@@ -2910,7 +2910,7 @@ fn preprocess_list_call(
         reject_strict_bare_enum_constructor_comparison(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), call_stack)?;
         reject_strict_nominal_enum_stringification(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), call_stack)?;
         warn_on_nominal_enum_legacy_absence_use(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
-        reject_or_warn_on_legacy_js_nullish_predicate(
+        reject_or_warn_on_js_nullish_predicate_mismatch(
           &head_form,
           &current_args,
           scope_types,
@@ -3495,7 +3495,7 @@ fn preprocess_list_call(
           )?;
           reject_strict_nominal_enum_stringification(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), call_stack)?;
           warn_on_nominal_enum_legacy_absence_use(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
-          reject_or_warn_on_legacy_js_nullish_predicate(
+          reject_or_warn_on_js_nullish_predicate_mismatch(
             call_head,
             &processed_args,
             scope_types,
@@ -5523,8 +5523,8 @@ fn warn_on_nominal_enum_legacy_absence_use(
   let Some(operation) = canonical_absence_operation_name(head) else {
     return;
   };
-  // `.some?` dispatches to the nominal Option receiver method, not the legacy
-  // nullable `some?` predicate; only the function form keeps the warning.
+  // `.some?` dispatches to the nominal Option receiver method, not a nullable
+  // value predicate; only the free predicate forms keep the warning.
   if operation == "some?" && matches!(head, Calcit::Method(_, _)) {
     return;
   }
@@ -5532,6 +5532,7 @@ fn warn_on_nominal_enum_legacy_absence_use(
     operation,
     "nil?"
       | "some?"
+      | "non-nil?"
       | "list?"
       | "map?"
       | "set?"
@@ -5604,10 +5605,10 @@ fn warn_on_nominal_enum_legacy_absence_use(
   }
 
   let guidance = match operation {
-    "nil?" | "some?" if enum_name == "Option" => {
+    "nil?" | "some?" | "non-nil?" if enum_name == "Option" => {
       "use `option:none?`/`option:some?` (or the corresponding methods) instead of nullable-value predicates".to_owned()
     }
-    "nil?" | "some?" => "use native `match` to inspect the nominal enum variant".to_owned(),
+    "nil?" | "some?" | "non-nil?" => "use native `match` to inspect the nominal enum variant".to_owned(),
     "=" | "&=" if enum_name == "Option" => {
       "compare Option values only with other Options, or unwrap/pattern-match before comparing a payload".to_owned()
     }
@@ -7664,7 +7665,7 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
     };
   }
 
-  // Legacy nil?/some? narrow only legacy Optional values. JavaScript host
+  // Nil predicates narrow only legacy Optional values. JavaScript host
   // nullability uses dedicated predicates so the FFI boundary stays visible.
   match pred_name {
     "nil?" => {
@@ -7680,7 +7681,7 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
         false_binding,
       }
     }
-    "some?" => {
+    "some?" | "non-nil?" => {
       let true_binding = scope_types.get(&sym).and_then(|current| {
         if let CalcitTypeAnnotation::Optional(inner) = current.as_ref() {
           Some((sym.clone(), inner.clone()))
@@ -11289,7 +11290,7 @@ mod tests {
     assert!(optional_warnings.borrow().is_empty());
 
     let predicate_warnings = RefCell::new(vec![]);
-    reject_or_warn_on_legacy_js_nullish_predicate(
+    reject_or_warn_on_js_nullish_predicate_mismatch(
       &Calcit::Proc(CalcitProc::NilQuestion),
       &args,
       &ScopeTypes::new(),
@@ -11301,6 +11302,27 @@ mod tests {
     .expect("compatibility mode should retain the legacy predicate warning");
     assert_eq!(predicate_warnings.borrow().len(), 1);
     assert_eq!(predicate_warnings.borrow()[0].code(), Some("W_JS_FFI_NULLABLE_PREDICATE"));
+
+    let non_nil_warnings = RefCell::new(vec![]);
+    reject_or_warn_on_js_nullish_predicate_mismatch(
+      &Calcit::Import(CalcitImport {
+        ns: Arc::from(calcit::CORE_NS),
+        def: Arc::from("non-nil?"),
+        info: Arc::new(ImportInfo::Core {
+          at_ns: Arc::from("tests.js-ffi"),
+        }),
+        def_id: None,
+      }),
+      &args,
+      &ScopeTypes::new(),
+      "tests.js-ffi",
+      "demo",
+      &non_nil_warnings,
+      &CallStackList::default(),
+    )
+    .expect("compatibility mode should retain the explicit non-nil predicate warning");
+    assert_eq!(non_nil_warnings.borrow().len(), 1);
+    assert!(non_nil_warnings.borrow()[0].message().contains("`non-nil?`"));
 
     let mut scope_types = ScopeTypes::new();
     scope_types.insert(
@@ -11355,7 +11377,7 @@ mod tests {
     assert_eq!(dereference_error.code.as_deref(), Some("E_JS_FFI_NULLABLE_DEREF"));
     assert!(dereference_error.msg.contains("js-present?"));
 
-    let predicate_error = reject_or_warn_on_legacy_js_nullish_predicate(
+    let predicate_error = reject_or_warn_on_js_nullish_predicate_mismatch(
       &Calcit::Proc(CalcitProc::NilQuestion),
       &args,
       &ScopeTypes::new(),
@@ -11367,6 +11389,26 @@ mod tests {
     .expect_err("strict project source must use a dedicated JavaScript nullish predicate");
     assert_eq!(predicate_error.code.as_deref(), Some("E_JS_FFI_NULLABLE_PREDICATE"));
     assert!(predicate_error.msg.contains("js-nullish?"));
+
+    let non_nil_error = reject_or_warn_on_js_nullish_predicate_mismatch(
+      &Calcit::Import(CalcitImport {
+        ns: Arc::from(calcit::CORE_NS),
+        def: Arc::from("non-nil?"),
+        info: Arc::new(ImportInfo::Core {
+          at_ns: Arc::from("tests.js-ffi-strict"),
+        }),
+        def_id: None,
+      }),
+      &args,
+      &ScopeTypes::new(),
+      "tests.js-ffi-strict",
+      "demo",
+      &RefCell::new(vec![]),
+      &CallStackList::default(),
+    )
+    .expect_err("strict project source must not erase JsNullish with non-nil?");
+    assert_eq!(non_nil_error.code.as_deref(), Some("E_JS_FFI_NULLABLE_PREDICATE"));
+    assert!(non_nil_error.msg.contains("`non-nil?`"));
   }
 
   #[test]
@@ -11397,7 +11439,7 @@ mod tests {
     });
     let args = CalcitList::from(std::slice::from_ref(&option_value));
 
-    for operation in ["some?", "get", "assoc", "dissoc", "merge", "&compare", "struct?"] {
+    for operation in ["some?", "non-nil?", "get", "assoc", "dissoc", "merge", "&compare", "struct?"] {
       let head = core_head(operation);
       let warnings = RefCell::new(vec![]);
       warn_on_nominal_enum_legacy_absence_use(&head, &args, &ScopeTypes::new(), "tests.option-migration", "demo", &warnings);

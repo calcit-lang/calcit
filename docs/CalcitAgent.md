@@ -547,6 +547,8 @@ Option 容器；Result 错误类型需要转换时显式使用 `.map-err`。
 
 旧 `option:some?` / `option:none?` 可用 `calcit fix --rule core-option-method-v1 --format edn` 预览迁移为 `.some?` / `.none?`；旧 `result:ok?` / `result:err?` / `result:unwrap-or` 用 `core-result-method-v1` 迁移为 `.ok?` / `.err?` / `.unwrap-or`。规则仅自动改写可证明的同一方法调用；core `%err` / `Result :err` 没有成功值，可用具体 fallback 推断成功类型并保留错误类型；成功值已有具体类型的 core `%ok` 也可凭方法契约迁移。普通 `Result<Dynamic,E>`、`:ok` 中的动态成功值和遮蔽类型不因 fallback 自动收窄，须审阅类型边界。先核对预览与 Snapshot revision，再应用、重复预览并运行测试。
 
+普通值的非 nil 判断使用 `non-nil?`；旧 `some?` 只作为同义兼容入口，不能与 Option `.some?` 混淆。可用 `calcit fix --rule core-non-nil-predicate-v1 --format edn` 预览等价改名；规则只接受编译器已解析的 core 引用，未知 macro 保留 review，不会把 Option 判断或用户同名函数按词形替换。`JsNullish<T>` 继续使用 `js-present?` / `js-nullish?`，不能借 `non-nil?` 擦除宿主边界。
+
 0.26.0 不删除旧 `option:*` / `result:*` 方法 helper：它们仍是 core method 的实现目标，不应在新应用代码中直接调用。其应用兼容入口最早于 0.27.0、且真实消费者在匹配的发布版依赖上迁移并通过严格检查、运行测试、Agent 文档和受影响 backend 验证，以及 core method 实现解耦后，才可考虑删除。完整条件见 [API 角色与命名](features/api-roles.md#旧方法-helper-的退场条件)；不能仅凭 fix 预览为空就推断可以删除。
 
 以下正反例可以直接由 `docs check-md` 执行。Unicode 字符数量不同于 UTF-8 字节数；`List.get` 的越界结果是 `Option :none`；列表的 `.contains?` 查询索引，`.includes?` 才查询元素；解析失败保留为 `Result` 的错误分支：

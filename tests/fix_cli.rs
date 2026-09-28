@@ -3526,6 +3526,227 @@ fn core_nominal_predicate_rules_migrate_proven_calls_idempotently() {
 }
 
 #[test]
+fn core_non_nil_predicate_rule_uses_resolved_references_and_is_idempotent() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  let target = "fix-command.main/legacy-non-nil";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn legacy-non-nil ()\n  assert= true $ some? false\n  assert= true $ some? 0\n  assert= false $ some? nil\n  some? 42",
+      ],
+    ),
+    "install legacy non-nil predicate calls",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)",
+      ],
+    ),
+    "declare legacy non-nil source",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        target,
+        "preserves-results",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ assert= true $ legacy-non-nil",
+      ],
+    ),
+    "attach non-nil behavior test",
+  );
+
+  let args = [
+    "--rule",
+    "core-non-nil-predicate-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "legacy-non-nil",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &args);
+  assert_success(&preview, "non-nil predicate preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions should be an array");
+  assert_eq!(suggestions.len(), 4, "{report}");
+  assert!(suggestions.iter().all(|suggestion| {
+    suggestion["rule_id"] == "core-non-nil-predicate-v1"
+      && suggestion["applicability"] == "machine-applicable"
+      && suggestion["origin_chain"][0]["target"] == "calcit.core/some?"
+  }));
+  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-non-nil-predicate-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "legacy-non-nil",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().expect("preview revision"),
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "non-nil predicate apply");
+  let updated = fs::read_to_string(&snapshot).expect("updated Snapshot should read");
+  assert!(updated.contains("calcit.core/non-nil?"));
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "non-nil behavior after migration",
+  );
+
+  let repeated = run_fix(&snapshot, &args);
+  assert_success(&repeated, "non-nil predicate idempotence preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/shadowed-some",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn shadowed-some ()\n  let\n      some? $ fn (x) false\n    some? nil",
+      ],
+    ),
+    "install a locally shadowed predicate",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/shadowed-some",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)",
+      ],
+    ),
+    "declare the locally shadowed predicate",
+  );
+  let shadowed_preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-non-nil-predicate-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "shadowed-some",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&shadowed_preview, "locally shadowed predicate preview");
+  assert_eq!(parse_stdout(&shadowed_preview)["data"]["suggestions"], serde_json::json!([]));
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/pass-form",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defmacro pass-form (body) body",
+      ],
+    ),
+    "install unknown source macro",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/legacy-macro-nil",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn legacy-macro-nil () $ pass-form $ some? nil",
+      ],
+    ),
+    "install macro-wrapped legacy predicate",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/legacy-macro-nil",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)",
+      ],
+    ),
+    "declare macro-wrapped legacy predicate",
+  );
+  let macro_preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-non-nil-predicate-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "legacy-macro-nil",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&macro_preview, "macro-wrapped non-nil predicate preview");
+  let macro_report = parse_stdout(&macro_preview);
+  assert_eq!(macro_report["data"]["suggestions"].as_array().map(Vec::len), Some(1));
+  assert_eq!(macro_report["data"]["suggestions"][0]["applicability"], "requires-review");
+  assert_eq!(macro_report["data"]["suggestions"][0]["replacement"], serde_json::Value::Null);
+  assert_eq!(
+    macro_report["data"]["suggestions"][0]["origin_chain"][0]["macro_origin"][0],
+    "fix-command.main/pass-form"
+  );
+}
+
+#[test]
 fn strict_result_success_consumption_rejects_dynamic_payload() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

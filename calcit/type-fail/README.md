@@ -49,7 +49,7 @@ preflight；只有验证 0.14 之前的临时 warning 路径时才使用 `--comp
 - strict indexed-access integration 会验证完整预处理路径拒绝 Number 等静态不支持的 `first` / `last` / `nth` / `get` receiver，并报告稳定的 `E_UNSUPPORTED_INDEXED_RECEIVER`；该检查属于 native/JS 共用的前端语义。
 - `untyped-js-object-access-strict.cirru` 会验证 strict 模式拒绝裸 `JsObject` 上的静态成员访问，并报告稳定的 `E_UNTYPED_JS_OBJECT_ACCESS` 与 external-object trait 迁移建议。
 - `js-nullish-dereference-strict.cirru` 会验证 strict 模式拒绝直接解引用 `JsNullish<JsObject>`，并报告稳定的 `E_JS_FFI_NULLABLE_DEREF` 与显式 narrow/optional access 建议。
-- `js-nullish-predicate-strict.cirru` 会验证 strict 模式拒绝以 legacy `nil?`/`some?` 检查 `JsNullish<T>`，并报告稳定的 `E_JS_FFI_NULLABLE_PREDICATE` 与专用 predicate 建议。
+- `js-nullish-predicate-strict.cirru` 会验证 strict 模式拒绝以 `nil?`/`some?`/`non-nil?` 检查 `JsNullish<T>`，并报告稳定的 `E_JS_FFI_NULLABLE_PREDICATE` 与专用 predicate 建议。
 - `unsafe-coerce-unscoped-strict.cirru` 会验证 strict 模式拒绝未声明 `:js-ffi` 的 `unsafe-coerce`，并报告稳定的 `E_UNSCOPED_UNSAFE_COERCE`。
 - `unsafe-coerce-scoped-strict.cirru` 是 integration preprocessing 正例：标记 adapter 可使用 assertion，普通 typed caller 不继承也不需要该 capability；完整 strict quality gate 仍要求显式 `unsafeCoerce` baseline。
 - `erased-generic-relation-strict.cirru` 会验证 strict 模式允许 Dynamic 作为开放泛型 payload 传递，但拒绝用只接受具体类型的 callback 隐式收窄该绑定，并报告稳定的 `E_ERASED_GENERIC_RELATION`。
@@ -89,7 +89,7 @@ preflight；只有验证 0.14 之前的临时 warning 路径时才使用 `--comp
 - `E_UNSUPPORTED_INDEXED_RECEIVER`：strict 项目源码把静态可解析但不支持的具体类型传给 `first`、`last`、`nth` 或 `get`；应转换到支持的 collection、先 narrow optional/FFI value，或对 Struct 使用字段访问
 - `E_UNTYPED_JS_OBJECT_ACCESS`：strict 项目源码在裸 `JsObject` 上以静态成员名执行读取、调用或写入，需在 lexical adapter 内绑定 external-object trait；动态 key 保留 raw lookup 语义
 - `E_JS_FFI_NULLABLE_DEREF`：strict 项目源码未 narrow `JsNullish<JsObject>` 就直接读取或调用宿主成员
-- `E_JS_FFI_NULLABLE_PREDICATE`：strict 项目源码用 legacy `nil?`/`some?` 擦除 `JsNullish<T>` 的宿主空值语义
+- `E_JS_FFI_NULLABLE_PREDICATE`：strict 项目源码用 `nil?`/`some?`/`non-nil?` 擦除 `JsNullish<T>` 的宿主空值语义
 - `E_UNSCOPED_UNSAFE_COERCE`：strict 项目源码在当前 definition 未声明 `:js-ffi` 时使用 `unsafe-coerce`
 - `E_ERASED_GENERIC_RELATION`：strict 模式下 Dynamic 实参擦除了 callee 声明的重复泛型关系
 - `W_FN_ARG_TYPE_MISMATCH`：用户函数调用参数类型不匹配

@@ -431,7 +431,7 @@ pub(super) fn reject_or_warn_on_untyped_js_ffi_field_access(
   Ok(())
 }
 
-pub(super) fn reject_or_warn_on_legacy_js_nullish_predicate(
+pub(super) fn reject_or_warn_on_js_nullish_predicate_mismatch(
   head: &Calcit,
   args: &CalcitList,
   scope_types: &ScopeTypes,
@@ -446,7 +446,7 @@ pub(super) fn reject_or_warn_on_legacy_js_nullish_predicate(
   let Some(operation) = canonical_absence_operation_name(head) else {
     return Ok(());
   };
-  if !matches!(operation, "nil?" | "some?") {
+  if !matches!(operation, "nil?" | "some?" | "non-nil?") {
     return Ok(());
   }
   let Some(value) = args.first() else {
