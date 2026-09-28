@@ -113,6 +113,12 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   不在本规则范围。运行 `calcit calcit.cirru fix --rule core-list-fold-v1 --format edn` 预览，审阅来源与 revision
   后带 `--expect-revision` 应用，重复预览应为空。本规则仅覆盖 definition `:code`，`:tests` / `:examples`
   需单独检查；目前不加入已发布 preset。
+- `core-list-intersperse-v1` 仅把具体 List 上已证明的 `.join separator` 改成 `.intersperse separator`。
+  两者必须同指 `calcit.core/intersperse`，形参与返回契约一致。该操作返回 List，只在元素之间插入同类型分隔值；
+  空 List、单元素、重复值和顺序不变。前缀 `join` 与返回 String 的 `join-str` 不是这条方法迁移的对象。
+  运行 `calcit calcit.cirru fix --rule core-list-intersperse-v1 --format edn` 预览，核对来源和 revision 后携带
+  `--expect-revision` 应用并重复预览。未知 macro、quoted data 和未证明的接收者不自动改写；当前只覆盖
+  definition `:code`，不改 `:tests` / `:examples`，也不加入已发布 preset。
 - `rename-definition-v1` 是参数化语义重构规则。它要求 `--ns`、`--def` 与 `--to`，只改写 resolver 已证明指向
   同一项目 definition 的源码引用，并在同一事务中移除旧 `:refer`、重命名声明。裸引用会写成完整 namespace 路径，
   避免新名称被调用点的局部 binding 遮蔽；已有 `:as` 限定名会保留 alias。definition-attached tests 与 examples

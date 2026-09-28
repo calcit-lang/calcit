@@ -5663,7 +5663,7 @@ fn try_custom_def_impl(
     "repeat" => Some(build(|ctx| emit_repeat_from_locals(ctx, 0, 1), export_name, env)),
     "interleave" => Some(build(|ctx| emit_interleave_from_locals(ctx, 0, 1), export_name, env)),
     "zipmap" => Some(build(|ctx| emit_zipmap_from_locals(ctx, 0, 1), export_name, env)),
-    "join" => Some(build(|ctx| emit_join_from_locals(ctx, 0, 1), export_name, env)),
+    "join" | "intersperse" => Some(build(|ctx| emit_join_from_locals(ctx, 0, 1), export_name, env)),
     "join-str" => Some(build(|ctx| emit_join_str_from_locals(ctx, 0, 1), export_name, env)),
     _ => None,
   }
@@ -6088,7 +6088,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
           "repeat" if args_list.len() == 2 => return emit_repeat(ctx, &args_list),
           "interleave" if args_list.len() == 2 => return emit_interleave(ctx, &args_list),
           "zipmap" if args_list.len() == 2 => return emit_zipmap(ctx, &args_list),
-          "join" if args_list.len() == 2 => return emit_join(ctx, &args_list),
+          "join" | "intersperse" if args_list.len() == 2 => return emit_join(ctx, &args_list),
           "join-str" if args_list.len() == 2 => return emit_join_str(ctx, &args_list),
           // `let` — multi-binding form: (let ((name val)...) body...).
           // The preprocessor normally expands this to nested `&let` forms, but intercept here

@@ -45,6 +45,8 @@ const CORE_COLLECTION_LEN_RULE: &str = "core-collection-len-v1";
 const CORE_COLLECTION_LEN_DIAGNOSTIC: &str = "FIX_CORE_COLLECTION_LEN";
 const CORE_LIST_FOLD_RULE: &str = "core-list-fold-v1";
 const CORE_LIST_FOLD_DIAGNOSTIC: &str = "FIX_CORE_LIST_FOLD";
+const CORE_LIST_INTERSPERSE_RULE: &str = "core-list-intersperse-v1";
+const CORE_LIST_INTERSPERSE_DIAGNOSTIC: &str = "FIX_CORE_LIST_INTERSPERSE";
 const RENAME_DEFINITION_RULE: &str = "rename-definition-v1";
 const RENAME_DEFINITION_DIAGNOSTIC: &str = "REFACTOR_RENAME_DEFINITION";
 const VALUE_TO_ZERO_ARG_FN_RULE: &str = "value-to-zero-arg-fn-v1";
@@ -526,7 +528,20 @@ pub(crate) fn handle_fix_command(
     )?);
   }
   if selected_rules.contains(&CORE_LIST_FOLD_RULE) {
-    suggestions.extend(plan_core_list_fold_fixes(&source_snapshot, snapshot_file, &selected_definitions)?);
+    suggestions.extend(plan_core_list_method_alias_fixes(
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+      LIST_FOLD_ALIAS,
+    )?);
+  }
+  if selected_rules.contains(&CORE_LIST_INTERSPERSE_RULE) {
+    suggestions.extend(plan_core_list_method_alias_fixes(
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+      LIST_INTERSPERSE_ALIAS,
+    )?);
   }
   let mut constructor_kinds = Vec::new();
   if selected_rules.contains(&NAMED_ENUM_CONSTRUCTOR_RULE) {
@@ -921,6 +936,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CORE_LIST_ADD_RULE
         | CORE_COLLECTION_LEN_RULE
         | CORE_LIST_FOLD_RULE
+        | CORE_LIST_INTERSPERSE_RULE
         | RENAME_DEFINITION_RULE
         | VALUE_TO_ZERO_ARG_FN_RULE
         | SYNTHESIZE_SCHEMA_RULE
@@ -930,7 +946,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     )
   {
     return Err(format!(
-      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
     ));
   }
   if let Some(rule @ (TAG_MATCH_RULE | REQUIRED_STRUCT_FIELD_RULE)) = options.rule.as_deref() {
@@ -960,6 +976,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_LIST_ADD_RULE
         | CORE_COLLECTION_LEN_RULE
         | CORE_LIST_FOLD_RULE
+        | CORE_LIST_INTERSPERSE_RULE
     ) {
       return vec![match rule {
         RENAME_DEFINITION_RULE => RENAME_DEFINITION_RULE,
@@ -972,6 +989,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_LIST_ADD_RULE => CORE_LIST_ADD_RULE,
         CORE_COLLECTION_LEN_RULE => CORE_COLLECTION_LEN_RULE,
         CORE_LIST_FOLD_RULE => CORE_LIST_FOLD_RULE,
+        CORE_LIST_INTERSPERSE_RULE => CORE_LIST_INTERSPERSE_RULE,
         _ => OPTIONAL_PARAMETERS_RULE,
       }];
     }
@@ -1067,6 +1085,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
     CORE_LIST_FOLD_RULE => FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_LIST_FOLD_DIAGNOSTIC,
+      evidence_source: "proven-list-receiver-and-method-implementation",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    CORE_LIST_INTERSPERSE_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: CORE_LIST_INTERSPERSE_DIAGNOSTIC,
       evidence_source: "proven-list-receiver-and-method-implementation",
       lifecycle: "semantic-refactor",
       source_version_required: false,
@@ -3619,18 +3644,54 @@ fn plan_core_list_add_fixes(
   Ok(suggestions)
 }
 
-/// Only rewrite complete seeded method calls. First-class method values are not equivalent.
-fn collect_list_reduce_calls(node: &Cirru, path: &mut Vec<usize>, calls: &mut Vec<(Vec<usize>, Vec<usize>, Vec<usize>)>) {
+#[derive(Clone, Copy)]
+struct ListMethodAliasRule {
+  rule_id: &'static str,
+  diagnostic_code: &'static str,
+  old_method: &'static str,
+  new_method: &'static str,
+  implementation: &'static str,
+  call_size: usize,
+  message: &'static str,
+}
+
+const LIST_FOLD_ALIAS: ListMethodAliasRule = ListMethodAliasRule {
+  rule_id: CORE_LIST_FOLD_RULE,
+  diagnostic_code: CORE_LIST_FOLD_DIAGNOSTIC,
+  old_method: ".reduce",
+  new_method: ".fold",
+  implementation: "calcit.core/fold",
+  call_size: 4,
+  message: "Use `.fold` for seeded left-to-right List accumulation; both methods resolve to the same core implementation.",
+};
+
+const LIST_INTERSPERSE_ALIAS: ListMethodAliasRule = ListMethodAliasRule {
+  rule_id: CORE_LIST_INTERSPERSE_RULE,
+  diagnostic_code: CORE_LIST_INTERSPERSE_DIAGNOSTIC,
+  old_method: ".join",
+  new_method: ".intersperse",
+  implementation: "calcit.core/intersperse",
+  call_size: 3,
+  message: "Use `.intersperse` for List separator insertion; both methods resolve to the same core implementation.",
+};
+
+/// Only rewrite complete method calls. First-class method values are not equivalent.
+fn collect_list_method_alias_calls(
+  node: &Cirru,
+  path: &mut Vec<usize>,
+  calls: &mut Vec<(Vec<usize>, Vec<usize>, Vec<usize>)>,
+  rule: ListMethodAliasRule,
+) {
   let Cirru::List(items) = node else {
     return;
   };
   if matches!(items.first(), Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "quote" | "quasiquote")) {
     return;
   }
-  if items.len() == 4 {
-    let indices = if matches!(&items[0], Cirru::Leaf(name) if name.as_ref() == ".reduce") {
+  if items.len() == rule.call_size {
+    let indices = if matches!(&items[0], Cirru::Leaf(name) if name.as_ref() == rule.old_method) {
       Some((0, 1))
-    } else if matches!(&items[1], Cirru::Leaf(name) if name.as_ref() == ".reduce") {
+    } else if matches!(&items[1], Cirru::Leaf(name) if name.as_ref() == rule.old_method) {
       Some((1, 0))
     } else {
       None
@@ -3645,15 +3706,16 @@ fn collect_list_reduce_calls(node: &Cirru, path: &mut Vec<usize>, calls: &mut Ve
   }
   for (index, child) in items.iter().enumerate() {
     path.push(index);
-    collect_list_reduce_calls(child, path, calls);
+    collect_list_method_alias_calls(child, path, calls, rule);
     path.pop();
   }
 }
 
-fn plan_core_list_fold_fixes(
+fn plan_core_list_method_alias_fixes(
   snapshot: &Snapshot,
   snapshot_file: &str,
   selected_definitions: &[(String, String)],
+  rule: ListMethodAliasRule,
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
@@ -3666,7 +3728,7 @@ fn plan_core_list_fold_fixes(
       continue;
     }
     let mut calls = Vec::new();
-    collect_list_reduce_calls(&entry.code, &mut Vec::new(), &mut calls);
+    collect_list_method_alias_calls(&entry.code, &mut Vec::new(), &mut calls, rule);
     if calls.is_empty() {
       continue;
     }
@@ -3722,31 +3784,35 @@ fn plan_core_list_fold_fixes(
         if !matches!(annotation.as_ref(), CalcitTypeAnnotation::List(_)) {
           return false;
         }
-        let old = runner::preprocess::static_method_contract(annotation.as_ref(), ".reduce");
-        let new = runner::preprocess::static_method_contract(annotation.as_ref(), ".fold");
+        let old = runner::preprocess::static_method_contract(annotation.as_ref(), rule.old_method);
+        let new = runner::preprocess::static_method_contract(annotation.as_ref(), rule.new_method);
         old.status == "proven"
           && new.status == "proven"
-          && old.definition.as_deref() == Some("calcit.core/fold")
+          && old.definition.as_deref() == Some(rule.implementation)
           && old.definition == new.definition
           && old.arg_types == new.arg_types
           && old.return_type == new.return_type
       });
       let machine_applicable = proven_same_impl && method_source_context_is_stable(&entry.code, &call_path);
       let original_node = navigate_to_path(&entry.code, &method_path)?;
-      let replacement_node = Cirru::leaf(".fold");
+      let replacement_node = Cirru::leaf(rule.new_method);
+      let mut method_evidence = serde_json::json!({
+        "kind": "receiver-method-query",
+        "receiver_type": inferred.as_ref().map(|annotation| annotation.describe()),
+        "same_core_implementation": proven_same_impl,
+      });
+      if rule.rule_id == CORE_LIST_FOLD_RULE {
+        method_evidence["same_core_fold_implementation"] = serde_json::json!(proven_same_impl);
+      }
       suggestions.push(FixSuggestion {
-        rule_id: CORE_LIST_FOLD_RULE,
-        diagnostic_code: CORE_LIST_FOLD_DIAGNOSTIC,
+        rule_id: rule.rule_id,
+        diagnostic_code: rule.diagnostic_code,
         semantic_layer: "surface",
         source_file: snapshot_file.to_owned(),
         definition: format!("{namespace}/{definition}"),
         path: format!("code{}", format_path(&method_path)),
         fingerprint: node_fingerprint(&original_node),
-        origin_chain: vec![serde_json::json!({
-          "kind": "receiver-method-query",
-          "receiver_type": inferred.as_ref().map(|annotation| annotation.describe()),
-          "same_core_fold_implementation": proven_same_impl,
-        })],
+        origin_chain: vec![method_evidence],
         original: quoted_json(&original_node),
         replacement: machine_applicable.then(|| quoted_json(&replacement_node)),
         applicability: if machine_applicable {
@@ -3755,15 +3821,17 @@ fn plan_core_list_fold_fixes(
           "requires-review"
         },
         message: if machine_applicable {
-          "Use `.fold` for seeded left-to-right List accumulation; both methods resolve to the same core implementation.".to_owned()
+          rule.message.to_owned()
         } else {
-          "Cannot prove a concrete List receiver, matching method implementation, or stable source context; review `.reduce` manually."
-            .to_owned()
+          format!(
+            "Cannot prove a concrete List receiver, matching method implementation, or stable source context; review `{}` manually.",
+            rule.old_method
+          )
         },
         target_path: method_path,
         operation: machine_applicable.then_some(FixOperation::ReplaceLeaf {
-          original: ".reduce".to_owned(),
-          replacement: ".fold".to_owned(),
+          original: rule.old_method.to_owned(),
+          replacement: rule.new_method.to_owned(),
         }),
       });
     }
