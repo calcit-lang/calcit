@@ -283,6 +283,188 @@ fn list_fold_fix_preserves_quoted_and_macro_boundaries() {
 }
 
 #[test]
+fn list_intersperse_fix_preserves_separator_semantics_and_revision_guard() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  let target = "fix-command.main/separator-values";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn separator-values (xs) (xs .join 0)",
+      ],
+    ),
+    "install List separator method",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return $ :: 'List 'Number)",
+      ],
+    ),
+    "declare List separator contract",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        target,
+        "preserves-duplicates-empty-and-singleton",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ do\n  assert= ([] 1 0 1 0 2) $ separator-values ([] 1 1 2)\n  assert= ([]) $ separator-values ([])\n  assert= ([] 7) $ separator-values ([] 7)",
+      ],
+    ),
+    "attach Calcit separator contract",
+  );
+  let selector = [
+    "--rule",
+    "core-list-intersperse-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "separator-values",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &selector);
+  assert_success(&preview, "intersperse preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
+  assert_eq!(suggestions.len(), 1, "{report}");
+  assert_eq!(suggestions[0]["applicability"], "machine-applicable", "{report}");
+  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+  let stale = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-list-intersperse-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "separator-values",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      "stale-revision",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!stale.status.success(), "stale revision must reject apply");
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-list-intersperse-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "separator-values",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().expect("preview revision"),
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "intersperse apply");
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "Calcit separator after migration",
+  );
+  let repeated = run_fix(&snapshot, &selector);
+  assert_success(&repeated, "idempotent intersperse preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+}
+
+#[test]
+fn list_intersperse_fix_preserves_quoted_and_macro_boundaries() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (name, code) in [
+    ("quoted-join", "quote $ defn quoted-join ()\n  quote $ ([] 1 2) .join 0\n  , 0"),
+    ("pass-form", "quote $ defmacro pass-form (body) body"),
+    ("macro-join", "quote $ defn macro-join (xs) $ pass-form $ xs .join 0"),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("fix-command.main/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          code,
+        ],
+      ),
+      "install separator boundary source",
+    );
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/macro-join",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return $ :: 'List 'Number)",
+      ],
+    ),
+    "declare macro separator receiver",
+  );
+  for (name, expected) in [("quoted-join", 0), ("macro-join", 1)] {
+    let preview = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "core-list-intersperse-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&preview, "separator boundary preview");
+    let report = parse_stdout(&preview);
+    let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
+    assert_eq!(suggestions.len(), expected, "{name}: {report}");
+    if expected == 1 {
+      assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
+      assert!(suggestions[0]["replacement"].is_null(), "{report}");
+    }
+  }
+}
+
+#[test]
 fn collection_len_fix_rewrites_only_proven_builtin_count_calls() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

@@ -112,7 +112,7 @@ const scenarios = [
     },
   },
   {
-    name: "list append, length, and fold expose proven contracts",
+    name: "list append, length, fold, and intersperse expose proven contracts",
     args: ["calcit/test.cirru", "query", "type", ":: 'List 'Number", "--format", "json"],
     check(result) {
       const append = result.data.methods.find((method) => method.name === ".append");
@@ -129,6 +129,14 @@ const scenarios = [
       assert.deepEqual(fold?.parameter_types, reduce?.parameter_types);
       assert.equal(fold?.return_type, reduce?.return_type);
       assert.equal(reduce?.definition, fold?.definition);
+      const intersperse = result.data.methods.find((method) => method.name === ".intersperse");
+      const join = result.data.methods.find((method) => method.name === ".join");
+      assert.equal(intersperse?.status, "proven");
+      assert.equal(intersperse?.definition, "calcit.core/intersperse");
+      assert.deepEqual(intersperse?.parameter_types, ["number"]);
+      assert.equal(intersperse?.return_type, "list<number>");
+      assert.deepEqual(join?.parameter_types, intersperse?.parameter_types);
+      assert.equal(join?.definition, intersperse?.definition);
     },
   },
   {
