@@ -542,7 +542,7 @@ calcit calcit.cirru analyze program-diff main --base v0.15.5 --format edn
 
 ## WASM preview 命令
 
-`calcit wasm` 生成面向 browser/embedded host 的 core module；`calcit wasi` 默认生成 WASI 0.3.1 `wasi:cli/command` Component，支持零参数入口、`get-args`、`get-env`、`println` / `eprintln` / `echo`、`quit!` 整数退出码、`read-stdin-text` 以及 `FsPath .read-text` / `.write-text`；正常返回时退出码为 0。显式传 `calcit wasi --boundary native` 仍生成可由 Wasmtime 等 WASI host 启动的 Preview 1 command core module，用于尚未迁移的宿主能力。通用的 `calcit wasm --boundary component` 输出供 Component tooling 包装的 core module，不等价于 WASI 0.3.1 command。两个命令把 Snapshot 路径放在子命令之后，并分别通过 help 暴露输出契约：
+`calcit wasm` 生成面向 browser/embedded host 的 core module；`calcit wasi` 默认生成 WASI 0.3.1 `wasi:cli/command` Component，支持零参数入口、`get-args`、`get-env`、`println` / `eprintln` / `echo`、`quit!` 整数退出码、`read-stdin-text` 以及 `FsPath .read-text` / `.write-text!`；正常返回时退出码为 0。显式传 `calcit wasi --boundary native` 仍生成可由 Wasmtime 等 WASI host 启动的 Preview 1 command core module，用于尚未迁移的宿主能力。通用的 `calcit wasm --boundary component` 输出供 Component tooling 包装的 core module，不等价于 WASI 0.3.1 command。两个命令把 Snapshot 路径放在子命令之后，并分别通过 help 暴露输出契约：
 
 ```bash
 calcit wasm calcit.cirru --emit-path js-out
@@ -552,7 +552,7 @@ calcit wasi calcit.cirru --boundary native --emit-path target/wasi-command
 wasmtime run -S p3 -W component-model-more-async-builtins=y -W component-model-async-stackful=y target/wasi-03-command/program.wasm
 ```
 
-两个命令都支持 `--entry`、`--init-fn`、`--reload-fn` 和 `--check-only`。WASI 0.3 Component 的 `--check-only` 会完成 codegen 与封装验证，但不会写出 `program.wasm`。WASI command 的 init definition 必须为零参数；Component 路径还要求显式 `Unit` 返回 schema，避免把 `Result` 等返回值悄然当成成功退出。尚未迁移的 Preview 1 宿主能力（时钟、`wait-ms`、安全随机数、`.read-dir`）在 Component 路径以 `E_WASI_COMMAND_CAPABILITY` 明确失败，可改用显式 `--boundary native`；`read-stdin-text`、`.read-text` 与 `.write-text` 已在 Component 路径支持。编译器还会沿入口的直接调用链检查失败的依赖，不会把核心包装函数变成运行时 trap。当前无法证明目标安全的间接调用会以 `E_WASI_COMMAND_INDIRECT` 拒绝。通用 `defwasm-export` 以 `E_WASI_COMMAND_EXPORT` 拒绝，不会悄然丢弃。使用标准输出或标准错误的 Component 在 Wasmtime 49 中需要上述两个 `-W` 选项；未使用标准流的纯计算、参数和环境变量命令仍可只用 `-S p3`。
+两个命令都支持 `--entry`、`--init-fn`、`--reload-fn` 和 `--check-only`。WASI 0.3 Component 的 `--check-only` 会完成 codegen 与封装验证，但不会写出 `program.wasm`。WASI command 的 init definition 必须为零参数；Component 路径还要求显式 `Unit` 返回 schema，避免把 `Result` 等返回值悄然当成成功退出。尚未迁移的 Preview 1 宿主能力（时钟、`wait-ms`、安全随机数、`.read-dir`）在 Component 路径以 `E_WASI_COMMAND_CAPABILITY` 明确失败，可改用显式 `--boundary native`；`read-stdin-text`、`.read-text` 与 `.write-text!` 已在 Component 路径支持，旧 `.write-text` 暂留兼容。编译器还会沿入口的直接调用链检查失败的依赖，不会把核心包装函数变成运行时 trap。当前无法证明目标安全的间接调用会以 `E_WASI_COMMAND_INDIRECT` 拒绝。通用 `defwasm-export` 以 `E_WASI_COMMAND_EXPORT` 拒绝，不会悄然丢弃。使用标准输出或标准错误的 Component 在 Wasmtime 49 中需要上述两个 `-W` 选项；未使用标准流的纯计算、参数和环境变量命令仍可只用 `-S p3`。
 
 WASI command 中的 `try-parse-cirru-edn-as` 与 `format-cirru-edn` 直接使用编译器已经推导出的闭合类型，不在运行时探测值类型。当前支持标量、递归 `List<T>`、标量 key 的 `Map<K,V>`，以及闭合 Struct field 和 Enum payload；core `Option<T>` / `Result<T,E>` 复用相同的 nominal Enum 路径。可完整往返的标量为 `Nil`、`Bool`、`String`、`Tag`、`Int8`、`UInt8`、`Int16`、`UInt16`、`Int32`、`UInt32`、`Int64` 与 `UInt64`。typed parser 还可读取 `Number`、`Float32` 与 `Float64`，但 formatter 尚不能为这些运行时浮点类型生成与 native 一致的文本，因此它们不属于当前支持的往返字段类型。Struct 输入使用 `%{} 'TypeName (:field value)`，Enum 输入使用 `%:: 'TypeName 'variant payload...`；名称、字段或 variant、payload 数量与递归 shape 都必须与声明完全一致。重复、缺失、未知项和数值越界都会返回 `Result :err`。格式化按声明字段或 variant 顺序生成 canonical Cirru EDN；开放 `Dynamic`、anonymous Enum 和其他未支持类型在 codegen 阶段明确拒绝，不会生成近似数据。
 
@@ -577,7 +577,7 @@ WASI command 也复用 `unix-time-ms` 与 `cpu-time`。前者读取系统实时�
 
 安全随机字节统一通过 `secure-random-bytes` 获取。参数必须是 `0..65536` 范围内的整数，返回值为 `Result<Buffer,String>`；WASI command 由 Preview 1 `random_get` 填充缓冲区，宿主错误保留为 `Result` 的错误分支。Native 与生成的 JavaScript 保持相同的公开值形状，分别使用系统 CSPRNG 与 Web Crypto。`calcit wasm` 的 core module 没有默认随机数宿主协议，会以 `E_WASM_CAPABILITY` 明确拒绝。
 
-WASI command 可通过 `FsPath .read-text` 与 `.write-text` 访问 host 显式预开放的目录。Calcit 路径使用 guest 侧名称，例如 host 以 `--dir ./data::/workspace` 授权后，程序访问 `workspace/input.txt`；编译器会选择最长匹配的 preopen，并只把剩余相对路径交给 Preview 1 `path_open`：
+WASI command 可通过 `FsPath .read-text` 与 `.write-text!` 访问 host 显式预开放的目录。Calcit 路径使用 guest 侧名称，例如 host 以 `--dir ./data::/workspace` 授权后，程序访问 `workspace/input.txt`；编译器会选择最长匹配的 preopen，并只把剩余相对路径交给 Preview 1 `path_open`：
 
 ```bash
 calcit wasi calcit.cirru --emit-path target/wasi-command

@@ -2937,6 +2937,9 @@
             .write-text $ :: 'Fn $ {}
               :args $ [] 'FsPath 'String
               :return $ :: 'Result 'Unit 'String
+            .write-text! $ :: 'Fn $ {}
+              :args $ [] 'FsPath 'String
+              :return $ :: 'Result 'Unit 'String
             .read-dir $ :: 'Fn $ {}
               :args $ [] 'FsPath
               :return $ :: 'Result (:: 'List 'FsPath) 'String
@@ -2950,7 +2953,7 @@
           :schema $ :: 'Trait
           :tags $ #{} :internal :trait
         'FsPathOpsImpl $ %{} 'CodeEntry (:doc "|Internal FsPath method implementation.")
-          :code $ quote $ defimpl FsPathOpsImpl FsPathOps (.read-text fs-path:read-text) (.write-text fs-path:write-text) (.read-dir fs-path:read-dir) (.walk-dir fs-path:walk-dir) (.to-string fs-path:to-string)
+          :code $ quote $ defimpl FsPathOpsImpl FsPathOps (.read-text fs-path:read-text) (.write-text fs-path:write-text) (.write-text! fs-path:write-text) (.read-dir fs-path:read-dir) (.walk-dir fs-path:walk-dir) (.to-string fs-path:to-string)
           :examples $ []
           :schema $ :: 'Impl
           :tags $ #{} :internal :trait-impl
@@ -5746,27 +5749,35 @@
           :schema $ :: 'Fn $ {} (:return 'FsPath)
             :args $ [] 'String
           :tags $ #{} :core
-          :tests $ [] $ %{} 'TestEntry (:name |fs-path-contract)
-            :code $ quote $ do
-              assert= |Cargo.toml $ .to-string $ fs:path |Cargo.toml
-              assert= true $ result:ok? $ .read-text (fs:path |Cargo.toml)
-              assert= true $ result:ok? $ .read-dir (fs:path |src)
-              assert= true $ result:ok? $ .walk-dir (fs:path |src)
-              assert= true $ result:err? $ .read-text (fs:path |/calcit-result-contract-does-not-exist/file)
-              assert= true $ result:err? $ .read-dir (fs:path |/calcit-result-contract-does-not-exist)
-              assert= true $ result:err? $ .write-text (fs:path |/calcit-result-contract-does-not-exist/file) |content
-              assert-type
-                .read-text $ fs:path |/calcit-result-contract-does-not-exist/file
-                :: 'Result 'String 'String
-              assert-type
-                .read-dir $ fs:path |/calcit-result-contract-does-not-exist
-                :: 'Result (:: 'List 'FsPath) 'String
-              assert-type
-                .walk-dir $ fs:path |/calcit-result-contract-does-not-exist
-                :: 'Result (:: 'List 'FsPath) 'String
-              assert-type
-                .write-text (fs:path |/calcit-result-contract-does-not-exist/file) |content
-                :: 'Result 'Unit 'String
+          :tests $ []
+            %{} 'TestEntry (:name |fs-path-contract)
+              :code $ quote $ do
+                assert= |Cargo.toml $ .to-string $ fs:path |Cargo.toml
+                assert= true $ result:ok? $ .read-text (fs:path |Cargo.toml)
+                assert= true $ result:ok? $ .read-dir (fs:path |src)
+                assert= true $ result:ok? $ .walk-dir (fs:path |src)
+                assert= true $ result:err? $ .read-text (fs:path |/calcit-result-contract-does-not-exist/file)
+                assert= true $ result:err? $ .read-dir (fs:path |/calcit-result-contract-does-not-exist)
+                assert= true $ result:err? $ .write-text (fs:path |/calcit-result-contract-does-not-exist/file) |content
+                assert-type
+                  .read-text $ fs:path |/calcit-result-contract-does-not-exist/file
+                  :: 'Result 'String 'String
+                assert-type
+                  .read-dir $ fs:path |/calcit-result-contract-does-not-exist
+                  :: 'Result (:: 'List 'FsPath) 'String
+                assert-type
+                  .walk-dir $ fs:path |/calcit-result-contract-does-not-exist
+                  :: 'Result (:: 'List 'FsPath) 'String
+                assert-type
+                  .write-text (fs:path |/calcit-result-contract-does-not-exist/file) |content
+                  :: 'Result 'Unit 'String
+            %{} 'TestEntry (:name |write-text-effect-contract)
+              :code $ quote $ do
+                assert= true $ result:err? $ .write-text! (fs:path |/calcit-result-contract-does-not-exist/file) |content
+                assert-type
+                  .write-text! (fs:path |/calcit-result-contract-does-not-exist/file) |content
+                  :: 'Result 'Unit 'String
+              :tags $ #{} :unit
         'generate-id! $ %{} 'CodeEntry
           :doc "|internal function for generating unique IDs\nSyntax: (generate-id!)\nParams: none\nReturns: unique string ID\nGenerates a unique identifier string for runtime use"
           :code $ quote &runtime-implementation

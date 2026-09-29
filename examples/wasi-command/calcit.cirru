@@ -42,7 +42,7 @@
                     .read-text $ fs:path input-path
                     (:ok content)
                       match
-                        .write-text (fs:path output-path) (transform-content prefix content)
+                        .write-text! (fs:path output-path) (transform-content prefix content)
                         (:ok _) (println "|Wrote " output-path)
                         (:err message)
                           fail! 73 $ str "|Failed to write " output-path |: message
@@ -63,7 +63,7 @@
                     fail! 65 $ str |manifest: message
                   (:ok output)
                     match
-                      .write-text (fs:path |workspace/output.cirru) output
+                      .write-text! (fs:path |workspace/output.cirru) output
                       (:err message)
                         fail! 73 $ str |output: message
                       (:ok _) (println |Manifest-written)
