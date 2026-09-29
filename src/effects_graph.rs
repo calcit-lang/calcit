@@ -621,7 +621,7 @@ fn resolve_def_call_from_expr(code: &Calcit, current_ns: &str) -> Option<(String
 fn is_state_operator(name: &str) -> bool {
   matches!(
     name,
-    "defatom" | "reset!" | "swap!" | "atom" | "deref" | "add-watch" | "remove-watch" | "set!"
+    "defatom" | "reset!" | "swap!" | "atom" | "deref" | "add-watch" | "remove-watch" | "add-watch!" | "remove-watch!" | "set!"
   )
 }
 
@@ -635,7 +635,7 @@ fn record_state_operator(
   let kind = match op_name {
     "defatom" | "atom" => "atom-def",
     "reset!" | "swap!" => "atom-write",
-    "add-watch" | "remove-watch" => "watch",
+    "add-watch" | "remove-watch" | "add-watch!" | "remove-watch!" => "watch",
     "deref" => "atom-read",
     "set!" => "local-write",
     _ => "state",
@@ -664,7 +664,7 @@ fn extract_state_target(list: Option<&crate::calcit::CalcitList>, op_name: &str)
     return op_name.to_string();
   };
   match op_name {
-    "swap!" | "reset!" | "deref" | "add-watch" | "remove-watch" | "set!" => {
+    "swap!" | "reset!" | "deref" | "add-watch" | "remove-watch" | "add-watch!" | "remove-watch!" | "set!" => {
       list.get(1).and_then(extract_symbol_name).unwrap_or_else(|| op_name.to_string())
     }
     "defatom" | "atom" => list.get(1).and_then(extract_symbol_name).unwrap_or_else(|| "?".to_string()),
@@ -721,7 +721,7 @@ fn classify_by_name(name: &str) -> Option<Vec<String>> {
     "get-env" => vec!["env"],
     "raise" => vec!["control/raise"],
     "quit!" => vec!["control/quit"],
-    "add-watch" | "remove-watch" => vec!["state/watch"],
+    "add-watch" | "remove-watch" | "add-watch!" | "remove-watch!" => vec!["state/watch"],
     "eval" => vec!["interop/eval"],
     "hint-fn" => vec!["async"],
     "println" | "eprintln" | "echo" => vec!["console"],
@@ -2292,6 +2292,14 @@ mod tests {
   fn classify_read_file_by_name() {
     let kinds = classify_call("read-file", None);
     assert_eq!(kinds, vec!["io/read".to_string()]);
+  }
+
+  #[test]
+  fn classify_both_watcher_spellings_as_state_effects() {
+    for name in ["add-watch", "remove-watch", "add-watch!", "remove-watch!"] {
+      assert!(is_state_operator(name));
+      assert_eq!(classify_call(name, None), vec!["state/watch".to_string()]);
+    }
   }
 
   #[test]
