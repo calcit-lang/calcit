@@ -47,7 +47,8 @@ try {
     ["nan", NaN, "NaN"],
   ]) {
     const native = execFileSync(binary, [snapshot, "eval", `turn-string ${source}`], { encoding: "utf8" });
-    assert.ok(native.includes(`|${expected}`), `native Number formatting should produce ${expected}`);
+    const nativeValue = native.match(/^took [^\r\n]*: \|([^\r\n]*)$/m)?.[1];
+    assert.equal(nativeValue, expected, `native Number formatting should produce ${expected}`);
     assert.equal(runtime.turn_string(value), expected, `generated JS should match native turn-string for ${source}`);
   }
   const tag = core.to_tag("ready");
