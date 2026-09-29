@@ -160,6 +160,7 @@
             test-assert-trait
             ; Debug helpers: methods introspection
             test-method-introspection
+            assert= true $ test-qualified-contains-boundary
             println "|All trait tests passed!"
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
@@ -583,6 +584,27 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
+        'test-qualified-contains-boundary $ %{} 'CodeEntry (:doc "|验证同名 trait 方法在显式调用与 Contains 泛型约束下保持各自来源。")
+          :code $ quote $ defn test-qualified-contains-boundary ()
+            let
+                CustomContains $ deftrait CustomContains $ .contains? :fn
+                CustomContainsImpl $ defimpl CustomContainsImpl CustomContains $ .contains?
+                  fn (self field) (&= field :virtual)
+                Box $ impl-traits
+                  defstruct Box $ :value 'Tag
+                  , CustomContainsImpl
+                box $ %{} Box $ :value :x
+              and (&trait-call CustomContains :contains? box :virtual)
+                not $ &trait-call CustomContains :contains? box :value
+                &trait-call Contains :contains? box :value
+                not $ &trait-call Contains :contains? box :virtual
+                contains-with-trait? box :value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |dispatches-by-bound-trait)
+            :code $ quote $ assert= true (test-qualified-contains-boundary)
+            :tags $ #{} :predicate :trait :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-traits.main
           :require $ calcit.test :refer $ throws?

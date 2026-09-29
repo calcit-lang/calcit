@@ -100,7 +100,7 @@ String 的 `.len/.count`、`.get/.nth/.slice` 与 `.find-index` 使用 Unicode �
 | `every?` / `any?`，predicate 返回 Bool，短路；空集分别 true/false | **目标** `all?` / **保留** `any?`，参数顺序和短路不变 | 先补足已有支持的 receiver/callback 类型关系；不凭当前宽 schema 承诺所有容器，或凭改名新增方法 |
 | `nil?/empty?/blank?/starts-with?/ends-with?/even?/odd?` | **保留**现有签名和命题 | 空白不等于空串；其他已有明确类型谓词同样不为相似拼写强改 |
 
-`Contains` 不能直接别名成一个新 trait：它目前横跨索引、键、字段与成员。#1454 先为上述命题建立具体签名，逐一迁移 builtin 与已定位的自定义 impl；旧 `Contains` bound 和具名 trait-call 在兼容窗口保持原契约。`core-predicate-method-v1` 仅覆盖已证明的 builtin receiver 和同一实现，普通用户自定义同名方法不改；trait-bound 与具名调用仍待单独证明。不得把泛型 `Contains<T,K>` 草率替换成更宽 Dynamic 或猜测性的 trait 联集。
+`Contains` 不能直接别名成一个新 trait：它目前横跨索引、键、字段与成员。#1454 先为上述命题建立具体签名，逐一迁移 builtin 与已定位的自定义 impl；旧 `Contains` bound 和具名 trait-call 在兼容窗口保持原契约。泛型接收者有唯一 `where T: Contains` 来源时，调用应绑定该 trait，而非仅按实例上同名方法查找；具体接收者同时实现多个同名 trait 时，仍需显式 `&trait-call` 消歧。`core-predicate-method-v1` 仅覆盖已证明的 builtin receiver 和同一实现，普通用户自定义同名方法及 trait-bound 泛型调用不自动改写。不得把泛型 `Contains<T,K>` 草率替换成更宽 Dynamic 或猜测性的 trait 联集。
 
 前置缺陷不能由改名掩盖：WASM 的 false/0 误判已经改为依据静态类型证据 lowering；具体参数及直接调用的泛型 helper 会单态化，无法证明类型的开放导出或一等函数边界则以 `E_WASM_NIL_TYPE_EVIDENCE` 拒绝。native、JS、core WASM 与 WASI Component 共享同一组 Calcit 定义测试；详细迁移边界见[升级说明](../run/upgrade.md#wasm-的-nil-类型证据)。在此基础上，`non-nil?` 已成为首选名字，旧 `some?` 保持同义兼容；`core-non-nil-predicate-v1` 只做已解析 core 引用的等价改名。`round?` 的近零/无穷差异已由共享测试修复，`integer?/.integer?` 复用该语义；函数及 Number 方法的显式迁移规则见 [fix 文档](../run/fix.md)。List/String 索引和 Map 键/值的新方法已提供，首批 builtin 的显式 `core-predicate-method-v1` 也见 fix 文档；Struct/Enum 与 `Contains` trait 的迁移仍由 [#1482](https://github.com/calcit-lang/calcit/issues/1482) 跟踪。
 

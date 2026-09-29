@@ -2556,6 +2556,12 @@ fn preprocess_list_call(
             check_struct_method_args(&typed_method, &processed_args, scope_types, file_ns, &def_name, check_warnings);
             require_js_ffi_feature_for_operation(&typed_method, file_ns, def_name.as_ref(), check_warnings, call_stack)?;
 
+            if let Some(qualified_call) =
+              qualify_trait_bound_method_call(&typed_method, &processed_args, scope_types, file_ns, &def_name)
+            {
+              return Ok(qualified_call);
+            }
+
             // Postfix syntax is normalized here rather than flowing through the
             // generic prefix-call branch below. Specialize it before returning
             // so typed source such as `m .keys` reaches codegen with the direct
@@ -3699,6 +3705,13 @@ fn preprocess_list_call(
           && let Some(expanded) = try_expand_typed_literal_path_call(call_head, &processed_args, scope_types, file_ns, call_stack)?
         {
           return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
+        }
+
+        if !has_spread
+          && let Some(call_head) = ys.first()
+          && let Some(qualified_call) = qualify_trait_bound_method_call(call_head, &processed_args, scope_types, file_ns, &def_name)
+        {
+          return Ok(qualified_call);
         }
 
         if !has_spread
@@ -5978,6 +5991,57 @@ fn try_specialize_polymorphic_call(
   for arg in processed_args.iter() {
     items.push(arg.to_owned());
   }
+  Some(Calcit::from(items))
+}
+
+/// Preserve the selected trait origin when a generic receiver has a where-bound.
+fn qualify_trait_bound_method_call(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+) -> Option<Calcit> {
+  let Calcit::Method(method_name, calcit::MethodKind::Invoke(inferred_receiver_type)) = head else {
+    return None;
+  };
+  let receiver = args.first()?;
+  let receiver_type = resolve_type_value(receiver, scope_types).unwrap_or_else(|| inferred_receiver_type.clone());
+  let traits = match receiver_type.as_ref() {
+    CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_) => trait_list_from_type(receiver_type.as_ref())?,
+    _ => return None,
+  };
+  let TraitMethodResolution::Selected(candidate) = resolve_trait_method(&traits, method_name.as_ref()) else {
+    return None;
+  };
+  let trait_value = match candidate.trait_def.definition_ref.as_deref() {
+    Some(definition_ref) => {
+      let (ns, def) = definition_ref.split_once('/')?;
+      let info = if ns == calcit::CORE_NS {
+        calcit::ImportInfo::Core { at_ns: file_ns.into() }
+      } else {
+        calcit::ImportInfo::NsReferDef {
+          at_ns: file_ns.into(),
+          at_def: def_name.into(),
+        }
+      };
+      Calcit::Import(CalcitImport {
+        ns: ns.into(),
+        def: def.into(),
+        info: Arc::new(info),
+        def_id: Some(program::ensure_def_id(ns, def).0),
+      })
+    }
+    None if candidate.trait_def.runtime_id.is_some() => Calcit::Trait((*candidate.trait_def).clone()),
+    None => return None,
+  };
+
+  // The where-bound determines the method origin; receiver-only runtime lookup can pick a different trait.
+  let mut items = Vec::with_capacity(args.len() + 3);
+  items.push(Calcit::Proc(CalcitProc::NativeTraitCall));
+  items.push(trait_value);
+  items.push(Calcit::Tag(cirru_edn::EdnTag::from(method_name.as_ref())));
+  items.extend(args.iter().cloned());
   Some(Calcit::from(items))
 }
 
@@ -12367,6 +12431,68 @@ mod tests {
       location: None,
       type_info,
     })
+  }
+
+  #[test]
+  fn trait_bound_method_uses_source_trait_identity() {
+    let trait_def = source_trait("app.contracts", "Contains", "contains?");
+    let receiver_type = Arc::new(CalcitTypeAnnotation::Trait(trait_def));
+    let receiver = method_test_receiver(receiver_type.clone());
+    let head = Calcit::Method(Arc::from("contains?"), calcit::MethodKind::Invoke(receiver_type));
+    let args = CalcitList::from(&[receiver.clone(), Calcit::Tag(EdnTag::new("value"))][..]);
+
+    let lowered = qualify_trait_bound_method_call(&head, &args, &ScopeTypes::new(), "app.consumer", "has-value?")
+      .expect("a unique trait bound must select its source definition");
+    let Calcit::List(items) = lowered else {
+      panic!("expected qualified call")
+    };
+    assert!(matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeTraitCall))));
+    let Some(Calcit::Import(trait_import)) = items.get(1) else {
+      panic!("source trait identity must be loaded rather than reconstructed");
+    };
+    assert_eq!(trait_import.ns.as_ref(), "app.contracts");
+    assert_eq!(trait_import.def.as_ref(), "Contains");
+    assert!(matches!(trait_import.info.as_ref(), ImportInfo::NsReferDef { .. }));
+    assert_eq!(items.get(2), Some(&Calcit::Tag(EdnTag::new("contains?"))));
+    assert_eq!(items.get(3), Some(&receiver));
+  }
+
+  #[test]
+  fn trait_bound_method_requires_stable_trait_identity() {
+    let runtime_trait = Arc::new(CalcitTrait::new_runtime(
+      EdnTag::new("Contains"),
+      vec![EdnTag::new("contains?")],
+      vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+    ));
+    let runtime_type = Arc::new(CalcitTypeAnnotation::Trait(runtime_trait.clone()));
+    let runtime_head = Calcit::Method(Arc::from("contains?"), calcit::MethodKind::Invoke(runtime_type.clone()));
+    let runtime_args = CalcitList::from(&[method_test_receiver(runtime_type)][..]);
+    let qualified = qualify_trait_bound_method_call(&runtime_head, &runtime_args, &ScopeTypes::new(), "app.consumer", "has-value?")
+      .expect("runtime identity can be cloned safely");
+    let Calcit::List(items) = qualified else {
+      panic!("expected qualified call")
+    };
+    assert!(matches!(items.get(1), Some(Calcit::Trait(trait_def)) if trait_def.runtime_id == runtime_trait.runtime_id));
+
+    let placeholder = Arc::new(CalcitTrait::new(
+      EdnTag::new("Contains"),
+      vec![EdnTag::new("contains?")],
+      vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+    ));
+    let placeholder_type = Arc::new(CalcitTypeAnnotation::Trait(placeholder));
+    let placeholder_head = Calcit::Method(Arc::from("contains?"), calcit::MethodKind::Invoke(placeholder_type.clone()));
+    let placeholder_args = CalcitList::from(&[method_test_receiver(placeholder_type)][..]);
+    assert!(
+      qualify_trait_bound_method_call(
+        &placeholder_head,
+        &placeholder_args,
+        &ScopeTypes::new(),
+        "app.consumer",
+        "has-value?"
+      )
+      .is_none(),
+      "an identity-free placeholder cannot be embedded as a runtime trait"
+    );
   }
 
   #[test]
