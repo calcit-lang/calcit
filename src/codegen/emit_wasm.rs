@@ -45,6 +45,8 @@ mod component;
 mod edn_parse;
 #[path = "emit_wasm/methods.rs"]
 mod methods;
+#[path = "emit_wasm/number_format.rs"]
+mod number_format;
 #[path = "emit_wasm/runtime.rs"]
 mod runtime;
 #[path = "emit_wasm/structs.rs"]
@@ -71,10 +73,9 @@ use structs::{
   emit_struct_to_map, resolve_struct_ref, try_parse_defrecord_form,
 };
 
-/// Base offset — reserve first 16 bytes for bookkeeping.
-/// The actual heap start will be shifted when string literals occupy the
-/// initial segment (see `build_string_pool`).
-const HEAP_BASE: i32 = 16;
+/// Low memory holds WASI scratch, the private Number formatter stack, and its
+/// read-only decimal table. String literals begin after this reserved region.
+const HEAP_BASE: i32 = 16 * 1024;
 /// Global index for the heap pointer (bump allocator).
 const HEAP_PTR_GLOBAL: u32 = 0;
 /// Magic marker written at `raw_base` of every heap allocation. Used by
@@ -478,31 +479,29 @@ fn emit_wasm_impl(
     eprintln!("[wasm] tag index: {tag_index:?}");
   }
 
+  let atom_count = ns_order
+    .iter()
+    .filter_map(|ns| program_data.get(ns.as_str()))
+    .flat_map(|file| file.defs.values())
+    .filter(|compiled| {
+      matches!(
+        &compiled.preprocessed_code,
+        Calcit::List(xs)
+          if matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::Defatom, _)))
+      )
+    })
+    .count() as u32;
+  let component_free_head_global = (boundary == WasmBoundary::Component).then_some(2 + atom_count);
+  let number_stack_global = 2 + atom_count + u32::from(component_free_head_global.is_some());
   let (mut compiled_fns, mut runtime_fn_index) = build_runtime_fns(
     num_imports,
+    number_stack_global,
     *tag_index.get("map").expect("map tag must exist") as i32,
     *tag_index.get("list").expect("list tag must exist") as i32,
     *tag_index.get("string").expect("string tag must exist") as i32,
     *tag_index.get("enum").expect("enum tag must exist") as i32,
     *tag_index.get("set").expect("set tag must exist") as i32,
-  );
-  let component_free_head_global = if boundary == WasmBoundary::Component {
-    let atom_count = ns_order
-      .iter()
-      .filter_map(|ns| program_data.get(ns.as_str()))
-      .flat_map(|file| file.defs.values())
-      .filter(|compiled| {
-        matches!(
-          &compiled.preprocessed_code,
-          Calcit::List(xs)
-            if matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::Defatom, _)))
-        )
-      })
-      .count() as u32;
-    Some(2 + atom_count)
-  } else {
-    None
-  };
+  )?;
   if target == WasmTarget::Wasi && boundary == WasmBoundary::Native {
     let fd_write_idx = *index_host_imports(&host_imports)
       .get(&("wasi_snapshot_preview1".into(), "fd_write".into()))
@@ -984,7 +983,6 @@ fn emit_wasm_impl(
       }
     }
   }
-
   // Build string literal pool: assigns each unique string a memory offset.
   let (string_pool, string_data_segment, heap_start) = build_string_pool(&fn_defs, &value_imports, &tag_index, target);
 
@@ -1015,6 +1013,7 @@ fn emit_wasm_impl(
       }
     }
   }
+  debug_assert_eq!(atom_initial_values.len(), atom_count as usize);
 
   let env = WasmCompileEnv {
     fn_index,

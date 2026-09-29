@@ -48,12 +48,15 @@ try {
   execFileSync(binary, ["--emit-path", output, snapshot, "js"], { stdio: "pipe" });
   const core = await import(pathToFileURL(join(output, "calcit.core.mjs")).href);
   const runtime = await import(pathToFileURL(resolve("lib/calcit.procs.mjs")).href);
-  for (const [source, value, expected] of [
+  const numberCases = [
     ["0.0000001", 0.0000001, "0.0000001"],
     ["-0.0000001", -0.0000001, "-0.0000001"],
+    ["0.1", 0.1, "0.1"],
+    ["0.5", 0.5, "0.5"],
     ["1000000000000000000000", 1e21, "1000000000000000000000"],
     ["0.000001", 1e-6, "0.000001"],
     ["9007199254740992", 2 ** 53, "9007199254740992"],
+    ["9007199254740991", 2 ** 53 - 1, "9007199254740991"],
     ["9007199254740994", 2 ** 53 + 2, "9007199254740994"],
     ["864310392341871.2", 864310392341871.2, "864310392341871.2"],
     ["-993946982230940.2", -993946982230940.2, "-993946982230940.2"],
@@ -61,10 +64,12 @@ try {
     ["2.2250738585072014e-308", 2.2250738585072014e-308, `0.${"0".repeat(307)}22250738585072014`],
     ["-0", -0, "-0"],
     ["5e-324", Number.MIN_VALUE, `0.${"0".repeat(323)}5`],
+    ["-5e-324", -Number.MIN_VALUE, `-0.${"0".repeat(323)}5`],
     ["1e309", Infinity, "inf"],
     ["-1e309", -Infinity, "-inf"],
     ["nan", NaN, "NaN"],
-  ]) {
+  ];
+  for (const [source, value, expected] of numberCases) {
     const native = execFileSync(binary, [snapshot, "eval", `turn-string ${source}`], { encoding: "utf8" });
     const nativeValue = native.match(/^took [^\r\n]*: \|([^\r\n]*)$/m)?.[1];
     assert.equal(nativeValue, expected, `native Number formatting should produce ${expected}`);
@@ -146,13 +151,20 @@ try {
   assert.equal(instance.exports["test-turn-string-zero"](0), 1, "WASM must distinguish Number zero from nil");
   assert.equal(instance.exports["test-turn-string-safe-limit"](2 ** 53), 1, "WASM must format the safe integer boundary");
   assert.equal(instance.exports["test-turn-string-negative-limit"](-(2 ** 53)), 1, "WASM must format the negative safe integer boundary");
-  for (const [value, expected] of [[0, "0"], [-0, "-0"], [42, "42"], [-(2 ** 53), "-9007199254740992"], [2 ** 53, "9007199254740992"], [NaN, "NaN"], [Infinity, "inf"], [-Infinity, "-inf"]]) {
+  for (const [value, expected] of [[0, "0"], [42, "42"], [-(2 ** 53), "-9007199254740992"], ...numberCases.map(([, value, expected]) => [value, expected])]) {
     assert.equal(readWasmString(instance.exports["test-turn-string-value"](value)), expected,
       `WASM must return exact UTF-8 number text for ${value}`);
   }
-  for (const value of [0.5, 2 ** 53 + 2, 1e21]) {
-    assert.throws(() => instance.exports["test-turn-string-runtime"](value), WebAssembly.RuntimeError,
-      `WASM must trap instead of silently misformatting ${String(value)}`);
+  const random = new DataView(new ArrayBuffer(8));
+  let seed = 0x1234abcd;
+  for (let i = 0; i < 1024; i++) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    random.setUint32(0, seed, true);
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    random.setUint32(4, seed, true);
+    const value = random.getFloat64(0, true);
+    assert.equal(readWasmString(instance.exports["test-turn-string-value"](value)), runtime.turn_string(value),
+      `WASM must match JS for f64 bits ${random.getBigUint64(0, true).toString(16)}`);
   }
 
   const openTraitSnapshot = join(output, "open-trait.cirru");
