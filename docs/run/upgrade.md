@@ -147,7 +147,7 @@ sort entries $ fn (a b)
 `Option :none`，不能由编译器猜测业务默认值。旧调用会给出 `E_PARTIAL_STRUCT_NIL_FILL` 迁移错误。
 
 基于 String path 的 `try-read-file path` 与 `try-write-file path content` 包装已移除。
-分别改为 `.read-text (fs:path path)` 与 `.write-text (fs:path path) content`，仍返回相同的
+分别改为 `.read-text (fs:path path)` 与 `.write-text! (fs:path path) content`，仍返回相同的
 `Result<String,String>` 与 `Result<Unit,String>`；不要迁回会抛出异常的原始 `read-file` /
 `write-file`。`try-read-dir` 暂留供递归 `.walk-dir` 使用，后续单独整理。
 

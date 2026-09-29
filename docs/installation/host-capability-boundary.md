@@ -75,7 +75,7 @@ no-op or fabricated success value.
 | Monotonic milliseconds for elapsed-time measurement | yes | unavailable | unavailable | WASI Preview 1 monotonic clock; Component 待实现；core WASM unavailable | `cpu-time`（只比较同一进程内两次调用的差值） |
 | 同步等待 | 当前线程 sleep | host injection 或 `Atomics.wait` | 主线程通常不可用并返回错误 | WASI Preview 1 `poll_oneoff`；Component 待实现；core WASM unavailable | `wait-ms`，返回 `Result<Unit,String>` |
 | Construct and inspect a path value without I/O | yes | yes | yes | value-level support only | `fs:path`, `FsPath .to-string` |
-| `FsPath .read-text` / `.write-text` | yes | host injection | browser `localStorage` adapter | WASI 0.3 Component 与 Preview 1 preopen；core WASM unavailable | `FsPath` Result-returning methods |
+| `FsPath .read-text` / `.write-text!` | yes | host injection | browser `localStorage` adapter | WASI 0.3 Component 与 Preview 1 preopen；core WASM unavailable | `FsPath` Result-returning methods；旧 `.write-text` 暂留兼容 |
 | `FsPath .read-dir` | yes | host injection | unavailable | WASI Preview 1 preopen；Component 待实现；core WASM unavailable | `FsPath` Result-returning methods |
 | `FsPath .walk-dir` | yes | host injection | unavailable | unavailable | `FsPath` Result-returning methods |
 | Process and signal lifecycle | `calcit.std` native module | Node adapter | unavailable | unavailable | typed process/signal APIs in `calcit.std` |
@@ -96,10 +96,10 @@ The matrix records what exists today, not an entitlement for every backend.
 
 - Open JSON data: String `.parse-json` and its `Result<Dynamic,String>` wrapper;
   decode the Dynamic value into a closed Struct/Enum before business logic.
-- 文件系统路径：用 `fs:path` 构造 `FsPath`，再调用 `.read-text`、`.write-text`、
+- 文件系统路径：用 `fs:path` 构造 `FsPath`，再调用 `.read-text`、`.write-text!`、
   `.read-dir` 或 `.walk-dir`。旧 String-path `try-read-file` / `try-write-file` 已退役；
   `try-read-dir` 暂作兼容入口，raw raising procedures 只供底层边界使用。
-- 文件系统：WASI command 的 `.read-text` / `.write-text` / `.read-dir` 只解析 host 显式授予的
+- 文件系统：WASI command 的 `.read-text` / `.write-text!` / `.read-dir` 只解析 host 显式授予的
   preopen，选择最长 guest 路径前缀，并拒绝绝对路径、`..` 越界、非法 UTF-8 与
   无法推进的 partial I/O。`.read-dir` 通过 cookie 分页枚举即时子项、过滤 `.` 与
   `..` 并按完整 guest path 排序；descriptor 生命周期完全留在 adapter 内部。
