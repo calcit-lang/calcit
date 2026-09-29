@@ -6245,17 +6245,14 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       if let Some(closure) = ctx.lambda_locals.get(name).cloned() {
         return emit_inline_closure_call(ctx, &closure, &args_list);
       }
-      if emit_specialized_static_call(ctx, &qualified, &args_list)? {
-        return Ok(());
-      }
-      if emit_specialized_static_call(ctx, name, &args_list)? {
-        return Ok(());
-      }
       let target_name = if ctx.fn_index.contains_key(&qualified) {
         qualified.as_str()
       } else {
         name
       };
+      if emit_specialized_static_call(ctx, target_name, &args_list)? {
+        return Ok(());
+      }
       let fn_idx = *ctx
         .fn_index
         .get(target_name)
@@ -9499,8 +9496,8 @@ mod tests {
   use super::{
     CompiledFn, ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
     ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HostImport,
-    ModuleFunctionLayout, WasiComponentReadImports, WasmBoundary, WasmCompileEnv, WasmGenCtx, WasmTarget, build_cabi_free_fn,
-    build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter, build_string_pool,
+    ModuleFunctionLayout, StaticFnDef, WasiComponentReadImports, WasmBoundary, WasmCompileEnv, WasmGenCtx, WasmTarget,
+    build_cabi_free_fn, build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter, build_string_pool,
     build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn,
     build_wasi_component_select_preopen_fn, build_wasm_module, component_abi_type, component_export_needs_post_return,
     component_flat_types, component_import_signature, component_memory_layout, component_task_return_signature, emit_call_expr,
@@ -9540,6 +9537,18 @@ mod tests {
       boundary: WasmBoundary::Native,
     };
     let mut ctx = WasmGenCtx::new(0, env);
+    ctx.static_fn_defs.insert(
+      "helper".to_string(),
+      Arc::new(StaticFnDef {
+        params: vec!["x".to_string()],
+        body: vec![],
+        arg_types: vec![Arc::new(CalcitTypeAnnotation::Dynamic)],
+        callback_arities: HashMap::new(),
+        fixed_arity: true,
+        nil_sensitive: true,
+        trait_sensitive: false,
+      }),
+    );
     let call = Calcit::from(vec![Calcit::Symbol {
       sym: Arc::from("helper"),
       info: Arc::new(CalcitSymbolInfo {
@@ -9575,6 +9584,7 @@ mod tests {
       .collect::<Vec<_>>();
     assert_eq!(calls, [4, 5], "remainder must evaluate each operand once, in source order");
 
+    ctx.static_fn_defs.remove("helper");
     fn_index.remove("tests.alpha/helper");
     ctx.fn_index = fn_index;
     ctx.instructions.clear();
