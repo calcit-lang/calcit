@@ -616,6 +616,7 @@ pub(crate) fn handle_fix_command(
     }
   }
   if selected_rules.contains(&CORE_PREDICATE_METHOD_RULE) {
+    let mut predicate_suggestions = Vec::new();
     for rule in [
       LIST_CONTAINS_INDEX_ALIAS,
       STRING_CONTAINS_INDEX_ALIAS,
@@ -623,13 +624,14 @@ pub(crate) fn handle_fix_command(
       MAP_CONTAINS_VALUE_ALIAS,
       SET_INCLUDES_ALIAS,
     ] {
-      suggestions.extend(plan_core_method_alias_fixes(
+      predicate_suggestions.extend(plan_core_method_alias_fixes(
         &source_snapshot,
         snapshot_file,
         &selected_definitions,
         rule,
       )?);
     }
+    suggestions.extend(collapse_predicate_alias_suggestions(predicate_suggestions));
   }
   let mut constructor_kinds = Vec::new();
   if selected_rules.contains(&NAMED_ENUM_CONSTRUCTOR_RULE) {
@@ -4249,6 +4251,26 @@ fn plan_core_method_alias_fixes(
   Ok(suggestions)
 }
 
+fn collapse_predicate_alias_suggestions(candidates: Vec<FixSuggestion>) -> Vec<FixSuggestion> {
+  let mut unique = BTreeMap::<(String, Vec<usize>), FixSuggestion>::new();
+  for mut candidate in candidates {
+    let key = (candidate.definition.clone(), candidate.target_path.clone());
+    if candidate.operation.is_none() {
+      candidate.message =
+        "Cannot prove one safe predicate migration from the receiver, method origin, and source context; review this call manually."
+          .to_owned();
+    }
+    match unique.get_mut(&key) {
+      Some(existing) if existing.operation.is_none() && candidate.operation.is_some() => *existing = candidate,
+      None => {
+        unique.insert(key, candidate);
+      }
+      _ => {}
+    }
+  }
+  unique.into_values().collect()
+}
+
 /// A zero-argument method call has two source nodes in either method-first or receiver-first form.
 fn collect_collection_count_calls(node: &Cirru, path: &mut Vec<usize>, calls: &mut Vec<(Vec<usize>, Vec<usize>, Vec<usize>)>) {
   let Cirru::List(items) = node else {
@@ -5275,11 +5297,12 @@ fn print_human_report(report: &FixReport<'_>) {
 #[cfg(test)]
 mod tests {
   use super::{
-    FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collect_builtin_round_call_heads,
-    collect_potential_local_bindings, collect_redundant_do_paths, fix_rule_metadata, fix_source_json_to_cirru, insert_fix_suggestion,
-    legacy_constructor_replacement, migration_for_source_leaf, optional_candidate_signature_is_closed,
-    optional_candidate_type_is_closed, optional_parameter_candidate, prototype_is_shadowed, resolve_fix_target,
-    rewrite_loaded_schema_type_references, rewrite_named_constructor_tree, struct_fields_are_complete, suggestion_operations,
+    FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collapse_predicate_alias_suggestions,
+    collect_builtin_round_call_heads, collect_potential_local_bindings, collect_redundant_do_paths, fix_rule_metadata,
+    fix_source_json_to_cirru, insert_fix_suggestion, legacy_constructor_replacement, migration_for_source_leaf,
+    optional_candidate_signature_is_closed, optional_candidate_type_is_closed, optional_parameter_candidate, prototype_is_shadowed,
+    resolve_fix_target, rewrite_loaded_schema_type_references, rewrite_named_constructor_tree, struct_fields_are_complete,
+    suggestion_operations,
   };
   use calcit::calcit::{CalcitFnTypeAnnotation, CalcitGenericBound, CalcitTrait, CalcitTypeAnnotation, SchemaKind};
   use cirru_parser::Cirru;
@@ -5291,6 +5314,46 @@ mod tests {
 
   fn leaf(value: &str) -> Cirru {
     Cirru::leaf(value)
+  }
+
+  #[test]
+  fn predicate_alias_suggestions_keep_one_review_per_source_and_prefer_proof() {
+    let review = FixSuggestion {
+      rule_id: "core-predicate-method-v1",
+      diagnostic_code: "FIX_CORE_PREDICATE_METHOD",
+      semantic_layer: "surface",
+      source_file: "calcit.cirru".to_owned(),
+      definition: "app.main/check".to_owned(),
+      path: "code/2/1".to_owned(),
+      fingerprint: "source".to_owned(),
+      origin_chain: vec![],
+      original: serde_json::json!({"value": ".contains?"}),
+      replacement: None,
+      applicability: "requires-review",
+      message: "List candidate".to_owned(),
+      target_path: vec![2, 1],
+      operation: None,
+    };
+    let mut another_alias = review.clone();
+    another_alias.message = "Map candidate".to_owned();
+    let mut proven = review.clone();
+    proven.replacement = Some(serde_json::json!({"value": ".contains-key?"}));
+    proven.applicability = "machine-applicable";
+    proven.operation = Some(FixOperation::ReplaceLeaf {
+      original: ".contains?".to_owned(),
+      replacement: ".contains-key?".to_owned(),
+    });
+    let mut other_call = review.clone();
+    other_call.path = "code/3/1".to_owned();
+    other_call.target_path = vec![3, 1];
+
+    let collapsed = collapse_predicate_alias_suggestions(vec![review, another_alias, proven, other_call]);
+    assert_eq!(collapsed.len(), 2);
+    assert_eq!(collapsed[0].target_path, vec![2, 1]);
+    assert_eq!(collapsed[0].applicability, "machine-applicable");
+    assert_eq!(collapsed[1].target_path, vec![3, 1]);
+    assert_eq!(collapsed[1].applicability, "requires-review");
+    assert!(collapsed[1].message.contains("review this call manually"));
   }
 
   #[test]

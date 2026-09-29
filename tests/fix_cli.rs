@@ -5990,6 +5990,15 @@ fn predicate_method_fix_migrates_only_proven_builtin_receivers() {
   let report = parse_stdout(&preview);
   let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
   assert_eq!(suggestions.len(), 5, "{report}");
+  let unique_paths = suggestions
+    .iter()
+    .map(|item| item["path"].as_str().expect("source path"))
+    .collect::<std::collections::HashSet<_>>();
+  assert_eq!(
+    unique_paths.len(),
+    suggestions.len(),
+    "a source call must have one migration suggestion"
+  );
   assert!(suggestions.iter().all(|item| item["applicability"] == "machine-applicable"));
   assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
   let replacements = suggestions
@@ -6139,13 +6148,7 @@ fn predicate_method_fix_preserves_custom_methods_and_reviews_unknown_macros() {
   );
   assert_success(&open, "open predicate method preview");
   let open_report = parse_stdout(&open);
-  assert!(
-    open_report["data"]["suggestions"]
-      .as_array()
-      .expect("suggestions array")
-      .iter()
-      .all(|suggestion| suggestion["applicability"] == "requires-review" && suggestion["replacement"].is_null())
-  );
+  assert_eq!(open_report["data"]["suggestions"], serde_json::json!([]), "{open_report}");
 
   let macro_call = run_fix(
     &snapshot,
