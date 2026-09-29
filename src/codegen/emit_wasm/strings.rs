@@ -440,9 +440,19 @@ pub(super) fn emit_str_ends_with(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   Ok(())
 }
 
-/// `turn-string v` — convert any value to its string representation.
+/// `turn-string v` — use proven scalar types before the legacy numeric fallback.
 pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "turn-string")?;
+
+  if let Calcit::Tag(tag) = &args[0] {
+    let name = tag.to_string();
+    let ptr = *ctx
+      .string_pool
+      .get(&name)
+      .ok_or_else(|| format!("missing WASM tag string literal: {name}"))?;
+    ctx.emit(f64_const(ptr as f64));
+    return Ok(());
+  }
 
   if let Calcit::Number(number) = &args[0] {
     let text = number.to_string();
