@@ -4595,6 +4595,7 @@ impl CalcitTypeAnnotation {
     result
   }
 
+  /// Evaluate a type proof against staged bindings; callers decide which outcomes commit them.
   fn prove_with_staged_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> TypeProof {
     use TypeBoundaryReason as Boundary;
     use TypeProof::{Mismatch, NeedsBoundary, Proven};
