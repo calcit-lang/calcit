@@ -41,6 +41,18 @@ try {
   const compiled = await import(pathToFileURL(join(output, "calcit.predicate-method-names.mjs")).href);
   compiled.run_tests();
 
+  const traitSnapshot = resolve("calcit/test-traits.cirru");
+  run(traitSnapshot, "test", "test-traits.main/test-qualified-contains-boundary", "--require-match");
+  const genericFix = JSON.parse(run(traitSnapshot, "fix", "--rule", "core-predicate-method-v1",
+    "--ns", "test-traits.main", "--def", "contains-with-trait?", "--format", "json"));
+  assert.equal(genericFix.data.suggestions.some((item) => item.applicability === "machine-applicable"), false,
+    "predicate migration must not rewrite a method call on a trait-bound generic receiver");
+  const traitOutput = join(fixture, "trait-js");
+  run(traitSnapshot, "--emit-path", traitOutput, "js");
+  const traits = await import(pathToFileURL(join(traitOutput, "test-traits.main.mjs")).href);
+  assert.equal(traits.test_qualified_contains_boundary(), true,
+    "a generic Contains bound must select its nominal trait, even when the receiver has another .contains? method");
+
   run("wasm", ...entry, "--emit-path", fixture);
   const module = new WebAssembly.Module(await readFile(join(fixture, "program.wasm")));
   const imports = {};
@@ -51,7 +63,7 @@ try {
   const wasm = new WebAssembly.Instance(module, imports);
   assert.equal(typeof wasm.exports["run-tests"], "function");
   wasm.exports["run-tests"]();
-  console.log("Core method naming definition tests passed on native / generated JS / core WASM");
+  console.log("Core method naming and trait-bound predicate tests passed on native / generated JS / core WASM");
 
   if (process.env.WASMTIME_CLI) {
     run(snapshot, "tree", "search-replace", "calcit.predicate-method-names/run-tests", "--pattern", "defwasm-export",
