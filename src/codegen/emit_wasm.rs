@@ -9495,7 +9495,7 @@ mod tests {
   use super::{
     CompiledFn, ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
     ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HostImport,
-    ModuleFunctionLayout, StaticFnDef, WasiComponentReadImports, WasmBoundary, WasmCompileEnv, WasmGenCtx, WasmTarget,
+    HEAP_BASE, ModuleFunctionLayout, StaticFnDef, WasiComponentReadImports, WasmBoundary, WasmCompileEnv, WasmGenCtx, WasmTarget,
     build_cabi_free_fn, build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter, build_string_pool,
     build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn,
     build_wasi_component_select_preopen_fn, build_wasm_module, component_abi_type, component_export_needs_post_return,
@@ -9979,7 +9979,7 @@ mod tests {
         results: vec![ValType::I32],
         locals: vec![],
         instructions: vec![
-          Instruction::I32Const(16),
+          Instruction::I32Const(HEAP_BASE),
           Instruction::I32Const(2048),
           Instruction::Call(5),
           Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)),
@@ -10003,7 +10003,7 @@ mod tests {
           run,
         ],
         &imports,
-        16384,
+        HEAP_BASE + ((string_data.len() + 7) & !7) as i32,
         &string_data,
         &[],
         1,
@@ -10081,7 +10081,7 @@ mod tests {
       realloc.export_name = Some("cabi_realloc".into());
       let open_index = free_index + 4;
       let instructions = vec![
-        Instruction::I32Const(16),
+        Instruction::I32Const(HEAP_BASE),
         Instruction::I32Const(0),
         Instruction::I32Const(1),
         Instruction::I32Const(2048),
@@ -10116,7 +10116,7 @@ mod tests {
           run,
         ],
         &imports,
-        16384,
+        HEAP_BASE + ((string_data.len() + 7) & !7) as i32,
         &string_data,
         &[],
         1,
@@ -10186,7 +10186,7 @@ mod tests {
       results: vec![],
       locals: vec![ValType::I32; 5],
       instructions: vec![
-        Instruction::I32Const(16),
+        Instruction::I32Const(HEAP_BASE),
         Instruction::I32Const(0),
         Instruction::I32Const(1),
         Instruction::I32Const(2048),
@@ -10288,7 +10288,7 @@ mod tests {
         run,
       ],
       &imports,
-      16384,
+      HEAP_BASE + ((string_data.len() + 7) & !7) as i32,
       &string_data,
       &[],
       1,
@@ -10361,7 +10361,7 @@ mod tests {
       let mut realloc = build_cabi_realloc_fn(free_index, 2);
       realloc.export_name = Some("cabi_realloc".into());
       let mut instructions = vec![
-        Instruction::I32Const(16),
+        Instruction::I32Const(HEAP_BASE),
         Instruction::I32Const(2048),
         Instruction::Call(free_index + 5),
         Instruction::LocalSet(0),
@@ -10467,7 +10467,7 @@ mod tests {
           run,
         ],
         &imports,
-        16384,
+        HEAP_BASE + ((string_data.len() + 7) & !7) as i32,
         &string_data,
         &[],
         1,
