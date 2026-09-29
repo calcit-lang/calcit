@@ -9494,8 +9494,8 @@ mod tests {
   use super::component::component_type_owns_memory;
   use super::{
     CompiledFn, ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
-    ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HostImport,
-    HEAP_BASE, ModuleFunctionLayout, StaticFnDef, WasiComponentReadImports, WasmBoundary, WasmCompileEnv, WasmGenCtx, WasmTarget,
+    ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HEAP_BASE,
+    HostImport, ModuleFunctionLayout, StaticFnDef, WasiComponentReadImports, WasmBoundary, WasmCompileEnv, WasmGenCtx, WasmTarget,
     build_cabi_free_fn, build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter, build_string_pool,
     build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn,
     build_wasi_component_select_preopen_fn, build_wasm_module, component_abi_type, component_export_needs_post_return,

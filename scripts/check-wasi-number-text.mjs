@@ -21,14 +21,14 @@ try {
   execFileSync(binary, ["docs", "agents", "--contract"], { stdio: "pipe" });
   const config = execFileSync(binary, [snapshot, "query", "config", "--format", "json"], { encoding: "utf8" });
   assert.equal(JSON.parse(config).data.entries[0].init_fn, "app.main/main!");
-  const body = `quote $ defn main! () ${cases.map(([source]) => `(println $ turn-string ${source})`).join(" ")} &unit`;
+  const body = `quote $ defn main! () ${cases.flatMap(([source]) => [`(println $ to-string ${source})`, `(println $ turn-string ${source})`]).join(" ")} &unit`;
   execFileSync(binary, [snapshot, "edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code", body], { stdio: "pipe" });
   execFileSync(binary, ["wasi", snapshot, "--emit-path", artifact], { stdio: "pipe" });
   const result = execFileSync(wasmtime, [
     "run", "-W", "component-model-more-async-builtins=y,component-model-async-stackful=y",
     join(artifact, "program.wasm"),
   ], { encoding: "utf8" });
-  assert.deepEqual(result.trimEnd().split("\n"), cases.map(([, expected]) => expected));
+  assert.deepEqual(result.trimEnd().split("\n"), cases.flatMap(([, expected]) => [expected, expected]));
 } finally {
   await rm(output, { recursive: true, force: true });
 }
