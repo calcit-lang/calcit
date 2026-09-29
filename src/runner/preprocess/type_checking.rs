@@ -95,12 +95,10 @@ fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str
     let Some(actual_type) = bindings.get(&bound.name) else {
       continue;
     };
-    if matches!(actual_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn) {
-      continue;
-    }
-
     let required = bound.as_type_annotation();
-    if actual_type.as_ref().is_compatible_with(required.as_ref()) {
+    if !matches!(actual_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
+      && actual_type.as_ref().is_compatible_with(required.as_ref())
+    {
       continue;
     }
 

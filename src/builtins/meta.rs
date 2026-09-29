@@ -1473,9 +1473,10 @@ fn collect_impls_for_value(value: &Calcit, call_stack: &CallStackList) -> Result
     Calcit::Str(..) => collect_optional_core_impls("&core-string-impls", call_stack),
     Calcit::Set(..) => collect_optional_core_impls("&core-set-impls", call_stack),
     Calcit::Fn { .. } | Calcit::Proc(..) => collect_optional_core_impls("&core-fn-impls", call_stack),
-    Calcit::Nil | Calcit::Bool(..) | Calcit::Tag(..) | Calcit::Symbol { .. } | Calcit::CirruQuote(..) => {
-      collect_optional_core_impls("&core-scalar-impls", call_stack)
+    Calcit::Nil | Calcit::Bool(..) | Calcit::Tag(..) | Calcit::Symbol { .. } => {
+      collect_optional_core_impls("&core-text-scalar-impls", call_stack)
     }
+    Calcit::CirruQuote(..) => collect_optional_core_impls("&core-scalar-impls", call_stack),
     other => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
       format!("&assert-traits cannot resolve impls for: {other}"),

@@ -2591,6 +2591,7 @@ let calcit_builtin_impls = {
   enum: null as CalcitImplEntry,
   struct: null as CalcitImplEntry,
   scalar: null as CalcitImplEntry,
+  textScalar: null as CalcitImplEntry,
   ref: null as CalcitImplEntry,
 };
 
@@ -2678,12 +2679,14 @@ function lookup_impls(obj: CalcitValue): [CalcitImpl[], string] {
     tag = "&core-ref-methods";
     impls = normalize_builtin_impls(calcit_builtin_impls.ref);
   } else if (
-    obj == null ||
+    obj === null ||
     typeof obj === "boolean" ||
     obj instanceof CalcitTag ||
-    obj instanceof CalcitSymbol ||
-    obj instanceof CalcitCirruQuote
+    obj instanceof CalcitSymbol
   ) {
+    tag = "&core-text-scalar-impls";
+    impls = normalize_builtin_impls(calcit_builtin_impls.textScalar);
+  } else if (obj === undefined || obj instanceof CalcitCirruQuote) {
     tag = "&core-scalar-impls";
     impls = normalize_builtin_impls(calcit_builtin_impls.scalar);
   } else {

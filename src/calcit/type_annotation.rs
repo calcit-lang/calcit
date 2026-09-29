@@ -3952,7 +3952,8 @@ impl CalcitTypeAnnotation {
       Self::Number => Some("&core-number-impls"),
       Self::Numeric(_) => Some("&core-number-impls"),
       Self::DynFn | Self::Fn(_) => Some("&core-fn-impls"),
-      Self::Nil | Self::Unit | Self::Bool | Self::Tag | Self::Symbol | Self::CirruQuote => Some("&core-scalar-impls"),
+      Self::Nil | Self::Bool | Self::Tag | Self::Symbol => Some("&core-text-scalar-impls"),
+      Self::Unit | Self::CirruQuote => Some("&core-scalar-impls"),
       Self::Optional(inner) => inner.core_impl_list_symbol(),
       Self::TypeRef(name, _) => resolve_type_ref_as_schema(name).and_then(|schema| schema.core_impl_list_symbol()),
       Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.core_impl_list_symbol()),
@@ -4081,10 +4082,21 @@ impl CalcitTypeAnnotation {
       Some("&core-list-impls") => &["Debug", "Eq", "Add", "Len", "Mappable", "Countable", "Contains", "Sliceable"],
       Some("&core-map-impls") => &["Debug", "Eq", "Len", "Mappable", "Countable", "Contains"],
       Some("&core-set-impls") => &["Debug", "Eq", "Len", "Mappable", "Countable", "Contains"],
-      Some("&core-string-impls") => &["Debug", "Eq", "Add", "Len", "Countable", "Contains", "Compare", "Sliceable"],
-      Some("&core-number-impls") => &["Debug", "Eq", "Add", "Multiply", "Compare"],
+      Some("&core-string-impls") => &[
+        "Debug",
+        "Eq",
+        "Add",
+        "Len",
+        "Countable",
+        "Contains",
+        "Compare",
+        "Sliceable",
+        "ToString",
+      ],
+      Some("&core-number-impls") => &["Debug", "Eq", "Add", "Multiply", "Compare", "ToString"],
       Some("&core-fn-impls") => &["Debug"],
       Some("&core-scalar-impls") => &["Debug", "Eq"],
+      Some("&core-text-scalar-impls") => &["Debug", "Eq", "ToString"],
       _ => &[],
     }
   }
@@ -6275,7 +6287,11 @@ mod tests {
       (CalcitTypeAnnotation::String, "&core-string-impls"),
       (CalcitTypeAnnotation::Number, "&core-number-impls"),
       (CalcitTypeAnnotation::DynFn, "&core-fn-impls"),
-      (CalcitTypeAnnotation::Bool, "&core-scalar-impls"),
+      (CalcitTypeAnnotation::Nil, "&core-text-scalar-impls"),
+      (CalcitTypeAnnotation::Bool, "&core-text-scalar-impls"),
+      (CalcitTypeAnnotation::Tag, "&core-text-scalar-impls"),
+      (CalcitTypeAnnotation::Symbol, "&core-text-scalar-impls"),
+      (CalcitTypeAnnotation::CirruQuote, "&core-scalar-impls"),
     ];
 
     for (annotation, definition) in cases {
