@@ -37,7 +37,7 @@ use crate::calcit::{
   CalcitProc, CalcitStructDef, CalcitSyntax, CalcitTypeAnnotation, MethodKind,
 };
 use crate::program;
-use crate::runner::preprocess::infer_static_type_from_expr;
+use crate::runner::preprocess::{infer_static_type_from_expr, resolve_static_trait_callable};
 
 #[path = "emit_wasm/component.rs"]
 mod component;
@@ -900,7 +900,8 @@ fn emit_wasm_impl(
   for (_, name, _, _) in &fn_defs {
     *export_name_counts.entry(name.clone()).or_insert(0) += 1;
   }
-  let nil_sensitive_defs = collect_nil_sensitive_defs(&fn_defs, &export_name_counts);
+  let nil_sensitive_defs = collect_sensitive_defs(&fn_defs, &export_name_counts, direct_nil_predicate);
+  let trait_sensitive_defs = collect_sensitive_defs(&fn_defs, &export_name_counts, expr_uses_trait_call);
   let mut fn_index: HashMap<String, u32> = HashMap::new();
   let mut fn_arity: HashMap<String, u32> = HashMap::new();
   // Track functions with rest args: value is the fixed-arity count (params before `&`).
@@ -962,6 +963,7 @@ fn emit_wasm_impl(
       callback_arities,
       fixed_arity: matches!(args, CalcitFnArgs::Args(_)),
       nil_sensitive: nil_sensitive_defs.contains(&format!("{ns}/{name}")),
+      trait_sensitive: trait_sensitive_defs.contains(&format!("{ns}/{name}")),
     });
     static_fn_defs.insert(format!("{ns}/{name}"), definition.clone());
     if export_name_counts.get(name).copied() == Some(1) {
@@ -1080,7 +1082,7 @@ fn emit_wasm_impl(
       })
     } else {
       try_custom_def_impl(ns, def_name, &export_name, args, &env)
-        .unwrap_or_else(|| compile_fn(def_name, &export_name, args, body, function_signature.as_deref(), &env))
+        .unwrap_or_else(|| compile_fn(ns, &export_name, args, body, function_signature.as_deref(), &env))
     };
     match result {
       Ok(mut func) => {
@@ -1104,7 +1106,15 @@ fn emit_wasm_impl(
             .static_fn_defs
             .get(&qualified)
             .is_some_and(|definition| definition_requires_nil_specialization(definition));
-        if explicit_export || (ns == init_ns && (def_name == init_def || !deferred_nil_specialization)) {
+        let deferred_trait_specialization = e.contains("E_WASM_TRAIT_TYPE_EVIDENCE")
+          && !explicit_export
+          && env
+            .static_fn_defs
+            .get(&qualified)
+            .is_some_and(|definition| definition_requires_trait_specialization(definition));
+        if explicit_export
+          || (ns == init_ns && (def_name == init_def || !(deferred_nil_specialization || deferred_trait_specialization)))
+        {
           return Err(format!("[wasm] target function {ns}/{def_name} is not compilable: {e}"));
         }
         if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
@@ -4849,6 +4859,7 @@ struct StaticFnDef {
   callback_arities: HashMap<usize, usize>,
   fixed_arity: bool,
   nil_sensitive: bool,
+  trait_sensitive: bool,
 }
 
 enum InlineArgument {
@@ -4858,6 +4869,8 @@ enum InlineArgument {
 
 /// Context for WASM code generation within a single function.
 struct WasmGenCtx {
+  /// Namespace of the definition currently being emitted.
+  source_ns: String,
   /// Map from local variable name to WASM local index
   locals: HashMap<String, u32>,
   /// Call-site-specialized source types for locals. Values keep the existing
@@ -4915,6 +4928,7 @@ struct WasmGenCtx {
 impl WasmGenCtx {
   fn new(num_params: u32, env: WasmCompileEnv) -> Self {
     WasmGenCtx {
+      source_ns: crate::calcit::CORE_NS.to_owned(),
       locals: HashMap::new(),
       local_types: HashMap::new(),
       extra_locals: Vec::new(),
@@ -5253,6 +5267,10 @@ fn infer_wasm_static_type(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<CalcitT
       .get(local.sym.as_ref())
       .cloned()
       .or_else(|| Some(local.type_info.clone())),
+    Calcit::List(items) if matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeStruct))) => items
+      .get(1)
+      .and_then(|definition| resolve_struct_ref(definition).ok())
+      .map(|definition| Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(definition)))),
     Calcit::List(items) => items
       .first()
       .and_then(|head| match head {
@@ -5309,12 +5327,24 @@ fn definition_requires_nil_specialization(definition: &StaticFnDef) -> bool {
       .any(|annotation| nil_type_evidence_is_open(annotation.as_ref()))
 }
 
+fn definition_requires_trait_specialization(definition: &StaticFnDef) -> bool {
+  definition.trait_sensitive && definition.arg_types.iter().any(|annotation| annotation.contains_type_var())
+}
+
 fn function_requires_nil_specialization(ctx: &WasmGenCtx, qualified: &str, fallback: &str) -> bool {
   ctx
     .static_fn_defs
     .get(qualified)
     .or_else(|| ctx.static_fn_defs.get(fallback))
     .is_some_and(|definition| definition_requires_nil_specialization(definition))
+}
+
+fn function_requires_trait_specialization(ctx: &WasmGenCtx, qualified: &str, fallback: &str) -> bool {
+  ctx
+    .static_fn_defs
+    .get(qualified)
+    .or_else(|| ctx.static_fn_defs.get(fallback))
+    .is_some_and(|definition| definition_requires_trait_specialization(definition))
 }
 
 fn reject_nil_specialized_spread_call(ctx: &WasmGenCtx, qualified: &str, fallback: &str) -> Result<(), String> {
@@ -5327,7 +5357,17 @@ fn reject_nil_specialized_spread_call(ctx: &WasmGenCtx, qualified: &str, fallbac
   }
 }
 
-fn resolve_nil_specialization_types(
+fn reject_trait_specialized_spread_call(ctx: &WasmGenCtx, qualified: &str, fallback: &str) -> Result<(), String> {
+  if function_requires_trait_specialization(ctx, qualified, fallback) {
+    Err(format!(
+      "E_WASM_TRAIT_TYPE_EVIDENCE: `{qualified}` cannot be called through a spread call before its generic argument type is known"
+    ))
+  } else {
+    Ok(())
+  }
+}
+
+fn resolve_static_specialization_types(
   ctx: &WasmGenCtx,
   definition: &StaticFnDef,
   args: &[Calcit],
@@ -5366,9 +5406,17 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
   };
 
   let needs_nil_specialization = definition_requires_nil_specialization(&definition);
+  let needs_trait_specialization = definition_requires_trait_specialization(&definition);
   let nil_argument_types = if needs_nil_specialization {
-    Some(resolve_nil_specialization_types(ctx, &definition, args).ok_or_else(|| {
+    Some(resolve_static_specialization_types(ctx, &definition, args).ok_or_else(|| {
       format!("E_WASM_NIL_TYPE_EVIDENCE: `{qualified}` requires concrete argument types so nil can be distinguished from false and 0")
+    })?)
+  } else {
+    None
+  };
+  let trait_argument_types = if needs_trait_specialization && nil_argument_types.is_none() {
+    Some(resolve_static_specialization_types(ctx, &definition, args).ok_or_else(|| {
+      format!("E_WASM_TRAIT_TYPE_EVIDENCE: `{qualified}` requires concrete argument types to select a trait implementation")
     })?)
   } else {
     None
@@ -5398,7 +5446,7 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
       Ok(closure.map(|_| (effects, tail)))
     })
     .collect::<Result<Vec<_>, String>>()?;
-  if closure_args.iter().all(Option::is_none) && nil_argument_types.is_none() {
+  if closure_args.iter().all(Option::is_none) && nil_argument_types.is_none() && trait_argument_types.is_none() {
     return Ok(false);
   }
   if !definition.fixed_arity || definition.params.len() != args.len() {
@@ -5412,7 +5460,7 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
     ));
   }
 
-  let argument_types = nil_argument_types.unwrap_or_else(|| {
+  let argument_types = nil_argument_types.or(trait_argument_types).unwrap_or_else(|| {
     args
       .iter()
       .map(|arg| infer_wasm_static_type(ctx, arg))
@@ -5568,7 +5616,7 @@ fn static_call_target(
   }
 }
 
-fn expression_calls_nil_sensitive(
+fn expression_calls_sensitive(
   expr: &Calcit,
   current_ns: &str,
   sensitive: &HashSet<String>,
@@ -5587,12 +5635,13 @@ fn expression_calls_nil_sensitive(
   }
   items
     .iter()
-    .any(|item| expression_calls_nil_sensitive(item, current_ns, sensitive, qualified_names, unique_names))
+    .any(|item| expression_calls_sensitive(item, current_ns, sensitive, qualified_names, unique_names))
 }
 
-fn collect_nil_sensitive_defs(
+fn collect_sensitive_defs(
   fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
   export_name_counts: &HashMap<String, usize>,
+  direct_predicate: fn(&Calcit) -> bool,
 ) -> HashSet<String> {
   let qualified_names = fn_defs
     .iter()
@@ -5605,7 +5654,7 @@ fn collect_nil_sensitive_defs(
     .collect::<HashMap<_, _>>();
   let mut sensitive = fn_defs
     .iter()
-    .filter(|(_, _, _, body)| body.iter().any(direct_nil_predicate))
+    .filter(|(_, _, _, body)| body.iter().any(direct_predicate))
     .map(|(ns, name, _, _)| format!("{ns}/{name}"))
     .collect::<HashSet<_>>();
 
@@ -5618,7 +5667,7 @@ fn collect_nil_sensitive_defs(
       }
       if body
         .iter()
-        .any(|expr| expression_calls_nil_sensitive(expr, ns, &sensitive, &qualified_names, &unique_names))
+        .any(|expr| expression_calls_sensitive(expr, ns, &sensitive, &qualified_names, &unique_names))
       {
         sensitive.insert(qualified);
         changed = true;
@@ -5670,7 +5719,7 @@ fn try_custom_def_impl(
 }
 
 fn compile_fn(
-  _name: &str,
+  source_ns: &str,
   export_name: &str,
   args: &CalcitFnArgs,
   body: &[Calcit],
@@ -5681,6 +5730,7 @@ fn compile_fn(
 
   let arity = param_names.len();
   let mut ctx = WasmGenCtx::new(arity as u32, env.clone());
+  ctx.source_ns = source_ns.to_owned();
 
   // Register parameter locals
   for (i, pname) in param_names.iter().enumerate() {
@@ -5721,6 +5771,15 @@ fn check_uses_recur(expr: &Calcit) -> bool {
         return false;
       }
       xs.iter().any(check_uses_recur)
+    }
+    _ => false,
+  }
+}
+
+fn expr_uses_trait_call(expr: &Calcit) -> bool {
+  match expr {
+    Calcit::List(items) => {
+      matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeTraitCall))) || items.iter().any(expr_uses_trait_call)
     }
     _ => false,
   }
@@ -5896,6 +5955,11 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
             "E_WASM_NIL_TYPE_EVIDENCE: `{qualified}` cannot be used as a first-class function before its generic argument type is known"
           ));
         }
+        if function_requires_trait_specialization(ctx, &qualified, import.def.as_ref()) {
+          return Err(format!(
+            "E_WASM_TRAIT_TYPE_EVIDENCE: `{qualified}` cannot be used as a first-class function before its generic argument type is known"
+          ));
+        }
         // Function reference used as a value — encode as f64 table slot index.
         ctx.emit(f64_const(slot as f64));
       } else if let Some(value_expr) = ctx.value_imports.get(&qualified).cloned() {
@@ -5925,6 +5989,11 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
         if function_requires_nil_specialization(ctx, &qualified, def_ref.def_name.as_ref()) {
           return Err(format!(
             "E_WASM_NIL_TYPE_EVIDENCE: `{qualified}` cannot be used as a first-class function before its generic argument type is known"
+          ));
+        }
+        if function_requires_trait_specialization(ctx, &qualified, def_ref.def_name.as_ref()) {
+          return Err(format!(
+            "E_WASM_TRAIT_TYPE_EVIDENCE: `{qualified}` cannot be used as a first-class function before its generic argument type is known"
           ));
         }
         let slot = ctx
@@ -6129,8 +6198,9 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       ctx.emit(Instruction::Call(fn_idx));
       Ok(())
     }
-    Calcit::Symbol { sym, .. } => {
+    Calcit::Symbol { sym, info, .. } => {
       let name = sym.as_ref();
+      let qualified = format!("{}/{}", info.at_ns, name);
       // IO functions: call host log_value for each arg, return nil
       if matches!(name, "println" | "eprintln" | "echo") {
         if ctx.target == WasmTarget::Wasi && ctx.boundary == WasmBoundary::Component {
@@ -6175,15 +6245,20 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       if let Some(closure) = ctx.lambda_locals.get(name).cloned() {
         return emit_inline_closure_call(ctx, &closure, &args_list);
       }
-      if emit_specialized_static_call(ctx, name, &args_list)? {
+      let target_name = if ctx.fn_index.contains_key(&qualified) {
+        qualified.as_str()
+      } else {
+        name
+      };
+      if emit_specialized_static_call(ctx, target_name, &args_list)? {
         return Ok(());
       }
       let fn_idx = *ctx
         .fn_index
-        .get(name)
+        .get(target_name)
         .ok_or_else(|| format!("unknown function symbol in direct call: {sym:?}"))?;
-      let target_arity = ctx.fn_arity.get(name).copied().unwrap_or(args_list.len() as u32);
-      let rest_fixed = ctx.fn_has_rest.get(name).copied();
+      let target_arity = ctx.fn_arity.get(target_name).copied().unwrap_or(args_list.len() as u32);
+      let rest_fixed = ctx.fn_has_rest.get(target_name).copied();
       emit_call_args(ctx, &args_list, target_arity, rest_fixed)?;
       ctx.emit(Instruction::Call(fn_idx));
       Ok(())
@@ -6330,6 +6405,7 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
     Calcit::Import(import) => {
       let qualified = format!("{}/{}", import.ns, import.def);
       reject_nil_specialized_spread_call(ctx, &qualified, import.def.as_ref())?;
+      reject_trait_specialized_spread_call(ctx, &qualified, import.def.as_ref())?;
       let fn_idx = ctx
         .fn_index
         .get(&qualified)
@@ -6354,6 +6430,7 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
     Calcit::Symbol { sym, .. } => {
       let name = sym.as_ref();
       reject_nil_specialized_spread_call(ctx, name, name)?;
+      reject_trait_specialized_spread_call(ctx, name, name)?;
       let fn_idx = *ctx
         .fn_index
         .get(name)
@@ -6373,6 +6450,7 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
       })?;
       let qualified = format!("{}/{}", def_ref.def_ns, def_ref.def_name);
       reject_nil_specialized_spread_call(ctx, &qualified, def_ref.def_name.as_ref())?;
+      reject_trait_specialized_spread_call(ctx, &qualified, def_ref.def_name.as_ref())?;
       let fn_idx = ctx
         .fn_index
         .get(&qualified)
@@ -6545,9 +6623,37 @@ fn emit_list_slice_from_i32_local(ctx: &mut WasmGenCtx, src_i32: u32, from_idx: 
   Ok(())
 }
 
+/// Lower a trait-origin-preserving call through its proven receiver type.
+fn emit_static_trait_call(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.len() < 3 {
+    return Err("E_WASM_TRAIT_CALL: &trait-call expects a trait, method tag, and receiver".into());
+  }
+  let Calcit::Tag(method_name) = &args[1] else {
+    return Err("E_WASM_TRAIT_CALL: method name must be a compile-time tag".into());
+  };
+  let receiver_type = infer_wasm_static_type(ctx, &args[2])
+    .filter(|annotation| !nil_type_evidence_is_open(annotation.as_ref()) && !annotation.contains_type_var())
+    .ok_or_else(|| "E_WASM_TRAIT_TYPE_EVIDENCE: &trait-call requires a concrete receiver type".to_owned())?;
+  let file_ns = ctx
+    .specialization_stack
+    .last()
+    .and_then(|qualified| qualified.rsplit_once('/').map(|(ns, _)| ns))
+    .unwrap_or(&ctx.source_ns);
+  let callable = resolve_static_trait_callable(&args[0], method_name.ref_str(), receiver_type.as_ref(), file_ns)
+    .map_err(|error| format!("E_WASM_TRAIT_RESOLUTION: {error}"))?;
+  let mut direct_call = Vec::with_capacity(args.len() - 1);
+  direct_call.push(callable);
+  direct_call.extend(args[2..].iter().cloned());
+  let Calcit::List(items) = Calcit::from(direct_call) else {
+    unreachable!("direct trait call is a nonempty expression")
+  };
+  emit_call_expr(ctx, &items)
+}
+
 /// Emit instructions for builtin proc calls.
 fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> Result<(), String> {
   match proc {
+    CalcitProc::NativeTraitCall => emit_static_trait_call(ctx, args),
     // Arithmetic
     CalcitProc::NativeAdd => emit_binary(ctx, Instruction::F64Add, args),
     CalcitProc::NativeMinus => emit_binary(ctx, Instruction::F64Sub, args),
@@ -6558,12 +6664,18 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       if args.len() != 2 {
         return Err("rem expects 2 args".into());
       }
-      emit_expr(ctx, &args[0])?; // a
-      emit_expr(ctx, &args[0])?; // a (again)
-      emit_expr(ctx, &args[1])?; // b
+      let a = ctx.alloc_local();
+      let b = ctx.alloc_local();
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(Instruction::LocalSet(a));
+      emit_expr(ctx, &args[1])?;
+      ctx.emit(Instruction::LocalSet(b));
+      ctx.emit(Instruction::LocalGet(a));
+      ctx.emit(Instruction::LocalGet(a));
+      ctx.emit(Instruction::LocalGet(b));
       ctx.emit(Instruction::F64Div);
       ctx.emit(Instruction::F64Trunc);
-      emit_expr(ctx, &args[1])?; // b (again)
+      ctx.emit(Instruction::LocalGet(b));
       ctx.emit(Instruction::F64Mul);
       ctx.emit(Instruction::F64Sub);
       Ok(())
@@ -9384,21 +9496,101 @@ mod tests {
   use super::{
     CompiledFn, ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
     ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HostImport,
-    ModuleFunctionLayout, WasiComponentReadImports, WasmBoundary, WasmTarget, build_cabi_free_fn, build_cabi_realloc_fn,
-    build_component_export_adapter, build_component_import_adapter, build_string_pool, build_wasi_component_open_at_fn,
-    build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn, build_wasi_component_select_preopen_fn, build_wasm_module,
-    component_abi_type, component_export_needs_post_return, component_flat_types, component_import_signature, component_memory_layout,
-    component_task_return_signature, expr_uses_wasi_file, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
+    ModuleFunctionLayout, StaticFnDef, WasiComponentReadImports, WasmBoundary, WasmCompileEnv, WasmGenCtx, WasmTarget,
+    build_cabi_free_fn, build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter, build_string_pool,
+    build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn,
+    build_wasi_component_select_preopen_fn, build_wasm_module, component_abi_type, component_export_needs_post_return,
+    component_flat_types, component_import_signature, component_memory_layout, component_task_return_signature, emit_call_expr,
+    emit_proc_call, expr_uses_wasi_file, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
     reject_reachable_wasi_command_dependencies, validate_component_export_symbols, validate_component_flat_parameters,
     validate_component_import_symbols, wasi_component_file_imports, wasm_non_nil_value_is_nonzero,
   };
   use crate::calcit::{
-    Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitProc, CalcitStructDef, CalcitStructValue, CalcitSyntax,
-    CalcitTypeAnnotation, MethodKind,
+    Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitProc, CalcitStructDef, CalcitStructValue, CalcitSymbolInfo,
+    CalcitSyntax, CalcitTypeAnnotation, MethodKind,
   };
   use cirru_edn::EdnTag;
   use wasm_encoder::{Instruction, ValType};
   use wasmtime::{Caller, Engine, Extern, Func, Instance, Module, Store};
+
+  #[test]
+  fn symbol_call_prefers_its_namespace_over_a_same_named_function() {
+    let mut fn_index = HashMap::from([
+      ("tests.alpha/helper".to_string(), 4),
+      ("tests.beta/helper".to_string(), 5),
+      ("helper".to_string(), 5),
+    ]);
+    let env = WasmCompileEnv {
+      fn_index: fn_index.clone(),
+      fn_arity: HashMap::from([("tests.alpha/helper".to_string(), 0), ("helper".to_string(), 0)]),
+      fn_has_rest: HashMap::new(),
+      runtime_fn_index: HashMap::new(),
+      tag_index: HashMap::new(),
+      struct_field_tags: HashMap::new(),
+      string_pool: HashMap::new(),
+      atom_globals: HashMap::new(),
+      value_imports: HashMap::new(),
+      static_fn_defs: HashMap::new(),
+      fn_table_index: HashMap::new(),
+      host_imports: HashMap::new(),
+      target: WasmTarget::Core,
+      boundary: WasmBoundary::Native,
+    };
+    let mut ctx = WasmGenCtx::new(0, env);
+    ctx.static_fn_defs.insert(
+      "helper".to_string(),
+      Arc::new(StaticFnDef {
+        params: vec!["x".to_string()],
+        body: vec![],
+        arg_types: vec![Arc::new(CalcitTypeAnnotation::Dynamic)],
+        callback_arities: HashMap::new(),
+        fixed_arity: true,
+        nil_sensitive: true,
+        trait_sensitive: false,
+      }),
+    );
+    let call = Calcit::from(vec![Calcit::Symbol {
+      sym: Arc::from("helper"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.alpha"),
+        at_def: Arc::from("caller"),
+      }),
+      location: None,
+    }]);
+    let Calcit::List(items) = call else {
+      panic!("constructed call must be a list");
+    };
+    emit_call_expr(&mut ctx, &items).expect("qualified symbol call");
+    assert!(matches!(ctx.instructions.last(), Some(Instruction::Call(4))));
+
+    let other_call = Calcit::from(vec![Calcit::Symbol {
+      sym: Arc::from("helper"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.beta"),
+        at_def: Arc::from("caller"),
+      }),
+      location: None,
+    }]);
+    ctx.instructions.clear();
+    emit_proc_call(&mut ctx, &CalcitProc::NativeNumberRem, &[Calcit::List(items.clone()), other_call])
+      .expect("remainder with callable arguments");
+    let calls = ctx
+      .instructions
+      .iter()
+      .filter_map(|instruction| match instruction {
+        Instruction::Call(idx) => Some(*idx),
+        _ => None,
+      })
+      .collect::<Vec<_>>();
+    assert_eq!(calls, [4, 5], "remainder must evaluate each operand once, in source order");
+
+    ctx.static_fn_defs.remove("helper");
+    fn_index.remove("tests.alpha/helper");
+    ctx.fn_index = fn_index;
+    ctx.instructions.clear();
+    emit_call_expr(&mut ctx, &items).expect("legacy bare symbol fallback");
+    assert!(matches!(ctx.instructions.last(), Some(Instruction::Call(5))));
+  }
 
   fn declaration(head: CalcitSyntax) -> Calcit {
     let items = [Calcit::Syntax(head, Arc::from("dependency.ns"))];
