@@ -15,10 +15,12 @@ const definitions = core[":files"]["'calcit.core"].defs;
 const methodTest = definitions["'contains?"].tests.find(item => item.name === "distinguishes-explicit-index-key-and-value-methods");
 const primitiveTest = definitions["'&list:contains?"].tests.find(item => item.name === "checks-list-index-bounds");
 const setUpdateTest = definitions["'include"].tests.find(item => item.name === "keeps-persistent-set-add-and-include-equivalent");
+const enumIndexTest = definitions["'contains-index?"].tests.find(item => item.name === "checks-enum-position-and-legacy-fractional-boundary");
 assert.ok(methodTest, "the naming contract must remain attached to calcit.core/contains?");
 assert.ok(primitiveTest, "the direct primitive boundary must remain attached to calcit.core/&list:contains?");
 assert.ok(setUpdateTest, "the persistent Set update contract must remain attached to calcit.core/include");
-const tests = [methodTest, primitiveTest, setUpdateTest];
+assert.ok(enumIndexTest, "the Enum index contract must remain attached to calcit.core/contains-index?");
+const tests = [methodTest, primitiveTest, setUpdateTest, enumIndexTest];
 
 const fixture = await mkdtemp(join(tmpdir(), "calcit-predicate-method-names-"));
 try {

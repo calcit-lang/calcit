@@ -553,7 +553,7 @@ List 单元素追加首选 `.append`，List 拼接用 `.concat`。迁移旧 `.ad
 
 判断 Number 是否有限且恰好没有小数部分时，首选 `integer? value` 或 `value .integer?`；返回 Bool，不代表安全整数范围或整数类型 refinement。旧 `round?/.round?` 暂留同义兼容。可显式用 `core-integer-predicate-v1` 预览：reader 解析为内建 Proc 的单参数 `round?` 调用，以及静态 Number 接收者且同实现同契约的 `.round?` 方法可自动改写；quoted 数据、自定义同名方法、开放接收者与未知 macro 不按词形批量替换。附带的 `:tests` / `:examples` 需人工检查。使用前可查询 `calcit.core/integer?` 的公开 schema 和 Number 方法契约。
 
-索引、键和值查询先看接收者类型：List/String 用 `.contains-index? Number` 判断有效位置，Map<K,V> 用 `.contains-key? K` 与 `.contains-value? V` 分别判断键和值；即使 K/V 同型也不能混用。List/Set 的元素成员和 String 子串仍用 `.includes?`。可显式用 `core-predicate-method-v1` 预览已证明的 builtin 方法等价迁移；它不处理 attached `:tests` / `:examples`、Struct/Enum、`Contains` trait 或自定义同名方法，不要按词形替换。List 索引的小数、负数和非有限值返回 false，JS 与 WASM 也遵守该契约。
+索引、键和值查询先看接收者类型：List/String 用 `.contains-index? Number` 判断有效位置，Enum 也提供 `.contains-index? Number`，其中 0 是 tag、1 起是 payload；Map<K,V> 用 `.contains-key? K` 与 `.contains-value? V` 分别判断键和值，即使 K/V 同型也不能混用。List/Set 的元素成员和 String 子串仍用 `.includes?`。Enum 新方法要求非负有限整数，旧 `.contains?` 对范围内小数会返回 true，因此不能机械迁移。可显式用 `core-predicate-method-v1` 预览已证明的 List/String/Map builtin 方法等价迁移；它不处理 attached `:tests` / `:examples`、Struct/Enum、`Contains` trait 或自定义同名方法，不要按词形替换。List 索引的小数、负数和非有限值返回 false，JS 与 WASM 也遵守该契约。
 
 持久集合更新首选 Map `.assoc key value` / `.dissoc key` 与 Set `.include item` / `.exclude item`，均返回新集合，不表示原地修改。Set `.add` 的同义调用可显式用 `core-set-include-v1` 预览，仅在具体 Set 接收者和同一 core 实现已证明时自动迁移；Map `.add` 接受二元 entry，不能按词形改成 `.assoc`。目前不新增 Rust 风格 `.insert/.remove`。
 

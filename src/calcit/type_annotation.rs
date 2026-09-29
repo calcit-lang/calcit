@@ -4627,6 +4627,14 @@ impl CalcitTypeAnnotation {
       },
       (_, Self::Dynamic) => Proven,
       (Self::Dynamic, _) => NeedsBoundary(Boundary::Dynamic),
+      (Self::Enum(_, _) | Self::EnumValue(_) | Self::AnonymousEnum, Self::AnonymousEnum) => Proven,
+      (actual @ Self::TypeRef(_, _), Self::AnonymousEnum) => {
+        if actual.resolve_to_enum().is_some() {
+          Proven
+        } else {
+          NeedsBoundary(Boundary::UnresolvedNominalIdentity)
+        }
+      }
       (Self::Optional(actual), Self::Optional(expected)) | (Self::JsNullish(actual), Self::JsNullish(expected)) => {
         actual.prove_with_staged_bindings(expected, bindings)
       }
@@ -6548,6 +6556,15 @@ mod tests {
     assert!(result_def.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("EnumDef")));
     assert!(result_value.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("Enum")));
     assert!(!result_value.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("EnumDef")));
+    let enum_type = CalcitTypeAnnotation::from_tag_name("Enum");
+    assert!(result_value.prove_with_bindings(&enum_type, &mut TypeBindings::new()).is_proven());
+    assert!(!result_def.prove_with_bindings(&enum_type, &mut TypeBindings::new()).is_proven());
+    let named_result_value = CalcitTypeAnnotation::Enum(result.clone(), Arc::new(vec![]));
+    assert!(
+      named_result_value
+        .prove_with_bindings(&enum_type, &mut TypeBindings::new())
+        .is_proven()
+    );
 
     assert_eq!(person_def.to_brief_string(), "struct-def Person");
     assert_eq!(result_def.to_brief_string(), "enum-def Result");

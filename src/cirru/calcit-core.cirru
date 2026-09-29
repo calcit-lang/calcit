@@ -320,7 +320,7 @@
               :tags $ #{} :core :unit
         '&core-enum-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for enum values.")
           :code $ quote $ def &core-enum-impls
-            [] &core-enum-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-enum-impl) (&impl::new Contains internal/&core-contains-enum-impl)
+            [] &core-enum-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-enum-impl) (&impl::new Contains internal/&core-contains-enum-impl) (&impl::new ContainsIndex internal/&core-contains-index-enum-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -2790,6 +2790,14 @@
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
+        'ContainsIndex $ %{} 'CodeEntry
+          :doc "|Enum 位置存在性 trait：索引必须是非负有限整数；与旧 Contains 的宽松范围判断不同。"
+          :code $ quote $ deftrait ContainsIndex
+            .contains-index? $ :: :fn $ {}
+              :args $ [] 'Enum 'Number
+              :return 'Bool
+          :examples $ []
+          :schema $ :: 'Trait
         'Countable $ %{} 'CodeEntry (:doc "|Core trait: Countable")
           :code $ quote $ deftrait Countable
             .count $ :: :fn $ {} (:return :number)
@@ -3936,6 +3944,56 @@
                 :: :a :b $ [] 1 2 3
                 [] 2 2
             :tags $ #{} :core :unit
+        'contains-index? $ %{} 'CodeEntry
+          :doc "|检查 Enum 的有效位置（tag 为 0，payload 自 1 起）：仅非负、有限整数且小于 count 时返回 true；负数、小数、非有限或越界返回 false。旧 .contains? 的小数行为不同，不能无条件迁移。"
+          :code $ quote $ defn contains-index? (value index)
+            hint-fn $ {}
+              :args $ [] 'Enum 'Number
+              :return 'Bool
+            and (integer? index) (&>= index 0)
+              &< index $ &enum:count value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Enum 'Number
+          :tests $ [] $ %{} 'TestEntry
+            :name |checks-enum-position-and-legacy-fractional-boundary
+            :code $ quote $ do
+              assert-type
+                contains-index? (:: :pair 10 20) 1
+                , 'Bool
+              assert-type
+                  Option :some 7
+                  , .contains-index? 1
+                , 'Bool
+              assert= true $ contains-index? (:: :pair 10 20) 0
+              assert= true $
+                :: :pair 10 20
+                , .contains-index? 1
+              assert= true $
+                :: :pair 10 20
+                , .contains-index? 2
+              assert= false $
+                :: :pair 10 20
+                , .contains-index? 3
+              assert= false $
+                :: :pair 10 20
+                , .contains-index? -1
+              assert= false $
+                :: :pair 10 20
+                , .contains-index? 0.5
+              assert= false $
+                :: :pair 10 20
+                , .contains-index? $ / 1 0
+              assert= false $
+                :: :pair 10 20
+                , .contains-index? $ / 0 0
+              assert= true $
+                Option :some 7
+                , .contains-index? 1
+              assert= false $
+                Option :some 7
+                , .contains-index? 2
+            :tags $ #{} :core :naming-contract :unit
         'contains-symbol? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn contains-symbol? (xs y)
             if (list? xs)
@@ -9503,6 +9561,10 @@
                 , false
           :examples $ []
           :schema $ :: 'Dynamic
+        '&core-contains-index-enum-impl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def &core-contains-index-enum-impl
+            &impl::new :&core-contains-index-enum-impl $ :: :contains-index? contains-index?
+          :examples $ []
         '&core-contains-list-impl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-contains-list-impl
             &impl::new :&core-contains-list-impl $ :: :contains? &list:contains?
