@@ -6198,8 +6198,9 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       ctx.emit(Instruction::Call(fn_idx));
       Ok(())
     }
-    Calcit::Symbol { sym, .. } => {
+    Calcit::Symbol { sym, info, .. } => {
       let name = sym.as_ref();
+      let qualified = format!("{}/{}", info.at_ns, name);
       // IO functions: call host log_value for each arg, return nil
       if matches!(name, "println" | "eprintln" | "echo") {
         if ctx.target == WasmTarget::Wasi && ctx.boundary == WasmBoundary::Component {
@@ -6244,15 +6245,23 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       if let Some(closure) = ctx.lambda_locals.get(name).cloned() {
         return emit_inline_closure_call(ctx, &closure, &args_list);
       }
+      if emit_specialized_static_call(ctx, &qualified, &args_list)? {
+        return Ok(());
+      }
       if emit_specialized_static_call(ctx, name, &args_list)? {
         return Ok(());
       }
+      let target_name = if ctx.fn_index.contains_key(&qualified) {
+        qualified.as_str()
+      } else {
+        name
+      };
       let fn_idx = *ctx
         .fn_index
-        .get(name)
+        .get(target_name)
         .ok_or_else(|| format!("unknown function symbol in direct call: {sym:?}"))?;
-      let target_arity = ctx.fn_arity.get(name).copied().unwrap_or(args_list.len() as u32);
-      let rest_fixed = ctx.fn_has_rest.get(name).copied();
+      let target_arity = ctx.fn_arity.get(target_name).copied().unwrap_or(args_list.len() as u32);
+      let rest_fixed = ctx.fn_has_rest.get(target_name).copied();
       emit_call_args(ctx, &args_list, target_arity, rest_fixed)?;
       ctx.emit(Instruction::Call(fn_idx));
       Ok(())
@@ -6658,12 +6667,18 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       if args.len() != 2 {
         return Err("rem expects 2 args".into());
       }
-      emit_expr(ctx, &args[0])?; // a
-      emit_expr(ctx, &args[0])?; // a (again)
-      emit_expr(ctx, &args[1])?; // b
+      let a = ctx.alloc_local();
+      let b = ctx.alloc_local();
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(Instruction::LocalSet(a));
+      emit_expr(ctx, &args[1])?;
+      ctx.emit(Instruction::LocalSet(b));
+      ctx.emit(Instruction::LocalGet(a));
+      ctx.emit(Instruction::LocalGet(a));
+      ctx.emit(Instruction::LocalGet(b));
       ctx.emit(Instruction::F64Div);
       ctx.emit(Instruction::F64Trunc);
-      emit_expr(ctx, &args[1])?; // b (again)
+      ctx.emit(Instruction::LocalGet(b));
       ctx.emit(Instruction::F64Mul);
       ctx.emit(Instruction::F64Sub);
       Ok(())
@@ -9484,21 +9499,88 @@ mod tests {
   use super::{
     CompiledFn, ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
     ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HostImport,
-    ModuleFunctionLayout, WasiComponentReadImports, WasmBoundary, WasmTarget, build_cabi_free_fn, build_cabi_realloc_fn,
-    build_component_export_adapter, build_component_import_adapter, build_string_pool, build_wasi_component_open_at_fn,
-    build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn, build_wasi_component_select_preopen_fn, build_wasm_module,
-    component_abi_type, component_export_needs_post_return, component_flat_types, component_import_signature, component_memory_layout,
-    component_task_return_signature, expr_uses_wasi_file, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
+    ModuleFunctionLayout, WasiComponentReadImports, WasmBoundary, WasmCompileEnv, WasmGenCtx, WasmTarget, build_cabi_free_fn,
+    build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter, build_string_pool,
+    build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn,
+    build_wasi_component_select_preopen_fn, build_wasm_module, component_abi_type, component_export_needs_post_return,
+    component_flat_types, component_import_signature, component_memory_layout, component_task_return_signature, emit_call_expr,
+    emit_proc_call, expr_uses_wasi_file, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
     reject_reachable_wasi_command_dependencies, validate_component_export_symbols, validate_component_flat_parameters,
     validate_component_import_symbols, wasi_component_file_imports, wasm_non_nil_value_is_nonzero,
   };
   use crate::calcit::{
-    Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitProc, CalcitStructDef, CalcitStructValue, CalcitSyntax,
-    CalcitTypeAnnotation, MethodKind,
+    Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitProc, CalcitStructDef, CalcitStructValue, CalcitSymbolInfo,
+    CalcitSyntax, CalcitTypeAnnotation, MethodKind,
   };
   use cirru_edn::EdnTag;
   use wasm_encoder::{Instruction, ValType};
   use wasmtime::{Caller, Engine, Extern, Func, Instance, Module, Store};
+
+  #[test]
+  fn symbol_call_prefers_its_namespace_over_a_same_named_function() {
+    let mut fn_index = HashMap::from([
+      ("tests.alpha/helper".to_string(), 4),
+      ("tests.beta/helper".to_string(), 5),
+      ("helper".to_string(), 5),
+    ]);
+    let env = WasmCompileEnv {
+      fn_index: fn_index.clone(),
+      fn_arity: HashMap::from([("tests.alpha/helper".to_string(), 0), ("helper".to_string(), 0)]),
+      fn_has_rest: HashMap::new(),
+      runtime_fn_index: HashMap::new(),
+      tag_index: HashMap::new(),
+      struct_field_tags: HashMap::new(),
+      string_pool: HashMap::new(),
+      atom_globals: HashMap::new(),
+      value_imports: HashMap::new(),
+      static_fn_defs: HashMap::new(),
+      fn_table_index: HashMap::new(),
+      host_imports: HashMap::new(),
+      target: WasmTarget::Core,
+      boundary: WasmBoundary::Native,
+    };
+    let mut ctx = WasmGenCtx::new(0, env);
+    let call = Calcit::from(vec![Calcit::Symbol {
+      sym: Arc::from("helper"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.alpha"),
+        at_def: Arc::from("caller"),
+      }),
+      location: None,
+    }]);
+    let Calcit::List(items) = call else {
+      panic!("constructed call must be a list");
+    };
+    emit_call_expr(&mut ctx, &items).expect("qualified symbol call");
+    assert!(matches!(ctx.instructions.last(), Some(Instruction::Call(4))));
+
+    let other_call = Calcit::from(vec![Calcit::Symbol {
+      sym: Arc::from("helper"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.beta"),
+        at_def: Arc::from("caller"),
+      }),
+      location: None,
+    }]);
+    ctx.instructions.clear();
+    emit_proc_call(&mut ctx, &CalcitProc::NativeNumberRem, &[Calcit::List(items.clone()), other_call])
+      .expect("remainder with callable arguments");
+    let calls = ctx
+      .instructions
+      .iter()
+      .filter_map(|instruction| match instruction {
+        Instruction::Call(idx) => Some(*idx),
+        _ => None,
+      })
+      .collect::<Vec<_>>();
+    assert_eq!(calls, [4, 5], "remainder must evaluate each operand once, in source order");
+
+    fn_index.remove("tests.alpha/helper");
+    ctx.fn_index = fn_index;
+    ctx.instructions.clear();
+    emit_call_expr(&mut ctx, &items).expect("legacy bare symbol fallback");
+    assert!(matches!(ctx.instructions.last(), Some(Instruction::Call(5))));
+  }
 
   fn declaration(head: CalcitSyntax) -> Calcit {
     let items = [Calcit::Syntax(head, Arc::from("dependency.ns"))];

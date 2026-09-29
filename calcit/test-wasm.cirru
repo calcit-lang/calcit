@@ -1151,6 +1151,19 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-qualified-symbol-helper $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-qualified-symbol-helper (x)
+            if
+              &=
+                point:score $ %{} PointValue $ :value x
+                , x
+              , 1 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-namespace-identity)
+            :code $ quote $ assert= 1 (test-qualified-symbol-helper 42)
+            :tags $ #{} :core :wasm
         'test-range $ %{} 'CodeEntry (:doc "|range creates list of numbers")
           :code $ quote $ defwasm-export test-range ()
             &list:count $ range 5
@@ -1867,3 +1880,12 @@
             :args $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-wasm.specialization-fail
+    'test-wasm.zzz-collision $ %{} 'FileEntry
+      :defs $ {} $ 'point:score
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn point:score (self) -99
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns test-wasm.zzz-collision

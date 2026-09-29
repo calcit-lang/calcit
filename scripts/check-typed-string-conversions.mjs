@@ -109,6 +109,7 @@ try {
   assert.equal(wasmJs.test_to_string_number(42), 1, "generated JS must run the generic ToString definition");
   assert.equal(wasmJs.test_to_string_scalars(), 1, "generated JS must preserve Nil, Bool, String, and Tag trait text");
   assert.equal(wasmJs.test_custom_trait_score(42), 1, "generated JS must select the same nominal trait implementation");
+  assert.equal(wasmJs.test_qualified_symbol_helper(42), 1, "generated JS must keep the local helper despite a same-named definition");
   const wasm = spawnSync(binary, ["wasm", wasmSnapshot, "--emit-path", output], { encoding: "utf8" });
   assert.equal(wasm.status, 0, "WASM should preserve unrelated exports");
   assert.match(wasm.stderr, /trapping unsupported dependency calcit\.core\/to-tag: E_WASM_TAG_CONVERSION/);
@@ -125,6 +126,7 @@ try {
   assert.equal(instance.exports["test-to-string-number"](42), 1, "WASM must specialize the generic ToString trait call for runtime Number arguments");
   assert.equal(instance.exports["test-to-string-scalars"](), 1, "WASM must preserve Nil, Bool, String, and Tag trait text");
   assert.equal(instance.exports["test-custom-trait-score"](42), 1, "WASM must select a user-defined nominal trait implementation for a runtime argument");
+  assert.equal(instance.exports["test-qualified-symbol-helper"](42), 1, "WASM must resolve a local symbol by namespace before a same-named helper");
   assert.equal(instance.exports["test-turn-string-runtime"](42), 1, "WASM must retain exact integer formatting");
   assert.equal(instance.exports["test-turn-string-zero"](0), 1, "WASM must distinguish Number zero from nil");
   assert.equal(instance.exports["test-turn-string-safe-limit"](2 ** 53), 1, "WASM must format the safe integer boundary");
