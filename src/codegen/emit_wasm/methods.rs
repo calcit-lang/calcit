@@ -486,13 +486,7 @@ fn emit_ptr_local_from_receiver(ctx: &mut WasmGenCtx, receiver_local: u32) -> u3
 fn emit_list_contains_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) {
   let ptr_local = emit_ptr_local_from_receiver(ctx, receiver_local);
   let count_local = emit_load_count_i32(ctx, ptr_local);
-  ctx.emit(f64_const(1.0));
-  ctx.emit(f64_const(0.0));
-  ctx.emit(Instruction::LocalGet(index_local));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalGet(count_local));
-  ctx.emit(Instruction::I32LtU);
-  ctx.emit(Instruction::Select);
+  emit_list_index_in_bounds_from_locals(ctx, count_local, index_local);
 }
 
 fn emit_list_includes_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, target_local: u32) {

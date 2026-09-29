@@ -518,7 +518,7 @@ export let _$n_list_$o_contains_$q_ = (xs: CalcitValue, x: CalcitValue): boolean
       throw new Error("Expected number index for detecting");
     }
     let size = xs.len();
-    if (x >= 0 && x < size) {
+    if (Number.isInteger(x) && x >= 0 && x < size) {
       return true;
     }
     return false;

@@ -876,14 +876,29 @@ pub(super) fn emit_list_contains(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   expect_arity(2, args, "&list:contains? expects 2 args")?;
   let ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, ptr);
-  ctx.emit(f64_const(1.0));
-  ctx.emit(f64_const(0.0));
+  let index = ctx.alloc_local();
   emit_expr(ctx, &args[1])?;
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalGet(count));
-  ctx.emit(Instruction::I32LtU);
-  ctx.emit(Instruction::Select);
+  ctx.emit(Instruction::LocalSet(index));
+  emit_list_index_in_bounds_from_locals(ctx, count, index);
   Ok(())
+}
+
+/// Check a numeric list index without trapping on fractions, negatives, or non-finite values.
+pub(super) fn emit_list_index_in_bounds_from_locals(ctx: &mut WasmGenCtx, count_local: u32, index_local: u32) {
+  ctx.emit(Instruction::LocalGet(index_local));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Ge);
+  ctx.emit(Instruction::LocalGet(index_local));
+  ctx.emit(Instruction::LocalGet(count_local));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::F64Lt);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::LocalGet(index_local));
+  ctx.emit(Instruction::LocalGet(index_local));
+  ctx.emit(Instruction::F64Trunc);
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::F64ConvertI32U);
 }
 
 /// `&list:includes? list value` — linear scan for matching f64 value.

@@ -364,7 +364,7 @@
           :tags $ #{} :internal
         '&core-list-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-list-methods
-            &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :bind mapcat) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :flat-map mapcat) (:: :fold fold) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :intersperse intersperse) (:: :join intersperse) (:: :join-str join-str) (:: :join-string join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :nth get) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reduce fold) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
+            &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :bind mapcat) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains? &list:contains?) (:: :contains-index? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :flat-map mapcat) (:: :fold fold) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :intersperse intersperse) (:: :join intersperse) (:: :join-str join-str) (:: :join-string join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :nth get) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reduce fold) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -376,7 +376,7 @@
           :tags $ #{} :internal
         '&core-map-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-map-methods
-            &impl::new :&core-map-methods (:: :add &map:add-entry) (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :count &map:count) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :filter-map-kv filter-map-kv) (:: :get get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys &map:keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :mappend merge) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :distinct-values distinct-values) (:: :values distinct-values)
+            &impl::new :&core-map-methods (:: :add &map:add-entry) (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :contains-key? &map:contains?) (:: :contains-value? &map:includes?) (:: :count &map:count) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :filter-map-kv filter-map-kv) (:: :get get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys &map:keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :mappend merge) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :distinct-values distinct-values) (:: :values distinct-values)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -431,7 +431,7 @@
           :tags $ #{} :internal
         '&core-string-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-string-methods
-            &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :utf8-byte-count &str:utf8-byte-count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get get) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :includes? &str:includes?) (:: :nth nth) (:: :first first) (:: :last last) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare) (:: :parse-cirru try-parse-cirru) (:: :parse-cirru-list try-parse-cirru-list) (:: :parse-cirru-edn try-parse-cirru-edn) (:: :parse-json try-parse-json)
+            &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :utf8-byte-count &str:utf8-byte-count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get get) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :contains-index? &str:contains?) (:: :includes? &str:includes?) (:: :nth nth) (:: :first first) (:: :last last) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare) (:: :parse-cirru try-parse-cirru) (:: :parse-cirru-list try-parse-cirru-list) (:: :parse-cirru-edn try-parse-cirru-edn) (:: :parse-json try-parse-json)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -991,7 +991,7 @@
               &list:concat ([] 1 2) ([] 4 5) ([] 7 8)
             :tags $ #{} :core :unit
         '&list:contains? $ %{} 'CodeEntry
-          :doc "|内部原语：按索引检查 List 是否包含该位置。参数为 List<T> 和 Number 索引，返回 Bool；有效索引范围为 0 到 count-1。检查元素是否存在请使用接收者方法 .includes?（底层为 &list:includes?）。"
+          :doc "|内部原语：按索引检查 List 是否包含该位置。参数为 List<T> 和 Number 索引，返回 Bool；只有范围内的整数索引有效。应用代码首选 .contains-index?；检查元素是否存在请用 .includes?。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
@@ -1002,6 +1002,10 @@
             :code $ quote $ do
               assert= true $ &list:contains? ([] :a :b :c) 1
               assert= false $ &list:contains? ([] :a :b :c) 3
+              assert= false $ &list:contains? ([] :a :b :c) -1
+              assert= false $ &list:contains? ([] :a :b :c) 0.5
+              assert= false $ &list:contains? ([] :a :b :c) $ / 1 0
+              assert= false $ &list:contains? ([] :a :b :c) $ / 0 0
             :tags $ #{} :core :unit
         '&list:count $ %{} 'CodeEntry
           :doc "|internal function for counting list elements\nSyntax: (&list:count list)\nParams: list (list)\nReturns: number\nReturns number of elements in list"
@@ -2099,7 +2103,7 @@
               assert= |12 $ &str:concat 1 2
             :tags $ #{} :core :unit
         '&str:contains? $ %{} 'CodeEntry
-          :doc "|String .contains? 的内部实现，检查字符索引是否有效；应用代码优先使用 text .contains? index。检查子串请用 text .includes? fragment。"
+          :doc "|String 索引谓词的内部实现，检查 Unicode 标量索引是否有效；应用代码首选 text .contains-index? index。检查子串请用 text .includes? fragment。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
@@ -4003,6 +4007,29 @@
                 assert= true $
                   #{} 10 20
                   , .includes? 10
+              :tags $ #{} :core :naming-contract :unit
+            %{} 'TestEntry (:name |distinguishes-explicit-index-key-and-value-methods)
+              :code $ quote $ do
+                assert= true $ ([] 10 20) .contains-index? 1
+                assert= false $ ([] 10 20) .contains-index? 10
+                assert= true $ ([] 10 20) .includes? 10
+                assert= false $ ([]) .contains-index? 0
+                assert= false $ ([] 10 20) .contains-index? -1
+                assert= false $ ([] 10 20) .contains-index? 0.5
+                assert= false $ ([] 10 20) .contains-index? $ / 1 0
+                assert= false $ ([] 10 20) .contains-index? $ / 0 0
+                assert= true $ "|😀a" .contains-index? 1
+                assert= false $ "|😀a" .contains-index? 2
+                assert= true $ "|😀a" .includes? |a
+                assert= false $ | .contains-index? 0
+                assert= true $ ({} (|key |value)) .contains-key? |key
+                assert= false $ ({} (|key |value)) .contains-key? |value
+                assert= true $ ({} (|key |value)) .contains-value? |value
+                assert= false $ ({} (|key |value)) .contains-value? |key
+                assert= false $ ({}) .contains-key? :missing
+                assert= false $ ({}) .contains-value? :missing
+                assert= true $ ({} (:id 7)) .contains-key? :id
+                assert= true $ ({} (:id 7)) .contains-value? 7
               :tags $ #{} :core :naming-contract :unit
         'cos $ %{} 'CodeEntry
           :doc "|internal function for cosine\nSyntax: (cos n)\nParams: n (number, radians)\nReturns: number\nReturns cosine of angle in radians"
@@ -8081,7 +8108,7 @@
               assert= 2 $ round 1.8
             :tags $ #{} :core :unit
         'round? $ %{} 'CodeEntry
-          :doc "|判断 Number 是否有限且恰好无小数部分。函数 round? 和方法 .round? 语义相同：NaN、正负 Infinity、非零小数返回 false，-0 返回 true。这不是安全整数范围或 Int32/UInt32 等 refinement 检查，也不执行舍入。"
+          :doc "|判断 Number 是否有限且恰好无小数部分。首选 integer? 和 Number .integer?；旧函数 round? 与方法 .round? 在兼容窗口保持同义。可用 calcit fix --rule core-integer-predicate-v1 显式预览来源受控的迁移，附带 tests/examples 需人工检查。NaN、正负 Infinity、非零小数返回 false，-0 返回 true。这不是安全整数范围或 Int32/UInt32 等 refinement 检查，也不执行舍入。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
