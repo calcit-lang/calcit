@@ -7155,6 +7155,21 @@
             :code $ quote $ assert= (%some 1)
               min $ [] 1 2 3 4
             :tags $ #{} :core :unit
+        'monotonic-time-ms $ %{} 'CodeEntry
+          :doc "|返回单调时钟的毫秒读数；仅同一次运行中的读数差可用于计算经过时间。旧 cpu-time 保留兼容，名称中的 CPU 不表示 CPU 使用量。JS、native 与 WASI Preview 1 可用；WASI 0.3 command 尚不支持时钟。"
+          :code $ quote $ defn monotonic-time-ms () (cpu-time)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tags $ #{} :io :time
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-monotonic-milliseconds)
+            :code $ quote $ let
+                before $ monotonic-time-ms
+                legacy $ cpu-time
+                after $ monotonic-time-ms
+              assert= true $ &<= before legacy
+              assert= true $ &<= legacy after
+            :tags $ #{} :core :time :unit
         'negate $ %{} 'CodeEntry (:doc "|Negate a number, returns its opposite")
           :code $ quote $ defn negate (x) (&- 0 x)
           :examples $ []
