@@ -14,9 +14,11 @@ const core = JSON.parse(run("cirru", "parse-edn", "--file", corePath));
 const definitions = core[":files"]["'calcit.core"].defs;
 const methodTest = definitions["'contains?"].tests.find(item => item.name === "distinguishes-explicit-index-key-and-value-methods");
 const primitiveTest = definitions["'&list:contains?"].tests.find(item => item.name === "checks-list-index-bounds");
+const setUpdateTest = definitions["'include"].tests.find(item => item.name === "keeps-persistent-set-add-and-include-equivalent");
 assert.ok(methodTest, "the naming contract must remain attached to calcit.core/contains?");
 assert.ok(primitiveTest, "the direct primitive boundary must remain attached to calcit.core/&list:contains?");
-const tests = [methodTest, primitiveTest];
+assert.ok(setUpdateTest, "the persistent Set update contract must remain attached to calcit.core/include");
+const tests = [methodTest, primitiveTest, setUpdateTest];
 
 const fixture = await mkdtemp(join(tmpdir(), "calcit-predicate-method-names-"));
 try {
@@ -47,7 +49,7 @@ try {
   const wasm = new WebAssembly.Instance(module, imports);
   assert.equal(typeof wasm.exports["run-tests"], "function");
   wasm.exports["run-tests"]();
-  console.log("Predicate method definition tests passed on native / generated JS / core WASM");
+  console.log("Core method naming definition tests passed on native / generated JS / core WASM");
 
   if (process.env.WASMTIME_CLI) {
     run(snapshot, "tree", "search-replace", "calcit.predicate-method-names/run-tests", "--pattern", "defwasm-export",
@@ -58,7 +60,7 @@ try {
       "run", "-S", "p3", "-W", "component-model-async-stackful=y",
       "-W", "component-model-more-async-builtins=y", join(component, "program.wasm"),
     ], { encoding: "utf8", timeout: 60000 });
-    console.log("Predicate method definition tests passed on WASI 0.3 Component / Wasmtime");
+    console.log("Core method naming definition tests passed on WASI 0.3 Component / Wasmtime");
   }
 } finally {
   await rm(fixture, { recursive: true, force: true });
