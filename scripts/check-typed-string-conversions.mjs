@@ -103,6 +103,12 @@ try {
   execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-safe-limit", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-negative-limit", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-negative-limit (x) (if (&= (turn-string x) |-9007199254740992) 1 0)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-negative-limit", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)"], { stdio: "pipe" });
+  const wasmJsOutput = join(output, "wasm-js");
+  execFileSync(binary, ["--emit-path", wasmJsOutput, wasmSnapshot, "js"], { stdio: "pipe" });
+  const wasmJs = await import(pathToFileURL(join(wasmJsOutput, "test-wasm.main.mjs")).href);
+  assert.equal(wasmJs.test_to_string_number(42), 1, "generated JS must run the generic ToString definition");
+  assert.equal(wasmJs.test_to_string_scalars(), 1, "generated JS must preserve Nil, Bool, String, and Tag trait text");
+  assert.equal(wasmJs.test_custom_trait_score(42), 1, "generated JS must select the same nominal trait implementation");
   const wasm = spawnSync(binary, ["wasm", wasmSnapshot, "--emit-path", output], { encoding: "utf8" });
   assert.equal(wasm.status, 0, "WASM should preserve unrelated exports");
   assert.match(wasm.stderr, /trapping unsupported dependency calcit\.core\/to-tag: E_WASM_TAG_CONVERSION/);
@@ -116,6 +122,9 @@ try {
   const instance = new WebAssembly.Instance(wasmModule, imports);
   assert.throws(() => instance.exports["test-to-tag"](), WebAssembly.RuntimeError, "WASM must not silently return a String as Tag");
   assert.throws(() => instance.exports["test-to-string-frac"](), WebAssembly.RuntimeError, "WASM must not silently misformat fractional Numbers");
+  assert.equal(instance.exports["test-to-string-number"](42), 1, "WASM must specialize the generic ToString trait call for runtime Number arguments");
+  assert.equal(instance.exports["test-to-string-scalars"](), 1, "WASM must preserve Nil, Bool, String, and Tag trait text");
+  assert.equal(instance.exports["test-custom-trait-score"](42), 1, "WASM must select a user-defined nominal trait implementation for a runtime argument");
   assert.equal(instance.exports["test-turn-string-runtime"](42), 1, "WASM must retain exact integer formatting");
   assert.equal(instance.exports["test-turn-string-zero"](0), 1, "WASM must distinguish Number zero from nil");
   assert.equal(instance.exports["test-turn-string-safe-limit"](2 ** 53), 1, "WASM must format the safe integer boundary");
@@ -124,6 +133,30 @@ try {
     assert.throws(() => instance.exports["test-turn-string-runtime"](value), WebAssembly.RuntimeError,
       `WASM must trap instead of silently misformatting ${String(value)}`);
   }
+
+  const openTraitSnapshot = join(output, "open-trait.cirru");
+  await copyFile("calcit/test-wasm.cirru", openTraitSnapshot);
+  execFileSync(binary, [openTraitSnapshot, "edit", "def", "test-wasm.main/test-to-string-open", "--input-format", "cirru", "--code", "quote $ defwasm-export test-to-string-open (x) (to-string x)"], { stdio: "pipe" });
+  execFileSync(binary, [openTraitSnapshot, "edit", "schema", "test-wasm.main/test-to-string-open", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'String) (:args $ [] 'T) (:generics $ [] 'T) (:where $ {} $ 'T 'ToString)"], { stdio: "pipe" });
+  const openTrait = spawnSync(binary, ["wasm", openTraitSnapshot, "--emit-path", join(output, "open-trait-wasm")], { encoding: "utf8" });
+  assert.notEqual(openTrait.status, 0, "a generic WASM export cannot choose a trait implementation without concrete type evidence");
+  assert.match(openTrait.stderr, /E_WASM_TRAIT_TYPE_EVIDENCE:.*calcit\.core\/to-string/);
+
+  const firstClassSnapshot = join(output, "first-class-trait.cirru");
+  await copyFile("calcit/test-wasm.cirru", firstClassSnapshot);
+  execFileSync(binary, [firstClassSnapshot, "edit", "def", "test-wasm.main/test-to-string-first-class", "--input-format", "cirru", "--code", "quote $ defwasm-export test-to-string-first-class () (let ((f to-string)) (if (&= (f 42) |42) 1 0))"], { stdio: "pipe" });
+  execFileSync(binary, [firstClassSnapshot, "edit", "schema", "test-wasm.main/test-to-string-first-class", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [])"], { stdio: "pipe" });
+  const firstClass = spawnSync(binary, ["wasm", firstClassSnapshot, "--emit-path", join(output, "first-class-trait-wasm")], { encoding: "utf8" });
+  assert.notEqual(firstClass.status, 0, "a first-class generic trait function cannot bypass specialization");
+  assert.match(firstClass.stderr, /E_WASM_TRAIT_TYPE_EVIDENCE:.*first-class function/);
+
+  const spreadSnapshot = join(output, "spread-trait.cirru");
+  await copyFile("calcit/test-wasm.cirru", spreadSnapshot);
+  execFileSync(binary, [spreadSnapshot, "edit", "def", "test-wasm.main/test-to-string-spread", "--input-format", "cirru", "--code", "quote $ defwasm-export test-to-string-spread () (if (&= (to-string 42 & $ []) |42) 1 0)"], { stdio: "pipe" });
+  execFileSync(binary, [spreadSnapshot, "edit", "schema", "test-wasm.main/test-to-string-spread", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [])"], { stdio: "pipe" });
+  const spread = spawnSync(binary, ["wasm", spreadSnapshot, "--emit-path", join(output, "spread-trait-wasm")], { encoding: "utf8" });
+  assert.notEqual(spread.status, 0, "a spread call cannot bypass generic trait specialization");
+  assert.match(spread.stderr, /E_WASM_TRAIT_TYPE_EVIDENCE:.*spread call/);
 } finally {
   await rm(output, { recursive: true, force: true });
 }

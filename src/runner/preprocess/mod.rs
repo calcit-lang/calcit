@@ -6157,6 +6157,63 @@ fn pick_callable_from_method_entry(
   }
 }
 
+/// Select a direct target for a trait call whose receiver type is proven at a
+/// static backend call site. The trait identity, not only the method name, is
+/// part of the dispatch evidence.
+pub(crate) fn resolve_static_trait_callable(
+  trait_expr: &Calcit,
+  method_name: &str,
+  receiver_type: &CalcitTypeAnnotation,
+  file_ns: &str,
+) -> Result<Calcit, String> {
+  let trait_def = match trait_expr {
+    Calcit::Trait(definition) => definition.to_owned(),
+    Calcit::Import(import) => match resolve_program_value_for_preprocess(&import.ns, &import.def, import.def_id) {
+      Some(Calcit::Trait(definition)) => definition,
+      _ => return Err(format!("trait `{}/{}` is not a resolved trait definition", import.ns, import.def)),
+    },
+    _ => return Err("trait call requires a statically resolved trait definition".into()),
+  };
+  if !trait_def.has_method(method_name) {
+    return Err(format!("trait {} does not define .{method_name}", trait_def.origin_label()));
+  }
+  let impls = get_impls_from_type(receiver_type).ok_or_else(|| {
+    format!(
+      "no static implementations are available for receiver `{}`",
+      receiver_type.describe()
+    )
+  })?;
+  let matching = impls.iter().filter(|imp| imp.implements_trait(&trait_def)).collect::<Vec<_>>();
+  let selected = match matching.as_slice() {
+    [selected] => *selected,
+    [] => {
+      return Err(format!(
+        "no implementation of {} is available for `{}`",
+        trait_def.origin_label(),
+        receiver_type.describe()
+      ));
+    }
+    _ => {
+      return Err(format!(
+        "multiple implementations of {} are available for `{}`",
+        trait_def.origin_label(),
+        receiver_type.describe()
+      ));
+    }
+  };
+  let entry = selected
+    .get(method_name)
+    .ok_or_else(|| format!("implementation of {} has no .{method_name} target", trait_def.origin_label()))?;
+  pick_callable_from_method_entry(entry, selected, receiver_type, method_name, file_ns, &CallStackList::default())
+    .map_err(|error| error.to_string())?
+    .ok_or_else(|| {
+      format!(
+        "implementation of {} .{method_name} is not a static callable",
+        trait_def.origin_label()
+      )
+    })
+}
+
 /// Derive the lowercase internal `&scope:name` scope from a nominal receiver.
 fn nominal_callable_scope_name(receiver_type: &CalcitTypeAnnotation, target_ns: &str) -> Option<String> {
   let raw_name = match receiver_type {
@@ -7256,6 +7313,9 @@ fn collect_trait_method_names(traits: &[Arc<CalcitTrait>]) -> Vec<String> {
 
 fn core_impl_list_symbol_from_type_annotation(type_value: &CalcitTypeAnnotation) -> Option<&'static str> {
   match type_value {
+    CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Bool | CalcitTypeAnnotation::Tag | CalcitTypeAnnotation::Symbol => {
+      Some("&core-text-scalar-impls")
+    }
     CalcitTypeAnnotation::List(_) => Some("&core-list-impls"),
     CalcitTypeAnnotation::String => Some("&core-string-impls"),
     CalcitTypeAnnotation::Map(_, _) => Some("&core-map-impls"),
@@ -12552,6 +12612,27 @@ mod tests {
     .expect_err("strict dispatch must reject duplicate impl attachments");
     assert_eq!(error.code(), Some("E_DUPLICATE_TRAIT_IMPL"));
     assert!(error.msg.contains("app.shared/Show"), "error: {error}");
+  }
+
+  #[test]
+  fn wasm_static_trait_resolution_rejects_duplicate_nominal_implementations() {
+    let _guard = lock_preprocess_test_state();
+    let show = source_trait("app.shared", "Show", "render");
+    let make_impl = |name: &str| {
+      Arc::new(CalcitImpl {
+        name: EdnTag::new(name),
+        origin: Some(show.clone()),
+        fields: Arc::new(vec![EdnTag::new("render")]),
+        values: Arc::new(vec![Calcit::Nil]),
+      })
+    };
+    let mut nominal = CalcitStructDef::from_fields(EdnTag::new("Card"), vec![]);
+    nominal.impls = vec![make_impl("FirstShow"), make_impl("SecondShow")];
+    let receiver_type = CalcitTypeAnnotation::StructValue(Arc::new(nominal));
+
+    let error = resolve_static_trait_callable(&Calcit::Trait((*show).clone()), "render", &receiver_type, "tests.trait-origin")
+      .expect_err("WASM must not choose between duplicate implementations");
+    assert!(error.contains("multiple implementations of app.shared/Show"), "error: {error}");
   }
 
   #[test]

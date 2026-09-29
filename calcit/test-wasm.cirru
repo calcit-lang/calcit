@@ -20,9 +20,28 @@
         :code $ quote $ ns test-wasm.helper
     'test-wasm.main $ %{} 'FileEntry
       :defs $ {}
+        'MeasuredPoint $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def MeasuredPoint (impl-traits PointValue PointScoreImpl)
+          :examples $ []
+          :schema $ :: 'StructDef
         'Point $ %{} 'CodeEntry
           :doc "|Struct definition (via legacy defrecord) for WASM test"
           :code $ quote $ defstruct Point (:x 'Number) (:y 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'PointScore $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait PointScore
+            .score $ :: 'Fn $ {}
+              :args $ [] 'test-wasm.main/PointValue
+              :return 'Number
+          :examples $ []
+          :schema $ :: 'Trait
+        'PointScoreImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl PointScoreImpl PointScore (.score point:score)
+          :examples $ []
+          :schema $ :: 'Impl
+        'PointValue $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct PointValue (:value 'Number)
           :examples $ []
           :schema $ :: 'StructDef
         'add-two $ %{} 'CodeEntry (:doc "|Simple addition")
@@ -81,6 +100,25 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'point:generic-score $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn point:generic-score (x) (x .score)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'T
+            :generics $ [] 'T
+            :where $ {} $ 'T 'PointScore
+        'point:score $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn point:score (self) (:value self)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'test-wasm.main/PointValue
+        'point:score-through-helper $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn point:score-through-helper (x) (point:generic-score x)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'T
+            :generics $ [] 'T
+            :where $ {} $ 'T 'PointScore
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export reload! ()
           :examples $ []
@@ -276,6 +314,19 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
+        'test-custom-trait-score $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-custom-trait-score (x)
+            if
+              &=
+                point:score-through-helper $ %{} MeasuredPoint $ :value x
+                , x
+              , 1 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |selects-nominal-trait)
+            :code $ quote $ assert= 1 (test-custom-trait-score 42)
+            :tags $ #{} :core :wasm
         'test-display-by-bin $ %{} 'CodeEntry (:doc "|17 in binary = 0b10001, length 7")
           :code $ quote $ defwasm-export test-display-by-bin ()
             &str:count $ &number:display-by 17 2
@@ -1575,6 +1626,32 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-to-string-number $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-to-string-number (x)
+            if
+              &= (to-string x) |42
+              , 1 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |specializes-runtime-number)
+            :code $ quote $ assert= 1 (test-to-string-number 42)
+            :tags $ #{} :core :wasm
+        'test-to-string-scalars $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-to-string-scalars ()
+            if
+              and
+                &= (to-string nil) |
+                &= (to-string true) |true
+                &= (to-string |hello) |hello
+                &= (to-string :ready) |ready
+              , 1 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-scalar-text)
+            :code $ quote $ assert= 1 (test-to-string-scalars)
+            :tags $ #{} :core :wasm
         'test-turn-string-bool $ %{} 'CodeEntry (:doc "|验证 Bool 转文本在 WASM 与 native 中一致。")
           :code $ quote $ defwasm-export test-turn-string-bool ()
             &let (yes true)

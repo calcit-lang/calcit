@@ -90,10 +90,10 @@ command -v wasmtime >/dev/null
 cargo run --bin calcit -- --compat-types --check-only "$FIXTURE"
 cargo build --features "$HARNESS_FEATURE" --bin "$HARNESS_BIN_NAME" --target "$TARGET"
 
-WASMTIME_NEW_CLI=0 wasmtime run \
+wasmtime run \
   --dir "$PWD/calcit::/workspace" \
   "$WASM_BIN" \
-  -- --check-only "/workspace/$(basename "$FIXTURE")"
+  --check-only "/workspace/$(basename "$FIXTURE")"
 
 # The generated command module keeps the Preview 1 bridge internal and starts
 # through the conventional no-argument `_start` export.
@@ -119,6 +119,19 @@ grep -Fxq "WASI-stderr: 42" "$COMMAND_STDERR"
 [ "$(wc -l <"$COMMAND_STDERR")" -eq 1 ]
 wasmtime run --env A=x "$COMMAND_OUT/program.wasm" >"$COMMAND_MISSING_STDOUT" 2>/dev/null
 grep -Fxq "WASI-env: missing" "$COMMAND_MISSING_STDOUT"
+
+# Exercise generic trait lowering through the current WASI component boundary.
+trait_fixture="$WASI_FS_HOST_DIR/trait-to-string.cirru"
+trait_output="$WASI_FS_HOST_DIR/trait-component"
+cp calcit/add.cirru "$trait_fixture"
+"$CALCIT_BIN" "$trait_fixture" edit def app.main/main! --overwrite --input-format cirru --code \
+  'quote $ defn main! () (if (&= (to-string 42) |42) (println |WASI-trait-to-string:-ok) (quit! 1))'
+"$CALCIT_BIN" "$trait_fixture" edit schema app.main/main! --input-format cirru --code \
+  "quote \$ :: 'Fn \$ {} (:return 'Unit) (:args \$ [])"
+"$CALCIT_BIN" wasi --boundary component "$trait_fixture" --emit-path "$trait_output"
+wasmtime run -W component-model-more-async-builtins=y -W component-model-async-stackful=y \
+  "$trait_output/program.wasm" >"$WASI_FS_HOST_DIR/trait-stdout.txt"
+grep -Fxq 'WASI-trait-to-string:-ok' "$WASI_FS_HOST_DIR/trait-stdout.txt"
 
 native_exit_status=0
 "$CALCIT_BIN" --init-fn app.main/exit-7! "$COMMAND_FIXTURE" >/dev/null 2>&1 || native_exit_status=$?
