@@ -140,6 +140,10 @@ do
 | `join-str/.join-str: (List<T>, String) -> String`，逐项格式化 | **已引入** `join-string/.join-string` | 保留 List<T>、原有显示规则和空 List 结果；旧名暂留兼容，不与返回 List 的 `intersperse` 混淆 |
 | `vals` / Map `.values: Map<K,V> -> Set<V>`，去重 | **已引入** `distinct-values/.distinct-values`；旧名暂保留兼容 | 新旧都返回去重 Set，顺序不保证；保留重复值的视图是独立语义任务，本轮不复用旧名 |
 | List `mapcat/.bind: (List<T>, (T)->List<U>) -> List<U>` | **已引入** `.flat-map` | 保持顺序、展平一层、callback 次数与具体 U；Fn `.bind` 是不同组合，**暂缓** |
+
+Map/Set 更新均返回新集合，不修改原接收者。Map `.assoc key value` 替换已有 key，`.dissoc key` 忽略不存在的 key；Set `.include item` 去重，`.exclude item` 忽略不存在的元素，二者还接受更多同型元素。空集合遵循相同规则。Set `.add` 与 `.include` 是同一实现；Map `.add ([] key value)` 则先断言 entry 恰为二元 List，非法形状会失败，且无法从 `List<T>` 证明 key/value 分别符合 K/V。因此 Map `.add` 既不是 `.assoc` 的同签名别名，也不使 Map 实现 `Add` trait；`where T: Add` 的泛型调用会拒绝 Map，用户自定义的 `Add` impl 仍按其名义 trait 派发。
+
+0.28.0 保留可精确查询的旧 Map `.add` 作为人工兼容入口，但不再作为 Agent 首选，也不提供自动改写。后续只有在 #1458 完成发布版匹配的真实消费者盘点与迁移、严格类型及 native/JS/受影响 WASM 回归、旧入口诊断和实现解耦后，才可在下一次 breaking release 移除；一次空的 fix 预览不构成移除证据。
 | `.mappend` 在 List/Map/Set/String 上为各自组合，Fn 另有含义 | **已引入** Map `.merge`、Set `.union`；List `.concat` 已存在，但 List `.mappend` 的自动迁移 **暂缓**；String 与 Fn 另行审阅 | 分别验证重复 key 胜出方、去重；List 的包装函数与 `.concat` 参数契约不同，String 现有格式化宽度先核对，不跨 receiver 批量替换 |
 | List/String `get/nth` 返回 Option；List `.find/.find-index` 接受 predicate，`.index-of` 接受元素；String `.find-index` 接受子串 | **保留**各命题，List 位置访问首选 `.get`；具体 List `.nth` 可用显式 `core-list-get-v1` 迁移 | 不把 predicate 查找改成值比较；缺失保持 Option，String 保持标量索引；Enum 异构位置访问 **暂缓** |
 | `.map/.filter/.slice/.reverse/.sort/.keys`、`map-entries` | **保留**明确的现有词义 | `map-entries: Map<K,V> -> List<MapEntry<K,V>>` 保留 K/V；不为缩短名字退回异构 List<Dynamic> |
