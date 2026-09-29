@@ -2459,7 +2459,10 @@ export let format_to_lisp = (x: CalcitValue): string => {
     chunk += ")";
     return chunk;
   } else if (typeof x === "string") {
-    return JSON.stringify("|" + x);
+    if (/^[\x00-\x7f]*$/u.test(x) && !/^[0-9A-Za-z?$.,'-]*$/u.test(x)) {
+      return JSON.stringify("|" + x);
+    }
+    return toString(x, true);
   } else {
     return x.toString();
   }
