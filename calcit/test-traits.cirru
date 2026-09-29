@@ -14,9 +14,13 @@
           :code $ quote $ def Counter
             impl-traits
               defstruct Counter $ :value 'Number
-              , CounterOpsImpl
+              , CounterOpsImpl CounterAddImpl
           :examples $ []
           :schema $ :: 'StructDef
+        'CounterAddImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl CounterAddImpl Add (.add counter:add)
+          :examples $ []
+          :schema $ :: 'Impl
         'CounterOps $ %{} 'CodeEntry (:doc |)
           :code $ quote $ deftrait CounterOps
             .next $ :: 'Fn $ {}
@@ -28,6 +32,12 @@
           :code $ quote $ defimpl CounterOpsImpl CounterOps (.next counter:next)
           :examples $ []
           :schema $ :: 'Impl
+        'counter:add $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn counter:add (self other)
+            %{} Counter $ :value $ + (:value self) (:value other)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'test-traits.external/Counter)
+            :args $ [] 'test-traits.external/Counter 'test-traits.external/Counter
         'counter:next $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn counter:next (self)
             %{} Counter $ :value $ inc (:value self)
@@ -108,6 +118,26 @@
           :code $ quote $ defstruct Person0 (:name 'String)
           :examples $ []
           :schema $ :: 'Struct
+        'add-with-trait $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn add-with-trait (a b) (a .add b)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T 'T
+            :generics $ [] 'T
+            :where $ {} $ 'T 'Add
+          :tests $ []
+            %{} 'TestEntry (:name |dispatches-number-and-string)
+              :code $ quote $ do
+                assert= 3 $ add-with-trait 1 2
+                assert= |ab $ add-with-trait |a |b
+              :tags $ #{} :trait :unit
+            %{} 'TestEntry (:name |dispatches-custom-add)
+              :code $ quote $ let
+                  a $ %{} test-traits.external/Counter $ :value 2
+                  b $ %{} test-traits.external/Counter $ :value 3
+                  summed $ add-with-trait a b
+                assert= 5 $ :value summed
+              :tags $ #{} :trait :unit
         'compare-with-trait $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn compare-with-trait (a b) (a .compare b)
           :examples $ []
@@ -211,8 +241,16 @@
             assert= ([] 1 2)
               .add ([] 1) 2
             ; Legacy Map .add takes one pair, not the Add trait contract.
-            assert= ({} (:a 1) (:b 2))
-              ({} (:a 1)) .add $ [] :b 2
+            assert=
+              {} (:a 1) (:b 2)
+              ({} (:a 1))
+                , .add $ [] :b 2
+            assert= 3 $ add-with-trait 1 2
+            assert= |ab $ add-with-trait |a |b
+            let
+                a $ %{} test-traits.external/Counter $ :value 2
+                b $ %{} test-traits.external/Counter $ :value 3
+              assert= 5 $ :value $ add-with-trait a b
             println "|  Add trait: ✓"
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
