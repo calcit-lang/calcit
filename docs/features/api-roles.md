@@ -282,7 +282,7 @@ calcit query context 'calcit.core/option:unwrap' --format edn
 
 `docs read` 的默认 guidebook 来自已安装的 `~/.config/calcit/docs`，不是当前工作目录的源码，也不会因重编译 CLI 自动更新。找不到新章节时，先用 `docs sections api-roles.md` 核对已安装文档版本，再按已有文档安装流程更新；不要为查新名字再创建查询入口。开发中的 Markdown 可直接用 `docs check-md <path> --snapshot <snapshot>` 验证，模块文档仍用现有 `--module` 参数查询。
 
-`query type` 的 `proven` 表示当前类型能证明该方法的调用契约；`open` 或 `ambiguous` 不是类型安全的肯定结论。方法旁边的 definition path 用于追踪实现。再用 `query def/context` 读取 `:constructor` 或 `:internal` 标签、schema 与示例；需要机器处理时优先用 `--format edn`。项目代码的类型证据可用 `query type-at` 或 `query context` 查看。
+`query type` 的 `proven` 表示当前类型能证明该方法的调用契约；`open` 或 `ambiguous` 不是类型安全的肯定结论。对已由显式 fix 证明为同一实现/签名的别名，查询另给 `preferred` 或 `compatibility` 角色，兼容项可追溯首选名和 fix 规则；未标角色的方法不应被推断为过期。方法旁边的 definition path 用于追踪实现。再用 `query def/context` 读取 `:constructor` 或 `:internal` 标签、schema 与示例；需要机器处理时优先用 `--format edn`。项目代码的类型证据可用 `query type-at` 或 `query context` 查看。
 
 真实项目中，Quamolit 的 `quamolit.gpu-scalar-program/first-slot` 以 `get slots 0` 得到 `Option<BoundScalar>`，再调用 `.unwrap`；Timegrass 的 `app.server/main!` 对 `parse-float raw` 的 `Result<Number,String>` 调用 `.unwrap-or 11009`。这两条路径均可在各自 Snapshot 上用 `query context` 找到，再用 `query type ":: 'Option ..."` 或 `query type ":: 'Result ..."` 检查方法契约。它们说明推荐入口应由返回类型决定，而不是由内部函数名字决定；不要求改变这些项目的源码。
 

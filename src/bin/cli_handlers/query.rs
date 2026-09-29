@@ -163,6 +163,12 @@ struct ContextMethod {
   name: String,
   origin: String,
   status: &'static str,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  role: Option<&'static str>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  preferred_name: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  fix_rule: Option<String>,
   parameter_types: Option<Vec<String>>,
   rest_type: Option<String>,
   return_type: Option<String>,
@@ -181,6 +187,9 @@ fn context_method(
     name: descriptor.name,
     origin: descriptor.origin,
     status: contract.status,
+    role: None,
+    preferred_name: None,
+    fix_rule: None,
     parameter_types: contract
       .arg_types
       .map(|args| args.iter().map(|annotation| annotation.describe()).collect()),
@@ -194,12 +203,37 @@ fn context_method(
   }
 }
 
+fn mark_proven_method_roles(receiver: &CalcitTypeAnnotation, methods: &mut [ContextMethod]) {
+  for alias in super::fix::proven_method_aliases(receiver) {
+    if let Some(preferred) = methods.iter_mut().find(|method| method.name == alias.new_method) {
+      preferred.role = Some("preferred");
+    }
+    if let Some(legacy) = methods.iter_mut().find(|method| method.name == alias.old_method) {
+      legacy.role = Some("compatibility");
+      legacy.preferred_name = Some(alias.new_method.to_owned());
+      legacy.fix_rule = Some(alias.fix_rule.to_owned());
+    }
+  }
+}
+
 fn method_contract_fingerprint(methods: &Option<Vec<ContextMethod>>) -> Result<String, String> {
   serde_json::to_string(methods).map_err(|error| format!("Failed to encode method contracts for revision: {error}"))
 }
 
 fn render_context_method(method: &ContextMethod) -> String {
   let mut rendered = format!("- `{}` (`{}`): {}", method.name, method.origin, method.status);
+  match method.role {
+    Some("preferred") => rendered.push_str("; preferred"),
+    Some("compatibility") => {
+      if let Some(preferred) = &method.preferred_name {
+        rendered.push_str(&format!("; compatibility: use `{preferred}`"));
+      }
+      if let Some(rule) = &method.fix_rule {
+        rendered.push_str(&format!("; `calcit fix --rule {rule}`"));
+      }
+    }
+    _ => {}
+  }
   if !method.generics.is_empty() {
     let generics = method.generics.iter().map(|name| format!("'{name}")).collect::<Vec<_>>();
     rendered.push_str(&format!(" for<{}>", generics.join(", ")));
@@ -1379,6 +1413,76 @@ mod type_query_tests {
   }
 
   #[test]
+  fn method_query_marks_only_proven_fix_aliases_as_compatibility() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let snapshot = load_core_snapshot().expect("core snapshot should load");
+    prepare_program_for_type_query_on_cli_stack(snapshot);
+
+    for (receiver, old_name, preferred_name, rule) in [
+      (
+        parse_type_annotation_query(":: 'List 'Number").expect("list type"),
+        ".contains?",
+        ".contains-index?",
+        "core-predicate-method-v1",
+      ),
+      (
+        parse_type_annotation_query(":: 'Map 'Tag 'Number").expect("map type"),
+        ".contains?",
+        ".contains-key?",
+        "core-predicate-method-v1",
+      ),
+      (
+        parse_type_annotation_query(":: 'Set 'Tag").expect("set type"),
+        ".add",
+        ".include",
+        "core-set-include-v1",
+      ),
+    ] {
+      let mut methods = runner::preprocess::static_method_contracts(receiver.as_ref())
+        .expect("method contracts")
+        .into_iter()
+        .map(|(method, contract)| context_method(method, contract))
+        .collect::<Vec<_>>();
+      mark_proven_method_roles(receiver.as_ref(), &mut methods);
+      let old = methods.iter().find(|method| method.name == old_name).expect("legacy alias");
+      assert_eq!(old.role, Some("compatibility"));
+      assert_eq!(old.preferred_name.as_deref(), Some(preferred_name));
+      assert_eq!(old.fix_rule.as_deref(), Some(rule));
+      assert!(render_context_method(old).contains(&format!("use `{preferred_name}`")));
+      let structured = serde_json::to_value(old).expect("method should serialize");
+      assert_eq!(structured["role"], "compatibility");
+      assert_eq!(structured["preferred_name"], preferred_name);
+      assert_eq!(structured["fix_rule"], rule);
+      let edn = format_json_value_as_edn(&structured).expect("method should render as Cirru EDN");
+      assert!(edn.contains(":preferred-name"));
+      assert!(edn.contains(":fix-rule"));
+      let preferred = methods
+        .iter()
+        .find(|method| method.name == preferred_name)
+        .expect("preferred method");
+      assert_eq!(preferred.role, Some("preferred"));
+      assert!(preferred.preferred_name.is_none());
+    }
+
+    let map = parse_type_annotation_query(":: 'Map 'Tag 'Number").expect("map type");
+    let mut methods = runner::preprocess::static_method_contracts(map.as_ref())
+      .expect("map method contracts")
+      .into_iter()
+      .map(|(method, contract)| context_method(method, contract))
+      .collect::<Vec<_>>();
+    mark_proven_method_roles(map.as_ref(), &mut methods);
+    for unchanged in [".add", ".assoc", ".dissoc"] {
+      let method = methods.iter().find(|method| method.name == unchanged).expect("map method");
+      assert!(method.role.is_none(), "{unchanged} has no proven equivalent alias fix");
+    }
+    let open = super::super::fix::proven_method_aliases(&CalcitTypeAnnotation::Dynamic);
+    assert!(
+      open.is_empty(),
+      "open receivers cannot inherit a preferred method by spelling alone"
+    );
+  }
+
+  #[test]
   fn method_query_reuses_bound_collection_contracts_and_keeps_open_schemas_explicit() {
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let snapshot = load_core_snapshot().expect("core snapshot should load");
@@ -1953,10 +2057,12 @@ fn handle_type(input_path: &str, opts: &QueryTypeCommand) -> Result<(), String> 
   let (annotation, source) = resolve_type_query_target(&snapshot, &opts.target)?;
   let rendered_type = format_type_query_annotation(annotation.as_ref())?;
   let methods = runner::preprocess::static_method_contracts(annotation.as_ref()).map(|items| {
-    items
+    let mut methods = items
       .into_iter()
       .map(|(method, contract)| context_method(method, contract))
-      .collect::<Vec<_>>()
+      .collect::<Vec<_>>();
+    mark_proven_method_roles(annotation.as_ref(), &mut methods);
+    methods
   });
   let method_fingerprint = method_contract_fingerprint(&methods)?;
   let source_revision = definition_type_query_target(&opts.target)
@@ -2685,10 +2791,12 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
   };
   let methods = inferred.as_ref().and_then(|annotation| {
     runner::preprocess::static_method_contracts(annotation.as_ref()).map(|items| {
-      items
+      let mut methods = items
         .into_iter()
         .map(|(method, contract)| context_method(method, contract))
-        .collect::<Vec<_>>()
+        .collect::<Vec<_>>();
+      mark_proven_method_roles(annotation.as_ref(), &mut methods);
+      methods
     })
   });
   let method_fingerprint = method_contract_fingerprint(&methods)?;
@@ -3125,11 +3233,12 @@ fn context_methods(annotation: &CalcitTypeAnnotation, budget: usize) -> Option<C
   let methods = runner::preprocess::static_method_contracts(annotation)?;
   let total = methods.len();
   let limit = (budget / 240).clamp(4, 80);
-  let items = methods
+  let mut items = methods
     .into_iter()
     .take(limit)
     .map(|(method, contract)| context_method(method, contract))
-    .collect();
+    .collect::<Vec<_>>();
+  mark_proven_method_roles(annotation, &mut items);
   Some(ContextCollection::new(total, items))
 }
 

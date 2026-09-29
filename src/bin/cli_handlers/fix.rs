@@ -4110,6 +4110,59 @@ const SET_UNION_ALIAS: MethodAliasRule = MethodAliasRule {
   message: "Use `.union` for Set combination; both methods resolve to the same core implementation and deduplicate values.",
 };
 
+/// Query and fix share these proven alias contracts; this is not a second API registry.
+const QUERYABLE_METHOD_ALIASES: &[MethodAliasRule] = &[
+  NUMBER_INTEGER_PREDICATE_ALIAS,
+  LIST_CONTAINS_INDEX_ALIAS,
+  STRING_CONTAINS_INDEX_ALIAS,
+  MAP_CONTAINS_KEY_ALIAS,
+  MAP_CONTAINS_VALUE_ALIAS,
+  SET_INCLUDES_ALIAS,
+  SET_INCLUDE_ALIAS,
+  LIST_FOLD_ALIAS,
+  LIST_INTERSPERSE_ALIAS,
+  LIST_FLAT_MAP_ALIAS,
+  LIST_JOIN_STRING_ALIAS,
+  LIST_GET_ALIAS,
+  MAP_DISTINCT_VALUES_ALIAS,
+  MAP_MERGE_ALIAS,
+  SET_UNION_ALIAS,
+];
+
+pub(super) struct ProvenMethodAlias {
+  pub old_method: &'static str,
+  pub new_method: &'static str,
+  pub fix_rule: &'static str,
+}
+
+fn method_alias_contract_is_proven(receiver: &CalcitTypeAnnotation, rule: MethodAliasRule) -> bool {
+  if !rule.receiver.matches(receiver) {
+    return false;
+  }
+  let old = runner::preprocess::static_method_contract(receiver, rule.old_method);
+  let new = runner::preprocess::static_method_contract(receiver, rule.new_method);
+  old.status == "proven"
+    && new.status == "proven"
+    && old.definition.as_deref() == Some(rule.implementation)
+    && old.definition == new.definition
+    && old.arg_types == new.arg_types
+    && old.rest_type == new.rest_type
+    && old.return_type == new.return_type
+}
+
+pub(super) fn proven_method_aliases(receiver: &CalcitTypeAnnotation) -> Vec<ProvenMethodAlias> {
+  QUERYABLE_METHOD_ALIASES
+    .iter()
+    .copied()
+    .filter(|rule| method_alias_contract_is_proven(receiver, *rule))
+    .map(|rule| ProvenMethodAlias {
+      old_method: rule.old_method,
+      new_method: rule.new_method,
+      fix_rule: rule.rule_id,
+    })
+    .collect()
+}
+
 /// Only rewrite complete method calls. First-class method values are not equivalent.
 fn collect_method_alias_calls(
   node: &Cirru,
@@ -4223,19 +4276,9 @@ fn plan_core_method_alias_fixes(
       }) {
         continue;
       }
-      let proven_same_impl = resolved.as_ref().is_some_and(|annotation| {
-        if !rule.receiver.matches(annotation.as_ref()) {
-          return false;
-        }
-        let old = runner::preprocess::static_method_contract(annotation.as_ref(), rule.old_method);
-        let new = runner::preprocess::static_method_contract(annotation.as_ref(), rule.new_method);
-        old.status == "proven"
-          && new.status == "proven"
-          && old.definition.as_deref() == Some(rule.implementation)
-          && old.definition == new.definition
-          && old.arg_types == new.arg_types
-          && old.return_type == new.return_type
-      });
+      let proven_same_impl = resolved
+        .as_ref()
+        .is_some_and(|annotation| method_alias_contract_is_proven(annotation.as_ref(), rule));
       let machine_applicable = proven_same_impl && method_source_context_is_stable(&entry.code, &call_path);
       let original_node = navigate_to_path(&entry.code, &method_path)?;
       let replacement_node = Cirru::leaf(rule.new_method);
