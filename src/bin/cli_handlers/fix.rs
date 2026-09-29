@@ -41,6 +41,8 @@ const CORE_NON_NIL_PREDICATE_RULE: &str = "core-non-nil-predicate-v1";
 const CORE_NON_NIL_PREDICATE_DIAGNOSTIC: &str = "FIX_CORE_NON_NIL_PREDICATE";
 const CORE_INTEGER_PREDICATE_RULE: &str = "core-integer-predicate-v1";
 const CORE_INTEGER_PREDICATE_DIAGNOSTIC: &str = "FIX_CORE_INTEGER_PREDICATE";
+const CORE_PREDICATE_METHOD_RULE: &str = "core-predicate-method-v1";
+const CORE_PREDICATE_METHOD_DIAGNOSTIC: &str = "FIX_CORE_PREDICATE_METHOD";
 const CORE_LIST_ADD_RULE: &str = "core-list-add-v1";
 const CORE_LIST_ADD_DIAGNOSTIC: &str = "FIX_CORE_LIST_ADD";
 const CORE_COLLECTION_LEN_RULE: &str = "core-collection-len-v1";
@@ -613,6 +615,22 @@ pub(crate) fn handle_fix_command(
       )?);
     }
   }
+  if selected_rules.contains(&CORE_PREDICATE_METHOD_RULE) {
+    for rule in [
+      LIST_CONTAINS_INDEX_ALIAS,
+      STRING_CONTAINS_INDEX_ALIAS,
+      MAP_CONTAINS_KEY_ALIAS,
+      MAP_CONTAINS_VALUE_ALIAS,
+      SET_INCLUDES_ALIAS,
+    ] {
+      suggestions.extend(plan_core_method_alias_fixes(
+        &source_snapshot,
+        snapshot_file,
+        &selected_definitions,
+        rule,
+      )?);
+    }
+  }
   let mut constructor_kinds = Vec::new();
   if selected_rules.contains(&NAMED_ENUM_CONSTRUCTOR_RULE) {
     constructor_kinds.push(NominalKind::Enum);
@@ -1004,6 +1022,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CORE_RESULT_METHOD_RULE
         | CORE_NON_NIL_PREDICATE_RULE
         | CORE_INTEGER_PREDICATE_RULE
+        | CORE_PREDICATE_METHOD_RULE
         | CORE_LIST_ADD_RULE
         | CORE_COLLECTION_LEN_RULE
         | CORE_LIST_FOLD_RULE
@@ -1022,7 +1041,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     )
   {
     return Err(format!(
-      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
     ));
   }
   if let Some(rule @ (TAG_MATCH_RULE | REQUIRED_STRUCT_FIELD_RULE)) = options.rule.as_deref() {
@@ -1050,6 +1069,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_RESULT_METHOD_RULE
         | CORE_NON_NIL_PREDICATE_RULE
         | CORE_INTEGER_PREDICATE_RULE
+        | CORE_PREDICATE_METHOD_RULE
         | CORE_LIST_ADD_RULE
         | CORE_COLLECTION_LEN_RULE
         | CORE_LIST_FOLD_RULE
@@ -1069,6 +1089,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_RESULT_METHOD_RULE => CORE_RESULT_METHOD_RULE,
         CORE_NON_NIL_PREDICATE_RULE => CORE_NON_NIL_PREDICATE_RULE,
         CORE_INTEGER_PREDICATE_RULE => CORE_INTEGER_PREDICATE_RULE,
+        CORE_PREDICATE_METHOD_RULE => CORE_PREDICATE_METHOD_RULE,
         CORE_LIST_ADD_RULE => CORE_LIST_ADD_RULE,
         CORE_COLLECTION_LEN_RULE => CORE_COLLECTION_LEN_RULE,
         CORE_LIST_FOLD_RULE => CORE_LIST_FOLD_RULE,
@@ -1160,6 +1181,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_INTEGER_PREDICATE_DIAGNOSTIC,
       evidence_source: "reader-resolved-builtin-proc-and-proven-number-method",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    CORE_PREDICATE_METHOD_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: CORE_PREDICATE_METHOD_DIAGNOSTIC,
+      evidence_source: "proven-builtin-receiver-and-identical-method-implementation",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -3841,6 +3869,7 @@ enum MethodReceiverKind {
   List,
   Map,
   Set,
+  String,
   Number,
 }
 
@@ -3850,6 +3879,7 @@ impl MethodReceiverKind {
       Self::List => matches!(annotation, CalcitTypeAnnotation::List(_)),
       Self::Map => matches!(annotation, CalcitTypeAnnotation::Map(_, _)),
       Self::Set => matches!(annotation, CalcitTypeAnnotation::Set(_)),
+      Self::String => matches!(annotation, CalcitTypeAnnotation::String),
       Self::Number => matches!(annotation, CalcitTypeAnnotation::Number),
     }
   }
@@ -3859,6 +3889,7 @@ impl MethodReceiverKind {
       Self::List => "List",
       Self::Map => "Map",
       Self::Set => "Set",
+      Self::String => "String",
       Self::Number => "Number",
     }
   }
@@ -3887,6 +3918,66 @@ const NUMBER_INTEGER_PREDICATE_ALIAS: MethodAliasRule = MethodAliasRule {
   call_size: 2,
   variadic: false,
   message: "Use `.integer?` for Number; both methods resolve to the same core implementation and return Bool.",
+};
+
+const LIST_CONTAINS_INDEX_ALIAS: MethodAliasRule = MethodAliasRule {
+  rule_id: CORE_PREDICATE_METHOD_RULE,
+  diagnostic_code: CORE_PREDICATE_METHOD_DIAGNOSTIC,
+  receiver: MethodReceiverKind::List,
+  old_method: ".contains?",
+  new_method: ".contains-index?",
+  implementation: "calcit.core/&list:contains?",
+  call_size: 3,
+  variadic: false,
+  message: "Use `.contains-index?` for a List position; `.includes?` checks an element instead.",
+};
+
+const STRING_CONTAINS_INDEX_ALIAS: MethodAliasRule = MethodAliasRule {
+  rule_id: CORE_PREDICATE_METHOD_RULE,
+  diagnostic_code: CORE_PREDICATE_METHOD_DIAGNOSTIC,
+  receiver: MethodReceiverKind::String,
+  old_method: ".contains?",
+  new_method: ".contains-index?",
+  implementation: "calcit.core/&str:contains?",
+  call_size: 3,
+  variadic: false,
+  message: "Use `.contains-index?` for a String scalar position; `.includes?` checks a substring instead.",
+};
+
+const MAP_CONTAINS_KEY_ALIAS: MethodAliasRule = MethodAliasRule {
+  rule_id: CORE_PREDICATE_METHOD_RULE,
+  diagnostic_code: CORE_PREDICATE_METHOD_DIAGNOSTIC,
+  receiver: MethodReceiverKind::Map,
+  old_method: ".contains?",
+  new_method: ".contains-key?",
+  implementation: "calcit.core/&map:contains?",
+  call_size: 3,
+  variadic: false,
+  message: "Use `.contains-key?` for Map keys; this does not check values.",
+};
+
+const MAP_CONTAINS_VALUE_ALIAS: MethodAliasRule = MethodAliasRule {
+  rule_id: CORE_PREDICATE_METHOD_RULE,
+  diagnostic_code: CORE_PREDICATE_METHOD_DIAGNOSTIC,
+  receiver: MethodReceiverKind::Map,
+  old_method: ".includes?",
+  new_method: ".contains-value?",
+  implementation: "calcit.core/&map:includes?",
+  call_size: 3,
+  variadic: false,
+  message: "Use `.contains-value?` for Map values; this does not check keys.",
+};
+
+const SET_INCLUDES_ALIAS: MethodAliasRule = MethodAliasRule {
+  rule_id: CORE_PREDICATE_METHOD_RULE,
+  diagnostic_code: CORE_PREDICATE_METHOD_DIAGNOSTIC,
+  receiver: MethodReceiverKind::Set,
+  old_method: ".contains?",
+  new_method: ".includes?",
+  implementation: "calcit.core/&set:includes?",
+  call_size: 3,
+  variadic: false,
+  message: "Use `.includes?` for Set element membership; both methods have the same implementation.",
 };
 
 const LIST_FOLD_ALIAS: MethodAliasRule = MethodAliasRule {
