@@ -5149,9 +5149,9 @@ fn check_struct_method_args(
 
   let fn_info: Option<&CalcitFn> = match method_entry {
     Calcit::Fn { info, .. } => Some(info.as_ref()),
-    Calcit::Proc(_proc) => {
-      // Procs will be inlined and checked by check_proc_arg_types later
-      // Skip checking here to avoid duplicate warnings
+    Calcit::Proc(proc) => {
+      // Inlined methods return before the lowered Proc call is preprocessed.
+      check_proc_arg_types(proc, args, scope_types, file_ns, def_name, head.get_location(), check_warnings);
       return;
     }
     _ => None,

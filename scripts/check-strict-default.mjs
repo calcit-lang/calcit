@@ -96,6 +96,21 @@ if (!openConcat.stdout.split("\n").some((line) => line.trim().endsWith(": 3"))) 
   throw new Error(`strict open-container concat returned an unexpected value:\n${openConcat.stdout}`);
 }
 
+const validMapMethod = run(["eval", "let ((m ({} (:a 1)))) (m .assoc :b 2)"]);
+expectStatus(validMapMethod, 0, "typed Map .assoc accepts a matching value");
+
+const invalidDirectMapAssoc = run(["eval", "&map:assoc ({} (:a 1)) :b |oops"]);
+expectStatus(invalidDirectMapAssoc, 1, "direct Map association rejects a mismatched value");
+if (!invalidDirectMapAssoc.stderr.includes("W_PROC_ARG_TYPE_MISMATCH")) {
+  throw new Error(`direct Map association lost its type diagnostic:\n${invalidDirectMapAssoc.stderr}`);
+}
+
+const invalidMapMethod = run(["eval", "let ((m ({} (:a 1)))) (m .assoc :b |oops)"]);
+expectStatus(invalidMapMethod, 1, "typed Map .assoc rejects a mismatched value");
+if (!invalidMapMethod.stderr.includes("W_PROC_ARG_TYPE_MISMATCH")) {
+  throw new Error(`typed Map .assoc lost its lowered Proc type diagnostic:\n${invalidMapMethod.stderr}`);
+}
+
 console.log(
-  "Strict-default CLI smoke passed: valid, failure, compatibility, conflict, eval, core Option/Result methods, and open-container merge/concat",
+  "Strict-default CLI smoke passed: valid, failure, compatibility, conflict, eval, core Option/Result methods, open-container merge/concat, and Map method types",
 );
