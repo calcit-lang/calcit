@@ -6,7 +6,7 @@
 
 ## 处理
 
-预处理在泛型接收者的唯一 trait bound 下，将方法调用 lowering 为保留来源的具名 trait 调用。对于来自源码定义的 trait，调用引用原定义，避免重新构造 trait 值而丢失运行时身份。多个同名 trait bound 仍按现有歧义规则报错；具体接收者的裸冲突调用仍要求显式 `&trait-call`。本次不将旧 Struct `.contains?` 批量迁移到 `.contains-field?`，也不扩大 `core-predicate-method-v1` 的自动改写范围。
+预处理在泛型接收者的唯一 trait bound 且具备稳定身份时，将方法调用 lowering 为保留来源的具名 trait 调用。对于来自源码定义的 trait，调用引用原定义，避免重新构造 trait 值而丢失运行时身份；已有运行时 ID 的 trait 可保留该 ID。既无源码引用又无运行时 ID 的占位值不参与这种 lowering。多个同名 trait bound 仍按现有歧义规则报错；具体接收者的裸冲突调用仍要求显式 `&trait-call`。本次不将旧 Struct `.contains?` 批量迁移到 `.contains-field?`，也不扩大 `core-predicate-method-v1` 的自动改写范围。
 
 ## 验证
 

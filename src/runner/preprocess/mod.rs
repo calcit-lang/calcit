@@ -6032,7 +6032,8 @@ fn qualify_trait_bound_method_call(
         def_id: Some(program::ensure_def_id(ns, def).0),
       })
     }
-    None => Calcit::Trait((*candidate.trait_def).clone()),
+    None if candidate.trait_def.runtime_id.is_some() => Calcit::Trait((*candidate.trait_def).clone()),
+    None => return None,
   };
 
   // The where-bound determines the method origin; receiver-only runtime lookup can pick a different trait.
@@ -12454,6 +12455,44 @@ mod tests {
     assert!(matches!(trait_import.info.as_ref(), ImportInfo::NsReferDef { .. }));
     assert_eq!(items.get(2), Some(&Calcit::Tag(EdnTag::new("contains?"))));
     assert_eq!(items.get(3), Some(&receiver));
+  }
+
+  #[test]
+  fn trait_bound_method_requires_stable_trait_identity() {
+    let runtime_trait = Arc::new(CalcitTrait::new_runtime(
+      EdnTag::new("Contains"),
+      vec![EdnTag::new("contains?")],
+      vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+    ));
+    let runtime_type = Arc::new(CalcitTypeAnnotation::Trait(runtime_trait.clone()));
+    let runtime_head = Calcit::Method(Arc::from("contains?"), calcit::MethodKind::Invoke(runtime_type.clone()));
+    let runtime_args = CalcitList::from(&[method_test_receiver(runtime_type)][..]);
+    let qualified = qualify_trait_bound_method_call(&runtime_head, &runtime_args, &ScopeTypes::new(), "app.consumer", "has-value?")
+      .expect("runtime identity can be cloned safely");
+    let Calcit::List(items) = qualified else {
+      panic!("expected qualified call")
+    };
+    assert!(matches!(items.get(1), Some(Calcit::Trait(trait_def)) if trait_def.runtime_id == runtime_trait.runtime_id));
+
+    let placeholder = Arc::new(CalcitTrait::new(
+      EdnTag::new("Contains"),
+      vec![EdnTag::new("contains?")],
+      vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+    ));
+    let placeholder_type = Arc::new(CalcitTypeAnnotation::Trait(placeholder));
+    let placeholder_head = Calcit::Method(Arc::from("contains?"), calcit::MethodKind::Invoke(placeholder_type.clone()));
+    let placeholder_args = CalcitList::from(&[method_test_receiver(placeholder_type)][..]);
+    assert!(
+      qualify_trait_bound_method_call(
+        &placeholder_head,
+        &placeholder_args,
+        &ScopeTypes::new(),
+        "app.consumer",
+        "has-value?"
+      )
+      .is_none(),
+      "an identity-free placeholder cannot be embedded as a runtime trait"
+    );
   }
 
   #[test]
