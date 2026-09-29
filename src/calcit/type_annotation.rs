@@ -4595,6 +4595,7 @@ impl CalcitTypeAnnotation {
     result
   }
 
+  /// Evaluate a type proof against staged bindings; callers decide which outcomes commit them.
   fn prove_with_staged_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> TypeProof {
     use TypeBoundaryReason as Boundary;
     use TypeProof::{Mismatch, NeedsBoundary, Proven};
@@ -4630,6 +4631,20 @@ impl CalcitTypeAnnotation {
       (Self::Enum(_, _) | Self::EnumValue(_) | Self::AnonymousEnum, Self::AnonymousEnum) => Proven,
       (actual @ Self::TypeRef(_, _), Self::AnonymousEnum) => {
         if actual.resolve_to_enum().is_some() {
+          Proven
+        } else {
+          NeedsBoundary(Boundary::UnresolvedNominalIdentity)
+        }
+      }
+      (Self::Struct(_, _) | Self::StructValue(_), Self::Custom(expected))
+        if Self::custom_keyword_matches(expected, "struct") || Self::custom_keyword_matches(expected, "record") =>
+      {
+        Proven
+      }
+      (actual @ Self::TypeRef(_, _), Self::Custom(expected))
+        if Self::custom_keyword_matches(expected, "struct") || Self::custom_keyword_matches(expected, "record") =>
+      {
+        if actual.resolve_to_struct().is_some() {
           Proven
         } else {
           NeedsBoundary(Boundary::UnresolvedNominalIdentity)
@@ -6551,6 +6566,9 @@ mod tests {
     assert!(person_def.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("StructDef")));
     assert!(person_value.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("Struct")));
     assert!(!person_value.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("StructDef")));
+    let struct_type = CalcitTypeAnnotation::from_tag_name("Struct");
+    assert!(person_value.prove_with_bindings(&struct_type, &mut TypeBindings::new()).is_proven());
+    assert!(!person_def.prove_with_bindings(&struct_type, &mut TypeBindings::new()).is_proven());
 
     assert!(!result_def.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("Enum")));
     assert!(result_def.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("EnumDef")));

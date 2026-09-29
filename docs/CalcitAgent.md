@@ -557,6 +557,8 @@ List 单元素追加首选 `.append`，List 拼接用 `.concat`。迁移旧 `.ad
 
 持久集合更新首选 Map `.assoc key value` / `.dissoc key` 与 Set `.include item` / `.exclude item`，均返回新集合，不表示原地修改。Set `.add` 的同义调用可显式用 `core-set-include-v1` 预览，仅在具体 Set 接收者和同一 core 实现已证明时自动迁移；Map `.add` 接受二元 entry，不能按词形改成 `.assoc`。目前不新增 Rust 风格 `.insert/.remove`。
 
+Struct 字段存在性使用 `.contains-field? :field` 或 `contains-field? value :field`，参数必须是 Tag，返回 Bool，字段不存在返回 false。此接口在 native、生成 JS 与现有 WASM 子集有相同命题；旧底层 `&struct:contains?` 在 native/JS 还接受 String/Symbol，属于兼容行为，不代表新接口可接受这些输入。当前 `core-predicate-method-v1` 不迁移 Struct；遇到旧 `.contains?`、自定义 `Contains` trait 或反射式字段名时先核对来源与目标支持范围。
+
 List 带初始值的从左到右累加首选 `.fold initial reducer`，空 List 返回初值，累加器类型可不同于元素类型。旧 `.reduce` 方法可显式用 `core-list-fold-v1` 预览和迁移：仅具体 List 的旧、新方法契约都 proven 且指向同一 core 实现时自动改写；前缀 `reduce`、开放接收者和用户方法保留人工审阅。该规则目前不加入版本化 preset，也不自动修改 `:tests` / `:examples`。
 
 List 元素间插入同类型分隔值首选 `.intersperse separator`，结果仍是 List；需要 String 时使用现有 `join-str`，两者不是同义词。旧 `.join` 方法可显式用 `core-list-intersperse-v1` 预览和迁移，仅具体 List 的两种方法契约均 proven 且同指 `calcit.core/intersperse` 时自动改写。前缀 `join`、未知 macro 和附带的 `:tests` / `:examples` 不自动改写；该规则不加入已发布 preset。

@@ -444,7 +444,7 @@
                 assert= false $ includes? methods .write-file
         '&core-struct-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for struct values.")
           :code $ quote $ def &core-struct-impls
-            [] &core-struct-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-struct-impl) (&impl::new Contains internal/&core-contains-struct-impl)
+            [] &core-struct-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-struct-impl) (&impl::new Contains internal/&core-contains-struct-impl) (&impl::new ContainsField internal/&core-contains-field-struct-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -2790,6 +2790,14 @@
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
+        'ContainsField $ %{} 'CodeEntry
+          :doc "|Struct 字段存在性 trait：仅接受 Tag 字段名，返回 Bool；与旧 Contains 的跨类型命题区分。"
+          :code $ quote $ deftrait ContainsField
+            .contains-field? $ :: :fn $ {}
+              :args $ [] 'Struct 'Tag
+              :return 'Bool
+          :examples $ []
+          :schema $ :: 'Trait
         'ContainsIndex $ %{} 'CodeEntry
           :doc "|Enum 位置存在性 trait：索引必须是非负有限整数；与旧 Contains 的宽松范围判断不同。"
           :code $ quote $ deftrait ContainsIndex
@@ -3882,6 +3890,27 @@
                 :args $ [] 'Buffer
             :return $ :: 'Result 'Unit 'StreamConsumeError
           :tags $ #{} :internal
+        'contains-field? $ %{} 'CodeEntry
+          :doc "|检查 Struct 是否声明给定 Tag 字段，返回 Bool；字段不存在返回 false。旧 .contains? 兼容更宽的动态字段名，不构成跨目标类型保证。"
+          :code $ quote $ defn contains-field? (value field)
+            hint-fn $ {}
+              :args $ [] 'Struct 'Tag
+              :return 'Bool
+            &struct:contains? value field
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Struct 'Tag
+          :tests $ [] $ %{} 'TestEntry (:name |checks-tag-field-and-missing-field)
+            :code $ quote $ let
+                Point $ defstruct Point (:x 'Number) (:y 'Number)
+                point $ %{} Point (:x 1) (:y 2)
+              assert-type (point .contains-field? :x) 'Bool
+              assert= true $ point .contains-field? :x
+              assert= true $ contains-field? point :y
+              assert= false $ point .contains-field? :missing
+              assert= true $ &struct:contains? point |x
+              assert= true $ &struct:contains? point 'x
+            :tags $ #{} :core :naming-contract :unit
         'contains-in? $ %{} 'CodeEntry
           :doc "||Check whether every hop in a nested path exists across maps, enums, or lists. Struct fields are intentionally excluded; use direct field access instead."
           :code $ quote $ defn contains-in? (xs path)
@@ -9561,6 +9590,10 @@
                 , false
           :examples $ []
           :schema $ :: 'Dynamic
+        '&core-contains-field-struct-impl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def &core-contains-field-struct-impl
+            &impl::new :&core-contains-field-struct-impl $ :: :contains-field? contains-field?
+          :examples $ []
         '&core-contains-index-enum-impl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-contains-index-enum-impl
             &impl::new :&core-contains-index-enum-impl $ :: :contains-index? contains-index?
