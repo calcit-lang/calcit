@@ -3763,6 +3763,7 @@ fn method_source_context_is_stable(code: &Cirru, call_path: &[usize]) -> bool {
   })
 }
 
+/// Plan List `.add` migrations only when source location and method contracts are proven.
 fn plan_core_list_add_fixes(
   snapshot: &Snapshot,
   snapshot_file: &str,
@@ -4128,6 +4129,7 @@ pub(super) struct ProvenMethodAlias {
   pub fix_rule: &'static str,
 }
 
+/// Require two methods to share a proven implementation and complete call contract.
 fn same_proven_method_contract(receiver: &CalcitTypeAnnotation, old_method: &str, new_method: &str, implementation: &str) -> bool {
   let old = runner::preprocess::static_method_contract(receiver, old_method);
   let new = runner::preprocess::static_method_contract(receiver, new_method);
@@ -4140,14 +4142,17 @@ fn same_proven_method_contract(receiver: &CalcitTypeAnnotation, old_method: &str
     && old.return_type == new.return_type
 }
 
+/// Check a generic alias rule against its receiver family and shared contract.
 fn method_alias_contract_is_proven(receiver: &CalcitTypeAnnotation, rule: MethodAliasRule) -> bool {
   rule.receiver.matches(receiver) && same_proven_method_contract(receiver, rule.old_method, rule.new_method, rule.implementation)
 }
 
+/// Exclude open List element contracts from `.add` recommendations and fixes.
 fn list_add_alias_is_proven(receiver: &CalcitTypeAnnotation) -> bool {
   matches!(receiver, CalcitTypeAnnotation::List(_)) && same_proven_method_contract(receiver, ".add", ".append", "calcit.core/append")
 }
 
+/// Return the expected core count implementation for supported collection types.
 fn collection_count_definition(receiver: &CalcitTypeAnnotation) -> Option<&'static str> {
   match receiver {
     CalcitTypeAnnotation::List(_) => Some("calcit.core/&list:count"),
@@ -4158,10 +4163,12 @@ fn collection_count_definition(receiver: &CalcitTypeAnnotation) -> Option<&'stat
   }
 }
 
+/// Prove `.count` and `.len` equivalent for a supported concrete receiver.
 fn collection_len_alias_is_proven(receiver: &CalcitTypeAnnotation) -> bool {
   collection_count_definition(receiver).is_some_and(|definition| same_proven_method_contract(receiver, ".count", ".len", definition))
 }
 
+/// Expose only alias roles backed by the same proof used by existing fix rules.
 pub(super) fn proven_method_aliases(receiver: &CalcitTypeAnnotation) -> Vec<ProvenMethodAlias> {
   let mut aliases = QUERYABLE_METHOD_ALIASES
     .iter()
@@ -4404,6 +4411,7 @@ fn collect_collection_count_calls(node: &Cirru, path: &mut Vec<usize>, calls: &m
   }
 }
 
+/// Plan `.count` migrations using the receiver-specific count implementation.
 fn plan_core_collection_len_fixes(
   snapshot: &Snapshot,
   snapshot_file: &str,
