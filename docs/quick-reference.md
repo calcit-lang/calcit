@@ -400,8 +400,8 @@ Struct，`get` 可按运行时字段名返回 `Option<Dynamic>`。
 
 ### EDN/Data Operations
 
-- `parse-cirru-edn`, `format-cirru-edn` - EDN serialization
-- `parse-cirru`, `format-cirru` - Cirru syntax
+- String `.parse-cirru-edn` 返回 `Result<Dynamic,String>`；`try-parse-cirru-edn` 是等价的具名 checked 入口；`parse-cirru-edn` 会抛错
+- String `.parse-cirru` 返回 `Result`；`parse-cirru` 会抛错；`format-cirru-edn`、`format-cirru` 用于序列化
 - `&data-to-code` - convert data to code
 - `pr-str` - print to string
 

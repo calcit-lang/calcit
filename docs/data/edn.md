@@ -30,30 +30,25 @@ cat calcit.cirru | calcit cirru parse-edn --file -
 
 内联 EDN 与 `--file` 互斥；命令仍只向 stdout 写出一个 JSON 文档，供只接受 JSON 的工具链消费。Calcit 自有数据与工作流继续以 Cirru EDN 为默认格式。
 
-The runtime APIs are:
+应用代码优先使用 String 的 `.parse-cirru-edn` 方法，得到 `Result<Dynamic,String>`；需要具名函数时，等价的 checked 入口是 `try-parse-cirru-edn text`。原有 `parse-cirru-edn text [type-options]` 会在格式错误时抛错，其可选类型映射只恢复名义身份，并不验证字段与容器元素。
 
-- `parse-cirru-edn text [type-options]`
-- `parse-cirru-edn-as text TypeExpr`
-- `decode-map-as value TypeExpr`
-- `format-cirru-edn value`
-
-`parse-cirru-edn` is the dynamic API: its result is `Dynamic`, and its optional type map only restores nominal identity. Use `parse-cirru-edn-as` when persisted or external data must enter typed application code.
+闭合类型数据使用 `try-parse-cirru-edn-as text TypeExpr` 获取 `Result<T,String>`；`parse-cirru-edn-as` 是会抛错的兼容形式。已求值的开放值可用 `decode-map-as value TypeExpr` 验证。序列化入口是 `format-cirru-edn value`。
 
 ## Recoverable parsing with Result
 
-严格类型代码使用返回 `Result` 的具名解析函数，以便处理格式错误：
+严格类型代码优先使用返回 `Result` 的 String 方法，以便处理格式错误：
 
 ```cirru
 let
-    parsed $ try-parse-cirru-edn |[]
-    json $ try-parse-json |1
+    parsed $ |[] .parse-cirru-edn
+    json $ |1 .parse-json
   assert= true $ parsed .ok?
   assert= true $ json .ok?
 ```
 
-旧式接收者方法包括 `.parse-cirru`、`.parse-cirru-list`、`.parse-cirru-edn` 和 `.parse-json`；新代码优先使用 `try-parse-cirru`、`try-parse-cirru-list`、`try-parse-cirru-edn` 与 `try-parse-json`。解析失败的信息位于 `Result` 的 `:err` 分支。
+`.parse-cirru`、`.parse-cirru-list`、`.parse-cirru-edn` 和 `.parse-json` 都是推荐的 checked 接收者方法；`try-parse-*` 是可按名称查询或作为函数值使用的具名形式，并非另一套首选语义。解析失败的信息位于 `Result` 的 `:err` 分支。旧的 `parse-*`/`json-parse` 抛错入口与 checked 形式不等价，不能直接自动改写调用。
 
-Cirru syntax has a closed result type, while Cirru EDN and JSON remain `Result<Dynamic,String>` because their data shapes are open. Use `parse-cirru-edn-as` or `decode-map-as` after the boundary when application code needs a closed nominal type. The original parser procedures remain available for compatibility and still raise on malformed input.
+Cirru 语法的解析结果是闭合类型；Cirru EDN 和 JSON 的形状开放，因此普通 checked 解析保留 `Result<Dynamic,String>`。业务代码需要闭合名义类型时，在边界使用 `try-parse-cirru-edn-as` 或 `decode-map-as` 验证，不把开放 payload 直接当作已证明类型。
 
 Under the default strict diagnostics, passing that open `Dynamic` result directly to a
 function argument whose contract contains a Struct or Enum is
