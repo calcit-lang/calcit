@@ -1360,6 +1360,7 @@ mod type_query_tests {
         ".eq?",
         ".add",
         ".multiply",
+        ".to-string",
       ]
     );
 

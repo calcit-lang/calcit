@@ -383,6 +383,7 @@
         '&core-number-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for number")
           :code $ quote $ def &core-number-impls
             [] &core-number-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-number-impl) (&impl::new Multiply internal/&core-multiply-number-impl) (&impl::new Compare internal/&core-compare-number-impl)
+              &impl::new ToString $ :: :to-string turn-string
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -426,6 +427,7 @@
           :code $ quote $ def &core-string-impls
             [] &core-string-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-string-impl) (&impl::new Len internal/&core-len-string-impl) (&impl::new Countable internal/&core-countable-string-impl) (&impl::new Contains internal/&core-contains-string-impl) (&impl::new Compare internal/&core-compare-string-impl)
               &impl::new Sliceable $ :: :slice &str:slice
+              &impl::new ToString $ :: :to-string turn-string
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -453,6 +455,14 @@
             &impl::new :&core-struct-methods (:: :count &struct:count) (:: :contains? &struct:contains?) (:: :assoc &struct:assoc) (:: :to-map &struct:to-map)
               :: :empty? $ defn &struct:empty?-impl (x)
                 &= 0 $ &struct:count x
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :internal
+        '&core-text-scalar-impls $ %{} 'CodeEntry
+          :doc "|Nil、Bool、Tag 与 Symbol 的内建实现；与 Unit/CirruQuote 的开放 scalar 列表分离。"
+          :code $ quote $ def &core-text-scalar-impls
+            [] (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl)
+              &impl::new ToString $ :: :to-string turn-string
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -859,6 +869,7 @@
             identity &core-enum-impls
             identity &core-struct-impls
             identity &core-scalar-impls
+            identity &core-text-scalar-impls
             identity &core-ref-impls
             identity Add
             identity Debug
@@ -868,9 +879,10 @@
             identity Multiply
             identity Show
             identity Sliceable
+            identity ToString
             if
               &= (&get-calcit-backend) :js
-              register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :enum &core-enum-impls :struct &core-struct-impls :scalar &core-scalar-impls :ref &core-ref-impls
+              register-calcit-builtin-impls $ &js-object :number &core-number-impls :string &core-string-impls :set &core-set-impls :list &core-list-impls :map &core-map-impls :fn &core-fn-impls :enum &core-enum-impls :struct &core-struct-impls :scalar &core-scalar-impls :ref &core-ref-impls :text-scalar &core-text-scalar-impls
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
@@ -3248,6 +3260,16 @@
           :examples $ []
           :schema $ :: 'Enum
           :tags $ #{} :data
+        'ToString $ %{} 'CodeEntry
+          :doc "|标量转文本的类型契约；与 Show 的用户展示、Debug 的诊断表示不同。仅有明确实现的值支持 .to-string。"
+          :code $ quote $ deftrait ToString
+            .to-string $ :: 'Fn $ {}
+              :args $ [] 'T
+              :generics $ [] 'T
+              :return 'String
+          :examples $ []
+          :schema $ :: 'Trait
+          :tags $ #{} :trait
         '[] $ %{} 'CodeEntry
           :doc "|internal function for creating lists\nSyntax: ([] & elements)\nParams: elements (any, variadic)\nReturns: list\nCreates new list from provided elements"
           :code $ quote &runtime-implementation
@@ -9043,6 +9065,41 @@
               #{} ([] :a 1) ([] :b 2)
               to-pairs $ &{} :a 1 :b 2
             :tags $ #{} :core :unit
+        'to-string $ %{} 'CodeEntry
+          :doc "|将实现 ToString 的值转换为文本。标量转换不等同于 Show 的用户展示或 Debug 的诊断表示；没有实现的集合、名义值与开放 Dynamic 不能直接调用。"
+          :code $ quote $ defn to-string (value) (.to-string value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'T
+            :generics $ [] 'T
+            :where $ {} $ 'T 'ToString
+          :tests $ []
+            %{} 'TestEntry (:name |converts-number-and-string)
+              :code $ quote $ do
+                assert-type (to-string 42) 'String
+                assert= |42 $ to-string 42
+                assert= |hello $ to-string |hello
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |converts-finite-scalars)
+              :code $ quote $ do
+                assert= | $ to-string nil
+                assert= |false $ to-string false
+                assert= |true $ to-string true
+                assert= |ready $ to-string :ready
+                assert= |ready $ to-string $ to-symbol |ready
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |supports-generic-bound)
+              :code $ quote $ let
+                  convert $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'T
+                      :generics $ [] 'T
+                      :where $ {} $ 'T 'ToString
+                      :return 'String
+                    to-string x
+                assert= |42 $ convert 42
+                assert= |ready $ convert :ready
+              :tags $ #{} :core :unit
         'to-symbol $ %{} 'CodeEntry
           :doc "|将 String 转为 Symbol；严格类型调用只接受 String，成功返回 Symbol。旧 turn-symbol 留作内部兼容入口。"
           :code $ quote $ defn to-symbol (source) (turn-symbol source)

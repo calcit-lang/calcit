@@ -67,6 +67,7 @@ const runtimeMetadata = new Set([
   "&core-number-impls",
   "&core-number-methods",
   "&core-scalar-impls",
+  "&core-text-scalar-impls",
   "&core-set-impls",
   "&core-set-methods",
   "&core-string-impls",
