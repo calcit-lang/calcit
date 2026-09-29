@@ -1577,9 +1577,11 @@
             :args $ []
         'test-turn-string-bool $ %{} 'CodeEntry (:doc "|验证 Bool 转文本在 WASM 与 native 中一致。")
           :code $ quote $ defwasm-export test-turn-string-bool ()
-            and
-              = (turn-string true) |true
-              = (turn-string false) |false
+            &let (yes true)
+              &let (no false)
+                and
+                  = (turn-string yes) |true
+                  = (turn-string no) |false
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
@@ -1610,7 +1612,8 @@
             :tags $ #{} :core :wasm
         'test-turn-string-tag $ %{} 'CodeEntry (:doc "|验证 Tag 转文本在 WASM 与 native 中一致。")
           :code $ quote $ defwasm-export test-turn-string-tag ()
-            = (turn-string :wasm-name) |wasm-name
+            &let (name :wasm-name)
+              = (turn-string name) |wasm-name
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
