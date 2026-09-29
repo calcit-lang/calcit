@@ -538,6 +538,12 @@ pub(crate) fn handle_fix_command(
       &selected_definitions,
       CorePredicateRename::Integer,
     )?);
+    suggestions.extend(plan_core_method_alias_fixes(
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+      NUMBER_INTEGER_PREDICATE_ALIAS,
+    )?);
   }
   if selected_rules.contains(&CORE_LIST_ADD_RULE) {
     suggestions.extend(plan_core_list_add_fixes(&source_snapshot, snapshot_file, &selected_definitions)?);
@@ -550,7 +556,7 @@ pub(crate) fn handle_fix_command(
     )?);
   }
   if selected_rules.contains(&CORE_LIST_FOLD_RULE) {
-    suggestions.extend(plan_core_collection_method_alias_fixes(
+    suggestions.extend(plan_core_method_alias_fixes(
       &source_snapshot,
       snapshot_file,
       &selected_definitions,
@@ -558,7 +564,7 @@ pub(crate) fn handle_fix_command(
     )?);
   }
   if selected_rules.contains(&CORE_LIST_INTERSPERSE_RULE) {
-    suggestions.extend(plan_core_collection_method_alias_fixes(
+    suggestions.extend(plan_core_method_alias_fixes(
       &source_snapshot,
       snapshot_file,
       &selected_definitions,
@@ -566,7 +572,7 @@ pub(crate) fn handle_fix_command(
     )?);
   }
   if selected_rules.contains(&CORE_LIST_FLAT_MAP_RULE) {
-    suggestions.extend(plan_core_collection_method_alias_fixes(
+    suggestions.extend(plan_core_method_alias_fixes(
       &source_snapshot,
       snapshot_file,
       &selected_definitions,
@@ -574,7 +580,7 @@ pub(crate) fn handle_fix_command(
     )?);
   }
   if selected_rules.contains(&CORE_LIST_JOIN_STRING_RULE) {
-    suggestions.extend(plan_core_collection_method_alias_fixes(
+    suggestions.extend(plan_core_method_alias_fixes(
       &source_snapshot,
       snapshot_file,
       &selected_definitions,
@@ -582,7 +588,7 @@ pub(crate) fn handle_fix_command(
     )?);
   }
   if selected_rules.contains(&CORE_LIST_GET_RULE) {
-    suggestions.extend(plan_core_collection_method_alias_fixes(
+    suggestions.extend(plan_core_method_alias_fixes(
       &source_snapshot,
       snapshot_file,
       &selected_definitions,
@@ -590,7 +596,7 @@ pub(crate) fn handle_fix_command(
     )?);
   }
   if selected_rules.contains(&CORE_MAP_DISTINCT_VALUES_RULE) {
-    suggestions.extend(plan_core_collection_method_alias_fixes(
+    suggestions.extend(plan_core_method_alias_fixes(
       &source_snapshot,
       snapshot_file,
       &selected_definitions,
@@ -599,7 +605,7 @@ pub(crate) fn handle_fix_command(
   }
   if selected_rules.contains(&CORE_COLLECTION_COMBINE_RULE) {
     for rule in [MAP_MERGE_ALIAS, SET_UNION_ALIAS] {
-      suggestions.extend(plan_core_collection_method_alias_fixes(
+      suggestions.extend(plan_core_method_alias_fixes(
         &source_snapshot,
         snapshot_file,
         &selected_definitions,
@@ -1153,7 +1159,7 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
     CORE_INTEGER_PREDICATE_RULE => FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_INTEGER_PREDICATE_DIAGNOSTIC,
-      evidence_source: "reader-resolved-builtin-proc",
+      evidence_source: "reader-resolved-builtin-proc-and-proven-number-method",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -3831,18 +3837,20 @@ fn plan_core_list_add_fixes(
 }
 
 #[derive(Clone, Copy)]
-enum CollectionReceiverKind {
+enum MethodReceiverKind {
   List,
   Map,
   Set,
+  Number,
 }
 
-impl CollectionReceiverKind {
+impl MethodReceiverKind {
   fn matches(self, annotation: &CalcitTypeAnnotation) -> bool {
     match self {
       Self::List => matches!(annotation, CalcitTypeAnnotation::List(_)),
       Self::Map => matches!(annotation, CalcitTypeAnnotation::Map(_, _)),
       Self::Set => matches!(annotation, CalcitTypeAnnotation::Set(_)),
+      Self::Number => matches!(annotation, CalcitTypeAnnotation::Number),
     }
   }
 
@@ -3851,15 +3859,16 @@ impl CollectionReceiverKind {
       Self::List => "List",
       Self::Map => "Map",
       Self::Set => "Set",
+      Self::Number => "Number",
     }
   }
 }
 
 #[derive(Clone, Copy)]
-struct CollectionMethodAliasRule {
+struct MethodAliasRule {
   rule_id: &'static str,
   diagnostic_code: &'static str,
-  receiver: CollectionReceiverKind,
+  receiver: MethodReceiverKind,
   old_method: &'static str,
   new_method: &'static str,
   implementation: &'static str,
@@ -3868,10 +3877,22 @@ struct CollectionMethodAliasRule {
   message: &'static str,
 }
 
-const LIST_FOLD_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule {
+const NUMBER_INTEGER_PREDICATE_ALIAS: MethodAliasRule = MethodAliasRule {
+  rule_id: CORE_INTEGER_PREDICATE_RULE,
+  diagnostic_code: CORE_INTEGER_PREDICATE_DIAGNOSTIC,
+  receiver: MethodReceiverKind::Number,
+  old_method: ".round?",
+  new_method: ".integer?",
+  implementation: "calcit.core/integer?",
+  call_size: 2,
+  variadic: false,
+  message: "Use `.integer?` for Number; both methods resolve to the same core implementation and return Bool.",
+};
+
+const LIST_FOLD_ALIAS: MethodAliasRule = MethodAliasRule {
   rule_id: CORE_LIST_FOLD_RULE,
   diagnostic_code: CORE_LIST_FOLD_DIAGNOSTIC,
-  receiver: CollectionReceiverKind::List,
+  receiver: MethodReceiverKind::List,
   old_method: ".reduce",
   new_method: ".fold",
   implementation: "calcit.core/fold",
@@ -3880,10 +3901,10 @@ const LIST_FOLD_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule {
   message: "Use `.fold` for seeded left-to-right List accumulation; both methods resolve to the same core implementation.",
 };
 
-const LIST_INTERSPERSE_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule {
+const LIST_INTERSPERSE_ALIAS: MethodAliasRule = MethodAliasRule {
   rule_id: CORE_LIST_INTERSPERSE_RULE,
   diagnostic_code: CORE_LIST_INTERSPERSE_DIAGNOSTIC,
-  receiver: CollectionReceiverKind::List,
+  receiver: MethodReceiverKind::List,
   old_method: ".join",
   new_method: ".intersperse",
   implementation: "calcit.core/intersperse",
@@ -3892,10 +3913,10 @@ const LIST_INTERSPERSE_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasR
   message: "Use `.intersperse` for List separator insertion; both methods resolve to the same core implementation.",
 };
 
-const LIST_FLAT_MAP_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule {
+const LIST_FLAT_MAP_ALIAS: MethodAliasRule = MethodAliasRule {
   rule_id: CORE_LIST_FLAT_MAP_RULE,
   diagnostic_code: CORE_LIST_FLAT_MAP_DIAGNOSTIC,
-  receiver: CollectionReceiverKind::List,
+  receiver: MethodReceiverKind::List,
   old_method: ".bind",
   new_method: ".flat-map",
   implementation: "calcit.core/mapcat",
@@ -3904,10 +3925,10 @@ const LIST_FLAT_MAP_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule
   message: "Use `.flat-map` for List element-to-List mapping; both methods resolve to the same core implementation.",
 };
 
-const LIST_JOIN_STRING_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule {
+const LIST_JOIN_STRING_ALIAS: MethodAliasRule = MethodAliasRule {
   rule_id: CORE_LIST_JOIN_STRING_RULE,
   diagnostic_code: CORE_LIST_JOIN_STRING_DIAGNOSTIC,
-  receiver: CollectionReceiverKind::List,
+  receiver: MethodReceiverKind::List,
   old_method: ".join-str",
   new_method: ".join-string",
   implementation: "calcit.core/join-str",
@@ -3916,10 +3937,10 @@ const LIST_JOIN_STRING_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasR
   message: "Use .join-string for List rendering; both methods resolve to the same core implementation.",
 };
 
-const LIST_GET_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule {
+const LIST_GET_ALIAS: MethodAliasRule = MethodAliasRule {
   rule_id: CORE_LIST_GET_RULE,
   diagnostic_code: CORE_LIST_GET_DIAGNOSTIC,
-  receiver: CollectionReceiverKind::List,
+  receiver: MethodReceiverKind::List,
   old_method: ".nth",
   new_method: ".get",
   implementation: "calcit.core/get",
@@ -3928,10 +3949,10 @@ const LIST_GET_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule {
   message: "Use .get for List positional lookup; both methods resolve to the same core implementation and return Option<T>.",
 };
 
-const MAP_DISTINCT_VALUES_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule {
+const MAP_DISTINCT_VALUES_ALIAS: MethodAliasRule = MethodAliasRule {
   rule_id: CORE_MAP_DISTINCT_VALUES_RULE,
   diagnostic_code: CORE_MAP_DISTINCT_VALUES_DIAGNOSTIC,
-  receiver: CollectionReceiverKind::Map,
+  receiver: MethodReceiverKind::Map,
   old_method: ".values",
   new_method: ".distinct-values",
   implementation: "calcit.core/distinct-values",
@@ -3940,10 +3961,10 @@ const MAP_DISTINCT_VALUES_ALIAS: CollectionMethodAliasRule = CollectionMethodAli
   message: "Use `.distinct-values` for a deduplicated Set of Map values; both methods resolve to the same core implementation.",
 };
 
-const MAP_MERGE_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule {
+const MAP_MERGE_ALIAS: MethodAliasRule = MethodAliasRule {
   rule_id: CORE_COLLECTION_COMBINE_RULE,
   diagnostic_code: CORE_COLLECTION_COMBINE_DIAGNOSTIC,
-  receiver: CollectionReceiverKind::Map,
+  receiver: MethodReceiverKind::Map,
   old_method: ".mappend",
   new_method: ".merge",
   implementation: "calcit.core/merge",
@@ -3952,10 +3973,10 @@ const MAP_MERGE_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule {
   message: "Use `.merge` for Map combination; both methods resolve to the same core implementation and later keys overwrite earlier keys.",
 };
 
-const SET_UNION_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule {
+const SET_UNION_ALIAS: MethodAliasRule = MethodAliasRule {
   rule_id: CORE_COLLECTION_COMBINE_RULE,
   diagnostic_code: CORE_COLLECTION_COMBINE_DIAGNOSTIC,
-  receiver: CollectionReceiverKind::Set,
+  receiver: MethodReceiverKind::Set,
   old_method: ".mappend",
   new_method: ".union",
   implementation: "calcit.core/union",
@@ -3965,11 +3986,11 @@ const SET_UNION_ALIAS: CollectionMethodAliasRule = CollectionMethodAliasRule {
 };
 
 /// Only rewrite complete method calls. First-class method values are not equivalent.
-fn collect_collection_method_alias_calls(
+fn collect_method_alias_calls(
   node: &Cirru,
   path: &mut Vec<usize>,
   calls: &mut Vec<(Vec<usize>, Vec<usize>, Vec<usize>)>,
-  rule: CollectionMethodAliasRule,
+  rule: MethodAliasRule,
 ) {
   let Cirru::List(items) = node else {
     return;
@@ -3995,16 +4016,16 @@ fn collect_collection_method_alias_calls(
   }
   for (index, child) in items.iter().enumerate() {
     path.push(index);
-    collect_collection_method_alias_calls(child, path, calls, rule);
+    collect_method_alias_calls(child, path, calls, rule);
     path.pop();
   }
 }
 
-fn plan_core_collection_method_alias_fixes(
+fn plan_core_method_alias_fixes(
   snapshot: &Snapshot,
   snapshot_file: &str,
   selected_definitions: &[(String, String)],
-  rule: CollectionMethodAliasRule,
+  rule: MethodAliasRule,
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
@@ -4017,7 +4038,7 @@ fn plan_core_collection_method_alias_fixes(
       continue;
     }
     let mut calls = Vec::new();
-    collect_collection_method_alias_calls(&entry.code, &mut Vec::new(), &mut calls, rule);
+    collect_method_alias_calls(&entry.code, &mut Vec::new(), &mut calls, rule);
     if calls.is_empty() {
       continue;
     }

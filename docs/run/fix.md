@@ -96,7 +96,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   predicate/member 迁移后再统一进入新的版本化 preset。
 - `core-integer-predicate-v1` 把 Cirru reader 直接解析为内建 Proc 的单参数 `round?` 调用头改为
   `calcit.core/integer?`。新入口复用有限且恰好没有小数部分的既有语义；不会把 Bool 当作整数类型 refinement。仅改写可回溯的源码调用，保留实参原位与求值次数；含同名词法绑定的定义及 quoted 数据跳过，未知 macro 只给 `requires-review`。
-  当前只覆盖 definition `:code`，不自动修改一等函数引用、`.round?` 方法、attached `:tests` / `:examples`；这些位置需人工审阅，方法迁移待来源和接收者证据独立证明。使用 `calcit calcit.cirru fix --rule core-integer-predicate-v1 --format edn` 预览，核对来源与 revision 后应用并重复预览；不加入已发布 preset。
+  同一规则还会把静态 Number 接收者的 `.round?` 改成 `.integer?`：旧、新方法现均指向 `calcit.core/integer?`，类型契约同为 `Number -> Bool`；自定义同名方法不改，开放接收者与未知宏不会自动改写。当前只覆盖 definition `:code`，不自动修改一等函数引用或 attached `:tests` / `:examples`；这些位置需人工审阅。使用 `calcit calcit.cirru fix --rule core-integer-predicate-v1 --format edn` 预览，核对来源与 revision 后应用并重复预览；不加入已发布 preset。
 - `core-list-add-v1` 仅把类型和方法契约均已证明的 List `.add` 改成 `.append`。它要求旧、新方法都指向
   `calcit.core/append`，形参和返回类型一致，且源码只经过已知保持调用的结构；Set/Map `.add` 不属于此规则，
   开放 List、未知 macro 和无法回溯的接收者只给 `requires-review`。显式运行
