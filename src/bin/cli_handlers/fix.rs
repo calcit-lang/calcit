@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
 
-use calcit::calcit::{CalcitFnTypeAnnotation, CalcitTypeAnnotation, LocatedWarning, SchemaKind};
+use calcit::calcit::{Calcit, CalcitFnTypeAnnotation, CalcitProc, CalcitTypeAnnotation, LocatedWarning, SchemaKind};
 use calcit::call_stack::CallStackList;
 use calcit::cli_args::{FixCommand, WeakTypesCommand};
 use calcit::data::cirru::code_to_calcit;
@@ -41,6 +41,8 @@ const CORE_NON_NIL_PREDICATE_RULE: &str = "core-non-nil-predicate-v1";
 const CORE_NON_NIL_PREDICATE_DIAGNOSTIC: &str = "FIX_CORE_NON_NIL_PREDICATE";
 const CORE_INTEGER_PREDICATE_RULE: &str = "core-integer-predicate-v1";
 const CORE_INTEGER_PREDICATE_DIAGNOSTIC: &str = "FIX_CORE_INTEGER_PREDICATE";
+const CORE_IDENTITY_CONVERSION_RULE: &str = "core-identity-conversion-v1";
+const CORE_IDENTITY_CONVERSION_DIAGNOSTIC: &str = "FIX_CORE_IDENTITY_CONVERSION";
 const CORE_PREDICATE_METHOD_RULE: &str = "core-predicate-method-v1";
 const CORE_PREDICATE_METHOD_DIAGNOSTIC: &str = "FIX_CORE_PREDICATE_METHOD";
 const CORE_LIST_ADD_RULE: &str = "core-list-add-v1";
@@ -549,6 +551,13 @@ pub(crate) fn handle_fix_command(
       NUMBER_INTEGER_PREDICATE_ALIAS,
     )?);
   }
+  if selected_rules.contains(&CORE_IDENTITY_CONVERSION_RULE) {
+    suggestions.extend(plan_core_identity_conversion_fixes(
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+    )?);
+  }
   if selected_rules.contains(&CORE_LIST_ADD_RULE) {
     suggestions.extend(plan_core_list_add_fixes(&source_snapshot, snapshot_file, &selected_definitions)?);
   }
@@ -1034,6 +1043,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CORE_RESULT_METHOD_RULE
         | CORE_NON_NIL_PREDICATE_RULE
         | CORE_INTEGER_PREDICATE_RULE
+        | CORE_IDENTITY_CONVERSION_RULE
         | CORE_PREDICATE_METHOD_RULE
         | CORE_LIST_ADD_RULE
         | CORE_SET_INCLUDE_RULE
@@ -1054,7 +1064,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     )
   {
     return Err(format!(
-      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_SET_INCLUDE_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_SET_INCLUDE_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
     ));
   }
   if let Some(rule @ (TAG_MATCH_RULE | REQUIRED_STRUCT_FIELD_RULE)) = options.rule.as_deref() {
@@ -1082,6 +1092,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_RESULT_METHOD_RULE
         | CORE_NON_NIL_PREDICATE_RULE
         | CORE_INTEGER_PREDICATE_RULE
+        | CORE_IDENTITY_CONVERSION_RULE
         | CORE_PREDICATE_METHOD_RULE
         | CORE_LIST_ADD_RULE
         | CORE_SET_INCLUDE_RULE
@@ -1103,6 +1114,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_RESULT_METHOD_RULE => CORE_RESULT_METHOD_RULE,
         CORE_NON_NIL_PREDICATE_RULE => CORE_NON_NIL_PREDICATE_RULE,
         CORE_INTEGER_PREDICATE_RULE => CORE_INTEGER_PREDICATE_RULE,
+        CORE_IDENTITY_CONVERSION_RULE => CORE_IDENTITY_CONVERSION_RULE,
         CORE_PREDICATE_METHOD_RULE => CORE_PREDICATE_METHOD_RULE,
         CORE_LIST_ADD_RULE => CORE_LIST_ADD_RULE,
         CORE_SET_INCLUDE_RULE => CORE_SET_INCLUDE_RULE,
@@ -1196,6 +1208,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_INTEGER_PREDICATE_DIAGNOSTIC,
       evidence_source: "reader-resolved-builtin-proc-and-proven-number-method",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    CORE_IDENTITY_CONVERSION_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: CORE_IDENTITY_CONVERSION_DIAGNOSTIC,
+      evidence_source: "reader-resolved-builtin-proc-and-proven-string-argument",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -3719,6 +3738,175 @@ fn collect_builtin_round_call_heads(node: &Cirru, path: &mut Vec<usize>, heads: 
     collect_builtin_round_call_heads(child, path, heads);
     path.pop();
   }
+}
+
+/// Collect complete built-in conversion calls without entering quoted source.
+fn collect_identity_conversion_calls(node: &Cirru, path: &mut Vec<usize>, calls: &mut Vec<(Vec<usize>, Vec<usize>, Vec<usize>)>) {
+  let Cirru::List(items) = node else {
+    return;
+  };
+  if matches!(items.first(), Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "quote" | "quasiquote")) {
+    return;
+  }
+  if items.len() == 2 && matches!(items.first(), Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "turn-symbol" | "turn-tag")) {
+    let mut head_path = path.clone();
+    head_path.push(0);
+    let mut argument_path = path.clone();
+    argument_path.push(1);
+    calls.push((path.clone(), head_path, argument_path));
+  }
+  for (index, child) in items.iter().enumerate() {
+    path.push(index);
+    collect_identity_conversion_calls(child, path, calls);
+    path.pop();
+  }
+}
+
+/// Rename only reader-resolved built-ins whose argument is proven String.
+fn plan_core_identity_conversion_fixes(
+  snapshot: &Snapshot,
+  snapshot_file: &str,
+  selected_definitions: &[(String, String)],
+) -> Result<Vec<FixSuggestion>, String> {
+  let mut suggestions = Vec::new();
+  for (namespace, definition) in selected_definitions {
+    let file = snapshot
+      .files
+      .get(namespace)
+      .ok_or_else(|| format!("Selected namespace `{namespace}` is missing from the source snapshot."))?;
+    let entry = file
+      .defs
+      .get(definition)
+      .ok_or_else(|| format!("Selected definition `{namespace}/{definition}` is missing from the source snapshot."))?;
+    if list_head(&entry.code) == Some("defmacro") {
+      continue;
+    }
+    let mut calls = Vec::new();
+    collect_identity_conversion_calls(&entry.code, &mut Vec::new(), &mut calls);
+    if calls.is_empty() {
+      continue;
+    }
+    let mut local_bindings = HashSet::new();
+    collect_potential_local_bindings(&entry.code, &mut local_bindings);
+    let compiled = program::lookup_compiled_def(namespace, definition);
+    let expressions = runner::preprocess::trace_definition_source_expressions(
+      namespace,
+      definition,
+      &RefCell::new(Vec::new()),
+      &CallStackList::default(),
+    )
+    .map_err(|failure| failure.msg)?;
+    for (call_path, head_path, argument_path) in calls {
+      let head = navigate_to_path(&entry.code, &head_path)?;
+      let Cirru::Leaf(old_name) = &head else {
+        continue;
+      };
+      if local_bindings.contains(old_name.as_ref()) || file.defs.contains_key(old_name.as_ref()) {
+        continue;
+      }
+      let expected_proc = match old_name.as_ref() {
+        "turn-symbol" => CalcitProc::TurnSymbol,
+        "turn-tag" => CalcitProc::TurnTag,
+        _ => continue,
+      };
+      let parsed_head = code_to_calcit(
+        &head,
+        namespace,
+        definition,
+        head_path
+          .iter()
+          .map(|index| u16::try_from(*index).map_err(|_| format!("Path index {index} exceeds Snapshot coordinate range")))
+          .collect::<Result<Vec<_>, _>>()?,
+      )
+      .map_err(|error| error.to_string())?;
+      if !matches!(parsed_head, Calcit::Proc(proc) if proc == expected_proc) {
+        continue;
+      }
+      let argument = navigate_to_path(&entry.code, &argument_path)?;
+      let parsed_argument = code_to_calcit(
+        &argument,
+        namespace,
+        definition,
+        argument_path
+          .iter()
+          .map(|index| u16::try_from(*index).map_err(|_| format!("Path index {index} exceeds Snapshot coordinate range")))
+          .collect::<Result<Vec<_>, _>>()?,
+      )
+      .map_err(|error| error.to_string())?;
+      let inferred = compiled
+        .as_ref()
+        .and_then(|compiled| {
+          super::query::find_preprocessed_node_at_path(
+            &compiled.preprocessed_code,
+            namespace,
+            definition,
+            &argument_path,
+            matches!(argument, Cirru::List(_)),
+          )
+        })
+        .and_then(runner::preprocess::infer_static_type_from_expr)
+        .or_else(|| {
+          runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &argument_path)
+            .and_then(|item| item.inferred_type.clone())
+        })
+        .or_else(|| super::query::infer_type_at_target(&parsed_argument, None));
+      let resolved = inferred
+        .as_ref()
+        .map(|annotation| runner::preprocess::resolve_namespace_type_refs_for_body(annotation.clone(), namespace));
+      if resolved.as_ref().is_some_and(|annotation| {
+        !matches!(
+          annotation.as_ref(),
+          CalcitTypeAnnotation::String | CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_)
+        )
+      }) {
+        continue;
+      }
+      let proven_string = resolved
+        .as_ref()
+        .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::String));
+      let machine_applicable = proven_string && method_source_context_is_stable(&entry.code, &call_path);
+      let new_name = if expected_proc == CalcitProc::TurnTag {
+        "to-tag"
+      } else {
+        "to-symbol"
+      };
+      let replacement = format!("calcit.core/{new_name}");
+      let replacement_node = Cirru::leaf(replacement.as_str());
+      suggestions.push(FixSuggestion {
+        rule_id: CORE_IDENTITY_CONVERSION_RULE,
+        diagnostic_code: CORE_IDENTITY_CONVERSION_DIAGNOSTIC,
+        semantic_layer: "surface",
+        source_file: snapshot_file.to_owned(),
+        definition: format!("{namespace}/{definition}"),
+        path: format!("code{}", format_path(&head_path)),
+        fingerprint: node_fingerprint(&head),
+        origin_chain: vec![serde_json::json!({
+          "kind": "reader-resolved-builtin-proc-and-argument-type",
+          "old_proc": old_name.as_ref(),
+          "argument_type": inferred.as_ref().map(|annotation| annotation.describe()),
+          "target": format!("calcit.core/{new_name}"),
+        })],
+        original: quoted_json(&head),
+        replacement: machine_applicable.then(|| quoted_json(&replacement_node)),
+        applicability: if machine_applicable {
+          "machine-applicable"
+        } else {
+          "requires-review"
+        },
+        message: if machine_applicable {
+          format!("Use `{new_name}` for a proven String argument; both paths call the same built-in conversion once.")
+        } else {
+          format!("Cannot prove a String argument and stable source context for `{old_name}`; review this conversion manually.")
+        },
+        target_path: head_path,
+        operation: machine_applicable.then_some(FixOperation::ReplaceLeaf {
+          original: old_name.to_string(),
+          replacement,
+        }),
+      });
+    }
+  }
+  Ok(suggestions)
 }
 
 /// Locate only one-argument method calls; a first-class method value cannot be renamed safely.

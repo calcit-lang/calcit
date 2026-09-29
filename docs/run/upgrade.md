@@ -44,6 +44,10 @@ assert= true $ .round? -0
 assert= true $ round? 9007199254740992
 ```
 
+## String 到 Tag/Symbol 的类型化转换
+
+新代码用 `to-tag: String -> Tag`、`to-symbol: String -> Symbol`。旧 `turn-tag` / `turn-symbol` 的 native/JS 运行时还接受 Tag/Symbol 输入，不能按词形全局替换。`calcit fix --rule core-identity-conversion-v1 --format edn` 只对内建调用且参数已证明为 String 的稳定源码提供自动迁移；Dynamic、非 String、quote、未知 macro 和一等函数引用需人工审阅。预览后携带 revision 应用，再重复预览并运行项目测试。WASM 缺少动态 Tag/Symbol intern；改名不会让原来不支持的调用变得可编译。
+
 ## 索引、键、值与成员谓词
 
 `contains?` 的旧方法形式依接收者表示不同命题，不能全局替换：List/String 检查索引，Map 检查键，Set 检查成员；Map 的旧 `.includes?` 则检查值。新代码首选 List/String `.contains-index?`、Map `.contains-key?` / `.contains-value?`，Set 成员保留 `.includes?`。String `.includes?` 判断子串，List `.includes?` 判断元素，均不得与索引判断混用。

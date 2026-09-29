@@ -191,7 +191,7 @@ do
 | --- | --- | --- |
 | `Option/Result/Struct` 名义构造；旧 `%some/%none/%ok/%err` | **保留**直接名义构造，旧 helper 属 **内部兼容** | 完整保留 payload/字段类型与错误；沿用现有 fix 与退场门禁 |
 | `turn-str` 转调 `turn-string`，schema 为 `T -> String`，native 实际只接受 nil/Bool/String/Tag/Symbol/Number | **目标词** `to-string`；**暂缓具体入口替换**直到可接受类型证明齐全 | nil 转空串、Tag/Symbol 文本等语义要保留；不能直接指向 Debug/Show，也不把所有 T 声称合法 |
-| `turn-symbol` / `turn-tag` 的历史运行时输入较宽 | **当前公开候选** `to-symbol: String -> Symbol`、`to-tag: String -> Tag`；旧入口暂留 core 宏与兼容路径 | 严格调用只接受 String；native/JS 已验证，WASM 尚无动态 Tag/Symbol intern，调用 `to-tag`/`turn-tag` 会显式报不支持而非伪装成 String。旧入口兼容 Tag/Symbol 输入不构成新接口的静态类型承诺；只在已证明 String 输入时考虑 guarded fix，不可全局替换 |
+| `turn-symbol` / `turn-tag` 的历史运行时输入较宽 | **已提供** `to-symbol: String -> Symbol`、`to-tag: String -> Tag`；旧入口暂留 core 宏与兼容路径 | 严格调用只接受 String；native/JS 已验证，WASM 尚无动态 Tag/Symbol intern，调用 `to-tag`/`turn-tag` 会显式报不支持而非伪装成 String。显式 `core-identity-conversion-v1` 只改写内建调用且参数被证明为 String 的稳定源码；旧入口兼容 Tag/Symbol 输入不构成新接口的静态类型承诺，不可全局替换 |
 | `str`、`.debug/.show`、`format-cirru-edn`、`format-to-lisp/to-lispy-string` | **保留**显示/调试/序列化职责；最后两者的等价范围 **暂缓** | 序列化默认 Cirru EDN；格式化不是通用安全转换，不借改名改变 escaping/往返行为 |
 | `.parse-json/.parse-cirru-edn/.parse-cirru/.parse-float` 返回 Result；`json-parse` 等旧入口抛错 | **保留并首选** `.parse-格式` 的 checked 路径；旧 throwing 入口属 **内部兼容** | `String -> Result<T,String>`；开放数据合法保留 Dynamic，typed parse-as 先证明 schema。throw→Result 是人工迁移，不能自动插入 unwrap/fallback；不新增公开 throwing 别名 |
 | `number->int8` 等 `Number -> Result<Refinement,String>`；`js-nullish->option: JsNullish<T> -> Option<T>` | **保留**显式源→目标边界箭头 | 前者检查范围/整数/有限性，后者只包装、不验证 T；不并列再造 `to-/as-/into-` 同义入口，JS 后者仍受 `:js-ffi` 限制 |
