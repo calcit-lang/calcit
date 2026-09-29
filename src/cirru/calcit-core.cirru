@@ -1004,8 +1004,8 @@
               assert= false $ &list:contains? ([] :a :b :c) 3
               assert= false $ &list:contains? ([] :a :b :c) -1
               assert= false $ &list:contains? ([] :a :b :c) 0.5
-              assert= false $ &list:contains? ([] :a :b :c) $ / 1 0
-              assert= false $ &list:contains? ([] :a :b :c) $ / 0 0
+              assert= false $ &list:contains? ([] :a :b :c) (/ 1 0)
+              assert= false $ &list:contains? ([] :a :b :c) (/ 0 0)
             :tags $ #{} :core :unit
         '&list:count $ %{} 'CodeEntry
           :doc "|internal function for counting list elements\nSyntax: (&list:count list)\nParams: list (list)\nReturns: number\nReturns number of elements in list"
@@ -3278,9 +3278,7 @@
             :code $ quote $ let
                 source $ atom 0
                 calls $ atom 0
-              assert= &unit $ add-watch! source :change $ fn (current previous)
-                assert= 1 current
-                assert= 0 previous
+              assert= &unit $ add-watch! source :change $ fn (current previous) (assert= 1 current) (assert= 0 previous)
                 reset! calls $ inc @calls
                 , &unit
               assert= "|add-watch failed: listener with key `change` already existed" $ try
@@ -4147,28 +4145,61 @@
                   #{} 10 20
                   , .includes? 10
               :tags $ #{} :core :naming-contract :unit
-            %{} 'TestEntry (:name |distinguishes-explicit-index-key-and-value-methods)
+            %{} 'TestEntry
+              :name |distinguishes-explicit-index-key-and-value-methods
               :code $ quote $ do
-                assert= true $ ([] 10 20) .contains-index? 1
-                assert= false $ ([] 10 20) .contains-index? 10
-                assert= true $ ([] 10 20) .includes? 10
-                assert= false $ ([]) .contains-index? 0
-                assert= false $ ([] 10 20) .contains-index? -1
-                assert= false $ ([] 10 20) .contains-index? 0.5
-                assert= false $ ([] 10 20) .contains-index? $ / 1 0
-                assert= false $ ([] 10 20) .contains-index? $ / 0 0
+                assert= true $
+                  [] 10 20
+                  , .contains-index? 1
+                assert= false $
+                  [] 10 20
+                  , .contains-index? 10
+                assert= true $
+                  [] 10 20
+                  , .includes? 10
+                assert= false $
+                  []
+                  , .contains-index? 0
+                assert= false $
+                  [] 10 20
+                  , .contains-index? -1
+                assert= false $
+                  [] 10 20
+                  , .contains-index? 0.5
+                assert= false $
+                  [] 10 20
+                  , .contains-index? $ / 1 0
+                assert= false $
+                  [] 10 20
+                  , .contains-index? $ / 0 0
                 assert= true $ "|😀a" .contains-index? 1
                 assert= false $ "|😀a" .contains-index? 2
                 assert= true $ "|😀a" .includes? |a
                 assert= false $ | .contains-index? 0
-                assert= true $ ({} (|key |value)) .contains-key? |key
-                assert= false $ ({} (|key |value)) .contains-key? |value
-                assert= true $ ({} (|key |value)) .contains-value? |value
-                assert= false $ ({} (|key |value)) .contains-value? |key
-                assert= false $ ({}) .contains-key? :missing
-                assert= false $ ({}) .contains-value? :missing
-                assert= true $ ({} (:id 7)) .contains-key? :id
-                assert= true $ ({} (:id 7)) .contains-value? 7
+                assert= true $
+                  {} $ |key |value
+                  , .contains-key? |key
+                assert= false $
+                  {} $ |key |value
+                  , .contains-key? |value
+                assert= true $
+                  {} $ |key |value
+                  , .contains-value? |value
+                assert= false $
+                  {} $ |key |value
+                  , .contains-value? |key
+                assert= false $
+                  {}
+                  , .contains-key? :missing
+                assert= false $
+                  {}
+                  , .contains-value? :missing
+                assert= true $
+                  {} $ :id 7
+                  , .contains-key? :id
+                assert= true $
+                  {} $ :id 7
+                  , .contains-value? 7
               :tags $ #{} :core :naming-contract :unit
         'cos $ %{} 'CodeEntry
           :doc "|internal function for cosine\nSyntax: (cos n)\nParams: n (number, radians)\nReturns: number\nReturns cosine of angle in radians"
@@ -5788,11 +5819,16 @@
           :tests $ []
             %{} 'TestEntry (:name |reads-list-indices-as-options)
               :code $ quote $ do
-                assert= (%some 2) $ ([] 1 2 2) .get 1
-                assert= (%some 2) $ ([] 1 2 2) .nth 2
-                assert= (%none) $ ([] 1 2) .get -1
-                assert= (%none) $ ([] 1 2) .nth 3
-                assert= (%none) $ ([]) .get 0
+                assert= (%some 2)
+                  ([] 1 2 2) .get 1
+                assert= (%some 2)
+                  ([] 1 2 2) .nth 2
+                assert= (%none)
+                  ([] 1 2) .get -1
+                assert= (%none)
+                  ([] 1 2) .nth 3
+                assert= (%none)
+                  ([]) .get 0
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |returns-some-or-none-for-map)
               :code $ quote $ assert= (%none)
@@ -6110,12 +6146,18 @@
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |keeps-persistent-set-add-and-include-equivalent)
               :code $ quote $ do
-                assert= (#{} 1 2) $ (#{} 1) .add 1 2
-                assert= (#{} 1 2) $ (#{} 1) .include 1 2
-                assert= (#{} 1) $ (#{} 1) .include 1
-                assert= (#{} 2) $ (#{} 1 2) .exclude 1
-                assert= (#{} 1) $ (#{} 1) .exclude 9
-                assert= (#{} 1) $ (#{} 1) .include 1
+                assert= (#{} 1 2)
+                  (#{} 1) .add 1 2
+                assert= (#{} 1 2)
+                  (#{} 1) .include 1 2
+                assert= (#{} 1)
+                  (#{} 1) .include 1
+                assert= (#{} 2)
+                  (#{} 1 2) .exclude 1
+                assert= (#{} 1)
+                  (#{} 1) .exclude 9
+                assert= (#{} 1)
+                  (#{} 1) .include 1
               :tags $ #{} :core :naming-contract :unit
         'includes? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn includes? (x k)
@@ -6286,7 +6328,8 @@
             :code $ quote $ assert= ([] 1 10 2 10 3 10 4)
               join ([] 1 2 3 4) 10
             :tags $ #{} :core :unit
-        'join-str $ %{} 'CodeEntry (:doc "|将 List 元素按既有显示规则逐项转为文本，并用 String 分隔符连接；旧名称保留兼容，首选 join-string 或 .join-string。")
+        'join-str $ %{} 'CodeEntry
+          :doc "|将 List 元素按既有显示规则逐项转为文本，并用 String 分隔符连接；旧名称保留兼容，首选 join-string 或 .join-string。"
           :code $ quote $ defn join-str (xs0 sep)
             apply-args (| xs0 true)
               defn %join-str (acc xs beginning?)
@@ -6310,26 +6353,38 @@
               assert= |1-2-3 $ join-str ([] 1 2 3) |-
               assert= | $ join-str ([]) |-
             :tags $ #{} :core :unit
-        'join-string $ %{} 'CodeEntry (:doc "|将 List 元素按既有显示规则逐项转为文本，并用 String 分隔符连接；空 List 返回空字符串。")
+        'join-string $ %{} 'CodeEntry
+          :doc "|将 List 元素按既有显示规则逐项转为文本，并用 String 分隔符连接；空 List 返回空字符串。"
           :code $ quote $ defn join-string (xs sep) (join-str xs sep)
           :examples $ []
             quote $ assert= |1-2-3 $ join-string ([] 1 2 3) |-
-            quote $ assert= |a,b $ ([] |a |b) .join-string |,
+            quote $ assert= |a,b $
+              [] |a |b
+              , .join-string |,
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] (:: 'List 'T) 'String
             :generics $ [] 'T
           :tests $ []
             %{} 'TestEntry (:name |renders-numbers-duplicates-and-empty-list)
               :code $ quote $ do
-                assert-type (join-string ([] 1 2) |-) 'String
+                assert-type
+                  join-string ([] 1 2) |-
+                  , 'String
                 assert= |1,1,2 $ join-string ([] 1 1 2) |,
-                assert= |1,1,2 $ ([] 1 1 2) .join-string |,
+                assert= |1,1,2 $
+                  [] 1 1 2
+                  , .join-string |,
                 assert= | $ join-string ([]) |,
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |preserves-legacy-rendering)
               :code $ quote $ do
-                assert= (join-str ([] |a |b) |/) $ join-string ([] |a |b) |/
-                assert= (([] |a |b) .join-str |/) $ ([] |a |b) .join-string |/
+                assert=
+                  join-str ([] |a |b) |/
+                  join-string ([] |a |b) |/
+                assert=
+                    [] |a |b
+                    , .join-str |/
+                  ([] |a |b) .join-string |/
               :tags $ #{} :core :unit
         'js-nullish->option $ %{} 'CodeEntry
           :doc "|Explicitly convert a JavaScript null/undefined boundary value into nominal Option<T>. This does not validate or coerce the opaque payload type."
@@ -7067,7 +7122,8 @@
             :args $ [] 'T
             :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'mapcat $ %{} 'CodeEntry (:doc "|对 List 的每个元素调用回调，并按原顺序把回调返回的 List 展平一层。公开方法优先使用 `.flat-map`；前缀 `mapcat` 与旧方法 `.bind` 暂保留兼容。")
+        'mapcat $ %{} 'CodeEntry
+          :doc "|对 List 的每个元素调用回调，并按原顺序把回调返回的 List 展平一层。公开方法优先使用 `.flat-map`；前缀 `mapcat` 与旧方法 `.bind` 暂保留兼容。"
           :code $ quote $ defn mapcat (xs f)
             &list:concat & $ map xs f
           :examples $ []
@@ -7091,9 +7147,10 @@
             %{} 'TestEntry (:name |flat-map-keeps-order-type-and-callback-count)
               :code $ quote $ let
                   calls $ atom 0
-                  result $ ([] 1 2 3) .flat-map $ fn (x)
-                    swap! calls inc
-                    [] (str x) (str x)
+                  result $
+                    [] 1 2 3
+                    , .flat-map $ fn (x) (swap! calls inc)
+                      [] (str x) (str x)
                 assert-type result $ :: 'List 'String
                 assert= ([] |1 |1 |2 |2 |3 |3) result
                 assert= 3 @calls
@@ -7139,11 +7196,23 @@
                 {,} :a nil :b 12 :c nil :d 14
                 merge ({,} :a 1 :b 2 :c 3) ({,} :a nil :b 12) ({,} :c nil :d 14)
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |map-method-combination-preserves-overwrite-order)
+            %{} 'TestEntry
+              :name |map-method-combination-preserves-overwrite-order
               :code $ quote $ do
-                assert= ({} (:a 3) (:b 2)) $ ({} (:a 1)) .merge ({} (:b 2)) ({} (:a 3))
-                assert= ({} (:a 3) (:b 2)) $ ({} (:a 1)) .mappend ({} (:b 2)) ({} (:a 3))
-                assert= ({}) $ ({}) .merge ({})
+                assert=
+                  {} (:a 3) (:b 2)
+                  ({} (:a 1))
+                    , .merge
+                      {} $ :b 2
+                      {} $ :a 3
+                assert=
+                  {} (:a 3) (:b 2)
+                  ({} (:a 1))
+                    , .mappend
+                      {} $ :b 2
+                      {} $ :a 3
+                assert= ({})
+                  ({}) .merge $ {}
               :tags $ #{} :core :unit
         'merge-dynamic $ %{} 'CodeEntry
           :doc "|Combines open Map<K,Dynamic> values left-to-right with later maps overwriting earlier keys, without claiming a homogeneous value relation."
@@ -8921,6 +8990,28 @@
               #{} ([] :a 1) ([] :b 2)
               to-pairs $ &{} :a 1 :b 2
             :tags $ #{} :core :unit
+        'to-symbol $ %{} 'CodeEntry
+          :doc "|将 String 转为 Symbol；严格类型调用只接受 String，成功返回 Symbol。旧 turn-symbol 留作内部兼容入口。"
+          :code $ quote $ defn to-symbol (source) (turn-symbol source)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Symbol)
+            :args $ [] 'String
+          :tests $ [] $ %{} 'TestEntry (:name |converts-string-to-symbol)
+            :code $ quote $ do
+              assert-type (to-symbol |ready) 'Symbol
+              assert= |ready $ turn-string $ to-symbol |ready
+            :tags $ #{} :core :unit
+        'to-tag $ %{} 'CodeEntry
+          :doc "|将 String 转为 Tag；不接受集合或隐式 Symbol/Tag 归一化。旧 turn-tag 留给 core 宏和兼容路径。"
+          :code $ quote $ defn to-tag (source) (turn-tag source)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Tag)
+            :args $ [] 'String
+          :tests $ [] $ %{} 'TestEntry (:name |converts-string-to-tag)
+            :code $ quote $ do
+              assert-type (to-tag |ready) 'Tag
+              assert= :ready $ to-tag |ready
+            :tags $ #{} :core :unit
         'trim $ %{} 'CodeEntry
           :doc "|internal function for trimming strings\nSyntax: (trim s)\nParams: s (string)\nReturns: string\nRemoves whitespace from beginning and end of string"
           :code $ quote &runtime-implementation
@@ -9171,9 +9262,12 @@
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |set-method-combination-deduplicates)
               :code $ quote $ do
-                assert= (#{} 1 2 3) $ (#{} 1 2) .union (#{} 2 3) (#{} 1)
-                assert= (#{} 1 2 3) $ (#{} 1 2) .mappend (#{} 2 3) (#{} 1)
-                assert= (#{}) $ (#{}) .union (#{})
+                assert= (#{} 1 2 3)
+                  (#{} 1 2) .union (#{} 2 3) (#{} 1)
+                assert= (#{} 1 2 3)
+                  (#{} 1 2) .mappend (#{} 2 3) (#{} 1)
+                assert= (#{})
+                  (#{}) .union $ #{}
               :tags $ #{} :core :unit
         'unix-time-ms $ %{} 'CodeEntry
           :doc "|返回 Unix epoch 以来的系统时间，单位为毫秒。系统时钟可能被宿主校准，不保证单调递增。"

@@ -7066,10 +7066,10 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       Ok(())
     }
 
-    // turn-tag — converts a string to a tag at runtime; in WASM, return the string as-is.
+    // Runtime tag interning is not represented by the static WASM tag table.
     CalcitProc::TurnTag => {
       expect_arity(1, args, "turn-tag")?;
-      emit_expr(ctx, &args[0])
+      Err("E_WASM_TAG_CONVERSION: turn-tag/to-tag requires runtime tag interning, which WASM does not support".into())
     }
 
     // Runtime trait tables are intentionally not implemented in the internal
