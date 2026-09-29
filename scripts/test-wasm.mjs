@@ -430,6 +430,7 @@ check("test-map-empty-false()", 0, e["test-map-empty-false"]);
 check("test-map-empty-method()", 0, e["test-map-empty-method"]);
 check("test-map-assoc-new()", 4, e["test-map-assoc-new"]); // count=2 + get(:b)=2
 check("test-map-assoc-update()", 99, e["test-map-assoc-update"]);
+check("test-map-add-legacy()", 2, e["test-map-add-legacy"]);
 check("test-map-dissoc()", 5, e["test-map-dissoc"]); // count=2 + get(:c)=3
 check("test-map-contains()", 1, e["test-map-contains"]); // 1+0
 check("test-map-includes()", 1, e["test-map-includes"]); // 1+0

@@ -557,7 +557,7 @@ List 单元素追加首选 `.append`，List 拼接用 `.concat`。迁移旧 `.ad
 
 索引、键和值查询先看接收者类型：List/String 用 `.contains-index? Number` 判断有效位置，Enum 也提供 `.contains-index? Number`，其中 0 是 tag、1 起是 payload；Map<K,V> 用 `.contains-key? K` 与 `.contains-value? V` 分别判断键和值，即使 K/V 同型也不能混用。List/Set 的元素成员和 String 子串仍用 `.includes?`。Enum 新方法要求非负有限整数，旧 `.contains?` 对范围内小数会返回 true，因此不能机械迁移。可显式用 `core-predicate-method-v1` 预览已证明的 List/String/Map builtin 方法等价迁移；它不处理 attached `:tests` / `:examples`、Struct/Enum、`Contains` trait 或自定义同名方法，不要按词形替换。List 索引的小数、负数和非有限值返回 false，JS 与 WASM 也遵守该契约。
 
-持久集合更新首选 Map `.assoc key value` / `.dissoc key` 与 Set `.include item` / `.exclude item`，均返回新集合，不表示原地修改。Set `.add` 的同义调用可显式用 `core-set-include-v1` 预览，仅在具体 Set 接收者和同一 core 实现已证明时自动迁移；Map `.add` 接受二元 entry，不能按词形改成 `.assoc`。目前不新增 Rust 风格 `.insert/.remove`。
+持久集合更新首选 Map `.assoc key value` / `.dissoc key` 与 Set `.include item` / `.exclude item`，均返回新集合，不表示原地修改。Set `.add` 的同义调用可显式用 `core-set-include-v1` 预览，仅在具体 Set 接收者和同一 core 实现已证明时自动迁移；Map `.add` 接受二元 entry，无法在现有 `List<T>` 中分别证明 key/value 类型，`query type` 会将其标为 `open`，结果仅有 `Map<Dynamic,Dynamic>` 边界。不要在新代码中生成该调用，也不能按词形改成 `.assoc`；旧调用需逐项人工迁移。目前不新增 Rust 风格 `.insert/.remove`。
 
 Struct 字段存在性使用 `.contains-field? :field` 或 `contains-field? value :field`，参数必须是 Tag，返回 Bool，字段不存在返回 false。此接口在 native、生成 JS 与现有 WASM 子集有相同命题；旧底层 `&struct:contains?` 在 native/JS 还接受 String/Symbol，属于兼容行为，不代表新接口可接受这些输入。当前 `core-predicate-method-v1` 不迁移 Struct；遇到旧 `.contains?`、自定义 `Contains` trait 或反射式字段名时先核对来源与目标支持范围。
 

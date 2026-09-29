@@ -210,6 +210,9 @@
             ; The receiver type selects this method before the Add trait.
             assert= ([] 1 2)
               .add ([] 1) 2
+            ; Legacy Map .add takes one pair, not the Add trait contract.
+            assert= ({} (:a 1) (:b 2))
+              ({} (:a 1)) .add $ [] :b 2
             println "|  Add trait: ✓"
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
