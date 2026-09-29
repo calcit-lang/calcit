@@ -104,6 +104,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   `calcit calcit.cirru fix --rule core-list-add-v1 --format edn` 预览，再核对 definition、path、来源和 revision；
   应用后重复预览并运行项目测试。该规则目前只覆盖 definition `:code`，`:tests` / `:examples` 仍需单独检查，
   也不加入已发布的 preset。
+- `core-set-include-v1` 仅把已证明的 Set `.add item` 改成 `.include item`（也支持原调用中的更多成员参数）。旧新方法都须解析到 `calcit.core/include`，并具有相同参数、返回类型与稳定源码位置；重复成员仍去重，返回新 Set。Map `.add` 接受二元 entry，List `.add` 表示追加元素，均不属于本规则；自定义同名方法、开放接收者、quoted data 与未知 macro 不自动改写。运行 `calcit calcit.cirru fix --rule core-set-include-v1 --format edn` 预览，核对来源与 revision 后携带 `--expect-revision` 应用，再重复预览并运行项目测试。当前仅修改 definition `:code`，`:tests` / `:examples` 人工核对；规则不进入已发布 preset。
 - `core-collection-len-v1` 仅把 List、Map、Set、String 上已证明的零参数 `.count` 改成 `.len`。
   编译器须同时证明具体接收者类型、旧/新方法指向同一个对应的 core `&*:count` 实现、形参与返回类型一致，
   且源码处于已知保持调用的结构。Struct 字段数、Enum payload 数、用户自定义 `Countable` 不在自动范围；

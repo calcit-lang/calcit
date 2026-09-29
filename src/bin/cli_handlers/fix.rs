@@ -45,6 +45,8 @@ const CORE_PREDICATE_METHOD_RULE: &str = "core-predicate-method-v1";
 const CORE_PREDICATE_METHOD_DIAGNOSTIC: &str = "FIX_CORE_PREDICATE_METHOD";
 const CORE_LIST_ADD_RULE: &str = "core-list-add-v1";
 const CORE_LIST_ADD_DIAGNOSTIC: &str = "FIX_CORE_LIST_ADD";
+const CORE_SET_INCLUDE_RULE: &str = "core-set-include-v1";
+const CORE_SET_INCLUDE_DIAGNOSTIC: &str = "FIX_CORE_SET_INCLUDE";
 const CORE_COLLECTION_LEN_RULE: &str = "core-collection-len-v1";
 const CORE_COLLECTION_LEN_DIAGNOSTIC: &str = "FIX_CORE_COLLECTION_LEN";
 const CORE_LIST_FOLD_RULE: &str = "core-list-fold-v1";
@@ -605,6 +607,14 @@ pub(crate) fn handle_fix_command(
       MAP_DISTINCT_VALUES_ALIAS,
     )?);
   }
+  if selected_rules.contains(&CORE_SET_INCLUDE_RULE) {
+    suggestions.extend(plan_core_method_alias_fixes(
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+      SET_INCLUDE_ALIAS,
+    )?);
+  }
   if selected_rules.contains(&CORE_COLLECTION_COMBINE_RULE) {
     for rule in [MAP_MERGE_ALIAS, SET_UNION_ALIAS] {
       suggestions.extend(plan_core_method_alias_fixes(
@@ -1026,6 +1036,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CORE_INTEGER_PREDICATE_RULE
         | CORE_PREDICATE_METHOD_RULE
         | CORE_LIST_ADD_RULE
+        | CORE_SET_INCLUDE_RULE
         | CORE_COLLECTION_LEN_RULE
         | CORE_LIST_FOLD_RULE
         | CORE_LIST_INTERSPERSE_RULE
@@ -1043,7 +1054,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     )
   {
     return Err(format!(
-      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_SET_INCLUDE_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
     ));
   }
   if let Some(rule @ (TAG_MATCH_RULE | REQUIRED_STRUCT_FIELD_RULE)) = options.rule.as_deref() {
@@ -1073,6 +1084,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_INTEGER_PREDICATE_RULE
         | CORE_PREDICATE_METHOD_RULE
         | CORE_LIST_ADD_RULE
+        | CORE_SET_INCLUDE_RULE
         | CORE_COLLECTION_LEN_RULE
         | CORE_LIST_FOLD_RULE
         | CORE_LIST_INTERSPERSE_RULE
@@ -1093,6 +1105,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_INTEGER_PREDICATE_RULE => CORE_INTEGER_PREDICATE_RULE,
         CORE_PREDICATE_METHOD_RULE => CORE_PREDICATE_METHOD_RULE,
         CORE_LIST_ADD_RULE => CORE_LIST_ADD_RULE,
+        CORE_SET_INCLUDE_RULE => CORE_SET_INCLUDE_RULE,
         CORE_COLLECTION_LEN_RULE => CORE_COLLECTION_LEN_RULE,
         CORE_LIST_FOLD_RULE => CORE_LIST_FOLD_RULE,
         CORE_LIST_INTERSPERSE_RULE => CORE_LIST_INTERSPERSE_RULE,
@@ -1197,6 +1210,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_LIST_ADD_DIAGNOSTIC,
       evidence_source: "proven-receiver-and-method-implementation",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    CORE_SET_INCLUDE_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: CORE_SET_INCLUDE_DIAGNOSTIC,
+      evidence_source: "proven-set-receiver-and-identical-method-implementation",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -3980,6 +4000,18 @@ const SET_INCLUDES_ALIAS: MethodAliasRule = MethodAliasRule {
   call_size: 3,
   variadic: false,
   message: "Use `.includes?` for Set element membership; both methods have the same implementation.",
+};
+
+const SET_INCLUDE_ALIAS: MethodAliasRule = MethodAliasRule {
+  rule_id: CORE_SET_INCLUDE_RULE,
+  diagnostic_code: CORE_SET_INCLUDE_DIAGNOSTIC,
+  receiver: MethodReceiverKind::Set,
+  old_method: ".add",
+  new_method: ".include",
+  implementation: "calcit.core/include",
+  call_size: 3,
+  variadic: true,
+  message: "Use `.include` for persistent Set member addition; both methods resolve to the same core implementation.",
 };
 
 const LIST_FOLD_ALIAS: MethodAliasRule = MethodAliasRule {

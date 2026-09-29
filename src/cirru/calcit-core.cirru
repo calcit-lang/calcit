@@ -5969,6 +5969,15 @@
               :code $ quote $ assert= (#{} 1 2 3)
                 include (#{} 1 2) 3
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |keeps-persistent-set-add-and-include-equivalent)
+              :code $ quote $ do
+                assert= (#{} 1 2) $ (#{} 1) .add 1 2
+                assert= (#{} 1 2) $ (#{} 1) .include 1 2
+                assert= (#{} 1) $ (#{} 1) .include 1
+                assert= (#{} 2) $ (#{} 1 2) .exclude 1
+                assert= (#{} 1) $ (#{} 1) .exclude 9
+                assert= (#{} 1) $ (#{} 1) .include 1
+              :tags $ #{} :core :naming-contract :unit
         'includes? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn includes? (x k)
             if (list? x) (&list:includes? x k) (.includes? x k)

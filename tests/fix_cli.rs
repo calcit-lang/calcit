@@ -1956,6 +1956,239 @@ fn list_add_fix_keeps_other_collections_and_unknown_macro_for_review() {
 }
 
 #[test]
+fn set_include_fix_migrates_only_proven_set_add_calls() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  let target = "fix-command.main/set-add";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn set-add ()\n  (#{} 1 2) .add 2 3",
+      ],
+    ),
+    "install Set add method",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'Set 'Number)",
+      ],
+    ),
+    "declare Set return type",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        target,
+        "preserves-set-members",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ assert= (#{} 1 2 3) $ set-add",
+      ],
+    ),
+    "attach Set behavior test",
+  );
+  let selector = [
+    "--rule",
+    "core-set-include-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "set-add",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &selector);
+  assert_success(&preview, "Set include migration preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
+  assert_eq!(suggestions.len(), 1, "{report}");
+  assert_eq!(suggestions[0]["applicability"], "machine-applicable", "{report}");
+  assert_eq!(suggestions[0]["replacement"]["value"], ".include", "{report}");
+  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+  let stale = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-set-include-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "set-add",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      "md5:stale",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!stale.status.success(), "stale source must reject apply");
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-set-include-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "set-add",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().expect("preview revision"),
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "Set include migration apply");
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "Set behavior after migration",
+  );
+  let repeated = run_fix(&snapshot, &selector);
+  assert_success(&repeated, "Set include idempotence preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+
+  for (name, code) in [
+    ("map-add", "quote $ defn map-add () $ ({} (:a 1)) .add $ [] :b 2"),
+    ("quoted-set-add", "quote $ defn quoted-set-add () $ quote $ (#{} 1) .add 2"),
+    ("pass-form", "quote $ defmacro pass-form (body) body"),
+    ("macro-set-add", "quote $ defn macro-set-add () $ pass-form $ (#{} 1) .add 2"),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("fix-command.main/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          code,
+        ],
+      ),
+      "install Set include negative boundary",
+    );
+  }
+  for name in ["map-add", "quoted-set-add", "macro-set-add"] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "schema",
+          &format!("fix-command.main/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)",
+        ],
+      ),
+      "declare Set include boundary schema",
+    );
+  }
+  for (name, expected) in [("map-add", 0), ("quoted-set-add", 0), ("macro-set-add", 1)] {
+    let preview = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "core-set-include-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&preview, "Set include boundary preview");
+    let report = parse_stdout(&preview);
+    let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
+    assert_eq!(suggestions.len(), expected, "{name}: {report}");
+    if name == "macro-set-add" {
+      assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
+      assert!(suggestions[0]["replacement"].is_null());
+    }
+  }
+  for (name, code) in [
+    ("AddBox0", "quote $ defstruct AddBox0 (:value 'Number)"),
+    ("AddBoxTrait", "quote $ deftrait AddBoxTrait (.add :fn)"),
+    ("AddBoxImpl", "quote $ defimpl AddBoxImpl AddBoxTrait\n  .add $ fn (box item) true"),
+    ("AddBox", "quote $ def AddBox $ impl-traits AddBox0 AddBoxImpl"),
+    ("read-add-box", "quote $ defn read-add-box (box) box .add 2"),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("fix-command.main/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          code,
+        ],
+      ),
+      "install custom add method boundary",
+    );
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/read-add-box",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'fix-command.main/AddBox) (:return 'Bool)",
+      ],
+    ),
+    "declare custom add receiver",
+  );
+  let custom = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-set-include-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "read-add-box",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&custom, "custom add method preview");
+  assert_eq!(parse_stdout(&custom)["data"]["suggestions"], serde_json::json!([]));
+}
+
+#[test]
 fn optional_parameter_rule_reports_review_evidence_without_writing() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
