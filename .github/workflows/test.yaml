@@ -256,6 +256,7 @@ jobs:
           && ln -s ../../ node_modules/@calcit/procs
           && cp -v scripts/main.mjs js-out/
           && node js-out/main.mjs
+          && node scripts/check-struct-field-js.mjs
           && bash scripts/test-js-command.sh
 
       - name: "verify shared Calcit backend contracts"

@@ -4635,6 +4635,20 @@ impl CalcitTypeAnnotation {
           NeedsBoundary(Boundary::UnresolvedNominalIdentity)
         }
       }
+      (Self::Struct(_, _) | Self::StructValue(_), Self::Custom(expected))
+        if Self::custom_keyword_matches(expected, "struct") || Self::custom_keyword_matches(expected, "record") =>
+      {
+        Proven
+      }
+      (actual @ Self::TypeRef(_, _), Self::Custom(expected))
+        if Self::custom_keyword_matches(expected, "struct") || Self::custom_keyword_matches(expected, "record") =>
+      {
+        if actual.resolve_to_struct().is_some() {
+          Proven
+        } else {
+          NeedsBoundary(Boundary::UnresolvedNominalIdentity)
+        }
+      }
       (Self::Optional(actual), Self::Optional(expected)) | (Self::JsNullish(actual), Self::JsNullish(expected)) => {
         actual.prove_with_staged_bindings(expected, bindings)
       }
@@ -6551,6 +6565,9 @@ mod tests {
     assert!(person_def.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("StructDef")));
     assert!(person_value.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("Struct")));
     assert!(!person_value.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("StructDef")));
+    let struct_type = CalcitTypeAnnotation::from_tag_name("Struct");
+    assert!(person_value.prove_with_bindings(&struct_type, &mut TypeBindings::new()).is_proven());
+    assert!(!person_def.prove_with_bindings(&struct_type, &mut TypeBindings::new()).is_proven());
 
     assert!(!result_def.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("Enum")));
     assert!(result_def.is_compatible_with(&CalcitTypeAnnotation::from_tag_name("EnumDef")));

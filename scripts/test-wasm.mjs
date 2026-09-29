@@ -313,6 +313,7 @@ check("test-struct-sum(3,4)", 7, e["test-struct-sum"], 3, 4);
 check("test-struct-sum(10,20)", 30, e["test-struct-sum"], 10, 20);
 check("test-struct-matches-true()", 1, e["test-struct-matches-true"]);
 check("test-struct-field-tag()", 1, e["test-struct-field-tag"]);
+check("test-struct-contains-field()", 1, e["test-struct-contains-field"]);
 check("test-struct-get-name()", 1, e["test-struct-get-name"]);
 check("test-struct-eq()", 1, e["test-struct-eq"]);
 check("test-struct-to-map()", 3, e["test-struct-to-map"]);

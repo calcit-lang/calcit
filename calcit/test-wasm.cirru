@@ -22,7 +22,7 @@
       :defs $ {}
         'Point $ %{} 'CodeEntry
           :doc "|Struct definition (via legacy defrecord) for WASM test"
-          :code $ quote $ defrecord Point :x :y
+          :code $ quote $ defstruct Point (:x 'Number) (:y 'Number)
           :examples $ []
           :schema $ :: 'StructDef
         'add-two $ %{} 'CodeEntry (:doc "|Simple addition")
@@ -1467,6 +1467,20 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-struct-contains-field $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-struct-contains-field ()
+            let
+                point $ %{} Point (:x 1) (:y 2)
+              if
+                and (point .contains-field? :x) (point .contains-field? :y)
+                  not $ point .contains-field? :missing
+                , 1 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |typed-field-predicate)
+            :code $ quote $ assert= 1 (test-struct-contains-field)
+            :tags $ #{} :unit :wasm
         'test-struct-eq $ %{} 'CodeEntry (:doc "|struct definition equals source struct")
           :code $ quote $ defwasm-export test-struct-eq ()
             &let
