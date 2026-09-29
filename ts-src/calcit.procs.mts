@@ -2459,7 +2459,13 @@ export let format_to_lisp = (x: CalcitValue): string => {
     chunk += ")";
     return chunk;
   } else if (typeof x === "string") {
-    return JSON.stringify("|" + x);
+    // Mirror cirru_edn::is_simple_char for each code point, including CJK blocks.
+    const simpleAscii = /^[0-9A-Za-z?$.,'-]$/u;
+    const simpleCjk = /^[\u2e80-\u2fdf\u3000-\u30ff\u3130-\u318f\u31c0-\u31ff\u3200-\u32ff\u3400-\u4dbf\u4e00-\u9fff\ua960-\ua97f\uac00-\ud7af\uf900-\ufaff\ufe30-\ufe4f\uff00-\uffef\u{1b000}-\u{1b2ff}\u{20000}-\u{323af}]$/u;
+    if (![...x].every((char) => simpleAscii.test(char) || simpleCjk.test(char))) {
+      return JSON.stringify("|" + x);
+    }
+    return toString(x, true);
   } else {
     return x.toString();
   }

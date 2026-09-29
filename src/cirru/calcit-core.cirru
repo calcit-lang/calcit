@@ -5721,19 +5721,26 @@
             :generics $ [] 'T
           :tags $ #{} :builtin :internal
         'format-to-lisp $ %{} 'CodeEntry
-          :doc "|internal function for formatting to Lisp syntax\nSyntax: (format-to-lisp value)\nParams: value (any)\nReturns: string in Lisp format\nConverts Calcit data structures to Lisp-style string representation"
+          :doc "|把代码/CirruQuote 值格式化为 Lisp 表达式文本；列表输出括号表达式，例如 ([] 1 |a) 格式化为 (1 |a)。用于源码或错误展示，不保证是可反解的数据序列化；与保留 Calcit 值构造形态的 to-lispy-string 不等价。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'T
             :generics $ [] 'T
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |formats-quoted-code-as-lisp)
-            :code $ quote $ do
-              assert= "|(defn f1 (x) (+ x y))" $ format-to-lisp $ quote
-                defn f1 (x) (+ x y)
-              assert= "|(nil? nil)" $ format-to-lisp $ quote (nil? nil)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |formats-quoted-code-as-lisp)
+              :code $ quote $ do
+                assert= "|(defn f1 (x) (+ x y))" $ format-to-lisp $ quote
+                  defn f1 (x) (+ x y)
+                assert= "|(nil? nil)" $ format-to-lisp $ quote (nil? nil)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |distinguishes-simple-and-quoted-strings)
+              :code $ quote $ do
+                assert= ||a $ format-to-lisp |a
+                assert= "|\"|a_b\"" $ format-to-lisp |a_b
+                assert= "||中文" $ format-to-lisp "|中文"
+              :tags $ #{} :core :unit
         'frequencies $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn frequencies (xs0)
             assert "|expects a list for frequencies" $ list? xs0
@@ -9044,13 +9051,20 @@
             :args $ [] 'T
             :generics $ [] 'T
         'to-lispy-string $ %{} 'CodeEntry
-          :doc "|internal function for converting to Lisp string\nSyntax: (to-lispy-string value)\nParams: value (any)\nReturns: string\nConverts value to Lisp-style string representation"
+          :doc "|输出 Calcit 值的诊断表示，列表保留 [] 构造形态，例如 ([] 1 |a) 显示为 ([] 1 |a)。它不是源码 Lisp 格式化、Cirru EDN 序列化或 ToString 标量转换；不要与 format-to-lisp 自动互换。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'T
             :generics $ [] 'T
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |distinguishes-display-from-lisp-format)
+            :code $ quote $ do
+              assert= "|(1 |a)" $ format-to-lisp $ [] 1 |a
+              assert= "|([] 1 |a)" $ to-lispy-string $ [] 1 |a
+              assert= "|(+ 1 2)" $ format-to-lisp $ quote (+ 1 2)
+              assert= "|([] '+ 1 2)" $ to-lispy-string $ quote (+ 1 2)
+            :tags $ #{} :core :unit
         'to-pairs $ %{} 'CodeEntry
           :doc "|internal function for converting to pairs\nSyntax: (to-pairs map)\nParams: map (map)\nReturns: set\nConverts map to an unordered set of [key value] pairs"
           :code $ quote &runtime-implementation

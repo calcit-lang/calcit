@@ -81,6 +81,13 @@ try {
   ]) {
     assert.equal(core.to_string(value), expected, `generated JS to-string should convert ${String(value)}`);
   }
+  const list = new runtime.CalcitSliceList([1, "a"]);
+  assert.equal(runtime.format_to_lisp(list), "(1 |a)", "JS Lisp formatting must match native for a simple String in a List");
+  assert.equal(runtime.to_lispy_string(list), "([] 1 |a)", "diagnostic List display is not Lisp formatting");
+  assert.equal(runtime.format_to_lisp("a b"), '"|a b"', "non-simple Strings still need quoted Lisp formatting");
+  assert.equal(runtime.format_to_lisp("a_b"), '"|a_b"', "non-simple ASCII punctuation follows native Lisp formatting");
+  assert.equal(runtime.format_to_lisp("中文"), "|中文", "CJK Strings keep the existing readable form");
+  assert.equal(runtime.format_to_lisp("中文_"), '"|中文_"', "mixed CJK Strings follow the native per-character rule");
 
   const wasmSnapshot = join(output, "unsupported-tag-conversion.cirru");
   await copyFile("calcit/test-wasm.cirru", wasmSnapshot);
