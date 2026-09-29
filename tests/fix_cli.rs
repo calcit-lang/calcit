@@ -101,6 +101,277 @@ fn assert_success(output: &Output, context: &str) {
 }
 
 #[test]
+fn core_effect_method_fix_handles_explicit_and_compact_calls() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  let target = "fix-command.main/legacy-effects";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn legacy-effects (path task response)\n  fn () $ path .write-text |payload\n  fn () task.cancel\n  fn () $ task.cancel-with :shutdown\n  fn () $ response.resolve :ok\n  fn () $ response.reject :error\n  , true",
+      ],
+    ),
+    "install effect calls",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'FsPath 'FfiTask 'FfiResponse) (:return 'Bool)",
+      ],
+    ),
+    "declare nominal effect receivers",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        target,
+        "keeps-deferred-effects",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ assert= true $ legacy-effects (fs:path |unused) (ffi:task nil) (ffi:response nil)",
+      ],
+    ),
+    "attach Calcit effect contract",
+  );
+  let selector = [
+    "--rule",
+    "core-effect-method-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "legacy-effects",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &selector);
+  assert_success(&preview, "effect method preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
+  assert_eq!(suggestions.len(), 5, "{report}");
+  assert!(
+    suggestions.iter().all(|item| item["applicability"] == "machine-applicable"),
+    "{report}"
+  );
+  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+  for (nominal, old, preferred) in [
+    ("calcit.core/FsPath", ".write-text", ".write-text!"),
+    ("calcit.core/FfiTask", ".cancel", ".cancel!"),
+    ("calcit.core/FfiResponse", ".resolve", ".resolve!"),
+  ] {
+    let queried = run_calcit(&snapshot, &["query", "type", nominal, "--format", "json"]);
+    assert_success(&queried, "effect method discovery");
+    let context = parse_stdout(&queried);
+    let methods = context["data"]["methods"].as_array().expect("queried methods");
+    let legacy = methods.iter().find(|method| method["name"] == old).expect("legacy method");
+    let current = methods.iter().find(|method| method["name"] == preferred).expect("preferred method");
+    assert_eq!(legacy["role"], "compatibility", "{context}");
+    assert_eq!(legacy["preferred_name"], preferred, "{context}");
+    assert_eq!(legacy["fix_rule"], "core-effect-method-v1", "{context}");
+    assert_eq!(current["role"], "preferred", "{context}");
+  }
+  let replacements = suggestions
+    .iter()
+    .map(|item| item["replacement"]["value"].as_str().unwrap_or_default())
+    .collect::<Vec<_>>();
+  for expected in [
+    ".write-text!",
+    "task.cancel!",
+    "task.cancel-with!",
+    "response.resolve!",
+    "response.reject!",
+  ] {
+    assert!(replacements.contains(&expected), "missing {expected}: {report}");
+  }
+  let stale = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-effect-method-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "legacy-effects",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      "stale-revision",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!stale.status.success(), "stale revision must reject effect migration");
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-effect-method-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "legacy-effects",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().expect("preview revision"),
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "effect method apply");
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "Calcit effect after migration",
+  );
+  let repeated = run_fix(&snapshot, &selector);
+  assert_success(&repeated, "idempotent effect preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+}
+
+#[test]
+fn core_effect_method_fix_skips_quoted_calls_and_reviews_macro_context() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (target, source) in [
+    ("fix-command.main/pass-effect", "quote $ defmacro pass-effect (body) body"),
+    (
+      "fix-command.main/macro-cancel",
+      "quote $ defn macro-cancel (task) $ pass-effect $ task.cancel-with :reason",
+    ),
+    (
+      "fix-command.main/macro-cancel-zero",
+      "quote $ defn macro-cancel-zero (task) $ pass-effect task.cancel",
+    ),
+    (
+      "fix-command.main/quoted-cancel",
+      "quote $ defn quoted-cancel ()\n  quote $ task.cancel-with :reason\n  , true",
+    ),
+  ] {
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", target, "--input-format", "cirru", "--code", source]),
+      "install effect boundary source",
+    );
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/macro-cancel",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'FfiTask) (:return 'Unit)",
+      ],
+    ),
+    "declare task receiver",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/macro-cancel-zero",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'FfiTask) (:return 'Unit)",
+      ],
+    ),
+    "declare zero-arg task receiver",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/quoted-cancel",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)",
+      ],
+    ),
+    "declare quoted source",
+  );
+  let macro_preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-effect-method-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "macro-cancel",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&macro_preview, "macro effect preview");
+  let report = parse_stdout(&macro_preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
+  assert_eq!(suggestions.len(), 1, "{report}");
+  assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
+  let zero_preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-effect-method-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "macro-cancel-zero",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&zero_preview, "zero-arg macro effect preview");
+  let zero_report = parse_stdout(&zero_preview);
+  let zero_suggestions = zero_report["data"]["suggestions"].as_array().expect("suggestions array");
+  assert_eq!(zero_suggestions.len(), 1, "{zero_report}");
+  assert_eq!(zero_suggestions[0]["applicability"], "requires-review", "{zero_report}");
+  let quoted_preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-effect-method-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "quoted-cancel",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&quoted_preview, "quoted effect preview");
+  assert_eq!(parse_stdout(&quoted_preview)["data"]["suggestions"], serde_json::json!([]));
+}
+
+#[test]
 fn list_fold_fix_preserves_seeded_method_semantics_and_revision_guard() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
