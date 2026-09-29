@@ -3240,6 +3240,34 @@
                 :args $ [] 'T 'T
             :generics $ [] 'T
           :tags $ #{} :builtin :internal :state :watch
+        'add-watch! $ %{} 'CodeEntry
+          :doc "|给 Ref<T> 注册 watcher。Tag key 不可重复；callback 接收新值和旧值，返回 Unit。注册会修改 Ref 的 watcher 状态；旧 add-watch 保留兼容。"
+          :code $ quote $ defn add-watch! (ref key callback) (add-watch ref key callback)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] (:: 'Ref 'T) 'Tag $ :: 'Fn
+              {} (:return 'Unit)
+                :args $ [] 'T 'T
+            :generics $ [] 'T
+          :tags $ #{} :state :watch
+          :tests $ [] $ %{} 'TestEntry (:name |registers-once-and-preserves-callback-order)
+            :code $ quote $ let
+                source $ atom 0
+                calls $ atom 0
+              assert= &unit $ add-watch! source :change $ fn (current previous)
+                assert= 1 current
+                assert= 0 previous
+                reset! calls $ inc @calls
+                , &unit
+              assert= "|add-watch failed: listener with key `change` already existed" $ try
+                add-watch! source :change $ fn (current previous) &unit
+                fn (error) error
+              assert= 1 $ reset! source 1
+              assert= 1 @calls
+              assert= &unit $ remove-watch! source :change
+              assert= 2 $ reset! source 2
+              assert= 1 @calls
+            :tags $ #{} :core :state :unit
         'and $ %{} 'CodeEntry
           :doc "|Logical conjunction macro with short-circuit semantics\nReturns the first falsy value or the last truthy value, evaluating expressions left to right."
           :code $ quote $ defmacro and (& xs)
@@ -8028,6 +8056,22 @@
             :args $ [] (:: 'Ref 'T) 'Tag
             :generics $ [] 'T
           :tags $ #{} :builtin :internal :state :watch
+        'remove-watch! $ %{} 'CodeEntry
+          :doc "|按 Tag key 移除 Ref<T> 的 watcher，返回 Unit；key 不存在时报错。移除会修改 watcher 状态；旧 remove-watch 保留兼容。"
+          :code $ quote $ defn remove-watch! (ref key) (remove-watch ref key)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] (:: 'Ref 'T) 'Tag
+            :generics $ [] 'T
+          :tags $ #{} :state :watch
+          :tests $ [] $ %{} 'TestEntry (:name |rejects-missing-key-without-repeating-effect)
+            :code $ quote $ let
+                source $ atom 0
+              assert= &unit $ add-watch! source :change $ fn (current previous) &unit
+              assert= &unit $ remove-watch! source :change
+              assert= "|remove-watch failed: listener with key `change` not found" $ try (remove-watch! source :change)
+                fn (error) error
+            :tags $ #{} :core :state :unit
         'repeat $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn repeat (x n0)
             apply-args

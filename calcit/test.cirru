@@ -448,6 +448,19 @@
               reset! *b 1
               assert= 1 @*b
               assert= 1 @*c
+            let
+                watched $ atom 0
+                notifications $ atom 0
+              assert= &unit $ add-watch! watched :change $ fn (current prev)
+                assert= 1 current
+                assert= 0 prev
+                reset! notifications $ inc @notifications
+                , &unit
+              assert= 1 $ reset! watched 1
+              assert= 1 @notifications
+              assert= &unit $ remove-watch! watched :change
+              assert= 2 $ reset! watched 2
+              assert= 1 @notifications
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []

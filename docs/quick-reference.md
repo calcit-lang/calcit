@@ -332,7 +332,7 @@ let
 - `&atom:deref` or `deref` - read value
 - `reset!` - set value
 - `swap!` - update with function
-- `add-watch`, `remove-watch` - observe changes
+- `add-watch!`, `remove-watch!`：注册和移除 Ref watcher，会修改 watcher 状态；旧 `add-watch/remove-watch` 暂留兼容
 - `ref?` - predicate
 
 ### Type Predicates

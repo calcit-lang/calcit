@@ -202,7 +202,7 @@ do
 
 | 当前入口 | 决策与目标签名原则 | 边界 |
 | --- | --- | --- |
-| `reset!/swap!`；`add-watch/remove-watch` | **保留**前者，后者 **目标** `add-watch!/remove-watch!` | 原参数、返回和 watcher 次数不变；不是借后缀新增类型缩窄 |
+| `reset!/swap!`；旧 `add-watch/remove-watch` | **已提供** `add-watch!/remove-watch!` 作为 Ref watcher 的首选注册/移除入口；旧名暂留底层兼容 | 两组调用共享原实现与 `Ref<T>`、`Tag`、`Unit` 契约；重复/缺失 key 仍报错，callback 次数不变；本阶段不自动改写未知同名调用 |
 | FsPath `.write-text`；js-ffi `write-text!` | core **目标** `.write-text!`；模块 **保留**已有 `!` | core 仍 `(FsPath,String)->Result<Unit,String>`；js-ffi 原有 Unit/throw/async 契约不因命名一致而自动统一 |
 | FfiTask `.cancel/.cancel-with`，FfiResponse `.resolve/.reject` | **目标**对应 `.cancel!/.cancel-with!/.resolve!/.reject!` | 保持既有泛型、签名、exactly-once、释放与失败行为，不能用返回 Bool 或命名代替生命周期证明 |
 | `.read-text/.read-dir/.walk-dir`、`get-args/get-env`；std `read-file!/read-dir!/walk-dir!` | **保留**core 查询名字；std **目标**去掉读取的 `!` | 保留 Option/Result/throw 各自边界；模块分别 PR，不为命名增加新宿主能力 |
