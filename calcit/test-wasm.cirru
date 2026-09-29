@@ -1467,7 +1467,8 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-        'test-struct-contains-field $ %{} 'CodeEntry (:doc |)
+        'test-struct-contains-field $ %{} 'CodeEntry
+          :doc "|验证 Struct 的类型化字段谓词：已声明的 Tag 字段存在，未声明字段不存在；返回 1 表示全部断言成立。"
           :code $ quote $ defwasm-export test-struct-contains-field ()
             let
                 point $ %{} Point (:x 1) (:y 2)
