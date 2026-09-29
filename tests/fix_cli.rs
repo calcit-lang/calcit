@@ -100,6 +100,7 @@ fn assert_success(output: &Output, context: &str) {
   );
 }
 
+/// Verify proven core effect aliases across explicit and compact source forms.
 #[test]
 fn core_effect_method_fix_handles_explicit_and_compact_calls() {
   let directory = TestDirectory::create();
@@ -248,6 +249,7 @@ fn core_effect_method_fix_handles_explicit_and_compact_calls() {
   assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
 }
 
+/// Keep quoted code untouched and leave macro-expanded effect calls for review.
 #[test]
 fn core_effect_method_fix_skips_quoted_calls_and_reviews_macro_context() {
   let directory = TestDirectory::create();

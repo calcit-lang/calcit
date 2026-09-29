@@ -4535,6 +4535,7 @@ struct MethodAliasCall {
   compact_receiver: Option<String>,
 }
 
+/// Extract the receiver from a compact source leaf such as `task.cancel`.
 fn compact_method_receiver<'a>(source: &'a str, method: &str) -> Option<&'a str> {
   let receiver = source.strip_suffix(method)?;
   if receiver.is_empty()
@@ -4613,6 +4614,7 @@ fn collect_method_alias_calls(node: &Cirru, path: &mut Vec<usize>, calls: &mut V
   }
 }
 
+/// Plan a leaf-only rename when receiver, core method contract, and source origin agree.
 fn plan_core_method_alias_fixes(
   snapshot: &Snapshot,
   snapshot_file: &str,
