@@ -78,6 +78,8 @@ For source-backed definitions, `query def` prints the stored Cirru body. For spe
 
 `query type` 给出 `.method` 的类型契约，方法后面的 definition path 只是实现入口；`query def/context` 的 `:internal` 标签不能被误读为公开推荐。对已存在显式 fix 且旧、新方法在具体接收者上都证明为同一实现、同一参数和返回契约的别名，查询附带 `role: preferred` 或 `role: compatibility`；兼容名还有 `preferred-name` 与 `fix-rule`（Cirru EDN 拼写；JSON 字段使用下划线）。`proven` 只表示类型契约可用，**不等于首选名称**。开放、歧义或不同实现的方法不会凭拼写获得推荐角色；准确查询旧名仍可见原实现。区分 nominal 类型名、构造器和内部函数时，参见 [API 命名角色](../features/api-roles.md)。
 
+例如 `query type ":: 'List 'Number" --format edn` 会把单元素追加的 `.append`、长度查询的 `.len` 标为首选，旧 `.add/.count` 分别关联 `core-list-add-v1`、`core-collection-len-v1`。同一长度规则也覆盖契约已证明的 Map/Set/String；Map `.add` 是不同的 entry 操作，不会因此变成 `.append` 或 `.assoc` 的兼容别名。
+
 命名整理的已实现入口与未来目标必须区分：用 `calcit docs read api-roles.md '逐族命名决策'`
 查看整组契约，或把章节改成 `谓词与成员查询`、`集合长度、组合与遍历` 缩小输出。
 标为“目标”的名字只有在当前版本的查询中实际存在且类型契约可用时才可生成调用；
