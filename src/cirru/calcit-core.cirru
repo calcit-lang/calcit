@@ -8048,7 +8048,7 @@
             :return $ :: 'List 'Dynamic
           :tags $ #{} :builtin :internal
         'parse-float $ %{} 'CodeEntry
-          :doc "|把完整数字文本解析为 Result<Number,String>。成功值包括有限数、NaN、inf、Infinity（支持符号与大小写变体）；无效文本的 :err 保留原输入。WASM 当前因 E_WASM_NIL_TYPE_EVIDENCE 明确不支持这条 Result 路径。"
+          :doc "|把完整数字文本解析为 Result<Number,String>。成功值包括有限数、NaN、inf、Infinity（支持符号与大小写变体）；无效文本的 :err 保留原输入。WASM 若将 parse-float 本身列为显式导出或入口 target，会因 E_WASM_NIL_TYPE_EVIDENCE 在代码生成阶段失败；若仅作为未支持依赖保留，生成的 stub 被调用时才陷阱。"
           :code $ quote $ defn parse-float (source)
             let
                 parsed $ &parse-float source
