@@ -32,7 +32,7 @@
             if
               and
                 = 1234 $ unix-time-ms
-                = 5678 $ cpu-time
+                = 5678 $ monotonic-time-ms
               println "|WASI-fixed-clocks: ok"
               quit! 1
           :examples $ []
@@ -850,7 +850,7 @@
             :tags $ #{} :core :env :unit :wasi :wasm
         'read-clocks $ %{} 'CodeEntry (:doc "|读取系统时钟与单调时钟的毫秒值。")
           :code $ quote $ defn read-clocks ()
-            [] (unix-time-ms) (cpu-time)
+            [] (unix-time-ms) (monotonic-time-ms)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ []
