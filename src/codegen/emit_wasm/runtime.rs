@@ -5952,13 +5952,81 @@ fn build_rt_str_ends_with() -> CompiledFn {
 
 /// `__rt_f64_to_str(value: f64) → f64` (logical string pointer)
 /// Converts a number to a heap-allocated string.
-/// Handles safe integers. Unsupported values trap instead of returning incorrect text.
+/// Handles safe integers and special values. Unsupported finite values trap.
+fn emit_f64_const_text(b: &mut Vec<Instruction<'static>>, text: &str, string_tag: i32) {
+  let padded_len = (text.len() + 7) & !7;
+  b.extend([
+    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
+    Instruction::LocalTee(11),
+    Instruction::I32Const(HEAP_MAGIC),
+    Instruction::I32Store(mem_arg_i32(0)),
+    Instruction::LocalGet(11),
+    Instruction::I32Const(4),
+    Instruction::I32Add,
+    Instruction::I32Const(string_tag),
+    Instruction::I32Store(mem_arg_i32(0)),
+    Instruction::LocalGet(11),
+    Instruction::I32Const(8),
+    Instruction::I32Add,
+    Instruction::LocalTee(7),
+    Instruction::F64Const(Ieee64::from(text.len() as f64)),
+    Instruction::F64Store(mem_arg_f64(0)),
+  ]);
+  for (offset, byte) in text.bytes().enumerate() {
+    b.extend([
+      Instruction::LocalGet(7),
+      Instruction::I32Const(8 + offset as i32),
+      Instruction::I32Add,
+      Instruction::I32Const(byte as i32),
+      Instruction::I32Store8(mem_arg_byte(0)),
+    ]);
+  }
+  b.extend([
+    Instruction::LocalGet(11),
+    Instruction::I32Const((16 + padded_len) as i32),
+    Instruction::I32Add,
+    Instruction::GlobalSet(HEAP_PTR_GLOBAL),
+    Instruction::LocalGet(7),
+    Instruction::F64ConvertI32U,
+    Instruction::Return,
+  ]);
+}
+
 fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
   // param 0: value (f64)
   // locals: 1=raw_i64(i64), 2=neg(i32), 3=abs_i64(i64), 4=ndigits(i32),
   //          5=tmp_i64(i64), 6=payload(i32), 7=str_ptr(i32), 8=content(i32),
   //          9=pos(i32), 10=digit(i32), 11=raw_base(i32)
-  let mut b = vec![Instruction::LocalGet(0)];
+  let mut b = Vec::new();
+
+  // Preserve native spelling for non-finite values and signed zero.
+  b.extend([
+    Instruction::LocalGet(0),
+    Instruction::LocalGet(0),
+    Instruction::F64Ne,
+    Instruction::If(BlockType::Empty),
+  ]);
+  emit_f64_const_text(&mut b, "NaN", string_tag);
+  b.push(Instruction::End);
+  for (value, text) in [(f64::INFINITY, "inf"), (f64::NEG_INFINITY, "-inf")] {
+    b.extend([
+      Instruction::LocalGet(0),
+      Instruction::F64Const(Ieee64::from(value)),
+      Instruction::F64Eq,
+      Instruction::If(BlockType::Empty),
+    ]);
+    emit_f64_const_text(&mut b, text, string_tag);
+    b.push(Instruction::End);
+  }
+  b.extend([
+    Instruction::LocalGet(0),
+    Instruction::I64ReinterpretF64,
+    Instruction::I64Const(i64::MIN),
+    Instruction::I64Eq,
+    Instruction::If(BlockType::Empty),
+  ]);
+  emit_f64_const_text(&mut b, "-0", string_tag);
+  b.extend([Instruction::End, Instruction::LocalGet(0)]);
 
   // Only values with exact integer formatting are supported here. The other
   // numeric cases need a proper decimal formatter; do not substitute a marker.

@@ -144,11 +144,11 @@ try {
   assert.equal(instance.exports["test-turn-string-zero"](0), 1, "WASM must distinguish Number zero from nil");
   assert.equal(instance.exports["test-turn-string-safe-limit"](2 ** 53), 1, "WASM must format the safe integer boundary");
   assert.equal(instance.exports["test-turn-string-negative-limit"](-(2 ** 53)), 1, "WASM must format the negative safe integer boundary");
-  for (const [value, expected] of [[0, "0"], [42, "42"], [-(2 ** 53), "-9007199254740992"], [2 ** 53, "9007199254740992"]]) {
+  for (const [value, expected] of [[0, "0"], [-0, "-0"], [42, "42"], [-(2 ** 53), "-9007199254740992"], [2 ** 53, "9007199254740992"], [NaN, "NaN"], [Infinity, "inf"], [-Infinity, "-inf"]]) {
     assert.equal(readWasmString(instance.exports["test-turn-string-value"](value)), expected,
       `WASM must return exact UTF-8 number text for ${value}`);
   }
-  for (const value of [0.5, -0, 2 ** 53 + 2, 1e21, Infinity, NaN]) {
+  for (const value of [0.5, 2 ** 53 + 2, 1e21]) {
     assert.throws(() => instance.exports["test-turn-string-runtime"](value), WebAssembly.RuntimeError,
       `WASM must trap instead of silently misformatting ${String(value)}`);
   }
