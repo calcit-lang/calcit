@@ -2280,6 +2280,36 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
       }),
       "remove-watch should require a Tag key: {watch_warnings:?}"
     );
+    let public_watch_warnings = warnings
+      .iter()
+      .filter(|warning| {
+        warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
+          && (warning.message().contains("calcit.core/add-watch!") || warning.message().contains("calcit.core/remove-watch!"))
+      })
+      .collect::<Vec<_>>();
+    assert_eq!(
+      public_watch_warnings.len(),
+      3,
+      "public Ref watcher wrappers should preserve the key and callback type boundaries: {warnings:?}"
+    );
+    assert!(public_watch_warnings.iter().any(|warning| {
+      warning
+        .message()
+        .contains("Function `calcit.core/add-watch!` arg 2 expects type `:tag`")
+        && warning.message().contains("got `:string`")
+    }));
+    assert!(public_watch_warnings.iter().any(|warning| {
+      warning
+        .message()
+        .contains("Function `calcit.core/add-watch!` arg 3 expects type `fn(:string, :string) -> :unit`")
+        && warning.message().contains("got `fn(:number) -> :number`")
+    }));
+    assert!(public_watch_warnings.iter().any(|warning| {
+      warning
+        .message()
+        .contains("Function `calcit.core/remove-watch!` arg 2 expects type `:tag`")
+        && warning.message().contains("got `:string`")
+    }));
     let variadic_method_warnings = warnings
       .iter()
       .filter(|warning| warning.code() == Some("W_METHOD_ARG_TYPE_MISMATCH") && warning.message().contains("Method `.merge` variadic"))
