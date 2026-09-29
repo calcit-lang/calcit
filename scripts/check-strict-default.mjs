@@ -111,6 +111,21 @@ if (!invalidMapMethod.stderr.includes("W_PROC_ARG_TYPE_MISMATCH")) {
   throw new Error(`typed Map .assoc lost its lowered Proc type diagnostic:\n${invalidMapMethod.stderr}`);
 }
 
+const validMapDissoc = run(["eval", "let ((m ({} (:a 1)))) (m .dissoc :missing)"]);
+expectStatus(validMapDissoc, 0, "typed Map .dissoc accepts a matching key");
+
+const invalidDirectMapDissoc = run(["eval", "&map:dissoc ({} (:a 1)) |oops"]);
+expectStatus(invalidDirectMapDissoc, 1, "direct Map dissociation rejects a mismatched key");
+if (!invalidDirectMapDissoc.stderr.includes("W_PROC_ARG_TYPE_MISMATCH")) {
+  throw new Error(`direct Map dissociation lost its type diagnostic:\n${invalidDirectMapDissoc.stderr}`);
+}
+
+const invalidMapDissoc = run(["eval", "let ((m ({} (:a 1)))) (m .dissoc |oops)"]);
+expectStatus(invalidMapDissoc, 1, "typed Map .dissoc rejects a mismatched key");
+if (!invalidMapDissoc.stderr.includes("W_PROC_ARG_TYPE_MISMATCH")) {
+  throw new Error(`typed Map .dissoc lost its lowered Proc type diagnostic:\n${invalidMapDissoc.stderr}`);
+}
+
 console.log(
-  "Strict-default CLI smoke passed: valid, failure, compatibility, conflict, eval, core Option/Result methods, open-container merge/concat, and Map method types",
+  "Strict-default CLI smoke passed: valid, failure, compatibility, conflict, eval, core Option/Result methods, open-container merge/concat, and Map assoc/dissoc method types",
 );
