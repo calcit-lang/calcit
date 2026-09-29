@@ -318,7 +318,7 @@ calcit test '<namespace>/<definition>'
 
 `type-at --format edn` 的语义路径可能是 `code@3.2`，而 `tree --path` 需要 `@3.2`；不要把仍含 `code@` 的 follow-up 命令直接交给 `tree`。`check-public` 目前只支持 human/json，所以上述公开 API 审计显式使用 JSON。
 
-读取 `query type`、`type-at` 或 `context` 的方法契约时，先看 `status`：`proven` 表示接收者实例化后，调用参数与结果已有精确类型；`open` 表示仍含 `Dynamic`/`DynFn` 或缺少可证明的 schema，不能据此生成精确调用。例如普通 `Option<Dynamic>` 的 `.unwrap-or` 是开放契约，但已证明为空的 core `Option :none` 可以由具体 fallback 推断类型；不读取内部值的 `.some? -> Bool` 仍可证明。`ambiguous` 需要先消除 trait/impl 来源冲突，不要按展示顺序猜一个实现。
+读取 `query type`、`type-at` 或 `context` 的方法契约时，先看 `status`：`proven` 表示接收者实例化后，调用参数与结果已有精确类型；`open` 表示仍含 `Dynamic`/`DynFn` 或缺少可证明的 schema，不能据此生成精确调用。例如普通 `Option<Dynamic>` 的 `.unwrap-or` 是开放契约，但已证明为空的 core `Option :none` 可以由具体 fallback 推断类型；不读取内部值的 `.some? -> Bool` 仍可证明。`ambiguous` 需要先消除 trait/impl 来源冲突，不要按展示顺序猜一个实现。对已证明同实现且有显式 fix 的别名，再看 `role`：`preferred` 是当前首选应用方法，`compatibility` 保留旧名查询并提供 `preferred-name`、`fix-rule`；没有角色不代表不可用，也不能仅凭 `proven` 猜测首选。
 
 最后运行当前仓库规定的测试和目标 codegen。只有项目目标是 JS 时，`calcit js` 才是对应的编译检查；它不是所有 Calcit 项目的通用完成证明。
 
