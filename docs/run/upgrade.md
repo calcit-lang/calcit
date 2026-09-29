@@ -28,7 +28,7 @@ related:
 
 `round?` 与 Number 的 `.round?` 现在统一判断“有限且恰好没有小数部分”。native、JS、core WASM 和 WASI Component 使用相同契约：NaN、正负 Infinity、任何非零小数均为 false；0、-0 与有限的整数值为 true。
 
-此前 native 使用 EPSILON 容差，把 `0.0000000000000001` 等近零非整数误判为 true；JS/WASM 则把 Infinity 误判为 true。这是行为修复，不是批量 rename。依赖旧容差的业务需要显式选择适合其精度的近似比较；不要通过自动 fix 猜测容差或加入舍入。现有源码无需改名，`integer?/.integer?` 仍是 [API 命名计划](../features/api-roles.md#谓词与成员查询) 中的目标词，尚未提供。
+此前 native 使用 EPSILON 容差，把 `0.0000000000000001` 等近零非整数误判为 true；JS/WASM 则把 Infinity 误判为 true。这是行为修复，不是批量 rename。依赖旧容差的业务需要显式选择适合其精度的近似比较；不要通过自动 fix 猜测容差或加入舍入。新代码首选已提供的 `integer?/.integer?`；旧名暂留同义兼容，可用 `calcit fix --rule core-integer-predicate-v1` 显式迁移已证明的调用，详见 [fix 规则](fix.md)。
 
 该 Bool 谓词不等于“安全整数”或 `Int32/UInt32` 等数值 refinement 证明。例如 `9007199254740992` 仍是有限且无小数部分的 Number，所以结果为 true；需要特定边界时继续使用对应的 checked 转换。这次不改变索引转换、JSON 格式化的内部容差，也不改变 `round` 的舍入行为。
 
@@ -43,6 +43,12 @@ assert= true $ .round? -0
 
 assert= true $ round? 9007199254740992
 ```
+
+## 索引、键、值与成员谓词
+
+`contains?` 的旧方法形式依接收者表示不同命题，不能全局替换：List/String 检查索引，Map 检查键，Set 检查成员；Map 的旧 `.includes?` 则检查值。新代码首选 List/String `.contains-index?`、Map `.contains-key?` / `.contains-value?`，Set 成员保留 `.includes?`。String `.includes?` 判断子串，List `.includes?` 判断元素，均不得与索引判断混用。
+
+已证明旧新方法同属 core 实现时，可显式预览 `calcit calcit.cirru fix --rule core-predicate-method-v1 --format edn`，审阅建议和 revision 后再应用。规则不迁移 Struct/Enum、`Contains` trait、自定义同名方法、开放接收者或 attached `:tests` / `:examples`；这些位置需要人工检查。原有方法仍保留原义，不会因新名字而改变失败行为。完整边界见 [API 命名角色](../features/api-roles.md#谓词与成员查询) 与 [fix 规则](fix.md)。
 
 ## WASM 的 nil 类型证据
 
