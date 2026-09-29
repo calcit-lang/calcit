@@ -36,6 +36,20 @@ try {
   execFileSync(binary, ["--emit-path", output, snapshot, "js"], { stdio: "pipe" });
   const core = await import(pathToFileURL(join(output, "calcit.core.mjs")).href);
   const runtime = await import(pathToFileURL(resolve("lib/calcit.procs.mjs")).href);
+  for (const [source, value, expected] of [
+    ["0.0000001", 0.0000001, "0.0000001"],
+    ["-0.0000001", -0.0000001, "-0.0000001"],
+    ["1000000000000000000000", 1e21, "1000000000000000000000"],
+    ["-0", -0, "-0"],
+    ["5e-324", Number.MIN_VALUE, `0.${"0".repeat(323)}5`],
+    ["1e309", Infinity, "inf"],
+    ["-1e309", -Infinity, "-inf"],
+    ["nan", NaN, "NaN"],
+  ]) {
+    const native = execFileSync(binary, [snapshot, "eval", `turn-string ${source}`], { encoding: "utf8" });
+    assert.ok(native.includes(`|${expected}`), `native Number formatting should produce ${expected}`);
+    assert.equal(runtime.turn_string(value), expected, `generated JS should match native turn-string for ${source}`);
+  }
   const tag = core.to_tag("ready");
   const symbol = core.to_symbol("ready");
   assert.ok(tag instanceof runtime.CalcitTag);
