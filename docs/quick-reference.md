@@ -394,7 +394,7 @@ Struct，`get` 可按运行时字段名返回 `Option<Dynamic>`。
 - `identical?` - reference equality
 - `recur` - tail recursion
 - `generate-id!` - unique ID generation
-- `cpu-time` - timing
+- `monotonic-time-ms` - 单调时钟毫秒读数，用于测量经过时间；旧 `cpu-time` 暂留兼容
 - `wait-ms`：同步等待整数毫秒，返回 `Result<Unit,String>`；与异步 `timeout-call` 无关
 - `&get-os`, `&get-calcit-backend` - environment info
 
