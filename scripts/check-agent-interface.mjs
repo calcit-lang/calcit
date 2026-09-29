@@ -37,7 +37,7 @@ const scenarios = [
     check(result) {
       assert.equal(result.data.id, "calcit.core/option:some?");
       assert.match(result.data.doc, /\.some\?/);
-      assert.equal(result.data.examples.items[0]?.cirru, "assert= true $\n  %some 1\n  , .some?");
+      assert.equal(result.data.examples.items[0]?.cirru, "assert= true $\n  Option :some 1\n  , .some?");
     },
   },
   {
@@ -56,7 +56,7 @@ const scenarios = [
     check(result) {
       assert.equal(result.data.id, "calcit.core/result:ok?");
       assert.match(result.data.doc, /\.ok\?/);
-      assert.equal(result.data.examples.items[0]?.cirru, "assert= true $\n  %ok 1\n  , .ok?");
+      assert.equal(result.data.examples.items[0]?.cirru, "assert= true $\n  Result :ok 1\n  , .ok?");
     },
   },
   {
@@ -849,6 +849,25 @@ const scenarios = [
     },
   },
 ];
+
+for (const [definition, method, legacy] of [
+  ["&str:includes?", ".includes?", ".contains?"],
+  ["&map:contains?", ".contains-key?", ".contains?"],
+  ["fold", ".fold", ".reduce"],
+  ["option:none?", ".none?", "%none"],
+  ["result:err?", ".err?", "%err"],
+]) {
+  scenarios.push({
+    name: `${definition} offers a canonical receiver example`,
+    args: ["src/cirru/calcit-core.cirru", "query", "context", `calcit.core/${definition}`, "--format", "json"],
+    check(result) {
+      const example = result.data.examples.items[0]?.cirru;
+      assert.equal(result.data.id, `calcit.core/${definition}`);
+      assert.ok(example?.includes(method), `${definition} must show ${method}`);
+      assert.ok(!example.includes(legacy), `${definition} must not recommend ${legacy}`);
+    },
+  });
+}
 
 const rows = [];
 for (const scenario of scenarios) {

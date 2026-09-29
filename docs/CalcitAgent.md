@@ -33,6 +33,8 @@ CLI 不传格式参数时保持适合人类 review 的 Markdown-compatible 输�
 
 遇到 `%some`、`.unwrap`、`option:unwrap`、`&str:includes?` 等不同层次的名字，先按 [API 命名角色](features/api-roles.md) 区分类型名、构造器、方法、命名空间函数和内部实现。查方法先用 `calcit query type` 确认接收者与 `proven` 契约，再通过 `query def/context --format edn` 读实现与标签；不要因为 `query type` 给出了 `&` 或 `option:*` 的 definition path，就把内部定义改成应用的推荐调用。
 
+查询结果有 `preferred` 时优先用对应方法；`compatibility` 的 `preferred-name` 和 `fix-rule` 用于显式迁移，`open` 不等于已证明可安全调用。`query type` 的 `definition` 是继续查 `query examples '<definition>'` 的定位线索，不是另一种推荐调用写法。例如 String `.includes?` 的示例位于 `calcit.core/&str:includes?`，Map `.contains-key?` 位于 `calcit.core/&map:contains?`，List `.fold` 位于 `calcit.core/fold`；这些示例展示应用方法调用。`query examples` 当前输出 Markdown-compatible 文本，尚不接受 `--format edn`，不要给它套用其他查询命令的格式参数。Option 判断可先用 `query type ":: 'Option 'Number" --format edn` 确认 `.none?`，再查询 `calcit.core/option:none?` 的直接名义构造示例。
+
 ## Mutation contract v1
 
 这是每次进入 Calcit 仓库、首次写入前必须读取的紧凑安全契约：

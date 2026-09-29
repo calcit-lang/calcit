@@ -1504,7 +1504,10 @@
         '&map:contains? $ %{} 'CodeEntry
           :doc "|internal function for checking if map contains key\nSyntax: (&map:contains? map key)\nParams: map (map), key (any)\nReturns: boolean\nReturns true if map contains key"
           :code $ quote &runtime-implementation
-          :examples $ []
+          :examples $ [] $ quote
+            assert= true $
+              {} $ :key 1
+              , .contains-key? :key
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] (:: 'Map 'K 'V) 'K
             :generics $ [] 'K 'V
@@ -2208,7 +2211,8 @@
         '&str:includes? $ %{} 'CodeEntry
           :doc "|String .includes? 的内部实现，检查是否包含子串；应用代码优先使用 text .includes? fragment。不要与 String .contains? 的字符索引检查混淆。"
           :code $ quote &runtime-implementation
-          :examples $ []
+          :examples $ [] $ quote
+            assert= true $ |abc .includes? |b
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'String 'String
           :tags $ #{} :alias :builtin :internal
@@ -5529,7 +5533,10 @@
         'fold $ %{} 'CodeEntry
           :doc "|Seeded left fold over a List<T>. Calls reducer once per element from left to right and returns the initial accumulator for an empty list; U may differ from T."
           :code $ quote $ defn fold (xs initial reducer) (foldl xs initial reducer)
-          :examples $ []
+          :examples $ [] $ quote
+            assert= 6 $
+              [] 1 2 3
+              , .fold 0 +
           :schema $ :: 'Fn $ {} (:return 'U)
             :args $ [] (:: 'List 'T) 'U $ :: 'Fn
               {} (:return 'U)
@@ -7828,7 +7835,7 @@
               (:none) true
           :examples $ [] $ quote
             assert= true $
-              %none
+              Option :none
               , .none?
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] $ :: 'Option 'T
@@ -7860,7 +7867,7 @@
               (:none) false
           :examples $ [] $ quote
             assert= true $
-              %some 1
+              Option :some 1
               , .some?
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] $ :: 'Option 'T
@@ -8293,7 +8300,7 @@
               (:err _) true
           :examples $ [] $ quote
             assert= true $
-              %err |failed
+              Result :err |failed
               , .err?
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] $ :: 'Result 'T 'E
@@ -8340,7 +8347,7 @@
               (:err _) false
           :examples $ [] $ quote
             assert= true $
-              %ok 1
+              Result :ok 1
               , .ok?
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] $ :: 'Result 'T 'E
