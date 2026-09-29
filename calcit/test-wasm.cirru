@@ -820,6 +820,12 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-map-add-legacy $ %{} 'CodeEntry (:doc "|旧 Map `.add` 二元 entry 保留 Map 形状，但不证明键值类型。")
+          :code $ quote $ defwasm-export test-map-add-legacy ()
+            &map:count $ (&{} :a 1) .add $ [] :b 2
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
         'test-map-bucket-update $ %{} 'CodeEntry
           :doc "|update on collided numeric keys keeps lookup correct"
           :code $ quote $ defwasm-export test-map-bucket-update (a b)

@@ -1505,6 +1505,20 @@ mod type_query_tests {
       let method = methods.iter().find(|method| method.name == unchanged).expect("map method");
       assert!(method.role.is_none(), "{unchanged} has no proven equivalent alias fix");
     }
+    assert_eq!(
+      methods.iter().find(|method| method.name == ".add").expect("legacy Map add").status,
+      "open",
+      "the legacy pair does not prove separate Map key and value types"
+    );
+    assert_eq!(
+      methods
+        .iter()
+        .find(|method| method.name == ".assoc")
+        .expect("typed Map assoc")
+        .status,
+      "proven",
+      "Map assoc must keep its key/value contract"
+    );
     let open = super::super::fix::proven_method_aliases(&CalcitTypeAnnotation::Dynamic);
     assert!(
       open.is_empty(),

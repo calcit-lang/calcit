@@ -1440,17 +1440,41 @@
             :code $ quote $ assert= (#{} 1)
               &list:to-set $ [] 1 1 1 1
             :tags $ #{} :core :unit
-        '&map:add-entry $ %{} 'CodeEntry (:doc |)
+        '&map:add-entry $ %{} 'CodeEntry
+          :doc "|Map `.add` 的旧二元 List entry 实现。只能验证 entry 长度，无法在现有 List<T> 类型中分别证明 key 为 K、value 为 V；结果按 Map<Dynamic,Dynamic> 保留开放边界。新代码使用 `.assoc key value`。"
           :code $ quote $ defn &map:add-entry (xs pair)
             assert "|&map:add-entry expected value in a pair" $ and (list? pair)
               &= 2 $ count pair
             &map:assoc xs (&list:nth pair 0) (&list:nth pair 1)
           :examples $ []
           :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'Map 'K 'V) (:: 'List 'P)
-            :generics $ [] 'K 'V 'P
-            :return $ :: 'Map 'K 'V
+            :args $ [] (:: 'Map 'K 'V) (:: 'List 'Dynamic)
+            :generics $ [] 'K 'V
+            :return $ :: 'Map 'Dynamic 'Dynamic
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-legacy-pair-shape-with-open-result)
+              :code $ quote $ let
+                  original $ &{} :a 1
+                  added $ original .add $ [] :b 2
+                  replaced $ original .add $ [] :a 3
+                assert-type added $ :: 'Map 'Dynamic 'Dynamic
+                assert= (&{} :a 1 :b 2) added
+                assert= (&{} :a 3) replaced
+                assert= (&{} :a 1) original
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-non-pair-list)
+              :code $ quote $ let
+                  original $ &{} :a 1
+                  short-error $ try
+                    original .add $ [] :b
+                    fn (error) error
+                  long-error $ try
+                    original .add $ [] :b 2 :c
+                    fn (error) error
+                assert= true $ &str:includes? short-error "|&map:add-entry expected value in a pair"
+                assert= true $ &str:includes? long-error "|&map:add-entry expected value in a pair"
+              :tags $ #{} :core :unit
         '&map:assoc $ %{} 'CodeEntry
           :doc "|internal function for map association\nSyntax: (&map:assoc map key value & key-values)\nParams: map (map), key (any), value (any), key-values (any, variadic)\nReturns: map\nReturns new map with key-value associations"
           :code $ quote &runtime-implementation
