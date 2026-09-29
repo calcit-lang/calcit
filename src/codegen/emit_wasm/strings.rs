@@ -455,7 +455,7 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   }
 
   if let Calcit::Number(number) = &args[0] {
-    let text = number.to_string();
+    let text = crate::util::number::format_calcit_number(*number);
     let ptr = *ctx
       .string_pool
       .get(&text)

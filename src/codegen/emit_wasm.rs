@@ -9218,7 +9218,7 @@ fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
   }
   match expr {
     Calcit::Number(number) => {
-      strings.push(number.to_string());
+      strings.push(crate::util::number::format_calcit_number(*number));
     }
     Calcit::Str(s) => {
       strings.push(s.to_string());

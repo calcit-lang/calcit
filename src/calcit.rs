@@ -846,6 +846,7 @@ impl Calcit {
       Calcit::Nil => String::from(""),
       Calcit::Unit => String::from("&unit"),
       Calcit::Str(s) => (**s).to_owned(),
+      Calcit::Number(value) => crate::util::number::format_calcit_number(*value),
       Calcit::Method(name, method_kind) => match method_kind {
         MethodKind::Invoke(_) => format!(".{name}"),
         MethodKind::Access => format!(".-{name}"),
