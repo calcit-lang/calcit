@@ -5950,9 +5950,9 @@ fn build_rt_str_ends_with() -> CompiledFn {
   }
 }
 
-/// `__rt_f64_to_str(value: f64) → i32`
+/// `__rt_f64_to_str(value: f64) → f64` (logical string pointer)
 /// Converts a number to a heap-allocated string.
-/// Handles integers (positive, negative, zero). Non-integers get "number".
+/// Handles safe integers. Unsupported values trap instead of returning incorrect text.
 fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
   // param 0: value (f64)
   // locals: 1=raw_i64(i64), 2=neg(i32), 3=abs_i64(i64), 4=ndigits(i32),
@@ -5960,11 +5960,24 @@ fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
   //          9=pos(i32), 10=digit(i32), 11=raw_base(i32)
   let mut b = vec![Instruction::LocalGet(0)];
 
-  // Check if value is an integer: floor(value) == value (and not NaN)
-  // Use: value - floor(value) == 0.0
+  // Only values with exact integer formatting are supported here. The other
+  // numeric cases need a proper decimal formatter; do not substitute a marker.
   b.push(Instruction::F64Floor);
   b.push(Instruction::LocalGet(0));
   b.push(Instruction::F64Eq);
+  b.push(Instruction::LocalGet(0));
+  b.push(Instruction::F64Const(Ieee64::from(-9007199254740992.0f64)));
+  b.push(Instruction::F64Ge);
+  b.push(Instruction::I32And);
+  b.push(Instruction::LocalGet(0));
+  b.push(Instruction::F64Const(Ieee64::from(9007199254740992.0f64)));
+  b.push(Instruction::F64Le);
+  b.push(Instruction::I32And);
+  b.push(Instruction::LocalGet(0));
+  b.push(Instruction::I64ReinterpretF64);
+  b.push(Instruction::I64Const(i64::MIN));
+  b.push(Instruction::I64Ne);
+  b.push(Instruction::I32And);
   b.push(Instruction::If(wasm_encoder::BlockType::Result(wasm_encoder::ValType::F64)));
   // --- integer branch ---
 
@@ -6130,61 +6143,10 @@ fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
   // return str_ptr as f64 — leave on stack
   b.push(Instruction::LocalGet(7));
   b.push(Instruction::F64ConvertI32U);
-  b.push(Instruction::Else); // end integer branch / start non-integer branch
+  b.push(Instruction::Else);
+  b.push(Instruction::Unreachable);
 
-  // --- non-integer branch: allocate string "number" ---
-  // "number" = 6 bytes: 110 117 109 98 101 114 (0x6e,0x75,0x6d,0x62,0x65,0x72)
-  // payload = 8 (byte_len) + 8 (padded 6 bytes to 8)
-  b.push(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
-  b.push(Instruction::LocalTee(11));
-  b.push(Instruction::I32Const(HEAP_MAGIC));
-  b.push(Instruction::I32Store(mem_arg_i32(0)));
-  b.push(Instruction::LocalGet(11));
-  b.push(Instruction::I32Const(4));
-  b.push(Instruction::I32Add);
-  b.push(Instruction::I32Const(string_tag));
-  b.push(Instruction::I32Store(mem_arg_i32(0)));
-  b.push(Instruction::LocalGet(11));
-  b.push(Instruction::I32Const(8));
-  b.push(Instruction::I32Add);
-  b.push(Instruction::LocalSet(7)); // str_ptr
-  // Advance heap_ptr by 16 (8 byte_len + 8 padded content)
-  b.push(Instruction::LocalGet(11));
-  b.push(Instruction::I32Const(24)); // 8 header + 8 byte_len + 8 padded bytes
-  b.push(Instruction::I32Add);
-  b.push(Instruction::GlobalSet(HEAP_PTR_GLOBAL));
-  // byte_len = 6
-  b.push(Instruction::LocalGet(7));
-  b.push(Instruction::F64Const(Ieee64::from(6.0f64)));
-  b.push(Instruction::F64Store(mem_arg_f64(0)));
-  // content base = str_ptr + 8
-  b.push(Instruction::LocalGet(7));
-  b.push(Instruction::I32Const(8));
-  b.push(Instruction::I32Add);
-  b.push(Instruction::LocalSet(8));
-  // write "number" bytes
-  b.push(Instruction::LocalGet(8));
-  b.push(Instruction::I32Const(b'n' as i32));
-  b.push(Instruction::I32Store8(mem_arg_byte(0)));
-  b.push(Instruction::LocalGet(8));
-  b.push(Instruction::I32Const(b'u' as i32));
-  b.push(Instruction::I32Store8(mem_arg_byte(1)));
-  b.push(Instruction::LocalGet(8));
-  b.push(Instruction::I32Const(b'm' as i32));
-  b.push(Instruction::I32Store8(mem_arg_byte(2)));
-  b.push(Instruction::LocalGet(8));
-  b.push(Instruction::I32Const(b'b' as i32));
-  b.push(Instruction::I32Store8(mem_arg_byte(3)));
-  b.push(Instruction::LocalGet(8));
-  b.push(Instruction::I32Const(b'e' as i32));
-  b.push(Instruction::I32Store8(mem_arg_byte(4)));
-  b.push(Instruction::LocalGet(8));
-  b.push(Instruction::I32Const(b'r' as i32));
-  b.push(Instruction::I32Store8(mem_arg_byte(5)));
-  b.push(Instruction::LocalGet(7));
-  b.push(Instruction::F64ConvertI32U);
-
-  b.push(Instruction::End); // end if/else for integer check
+  b.push(Instruction::End);
 
   CompiledFn {
     export_name: None,

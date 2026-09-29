@@ -48,6 +48,10 @@ assert= true $ round? 9007199254740992
 
 新代码用 `to-tag: String -> Tag`、`to-symbol: String -> Symbol`。旧 `turn-tag` / `turn-symbol` 的 native/JS 运行时还接受 Tag/Symbol 输入，不能按词形全局替换。`calcit fix --rule core-identity-conversion-v1 --format edn` 只对内建调用且参数已证明为 String 的稳定源码提供自动迁移；Dynamic、非 String、quote、未知 macro 和一等函数引用需人工审阅。预览后携带 revision 应用，再重复预览并运行项目测试。WASM 缺少动态 Tag/Symbol intern；改名不会让原来不支持的调用变得可编译。
 
+## WASM 运行时 Number 转文本的边界
+
+core WASM 的旧 `turn-string` 对类型已知的运行时 Number，仅保证绝对值不超过 2^53 的有限整数。0 会转为 `|0`，不再与 nil 的空串混淆；小数、负零、超出该范围的整数以及 NaN/无穷值会陷阱，不再伪造 `|number` 等文本。编译期已知的数字 literal 仍走独立的常量路径。这项变化是防止静默错误，并非完成跨目标数字格式化；需要小数或特殊值的 WASM 业务暂不能依赖运行时 `turn-string`。开放 Dynamic 值还可能受现有 WASM f64 表示限制，应先提供具体类型证据，不能把此修复视为动态转换支持。
+
 ## 索引、键、值与成员谓词
 
 `contains?` 的旧方法形式依接收者表示不同命题，不能全局替换：List/String 检查索引，Map 检查键，Set 检查成员；Map 的旧 `.includes?` 则检查值。新代码首选 List/String `.contains-index?`、Map `.contains-key?` / `.contains-value?`，Set 成员保留 `.includes?`。String `.includes?` 判断子串，List `.includes?` 判断元素，均不得与索引判断混用。

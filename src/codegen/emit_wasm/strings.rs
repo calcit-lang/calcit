@@ -465,6 +465,15 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   }
 
   match super::infer_wasm_static_type(ctx, &args[0]).as_deref() {
+    Some(CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_)) => {
+      let f64_to_str_idx = *ctx
+        .runtime_fn_index
+        .get("__rt_f64_to_str")
+        .ok_or("missing WASM number-to-string helper")?;
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(Instruction::Call(f64_to_str_idx));
+      return Ok(());
+    }
     Some(CalcitTypeAnnotation::Bool) => {
       emit_expr(ctx, &args[0])?;
       ctx.emit(f64_const(0.0));

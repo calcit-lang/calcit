@@ -88,6 +88,14 @@ try {
   execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-to-tag", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [])"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-to-string-frac", "--input-format", "cirru", "--code", "quote $ defwasm-export test-to-string-frac () (if (&= (to-string 0.5) |0.5) 1 0)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-to-string-frac", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [])"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-runtime", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-runtime (x) (if (&= (turn-string x) |42) 1 0)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-runtime", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-zero", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-zero (x) (if (&= (turn-string x) |0) 1 0)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-zero", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-safe-limit", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-safe-limit (x) (if (&= (turn-string x) |9007199254740992) 1 0)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-safe-limit", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-negative-limit", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-negative-limit (x) (if (&= (turn-string x) |-9007199254740992) 1 0)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-negative-limit", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)"], { stdio: "pipe" });
   const wasm = spawnSync(binary, ["wasm", wasmSnapshot, "--emit-path", output], { encoding: "utf8" });
   assert.equal(wasm.status, 0, "WASM should preserve unrelated exports");
   assert.match(wasm.stderr, /trapping unsupported dependency calcit\.core\/to-tag: E_WASM_TAG_CONVERSION/);
@@ -101,6 +109,14 @@ try {
   const instance = new WebAssembly.Instance(wasmModule, imports);
   assert.throws(() => instance.exports["test-to-tag"](), WebAssembly.RuntimeError, "WASM must not silently return a String as Tag");
   assert.throws(() => instance.exports["test-to-string-frac"](), WebAssembly.RuntimeError, "WASM must not silently misformat fractional Numbers");
+  assert.equal(instance.exports["test-turn-string-runtime"](42), 1, "WASM must retain exact integer formatting");
+  assert.equal(instance.exports["test-turn-string-zero"](0), 1, "WASM must distinguish Number zero from nil");
+  assert.equal(instance.exports["test-turn-string-safe-limit"](2 ** 53), 1, "WASM must format the safe integer boundary");
+  assert.equal(instance.exports["test-turn-string-negative-limit"](-(2 ** 53)), 1, "WASM must format the negative safe integer boundary");
+  for (const value of [0.5, -0, 2 ** 53 + 2, 1e21, Infinity, NaN]) {
+    assert.throws(() => instance.exports["test-turn-string-runtime"](value), WebAssembly.RuntimeError,
+      `WASM must trap instead of silently misformatting ${String(value)}`);
+  }
 } finally {
   await rm(output, { recursive: true, force: true });
 }
