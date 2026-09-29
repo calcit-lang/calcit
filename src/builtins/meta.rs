@@ -2314,4 +2314,21 @@ mod tests {
     );
     assert!(error.msg.contains("line 1, column 1"), "missing source location: {}", error.msg);
   }
+
+  #[test]
+  fn turn_symbol_runtime_preserves_legacy_inputs_and_rejects_numbers() {
+    let from_string = turn_symbol(&[Calcit::new_str("hello")]).expect("string converts to symbol");
+    assert!(matches!(&from_string, Calcit::Symbol { sym, .. } if sym.as_ref() == "hello"));
+    let from_tag = turn_symbol(&[Calcit::tag("hello")]).expect("legacy tag converts to symbol");
+    assert!(matches!(&from_tag, Calcit::Symbol { sym, .. } if sym.as_ref() == "hello"));
+    assert_eq!(
+      turn_symbol(std::slice::from_ref(&from_string)).expect("legacy symbol remains a symbol"),
+      from_string
+    );
+    let error = turn_symbol(&[Calcit::Number(42.0)]).expect_err("number must not convert to symbol");
+    assert!(
+      error.msg.contains("turn-symbol cannot convert to symbol"),
+      "unexpected error: {error:?}"
+    );
+  }
 }

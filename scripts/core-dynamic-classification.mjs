@@ -128,7 +128,6 @@ const openDataBoundaries = new Set([
   "try-parse-cirru-edn-as",
   "try-parse-cirru-list",
   "try-parse-json",
-  "turn-symbol",
 ]);
 const compilerSpecializedPositions = new Map([
   [

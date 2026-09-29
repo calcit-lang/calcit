@@ -15,6 +15,12 @@ try {
 
   const runtimeA = await import(pathToFileURL(join(runtimeAPath, "calcit.procs.mjs")).href);
   const runtimeB = await import(pathToFileURL(join(runtimeBPath, "calcit.procs.mjs")).href);
+  const symbolFromString = runtimeA.turn_symbol("hello");
+  assert.ok(symbolFromString instanceof runtimeA.CalcitSymbol, "turn-symbol must return a Symbol on JS");
+  assert.equal(symbolFromString.value, "hello");
+  assert.equal(runtimeA.turn_symbol(symbolFromString), symbolFromString, "legacy Symbol input remains runtime-compatible");
+  assert.equal(runtimeA.turn_symbol(runtimeA.newTag("hello")).value, "hello", "legacy Tag input remains runtime-compatible");
+  assert.throws(() => runtimeA.turn_symbol(new runtimeA.CalcitSliceList([1])), /Unexpected data for symbol/);
   const writes = [];
   const waits = [];
   globalThis.__calcit_injections__ = {

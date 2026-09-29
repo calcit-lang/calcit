@@ -8954,12 +8954,17 @@
             :generics $ [] 'T
           :tags $ #{} :builtin :internal
         'turn-symbol $ %{} 'CodeEntry
-          :doc "|internal function for converting to symbol\nSyntax: (turn-symbol value)\nParams: value (string, tag, or symbol)\nReturns: symbol\nConverts string, tag, or existing symbol to symbol type"
+          :doc "|内部 String → Symbol 转换。严格类型调用只接受 String，成功返回 Symbol；不支持的输入会报错。native 运行时仍接受 Tag/Symbol 作为历史兼容，但这不是静态类型契约；新代码不应依赖该隐式转换。"
           :code $ quote &runtime-implementation
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ [] 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Symbol)
+            :args $ [] 'String
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |returns-typed-symbol-from-string)
+            :code $ quote $ do
+              assert-type (turn-symbol |hello) 'Symbol
+              assert= |hello $ turn-string $ turn-symbol |hello
+            :tags $ #{} :core :unit
         'turn-tag $ %{} 'CodeEntry
           :doc "|internal function for converting to tag\nSyntax: (turn-tag value)\nParams: value (string, symbol, or tag)\nReturns: tag\nConverts string, symbol, or existing tag to tag type"
           :code $ quote &runtime-implementation
