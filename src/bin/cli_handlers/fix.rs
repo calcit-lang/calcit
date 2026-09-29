@@ -3763,6 +3763,7 @@ fn method_source_context_is_stable(code: &Cirru, call_path: &[usize]) -> bool {
   })
 }
 
+/// Plan List `.add` migrations only when source location and method contracts are proven.
 fn plan_core_list_add_fixes(
   snapshot: &Snapshot,
   snapshot_file: &str,
@@ -3820,23 +3821,16 @@ fn plan_core_list_add_fixes(
             .and_then(|item| item.inferred_type.clone())
         })
         .or_else(|| super::query::infer_type_at_target(&source_receiver, None));
-      let concrete_list = inferred.as_ref().is_some_and(|annotation| {
-        let resolved = runner::preprocess::resolve_namespace_type_refs_for_body(annotation.clone(), namespace);
-        matches!(resolved.as_ref(), CalcitTypeAnnotation::List(_))
-      });
-      let proven_same_impl = inferred.as_ref().is_some_and(|annotation| {
-        let resolved = runner::preprocess::resolve_namespace_type_refs_for_body(annotation.clone(), namespace);
-        let old = runner::preprocess::static_method_contract(resolved.as_ref(), ".add");
-        let new = runner::preprocess::static_method_contract(resolved.as_ref(), ".append");
-        old.status == "proven"
-          && new.status == "proven"
-          && old.definition.as_deref() == Some("calcit.core/append")
-          && old.definition == new.definition
-          && old.arg_types == new.arg_types
-          && old.return_type == new.return_type
-      });
-      let definitely_other_type = inferred.as_ref().is_some_and(|annotation| {
-        let resolved = runner::preprocess::resolve_namespace_type_refs_for_body(annotation.clone(), namespace);
+      let resolved = inferred
+        .as_ref()
+        .map(|annotation| runner::preprocess::resolve_namespace_type_refs_for_body(annotation.clone(), namespace));
+      let concrete_list = resolved
+        .as_ref()
+        .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::List(_)));
+      let proven_same_impl = resolved
+        .as_ref()
+        .is_some_and(|annotation| list_add_alias_is_proven(annotation.as_ref()));
+      let definitely_other_type = resolved.as_ref().is_some_and(|resolved| {
         !matches!(
           resolved.as_ref(),
           CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_)
@@ -4135,23 +4129,48 @@ pub(super) struct ProvenMethodAlias {
   pub fix_rule: &'static str,
 }
 
-fn method_alias_contract_is_proven(receiver: &CalcitTypeAnnotation, rule: MethodAliasRule) -> bool {
-  if !rule.receiver.matches(receiver) {
-    return false;
-  }
-  let old = runner::preprocess::static_method_contract(receiver, rule.old_method);
-  let new = runner::preprocess::static_method_contract(receiver, rule.new_method);
+/// Require two methods to share a proven implementation and complete call contract.
+fn same_proven_method_contract(receiver: &CalcitTypeAnnotation, old_method: &str, new_method: &str, implementation: &str) -> bool {
+  let old = runner::preprocess::static_method_contract(receiver, old_method);
+  let new = runner::preprocess::static_method_contract(receiver, new_method);
   old.status == "proven"
     && new.status == "proven"
-    && old.definition.as_deref() == Some(rule.implementation)
+    && old.definition.as_deref() == Some(implementation)
     && old.definition == new.definition
     && old.arg_types == new.arg_types
     && old.rest_type == new.rest_type
     && old.return_type == new.return_type
 }
 
+/// Check a generic alias rule against its receiver family and shared contract.
+fn method_alias_contract_is_proven(receiver: &CalcitTypeAnnotation, rule: MethodAliasRule) -> bool {
+  rule.receiver.matches(receiver) && same_proven_method_contract(receiver, rule.old_method, rule.new_method, rule.implementation)
+}
+
+/// Exclude open List element contracts from `.add` recommendations and fixes.
+fn list_add_alias_is_proven(receiver: &CalcitTypeAnnotation) -> bool {
+  matches!(receiver, CalcitTypeAnnotation::List(_)) && same_proven_method_contract(receiver, ".add", ".append", "calcit.core/append")
+}
+
+/// Return the expected core count implementation for supported collection types.
+fn collection_count_definition(receiver: &CalcitTypeAnnotation) -> Option<&'static str> {
+  match receiver {
+    CalcitTypeAnnotation::List(_) => Some("calcit.core/&list:count"),
+    CalcitTypeAnnotation::Map(_, _) => Some("calcit.core/&map:count"),
+    CalcitTypeAnnotation::Set(_) => Some("calcit.core/&set:count"),
+    CalcitTypeAnnotation::String => Some("calcit.core/&str:count"),
+    _ => None,
+  }
+}
+
+/// Prove `.count` and `.len` equivalent for a supported concrete receiver.
+fn collection_len_alias_is_proven(receiver: &CalcitTypeAnnotation) -> bool {
+  collection_count_definition(receiver).is_some_and(|definition| same_proven_method_contract(receiver, ".count", ".len", definition))
+}
+
+/// Expose only alias roles backed by the same proof used by existing fix rules.
 pub(super) fn proven_method_aliases(receiver: &CalcitTypeAnnotation) -> Vec<ProvenMethodAlias> {
-  QUERYABLE_METHOD_ALIASES
+  let mut aliases = QUERYABLE_METHOD_ALIASES
     .iter()
     .copied()
     .filter(|rule| method_alias_contract_is_proven(receiver, *rule))
@@ -4160,7 +4179,22 @@ pub(super) fn proven_method_aliases(receiver: &CalcitTypeAnnotation) -> Vec<Prov
       new_method: rule.new_method,
       fix_rule: rule.rule_id,
     })
-    .collect()
+    .collect::<Vec<_>>();
+  if list_add_alias_is_proven(receiver) {
+    aliases.push(ProvenMethodAlias {
+      old_method: ".add",
+      new_method: ".append",
+      fix_rule: CORE_LIST_ADD_RULE,
+    });
+  }
+  if collection_len_alias_is_proven(receiver) {
+    aliases.push(ProvenMethodAlias {
+      old_method: ".count",
+      new_method: ".len",
+      fix_rule: CORE_COLLECTION_LEN_RULE,
+    });
+  }
+  aliases
 }
 
 /// Only rewrite complete method calls. First-class method values are not equivalent.
@@ -4377,6 +4411,7 @@ fn collect_collection_count_calls(node: &Cirru, path: &mut Vec<usize>, calls: &m
   }
 }
 
+/// Plan `.count` migrations using the receiver-specific count implementation.
 fn plan_core_collection_len_fixes(
   snapshot: &Snapshot,
   snapshot_file: &str,
@@ -4437,13 +4472,9 @@ fn plan_core_collection_len_fixes(
       let resolved = inferred
         .as_ref()
         .map(|annotation| runner::preprocess::resolve_namespace_type_refs_for_body(annotation.clone(), namespace));
-      let expected_definition = resolved.as_ref().and_then(|annotation| match annotation.as_ref() {
-        CalcitTypeAnnotation::List(_) => Some("calcit.core/&list:count"),
-        CalcitTypeAnnotation::Map(_, _) => Some("calcit.core/&map:count"),
-        CalcitTypeAnnotation::Set(_) => Some("calcit.core/&set:count"),
-        CalcitTypeAnnotation::String => Some("calcit.core/&str:count"),
-        _ => None,
-      });
+      let expected_definition = resolved
+        .as_ref()
+        .and_then(|annotation| collection_count_definition(annotation.as_ref()));
       if resolved.as_ref().is_some_and(|annotation| {
         !matches!(
           annotation.as_ref(),
@@ -4452,16 +4483,9 @@ fn plan_core_collection_len_fixes(
       }) {
         continue;
       }
-      let proven_same_impl = resolved.as_ref().zip(expected_definition).is_some_and(|(annotation, expected)| {
-        let old = runner::preprocess::static_method_contract(annotation.as_ref(), ".count");
-        let new = runner::preprocess::static_method_contract(annotation.as_ref(), ".len");
-        old.status == "proven"
-          && new.status == "proven"
-          && old.definition.as_deref() == Some(expected)
-          && old.definition == new.definition
-          && old.arg_types == new.arg_types
-          && old.return_type == new.return_type
-      });
+      let proven_same_impl = resolved
+        .as_ref()
+        .is_some_and(|annotation| collection_len_alias_is_proven(annotation.as_ref()));
       let machine_applicable = proven_same_impl && method_source_context_is_stable(&entry.code, &call_path);
       let original_node = navigate_to_path(&entry.code, &method_path)?;
       let replacement_node = Cirru::leaf(".len");

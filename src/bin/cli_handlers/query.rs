@@ -1437,6 +1437,36 @@ mod type_query_tests {
         ".include",
         "core-set-include-v1",
       ),
+      (
+        parse_type_annotation_query(":: 'List 'Number").expect("list type"),
+        ".add",
+        ".append",
+        "core-list-add-v1",
+      ),
+      (
+        parse_type_annotation_query(":: 'List 'Number").expect("list type"),
+        ".count",
+        ".len",
+        "core-collection-len-v1",
+      ),
+      (
+        parse_type_annotation_query(":: 'Map 'Tag 'Number").expect("map type"),
+        ".count",
+        ".len",
+        "core-collection-len-v1",
+      ),
+      (
+        parse_type_annotation_query(":: 'Set 'Tag").expect("set type"),
+        ".count",
+        ".len",
+        "core-collection-len-v1",
+      ),
+      (
+        parse_type_annotation_query("'String").expect("string type"),
+        ".count",
+        ".len",
+        "core-collection-len-v1",
+      ),
     ] {
       let mut methods = runner::preprocess::static_method_contracts(receiver.as_ref())
         .expect("method contracts")
@@ -1479,6 +1509,13 @@ mod type_query_tests {
     assert!(
       open.is_empty(),
       "open receivers cannot inherit a preferred method by spelling alone"
+    );
+    let open_list = parse_type_annotation_query(":: 'List 'Dynamic").expect("open list type");
+    assert!(
+      !super::super::fix::proven_method_aliases(open_list.as_ref())
+        .iter()
+        .any(|alias| alias.old_method == ".add"),
+      "an open element contract cannot prove List .add/.append equivalence"
     );
   }
 
