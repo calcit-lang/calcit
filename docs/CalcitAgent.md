@@ -553,6 +553,8 @@ List 单元素追加首选 `.append`，List 拼接用 `.concat`。迁移旧 `.ad
 
 判断 Number 是否有限且恰好没有小数部分时，首选 `integer? value` 或 `value .integer?`；返回 Bool，不代表安全整数范围或整数类型 refinement。旧 `round?/.round?` 暂留同义兼容。可显式用 `core-integer-predicate-v1` 预览：reader 解析为内建 Proc 的单参数 `round?` 调用，以及静态 Number 接收者且同实现同契约的 `.round?` 方法可自动改写；quoted 数据、自定义同名方法、开放接收者与未知 macro 不按词形批量替换。附带的 `:tests` / `:examples` 需人工检查。使用前可查询 `calcit.core/integer?` 的公开 schema 和 Number 方法契约。
 
+索引、键和值查询先看接收者类型：List/String 用 `.contains-index? Number` 判断有效位置，Map<K,V> 用 `.contains-key? K` 与 `.contains-value? V` 分别判断键和值；即使 K/V 同型也不能混用。List/Set 的元素成员和 String 子串仍用 `.includes?`。旧 `.contains?` 在不同接收者上含义不同，`Contains` trait、自定义同名方法及 Struct/Enum 尚未整体迁移；不要按词形替换。List 索引的小数、负数和非有限值返回 false，JS 与 WASM 也遵守该契约。
+
 List 带初始值的从左到右累加首选 `.fold initial reducer`，空 List 返回初值，累加器类型可不同于元素类型。旧 `.reduce` 方法可显式用 `core-list-fold-v1` 预览和迁移：仅具体 List 的旧、新方法契约都 proven 且指向同一 core 实现时自动改写；前缀 `reduce`、开放接收者和用户方法保留人工审阅。该规则目前不加入版本化 preset，也不自动修改 `:tests` / `:examples`。
 
 List 元素间插入同类型分隔值首选 `.intersperse separator`，结果仍是 List；需要 String 时使用现有 `join-str`，两者不是同义词。旧 `.join` 方法可显式用 `core-list-intersperse-v1` 预览和迁移，仅具体 List 的两种方法契约均 proven 且同指 `calcit.core/intersperse` 时自动改写。前缀 `join`、未知 macro 和附带的 `:tests` / `:examples` 不自动改写；该规则不加入已发布 preset。
@@ -561,7 +563,7 @@ Map 的去重值集合首选 `.distinct-values` / `distinct-values`，返回 `Se
 
 0.26.0 不删除旧 `option:*` / `result:*` 方法 helper：它们仍是 core method 的实现目标，不应在新应用代码中直接调用。其应用兼容入口最早于 0.27.0、且真实消费者在匹配的发布版依赖上迁移并通过严格检查、运行测试、Agent 文档和受影响 backend 验证，以及 core method 实现解耦后，才可考虑删除。完整条件见 [API 角色与命名](features/api-roles.md#旧方法-helper-的退场条件)；不能仅凭 fix 预览为空就推断可以删除。
 
-以下正反例可以直接由 `docs check-md` 执行。Unicode 字符数量不同于 UTF-8 字节数；`List.get` 的越界结果是 `Option :none`；列表的 `.contains?` 查询索引，`.includes?` 才查询元素；解析失败保留为 `Result` 的错误分支：
+以下正反例可以直接由 `docs check-md` 执行。Unicode 字符数量不同于 UTF-8 字节数；`List.get` 的越界结果是 `Option :none`；列表的 `.contains-index?` 查询索引，`.includes?` 才查询元素；解析失败保留为 `Result` 的错误分支：
 
 ```cirru
 let
@@ -570,8 +572,8 @@ let
   assert= 5 $ &str:utf8-byte-count |A😀
   assert= (Option :some 20) $ xs.get 1
   assert= (Option :none) $ xs.get 2
-  assert= true $ xs.contains? 1
-  assert= false $ xs.contains? 20
+  assert= true $ xs.contains-index? 1
+  assert= false $ xs.contains-index? 20
   assert= true $ xs.includes? 20
   assert= (Result :ok 1.5) $ parse-float |1.5
   assert= true $ (parse-float |bad).err?

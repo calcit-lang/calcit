@@ -1347,6 +1347,38 @@ mod type_query_tests {
   }
 
   #[test]
+  fn predicate_method_query_distinguishes_index_key_and_value_origins() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let snapshot = load_core_snapshot().expect("core snapshot should load");
+    prepare_program_for_type_query_on_cli_stack(snapshot);
+
+    let list = parse_type_annotation_query(":: 'List 'Number").expect("typed list should parse");
+    let string = CalcitTypeAnnotation::String;
+    for (receiver, definition) in [
+      (list.as_ref(), "calcit.core/&list:contains?"),
+      (&string, "calcit.core/&str:contains?"),
+    ] {
+      let contract = runner::preprocess::static_method_contract(receiver, ".contains-index?");
+      assert_eq!(contract.status, "proven", "{contract:?}");
+      assert_eq!(contract.definition.as_deref(), Some(definition));
+      assert_eq!(contract.arg_types.unwrap()[0].describe(), "number");
+      assert_eq!(contract.return_type.unwrap().describe(), "bool");
+    }
+
+    let map = parse_type_annotation_query(":: 'Map 'String 'String").expect("same-type map should parse");
+    for (method, definition) in [
+      (".contains-key?", "calcit.core/&map:contains?"),
+      (".contains-value?", "calcit.core/&map:includes?"),
+    ] {
+      let contract = runner::preprocess::static_method_contract(map.as_ref(), method);
+      assert_eq!(contract.status, "proven", "{contract:?}");
+      assert_eq!(contract.definition.as_deref(), Some(definition));
+      assert_eq!(contract.arg_types.unwrap()[0].describe(), "string");
+      assert_eq!(contract.return_type.unwrap().describe(), "bool");
+    }
+  }
+
+  #[test]
   fn method_query_reuses_bound_collection_contracts_and_keeps_open_schemas_explicit() {
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let snapshot = load_core_snapshot().expect("core snapshot should load");

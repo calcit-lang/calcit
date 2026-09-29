@@ -1,0 +1,65 @@
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { copyFile, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+
+const binary = resolve(process.env.CALCIT_BIN ?? "target/debug/calcit");
+const run = (...args) => execFileSync(binary, args, {
+  encoding: "utf8", stdio: "pipe", timeout: 60000, maxBuffer: 16 * 1024 * 1024,
+});
+const corePath = resolve("src/cirru/calcit-core.cirru");
+const core = JSON.parse(run("cirru", "parse-edn", "--file", corePath));
+const definitions = core[":files"]["'calcit.core"].defs;
+const methodTest = definitions["'contains?"].tests.find(item => item.name === "distinguishes-explicit-index-key-and-value-methods");
+const primitiveTest = definitions["'&list:contains?"].tests.find(item => item.name === "checks-list-index-bounds");
+assert.ok(methodTest, "the naming contract must remain attached to calcit.core/contains?");
+assert.ok(primitiveTest, "the direct primitive boundary must remain attached to calcit.core/&list:contains?");
+const tests = [methodTest, primitiveTest];
+
+const fixture = await mkdtemp(join(tmpdir(), "calcit-predicate-method-names-"));
+try {
+  const snapshot = join(fixture, "calcit.cirru");
+  await copyFile(corePath, snapshot);
+  await symlink(resolve("node_modules"), join(fixture, "node_modules"), "dir");
+  run(snapshot, "query", "config");
+  run(snapshot, "edit", "add-ns", "calcit.predicate-method-names");
+  run(snapshot, "edit", "def", "calcit.predicate-method-names/run-tests", "--input-format", "json-ast", "--code",
+    JSON.stringify(["defwasm-export", "run-tests", [], ...tests.map(test => test.code.__edn_quote), "&unit"]));
+  run(snapshot, "edit", "schema", "calcit.predicate-method-names/run-tests", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+  const entry = [snapshot, "--init-fn", "calcit.predicate-method-names/run-tests", "--reload-fn", "calcit.predicate-method-names/run-tests"];
+  run(...entry);
+
+  const output = join(fixture, "js-out");
+  run(...entry, "--emit-path", output, "js");
+  const compiled = await import(pathToFileURL(join(output, "calcit.predicate-method-names.mjs")).href);
+  compiled.run_tests();
+
+  run("wasm", ...entry, "--emit-path", fixture);
+  const module = new WebAssembly.Module(await readFile(join(fixture, "program.wasm")));
+  const imports = {};
+  for (const { module: namespace, name, kind } of WebAssembly.Module.imports(module)) {
+    assert.equal(kind, "function");
+    (imports[namespace] ??= {})[name] = () => { throw new Error(`Unexpected host call: ${namespace}.${name}`); };
+  }
+  const wasm = new WebAssembly.Instance(module, imports);
+  assert.equal(typeof wasm.exports["run-tests"], "function");
+  wasm.exports["run-tests"]();
+  console.log("Predicate method definition tests passed on native / generated JS / core WASM");
+
+  if (process.env.WASMTIME_CLI) {
+    run(snapshot, "tree", "search-replace", "calcit.predicate-method-names/run-tests", "--pattern", "defwasm-export",
+      "--input-format", "cirru", "--code", "quote defn");
+    const component = join(fixture, "component");
+    run("wasi", ...entry, "--emit-path", component);
+    execFileSync(process.env.WASMTIME_CLI, [
+      "run", "-S", "p3", "-W", "component-model-async-stackful=y",
+      "-W", "component-model-more-async-builtins=y", join(component, "program.wasm"),
+    ], { encoding: "utf8", timeout: 60000 });
+    console.log("Predicate method definition tests passed on WASI 0.3 Component / Wasmtime");
+  }
+} finally {
+  await rm(fixture, { recursive: true, force: true });
+}
