@@ -535,6 +535,11 @@ let
 `Result<...,String>`；旧 `.write-text` 暂留兼容且映射到同一实现，不会变成抛错操作。String 不提供文件效果方法。旧 `try-read-file` / `try-write-file`
 已退役，应改用 `fs:path` 后调用对应方法；`try-read-dir` 和底层 raising procedures
 暂留为兼容入口。
+迁移 FsPath 写入与 native FFI 任务取消/响应完成的旧方法时，可先用
+`calcit query type calcit.core/FsPath --format edn`（或查询 `FfiTask`、`FfiResponse`）确认
+`preferred` / `compatibility` 和类型签名，再显式预览
+`calcit calcit.cirru fix --rule core-effect-method-v1 --format edn`。只有来源与接收者均已证明的
+definition `:code` 调用会自动改写；attached tests/examples 和未知宏需人工审阅。
 这些文件效果支持 native 与生成的 JavaScript。WASI command 还支持基于 preopen 的
 文本读写与 `.read-dir`；core WASM 明确拒绝宿主文件效果，`.walk-dir` 尚未接入 WASI。
 

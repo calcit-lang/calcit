@@ -65,6 +65,8 @@ const CORE_MAP_DISTINCT_VALUES_RULE: &str = "core-map-distinct-values-v1";
 const CORE_MAP_DISTINCT_VALUES_DIAGNOSTIC: &str = "FIX_CORE_MAP_DISTINCT_VALUES";
 const CORE_COLLECTION_COMBINE_RULE: &str = "core-collection-combine-v1";
 const CORE_COLLECTION_COMBINE_DIAGNOSTIC: &str = "FIX_CORE_COLLECTION_COMBINE";
+const CORE_EFFECT_METHOD_RULE: &str = "core-effect-method-v1";
+const CORE_EFFECT_METHOD_DIAGNOSTIC: &str = "FIX_CORE_EFFECT_METHOD";
 const RENAME_DEFINITION_RULE: &str = "rename-definition-v1";
 const RENAME_DEFINITION_DIAGNOSTIC: &str = "REFACTOR_RENAME_DEFINITION";
 const VALUE_TO_ZERO_ARG_FN_RULE: &str = "value-to-zero-arg-fn-v1";
@@ -652,6 +654,16 @@ pub(crate) fn handle_fix_command(
     }
     suggestions.extend(collapse_predicate_alias_suggestions(predicate_suggestions));
   }
+  if selected_rules.contains(&CORE_EFFECT_METHOD_RULE) {
+    for rule in CORE_EFFECT_METHOD_ALIASES {
+      suggestions.extend(plan_core_method_alias_fixes(
+        &source_snapshot,
+        snapshot_file,
+        &selected_definitions,
+        *rule,
+      )?);
+    }
+  }
   let mut constructor_kinds = Vec::new();
   if selected_rules.contains(&NAMED_ENUM_CONSTRUCTOR_RULE) {
     constructor_kinds.push(NominalKind::Enum);
@@ -1055,6 +1067,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CORE_LIST_GET_RULE
         | CORE_MAP_DISTINCT_VALUES_RULE
         | CORE_COLLECTION_COMBINE_RULE
+        | CORE_EFFECT_METHOD_RULE
         | RENAME_DEFINITION_RULE
         | VALUE_TO_ZERO_ARG_FN_RULE
         | SYNTHESIZE_SCHEMA_RULE
@@ -1064,7 +1077,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     )
   {
     return Err(format!(
-      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_NOMINAL_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_SET_INCLUDE_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_SET_INCLUDE_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
     ));
   }
   if let Some(rule @ (TAG_MATCH_RULE | REQUIRED_STRUCT_FIELD_RULE)) = options.rule.as_deref() {
@@ -1104,6 +1117,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_LIST_GET_RULE
         | CORE_MAP_DISTINCT_VALUES_RULE
         | CORE_COLLECTION_COMBINE_RULE
+        | CORE_EFFECT_METHOD_RULE
     ) {
       return vec![match rule {
         RENAME_DEFINITION_RULE => RENAME_DEFINITION_RULE,
@@ -1126,6 +1140,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_LIST_GET_RULE => CORE_LIST_GET_RULE,
         CORE_MAP_DISTINCT_VALUES_RULE => CORE_MAP_DISTINCT_VALUES_RULE,
         CORE_COLLECTION_COMBINE_RULE => CORE_COLLECTION_COMBINE_RULE,
+        CORE_EFFECT_METHOD_RULE => CORE_EFFECT_METHOD_RULE,
         _ => OPTIONAL_PARAMETERS_RULE,
       }];
     }
@@ -1292,6 +1307,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_COLLECTION_COMBINE_DIAGNOSTIC,
       evidence_source: "proven-map-or-set-receiver-and-method-implementation",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    CORE_EFFECT_METHOD_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: CORE_EFFECT_METHOD_DIAGNOSTIC,
+      evidence_source: "proven-core-nominal-receiver-and-identical-method-implementation",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -4099,6 +4121,10 @@ enum MethodReceiverKind {
   Set,
   String,
   Number,
+  CoreStruct {
+    definition: &'static str,
+    trait_origin: &'static str,
+  },
 }
 
 impl MethodReceiverKind {
@@ -4109,6 +4135,10 @@ impl MethodReceiverKind {
       Self::Set => matches!(annotation, CalcitTypeAnnotation::Set(_)),
       Self::String => matches!(annotation, CalcitTypeAnnotation::String),
       Self::Number => matches!(annotation, CalcitTypeAnnotation::Number),
+      Self::CoreStruct { definition, .. } => annotation.resolve_to_struct().is_some_and(|base| {
+        base.definition_ref.as_deref() == Some(definition)
+          || (base.definition_ref.is_none() && base.name.ref_str() == definition.rsplit('/').next().unwrap_or(definition))
+      }),
     }
   }
 
@@ -4119,6 +4149,7 @@ impl MethodReceiverKind {
       Self::Set => "Set",
       Self::String => "String",
       Self::Number => "Number",
+      Self::CoreStruct { definition, .. } => definition,
     }
   }
 }
@@ -4316,6 +4347,79 @@ const SET_UNION_ALIAS: MethodAliasRule = MethodAliasRule {
   message: "Use `.union` for Set combination; both methods resolve to the same core implementation and deduplicate values.",
 };
 
+const CORE_EFFECT_METHOD_ALIASES: &[MethodAliasRule] = &[
+  MethodAliasRule {
+    rule_id: CORE_EFFECT_METHOD_RULE,
+    diagnostic_code: CORE_EFFECT_METHOD_DIAGNOSTIC,
+    receiver: MethodReceiverKind::CoreStruct {
+      definition: "calcit.core/FsPath",
+      trait_origin: "calcit.core/FsPathOps",
+    },
+    old_method: ".write-text",
+    new_method: ".write-text!",
+    implementation: "calcit.core/fs-path:write-text",
+    call_size: 3,
+    variadic: false,
+    message: "Use `.write-text!` for a proven core FsPath write; both methods share the same Result-returning implementation.",
+  },
+  MethodAliasRule {
+    rule_id: CORE_EFFECT_METHOD_RULE,
+    diagnostic_code: CORE_EFFECT_METHOD_DIAGNOSTIC,
+    receiver: MethodReceiverKind::CoreStruct {
+      definition: "calcit.core/FfiTask",
+      trait_origin: "calcit.core/FfiTaskOps",
+    },
+    old_method: ".cancel",
+    new_method: ".cancel!",
+    implementation: "calcit.core/ffi-task:cancel",
+    call_size: 2,
+    variadic: false,
+    message: "Use `.cancel!` for a proven core FfiTask cancellation; the lifecycle implementation is unchanged.",
+  },
+  MethodAliasRule {
+    rule_id: CORE_EFFECT_METHOD_RULE,
+    diagnostic_code: CORE_EFFECT_METHOD_DIAGNOSTIC,
+    receiver: MethodReceiverKind::CoreStruct {
+      definition: "calcit.core/FfiTask",
+      trait_origin: "calcit.core/FfiTaskOps",
+    },
+    old_method: ".cancel-with",
+    new_method: ".cancel-with!",
+    implementation: "calcit.core/ffi-task:cancel-with",
+    call_size: 3,
+    variadic: false,
+    message: "Use `.cancel-with!` for a proven core FfiTask cancellation; the reason is evaluated once.",
+  },
+  MethodAliasRule {
+    rule_id: CORE_EFFECT_METHOD_RULE,
+    diagnostic_code: CORE_EFFECT_METHOD_DIAGNOSTIC,
+    receiver: MethodReceiverKind::CoreStruct {
+      definition: "calcit.core/FfiResponse",
+      trait_origin: "calcit.core/FfiResponseOps",
+    },
+    old_method: ".resolve",
+    new_method: ".resolve!",
+    implementation: "calcit.core/ffi-response:resolve",
+    call_size: 3,
+    variadic: false,
+    message: "Use `.resolve!` for a proven core FfiResponse completion; exactly-once handling is unchanged.",
+  },
+  MethodAliasRule {
+    rule_id: CORE_EFFECT_METHOD_RULE,
+    diagnostic_code: CORE_EFFECT_METHOD_DIAGNOSTIC,
+    receiver: MethodReceiverKind::CoreStruct {
+      definition: "calcit.core/FfiResponse",
+      trait_origin: "calcit.core/FfiResponseOps",
+    },
+    old_method: ".reject",
+    new_method: ".reject!",
+    implementation: "calcit.core/ffi-response:reject",
+    call_size: 3,
+    variadic: false,
+    message: "Use `.reject!` for a proven core FfiResponse completion; exactly-once handling is unchanged.",
+  },
+];
+
 /// Query and fix share these proven alias contracts; this is not a second API registry.
 const QUERYABLE_METHOD_ALIASES: &[MethodAliasRule] = &[
   NUMBER_INTEGER_PREDICATE_ALIAS,
@@ -4356,7 +4460,21 @@ fn same_proven_method_contract(receiver: &CalcitTypeAnnotation, old_method: &str
 
 /// Check a generic alias rule against its receiver family and shared contract.
 fn method_alias_contract_is_proven(receiver: &CalcitTypeAnnotation, rule: MethodAliasRule) -> bool {
-  rule.receiver.matches(receiver) && same_proven_method_contract(receiver, rule.old_method, rule.new_method, rule.implementation)
+  if !rule.receiver.matches(receiver) || !same_proven_method_contract(receiver, rule.old_method, rule.new_method, rule.implementation) {
+    return false;
+  }
+  match rule.receiver {
+    MethodReceiverKind::CoreStruct { trait_origin, .. } => {
+      runner::preprocess::static_method_contracts(receiver).is_some_and(|methods| {
+        [rule.old_method, rule.new_method].iter().all(|name| {
+          methods
+            .iter()
+            .any(|(descriptor, contract)| descriptor.name == *name && descriptor.origin == trait_origin && contract.status == "proven")
+        })
+      })
+    }
+    _ => true,
+  }
 }
 
 /// Exclude open List element contracts from `.add` recommendations and fixes.
@@ -4384,6 +4502,7 @@ fn collection_len_alias_is_proven(receiver: &CalcitTypeAnnotation) -> bool {
 pub(super) fn proven_method_aliases(receiver: &CalcitTypeAnnotation) -> Vec<ProvenMethodAlias> {
   let mut aliases = QUERYABLE_METHOD_ALIASES
     .iter()
+    .chain(CORE_EFFECT_METHOD_ALIASES.iter())
     .copied()
     .filter(|rule| method_alias_contract_is_proven(receiver, *rule))
     .map(|rule| ProvenMethodAlias {
@@ -4409,13 +4528,43 @@ pub(super) fn proven_method_aliases(receiver: &CalcitTypeAnnotation) -> Vec<Prov
   aliases
 }
 
+struct MethodAliasCall {
+  call_path: Vec<usize>,
+  method_path: Vec<usize>,
+  receiver_path: Vec<usize>,
+  compact_receiver: Option<String>,
+}
+
+/// Extract the receiver from a compact source leaf such as `task.cancel`.
+fn compact_method_receiver<'a>(source: &'a str, method: &str) -> Option<&'a str> {
+  let receiver = source.strip_suffix(method)?;
+  if receiver.is_empty()
+    || receiver.starts_with(|character: char| character.is_ascii_digit())
+    || !receiver
+      .chars()
+      .all(|character| character.is_alphanumeric() || matches!(character, '-' | '_' | '?' | '!' | '*'))
+  {
+    return None;
+  }
+  Some(receiver)
+}
+
 /// Only rewrite complete method calls. First-class method values are not equivalent.
-fn collect_method_alias_calls(
-  node: &Cirru,
-  path: &mut Vec<usize>,
-  calls: &mut Vec<(Vec<usize>, Vec<usize>, Vec<usize>)>,
-  rule: MethodAliasRule,
-) {
+fn collect_method_alias_calls(node: &Cirru, path: &mut Vec<usize>, calls: &mut Vec<MethodAliasCall>, rule: MethodAliasRule) {
+  if let Cirru::Leaf(source) = node {
+    if rule.rule_id == CORE_EFFECT_METHOD_RULE
+      && rule.call_size == 2
+      && let Some(receiver) = compact_method_receiver(source, rule.old_method)
+    {
+      calls.push(MethodAliasCall {
+        call_path: path.clone(),
+        method_path: path.clone(),
+        receiver_path: path.clone(),
+        compact_receiver: Some(receiver.to_owned()),
+      });
+    }
+    return;
+  }
   let Cirru::List(items) = node else {
     return;
   };
@@ -4435,8 +4584,28 @@ fn collect_method_alias_calls(
       method_path.push(method_index);
       let mut receiver_path = path.clone();
       receiver_path.push(receiver_index);
-      calls.push((path.clone(), method_path, receiver_path));
+      calls.push(MethodAliasCall {
+        call_path: path.clone(),
+        method_path,
+        receiver_path,
+        compact_receiver: None,
+      });
     }
+  }
+  if rule.rule_id == CORE_EFFECT_METHOD_RULE
+    && rule.call_size > 2
+    && (items.len() + 1 == rule.call_size || (rule.variadic && items.len() + 1 > rule.call_size))
+    && let Some(Cirru::Leaf(source)) = items.first()
+    && let Some(receiver) = compact_method_receiver(source, rule.old_method)
+  {
+    let mut leaf_path = path.clone();
+    leaf_path.push(0);
+    calls.push(MethodAliasCall {
+      call_path: path.clone(),
+      method_path: leaf_path.clone(),
+      receiver_path: leaf_path,
+      compact_receiver: Some(receiver.to_owned()),
+    });
   }
   for (index, child) in items.iter().enumerate() {
     path.push(index);
@@ -4445,6 +4614,7 @@ fn collect_method_alias_calls(
   }
 }
 
+/// Plan a leaf-only rename when receiver, core method contract, and source origin agree.
 fn plan_core_method_alias_fixes(
   snapshot: &Snapshot,
   snapshot_file: &str,
@@ -4474,13 +4644,17 @@ fn plan_core_method_alias_fixes(
       &CallStackList::default(),
     )
     .map_err(|failure| failure.msg)?;
-    for (call_path, method_path, receiver_path) in calls {
-      let receiver = navigate_to_path(&entry.code, &receiver_path)?;
+    for call in calls {
+      let receiver = match &call.compact_receiver {
+        Some(name) => Cirru::leaf(name.as_str()),
+        None => navigate_to_path(&entry.code, &call.receiver_path)?,
+      };
       let source_receiver = code_to_calcit(
         &receiver,
         namespace,
         definition,
-        receiver_path
+        call
+          .receiver_path
           .iter()
           .map(|index| u16::try_from(*index).map_err(|_| format!("Path index {index} exceeds Snapshot coordinate range")))
           .collect::<Result<Vec<_>, _>>()?,
@@ -4493,13 +4667,13 @@ fn plan_core_method_alias_fixes(
             &compiled.preprocessed_code,
             namespace,
             definition,
-            &receiver_path,
+            &call.receiver_path,
             matches!(receiver, Cirru::List(_)),
           )
         })
         .and_then(runner::preprocess::infer_static_type_from_expr)
         .or_else(|| {
-          runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &receiver_path)
+          runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &call.receiver_path)
             .and_then(|item| item.inferred_type.clone())
         })
         .or_else(|| super::query::infer_type_at_target(&source_receiver, None));
@@ -4525,9 +4699,17 @@ fn plan_core_method_alias_fixes(
       let proven_same_impl = resolved
         .as_ref()
         .is_some_and(|annotation| method_alias_contract_is_proven(annotation.as_ref(), rule));
-      let machine_applicable = proven_same_impl && method_source_context_is_stable(&entry.code, &call_path);
-      let original_node = navigate_to_path(&entry.code, &method_path)?;
-      let replacement_node = Cirru::leaf(rule.new_method);
+      let machine_applicable = proven_same_impl && method_source_context_is_stable(&entry.code, &call.call_path);
+      let original_node = navigate_to_path(&entry.code, &call.method_path)?;
+      let original_leaf = match &original_node {
+        Cirru::Leaf(name) => name.as_ref(),
+        Cirru::List(_) => return Err("Method alias candidate must be a source leaf.".to_owned()),
+      };
+      let replacement_leaf = match &call.compact_receiver {
+        Some(name) => format!("{name}{}", rule.new_method),
+        None => rule.new_method.to_owned(),
+      };
+      let replacement_node = Cirru::leaf(replacement_leaf.as_str());
       let mut method_evidence = serde_json::json!({
         "kind": "receiver-method-query",
         "receiver_type": inferred.as_ref().map(|annotation| annotation.describe()),
@@ -4542,7 +4724,7 @@ fn plan_core_method_alias_fixes(
         semantic_layer: "surface",
         source_file: snapshot_file.to_owned(),
         definition: format!("{namespace}/{definition}"),
-        path: format!("code{}", format_path(&method_path)),
+        path: format!("code{}", format_path(&call.method_path)),
         fingerprint: node_fingerprint(&original_node),
         origin_chain: vec![method_evidence],
         original: quoted_json(&original_node),
@@ -4561,10 +4743,10 @@ fn plan_core_method_alias_fixes(
             rule.old_method
           )
         },
-        target_path: method_path,
+        target_path: call.method_path,
         operation: machine_applicable.then_some(FixOperation::ReplaceLeaf {
-          original: rule.old_method.to_owned(),
-          replacement: rule.new_method.to_owned(),
+          original: original_leaf.to_owned(),
+          replacement: replacement_leaf,
         }),
       });
     }
