@@ -561,6 +561,8 @@ List 单元素追加首选 `.append`，List 拼接用 `.concat`。迁移旧 `.ad
 
 Struct 字段存在性使用 `.contains-field? :field` 或 `contains-field? value :field`，参数必须是 Tag，返回 Bool，字段不存在返回 false。此接口在 native、生成 JS 与现有 WASM 子集有相同命题；旧底层 `&struct:contains?` 在 native/JS 还接受 String/Symbol，属于兼容行为，不代表新接口可接受这些输入。当前 `core-predicate-method-v1` 不迁移 Struct；遇到旧 `.contains?`、自定义 `Contains` trait 或反射式字段名时先核对来源与目标支持范围。
 
+String 到名义标识使用 `to-tag: String -> Tag` 与 `to-symbol: String -> Symbol`；新代码不要用 `turn-tag/turn-symbol` 表达任意类型的强制转换。旧入口为 core 宏及现有消费者保留，运行时接受额外输入不扩大新 API 的严格契约。遇到非 String 输入先显式决定语义，不按名称全局替换；`turn-string`、`str`、`.show/.debug` 也不能混作同一种显示或转换。当前 native/JS 已验证，WASM 缺少运行时 Tag/Symbol intern，不能使用新转换；`turn-tag` 的 WASM lowering 现显式拒绝，而不再把 String 错当 Tag。
+
 测量经过时间使用 `monotonic-time-ms`，返回 Number 毫秒；只比较同一次运行中的两次读数，不把它当 Unix 时间戳或 CPU 使用量。旧 `cpu-time` 暂留兼容。`unix-time-ms` 是可能受宿主校时影响的 epoch 毫秒。新单调时钟名复用已有 native/JS/WASI Preview 1 实现；WASI 0.3 command 目前不支持时钟，应保留显式 capability 错误，不自行回退。
 
 List 带初始值的从左到右累加首选 `.fold initial reducer`，空 List 返回初值，累加器类型可不同于元素类型。旧 `.reduce` 方法可显式用 `core-list-fold-v1` 预览和迁移：仅具体 List 的旧、新方法契约都 proven 且指向同一 core 实现时自动改写；前缀 `reduce`、开放接收者和用户方法保留人工审阅。该规则目前不加入版本化 preset，也不自动修改 `:tests` / `:examples`。

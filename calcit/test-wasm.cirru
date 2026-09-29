@@ -513,22 +513,6 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-        'test-list-flat-map-method $ %{} 'CodeEntry (:doc "|typed List .flat-map keeps mapped element order")
-          :code $ quote $ defwasm-export test-list-flat-map-method ()
-            &let
-              xs $ ([] 1 2) .flat-map $ fn (x) ([] x (&+ x 10))
-              &+ (&list:count xs) (&list:nth xs 3)
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
-        'test-list-join-string $ %{} 'CodeEntry (:doc "|List join-string method and prefix preserve rendering")
-          :code $ quote $ defwasm-export test-list-join-string ()
-            &+
-              &str:count $ ([] 1 2 3) .join-string |-
-              &str:count $ join-string ([] 1 2 3) |-
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
         'test-list-contains $ %{} 'CodeEntry (:doc "|contains checks index bounds")
           :code $ quote $ defwasm-export test-list-contains ()
             &let
@@ -607,6 +591,17 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-list-flat-map-method $ %{} 'CodeEntry (:doc "|typed List .flat-map keeps mapped element order")
+          :code $ quote $ defwasm-export test-list-flat-map-method ()
+            &let
+              xs $
+                [] 1 2
+                , .flat-map $ fn (x)
+                  [] x $ &+ x 10
+              &+ (&list:count xs) (&list:nth xs 3)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
         'test-list-includes $ %{} 'CodeEntry (:doc "|includes checks value presence")
           :code $ quote $ defwasm-export test-list-includes ()
             &+
@@ -638,6 +633,17 @@
               &+
                 option:unwrap-or (xs .get 1) -1
                 option:unwrap-or (xs .nth 2) -1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+        'test-list-join-string $ %{} 'CodeEntry
+          :doc "|List join-string method and prefix preserve rendering"
+          :code $ quote $ defwasm-export test-list-join-string ()
+            &+
+              &str:count $
+                [] 1 2 3
+                , .join-string |-
+              &str:count $ join-string ([] 1 2 3) |-
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -804,6 +810,14 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
+        'test-map-add-legacy $ %{} 'CodeEntry (:doc "|旧 Map `.add` 二元 entry 保留 Map 形状，但不证明键值类型。")
+          :code $ quote $ defwasm-export test-map-add-legacy ()
+            &map:count $
+              &{} :a 1
+              , .add $ [] :b 2
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
         'test-map-assoc-new $ %{} 'CodeEntry (:doc "|assoc adds new key")
           :code $ quote $ defwasm-export test-map-assoc-new ()
             &let
@@ -817,12 +831,6 @@
             &map:get
               &map:assoc (&{} :a 1 :b 2) :b 99
               , :b
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
-        'test-map-add-legacy $ %{} 'CodeEntry (:doc "|旧 Map `.add` 二元 entry 保留 Map 形状，但不证明键值类型。")
-          :code $ quote $ defwasm-export test-map-add-legacy ()
-            &map:count $ (&{} :a 1) .add $ [] :b 2
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
