@@ -21,28 +21,37 @@ try {
     ["dynamic-symbol", "quote $ defn dynamic-symbol (value) $ turn-symbol value", "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Symbol)"],
     ["tag-input", "quote $ defn tag-input () $ turn-tag :ready", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Tag)"],
     ["macro-tag", "quote $ defn macro-tag () $ or (turn-tag |ready) :fallback", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Tag)"],
+    ["name-value", "quote $ defn name-value () |ready", "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)"],
+    ["from-fn", "quote $ defn from-fn () $ turn-tag $ name-value", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Tag)"],
+    ["from-macro", "quote $ defn from-macro () $ turn-tag $ macro-name", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Tag)"],
     ["quoted", "quote $ defn quoted () $ quote $ turn-tag |ready", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)"],
   ]) {
     run(snapshot, "edit", "def", `test-wasm.conversion/${name}`, "--input-format", "cirru", "--code", code);
     run(snapshot, "edit", "schema", `test-wasm.conversion/${name}`, "--input-format", "cirru", "--code", schema);
   }
+  run(snapshot, "edit", "def", "test-wasm.conversion/macro-name", "--input-format", "cirru", "--code", "quote $ defmacro macro-name () |ready");
   run(snapshot, "edit", "add-test", "test-wasm.conversion/safe-tag", "preserves-tag", "--tags", "unit", "--input-format", "cirru", "--code", "quote $ assert= :ready $ safe-tag");
   run(snapshot, "edit", "add-test", "test-wasm.conversion/safe-symbol", "preserves-symbol", "--tags", "unit", "--input-format", "cirru", "--code", "quote $ assert= |ready $ turn-string $ safe-symbol");
+  run(snapshot, "edit", "add-test", "test-wasm.conversion/from-fn", "preserves-function-argument", "--tags", "unit", "--input-format", "cirru", "--code", "quote $ assert= :ready $ from-fn");
   run(snapshot, "test", "test-wasm.conversion/safe-tag", "--require-match");
   run(snapshot, "test", "test-wasm.conversion/safe-symbol", "--require-match");
+  run(snapshot, "test", "test-wasm.conversion/from-fn", "--require-match");
   const before = await readFile(snapshot, "utf8");
   const preview = JSON.parse(run(snapshot, "fix", "--rule", rule, "--ns", "test-wasm.conversion", "--format", "json"));
   const applicable = preview.data.suggestions.filter((item) => item.applicability === "machine-applicable");
-  assert.deepEqual(applicable.map((item) => item.definition).sort(), ["test-wasm.conversion/safe-symbol", "test-wasm.conversion/safe-tag"]);
+  assert.deepEqual(applicable.map((item) => item.definition).sort(), ["test-wasm.conversion/from-fn", "test-wasm.conversion/safe-symbol", "test-wasm.conversion/safe-tag"]);
   assert.equal(preview.data.suggestions.some((item) => item.definition === "test-wasm.conversion/tag-input"), false,
     "Tag input must not be treated as the new String-only contract");
   assert.equal(preview.data.suggestions.find((item) => item.definition === "test-wasm.conversion/dynamic-tag")?.applicability, "requires-review");
   assert.equal(preview.data.suggestions.find((item) => item.definition === "test-wasm.conversion/dynamic-symbol")?.applicability, "requires-review");
   assert.equal(preview.data.suggestions.find((item) => item.definition === "test-wasm.conversion/macro-tag")?.applicability, "requires-review");
+  const macroArgument = preview.data.suggestions.find((item) => item.definition === "test-wasm.conversion/from-macro");
+  assert.equal(macroArgument?.origin_chain?.[0]?.argument_type, "string", "the macro result must be proven String to exercise the provenance guard");
+  assert.equal(macroArgument.applicability, "requires-review");
   assert.equal(preview.data.suggestions.some((item) => item.definition === "test-wasm.conversion/quoted"), false);
   assert.equal(await readFile(snapshot, "utf8"), before, "preview must not modify the Snapshot");
 
-  const stale = spawnSync(binary, [snapshot, "fix", "--rule", rule, "--ns", "test-wasm.conversion", "--apply", "--expect-revision", "md5:stale", "--allow-no-vcs", "--format", "json"], { encoding: "utf8" });
+  const stale = spawnSync(binary, [snapshot, "fix", "--rule", rule, "--ns", "test-wasm.conversion", "--apply", "--expect-revision", "md5:stale", "--allow-no-vcs", "--format", "json"], { encoding: "utf8", timeout: 60000 });
   assert.notEqual(stale.status, 0, "a stale revision must not apply changes");
   assert.equal(await readFile(snapshot, "utf8"), before);
 
@@ -54,8 +63,10 @@ try {
   assert.match(JSON.stringify(safeSymbol.data.code), /calcit\.core\/to-symbol/);
   run(snapshot, "test", "test-wasm.conversion/safe-tag", "--require-match");
   run(snapshot, "test", "test-wasm.conversion/safe-symbol", "--require-match");
+  run(snapshot, "test", "test-wasm.conversion/from-fn", "--require-match");
   for (const [name, result] of [["safe-tag", /:ready/], ["safe-symbol", /'ready/]]) {
-    const executed = spawnSync(binary, [snapshot, "--init-fn", `test-wasm.conversion/${name}`, "--reload-fn", `test-wasm.conversion/${name}`], { encoding: "utf8" });
+    const executed = spawnSync(binary, [snapshot, "--init-fn", `test-wasm.conversion/${name}`, "--reload-fn", `test-wasm.conversion/${name}`], { encoding: "utf8", timeout: 60000 });
+    assert.equal(executed.error, undefined, `native execution failed: ${executed.error?.message ?? "unknown error"}`);
     assert.equal(executed.status, 0, executed.stderr);
     assert.match(executed.stderr, result);
   }

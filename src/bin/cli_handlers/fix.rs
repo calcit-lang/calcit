@@ -3796,6 +3796,9 @@ fn plan_core_identity_conversion_fixes(
       &CallStackList::default(),
     )
     .map_err(|failure| failure.msg)?;
+    let usages =
+      runner::preprocess::trace_definition_source_usages(namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
+        .map_err(|failure| failure.msg)?;
     for (call_path, head_path, argument_path) in calls {
       let head = navigate_to_path(&entry.code, &head_path)?;
       let Cirru::Leaf(old_name) = &head else {
@@ -3864,7 +3867,26 @@ fn plan_core_identity_conversion_fixes(
       let proven_string = resolved
         .as_ref()
         .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::String));
-      let machine_applicable = proven_string && method_source_context_is_stable(&entry.code, &call_path);
+      let argument_crosses_macro = usages.iter().any(|usage| {
+        let Some(location) = &usage.location else {
+          return false;
+        };
+        location.ns.as_ref() == namespace
+          && location.def.as_ref() == definition
+          && location.coord.len() > argument_path.len()
+          && location
+            .coord
+            .iter()
+            .map(|index| usize::from(*index))
+            .zip(argument_path.iter().copied())
+            .all(|(index, expected)| index == expected)
+          && (!usage.macro_origin.is_empty()
+            || matches!(
+              program::lookup_compiled_def(&usage.target_ns, &usage.target_def).map(|compiled| compiled.kind),
+              Some(program::CompiledDefKind::Macro)
+            ))
+      });
+      let machine_applicable = proven_string && !argument_crosses_macro && method_source_context_is_stable(&entry.code, &call_path);
       let new_name = if expected_proc == CalcitProc::TurnTag {
         "to-tag"
       } else {
@@ -3895,6 +3917,8 @@ fn plan_core_identity_conversion_fixes(
         },
         message: if machine_applicable {
           format!("Use `{new_name}` for a proven String argument; both paths call the same built-in conversion once.")
+        } else if argument_crosses_macro {
+          format!("The argument to `{old_name}` crosses macro expansion; review this conversion manually.")
         } else {
           format!("Cannot prove a String argument and stable source context for `{old_name}`; review this conversion manually.")
         },
