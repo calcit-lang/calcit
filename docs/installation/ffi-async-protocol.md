@@ -256,14 +256,14 @@ lifecycle failure。预留的 `Complete`/`Fail` 仍可入队，供模块 exactly
 
 At the Calcit adapter boundary, wrap that opaque value with `ffi:task` and
 expose the nominal `FfiTask` to application code. Lifecycle operations are
-method-oriented: `.cancel` supplies the standard cancelled reason and
-`.cancel-with reason` supplies an explicit EDN-compatible reason. The raw
+method-oriented: `.cancel!` supplies the standard cancelled reason and
+`.cancel-with! reason` supplies an explicit EDN-compatible reason. The raw
 procedure remains available for compatibility, but should not leak through a
 module's public API.
 
 在 Calcit 模块适配边界，应使用 `ffi:task` 包装这个不透明值，并向业务代码暴露
-nominal `FfiTask`。生命周期操作以方法为主：`.cancel` 使用标准取消原因，
-`.cancel-with reason` 传入显式、可编码为 EDN 的原因。底层 procedure 继续兼容，
+nominal `FfiTask`。生命周期操作以方法为主：`.cancel!` 使用标准取消原因，
+`.cancel-with! reason` 传入显式、可编码为 EDN 的原因。旧方法和底层 procedure 继续兼容，
 但不应泄漏到模块公开 API。
 
 A Server that declares `REQUIRES_RESPONSE` opens one response capability for
@@ -291,7 +291,7 @@ at timeout.
 
 Calcit appends an opaque AnyRef response capability to the event's decoded EDN
 arguments. An adapter wraps it with `ffi:response`; application callbacks then
-call `.resolve value` or `.reject value` on the nominal `FfiResponse`. The raw
+call `.resolve! value` or `.reject! value` on the nominal `FfiResponse`. The raw
 `&ffi-response-resolve` and `&ffi-response-reject` procedures remain boundary
 primitives. The host atomically claims the capability, encodes
 that value, calls the module's resolve function on the host thread, and
@@ -315,6 +315,8 @@ validates capability kind, owner, generation, lifecycle, and EDN encodability.
 `FfiTask` 与 `FfiResponse` 是两个独立的 nominal wrapper。payload 与 reason
 使用方法级泛型而不是 `Dynamic`；只有宿主边界上的不透明 raw 字段保持动态。
 宿主仍会校验 capability kind、owner、generation、lifecycle 以及 EDN 可编码性。
+业务代码优先使用 `.resolve!`、`.reject!`；旧 `.resolve`、`.reject` 暂留兼容，
+它们与新方法共用同一宿主调用，不改变 exactly-once 与释放规则。
 
 AnyRef is deliberately a native non-serializable capability rather than a
 Calcit number: the full generation-bearing `u64` cannot safely round-trip

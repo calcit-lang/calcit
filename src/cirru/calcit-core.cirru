@@ -2879,7 +2879,15 @@
               :generics $ [] 'T
               :args $ [] 'FfiResponse 'T
               :return 'Unit
+            .resolve! $ :: 'Fn $ {}
+              :generics $ [] 'T
+              :args $ [] 'FfiResponse 'T
+              :return 'Unit
             .reject $ :: 'Fn $ {}
+              :generics $ [] 'T
+              :args $ [] 'FfiResponse 'T
+              :return 'Unit
+            .reject! $ :: 'Fn $ {}
               :generics $ [] 'T
               :args $ [] 'FfiResponse 'T
               :return 'Unit
@@ -2888,7 +2896,7 @@
           :tags $ #{} :internal :trait
         'FfiResponseOpsImpl $ %{} 'CodeEntry
           :doc "|Internal implementation of native async response methods."
-          :code $ quote $ defimpl FfiResponseOpsImpl FfiResponseOps (.resolve ffi-response:resolve) (.reject ffi-response:reject)
+          :code $ quote $ defimpl FfiResponseOpsImpl FfiResponseOps (.resolve ffi-response:resolve) (.resolve! ffi-response:resolve) (.reject ffi-response:reject) (.reject! ffi-response:reject)
           :examples $ []
           :schema $ :: 'Impl
           :tags $ #{} :internal :trait-impl
@@ -2907,7 +2915,14 @@
             .cancel $ :: 'Fn $ {}
               :args $ [] 'FfiTask
               :return 'Unit
+            .cancel! $ :: 'Fn $ {}
+              :args $ [] 'FfiTask
+              :return 'Unit
             .cancel-with $ :: 'Fn $ {}
+              :generics $ [] 'T
+              :args $ [] 'FfiTask 'T
+              :return 'Unit
+            .cancel-with! $ :: 'Fn $ {}
               :generics $ [] 'T
               :args $ [] 'FfiTask 'T
               :return 'Unit
@@ -2916,7 +2931,7 @@
           :tags $ #{} :internal :trait
         'FfiTaskOpsImpl $ %{} 'CodeEntry
           :doc "|Internal implementation of native async task methods."
-          :code $ quote $ defimpl FfiTaskOpsImpl FfiTaskOps (.cancel ffi-task:cancel) (.cancel-with ffi-task:cancel-with)
+          :code $ quote $ defimpl FfiTaskOpsImpl FfiTaskOps (.cancel ffi-task:cancel) (.cancel! ffi-task:cancel) (.cancel-with ffi-task:cancel-with) (.cancel-with! ffi-task:cancel-with)
           :examples $ []
           :schema $ :: 'Impl
           :tags $ #{} :internal :trait-impl
@@ -5189,47 +5204,67 @@
             :generics $ [] 'T
           :tags $ #{} :ffi :internal
         'ffi:response $ %{} 'CodeEntry
-          :doc "|Wrap a raw native async response capability at a module adapter boundary."
+          :doc "|Wrap a raw native async response capability at a module adapter boundary. Examples with nil only check the method contract without invoking it; real resolution requires a host-issued capability."
           :code $ quote $ defn ffi:response (raw)
             %{} FfiResponse $ :raw raw
           :examples $ []
-            quote $ ffi:response raw-response-capability
+            quote $ ffi:response nil
             quote $ let
-                response $ ffi:response raw-response-capability
-              response.resolve payload
+                response $ ffi:response nil
+              fn () $ response.resolve! :ok
             quote $ let
-                response $ ffi:response raw-response-capability
-              response.reject error
+                response $ ffi:response nil
+              fn () $ response.reject! :error
           :schema $ :: 'Fn $ {} (:return 'FfiResponse)
             :args $ [] 'Dynamic
           :tags $ #{} :core :ffi
-          :tests $ [] $ %{} 'TestEntry (:name |wraps-response-capability)
-            :code $ quote $ let
-                response $ ffi:response nil
-              assert-type response 'FfiResponse
-              , true
-            :tags $ #{} :unit
+          :tests $ []
+            %{} 'TestEntry (:name |wraps-response-capability)
+              :code $ quote $ let
+                  response $ ffi:response nil
+                assert-type response 'FfiResponse
+                , true
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |effect-method-contract)
+              :code $ quote $ let
+                  response $ ffi:response nil
+                  resolve $ fn () $ response.resolve! :ok
+                  reject $ fn () $ response.reject! :error
+                assert-type resolve $ :: 'Fn $ {} (:return 'Unit)
+                assert-type reject $ :: 'Fn $ {} (:return 'Unit)
+                , true
+              :tags $ #{} :unit
         'ffi:task $ %{} 'CodeEntry
-          :doc "|Wrap a raw native async task capability at a module adapter boundary."
+          :doc "|Wrap a raw native async task capability at a module adapter boundary. Examples with nil only check the method contract without invoking it; real cancellation requires a host-issued capability."
           :code $ quote $ defn ffi:task (raw)
             %{} FfiTask $ :raw raw
           :examples $ []
-            quote $ ffi:task raw-task-capability
+            quote $ ffi:task nil
             quote $ let
-                task $ ffi:task raw-task-capability
-              , task.cancel
+                task $ ffi:task nil
+              fn () task.cancel!
             quote $ let
-                task $ ffi:task raw-task-capability
-              task.cancel-with :shutdown
+                task $ ffi:task nil
+              fn () $ task.cancel-with! :shutdown
           :schema $ :: 'Fn $ {} (:return 'FfiTask)
             :args $ [] 'Dynamic
           :tags $ #{} :core :ffi
-          :tests $ [] $ %{} 'TestEntry (:name |wraps-task-capability)
-            :code $ quote $ let
-                task $ ffi:task nil
-              assert-type task 'FfiTask
-              , true
-            :tags $ #{} :unit
+          :tests $ []
+            %{} 'TestEntry (:name |wraps-task-capability)
+              :code $ quote $ let
+                  task $ ffi:task nil
+                assert-type task 'FfiTask
+                , true
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |effect-method-contract)
+              :code $ quote $ let
+                  task $ ffi:task nil
+                  cancel $ fn () task.cancel!
+                  cancel-with $ fn () $ task.cancel-with! :shutdown
+                assert-type cancel $ :: 'Fn $ {} (:return 'Unit)
+                assert-type cancel-with $ :: 'Fn $ {} (:return 'Unit)
+                , true
+              :tags $ #{} :unit
         'filter $ %{} 'CodeEntry
           :doc "|Builds a new collection containing only the elements where the predicate returns truthy, preserving the original collection type when possible."
           :code $ quote $ defn filter (xs f) (.filter xs f)

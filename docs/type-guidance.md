@@ -170,7 +170,7 @@ preopen 的 `.read-text` / `.write-text!`（UTF-8，最多 4 MiB）。写入采�
 
 Native 异步 FFI capability 也遵循相同边界原则。模块适配层用 `ffi:task`、
 `ffi:response` 把不透明 AnyRef 提升为 nominal `FfiTask`、`FfiResponse`，业务层调用
-`.cancel`、`.cancel-with`、`.resolve`、`.reject`。raw 字段保持 `Dynamic`，但
+`.cancel!`、`.cancel-with!`、`.resolve!`、`.reject!`。旧名暂留兼容。raw 字段保持 `Dynamic`，但
 reason/payload 使用方法级泛型，因此不会为了宿主编码而抹掉调用侧类型。底层
 `&ffi-task-cancel`、`&ffi-response-*` 只作为适配与兼容入口。
 
