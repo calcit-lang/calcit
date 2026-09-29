@@ -440,9 +440,75 @@ pub(super) fn emit_str_ends_with(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   Ok(())
 }
 
-/// `turn-string v` — convert any value to its string representation.
+/// `turn-string v` — use proven scalar types before the legacy numeric fallback.
 pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "turn-string")?;
+
+  if let Calcit::Tag(tag) = &args[0] {
+    let name = tag.to_string();
+    let ptr = *ctx
+      .string_pool
+      .get(&name)
+      .ok_or_else(|| format!("missing WASM tag string literal: {name}"))?;
+    ctx.emit(f64_const(ptr as f64));
+    return Ok(());
+  }
+
+  if let Calcit::Number(number) = &args[0] {
+    let text = number.to_string();
+    let ptr = *ctx
+      .string_pool
+      .get(&text)
+      .ok_or_else(|| format!("missing WASM string literal: {text}"))?;
+    ctx.emit(f64_const(ptr as f64));
+    return Ok(());
+  }
+
+  match super::infer_wasm_static_type(ctx, &args[0]).as_deref() {
+    Some(CalcitTypeAnnotation::Bool) => {
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::F64Eq);
+      ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+      let false_ptr = *ctx.string_pool.get("false").ok_or("missing WASM false string literal")?;
+      ctx.emit(f64_const(false_ptr as f64));
+      ctx.emit(Instruction::Else);
+      let true_ptr = *ctx.string_pool.get("true").ok_or("missing WASM true string literal")?;
+      ctx.emit(f64_const(true_ptr as f64));
+      ctx.emit(Instruction::End);
+      return Ok(());
+    }
+    Some(CalcitTypeAnnotation::Tag) => {
+      let tag = ctx.alloc_local();
+      let result = ctx.alloc_local();
+      emit_expr(ctx, &args[0])?;
+      ctx.emit(Instruction::LocalSet(tag));
+      let mut tags: Vec<_> = ctx.tag_index.iter().map(|(name, id)| (name.clone(), *id)).collect();
+      tags.sort_by_key(|(_, id)| *id);
+      for (name, id) in tags {
+        let ptr = *ctx
+          .string_pool
+          .get(&name)
+          .ok_or_else(|| format!("missing WASM tag string literal: {name}"))?;
+        ctx.emit(Instruction::LocalGet(tag));
+        ctx.emit(f64_const(id as f64));
+        ctx.emit(Instruction::F64Eq);
+        ctx.begin_block_if();
+        ctx.emit(f64_const(ptr as f64));
+        ctx.emit(Instruction::LocalSet(result));
+        ctx.emit(Instruction::End);
+      }
+      ctx.emit(Instruction::LocalGet(result));
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::F64Eq);
+      ctx.begin_block_if();
+      ctx.emit(Instruction::Unreachable);
+      ctx.emit(Instruction::End);
+      ctx.emit(Instruction::LocalGet(result));
+      return Ok(());
+    }
+    _ => {}
+  }
 
   // Compile-time fast path: literal enum constructor like `(:: :tag val0 val1 ...)`.
   // Pre-compute the lispy string and emit it as a string-pool constant.

@@ -1575,6 +1575,51 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-turn-string-bool $ %{} 'CodeEntry (:doc "|验证 Bool 转文本在 WASM 与 native 中一致。")
+          :code $ quote $ defwasm-export test-turn-string-bool ()
+            &let (yes true)
+              &let (no false)
+                and
+                  = (turn-string yes) |true
+                  = (turn-string no) |false
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |bool-text-parity)
+            :code $ quote $ assert= true (test-turn-string-bool)
+            :tags $ #{} :core :wasm
+        'test-turn-string-nil-string $ %{} 'CodeEntry (:doc "|验证 nil 和 String 转文本在 WASM 与 native 中一致。")
+          :code $ quote $ defwasm-export test-turn-string-nil-string ()
+            and
+              = (turn-string nil) |
+              = (turn-string |hello) |hello
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |nil-string-text-parity)
+            :code $ quote $ assert= true (test-turn-string-nil-string)
+            :tags $ #{} :core :wasm
+        'test-turn-string-number $ %{} 'CodeEntry (:doc "|验证整数和小数转文本在 WASM 与 native 中一致。")
+          :code $ quote $ defwasm-export test-turn-string-number ()
+            and
+              = (turn-string 42) |42
+              = (turn-string 1.5) |1.5
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |number-text-parity)
+            :code $ quote $ assert= true (test-turn-string-number)
+            :tags $ #{} :core :wasm
+        'test-turn-string-tag $ %{} 'CodeEntry (:doc "|验证 Tag 转文本在 WASM 与 native 中一致。")
+          :code $ quote $ defwasm-export test-turn-string-tag ()
+            &let (name :wasm-name)
+              = (turn-string name) |wasm-name
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |tag-text-parity)
+            :code $ quote $ assert= true (test-turn-string-tag)
+            :tags $ #{} :core :wasm
         'test-type-of-enum $ %{} 'CodeEntry (:doc "|type-of enum == :enum tag")
           :code $ quote $ defwasm-export test-type-of-enum ()
             if

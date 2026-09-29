@@ -8941,6 +8941,9 @@ fn build_string_pool(
     strings.push(" ".into());
     strings.push("\n".into());
   }
+  strings.push("true".into());
+  strings.push("false".into());
+  strings.extend(tag_index.keys().cloned());
   if needs_edn_format {
     strings.extend(
       [
@@ -9102,6 +9105,9 @@ fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
     collect_strings_from_data_shape(&graph, strings);
   }
   match expr {
+    Calcit::Number(number) => {
+      strings.push(number.to_string());
+    }
     Calcit::Str(s) => {
       strings.push(s.to_string());
     }
