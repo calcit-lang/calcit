@@ -6302,7 +6302,7 @@ fn build_rt_f64_to_str(string_tag: i32, ryu_format_idx: u32) -> CompiledFn {
       ValType::I32, // digit (10)
       ValType::I32, // raw_base (11)
       ValType::I32, // canonical_len (12)
-      ValType::I32, // payload (13)
+      ValType::I32, // ryu_payload (13)
     ],
     instructions: b,
   }
