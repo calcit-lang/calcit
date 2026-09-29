@@ -9340,12 +9340,25 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Dynamic
-        'turn-str $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn turn-str (x) (turn-string x)
+        'turn-str $ %{} 'CodeEntry
+          :doc "|旧版兼容别名；仅接受实现 ToString 的值，推荐新代码使用 to-string。集合、Unit、开放 Dynamic 不属于该静态契约。"
+          :code $ quote $ defn turn-str (x) (to-string x)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'T
             :generics $ [] 'T
+            :where $ {} $ 'T 'ToString
+          :tags $ #{} :internal
+          :tests $ [] $ %{} 'TestEntry (:name |accepts-proven-scalars)
+            :code $ quote $ do
+              assert-type (turn-str 42) 'String
+              assert= |42 $ turn-str 42
+              assert= |hello $ turn-str |hello
+              assert= |false $ turn-str false
+              assert= | $ turn-str nil
+              assert= |ready $ turn-str :ready
+              assert= |ready $ turn-str $ to-symbol |ready
+            :tags $ #{} :core :unit
         'turn-string $ %{} 'CodeEntry
           :doc "|internal function for converting to string\nSyntax: (turn-string value)\nParams: value (any)\nReturns: string\nConverts value to string representation"
           :code $ quote &runtime-implementation
