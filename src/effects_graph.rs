@@ -726,7 +726,9 @@ fn classify_by_name(name: &str) -> Option<Vec<String>> {
     "hint-fn" => vec!["async"],
     "println" | "eprintln" | "echo" => vec!["console"],
     "render!" => vec!["render"],
-    "generate-id!" | "cpu-time" | "wait-ms" | "&wait-ms" | "&get-os" | "async-sleep" => vec!["io"],
+    "generate-id!" | "cpu-time" | "monotonic-time-ms" | "unix-time-ms" | "wait-ms" | "&wait-ms" | "&get-os" | "async-sleep" => {
+      vec!["io"]
+    }
     "try" => vec!["control"],
     "&doseq" => vec!["effect/sequential"],
     // Respo convention: common project-level functions
@@ -2299,6 +2301,13 @@ mod tests {
     for name in ["add-watch", "remove-watch", "add-watch!", "remove-watch!"] {
       assert!(is_state_operator(name));
       assert_eq!(classify_call(name, None), vec!["state/watch".to_string()]);
+    }
+  }
+
+  #[test]
+  fn classify_clock_calls_by_both_legacy_and_preferred_names() {
+    for name in ["cpu-time", "monotonic-time-ms", "unix-time-ms"] {
+      assert_eq!(classify_call(name, None), vec!["io".to_string()]);
     }
   }
 
