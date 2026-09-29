@@ -412,8 +412,8 @@ Struct，`get` 可按运行时字段名返回 `Option<Dynamic>`。
 - `FsPath .read-text`、`.read-dir`、`.walk-dir`、`.write-text!`：返回 `Result` 的可恢复文件效果；旧 `.write-text` 暂留兼容。WASI 0.3 Component command 支持 preopen 内最多 4 MiB UTF-8 文本读写（写入 create + truncate，非原子），目录效果待实现；core WASM 不可用
 - `try-read-dir`：基于 String path 的兼容目录函数，返回 `Result`；文件读写改用 `fs:path` 的方法
 - `read-file`、`read-dir`、`write-file`：保留异常语义的兼容 primitives（native/JS；WASM 不可用）
-- `ffi:task`, `FfiTask .cancel` / `.cancel-with` - nominal native async task lifecycle API
-- `ffi:response`, `FfiResponse .resolve` / `.reject` - nominal exactly-once native response API
+- `ffi:task`、`FfiTask .cancel!` / `.cancel-with!`：native 异步 task 生命周期方法；旧名暂留兼容。
+- `ffi:response`、`FfiResponse .resolve!` / `.reject!`：native response 一次性完成方法；旧名暂留兼容。
 - `get-env` - environment variables
 - `wait-ms`：跨 backend 的同步等待边界；零值不调用宿主，缺少能力时返回错误
 - `raise` - throw error
