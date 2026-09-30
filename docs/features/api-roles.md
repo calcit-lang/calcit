@@ -213,7 +213,7 @@ do
 | `reset!/swap!`；旧 `add-watch/remove-watch` | **已提供** `add-watch!/remove-watch!` 作为 Ref watcher 的首选注册/移除入口；旧名暂留底层兼容 | 两组调用共享原实现与 `Ref<T>`、`Tag`、`Unit` 契约；重复/缺失 key 仍报错，callback 次数不变；本阶段不自动改写未知同名调用 |
 | FsPath 旧 `.write-text`；js-ffi `write-text!` | core **已提供** `.write-text!`；模块 **保留**已有 `!` | core 仍 `(FsPath,String)->Result<Unit,String>`，旧方法暂留兼容且共用实现；`core-effect-method-v1` 仅在类型与来源已证明时改写 core 调用；js-ffi 原有 Unit/throw/async 契约不因命名一致而自动统一 |
 | FfiTask `.cancel/.cancel-with`，FfiResponse `.resolve/.reject` | **已提供** `.cancel!/.cancel-with!/.resolve!/.reject!`；旧名暂留兼容 | 新旧方法共用宿主实现，保持泛型、签名、exactly-once、释放与失败行为；`core-effect-method-v1` 可受控改写已证明调用，不能用返回 Bool 或命名代替生命周期证明 |
-| `.read-text/.read-dir/.walk-dir`、`get-args/get-env`；std `read-file!/read-dir!/walk-dir!` | **保留**core 查询名字；std **目标**去掉读取的 `!` | 保留 Option/Result/throw 各自边界；模块分别 PR，不为命名增加新宿主能力 |
+| `.read-text/.read-dir/.walk-dir`、`get-args/get-env`；std `read-file!/read-dir!/walk-dir!` | **保留**core 查询名字；std 的首选 `read-file/read-dir/walk-dir` 已合并源码，待模块发版 | [std #75](https://github.com/calcit-lang/calcit.std/pull/75) 保留旧名兼容及原参数、返回与失败模型；不要把 main 的新名字视为已发布模块版本，不为命名增加新宿主能力 |
 | `cpu-time: () -> Number` 实际为单调毫秒；`unix-time-ms` | **已提供** `monotonic-time-ms: () -> Number`；旧 `cpu-time` 暂留，`unix-time-ms` 保留 | 新入口复用旧时钟实现，只在同一运行内比较经过时间；native、JS、WASI Preview 1 可用，WASI 0.3 command 时钟仍明确不支持。std `get-time!/get-timestamp` 先核对返回模型再定映射 |
 | 定时器注册/取消、`on-ctrl-c`；随机数、ID 生成 | **目标**注册/取消使用 `!`；随机/ID 的具体词汇 **暂缓** | 区分产生值与改变资源状态，核对 async、句柄和 callback；不按字符串后缀批量处理 |
 | `println/echo/eprintln/read-stdin-text/wait-ms` | **保留**这些有限、按名明确的效果例外 | 输出、消费 stdin 和等待仍有真实效果；不是“所有 read-/print- 都自动例外” |
@@ -296,7 +296,7 @@ assert= true $ &str:includes? |abc |b
 
 冻结门禁的验收应覆盖两类失败：删除/改名，以及 schema/receiver/generic/失败契约变化。CI 必须能用受控负例证明未经迁移的变化被拒绝，同时验证合法新增与内部实现重构不被误阻断。显式迁移版本的例外需要同一 PR 的映射和相应证明；只更新 baseline 文件或文档不能自动放行。失败语义与 backend 覆盖仍由 Calcit `:tests`、严格负例及既有 host 测试共同证明，不另建统计 analyzer。
 
-在清单、别名排期与上述门禁完成前，#1568 和关联收尾 issues 保持开放。core 可先发布经过验证的版本，再以该正式版或明确标记的 alpha 验证模块消费者；milestone 只有在消费者和收尾验收完成、正式发版及中文成果 Discussion 发布后才标记完成，避免“要先关闭 milestone 才能发布、又要先发布才能迁移”的循环。
+#1568 的策略基础已经关闭，未完成的清单覆盖、别名排期与上述门禁继续由 [#1458](https://github.com/calcit-lang/calcit/issues/1458) 收尾；策略 issue 关闭不表示整个 core 已冻结或所有目标名已发布。core 可先发布经过验证的版本，再以该正式版或明确标记的 alpha 验证模块消费者；milestone 只有在消费者和收尾验收完成、正式发版及中文成果 Discussion 发布后才标记完成，避免“要先关闭 milestone 才能发布、又要先发布才能迁移”的循环。
 
 先查类型再选方法，不要从模糊搜索到的内部定义名猜调用形式：
 

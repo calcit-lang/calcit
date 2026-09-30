@@ -95,63 +95,63 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   `:tests` / `:examples`；这些位置应由测试和人工检查同步迁移。本规则也包含在新的 `core-api-0.28-v1`；已发布的 surface preset 保持原定义。
 - `core-integer-predicate-v1` 把 Cirru reader 直接解析为内建 Proc 的单参数 `round?` 调用头改为
   `calcit.core/integer?`。新入口复用有限且恰好没有小数部分的既有语义；不会把 Bool 当作整数类型 refinement。仅改写可回溯的源码调用，保留实参原位与求值次数；含同名词法绑定的定义及 quoted 数据跳过，未知 macro 只给 `requires-review`。
-  同一规则还会把静态 Number 接收者的 `.round?` 改成 `.integer?`：旧、新方法现均指向 `calcit.core/integer?`，类型契约同为 `Number -> Bool`；自定义同名方法不改，开放接收者与未知宏不会自动改写。当前只覆盖 definition `:code`，不自动修改一等函数引用或 attached `:tests` / `:examples`；这些位置需人工审阅。使用 `calcit calcit.cirru fix --rule core-integer-predicate-v1 --format edn` 预览，核对来源与 revision 后应用并重复预览；不加入已发布 preset。
-- `core-identity-conversion-v1` 把参数已证明为 String 的内建 `turn-tag` / `turn-symbol` 完整调用分别改为 `calcit.core/to-tag` / `calcit.core/to-symbol`；也把解析到 core 兼容函数、且参数已证明为内建 Nil、Bool、Number、String、Tag 或 Symbol 的 `turn-string` 改为 `calcit.core/to-string`。这些标量路径调用相同的底层转换，实参仍只求值一次；自定义 `ToString` 实现、Dynamic、已知不支持的集合、局部同名绑定、quoted 数据、未知 macro 与一等函数值都不自动改写。仅扫描 definition `:code`，`:tests` / `:examples` 需人工检查。先用 `calcit calcit.cirru fix --rule core-identity-conversion-v1 --format edn` 预览，核对来源与 revision，再带 `--expect-revision` 应用并复查；不加入已发布 preset。WASM 仍不支持动态 Tag/Symbol intern，迁移不意味着获得 WASM 支持。
-- `core-predicate-method-v1` 按已证明的接收者类型迁移谓词方法：List/String `.contains?` → `.contains-index?`，Map `.contains?` → `.contains-key?`、`.includes?` → `.contains-value?`，Set `.contains?` → `.includes?`。每一项都须证明旧、新方法解析到同一个 core 实现，参数与返回类型相同，且源码可稳定定位；不会把索引、键、值和成员混成一个命题。自定义同名方法不改，开放接收者不会自动改写，未知 macro 只给 `requires-review`，quoted data 跳过。先运行 `calcit calcit.cirru fix --rule core-predicate-method-v1 --format edn` 预览，再核对来源和 revision、带 `--expect-revision` 应用，最后重复预览并运行项目测试。当前只扫描 definition `:code`，不自动改 attached `:tests` / `:examples`、Struct/Enum、trait-bound 或具名 trait-call；本规则须显式选择，不加入已发布 preset。
-- `core-effect-method-v1` 只迁移已证明的 core nominal 效果方法：`FsPath .write-text` → `.write-text!`，`FfiTask .cancel/.cancel-with` → `.cancel!/.cancel-with!`，`FfiResponse .resolve/.reject` → `.resolve!/.reject!`。前缀 `path .write-text` 和紧凑 `task.cancel-with` 写法都可处理；必须同时证明接收者、core trait 来源、旧新方法签名及同一 helper，才能保持参数求值次数、Result/Unit 与宿主生命周期语义。开放接收者与用户自定义同名方法不自动改写，未知 macro 只给 `requires-review`，quoted data 跳过。先用 `calcit calcit.cirru fix --rule core-effect-method-v1 --format edn` 预览，再带相同 selector 和 `--expect-revision` 应用，重复预览应为空。当前只修改 definition `:code`，`:tests` / `:examples` 需人工核对；本规则不加入已发布 preset，也不提供新的宿主能力。
+  同一规则还会把静态 Number 接收者的 `.round?` 改成 `.integer?`：旧、新方法现均指向 `calcit.core/integer?`，类型契约同为 `Number -> Bool`；自定义同名方法不改，开放接收者与未知宏不会自动改写。当前只覆盖 definition `:code`，不自动修改一等函数引用或 attached `:tests` / `:examples`；这些位置需人工审阅。使用 `calcit calcit.cirru fix --rule core-integer-predicate-v1 --format edn` 预览，核对来源与 revision 后应用并重复预览；包含在 `core-api-0.28-v1`；旧 surface preset 不变。
+- `core-identity-conversion-v1` 把参数已证明为 String 的内建 `turn-tag` / `turn-symbol` 完整调用分别改为 `calcit.core/to-tag` / `calcit.core/to-symbol`；也把解析到 core 兼容函数、且参数已证明为内建 Nil、Bool、Number、String、Tag 或 Symbol 的 `turn-string` 改为 `calcit.core/to-string`。这些标量路径调用相同的底层转换，实参仍只求值一次；自定义 `ToString` 实现、Dynamic、已知不支持的集合、局部同名绑定、quoted 数据、未知 macro 与一等函数值都不自动改写。仅扫描 definition `:code`，`:tests` / `:examples` 需人工检查。先用 `calcit calcit.cirru fix --rule core-identity-conversion-v1 --format edn` 预览，核对来源与 revision，再带 `--expect-revision` 应用并复查；包含在 `core-api-0.28-v1`；旧 surface preset 不变。WASM 仍不支持动态 Tag/Symbol intern，迁移不意味着获得 WASM 支持。
+- `core-predicate-method-v1` 按已证明的接收者类型迁移谓词方法：List/String `.contains?` → `.contains-index?`，Map `.contains?` → `.contains-key?`、`.includes?` → `.contains-value?`，Set `.contains?` → `.includes?`。每一项都须证明旧、新方法解析到同一个 core 实现，参数与返回类型相同，且源码可稳定定位；不会把索引、键、值和成员混成一个命题。自定义同名方法不改，开放接收者不会自动改写，未知 macro 只给 `requires-review`，quoted data 跳过。先运行 `calcit calcit.cirru fix --rule core-predicate-method-v1 --format edn` 预览，再核对来源和 revision、带 `--expect-revision` 应用，最后重复预览并运行项目测试。当前只扫描 definition `:code`，不自动改 attached `:tests` / `:examples`、Struct/Enum、trait-bound 或具名 trait-call；本规则可单独选择，也包含在 `core-api-0.28-v1`；旧 surface preset 不变。
+- `core-effect-method-v1` 只迁移已证明的 core nominal 效果方法：`FsPath .write-text` → `.write-text!`，`FfiTask .cancel/.cancel-with` → `.cancel!/.cancel-with!`，`FfiResponse .resolve/.reject` → `.resolve!/.reject!`。前缀 `path .write-text` 和紧凑 `task.cancel-with` 写法都可处理；必须同时证明接收者、core trait 来源、旧新方法签名及同一 helper，才能保持参数求值次数、Result/Unit 与宿主生命周期语义。开放接收者与用户自定义同名方法不自动改写，未知 macro 只给 `requires-review`，quoted data 跳过。先用 `calcit calcit.cirru fix --rule core-effect-method-v1 --format edn` 预览，再带相同 selector 和 `--expect-revision` 应用，重复预览应为空。当前只修改 definition `:code`，`:tests` / `:examples` 需人工核对；本规则包含在 `core-api-0.28-v1`，旧 surface preset 不变，也不提供新的宿主能力。
 - `core-list-add-v1` 仅把类型和方法契约均已证明的 List `.add` 改成 `.append`。它要求旧、新方法都指向
   `calcit.core/append`，形参和返回类型一致，且源码只经过已知保持调用的结构；Set/Map `.add` 不属于此规则，
   开放 List、未知 macro 和无法回溯的接收者只给 `requires-review`。显式运行
   `calcit calcit.cirru fix --rule core-list-add-v1 --format edn` 预览，再核对 definition、path、来源和 revision；
   应用后重复预览并运行项目测试。该规则目前只覆盖 definition `:code`，`:tests` / `:examples` 仍需单独检查，
-  也不加入已发布的 preset。
-- `core-set-include-v1` 仅把已证明的 Set `.add item` 改成 `.include item`（也支持原调用中的更多成员参数）。旧新方法都须解析到 `calcit.core/include`，并具有相同参数、返回类型与稳定源码位置；重复成员仍去重，返回新 Set。Map `.add` 接受二元 entry，List `.add` 表示追加元素，均不属于本规则；自定义同名方法、开放接收者、quoted data 与未知 macro 不自动改写。运行 `calcit calcit.cirru fix --rule core-set-include-v1 --format edn` 预览，核对来源与 revision 后携带 `--expect-revision` 应用，再重复预览并运行项目测试。当前仅修改 definition `:code`，`:tests` / `:examples` 人工核对；规则不进入已发布 preset。
+  也包含在 `core-api-0.28-v1`；旧 surface preset 不变。
+- `core-set-include-v1` 仅把已证明的 Set `.add item` 改成 `.include item`（也支持原调用中的更多成员参数）。旧新方法都须解析到 `calcit.core/include`，并具有相同参数、返回类型与稳定源码位置；重复成员仍去重，返回新 Set。Map `.add` 接受二元 entry，List `.add` 表示追加元素，均不属于本规则；自定义同名方法、开放接收者、quoted data 与未知 macro 不自动改写。运行 `calcit calcit.cirru fix --rule core-set-include-v1 --format edn` 预览，核对来源与 revision 后携带 `--expect-revision` 应用，再重复预览并运行项目测试。当前仅修改 definition `:code`，`:tests` / `:examples` 人工核对；规则包含在 `core-api-0.28-v1`；旧 surface preset 不变。
 - `core-collection-len-v1` 仅把 List、Map、Set、String 上已证明的零参数 `.count` 改成 `.len`。
   编译器须同时证明具体接收者类型、旧/新方法指向同一个对应的 core `&*:count` 实现、形参与返回类型一致，
   且源码处于已知保持调用的结构。Struct 字段数、Enum payload 数、用户自定义 `Countable` 不在自动范围；
   开放类型与未知 macro 只给 `requires-review`，quoted data 不扫描。String 两种方法都按 Unicode 标量计数，
   不会转为 UTF-8 字节长度。用 `calcit calcit.cirru fix --rule core-collection-len-v1 --format edn` 预览，
   核对来源与 revision 后带 `--expect-revision` 应用；重复预览应为空，再运行严格检查与项目测试。
-  当前仅覆盖 definition `:code`，`:tests` / `:examples` 需单独检查；该规则也不加入已发布 preset。
+  当前仅覆盖 definition `:code`，`:tests` / `:examples` 需单独检查；该规则也包含在 `core-api-0.28-v1`；旧 surface preset 不变。
 - `core-list-fold-v1` 仅把具体 List 上已证明的 seeded `.reduce` 方法改成 `.fold`。两者必须指向同一个
   `calcit.core/fold` 实现，参数与返回类型一致；空列表仍返回初值，按从左到右顺序调用 reducer，累加器类型可与元素类型不同。
   开放接收者、用户自定义同名方法、未知 macro 和 quoted data 不会自动改写。前缀函数 `reduce` 暂保留兼容，
   不在本规则范围。运行 `calcit calcit.cirru fix --rule core-list-fold-v1 --format edn` 预览，审阅来源与 revision
   后带 `--expect-revision` 应用，重复预览应为空。本规则仅覆盖 definition `:code`，`:tests` / `:examples`
-  需单独检查；目前不加入已发布 preset。
+  需单独检查；也包含在 `core-api-0.28-v1`；旧 surface preset 不变。
 - `core-list-intersperse-v1` 仅把具体 List 上已证明的 `.join separator` 改成 `.intersperse separator`。
   两者必须同指 `calcit.core/intersperse`，形参与返回契约一致。该操作返回 List，只在元素之间插入同类型分隔值；
   空 List、单元素、重复值和顺序不变。前缀 `join` 与返回 String 的 `join-str` 不是这条方法迁移的对象。
   运行 `calcit calcit.cirru fix --rule core-list-intersperse-v1 --format edn` 预览，核对来源和 revision 后携带
   `--expect-revision` 应用并重复预览。未知 macro、quoted data 和未证明的接收者不自动改写；当前只覆盖
-  definition `:code`，不改 `:tests` / `:examples`，也不加入已发布 preset。
+  definition `:code`，不改 `:tests` / `:examples`，也包含在 `core-api-0.28-v1`；旧 surface preset 不变。
 - `core-list-join-string-v1` 仅把具体 List 上已证明的 `.join-str separator` 改成 `.join-string separator`。
   两者必须同指 `calcit.core/join-str`，形参与返回类型契约一致；保留对 List 元素的原有显示转换、String 分隔符
   和空 List 的空字符串结果。运行 `calcit calcit.cirru fix --rule core-list-join-string-v1 --format edn` 预览，
   核对来源与 revision 后携带 `--expect-revision` 应用并重复预览。前缀 `join-str`、quoted data、开放接收者、
-  未知 macro 和用户方法不自动改写；当前只覆盖 definition `:code`，不改 `:tests` / `:examples`，不加入已发布 preset。
+  未知 macro 和用户方法不自动改写；当前只覆盖 definition `:code`，不改 `:tests` / `:examples`，包含在 `core-api-0.28-v1`；旧 surface preset 不变。
 - `core-map-distinct-values-v1` 仅把具体 Map 上已证明的零参数 `.values` 改成 `.distinct-values`。
   两者必须同指 `calcit.core/distinct-values`，形参与返回契约一致，均返回去重的 Set，不能解释成保留重复值的 List。
   运行 `calcit calcit.cirru fix --rule core-map-distinct-values-v1 --format edn` 预览，核对来源与 revision 后携带
   `--expect-revision` 应用并再次预览。前缀 `vals`、quoted data、开放接收者、未知 macro 与用户自定义方法不自动改写；
-  当前只覆盖 definition `:code`，不改 `:tests` / `:examples`，也不加入已发布 preset。
+  当前只覆盖 definition `:code`，不改 `:tests` / `:examples`，也包含在 `core-api-0.28-v1`；旧 surface preset 不变。
 - `core-list-flat-map-v1` 仅把具体 List 上已证明的 `.bind callback` 改成 `.flat-map callback`。
   两者必须同指 `calcit.core/mapcat`，回调及返回类型契约一致；每个元素调用一次回调，将返回的 List 按顺序展平一层。
   运行 `calcit calcit.cirru fix --rule core-list-flat-map-v1 --format edn` 预览，核对来源和 revision 后携带
   `--expect-revision` 应用并重复预览。Fn `.bind` 是不同语义，开放接收者、未知 macro、quoted data 和用户方法
-  不自动改写。当前只覆盖 definition `:code`，不改 `:tests` / `:examples`，不加入已发布 preset。
+  不自动改写。当前只覆盖 definition `:code`，不改 `:tests` / `:examples`，包含在 `core-api-0.28-v1`；旧 surface preset 不变。
 - `core-list-get-v1` 仅把具体 List 上已证明的 `.nth index` 改成 `.get index`。
   两者必须同指 `calcit.core/get`，形参与 `Option<T>` 返回契约一致；空 List 或越界仍返回 `none`。
   运行 `calcit calcit.cirru fix --rule core-list-get-v1 --format edn` 预览，核对 receiver、来源与 revision 后携带
   `--expect-revision` 应用并再次预览。String/Enum 的 `.nth`、前缀函数、开放接收者、quoted data、未知 macro
-  和用户自定义方法不自动改写。当前只覆盖 definition `:code`，不改 `:tests` / `:examples`，不加入已发布 preset。
+  和用户自定义方法不自动改写。当前只覆盖 definition `:code`，不改 `:tests` / `:examples`，包含在 `core-api-0.28-v1`；旧 surface preset 不变。
 - `core-collection-combine-v1` 仅把具体 Map 的 `.mappend` 改成 `.merge`、具体 Set 的 `.mappend` 改成 `.union`。
   两组旧/新方法必须各自指向同一个 core 实现，形参与返回契约一致；Map 后出现的同名 key 覆盖前值，Set 去重。
   规则支持至少一个组合参数的完整方法调用，不处理作为值传递的方法名。运行
   `calcit calcit.cirru fix --rule core-collection-combine-v1 --format edn` 预览，核对 receiver、来源与 revision 后
   携带 `--expect-revision` 应用并再次预览。List、String、Fn 的 `.mappend` 语义不同，开放接收者、quoted data、
   未知 macro 和用户自定义方法也不自动改写。当前只覆盖 definition `:code`，不改 `:tests` / `:examples`，
-  不加入已发布 preset。
+  包含在 `core-api-0.28-v1`；旧 surface preset 不变。
 - `rename-definition-v1` 是参数化语义重构规则。它要求 `--ns`、`--def` 与 `--to`，只改写 resolver 已证明指向
   同一项目 definition 的源码引用，并在同一事务中移除旧 `:refer`、重命名声明。裸引用会写成完整 namespace 路径，
   避免新名称被调用点的局部 binding 遮蔽；已有 `:as` 限定名会保留 alias。definition-attached tests 与 examples
@@ -192,7 +192,7 @@ calcit calcit.cirru fix --preset surface-latest-v2 --format edn
 
 ### 0.28 核心 API 命名迁移
 
-`core-api-0.28-v1` 组合已证明等价的 15 条叶子改写规则。它适合在结构升级后一次迁移核心 API 名称；每个调用仍须满足对应规则的类型、来源和源码位置证明。
+`core-api-0.28-v1` 从已发布的 `0.28.0-alpha.2` 起提供，组合已证明等价的 15 条叶子改写规则。它适合在结构升级后一次迁移核心 API 名称；每个调用仍须满足对应规则的类型、来源和源码位置证明。表中的规则也可用 `--rule` 单独选择，未回填进旧的 `surface-latest-v1/v2`；不要把“旧 preset 不变”理解为需要逐条运行所有规则。
 
 | 范围 | 展开的规则 |
 | --- | --- |
@@ -211,7 +211,7 @@ calcit calcit.cirru fix --preset core-api-0.28-v1 --format edn
 
 此集合只替换 definition `:code` 内已证明的叶子，嵌套调用的参数和 source path 保持原位。预览的 `:data :filters :source-coverage` 在 `:scanned-regions` 列出字符串 `|code`，在 `:manual-review-regions` 列出 `|tests`、`|examples`。未证明的候选继续作为 `requires-review` 返回，quoted data 和 macro 定义沿用各规则的边界。普通函数、primitive 和方法参数的求值上下文由 reader 或 compiler-resolved 来源确认，未知宏仍需人工核对其是否观察源码拼写。
 
-应用后重复预览，`machine-applicable` 建议应为空；`requires-review` 候选可能仍在，不能把它们当成已迁移或为了清零而自动应用。逐项核对这些候选以及 attached `:tests` / `:examples`，再运行项目严格检查和测试。Respo 副本验证中自动迁移 15 处后没有剩余可自动应用的建议，32 处人工审阅候选保留，48 个 definition tests 全部通过；这不代表整个项目的旧名已经清零。
+应用后重复预览，`machine-applicable` 建议应为空；`requires-review` 候选可能仍在，不能把它们当成已迁移或为了清零而自动应用。逐项核对这些候选以及 attached `:tests` / `:examples`，再运行项目严格检查和测试。使用已发布 `0.28.0-alpha.2` 的 Respo 副本验证中自动迁移 15 处后没有剩余可自动应用的建议，32 处人工审阅候选保留，48 个 definition tests 全部通过；这不代表整个项目的旧名已经清零。
 
 先用 `surface-latest-v2` 整理构造器和 `do` 结构，再运行本 preset；如需迁移 `%some/%none/%ok/%err` 或 `option:*/result:*` helper，分别使用 `core-nominal-constructor-v1`、`core-option-method-v1`、`core-result-method-v1` 并逐次核对新 revision。这些规则会改写完整调用树，不能和叶子集合未经组合证明就一次应用。旧 `surface-latest-v1/v2` 及 `--workflow strict` 的冻结范围保持原有定义。
 

@@ -2,7 +2,7 @@
 
 `core-api-0.28-scope.edn` 是已审阅的转换、解析、副作用、谓词与集合首选入口的范围与失败语义；`core-api-0.28-baseline.edn` 用现有 `query def/type` 导出对应的声明证据。两者都是原生 **Cirru EDN**，不是 Snapshot，也不参与运行时派发。
 
-本批是 **0.28.0 candidate 的部分基线**，不是整个 core 已冻结的声明。现已纳入公开数学函数、`fs:path` 首选构造、ToString/Len/Add/Eq 约束及已审阅的集合/谓词方法，不因 internal tag 漏掉应用入口。其余公开边界/trait、兼容名移除版本、实际 backend 支持矩阵与集中迁移例外仍未完成。#1568 及 milestone 收尾继续保持开放。失败描述是人工审阅的语义记录，不是脚本自动证明；行为仍以已有 Calcit `:tests`、严格负例和 host/backend 回归为准。
+本批是 **0.28.0 candidate 的部分基线**，不是整个 core 已冻结的声明。现已纳入公开数学函数、`fs:path` 首选构造、ToString/Len/Add/Eq 约束及已审阅的集合/谓词方法，不因 internal tag 漏掉应用入口。其余公开边界/trait、兼容名移除版本、实际 backend 支持矩阵与集中迁移例外仍未完成。#1568 的策略基础已关闭，剩余验收由 [#1458](https://github.com/calcit-lang/calcit/issues/1458) 与 milestone 收尾跟进；issue 状态不改变部分基线的覆盖范围。失败描述是人工审阅的语义记录，不是脚本自动证明；行为仍以已有 Calcit `:tests`、严格负例和 host/backend 回归为准。
 
 ## 导出和检查
 
@@ -24,6 +24,6 @@ node scripts/core-api-contract.mjs
 
 Option `.map` 目前查询仍为 open，解析开放 JSON/Cirru EDN 等边界仍需要单独审阅，不能靠本清单或目标类型把它们包装成 proven。候选只记录真实证据，不把推导漏洞固化为永久动态契约。0.29 的断言/调用证明工作仍由 #1538 拥有。
 
-CI 检查当前源码与基线，并对 PR 的 merge-base 基线重新比较；push 比较父提交。只改范围或重生成基线不能放行既有名字、schema、失败记录或 receiver 的变化。合法新增允许；函数体、局部参数名和方法内部实现路径不冻结。当前不提供 breaking-change 豁免，集中迁移例外需在 #1568 后续实现同一 PR 的映射与语义验证，不能手动跳过检查。
+CI 检查当前源码与基线，并对 PR 的 merge-base 基线重新比较；push 比较父提交。只改范围或重生成基线不能放行既有名字、schema、失败记录或 receiver 的变化。合法新增允许；函数体、局部参数名和方法内部实现路径不冻结。当前不提供 breaking-change 豁免，#1568 规划的集中迁移例外仍由 #1458 跟进，须实现同一 PR 的映射与语义验证，不能手动跳过检查。
 
 这里的测试放在 Node，是为了验证导出格式、Git 基线防绕过和契约比较这些维护工具边界，不重复添加 Rust 语言语义测试，也不新增动态类型统计 analyzer。失败描述的变化可由历史比较发现，但实现是否违反失败语义仍须由共享语义测试证明；不能把“文字没有变化”当作行为已经验证。
