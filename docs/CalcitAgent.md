@@ -570,6 +570,8 @@ Struct 字段存在性使用 `.contains-field? :field` 或 `contains-field? valu
 
 String 到名义标识使用 `to-tag: String -> Tag` 与 `to-symbol: String -> Symbol`；新代码不要用 `turn-tag/turn-symbol` 表达任意类型的强制转换。旧入口为 core 宏及现有消费者保留，运行时接受额外输入不扩大新 API 的严格契约。可显式用 `calcit fix --rule core-identity-conversion-v1 --format edn` 预览：仅在完整内建调用的参数被证明为 String、源码上下文稳定时自动迁移；Dynamic、非 String、quote、macro 与一等函数引用不自动改写，`:tests` / `:examples` 需人工检查。`turn-string`、`str`、`.show/.debug` 也不能混作同一种显示或转换。当前 native/JS 已验证，WASM 缺少运行时 Tag/Symbol intern，不能使用新转换；`turn-tag` 的 WASM lowering 现显式拒绝，而不再把 String 错当 Tag。
 
+对旧 `turn-string`，同一 fix 仅在内建 Nil、Bool、Number、String、Tag、Symbol 参数已证明时改为 `to-string`；这些内建 trait 方法调用相同的底层转换。自定义 `ToString`、开放 Dynamic、集合及无法稳定定位的源码不自动改写。`str`、`.show/.debug` 仍是不同显示职责，不应加入此迁移。
+
 测量经过时间使用 `monotonic-time-ms`，返回 Number 毫秒；只比较同一次运行中的两次读数，不把它当 Unix 时间戳或 CPU 使用量。旧 `cpu-time` 暂留兼容。`unix-time-ms` 是可能受宿主校时影响的 epoch 毫秒。新单调时钟名复用已有 native/JS/WASI Preview 1 实现；WASI 0.3 command 目前不支持时钟，应保留显式 capability 错误，不自行回退。
 
 List 带初始值的从左到右累加首选 `.fold initial reducer`，空 List 返回初值，累加器类型可不同于元素类型。旧 `.reduce` 方法可显式用 `core-list-fold-v1` 预览和迁移：仅具体 List 的旧、新方法契约都 proven 且指向同一 core 实现时自动改写；前缀 `reduce`、开放接收者和用户方法保留人工审阅。该规则目前不加入版本化 preset，也不自动修改 `:tests` / `:examples`。

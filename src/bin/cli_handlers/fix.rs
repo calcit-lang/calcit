@@ -1229,7 +1229,7 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
     CORE_IDENTITY_CONVERSION_RULE => FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_IDENTITY_CONVERSION_DIAGNOSTIC,
-      evidence_source: "reader-resolved-builtin-proc-and-proven-string-argument",
+      evidence_source: "reader-resolved-builtin-proc-and-proven-conversion-argument",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -3770,7 +3770,9 @@ fn collect_identity_conversion_calls(node: &Cirru, path: &mut Vec<usize>, calls:
   if matches!(items.first(), Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "quote" | "quasiquote")) {
     return;
   }
-  if items.len() == 2 && matches!(items.first(), Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "turn-symbol" | "turn-tag")) {
+  if items.len() == 2
+    && matches!(items.first(), Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "turn-symbol" | "turn-tag" | "turn-string"))
+  {
     let mut head_path = path.clone();
     head_path.push(0);
     let mut argument_path = path.clone();
@@ -3784,7 +3786,7 @@ fn collect_identity_conversion_calls(node: &Cirru, path: &mut Vec<usize>, calls:
   }
 }
 
-/// Rename only reader-resolved built-ins whose argument is proven String.
+/// Rename reader-resolved built-ins only when the argument proves the same conversion.
 fn plan_core_identity_conversion_fixes(
   snapshot: &Snapshot,
   snapshot_file: &str,
@@ -3832,6 +3834,7 @@ fn plan_core_identity_conversion_fixes(
       let expected_proc = match old_name.as_ref() {
         "turn-symbol" => CalcitProc::TurnSymbol,
         "turn-tag" => CalcitProc::TurnTag,
+        "turn-string" => CalcitProc::TurnString,
         _ => continue,
       };
       let parsed_head = code_to_calcit(
@@ -3878,17 +3881,33 @@ fn plan_core_identity_conversion_fixes(
       let resolved = inferred
         .as_ref()
         .map(|annotation| runner::preprocess::resolve_namespace_type_refs_for_body(annotation.clone(), namespace));
-      if resolved.as_ref().is_some_and(|annotation| {
-        !matches!(
+      let proven_builtin_scalar = resolved.as_ref().is_some_and(|annotation| {
+        matches!(
           annotation.as_ref(),
-          CalcitTypeAnnotation::String | CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_)
+          CalcitTypeAnnotation::Nil
+            | CalcitTypeAnnotation::Bool
+            | CalcitTypeAnnotation::Number
+            | CalcitTypeAnnotation::String
+            | CalcitTypeAnnotation::Tag
+            | CalcitTypeAnnotation::Symbol
         )
+      });
+      let proven_argument = if expected_proc == CalcitProc::TurnString {
+        proven_builtin_scalar
+      } else {
+        resolved
+          .as_ref()
+          .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::String))
+      };
+      if resolved.as_ref().is_some_and(|annotation| {
+        !proven_argument
+          && !matches!(
+            annotation.as_ref(),
+            CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_)
+          )
       }) {
         continue;
       }
-      let proven_string = resolved
-        .as_ref()
-        .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::String));
       let argument_crosses_macro = usages.iter().any(|usage| {
         let Some(location) = &usage.location else {
           return false;
@@ -3908,11 +3927,12 @@ fn plan_core_identity_conversion_fixes(
               Some(program::CompiledDefKind::Macro)
             ))
       });
-      let machine_applicable = proven_string && !argument_crosses_macro && method_source_context_is_stable(&entry.code, &call_path);
-      let new_name = if expected_proc == CalcitProc::TurnTag {
-        "to-tag"
-      } else {
-        "to-symbol"
+      let machine_applicable = proven_argument && !argument_crosses_macro && method_source_context_is_stable(&entry.code, &call_path);
+      let new_name = match expected_proc {
+        CalcitProc::TurnTag => "to-tag",
+        CalcitProc::TurnSymbol => "to-symbol",
+        CalcitProc::TurnString => "to-string",
+        _ => unreachable!("only supported conversions are collected"),
       };
       let replacement = format!("calcit.core/{new_name}");
       let replacement_node = Cirru::leaf(replacement.as_str());
@@ -3938,11 +3958,11 @@ fn plan_core_identity_conversion_fixes(
           "requires-review"
         },
         message: if machine_applicable {
-          format!("Use `{new_name}` for a proven String argument; both paths call the same built-in conversion once.")
+          format!("Use `{new_name}` for a proven built-in argument; both paths call the same conversion once.")
         } else if argument_crosses_macro {
           format!("The argument to `{old_name}` crosses macro expansion; review this conversion manually.")
         } else {
-          format!("Cannot prove a String argument and stable source context for `{old_name}`; review this conversion manually.")
+          format!("Cannot prove an equivalent argument and stable source context for `{old_name}`; review this conversion manually.")
         },
         target_path: head_path,
         operation: machine_applicable.then_some(FixOperation::ReplaceLeaf {
