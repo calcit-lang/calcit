@@ -3564,6 +3564,14 @@ pub(super) fn build_wasm_module(
       &ConstExpr::i32_const(0),
     );
   }
+  globals.global(
+    GlobalType {
+      val_type: ValType::I32,
+      mutable: true,
+      shared: false,
+    },
+    &ConstExpr::i32_const(number_format::NUMBER_STACK_TOP),
+  );
   module.section(&globals);
 
   // Export section: memory, heap pointer global, and named functions
@@ -3621,10 +3629,18 @@ pub(super) fn build_wasm_module(
   }
   module.section(&codes);
 
-  // Data section: string literals pre-allocated before the heap
-  if !string_data.is_empty() {
+  // The Number lookup table occupies reserved low memory, disjoint from the
+  // Calcit string pool and bump allocator.
+  {
     let mut data = wasm_encoder::DataSection::new();
-    data.active(0, &ConstExpr::i32_const(HEAP_BASE), string_data.iter().copied());
+    data.active(
+      0,
+      &ConstExpr::i32_const(number_format::NUMBER_TABLE_BASE),
+      number_format::number_table_data()?.iter().copied(),
+    );
+    if !string_data.is_empty() {
+      data.active(0, &ConstExpr::i32_const(HEAP_BASE), string_data.iter().copied());
+    }
     module.section(&data);
   }
 
@@ -3633,14 +3649,16 @@ pub(super) fn build_wasm_module(
 
 pub(super) fn build_runtime_fns(
   base_index: u32,
+  number_stack_global: u32,
   map_tag: i32,
   list_tag: i32,
   string_tag: i32,
   enum_tag: i32,
   set_tag: i32,
-) -> (Vec<CompiledFn>, HashMap<String, u32>) {
+) -> Result<(Vec<CompiledFn>, HashMap<String, u32>), String> {
   let mut fn_index = HashMap::new();
-  let mut fns = Vec::new();
+  let (mut fns, _) = number_format::load_number_functions(base_index, number_stack_global)?;
+  fn_index.insert(String::from("__rt_ryu_format"), base_index);
 
   let copy_name = String::from("__rt_copy_f64_slots");
   fn_index.insert(copy_name.clone(), base_index + fns.len() as u32);
@@ -3959,7 +3977,7 @@ pub(super) fn build_runtime_fns(
   // Number-to-string: __rt_f64_to_str(value: f64) → i32 (string logical ptr)
   let f64_to_str_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_f64_to_str"), f64_to_str_idx);
-  fns.push(build_rt_f64_to_str(string_tag));
+  fns.push(build_rt_f64_to_str(string_tag, fn_index["__rt_ryu_format"]));
 
   // Radix display: __rt_display_by(value: f64, radix: f64) → f64 (string logical ptr as f64)
   let display_by_idx = base_index + fns.len() as u32;
@@ -4041,7 +4059,7 @@ pub(super) fn build_runtime_fns(
   fn_index.insert(String::from("__rt_set_equal"), set_equal_idx);
   fns.push(build_rt_set_equal(value_equal_idx));
 
-  (fns, fn_index)
+  Ok((fns, fn_index))
 }
 
 const RT_MAP_TABLE_KIND: f64 = 0.0;
@@ -5952,16 +5970,84 @@ fn build_rt_str_ends_with() -> CompiledFn {
 
 /// `__rt_f64_to_str(value: f64) → f64` (logical string pointer)
 /// Converts a number to a heap-allocated string.
-/// Handles safe integers. Unsupported values trap instead of returning incorrect text.
-fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
+/// Handles every finite f64 and the language's special values.
+fn emit_f64_const_text(b: &mut Vec<Instruction<'static>>, text: &str, string_tag: i32) {
+  let padded_len = (text.len() + 7) & !7;
+  b.extend([
+    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
+    Instruction::LocalTee(11),
+    Instruction::I32Const(HEAP_MAGIC),
+    Instruction::I32Store(mem_arg_i32(0)),
+    Instruction::LocalGet(11),
+    Instruction::I32Const(4),
+    Instruction::I32Add,
+    Instruction::I32Const(string_tag),
+    Instruction::I32Store(mem_arg_i32(0)),
+    Instruction::LocalGet(11),
+    Instruction::I32Const(8),
+    Instruction::I32Add,
+    Instruction::LocalTee(7),
+    Instruction::F64Const(Ieee64::from(text.len() as f64)),
+    Instruction::F64Store(mem_arg_f64(0)),
+  ]);
+  for (offset, byte) in text.bytes().enumerate() {
+    b.extend([
+      Instruction::LocalGet(7),
+      Instruction::I32Const(8 + offset as i32),
+      Instruction::I32Add,
+      Instruction::I32Const(byte as i32),
+      Instruction::I32Store8(mem_arg_byte(0)),
+    ]);
+  }
+  b.extend([
+    Instruction::LocalGet(11),
+    Instruction::I32Const((16 + padded_len) as i32),
+    Instruction::I32Add,
+    Instruction::GlobalSet(HEAP_PTR_GLOBAL),
+    Instruction::LocalGet(7),
+    Instruction::F64ConvertI32U,
+    Instruction::Return,
+  ]);
+}
+
+fn build_rt_f64_to_str(string_tag: i32, ryu_format_idx: u32) -> CompiledFn {
   // param 0: value (f64)
   // locals: 1=raw_i64(i64), 2=neg(i32), 3=abs_i64(i64), 4=ndigits(i32),
   //          5=tmp_i64(i64), 6=payload(i32), 7=str_ptr(i32), 8=content(i32),
   //          9=pos(i32), 10=digit(i32), 11=raw_base(i32)
-  let mut b = vec![Instruction::LocalGet(0)];
+  let mut b = Vec::new();
 
-  // Only values with exact integer formatting are supported here. The other
-  // numeric cases need a proper decimal formatter; do not substitute a marker.
+  // Preserve native spelling for non-finite values and signed zero.
+  b.extend([
+    Instruction::LocalGet(0),
+    Instruction::LocalGet(0),
+    Instruction::F64Ne,
+    Instruction::If(BlockType::Empty),
+  ]);
+  emit_f64_const_text(&mut b, "NaN", string_tag);
+  b.push(Instruction::End);
+  for (value, text) in [(f64::INFINITY, "inf"), (f64::NEG_INFINITY, "-inf")] {
+    b.extend([
+      Instruction::LocalGet(0),
+      Instruction::F64Const(Ieee64::from(value)),
+      Instruction::F64Eq,
+      Instruction::If(BlockType::Empty),
+    ]);
+    emit_f64_const_text(&mut b, text, string_tag);
+    b.push(Instruction::End);
+  }
+  b.extend([
+    Instruction::LocalGet(0),
+    Instruction::I64ReinterpretF64,
+    Instruction::I64Const(i64::MIN),
+    Instruction::I64Eq,
+    Instruction::If(BlockType::Empty),
+  ]);
+  emit_f64_const_text(&mut b, "-0", string_tag);
+  b.extend([Instruction::End, Instruction::LocalGet(0)]);
+
+  // Preserve the cheap integer path; all other finite values use the pinned
+  // shortest-decimal formatter and the same canonical expansion as native.
   b.push(Instruction::F64Floor);
   b.push(Instruction::LocalGet(0));
   b.push(Instruction::F64Eq);
@@ -6144,7 +6230,58 @@ fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
   b.push(Instruction::LocalGet(7));
   b.push(Instruction::F64ConvertI32U);
   b.push(Instruction::Else);
-  b.push(Instruction::Unreachable);
+  // The helper writes into reserved scratch memory, outside the heap. The
+  // longest expanded f64 uses 327 bytes; 400 is the helper's ABI bound.
+  b.extend([
+    Instruction::LocalGet(0),
+    Instruction::I32Const(number_format::NUMBER_SCRATCH),
+    Instruction::Call(ryu_format_idx),
+    Instruction::LocalTee(12),
+    Instruction::I32Const(400),
+    Instruction::I32GtU,
+    Instruction::If(BlockType::Empty),
+    Instruction::Unreachable,
+    Instruction::End,
+    // payload = 8-byte length slot + padded UTF-8 bytes.
+    Instruction::LocalGet(12),
+    Instruction::I32Const(7),
+    Instruction::I32Add,
+    Instruction::I32Const(-8),
+    Instruction::I32And,
+    Instruction::I32Const(8),
+    Instruction::I32Add,
+    Instruction::LocalSet(13),
+    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
+    Instruction::LocalTee(11),
+    Instruction::I32Const(HEAP_MAGIC),
+    Instruction::I32Store(mem_arg_i32(0)),
+    Instruction::LocalGet(11),
+    Instruction::I32Const(4),
+    Instruction::I32Add,
+    Instruction::I32Const(string_tag),
+    Instruction::I32Store(mem_arg_i32(0)),
+    Instruction::LocalGet(11),
+    Instruction::I32Const(8),
+    Instruction::I32Add,
+    Instruction::LocalTee(7),
+    Instruction::LocalGet(12),
+    Instruction::F64ConvertI32U,
+    Instruction::F64Store(mem_arg_f64(0)),
+    Instruction::LocalGet(7),
+    Instruction::I32Const(8),
+    Instruction::I32Add,
+    Instruction::I32Const(number_format::NUMBER_SCRATCH),
+    Instruction::LocalGet(12),
+    Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
+    Instruction::LocalGet(11),
+    Instruction::I32Const(8),
+    Instruction::I32Add,
+    Instruction::LocalGet(13),
+    Instruction::I32Add,
+    Instruction::GlobalSet(HEAP_PTR_GLOBAL),
+    Instruction::LocalGet(7),
+    Instruction::F64ConvertI32U,
+  ]);
 
   b.push(Instruction::End);
 
@@ -6164,6 +6301,8 @@ fn build_rt_f64_to_str(string_tag: i32) -> CompiledFn {
       ValType::I32, // pos (9)
       ValType::I32, // digit (10)
       ValType::I32, // raw_base (11)
+      ValType::I32, // canonical_len (12)
+      ValType::I32, // ryu_payload (13)
     ],
     instructions: b,
   }

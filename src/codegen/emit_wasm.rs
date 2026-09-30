@@ -45,6 +45,8 @@ mod component;
 mod edn_parse;
 #[path = "emit_wasm/methods.rs"]
 mod methods;
+#[path = "emit_wasm/number_format.rs"]
+mod number_format;
 #[path = "emit_wasm/runtime.rs"]
 mod runtime;
 #[path = "emit_wasm/structs.rs"]
@@ -71,10 +73,9 @@ use structs::{
   emit_struct_to_map, resolve_struct_ref, try_parse_defrecord_form,
 };
 
-/// Base offset — reserve first 16 bytes for bookkeeping.
-/// The actual heap start will be shifted when string literals occupy the
-/// initial segment (see `build_string_pool`).
-const HEAP_BASE: i32 = 16;
+/// Low memory holds WASI scratch, the private Number formatter stack, and its
+/// read-only decimal table. String literals begin after this reserved region.
+const HEAP_BASE: i32 = 16 * 1024;
 /// Global index for the heap pointer (bump allocator).
 const HEAP_PTR_GLOBAL: u32 = 0;
 /// Magic marker written at `raw_base` of every heap allocation. Used by
@@ -478,31 +479,29 @@ fn emit_wasm_impl(
     eprintln!("[wasm] tag index: {tag_index:?}");
   }
 
+  let atom_count = ns_order
+    .iter()
+    .filter_map(|ns| program_data.get(ns.as_str()))
+    .flat_map(|file| file.defs.values())
+    .filter(|compiled| {
+      matches!(
+        &compiled.preprocessed_code,
+        Calcit::List(xs)
+          if matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::Defatom, _)))
+      )
+    })
+    .count() as u32;
+  let component_free_head_global = (boundary == WasmBoundary::Component).then_some(2 + atom_count);
+  let number_stack_global = 2 + atom_count + u32::from(component_free_head_global.is_some());
   let (mut compiled_fns, mut runtime_fn_index) = build_runtime_fns(
     num_imports,
+    number_stack_global,
     *tag_index.get("map").expect("map tag must exist") as i32,
     *tag_index.get("list").expect("list tag must exist") as i32,
     *tag_index.get("string").expect("string tag must exist") as i32,
     *tag_index.get("enum").expect("enum tag must exist") as i32,
     *tag_index.get("set").expect("set tag must exist") as i32,
-  );
-  let component_free_head_global = if boundary == WasmBoundary::Component {
-    let atom_count = ns_order
-      .iter()
-      .filter_map(|ns| program_data.get(ns.as_str()))
-      .flat_map(|file| file.defs.values())
-      .filter(|compiled| {
-        matches!(
-          &compiled.preprocessed_code,
-          Calcit::List(xs)
-            if matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::Defatom, _)))
-        )
-      })
-      .count() as u32;
-    Some(2 + atom_count)
-  } else {
-    None
-  };
+  )?;
   if target == WasmTarget::Wasi && boundary == WasmBoundary::Native {
     let fd_write_idx = *index_host_imports(&host_imports)
       .get(&("wasi_snapshot_preview1".into(), "fd_write".into()))
@@ -984,7 +983,6 @@ fn emit_wasm_impl(
       }
     }
   }
-
   // Build string literal pool: assigns each unique string a memory offset.
   let (string_pool, string_data_segment, heap_start) = build_string_pool(&fn_defs, &value_imports, &tag_index, target);
 
@@ -1015,6 +1013,7 @@ fn emit_wasm_impl(
       }
     }
   }
+  debug_assert_eq!(atom_initial_values.len(), atom_count as usize);
 
   let env = WasmCompileEnv {
     fn_index,
@@ -9218,7 +9217,7 @@ fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
   }
   match expr {
     Calcit::Number(number) => {
-      strings.push(number.to_string());
+      strings.push(crate::util::number::format_calcit_number(*number));
     }
     Calcit::Str(s) => {
       strings.push(s.to_string());
@@ -9495,8 +9494,8 @@ mod tests {
   use super::component::component_type_owns_memory;
   use super::{
     CompiledFn, ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
-    ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HostImport,
-    ModuleFunctionLayout, StaticFnDef, WasiComponentReadImports, WasmBoundary, WasmCompileEnv, WasmGenCtx, WasmTarget,
+    ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HEAP_BASE,
+    HostImport, ModuleFunctionLayout, StaticFnDef, WasiComponentReadImports, WasmBoundary, WasmCompileEnv, WasmGenCtx, WasmTarget,
     build_cabi_free_fn, build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter, build_string_pool,
     build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn,
     build_wasi_component_select_preopen_fn, build_wasm_module, component_abi_type, component_export_needs_post_return,
@@ -9980,7 +9979,7 @@ mod tests {
         results: vec![ValType::I32],
         locals: vec![],
         instructions: vec![
-          Instruction::I32Const(16),
+          Instruction::I32Const(HEAP_BASE),
           Instruction::I32Const(2048),
           Instruction::Call(5),
           Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)),
@@ -10004,7 +10003,7 @@ mod tests {
           run,
         ],
         &imports,
-        16384,
+        HEAP_BASE + ((string_data.len() + 7) & !7) as i32,
         &string_data,
         &[],
         1,
@@ -10082,7 +10081,7 @@ mod tests {
       realloc.export_name = Some("cabi_realloc".into());
       let open_index = free_index + 4;
       let instructions = vec![
-        Instruction::I32Const(16),
+        Instruction::I32Const(HEAP_BASE),
         Instruction::I32Const(0),
         Instruction::I32Const(1),
         Instruction::I32Const(2048),
@@ -10117,7 +10116,7 @@ mod tests {
           run,
         ],
         &imports,
-        16384,
+        HEAP_BASE + ((string_data.len() + 7) & !7) as i32,
         &string_data,
         &[],
         1,
@@ -10187,7 +10186,7 @@ mod tests {
       results: vec![],
       locals: vec![ValType::I32; 5],
       instructions: vec![
-        Instruction::I32Const(16),
+        Instruction::I32Const(HEAP_BASE),
         Instruction::I32Const(0),
         Instruction::I32Const(1),
         Instruction::I32Const(2048),
@@ -10289,7 +10288,7 @@ mod tests {
         run,
       ],
       &imports,
-      16384,
+      HEAP_BASE + ((string_data.len() + 7) & !7) as i32,
       &string_data,
       &[],
       1,
@@ -10362,7 +10361,7 @@ mod tests {
       let mut realloc = build_cabi_realloc_fn(free_index, 2);
       realloc.export_name = Some("cabi_realloc".into());
       let mut instructions = vec![
-        Instruction::I32Const(16),
+        Instruction::I32Const(HEAP_BASE),
         Instruction::I32Const(2048),
         Instruction::Call(free_index + 5),
         Instruction::LocalSet(0),
@@ -10468,7 +10467,7 @@ mod tests {
           run,
         ],
         &imports,
-        16384,
+        HEAP_BASE + ((string_data.len() + 7) & !7) as i32,
         &string_data,
         &[],
         1,

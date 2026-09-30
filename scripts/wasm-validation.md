@@ -36,6 +36,7 @@ WASM 相关能力分属四个不同层级，排查或文档引用时不要把它
 | 算术: `&+`, `&-`, `&*`, `&/`           | ✅   | 映射到 f64 指令          |
 | `&number:rem`                          | ✅   | 通过 trunc/mul/sub 模拟  |
 | `&number:fits?`                        | ✅   | 支持字面量或局部绑定 tag；未知 refinement tag 返回 false，不 trap |
+| `turn-string`（Number）                | ✅   | 运行时按 native/JS 共用的最短十进制规则输出；特殊值、有限小数和指数边界均覆盖 |
 | 比较: `&<`, `&>`, `&=`                 | ✅   | 返回 f64 (1.0/0.0)       |
 | `not`                                  | ✅   | 逻辑非                   |
 | `identical?`                           | ✅   | 数值相等 (f64.eq)        |

@@ -1,0 +1,17 @@
+[package]
+name = "calcit-wasm-number-format"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+ryu = { version = "=1.0.23", features = ["small"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"

@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 
 use crate::builtins::meta::type_of;
 use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitList, CalcitProc, format_proc_examples_hint};
-use crate::util::number::f64_to_usize;
+use crate::util::number::{f64_to_usize, format_calcit_number};
 
 pub fn binary_str_concat(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
@@ -79,7 +79,7 @@ pub fn turn_string(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Some(Calcit::Str(s)) => Ok(Calcit::Str(s.to_owned())),
     Some(Calcit::Tag(s)) => Ok(Calcit::Str(s.arc_str())),
     Some(Calcit::Symbol { sym, .. }) => Ok(Calcit::Str(sym.to_owned())),
-    Some(Calcit::Number(n)) => Ok(Calcit::Str(n.to_string().into())),
+    Some(Calcit::Number(n)) => Ok(Calcit::Str(format_calcit_number(*n).into())),
     Some(a) => {
       let msg = format!(
         "turn-string cannot convert to string: {}",

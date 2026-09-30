@@ -100,6 +100,8 @@ jobs:
             node scripts/check-predicate-method-names.mjs
           WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
             node scripts/check-nil-predicate.mjs
+          WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
+            node scripts/check-wasi-number-text.mjs
 
   wasi_business_smoke:
     name: Published WASI HTTP business loop

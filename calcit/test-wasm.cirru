@@ -1708,6 +1708,7 @@
             and
               = (turn-string 42) |42
               = (turn-string 1.5) |1.5
+              = (to-string 1.5) |1.5
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []

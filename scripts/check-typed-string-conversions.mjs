@@ -48,16 +48,28 @@ try {
   execFileSync(binary, ["--emit-path", output, snapshot, "js"], { stdio: "pipe" });
   const core = await import(pathToFileURL(join(output, "calcit.core.mjs")).href);
   const runtime = await import(pathToFileURL(resolve("lib/calcit.procs.mjs")).href);
-  for (const [source, value, expected] of [
+  const numberCases = [
     ["0.0000001", 0.0000001, "0.0000001"],
     ["-0.0000001", -0.0000001, "-0.0000001"],
+    ["0.1", 0.1, "0.1"],
+    ["0.5", 0.5, "0.5"],
     ["1000000000000000000000", 1e21, "1000000000000000000000"],
+    ["0.000001", 1e-6, "0.000001"],
+    ["9007199254740992", 2 ** 53, "9007199254740992"],
+    ["9007199254740991", 2 ** 53 - 1, "9007199254740991"],
+    ["9007199254740994", 2 ** 53 + 2, "9007199254740994"],
+    ["864310392341871.2", 864310392341871.2, "864310392341871.2"],
+    ["-993946982230940.2", -993946982230940.2, "-993946982230940.2"],
+    ["1.7976931348623157e308", Number.MAX_VALUE, "17976931348623157" + "0".repeat(292)],
+    ["2.2250738585072014e-308", 2.2250738585072014e-308, `0.${"0".repeat(307)}22250738585072014`],
     ["-0", -0, "-0"],
     ["5e-324", Number.MIN_VALUE, `0.${"0".repeat(323)}5`],
+    ["-5e-324", -Number.MIN_VALUE, `-0.${"0".repeat(323)}5`],
     ["1e309", Infinity, "inf"],
     ["-1e309", -Infinity, "-inf"],
     ["nan", NaN, "NaN"],
-  ]) {
+  ];
+  for (const [source, value, expected] of numberCases) {
     const native = execFileSync(binary, [snapshot, "eval", `turn-string ${source}`], { encoding: "utf8" });
     const nativeValue = native.match(/^took [^\r\n]*: \|([^\r\n]*)$/m)?.[1];
     assert.equal(nativeValue, expected, `native Number formatting should produce ${expected}`);
@@ -95,6 +107,8 @@ try {
   execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-to-tag", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [])"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-to-string-frac", "--input-format", "cirru", "--code", "quote $ defwasm-export test-to-string-frac () (if (&= (to-string 0.5) |0.5) 1 0)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-to-string-frac", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [])"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-to-string-value", "--input-format", "cirru", "--code", "quote $ defwasm-export test-to-string-value (x) (to-string x)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-to-string-value", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'String) (:args $ [] 'Number)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-runtime", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-runtime (x) (if (&= (turn-string x) |42) 1 0)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-runtime", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-zero", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-zero (x) (if (&= (turn-string x) |0) 1 0)"], { stdio: "pipe" });
@@ -103,6 +117,8 @@ try {
   execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-safe-limit", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-negative-limit", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-negative-limit (x) (if (&= (turn-string x) |-9007199254740992) 1 0)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-negative-limit", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-value", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-value (x) (turn-string x)"], { stdio: "pipe" });
+  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-value", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'String) (:args $ [] 'Number)"], { stdio: "pipe" });
   const wasmJsOutput = join(output, "wasm-js");
   execFileSync(binary, ["--emit-path", wasmJsOutput, wasmSnapshot, "js"], { stdio: "pipe" });
   const wasmJs = await import(pathToFileURL(join(wasmJsOutput, "test-wasm.main.mjs")).href);
@@ -113,7 +129,6 @@ try {
   const wasm = spawnSync(binary, ["wasm", wasmSnapshot, "--emit-path", output], { encoding: "utf8" });
   assert.equal(wasm.status, 0, "WASM should preserve unrelated exports");
   assert.match(wasm.stderr, /trapping unsupported dependency calcit\.core\/to-tag: E_WASM_TAG_CONVERSION/);
-  assert.match(wasm.stderr, /trapping unsupported dependency calcit\.core\/to-string/);
   const wasmModule = new WebAssembly.Module(await readFile(join(output, "program.wasm")));
   const imports = {};
   for (const item of WebAssembly.Module.imports(wasmModule)) {
@@ -121,8 +136,14 @@ try {
     (imports[item.module] ??= {})[item.name] = () => 0;
   }
   const instance = new WebAssembly.Instance(wasmModule, imports);
+  const readWasmString = (pointer) => {
+    const memory = instance.exports.memory.buffer;
+    const length = new DataView(memory).getFloat64(pointer, true);
+    assert.ok(Number.isSafeInteger(length) && length >= 0, "WASM string length must be a nonnegative safe integer");
+    return new TextDecoder().decode(new Uint8Array(memory, pointer + 8, length));
+  };
   assert.throws(() => instance.exports["test-to-tag"](), WebAssembly.RuntimeError, "WASM must not silently return a String as Tag");
-  assert.throws(() => instance.exports["test-to-string-frac"](), WebAssembly.RuntimeError, "WASM must not silently misformat fractional Numbers");
+  assert.equal(instance.exports["test-to-string-frac"](), 1, "WASM must lower Number to-string through its trait implementation");
   assert.equal(instance.exports["test-to-string-number"](42), 1, "WASM must specialize the generic ToString trait call for runtime Number arguments");
   assert.equal(instance.exports["test-to-string-scalars"](), 1, "WASM must preserve Nil, Bool, String, and Tag trait text");
   assert.equal(instance.exports["test-custom-trait-score"](42), 1, "WASM must select a user-defined nominal trait implementation for a runtime argument");
@@ -131,9 +152,22 @@ try {
   assert.equal(instance.exports["test-turn-string-zero"](0), 1, "WASM must distinguish Number zero from nil");
   assert.equal(instance.exports["test-turn-string-safe-limit"](2 ** 53), 1, "WASM must format the safe integer boundary");
   assert.equal(instance.exports["test-turn-string-negative-limit"](-(2 ** 53)), 1, "WASM must format the negative safe integer boundary");
-  for (const value of [0.5, -0, 2 ** 53 + 2, 1e21, Infinity, NaN]) {
-    assert.throws(() => instance.exports["test-turn-string-runtime"](value), WebAssembly.RuntimeError,
-      `WASM must trap instead of silently misformatting ${String(value)}`);
+  for (const [value, expected] of [[0, "0"], [42, "42"], [-(2 ** 53), "-9007199254740992"], ...numberCases.map(([, value, expected]) => [value, expected])]) {
+    assert.equal(readWasmString(instance.exports["test-turn-string-value"](value)), expected,
+      `WASM must return exact UTF-8 number text for ${value}`);
+    assert.equal(readWasmString(instance.exports["test-to-string-value"](value)), expected,
+      `WASM trait to-string must return exact UTF-8 number text for ${value}`);
+  }
+  const random = new DataView(new ArrayBuffer(8));
+  let seed = 0x1234abcd;
+  for (let i = 0; i < 1024; i++) {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    random.setUint32(0, seed, true);
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    random.setUint32(4, seed, true);
+    const value = random.getFloat64(0, true);
+    assert.equal(readWasmString(instance.exports["test-turn-string-value"](value)), runtime.turn_string(value),
+      `WASM must match JS for f64 bits ${random.getBigUint64(0, true).toString(16)}`);
   }
 
   const openTraitSnapshot = join(output, "open-trait.cirru");
