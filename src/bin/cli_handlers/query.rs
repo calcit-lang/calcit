@@ -159,6 +159,13 @@ struct SemanticQueryEnvelope<T> {
 }
 
 #[derive(Debug, Clone, Serialize)]
+struct ContextCallTypes {
+  parameters: Vec<serde_json::Value>,
+  rest: Option<serde_json::Value>,
+  returns: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Serialize)]
 struct ContextMethod {
   name: String,
   origin: String,
@@ -172,6 +179,8 @@ struct ContextMethod {
   parameter_types: Option<Vec<String>>,
   rest_type: Option<String>,
   return_type: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  call_types: Option<ContextCallTypes>,
   generics: Vec<String>,
   bounds: Vec<String>,
   features: Vec<String>,
@@ -183,6 +192,7 @@ fn context_method(
   descriptor: runner::preprocess::StaticMethodDescriptor,
   contract: runner::preprocess::StaticMethodContract,
 ) -> ContextMethod {
+  let call_types = method_call_types(&contract);
   ContextMethod {
     name: descriptor.name,
     origin: descriptor.origin,
@@ -195,12 +205,39 @@ fn context_method(
       .map(|args| args.iter().map(|annotation| annotation.describe()).collect()),
     rest_type: contract.rest_type.map(|annotation| annotation.describe()),
     return_type: contract.return_type.map(|annotation| annotation.describe()),
+    call_types,
     generics: contract.generics,
     bounds: contract.bounds,
     features: contract.features,
     definition: contract.definition,
     detail: contract.detail,
   }
+}
+
+/// Export the already resolved contract as syntax nodes, not display strings.
+fn method_call_types(contract: &runner::preprocess::StaticMethodContract) -> Option<ContextCallTypes> {
+  if contract.status != "proven" {
+    return None;
+  }
+  let node = |annotation: &CalcitTypeAnnotation| {
+    query_schema_cirru(annotation, true)
+      .ok()
+      .flatten()
+      .map(|cirru| cirru_to_json(&cirru))
+  };
+  Some(ContextCallTypes {
+    parameters: contract
+      .arg_types
+      .as_ref()?
+      .iter()
+      .map(|annotation| node(annotation))
+      .collect::<Option<Vec<_>>>()?,
+    rest: match contract.rest_type.as_ref() {
+      Some(annotation) => Some(node(annotation)?),
+      None => None,
+    },
+    returns: node(contract.return_type.as_ref()?)?,
+  })
 }
 
 fn mark_proven_method_roles(receiver: &CalcitTypeAnnotation, methods: &mut [ContextMethod]) {
@@ -1671,6 +1708,32 @@ mod type_query_tests {
         .iter()
         .any(|alias| alias.old_method == ".add"),
       "an open element contract cannot prove List .add/.append equivalence"
+    );
+  }
+
+  #[test]
+  fn structured_method_call_types_preserve_specialized_container_and_callback_nodes() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let snapshot = load_core_snapshot().expect("core snapshot should load");
+    prepare_program_for_type_query_on_cli_stack(snapshot);
+    let receiver = parse_type_annotation_query(":: 'List 'Number").expect("list type");
+    let get = runner::preprocess::static_method_contract(receiver.as_ref(), ".get");
+    let nodes = method_call_types(&get).expect("proven positional lookup should export nodes");
+    assert_eq!(nodes.parameters, vec![serde_json::json!("'Number")]);
+    assert_eq!(nodes.returns, serde_json::json!(["::", "'calcit.core/Option", "'Number"]));
+    assert!(nodes.rest.is_none());
+
+    let fold = runner::preprocess::static_method_contract(receiver.as_ref(), ".fold");
+    let nodes = method_call_types(&fold).expect("proven callback should export syntax nodes");
+    assert_eq!(nodes.parameters[0], serde_json::json!("'U"));
+    assert_eq!(nodes.parameters[1][0], "::");
+    assert_eq!(nodes.parameters[1][1], "'Fn");
+    assert_eq!(nodes.returns, serde_json::json!("'U"));
+    let open = runner::preprocess::static_method_contract(receiver.as_ref(), ".each");
+    assert_eq!(open.status, "open");
+    assert!(
+      method_call_types(&open).is_none(),
+      "unproven calls must not fabricate syntax evidence"
     );
   }
 

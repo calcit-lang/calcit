@@ -16,6 +16,10 @@ test("native EDN preserves symbols, tags and raw schema quotes", () => {
   assert.ok(conversion.schema.quote.some(pair => pair[0] === ":where"));
   const reader = definition(baseline, "read-dir");
   assert.deepEqual(reader["runtime-arity"], { min: 1, max: 2 });
+  const get = baseline["method-contracts"].find(row => row.receiver === ":: 'List 'Number" && row.name === ".get");
+  assert.deepEqual(get.returns.quote, ["::", "'calcit.core/Option", "'Number"]);
+  assert.equal(typeof conversion.schema.quote.find(pair => pair[0] === ":return")[1], "string",
+    "quoted syntax leaves are strings; only EDN symbols outside quotes become symbol objects");
 });
 
 for (const [name, mutate] of [
@@ -28,6 +32,8 @@ for (const [name, mutate] of [
   ["receiver", data => data.methods[0].receiver = "'Dynamic"],
   ["method schema", data => data.methods[0].schema.quote[2][1] = "'Dynamic"],
   ["backend feature", data => data.methods[0].features.push("js-ffi")],
+  ["specialized lookup result", data => data["method-contracts"].find(row => row.receiver === ":: 'List 'Number" && row.name === ".get").returns.quote = "'String"],
+  ["specialized callback relation", data => data["method-contracts"].find(row => row.name === ".fold").returns.quote = "'Number"],
 ]) {
   test(`rejects an unannounced ${name} change even when the baseline is regenerated`, () => {
     const changed = structuredClone(baseline);
@@ -49,6 +55,8 @@ test("schema map entry ordering is not a breaking signature change", () => {
   const conversion = definition(changed, "to-string");
   const schema = conversion.schema.quote;
   conversion.schema.quote = [schema[0], ...schema.slice(1).reverse()];
+  const callback = changed["method-contracts"].find(row => row.name === ".fold").parameters[1].quote;
+  callback[2] = [callback[2][0], ...callback[2].slice(1).reverse()];
   assertPreserved(baseline, changed);
 });
 
@@ -60,11 +68,14 @@ test("function implementation bodies and argument variable names are not frozen"
   assertPreserved(before, after);
 });
 
-test("open/ambiguous dispatch cannot be promoted into the baseline", () => {
+test("unproven dispatch or missing call syntax cannot be promoted into the baseline", () => {
   const scope = { definitions: [], methods: [{ receiver: "'Number", name: ".example" }] };
   for (const status of ["open", "ambiguous"]) {
     assert.throws(() => collect(scope, () => ({ methods: [{ name: ".example", status }] })), /requires proven dispatch/);
   }
+  assert.throws(() => collect(scope, kind => kind === "type"
+    ? { methods: [{ name: ".example", status: "proven", definition: "calcit.core/example" }] }
+    : { code: ["defn", "example", ["x"], [",", "x"]], schema: "'Number" }), /requires resolved call type syntax/);
 });
 
 test("Git history rejects a baseline-only waiver in both PR and push workflows", async () => {

@@ -93,6 +93,402 @@
       :runtime-arity nil
       :declaration $ quote $ defstruct FfiResponse (:raw 'Dynamic)
       :schema $ quote 'StructDef
+    {} (:declaration nil)
+      :failure "|String_构造_FsPath，不访问或规范化文件系统路径"
+      :name 'calcit.core/fs:path
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'FsPath)
+        :args $ [] 'String
+    {} (:declaration nil)
+      :failure "|仅判断_nil，不表示_Option_是否_some"
+      :name 'calcit.core/non-nil?
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Bool)
+        :args $ [] 'T
+        :generics $ [] 'T
+    {} (:declaration nil)
+      :failure "|只接受_Number，判断有限整数，不进行舍入"
+      :name 'calcit.core/integer?
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Bool)
+        :args $ [] 'Number
+    {} (:declaration nil)
+      :failure "|返回新的同型_List，不修改原集合"
+      :name 'calcit.core/append
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] (:: 'List 'T) 'T
+        :generics $ [] 'T
+        :return $ :: 'List 'T
+    {} (:declaration nil)
+      :failure "|从左至右，空_List_返回初值，保持_accumulator_类型"
+      :name 'calcit.core/fold
+      :runtime-arity $ {} (:max 3) (:min 3)
+      :schema $ quote $ {} (:kind :fn) (:return 'U)
+        :args $ [] (:: 'List 'T) 'U $ :: 'Fn
+          {} (:return 'U)
+            :args $ [] 'U 'T
+        :generics $ [] 'T 'U
+    {} (:declaration nil)
+      :failure "|插入同类型分隔项，空_List_仍为空"
+      :name 'calcit.core/intersperse
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] (:: 'List 'T) 'T
+        :generics $ [] 'T
+        :return $ :: 'List 'T
+    {} (:declaration nil)
+      :failure "|显示转换后拼接文本，空_List_返回空_String"
+      :name 'calcit.core/join-string
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn) (:return 'String)
+        :args $ [] (:: 'List 'T) 'String
+        :generics $ [] 'T
+    {} (:declaration nil)
+      :failure "|返回去重_Set，不承诺顺序，不保留重复值"
+      :name 'calcit.core/distinct-values
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] $ :: 'Map 'K 'V
+        :generics $ [] 'K 'V
+        :return $ :: 'Set 'V
+    {} (:declaration nil)
+      :failure "|返回新的_Map，后面的同名_key_覆盖前值"
+      :name 'calcit.core/merge
+      :runtime-arity $ {} (:max nil) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] $ :: 'Map 'K 'V
+        :generics $ [] 'K 'V
+        :rest $ :: 'Map 'K 'V
+        :return $ :: 'Map 'K 'V
+    {} (:declaration nil)
+      :failure "|返回新的去重_Set，不修改原集合"
+      :name 'calcit.core/union
+      :runtime-arity $ {} (:max nil) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] $ :: 'Set 'T
+        :generics $ [] 'T
+        :rest $ :: 'Set 'T
+        :return $ :: 'Set 'T
+    {} (:declaration nil)
+      :failure "|同型_Set_添加元素并去重，保持原集合"
+      :name 'calcit.core/include
+      :runtime-arity $ {} (:max nil) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:rest 'T)
+        :args $ [] $ :: 'Set 'T
+        :generics $ [] 'T
+        :return $ :: 'Set 'T
+    {} (:declaration nil)
+      :failure "|同型_Set_移除元素，不存在元素无影响"
+      :name 'calcit.core/exclude
+      :runtime-arity $ {} (:max nil) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:rest 'T)
+        :args $ [] $ :: 'Set 'T
+        :generics $ [] 'T
+        :return $ :: 'Set 'T
+    {} (:declaration nil)
+      :failure "|未匹配保留原_String，不返回_Option"
+      :name 'calcit.core/strip-prefix
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn) (:return 'String)
+        :args $ [] 'String 'String
+    {} (:declaration nil)
+      :failure "|未匹配保留原_String，不返回_Option"
+      :name 'calcit.core/strip-suffix
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn) (:return 'String)
+        :args $ [] 'String 'String
+    {} (:declaration nil)
+      :failure "|Number_三角函数，不是内部_helper"
+      :name 'calcit.core/cos
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Number)
+        :args $ [] 'Number
+    {} (:declaration nil)
+      :failure "|Number_三角函数，不是内部_helper"
+      :name 'calcit.core/sin
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Number)
+        :args $ [] 'Number
+    {} (:declaration nil)
+      :failure "|返回_Number，保留现有非有限数语义"
+      :name 'calcit.core/sqrt
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Number)
+        :args $ [] 'Number
+    {} (:declaration nil)
+      :failure "|向负无穷舍入，不等同_integer_判断"
+      :name 'calcit.core/floor
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Number)
+        :args $ [] 'Number
+    {} (:declaration nil)
+      :failure "|向正无穷舍入，不等同_integer_判断"
+      :name 'calcit.core/ceil
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Number)
+        :args $ [] 'Number
+    {} (:declaration nil)
+      :failure "|保留现有_Number_舍入模型，不改为整数_refinement"
+      :name 'calcit.core/round
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Number)
+        :args $ [] 'Number
+    {} (:declaration nil)
+      :failure "|Number_指数运算，保留现有非有限数语义"
+      :name 'calcit.core/pow
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn) (:return 'Number)
+        :args $ [] 'Number 'Number
+    {}
+      :failure "|公开_trait_约束，不能由命名代替实现证据"
+      :name 'calcit.core/ToString
+      :runtime-arity nil
+      :declaration $ quote $ deftrait ToString
+        .to-string $ :: 'Fn $ {}
+          :args $ [] 'T
+          :generics $ [] 'T
+          :return 'String
+      :schema $ quote 'Trait
+    {}
+      :failure "|公开_trait_约束，长度单位遵循接收者语义"
+      :name 'calcit.core/Len
+      :runtime-arity nil
+      :declaration $ quote $ deftrait Len
+        .len $ :: :fn $ {} (:return :number)
+          :generics $ [] 'T
+          :args $ [] 'T
+      :schema $ quote 'Trait
+    {}
+      :failure "|公开同类型加法_trait，Map_不因旧_add_而获得该约束"
+      :name 'calcit.core/Add
+      :runtime-arity nil
+      :declaration $ quote $ deftrait Add
+        .add $ :: :fn $ {} (:return 'T)
+          :generics $ [] 'T
+          :args $ [] 'T 'T
+      :schema $ quote 'Trait
+    {}
+      :failure "|公开同类型相等_trait，仍需要实际实现证据"
+      :name 'calcit.core/Eq
+      :runtime-arity nil
+      :declaration $ quote $ deftrait Eq
+        .eq? $ :: :fn $ {} (:return :bool)
+          :generics $ [] 'T
+          :args $ [] 'T 'T
+      :schema $ quote 'Trait
+  :method-contracts $ []
+    {} (:name |.unwrap)
+      :receiver "|:: 'calcit.core/Option 'Number"
+      :rest nil
+      :parameters $ []
+      :returns $ quote 'Number
+    {} (:name |.unwrap-or)
+      :receiver "|:: 'calcit.core/Option 'Number"
+      :rest nil
+      :parameters $ [] $ quote 'Number
+      :returns $ quote 'Number
+    {} (:name |.unwrap-or)
+      :receiver "|:: 'calcit.core/Result 'Number 'String"
+      :rest nil
+      :parameters $ [] $ quote 'Number
+      :returns $ quote 'Number
+    {} (:name |.read-text)
+      :receiver |calcit.core/FsPath
+      :rest nil
+      :parameters $ []
+      :returns $ quote $ :: 'Result 'String 'String
+    {} (:name |.read-dir)
+      :receiver |calcit.core/FsPath
+      :rest nil
+      :parameters $ []
+      :returns $ quote $ :: 'Result (:: 'List 'FsPath) 'String
+    {} (:name |.walk-dir)
+      :receiver |calcit.core/FsPath
+      :rest nil
+      :parameters $ []
+      :returns $ quote $ :: 'Result (:: 'List 'FsPath) 'String
+    {} (:name |.write-text!)
+      :receiver |calcit.core/FsPath
+      :rest nil
+      :parameters $ [] $ quote 'String
+      :returns $ quote $ :: 'Result 'Unit 'String
+    {} (:name |.cancel!)
+      :receiver "|:: 'calcit.core/FfiTask 'Number"
+      :rest nil
+      :parameters $ []
+      :returns $ quote 'Unit
+    {} (:name |.cancel-with!)
+      :receiver "|:: 'calcit.core/FfiTask 'Number"
+      :rest nil
+      :parameters $ [] $ quote 'T
+      :returns $ quote 'Unit
+    {} (:name |.resolve!)
+      :receiver "|:: 'calcit.core/FfiResponse 'Number"
+      :rest nil
+      :parameters $ [] $ quote 'T
+      :returns $ quote 'Unit
+    {} (:name |.reject!)
+      :receiver "|:: 'calcit.core/FfiResponse 'Number"
+      :rest nil
+      :parameters $ [] $ quote 'T
+      :returns $ quote 'Unit
+    {} (:name |.to-string)
+      :receiver |calcit.core/FsPath
+      :rest nil
+      :parameters $ []
+      :returns $ quote 'String
+    {} (:name |.integer?) (:receiver |'Number) (:rest nil)
+      :parameters $ []
+      :returns $ quote 'Bool
+    {} (:name |.includes?) (:receiver |'String) (:rest nil)
+      :parameters $ [] $ quote 'String
+      :returns $ quote 'Bool
+    {}
+      :name |.contains-index?
+      :receiver |'String
+      :rest nil
+      :parameters $ [] $ quote 'Number
+      :returns $ quote 'Bool
+    {} (:name |.len) (:receiver |'String) (:rest nil)
+      :parameters $ []
+      :returns $ quote 'Number
+    {} (:name |.get) (:receiver |'String) (:rest nil)
+      :parameters $ [] $ quote 'Number
+      :returns $ quote $ :: 'calcit.core/Option 'String
+    {} (:name |.strip-prefix) (:receiver |'String) (:rest nil)
+      :parameters $ [] $ quote 'String
+      :returns $ quote 'String
+    {} (:name |.strip-suffix) (:receiver |'String) (:rest nil)
+      :parameters $ [] $ quote 'String
+      :returns $ quote 'String
+    {} (:name |.parse-float) (:receiver |'String) (:rest nil)
+      :parameters $ []
+      :returns $ quote $ :: 'calcit.core/Result 'Number 'String
+    {} (:name |.parse-cirru) (:receiver |'String) (:rest nil)
+      :parameters $ []
+      :returns $ quote $ :: 'calcit.core/Result 'CirruQuote 'String
+    {} (:name |.append)
+      :receiver "|:: 'List 'Number"
+      :rest nil
+      :parameters $ [] $ quote 'Number
+      :returns $ quote $ :: 'List 'Number
+    {} (:name |.len)
+      :receiver "|:: 'List 'Number"
+      :rest nil
+      :parameters $ []
+      :returns $ quote 'Number
+    {} (:name |.get)
+      :receiver "|:: 'List 'Number"
+      :rest nil
+      :parameters $ [] $ quote 'Number
+      :returns $ quote $ :: 'calcit.core/Option 'Number
+    {} (:name |.fold)
+      :receiver "|:: 'List 'Number"
+      :rest nil
+      :parameters $ [] (quote 'U)
+        quote $ :: 'Fn $ {} (:return 'U)
+          :args $ [] 'U 'Number
+      :returns $ quote 'U
+    {} (:name |.intersperse)
+      :receiver "|:: 'List 'Number"
+      :rest nil
+      :parameters $ [] $ quote 'Number
+      :returns $ quote $ :: 'List 'Number
+    {} (:name |.join-string)
+      :receiver "|:: 'List 'Number"
+      :rest nil
+      :parameters $ [] $ quote 'String
+      :returns $ quote 'String
+    {} (:name |.flat-map)
+      :receiver "|:: 'List 'Number"
+      :rest nil
+      :parameters $ [] $ quote
+        :: 'Fn $ {}
+          :args $ [] 'Number
+          :return $ :: 'List 'U
+      :returns $ quote $ :: 'List 'U
+    {}
+      :name |.contains-index?
+      :receiver "|:: 'List 'Number"
+      :rest nil
+      :parameters $ [] $ quote 'Number
+      :returns $ quote 'Bool
+    {} (:name |.includes?)
+      :receiver "|:: 'List 'Number"
+      :rest nil
+      :parameters $ [] $ quote 'Number
+      :returns $ quote 'Bool
+    {} (:name |.contains-key?)
+      :receiver "|:: 'Map 'Tag 'Number"
+      :rest nil
+      :parameters $ [] $ quote 'Tag
+      :returns $ quote 'Bool
+    {}
+      :name |.contains-value?
+      :receiver "|:: 'Map 'Tag 'Number"
+      :rest nil
+      :parameters $ [] $ quote 'Number
+      :returns $ quote 'Bool
+    {} (:name |.len)
+      :receiver "|:: 'Map 'Tag 'Number"
+      :rest nil
+      :parameters $ []
+      :returns $ quote 'Number
+    {} (:name |.get)
+      :receiver "|:: 'Map 'Tag 'Number"
+      :rest nil
+      :parameters $ [] $ quote 'Tag
+      :returns $ quote $ :: 'calcit.core/Option 'Number
+    {}
+      :name |.distinct-values
+      :receiver "|:: 'Map 'Tag 'Number"
+      :rest nil
+      :parameters $ []
+      :returns $ quote $ :: 'Set 'Number
+    {} (:name |.merge)
+      :receiver "|:: 'Map 'Tag 'Number"
+      :parameters $ []
+      :rest $ quote $ :: 'Map 'Tag 'Number
+      :returns $ quote $ :: 'Map 'Tag 'Number
+    {} (:name |.includes?) (:receiver "|:: 'Set 'Number") (:rest nil)
+      :parameters $ [] $ quote 'Number
+      :returns $ quote 'Bool
+    {} (:name |.include) (:receiver "|:: 'Set 'Number")
+      :parameters $ []
+      :rest $ quote 'Number
+      :returns $ quote $ :: 'Set 'Number
+    {} (:name |.exclude) (:receiver "|:: 'Set 'Number")
+      :parameters $ []
+      :rest $ quote 'Number
+      :returns $ quote $ :: 'Set 'Number
+    {} (:name |.len) (:receiver "|:: 'Set 'Number") (:rest nil)
+      :parameters $ []
+      :returns $ quote 'Number
+    {} (:name |.union) (:receiver "|:: 'Set 'Number")
+      :parameters $ []
+      :rest $ quote $ :: 'Set 'Number
+      :returns $ quote $ :: 'Set 'Number
+    {} (:name |.some?)
+      :receiver "|:: 'calcit.core/Option 'Number"
+      :rest nil
+      :parameters $ []
+      :returns $ quote 'Bool
+    {} (:name |.none?)
+      :receiver "|:: 'calcit.core/Option 'Number"
+      :rest nil
+      :parameters $ []
+      :returns $ quote 'Bool
+    {} (:name |.ok?)
+      :receiver "|:: 'calcit.core/Result 'Number 'String"
+      :rest nil
+      :parameters $ []
+      :returns $ quote 'Bool
+    {} (:name |.err?)
+      :receiver "|:: 'calcit.core/Result 'Number 'String"
+      :rest nil
+      :parameters $ []
+      :returns $ quote 'Bool
   :methods $ []
     {} (:failure "|none_抛错") (:name |.unwrap)
       :provenance 'calcit.core/option:unwrap
@@ -195,3 +591,336 @@
       :schema $ quote $ {} (:kind :fn) (:return 'Unit)
         :args $ [] 'FfiResponse 'T
         :generics $ [] 'T
+    {}
+      :failure "|返回原始路径文本，不访问文件系统"
+      :name |.to-string
+      :provenance 'calcit.core/fs-path:to-string
+      :receiver |calcit.core/FsPath
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'String)
+        :args $ [] 'FsPath
+    {}
+      :failure "|Number_有限整数判断，不是舍入"
+      :name |.integer?
+      :provenance 'calcit.core/integer?
+      :receiver |'Number
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Bool)
+        :args $ [] 'Number
+    {} (:failure "|判断子串，不是索引存在") (:name |.includes?)
+      :provenance 'calcit.core/&str:includes?
+      :receiver |'String
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn) (:return 'Bool)
+        :args $ [] 'String 'String
+    {}
+      :failure "|判断_Unicode_标量索引是否存在"
+      :name |.contains-index?
+      :provenance 'calcit.core/&str:contains?
+      :receiver |'String
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn) (:return 'Bool)
+        :args $ [] 'String 'Number
+    {}
+      :failure "|Unicode_标量长度，不是_utf8_字节数"
+      :name |.len
+      :provenance 'calcit.core/&str:count
+      :receiver |'String
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Number)
+        :args $ [] 'String
+    {}
+      :failure "|Unicode_标量位置，缺失返回_none"
+      :name |.get
+      :provenance 'calcit.core/get
+      :receiver |'String
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Dynamic 'Dynamic
+        :return $ :: 'Option 'Dynamic
+    {} (:failure "|未匹配保留原_String") (:name |.strip-prefix)
+      :provenance 'calcit.core/strip-prefix
+      :receiver |'String
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn) (:return 'String)
+        :args $ [] 'String 'String
+    {} (:failure "|未匹配保留原_String") (:name |.strip-suffix)
+      :provenance 'calcit.core/strip-suffix
+      :receiver |'String
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn) (:return 'String)
+        :args $ [] 'String 'String
+    {}
+      :failure "|非法文本返回原文_err，合法非有限值仍是_ok"
+      :name |.parse-float
+      :provenance 'calcit.core/parse-float
+      :receiver |'String
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'String
+        :return $ :: 'Result 'Number 'String
+    {}
+      :failure "|语法失败返回_Result_err，成功返回_CirruQuote"
+      :name |.parse-cirru
+      :provenance 'calcit.core/try-parse-cirru
+      :receiver |'String
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'String
+        :return $ :: 'Result 'CirruQuote 'String
+    {}
+      :failure "|返回新的同型_List，不修改原集合"
+      :name |.append
+      :provenance 'calcit.core/append
+      :receiver "|:: 'List 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] (:: 'List 'T) 'T
+        :generics $ [] 'T
+        :return $ :: 'List 'T
+    {}
+      :failure "|返回元素数量，空_List_为_0"
+      :name |.len
+      :provenance 'calcit.core/&list:count
+      :receiver "|:: 'List 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Number)
+        :args $ [] $ :: 'List 'T
+        :generics $ [] 'T
+    {}
+      :failure "|位置读取返回_Option_Number，缺失返回_none"
+      :name |.get
+      :provenance 'calcit.core/get
+      :receiver "|:: 'List 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Dynamic 'Dynamic
+        :return $ :: 'Option 'Dynamic
+    {}
+      :failure "|保留_accumulator_泛型和左至右的回调顺序"
+      :name |.fold
+      :provenance 'calcit.core/fold
+      :receiver "|:: 'List 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 3) (:min 3)
+      :schema $ quote $ {} (:kind :fn) (:return 'U)
+        :args $ [] (:: 'List 'T) 'U $ :: 'Fn
+          {} (:return 'U)
+            :args $ [] 'U 'T
+        :generics $ [] 'T 'U
+    {}
+      :failure "|插入同型分隔项，保持顺序与重复值"
+      :name |.intersperse
+      :provenance 'calcit.core/intersperse
+      :receiver "|:: 'List 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] (:: 'List 'T) 'T
+        :generics $ [] 'T
+        :return $ :: 'List 'T
+    {} (:failure "|文本拼接，不返回_List") (:name |.join-string)
+      :provenance 'calcit.core/join-str
+      :receiver "|:: 'List 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn) (:return 'String)
+        :args $ [] (:: 'List 'T) 'String
+        :generics $ [] 'T
+    {}
+      :failure "|每个元素调用回调一次，按顺序展平一层_List"
+      :name |.flat-map
+      :provenance 'calcit.core/mapcat
+      :receiver "|:: 'List 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] (:: 'List 'T)
+          :: 'Fn $ {}
+            :args $ [] 'T
+            :return $ :: 'List 'U
+        :generics $ [] 'T 'U
+        :return $ :: 'List 'U
+    {} (:failure "|判断位置，不判断元素内容")
+      :name |.contains-index?
+      :provenance 'calcit.core/&list:contains?
+      :receiver "|:: 'List 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn) (:return 'Bool)
+        :args $ [] (:: 'List 'T) 'Number
+        :generics $ [] 'T
+    {} (:failure "|判断元素，不判断位置") (:name |.includes?)
+      :provenance 'calcit.core/&list:includes?
+      :receiver "|:: 'List 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn) (:return 'Bool)
+        :args $ [] (:: 'List 'T) 'T
+        :generics $ [] 'T
+    {}
+      :failure "|判断_key，不判断_value"
+      :name |.contains-key?
+      :provenance 'calcit.core/&map:contains?
+      :receiver "|:: 'Map 'Tag 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn) (:return 'Bool)
+        :args $ [] (:: 'Map 'K 'V) 'K
+        :generics $ [] 'K 'V
+    {}
+      :failure "|判断_value，不判断_key"
+      :name |.contains-value?
+      :provenance 'calcit.core/&map:includes?
+      :receiver "|:: 'Map 'Tag 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn) (:return 'Bool)
+        :args $ [] (:: 'Map 'K 'V) 'V
+        :generics $ [] 'K 'V
+    {}
+      :failure "|返回键值项数量，空_Map_为_0"
+      :name |.len
+      :provenance 'calcit.core/&map:count
+      :receiver "|:: 'Map 'Tag 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Number)
+        :args $ [] $ :: 'Map 'K 'V
+        :generics $ [] 'K 'V
+    {}
+      :failure "|key_读取返回_Option_Number，缺失返回_none"
+      :name |.get
+      :provenance 'calcit.core/get
+      :receiver "|:: 'Map 'Tag 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Dynamic 'Dynamic
+        :return $ :: 'Option 'Dynamic
+    {}
+      :failure "|返回去重_Set_Number，不保留重复值"
+      :name |.distinct-values
+      :provenance 'calcit.core/distinct-values
+      :receiver "|:: 'Map 'Tag 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] $ :: 'Map 'K 'V
+        :generics $ [] 'K 'V
+        :return $ :: 'Set 'V
+    {}
+      :failure "|保持_Map_Tag_Number，后值覆盖同名_key"
+      :name |.merge
+      :provenance 'calcit.core/merge
+      :receiver "|:: 'Map 'Tag 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max nil) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] $ :: 'Map 'K 'V
+        :generics $ [] 'K 'V
+        :rest $ :: 'Map 'K 'V
+        :return $ :: 'Map 'K 'V
+    {} (:failure "|判断元素成员，不判断位置") (:name |.includes?)
+      :provenance 'calcit.core/&set:includes?
+      :receiver "|:: 'Set 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn) (:return 'Bool)
+        :args $ [] (:: 'Set 'T) 'T
+        :generics $ [] 'T
+    {}
+      :failure "|返回新的同型_Set，添加元素并去重"
+      :name |.include
+      :provenance 'calcit.core/include
+      :receiver "|:: 'Set 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max nil) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:rest 'T)
+        :args $ [] $ :: 'Set 'T
+        :generics $ [] 'T
+        :return $ :: 'Set 'T
+    {}
+      :failure "|返回新的同型_Set，不存在元素无影响"
+      :name |.exclude
+      :provenance 'calcit.core/exclude
+      :receiver "|:: 'Set 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max nil) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:rest 'T)
+        :args $ [] $ :: 'Set 'T
+        :generics $ [] 'T
+        :return $ :: 'Set 'T
+    {}
+      :failure "|去重后的成员数量，空_Set_为_0"
+      :name |.len
+      :provenance 'calcit.core/&set:count
+      :receiver "|:: 'Set 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Number)
+        :args $ [] $ :: 'Set 'T
+        :generics $ [] 'T
+    {} (:failure "|组合并去重，不修改原集合") (:name |.union)
+      :provenance 'calcit.core/union
+      :receiver "|:: 'Set 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max nil) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] $ :: 'Set 'T
+        :generics $ [] 'T
+        :rest $ :: 'Set 'T
+        :return $ :: 'Set 'T
+    {}
+      :failure "|只检查_variant，不验证未知_payload"
+      :name |.some?
+      :provenance 'calcit.core/option:some?
+      :receiver "|:: 'calcit.core/Option 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Bool)
+        :args $ [] $ :: 'Option 'T
+        :generics $ [] 'T
+    {}
+      :failure "|只检查_variant，不验证未知_payload"
+      :name |.none?
+      :provenance 'calcit.core/option:none?
+      :receiver "|:: 'calcit.core/Option 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Bool)
+        :args $ [] $ :: 'Option 'T
+        :generics $ [] 'T
+    {}
+      :failure "|只检查_variant，不验证未知_payload"
+      :name |.ok?
+      :provenance 'calcit.core/result:ok?
+      :receiver "|:: 'calcit.core/Result 'Number 'String"
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Bool)
+        :args $ [] $ :: 'Result 'T 'E
+        :generics $ [] 'T 'E
+    {}
+      :failure "|只检查_variant，不验证未知_payload"
+      :name |.err?
+      :provenance 'calcit.core/result:err?
+      :receiver "|:: 'calcit.core/Result 'Number 'String"
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Bool)
+        :args $ [] $ :: 'Result 'T 'E
+        :generics $ [] 'T 'E
