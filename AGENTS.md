@@ -7,7 +7,7 @@
 - **构建验证**：执行 `yarn compile` 确保前端 TS 与 Rust 核心构建正常。
 - **运行测试**：执行 `cargo test` 验证单元测试，`yarn check-all` 验证全量集成测试。
 - **Agent CLI 协议检查**：在本仓库执行 `yarn check-agent-interface`，验证显式选择 `--format json` 的兼容路径 stdout 可解析为单个 JSON，并记录语义查询耗时与输出字节数。该命令属于 Calcit 仓库开发流程，不适用于普通业务项目；它不改变 Cirru EDN 的原生格式地位。
-- **外部项目回归**：CLI 查询、编辑或类型分析改动完成后，用已全局安装的新 `calcit` 在 Respo 等真实项目验证；有写入风险的编辑命令先作用于 Snapshot 临时副本。大项目只需要统计时使用 `--summary-only`，examples 回归优先使用 `check-examples --ns <ns> --def <definition>`。
+- **外部项目回归**：CLI 查询、编辑或类型分析改动完成后，用已全局安装的新 `calcit` 在 Respo 等真实项目验证；有写入风险的编辑命令先作用于 Snapshot 临时副本。大项目只需要统计时使用 `--summary-only`，examples 回归优先使用 `calcit analyze check-examples --ns <ns> --def <definition>`。
 
 ### 功能准则
 
