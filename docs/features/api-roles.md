@@ -298,7 +298,15 @@ assert= true $ &str:includes? |abc |b
 
 #1568 的策略基础已经关闭，未完成的清单覆盖、别名排期与上述门禁继续由 [#1458](https://github.com/calcit-lang/calcit/issues/1458) 收尾；策略 issue 关闭不表示整个 core 已冻结或所有目标名已发布。core 可先发布经过验证的版本，再以该正式版或明确标记的 alpha 验证模块消费者；milestone 只有在消费者和收尾验收完成、正式发版及中文成果 Discussion 发布后才标记完成，避免“要先关闭 milestone 才能发布、又要先发布才能迁移”的循环。
 
-先查类型再选方法，不要从模糊搜索到的内部定义名猜调用形式：
+先查类型再选方法，不要从模糊搜索到的内部定义名猜调用形式。以下任务都有可查询的已证明方法契约；名义类型 `FsPath` 使用限定定义名查询，不要写成不存在的内建类型 `'FsPath`：
+
+| 任务 | 接收者 | 首选应用写法 | 结果契约 |
+| --- | --- | --- | --- |
+| 查找文本子串 | String | `text .includes? fragment` | Bool，不是字符索引检查 |
+| 检查 Map 的 key | Map<K,V> | `entries .contains-key? key` | Bool，key 须为 K |
+| 带初值的 List 折叠 | List<T> | `items .fold initial reducer` | U，reducer 为 Fn(U,T) → U |
+| 判断 Option 有值 | Option<T> | `value .some?` | Bool，不是非 nil 判断 |
+| 写入 UTF-8 文件 | FsPath | `path .write-text! content` | Result<Unit,String>，须处理失败 |
 
 ```bash
 calcit docs read api-roles.md '逐族命名决策'
@@ -307,9 +315,12 @@ calcit query type ":: 'Option 'Number"
 calcit query type "'String"
 calcit query type ":: 'List 'Number"
 calcit query type ":: 'Map 'Tag 'Number"
+calcit query type calcit.core/FsPath
 calcit query def 'calcit.core/Option' --format edn
 calcit query def 'calcit.core/%some' --format edn
 calcit query context 'calcit.core/option:unwrap' --format edn
+calcit query examples calcit.core/fold
+calcit analyze check-examples --ns calcit.core --def fold
 ```
 
 `docs read` 的默认 guidebook 来自已安装的 `~/.config/calcit/docs`，不是当前工作目录的源码，也不会因重编译 CLI 自动更新。找不到新章节时，先用 `docs sections api-roles.md` 核对已安装文档版本，再按已有文档安装流程更新；不要为查新名字再创建查询入口。开发中的 Markdown 可直接用 `docs check-md <path> --snapshot <snapshot>` 验证，模块文档仍用现有 `--module` 参数查询。
