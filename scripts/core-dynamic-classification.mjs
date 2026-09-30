@@ -246,6 +246,10 @@ const compilerSpecializedPositions = new Map([
 ]);
 const reviewedCompatibilityPositions = new Map([
   [
+    "&turn-string|schema.args.0",
+    "内部 primitive 仅接受六类内建标量，当前类型语法无法以单一输入类型表达该集合。对外兼容函数 turn-string 要求 ToString 证据；应用代码不应直接调用此 Dynamic primitive。",
+  ],
+  [
     "&map:add-entry|schema.args.1.item",
     "Legacy Map.add accepts a heterogeneous two-item List; a homogeneous List item cannot prove independent key and value types. New callers must use assoc, while #1479 tracks retirement.",
   ],

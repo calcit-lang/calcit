@@ -35,7 +35,10 @@ assert.ok(JSON.stringify(stringConversion.data.schema).includes("ToString"), "to
 const legacyStringConversion = JSON.parse(execFileSync(binary, [snapshot, "query", "def", "calcit.core/turn-str", "--format", "json"], { encoding: "utf8" }));
 assert.ok(JSON.stringify(legacyStringConversion.data.schema).includes("ToString"), "turn-str must retain the same strict trait boundary");
 assert.ok(legacyStringConversion.data.tags.includes("internal"), "the compatibility alias must not be recommended as a public API");
-for (const expression of ["to-string ([] 1)", "to-string (&{} :a 1)", "to-string (#{} 1)", "to-string &unit", "to-string (fs:path |abc)", "to-string (json-parse |42)", "turn-str ([] 1)", "turn-str (&{} :a 1)", "turn-str &unit", "turn-str (json-parse |42)"]) {
+const legacyTurnString = JSON.parse(execFileSync(binary, [snapshot, "query", "def", "calcit.core/turn-string", "--format", "json"], { encoding: "utf8" }));
+assert.ok(JSON.stringify(legacyTurnString.data.schema).includes("ToString"), "turn-string must expose the trait-bound wrapper contract");
+assert.ok(legacyTurnString.data.tags.includes("internal"), "turn-string must remain a compatibility entry");
+for (const expression of ["to-string ([] 1)", "to-string (&{} :a 1)", "to-string (#{} 1)", "to-string &unit", "to-string (fs:path |abc)", "to-string (json-parse |42)", "turn-str ([] 1)", "turn-str (&{} :a 1)", "turn-str &unit", "turn-str (json-parse |42)", "turn-string ([] 1)", "turn-string (&{} :a 1)", "turn-string &unit", "turn-string (json-parse |42)"]) {
   const result = spawnSync(binary, [snapshot, "eval", expression], { encoding: "utf8" });
   assert.notEqual(result.status, 0, `${expression} must fail strict trait-bound checking`);
   assert.match(result.stderr, /W_GENERIC_WHERE_BOUND_MISMATCH/);
@@ -96,6 +99,7 @@ try {
   ]) {
     assert.equal(core.to_string(value), expected, `generated JS to-string should convert ${String(value)}`);
     assert.equal(core.turn_str(value), expected, `generated JS compatibility alias should convert ${String(value)}`);
+    assert.equal(core.turn_string(value), expected, `generated JS turn-string compatibility wrapper should convert ${String(value)}`);
   }
   const traitsOutput = join(output, "traits-js");
   execFileSync(binary, ["--emit-path", traitsOutput, "calcit/test-traits.cirru", "js"], { stdio: "pipe" });

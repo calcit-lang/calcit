@@ -254,7 +254,7 @@ pub enum CalcitProc {
   Trim,
   #[strum(serialize = "&str")]
   NativeStr,
-  #[strum(serialize = "turn-string")]
+  #[strum(serialize = "&turn-string")]
   TurnString,
   #[strum(serialize = "split")]
   Split,

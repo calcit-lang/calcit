@@ -383,7 +383,7 @@
         '&core-number-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for number")
           :code $ quote $ def &core-number-impls
             [] &core-number-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-number-impl) (&impl::new Multiply internal/&core-multiply-number-impl) (&impl::new Compare internal/&core-compare-number-impl)
-              &impl::new ToString $ :: :to-string turn-string
+              &impl::new ToString $ :: :to-string &turn-string
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -427,7 +427,7 @@
           :code $ quote $ def &core-string-impls
             [] &core-string-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-string-impl) (&impl::new Len internal/&core-len-string-impl) (&impl::new Countable internal/&core-countable-string-impl) (&impl::new Contains internal/&core-contains-string-impl) (&impl::new Compare internal/&core-compare-string-impl)
               &impl::new Sliceable $ :: :slice &str:slice
-              &impl::new ToString $ :: :to-string turn-string
+              &impl::new ToString $ :: :to-string &turn-string
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -462,7 +462,7 @@
           :doc "|Nil、Bool、Tag 与 Symbol 的内建实现；与 Unit/CirruQuote 的开放 scalar 列表分离。"
           :code $ quote $ def &core-text-scalar-impls
             [] (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl)
-              &impl::new ToString $ :: :to-string turn-string
+              &impl::new ToString $ :: :to-string &turn-string
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -2492,6 +2492,13 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
+          :tags $ #{} :builtin :internal
+        '&turn-string $ %{} 'CodeEntry
+          :doc "|内部标量转换 primitive，仅供内建 ToString 实现使用；支持 Nil、Bool、Number、String、Tag、Symbol。应用代码使用 to-string。"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'Dynamic
           :tags $ #{} :builtin :internal
         '&union $ %{} 'CodeEntry
           :doc "|internal function for set union\nSyntax: (&union set1 set2 & sets)\nParams: set1 (set), set2 (set), sets (set, variadic)\nReturns: set\nReturns union of all sets"
@@ -9455,14 +9462,22 @@
               assert= |ready $ turn-str $ to-symbol |ready
             :tags $ #{} :core :unit
         'turn-string $ %{} 'CodeEntry
-          :doc "|internal function for converting to string\nSyntax: (turn-string value)\nParams: value (any)\nReturns: string\nConverts value to string representation"
-          :code $ quote &runtime-implementation
+          :doc "|旧版兼容入口；只接受实现 ToString 的值，新代码使用 to-string。集合、Unit 与未收窄的 Dynamic 不能直接调用。"
+          :code $ quote $ defn turn-string (value) (to-string value)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'T
             :generics $ [] 'T
-          :tags $ #{} :builtin :internal
+            :where $ {} $ 'T 'ToString
+          :tags $ #{} :internal
           :tests $ []
+            %{} 'TestEntry (:name |accepts-proven-scalar-values)
+              :code $ quote $ do
+                assert-type (turn-string 42) 'String
+                assert= |42 $ turn-string 42
+                assert= |hello $ turn-string |hello
+                assert= |ready $ turn-string :ready
+              :tags $ #{} :core :unit
             %{} 'TestEntry (:name |formats-number-boundaries)
               :code $ quote $ do
                 assert= |0.0000001 $ turn-string 0.0000001

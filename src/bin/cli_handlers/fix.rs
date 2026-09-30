@@ -3786,7 +3786,7 @@ fn collect_identity_conversion_calls(node: &Cirru, path: &mut Vec<usize>, calls:
   }
 }
 
-/// Rename reader-resolved built-ins only when the argument proves the same conversion.
+/// Rename resolved core conversions only when the argument proves the same conversion.
 fn plan_core_identity_conversion_fixes(
   snapshot: &Snapshot,
   snapshot_file: &str,
@@ -3847,7 +3847,18 @@ fn plan_core_identity_conversion_fixes(
           .collect::<Result<Vec<_>, _>>()?,
       )
       .map_err(|error| error.to_string())?;
-      if !matches!(parsed_head, Calcit::Proc(proc) if proc == expected_proc) {
+      let resolved_core_wrapper = old_name.as_ref() == "turn-string"
+        && matches!(parsed_head, Calcit::Symbol { .. })
+        && usages.iter().any(|usage| {
+          usage.target_ns.as_ref() == calcit::calcit::CORE_NS
+            && usage.target_def.as_ref() == "turn-string"
+            && usage.location.as_ref().is_some_and(|location| {
+              location.ns.as_ref() == namespace
+                && location.def.as_ref() == definition
+                && location.coord.iter().map(|index| usize::from(*index)).eq(head_path.iter().copied())
+            })
+        });
+      if !matches!(parsed_head, Calcit::Proc(proc) if proc == expected_proc) && !resolved_core_wrapper {
         continue;
       }
       let argument = navigate_to_path(&entry.code, &argument_path)?;
@@ -3945,7 +3956,7 @@ fn plan_core_identity_conversion_fixes(
         path: format!("code{}", format_path(&head_path)),
         fingerprint: node_fingerprint(&head),
         origin_chain: vec![serde_json::json!({
-          "kind": "reader-resolved-builtin-proc-and-argument-type",
+          "kind": "resolved-core-conversion-and-argument-type",
           "old_proc": old_name.as_ref(),
           "argument_type": inferred.as_ref().map(|annotation| annotation.describe()),
           "target": format!("calcit.core/{new_name}"),
