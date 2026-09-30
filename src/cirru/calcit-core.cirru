@@ -5709,17 +5709,25 @@
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'List
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |formats-simple-form-on-one-line)
-            :code $ quote $ do
-              assert=
-                format-cirru-one-liner $ [] |defn
-                  [] |add $ [] |a |b
-                  [] |+ |a |b
-                , "|defn (add (a b)) $ + a b"
-              assert=
-                format-cirru-one-liner $ [] |+ |1 |2
-                , "|+ 1 2"
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |formats-simple-form-on-one-line)
+              :code $ quote $ do
+                assert=
+                  format-cirru-one-liner $ [] |defn
+                    [] |add $ [] |a |b
+                    [] |+ |a |b
+                  , "|defn (add (a b)) $ + a b"
+                assert=
+                  format-cirru-one-liner $ [] |+ |1 |2
+                  , "|+ 1 2"
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-spread-non-list)
+              :code $ quote $ assert= true
+                try
+                  format-cirru-one-liner & $ [] 1
+                  fn (error)
+                    &str:includes? (str error) |expected
+              :tags $ #{} :core :unit
         'format-to-cirru $ %{} 'CodeEntry
           :doc "|internal function for formatting to Cirru syntax\nSyntax: (format-to-cirru value)\nParams: value (any)\nReturns: string in Cirru format\nConverts Calcit data structures to Cirru-style string representation"
           :code $ quote &runtime-implementation
