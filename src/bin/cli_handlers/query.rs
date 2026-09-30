@@ -260,6 +260,49 @@ fn render_context_method(method: &ContextMethod) -> String {
   rendered
 }
 
+fn render_type_query_methods(methods: &[ContextMethod]) -> String {
+  let mut out = String::new();
+  let preferred = methods.iter().filter(|method| method.role == Some("preferred")).count();
+  let compatibility = methods.iter().filter(|method| method.role == Some("compatibility")).count();
+  let _ = writeln!(
+    &mut out,
+    "Count: {} ({} confirmed preferred, {} compatibility).",
+    methods.len(),
+    preferred,
+    compatibility
+  );
+
+  for (heading, group) in [
+    (
+      "Confirmed preferred",
+      methods.iter().filter(|method| method.role == Some("preferred")).collect::<Vec<_>>(),
+    ),
+    (
+      "Other registered methods (role not yet classified)",
+      methods
+        .iter()
+        .filter(|method| !matches!(method.role, Some("preferred" | "compatibility")))
+        .collect::<Vec<_>>(),
+    ),
+    (
+      "Compatibility (use the listed preferred name)",
+      methods
+        .iter()
+        .filter(|method| method.role == Some("compatibility"))
+        .collect::<Vec<_>>(),
+    ),
+  ] {
+    if group.is_empty() {
+      continue;
+    }
+    let _ = writeln!(&mut out, "\n### {heading}\n");
+    for method in group {
+      let _ = writeln!(&mut out, "{}", render_context_method(method));
+    }
+  }
+  out
+}
+
 #[derive(Debug, Serialize)]
 struct TypeQueryData {
   target: String,
@@ -1561,6 +1604,38 @@ mod type_query_tests {
   }
 
   #[test]
+  fn type_query_human_output_separates_preferred_and_compatibility_methods() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let snapshot = load_core_snapshot().expect("core snapshot should load");
+    prepare_program_for_type_query_on_cli_stack(snapshot);
+    let receiver = parse_type_annotation_query(":: 'List 'Number").expect("list type");
+    let mut methods = runner::preprocess::static_method_contracts(receiver.as_ref())
+      .expect("list method contracts")
+      .into_iter()
+      .map(|(method, contract)| context_method(method, contract))
+      .collect::<Vec<_>>();
+    mark_proven_method_roles(receiver.as_ref(), &mut methods);
+
+    let structured = serde_json::to_value(&methods).expect("method contracts should serialize");
+    let names = structured.as_array().expect("method list");
+    let add = names.iter().position(|method| method["name"] == ".add").expect("legacy add");
+    let append = names
+      .iter()
+      .position(|method| method["name"] == ".append")
+      .expect("preferred append");
+    assert!(add < append, "structured dispatch order remains unchanged");
+    let rendered = render_type_query_methods(&methods);
+    let preferred = rendered.find("### Confirmed preferred").expect("preferred heading");
+    let other = rendered.find("### Other registered methods").expect("unclassified heading");
+    let compatibility = rendered.find("### Compatibility").expect("compatibility heading");
+    assert!(preferred < other && other < compatibility);
+    assert!(rendered[preferred..other].contains("- `.append`"));
+    assert!(rendered[other..compatibility].contains("- `.foldl`"));
+    assert!(rendered[compatibility..].contains("- `.add`"));
+    assert!(rendered[compatibility..].contains("core-list-add-v1"));
+  }
+
+  #[test]
   fn method_query_reuses_bound_collection_contracts_and_keeps_open_schemas_explicit() {
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let snapshot = load_core_snapshot().expect("core snapshot should load");
@@ -2197,17 +2272,14 @@ fn handle_type(input_path: &str, opts: &QueryTypeCommand) -> Result<(), String> 
 
   println!("\n## Methods\n");
   println!(
-    "Call the listed `.method` on a typed receiver. A definition path is its implementation reference, not a second recommended call form. `open` or `ambiguous` does not prove a typed call; use `query def` for constructors and `docs read api-roles.md` for API roles.\n"
+    "Call a method on a typed receiver. Confirmed preferred names come first; compatibility names link to their replacement and fix, while unclassified methods need role review. A definition path is its implementation reference, not a second recommended call form. `open` or `ambiguous` does not prove a typed call; use `query def` for constructors and `docs read api-roles.md` for API roles.\n"
   );
   match data.methods {
     Some(methods) if methods.is_empty() => {
       println!("_No methods registered for this type._");
     }
     Some(methods) => {
-      println!("Count: {} (high → low precedence).\n", methods.len());
-      for method in methods {
-        println!("{}", render_context_method(&method));
-      }
+      print!("{}", render_type_query_methods(&methods));
     }
     None => {
       println!("_This type has no statically resolvable method metadata._");
