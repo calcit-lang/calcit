@@ -5123,6 +5123,12 @@ fn core_nominal_constructor_preview_skips_unrelated_type_slot_declarations() {
   let report = parse_stdout(&preview);
   assert_eq!(report["command"], "fix");
   assert_eq!(report["data"]["suggestions"], serde_json::json!([]));
+  let api_preview = run_fix(
+    &snapshot,
+    &["--preset", "core-api-0.28-v1", "--ns", "fix-command.main", "--format", "json"],
+  );
+  assert_success(&api_preview, "whole-namespace API preview with unrelated type slot");
+  assert_eq!(parse_stdout(&api_preview)["data"]["suggestions"], serde_json::json!([]));
 }
 
 #[test]
@@ -8001,6 +8007,134 @@ fn surface_latest_v2_unwraps_single_expression_do_without_changing_v1() {
       String::from_utf8_lossy(&calcit_test.stderr)
     );
   }
+}
+
+#[test]
+fn core_api_028_preset_composes_nested_leaf_renames_and_is_idempotent() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  let target = "fix-command.main/api-alias-summary";
+  for args in [
+    vec![
+      "edit",
+      "def",
+      "fix-command.main/api-summary-label",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn api-summary-label (text)\n  , text",
+    ],
+    vec![
+      "edit",
+      "schema",
+      "fix-command.main/api-summary-label",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return 'String)",
+    ],
+    vec![
+      "edit",
+      "def",
+      target,
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn api-alias-summary (xs)\n  api-summary-label $ &str:concat (turn-string $ .count $ .add xs 3) $ &str:concat |: $ turn-string $ round? 2",
+    ],
+    vec![
+      "edit",
+      "schema",
+      target,
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return 'String)",
+    ],
+    vec![
+      "edit",
+      "add-test",
+      target,
+      "nested-alias-semantics",
+      "--tags",
+      "unit",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ do\n  assert= |4:true $ api-alias-summary ([] 1 2 3)\n  assert= |1:true $ api-alias-summary ([])",
+    ],
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), "install nested API fixture through Calcit CLI");
+  }
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "original Calcit semantics",
+  );
+  let original = fs::read(&snapshot).expect("original snapshot");
+  let old = run_fix(
+    &snapshot,
+    &[
+      "--preset",
+      "surface-latest-v2",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "api-alias-summary",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&old, "frozen surface preset");
+  assert_eq!(parse_stdout(&old)["data"]["suggestions"], serde_json::json!([]));
+
+  let selectors = [
+    "--preset",
+    "core-api-0.28-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "api-alias-summary",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &selectors);
+  assert_success(&preview, "composed API preview");
+  assert_eq!(fs::read(&snapshot).unwrap(), original, "preview must preserve source");
+  let report = parse_stdout(&preview);
+  assert_eq!(report["data"]["filters"]["preset_id"], "core-api-0.28-v1");
+  assert_eq!(
+    report["data"]["filters"]["source_coverage"]["scanned_regions"],
+    serde_json::json!(["code"])
+  );
+  assert_eq!(
+    report["data"]["filters"]["source_coverage"]["manual_review_regions"],
+    serde_json::json!(["tests", "examples"])
+  );
+  assert_eq!(report["data"]["filters"]["expanded_rule_ids"].as_array().unwrap().len(), 15);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions");
+  assert_eq!(suggestions.len(), 5, "nested aliases must all compose: {report}");
+  assert!(
+    suggestions
+      .iter()
+      .all(|suggestion| suggestion["applicability"] == "machine-applicable"),
+    "{report}"
+  );
+  let mut apply = selectors.to_vec();
+  apply.extend([
+    "--apply",
+    "--allow-no-vcs",
+    "--expect-revision",
+    report["revision"].as_str().unwrap(),
+  ]);
+  assert_success(&run_fix(&snapshot, &apply), "guarded API apply");
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "migrated Calcit semantics",
+  );
+  let repeated = run_fix(&snapshot, &selectors);
+  assert_success(&repeated, "repeated API preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
 }
 
 #[test]

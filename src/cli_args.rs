@@ -146,7 +146,7 @@ pub struct FixCommand {
   /// restrict fixes to one stable rule ID
   #[argh(option)]
   pub rule: Option<String>,
-  /// apply one versioned set of stable migration rules
+  /// select surface-latest-v1, surface-latest-v2, or core-api-0.28-v1 migration rules
   #[argh(option)]
   pub preset: Option<String>,
   /// compose a project workflow; currently supports strict

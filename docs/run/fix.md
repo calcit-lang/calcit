@@ -92,8 +92,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   `calcit.core/non-nil?`。这是等价的非 nil 谓词改名，不会猜成 Option `.some?`，也不会改写用户自定义同名函数。
   规则保留实参位置、求值次数和失败行为；明确限定新引用可避免局部变量或 import 遮蔽。已知保持调用的 core macro
   可以自动迁移，未知 macro 只返回 `requires-review`。当前只扫描所选 definition 的源码 `:code`，不会盲改 attached
-  `:tests` / `:examples`；这些位置应由测试和人工检查同步迁移。本规则当前须显式选择，不改变已发布 preset；完成本阶段其余
-  predicate/member 迁移后再统一进入新的版本化 preset。
+  `:tests` / `:examples`；这些位置应由测试和人工检查同步迁移。本规则也包含在新的 `core-api-0.28-v1`；已发布的 surface preset 保持原定义。
 - `core-integer-predicate-v1` 把 Cirru reader 直接解析为内建 Proc 的单参数 `round?` 调用头改为
   `calcit.core/integer?`。新入口复用有限且恰好没有小数部分的既有语义；不会把 Bool 当作整数类型 refinement。仅改写可回溯的源码调用，保留实参原位与求值次数；含同名词法绑定的定义及 quoted 数据跳过，未知 macro 只给 `requires-review`。
   同一规则还会把静态 Number 接收者的 `.round?` 改成 `.integer?`：旧、新方法现均指向 `calcit.core/integer?`，类型契约同为 `Number -> Bool`；自定义同名方法不改，开放接收者与未知宏不会自动改写。当前只覆盖 definition `:code`，不自动修改一等函数引用或 attached `:tests` / `:examples`；这些位置需人工审阅。使用 `calcit calcit.cirru fix --rule core-integer-predicate-v1 --format edn` 预览，核对来源与 revision 后应用并重复预览；不加入已发布 preset。
@@ -190,6 +189,31 @@ calcit calcit.cirru fix --preset surface-latest-v2 --format edn
 
 `--preset` 与 `--rule` 互斥。apply 必须原样重复 preview 的 `--preset`、`--ns` 和 `--def`；第二次 preview
 应返回空建议。未来集合发生变化时应发布新的 preset ID，既有 ID 不应静默改变含义。
+
+### 0.28 核心 API 命名迁移
+
+`core-api-0.28-v1` 组合已证明等价的 15 条叶子改写规则。它适合在结构升级后一次迁移核心 API 名称；每个调用仍须满足对应规则的类型、来源和源码位置证明。
+
+| 范围 | 展开的规则 |
+| --- | --- |
+| nil/整数谓词与标量转换 | `core-non-nil-predicate-v1`、`core-integer-predicate-v1`、`core-identity-conversion-v1` |
+| 索引/键/值/成员判断 | `core-predicate-method-v1` |
+| 集合追加、长度与折叠 | `core-list-add-v1`、`core-set-include-v1`、`core-collection-len-v1`、`core-list-fold-v1` |
+| 分隔、展平映射、文本拼接与读取 | `core-list-intersperse-v1`、`core-list-flat-map-v1`、`core-list-join-string-v1`、`core-list-get-v1` |
+| Map/Set 组合与效果方法 | `core-map-distinct-values-v1`、`core-collection-combine-v1`、`core-effect-method-v1` |
+
+```bash
+calcit calcit.cirru fix --preset core-api-0.28-v1 --format edn
+calcit calcit.cirru fix --preset core-api-0.28-v1 \
+  --apply --expect-revision 'md5:<preview 返回的 revision>'
+calcit calcit.cirru fix --preset core-api-0.28-v1 --format edn
+```
+
+此集合只替换 definition `:code` 内已证明的叶子，嵌套调用的参数和 source path 保持原位。预览的 `:data :filters :source-coverage` 在 `:scanned-regions` 列出字符串 `|code`，在 `:manual-review-regions` 列出 `|tests`、`|examples`。未证明的候选继续作为 `requires-review` 返回，quoted data 和 macro 定义沿用各规则的边界。普通函数、primitive 和方法参数的求值上下文由 reader 或 compiler-resolved 来源确认，未知宏仍需人工核对其是否观察源码拼写。
+
+应用后重复预览，`machine-applicable` 建议应为空；`requires-review` 候选可能仍在，不能把它们当成已迁移或为了清零而自动应用。逐项核对这些候选以及 attached `:tests` / `:examples`，再运行项目严格检查和测试。Respo 副本验证中自动迁移 15 处后没有剩余可自动应用的建议，32 处人工审阅候选保留，48 个 definition tests 全部通过；这不代表整个项目的旧名已经清零。
+
+先用 `surface-latest-v2` 整理构造器和 `do` 结构，再运行本 preset；如需迁移 `%some/%none/%ok/%err` 或 `option:*/result:*` helper，分别使用 `core-nominal-constructor-v1`、`core-option-method-v1`、`core-result-method-v1` 并逐次核对新 revision。这些规则会改写完整调用树，不能和叶子集合未经组合证明就一次应用。旧 `surface-latest-v1/v2` 及 `--workflow strict` 的冻结范围保持原有定义。
 
 单独迁移 Option/Result 构造 helper 时，先在真实项目中预览 `requires-review` 与 `machine-applicable`
 的区别，再应用并重新预览确认幂等。应用前必须确认项目 `deps.cirru` 所锁定的 Calcit 版本与运行的 CLI 一致：

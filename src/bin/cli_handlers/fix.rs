@@ -77,6 +77,7 @@ const OPTIONAL_PARAMETERS_RULE: &str = "optional-parameters-v1";
 const OPTIONAL_PARAMETERS_DIAGNOSTIC: &str = "E_LEGACY_OPTIONAL_PARAM";
 const SURFACE_LATEST_V1_PRESET: &str = "surface-latest-v1";
 const SURFACE_LATEST_V2_PRESET: &str = "surface-latest-v2";
+const CORE_API_028_V1_PRESET: &str = "core-api-0.28-v1";
 const AVAILABLE_RULES: [&str; 5] = [
   REMOVED_DATA_API_RULE,
   NAMED_ENUM_CONSTRUCTOR_RULE,
@@ -96,6 +97,24 @@ const SURFACE_LATEST_V2_RULES: [&str; 5] = [
   NAMED_STRUCT_CONSTRUCTOR_RULE,
   REDUNDANT_DO_RULE,
   SINGLE_EXPRESSION_DO_RULE,
+];
+// These proven renames replace leaves only, so nested calls retain their source paths.
+const CORE_API_028_V1_RULES: [&str; 15] = [
+  CORE_NON_NIL_PREDICATE_RULE,
+  CORE_INTEGER_PREDICATE_RULE,
+  CORE_IDENTITY_CONVERSION_RULE,
+  CORE_PREDICATE_METHOD_RULE,
+  CORE_LIST_ADD_RULE,
+  CORE_SET_INCLUDE_RULE,
+  CORE_COLLECTION_LEN_RULE,
+  CORE_LIST_FOLD_RULE,
+  CORE_LIST_INTERSPERSE_RULE,
+  CORE_LIST_FLAT_MAP_RULE,
+  CORE_LIST_JOIN_STRING_RULE,
+  CORE_LIST_GET_RULE,
+  CORE_MAP_DISTINCT_VALUES_RULE,
+  CORE_COLLECTION_COMBINE_RULE,
+  CORE_EFFECT_METHOD_RULE,
 ];
 const TAG_MATCH_RULE: &str = "tag-match-to-match-v1";
 const REQUIRED_STRUCT_FIELD_RULE: &str = "required-struct-field-v1";
@@ -172,6 +191,14 @@ struct FixFilters<'a> {
   preset_id: Option<&'a str>,
   expanded_rule_ids: Vec<&'static str>,
   expanded_rules: Vec<FixRuleMetadata>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  source_coverage: Option<FixSourceCoverage>,
+}
+
+#[derive(Debug, Serialize)]
+struct FixSourceCoverage {
+  scanned_regions: &'static [&'static str],
+  manual_review_regions: &'static [&'static str],
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -877,6 +904,10 @@ pub(crate) fn handle_fix_command(
         preset_id: options.preset.as_deref(),
         expanded_rule_ids: selected_rules,
         expanded_rules,
+        source_coverage: (options.preset.as_deref() == Some(CORE_API_028_V1_PRESET)).then_some(FixSourceCoverage {
+          scanned_regions: &["code"],
+          manual_review_regions: &["tests", "examples"],
+        }),
       },
       changed: transaction.changed,
       new_revision: &transaction.new_revision,
@@ -1036,10 +1067,10 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     return Err(format!("`calcit fix --to` is only valid with `--rule {RENAME_DEFINITION_RULE}`."));
   }
   if let Some(preset) = options.preset.as_deref()
-    && !matches!(preset, SURFACE_LATEST_V1_PRESET | SURFACE_LATEST_V2_PRESET)
+    && !matches!(preset, SURFACE_LATEST_V1_PRESET | SURFACE_LATEST_V2_PRESET | CORE_API_028_V1_PRESET)
   {
     return Err(format!(
-      "Unknown fix preset `{preset}`. Available presets: `{SURFACE_LATEST_V1_PRESET}`, `{SURFACE_LATEST_V2_PRESET}`."
+      "Unknown fix preset `{preset}`. Available presets: `{SURFACE_LATEST_V1_PRESET}`, `{SURFACE_LATEST_V2_PRESET}`, `{CORE_API_028_V1_PRESET}`."
     ));
   }
   if let Some(rule) = options.rule.as_deref()
@@ -1149,6 +1180,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
   match options.preset.as_deref() {
     Some(SURFACE_LATEST_V1_PRESET) => SURFACE_LATEST_V1_RULES.to_vec(),
     Some(SURFACE_LATEST_V2_PRESET) => SURFACE_LATEST_V2_RULES.to_vec(),
+    Some(CORE_API_028_V1_PRESET) => CORE_API_028_V1_RULES.to_vec(),
     _ => AVAILABLE_RULES.to_vec(),
   }
 }
@@ -3635,26 +3667,33 @@ fn plan_core_predicate_rename_fixes(
     if list_head(&entry.code) == Some("defmacro") {
       continue;
     }
+    let mut integer_heads = Vec::new();
     if matches!(rule, CorePredicateRename::Integer) {
       let mut local_bindings = HashSet::new();
       collect_potential_local_bindings(&entry.code, &mut local_bindings);
       if local_bindings.contains(old_name) {
         continue;
       }
+      collect_builtin_round_call_heads(&entry.code, &mut Vec::new(), &mut integer_heads);
+      if integer_heads.is_empty() {
+        continue;
+      }
+    } else if !program::lookup_def_id("calcit.core", old_name)
+      .is_some_and(|target| program::lookup_compiled_def(namespace, definition).is_some_and(|compiled| compiled.deps.contains(&target)))
+    {
+      // Resolved dependencies retain aliases without re-tracing unrelated declaration definitions.
+      continue;
     }
 
-    let usages = if matches!(rule, CorePredicateRename::NonNil) {
+    let usages =
       runner::preprocess::trace_definition_source_usages(namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
-        .map_err(|failure| failure.msg)?
-    } else {
-      Vec::new()
-    };
+        .map_err(|failure| failure.msg)?;
     let mut planned = BTreeMap::<Vec<usize>, (String, String, Vec<String>, Option<String>)>::new();
-    for usage in usages {
+    for usage in &usages {
       if usage.target_ns.as_ref() != "calcit.core" || usage.target_def.as_ref() != old_name {
         continue;
       }
-      let Some(location) = usage.location else {
+      let Some(location) = &usage.location else {
         continue;
       };
       if location.ns.as_ref() != namespace || location.def.as_ref() != definition {
@@ -3668,7 +3707,7 @@ fn plan_core_predicate_rename_fixes(
       let Ok(replacement) = semantic_rename_leaf_replacement(source_leaf.as_ref(), old_name, "calcit.core", new_name) else {
         continue;
       };
-      let macro_origin = usage.macro_origin;
+      let macro_origin = usage.macro_origin.clone();
       let review = (!macro_origin
         .iter()
         .all(|origin| preserves_nominal_method_call_through_macro(origin)))
@@ -3697,12 +3736,10 @@ fn plan_core_predicate_rename_fixes(
       // The Cirru reader resolves `round?` directly to a built-in Proc before
       // preprocessing, so it has no source location in definition-usage traces.
       // A source call head is therefore sufficient evidence for this one proc.
-      let mut call_heads = Vec::new();
-      collect_builtin_round_call_heads(&entry.code, &mut Vec::new(), &mut call_heads);
-      for head_path in call_heads {
+      for head_path in integer_heads {
         let mut call_path = head_path.clone();
         call_path.pop();
-        let review = (!method_source_context_is_stable(&entry.code, &call_path)).then(|| {
+        let review = (!method_source_context_is_stable(&entry.code, &call_path, namespace, definition, &usages)).then(|| {
           "The built-in predicate call crosses an unknown source context; review whether macro expansion observes its spelling."
             .to_owned()
         });
@@ -3946,7 +3983,9 @@ fn plan_core_identity_conversion_fixes(
               Some(program::CompiledDefKind::Macro)
             ))
       });
-      let machine_applicable = proven_argument && !argument_crosses_macro && method_source_context_is_stable(&entry.code, &call_path);
+      let machine_applicable = proven_argument
+        && !argument_crosses_macro
+        && method_source_context_is_stable(&entry.code, &call_path, namespace, definition, &usages);
       let new_name = match expected_proc {
         CalcitProc::TurnTag => "to-tag",
         CalcitProc::TurnSymbol => "to-symbol",
@@ -4025,14 +4064,53 @@ fn collect_list_add_calls(node: &Cirru, path: &mut Vec<usize>, calls: &mut Vec<(
   }
 }
 
-/// Unknown enclosing macros may inspect source spelling even when the nested call type is known.
-fn method_source_context_is_stable(code: &Cirru, call_path: &[usize]) -> bool {
+/// Allow evaluated call arguments only when the reader or resolver proves their enclosing call is not an unknown macro.
+fn method_source_context_is_stable(
+  code: &Cirru,
+  call_path: &[usize],
+  namespace: &str,
+  definition: &str,
+  usages: &[runner::preprocess::ResolvedSourceUsage],
+) -> bool {
   (0..call_path.len()).all(|depth| {
     let Ok(Cirru::List(items)) = navigate_to_path(code, &call_path[..depth]) else {
       return false;
     };
-    matches!(items.first(), Some(Cirru::Leaf(head))
-      if matches!(head.as_ref(), "defn" | "fn" | "let" | "let[]" | "do" | "if" | "cond" | "assert="))
+    let Some(head) = items.first() else {
+      return false;
+    };
+    if matches!(head, Cirru::Leaf(head) if matches!(head.as_ref(), "defn" | "fn" | "let" | "let[]" | "do" | "if" | "cond")) {
+      return true;
+    }
+    if matches!(
+      code_to_calcit(head, namespace, definition, Vec::new()),
+      Ok(Calcit::Proc(..) | Calcit::Method(..))
+    ) {
+      return true;
+    }
+    let mut head_path = call_path[..depth].to_vec();
+    head_path.push(0);
+    let matching = usages
+      .iter()
+      .filter(|usage| {
+        usage.location.as_ref().is_some_and(|location| {
+          location.ns.as_ref() == namespace
+            && location.def.as_ref() == definition
+            && location.coord.iter().map(|index| usize::from(*index)).eq(head_path.iter().copied())
+        })
+      })
+      .collect::<Vec<_>>();
+    !matching.is_empty()
+      && matching.iter().all(|usage| {
+        usage
+          .macro_origin
+          .iter()
+          .all(|origin| preserves_nominal_method_call_through_macro(origin))
+          && (matches!(
+            program::lookup_compiled_def(&usage.target_ns, &usage.target_def).map(|compiled| compiled.kind),
+            Some(program::CompiledDefKind::Fn | program::CompiledDefKind::Proc)
+          ) || preserves_nominal_method_call_through_macro(&format!("{}/{}", usage.target_ns, usage.target_def)))
+      })
   })
 }
 
@@ -4057,6 +4135,9 @@ fn plan_core_list_add_fixes(
     if calls.is_empty() {
       continue;
     }
+    let usages =
+      runner::preprocess::trace_definition_source_usages(namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
+        .map_err(|failure| failure.msg)?;
     let compiled = program::lookup_compiled_def(namespace, definition);
     let expressions = runner::preprocess::trace_definition_source_expressions(
       namespace,
@@ -4112,7 +4193,8 @@ fn plan_core_list_add_fixes(
       if definitely_other_type {
         continue;
       }
-      let machine_applicable = concrete_list && proven_same_impl && method_source_context_is_stable(&entry.code, &call_path);
+      let machine_applicable =
+        concrete_list && proven_same_impl && method_source_context_is_stable(&entry.code, &call_path, namespace, definition, &usages);
       let original_node = navigate_to_path(&entry.code, &method_path)?;
       let replacement_node = Cirru::leaf(".append");
       suggestions.push(FixSuggestion {
@@ -4675,6 +4757,9 @@ fn plan_core_method_alias_fixes(
     if calls.is_empty() {
       continue;
     }
+    let usages =
+      runner::preprocess::trace_definition_source_usages(namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
+        .map_err(|failure| failure.msg)?;
     let compiled = program::lookup_compiled_def(namespace, definition);
     let expressions = runner::preprocess::trace_definition_source_expressions(
       namespace,
@@ -4738,7 +4823,8 @@ fn plan_core_method_alias_fixes(
       let proven_same_impl = resolved
         .as_ref()
         .is_some_and(|annotation| method_alias_contract_is_proven(annotation.as_ref(), rule));
-      let machine_applicable = proven_same_impl && method_source_context_is_stable(&entry.code, &call.call_path);
+      let machine_applicable =
+        proven_same_impl && method_source_context_is_stable(&entry.code, &call.call_path, namespace, definition, &usages);
       let original_node = navigate_to_path(&entry.code, &call.method_path)?;
       let original_leaf = match &original_node {
         Cirru::Leaf(name) => name.as_ref(),
@@ -4865,6 +4951,9 @@ fn plan_core_collection_len_fixes(
     if calls.is_empty() {
       continue;
     }
+    let usages =
+      runner::preprocess::trace_definition_source_usages(namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
+        .map_err(|failure| failure.msg)?;
     let compiled = program::lookup_compiled_def(namespace, definition);
     let expressions = runner::preprocess::trace_definition_source_expressions(
       namespace,
@@ -4919,7 +5008,8 @@ fn plan_core_collection_len_fixes(
       let proven_same_impl = resolved
         .as_ref()
         .is_some_and(|annotation| collection_len_alias_is_proven(annotation.as_ref()));
-      let machine_applicable = proven_same_impl && method_source_context_is_stable(&entry.code, &call_path);
+      let machine_applicable =
+        proven_same_impl && method_source_context_is_stable(&entry.code, &call_path, namespace, definition, &usages);
       let original_node = navigate_to_path(&entry.code, &method_path)?;
       let replacement_node = Cirru::leaf(".len");
       suggestions.push(FixSuggestion {
@@ -5783,6 +5873,10 @@ fn print_human_report(report: &FixReport<'_>) {
   println!("- revision: `{}`", report.revision);
   if let Some(preset) = report.data.filters.preset_id {
     println!("- preset: `{preset}`");
+  }
+  if let Some(coverage) = &report.data.filters.source_coverage {
+    println!("- scanned source regions: `{}`", coverage.scanned_regions.join(", "));
+    println!("- manual review source regions: `{}`", coverage.manual_review_regions.join(", "));
   }
   if let Some(replacement) = report.data.filters.replacement_name {
     println!("- replacement definition: `{replacement}`");

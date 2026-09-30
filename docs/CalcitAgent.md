@@ -246,6 +246,8 @@ JSON 中 definition 和 match 都带 `source`、`origin`，并用 `node_kind: le
 - 整个项目进入严格语义时，先运行 `calcit calcit.cirru fix --workflow strict --format edn` 保存项目 manifest；只按其中 `:resume :revision` 执行同一 workflow 的 `--apply --expect-revision`，随后运行 `--verify`。读取 preflight、entries/type slots、安全建议、review-required 类型位置、FFI 边界与 verification results，不要为 schema、Dynamic 收窄、FFI trust 或业务默认值自行补决策，也不要猜测外部 build 命令。preflight 的 `external-gates` 只是调用方待办，`executed: false` 时不得当作已通过。
 - definition 与静态 usage 一起重命名时，使用 `calcit fix --rule rename-definition-v1 --ns <ns> --def <old> --to <new> --format edn`，不要组合 `query search` 与文本替换猜调用点。普通 code、`:tests`、examples、schema 与 imports 会进入同一原子事务；macro、quoted data、dependency source 或缺少 source coordinate 的 blocker 会使事务整体拒绝，此时不得绕过为 declaration-only 改名。
 - 把 `(def name value)` 及其静态读取一起改成零参数函数时，使用 `calcit fix --rule value-to-zero-arg-fn-v1 --ns <ns> --def <name> --format edn`。该操作把初始化时的一次求值改成每次调用求值，会影响副作用、环境读取、对象身份、分配成本和缓存，Agent 必须展示并审阅这项语义变化，不能把它当作等价 lint fix 或加入 preset。普通 code、`:tests`、examples 与目标 schema 会原子更新；macro、quoted data、dependency source、schema type reference、自引用或缺少 source coordinate 时保持 fail closed。
+
+完成结构升级后，可用 `calcit fix --preset core-api-0.28-v1 --format edn` 一次预览 15 条已证明的核心 API 叶子改名，覆盖标量转换、谓词、集合方法和 core 效果方法。复用上述 revision 和 source 审阅流程；`source-coverage` 明确说明只扫描 `:code`，`:tests/:examples` 需人工核对。完整调用树的构造器、Option/Result helper 迁移仍单独运行对应规则，顺序见 `calcit docs read fix.md '0.28 核心 API 命名迁移'`。
 - 为单个 runtime value/function 补全缺失 schema 时，使用 `calcit fix --rule synthesize-schema-v1 --ns <ns> --def <name> --format edn`。它只复用正常 compiled inference 与普通项目源码中 resolver 确认、类型一致的全部调用点，填补已有 `Dynamic` 洞；`machine-applicable` 候选可按 revision 原子应用，带 `schema.args.<index>`、`schema.return...` 等 unresolved slot 的 `needs-review` 候选即使传 `--apply` 也不写回。tests/examples 的单个样本不能充当公共参数证明，不得为消除洞扩大成整个 `Dynamic`；macro、data/trait/impl contract 继续显式维护。
 
 CLI 入口按任务收敛：entry 语义验证使用 `--check-only`，只读事实使用 `query`/`analyze`，可证明的检测与改写统一使用
@@ -574,11 +576,11 @@ String 到名义标识使用 `to-tag: String -> Tag` 与 `to-symbol: String -> S
 
 测量经过时间使用 `monotonic-time-ms`，返回 Number 毫秒；只比较同一次运行中的两次读数，不把它当 Unix 时间戳或 CPU 使用量。旧 `cpu-time` 暂留兼容。`unix-time-ms` 是可能受宿主校时影响的 epoch 毫秒。新单调时钟名复用已有 native/JS/WASI Preview 1 实现；WASI 0.3 command 目前不支持时钟，应保留显式 capability 错误，不自行回退。
 
-List 带初始值的从左到右累加首选 `.fold initial reducer`，空 List 返回初值，累加器类型可不同于元素类型。旧 `.reduce` 方法可显式用 `core-list-fold-v1` 预览和迁移：仅具体 List 的旧、新方法契约都 proven 且指向同一 core 实现时自动改写；前缀 `reduce`、开放接收者和用户方法保留人工审阅。该规则目前不加入版本化 preset，也不自动修改 `:tests` / `:examples`。
+List 带初始值的从左到右累加首选 `.fold initial reducer`，空 List 返回初值，累加器类型可不同于元素类型。旧 `.reduce` 方法可用 `core-list-fold-v1` 或 `core-api-0.28-v1` preset 预览和迁移：仅具体 List 的旧、新方法契约都 proven 且指向同一 core 实现时自动改写；前缀 `reduce`、开放接收者和用户方法保留人工审阅，`:tests` / `:examples` 人工核对。
 
-List 元素间插入同类型分隔值首选 `.intersperse separator`，结果仍是 List；需要 String 时使用现有 `join-str`，两者不是同义词。旧 `.join` 方法可显式用 `core-list-intersperse-v1` 预览和迁移，仅具体 List 的两种方法契约均 proven 且同指 `calcit.core/intersperse` 时自动改写。前缀 `join`、未知 macro 和附带的 `:tests` / `:examples` 不自动改写；该规则不加入已发布 preset。
+List 元素间插入同类型分隔值首选 `.intersperse separator`，结果仍是 List；需要 String 时使用 `.join-string`。旧 `.join` 方法可用 `core-list-intersperse-v1` 或 `core-api-0.28-v1` preset 迁移，仅具体 List 的两种方法契约均 proven 且同指 `calcit.core/intersperse` 时自动改写。前缀 `join`、未知 macro 和附带的 `:tests` / `:examples` 仍需人工核对。
 
-Map 的去重值集合首选 `.distinct-values` / `distinct-values`，返回 `Set<V>`；旧 `.values` / `vals` 的返回值也是去重 Set，不应误认成保留重复值的 List。旧方法可显式用 `core-map-distinct-values-v1` 预览和迁移，自动改写仅限具体 Map 的新旧方法契约均 proven、同指 `calcit.core/distinct-values` 的完整调用。前缀 `vals`、开放接收者、用户方法和附带的 `:tests` / `:examples` 不自动改写；该规则不加入已发布 preset。
+Map 的去重值集合首选 `.distinct-values` / `distinct-values`，返回 `Set<V>`；旧 `.values` / `vals` 的返回值也是去重 Set，不应误认成保留重复值的 List。旧方法可用 `core-map-distinct-values-v1` 或 `core-api-0.28-v1` preset 迁移，自动改写仅限具体 Map 的新旧方法契约均 proven、同指 `calcit.core/distinct-values` 的完整调用。前缀 `vals`、开放接收者、用户方法和附带的 `:tests` / `:examples` 仍需人工核对。
 
 0.26.0 不删除旧 `option:*` / `result:*` 方法 helper：它们仍是 core method 的实现目标，不应在新应用代码中直接调用。其应用兼容入口最早于 0.27.0、且真实消费者在匹配的发布版依赖上迁移并通过严格检查、运行测试、Agent 文档和受影响 backend 验证，以及 core method 实现解耦后，才可考虑删除。完整条件见 [API 角色与命名](features/api-roles.md#旧方法-helper-的退场条件)；不能仅凭 fix 预览为空就推断可以删除。
 
