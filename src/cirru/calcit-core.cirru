@@ -6026,6 +6026,7 @@
             %{} 'TestEntry (:name |reads-astral-scalar-code)
               :code $ quote $ do
                 assert= 128512 $ get-char-code "|😀"
+                assert= 128512 $ .get-char-code "|😀"
                 assert= 128512 $ get-char-code $ char-from-code 128512
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |rejects-multiple-characters)
