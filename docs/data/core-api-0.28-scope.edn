@@ -1,0 +1,30 @@
+{}
+  :version |0.28.0-candidate
+  :scope |reviewed-conversion-and-effect-boundaries
+  :definitions $ []
+    {} (:name 'calcit.core/to-string) (:failure |需要_ToString_约束，不任意字符串化动态值)
+    {} (:name 'calcit.core/to-symbol) (:failure |仅接受_String，返回_Symbol)
+    {} (:name 'calcit.core/to-tag) (:failure |仅接受_String，返回_Tag)
+    {} (:name 'calcit.core/parse-float) (:failure |失败返回_Result_err，保留输入字符串)
+    {} (:name 'calcit.core/read-file) (:failure |同步读取失败抛错，JS_需要宿主注入)
+    {} (:name 'calcit.core/read-dir) (:failure |同步读取失败抛错，recursive_可省略，JS_需要宿主注入)
+    {} (:name 'calcit.core/monotonic-time-ms) (:failure |单调毫秒时钟，不代表墙钟时间)
+    {} (:name 'calcit.core/add-watch!) (:failure |重复_Tag_key_抛错，回调接收新旧值，成功返回_Unit)
+    {} (:name 'calcit.core/remove-watch!) (:failure |不存在的_Tag_key_抛错，成功返回_Unit)
+    {} (:name 'calcit.core/Option) (:failure |名义_enum，some_携带_T，none_无负载)
+    {} (:name 'calcit.core/Result) (:failure |名义_enum，ok_携带_T，err_携带_E)
+    {} (:name 'calcit.core/FsPath) (:failure |名义路径对象，文件操作失败使用_Result)
+    {} (:name 'calcit.core/FfiTask) (:failure |显式宿主边界，raw_仍为_Dynamic，不扩大到业务值)
+    {} (:name 'calcit.core/FfiResponse) (:failure |显式宿主边界，raw_仍为_Dynamic，不扩大到业务值)
+  :methods $ []
+    {} (:receiver ":: 'calcit.core/Option 'Number") (:name |.unwrap) (:failure |none_抛错)
+    {} (:receiver ":: 'calcit.core/Option 'Number") (:name |.unwrap-or) (:failure |none_使用同类型默认值)
+    {} (:receiver ":: 'calcit.core/Result 'Number 'String") (:name |.unwrap-or) (:failure |err_使用同类型默认值)
+    {} (:receiver |calcit.core/FsPath) (:name |.read-text) (:failure |文件读取失败返回_Result_err)
+    {} (:receiver |calcit.core/FsPath) (:name |.read-dir) (:failure |目录读取失败返回_Result_err)
+    {} (:receiver |calcit.core/FsPath) (:name |.walk-dir) (:failure |递归目录读取失败返回_Result_err)
+    {} (:receiver |calcit.core/FsPath) (:name |.write-text!) (:failure |文件写入失败返回_Result_err)
+    {} (:receiver ":: 'calcit.core/FfiTask 'Number") (:name |.cancel!) (:failure |宿主取消边界，返回_Unit)
+    {} (:receiver ":: 'calcit.core/FfiTask 'Number") (:name |.cancel-with!) (:failure |宿主取消边界，理由类型取自声明_schema)
+    {} (:receiver ":: 'calcit.core/FfiResponse 'Number") (:name |.resolve!) (:failure |宿主响应边界，值类型取自声明_schema)
+    {} (:receiver ":: 'calcit.core/FfiResponse 'Number") (:name |.reject!) (:failure |宿主响应失败边界，错误类型取自声明_schema)

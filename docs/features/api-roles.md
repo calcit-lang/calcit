@@ -280,6 +280,8 @@ assert= true $ &str:includes? |abc |b
 
 这是 [#1568](https://github.com/calcit-lang/calcit/issues/1568) 的策略基础。**0.28.0 的冻结清单与 CI 门禁尚在实施，不代表本页所有目标名都已经发布或冻结。** 上文的“目标”“暂缓”和未通过消费者验收的条目不能成为稳定 API 承诺。使用者先查询已安装版本，维护者再依据发布版证据完成清单。
 
+首批转换、解析与副作用边界的候选证据见 [核心 API 契约基线](../data/README.md)：使用原生 Cirru EDN 保存 schema、名义声明和运行时 arity，检查现有方法派发，并在 CI 对当前及 Git 历史基线比较。它是部分 candidate，不是全量冻结，也不新增用户查询命令或动态类型统计。
+
 冻结的是用户层的调用契约，不是编译器内部表示。审阅后的清单需要覆盖首选类型/构造入口、普通函数、trait 与接收者方法；每项记录公开名字、接收者与参数顺序、optional/rest、泛型和 `where` 约束、返回类型、失败语义及实际 backend 支持范围。`Option` 等名义类型不能因带 `:internal` 而漏掉；方法的 `definition` 只是实现路径，`&` primitive、宏展开 helper 与 lowering 名不因此冻结。core 之外的模块由各自仓库维护版本契约，不用 core 清单冻结 npm、native ABI 或 WIT 的外部名字。
 
 清单应从已有 `query def/context/type --format edn` 的结构化证据整理，而不是新增公开 API registry 或查询命令。函数 schema 与具体 receiver 上的方法契约分别导出：只抓一个函数定义无法证明方法派发、歧义、generic bound 或所有 backend 支持。保留原生 Cirru EDN 的 tag、symbol 与类型表达，不把展示字符串作为签名的唯一证据。清单是发布与 review 的基线，不是另一份驱动运行时的定义。

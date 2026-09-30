@@ -1,0 +1,197 @@
+{}
+  :scope |reviewed-conversion-and-effect-boundaries
+  :version |0.28.0-candidate
+  :definitions $ []
+    {} (:declaration nil)
+      :failure "|需要_ToString_约束，不任意字符串化动态值"
+      :name 'calcit.core/to-string
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'String)
+        :args $ [] 'T
+        :generics $ [] 'T
+        :where $ {} $ 'T 'ToString
+    {} (:declaration nil)
+      :failure "|仅接受_String，返回_Symbol"
+      :name 'calcit.core/to-symbol
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Symbol)
+        :args $ [] 'String
+    {} (:declaration nil)
+      :failure "|仅接受_String，返回_Tag"
+      :name 'calcit.core/to-tag
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Tag)
+        :args $ [] 'String
+    {} (:declaration nil)
+      :failure "|失败返回_Result_err，保留输入字符串"
+      :name 'calcit.core/parse-float
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'String
+        :return $ :: 'Result 'Number 'String
+    {} (:declaration nil)
+      :failure "|同步读取失败抛错，JS_需要宿主注入"
+      :name 'calcit.core/read-file
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'String)
+        :args $ [] 'String
+    {} (:declaration nil)
+      :failure "|同步读取失败抛错，recursive_可省略，JS_需要宿主注入"
+      :name 'calcit.core/read-dir
+      :runtime-arity $ {} (:max 2) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'String 'Bool
+        :return $ :: 'List 'String
+    {} (:declaration nil) (:failure "|单调毫秒时钟，不代表墙钟时间")
+      :name 'calcit.core/monotonic-time-ms
+      :runtime-arity $ {} (:max 0) (:min 0)
+      :schema $ quote $ {} (:kind :fn) (:return 'Number)
+        :args $ []
+    {} (:declaration nil)
+      :failure "|重复_Tag_key_抛错，回调接收新旧值，成功返回_Unit"
+      :name 'calcit.core/add-watch!
+      :runtime-arity $ {} (:max 3) (:min 3)
+      :schema $ quote $ {} (:kind :fn) (:return 'Unit)
+        :args $ [] (:: 'Ref 'T) 'Tag $ :: 'Fn
+          {} (:return 'Unit)
+            :args $ [] 'T 'T
+        :generics $ [] 'T
+    {} (:declaration nil)
+      :failure "|不存在的_Tag_key_抛错，成功返回_Unit"
+      :name 'calcit.core/remove-watch!
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn) (:return 'Unit)
+        :args $ [] (:: 'Ref 'T) 'Tag
+        :generics $ [] 'T
+    {}
+      :failure "|名义_enum，some_携带_T，none_无负载"
+      :name 'calcit.core/Option
+      :runtime-arity nil
+      :schema nil
+      :declaration $ quote $ defenum Option ([] 'T) (:some 'T) (:none)
+    {}
+      :failure "|名义_enum，ok_携带_T，err_携带_E"
+      :name 'calcit.core/Result
+      :runtime-arity nil
+      :schema nil
+      :declaration $ quote $ defenum Result ([] 'T 'E) (:ok 'T) (:err 'E)
+    {}
+      :failure "|名义路径对象，文件操作失败使用_Result"
+      :name 'calcit.core/FsPath
+      :runtime-arity nil
+      :declaration $ quote $ defstruct FsPath (:value 'String)
+      :schema $ quote 'StructDef
+    {}
+      :failure "|显式宿主边界，raw_仍为_Dynamic，不扩大到业务值"
+      :name 'calcit.core/FfiTask
+      :runtime-arity nil
+      :declaration $ quote $ defstruct FfiTask (:raw 'Dynamic)
+      :schema $ quote 'StructDef
+    {}
+      :failure "|显式宿主边界，raw_仍为_Dynamic，不扩大到业务值"
+      :name 'calcit.core/FfiResponse
+      :runtime-arity nil
+      :declaration $ quote $ defstruct FfiResponse (:raw 'Dynamic)
+      :schema $ quote 'StructDef
+  :methods $ []
+    {} (:failure "|none_抛错") (:name |.unwrap)
+      :provenance 'calcit.core/option:unwrap
+      :receiver "|:: 'calcit.core/Option 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'T)
+        :args $ [] $ :: 'Option 'T
+        :generics $ [] 'T
+    {} (:failure "|none_使用同类型默认值") (:name |.unwrap-or)
+      :provenance 'calcit.core/option:unwrap-or
+      :receiver "|:: 'calcit.core/Option 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn) (:return 'T)
+        :args $ [] (:: 'Option 'T) 'T
+        :generics $ [] 'T
+    {} (:failure "|err_使用同类型默认值") (:name |.unwrap-or)
+      :provenance 'calcit.core/result:unwrap-or
+      :receiver "|:: 'calcit.core/Result 'Number 'String"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn) (:return 'T)
+        :args $ [] (:: 'Result 'T 'E) 'T
+        :generics $ [] 'T 'E
+    {}
+      :failure "|文件读取失败返回_Result_err"
+      :name |.read-text
+      :provenance 'calcit.core/fs-path:read-text
+      :receiver |calcit.core/FsPath
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'FsPath
+        :return $ :: 'Result 'String 'String
+    {}
+      :failure "|目录读取失败返回_Result_err"
+      :name |.read-dir
+      :provenance 'calcit.core/fs-path:read-dir
+      :receiver |calcit.core/FsPath
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'FsPath
+        :return $ :: 'Result (:: 'List 'FsPath) 'String
+    {}
+      :failure "|递归目录读取失败返回_Result_err"
+      :name |.walk-dir
+      :provenance 'calcit.core/fs-path:walk-dir
+      :receiver |calcit.core/FsPath
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'FsPath
+        :return $ :: 'Result (:: 'List 'FsPath) 'String
+    {}
+      :failure "|文件写入失败返回_Result_err"
+      :name |.write-text!
+      :provenance 'calcit.core/fs-path:write-text
+      :receiver |calcit.core/FsPath
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'FsPath 'String
+        :return $ :: 'Result 'Unit 'String
+    {} (:failure "|宿主取消边界，返回_Unit") (:name |.cancel!)
+      :provenance 'calcit.core/ffi-task:cancel
+      :receiver "|:: 'calcit.core/FfiTask 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Unit)
+        :args $ [] 'FfiTask
+    {}
+      :failure "|宿主取消边界，理由类型取自声明_schema"
+      :name |.cancel-with!
+      :provenance 'calcit.core/ffi-task:cancel-with
+      :receiver "|:: 'calcit.core/FfiTask 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn) (:return 'Unit)
+        :args $ [] 'FfiTask 'T
+        :generics $ [] 'T
+    {}
+      :failure "|宿主响应边界，值类型取自声明_schema"
+      :name |.resolve!
+      :provenance 'calcit.core/ffi-response:resolve
+      :receiver "|:: 'calcit.core/FfiResponse 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn) (:return 'Unit)
+        :args $ [] 'FfiResponse 'T
+        :generics $ [] 'T
+    {}
+      :failure "|宿主响应失败边界，错误类型取自声明_schema"
+      :name |.reject!
+      :provenance 'calcit.core/ffi-response:reject
+      :receiver "|:: 'calcit.core/FfiResponse 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn) (:return 'Unit)
+        :args $ [] 'FfiResponse 'T
+        :generics $ [] 'T
