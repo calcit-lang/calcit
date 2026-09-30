@@ -52,6 +52,10 @@
           :code $ quote $ defimpl CoreShowImpl calcit.core/Show (.show core-show:show)
           :examples $ []
           :schema $ :: 'Impl
+        'CoreToStringImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl CoreToStringImpl calcit.core/ToString (.to-string core-show:show)
+          :examples $ []
+          :schema $ :: 'Impl
         'Demo0 $ %{} 'CodeEntry (:doc "|Enum prototype for tuple trait tests")
           :code $ quote $ defenum Demo (:demo 'Dynamic)
           :examples $ []
@@ -646,6 +650,18 @@
           :tests $ [] $ %{} 'TestEntry (:name |dispatches-by-bound-trait)
             :code $ quote $ assert= true (test-qualified-contains-boundary)
             :tags $ #{} :predicate :trait :unit
+        'test-turn-str-custom $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn test-turn-str-custom ()
+            let
+                Person $ impl-traits Person0 CoreToStringImpl
+                p $ %{} Person $ :name |Alice
+              turn-str p
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |dispatches-custom-to-string)
+            :code $ quote $ assert= |Person:Alice (test-turn-str-custom)
+            :tags $ #{} :trait :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-traits.main
           :require $ calcit.test :refer $ throws?
