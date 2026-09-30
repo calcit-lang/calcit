@@ -78,6 +78,8 @@ For source-backed definitions, `query def` prints the stored Cirru body. For spe
 
 `query type` 给出 `.method` 的类型契约，方法后面的 definition path 只是实现入口；`query def/context` 的 `:internal` 标签不能被误读为公开推荐。对已存在显式 fix 且旧、新方法在具体接收者上都证明为同一实现、同一参数和返回契约的别名，查询附带 `role: preferred` 或 `role: compatibility`；兼容名还有 `preferred-name` 与 `fix-rule`（Cirru EDN 拼写；JSON 字段使用下划线）。`proven` 只表示类型契约可用，**不等于首选名称**。开放、歧义或不同实现的方法不会凭拼写获得推荐角色；准确查询旧名仍可见原实现。区分 nominal 类型名、构造器和内部函数时，参见 [API 命名角色](../features/api-roles.md)。
 
+默认 Markdown 输出先列已证明的首选方法，再列尚未完成角色归类的方法，最后列附有首选名和 fix 规则的兼容方法。分组仅改变阅读顺序，不隐藏方法、不改变分派优先级或结构化输出；尚未归类不表示应优先使用。
+
 例如 `query type ":: 'List 'Number" --format edn` 会把单元素追加的 `.append`、长度查询的 `.len` 标为首选，旧 `.add/.count` 分别关联 `core-list-add-v1`、`core-collection-len-v1`。同一长度规则也覆盖契约已证明的 Map/Set/String；Map `.add` 是不同的 entry 操作，不会因此变成 `.append` 或 `.assoc` 的兼容别名。
 
 命名整理的已实现入口与未来目标必须区分：用 `calcit docs read api-roles.md '逐族命名决策'`
@@ -222,7 +224,7 @@ calcit query type calcit.core/ceil
 calcit query type "'Number" --format edn
 ```
 
-`query type` loads and preprocesses static metadata but does not run the project init or reload function. It lists methods in dispatch-precedence order and shows the impl that contributes each method. Definition targets first use an explicit schema, then static source inference. This allows `defstruct` and `defenum` declarations with a dynamic entry schema to expose their named type and methods without constructing a runtime value. If neither source is sufficient, query a concrete type annotation instead.
+`query type` 只加载和预处理静态元数据，不执行项目的 init/reload 函数。默认 Markdown 按已证明首选、未归类、兼容入口分组；显式 EDN/JSON 保持原有方法列表和分派优先级，每项仍可追溯贡献该方法的实现。查询定义时先使用显式 schema，再尝试静态源码推断。因此，即使 `defstruct`、`defenum` 的 entry schema 为 Dynamic，也能在不构造运行时值的情况下查看名义类型及方法；若两种证据都不足，请查询具体类型标注。
 
 ### Inspect an Expression Type (`type-at`)
 
