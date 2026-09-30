@@ -1475,7 +1475,11 @@ impl CalcitProc {
         return_type: some_tag("string"),
         arg_types: vec![dynamic_tag()],
       }),
-      FormatCirru | FormatCirruEdn => Some(ProcTypeSignature {
+      FormatCirru => Some(ProcTypeSignature {
+        return_type: some_tag("string"),
+        arg_types: vec![some_tag("list"), some_tag("bool")],
+      }),
+      FormatCirruEdn => Some(ProcTypeSignature {
         return_type: some_tag("string"),
         arg_types: vec![dynamic_tag(), some_tag("bool")],
       }),
