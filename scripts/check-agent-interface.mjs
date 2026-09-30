@@ -112,6 +112,27 @@ const scenarios = [
     },
   },
   {
+    name: "FsPath write method leads to a safe canonical example",
+    args: ["calcit/test.cirru", "query", "type", "calcit.core/FsPath", "--format", "json"],
+    check(result) {
+      const write = result.data.methods.find((method) => method.name === ".write-text!");
+      assert.equal(write?.status, "proven");
+      assert.equal(write?.role, "preferred");
+      assert.equal(write?.definition, "calcit.core/fs-path:write-text");
+      assert.deepEqual(write?.parameter_types, ["string"]);
+      assert.equal(write?.return_type, "type Result<unit, string>");
+    },
+  },
+  {
+    name: "FsPath write definition example uses the preferred method",
+    args: ["src/cirru/calcit-core.cirru", "query", "context", "calcit.core/fs-path:write-text", "--format", "json"],
+    check(result) {
+      assert.equal(result.data.examples.total, 1);
+      assert.match(result.data.examples.items[0]?.cirru, /\.write-text!/);
+      assert.match(result.data.examples.items[0]?.cirru, /\.err\?/);
+    },
+  },
+  {
     name: "list append, length, fold, intersperse, and index lookup expose proven contracts",
     args: ["calcit/test.cirru", "query", "type", ":: 'List 'Number", "--format", "json"],
     check(result) {

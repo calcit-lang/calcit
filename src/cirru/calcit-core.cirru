@@ -5804,7 +5804,8 @@
           :doc "|把 UTF-8 文本写入 FsPath 并返回 Result<Unit,String>；WASI 只访问 host 显式授予的 preopen。"
           :code $ quote $ defn fs-path:write-text (self content)
             &fs-write-text Result (:value self) content "|fs-path:write-text failed"
-          :examples $ []
+          :examples $ [] $ quote
+            assert= true $ .err? $ .write-text! (fs:path |/calcit-agent-example-missing-parent/file/) |content
           :schema $ :: 'Fn $ {}
             :args $ [] 'FsPath 'String
             :return $ :: 'Result 'Unit 'String
