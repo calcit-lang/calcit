@@ -4,6 +4,16 @@ import { copyFile, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { char_from_code, get_char_code } from "../lib/calcit.procs.mjs";
+
+assert.equal(char_from_code(0x1f600), "😀");
+assert.equal(get_char_code("😀"), 0x1f600);
+for (const code of [NaN, Infinity, -1, 0xd800, 0x110000, 1.5]) {
+  assert.throws(() => char_from_code(code), /Unicode scalar value/);
+}
+for (const text of ["", "ab", "\ud800"]) {
+  assert.throws(() => get_char_code(text), /Unicode scalar character/);
+}
 
 const binary = resolve(process.env.CALCIT_BIN ?? "target/debug/calcit");
 const run = (...args) => execFileSync(binary, args, { encoding: "utf8", stdio: "pipe", maxBuffer: 16 * 1024 * 1024 });
@@ -11,9 +21,12 @@ const corePath = resolve("src/cirru/calcit-core.cirru");
 // Read the authoritative definition tests as AST, not a second JS assertion suite.
 const core = JSON.parse(run("cirru", "parse-edn", "--file", corePath));
 const definitions = core[":files"]["'calcit.core"].defs;
-const successNames = ["unicode-scalar-indexing", "scalar-slice-boundaries", "scalar-search-indices"];
-const failureNames = ["rejects-invalid-string-indices", "scalar-slice-invalid-evaluation"];
-const available = [...definitions["'last"].tests, ...definitions["'&str:slice"].tests, ...definitions["'str-find-index"].tests];
+const successNames = ["unicode-scalar-indexing", "scalar-slice-boundaries", "scalar-search-indices",
+  "roundtrips-astral-scalar", "reads-astral-scalar-code"];
+const failureNames = ["rejects-invalid-string-indices", "scalar-slice-invalid-evaluation",
+  "rejects-invalid-scalars", "rejects-multiple-characters"];
+const available = [...definitions["'last"].tests, ...definitions["'&str:slice"].tests, ...definitions["'str-find-index"].tests,
+  ...definitions["'char-from-code"].tests, ...definitions["'get-char-code"].tests];
 const tests = [...successNames, ...failureNames].map((name) => {
   const test = available.find((entry) => entry.name === name);
   assert.ok(test, `missing Unicode definition test: ${name}`);
@@ -51,14 +64,15 @@ try {
   // The existing WASM subset has no catchable try boundary. Run successful
   // assertions unchanged; expose invalid operations separately to check traps.
   run(snapshot, "edit", "rm-def", "calcit.unicode/main!");
-  const assertions = tests.filter((test) => successNames.includes(test.name)).flatMap((test) => test.code.__edn_quote.slice(1));
+  const testExpressions = (test) => test.code.__edn_quote[0] === "do" ? test.code.__edn_quote.slice(1) : [test.code.__edn_quote];
+  const assertions = tests.filter((test) => successNames.includes(test.name)).flatMap(testExpressions);
   for (const [index, assertion] of assertions.entries()) {
     const name = `wasm-case-${index}`;
     run(snapshot, "edit", "def", `calcit.unicode/${name}`, "--input-format", "json-ast", "--code",
       JSON.stringify(["defwasm-export", name, [], assertion, "&unit"]));
     run(snapshot, "edit", "schema", `calcit.unicode/${name}`, "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
   }
-  const invalidAssertions = tests.filter((test) => failureNames.includes(test.name)).flatMap((test) => test.code.__edn_quote.slice(1));
+  const invalidAssertions = tests.filter((test) => failureNames.includes(test.name)).flatMap(testExpressions);
   for (const [index, assertion] of invalidAssertions.entries()) {
     assert.equal(assertion[0], "assert=");
     assert.equal(assertion[2][0], "try");

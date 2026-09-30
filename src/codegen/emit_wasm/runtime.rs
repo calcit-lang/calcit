@@ -7276,10 +7276,42 @@ fn build_rt_char_from_code(str_tag: i32) -> CompiledFn {
   // locals: 1=code(i32), 2=raw_base(i32), 3=new_ptr(i32), 4=byte_len(i32)
   let mut b: Vec<Instruction> = Vec::new();
 
+  // Reject non-integers, out-of-range values, and surrogate code points.
+  b.push(Instruction::LocalGet(0));
+  b.push(Instruction::LocalGet(0));
+  b.push(Instruction::F64Trunc);
+  b.push(Instruction::F64Ne);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::Unreachable);
+  b.push(Instruction::End);
+  b.push(Instruction::LocalGet(0));
+  b.push(Instruction::F64Const(0.0.into()));
+  b.push(Instruction::F64Lt);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::Unreachable);
+  b.push(Instruction::End);
+  b.push(Instruction::LocalGet(0));
+  b.push(Instruction::F64Const((0x10ffff as f64).into()));
+  b.push(Instruction::F64Gt);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::Unreachable);
+  b.push(Instruction::End);
+
   // code = i32(cp)
   b.push(Instruction::LocalGet(0));
   b.push(Instruction::I32TruncF64U);
   b.push(Instruction::LocalSet(1));
+
+  b.push(Instruction::LocalGet(1));
+  b.push(Instruction::I32Const(0xd800));
+  b.push(Instruction::I32GeU);
+  b.push(Instruction::LocalGet(1));
+  b.push(Instruction::I32Const(0xdfff));
+  b.push(Instruction::I32LeU);
+  b.push(Instruction::I32And);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::Unreachable);
+  b.push(Instruction::End);
 
   // Determine byte_len based on codepoint range
   // Default: 1 byte (ASCII)

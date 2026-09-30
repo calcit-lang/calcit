@@ -1411,7 +1411,55 @@ pub(super) fn emit_blank(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
   Ok(())
 }
 
-/// `get-char-code` — returns the Unicode code point of the first character as f64.
+/// Trap unless the string contains exactly one UTF-8 scalar value.
+pub(super) fn emit_assert_single_char_utf8(ctx: &mut WasmGenCtx, ptr: u32, b0: u32) {
+  let len = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(len));
+  ctx.emit(Instruction::LocalGet(len));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+
+  let width = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(b0));
+  ctx.emit(Instruction::I32Const(0x80));
+  ctx.emit(Instruction::I32LtU);
+  ctx.emit(Instruction::If(BlockType::Empty));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::LocalSet(width));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(b0));
+  ctx.emit(Instruction::I32Const(0xe0));
+  ctx.emit(Instruction::I32LtU);
+  ctx.emit(Instruction::If(BlockType::Empty));
+  ctx.emit(Instruction::I32Const(2));
+  ctx.emit(Instruction::LocalSet(width));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(b0));
+  ctx.emit(Instruction::I32Const(0xf0));
+  ctx.emit(Instruction::I32LtU);
+  ctx.emit(Instruction::If(BlockType::Empty));
+  ctx.emit(Instruction::I32Const(3));
+  ctx.emit(Instruction::LocalSet(width));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::I32Const(4));
+  ctx.emit(Instruction::LocalSet(width));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalGet(len));
+  ctx.emit(Instruction::LocalGet(width));
+  ctx.emit(Instruction::I32Ne);
+  ctx.emit(Instruction::If(BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+}
+
+/// `get-char-code` — returns the Unicode code point of a single character as f64.
 /// Handles full UTF-8 decoding (1-, 2-, 3-, 4-byte sequences).
 pub(super) fn emit_get_char_code(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "get-char-code")?;
@@ -1427,6 +1475,8 @@ pub(super) fn emit_get_char_code(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   ctx.emit(Instruction::LocalGet(content));
   ctx.emit(Instruction::I32Load8U(mem_arg_byte(0)));
   ctx.emit(Instruction::LocalSet(b0));
+
+  emit_assert_single_char_utf8(ctx, ptr, b0);
 
   let result = ctx.alloc_local_typed(ValType::I32);
 
