@@ -9544,6 +9544,26 @@ pub fn preprocess_assert_type(
   if let Calcit::Local(local) = &asserted_target {
     let asserted_type = local_nominal_type.unwrap_or_else(|| CalcitTypeAnnotation::parse_type_annotation_form(&asserted_type_form));
     let current_type = resolve_type_value(&asserted_target, ctx.scope_types).unwrap_or_else(|| local.type_info.clone());
+    // An assertion cannot replace contradictory evidence with its own target.
+    // Open boundaries remain distinct from a known mismatch; their policy is
+    // handled separately rather than silently promoted to a complete proof.
+    if current_type
+      .prove_with_bindings(asserted_type.as_ref(), &mut HashMap::new())
+      .is_mismatch()
+    {
+      return Err(CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        format!(
+          "assert-type cannot prove local `{}`: expected `{}`, got `{}`; correct the assertion or use a checked decoder at the data boundary",
+          local.sym,
+          asserted_type.to_brief_string(),
+          current_type.to_brief_string(),
+        ),
+        "E_ASSERT_TYPE_MISMATCH",
+        ctx.call_stack,
+        target_raw.get_location(),
+      ));
+    }
     let type_entry = if current_type.as_ref().is_compatible_with(asserted_type.as_ref())
       && annotation_dynamic_weight(current_type.as_ref()) < annotation_dynamic_weight(asserted_type.as_ref())
     {
@@ -13634,7 +13654,7 @@ mod tests {
     let expr = Cirru::List(vec![
       Cirru::leaf("&let"),
       Cirru::List(vec![Cirru::leaf("x"), Cirru::leaf("1")]),
-      Cirru::List(vec![Cirru::leaf("assert-type"), Cirru::leaf("x"), Cirru::leaf(":fn")]),
+      Cirru::List(vec![Cirru::leaf("assert-type"), Cirru::leaf("x"), Cirru::leaf(":number")]),
       Cirru::leaf("x"),
     ]);
     let code = code_to_calcit(&expr, "tests.assert", "demo", vec![]).expect("parse cirru");
@@ -13664,7 +13684,10 @@ mod tests {
         "type info should persist for later usages"
       );
       // Verify the type value
-      assert!(matches!(local.type_info.as_ref(), CalcitTypeAnnotation::DynFn), "type should be fn");
+      assert!(
+        matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Number),
+        "type should remain number"
+      );
     } else {
       panic!("expected trailing local expression");
     }

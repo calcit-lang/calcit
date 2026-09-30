@@ -488,6 +488,8 @@ pub(crate) enum TypeBoundaryReason {
   RecursiveTypeSlot,
   UnresolvedNominalIdentity,
   TypeComplexityLimit,
+  NumericRefinement,
+  SyntaxValue,
 }
 
 const TYPE_RELATION_NODE_LIMIT: usize = 16_384;
@@ -740,6 +742,13 @@ fn bounded_plain_type_relation<'a>(
       | (Type::Unit, Type::Unit) => {}
       (Type::Numeric(actual), Type::Numeric(expected)) if actual == expected => {}
       (Type::Numeric(_), Type::Number) => {}
+      (Type::Number | Type::Numeric(_), Type::Numeric(_)) => {
+        if matches!(mode, PlainRelationMode::Proof) {
+          result = result.and(NeedsBoundary(Boundary::NumericRefinement));
+        } else {
+          return Ok(Some((Mismatch, stats)));
+        }
+      }
       (Type::Nil, Type::Optional(_)) | (Type::Nil, Type::JsNullish(_)) => {
         if matches!(mode, PlainRelationMode::Proof) {
           result = result.and(NeedsBoundary(Boundary::LegacyNullish));
@@ -756,6 +765,14 @@ fn bounded_plain_type_relation<'a>(
           result = result.and(NeedsBoundary(Boundary::LegacyNullish));
         }
         worklist.push((plain, inner.as_ref(), depth + 1));
+      }
+      (Type::Optional(inner) | Type::JsNullish(inner), plain) if !matches!(plain, Type::Optional(_) | Type::JsNullish(_)) => {
+        if matches!(mode, PlainRelationMode::Proof) {
+          result = result.and(NeedsBoundary(Boundary::LegacyNullish));
+          worklist.push((inner.as_ref(), plain, depth + 1));
+        } else {
+          return Ok(Some((Mismatch, stats)));
+        }
       }
       (Type::Fn(_), _)
       | (_, Type::Fn(_))
@@ -4640,6 +4657,16 @@ impl CalcitTypeAnnotation {
       },
       (_, Self::Dynamic) => Proven,
       (Self::Dynamic, _) => NeedsBoundary(Boundary::Dynamic),
+      (Self::Syntax(_), expected) if !matches!(expected, Self::Syntax(_)) => NeedsBoundary(Boundary::SyntaxValue),
+      // A broad runtime family does not contradict a particular nominal
+      // identity, but it cannot prove that identity without a checked boundary.
+      (Self::Custom(actual), expected)
+        if (Self::custom_keyword_matches(actual, "struct") || Self::custom_keyword_matches(actual, "record"))
+          && expected.resolve_to_struct().is_some() =>
+      {
+        NeedsBoundary(Boundary::UnresolvedNominalIdentity)
+      }
+      (Self::AnonymousEnum, expected) if expected.resolve_to_enum().is_some() => NeedsBoundary(Boundary::UnresolvedNominalIdentity),
       (Self::Enum(_, _) | Self::EnumValue(_) | Self::AnonymousEnum, Self::AnonymousEnum) => Proven,
       (actual @ Self::TypeRef(_, _), Self::AnonymousEnum) => {
         if actual.resolve_to_enum().is_some() {
@@ -4664,6 +4691,13 @@ impl CalcitTypeAnnotation {
       }
       (Self::Optional(actual), Self::Optional(expected)) | (Self::JsNullish(actual), Self::JsNullish(expected)) => {
         actual.prove_with_staged_bindings(expected, bindings)
+      }
+      (Self::Optional(actual) | Self::JsNullish(actual), expected) if !matches!(expected, Self::Optional(_) | Self::JsNullish(_)) => {
+        if actual.prove_with_staged_bindings(expected, bindings).is_mismatch() {
+          Mismatch
+        } else {
+          NeedsBoundary(Boundary::LegacyNullish)
+        }
       }
       (_, Self::Optional(_)) | (Self::Optional(_), _) | (_, Self::JsNullish(_)) | (Self::JsNullish(_), _) => {
         if self.compatible_with_bindings(expected, &mut bindings.clone()) {
@@ -6365,6 +6399,14 @@ mod tests {
 
     assert!(int8.is_compatible_with(&number));
     assert!(!number.is_compatible_with(&int8));
+    assert_eq!(
+      number.prove_with_bindings(&int8, &mut TypeBindings::new()),
+      TypeProof::NeedsBoundary(TypeBoundaryReason::NumericRefinement),
+    );
+    assert!(
+      !number.is_proven_for(&int8),
+      "a range check is required, not an implicit conversion"
+    );
     assert!(
       bounded_plain_type_relation(&int8, &number, PlainRelationMode::Compatibility)
         .expect("numeric widening stays inside the relation budget")
@@ -7803,7 +7845,16 @@ mod tests {
     let mut bindings = TypeBindings::new();
     let anonymous = CalcitTypeAnnotation::AnonymousEnum;
     let slot = CalcitTypeAnnotation::TypeSlot(slot_name.clone());
-    assert_eq!(anonymous.prove_with_bindings(&slot, &mut bindings), TypeProof::Mismatch);
+    let before = bindings.clone();
+    assert_eq!(
+      anonymous.prove_with_bindings(&slot, &mut bindings),
+      TypeProof::NeedsBoundary(TypeBoundaryReason::UnresolvedNominalIdentity),
+    );
+    assert!(
+      !anonymous.is_proven_for(&slot),
+      "erased identity cannot prove a resolved nominal slot"
+    );
+    assert_eq!(bindings, before, "missing nominal evidence must not commit bindings");
     assert_eq!(
       concrete_enum.prove_with_bindings(&CalcitTypeAnnotation::AnonymousEnum, &mut bindings),
       TypeProof::Proven

@@ -32,7 +32,7 @@
     "bench-struct-index": "yarn compile && node scripts/bench-struct-index.mjs",
     "check-smooth": "yarn fmt-rs && yarn lint-rs && yarn test-rs && yarn check-all",
     "check-all": "yarn compile && yarn check-js-runtime && node scripts/check-file-read-names.mjs && node scripts/check-enum-impl-cycle.mjs && node scripts/check-typed-source-alias.mjs && node scripts/check-parse-boundary.mjs && yarn check-js-ffi-source && yarn check-strict-default && yarn check-agent-interface && node --test scripts/core-api-contract.test.mjs && node scripts/core-api-contract.mjs && yarn try-core-tests && yarn check-core-dynamic-classification && yarn try-rs && yarn try-js && node scripts/check-struct-field-js.mjs && yarn try-ir && yarn try-wasm && yarn check-literal-paths && yarn check-typed-method-rem",
-    "check-strict-default": "cargo build --bin calcit && node scripts/check-strict-default.mjs",
+    "check-strict-default": "cargo build --bin calcit && node scripts/check-strict-default.mjs && node scripts/check-known-assertion.mjs",
     "check-agent-interface": "cargo build --bin calcit && node scripts/check-agent-interface.mjs",
     "try-all": "yarn check-all",
     "try-core-tests": "cargo run --bin calcit -- src/cirru/calcit-core.cirru test --tag unit --summary-only --require-match",
