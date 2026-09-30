@@ -3052,6 +3052,14 @@ fn rewrite_core_nominal_constructor_tree(
   }
 }
 
+/// Detect source-level legacy constructors before attempting compiler-resolved rewrites.
+fn contains_core_nominal_constructor_candidate(node: &Cirru) -> bool {
+  match node {
+    Cirru::Leaf(name) => core_nominal_constructor(name.as_ref()).is_some(),
+    Cirru::List(items) => items.iter().any(contains_core_nominal_constructor_candidate),
+  }
+}
+
 /// Plan direct nominal construction only from compiler-resolved core helper calls.
 fn plan_core_nominal_constructor_fixes(
   snapshot: &Snapshot,
@@ -3065,7 +3073,7 @@ fn plan_core_nominal_constructor_fixes(
       .get(namespace)
       .and_then(|file| file.defs.get(definition))
       .ok_or_else(|| format!("Selected definition `{namespace}/{definition}` is missing from the source snapshot."))?;
-    if list_head(&entry.code) == Some("defmacro") {
+    if list_head(&entry.code) == Some("defmacro") || !contains_core_nominal_constructor_candidate(&entry.code) {
       continue;
     }
     let mut bindings = HashSet::new();

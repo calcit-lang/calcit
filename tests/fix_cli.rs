@@ -5091,6 +5091,41 @@ fn retired_surface_rules_point_to_the_published_migration_bridge() {
 }
 
 #[test]
+fn core_nominal_constructor_preview_skips_unrelated_type_slot_declarations() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/declare-dispatch-slot",
+        "--code",
+        "quote $ deftype-slot :dispatch-op",
+      ],
+    ),
+    "install type-slot declaration",
+  );
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-nominal-constructor-v1",
+      "--ns",
+      "fix-command.main",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&preview, "whole-namespace constructor preview with unrelated type slot");
+  let report = parse_stdout(&preview);
+  assert_eq!(report["command"], "fix");
+  assert_eq!(report["data"]["suggestions"], serde_json::json!([]));
+}
+
+#[test]
 fn core_nominal_constructor_rule_previews_applies_and_is_idempotent() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
