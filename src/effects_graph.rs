@@ -716,7 +716,7 @@ pub fn classify_call(name: &str, tags: Option<&HashSet<EdnTag>>) -> Vec<String> 
 
 fn classify_by_name(name: &str) -> Option<Vec<String>> {
   let kinds = match name {
-    "read-file" => vec!["io/read"],
+    "read-file" | "&read-file" => vec!["io/read"],
     "write-file" => vec!["io/write"],
     "get-env" => vec!["env"],
     "raise" => vec!["control/raise"],
@@ -2293,6 +2293,7 @@ mod tests {
   #[test]
   fn classify_read_file_by_name() {
     let kinds = classify_call("read-file", None);
+    assert_eq!(classify_call("&read-file", None), kinds);
     assert_eq!(kinds, vec!["io/read".to_string()]);
   }
 

@@ -8151,6 +8151,73 @@ fn preset_and_rule_selection_conflict() {
 }
 
 #[test]
+fn rename_module_definitions_to_public_file_names_preserves_attached_tests() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (old, new) in [("legacy-file-reader", "read-file"), ("legacy-dir-reader", "read-dir")] {
+    let target = format!("fix-command.main/{old}");
+    let code = format!("quote $ defn {old} (path) $ &str:concat path |!");
+    let test = format!("quote $ if (&= |example! $ {old} |example) &unit $ raise |module-reader-contract-failed");
+    for args in [
+      vec!["edit", "def", &target, "--input-format", "cirru", "--code", &code],
+      vec![
+        "edit",
+        "schema",
+        &target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return 'String)",
+      ],
+      vec![
+        "edit",
+        "add-test",
+        &target,
+        "preserves-module-reader",
+        "--input-format",
+        "cirru",
+        "--code",
+        &test,
+      ],
+    ] {
+      assert_success(&run_calcit(&snapshot, &args), "install module definition through Calcit CLI");
+    }
+    let selectors = [
+      "--rule",
+      "rename-definition-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      old,
+      "--to",
+      new,
+      "--format",
+      "json",
+    ];
+    let preview = run_fix(&snapshot, &selectors);
+    assert_success(&preview, "public file name rename preview");
+    let report = parse_stdout(&preview);
+    let mut apply = selectors.to_vec();
+    apply.extend([
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().unwrap(),
+    ]);
+    assert_success(&run_fix(&snapshot, &apply), "public file name rename apply");
+    let renamed = format!("fix-command.main/{new}");
+    assert_success(
+      &run_calcit(&snapshot, &["test", &renamed, "--require-match"]),
+      "renamed module definition attached semantics",
+    );
+    let repeated = run_fix(&snapshot, &selectors);
+    assert_success(&repeated, "rename repeat");
+    assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+  }
+}
+
+#[test]
 fn named_constructor_preset_preserves_quoted_data() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

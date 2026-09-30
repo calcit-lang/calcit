@@ -31,6 +31,8 @@ leads_to:
 
 ## 表层命名矩阵
 
+`read-file/read-dir` 的公开名称与底层 primitive 分离：底层分别使用 `&read-file/&read-dir`，公开调用仍保留原有参数、返回值和抛错行为，JS runtime 与 host injection 名称不变。模块可以声明同名定义并通过正常命名空间引用（例如 `fs/read-file`）复用；局部遮蔽 core 名称仍接受既有严格诊断，不因此放宽。新代码优先采用 typed `FsPath` 方法；这项 reader 修复不让旧读取接口获得新的 WASM 能力。
+
 | 角色 | 首选形态 | 命名与类型依据 | 不作为新代码入口 |
 | --- | --- | --- | --- |
 | 类型、trait、Enum 变体 | `Person`、`Option`、`Result`；`:some`、`:err` | 类型名用 PascalCase；variant 用 tag，由定义验证 payload；`Option<T>` / `Result<T,E>` 写进 schema | 把 `%some` 当作类型或把裸 `Option` 当作已构造的值 |

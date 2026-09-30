@@ -526,11 +526,12 @@ fn to_js_code(
         // println!("gen proc {} under {}", s, ns,);
         // let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_owned()));
         // gen_symbol_code(s, primes::CORE_NS, &resolved, ns, xs, local_defs)
-        // The internal scalar proc keeps the existing @calcit/procs export.
-        let runtime_name = if runtime_proc == CalcitProc::TurnString {
-          "turn-string"
-        } else {
-          runtime_proc.as_ref()
+        // Internal primitives keep the existing @calcit/procs exports and host injection names.
+        let runtime_name = match runtime_proc {
+          CalcitProc::TurnString => "turn-string",
+          CalcitProc::ReadFile => "read-file",
+          CalcitProc::ReadDir => "read-dir",
+          _ => runtime_proc.as_ref(),
         };
         Ok(format!("{proc_prefix}{}", escape_var(runtime_name)))
       }
@@ -3266,7 +3267,7 @@ mod tests {
   }
 
   #[test]
-  fn native_list_aliases_use_existing_runtime_exports() {
+  fn internal_aliases_use_existing_runtime_exports() {
     let local_defs: HashSet<Arc<str>> = HashSet::new();
     let file_imports = RefCell::new(ImportsDict::new());
     let tags = RefCell::new(HashSet::new());
@@ -3275,9 +3276,11 @@ mod tests {
       (CalcitProc::NativeListAppend, "append"),
       (CalcitProc::NativeListPrepend, "prepend"),
       (CalcitProc::NativeListButlast, "butlast"),
+      (CalcitProc::ReadFile, "read_file"),
+      (CalcitProc::ReadDir, "read_dir"),
     ] {
       let proc_code = to_js_code(&Calcit::Proc(native), "tests.emit-js", &local_defs, &file_imports, &tags, None)
-        .expect("native list alias should compile as a function value");
+        .expect("internal alias should compile as a function value");
       assert_eq!(proc_code, format!("$clt.{runtime_name}"));
 
       let form = Calcit::from(vec![Calcit::Proc(native), symbol("xs"), symbol("value")]);
