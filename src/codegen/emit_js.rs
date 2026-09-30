@@ -526,7 +526,13 @@ fn to_js_code(
         // println!("gen proc {} under {}", s, ns,);
         // let resolved = Some(ResolvedDef(String::from(primes::CORE_NS), s.to_owned()));
         // gen_symbol_code(s, primes::CORE_NS, &resolved, ns, xs, local_defs)
-        Ok(format!("{proc_prefix}{}", escape_var(runtime_proc.as_ref())))
+        // The internal scalar proc keeps the existing @calcit/procs export.
+        let runtime_name = if runtime_proc == CalcitProc::TurnString {
+          "turn-string"
+        } else {
+          runtime_proc.as_ref()
+        };
+        Ok(format!("{proc_prefix}{}", escape_var(runtime_name)))
       }
       Calcit::Registered(alias) => {
         let proc_prefix = get_proc_prefix(ns);

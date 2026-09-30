@@ -10,6 +10,10 @@ const rule = "core-identity-conversion-v1";
 const fixture = await mkdtemp(join(tmpdir(), "calcit-identity-conversion-fix-"));
 
 try {
+  const rejectedList = spawnSync(binary, ["calcit/test.cirru", "eval", "turn-string $ [] 1"], { encoding: "utf8", timeout: 60000 });
+  assert.notEqual(rejectedList.status, 0, "List input must fail strict preprocessing before conversion");
+  assert.match(rejectedList.stderr, /W_GENERIC_WHERE_BOUND_MISMATCH/);
+
   const snapshot = join(fixture, "calcit.cirru");
   await copyFile("calcit/test-wasm.cirru", snapshot);
   run(snapshot, "query", "config");
@@ -26,7 +30,6 @@ try {
     ["dynamic-tag", "quote $ defn dynamic-tag (value) $ turn-tag value", "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Tag)"],
     ["dynamic-symbol", "quote $ defn dynamic-symbol (value) $ turn-symbol value", "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Symbol)"],
     ["dynamic-string", "quote $ defn dynamic-string (value) $ turn-string value", "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'String)"],
-    ["list-string", "quote $ defn list-string () $ turn-string ([] 1)", "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)"],
     ["tag-input", "quote $ defn tag-input () $ turn-tag :ready", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Tag)"],
     ["macro-tag", "quote $ defn macro-tag () $ or (turn-tag |ready) :fallback", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Tag)"],
     ["name-value", "quote $ defn name-value () |ready", "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)"],
@@ -66,7 +69,6 @@ try {
   assert.equal(preview.data.suggestions.find((item) => item.definition === "test-wasm.conversion/dynamic-tag")?.applicability, "requires-review");
   assert.equal(preview.data.suggestions.find((item) => item.definition === "test-wasm.conversion/dynamic-symbol")?.applicability, "requires-review");
   assert.equal(preview.data.suggestions.find((item) => item.definition === "test-wasm.conversion/dynamic-string")?.applicability, "requires-review");
-  assert.equal(preview.data.suggestions.some((item) => item.definition === "test-wasm.conversion/list-string"), false);
   assert.equal(preview.data.suggestions.find((item) => item.definition === "test-wasm.conversion/macro-tag")?.applicability, "requires-review");
   const macroArgument = preview.data.suggestions.find((item) => item.definition === "test-wasm.conversion/from-macro");
   assert.equal(macroArgument?.origin_chain?.[0]?.argument_type, "string", "the macro result must be proven String to exercise the provenance guard");

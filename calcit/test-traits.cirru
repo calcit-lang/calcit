@@ -670,6 +670,7 @@
             let
                 Person $ impl-traits Person0 CoreToStringImpl
                 p $ %{} Person $ :name |Alice
+              assert= |Person:Alice $ turn-string p
               turn-str p
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
