@@ -76,6 +76,32 @@ calcit analyze check-types --summary-only
 calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format edn
 ```
 
+## 解析成功不等于数据类型验证成功
+
+String 的 `.parse-cirru-edn` 返回 `Result<Dynamic,String>`：`:ok` 只说明文本符合 Cirru EDN 语法，
+不证明内部元素符合业务类型。`.parse-json` 也是开放协议边界；JSON 不是 Calcit 的默认数据格式。
+查询显示 `open` 时，不应凭调用名字、声明返回类型或浅层 `assert-type` 把 payload 当成已验证的具体值。
+
+已知目标形状时，优先在输入边界使用 `try-parse-cirru-edn-as`，由现有 decoder 真正检查每层数据。
+若数据已经作为开放值保存或传递，再使用 `try-decode-map-as`；它不只接受 Map，也能验证声明的 List 等闭合形状。
+两个入口都返回 `Result<T,String>`，业务必须处理失败，而不是自动插入 unwrap、默认值或 unsafe cast。
+
+```cirru
+assert=
+  Result :ok $ [] $ [] 1 2
+  try-parse-cirru-edn-as "|[] ([] 1 2)" $ :: 'List $ :: 'List 'Number
+match
+  try-parse-cirru-edn-as "|[] ([] 1 |bad)" $ :: 'List $ :: 'List 'Number
+  (:err message)
+    assert= true $ message .includes? |[0][1]
+  (:ok _) (raise "|无效的嵌套 Number 不应通过验证")
+```
+
+后一例语法合法，但第二层 List 的第二个元素是 String；错误保留 `[0][1]` 路径，便于 Agent 定位，
+不依赖整段错误文本或给开放解析套 nominal wrapper。这些深层正反例在 native 和生成的 JS 上共享相同 Calcit 测试。
+当前 WASM typed EDN parser 只支持已声明的标量及顶层同质标量集合子集；嵌套集合仍明确拒绝，
+本例不表示新增 WASM 支持，也不替代 #1538 的通用断言/调用证明收紧。
+
 ## Schema 类型别名在各后端一致展开
 
 非 Dynamic definition schema 可以通过完整的 `'namespace/definition` 名称作为类型别名使用。别名只复用底层类型关系，不创建新的运行时包装；需要名义身份时仍应使用 `defstruct` 或 `defenum`。
