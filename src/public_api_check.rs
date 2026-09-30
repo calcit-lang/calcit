@@ -32,7 +32,7 @@ struct PreparedDefinition {
   runtime_intrinsic: bool,
 }
 
-fn is_core_runtime_intrinsic(namespace: &str, definition: &str, entry: &snapshot::CodeEntry) -> bool {
+pub(crate) fn is_core_runtime_intrinsic(namespace: &str, definition: &str, entry: &snapshot::CodeEntry) -> bool {
   if namespace != calcit::calcit::CORE_NS || !entry.tags.iter().any(|tag| tag.ref_str() == "builtin") {
     return false;
   }

@@ -15,7 +15,7 @@ use super::stdout::{cli_print as print, cli_println as println};
 use super::structured_output::{StructuredOutputFormat, format_json_value_as_edn, json_value_to_edn};
 use super::tips::command_guidance_enabled;
 use calcit::CalcitTypeAnnotation;
-use calcit::calcit::{Calcit, CalcitFnTypeAnnotation, DYNAMIC_TYPE, LocatedWarning};
+use calcit::calcit::{Calcit, CalcitFnTypeAnnotation, CalcitProc, DYNAMIC_TYPE, LocatedWarning};
 use calcit::call_stack::CallStackList;
 use calcit::call_tree::{CallTreeAnalyzer, CallTreeConfig};
 use calcit::cli_args::{
@@ -444,6 +444,8 @@ struct DefinitionContextData {
   schema: Option<String>,
   #[serde(skip_serializing_if = "Option::is_none")]
   inferred_schema: Option<String>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  runtime_arity: Option<RuntimeCallArity>,
   features: Vec<String>,
   js_ffi: Option<JsFfiQueryInfo>,
   code: ContextCode,
@@ -453,6 +455,40 @@ struct DefinitionContextData {
   usages: ContextCollection<ContextUsage>,
   docs: ContextCollection<ContextDocLink>,
   static_methods: Option<ContextCollection<ContextMethod>>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+struct RuntimeCallArity {
+  min: usize,
+  max: Option<usize>,
+}
+
+/// Expose authoritative Proc omission metadata without inventing nullable value types
+/// or inferring a wrapper's callable contract from its name or declared schema.
+fn core_runtime_call_arity(namespace: &str, definition: &str, entry: &snapshot::CodeEntry) -> Option<RuntimeCallArity> {
+  if namespace != calcit::calcit::CORE_NS {
+    return None;
+  }
+  let proc_name = if crate::public_api_check::is_core_runtime_intrinsic(namespace, definition, entry) {
+    definition
+  } else if let Cirru::Leaf(value) = &entry.code {
+    value.as_ref()
+  } else {
+    return None;
+  };
+  let arity = proc_name.parse::<CalcitProc>().ok()?.arity()?;
+  Some(RuntimeCallArity {
+    min: arity.min,
+    max: arity.max,
+  })
+}
+
+fn render_runtime_call_arity(arity: RuntimeCallArity) -> String {
+  match arity.max {
+    Some(max) if max == arity.min => format!("{}", arity.min),
+    Some(max) => format!("{}..={max}", arity.min),
+    None => format!("{}..", arity.min),
+  }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -1073,6 +1109,41 @@ fn parse_type_annotation_query(target: &str) -> Result<Arc<CalcitTypeAnnotation>
 mod type_query_tests {
   use super::*;
   use crate::cli_handlers::test_support::TestProject;
+
+  #[test]
+  fn runtime_call_arity_uses_core_proc_values_not_schema_or_spelling_guesses() {
+    let snapshot = load_core_snapshot().expect("core snapshot");
+    let core = &snapshot.files["calcit.core"];
+    for (name, min, max) in [("read-dir", 1, 2), ("read-file", 1, 1), ("trim", 1, 2), ("range", 1, 3)] {
+      let entry = &core.defs[name];
+      let arity = core_runtime_call_arity("calcit.core", name, entry).expect("registered runtime Proc");
+      assert_eq!(arity, RuntimeCallArity { min, max: Some(max) });
+      assert_eq!(serde_json::to_value(arity).unwrap(), serde_json::json!({ "min": min, "max": max }));
+      assert!(
+        format_json_value_as_edn(&serde_json::to_value(arity).unwrap())
+          .unwrap()
+          .contains(":min")
+      );
+      assert!(core_runtime_call_arity("app.main", name, entry).is_none());
+    }
+    assert!(core_runtime_call_arity("calcit.core", "to-string", &core.defs["to-string"]).is_none());
+    let mut renamed = core.defs["read-dir"].clone();
+    renamed.schema = DYNAMIC_TYPE.clone();
+    assert_eq!(
+      core_runtime_call_arity("calcit.core", "unrelated-name", &renamed),
+      Some(RuntimeCallArity { min: 1, max: Some(2) })
+    );
+    renamed.code = Cirru::Leaf("&runtime-implementation".into());
+    renamed.tags.clear();
+    assert!(core_runtime_call_arity("calcit.core", "read-dir", &renamed).is_none());
+    renamed.code = Cirru::List(vec![Cirru::Leaf("&read-dir".into())]);
+    assert!(
+      core_runtime_call_arity("calcit.core", "read-dir", &renamed).is_none(),
+      "a call expression is not a Proc value"
+    );
+    assert_eq!(render_runtime_call_arity(RuntimeCallArity { min: 1, max: Some(2) }), "1..=2");
+    assert_eq!(render_runtime_call_arity(RuntimeCallArity { min: 1, max: None }), "1..");
+  }
 
   #[test]
   fn definition_ffi_json_is_complete_and_round_trips() {
@@ -3610,6 +3681,7 @@ fn build_regular_context(
     tags,
     schema: context_schema(entry.schema.as_ref())?,
     inferred_schema: inferred_schema.as_ref().map(|schema| context_schema(schema)).transpose()?.flatten(),
+    runtime_arity: core_runtime_call_arity(namespace, definition, entry),
     features: context_features(effective_schema),
     js_ffi: None,
     code,
@@ -3689,6 +3761,7 @@ fn build_special_builtin_context(
     tags: tags.clone(),
     schema: Some(schema),
     inferred_schema: None,
+    runtime_arity: None,
     features: tags,
     js_ffi: None,
     code: ContextCode {
@@ -3742,6 +3815,9 @@ fn render_context_human(envelope: &SemanticQueryEnvelope<DefinitionContextData>)
   let _ = writeln!(&mut out, "- Source: `{}`", data.source);
   let _ = writeln!(&mut out, "- Kind: `{}`", data.kind);
   let _ = writeln!(&mut out, "- Type coverage: `{}`", data.coverage);
+  if let Some(arity) = data.runtime_arity {
+    let _ = writeln!(&mut out, "- Runtime Proc arity: `{}`", render_runtime_call_arity(arity));
+  }
   if let Some(info) = &data.js_ffi {
     let _ = writeln!(&mut out, "- JavaScript FFI: `{}`", info.source_kind.unwrap_or("invalid"));
   }
@@ -4642,6 +4718,9 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
   if structured {
     let mut data = code_entry_to_json(code_entry)?;
     data["id"] = serde_json::json!(format!("{namespace}/{resolved_definition}"));
+    if let Some(arity) = core_runtime_call_arity(namespace, &resolved_definition, code_entry) {
+      data["runtime_arity"] = serde_json::to_value(arity).map_err(|error| format!("Failed to serialize runtime arity: {error}"))?;
+    }
     data["ffi_edn"] = data["ffi"].take();
     data["ffi"] = serde_json::to_value(&code_entry.ffi).map_err(|e| format!("Failed to serialize FFI metadata: {e}"))?;
     data["js_ffi"] = serde_json::to_value(
@@ -4661,6 +4740,9 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
 
   let mut out = String::new();
   let _ = writeln!(&mut out, "# Definition `{namespace}/{resolved_definition}`\n");
+  if let Some(arity) = core_runtime_call_arity(namespace, &resolved_definition, code_entry) {
+    let _ = writeln!(&mut out, "- Runtime Proc arity: `{}`", render_runtime_call_arity(arity));
+  }
 
   if let Ok(code_data) = calcit::data::cirru::code_to_calcit(&code_entry.code, namespace, &resolved_definition, vec![])
     && let Some(summary) = CalcitTypeAnnotation::summarize_code(&code_data)

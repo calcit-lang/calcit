@@ -78,6 +78,8 @@ For source-backed definitions, `query def` prints the stored Cirru body. For spe
 
 `query type` 给出 `.method` 的类型契约，方法后面的 definition path 只是实现入口；`query def/context` 的 `:internal` 标签不能被误读为公开推荐。对已存在显式 fix 且旧、新方法在具体接收者上都证明为同一实现、同一参数和返回契约的别名，查询附带 `role: preferred` 或 `role: compatibility`；兼容名还有 `preferred-name` 与 `fix-rule`（Cirru EDN 拼写；JSON 字段使用下划线）。`proven` 只表示类型契约可用，**不等于首选名称**。开放、歧义或不同实现的方法不会凭拼写获得推荐角色；准确查询旧名仍可见原实现。区分 nominal 类型名、构造器和内部函数时，参见 [API 命名角色](../features/api-roles.md)。
 
+`query def/context` 对可直接证明为已注册 core Proc 的定义另给 `:runtime-arity`（JSON 为 `runtime_arity`）：`:min` 是最少传参个数，`:max` 是最多个数，`nil` 表示没有有限上限。例如 `read-dir` 为 `{:min 1, :max 2}`，省略第二个参数不意味着可以传 nil，也不意味着它的 Bool 值类型变为 Optional。human 输出显示 `Runtime Proc arity: 1..=2`。此证据复用编译器已有 Proc 元数据，不根据函数名、schema 宽度或 `:internal` 标签猜测；普通函数、未知别名和特殊 builtin 未证明时不提供该字段。字段缺失不是零参数、无上限或可调用的承诺。参数值类型、失败与 backend 支持仍需结合 schema、文档与测试查看，arity 不代替它们。
+
 默认 Markdown 输出先列已证明的首选方法，再列尚未完成角色归类的方法，最后列附有首选名和 fix 规则的兼容方法。分组仅改变阅读顺序，不隐藏方法、不改变分派优先级或结构化输出；尚未归类不表示应优先使用。
 
 例如 `query type ":: 'List 'Number" --format edn` 会把单元素追加的 `.append`、长度查询的 `.len` 标为首选，旧 `.add/.count` 分别关联 `core-list-add-v1`、`core-collection-len-v1`。同一长度规则也覆盖契约已证明的 Map/Set/String；Map `.add` 是不同的 entry 操作，不会因此变成 `.append` 或 `.assoc` 的兼容别名。
