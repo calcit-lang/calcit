@@ -37,22 +37,6 @@ pub fn format_calcit_number(value: f64) -> String {
   }
 }
 
-#[cfg(test)]
-mod number_text_tests {
-  use super::format_calcit_number;
-
-  #[test]
-  fn canonical_number_text_uses_one_shortest_decimal_tie_break() {
-    assert_eq!(format_calcit_number(f64::from_bits(0x4308_90af_8f4a_2b7a)), "864310392341871.2");
-    assert_eq!(format_calcit_number(f64::from_bits(0xc30c_3fea_8669_5ce2)), "-993946982230940.2");
-    assert_eq!(format_calcit_number(-0.0), "-0");
-    assert_eq!(format_calcit_number(f64::NAN), "NaN");
-    assert_eq!(format_calcit_number(f64::INFINITY), "inf");
-    assert_eq!(format_calcit_number(f64::NEG_INFINITY), "-inf");
-    assert_eq!(format_calcit_number(f64::from_bits(1)), format!("0.{}5", "0".repeat(323)));
-  }
-}
-
 fn is_float_integer(f: f64) -> bool {
   f.fract().abs() <= f64::EPSILON
 }
@@ -74,5 +58,21 @@ pub fn f64_to_i32(f: f64) -> Result<i32, String> {
     Ok(f as i32)
   } else {
     Err(format!("cannot extract int from float: {f}"))
+  }
+}
+
+#[cfg(test)]
+mod number_text_tests {
+  use super::format_calcit_number;
+
+  #[test]
+  fn canonical_number_text_uses_one_shortest_decimal_tie_break() {
+    assert_eq!(format_calcit_number(f64::from_bits(0x4308_90af_8f4a_2b7a)), "864310392341871.2");
+    assert_eq!(format_calcit_number(f64::from_bits(0xc30c_3fea_8669_5ce2)), "-993946982230940.2");
+    assert_eq!(format_calcit_number(-0.0), "-0");
+    assert_eq!(format_calcit_number(f64::NAN), "NaN");
+    assert_eq!(format_calcit_number(f64::INFINITY), "inf");
+    assert_eq!(format_calcit_number(f64::NEG_INFINITY), "-inf");
+    assert_eq!(format_calcit_number(f64::from_bits(1)), format!("0.{}5", "0".repeat(323)));
   }
 }
