@@ -52,6 +52,8 @@ let
 
 `format-cirru` 接受以 List 表示的 Cirru 顶层行，内部节点仍可递归包含 String/List；传入 Number 等非 List 会在严格检查阶段报类型不匹配。它与格式化任意可序列化数据的 `format-cirru-edn` 不是同一个契约。
 
+`format-cirru-one-liner` 也要求外层 List，格式化单个 Cirru 表达式；Number 等非 List 会在严格检查阶段报类型不匹配。内部 String/List 节点保持开放，不能据此外推为任意 Calcit 值格式化接口。
+
 Under the default strict diagnostics, passing that open `Dynamic` result directly to a
 function argument whose contract contains a Struct or Enum is
 `E_DYNAMIC_NOMINAL_ARGUMENT`. This also covers matching containers such as

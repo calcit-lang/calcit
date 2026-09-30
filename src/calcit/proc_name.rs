@@ -1485,7 +1485,7 @@ impl CalcitProc {
       }),
       FormatCirruOneLiner => Some(ProcTypeSignature {
         return_type: some_tag("string"),
-        arg_types: vec![dynamic_tag()],
+        arg_types: vec![some_tag("list")],
       }),
       ParseCirruList => Some(ProcTypeSignature {
         return_type: some_tag("list"),
