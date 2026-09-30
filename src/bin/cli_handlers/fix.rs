@@ -3052,6 +3052,7 @@ fn rewrite_core_nominal_constructor_tree(
   }
 }
 
+/// Detect source-level legacy constructors before attempting compiler-resolved rewrites.
 fn contains_core_nominal_constructor_candidate(node: &Cirru) -> bool {
   match node {
     Cirru::Leaf(name) => core_nominal_constructor(name.as_ref()).is_some(),
