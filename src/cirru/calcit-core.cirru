@@ -3531,6 +3531,25 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :meta :syntax
+          :tests $ []
+            %{} 'TestEntry (:name |proven-scalar)
+              :code $ quote $ let
+                  x 3
+                assert-type x 'Number
+                assert= 4 $ + x 1
+              :tags $ #{} :assert-boundary :assert-scalar-wasm :unit
+            %{} 'TestEntry (:name |proven-list-payload)
+              :code $ quote $ let
+                  xs $ [] 1 2
+                assert-type xs $ :: 'List 'Number
+                assert= 3 $ xs .fold 0 +
+              :tags $ #{} :assert-boundary :unit
+            %{} 'TestEntry (:name |preserves-concrete-evidence)
+              :code $ quote $ let
+                  x 3
+                assert-type x 'Dynamic
+                assert= 4 $ + x 1
+              :tags $ #{} :assert-boundary :assert-scalar-wasm :unit
         'assert= $ %{} 'CodeEntry
           :doc "|asserts that two values are equal, raises error showing both values if not"
           :code $ quote $ defmacro assert= (a b)
