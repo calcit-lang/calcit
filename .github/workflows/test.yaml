@@ -204,6 +204,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - uses: actions/setup-node@v6
@@ -263,6 +264,8 @@ jobs:
 
       - name: "verify shared Calcit backend contracts"
         run: |
+          node --test scripts/core-api-contract.test.mjs
+          node scripts/core-api-contract.mjs
           node scripts/check-string-unicode.mjs
           node scripts/check-numeric-predicate.mjs
           node scripts/check-nil-predicate.mjs
