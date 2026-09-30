@@ -784,12 +784,40 @@ fn lookup_callable_ns_def_for_preprocess(
   call_stack: &CallStackList,
 ) -> Result<Option<Calcit>, CalcitErr> {
   ensure_ns_def_compiled(raw_ns, raw_def, check_warnings, call_stack)?;
-  Ok(
-    match program::resolve_compiled_executable_def(raw_ns, raw_def, call_stack).ok().flatten() {
-      value @ Some(Calcit::Macro { .. } | Calcit::Fn { .. }) => value,
-      _ => None,
-    },
-  )
+  if let value @ Some(Calcit::Macro { .. } | Calcit::Fn { .. }) =
+    program::resolve_compiled_executable_def(raw_ns, raw_def, call_stack).ok().flatten()
+  {
+    return Ok(value);
+  }
+
+  let mut target = (Arc::<str>::from(raw_ns), Arc::<str>::from(raw_def));
+  let mut visited = HashSet::new();
+  loop {
+    if !visited.insert(target.clone()) {
+      return Ok(None);
+    }
+    let (ns, def) = &target;
+    // Follow only compiled source references. A declaration or arbitrary lazy
+    // expression is not callable evidence, and checking must not execute it.
+    let Some(compiled) = program::lookup_compiled_def(ns, def) else {
+      return Ok(None);
+    };
+    let code = match &compiled.preprocessed_code {
+      Calcit::Thunk(thunk) => thunk.get_code(),
+      code => code,
+    };
+    let Calcit::Import(import) = code else {
+      return Ok(None);
+    };
+    target = (import.ns.clone(), import.def.clone());
+    ensure_ns_def_compiled(&target.0, &target.1, check_warnings, call_stack)?;
+    if let value @ Some(Calcit::Fn { .. }) = program::resolve_compiled_executable_def(&target.0, &target.1, call_stack)
+      .ok()
+      .flatten()
+    {
+      return Ok(value);
+    }
+  }
 }
 
 fn resolve_trait_def_from_source_code(code: &Calcit) -> Option<CalcitTrait> {
