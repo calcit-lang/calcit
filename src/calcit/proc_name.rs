@@ -1485,7 +1485,7 @@ impl CalcitProc {
       }),
       ParseCirruList => Some(ProcTypeSignature {
         return_type: some_tag("list"),
-        arg_types: vec![dynamic_tag()],
+        arg_types: vec![some_tag("string")],
       }),
       NativeCirruQuoteToList => Some(ProcTypeSignature {
         return_type: some_tag("list"),
