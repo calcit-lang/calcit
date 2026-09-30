@@ -40,6 +40,14 @@ const scenarios = [
       assert.equal(result.data.examples.items[0]?.cirru, "assert= true $\n  Option :some 1\n  , .some?");
     },
   },
+  ...["def", "context"].map(command => ({
+    name: `read-dir ${command} preserves Proc omission evidence`,
+    args: ["src/cirru/calcit-core.cirru", "query", command, "calcit.core/read-dir", "--format", "json"],
+    check(result) {
+      assert.deepEqual(result.data.runtime_arity, { min: 1, max: 2 });
+      assert.equal(result.data.id, "calcit.core/read-dir");
+    },
+  })),
   {
     name: "non-nil predicate context distinguishes Option variants",
     args: ["src/cirru/calcit-core.cirru", "query", "context", "calcit.core/non-nil?", "--format", "json"],
