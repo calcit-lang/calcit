@@ -1987,6 +1987,143 @@ fn collection_len_fix_preserves_nominal_count_and_unknown_macro_source() {
 }
 
 #[test]
+fn reader_deref_receivers_preserve_types_and_collection_migration_guards() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  for (name, initial, returns, rule, expected) in [
+    ("reader-number", "3", "'Number", "core-list-add-v1", "4"),
+    ("reader-list", "([] 1 2)", "(:: 'List 'Number)", "core-list-add-v1", "([] 1 2 3)"),
+    ("reader-set", "(#{} 1 2)", "(:: 'Set 'Number)", "core-set-include-v1", "(#{} 1 2 3)"),
+  ] {
+    let target = format!("fix-command.main/{name}");
+    let source = format!(
+      "quote $ defn {name} () (let ((cell (atom {initial}))) (.add @cell {}))",
+      if name == "reader-number" { "1" } else { "3" }
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", &target, "--input-format", "cirru", "--code", &source]),
+      "install reader receiver",
+    );
+    let schema = format!("quote $ :: 'Fn $ {{}} (:args $ []) (:return {returns})");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "schema", &target, "--input-format", "cirru", "--code", &schema],
+      ),
+      "declare reader return",
+    );
+    let behavior = format!("quote $ assert= {expected} $ {name}");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "add-test",
+          &target,
+          "reader-contract",
+          "--tags",
+          "unit",
+          "--input-format",
+          "cirru",
+          "--code",
+          &behavior,
+        ],
+      ),
+      "attach Calcit reader semantics",
+    );
+    let before = fs::read(&snapshot).expect("snapshot bytes");
+    let preview = run_fix(
+      &snapshot,
+      &["--rule", rule, "--ns", "fix-command.main", "--def", name, "--format", "json"],
+    );
+    assert_success(&preview, "preview reader migration");
+    let report = parse_stdout(&preview);
+    let suggestions = report["data"]["suggestions"].as_array().expect("suggestions");
+    assert_eq!(fs::read(&snapshot).expect("snapshot bytes"), before);
+    let query = run_calcit(
+      &snapshot,
+      &["query", "type-at", &target, "--path", "code@3.2.1", "--format", "json"],
+    );
+    assert_success(&query, "query expanded reader receiver");
+    let evidence = parse_stdout(&query);
+    assert_eq!(evidence["data"]["confidence"], "exact", "{evidence}");
+    let receiver_type = evidence["data"]["inferred_type"].as_str().expect("reader payload type");
+    assert!(receiver_type.contains("Number"), "{evidence}");
+    if name == "reader-number" {
+      assert!(suggestions.is_empty(), "{report}");
+      assert_eq!(evidence["data"]["inferred_type"], "'Number", "{evidence}");
+      let outer_query = run_calcit(&snapshot, &["query", "type-at", &target, "--path", "code@3.2", "--format", "json"]);
+      assert_success(&outer_query, "query outer Number method");
+      let outer = parse_stdout(&outer_query);
+      assert_eq!(outer["data"]["inferred_type"], "'Number", "{outer}");
+      assert_ne!(outer["data"]["lowering"]["lowered_head"], "calcit.core/deref", "{outer}");
+      let set_preview = run_fix(
+        &snapshot,
+        &[
+          "--rule",
+          "core-set-include-v1",
+          "--ns",
+          "fix-command.main",
+          "--def",
+          name,
+          "--format",
+          "json",
+        ],
+      );
+      assert_success(&set_preview, "Number is not a Set migration");
+      assert!(
+        parse_stdout(&set_preview)["data"]["suggestions"]
+          .as_array()
+          .expect("suggestions")
+          .is_empty()
+      );
+    } else {
+      assert!(
+        receiver_type.contains(if name == "reader-list" { "List" } else { "Set" }),
+        "{evidence}"
+      );
+      assert_eq!(suggestions.len(), 1, "{report}");
+      assert_eq!(suggestions[0]["applicability"], "machine-applicable", "{report}");
+      let revision = report["revision"].as_str().expect("revision");
+      let apply = run_fix(
+        &snapshot,
+        &[
+          "--rule",
+          rule,
+          "--ns",
+          "fix-command.main",
+          "--def",
+          name,
+          "--apply",
+          "--allow-no-vcs",
+          "--expect-revision",
+          revision,
+          "--format",
+          "json",
+        ],
+      );
+      assert_success(&apply, "apply proven reader migration");
+      let repeated = run_fix(
+        &snapshot,
+        &["--rule", rule, "--ns", "fix-command.main", "--def", name, "--format", "json"],
+      );
+      assert_success(&repeated, "repeat reader migration");
+      assert!(
+        parse_stdout(&repeated)["data"]["suggestions"]
+          .as_array()
+          .expect("suggestions")
+          .is_empty()
+      );
+    }
+    assert_success(
+      &run_calcit(&snapshot, &["test", &target, "--require-match"]),
+      "run shared Calcit reader semantics",
+    );
+  }
+}
+
+#[test]
 fn list_add_fix_rewrites_only_proven_element_append() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

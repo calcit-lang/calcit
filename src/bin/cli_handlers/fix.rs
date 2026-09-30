@@ -4160,6 +4160,7 @@ fn plan_core_list_add_fixes(
       .map_err(|error| error.to_string())?;
       let inferred = compiled
         .as_ref()
+        .filter(|_| !matches!(receiver, Cirru::Leaf(_)) || !matches!(source_receiver, Calcit::List(_)))
         .and_then(|compiled| {
           super::query::find_preprocessed_node_at_path(
             &compiled.preprocessed_code,
@@ -4786,6 +4787,7 @@ fn plan_core_method_alias_fixes(
       .map_err(|error| error.to_string())?;
       let inferred = compiled
         .as_ref()
+        .filter(|_| !matches!(receiver, Cirru::Leaf(_)) || !matches!(source_receiver, Calcit::List(_)))
         .and_then(|compiled| {
           super::query::find_preprocessed_node_at_path(
             &compiled.preprocessed_code,

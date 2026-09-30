@@ -2192,8 +2192,8 @@ pub fn preprocess_expr(
         )?);
         if SOURCE_EXPRESSION_TRACE.with(|trace| trace.borrow().is_some())
           && let Some(head) = xs.first()
-          && matches!(head, Calcit::Symbol { .. } | Calcit::Import { .. })
-          && let Some(location) = derive_call_expr_location(head)
+          && matches!(head, Calcit::Symbol { .. } | Calcit::Import { .. } | Calcit::Method(..))
+          && let Some(location) = derive_list_call_expr_location(xs)
         {
           let inferred_type = resolve_type_value(&processed, scope_types);
           SOURCE_EXPRESSION_TRACE.with(|trace| {
@@ -2292,7 +2292,7 @@ fn preprocess_list_call(
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let head = &xs[0];
-  let call_location = derive_call_expr_location(head);
+  let call_location = derive_list_call_expr_location(xs);
   let head_form = preprocess_expr(head, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
   let args = xs.drop_left();
   let mut def_name = grab_def_name(head);
@@ -4315,6 +4315,34 @@ fn derive_call_expr_location(head: &Calcit) -> Option<NodeLocation> {
     location.def.clone(),
     Arc::from(parent_coord),
   ))
+}
+
+fn derive_list_call_expr_location(items: &CalcitList) -> Option<NodeLocation> {
+  let head = items.first()?;
+  if matches!(head, Calcit::Method(..)) {
+    let receiver = items.get(1)?;
+    let location = receiver.get_location().or_else(|| match receiver {
+      Calcit::List(call) => derive_list_call_expr_location(call),
+      _ => None,
+    })?;
+    let mut coord = (*location.coord).clone();
+    coord.pop();
+    return Some(NodeLocation::new(location.ns, location.def, Arc::from(coord)));
+  }
+  let location = head.get_location()?;
+  // Reader-expanded calls share the original leaf coordinate for head and
+  // operand. Unlike ordinary calls, their source expression is not a parent.
+  if items.len() == 2
+    && matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "deref")
+    && items
+      .get(1)
+      .and_then(Calcit::get_location)
+      .is_some_and(|operand| operand == location)
+  {
+    Some(location)
+  } else {
+    derive_call_expr_location(head)
+  }
 }
 
 /// Check recur calls against the arity and parameter types of their lexical function.

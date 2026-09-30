@@ -3041,16 +3041,6 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
     runner::preprocess::compile_source_def_for_snapshot(namespace, &definition, &warnings, &CallStackList::default()).err();
   let compiled = program::lookup_compiled_def(namespace, &definition);
   let processed_root = compiled.as_ref().map(|compiled| &compiled.preprocessed_code);
-  let located_target = processed_root
-    .and_then(|root| find_preprocessed_node_at_path(root, namespace, &definition, &target_path, matches!(target_node, Cirru::List(_))));
-  let traced = if compile_error.is_none() && located_target.is_none() && matches!(target_node, Cirru::List(_)) {
-    runner::preprocess::trace_definition_source_expressions(namespace, &definition, &RefCell::new(vec![]), &CallStackList::default())
-      .unwrap_or_default()
-  } else {
-    vec![]
-  };
-  let traced_target = runner::preprocess::unique_source_expression_at_path(&traced, namespace, &definition, &target_path);
-  let processed_target = located_target.or_else(|| traced_target.map(|item| &item.processed));
   let source_target = code_to_calcit(
     &target_node,
     namespace,
@@ -3060,6 +3050,24 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
       .map(|idx| u16::try_from(*idx).map_err(|_| format!("Path index {idx} exceeds Snapshot coordinate range")))
       .collect::<Result<Vec<_>, _>>()?,
   )?;
+  let reader_expanded = matches!(target_node, Cirru::Leaf(_)) && matches!(source_target, Calcit::List(_));
+  let source_method_call = matches!(&source_target, Calcit::List(items) if matches!(items.first(), Some(Calcit::Method(..))));
+  let needs_source_trace = reader_expanded || source_method_call;
+  let located_target = processed_root
+    .and_then(|root| find_preprocessed_node_at_path(root, namespace, &definition, &target_path, matches!(target_node, Cirru::List(_))));
+  let traced = if compile_error.is_none() && (needs_source_trace || (located_target.is_none() && matches!(target_node, Cirru::List(_))))
+  {
+    runner::preprocess::trace_definition_source_expressions(namespace, &definition, &RefCell::new(vec![]), &CallStackList::default())
+      .unwrap_or_default()
+  } else {
+    vec![]
+  };
+  let traced_target = runner::preprocess::unique_source_expression_at_path(&traced, namespace, &definition, &target_path);
+  let processed_target = if needs_source_trace {
+    traced_target.map(|item| &item.processed)
+  } else {
+    located_target.or_else(|| traced_target.map(|item| &item.processed))
+  };
   let inference_target = processed_target.unwrap_or(&source_target);
   let inferred = traced_target
     .and_then(|item| item.inferred_type.clone())
