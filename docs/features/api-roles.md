@@ -63,14 +63,14 @@ The public, human-facing form is distinct from macro-expanded core definitions a
 | `option:unwrap value`、`option:unwrap-or value fallback` | `value .unwrap`、`value .unwrap-or fallback` | `core-option-method-v1` 只自动改写接收者有编译器证明的调用；core 空 Option 可由具体 fallback 补足类型，其他开放类型、未知 macro、函数值引用仍需人工确认 |
 | `result:unwrap-or result fallback` | `result .unwrap-or fallback` | `core-result-method-v1` 只改写目标方法已证明的调用；core `:err` 可由具体 fallback 确定成功类型，同时保留错误类型；开放 Result、`:ok` 动态值和遮蔽调用仍需审阅 |
 | `option:some?` / `option:none?`、`result:ok?` / `result:err?` | `value .some?` / `.none?`、`value .ok?` / `.err?` | 沿用对应 Option / Result 方法规则，仍须证明接收者名义类型及同一 core 方法；裸 Dynamic 不能借 Bool 返回值绕过类型检查 |
-| `&str:includes? text fragment`（容易被误记为 `&string:include?`） | `text .includes? fragment` | 当前内部定义的准确拼写是 `&str:includes?`；`.contains?` 对 String 检查索引，不能把两者机械互换 |
+| `&str:includes? text fragment`（容易被误记为 `&string:include?`） | `text .includes? fragment` | 当前内部定义的准确拼写是 `&str:includes?`；旧 `.contains?` 对 String 检查索引，其首选名为 `.contains-index?`，不能把索引与子串查询机械互换 |
 | 静态 `%:: Enum :variant payload`、`%{} Struct (:field value)` | `Enum :variant payload`、`Struct :field value` | 只有类型定义能静态解析、variant/字段契约可证明时才自动修复；动态 prototype 边界仍可显式使用低层形式 |
 
 这张对照表只规定**公开源码的首选写法**，不是要求一次删除所有内部实现名。内部函数即使仍出现在 `query type` 的定义路径中，也不得反向成为 Agent 推荐的应用代码。
 
 ### 索引单位：普通索引与显式 byte 单位
 
-String 的 `.len/.count`、`.get/.nth/.slice` 与 `.find-index` 使用 Unicode 标量单位；查找返回 `Option<Number>`，不是 Rust `str::find` 的字节偏移。Calcit 借鉴语义清晰的命名，不照搬会破坏自身索引一致性的底层表示。`.includes?` 判断子串，`.contains?` 当前判断索引存在，不因统一索引单位而互换。协议长度使用显式 `&str:utf8-byte-count`，不可混入普通索引。示例和边界见 [String](../data/string.md#子串搜索索引)；其他 API 族的重命名仍由 #1452 逐项决策，本修复不增加别名或 fix 规则。
+String 的 `.len`（兼容 `.count`）、`.get/.nth/.slice` 与 `.find-index` 使用 Unicode 标量单位；查找返回 `Option<Number>`，不是 Rust `str::find` 的字节偏移。Calcit 借鉴语义清晰的命名，不照搬会破坏自身索引一致性的底层表示。`.includes?` 判断子串，`.contains-index?`（兼容 `.contains?`）判断索引存在，不因统一索引单位而互换。协议长度使用显式 `&str:utf8-byte-count`，不可混入普通索引。示例和边界见 [String](../data/string.md#子串搜索索引)；其他 API 族的重命名仍由 #1452 逐项决策，本修复不增加别名或 fix 规则。
 
 ## 逐族命名决策（0.27–0.28）
 
@@ -171,16 +171,16 @@ List 的位置读取优先用 `.get`：`List<T>` 的 `.get` 与兼容入口 `.nt
 ```cirru
 do
   assert= ([] 1 0 2)
-    ([] 1 2) .join 0
+    ([] 1 2) .intersperse 0
   assert= |1-2 $
     [] 1 2
-    , .join-str |-
+    , .join-string |-
   assert= (#{} 1)
     ({} (:a 1) (:b 1))
-      , .values
+      , .distinct-values
   assert= 13 $
     [] 1 2
-    , .foldl 10 +
+    , .fold 10 +
   assert= ([] 1 2 3)
     ([] 1 2) .append 3
 ```
@@ -198,7 +198,7 @@ do
 | `.parse-json/.parse-cirru-edn/.parse-cirru/.parse-float` 返回 Result；`json-parse` 等旧入口抛错 | **保留并首选** `.parse-格式` 的 checked 路径；旧 throwing 入口属 **内部兼容** | `String -> Result<T,String>`；开放数据合法保留 Dynamic，typed parse-as 先证明 schema。`parse-float` 的 `NaN`、`inf`、`Infinity` 及带符号、大小写变体在 native/JS 返回 `:ok Number`，无效文本返回原文 `:err`；WASM 若将 `parse-float` 本身列为显式导出或入口 target，会在代码生成阶段因 `E_WASM_NIL_TYPE_EVIDENCE` 失败；若仅作为未支持依赖保留，生成的 stub 被调用时才陷阱，尚不能宣称支持该 Result 路径。throw→Result 是人工迁移，不能自动插入 unwrap/fallback；不新增公开 throwing 别名 |
 | `number->int8` 等 `Number -> Result<Refinement,String>`；`js-nullish->option: JsNullish<T> -> Option<T>` | **保留**显式源→目标边界箭头 | 前者检查范围/整数/有限性，后者只包装、不验证 T；不并列再造 `to-/as-/into-` 同义入口，JS 后者仍受 `:js-ffi` 限制 |
 | `strip-prefix/strip-suffix: (String,String) -> String`，未匹配保留原串 | **保留**现有签名和不匹配行为 | 不因为 Rust 同名 API 返回 Option 就夹带返回类型变更 |
-| `fs:path: String -> FsPath` 与直接 Struct 构造 | **保留当前推荐** `fs:path`；**暂缓**构造方式合并 | 先核对初始化/trait/校验等价性；不要把内部 `fs-path:*` 当成应用首选 |
+| `fs:path: String -> FsPath` 与直接 Struct 构造 | **保留** `fs:path` 为应用首选；直接名义构造可追溯 | 两者创建相同 `FsPath :value String`，不访问文件系统、不规范化路径或检查存在；均在严格预处理时拒绝 Number。不新增 `to-path` 或无收益的构造器 fix；不要把内部 `fs-path:*` 当成应用首选 |
 
 ### 效果、宿主与内部实现
 
@@ -252,11 +252,13 @@ assert= 3 $
 assert= (Result :ok 3) (parse-float |3)
 ```
 
-String 的 `.includes?` 检查子串；`.contains?` 在 String 上检查**字符索引**是否有效，不能只凭英文词形把两者当同义词。List 和 Map 的 `.get` 都返回 Option：
+String 的 `.includes?` 检查子串；`.contains-index?` 在 String 上检查**字符索引**是否有效，不能只凭英文词形把两者当同义词。List 和 Map 的 `.get` 都返回 Option：
 
 ```cirru
 do
   assert= true $ |abc .includes? |b
+  assert= true $ |abc .contains-index? 1
+  assert= false $ |abc .contains-index? 3
   assert= (Option :some 2)
     ([] 1 2 3) .get 1
   assert= (Option :some 2)
@@ -288,7 +290,9 @@ calcit query context 'calcit.core/option:unwrap' --format edn
 
 `docs read` 的默认 guidebook 来自已安装的 `~/.config/calcit/docs`，不是当前工作目录的源码，也不会因重编译 CLI 自动更新。找不到新章节时，先用 `docs sections api-roles.md` 核对已安装文档版本，再按已有文档安装流程更新；不要为查新名字再创建查询入口。开发中的 Markdown 可直接用 `docs check-md <path> --snapshot <snapshot>` 验证，模块文档仍用现有 `--module` 参数查询。
 
-`query type` 的 `proven` 表示当前类型能证明该方法的调用契约；`open` 或 `ambiguous` 不是类型安全的肯定结论。对已由显式 fix 证明为同一实现/签名的别名，查询另给 `preferred` 或 `compatibility` 角色，兼容项可追溯首选名和 fix 规则；未标角色的方法不应被推断为过期。方法旁边的 definition path 用于追踪实现。再用 `query def/context` 读取 `:constructor` 或 `:internal` 标签、schema 与示例；需要机器处理时优先用 `--format edn`。项目代码的类型证据可用 `query type-at` 或 `query context` 查看。
+`query type` 的 `proven` 表示当前类型能证明该方法的调用契约；`open` 或 `ambiguous` 不是类型安全的肯定结论。对已由显式 fix 证明为同一实现/签名的别名，查询另给 `preferred` 或 `compatibility` 角色，兼容项可追溯首选名和 fix 规则。human 输出按已证明的首选入口、尚未分类的方法、兼容入口分组；未标角色的方法不应被推断为过期，`open` 的方法也不因角色标为首选就变成已证明。方法旁边的 definition path 用于追踪实现。再用 `query def/context` 读取 `:constructor` 或 `:internal` 标签、schema 与示例；需要机器处理时优先用 `--format edn`。项目代码的类型证据可用 `query type-at` 或 `query context` 查看。
+
+结构升级后，使用 `calcit fix --preset core-api-0.28-v1 --format edn` 统一预览已证明的核心 API 叶子改名，再按 revision 应用。`:code` 自动扫描，attached `:tests` / `:examples` 人工核对；重复预览的自动建议应为空，剩余 `requires-review` 不等于已迁移。Option/Result helper 和完整构造调用仍分步迁移，顺序与范围见 [0.28 核心 API 命名迁移](../run/fix.md#028-核心-api-命名迁移)。
 
 真实项目中，Quamolit 的 `quamolit.gpu-scalar-program/first-slot` 以 `get slots 0` 得到 `Option<BoundScalar>`，再调用 `.unwrap`；Timegrass 的 `app.server/main!` 对 `parse-float raw` 的 `Result<Number,String>` 调用 `.unwrap-or 11009`。这两条路径均可在各自 Snapshot 上用 `query context` 找到，再用 `query type ":: 'Option ..."` 或 `query type ":: 'Result ..."` 检查方法契约。它们说明推荐入口应由返回类型决定，而不是由内部函数名字决定；不要求改变这些项目的源码。
 
