@@ -3853,11 +3853,30 @@
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'Number
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |creates-unicode-character)
-            :code $ quote $ do
-              assert= |a $ char-from-code 97
-              assert= "|汉" $ char-from-code 27721
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |creates-unicode-character)
+              :code $ quote $ do
+                assert= |a $ char-from-code 97
+                assert= "|汉" $ char-from-code 27721
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |roundtrips-astral-scalar)
+              :code $ quote $ do
+                assert= "|😀" $ char-from-code 128512
+                assert= "|😀" $ char-from-code $ get-char-code "|😀"
+                assert= 1114111 $ get-char-code $ char-from-code 1114111
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-invalid-scalars)
+              :code $ quote $ do
+                assert= true $ try
+                  do (char-from-code 55296) false
+                  fn (e) true
+                assert= true $ try
+                  do (char-from-code 1114112) false
+                  fn (e) true
+                assert= true $ try
+                  do (char-from-code 1.5) false
+                  fn (e) true
+              :tags $ #{} :core :unit
         'cirru-quote? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn cirru-quote? (x)
             &= (type-of x) :cirru-quote
@@ -5998,11 +6017,23 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'String
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |reads-unicode-character-code)
-            :code $ quote $ do
-              assert= 97 $ get-char-code |a
-              assert= 27721 $ get-char-code "|汉"
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |reads-unicode-character-code)
+              :code $ quote $ do
+                assert= 97 $ get-char-code |a
+                assert= 27721 $ get-char-code "|汉"
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |reads-astral-scalar-code)
+              :code $ quote $ do
+                assert= 128512 $ get-char-code "|😀"
+                assert= 128512 $ get-char-code $ char-from-code 128512
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-multiple-characters)
+              :code $ quote $ assert= true
+                try
+                  do (get-char-code |ab) false
+                  fn (e) true
+              :tags $ #{} :core :unit
         'get-env $ %{} 'CodeEntry (:doc "|Read an environment variable as Option<String>.")
           :code $ quote $ defn get-env (name)
             optionally $ &get-env name

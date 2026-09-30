@@ -246,6 +246,26 @@ function checkStr(label, expected, fn, ...args) {
   }
 }
 
+function makeWasmStr(value) {
+  const bytes = new TextEncoder().encode(value);
+  const ptr = allocString(bytes.length);
+  const mem = new DataView(inst.exports.memory.buffer);
+  mem.setFloat64(ptr, bytes.length, true);
+  new Uint8Array(mem.buffer, ptr + 8, bytes.length).set(bytes);
+  return ptr;
+}
+
+function checkTrap(label, fn) {
+  try {
+    fn();
+    console.log(`  ${label}  FAIL (expected WASM trap)`);
+    fail++;
+  } catch (error) {
+    if (!(error instanceof WebAssembly.RuntimeError)) throw error;
+    console.log(`  ${label}  OK (WASM trap)`);
+  }
+}
+
 function getHashSlots(n) {
   const hash = e["test-map-hash-value"](n) >>> 0;
   return [hash & 31, (hash >>> 5) & 31];
@@ -527,6 +547,17 @@ check("test-buf-list-map()", 3, e["test-buf-list-map"]);
 check("test-buf-list-filter()", 2, e["test-buf-list-filter"]);
 
 // --- String operation tests ---
+checkStr("char-from-code(128512)", "😀", e["test-char-from-code"], 128512);
+check("get-char-code('😀')", 128512, e["test-get-char-code"], makeWasmStr("😀"));
+check("'😀'.get-char-code()", 128512, e["test-method-get-char-code"], makeWasmStr("😀"));
+checkTrap("char-from-code(surrogate)", () => e["test-char-from-code"](55296));
+checkTrap("char-from-code(out of range)", () => e["test-char-from-code"](1114112));
+checkTrap("char-from-code(fractional)", () => e["test-char-from-code"](1.5));
+checkTrap("char-from-code(NaN)", () => e["test-char-from-code"](NaN));
+checkTrap("char-from-code(infinity)", () => e["test-char-from-code"](Infinity));
+checkTrap("get-char-code('ab')", () => e["test-get-char-code"](makeWasmStr("ab")));
+checkTrap("get-char-code('')", () => e["test-get-char-code"](makeWasmStr("")));
+checkTrap("'ab'.get-char-code()", () => e["test-method-get-char-code"](makeWasmStr("ab")));
 check("test-str-count()", 5, e["test-str-count"]);
 check("test-str-character-count()", 2, e["test-str-character-count"]);
 check("test-str-utf8-byte-count()", 5, e["test-str-utf8-byte-count"]);

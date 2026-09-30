@@ -293,8 +293,17 @@ pub fn get_char_code(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn char_from_code(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Number(x)) => match f64_to_usize(*x) {
-      Ok(n) => Ok(Calcit::Str((char::from_u32(n as u32).expect("create char")).to_string().into())),
-      Err(e) => CalcitErr::err_str(CalcitErrKind::Type, format!("char-from-code expected a number, but received: {e}")),
+      Ok(n) if n <= 0x10ffff => match char::from_u32(n as u32) {
+        Some(c) => Ok(Calcit::Str(c.to_string().into())),
+        None => CalcitErr::err_str(
+          CalcitErrKind::Type,
+          format!("char-from-code expected a Unicode scalar value, but received: {x}"),
+        ),
+      },
+      _ => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("char-from-code expected a Unicode scalar value, but received: {x}"),
+      ),
     },
     Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("char-from-code expected 1 number, but received: {a}")),
     _ => CalcitErr::err_str(CalcitErrKind::Arity, "char-from-code expected 1 argument, but received none"),

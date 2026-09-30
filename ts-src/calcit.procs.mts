@@ -1537,15 +1537,21 @@ export let _$n_number_$o_display_by = (x: number, n: number): string => {
 };
 
 export let get_char_code = (c: string): number => {
-  if (typeof c !== "string" || c.length !== 1) {
+  if (typeof c !== "string") {
     throw new Error("Expected a character");
   }
-  return c.charCodeAt(0);
+  const code = c.codePointAt(0);
+  if (code === undefined || code >= 0xd800 && code <= 0xdfff || String.fromCodePoint(code) !== c) {
+    throw new Error("Expected a single Unicode scalar character");
+  }
+  return code;
 };
 
 export let char_from_code = (n: number): string => {
-  if (typeof n !== "number") throw new Error("Expected an integer");
-  return String.fromCharCode(n);
+  if (!Number.isInteger(n) || n < 0 || n > 0x10ffff || n >= 0xd800 && n <= 0xdfff) {
+    throw new Error("Expected a Unicode scalar value");
+  }
+  return String.fromCodePoint(n);
 };
 
 export let _$n_set_$o_to_list = (x: CalcitSet): CalcitSliceList => {

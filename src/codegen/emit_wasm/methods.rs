@@ -195,6 +195,7 @@ pub(super) fn emit_method_invoke(ctx: &mut WasmGenCtx, name: &str, args: &[Calci
       ctx.emit(Instruction::LocalGet(content));
       ctx.emit(Instruction::I32Load8U(super::mem_arg_byte(0)));
       ctx.emit(Instruction::LocalSet(b0));
+      super::strings::emit_assert_single_char_utf8(ctx, ptr, b0);
       let result = ctx.alloc_local_typed(wasm_encoder::ValType::I32);
       // ASCII fast path
       ctx.emit(Instruction::LocalGet(b0));

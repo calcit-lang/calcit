@@ -277,6 +277,11 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
+        'test-char-from-code $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-char-from-code (n) (char-from-code n)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'Number
         'test-closure-capture-map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-closure-capture-map ()
             let
@@ -502,6 +507,11 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
+        'test-get-char-code $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-get-char-code (s) (get-char-code s)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'String
         'test-gte $ %{} 'CodeEntry (:doc |greater-than-or-equal)
           :code $ quote $ defwasm-export test-gte (a b)
             if (&> a b) 1 $ if (&= a b) 1 0
@@ -1113,6 +1123,11 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
+        'test-method-get-char-code $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-method-get-char-code (s) (s .get-char-code)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'String
         'test-min $ %{} 'CodeEntry (:doc "|min of two numbers")
           :code $ quote $ defwasm-export test-min (a b)
             if (&< a b) a b
