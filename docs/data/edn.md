@@ -48,7 +48,7 @@ let
 
 `.parse-cirru`、`.parse-cirru-list`、`.parse-cirru-edn` 和 `.parse-json` 都是推荐的 checked 接收者方法；`try-parse-*` 是可按名称查询或作为函数值使用的具名形式，并非另一套首选语义。解析失败的信息位于 `Result` 的 `:err` 分支。旧的 `parse-*`/`json-parse` 抛错入口与 checked 形式不等价，不能直接自动改写调用。
 
-Cirru 语法的解析结果是闭合类型；Cirru EDN 和 JSON 的形状开放，因此普通 checked 解析保留 `Result<Dynamic,String>`。业务代码需要闭合名义类型时，在边界使用 `try-parse-cirru-edn-as` 或 `decode-map-as` 验证，不把开放 payload 直接当作已证明类型。
+`.parse-cirru` 的成功值是闭合的 `CirruQuote`；`.parse-cirru-list` 的成功值是递归的 String/List 语法数据，目前以 `List<Dynamic>` 表达，不是 `CirruQuote`。两者都要求 String 输入，旧的 `parse-cirru-list` 底层调用也会在严格检查阶段拒绝 Number 等非 String。Cirru EDN 和 JSON 的数据形状开放，普通 checked 解析保留 `Result<Dynamic,String>`。业务代码需要闭合名义类型时，在边界使用 `try-parse-cirru-edn-as` 或 `decode-map-as` 验证，不把开放 payload 直接当作已证明类型。
 
 Under the default strict diagnostics, passing that open `Dynamic` result directly to a
 function argument whose contract contains a Struct or Enum is
