@@ -124,7 +124,7 @@ pub enum CalcitProc {
   NativeGetCalcitBackend,
   #[strum(serialize = "register-calcit-builtin-impls")]
   RegisterCalcitBuiltinImpls,
-  #[strum(serialize = "read-file")]
+  #[strum(serialize = "&read-file")]
   ReadFile,
   #[strum(serialize = "&fs-read-text")]
   NativeFsReadText,
@@ -132,7 +132,7 @@ pub enum CalcitProc {
   NativeReadStdinText,
   #[strum(serialize = "&fs-read-dir")]
   NativeFsReadDir,
-  #[strum(serialize = "read-dir")]
+  #[strum(serialize = "&read-dir")]
   ReadDir,
   #[strum(serialize = "write-file")]
   WriteFile,
@@ -1794,6 +1794,10 @@ mod tests {
     assert_eq!(CalcitProc::from_str("&enum:nth"), Ok(CalcitProc::NativeEnumNth));
     assert!(CalcitProc::from_str("parse-float").is_err());
     assert!(CalcitProc::from_str("get-env").is_err());
+    assert_eq!(CalcitProc::from_str("&read-file"), Ok(CalcitProc::ReadFile));
+    assert_eq!(CalcitProc::from_str("&read-dir"), Ok(CalcitProc::ReadDir));
+    assert!(CalcitProc::from_str("read-file").is_err());
+    assert!(CalcitProc::from_str("read-dir").is_err());
   }
 
   #[test]

@@ -8307,19 +8307,40 @@
             :tags $ #{} :core :unit
         'read-dir $ %{} 'CodeEntry
           :doc "|List paths inside a directory.\nSyntax: (read-dir path recursive?)\nParams: path (string), recursive? (optional boolean, defaults to false)\nReturns: sorted list of path strings"
-          :code $ quote &runtime-implementation
+          :code $ quote &read-dir
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'String 'Bool
             :return $ :: 'List 'String
           :tags $ #{} :builtin :file :internal :io
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-one-and-two-argument-directory-reads)
+              :code $ quote $ do
+                assert= (read-dir |src) (&read-dir |src)
+                assert= (read-dir |src false) (&read-dir |src false)
+                assert= (read-dir |src true) (&read-dir |src true)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-missing-directory-failure)
+              :code $ quote $ assert= |caught
+                try (read-dir |/calcit-read-name-does-not-exist)
+                  fn (_error) |caught
+              :tags $ #{} :core :unit
         'read-file $ %{} 'CodeEntry
           :doc "|internal function for reading files\nSyntax: (read-file filepath)\nParams: filepath (string)\nReturns: string content or error\nReads file content as string, throws error if file not found"
-          :code $ quote &runtime-implementation
+          :code $ quote &read-file
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String
           :tags $ #{} :builtin :file :internal :io
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-file-read-alias)
+              :code $ quote $ assert= (read-file |Cargo.toml) (&read-file |Cargo.toml)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-missing-file-failure)
+              :code $ quote $ assert= |caught
+                try (read-file |/calcit-read-name-does-not-exist)
+                  fn (_error) |caught
+              :tags $ #{} :core :unit
         'read-stdin-text $ %{} 'CodeEntry
           :doc "|同步读取 stdin 至 EOF，最多 4 MiB，严格 UTF-8；返回 Result<String,String>。失败或超限可能已消费部分输入，不保证可重试。Node 需 read_stdin 字节注入；browser 返回 unsupported；WASI 需 --boundary component。"
           :code $ quote $ defn read-stdin-text ()
