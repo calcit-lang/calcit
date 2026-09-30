@@ -26,3 +26,9 @@ Node 从 Snapshot 读取这些 AST，复用 native/JS，并仅对已有支持的
 
 该 bugfix 在 0.28 收尾，broader Dynamic/Unknown proof 和消费者默认翻转仍按 0.29 分阶段计划推进。
 完整仓库门禁及真实消费者证据记录在 PR，不把单个错误码或测试通过当完整类型系统安全证明。
+
+PR review 指出开放 enum 的名义查询可能绕过循环 type slot 防护。名义身份查询现在仅处理
+直接的 nominal carrier；TypeSlot 与 nullable wrapper 保留共享 proof dispatch，且 nullable
+关系保留内部 RecursiveTypeSlot 等具体原因，不将其压平成 LegacyNullish 或提交 generic binding。
+扩展已有 Rust 循环 slot invariant，覆盖开放 enum/struct 与直接/Optional 包装的循环期望类型；
+这些内部循环无法通过正常 Calcit source 合理构造，因此不增加另一套用户语义测试入口。

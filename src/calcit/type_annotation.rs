@@ -4662,11 +4662,16 @@ impl CalcitTypeAnnotation {
       // identity, but it cannot prove that identity without a checked boundary.
       (Self::Custom(actual), expected)
         if (Self::custom_keyword_matches(actual, "struct") || Self::custom_keyword_matches(actual, "record"))
+          && matches!(expected, Self::Struct(_, _) | Self::StructValue(_) | Self::TypeRef(_, _))
           && expected.resolve_to_struct().is_some() =>
       {
         NeedsBoundary(Boundary::UnresolvedNominalIdentity)
       }
-      (Self::AnonymousEnum, expected) if expected.resolve_to_enum().is_some() => NeedsBoundary(Boundary::UnresolvedNominalIdentity),
+      (Self::AnonymousEnum, expected)
+        if matches!(expected, Self::Enum(_, _) | Self::EnumValue(_) | Self::TypeRef(_, _)) && expected.resolve_to_enum().is_some() =>
+      {
+        NeedsBoundary(Boundary::UnresolvedNominalIdentity)
+      }
       (Self::Enum(_, _) | Self::EnumValue(_) | Self::AnonymousEnum, Self::AnonymousEnum) => Proven,
       (actual @ Self::TypeRef(_, _), Self::AnonymousEnum) => {
         if actual.resolve_to_enum().is_some() {
@@ -4693,11 +4698,14 @@ impl CalcitTypeAnnotation {
         actual.prove_with_staged_bindings(expected, bindings)
       }
       (Self::Optional(actual) | Self::JsNullish(actual), expected) if !matches!(expected, Self::Optional(_) | Self::JsNullish(_)) => {
-        if actual.prove_with_staged_bindings(expected, bindings).is_mismatch() {
-          Mismatch
-        } else {
-          NeedsBoundary(Boundary::LegacyNullish)
-        }
+        actual
+          .prove_with_staged_bindings(expected, bindings)
+          .and(NeedsBoundary(Boundary::LegacyNullish))
+      }
+      (actual, Self::Optional(expected) | Self::JsNullish(expected)) if !matches!(actual, Self::Optional(_) | Self::JsNullish(_)) => {
+        actual
+          .prove_with_staged_bindings(expected, bindings)
+          .and(NeedsBoundary(Boundary::LegacyNullish))
       }
       (_, Self::Optional(_)) | (Self::Optional(_), _) | (_, Self::JsNullish(_)) | (Self::JsNullish(_), _) => {
         if self.compatible_with_bindings(expected, &mut bindings.clone()) {
@@ -6914,6 +6922,20 @@ mod tests {
       recursive.prove_with_bindings(&CalcitTypeAnnotation::Number, &mut TypeBindings::new()),
       TypeProof::NeedsBoundary(TypeBoundaryReason::RecursiveTypeSlot)
     );
+
+    for actual in [
+      CalcitTypeAnnotation::AnonymousEnum,
+      CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("struct"))),
+    ] {
+      for expected in [recursive.clone(), CalcitTypeAnnotation::Optional(Arc::new(recursive.clone()))] {
+        let mut bindings = TypeBindings::new();
+        assert_eq!(
+          actual.prove_with_bindings(&expected, &mut bindings),
+          TypeProof::NeedsBoundary(TypeBoundaryReason::RecursiveTypeSlot)
+        );
+        assert!(bindings.is_empty(), "a cyclic boundary must not commit generic bindings");
+      }
+    }
 
     pop_type_slot_override(&right);
     pop_type_slot_override(&left);
