@@ -1102,6 +1102,23 @@ fn strict_type_fail_generic_callback_output_keeps_map_value_type() {
 }
 
 #[test]
+fn strict_explicit_trait_call_rejects_unproven_dispatch_before_runtime() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    for (snippet, code) in [
+      ("&trait-call calcit.core/Countable :count 1", "E_TRAIT_CALL_IMPL_MISSING"),
+      ("&trait-call calcit.core/Countable :unknown $ [] 1", "E_TRAIT_CALL_METHOD_MISSING"),
+      ("&trait-call calcit.core/Countable :count ([] 1) 2", "E_TRAIT_CALL_ARITY"),
+      ("&trait-call 1 :count $ [] 1", "E_UNPROVEN_TRAIT_CALL"),
+    ] {
+      let entries = load_snippet_entries(snippet);
+      let err = run_check_only(&entries).expect_err("invalid explicit trait call must fail during preprocessing");
+      assert!(err.contains(code), "expected {code} for `{snippet}`, got: {err}");
+    }
+  });
+}
+
+#[test]
 fn strict_specialized_map_contracts_reject_concrete_callbacks_for_open_payload() {
   run_with_large_stack(|| {
     let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {

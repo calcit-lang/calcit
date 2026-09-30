@@ -3543,6 +3543,7 @@ fn preprocess_list_call(
             check_warnings,
             call_stack,
           )?;
+          validate_explicit_trait_call(call_head, &processed_args, scope_types, file_ns, call_stack)?;
           warn_on_method_name_conflict(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
         }
 
@@ -5399,6 +5400,164 @@ fn reject_or_warn_on_dynamic_trait_call(
     gen_check_warning_code(message, "P_DYNAMIC_METHOD_DISPATCH", file_ns, check_warnings);
   }
   Ok(())
+}
+
+fn validate_explicit_trait_call(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  if !matches!(head, Calcit::Proc(CalcitProc::NativeTraitCall)) || !strict_types_enabled() || !should_emit_project_source_lint(file_ns)
+  {
+    return Ok(());
+  }
+
+  let reject = |code, message: String, location| {
+    CalcitErr::use_msg_stack_location_with_code(CalcitErrKind::Type, message, code, call_stack, location)
+  };
+  let trait_def = match args.first() {
+    Some(Calcit::Trait(definition)) => definition.to_owned(),
+    Some(Calcit::Import(import)) => match resolve_program_value_for_preprocess(&import.ns, &import.def, import.def_id) {
+      Some(Calcit::Trait(definition)) => definition,
+      _ => {
+        return Err(reject(
+          "E_UNPROVEN_TRAIT_CALL",
+          format!(
+            "&trait-call requires a resolved trait definition, not `{}/{}`",
+            import.ns, import.def
+          ),
+          head.get_location(),
+        ));
+      }
+    },
+    Some(local @ Calcit::Local(_)) => match resolve_type_value(local, scope_types).as_deref() {
+      Some(CalcitTypeAnnotation::Trait(definition)) => definition.as_ref().to_owned(),
+      _ => {
+        return Err(reject(
+          "E_UNPROVEN_TRAIT_CALL",
+          "&trait-call requires a statically resolved trait definition; this local value has no nominal trait identity".to_owned(),
+          local.get_location().or_else(|| head.get_location()),
+        ));
+      }
+    },
+    _ => {
+      return Err(reject(
+        "E_UNPROVEN_TRAIT_CALL",
+        "&trait-call requires a statically resolved trait definition; a dynamic trait value does not prove dispatch".to_owned(),
+        head.get_location(),
+      ));
+    }
+  };
+  let method_name = match args.get(1) {
+    Some(Calcit::Tag(name)) => name.ref_str(),
+    Some(Calcit::Symbol { sym, .. }) => sym.as_ref(),
+    Some(Calcit::Str(name)) => name.as_ref(),
+    _ => {
+      return Err(reject(
+        "E_UNPROVEN_TRAIT_CALL",
+        "&trait-call requires a static method name".to_owned(),
+        head.get_location(),
+      ));
+    }
+  };
+  if !trait_def.has_method(method_name) {
+    return Err(reject(
+      "E_TRAIT_CALL_METHOD_MISSING",
+      format!("trait {} does not define .{method_name}", trait_def.origin_label()),
+      head.get_location(),
+    ));
+  }
+  if let Some(signature) = trait_def
+    .method_index(method_name)
+    .and_then(|index| trait_def.method_types.get(index))
+    .and_then(|annotation| annotation.as_function())
+  {
+    let actual_count = args.len().saturating_sub(2);
+    let expected_count = signature.arg_types.len();
+    let trailing_options = if signature.rest_type.is_none() {
+      calcit::trailing_option_arg_count(&signature.arg_types, expected_count)
+    } else {
+      0
+    };
+    let enough = actual_count >= expected_count.saturating_sub(trailing_options);
+    let not_too_many = signature.rest_type.is_some() || actual_count <= expected_count;
+    if !enough || !not_too_many {
+      return Err(reject(
+        "E_TRAIT_CALL_ARITY",
+        format!(
+          "&trait-call {} .{method_name} expects {expected_count} argument(s) including receiver, got {actual_count}",
+          trait_def.origin_label()
+        ),
+        head.get_location(),
+      ));
+    }
+  }
+  let receiver = args.get(2).ok_or_else(|| {
+    reject(
+      "E_TRAIT_CALL_ARITY",
+      "&trait-call requires a receiver after its trait and method".to_owned(),
+      head.get_location(),
+    )
+  })?;
+  let receiver_type = resolve_type_value(receiver, scope_types).ok_or_else(|| {
+    reject(
+      "E_UNPROVEN_TRAIT_CALL",
+      format!(
+        "&trait-call {} .{method_name} has no proven receiver type; declare its schema or narrow the value",
+        trait_def.origin_label()
+      ),
+      receiver.get_location().or_else(|| head.get_location()),
+    )
+  })?;
+  if let Some(cause) = classify_dynamic_dispatch_receiver(Some(receiver_type.as_ref()), current_function_has_js_ffi_feature())
+    && !matches!(cause, DynamicDispatchReceiverCause::UnboundGeneric(_))
+  {
+    return Err(reject(
+      "E_UNPROVEN_TRAIT_CALL",
+      format!(
+        "&trait-call {} .{method_name} cannot use {}; {}",
+        trait_def.origin_label(),
+        cause.label(),
+        cause.migration()
+      ),
+      receiver.get_location().or_else(|| head.get_location()),
+    ));
+  }
+
+  let matching_count = if let Some(traits) = trait_list_from_type(receiver_type.as_ref()) {
+    traits.iter().filter(|candidate| candidate.has_same_origin(&trait_def)).count()
+  } else {
+    get_impls_from_type(receiver_type.as_ref())
+      .unwrap_or_default()
+      .iter()
+      .filter(|candidate| candidate.implements_trait(&trait_def))
+      .count()
+  };
+  match matching_count {
+    1 => Ok(()),
+    0 if trait_def.get_default(method_name).is_some() => Ok(()),
+    0 if core_impl_list_symbol_from_type_annotation(receiver_type.as_ref()).is_some() => Err(reject(
+      "E_TRAIT_CALL_IMPL_MISSING",
+      format!(
+        "&trait-call {} .{method_name} has no implementation for receiver `{}`",
+        trait_def.origin_label(),
+        receiver_type.describe()
+      ),
+      receiver.get_location().or_else(|| head.get_location()),
+    )),
+    0 => Ok(()),
+    _ => Err(reject(
+      "E_DUPLICATE_TRAIT_IMPL",
+      format!(
+        "&trait-call {} .{method_name} has multiple implementations for receiver `{}`",
+        trait_def.origin_label(),
+        receiver_type.describe()
+      ),
+      receiver.get_location().or_else(|| head.get_location()),
+    )),
+  }
 }
 
 fn canonical_absence_operation_name(head: &Calcit) -> Option<&str> {

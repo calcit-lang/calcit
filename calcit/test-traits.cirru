@@ -514,6 +514,21 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
+          :tests $ []
+            %{} 'TestEntry (:name |count-with-proven-list)
+              :code $ quote $ assert= 2
+                &trait-call calcit.core/Countable :count $ [] 1 2
+              :tags $ #{} :trait :unit
+            %{} 'TestEntry (:name |preserves-declared-generic-bound)
+              :code $ quote $ let
+                  count-items $ fn (x)
+                    hint-fn $ {} (:return 'Number)
+                      :args $ [] 'T
+                      :generics $ [] 'T
+                      :where $ {} $ 'T 'Countable
+                    &trait-call calcit.core/Countable :count x
+                assert= 2 $ count-items $ [] 1 2
+              :tags $ #{} :trait :unit
         'test-impl-precedence-order $ %{} 'CodeEntry (:doc "|Test impl precedence order")
           :code $ quote $ defn test-impl-precedence-order () (println "|Testing impl precedence order...")
             let
