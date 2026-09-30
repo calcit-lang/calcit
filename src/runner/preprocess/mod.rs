@@ -2909,7 +2909,7 @@ fn preprocess_list_call(
         }
 
         if strict_types_enabled()
-          && (checked_contract.is_some() || refreshed_checked_contract.is_some())
+          && (!info.generics.is_empty() || checked_contract.is_some() || refreshed_checked_contract.is_some())
           && let Some(expected) = active_expected_types.get(arg_idx)
           && let Some(binding_expected) = info.arg_types.get(arg_idx).or(info.rest_type.as_ref()).or(Some(expected))
           && !empty_container_has_no_type_evidence(&form, binding_expected.as_ref())

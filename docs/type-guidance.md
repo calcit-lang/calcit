@@ -47,6 +47,8 @@ calcit query context app.main/initial-count --format edn
 
 ## Dynamic 是边界，不是默认多态
 
+普通泛型函数会按实参顺序传递已知的类型关系。例如 `filter-map-kv` 接收 `Map<String,Number>` 时，后续回调的参数可推为 `String` 和 `Number`；回调返回的 `MapEntryDecision<R,S>` 也保留泛型实参，让结果 `Map<R,S>` 继续约束后续写入。无需为了传递这些关系手工增加 `hint-fn` 或 `assert-type`。如果输入本身是显式 `Dynamic`，推断不会凭空把它收窄为某个具体类型，仍应在真实边界处 decode 或 narrow。
+
 `Dynamic` 适合 JS FFI、框架开放数据、宏和确实无法提前知道的外部输入。普通函数不要用多个 `Dynamic` 表示“它们应该是同一个类型”：输入和返回关联时用 `:generics` 与 TypeVar；只需要能力时用 trait 与 `:where`；同质集合写出元素类型；有限异构数据定义为 Enum；可缺失值使用 `Option<T>`，带失败信息使用 `Result<T, E>`。
 
 Dynamic 表示用户明确选择的开放 Calcit 值，不等于编译器尚未推断出的 Unknown/Unresolved，也不等于宿主拥有的

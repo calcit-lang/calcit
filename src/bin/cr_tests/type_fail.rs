@@ -1084,6 +1084,24 @@ fn strict_type_fail_erased_generic_relation_reports_stable_error_code() {
 }
 
 #[test]
+fn strict_type_fail_generic_callback_output_keeps_map_value_type() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_fixture_entries("calcit/type-fail/generic-callback-map-output-strict.cirru");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("invalid map update should preprocess with a warning");
+    let warnings = warnings.borrow();
+    assert!(
+      warnings
+        .iter()
+        .any(|warning| warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH") && warning.message().contains("&map:assoc")),
+      "generic callback output must retain its value type: {warnings:?}"
+    );
+  });
+}
+
+#[test]
 fn strict_specialized_map_contracts_reject_concrete_callbacks_for_open_payload() {
   run_with_large_stack(|| {
     let main_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
