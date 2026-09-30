@@ -52,6 +52,7 @@ preflight；只有验证 0.14 之前的临时 warning 路径时才使用 `--comp
 - `js-nullish-predicate-strict.cirru` 会验证 strict 模式拒绝以 `nil?`/`some?`/`non-nil?` 检查 `JsNullish<T>`，并报告稳定的 `E_JS_FFI_NULLABLE_PREDICATE` 与专用 predicate 建议。
 - `unsafe-coerce-unscoped-strict.cirru` 会验证 strict 模式拒绝未声明 `:js-ffi` 的 `unsafe-coerce`，并报告稳定的 `E_UNSCOPED_UNSAFE_COERCE`。
 - `unsafe-coerce-scoped-strict.cirru` 是 integration preprocessing 正例：标记 adapter 可使用 assertion，普通 typed caller 不继承也不需要该 capability；完整 strict quality gate 仍要求显式 `unsafeCoerce` baseline。
+- `unsafe-coerce-global-leak-strict.cirru` 验证标记为 `:js-ffi` 的调用方不能把权限传给被引用的顶层 `defatom` 初始化；即使该值在入口依赖闭包中也必须报 `E_UNSCOPED_UNSAFE_COERCE`。
 - `erased-generic-relation-strict.cirru` 会验证 strict 模式允许 Dynamic 作为开放泛型 payload 传递，但拒绝用只接受具体类型的 callback 隐式收窄该绑定，并报告稳定的 `E_ERASED_GENERIC_RELATION`。
 
 ## 自动化测试
