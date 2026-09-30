@@ -13,6 +13,7 @@
 Number→numeric refinement 仍需要范围检查；开放 struct/enum 缺少名义身份；Optional/JsNullish
 到具体值需要非空证据。共享关系将这些情况保留为 NeedsBoundary，不变成 Proven，
 旧 compatibility 的隐式数值/非空收窄仍不允许。嵌套 payload 确定不兼容继续是 Mismatch。
+macro 的 Syntax 输入还缺 value-stage 证据，同样不当作确定的 runtime 类型矛盾或静态证明。
 这不是按 core 或 Respo 名称添加例外；真实 consumer 的严格检查用于防止误伤，
 原 nominal-slot 方向性测试继续确认开放 enum 不能证明具体 slot、不能提交 binding，
 只把“缺身份”与“确定矛盾”的诊断分类区别开。
