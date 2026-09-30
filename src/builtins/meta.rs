@@ -300,7 +300,7 @@ pub fn format_cirru(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn format_cirru_one_liner(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
-    Some(a) => match cirru::calcit_data_to_cirru(a) {
+    Some(a @ Calcit::List(_)) => match cirru::calcit_data_to_cirru(a) {
       Ok(v) => {
         // Format the expression directly
         match cirru_parser::format_expr_one_liner(&v) {
@@ -310,6 +310,10 @@ pub fn format_cirru_one_liner(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       }
       Err(e) => CalcitErr::err_str(CalcitErrKind::Syntax, format!("format-cirru-one-liner failed: {e}")),
     },
+    Some(a) => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("format-cirru-one-liner expected a list for Cirru formatting, but received: {a}"),
+    ),
     None => {
       let hint = format_proc_examples_hint(&CalcitProc::FormatCirruOneLiner).unwrap_or_default();
       CalcitErr::err_str_with_hint(
@@ -2314,6 +2318,18 @@ mod tests {
       error.msg
     );
     assert!(error.msg.contains("line 1, column 1"), "missing source location: {}", error.msg);
+  }
+
+  #[test]
+  fn one_line_cirru_formatter_rejects_non_list_at_runtime() {
+    for invalid in [Calcit::Number(1.0), Calcit::new_str("leaf")] {
+      let error = format_cirru_one_liner(&[invalid]).expect_err("outer Cirru expression must be a list");
+      assert_eq!(error.kind, CalcitErrKind::Type);
+      assert!(
+        error.msg.contains("format-cirru-one-liner expected a list"),
+        "unexpected error: {error:?}"
+      );
+    }
   }
 
   #[test]
