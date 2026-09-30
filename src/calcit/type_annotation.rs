@@ -5564,6 +5564,11 @@ pub(crate) fn code_resolves_to_nominal_type_def(code: &Calcit) -> bool {
 }
 
 pub(crate) fn resolve_type_def_from_code(code: &Calcit) -> Option<Calcit> {
+  // Follow data-definition aliases without evaluating an unfinished impl.
+  // The shared lookup guard covers both source symbols and compiled imports.
+  if matches!(code, Calcit::Import(_) | Calcit::Symbol { .. }) {
+    return resolve_calcit_value(code).filter(|value| matches!(value, Calcit::StructDef(_) | Calcit::EnumDef(_)));
+  }
   // Unwrap thunks: defstruct/defenum definitions are stored as unevaluated thunks
   if let Calcit::Thunk(thunk) = code {
     return resolve_type_def_from_code(thunk.get_code());
@@ -5805,19 +5810,21 @@ fn normalized_data_definition_forms(items: &CalcitList) -> Vec<&Calcit> {
 
 fn resolve_calcit_value(form: &Calcit) -> Option<Calcit> {
   match form {
-    Calcit::Import(import) => {
+    Calcit::Import(_) | Calcit::Symbol { .. } => {
+      let (namespace, definition) = match form {
+        Calcit::Import(import) => (&import.ns, &import.def),
+        Calcit::Symbol { sym, info, .. } => (&info.at_ns, sym),
+        _ => unreachable!(),
+      };
       let mut short_circuit = false;
       let mut pushed = false;
 
       IMPORT_RESOLUTION_STACK.with(|stack| {
         let mut stack = stack.borrow_mut();
-        if stack
-          .iter()
-          .any(|(ns, def)| ns.as_ref() == import.ns.as_ref() && def.as_ref() == import.def.as_ref())
-        {
+        if stack.iter().any(|(ns, def)| ns == namespace && def == definition) {
           short_circuit = true;
         } else {
-          stack.push((import.ns.clone(), import.def.clone()));
+          stack.push((namespace.clone(), definition.clone()));
           pushed = true;
         }
       });
@@ -5826,12 +5833,9 @@ fn resolve_calcit_value(form: &Calcit) -> Option<Calcit> {
         return None;
       }
 
-      let resolved = lookup_runtime_ready_registered(import.ns.as_ref(), import.def.as_ref())
+      let resolved = lookup_runtime_ready_registered(namespace, definition)
         .map(|value| resolve_type_def_from_code(&value).unwrap_or(value))
-        .or_else(|| {
-          lookup_def_code_registered(import.ns.as_ref(), import.def.as_ref())
-            .map(|value| resolve_type_def_from_code(&value).unwrap_or(value))
-        });
+        .or_else(|| lookup_def_code_registered(namespace, definition).map(|value| resolve_type_def_from_code(&value).unwrap_or(value)));
 
       if pushed {
         IMPORT_RESOLUTION_STACK.with(|stack| {
@@ -5842,11 +5846,6 @@ fn resolve_calcit_value(form: &Calcit) -> Option<Calcit> {
 
       resolved
     }
-    Calcit::Symbol { sym, info, .. } => lookup_runtime_ready_registered(info.at_ns.as_ref(), sym)
-      .map(|value| resolve_type_def_from_code(&value).unwrap_or(value))
-      .or_else(|| {
-        lookup_def_code_registered(info.at_ns.as_ref(), sym).map(|value| resolve_type_def_from_code(&value).unwrap_or(value))
-      }),
     _ => None,
   }
 }
