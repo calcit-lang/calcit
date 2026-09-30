@@ -50,7 +50,23 @@ try {
   assert.notEqual(shadow.status, 0, "strict core-shadowing diagnostics must remain enabled");
   assert.match(shadow.stderr, /local binding.*read-file.*shadowed/);
   assert.doesNotMatch(shadow.stderr, /invalid pair for &let binding/);
-  console.log("File-read aliases passed shared native/JS definition tests, host call counts and strict shadowing diagnostics");
+  const consumer = join(fixture, "module-consumer.cirru");
+  await copyFile("tests/fixtures/file-reader-names-consumer.cirru", consumer);
+  await copyFile("tests/fixtures/file-reader-names-module.cirru", join(fixture, "file-reader-names-module.cirru"));
+  const moduleSource = JSON.parse(run("cirru", "parse-edn", "--file", consumer));
+  const moduleTests = moduleSource[":files"]["'app.main"].defs["'main!"].tests;
+  assert.equal(moduleTests.length, 2);
+  run(consumer, "query", "config");
+  run(consumer, "edit", "def", "app.main/main!", "--overwrite", "--input-format", "json-ast", "--code",
+    JSON.stringify(["defn", "main!", [], ...moduleTests.map(test => test.code.__edn_quote), "&unit"]));
+  run(consumer, "test", "--require-match");
+  const moduleOutput = join(fixture, "module-js");
+  run(consumer, "--emit-path", moduleOutput, "js");
+  const moduleConsumer = await import(pathToFileURL(join(moduleOutput, "app.main.mjs")).href);
+  const callsBeforeModule = calls.length;
+  moduleConsumer.main_$x_();
+  assert.equal(calls.length, callsBeforeModule, "qualified module functions must not dispatch to core file injections");
+  console.log("File-read aliases and qualified dependency calls passed shared native/JS tests, host calls and strict shadowing diagnostics");
 } finally {
   if (previousInjections === undefined) delete globalThis.__calcit_injections__;
   else globalThis.__calcit_injections__ = previousInjections;
