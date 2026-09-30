@@ -74,6 +74,8 @@ pub(crate) fn checked_call_contract_arity(fn_ns: &str, fn_def: &str) -> Option<u
     return None;
   }
   match fn_def {
+    "first" | "last" => Some(1),
+    "nth" => Some(2),
     "any?" | "each" | "every?" | "get" | "filter" | "map" | "map-indexed" | "map-list-kv" | "result:map" => Some(2),
     "option:fold" | "update" => Some(3),
     _ => None,
@@ -143,6 +145,24 @@ pub(crate) fn resolve_checked_call_contract(
     });
   }
   match (fn_def, receiver_type.as_ref()) {
+    ("first" | "last" | "nth", value) => {
+      let member_type = match value {
+        T::List(item_type) => item_type.clone(),
+        T::String => Arc::new(T::String),
+        T::EnumValue(_) | T::AnonymousEnum => crate::calcit::DYNAMIC_TYPE.clone(),
+        value if value.resolve_to_enum().is_some() => crate::calcit::DYNAMIC_TYPE.clone(),
+        _ => return None,
+      };
+      Some(CheckedCallContract {
+        expected_types: Some(if fn_def == "nth" {
+          vec![receiver_type.clone(), Arc::new(T::Number)]
+        } else {
+          vec![receiver_type.clone()]
+        }),
+        return_type: core_type_ref("Option", vec![member_type]),
+        lowering: Some(CheckedCallLowering::TypedOptionalAccess),
+      })
+    }
     ("any?" | "every?", T::List(item_type) | T::Set(item_type)) => {
       let callback_type = if matches!(item_type.as_ref(), T::Syntax(_)) {
         Arc::new(T::DynFn)
@@ -385,6 +405,45 @@ mod tests {
       location: None,
       type_info,
     })
+  }
+
+  #[test]
+  fn indexed_sequence_contract_shares_member_type_and_lowering_evidence() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    for (receiver, member) in [
+      (Arc::new(CalcitTypeAnnotation::List(number.clone())), number),
+      (Arc::new(CalcitTypeAnnotation::String), Arc::new(CalcitTypeAnnotation::String)),
+    ] {
+      for operation in ["first", "last", "nth"] {
+        let mut args = vec![local("sequence", receiver.clone())];
+        if operation == "nth" {
+          args.push(Calcit::Number(0.0));
+        }
+        let args = CalcitList::from(args.as_slice());
+        let contract = resolve_checked_call_contract(calcit::CORE_NS, operation, &args, &ScopeTypes::new())
+          .expect("typed sequence access must have one checked contract");
+        let expected = contract.expected_types.expect("typed sequence access must prove its parameters");
+        assert_eq!(expected[0], receiver);
+        if operation == "nth" {
+          assert_eq!(expected[1].as_ref(), &CalcitTypeAnnotation::Number);
+        }
+        assert_eq!(contract.return_type, core_type_ref("Option", vec![member.clone()]));
+        assert_eq!(contract.lowering, Some(CheckedCallLowering::TypedOptionalAccess));
+      }
+    }
+
+    let open = CalcitList::from(&[local("sequence", crate::calcit::DYNAMIC_TYPE.clone())] as &[Calcit]);
+    assert!(resolve_checked_call_contract(calcit::CORE_NS, "first", &open, &ScopeTypes::new()).is_none());
+
+    let enum_args = CalcitList::from(&[local("sequence", Arc::new(CalcitTypeAnnotation::AnonymousEnum))] as &[Calcit]);
+    let enum_contract = resolve_checked_call_contract(calcit::CORE_NS, "first", &enum_args, &ScopeTypes::new())
+      .expect("an enum retains its existing optional access lowering");
+    assert_eq!(
+      enum_contract.return_type,
+      core_type_ref("Option", vec![crate::calcit::DYNAMIC_TYPE.clone()])
+    );
+    assert_eq!(enum_contract.lowering, Some(CheckedCallLowering::TypedOptionalAccess));
+    assert!(resolve_checked_call_contract(calcit::CORE_NS, "nth", &enum_args, &ScopeTypes::new()).is_none());
   }
 
   #[test]

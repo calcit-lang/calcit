@@ -5526,6 +5526,16 @@
                 assert= |empty $ option:unwrap-or (first |) |empty
                 assert= (%some "|文") (last "|中文")
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |retains-proven-sequence-payload)
+              :code $ quote $ do
+                assert-type
+                  first $ [] 1 2
+                  :: 'Option 'Number
+                assert-type (first |abc) (:: 'Option 'String)
+                assert= (%some 1)
+                  first $ [] 1 2
+                assert= (%some |a) (first |abc)
+              :tags $ #{} :core :types :unit
         'flipped $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro flipped (f & args)
             quasiquote $ ~f $ ~@ (reverse args)
@@ -6761,6 +6771,16 @@
                   do (&str:slice "|😀" 0 0.5) false
                   fn (message) true
               :tags $ #{} :core :unicode :unit
+            %{} 'TestEntry (:name |retains-proven-sequence-payload)
+              :code $ quote $ do
+                assert-type
+                  last $ [] 1 2
+                  :: 'Option 'Number
+                assert-type (last |abc) (:: 'Option 'String)
+                assert= (%some 2)
+                  last $ [] 1 2
+                assert= (%some |c) (last |abc)
+              :tags $ #{} :core :types :unit
         'let $ %{} 'CodeEntry
           :doc "|macro for local bindings\nSyntax: (let ([name value] ...) body...)\nParams: pairs (list of binding pairs), body (expressions)\nReturns: result of body with bindings in scope\nCreates multiple local bindings sequentially"
           :code $ quote $ defmacro let (pairs & body)
@@ -7587,15 +7607,26 @@
           :schema $ :: 'Fn $ {}
             :args $ [] 'Dynamic 'Number
             :return $ :: 'Option 'Dynamic
-          :tests $ [] $ %{} 'TestEntry (:name |reads-open-list-payload)
-            :code $ quote $ let
-                xs $ assert-type
-                  [] 1 $ {} $ :a 2
-                  :: 'List 'Dynamic
-              assert=
-                %some $ {} $ :a 2
-                nth xs 1
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |reads-open-list-payload)
+              :code $ quote $ let
+                  xs $ assert-type
+                    [] 1 $ {} $ :a 2
+                    :: 'List 'Dynamic
+                assert=
+                  %some $ {} $ :a 2
+                  nth xs 1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |retains-proven-sequence-payload)
+              :code $ quote $ do
+                assert-type
+                  nth ([] 1 2) 1
+                  :: 'Option 'Number
+                assert-type (nth |abc 1) (:: 'Option 'String)
+                assert= (%some 2)
+                  nth ([] 1 2) 1
+                assert= (%some |b) (nth |abc 1)
+              :tags $ #{} :core :types :unit
         'number->float32 $ %{} 'CodeEntry
           :doc "|把 Number 显式检查并转换为 Float32 refinement；成功返回原数值，失败返回带上下文的 String。refinement 只携带边界证明，运行时仍是 Number。"
           :code $ quote $ defn number->float32 (value)

@@ -1804,7 +1804,7 @@ fn try_expand_typed_optional_access_call(
         file_ns,
       )))
     }
-    ("nth", 2, _) if indexed_procs.is_some() => {
+    ("nth", 2, _) if indexed_procs.is_some() && matches!(checked_lowering, Some(CheckedCallLowering::TypedOptionalAccess)) => {
       let (count_proc, nth_proc) = indexed_procs.expect("guarded indexed procs");
       let receiver = generated_path_symbol("typed_nth_receiver", file_ns, call_stack)?;
       let index = generated_path_symbol("typed_nth_index", file_ns, call_stack)?;
@@ -1815,13 +1815,13 @@ fn try_expand_typed_optional_access_call(
         file_ns,
       )))
     }
-    ("first", 1, _) if indexed_procs.is_some() => {
+    ("first", 1, _) if indexed_procs.is_some() && matches!(checked_lowering, Some(CheckedCallLowering::TypedOptionalAccess)) => {
       let receiver = generated_path_symbol("typed_first_receiver", file_ns, call_stack)?;
       let body =
         generated_optional_first_access(receiver.to_owned(), receiver_type.as_ref(), file_ns).expect("guarded typed first receiver");
       Ok(Some(generated_let(receiver, receiver_expr.to_owned(), body, file_ns)))
     }
-    ("last", 1, _) if indexed_procs.is_some() => {
+    ("last", 1, _) if indexed_procs.is_some() && matches!(checked_lowering, Some(CheckedCallLowering::TypedOptionalAccess)) => {
       let receiver = generated_path_symbol("typed_last_receiver", file_ns, call_stack)?;
       let body = generated_optional_last_access(receiver.to_owned(), receiver_type.as_ref(), file_ns, call_stack)?
         .expect("guarded typed last receiver");

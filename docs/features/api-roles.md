@@ -41,6 +41,8 @@ leads_to:
 
 `?` 表示返回布尔判断，`!` 只用于确有作用或特殊控制语义的公开名字；不要机械地给每个动词添加后缀。模块名和普通函数继续用 kebab-case。公开名称是否是方法由类型契约和解析证据决定，不由字符串里是否有 `:` 或 `&` 决定。内部 helper 与 primitive 暂有不同实现命名；它们不是两套公开语言风格，不承诺用户可依赖其拼写。下一步先迁移公开调用，再根据真实编译器重复逻辑决定是否调整内部名字，避免为了表面一致重做 lowering。
 
+已知 `List<T>` 和 `String` 的 `.first`、`.last`、`.nth` 使用同一接收者证明推导 `Option<T>` 或 `Option<String>`；`calcit query type ":: 'List 'Number" --format edn` 可查看参数、返回值和 `proven` 状态。List 的 `.nth` 仍按已有规则标为兼容名、推荐 `.get`，证明状态不改变 API 角色。开放接收者或 Enum 的异质 payload 不能仅凭方法名得到具体成员类型；查询保持开放证据，不把 `Dynamic` 伪装为已证明的 `T`。
+
 ### English reference for Agents
 
 | Role | Preferred public form | Legacy or implementation form |
