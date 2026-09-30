@@ -2694,6 +2694,7 @@ fn parse_legacy_configs_for_format(data: &Edn) -> Result<(SnapshotEntry, Option<
   }
   let entry = parse_snapshot_entry_with_context(data.to_owned(), "legacy configs", false)?;
   let version = match configs.get(&Edn::tag("version")).or_else(|| configs.get(&Edn::str("version"))) {
+    Some(Edn::Nil) => None,
     Some(_) => Some(parse_snapshot_config_string_field(&configs, "version", "legacy configs")?),
     None => None,
   };
@@ -6102,6 +6103,25 @@ mod tests {
     let legacy = legacy_direct_quote_snapshot([("custom", Edn::Bool(true))]);
     let error = load_snapshot_data_for_format(&legacy, "calcit.cirru").expect_err("unknown legacy config must not be discarded");
     assert!(error.contains("legacy configs: unknown field `:custom`"), "error: {error}");
+  }
+
+  #[test]
+  fn format_loader_treats_legacy_nil_version_as_absent() {
+    let legacy = legacy_direct_quote_snapshot([("version", Edn::Nil)]);
+    let (snapshot, migration) = load_snapshot_data_for_format(&legacy, "calcit.cirru").expect("legacy nil version should migrate");
+    assert!(migration.legacy_configs);
+    assert_eq!(snapshot.version, default_version());
+
+    let rendered = render_snapshot_content(&snapshot).expect("migrated snapshot should render");
+    let canonical = cirru_edn::parse(&rendered).expect("canonical output should parse");
+    load_snapshot_data(&canonical, "calcit.cirru").expect("canonical output should pass the strict loader");
+  }
+
+  #[test]
+  fn format_loader_rejects_non_nil_legacy_version_with_wrong_type() {
+    let legacy = legacy_direct_quote_snapshot([("version", Edn::Bool(true))]);
+    let error = load_snapshot_data_for_format(&legacy, "calcit.cirru").expect_err("non-string version must fail");
+    assert!(error.contains("legacy configs.version"), "error: {error}");
   }
 
   #[test]
