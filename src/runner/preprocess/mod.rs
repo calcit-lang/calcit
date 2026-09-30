@@ -541,17 +541,30 @@ fn ensure_ns_def_preprocessed(
   let saved_fn_type = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().take());
   let saved_struct_type = EXPECTED_STRUCT_TYPE.with(|cell| cell.borrow_mut().take());
 
-  let Some(()) = with_preprocess_compile_guard(ns, def, || match program::lookup_def_code(ns, def) {
+  let result = with_preprocess_compile_guard(ns, def, || match program::lookup_def_code(ns, def) {
     Some(code) => {
       let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
 
       let mut scope_types = ScopeTypes::new();
       let context_label = format!("{ns}/{def}");
-      let resolved_code = builtins::meta::with_compiling_def(ns, def, || {
+      // Referenced source definitions have their own lexical capabilities.
+      // A caller's :js-ffi feature must not authorize a top-level value.
+      let saved_features = CURRENT_FN_FEATURES.with(|cell| cell.replace(None));
+      // A source `fn` uses the definition's schema, not the caller's expected
+      // callback type. Named `defn` handles its own schema and must not pass
+      // that expectation on to an unrelated nested callback.
+      if matches!(&code, Calcit::List(forms) if matches!(forms.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "fn"))
+        && let CalcitTypeAnnotation::Fn(fn_schema) = program::lookup_def_schema(ns, def).as_ref()
+      {
+        EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = Some(fn_schema.clone()));
+      }
+      let resolved_result = builtins::meta::with_compiling_def(ns, def, || {
         calcit::with_type_annotation_warning_context(context_label, || {
           preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, &next_stack)
         })
-      })?;
+      });
+      CURRENT_FN_FEATURES.with(|cell| *cell.borrow_mut() = saved_features);
+      let resolved_code = resolved_result?;
       store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
 
       Ok(())
@@ -566,18 +579,13 @@ fn ensure_ns_def_preprocessed(
         Some(loc),
       ))
     }
-  })?
-  else {
-    // Restore saved type hints (even when compilation was skipped by the guard)
-    EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = saved_fn_type);
-    EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = saved_struct_type);
-    return Ok(());
-  };
+  });
 
-  // Restore saved type hints after compilation
+  // Restore caller hints even when preprocessing failed or was skipped.
   EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = saved_fn_type);
   EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = saved_struct_type);
 
+  let Some(()) = result? else { return Ok(()) };
   Ok(())
 }
 

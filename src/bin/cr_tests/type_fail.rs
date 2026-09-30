@@ -1046,6 +1046,13 @@ fn strict_type_fail_unsafe_coerce_requires_lexical_ffi_scope() {
 
     let scoped = load_fixture_entries("calcit/type-fail/unsafe-coerce-scoped-strict.cirru");
     run_check_only(&scoped).expect("a marked adapter may contain unsafe-coerce without leaking capability to its caller");
+
+    let global_leak = load_fixture_entries("calcit/type-fail/unsafe-coerce-global-leak-strict.cirru");
+    let err = run_check_only(&global_leak).expect_err("a marked caller must not authorize a referenced top-level value");
+    assert!(
+      err.contains("E_UNSCOPED_UNSAFE_COERCE"),
+      "unexpected global capability error: {err}"
+    );
   });
 }
 
