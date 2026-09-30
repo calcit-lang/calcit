@@ -960,16 +960,6 @@ fn infer_core_nominal_absence_return_type(
       Some(core_type_ref("Option", vec![element_type]))
     }
     "find-index" | "index-of" => Some(core_type_ref("Option", vec![tag_annotation("number")])),
-    "first" | "last" => {
-      let receiver_type = call_expr.get(1).and_then(|value| resolve_type_value(value, scope_types))?;
-      let payload_type = infer_sequence_payload_type(receiver_type.as_ref())?;
-      Some(core_type_ref("Option", vec![payload_type]))
-    }
-    "nth" => {
-      let receiver_type = call_expr.get(1).and_then(|value| resolve_type_value(value, scope_types))?;
-      let payload_type = infer_sequence_payload_type(receiver_type.as_ref())?;
-      Some(core_type_ref("Option", vec![payload_type]))
-    }
     "parse-float" => Some(core_type_ref("Result", vec![tag_annotation("number"), tag_annotation("string")])),
     "get-env" => Some(core_type_ref("Option", vec![tag_annotation("string")])),
     _ => None,
@@ -1069,15 +1059,6 @@ pub(super) fn fully_typed_literal_assoc_path(base_type: &CalcitTypeAnnotation, p
 
   (!matches!(current_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn))
     .then(|| path_items.into_iter().cloned().collect())
-}
-
-fn infer_sequence_payload_type(base_type: &CalcitTypeAnnotation) -> Option<Arc<CalcitTypeAnnotation>> {
-  match base_type {
-    CalcitTypeAnnotation::List(element_type) => Some(element_type.clone()),
-    CalcitTypeAnnotation::String => Some(tag_annotation("string")),
-    CalcitTypeAnnotation::EnumValue(_) | CalcitTypeAnnotation::AnonymousEnum => Some(calcit::DYNAMIC_TYPE.clone()),
-    _ => None,
-  }
 }
 
 fn infer_lookup_payload_type_from_type(

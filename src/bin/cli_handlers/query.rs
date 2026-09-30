@@ -1414,6 +1414,32 @@ mod type_query_tests {
   }
 
   #[test]
+  fn indexed_sequence_methods_expose_proven_agent_contracts() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let snapshot = load_core_snapshot().expect("core snapshot should load");
+    prepare_program_for_type_query_on_cli_stack(snapshot);
+
+    for (receiver, member) in [
+      (parse_type_annotation_query(":: 'List 'Number").expect("typed list"), "number"),
+      (parse_type_annotation_query("'String").expect("string"), "string"),
+    ] {
+      for method in [".first", ".last", ".nth"] {
+        let contract = runner::preprocess::static_method_contract(receiver.as_ref(), method);
+        assert_eq!(contract.status, "proven", "{method}: {contract:?}");
+        assert_eq!(
+          contract.return_type.unwrap().describe(),
+          format!("type calcit.core/Option<{member}>")
+        );
+        let args = contract.arg_types.expect("proven method parameters");
+        assert_eq!(args.len(), usize::from(method == ".nth"));
+        if method == ".nth" {
+          assert_eq!(args[0].describe(), "number");
+        }
+      }
+    }
+  }
+
+  #[test]
   fn method_query_marks_only_proven_fix_aliases_as_compatibility() {
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let snapshot = load_core_snapshot().expect("core snapshot should load");
