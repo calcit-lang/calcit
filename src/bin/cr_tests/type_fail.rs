@@ -1360,6 +1360,25 @@ fn parse_cirru_list_rejects_non_string_before_runtime() {
 }
 
 #[test]
+fn format_cirru_rejects_non_list_before_runtime() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries("format-cirru 1");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("invalid formatter input should produce a type warning before runtime");
+    assert!(
+      warnings.borrow().iter().any(|warning| {
+        warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH")
+          && warning.message().contains("Proc `format-cirru` arg 1 expects type `list`")
+          && warning.message().contains("got `:number`")
+      }),
+      "format-cirru should reject a Number argument during preprocessing: {:?}",
+      warnings.borrow()
+    );
+  });
+}
+
+#[test]
 fn strict_mode_rejects_implicit_option_and_result_stringification() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();

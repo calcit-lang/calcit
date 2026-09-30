@@ -5680,6 +5680,14 @@
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'List
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |formats-nested-lines)
+            :code $ quote $ do
+              assert= "|a b" $ trim $ format-cirru
+                [] $ [] |a |b
+              assert-type
+                format-cirru $ [] $ [] |a |b
+                , 'String
+            :tags $ #{} :core :unit
         'format-cirru-edn $ %{} 'CodeEntry
           :doc "|internal function for formatting Cirru EDN\nSyntax: (format-cirru-edn data)\nParams: data (any)\nReturns: string\nFormats Calcit data structures into Cirru EDN format text"
           :code $ quote &runtime-implementation

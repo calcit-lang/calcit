@@ -50,6 +50,8 @@ let
 
 `.parse-cirru` 的成功值是闭合的 `CirruQuote`；`.parse-cirru-list` 的成功值是递归的 String/List 语法数据，目前以 `List<Dynamic>` 表达，不是 `CirruQuote`。两者都要求 String 输入，旧的 `parse-cirru-list` 底层调用也会在严格检查阶段拒绝 Number 等非 String。Cirru EDN 和 JSON 的数据形状开放，普通 checked 解析保留 `Result<Dynamic,String>`。业务代码需要闭合名义类型时，在边界使用 `try-parse-cirru-edn-as` 或 `decode-map-as` 验证，不把开放 payload 直接当作已证明类型。
 
+`format-cirru` 接受以 List 表示的 Cirru 顶层行，内部节点仍可递归包含 String/List；传入 Number 等非 List 会在严格检查阶段报类型不匹配。它与格式化任意可序列化数据的 `format-cirru-edn` 不是同一个契约。
+
 Under the default strict diagnostics, passing that open `Dynamic` result directly to a
 function argument whose contract contains a Struct or Enum is
 `E_DYNAMIC_NOMINAL_ARGUMENT`. This also covers matching containers such as
