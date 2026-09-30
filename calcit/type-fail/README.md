@@ -30,8 +30,11 @@ preflight；只有验证 0.14 之前的临时 warning 路径时才使用 `--comp
 - `cargo run --bin calcit -- calcit/type-fail/js-nullish-predicate-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/unsafe-coerce-unscoped-strict.cirru --strict-types --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/erased-generic-relation-strict.cirru --strict-types --check-only`
+- `cargo run --bin calcit -- calcit/type-fail/generic-callback-map-output-strict.cirru --check-only`
 
 其中：
+
+- `generic-callback-map-output-strict.cirru` 验证普通泛型函数按已知输入推断回调参数和 Enum 泛型返回值，最终拒绝向 `Map<String,Number>` 写入字符串值。
 
 - 前 4 个会触发 `schema mismatch while preprocessing definition`（定义时校验）。
 - `schema-call-arg-type-mismatch.cirru` 会触发基于 schema 的函数参数类型告警，并在 `--check-only` 下被当作错误处理。

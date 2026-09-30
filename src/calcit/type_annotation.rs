@@ -5104,7 +5104,23 @@ impl CalcitTypeAnnotation {
           Calcit::List(Arc::new(CalcitList::from(items.as_slice())))
         }
       }
-      Self::Enum(enum_def, _) => Calcit::EnumDef((**enum_def).clone()),
+      Self::Enum(enum_def, args) => {
+        if args.is_empty() {
+          Calcit::EnumDef((**enum_def).clone())
+        } else {
+          let mut items = Vec::with_capacity(args.len() + 2);
+          items.push(Self::make_symbol("::"));
+          if let Some(definition_ref) = enum_def.definition_ref() {
+            items.push(Self::quote_symbol(definition_ref));
+          } else {
+            items.push(Self::make_symbol(enum_def.name().ref_str().trim_start_matches(':')));
+          }
+          for arg in args.iter() {
+            items.push(arg.to_calcit());
+          }
+          Calcit::List(Arc::new(CalcitList::from(items.as_slice())))
+        }
+      }
       Self::StructDef(struct_def) => Calcit::StructDef((**struct_def).clone()),
       Self::EnumDef(enum_def) => Calcit::EnumDef((**enum_def).clone()),
       Self::Trait(trait_def) => Calcit::Trait((**trait_def).clone()),
@@ -5199,8 +5215,24 @@ impl CalcitTypeAnnotation {
         ))
       }
       Self::Custom(value) => calcit_type_to_edn(value.as_ref()),
-      // Enum / Trait variants – use the name as a symbol
-      Self::Enum(e, _) => Edn::Symbol(Arc::from(e.name().ref_str())),
+      Self::Enum(e, args) => {
+        if args.is_empty() {
+          Edn::Symbol(Arc::from(e.name().ref_str()))
+        } else {
+          let mut items = Vec::with_capacity(args.len() + 2);
+          items.push(Edn::Symbol(Arc::from("::")));
+          let name = e
+            .definition_ref()
+            .map(AsRef::as_ref)
+            .unwrap_or_else(|| e.name().ref_str().trim_start_matches(':'));
+          items.push(Edn::Symbol(Arc::from(name)));
+          for arg in args.iter() {
+            items.push(arg.to_type_edn());
+          }
+          Edn::List(EdnListView(items))
+        }
+      }
+      // Unapplied nominal values and traits use their names as symbols.
       Self::StructDef(_) => Edn::Symbol(Arc::from("StructDef")),
       Self::EnumDef(_) => Edn::Symbol(Arc::from("EnumDef")),
       Self::StructValue(struct_def) => Edn::Symbol(Arc::from(struct_def.name.ref_str())),
@@ -6539,6 +6571,28 @@ mod tests {
       })
       .expect("valid generic enum"),
     )
+  }
+
+  #[test]
+  fn applied_enum_arguments_survive_schema_serialization() {
+    let result = generic_result_enum();
+    let applied = CalcitTypeAnnotation::Enum(
+      result,
+      Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number), Arc::new(CalcitTypeAnnotation::String)]),
+    );
+    let expected = Edn::List(EdnListView(vec![
+      Edn::Symbol(Arc::from("::")),
+      Edn::Symbol(Arc::from("Result")),
+      Edn::Symbol(Arc::from("Number")),
+      Edn::Symbol(Arc::from("String")),
+    ]));
+
+    assert_eq!(applied.to_type_edn(), expected);
+    let encoded = applied.to_calcit();
+    let Calcit::List(items) = encoded else {
+      panic!("applied enum should retain its type arguments in Calcit form");
+    };
+    assert_eq!(items.len(), 4);
   }
 
   #[test]
@@ -7906,6 +7960,23 @@ mod tests {
       app_type.prove_with_bindings(&admin_type, &mut TypeBindings::new()),
       TypeProof::Mismatch
     );
+    for (annotation, qualified_name) in [(&app_type, "app.models/Result"), (&admin_type, "admin.models/Result")] {
+      let encoded = annotation.to_type_edn();
+      let Edn::List(items) = &encoded else {
+        panic!("applied enum schema must retain its qualified identity");
+      };
+      assert_eq!(items.0.get(1), Some(&Edn::Symbol(Arc::from(qualified_name))));
+      let restored = CalcitTypeAnnotation::parse_type_annotation_from_edn(&encoded);
+      assert!(
+        matches!(restored.as_ref(), CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == qualified_name && args.len() == 2),
+        "schema round trip must retain {qualified_name}: {restored:?}"
+      );
+      let restored_from_calcit = CalcitTypeAnnotation::parse_type_annotation_form(&annotation.to_calcit());
+      assert!(
+        matches!(restored_from_calcit.as_ref(), CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == qualified_name && args.len() == 2),
+        "Calcit round trip must retain {qualified_name}: {restored_from_calcit:?}"
+      );
+    }
   }
 
   #[test]

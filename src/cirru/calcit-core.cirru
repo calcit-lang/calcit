@@ -5386,6 +5386,14 @@
                     fn (_k _v) (raise |callback-failed)
                   fn (error) error
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-generic-callback-map-types)
+              :code $ quote $ let
+                  input $ {} $ |a 1
+                  selected $ filter-map-kv input $ fn (id value)
+                    %:: MapEntryDecision :keep (to-tag id) (str value)
+                assert-type selected $ :: 'Map 'Tag 'String
+                assert= |1 $ &map:get selected :a
+              :tags $ #{} :core :unit
         'filter-not $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn filter-not (xs f)
             filter xs $ defn %filter-not (x)
