@@ -50,6 +50,74 @@ fn assert_success(output: &Output, context: &str) {
   );
 }
 
+#[test]
+fn trait_bearing_enum_cycle_preserves_nominal_evidence_in_graph_checks() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/enum-impl-cycle.cirru", &snapshot).expect("enum cycle fixture should copy");
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "ordinary enum cycle check");
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only", "--keep-going", "--format", "edn"]),
+    "definition graph must preserve the same nominal constructor evidence",
+  );
+  assert_success(&run_calcit(&snapshot, &["test", "--require-match"]), "attached nominal method test");
+  assert_success(
+    &run_calcit(&snapshot, &["fix", "--workflow", "strict", "--verify", "--format", "edn"]),
+    "strict workflow must reuse the same nominal evidence",
+  );
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.reader/%make-plugin",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn %make-plugin (value) (%:: Plugin :item |wrong-payload)",
+      ],
+    ),
+    "introduce an invalid enum payload",
+  );
+  let invalid = run_calcit(&snapshot, &["--check-only", "--keep-going", "--format", "edn"]);
+  assert!(
+    !invalid.status.success(),
+    "source-backed nominal recovery must not waive payload checking"
+  );
+
+  fs::copy("tests/fixtures/enum-impl-cycle.cirru", &snapshot).expect("valid fixture should restore before cyclic alias check");
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only", "--keep-going", "--format", "edn"]),
+    "restored fixture must pass before introducing the cyclic alias",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.reader/Plugin",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ def Plugin Plugin",
+      ],
+    ),
+    "introduce a cyclic source alias",
+  );
+  let cyclic = run_calcit(&snapshot, &["--check-only", "--keep-going", "--format", "edn"]);
+  assert!(!cyclic.status.success(), "cyclic source aliases must not supply nominal evidence");
+  assert!(
+    cyclic.status.code().is_some(),
+    "cyclic source resolution must fail normally, not abort"
+  );
+  assert!(!String::from_utf8_lossy(&cyclic.stderr).contains("stack overflow"));
+}
+
 fn edit_definition(snapshot: &Path, name: &str, code: &str, overwrite: bool) {
   let target = format!("app.main/{name}");
   let mut args = vec!["edit", "def", target.as_str(), "--code", code];

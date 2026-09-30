@@ -2515,19 +2515,24 @@ pub(crate) fn resolve_program_value_for_preprocess(ns: &str, def: &str, def_id: 
 }
 
 pub(crate) fn resolve_enum_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<CalcitEnumDef> {
+  fn resolve_named_enum(ns: &str, def: &str, def_id: Option<u32>) -> Option<CalcitEnumDef> {
+    match resolve_program_value_for_preprocess(ns, def, def_id) {
+      Some(Calcit::EnumDef(enum_def)) => Some(enum_def),
+      Some(Calcit::Struct(struct_value)) => CalcitEnumDef::from_struct(struct_value).ok(),
+      _ => {
+        // A trait method can request its own enum while its impl attachment
+        // is still compiling. Recover only the declared nominal shape; do not
+        // execute the attachment or fabricate its unfinished method table.
+        CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), Arc::new(vec![])).resolve_to_enum()
+      }
+    }
+  }
+
   match target {
     Calcit::EnumDef(enum_def) => Some(enum_def.to_owned()),
     Calcit::Struct(struct_value) => CalcitEnumDef::from_struct(struct_value.to_owned()).ok(),
-    Calcit::Symbol { sym, info, .. } => match resolve_program_value_for_preprocess(&info.at_ns, sym, None) {
-      Some(Calcit::EnumDef(enum_def)) => Some(enum_def),
-      Some(Calcit::Struct(struct_value)) => CalcitEnumDef::from_struct(struct_value).ok(),
-      _ => None,
-    },
-    Calcit::Import(CalcitImport { ns, def, def_id, .. }) => match resolve_program_value_for_preprocess(ns, def, *def_id) {
-      Some(Calcit::EnumDef(enum_def)) => Some(enum_def),
-      Some(Calcit::Struct(struct_value)) => CalcitEnumDef::from_struct(struct_value).ok(),
-      _ => None,
-    },
+    Calcit::Symbol { sym, info, .. } => resolve_named_enum(&info.at_ns, sym, None),
+    Calcit::Import(CalcitImport { ns, def, def_id, .. }) => resolve_named_enum(ns, def, *def_id),
     _ => resolve_type_value(target, scope_types)
       .and_then(|t| match t.as_ref() {
         CalcitTypeAnnotation::TypeSlot(name) => resolve_type_slot(name),

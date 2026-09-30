@@ -45,6 +45,18 @@ let
   ; => $ %:: 'Shape :rect 3 4
 ```
 
+## 带 trait 的 nominal 构造与循环引用
+
+通过 `impl-traits` 为 Enum 附加方法后，构造器的返回 schema 和方法的 `self` schema
+可以引用同一个完整 nominal 名称。方法中的 `match self` 可能在 impl 尚未完成预处理时
+请求 Enum 定义；编译器应从已有源码恢复变体和 payload 类型，而不是把构造结果退化为
+无名的 `Enum`。普通检查、`--check-only --keep-going` 和 `fix --workflow strict --verify`
+应遵守同一契约，不需要仅为满足不同检查顺序而增加冗余 `assert-type`。
+
+这种恢复只提供可证明的 nominal 数据形状，不承诺尚未完成的 impl 方法表，也不跳过
+变体、payload、泛型约束或方法歧义检查。复现与共享 native/JS 语义测试见
+`tests/fixtures/enum-impl-cycle.cirru`；无需新增 Dynamic、unsafe coercion 或平行调用入口。
+
 ## Generic Enums
 
 `defenum` accepts an optional generics list right after the type name. Declare generic slots with quoted symbols, then use the applied named type syntax `(:: 'TypeName ...)` in schemas and assertions.
