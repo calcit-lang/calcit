@@ -528,6 +528,16 @@
                     swap! *counted &+ n
                   assert= 10 @*counted
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |types-range-index-in-body)
+              :code $ quote $ let
+                  *counted $ atom 0
+                do
+                  &doseq
+                    idx $ range 3
+                    assert-type idx 'Number
+                    swap! *counted &+ $ option:unwrap $ nth ([] 0 1 2) idx
+                  assert= 3 @*counted
+              :tags $ #{} :core :unit
         '&enum-def:has-variant? $ %{} 'CodeEntry (:doc "|Test whether an EnumDef declares a variant.")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -5640,10 +5650,16 @@
                 :args $ [] 'U 'T
             :generics $ [] 'T 'U
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |reduces-list-from-left)
-            :code $ quote $ assert= 6
-              foldl ([] 1 2 3) 0 &+
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |reduces-list-from-left)
+              :code $ quote $ assert= 6
+                foldl ([] 1 2 3) 0 &+
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |types-range-index-in-callback)
+              :code $ quote $ assert= 3
+                foldl (range 3) 0 $ fn (sum idx) (assert-type idx 'Number)
+                  + sum $ option:unwrap $ nth ([] 0 1 2) idx
+              :tags $ #{} :core :unit
         'foldl' $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn foldl' (xs acc f)
             list-match xs

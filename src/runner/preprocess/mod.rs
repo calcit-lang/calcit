@@ -3331,11 +3331,23 @@ fn preprocess_list_call(
               let candidate_args = CalcitList::from(&[receiver.to_owned(), a.to_owned()]);
               specialize_collection_sort_expected_types(&candidate_args, scope_types, &signature.arg_types)
                 .and_then(|types| types.get(1).and_then(|expected| expected.resolve_to_fn()))
+            } else if !has_spread
+              && ys.len() == 3
+              && let Calcit::Proc(proc @ (CalcitProc::Foldl | CalcitProc::NativeListFoldl)) = &head_form
+              && let (Some(receiver), Some(initial)) = (ys.get(1), ys.get(2))
+              && let Some(signature) = proc.get_type_signature()
+            {
+              let candidate_args = CalcitList::from(&[receiver.to_owned(), initial.to_owned(), a.to_owned()]);
+              type_checking::specialize_collection_fold_expected_types(&candidate_args, scope_types, &signature.arg_types)
+                .and_then(|types| types.get(2).and_then(|expected| expected.resolve_to_fn()))
             } else {
               None
             };
             let has_callback_contract = matches!(&head_form, Calcit::Method(_, calcit::MethodKind::Invoke(_)))
-              || matches!(&head_form, Calcit::Proc(CalcitProc::Sort | CalcitProc::NativeListSort));
+              || matches!(
+                &head_form,
+                Calcit::Proc(CalcitProc::Sort | CalcitProc::NativeListSort | CalcitProc::Foldl | CalcitProc::NativeListFoldl)
+              );
             let previous_fn = has_callback_contract.then(|| {
               EXPECTED_FN_TYPE.with(|cell| {
                 let mut slot = cell.borrow_mut();
