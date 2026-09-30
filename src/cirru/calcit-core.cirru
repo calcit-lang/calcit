@@ -5805,7 +5805,7 @@
           :code $ quote $ defn fs-path:write-text (self content)
             &fs-write-text Result (:value self) content "|fs-path:write-text failed"
           :examples $ [] $ quote
-            assert= true $ .err? $ .write-text! (fs:path |/calcit-agent-example-missing-parent/file) |content
+            assert= true $ .err? $ .write-text! (fs:path |/calcit-agent-example-missing-parent/file/) |content
           :schema $ :: 'Fn $ {}
             :args $ [] 'FsPath 'String
             :return $ :: 'Result 'Unit 'String
