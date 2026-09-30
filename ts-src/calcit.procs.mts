@@ -1488,6 +1488,8 @@ export let _$n_str_$o_find_index = (x: string, y: string): number => {
 };
 
 export let _$n_parse_float = (x: string): number | null => {
+  if (/^[+-]?nan$/i.test(x)) return NaN;
+  if (/^[+-]?(?:inf|infinity)$/i.test(x)) return x.startsWith("-") ? -Infinity : Infinity;
   if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(x)) {
     return null;
   }

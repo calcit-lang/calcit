@@ -8048,7 +8048,7 @@
             :return $ :: 'List 'Dynamic
           :tags $ #{} :builtin :internal
         'parse-float $ %{} 'CodeEntry
-          :doc "|Parse a number as Result<Number,String>; err contains the original invalid input."
+          :doc "|把完整数字文本解析为 Result<Number,String>。成功值包括有限数、NaN、inf、Infinity（支持符号与大小写变体）；无效文本的 :err 保留原输入。WASM 若将 parse-float 本身列为显式导出或入口 target，会因 E_WASM_NIL_TYPE_EVIDENCE 在代码生成阶段失败；若仅作为未支持依赖保留，生成的 stub 被调用时才陷阱。"
           :code $ quote $ defn parse-float (source)
             let
                 parsed $ &parse-float source
@@ -8070,6 +8070,22 @@
                 assert= (%ok 0) (parse-float |0)
                 assert= (%err |1oops) (parse-float |1oops)
                 assert= (%err |1e) (parse-float |1e)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |parses-nonfinite-spellings)
+              :code $ quote $ do
+                assert= |NaN $ match (parse-float |NaN)
+                  (:ok value) (to-string value)
+                  (:err _) |error
+                assert= |NaN $ match (parse-float |+nan)
+                  (:ok value) (to-string value)
+                  (:err _) |error
+                assert= |inf $ match (parse-float |inf)
+                  (:ok value) (to-string value)
+                  (:err _) |error
+                assert= |-inf $ match (parse-float |-INFINITY)
+                  (:ok value) (to-string value)
+                  (:err _) |error
+                assert= (%err |infinite) (parse-float |infinite)
               :tags $ #{} :core :unit
         'pow $ %{} 'CodeEntry
           :doc "|internal function for power operation\nSyntax: (pow base exponent)\nParams: base (number), exponent (number)\nReturns: number\nRaises base to the power of exponent"

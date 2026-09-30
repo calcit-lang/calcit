@@ -21,6 +21,11 @@ try {
   assert.equal(runtimeA.turn_symbol(symbolFromString), symbolFromString, "legacy Symbol input remains runtime-compatible");
   assert.equal(runtimeA.turn_symbol(runtimeA.newTag("hello")).value, "hello", "legacy Tag input remains runtime-compatible");
   assert.throws(() => runtimeA.turn_symbol(new runtimeA.CalcitSliceList([1])), /Unexpected data for symbol/);
+  assert.ok(Number.isNaN(runtimeA._$n_parse_float("+nan")), "JS must parse signed NaN like native");
+  assert.equal(runtimeA._$n_parse_float("INF"), Infinity, "JS must parse case-insensitive infinity like native");
+  assert.equal(runtimeA._$n_parse_float("-Infinity"), -Infinity, "JS must preserve a negative non-finite number");
+  assert.equal(runtimeA._$n_parse_float("1e309"), Infinity, "overflowing decimal input remains a successful Number");
+  assert.equal(runtimeA._$n_parse_float("infinite"), null, "invalid non-finite spellings must remain errors");
   const writes = [];
   const waits = [];
   globalThis.__calcit_injections__ = {
