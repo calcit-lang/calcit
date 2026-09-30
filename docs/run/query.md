@@ -89,6 +89,8 @@ For source-backed definitions, `query def` prints the stored Cirru body. For spe
 标为“目标”的名字只有在当前版本的查询中实际存在且类型契约可用时才可生成调用；
 `open` 表示查询证明不足，不能直接等同于运行失败，也不能绕过严格检查。
 
+结构化方法条目中的 `:call-types`（JSON 为 `call_types`）补充已解析的参数、rest 和返回类型语法节点；参数不含隐式接收者，Fn 回调及泛型变量不会退化成显示字符串。它复用已有 checker 的证明，只在 `proven` 且语法可表达时提供；`open/ambiguous` 没有该字段。原有 `parameter-types/return-type` 仍便于阅读，schema 原声明仍通过 definition path 查询。比如 List `.get` 的实现 `get` 可处理开放值，但具体 List 查询给出的调用返回类型是 `Option<Number>`，不能只凭实现的宽 schema 判断方法类型。默认 human 输出保持现有紧凑分组，不增加命令或参数。
+
 Agent 查询优先显式使用 `--format edn`，例如 `calcit query def namespace/name --format edn`；
 需要与 JSON 工具互操作时再指定 `--format json`。`query type`、`type-at`、`context`、
 `def`、`config`，以及只读的 `config show/modules/type-slots` 使用相同的结构化输出约定。

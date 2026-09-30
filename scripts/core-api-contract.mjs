@@ -61,6 +61,7 @@ function sourceArity(code) {
 
 export function collect(scope, query) {
   const cache = new Map();
+  const receivers = new Map();
   const definition = name => {
     if (!cache.has(name)) cache.set(name, query("def", name));
     const data = cache.get(name);
@@ -71,24 +72,38 @@ export function collect(scope, query) {
       "runtime-arity": data.runtime_arity ?? sourceArity(data.code),
     };
   };
+  const methods = scope.methods.map(item => {
+    if (!receivers.has(item.receiver)) receivers.set(item.receiver, query("type", item.receiver));
+    const data = receivers.get(item.receiver);
+    const method = data.methods.find(method => method.name === item.name);
+    assert.equal(method?.status, "proven", `${item.receiver} ${item.name} requires proven dispatch`);
+    assert.notEqual(method.role, "compatibility", `${item.name} is not the preferred spelling`);
+    assert.ok(method.definition, `${item.name} requires schema provenance`);
+    const evidence = definition(method.definition);
+    assert.ok(evidence.schema, `${item.name} requires declared generic/receiver evidence`);
+    return {
+      ...item,
+      schema: evidence.schema,
+      "runtime-arity": evidence["runtime-arity"],
+      features: method.features,
+      provenance: { symbol: method.definition },
+    };
+  });
   return {
     version: scope.version,
     scope: scope.scope,
     definitions: scope.definitions.map(item => ({ ...item, ...definition(item.name.symbol) })),
-    methods: scope.methods.map(item => {
-      const data = query("type", item.receiver);
+    methods,
+    "method-contracts": scope.methods.map(item => {
+      const data = receivers.get(item.receiver);
       const method = data.methods.find(method => method.name === item.name);
-      assert.equal(method?.status, "proven", `${item.receiver} ${item.name} requires proven dispatch`);
-      assert.notEqual(method.role, "compatibility", `${item.name} is not the preferred spelling`);
-      assert.ok(method.definition, `${item.name} requires schema provenance`);
-      const evidence = definition(method.definition);
-      assert.ok(evidence.schema, `${item.name} requires declared generic/receiver evidence`);
+      assert.ok(method.call_types, `${item.receiver} ${item.name} requires resolved call type syntax`);
       return {
-        ...item,
-        schema: evidence.schema,
-        "runtime-arity": evidence["runtime-arity"],
-        features: method.features,
-        provenance: { symbol: method.definition },
+        receiver: item.receiver,
+        name: item.name,
+        parameters: method.call_types.parameters.map(quote => ({ quote })),
+        rest: method.call_types.rest == null ? null : { quote: method.call_types.rest },
+        returns: { quote: method.call_types.returns },
       };
     }),
   };
@@ -105,13 +120,16 @@ function contract(row) {
     return children;
   };
   if (publicContract.schema) publicContract.schema = { quote: normalize(publicContract.schema.quote) };
+  if (publicContract.parameters) publicContract.parameters = publicContract.parameters.map(item => ({ quote: normalize(item.quote) }));
+  if (publicContract.rest) publicContract.rest = { quote: normalize(publicContract.rest.quote) };
+  if (publicContract.returns) publicContract.returns = { quote: normalize(publicContract.returns.quote) };
   return publicContract;
 }
 
 export function assertPreserved(previous, current) {
-  for (const family of ["definitions", "methods"]) {
-    for (const old of previous[family]) {
-      const row = current[family].find(row => family === "definitions"
+  for (const family of ["definitions", "methods", "method-contracts"]) {
+    for (const old of previous[family] ?? []) {
+      const row = (current[family] ?? []).find(row => family === "definitions"
         ? row.name.symbol === old.name.symbol
         : row.receiver === old.receiver && row.name === old.name);
       assert.ok(row, `removed frozen ${family}: ${JSON.stringify(old.name)}`);
@@ -153,7 +171,7 @@ export function check() {
   assertPreserved(baseline, current);
   // Compare the committed baseline too: editing the working copy is not a waiver.
   assertHistoryPreserved(baseline, current, { baseRef: process.env.GITHUB_BASE_REF, eventName: process.env.GITHUB_EVENT_NAME });
-  console.log("Reviewed core conversion/effect contracts preserve native schemas, arity and proven method dispatch");
+  console.log("Reviewed core contracts preserve native schemas, arity and specialized method call types");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) check();

@@ -1,8 +1,8 @@
 # 核心 API 契约基线
 
-`core-api-0.28-scope.edn` 是已审阅的转换、解析和副作用入口的范围与失败语义；`core-api-0.28-baseline.edn` 用现有 `query def/type` 导出对应的声明证据。两者都是原生 **Cirru EDN**，不是 Snapshot，也不参与运行时派发。
+`core-api-0.28-scope.edn` 是已审阅的转换、解析、副作用、谓词与集合首选入口的范围与失败语义；`core-api-0.28-baseline.edn` 用现有 `query def/type` 导出对应的声明证据。两者都是原生 **Cirru EDN**，不是 Snapshot，也不参与运行时派发。
 
-本批是 **0.28.0 candidate 的部分基线**，不是整个 core 已冻结的声明。尚缺集合/谓词/其他公开 trait 的逐族审阅、兼容名的移除版本、实际 backend 支持矩阵与集中迁移例外。#1568 及 milestone 收尾继续保持开放。失败描述是人工审阅的语义记录，不是脚本自动证明；行为仍以已有 Calcit `:tests`、严格负例和 host/backend 回归为准。
+本批是 **0.28.0 candidate 的部分基线**，不是整个 core 已冻结的声明。现已纳入公开数学函数、`fs:path` 首选构造、ToString/Len/Add/Eq 约束及已审阅的集合/谓词方法，不因 internal tag 漏掉应用入口。其余公开边界/trait、兼容名移除版本、实际 backend 支持矩阵与集中迁移例外仍未完成。#1568 及 milestone 收尾继续保持开放。失败描述是人工审阅的语义记录，不是脚本自动证明；行为仍以已有 Calcit `:tests`、严格负例和 host/backend 回归为准。
 
 ## 导出和检查
 
@@ -19,6 +19,10 @@ node scripts/core-api-contract.mjs
 导出只写 stdout，先审阅再更新基线；不是自动接受签名变化的命令。Node 子进程显式选择 JSON 仅作为工具桥接，持久化产物保留 symbol、tag 和 `quote` 包裹的原始 schema。泛型与 `where`、receiver 参数、返回类型、名义类型声明和 optional/rest arity 都不以展示字符串代替。`read-dir` 的 Bool schema 不代表 recursive 参数必填，以已有运行时 arity 为准。
 
 方法先在明确 receiver 上查询，必须 `proven` 且不能是已识别的兼容入口，再追溯原始声明 schema。Number 实例用于派发检查，不把它误写为方法的唯一可用类型；泛型关系仍保存在 schema。尚为 `open/ambiguous` 的方法不会自动加入。`FfiTask/FfiResponse` 的 raw Dynamic 是现有宿主边界，不意味着业务层可以绕过类型约束。
+
+`method-contracts` 另外保存当前接收者上的 `call-types` 原生 quote：例如 List/Map 的 `.get` 实现声明允许开放值，但编译器已经证明具体调用返回 `Option<Number>`。即使实现的宽 schema 没变，具体调用结果或 callback 类型关系变差也不能绕过检查。这些参数不含隐式接收者；`methods` 中的 `runtime-arity` 则是实现函数的 arity，包含接收者，两者不能混用。共享接收者查询只执行一次，不重复运行同一分析。
+
+Option `.map` 目前查询仍为 open，解析开放 JSON/Cirru EDN 等边界仍需要单独审阅，不能靠本清单或目标类型把它们包装成 proven。候选只记录真实证据，不把推导漏洞固化为永久动态契约。0.29 的断言/调用证明工作仍由 #1538 拥有。
 
 CI 检查当前源码与基线，并对 PR 的 merge-base 基线重新比较；push 比较父提交。只改范围或重生成基线不能放行既有名字、schema、失败记录或 receiver 的变化。合法新增允许；函数体、局部参数名和方法内部实现路径不冻结。当前不提供 breaking-change 豁免，集中迁移例外需在 #1568 后续实现同一 PR 的映射与语义验证，不能手动跳过检查。
 

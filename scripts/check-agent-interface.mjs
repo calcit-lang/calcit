@@ -158,6 +158,10 @@ const scenarios = [
       assert.deepEqual(fold?.parameter_types, reduce?.parameter_types);
       assert.equal(fold?.return_type, reduce?.return_type);
       assert.equal(reduce?.definition, fold?.definition);
+      assert.deepEqual(fold.call_types, reduce.call_types);
+      assert.equal(fold.call_types.parameters[0], "'U");
+      assert.deepEqual(fold.call_types.parameters[1].slice(0, 2), ["::", "'Fn"]);
+      assert.equal(fold.call_types.returns, "'U");
       const intersperse = result.data.methods.find((method) => method.name === ".intersperse");
       const join = result.data.methods.find((method) => method.name === ".join");
       assert.equal(intersperse?.status, "proven");
@@ -192,6 +196,15 @@ const scenarios = [
       assert.equal(nth?.definition, get?.definition);
       assert.deepEqual(nth?.parameter_types, get?.parameter_types);
       assert.equal(nth?.return_type, get?.return_type);
+      assert.deepEqual(get.call_types, {
+        parameters: ["'Number"],
+        rest: null,
+        returns: ["::", "'calcit.core/Option", "'Number"],
+      });
+      assert.deepEqual(nth.call_types, get.call_types);
+      const each = result.data.methods.find((method) => method.name === ".each");
+      assert.equal(each?.status, "open");
+      assert.ok(!Object.hasOwn(each, "call_types"), "open methods must not claim proven call types");
     },
   },
   {
