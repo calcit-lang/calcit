@@ -154,6 +154,20 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number $ :: 'List 'Number
+        'tail-count $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export tail-count (n) (tail-count-step n)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+        'tail-count-step $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn tail-count-step (n)
+            if (&<= n 0) 0 $ tail-count-step $ &- n 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |large-direct-self-tail-call)
+            :code $ quote $ assert= 0 (tail-count-step 100000)
+            :tags $ #{} :wasm
         'test-abs $ %{} 'CodeEntry (:doc "|abs from calcit.core")
           :code $ quote $ defwasm-export test-abs (x) (abs x)
           :examples $ []

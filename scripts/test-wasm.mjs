@@ -286,6 +286,7 @@ check("fibo(10)", 89, e.fibo, 10);
 check("factorial(10)", 3628800, e.factorial, 10);
 check("add-two(3.5,2.5)", 6, e["add-two"], 3.5, 2.5);
 check("sum-range(10)", 55, e["sum-range"], 10);
+check("tail-count(100000)", 0, e["tail-count"], 100000);
 check("test-floor(3.7)", 3, e["test-floor"], 3.7);
 check("test-ceil(3.2)", 4, e["test-ceil"], 3.2);
 check("test-round(3.5)", 4, e["test-round"], 3.5);

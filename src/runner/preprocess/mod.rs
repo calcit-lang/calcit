@@ -8440,6 +8440,74 @@ fn reject_strict_bare_enum_constructor_comparison(
   ))
 }
 
+/// Rewrite a proven direct self-call only where its result is returned by the
+/// current function. Resolved imports exclude local shadowing and indirect calls.
+fn lower_direct_self_tail_call(expr: &Calcit, ns: &str, def: &str) -> Option<Calcit> {
+  let Calcit::List(items) = expr else { return None };
+  match items.first() {
+    Some(Calcit::Import(import)) if import.ns.as_ref() == ns && import.def.as_ref() == def => {
+      let mut call = items.to_vec();
+      call[0] = Calcit::Proc(CalcitProc::Recur);
+      Some(Calcit::from(call))
+    }
+    Some(Calcit::Syntax(CalcitSyntax::If, _)) => {
+      let mut changed = false;
+      let mut forms = items.to_vec();
+      for branch in forms.iter_mut().skip(2) {
+        if let Some(lowered) = lower_direct_self_tail_call(branch, ns, def) {
+          *branch = lowered;
+          changed = true;
+        }
+      }
+      changed.then(|| Calcit::from(forms))
+    }
+    Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) if items.len() > 2 => {
+      let mut forms = items.to_vec();
+      let last = forms.last_mut().expect("CoreLet has a body");
+      let lowered = lower_direct_self_tail_call(last, ns, def)?;
+      *last = lowered;
+      Some(Calcit::from(forms))
+    }
+    Some(Calcit::Syntax(CalcitSyntax::Match, _)) => {
+      let mut changed = false;
+      let mut forms = items.to_vec();
+      let branch_start = if matches!(forms.get(2), Some(Calcit::EnumDef(_))) { 3 } else { 2 };
+      if branch_start == 3 {
+        if let Some(Calcit::List(table)) = forms.get_mut(3) {
+          let mut branches = table.to_vec();
+          for branch in &mut branches {
+            if let Some(lowered) = lower_self_tail_match_branch(branch, ns, def) {
+              *branch = lowered;
+              changed = true;
+            }
+          }
+          if changed {
+            forms[3] = Calcit::from(branches);
+          }
+        }
+      } else {
+        for branch in forms.iter_mut().skip(branch_start) {
+          if let Some(lowered) = lower_self_tail_match_branch(branch, ns, def) {
+            *branch = lowered;
+            changed = true;
+          }
+        }
+      }
+      changed.then(|| Calcit::from(forms))
+    }
+    _ => None,
+  }
+}
+
+fn lower_self_tail_match_branch(branch: &Calcit, ns: &str, def: &str) -> Option<Calcit> {
+  let Calcit::List(pair) = branch else { return None };
+  let body = pair.get(1)?;
+  let lowered = lower_direct_self_tail_call(body, ns, def)?;
+  let mut forms = pair.to_vec();
+  forms[1] = lowered;
+  Some(Calcit::from(forms))
+}
+
 pub fn preprocess_defn(
   head: &CalcitSyntax,
   head_ns: &str,
@@ -8896,7 +8964,14 @@ pub fn preprocess_defn(
       // Restore previous function features
       CURRENT_FN_FEATURES.with(|cell| *cell.borrow_mut() = prev_features);
 
-      Ok(Calcit::List(Arc::new(xs.into())))
+      let mut forms = xs.to_vec();
+      if source_top_level_definition && matches!(head, CalcitSyntax::Defn) && !has_marked_args && args.len() > 2 {
+        let body_index = forms.len() - 1 - usize::from(generated_fn_schema.is_some());
+        if let Some(lowered) = lower_direct_self_tail_call(&forms[body_index], ctx.file_ns, def_name) {
+          forms[body_index] = lowered;
+        }
+      }
+      Ok(Calcit::from(forms))
     }
     (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Syntax,
@@ -10380,6 +10455,65 @@ mod tests {
     assert!(helper_body_has_recursive_edge(&body));
     let ordinary = Calcit::from(vec![core_import("count", "tests.helper-inference"), Calcit::Number(1.0)]);
     assert!(!helper_body_has_recursive_edge(&ordinary));
+  }
+
+  #[test]
+  fn direct_self_tail_lowering_keeps_non_tail_and_shadowed_calls() {
+    let ns = "tests.tail-call";
+    let def = "walk";
+    let self_import = Calcit::Import(CalcitImport {
+      ns: Arc::from(ns),
+      def: Arc::from(def),
+      info: Arc::new(ImportInfo::SameFile { at_def: Arc::from(def) }),
+      def_id: None,
+    });
+    let self_call = Calcit::from(vec![self_import, Calcit::Number(1.0)]);
+    let lowered = lower_direct_self_tail_call(&self_call, ns, def).expect("direct self-call in tail position");
+    let Calcit::List(lowered_items) = lowered else {
+      panic!("expected a call")
+    };
+    assert!(matches!(lowered_items.first(), Some(Calcit::Proc(CalcitProc::Recur))));
+
+    let non_tail = Calcit::from(vec![core_import("&+", ns), Calcit::Number(1.0), self_call.clone()]);
+    assert!(lower_direct_self_tail_call(&non_tail, ns, def).is_none());
+    let shadowed = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from(def)),
+      sym: Arc::from(def),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from(ns),
+        at_def: Arc::from(def),
+      }),
+      location: None,
+      type_info: calcit::DYNAMIC_TYPE.clone(),
+    });
+    assert!(lower_direct_self_tail_call(&Calcit::from(vec![shadowed, Calcit::Number(1.0)]), ns, def).is_none());
+
+    let if_form = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::If, Arc::from(calcit::CORE_NS)),
+      Calcit::Bool(true),
+      self_call.clone(),
+      Calcit::Number(0.0),
+    ]);
+    let lowered_if = lower_direct_self_tail_call(&if_form, ns, def).expect("tail branch should lower");
+    let Calcit::List(if_items) = lowered_if else {
+      panic!("expected if")
+    };
+    assert_eq!(if_items.get(1), Some(&Calcit::Bool(true)));
+    assert!(matches!(if_items.get(2), Some(Calcit::List(branch)) if matches!(branch.first(), Some(Calcit::Proc(CalcitProc::Recur)))));
+    assert_eq!(if_items.get(3), Some(&Calcit::Number(0.0)));
+
+    let core_let = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from(calcit::CORE_NS)),
+      Calcit::from(vec![]),
+      Calcit::Number(2.0),
+      self_call,
+    ]);
+    let lowered_let = lower_direct_self_tail_call(&core_let, ns, def).expect("final let body should lower");
+    let Calcit::List(let_items) = lowered_let else {
+      panic!("expected let")
+    };
+    assert_eq!(let_items.get(2), Some(&Calcit::Number(2.0)));
+    assert!(matches!(let_items.get(3), Some(Calcit::List(branch)) if matches!(branch.first(), Some(Calcit::Proc(CalcitProc::Recur)))));
   }
 
   fn strict_macro_signature(

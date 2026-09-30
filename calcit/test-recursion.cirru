@@ -14,6 +14,17 @@
           :code $ quote $ defatom *count-effects 0
           :examples $ []
           :schema $ :: 'Dynamic
+        'consume-tail $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn consume-tail (xs)
+            list-match xs
+              () 0
+              (_ rest-items) (consume-tail rest-items)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'List 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |walks-large-list-without-native-stack-growth)
+            :code $ quote $ assert= 0
+              consume-tail $ range 100000
         'hole-series $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn hole-series (x) (assert-type x 'Number)
             if (&<= x 0) (raise "|unexpected small number")
