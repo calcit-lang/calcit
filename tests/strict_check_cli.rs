@@ -88,6 +88,11 @@ fn trait_bearing_enum_cycle_preserves_nominal_evidence_in_graph_checks() {
     "source-backed nominal recovery must not waive payload checking"
   );
 
+  fs::copy("tests/fixtures/enum-impl-cycle.cirru", &snapshot).expect("valid fixture should restore before cyclic alias check");
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only", "--keep-going", "--format", "edn"]),
+    "restored fixture must pass before introducing the cyclic alias",
+  );
   assert_success(
     &run_calcit(
       &snapshot,
