@@ -5110,7 +5110,11 @@ impl CalcitTypeAnnotation {
         } else {
           let mut items = Vec::with_capacity(args.len() + 2);
           items.push(Self::make_symbol("::"));
-          items.push(Self::make_symbol(enum_def.name().ref_str().trim_start_matches(':')));
+          if let Some(definition_ref) = enum_def.definition_ref() {
+            items.push(Self::quote_symbol(definition_ref));
+          } else {
+            items.push(Self::make_symbol(enum_def.name().ref_str().trim_start_matches(':')));
+          }
           for arg in args.iter() {
             items.push(arg.to_calcit());
           }
@@ -5217,7 +5221,11 @@ impl CalcitTypeAnnotation {
         } else {
           let mut items = Vec::with_capacity(args.len() + 2);
           items.push(Edn::Symbol(Arc::from("::")));
-          items.push(Edn::Symbol(Arc::from(e.name().ref_str().trim_start_matches(':'))));
+          let name = e
+            .definition_ref()
+            .map(AsRef::as_ref)
+            .unwrap_or_else(|| e.name().ref_str().trim_start_matches(':'));
+          items.push(Edn::Symbol(Arc::from(name)));
           for arg in args.iter() {
             items.push(arg.to_type_edn());
           }
@@ -7952,6 +7960,23 @@ mod tests {
       app_type.prove_with_bindings(&admin_type, &mut TypeBindings::new()),
       TypeProof::Mismatch
     );
+    for (annotation, qualified_name) in [(&app_type, "app.models/Result"), (&admin_type, "admin.models/Result")] {
+      let encoded = annotation.to_type_edn();
+      let Edn::List(items) = &encoded else {
+        panic!("applied enum schema must retain its qualified identity");
+      };
+      assert_eq!(items.0.get(1), Some(&Edn::Symbol(Arc::from(qualified_name))));
+      let restored = CalcitTypeAnnotation::parse_type_annotation_from_edn(&encoded);
+      assert!(
+        matches!(restored.as_ref(), CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == qualified_name && args.len() == 2),
+        "schema round trip must retain {qualified_name}: {restored:?}"
+      );
+      let restored_from_calcit = CalcitTypeAnnotation::parse_type_annotation_form(&annotation.to_calcit());
+      assert!(
+        matches!(restored_from_calcit.as_ref(), CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == qualified_name && args.len() == 2),
+        "Calcit round trip must retain {qualified_name}: {restored_from_calcit:?}"
+      );
+    }
   }
 
   #[test]
