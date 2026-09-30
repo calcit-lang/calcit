@@ -56,6 +56,8 @@ Dynamic 表示用户明确选择的开放 Calcit 值，不等于编译器尚未�
 具体 Struct/Enum 或某个 trait 能力使用时，才需要 decode、narrow 或显式 unsafe boundary。真正参数化且不观察
 内容的泛型函数可以携带 Dynamic；声称具体内容关系但没有证据的调用继续拒绝。
 
+`&trait-call Trait :method receiver ...` 用于消除不同 trait 的同名方法歧义，不是对 receiver 的强制转换。严格检查会拒绝无法静态识别的 trait/method、已知 Fn 方法签名的错误参数个数，以及已知内建 receiver 上确实不存在的 impl；例如 Number 不会因为显式写了 `Countable` 就获得 `.count`。局部 `impl-traits` 组合与具名泛型的附着来源目前尚不能在所有路径完整保留，缺失的静态证明不能误报成“确定没有 impl”；这类调用仍由运行时核对。普通业务优先使用带 schema 的接收者方法，让现有 trait 关系参与推断。
+
 普通执行、编译和严格检查只报告可执行的 warning/error，不计算 Dynamic 比例。迁移存量代码时再显式查询具体位置：
 
 ```bash
