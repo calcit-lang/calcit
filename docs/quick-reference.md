@@ -390,7 +390,7 @@ Struct，`get` 可按运行时字段名返回 `Option<Dynamic>`。
 ### Meta Operations
 
 - `type-of` - get type tag
-- `turn-string`, `turn-symbol`, `turn-tag` - type conversion
+- `to-string`：实现 `ToString` 的值转文本；`to-symbol` / `to-tag`：String 转标识。旧 `turn-*` 暂留兼容，受控迁移见 [升级指南](run/upgrade.md)
 - `identical?` - reference equality
 - `recur` - tail recursion
 - `generate-id!` - unique ID generation

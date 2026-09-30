@@ -48,6 +48,8 @@ assert= true $ round? 9007199254740992
 
 新代码用 `to-tag: String -> Tag`、`to-symbol: String -> Symbol`。旧 `turn-tag` / `turn-symbol` 的 native/JS 运行时还接受 Tag/Symbol 输入，不能按词形全局替换。`calcit fix --rule core-identity-conversion-v1 --format edn` 只对内建调用且参数已证明为 String 的稳定源码提供自动迁移；Dynamic、非 String、quote、未知 macro 和一等函数引用需人工审阅。预览后携带 revision 应用，再重复预览并运行项目测试。WASM 缺少动态 Tag/Symbol intern；改名不会让原来不支持的调用变得可编译。
 
+同一显式 fix 也能迁移部分旧 `turn-string` 调用：仅当参数已证明是内建 Nil、Bool、Number、String、Tag 或 Symbol，且源码上下文稳定时，改为首选 `to-string`。这些内建 `ToString` 实现调用同一个底层转换；自定义名义类型的 `.to-string` 可能有不同实现，因此不能仅凭名字或泛型约束批量改写。开放 `Dynamic` 保留人工审阅，集合不会被伪装成可转换值。
+
 ## WASM 运行时 Number 转文本的边界
 
 在 0.27.0 的安全修复阶段，core WASM 的旧 `turn-string` 对类型已知的运行时 Number 只保证绝对值不超过 2^53 的有限整数；小数、负零、超范围整数和非有限值会陷阱，避免静默输出伪造文本。升级到 0.29.0 后，core WASM 与 WASI 0.3 对这些 `f64` 值均使用与 native/JS 一致的最短十进制规则；`to-string` 的 Number 方法通过已证明的 `ToString` trait 实现进入同一运行时路径，不是新增的名称特判或 host import。未证明的开放 `Dynamic`、二义 trait 与一等函数边界仍可能被静态拒绝；不能把 Number 支持误解为任意动态值都可转换。
