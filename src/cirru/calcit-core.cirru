@@ -9342,12 +9342,31 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic 'Dynamic
           :tags $ #{} :builtin :data :syntax
-          :tests $ [] $ %{} 'TestEntry (:name |result-contract)
-            :code $ quote $ do
-              assert= true $ result:ok? $ try-decode-map-as 1 'Number
-              assert= true $ result:err? $ try-decode-map-as |bad 'Number
-              assert-type (try-decode-map-as 1 'Number) (:: 'Result 'Number 'String)
-            :tags $ #{} :unit
+          :tests $ []
+            %{} 'TestEntry (:name |result-contract)
+              :code $ quote $ do
+                assert= true $ result:ok? $ try-decode-map-as 1 'Number
+                assert= true $ result:err? $ try-decode-map-as |bad 'Number
+                assert-type (try-decode-map-as 1 'Number) (:: 'Result 'Number 'String)
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |parsed-open-value-deep-success)
+              :code $ quote $ match ("|[] ([] 1 2)" .parse-cirru-edn)
+                (:ok value)
+                  assert=
+                    Result :ok $ [] $ [] 1 2
+                    try-decode-map-as value $ :: 'List $ :: 'List 'Number
+                (:err message) (raise message)
+              :tags $ #{} :parse-boundary :unit
+            %{} 'TestEntry (:name |parsed-open-value-deep-rejection)
+              :code $ quote $ match ("|[] ([] 1 |bad)" .parse-cirru-edn)
+                (:ok value)
+                  match
+                    try-decode-map-as value $ :: 'List $ :: 'List 'Number
+                    (:err message)
+                      assert= true $ message .includes? |[0][1]
+                    (:ok _) (raise "|parsing does not validate nested payload types")
+                (:err message) (raise message)
+              :tags $ #{} :parse-boundary :unit
         'try-parse-cirru $ %{} 'CodeEntry
           :doc "|Parse Cirru as Result<CirruQuote,String>; errors are returned instead of raised. Prefer the .parse-cirru String method in user code."
           :code $ quote $ defn try-parse-cirru (source)
@@ -9404,14 +9423,27 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'String 'Dynamic
           :tags $ #{} :builtin :data :syntax
-          :tests $ [] $ %{} 'TestEntry (:name |result-contract)
-            :code $ quote $ do
-              assert= true $ result:ok? $ try-parse-cirru-edn-as "|[] 1 2" (:: 'List 'Number)
-              assert= true $ result:err? $ try-parse-cirru-edn-as "|[] 1 |bad" (:: 'List 'Number)
-              assert-type
-                try-parse-cirru-edn-as "|[] 1 2" $ :: 'List 'Number
-                :: 'Result (:: 'List 'Number) 'String
-            :tags $ #{} :unit
+          :tests $ []
+            %{} 'TestEntry (:name |result-contract)
+              :code $ quote $ do
+                assert= true $ result:ok? $ try-parse-cirru-edn-as "|[] 1 2" (:: 'List 'Number)
+                assert= true $ result:err? $ try-parse-cirru-edn-as "|[] 1 |bad" (:: 'List 'Number)
+                assert-type
+                  try-parse-cirru-edn-as "|[] 1 2" $ :: 'List 'Number
+                  :: 'Result (:: 'List 'Number) 'String
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |nested-list-success)
+              :code $ quote $ assert=
+                Result :ok $ [] $ [] 1 2
+                try-parse-cirru-edn-as "|[] ([] 1 2)" $ :: 'List $ :: 'List 'Number
+              :tags $ #{} :parse-boundary :unit
+            %{} 'TestEntry (:name |nested-list-failure-path)
+              :code $ quote $ match
+                try-parse-cirru-edn-as "|[] ([] 1 |bad)" $ :: 'List $ :: 'List 'Number
+                (:err message)
+                  assert= true $ message .includes? |[0][1]
+                (:ok _) (raise "|nested invalid Number must not be accepted")
+              :tags $ #{} :parse-boundary :unit
         'try-parse-cirru-list $ %{} 'CodeEntry
           :doc "|Parse a Cirru expression list as Result<List,String>; errors are returned instead of raised. Prefer the .parse-cirru-list String method in user code."
           :code $ quote $ defn try-parse-cirru-list (source)
