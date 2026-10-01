@@ -7,3 +7,5 @@
 首次回归发现 `)` 在 native 为 Result err、生成 JS 却为 ok。缺陷属于 `@cirru/parser.ts@0.0.9` 的 lexer，见 #1600 与 Cirru/parser.ts#42 / PR #43。保留失败样例和现有错误模型，在 owner 修复并正式发布版本后升级依赖；不在 Calcit 增加第二套 parser，不更换测试预期，也不把未发布 checkout 当作发布兼容证据。
 
 本批不扩张 WASM parser 能力。闭合 Cirru EDN WASM decoder 继续由其原有支持矩阵与实际执行测试证明。
+
+上游 #43 已合并，精确 main 的 CI 成功；0.0.10 annotated tag、Release 与 npm 发布完成，官方 registry 已核对版本和 integrity。本 PR 将依赖从 `^0.0.9` 改为精确 `0.0.10` 并更新锁文件，原失败的 native/JS 同 AST 检查通过。还发现该脚本原本只在本地 check-all 执行，补入 CI 现有共享契约步骤；旧依赖在该 CI job 的实际失败日志与本地一致。没有用未覆盖该场景的绿灯作完成证明。
