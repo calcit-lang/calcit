@@ -60,6 +60,19 @@ try {
     "assert-type (Option :some 3) (:: 'Option 'String)",
     "assert-type (Option :some 3) (:: 'Result 'Number 'String)",
   ];
+  const detailed = new Map([
+    ["assert-type (.map (Option :some 3) $ fn (x) ([] x)) (:: 'Option (:: 'List 'String))",
+      ["expected `'Option<list<:string>>`", "got `'calcit.core/Option<list<:number>>`"]],
+    ["assert-type (.map (Result :ok 3) $ fn (x) ([] x)) (:: 'Result (:: 'List 'String) 'String)",
+      ["expected `'Result<list<:string>, :string>`", "got `'calcit.core/Result<list<:number>, dynamic>`"]],
+    ["assert-type ({} (:a ([] 1))) (:: 'Map 'Tag (:: 'List 'String))",
+      ["expected `map<:tag,list<:string>>`", "got `map<:tag,list<:number>>`"]],
+    ["assert-type (#{} 1) (:: 'Set 'String)",
+      ["expected `set<:string>`", "got `set<:number>`"]],
+    ["assert-type (atom 1) (:: 'Ref 'String)",
+      ["expected `ref<:string>`", "got `ref<:number>`"]],
+  ]);
+  bad.push(...detailed.keys());
   for (const expression of bad) {
     run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
       `quote $ defwasm-export run-tests () (${expression})`);
@@ -71,6 +84,9 @@ try {
       assert.ok(result.stderr.includes("calcit.assert-evidence/run-tests"), result.stderr);
       assert.ok(result.stderr.includes("expected") && result.stderr.includes("got"), result.stderr);
       assert.ok(result.stderr.includes("preprocessing"), result.stderr);
+      for (const fragment of detailed.get(expression) ?? []) {
+        assert.ok(result.stderr.includes(fragment), `${expression} must preserve ${fragment}\n${result.stderr}`);
+      }
     }
   }
   console.log("Known incompatible local and expression assertions rejected before native/JS/WASM; shared positive tests passed");

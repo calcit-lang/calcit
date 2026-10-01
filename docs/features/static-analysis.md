@@ -723,6 +723,8 @@ assert= 3 $ assert-type (+ 1 2) 'Number
 
 例如 `assert-type (+ 1 2) 'String` 会被拒绝。请修正目标类型；外部开放数据需要真正的 checked decoder，并处理失败，不能仅用断言或返回值声明冒充验证。这里不改变尚在迁移的 Dynamic 边界策略，也不声称断言能深层校验任意嵌套数据。已证明的局部断言可被消去；表达式断言的运行时处理仍取决于 backend，不保证所有断言都没有运行成本。
 
+诊断中的集合类型保留已知泛型：例如 Option 回调返回 `List<Number>`，却断言为 `Option<List<String>>` 时，`expected` 显示 `'Option<list<:string>>`，`got` 显示 `'calcit.core/Option<list<:number>>`，不能把二者都缩成 `:list`。Map 的 key/value、Set/Ref 的成员以及 callback 签名也保留同样的嵌套证据。极深或极宽的类型仍以 `…` 截断展示，避免诊断占用过多资源；这是显示预算，不放宽类型检查，也不把未证明的 Dynamic 改写成具体类型。
+
 ## Type Inspection Tool
 
 Use `&inspect-type` to debug type inference. Pass a symbol name and the inferred type is printed to stderr during preprocessing:
