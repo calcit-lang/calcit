@@ -77,6 +77,24 @@ try {
   const wasm = new WebAssembly.Instance(module, imports);
   assert.equal(wasm.exports["run-tests"](), 1);
 
+  // Unsupported runtime data must fail codegen, not become a zero result.
+  // Native execution still verifies that each source expression is valid.
+  for (const [name, expression, diagnostic] of [
+    ["runtime-quote", ["quote", ["+", "1", "2"]], /unsupported runtime quote value in WASM/],
+    ["runtime-format", ["format-to-lisp", "42"], /unsupported runtime format-to-lisp in WASM/],
+    ["branch-format", ["if", "true", ["format-to-lisp", "42"], "|fallback"], /unsupported runtime format-to-lisp in WASM/],
+  ]) {
+    setBody([expression]);
+    run();
+    const rejectedOutput = join(project, name);
+    const rejected = spawnSync(binary, [snapshot, "wasm", "--emit-path", rejectedOutput], options);
+    assert.equal(rejected.error, undefined);
+    assert.notEqual(rejected.status, 0, `${name} must fail before artifact emission`);
+    assert.match(rejected.stderr, diagnostic);
+    assert.match(rejected.stderr, /calcit\.assert-evidence\/run-tests/);
+    await assert.rejects(readFile(join(rejectedOutput, "program.wasm")), { code: "ENOENT" });
+  }
+
   // The shared preprocessor must reject before execution or either codegen.
   const bad = [
     "let ((x |hello)) (assert-type x 'Number)",

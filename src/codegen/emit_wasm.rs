@@ -5965,11 +5965,7 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
         // Imported top-level def value (e.g. a string constant). Inline its expression.
         emit_expr(ctx, &value_expr)?;
       } else {
-        // defvar or otherwise non-function import — emit nil (0.0) as a placeholder.
-        // This covers `def`-defined values that aren't representable as f64.
-        // Such references appear mostly in initializer/registration paths that are
-        // no-ops in WASM (e.g., &init-builtin-impls!).
-        ctx.emit(f64_const(0.0));
+        return Err(format!("unsupported value import in WASM: {qualified}"));
       }
     }
     Calcit::Str(s) => {
@@ -6054,15 +6050,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         Err(format!("{syn} is not yet supported in WASM codegen"))
       }
       CalcitSyntax::Defn => Err("nested fn/defn closure values are not yet supported in WASM codegen".into()),
-      CalcitSyntax::Quote | CalcitSyntax::Quasiquote => {
-        // Quote creates a runtime value (quoted symbol/expression).
-        // In WASM, emit nil as a placeholder — quote values appear mainly in
-        // error-reporting paths (e.g., the assert macro formats the failing
-        // expression via `format-to-lisp (quote ~xs)`) and don't affect the
-        // normal execution path.
-        ctx.emit(f64_const(0.0));
-        Ok(())
-      }
+      CalcitSyntax::Quote | CalcitSyntax::Quasiquote => Err(format!("unsupported runtime {syn} value in WASM")),
       CalcitSyntax::Reset => {
         // reset! atom new-value — set atom global and return new value
         if args_list.len() != 2 {

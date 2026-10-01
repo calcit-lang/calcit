@@ -5892,6 +5892,9 @@
                 assert= "|\"|a_b\"" $ format-to-lisp |a_b
                 assert= "||中文" $ format-to-lisp "|中文"
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |formats-runtime-number)
+              :code $ quote $ assert= |42 (format-to-lisp 42)
+              :tags $ #{} :core :format-boundary :unit
         'frequencies $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn frequencies (xs0)
             assert "|expects a list for frequencies" $ list? xs0

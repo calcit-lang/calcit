@@ -1,0 +1,9 @@
+# WASM 可达占位回退审计（#1533，进行中）
+
+基于未发布 main `0396fe4d366a8b8d39cf80e67821a7b568ac8360`。公共入口直接返回 `quote (+ 1 2)` 时，native 返回引用表达式，实际 WASM 返回 0；`format-to-lisp 42` 的 native 结果为字符串 `42`，WASM 仍成功产出并返回 0。
+
+初步修改让运行时 quote/quasiquote、无法表示的值 import、非静态的 format-to-lisp 返回已有 codegen 错误，不新增诊断分类。保留静态 `(format-to-lisp (quote ...))` 字符串池路径，避免破坏断言错误文本；不把零、Unit 或 metadata 常量统一当成错误。
+
+共同格式化语义通过 CLI 新增到 `calcit.core/format-to-lisp` 的 `:tests`，三个 native 用例通过。已有断言 runner 在初步修改后通过；同一 runner 补充直接 quote、运行时格式化和条件分支的编译拒绝及不产出 artifact 检查后，重新构建与完整专项回放均通过，既有 native/JS 正例、参数/返回负例、async 和标量 WASM 断言保持通过。
+
+尚未完成：值 import 公共路径的可达性分类、跨模块/helper 依赖与错误分支、WASI 验证、source 定位精度、文档与完整门禁。当前改动不能视为 #1533 已验收；尤其 core WASM 对某些非入口依赖仍安装 trap，必须确认其可达性处理，不能仅靠直接入口负例宣称 fail-closed。
