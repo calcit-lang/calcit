@@ -28,6 +28,10 @@ node scripts/core-api-contract.mjs
 
 Option `.map` 目前查询仍为 open，解析开放 JSON/Cirru EDN 等边界仍需要单独审阅，不能靠本清单或目标类型把它们包装成 proven。候选只记录真实证据，不把推导漏洞固化为永久动态契约。0.29 的断言/调用证明工作仍由 #1538 拥有。
 
+解析家族的 `try-parse-json`、`try-parse-cirru`、`try-parse-cirru-edn` 与 `try-parse-cirru-list` 函数声明也纳入候选：输入为 String，失败为 String，成功值分别为开放数据、CirruQuote、开放数据与开放 List。记录声明不等于证明开放 payload，JSON/Cirru EDN/List 的方法契约仍不进入要求 `proven` 的方法冻结范围。需要业务类型时使用现有闭合 decoder，而不是插入 unsafe 或假定目标类型。
+
+`scripts/check-parse-boundary.mjs` 在 native 与生成 JS 执行同一份 definition `result-method-contract` AST，覆盖普通 String `.parse-float/.parse-json/.parse-cirru/.parse-cirru-edn/.parse-cirru-list` 的成功、失败和 Result 类型断言，并继续执行闭合 decoder 的嵌套成功/拒绝用例。此批不宣称这些通用文本 parser 的 WASM 支持；已有闭合 Cirru EDN WASM decoder 的支持与限制见 [WASM 验证说明](../../scripts/wasm-validation.md)。
+
 CI 检查当前源码与基线，并对 PR 的 merge-base 基线重新比较；push 比较父提交。只改范围或重生成基线不能放行既有名字、schema、失败记录或 receiver 的变化。合法新增允许；函数体、局部参数名和方法内部实现路径不冻结。当前不提供 breaking-change 豁免，#1568 规划的集中迁移例外仍由 #1458 跟进，须实现同一 PR 的映射与语义验证，不能手动跳过检查。
 
 这里的测试放在 Node，是为了验证导出格式、Git 基线防绕过和契约比较这些维护工具边界，不重复添加 Rust 语言语义测试，也不新增动态类型统计 analyzer。失败描述的变化可由历史比较发现，但实现是否违反失败语义仍须由共享语义测试证明；不能把“文字没有变化”当作行为已经验证。

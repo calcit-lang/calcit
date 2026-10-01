@@ -31,6 +31,34 @@
         :args $ [] 'String
         :return $ :: 'Result 'Number 'String
     {} (:declaration nil)
+      :failure "|文本语法失败返回_String_err，成功_payload_保持合法开放数据"
+      :name 'calcit.core/try-parse-json
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'String
+        :return $ :: 'Result 'Dynamic 'String
+    {} (:declaration nil)
+      :failure "|文本语法失败返回_String_err，成功返回_CirruQuote"
+      :name 'calcit.core/try-parse-cirru
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'String
+        :return $ :: 'Result 'CirruQuote 'String
+    {} (:declaration nil)
+      :failure "|文本语法失败返回_String_err，成功_payload_保持合法开放数据"
+      :name 'calcit.core/try-parse-cirru-edn
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'String
+        :return $ :: 'Result 'Dynamic 'String
+    {} (:declaration nil)
+      :failure "|文本语法失败返回_String_err，成功返回开放_List"
+      :name 'calcit.core/try-parse-cirru-list
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'String
+        :return $ :: 'Result (:: 'List 'Dynamic) 'String
+    {} (:declaration nil)
       :failure "|同步读取失败抛错，JS_需要宿主注入"
       :name 'calcit.core/read-file
       :runtime-arity $ {} (:max 1) (:min 1)
