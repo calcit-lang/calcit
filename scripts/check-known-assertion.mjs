@@ -30,10 +30,15 @@ try {
   run("test", "calcit.core/hint-fn", "--tag", "async-return-boundary", "--require-match");
   const asyncTests = returnResponse.data.tests.filter(test => test.tags.includes("async-return-boundary"));
   assert.equal(asyncTests.length, 1);
+  run("test", "calcit.core/quote", "--tag", "quote-return-boundary", "--require-match");
+  const quoteResponse = JSON.parse(run("query", "def", "calcit.core/quote", "--format", "json"));
+  assert.deepEqual(quoteResponse.diagnostics, []);
+  const quoteTests = quoteResponse.data.tests.filter(test => test.tags.includes("quote-return-boundary"));
+  assert.equal(quoteTests.length, 3);
   run("edit", "add-ns", "calcit.assert-evidence");
   const setBody = trees => run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite",
     "--input-format", "json-ast", "--code", JSON.stringify(["defwasm-export", "run-tests", [], ...trees, "1"]));
-  setBody([...tests, ...returnTests, ...callTests, ...asyncTests].map(test => test.code));
+  setBody([...tests, ...returnTests, ...callTests, ...asyncTests, ...quoteTests].map(test => test.code));
   run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
   run("config", "set", "init-fn", "calcit.assert-evidence/run-tests");

@@ -647,7 +647,7 @@ fn gen_call_code(
         CalcitSyntax::CoreLet => gen_let_code(&body, local_defs, xs, ns, file_imports, tags, return_label),
 
         CalcitSyntax::Quote => match body.first() {
-          Some(item) => quote_to_js(item, var_prefix, tags),
+          Some(item) => quote_to_js(item, var_prefix, tags).map(|value| format!("{return_code}{value}")),
           None => Err(format!("quote expected a node, got nothing from {body}")),
         },
         CalcitSyntax::Defatom => match (body.first(), body.get(1)) {
