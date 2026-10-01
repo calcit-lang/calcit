@@ -12,6 +12,8 @@
 
 这只是源代码写入边界，不是完整类型证明。源码声明的宏仍可能展开成非法表达式；后续检查负责展开语义。Snapshot 布局、类型系统及后端不变。
 
+Respo 真实副本另外暴露 `*dispatch-op` 的 `deftype-slot :dispatch-op`：slot 名是独立的语义参数，不要求等于 definition key。检查此形式只接受一个 tag/string 名，保留现有语言能力，不以本轮编辑校验提前淘汰 type slot。
+
 ## 验证方式
 
 `tests/edit_cli.rs` 验证失败时 Snapshot 字节不变、事务回滚、项目/依赖宏解析、未知头部选项的边界及历史名称差异的不可扩展性。这些属于 CLI 文件系统边界，因此放在 Rust 集成测试，而非重复语言语义测试。

@@ -299,6 +299,8 @@ fn edit_def_rejects_invalid_named_shapes_without_writing() {
     "quote $ ### app.main/foo",
     "quote $ fn foo 1",
     "quote $ fn ()",
+    "quote $ deftype-slot other",
+    "quote $ deftype-slot :slot :extra",
   ] {
     let output = run_calcit(
       &snapshot,
@@ -337,6 +339,13 @@ fn edit_def_rejects_invalid_named_shapes_without_writing() {
   let output = run_calcit(&snapshot, &["edit", "transaction", "--code", &operations.to_string()]);
   assert!(!output.status.success(), "invalid definition must abort the transaction");
   assert_eq!(fs::read(&snapshot).unwrap(), original, "failed transaction must not write");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "def", "app.main/*slot", "--code", "quote $ deftype-slot :slot"],
+    ),
+    "type-slot declarations use slot names, not definition keys",
+  );
 }
 
 #[test]

@@ -997,6 +997,16 @@ fn validate_definition_shape(
       ))
     };
   }
+  // Type slots carry an independent slot name, not the Snapshot key.
+  if items.first().is_some_and(|head| head.eq_leaf("deftype-slot")) {
+    return if items.len() == 2 && matches!(&items[1], Cirru::Leaf(name) if name.starts_with(':') || name.starts_with('|')) {
+      Ok(())
+    } else {
+      Err(format!(
+        "Definition '{namespace}/{definition}': deftype-slot requires exactly one tag or string slot name."
+      ))
+    };
+  }
   let (Some(Cirru::Leaf(head)), Some(Cirru::Leaf(name))) = (items.first(), items.get(1)) else {
     return Err(format!(
       "Definition '{namespace}/{definition}' requires a definition head and a symbol name."
