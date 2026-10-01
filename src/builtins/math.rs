@@ -142,7 +142,17 @@ pub fn rem(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub(crate) fn rem_numbers(base: f64, step: f64) -> Result<Calcit, CalcitErr> {
   match (f64_to_i32(base), f64_to_i32(step)) {
-    (Ok(a), Ok(b)) => Ok(Calcit::Number((a % b) as f64)),
+    (Ok(a), Ok(b)) => match a.checked_rem(b) {
+      Some(value) => Ok(Calcit::Number(value as f64)),
+      None => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        if b == 0 {
+          "&number:rem divisor must not be zero"
+        } else {
+          "&number:rem integer remainder overflow"
+        },
+      ),
+    },
     (Err(a), _) => CalcitErr::err_str(CalcitErrKind::Type, a),
     (_, Err(a)) => CalcitErr::err_str(CalcitErrKind::Type, a),
   }
@@ -373,5 +383,38 @@ pub fn bit_not(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       CalcitErrKind::Arity,
       format!("&math:bit-not expected 1 number, but received: {a:?}"),
     ),
+  }
+}
+
+#[cfg(test)]
+mod remainder_safety_tests {
+  use super::rem_numbers;
+
+  #[test]
+  fn native_remainder_errors_never_unwind() {
+    let values = [
+      0.0,
+      -0.0,
+      1.0,
+      -1.0,
+      i32::MIN as f64,
+      i32::MAX as f64,
+      f64::MIN,
+      f64::MAX,
+      0.5,
+      f64::NAN,
+      f64::INFINITY,
+      f64::NEG_INFINITY,
+    ];
+    for base in values {
+      for step in values {
+        assert!(
+          std::panic::catch_unwind(|| rem_numbers(base, step)).is_ok(),
+          "native remainder must not unwind for {base} % {step}"
+        );
+      }
+    }
+    assert!(rem_numbers(1.0, 0.0).is_err());
+    assert!(rem_numbers(i32::MIN as f64, -1.0).is_err());
   }
 }
