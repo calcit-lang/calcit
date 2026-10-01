@@ -2082,7 +2082,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     );
     assert!(
       filter_warnings.iter().any(|warning| {
-        warning.message().contains("arg 2 expects type `fn(:list) -> :bool`")
+        warning.message().contains("arg 2 expects type `fn(list<dynamic>) -> :bool`")
           && warning.message().contains("got `fn(:number) -> :number`")
       }),
       "Map filters should expose their heterogeneous pair as a List-shaped predicate argument: {filter_warnings:?}"
@@ -2124,7 +2124,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     assert!(
       iteration_warnings.iter().any(|warning| {
         warning.message().contains("calcit.core/every?")
-          && warning.message().contains("expects type `fn(:list) -> :bool`")
+          && warning.message().contains("expects type `fn(list<dynamic>) -> :bool`")
           && warning.message().contains("got `fn(:number) -> :number`")
       }),
       "every? should expose Map entries as heterogeneous List pairs: {iteration_warnings:?}"
@@ -2159,7 +2159,9 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     );
     assert!(
       map_warnings.iter().any(|warning| {
-        warning.message().contains("arg 2 expects type `fn(:list) -> :list`")
+        warning
+          .message()
+          .contains("arg 2 expects type `fn(list<dynamic>) -> list<dynamic>`")
           && warning.message().contains("got `fn(:number) -> :number`")
       }),
       "Map mappers should consume and return heterogeneous List pairs: {map_warnings:?}"
@@ -2190,7 +2192,7 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     assert!(
       fold_warnings.iter().any(|warning| {
         warning.message().contains("Proc `foldl`")
-          && warning.message().contains("expects type `fn(:number, :list) -> :number`")
+          && warning.message().contains("expects type `fn(:number, list<dynamic>) -> :number`")
           && warning.message().contains("got `fn(:number, & :number) -> :number`")
       }),
       "Map foldl should expose entries as heterogeneous List pairs: {fold_warnings:?}"
