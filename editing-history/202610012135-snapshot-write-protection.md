@@ -15,4 +15,12 @@
 
 真实 Respo Snapshot 原文件只读，性能验证在临时副本进行，使用当前未发布分支构建而非声称已发布工具链具备修复。315824 字节副本的 21 次中位数测量：原子写入基线 7.132ms，保护写入 7.715ms，额外 0.583ms。完整验证结果以 PR 为准。
 
+Review 后锁记录读写统一使用已持锁的句柄；Unix rename 后尽力同步父目录。内部锁使用原生文件名保留文件系统的大小写别名语义。性能阈值保留 10ms，但不作为普通并行单元测试的时间门禁，使用显式 benchmark 隔离运行，避免 CI 磁盘抖动：
+
+```bash
+cargo test --lib util::atomic_write::tests::snapshot_guard_adds_less_than_ten_milliseconds_to_serial_writes -- --ignored --test-threads=1 --nocapture
+```
+
+可用 `CALCIT_WRITE_GUARD_BENCHMARK_SNAPSHOT` 选择真实 Snapshot；测试先复制源文件，不修改该原文件。
+
 锁协调遵守协议的 CLI；旧 CLI 与外部编辑器不受内核 advisory lock 强制限制，提交前比较不等于任意外部写入的 CAS。不自动合并、自动重试业务修改或改变 Snapshot 格式。`.calcit/` 锁状态为本地工具数据，不应提交到仓库；有活跃进程时不能清理锁文件。

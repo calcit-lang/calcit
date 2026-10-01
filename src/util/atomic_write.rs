@@ -302,6 +302,7 @@ pub fn stage_atomic_file(destination: &Path, content: &[u8], label: &str) -> Res
 mod tests {
   use super::{SnapshotWriteGuard, WriterLock, stage_atomic_file, write_snapshot};
   use std::fs;
+  use std::io::Seek;
 
   #[test]
   fn atomic_writer_identity_matches_filesystem_case_aliases() {
