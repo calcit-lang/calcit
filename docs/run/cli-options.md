@@ -542,6 +542,8 @@ calcit calcit.cirru analyze program-diff main --base v0.15.5 --format edn
 
 ## WASM preview 命令
 
+WASM 支持范围不能与 Calcit 表层语义混淆：macro 在编译前展开，类型已证明的普通方法可经过静态 lowering 与泛型单态化编译，不需要为了目标后端把调用改成 native call。开放 Dynamic、运行时派发、未闭合的 ABI 或尚未实现的宿主能力则需要逐项检查；`query type --format edn` 的方法证据也不代替实际目标编译与运行。内部字符串内存保存 UTF-8 字节长度，不改变 `.len` 使用 Unicode 标量数量的公开契约。
+
 `calcit wasm` 生成面向 browser/embedded host 的 core module；`calcit wasi` 默认生成 WASI 0.3.1 `wasi:cli/command` Component，支持零参数入口、`get-args`、`get-env`、`println` / `eprintln` / `echo`、`quit!` 整数退出码、`read-stdin-text` 以及 `FsPath .read-text` / `.write-text!`；正常返回时退出码为 0。显式传 `calcit wasi --boundary native` 仍生成可由 Wasmtime 等 WASI host 启动的 Preview 1 command core module，用于尚未迁移的宿主能力。通用的 `calcit wasm --boundary component` 输出供 Component tooling 包装的 core module，不等价于 WASI 0.3.1 command。两个命令把 Snapshot 路径放在子命令之后，并分别通过 help 暴露输出契约：
 
 ```bash
@@ -569,7 +571,7 @@ WASI command 继续使用与原生、JavaScript 相同的 `get-env` 和 `get-arg
 
 command init definition 正常返回时，进程状态为 `0`；调用 `quit!` 可显式设置 `0..255` 的整数退出状态。Preview 1 路径在内部调用 `proc_exit`，WASI 0.3 Component 路径调用 `wasi:cli/exit@0.3.1#exit-with-code`；Calcit 源码无需感知这两套 ABI。
 
-版本坐标（2026-09-23）：WASI 规范 release 为 `v0.3.1`，这里使用的 `wasi:cli`、`wasi:clocks`、`wasi:filesystem`、`wasi:random` 和 `wasi:sockets` WIT package 均为 `0.3.1`，来源与校验值由 `calcit-bindgen 0.1.9` 维护；其 Component 包装依赖 `wit-component 0.258.0`。实际运行验收使用已发布的 Wasmtime `49.0.0`；未调用标准流的命令形如 `wasmtime run -S p3 program.wasm`，调用标准流的命令还需要前述两个 async 特性开关。Wasmtime 49 内置的 p3 CLI WIT 仍标记为 `0.3.0`，但生成的 `0.3.1` Component 已用正式二进制测试参数、环境、标准输出/标准错误、退出码及拒绝路径；不能仅凭内置文件的版本文字判断兼容性，也不能把 WIT parse 当作运行验收。`calcit wasi` 默认目标已在 #1269 切换为 WASI 0.3 Component；Preview 1 保留显式 `--boundary native` 入口。
+版本坐标（2026-10-01）：WASI 规范 release 为 `v0.3.1`，这里使用的 `wasi:cli`、`wasi:clocks`、`wasi:filesystem`、`wasi:random` 和 `wasi:sockets` WIT package 均为 `0.3.1`，来源与校验值由 `calcit-bindgen 0.1.9` 维护；其 Component 包装依赖 `wit-component 0.258.0`。当前 CI 与[仓库标准流示例](../../scripts/wasm-validation.md#编译与验证方式)的实际运行验证使用已发布的 Wasmtime `49.0.1`；未调用标准流的命令形如 `wasmtime run -S p3 program.wasm`，调用标准流的命令还需要前述两个 async 特性开关。Wasmtime 49 内置的 p3 CLI WIT 仍标记为 `0.3.0`，但生成的 `0.3.1` Component 已用正式二进制测试参数、环境、标准输出/标准错误、退出码及拒绝路径；不能仅凭内置文件的版本文字判断兼容性，也不能把 WIT parse 当作运行验收。`calcit wasi` 默认目标已在 #1269 切换为 WASI 0.3 Component；Preview 1 保留显式 `--boundary native` 入口。
 
 WASI Preview 1 command 使用 `unix-time-ms` 与 `monotonic-time-ms`（旧名 `cpu-time` 暂留兼容）。前者读取系统实时时钟；后者读取单调时钟，只保证同一进程内两次读数的差值有意义。两者均返回毫秒数；Preview 1 的纳秒结果与错误码由编译器内部转换和检查，宿主失败时不会返回 `0` 或 `nil`。WASI 0.3 Component 目前不支持时钟，不会自动回退到 Preview 1。
 

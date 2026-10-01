@@ -2,7 +2,9 @@
 
 ## 概述
 
-Calcit 通过两个公开 preview 子命令暴露 WASM codegen：`calcit wasm` 生成 browser/embedded core module，`calcit wasi` 生成 WASI command module。两者共享同一套 Snapshot 加载、预处理、target validation 与 codegen 实现；当前支持范围仍以本文和明确的 unsupported 错误为准。
+Calcit 通过两个公开 preview 子命令暴露 WASM codegen：`calcit wasm` 生成 browser/embedded core module，`calcit wasi` 默认生成 WASI 0.3.1 `wasi:cli/command` Component；只有显式 `--boundary native` 才选择 Preview 1 command core module。两者共享同一套 Snapshot 加载、预处理、target validation 与 codegen 实现。
+
+用户和 AI Agents 优先查已安装版本的 `calcit wasm --help`、`calcit wasi --help` 及[CLI 参考](../docs/run/cli-options.md#wasm-preview-命令)。本页解释仓库回归、内部表示与已经验证的子集，不另建用户命令或把 backend 缺口改写成语言禁令。
 
 `cr-wasm` 已退出默认安装和 release assets。新的人类与 Agent 工作流应使用 `calcit wasm` / `calcit wasi`，不要依据内部 binary 名称猜测输出契约。仓库内的 WASI 自举回归使用 feature-gated harness；它不是用户 CLI，也不会由默认 `cargo install calcit` 安装。
 
@@ -10,18 +12,22 @@ Calcit 通过两个公开 preview 子命令暴露 WASM codegen：`calcit wasm` �
 
 WASM 相关能力分属四个不同层级，排查或文档引用时不要把它们混在同一张表里：
 
-1. **表层不支持（语言语义）**：宏系统（编译前展开）、`Dynamic`、opaque host object、Atom/Ref、
-   可变参数与可选参数、动态 method dispatch。这一层由预处理与 codegen 以稳定诊断拒绝，不是 codegen 缺口。
+1. **表层与 typed core**：Calcit macro 在编译前展开。普通方法调用可由类型推导、trait 证明和
+   单态化 lowering 成静态调用；应优先保留这些 Calcit 写法，不为绕过后端改成 native call。
+   尚未取得闭合类型、依赖运行时动态派发或需要未实现 ABI 的调用可能被 WASM 拒绝，
+   这是相应目标的支持边界，不是宏、方法、Dynamic、Ref 等在整个 Calcit 语言中非法。
 2. **预处理后可静态 lowering 的子集**：下表列出的纯计算与闭合数据操作，在 core 与 WASI command
    两个目标上共享同一套 Snapshot 加载、target validation 与 codegen。
-3. **WASI command 目标**：`calcit wasi` 生成带 `_start` 的 Preview 1 command module，通过集中式
-   capability registry 提供 `println`、`get-env`、`get-args` 等；不继承 core 目标的 JS `io` imports。
+3. **WASI command 目标**：默认 WASI 0.3.1 Component 使用标准 command world；显式
+   `--boundary native` 生成带 `_start` 的 Preview 1 command core module。宿主能力按所选边界
+   验证，不静默退回旧协议，也不继承 browser core 目标的 JS `io` imports。
 4. **Component boundary**：`calcit wasm --boundary component` 与
    `calcit ffi export --boundary component` 走独立的 Canonical ABI adapter 与版本化 Interface IR，
    其类型矩阵、async lifecycle 与 HTTP 边界以
    [WASM Component 边界](../docs/installation/wasm-component-boundary.md) 为准，不在本文件重复。
 
-下表只描述第 2 层，即 core/WASI command codegen 当前支持的最小计算子集。
+下表主要描述第 2 层的内部表示和部分已验证操作，不保证某个类型的所有方法或动态输入均可编译；
+WASI 宿主能力必须另外满足所选 command 边界，Component 类型闭包也必须单独验证。
 
 ## 支持的子集
 
@@ -31,12 +37,12 @@ WASM 相关能力分属四个不同层级，排查或文档引用时不要把它
 | Number 字面量                          | ✅   | 直接映射到 f64           |
 | Bool 字面量                            | ✅   | true → 1.0, false → 0.0  |
 | Nil                                    | ✅   | → 0.0                    |
-| `if` 条件                              | ✅   | 非零为 truthy            |
+| `if` 条件                              | ✅   | Bool 的内部 0/1 分支；不能据此把任意 Number 条件当作合法表层写法 |
 | `let` 绑定                             | ✅   | 转为 WASM local          |
 | 算术: `&+`, `&-`, `&*`, `&/`           | ✅   | 映射到 f64 指令          |
 | `&number:rem`                          | ✅   | 通过 trunc/mul/sub 模拟  |
 | `&number:fits?`                        | ✅   | 支持字面量或局部绑定 tag；未知 refinement tag 返回 false，不 trap |
-| `turn-string`（Number）                | ✅   | 运行时按 native/JS 共用的最短十进制规则输出；特殊值、有限小数和指数边界均覆盖 |
+| `to-string`（Number）                  | ✅   | 首选公开转换；运行时按 native/JS 共用的最短十进制规则输出，特殊值、有限小数和指数边界均覆盖；旧 turn-string 暂留兼容 |
 | 比较: `&<`, `&>`, `&=`                 | ✅   | 返回 f64 (1.0/0.0)       |
 | `not`                                  | ✅   | 逻辑非                   |
 | `identical?`                           | ✅   | 数值相等 (f64.eq)        |
@@ -45,7 +51,7 @@ WASM 相关能力分属四个不同层级，排查或文档引用时不要把它
 | 函数调用                               | ✅   | 同模块内函数互调         |
 | Tag / Struct / Enum                    | ✅   | 线性内存 + f64 编码指针  |
 | List / Map / Set                       | ✅   | 线性内存 bump allocator  |
-| `println` / `echo` / IO               | ✅   | 通过 `io/log_value` host import |
+| `println` / `echo`                     | ✅   | browser core 使用 `io` host imports；WASI command 使用对应标准流协议，不保证所有 IO 均受支持 |
 | 字符串字面量                           | ✅   | 编译期写入数据段         |
 | `&str:count`                          | ✅   | Unicode 标量数；不是 UTF-8 字节数 |
 | `&str:first` / `&str:rest` / `&str:slice` / `&str:nth` | ✅ | 按 Unicode 标量读取/切片；空串与越界安全，非法索引 trap；共享 Calcit 测试见 `scripts/check-string-unicode.mjs` |
@@ -60,13 +66,16 @@ WASM 相关能力分属四个不同层级，排查或文档引用时不要把它
 | `__str_new` (FFI)                      | ✅   | JS → WASM 字符串传递     |
 | `defwasm-import` / `defwasm-export`    | ✅   | 显式声明 host ABI，支持 Number / String |
 
-**不支持（留给解释器/JS codegen）：**
+**需要明确检查的目标边界：**
 
-- 宏系统（编译前已展开）
 - `&str:replace` / `str` 类型转换 / `&str:escape`
-- Method dispatch
-- Atom / Ref
-- 可变参数 (`&`) 和可选参数 (`?`)
+- 需要运行时选择实现的动态 method dispatch；已证明的普通方法不在此列
+- Atom / Ref 的运行时状态与观察者能力
+- 未经静态 lowering 的可变参数 (`&`) 和可选参数 (`?`)；公开 Component ABI 不接受这些 arity
+
+上述缺口不能通过放宽 Dynamic、复制一套“动态 API”或自动插入 unsafe 来隐藏。普通依赖中
+未受支持的实现可能保留 trapping slot；显式导出与 command 入口则要求更强的编译期验证。
+生成产物存在不是可用性证明，应实际调用相应入口并验证结果。
 
 ### Cirru EDN 格式化边界
 
@@ -101,14 +110,27 @@ Struct、Enum、Option 与 Result 已由同一套 parser/formatter 覆盖，不�
 calcit wasm calcit.cirru --emit-path js-out
 ```
 
-生成并运行 WASI command module：
+生成并运行默认 WASI 0.3.1 command Component（下列标准流参数与 CI 使用的 Wasmtime 49.0.1 对齐）：
 
 ```bash
-calcit wasi calcit/test-wasi-command.cirru --emit-path target/wasi-command
-wasmtime run --env APP_MODE=release target/wasi-command/program.wasm alpha beta
+calcit wasi tests/fixtures/wasi-command-03.cirru --emit-path target/wasi-doc-component
+wasmtime run -S p3 -W component-model-more-async-builtins=y -W component-model-async-stackful=y target/wasi-doc-component/program.wasm
 ```
 
-两个命令都支持 `--check-only`，只执行同一套 target validation，不写出 `program.wasm`。`--help` 会分别说明输出类型和 command entry 约束。
+如果确实需要尚未迁移到 Component 的宿主能力，显式选择 Preview 1，不把它当作默认推荐：
+
+```bash
+calcit wasi calcit/test-wasi-command.cirru --boundary native --emit-path target/wasi-doc-native
+wasmtime run --env CALCIT_WASI_TEST_ENV=release target/wasi-doc-native/program.wasm alpha beta
+```
+
+两个仓库 fixture 的入口契约不同：Component 示例显式返回 Unit；Preview 1 的历史测试入口
+仍返回 Number，因此不能把它换掉参数直接作为默认 Component 示例，否则会报告
+`E_WASI_COMMAND_ENTRY`，要求入口返回 Unit。业务入口以现有
+`examples/wasi-command/calcit.cirru` 与相应回归脚本为准，不额外创造一个示例程序。
+
+两个命令都支持 `--check-only`。WASI 0.3 Component 还执行 codegen 与封装验证，但不写出
+`program.wasm`；它不是“只有预处理”。`--help` 会分别说明输出类型和 command entry 约束。
 
 仓库全量验证：
 
@@ -122,12 +144,13 @@ yarn try-wasm
 
 公开命令名称明确区分两种宿主契约：
 
-- `core` 是默认值，保持浏览器或嵌入式宿主现有的 `math`、`io` imports 和导出行为。
-- `wasi` 生成 command module，并增加无参数、无返回值的 `_start` 入口。当前支持 `println`、`eprintln`、`echo`、`get-env` 和 `get-args`；`get-args` 返回宿主传入的完整参数列表，包含第 0 项。
+- `calcit wasm` 默认 core boundary，供浏览器或嵌入式宿主提供已有的 `math`、`io` imports。通用 `--boundary component` 是供工具包装的 core adapter，不是默认 WASI command。
+- `calcit wasi` 默认 WASI 0.3.1 command Component；init 必须零参数并显式返回 Unit。支持标准流、参数/环境、`quit!`、`read-stdin-text` 以及 `FsPath .read-text` / `.write-text!`，不等同于所有宿主能力均可用。
+- `calcit wasi --boundary native` 才是带 `_start` 的 Preview 1 command。时钟、等待、安全随机数和 `.read-dir` 等尚未迁移的能力仍需此显式边界，不能在默认 Component 路径静默回退。
 
-command init definition 正常返回时状态为 `0`；`quit!` 接受 `0..255` 的整数，并映射到 WASI `proc_exit`。该限制与原生、JavaScript 后端一致，避免宿主各自执行隐式饱和或取模。
+command init definition 正常返回时状态为 `0`；`quit!` 接受 `0..255` 的整数，映射到所选协议的退出操作（Preview 1 为 `proc_exit`）。该限制与原生、JavaScript 后端一致，避免宿主各自执行隐式饱和或取模。
 
-WASI 目标不会接受 `defwasm-import` 声明的任意宿主函数，也不会继承 core 目标的 JS `io` imports。遇到尚未注册的宿主能力时，codegen 以 `E_WASM_CAPABILITY` 失败；无效目标或 command 入口形状以 `E_WASM_TARGET` 失败。后续退出、时钟、随机数和预开放文件系统均从集中式 capability registry 接入，Preview 1 的 ABI 名称不会成为 Calcit 源码 API。
+WASI 目标不会接受 `defwasm-import` 声明的任意宿主函数，也不会继承 core 目标的 JS `io` imports。通用目标校验使用 `E_WASM_CAPABILITY` / `E_WASM_TARGET`；WASI 0.3 command 另明确拒绝尚未迁移的能力（`E_WASI_COMMAND_CAPABILITY`）、无法证明的间接调用（`E_WASI_COMMAND_INDIRECT`）及通用 export（`E_WASI_COMMAND_EXPORT`）。这些诊断是目标证据，不是增加一套表层语言规则；Preview 1 的 ABI 名称也不会成为 Calcit 源码 API。
 
 ## 声明式 WASM FFI
 
@@ -165,7 +188,7 @@ defwasm-export add-one (a)
 
 ## 字符串内存布局
 
-字符串在线性内存中以 UTF-8 字节存储，与 Rust 的 `str` 语义一致（`count` 返回**字节数**而非字符数）：
+字符串在线性内存中以 UTF-8 字节存储，下面的 `byte_len` 是存储字节数。公开 `.len` 与底层 `&str:count` 返回 **Unicode 标量数**，不等于该内存字段，也不表示用户感知的字形簇数；相关跨 backend 语义由 `scripts/check-string-unicode.mjs` 验证：
 
 ```
 logical_ptr - 8: HEAP_MAGIC (i32)        — 堆对象标记
