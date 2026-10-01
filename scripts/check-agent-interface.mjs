@@ -282,6 +282,18 @@ const scenarios = [
     },
   },
   {
+    name: "open variadic queries retain rest annotations without call proof",
+    args: ["calcit/test.cirru", "query", "type", ":: 'List 'Dynamic", "--format", "json"],
+    check(result) {
+      const concat = result.data.methods.find(method => method.name === ".concat");
+      assert.equal(concat?.status, "open");
+      assert.deepEqual(concat.parameter_types, []);
+      assert.equal(concat.rest_type, "list");
+      assert.equal(concat.return_type, "list");
+      assert.ok(!Object.hasOwn(concat, "call_types"));
+    },
+  },
+  {
     name: "builtin FFI context",
     args: [
       "calcit/test.cirru",

@@ -1835,6 +1835,20 @@ mod type_query_tests {
     assert_eq!(open_append.status, "open", "an explicitly dynamic element still needs narrowing");
     assert_eq!(open_append.arg_types.unwrap()[0].describe(), "dynamic");
     assert_eq!(open_append.return_type.unwrap().describe(), "list");
+    let open_concat = runner::preprocess::static_method_contract(open_list.as_ref(), ".concat");
+    assert_eq!(open_concat.status, "open");
+    assert!(open_concat.arg_types.as_ref().unwrap().is_empty());
+    assert_eq!(open_concat.rest_type.as_ref().unwrap().describe(), "list");
+    assert_eq!(open_concat.return_type.as_ref().unwrap().describe(), "list");
+    assert!(method_call_types(&open_concat).is_none());
+    let rendered_concat = context_method(
+      runner::preprocess::StaticMethodDescriptor {
+        name: ".concat".to_owned(),
+        origin: "test".to_owned(),
+      },
+      open_concat,
+    );
+    assert!(render_context_method(&rendered_concat).contains("(...list) -> list"));
     let original_fingerprint = method_contract_fingerprint(&Some(vec![list_get.clone()])).expect("method serialization");
     let mut changed = list_get.clone();
     changed.return_type = Some("type calcit.core/Option<string>".to_owned());
