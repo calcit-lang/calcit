@@ -258,6 +258,10 @@ The command does not invoke the project init/reload function. A dynamic FFI boun
 `data.lowering.source_head` 等兼容形式。`specialized` 表示源码语义已经选择类型专门化的 primitive；
 `dynamic` 或 `unavailable` 仍需作为迁移和检查线索，不能因为推断成功就假定执行路径已优化。
 
+`:next` 中的源码导航命令保留本次查询的 Snapshot，并对路径与 definition 做 shell quoting。
+结构化 `:data :path` 继续使用 `code` / `code@3.1`；对应 `tree show` 命令在根节点省略 `--path`，
+子节点使用原有 `@3.1` 数字坐标。可直接复制下一步命令，不必手动转换路径；该导航只读，不改写源码。
+
 ### Gather Definition Context (`context`)
 
 对于未声明 root schema、但普通预处理已证明签名的 helper，结构化输出保留 `:schema nil`，另外提供 `:inferred-schema`；human 输出单独显示 “Inferred schema”。它是编译器证据，不是源码声明，查询不会写回 Snapshot。此时不会再仅因缺少 root schema 报告未解析类型；实际预处理错误仍会出现在 diagnostics 中。
