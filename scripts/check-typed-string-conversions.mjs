@@ -61,7 +61,7 @@ try {
     encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
   }));
   const conversionTests = source[":files"]["'calcit.core"].defs["'to-string"].tests;
-  const methodTests = ["scalar-method-contract", "wasm-scalar-method-contract"].map(name => {
+  const methodTests = ["scalar-method-contract", "wasm-scalar-method-contract", "map-entry-tag-method-contract"].map(name => {
     const test = conversionTests.find(test => test.name === name);
     assert.ok(test, `the ${name} definition test must exist`);
     return test;
@@ -86,6 +86,7 @@ try {
   console.log("Scalar method definition assertions passed on native and generated JS");
 
   // WASM cannot lower Symbol conversion; reuse the attached supported-subset AST.
+  edit("rm-def", "calcit.conversion-contracts/main!");
   edit("def", "calcit.conversion-contracts/scalar-methods", "--input-format", "json-ast", "--code",
     JSON.stringify(["defwasm-export", "scalar-methods", [], methodTests[1].code.__edn_quote, "&unit"]));
   edit("schema", "calcit.conversion-contracts/scalar-methods", "--input-format", "cirru", "--code",
