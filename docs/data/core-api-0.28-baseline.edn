@@ -1,3 +1,4 @@
+
 {}
   :scope |reviewed-conversion-and-effect-boundaries
   :version |0.28.0-candidate
@@ -251,6 +252,24 @@
           :return 'String
       :schema $ quote 'Trait
     {}
+      :failure "|调试显示_trait，不等同值转换或通用序列化，须有实现证据"
+      :name 'calcit.core/Debug
+      :runtime-arity nil
+      :declaration $ quote $ deftrait Debug
+        .debug $ :: :fn $ {} (:return :string)
+          :generics $ [] 'T
+          :args $ [] 'T
+      :schema $ quote 'Trait
+    {}
+      :failure "|面向人的显示_trait，不等同_Debug_或_ToString，须有实现证据"
+      :name 'calcit.core/Show
+      :runtime-arity nil
+      :declaration $ quote $ deftrait Show
+        .show $ :: :fn $ {} (:return :string)
+          :generics $ [] 'T
+          :args $ [] 'T
+      :schema $ quote 'Trait
+    {}
       :failure "|公开_trait_约束，长度单位遵循接收者语义"
       :name 'calcit.core/Len
       :runtime-arity nil
@@ -278,6 +297,21 @@
           :args $ [] 'T 'T
       :schema $ quote 'Trait
   :method-contracts $ []
+    {} (:name |.to-string) (:receiver |'String) (:rest nil)
+      :parameters $ []
+      :returns $ quote 'String
+    {} (:name |.to-string) (:receiver |'Number) (:rest nil)
+      :parameters $ []
+      :returns $ quote 'String
+    {} (:name |.to-string) (:receiver |'Bool) (:rest nil)
+      :parameters $ []
+      :returns $ quote 'String
+    {} (:name |.to-string) (:receiver |'Tag) (:rest nil)
+      :parameters $ []
+      :returns $ quote 'String
+    {} (:name |.to-string) (:receiver |'Symbol) (:rest nil)
+      :parameters $ []
+      :returns $ quote 'String
     {} (:name |.unwrap)
       :receiver "|:: 'calcit.core/Option 'Number"
       :rest nil
@@ -490,6 +524,51 @@
       :parameters $ []
       :returns $ quote 'Bool
   :methods $ []
+    {}
+      :failure "|返回原_String，不添加_debug_引号或转义"
+      :name |.to-string
+      :provenance 'calcit.core/&turn-string
+      :receiver |'String
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'String)
+        :args $ [] 'Dynamic
+    {}
+      :failure "|返回统一的_Number_文本，不解析或改变数值"
+      :name |.to-string
+      :provenance 'calcit.core/&turn-string
+      :receiver |'Number
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'String)
+        :args $ [] 'Dynamic
+    {}
+      :failure "|返回_Bool_文本，不接受任意_Dynamic"
+      :name |.to-string
+      :provenance 'calcit.core/&turn-string
+      :receiver |'Bool
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'String)
+        :args $ [] 'Dynamic
+    {}
+      :failure "|返回_Tag_名称文本，不等同_Debug_显示"
+      :name |.to-string
+      :provenance 'calcit.core/&turn-string
+      :receiver |'Tag
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'String)
+        :args $ [] 'Dynamic
+    {}
+      :failure "|返回_Symbol_名称文本，不求值该符号"
+      :name |.to-string
+      :provenance 'calcit.core/&turn-string
+      :receiver |'Symbol
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'String)
+        :args $ [] 'Dynamic
     {} (:failure "|none_抛错") (:name |.unwrap)
       :provenance 'calcit.core/option:unwrap
       :receiver "|:: 'calcit.core/Option 'Number"

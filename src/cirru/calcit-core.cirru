@@ -9344,6 +9344,24 @@
                 assert= |42 $ convert 42
                 assert= |ready $ convert :ready
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |scalar-method-contract)
+              :code $ quote $ do
+                assert= |hello $ |hello .to-string
+                assert= |42 $ 42 .to-string
+                assert= |true $ true .to-string
+                assert= |ready $ :ready .to-string
+                assert= |ready $
+                  to-symbol |ready
+                  , .to-string
+                assert-type (|hello .to-string) 'String
+                assert-type (42 .to-string) 'String
+                assert-type (true .to-string) 'String
+                assert-type (:ready .to-string) 'String
+                assert-type
+                    to-symbol |ready
+                    , .to-string
+                  , 'String
+              :tags $ #{} :core :unit
         'to-symbol $ %{} 'CodeEntry
           :doc "|将 String 转为 Symbol；严格类型调用只接受 String，成功返回 Symbol。旧 turn-symbol 留作内部兼容入口。"
           :code $ quote $ defn to-symbol (source) (turn-symbol source)

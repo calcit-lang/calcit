@@ -10,6 +10,22 @@ import { assertHistoryPreserved, assertPreserved, baselinePath, collect, readEdn
 const baseline = readEdn(readFileSync(baselinePath, "utf8"));
 const definition = (data, name) => data.definitions.find(row => row.name.symbol === `calcit.core/${name}`);
 
+test("scalar conversion evidence preserves precise results and distinct display traits", () => {
+  for (const receiver of ["'String", "'Number", "'Bool", "'Tag", "'Symbol"]) {
+    const conversion = baseline["method-contracts"].find(row => row.receiver === receiver && row.name === ".to-string");
+    assert.ok(conversion, `${receiver} must retain its conversion evidence`);
+    assert.deepEqual(conversion.parameters, []);
+    assert.equal(conversion.rest, null);
+    assert.equal(conversion.returns.quote, "'String");
+  }
+  for (const [name, method] of [["ToString", ".to-string"], ["Debug", ".debug"], ["Show", ".show"]]) {
+    const trait = definition(baseline, name).declaration.quote;
+    assert.equal(trait[0], "deftrait");
+    assert.equal(trait[1], name);
+    assert.equal(trait[2][0], method);
+  }
+});
+
 test("native EDN preserves symbols, tags and raw schema quotes", () => {
   assert.deepEqual(readEdn(writeEdn(baseline)), baseline);
   const conversion = definition(baseline, "to-string");
@@ -33,6 +49,8 @@ for (const [name, mutate] of [
   ["method schema", data => data.methods[0].schema.quote[2][1] = "'Dynamic"],
   ["backend feature", data => data.methods[0].features.push("js-ffi")],
   ["specialized lookup result", data => data["method-contracts"].find(row => row.receiver === ":: 'List 'Number" && row.name === ".get").returns.quote = "'String"],
+  ["scalar conversion result", data => data["method-contracts"].find(row => row.receiver === "'String" && row.name === ".to-string").returns.quote = "'Dynamic"],
+  ["display trait method", data => definition(data, "Debug").declaration.quote[2][0] = ".to-string"],
   ["specialized callback relation", data => data["method-contracts"].find(row => row.name === ".fold").returns.quote = "'Number"],
 ]) {
   test(`rejects an unannounced ${name} change even when the baseline is regenerated`, () => {

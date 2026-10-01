@@ -54,6 +54,33 @@ try {
   execFileSync(binary, ["--emit-path", output, snapshot, "js"], { stdio: "pipe" });
   const core = await import(pathToFileURL(join(output, "calcit.core.mjs")).href);
   const runtime = await import(pathToFileURL(resolve("lib/calcit.procs.mjs")).href);
+
+  // Execute the same attached method assertions on native and generated JS.
+  const coreSource = resolve("src/cirru/calcit-core.cirru");
+  const source = JSON.parse(execFileSync(binary, ["cirru", "parse-edn", "--file", coreSource], {
+    encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
+  }));
+  const methodTest = source[":files"]["'calcit.core"].defs["'to-string"].tests.find(test => test.name === "scalar-method-contract");
+  assert.ok(methodTest, "the scalar method definition test must exist");
+  const methodSnapshot = join(output, "scalar-methods.cirru");
+  await copyFile(coreSource, methodSnapshot);
+  const edit = (...args) => execFileSync(binary, [methodSnapshot, "edit", ...args], { stdio: "pipe" });
+  edit("add-ns", "calcit.conversion-contracts");
+  edit("def", "calcit.conversion-contracts/main!", "--input-format", "json-ast", "--code",
+    JSON.stringify(["defn", "main!", [], methodTest.code.__edn_quote, "&unit"]));
+  edit("schema", "calcit.conversion-contracts/main!", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+  const methodEntry = [methodSnapshot, "--init-fn", "calcit.conversion-contracts/main!",
+    "--reload-fn", "calcit.conversion-contracts/main!"];
+  execFileSync(binary, methodEntry, { stdio: "pipe" });
+  const methodOutput = join(output, "methods-js");
+  execFileSync(binary, [...methodEntry, "--emit-path", methodOutput, "js"], { stdio: "pipe" });
+  // Each generated program owns its reachable builtin-impl registry.
+  const methodModule = pathToFileURL(join(methodOutput, "calcit.conversion-contracts.mjs")).href;
+  execFileSync(process.execPath, ["--input-type=module", "-e",
+    `import * as fixture from ${JSON.stringify(methodModule)}; fixture.main_$x_();`], { stdio: "pipe" });
+  console.log("Scalar method definition assertions passed on native and generated JS");
+
   const numberCases = [
     ["0.0000001", 0.0000001, "0.0000001"],
     ["-0.0000001", -0.0000001, "-0.0000001"],
