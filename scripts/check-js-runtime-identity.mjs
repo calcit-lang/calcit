@@ -101,6 +101,42 @@ try {
   runtimeA.register_calcit_builtin_impls({ ref: new runtimeA.CalcitSliceList([refDerefImpl]) });
   assert.equal(runtimeA.invoke_method("deref", runtimeA.atom(7)), 7, "dynamic Ref fallback must use the registered Ref impl table");
 
+  // Host-created impl tables bypass source preprocessing. Runtime dispatch
+  // still cannot choose between two implementations of one nominal origin.
+  const traitMethod = runtimeA.newTag("render");
+  const leftOrigin = new runtimeA.CalcitTrait(runtimeA.newTag("Show"), [traitMethod], [null]);
+  const rightOrigin = new runtimeA.CalcitTrait(runtimeA.newTag("Show"), [traitMethod], [null]);
+  const calls = [];
+  const makeImpl = (name, origin, result) => new runtimeA.CalcitImpl(
+    runtimeA.newTag(name), [traitMethod], [() => { calls.push(result); return result; }], origin,
+  );
+  const leftImpl = makeImpl("Left", leftOrigin, "left");
+  const secondLeftImpl = makeImpl("SecondLeft", leftOrigin, "second-left");
+  const rightImpl = makeImpl("Right", rightOrigin, "right");
+  const makeReceiver = (impls) => {
+    const definition = new runtimeA.CalcitStructDef(runtimeA.newTag("Card"), [], [], impls);
+    return new runtimeA.CalcitStructValue(definition.name, [], [], definition);
+  };
+  for (const impls of [[leftImpl, rightImpl], [rightImpl, leftImpl]]) {
+    const receiver = makeReceiver(impls);
+    assert.equal(runtimeA._$n_trait_call(leftOrigin, traitMethod, receiver), "left");
+    assert.equal(runtimeA._$n_trait_call(rightOrigin, traitMethod, receiver), "right");
+  }
+  for (const impls of [[leftImpl, secondLeftImpl], [secondLeftImpl, leftImpl], [leftImpl, leftImpl]]) {
+    const receiver = makeReceiver(impls);
+    const countBefore = calls.length;
+    let evaluated = 0;
+    assert.throws(() => runtimeA._$n_trait_call(leftOrigin, traitMethod, receiver, ++evaluated), /E_DUPLICATE_TRAIT_IMPL.*duplicate impls/);
+    assert.equal(evaluated, 1, "ordinary argument evaluation must remain exactly once before dispatch");
+    runtimeA.register_calcit_builtin_impls({ number: new runtimeA.CalcitSliceList(impls) });
+    assert.throws(() => runtimeA._$n_trait_call(leftOrigin, traitMethod, 1), /E_DUPLICATE_TRAIT_IMPL.*duplicate impls/);
+    assert.equal(calls.length, countBefore, "duplicate rejection must invoke neither candidate");
+  }
+  runtimeA.register_calcit_builtin_impls({ number: null });
+  assert.throws(() => runtimeA._$n_trait_call(rightOrigin, traitMethod, makeReceiver([leftImpl])), /cannot find impl/);
+  const reloadedOrigin = new runtimeA.CalcitTrait(runtimeA.newTag("Show"), [traitMethod], [null]);
+  assert.throws(() => runtimeA._$n_trait_call(reloadedOrigin, traitMethod, makeReceiver([leftImpl])), /cannot find impl/);
+
   const mapKeyA = "map-key-a";
   const mapKeyB = "map-key-b";
   const typedMapKeys = runtimeA._$n_map_$o_keys(new runtimeA.CalcitSliceMap([mapKeyA, 1, mapKeyB, 2]));

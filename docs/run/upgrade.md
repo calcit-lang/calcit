@@ -24,6 +24,14 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 显式 trait 调用的重复实现
+
+`&trait-call Trait :method receiver ...` 按 trait 来源选择实现。同一个接收者上，该来源必须只有一个候选；多个候选会报 `E_DUPLICATE_TRAIT_IMPL`，不会执行其中任何一个方法。native 与 JS runtime 均执行这条规则，包括显式 `--compat-types` 生成或运行的调用。
+
+严格源码原本已拒绝此类重复实现；此次收紧补齐运行时边界。此前兼容模式对 Struct/Enum 选择最后一个候选、对内建接收者选择第一个候选。升级时删除同一 trait 来源的重复 attachment，或使用不同 trait 表达不同能力，再显式选择需要的 trait。不能仅交换 impl 顺序来修复，也没有可自动决定保留哪种业务行为的 fix。
+
+不同来源 trait 的同名方法仍可通过 `&trait-call` 消歧。此变更不调整兼容模式中普通 `.method` 的历史查找顺序，也不增加新的运行时配置开关。
+
 ## native 取余的错误恢复
 
 native 的 `&number:rem` 和 Number `.rem` 遇到零除数（包括 `-0`）时返回可由 `try` 捕获的 Calcit 错误，消息为 `&number:rem divisor must not be zero`；内部 i32 取余溢出（例如 `-2147483648` 除以 `-1`）返回 `&number:rem integer remainder overflow`。此前这两类输入直接触发 Rust panic，无法由 Calcit `try` 恢复。

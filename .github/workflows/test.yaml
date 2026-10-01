@@ -233,7 +233,14 @@ jobs:
         run: cargo build --bin calcit && node scripts/core-dynamic-classification.mjs --check
 
       - name: "verify strict diagnostics default and compatibility escape hatch"
-        run: node scripts/check-strict-default.mjs
+        # The compatibility regression executes generated JS before try-js.
+        # Prepare the local runtime instead of relying on a developer symlink.
+        run: |
+          yarn install --immutable
+          yarn compile
+          mkdir -p node_modules/@calcit
+          ln -s ../../ node_modules/@calcit/procs
+          node scripts/check-strict-default.mjs
 
       - name: "verify release manifest generator"
         run: node --test scripts/release-manifest.test.mjs
@@ -253,10 +260,7 @@ jobs:
 
       - name: "try js"
         run: >
-          yarn
-          && yarn tsc
-          && cargo run --bin calcit -- calcit/test.cirru js
-          && ln -s ../../ node_modules/@calcit/procs
+          cargo run --bin calcit -- calcit/test.cirru js
           && cp -v scripts/main.mjs js-out/
           && node js-out/main.mjs
           && node scripts/check-struct-field-js.mjs
