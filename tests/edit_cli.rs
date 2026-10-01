@@ -287,6 +287,69 @@ fn prepare_minimal_snapshot(directory: &TestDirectory) -> PathBuf {
   snapshot
 }
 
+#[test]
+fn import_edits_recognize_legacy_list_prefixed_rules() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  let imports = "quote $ [] ([] calcit.core :refer $ [] inc) ([] app.other :as other) (app.keep :as keep)";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "imports", "app.main", "--input-format", "cirru", "--code", imports],
+    ),
+    "install mixed legacy and modern imports",
+  );
+  let read_ns = || {
+    let source = fs::read_to_string(&snapshot).unwrap();
+    let data = cirru_edn::parse(&source).unwrap();
+    let parsed = calcit::snapshot::load_snapshot_data(&data, snapshot.to_str().unwrap()).unwrap();
+    parsed.files["app.main"].ns.code.clone()
+  };
+  let original = read_ns();
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "rm-import", "app.main", "calcit.core"]),
+    "remove legacy refer import",
+  );
+  let mut expected = original.clone();
+  let cirru_parser::Cirru::List(ns) = &mut expected else {
+    panic!("namespace expression")
+  };
+  let cirru_parser::Cirru::List(require) = &mut ns[2] else {
+    panic!("require expression")
+  };
+  require.remove(1);
+  assert_eq!(read_ns(), expected, "unrelated rules must retain their exact AST");
+
+  let before_missing = fs::read(&snapshot).unwrap();
+  let missing = run_calcit(&snapshot, &["edit", "rm-import", "app.main", "app.missing"]);
+  assert!(!missing.status.success());
+  assert_eq!(fs::read(&snapshot).unwrap(), before_missing, "missing imports must not write");
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-import",
+        "app.main",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ app.other :as renamed",
+      ],
+    ),
+    "overwrite an existing legacy alias rather than append a duplicate",
+  );
+  let rendered = read_ns().to_string();
+  assert_eq!(rendered.matches("app.other").count(), 1);
+  assert!(rendered.contains("renamed"));
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "rm-import", "app.main", "app.keep"]),
+    "remove modern alias import",
+  );
+}
+
 fn create_macro(snapshot: &Path, name: &str, code: &str) {
   let target = format!("app.main/{name}");
   let output = run_calcit(snapshot, &["edit", "def", &target, "--code", code]);

@@ -198,6 +198,31 @@ try {
   setBody(scalar.map(test => test.code));
   run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
+  // Source imports are values, not automatically callable namespace bindings.
+  run("edit", "add-ns", "calcit.call-values");
+  run("edit", "def", "calcit.call-values/site", "--input-format", "cirru", "--code",
+    "quote $ def site $ {} (:storage-key |proto-shuangpin)");
+  run("edit", "schema", "calcit.call-values/site", "--input-format", "cirru", "--code",
+    "quote $ :: 'Map 'Tag 'String");
+  run("edit", "add-import", "calcit.assert-evidence", "--input-format", "cirru", "--code",
+    "quote $ calcit.call-values :as config");
+  run("edit", "add-test", "calcit.assert-evidence/run-tests", "reads-imported-map", "--tags", "unit",
+    "--input-format", "cirru", "--code", "quote $ assert= |proto-shuangpin $ (get config/site :storage-key) .unwrap");
+  run("test", "calcit.assert-evidence/run-tests", "--require-match");
+  for (const expression of ["config/site :storage-key", "let ((value config/site)) (value :storage-key)"]) {
+    run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defwasm-export run-tests () (${expression}) 1`);
+    for (const mode of [["--check-only"], ["js"], ["wasm"], ["wasi"]]) {
+      const destination = join(project, `non-callable-${mode[0]}`);
+      const rejected = spawnSync(binary, ["--emit-path", destination, snapshot, ...mode], options);
+      assert.equal(rejected.error, undefined);
+      assert.notEqual(rejected.status, 0, `${expression} must reject before code generation`);
+      assert.match(`${rejected.stdout}\n${rejected.stderr}`, /non-function.*map</);
+      assert.match(`${rejected.stdout}\n${rejected.stderr}`, /calcit\.assert-evidence\/run-tests/);
+      await assert.rejects(readFile(join(destination, "program.wasm")), { code: "ENOENT" });
+    }
+  }
+  setBody(scalar.map(test => test.code));
 
   // The shared preprocessor must reject before execution or either codegen.
   const bad = [

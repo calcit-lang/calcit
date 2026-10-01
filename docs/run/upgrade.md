@@ -24,6 +24,16 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## native 取余的错误恢复
+
+native 的 `&number:rem` 和 Number `.rem` 遇到零除数（包括 `-0`）时返回可由 `try` 捕获的 Calcit 错误，消息为 `&number:rem divisor must not be zero`；内部 i32 取余溢出（例如 `-2147483648` 除以 `-1`）返回 `&number:rem integer remainder overflow`。此前这两类输入直接触发 Rust panic，无法由 Calcit `try` 恢复。
+
+这项修复保持既有成功值和整数转换行为，不提供自动源码改写。需要错误恢复的业务可自行决定如何处理 `try` 的错误，不自动补默认值。
+
+### 限制
+
+- native 仍沿用整数取余与既有 i32 转换；JS/WASM 的小数、零除数和大整数行为尚未统一，不能把此崩溃修复理解为跨后端数值对齐。
+
 ## 整数谓词的跨目标语义修复
 
 `round?` 与 Number 的 `.round?` 现在统一判断“有限且恰好没有小数部分”。native、JS、core WASM 和 WASI Component 使用相同契约：NaN、正负 Infinity、任何非零小数均为 false；0、-0 与有限的整数值为 true。
