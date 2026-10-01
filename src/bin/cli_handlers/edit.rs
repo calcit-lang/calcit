@@ -86,6 +86,11 @@ pub(crate) fn process_node_with_references(
 }
 
 pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(), String> {
+  let _writer = if edit_mutates_snapshot(&cmd.subcommand) {
+    Some(calcit::util::atomic_write::SnapshotWriteGuard::acquire(snapshot_file)?)
+  } else {
+    None
+  };
   if edit_mutates_snapshot(&cmd.subcommand) {
     guard_snapshot_mutation_toolchain(snapshot_file)?;
   }
@@ -276,7 +281,7 @@ fn handle_format(_opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), S
   if formatted_content == original_content {
     println!("{} No formatting changes for '{}'", "·".dimmed(), snapshot_file.dimmed());
   } else {
-    fs::write(snapshot_file, formatted_content).map_err(|e| format!("Failed to write {snapshot_file}: {e}"))?;
+    calcit::util::atomic_write::write_snapshot(snapshot_file, formatted_content.as_bytes())?;
     println!("{} Formatted snapshot file '{}'", "✓".green(), snapshot_file.cyan());
   }
   if canonicalized_type_forms > 0 {
@@ -2046,7 +2051,7 @@ fn save_schema_preserving_snapshot(
     Some(line) => format!("{line}\n{formatted}"),
     None => formatted,
   };
-  fs::write(snapshot_file, output).map_err(|e| format!("Failed to write {snapshot_file}: {e}"))
+  calcit::util::atomic_write::write_snapshot(snapshot_file, output.as_bytes())
 }
 
 fn save_ffi_preserving_snapshot(snapshot_file: &str, namespace: &str, definition: &str, ffi: Option<Edn>) -> Result<(), String> {
@@ -2090,7 +2095,7 @@ fn save_ffi_preserving_snapshot(snapshot_file: &str, namespace: &str, definition
     Some(line) => format!("{line}\n{formatted}"),
     None => formatted,
   };
-  fs::write(snapshot_file, output).map_err(|e| format!("Failed to write {snapshot_file}: {e}"))
+  calcit::util::atomic_write::write_snapshot(snapshot_file, output.as_bytes())
 }
 
 fn parse_examples_input(raw: &str) -> Result<Vec<Cirru>, String> {

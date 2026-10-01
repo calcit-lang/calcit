@@ -96,7 +96,7 @@ pub fn set_cursor_after_mode(mode: &str) -> Result<(), String> {
 }
 
 pub fn handle_cursor_command(cmd: &CursorCommand, snapshot_file: &str) -> Result<(), String> {
-  if matches!(
+  let mutates_snapshot = matches!(
     &cmd.subcommand,
     CursorSubcommand::Cut(_)
       | CursorSubcommand::Paste(_)
@@ -106,7 +106,13 @@ pub fn handle_cursor_command(cmd: &CursorCommand, snapshot_file: &str) -> Result
       | CursorSubcommand::BarfLast(_)
       | CursorSubcommand::BarfFirst(_)
       | CursorSubcommand::Duplicate(_)
-  ) {
+  );
+  let _writer = if mutates_snapshot {
+    Some(calcit::util::atomic_write::SnapshotWriteGuard::acquire(snapshot_file)?)
+  } else {
+    None
+  };
+  if mutates_snapshot {
     guard_snapshot_mutation_toolchain(snapshot_file)?;
   }
   match &cmd.subcommand {

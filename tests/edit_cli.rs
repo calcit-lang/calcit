@@ -57,6 +57,152 @@ fn query_definition(snapshot: &Path, target: &str) -> serde_json::Value {
 }
 
 #[test]
+fn concurrent_snapshot_writes_keep_successful_edits_or_report_conflicts() {
+  // This is a process/filesystem invariant, not a Calcit language semantic test.
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/test-wasm.cirru", &snapshot).expect("copy isolated concurrency fixture");
+  let targets = ["test-wasm.main/main!", "test-wasm.helper/add-and-double"];
+  let mut successful_writes = 0;
+  for round in 0..20 {
+    let start = std::sync::Barrier::new(2);
+    let results = std::thread::scope(|scope| {
+      let handles: Vec<_> = targets
+        .iter()
+        .enumerate()
+        .map(|(writer, target)| {
+          let snapshot = &snapshot;
+          let start = &start;
+          scope.spawn(move || {
+            let doc = format!("writer-{writer}-round-{round}");
+            start.wait();
+            let output = run_calcit(snapshot, &["edit", "doc", target, &doc]);
+            (*target, doc, output)
+          })
+        })
+        .collect();
+      handles
+        .into_iter()
+        .map(|handle| handle.join().expect("writer thread should finish"))
+        .collect::<Vec<_>>()
+    });
+    let content = fs::read_to_string(&snapshot).expect("snapshot remains readable after concurrent writes");
+    let data = cirru_edn::parse(&content).expect("snapshot remains valid Cirru EDN");
+    let parsed = calcit::snapshot::load_snapshot_data(&data, snapshot.to_str().unwrap()).expect("snapshot remains loadable");
+    for (target, expected_doc, output) in results {
+      if output.status.success() {
+        successful_writes += 1;
+        let (ns, name) = target.split_once('/').unwrap();
+        assert_eq!(
+          parsed.files[ns].defs[name].doc, expected_doc,
+          "round {round}: successful edit of {target} must not be silently overwritten"
+        );
+      } else {
+        let diagnostic = String::from_utf8_lossy(&output.stderr);
+        assert!(
+          diagnostic.contains("Snapshot revision mismatch") || diagnostic.contains("writer lock"),
+          "failed writer must report a recoverable conflict, not an unrelated failure: {diagnostic}"
+        );
+      }
+    }
+  }
+  assert!(successful_writes > 0, "write protection must permit progress");
+}
+
+#[test]
+fn snapshot_mutation_entrypoints_respect_a_live_old_writer_lock() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/test-wasm.cirru", &snapshot).unwrap();
+  let original = fs::read(&snapshot).unwrap();
+  let guard = calcit::util::atomic_write::SnapshotWriteGuard::acquire(&snapshot).unwrap();
+  // Age must not override ownership. Only this isolated fixture is modified.
+  fs::write(directory.0.join(".calcit/calcit.cirru.lock"), "pid=123 acquired-at=1\n").unwrap();
+  let commands: Vec<Vec<&str>> = vec![
+    vec!["edit", "doc", "test-wasm.main/main!", "blocked"],
+    vec!["edit", "format"],
+    vec!["edit", "schema", "test-wasm.main/main!", "--clear"],
+    vec![
+      "edit",
+      "transaction",
+      "--code",
+      "[[\"edit\",\"doc\",\"test-wasm.main/main!\",\"blocked\"]]",
+    ],
+    vec!["config", "set", "init-fn", "test-wasm.main/main!"],
+    vec![
+      "tree",
+      "replace",
+      "test-wasm.main/main!",
+      "--path",
+      "3",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote 42",
+    ],
+    vec!["cursor", "cut"],
+    vec!["fix", "--apply", "--rule", "unnecessary-do-v1"],
+  ];
+  std::thread::scope(|scope| {
+    let handles: Vec<_> = commands
+      .iter()
+      .map(|args| {
+        let snapshot = &snapshot;
+        scope.spawn(move || (args, run_calcit(snapshot, args)))
+      })
+      .collect();
+    for handle in handles {
+      let (args, output) = handle.join().unwrap();
+      assert!(!output.status.success(), "active writer should block {args:?}");
+      assert!(
+        String::from_utf8_lossy(&output.stderr).contains("writer lock"),
+        "{args:?}: {:?}",
+        output
+      );
+    }
+  });
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+  drop(guard);
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "doc", "test-wasm.main/main!", "after release"]),
+    "write after release",
+  );
+}
+
+#[test]
+fn interrupted_cli_writer_releases_ownership_and_reports_recovery() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/test-wasm.cirru", &snapshot).unwrap();
+  let original = fs::read(&snapshot).unwrap();
+  let mut child = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .arg(&snapshot)
+    .args(["edit", "def", "test-wasm.main/main!", "--overwrite", "--input-format", "cirru"])
+    .stdin(std::process::Stdio::piped())
+    .stdout(std::process::Stdio::null())
+    .stderr(std::process::Stdio::null())
+    .spawn()
+    .unwrap();
+  let lock = directory.0.join(".calcit/calcit.cirru.lock");
+  let started = std::time::Instant::now();
+  while !fs::read_to_string(&lock).is_ok_and(|content| content.contains(&format!("pid={}", child.id()))) {
+    if started.elapsed() > std::time::Duration::from_secs(5) {
+      let _ = child.kill();
+      let _ = child.wait();
+      panic!("child did not acquire the writer lock");
+    }
+    std::thread::sleep(std::time::Duration::from_millis(10));
+  }
+  child.kill().unwrap();
+  child.wait().unwrap();
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+  let retry = run_calcit(&snapshot, &["edit", "doc", "test-wasm.main/main!", "recovered"]);
+  assert_success(&retry, "write after interrupted process");
+  assert!(String::from_utf8_lossy(&retry.stderr).contains("Recovered writer lock"));
+  assert_eq!(query_definition(&snapshot, "test-wasm.main/main!")["data"]["doc"], "recovered");
+}
+
+#[test]
 fn schema_clear_and_structural_edits_preserve_missing_intent() {
   let directory = TestDirectory::create();
   let snapshot = prepare_minimal_snapshot(&directory);

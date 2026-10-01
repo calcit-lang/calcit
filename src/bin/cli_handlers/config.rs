@@ -278,6 +278,11 @@ pub fn handle_config_command(cmd: &ConfigCommand, snapshot_file: &str) -> Result
     ConfigSubcommand::Set(opts) => opts.key != "version",
     _ => true,
   };
+  let _writer = if mutates_snapshot {
+    Some(calcit::util::atomic_write::SnapshotWriteGuard::acquire(snapshot_file)?)
+  } else {
+    None
+  };
   if mutates_snapshot {
     guard_snapshot_mutation_toolchain(snapshot_file)?;
   }
@@ -758,7 +763,7 @@ fn save_type_slots_preserving_snapshot(
     Some(line) => format!("{line}\n{formatted}"),
     None => formatted,
   };
-  fs::write(snapshot_file, output).map_err(|e| format!("Failed to write {snapshot_file}: {e}"))
+  calcit::util::atomic_write::write_snapshot(snapshot_file, output.as_bytes())
 }
 
 fn handle_set_type_slot(opts: &ConfigSetTypeSlotCommand, snapshot_file: &str) -> Result<(), String> {

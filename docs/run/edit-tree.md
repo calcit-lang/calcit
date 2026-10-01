@@ -233,6 +233,14 @@ work item is the unit assigned to an Agent; the first workflow keeps Snapshot
 writes serial at the parent/coordinator even when implementation work is
 parallel.
 
+### Snapshot 写入保护
+
+`edit`、`tree`、`config`、cursor mutation 和 `fix --apply` 在读取与修改 Snapshot 期间持有排他锁，同一文件的写命令最多等待 5 秒。超时会非零退出并提示重新读取后重试，不自动重试修改或合并结果。所有 Snapshot 保存使用临时文件加原子替换，提交前再次核对读取时的 revision。
+
+锁保存在 Snapshot 所在目录的 `.calcit/<文件名>.lock`，原子保存的内部锁位于 `.calcit/atomic/`。锁文件保留稳定 inode，正常结束后清空持有者记录；进程中断后内核释放锁，下次写入会在 stderr 提示恢复。不要因文件超过 60 秒或仍存在就删除它，活跃事务可能持续更久。
+
+Agent 仍应串行写入，使用独立 worktree/Snapshot 做并行开发，使用 transaction 与 `--expect-revision` 保护跨命令计划。锁保证使用当前协议的写命令互相协调；外部编辑器或旧版 CLI 不遵守该锁，revision 核对只能检测提交前已发生的内容变化，不是任意外部写入的文件系统 CAS。符号链接 Snapshot 与不支持文件锁的文件系统会明确拒绝写入。
+
 ### Atomic Transactions
 
 `calcit edit transaction` applies existing `edit`, `tree`, and `config` mutations to a staged snapshot. The original snapshot is replaced only after every operation succeeds and the staged result can be loaded and serialized again. A failed operation, stale revision, or `--dry-run` leaves the original file unchanged.

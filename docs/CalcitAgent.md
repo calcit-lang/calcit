@@ -271,7 +271,7 @@ quote/quasiquote，并用 staged preprocess 验证 splice 后的 scope。此检�
 从 0.14.16 起，enum 模式匹配统一使用原生 `match`；静态 Struct 字段统一使用 `(:field value)`，只有显式 `Dynamic` 接收者继续保留可缺失的运行时 `get`。
 不得为了让迁移通过而插入默认值、无条件 unwrap、`unsafe-coerce` 或扩大 Dynamic。
 
-同一个 Snapshot 的写命令必须串行执行，包括 `config`、`edit`、`tree` 和 cursor mutation；两个进程同时读取再保存会发生最后写入覆盖。需要并行时使用独立 Snapshot/worktree，需要同一文件内的原子多步修改时使用 transaction 和 `--expect-revision`。
+同一个 Snapshot 的写命令仍应串行执行，包括 `config`、`edit`、`tree`、cursor mutation 和 `fix --apply`。当前 CLI 从读取到提交持有排他锁，最多等待 5 秒，超时或 revision 变化时明确失败；进程中断后自动释放内核锁，下次写入会提示恢复。不要删除仍可能被活跃进程持有的 `.calcit/*.lock`。需要并行时使用独立 Snapshot/worktree，需要同一文件内的原子多步修改时使用 transaction 和 `--expect-revision`。外部编辑器或旧 CLI 不遵守此锁，不能据此宣称任意外部写入都不会冲突。
 
 升级 PR 中出现大段 `calcit.cirru` 文本变化时，先运行 `calcit calcit.cirru analyze program-diff <base-ref> --format edn`。优先读取 `:classification`、`:semantic-review-required`、`:categories` 和 `:changes`；只有 `canonical-format-only` 可以省去逐行确认格式差异，任何 config、schema/signature、runtime boundary 或 executable expression 分类仍需检查并运行对应验证。不要另找 JSON 专用入口；外部互操作确有需要时在同一命令上显式传 `--format json`。
 
