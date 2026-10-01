@@ -605,6 +605,28 @@
                     &str:includes? error |duplicate
                 assert= 1 @counter
               :tags $ #{} :trait-runtime
+            %{} 'TestEntry (:name |fresh-origin-rejects-stale-impl)
+              :code $ quote $ let
+                  make-trait $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return 'Trait
+                    deftrait FreshShow $ .render :fn
+                  old-trait $ make-trait
+                  next-trait $ make-trait
+                  old-impl $ defimpl OldImpl old-trait $ .render
+                    fn (self) |old
+                  Person $ impl-traits Person0 old-impl
+                  p $ %{} Person $ :name |Alice
+                assert= |old $ &trait-call old-trait :render p
+                assert= true $ try
+                  do (&trait-call next-trait :render p) false
+                  fn (error)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Bool
+                    &str:includes? error "|cannot find impl"
+              :tags $ #{} :trait-identity-runtime
         'test-impl-precedence-order $ %{} 'CodeEntry (:doc "|Test impl precedence order")
           :code $ quote $ defn test-impl-precedence-order () (println "|Testing impl precedence order...")
             let

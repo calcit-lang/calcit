@@ -15,3 +15,7 @@
 JS host 可以直接构造 impl 表，无法由稳定 Calcit 严格接口构造的 builtin 重复、同名不同 identity、旧 receiver 配合新 identity 与无候选边界在原有 runtime identity 脚本验证；拒绝不得调用任何候选。
 
 本次没有新增 trait default 方法语法、reload 协议或新的检查入口；相关验收须以现有支持范围继续核对，不能把该修复宣称为 #1532 的全部验收完成。
+
+补充验收：新增同一 trait 工厂重新求值的 Calcit `:tests`，native 与实际 JS 均保持旧身份可调用、拒绝新身份选择旧 impl。源码审阅显示 `defaults` 仅由 Rust 内部测试注入，公开 constructor 固定为 None；现有严格 runner 在 native/JS/WASM/WASI 上验证 `(method type default-body)` 在 macro 层拒绝，并在用户文档说明未提供默认方法体。原有 Rust trait-schema-owner 缓存依赖与同 source-ref 的不同 runtime identity 回归继续保留，不把工厂重求值测试冒充完整 watch 端到端验证。
+
+首轮远端 CI 在 compatibility JS import 报 `ERR_MODULE_NOT_FOUND`：严格策略测试原先不执行 JS，工作流把 runtime 编译/本地包链接放在后续 try-js，开发环境预先存在链接掩盖了顺序问题。测试与发布工作流都将原有 runtime 准备前移到严格策略测试，后续 try-js 复用产物，避免重复链接；不跳过真实 JS 回放、不重跑旧 HEAD 冒充修复。

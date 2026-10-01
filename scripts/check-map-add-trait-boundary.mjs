@@ -59,7 +59,17 @@ try {
       }, `${test.name}: strict selection must reject duplicate origins before execution or codegen`);
     }
   }
-  console.log("Map .add / Add trait boundary passed on native, generated JS, and strict negative checking");
+  // Public deftrait accepts declarations, not a third default-body element.
+  // Native's internal defaults field is not a user-facing source feature.
+  setRuntimeBody([{ code: ["let", [["WithDefault", ["deftrait", "WithDefault",
+    [".render", ":fn", ["fn", ["self"], "|default"]]]]], "&unit"] }]);
+  for (const mode of [[], ["--check-only"], ["js"], ["wasm"], ["wasi"]]) {
+    assert.throws(() => run(snapshot, ...selection, ...mode), error => {
+      assert.match(`${error.stdout ?? ""}\n${error.stderr ?? ""}`, /deftrait expects each method as \(method type\)/);
+      return true;
+    }, "an unsupported default body must fail macro validation on every target");
+  }
+  console.log("Map .add / Add trait boundary passed on native, generated JS, and strict duplicate/default rejection");
 } finally {
   await rm(fixture, { recursive: true, force: true });
 }

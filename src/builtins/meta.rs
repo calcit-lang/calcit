@@ -1535,7 +1535,7 @@ fn trait_method_names(trait_def: &CalcitTrait) -> String {
 ///
 /// Notes:
 /// - It selects the impl struct by matching `impl.origin` with the target trait.
-/// - It still applies the same precedence rule as `.method` within the impl list.
+/// - Multiple impls of the selected origin are rejected in every type mode.
 pub fn trait_call(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() < 3 {
     return CalcitErr::err_nodes(

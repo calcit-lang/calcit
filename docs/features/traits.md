@@ -245,6 +245,8 @@ Usage: `&trait-call Trait :method receiver & args`
 
 选定 trait 来源后，接收者只能有一个该来源的实现。重复 attachment 会报 `E_DUPLICATE_TRAIT_IMPL`；native 与 JS runtime 都在执行方法前拒绝，不因接收者类型或 attachment 顺序选择候选。显式 `--compat-types` 不改变这条运行时规则。不同来源的同名方法仍可显式选择各自 trait；同一来源的重复实现则需删除或拆分为不同能力。
 
+重新求值 trait 定义会生成新的运行时身份。保留旧接收者时，需要同时保留与其 impl 匹配的旧 trait；使用新 trait 时则重新创建对应的 impl 和接收者。相同名称不会让旧 impl 自动满足新的 trait。
+
 Example with two traits sharing the same method name:
 
 ```cirru.no-check
@@ -362,3 +364,7 @@ Expected output:
 ```text
 ([] 2 3 4)
 ```
+
+## 限制
+
+- `deftrait` 当前只支持 `(method type)` 声明，不支持在该条目中附加默认方法体。

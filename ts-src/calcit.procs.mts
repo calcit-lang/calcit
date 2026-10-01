@@ -2827,6 +2827,7 @@ export function _$n_inspect_methods(obj: CalcitValue, note: CalcitValue): Calcit
   return obj;
 }
 
+/** Dispatch through one nominal origin; duplicate implementations never select by order. */
 export function _$n_trait_call(traitDef: CalcitValue, method: CalcitValue, obj: CalcitValue, ...args: CalcitValue[]) {
   if (arguments.length < 3) {
     throw new Error("&trait-call expected 3+ arguments (trait, method, receiver, & args)");

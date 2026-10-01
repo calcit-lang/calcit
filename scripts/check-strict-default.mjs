@@ -70,6 +70,10 @@ const definition = run([traitSnapshot, "query", "def", "test-traits.main/test-ex
 expectStatus(definition, 0, "read duplicate-trait contracts");
 const runtimeTests = JSON.parse(definition.stdout).data.tests.filter(test => test.tags.includes("trait-runtime"));
 assert.equal(runtimeTests.length, 6);
+const identityTests = JSON.parse(definition.stdout).data.tests.filter(test => test.tags.includes("trait-identity-runtime"));
+assert.equal(identityTests.length, 1);
+expectStatus(run([traitSnapshot, "--compat-types", "test", "test-traits.main/test-explicit-trait-call",
+  "--tag", "trait-identity-runtime", "--require-match"]), 0, "fresh trait identity rejects a stale implementation");
 const traitFixture = await mkdtemp(join(tmpdir(), "calcit-compat-trait-"));
 try {
   const snapshot = join(traitFixture, "calcit.cirru");
@@ -77,7 +81,7 @@ try {
   await symlink(resolve("node_modules"), join(traitFixture, "node_modules"), "dir");
   const edit = run([snapshot, "edit", "def", "test-traits.main/test-explicit-trait-call", "--overwrite",
     "--input-format", "json-ast", "--code", JSON.stringify([
-      "defn", "test-explicit-trait-call", [], ...runtimeTests.map(test => test.code), "1",
+      "defn", "test-explicit-trait-call", [], ...runtimeTests.concat(identityTests).map(test => test.code), "1",
     ])]);
   expectStatus(edit, 0, "assemble compatibility trait replay");
   const output = join(traitFixture, "js-out");
