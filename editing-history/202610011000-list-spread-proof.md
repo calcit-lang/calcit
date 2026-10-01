@@ -33,5 +33,5 @@ List key、Set 显式转换、展开后普通参数、多处展开、空展开�
 
 12 个错误程序覆盖 Set 字面量 / 局部 / `vals` / `filter`，scalar、Map、
 Option、primitive、local callable、显式低层展开、多处展开。每项分别验证
-native、check-only（含 compatibility 模式）、JS、WASM 都在预处理阶段报告同一代码、期望/实际类型、
+native、check-only、JS、WASM 都在预处理阶段报告同一代码、期望/实际类型、
 位置及转换提示；没有声称 WASM 已经支持合法 variadic List 展开。

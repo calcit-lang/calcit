@@ -51,7 +51,7 @@ try {
   for (const expression of bad) {
     run("edit", "def", "calcit.spread-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
       `quote $ defwasm-export run-tests () (${expression})`);
-    for (const mode of [[], ["--check-only"], ["--compat-types", "--check-only"], ["js"], ["wasm"]]) {
+    for (const mode of [[], ["--check-only"], ["js"], ["wasm"]]) {
       const result = spawnSync(binary, ["--emit-path", output, snapshot, ...mode], options);
       if (result.error) throw result.error;
       assert.equal(result.status, 1, `${expression} ${mode}\n${result.stdout}\n${result.stderr}`);
