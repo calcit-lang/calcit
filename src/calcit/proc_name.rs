@@ -1074,8 +1074,8 @@ impl CalcitProc {
         arg_types: vec![map_of(type_var("K"), type_var("V")), map_of(type_var("K"), type_var("V"))],
       }),
       ToPairs => Some(ProcTypeSignature {
-        return_type: some_set(),
-        arg_types: vec![some_tag("map")],
+        return_type: set_of(list_of(dynamic_tag())),
+        arg_types: vec![map_of(type_var("K"), type_var("V"))],
       }),
       NativeMapToList => Some(ProcTypeSignature {
         return_type: list_of(list_of(dynamic_tag())),

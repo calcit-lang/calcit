@@ -40,7 +40,7 @@
           :examples $ []
           :schema $ :: 'StructDef
         'call-host-combine $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defwasm-export call-host-combine (left right count enabled?) (host-combine left right count enabled?)
+          :code $ quote $ defwasm-export call-host-combine (left right item-count enabled?) (host-combine left right item-count enabled?)
           :examples $ []
           :schema $ :: 'Fn $ {} (:async true) (:return 'String)
             :args $ [] 'String 'String 'Number 'Bool
@@ -124,7 +124,7 @@
             :code $ quote $ assert= (%ok |ready) (%ok |ready)
             :tags $ #{} :wasm
         'host-combine $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defwasm-import host-combine (left right count enabled?) |host |combine
+          :code $ quote $ defwasm-import host-combine (left right item-count enabled?) |host |combine
           :examples $ []
           :schema $ :: 'Fn $ {} (:async true) (:return 'String)
             :args $ [] 'String 'String 'Number 'Bool

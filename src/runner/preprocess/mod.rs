@@ -9219,9 +9219,18 @@ pub fn preprocess_defn(
         check_function_return_type(
           &processed_body,
           &return_type_hint,
+          effective_fn_schema
+            .as_ref()
+            .is_some_and(|signature| signature.is_async_invocation()),
           &body_types,
-          ctx.file_ns,
-          def_name.as_ref(),
+          CallTypeCheckInfo {
+            file_ns: ctx.file_ns,
+            def_name: def_name.as_ref(),
+            call_location: find_preferred_macro_location(ctx.call_stack)
+              .filter(|location| location.def.as_ref() != GENERATED_DEF)
+              .or_else(|| ctx.call_location.clone())
+              .or(Some(definition_location.clone())),
+          },
           ctx.check_warnings,
         );
 
@@ -12756,7 +12765,18 @@ mod tests {
       .expect("compatibility mode should keep the existing return mismatch warning path");
 
       let warnings = RefCell::new(vec![]);
-      check_function_return_type(&body, &declared, &ScopeTypes::new(), "tests.strict-nil", "unit-step", &warnings);
+      check_function_return_type(
+        &body,
+        &declared,
+        false,
+        &ScopeTypes::new(),
+        CallTypeCheckInfo {
+          file_ns: "tests.strict-nil",
+          def_name: "unit-step",
+          call_location: None,
+        },
+        &warnings,
+      );
       assert_eq!(warnings.borrow()[0].code(), Some("W_FN_RETURN_TYPE_MISMATCH"));
     }
 

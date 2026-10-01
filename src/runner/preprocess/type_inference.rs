@@ -51,9 +51,16 @@ pub(crate) fn is_pending_async_value(value: &CalcitTypeAnnotation) -> bool {
 }
 
 fn awaited_async_value(value: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
-  match value.as_ref() {
-    CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == ASYNC_INVOCATION_VALUE_TYPE && args.len() == 1 => args[0].clone(),
-    _ => calcit::DYNAMIC_TYPE.clone(),
+  async_invocation_result(value.as_ref()).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone())
+}
+
+/// Recover the logical result only at an await or an async function return boundary.
+pub(crate) fn async_invocation_result(value: &CalcitTypeAnnotation) -> Option<Arc<CalcitTypeAnnotation>> {
+  match value {
+    CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == ASYNC_INVOCATION_VALUE_TYPE && args.len() == 1 => {
+      Some(args[0].clone())
+    }
+    _ => None,
   }
 }
 

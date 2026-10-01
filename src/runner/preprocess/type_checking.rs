@@ -18,7 +18,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::checked_call_contract::resolve_checked_call_contract;
-use super::type_inference::{infer_struct_field_type, infer_unhinted_callback_signature};
+use super::type_inference::{async_invocation_result, infer_struct_field_type, infer_unhinted_callback_signature};
 use crate::calcit::type_annotation::TypeProof;
 use crate::calcit::{
   self, Calcit, CalcitFn, CalcitGenericBound, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning,
@@ -1037,11 +1037,13 @@ pub(crate) fn detect_return_type_hint_from_processed_body(processed_body: &[Calc
 pub(crate) fn check_function_return_type(
   fn_body: &[Calcit],
   declared_return_type: &Arc<CalcitTypeAnnotation>,
+  async_invocation: bool,
   scope_types: &ScopeTypes,
-  file_ns: &str,
-  def_name: &str,
+  info: CallTypeCheckInfo<'_>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
+  let file_ns = info.file_ns;
+  let def_name = info.def_name;
   if matches!(**declared_return_type, CalcitTypeAnnotation::Dynamic) {
     return;
   }
@@ -1058,6 +1060,13 @@ pub(crate) fn check_function_return_type(
 
   let Some(actual_type) = resolve_type_value(last_expr, scope_types) else {
     return;
+  };
+  // Async functions adopt a pending tail result; a synchronous function must
+  // retain the pending wrapper rather than claim its logical result as a value.
+  let actual_type = if async_invocation {
+    async_invocation_result(actual_type.as_ref()).unwrap_or(actual_type)
+  } else {
+    actual_type
   };
 
   let mut bindings = HashMap::new();
@@ -1078,7 +1087,10 @@ pub(crate) fn check_function_return_type(
       ),
       "W_FN_RETURN_TYPE_MISMATCH",
       file_ns,
-      last_expr.get_location(),
+      last_expr
+        .get_location()
+        .filter(|location| location.def.as_ref() != calcit::GENERATED_DEF)
+        .or(info.call_location),
       expected_str,
       actual_str,
       check_warnings,
@@ -1158,7 +1170,18 @@ mod tests {
     ));
     let warnings = RefCell::new(vec![]);
 
-    check_function_return_type(&body, &expected, &ScopeTypes::new(), "tests.return", "callback", &warnings);
+    check_function_return_type(
+      &body,
+      &expected,
+      false,
+      &ScopeTypes::new(),
+      CallTypeCheckInfo {
+        file_ns: "tests.return",
+        def_name: "callback",
+        call_location: None,
+      },
+      &warnings,
+    );
 
     let warnings = warnings.borrow();
     assert_eq!(warnings.len(), 1, "a generic payload must not erase the Result wrapper contract");
@@ -1193,9 +1216,13 @@ mod tests {
     check_function_return_type(
       &[Calcit::Local(local)],
       &expected,
+      false,
       &scope_types,
-      "tests.return",
-      "callback",
+      CallTypeCheckInfo {
+        file_ns: "tests.return",
+        def_name: "callback",
+        call_location: None,
+      },
       &warnings,
     );
 

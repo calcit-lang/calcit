@@ -419,8 +419,16 @@ wasmtime run \
   --env 'WASI_PREFIX=prefix: ' \
   "$STARTER_OUT/program.wasm" \
   workspace/input.txt workspace/output.txt >"$STARTER_STDOUT"
-grep -Fq 'workspace/output.txt' "$STARTER_STDOUT"
-grep -Fxq 'prefix: payload' "$WASI_FS_HOST_DIR/starter/output.txt"
+if ! grep -Fq 'workspace/output.txt' "$STARTER_STDOUT"; then
+  echo "WASI command starter did not report its output path; actual stdout:" >&2
+  sed -n '1,20p' "$STARTER_STDOUT" >&2
+  exit 1
+fi
+if ! grep -Fxq 'prefix: payload' "$WASI_FS_HOST_DIR/starter/output.txt"; then
+  echo "WASI command starter produced unexpected prefixed content:" >&2
+  sed -n '1,20p' "$WASI_FS_HOST_DIR/starter/output.txt" >&2
+  exit 1
+fi
 
 if wasmtime run \
   --dir "$WASI_FS_HOST_DIR/starter::/workspace" \
