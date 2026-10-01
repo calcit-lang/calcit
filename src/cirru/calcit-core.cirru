@@ -4965,6 +4965,51 @@
               :code $ quote $ assert= (&{} :a 1)
                 dissoc (&{} :a 1) :missing
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |spreads-list-keys)
+              :code $ quote $ assert=
+                {} $ :c 3
+                dissoc
+                  {} (:a 1) (:b 2) (:c 3)
+                  , & $ [] :a :b
+              :tags $ #{} :core :spread-boundary :unit
+            %{} 'TestEntry (:name |explicitly-converts-set-keys)
+              :code $ quote $ assert=
+                {} $ :c 3
+                dissoc
+                  {} (:a 1) (:b 2) (:c 3)
+                  , & $ .to-list $ #{} :a :b
+              :tags $ #{} :core :spread-boundary :unit
+            %{} 'TestEntry (:name |preserves-unspread-arguments)
+              :code $ quote $ assert=
+                {} $ :d 4
+                dissoc
+                  {} (:a 1) (:b 2) (:c 3) (:d 4)
+                  , :a & ([] :b) :c
+              :tags $ #{} :core :spread-boundary :unit
+            %{} 'TestEntry (:name |supports-multiple-list-spreads)
+              :code $ quote $ assert=
+                {} $ :c 3
+                dissoc
+                  {} (:a 1) (:b 2) (:c 3)
+                  , & ([] :a) & $ [] :b
+              :tags $ #{} :core :spread-boundary :unit
+            %{} 'TestEntry (:name |empty-list-spread-keeps-map)
+              :code $ quote $ assert=
+                {} $ :a 1
+                dissoc
+                  {} $ :a 1
+                  , :missing & $ []
+              :tags $ #{} :core :spread-boundary :unit
+            %{} 'TestEntry (:name |local-function-list-spread)
+              :code $ quote $ assert= 6
+                let
+                    sum $ fn (x y z) (+ x y z)
+                  sum & $ [] 1 2 3
+              :tags $ #{} :core :spread-boundary :unit
+            %{} 'TestEntry (:name |preserves-heterogeneous-list-spread)
+              :code $ quote $ assert= ([] 1 |two)
+                [] & $ [] 1 |two
+              :tags $ #{} :core :spread-boundary :unit
         'dissoc-in $ %{} 'CodeEntry
           :doc "|Remove a nested key or index. An empty path leaves the input unchanged."
           :code $ quote $ defn dissoc-in (data path)
