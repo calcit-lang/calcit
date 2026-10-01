@@ -151,9 +151,8 @@ try {
 
   run("edit", "def", "calcit.placeholder-helper/stored-quote", "--input-format", "cirru", "--code",
     "quote $ def stored-quote $ quote $ + 1 2");
-  run("edit", "add-import", "calcit.assert-evidence", "--overwrite", "--input-format", "cirru", "--code",
-    "quote $ calcit.placeholder-helper :refer $ format-value stored-quote");
-  setBody(["stored-quote"]);
+  // Keep the alias used by the attached callback regression in later replays.
+  setBody(["helper/stored-quote"]);
   run();
   const valueOutput = join(project, "imported-quote");
   const valueRejected = spawnSync(binary, [snapshot, "wasm", "--emit-path", valueOutput], options);
