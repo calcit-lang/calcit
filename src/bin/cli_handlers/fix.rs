@@ -75,6 +75,8 @@ const SYNTHESIZE_SCHEMA_RULE: &str = "synthesize-schema-v1";
 const SYNTHESIZE_SCHEMA_DIAGNOSTIC: &str = "REFACTOR_SYNTHESIZE_SCHEMA";
 const SPREAD_CALL_PROOF_RULE: &str = "spread-call-proof-v1";
 const SPREAD_CALL_PROOF_DIAGNOSTIC: &str = "REFACTOR_SPREAD_CALL";
+const UNSAFE_COERCE_BOUNDARY_RULE: &str = "unsafe-coerce-boundary-v1";
+const UNSAFE_COERCE_BOUNDARY_DIAGNOSTIC: &str = "E_UNSCOPED_UNSAFE_COERCE";
 const OPTIONAL_PARAMETERS_RULE: &str = "optional-parameters-v1";
 const OPTIONAL_PARAMETERS_DIAGNOSTIC: &str = "E_LEGACY_OPTIONAL_PARAM";
 const SURFACE_LATEST_V1_PRESET: &str = "surface-latest-v1";
@@ -486,7 +488,14 @@ pub(crate) fn handle_fix_command(
   } else {
     project_definitions.clone()
   };
-  let warnings = if validation_only {
+  let mut boundary_suggestions = Vec::new();
+  let mut boundary_diagnostics = Vec::new();
+  let warnings = if selected_rules.contains(&UNSAFE_COERCE_BOUNDARY_RULE) && !validation_only {
+    let review = unsafe_boundary::compile_boundary_review(&source_snapshot, snapshot_file, &selected_definitions)?;
+    boundary_suggestions = review.suggestions;
+    boundary_diagnostics = review.diagnostics;
+    review.warnings
+  } else if validation_only {
     compile_selected_definitions(&selected_definitions)?
   } else if migration_rule {
     compile_selected_definitions_for_migration(&selected_definitions)?
@@ -505,7 +514,7 @@ pub(crate) fn handle_fix_command(
   } else {
     None
   };
-  let mut suggestions = Vec::new();
+  let mut suggestions = boundary_suggestions;
   if selected_rules.contains(&SPREAD_CALL_PROOF_RULE) {
     suggestions.extend(spread_call::plan_spread_call_fixes(
       &source_snapshot,
@@ -914,7 +923,7 @@ pub(crate) fn handle_fix_command(
         expanded_rule_ids: selected_rules,
         expanded_rules,
         source_coverage: (options.preset.as_deref() == Some(CORE_API_028_V1_PRESET)
-          || options.rule.as_deref() == Some(SPREAD_CALL_PROOF_RULE))
+          || matches!(options.rule.as_deref(), Some(SPREAD_CALL_PROOF_RULE | UNSAFE_COERCE_BOUNDARY_RULE)))
         .then_some(FixSourceCoverage {
           scanned_regions: &["code"],
           manual_review_regions: &["tests", "examples"],
@@ -923,14 +932,20 @@ pub(crate) fn handle_fix_command(
       changed: transaction.changed,
       new_revision: &transaction.new_revision,
       validation: FixValidation {
-        status: if operations.is_empty() { "not-needed" } else { "passed" },
+        status: if !boundary_diagnostics.is_empty() {
+          "requires-review"
+        } else if operations.is_empty() {
+          "not-needed"
+        } else {
+          "passed"
+        },
         staged_scope_preprocess: !operations.is_empty(),
         checked_operations: operations.len(),
       },
       suggestions: &suggestions,
       workflow,
     },
-    diagnostics: vec![],
+    diagnostics: boundary_diagnostics,
     next: vec![],
   };
 
@@ -945,7 +960,9 @@ pub(crate) fn handle_fix_command(
     }
     StructuredOutputFormat::Human => print_human_report(&report),
   }
-  if workflow_failed {
+  if !report.diagnostics.is_empty() {
+    Err("Compiler boundary review required; the source is unchanged and strict compilation still fails. Review the reported lexical boundary without automatically granting FFI permission.".to_owned())
+  } else if workflow_failed {
     Err("Strict project workflow verification failed; inspect the structured workflow results.".to_owned())
   } else {
     Ok(())
@@ -1114,14 +1131,17 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | VALUE_TO_ZERO_ARG_FN_RULE
         | SYNTHESIZE_SCHEMA_RULE
         | SPREAD_CALL_PROOF_RULE
+        | UNSAFE_COERCE_BOUNDARY_RULE
         | OPTIONAL_PARAMETERS_RULE
         | TAG_MATCH_RULE
         | REQUIRED_STRUCT_FIELD_RULE
     )
   {
-    return Err(format!(
-      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_SET_INCLUDE_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
-    ));
+    return Err(
+      format!(
+        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_SET_INCLUDE_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+      ) + &format!(" Review-only compiler boundary rule: `{UNSAFE_COERCE_BOUNDARY_RULE}`."),
+    );
   }
   if let Some(rule @ (TAG_MATCH_RULE | REQUIRED_STRUCT_FIELD_RULE)) = options.rule.as_deref() {
     return Err(format!(
@@ -1143,6 +1163,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | VALUE_TO_ZERO_ARG_FN_RULE
         | SYNTHESIZE_SCHEMA_RULE
         | SPREAD_CALL_PROOF_RULE
+        | UNSAFE_COERCE_BOUNDARY_RULE
         | OPTIONAL_PARAMETERS_RULE
         | CORE_NOMINAL_CONSTRUCTOR_RULE
         | CORE_OPTION_METHOD_RULE
@@ -1168,6 +1189,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         VALUE_TO_ZERO_ARG_FN_RULE => VALUE_TO_ZERO_ARG_FN_RULE,
         SYNTHESIZE_SCHEMA_RULE => SYNTHESIZE_SCHEMA_RULE,
         SPREAD_CALL_PROOF_RULE => SPREAD_CALL_PROOF_RULE,
+        UNSAFE_COERCE_BOUNDARY_RULE => UNSAFE_COERCE_BOUNDARY_RULE,
         CORE_NOMINAL_CONSTRUCTOR_RULE => CORE_NOMINAL_CONSTRUCTOR_RULE,
         CORE_OPTION_METHOD_RULE => CORE_OPTION_METHOD_RULE,
         CORE_RESULT_METHOD_RULE => CORE_RESULT_METHOD_RULE,
@@ -1202,6 +1224,13 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
 /// Describe how a current normalization rule is derived without coupling it to a source release.
 fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
   match rule_id {
+    UNSAFE_COERCE_BOUNDARY_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: UNSAFE_COERCE_BOUNDARY_DIAGNOSTIC,
+      evidence_source: "current-diagnostic",
+      lifecycle: "current-semantics",
+      source_version_required: false,
+    },
     REMOVED_DATA_API_RULE => FixRuleMetadata {
       rule_id,
       diagnostic_code: REMOVED_DATA_API_DIAGNOSTIC,
@@ -1832,6 +1861,7 @@ fn plan_definition_rename(
 
 pub(crate) mod schema_synthesis;
 mod spread_call;
+mod unsafe_boundary;
 use schema_synthesis::plan_schema_synthesis;
 
 /// Surface legacy omission markers from the unexpanded Snapshot without implying a safe rewrite.

@@ -173,6 +173,15 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   `--apply --expect-revision <revision>`，写回仍经过 staged preprocess 和原子事务。该规则不进入默认 preset。
   未知长度、开放实参、optional/rest、尚未证明的 trait bounds、多重 spread 或不唯一的 macro/source 映射
   返回 `requires-review`，replacement 为空，传入 `--apply` 也不修改这些节点。quoted data 和函数参数声明不作为调用检查。
+- `unsafe-coerce-boundary-v1` 把现有 `E_UNSCOPED_UNSAFE_COERCE` 转为可导航的待审建议，运行
+  `calcit fix --rule unsafe-coerce-boundary-v1 --ns app.main --def run --format edn` 查看编译器位置、源码指纹、
+  词法函数位置与编译栈。先核对捕获、效果和失败路径，再人工选择 checked decoder 或显式 adapter。
+  建议的 replacement 为空，`--apply` 不修改源码或授予 `:js-ffi`。编译错误保留在 diagnostics 中，命令仍非零退出，
+  不能用预览成功替代 strict 编译。已有明确词法权限的 adapter 不生成建议；词法权限以编译器规则为准，
+  不因函数名、namespace 命名或调用者的权限推断独立 source definition 的权限。
+  此规则须使用严格类型模式，不进入默认 preset 或 strict workflow 的自动改写集合；只检查 definition `:code`，
+  每个 definition 在首个编译错误停止。修复后重新运行以发现后续错误；`:tests` / `:examples` 仍需独立验证。
+  不相关错误、依赖或所选 scope 外的错误、缺少源码定位的错误直接失败，不猜定位或隐藏问题。
 - `tag-match-to-match-v1` 与 `required-struct-field-v1` 属于只随 Calcit 0.14.15 发布的 migration bridge，不是当前 fix surface。
   升级旧项目时请固定使用 0.14.15 执行规则、review 输出并验证测试；迁移完成后再切换到 0.14.16 或更新版本。
   当前版本若显式请求这两个 rule，会返回稳定错误和上述版本提示，不会继续携带旧 planner 与分析特例。
