@@ -7,6 +7,270 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn unsafe_boundary_fix_preserves_compiler_rejection_and_source_bytes() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy fixture");
+  for (name, source, features) in [
+    ("unscoped", "quote $ defn unscoped (x)\n  unsafe-coerce x 'Number", ""),
+    (
+      "nested",
+      "quote $ defn nested (x)\n  let\n      f $ fn (y)\n        unsafe-coerce y 'Number\n    f x",
+      "",
+    ),
+  ] {
+    let target = format!("fix-command.main/{name}");
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", &target, "--input-format", "cirru", "--code", source]),
+      "add boundary source",
+    );
+    let schema = format!("quote $ :: 'Fn $ {{}} (:args $ [] 'Number) (:return 'Number) {features}");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "schema", &target, "--input-format", "cirru", "--code", &schema],
+      ),
+      "add boundary schema",
+    );
+    let original = fs::read(&snapshot).unwrap();
+    let selector = [
+      "--rule",
+      "unsafe-coerce-boundary-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      name,
+      "--format",
+      "json",
+    ];
+    let preview = run_fix(&snapshot, &selector);
+    assert!(!preview.status.success(), "a plan must not downgrade the compiler error");
+    let report = parse_stdout(&preview);
+    assert_eq!(report["data"]["validation"]["status"], "requires-review", "{report}");
+    assert_eq!(report["diagnostics"][0]["code"], "E_UNSCOPED_UNSAFE_COERCE", "{report}");
+    assert_eq!(report["diagnostics"][0]["severity"], "error");
+    let suggestions = report["data"]["suggestions"].as_array().unwrap();
+    assert_eq!(suggestions.len(), 1, "{report}");
+    assert_eq!(suggestions[0]["definition"], target);
+    assert_eq!(suggestions[0]["applicability"], "requires-review");
+    assert!(suggestions[0]["replacement"].is_null());
+    assert!(suggestions[0]["path"].as_str().unwrap().starts_with("code@3"), "{report}");
+    assert!(suggestions[0]["message"].as_str().unwrap().contains("first compiler error"));
+    assert!(suggestions[0]["origin_chain"][0]["lexical_source_path"].is_string());
+    let mut edn_selector = selector;
+    edn_selector[7] = "edn";
+    let edn = run_fix(&snapshot, &edn_selector);
+    assert!(!edn.status.success());
+    cirru_edn::parse(&String::from_utf8_lossy(&edn.stdout)).expect("one EDN error plan");
+    let mut human_selector = selector;
+    human_selector[7] = "human";
+    let human = run_fix(&snapshot, &human_selector);
+    assert!(!human.status.success());
+    let human_text = String::from_utf8_lossy(&human.stdout);
+    assert!(human_text.contains("# Compiler-guided source fixes"));
+    assert!(human_text.contains("requires-review"));
+    let mut apply = selector.to_vec();
+    apply.extend(["--apply", "--expect-revision", report["revision"].as_str().unwrap()]);
+    let applied = run_fix(&snapshot, &apply);
+    assert!(!applied.status.success());
+    assert_eq!(parse_stdout(&applied)["data"]["changed"], false);
+    assert_eq!(fs::read(&snapshot).unwrap(), original);
+    assert_eq!(parse_stdout(&run_fix(&snapshot, &selector))["revision"], report["revision"]);
+    let mut stale = selector.to_vec();
+    stale.extend(["--apply", "--expect-revision", "stale"]);
+    assert!(!run_fix(&snapshot, &stale).status.success());
+    assert_eq!(fs::read(&snapshot).unwrap(), original);
+  }
+}
+
+#[test]
+fn unsafe_boundary_fix_accepts_explicit_adapters_and_rejects_unrelated_errors() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy fixture");
+  let target = "fix-command.main/adapter";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn adapter (x)\n  unsafe-coerce x 'Number",
+      ],
+    ),
+    "add explicit adapter",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number) (:features $ #{} :js-ffi)",
+      ],
+    ),
+    "mark lexical adapter",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        target,
+        "identity",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ assert= 3 $ adapter 3",
+      ],
+    ),
+    "attach adapter semantics",
+  );
+  let original = fs::read(&snapshot).unwrap();
+  let selector = [
+    "--rule",
+    "unsafe-coerce-boundary-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "adapter",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &selector);
+  assert_success(&preview, "proven lexical adapter");
+  assert_eq!(parse_stdout(&preview)["data"]["suggestions"], serde_json::json!([]));
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "adapter semantic replay",
+  );
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+
+  let compat = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .arg("--compat-types")
+    .arg(&snapshot)
+    .arg("fix")
+    .args(selector)
+    .output()
+    .expect("compatibility-mode preview");
+  assert!(!compat.status.success());
+  assert!(String::from_utf8_lossy(&compat.stderr).contains("requires strict types"));
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "add-ns", "fix-command.boundary"]),
+    "add independent owner",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.boundary/raw",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn raw (x)\n  unsafe-coerce x 'Number",
+      ],
+    ),
+    "add unscoped independent definition",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.boundary/raw",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+      ],
+    ),
+    "add independent schema",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        target,
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn adapter (x)\n  fix-command.boundary/raw x",
+      ],
+    ),
+    "reference independent owner from privileged adapter",
+  );
+  let original = fs::read(&snapshot).unwrap();
+  let outside = run_fix(&snapshot, &selector);
+  assert!(!outside.status.success());
+  assert!(String::from_utf8_lossy(&outside.stderr).contains("outside the selected project scope"));
+  assert!(outside.stdout.is_empty());
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+  let owned = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "unsafe-coerce-boundary-v1",
+      "--ns",
+      "fix-command.boundary",
+      "--def",
+      "raw",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!owned.status.success());
+  assert_eq!(
+    parse_stdout(&owned)["data"]["suggestions"][0]["definition"],
+    "fix-command.boundary/raw"
+  );
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn adapter (x)\n  assert-type 1 String",
+        "--overwrite",
+      ],
+    ),
+    "add unrelated compiler contradiction",
+  );
+  let original = fs::read(&snapshot).unwrap();
+  let unrelated = run_fix(&snapshot, &selector);
+  assert!(!unrelated.status.success());
+  assert!(String::from_utf8_lossy(&unrelated.stderr).contains("E_ASSERT_TYPE_MISMATCH"));
+  assert!(
+    unrelated.stdout.is_empty(),
+    "unrelated errors cannot become an empty successful plan"
+  );
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+}
+
+#[test]
 fn literal_spread_fix_is_guarded_atomic_and_idempotent() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
