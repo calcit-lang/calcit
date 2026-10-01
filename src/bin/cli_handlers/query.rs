@@ -5,7 +5,7 @@
 use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, maybe_chunk_node};
 use super::common::{
   cirru_to_json_value, deps_path_for_snapshot, emit_cli_output, format_path, markdown_fenced_block, parse_path,
-  print_cli_warning_block, resolve_definition_lookup,
+  print_cli_warning_block, resolve_definition_lookup, shell_quote,
 };
 use super::cursor::{
   CursorLastQuery, load_cursor_last_query, resolve_active_cursor_reference, resolve_cursor_path_argument,
@@ -3231,11 +3231,19 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
     static_methods: methods,
     lowering,
   };
-  let mut next = vec![format!("calcit tree show '{namespace}/{definition}' --path '{semantic_path}'")];
+  let command_prefix = format!("calcit {}", shell_quote(input_path));
+  let quoted_target = shell_quote(&format!("{namespace}/{definition}"));
+  let tree_path = if target_path.is_empty() {
+    String::new()
+  } else {
+    format!(" --path {}", shell_quote(&format_path(&target_path)))
+  };
+  let mut next = vec![format!("{command_prefix} tree show {quoted_target}{tree_path}")];
   if confidence != "exact" {
-    next.push(format!("calcit query schema '{namespace}/{definition}'"));
+    next.push(format!("{command_prefix} query schema {quoted_target}"));
     next.push(format!(
-      "calcit analyze weak-types --ns '{namespace}' --intent unresolved --format json"
+      "{command_prefix} analyze weak-types --ns {} --intent unresolved --format edn",
+      shell_quote(namespace)
     ));
   }
   let envelope = SemanticQueryEnvelope {
