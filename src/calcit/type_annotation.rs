@@ -3506,7 +3506,10 @@ impl CalcitTypeAnnotation {
       return "…".to_owned();
     }
     *remaining -= 1;
-    if let Some(tag) = self.builtin_tag_name() {
+    // Collection tags describe the runtime kind, not their generic contract.
+    if !matches!(self, Self::List(_) | Self::Map(_, _) | Self::Set(_) | Self::Ref(_))
+      && let Some(tag) = self.builtin_tag_name()
+    {
       return format!(":{tag}");
     }
 
@@ -6058,6 +6061,30 @@ mod tests {
     // Avoid recursively dropping a deliberately over-budget test fixture.
     std::mem::forget(actual);
     std::mem::forget(expected);
+  }
+
+  #[test]
+  fn brief_diagnostics_preserve_nested_collection_arguments() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let list = Arc::new(CalcitTypeAnnotation::List(number.clone()));
+    assert_eq!(list.to_brief_string(), "list<:number>");
+    assert_eq!(
+      CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::Tag), list.clone()).to_brief_string(),
+      "map<:tag,list<:number>>"
+    );
+    assert_eq!(
+      CalcitTypeAnnotation::Set(Arc::new(CalcitTypeAnnotation::String)).to_brief_string(),
+      "set<:string>"
+    );
+    assert_eq!(CalcitTypeAnnotation::Ref(number).to_brief_string(), "ref<:number>");
+    assert_eq!(
+      CalcitTypeAnnotation::TypeRef(Arc::from("calcit.core/Option"), Arc::new(vec![list.clone()])).to_brief_string(),
+      "'calcit.core/Option<list<:number>>"
+    );
+    let callback = CalcitTypeAnnotation::from_function_parts(vec![list.clone()], list);
+    assert_eq!(callback.to_brief_string(), "fn(list<:number>) -> list<:number>");
+    assert_eq!(CalcitTypeAnnotation::Number.to_brief_string(), ":number");
+    assert_eq!(CalcitTypeAnnotation::Dynamic.to_brief_string(), "dynamic");
   }
 
   #[test]
