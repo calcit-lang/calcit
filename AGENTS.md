@@ -15,6 +15,17 @@
 - **一致性**：复用现有模式，保持日志和错误信息风格统一。
 - **测试覆盖**：新功能必须补齐正常路径与异常分支的测试用例。
 
+### 收敛准则
+
+语言与工具链优先变得更简练：一条通用规则覆盖一类问题，一个入口完成一类工作。
+
+- **通用类型关系优先**：收紧类型检查时，修改通用的类型关系或证明（例如 Dynamic 进入具体类型时需要证明，见 #1538），让同一规则覆盖所有构造。新增诊断编号时，在 PR 中说明为什么现有编号无法表达。
+- **证据丢失走统一校验**：某个构造经改写（macro 展开、内联、`recur`、Option lowering）后丢失类型证据时，先把最小用例加入改写后校验（#1553）的回归集，再修复；同类问题优先在校验层一次解决。#1553 落地前，先把最小用例加入现有测试（`calcit/test-*.cirru` 或 `tests/` 下对应用例），并在 PR 中标注 `#1553`，之后迁入回归集。
+- **跨后端回放复用一个运行器**：统一运行器（#1560）落地后，在 native / JS / WASM 上按 tag 重放 core `:tests`，新的回放需求通过给 `:tests` 加 tag 并加入统一运行器完成。落地前，继续使用现有 native core、JS 和 WASM fixture 的独立命令，扩展现有脚本而不是复制骨架；两个阶段都不新增 `scripts/check-*.mjs` 文件。
+- **契约数据由工具生成**：API 基线只保存名称与签名，由 `query` 导出生成；失败语义写在定义自身的 schema、doc 或 proc 元数据中（#1558），不在基线里另写一份文字描述。
+- **查询词汇保持少而稳定**：`query` 输出新增字段或概念前，先确认现有字段无法表达，并记录在 #1566；同一事实只用一个名字。
+- **文档先写事实**：用户文档和 README 先说明实际行为、用法和示例，限制集中写在末尾的“限制”小节，每条一句。避免连续的否定式声明，issue 状态、提交 SHA 和 CI 链接只写在 issue 或 PR 中。
+
 ### 测试放置（Calcit-first）
 
 - **优先 definition `:tests`**：用户可观察的语言语义、类型推导、macro 展开、core API、runtime 行为与跨 backend 契约，默认写成 Calcit definition 的 `:tests`，用用户会写的表达式断言输入与预期结果，便于 reviewer 直接看到契约。
@@ -210,7 +221,7 @@ npm view @calcit/procs version
 
 `editing-history/` 保留已有记录，作为可检索的历史档案；不要为了统一格式批量改写或删除。
 语义设计、复杂故障修复、跨模块契约变化在提交前新增一个以年月日时分开头的文件，记录决策依据、兼容边界和验证方式。
-机械格式化、纯版本号更新、简单测试调整等日常提交不强制新增文件，由 commit 与 PR 保留过程。
+机械格式化、纯版本号更新、简单测试调整等日常提交不强制新增文件，由 commit 与 PR 保留过程；只补测试、修正文档或回放已有契约的 PR 不新增文件。
 不能用 editing-history 代替当前 RFC、用户文档和可执行测试；历史记录中的旧方案不自动成为当前规范。
 
 ## Issue、分支与 PR
@@ -219,6 +230,8 @@ npm view @calcit/procs version
 - 开始修改前检查相关开放 Issue、PR 和目标路径，避免与进行中的工作重叠。并行任务各用独立 branch 与 worktree；不要进入、清理或重置他人的 worktree。
 - 除纯版本号 release commit 外，功能、修复、重构、测试、CI 和文档改动都必须通过 PR。只 push 分支或贴 commit 链接不算完成。
 - PR 应关联 Issue，并记录修改范围与验证结果。一个 Issue 修改多个仓库时，每个仓库分别创建 PR，并在主 Issue 汇总。
+- 同一 Issue 下只补测试或文档的改动合并到一个 PR，不为每个边界单独开 PR；行为修复与其测试放在同一个 PR。
+- Issue 进度评论保持简短：结论、相关 PR 链接、剩余事项。验证命令、CI 记录和 SHA 写在 PR 描述中，评论里不重复。
 - PR 必须等待最新 head 的 bot 或用户 review 完成，处理所有有效意见并清零 review threads；required Actions 全绿且 mergeability 为 CLEAN 后才能合并。Actions 失败时查明并修复原因，不能用重跑代替处理。
 - PR 合并后等待精确 main HEAD 的 required Actions 成功，再进行依赖发布或关闭发布门槛。Wiki 内容只维护在外部 Wiki，不在仓库重复保存。
 - 纯版本号 release commit 可直接在已验证的 `main` 完成；只允许版本字段及由此产生的 lockfile metadata，不得改变依赖集合或夹带源码、测试、CI、文档。必须在精确 main SHA 的 required Actions 成功后才创建指向同一 SHA 的 annotated tag 与 GitHub Release。
