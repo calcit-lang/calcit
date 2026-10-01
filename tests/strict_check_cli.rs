@@ -51,6 +51,48 @@ fn assert_success(output: &Output, context: &str) {
 }
 
 #[test]
+fn large_case_under_a_dependency_chain_checks_without_aborting() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/large-case-check.cirru", &snapshot).expect("large case fixture should copy");
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "ordinary large case check");
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only", "--keep-going", "--format", "edn"]),
+    "definition graph must check the same large case",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["test", "app.main/lookup", "--require-match"]),
+    "Calcit tests retain first, middle, last and default branch results",
+  );
+
+  let patterns = (0..160)
+    .map(|index| {
+      if index == 159 {
+        format!("(|p{index} (inc |not-a-number))")
+      } else {
+        format!("(|p{index} {index})")
+      }
+    })
+    .collect::<Vec<_>>()
+    .join(" ");
+  edit_definition(
+    &snapshot,
+    "lookup",
+    &format!("quote $ defn lookup (name) $ case-default name -1 {patterns}"),
+    true,
+  );
+  let invalid = run_calcit(&snapshot, &["--check-only"]);
+  assert!(!invalid.status.success(), "an invalid late branch must still fail type checking");
+  assert!(
+    invalid.status.code().is_some(),
+    "late-branch diagnostics must not abort the process"
+  );
+  let stderr = String::from_utf8_lossy(&invalid.stderr);
+  assert!(!stderr.contains("stack overflow"), "{stderr}");
+  assert!(stderr.contains("number") && stderr.contains("string"), "{stderr}");
+}
+
+#[test]
 fn trait_bearing_enum_cycle_preserves_nominal_evidence_in_graph_checks() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();

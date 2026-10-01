@@ -2860,268 +2860,20 @@ fn preprocess_list_call(
       execute_macro()
     }
 
-    Some(Calcit::Fn { info, .. }) => {
-      match &*info.args {
-        CalcitFnArgs::MarkedArgs(xs) => {
-          check_fn_marked_args(xs, &info.arg_types, &args, file_ns, &info.name, &def_name, check_warnings);
-        }
-        CalcitFnArgs::Args(xs) => {
-          check_fn_args(xs, &info.arg_types, &args, file_ns, &info.name, &def_name, check_warnings);
-        }
-      }
-      let mut ys = CalcitList::new_inner_from(std::slice::from_ref(&head_form));
-      let mut has_spread = false;
-      let checked_contract = resolve_checked_call_contract(&info.def_ns, &info.name, &args, scope_types);
-      let preprocessing_expected_types = checked_contract
-        .as_ref()
-        .and_then(|contract| contract.expected_types.as_deref())
-        .unwrap_or(&info.arg_types);
-      let mut preprocessing_type_bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
-
-      // Process arguments with type-aware preprocessing for Fn-typed params.
-      // When the expected param type is Fn(...), set EXPECTED_FN_TYPE so that
-      // preprocess_defn can inject arg types into anonymous fn params' scope_types.
-      for (arg_idx, a) in args.iter().enumerate() {
-        if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = a {
-          has_spread = true;
-          ys = ys.push(a.to_owned());
-          continue;
-        }
-
-        // Recompute receiver-specialized contracts after earlier arguments have
-        // been preprocessed. Raw collection literals may not expose K/V until
-        // this point, while a following inline callback needs those concrete
-        // types during its own preprocessing.
-        let can_refresh_checked_contract =
-          checked_call_contract_arity(&info.def_ns, &info.name).is_some_and(|required_arity| args.len() == required_arity);
-        let can_refresh_fold_types =
-          args.len() == 3 && info.def_ns.as_ref() == calcit::CORE_NS && matches!(info.name.as_ref(), "fold" | "foldl" | "reduce");
-        let staged_args = if arg_idx > 0 && (can_refresh_checked_contract || can_refresh_fold_types) {
-          let processed_count = ys.len().saturating_sub(1);
-          let staged_values = args
-            .iter()
-            .enumerate()
-            .map(|(idx, original)| {
-              if idx < processed_count {
-                ys.get(idx + 1).cloned().unwrap_or_else(|| original.clone())
-              } else {
-                original.clone()
-              }
-            })
-            .collect::<Vec<_>>();
-          Some(CalcitList::from(staged_values.as_slice()))
-        } else {
-          None
-        };
-        let refreshed_checked_contract = if can_refresh_checked_contract {
-          staged_args
-            .as_ref()
-            .and_then(|staged| resolve_checked_call_contract(&info.def_ns, &info.name, staged, scope_types))
-        } else {
-          None
-        };
-        let refreshed_fold_types = if can_refresh_fold_types {
-          staged_args
-            .as_ref()
-            .and_then(|staged| type_checking::specialize_collection_fold_expected_types(staged, scope_types, &info.arg_types))
-        } else {
-          None
-        };
-        let active_expected_types = refreshed_checked_contract
-          .as_ref()
-          .and_then(|contract| contract.expected_types.as_deref())
-          .or(refreshed_fold_types.as_deref())
-          .unwrap_or(preprocessing_expected_types);
-
-        // Set expected fn type hint if this arg position has a Fn-typed param
-        let expected_type = active_expected_types.get(arg_idx).map(|expected| {
-          if strict_types_enabled() {
-            expected.substitute_type_vars(&preprocessing_type_bindings)
-          } else {
-            expected.clone()
-          }
-        });
-        let expected_fn = expected_type.as_ref().and_then(|expected_type| expected_type.resolve_to_fn());
-
-        // Set expected struct type hint if this arg position has a struct-typed param
-        // This enables field-type-aware preprocessing of hashmap literals (e.g., DomProps)
-        let expected_struct = if arg_idx < active_expected_types.len() {
-          active_expected_types[arg_idx].resolve_to_struct_with_ref().map(|(s, _)| s)
-        } else {
-          None
-        };
-
-        if let Some(fn_annot) = expected_fn {
-          EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().replace(fn_annot));
-        }
-        if let Some(struct_def) = expected_struct {
-          EXPECTED_STRUCT_TYPE.with(|cell| cell.borrow_mut().replace(struct_def));
-        }
-
-        let result = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack);
-
-        // Always clear the hints after preprocessing, even on error
-        EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = None);
-        EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = None);
-
-        let form = result?;
-
-        if let Some(expected) = expected_type.as_ref() {
-          reject_strict_bare_enum_constructor_value(
-            &form,
-            expected,
-            scope_types,
-            file_ns,
-            def_name.as_ref(),
-            call_stack,
-            call_location.clone(),
-          )?;
-        }
-
-        if strict_types_enabled()
-          && (!info.generics.is_empty() || checked_contract.is_some() || refreshed_checked_contract.is_some())
-          && let Some(expected) = active_expected_types.get(arg_idx)
-          && let Some(binding_expected) = info.arg_types.get(arg_idx).or(info.rest_type.as_ref()).or(Some(expected))
-          && !empty_container_has_no_type_evidence(&form, binding_expected.as_ref())
-          && let Some(actual) = resolve_type_value(&form, scope_types)
-          && !contains_dynamic_type(actual.as_ref())
-        {
-          let mut candidate = preprocessing_type_bindings.clone();
-          if actual
-            .as_ref()
-            .prove_with_bindings(binding_expected.as_ref(), &mut candidate)
-            .is_proven()
-          {
-            preprocessing_type_bindings = candidate;
-          }
-        }
-
-        ys = ys.push(form);
-      }
-      let processed_call_args = CalcitList::from(ys.drop_left());
-      if has_spread {
-        reject_known_non_list_spreads(&processed_call_args, scope_types, call_stack, call_location.clone())?;
-      }
-      reject_pending_async_arguments(&head_form, &processed_call_args, scope_types, call_stack)?;
-      if !has_spread {
-        let mut current_args = processed_call_args;
-        let checked_contract = resolve_checked_call_contract(&info.def_ns, &info.name, &current_args, scope_types);
-        let checked_expected_types = checked_contract.as_ref().and_then(|contract| contract.expected_types.as_deref());
-        // Core helpers such as `get` resolve to ordinary functions, so validate
-        // their statically known struct fields in this branch as well.
-        check_struct_field_access(&head_form, &current_args, scope_types, file_ns, call_stack, check_warnings);
-        reject_strict_bare_enum_constructor_comparison(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), call_stack)?;
-        reject_strict_nominal_enum_stringification(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), call_stack)?;
-        warn_on_nominal_enum_legacy_absence_use(&head_form, &current_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
-        reject_or_warn_on_js_nullish_predicate_mismatch(
-          &head_form,
-          &current_args,
-          scope_types,
-          file_ns,
-          def_name.as_ref(),
-          check_warnings,
-          call_stack,
-        )?;
-        let mut any_rewritten = false;
-        // Rewrite hashmap literal args to struct literals when the expected type is a struct
-        if let Some(rewritten) = try_rewrite_map_args_to_structs(
-          info.as_ref(),
-          checked_expected_types,
-          &current_args,
-          file_ns,
-          &def_name,
-          check_warnings,
-        ) {
-          current_args = rewritten;
-          any_rewritten = true;
-        }
-        // Rewrite loose struct literal args (`?{}`) to struct literals when the expected type is a struct
-        if let Some(rewritten) = try_rewrite_loose_struct_args_to_structs(
-          info.as_ref(),
-          checked_expected_types,
-          &current_args,
-          file_ns,
-          &def_name,
-          check_warnings,
-        ) {
-          current_args = rewritten;
-          any_rewritten = true;
-        }
-        // Rewrite untyped enum literal args to named enums when the expected type is an enum
-        if let Some(rewritten) = try_rewrite_enum_args_to_named_enums(
-          info.as_ref(),
-          checked_expected_types,
-          &current_args,
-          file_ns,
-          &def_name,
-          check_warnings,
-        ) {
-          current_args = rewritten;
-          any_rewritten = true;
-        }
-        // Rebuild ys only once after all rewrites
-        if any_rewritten {
-          let mut new_ys = CalcitList::new_inner_from(std::slice::from_ref(&head_form));
-          for item in current_args.iter() {
-            new_ys = new_ys.push(item.to_owned());
-          }
-          ys = new_ys;
-        }
-        check_core_fn_arg_types(
-          info.as_ref(),
-          &current_args,
-          scope_types,
-          file_ns,
-          &def_name,
-          call_location.clone(),
-          check_warnings,
-        );
-        let effective_schema = effective_user_call_schema(info.as_ref());
-        reject_strict_dynamic_nominal_argument(
-          &head_form,
-          &current_args,
-          effective_schema.as_ref(),
-          scope_types,
-          file_ns,
-          call_stack,
-        )?;
-        if let Some(expected_types) = checked_expected_types {
-          reject_strict_unproven_specialized_contract(&head_form, &current_args, expected_types, 0, scope_types, file_ns, call_stack)?;
-        }
-        reject_strict_unproven_generic_relation(
-          &head_form,
-          &current_args,
-          effective_schema.as_ref(),
-          scope_types,
-          file_ns,
-          call_stack,
-        )?;
-        check_user_fn_arg_types(info.as_ref(), &head_form, &current_args, scope_types, &call_info, check_warnings);
-      }
-      if has_spread {
-        ys = ys.prepend(Calcit::Syntax(CalcitSyntax::CallSpread, info.def_ns.to_owned()));
-        Ok(Calcit::from(CalcitList::from(ys)))
-      } else {
-        // Try to specialize polymorphic calls when receiver type is known
-        if let Calcit::Import(CalcitImport { ns, def, .. }) = &head_form {
-          let current_args = CalcitList::from(ys.drop_left());
-          if matches!(def.as_ref(), "get-in" | "assoc-in" | "update-in")
-            && let Some(expanded) = try_expand_typed_literal_path_call(&head_form, &current_args, scope_types, file_ns, call_stack)?
-          {
-            return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
-          }
-          if matches!(def.as_ref(), "get" | "nth" | "first" | "last")
-            && let Some(expanded) = try_expand_typed_optional_access_call(ns, def, &current_args, scope_types, file_ns, call_stack)?
-          {
-            return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
-          }
-          if let Some(specialized) = try_specialize_polymorphic_call(ns, def, &current_args, scope_types, file_ns) {
-            return Ok(specialized);
-          }
-        }
-        Ok(Calcit::from(CalcitList::from(ys)))
-      }
-    }
+    Some(Calcit::Fn { info, .. }) => preprocess_known_function_call(
+      info,
+      head_form,
+      args,
+      &call_info,
+      PreprocessContext {
+        scope_defs,
+        scope_types,
+        file_ns,
+        check_warnings,
+        call_stack,
+        call_location,
+      },
+    ),
 
     _ => match &head_form {
       Calcit::Tag(tag) => {
@@ -3841,6 +3593,279 @@ fn preprocess_list_call(
         ))
       }
     },
+  }
+}
+
+/// Keep function-contract temporaries off the recursive macro/syntax path.
+#[inline(never)]
+fn preprocess_known_function_call(
+  info: Arc<CalcitFn>,
+  head_form: Calcit,
+  args: CalcitList,
+  call_info: &CallTypeCheckInfo,
+  ctx: PreprocessContext,
+) -> Result<Calcit, CalcitErr> {
+  let PreprocessContext {
+    scope_defs,
+    scope_types,
+    file_ns,
+    check_warnings,
+    call_stack,
+    ..
+  } = ctx;
+  let def_name = call_info.def_name;
+  let call_location = call_info.call_location.clone();
+  match &*info.args {
+    CalcitFnArgs::MarkedArgs(xs) => {
+      check_fn_marked_args(xs, &info.arg_types, &args, file_ns, &info.name, def_name, check_warnings);
+    }
+    CalcitFnArgs::Args(xs) => {
+      check_fn_args(xs, &info.arg_types, &args, file_ns, &info.name, def_name, check_warnings);
+    }
+  }
+  let mut ys = CalcitList::new_inner_from(std::slice::from_ref(&head_form));
+  let mut has_spread = false;
+  let checked_contract = resolve_checked_call_contract(&info.def_ns, &info.name, &args, scope_types);
+  let preprocessing_expected_types = checked_contract
+    .as_ref()
+    .and_then(|contract| contract.expected_types.as_deref())
+    .unwrap_or(&info.arg_types);
+  let mut preprocessing_type_bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+
+  // Process arguments with type-aware preprocessing for Fn-typed params.
+  // When the expected param type is Fn(...), set EXPECTED_FN_TYPE so that
+  // preprocess_defn can inject arg types into anonymous fn params' scope_types.
+  for (arg_idx, a) in args.iter().enumerate() {
+    if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = a {
+      has_spread = true;
+      ys = ys.push(a.to_owned());
+      continue;
+    }
+
+    // Recompute receiver-specialized contracts after earlier arguments have
+    // been preprocessed. Raw collection literals may not expose K/V until
+    // this point, while a following inline callback needs those concrete
+    // types during its own preprocessing.
+    let can_refresh_checked_contract =
+      checked_call_contract_arity(&info.def_ns, &info.name).is_some_and(|required_arity| args.len() == required_arity);
+    let can_refresh_fold_types =
+      args.len() == 3 && info.def_ns.as_ref() == calcit::CORE_NS && matches!(info.name.as_ref(), "fold" | "foldl" | "reduce");
+    let staged_args = if arg_idx > 0 && (can_refresh_checked_contract || can_refresh_fold_types) {
+      let processed_count = ys.len().saturating_sub(1);
+      let staged_values = args
+        .iter()
+        .enumerate()
+        .map(|(idx, original)| {
+          if idx < processed_count {
+            ys.get(idx + 1).cloned().unwrap_or_else(|| original.clone())
+          } else {
+            original.clone()
+          }
+        })
+        .collect::<Vec<_>>();
+      Some(CalcitList::from(staged_values.as_slice()))
+    } else {
+      None
+    };
+    let refreshed_checked_contract = if can_refresh_checked_contract {
+      staged_args
+        .as_ref()
+        .and_then(|staged| resolve_checked_call_contract(&info.def_ns, &info.name, staged, scope_types))
+    } else {
+      None
+    };
+    let refreshed_fold_types = if can_refresh_fold_types {
+      staged_args
+        .as_ref()
+        .and_then(|staged| type_checking::specialize_collection_fold_expected_types(staged, scope_types, &info.arg_types))
+    } else {
+      None
+    };
+    let active_expected_types = refreshed_checked_contract
+      .as_ref()
+      .and_then(|contract| contract.expected_types.as_deref())
+      .or(refreshed_fold_types.as_deref())
+      .unwrap_or(preprocessing_expected_types);
+
+    // Set expected fn type hint if this arg position has a Fn-typed param
+    let expected_type = active_expected_types.get(arg_idx).map(|expected| {
+      if strict_types_enabled() {
+        expected.substitute_type_vars(&preprocessing_type_bindings)
+      } else {
+        expected.clone()
+      }
+    });
+    let expected_fn = expected_type.as_ref().and_then(|expected_type| expected_type.resolve_to_fn());
+
+    // Set expected struct type hint if this arg position has a struct-typed param
+    // This enables field-type-aware preprocessing of hashmap literals (e.g., DomProps)
+    let expected_struct = if arg_idx < active_expected_types.len() {
+      active_expected_types[arg_idx].resolve_to_struct_with_ref().map(|(s, _)| s)
+    } else {
+      None
+    };
+
+    if let Some(fn_annot) = expected_fn {
+      EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().replace(fn_annot));
+    }
+    if let Some(struct_def) = expected_struct {
+      EXPECTED_STRUCT_TYPE.with(|cell| cell.borrow_mut().replace(struct_def));
+    }
+
+    let result = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack);
+
+    // Always clear the hints after preprocessing, even on error
+    EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = None);
+    EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = None);
+
+    let form = result?;
+
+    if let Some(expected) = expected_type.as_ref() {
+      reject_strict_bare_enum_constructor_value(&form, expected, scope_types, file_ns, def_name, call_stack, call_location.clone())?;
+    }
+
+    if strict_types_enabled()
+      && (!info.generics.is_empty() || checked_contract.is_some() || refreshed_checked_contract.is_some())
+      && let Some(expected) = active_expected_types.get(arg_idx)
+      && let Some(binding_expected) = info.arg_types.get(arg_idx).or(info.rest_type.as_ref()).or(Some(expected))
+      && !empty_container_has_no_type_evidence(&form, binding_expected.as_ref())
+      && let Some(actual) = resolve_type_value(&form, scope_types)
+      && !contains_dynamic_type(actual.as_ref())
+    {
+      let mut candidate = preprocessing_type_bindings.clone();
+      if actual
+        .as_ref()
+        .prove_with_bindings(binding_expected.as_ref(), &mut candidate)
+        .is_proven()
+      {
+        preprocessing_type_bindings = candidate;
+      }
+    }
+
+    ys = ys.push(form);
+  }
+  let processed_call_args = CalcitList::from(ys.drop_left());
+  if has_spread {
+    reject_known_non_list_spreads(&processed_call_args, scope_types, call_stack, call_location.clone())?;
+  }
+  reject_pending_async_arguments(&head_form, &processed_call_args, scope_types, call_stack)?;
+  if !has_spread {
+    let mut current_args = processed_call_args;
+    let checked_contract = resolve_checked_call_contract(&info.def_ns, &info.name, &current_args, scope_types);
+    let checked_expected_types = checked_contract.as_ref().and_then(|contract| contract.expected_types.as_deref());
+    // Core helpers such as `get` resolve to ordinary functions, so validate
+    // their statically known struct fields in this branch as well.
+    check_struct_field_access(&head_form, &current_args, scope_types, file_ns, call_stack, check_warnings);
+    reject_strict_bare_enum_constructor_comparison(&head_form, &current_args, scope_types, file_ns, def_name, call_stack)?;
+    reject_strict_nominal_enum_stringification(&head_form, &current_args, scope_types, file_ns, def_name, call_stack)?;
+    warn_on_nominal_enum_legacy_absence_use(&head_form, &current_args, scope_types, file_ns, def_name, check_warnings);
+    reject_or_warn_on_js_nullish_predicate_mismatch(
+      &head_form,
+      &current_args,
+      scope_types,
+      file_ns,
+      def_name,
+      check_warnings,
+      call_stack,
+    )?;
+    let mut any_rewritten = false;
+    // Rewrite hashmap literal args to struct literals when the expected type is a struct
+    if let Some(rewritten) = try_rewrite_map_args_to_structs(
+      info.as_ref(),
+      checked_expected_types,
+      &current_args,
+      file_ns,
+      def_name,
+      check_warnings,
+    ) {
+      current_args = rewritten;
+      any_rewritten = true;
+    }
+    // Rewrite loose struct literal args (`?{}`) to struct literals when the expected type is a struct
+    if let Some(rewritten) = try_rewrite_loose_struct_args_to_structs(
+      info.as_ref(),
+      checked_expected_types,
+      &current_args,
+      file_ns,
+      def_name,
+      check_warnings,
+    ) {
+      current_args = rewritten;
+      any_rewritten = true;
+    }
+    // Rewrite untyped enum literal args to named enums when the expected type is an enum
+    if let Some(rewritten) = try_rewrite_enum_args_to_named_enums(
+      info.as_ref(),
+      checked_expected_types,
+      &current_args,
+      file_ns,
+      def_name,
+      check_warnings,
+    ) {
+      current_args = rewritten;
+      any_rewritten = true;
+    }
+    // Rebuild ys only once after all rewrites
+    if any_rewritten {
+      let mut new_ys = CalcitList::new_inner_from(std::slice::from_ref(&head_form));
+      for item in current_args.iter() {
+        new_ys = new_ys.push(item.to_owned());
+      }
+      ys = new_ys;
+    }
+    check_core_fn_arg_types(
+      info.as_ref(),
+      &current_args,
+      scope_types,
+      file_ns,
+      def_name,
+      call_location.clone(),
+      check_warnings,
+    );
+    let effective_schema = effective_user_call_schema(info.as_ref());
+    reject_strict_dynamic_nominal_argument(
+      &head_form,
+      &current_args,
+      effective_schema.as_ref(),
+      scope_types,
+      file_ns,
+      call_stack,
+    )?;
+    if let Some(expected_types) = checked_expected_types {
+      reject_strict_unproven_specialized_contract(&head_form, &current_args, expected_types, 0, scope_types, file_ns, call_stack)?;
+    }
+    reject_strict_unproven_generic_relation(
+      &head_form,
+      &current_args,
+      effective_schema.as_ref(),
+      scope_types,
+      file_ns,
+      call_stack,
+    )?;
+    check_user_fn_arg_types(info.as_ref(), &head_form, &current_args, scope_types, call_info, check_warnings);
+  }
+  if has_spread {
+    ys = ys.prepend(Calcit::Syntax(CalcitSyntax::CallSpread, info.def_ns.to_owned()));
+    Ok(Calcit::from(CalcitList::from(ys)))
+  } else {
+    // Try to specialize polymorphic calls when receiver type is known
+    if let Calcit::Import(CalcitImport { ns, def, .. }) = &head_form {
+      let current_args = CalcitList::from(ys.drop_left());
+      if matches!(def.as_ref(), "get-in" | "assoc-in" | "update-in")
+        && let Some(expanded) = try_expand_typed_literal_path_call(&head_form, &current_args, scope_types, file_ns, call_stack)?
+      {
+        return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
+      }
+      if matches!(def.as_ref(), "get" | "nth" | "first" | "last")
+        && let Some(expanded) = try_expand_typed_optional_access_call(ns, def, &current_args, scope_types, file_ns, call_stack)?
+      {
+        return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
+      }
+      if let Some(specialized) = try_specialize_polymorphic_call(ns, def, &current_args, scope_types, file_ns) {
+        return Ok(specialized);
+      }
+    }
+    Ok(Calcit::from(CalcitList::from(ys)))
   }
 }
 
