@@ -166,6 +166,32 @@ fn spread_fix_preserves_rest_optional_and_unknown_macro_boundaries() {
     ),
     "add unknown macro",
   );
+  for (name, source) in [
+    (
+      "fixed-sum",
+      "quote $ defn fixed-sum (a b)\n  hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Number)\n  + a b",
+    ),
+    (
+      "spread-syntax",
+      "quote $ defmacro spread-syntax (marker literal)\n  quasiquote $ fixed-sum & ~literal",
+    ),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("fix-command.main/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          source,
+        ],
+      ),
+      "add macro-headed spread fixture",
+    );
+  }
   let cases = [
     (
       "rest-spread",
@@ -178,6 +204,14 @@ fn spread_fix_preserves_rest_optional_and_unknown_macro_boundaries() {
     (
       "macro-spread",
       "quote $ defn macro-spread ()\n  let\n      f $ fn (a b)\n        hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Number)\n        + a b\n    spread-wrapper $ f & $ [] 1 2",
+    ),
+    (
+      "macro-headed-spread",
+      "quote $ defn macro-headed-spread ()\n  spread-syntax & $ [] 1 2",
+    ),
+    (
+      "qualified-macro-headed-spread",
+      "quote $ defn qualified-macro-headed-spread ()\n  fix-command.main/spread-syntax & $ [] 1 2",
     ),
   ];
   for (name, source) in cases {
@@ -201,6 +235,31 @@ fn spread_fix_preserves_rest_optional_and_unknown_macro_boundaries() {
       ),
       "add boundary schema",
     );
+    if name.ends_with("macro-headed-spread") {
+      let assertion = format!("quote $ assert= 3 $ {name}");
+      assert_success(
+        &run_calcit(
+          &snapshot,
+          &[
+            "edit",
+            "add-test",
+            &target,
+            "result",
+            "--tags",
+            "unit",
+            "--input-format",
+            "cirru",
+            "--code",
+            &assertion,
+          ],
+        ),
+        "attach macro syntax semantic test",
+      );
+      assert_success(
+        &run_calcit(&snapshot, &["test", &target, "--require-match"]),
+        "run original macro syntax",
+      );
+    }
     let before = fs::read(&snapshot).unwrap();
     let result = run_fix(
       &snapshot,
@@ -224,6 +283,12 @@ fn spread_fix_preserves_rest_optional_and_unknown_macro_boundaries() {
     assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
     assert!(suggestions[0]["replacement"].is_null(), "{report}");
     assert_eq!(fs::read(&snapshot).unwrap(), before);
+    if name.ends_with("macro-headed-spread") {
+      assert_success(
+        &run_calcit(&snapshot, &["test", &target, "--require-match"]),
+        "replay retained macro syntax",
+      );
+    }
   }
 }
 

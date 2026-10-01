@@ -126,7 +126,21 @@ pub(super) fn plan_spread_call_fixes(
         let Some(evidence) = runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, path) else {
           return false;
         };
-        fixed_spread_is_proven(&source, &evidence.processed)
+        let mut head_path = path.to_vec();
+        head_path.push(0);
+        let source_head_is_macro = usages.iter().any(|usage| {
+          usage.location.as_ref().is_some_and(|location| {
+            location.ns.as_ref() == namespace
+              && location.def.as_ref() == definition
+              && location.coord.iter().map(|index| usize::from(*index)).eq(head_path.iter().copied())
+              && matches!(
+                program::lookup_compiled_def(&usage.target_ns, &usage.target_def).map(|compiled| compiled.kind),
+                Some(program::CompiledDefKind::Macro)
+              )
+          })
+        });
+        !source_head_is_macro
+          && fixed_spread_is_proven(&source, &evidence.processed)
           && method_source_context_is_stable(&entry.code, path, namespace, definition, &usages)
           && !usages.iter().any(|usage| {
             usage.location.as_ref().is_some_and(|location| {

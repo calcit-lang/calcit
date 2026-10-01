@@ -9,3 +9,5 @@
 用户可观察的 spread/direct 参数单次求值顺序写在 core definition 的 :tests，复用现有 spread runner 在 native 与真实 JS 回放。CLI preview、不写回负例、过期 revision 与幂等性留在已有 fix_cli 的底层事务回归。此记录是开发中设计依据，不代表完整 issue 的六类迁移规则已经交付。
 
 改写后的固定数值调用另有实际 native、JS、WASM 导出结果验证。WASM 会收集项目函数，不能把 native/JS 的 Ref 测试混入该数值 fixture 后宣称全部支持；单独复制 Snapshot 并通过结构化命令去掉 replay 函数，保留真实改写结果，明确 Ref 仍是当前 WASM unsupported 边界。
+
+审查补充发现：macro 自身作为 source head 时，也可能展开成类型与 arity 完整的 CallSpread。只检查展开结果及 macro_origin，会把 macro 消费的原始 `&` / List 语法当作普通值参数；错误改写虽被 staged preprocess 阻止写入，但建议已错误标为 machine-applicable。先运行 CLI 反例确认失败，再根据 source head 坐标的 resolved usage 与 CompiledDefKind::Macro 排除，不按函数名文本判断。直接名称和全限定名称都保留 requires-review/null replacement，临时 definition :tests 在请求 apply 前后均返回 3，文件 bytes 不变；普通已证明函数调用仍可改写。
