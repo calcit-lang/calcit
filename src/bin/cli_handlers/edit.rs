@@ -2707,13 +2707,19 @@ fn extract_require_list(ns_code: &Cirru) -> Vec<String> {
 }
 
 /// Extract the source namespace from a require rule
-/// e.g. from `(calcit.core :refer ...)` extract `calcit.core`
+/// Accept the same optional legacy `[]` prefix as the program import parser.
 fn get_require_source_ns(rule: &Cirru) -> Option<String> {
   match rule {
-    Cirru::List(items) if !items.is_empty() => match &items[0] {
-      Cirru::Leaf(s) => Some(s.to_string()),
-      _ => None,
-    },
+    Cirru::List(items) => {
+      let items = match items.first() {
+        Some(head) if head.eq_leaf("[]") => &items[1..],
+        _ => items.as_slice(),
+      };
+      match items.first() {
+        Some(Cirru::Leaf(source)) => Some(source.to_string()),
+        _ => None,
+      }
+    }
     _ => None,
   }
 }
