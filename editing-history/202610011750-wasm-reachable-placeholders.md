@@ -10,4 +10,8 @@
 
 第三步只记录生成过程中实际发射的函数值引用，把这些具体指向加入同一依赖图，避免全表扫描。把 format-value 保存到局部 callback 再调用的负例现在也在 artifact 生成前被拒绝；完整专项 runner 与 all-target/all-feature Clippy 通过。17a13e66 的完整 Rust 测试通过；函数值补充提交的完整 Rust 仍待确认。
 
-尚未完成：值 import 公共路径的可达性分类、宿主提供函数值与运行时参数的边界、错误分支、WASI 验证、source 定位精度、文档与完整门禁。没有把所有间接调用统一拒绝，也没有声称任意宿主传入的表索引已验证安全；需保留这些边界的明确验收证据。
+第四步确认跨模块 def 保存的 quote 值走常量内联，在失败信息中补上被导入定义名；Enum 定义值的探针已被既有 `&enum-def:new` unsupported 拦截，不算本次新增修复。参数化 WASM export 的 Bool 两分支分别实际返回合法 0/7，Unit 两分支实际返回现有 ABI 的 0；一般格式化出现在运行时参数分支时仍在编译阶段拒绝。扩展专项回放通过。直接 quasiquote 的 native 正常执行与 WASM 编译拒绝也已确认，并加入同一 runner。
+
+WASI 继续复用 Number 文本 smoke：真实 Component 对运行时 quote/format-to-lisp 编译拒绝且不生成 artifact；静态 quote 格式化的失败断言仍可编译，真实 Wasmtime 执行保留错误文本及非零退出。该扩展 smoke 通过，808d59f7 的完整 Rust 也通过。
+
+现有 core value ABI 的任意宿主表索引由宿主管理，不把本次具体函数值依赖检查宣传为外部索引安全验证；Component 本身拒绝 Fn/closure。文档明确这个边界。剩余全量 check-all、最新提交 Rust/Clippy、独立 review 与 CI 门禁未完成，保持 draft。

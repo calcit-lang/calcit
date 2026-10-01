@@ -6030,7 +6030,7 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
         ctx.emit(f64_const(slot as f64));
       } else if let Some(value_expr) = ctx.value_imports.get(&qualified).cloned() {
         // Imported top-level def value (e.g. a string constant). Inline its expression.
-        emit_expr(ctx, &value_expr)?;
+        emit_expr(ctx, &value_expr).map_err(|reason| format!("{reason} (imported value `{qualified}`)"))?;
       } else {
         return Err(format!("unsupported value import in WASM: {qualified}"));
       }

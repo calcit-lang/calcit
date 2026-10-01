@@ -81,6 +81,7 @@ try {
   // Native execution still verifies that each source expression is valid.
   for (const [name, expression, diagnostic] of [
     ["runtime-quote", ["quote", ["+", "1", "2"]], /unsupported runtime quote value in WASM/],
+    ["runtime-quasiquote", ["quasiquote", ["+", "1", "2"]], /unsupported runtime quasiquote value in WASM/],
     ["runtime-format", ["format-to-lisp", "42"], /unsupported runtime format-to-lisp in WASM/],
     ["branch-format", ["if", "true", ["format-to-lisp", "42"], "|fallback"], /unsupported runtime format-to-lisp in WASM/],
   ]) {
@@ -123,6 +124,56 @@ try {
   run("wasm", "--emit-path", supportedOutput);
   const supportedModule = new WebAssembly.Module(await readFile(join(supportedOutput, "program.wasm")));
   assert.equal(new WebAssembly.Instance(supportedModule, imports).exports["run-tests"](), 1);
+
+  run("edit", "def", "calcit.placeholder-helper/stored-quote", "--input-format", "cirru", "--code",
+    "quote $ def stored-quote $ quote $ + 1 2");
+  run("edit", "add-import", "calcit.assert-evidence", "--overwrite", "--input-format", "cirru", "--code",
+    "quote $ calcit.placeholder-helper :refer $ format-value stored-quote");
+  setBody(["stored-quote"]);
+  run();
+  const valueOutput = join(project, "imported-quote");
+  const valueRejected = spawnSync(binary, [snapshot, "wasm", "--emit-path", valueOutput], options);
+  assert.equal(valueRejected.error, undefined);
+  assert.notEqual(valueRejected.status, 0);
+  assert.match(valueRejected.stderr, /unsupported runtime quote value in WASM/);
+  assert.match(valueRejected.stderr, /imported value `calcit\.placeholder-helper\/stored-quote`/);
+  await assert.rejects(readFile(join(valueOutput, "program.wasm")), { code: "ENOENT" });
+
+  // Exercise both runtime-selected branches and distinguish legitimate zero.
+  run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
+    "quote $ defwasm-export run-tests (flag) $ if flag 0 7");
+  run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ [] 'Bool) (:return 'Number)");
+  const parameterOutput = join(project, "runtime-parameter");
+  run("wasm", "--emit-path", parameterOutput);
+  const parameterModule = new WebAssembly.Module(await readFile(join(parameterOutput, "program.wasm")));
+  const parameterWasm = new WebAssembly.Instance(parameterModule, imports);
+  assert.equal(parameterWasm.exports["run-tests"](1), 0);
+  assert.equal(parameterWasm.exports["run-tests"](0), 7);
+
+  run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
+    "quote $ defwasm-export run-tests (flag) $ if flag &unit &unit");
+  run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ [] 'Bool) (:return 'Unit)");
+  const unitOutput = join(project, "legitimate-unit");
+  run("wasm", "--emit-path", unitOutput);
+  const unitModule = new WebAssembly.Module(await readFile(join(unitOutput, "program.wasm")));
+  const unitWasm = new WebAssembly.Instance(unitModule, imports);
+  assert.equal(unitWasm.exports["run-tests"](1), 0);
+  assert.equal(unitWasm.exports["run-tests"](0), 0);
+
+  run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
+    "quote $ defwasm-export run-tests (flag) $ if flag (format-to-lisp 42) |fallback");
+  run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ [] 'Bool) (:return 'String)");
+  const branchRejected = spawnSync(binary, [snapshot, "wasm", "--emit-path", join(project, "parameter-format")], options);
+  assert.equal(branchRejected.error, undefined);
+  assert.notEqual(branchRejected.status, 0);
+  assert.match(branchRejected.stderr, /unsupported runtime format-to-lisp in WASM/);
+  await assert.rejects(readFile(join(project, "parameter-format", "program.wasm")), { code: "ENOENT" });
+  setBody(scalar.map(test => test.code));
+  run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
 
   // The shared preprocessor must reject before execution or either codegen.
   const bad = [

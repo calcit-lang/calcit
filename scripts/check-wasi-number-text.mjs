@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
-import { copyFile, mkdtemp, rm } from "node:fs/promises";
+import { execFileSync, spawnSync } from "node:child_process";
+import { copyFile, mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -29,6 +29,31 @@ try {
     join(artifact, "program.wasm"),
   ], { encoding: "utf8" });
   assert.deepEqual(result.trimEnd().split("\n"), cases.flatMap(([, expected]) => [expected, expected]));
+
+  for (const [name, expression, diagnostic] of [
+    ["quote", "quote $ + 1 2", /unsupported runtime quote value in WASM/],
+    ["format", "format-to-lisp 42", /unsupported runtime format-to-lisp in WASM/],
+  ]) {
+    execFileSync(binary, [snapshot, "edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru",
+      "--code", `quote $ defn main! () (${expression}) &unit`], { stdio: "pipe" });
+    const rejectedOutput = join(output, `rejected-${name}`);
+    const rejected = spawnSync(binary, ["wasi", snapshot, "--emit-path", rejectedOutput], { encoding: "utf8", timeout: 60000 });
+    assert.equal(rejected.error, undefined);
+    assert.notEqual(rejected.status, 0, "unsupported runtime values must fail before WASI artifact emission");
+    assert.match(rejected.stderr, diagnostic);
+    await assert.rejects(readFile(join(rejectedOutput, "program.wasm")), { code: "ENOENT" });
+  }
+
+  // The static quoted expression used by assertion messages remains supported.
+  execFileSync(binary, [snapshot, "edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru",
+    "--code", "quote $ defn main! () (assert= 1 2) &unit"], { stdio: "pipe" });
+  const failureOutput = join(output, "failed-assertion");
+  execFileSync(binary, ["wasi", snapshot, "--emit-path", failureOutput], { stdio: "pipe" });
+  const failure = spawnSync(wasmtime, ["run", "-W", "component-model-more-async-builtins=y,component-model-async-stackful=y",
+    join(failureOutput, "program.wasm")], { encoding: "utf8", timeout: 60000 });
+  assert.equal(failure.error, undefined);
+  assert.notEqual(failure.status, 0, "a failed assertion must not turn into successful zero execution");
+  assert.match(failure.stderr, /assert|Assertion/);
 } finally {
   await rm(output, { recursive: true, force: true });
 }

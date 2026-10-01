@@ -28,7 +28,7 @@ Calcit 将 WebAssembly core module 的内部 value ABI 与 Component Model 的�
 - 参数和返回值统一用 WASM `f64` 承载；
 - `Number` 直接传递，`String`、`List`、Struct 和 Enum 传递 Calcit heap 中的逻辑指针；
 - 宿主需要理解 Calcit 的 tag、heap 和 memory layout；
-- 可编译的普通 `defn` 仍作为内部调试入口导出，`defwasm-export` 则标记必须稳定编译的宿主边界。
+- 可编译的普通 `defn` 供模块内部调用，`defwasm-export` 标记公开的宿主边界。
 
 这一 ABI 适合直接控制 memory 的 JavaScript 宿主和回归测试，但不是 Canonical ABI。
 
@@ -271,3 +271,12 @@ CI 的可用性基线不是“能生成 WIT”：同一份 Calcit contract 必�
 6. 在异步基础上继续交付有界 buffered WASI HTTP client；service 与更底层 socket 后置。
 
 用户可观察的类型与语义优先由 Calcit definition `:tests` 覆盖；Rust 测试只覆盖 contract serialization、WASM encoding、Canonical ABI/memory layout 和 unsupported boundary。
+
+## 编译失败与限制
+
+代码生成从配置入口和实际导出入口检查已发射的直接调用与具体函数值引用；可达 helper 编译失败时，诊断带出其 namespace/definition，阻止产出 artifact。导入常量的失败还会保留被导入定义的名称。未被引用的依赖 slot 不会仅因自身不受支持而阻断正常入口。
+
+- 运行时 `quote` / `quasiquote` 值及一般 `format-to-lisp` 尚不支持，编译时明确拒绝，不以 `0` 或 nil 替代。
+- `(format-to-lisp (quote ...))` 的静态字符串路径继续支持，断言失败仍保留错误文本与失败状态。
+- 合法 Number `0` 和 Unit 保留已有 core value ABI；不能将所有零常量解释为占位回退。
+- core value ABI 的函数表索引由宿主管理，任意外部索引的安全性不等同于编译器对具体函数值引用的检查；Component 边界继续拒绝 Fn/closure。
