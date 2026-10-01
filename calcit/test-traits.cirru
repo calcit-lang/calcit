@@ -529,6 +529,82 @@
                     &trait-call calcit.core/Countable :count x
                 assert= 2 $ count-items $ [] 1 2
               :tags $ #{} :trait :unit
+            %{} 'TestEntry (:name |duplicate-origin-runtime)
+              :code $ quote $ let
+                  Person $ impl-traits Person0 MyFooImpl MyFooImpl2
+                  p $ %{} Person $ :name |Alice
+                assert= true $ try
+                  do (&trait-call MyFoo :foo p) false
+                  fn (error)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Bool
+                    &str:includes? error |duplicate
+              :tags $ #{} :trait-runtime
+            %{} 'TestEntry (:name |duplicate-origin-reversed)
+              :code $ quote $ let
+                  Person $ impl-traits Person0 MyFooImpl2 MyFooImpl
+                  p $ %{} Person $ :name |Alice
+                assert= true $ try
+                  do (&trait-call MyFoo :foo p) false
+                  fn (error)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Bool
+                    &str:includes? error |duplicate
+              :tags $ #{} :trait-runtime
+            %{} 'TestEntry (:name |duplicate-origin-repeated)
+              :code $ quote $ let
+                  Person $ impl-traits Person0 MyFooImpl MyFooImpl
+                  p $ %{} Person $ :name |Alice
+                assert= true $ try
+                  do (&trait-call MyFoo :foo p) false
+                  fn (error)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Bool
+                    &str:includes? error |duplicate
+              :tags $ #{} :trait-runtime
+            %{} 'TestEntry (:name |duplicate-enum-origin)
+              :code $ quote $ let
+                  Person $ impl-traits Demo0 MyBarImpl MyBarImpl2
+                  p $ %:: Person :demo 1
+                assert= true $ try
+                  do (&trait-call MyBar :bar p) false
+                  fn (error)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Bool
+                    &str:includes? error |duplicate
+              :tags $ #{} :trait-runtime
+            %{} 'TestEntry (:name |duplicate-enum-reversed)
+              :code $ quote $ let
+                  Person $ impl-traits Demo0 MyBarImpl2 MyBarImpl
+                  p $ %:: Person :demo 1
+                assert= true $ try
+                  do (&trait-call MyBar :bar p) false
+                  fn (error)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Bool
+                    &str:includes? error |duplicate
+              :tags $ #{} :trait-runtime
+            %{} 'TestEntry (:name |duplicate-arguments-once)
+              :code $ quote $ let
+                  Person $ impl-traits Person0 MyFooImpl MyFooImpl2
+                  p $ %{} Person $ :name |Alice
+                  counter $ atom 0
+                assert= true $ try
+                  do
+                    &trait-call MyFoo :foo p $ reset! counter $ + @counter 1
+                    , false
+                  fn (error)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Bool
+                    &str:includes? error |duplicate
+                assert= 1 @counter
+              :tags $ #{} :trait-runtime
         'test-impl-precedence-order $ %{} 'CodeEntry (:doc "|Test impl precedence order")
           :code $ quote $ defn test-impl-precedence-order () (println "|Testing impl precedence order...")
             let

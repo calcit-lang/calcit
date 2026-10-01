@@ -1,5 +1,10 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync, readdirSync } from "node:fs";
+import assert from "node:assert/strict";
+import { copyFile, mkdtemp, rm, symlink } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const binary = process.env.CALCIT_STRICT_BIN ?? "./target/debug/calcit";
 
@@ -53,6 +58,39 @@ if (!unscoped.stderr.includes("E_UNSCOPED_UNSAFE_COERCE")) {
 
 const compatibility = run(["calcit/type-fail/unsafe-coerce-unscoped-strict.cirru", "--compat-types", "--check-only"]);
 expectStatus(compatibility, 0, "compatibility escape hatch");
+
+// Compatibility preprocessing must not turn duplicate origins into runtime
+// precedence. Replay the definition-owned contracts without relaxing any
+// ordinary entrypoint or the compatibility scanner above.
+const traitSnapshot = "calcit/test-traits.cirru";
+const traitTests = run([traitSnapshot, "--compat-types", "test",
+  "test-traits.main/test-explicit-trait-call", "--tag", "trait-runtime", "--require-match"]);
+expectStatus(traitTests, 0, "compatibility native duplicate-trait contracts");
+const definition = run([traitSnapshot, "query", "def", "test-traits.main/test-explicit-trait-call", "--format", "json"]);
+expectStatus(definition, 0, "read duplicate-trait contracts");
+const runtimeTests = JSON.parse(definition.stdout).data.tests.filter(test => test.tags.includes("trait-runtime"));
+assert.equal(runtimeTests.length, 6);
+const traitFixture = await mkdtemp(join(tmpdir(), "calcit-compat-trait-"));
+try {
+  const snapshot = join(traitFixture, "calcit.cirru");
+  await copyFile(traitSnapshot, snapshot);
+  await symlink(resolve("node_modules"), join(traitFixture, "node_modules"), "dir");
+  const edit = run([snapshot, "edit", "def", "test-traits.main/test-explicit-trait-call", "--overwrite",
+    "--input-format", "json-ast", "--code", JSON.stringify([
+      "defn", "test-explicit-trait-call", [], ...runtimeTests.map(test => test.code), "1",
+    ])]);
+  expectStatus(edit, 0, "assemble compatibility trait replay");
+  const output = join(traitFixture, "js-out");
+  const selection = ["--init-fn", "test-traits.main/test-explicit-trait-call",
+    "--reload-fn", "test-traits.main/test-explicit-trait-call"];
+  expectStatus(run([snapshot, ...selection, "--compat-types"]), 0, "compatibility native assembled replay");
+  expectStatus(run([snapshot, ...selection, "--compat-types", "--emit-path", output, "js"]), 0,
+    "compatibility JS duplicate-trait generation");
+  const generated = await import(pathToFileURL(join(output, "test-traits.main.mjs")).href);
+  assert.equal(generated.test_explicit_trait_call(), 1, "generated JS must preserve duplicate-trait runtime errors");
+} finally {
+  await rm(traitFixture, { recursive: true, force: true });
+}
 
 const conflict = run(["calcit/test.cirru", "--strict-types", "--compat-types", "--check-only"]);
 expectStatus(conflict, 1, "conflicting type policies");

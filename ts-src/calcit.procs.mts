@@ -2845,20 +2845,22 @@ export function _$n_trait_call(traitDef: CalcitValue, method: CalcitValue, obj: 
     throw new Error(`&trait-call cannot resolve impls for: ${toString(obj, true)}`);
   }
   const impls = pair[0];
-  const reverse = obj instanceof CalcitStructValue || obj instanceof CalcitEnumValue || obj instanceof CalcitStructDef || obj instanceof CalcitEnumDef;
-  let idx = reverse ? impls.length - 1 : 0;
-  while (reverse ? idx >= 0 : idx < impls.length) {
-    const impl = impls[idx];
-    if (impl != null && impl.origin === traitDef) {
-      const fn = impl.getOrNil(methodName);
-      if (fn != null) {
-        if (typeof fn !== "function") {
-          throw new Error(`&trait-call: method :${methodName} for trait ${traitDef.name.toString()} is not a function: ${toString(fn, true)}`);
-        }
-        return fn(obj, ...args);
+  // Explicit trait selection disambiguates origins, not implementations of
+  // one origin. Check all candidates before invoking any method.
+  const matchingImpls = impls.filter((impl) => impl != null && impl.origin === traitDef);
+  if (matchingImpls.length > 1) {
+    throw new Error(
+      `[E_DUPLICATE_TRAIT_IMPL] &trait-call: trait ${traitDef.name.toString()} has ${matchingImpls.length} implementations attached to the same receiver; dispatch cannot choose between duplicate impls`
+    );
+  }
+  if (matchingImpls.length === 1) {
+    const fn = matchingImpls[0].getOrNil(methodName);
+    if (fn != null) {
+      if (typeof fn !== "function") {
+        throw new Error(`&trait-call: method :${methodName} for trait ${traitDef.name.toString()} is not a function: ${toString(fn, true)}`);
       }
+      return fn(obj, ...args);
     }
-    idx += reverse ? -1 : 1;
   }
   throw new Error(
     `&trait-call: cannot find impl for trait ${traitDef.name.toString()} on ${toString(obj, true)}. Hint: use defimpl to create impls tagged by trait.`

@@ -1590,11 +1590,11 @@ pub fn trait_call(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, C
     }
   }
 
-  if runner::preprocess::is_strict_types_enabled() && matching_impls.len() > 1 {
+  if matching_impls.len() > 1 {
     return Err(CalcitErr::use_msg_stack_location_with_code(
       CalcitErrKind::Type,
       format!(
-        "&trait-call: trait {} has {} implementations attached to the same receiver; strict dispatch cannot choose between duplicate impls",
+        "&trait-call: trait {} has {} implementations attached to the same receiver; dispatch cannot choose between duplicate impls",
         trait_def.origin_label(),
         matching_impls.len()
       ),

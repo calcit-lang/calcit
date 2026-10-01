@@ -243,6 +243,8 @@ Usage: `&trait-call Trait :method receiver & args`
 
 `&trait-call` matches by the impl value's trait origin, not just by trait name text. This avoids accidental dispatch when two different trait values share the same printed name.
 
+选定 trait 来源后，接收者只能有一个该来源的实现。重复 attachment 会报 `E_DUPLICATE_TRAIT_IMPL`；native 与 JS runtime 都在执行方法前拒绝，不因接收者类型或 attachment 顺序选择候选。显式 `--compat-types` 不改变这条运行时规则。不同来源的同名方法仍可显式选择各自 trait；同一来源的重复实现则需删除或拆分为不同能力。
+
 Example with two traits sharing the same method name:
 
 ```cirru.no-check
