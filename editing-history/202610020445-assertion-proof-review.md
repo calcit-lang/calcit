@@ -18,6 +18,7 @@ Rust 只负责低层审计作用域恢复、CLI envelope 与原始 bytes 不变�
 同次审计中，函数体缺少具体返回证据时先报告 producer，避免后续断言借用其声明自证。
 新 `E_ASSERT_TYPE_UNPROVEN` 区分缺证据与既有 `E_ASSERT_TYPE_MISMATCH` 矛盾；
 `E_FN_RETURN_UNPROVEN` 区分缺少实现证明与原返回类型矛盾 warning。既有矛盾门禁不降级。
+producer 实现的既有 `W_FN_RETURN_TYPE_MISMATCH` 使本次显式审计失败，不借用已矛盾的声明返回空建议。
 
 ## 边界与验证
 

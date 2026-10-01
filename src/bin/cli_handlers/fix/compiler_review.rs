@@ -34,6 +34,19 @@ pub(super) fn compile_boundary_review(
     } else {
       runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default()).map(|_| ())
     };
+    if rule == ASSERT_TYPE_PROOF_RULE
+      && let Some(warning) = warnings
+        .borrow()
+        .iter()
+        .find(|warning| warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH"))
+    {
+      // A contradictory implementation cannot lend its declared return type
+      // to an assertion, even when ordinary checking reports it as a warning.
+      return Err(format!(
+        "Assertion proof audit cannot borrow a contradictory producer contract: {}",
+        warning
+      ));
+    }
     if let Err(error) = result {
       let diagnostic_code = match (rule, error.code()) {
         (UNSAFE_COERCE_BOUNDARY_RULE, Some(UNSAFE_COERCE_BOUNDARY_DIAGNOSTIC)) => UNSAFE_COERCE_BOUNDARY_DIAGNOSTIC,

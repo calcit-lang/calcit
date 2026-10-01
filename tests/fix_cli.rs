@@ -173,6 +173,30 @@ fn assertion_proof_fix_does_not_borrow_a_producers_declared_return() {
   assert_eq!(parse_stdout(&navigation)["data"]["path"], "code");
   assert!(report["data"]["suggestions"][0]["replacement"].is_null());
   assert_eq!(fs::read(&snapshot).unwrap(), original);
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.proof/open-producer",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn open-producer (x)\n  , |wrong",
+        "--overwrite",
+      ],
+    ),
+    "make the producer implementation contradict its declaration",
+  );
+  let contradictory_source = fs::read(&snapshot).unwrap();
+  let rejected = run_fix(
+    &snapshot,
+    &["--rule", "assert-type-proof-v1", "--ns", "fix-command.proof", "--format", "json"],
+  );
+  assert!(!rejected.status.success(), "a contradictory producer cannot yield a clear audit");
+  assert!(String::from_utf8_lossy(&rejected.stderr).contains("W_FN_RETURN_TYPE_MISMATCH"));
+  assert_eq!(fs::read(&snapshot).unwrap(), contradictory_source);
 }
 
 #[test]
