@@ -28,9 +28,15 @@ try {
     const target = `calcit.core/${name}`;
     run("test", target, "--require-match");
     const response = JSON.parse(run("query", "def", target, "--format", "json"));
-    const tests = response.data.tests.filter(test => test.name === "result-method-contract");
-    assert.equal(tests.length, 1, `${name} must retain the ordinary parsing method contract`);
-    trees.push(tests[0].code);
+    assert.deepEqual(response.diagnostics, []);
+    const tests = response.data.tests.filter(test => test.name === "result-method-contract" || test.tags.includes("parse-boundary"));
+    assert.equal(tests.filter(test => test.name === "result-method-contract").length, 1,
+      `${name} must retain the ordinary parsing method contract`);
+    if (name === "try-parse-cirru-list") {
+      assert.equal(tests.filter(test => test.name === "lexer-state-contract").length, 1,
+        "Cirru parsing must retain quoted, empty-input and dollar/comma source fixtures");
+    }
+    trees.push(...tests.map(test => test.code));
   }
   run("edit", "add-ns", "calcit.parse-boundary");
   run("edit", "def", "calcit.parse-boundary/main!", "--input-format", "json-ast", "--code",

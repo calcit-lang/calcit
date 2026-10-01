@@ -9570,14 +9570,35 @@
           :schema $ :: 'Fn $ {}
             :args $ [] 'String
             :return $ :: 'Result (:: 'List 'Dynamic) 'String
-          :tests $ [] $ %{} 'TestEntry (:name |result-method-contract)
-            :code $ quote $ do
-              assert= true $ result:ok? $ |a .parse-cirru-list
-              assert= true $ result:err? $
-                char-from-code 41
-                , .parse-cirru-list
-              assert-type (|a .parse-cirru-list)
-                :: 'Result (:: 'List 'Dynamic) 'String
+          :tests $ []
+            %{} 'TestEntry (:name |result-method-contract)
+              :code $ quote $ do
+                assert= true $ result:ok? $ |a .parse-cirru-list
+                assert= true $ result:err? $
+                  char-from-code 41
+                  , .parse-cirru-list
+                assert-type (|a .parse-cirru-list)
+                  :: 'Result (:: 'List 'Dynamic) 'String
+            %{} 'TestEntry (:name |lexer-state-contract)
+              :code $ quote $ do
+                assert=
+                  Result :ok $ []
+                  | .parse-cirru-list
+                assert=
+                  Result :ok $ [] $ [] |a "||quoted ) $ ,"
+                  (str "|a " (char-from-code 34) "||quoted ) $ ," (char-from-code 34))
+                    , .parse-cirru-list
+                assert= true $ result:ok? $
+                  str "|a " (char-from-code 34) "||quoted ) $ ," $ char-from-code 34
+                  , .parse-cirru
+                assert=
+                  Result :ok $ [] $ [] |a ([] |b |c)
+                  "|a $ b c" .parse-cirru-list
+                assert=
+                  Result :ok $ [] $ [] |a ([] |b) |c
+                  "|a\n  b\n  , c" .parse-cirru-list
+                assert= true $ result:err? $ "|a (b" .parse-cirru-list
+              :tags $ #{} :core :parse-boundary :unit
         'try-parse-json $ %{} 'CodeEntry
           :doc "|Parse JSON as Result<Dynamic,String>; the payload stays Dynamic because JSON is open data. Prefer the .parse-json String method in user code."
           :code $ quote $ defn try-parse-json (source)
