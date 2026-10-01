@@ -159,9 +159,9 @@ impl CalcitSyntax {
         return_type: value_t.clone(),
       }),
       HintFn => Some(SyntaxTypeSignature {
-        param_names: vec!["hint", "f"],
-        param_types: vec![tag_t.clone(), dyn_t.clone()],
-        return_type: dyn_t.clone(),
+        param_names: vec!["target-or-schema", "schema"],
+        param_types: vec![dyn_t.clone(), dyn_t.clone()],
+        return_type: Arc::new(CalcitTypeAnnotation::Nil),
       }),
       AssertType => Some(SyntaxTypeSignature {
         param_names: vec!["expr", "type"],

@@ -2049,9 +2049,9 @@ fn gen_js_func(
         _ => false,
       };
       if is_hint {
-        // A zero-argument hint form is the expansion of `;nil`; it is a real
-        // Nil expression. Only forms carrying metadata are stripped.
-        if xs.len() > 1 {
+        // Strip only enclosing-function metadata. Zero-argument legacy Nil
+        // markers and targeted local hints remain executable Nil expressions.
+        if xs.len() == 2 {
           if hinted_async(xs) {
             async_prefix = String::from("async ")
           } else if !xs.iter().skip(1).any(is_schema_map_form) {

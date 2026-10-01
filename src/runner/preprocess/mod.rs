@@ -8560,9 +8560,13 @@ fn reject_strict_nil_for_unit_return(
     return Ok(());
   }
 
-  let Some(returned_expr) = fn_body.last() else {
-    return Ok(());
-  };
+  // Match the executable body used by runtime construction: surrounding
+  // schema hints are removed, and an otherwise empty body returns Nil.
+  let returned_expr = fn_body
+    .iter()
+    .rev()
+    .find(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
+    .unwrap_or(&Calcit::Nil);
   let Some(actual_type) = resolve_type_value(returned_expr, scope_types) else {
     return Ok(());
   };
@@ -8970,7 +8974,7 @@ pub fn preprocess_defn(
       let body_fn_hint = args
         .iter()
         .skip(2)
-        .find_map(CalcitTypeAnnotation::extract_fn_annotation_from_hint_form)
+        .find_map(CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form)
         .and_then(|annotation| match annotation.as_ref() {
           CalcitTypeAnnotation::Fn(fn_annotation) => Some(fn_annotation.clone()),
           _ => None,

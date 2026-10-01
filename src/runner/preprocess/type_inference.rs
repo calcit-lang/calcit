@@ -667,7 +667,7 @@ pub(crate) fn infer_return_type_from_compiled_callable(
         if let Some(CalcitTypeAnnotation::Fn(info)) = forms
           .iter()
           .skip(3)
-          .find_map(CalcitTypeAnnotation::extract_fn_annotation_from_hint_form)
+          .find_map(CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form)
           .as_deref()
         {
           let qualified = resolve_namespace_type_refs_for_body(Arc::new(CalcitTypeAnnotation::Fn(info.clone())), ns);
@@ -1233,9 +1233,9 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
     Calcit::List(xs) => {
       let head = xs.first()?;
       match head {
-        // The zero-argument `hint-fn` is the processed representation of the
-        // legacy `;nil` marker. Metadata-bearing forms are not Nil values.
-        Calcit::Syntax(CalcitSyntax::HintFn, _) if xs.len() == 1 => Some(tag_annotation("nil")),
+        // Hints refine the surrounding function or a local binding, but the
+        // hint expression itself returns Nil; it never wraps a function value.
+        Calcit::Syntax(CalcitSyntax::HintFn, _) => Some(tag_annotation("nil")),
 
         // &let expression: infer from final expression (last element)
         Calcit::Syntax(CalcitSyntax::CoreLet, _) => {
@@ -1508,7 +1508,7 @@ fn infer_preprocessed_function_type(xs: &CalcitList) -> Arc<CalcitTypeAnnotation
   let hinted = xs
     .iter()
     .skip(3)
-    .find_map(CalcitTypeAnnotation::extract_fn_annotation_from_hint_form);
+    .find_map(CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form);
   let Some(hinted) = hinted else {
     // Keep ordinary unhinted callbacks dynamic: inferring their return type can
     // retroactively tighten existing higher-order calls. A zero-argument thunk
@@ -1570,7 +1570,7 @@ pub(crate) fn infer_unhinted_callback_signature(xs: &CalcitList, scope_types: &S
   if xs.len() <= 3
     || xs.iter().skip(3).any(|form| {
       matches!(
-        CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(form).as_deref(),
+        CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form(form).as_deref(),
         Some(CalcitTypeAnnotation::Fn(_))
       )
     })
@@ -2231,7 +2231,7 @@ pub fn infer_compiled_definition_implementation_type(ns: &str, def: &str) -> Opt
       }
       let mut returned = None;
       for form in items.iter().skip(3) {
-        if CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(form).is_none() {
+        if !crate::builtins::syntax::is_function_metadata_hint(form) {
           returned = Some(form);
         }
       }

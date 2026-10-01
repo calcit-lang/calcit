@@ -6256,7 +6256,7 @@
                 fn (x) (.rem x 3)
             :tags $ #{} :core :unit
         'hint-fn $ %{} 'CodeEntry
-          :doc "|internal syntax for function hints (used for async and function schema metadata)\nSyntax: (hint-fn hint-data fn-expr)\nParams: hint-data (schema map or keyword), fn-expr (function)\nReturns: hinted function\nAdds execution hints to functions, including async markers and schema metadata such as :args, :return, :generics, and :where"
+          :doc "|函数类型元数据：在函数体中使用 (hint-fn schema)，或使用 (hint-fn f schema) 为已有局部函数补充类型。schema 支持 :args、:return、:generics、:where 和 :async。\n表达式本身返回 Nil，不创建、包装或返回函数；需要传递回调时直接传递 f，或将 hint-fn 写在 fn 的函数体中。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
@@ -6367,6 +6367,59 @@
                 assert= true $ fn? forward
                 , forward
               :tags $ #{} :async-return-boundary
+            %{} 'TestEntry (:name |metadata-is-nil)
+              :code $ quote $ let
+                  metadata $ hint-fn $ {}
+                    :args $ [] 'Number
+                    :return 'Number
+                assert-type metadata 'Nil
+                assert= nil metadata
+              :tags $ #{} :hint-value-boundary
+            %{} 'TestEntry (:name |local-hint-is-nil)
+              :code $ quote $ let
+                  f $ fn (x) (+ x 1)
+                  metadata $ hint-fn f $ {}
+                    :args $ [] 'Number
+                    :return 'Number
+                assert-type metadata 'Nil
+                assert= nil metadata
+                assert= 4 $ f 3
+              :tags $ #{} :hint-value-boundary
+            %{} 'TestEntry (:name |hinted-body-is-callable)
+              :code $ quote $ let
+                  invoke $ fn (callback)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Fn
+                        {}
+                          :args $ [] 'Number
+                          :return 'Number
+                      :return 'Number
+                    callback 3
+                assert= 4 $ invoke $ fn (x)
+                  hint-fn $ {}
+                    :args $ [] 'Number
+                    :return 'Number
+                  + x 1
+              :tags $ #{} :hint-value-boundary
+            %{} 'TestEntry (:name |trailing-body-metadata)
+              :code $ quote $ let
+                  f $ fn () 3 $ hint-fn
+                    {}
+                      :args $ []
+                      :return 'Number
+                assert= 3 $ f
+              :tags $ #{} :hint-value-boundary
+            %{} 'TestEntry (:name |targeted-body-hint-is-nil)
+              :code $ quote $ let
+                  f $ fn (x) (+ x 1)
+                  annotate $ fn () 3 $ hint-fn f
+                    {}
+                      :args $ [] 'Number
+                      :return 'Number
+                assert-type (annotate) 'Nil
+                assert= nil $ annotate
+                assert= 4 $ f 3
+              :tags $ #{} :hint-value-boundary
         'identical? $ %{} 'CodeEntry
           :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
           :code $ quote &runtime-implementation

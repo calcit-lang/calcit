@@ -39,7 +39,7 @@ fn callback_return_type(callback: &Calcit, scope_types: &ScopeTypes) -> Option<A
     items
       .iter()
       .skip(3)
-      .find_map(CalcitTypeAnnotation::extract_fn_annotation_from_hint_form)
+      .find_map(CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form)
   };
   let callback_type = embedded_schema().or_else(|| resolve_type_value(callback, scope_types))?;
   match callback_type.as_ref() {

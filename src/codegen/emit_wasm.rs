@@ -2250,7 +2250,7 @@ fn collect_component_import_adapters(program_data: &program::CompiledProgram) ->
 fn direct_tail_import_definition(body: &[Calcit], args: &CalcitFnArgs) -> Option<String> {
   let expressions = body
     .iter()
-    .filter(|item| CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(item).is_none())
+    .filter(|item| !crate::builtins::syntax::is_function_metadata_hint(item))
     .collect::<Vec<_>>();
   let [Calcit::List(call)] = expressions.as_slice() else {
     return None;
@@ -2374,7 +2374,7 @@ fn component_stream_consumer(
   }
   let expressions = body
     .iter()
-    .filter(|item| CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(item).is_none())
+    .filter(|item| !crate::builtins::syntax::is_function_metadata_hint(item))
     .collect::<Vec<_>>();
   let [Calcit::List(call)] = expressions.as_slice() else {
     return Err(format!(
@@ -4864,7 +4864,7 @@ fn parse_wasm_import_def(code: &Calcit) -> Option<(String, String, CalcitFnArgs)
   let body: Vec<&Calcit> = xs
     .iter()
     .skip(3)
-    .filter(|item| CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(item).is_none())
+    .filter(|item| !crate::builtins::syntax::is_function_metadata_hint(item))
     .collect();
   let [Calcit::Str(module), Calcit::Str(name)] = body.as_slice() else {
     return None;
@@ -5839,7 +5839,7 @@ fn emit_body(ctx: &mut WasmGenCtx, exprs: &[Calcit]) -> Result<(), String> {
   // body. `hint-fn` is compile-time metadata, not the closure's return value.
   let executable = exprs
     .iter()
-    .filter(|expr| !matches!(expr, Calcit::List(xs) if matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::HintFn, _)))))
+    .filter(|expr| !crate::builtins::syntax::is_function_metadata_hint(expr))
     .collect::<Vec<_>>();
   if executable.is_empty() {
     ctx.emit(f64_const(0.0));
