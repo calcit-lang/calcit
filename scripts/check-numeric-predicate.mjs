@@ -19,7 +19,18 @@ assert.deepEqual(roundTests.map(test => test.name).sort(), [
   "distinguishes-integers", "finite-exact-integer-boundaries", "integer-method-and-evaluation",
 ]);
 assert.deepEqual(integerTests.map(test => test.name), ["integer-alias-boundaries-and-evaluation"]);
-const tests = [...roundTests, ...integerTests];
+// Preserve the existing refinement assertions verbatim, including Result payload types.
+const refinementTests = ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64", "float32", "float64"]
+  .flatMap(type => {
+    const name = `number->${type}`;
+    const attached = definitions[`'${name}`]?.tests;
+    assert.ok(attached, `${name} must retain definition-attached tests`);
+    assert.deepEqual(attached.map(test => test.name), ["checks-boundaries-and-type"],
+      `${name} must retain its reviewed success, rejection and type assertions`);
+    return attached;
+  });
+const predicateTests = [...roundTests, ...integerTests];
+const tests = [...predicateTests, ...refinementTests];
 const expectedTrace = [
   "integer-free-argument", "integer-method-argument", "integer-alias-free-argument", "integer-alias-method-argument",
 ];
@@ -49,7 +60,14 @@ try {
     console.log = originalLog;
   }
   assert.deepEqual(jsTrace, expectedTrace, "JS must evaluate each predicate argument exactly once");
+  console.log("Numeric predicate and refinement definition tests passed on native / generated JS");
 
+  // The Int8 test also uses a throwing EDN parser unavailable in WASM.
+  // Keep its full AST on native/JS; do not strip assertions to claim target parity.
+  run(snapshot, "tree", "show", "calcit.numeric-predicate/run-tests");
+  run(snapshot, "edit", "def", "calcit.numeric-predicate/run-tests", "--overwrite",
+    "--input-format", "json-ast", "--code",
+    JSON.stringify(["defwasm-export", "run-tests", [], ...predicateTests.map(test => test.code.__edn_quote), "&unit"]));
   run("wasm", ...entry, "--emit-path", fixture);
   const module = new WebAssembly.Module(await readFile(join(fixture, "program.wasm")));
   const imports = {};
@@ -70,7 +88,7 @@ try {
   assert.equal(typeof wasm.exports["run-tests"], "function");
   wasm.exports["run-tests"]();
   assert.deepEqual(wasmTrace, expectedTrace, "WASM must evaluate each predicate argument exactly once");
-  console.log("Numeric predicate definition tests passed on native / generated JS / core WASM");
+  console.log("Numeric predicate definition tests passed on core WASM; refinement conversion tests are native/JS only");
 
   // The Component CI job supplies the pinned Wasmtime executable explicitly.
   if (process.env.WASMTIME_CLI) {

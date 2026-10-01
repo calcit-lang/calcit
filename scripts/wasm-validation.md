@@ -255,7 +255,7 @@ yarn try-wasm
 
 ## 手动渐进套件（不在 CI 中）
 
-CI 与 `yarn check-all` 只运行 `scripts/test-wasm.sh`。以下脚本是维护者按需运行的渐进式 / 调试工具，
+`scripts/test-wasm.sh` 是通用 export/ABI 验证入口；CI 与 `yarn check-all` 还运行 String、数字谓词等共享 Calcit 契约脚本，具体入口以 `.github/workflows/test.yaml` 和 `package.json` 为准。数字契约脚本的十个 refinement 转换测试完整运行在 native/JS，WASM/WASI 使用原有四个整数谓词测试；两组覆盖不能混称。关键 API 的测试证据索引见 [核心 API 契约基线](../docs/data/README.md#已验证的后端范围)。以下脚本是维护者按需运行的渐进式 / 调试工具，
 不属于默认门禁；在此登记用途，避免它们因无入口而悄悄腐化：
 
 - `scripts/test-wasm-suite.sh`：逐个把纯计算 `test-*.cirru` fixture 编译为 WASM 并运行 `main!`。

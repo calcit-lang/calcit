@@ -8,9 +8,35 @@
 
 `to-string` 的 `wasm-scalar-method-contract` 附带测试使用普通 `.to-string`，同一断言 AST 在 native、生成 JS 和实际 WASM 执行，覆盖 String、Number、Bool、Tag、Nil 的文本结果及 String 返回类型。WASM fixture 另外从宿主传入运行时 Number，核对普通方法返回的 UTF-8 文本，包括小数、正负零、非有限值和 f64 边界；不改成 native call 或内部 primitive 来绕过方法 lowering。Symbol 仍只计入已经验证的 native/JS 范围，不能因其他标量通过而宣称 WASM 支持 Symbol。
 
-## 导出和检查
+## 显式转换边界
 
 显式箭头转换的候选声明覆盖 `number->int*/uint*/float*` 与 `js-nullish->option`。前者保留 `Number -> Result<Refinement,String>`，成功值仍是原 Number，精确表示和范围验证不是自动舍入；后者保留 `JsNullish<T> -> Option<T>` 的同一 T 与 `:js-ffi` feature，仅包装空值边界，不能充当 payload decoder。两者职责不同，不因同用箭头拼写而合并错误模型或新增 `to-/as-/into-` 别名。此处记录既有 schema，不新增 backend 支持，也不冻结未经证明的动态类型。
+
+## 已验证的后端范围
+
+以下是当前候选中几个关键边界的**测试证据索引**，不是所有 core API 的支持矩阵。声明 schema、查询的 `proven`、成功生成产物、实际执行成功是不同层次：`proven` 只证明当前接收者上的静态调用契约，不自动承诺某个 backend 或宿主支持。未列出的入口仍须查看对应实现与测试，不能从同族名字推断支持。
+
+| 边界 | native / 生成 JS 的证据 | WASM / WASI 的证据与限制 |
+| --- | --- | --- |
+| `integer?/.integer?` | `check-numeric-predicate.mjs` 完整重放既有四个 Calcit `:tests`，检查有限整数和实参求值次数 | 同四份 AST 在 core WASM 执行；设置 `WASMTIME_CLI` 时也运行真实 WASI 0.3 Component |
+| `number->int*/uint*/float*` | 同脚本完整重放十个 `checks-boundaries-and-type`；保留成功值、失败分支及 `Result<Refinement,String>` 断言 | 此脚本不宣称转换测试的 WASM/WASI 覆盖。Int8 测试包含当前 WASM 不支持的 throwing `parse-cirru-edn-as`；不删掉该断言，也不把谓词测试通过当作转换测试通过 |
+| 标量 `.to-string` | `check-typed-string-conversions.mjs` 重放普通方法断言，并验证 ToString 约束拒绝未证明的输入 | String、Number、Bool、Tag、Nil 的受支持 AST 和运行时 Number 文本在实际 core WASM 执行；Symbol 不计入该范围，开放泛型导出仍拒绝 |
+| String `.parse-float/.parse-json/.parse-cirru/.parse-cirru-edn/.parse-cirru-list` | `check-parse-boundary.mjs` 重放同一份 Result 方法及解析边界测试，包括错误文本与嵌套 payload 拒绝 | 不宣称通用 parser 的 WASM 支持；不能因为返回 Result 就假定可 lowering |
+| 闭合 `try-parse-cirru-edn-as` 与 `format-cirru-edn` | 闭合 decoder 由解析边界测试验证；不是开放 JSON/Cirru 值的隐式强转 | 递归容器和 nominal 数据的受支持 shape、容量限制和拒绝行为见 [WASM 验证说明](../../scripts/wasm-validation.md#cirru-edn-格式化边界)。Manifest 文件业务由现有脚本分别验证 Preview 1 与默认 Component，不能将整份历史 fixture 的能力移植为默认 Component 承诺 |
+| `FsPath .read-text/.write-text!` | `test-wasi-manifest-business.sh` 使用同一份 Manifest 输入、输出和 Result 分支在 native 与 Node JS 执行 | 同脚本验证显式 Preview 1；`test-wasi-manifest-component.sh` 单独验证默认 WASI 0.3 Component。`.read-dir/.walk-dir` 不因文件读写通过就获得默认 Component 支持 |
+
+上表引用的是仓库源码回归，不是新安装包或消费者兼容性证明。跨仓库升级仍要使用匹配的已发布精确版本，并执行真实项目回归。`js-nullish->option` 的 `:js-ffi` 和同一 payload 泛型保留在声明基线中；它仍是 JS 空值包装边界，不属于通用 WASM decoder。
+
+维护者可在已经构建本仓库 binary 和 JS runtime 后复跑现有数字检查，不新增用户命令：
+
+```bash
+node scripts/check-numeric-predicate.mjs
+WASMTIME_CLI=/absolute/path/to/wasmtime node scripts/check-numeric-predicate.mjs
+```
+
+第二条使用维护者提供的真实 Wasmtime；CI 在 Component job 中传入固定宿主。未设置变量时脚本只执行 native、生成 JS 与 core WASM，日志明确区分十个转换测试和四个谓词测试的覆盖范围。该索引不取代后续完整 backend 矩阵，也不放行候选基线中尚未完成的移除版本与集中迁移验收。
+
+## 声明导出与历史比较
 
 普通用户仍使用已安装版本的 `calcit query def/context/type --format edn`。以下是仓库开发步骤，不新增用户 CLI 入口：
 
