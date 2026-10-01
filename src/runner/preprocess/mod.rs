@@ -7620,8 +7620,9 @@ pub struct StaticMethodDescriptor {
   pub origin: String,
 }
 
-/// Compiler-resolved callable evidence for one receiver method. An open or
-/// ambiguous result must not be presented as an instantiated signature.
+/// Compiler-resolved schema for one receiver method. Open signatures retain
+/// declared types for discovery, but only `proven` is complete call evidence.
+/// Missing, ambiguous, or unsuccessfully bound schemas have no signature.
 #[derive(Debug, Clone)]
 pub struct StaticMethodContract {
   pub status: &'static str,
@@ -7686,9 +7687,9 @@ fn checked_core_method_contract(receiver: &CalcitTypeAnnotation, namespace: &str
     || annotation_dynamic_weight(contract.return_type.as_ref()) > 0;
   Some(StaticMethodContract {
     status: if has_open_types { "open" } else { "proven" },
-    arg_types: (!has_open_types).then(|| expected_types.into_iter().skip(1).collect()),
+    arg_types: Some(expected_types.into_iter().skip(1).collect()),
     rest_type: None,
-    return_type: (!has_open_types).then_some(contract.return_type),
+    return_type: Some(contract.return_type),
     generics: vec![],
     bounds: vec![],
     features: vec![],
@@ -7852,9 +7853,9 @@ fn static_method_contract_with_impls(
     || annotation_dynamic_weight(return_type.as_ref()) > 0;
   StaticMethodContract {
     status: if has_open_types { "open" } else { "proven" },
-    arg_types: (!has_open_types).then_some(arg_types),
-    rest_type: (!has_open_types).then_some(rest_type).flatten(),
-    return_type: (!has_open_types).then_some(return_type),
+    arg_types: Some(arg_types),
+    rest_type,
+    return_type: Some(return_type),
     generics: signature
       .generics
       .iter()

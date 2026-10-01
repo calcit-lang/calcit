@@ -1731,10 +1731,43 @@ mod type_query_tests {
     assert_eq!(nodes.returns, serde_json::json!("'U"));
     let open = runner::preprocess::static_method_contract(receiver.as_ref(), ".each");
     assert_eq!(open.status, "open");
+    assert_eq!(open.arg_types.as_ref().unwrap()[0].describe(), "fn(number) -> dynamic");
+    assert_eq!(open.return_type.as_ref().unwrap().describe(), "unit");
+    assert!(open.rest_type.is_none());
+    assert_eq!(open.definition.as_deref(), Some("calcit.core/each"));
     assert!(
       method_call_types(&open).is_none(),
       "unproven calls must not fabricate syntax evidence"
     );
+  }
+
+  #[test]
+  fn open_parse_method_queries_retain_declared_results_without_call_proof() {
+    let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    let snapshot = load_core_snapshot().expect("core snapshot should load");
+    prepare_program_for_type_query_on_cli_stack(snapshot);
+    let methods = runner::preprocess::static_method_contracts(&CalcitTypeAnnotation::String)
+      .expect("String methods")
+      .into_iter()
+      .map(|(descriptor, contract)| context_method(descriptor, contract))
+      .collect::<Vec<_>>();
+    for (name, result) in [
+      (".parse-json", "type calcit.core/Result<dynamic, string>"),
+      (".parse-cirru-edn", "type calcit.core/Result<dynamic, string>"),
+      (".parse-cirru-list", "type calcit.core/Result<list, string>"),
+    ] {
+      let method = methods.iter().find(|method| method.name == name).expect("parse method");
+      assert_eq!(method.status, "open");
+      assert_eq!(method.parameter_types, Some(vec![]));
+      assert_eq!(method.return_type.as_deref(), Some(result));
+      assert!(method.call_types.is_none(), "declared open types do not prove a closed call");
+      assert!(render_context_method(method).contains(&format!("() -> {result}")));
+    }
+    let missing = runner::preprocess::static_method_contract(&CalcitTypeAnnotation::String, ".missing-method");
+    assert_eq!(missing.status, "open");
+    assert!(missing.arg_types.is_none());
+    assert!(missing.return_type.is_none());
+    assert!(method_call_types(&missing).is_none());
   }
 
   #[test]
@@ -1804,7 +1837,22 @@ mod type_query_tests {
     let open_list = parse_type_annotation_query(":: 'List 'Dynamic").expect("open list should parse");
     let open_append = runner::preprocess::static_method_contract(open_list.as_ref(), ".append");
     assert_eq!(open_append.status, "open", "an explicitly dynamic element still needs narrowing");
-    assert!(open_append.arg_types.is_none());
+    assert_eq!(open_append.arg_types.unwrap()[0].describe(), "dynamic");
+    assert_eq!(open_append.return_type.unwrap().describe(), "list");
+    let open_concat = runner::preprocess::static_method_contract(open_list.as_ref(), ".concat");
+    assert_eq!(open_concat.status, "open");
+    assert!(open_concat.arg_types.as_ref().unwrap().is_empty());
+    assert_eq!(open_concat.rest_type.as_ref().unwrap().describe(), "list");
+    assert_eq!(open_concat.return_type.as_ref().unwrap().describe(), "list");
+    assert!(method_call_types(&open_concat).is_none());
+    let rendered_concat = context_method(
+      runner::preprocess::StaticMethodDescriptor {
+        name: ".concat".to_owned(),
+        origin: "test".to_owned(),
+      },
+      open_concat,
+    );
+    assert!(render_context_method(&rendered_concat).contains("(...list) -> list"));
     let original_fingerprint = method_contract_fingerprint(&Some(vec![list_get.clone()])).expect("method serialization");
     let mut changed = list_get.clone();
     changed.return_type = Some("type calcit.core/Option<string>".to_owned());
@@ -1833,8 +1881,8 @@ mod type_query_tests {
       open_unwrap_or.status, "open",
       "receiver-bound Dynamic must not become a precise contract"
     );
-    assert!(open_unwrap_or.arg_types.is_none());
-    assert!(open_unwrap_or.return_type.is_none());
+    assert_eq!(open_unwrap_or.arg_types.unwrap()[0].describe(), "dynamic");
+    assert_eq!(open_unwrap_or.return_type.unwrap().describe(), "dynamic");
     let open_and_then = runner::preprocess::static_method_contract(open_option.as_ref(), ".and-then");
     assert_eq!(open_and_then.status, "open", "nested Dynamic callback input must remain open");
     let some = runner::preprocess::static_method_contract(open_option.as_ref(), ".some?");
@@ -1843,8 +1891,11 @@ mod type_query_tests {
 
     let option_map = runner::preprocess::static_method_contract(option.as_ref(), ".map");
     assert_eq!(option_map.status, "open", "DynFn schema must not imply a precise callback contract");
-    assert!(option_map.arg_types.is_none());
-    assert!(option_map.return_type.is_none());
+    assert!(
+      option_map.arg_types.is_some(),
+      "declared callback schema is discoverable, not proven"
+    );
+    assert!(option_map.return_type.is_some());
 
     let result = parse_type_annotation_query(":: 'Result 'Number 'String").expect("typed Result should parse");
     let map_err = runner::preprocess::static_method_contract(result.as_ref(), ".map-err");

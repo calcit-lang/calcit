@@ -204,6 +204,10 @@ const scenarios = [
       assert.deepEqual(nth.call_types, get.call_types);
       const each = result.data.methods.find((method) => method.name === ".each");
       assert.equal(each?.status, "open");
+      assert.deepEqual(each.parameter_types, ["fn(number) -> dynamic"]);
+      assert.equal(each.return_type, "unit");
+      assert.equal(each.rest_type, null);
+      assert.equal(each.definition, "calcit.core/each");
       assert.ok(!Object.hasOwn(each, "call_types"), "open methods must not claim proven call types");
     },
   },
@@ -258,6 +262,39 @@ const scenarios = [
       if (result.data.methods !== null || result.diagnostics[0]?.code !== "W_LEGACY_ANY_ALIAS") {
         throw new Error(":any did not preserve dynamic dispatch semantics and migration guidance");
       }
+    },
+  },
+  {
+    name: "open parsing queries preserve declared Result boundaries without call proof",
+    args: ["calcit/test.cirru", "query", "type", "'String", "--format", "json"],
+    check(result) {
+      for (const [name, returns] of [
+        [".parse-json", "type calcit.core/Result<dynamic, string>"],
+        [".parse-cirru-edn", "type calcit.core/Result<dynamic, string>"],
+        [".parse-cirru-list", "type calcit.core/Result<list, string>"],
+      ]) {
+        const method = result.data.methods.find(method => method.name === name);
+        assert.equal(method?.status, "open");
+        assert.deepEqual(method.parameter_types, []);
+        assert.equal(method.return_type, returns);
+        assert.ok(!Object.hasOwn(method, "call_types"), "open schema must not become closed call evidence");
+        assert.match(method.detail, /unproven/);
+      }
+      const closed = result.data.methods.find(method => method.name === ".parse-float");
+      assert.equal(closed?.status, "proven");
+      assert.deepEqual(closed.call_types.returns, ["::", "'calcit.core/Result", "'Number", "'String"]);
+    },
+  },
+  {
+    name: "open variadic queries retain rest annotations without call proof",
+    args: ["calcit/test.cirru", "query", "type", ":: 'List 'Dynamic", "--format", "json"],
+    check(result) {
+      const concat = result.data.methods.find(method => method.name === ".concat");
+      assert.equal(concat?.status, "open");
+      assert.deepEqual(concat.parameter_types, []);
+      assert.equal(concat.rest_type, "list");
+      assert.equal(concat.return_type, "list");
+      assert.ok(!Object.hasOwn(concat, "call_types"));
     },
   },
   {
