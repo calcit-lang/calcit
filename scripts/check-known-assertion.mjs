@@ -24,10 +24,13 @@ try {
   assert.deepEqual(returnResponse.diagnostics, []);
   const returnTests = returnResponse.data.tests.filter(test => test.tags.includes("return-boundary"));
   assert.equal(returnTests.length, 3);
+  run("test", "calcit.core/hint-fn", "--tag", "call-boundary", "--require-match");
+  const callTests = returnResponse.data.tests.filter(test => test.tags.includes("call-boundary"));
+  assert.equal(callTests.length, 4);
   run("edit", "add-ns", "calcit.assert-evidence");
   const setBody = trees => run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite",
     "--input-format", "json-ast", "--code", JSON.stringify(["defwasm-export", "run-tests", [], ...trees, "1"]));
-  setBody([...tests, ...returnTests].map(test => test.code));
+  setBody([...tests, ...returnTests, ...callTests].map(test => test.code));
   run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
   run("config", "set", "init-fn", "calcit.assert-evidence/run-tests");
@@ -87,13 +90,22 @@ try {
     "let ((facade (fn (value) (hint-fn ({} (:args ([] 'String)) (:return 'Number))) value))) facade |hello",
     "let ((facade (fn (value) (hint-fn ({} (:args ([] (:: 'List 'Number))) (:return (:: 'List 'String)))) value))) facade ([] 1 2)",
   ];
+  const badCalls = [
+    "let ((consume (fn (value) (hint-fn ({} (:args ([] 'Number)) (:return 'Unit))) &unit))) (consume |hello)",
+    "let ((consume (fn (value) (hint-fn ({} (:args ([] 'String)) (:return 'Unit))) &unit))) (consume 3)",
+    "let ((consume (fn (values) (hint-fn ({} (:args ([] (:: 'List 'Number))) (:return 'Unit))) &unit))) (consume ([] |hello))",
+    "let ((consume (fn (value) (hint-fn ({} (:args ([] (:: 'Option 'Number))) (:return 'Unit))) &unit))) (consume (Option :some |hello))",
+    "let ((consume (fn (callback) (hint-fn ({} (:args ([] (:: 'Fn ({} (:args ([] 'Number)) (:return 'Number))))) (:return 'Unit))) &unit)) (wrong (fn (x) (hint-fn ({} (:args ([] 'String)) (:return 'String))) x))) (consume wrong)",
+    "let ((consume (fn (value) (hint-fn ({} (:args ([] 'Number)) (:return 'Unit))) &unit)) (forward (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) (consume callback)))) (forward (fn (x) x))",
+  ];
   const rejected = [
     ...bad.map(expression => [expression, "E_ASSERT_TYPE_MISMATCH"]),
     ...badReturns.map(expression => [expression, "W_FN_RETURN_TYPE_MISMATCH"]),
+    ...badCalls.map(expression => [expression, "W_LOCAL_FN_ARG_TYPE_MISMATCH"]),
   ];
   for (const [expression, diagnostic] of rejected) {
     run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
-      `quote $ defwasm-export run-tests () (${expression})`);
+      `quote $ defwasm-export run-tests () (${expression}) 1`);
     const modes = diagnostic === "E_ASSERT_TYPE_MISMATCH"
       ? [[], ["--check-only"], ["js"], ["wasm"]]
       : [[], ["--check-only"], ["js"]];
@@ -103,12 +115,14 @@ try {
       assert.equal(result.status, 1, `${expression} ${mode}\n${result.stdout}\n${result.stderr}`);
       // JS warning diagnostics use stdout and the existing build-error artifact.
       const diagnostics = `${result.stdout}\n${result.stderr}`;
-      assert.ok(diagnostics.includes(diagnostic), diagnostics);
+      assert.ok(diagnostics.includes(diagnostic), `${expression} ${mode}\n${diagnostics}`);
       assert.ok(diagnostics.includes("calcit.assert-evidence/run-tests"), diagnostics);
       if (diagnostic === "E_ASSERT_TYPE_MISMATCH") {
         assert.ok(diagnostics.includes("expected") && diagnostics.includes("got"), diagnostics);
-      } else {
+      } else if (diagnostic === "W_FN_RETURN_TYPE_MISMATCH") {
         assert.ok(diagnostics.includes("declares return type") && diagnostics.includes("body returns"), diagnostics);
+      } else {
+        assert.ok(diagnostics.includes("expects type") && diagnostics.includes("but got"), diagnostics);
       }
       assert.ok(/preprocessing|warnings, (?:runner|codegen) blocked/.test(diagnostics), diagnostics);
       for (const fragment of detailed.get(expression) ?? []) {
@@ -116,7 +130,7 @@ try {
       }
     }
   }
-  console.log("Known assertions rejected before native/JS/WASM and return contracts before native/JS; shared native/JS positives and scalar WASM assertions passed");
+  console.log("Known assertions rejected before native/JS/WASM and return/call contracts before native/JS; shared native/JS positives and scalar WASM assertions passed");
 } finally {
   await rm(project, { recursive: true, force: true });
 }
