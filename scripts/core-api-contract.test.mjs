@@ -55,6 +55,23 @@ test("parsing declarations preserve open payloads without promoting open method 
   }
 });
 
+test("explicit conversion boundaries preserve refinements, generic payloads and JS feature", () => {
+  for (const [suffix, type] of [["int8", "Int8"], ["int16", "Int16"], ["int32", "Int32"], ["int64", "Int64"],
+    ["uint8", "UInt8"], ["uint16", "UInt16"], ["uint32", "UInt32"], ["uint64", "UInt64"],
+    ["float32", "Float32"], ["float64", "Float64"]]) {
+    const converter = definition(baseline, `number->${suffix}`);
+    assert.deepEqual(converter["runtime-arity"], { min: 1, max: 1 });
+    assert.deepEqual(converter.schema.quote.find(pair => pair[0] === ":args")[1], ["[]", "'Number"]);
+    assert.deepEqual(converter.schema.quote.find(pair => pair[0] === ":return")[1],
+      ["::", "'calcit.core/Result", `'${type}`, "'String"]);
+  }
+  const schema = definition(baseline, "js-nullish->option").schema.quote;
+  assert.deepEqual(schema.find(pair => pair[0] === ":args")[1], ["[]", ["::", "'JsNullish", "'T"]]);
+  assert.deepEqual(schema.find(pair => pair[0] === ":return")[1], ["::", "'Option", "'T"]);
+  assert.deepEqual(schema.find(pair => pair[0] === ":generics")[1], ["[]", "'T"]);
+  assert.deepEqual(schema.find(pair => pair[0] === ":features")[1], ["#{}", ":js-ffi"]);
+});
+
 for (const [name, mutate] of [
   ["deletion", data => data.definitions.shift()],
   ["return type", data => definition(data, "to-string").schema.quote.find(pair => pair[0] === ":return")[1] = "'Dynamic"],
@@ -63,6 +80,9 @@ for (const [name, mutate] of [
   ["optional argument", data => definition(data, "read-dir")["runtime-arity"].min = 2],
   ["failure contract", data => definition(data, "parse-float").failure = "throw instead of Result"],
   ["open parsing error type", data => definition(data, "try-parse-json").schema.quote.find(pair => pair[0] === ":return")[1][3] = "'Dynamic"],
+  ["numeric refinement result", data => definition(data, "number->int8").schema.quote.find(pair => pair[0] === ":return")[1][2] = "'Number"],
+  ["nullish payload relation", data => definition(data, "js-nullish->option").schema.quote.find(pair => pair[0] === ":return")[1][2] = "'Dynamic"],
+  ["JS boundary feature", data => definition(data, "js-nullish->option").schema.quote = definition(data, "js-nullish->option").schema.quote.filter(pair => pair[0] !== ":features")],
   ["receiver", data => data.methods[0].receiver = "'Dynamic"],
   ["method schema", data => data.methods[0].schema.quote[2][1] = "'Dynamic"],
   ["backend feature", data => data.methods[0].features.push("js-ffi")],
