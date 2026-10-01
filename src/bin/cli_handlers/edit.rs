@@ -909,6 +909,122 @@ pub(crate) fn check_ns_editable(snapshot: &Snapshot, namespace: &str) -> Result<
 // Definition operations
 // ═══════════════════════════════════════════════════════════════════════════════
 
+const DEFINITION_HEADS: &[&str] = &[
+  "def",
+  "defn",
+  "defmacro",
+  "defstruct",
+  "defenum",
+  "deftrait",
+  "defimpl",
+  "defatom",
+  "defexternal",
+  "defwasm-export",
+  "defwasm-import",
+];
+
+fn source_declares_macro(entry: &CodeEntry) -> bool {
+  matches!(&entry.code, Cirru::List(items) if items.first().is_some_and(|head| head.eq_leaf("defmacro")))
+}
+
+fn definition_head_is_macro(snapshot_file: &str, snapshot: &Snapshot, namespace: &str, head: &str) -> Result<bool, String> {
+  let file = &snapshot.files[namespace];
+  let imports = calcit::program::extract_import_map(&file.ns.code, namespace)?;
+  let (source_ns, source_def) = if let Some((prefix, name)) = head.split_once('/') {
+    let source_ns = match imports.get(prefix).map(|rule| rule.as_ref()) {
+      Some(calcit::program::ImportRule::NsAs(target)) => target.as_ref(),
+      Some(_) => return Ok(false),
+      None => prefix,
+    };
+    (source_ns, name)
+  } else if file.defs.contains_key(head) {
+    (namespace, head)
+  } else if let Some(rule) = imports.get(head) {
+    match rule.as_ref() {
+      calcit::program::ImportRule::NsReferDef(target, name) => (target.as_ref(), name.as_ref()),
+      _ => return Ok(false),
+    }
+  } else {
+    (calcit::calcit::CORE_NS, head)
+  };
+  if let Some(file) = snapshot.files.get(source_ns) {
+    return Ok(file.defs.get(source_def).is_some_and(source_declares_macro));
+  }
+  if source_ns == calcit::calcit::CORE_NS {
+    let core = calcit::load_core_snapshot()?;
+    return Ok(core.files[source_ns].defs.get(source_def).is_some_and(source_declares_macro));
+  }
+  // Read source only, across all configured entries; do not expand macros or
+  // activate unrelated definitions while validating a mutation.
+  let base_dir = Path::new(snapshot_file).parent().unwrap_or(Path::new("."));
+  let module_folder = calcit::project_module_folder(base_dir);
+  let modules = snapshot
+    .entries
+    .values()
+    .flat_map(|entry| entry.modules.iter())
+    .collect::<std::collections::BTreeSet<_>>();
+  for module in modules {
+    if let Ok(loaded) = super::load_module_with_sources_silent(module, base_dir, &module_folder)
+      && let Some(file) = loaded.snapshot.files.get(source_ns)
+    {
+      return Ok(file.defs.get(source_def).is_some_and(source_declares_macro));
+    }
+  }
+  Ok(false)
+}
+
+fn validate_definition_shape(
+  snapshot_file: &str,
+  snapshot: &Snapshot,
+  namespace: &str,
+  definition: &str,
+  code: &Cirru,
+  allow_unknown_head: bool,
+) -> Result<(), String> {
+  let Cirru::List(items) = code else {
+    return Err(format!(
+      "Definition '{namespace}/{definition}' must be a named definition expression, not a leaf."
+    ));
+  };
+  // A top-level anonymous function is named by the Snapshot definition key,
+  // not by a second leaf in its source expression.
+  if items.first().is_some_and(|head| head.eq_leaf("fn")) {
+    return if matches!(items.get(1), Some(Cirru::List(_))) && items.len() >= 3 {
+      Ok(())
+    } else {
+      Err(format!(
+        "Definition '{namespace}/{definition}': fn requires a parameter list and a body."
+      ))
+    };
+  }
+  let (Some(Cirru::Leaf(head)), Some(Cirru::Leaf(name))) = (items.first(), items.get(1)) else {
+    return Err(format!(
+      "Definition '{namespace}/{definition}' requires a definition head and a symbol name."
+    ));
+  };
+  // Preserve an unchanged historical expression; this cannot introduce a new
+  // name mismatch, and avoids renaming nominal types during a source round-trip.
+  let unchanged = snapshot.files[namespace]
+    .defs
+    .get(definition)
+    .is_some_and(|entry| &entry.code == code);
+  if name.as_ref() != definition && !unchanged {
+    return Err(format!(
+      "Definition name mismatch: expected '{definition}', got '{name}' in '{namespace}/{definition}'."
+    ));
+  }
+  if !allow_unknown_head
+    && !DEFINITION_HEADS.contains(&head.as_ref())
+    && !definition_head_is_macro(snapshot_file, snapshot, namespace, head)?
+  {
+    return Err(format!(
+      "Unrecognized definition head '{head}' for '{namespace}/{definition}'. Expected {}, or a source-declared macro from this namespace, imports or core. Use --allow-unknown-head only for an intentional custom definition form.",
+      DEFINITION_HEADS.join(", ")
+    ));
+  }
+  Ok(())
+}
+
 fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
@@ -926,7 +1042,7 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
   // Check if namespace exists
   let file_data = snapshot
     .files
-    .get_mut(namespace)
+    .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
   let exact_exists = file_data.defs.contains_key(definition);
@@ -955,6 +1071,14 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
   } else {
     None
   };
+  validate_definition_shape(
+    snapshot_file,
+    &snapshot,
+    namespace,
+    resolved_definition,
+    &syntax_tree,
+    opts.allow_unknown_head,
+  )?;
   let existing_edit_advice = previous_entry
     .as_ref()
     .and_then(|entry| format_existing_definition_advice(namespace, resolved_definition, &entry.code, &syntax_tree));
@@ -998,7 +1122,12 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
     }
     entry
   };
-  file_data.defs.insert(resolved_definition.to_string(), code_entry);
+  snapshot
+    .files
+    .get_mut(namespace)
+    .expect("validated local namespace")
+    .defs
+    .insert(resolved_definition.to_string(), code_entry);
 
   save_snapshot(&snapshot, snapshot_file)?;
 

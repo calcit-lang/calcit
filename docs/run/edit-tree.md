@@ -44,6 +44,18 @@ calcit edit format
 
 This command also rewrites older namespace records into canonical shapes. Namespace keys under `:files` and definition keys under `:defs` are written as Symbols; readers continue accepting legacy String keys. A snapshot containing both forms of the same normalized identifier is rejected instead of silently overwriting one entry. A retired `compact.cirru` must first be copied or renamed to `calcit.cirru`; then `edit format` alone can migrate early direct-quote code and top-level `:configs` through an isolated one-way loader. It reports migrated node counts and rejects ambiguous legacy configs. Runtime loading and other edits remain strict. A direct-quote `defmacro` is the narrow exception to ordinary Dynamic initialization: its parameter markers become conservative `Syntax` required/optional/rest slots, its expansion is `Expr<Dynamic>`, and its capability set is empty, so the canonical result is immediately readable without granting effects. Existing structured Dynamic macro schemas remain rejected. For accepted snapshots, stderr identifies `W_LEGACY_ANY` or `W_DYNAMIC_TYPE_DEBT` when follow-up work is recommended. It does not invent concrete semantic types; follow dynamic or unbound-slot warnings with `calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved`.
 
+### 定义写入的形状检查
+
+`edit def` 在写盘前检查定义形状。`defn`、`defmacro`、`def`、名义类型、trait 和 WASM 定义等具名形式，其第二个元素必须与目标 definition 名一致。项目或依赖中的定义宏（例如 `defcomp`、`defstyle`）通过源码和 import 解析识别，不按名字前缀猜测。顶层 `fn` 由 Snapshot 的 definition key 命名，必须提供参数列表和函数体。
+
+```bash
+calcit edit def app.util/double --input-format cirru --code 'quote $ defn double (x) (* x 2)'
+```
+
+新增或改写表达式时，名称不一致、单独的 leaf 或无法识别的头部会非零退出，不修改 Snapshot；已有 AST 完全不变的原样覆盖可保留历史的 key/name 差异。事务中的任一非法定义使整个事务不写入。确需使用尚不能识别的自定义具名形式时，可显式加 `--allow-unknown-head`，但仍须满足 list 根节点及名称一致性检查。
+
+此检查不展开宏，也不替代类型检查；宏返回的表达式仍需后续检查验证。编辑后运行 `calcit --check-only` 与项目测试。不要把带标题或围栏的 Markdown 查询输出直接交给 `edit def`。
+
 ### Schema 缺省与显式 Dynamic
 
 未声明 `:schema` 和显式 `Dynamic` 不是同一意图：前者表示缺少声明，后者表示用户选择开放类型边界。`edit def` 创建未标注定义，以及后续结构化编辑、`edit format`，均保留缺省状态，不自动写入 `Dynamic`。

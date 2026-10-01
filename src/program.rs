@@ -879,7 +879,8 @@ pub fn validate_import_rules(rules: &[Cirru]) -> Result<Vec<String>, String> {
   Ok(warnings)
 }
 
-fn extract_import_map(nodes: &Cirru, ns_name: &str) -> Result<HashMap<Arc<str>, Arc<ImportRule>>, String> {
+/// Parse source imports without activating definitions or evaluating code.
+pub fn extract_import_map(nodes: &Cirru, ns_name: &str) -> Result<HashMap<Arc<str>, Arc<ImportRule>>, String> {
   match nodes {
     Cirru::List(xs) => {
       if xs.first().is_some_and(|head| head.eq_leaf(":ns")) {

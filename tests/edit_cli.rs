@@ -288,6 +288,270 @@ fn prepare_minimal_snapshot(directory: &TestDirectory) -> PathBuf {
 }
 
 #[test]
+fn edit_def_rejects_invalid_named_shapes_without_writing() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  let original = fs::read(&snapshot).expect("snapshot before invalid writes");
+  for code in [
+    "quote 42",
+    "quote $ hello world",
+    "quote $ defn bar (x) x",
+    "quote $ ### app.main/foo",
+    "quote $ fn foo 1",
+    "quote $ fn ()",
+  ] {
+    let output = run_calcit(
+      &snapshot,
+      &["edit", "def", "app.main/foo", "--input-format", "cirru", "--code", code],
+    );
+    assert!(!output.status.success(), "invalid definition must fail: {code}");
+    assert_eq!(fs::read(&snapshot).unwrap(), original, "invalid definition must not write: {code}");
+    if code.contains("defn bar") {
+      let error = String::from_utf8_lossy(&output.stderr);
+      assert!(
+        error.contains("foo") && error.contains("bar"),
+        "name mismatch must show both names: {error}"
+      );
+    }
+  }
+  let operations = serde_json::json!([
+    [
+      "edit",
+      "def",
+      "app.main/valid",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn valid () 1"
+    ],
+    [
+      "edit",
+      "def",
+      "app.main/foo",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn bar () 2"
+    ]
+  ]);
+  let output = run_calcit(&snapshot, &["edit", "transaction", "--code", &operations.to_string()]);
+  assert!(!output.status.success(), "invalid definition must abort the transaction");
+  assert_eq!(fs::read(&snapshot).unwrap(), original, "failed transaction must not write");
+}
+
+#[test]
+fn edit_def_preserves_unchanged_historical_names_but_rejects_changed_mismatches() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/test-doc-smoke.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "test-doc-smoke.main/DocEnum0",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defenum DocEnum (:ok 'String)",
+      ],
+    ),
+    "unchanged nominal type must round-trip without renaming",
+  );
+  let original = fs::read(&snapshot).unwrap();
+  for flags in [vec![], vec!["--allow-unknown-head"]] {
+    let mut args = vec![
+      "edit",
+      "def",
+      "test-doc-smoke.main/DocEnum0",
+      "--overwrite",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defenum DocEnum (:ok 'Number)",
+    ];
+    args.extend(flags);
+    let output = run_calcit(&snapshot, &args);
+    assert!(!output.status.success(), "changed mismatch must be rejected");
+    assert_eq!(fs::read(&snapshot).unwrap(), original, "changed mismatch must not write");
+  }
+}
+
+#[test]
+fn edit_def_round_trips_repository_program_definitions() {
+  fn syntax_json(node: &cirru_parser::Cirru) -> serde_json::Value {
+    match node {
+      cirru_parser::Cirru::Leaf(leaf) => serde_json::Value::String(leaf.to_string()),
+      cirru_parser::Cirru::List(items) => serde_json::Value::Array(items.iter().map(syntax_json).collect()),
+    }
+  }
+  let mut programs = fs::read_dir("calcit")
+    .unwrap()
+    .map(|entry| entry.unwrap().path())
+    .filter(|path| path.extension().is_some_and(|extension| extension == "cirru"))
+    .collect::<Vec<_>>();
+  programs.sort();
+  // Allow the same filesystem-boundary regression to replay a real consumer
+  // snapshot locally without checking ecosystem source into this repository.
+  if let Some(consumer) = std::env::var_os("CALCIT_EDIT_ROUNDTRIP_SNAPSHOT") {
+    programs.push(PathBuf::from(consumer));
+  }
+  let mut definitions = 0;
+  let mut anonymous_functions = 0;
+  for program in programs {
+    let directory = TestDirectory::create();
+    let snapshot = directory.snapshot();
+    fs::copy(&program, &snapshot).unwrap();
+    let source = fs::read_to_string(&snapshot).unwrap();
+    let data = cirru_edn::parse(&source).unwrap();
+    let original = calcit::snapshot::load_snapshot_data(&data, snapshot.to_str().unwrap()).unwrap();
+    for (namespace, file) in &original.files {
+      // Path metadata is synthesized by the loader, not persisted program code.
+      if namespace == &format!("{}.$meta", original.package) {
+        continue;
+      }
+      for (name, entry) in &file.defs {
+        let target = format!("{namespace}/{name}");
+        let code = syntax_json(&entry.code).to_string();
+        assert_success(
+          &run_calcit(
+            &snapshot,
+            &["edit", "def", &target, "--overwrite", "--input-format", "json-ast", "--code", &code],
+          ),
+          &format!("round-trip {} {target}", program.display()),
+        );
+        definitions += 1;
+        if matches!(&entry.code, cirru_parser::Cirru::List(items) if items.first().is_some_and(|head| head.eq_leaf("fn"))) {
+          anonymous_functions += 1;
+        }
+      }
+    }
+    let rewritten = cirru_edn::parse(&fs::read_to_string(&snapshot).unwrap()).unwrap();
+    let loaded = calcit::snapshot::load_snapshot_data(&rewritten, snapshot.to_str().unwrap()).unwrap();
+    for (namespace, file) in &original.files {
+      for (name, entry) in &file.defs {
+        assert_eq!(
+          calcit::snapshot::definition_revision(entry).unwrap(),
+          calcit::snapshot::definition_revision(&loaded.files[namespace].defs[name]).unwrap(),
+          "round-trip must retain all definition metadata: {} {namespace}/{name}",
+          program.display()
+        );
+      }
+    }
+  }
+  assert!(definitions > 0, "repository corpus must not be empty");
+  assert!(anonymous_functions > 0, "anonymous function compatibility must be exercised");
+}
+
+#[test]
+fn edit_def_accepts_source_macros_and_bounds_the_unknown_head_override() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "add-ns", "app.macros"]),
+    "create local macro namespace",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.macros/defview",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defmacro defview (name) $ quasiquote $ defn (~ name) () 1",
+      ],
+    ),
+    "declare source macro",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "add-import", "app.main", "--code", "quote $ app.macros :as macros"],
+    ),
+    "import local macro namespace",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "def", "app.main/view", "--code", "quote $ macros/defview view"],
+    ),
+    "accept qualified source macro",
+  );
+  let modules = directory.0.join(".calcit/modules/ui");
+  fs::create_dir_all(&modules).unwrap();
+  let module = modules.join("calcit.cirru");
+  fs::copy("calcit/test-wasm.cirru", &module).unwrap();
+  assert_success(&run_calcit(&module, &["edit", "add-ns", "test-wasm.ui"]), "create module namespace");
+  assert_success(
+    &run_calcit(
+      &module,
+      &[
+        "edit",
+        "def",
+        "test-wasm.ui/defwidget",
+        "--code",
+        "quote $ defmacro defwidget (name) $ quasiquote $ defn (~ name) () 1",
+      ],
+    ),
+    "declare dependency macro",
+  );
+  assert_success(&run_calcit(&snapshot, &["config", "add-module", "ui/"]), "configure module");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-import",
+        "app.main",
+        "--code",
+        "quote $ test-wasm.ui :refer $ defwidget",
+      ],
+    ),
+    "import dependency macro",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "def", "app.main/widget", "--code", "quote $ defwidget widget"]),
+    "accept source-declared dependency macro",
+  );
+  let original = fs::read(&snapshot).unwrap();
+  let unknown = run_calcit(&snapshot, &["edit", "def", "app.main/custom", "--code", "quote $ special custom 1"]);
+  assert!(!unknown.status.success());
+  let error = String::from_utf8_lossy(&unknown.stderr);
+  assert!(
+    error.contains("Unrecognized definition head") && error.contains("--allow-unknown-head"),
+    "{error}"
+  );
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+  for code in ["quote 42", "quote $ special other 1"] {
+    let output = run_calcit(
+      &snapshot,
+      &["edit", "def", "app.main/custom", "--allow-unknown-head", "--code", code],
+    );
+    assert!(!output.status.success(), "override must retain shape/name checks");
+    assert_eq!(fs::read(&snapshot).unwrap(), original);
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/custom",
+        "--allow-unknown-head",
+        "--code",
+        "quote $ special custom 1",
+      ],
+    ),
+    "explicitly allow an intentional custom head",
+  );
+}
+
+#[test]
 fn import_edits_recognize_legacy_list_prefixed_rules() {
   let directory = TestDirectory::create();
   let snapshot = prepare_minimal_snapshot(&directory);
