@@ -1668,6 +1668,18 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-to-string-method-value $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-to-string-method-value (x) (x .to-string)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-runtime-number-text)
+            :code $ quote $ do
+              assert= |0.5 $ test-to-string-method-value 0.5
+              assert= |0 $ test-to-string-method-value 0
+              assert= |-0 $ test-to-string-method-value -0
+              assert-type (test-to-string-method-value 0.5) (quote String)
+            :tags $ #{} :core :wasm
         'test-to-string-number $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-to-string-number (x)
             if

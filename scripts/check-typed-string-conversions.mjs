@@ -60,14 +60,18 @@ try {
   const source = JSON.parse(execFileSync(binary, ["cirru", "parse-edn", "--file", coreSource], {
     encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
   }));
-  const methodTest = source[":files"]["'calcit.core"].defs["'to-string"].tests.find(test => test.name === "scalar-method-contract");
-  assert.ok(methodTest, "the scalar method definition test must exist");
+  const conversionTests = source[":files"]["'calcit.core"].defs["'to-string"].tests;
+  const methodTests = ["scalar-method-contract", "wasm-scalar-method-contract"].map(name => {
+    const test = conversionTests.find(test => test.name === name);
+    assert.ok(test, `the ${name} definition test must exist`);
+    return test;
+  });
   const methodSnapshot = join(output, "scalar-methods.cirru");
   await copyFile(coreSource, methodSnapshot);
   const edit = (...args) => execFileSync(binary, [methodSnapshot, "edit", ...args], { stdio: "pipe" });
   edit("add-ns", "calcit.conversion-contracts");
   edit("def", "calcit.conversion-contracts/main!", "--input-format", "json-ast", "--code",
-    JSON.stringify(["defn", "main!", [], methodTest.code.__edn_quote, "&unit"]));
+    JSON.stringify(["defn", "main!", [], ...methodTests.map(test => test.code.__edn_quote), "&unit"]));
   edit("schema", "calcit.conversion-contracts/main!", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
   const methodEntry = [methodSnapshot, "--init-fn", "calcit.conversion-contracts/main!",
@@ -80,6 +84,26 @@ try {
   execFileSync(process.execPath, ["--input-type=module", "-e",
     `import * as fixture from ${JSON.stringify(methodModule)}; fixture.main_$x_();`], { stdio: "pipe" });
   console.log("Scalar method definition assertions passed on native and generated JS");
+
+  // WASM cannot lower Symbol conversion; reuse the attached supported-subset AST.
+  edit("def", "calcit.conversion-contracts/scalar-methods", "--input-format", "json-ast", "--code",
+    JSON.stringify(["defwasm-export", "scalar-methods", [], methodTests[1].code.__edn_quote, "&unit"]));
+  edit("schema", "calcit.conversion-contracts/scalar-methods", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+  const methodWasmOutput = join(output, "methods-wasm");
+  execFileSync(binary, ["wasm", methodSnapshot, "--init-fn", "calcit.conversion-contracts/scalar-methods",
+    "--reload-fn", "calcit.conversion-contracts/scalar-methods", "--emit-path", methodWasmOutput], { stdio: "pipe" });
+  const methodWasmModule = new WebAssembly.Module(await readFile(join(methodWasmOutput, "program.wasm")));
+  const methodWasmImports = {};
+  for (const item of WebAssembly.Module.imports(methodWasmModule)) {
+    assert.equal(item.kind, "function");
+    (methodWasmImports[item.module] ??= {})[item.name] = () => {
+      throw new Error(`unexpected scalar-method host call: ${item.module}/${item.name}`);
+    };
+  }
+  const methodWasmInstance = new WebAssembly.Instance(methodWasmModule, methodWasmImports);
+  methodWasmInstance.exports["scalar-methods"]();
+  console.log("The same supported scalar method assertions passed on actual WASM");
 
   const numberCases = [
     ["0.0000001", 0.0000001, "0.0000001"],
@@ -200,6 +224,10 @@ try {
       `WASM must return exact UTF-8 number text for ${value}`);
     assert.equal(readWasmString(instance.exports["test-to-string-value"](value)), expected,
       `WASM trait to-string must return exact UTF-8 number text for ${value}`);
+    assert.equal(wasmJs.test_to_string_method_value(value), expected,
+      `generated JS ordinary method must preserve runtime Number text for ${value}`);
+    assert.equal(readWasmString(instance.exports["test-to-string-method-value"](value)), expected,
+      `WASM ordinary method must return exact UTF-8 number text for ${value}`);
   }
   const random = new DataView(new ArrayBuffer(8));
   let seed = 0x1234abcd;
@@ -211,6 +239,8 @@ try {
     const value = random.getFloat64(0, true);
     assert.equal(readWasmString(instance.exports["test-turn-string-value"](value)), runtime.turn_string(value),
       `WASM must match JS for f64 bits ${random.getBigUint64(0, true).toString(16)}`);
+    assert.equal(readWasmString(instance.exports["test-to-string-method-value"](value)), wasmJs.test_to_string_method_value(value),
+      `ordinary method Number text must match across JS/WASM for f64 bits ${random.getBigUint64(0, true).toString(16)}`);
   }
 
   const openTraitSnapshot = join(output, "open-trait.cirru");

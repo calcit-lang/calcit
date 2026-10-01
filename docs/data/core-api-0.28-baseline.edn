@@ -312,6 +312,9 @@
     {} (:name |.to-string) (:receiver |'Symbol) (:rest nil)
       :parameters $ []
       :returns $ quote 'String
+    {} (:name |.to-string) (:receiver |'Nil) (:rest nil)
+      :parameters $ []
+      :returns $ quote 'String
     {} (:name |.unwrap)
       :receiver "|:: 'calcit.core/Option 'Number"
       :rest nil
@@ -565,6 +568,15 @@
       :name |.to-string
       :provenance 'calcit.core/&turn-string
       :receiver |'Symbol
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'String)
+        :args $ [] 'Dynamic
+    {}
+      :failure "|返回空_String，不把_nil_伪装为其他值"
+      :name |.to-string
+      :provenance 'calcit.core/&turn-string
+      :receiver |'Nil
       :features $ []
       :runtime-arity $ {} (:max 1) (:min 1)
       :schema $ quote $ {} (:kind :fn) (:return 'String)

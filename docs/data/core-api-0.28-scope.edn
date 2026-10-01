@@ -49,6 +49,7 @@
     {} (:receiver |'Bool) (:name |.to-string) (:failure |返回_Bool_文本，不接受任意_Dynamic)
     {} (:receiver |'Tag) (:name |.to-string) (:failure |返回_Tag_名称文本，不等同_Debug_显示)
     {} (:receiver |'Symbol) (:name |.to-string) (:failure |返回_Symbol_名称文本，不求值该符号)
+    {} (:receiver |'Nil) (:name |.to-string) (:failure |返回空_String，不把_nil_伪装为其他值)
     {} (:receiver ":: 'calcit.core/Option 'Number") (:name |.unwrap) (:failure |none_抛错)
     {} (:receiver ":: 'calcit.core/Option 'Number") (:name |.unwrap-or) (:failure |none_使用同类型默认值)
     {} (:receiver ":: 'calcit.core/Result 'Number 'String") (:name |.unwrap-or) (:failure |err_使用同类型默认值)
