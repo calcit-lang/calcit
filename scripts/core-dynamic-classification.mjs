@@ -276,6 +276,10 @@ const reviewedPublicBoundaryPositions = new Map([
     "A Map entry is a heterogeneous key/value pair, which a homogeneous List item type cannot represent without erasing one parameter; callers must narrow each slot.",
   ],
   [
+    "to-pairs|schema.return.item.item",
+    "返回值保留 Set<List> 的真实形状；键和值是不同类型的两个槽位，当前同质 List 无法表达其独立关系。只在槽位保留开放类型，读取内容时仍需窄化，不能伪称为 Enum。",
+  ],
+  [
     "&cirru-quote:to-list|schema.return.item",
     "CirruQuote converts to a recursively heterogeneous syntax tree whose leaf-or-list union is not expressible; consumers must parse or narrow nodes before ordinary typed processing.",
   ],

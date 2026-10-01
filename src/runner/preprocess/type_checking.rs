@@ -1039,10 +1039,11 @@ pub(crate) fn check_function_return_type(
   declared_return_type: &Arc<CalcitTypeAnnotation>,
   async_invocation: bool,
   scope_types: &ScopeTypes,
-  file_ns: &str,
-  def_name: &str,
+  info: CallTypeCheckInfo<'_>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
+  let file_ns = info.file_ns;
+  let def_name = info.def_name;
   if matches!(**declared_return_type, CalcitTypeAnnotation::Dynamic) {
     return;
   }
@@ -1086,7 +1087,10 @@ pub(crate) fn check_function_return_type(
       ),
       "W_FN_RETURN_TYPE_MISMATCH",
       file_ns,
-      last_expr.get_location(),
+      last_expr
+        .get_location()
+        .filter(|location| location.def.as_ref() != calcit::GENERATED_DEF)
+        .or(info.call_location),
       expected_str,
       actual_str,
       check_warnings,
@@ -1166,7 +1170,18 @@ mod tests {
     ));
     let warnings = RefCell::new(vec![]);
 
-    check_function_return_type(&body, &expected, false, &ScopeTypes::new(), "tests.return", "callback", &warnings);
+    check_function_return_type(
+      &body,
+      &expected,
+      false,
+      &ScopeTypes::new(),
+      CallTypeCheckInfo {
+        file_ns: "tests.return",
+        def_name: "callback",
+        call_location: None,
+      },
+      &warnings,
+    );
 
     let warnings = warnings.borrow();
     assert_eq!(warnings.len(), 1, "a generic payload must not erase the Result wrapper contract");
@@ -1203,8 +1218,11 @@ mod tests {
       &expected,
       false,
       &scope_types,
-      "tests.return",
-      "callback",
+      CallTypeCheckInfo {
+        file_ns: "tests.return",
+        def_name: "callback",
+        call_location: None,
+      },
       &warnings,
     );
 

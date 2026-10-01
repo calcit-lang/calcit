@@ -149,7 +149,7 @@
         'sum-rest-list $ %{} 'CodeEntry (:doc "|helper: sums a list via recur")
           :code $ quote $ defwasm-export sum-rest-list (acc xs)
             if (&list:empty? xs) acc $ recur
-              &+ acc $ &list:first xs
+              &+ acc $ .unwrap $ .first xs
               &list:rest xs
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -656,10 +656,25 @@
             :args $ []
         'test-list-first $ %{} 'CodeEntry (:doc "|list first element")
           :code $ quote $ defwasm-export test-list-first ()
-            &list:first $ [] 42 99
+            .unwrap $ .first $ [] 42 99
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |checked-sequence-values)
+            :code $ quote $ do
+              assert= 42 $ test-list-first
+              assert= 5 $ test-list-prepend
+              assert= 20 $ test-list-rest-first
+              assert= 40 $ test-list-reverse
+              assert= 23 $ test-list-slice
+              assert= 14 $ test-list-sort-ascending
+              assert= 41 $ test-list-sort-descending
+              assert= 14 $ test-list-sort-dynamic-callee
+              assert= 41 $ test-list-sort-input-immutable
+              assert= 0 $ sum-rest-list 0 $ []
+              assert= 6 $ sum-rest-list 0 $ [] 1 2 3
+              assert= 4 $ test-to-pairs
+            :tags $ #{} :core :wasm
         'test-list-first-generic $ %{} 'CodeEntry (:doc "|generic first() on list via invoke")
           :code $ quote $ defwasm-export test-list-first-generic ()
             option:unwrap $ first $ [] 42 99
@@ -754,7 +769,7 @@
             :args $ [] 'Number
         'test-list-prepend $ %{} 'CodeEntry (:doc "|prepend returns correct first elem")
           :code $ quote $ defwasm-export test-list-prepend ()
-            &list:first $ prepend ([] 10 20) 5
+            .unwrap $ .first $ prepend ([] 10 20) 5
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -772,7 +787,7 @@
             :args $ []
         'test-list-rest-first $ %{} 'CodeEntry (:doc "|first of rest")
           :code $ quote $ defwasm-export test-list-rest-first ()
-            &list:first $ &list:rest $ [] 10 20 30
+            .unwrap $ .first $ &list:rest ([] 10 20 30)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -786,7 +801,9 @@
           :code $ quote $ defwasm-export test-list-reverse ()
             &let
               xs $ &list:reverse $ [] 10 20 30
-              &+ (&list:first xs) (&list:nth xs 2)
+              &+
+                .unwrap $ .first xs
+                &list:nth xs 2
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -794,7 +811,8 @@
           :code $ quote $ defwasm-export test-list-slice ()
             &let
               xs $ &list:slice ([] 10 20 30 40 50) 1 4
-              &+ (&list:count xs) (&list:first xs)
+              &+ (&list:count xs)
+                .unwrap $ .first xs
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -803,8 +821,8 @@
             &let
               ys $ sort ([] 4 1 3 2) &-
               +
-                * 10 $ &list:first ys
-                &list:last ys
+                * 10 $ .unwrap $ .first ys
+                .unwrap $ .last ys
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -814,8 +832,8 @@
               ys $ &list:sort ([] 4 1 3 2)
                 fn (a b) (- b a)
               +
-                * 10 $ &list:first ys
-                &list:last ys
+                * 10 $ .unwrap $ .first ys
+                .unwrap $ .last ys
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -825,8 +843,8 @@
               &let
                 ys $ sort ([] 4 1 3 2) comparator
                 +
-                  * 10 $ &list:first ys
-                  &list:last ys
+                  * 10 $ .unwrap $ .first ys
+                  .unwrap $ .last ys
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -837,8 +855,8 @@
               &let
                 ys $ sort xs $ fn (a b) (- a b)
                 +
-                  * 10 $ &list:first xs
-                  &list:first ys
+                  * 10 $ .unwrap $ .first xs
+                  .unwrap $ .first ys
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -1516,11 +1534,16 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-        'test-str-first $ %{} 'CodeEntry (:doc "|first byte of hello = 104 (h)")
-          :code $ quote $ defwasm-export test-str-first () (&str:first |hello)
+        'test-str-first $ %{} 'CodeEntry
+          :doc "|非空字符串的首字符：hello 返回 h；通过 String.first 和 Option.unwrap 显式取值。"
+          :code $ quote $ defwasm-export test-str-first ()
+            .unwrap $ .first |hello
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |checked-first-character)
+            :code $ quote $ assert= |h (test-str-first)
+            :tags $ #{} :core :wasm
         'test-str-includes-false $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-includes-false () (|hello .includes? |xyz)
           :examples $ []
@@ -1668,8 +1691,8 @@
           :code $ quote $ defwasm-export test-to-pairs ()
             &let
               ps $ to-pairs $ &{} :a 1 :b 2
-              &+ (&list:count ps)
-                &list:count $ &list:first ps
+              &+ (.len ps)
+                .len $ .unwrap $ .first (.to-list ps)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []

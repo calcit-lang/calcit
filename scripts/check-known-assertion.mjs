@@ -86,6 +86,8 @@ try {
     "assert-type (Option :some 3) (:: 'Result 'Number 'String)",
   ];
   const detailed = new Map([
+    ["assert-type (to-pairs (&{} :a 1)) (:: 'Set 'Enum)",
+      ["expected `set<:enum>`", "got `set<list<dynamic>>`"]],
     ["assert-type (.map (Option :some 3) $ fn (x) ([] x)) (:: 'Option (:: 'List 'String))",
       ["expected `'Option<list<:string>>`", "got `'calcit.core/Option<list<:number>>`"]],
     ["assert-type (.map (Result :ok 3) $ fn (x) ([] x)) (:: 'Result (:: 'List 'String) 'String)",

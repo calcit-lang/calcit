@@ -9408,19 +9408,28 @@
               assert= "|([] '+ 1 2)" $ to-lispy-string $ quote (+ 1 2)
             :tags $ #{} :core :unit
         'to-pairs $ %{} 'CodeEntry
-          :doc "|internal function for converting to pairs\nSyntax: (to-pairs map)\nParams: map (map)\nReturns: set\nConverts map to an unordered set of [key value] pairs"
+          :doc "|把 Map 转为无序的 Set<List>，每个 List 是包含键和值的两个槽位。与 Map.to-list 不同，外层是 Set；键和值可能具有不同类型，当前同质 List 仅保留开放槽位，读取具体内容前仍需窄化。可通过 .to-pairs 调用，再用集合方法操作；返回值不是 Enum。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'K 'V
             :generics $ [] 'K 'V
-            :return $ :: 'Set 'Enum
+            :return $ :: 'Set $ :: 'List 'Dynamic
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |returns-unordered-entry-set)
-            :code $ quote $ assert=
-              #{} ([] :a 1) ([] :b 2)
-              to-pairs $ &{} :a 1 :b 2
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |returns-unordered-entry-set)
+              :code $ quote $ assert=
+                #{} ([] :a 1) ([] :b 2)
+                to-pairs $ &{} :a 1 :b 2
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |exposes-list-shaped-entries)
+              :code $ quote $ let
+                  ps $ to-pairs $ &{} :a 1 :b 2
+                assert-type ps $ :: 'Set $ :: 'List 'Dynamic
+                assert= 2 $ .len ps
+                assert= 2 $ .len $ .unwrap
+                  .first $ .to-list ps
+              :tags $ #{} :core :unit
         'to-string $ %{} 'CodeEntry
           :doc "|将实现 ToString 的值转换为文本。标量转换不等同于 Show 的用户展示或 Debug 的诊断表示；没有实现的集合、名义值与开放 Dynamic 不能直接调用。"
           :code $ quote $ defn to-string (value) (.to-string value)

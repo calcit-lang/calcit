@@ -265,7 +265,11 @@ try {
   execFileSync(binary, [spreadSnapshot, "edit", "schema", "test-wasm.main/test-to-string-spread", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [])"], { stdio: "pipe" });
   const spread = spawnSync(binary, ["wasm", spreadSnapshot, "--emit-path", join(output, "spread-trait-wasm")], { encoding: "utf8" });
   assert.notEqual(spread.status, 0, "a spread call cannot bypass generic trait specialization");
-  assert.match(spread.stderr, /E_WASM_TRAIT_TYPE_EVIDENCE:.*spread call/);
+  // Fixed-arity spread uncertainty is rejected by the shared preprocessor,
+  // before WASM-specific specialization can run.
+  assert.match(spread.stderr, /expected 1 args in to-string.*got spreading form/);
+  assert.match(spread.stderr, /test-wasm\.main\/test-to-string-spread/);
+  assert.match(spread.stderr, /Found 1 warnings during preprocessing/);
 } finally {
   await rm(output, { recursive: true, force: true });
 }
