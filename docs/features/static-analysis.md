@@ -703,7 +703,13 @@ let
   process-data $ [] 1 2 3
 ```
 
-**Note**: `assert-type` is evaluated during preprocessing and removed at runtime, so there's no performance penalty.
+`assert-type` 不能推翻已有的类型证据。局部变量、字面量和调用结果若已知与目标类型矛盾，都会在共同预处理阶段报告 `E_ASSERT_TYPE_MISMATCH`，不应等到 native 执行或 JS/WASM 生成后才发现错误。
+
+```cirru
+assert= 3 $ assert-type (+ 1 2) 'Number
+```
+
+例如 `assert-type (+ 1 2) 'String` 会被拒绝。请修正目标类型；外部开放数据需要真正的 checked decoder，并处理失败，不能仅用断言或返回值声明冒充验证。这里不改变尚在迁移的 Dynamic 边界策略，也不声称断言能深层校验任意嵌套数据。已证明的局部断言可被消去；表达式断言的运行时处理仍取决于 backend，不保证所有断言都没有运行成本。
 
 ## Type Inspection Tool
 

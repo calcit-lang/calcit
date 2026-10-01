@@ -3550,6 +3550,17 @@
                 assert-type x 'Dynamic
                 assert= 4 $ + x 1
               :tags $ #{} :assert-boundary :assert-scalar-wasm :unit
+            %{} 'TestEntry (:name |proven-literal-expression)
+              :code $ quote $ assert= 3 (assert-type 3 'Number)
+              :tags $ #{} :assert-boundary :assert-scalar-wasm :unit
+            %{} 'TestEntry (:name |proven-call-expression)
+              :code $ quote $ assert= 3
+                assert-type (+ 1 2) 'Number
+              :tags $ #{} :assert-boundary :assert-scalar-wasm :unit
+            %{} 'TestEntry (:name |proven-list-expression)
+              :code $ quote $ assert= ([] 1 2)
+                assert-type ([] 1 2) (:: 'List 'Number)
+              :tags $ #{} :assert-boundary :unit
         'assert= $ %{} 'CodeEntry
           :doc "|asserts that two values are equal, raises error showing both values if not"
           :code $ quote $ defmacro assert= (a b)
