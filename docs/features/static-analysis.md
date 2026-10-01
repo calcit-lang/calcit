@@ -312,6 +312,18 @@ The preprocessor propagates a named function's schema into its parameter binding
 
 `if` 两个分支合流时会保留“可能缺失”的信息：当一个分支是具体类型、另一个是同一 payload 的 `Option<T>` 时，合流结果是 `Option<T>`，而不是退化为 `Dynamic` 或直接取具体分支。因此把 `(if c 0 (min xs))` 的结果直接用于算术会报告 `W_FN_ARG_TYPE_MISMATCH`，并提示先用 `.unwrap-or` 或 `match` 处理缺失分支；只有两侧本来就可互用时才沿用较宽的 Dynamic 形状，以免误报。
 
+### 展开参数的集合边界
+
+调用中的 `&` 每次只展开后面的一个 `List`；它不把 `Set` 或 `Map` 当作参数序列。若推导结果明确不是 List，默认预处理会报告 `E_SPREAD_TYPE_MISMATCH`，并给出期望类型、实际类型和源码位置。该检查发生在 native 执行、JS 生成和 WASM 目标检查之前，普通 `--check-only` 同样拒绝错误写法。
+
+例如 `dissoc ({} (:a 1)) & (#{} :a)` 会被拒绝。需要展开 Set 中的 key 时，显式表达集合转换：
+
+```cirru
+dissoc ({} (:a 1)) & $ .to-list $ #{} :a
+```
+
+这里仅证明展开对象的集合种类，不证明参数数量或每个元素都满足目标函数的契约。`List<Dynamic>` 仍是 List；完全开放的 Dynamic、未解析类型及 macro syntax 边界不会被当成已证明的 List，也不会在这一有界修复中新增全面禁止策略。Set 转换不保证元素顺序，因此编译器只提供诊断建议，不自动插入 `.to-list`。
+
 `assert-type` is still useful, but mainly for local variables, intermediate values, and explicit checks inside the function body.
 
 Runnable Example:

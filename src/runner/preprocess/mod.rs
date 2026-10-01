@@ -2246,6 +2246,48 @@ fn removed_tag_match_error(expr: &Calcit, call_stack: &CallStackList) -> CalcitE
   )
 }
 
+/// A spread consumes one runtime List, independently of the callable's arity
+/// or element contract. Reject contradictory evidence before any backend lowers it.
+fn reject_known_non_list_spreads(
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  call_stack: &CallStackList,
+  call_location: Option<NodeLocation>,
+) -> Result<(), CalcitErr> {
+  let expected = CalcitTypeAnnotation::List(calcit::DYNAMIC_TYPE.clone());
+  let mut spreading = false;
+  for arg in args.iter() {
+    if matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
+      spreading = true;
+      continue;
+    }
+    if spreading {
+      spreading = false;
+      if let Some(actual) = resolve_type_value(arg, scope_types)
+        && actual.prove_with_bindings(&expected, &mut HashMap::new()).is_mismatch()
+      {
+        let hint = if matches!(actual.as_ref(), CalcitTypeAnnotation::Set(_)) {
+          "convert the Set explicitly with `.to-list` before spreading"
+        } else {
+          "pass a List containing the arguments intended for this call"
+        };
+        return Err(CalcitErr::use_msg_stack_location_with_code(
+          CalcitErrKind::Type,
+          format!(
+            "spread operand must be a List: expected `{}`, got `{}`; {hint}",
+            expected.to_brief_string(),
+            actual.to_brief_string(),
+          ),
+          "E_SPREAD_TYPE_MISMATCH",
+          call_stack,
+          arg.get_location().or_else(|| call_location.clone()),
+        ));
+      }
+    }
+  }
+  Ok(())
+}
+
 fn reject_pending_async_arguments(
   head: &Calcit,
   args: &CalcitList,
@@ -2957,6 +2999,9 @@ fn preprocess_list_call(
         ys = ys.push(form);
       }
       let processed_call_args = CalcitList::from(ys.drop_left());
+      if has_spread {
+        reject_known_non_list_spreads(&processed_call_args, scope_types, call_stack, call_location.clone())?;
+      }
       reject_pending_async_arguments(&head_form, &processed_call_args, scope_types, call_stack)?;
       if !has_spread {
         let mut current_args = processed_call_args;
@@ -3222,6 +3267,7 @@ fn preprocess_list_call(
             ys.push(form);
             Ok(())
           })?;
+          reject_known_non_list_spreads(&CalcitList::from(&ys[1..]), scope_types, call_stack, call_location.clone())?;
           Ok(Calcit::from(ys))
         }
         CalcitSyntax::AssertType => {
@@ -3396,6 +3442,9 @@ fn preprocess_list_call(
 
         // Check for struct field access after processing arguments
         let processed_args = CalcitList::from(ys.drop_left()); // Skip the head, convert to CalcitList
+        if has_spread {
+          reject_known_non_list_spreads(&processed_args, scope_types, call_stack, call_location.clone())?;
+        }
         reject_pending_async_arguments(&head_form, &processed_args, scope_types, call_stack)?;
         validate_method_call(&head_form, &processed_args, scope_types, file_ns, call_stack)?;
         check_struct_field_access(&head_form, &processed_args, scope_types, file_ns, call_stack, check_warnings);
