@@ -35,7 +35,8 @@ use type_inference::{
   resolve_program_value_for_preprocess, resolve_type_value,
 };
 pub use type_inference::{
-  infer_compiled_definition_implementation_type, infer_static_type_from_expr, resolve_core_nominal_instance_type,
+  fixed_call_arguments_are_proven, infer_compiled_definition_implementation_type, infer_static_type_from_expr,
+  resolve_core_nominal_instance_type,
 };
 use type_rewriting::{
   build_enum_ref_node, build_struct_ref_node, try_rewrite_enum_args_to_named_enums, try_rewrite_local_fn_enum_args_to_named_enums,

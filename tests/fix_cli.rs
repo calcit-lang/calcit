@@ -6,6 +6,292 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+#[test]
+fn literal_spread_fix_is_guarded_atomic_and_idempotent() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy fixture");
+  let target = "fix-command.main/literal-spread";
+  let source = "quote $ defn literal-spread ()\n  let\n      *counter $ atom 0\n      f $ fn (a b)\n        hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Number)\n        + (* a 10) b\n    f & $ []\n      do (reset! *counter $ + @*counter 1) @*counter\n      do (reset! *counter $ + @*counter 1) @*counter";
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "def", target, "--input-format", "cirru", "--code", source]),
+    "add spread source",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+      ],
+    ),
+    "add spread schema",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        target,
+        "result",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ assert= 12 $ literal-spread",
+      ],
+    ),
+    "attach semantic test",
+  );
+  let selector = [
+    "--rule",
+    "spread-call-proof-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "literal-spread",
+    "--format",
+    "json",
+  ];
+  let original = fs::read(&snapshot).expect("read original");
+  let preview = run_fix(&snapshot, &selector);
+  assert_success(&preview, "spread preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions");
+  assert_eq!(suggestions.len(), 1, "{report}");
+  assert_eq!(suggestions[0]["applicability"], "machine-applicable", "{report}");
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+  let mut stale = selector.to_vec();
+  stale.extend(["--apply", "--allow-no-vcs", "--expect-revision", "stale"]);
+  assert!(!run_fix(&snapshot, &stale).status.success());
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+  let mut apply = selector.to_vec();
+  apply.extend([
+    "--apply",
+    "--allow-no-vcs",
+    "--expect-revision",
+    report["revision"].as_str().unwrap(),
+  ]);
+  assert_success(&run_fix(&snapshot, &apply), "apply spread");
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "replay preserved semantic test",
+  );
+  let applied = fs::read(&snapshot).unwrap();
+  let second = run_fix(&snapshot, &selector);
+  assert_success(&second, "second preview");
+  assert!(parse_stdout(&second)["data"]["suggestions"].as_array().unwrap().is_empty());
+  assert_eq!(fs::read(&snapshot).unwrap(), applied);
+}
+
+#[test]
+fn spread_fix_keeps_unproved_calls_for_review_without_writes() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy fixture");
+  let cases = [
+    ("unknown-length", "(xs)", "f & xs", "[] (:: 'List 'Number)"),
+    ("wrong-item", "()", "f & ([] 1 |two)", "[]"),
+    ("wrong-length", "()", "f & ([] 1)", "[]"),
+    ("multiple-spreads", "()", "f & ([] 1) & ([] 2)", "[]"),
+    ("open-item", "(x)", "f & ([] 1 x)", "[] 'Dynamic"),
+  ];
+  for (name, parameters, call, arguments) in cases {
+    let target = format!("fix-command.main/{name}");
+    let source = format!(
+      "quote $ defn {name} {parameters}\n  let\n      f $ fn (a b)\n        hint-fn $ {{}} (:args $ [] 'Number 'Number) (:return 'Number)\n        + a b\n    {call}"
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", &target, "--input-format", "cirru", "--code", &source]),
+      "add review case",
+    );
+    let schema = format!("quote $ :: 'Fn $ {{}} (:args $ {arguments}) (:return 'Number)");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "schema", &target, "--input-format", "cirru", "--code", &schema],
+      ),
+      "add review schema",
+    );
+    let original = fs::read(&snapshot).unwrap();
+    let result = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "spread-call-proof-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+        "--apply",
+        "--allow-no-vcs",
+      ],
+    );
+    assert_success(&result, name);
+    let report = parse_stdout(&result);
+    let suggestions = report["data"]["suggestions"].as_array().unwrap();
+    assert_eq!(suggestions.len(), 1, "{name}: {report}");
+    assert_eq!(suggestions[0]["applicability"], "requires-review", "{name}: {report}");
+    assert!(suggestions[0]["replacement"].is_null(), "{report}");
+    assert_eq!(fs::read(&snapshot).unwrap(), original, "{name}");
+  }
+}
+
+#[test]
+fn spread_fix_preserves_rest_optional_and_unknown_macro_boundaries() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy fixture");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/spread-wrapper",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defmacro spread-wrapper (x) x",
+      ],
+    ),
+    "add unknown macro",
+  );
+  for (name, source) in [
+    (
+      "fixed-sum",
+      "quote $ defn fixed-sum (a b)\n  hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Number)\n  + a b",
+    ),
+    (
+      "spread-syntax",
+      "quote $ defmacro spread-syntax (marker literal)\n  quasiquote $ fixed-sum & ~literal",
+    ),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("fix-command.main/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          source,
+        ],
+      ),
+      "add macro-headed spread fixture",
+    );
+  }
+  let cases = [
+    (
+      "rest-spread",
+      "quote $ defn rest-spread ()\n  let\n      f $ fn (& xs)\n        hint-fn $ {} (:args $ []) (:rest 'Number) (:return 'Number)\n        , 1\n    f & $ [] 1 2",
+    ),
+    (
+      "optional-spread",
+      "quote $ defn optional-spread ()\n  let\n      f $ fn (x)\n        hint-fn $ {} (:args $ [] (:: 'Optional 'Number)) (:return 'Number)\n        , 1\n    f & $ [] 1",
+    ),
+    (
+      "macro-spread",
+      "quote $ defn macro-spread ()\n  let\n      f $ fn (a b)\n        hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Number)\n        + a b\n    spread-wrapper $ f & $ [] 1 2",
+    ),
+    (
+      "macro-headed-spread",
+      "quote $ defn macro-headed-spread ()\n  spread-syntax & $ [] 1 2",
+    ),
+    (
+      "qualified-macro-headed-spread",
+      "quote $ defn qualified-macro-headed-spread ()\n  fix-command.main/spread-syntax & $ [] 1 2",
+    ),
+  ];
+  for (name, source) in cases {
+    let target = format!("fix-command.main/{name}");
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", &target, "--input-format", "cirru", "--code", source]),
+      "add boundary source",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "schema",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+        ],
+      ),
+      "add boundary schema",
+    );
+    if name.ends_with("macro-headed-spread") {
+      let assertion = format!("quote $ assert= 3 $ {name}");
+      assert_success(
+        &run_calcit(
+          &snapshot,
+          &[
+            "edit",
+            "add-test",
+            &target,
+            "result",
+            "--tags",
+            "unit",
+            "--input-format",
+            "cirru",
+            "--code",
+            &assertion,
+          ],
+        ),
+        "attach macro syntax semantic test",
+      );
+      assert_success(
+        &run_calcit(&snapshot, &["test", &target, "--require-match"]),
+        "run original macro syntax",
+      );
+    }
+    let before = fs::read(&snapshot).unwrap();
+    let result = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "spread-call-proof-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+        "--apply",
+        "--allow-no-vcs",
+      ],
+    );
+    assert_success(&result, name);
+    let report = parse_stdout(&result);
+    let suggestions = report["data"]["suggestions"].as_array().unwrap();
+    assert_eq!(suggestions.len(), 1, "{name}: {report}");
+    assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
+    assert!(suggestions[0]["replacement"].is_null(), "{report}");
+    assert_eq!(fs::read(&snapshot).unwrap(), before);
+    if name.ends_with("macro-headed-spread") {
+      assert_success(
+        &run_calcit(&snapshot, &["test", &target, "--require-match"]),
+        "replay retained macro syntax",
+      );
+    }
+  }
+}
+
 struct TestDirectory(PathBuf);
 
 impl TestDirectory {

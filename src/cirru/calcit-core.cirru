@@ -5020,6 +5020,42 @@
               :code $ quote $ assert= ([] 1 |two)
                 [] & $ [] 1 |two
               :tags $ #{} :core :spread-boundary :unit
+            %{} 'TestEntry (:name |fixed-call-spread-evaluates-arguments-once)
+              :code $ quote $ assert= ([] 3 |ab)
+                let
+                    *order $ atom |
+                    f $ fn (a b)
+                      hint-fn $ {}
+                        :args $ [] (quote Number) (quote Number)
+                        :return $ quote Number
+                      + a b
+                    result $ f & $ []
+                      do
+                        reset! *order $ str @*order |a
+                        , 1
+                      do
+                        reset! *order $ str @*order |b
+                        , 2
+                  [] result @*order
+              :tags $ #{} :core :spread-proof :unit
+            %{} 'TestEntry (:name |fixed-call-direct-evaluates-arguments-once)
+              :code $ quote $ assert= ([] 3 |ab)
+                let
+                    *order $ atom |
+                    f $ fn (a b)
+                      hint-fn $ {}
+                        :args $ [] (quote Number) (quote Number)
+                        :return $ quote Number
+                      + a b
+                    result $ f
+                      do
+                        reset! *order $ str @*order |a
+                        , 1
+                      do
+                        reset! *order $ str @*order |b
+                        , 2
+                  [] result @*order
+              :tags $ #{} :core :spread-proof :unit
         'dissoc-in $ %{} 'CodeEntry
           :doc "|Remove a nested key or index. An empty path leaves the input unchanged."
           :code $ quote $ defn dissoc-in (data path)

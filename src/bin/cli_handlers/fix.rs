@@ -73,6 +73,8 @@ const VALUE_TO_ZERO_ARG_FN_RULE: &str = "value-to-zero-arg-fn-v1";
 const VALUE_TO_ZERO_ARG_FN_DIAGNOSTIC: &str = "REFACTOR_VALUE_TO_ZERO_ARG_FN";
 const SYNTHESIZE_SCHEMA_RULE: &str = "synthesize-schema-v1";
 const SYNTHESIZE_SCHEMA_DIAGNOSTIC: &str = "REFACTOR_SYNTHESIZE_SCHEMA";
+const SPREAD_CALL_PROOF_RULE: &str = "spread-call-proof-v1";
+const SPREAD_CALL_PROOF_DIAGNOSTIC: &str = "REFACTOR_SPREAD_CALL";
 const OPTIONAL_PARAMETERS_RULE: &str = "optional-parameters-v1";
 const OPTIONAL_PARAMETERS_DIAGNOSTIC: &str = "E_LEGACY_OPTIONAL_PARAM";
 const SURFACE_LATEST_V1_PRESET: &str = "surface-latest-v1";
@@ -504,6 +506,13 @@ pub(crate) fn handle_fix_command(
     None
   };
   let mut suggestions = Vec::new();
+  if selected_rules.contains(&SPREAD_CALL_PROOF_RULE) {
+    suggestions.extend(spread_call::plan_spread_call_fixes(
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+    )?);
+  }
   if semantic_rename {
     suggestions.extend(plan_definition_rename(
       options,
@@ -904,7 +913,9 @@ pub(crate) fn handle_fix_command(
         preset_id: options.preset.as_deref(),
         expanded_rule_ids: selected_rules,
         expanded_rules,
-        source_coverage: (options.preset.as_deref() == Some(CORE_API_028_V1_PRESET)).then_some(FixSourceCoverage {
+        source_coverage: (options.preset.as_deref() == Some(CORE_API_028_V1_PRESET)
+          || options.rule.as_deref() == Some(SPREAD_CALL_PROOF_RULE))
+        .then_some(FixSourceCoverage {
           scanned_regions: &["code"],
           manual_review_regions: &["tests", "examples"],
         }),
@@ -1102,13 +1113,14 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | RENAME_DEFINITION_RULE
         | VALUE_TO_ZERO_ARG_FN_RULE
         | SYNTHESIZE_SCHEMA_RULE
+        | SPREAD_CALL_PROOF_RULE
         | OPTIONAL_PARAMETERS_RULE
         | TAG_MATCH_RULE
         | REQUIRED_STRUCT_FIELD_RULE
     )
   {
     return Err(format!(
-      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_SET_INCLUDE_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+      "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_SET_INCLUDE_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
     ));
   }
   if let Some(rule @ (TAG_MATCH_RULE | REQUIRED_STRUCT_FIELD_RULE)) = options.rule.as_deref() {
@@ -1130,6 +1142,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
       RENAME_DEFINITION_RULE
         | VALUE_TO_ZERO_ARG_FN_RULE
         | SYNTHESIZE_SCHEMA_RULE
+        | SPREAD_CALL_PROOF_RULE
         | OPTIONAL_PARAMETERS_RULE
         | CORE_NOMINAL_CONSTRUCTOR_RULE
         | CORE_OPTION_METHOD_RULE
@@ -1154,6 +1167,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         RENAME_DEFINITION_RULE => RENAME_DEFINITION_RULE,
         VALUE_TO_ZERO_ARG_FN_RULE => VALUE_TO_ZERO_ARG_FN_RULE,
         SYNTHESIZE_SCHEMA_RULE => SYNTHESIZE_SCHEMA_RULE,
+        SPREAD_CALL_PROOF_RULE => SPREAD_CALL_PROOF_RULE,
         CORE_NOMINAL_CONSTRUCTOR_RULE => CORE_NOMINAL_CONSTRUCTOR_RULE,
         CORE_OPTION_METHOD_RULE => CORE_OPTION_METHOD_RULE,
         CORE_RESULT_METHOD_RULE => CORE_RESULT_METHOD_RULE,
@@ -1367,6 +1381,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: SYNTHESIZE_SCHEMA_DIAGNOSTIC,
       evidence_source: "compiled-type-inference",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    SPREAD_CALL_PROOF_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: SPREAD_CALL_PROOF_DIAGNOSTIC,
+      evidence_source: "compiler-fixed-call-proof",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -1810,6 +1831,7 @@ fn plan_definition_rename(
 }
 
 pub(crate) mod schema_synthesis;
+mod spread_call;
 use schema_synthesis::plan_schema_synthesis;
 
 /// Surface legacy omission markers from the unexpanded Snapshot without implying a safe rewrite.
@@ -4079,7 +4101,7 @@ fn method_source_context_is_stable(
     let Some(head) = items.first() else {
       return false;
     };
-    if matches!(head, Cirru::Leaf(head) if matches!(head.as_ref(), "defn" | "fn" | "let" | "let[]" | "do" | "if" | "cond")) {
+    if matches!(head, Cirru::Leaf(head) if matches!(head.as_ref(), "defn" | "defwasm-export" | "fn" | "let" | "let[]" | "do" | "if" | "cond")) {
       return true;
     }
     if matches!(
