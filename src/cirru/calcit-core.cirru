@@ -6276,6 +6276,15 @@
                 assert= ([] 1 2)
                   keep $ [] 1 2
               :tags $ #{} :return-boundary
+            %{} 'TestEntry (:name |explicit-unit-return-contract)
+              :code $ quote $ let
+                  finish $ fn (callback)
+                    hint-fn $ {}
+                      :args $ [] 'Fn
+                      :return 'Unit
+                    , &unit
+                assert= &unit $ finish $ fn (x) x
+              :tags $ #{} :return-boundary
         'identical? $ %{} 'CodeEntry
           :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
           :code $ quote &runtime-implementation

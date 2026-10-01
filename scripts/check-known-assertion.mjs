@@ -23,7 +23,7 @@ try {
   const returnResponse = JSON.parse(run("query", "def", "calcit.core/hint-fn", "--format", "json"));
   assert.deepEqual(returnResponse.diagnostics, []);
   const returnTests = returnResponse.data.tests.filter(test => test.tags.includes("return-boundary"));
-  assert.equal(returnTests.length, 2);
+  assert.equal(returnTests.length, 3);
   run("edit", "add-ns", "calcit.assert-evidence");
   const setBody = trees => run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite",
     "--input-format", "json-ast", "--code", JSON.stringify(["defwasm-export", "run-tests", [], ...trees, "1"]));
@@ -81,6 +81,7 @@ try {
   const badReturns = [
     "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Number))) callback))) facade (fn (x) x)",
     "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'String))) callback))) facade (fn (x) x)",
+    "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) callback))) facade (fn (x) x)",
     "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return (:: 'List 'Number)))) callback))) facade (fn (x) x)",
     "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return (:: 'Option 'Number)))) callback))) facade (fn (x) x)",
     "let ((facade (fn (value) (hint-fn ({} (:args ([] 'String)) (:return 'Number))) value))) facade |hello",
