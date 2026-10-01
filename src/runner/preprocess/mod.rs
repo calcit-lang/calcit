@@ -9569,29 +9569,37 @@ pub fn preprocess_assert_type(
   };
 
   let asserted_target = target_form;
-  if let Calcit::Local(local) = &asserted_target {
-    let asserted_type = local_nominal_type.unwrap_or_else(|| CalcitTypeAnnotation::parse_type_annotation_form(&asserted_type_form));
-    let current_type = resolve_type_value(&asserted_target, ctx.scope_types).unwrap_or_else(|| local.type_info.clone());
-    // An assertion cannot replace contradictory evidence with its own target.
-    // Open boundaries remain distinct from a known mismatch; their policy is
-    // handled separately rather than silently promoted to a complete proof.
-    if current_type
+  let asserted_type = local_nominal_type.unwrap_or_else(|| CalcitTypeAnnotation::parse_type_annotation_form(&asserted_type_form));
+  let current_type = resolve_type_value(&asserted_target, ctx.scope_types).or_else(|| match &asserted_target {
+    Calcit::Local(local) => Some(local.type_info.clone()),
+    _ => None,
+  });
+  // Contradictory evidence is invalid for every expression, not just a local.
+  // Open boundaries still require their separate migration policy; this check
+  // neither manufactures proof nor changes their existing behavior.
+  if let Some(current_type) = &current_type
+    && current_type
       .prove_with_bindings(asserted_type.as_ref(), &mut HashMap::new())
       .is_mismatch()
-    {
-      return Err(CalcitErr::use_msg_stack_location_with_code(
-        CalcitErrKind::Type,
-        format!(
-          "assert-type cannot prove local `{}`: expected `{}`, got `{}`; correct the assertion or use a checked decoder at the data boundary",
-          local.sym,
-          asserted_type.to_brief_string(),
-          current_type.to_brief_string(),
-        ),
-        "E_ASSERT_TYPE_MISMATCH",
-        ctx.call_stack,
-        target_raw.get_location(),
-      ));
-    }
+  {
+    let target_description = match &asserted_target {
+      Calcit::Local(local) => format!("local `{}`", local.sym),
+      _ => format!("expression `{target_raw}`"),
+    };
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!(
+        "assert-type cannot prove {target_description}: expected `{}`, got `{}`; correct the assertion or use a checked decoder at the data boundary",
+        asserted_type.to_brief_string(),
+        current_type.to_brief_string(),
+      ),
+      "E_ASSERT_TYPE_MISMATCH",
+      ctx.call_stack,
+      target_raw.get_location().or_else(|| type_form.get_location()),
+    ));
+  }
+  if let Calcit::Local(local) = &asserted_target {
+    let current_type = current_type.expect("local assertion has inline type evidence");
     let type_entry = if current_type.as_ref().is_compatible_with(asserted_type.as_ref())
       && annotation_dynamic_weight(current_type.as_ref()) < annotation_dynamic_weight(asserted_type.as_ref())
     {

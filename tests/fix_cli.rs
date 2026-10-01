@@ -7763,7 +7763,7 @@ fn imported_callable_return_keeps_its_declaration_namespace() {
         "def",
         "fix-command.main/passed-option",
         "--code",
-        "quote $ defn passed-option () $ fix-command.foreign/pass-through $ assert-type (Option :some 4) $ :: 'fix-command.main/Option 'Number",
+        "quote $ defn passed-option () $ fix-command.foreign/pass-through $ assert-type (fix-command.main/Option :some 4) $ :: 'fix-command.main/Option 'Number",
       ],
     ),
     "install generic caller",
