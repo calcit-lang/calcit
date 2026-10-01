@@ -1116,9 +1116,7 @@ fn emit_wasm_impl(
         {
           return Err(format!("[wasm] target function {ns}/{def_name} is not compilable: {e}"));
         }
-        if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
-          unsupported_dependencies.insert(num_imports + compiled_fns.len() as u32, (format!("{ns}/{def_name}"), e.clone()));
-        }
+        unsupported_dependencies.insert(num_imports + compiled_fns.len() as u32, (format!("{ns}/{def_name}"), e.clone()));
         if write_output {
           eprintln!("[wasm] trapping unsupported dependency {ns}/{def_name}: {e}");
         }
@@ -1254,6 +1252,23 @@ fn emit_wasm_impl(
 
   if compiled_fns.is_empty() {
     return Err("no functions could be compiled to WASM".into());
+  }
+
+  // Validate actual emitted calls from the configured entry and public exports.
+  // Unreferenced dependency slots may remain traps without rejecting the target.
+  if let Some(&entry) = env.fn_index.get(&format!("{init_ns}/{init_def}")) {
+    reject_reachable_wasm_dependencies(&compiled_fns, num_imports, entry, &unsupported_dependencies, false)?;
+  }
+  for (index, function) in compiled_fns.iter().enumerate() {
+    if function.export_name.is_some() {
+      reject_reachable_wasm_dependencies(
+        &compiled_fns,
+        num_imports,
+        num_imports + index as u32,
+        &unsupported_dependencies,
+        false,
+      )?;
+    }
   }
 
   // Build module using wasm-encoder
@@ -1438,6 +1453,16 @@ fn reject_reachable_wasi_command_dependencies(
   entry_index: u32,
   unsupported: &HashMap<u32, (String, String)>,
 ) -> Result<(), String> {
+  reject_reachable_wasm_dependencies(functions, num_imports, entry_index, unsupported, true)
+}
+
+fn reject_reachable_wasm_dependencies(
+  functions: &[CompiledFn],
+  num_imports: u32,
+  entry_index: u32,
+  unsupported: &HashMap<u32, (String, String)>,
+  wasi_command: bool,
+) -> Result<(), String> {
   let mut pending = vec![entry_index];
   let mut visited = HashSet::new();
   while let Some(index) = pending.pop() {
@@ -1445,7 +1470,9 @@ fn reject_reachable_wasi_command_dependencies(
       continue;
     }
     if let Some((definition, reason)) = unsupported.get(&index) {
-      let code = if reason.starts_with("E_WASI_COMMAND_CAPABILITY:") {
+      let code = if !wasi_command {
+        "E_WASM_TARGET"
+      } else if reason.starts_with("E_WASI_COMMAND_CAPABILITY:") {
         "E_WASI_COMMAND_CAPABILITY"
       } else {
         "E_WASI_COMMAND_DEPENDENCY"
@@ -1461,7 +1488,7 @@ fn reject_reachable_wasi_command_dependencies(
     for instruction in &function.instructions {
       match instruction {
         Instruction::Call(callee) => pending.push(*callee),
-        Instruction::CallIndirect { .. } => {
+        Instruction::CallIndirect { .. } if wasi_command => {
           return Err("E_WASI_COMMAND_INDIRECT: an indirect call may reach an unsupported host capability".into());
         }
         _ => {}

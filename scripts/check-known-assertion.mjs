@@ -95,6 +95,30 @@ try {
     await assert.rejects(readFile(join(rejectedOutput, "program.wasm")), { code: "ENOENT" });
   }
 
+  run("edit", "add-ns", "calcit.placeholder-helper");
+  run("edit", "def", "calcit.placeholder-helper/format-value", "--input-format", "cirru", "--code",
+    "quote $ defn format-value () $ format-to-lisp 42");
+  run("edit", "schema", "calcit.placeholder-helper/format-value", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)");
+  run("edit", "add-import", "calcit.assert-evidence", "--input-format", "cirru", "--code",
+    "quote $ calcit.placeholder-helper :refer $ format-value");
+  setBody([["format-value"]]);
+  run();
+  const helperOutput = join(project, "helper-format");
+  const helperRejected = spawnSync(binary, [snapshot, "wasm", "--emit-path", helperOutput], options);
+  assert.equal(helperRejected.error, undefined);
+  assert.notEqual(helperRejected.status, 0, "a reachable failed helper must reject before runtime");
+  assert.match(helperRejected.stderr, /reachable `calcit\.placeholder-helper\/format-value` cannot compile/);
+  assert.match(helperRejected.stderr, /unsupported runtime format-to-lisp in WASM/);
+  await assert.rejects(readFile(join(helperOutput, "program.wasm")), { code: "ENOENT" });
+
+  // Leaving the same helper uncalled must not block a supported export.
+  setBody(scalar.map(test => test.code));
+  const supportedOutput = join(project, "uncalled-helper");
+  run("wasm", "--emit-path", supportedOutput);
+  const supportedModule = new WebAssembly.Module(await readFile(join(supportedOutput, "program.wasm")));
+  assert.equal(new WebAssembly.Instance(supportedModule, imports).exports["run-tests"](), 1);
+
   // The shared preprocessor must reject before execution or either codegen.
   const bad = [
     "let ((x |hello)) (assert-type x 'Number)",
