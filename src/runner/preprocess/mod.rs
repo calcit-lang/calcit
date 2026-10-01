@@ -2266,10 +2266,15 @@ fn reject_known_non_list_spreads(
       if let Some(actual) = resolve_type_value(arg, scope_types)
         && actual.prove_with_bindings(&expected, &mut HashMap::new()).is_mismatch()
       {
+        let hint = if matches!(actual.as_ref(), CalcitTypeAnnotation::Set(_)) {
+          "convert the Set explicitly with `.to-list` before spreading"
+        } else {
+          "pass a List containing the arguments intended for this call"
+        };
         return Err(CalcitErr::use_msg_stack_location_with_code(
           CalcitErrKind::Type,
           format!(
-            "spread operand must be a List: expected `{}`, got `{}`; convert a Set explicitly with `.to-list` before spreading",
+            "spread operand must be a List: expected `{}`, got `{}`; {hint}",
             expected.to_brief_string(),
             actual.to_brief_string(),
           ),

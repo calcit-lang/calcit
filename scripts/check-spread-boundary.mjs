@@ -35,20 +35,20 @@ try {
   // Failed programs cannot reach attached test execution. Check their CLI
   // diagnostics before native execution and both code-generation paths.
   const bad = [
-    "dissoc ({} (:a 1)) & (#{} :a)",
-    "let ((keys (#{} :a))) (dissoc ({} (:a 1)) & keys)",
-    "dissoc ({} (:a 1)) & (filter (vals ({} (:id :a))) (fn (key) (= key :a)))",
-    "dissoc ({} (:a 1)) & 1",
-    "dissoc ({} (:a 1)) & |a",
-    "dissoc ({} (:a 1)) & ({} (:a 1))",
-    "dissoc ({} (:a 1)) & (Option :some :a)",
-    "&map:dissoc ({} (:a 1)) & (#{} :a)",
-    "let ((keys (vals ({} (:id :a))))) (dissoc ({} (:a 1)) & keys)",
-    "let ((f (fn (x) x))) (f & (#{} 1))",
-    "&call-spread dissoc ({} (:a 1)) & (#{} :a)",
-    "dissoc ({} (:a 1) (:b 2)) & ([] :a) & (#{} :b)",
+    ["dissoc ({} (:a 1)) & (#{} :a)", true],
+    ["let ((keys (#{} :a))) (dissoc ({} (:a 1)) & keys)", true],
+    ["dissoc ({} (:a 1)) & (filter (vals ({} (:id :a))) (fn (key) (= key :a)))", true],
+    ["dissoc ({} (:a 1)) & 1", false],
+    ["dissoc ({} (:a 1)) & |a", false],
+    ["dissoc ({} (:a 1)) & ({} (:a 1))", false],
+    ["dissoc ({} (:a 1)) & (Option :some :a)", false],
+    ["&map:dissoc ({} (:a 1)) & (#{} :a)", true],
+    ["let ((keys (vals ({} (:id :a))))) (dissoc ({} (:a 1)) & keys)", true],
+    ["let ((f (fn (x) x))) (f & (#{} 1))", true],
+    ["&call-spread dissoc ({} (:a 1)) & (#{} :a)", true],
+    ["dissoc ({} (:a 1) (:b 2)) & ([] :a) & (#{} :b)", true],
   ];
-  for (const expression of bad) {
+  for (const [expression, isSet] of bad) {
     run("edit", "def", "calcit.spread-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
       `quote $ defwasm-export run-tests () (${expression})`);
     for (const mode of [[], ["--check-only"], ["js"], ["wasm"]]) {
@@ -58,7 +58,8 @@ try {
       assert.ok(result.stderr.includes("E_SPREAD_TYPE_MISMATCH"), `${expression}\n${result.stderr}`);
       assert.ok(result.stderr.includes("calcit.spread-evidence/run-tests"), result.stderr);
       assert.ok(result.stderr.includes("expected") && result.stderr.includes("got"), result.stderr);
-      assert.ok(result.stderr.includes(".to-list"), result.stderr);
+      assert.equal(result.stderr.includes(".to-list"), isSet, result.stderr);
+      if (!isSet) assert.ok(result.stderr.includes("pass a List"), result.stderr);
       assert.ok(result.stderr.includes("preprocessing"), result.stderr);
     }
   }
