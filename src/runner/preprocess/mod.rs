@@ -82,6 +82,7 @@ pub struct SourceExpressionEvidence {
 }
 
 thread_local! {
+  static REQUIRE_ASSERTION_PROOF: Cell<bool> = const { Cell::new(false) };
   static RESOLVED_SOURCE_USAGE_TRACE: RefCell<Option<Vec<ResolvedSourceUsage>>> = const { RefCell::new(None) };
   static SOURCE_EXPRESSION_TRACE: RefCell<Option<Vec<SourceExpressionEvidence>>> = const { RefCell::new(None) };
   #[cfg(test)]
@@ -90,6 +91,19 @@ thread_local! {
   static TEST_STRICT_TYPES: Cell<bool> = const { Cell::new(false) };
   #[cfg(test)]
   static TEST_PROJECT_NAMESPACES: RefCell<HashSet<Arc<str>>> = RefCell::new(HashSet::new());
+}
+
+/// Run an explicit assertion audit without changing ordinary compilation policy.
+/// Callers must re-preprocess source rather than reuse previously compiled definitions.
+pub fn with_assertion_proof<R>(f: impl FnOnce() -> R) -> R {
+  struct Restore(bool);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      REQUIRE_ASSERTION_PROOF.with(|enabled| enabled.set(self.0));
+    }
+  }
+  let _restore = Restore(REQUIRE_ASSERTION_PROOF.with(|enabled| enabled.replace(true)));
+  f()
 }
 
 /// Re-preprocess one definition and retain the compiler's actual result for source-headed calls.
@@ -9264,7 +9278,11 @@ pub fn preprocess_defn(
               .or(Some(definition_location.clone())),
           },
           ctx.check_warnings,
-        );
+        )
+        .map_err(|mut error| {
+          error.stack = ctx.call_stack.clone();
+          error
+        })?;
 
         // Check recur calls against the function's declared parameter types.
         // Skip checking for:
@@ -9668,10 +9686,11 @@ pub fn preprocess_assert_type(
   // Contradictory evidence is invalid for every expression, not just a local.
   // Open boundaries still require their separate migration policy; this check
   // neither manufactures proof nor changes their existing behavior.
+  let assertion_proof = current_type
+    .as_ref()
+    .map(|actual| actual.prove_with_bindings(asserted_type.as_ref(), &mut HashMap::new()));
   if let Some(current_type) = &current_type
-    && current_type
-      .prove_with_bindings(asserted_type.as_ref(), &mut HashMap::new())
-      .is_mismatch()
+    && assertion_proof.is_some_and(TypeProof::is_mismatch)
   {
     let target_description = match &asserted_target {
       Calcit::Local(local) => format!("local `{}`", local.sym),
@@ -9685,6 +9704,24 @@ pub fn preprocess_assert_type(
         current_type.to_brief_string(),
       ),
       "E_ASSERT_TYPE_MISMATCH",
+      ctx.call_stack,
+      target_raw.get_location().or_else(|| type_form.get_location()),
+    ));
+  }
+  // Audit before the local scope update: an assertion cannot provide its own
+  // input evidence, and a second assertion must not hide the first boundary.
+  if REQUIRE_ASSERTION_PROOF.with(Cell::get) && !assertion_proof.is_some_and(TypeProof::is_proven) {
+    let actual = current_type
+      .as_ref()
+      .map(|annotation| annotation.to_brief_string())
+      .unwrap_or_else(|| "unknown".to_owned());
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!(
+        "assert-type lacks independent input proof: expected `{}`, got `{actual}`; use a checked decoder at the data boundary, not another assertion",
+        asserted_type.to_brief_string(),
+      ),
+      "E_ASSERT_TYPE_UNPROVEN",
       ctx.call_stack,
       target_raw.get_location().or_else(|| type_form.get_location()),
     ));
@@ -12808,7 +12845,8 @@ mod tests {
           call_location: None,
         },
         &warnings,
-      );
+      )
+      .expect("ordinary checking retains return warnings");
       assert_eq!(warnings.borrow()[0].code(), Some("W_FN_RETURN_TYPE_MISMATCH"));
     }
 
@@ -13238,6 +13276,30 @@ mod tests {
     assert!(message.contains("app.a/Show"), "warning: {message}");
     assert!(message.contains("app.b/Show"), "warning: {message}");
     assert!(message.contains("compatibility dispatch picks `app.b/Show`"), "warning: {message}");
+  }
+
+  #[test]
+  fn assertion_audit_restores_policy_and_keeps_input_scope_on_failure() {
+    let _guard = lock_preprocess_test_state();
+    let expr = Cirru::List(vec![Cirru::leaf("assert-type"), Cirru::leaf("x"), Cirru::leaf("Number")]);
+    let code = code_to_calcit(&expr, "tests.assert", "audit", vec![]).expect("parse assertion");
+    let scope_defs = HashSet::from([Arc::from("x")]);
+    let mut scope_types = ScopeTypes::from([(Arc::from("x"), calcit::DYNAMIC_TYPE.clone())]);
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+    let error = with_assertion_proof(|| {
+      with_assertion_proof(|| preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.assert", &warnings, &stack))
+        .expect_err("the outer audit remains enabled after nested scope cleanup")
+    });
+    assert_eq!(error.code(), Some("E_ASSERT_TYPE_UNPROVEN"));
+    assert!(error.location.is_some());
+    assert!(matches!(scope_types["x"].as_ref(), CalcitTypeAnnotation::Dynamic));
+    assert!(!REQUIRE_ASSERTION_PROOF.with(Cell::get));
+    let panic = std::panic::catch_unwind(|| with_assertion_proof(|| panic!("audit cleanup probe")));
+    assert!(panic.is_err());
+    assert!(!REQUIRE_ASSERTION_PROOF.with(Cell::get));
+    preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.assert", &warnings, &stack)
+      .expect("ordinary compilation retains its existing policy");
   }
 
   #[test]

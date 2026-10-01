@@ -481,6 +481,7 @@ pub(crate) enum TypeBoundaryReason {
   UnknownCallable,
   TagCallable,
   UnresolvedTypeSlot,
+  UnboundTypeVariable,
   LegacyNullish,
   ErasedTypeArguments,
   RecursiveTypeVariable,
@@ -4661,15 +4662,14 @@ impl CalcitTypeAnnotation {
           Proven
         }
       },
+      (_, Self::Dynamic) => Proven,
       (Self::TypeVar(var), expected_type) => match bindings.get(var).cloned() {
         Some(bound) => bound.prove_with_staged_bindings(expected_type, bindings),
         None if expected_type.contains_type_var_named_with_bindings(var, bindings) => NeedsBoundary(Boundary::RecursiveTypeVariable),
-        None => {
-          bindings.insert(var.clone(), Arc::new(expected_type.clone()));
-          Proven
-        }
+        // Expected variables can be inferred from actual evidence. The reverse
+        // direction cannot turn an arbitrary actual T into a concrete value.
+        None => NeedsBoundary(Boundary::UnboundTypeVariable),
       },
-      (_, Self::Dynamic) => Proven,
       (Self::Dynamic, _) => NeedsBoundary(Boundary::Dynamic),
       (Self::Syntax(_), expected) if !matches!(expected, Self::Syntax(_)) => NeedsBoundary(Boundary::SyntaxValue),
       // A broad runtime family does not contradict a particular nominal

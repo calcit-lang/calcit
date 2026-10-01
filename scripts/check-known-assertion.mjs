@@ -18,7 +18,7 @@ try {
   const response = JSON.parse(run("query", "def", "calcit.core/assert-type", "--format", "json"));
   assert.deepEqual(response.diagnostics, []);
   const tests = response.data.tests.filter(test => test.tags.includes("assert-boundary"));
-  assert.equal(tests.length, 6);
+  assert.equal(tests.length, 8);
   run("test", "calcit.core/hint-fn", "--tag", "return-boundary", "--require-match");
   const returnResponse = JSON.parse(run("query", "def", "calcit.core/hint-fn", "--format", "json"));
   assert.deepEqual(returnResponse.diagnostics, []);

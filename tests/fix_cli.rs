@@ -7,6 +7,325 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn assertion_proof_fix_reports_original_evidence_without_writing() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy fixture");
+  for (name, source, argument, diagnostic) in [
+    ("open", "assert-type x Number", "Dynamic", "E_ASSERT_TYPE_UNPROVEN"),
+    ("generic", "assert-type x Number", "T", "E_ASSERT_TYPE_UNPROVEN"),
+    (
+      "erased-callable",
+      "assert-type x $ :: Fn $ {} (:args $ [] Number) (:return Number)",
+      "Fn",
+      "E_ASSERT_TYPE_UNPROVEN",
+    ),
+    ("contradiction", "assert-type x Number", "String", "E_ASSERT_TYPE_MISMATCH"),
+    (
+      "circular",
+      "assert-type (assert-type x Number) Number",
+      "Dynamic",
+      "E_ASSERT_TYPE_UNPROVEN",
+    ),
+  ] {
+    let target = format!("fix-command.main/{name}");
+    let generics = if argument == "T" { " (:generics $ [] 'T)" } else { "" };
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ defn {name} (x)\n  {source}"),
+        ],
+      ),
+      "add assertion source",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "schema",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ :: 'Fn $ {{}} (:args $ [] '{argument}) (:return 'Number){generics}"),
+        ],
+      ),
+      "add assertion contract",
+    );
+    let original = fs::read(&snapshot).unwrap();
+    let args = [
+      "--rule",
+      "assert-type-proof-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      name,
+      "--format",
+      "json",
+    ];
+    let preview = run_fix(&snapshot, &args);
+    assert!(!preview.status.success());
+    let report = parse_stdout(&preview);
+    assert_eq!(report["diagnostics"][0]["code"], diagnostic, "{report}");
+    let suggestion = &report["data"]["suggestions"][0];
+    assert_eq!(suggestion["rule_id"], "assert-type-proof-v1");
+    assert_eq!(suggestion["diagnostic_code"], diagnostic);
+    assert_eq!(suggestion["definition"], target);
+    assert_eq!(suggestion["applicability"], "requires-review");
+    assert!(suggestion["replacement"].is_null());
+    assert!(suggestion["fingerprint"].is_string());
+    let mut apply = args.to_vec();
+    apply.extend(["--apply", "--expect-revision", report["revision"].as_str().unwrap()]);
+    let applied = run_fix(&snapshot, &apply);
+    assert!(!applied.status.success());
+    assert_eq!(parse_stdout(&applied)["data"]["changed"], false);
+    assert_eq!(fs::read(&snapshot).unwrap(), original);
+    let mut edn = args;
+    edn[7] = "edn";
+    let output = run_fix(&snapshot, &edn);
+    assert!(!output.status.success());
+    cirru_edn::parse(&String::from_utf8_lossy(&output.stdout)).expect("one EDN review report");
+  }
+}
+
+#[test]
+fn assertion_proof_fix_does_not_borrow_a_producers_declared_return() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy fixture");
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "add-ns", "fix-command.proof"]),
+    "add isolated proof owner",
+  );
+  for (name, body) in [
+    ("open-producer", "cond\n    (nil? x) 0\n    true x"),
+    ("assert-consumer", "assert-type (open-producer x) Number"),
+  ] {
+    let target = format!("fix-command.proof/{name}");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ defn {name} (x)\n  {body}"),
+        ],
+      ),
+      "add independent producer proof fixture",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "schema",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Number)",
+        ],
+      ),
+      "declare unproven producer and consumer",
+    );
+  }
+  let original = fs::read(&snapshot).unwrap();
+  let preview = run_fix(
+    &snapshot,
+    &["--rule", "assert-type-proof-v1", "--ns", "fix-command.proof", "--format", "json"],
+  );
+  assert!(
+    !preview.status.success(),
+    "a producer declaration is not proof of its implementation"
+  );
+  let report = parse_stdout(&preview);
+  assert_eq!(report["diagnostics"][0]["code"], "E_FN_RETURN_UNPROVEN", "{report}");
+  assert_eq!(
+    report["data"]["suggestions"][0]["definition"], "fix-command.proof/open-producer",
+    "{report}"
+  );
+  assert_eq!(report["data"]["suggestions"][0]["path"], "code", "{report}");
+  let navigation = run_calcit(
+    &snapshot,
+    &[
+      "query",
+      "type-at",
+      "fix-command.proof/open-producer",
+      "--path",
+      "code",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&navigation, "navigate to the reported lowered-tail source owner");
+  assert_eq!(parse_stdout(&navigation)["data"]["path"], "code");
+  assert!(report["data"]["suggestions"][0]["replacement"].is_null());
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+}
+
+#[test]
+fn assertion_proof_fix_accepts_independently_proven_values() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy fixture");
+  let target = "fix-command.main/proven-assertion";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn proven-assertion (x)\n  assert-type x Number",
+      ],
+    ),
+    "add proven source",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+      ],
+    ),
+    "add proven contract",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        target,
+        "identity",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ assert= 3 $ proven-assertion 3",
+      ],
+    ),
+    "attach Calcit identity semantics",
+  );
+  let original = fs::read(&snapshot).unwrap();
+  let output = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "assert-type-proof-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "proven-assertion",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&output, "independent Number evidence");
+  assert_eq!(parse_stdout(&output)["data"]["suggestions"], serde_json::json!([]));
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "Calcit assertion semantics",
+  );
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+  for (name, annotation, generics) in [("generic-identity", "T", " (:generics $ [] 'T)"), ("open-identity", "Dynamic", "")] {
+    let target = format!("fix-command.main/{name}");
+    let asserted_type = if annotation == "T" { "'T" } else { annotation };
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ defn {name} (x)\n  assert-type x {asserted_type}"),
+        ],
+      ),
+      "add identity assertion",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "schema",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ :: 'Fn $ {{}} (:args $ [] '{annotation}) (:return '{annotation}){generics}"),
+        ],
+      ),
+      "add identity signature",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "add-test",
+          &target,
+          "identity",
+          "--tags",
+          "unit",
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ assert= 3 $ {name} 3"),
+        ],
+      ),
+      "attach generic/open Calcit semantics",
+    );
+    let original = fs::read(&snapshot).unwrap();
+    let output = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "assert-type-proof-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&output, "a legitimate identity must not require narrowing");
+    assert_eq!(parse_stdout(&output)["data"]["suggestions"], serde_json::json!([]));
+    assert_success(
+      &run_calcit(&snapshot, &["test", &target, "--require-match"]),
+      "identity semantic replay",
+    );
+    assert_eq!(fs::read(&snapshot).unwrap(), original);
+  }
+}
+
+#[test]
 fn unsafe_boundary_fix_preserves_compiler_rejection_and_source_bytes() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
