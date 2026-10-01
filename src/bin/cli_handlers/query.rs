@@ -1731,6 +1731,10 @@ mod type_query_tests {
     assert_eq!(nodes.returns, serde_json::json!("'U"));
     let open = runner::preprocess::static_method_contract(receiver.as_ref(), ".each");
     assert_eq!(open.status, "open");
+    assert_eq!(open.arg_types.as_ref().unwrap()[0].describe(), "fn(number) -> dynamic");
+    assert_eq!(open.return_type.as_ref().unwrap().describe(), "unit");
+    assert!(open.rest_type.is_none());
+    assert_eq!(open.definition.as_deref(), Some("calcit.core/each"));
     assert!(
       method_call_types(&open).is_none(),
       "unproven calls must not fabricate syntax evidence"

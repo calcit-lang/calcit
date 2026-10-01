@@ -204,6 +204,10 @@ const scenarios = [
       assert.deepEqual(nth.call_types, get.call_types);
       const each = result.data.methods.find((method) => method.name === ".each");
       assert.equal(each?.status, "open");
+      assert.deepEqual(each.parameter_types, ["fn(number) -> dynamic"]);
+      assert.equal(each.return_type, "unit");
+      assert.equal(each.rest_type, null);
+      assert.equal(each.definition, "calcit.core/each");
       assert.ok(!Object.hasOwn(each, "call_types"), "open methods must not claim proven call types");
     },
   },
