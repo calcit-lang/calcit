@@ -7,6 +7,101 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn type_at_next_navigation_executes_at_root_and_nested_paths() {
+  let directory = TestDirectory::create();
+  let snapshot_directory = directory.path().join("snapshot with ' quote");
+  fs::create_dir(&snapshot_directory).expect("quoted project directory");
+  let snapshot = snapshot_directory.join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy fixture");
+  let original = fs::read(&snapshot).unwrap();
+  for path in ["code", "code@2", "code@3"] {
+    let query = run_calcit(
+      &snapshot,
+      &["query", "type-at", "fix-command.main/main!", "--path", path, "--format", "json"],
+    );
+    assert_success(&query, "query source navigation");
+    let report = parse_stdout(&query);
+    assert_eq!(report["data"]["path"], path);
+    let command = report["next"][0].as_str().unwrap();
+    if path == "code" {
+      assert!(!command.contains("--path"), "{command}");
+    } else {
+      assert!(
+        command.contains(&format!("--path '{}'", path.strip_prefix("code").unwrap())),
+        "{command}"
+      );
+    }
+    let binary_directory = Path::new(env!("CARGO_BIN_EXE_calcit")).parent().unwrap();
+    let navigation = Command::new("sh")
+      .args(["-c", &format!("{command} --json --raw --depth 0")])
+      .current_dir(directory.path())
+      .env(
+        "PATH",
+        format!("{}:{}", binary_directory.display(), std::env::var("PATH").unwrap_or_default()),
+      )
+      .output()
+      .expect("execute the actual suggested command without splitting shell quoting");
+    assert_success(&navigation, "execute query next command from another working directory");
+    let stdout = String::from_utf8(navigation.stdout).unwrap();
+    if report["data"]["tree"].is_array() {
+      let json = stdout
+        .split("```json\n")
+        .nth(1)
+        .expect("tree JSON fence")
+        .split("```")
+        .next()
+        .unwrap();
+      let tree: serde_json::Value = serde_json::from_str(json.trim()).expect("tree AST");
+      assert_eq!(tree, report["data"]["tree"]);
+    } else {
+      let leaf = stdout
+        .split("```cirru\n")
+        .nth(1)
+        .expect("leaf Cirru fence")
+        .split("```")
+        .next()
+        .unwrap();
+      assert_eq!(leaf.trim(), report["data"]["tree"].as_str().unwrap());
+    }
+    assert_eq!(fs::read(&snapshot).unwrap(), original);
+    let edn = run_calcit(
+      &snapshot,
+      &["query", "type-at", "fix-command.main/main!", "--path", path, "--format", "edn"],
+    );
+    assert_success(&edn, "EDN navigation contract");
+    let cirru_edn::Edn::Map(envelope) = cirru_edn::parse(&String::from_utf8_lossy(&edn.stdout)).unwrap() else {
+      panic!("EDN query envelope");
+    };
+    let expected_next = cirru_edn::Edn::List(cirru_edn::EdnListView(
+      report["next"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|command| cirru_edn::Edn::str(command.as_str().unwrap()))
+        .collect(),
+    ));
+    assert_eq!(envelope.get(&cirru_edn::Edn::tag("next")), Some(&expected_next));
+    let human = run_calcit(&snapshot, &["query", "type-at", "fix-command.main/main!", "--path", path]);
+    assert_success(&human, "human navigation contract");
+    assert!(String::from_utf8_lossy(&human.stdout).contains(command));
+  }
+  let invalid = run_calcit(
+    &snapshot,
+    &[
+      "query",
+      "type-at",
+      "fix-command.main/main!",
+      "--path",
+      "code@999",
+      "--format",
+      "edn",
+    ],
+  );
+  assert!(!invalid.status.success());
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+}
+
+#[test]
 fn unsafe_boundary_fix_preserves_compiler_rejection_and_source_bytes() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
