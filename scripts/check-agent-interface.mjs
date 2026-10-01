@@ -261,6 +261,27 @@ const scenarios = [
     },
   },
   {
+    name: "open parsing queries preserve declared Result boundaries without call proof",
+    args: ["calcit/test.cirru", "query", "type", "'String", "--format", "json"],
+    check(result) {
+      for (const [name, returns] of [
+        [".parse-json", "type calcit.core/Result<dynamic, string>"],
+        [".parse-cirru-edn", "type calcit.core/Result<dynamic, string>"],
+        [".parse-cirru-list", "type calcit.core/Result<list, string>"],
+      ]) {
+        const method = result.data.methods.find(method => method.name === name);
+        assert.equal(method?.status, "open");
+        assert.deepEqual(method.parameter_types, []);
+        assert.equal(method.return_type, returns);
+        assert.ok(!Object.hasOwn(method, "call_types"), "open schema must not become closed call evidence");
+        assert.match(method.detail, /unproven/);
+      }
+      const closed = result.data.methods.find(method => method.name === ".parse-float");
+      assert.equal(closed?.status, "proven");
+      assert.deepEqual(closed.call_types.returns, ["::", "'calcit.core/Result", "'Number", "'String"]);
+    },
+  },
+  {
     name: "builtin FFI context",
     args: [
       "calcit/test.cirru",
