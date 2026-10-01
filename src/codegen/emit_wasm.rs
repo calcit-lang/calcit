@@ -18,9 +18,11 @@
 //! Struct/Enum pointers: i32 offsets into linear memory, converted to/from f64.
 //! Output is a `.wasm` binary that can be loaded by Node.js, Deno, or any WASM runtime.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
+use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -1016,6 +1018,7 @@ fn emit_wasm_impl(
   debug_assert_eq!(atom_initial_values.len(), atom_count as usize);
 
   let env = WasmCompileEnv {
+    function_value_dependencies: Rc::default(),
     fn_index,
     fn_arity,
     fn_has_rest,
@@ -1257,7 +1260,14 @@ fn emit_wasm_impl(
   // Validate actual emitted calls from the configured entry and public exports.
   // Unreferenced dependency slots may remain traps without rejecting the target.
   if let Some(&entry) = env.fn_index.get(&format!("{init_ns}/{init_def}")) {
-    reject_reachable_wasm_dependencies(&compiled_fns, num_imports, entry, &unsupported_dependencies, false)?;
+    reject_reachable_wasm_dependencies(
+      &compiled_fns,
+      num_imports,
+      entry,
+      &unsupported_dependencies,
+      &env.function_value_dependencies.borrow(),
+      false,
+    )?;
   }
   for (index, function) in compiled_fns.iter().enumerate() {
     if function.export_name.is_some() {
@@ -1266,6 +1276,7 @@ fn emit_wasm_impl(
         num_imports,
         num_imports + index as u32,
         &unsupported_dependencies,
+        &env.function_value_dependencies.borrow(),
         false,
       )?;
     }
@@ -1453,7 +1464,7 @@ fn reject_reachable_wasi_command_dependencies(
   entry_index: u32,
   unsupported: &HashMap<u32, (String, String)>,
 ) -> Result<(), String> {
-  reject_reachable_wasm_dependencies(functions, num_imports, entry_index, unsupported, true)
+  reject_reachable_wasm_dependencies(functions, num_imports, entry_index, unsupported, &HashMap::new(), true)
 }
 
 fn reject_reachable_wasm_dependencies(
@@ -1461,6 +1472,7 @@ fn reject_reachable_wasm_dependencies(
   num_imports: u32,
   entry_index: u32,
   unsupported: &HashMap<u32, (String, String)>,
+  function_values: &HashMap<u32, HashSet<u32>>,
   wasi_command: bool,
 ) -> Result<(), String> {
   let mut pending = vec![entry_index];
@@ -1481,6 +1493,9 @@ fn reject_reachable_wasm_dependencies(
     }
     if index < num_imports {
       continue;
+    }
+    if let Some(references) = function_values.get(&index) {
+      pending.extend(references.iter().copied());
     }
     let function = functions
       .get((index - num_imports) as usize)
@@ -4775,6 +4790,8 @@ fn build_component_export_adapter(adapter: &ComponentExportAdapter, runtime: &Co
 
 #[derive(Clone)]
 struct WasmCompileEnv {
+  /// Function values actually emitted, keyed by their containing function index.
+  function_value_dependencies: FunctionValueDependencies,
   fn_index: HashMap<String, u32>,
   fn_arity: HashMap<String, u32>,
   fn_has_rest: HashMap<String, u32>,
@@ -4888,6 +4905,8 @@ struct StaticFnDef {
   trait_sensitive: bool,
 }
 
+type FunctionValueDependencies = Rc<RefCell<HashMap<u32, HashSet<u32>>>>;
+
 enum InlineArgument {
   Value(u32),
   Closure(Arc<InlineClosure>),
@@ -4895,6 +4914,8 @@ enum InlineArgument {
 
 /// Context for WASM code generation within a single function.
 struct WasmGenCtx {
+  source_fn_index: Option<u32>,
+  function_value_dependencies: FunctionValueDependencies,
   /// Namespace of the definition currently being emitted.
   source_ns: String,
   /// Map from local variable name to WASM local index
@@ -4952,8 +4973,21 @@ struct WasmGenCtx {
 }
 
 impl WasmGenCtx {
+  fn record_function_value(&mut self, qualified: &str) {
+    if let (Some(source), Some(&target)) = (self.source_fn_index, self.fn_index.get(qualified)) {
+      self
+        .function_value_dependencies
+        .borrow_mut()
+        .entry(source)
+        .or_default()
+        .insert(target);
+    }
+  }
+
   fn new(num_params: u32, env: WasmCompileEnv) -> Self {
     WasmGenCtx {
+      source_fn_index: None,
+      function_value_dependencies: env.function_value_dependencies,
       source_ns: crate::calcit::CORE_NS.to_owned(),
       locals: HashMap::new(),
       local_types: HashMap::new(),
@@ -5757,6 +5791,11 @@ fn compile_fn(
   let arity = param_names.len();
   let mut ctx = WasmGenCtx::new(arity as u32, env.clone());
   ctx.source_ns = source_ns.to_owned();
+  ctx.source_fn_index = env
+    .fn_index
+    .get(&format!("{source_ns}/{export_name}"))
+    .or_else(|| env.fn_index.get(export_name))
+    .copied();
 
   // Register parameter locals
   for (i, pname) in param_names.iter().enumerate() {
@@ -5987,6 +6026,7 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
           ));
         }
         // Function reference used as a value — encode as f64 table slot index.
+        ctx.record_function_value(&qualified);
         ctx.emit(f64_const(slot as f64));
       } else if let Some(value_expr) = ctx.value_imports.get(&qualified).cloned() {
         // Imported top-level def value (e.g. a string constant). Inline its expression.
@@ -6024,6 +6064,7 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
           .or_else(|| ctx.fn_table_index.get(def_ref.def_name.as_ref()))
           .copied()
           .ok_or_else(|| format!("fn value not in table: {qualified}"))?;
+        ctx.record_function_value(&qualified);
         ctx.emit(f64_const(slot as f64));
       } else {
         return Err("anonymous closure values are not yet supported in WASM codegen".into());
@@ -9535,6 +9576,7 @@ mod tests {
       ("helper".to_string(), 5),
     ]);
     let env = WasmCompileEnv {
+      function_value_dependencies: Default::default(),
       fn_index: fn_index.clone(),
       fn_arity: HashMap::from([("tests.alpha/helper".to_string(), 0), ("helper".to_string(), 0)]),
       fn_has_rest: HashMap::new(),

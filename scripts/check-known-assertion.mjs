@@ -102,15 +102,20 @@ try {
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)");
   run("edit", "add-import", "calcit.assert-evidence", "--input-format", "cirru", "--code",
     "quote $ calcit.placeholder-helper :refer $ format-value");
-  setBody([["format-value"]]);
-  run();
-  const helperOutput = join(project, "helper-format");
-  const helperRejected = spawnSync(binary, [snapshot, "wasm", "--emit-path", helperOutput], options);
-  assert.equal(helperRejected.error, undefined);
-  assert.notEqual(helperRejected.status, 0, "a reachable failed helper must reject before runtime");
-  assert.match(helperRejected.stderr, /reachable `calcit\.placeholder-helper\/format-value` cannot compile/);
-  assert.match(helperRejected.stderr, /unsupported runtime format-to-lisp in WASM/);
-  await assert.rejects(readFile(join(helperOutput, "program.wasm")), { code: "ENOENT" });
+  for (const [name, expression] of [
+    ["helper-format", ["format-value"]],
+    ["indirect-helper-format", ["let", [["callback", "format-value"]], ["callback"]]],
+  ]) {
+    setBody([expression]);
+    run();
+    const helperOutput = join(project, name);
+    const helperRejected = spawnSync(binary, [snapshot, "wasm", "--emit-path", helperOutput], options);
+    assert.equal(helperRejected.error, undefined);
+    assert.notEqual(helperRejected.status, 0, "a reachable failed helper must reject before runtime");
+    assert.match(helperRejected.stderr, /reachable `calcit\.placeholder-helper\/format-value` cannot compile/);
+    assert.match(helperRejected.stderr, /unsupported runtime format-to-lisp in WASM/);
+    await assert.rejects(readFile(join(helperOutput, "program.wasm")), { code: "ENOENT" });
+  }
 
   // Leaving the same helper uncalled must not block a supported export.
   setBody(scalar.map(test => test.code));
