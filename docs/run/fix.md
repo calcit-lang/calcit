@@ -166,6 +166,13 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   只填补源码 schema 中已有的 `Dynamic` 洞。零参数函数、可推导返回值和 `Ref<T>` 等候选没有剩余洞时标记为
   `machine-applicable`；局部参数、嵌套泛型等位置仍缺少约束时保留精确路径并标记为 `needs-review`，即使传入 `--apply`
   也不写回。该规则不进入升级 preset，不处理 macro、data/trait/impl 声明，也不通过执行程序猜运行时类型。
+- `spread-call-proof-v1` 将有完整证明的 `f & ([] 1 2)` 改为 `f 1 2`，也支持 spread 前已有固定实参。
+  它读取唯一的编译器 source-expression、真实 List 构造器和固定 callable 契约，按通用类型关系逐项证明，
+  保留 head、实参的单次求值与顺序。预览先运行
+  `calcit fix --rule spread-call-proof-v1 --ns app.main --def run --format edn`；review 后再使用现有
+  `--apply --expect-revision <revision>`，写回仍经过 staged preprocess 和原子事务。该规则不进入默认 preset。
+  未知长度、开放实参、optional/rest、尚未证明的 trait bounds、多重 spread 或不唯一的 macro/source 映射
+  返回 `requires-review`，replacement 为空，传入 `--apply` 也不修改这些节点。quoted data 和函数参数声明不作为调用检查。
 - `tag-match-to-match-v1` 与 `required-struct-field-v1` 属于只随 Calcit 0.14.15 发布的 migration bridge，不是当前 fix surface。
   升级旧项目时请固定使用 0.14.15 执行规则、review 输出并验证测试；迁移完成后再切换到 0.14.16 或更新版本。
   当前版本若显式请求这两个 rule，会返回稳定错误和上述版本提示，不会继续携带旧 planner 与分析特例。

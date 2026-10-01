@@ -2181,6 +2181,30 @@ pub fn infer_static_type_from_expr(expr: &Calcit) -> Option<Arc<CalcitTypeAnnota
   infer_type_from_expr(expr, &ScopeTypes::new())
 }
 
+/// Prove a fixed call from already-processed expressions, without executing them.
+/// This uses the compiler's ordinary proof relation, not compatibility matching.
+pub fn fixed_call_arguments_are_proven(callable: &Calcit, arguments: &[Calcit]) -> bool {
+  let Some(signature) = infer_static_type_from_expr(callable).and_then(|annotation| annotation.resolve_to_nonoptional_fn()) else {
+    return false;
+  };
+  if signature.fn_kind != SchemaKind::Fn
+    || signature.rest_type.is_some()
+    || !signature.where_bounds.is_empty()
+    || signature.arg_types.len() != arguments.len()
+    || calcit::trailing_option_arg_count(&signature.arg_types, signature.arg_types.len()) > 0
+    || signature
+      .arg_types
+      .iter()
+      .any(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Optional(_)))
+  {
+    return false;
+  }
+  let mut bindings = HashMap::new();
+  arguments.iter().zip(&signature.arg_types).all(|(argument, expected)| {
+    infer_static_type_from_expr(argument).is_some_and(|actual| actual.prove_with_bindings(expected, &mut bindings).is_proven())
+  })
+}
+
 /// Resolve a declarative core nominal definition through the same value path
 /// used by method preprocessing, preserving attached implementations.
 pub fn resolve_core_nominal_instance_type(ns: &str, def: &str) -> Option<Arc<CalcitTypeAnnotation>> {
