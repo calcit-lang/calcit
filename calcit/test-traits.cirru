@@ -63,19 +63,19 @@
         'DemoBar $ %{} 'CodeEntry (:doc "|Enum with MyBar impls")
           :code $ quote $ def DemoBar (impl-traits Demo0 MyBarImpl2)
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ :: 'EnumDef
         'DemoZap $ %{} 'CodeEntry (:doc "|Enum with MyZapA/MyZapB")
           :code $ quote $ def DemoZap (impl-traits Demo0 MyZapAImpl MyZapBImpl)
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ :: 'EnumDef
         'DemoZapA $ %{} 'CodeEntry (:doc "|Enum with MyZapA then MyZapB")
           :code $ quote $ def DemoZapA (impl-traits Demo0 MyZapAImpl MyZapBImpl)
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ :: 'EnumDef
         'DemoZapB $ %{} 'CodeEntry (:doc "|Enum with MyZapB then MyZapA")
           :code $ quote $ def DemoZapB (impl-traits Demo0 MyZapBImpl MyZapAImpl)
           :examples $ []
-          :schema $ :: 'Impl
+          :schema $ :: 'EnumDef
         'MyBar $ %{} 'CodeEntry (:doc "|Trait for tuple override test")
           :code $ quote $ deftrait MyBar (.bar :fn)
           :examples $ []

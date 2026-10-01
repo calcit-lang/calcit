@@ -51,6 +51,96 @@ fn assert_success(output: &Output, context: &str) {
 }
 
 #[test]
+fn immutable_value_schemas_reject_contradictions_before_codegen() {
+  for (target, schema) in [
+    ("app.values/initial-state", "quote $ :: 'Map 'Tag 'String"),
+    ("app.main/initial-state", "quote $ :: 'Map 'Tag 'String"),
+    ("app.main/state-alias", "quote $ :: 'Map 'Tag 'String"),
+    ("app.reader/state-alias", "quote $ :: 'Map 'Tag 'String"),
+    ("app.main/members", "quote $ :: 'Map 'String 'String"),
+    ("app.main/answer", "quote $ :: 'String"),
+    ("app.main/label", "quote $ :: 'Number"),
+  ] {
+    let directory = TestDirectory::create();
+    let snapshot = directory.snapshot();
+    fs::copy("tests/fixtures/def-value-schema.cirru", &snapshot).expect("copy value contract fixture");
+    assert_success(&run_calcit(&snapshot, &["--check-only"]), "valid value schemas");
+    assert_success(
+      &run_calcit(&snapshot, &["test", "--tag", "def-value-contract", "--require-match"]),
+      "Calcit attached value semantics",
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", target, "--input-format", "cirru", "--code", schema]),
+      "introduce contradictory value schema",
+    );
+    let original = fs::read(&snapshot).unwrap();
+    let output_directory = directory.0.join("rejected-js");
+    for args in [
+      vec!["--check-only"],
+      vec!["--check-only", "--keep-going", "--format", "edn"],
+      vec!["--emit-path", output_directory.to_str().unwrap(), "js"],
+    ] {
+      let output = run_calcit(&snapshot, &args);
+      assert!(!output.status.success(), "contradictory {target} schema was accepted");
+      let report = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+      );
+      assert!(report.contains("E_SCHEMA_DEF_MISMATCH"), "{report}");
+      assert!(report.contains(target), "{report}");
+      if !args.contains(&"--format") {
+        assert!(report.contains(&format!("at {target} @2")), "{report}");
+      }
+      assert_eq!(fs::read(&snapshot).unwrap(), original);
+    }
+    assert!(!output_directory.join("app.main.mjs").exists());
+  }
+}
+
+#[test]
+fn immutable_value_schema_check_does_not_execute_the_initializer() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("tests/fixtures/def-value-schema.cirru", &snapshot).expect("copy effect contract fixture");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/answer",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ def answer $ do (println |initializer-effect-marker) 42",
+      ],
+    ),
+    "add an effectful but correctly typed initializer",
+  );
+  let output_directory = directory.0.join("generated-js");
+  for args in [
+    vec!["--check-only"],
+    vec!["--check-only", "--keep-going", "--format", "edn"],
+    vec!["--emit-path", output_directory.to_str().unwrap(), "js"],
+  ] {
+    let output = run_calcit(&snapshot, &args);
+    assert_success(&output, "check effectful initializer without evaluating it");
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("initializer-effect-marker"));
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("initializer-effect-marker"));
+  }
+  let runtime = run_calcit(&snapshot, &[]);
+  assert_success(&runtime, "execute the unchanged value contract");
+  assert_eq!(
+    String::from_utf8_lossy(&runtime.stdout)
+      .matches("initializer-effect-marker")
+      .count(),
+    1
+  );
+}
+
+#[test]
 fn large_case_under_a_dependency_chain_checks_without_aborting() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();

@@ -566,6 +566,7 @@ fn ensure_ns_def_preprocessed(
       });
       CURRENT_FN_FEATURES.with(|cell| *cell.borrow_mut() = saved_features);
       let resolved_code = resolved_result?;
+      check_top_level_value_schema(ns, def, &code, &resolved_code, &scope_types, &next_stack)?;
       store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
 
       Ok(())
@@ -588,6 +589,46 @@ fn ensure_ns_def_preprocessed(
 
   let Some(()) = result? else { return Ok(()) };
   Ok(())
+}
+
+/// Check independently resolved immutable initializers before publishing their schema.
+fn check_top_level_value_schema(
+  ns: &str,
+  def: &str,
+  source: &Calcit,
+  resolved: &Calcit,
+  scope_types: &ScopeTypes,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  let Calcit::List(forms) = source else { return Ok(()) };
+  if !matches!(forms.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "def") {
+    return Ok(());
+  }
+  let expected = program::lookup_def_schema(ns, def);
+  let Some(actual) = resolve_type_value(resolved, scope_types) else {
+    return Ok(());
+  };
+  // Preserve the existing migration policy for open evidence; a definite
+  // contradiction must never become a consumer's dispatch contract.
+  if !matches!(actual.prove_with_bindings(&expected, &mut HashMap::new()), TypeProof::Mismatch) {
+    return Ok(());
+  }
+  let location = forms
+    .get(2)
+    .and_then(Calcit::get_location)
+    .filter(|location| location.ns.as_ref() == ns && location.def.as_ref() == def)
+    .unwrap_or_else(|| NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::new(vec![2])));
+  Err(CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Type,
+    format!(
+      "Value `{ns}/{def}` declares type `{}`, but its initializer has type `{}`",
+      expected.to_brief_string(),
+      actual.to_brief_string()
+    ),
+    "E_SCHEMA_DEF_MISMATCH",
+    call_stack,
+    Some(location),
+  ))
 }
 
 pub fn ensure_ns_def_compiled(
