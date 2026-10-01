@@ -364,6 +364,11 @@ calcit query def 'app.util/double'
 calcit --check-only
 ```
 
+`edit def` 写盘前检查定义形状与具名形式的名称一致性，项目/依赖定义宏按源码和 import 识别。
+顶层 `fn` 的名称由 Snapshot key 提供，须有参数列表与函数体。`--allow-unknown-head` 只放行未知头部，
+不放行非法根节点或具名形式的名称不一致。事务复用同一检查，失败不写盘；Markdown 标题和围栏不是代码输入。
+这不替代类型检查，也不证明自定义宏的展开结果；继续运行项目规定的 check/test。
+
 创建 macro 也只需要一条 `edit def`。CLI 会从参数表生成可立即加载的保守严格 contract：输入先按
 `Syntax` 处理，展开结果为 `Expr<Dynamic>`，capabilities 默认为空；之后再根据真实语义用
 `edit schema` 收窄，不要手工修补 Snapshot：

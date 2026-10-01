@@ -1661,6 +1661,9 @@ pub struct EditDefCommand {
   /// overwrite existing definition if it already exists
   #[argh(switch, long = "overwrite")]
   pub overwrite: bool,
+  /// allow an unrecognized definition head; shape and name checks still apply
+  #[argh(switch, long = "allow-unknown-head")]
+  pub allow_unknown_head: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

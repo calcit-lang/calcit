@@ -1019,7 +1019,7 @@ fn push_edit(tokens: &mut Vec<String>, cmd: &EditCommand) {
       );
     }
     EditSubcommand::Def(opts) => {
-      echo_items!(tokens, pos "target" => &opts.target, code_input opts, value "input-format" => &opts.input_format; default "auto", switch "overwrite" => opts.overwrite)
+      echo_items!(tokens, pos "target" => &opts.target, code_input opts, value "input-format" => &opts.input_format; default "auto", switch "overwrite" => opts.overwrite, switch "allow-unknown-head" => opts.allow_unknown_head)
     }
     EditSubcommand::MvDef(opts) => echo_items!(tokens, pos "source" => &opts.source, pos "target" => &opts.target),
     EditSubcommand::RmDef(opts) => echo_items!(tokens, pos "target" => &opts.target),
