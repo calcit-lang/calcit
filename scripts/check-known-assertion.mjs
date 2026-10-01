@@ -295,9 +295,7 @@ try {
   for (const [expression, diagnostic] of rejected) {
     run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
       `quote $ defwasm-export run-tests () (${expression}) 1`);
-    const modes = diagnostic === "E_ASSERT_TYPE_MISMATCH"
-      ? [[], ["--check-only"], ["js"], ["wasm"]]
-      : [[], ["--check-only"], ["js"], ["wasm"], ["wasm", "--check-only"], ["wasi"], ["wasi", "--check-only"]];
+    const modes = [[], ["--check-only"], ["js"], ["wasm"], ["wasm", "--check-only"], ["wasi"], ["wasi", "--check-only"]];
     for (const mode of modes) {
       const result = spawnSync(binary, ["--emit-path", output, snapshot, ...mode], options);
       if (result.error) throw result.error;
@@ -324,7 +322,7 @@ try {
       }
     }
   }
-  console.log("Known assertions and return/call contracts rejected before native/JS/WASM; native/JS positives, JS async adoption and scalar WASM assertions passed");
+  console.log("Known assertions and return/call contracts rejected before native/JS/WASM/WASI; native/JS positives, JS async adoption and scalar WASM assertions passed");
 } finally {
   await rm(project, { recursive: true, force: true });
 }
