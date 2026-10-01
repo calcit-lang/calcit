@@ -32,7 +32,7 @@ use std::sync::{Arc, Mutex};
 use cirru_edn::EdnAnyRef;
 use cirru_edn::{Edn, EdnTag};
 use cirru_parser::Cirru;
-use im_ternary_tree::TernaryTreeList;
+use finger_vec::FingerVec;
 use serde::Serialize;
 
 pub use calcit_impl::CalcitImpl;
@@ -815,8 +815,8 @@ impl PartialEq for Calcit {
   }
 }
 
-impl From<TernaryTreeList<Calcit>> for Calcit {
-  fn from(xs: TernaryTreeList<Calcit>) -> Calcit {
+impl From<FingerVec<Calcit>> for Calcit {
+  fn from(xs: FingerVec<Calcit>) -> Calcit {
     Calcit::List(Arc::new(CalcitList::List(xs)))
   }
 }
@@ -827,8 +827,8 @@ impl From<Vec<Calcit>> for Calcit {
   }
 }
 
-impl From<&TernaryTreeList<Calcit>> for Calcit {
-  fn from(xs: &TernaryTreeList<Calcit>) -> Calcit {
+impl From<&FingerVec<Calcit>> for Calcit {
+  fn from(xs: &FingerVec<Calcit>) -> Calcit {
     Calcit::List(Arc::new(CalcitList::from(xs)))
   }
 }

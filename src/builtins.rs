@@ -18,12 +18,12 @@ use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitListView, CalcitProc
 use crate::call_stack::{CallStackList, using_stack};
 use cirru_edn::EdnTag;
 
-use im_ternary_tree::TernaryTreeList;
+use finger_vec::FingerVec;
 pub(crate) use math::rem_numbers;
 pub(crate) use refs::{ValueAndListeners, quick_build_atom};
 
 pub type FnType = fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit, CalcitErr>;
-pub type SyntaxType = fn(expr: &TernaryTreeList<Calcit>, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr>;
+pub type SyntaxType = fn(expr: &FingerVec<Calcit>, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RegisteredProcPlatform {

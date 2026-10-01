@@ -701,7 +701,7 @@ pub fn first(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-// real implementation relies of ternary-tree
+// real implementation relies on finger_vec
 pub fn assoc_before(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 3 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:assoc-before expected 3 arguments, but received:", xs);
