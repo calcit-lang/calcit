@@ -51,7 +51,12 @@ try {
   const fixedJs = join(project, "fixed-js");
   run("--emit-path", fixedJs, "js");
   assert.equal((await import(pathToFileURL(join(fixedJs, "calcit.spread-evidence.mjs")).href)).fixed_spread(), 3);
-  run("--emit-path", output, "wasm");
+  // WASM gathers project functions, so keep the native/JS Ref tests out of
+  // this separate numeric fixture rather than claiming unsupported Ref parity.
+  const wasmSnapshot = join(project, "wasm-snapshot.cirru");
+  await copyFile(snapshot, wasmSnapshot);
+  execFileSync(binary, [wasmSnapshot, "edit", "rm-def", "calcit.spread-evidence/run-tests"], options);
+  execFileSync(binary, [wasmSnapshot, "--emit-path", output, "wasm"], options);
   const module = new WebAssembly.Module(await readFile(join(output, "program.wasm")));
   const imports = {};
   for (const { module: namespace, name, kind } of WebAssembly.Module.imports(module)) {

@@ -7,3 +7,5 @@
 初版把所有 macro origin 拒绝，导致正常 let/do 内含副作用的实参也无法改写。实际 trace 表明类型证明完整，缺口在于把已有 core let/do 来源误当作任意宏。改为复用既有来源稳定性判断，未知用户宏仍需 review；没有增加宏白名单或放宽类型关系。保持 head 与每个实参子树原样且只出现一次，嵌套已证明改写组合成一次外层 replacement。
 
 用户可观察的 spread/direct 参数单次求值顺序写在 core definition 的 :tests，复用现有 spread runner 在 native 与真实 JS 回放。CLI preview、不写回负例、过期 revision 与幂等性留在已有 fix_cli 的底层事务回归。此记录是开发中设计依据，不代表完整 issue 的六类迁移规则已经交付。
+
+改写后的固定数值调用另有实际 native、JS、WASM 导出结果验证。WASM 会收集项目函数，不能把 native/JS 的 Ref 测试混入该数值 fixture 后宣称全部支持；单独复制 Snapshot 并通过结构化命令去掉 replay 函数，保留真实改写结果，明确 Ref 仍是当前 WASM unsupported 边界。
