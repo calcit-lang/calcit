@@ -38,6 +38,23 @@ test("native EDN preserves symbols, tags and raw schema quotes", () => {
     "quoted syntax leaves are strings; only EDN symbols outside quotes become symbol objects");
 });
 
+test("parsing declarations preserve open payloads without promoting open method evidence", () => {
+  for (const [name, payload] of [
+    ["try-parse-json", "'Dynamic"],
+    ["try-parse-cirru-edn", "'Dynamic"],
+    ["try-parse-cirru-list", ["::", "'List", "'Dynamic"]],
+    ["try-parse-cirru", "'CirruQuote"],
+  ]) {
+    const parser = definition(baseline, name);
+    assert.deepEqual(parser["runtime-arity"], { min: 1, max: 1 });
+    assert.deepEqual(parser.schema.quote.find(pair => pair[0] === ":args")[1], ["[]", "'String"]);
+    assert.deepEqual(parser.schema.quote.find(pair => pair[0] === ":return")[1], ["::", "'Result", payload, "'String"]);
+  }
+  for (const name of [".parse-json", ".parse-cirru-edn", ".parse-cirru-list"]) {
+    assert.ok(!baseline["method-contracts"].some(method => method.name === name), "open parsing is not proven method evidence");
+  }
+});
+
 for (const [name, mutate] of [
   ["deletion", data => data.definitions.shift()],
   ["return type", data => definition(data, "to-string").schema.quote.find(pair => pair[0] === ":return")[1] = "'Dynamic"],
@@ -45,6 +62,7 @@ for (const [name, mutate] of [
   ["generic bound", data => definition(data, "to-string").schema.quote = definition(data, "to-string").schema.quote.filter(pair => pair[0] !== ":where")],
   ["optional argument", data => definition(data, "read-dir")["runtime-arity"].min = 2],
   ["failure contract", data => definition(data, "parse-float").failure = "throw instead of Result"],
+  ["open parsing error type", data => definition(data, "try-parse-json").schema.quote.find(pair => pair[0] === ":return")[1][3] = "'Dynamic"],
   ["receiver", data => data.methods[0].receiver = "'Dynamic"],
   ["method schema", data => data.methods[0].schema.quote[2][1] = "'Dynamic"],
   ["backend feature", data => data.methods[0].features.push("js-ffi")],

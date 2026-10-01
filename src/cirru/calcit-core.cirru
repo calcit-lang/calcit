@@ -8280,6 +8280,12 @@
                   (:err _) |error
                 assert= (%err |infinite) (parse-float |infinite)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |result-method-contract)
+              :code $ quote $ do
+                assert= (Result :ok 1.5) (|1.5 .parse-float)
+                assert= (Result :err |oops) (|oops .parse-float)
+                assert-type (|1.5 .parse-float) (:: 'Result 'Number 'String)
+              :tags $ #{} :core :parse-method-contract :unit
         'pow $ %{} 'CodeEntry
           :doc "|internal function for power operation\nSyntax: (pow base exponent)\nParams: base (number), exponent (number)\nReturns: number\nRaises base to the power of exponent"
           :code $ quote &runtime-implementation
