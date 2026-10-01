@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions, TryLockError};
-use std::io::Write;
+use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -40,7 +40,11 @@ impl WriterLock {
       }
     }
     let mut lock = Self(file);
-    let previous = fs::read_to_string(path).map_err(|error| format!("Failed to read writer lock '{}': {error}", path.display()))?;
+    let mut previous = String::new();
+    lock
+      .0
+      .read_to_string(&mut previous)
+      .map_err(|error| format!("Failed to read writer lock '{}': {error}", path.display()))?;
     if !previous.is_empty() {
       eprintln!(
         "Recovered writer lock '{}' left by an interrupted writer: {}",
@@ -48,6 +52,10 @@ impl WriterLock {
         previous.trim()
       );
     }
+    lock
+      .0
+      .rewind()
+      .map_err(|error| format!("Failed to rewind writer lock '{}': {error}", path.display()))?;
     lock
       .0
       .set_len(0)
@@ -200,6 +208,13 @@ impl StagedFile {
       )
     })?;
     self.committed = true;
+    // Directory syncing is best-effort: some Unix filesystems do not support it.
+    #[cfg(unix)]
+    if let Some(parent) = self.destination.parent()
+      && let Ok(directory) = File::open(parent)
+    {
+      let _ = directory.sync_all();
+    }
     if let Some(state) = active_writer(&path) {
       *state.revision.borrow_mut() = next_revision;
     }
@@ -372,6 +387,7 @@ mod tests {
   }
 
   #[test]
+  #[ignore = "timing benchmark; run explicitly with --ignored and --test-threads=1"]
   fn snapshot_guard_adds_less_than_ten_milliseconds_to_serial_writes() {
     let fixture = tempfile::tempdir().unwrap();
     let path = fixture.path().join("calcit.cirru");
@@ -420,6 +436,19 @@ mod tests {
     drop(first);
     assert!(path.exists(), "the stable lock inode must never be unlinked");
     let _next = WriterLock::acquire(&path, std::time::Duration::ZERO).unwrap();
+  }
+
+  #[test]
+  fn recovered_record_is_read_and_replaced_through_the_locked_handle() {
+    let fixture = tempfile::tempdir().unwrap();
+    let path = fixture.path().join("writer.lock");
+    fs::write(&path, "pid=999999 acquired-at=1 old-record-padding\n").unwrap();
+    let guard = WriterLock::acquire(&path, std::time::Duration::ZERO).unwrap();
+    let record = fs::read_to_string(&path).unwrap();
+    assert!(record.starts_with(&format!("pid={} acquired-at=", std::process::id())));
+    assert!(!record.contains("old-record-padding"));
+    drop(guard);
+    assert!(fs::read(&path).unwrap().is_empty());
   }
 
   #[test]
