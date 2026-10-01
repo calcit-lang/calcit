@@ -8436,6 +8436,61 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :syntax
+          :tests $ []
+            %{} 'TestEntry (:name |function-tail-values)
+              :code $ quote $ let
+                  number-fn $ fn () $ quote 42
+                  text-fn $ fn () $ quote |hello
+                  symbol-fn $ fn () $ quote never-bound
+                  expression-fn $ fn () $ quote (+ 1 2)
+                assert= 42 $ number-fn
+                assert= |hello $ text-fn
+                assert= (quote never-bound) (symbol-fn)
+                assert=
+                  quote $ + 1 2
+                  expression-fn
+              :tags $ #{} :core :quote-return-boundary :unit
+            %{} 'TestEntry (:name |nested-tail-and-expression-contexts)
+              :code $ quote $ let
+                  with-let $ fn () $ let
+                      x 3
+                    quote x
+                  choose $ fn (flag)
+                    if flag (quote left) (quote right)
+                  compose $ fn () $ [] (quote left)
+                    quote $ + 1 2
+                assert= (quote x) (with-let)
+                assert= (quote left) (choose true)
+                assert= (quote right) (choose false)
+                assert=
+                  [] (quote left)
+                    quote $ + 1 2
+                  compose
+              :tags $ #{} :core :quote-return-boundary :unit
+            %{} 'TestEntry (:name |preserves-non-evaluation-and-effects)
+              :code $ quote $ let
+                  hits $ atom 0
+                  quoted $ fn (ignored)
+                    quote $ raise |must-not-run
+                  branches $ fn (flag)
+                    if
+                      do (swap! hits inc) flag
+                      do (swap! hits inc)
+                        quote $ raise |true-data
+                      do (swap! hits inc)
+                        quote $ raise |false-data
+                assert=
+                  quote $ raise |must-not-run
+                  quoted $ do (swap! hits inc) 1
+                assert= 1 $ deref hits
+                assert=
+                  quote $ raise |true-data
+                  branches true
+                assert=
+                  quote $ raise |false-data
+                  branches false
+                assert= 5 $ deref hits
+              :tags $ #{} :core :quote-return-boundary :unit
         'raise $ %{} 'CodeEntry
           :doc "|internal function for raising exceptions\nSyntax: (raise message)\nParams: message (string)\nReturns: never returns (throws exception)\nThrows an exception with the given message"
           :code $ quote &runtime-implementation
