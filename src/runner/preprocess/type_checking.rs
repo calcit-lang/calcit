@@ -1050,13 +1050,11 @@ pub(crate) fn check_function_return_type(
 
   // Generated schema hints are metadata, just as in the runtime body. Check
   // the last executable expression rather than a trailing injected hint.
-  let Some(last_expr) = fn_body
+  let last_expr = fn_body
     .iter()
     .rev()
     .find(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
-  else {
-    return;
-  };
+    .unwrap_or(&Calcit::Nil);
 
   let Some(actual_type) = resolve_type_value(last_expr, scope_types) else {
     return;

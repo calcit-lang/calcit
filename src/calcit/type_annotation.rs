@@ -1849,6 +1849,12 @@ impl CalcitTypeAnnotation {
     Some(list)
   }
 
+  /// Only a one-argument hint describes the enclosing function. A targeted
+  /// local hint must not replace the enclosing function's contract.
+  fn get_surrounding_hint_fn_items(form: &Calcit) -> Option<&CalcitList> {
+    Self::get_hint_fn_items(form).filter(|items| items.len() == 2)
+  }
+
   fn schema_key_name(form: &Calcit) -> Option<&str> {
     match form {
       Calcit::Tag(tag) => {
@@ -2009,7 +2015,7 @@ impl CalcitTypeAnnotation {
 
   pub fn extract_return_type_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
     let generics = Self::extract_generics_from_hint_form(form).unwrap_or_default();
-    let items = Self::get_hint_fn_items(form)?;
+    let items = Self::get_surrounding_hint_fn_items(form)?;
     for item in items.iter().skip(1) {
       if let Some(type_expr) = Self::extract_schema_value_single(item, "return") {
         return Some(CalcitTypeAnnotation::parse_type_annotation_form_with_generics(
@@ -2022,7 +2028,7 @@ impl CalcitTypeAnnotation {
   }
 
   pub fn extract_generics_from_hint_form(form: &Calcit) -> Option<Vec<Arc<str>>> {
-    let items = Self::get_hint_fn_items(form)?;
+    let items = Self::get_surrounding_hint_fn_items(form)?;
     for item in items.iter().skip(1) {
       if let Some(value) = Self::extract_schema_value_single(item, "generics")
         && let Some(vars) = Self::parse_generics_list(value)
@@ -2036,7 +2042,7 @@ impl CalcitTypeAnnotation {
   /// Extract the element type declared by `:rest` from a schema hint-fn form.
   pub fn extract_rest_type_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
     let generics = Self::extract_generics_from_hint_form(form).unwrap_or_default();
-    let items = Self::get_hint_fn_items(form)?;
+    let items = Self::get_surrounding_hint_fn_items(form)?;
     for item in items.iter().skip(1) {
       if let Some(type_expr) = Self::extract_schema_value_single(item, "rest") {
         return Some(CalcitTypeAnnotation::parse_type_annotation_form_with_generics(
@@ -2275,7 +2281,7 @@ impl CalcitTypeAnnotation {
 
   pub fn extract_where_bounds_from_hint_form(form: &Calcit) -> Option<Vec<CalcitGenericBound>> {
     let generics = Self::extract_generics_from_hint_form(form).unwrap_or_default();
-    let items = Self::get_hint_fn_items(form)?;
+    let items = Self::get_surrounding_hint_fn_items(form)?;
     for item in items.iter().skip(1) {
       if let Some(where_form) = Self::extract_schema_value_single(item, "where") {
         let bounds = Self::parse_where_bounds_form(where_form, generics.as_slice(), true);
@@ -2348,7 +2354,7 @@ impl CalcitTypeAnnotation {
   /// Return whether a `hint-fn` schema marks the surrounding function as async.
   /// This is the checked invocation contract shared with JavaScript lowering.
   pub(crate) fn hint_form_marks_async(form: &Calcit) -> bool {
-    let Some(items) = Self::get_hint_fn_items(form) else {
+    let Some(items) = Self::get_surrounding_hint_fn_items(form) else {
       return false;
     };
     items
@@ -2434,13 +2440,18 @@ impl CalcitTypeAnnotation {
     None
   }
 
+  pub(crate) fn extract_surrounding_fn_annotation_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
+    Self::get_surrounding_hint_fn_items(form)?;
+    Self::extract_fn_annotation_from_hint_form(form)
+  }
+
   /// Extract arg types from a schema hint-fn form, e.g. `(HintFn {:args ([] :number :fn) :return :number})`.
   ///
   /// Returns `None` if the hint-fn was not found or has no `:args` key. Used in `syntax::defn` as
   /// the highest-priority source for `CalcitFn.arg_types` (before `assert-type` body scanning).
   pub fn extract_arg_types_from_hint_form(form: &Calcit, params: &[Arc<str>]) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
     let generics = Self::extract_generics_from_hint_form(form).unwrap_or_default();
-    let items = Self::get_hint_fn_items(form)?;
+    let items = Self::get_surrounding_hint_fn_items(form)?;
     for item in items.iter().skip(1) {
       if let Some(args_form) = Self::extract_schema_value_single(item, "args") {
         let types = Self::parse_schema_args_types(args_form, params.len(), generics.as_slice());

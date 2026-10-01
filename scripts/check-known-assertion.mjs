@@ -27,6 +27,9 @@ try {
   run("test", "calcit.core/hint-fn", "--tag", "call-boundary", "--require-match");
   const callTests = returnResponse.data.tests.filter(test => test.tags.includes("call-boundary"));
   assert.equal(callTests.length, 4);
+  run("test", "calcit.core/hint-fn", "--tag", "hint-value-boundary", "--require-match");
+  const hintTests = returnResponse.data.tests.filter(test => test.tags.includes("hint-value-boundary"));
+  assert.equal(hintTests.length, 5);
   run("test", "calcit.core/hint-fn", "--tag", "async-return-boundary", "--require-match");
   const asyncTests = returnResponse.data.tests.filter(test => test.tags.includes("async-return-boundary"));
   assert.equal(asyncTests.length, 1);
@@ -38,7 +41,7 @@ try {
   run("edit", "add-ns", "calcit.assert-evidence");
   const setBody = trees => run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite",
     "--input-format", "json-ast", "--code", JSON.stringify(["defwasm-export", "run-tests", [], ...trees, "1"]));
-  setBody([...tests, ...returnTests, ...callTests, ...asyncTests, ...quoteTests].map(test => test.code));
+  setBody([...tests, ...returnTests, ...callTests, ...hintTests, ...asyncTests, ...quoteTests].map(test => test.code));
   run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
   run("config", "set", "init-fn", "calcit.assert-evidence/run-tests");
@@ -203,6 +206,10 @@ try {
     "quote $ def site $ {} (:storage-key |proto-shuangpin)");
   run("edit", "schema", "calcit.call-values/site", "--input-format", "cirru", "--code",
     "quote $ :: 'Map 'Tag 'String");
+  run("edit", "def", "calcit.call-values/consume-callback", "--input-format", "cirru", "--code",
+    "quote $ defn consume-callback (callback) (callback 1)");
+  run("edit", "schema", "calcit.call-values/consume-callback", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args ([] (:: 'Fn ({} (:args ([] 'Number)) (:return 'Number))))) (:return 'Number)");
   run("edit", "add-import", "calcit.assert-evidence", "--input-format", "cirru", "--code",
     "quote $ calcit.call-values :as config");
   run("edit", "add-test", "calcit.assert-evidence/run-tests", "reads-imported-map", "--tags", "unit",
@@ -232,6 +239,7 @@ try {
     "assert-type |hello 'Number",
     "assert-type 3 'String",
     "assert-type (+ 1 2) 'String",
+    "assert-type (hint-fn ({} (:args ([] 'Number)) (:return 'Number))) 'Fn",
     "assert-type ([] 1 2) (:: 'List 'String)",
     "assert-type (Option :some 3) (:: 'Option 'String)",
     "assert-type (Option :some 3) (:: 'Result 'Number 'String)",
@@ -252,6 +260,8 @@ try {
   ]);
   bad.push(...detailed.keys());
   const badReturns = [
+    "let ((empty (fn () (hint-fn ({} (:args ([])) (:return 'Number)))))) (empty)",
+    "let ((f (fn (x) (+ x 1))) (wrong (fn () (hint-fn ({} (:args ([])) (:return 'Number))) 3 (hint-fn f ({} (:args ([] 'Number)) (:return 'Number)))))) (wrong)",
     "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Number))) callback))) facade (fn (x) x)",
     "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'String))) callback))) facade (fn (x) x)",
     "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) callback))) facade (fn (x) x)",
@@ -269,11 +279,18 @@ try {
     "let ((consume (fn (value) (hint-fn ({} (:args ([] (:: 'Option 'Number))) (:return 'Unit))) &unit))) (consume (Option :some |hello))",
     "let ((consume (fn (callback) (hint-fn ({} (:args ([] (:: 'Fn ({} (:args ([] 'Number)) (:return 'Number))))) (:return 'Unit))) &unit)) (wrong (fn (x) (hint-fn ({} (:args ([] 'String)) (:return 'String))) x))) (consume wrong)",
     "let ((consume (fn (value) (hint-fn ({} (:args ([] 'Number)) (:return 'Unit))) &unit)) (forward (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) (consume callback)))) (forward (fn (x) x))",
+    // Annotation expressions are Nil, including through bindings and helpers.
+    "let ((consume (fn (callback) (hint-fn ({} (:args ([] (:: 'Fn ({} (:args ([] 'Number)) (:return 'Number))))) (:return 'Number))) (callback 1)))) (consume (hint-fn ({} (:args ([] 'Number)) (:return 'Number)) (fn (x) x)))",
+    "let ((consume (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) &unit)) (callback (hint-fn ({} (:args ([] 'Number)) (:return 'Number))))) (consume callback)",
+    "let ((consume (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) &unit)) (f (fn (x) x))) (consume (hint-fn f ({} (:args ([] 'Number)) (:return 'Number))))",
+    "let ((consume (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) &unit)) (make-metadata (fn () (hint-fn ({} (:args ([])) (:return 'Nil)))))) (consume (make-metadata))",
   ];
   const rejected = [
     ...bad.map(expression => [expression, "E_ASSERT_TYPE_MISMATCH"]),
     ...badReturns.map(expression => [expression, "W_FN_RETURN_TYPE_MISMATCH"]),
     ...badCalls.map(expression => [expression, "W_LOCAL_FN_ARG_TYPE_MISMATCH"]),
+    ["config/consume-callback (hint-fn ({} (:args ([] 'Number)) (:return 'Number)) (fn (x) x))", "W_FN_ARG_TYPE_MISMATCH"],
+    ["let ((empty (fn () (hint-fn ({} (:args ([])) (:return 'Unit)))))) (empty)", "E_NIL_FOR_UNIT"],
   ];
   for (const [expression, diagnostic] of rejected) {
     run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
@@ -293,6 +310,8 @@ try {
         assert.ok(diagnostics.includes("expected") && diagnostics.includes("got"), diagnostics);
       } else if (diagnostic === "W_FN_RETURN_TYPE_MISMATCH") {
         assert.ok(diagnostics.includes("declares return type") && diagnostics.includes("body returns"), diagnostics);
+      } else if (diagnostic === "E_NIL_FOR_UNIT") {
+        assert.ok(diagnostics.includes("declares Unit but returns nil"), diagnostics);
       } else {
         assert.ok(diagnostics.includes("expects type") && diagnostics.includes("but got"), diagnostics);
       }

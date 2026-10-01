@@ -120,7 +120,7 @@
             :generics $ [] 'T
             :where $ {} $ 'T 'PointScore
         'reload! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defwasm-export reload! ()
+          :code $ quote $ defwasm-export reload! () &unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []

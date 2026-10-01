@@ -52,7 +52,7 @@
           :examples $ []
           :schema $ :: 'Dynamic
         'reload! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn reload! ()
+          :code $ quote $ defn reload! () &unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
