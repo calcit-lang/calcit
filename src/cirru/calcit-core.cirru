@@ -8472,10 +8472,24 @@
                   hits $ atom 0
                   quoted $ fn (ignored)
                     quote $ raise |must-not-run
+                  branches $ fn (flag)
+                    if
+                      do (swap! hits inc) flag
+                      do (swap! hits inc)
+                        quote $ raise |true-data
+                      do (swap! hits inc)
+                        quote $ raise |false-data
                 assert=
                   quote $ raise |must-not-run
                   quoted $ do (swap! hits inc) 1
                 assert= 1 $ deref hits
+                assert=
+                  quote $ raise |true-data
+                  branches true
+                assert=
+                  quote $ raise |false-data
+                  branches false
+                assert= 5 $ deref hits
               :tags $ #{} :core :quote-return-boundary :unit
         'raise $ %{} 'CodeEntry
           :doc "|internal function for raising exceptions\nSyntax: (raise message)\nParams: message (string)\nReturns: never returns (throws exception)\nThrows an exception with the given message"
