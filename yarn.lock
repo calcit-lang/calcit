@@ -9,6 +9,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "@calcit/procs@workspace:."
   dependencies:
+    "@calcit/finger-vec": "npm:0.1.0"
     "@calcit/ternary-tree": "npm:0.0.26"
     "@cirru/parser.ts": "npm:0.0.10"
     "@cirru/writer.ts": "npm:^0.1.9"
@@ -16,6 +17,12 @@ __metadata:
     typescript: "npm:^6.0.3"
   languageName: unknown
   linkType: soft
+
+"@calcit/finger-vec@npm:0.1.0":
+  version: 0.1.0
+  resolution: "@calcit/finger-vec@npm:0.1.0"
+  languageName: node
+  linkType: hard
 
 "@calcit/ternary-tree@npm:0.0.26":
   version: 0.0.26

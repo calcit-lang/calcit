@@ -50,6 +50,7 @@
     "url": "git+https://github.com/calcit-lang/calcit.git"
   },
   "dependencies": {
+    "@calcit/finger-vec": "0.1.0",
     "@calcit/ternary-tree": "0.0.26",
     "@cirru/parser.ts": "0.0.10",
     "@cirru/writer.ts": "^0.1.9"

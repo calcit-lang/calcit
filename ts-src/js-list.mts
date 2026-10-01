@@ -1,20 +1,7 @@
-import * as ternaryTree from "@calcit/ternary-tree";
+import { FingerVec } from "@calcit/finger-vec";
+import { Hash } from "@calcit/ternary-tree";
 
 import { CalcitValue, isLiteral } from "./js-primes.mjs";
-
-import {
-  TernaryTreeList,
-  initTernaryTreeList,
-  initTernaryTreeListFromRange,
-  listLen,
-  listGet,
-  assocList,
-  listToItems,
-  dissocList,
-  Hash,
-  assocBefore,
-  assocAfter,
-} from "@calcit/ternary-tree";
 
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet } from "./js-set.mjs";
@@ -24,39 +11,42 @@ import { isNestedCalcitData, tipNestedCalcitData, toString, CalcitFn } from "./c
 
 // two list implementations, should offer same interface
 export class CalcitList {
-  value: TernaryTreeList<CalcitValue>;
+  value: FingerVec<CalcitValue>;
   cachedHash: Hash;
-  constructor(value: TernaryTreeList<CalcitValue>) {
+  constructor(value: FingerVec<CalcitValue>) {
     this.cachedHash = null;
     if (value == null) {
-      this.value = initTernaryTreeList([]);
+      this.value = FingerVec.empty();
     } else {
       this.value = value;
     }
   }
   len() {
-    return listLen(this.value);
+    return this.value.size;
   }
   get(idx: number) {
-    if (this.len() === 0) {
+    if (this.value.size === 0) {
       return null;
     }
-    return listGet(this.value, idx);
+    if (idx < 0 || idx >= this.value.size) {
+      throw new Error(`Index ${idx} out of range for list of size ${this.value.size}`);
+    }
+    return this.value.get(idx);
   }
   assoc(idx: number, v: CalcitValue) {
-    return new CalcitList(assocList(this.value, idx, v));
+    return new CalcitList(this.value.assoc(idx, v));
   }
   assocBefore(idx: number, v: CalcitValue) {
-    return new CalcitList(assocBefore(this.value, idx, v));
+    return new CalcitList(this.value.assocBefore(idx, v));
   }
   assocAfter(idx: number, v: CalcitValue) {
-    return new CalcitList(assocAfter(this.value, idx, v));
+    return new CalcitList(this.value.assocAfter(idx, v));
   }
   dissoc(idx: number) {
-    return new CalcitList(dissocList(this.value, idx));
+    return new CalcitList(this.value.dissoc(idx));
   }
   slice(from: number, to: number) {
-    return new CalcitList(ternaryTree.slice(this.value, from, to));
+    return new CalcitList(this.value.slice(from, to));
   }
   toString(shorter = false, disableJsDataWarning: boolean = false): string {
     let result = "";
@@ -70,41 +60,44 @@ export class CalcitList {
     return `([]${result})`;
   }
   isEmpty() {
-    return this.len() === 0;
+    return this.value.size === 0;
   }
   /** usage: `for of` */
   items(): Generator<CalcitValue> {
-    return listToItems(this.value);
+    return this.value.items();
   }
   append(v: CalcitValue) {
-    return new CalcitList(ternaryTree.append(this.value, v));
+    return new CalcitList(this.value.pushRight(v));
   }
   prepend(v: CalcitValue) {
-    return new CalcitList(ternaryTree.prepend(this.value, v));
+    return new CalcitList(this.value.pushLeft(v));
   }
   first() {
-    return ternaryTree.first(this.value);
+    if (this.value.size === 0) {
+      throw new Error("Cannot get from empty list");
+    }
+    return this.value.first();
   }
   rest() {
-    return new CalcitList(ternaryTree.rest(this.value));
+    return new CalcitList(this.value.rest());
   }
   concat(ys: CalcitList | CalcitSliceList) {
     if (ys instanceof CalcitSliceList) {
-      return new CalcitList(ternaryTree.concat(this.value, ys.turnListMode().value));
+      return new CalcitList(this.value.concat(ys.turnListMode().value));
     } else if (ys instanceof CalcitList) {
-      return new CalcitList(ternaryTree.concat(this.value, ys.value));
+      return new CalcitList(this.value.concat(ys.value));
     } else {
       throw new Error(`Unknown data to concat: ${ys}`);
     }
   }
   map(f: (v: CalcitValue) => CalcitValue): CalcitList {
-    return new CalcitList(ternaryTree.listMapValues(this.value, f));
+    return new CalcitList(this.value.map(f));
   }
   toArray(): CalcitValue[] {
-    return [...ternaryTree.listToItems(this.value)];
+    return this.value.toArray();
   }
   reverse() {
-    return new CalcitList(ternaryTree.reverse(this.value));
+    return new CalcitList(this.value.reverse());
   }
   nestedDataInChildren(): boolean {
     let size = this.len();
@@ -113,6 +106,7 @@ export class CalcitList {
         return true;
       }
     }
+    return false;
   }
 }
 
@@ -139,7 +133,7 @@ export class CalcitSliceList {
     if (this.cachedTreeListRef != null) {
       return this.cachedTreeListRef;
     }
-    let ret = new CalcitList(initTernaryTreeListFromRange(this.value, this.start, this.end));
+    let ret = new CalcitList(FingerVec.fromRange(this.value, this.start, this.end));
     this.cachedTreeListRef = ret;
     return ret;
   }
@@ -257,8 +251,8 @@ export class CalcitSliceList {
   }
   map(f: (v: CalcitValue) => CalcitValue): CalcitSliceList {
     let ys: CalcitValue[] = [];
-    for (let x in sliceGenerator(this.value, this.start, this.end)) {
-      ys.push(f(x));
+    for (let idx = this.start; idx < this.end; idx++) {
+      ys.push(f(this.value[idx]));
     }
 
     return new CalcitSliceList(ys);
