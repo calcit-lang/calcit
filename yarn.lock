@@ -5,6 +5,13 @@ __metadata:
   version: 8
   cacheKey: 10c0
 
+"@calcit/finger-vec@npm:0.1.0":
+  version: 0.1.0
+  resolution: "@calcit/finger-vec@npm:0.1.0"
+  checksum: 10c0/3f7d8d503c8d6996d71f1311ccf78d1510460f97908c657fe87ecb587783551754d53bbe0461a2c97bff4d991a83b2082ea5f0d74f8fa8c2dd6db3ee08f4ce43
+  languageName: node
+  linkType: hard
+
 "@calcit/procs@workspace:.":
   version: 0.0.0-use.local
   resolution: "@calcit/procs@workspace:."
@@ -17,12 +24,6 @@ __metadata:
     typescript: "npm:^6.0.3"
   languageName: unknown
   linkType: soft
-
-"@calcit/finger-vec@npm:0.1.0":
-  version: 0.1.0
-  resolution: "@calcit/finger-vec@npm:0.1.0"
-  languageName: node
-  linkType: hard
 
 "@calcit/ternary-tree@npm:0.0.26":
   version: 0.0.26
