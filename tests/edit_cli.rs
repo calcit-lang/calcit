@@ -511,6 +511,10 @@ fn edit_def_accepts_source_macros_and_bounds_the_unknown_head_override() {
   );
   assert_success(&run_calcit(&snapshot, &["config", "add-module", "ui/"]), "configure module");
   assert_success(
+    &run_calcit(&snapshot, &["config", "add-module", "missing/"]),
+    "configure unavailable module for lookup diagnostics",
+  );
+  assert_success(
     &run_calcit(
       &snapshot,
       &[
@@ -527,7 +531,35 @@ fn edit_def_accepts_source_macros_and_bounds_the_unknown_head_override() {
     &run_calcit(&snapshot, &["edit", "def", "app.main/widget", "--code", "quote $ defwidget widget"]),
     "accept source-declared dependency macro",
   );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "add-import", "app.main", "--code", "quote $ unavailable.ui :as broken"],
+    ),
+    "import unavailable dependency namespace",
+  );
   let original = fs::read(&snapshot).unwrap();
+  let broken = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "def",
+      "app.main/missing-widget",
+      "--code",
+      "quote $ broken/defwidget missing-widget",
+    ],
+  );
+  assert!(!broken.status.success(), "unavailable source must not validate a macro");
+  let error = String::from_utf8_lossy(&broken.stderr);
+  assert!(
+    error.contains("missing/") && error.contains("load"),
+    "module failure must remain visible: {error}"
+  );
+  assert!(
+    !error.contains("Use --allow-unknown-head"),
+    "dependency failures must not recommend bypassing validation: {error}"
+  );
+  assert_eq!(fs::read(&snapshot).unwrap(), original, "failed macro resolution must not write");
   let unknown = run_calcit(&snapshot, &["edit", "def", "app.main/custom", "--code", "quote $ special custom 1"]);
   assert!(!unknown.status.success());
   let error = String::from_utf8_lossy(&unknown.stderr);

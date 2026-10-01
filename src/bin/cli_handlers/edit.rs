@@ -963,12 +963,22 @@ fn definition_head_is_macro(snapshot_file: &str, snapshot: &Snapshot, namespace:
     .values()
     .flat_map(|entry| entry.modules.iter())
     .collect::<std::collections::BTreeSet<_>>();
+  let mut load_errors = Vec::new();
   for module in modules {
-    if let Ok(loaded) = super::load_module_with_sources_silent(module, base_dir, &module_folder)
-      && let Some(file) = loaded.snapshot.files.get(source_ns)
-    {
-      return Ok(file.defs.get(source_def).is_some_and(source_declares_macro));
+    match super::load_module_with_sources_silent(module, base_dir, &module_folder) {
+      Ok(loaded) => {
+        if let Some(file) = loaded.snapshot.files.get(source_ns) {
+          return Ok(file.defs.get(source_def).is_some_and(source_declares_macro));
+        }
+      }
+      Err(error) => load_errors.push(format!("{module}: {error}")),
     }
+  }
+  if !load_errors.is_empty() {
+    return Err(format!(
+      "Unrecognized definition head '{head}': cannot resolve namespace '{source_ns}'; module load failures:\n{}\nRepair the dependency sources and retry this edit.",
+      load_errors.join("\n")
+    ));
   }
   Ok(false)
 }
