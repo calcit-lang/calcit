@@ -25,6 +25,12 @@ producer 实现的既有 `W_FN_RETURN_TYPE_MISMATCH` 使本次显式审计失败
 Number 返回声明与 Map 参数证据擦除分别覆盖缓存拒绝和精确/根节点定位，原始 bytes 均不变。
 重新检查 core macro 依赖可能先暴露既有返回推断不足；不因被缓存、属于 core 或需要更方便的报告而豁免。
 
+后续完整 review 的 architecture 备注指出：带 :js-ffi 的函数返回证明失败，会跳过手动权限恢复，
+让同次审计的下一项顶层 unsafe-coerce 借用其权限。实际旧 CLI 复现了只报告 producer 缺证据、
+遗漏后续未授权 coercion 的情况。函数 feature 作用域改用 Drop guard，在所有错误/正常退出和
+unwind 路径恢复外层权限；不为审计临时新增权限、不改用户 feature policy。CLI 回归检查同次
+审计仍拒绝后续未授权定义且 Snapshot 不变；已有带权限 adapter 的附带 Calcit 测试保持正例。
+
 ## 边界与验证
 
 规则只通过显式 `fix --rule assert-type-proof-v1` 开启，不加入默认 preset 或 strict workflow。

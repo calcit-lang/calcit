@@ -7,6 +7,48 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn assertion_proof_error_does_not_grant_ffi_to_the_next_definition() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy feature isolation fixture");
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "add-ns", "fix-command.features"]),
+    "add isolated source owners",
+  );
+  for (target, source, schema) in [
+    (
+      "fix-command.features/a-return",
+      "quote $ defn a-return (x) , x",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Number) (:features $ #{} :js-ffi)",
+    ),
+    (
+      "fix-command.features/b-unscoped",
+      "quote $ def b-unscoped $ unsafe-coerce 1 'Number",
+      "quote 'Number",
+    ),
+  ] {
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", target, "--input-format", "cirru", "--code", source]),
+      "add permission isolation source",
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", target, "--input-format", "cirru", "--code", schema]),
+      "declare each definition's lexical permissions",
+    );
+  }
+  let original = fs::read(&snapshot).unwrap();
+  let output = run_fix(
+    &snapshot,
+    &["--rule", "assert-type-proof-v1", "--ns", "fix-command.features", "--format", "edn"],
+  );
+  assert!(!output.status.success());
+  let error = String::from_utf8_lossy(&output.stderr);
+  assert!(error.contains("E_UNSCOPED_UNSAFE_COERCE"), "{error}");
+  assert!(error.contains("fix-command.features/b-unscoped"), "{error}");
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+}
+
+#[test]
 fn assertion_proof_fix_reports_original_evidence_without_writing() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

@@ -267,6 +267,17 @@ thread_local! {
   static PREPROCESS_DEPTH: Cell<usize> = const { Cell::new(0) };
 }
 
+/// Restore lexical permissions on every exit, including errors and unwinding.
+struct FunctionFeaturesScope {
+  previous: Option<Arc<HashSet<EdnTag>>>,
+}
+
+impl Drop for FunctionFeaturesScope {
+  fn drop(&mut self) {
+    CURRENT_FN_FEATURES.with(|cell| *cell.borrow_mut() = self.previous.take());
+  }
+}
+
 pub fn set_verbose_preprocess(enabled: bool) {
   VERBOSE_PREPROCESS.store(enabled, Ordering::SeqCst);
 }
@@ -9157,6 +9168,9 @@ pub fn preprocess_defn(
         *guard = current;
         old
       });
+      let feature_scope = FunctionFeaturesScope {
+        previous: prev_features.clone(),
+      };
 
       args.traverse_result::<CalcitErr>(&mut |a| {
         if to_skip > 0 {
@@ -9306,7 +9320,7 @@ pub fn preprocess_defn(
       }
 
       // Restore previous function features
-      CURRENT_FN_FEATURES.with(|cell| *cell.borrow_mut() = prev_features);
+      drop(feature_scope);
 
       let mut forms = xs.to_vec();
       if source_top_level_definition && matches!(head, CalcitSyntax::Defn) && !has_marked_args && args.len() > 2 {
@@ -13276,6 +13290,24 @@ mod tests {
     assert!(message.contains("app.a/Show"), "warning: {message}");
     assert!(message.contains("app.b/Show"), "warning: {message}");
     assert!(message.contains("compatibility dispatch picks `app.b/Show`"), "warning: {message}");
+  }
+
+  #[test]
+  fn function_features_scope_restores_parent_after_unwinding() {
+    let _guard = lock_preprocess_test_state();
+    let _parent = CurrentFnFeaturesGuard::js_ffi();
+    let previous = CURRENT_FN_FEATURES.with(|cell| cell.borrow().clone());
+    let panic = std::panic::catch_unwind(|| {
+      let _scope = FunctionFeaturesScope {
+        previous: CURRENT_FN_FEATURES.with(|cell| cell.replace(Some(Arc::new(HashSet::new())))),
+      };
+      assert!(CURRENT_FN_FEATURES.with(|cell| cell.borrow().as_ref().unwrap().is_empty()));
+      panic!("feature cleanup probe");
+    });
+    assert!(panic.is_err());
+    CURRENT_FN_FEATURES.with(|cell| {
+      assert!(Arc::ptr_eq(cell.borrow().as_ref().unwrap(), previous.as_ref().unwrap()));
+    });
   }
 
   #[test]
