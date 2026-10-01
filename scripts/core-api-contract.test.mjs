@@ -11,7 +11,7 @@ const baseline = readEdn(readFileSync(baselinePath, "utf8"));
 const definition = (data, name) => data.definitions.find(row => row.name.symbol === `calcit.core/${name}`);
 
 test("scalar conversion evidence preserves precise results and distinct display traits", () => {
-  for (const receiver of ["'String", "'Number", "'Bool", "'Tag", "'Symbol"]) {
+  for (const receiver of ["'String", "'Number", "'Bool", "'Tag", "'Symbol", "'Nil"]) {
     const conversion = baseline["method-contracts"].find(row => row.receiver === receiver && row.name === ".to-string");
     assert.ok(conversion, `${receiver} must retain its conversion evidence`);
     assert.deepEqual(conversion.parameters, []);

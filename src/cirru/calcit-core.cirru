@@ -9362,6 +9362,19 @@
                     , .to-string
                   , 'String
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |wasm-scalar-method-contract)
+              :code $ quote $ do
+                assert= |hello $ |hello .to-string
+                assert= |0.5 $ 0.5 .to-string
+                assert= |false $ false .to-string
+                assert= |ready $ :ready .to-string
+                assert= | $ nil .to-string
+                assert-type (|hello .to-string) 'String
+                assert-type (0.5 .to-string) 'String
+                assert-type (false .to-string) 'String
+                assert-type (:ready .to-string) 'String
+                assert-type (nil .to-string) 'String
+              :tags $ #{} :core :unit
         'to-symbol $ %{} 'CodeEntry
           :doc "|将 String 转为 Symbol；严格类型调用只接受 String，成功返回 Symbol。旧 turn-symbol 留作内部兼容入口。"
           :code $ quote $ defn to-symbol (source) (turn-symbol source)
