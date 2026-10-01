@@ -6285,6 +6285,60 @@
                     , &unit
                 assert= &unit $ finish $ fn (x) x
               :tags $ #{} :return-boundary
+            %{} 'TestEntry (:name |fixed-callback-call-contract)
+              :code $ quote $ let
+                  apply-one $ fn (callback value)
+                    hint-fn $ {}
+                      :args $ []
+                        :: 'Fn $ {}
+                          :args $ [] 'Number
+                          :return 'Number
+                        , 'Number
+                      :return 'Number
+                    callback value
+                assert= 4 $ apply-one
+                  fn (x) (+ x 1)
+                  , 3
+              :tags $ #{} :call-boundary
+            %{} 'TestEntry (:name |empty-list-call-contract)
+              :code $ quote $ let
+                  count-values $ fn (xs)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'List 'Number
+                      :return 'Number
+                    .len xs
+                assert= 0 $ count-values $ []
+              :tags $ #{} :call-boundary
+            %{} 'TestEntry (:name |dynamic-storage-call-contract)
+              :code $ quote $ let
+                  keep $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic
+                      :return 'Dynamic
+                    , value
+                assert= |hello $ keep |hello
+                assert= ([] 1 2)
+                  keep $ [] 1 2
+              :tags $ #{} :call-boundary
+            %{} 'TestEntry (:name |generic-callback-call-contract)
+              :code $ quote $ let
+                  apply-generic $ fn (callback value)
+                    hint-fn $ {}
+                      :generics $ [] 'T
+                      :args $ []
+                        :: 'Fn $ {}
+                          :args $ [] 'T
+                          :return 'T
+                        , 'T
+                      :return 'T
+                    callback value
+                  identity-number $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    , x
+                assert= 3 $ apply-generic identity-number 3
+              :tags $ #{} :call-boundary
         'identical? $ %{} 'CodeEntry
           :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
           :code $ quote &runtime-implementation
