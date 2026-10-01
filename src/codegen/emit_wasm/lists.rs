@@ -1748,6 +1748,7 @@ mod sort_tests {
     WasmGenCtx::new(
       0,
       WasmCompileEnv {
+        function_value_dependencies: Default::default(),
         fn_index: HashMap::new(),
         fn_arity: HashMap::new(),
         fn_has_rest: HashMap::new(),

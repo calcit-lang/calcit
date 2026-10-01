@@ -647,8 +647,7 @@ pub(super) fn emit_format_to_lisp(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
       return Ok(());
     }
   }
-  // Fallback: evaluate args for side-effects and return nil
-  ctx.stub_proc(args)
+  Err("unsupported runtime format-to-lisp in WASM: requires a statically quoted expression".into())
 }
 
 /// `&list:distinct xs` — return new list with duplicate elements removed (O(n²)).

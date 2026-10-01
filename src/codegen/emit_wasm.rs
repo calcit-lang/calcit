@@ -18,9 +18,11 @@
 //! Struct/Enum pointers: i32 offsets into linear memory, converted to/from f64.
 //! Output is a `.wasm` binary that can be loaded by Node.js, Deno, or any WASM runtime.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
+use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::Arc;
 
@@ -1016,6 +1018,7 @@ fn emit_wasm_impl(
   debug_assert_eq!(atom_initial_values.len(), atom_count as usize);
 
   let env = WasmCompileEnv {
+    function_value_dependencies: Rc::default(),
     fn_index,
     fn_arity,
     fn_has_rest,
@@ -1116,9 +1119,7 @@ fn emit_wasm_impl(
         {
           return Err(format!("[wasm] target function {ns}/{def_name} is not compilable: {e}"));
         }
-        if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
-          unsupported_dependencies.insert(num_imports + compiled_fns.len() as u32, (format!("{ns}/{def_name}"), e.clone()));
-        }
+        unsupported_dependencies.insert(num_imports + compiled_fns.len() as u32, (format!("{ns}/{def_name}"), e.clone()));
         if write_output {
           eprintln!("[wasm] trapping unsupported dependency {ns}/{def_name}: {e}");
         }
@@ -1254,6 +1255,33 @@ fn emit_wasm_impl(
 
   if compiled_fns.is_empty() {
     return Err("no functions could be compiled to WASM".into());
+  }
+
+  // Validate actual emitted calls from the configured entry and public exports.
+  // Unreferenced dependency slots may remain traps without rejecting the target.
+  if let Some(&entry) = env.fn_index.get(&format!("{init_ns}/{init_def}")) {
+    reject_reachable_wasm_dependencies(
+      &compiled_fns,
+      num_imports,
+      entry,
+      &unsupported_dependencies,
+      &env.function_value_dependencies.borrow(),
+      false,
+    )
+    .map_err(|reason| format!("{reason} (entry `{init_ns}/{init_def}`)"))?;
+  }
+  for (index, function) in compiled_fns.iter().enumerate() {
+    if function.export_name.is_some() {
+      reject_reachable_wasm_dependencies(
+        &compiled_fns,
+        num_imports,
+        num_imports + index as u32,
+        &unsupported_dependencies,
+        &env.function_value_dependencies.borrow(),
+        false,
+      )
+      .map_err(|reason| format!("{reason} (export `{}`)", function.export_name.as_deref().unwrap_or_default()))?;
+    }
   }
 
   // Build module using wasm-encoder
@@ -1438,6 +1466,17 @@ fn reject_reachable_wasi_command_dependencies(
   entry_index: u32,
   unsupported: &HashMap<u32, (String, String)>,
 ) -> Result<(), String> {
+  reject_reachable_wasm_dependencies(functions, num_imports, entry_index, unsupported, &HashMap::new(), true)
+}
+
+fn reject_reachable_wasm_dependencies(
+  functions: &[CompiledFn],
+  num_imports: u32,
+  entry_index: u32,
+  unsupported: &HashMap<u32, (String, String)>,
+  function_values: &HashMap<u32, HashSet<u32>>,
+  wasi_command: bool,
+) -> Result<(), String> {
   let mut pending = vec![entry_index];
   let mut visited = HashSet::new();
   while let Some(index) = pending.pop() {
@@ -1445,7 +1484,9 @@ fn reject_reachable_wasi_command_dependencies(
       continue;
     }
     if let Some((definition, reason)) = unsupported.get(&index) {
-      let code = if reason.starts_with("E_WASI_COMMAND_CAPABILITY:") {
+      let code = if !wasi_command {
+        "E_WASM_TARGET"
+      } else if reason.starts_with("E_WASI_COMMAND_CAPABILITY:") {
         "E_WASI_COMMAND_CAPABILITY"
       } else {
         "E_WASI_COMMAND_DEPENDENCY"
@@ -1455,13 +1496,16 @@ fn reject_reachable_wasi_command_dependencies(
     if index < num_imports {
       continue;
     }
+    if let Some(references) = function_values.get(&index) {
+      pending.extend(references.iter().copied());
+    }
     let function = functions
       .get((index - num_imports) as usize)
       .ok_or_else(|| format!("E_WASI_COMMAND_DEPENDENCY: missing function index {index}"))?;
     for instruction in &function.instructions {
       match instruction {
         Instruction::Call(callee) => pending.push(*callee),
-        Instruction::CallIndirect { .. } => {
+        Instruction::CallIndirect { .. } if wasi_command => {
           return Err("E_WASI_COMMAND_INDIRECT: an indirect call may reach an unsupported host capability".into());
         }
         _ => {}
@@ -4748,6 +4792,8 @@ fn build_component_export_adapter(adapter: &ComponentExportAdapter, runtime: &Co
 
 #[derive(Clone)]
 struct WasmCompileEnv {
+  /// Function values actually emitted, keyed by their containing function index.
+  function_value_dependencies: FunctionValueDependencies,
   fn_index: HashMap<String, u32>,
   fn_arity: HashMap<String, u32>,
   fn_has_rest: HashMap<String, u32>,
@@ -4861,6 +4907,8 @@ struct StaticFnDef {
   trait_sensitive: bool,
 }
 
+type FunctionValueDependencies = Rc<RefCell<HashMap<u32, HashSet<u32>>>>;
+
 enum InlineArgument {
   Value(u32),
   Closure(Arc<InlineClosure>),
@@ -4868,6 +4916,8 @@ enum InlineArgument {
 
 /// Context for WASM code generation within a single function.
 struct WasmGenCtx {
+  source_fn_index: Option<u32>,
+  function_value_dependencies: FunctionValueDependencies,
   /// Namespace of the definition currently being emitted.
   source_ns: String,
   /// Map from local variable name to WASM local index
@@ -4925,8 +4975,21 @@ struct WasmGenCtx {
 }
 
 impl WasmGenCtx {
+  fn record_function_value(&mut self, qualified: &str) {
+    if let (Some(source), Some(&target)) = (self.source_fn_index, self.fn_index.get(qualified)) {
+      self
+        .function_value_dependencies
+        .borrow_mut()
+        .entry(source)
+        .or_default()
+        .insert(target);
+    }
+  }
+
   fn new(num_params: u32, env: WasmCompileEnv) -> Self {
     WasmGenCtx {
+      source_fn_index: None,
+      function_value_dependencies: env.function_value_dependencies,
       source_ns: crate::calcit::CORE_NS.to_owned(),
       locals: HashMap::new(),
       local_types: HashMap::new(),
@@ -4987,25 +5050,6 @@ impl WasmGenCtx {
       .get(name)
       .unwrap_or_else(|| panic!("runtime helper missing: {name}"));
     self.emit(Instruction::Call(fn_idx));
-  }
-
-  /// Evaluate all `args`, dropping each result, then push nil (0.0).
-  /// Used for operations that are intentionally no-ops in WASM.
-  pub(super) fn stub_proc(&mut self, args: &[Calcit]) -> Result<(), String> {
-    for arg in args {
-      emit_expr(self, arg)?;
-      self.emit(Instruction::Drop);
-    }
-    self.emit(f64_const(0.0));
-    Ok(())
-  }
-
-  /// Silently ignore all args and return nil. Use for type-system procs whose
-  /// arguments may contain tags/values not representable in WASM (e.g. `:&core-number-methods`).
-  /// NOTE: This should only be used for initialization/setup code that runs before user code.
-  pub(super) fn silent_nil(&mut self) -> Result<(), String> {
-    self.emit(f64_const(0.0));
-    Ok(())
   }
 
   // -----------------------------------------------------------------------
@@ -5730,6 +5774,11 @@ fn compile_fn(
   let arity = param_names.len();
   let mut ctx = WasmGenCtx::new(arity as u32, env.clone());
   ctx.source_ns = source_ns.to_owned();
+  ctx.source_fn_index = env
+    .fn_index
+    .get(&format!("{source_ns}/{export_name}"))
+    .or_else(|| env.fn_index.get(export_name))
+    .copied();
 
   // Register parameter locals
   for (i, pname) in param_names.iter().enumerate() {
@@ -5923,7 +5972,11 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
     }
     // `do` appears as a bare (non-call) expression when used as a body sequencer in defn.
     // It's a no-op — just emit nil so it can be dropped by emit_body.
-    Calcit::Import(import) if import.def.as_ref() == "do" => {
+    Calcit::Import(import)
+      if import.ns.as_ref() == crate::calcit::CORE_NS
+        && import.def.as_ref() == "do"
+        && !ctx.fn_table_index.contains_key(&format!("{}/{}", import.ns, import.def)) =>
+    {
       ctx.emit(f64_const(0.0));
     }
     Calcit::Import(import) => {
@@ -5960,16 +6013,13 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
           ));
         }
         // Function reference used as a value — encode as f64 table slot index.
+        ctx.record_function_value(&qualified);
         ctx.emit(f64_const(slot as f64));
       } else if let Some(value_expr) = ctx.value_imports.get(&qualified).cloned() {
         // Imported top-level def value (e.g. a string constant). Inline its expression.
-        emit_expr(ctx, &value_expr)?;
+        emit_expr(ctx, &value_expr).map_err(|reason| format!("{reason} (imported value `{qualified}`)"))?;
       } else {
-        // defvar or otherwise non-function import — emit nil (0.0) as a placeholder.
-        // This covers `def`-defined values that aren't representable as f64.
-        // Such references appear mostly in initializer/registration paths that are
-        // no-ops in WASM (e.g., &init-builtin-impls!).
-        ctx.emit(f64_const(0.0));
+        return Err(format!("unsupported value import in WASM: {qualified}"));
       }
     }
     Calcit::Str(s) => {
@@ -6001,6 +6051,7 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
           .or_else(|| ctx.fn_table_index.get(def_ref.def_name.as_ref()))
           .copied()
           .ok_or_else(|| format!("fn value not in table: {qualified}"))?;
+        ctx.record_function_value(&qualified);
         ctx.emit(f64_const(slot as f64));
       } else {
         return Err("anonymous closure values are not yet supported in WASM codegen".into());
@@ -6054,15 +6105,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         Err(format!("{syn} is not yet supported in WASM codegen"))
       }
       CalcitSyntax::Defn => Err("nested fn/defn closure values are not yet supported in WASM codegen".into()),
-      CalcitSyntax::Quote | CalcitSyntax::Quasiquote => {
-        // Quote creates a runtime value (quoted symbol/expression).
-        // In WASM, emit nil as a placeholder — quote values appear mainly in
-        // error-reporting paths (e.g., the assert macro formats the failing
-        // expression via `format-to-lisp (quote ~xs)`) and don't affect the
-        // normal execution path.
-        ctx.emit(f64_const(0.0));
-        Ok(())
-      }
+      CalcitSyntax::Quote | CalcitSyntax::Quasiquote => Err(format!("unsupported runtime {syn} value in WASM")),
       CalcitSyntax::Reset => {
         // reset! atom new-value — set atom global and return new value
         if args_list.len() != 2 {
@@ -6899,7 +6942,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeEnum => emit_enum_new(ctx, args),
     CalcitProc::NativeEnumNth => emit_enum_nth(ctx, args),
     CalcitProc::NativeEnumCount => emit_enum_count(ctx, args),
-    CalcitProc::NativeEnumValidate => ctx.stub_proc(args), // no-op in WASM
+    CalcitProc::NativeEnumValidate => Err("runtime enum validation is not supported in WASM".into()),
     // %:: enum variant constructor: (enum_class tag payload...) — ignore enum_class
     CalcitProc::NativeNamedEnumNew => emit_named_enum_new(ctx, args),
     CalcitProc::NativeEnumImpls
@@ -7061,10 +7104,8 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::FoldlShortcut => emit_foldl_shortcut(ctx, args),
     CalcitProc::FoldrShortcut => emit_foldr_shortcut(ctx, args),
 
-    // Format (stub — only used in raise/error paths)
+    // Static quoted expressions can be formatted without runtime reflection.
     CalcitProc::FormatToLisp => emit_format_to_lisp(ctx, args),
-    // to-lispy-string — stub, only used in raise/error message paths
-    CalcitProc::PrStr => ctx.stub_proc(args),
     CalcitProc::GetEnv => {
       if !(1..=2).contains(&args.len()) {
         return Err(format!("get-env expects 1~2 args, got {}", args.len()));
@@ -7171,12 +7212,6 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       Ok(())
     }
 
-    // &get-calcit-backend — runtime-env query, not meaningful in WASM; return nil.
-    CalcitProc::NativeGetCalcitBackend => {
-      ctx.emit(f64_const(0.0));
-      Ok(())
-    }
-
     // Runtime tag interning is not represented by the static WASM tag table.
     CalcitProc::TurnTag => {
       expect_arity(1, args, "turn-tag")?;
@@ -7189,11 +7224,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       Err("runtime trait registration must be eliminated before WASM codegen".into())
     }
 
-    // register-calcit-builtin-impls — builtin impl registration; not meaningful in WASM; return nil.
-    CalcitProc::RegisterCalcitBuiltinImpls => {
-      eprintln!("[wasm warning] RegisterCalcitBuiltinImpls is ignored in WASM (builtin impls already registered)");
-      ctx.silent_nil()
-    }
+    CalcitProc::RegisterCalcitBuiltinImpls => Err("runtime builtin impl registration must be eliminated before WASM codegen".into()),
 
     // &impl::new — only valid as compile-time metadata for WASM.
     CalcitProc::NativeImplNew => Err("runtime trait impl construction must be eliminated before WASM codegen".into()),
@@ -7202,12 +7233,6 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeAssertTraits => Err(
       "runtime trait assertions are not supported by the internal WASM backend; make the receiver type statically resolvable".into(),
     ),
-
-    // &get-os — host OS info; not available in WASM; return nil.
-    CalcitProc::NativeGetOs => ctx.stub_proc(args),
-
-    // definition metadata — not available in WASM; return nil.
-    CalcitProc::NativeGetDefDoc | CalcitProc::NativeGetDefSchema => ctx.stub_proc(args),
 
     // &number:display-by — radix string formatting.
     CalcitProc::NativeNumberDisplayBy => {
@@ -7219,9 +7244,6 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       ctx.call_rt("__rt_display_by");
       Ok(())
     }
-
-    // &number:format — formatting; stub in WASM.
-    CalcitProc::NativeNumberFormat => ctx.stub_proc(args),
 
     CalcitProc::Sort => emit_list_sort(ctx, args),
 
@@ -9520,6 +9542,7 @@ mod tests {
       ("helper".to_string(), 5),
     ]);
     let env = WasmCompileEnv {
+      function_value_dependencies: Default::default(),
       fn_index: fn_index.clone(),
       fn_arity: HashMap::from([("tests.alpha/helper".to_string(), 0), ("helper".to_string(), 0)]),
       fn_has_rest: HashMap::new(),

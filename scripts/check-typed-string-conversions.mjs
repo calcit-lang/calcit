@@ -193,6 +193,14 @@ try {
   assert.equal(wasmJs.test_to_string_scalars(), 1, "generated JS must preserve Nil, Bool, String, and Tag trait text");
   assert.equal(wasmJs.test_custom_trait_score(42), 1, "generated JS must select the same nominal trait implementation");
   assert.equal(wasmJs.test_qualified_symbol_helper(42), 1, "generated JS must keep the local helper despite a same-named definition");
+  const rejectedTagOutput = join(output, "rejected-tag-export");
+  const rejectedTag = spawnSync(binary, ["wasm", wasmSnapshot, "--emit-path", rejectedTagOutput], { encoding: "utf8" });
+  assert.notEqual(rejectedTag.status, 0, "an unsupported public Tag conversion must reject before runtime");
+  assert.match(rejectedTag.stderr, /E_WASM_TARGET: reachable `calcit\.core\/to-tag` cannot compile/);
+  assert.match(rejectedTag.stderr, /E_WASM_TAG_CONVERSION/);
+  await assert.rejects(readFile(join(rejectedTagOutput, "program.wasm")), { code: "ENOENT" });
+  // Keep the negative export separate so supported conversion exports run unchanged.
+  execFileSync(binary, [wasmSnapshot, "edit", "rm-def", "test-wasm.main/test-to-tag"], { stdio: "pipe" });
   const wasm = spawnSync(binary, ["wasm", wasmSnapshot, "--emit-path", output], { encoding: "utf8" });
   assert.equal(wasm.status, 0, `WASM should preserve unrelated exports\n${wasm.stdout}\n${wasm.stderr}`);
   assert.match(wasm.stderr, /trapping unsupported dependency calcit\.core\/to-tag: E_WASM_TAG_CONVERSION/);
@@ -209,7 +217,6 @@ try {
     assert.ok(Number.isSafeInteger(length) && length >= 0, "WASM string length must be a nonnegative safe integer");
     return new TextDecoder().decode(new Uint8Array(memory, pointer + 8, length));
   };
-  assert.throws(() => instance.exports["test-to-tag"](), WebAssembly.RuntimeError, "WASM must not silently return a String as Tag");
   assert.equal(instance.exports["test-to-string-frac"](), 1, "WASM must lower Number to-string through its trait implementation");
   assert.equal(instance.exports["test-to-string-number"](42), 1, "WASM must specialize the generic ToString trait call for runtime Number arguments");
   assert.equal(instance.exports["test-turn-str-runtime"](42), 1, "WASM compatibility alias must specialize the ToString trait call for runtime Number arguments");

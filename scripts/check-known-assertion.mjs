@@ -77,6 +77,127 @@ try {
   const wasm = new WebAssembly.Instance(module, imports);
   assert.equal(wasm.exports["run-tests"](), 1);
 
+  // Unsupported runtime data must fail codegen, not become a zero result.
+  // Native execution still verifies that each source expression is valid.
+  for (const [name, expression, diagnostic] of [
+    ["runtime-quote", ["quote", ["+", "1", "2"]], /unsupported runtime quote value in WASM/],
+    ["runtime-quasiquote", ["quasiquote", ["+", "1", "2"]], /unsupported runtime quasiquote value in WASM/],
+    ["runtime-format", ["format-to-lisp", "42"], /unsupported runtime format-to-lisp in WASM/],
+    ["number-format", ["&number:format", "1.5", "2"], /unsupported proc in WASM: &number:format/],
+    ["value-print", ["to-lispy-string", "42"], /unsupported proc in WASM: to-lispy-string/],
+    ["host-os", ["&get-os"], /unsupported proc in WASM: &get-os/],
+    ["runtime-backend", ["&get-calcit-backend"], /unsupported proc in WASM: &get-calcit-backend/],
+    ["runtime-enum-validation", ["&enum:validate", ["Option", ":some", "3"], ":some"], /runtime enum validation is not supported in WASM/],
+    ["runtime-builtin-registration", ["register-calcit-builtin-impls", ["format-to-lisp", "42"]], /runtime builtin impl registration must be eliminated before WASM codegen/],
+    ["definition-doc", ["&get-def-doc", "|calcit.core/inc"], /unsupported proc in WASM: &get-def-doc/],
+    ["definition-schema", ["&get-def-schema", "|calcit.core/inc"], /unsupported proc in WASM: &get-def-schema/],
+    ["branch-format", ["if", "true", ["format-to-lisp", "42"], "|fallback"], /unsupported runtime format-to-lisp in WASM/],
+  ]) {
+    setBody([expression]);
+    run();
+    const rejectedOutput = join(project, name);
+    const rejected = spawnSync(binary, [snapshot, "wasm", "--emit-path", rejectedOutput], options);
+    assert.equal(rejected.error, undefined);
+    assert.notEqual(rejected.status, 0, `${name} must fail before artifact emission`);
+    assert.match(rejected.stderr, diagnostic);
+    assert.match(rejected.stderr, /calcit\.assert-evidence\/run-tests/);
+    await assert.rejects(readFile(join(rejectedOutput, "program.wasm")), { code: "ENOENT" });
+  }
+
+  run("edit", "add-ns", "calcit.placeholder-helper");
+  run("edit", "def", "calcit.placeholder-helper/format-value", "--input-format", "cirru", "--code",
+    "quote $ defn format-value () $ format-to-lisp 42");
+  run("edit", "schema", "calcit.placeholder-helper/format-value", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'String)");
+  run("edit", "add-import", "calcit.assert-evidence", "--input-format", "cirru", "--code",
+    "quote $ calcit.placeholder-helper :refer $ format-value");
+  for (const [name, expression] of [
+    ["helper-format", ["format-value"]],
+    ["indirect-helper-format", ["let", [["callback", "format-value"]], ["callback"]]],
+  ]) {
+    setBody([expression]);
+    run();
+    const helperOutput = join(project, name);
+    const helperRejected = spawnSync(binary, [snapshot, "wasm", "--emit-path", helperOutput], options);
+    assert.equal(helperRejected.error, undefined);
+    assert.notEqual(helperRejected.status, 0, "a reachable failed helper must reject before runtime");
+    assert.match(helperRejected.stderr, /reachable `calcit\.placeholder-helper\/format-value` cannot compile/);
+    assert.match(helperRejected.stderr, /unsupported runtime format-to-lisp in WASM/);
+    await assert.rejects(readFile(join(helperOutput, "program.wasm")), { code: "ENOENT" });
+  }
+
+  // Leaving the same helper uncalled must not block a supported export.
+  setBody(scalar.map(test => test.code));
+  const supportedOutput = join(project, "uncalled-helper");
+  run("wasm", "--emit-path", supportedOutput);
+  const supportedModule = new WebAssembly.Module(await readFile(join(supportedOutput, "program.wasm")));
+  assert.equal(new WebAssembly.Instance(supportedModule, imports).exports["run-tests"](), 1);
+
+  run("edit", "def", "calcit.placeholder-helper/do", "--input-format", "cirru", "--code",
+    "quote $ defn do () 42");
+  run("edit", "schema", "calcit.placeholder-helper/do", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
+  run("edit", "add-import", "calcit.assert-evidence", "--overwrite", "--input-format", "cirru", "--code",
+    "quote $ calcit.placeholder-helper :as helper");
+  run("edit", "add-test", "calcit.assert-evidence/run-tests", "keeps-imported-named-function-value", "--tags", "unit",
+    "--input-format", "cirru", "--code", "quote $ assert= 42 $ let ((callback helper/do)) (callback)");
+  run("test", "calcit.assert-evidence/run-tests", "--require-match");
+  setBody([["assert=", "42", ["let", [["callback", "helper/do"]], ["callback"]]]]);
+  run();
+  const namedDoOutput = join(project, "named-do-function");
+  run("wasm", "--emit-path", namedDoOutput);
+  const namedDoModule = new WebAssembly.Module(await readFile(join(namedDoOutput, "program.wasm")));
+  assert.equal(new WebAssembly.Instance(namedDoModule, imports).exports["run-tests"](), 1);
+
+  run("edit", "def", "calcit.placeholder-helper/stored-quote", "--input-format", "cirru", "--code",
+    "quote $ def stored-quote $ quote $ + 1 2");
+  run("edit", "add-import", "calcit.assert-evidence", "--overwrite", "--input-format", "cirru", "--code",
+    "quote $ calcit.placeholder-helper :refer $ format-value stored-quote");
+  setBody(["stored-quote"]);
+  run();
+  const valueOutput = join(project, "imported-quote");
+  const valueRejected = spawnSync(binary, [snapshot, "wasm", "--emit-path", valueOutput], options);
+  assert.equal(valueRejected.error, undefined);
+  assert.notEqual(valueRejected.status, 0);
+  assert.match(valueRejected.stderr, /unsupported runtime quote value in WASM/);
+  assert.match(valueRejected.stderr, /imported value `calcit\.placeholder-helper\/stored-quote`/);
+  await assert.rejects(readFile(join(valueOutput, "program.wasm")), { code: "ENOENT" });
+
+  // Exercise both runtime-selected branches and distinguish legitimate zero.
+  run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
+    "quote $ defwasm-export run-tests (flag) $ if flag 0 7");
+  run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ [] 'Bool) (:return 'Number)");
+  const parameterOutput = join(project, "runtime-parameter");
+  run("wasm", "--emit-path", parameterOutput);
+  const parameterModule = new WebAssembly.Module(await readFile(join(parameterOutput, "program.wasm")));
+  const parameterWasm = new WebAssembly.Instance(parameterModule, imports);
+  assert.equal(parameterWasm.exports["run-tests"](1), 0);
+  assert.equal(parameterWasm.exports["run-tests"](0), 7);
+
+  run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
+    "quote $ defwasm-export run-tests (flag) $ if flag &unit &unit");
+  run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ [] 'Bool) (:return 'Unit)");
+  const unitOutput = join(project, "legitimate-unit");
+  run("wasm", "--emit-path", unitOutput);
+  const unitModule = new WebAssembly.Module(await readFile(join(unitOutput, "program.wasm")));
+  const unitWasm = new WebAssembly.Instance(unitModule, imports);
+  assert.equal(unitWasm.exports["run-tests"](1), 0);
+  assert.equal(unitWasm.exports["run-tests"](0), 0);
+
+  run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
+    "quote $ defwasm-export run-tests (flag) $ if flag (format-to-lisp 42) |fallback");
+  run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ [] 'Bool) (:return 'String)");
+  const branchRejected = spawnSync(binary, [snapshot, "wasm", "--emit-path", join(project, "parameter-format")], options);
+  assert.equal(branchRejected.error, undefined);
+  assert.notEqual(branchRejected.status, 0);
+  assert.match(branchRejected.stderr, /unsupported runtime format-to-lisp in WASM/);
+  await assert.rejects(readFile(join(project, "parameter-format", "program.wasm")), { code: "ENOENT" });
+  setBody(scalar.map(test => test.code));
+  run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
   // Source imports are values, not automatically callable namespace bindings.
   run("edit", "add-ns", "calcit.call-values");
   run("edit", "def", "calcit.call-values/site", "--input-format", "cirru", "--code",
