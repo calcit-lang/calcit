@@ -544,7 +544,7 @@ fn ensure_ns_def_preprocessed(
     validate_js_ffi_definition_target("embedded JS FFI reference", None, ns, def, call_stack)?;
   }
 
-  if program::lookup_compiled_def(ns, def).is_some() {
+  if program::lookup_compiled_def(ns, def).is_some() && !REQUIRE_ASSERTION_PROOF.with(Cell::get) {
     return Ok(());
   }
 
@@ -14836,6 +14836,8 @@ mod tests {
       program::lookup_compiled_def(ns, def).is_some(),
       "recursive source def should compile once"
     );
+    with_assertion_proof(|| ensure_ns_def_compiled(ns, def, &warnings, &stack))
+      .expect("audit reprocesses cached recursive dependencies through the same compile guard");
   }
 
   #[test]

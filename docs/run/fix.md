@@ -195,6 +195,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   规则复用 compiler 的共同证明关系与既有 suggestion，不运行程序猜类型，也不自动补 schema、选择 decoder、
   删除断言或插入强转。replacement 为空；`--apply` 不写入源码。报告保留 error，命令非零退出。
   此项审计须使用严格模式，暂不进入默认 preset 或 strict workflow；普通编译的开放边界迁移策略保持不变。
+  所选定义与其依赖都重新预处理，不把入口预检或普通编译的缓存当成审计证明；递归继续使用既有编译 guard。
   每个 definition 在首个错误停止，只检查 `:code`，`:tests` / `:examples` 需另行运行。
   所选 scope 外、未知来源及其他编译错误会直接失败，不能将空报告当作这些路径已安全的证明。
 - `tag-match-to-match-v1` 与 `required-struct-field-v1` 属于只随 Calcit 0.14.15 发布的 migration bridge，不是当前 fix surface。

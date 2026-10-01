@@ -20,6 +20,11 @@ Rust 只负责低层审计作用域恢复、CLI envelope 与原始 bytes 不变�
 `E_FN_RETURN_UNPROVEN` 区分缺少实现证明与原返回类型矛盾 warning。既有矛盾门禁不降级。
 producer 实现的既有 `W_FN_RETURN_TYPE_MISMATCH` 使本次显式审计失败，不借用已矛盾的声明返回空建议。
 
+独立 review 发现显式 `--strict-types` 的入口预检会预热依赖 cache。CLI 回归实际复现了审计错误地成功退出，
+再修正依赖缓存门禁：仅本次显式审计重新预处理依赖，普通编译仍走原缓存；递归保留同一个 compile guard。
+Number 返回声明与 Map 参数证据擦除分别覆盖缓存拒绝和精确/根节点定位，原始 bytes 均不变。
+重新检查 core macro 依赖可能先暴露既有返回推断不足；不因被缓存、属于 core 或需要更方便的报告而豁免。
+
 ## 边界与验证
 
 规则只通过显式 `fix --rule assert-type-proof-v1` 开启，不加入默认 preset 或 strict workflow。
