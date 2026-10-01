@@ -33,6 +33,11 @@ use super::tree_mutation::{TreeCursorMutation, TreeOperation};
 
 /// Main handler for code command
 pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(), String> {
+  let _writer = if !matches!(&cmd.subcommand, TreeSubcommand::Show(_)) {
+    Some(calcit::util::atomic_write::SnapshotWriteGuard::acquire(snapshot_file)?)
+  } else {
+    None
+  };
   if !matches!(&cmd.subcommand, TreeSubcommand::Show(_)) {
     guard_snapshot_mutation_toolchain(snapshot_file)?;
   }

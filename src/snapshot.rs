@@ -3766,11 +3766,7 @@ fn normalize_pipe_prefixed_leaf(node: Cirru) -> Cirru {
 pub fn save_snapshot_to_file<P: AsRef<Path>>(snapshot_path: P, snapshot: &Snapshot) -> Result<(), String> {
   let content = render_snapshot_content(snapshot)?;
 
-  // Write to file
-  std::fs::write(&snapshot_path, content)
-    .map_err(|e| format!("Failed to write snapshot file {}: {e}", snapshot_path.as_ref().display()))?;
-
-  Ok(())
+  crate::util::atomic_write::write_snapshot(snapshot_path, content.as_bytes())
 }
 
 #[cfg(test)]

@@ -691,6 +691,12 @@ fn run_cli() -> Result<(), String> {
     }
   }
 
+  // Fix consumes compiled evidence, so serialize before loading that evidence.
+  let _fix_writer = if matches!(&cli_args.subcommand, Some(CalcitCommand::Fix(options)) if options.apply) {
+    Some(calcit::util::atomic_write::SnapshotWriteGuard::acquire(&cli_args.input)?)
+  } else {
+    None
+  };
   let input_path = PathBuf::from(&cli_args.input);
   let input_path_str = input_path.to_string_lossy().to_string();
   let base_dir = input_path.parent().expect("extract parent");
