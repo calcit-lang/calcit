@@ -12,6 +12,8 @@
 
 完整回归暴露 test-traits 的四个 EnumDef alias 误标为 Impl。实际 `impl-traits` 返回附带方法的 EnumDef，并非 `defimpl` 的 Impl；通过 Calcit CLI 将这四项 schema 修正为 EnumDef，不修改 trait dispatch、顺序或结果的测试期望。
 
+CI 的 WASM 公共定义检查发现 core 的 ReadableByteStream/StreamConsumeError 也把 definition value 错标为 Struct/Enum 实例。通过 CLI 将两项实际 definition schema 改为 StructDef/EnumDef，保留构造限制、Component ABI 和语义测试；不让 definition/instance 在 TypeProof 中混为兼容类型。
+
 WASM 回归也暴露已有 attachment 推断把表达式位置的命名 StructDef/EnumDef 的 TypeRef 当成实例。在 attachment 的共同推断中，使用实际输入表达式的源定义区分 definition value 与指向同名 nominal type 的实例 schema，保留 StructDef/EnumDef 及公共 definition identity。不扩大普通 query 的表示变更，不改正确的 StructDef schema，也不豁免该诊断。已有 typed-string-conversions runner 回放 trait 方法到 JS/WASM 验证这一分层区别。
 
 直接跨 namespace 读取同名 alias 另暴露 JS emitter 的绑定冲突，已单独建立 #1643，失败 Snapshot 保留在本地 `.calcit/snippets/def-value-js-collision.cirru`。本 fixture 通过普通 `:as reader` namespace alias 验证跨模块值，不改 JS 路径或产物；不把此 fixture 通过宣称为 direct qualified reference 的绑定问题已修复。

@@ -3163,7 +3163,7 @@
           :doc "|Component Model 只读字节流标记类型。仅允许作为 async defwasm-export 的唯一直接参数；值由主机拥有，Calcit 代码不能构造、复制或访问原始句柄。"
           :code $ quote $ def ReadableByteStream (defstruct ReadableByteStream)
           :examples $ []
-          :schema $ :: 'Struct
+          :schema $ :: 'StructDef
           :tags $ #{} :data :internal
         'Result $ %{} 'CodeEntry
           :doc "|Calcit 泛型 Result<T,E> 的 nominal Enum 定义：用作公开 schema，也可直接调用 Result :ok value 或 Result :err error 构造值；已知接收者上优先使用 .method。%ok/%err 是待迁移的旧 helper。"
@@ -3279,7 +3279,7 @@
           :code $ quote $ def StreamConsumeError
             defenum StreamConsumeError $ :total-limit
           :examples $ []
-          :schema $ :: 'Enum
+          :schema $ :: 'EnumDef
           :tags $ #{} :data
         'StringDestruct $ %{} 'CodeEntry
           :doc "|Nominal result of destruct-str: none, or the first character with the remaining string."
