@@ -9561,6 +9561,41 @@
                 assert-type (:ready .to-string) 'String
                 assert-type (nil .to-string) 'String
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |map-entry-tag-method-contract)
+              :code $ quote $ do
+                &doseq
+                  entry $ map-entries $ {} (:className |circle-button)
+                  let
+                      typed $ assert-type entry $ :: 'MapEntry 'Tag 'String
+                    assert= |className $
+                      :key typed
+                      , .to-string
+                    assert= |circle-button $ :value typed
+                &doseq
+                  entry $ map-entries $ {}
+                    :pointerdown $ fn ()
+                      hint-fn $ {}
+                        :args $ []
+                        :return 'Unit
+                      , &unit
+                  let
+                      typed $ assert-type entry $ :: 'MapEntry 'Tag
+                        :: 'Fn $ {}
+                          :args $ []
+                          :return 'Unit
+                    assert= |pointerdown $
+                      :key typed
+                      , .to-string
+                    assert= &unit $
+                      :value typed
+                let
+                    name $ fn (key)
+                      hint-fn $ {}
+                        :args $ [] 'Tag
+                        :return 'String
+                      key .to-string
+                  assert= |className $ name :className
+              :tags $ #{} :core :unit
         'to-symbol $ %{} 'CodeEntry
           :doc "|将 String 转为 Symbol；严格类型调用只接受 String，成功返回 Symbol。旧 turn-symbol 留作内部兼容入口。"
           :code $ quote $ defn to-symbol (source) (turn-symbol source)
