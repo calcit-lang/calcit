@@ -210,7 +210,7 @@ impl StagedFile {
     self.committed = true;
     // Directory syncing is best-effort: some Unix filesystems do not support it.
     #[cfg(unix)]
-    if let Some(parent) = self.destination.parent()
+    if let Some(parent) = path.parent()
       && let Ok(directory) = File::open(parent)
     {
       let _ = directory.sync_all();
