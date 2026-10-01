@@ -725,6 +725,14 @@ assert= 3 $ assert-type (+ 1 2) 'Number
 
 诊断中的集合类型保留已知泛型：例如 Option 回调返回 `List<Number>`，却断言为 `Option<List<String>>` 时，`expected` 显示 `'Option<list<:string>>`，`got` 显示 `'calcit.core/Option<list<:number>>`，不能把二者都缩成 `:list`。Map 的 key/value、Set/Ref 的成员以及 callback 签名也保留同样的嵌套证据。极深或极宽的类型仍以 `…` 截断展示，避免诊断占用过多资源；这是显示预算，不放宽类型检查，也不把未证明的 Dynamic 改写成具体类型。
 
+### 返回契约与 async 尾返回
+
+函数声明的返回类型需要由最后一个实际执行表达式证明；末尾注入的 `hint-fn` 元数据不能遮住这个表达式。已知矛盾报告 `W_FN_RETURN_TYPE_MISMATCH`，不会因为实际值属于 Fn 而跳过检查；明确声明为 Dynamic 的保存和传递仍然允许。
+
+async 函数的返回契约描述完成后的逻辑结果。若尾表达式是另一个 async 调用，只在当前函数也明确标记 async 时检查它的逻辑结果：Number 结果不能转发成 String，普通同步函数也不能把尚未完成的调用当成 Number。这个边界不为普通参数自动插入 await，不改变尚在迁移的开放类型策略；具体 backend 仍会独立拒绝不支持的 async 控制流。JS 的 Promise 转发和已有 Component async import 尾调用分别通过真实宿主回放验证，不代表 native 新增了异步等待语法。
+
+`calcit wasm` / `calcit wasi` 的生成与 `--check-only` 同样拒绝已有预处理告警，再进行目标能力验证；不会产出忽略类型告警的成功文件，也不会把 backend unsupported 当成已证明的类型拒绝。
+
 ## Type Inspection Tool
 
 Use `&inspect-type` to debug type inference. Pass a symbol name and the inferred type is printed to stderr during preprocessing:

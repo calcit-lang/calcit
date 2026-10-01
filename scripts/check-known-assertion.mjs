@@ -27,10 +27,13 @@ try {
   run("test", "calcit.core/hint-fn", "--tag", "call-boundary", "--require-match");
   const callTests = returnResponse.data.tests.filter(test => test.tags.includes("call-boundary"));
   assert.equal(callTests.length, 4);
+  run("test", "calcit.core/hint-fn", "--tag", "async-return-boundary", "--require-match");
+  const asyncTests = returnResponse.data.tests.filter(test => test.tags.includes("async-return-boundary"));
+  assert.equal(asyncTests.length, 1);
   run("edit", "add-ns", "calcit.assert-evidence");
   const setBody = trees => run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite",
     "--input-format", "json-ast", "--code", JSON.stringify(["defwasm-export", "run-tests", [], ...trees, "1"]));
-  setBody([...tests, ...returnTests, ...callTests].map(test => test.code));
+  setBody([...tests, ...returnTests, ...callTests, ...asyncTests].map(test => test.code));
   run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
   run("config", "set", "init-fn", "calcit.assert-evidence/run-tests");
@@ -40,6 +43,20 @@ try {
   run("--emit-path", output, "js");
   const generated = await import(pathToFileURL(join(output, "calcit.assert-evidence.mjs")).href);
   assert.equal(generated.run_tests(), 1);
+
+  // Replay the same Calcit expression as a factory and invoke its async
+  // function in JS, where Promise adoption is observable at the host boundary.
+  run("edit", "def", "calcit.assert-evidence/make-async-tail", "--input-format", "json-ast", "--code",
+    JSON.stringify(["defn", "make-async-tail", [], asyncTests[0].code]));
+  run("edit", "schema", "calcit.assert-evidence/make-async-tail", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Fn)");
+  const asyncOutput = join(project, "async-js-out");
+  run("--emit-path", asyncOutput, "js");
+  const asyncGenerated = await import(pathToFileURL(join(asyncOutput, "calcit.assert-evidence.mjs")).href);
+  const pending = asyncGenerated.make_async_tail()(3);
+  assert.ok(pending instanceof Promise, "async forwarding must return a Promise, not merely a synchronous value");
+  assert.equal(await pending, 3);
+  run("edit", "rm-def", "calcit.assert-evidence/make-async-tail");
 
   // Only replay the already-supported scalar subset in core WASM.
   const scalar = tests.filter(test => test.tags.includes("assert-scalar-wasm"));
@@ -89,6 +106,8 @@ try {
     "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return (:: 'Option 'Number)))) callback))) facade (fn (x) x)",
     "let ((facade (fn (value) (hint-fn ({} (:args ([] 'String)) (:return 'Number))) value))) facade |hello",
     "let ((facade (fn (value) (hint-fn ({} (:args ([] (:: 'List 'Number))) (:return (:: 'List 'String)))) value))) facade ([] 1 2)",
+    "let ((load (fn (x) (hint-fn ({} (:async true) (:args ([] 'Number)) (:return 'Number))) x)) (forward (fn (x) (hint-fn ({} (:args ([] 'Number)) (:return 'Number))) (load x)))) (fn? forward)",
+    "let ((load (fn (x) (hint-fn ({} (:async true) (:args ([] 'String)) (:return 'String))) x)) (forward (fn (x) (hint-fn ({} (:async true) (:args ([] 'String)) (:return 'Number))) (load x)))) (fn? forward)",
   ];
   const badCalls = [
     "let ((consume (fn (value) (hint-fn ({} (:args ([] 'Number)) (:return 'Unit))) &unit))) (consume |hello)",
@@ -108,7 +127,7 @@ try {
       `quote $ defwasm-export run-tests () (${expression}) 1`);
     const modes = diagnostic === "E_ASSERT_TYPE_MISMATCH"
       ? [[], ["--check-only"], ["js"], ["wasm"]]
-      : [[], ["--check-only"], ["js"]];
+      : [[], ["--check-only"], ["js"], ["wasm"], ["wasm", "--check-only"], ["wasi"], ["wasi", "--check-only"]];
     for (const mode of modes) {
       const result = spawnSync(binary, ["--emit-path", output, snapshot, ...mode], options);
       if (result.error) throw result.error;
@@ -125,12 +144,15 @@ try {
         assert.ok(diagnostics.includes("expects type") && diagnostics.includes("but got"), diagnostics);
       }
       assert.ok(/preprocessing|warnings, (?:runner|codegen) blocked/.test(diagnostics), diagnostics);
+      if (mode.includes("wasm") || mode.includes("wasi")) {
+        await assert.rejects(readFile(join(output, "program.wasm")), { code: "ENOENT" });
+      }
       for (const fragment of detailed.get(expression) ?? []) {
         assert.ok(diagnostics.includes(fragment), `${expression} must preserve ${fragment}\n${diagnostics}`);
       }
     }
   }
-  console.log("Known assertions rejected before native/JS/WASM and return/call contracts before native/JS; shared native/JS positives and scalar WASM assertions passed");
+  console.log("Known assertions and return/call contracts rejected before native/JS/WASM; native/JS positives, JS async adoption and scalar WASM assertions passed");
 } finally {
   await rm(project, { recursive: true, force: true });
 }

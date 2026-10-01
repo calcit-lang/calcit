@@ -1142,8 +1142,13 @@
         'test-not $ %{} 'CodeEntry (:doc "|not operation")
           :code $ quote $ defwasm-export test-not (x) (not x)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Bool
+          :tests $ [] $ %{} 'TestEntry (:name |boolean-not-contract)
+            :code $ quote $ do
+              assert= true $ test-not false
+              assert= false $ test-not true
+            :tags $ #{} :core :wasm
         'test-number-compare-method $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-number-compare-method () (.compare 1 2)
           :examples $ []
@@ -1467,12 +1472,12 @@
         'test-str-contains-false $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-contains-false () (&str:contains? |hello 10)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
+          :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
         'test-str-contains-true $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-contains-true () (&str:contains? |hello 1)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
+          :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
         'test-str-count $ %{} 'CodeEntry (:doc "|string character count")
           :code $ quote $ defwasm-export test-str-count () (&str:count |hello)
@@ -1483,7 +1488,7 @@
           :code $ quote $ defwasm-export test-str-empty-false ()
             &= (&str:count |hi) 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
+          :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
         'test-str-empty-true $ %{} 'CodeEntry (:doc "|rest of 1-char string has 0 characters")
           :code $ quote $ defwasm-export test-str-empty-true ()
@@ -1491,7 +1496,7 @@
               &str:count $ &str:rest |a
               , 0
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
+          :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ []
         'test-str-escape $ %{} 'CodeEntry (:doc "|escape special chars")
           :code $ quote $ defwasm-export test-str-escape ()

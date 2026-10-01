@@ -6339,6 +6339,21 @@
                     , x
                 assert= 3 $ apply-generic identity-number 3
               :tags $ #{} :call-boundary
+            %{} 'TestEntry (:name |async-tail-return-contract)
+              :code $ quote $ let
+                  load $ fn (x)
+                    hint-fn $ {} (:async true)
+                      :args $ [] 'Number
+                      :return 'Number
+                    , x
+                  forward $ fn (x)
+                    hint-fn $ {} (:async true)
+                      :args $ [] 'Number
+                      :return 'Number
+                    load x
+                assert= true $ fn? forward
+                , forward
+              :tags $ #{} :async-return-boundary
         'identical? $ %{} 'CodeEntry
           :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
           :code $ quote &runtime-implementation

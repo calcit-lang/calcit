@@ -114,23 +114,14 @@ fn run_check_only(entries: &ProgramEntries, target: WasmTarget, boundary: WasmBo
     "reload_fn",
     &check_warnings,
   )?;
+  if target == WasmTarget::Wasi || boundary == WasmBoundary::Component {
+    preprocess_wasm_namespace(entries, &check_warnings)?;
+  }
+  reject_preprocess_warnings(&check_warnings)?;
 
   codegen::emit_wasm::validate_wasm_target(&entries.init_ns, &entries.init_def, target)?;
-
-  if target == WasmTarget::Wasi {
-    preprocess_wasm_namespace(entries, &check_warnings)?;
-    codegen::emit_wasm::validate_wasm_target(&entries.init_ns, &entries.init_def, target)?;
-  }
   if boundary == WasmBoundary::Component {
-    preprocess_wasm_namespace(entries, &check_warnings)?;
     codegen::emit_wasm::validate_wasm_boundary(target, boundary, &entries.init_ns, &entries.init_def)?;
-  }
-
-  let warnings = check_warnings.borrow();
-  if !warnings.is_empty() {
-    eprintln!("\n{} ({} warnings)", "Warnings:".yellow(), warnings.len());
-    LocatedWarning::print_list(&warnings);
-    return Err(format!("Found {} warnings during preprocessing", warnings.len()));
   }
 
   if target == WasmTarget::Wasi && boundary == WasmBoundary::Component {
@@ -143,6 +134,17 @@ fn run_check_only(entries: &ProgramEntries, target: WasmTarget, boundary: WasmBo
     "✓ Check passed".green().bold(),
     format!("({}ms)", duration.as_micros() as f64 / 1000.0).dimmed()
   );
+
+  Ok(())
+}
+
+fn reject_preprocess_warnings(check_warnings: &RefCell<Vec<LocatedWarning>>) -> Result<(), String> {
+  let warnings = check_warnings.borrow();
+  if !warnings.is_empty() {
+    eprintln!("\n{} ({} warnings)", "Warnings:".yellow(), warnings.len());
+    LocatedWarning::print_list(&warnings);
+    return Err(format!("Found {} warnings during preprocessing", warnings.len()));
+  }
 
   Ok(())
 }
@@ -174,6 +176,7 @@ fn run_wasm_codegen(entries: &ProgramEntries, emit_path: &str, target: WasmTarge
 
   let check_warnings = RefCell::new(vec![]);
   preprocess_wasm_namespace(entries, &check_warnings)?;
+  reject_preprocess_warnings(&check_warnings)?;
   codegen::emit_wasm::emit_wasm(&entries.init_ns, &entries.init_def, emit_path, target, boundary)?;
 
   let duration = Instant::now().duration_since(started_time);

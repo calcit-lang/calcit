@@ -193,7 +193,7 @@ try {
   assert.equal(wasmJs.test_custom_trait_score(42), 1, "generated JS must select the same nominal trait implementation");
   assert.equal(wasmJs.test_qualified_symbol_helper(42), 1, "generated JS must keep the local helper despite a same-named definition");
   const wasm = spawnSync(binary, ["wasm", wasmSnapshot, "--emit-path", output], { encoding: "utf8" });
-  assert.equal(wasm.status, 0, "WASM should preserve unrelated exports");
+  assert.equal(wasm.status, 0, `WASM should preserve unrelated exports\n${wasm.stdout}\n${wasm.stderr}`);
   assert.match(wasm.stderr, /trapping unsupported dependency calcit\.core\/to-tag: E_WASM_TAG_CONVERSION/);
   const wasmModule = new WebAssembly.Module(await readFile(join(output, "program.wasm")));
   const imports = {};
