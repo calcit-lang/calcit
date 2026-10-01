@@ -19,10 +19,15 @@ try {
   assert.deepEqual(response.diagnostics, []);
   const tests = response.data.tests.filter(test => test.tags.includes("assert-boundary"));
   assert.equal(tests.length, 6);
+  run("test", "calcit.core/hint-fn", "--tag", "return-boundary", "--require-match");
+  const returnResponse = JSON.parse(run("query", "def", "calcit.core/hint-fn", "--format", "json"));
+  assert.deepEqual(returnResponse.diagnostics, []);
+  const returnTests = returnResponse.data.tests.filter(test => test.tags.includes("return-boundary"));
+  assert.equal(returnTests.length, 2);
   run("edit", "add-ns", "calcit.assert-evidence");
   const setBody = trees => run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite",
     "--input-format", "json-ast", "--code", JSON.stringify(["defwasm-export", "run-tests", [], ...trees, "1"]));
-  setBody(tests.map(test => test.code));
+  setBody([...tests, ...returnTests].map(test => test.code));
   run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
   run("config", "set", "init-fn", "calcit.assert-evidence/run-tests");
@@ -73,23 +78,44 @@ try {
       ["expected `ref<:string>`", "got `ref<:number>`"]],
   ]);
   bad.push(...detailed.keys());
-  for (const expression of bad) {
+  const badReturns = [
+    "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Number))) callback))) facade (fn (x) x)",
+    "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'String))) callback))) facade (fn (x) x)",
+    "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return (:: 'List 'Number)))) callback))) facade (fn (x) x)",
+    "let ((facade (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return (:: 'Option 'Number)))) callback))) facade (fn (x) x)",
+    "let ((facade (fn (value) (hint-fn ({} (:args ([] 'String)) (:return 'Number))) value))) facade |hello",
+    "let ((facade (fn (value) (hint-fn ({} (:args ([] (:: 'List 'Number))) (:return (:: 'List 'String)))) value))) facade ([] 1 2)",
+  ];
+  const rejected = [
+    ...bad.map(expression => [expression, "E_ASSERT_TYPE_MISMATCH"]),
+    ...badReturns.map(expression => [expression, "W_FN_RETURN_TYPE_MISMATCH"]),
+  ];
+  for (const [expression, diagnostic] of rejected) {
     run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
       `quote $ defwasm-export run-tests () (${expression})`);
-    for (const mode of [[], ["--check-only"], ["js"], ["wasm"]]) {
+    const modes = diagnostic === "E_ASSERT_TYPE_MISMATCH"
+      ? [[], ["--check-only"], ["js"], ["wasm"]]
+      : [[], ["--check-only"], ["js"]];
+    for (const mode of modes) {
       const result = spawnSync(binary, ["--emit-path", output, snapshot, ...mode], options);
       if (result.error) throw result.error;
       assert.equal(result.status, 1, `${expression} ${mode}\n${result.stdout}\n${result.stderr}`);
-      assert.ok(result.stderr.includes("E_ASSERT_TYPE_MISMATCH"), result.stderr);
-      assert.ok(result.stderr.includes("calcit.assert-evidence/run-tests"), result.stderr);
-      assert.ok(result.stderr.includes("expected") && result.stderr.includes("got"), result.stderr);
-      assert.ok(result.stderr.includes("preprocessing"), result.stderr);
+      // JS warning diagnostics use stdout and the existing build-error artifact.
+      const diagnostics = `${result.stdout}\n${result.stderr}`;
+      assert.ok(diagnostics.includes(diagnostic), diagnostics);
+      assert.ok(diagnostics.includes("calcit.assert-evidence/run-tests"), diagnostics);
+      if (diagnostic === "E_ASSERT_TYPE_MISMATCH") {
+        assert.ok(diagnostics.includes("expected") && diagnostics.includes("got"), diagnostics);
+      } else {
+        assert.ok(diagnostics.includes("declares return type") && diagnostics.includes("body returns"), diagnostics);
+      }
+      assert.ok(/preprocessing|warnings, (?:runner|codegen) blocked/.test(diagnostics), diagnostics);
       for (const fragment of detailed.get(expression) ?? []) {
-        assert.ok(result.stderr.includes(fragment), `${expression} must preserve ${fragment}\n${result.stderr}`);
+        assert.ok(diagnostics.includes(fragment), `${expression} must preserve ${fragment}\n${diagnostics}`);
       }
     }
   }
-  console.log("Known incompatible local and expression assertions rejected before native/JS/WASM; shared positive tests passed");
+  console.log("Known assertions rejected before native/JS/WASM and return contracts before native/JS; shared native/JS positives and scalar WASM assertions passed");
 } finally {
   await rm(project, { recursive: true, force: true });
 }

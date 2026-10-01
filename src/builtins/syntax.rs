@@ -107,7 +107,7 @@ pub fn defn(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str) -> Re
 /// A one-argument `hint-fn` form describes the surrounding function. Its
 /// information is copied into `CalcitFn` above and is not executable body code.
 /// Two-argument forms still target an expression and must retain runtime behavior.
-fn is_function_metadata_hint(form: &Calcit) -> bool {
+pub(crate) fn is_function_metadata_hint(form: &Calcit) -> bool {
   matches!(
     form,
     Calcit::List(xs) if xs.len() == 2 && matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::HintFn, _)))

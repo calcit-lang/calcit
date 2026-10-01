@@ -6248,6 +6248,34 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :async :builtin :internal :syntax
+          :tests $ []
+            %{} 'TestEntry (:name |callable-return-contract)
+              :code $ quote $ let
+                  pass-number $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    , x
+                  keep $ fn (callback)
+                    hint-fn $ {}
+                      :args $ [] 'Fn
+                      :return 'Fn
+                    , callback
+                assert= 3 $
+                  keep pass-number
+                  , 3
+              :tags $ #{} :return-boundary
+            %{} 'TestEntry (:name |dynamic-storage-return-contract)
+              :code $ quote $ let
+                  keep $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic
+                      :return 'Dynamic
+                    , value
+                assert= |hello $ keep |hello
+                assert= ([] 1 2)
+                  keep $ [] 1 2
+              :tags $ #{} :return-boundary
         'identical? $ %{} 'CodeEntry
           :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
           :code $ quote &runtime-implementation

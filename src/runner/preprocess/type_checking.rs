@@ -19,6 +19,7 @@ use std::sync::Arc;
 
 use super::checked_call_contract::resolve_checked_call_contract;
 use super::type_inference::{infer_struct_field_type, infer_unhinted_callback_signature};
+use crate::calcit::type_annotation::TypeProof;
 use crate::calcit::{
   self, Calcit, CalcitFn, CalcitGenericBound, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning,
   NodeLocation,
@@ -1045,25 +1046,29 @@ pub(crate) fn check_function_return_type(
     return;
   }
 
-  if fn_body.is_empty() {
+  // Generated schema hints are metadata, just as in the runtime body. Check
+  // the last executable expression rather than a trailing injected hint.
+  let Some(last_expr) = fn_body
+    .iter()
+    .rev()
+    .find(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
+  else {
     return;
-  }
-
-  let last_expr = &fn_body[fn_body.len() - 1];
+  };
 
   let Some(actual_type) = resolve_type_value(last_expr, scope_types) else {
     return;
   };
 
-  if matches!(actual_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn) {
-    return;
-  }
-
   let mut bindings = HashMap::new();
-  if !actual_type
-    .as_ref()
-    .compatible_with_bindings(declared_return_type.as_ref(), &mut bindings)
-  {
+  // Keep unproven boundaries on the existing migration path, but never let
+  // an open callable hide a definite contradiction with the return contract.
+  let compatible = match actual_type.prove_with_bindings(declared_return_type, &mut bindings) {
+    TypeProof::Proven => true,
+    TypeProof::Mismatch => false,
+    TypeProof::NeedsBoundary(_) => actual_type.compatible_with_bindings(declared_return_type, &mut bindings),
+  };
+  if !compatible {
     let expected_str = diagnostic_type_string(declared_return_type.as_ref());
     let actual_str = diagnostic_type_string(actual_type.as_ref());
     gen_check_warning_code_at_with_types(
