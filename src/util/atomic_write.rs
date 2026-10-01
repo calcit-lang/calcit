@@ -1,4 +1,3 @@
-use md5::{Digest, Md5};
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions, TryLockError};
@@ -244,8 +243,10 @@ pub fn stage_atomic_file(destination: &Path, content: &[u8], label: &str) -> Res
   let lock_directory = parent.join(".calcit/atomic");
   fs::create_dir_all(&lock_directory).map_err(|error| format!("Failed to create atomic writer lock directory: {error}"))?;
   let canonical = canonical_destination(destination)?;
-  let identity = Md5::digest(canonical.as_os_str().as_encoded_bytes());
-  let lock = lock_directory.join(format!("{}.lock", hex::encode(identity)));
+  // Native names preserve the filesystem's case-folding identity for aliases.
+  let mut lock_name = destination.file_name().unwrap().to_os_string();
+  lock_name.push(".lock");
+  let lock = lock_directory.join(lock_name);
   let lock = WriterLock::acquire(&lock, Duration::ZERO)?;
 
   for attempt in 0..32_u8 {
@@ -286,6 +287,25 @@ pub fn stage_atomic_file(destination: &Path, content: &[u8], label: &str) -> Res
 mod tests {
   use super::{SnapshotWriteGuard, WriterLock, stage_atomic_file, write_snapshot};
   use std::fs;
+
+  #[test]
+  fn atomic_writer_identity_matches_filesystem_case_aliases() {
+    let fixture = tempfile::tempdir().unwrap();
+    let path = fixture.path().join("state");
+    let alias = fixture.path().join("STATE");
+    fs::write(&path, "original").unwrap();
+    let case_alias = alias.exists();
+    if !case_alias {
+      fs::write(&alias, "distinct file").unwrap();
+    }
+    let _first = stage_atomic_file(&path, b"first", "test state").unwrap();
+    let second = stage_atomic_file(&alias, b"second", "test state");
+    assert_eq!(
+      second.is_err(),
+      case_alias,
+      "aliases must share ownership, but distinct files must remain independent"
+    );
+  }
 
   #[test]
   fn stale_revision_rejects_atomic_commit_and_preserves_external_edit() {
