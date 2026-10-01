@@ -10,6 +10,8 @@
 
 ## 导出和检查
 
+显式箭头转换的候选声明覆盖 `number->int*/uint*/float*` 与 `js-nullish->option`。前者保留 `Number -> Result<Refinement,String>`，成功值仍是原 Number，精确表示和范围验证不是自动舍入；后者保留 `JsNullish<T> -> Option<T>` 的同一 T 与 `:js-ffi` feature，仅包装空值边界，不能充当 payload decoder。两者职责不同，不因同用箭头拼写而合并错误模型或新增 `to-/as-/into-` 别名。此处记录既有 schema，不新增 backend 支持，也不冻结未经证明的动态类型。
+
 普通用户仍使用已安装版本的 `calcit query def/context/type --format edn`。以下是仓库开发步骤，不新增用户 CLI 入口：
 
 ```bash

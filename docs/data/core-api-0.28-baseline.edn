@@ -324,6 +324,85 @@
           :generics $ [] 'T
           :args $ [] 'T 'T
       :schema $ quote 'Trait
+    {} (:declaration nil)
+      :failure "|检查目标_refinement，成功保留原_Number，失败返回_String_err，不自动舍入"
+      :name 'calcit.core/number->int8
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Number
+        :return $ :: 'calcit.core/Result 'Int8 'String
+    {} (:declaration nil)
+      :failure "|检查目标_refinement，成功保留原_Number，失败返回_String_err，不自动舍入"
+      :name 'calcit.core/number->int16
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Number
+        :return $ :: 'calcit.core/Result 'Int16 'String
+    {} (:declaration nil)
+      :failure "|检查目标_refinement，成功保留原_Number，失败返回_String_err，不自动舍入"
+      :name 'calcit.core/number->int32
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Number
+        :return $ :: 'calcit.core/Result 'Int32 'String
+    {} (:declaration nil)
+      :failure "|检查目标_refinement，成功保留原_Number，失败返回_String_err，不自动舍入"
+      :name 'calcit.core/number->int64
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Number
+        :return $ :: 'calcit.core/Result 'Int64 'String
+    {} (:declaration nil)
+      :failure "|检查目标_refinement，成功保留原_Number，失败返回_String_err，不自动舍入"
+      :name 'calcit.core/number->uint8
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Number
+        :return $ :: 'calcit.core/Result 'UInt8 'String
+    {} (:declaration nil)
+      :failure "|检查目标_refinement，成功保留原_Number，失败返回_String_err，不自动舍入"
+      :name 'calcit.core/number->uint16
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Number
+        :return $ :: 'calcit.core/Result 'UInt16 'String
+    {} (:declaration nil)
+      :failure "|检查目标_refinement，成功保留原_Number，失败返回_String_err，不自动舍入"
+      :name 'calcit.core/number->uint32
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Number
+        :return $ :: 'calcit.core/Result 'UInt32 'String
+    {} (:declaration nil)
+      :failure "|检查目标_refinement，成功保留原_Number，失败返回_String_err，不自动舍入"
+      :name 'calcit.core/number->uint64
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Number
+        :return $ :: 'calcit.core/Result 'UInt64 'String
+    {} (:declaration nil)
+      :failure "|检查目标_refinement，成功保留原_Number，失败返回_String_err，不自动舍入"
+      :name 'calcit.core/number->float32
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Number
+        :return $ :: 'calcit.core/Result 'Float32 'String
+    {} (:declaration nil)
+      :failure "|检查目标_refinement，成功保留原_Number，失败返回_String_err，不自动舍入"
+      :name 'calcit.core/number->float64
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Number
+        :return $ :: 'calcit.core/Result 'Float64 'String
+    {} (:declaration nil)
+      :failure "|仅包装_JS_null_undefined_边界，不验证_payload，须有_js-ffi_feature"
+      :name 'calcit.core/js-nullish->option
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] $ :: 'JsNullish 'T
+        :features $ #{} :js-ffi
+        :generics $ [] 'T
+        :return $ :: 'Option 'T
   :method-contracts $ []
     {} (:name |.to-string) (:receiver |'String) (:rest nil)
       :parameters $ []
