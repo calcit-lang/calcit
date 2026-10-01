@@ -571,7 +571,7 @@ WASI command 继续使用与原生、JavaScript 相同的 `get-env` 和 `get-arg
 
 command init definition 正常返回时，进程状态为 `0`；调用 `quit!` 可显式设置 `0..255` 的整数退出状态。Preview 1 路径在内部调用 `proc_exit`，WASI 0.3 Component 路径调用 `wasi:cli/exit@0.3.1#exit-with-code`；Calcit 源码无需感知这两套 ABI。
 
-版本坐标（2026-10-01）：WASI 规范 release 为 `v0.3.1`，这里使用的 `wasi:cli`、`wasi:clocks`、`wasi:filesystem`、`wasi:random` 和 `wasi:sockets` WIT package 均为 `0.3.1`，来源与校验值由 `calcit-bindgen 0.1.9` 维护；其 Component 包装依赖 `wit-component 0.258.0`。当前 CI 与[仓库标准流示例](../../scripts/wasm-validation.md#编译命令)的实际运行验证使用已发布的 Wasmtime `49.0.1`；未调用标准流的命令形如 `wasmtime run -S p3 program.wasm`，调用标准流的命令还需要前述两个 async 特性开关。Wasmtime 49 内置的 p3 CLI WIT 仍标记为 `0.3.0`，但生成的 `0.3.1` Component 已用正式二进制测试参数、环境、标准输出/标准错误、退出码及拒绝路径；不能仅凭内置文件的版本文字判断兼容性，也不能把 WIT parse 当作运行验收。`calcit wasi` 默认目标已在 #1269 切换为 WASI 0.3 Component；Preview 1 保留显式 `--boundary native` 入口。
+版本坐标（2026-10-01）：WASI 规范 release 为 `v0.3.1`，这里使用的 `wasi:cli`、`wasi:clocks`、`wasi:filesystem`、`wasi:random` 和 `wasi:sockets` WIT package 均为 `0.3.1`，来源与校验值由 `calcit-bindgen 0.1.9` 维护；其 Component 包装依赖 `wit-component 0.258.0`。当前 CI 与[仓库标准流示例](../../scripts/wasm-validation.md#编译与验证方式)的实际运行验证使用已发布的 Wasmtime `49.0.1`；未调用标准流的命令形如 `wasmtime run -S p3 program.wasm`，调用标准流的命令还需要前述两个 async 特性开关。Wasmtime 49 内置的 p3 CLI WIT 仍标记为 `0.3.0`，但生成的 `0.3.1` Component 已用正式二进制测试参数、环境、标准输出/标准错误、退出码及拒绝路径；不能仅凭内置文件的版本文字判断兼容性，也不能把 WIT parse 当作运行验收。`calcit wasi` 默认目标已在 #1269 切换为 WASI 0.3 Component；Preview 1 保留显式 `--boundary native` 入口。
 
 WASI Preview 1 command 使用 `unix-time-ms` 与 `monotonic-time-ms`（旧名 `cpu-time` 暂留兼容）。前者读取系统实时时钟；后者读取单调时钟，只保证同一进程内两次读数的差值有意义。两者均返回毫秒数；Preview 1 的纳秒结果与错误码由编译器内部转换和检查，宿主失败时不会返回 `0` 或 `nil`。WASI 0.3 Component 目前不支持时钟，不会自动回退到 Preview 1。
 
