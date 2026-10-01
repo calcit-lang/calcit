@@ -429,10 +429,15 @@ mod tests {
   fn live_old_lock_cannot_be_reclaimed_and_its_inode_is_retained() {
     let fixture = tempfile::tempdir().unwrap();
     let path = fixture.path().join("writer.lock");
-    let first = WriterLock::acquire(&path, std::time::Duration::ZERO).unwrap();
-    fs::write(&path, "pid=123 acquired-at=1\n").unwrap();
+    let mut first = WriterLock::acquire(&path, std::time::Duration::ZERO).unwrap();
+    first.0.rewind().unwrap();
+    first.0.set_len(0).unwrap();
+    std::io::Write::write_all(&mut first.0, b"pid=123 acquired-at=1\n").unwrap();
     assert!(WriterLock::acquire(&path, std::time::Duration::ZERO).is_err());
-    assert_eq!(fs::read_to_string(&path).unwrap(), "pid=123 acquired-at=1\n");
+    first.0.rewind().unwrap();
+    let mut record = String::new();
+    std::io::Read::read_to_string(&mut first.0, &mut record).unwrap();
+    assert_eq!(record, "pid=123 acquired-at=1\n");
     drop(first);
     assert!(path.exists(), "the stable lock inode must never be unlinked");
     let _next = WriterLock::acquire(&path, std::time::Duration::ZERO).unwrap();
@@ -443,8 +448,10 @@ mod tests {
     let fixture = tempfile::tempdir().unwrap();
     let path = fixture.path().join("writer.lock");
     fs::write(&path, "pid=999999 acquired-at=1 old-record-padding\n").unwrap();
-    let guard = WriterLock::acquire(&path, std::time::Duration::ZERO).unwrap();
-    let record = fs::read_to_string(&path).unwrap();
+    let mut guard = WriterLock::acquire(&path, std::time::Duration::ZERO).unwrap();
+    guard.0.rewind().unwrap();
+    let mut record = String::new();
+    std::io::Read::read_to_string(&mut guard.0, &mut record).unwrap();
     assert!(record.starts_with(&format!("pid={} acquired-at=", std::process::id())));
     assert!(!record.contains("old-record-padding"));
     drop(guard);
