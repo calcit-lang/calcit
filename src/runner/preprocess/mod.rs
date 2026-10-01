@@ -6959,11 +6959,13 @@ fn check_callable_type(
     // These are always callable
     Calcit::Fn { .. }
     | Calcit::Proc(..)
-    | Calcit::Import { .. }
     | Calcit::Registered { .. }
     | Calcit::Method(_, _)
     | Calcit::RawCode(..)
     | Calcit::Symbol { .. } => (),
+
+    // Untyped external JS imports retain their existing explicit host boundary.
+    Calcit::Import(import) if matches!(import.info.as_ref(), ImportInfo::JsDefault { .. }) => (),
 
     // For List expressions, check if it's a function call that returns a callable
     Calcit::List(_) => {
