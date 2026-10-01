@@ -1267,7 +1267,8 @@ fn emit_wasm_impl(
       &unsupported_dependencies,
       &env.function_value_dependencies.borrow(),
       false,
-    )?;
+    )
+    .map_err(|reason| format!("{reason} (entry `{init_ns}/{init_def}`)"))?;
   }
   for (index, function) in compiled_fns.iter().enumerate() {
     if function.export_name.is_some() {
@@ -1278,7 +1279,8 @@ fn emit_wasm_impl(
         &unsupported_dependencies,
         &env.function_value_dependencies.borrow(),
         false,
-      )?;
+      )
+      .map_err(|reason| format!("{reason} (export `{}`)", function.export_name.as_deref().unwrap_or_default()))?;
     }
   }
 

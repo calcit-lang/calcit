@@ -15,3 +15,5 @@
 WASI 继续复用 Number 文本 smoke：真实 Component 对运行时 quote/format-to-lisp 编译拒绝且不生成 artifact；静态 quote 格式化的失败断言仍可编译，真实 Wasmtime 执行保留错误文本及非零退出。该扩展 smoke 通过，808d59f7 的完整 Rust 也通过。
 
 现有 core value ABI 的任意宿主表索引由宿主管理，不把本次具体函数值依赖检查宣传为外部索引安全验证；Component 本身拒绝 Fn/closure。文档明确这个边界。剩余全量 check-all、最新提交 Rust/Clippy、独立 review 与 CI 门禁未完成，保持 draft。
+
+全量 check-all 首次在旧 Tag conversion 负例处失败：该 fixture 故意同时导出不支持的 test-to-tag 和正常 String 转换，并要求前者编译后 trap。补充入口/导出诊断上下文后证实 root 正是 test-to-tag，不是正常转换误拒绝。依照本 issue 的编译期 fail-closed 契约，将同一负例改为明确检查编译拒绝和无 artifact，再通过 CLI 从临时 Snapshot 移除这个负例导出，保留并运行全部原有转换正例。未删减 String/trait/普通方法断言，也未改用 native call。独立的完整 typed-string-conversions 回放通过，全量 check-all 需重新执行。
