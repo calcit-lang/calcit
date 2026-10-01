@@ -277,6 +277,7 @@ CI 的可用性基线不是“能生成 WIT”：同一份 Calcit contract 必�
 代码生成从配置入口和实际导出入口检查已发射的直接调用与具体函数值引用；可达 helper 编译失败时，诊断带出其 namespace/definition，阻止产出 artifact。导入常量的失败还会保留被导入定义的名称。未被引用的依赖 slot 不会仅因自身不受支持而阻断正常入口。
 
 - 运行时 `quote` / `quasiquote` 值及一般 `format-to-lisp` 尚不支持，编译时明确拒绝，不以 `0` 或 nil 替代。
+- `to-lispy-string`、`&number:format`、`&get-os` 及 definition 元数据查询尚不支持，统一给出 unsupported proc 诊断。
 - `(format-to-lisp (quote ...))` 的静态字符串路径继续支持，断言失败仍保留错误文本与失败状态。
 - 合法 Number `0` 和 Unit 保留已有 core value ABI；不能将所有零常量解释为占位回退。
 - core value ABI 的函数表索引由宿主管理，任意外部索引的安全性不等同于编译器对具体函数值引用的检查；Component 边界继续拒绝 Fn/closure。

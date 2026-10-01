@@ -17,3 +17,7 @@ WASI 继续复用 Number 文本 smoke：真实 Component 对运行时 quote/form
 现有 core value ABI 的任意宿主表索引由宿主管理，不把本次具体函数值依赖检查宣传为外部索引安全验证；Component 本身拒绝 Fn/closure。文档明确这个边界。剩余全量 check-all、最新提交 Rust/Clippy、独立 review 与 CI 门禁未完成，保持 draft。
 
 全量 check-all 首次在旧 Tag conversion 负例处失败：该 fixture 故意同时导出不支持的 test-to-tag 和正常 String 转换，并要求前者编译后 trap。补充入口/导出诊断上下文后证实 root 正是 test-to-tag，不是正常转换误拒绝。依照本 issue 的编译期 fail-closed 契约，将同一负例改为明确检查编译拒绝和无 artifact，再通过 CLI 从临时 Snapshot 移除这个负例导出，保留并运行全部原有转换正例。未删减 String/trait/普通方法断言，也未改用 native call。独立的完整 typed-string-conversions 回放通过，全量 check-all 需重新执行。
+
+后续审计发现模块中的普通 do 函数会被仅凭名字当成内部序列标记：native 通过正常 alias 保存函数值并调用得到 42，真实 WASM 发射表槽 0，导致递归栈溢出。现在序列标记限定为 core 的 do 且不具备真实函数表项；用户函数通过普通函数值路径编码并纳入依赖检查。消费模块定义上的 :tests 与实际 WASM 回放通过，仍使用正常 Calcit import/callback，不引入 workaround。
+
+另一个真实反例：&number:format 1.5 2 在 native 返回字符串 1.50，WASM 返回 0。删除其零占位分支，并一并移除数据字符串化、宿主 OS 和 definition 元数据的未实现零占位分支，复用现有 unsupported proc 默认诊断。Number 格式化与 do 补充专项通过；其余四项新增编译拒绝用例待完整扩展回放。c843ab79 的 CI 全绿，新的补充仍需精确提交上的全量验证。

@@ -5991,7 +5991,11 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
     }
     // `do` appears as a bare (non-call) expression when used as a body sequencer in defn.
     // It's a no-op — just emit nil so it can be dropped by emit_body.
-    Calcit::Import(import) if import.def.as_ref() == "do" => {
+    Calcit::Import(import)
+      if import.ns.as_ref() == crate::calcit::CORE_NS
+        && import.def.as_ref() == "do"
+        && !ctx.fn_table_index.contains_key(&format!("{}/{}", import.ns, import.def)) =>
+    {
       ctx.emit(f64_const(0.0));
     }
     Calcit::Import(import) => {
@@ -7119,10 +7123,8 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::FoldlShortcut => emit_foldl_shortcut(ctx, args),
     CalcitProc::FoldrShortcut => emit_foldr_shortcut(ctx, args),
 
-    // Format (stub — only used in raise/error paths)
+    // Static quoted expressions can be formatted without runtime reflection.
     CalcitProc::FormatToLisp => emit_format_to_lisp(ctx, args),
-    // to-lispy-string — stub, only used in raise/error message paths
-    CalcitProc::PrStr => ctx.stub_proc(args),
     CalcitProc::GetEnv => {
       if !(1..=2).contains(&args.len()) {
         return Err(format!("get-env expects 1~2 args, got {}", args.len()));
@@ -7261,12 +7263,6 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       "runtime trait assertions are not supported by the internal WASM backend; make the receiver type statically resolvable".into(),
     ),
 
-    // &get-os — host OS info; not available in WASM; return nil.
-    CalcitProc::NativeGetOs => ctx.stub_proc(args),
-
-    // definition metadata — not available in WASM; return nil.
-    CalcitProc::NativeGetDefDoc | CalcitProc::NativeGetDefSchema => ctx.stub_proc(args),
-
     // &number:display-by — radix string formatting.
     CalcitProc::NativeNumberDisplayBy => {
       if args.len() != 2 {
@@ -7277,9 +7273,6 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       ctx.call_rt("__rt_display_by");
       Ok(())
     }
-
-    // &number:format — formatting; stub in WASM.
-    CalcitProc::NativeNumberFormat => ctx.stub_proc(args),
 
     CalcitProc::Sort => emit_list_sort(ctx, args),
 

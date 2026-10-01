@@ -83,6 +83,11 @@ try {
     ["runtime-quote", ["quote", ["+", "1", "2"]], /unsupported runtime quote value in WASM/],
     ["runtime-quasiquote", ["quasiquote", ["+", "1", "2"]], /unsupported runtime quasiquote value in WASM/],
     ["runtime-format", ["format-to-lisp", "42"], /unsupported runtime format-to-lisp in WASM/],
+    ["number-format", ["&number:format", "1.5", "2"], /unsupported proc in WASM: &number:format/],
+    ["value-print", ["to-lispy-string", "42"], /unsupported proc in WASM: to-lispy-string/],
+    ["host-os", ["&get-os"], /unsupported proc in WASM: &get-os/],
+    ["definition-doc", ["&get-def-doc", "|calcit.core/inc"], /unsupported proc in WASM: &get-def-doc/],
+    ["definition-schema", ["&get-def-schema", "|calcit.core/inc"], /unsupported proc in WASM: &get-def-schema/],
     ["branch-format", ["if", "true", ["format-to-lisp", "42"], "|fallback"], /unsupported runtime format-to-lisp in WASM/],
   ]) {
     setBody([expression]);
@@ -124,6 +129,22 @@ try {
   run("wasm", "--emit-path", supportedOutput);
   const supportedModule = new WebAssembly.Module(await readFile(join(supportedOutput, "program.wasm")));
   assert.equal(new WebAssembly.Instance(supportedModule, imports).exports["run-tests"](), 1);
+
+  run("edit", "def", "calcit.placeholder-helper/do", "--input-format", "cirru", "--code",
+    "quote $ defn do () 42");
+  run("edit", "schema", "calcit.placeholder-helper/do", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
+  run("edit", "add-import", "calcit.assert-evidence", "--overwrite", "--input-format", "cirru", "--code",
+    "quote $ calcit.placeholder-helper :as helper");
+  run("edit", "add-test", "calcit.assert-evidence/run-tests", "keeps-imported-named-function-value", "--tags", "unit",
+    "--input-format", "cirru", "--code", "quote $ assert= 42 $ let ((callback helper/do)) (callback)");
+  run("test", "calcit.assert-evidence/run-tests", "--require-match");
+  setBody([["assert=", "42", ["let", [["callback", "helper/do"]], ["callback"]]]]);
+  run();
+  const namedDoOutput = join(project, "named-do-function");
+  run("wasm", "--emit-path", namedDoOutput);
+  const namedDoModule = new WebAssembly.Module(await readFile(join(namedDoOutput, "program.wasm")));
+  assert.equal(new WebAssembly.Instance(namedDoModule, imports).exports["run-tests"](), 1);
 
   run("edit", "def", "calcit.placeholder-helper/stored-quote", "--input-format", "cirru", "--code",
     "quote $ def stored-quote $ quote $ + 1 2");
