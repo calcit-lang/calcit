@@ -21,3 +21,5 @@ WASI 继续复用 Number 文本 smoke：真实 Component 对运行时 quote/form
 后续审计发现模块中的普通 do 函数会被仅凭名字当成内部序列标记：native 通过正常 alias 保存函数值并调用得到 42，真实 WASM 发射表槽 0，导致递归栈溢出。现在序列标记限定为 core 的 do 且不具备真实函数表项；用户函数通过普通函数值路径编码并纳入依赖检查。消费模块定义上的 :tests 与实际 WASM 回放通过，仍使用正常 Calcit import/callback，不引入 workaround。
 
 另一个真实反例：&number:format 1.5 2 在 native 返回字符串 1.50，WASM 返回 0。删除其零占位分支，并一并移除数据字符串化、宿主 OS 和 definition 元数据的未实现零占位分支，复用现有 unsupported proc 默认诊断。Number 格式化与 do 补充专项通过；其余四项新增编译拒绝用例待完整扩展回放。c843ab79 的 CI 全绿，新的补充仍需精确提交上的全量验证。
+
+2aeaab10 上完整 cargo test、all-target/all-feature Clippy 与 yarn check-all 均通过。同步已合并的 #1605/#1610 后，进一步核对 native 契约发现 backend 查询返回 Tag、enum 校验可能失败、builtin 注册的参数仍需求值；这些运行时调用不能直接视为 metadata。删除剩余零占位/no-op 分支及不再使用的 stub helper，残留 enum 校验/注册明确拒绝，backend 查询复用 unsupported proc。扩展后的完整断言专项通过；本补充尚待精确 HEAD 全量验证，PR 保持 draft。按更新的 milestone 优先级，先保存本分支，再处理 0.28 的迁移阻塞，不把前一提交全量通过冒充本补充验证。

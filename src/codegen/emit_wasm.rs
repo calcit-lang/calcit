@@ -5052,25 +5052,6 @@ impl WasmGenCtx {
     self.emit(Instruction::Call(fn_idx));
   }
 
-  /// Evaluate all `args`, dropping each result, then push nil (0.0).
-  /// Used for operations that are intentionally no-ops in WASM.
-  pub(super) fn stub_proc(&mut self, args: &[Calcit]) -> Result<(), String> {
-    for arg in args {
-      emit_expr(self, arg)?;
-      self.emit(Instruction::Drop);
-    }
-    self.emit(f64_const(0.0));
-    Ok(())
-  }
-
-  /// Silently ignore all args and return nil. Use for type-system procs whose
-  /// arguments may contain tags/values not representable in WASM (e.g. `:&core-number-methods`).
-  /// NOTE: This should only be used for initialization/setup code that runs before user code.
-  pub(super) fn silent_nil(&mut self) -> Result<(), String> {
-    self.emit(f64_const(0.0));
-    Ok(())
-  }
-
   // -----------------------------------------------------------------------
   // Integer arithmetic helpers
   // -----------------------------------------------------------------------
@@ -6961,7 +6942,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeEnum => emit_enum_new(ctx, args),
     CalcitProc::NativeEnumNth => emit_enum_nth(ctx, args),
     CalcitProc::NativeEnumCount => emit_enum_count(ctx, args),
-    CalcitProc::NativeEnumValidate => ctx.stub_proc(args), // no-op in WASM
+    CalcitProc::NativeEnumValidate => Err("runtime enum validation is not supported in WASM".into()),
     // %:: enum variant constructor: (enum_class tag payload...) — ignore enum_class
     CalcitProc::NativeNamedEnumNew => emit_named_enum_new(ctx, args),
     CalcitProc::NativeEnumImpls
@@ -7231,12 +7212,6 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       Ok(())
     }
 
-    // &get-calcit-backend — runtime-env query, not meaningful in WASM; return nil.
-    CalcitProc::NativeGetCalcitBackend => {
-      ctx.emit(f64_const(0.0));
-      Ok(())
-    }
-
     // Runtime tag interning is not represented by the static WASM tag table.
     CalcitProc::TurnTag => {
       expect_arity(1, args, "turn-tag")?;
@@ -7249,11 +7224,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       Err("runtime trait registration must be eliminated before WASM codegen".into())
     }
 
-    // register-calcit-builtin-impls — builtin impl registration; not meaningful in WASM; return nil.
-    CalcitProc::RegisterCalcitBuiltinImpls => {
-      eprintln!("[wasm warning] RegisterCalcitBuiltinImpls is ignored in WASM (builtin impls already registered)");
-      ctx.silent_nil()
-    }
+    CalcitProc::RegisterCalcitBuiltinImpls => Err("runtime builtin impl registration must be eliminated before WASM codegen".into()),
 
     // &impl::new — only valid as compile-time metadata for WASM.
     CalcitProc::NativeImplNew => Err("runtime trait impl construction must be eliminated before WASM codegen".into()),
