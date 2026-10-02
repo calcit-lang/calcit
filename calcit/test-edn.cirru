@@ -181,8 +181,23 @@
                     , Response
                   , false
                 fn (_error) true
+            let
+                value $ DemoEnum :err |oops
+                wire $ format-cirru-edn value
+                parsed $ parse-cirru-edn wire $ {} (:DemoEnum DemoEnum)
+              assert= value $ decode-map-as value DemoEnum
+              assert= value $ decode-map-as parsed DemoEnum
+              assert= true $ .err? $ try-decode-map-as (:: :err |oops) DemoEnum
+              assert= true $ .err? $ try-decode-map-as
+                parse-cirru-edn "|%:: :DemoEnum :err 42" $ {} $ :DemoEnum DemoEnum
+                , DemoEnum
+              , &unit
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |nominal-enum-boundary)
+            :code $ quote $ test-runtime-map-decode
+            :tags $ #{} :unit
         'test-symbol $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-symbol () (log-title "|Testing symbol to edn")
             assert= (&extract-code-into-edn 'aa)

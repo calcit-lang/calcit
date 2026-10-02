@@ -273,7 +273,7 @@ impl MapDecoder<'_> {
         let Some(actual_nominal) = enum_value.sum_type.as_ref() else {
           return Err(EdnDecodeError::at(path, format!("expected nominal enum :{}", nominal.name())));
         };
-        if !Arc::ptr_eq(actual_nominal, nominal) {
+        if !Arc::ptr_eq(actual_nominal, nominal) && !actual_nominal.same_nominal_definition(nominal) {
           return Err(EdnDecodeError::at(
             path,
             format!("expected enum :{}, got :{}", nominal.name(), actual_nominal.name()),
@@ -849,5 +849,39 @@ mod tests {
     let invalid = cirru_edn::parse("%:: :ResultText :ok 1").expect("parse invalid enum");
     let error = decode(&shape, &invalid).expect_err("arity must fail");
     assert!(error.message.contains("expects 0 payload(s), got 1"));
+  }
+
+  #[test]
+  fn runtime_enum_decoder_preserves_declaration_identity_across_arc_clones() {
+    let anonymous = option_enum();
+    let nominal = Arc::new((*anonymous).clone().with_definition_ref("tests.edn", "Option"));
+    let shape = DataShapeGraph::build(&CalcitTypeAnnotation::Enum(nominal.clone(), Arc::new(vec![])), "tests.edn")
+      .expect("derive named enum shape");
+    let mut value = CalcitEnumValue {
+      tag: Arc::new(Calcit::tag("none")),
+      extra: vec![],
+      sum_type: Some(Arc::new((*nominal).clone())),
+    };
+    assert!(!Arc::ptr_eq(value.sum_type.as_ref().unwrap(), &nominal));
+    let Calcit::Enum(decoded) = decode_map(&shape, &Calcit::Enum(value.clone())).expect("decode declaration clone") else {
+      panic!("expected enum");
+    };
+    assert!(Arc::ptr_eq(decoded.sum_type.as_ref().unwrap(), &nominal));
+
+    value.sum_type = Some(Arc::new((*nominal).clone().with_definition_ref("tests.other", "Option")));
+    assert!(decode_map(&shape, &Calcit::Enum(value.clone())).is_err());
+
+    let mut changed = nominal.to_struct_prototype();
+    changed.values = Arc::new(vec![
+      Calcit::List(Arc::new(CalcitList::Vector(vec![Calcit::tag("string")]))),
+      Calcit::List(Arc::new(CalcitList::Vector(vec![Calcit::tag("number")]))),
+    ]);
+    value.sum_type = Some(Arc::new(CalcitEnumDef::from_struct(changed).expect("changed declaration")));
+    assert!(decode_map(&shape, &Calcit::Enum(value.clone())).is_err());
+
+    let anonymous_shape = DataShapeGraph::build(&CalcitTypeAnnotation::Enum(anonymous.clone(), Arc::new(vec![])), "tests.edn")
+      .expect("derive unbound enum shape");
+    value.sum_type = Some(Arc::new((*anonymous).clone()));
+    assert!(decode_map(&anonymous_shape, &Calcit::Enum(value)).is_err());
   }
 }
