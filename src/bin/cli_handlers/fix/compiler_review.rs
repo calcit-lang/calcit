@@ -38,7 +38,10 @@ pub(super) fn compile_boundary_review(
   let mut diagnostics = Vec::new();
   let mut seen = HashSet::new();
   for (namespace, definition) in definitions {
-    let result = if matches!(rule, ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE) {
+    let result = if matches!(
+      rule,
+      ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE | CALLABLE_CONTRACT_PROOF_RULE
+    ) {
       runner::preprocess::with_assertion_proof(|| {
         // Reprocess the selected source even if another definition compiled it
         // earlier. Cached local annotations are not pre-assertion evidence.
@@ -47,8 +50,10 @@ pub(super) fn compile_boundary_review(
     } else {
       runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default()).map(|_| ())
     };
-    if matches!(rule, ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE)
-      && let Some(warning) = warnings.borrow().iter().find(|warning| is_contradictory_proof_warning(warning))
+    if matches!(
+      rule,
+      ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE | CALLABLE_CONTRACT_PROOF_RULE
+    ) && let Some(warning) = warnings.borrow().iter().find(|warning| is_contradictory_proof_warning(warning))
     {
       // A contradictory implementation cannot lend its declared return type
       // to an assertion, even when ordinary checking reports it as a warning.
@@ -61,7 +66,9 @@ pub(super) fn compile_boundary_review(
         (ASSERT_TYPE_PROOF_RULE, Some("E_ASSERT_TYPE_MISMATCH")) => "E_ASSERT_TYPE_MISMATCH",
         (ASSERT_TYPE_PROOF_RULE, Some("E_FN_RETURN_UNPROVEN")) => "E_FN_RETURN_UNPROVEN",
         (CONCRETE_RETURN_PROOF_RULE, Some(CONCRETE_RETURN_PROOF_DIAGNOSTIC)) => CONCRETE_RETURN_PROOF_DIAGNOSTIC,
-        (ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE, Some("E_CALL_ARGUMENT_UNPROVEN")) => "E_CALL_ARGUMENT_UNPROVEN",
+        (ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE | CALLABLE_CONTRACT_PROOF_RULE, Some("E_CALL_ARGUMENT_UNPROVEN")) => {
+          "E_CALL_ARGUMENT_UNPROVEN"
+        }
         _ => return Err(format!("Failed to preprocess fix target {namespace}/{definition}: {error}")),
       };
       let location = error
@@ -111,7 +118,12 @@ pub(super) fn compile_boundary_review(
           })
         })
         .collect::<Vec<_>>();
-      let message = if rule == CONCRETE_RETURN_PROOF_RULE {
+      let message = if rule == CALLABLE_CONTRACT_PROOF_RULE {
+        format!(
+          "{}; review the callable's argument, rest, return and feature contract at this source owner. Bare Fn/DynFn storage is allowed but cannot prove a concrete invocation contract. Only an independently checked implementation may supply missing metadata through synthesize-schema-v1; an unknown external callback cannot be assigned a guessed signature. The shared compiler may report an earlier non-callable argument obligation first; only the first error per definition is reported, and tests/examples are not scanned. No schema, permission or code is changed.",
+          error.msg
+        )
+      } else if rule == CONCRETE_RETURN_PROOF_RULE {
         format!(
           "{}; inspect the producer implementation at this source owner, not its wrapper declaration. Choose a checked boundary for open input. Only if the implementation independently proves the missing metadata, review the existing synthesize-schema-v1 candidate. Only the first compiler error per definition is reported; tests/examples are not scanned. No schema, permission or code is changed.",
           error.msg

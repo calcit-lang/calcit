@@ -7,6 +7,201 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn callable_contract_proof_preserves_open_storage_and_reviews_concrete_use() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).unwrap();
+  let callback = "(:: 'Fn $ {} (:args $ [] 'Number) (:return 'Number))";
+  let rest_callback = "(:: 'Fn $ {} (:args $ [] 'Number) (:rest 'Number) (:return 'Number))";
+  let feature_callback = "(:: 'Fn $ {} (:args $ [] 'Number) (:return 'Number) (:features $ #{} :js-ffi))";
+  let async_callback = "(:: 'Fn $ {} (:args $ [] 'Number) (:return 'Number) (:async true))";
+  for (name, argument, returns, body) in [
+    ("consume", callback, "'Number", "callback 1"),
+    ("erased", "'Fn", "'Number", "consume callback"),
+    ("open-input", "'Dynamic", "'Number", "consume callback"),
+    ("closed", callback, "'Number", "consume callback"),
+    ("storage", "'Fn", "'Fn", ", callback"),
+    (
+      "owned-feature",
+      "'Fn",
+      "'Number",
+      "consume-feature (fn (n) (hint-fn ({} (:args ([] 'Number)) (:return 'Number) (:features (#{} :js-ffi)))) (unsafe-coerce n 'Number))",
+    ),
+    ("consume-async", async_callback, "'Number", ", 1"),
+    ("erased-async", "'Fn", "'Number", "consume-async callback"),
+    ("sync-for-async", "'Fn", "'Number", "consume-async (fn (n) (&+ n 1))"),
+    ("consume-rest", rest_callback, "'Number", "callback 1 2"),
+    ("erased-rest", "'Fn", "'Number", "consume-rest callback"),
+    ("closed-rest", rest_callback, "'Number", "consume-rest callback"),
+    ("consume-feature", feature_callback, "'Number", "callback 1"),
+    ("erased-feature", "'Fn", "'Number", "consume-feature callback"),
+    ("closed-feature", feature_callback, "'Number", "consume-feature callback"),
+    (
+      "wrong-signature",
+      "(:: 'Fn $ {} (:args $ [] 'String) (:return 'String))",
+      "'Number",
+      "consume callback",
+    ),
+    ("unknown-invocation", "'Fn", "'Number", "callback 1"),
+    ("foreign-owner", "'Fn", "'Number", "erased callback"),
+    ("unscoped", "'Fn", "'Number", "unsafe-coerce callback 'Number"),
+    (
+      "borrowed-feature",
+      "'Fn",
+      "'Number",
+      "consume-feature (fn (n) (unsafe-coerce n 'Number))",
+    ),
+  ] {
+    let target = format!("fix-command.main/{name}");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ defn {name} (callback)\n  {body}"),
+        ],
+      ),
+      "install callable source",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "schema",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ :: 'Fn $ {{}} (:args $ [] {argument}) (:return {returns})"),
+        ],
+      ),
+      "declare callable contract",
+    );
+  }
+  for (name, code) in [
+    ("closed", "quote $ assert= 2 $ closed $ fn (n) (&+ n 1)"),
+    ("storage", "quote $ assert= true $ fn? $ storage $ fn (n) (&+ n 1)"),
+  ] {
+    let target = format!("fix-command.main/{name}");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "add-test",
+          &target,
+          "callable-contract",
+          "--tags",
+          "unit",
+          "--input-format",
+          "cirru",
+          "--code",
+          code,
+        ],
+      ),
+      "attach callable semantics",
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["test", &target, "--require-match"]),
+      "replay callable definition tests",
+    );
+  }
+  let original = fs::read(&snapshot).unwrap();
+  for (name, rejected) in [
+    ("erased", true),
+    ("open-input", true),
+    ("closed", false),
+    ("storage", false),
+    ("erased-rest", true),
+    ("closed-rest", false),
+    ("erased-feature", true),
+    ("closed-feature", false),
+    ("owned-feature", false),
+    ("erased-async", true),
+  ] {
+    let selectors = [
+      "--rule",
+      "callable-contract-proof-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      name,
+      "--format",
+      "json",
+    ];
+    let output = run_fix(&snapshot, &selectors);
+    assert_eq!(output.status.success(), !rejected, "{}", String::from_utf8_lossy(&output.stderr));
+    let report = parse_stdout(&output);
+    let suggestions = report["data"]["suggestions"].as_array().unwrap();
+    assert_eq!(suggestions.len(), usize::from(rejected));
+    if rejected {
+      let suggestion = &suggestions[0];
+      assert_eq!(suggestion["diagnostic_code"], "E_CALL_ARGUMENT_UNPROVEN");
+      assert_eq!(suggestion["applicability"], "requires-review");
+      assert!(suggestion["replacement"].is_null());
+      assert_eq!(suggestion["path"], "code@3.1");
+      assert!(suggestion["message"].as_str().unwrap().contains("-> :number"));
+      let hint = suggestion["origin_chain"][0]["diagnostic"]["hint"].as_str().unwrap();
+      assert!(hint.contains(if name == "erased-rest" { "rest: :number" } else { "rest: none" }));
+      assert!(
+        hint.contains(if name == "erased-feature" {
+          "declared features: [js-ffi]"
+        } else {
+          "declared features: []"
+        }),
+        "{name}: {hint}"
+      );
+      assert!(hint.contains("not just fn?"));
+      assert!(!hint.contains("$async-invocation"));
+      if name == "erased-async" {
+        assert!(hint.contains("async fn(:number) -> :number"));
+      }
+      let applied = run_fix(&snapshot, &[selectors.as_slice(), &["--apply"]].concat());
+      assert!(!applied.status.success(), "unknown callback must never acquire a guessed schema");
+      let mut edn_selectors = selectors;
+      edn_selectors[7] = "edn";
+      let edn = run_fix(&snapshot, &edn_selectors);
+      assert!(!edn.status.success());
+      cirru_edn::parse(&String::from_utf8_lossy(&edn.stdout)).expect("one native EDN review document");
+    }
+    assert_eq!(fs::read(&snapshot).unwrap(), original, "proof audit must preserve source bytes");
+  }
+  for (name, expected_error) in [
+    ("wrong-signature", "E_CALL_ARGUMENT_MISMATCH"),
+    ("unknown-invocation", "E_FN_RETURN_UNPROVEN"),
+    ("foreign-owner", "outside the selected project scope"),
+    ("unscoped", "E_UNSCOPED_UNSAFE_COERCE"),
+    ("borrowed-feature", "E_UNSCOPED_UNSAFE_COERCE"),
+    ("sync-for-async", "E_CALL_ARGUMENT_MISMATCH"),
+  ] {
+    let output = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "callable-contract-proof-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--apply",
+        "--format",
+        "edn",
+      ],
+    );
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains(expected_error), "{name}: {stderr}");
+    assert_eq!(fs::read(&snapshot).unwrap(), original, "a failed boundary audit must not write");
+  }
+}
+
+#[test]
 fn concrete_return_proof_navigates_the_implementation_without_writing() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

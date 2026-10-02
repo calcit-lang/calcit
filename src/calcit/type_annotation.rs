@@ -856,7 +856,7 @@ struct FnSchemaFields<'a> {
   async_invocation: Option<&'a Calcit>,
 }
 
-const ASYNC_INVOCATION_FEATURE: &str = "$async-invocation";
+pub(crate) const ASYNC_INVOCATION_FEATURE: &str = "$async-invocation";
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct CalcitGenericBound {
@@ -2348,6 +2348,26 @@ impl CalcitTypeAnnotation {
         }
         Arc::new(features)
       }
+      Calcit::List(xs)
+        if xs.first().is_some_and(|head| match head {
+          Calcit::Symbol { sym, .. } => sym.as_ref() == "#{}",
+          Calcit::Proc(CalcitProc::Set) => true,
+          Calcit::Import(CalcitImport { ns, def, .. }) => ns.as_ref() == CORE_NS && def.as_ref() == "#{}",
+          _ => false,
+        }) =>
+      {
+        // Schema source is not evaluated: retain literal feature tags without
+        // executing a set expression or accepting the reserved async marker.
+        Arc::new(
+          xs.iter()
+            .skip(1)
+            .filter_map(|item| match item {
+              Calcit::Tag(tag) if tag.ref_str() != ASYNC_INVOCATION_FEATURE => Some(tag.clone()),
+              _ => None,
+            })
+            .collect(),
+        )
+      }
       _ => Arc::new(HashSet::new()),
     }
   }
@@ -2465,10 +2485,11 @@ impl CalcitTypeAnnotation {
   /// Convert a type-annotation [`Edn`] value into its equivalent [`Calcit`] form so that
   /// [`Self::parse_type_annotation_form`] can be reused without duplicating its logic.
   /// Only the variants that appear inside schema type expressions need to be handled:
-  /// tags, symbols, lists, and tuples.
+  /// Preserve nested schema metadata as well as type expressions.
   fn edn_type_to_calcit(form: &Edn) -> Calcit {
     match form {
       Edn::Nil => Calcit::Nil,
+      Edn::Bool(value) => Calcit::Bool(*value),
       Edn::Tag(t) => Calcit::Tag(t.clone()),
       Edn::Str(s) => Calcit::Str(s.clone()),
       Edn::Symbol(s) => Calcit::Symbol {
@@ -2483,6 +2504,7 @@ impl CalcitTypeAnnotation {
         let items: Vec<Calcit> = xs.0.iter().map(Self::edn_type_to_calcit).collect();
         Calcit::List(Arc::new(CalcitList::from(items.as_slice())))
       }
+      Edn::Set(xs) => Calcit::Set(xs.0.iter().map(Self::edn_type_to_calcit).collect()),
       Edn::Map(xs) => {
         let mut ys = rpds::HashTrieMap::new_sync();
         for (k, v) in &xs.0 {
@@ -7136,6 +7158,15 @@ mod tests {
     assert!(!source.is_async_invocation());
     assert!(!source.features.contains(&reserved));
 
+    let literal_features = Calcit::from(vec![
+      symbol("#{}"),
+      Calcit::Tag(EdnTag::from("js-ffi")),
+      Calcit::Tag(reserved.clone()),
+    ]);
+    let parsed_features = CalcitTypeAnnotation::parse_fn_features_from_form(Some(&literal_features));
+    assert!(parsed_features.contains(&EdnTag::from("js-ffi")));
+    assert!(!parsed_features.contains(&reserved));
+
     let mut features = EdnSetView::default();
     features.insert(Edn::Tag(reserved.clone()));
     let edn_schema = Edn::Map(EdnMapView::from(HashMap::from([
@@ -7145,6 +7176,28 @@ mod tests {
     let edn = CalcitTypeAnnotation::parse_fn_schema_from_edn(&edn_schema).expect("EDN fn schema");
     assert!(!edn.is_async_invocation());
     assert!(!edn.features.contains(&reserved));
+  }
+
+  #[test]
+  fn nested_callable_schema_preserves_async_and_feature_metadata() {
+    let mut features = EdnSetView::default();
+    features.insert(Edn::tag("js-ffi"));
+    let nested = Edn::enum_value(
+      "Fn",
+      vec![Edn::Map(EdnMapView::from(HashMap::from([
+        (Edn::tag("args"), Edn::List(vec![Edn::Symbol("Number".into())].into())),
+        (Edn::tag("return"), Edn::Symbol("Number".into())),
+        (Edn::tag("async"), Edn::Bool(true)),
+        (Edn::tag("features"), Edn::Set(features)),
+      ])))],
+    );
+    let annotation = CalcitTypeAnnotation::parse_type_annotation_from_edn(&nested);
+    let CalcitTypeAnnotation::Fn(signature) = annotation.as_ref() else {
+      panic!("expected nested Fn")
+    };
+    assert!(signature.is_async_invocation());
+    assert!(signature.features.contains(&EdnTag::from("js-ffi")));
+    assert_eq!(annotation.to_type_edn(), nested);
   }
 
   #[test]

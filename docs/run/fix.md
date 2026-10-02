@@ -194,6 +194,14 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   replacement 为空，`--apply` 不修改代码或业务契约。只有 producer 实现可独立证明且缺少 schema 时，
   才另用现有 `synthesize-schema-v1` 审阅 metadata 候选；它仍执行独立证据、调用点一致性与原子写入门禁。
   此规则只审计 definition `:code`，须使用严格模式，暂不进入默认 preset 或 strict workflow。
+- `callable-contract-proof-v1` 检查具体调用所需的参数证明，运行
+  `calcit fix --rule callable-contract-proof-v1 --ns app.main --def run --format edn`。
+  裸 `Fn` 可以保存、返回和传递；传入具有具体参数/返回契约的 callback 位置时，必须由实现或真实边界提供证明。
+  报告复用 `E_CALL_ARGUMENT_UNPROVEN`、源码位置与指纹；直接 callable 契约的 hint 展示签名、rest 和声明的 features，
+  不把 `fn?` 当作签名验证，也不自动授予 features。未知外部 callback 保持待审，replacement 为空，`--apply` 不改源码。
+  该入口运行共享 compiler proof，不另建 callable 检查器；同一定义较早的非 callable 参数缺证据也会先报告。
+  矛盾类型、未解决的返回/断言错误或 scope 外错误会阻止审计。每个定义只定位首个错误，只扫描 `:code`；
+  `:tests` 与 `:examples` 仍需另行验证。当前规则要求严格模式，不进入默认 preset 或 strict workflow 的自动写回集合。
 - `assert-type-proof-v1` 显式审计断言前的类型证据，运行
   `calcit fix --rule assert-type-proof-v1 --ns app.main --def run --format edn` 查看原始输入位置和编译栈。
   已知矛盾保留 `E_ASSERT_TYPE_MISMATCH`；开放输入、未知 callable 或未绑定泛型缺少证明时报告
