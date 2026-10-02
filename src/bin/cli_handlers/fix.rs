@@ -3031,16 +3031,19 @@ fn semantic_rename_leaf_replacement(source_leaf: &str, old_name: &str, target_ns
 }
 
 fn replace_attached_source_node(node: &mut Cirru, path: &[usize], expected: &str, replacement: &Cirru) -> Result<(), String> {
+  replace_attached_source_tree(node, path, &Cirru::leaf(expected), replacement)
+}
+
+/// Replace a checked source subtree without interpreting its payload as executable code.
+fn replace_attached_source_tree(node: &mut Cirru, path: &[usize], expected: &Cirru, replacement: &Cirru) -> Result<(), String> {
   if path.is_empty() {
-    return match node {
-      Cirru::Leaf(value) if value.as_ref() == expected => {
-        *node = replacement.clone();
-        Ok(())
-      }
-      other => Err(format!(
-        "Attached source changed while planning semantic rename: expected leaf `{expected}`, got `{other}`"
-      )),
-    };
+    if node != expected {
+      return Err(format!(
+        "Attached source changed while planning rewrite: expected `{expected}`, got `{node}`"
+      ));
+    }
+    *node = replacement.clone();
+    return Ok(());
   }
   let Cirru::List(items) = node else {
     return Err(format!("Attached source path {} traverses a leaf", format_path(path)));
@@ -3049,7 +3052,7 @@ fn replace_attached_source_node(node: &mut Cirru, path: &[usize], expected: &str
   let child = items
     .get_mut(index)
     .ok_or_else(|| format!("Attached source path {} is out of range", format_path(path)))?;
-  replace_attached_source_node(child, &path[1..], expected, replacement)
+  replace_attached_source_tree(child, &path[1..], expected, replacement)
 }
 
 fn format_quoted_nodes(nodes: &[Cirru]) -> Result<String, String> {
@@ -3920,7 +3923,11 @@ impl CorePredicateRename {
 fn supports_attached_migrations(rule: &str) -> bool {
   matches!(
     rule,
-    CORE_FUNCTION_ALIAS_RULE | CORE_NON_NIL_PREDICATE_RULE | CORE_INTEGER_PREDICATE_RULE
+    CORE_FUNCTION_ALIAS_RULE
+      | CORE_NON_NIL_PREDICATE_RULE
+      | CORE_INTEGER_PREDICATE_RULE
+      | REDUNDANT_DO_RULE
+      | SINGLE_EXPRESSION_DO_RULE
   ) || QUERYABLE_METHOD_ALIASES
     .iter()
     .chain(CORE_EFFECT_METHOD_ALIASES)
@@ -3964,6 +3971,24 @@ fn plan_attached_fixes(
       let mut origins = Vec::new();
       let mut blockers = Vec::new();
       for (index, source) in rewritten.iter_mut().enumerate() {
+        for rule in [REDUNDANT_DO_RULE, SINGLE_EXPRESSION_DO_RULE] {
+          if !selected_rules.contains(&rule) {
+            continue;
+          }
+          match plan_attached_do_rewrite(
+            source,
+            namespace,
+            &format!("&calcit:fix-attached:{definition}:{region}:{index}"),
+            rule,
+          ) {
+            Ok(Some(rewrite)) => {
+              *source = rewrite.code;
+              origins.extend(rewrite.origin_chain);
+            }
+            Ok(None) => {}
+            Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
+          }
+        }
         for alias in [
           CorePredicateRename::NonNil,
           CorePredicateRename::Optionally,
@@ -4070,7 +4095,7 @@ fn plan_attached_fixes(
         replacement: safe.then(|| quoted_json(&replacement)),
         applicability: if safe { "machine-applicable" } else { "requires-review" },
         message: if safe {
-          "Replace resolved legacy calls in attached source without changing assertions, tags, or argument evaluation.".to_owned()
+          "Apply proven source rewrites without changing assertions, tags, or argument evaluation.".to_owned()
         } else {
           blockers.join("; ")
         },
@@ -5552,6 +5577,64 @@ fn plan_core_collection_len_fixes(
   Ok(suggestions)
 }
 
+/// Reuse structural body rules, checking actual attached coordinates rather than the synthetic function body.
+fn plan_attached_do_rewrite(
+  source: &Cirru,
+  namespace: &str,
+  definition: &str,
+  rule: &str,
+) -> Result<Option<AttachedSourceRewrite>, String> {
+  let mut paths = Vec::new();
+  if rule == REDUNDANT_DO_RULE {
+    collect_redundant_do_paths(source, &mut Vec::new(), &mut paths);
+  } else {
+    collect_single_expression_do_paths(source, &mut Vec::new(), &mut paths);
+  }
+  if paths.is_empty() {
+    return Ok(None);
+  }
+  let wrapper = Cirru::List(vec![Cirru::leaf("fn"), Cirru::List(vec![]), source.clone()]);
+  let parsed = code_to_calcit(&wrapper, namespace, definition, vec![]).map_err(|error| error.to_string())?;
+  let usages =
+    runner::preprocess::trace_source_usages(&parsed, namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
+      .map_err(|error| error.msg)?;
+  for path in &paths {
+    let mut wrapper_path = vec![2];
+    wrapper_path.extend(path);
+    if !method_source_context_is_stable(&wrapper, &wrapper_path, namespace, definition, &usages) {
+      return Err(format!(
+        "Cannot prove stable executable context for `do` at {}; preserve the metadata region for review.",
+        format_path(path)
+      ));
+    }
+  }
+  // Redundant wrappers are spliced by their actual enclosing body. A root multi-expression do has no such parent.
+  let mut targets = if rule == REDUNDANT_DO_RULE {
+    paths.iter().map(|path| path[..path.len() - 1].to_vec()).collect::<Vec<_>>()
+  } else {
+    paths.clone()
+  };
+  targets.sort_by(|left, right| right.cmp(left));
+  targets.dedup();
+  let mut rewritten = source.clone();
+  for path in targets {
+    let original = navigate_to_path(&rewritten, &path)?;
+    let replacement = if rule == REDUNDANT_DO_RULE {
+      splice_redundant_do_children(original.clone())
+    } else {
+      unwrap_single_expression_do(original.clone())
+    };
+    replace_attached_source_tree(&mut rewritten, &path, &original, &replacement)?;
+  }
+  Ok(Some(AttachedSourceRewrite {
+    code: rewritten,
+    origin_chain: paths
+      .into_iter()
+      .map(|path| serde_json::json!({"kind": "resolved-attached-source", "path": format_path(&path), "rule_id": rule}))
+      .collect(),
+  }))
+}
+
 /// Build structural splice suggestions for redundant `do` wrappers in proven variadic bodies.
 fn plan_redundant_do_fixes(
   snapshot: &Snapshot,
@@ -5972,6 +6055,7 @@ fn splice_redundant_do_children(node: Cirru) -> Cirru {
   let body_start = match items.first().and_then(leaf_value) {
     Some("defn") => Some(3),
     Some("fn" | "let") => Some(2),
+    Some("let[]") => Some(3),
     Some("do") => Some(1),
     _ => None,
   };

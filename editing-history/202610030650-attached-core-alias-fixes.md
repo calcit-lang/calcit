@@ -46,3 +46,8 @@ reader 的 `@ref` 则要保留原形状保护：源码叶代表 deref 调用，�
 共享规则现在只自动改直接调用，普通 `:code` 和附带区域都保留该保护。补充的嵌套 recur 负例
 保证外层独立退出不为内部递归循环提供具体返回证明；原 Diary patch helper 的只读审计通过且校验和不变，
 这些局部检查不代表完整 Diary 迁移。
+
+附带 `do` 整理直接复用已有路径收集与结构化 body rewrite，synthetic fn 仅用于编译器来源证明，
+不把附带根表达式误当成函数 variadic body。单表达式根可解包，多表达式根必须保留顺序容器。
+未知宏沿用既有执行上下文门禁，整个 metadata 区域进入 review；quoted data 原样保留。
+顺便对齐已有 splicing helper 的 `let[]` body 支持与路径收集规则，避免同一规则两处不一致。

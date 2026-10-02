@@ -7,6 +7,92 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn attached_do_rules_preserve_root_sequence_and_macro_data() {
+  for rule in ["redundant-do-v1", "single-expression-do-v1"] {
+    let directory = TestDirectory::create();
+    let snapshot = directory.path().join("calcit.cirru");
+    fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+    assert_success(&run_calcit(&snapshot, &["query", "config"]), "inspect do fixture config");
+    for (target, code, overwrite) in [
+      ("app.main/main!", "quote $ defn main! ()\n  , &unit", true),
+      ("app.main/opaque", "quote $ defmacro opaque (x)\n  , x", false),
+    ] {
+      let mut args = vec!["edit", "def", target, "--input-format", "cirru", "--code", code];
+      if overwrite {
+        args.push("--overwrite");
+      }
+      assert_success(&run_calcit(&snapshot, &args), "create do boundary fixture");
+    }
+    for (name, code) in [
+      ("root-sequence", "quote $ do (assert= 1 1) (assert= 2 2)"),
+      ("quoted-data", "quote $ assert= (quote $ do 1) (quote $ do 1)"),
+      ("opaque", "quote $ assert= 2 $ opaque $ let ((x 1)) (do (+ x 1))"),
+    ] {
+      assert_success(
+        &run_calcit(
+          &snapshot,
+          &[
+            "edit",
+            "add-test",
+            "app.main/main!",
+            name,
+            "--tags",
+            "unit,upgrade",
+            "--input-format",
+            "cirru",
+            "--code",
+            code,
+          ],
+        ),
+        "attach do boundary assertion",
+      );
+    }
+    assert_success(
+      &run_calcit(&snapshot, &["test", "app.main/main!", "--require-match"]),
+      "original do boundaries",
+    );
+    let before = fs::read(&snapshot).unwrap();
+    let preview = run_calcit(
+      &snapshot,
+      &[
+        "fix",
+        "--ns",
+        "app.main",
+        "--def",
+        "main!",
+        "--rule",
+        rule,
+        "--include-attached",
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&preview, rule);
+    let report: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    let suggestions = report["data"]["suggestions"].as_array().unwrap();
+    assert_eq!(suggestions.len(), 1, "{rule}: {report}");
+    assert_eq!(suggestions[0]["path"], "tests.opaque");
+    assert_eq!(suggestions[0]["applicability"], "requires-review");
+    let mut apply = vec![
+      "fix",
+      "--ns",
+      "app.main",
+      "--def",
+      "main!",
+      "--rule",
+      rule,
+      "--include-attached",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+    ];
+    apply.push(report["revision"].as_str().unwrap());
+    assert_success(&run_calcit(&snapshot, &apply), "retain unproven do regions");
+    assert_eq!(fs::read(&snapshot).unwrap(), before);
+  }
+}
+
+#[test]
 fn attached_predicate_migration_preserves_opaque_contexts_and_function_identity() {
   for (rule, predicate) in [("core-non-nil-predicate-v1", "some?"), ("core-integer-predicate-v1", "round?")] {
     let directory = TestDirectory::create();
@@ -217,6 +303,19 @@ fn attached_method_alias_fix_preserves_unproven_regions_and_quoted_data() {
 fn method_alias_fix_reuses_receiver_proofs_in_attached_tests_and_examples() {
   // The host checks the transaction protocol; each Calcit assertion is replayed before and after migration.
   for (rule, code) in [
+    (
+      "redundant-do-v1",
+      "quote $ do\n  assert= 3 $ let ((x 1))\n    do\n      assert= x 1\n      do\n        assert= (+ x 1) 2\n        + x 2\n  assert= 4 4",
+    ),
+    ("single-expression-do-v1", "quote $ do $ assert= 3 $ do $ + (do 1) (do $ do 2)"),
+    (
+      "redundant-do-v1",
+      "quote $ assert= 3 $ let ((cell (atom 0)))\n  do\n    reset! cell 1\n    do\n      assert= @cell 1\n      reset! cell 2\n    assert= @cell 2\n    + @cell 1",
+    ),
+    (
+      "single-expression-do-v1",
+      "quote $ assert= 2 $ let ((cell (atom 0)))\n  do $ reset! cell 1\n  assert= @cell 1\n  do $ reset! cell (+ @cell 1)\n  do $ deref cell",
+    ),
     (
       "core-non-nil-predicate-v1",
       "quote $ do (assert= true $ some? 1) (assert= false $ some? nil)",

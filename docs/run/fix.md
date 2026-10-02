@@ -53,6 +53,9 @@ Map distinct-values、Set include、collection combine、predicate method 和 ef
 附带方法改写与 `:code` 共享接收者类型、方法实现和源码来源的证明，局部 `let` 类型由实际预处理结果保留。
 `round?` 的 reader 调用头与 Number 方法迁移同时覆盖，仍保留引号、局部遮蔽和未知宏保护。
 一个示例区域中混有需要 review 的表达式时，整个区域暂不自动改写。
+`redundant-do-v1` 与 `single-expression-do-v1` 也支持附带区域，复用原 body 规则。
+最外层多表达式 `do` 保留，只有真实 variadic body 内的 wrapper 能拆开；单表达式 wrapper 可直接解包。
+quoted data 不改写，未知宏中无法证明执行上下文的区域保留 review。
 其他规则与 preset 的附带覆盖尚未实现，
 不支持的组合会报错，不会静默跳过。下文各条规则的默认扫描范围保持不变。
 
