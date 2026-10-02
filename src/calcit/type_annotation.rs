@@ -4196,7 +4196,8 @@ impl CalcitTypeAnnotation {
     self.compatible_with_bindings(expected, &mut bindings)
   }
 
-  pub(crate) fn is_proven_for(&self, expected: &CalcitTypeAnnotation) -> bool {
+  /// Require concrete static proof rather than legacy compatibility across an open boundary.
+  pub fn is_proven_for(&self, expected: &CalcitTypeAnnotation) -> bool {
     let mut bindings = TypeBindings::new();
     self.prove_with_bindings(expected, &mut bindings).is_proven()
   }

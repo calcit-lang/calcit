@@ -163,8 +163,9 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   选择，不进入任何升级 preset。quoted data、macro 生成引用、dependency source、schema type reference、自引用或缺少 source
   coordinate 的引用会拒绝整个事务。
 - `synthesize-schema-v1` 是参数化类型改写规则。它要求 `--ns` 与 `--def`，直接读取正常预处理及自底向上的类型推导结果，
-  只填补源码 schema 中已有的 `Dynamic` 洞。零参数函数、可推导返回值和 `Ref<T>` 等候选没有剩余洞时标记为
-  `machine-applicable`；局部参数、嵌套泛型等位置仍缺少约束时保留精确路径并标记为 `needs-review`，即使传入 `--apply`
+  只填补源码 schema 中已有的 `Dynamic` 洞。零参数函数、可推导返回值和 `Ref<T>` 等候选只有独立实现与调用点证明通过，
+  且没有剩余洞时才标记为 `machine-applicable`；缺少证明或局部参数、嵌套泛型等位置仍缺少约束时保留现有证据和精确路径，
+  并标记为 `needs-review`，即使传入 `--apply`
   也不写回。该规则不进入升级 preset，不处理 macro、data/trait/impl 声明，也不通过执行程序猜运行时类型。
 - `spread-call-proof-v1` 将有完整证明的 `f & ([] 1 2)` 改为 `f 1 2`，也支持 spread 前已有固定实参。
   它读取唯一的编译器 source-expression、真实 List 构造器和固定 callable 契约，按通用类型关系逐项证明，
@@ -372,9 +373,14 @@ calcit calcit.cirru fix --rule synthesize-schema-v1 \
 features、参数与函数类别保持不变。
 
 结构化 suggestion 的 `:origin-chain` 会给出 compiled inference 候选以及仍未解决的 slot path。只有
-`:applicability :machine-applicable` 且未留下 `Dynamic`/未知 callable 的候选会生成事务 operation。`needs-review`
+`:applicability :machine-applicable`、独立实现证明通过且未留下 `Dynamic`/未知 callable 的候选会生成事务 operation。`needs-review`
 候选只展示更精确的外层结构，例如 `Option<Dynamic>`，不会把未知 payload 扩大成整个 `Dynamic`，也不会在 `--apply`
 时部分写回。无法从静态实现恢复类型时命令明确失败；macro、nominal data、trait 和 impl contract 必须继续显式声明。
+
+候选没有剩余洞也可能需要 review：函数返回声明和未经证明的 `assert-type` 不能为自己提供证据，
+`unsafe-coerce` 的目标类型只是显式信任契约。证明审计检查强转前的实际类型；真实 decoder 的成功结果和已证明的
+断言仍可支持补全。`:origin-chain` 中保留编译器诊断及原始位置，未证明候选即使传 `--apply` 也不写回。
+只读 `analyze weak-types --schema-evidence` 保留这些候选为 `boundary-unknown`，其他定义继续正常查询。
 
 实现侧证据可补全 value、zero-argument function、`Ref<T>` 与函数返回洞。带参数函数还会遍历普通项目源码中 resolver
 确认的调用点；只有调用形态完整、没有 macro/函数值等动态边界，并且同一参数的所有可推导实参类型完全一致时，才把该类型作为

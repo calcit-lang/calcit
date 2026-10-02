@@ -1226,6 +1226,20 @@ pub fn clone_existing_compiled_program() -> CompiledProgram {
   PROGRAM_COMPILED_DATA_STATE.read().expect("read compiled program data").clone()
 }
 
+/// Preserve the ordinary compiled cache across an explicit compiler audit.
+/// Like other program-state mutations, this requires exclusive compiler ownership.
+pub(crate) struct CompiledProgramCheckpoint(CompiledProgram);
+
+impl Drop for CompiledProgramCheckpoint {
+  fn drop(&mut self) {
+    *PROGRAM_COMPILED_DATA_STATE.write().unwrap_or_else(|error| error.into_inner()) = std::mem::take(&mut self.0);
+  }
+}
+
+pub(crate) fn checkpoint_compiled_program() -> CompiledProgramCheckpoint {
+  CompiledProgramCheckpoint(clone_existing_compiled_program())
+}
+
 /// Install one explicitly named source namespace for an isolated compiler test.
 #[cfg(test)]
 pub(crate) fn install_internal_source_namespace(ns: Arc<str>, file: ProgramFileData) -> Result<(), String> {

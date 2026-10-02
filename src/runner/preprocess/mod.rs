@@ -96,13 +96,21 @@ thread_local! {
 /// Run an explicit assertion audit without changing ordinary compilation policy.
 /// Callers must re-preprocess source rather than reuse previously compiled definitions.
 pub fn with_assertion_proof<R>(f: impl FnOnce() -> R) -> R {
+  // Audit inference deliberately ignores trusted coercion contracts. Its
+  // temporary local annotations must not replace ordinary cached output,
+  // including on errors or unwinding. Nested audits share the outer checkpoint.
+  let _compiled_checkpoint = (!REQUIRE_ASSERTION_PROOF.with(Cell::get)).then(program::checkpoint_compiled_program);
+  with_assertion_proof_policy(true, f)
+}
+
+fn with_assertion_proof_policy<R>(enabled: bool, f: impl FnOnce() -> R) -> R {
   struct Restore(bool);
   impl Drop for Restore {
     fn drop(&mut self) {
       REQUIRE_ASSERTION_PROOF.with(|enabled| enabled.set(self.0));
     }
   }
-  let _restore = Restore(REQUIRE_ASSERTION_PROOF.with(|enabled| enabled.replace(true)));
+  let _restore = Restore(REQUIRE_ASSERTION_PROOF.with(|current| current.replace(enabled)));
   f()
 }
 
@@ -584,11 +592,23 @@ fn ensure_ns_def_preprocessed(
       {
         EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = Some(fn_schema.clone()));
       }
-      let resolved_result = builtins::meta::with_compiling_def(ns, def, || {
-        calcit::with_type_annotation_warning_context(context_label, || {
-          preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, &next_stack)
+      let compile = || {
+        builtins::meta::with_compiling_def(ns, def, || {
+          calcit::with_type_annotation_warning_context(context_label, || {
+            preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, &next_stack)
+          })
         })
-      });
+      };
+      // Macro implementations produce source, not the runtime return evidence
+      // of their expansion. Audit the expanded source in the caller's scope;
+      // do not borrow or demand runtime proofs from compile-time helpers.
+      let is_macro =
+        matches!(&code, Calcit::List(forms) if matches!(forms.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defmacro"));
+      let resolved_result = if is_macro {
+        with_assertion_proof_policy(false, compile)
+      } else {
+        compile()
+      };
       CURRENT_FN_FEATURES.with(|cell| *cell.borrow_mut() = saved_features);
       let resolved_code = resolved_result?;
       check_top_level_value_schema(ns, def, &code, &resolved_code, &scope_types, &next_stack)?;
@@ -1310,7 +1330,9 @@ pub fn compile_source_def_for_snapshot(
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<(), CalcitErr> {
-  if program::lookup_compiled_def(ns, def).is_some() {
+  // A proof audit must revisit source even when ordinary inventory compilation
+  // has already warmed this definition's trusted metadata.
+  if program::lookup_compiled_def(ns, def).is_some() && !REQUIRE_ASSERTION_PROOF.with(Cell::get) {
     return Ok(());
   }
 
@@ -2875,7 +2897,11 @@ fn preprocess_list_call(
               }
               let evaluator_timer =
                 runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::Evaluator);
-              let evaluate_body = || runner::evaluate_lines(&info.body.to_vec(), &body_scope, file_ns, &next_stack);
+              let evaluate_body = || {
+                with_assertion_proof_policy(false, || {
+                  runner::evaluate_lines(&info.body.to_vec(), &body_scope, file_ns, &next_stack)
+                })
+              };
               let evaluated = runner::macro_capability::with_macro_context(
                 Arc::from(macro_name.as_str()),
                 info.signature.capabilities.clone(),
@@ -13374,6 +13400,50 @@ mod tests {
     assert!(!REQUIRE_ASSERTION_PROOF.with(Cell::get));
     preprocess_expr(&code, &scope_defs, &mut scope_types, "tests.assert", &warnings, &stack)
       .expect("ordinary compilation retains its existing policy");
+  }
+
+  #[test]
+  fn assertion_audit_restores_compiled_cache_on_success_error_and_unwind() {
+    let _guard = lock_preprocess_test_state();
+    let ns = "tests.audit-cache";
+    let entry = |number| program::ProgramDefEntry {
+      code: Calcit::Number(number),
+      schema: calcit::DYNAMIC_TYPE.clone(),
+      doc: Arc::from(""),
+      examples: vec![],
+      ffi: None,
+    };
+    program::install_internal_source_namespace(
+      Arc::from(ns),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(Arc::from("warm"), entry(3.0)), (Arc::from("temporary"), entry(5.0))]),
+      },
+    )
+    .expect("install isolated cache fixture");
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+    ensure_ns_def_compiled(ns, "warm", &warnings, &stack).expect("populate ordinary cache");
+    let ordinary = program::clone_existing_compiled_program();
+    for outcome in 0..3 {
+      let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        with_assertion_proof(|| {
+          let mut changed = program::lookup_compiled_def(ns, "warm").unwrap();
+          changed.preprocessed_code = Calcit::Number(9.0);
+          program::write_compiled_def(ns, "warm", changed);
+          ensure_ns_def_compiled(ns, "temporary", &warnings, &stack).expect("populate audit-only cache");
+          assert!(program::lookup_compiled_def(ns, "temporary").is_some());
+          match outcome {
+            0 => Ok(()),
+            1 => Err("audit error"),
+            _ => panic!("audit cache cleanup probe"),
+          }
+        })
+      }));
+      assert_eq!(result.is_err(), outcome == 2);
+      assert_eq!(program::clone_existing_compiled_program(), ordinary, "audit outcome {outcome}");
+      assert!(!REQUIRE_ASSERTION_PROOF.with(Cell::get));
+    }
   }
 
   #[test]

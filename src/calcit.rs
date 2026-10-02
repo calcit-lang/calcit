@@ -432,8 +432,17 @@ impl Hash for Calcit {
       }
       Number(n) => {
         "number:".hash(_state);
-        // TODO https://stackoverflow.com/q/39638363/883571
-        (*n as usize).hash(_state)
+        // hash the full bit pattern: `as usize` collapsed every negative number and every
+        // fraction below 1 into bucket 0, turning maps keyed by them into linear scans.
+        // `0.0 == -0.0` under Eq, so both must hash alike; NaN is normalized to one pattern.
+        let bits = if *n == 0.0 {
+          0u64
+        } else if n.is_nan() {
+          f64::NAN.to_bits()
+        } else {
+          n.to_bits()
+        };
+        bits.hash(_state)
       }
       Symbol { sym, .. } => {
         "symbol:".hash(_state);
@@ -481,8 +490,9 @@ impl Hash for Calcit {
       }
       BufList(items) => {
         "buf-list:".hash(_state);
-        let items = items.lock().expect("BufList lock");
-        items.hash(_state);
+        // BufList is mutable, so it has identity semantics like `Ref`: content-based hashing
+        // would change after a push and lose the value inside any hashed container.
+        (Arc::as_ptr(items) as usize).hash(_state);
       }
       CirruQuote(code) => {
         "cirru-quote:".hash(_state);
@@ -686,11 +696,8 @@ impl Ord for Calcit {
       (Buffer(..), _) => Less,
       (_, Buffer(..)) => Greater,
 
-      (BufList(a), BufList(b)) => {
-        let a = a.lock().expect("BufList lock");
-        let b = b.lock().expect("BufList lock");
-        a.cmp(&*b)
-      }
+      // identity order, see the note in `Hash`; never locks, so comparing a list with itself is safe
+      (BufList(a), BufList(b)) => (Arc::as_ptr(a) as usize).cmp(&(Arc::as_ptr(b) as usize)),
       (BufList(_), _) => Less,
       (_, BufList(_)) => Greater,
 
@@ -789,11 +796,7 @@ impl PartialEq for Calcit {
       (Ref(a, _), Ref(b, _)) => a == b,
       (Enum(a), Enum(b)) => a == b,
       (Buffer(b), Buffer(d)) => b == d,
-      (BufList(a), BufList(b)) => {
-        let a = a.lock().expect("BufList lock");
-        let b = b.lock().expect("BufList lock");
-        *a == *b
-      }
+      (BufList(a), BufList(b)) => Arc::ptr_eq(a, b),
       (CirruQuote(b), CirruQuote(d)) => b == d,
       (List(a), List(b)) => a == b,
       (Set(a), Set(b)) => a == b,
@@ -1764,6 +1767,33 @@ mod tests {
   }
 
   #[test]
+  fn number_hash_distinguishes_negative_and_fractional_values() {
+    let samples = [-1.0, -2.0, -3.5, -1000.0, 0.5, 0.25, 0.125, 1.0, 2.0, 1e300, -1e300];
+    let mut seen = std::collections::HashSet::new();
+    for n in samples {
+      assert!(seen.insert(calcit_hash(&Calcit::Number(n))), "hash collision for {n}");
+    }
+  }
+
+  #[test]
+  fn number_hash_matches_eq_for_zero_and_nan() {
+    assert_eq!(Calcit::Number(0.0), Calcit::Number(-0.0));
+    assert_eq!(calcit_hash(&Calcit::Number(0.0)), calcit_hash(&Calcit::Number(-0.0)));
+    assert_eq!(calcit_hash(&Calcit::Number(f64::NAN)), calcit_hash(&Calcit::Number(-f64::NAN)));
+  }
+
+  #[test]
+  fn map_with_negative_and_fractional_keys_keeps_all_entries() {
+    let mut map: rpds::HashTrieMapSync<Calcit, Calcit> = rpds::HashTrieMapSync::new_sync();
+    for i in 0..2000 {
+      map = map.insert(Calcit::Number(-(i as f64) - 1.0), Calcit::Number(i as f64));
+      map = map.insert(Calcit::Number(i as f64 / 2000.0 + 0.0001), Calcit::Number(i as f64));
+    }
+    assert_eq!(map.size(), 4000);
+    assert_eq!(map.get(&Calcit::Number(-1001.0)), Some(&Calcit::Number(1000.0)));
+  }
+
+  #[test]
   fn node_location_uses_dot_separator() {
     let loc = NodeLocation::new(
       Arc::from("app.comp.sidebar"),
@@ -1771,5 +1801,36 @@ mod tests {
       Arc::from(vec![3, 2, 1, 0]),
     );
     assert_eq!(loc.to_string(), "app.comp.sidebar/comp-sidebar @3.2.1.0");
+  }
+
+  #[test]
+  fn buf_list_compares_by_identity_without_locking() {
+    let a = Calcit::BufList(Arc::new(Mutex::new(vec![Calcit::Number(1.0)])));
+    let same_content = Calcit::BufList(Arc::new(Mutex::new(vec![Calcit::Number(1.0)])));
+    let alias = a.clone();
+
+    // self comparison used to lock the same mutex twice and hang
+    assert_eq!(a, a);
+    assert_eq!(a, alias);
+    assert_eq!(a.cmp(&alias), std::cmp::Ordering::Equal);
+    assert_ne!(a, same_content);
+    assert_ne!(a.cmp(&same_content), std::cmp::Ordering::Equal);
+    assert_eq!(calcit_hash(&a), calcit_hash(&alias));
+  }
+
+  #[test]
+  fn buf_list_hash_is_stable_across_mutation() {
+    let buf = Arc::new(Mutex::new(Vec::new()));
+    let value = Calcit::BufList(buf.clone());
+    let before = calcit_hash(&value);
+
+    let mut set: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSetSync::new_sync();
+    set = set.insert(value.clone());
+    buf.lock().expect("BufList lock").push(Calcit::Number(1.0));
+    // a self-referencing push must not recurse into hashing or comparison either
+    buf.lock().expect("BufList lock").push(value.clone());
+
+    assert_eq!(calcit_hash(&value), before);
+    assert!(set.contains(&value));
   }
 }

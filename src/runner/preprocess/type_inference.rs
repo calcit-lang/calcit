@@ -626,6 +626,36 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   // Resolve the declaration before substituting caller argument types. Resolving
   // the result afterward would reinterpret a caller-owned generic payload in ns.
   let declared_schema = resolve_namespace_type_refs_for_body(program::lookup_def_schema(ns, def), ns);
+  let open_return = matches!(declared_schema.as_ref(), CalcitTypeAnnotation::Fn(info) if matches!(info.return_type.as_ref(), CalcitTypeAnnotation::Dynamic));
+  if super::REQUIRE_ASSERTION_PROOF.with(std::cell::Cell::get)
+    && (crate::snapshot::schema_annotation_is_missing(&declared_schema) || open_return)
+    && let Some(returned) = with_callable_return_inference(ns, def, || {
+      // Open metadata is not evidence either way. During an audit, recover
+      // the source implementation's actual return without changing its public
+      // contract or using a declared return as proof of that implementation.
+      let implementation = infer_compiled_definition_implementation_type(ns, def)?;
+      let CalcitTypeAnnotation::Fn(implementation) = implementation.as_ref() else {
+        return None;
+      };
+      let signature = match declared_schema.as_ref() {
+        CalcitTypeAnnotation::Fn(signature) => signature,
+        _ => implementation,
+      };
+      let returned = resolve_namespace_type_refs_for_body(implementation.return_type.clone(), ns);
+      let resolved = resolve_generic_return_type_parts(
+        signature.generics.as_ref(),
+        &signature.arg_types,
+        signature.rest_type.as_ref(),
+        &returned,
+        call_expr.iter().skip(1),
+        scope_types,
+      )
+      .or_else(|| (!returned.contains_type_var()).then(|| returned.clone()))?;
+      Some(invocation_return_type(signature, resolved, definition_marks_async(ns, def)))
+    })
+  {
+    return Some(returned);
+  }
   if let CalcitTypeAnnotation::Fn(info) = declared_schema.as_ref() {
     let declared_return = resolve_generic_return_type_parts(
       info.generics.as_ref(),
@@ -769,13 +799,26 @@ thread_local! {
   static INFERRED_CALLABLE_IMPL_RETURNS: RefCell<HashSet<(String, String)>> = RefCell::new(HashSet::new());
 }
 
-fn infer_compiled_callable_body_return(ns: &str, def: &str, code: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
+fn with_callable_return_inference<R>(ns: &str, def: &str, infer: impl FnOnce() -> Option<R>) -> Option<R> {
   let key = (ns.to_owned(), def.to_owned());
   let entered = INFERRED_CALLABLE_IMPL_RETURNS.with(|definitions| definitions.borrow_mut().insert(key.clone()));
   if !entered {
     return None;
   }
-  let inferred = (|| {
+  struct Restore((String, String));
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      INFERRED_CALLABLE_IMPL_RETURNS.with(|definitions| {
+        definitions.borrow_mut().remove(&self.0);
+      });
+    }
+  }
+  let _restore = Restore(key);
+  infer()
+}
+
+fn infer_compiled_callable_body_return(ns: &str, def: &str, code: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
+  with_callable_return_inference(ns, def, || {
     let body = match code {
       Calcit::Fn { info, .. } => info.body.last()?,
       Calcit::List(items)
@@ -792,11 +835,7 @@ fn infer_compiled_callable_body_return(ns: &str, def: &str, code: &Calcit) -> Op
       _ => return None,
     };
     infer_guaranteed_nominal_impl_return(body)
-  })();
-  INFERRED_CALLABLE_IMPL_RETURNS.with(|definitions| {
-    definitions.borrow_mut().remove(&key);
-  });
-  inferred
+  })
 }
 
 fn infer_guaranteed_nominal_impl_return(expr: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
@@ -1269,6 +1308,12 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
         // `assert-type` is erased for local bindings during preprocessing, but when it wraps an
         // arbitrary expression (notably on the right-hand side of `let`) the expression must keep
         // its declared type for the new local binding and later field/method checks.
+        // A trusted coercion changes the ordinary static contract, but it is
+        // not independent evidence in a proof audit. Retain the input evidence
+        // so locals and producer returns cannot lend the cast its own proof.
+        Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _) if super::REQUIRE_ASSERTION_PROOF.with(std::cell::Cell::get) => {
+          xs.get(1).and_then(|input| resolve_type_value(input, scope_types))
+        }
         Calcit::Syntax(CalcitSyntax::AssertType | CalcitSyntax::UnsafeCoerce, _) => xs
           .get(2)
           .map(|form| CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &[]))
@@ -2653,6 +2698,28 @@ pub(crate) fn resolve_struct_value(target: &Calcit, scope_types: &ScopeTypes) ->
 mod tests {
   use super::*;
   use crate::calcit::{CalcitFn, CalcitFnArgs, CalcitFnUsageMeta, CalcitLocal, CalcitScope, CalcitSymbolInfo};
+
+  #[test]
+  fn callable_return_inference_restores_recursion_guard_on_success_failure_and_unwind() {
+    for outcome in 0..3 {
+      let result = std::panic::catch_unwind(|| {
+        with_callable_return_inference("tests.return-guard", "root", || {
+          assert_eq!(with_callable_return_inference("tests.return-guard", "root", || Some(9)), None);
+          assert_eq!(with_callable_return_inference("tests.return-guard", "other", || Some(7)), Some(7));
+          match outcome {
+            0 => Some(3),
+            1 => None,
+            _ => panic!("return inference cleanup probe"),
+          }
+        })
+      });
+      assert_eq!(result.is_err(), outcome == 2);
+      if let Ok(value) = result {
+        assert_eq!(value, if outcome == 0 { Some(3) } else { None });
+      }
+      assert_eq!(with_callable_return_inference("tests.return-guard", "root", || Some(5)), Some(5));
+    }
+  }
 
   fn proc_call(proc: CalcitProc, args: Vec<Calcit>) -> Calcit {
     let mut items = Vec::with_capacity(args.len() + 1);
