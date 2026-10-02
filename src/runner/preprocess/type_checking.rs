@@ -1080,15 +1080,19 @@ pub(crate) fn check_function_return_type(
           .map(|_| NodeLocation::new(Arc::from(file_ns), Arc::from(def_name), Arc::new(vec![])))
       })
       .or(info.call_location.clone());
-    CalcitErr::use_msg_stack_location_with_code(
-      CalcitErrKind::Type,
-      format!(
-        "Function `{file_ns}/{def_name}` has no independent return proof: expected `{}`, got `{actual}`; a declared return type is not a checked conversion",
-        diagnostic_type_string(declared_return_type)
+    super::proof_provenance::attach(
+      CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        format!(
+          "Function `{file_ns}/{def_name}` has no independent return proof: expected `{}`, got `{actual}`; a declared return type is not a checked conversion",
+          diagnostic_type_string(declared_return_type)
+        ),
+        "E_FN_RETURN_UNPROVEN",
+        &crate::call_stack::CallStackList::default(),
+        location,
       ),
-      "E_FN_RETURN_UNPROVEN",
-      &crate::call_stack::CallStackList::default(),
-      location,
+      last_expr,
+      scope_types,
     )
   };
   let Some(actual_type) = actual_type else {

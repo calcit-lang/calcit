@@ -216,6 +216,10 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   `calcit fix --rule assert-type-proof-v1 --ns app.main --def run --format edn` 查看原始输入位置和编译栈。
   已知矛盾保留 `E_ASSERT_TYPE_MISMATCH`；开放输入、未知 callable 或未绑定泛型缺少证明时报告
   `E_ASSERT_TYPE_UNPROVEN`。审计在更新局部类型之前停止，因此不能通过再加一层断言消除待审边界。
+  proof 错误的 `provenance` 给出局部绑定、编译器解析到的 producer 及可读取的返回表达式，
+  方便从失败点追到 helper 的开放契约。它只解释已有错误，不提供新的类型证明或自动选择 decoder。
+  同名局部绑定按词法作用域区分；来源最多展开 8 层、保留 16 项，不能将其当作完整运行时数据流。
+  生成节点没有精确坐标时 path 为空；条件表达式的实参仅表示可能贡献，不表示运行时选中了该分支。
   当前预处理涉及的函数体还须独立证明其具体返回契约；仅靠返回声明的 producer 报告
   `E_FN_RETURN_UNPROVEN`，并定位其真实 source owner。Number identity、泛型 T identity 和明确的
   Dynamic 保存/传递可以保持原写法；未知 T 不能靠目标 Number 获得证明。
