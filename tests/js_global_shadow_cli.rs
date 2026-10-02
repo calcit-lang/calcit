@@ -65,8 +65,10 @@ fn js_host_global_survives_a_same_name_schema_import() {
 
   let generated = fs::read_to_string(emit_path.join("js-global-shadow.main.mjs")).expect("generated module should exist");
   assert!(
-    generated.contains("import { Element } from"),
-    "fixture must generate a shadowing import binding:\n{generated}"
+    generated.contains("import * as $js_global_shadow_DOT_schema from")
+      && generated.contains("$js_global_shadow_DOT_schema.Element")
+      && !generated.contains("import { Element } from"),
+    "schema imports must retain namespace identity instead of binding the host global's name:\n{generated}"
   );
   assert!(
     generated.contains("globalThis.Element"),

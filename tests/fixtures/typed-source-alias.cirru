@@ -96,8 +96,36 @@
           :examples $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns fix-command.alias-evidence
+    'fix-command.left $ %{} 'FileEntry
+      :defs $ {} $ 'state-alias
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ def state-alias 20
+          :examples $ []
+          :schema $ :: 'Number
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns fix-command.left
+    'fix-command.other-side $ %{} 'FileEntry
+      :defs $ {} $ 'state-alias
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ def state-alias 40
+          :examples $ []
+          :schema $ :: 'Number
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns fix-command.other-side
+    'fix-command.other_side $ %{} 'FileEntry
+      :defs $ {} $ 'state-alias
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ def state-alias 50
+          :examples $ []
+          :schema $ :: 'Number
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns fix-command.other_side
     'fix-command.reader $ %{} 'FileEntry
       :defs $ {}
+        'dash-value $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def dash-value 60
+          :examples $ []
+          :schema $ :: 'Number
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () &unit
           :examples $ []
@@ -113,5 +141,40 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String
+        'state-alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def state-alias 10
+          :examples $ []
+          :schema $ :: 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |namespace-identity)
+            :code $ quote $ do (assert= 10 fix-command.reader/state-alias) (assert= 20 fix-command.left/state-alias) (assert= 30 fix-command.right/state-alias) (assert= 20 left/state-alias) (assert= 30 right/state-alias)
+              let
+                  state-alias 7
+                assert= 7 state-alias
+                assert= 10 fix-command.reader/state-alias
+                assert= 20 fix-command.left/state-alias
+                assert= 30 fix-command.right/state-alias
+              assert= 40 fix-command.other-side/state-alias
+              assert= 50 fix-command.other_side/state-alias
+              let
+                  $fix_command_DOT_left 99
+                  $fix_command_DOT_left_ 98
+                assert= 99 $fix_command_DOT_left
+                assert= 98 $fix_command_DOT_left_
+                assert= 20 fix-command.left/state-alias
+                assert= 20 left/state-alias
+              let
+                  dash_value 61
+                assert= 61 dash_value
+                assert= 60 fix-command.reader/dash-value
+            :tags $ #{} :alias-contract :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns fix-command.reader
+          :require (fix-command.left :as left) (fix-command.right :as right)
+    'fix-command.right $ %{} 'FileEntry
+      :defs $ {} $ 'state-alias
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ def state-alias 30
+          :examples $ []
+          :schema $ :: 'Number
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns fix-command.right
