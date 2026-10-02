@@ -11299,9 +11299,10 @@ fn legacy_optional_public_schema_requires_migration(ns: &str, def_name: &str, sc
   }
   // Core `&` definitions are semver-private primitives and may still model
   // nullable host/runtime values. Public core wrappers must obey the same
-  // nominal absence rule as application code. `optionally` is the one explicit
-  // bridge from an internal Optional<T> value to Option<T>.
-  !(ns == calcit::CORE_NS && (def_name.starts_with('&') || def_name == "optionally"))
+  // nominal absence rule as application code. `nil->option` and its legacy
+  // spelling `optionally` are the explicit bridge from an internal Optional<T>
+  // value to Option<T>.
+  !(ns == calcit::CORE_NS && (def_name.starts_with('&') || matches!(def_name, "optionally" | "nil->option")))
 }
 
 fn reject_strict_legacy_optional_public_schema(
@@ -19193,6 +19194,8 @@ mod tests {
       .expect("raw core primitives remain explicit nullable implementation boundaries");
     reject_strict_legacy_optional_public_schema(calcit::CORE_NS, "optionally", &schema, &CallStackList::default(), None)
       .expect("the explicit Optional-to-Option bridge remains available");
+    reject_strict_legacy_optional_public_schema(calcit::CORE_NS, "nil->option", &schema, &CallStackList::default(), None)
+      .expect("the preferred spelling of the bridge remains available");
   }
 
   #[test]
