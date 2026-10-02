@@ -32,6 +32,20 @@ related:
 
 不同来源 trait 的同名方法仍可通过 `&trait-call` 消歧。此变更不调整兼容模式中普通 `.method` 的历史查找顺序，也不增加新的运行时配置开关。
 
+## `str-spaced` 的首参数与格式化边界
+
+`str-spaced` 的签名明确为 `(x0 & xs)`：至少传一个值，跳过 nil，以空格连接其余值的文本。单个 nil 或全 nil 仍返回空字符串，空字符串本身仍占据一个拼接位置。内部拼接函数只接收 String；异质值的转换保留在公开格式化边界，不再让 nullable 泛型进入拼接过程。
+
+此前公开签名是纯 rest，但零参数调用实际会在内部函数缺少 `x0` 时报错。现在提前拒绝同一无效调用，不为它增加空字符串默认值。普通非空调用无需改写。
+
+```cirru
+assert= "|a 12 false" $ str-spaced |a nil 12 false
+assert= | $ str-spaced nil nil
+assert= "| b" $ str-spaced | |b
+```
+
+只有未知长度列表的展开调用需要审阅：`str-spaced & xs` 不能证明首项存在。应先由调用者确认非空，再显式传首项与剩余项；空列表如何处理属于业务决策，不自动插入 fallback、unsafe 或长度断言。此签名收敛安排在非 patch 升级中，不为这一情形新增 fix 规则。
+
 ## native 取余的错误恢复
 
 native 的 `&number:rem` 和 Number `.rem` 遇到零除数（包括 `-0`）时返回可由 `try` 捕获的 Calcit 错误，消息为 `&number:rem divisor must not be zero`；内部 i32 取余溢出（例如 `-2147483648` 除以 `-1`）返回 `&number:rem integer remainder overflow`。此前这两类输入直接触发 Rust panic，无法由 Calcit `try` 恢复。

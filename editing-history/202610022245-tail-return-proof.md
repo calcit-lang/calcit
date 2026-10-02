@@ -29,3 +29,7 @@
 全量内部回归发现后传显式 Dynamic 时，普通泛型返回推断仍保留先前 Number 绑定，产生假精度。复用原有直接泛型运输语义：只有被调用方自己声明的直接变量可以把既有绑定改为传入值的 Dynamic；具体参数、嵌套具体契约与外层捕获变量仍要求证明。两种参数顺序都不得证明 Number 返回，现有 CLI 无写入审计用例补齐这项约束。
 
 完整回放越过同名泛型碰撞后仍被公开 `str-spaced` 的未知长度 spread 到 helper 必需首项所阻断，另在 #1707 记录 source/schema 的实际契约债务。不能接受上游错误代替原 shadow-proof 未证明返回的负例，也不能把零参数当前报错擅自改为空字符串默认值。当前改动未满足完整回放与交付门禁。
+
+#1707 后续将公开签名明确为至少一项，先通过既有 List filter/map 完成 nil 过滤与 `&str` 转换，再调用 String-only helper；没有扩大公开 Dynamic 格式化能力，也不让 Dynamic 进入具体 String 契约。全 nil 的已有空字符串结果与空文本的位置保留；零参数仍拒绝，只是错误更早。内部 nullable 泛型随职责收敛移除。未知长度 spread 的非空决策不能由 fix 替业务选择，升级说明明确人工处理边界。
+
+WASM 目前拒绝局部闭包 recur。原 loop 测试与新增 typed closure 测试仍在 native/JS 执行；WASM 保留无产物的明确拒绝，并从同一 typed closure 的函数体和 hint 生成临时具名函数进行受支持所有权边界的实际导出回放，不替换为 native call。跨后端完整回放和重新内嵌 core 的 CLI 构建仍需验证，不能仅凭旧 binary 加载新 Snapshot 宣称交付。

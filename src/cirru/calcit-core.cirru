@@ -2121,29 +2121,21 @@
               assert= |1 $ &str 1
             :tags $ #{} :core :unit
         '&str-spaced $ %{} 'CodeEntry
-          :doc "|Internal function for joining strings with spaces, used by str-spaced"
+          :doc "|内部 String 拼接函数；仅供 str-spaced 在过滤 nil、完成文本转换后调用。head? 表示首项是否免于前置空格。"
           :code $ quote $ defn &str-spaced (head? x0 & xs)
-            if (&list:empty? xs)
-              if head? (&str x0)
-                if (nil? x0) | $ &str:concat "| " x0
-              if (non-nil? x0)
-                &str:concat
-                  if head? (&str x0) (&str:concat "| " x0)
-                  &str-spaced false (&list:nth xs 0) & $ &list:rest xs
-                &str-spaced head? (&list:nth xs 0) & $ &list:rest xs
+            let
+                prefix $ if head? x0 $ &str:concat "| " x0
+              if (&list:empty? xs) prefix $ &str:concat prefix $ &str-spaced false (&list:nth xs 0) & (&list:rest xs)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'Bool $ :: 'Optional 'T
-            :generics $ [] 'T
-            :rest $ :: 'Optional 'T
+          :schema $ :: 'Fn $ {} (:rest 'String) (:return 'String)
+            :args $ [] 'Bool 'String
           :tags $ #{} :internal
           :tests $ [] $ %{} 'TestEntry (:name |nonempty-rest-contract)
             :code $ quote $ do
               assert= |A $ &str-spaced true |A
               assert= "| A" $ &str-spaced false |A
-              assert= "|A B" $ &str-spaced true nil |A nil |B
-              assert= "| A B" $ &str-spaced false nil |A nil |B
-              assert= | $ &str-spaced true nil nil
+              assert= "|A B" $ &str-spaced true |A |B
+              assert= "| A B" $ &str-spaced false |A |B
               assert= "| B" $ &str-spaced true | |B
             :tags $ #{} :tail-return-proof :unit
         '&str:compare $ %{} 'CodeEntry
@@ -5854,6 +5846,17 @@
                       next $ &- n 1
                     if (&< n 1) 0 $ do (&+ n 0) (recur next)
               :tags $ #{} :tail-return-proof :unit
+            %{} 'TestEntry (:name |typed-number-exits)
+              :code $ quote $ let
+                  step $ fn (n)
+                    hint-fn $ {}
+                      :args $ [] $ quote Number
+                      :return $ quote Number
+                    let
+                        next $ &- n 1
+                      if (&< n 1) 0 $ do (&+ n 0) (recur next)
+                assert= 0 $ step 4
+              :tags $ #{} :tail-return-proof :unit
         'foldl-shortcut $ %{} 'CodeEntry
           :doc "|Internal left fold with early termination. Syntax: (foldl-shortcut list initial default reducer). The reducer receives accumulator and element, then returns an anonymous enum `:: Bool accumulator`; true returns its accumulator immediately, false continues, and exhaustion returns default."
           :code $ quote &runtime-implementation
@@ -9519,16 +9522,31 @@
                   do (println |unicode-search-needle) "|中"
             :tags $ #{} :core :unicode :unit
         'str-spaced $ %{} 'CodeEntry
-          :doc "|converts values to string and joins them with spaces"
-          :code $ quote $ defn str-spaced (& xs) (&str-spaced true & xs)
+          :doc "|至少传一个值，将非 nil 值转为文本并用空格连接。单个 nil 或全 nil 返回空字符串；空文本保留拼接位置。未知长度 spread 必须先确认非空并显式传入首项。"
+          :code $ quote $ defn str-spaced (x0 & xs)
+            let
+                texts $ &list:map
+                  &list:filter (&list:prepend xs x0) non-nil?
+                  , &str
+              if (&list:empty? texts) | $ &str-spaced true (&list:nth texts 0) & $ &list:rest texts
           :examples $ []
             quote $ assert= "|a b c" $ str-spaced |a |b |c
             quote $ assert= "|1 2 3" $ str-spaced 1 2 3
           :schema $ :: 'Fn $ {} (:rest 'Dynamic) (:return 'String)
-            :args $ []
-          :tests $ [] $ %{} 'TestEntry (:name |joins-non-nil-values)
-            :code $ quote $ assert= "|a c 12" (str-spaced |a nil |c 12)
-            :tags $ #{} :core :unit
+            :args $ [] 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |joins-non-nil-values)
+              :code $ quote $ assert= "|a c 12" (str-spaced |a nil |c 12)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |heterogeneous-formatting-contract)
+              :code $ quote $ do
+                assert= |A $ str-spaced |A
+                assert= "|A B" $ str-spaced nil |A nil |B
+                assert= | $ str-spaced nil nil
+                assert= "| B" $ str-spaced | |B
+                assert= "|A 12 false" $ str-spaced |A nil 12 false
+                assert= | $ str-spaced nil
+              :tags $ #{} :core :tail-return-proof :unit
         'string? $ %{} 'CodeEntry (:doc "|checks if value is a string")
           :code $ quote &runtime-implementation
           :examples $ []

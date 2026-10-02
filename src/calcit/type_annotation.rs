@@ -7021,7 +7021,7 @@ mod tests {
     let actual = Arc::new(CalcitTypeAnnotation::List(optional_t.clone()));
     let expected = Arc::new(CalcitTypeAnnotation::List(t.clone()));
     let names = [Arc::from("T")];
-    let mut proof = CallTypeProof::new(&names, &[expected.clone(), t.clone()], &[actual.clone()]);
+    let mut proof = CallTypeProof::new(&names, &[expected.clone(), t.clone()], std::slice::from_ref(&actual));
     assert!(proof.prove(&actual, &expected).is_proven());
     assert_eq!(proof.result(&t), Some(optional_t.clone()));
     assert!(!proof.result(&t).unwrap().to_brief_string().contains("#call-type"));
@@ -7029,26 +7029,26 @@ mod tests {
     assert!(!proof.prove(&conflicting, &expected).is_proven());
     assert_eq!(proof.result(&t), Some(optional_t));
 
-    let mut rigid = CallTypeProof::new(&names, &[t.clone()], &[t.clone()]);
+    let mut rigid = CallTypeProof::new(&names, std::slice::from_ref(&t), std::slice::from_ref(&t));
     assert!(rigid.prove(&t, &t).is_proven());
     assert!(!rigid.prove(&CalcitTypeAnnotation::Number, &t).is_proven());
     assert_eq!(rigid.result(&t), Some(t.clone()));
 
-    let mut independent = CallTypeProof::new(&names, &[t.clone()], &[Arc::new(CalcitTypeAnnotation::String)]);
+    let mut independent = CallTypeProof::new(&names, std::slice::from_ref(&t), &[Arc::new(CalcitTypeAnnotation::String)]);
     assert!(independent.prove(&CalcitTypeAnnotation::String, &t).is_proven());
     assert_eq!(independent.result(&t), Some(Arc::new(CalcitTypeAnnotation::String)));
     assert!(!independent.prove(&CalcitTypeAnnotation::Number, &t).is_proven());
 
     let closed = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number)));
     let open = Arc::new(CalcitTypeAnnotation::List(DYNAMIC_TYPE.clone()));
-    let mut boundary = CallTypeProof::new(&[], &[closed.clone()], &[open.clone()]);
+    let mut boundary = CallTypeProof::new(&[], std::slice::from_ref(&closed), std::slice::from_ref(&open));
     assert!(!boundary.prove(&open, &closed).is_proven());
     assert!(
       !CalcitTypeAnnotation::Optional(t.clone())
         .prove_with_bindings(&t, &mut TypeBindings::new())
         .is_proven()
     );
-    let mut captured = CallTypeProof::new(&[], &[t.clone()], &[t.clone()]);
+    let mut captured = CallTypeProof::new(&[], std::slice::from_ref(&t), std::slice::from_ref(&t));
     assert!(captured.prove(&t, &t).is_proven());
     assert!(!captured.prove(&CalcitTypeAnnotation::String, &t).is_proven());
     assert!(!captured.prove(&CalcitTypeAnnotation::Dynamic, &t).is_proven());
@@ -7060,12 +7060,12 @@ mod tests {
     let t = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
     let number = Arc::new(CalcitTypeAnnotation::Number);
     for actual in [[number.clone(), DYNAMIC_TYPE.clone()], [DYNAMIC_TYPE.clone(), number.clone()]] {
-      let mut proof = CallTypeProof::new(&[Arc::from("T")], &[t.clone()], &actual);
+      let mut proof = CallTypeProof::new(&[Arc::from("T")], std::slice::from_ref(&t), &actual);
       for argument in &actual {
         assert!(proof.prove(argument, &t).is_proven());
       }
       assert_eq!(proof.result(&t), Some(DYNAMIC_TYPE.clone()));
-      let mut concrete = CallTypeProof::new(&[], &[number.clone()], &actual);
+      let mut concrete = CallTypeProof::new(&[], std::slice::from_ref(&number), &actual);
       assert!(!concrete.prove(&CalcitTypeAnnotation::Dynamic, &number).is_proven());
     }
   }

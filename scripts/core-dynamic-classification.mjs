@@ -9,7 +9,7 @@ if (mode !== "--write" && mode !== "--check") {
 }
 
 const repository = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const calcit = resolve(repository, "target/debug/calcit");
+const calcit = resolve(process.env.CALCIT_BIN ?? resolve(repository, "target/debug/calcit"));
 const outputPath = resolve(repository, "docs/core-dynamic-classification.md");
 const result = spawnSync(
   calcit,
@@ -302,6 +302,10 @@ const reviewedPublicBoundaryPositions = new Map([
   [
     "str|schema.rest",
     "Variadic string conversion deliberately accepts every runtime value; Dynamic is the honest universal presentation input rather than a relation between arguments.",
+  ],
+  [
+    "str-spaced|schema.args.0",
+    "公开格式化边界的必需首项沿用原 rest 的异质输入能力；转换后仅传递 String，不让此输入证明具体业务类型。",
   ],
   [
     "str-spaced|schema.rest",
