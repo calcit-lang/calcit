@@ -284,6 +284,7 @@ fn merge_callsite_argument_evidence(
   let mut observed: Vec<HashSet<String>> = vec![HashSet::new(); signature.arg_types.len()];
   let mut unavailable_owners = Vec::new();
   let mut evidence = Vec::new();
+  let mut callsites = Vec::new();
   for (owner_ns, owner_def) in project_definitions {
     if is_sample_namespace(owner_ns) {
       continue;
@@ -321,107 +322,114 @@ fn merge_callsite_argument_evidence(
       blocked.fill(true);
       continue;
     }
-    // Call-site arguments require the same independent evidence as a return.
-    // Audit only actual source owners, never unrelated inventory definitions.
-    let owner_warnings = RefCell::new(Vec::new());
-    let owner_proof = runner::preprocess::with_assertion_proof(|| -> Result<(), String> {
-      runner::preprocess::compile_source_def_for_snapshot(owner_ns, owner_def, &owner_warnings, &CallStackList::default()).map_err(
-        |error| {
-          evidence.push(serde_json::json!({
-            "kind": "compiler-diagnostic",
-            "target": format!("{owner_ns}/{owner_def}"),
-            "diagnostic": super::compiler_review::boundary_diagnostic(&error, &format!("{owner_ns}/{owner_def}")),
-          }));
-          error.to_string()
-        },
-      )?;
-      let Some(compiled) = program::lookup_compiled_def(owner_ns, owner_def) else {
-        return Err(format!("No compiled call-site evidence for `{owner_ns}/{owner_def}`."));
-      };
-      for usage in usages {
-        let Some(location) = usage.location else {
-          blocked.fill(true);
-          continue;
-        };
-        if !usage.macro_origin.is_empty() || location.ns.as_ref() != owner_ns || location.def.as_ref() != owner_def {
-          blocked.fill(true);
-          continue;
-        }
-        let mut call_path = location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>();
-        if call_path.pop() != Some(0) {
-          blocked.fill(true);
-          continue;
-        }
-        let source_call = navigate_to_path(&source_entry.code, &call_path)?;
-        let Cirru::List(source_items) = source_call else {
-          blocked.fill(true);
-          continue;
-        };
-        if source_items.len().saturating_sub(1) != signature.arg_types.len() {
-          blocked.fill(true);
-          continue;
-        }
-        for (index, source_argument) in source_items.iter().skip(1).enumerate() {
-          let mut argument_path = call_path.clone();
-          argument_path.push(index + 1);
-          let source_argument = code_to_calcit(
-            source_argument,
-            owner_ns,
-            owner_def,
-            argument_path
-              .iter()
-              .map(|value| {
-                u16::try_from(*value).map_err(|_| format!("Source path index `{value}` exceeds the compiler coordinate range."))
-              })
-              .collect::<Result<Vec<_>, _>>()?,
-          )?;
-          let processed_argument = super::super::query::find_preprocessed_node_at_path(
-            &compiled.preprocessed_code,
-            owner_ns,
-            owner_def,
-            &argument_path,
-            matches!(source_items[index + 1], Cirru::List(_)),
-          );
-          let Some(candidate) = super::super::query::infer_type_at_target(&source_argument, processed_argument)
-            .map(|value| normalize_inferred_schema(&value))
-          else {
-            blocked[index] = true;
-            continue;
+    callsites.push((owner_ns, owner_def, source_entry, usages));
+  }
+  // Discover usages with ordinary metadata first, then audit only their source
+  // owners in one isolated checkpoint. Inventory is not proof, and restoring
+  // its compiled cache once avoids a full snapshot copy for every owner.
+  if !callsites.is_empty() {
+    runner::preprocess::with_assertion_proof(|| {
+      for (owner_ns, owner_def, source_entry, usages) in callsites {
+        let owner_warnings = RefCell::new(Vec::new());
+        let owner_proof = (|| -> Result<(), String> {
+          runner::preprocess::compile_source_def_for_snapshot(owner_ns, owner_def, &owner_warnings, &CallStackList::default())
+            .map_err(|error| {
+              evidence.push(serde_json::json!({
+                "kind": "compiler-diagnostic",
+                "target": format!("{owner_ns}/{owner_def}"),
+                "diagnostic": super::compiler_review::boundary_diagnostic(&error, &format!("{owner_ns}/{owner_def}")),
+              }));
+              error.to_string()
+            })?;
+          let Some(compiled) = program::lookup_compiled_def(owner_ns, owner_def) else {
+            return Err(format!("No compiled call-site evidence for `{owner_ns}/{owner_def}`."));
           };
-          if matches!(candidate.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn) {
-            blocked[index] = true;
-            continue;
+          for usage in usages {
+            let Some(location) = usage.location else {
+              blocked.fill(true);
+              continue;
+            };
+            if !usage.macro_origin.is_empty() || location.ns.as_ref() != owner_ns || location.def.as_ref() != owner_def {
+              blocked.fill(true);
+              continue;
+            }
+            let mut call_path = location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>();
+            if call_path.pop() != Some(0) {
+              blocked.fill(true);
+              continue;
+            }
+            let source_call = navigate_to_path(&source_entry.code, &call_path)?;
+            let Cirru::List(source_items) = source_call else {
+              blocked.fill(true);
+              continue;
+            };
+            if source_items.len().saturating_sub(1) != signature.arg_types.len() {
+              blocked.fill(true);
+              continue;
+            }
+            for (index, source_argument) in source_items.iter().skip(1).enumerate() {
+              let mut argument_path = call_path.clone();
+              argument_path.push(index + 1);
+              let source_argument = code_to_calcit(
+                source_argument,
+                owner_ns,
+                owner_def,
+                argument_path
+                  .iter()
+                  .map(|value| {
+                    u16::try_from(*value).map_err(|_| format!("Source path index `{value}` exceeds the compiler coordinate range."))
+                  })
+                  .collect::<Result<Vec<_>, _>>()?,
+              )?;
+              let processed_argument = super::super::query::find_preprocessed_node_at_path(
+                &compiled.preprocessed_code,
+                owner_ns,
+                owner_def,
+                &argument_path,
+                matches!(source_items[index + 1], Cirru::List(_)),
+              );
+              let Some(candidate) = super::super::query::infer_type_at_target(&source_argument, processed_argument)
+                .map(|value| normalize_inferred_schema(&value))
+              else {
+                blocked[index] = true;
+                continue;
+              };
+              if matches!(candidate.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn) {
+                blocked[index] = true;
+                continue;
+              }
+              observed[index].insert(candidate.to_brief_string());
+              match &candidates[index] {
+                Some(current) if current != &candidate => blocked[index] = true,
+                Some(_) => {}
+                None => candidates[index] = Some(candidate),
+              }
+              paths[index].push(format!("{owner_ns}/{owner_def}{}", format_path(&call_path)));
+            }
           }
-          observed[index].insert(candidate.to_brief_string());
-          match &candidates[index] {
-            Some(current) if current != &candidate => blocked[index] = true,
-            Some(_) => {}
-            None => candidates[index] = Some(candidate),
+          Ok(())
+        })();
+        let contradictory = owner_warnings
+          .borrow()
+          .iter()
+          .any(|warning| warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH"));
+        if owner_proof.is_err() || contradictory {
+          blocked.fill(true);
+          unavailable_owners.push(format!("{owner_ns}/{owner_def}"));
+          for warning in owner_warnings
+            .borrow()
+            .iter()
+            .filter(|warning| warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH"))
+          {
+            evidence.push(serde_json::json!({
+              "kind": "compiler-diagnostic",
+              "target": format!("{owner_ns}/{owner_def}"),
+              "diagnostic": warning.as_json(),
+            }));
           }
-          paths[index].push(format!("{owner_ns}/{owner_def}{}", format_path(&call_path)));
         }
       }
-      Ok(())
     });
-    let contradictory = owner_warnings
-      .borrow()
-      .iter()
-      .any(|warning| warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH"));
-    if owner_proof.is_err() || contradictory {
-      blocked.fill(true);
-      unavailable_owners.push(format!("{owner_ns}/{owner_def}"));
-      for warning in owner_warnings
-        .borrow()
-        .iter()
-        .filter(|warning| warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH"))
-      {
-        evidence.push(serde_json::json!({
-          "kind": "compiler-diagnostic",
-          "target": format!("{owner_ns}/{owner_def}"),
-          "diagnostic": warning.as_json(),
-        }));
-      }
-    }
   }
 
   let mut updated = signature.as_ref().clone();

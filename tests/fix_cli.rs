@@ -5454,8 +5454,18 @@ fn schema_synthesis_requires_independent_producer_and_coercion_evidence() {
     ),
     ("owner-proof", "quote $ defn owner-proof (value)\n  , 3", None),
     (
+      "proven-owner",
+      "quote $ defn proven-owner ()\n  owner-proof 3",
+      Some("quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"),
+    ),
+    (
       "unproven-owner",
       "quote $ defn unproven-owner ()\n  owner-proof 3\n  let\n      value $ parse-cirru-edn \"|do nil\"\n    assert-type value 'Number\n    , value",
+      Some("quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"),
+    ),
+    (
+      "zz-proven-owner",
+      "quote $ defn zz-proven-owner ()\n  owner-proof 3",
       Some("quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"),
     ),
   ] {
@@ -5504,6 +5514,25 @@ fn schema_synthesis_requires_independent_producer_and_coercion_evidence() {
           }),
         "the audit must recheck a warmed call-site owner, rather than reuse trusted compiled metadata: {report}"
       );
+      let evidence = report["data"]["suggestions"][0]["origin_chain"].as_array().unwrap();
+      assert!(
+        evidence.iter().any(|item| {
+          item["kind"] == "unavailable-callsite-owners" && item["definitions"] == serde_json::json!(["fix-command.main/unproven-owner"])
+        }),
+        "a failed owner must not poison independently proven owners in the same audit checkpoint: {report}"
+      );
+      for owner in ["proven-owner", "zz-proven-owner"] {
+        assert!(
+          evidence.iter().any(|item| item["calls"].as_array().is_some_and(|calls| {
+            calls.iter().any(|call| {
+              call
+                .as_str()
+                .is_some_and(|path| path.starts_with(&format!("fix-command.main/{owner}@")))
+            })
+          })),
+          "retain argument evidence before and after the rejected owner: {report}"
+        );
+      }
     }
     let mut apply_arguments = arguments.to_vec();
     apply_arguments.extend(["--apply", "--allow-no-vcs"]);
