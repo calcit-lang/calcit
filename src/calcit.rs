@@ -527,7 +527,7 @@ impl Hash for Calcit {
       Struct(CalcitStructValue { struct_ref, values, .. }) => {
         "record:".hash(_state);
         struct_ref.name.hash(_state);
-        struct_ref.definition_ref.hash(_state);
+        // `definition_ref` is left out on purpose: untyped and nominal values may be equal
         struct_ref.fields.hash(_state);
         values.hash(_state);
       }
@@ -1850,7 +1850,6 @@ mod tests {
     let b = build(Some("app.b/Point"), 1.0);
     assert_ne!(a, b);
     assert_ne!(a.cmp(&b), Equal);
-    assert_ne!(calcit_hash(&a), calcit_hash(&b));
 
     // the same definition path stays equal, e.g. after hot code swapping re-creates the definition
     let reloaded = build(Some("app.a/Point"), 1.0);
@@ -1858,8 +1857,11 @@ mod tests {
     assert_eq!(a.cmp(&reloaded), Equal);
     assert_eq!(calcit_hash(&a), calcit_hash(&reloaded));
 
-    // anonymous structs (no definition) with the same shape still compare by content
-    assert_eq!(build(None, 1.0), build(None, 1.0));
+    // untyped data (no definition) still equals a nominal value of the same shape and hashes alike
+    let untyped = build(None, 1.0);
+    assert_eq!(untyped, a);
+    assert_eq!(calcit_hash(&untyped), calcit_hash(&a));
+    assert_ne!(untyped, build(Some("app.a/Point"), 2.0));
     assert_ne!(build(None, 1.0), build(None, 2.0));
   }
 }

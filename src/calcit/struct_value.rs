@@ -18,10 +18,17 @@ pub struct CalcitStructValue {
 
 impl PartialEq for CalcitStructValue {
   fn eq(&self, other: &Self) -> bool {
-    // `definition_ref` ("ns/def") keeps same-named structs from different definitions apart;
-    // it is a path, not a pointer, so values stay comparable across hot code swapping.
-    self.struct_ref.name == other.struct_ref.name
-      && self.struct_ref.definition_ref == other.struct_ref.definition_ref
+    // Two values from different definitions ("ns/def") are never equal, even with the same name and
+    // fields. A value without a definition is untyped data (e.g. from `parse-cirru-edn`) and keeps
+    // comparing equal to a nominal value of the same shape, so only a conflict between two known
+    // definitions counts. `definition_ref` is a path, not a pointer, so hot code swapping is safe.
+    // `Hash` ignores it (equal values must hash alike), `Ord` still orders by it to stay total.
+    let same_definition = match (&self.struct_ref.definition_ref, &other.struct_ref.definition_ref) {
+      (Some(left), Some(right)) => left == right,
+      _ => true,
+    };
+    same_definition
+      && self.struct_ref.name == other.struct_ref.name
       && self.struct_ref.fields == other.struct_ref.fields
       && self.values == other.values
   }
