@@ -63,6 +63,7 @@ aliases:
 集合不提供元素类型；如果初值、默认值及 reducer 的实际返回都能独立证明为
 `Number` 或 `Bool`，累积结果可以保持具体类型。回调的参数契约应明确说明怎样
 处理开放元素，不能仅声明返回类型或使用 `assert-type` 把元素当成具体值。
+显式返回证明审计会保留开放参数证据；普通入口的全面收紧仍以真实消费者迁移为前提。
 
 ```bash
 calcit src/cirru/calcit-core.cirru test calcit.core/foldl-shortcut --tag open-fold-proof --require-match
