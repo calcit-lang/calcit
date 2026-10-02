@@ -494,6 +494,63 @@ try {
   const nominalModule = new WebAssembly.Module(await readFile(join(nominalWasmOutput, "program.wasm")));
   assert.equal(new WebAssembly.Instance(nominalModule, imports).exports["run-tests"](), 1);
 
+  // Raw WASM exports let the host supply malformed pointers despite source
+  // schemas. Keep ordinary method calls and probe the allocation boundary.
+  for (const [name, parameters, body, schema] of [
+    ["make-state", [], ["WriteState", ":count", "1", ":label", "|kept"], "quote $ :: 'Fn $ {} (:args $ []) (:return 'WriteState)"],
+    ["make-list", ["layout"], ["[]", "layout", "9"], "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return $ :: 'List 'Number)"],
+    ["raw-write", ["receiver"], ["receiver", ".assoc", ":count", "2"], "quote $ :: 'Fn $ {} (:args $ [] 'WriteState) (:return 'WriteState)"],
+  ]) {
+    run("edit", "def", `calcit.assert-evidence/${name}`, "--input-format", "json-ast", "--code",
+      JSON.stringify(["defwasm-export", name, parameters, body]));
+    run("edit", "schema", `calcit.assert-evidence/${name}`, "--input-format", "cirru", "--code", schema);
+  }
+  run("wasm", "--emit-path", nominalWasmOutput);
+  const guardedModule = new WebAssembly.Module(await readFile(join(nominalWasmOutput, "program.wasm")));
+  const forgedInstance = new WebAssembly.Instance(guardedModule, imports);
+  const forgedState = forgedInstance.exports["make-state"]();
+  const forgedMemory = new DataView(forgedInstance.exports.memory.buffer);
+  const forgedList = forgedInstance.exports["make-list"](forgedMemory.getFloat64(forgedState + 8, true));
+  assert.throws(() => forgedInstance.exports["raw-write"](forgedList), WebAssembly.RuntimeError,
+    "a List with a matching nominal-layout slot must not become a Struct");
+  for (const count of [-1, 0, 1, 3, 1.5, NaN, Infinity]) {
+    const instance = new WebAssembly.Instance(guardedModule, imports);
+    const original = instance.exports["make-state"]();
+    const memory = new DataView(instance.exports.memory.buffer);
+    memory.setFloat64(original, count, true);
+    assert.throws(() => instance.exports["raw-write"](original), WebAssembly.RuntimeError, `wrong count: ${count}`);
+    assert.equal(memory.getFloat64(original + 16, true), 1, "rejected updates preserve the source field");
+    assert.equal(instance.exports["make-state"](), original + 40, "rejected updates must not allocate a result");
+  }
+  for (const malformed of ["magic", "fractional", "unaligned", "outside", "nan", "negative"]) {
+    const instance = new WebAssembly.Instance(guardedModule, imports);
+    const original = instance.exports["make-state"]();
+    const memory = new DataView(instance.exports.memory.buffer);
+    if (malformed === "magic") memory.setUint32(original - 8, 0, true);
+    const receiver = malformed === "fractional" ? original + 0.5
+      : malformed === "unaligned" ? original + 1
+      : malformed === "outside" ? memory.byteLength
+      : malformed === "nan" ? NaN
+      : malformed === "negative" ? -1 : original;
+    assert.throws(() => instance.exports["raw-write"](receiver), WebAssembly.RuntimeError, malformed);
+  }
+  for (const offset of [16, 24]) {
+    const instance = new WebAssembly.Instance(guardedModule, imports);
+    const original = instance.exports["make-state"]();
+    const memory = new DataView(instance.exports.memory.buffer);
+    const magic = memory.getUint32(original - 8, true);
+    const kind = memory.getUint32(original - 4, true);
+    const layout = memory.getFloat64(original + 8, true);
+    const receiver = original + offset;
+    memory.setUint32(receiver - 8, magic, true);
+    memory.setUint32(receiver - 4, kind, true);
+    memory.setFloat64(receiver, 2, true);
+    memory.setFloat64(receiver + 8, layout, true);
+    assert.throws(() => instance.exports["raw-write"](receiver), WebAssembly.RuntimeError,
+      "a forged prefix or copy span beyond the allocated heap must trap");
+    assert.equal(instance.exports["make-state"](), original + 40, "heap-span rejection must precede result allocation");
+  }
+
   // Low-level stale metadata must trap instead of overwriting another field.
   setBody([["&struct:assoc-at", ["WriteState", ":count", "1", ":label", "|kept"], "1", ":count", "2"]]);
   run("wasm", "--emit-path", nominalWasmOutput);

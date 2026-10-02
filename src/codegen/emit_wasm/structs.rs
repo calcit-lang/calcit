@@ -253,10 +253,7 @@ pub(super) fn try_parse_defrecord_form(code: &Calcit) -> Option<CalcitStructDef>
   })
 }
 
-/// Emit `&struct:nth struct_value idx_literal tag_literal` — O(1) field access by index.
-///
-/// `idx` must be a compile-time Number constant.
-/// Copy a nominal value before updating a statically selected field.
+/// Copy a validated Struct allocation before updating a statically selected field.
 pub(super) fn emit_struct_assoc_at(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(4, args, "&struct:assoc-at requires 4 args (struct, index, tag, value)")?;
   let (Calcit::Number(index), Calcit::Tag(field)) = (&args[1], &args[2]) else {
@@ -271,40 +268,96 @@ pub(super) fn emit_struct_assoc_at(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
     .struct_layouts
     .field_tags
     .iter()
-    .filter_map(|(id, fields)| (fields.get(index) == Some(&field_id)).then_some(*id))
+    .filter_map(|(id, fields)| (fields.get(index) == Some(&field_id)).then_some((*id, fields.len())))
     .collect::<Vec<_>>();
   layouts.sort_unstable();
 
-  let src = emit_ptr_to_i32(ctx, &args[0])?;
+  let receiver = ctx.alloc_local();
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(Instruction::LocalSet(receiver));
   let value = ctx.alloc_local();
   emit_expr(ctx, &args[3])?;
   ctx.emit(Instruction::LocalSet(value));
 
-  // Validate metadata against the actual nominal layout before touching fields.
+  // Reuse heap range, magic and allocation-kind validation. A matching payload
+  // layout slot in a List must not manufacture nominal Struct authority.
+  emit_type_of_local(ctx, receiver);
+  ctx.emit(f64_const(get_type_tag(ctx, "struct")));
+  ctx.emit(Instruction::F64Ne);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  let src = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(receiver));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(src));
+  ctx.emit(Instruction::LocalGet(src));
+  ctx.emit(Instruction::I32Const(7));
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  // The count and identity prefix must exist before either slot is loaded.
+  ctx.emit(Instruction::LocalGet(src));
+  ctx.emit(Instruction::I64ExtendI32U);
+  ctx.emit(Instruction::I64Const(16));
+  ctx.emit(Instruction::I64Add);
+  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  ctx.emit(Instruction::I64ExtendI32U);
+  ctx.emit(Instruction::I64GtU);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+
+  let count = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(src));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(count));
+  let slots = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::I32Const(0));
-  for layout in layouts {
+  ctx.emit(Instruction::LocalSet(slots));
+  for (layout, field_count) in layouts {
+    let layout_slots = i32::try_from(field_count)
+      .ok()
+      .and_then(|count| count.checked_add(2))
+      .filter(|slots| slots.checked_mul(8).is_some())
+      .ok_or("Struct layout is too large for WASM allocation")?;
     ctx.emit(Instruction::LocalGet(src));
     ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
     ctx.emit(f64_const(layout as f64));
     ctx.emit(Instruction::F64Eq);
-    ctx.emit(Instruction::I32Or);
+    ctx.emit(Instruction::LocalGet(count));
+    ctx.emit(f64_const(field_count as f64));
+    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::I32And);
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+    ctx.emit(Instruction::I32Const(layout_slots));
+    ctx.emit(Instruction::LocalSet(slots));
+    ctx.emit(Instruction::End);
   }
+  ctx.emit(Instruction::LocalGet(slots));
   ctx.emit(Instruction::I32Eqz);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
   ctx.emit(Instruction::Unreachable);
   ctx.emit(Instruction::End);
 
-  let count = emit_load_count_i32(ctx, src);
-  let slots = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(count));
-  ctx.emit(Instruction::I32Const(2));
-  ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalSet(slots));
+  // Copy size comes from the validated registered layout, never receiver count.
   let size = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(slots));
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Mul);
   ctx.emit(Instruction::LocalSet(size));
+  ctx.emit(Instruction::LocalGet(src));
+  ctx.emit(Instruction::I64ExtendI32U);
+  ctx.emit(Instruction::LocalGet(size));
+  ctx.emit(Instruction::I64ExtendI32U);
+  ctx.emit(Instruction::I64Add);
+  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  ctx.emit(Instruction::I64ExtendI32U);
+  ctx.emit(Instruction::I64GtU);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
   let dst = ctx.alloc_local_typed(ValType::I32);
   emit_bump_alloc_dynamic(ctx, size, dst, "struct");
   let dst_base = emit_addr_offset(ctx, dst, 0);
