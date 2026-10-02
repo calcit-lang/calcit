@@ -14,7 +14,7 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
           :code $ quote $ defn ok-loop ()
-            loop ((a 1) (acc ([]))) $ if (> a 3) acc $ recur (inc a) $ conj acc a
+            loop ((a 1)) $ if (> a 3) a $ recur $ inc a
         'bad-in-list $ %{} 'CodeEntry (:doc |)
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
