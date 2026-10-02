@@ -7,6 +7,325 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn concrete_return_proof_navigates_the_implementation_without_writing() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy return proof fixture");
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "add-ns", "fix-command.returns"]),
+    "add return proof owners",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.returns/sink",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn sink (n) , n",
+      ],
+    ),
+    "add closed sink implementation",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.returns/sink",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+      ],
+    ),
+    "declare closed sink",
+  );
+  for (name, argument, returns, body, rejected) in [
+    ("closed", "Number", "Number", ", x", false),
+    ("generic", "T", "T", ", x", false),
+    ("open-storage", "Dynamic", "Dynamic", ", x", false),
+    ("open-result", "Dynamic", "Number", ", x", true),
+    ("wrapped-result", "Dynamic", "Number", "open-result x", true),
+    ("closed-call", "Number", "Number", "sink x", false),
+    ("open-call", "Dynamic", "Number", "sink x", true),
+    ("local-call", "Dynamic", "Number", "let ((f sink)) (f x)", true),
+    ("proc-call", "Dynamic", "Number", "&+ x 1", true),
+    ("method-call", "Dynamic", "Number", ".rem 3 x", true),
+    ("postfix-call", "Dynamic", "Number", "3 .rem x", true),
+    ("closed-method-call", "Number", "Number", ".rem 3 x", false),
+    ("closed-postfix-call", "Number", "Number", "3 .rem x", false),
+    ("cond-call", "Bool", "Number", "cond (x 1) (true 2)", false),
+    ("spread-call", "Dynamic", "Number", "sink & ([] x)", true),
+    ("closed-spread-call", "Number", "Number", "sink & ([] x)", false),
+    ("unknown-spread-call", "Dynamic", "Number", "sink & x", true),
+    ("local-spread-call", "Dynamic", "Number", "let ((f sink)) (f & ([] x))", true),
+    ("proc-spread-call", "Dynamic", "Number", "&+ 1 & ([] x)", true),
+    ("core-spread-call", "Dynamic", "Number", "&call-spread sink & ([] x)", true),
+    ("closed-core-spread-call", "Number", "Number", "&call-spread sink & ([] x)", false),
+    (
+      "checked-call",
+      "Dynamic",
+      "Number",
+      "match (try-decode-map-as x 'Number)\n    (:ok n) (sink n)\n    (:err reason) (raise reason)",
+      false,
+    ),
+  ] {
+    let target = format!("fix-command.returns/{name}");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ defn {name} (x)\n  {body}"),
+        ],
+      ),
+      "add return implementation",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "schema",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!(
+            "quote $ :: 'Fn $ {{}} (:args $ [] '{argument}) (:return '{returns}){}",
+            if argument == "T" { " (:generics $ [] 'T)" } else { "" }
+          ),
+        ],
+      ),
+      "declare return contract",
+    );
+    let original = fs::read(&snapshot).unwrap();
+    let selectors = [
+      "--rule",
+      "concrete-return-proof-v1",
+      "--ns",
+      "fix-command.returns",
+      "--format",
+      "json",
+    ];
+    let output = run_fix(&snapshot, &[selectors.as_slice(), &["--def", name]].concat());
+    assert_eq!(output.status.success(), !rejected, "{}", String::from_utf8_lossy(&output.stderr));
+    let report = if name == "wrapped-result" {
+      assert!(String::from_utf8_lossy(&output.stderr).contains("outside the selected project scope"));
+      serde_json::Value::Null
+    } else {
+      parse_stdout(&output)
+    };
+    if rejected {
+      // A wrapper declaration cannot hide the upstream implementation debt.
+      // Single-owner selection refuses navigation outside its explicit scope.
+      if name == "wrapped-result" {
+        // Select both owners to make the source debt navigable.
+        let scoped = run_fix(&snapshot, &selectors);
+        assert!(!scoped.status.success());
+        let scoped_report = parse_stdout(&scoped);
+        assert!(
+          scoped_report["data"]["suggestions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|suggestion| suggestion["definition"] == "fix-command.returns/open-result")
+        );
+      } else {
+        assert_eq!(
+          report["diagnostics"][0]["code"],
+          if [
+            "open-call",
+            "local-call",
+            "proc-call",
+            "method-call",
+            "postfix-call",
+            "spread-call",
+            "unknown-spread-call",
+            "local-spread-call",
+            "proc-spread-call",
+            "core-spread-call"
+          ]
+          .contains(&name)
+          {
+            "E_CALL_ARGUMENT_UNPROVEN"
+          } else {
+            "E_FN_RETURN_UNPROVEN"
+          },
+          "{name}: {report}"
+        );
+        let suggestion = &report["data"]["suggestions"][0];
+        assert_eq!(suggestion["rule_id"], "concrete-return-proof-v1");
+        assert_eq!(suggestion["definition"], target);
+        assert_eq!(suggestion["applicability"], "requires-review");
+        assert!(suggestion["replacement"].is_null());
+        let edn = run_fix(
+          &snapshot,
+          &[
+            "--rule",
+            "concrete-return-proof-v1",
+            "--ns",
+            "fix-command.returns",
+            "--def",
+            name,
+            "--format",
+            "edn",
+          ],
+        );
+        assert!(!edn.status.success());
+        cirru_edn::parse(&String::from_utf8_lossy(&edn.stdout)).expect("one Cirru EDN return-proof report");
+        let applied = run_fix(
+          &snapshot,
+          &[
+            selectors.as_slice(),
+            &["--def", name, "--apply", "--expect-revision", report["revision"].as_str().unwrap()],
+          ]
+          .concat(),
+        );
+        assert!(!applied.status.success());
+        assert_eq!(parse_stdout(&applied)["data"]["changed"], false);
+      }
+    } else {
+      assert!(report["data"]["suggestions"].as_array().unwrap().is_empty());
+    }
+    assert_eq!(fs::read(&snapshot).unwrap(), original);
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.returns/closed-call",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return 'Number)",
+      ],
+    ),
+    "create a definite call contradiction",
+  );
+  let original = fs::read(&snapshot).unwrap();
+  let mismatch = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "concrete-return-proof-v1",
+      "--ns",
+      "fix-command.returns",
+      "--def",
+      "closed-call",
+      "--format",
+      "edn",
+    ],
+  );
+  assert!(!mismatch.status.success());
+  assert!(String::from_utf8_lossy(&mismatch.stderr).contains("E_CALL_ARGUMENT_MISMATCH"));
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.returns/closed-call",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn closed-call (x) $ cond (true (sink x))",
+      ],
+    ),
+    "retain runtime contradictions after macro expansion",
+  );
+  let original = fs::read(&snapshot).unwrap();
+  let mismatch = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "concrete-return-proof-v1",
+      "--ns",
+      "fix-command.returns",
+      "--def",
+      "closed-call",
+      "--format",
+      "edn",
+    ],
+  );
+  assert!(!mismatch.status.success());
+  assert!(String::from_utf8_lossy(&mismatch.stderr).contains("E_CALL_ARGUMENT_MISMATCH"));
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+}
+
+#[test]
+fn concrete_return_proof_rejects_a_known_spread_argument_contradiction() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "add-ns", "fix-command.spread"]),
+    "add spread owner",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.spread/bad",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn bad () $ &+ 1 & ([] |wrong)",
+      ],
+    ),
+    "add contradictory spread",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.spread/bad",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+      ],
+    ),
+    "declare spread return",
+  );
+  let original = fs::read(&snapshot).unwrap();
+  let output = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "concrete-return-proof-v1",
+      "--ns",
+      "fix-command.spread",
+      "--def",
+      "bad",
+      "--format",
+      "edn",
+    ],
+  );
+  assert!(!output.status.success());
+  assert!(String::from_utf8_lossy(&output.stderr).contains("E_CALL_ARGUMENT_MISMATCH"));
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+}
+
+#[test]
 fn assertion_proof_error_does_not_grant_ffi_to_the_next_definition() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
@@ -271,13 +590,12 @@ fn assertion_proof_fix_does_not_borrow_a_producers_declared_return() {
       "make the producer implementation contradict its declaration",
     );
     let contradictory_source = fs::read(&snapshot).unwrap();
-    let rejected = run_fix(
-      &snapshot,
-      &["--rule", "assert-type-proof-v1", "--ns", "fix-command.proof", "--format", "json"],
-    );
-    assert!(!rejected.status.success(), "a contradictory producer cannot yield a clear audit");
-    assert!(String::from_utf8_lossy(&rejected.stderr).contains("W_FN_RETURN_TYPE_MISMATCH"));
-    assert_eq!(fs::read(&snapshot).unwrap(), contradictory_source);
+    for rule in ["assert-type-proof-v1", "concrete-return-proof-v1"] {
+      let rejected = run_fix(&snapshot, &["--rule", rule, "--ns", "fix-command.proof", "--format", "json"]);
+      assert!(!rejected.status.success(), "a contradictory producer cannot yield a clear audit");
+      assert!(String::from_utf8_lossy(&rejected.stderr).contains("W_FN_RETURN_TYPE_MISMATCH"));
+      assert_eq!(fs::read(&snapshot).unwrap(), contradictory_source);
+    }
   }
 }
 

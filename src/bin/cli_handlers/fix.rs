@@ -79,6 +79,8 @@ const UNSAFE_COERCE_BOUNDARY_RULE: &str = "unsafe-coerce-boundary-v1";
 const UNSAFE_COERCE_BOUNDARY_DIAGNOSTIC: &str = "E_UNSCOPED_UNSAFE_COERCE";
 const ASSERT_TYPE_PROOF_RULE: &str = "assert-type-proof-v1";
 const ASSERT_TYPE_PROOF_DIAGNOSTIC: &str = "E_ASSERT_TYPE_UNPROVEN";
+const CONCRETE_RETURN_PROOF_RULE: &str = "concrete-return-proof-v1";
+const CONCRETE_RETURN_PROOF_DIAGNOSTIC: &str = "E_FN_RETURN_UNPROVEN";
 const OPTIONAL_PARAMETERS_RULE: &str = "optional-parameters-v1";
 const OPTIONAL_PARAMETERS_DIAGNOSTIC: &str = "E_LEGACY_OPTIONAL_PARAM";
 const SURFACE_LATEST_V1_PRESET: &str = "surface-latest-v1";
@@ -492,10 +494,12 @@ pub(crate) fn handle_fix_command(
   };
   let mut boundary_suggestions = Vec::new();
   let mut boundary_diagnostics = Vec::new();
-  let review_rule = selected_rules
-    .iter()
-    .copied()
-    .find(|rule| matches!(*rule, UNSAFE_COERCE_BOUNDARY_RULE | ASSERT_TYPE_PROOF_RULE));
+  let review_rule = selected_rules.iter().copied().find(|rule| {
+    matches!(
+      *rule,
+      UNSAFE_COERCE_BOUNDARY_RULE | ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE
+    )
+  });
   let warnings = if let Some(rule) = review_rule.filter(|_| !validation_only) {
     let review = compiler_review::compile_boundary_review(&source_snapshot, snapshot_file, &selected_definitions, rule)?;
     boundary_suggestions = review.suggestions;
@@ -931,7 +935,7 @@ pub(crate) fn handle_fix_command(
         source_coverage: (options.preset.as_deref() == Some(CORE_API_028_V1_PRESET)
           || matches!(
             options.rule.as_deref(),
-            Some(SPREAD_CALL_PROOF_RULE | UNSAFE_COERCE_BOUNDARY_RULE | ASSERT_TYPE_PROOF_RULE)
+            Some(SPREAD_CALL_PROOF_RULE | UNSAFE_COERCE_BOUNDARY_RULE | ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE)
           ))
         .then_some(FixSourceCoverage {
           scanned_regions: &["code"],
@@ -1142,6 +1146,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | SPREAD_CALL_PROOF_RULE
         | UNSAFE_COERCE_BOUNDARY_RULE
         | ASSERT_TYPE_PROOF_RULE
+        | CONCRETE_RETURN_PROOF_RULE
         | OPTIONAL_PARAMETERS_RULE
         | TAG_MATCH_RULE
         | REQUIRED_STRUCT_FIELD_RULE
@@ -1150,7 +1155,9 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     return Err(
       format!(
         "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_SET_INCLUDE_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
-      ) + &format!(" Review-only compiler rules: `{UNSAFE_COERCE_BOUNDARY_RULE}`, `{ASSERT_TYPE_PROOF_RULE}`."),
+      ) + &format!(
+        " Review-only compiler rules: `{UNSAFE_COERCE_BOUNDARY_RULE}`, `{ASSERT_TYPE_PROOF_RULE}`, `{CONCRETE_RETURN_PROOF_RULE}`."
+      ),
     );
   }
   if let Some(rule @ (TAG_MATCH_RULE | REQUIRED_STRUCT_FIELD_RULE)) = options.rule.as_deref() {
@@ -1175,6 +1182,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | SPREAD_CALL_PROOF_RULE
         | UNSAFE_COERCE_BOUNDARY_RULE
         | ASSERT_TYPE_PROOF_RULE
+        | CONCRETE_RETURN_PROOF_RULE
         | OPTIONAL_PARAMETERS_RULE
         | CORE_NOMINAL_CONSTRUCTOR_RULE
         | CORE_OPTION_METHOD_RULE
@@ -1202,6 +1210,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         SPREAD_CALL_PROOF_RULE => SPREAD_CALL_PROOF_RULE,
         UNSAFE_COERCE_BOUNDARY_RULE => UNSAFE_COERCE_BOUNDARY_RULE,
         ASSERT_TYPE_PROOF_RULE => ASSERT_TYPE_PROOF_RULE,
+        CONCRETE_RETURN_PROOF_RULE => CONCRETE_RETURN_PROOF_RULE,
         CORE_NOMINAL_CONSTRUCTOR_RULE => CORE_NOMINAL_CONSTRUCTOR_RULE,
         CORE_OPTION_METHOD_RULE => CORE_OPTION_METHOD_RULE,
         CORE_RESULT_METHOD_RULE => CORE_RESULT_METHOD_RULE,
@@ -1236,6 +1245,13 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
 /// Describe how a current normalization rule is derived without coupling it to a source release.
 fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
   match rule_id {
+    CONCRETE_RETURN_PROOF_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: CONCRETE_RETURN_PROOF_DIAGNOSTIC,
+      evidence_source: "current-diagnostic",
+      lifecycle: "current-semantics",
+      source_version_required: false,
+    },
     ASSERT_TYPE_PROOF_RULE => FixRuleMetadata {
       rule_id,
       diagnostic_code: ASSERT_TYPE_PROOF_DIAGNOSTIC,

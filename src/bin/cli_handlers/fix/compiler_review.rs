@@ -7,6 +7,19 @@ pub(super) struct BoundaryReview {
   pub diagnostics: Vec<Value>,
 }
 
+pub(super) fn is_contradictory_proof_warning(warning: &LocatedWarning) -> bool {
+  if !warning.code().is_some_and(|code| code.ends_with("_MISMATCH")) {
+    return false;
+  }
+  let owner = warning.location();
+  // Macro implementation contracts describe syntax production. The proof
+  // pass checks the expanded runtime expression in its caller's scope.
+  !matches!(
+    program::lookup_def_schema(&owner.ns, &owner.def).as_ref(),
+    CalcitTypeAnnotation::Macro(_)
+  )
+}
+
 /// Preserve strict compiler rejection and expose only source-owned review targets.
 /// Preprocessing stops at the first error per definition; this is not an exhaustive scan.
 pub(super) fn compile_boundary_review(
@@ -25,7 +38,7 @@ pub(super) fn compile_boundary_review(
   let mut diagnostics = Vec::new();
   let mut seen = HashSet::new();
   for (namespace, definition) in definitions {
-    let result = if rule == ASSERT_TYPE_PROOF_RULE {
+    let result = if matches!(rule, ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE) {
       runner::preprocess::with_assertion_proof(|| {
         // Reprocess the selected source even if another definition compiled it
         // earlier. Cached local annotations are not pre-assertion evidence.
@@ -34,18 +47,12 @@ pub(super) fn compile_boundary_review(
     } else {
       runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default()).map(|_| ())
     };
-    if rule == ASSERT_TYPE_PROOF_RULE
-      && let Some(warning) = warnings
-        .borrow()
-        .iter()
-        .find(|warning| warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH"))
+    if matches!(rule, ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE)
+      && let Some(warning) = warnings.borrow().iter().find(|warning| is_contradictory_proof_warning(warning))
     {
       // A contradictory implementation cannot lend its declared return type
       // to an assertion, even when ordinary checking reports it as a warning.
-      return Err(format!(
-        "Assertion proof audit cannot borrow a contradictory producer contract: {}",
-        warning
-      ));
+      return Err(format!("{rule} cannot borrow a contradictory producer contract: {}", warning));
     }
     if let Err(error) = result {
       let diagnostic_code = match (rule, error.code()) {
@@ -53,6 +60,8 @@ pub(super) fn compile_boundary_review(
         (ASSERT_TYPE_PROOF_RULE, Some(ASSERT_TYPE_PROOF_DIAGNOSTIC)) => ASSERT_TYPE_PROOF_DIAGNOSTIC,
         (ASSERT_TYPE_PROOF_RULE, Some("E_ASSERT_TYPE_MISMATCH")) => "E_ASSERT_TYPE_MISMATCH",
         (ASSERT_TYPE_PROOF_RULE, Some("E_FN_RETURN_UNPROVEN")) => "E_FN_RETURN_UNPROVEN",
+        (CONCRETE_RETURN_PROOF_RULE, Some(CONCRETE_RETURN_PROOF_DIAGNOSTIC)) => CONCRETE_RETURN_PROOF_DIAGNOSTIC,
+        (ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE, Some("E_CALL_ARGUMENT_UNPROVEN")) => "E_CALL_ARGUMENT_UNPROVEN",
         _ => return Err(format!("Failed to preprocess fix target {namespace}/{definition}: {error}")),
       };
       let location = error
@@ -102,13 +111,28 @@ pub(super) fn compile_boundary_review(
           })
         })
         .collect::<Vec<_>>();
+      let message = if rule == CONCRETE_RETURN_PROOF_RULE {
+        format!(
+          "{}; inspect the producer implementation at this source owner, not its wrapper declaration. Choose a checked boundary for open input. Only if the implementation independently proves the missing metadata, review the existing synthesize-schema-v1 candidate. Only the first compiler error per definition is reported; tests/examples are not scanned. No schema, permission or code is changed.",
+          error.msg
+        )
+      } else {
+        format!(
+          "{}; inspect the compiler location and lexical source context. Review captures, effects and failure paths before choosing a checked decoder or an explicit adapter. Only the first compiler error per definition is reported; tests/examples are not scanned. No permission or code is changed.",
+          error.msg
+        )
+      };
       suggestions.push(FixSuggestion {
         rule_id: rule,
         diagnostic_code,
         semantic_layer: "surface",
         source_file: snapshot_file.to_owned(),
         definition: definition_id,
-        path: if path.is_empty() { "code".to_owned() } else { format!("code{}", format_path(&path)) },
+        path: if path.is_empty() {
+          "code".to_owned()
+        } else {
+          format!("code{}", format_path(&path))
+        },
         fingerprint: node_fingerprint(&original),
         origin_chain: vec![serde_json::json!({
           "kind": "compiler-diagnostic",
@@ -119,7 +143,7 @@ pub(super) fn compile_boundary_review(
         original: quoted_json(&original),
         replacement: None,
         applicability: "requires-review",
-        message: format!("{}; inspect the compiler location and lexical source context. Review captures, effects and failure paths before choosing a checked decoder or an explicit adapter. Only the first compiler error per definition is reported; tests/examples are not scanned. No permission or code is changed.", error.msg),
+        message,
         target_path: path,
         operation: None,
       });
