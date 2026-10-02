@@ -2521,7 +2521,7 @@ fn infer_definition_value_type_inner(ns: &str, def: &str) -> Option<Arc<CalcitTy
       Arc::new(CalcitTypeAnnotation::from_calcit_fn(&info)),
     )),
     Calcit::Proc(proc) => proc.get_type_signature().map(|signature| {
-      Arc::new(CalcitTypeAnnotation::from_function_parts(
+      Arc::new(CalcitTypeAnnotation::from_proc_parts(
         signature.arg_types.clone(),
         signature.return_type.clone(),
       ))

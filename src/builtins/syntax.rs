@@ -40,13 +40,20 @@ pub fn defn(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str) -> Re
         .find_map(|f| CalcitTypeAnnotation::extract_arg_types_from_hint_form(f, &param_symbols))
         .unwrap_or_else(|| CalcitTypeAnnotation::collect_arg_type_hints_from_body(&body_items, &param_symbols, generics.as_ref()));
       let lexical_generics = crate::calcit::type_annotation::lexical_type_variables_in_forms(xs.iter().chain(body_items.iter()));
-      if let Some(CalcitTypeAnnotation::Fn(signature)) = body_items
-        .iter()
-        .find_map(|form| CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form_in_scope(form, &lexical_generics))
-        .as_deref()
-      {
-        arg_types = signature.arg_types.clone();
-        arg_types.resize(param_symbols.len(), calcit::DYNAMIC_TYPE.clone());
+      if let Some((signature, declares_args)) = body_items.iter().find_map(|form| {
+        let annotation = CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form_in_scope(form, &lexical_generics)?;
+        let CalcitTypeAnnotation::Fn(signature) = annotation.as_ref() else {
+          return None;
+        };
+        Some((
+          signature.clone(),
+          CalcitTypeAnnotation::extract_arg_types_from_hint_form(form, &param_symbols).is_some(),
+        ))
+      }) {
+        if declares_args {
+          arg_types = signature.arg_types.clone();
+          arg_types.resize(param_symbols.len(), calcit::DYNAMIC_TYPE.clone());
+        }
         return_type = signature.return_type.clone();
         where_bounds = signature.where_bounds.clone();
         declared_rest_type = signature.rest_type.clone();
@@ -354,6 +361,38 @@ mod tests {
         assert_eq!(info.body, vec![body_expr], "function metadata hint must not execute as body code");
       }
       other => panic!("expected function, got {other}"),
+    }
+  }
+
+  #[test]
+  fn return_only_metadata_preserves_raw_parameter_evidence() {
+    // Raw runtime forms bypass preprocessing; source-level tests cannot expose
+    // whether metadata overwrites the body collector at this internal boundary.
+    for ns in ["tests.fn", crate::calcit::CORE_NS] {
+      let hint = make_hint_form(
+        ns,
+        vec![
+          make_symbol("{}", ns, "demo"),
+          Calcit::from(vec![Calcit::Tag(EdnTag::new("return")), Calcit::Tag(EdnTag::new("number"))]),
+        ],
+      );
+      let assertion = Calcit::from(vec![
+        Calcit::Syntax(CalcitSyntax::AssertType, Arc::from(ns)),
+        make_symbol("x", ns, "demo"),
+        Calcit::Tag(EdnTag::new("number")),
+      ]);
+      let expr = CalcitList::Vector(vec![
+        make_symbol("demo", ns, "demo"),
+        Calcit::from(vec![make_local("x", ns, "demo")]),
+        hint,
+        assertion,
+        make_symbol("x", ns, "demo"),
+      ]);
+      let Calcit::Fn { info, .. } = defn(&expr.view(), &CalcitScope::default(), ns).expect("raw function should compile") else {
+        panic!("expected function");
+      };
+      assert!(matches!(info.arg_types[0].as_ref(), CalcitTypeAnnotation::Number));
+      assert!(matches!(info.return_type.as_ref(), CalcitTypeAnnotation::Number));
     }
   }
 

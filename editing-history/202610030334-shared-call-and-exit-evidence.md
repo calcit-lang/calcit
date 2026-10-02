@@ -33,3 +33,9 @@ strict workflow 正例必须无顶层诊断并产生可恢复计划。旧项目�
 全量 definition tests 暴露的 `&list:apply` 函数列表证据丢失已通过通用推导修复：将实际调用的集合成员契约传给 literal callback 的参数，输出仍独立来自函数体；函数集合采用参数逆变的共同 callable 契约，互不兼容的返回值仍丢失具体证据。集合展开不走 literal 快捷路径，异步 pending 输入仍经过统一检查。原方法调用与原测试代码保持不变，并加入现有 native/JS 回放器，没有新增检查入口。
 
 该候选的完整 Cargo（包括本机 HTTP/WASI 回归）、全部 469 条 definition tests、Agent interface、API 基线、统一严格回放与 Clippy 已通过。另补函数列表混合返回值与开放 callback 输出的严格修复负例，要求失败且 Snapshot 不变；普通兼容模式的开放边界不冒充严格证明。最终 PR/rebase 的 HEAD 仍须重新验证。
+
+## 独立 review 补充
+
+PR review 指出两个共享证据入口遗漏：仅声明返回值的 metadata hint 不应清空从原始 body 收集的参数类型；proc 的 definition alias 与 runtime value 路径也必须声明自己的泛型。前者只在实际选中的 hint 显式包含 `:args` 时覆盖参数，避免另一个 hint 的字段影响当前签名；后者统一使用已有 `from_proc_parts`，不增加新的 alias 特例。
+
+原始 runtime form 的参数收集和 runtime proc 的泛型归属属于预处理之外的内部 metadata invariant，使用 Rust 精确回归；用户可观察 callback 行为仍由既有 Calcit definition tests 与 native/JS 回放覆盖。补丁须重新构建和验证，上一 HEAD 的通过不代替本轮验收。

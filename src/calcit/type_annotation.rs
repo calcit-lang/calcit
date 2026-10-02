@@ -8836,6 +8836,17 @@ mod tests {
   }
 
   #[test]
+  fn runtime_proc_annotations_preserve_callee_owned_variables() {
+    let value = Calcit::Proc(CalcitProc::NativeListEmpty);
+    let runtime = infer_runtime_value_type(&value);
+    let CalcitTypeAnnotation::Fn(signature) = runtime.as_ref() else {
+      panic!("proc should expose a callable contract");
+    };
+    assert_eq!(signature.generics.as_slice(), &[Arc::<str>::from("T")]);
+    assert_eq!(runtime.as_ref(), &CalcitTypeAnnotation::from_calcit(&value));
+  }
+
+  #[test]
   fn nil_and_unit_are_distinct_static_and_runtime_types() {
     assert_eq!(
       CalcitTypeAnnotation::builtin_type_from_tag_name("nil"),
@@ -9678,7 +9689,7 @@ pub fn infer_runtime_value_type(value: &Calcit) -> Arc<CalcitTypeAnnotation> {
     Calcit::Proc(proc) => proc
       .get_type_signature()
       .map(|signature| {
-        Arc::new(CalcitTypeAnnotation::from_function_parts(
+        Arc::new(CalcitTypeAnnotation::from_proc_parts(
           signature.arg_types.clone(),
           signature.return_type.clone(),
         ))
