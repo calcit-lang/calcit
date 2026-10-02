@@ -411,7 +411,8 @@ pub(crate) fn infer_if_return_type(xs: &CalcitList, scope_types: &ScopeTypes) ->
   }
 }
 
-/// Read branch bodies from either the pair-based or indexed enum representation.
+/// Read pattern/body pairs from pair-based or indexed preprocessed matches.
+/// Absent indexed branches are skipped; malformed branch pairs reject inference.
 fn preprocessed_match_branches(xs: &CalcitList) -> Option<Vec<(&Calcit, &Calcit)>> {
   if xs.len() < 3 {
     return None;
@@ -438,6 +439,7 @@ fn preprocessed_match_branches(xs: &CalcitList) -> Option<Vec<(&Calcit, &Calcit)
   Some(bodies)
 }
 
+/// Project validated match branches when only their bodies are needed.
 fn preprocessed_match_bodies(xs: &CalcitList) -> Option<Vec<&Calcit>> {
   Some(preprocessed_match_branches(xs)?.into_iter().map(|(_, body)| body).collect())
 }
@@ -457,6 +459,8 @@ fn bind_pattern_scope(pattern: &Calcit, scope: &mut ScopeTypes) {
   }
 }
 
+/// Infer a core-let initializer in its parent scope, then bind its local name.
+/// Missing evidence becomes Dynamic and still shadows same-named outer evidence.
 fn core_let_scope(items: &CalcitList, scope_types: &ScopeTypes) -> ScopeTypes {
   let mut scope = scope_types.clone();
   if let Some(Calcit::List(pair)) = items.get(1)
@@ -2470,6 +2474,9 @@ fn shortcut_payload_is_proven(expr: &Calcit, accumulator: &CalcitTypeAnnotation,
   }
 }
 
+/// Prove a shortcut fold result from its concrete accumulator, default and reducer.
+/// Every reachable reducer result must have a Bool control and a proven payload;
+/// unavailable source or open evidence leaves the result unproven, not narrowed.
 fn infer_shortcut_fold_return(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
   if xs.len() != 5 {
     return None;
