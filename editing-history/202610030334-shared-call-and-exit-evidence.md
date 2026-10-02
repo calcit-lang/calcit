@@ -39,3 +39,5 @@ strict workflow 正例必须无顶层诊断并产生可恢复计划。旧项目�
 PR review 指出两个共享证据入口遗漏：仅声明返回值的 metadata hint 不应清空从原始 body 收集的参数类型；proc 的 definition alias 与 runtime value 路径也必须声明自己的泛型。前者只在实际选中的 hint 显式包含 `:args` 时覆盖参数，避免另一个 hint 的字段影响当前签名；后者统一使用已有 `from_proc_parts`，不增加新的 alias 特例。
 
 原始 runtime form 的参数收集和 runtime proc 的泛型归属属于预处理之外的内部 metadata invariant，使用 Rust 精确回归；用户可观察 callback 行为仍由既有 Calcit definition tests 与 native/JS 回放覆盖。补丁须重新构建和验证，上一 HEAD 的通过不代替本轮验收。
+
+新增 proc definition alias 的 Calcit `.map` 附带测试后，native 通过，但生成 JS 报 `$procs is not defined`：Proc definition 分支假定定义名就是 runtime export 名，且假定命名空间已经导入 `$procs`。该分支改为复用实际 codegen value 的普通表达式生成与 namespace-aware proc 映射，并导出 alias 绑定。保留方法调用和原函数身份，不添加额外 runtime import 或 wrapper。既有 source-alias 运行器跨命名空间回放该测试，同时验证真实 alias 可被导入。

@@ -51,6 +51,21 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String
+        'empty-proc $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def empty-proc &list:empty?
+          :examples $ []
+          :tests $ [] $ %{} 'TestEntry (:name |specializes-proc-alias-callback)
+            :code $ quote $ do
+              assert-type
+                .map
+                  [] ([]) ([] 1)
+                  , fix-command.alias-evidence/empty-proc
+                :: List Bool
+              assert= ([] true false)
+                .map
+                  [] ([]) ([] 1)
+                  , fix-command.alias-evidence/empty-proc
+            :tags $ #{} :alias-contract :unit
         'optional-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def optional-alias fix-command.alias-evidence/optional-text
           :examples $ []
