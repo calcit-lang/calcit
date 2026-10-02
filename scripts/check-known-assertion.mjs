@@ -87,7 +87,11 @@ try {
   const getTests = getResponse.data.tests.filter(test => test.tags.includes("checked-exit-proof"));
   assert.equal(exitTests.length, 1);
   assert.equal(getTests.length, 1);
-  setBody([...tailTests, ...restTests, ...genericTests, ...formattingTests, ...mappingTests, ...definitionTests, ...assertionTests, ...resultTests, ...exitTests, ...getTests].map(test => test.code));
+  run("test", "calcit.core/&list:apply", "--require-match");
+  const applyResponse = JSON.parse(run("query", "def", "calcit.core/&list:apply", "--format", "json"));
+  const applyTests = applyResponse.data.tests.filter(test => test.name === "preserves-homogeneous-function-result-types");
+  assert.equal(applyTests.length, 1);
+  setBody([...tailTests, ...restTests, ...genericTests, ...formattingTests, ...mappingTests, ...definitionTests, ...assertionTests, ...resultTests, ...exitTests, ...getTests, ...applyTests].map(test => test.code));
   run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
   run("config", "set", "init-fn", "calcit.assert-evidence/run-tests");
@@ -126,6 +130,20 @@ try {
     tailImports[item.module][item.name] = () => { throw new Error(`unexpected tail import ${item.module}.${item.name}`); };
   }
   assert.equal(new WebAssembly.Instance(tailModule, tailImports).exports["run-tests"](), 1);
+  // A common input context cannot invent a common concrete output for the
+  // members of a function list, including independently open callback bodies.
+  for (const [name, callbacks] of [
+    ["mixed-callable-outputs", [["fn", ["x"], ["str", "x"]], ["fn", ["x"], ["+", "x", "1"]]]],
+    ["open-callable-output", [["fn", ["x"], ["parse-cirru-edn", "|1"]]]],
+  ]) {
+    setBody([["assert-type", [".apply", ["[]", "1", "2"], ["[]", ...callbacks]], ["::", "'List", "'String"]]]);
+    const original = await readFile(snapshot);
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "assert-type-proof-v1", "--ns", "calcit.assert-evidence", "--def", "run-tests", "--format", "edn"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_ASSERT_TYPE_UNPROVEN|E_ASSERT_TYPE_MISMATCH|E_ERASED_GENERIC_RELATION|E_CALL_ARGUMENT_UNPROVEN/);
+    assert.deepEqual(await readFile(snapshot), original);
+  }
   setBody([["str-spaced"]]);
   const zeroArgumentOriginal = await readFile(snapshot);
   for (const mode of [[], ["--check-only"], ["js"], ["wasm"], ["wasi"]]) {

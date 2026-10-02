@@ -1821,17 +1821,21 @@ fn infer_preprocessed_function_type(xs: &CalcitList) -> Arc<CalcitTypeAnnotation
     .skip(3)
     .find_map(|form| CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form_in_scope(form, &lexical_generics));
   let Some(hinted) = hinted else {
-    // Keep ordinary unhinted callbacks dynamic: inferring their return type can
-    // retroactively tighten existing higher-order calls. A zero-argument thunk
-    // is safe to retain, and provides the U anchor for eliminators such as
-    // `option:fold`.
+    // Preserve independently inferred output when every lexical input already
+    // carries evidence, including call-site parameter contexts. Open inputs
+    // remain open; an expected return declaration is never output evidence.
     let Some(inferred) = infer_unhinted_callback_signature(xs, &ScopeTypes::new()) else {
       return Arc::new(CalcitTypeAnnotation::DynFn);
     };
     let CalcitTypeAnnotation::Fn(signature) = inferred.as_ref() else {
       return Arc::new(CalcitTypeAnnotation::DynFn);
     };
-    if !signature.arg_types.is_empty() || signature.rest_type.is_some() {
+    if signature.rest_type.is_some()
+      || signature
+        .arg_types
+        .iter()
+        .any(|parameter| super::contains_dynamic_type(parameter.as_ref()))
+    {
       return Arc::new(CalcitTypeAnnotation::DynFn);
     }
     return mark_async_callable(inferred, is_async);
@@ -2408,6 +2412,17 @@ fn infer_homogeneous_type<'a>(values: impl Iterator<Item = &'a Calcit>, scope_ty
       return calcit::DYNAMIC_TYPE.clone();
     }
     match &inferred {
+      Some(current)
+        if matches!(current.as_ref(), CalcitTypeAnnotation::Fn(_)) && matches!(next.as_ref(), CalcitTypeAnnotation::Fn(_)) =>
+      {
+        // Function inputs are contravariant: retain a common callable contract,
+        // not an invariant equality requirement on every parameter annotation.
+        if current.is_proven_for(next.as_ref()) {
+          inferred = Some(next);
+        } else if !next.is_proven_for(current.as_ref()) {
+          return calcit::DYNAMIC_TYPE.clone();
+        }
+      }
       Some(current) if !current.as_ref().is_proven_for(next.as_ref()) || !next.as_ref().is_proven_for(current.as_ref()) => {
         return calcit::DYNAMIC_TYPE.clone();
       }

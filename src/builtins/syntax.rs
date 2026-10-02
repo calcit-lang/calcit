@@ -53,7 +53,9 @@ pub fn defn(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str) -> Re
       }
       // Fallback: if all arg_types are Dynamic (assert-type was preprocessed away),
       // extract types from Local nodes in the preprocessed args list
-      if file_ns != calcit::CORE_NS && arg_types.iter().all(|t| matches!(t.as_ref(), CalcitTypeAnnotation::Dynamic)) {
+      if (file_ns != calcit::CORE_NS || !body_items.iter().any(is_function_metadata_hint))
+        && arg_types.iter().all(|t| matches!(t.as_ref(), CalcitTypeAnnotation::Dynamic))
+      {
         let from_locals = extract_arg_types_from_locals(xs, &param_symbols);
         if from_locals.iter().any(|t| !matches!(t.as_ref(), CalcitTypeAnnotation::Dynamic)) {
           arg_types = from_locals;

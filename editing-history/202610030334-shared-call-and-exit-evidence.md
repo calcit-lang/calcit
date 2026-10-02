@@ -30,4 +30,6 @@ strict workflow 正例必须无顶层诊断并产生可恢复计划。旧项目�
 
 提交前重新运行完整 Cargo、Agent interface、API 基线、统一跨后端回放、core tests、格式与 Clippy，保留真实项目和原负例。PR 的最新 HEAD CI/review、精确 main SHA workflows 与 milestone 发布门禁仍需独立完成，本记录不代替那些验收。
 
-当前 checkpoint 的完整 Cargo（包括本机 HTTP/WASI 回归）、Agent interface、API 基线、统一严格回放与 Clippy 已通过。全量 definition tests 仍有一条未通过：`&list:apply` 的未标记测试暴露了函数列表丢失 callable 证据。该原用例保持不变，下一步补上通用推导后重新验证，不以 unit tag 的通过冒充全量语义验收。
+全量 definition tests 暴露的 `&list:apply` 函数列表证据丢失已通过通用推导修复：将实际调用的集合成员契约传给 literal callback 的参数，输出仍独立来自函数体；函数集合采用参数逆变的共同 callable 契约，互不兼容的返回值仍丢失具体证据。集合展开不走 literal 快捷路径，异步 pending 输入仍经过统一检查。原方法调用与原测试代码保持不变，并加入现有 native/JS 回放器，没有新增检查入口。
+
+该候选的完整 Cargo（包括本机 HTTP/WASI 回归）、全部 469 条 definition tests、Agent interface、API 基线、统一严格回放与 Clippy 已通过。另补函数列表混合返回值与开放 callback 输出的严格修复负例，要求失败且 Snapshot 不变；普通兼容模式的开放边界不冒充严格证明。最终 PR/rebase 的 HEAD 仍须重新验证。

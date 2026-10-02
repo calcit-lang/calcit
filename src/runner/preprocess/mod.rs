@@ -68,6 +68,62 @@ fn callback_parameter_context(signature: Arc<CalcitFnTypeAnnotation>) -> Arc<Cal
   Arc::new(context)
 }
 
+/// Carry collection member contexts into literal callbacks before evidence erasure.
+fn preprocess_argument_with_context(
+  expr: &Calcit,
+  expected: Option<&Arc<CalcitTypeAnnotation>>,
+  scope_defs: &HashSet<Arc<str>>,
+  scope_types: &mut ScopeTypes,
+  file_ns: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  let member = match expected.map(AsRef::as_ref) {
+    Some(CalcitTypeAnnotation::List(member)) => Some((CalcitProc::List, member)),
+    Some(CalcitTypeAnnotation::Set(member)) => Some((CalcitProc::Set, member)),
+    _ => None,
+  };
+  if let Some((constructor, member)) = member
+    && let Calcit::List(items) = expr
+    && let Some(head) = items.first()
+    && (matches!(head, Calcit::Proc(proc) if *proc == constructor)
+      || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == constructor.as_ref())
+      || matches!(head, Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == constructor.as_ref()))
+    && !items.iter().skip(1).any(|item| {
+      matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) || matches!(item, Calcit::Symbol { sym, .. } if sym.as_ref() == "&")
+    })
+  {
+    let processed_head = preprocess_expr(head, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+    if matches!(processed_head, Calcit::Proc(proc) if proc == constructor) {
+      let mut processed = vec![processed_head];
+      for item in items.iter().skip(1) {
+        processed.push(preprocess_argument_with_context(
+          item,
+          Some(member),
+          scope_defs,
+          scope_types,
+          file_ns,
+          check_warnings,
+          call_stack,
+        )?);
+      }
+      reject_pending_async_arguments(&processed[0], &CalcitList::from(&processed[1..]), scope_types, call_stack)?;
+      return Ok(Calcit::from(processed));
+    }
+  }
+  let previous = EXPECTED_FN_TYPE.with(|cell| {
+    let mut slot = cell.borrow_mut();
+    let previous = slot.take();
+    *slot = expected
+      .and_then(|annotation| annotation.resolve_to_fn())
+      .map(callback_parameter_context);
+    previous
+  });
+  let result = preprocess_expr(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack);
+  EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous);
+  result
+}
+
 #[cfg(not(test))]
 static WARN_DYN_METHOD: AtomicBool = AtomicBool::new(false);
 #[cfg(not(test))]
@@ -2728,7 +2784,15 @@ fn preprocess_list_call(
                 *slot = expected_fn.map(callback_parameter_context);
                 previous
               });
-              let processed = preprocess_expr(arg, scope_defs, scope_types, file_ns, check_warnings, call_stack);
+              let processed = preprocess_argument_with_context(
+                arg,
+                expected_method_args.as_ref().and_then(|types| types.get(arg_idx)),
+                scope_defs,
+                scope_types,
+                file_ns,
+                check_warnings,
+                call_stack,
+              );
               EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous_fn);
               processed_args = processed_args.push(processed?);
             }
@@ -3275,14 +3339,12 @@ fn preprocess_list_call(
             }
             // Prefix methods share the receiver-specialized callback contract
             // used by postfix methods. Process the receiver before deriving it.
-            let expected_fn = if !has_spread
+            let expected_type = if !has_spread
               && let Calcit::Method(name, calcit::MethodKind::Invoke(_)) = &head_form
               && let Some(receiver) = ys.get(1)
               && let Some(receiver_type) = resolve_type_value(receiver, scope_types)
             {
-              expected_method_argument_types(receiver_type.as_ref(), name)
-                .and_then(|types| types.get(ys.len() - 2).cloned())
-                .and_then(|expected| expected.resolve_to_fn())
+              expected_method_argument_types(receiver_type.as_ref(), name).and_then(|types| types.get(ys.len() - 2).cloned())
             } else if !has_spread
               && ys.len() == 2
               && let Calcit::Proc(proc @ (CalcitProc::Sort | CalcitProc::NativeListSort)) = &head_form
@@ -3292,7 +3354,7 @@ fn preprocess_list_call(
               // Use the same list member contract as the later proc argument check.
               let candidate_args = CalcitList::from(&[receiver.to_owned(), a.to_owned()]);
               specialize_collection_sort_expected_types(&candidate_args, scope_types, &signature.arg_types)
-                .and_then(|types| types.get(1).and_then(|expected| expected.resolve_to_fn()))
+                .and_then(|types| types.get(1).cloned())
             } else if !has_spread
               && let Calcit::Proc(
                 proc @ (CalcitProc::Foldl
@@ -3317,7 +3379,7 @@ fn preprocess_list_call(
               candidate_args.push(a.to_owned());
               let candidate_args = CalcitList::from(candidate_args.as_slice());
               type_checking::specialize_collection_fold_expected_types(&candidate_args, scope_types, &signature.arg_types)
-                .and_then(|types| types.last().and_then(|expected| expected.resolve_to_fn()))
+                .and_then(|types| types.last().cloned())
             } else if !has_spread {
               // A local/indirect callable has the same input contract as a named
               // function. Supply it before checking an inline callback body;
@@ -3328,11 +3390,11 @@ fn preprocess_list_call(
                   .get(ys.len() - 1)
                   .or(signature.rest_type.as_ref())
                   .map(|expected| expected.substitute_type_vars(&callable_bindings))
-                  .and_then(|expected| expected.resolve_to_fn())
               })
             } else {
               None
             };
+            let expected_fn = expected_type.as_ref().and_then(|expected| expected.resolve_to_fn());
             let has_callback_contract = callable_contract.is_some()
               || matches!(&head_form, Calcit::Method(_, calcit::MethodKind::Invoke(_)))
               || matches!(
@@ -3355,7 +3417,19 @@ fn preprocess_list_call(
                 previous
               })
             });
-            let result = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack);
+            let result = if has_callback_contract {
+              preprocess_argument_with_context(
+                a,
+                expected_type.as_ref(),
+                scope_defs,
+                scope_types,
+                file_ns,
+                check_warnings,
+                call_stack,
+              )
+            } else {
+              preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)
+            };
             if let Some(previous_fn) = previous_fn {
               EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous_fn);
             }
@@ -3910,7 +3984,15 @@ fn preprocess_known_function_call(
       EXPECTED_STRUCT_TYPE.with(|cell| cell.borrow_mut().replace(struct_def));
     }
 
-    let result = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack);
+    let result = preprocess_argument_with_context(
+      a,
+      expected_type.as_ref(),
+      scope_defs,
+      scope_types,
+      file_ns,
+      check_warnings,
+      call_stack,
+    );
 
     // Always clear the hints after preprocessing, even on error
     EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = None);
