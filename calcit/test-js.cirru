@@ -243,6 +243,13 @@
             let
                 Math $ unsafe-coerce js/Math test-js.main/TestMath
               assert= (.-PI Math) js/Math.PI
+            ; "host objects compare and hash by identity (#1704)"
+            let
+                a js/{}
+                b js/{}
+              assert= false $ = a b
+              assert= true $ = a a
+              assert= 2 $ count $ #{} a b a
             let
                 a js/{}
               aset a |name |demo
