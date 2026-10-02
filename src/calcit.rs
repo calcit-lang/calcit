@@ -98,8 +98,8 @@ pub enum Calcit {
   Ref(Arc<str>, Arc<Mutex<ValueAndListeners>>),
   /// Enum value. `definition` is absent for anonymous enum values.
   Enum(CalcitEnumValue),
-  /// binary data, to be used by FFIs
-  Buffer(Vec<u8>),
+  /// binary data, to be used by FFIs. Immutable and shared: cloning the value does not copy the bytes.
+  Buffer(Arc<[u8]>),
   /// mutable append-only list, for performance-sensitive accumulation patterns.
   /// Only supports push/concat at the tail, no head/middle mutation.
   BufList(Arc<Mutex<Vec<Calcit>>>),
@@ -210,7 +210,7 @@ impl fmt::Display for Calcit {
             buf.len() - 8
           ))?;
         } else {
-          for b in buf {
+          for b in buf.iter() {
             f.write_str(" ")?;
             f.write_str(&buffer_bit_hex(b.to_owned()))?;
           }
@@ -1930,5 +1930,19 @@ mod tests {
     let right: rpds::HashTrieMapSync<Calcit, Calcit> = rpds::HashTrieMapSync::new_sync().insert(Calcit::Set(inner_b), Calcit::Nil);
     assert_eq!(Calcit::Map(left.clone()), Calcit::Map(right.clone()));
     assert_eq!(calcit_hash(&Calcit::Map(left)), calcit_hash(&Calcit::Map(right)));
+  }
+
+  #[test]
+  fn cloning_a_buffer_shares_its_bytes() {
+    let original = Calcit::Buffer(Arc::from(vec![1u8, 2, 3, 4]));
+    let cloned = original.clone();
+    let (Calcit::Buffer(a), Calcit::Buffer(b)) = (&original, &cloned) else {
+      panic!("buffers expected");
+    };
+    assert!(Arc::ptr_eq(a, b), "clone must share the allocation");
+    assert_eq!(original, cloned);
+    assert_eq!(calcit_hash(&original), calcit_hash(&cloned));
+    assert_ne!(original, Calcit::Buffer(Arc::from(vec![1u8, 2, 3, 5])));
+    assert_eq!(original.to_string(), "(&buffer 01 02 03 04)");
   }
 }
