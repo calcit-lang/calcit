@@ -31,3 +31,10 @@
 Respo 回归暴露 `cond` 宏实现中语法树操作的历史 warning 被误当作运行时返回矛盾。
 warning 过滤依据定义的 Macro schema 区分编译期实现与展开后的运行时代码，和已有 proof pass 的
 macro policy 保持一致；展开后的实参类型矛盾仍须失败。补充 cond 的 definition :tests 与 CLI 拒绝回归。
+
+审查发现 `&` 展开调用绕过了参数证明。proof pass 对源列表字面量按位置展开证据，复用同一
+类型关系；非字面量展开暂保留人工 review，不能借用 callee 返回声明证明输入。返回推断复用
+同一无求值的字面量展开，运行时 AST 和求值顺序不变。显式 `&call-spread` 进入相同预处理路径。
+新增 `E_CALL_ARGUMENT_MISMATCH` 表示已证明矛盾：既有 UNPROVEN 表示证据不足，不能把确定的
+String/Number 冲突降为可导航的缺失证据；普通编译的 warning 策略不变。CLI 回归检查 source
+不变与两种报告格式，正向调用语义放入 hint-fn 的 :tests 并通过既有 native/JS runner 回放。

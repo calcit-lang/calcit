@@ -188,6 +188,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   缺证据的 producer 保留 `E_FN_RETURN_UNPROVEN`、真实 source owner、path、fingerprint 与编译栈；
   wrapper 的返回声明不能代替 producer body 证明。所选 scope 不含真实 owner 时直接失败，扩大显式 scope 后重查。
   调用具体参数契约时，动态值或未知实参缺少证明会报告 `E_CALL_ARGUMENT_UNPROVEN`，不能借用 callee 的返回声明。
+  字面量列表的 `&` 展开逐项复用参数证明；无法静态确定参数布局的展开保留为人工 review，已确定的类型矛盾以 `E_CALL_ARGUMENT_MISMATCH` 阻断审计。
   显式开放参数仍允许传递 Dynamic；decoder 成功分支提供的真实类型证据可以用于具体调用。
   独立证明的 identity 和显式 `Dynamic -> Dynamic` 不产生建议；矛盾返回或未解决的断言、强转边界阻止审计，不能被隐藏。
   replacement 为空，`--apply` 不修改代码或业务契约。只有 producer 实现可独立证明且缺少 schema 时，

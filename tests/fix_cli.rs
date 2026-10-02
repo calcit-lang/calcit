@@ -60,6 +60,13 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
     ("closed-method-call", "Number", "Number", ".rem 3 x", false),
     ("closed-postfix-call", "Number", "Number", "3 .rem x", false),
     ("cond-call", "Bool", "Number", "cond (x 1) (true 2)", false),
+    ("spread-call", "Dynamic", "Number", "sink & ([] x)", true),
+    ("closed-spread-call", "Number", "Number", "sink & ([] x)", false),
+    ("unknown-spread-call", "Dynamic", "Number", "sink & x", true),
+    ("local-spread-call", "Dynamic", "Number", "let ((f sink)) (f & ([] x))", true),
+    ("proc-spread-call", "Dynamic", "Number", "&+ 1 & ([] x)", true),
+    ("core-spread-call", "Dynamic", "Number", "&call-spread sink & ([] x)", true),
+    ("closed-core-spread-call", "Number", "Number", "&call-spread sink & ([] x)", false),
     (
       "checked-call",
       "Dynamic",
@@ -137,7 +144,20 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
       } else {
         assert_eq!(
           report["diagnostics"][0]["code"],
-          if ["open-call", "local-call", "proc-call", "method-call", "postfix-call"].contains(&name) {
+          if [
+            "open-call",
+            "local-call",
+            "proc-call",
+            "method-call",
+            "postfix-call",
+            "spread-call",
+            "unknown-spread-call",
+            "local-spread-call",
+            "proc-spread-call",
+            "core-spread-call"
+          ]
+          .contains(&name)
+          {
             "E_CALL_ARGUMENT_UNPROVEN"
           } else {
             "E_FN_RETURN_UNPROVEN"
@@ -210,7 +230,7 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
     ],
   );
   assert!(!mismatch.status.success());
-  assert!(String::from_utf8_lossy(&mismatch.stderr).contains("W_FN_ARG_TYPE_MISMATCH"));
+  assert!(String::from_utf8_lossy(&mismatch.stderr).contains("E_CALL_ARGUMENT_MISMATCH"));
   assert_eq!(fs::read(&snapshot).unwrap(), original);
   assert_success(
     &run_calcit(
@@ -243,7 +263,65 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
     ],
   );
   assert!(!mismatch.status.success());
-  assert!(String::from_utf8_lossy(&mismatch.stderr).contains("W_FN_ARG_TYPE_MISMATCH"));
+  assert!(String::from_utf8_lossy(&mismatch.stderr).contains("E_CALL_ARGUMENT_MISMATCH"));
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+}
+
+#[test]
+fn concrete_return_proof_rejects_a_known_spread_argument_contradiction() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "add-ns", "fix-command.spread"]),
+    "add spread owner",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.spread/bad",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn bad () $ &+ 1 & ([] |wrong)",
+      ],
+    ),
+    "add contradictory spread",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.spread/bad",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+      ],
+    ),
+    "declare spread return",
+  );
+  let original = fs::read(&snapshot).unwrap();
+  let output = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "concrete-return-proof-v1",
+      "--ns",
+      "fix-command.spread",
+      "--def",
+      "bad",
+      "--format",
+      "edn",
+    ],
+  );
+  assert!(!output.status.success());
+  assert!(String::from_utf8_lossy(&output.stderr).contains("E_CALL_ARGUMENT_MISMATCH"));
   assert_eq!(fs::read(&snapshot).unwrap(), original);
 }
 

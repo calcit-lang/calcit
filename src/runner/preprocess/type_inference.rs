@@ -1202,6 +1202,25 @@ pub(super) fn extract_literal_list_items(form: &Calcit) -> Option<Vec<&Calcit>> 
   Some(items.iter().skip(1).collect())
 }
 
+/// Expand only source-owned literal spreads without evaluating any expression.
+pub(super) fn expand_literal_call_arguments(args: &CalcitList) -> Result<CalcitList, Option<&Calcit>> {
+  let mut expanded = Vec::new();
+  let mut arguments = args.iter();
+  while let Some(argument) = arguments.next() {
+    if !matches!(argument, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
+      expanded.push(argument.clone());
+      continue;
+    }
+    let operand = arguments.next();
+    let items = operand.and_then(extract_literal_list_items).ok_or(operand)?;
+    if items.iter().any(|item| matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
+      return Err(operand);
+    }
+    expanded.extend(items.into_iter().cloned());
+  }
+  Ok(CalcitList::from(expanded.as_slice()))
+}
+
 // ---------------------------------------------------------------------------
 // Main synthesis: infer_type_from_expr
 // ---------------------------------------------------------------------------
@@ -1272,6 +1291,12 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
     Calcit::List(xs) => {
       let head = xs.first()?;
       match head {
+        Calcit::Syntax(CalcitSyntax::CallSpread, _) => {
+          let callable = xs.get(1)?;
+          let arguments = xs.drop_left().drop_left();
+          let expanded = expand_literal_call_arguments(&arguments).ok()?;
+          infer_type_from_expr(&Calcit::from(expanded.push_left(callable.clone())), scope_types)
+        }
         // Hints refine the surrounding function or a local binding, but the
         // hint expression itself returns Nil; it never wraps a function value.
         Calcit::Syntax(CalcitSyntax::HintFn, _) => Some(tag_annotation("nil")),

@@ -3118,6 +3118,17 @@ fn preprocess_list_call(
           Ok(preprocess_defatom(name, name_ns, &args, &mut ctx)?)
         }
         CalcitSyntax::CallSpread => {
+          // Explicit core calls must use the same proof path as surface `&` calls.
+          if REQUIRE_ASSERTION_PROOF.with(Cell::get) {
+            return preprocess_expr(
+              &Calcit::from(args.clone()),
+              scope_defs,
+              scope_types,
+              file_ns,
+              check_warnings,
+              call_stack,
+            );
+          }
           let mut ys = vec![head_form];
 
           args.traverse_result::<CalcitErr>(&mut |a| {
@@ -3867,6 +3878,14 @@ fn preprocess_known_function_call(
   let processed_call_args = CalcitList::from(ys.drop_left());
   if has_spread {
     reject_known_non_list_spreads(&processed_call_args, scope_types, call_stack, call_location.clone())?;
+    reject_strict_unproven_generic_relation(
+      &head_form,
+      &processed_call_args,
+      effective_user_call_schema(info.as_ref()).as_ref(),
+      scope_types,
+      file_ns,
+      call_stack,
+    )?;
   }
   reject_pending_async_arguments(&head_form, &processed_call_args, scope_types, call_stack)?;
   if !has_spread {
@@ -10343,6 +10362,7 @@ struct UnprovenGenericArgument {
   expected: Arc<CalcitTypeAnnotation>,
   actual: Option<Arc<CalcitTypeAnnotation>>,
   generics: Vec<Arc<str>>,
+  contradictory: bool,
 }
 
 #[derive(Debug, PartialEq)]
@@ -10506,10 +10526,11 @@ fn find_unproven_generic_argument(
         expected: expected.clone(),
         actual: None,
         generics,
+        contradictory: false,
       });
     };
     let proof = actual.prove_available_bindings(expected, &mut bindings);
-    (matches!(proof, TypeProof::NeedsBoundary(_))
+    ((matches!(proof, TypeProof::NeedsBoundary(_)) || audit && proof.is_mismatch())
       && (audit
         || matches!(
           proof,
@@ -10520,6 +10541,7 @@ fn find_unproven_generic_argument(
       expected: expected.clone(),
       actual: Some(actual),
       generics,
+      contradictory: proof.is_mismatch(),
     })
   };
 
@@ -10543,11 +10565,29 @@ fn reject_strict_unproven_generic_relation(
   if !audit && (!strict_types_enabled() || !should_emit_project_source_lint(file_ns)) {
     return Ok(());
   }
+  let expanded_args;
+  let args = if audit && args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
+    expanded_args = type_inference::expand_literal_call_arguments(args).map_err(|operand| {
+        CalcitErr::use_msg_stack_location_with_code(
+          CalcitErrKind::Type,
+          format!(
+            "call to `{head}` cannot independently prove spread arguments without a statically available argument list; expose the fixed arguments or review the open call boundary"
+          ),
+          "E_CALL_ARGUMENT_UNPROVEN",
+          call_stack,
+          operand.and_then(Calcit::get_location).or_else(|| head.get_location()),
+        )
+    })?;
+    &expanded_args
+  } else {
+    args
+  };
   let Some(UnprovenGenericArgument {
     index,
     expected,
     actual,
     generics,
+    contradictory,
   }) = find_unproven_generic_argument(signature, args, scope_types)
   else {
     return Ok(());
@@ -10558,6 +10598,19 @@ fn reject_strict_unproven_generic_relation(
     .map(|actual| actual.to_brief_string())
     .unwrap_or_else(|| "unknown".to_owned());
   let argument = args.get(index);
+  if contradictory {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!(
+        "call to `{head}` has an argument type mismatch at argument {}: expected `{}`, got `{actual_name}`",
+        index + 1,
+        expected.to_brief_string()
+      ),
+      "E_CALL_ARGUMENT_MISMATCH",
+      call_stack,
+      argument.and_then(Calcit::get_location).or_else(|| head.get_location()),
+    ));
+  }
   Err(CalcitErr::use_msg_stack_location_with_code(
     CalcitErrKind::Type,
     if audit {

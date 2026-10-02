@@ -6517,6 +6517,16 @@
                 assert= 1 $ choose true
                 assert= 2 $ choose false
               :tags $ #{} :call-boundary :concrete-call-proof
+            %{} 'TestEntry (:name |literal-spread-call-contract)
+              :code $ quote $ let
+                  sink $ fn (n)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    , n
+                assert= 3 $ sink & $ [] 3
+                assert= 4 $ &+ 1 & $ [] 3
+              :tags $ #{} :call-boundary :concrete-call-proof
         'identical? $ %{} 'CodeEntry
           :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
           :code $ quote &runtime-implementation
