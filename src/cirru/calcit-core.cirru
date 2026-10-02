@@ -8476,13 +8476,24 @@
                 assert= 0 $ option:unwrap-or absent 0
             :tags $ #{} :core :unit
         'optionally $ %{} 'CodeEntry
-          :doc "|Convert a nullable Optional<T> value into nominal Option<T>."
+          :doc "|Convert a nullable Optional<T> value into nominal Option<T>. Legacy spelling kept for compatibility; prefer nil->option."
           :code $ quote $ defn optionally (s)
             if (nil? s) (%none) (%some s)
           :examples $ []
             quote $ assert= (%some 1) (optionally 1)
             quote $ assert= (%none) (optionally nil)
             quote $ assert= Option $ &enum:definition (optionally 1)
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Optional 'T
+            :generics $ [] 'T
+            :return $ :: 'Option 'T
+        'nil->option $ %{} 'CodeEntry
+          :doc "|Convert a possibly-nil value into nominal Option<T>: nil becomes %none, anything else %some. Preferred spelling of the legacy optionally; both share one implementation."
+          :code $ quote $ defn nil->option (s) (optionally s)
+          :examples $ []
+            quote $ assert= (%some 1) (nil->option 1)
+            quote $ assert= (%none) (nil->option nil)
+            quote $ assert= Option $ &enum:definition (nil->option 1)
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Optional 'T
             :generics $ [] 'T
