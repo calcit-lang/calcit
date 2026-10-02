@@ -10,6 +10,8 @@
 
 安全迁移仍先读取完整 legacy 编译证据，不受后续 proof 首错中断影响。preview/apply 有证明错误时保持 requires-review，verify 失败；apply 可提交已验证的安全迁移，但不得宣称待审证明已解决，恢复 revision 和退出信息必须反映真实写入。
 
+Respo 回归发现，legacy 模式仍会拒绝确定矛盾的断言。workflow 在证据收集阶段按定义保留这些编译器错误并继续收集其他定义的 warnings，与 proof pass 的诊断去重后输出同一个 manifest；不把错误变成成功，也不影响独立规则的 fail-fast 行为。
+
 集合构造是存储而不是具体类型消费：其参数证明使用既有推导得到的共同元素类型。开放集合不能借返回声明变成具体元素集合。Macro source trace 与普通编译统一，在语法构造阶段不借运行时证明；展开后的函数仍接受运行时证明检查。
 
 ## 验证

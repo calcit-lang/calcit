@@ -193,10 +193,27 @@ fn trait_bearing_enum_cycle_preserves_nominal_evidence_in_graph_checks() {
     "definition graph must preserve the same nominal constructor evidence",
   );
   assert_success(&run_calcit(&snapshot, &["test", "--require-match"]), "attached nominal method test");
-  assert_success(
-    &run_calcit(&snapshot, &["fix", "--workflow", "strict", "--verify", "--format", "edn"]),
-    "strict workflow must reuse the same nominal evidence",
+  let original = fs::read(&snapshot).unwrap();
+  let workflow = run_calcit(&snapshot, &["fix", "--workflow", "strict", "--verify", "--format", "json"]);
+  // Graph validation and independent return proof are separate obligations.
+  // The legacy core dependency must not hide successful nominal cycle checks.
+  assert!(
+    !workflow.status.success(),
+    "unproven dependency returns must block strict verification"
   );
+  let report: serde_json::Value = serde_json::from_slice(&workflow.stdout).expect("strict workflow must preserve a structured report");
+  assert_eq!(report["data"]["workflow"]["status"], "failed");
+  let results = report["data"]["workflow"]["verification"]["results"].as_array().unwrap();
+  assert_eq!(results.len(), 1);
+  assert_eq!(results[0]["status"], "passed");
+  let definitions = results[0]["report"]["data"]["definitions"].as_array().unwrap();
+  assert_eq!(definitions.len(), 7);
+  assert!(definitions.iter().all(|definition| definition["status"] == "passed"));
+  let diagnostics = report["diagnostics"].as_array().unwrap();
+  assert_eq!(diagnostics.len(), 1);
+  assert_eq!(diagnostics[0]["code"], "E_FN_RETURN_UNPROVEN");
+  assert_eq!(diagnostics[0]["definition"], "calcit.core/every?");
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
 
   assert_success(
     &run_calcit(

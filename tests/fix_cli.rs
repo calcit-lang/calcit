@@ -5010,6 +5010,40 @@ fn strict_workflow_checks_proofs_and_resumes_without_fabricating_repairs() {
         "--input-format",
         "cirru",
         "--code",
+        "quote $ defn unproven (value) (assert-type |wrong Number) 1",
+      ],
+    ),
+    "introduce a contradiction rejected even during legacy evidence collection",
+  );
+  let contradictory_bytes = fs::read(&snapshot).unwrap();
+  for format in ["edn", "json"] {
+    let output = run_fix(&snapshot, &["--workflow", "strict", "--format", format]);
+    assert!(!output.status.success());
+    if format == "edn" {
+      cirru_edn::parse(&String::from_utf8_lossy(&output.stdout)).expect("contradictions must preserve the EDN manifest");
+      assert!(String::from_utf8_lossy(&output.stdout).contains("E_ASSERT_TYPE_MISMATCH"));
+    } else {
+      let report = parse_stdout(&output);
+      assert_eq!(report["data"]["workflow"]["status"], "requires-review");
+      let diagnostics = report["diagnostics"].as_array().unwrap();
+      assert_eq!(diagnostics.len(), 1);
+      assert_eq!(diagnostics[0]["code"], "E_ASSERT_TYPE_MISMATCH");
+      assert_eq!(diagnostics[0]["definition"], "app.main/unproven");
+      assert!(report["data"]["suggestions"][0]["replacement"].is_null());
+    }
+    assert_eq!(fs::read(&snapshot).unwrap(), contradictory_bytes);
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/unproven",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
         "quote $ defn unproven (value) 1",
       ],
     ),

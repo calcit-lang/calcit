@@ -510,7 +510,24 @@ pub(crate) fn handle_fix_command(
     // Preserve the complete migration evidence even when a later proof pass
     // stops early in an individual definition.
     let migration_warnings = if options.workflow.is_some() {
-      Some(compile_selected_definitions_for_migration(&selected_definitions)?)
+      Some(with_legacy_migration_mode(|| {
+        let warnings = RefCell::new(Vec::new());
+        for (namespace, definition) in &selected_definitions {
+          if let Err(error) = runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default()) {
+            // Legacy mode still rejects contradictions. Keep their diagnostics
+            // in the manifest while collecting other definitions' migration evidence.
+            let owner = error.location.as_ref().map_or_else(
+              || format!("{namespace}/{definition}"),
+              |location| format!("{}/{}", location.ns, location.def),
+            );
+            let diagnostic = compiler_review::boundary_diagnostic(&error, &owner);
+            if !boundary_diagnostics.contains(&diagnostic) {
+              boundary_diagnostics.push(diagnostic);
+            }
+          }
+        }
+        warnings.into_inner()
+      }))
     } else {
       None
     };
@@ -522,7 +539,11 @@ pub(crate) fn handle_fix_command(
       options.workflow.is_some(),
     )?;
     boundary_suggestions = review.suggestions;
-    boundary_diagnostics = review.diagnostics;
+    for diagnostic in review.diagnostics {
+      if !boundary_diagnostics.contains(&diagnostic) {
+        boundary_diagnostics.push(diagnostic);
+      }
+    }
     migration_warnings.unwrap_or(review.warnings)
   } else if validation_only {
     compile_selected_definitions(&selected_definitions)?
