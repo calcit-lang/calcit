@@ -14,6 +14,9 @@ const run = (...args) => execFileSync(binary, [snapshot, ...args], options);
 try {
   await copyFile("src/cirru/calcit-core.cirru", snapshot);
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
+  const coreOriginal = await readFile(snapshot);
+  run("fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.core", "--def", "every?", "--format", "edn");
+  assert.deepEqual(await readFile(snapshot), coreOriginal);
   run("test", "--tag", "assert-boundary", "--require-match");
   const response = JSON.parse(run("query", "def", "calcit.core/assert-type", "--format", "json"));
   assert.deepEqual(response.diagnostics, []);

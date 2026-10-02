@@ -212,7 +212,9 @@ fn trait_bearing_enum_cycle_preserves_nominal_evidence_in_graph_checks() {
   let diagnostics = report["diagnostics"].as_array().unwrap();
   assert_eq!(diagnostics.len(), 1);
   assert_eq!(diagnostics[0]["code"], "E_FN_RETURN_UNPROVEN");
-  assert_eq!(diagnostics[0]["definition"], "calcit.core/every?");
+  // Open-fold accumulator proof now establishes every?'s Bool result.
+  // The next independent generic equality obligation must remain visible.
+  assert_eq!(diagnostics[0]["definition"], "calcit.core/foldl-compare");
   assert_eq!(fs::read(&snapshot).unwrap(), original);
 
   assert_success(
