@@ -39,6 +39,7 @@ pub(super) fn compile_boundary_review(
   let mut diagnostics = Vec::new();
   let mut seen = HashSet::new();
   for (namespace, definition) in definitions {
+    let warning_start = warnings.borrow().len();
     let result = if workflow
       || matches!(
         rule,
@@ -53,7 +54,10 @@ pub(super) fn compile_boundary_review(
       runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default()).map(|_| ())
     };
     if workflow {
-      for warning in warnings.borrow().iter().filter(|warning| is_contradictory_proof_warning(warning)) {
+      for warning in warnings.borrow()[warning_start..]
+        .iter()
+        .filter(|warning| is_contradictory_proof_warning(warning))
+      {
         let mut diagnostic = warning.as_json();
         diagnostic["severity"] = serde_json::json!("error");
         diagnostic["phase"] = serde_json::json!("preprocess");
