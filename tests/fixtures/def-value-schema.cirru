@@ -36,6 +36,16 @@
           :code $ quote $ def open-store members
           :examples $ []
           :schema $ :: 'Dynamic
+        'prepare-client-patch $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn prepare-client-patch (next-raw)
+            match (try-decode-map-as next-raw app.values/ClientProjection)
+              (:ok typed)
+                Result :ok $ app.values/PatchCandidate :raw next-raw :typed typed
+              (:err reason) (Result :err reason)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'Tag 'Dynamic
+            :return $ :: 'Result 'app.values/PatchCandidate 'String
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
@@ -123,6 +133,36 @@
                 assert= |Ada $ :username $ assoc initial-state :username |Ada
                 assert= | $ :username initial-state
               :tags $ #{} :diary-boundary :unit
+            %{} 'TestEntry (:name |checked-patch-projection)
+              :code $ quote $ let
+                  previous-raw $ {} (:count 1) (:color |red)
+                  previous $ match (prepare-client-patch previous-raw)
+                    (:ok candidate) candidate
+                    (:err reason) (raise reason)
+                  next-raw $ assoc previous-raw :count 2
+                match (prepare-client-patch next-raw)
+                  (:ok candidate)
+                    do
+                      assert= next-raw $ :raw candidate
+                      assert= 2 $ :count $ :typed candidate
+                      assert= |red $ :color $ :typed candidate
+                      assert= previous-raw $ :raw previous
+                      assert= 1 $ :count $ :typed previous
+                  (:err reason) (raise reason)
+                match
+                  prepare-client-patch $ assoc next-raw :count |invalid
+                  (:ok _) (raise |invalid-patch-candidate-accepted)
+                  (:err reason)
+                    do
+                      assert= true $ .includes? reason |count
+                      assert= previous-raw $ :raw previous
+                      assert= 1 $ :count $ :typed previous
+                match
+                  prepare-client-patch $ {} $ :count 2
+                  (:ok _) (raise |incomplete-patch-candidate-accepted)
+                  (:err reason)
+                    assert= true $ .includes? reason |color
+              :tags $ #{} :diary-boundary :unit
         'verify-values $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn verify-values ()
             assert= | $ :username initial-state
@@ -153,8 +193,18 @@
           :require $ app.values :as values
     'app.values $ %{} 'FileEntry
       :defs $ {}
+        'ClientProjection $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct ClientProjection (:count 'Number) (:color 'String)
+          :examples $ []
+          :schema $ :: 'StructDef
         'LoginState $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct LoginState (:username 'String) (:password 'String)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'PatchCandidate $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct PatchCandidate
+            :raw $ :: 'Map 'Tag 'Dynamic
+            :typed 'app.values/ClientProjection
           :examples $ []
           :schema $ :: 'StructDef
         'initial-state $ %{} 'CodeEntry (:doc |)

@@ -368,7 +368,7 @@ try {
   const diaryResponse = JSON.parse(run("query", "def", "app.main/verify-login-decode", "--format", "json"));
   assert.deepEqual(diaryResponse.diagnostics, []);
   const diaryTests = diaryResponse.data.tests.filter(test => test.tags.includes("diary-boundary"));
-  assert.equal(diaryTests.length, 5);
+  assert.equal(diaryTests.length, 6);
   // Compile the definition-attached expressions themselves, not a JS rewrite
   // of the application boundary semantics.
   run("edit", "def", "app.main/verify-diary-boundaries", "--input-format", "json-ast", "--code",
