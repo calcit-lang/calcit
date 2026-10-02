@@ -61,7 +61,7 @@ use component::{
   build_component_variant_lower_fn, collect_component_compound_types, collect_component_owned_types, component_fields_layout,
   component_memory_layout, push_component_result_reclaim, push_load_value_flat, push_store_value_flat,
 };
-use methods::{emit_call_args, emit_method_invoke};
+use methods::{emit_call_args, emit_method_invoke, emit_type_of_local};
 use runtime::{
   HostImport, ModuleFunctionLayout, WasiComponentReadImports, WasiComponentWriteImports, build_runtime_fns, build_utf8_valid_fn,
   build_wasi_component_get_env_fn, build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn,

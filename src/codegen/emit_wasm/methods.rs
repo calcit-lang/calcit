@@ -356,7 +356,7 @@ pub(super) fn emit_method_invoke(ctx: &mut WasmGenCtx, name: &str, args: &[Calci
   }
 }
 
-fn emit_type_of_local(ctx: &mut WasmGenCtx, value_local: u32) {
+pub(super) fn emit_type_of_local(ctx: &mut WasmGenCtx, value_local: u32) {
   let number_tag = get_type_tag(ctx, "number");
   let is_valid_ptr = ctx.alloc_local_typed(ValType::I32);
   let raw_base = ctx.alloc_local_typed(ValType::I32);
