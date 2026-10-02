@@ -1,4 +1,119 @@
 use super::*;
+use std::collections::BTreeSet;
+
+pub(super) fn component_struct_identity(record: &ComponentStructType) -> StructIdentity {
+  StructIdentity {
+    name: record.tag.clone(),
+    definition: (record.id != record.tag).then(|| record.id.clone()),
+    fields: record.fields.iter().map(|(name, _)| name.clone()).collect(),
+  }
+}
+
+/// The same immutable identity components used by native Struct value equality.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct StructIdentity {
+  pub name: String,
+  pub definition: Option<String>,
+  pub fields: Vec<String>,
+}
+
+impl From<&CalcitStructDef> for StructIdentity {
+  fn from(definition: &CalcitStructDef) -> Self {
+    Self {
+      name: definition.name.ref_str().to_owned(),
+      definition: definition.definition_ref.as_ref().map(ToString::to_string),
+      fields: definition.fields.iter().map(|field| field.ref_str().to_owned()).collect(),
+    }
+  }
+}
+
+#[derive(Clone, Default)]
+pub(super) struct StructLayouts {
+  pub ids: BTreeMap<StructIdentity, u32>,
+  pub names: BTreeMap<u32, u32>,
+  pub field_tags: HashMap<u32, Vec<u32>>,
+}
+
+impl StructLayouts {
+  pub fn id(&self, definition: &CalcitStructDef) -> Result<u32, String> {
+    self.ids.get(&StructIdentity::from(definition)).copied().ok_or_else(|| {
+      format!(
+        "E_WASM_STRUCT_IDENTITY: unregistered Struct definition {:?}",
+        definition.definition_ref
+      )
+    })
+  }
+}
+
+pub(super) fn collect_struct_layouts(
+  program_data: &program::CompiledProgram,
+  fn_defs: &[(String, String, CalcitFnArgs, Vec<Calcit>)],
+  component_types: &[ComponentAbiType],
+  tags: &HashMap<String, u32>,
+) -> Result<StructLayouts, String> {
+  fn visit(expression: &Calcit, identities: &mut BTreeSet<StructIdentity>) {
+    if let Some(graph) = DataShapeGraph::from_calcit_handle(expression) {
+      for node in &graph.nodes {
+        if let DataShapeNode::Struct { nominal, .. } = node {
+          identities.insert(StructIdentity::from(nominal.as_ref()));
+        }
+      }
+    }
+    match expression {
+      Calcit::StructDef(definition) => {
+        identities.insert(StructIdentity::from(definition));
+      }
+      Calcit::Import(_) => {
+        if let Ok(definition) = resolve_struct_ref(expression) {
+          identities.insert(StructIdentity::from(&definition));
+        }
+      }
+      Calcit::List(items) => {
+        for item in items.iter() {
+          visit(item, identities);
+        }
+      }
+      _ => {}
+    }
+  }
+  let mut identities = BTreeSet::new();
+  for (_, _, _, body) in fn_defs {
+    for expression in body {
+      visit(expression, &mut identities);
+    }
+  }
+  for (ns, file) in program_data.iter() {
+    for (name, compiled) in &file.defs {
+      if let Some(Calcit::StructDef(definition)) = program::lookup_runtime_ready(ns, name) {
+        identities.insert(StructIdentity::from(&definition));
+      }
+      for expression in [&compiled.preprocessed_code, &compiled.codegen_form] {
+        visit(expression, &mut identities);
+      }
+    }
+  }
+  for ty in component_types {
+    if let ComponentAbiType::Struct(record) = ty {
+      identities.insert(component_struct_identity(record));
+    }
+  }
+  let mut layouts = StructLayouts::default();
+  for (index, identity) in identities.into_iter().enumerate() {
+    let id = (index + 1) as u32;
+    let tag = *tags
+      .get(&identity.name)
+      .ok_or_else(|| format!("missing Struct name tag {}", identity.name))?;
+    let fields = identity
+      .fields
+      .iter()
+      .map(|field| tags.get(field).copied().ok_or_else(|| format!("missing Struct field tag {field}")))
+      .collect::<Result<Vec<_>, _>>()?;
+    layouts.names.insert(id, tag);
+    layouts.field_tags.insert(id, fields);
+    layouts.ids.insert(identity, id);
+  }
+  Ok(layouts)
+}
 
 pub(super) fn emit_struct_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.is_empty() {
@@ -20,11 +135,8 @@ pub(super) fn emit_struct_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
     ));
   }
 
-  // Get struct tag ID
-  let struct_tag_id = *ctx
-    .tag_index
-    .get(&struct_def.name.to_string())
-    .ok_or_else(|| format!("unknown struct tag: {}", struct_def.name))?;
+  // Resolve the full definition identity, independently of the display name.
+  let struct_tag_id = ctx.struct_layouts.id(&struct_def)?;
 
   // Layout: [count:f64][struct_tag:f64][field0:f64][field1:f64]...
   // Total bytes: (2 + field_count) * 8
@@ -39,7 +151,7 @@ pub(super) fn emit_struct_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   ctx.emit(f64_const(field_count as f64));
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
 
-  // Store struct tag at offset 8
+  // Store the nominal layout identity at offset 8.
   ctx.emit(Instruction::LocalGet(ptr_local));
   ctx.emit(f64_const(struct_tag_id as f64));
   ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
@@ -78,10 +190,10 @@ pub(super) fn resolve_struct_ref(node: &Calcit) -> Result<CalcitStructDef, Strin
         }
         // Try to extract struct from defrecord form: (defrecord Name :field1 :field2 ...)
         if let Some(struct_def) = try_parse_defrecord_form(&compiled.codegen_form) {
-          return Ok(struct_def);
+          return Ok(struct_def.with_definition_ref(ns, def));
         }
         if let Some(struct_def) = try_parse_defrecord_form(&compiled.preprocessed_code) {
-          return Ok(struct_def);
+          return Ok(struct_def.with_definition_ref(ns, def));
         }
         return Err(format!("&%{{}}: compiled def {ns}/{def} is not a struct"));
       }
@@ -89,7 +201,7 @@ pub(super) fn resolve_struct_ref(node: &Calcit) -> Result<CalcitStructDef, Strin
       if let Some(source) = program::lookup_def_code(ns, def)
         && let Some(struct_def) = try_parse_defrecord_form(&source)
       {
-        return Ok(struct_def);
+        return Ok(struct_def.with_definition_ref(ns, def));
       }
       Err(format!("&%{{}}: cannot resolve struct reference {ns}/{def}"))
     }
@@ -205,7 +317,8 @@ pub(super) fn emit_struct_get(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   ctx.emit(Instruction::LocalSet(key_tag_local));
 
   let mut struct_entries = ctx
-    .struct_field_tags
+    .struct_layouts
+    .field_tags
     .iter()
     .map(|(tag, fields)| (*tag, fields.clone()))
     .collect::<Vec<_>>();
@@ -276,7 +389,8 @@ pub(super) fn emit_struct_field_tag(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
   ctx.emit(Instruction::LocalSet(struct_tag_local));
 
   let mut struct_entries = ctx
-    .struct_field_tags
+    .struct_layouts
+    .field_tags
     .iter()
     .map(|(tag, fields)| (*tag, fields.clone()))
     .collect::<Vec<_>>();
@@ -327,6 +441,21 @@ pub(super) fn emit_struct_get_name(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  let identity = ctx.alloc_local();
+  ctx.emit(Instruction::LocalSet(identity));
+  let names = ctx.struct_layouts.names.clone();
+  for (id, tag) in &names {
+    ctx.emit(Instruction::LocalGet(identity));
+    ctx.emit(f64_const(*id as f64));
+    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+    ctx.emit(f64_const(*tag as f64));
+    ctx.emit(Instruction::Else);
+  }
+  ctx.emit(Instruction::Unreachable);
+  for _ in names {
+    ctx.emit(Instruction::End);
+  }
   Ok(())
 }
 
@@ -359,7 +488,8 @@ pub(super) fn emit_struct_to_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
     .expect("runtime helper __rt_map_assoc must exist");
 
   let mut struct_entries = ctx
-    .struct_field_tags
+    .struct_layouts
+    .field_tags
     .iter()
     .map(|(tag, fields)| (*tag, fields.clone()))
     .collect::<Vec<_>>();
@@ -417,7 +547,7 @@ pub(super) fn emit_struct_matches(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
 /// Emit `&struct:contains? struct_value key_tag` — check if a field tag exists in a struct value.
 ///
 /// Layout: [count:f64][struct_tag:f64][field0:f64]...
-/// Field tags are compile-time known via ctx.struct_field_tags.
+/// Field tags are compile-time known via ctx.struct_layouts.field_tags.
 pub(super) fn emit_struct_contains(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&struct:contains? requires 2 args (struct_value, key_tag)")?;
   let record_ptr = emit_ptr_to_i32(ctx, &args[0])?;
@@ -434,7 +564,8 @@ pub(super) fn emit_struct_contains(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
   ctx.emit(Instruction::LocalSet(key_tag_local));
 
   let mut struct_entries = ctx
-    .struct_field_tags
+    .struct_layouts
+    .field_tags
     .iter()
     .map(|(tag, fields)| (*tag, fields.clone()))
     .collect::<Vec<_>>();

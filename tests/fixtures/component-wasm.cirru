@@ -7,8 +7,8 @@
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
-  :files $ {} $ 'component-wasm.main
-    %{} 'FileEntry
+  :files $ {}
+    'component-wasm.main $ %{} 'FileEntry
       :defs $ {}
         'Event $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Event (:idle) (:named 'String) (:moved 'Number 'Number) (:profile 'component-wasm.main/Profile)
@@ -410,6 +410,22 @@
           :tests $ [] $ %{} 'TestEntry (:name |returns-unit)
             :code $ quote $ assert= &unit (ping)
             :tags $ #{} :wasm
+        'profile-stats-identity $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export profile-stats-identity (value)
+            let
+                score $ :score value
+                same $ ProfileStats :score score
+                different $ other/ProfileStats :score score
+              and (= value same)
+                = (&hash value) (&hash same)
+                not $ &= value different
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'component-wasm.main/ProfileStats
+          :tests $ [] $ %{} 'TestEntry (:name |lifted-definition)
+            :code $ quote $ assert= true
+              profile-stats-identity $ ProfileStats :score 7.5
+            :tags $ #{} :struct-identity :unit
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () 0
           :examples $ []
@@ -423,3 +439,12 @@
             :args $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns component-wasm.main
+          :require $ component-wasm.other :as other
+    'component-wasm.other $ %{} 'FileEntry
+      :defs $ {} $ 'ProfileStats
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct ProfileStats (:score 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns component-wasm.other

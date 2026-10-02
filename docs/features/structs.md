@@ -307,6 +307,16 @@ let
   println $ struct-definition p
 ```
 
+### 定义身份与值相等
+
+顶层 Struct 定义使用完整的 `namespace/definition` 作为名义身份。两个命名空间即使都声明了名为 `Point`、字段完全相同的 Struct，也代表不同类型；`get-name` 返回的短名称不能用作身份判断。普通 `=` 要求两个操作数具有相同静态类型，业务代码应先按类型分支，再比较同类型的值。
+
+Struct 值的相等比较同时检查定义身份、名称、字段名和字段值；字段值按各自的值语义递归比较。重新构造的相等值可以查询原有 Map key，相等值的哈希也必须一致。哈希数值属于各 backend 的内部实现，不用于持久化标识或跨 backend 通信。
+
+热重载不把定义对象的内存地址作为身份：同一个 `namespace/definition` 重新求值后，只要名称、字段布局和值仍相同，旧值和新值仍然相等。修改字段布局或字段值后不再相等。引用已有定义的别名保留原始身份；更新字段和附加 trait 实现也保留定义身份。
+
+没有绑定到顶层定义的局部 Struct 和未经类型恢复的 EDN Struct 数据不自动获得某个同名顶层定义的身份。需要判断来源时，使用 Struct 类型判断，而不是比较打印出来的名字。
+
 ### Struct Origin Check
 
 Use the typed Struct predicate when you need to confirm a struct value's origin:

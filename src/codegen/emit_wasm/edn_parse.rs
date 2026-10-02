@@ -364,12 +364,7 @@ fn emit_parse_scalar_struct(
     ctx.emit(Instruction::I32And);
   }
   ctx.begin_block_if();
-  let struct_tag_id = *ctx.tag_index.get(nominal.name.ref_str()).ok_or_else(|| {
-    format!(
-      "E_WASM_EDN_SHAPE: struct tag :{} is not present in the compiled program",
-      nominal.name
-    )
-  })?;
+  let struct_tag_id = ctx.struct_layouts.id(nominal)?;
   let struct_ptr = ctx.alloc_local_typed(ValType::I32);
   emit_bump_alloc(ctx, ((2 + fields.len()) * 8) as i32, struct_ptr, "struct");
   ctx.emit(Instruction::LocalGet(struct_ptr));

@@ -18,10 +18,22 @@
             :args $ [] 'Number 'Number
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-wasm.helper
+    'test-wasm.layout $ %{} 'FileEntry
+      :defs $ {} $ 'Point
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Point (:z 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns test-wasm.layout
     'test-wasm.main $ %{} 'FileEntry
       :defs $ {}
         'MeasuredPoint $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def MeasuredPoint (impl-traits PointValue PointScoreImpl)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'NominalPayload $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NominalPayload (:label 'String) (:point Point)
           :examples $ []
           :schema $ :: 'StructDef
         'Point $ %{} 'CodeEntry
@@ -1602,6 +1614,36 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-struct-container-hash $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-struct-container-hash ()
+            let
+                a $ Point :x 1 :y 2
+                b $ Point :x 1 :y 2
+                ma $ &{} :a a :b b
+                mb $ &{} :b b :a a
+                la $ [] a
+                lb $ [] b
+                sa $ #{} a
+                sb $ #{} b
+                oa $ Option :some a
+                ob $ Option :some b
+              if
+                and
+                  = (&hash ma) (&hash mb)
+                  = (&hash la) (&hash lb)
+                  = (&hash sa) (&hash sb)
+                  = (&hash oa) (&hash ob)
+                  = (&hash -0) (&hash 0)
+                  =
+                    &map:get (&{} -1 8) -1
+                    , 8
+                , 1 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |definition-identity)
+            :code $ quote $ assert= 1 (test-struct-container-hash)
+            :tags $ #{} :struct-identity :unit :wasm
         'test-struct-contains-field $ %{} 'CodeEntry
           :doc "|验证 Struct 的类型化字段谓词：已声明的 Tag 字段存在，未声明字段不存在；返回 1 表示全部断言成立。"
           :code $ quote $ defwasm-export test-struct-contains-field ()
@@ -1617,6 +1659,27 @@
           :tests $ [] $ %{} 'TestEntry (:name |typed-field-predicate)
             :code $ quote $ assert= 1 (test-struct-contains-field)
             :tags $ #{} :unit :wasm
+        'test-struct-edn-identity $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-struct-edn-identity ()
+            let
+                decoded $ try-parse-cirru-edn-as "|%{} :Point (:x 1) (:y 2)" Point
+                expected $ Result :ok $ Point :x 1 :y 2
+                other $ try-parse-cirru-edn-as "|%{} :Point (:x 1) (:y 2)" test-wasm.nominal/Point
+              if
+                and
+                  match decoded
+                    (:ok value)
+                      = value $ Point :x 1 :y 2
+                    (:err _) false
+                  = (&hash decoded) (&hash expected)
+                  not $ &= decoded other
+                , 1 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |definition-identity)
+            :code $ quote $ assert= 1 (test-struct-edn-identity)
+            :tags $ #{} :struct-identity :unit :wasm
         'test-struct-eq $ %{} 'CodeEntry (:doc "|struct definition equals source struct")
           :code $ quote $ defwasm-export test-struct-eq ()
             &let
@@ -1647,6 +1710,60 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-struct-hash $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-struct-hash ()
+            let
+                a $ NominalPayload :label (&str:concat |he |llo) :point $ Point :x 1 :y 2
+                b $ NominalPayload :label (&str:concat |hel |lo) :point $ Point :x 1 :y 2
+              if
+                and (= a b)
+                  = (&hash a) (&hash b)
+                , 1 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |definition-identity)
+            :code $ quote $ assert= 1 (test-struct-hash)
+            :tags $ #{} :struct-identity :unit :wasm
+        'test-struct-layout-identity $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-struct-layout-identity ()
+            let
+                point $ Point :x 1 :y 2
+                different $ layout/Point :z 3
+              if
+                and
+                  = (:x point) 1
+                  = (:z different) 3
+                  =
+                    &map:get (&struct:to-map different) :z
+                    , 3
+                  = (&struct:get-name different) :Point
+                  not $ .contains-field? different :x
+                , 1 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |definition-identity)
+            :code $ quote $ assert= 1 (test-struct-layout-identity)
+            :tags $ #{} :struct-identity :unit :wasm
+        'test-struct-map-key $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-struct-map-key ()
+            let
+                a $ Point :x 1 :y 2
+                b $ Point :x 1 :y 2
+                other $ nominal/Point :x 1 :y 2
+                m $ &{} a 10 other 20
+              if
+                and
+                  = (&map:get m b) 10
+                  = (&map:get m other) 20
+                , 1 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |definition-identity)
+            :code $ quote $ assert= 1 (test-struct-map-key)
+            :tags $ #{} :struct-identity :unit :wasm
         'test-struct-matches-true $ %{} 'CodeEntry (:doc "|struct:matches? returns true for same type")
           :code $ quote $ defwasm-export test-struct-matches-true ()
             &let
@@ -1657,6 +1774,22 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-struct-nominal-equality $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-struct-nominal-equality ()
+            let
+                a $ Point :x 1 :y 2
+                again $ Point :x 1 :y 2
+                other $ nominal/Point :x 1 :y 2
+              if
+                and (= a again)
+                  not $ &= a other
+                , 1 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |definition-identity)
+            :code $ quote $ assert= 1 (test-struct-nominal-equality)
+            :tags $ #{} :struct-identity :unit :wasm
         'test-struct-sum $ %{} 'CodeEntry (:doc "|Struct create + field access")
           :code $ quote $ defwasm-export test-struct-sum (x y)
             &let
@@ -1875,7 +2008,15 @@
             :args $ [] 'String
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-wasm.main
-          :require $ test-wasm.helper :as helper
+          :require (test-wasm.helper :as helper) (test-wasm.nominal :as nominal) (test-wasm.layout :as layout)
+    'test-wasm.nominal $ %{} 'FileEntry
+      :defs $ {} $ 'Point
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Point (:x 'Number) (:y 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns test-wasm.nominal
     'test-wasm.specialization-fail $ %{} 'FileEntry
       :defs $ {}
         'apply-one $ %{} 'CodeEntry (:doc |)
