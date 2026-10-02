@@ -294,15 +294,20 @@ export let hashFunction = (x: CalcitValue): Hash => {
   if (typeof x === "function") {
     // method values are closures created on the fly (see invoke_method_closure);
     // hash by method name so equal methods share the same hash, matching isEqual
+    // cache in a WeakMap instead of writing onto the function, so frozen functions hash safely
+    const cachedFn = hostValueHashes.get(x as object);
+    if (cachedFn != null) {
+      return cachedFn;
+    }
     const methodName = (x as { __calcitMethodName?: string }).__calcitMethodName;
     if (methodName != null) {
       let h = mergeValueHash(defaultHash_fn, methodName);
-      (x as any)[calcit_dirty_hash_key] = h;
+      hostValueHashes.set(x as object, h);
       return h;
     }
     fnHashCounter = fnHashCounter + 1;
     let h = mergeValueHash(defaultHash_fn, fnHashCounter);
-    (x as any)[calcit_dirty_hash_key] = h;
+    hostValueHashes.set(x as object, h);
     return h;
   }
   if (x instanceof CalcitRef) {
