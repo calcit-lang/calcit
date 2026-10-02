@@ -392,7 +392,7 @@ impl Decoder<'_> {
         _ => Err(kind_mismatch(path, "tag", input)),
       },
       DataShapeNode::Buffer => match input {
-        Edn::Buffer(value) => Ok(Calcit::Buffer(value.clone())),
+        Edn::Buffer(value) => Ok(Calcit::Buffer(Arc::from(value.as_slice()))),
         _ => Err(kind_mismatch(path, "buffer", input)),
       },
       DataShapeNode::CirruQuote => match input {

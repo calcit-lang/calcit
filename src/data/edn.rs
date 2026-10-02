@@ -111,7 +111,7 @@ pub fn calcit_to_edn(x: &Calcit) -> Result<Edn, String> {
         }
       }
     }
-    Buffer(buf) => Ok(Edn::Buffer(buf.to_owned())),
+    Buffer(buf) => Ok(Edn::Buffer(buf.to_vec())),
     CirruQuote(code) => Ok(Edn::Quote(code.to_owned())),
     Method(name, kind) => match kind {
       MethodKind::Access => Ok(Edn::Symbol(format!(".-{name}").into())),
@@ -412,7 +412,7 @@ pub fn edn_to_calcit(x: &Edn, options: &Calcit) -> Calcit {
         values: Arc::new(values),
       })
     }
-    Edn::Buffer(buf) => Calcit::Buffer(buf.to_owned()),
+    Edn::Buffer(buf) => Calcit::Buffer(Arc::from(buf.as_slice())),
     Edn::AnyRef(r) => Calcit::AnyRef(r.to_owned()),
     Edn::Atom(a) => crate::builtins::quick_build_atom(edn_to_calcit(a, options)),
   }
