@@ -145,7 +145,13 @@ pub fn trace_definition_source_expressions(
   let mut scope_types = ScopeTypes::new();
   let result = builtins::meta::with_compiling_def(ns, def, || {
     calcit::with_type_annotation_warning_context(format!("{ns}/{def}"), || {
-      preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, call_stack)
+      let mut compile = || preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, call_stack);
+      if matches!(&code, Calcit::List(forms) if matches!(forms.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defmacro"))
+      {
+        with_assertion_proof_policy(false, compile)
+      } else {
+        compile()
+      }
     })
   });
   let expressions = SOURCE_EXPRESSION_TRACE.with(|trace| trace.replace(previous).unwrap_or_default());
@@ -10817,6 +10823,28 @@ fn reject_strict_unproven_generic_relation(
   } else {
     args
   };
+  // Collection construction transports values; prove against the independently
+  // inferred common element types, not a homogeneous T chosen by the first item.
+  // A heterogeneous/open collection stays open at its later concrete sink.
+  let storage_signature = if audit && matches!(head, Calcit::Proc(CalcitProc::List | CalcitProc::Set | CalcitProc::NativeMap)) {
+    let form = Calcit::from(args.push_left(head.to_owned()));
+    resolve_type_value(&form, scope_types).and_then(|inferred| {
+      let types = match inferred.as_ref() {
+        CalcitTypeAnnotation::List(inner) | CalcitTypeAnnotation::Set(inner) => vec![inner.clone(); args.len()],
+        CalcitTypeAnnotation::Map(key, value) => (0..args.len())
+          .map(|index| if index % 2 == 0 { key.clone() } else { value.clone() })
+          .collect(),
+        _ => return None,
+      };
+      let mut contract = signature.clone();
+      contract.arg_types = types;
+      contract.rest_type = None;
+      Some(contract)
+    })
+  } else {
+    None
+  };
+  let signature = storage_signature.as_ref().unwrap_or(signature);
   let Some(UnprovenGenericArgument {
     index,
     expected,

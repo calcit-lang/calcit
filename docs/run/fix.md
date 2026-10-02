@@ -193,7 +193,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   独立证明的 identity 和显式 `Dynamic -> Dynamic` 不产生建议；矛盾返回或未解决的断言、强转边界阻止审计，不能被隐藏。
   replacement 为空，`--apply` 不修改代码或业务契约。只有 producer 实现可独立证明且缺少 schema 时，
   才另用现有 `synthesize-schema-v1` 审阅 metadata 候选；它仍执行独立证据、调用点一致性与原子写入门禁。
-  此规则只审计 definition `:code`，须使用严格模式，暂不进入默认 preset 或 strict workflow。
+  此规则只审计 definition `:code`，须使用严格模式；strict workflow 已包含此检查，默认 preset 不变。
 - `callable-contract-proof-v1` 检查具体调用所需的参数证明，运行
   `calcit fix --rule callable-contract-proof-v1 --ns app.main --def run --format edn`。
   裸 `Fn` 可以保存、返回和传递；传入具有具体参数/返回契约的 callback 位置时，必须由实现或真实边界提供证明。
@@ -221,7 +221,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   可读取同一源码节点；展开后无法保留尾表达式坐标时，path 为声明根节点 `code`。
   规则复用 compiler 的共同证明关系与既有 suggestion，不运行程序猜类型，也不自动补 schema、选择 decoder、
   删除断言或插入强转。replacement 为空；`--apply` 不写入源码。报告保留 error，命令非零退出。
-  此项审计须使用严格模式，暂不进入默认 preset 或 strict workflow；普通编译的开放边界迁移策略保持不变。
+  此项审计须使用严格模式；strict workflow 已包含此检查，默认 preset 和普通编译的开放边界迁移策略保持不变。
   所选定义与其依赖都重新预处理，不把入口预检或普通编译的缓存当成审计证明；递归继续使用既有编译 guard。
   每个 definition 在首个错误停止，只检查 `:code`，`:tests` / `:examples` 需另行运行。
   所选 scope 外、未知来源及其他编译错误会直接失败，不能将空报告当作这些路径已安全的证明。
@@ -272,7 +272,7 @@ calcit calcit.cirru fix --preset core-api-0.28-v1 --format edn
 
 应用后重复预览，`machine-applicable` 建议应为空；`requires-review` 候选可能仍在，不能把它们当成已迁移或为了清零而自动应用。逐项核对这些候选以及 attached `:tests` / `:examples`，再运行项目严格检查和测试。使用已发布 `0.28.0-alpha.2` 的 Respo 副本验证中自动迁移 15 处后没有剩余可自动应用的建议，32 处人工审阅候选保留，48 个 definition tests 全部通过；这不代表整个项目的旧名已经清零。
 
-先用 `surface-latest-v2` 整理构造器和 `do` 结构，再运行本 preset；如需迁移 `%some/%none/%ok/%err` 或 `option:*/result:*` helper，分别使用 `core-nominal-constructor-v1`、`core-option-method-v1`、`core-result-method-v1` 并逐次核对新 revision。这些规则会改写完整调用树，不能和叶子集合未经组合证明就一次应用。旧 `surface-latest-v1/v2` 及 `--workflow strict` 的冻结范围保持原有定义。
+先用 `surface-latest-v2` 整理构造器和 `do` 结构，再运行本 preset；如需迁移 `%some/%none/%ok/%err` 或 `option:*/result:*` helper，分别使用 `core-nominal-constructor-v1`、`core-option-method-v1`、`core-result-method-v1` 并逐次核对新 revision。这些规则会改写完整调用树，不能和叶子集合未经组合证明就一次应用。旧 `surface-latest-v1/v2` 的冻结范围保持原有定义；strict workflow 的证明检查另见下节。
 
 单独迁移 Option/Result 构造 helper 时，先在真实项目中预览 `requires-review` 与 `machine-applicable`
 的区别，再应用并重新预览确认幂等。应用前必须确认项目 `deps.cirru` 所锁定的 Calcit 版本与运行的 CLI 一致：
@@ -298,6 +298,13 @@ calcit calcit.cirru fix --workflow strict --verify --format edn
 `surface-latest-v2` 的安全建议、需要 review 的弱类型位置、已声明保留的动态边界、显式 FFI 边界、已有 verification profile，以及逐 entry
 的严格检查命令。命令用 token list 表示，Agent 不需要重新解析 shell 字符串；`:resume :revision` 与
 `:resume :apply-command` 给出恢复下一步所需的精确 revision guard。
+workflow 还组合 `spread-call-proof-v1` 与 unsafe、assert、return、callable、nominal-write 的既有证明规则，
+共用一次编译器证明过程，而不是逐条重复检查。可定位的问题进入原有 suggestions 和
+`:review-required :source-fixes`；无法定位或来自依赖的错误保留在顶层 diagnostics，不猜测可写回位置。
+存在证明错误时，preview/apply 状态为 `requires-review`，verify 为 `failed`，命令返回非零。
+`--apply` 只应用已证明安全的源码迁移，仍需处理剩余证明错误；核对 `:safe-fixes` 与新 revision 后再继续。
+显式开放的集合可以保存开放值，具体元素契约仍需在返回或使用处证明；macro 实现的语法构造与展开后的运行时代码分层检查。
+每个定义只报告首个编译错误；`:tests` 与 `:examples` 不在此扫描范围，需另行执行。
 `:preflight` 与 `analyze verify` 共享只读证据：Snapshot path/revision、Calcit/`@calcit/procs` 版本链、显式声明的 host
 requirements，以及只由调用方执行的 external gates。它不会运行 shell gate，也不会从项目文件猜测包管理器。
 无法自动应用的 source suggestion 单独保留在 `:review-required :source-fixes`，不会计入

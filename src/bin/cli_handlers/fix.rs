@@ -507,10 +507,44 @@ pub(crate) fn handle_fix_command(
     )
   });
   let warnings = if let Some(rule) = review_rule.filter(|_| !validation_only) {
-    let review = compiler_review::compile_boundary_review(&source_snapshot, snapshot_file, &selected_definitions, rule)?;
+    // Preserve the complete migration evidence even when a later proof pass
+    // stops early in an individual definition.
+    let migration_warnings = if options.workflow.is_some() {
+      Some(with_legacy_migration_mode(|| {
+        let warnings = RefCell::new(Vec::new());
+        for (namespace, definition) in &selected_definitions {
+          if let Err(error) = runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default()) {
+            // Legacy mode still rejects contradictions. Keep their diagnostics
+            // in the manifest while collecting other definitions' migration evidence.
+            let owner = error.location.as_ref().map_or_else(
+              || format!("{namespace}/{definition}"),
+              |location| format!("{}/{}", location.ns, location.def),
+            );
+            let diagnostic = compiler_review::boundary_diagnostic(&error, &owner);
+            if !boundary_diagnostics.contains(&diagnostic) {
+              boundary_diagnostics.push(diagnostic);
+            }
+          }
+        }
+        warnings.into_inner()
+      }))
+    } else {
+      None
+    };
+    let review = compiler_review::compile_boundary_review(
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+      rule,
+      options.workflow.is_some(),
+    )?;
     boundary_suggestions = review.suggestions;
-    boundary_diagnostics = review.diagnostics;
-    review.warnings
+    for diagnostic in review.diagnostics {
+      if !boundary_diagnostics.contains(&diagnostic) {
+        boundary_diagnostics.push(diagnostic);
+      }
+    }
+    migration_warnings.unwrap_or(review.warnings)
   } else if validation_only {
     compile_selected_definitions(&selected_definitions)?
   } else if migration_rule {
@@ -844,8 +878,11 @@ pub(crate) fn handle_fix_command(
     } else {
       Vec::new()
     };
-    workflow_failed =
-      options.verify && (!operations.is_empty() || preflight.is_failed() || results.iter().any(|result| result.status != "passed"));
+    workflow_failed = options.verify
+      && (!boundary_diagnostics.is_empty()
+        || !operations.is_empty()
+        || preflight.is_failed()
+        || results.iter().any(|result| result.status != "passed"));
     let resume_revision = if options.apply {
       transaction.new_revision.clone()
     } else {
@@ -856,6 +893,8 @@ pub(crate) fn handle_fix_command(
       mode,
       status: if workflow_failed {
         "failed"
+      } else if !boundary_diagnostics.is_empty() {
+        "requires-review"
       } else if options.verify {
         "passed"
       } else if options.apply {
@@ -938,7 +977,8 @@ pub(crate) fn handle_fix_command(
         preset_id: options.preset.as_deref(),
         expanded_rule_ids: selected_rules,
         expanded_rules,
-        source_coverage: (options.preset.as_deref() == Some(CORE_API_028_V1_PRESET)
+        source_coverage: (options.workflow.is_some()
+          || options.preset.as_deref() == Some(CORE_API_028_V1_PRESET)
           || matches!(
             options.rule.as_deref(),
             Some(
@@ -987,7 +1027,11 @@ pub(crate) fn handle_fix_command(
     StructuredOutputFormat::Human => print_human_report(&report),
   }
   if !report.diagnostics.is_empty() {
-    Err("Compiler proof review required; the source is unchanged. Review the reported input evidence or lexical boundary without automatically adding casts or granting FFI permission.".to_owned())
+    Err(if options.apply && transaction.changed {
+      "Compiler proof review required; only the reported safe migrations were applied. Review the remaining input evidence or lexical boundary; no proof repair, cast or FFI permission was inserted."
+    } else {
+      "Compiler proof review required; the source is unchanged. Review the reported input evidence or lexical boundary without automatically adding casts or granting FFI permission."
+    }.to_owned())
   } else if workflow_failed {
     Err("Strict project workflow verification failed; inspect the structured workflow results.".to_owned())
   } else {
@@ -1186,7 +1230,18 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
 /// Expand one explicit rule or versioned preset into a deterministic rule sequence.
 fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
   if options.workflow.as_deref() == Some("strict") {
-    return SURFACE_LATEST_V2_RULES.to_vec();
+    return SURFACE_LATEST_V2_RULES
+      .iter()
+      .copied()
+      .chain([
+        SPREAD_CALL_PROOF_RULE,
+        UNSAFE_COERCE_BOUNDARY_RULE,
+        ASSERT_TYPE_PROOF_RULE,
+        CONCRETE_RETURN_PROOF_RULE,
+        CALLABLE_CONTRACT_PROOF_RULE,
+        NOMINAL_WRITE_PROOF_RULE,
+      ])
+      .collect();
   }
   if let Some(rule) = options.rule.as_deref() {
     if matches!(

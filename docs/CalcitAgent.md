@@ -256,6 +256,8 @@ JSON 中 definition 和 match 都带 `source`、`origin`，并用 `node_kind: le
 
 schema 候选没有 unresolved slot 也可能需要 review；检查 `:origin-chain` 中的编译器诊断与实际实现证据，不能用返回声明、未证明断言或强转目标类型循环自证。此类候选保留可读报告，但 `--apply` 不写回。
 
+`fix --workflow strict` 已组合 spread、unsafe、assert、return、callable 与 nominal-write 证明。先看顶层 diagnostics：有证明错误时 preview/apply 为 `requires-review`、verify 为 `failed`，不能把普通 entry 检查通过视为全部证明完成。apply 可提交安全迁移，但不会修复待审证明；按实际新 revision 恢复。没有源码位置或来自依赖的错误只保留诊断，不猜可编辑位置。每个定义只报告首错，tests/examples 仍单独验证。
+
 单独检查具体返回声明的实现证据，使用 `calcit fix --rule concrete-return-proof-v1 --ns <ns> --def <name> --format edn`。
 沿报告导航到真实 producer，不能把 wrapper 的返回 schema 当成转换。缺证据建议只供 review；
 修正边界或独立证明实现后再检查，只有缺省 metadata 才考虑既有 synthesis，不猜类型或 decoder。
