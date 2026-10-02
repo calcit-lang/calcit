@@ -3544,6 +3544,20 @@ fn preprocess_list_call(
             call_location.clone(),
             check_warnings,
           );
+          if REQUIRE_ASSERTION_PROOF.with(Cell::get)
+            && let Some(contract) = proc.get_type_signature()
+            && let CalcitTypeAnnotation::Fn(signature) =
+              CalcitTypeAnnotation::from_function_parts(contract.arg_types.clone(), contract.return_type.clone())
+          {
+            reject_strict_unproven_generic_relation(
+              &Calcit::Proc(*proc),
+              &processed_args,
+              &signature,
+              scope_types,
+              file_ns,
+              call_stack,
+            )?;
+          }
 
           // Try predicate folding for type-predicate procs
           if let Some(specialized) =
@@ -6917,6 +6931,23 @@ fn validate_method_call(
   // Literals do not always carry a separately resolvable type in `ScopeTypes`,
   // so prefer that evidence and only fall back to resolving the expression.
   let type_value = resolve_type_value(receiver, scope_types).unwrap_or_else(|| inferred_receiver_type.clone());
+
+  if REQUIRE_ASSERTION_PROOF.with(Cell::get) {
+    let contract = static_method_contract(type_value.as_ref(), method_name);
+    if let Some(mut arg_types) = contract.arg_types {
+      arg_types.insert(0, type_value.clone());
+      let signature = CalcitFnTypeAnnotation {
+        arg_types,
+        return_type: contract.return_type.unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()),
+        rest_type: contract.rest_type,
+        generics: Arc::new(contract.generics.into_iter().map(Arc::from).collect()),
+        where_bounds: Arc::new(vec![]),
+        fn_kind: SchemaKind::Fn,
+        features: Arc::new(HashSet::new()),
+      };
+      reject_strict_unproven_generic_relation(head, args, &signature, scope_types, file_ns, call_stack)?;
+    }
+  }
 
   if let Some(traits) = trait_list_from_type(type_value.as_ref()) {
     let method_str = method_name.as_ref();
@@ -10310,7 +10341,7 @@ fn find_unbound_type_slot_schema(annotation: &Arc<CalcitTypeAnnotation>, path: &
 struct UnprovenGenericArgument {
   index: usize,
   expected: Arc<CalcitTypeAnnotation>,
-  actual: Arc<CalcitTypeAnnotation>,
+  actual: Option<Arc<CalcitTypeAnnotation>>,
   generics: Vec<Arc<str>>,
 }
 
@@ -10413,7 +10444,8 @@ fn find_unproven_generic_argument(
   args: &CalcitList,
   scope_types: &ScopeTypes,
 ) -> Option<UnprovenGenericArgument> {
-  if signature.generics.is_empty() || args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
+  let audit = REQUIRE_ASSERTION_PROOF.with(Cell::get);
+  if (signature.generics.is_empty() && !audit) || args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
     return None;
   }
 
@@ -10424,8 +10456,17 @@ fn find_unproven_generic_argument(
       signature
         .arg_types
         .get(index)
+        .or_else(|| {
+          signature
+            .arg_types
+            .last()
+            .filter(|last| matches!(last.as_ref(), CalcitTypeAnnotation::Variadic(_)))
+        })
         .or(signature.rest_type.as_ref())
-        .map(|expected| (index, arg, expected))
+        .map(|expected| match expected.as_ref() {
+          CalcitTypeAnnotation::Variadic(inner) => (index, arg, inner),
+          _ => (index, arg, expected),
+        })
     })
     .collect::<Vec<_>>();
   // Inspect open evidence first so intentional Dynamic transport is not narrowed by a later concrete peer.
@@ -10440,31 +10481,44 @@ fn find_unproven_generic_argument(
 
   let mut bindings = HashMap::new();
   let mut inspect = |index: usize, arg: &Calcit, expected: &Arc<CalcitTypeAnnotation>| {
+    if matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic) {
+      return None;
+    }
     if empty_container_has_no_type_evidence(arg, expected.as_ref()) {
       return None;
     }
     let actual = resolve_type_value(arg, scope_types).or_else(|| match arg {
       Calcit::Local(local) => Some(local.type_info.clone()),
       _ => None,
-    })?;
+    });
     let generics = signature
       .generics
       .iter()
       .filter(|name| expected.contains_type_var_named(name))
       .cloned()
       .collect::<Vec<_>>();
-    if generics.is_empty() {
+    if generics.is_empty() && !audit {
       return None;
     }
+    let Some(actual) = actual else {
+      return audit.then(|| UnprovenGenericArgument {
+        index,
+        expected: expected.clone(),
+        actual: None,
+        generics,
+      });
+    };
     let proof = actual.prove_available_bindings(expected, &mut bindings);
-    matches!(
-      proof,
-      TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic | TypeBoundaryReason::UnknownCallable)
-    )
+    (matches!(proof, TypeProof::NeedsBoundary(_))
+      && (audit
+        || matches!(
+          proof,
+          TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic | TypeBoundaryReason::UnknownCallable)
+        )))
     .then(|| UnprovenGenericArgument {
       index,
       expected: expected.clone(),
-      actual,
+      actual: Some(actual),
       generics,
     })
   };
@@ -10485,7 +10539,8 @@ fn reject_strict_unproven_generic_relation(
   file_ns: &str,
   call_stack: &CallStackList,
 ) -> Result<(), CalcitErr> {
-  if !strict_types_enabled() || !should_emit_project_source_lint(file_ns) {
+  let audit = REQUIRE_ASSERTION_PROOF.with(Cell::get);
+  if !audit && (!strict_types_enabled() || !should_emit_project_source_lint(file_ns)) {
     return Ok(());
   }
   let Some(UnprovenGenericArgument {
@@ -10498,16 +10553,32 @@ fn reject_strict_unproven_generic_relation(
     return Ok(());
   };
   let names = generics.iter().map(|name| format!("`'{name}`")).collect::<Vec<_>>().join(", ");
+  let actual_name = actual
+    .as_ref()
+    .map(|actual| actual.to_brief_string())
+    .unwrap_or_else(|| "unknown".to_owned());
   let argument = args.get(index);
   Err(CalcitErr::use_msg_stack_location_with_code(
     CalcitErrKind::Type,
-    format!(
-      "call to `{head}` passes `{}` at argument {}, which cannot satisfy generic relation {names} required by `{}` without narrowing an open Dynamic binding; decode or narrow the value before using concrete capabilities",
-      actual.to_brief_string(),
-      index + 1,
-      expected.to_brief_string(),
-    ),
-    "E_ERASED_GENERIC_RELATION",
+    if audit {
+      format!(
+        "call to `{head}` has no independent argument proof at argument {}: expected `{}`, got `{actual_name}`; a callee return declaration cannot validate its input; decode or narrow before this call",
+        index + 1,
+        expected.to_brief_string(),
+      )
+    } else {
+      format!(
+        "call to `{head}` passes `{}` at argument {}, which cannot satisfy generic relation {names} required by `{}` without narrowing an open Dynamic binding; decode or narrow the value before using concrete capabilities",
+        actual_name,
+        index + 1,
+        expected.to_brief_string(),
+      )
+    },
+    if audit {
+      "E_CALL_ARGUMENT_UNPROVEN"
+    } else {
+      "E_ERASED_GENERIC_RELATION"
+    },
     call_stack,
     argument.and_then(Calcit::get_location).or_else(|| head.get_location()),
   ))

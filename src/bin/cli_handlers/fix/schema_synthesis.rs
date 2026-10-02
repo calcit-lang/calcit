@@ -412,14 +412,14 @@ fn merge_callsite_argument_evidence(
         let contradictory = owner_warnings
           .borrow()
           .iter()
-          .any(|warning| warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH"));
+          .any(super::compiler_review::is_contradictory_proof_warning);
         if owner_proof.is_err() || contradictory {
           blocked.fill(true);
           unavailable_owners.push(format!("{owner_ns}/{owner_def}"));
           for warning in owner_warnings
             .borrow()
             .iter()
-            .filter(|warning| warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH"))
+            .filter(|warning| super::compiler_review::is_contradictory_proof_warning(warning))
           {
             evidence.push(serde_json::json!({
               "kind": "compiler-diagnostic",
@@ -562,7 +562,7 @@ fn schema_candidate_for_definition(
     }
   }
   for warning in proof_warnings.borrow().iter() {
-    if warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH") {
+    if super::compiler_review::is_contradictory_proof_warning(warning) {
       unproven = true;
       callsite_evidence.push(serde_json::json!({
         "kind": "compiler-diagnostic",

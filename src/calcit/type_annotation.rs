@@ -4884,7 +4884,8 @@ impl CalcitTypeAnnotation {
         None => NeedsBoundary(Boundary::UnresolvedNominalIdentity),
       },
       (Self::Fn(actual), Self::Fn(expected)) => actual.prove_signature_with_bindings(expected, bindings),
-      (Self::Fn(_), Self::DynFn) | (Self::DynFn, Self::Fn(_)) => NeedsBoundary(Boundary::UnknownCallable),
+      (Self::Fn(_), Self::DynFn) => Proven,
+      (Self::DynFn, Self::Fn(_)) => NeedsBoundary(Boundary::UnknownCallable),
       (Self::Tag, Self::DynFn) | (Self::Tag, Self::Fn(_)) => NeedsBoundary(Boundary::TagCallable),
       (Self::TypeSlot(name), other) => match resolve_type_slot(name) {
         Some(resolved) => with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, name, || {
@@ -8122,6 +8123,10 @@ mod tests {
       TypeProof::NeedsBoundary(TypeBoundaryReason::UnknownCallable)
     );
     assert_eq!(signature.prove_with_bindings(&signature, &mut bindings), TypeProof::Proven);
+    assert_eq!(
+      signature.prove_with_bindings(&CalcitTypeAnnotation::DynFn, &mut bindings),
+      TypeProof::Proven
+    );
   }
 
   #[test]

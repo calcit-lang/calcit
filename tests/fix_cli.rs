@@ -15,12 +15,55 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
     &run_calcit(&snapshot, &["edit", "add-ns", "fix-command.returns"]),
     "add return proof owners",
   );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.returns/sink",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn sink (n) , n",
+      ],
+    ),
+    "add closed sink implementation",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.returns/sink",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+      ],
+    ),
+    "declare closed sink",
+  );
   for (name, argument, returns, body, rejected) in [
     ("closed", "Number", "Number", ", x", false),
     ("generic", "T", "T", ", x", false),
     ("open-storage", "Dynamic", "Dynamic", ", x", false),
     ("open-result", "Dynamic", "Number", ", x", true),
     ("wrapped-result", "Dynamic", "Number", "open-result x", true),
+    ("closed-call", "Number", "Number", "sink x", false),
+    ("open-call", "Dynamic", "Number", "sink x", true),
+    ("local-call", "Dynamic", "Number", "let ((f sink)) (f x)", true),
+    ("proc-call", "Dynamic", "Number", "&+ x 1", true),
+    ("method-call", "Dynamic", "Number", ".rem 3 x", true),
+    ("postfix-call", "Dynamic", "Number", "3 .rem x", true),
+    (
+      "checked-call",
+      "Dynamic",
+      "Number",
+      "match (try-decode-map-as x 'Number)\n    (:ok n) (sink n)\n    (:err reason) (raise reason)",
+      false,
+    ),
   ] {
     let target = format!("fix-command.returns/{name}");
     assert_success(
@@ -89,7 +132,15 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
             .any(|suggestion| suggestion["definition"] == "fix-command.returns/open-result")
         );
       } else {
-        assert_eq!(report["diagnostics"][0]["code"], "E_FN_RETURN_UNPROVEN");
+        assert_eq!(
+          report["diagnostics"][0]["code"],
+          if ["open-call", "local-call", "proc-call", "method-call", "postfix-call"].contains(&name) {
+            "E_CALL_ARGUMENT_UNPROVEN"
+          } else {
+            "E_FN_RETURN_UNPROVEN"
+          },
+          "{name}: {report}"
+        );
         let suggestion = &report["data"]["suggestions"][0];
         assert_eq!(suggestion["rule_id"], "concrete-return-proof-v1");
         assert_eq!(suggestion["definition"], target);
@@ -126,6 +177,38 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
     }
     assert_eq!(fs::read(&snapshot).unwrap(), original);
   }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.returns/closed-call",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return 'Number)",
+      ],
+    ),
+    "create a definite call contradiction",
+  );
+  let original = fs::read(&snapshot).unwrap();
+  let mismatch = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "concrete-return-proof-v1",
+      "--ns",
+      "fix-command.returns",
+      "--def",
+      "closed-call",
+      "--format",
+      "edn",
+    ],
+  );
+  assert!(!mismatch.status.success());
+  assert!(String::from_utf8_lossy(&mismatch.stderr).contains("W_FN_ARG_TYPE_MISMATCH"));
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
 }
 
 #[test]

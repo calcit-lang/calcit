@@ -7,6 +7,10 @@ pub(super) struct BoundaryReview {
   pub diagnostics: Vec<Value>,
 }
 
+pub(super) fn is_contradictory_proof_warning(warning: &LocatedWarning) -> bool {
+  warning.code().is_some_and(|code| code.ends_with("_MISMATCH"))
+}
+
 /// Preserve strict compiler rejection and expose only source-owned review targets.
 /// Preprocessing stops at the first error per definition; this is not an exhaustive scan.
 pub(super) fn compile_boundary_review(
@@ -35,10 +39,7 @@ pub(super) fn compile_boundary_review(
       runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default()).map(|_| ())
     };
     if matches!(rule, ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE)
-      && let Some(warning) = warnings
-        .borrow()
-        .iter()
-        .find(|warning| warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH"))
+      && let Some(warning) = warnings.borrow().iter().find(|warning| is_contradictory_proof_warning(warning))
     {
       // A contradictory implementation cannot lend its declared return type
       // to an assertion, even when ordinary checking reports it as a warning.
@@ -51,6 +52,7 @@ pub(super) fn compile_boundary_review(
         (ASSERT_TYPE_PROOF_RULE, Some("E_ASSERT_TYPE_MISMATCH")) => "E_ASSERT_TYPE_MISMATCH",
         (ASSERT_TYPE_PROOF_RULE, Some("E_FN_RETURN_UNPROVEN")) => "E_FN_RETURN_UNPROVEN",
         (CONCRETE_RETURN_PROOF_RULE, Some(CONCRETE_RETURN_PROOF_DIAGNOSTIC)) => CONCRETE_RETURN_PROOF_DIAGNOSTIC,
+        (ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE, Some("E_CALL_ARGUMENT_UNPROVEN")) => "E_CALL_ARGUMENT_UNPROVEN",
         _ => return Err(format!("Failed to preprocess fix target {namespace}/{definition}: {error}")),
       };
       let location = error

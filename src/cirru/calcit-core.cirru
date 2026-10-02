@@ -6477,6 +6477,36 @@
                 assert= nil $ annotate
                 assert= 4 $ f 3
               :tags $ #{} :hint-value-boundary
+            %{} 'TestEntry (:name |typed-callable-to-open-storage)
+              :code $ quote $ let
+                  keep $ fn (callback)
+                    hint-fn $ {}
+                      :args $ [] 'Fn
+                      :return 'Fn
+                    , callback
+                  identity-number $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    , x
+                assert= true $ fn? $ keep identity-number
+              :tags $ #{} :call-boundary :concrete-call-proof
+            %{} 'TestEntry (:name |checked-number-to-concrete-call)
+              :code $ quote $ let
+                  increment $ fn (n)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    &+ n 1
+                  decode-and-increment $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic
+                      :return 'Number
+                    match (try-decode-map-as value 'Number)
+                      (:ok n) (increment n)
+                      (:err reason) (raise reason)
+                assert= 4 $ decode-and-increment 3
+              :tags $ #{} :call-boundary :concrete-call-proof
         'identical? $ %{} 'CodeEntry
           :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
           :code $ quote &runtime-implementation

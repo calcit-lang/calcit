@@ -26,7 +26,7 @@ try {
   assert.equal(returnTests.length, 3);
   run("test", "calcit.core/hint-fn", "--tag", "call-boundary", "--require-match");
   const callTests = returnResponse.data.tests.filter(test => test.tags.includes("call-boundary"));
-  assert.equal(callTests.length, 4);
+  assert.equal(callTests.length, 6);
   run("test", "calcit.core/hint-fn", "--tag", "hint-value-boundary", "--require-match");
   const hintTests = returnResponse.data.tests.filter(test => test.tags.includes("hint-value-boundary"));
   assert.equal(hintTests.length, 5);
@@ -46,6 +46,11 @@ try {
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
   run("config", "set", "init-fn", "calcit.assert-evidence/run-tests");
   run("config", "set", "reload-fn", "calcit.assert-evidence/run-tests");
+  const concreteCalls = callTests.filter(test => test.tags.includes("concrete-call-proof"));
+  assert.equal(concreteCalls.length, 2);
+  setBody(concreteCalls.map(test => test.code));
+  run("fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.assert-evidence", "--def", "run-tests", "--format", "edn");
+  setBody([...tests, ...returnTests, ...callTests, ...hintTests, ...asyncTests, ...quoteTests].map(test => test.code));
   run();
   const output = join(project, "js-out");
   run("--emit-path", output, "js");
