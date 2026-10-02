@@ -7,6 +7,128 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn concrete_return_proof_navigates_the_implementation_without_writing() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy return proof fixture");
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "add-ns", "fix-command.returns"]),
+    "add return proof owners",
+  );
+  for (name, argument, returns, body, rejected) in [
+    ("closed", "Number", "Number", ", x", false),
+    ("generic", "T", "T", ", x", false),
+    ("open-storage", "Dynamic", "Dynamic", ", x", false),
+    ("open-result", "Dynamic", "Number", ", x", true),
+    ("wrapped-result", "Dynamic", "Number", "open-result x", true),
+  ] {
+    let target = format!("fix-command.returns/{name}");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ defn {name} (x)\n  {body}"),
+        ],
+      ),
+      "add return implementation",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "schema",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!(
+            "quote $ :: 'Fn $ {{}} (:args $ [] '{argument}) (:return '{returns}){}",
+            if argument == "T" { " (:generics $ [] 'T)" } else { "" }
+          ),
+        ],
+      ),
+      "declare return contract",
+    );
+    let original = fs::read(&snapshot).unwrap();
+    let selectors = [
+      "--rule",
+      "concrete-return-proof-v1",
+      "--ns",
+      "fix-command.returns",
+      "--format",
+      "json",
+    ];
+    let output = run_fix(&snapshot, &[selectors.as_slice(), &["--def", name]].concat());
+    assert_eq!(output.status.success(), !rejected, "{}", String::from_utf8_lossy(&output.stderr));
+    let report = if name == "wrapped-result" {
+      assert!(String::from_utf8_lossy(&output.stderr).contains("outside the selected project scope"));
+      serde_json::Value::Null
+    } else {
+      parse_stdout(&output)
+    };
+    if rejected {
+      // A wrapper declaration cannot hide the upstream implementation debt.
+      // Single-owner selection refuses navigation outside its explicit scope.
+      if name == "wrapped-result" {
+        // Select both owners to make the source debt navigable.
+        let scoped = run_fix(&snapshot, &selectors);
+        assert!(!scoped.status.success());
+        let scoped_report = parse_stdout(&scoped);
+        assert!(
+          scoped_report["data"]["suggestions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|suggestion| suggestion["definition"] == "fix-command.returns/open-result")
+        );
+      } else {
+        assert_eq!(report["diagnostics"][0]["code"], "E_FN_RETURN_UNPROVEN");
+        let suggestion = &report["data"]["suggestions"][0];
+        assert_eq!(suggestion["rule_id"], "concrete-return-proof-v1");
+        assert_eq!(suggestion["definition"], target);
+        assert_eq!(suggestion["applicability"], "requires-review");
+        assert!(suggestion["replacement"].is_null());
+        let edn = run_fix(
+          &snapshot,
+          &[
+            "--rule",
+            "concrete-return-proof-v1",
+            "--ns",
+            "fix-command.returns",
+            "--def",
+            name,
+            "--format",
+            "edn",
+          ],
+        );
+        assert!(!edn.status.success());
+        cirru_edn::parse(&String::from_utf8_lossy(&edn.stdout)).expect("one Cirru EDN return-proof report");
+        let applied = run_fix(
+          &snapshot,
+          &[
+            selectors.as_slice(),
+            &["--def", name, "--apply", "--expect-revision", report["revision"].as_str().unwrap()],
+          ]
+          .concat(),
+        );
+        assert!(!applied.status.success());
+        assert_eq!(parse_stdout(&applied)["data"]["changed"], false);
+      }
+    } else {
+      assert!(report["data"]["suggestions"].as_array().unwrap().is_empty());
+    }
+    assert_eq!(fs::read(&snapshot).unwrap(), original);
+  }
+}
+
+#[test]
 fn assertion_proof_error_does_not_grant_ffi_to_the_next_definition() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
@@ -271,13 +393,12 @@ fn assertion_proof_fix_does_not_borrow_a_producers_declared_return() {
       "make the producer implementation contradict its declaration",
     );
     let contradictory_source = fs::read(&snapshot).unwrap();
-    let rejected = run_fix(
-      &snapshot,
-      &["--rule", "assert-type-proof-v1", "--ns", "fix-command.proof", "--format", "json"],
-    );
-    assert!(!rejected.status.success(), "a contradictory producer cannot yield a clear audit");
-    assert!(String::from_utf8_lossy(&rejected.stderr).contains("W_FN_RETURN_TYPE_MISMATCH"));
-    assert_eq!(fs::read(&snapshot).unwrap(), contradictory_source);
+    for rule in ["assert-type-proof-v1", "concrete-return-proof-v1"] {
+      let rejected = run_fix(&snapshot, &["--rule", rule, "--ns", "fix-command.proof", "--format", "json"]);
+      assert!(!rejected.status.success(), "a contradictory producer cannot yield a clear audit");
+      assert!(String::from_utf8_lossy(&rejected.stderr).contains("W_FN_RETURN_TYPE_MISMATCH"));
+      assert_eq!(fs::read(&snapshot).unwrap(), contradictory_source);
+    }
   }
 }
 

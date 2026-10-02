@@ -183,6 +183,14 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   此规则须使用严格类型模式，不进入默认 preset 或 strict workflow 的自动改写集合；只检查 definition `:code`，
   每个 definition 在首个编译错误停止。修复后重新运行以发现后续错误；`:tests` / `:examples` 仍需独立验证。
   不相关错误、依赖或所选 scope 外的错误、缺少源码定位的错误直接失败，不猜定位或隐藏问题。
+- `concrete-return-proof-v1` 复用同一 compiler proof，显式检查函数实现是否证明了声明的具体返回类型。
+  运行 `calcit fix --rule concrete-return-proof-v1 --ns app.main --def run --format edn`。
+  缺证据的 producer 保留 `E_FN_RETURN_UNPROVEN`、真实 source owner、path、fingerprint 与编译栈；
+  wrapper 的返回声明不能代替 producer body 证明。所选 scope 不含真实 owner 时直接失败，扩大显式 scope 后重查。
+  独立证明的 identity 和显式 `Dynamic -> Dynamic` 不产生建议；矛盾返回或未解决的断言、强转边界阻止审计，不能被隐藏。
+  replacement 为空，`--apply` 不修改代码或业务契约。只有 producer 实现可独立证明且缺少 schema 时，
+  才另用现有 `synthesize-schema-v1` 审阅 metadata 候选；它仍执行独立证据、调用点一致性与原子写入门禁。
+  此规则只审计 definition `:code`，须使用严格模式，暂不进入默认 preset 或 strict workflow。
 - `assert-type-proof-v1` 显式审计断言前的类型证据，运行
   `calcit fix --rule assert-type-proof-v1 --ns app.main --def run --format edn` 查看原始输入位置和编译栈。
   已知矛盾保留 `E_ASSERT_TYPE_MISMATCH`；开放输入、未知 callable 或未绑定泛型缺少证明时报告

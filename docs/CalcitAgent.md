@@ -252,6 +252,10 @@ JSON 中 definition 和 match 都带 `source`、`origin`，并用 `node_kind: le
 
 schema 候选没有 unresolved slot 也可能需要 review；检查 `:origin-chain` 中的编译器诊断与实际实现证据，不能用返回声明、未证明断言或强转目标类型循环自证。此类候选保留可读报告，但 `--apply` 不写回。
 
+单独检查具体返回声明的实现证据，使用 `calcit fix --rule concrete-return-proof-v1 --ns <ns> --def <name> --format edn`。
+沿报告导航到真实 producer，不能把 wrapper 的返回 schema 当成转换。缺证据建议只供 review；
+修正边界或独立证明实现后再检查，只有缺省 metadata 才考虑既有 synthesis，不猜类型或 decoder。
+
 CLI 入口按任务收敛：entry 语义验证使用 `--check-only`，只读事实使用 `query`/`analyze`，可证明的检测与改写统一使用
 `fix` preview/apply，用户指定的结构修改使用 `edit`/`tree`/`cursor`。不要为一条检测或 migration rule 猜测新的顶层命令；
 完整边界见 `calcit docs read workflow-entrypoints.md --full`。
