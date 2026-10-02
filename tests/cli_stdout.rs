@@ -86,3 +86,24 @@ fn non_broken_pipe_stdout_errors_remain_failures() {
   assert!(stderr.contains("failed writing CLI stdout"), "{stderr}");
   assert!(!stderr.contains("panicked"), "{stderr}");
 }
+
+#[test]
+fn deep_non_tail_recursion_reports_a_calcit_error_instead_of_aborting() {
+  let fixture = documentation_fixture();
+  let output = calcit(fixture.path())
+    .arg("tests/fixtures/deep-recursion.cirru")
+    .output()
+    .expect("run deep recursion fixture");
+  let stdout = String::from_utf8_lossy(&output.stdout);
+  let stderr = String::from_utf8_lossy(&output.stderr);
+
+  // a native stack overflow aborts the process on a signal and prints this marker
+  assert!(!stderr.contains("overflowed its stack"), "{stderr}");
+  assert!(stderr.contains("native stack budget"), "{stderr}");
+  assert!(stdout.contains("shallow 3000"), "ordinary recursion must keep working: {stdout}");
+  assert!(!output.status.success(), "the deep call must fail");
+  assert!(
+    output.status.code().is_some(),
+    "the process must exit normally, not die from a signal"
+  );
+}
