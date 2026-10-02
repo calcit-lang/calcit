@@ -1916,7 +1916,7 @@ pub fn buffer(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       _ => return CalcitErr::err_str(CalcitErrKind::Type, format!("&buffer expected a hex string, but received: {x}")),
     }
   }
-  Ok(Calcit::Buffer(buf))
+  Ok(Calcit::Buffer(buf.into()))
 }
 
 pub fn hash(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {

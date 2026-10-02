@@ -237,7 +237,7 @@ pub fn secure_random_bytes(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     let result = {
       let mut bytes = vec![0; *size as usize];
       match getrandom::fill(&mut bytes) {
-        Ok(()) => new_named_enum_value(&[result_type.to_owned(), Calcit::tag("ok"), Calcit::Buffer(bytes)]),
+        Ok(()) => new_named_enum_value(&[result_type.to_owned(), Calcit::tag("ok"), Calcit::Buffer(bytes.into())]),
         Err(error) => new_named_enum_value(&[
           result_type.to_owned(),
           Calcit::tag("err"),
