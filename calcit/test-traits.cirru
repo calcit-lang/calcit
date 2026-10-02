@@ -306,6 +306,22 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
+        'test-bit-shifts $ %{} 'CodeEntry
+          :doc "|Shift counts use their low five bits on every backend"
+          :code $ quote $ defn test-bit-shifts ()
+            assert= 4 $ bit-shl 1 2
+            assert= 1 $ bit-shl 1 32
+            assert= 2 $ bit-shl 1 33
+            assert= -2147483648 $ bit-shl 1 31
+            assert= -2147483648 $ bit-shl 1 -1
+            assert= 2 $ bit-shr 8 2
+            assert= 8 $ bit-shr 8 32
+            assert= -4 $ bit-shr -8 1
+            assert= -1 $ bit-shr -8 -1
+            assert= 0 $ bit-shr 5 100
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
         'test-collection-traits $ %{} 'CodeEntry (:doc "|Test Len/Empty/Contains traits for collections")
           :code $ quote $ defn test-collection-traits () (println "|Testing Collection traits (Len, Empty)...") (; Len trait)
             assert= 0 $ count $ []
@@ -362,21 +378,6 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
-        'test-bit-shifts $ %{} 'CodeEntry (:doc "|Shift counts use their low five bits on every backend")
-          :code $ quote $ defn test-bit-shifts ()
-            assert= 4 $ bit-shl 1 2
-            assert= 1 $ bit-shl 1 32
-            assert= 2 $ bit-shl 1 33
-            assert= -2147483648 $ bit-shl 1 31
-            assert= -2147483648 $ bit-shl 1 -1
-            assert= 2 $ bit-shr 8 2
-            assert= 8 $ bit-shr 8 32
-            assert= -4 $ bit-shr -8 1
-            assert= -1 $ bit-shr -8 -1
-            assert= 0 $ bit-shr 5 100
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
-            :args $ []
         'test-compare-trait $ %{} 'CodeEntry (:doc "|Test Compare trait")
           :code $ quote $ defn test-compare-trait () (println "|Testing Compare trait...") (; Number comparison)
             assert= true $ < 1 2
@@ -393,15 +394,25 @@
             assert= -1 $ &compare ([]) ([] 0)
             assert= -1 $ &compare ([] 1) ([] 1 0)
             assert= -1 $ &compare ([] 1 2) ([] 1 3)
-            assert= -1 $ &compare ([] ([] 2)) ([] ([] 10))
+            assert= -1 $ &compare
+              [] $ [] 2
+              [] $ [] 10
             assert= -1 $ &compare (#{} 2 3) (#{} 2 3 4)
             assert= -1 $ &compare (#{} 2 3) (#{} 2 10)
             assert= 1 $ &compare (#{} 10 3) (#{} 2 4)
             assert= 0 $ &compare (#{} 3 2) (#{} 2 3)
-            assert= -1 $ &compare ({} (:a 2)) ({} (:a 10))
-            assert= -1 $ &compare ({} (:a 1)) ({} (:a 1) (:b 1))
-            assert= 1 $ &compare ({} (:b 1)) ({} (:a 1))
-            assert= 0 $ &compare ({} (:a 1) (:b 2)) ({} (:b 2) (:a 1))
+            assert= -1 $ &compare
+              {} $ :a 2
+              {} $ :a 10
+            assert= -1 $ &compare
+              {} $ :a 1
+              {} (:a 1) (:b 1)
+            assert= 1 $ &compare
+              {} $ :b 1
+              {} $ :a 1
+            assert= 0 $ &compare
+              {} (:a 1) (:b 2)
+              {} (:b 2) (:a 1)
             do
               assert= -1 $ .compare 1 2
               assert= 0 $ .compare 2 2
@@ -806,6 +817,20 @@
           :tests $ [] $ %{} 'TestEntry (:name |dispatches-custom-to-string)
             :code $ quote $ assert= |Person:Alice (test-turn-str-custom)
             :tags $ #{} :trait :unit
+        'trait-listener-host $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn trait-listener-host (value)
+            unsafe-coerce value $ :: 'Fn $ {}
+              :args $ [] 'test-traits.main/MyFoo
+              :return 'Unit
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Dynamic
+            :features $ #{} :js-ffi
+            :return $ :: 'Fn $ {} (:return 'Unit)
+              :args $ [] 'test-traits.main/MyFoo
+          :tests $ [] $ %{} 'TestEntry (:name |nominal-trait-callback)
+            :code $ quote $ assert= :fn
+              type-of $ trait-listener-host $ fn (value) &unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-traits.main
           :require $ calcit.test :refer $ throws?

@@ -4909,6 +4909,14 @@ impl CalcitTypeAnnotation {
       (Self::Fn(_), Self::DynFn) => Proven,
       (Self::DynFn, Self::Fn(_)) => NeedsBoundary(Boundary::UnknownCallable),
       (Self::Tag, Self::DynFn) | (Self::Tag, Self::Fn(_)) => NeedsBoundary(Boundary::TagCallable),
+      // A trait name reference and its resolved trait denote the same nominal
+      // type; a trait is not a schema alias, so the TypeRef fallback below
+      // would otherwise report a mismatch (for example inside Fn arguments).
+      (Self::TypeRef(name, args), Self::Trait(trait_def)) | (Self::Trait(trait_def), Self::TypeRef(name, args))
+        if args.is_empty() && Self::type_ref_matches_trait(name, trait_def.as_ref()) =>
+      {
+        Proven
+      }
       (Self::TypeSlot(name), other) => match resolve_type_slot(name) {
         Some(resolved) => with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, name, || {
           resolved.prove_with_staged_bindings(other, bindings)
@@ -6501,6 +6509,40 @@ mod tests {
       unreachable!();
     };
     assert!(CalcitTypeAnnotation::Trait(dom_element).satisfies_trait_bound(evaluated_dom_element));
+  }
+
+  #[test]
+  fn trait_references_prove_against_resolved_traits_inside_fn_types() {
+    let mut evaluated_host = CalcitTrait::new_reference("app.ffi/Host");
+    evaluated_host.runtime_id = Some(11);
+    let resolved = Arc::new(CalcitTypeAnnotation::Trait(Arc::new(evaluated_host)));
+    let reference = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("app.ffi/Host"), Arc::new(vec![])));
+    let other = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("app.ffi/Other"), Arc::new(vec![])));
+    let callback = |arg: Arc<CalcitTypeAnnotation>| {
+      CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![arg.clone()],
+        return_type: arg,
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      }))
+    };
+
+    let mut bindings = TypeBindings::new();
+    assert!(
+      callback(resolved.clone())
+        .prove_with_bindings(&callback(reference.clone()), &mut bindings)
+        .is_proven()
+    );
+    assert!(
+      callback(reference.clone())
+        .prove_with_bindings(&callback(resolved.clone()), &mut bindings)
+        .is_proven()
+    );
+    assert!(resolved.prove_with_bindings(reference.as_ref(), &mut bindings).is_proven());
+    assert!(!callback(resolved).prove_with_bindings(&callback(other), &mut bindings).is_proven());
   }
 
   #[test]
