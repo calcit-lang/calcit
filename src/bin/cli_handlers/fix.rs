@@ -651,6 +651,13 @@ pub(crate) fn handle_fix_command(
         alias,
       )?);
     }
+    if options.include_attached {
+      suggestions.extend(plan_attached_core_alias_fixes(
+        &source_snapshot,
+        snapshot_file,
+        &selected_definitions,
+      )?);
+    }
   }
   if selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE) {
     suggestions.extend(plan_core_predicate_rename_fixes(
@@ -995,7 +1002,8 @@ pub(crate) fn handle_fix_command(
         preset_id: options.preset.as_deref(),
         expanded_rule_ids: selected_rules,
         expanded_rules,
-        source_coverage: (options.workflow.is_some()
+        source_coverage: (options.include_attached
+          || options.workflow.is_some()
           || options.preset.as_deref() == Some(CORE_API_028_V1_PRESET)
           || matches!(
             options.rule.as_deref(),
@@ -1009,8 +1017,12 @@ pub(crate) fn handle_fix_command(
             )
           ))
         .then_some(FixSourceCoverage {
-          scanned_regions: &["code"],
-          manual_review_regions: &["tests", "examples"],
+          scanned_regions: if options.include_attached {
+            &["code", "tests", "examples"]
+          } else {
+            &["code"]
+          },
+          manual_review_regions: if options.include_attached { &[] } else { &["tests", "examples"] },
         }),
       },
       changed: transaction.changed,
@@ -1080,6 +1092,9 @@ impl Drop for FixTargetScope {
 /// Recreate the exact selection arguments for staged post-fix validation.
 fn fix_scope_args(options: &FixCommand) -> Vec<String> {
   let mut args = Vec::new();
+  if options.include_attached {
+    args.push("--include-attached".to_owned());
+  }
   if let Some(namespace) = &options.ns {
     args.push("--ns".to_owned());
     args.push(namespace.clone());
@@ -1110,6 +1125,12 @@ fn fix_scope_args(options: &FixCommand) -> Vec<String> {
 /// Reject ambiguous modes, incomplete scopes, and unknown stable rule IDs.
 fn validate_options(options: &FixCommand) -> Result<(), String> {
   StructuredOutputFormat::parse(&options.format, "fix")?;
+  if options.include_attached && options.rule.as_deref() != Some(CORE_FUNCTION_ALIAS_RULE) {
+    return Err(
+      "`--include-attached` currently requires `--rule core-function-alias-v1`; other attached migrations are not implemented yet."
+        .to_owned(),
+    );
+  }
   if let Some(workflow) = options.workflow.as_deref()
     && workflow != "strict"
   {
@@ -2803,7 +2824,13 @@ fn source_name_resolves_to_target(owner_ns: &str, source: &str, target_ns: &str,
   source == target_def
     && (owner_ns == target_ns
       || imported_definition_target(owner_ns, source)
-        .is_some_and(|(namespace, definition)| namespace == target_ns && definition == target_def))
+        .is_some_and(|(namespace, definition)| namespace == target_ns && definition == target_def)
+      // Core names are implicitly visible after local definitions and imports.
+      // Lexical bindings are still checked by the compiler usage trace.
+      || (target_ns == "calcit.core"
+        && program::lookup_def_id(owner_ns, source).is_none()
+        && imported_definition_target(owner_ns, source).is_none()
+        && program::lookup_def_id("calcit.core", source).is_some()))
 }
 
 fn cirru_contains_target_reference(node: &Cirru, owner_ns: &str, target_ns: &str, target_def: &str) -> bool {
@@ -2836,6 +2863,12 @@ struct AttachedSourceRewrite {
   origin_chain: Vec<Value>,
 }
 
+struct AttachedRewriteTarget<'a> {
+  namespace: &'a str,
+  definition: &'a str,
+  allow_preserving_macros: bool,
+}
+
 /// Resolve references inside one definition-attached executable source without guessing from leaf text.
 fn plan_attached_source_rewrite(
   source: &Cirru,
@@ -2846,9 +2879,18 @@ fn plan_attached_source_rewrite(
   old_name: &str,
   new_name: &str,
 ) -> Result<Option<AttachedSourceRewrite>, String> {
-  plan_attached_source_rewrite_with(source, owner_ns, synthetic_def, source_label, target_ns, old_name, &|source_leaf| {
-    semantic_rename_leaf_replacement(source_leaf, old_name, target_ns, new_name).map(Cirru::leaf)
-  })
+  plan_attached_source_rewrite_with(
+    source,
+    owner_ns,
+    synthetic_def,
+    source_label,
+    AttachedRewriteTarget {
+      namespace: target_ns,
+      definition: old_name,
+      allow_preserving_macros: false,
+    },
+    &|source_leaf, _| semantic_rename_leaf_replacement(source_leaf, old_name, target_ns, new_name).map(Cirru::leaf),
+  )
 }
 
 fn plan_attached_value_call_rewrite(
@@ -2864,9 +2906,12 @@ fn plan_attached_value_call_rewrite(
     owner_ns,
     synthetic_def,
     source_label,
-    target_ns,
-    target_def,
-    &|source_leaf| Ok(Cirru::List(vec![Cirru::leaf(source_leaf)])),
+    AttachedRewriteTarget {
+      namespace: target_ns,
+      definition: target_def,
+      allow_preserving_macros: false,
+    },
+    &|source_leaf, _| Ok(Cirru::List(vec![Cirru::leaf(source_leaf)])),
   )
 }
 
@@ -2875,13 +2920,17 @@ fn plan_attached_source_rewrite_with<F>(
   owner_ns: &str,
   synthetic_def: &str,
   source_label: &str,
-  target_ns: &str,
-  target_def: &str,
+  target: AttachedRewriteTarget<'_>,
   rewrite_leaf: &F,
 ) -> Result<Option<AttachedSourceRewrite>, String>
 where
-  F: Fn(&str) -> Result<Cirru, String>,
+  F: Fn(&str, &[usize]) -> Result<Cirru, String>,
 {
+  let AttachedRewriteTarget {
+    namespace: target_ns,
+    definition: target_def,
+    allow_preserving_macros,
+  } = target;
   if quoted_region_contains_target_reference(source, owner_ns, target_ns, target_def) {
     return Err(format!(
       "{source_label}: quoted source contains `{target_ns}/{target_def}` and may be consumed dynamically"
@@ -2908,7 +2957,12 @@ where
       .into_iter()
       .filter(|origin| origin != "calcit.core/fn")
       .collect::<Vec<_>>();
-    if !macro_origin.is_empty() {
+    if !macro_origin.is_empty()
+      && !(allow_preserving_macros
+        && macro_origin
+          .iter()
+          .all(|origin| preserves_nominal_method_call_through_macro(origin)))
+    {
       return Err(format!(
         "{source_label}: target reference is produced across macro boundary {}",
         macro_origin.join(" -> ")
@@ -2938,7 +2992,7 @@ where
         format_path(path)
       ));
     };
-    let replacement = rewrite_leaf(&source_leaf).map_err(|error| format!("{source_label}{}: {error}", format_path(path)))?;
+    let replacement = rewrite_leaf(&source_leaf, path).map_err(|error| format!("{source_label}{}: {error}", format_path(path)))?;
     rewrites.insert(path.to_vec(), (source_leaf.to_string(), replacement, macro_origin));
   }
   if rewrites.is_empty() {
@@ -3864,6 +3918,122 @@ impl CorePredicateRename {
 
 /// Rewrite proven core predicate references. The qualified replacement cannot
 /// be captured by a local or imported name.
+fn plan_attached_core_alias_fixes(
+  snapshot: &Snapshot,
+  snapshot_file: &str,
+  selected_definitions: &[(String, String)],
+) -> Result<Vec<FixSuggestion>, String> {
+  let mut suggestions = Vec::new();
+  for (namespace, definition) in selected_definitions {
+    let entry = &snapshot.files[namespace].defs[definition];
+    let mut regions = entry
+      .tests
+      .iter()
+      .map(|test| {
+        let mut tags = test.tags.iter().map(|tag| tag.ref_str()).collect::<Vec<_>>();
+        tags.sort_unstable();
+        (
+          format!("tests.{}", test.name),
+          vec![test.code.clone()],
+          Some((test.name.clone(), tags.join(","))),
+        )
+      })
+      .collect::<Vec<_>>();
+    if !entry.examples.is_empty() {
+      regions.push(("examples".to_owned(), entry.examples.clone(), None));
+    }
+    for (region, sources, test) in regions {
+      let original = if test.is_some() {
+        sources[0].clone()
+      } else {
+        Cirru::List(sources.clone())
+      };
+      let mut rewritten = sources;
+      let mut origins = Vec::new();
+      let mut blockers = Vec::new();
+      for (index, source) in rewritten.iter_mut().enumerate() {
+        for alias in [
+          CorePredicateRename::Optionally,
+          CorePredicateRename::JoinString,
+          CorePredicateRename::Join,
+          CorePredicateRename::Vals,
+        ] {
+          let (old, new, _, _) = alias.names();
+          if !cirru_contains_target_reference(source, namespace, "calcit.core", old) {
+            continue;
+          }
+          let label = format!("{namespace}/{definition} {region}[{index}]");
+          match plan_attached_source_rewrite_with(
+            source,
+            namespace,
+            &format!("&calcit:fix-attached:{definition}:{region}:{index}"),
+            &label,
+            AttachedRewriteTarget {
+              namespace: "calcit.core",
+              definition: old,
+              allow_preserving_macros: true,
+            },
+            &|leaf, path| {
+              if path.last() != Some(&0) {
+                return Err(format!("`{old}` is a first-class value; `{new}` has a different function identity"));
+              }
+              semantic_rename_leaf_replacement(leaf, old, "calcit.core", new).map(|_| Cirru::leaf(format!("calcit.core/{new}")))
+            },
+          ) {
+            Ok(Some(rewrite)) => {
+              *source = rewrite.code;
+              origins.extend(rewrite.origin_chain);
+            }
+            Ok(None) => {}
+            Err(error) => blockers.push(error),
+          }
+        }
+      }
+      if origins.is_empty() && blockers.is_empty() {
+        continue;
+      }
+      // Merge all alias replacements in a metadata region into one operation.
+      // A blocked region is never partially rewritten or used as a test oracle.
+      let safe = blockers.is_empty();
+      let replacement = if test.is_some() {
+        rewritten[0].clone()
+      } else {
+        Cirru::List(rewritten.clone())
+      };
+      let operation = if safe {
+        let code = format_quoted_nodes(&rewritten)?;
+        Some(match test {
+          Some((name, tags)) => FixOperation::ReplaceTest { name, tags, code },
+          None => FixOperation::ReplaceExamples { code },
+        })
+      } else {
+        None
+      };
+      suggestions.push(FixSuggestion {
+        rule_id: CORE_FUNCTION_ALIAS_RULE,
+        diagnostic_code: CORE_FUNCTION_ALIAS_DIAGNOSTIC,
+        semantic_layer: "surface",
+        source_file: snapshot_file.to_owned(),
+        definition: format!("{namespace}/{definition}"),
+        path: region,
+        fingerprint: node_fingerprint(&original),
+        origin_chain: origins,
+        original: quoted_json(&original),
+        replacement: safe.then(|| quoted_json(&replacement)),
+        applicability: if safe { "machine-applicable" } else { "requires-review" },
+        message: if safe {
+          "Replace resolved legacy calls in attached source without changing assertions, tags, or argument evaluation.".to_owned()
+        } else {
+          blockers.join("; ")
+        },
+        target_path: vec![],
+        operation,
+      });
+    }
+  }
+  Ok(suggestions)
+}
+
 fn plan_core_predicate_rename_fixes(
   snapshot: &Snapshot,
   snapshot_file: &str,

@@ -35,6 +35,20 @@ calcit calcit.cirru fix
 calcit calcit.cirru fix --ns app.main --def render! --format edn
 ```
 
+升级函数形式兼容名时，可显式把附带测试与示例纳入同一次预览：
+
+```bash
+calcit calcit.cirru fix --rule core-function-alias-v1 --include-attached --format edn
+```
+
+该选择复用编译器的引用解析与 Snapshot 原子事务。一个测试或示例区域里的多个旧名合并成一个操作，
+保留断言、标签、实参顺序与示例顺序；引号、一等函数身份和未知宏边界仍返回 `requires-review`，
+局部同名 binding 不改写。预览不写入文件；应用时仍须核对 revision 并传 `--expect-revision`，随后运行附带测试。
+不传 `--include-attached` 时仍只扫描 `:code`。
+
+当前 `--include-attached` 仅支持显式的 `core-function-alias-v1`；其他规则与 preset 的附带覆盖尚未实现，
+不支持的组合会报错，不会静默跳过。下文各条规则的默认扫描范围保持不变。
+
 不带 `--ns` 的整项目预览覆盖所有 named entry 的源码，因此按 target 中立的方式规划改写；例如 browser 默认入口不会阻止扫描
 server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定义，也不能代替逐入口的 `--check-only` 或 `fix --workflow strict --verify`。
 限定 `--ns`/`--def` 时仍使用所选 `--entry` 的 target 检查；检查 Node-only 定义时应显式选择 Node entry。

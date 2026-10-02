@@ -7,6 +7,133 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn function_alias_fix_covers_attached_regions_without_rewriting_identity_or_shadowing() {
+  // Rust checks the CLI transaction protocol; Calcit attached tests define the behavior.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/main!",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn main! ()\n  , &unit",
+      ],
+    ),
+    "create upgrade entry",
+  );
+  for (name, code) in [
+    (
+      "legacy-calls",
+      "quote $ do\n  assert= |a-x-b $ join-str (join ([] |a |b) |x) |-\n  assert= (#{} 1 2) $ vals $ {} (:a 1) (:b 2)\n  assert= (Option :some 1) $ optionally 1\n  assert= |a-b $ calcit.core/join-str ([] |a |b) |-",
+    ),
+    ("function-identity", "quote $ assert= join-str join-str"),
+    ("quoted-name", "quote $ assert= (quote join-str) (quote join-str)"),
+    (
+      "local-shadow",
+      "quote $ let ((join-str $ fn (xs sep) |local))\n  assert= |local $ join-str ([] |a |b) |-",
+    ),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "add-test",
+          "app.main/main!",
+          name,
+          "--tags",
+          if name == "local-shadow" { "shadow" } else { "unit,upgrade" },
+          "--input-format",
+          "cirru",
+          "--code",
+          code,
+        ],
+      ),
+      "attach upgrade contract",
+    );
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-example",
+        "app.main/main!",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ join-str (join ([] |a |b) |x) |-",
+      ],
+    ),
+    "attach upgrade example",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["test", "app.main/main!", "--exclude-tag", "shadow", "--require-match"]),
+    "legacy attached semantics",
+  );
+  let shadow = run_calcit(&snapshot, &["test", "app.main/main!", "--name", "local-shadow", "--require-match"]);
+  assert!(!shadow.status.success(), "shadowing remains an explicit compiler warning");
+  assert!(String::from_utf8_lossy(&shadow.stderr).contains("shadowed `calcit.core/join-str`"));
+  let before = fs::read(&snapshot).unwrap();
+  let base = [
+    "fix",
+    "--ns",
+    "app.main",
+    "--def",
+    "main!",
+    "--rule",
+    "core-function-alias-v1",
+    "--format",
+    "json",
+  ];
+  let output = run_calcit(&snapshot, &base);
+  assert_success(&output, "default code-only preview");
+  let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+  assert!(report["data"]["suggestions"].as_array().unwrap().is_empty());
+  let mut args = base.to_vec();
+  args.push("--include-attached");
+  let output = run_calcit(&snapshot, &args);
+  assert_success(&output, "attached preview");
+  let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+  let suggestions = report["data"]["suggestions"].as_array().unwrap();
+  assert_eq!(suggestions.iter().filter(|s| s["applicability"] == "machine-applicable").count(), 2);
+  assert_eq!(suggestions.iter().filter(|s| s["applicability"] == "requires-review").count(), 2);
+  assert!(!suggestions.iter().any(|s| s["path"] == "tests.local-shadow"));
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "preview must not write");
+  let mut stale_args = args.clone();
+  stale_args.extend(["--apply", "--allow-no-vcs", "--expect-revision", "md5:stale"]);
+  let stale = run_calcit(&snapshot, &stale_args);
+  assert!(!stale.status.success());
+  assert!(String::from_utf8_lossy(&stale.stderr).contains("revision mismatch"));
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "stale plans must not write");
+  args.extend(["--apply", "--allow-no-vcs"]);
+  assert_success(&run_calcit(&snapshot, &args), "apply attached migration");
+  assert_success(
+    &run_calcit(&snapshot, &["test", "app.main/main!", "--exclude-tag", "shadow", "--require-match"]),
+    "migrated attached semantics",
+  );
+  let output = run_calcit(&snapshot, &base);
+  assert_success(&output, "code remains unchanged");
+  let output = run_calcit(&snapshot, &args[..args.len() - 2]);
+  assert_success(&output, "attached migration is idempotent");
+  let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+  assert!(
+    report["data"]["suggestions"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .all(|s| s["applicability"] == "requires-review")
+  );
+}
+
+#[test]
 fn nominal_write_proof_checks_method_value_without_rewriting_source() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
