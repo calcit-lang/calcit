@@ -331,6 +331,30 @@ try {
       }
     }
   }
+  run("edit", "def", "calcit.assert-evidence/WriteState", "--input-format", "cirru", "--code",
+    "quote $ defstruct WriteState (:count 'Number)");
+  run("edit", "def", "calcit.assert-evidence/write-count", "--input-format", "cirru", "--code",
+    "quote $ defn write-count (state incoming) (state .assoc :count incoming)");
+  run("edit", "schema", "calcit.assert-evidence/write-count", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ [] 'WriteState 'Number) (:return 'WriteState)");
+  run("edit", "add-test", "calcit.assert-evidence/write-count", "nominal-method-write", "--tags", "nominal-write",
+    "--input-format", "cirru", "--code", "quote $ assert= 2 $ :count $ write-count (WriteState :count 1) 2");
+  run("test", "calcit.assert-evidence/write-count", "--tag", "nominal-write", "--require-match");
+  const nominalTests = JSON.parse(run("query", "def", "calcit.assert-evidence/write-count", "--format", "json"))
+    .data.tests.filter(test => test.tags.includes("nominal-write"));
+  assert.equal(nominalTests.length, 1);
+  setBody(nominalTests.map(test => test.code));
+  run("fix", "--rule", "nominal-write-proof-v1", "--ns", "calcit.assert-evidence", "--def", "write-count", "--format", "edn");
+  run();
+  const nominalOutput = join(project, "nominal-write-js");
+  run("--emit-path", nominalOutput, "js");
+  const nominalJs = await import(pathToFileURL(join(nominalOutput, "calcit.assert-evidence.mjs")).href);
+  assert.equal(nominalJs.run_tests(), 1);
+  const nominalWasmOutput = join(project, "nominal-write-wasm");
+  run("wasm", "--emit-path", nominalWasmOutput);
+  const nominalModule = new WebAssembly.Module(await readFile(join(nominalWasmOutput, "program.wasm")));
+  assert.equal(new WebAssembly.Instance(nominalModule, imports).exports["run-tests"](), 1);
+
   await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
   run("test", "--tag", "def-value-contract", "--require-match");
   run("test", "--tag", "diary-boundary", "--require-match");

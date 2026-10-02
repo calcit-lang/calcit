@@ -7,6 +7,178 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn nominal_write_proof_checks_method_value_without_rewriting_source() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/WriteState",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defstruct WriteState (:count 'Number)",
+      ],
+    ),
+    "create nominal state",
+  );
+  for (name, input, body) in [
+    ("write-known", "Number", "state .assoc :count incoming"),
+    ("write-open", "Dynamic", "state .assoc :count incoming"),
+    ("write-prefix", "Dynamic", ".assoc state :count incoming"),
+    ("write-wrong", "String", "state .assoc :count incoming"),
+    ("write-missing", "Number", "state .assoc :missing incoming"),
+  ] {
+    let target = format!("fix-command.main/{name}");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ defn {name} (state incoming)\n  {body}"),
+        ],
+      ),
+      "create method write",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "schema",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ :: 'Fn $ {{}} (:args $ [] 'WriteState '{input}) (:return 'WriteState)"),
+        ],
+      ),
+      "declare method contract",
+    );
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        "fix-command.main/write-known",
+        "retains-nominal-value",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ assert= 2 $ :count $ write-known (WriteState :count 1) 2",
+      ],
+    ),
+    "attach method semantics",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["test", "fix-command.main/write-known", "--require-match"]),
+    "run method semantics",
+  );
+  let original = fs::read(&snapshot).unwrap();
+  for name in ["write-known", "write-open", "write-prefix"] {
+    let output = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "nominal-write-proof-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+      ],
+    );
+    let report = parse_stdout(&output);
+    let suggestions = report["data"]["suggestions"].as_array().unwrap();
+    if name == "write-known" {
+      assert_success(&output, "accept proven nominal write");
+      assert!(suggestions.is_empty());
+    } else {
+      assert!(!output.status.success());
+      assert_eq!(suggestions.len(), 1);
+      assert_eq!(suggestions[0]["diagnostic_code"], "E_CALL_ARGUMENT_UNPROVEN");
+      assert_eq!(suggestions[0]["path"], "code@3.3");
+      assert!(suggestions[0]["replacement"].is_null());
+      assert_eq!(suggestions[0]["applicability"], "requires-review");
+      assert!(
+        suggestions[0]["origin_chain"][0]["diagnostic"]["hint"]
+          .as_str()
+          .unwrap()
+          .contains(":count")
+      );
+      let edn = run_fix(
+        &snapshot,
+        &[
+          "--rule",
+          "nominal-write-proof-v1",
+          "--ns",
+          "fix-command.main",
+          "--def",
+          name,
+          "--format",
+          "edn",
+        ],
+      );
+      assert!(!edn.status.success());
+      cirru_edn::parse(&String::from_utf8_lossy(&edn.stdout)).expect("one native nominal-write report");
+      let applied = run_fix(
+        &snapshot,
+        &[
+          "--rule",
+          "nominal-write-proof-v1",
+          "--ns",
+          "fix-command.main",
+          "--def",
+          name,
+          "--apply",
+          "--format",
+          "json",
+        ],
+      );
+      assert!(!applied.status.success());
+      assert!(parse_stdout(&applied)["data"]["suggestions"][0]["replacement"].is_null());
+    }
+    assert_eq!(fs::read(&snapshot).unwrap(), original);
+  }
+  for name in ["write-wrong", "write-missing"] {
+    let output = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "nominal-write-proof-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "edn",
+      ],
+    );
+    assert!(!output.status.success());
+    assert!(
+      String::from_utf8_lossy(&output.stderr).contains("E_CALL_ARGUMENT_MISMATCH"),
+      "{}",
+      String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read(&snapshot).unwrap(), original);
+  }
+}
+
+#[test]
 fn callable_contract_proof_preserves_open_storage_and_reviews_concrete_use() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
