@@ -1,5 +1,6 @@
 mod checked_call_contract;
 mod js_ffi;
+mod proof_provenance;
 mod type_checking;
 mod type_inference;
 mod type_rewriting;
@@ -9517,6 +9518,10 @@ pub fn preprocess_defn(
         .map(|symbol| body_types.get(symbol).cloned().unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()))
         .collect::<Vec<_>>();
       xs = xs.push_right(Calcit::from(zs.clone()));
+      let mut proof_bindings = proof_provenance::BindingScope::new();
+      for parameter in &zs {
+        proof_bindings.bind(parameter, None, &body_types);
+      }
 
       let mut to_skip = 2;
       let mut processed_body: Vec<Calcit> = vec![];
@@ -9848,6 +9853,12 @@ pub fn preprocess_core_let(
     }
   };
   xs.push(binding);
+  let mut proof_binding = proof_provenance::BindingScope::new();
+  if let Some(Calcit::List(pair)) = xs.get(1)
+    && let (Some(local), Some(value)) = (pair.first(), pair.get(1))
+  {
+    proof_binding.bind(local, Some(value), &body_types);
+  }
 
   let mut skipped_head = false;
   args.traverse_result::<CalcitErr>(&mut |a| {
@@ -10127,15 +10138,19 @@ pub fn preprocess_assert_type(
       .as_ref()
       .map(|annotation| annotation.to_brief_string())
       .unwrap_or_else(|| "unknown".to_owned());
-    return Err(CalcitErr::use_msg_stack_location_with_code(
-      CalcitErrKind::Type,
-      format!(
-        "assert-type lacks independent input proof: expected `{}`, got `{actual}`; use a checked decoder at the data boundary, not another assertion",
-        asserted_type.to_brief_string(),
+    return Err(proof_provenance::attach(
+      CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        format!(
+          "assert-type lacks independent input proof: expected `{}`, got `{actual}`; use a checked decoder at the data boundary, not another assertion",
+          asserted_type.to_brief_string(),
+        ),
+        "E_ASSERT_TYPE_UNPROVEN",
+        ctx.call_stack,
+        target_raw.get_location().or_else(|| type_form.get_location()),
       ),
-      "E_ASSERT_TYPE_UNPROVEN",
-      ctx.call_stack,
-      target_raw.get_location().or_else(|| type_form.get_location()),
+      &asserted_target,
+      ctx.scope_types,
     ));
   }
   if let Calcit::Local(local) = &asserted_target {
@@ -10940,7 +10955,11 @@ fn reject_strict_unproven_generic_relation(
       features.join(", "),
     ).into_boxed_str());
   }
-  Err(error)
+  Err(if let Some(argument) = argument {
+    proof_provenance::attach(error, argument, scope_types)
+  } else {
+    error
+  })
 }
 
 fn contains_nominal_contract(annotation: &CalcitTypeAnnotation) -> bool {

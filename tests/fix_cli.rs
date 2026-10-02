@@ -622,6 +622,16 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
         let suggestion = &report["data"]["suggestions"][0];
         assert_eq!(suggestion["rule_id"], "concrete-return-proof-v1");
         assert_eq!(suggestion["definition"], target);
+        if matches!(
+          name,
+          "open-result" | "open-call" | "local-call" | "proc-call" | "method-call" | "postfix-call"
+        ) {
+          let evidence = report["diagnostics"][0]["provenance"]
+            .as_array()
+            .expect("shared relation provenance");
+          assert!(!evidence.is_empty(), "{name}: {report}");
+          assert!(evidence.iter().any(|item| item["definition"] == target), "{name}: {report}");
+        }
         assert_eq!(suggestion["applicability"], "requires-review");
         assert!(suggestion["replacement"].is_null());
         let edn = run_fix(
@@ -827,6 +837,43 @@ fn assertion_proof_fix_reports_original_evidence_without_writing() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy fixture");
+  for (name, body) in [
+    ("source", ", x"),
+    ("helper", "source x"),
+    ("recursive-helper", "let ((alias $ recursive-helper x)) , alias"),
+  ] {
+    let target = format!("fix-command.main/{name}");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ defn {name} (x)\n  {body}"),
+        ],
+      ),
+      "add provenance helper",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "schema",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)",
+        ],
+      ),
+      "declare open helper contract",
+    );
+  }
   for (name, source, argument, diagnostic) in [
     ("open", "assert-type x Number", "Dynamic", "E_ASSERT_TYPE_UNPROVEN"),
     ("generic", "assert-type x Number", "T", "E_ASSERT_TYPE_UNPROVEN"),
@@ -840,6 +887,30 @@ fn assertion_proof_fix_reports_original_evidence_without_writing() {
     (
       "circular",
       "assert-type (assert-type x Number) Number",
+      "Dynamic",
+      "E_ASSERT_TYPE_UNPROVEN",
+    ),
+    (
+      "helper-chain",
+      "let ((result $ helper x)) (assert-type result Number)",
+      "Dynamic",
+      "E_ASSERT_TYPE_UNPROVEN",
+    ),
+    (
+      "shadow-chain",
+      "let ((x $ helper 1)) (assert-type x Number)",
+      "Number",
+      "E_ASSERT_TYPE_UNPROVEN",
+    ),
+    (
+      "restored-scope",
+      "do (let ((x 1)) , x) (assert-type x Number)",
+      "Dynamic",
+      "E_ASSERT_TYPE_UNPROVEN",
+    ),
+    (
+      "recursive-chain",
+      "assert-type (recursive-helper x) Number",
       "Dynamic",
       "E_ASSERT_TYPE_UNPROVEN",
     ),
@@ -898,6 +969,31 @@ fn assertion_proof_fix_reports_original_evidence_without_writing() {
     assert_eq!(suggestion["applicability"], "requires-review");
     assert!(suggestion["replacement"].is_null());
     assert!(suggestion["fingerprint"].is_string());
+    if diagnostic == "E_ASSERT_TYPE_UNPROVEN" {
+      let evidence = report["diagnostics"][0]["provenance"].as_array().expect("bounded proof evidence");
+      assert!(!evidence.is_empty(), "{name}: {report}");
+      assert!(evidence.len() <= 16, "{name}: {report}");
+      if matches!(name, "helper-chain" | "shadow-chain") {
+        for owner in ["fix-command.main/helper", "fix-command.main/source"] {
+          assert!(
+            evidence
+              .iter()
+              .any(|item| item["operation"] == owner && item["kind"] == "resolved-producer"),
+            "{name}: {report}"
+          );
+        }
+      }
+      if name == "restored-scope" {
+        assert!(
+          evidence.iter().all(|item| item["type"] != ":number"),
+          "inner binding must not leak: {report}"
+        );
+      }
+      assert_eq!(
+        suggestion["origin_chain"][0]["diagnostic"]["provenance"],
+        report["diagnostics"][0]["provenance"]
+      );
+    }
     let mut apply = args.to_vec();
     apply.extend(["--apply", "--expect-revision", report["revision"].as_str().unwrap()]);
     let applied = run_fix(&snapshot, &apply);
