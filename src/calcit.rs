@@ -417,6 +417,13 @@ pub fn format_to_lisp(x: &Calcit) -> String {
   }
 }
 
+/// Hash a value on its own so unordered containers can combine entry hashes without sorting.
+fn standalone_hash<T: Hash>(value: &T) -> u64 {
+  let mut hasher = std::collections::hash_map::DefaultHasher::new();
+  value.hash(&mut hasher);
+  hasher.finish()
+}
+
 impl Hash for Calcit {
   fn hash<H>(&self, _state: &mut H)
   where
@@ -508,21 +515,16 @@ impl Hash for Calcit {
       }
       Set(v) => {
         "set:".hash(_state);
-        let mut xs: Vec<_> = v.iter().collect();
-        // sort to ensure stable result
-        xs.sort();
-        for x in xs {
-          x.hash(_state)
-        }
+        v.size().hash(_state);
+        // order-independent combination: no sorting, no allocation, equal sets hash alike
+        v.iter().fold(0u64, |acc, x| acc.wrapping_add(standalone_hash(x))).hash(_state);
       }
       Map(v) => {
         "map:".hash(_state);
-        // order for map is not stable
-        let mut xs: Vec<_> = v.iter().collect();
-        xs.sort();
-        for x in xs {
-          x.hash(_state)
-        }
+        v.size().hash(_state);
+        v.iter()
+          .fold(0u64, |acc, entry| acc.wrapping_add(standalone_hash(&entry)))
+          .hash(_state);
       }
       Struct(CalcitStructValue { struct_ref, values, .. }) => {
         "record:".hash(_state);
@@ -1869,5 +1871,64 @@ mod tests {
     assert_eq!(untyped, build(None, 1.0));
     assert_eq!(untyped.cmp(&build(None, 1.0)), Equal);
     assert_ne!(untyped, build(None, 2.0));
+  }
+
+  #[test]
+  fn map_and_set_hash_do_not_depend_on_insertion_order() {
+    let keys: Vec<Calcit> = (0..64).map(|i| Calcit::Number(f64::from(i) - 20.5)).collect();
+
+    let mut set_forward: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSetSync::new_sync();
+    let mut set_backward: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSetSync::new_sync();
+    let mut map_forward: rpds::HashTrieMapSync<Calcit, Calcit> = rpds::HashTrieMapSync::new_sync();
+    let mut map_backward: rpds::HashTrieMapSync<Calcit, Calcit> = rpds::HashTrieMapSync::new_sync();
+    for key in &keys {
+      set_forward = set_forward.insert(key.clone());
+      map_forward = map_forward.insert(key.clone(), Calcit::Tag(EdnTag::new("v")));
+    }
+    for key in keys.iter().rev() {
+      set_backward = set_backward.insert(key.clone());
+      map_backward = map_backward.insert(key.clone(), Calcit::Tag(EdnTag::new("v")));
+    }
+
+    assert_eq!(Calcit::Set(set_forward.clone()), Calcit::Set(set_backward.clone()));
+    assert_eq!(
+      calcit_hash(&Calcit::Set(set_forward.clone())),
+      calcit_hash(&Calcit::Set(set_backward))
+    );
+    assert_eq!(Calcit::Map(map_forward.clone()), Calcit::Map(map_backward.clone()));
+    assert_eq!(
+      calcit_hash(&Calcit::Map(map_forward.clone())),
+      calcit_hash(&Calcit::Map(map_backward))
+    );
+
+    // a changed element or value, a missing entry, and key/value swaps must change the hash
+    let changed_value = map_forward.insert(keys[0].clone(), Calcit::Tag(EdnTag::new("other")));
+    assert_ne!(
+      calcit_hash(&Calcit::Map(map_forward.clone())),
+      calcit_hash(&Calcit::Map(changed_value))
+    );
+    let smaller = set_forward.remove(&keys[0]);
+    assert_ne!(calcit_hash(&Calcit::Set(set_forward)), calcit_hash(&Calcit::Set(smaller)));
+    let swapped: rpds::HashTrieMapSync<Calcit, Calcit> = rpds::HashTrieMapSync::new_sync()
+      .insert(Calcit::Number(1.0), Calcit::Number(2.0))
+      .insert(Calcit::Number(2.0), Calcit::Number(1.0));
+    let straight: rpds::HashTrieMapSync<Calcit, Calcit> = rpds::HashTrieMapSync::new_sync()
+      .insert(Calcit::Number(1.0), Calcit::Number(1.0))
+      .insert(Calcit::Number(2.0), Calcit::Number(2.0));
+    assert_ne!(calcit_hash(&Calcit::Map(swapped)), calcit_hash(&Calcit::Map(straight)));
+  }
+
+  #[test]
+  fn nested_map_and_set_hash_are_consistent_with_equality() {
+    let inner_a: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSetSync::new_sync()
+      .insert(Calcit::Number(1.0))
+      .insert(Calcit::Number(2.0));
+    let inner_b: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSetSync::new_sync()
+      .insert(Calcit::Number(2.0))
+      .insert(Calcit::Number(1.0));
+    let left: rpds::HashTrieMapSync<Calcit, Calcit> = rpds::HashTrieMapSync::new_sync().insert(Calcit::Set(inner_a), Calcit::Nil);
+    let right: rpds::HashTrieMapSync<Calcit, Calcit> = rpds::HashTrieMapSync::new_sync().insert(Calcit::Set(inner_b), Calcit::Nil);
+    assert_eq!(Calcit::Map(left.clone()), Calcit::Map(right.clone()));
+    assert_eq!(calcit_hash(&Calcit::Map(left)), calcit_hash(&Calcit::Map(right)));
   }
 }
