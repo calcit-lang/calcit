@@ -107,11 +107,15 @@ required-features = ["internal-wasi-preprocess-harness"]
 
 # Used by CI to run the CLI-heavy contract scripts: much faster to run than the debug
 # build, much faster to build than `release` (no LTO, parallel codegen units).
+# It keeps debug assertions and overflow checks, so tests still catch the panics that
+# only a debug build reveals.
 [profile.ci]
 inherits = "release"
 lto = false
 opt-level = 1
 codegen-units = 16
+debug-assertions = true
+overflow-checks = true
 
 [profile.release]
 lto = true
