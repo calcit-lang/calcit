@@ -3840,6 +3840,11 @@ enum CorePredicateRename {
 }
 
 impl CorePredicateRename {
+  /// Function aliases are distinct functions, so only direct calls are equivalent.
+  fn requires_call_head(self) -> bool {
+    matches!(self, Self::Optionally | Self::JoinString | Self::Join | Self::Vals)
+  }
+
   fn names(self) -> (&'static str, &'static str, &'static str, &'static str) {
     match self {
       Self::NonNil => ("some?", "non-nil?", CORE_NON_NIL_PREDICATE_RULE, CORE_NON_NIL_PREDICATE_DIAGNOSTIC),
@@ -3917,15 +3922,24 @@ fn plan_core_predicate_rename_fixes(
         continue;
       };
       let macro_origin = usage.macro_origin.clone();
-      let review = (!macro_origin
-        .iter()
-        .all(|origin| preserves_nominal_method_call_through_macro(origin)))
-      .then(|| {
-        format!(
-          "The core predicate reference crosses macro expansion {}; review whether the macro observes the source spelling.",
-          macro_origin.join(" -> ")
-        )
-      });
+      // Preferred aliases are separate forwarding functions, so a first-class
+      // reference changes function identity even though direct calls agree.
+      let first_class_alias = rule.requires_call_head() && path.last() != Some(&0);
+      let review = if first_class_alias {
+        Some(format!(
+          "`{old_name}` is used as a first-class value, and `{new_name}` is a separate function with its own identity; review before renaming."
+        ))
+      } else {
+        (!macro_origin
+          .iter()
+          .all(|origin| preserves_nominal_method_call_through_macro(origin)))
+        .then(|| {
+          format!(
+            "The core reference crosses macro expansion {}; review whether the macro observes the source spelling.",
+            macro_origin.join(" -> ")
+          )
+        })
+      };
       planned
         .entry(path)
         .and_modify(|(_, _, origins, current_review)| {

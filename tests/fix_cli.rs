@@ -8623,6 +8623,59 @@ fn core_function_alias_rule_renames_resolved_legacy_functions_and_is_idempotent(
   let repeated = run_fix(&snapshot, &args);
   assert_success(&repeated, "function alias idempotence preview");
   assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+
+  // A first-class reference keeps its function identity, so it is review-only.
+  let first_class = "fix-command.main/first-class-alias";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        first_class,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn first-class-alias ()\n  assert= 1 $ count $ [] vals\n  , true",
+      ],
+    ),
+    "install a first-class legacy function reference",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        first_class,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)",
+      ],
+    ),
+    "declare the first-class reference source",
+  );
+  let review = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-function-alias-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "first-class-alias",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&review, "first-class alias preview");
+  let review_report = parse_stdout(&review);
+  let review_suggestions = review_report["data"]["suggestions"]
+    .as_array()
+    .expect("suggestions should be an array");
+  assert_eq!(review_suggestions.len(), 1, "{review_report}");
+  assert_eq!(review_suggestions[0]["applicability"], "requires-review", "{review_report}");
 }
 
 #[test]
