@@ -3897,7 +3897,7 @@ enum CorePredicateRename {
 impl CorePredicateRename {
   /// Function aliases are distinct functions, so only direct calls are equivalent.
   fn requires_call_head(self) -> bool {
-    matches!(self, Self::Optionally | Self::JoinString | Self::Join | Self::Vals)
+    matches!(self, Self::NonNil | Self::Optionally | Self::JoinString | Self::Join | Self::Vals)
   }
 
   fn names(self) -> (&'static str, &'static str, &'static str, &'static str) {
@@ -3918,12 +3918,13 @@ impl CorePredicateRename {
 }
 
 fn supports_attached_migrations(rule: &str) -> bool {
-  rule == CORE_FUNCTION_ALIAS_RULE
-    || (rule != CORE_INTEGER_PREDICATE_RULE
-      && QUERYABLE_METHOD_ALIASES
-        .iter()
-        .chain(CORE_EFFECT_METHOD_ALIASES)
-        .any(|alias| alias.rule_id == rule))
+  matches!(
+    rule,
+    CORE_FUNCTION_ALIAS_RULE | CORE_NON_NIL_PREDICATE_RULE | CORE_INTEGER_PREDICATE_RULE
+  ) || QUERYABLE_METHOD_ALIASES
+    .iter()
+    .chain(CORE_EFFECT_METHOD_ALIASES)
+    .any(|alias| alias.rule_id == rule)
 }
 
 /// Apply existing source proofs to one metadata region without registering synthetic definitions.
@@ -3964,15 +3965,14 @@ fn plan_attached_fixes(
       let mut blockers = Vec::new();
       for (index, source) in rewritten.iter_mut().enumerate() {
         for alias in [
+          CorePredicateRename::NonNil,
           CorePredicateRename::Optionally,
           CorePredicateRename::JoinString,
           CorePredicateRename::Join,
           CorePredicateRename::Vals,
         ] {
-          let (old, new, _, _) = alias.names();
-          if !selected_rules.contains(&CORE_FUNCTION_ALIAS_RULE)
-            || !cirru_contains_target_reference(source, namespace, "calcit.core", old)
-          {
+          let (old, new, rule_id, _) = alias.names();
+          if !selected_rules.contains(&rule_id) || !cirru_contains_target_reference(source, namespace, "calcit.core", old) {
             continue;
           }
           let label = format!("{namespace}/{definition} {region}[{index}]");
@@ -3987,7 +3987,7 @@ fn plan_attached_fixes(
               allow_preserving_macros: true,
             },
             &|leaf, path| {
-              if path.last() != Some(&0) {
+              if alias.requires_call_head() && path.last() != Some(&0) {
                 return Err(format!("`{old}` is a first-class value; `{new}` has a different function identity"));
               }
               semantic_rename_leaf_replacement(leaf, old, "calcit.core", new).map(|_| Cirru::leaf(format!("calcit.core/{new}")))
@@ -4001,34 +4001,39 @@ fn plan_attached_fixes(
             Err(error) => blockers.push(error),
           }
         }
+        let wrapper = Cirru::List(vec![Cirru::leaf("fn"), Cirru::List(vec![]), source.clone()]);
+        let synthetic_def = format!("&calcit:fix-attached:{definition}:{region}:{index}");
+        let mut candidates = Vec::new();
+        if selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE) {
+          match plan_core_predicate_rename_source(snapshot_file, namespace, &synthetic_def, &wrapper, CorePredicateRename::Integer) {
+            Ok(planned) => candidates.extend(planned),
+            Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
+          }
+        }
         for alias in QUERYABLE_METHOD_ALIASES
           .iter()
           .chain(CORE_EFFECT_METHOD_ALIASES)
           .filter(|alias| selected_rules.contains(&alias.rule_id))
         {
-          let wrapper = Cirru::List(vec![Cirru::leaf("fn"), Cirru::List(vec![]), source.clone()]);
-          let synthetic_def = format!("&calcit:fix-attached:{definition}:{region}:{index}");
           match plan_core_method_alias_source(snapshot_file, namespace, &synthetic_def, &wrapper, None, *alias) {
-            Ok(candidates) => {
-              for candidate in candidates {
-                let Some(path) = candidate.target_path.strip_prefix(&[2]) else {
-                  blockers.push("Compiler suggestion points outside its attached source wrapper.".to_owned());
-                  continue;
-                };
-                match candidate.operation {
-                  Some(FixOperation::ReplaceLeaf { original, replacement }) => {
-                    replace_attached_source_node(source, path, &original, &Cirru::leaf(replacement))?;
-                    origins.extend(candidate.origin_chain);
-                    origins.push(
-                      serde_json::json!({"kind": "resolved-attached-source", "path": format_path(path), "rule_id": alias.rule_id}),
-                    );
-                  }
-                  None => blockers.push(candidate.message),
-                  _ => return Err("Attached method alias produced a non-leaf operation.".to_owned()),
-                }
-              }
-            }
+            Ok(planned) => candidates.extend(planned),
             Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
+          }
+        }
+        for candidate in candidates {
+          let Some(path) = candidate.target_path.strip_prefix(&[2]) else {
+            blockers.push("Compiler suggestion points outside its attached source wrapper.".to_owned());
+            continue;
+          };
+          match candidate.operation {
+            Some(FixOperation::ReplaceLeaf { original, replacement }) => {
+              replace_attached_source_node(source, path, &original, &Cirru::leaf(replacement))?;
+              origins.extend(candidate.origin_chain);
+              origins
+                .push(serde_json::json!({"kind": "resolved-attached-source", "path": format_path(path), "rule_id": candidate.rule_id}));
+            }
+            None => blockers.push(candidate.message),
+            _ => return Err("Attached method alias produced a non-leaf operation.".to_owned()),
           }
         }
       }
@@ -4083,7 +4088,7 @@ fn plan_core_predicate_rename_fixes(
   selected_definitions: &[(String, String)],
   rule: CorePredicateRename,
 ) -> Result<Vec<FixSuggestion>, String> {
-  let (old_name, new_name, rule_id, diagnostic_code) = rule.names();
+  let (old_name, _, _, _) = rule.names();
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
     let entry = snapshot
@@ -4094,104 +4099,132 @@ fn plan_core_predicate_rename_fixes(
     if list_head(&entry.code) == Some("defmacro") {
       continue;
     }
-    let mut integer_heads = Vec::new();
-    if matches!(rule, CorePredicateRename::Integer) {
-      let mut local_bindings = HashSet::new();
-      collect_potential_local_bindings(&entry.code, &mut local_bindings);
-      if local_bindings.contains(old_name) {
-        continue;
-      }
-      collect_builtin_round_call_heads(&entry.code, &mut Vec::new(), &mut integer_heads);
-      if integer_heads.is_empty() {
-        continue;
-      }
-    } else if !program::lookup_def_id("calcit.core", old_name)
-      .is_some_and(|target| program::lookup_compiled_def(namespace, definition).is_some_and(|compiled| compiled.deps.contains(&target)))
+    if !matches!(rule, CorePredicateRename::Integer)
+      && !program::lookup_def_id("calcit.core", old_name).is_some_and(|target| {
+        program::lookup_compiled_def(namespace, definition).is_some_and(|compiled| compiled.deps.contains(&target))
+      })
     {
-      // Resolved dependencies retain aliases without re-tracing unrelated declaration definitions.
+      // Avoid re-tracing unrelated declaration definitions.
       continue;
     }
+    suggestions.extend(plan_core_predicate_rename_source(
+      snapshot_file,
+      namespace,
+      definition,
+      &entry.code,
+      rule,
+    )?);
+  }
+  Ok(suggestions)
+}
 
-    let usages =
-      runner::preprocess::trace_definition_source_usages(namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
-        .map_err(|failure| failure.msg)?;
-    let mut planned = BTreeMap::<Vec<usize>, (String, String, Vec<String>, Option<String>)>::new();
-    for usage in &usages {
-      if usage.target_ns.as_ref() != "calcit.core" || usage.target_def.as_ref() != old_name {
-        continue;
-      }
-      let Some(location) = &usage.location else {
-        continue;
-      };
-      if location.ns.as_ref() != namespace || location.def.as_ref() != definition {
-        continue;
-      }
-      let path = location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>();
-      let node = navigate_to_path(&entry.code, &path)?;
-      let Cirru::Leaf(source_leaf) = node else {
-        continue;
-      };
-      let Ok(replacement) = semantic_rename_leaf_replacement(source_leaf.as_ref(), old_name, "calcit.core", new_name) else {
-        continue;
-      };
-      let macro_origin = usage.macro_origin.clone();
-      // Preferred aliases are separate forwarding functions, so a first-class
-      // reference changes function identity even though direct calls agree.
-      let first_class_alias = rule.requires_call_head() && path.last() != Some(&0);
-      let review = if first_class_alias {
-        Some(format!(
-          "`{old_name}` is used as a first-class value, and `{new_name}` is a separate function with its own identity; review before renaming."
-        ))
-      } else {
-        (!macro_origin
-          .iter()
-          .all(|origin| preserves_nominal_method_call_through_macro(origin)))
-        .then(|| {
-          format!(
-            "The core reference crosses macro expansion {}; review whether the macro observes the source spelling.",
-            macro_origin.join(" -> ")
-          )
-        })
-      };
-      planned
-        .entry(path)
-        .and_modify(|(_, _, origins, current_review)| {
-          for origin in &macro_origin {
-            if !origins.contains(origin) {
-              origins.push(origin.clone());
-            }
-          }
-          if current_review.is_none() {
-            *current_review = review.clone();
-          }
-        })
-        .or_insert_with(|| (source_leaf.to_string(), replacement, macro_origin, review));
+/// Share resolved predicate references and reader call-head proofs with attached source.
+fn plan_core_predicate_rename_source(
+  snapshot_file: &str,
+  namespace: &str,
+  definition: &str,
+  source: &Cirru,
+  rule: CorePredicateRename,
+) -> Result<Vec<FixSuggestion>, String> {
+  let (old_name, new_name, rule_id, diagnostic_code) = rule.names();
+  let mut suggestions = Vec::new();
+  if list_head(source) == Some("defmacro") {
+    return Ok(suggestions);
+  }
+  let mut integer_heads = Vec::new();
+  if matches!(rule, CorePredicateRename::Integer) {
+    let mut local_bindings = HashSet::new();
+    collect_potential_local_bindings(source, &mut local_bindings);
+    if local_bindings.contains(old_name) {
+      return Ok(suggestions);
     }
-
-    if matches!(rule, CorePredicateRename::Integer) {
-      // The Cirru reader resolves `round?` directly to a built-in Proc before
-      // preprocessing, so it has no source location in definition-usage traces.
-      // A source call head is therefore sufficient evidence for this one proc.
-      for head_path in integer_heads {
-        let mut call_path = head_path.clone();
-        call_path.pop();
-        let review = (!method_source_context_is_stable(&entry.code, &call_path, namespace, definition, &usages)).then(|| {
-          "The built-in predicate call crosses an unknown source context; review whether macro expansion observes its spelling."
-            .to_owned()
-        });
-        planned.insert(
-          head_path,
-          (old_name.to_owned(), format!("calcit.core/{new_name}"), Vec::new(), review),
-        );
-      }
+    collect_builtin_round_call_heads(source, &mut Vec::new(), &mut integer_heads);
+    if integer_heads.is_empty() {
+      return Ok(suggestions);
     }
+  }
 
-    for (target_path, (original_leaf, replacement, macro_origin, review)) in planned {
-      let original_node = Cirru::leaf(original_leaf.as_str());
-      let replacement_node = Cirru::leaf(replacement.as_str());
-      let machine_applicable = review.is_none();
-      let message = review.unwrap_or_else(|| format!("Use the preferred core name `{new_name}`; both names resolve to the same implementation, so this changes only the resolved name and preserves argument evaluation."));
-      suggestions.push(FixSuggestion {
+  let parsed = code_to_calcit(source, namespace, definition, vec![]).map_err(|error| error.to_string())?;
+  let usages =
+    runner::preprocess::trace_source_usages(&parsed, namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
+      .map_err(|failure| failure.msg)?;
+  let mut planned = BTreeMap::<Vec<usize>, (String, String, Vec<String>, Option<String>)>::new();
+  for usage in &usages {
+    if usage.target_ns.as_ref() != "calcit.core" || usage.target_def.as_ref() != old_name {
+      continue;
+    }
+    let Some(location) = &usage.location else {
+      continue;
+    };
+    if location.ns.as_ref() != namespace || location.def.as_ref() != definition {
+      continue;
+    }
+    let path = location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>();
+    let node = navigate_to_path(source, &path)?;
+    let Cirru::Leaf(source_leaf) = node else {
+      continue;
+    };
+    let Ok(replacement) = semantic_rename_leaf_replacement(source_leaf.as_ref(), old_name, "calcit.core", new_name) else {
+      continue;
+    };
+    let macro_origin = usage.macro_origin.clone();
+    // Preferred aliases are separate forwarding functions, so a first-class
+    // reference changes function identity even though direct calls agree.
+    let first_class_alias = rule.requires_call_head() && path.last() != Some(&0);
+    let review = if first_class_alias {
+      Some(format!(
+        "`{old_name}` is used as a first-class value, and `{new_name}` is a separate function with its own identity; review before renaming."
+      ))
+    } else {
+      (!macro_origin
+        .iter()
+        .all(|origin| preserves_nominal_method_call_through_macro(origin)))
+      .then(|| {
+        format!(
+          "The core reference crosses macro expansion {}; review whether the macro observes the source spelling.",
+          macro_origin.join(" -> ")
+        )
+      })
+    };
+    planned
+      .entry(path)
+      .and_modify(|(_, _, origins, current_review)| {
+        for origin in &macro_origin {
+          if !origins.contains(origin) {
+            origins.push(origin.clone());
+          }
+        }
+        if current_review.is_none() {
+          *current_review = review.clone();
+        }
+      })
+      .or_insert_with(|| (source_leaf.to_string(), replacement, macro_origin, review));
+  }
+
+  if matches!(rule, CorePredicateRename::Integer) {
+    // The Cirru reader resolves `round?` directly to a built-in Proc before
+    // preprocessing, so it has no source location in definition-usage traces.
+    // A source call head is therefore sufficient evidence for this one proc.
+    for head_path in integer_heads {
+      let mut call_path = head_path.clone();
+      call_path.pop();
+      let review = (!method_source_context_is_stable(source, &call_path, namespace, definition, &usages)).then(|| {
+        "The built-in predicate call crosses an unknown source context; review whether macro expansion observes its spelling."
+          .to_owned()
+      });
+      planned.insert(
+        head_path,
+        (old_name.to_owned(), format!("calcit.core/{new_name}"), Vec::new(), review),
+      );
+    }
+  }
+
+  for (target_path, (original_leaf, replacement, macro_origin, review)) in planned {
+    let original_node = Cirru::leaf(original_leaf.as_str());
+    let replacement_node = Cirru::leaf(replacement.as_str());
+    let machine_applicable = review.is_none();
+    let message = review.unwrap_or_else(|| format!("Use the preferred core name `{new_name}`; the direct calls have equivalent results and preserve argument evaluation. First-class function identity is not rewritten."));
+    suggestions.push(FixSuggestion {
         rule_id,
         diagnostic_code,
         semantic_layer: "surface",
@@ -4219,7 +4252,6 @@ fn plan_core_predicate_rename_fixes(
           replacement,
         }),
       });
-    }
   }
   Ok(suggestions)
 }

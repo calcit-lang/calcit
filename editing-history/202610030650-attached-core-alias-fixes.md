@@ -36,3 +36,13 @@ reader 的 `@ref` 则要保留原形状保护：源码叶代表 deref 调用，�
 附带回归覆盖 List、Map、Set 的方法改名和 FsPath 写入错误；断言在改写前后原样执行。
 未知宏与开放 receiver 保留 review，quoted data 不改写；含 blocker 的示例区域整体保留。
 剩余构造器、转换、body 整理等规则、preset/workflow 组合和弃用元数据仍未完成。
+
+谓词迁移继续复用相同入口：`some?` 的已解析引用使用已有 attached resolver；`round?` 的 reader
+调用头与普通 `:code` 共用 source proof，Number 方法仍由原方法证明处理，不将整个规则缩成只有方法别名。
+附带断言同时覆盖 nil、非 nil、整数、小数和 Number 方法；未知宏与 quoted data 不能借 reader
+解析取得自动改写权限。剩余规则与弃用元数据继续保留未完成状态。
+
+检查定义后确认 `some?` 与 `non-nil?` 同样是两个独立 Fn，不能因函数体相同而改写一等身份；
+共享规则现在只自动改直接调用，普通 `:code` 和附带区域都保留该保护。补充的嵌套 recur 负例
+保证外层独立退出不为内部递归循环提供具体返回证明；原 Diary patch helper 的只读审计通过且校验和不变，
+这些局部检查不代表完整 Diary 迁移。

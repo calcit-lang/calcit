@@ -7,6 +7,112 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn attached_predicate_migration_preserves_opaque_contexts_and_function_identity() {
+  for (rule, predicate) in [("core-non-nil-predicate-v1", "some?"), ("core-integer-predicate-v1", "round?")] {
+    let directory = TestDirectory::create();
+    let snapshot = directory.path().join("calcit.cirru");
+    fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+    for (target, code, overwrite) in [
+      ("app.main/main!", "quote $ defn main! ()\n  , &unit", true),
+      ("app.main/opaque", "quote $ defmacro opaque (x)\n  , x", false),
+    ] {
+      let mut args = vec!["edit", "def", target, "--input-format", "cirru", "--code", code];
+      if overwrite {
+        args.push("--overwrite");
+      }
+      assert_success(&run_calcit(&snapshot, &args), "create predicate boundary fixture");
+    }
+    let mut assertions = vec![
+      ("safe", format!("quote $ assert= true $ {predicate} 2")),
+      ("opaque", format!("quote $ assert= true $ opaque $ {predicate} 2")),
+      ("quoted-data", format!("quote $ assert= (quote {predicate}) (quote {predicate})")),
+    ];
+    if predicate == "some?" {
+      assertions.push(("function-identity", "quote $ assert= some? some?".to_owned()));
+    }
+    for (name, code) in &assertions {
+      assert_success(
+        &run_calcit(
+          &snapshot,
+          &[
+            "edit",
+            "add-test",
+            "app.main/main!",
+            name,
+            "--tags",
+            "unit,upgrade",
+            "--input-format",
+            "cirru",
+            "--code",
+            code,
+          ],
+        ),
+        "attach original predicate assertion",
+      );
+    }
+    assert_success(
+      &run_calcit(&snapshot, &["test", "app.main/main!", "--require-match"]),
+      "original predicate semantics",
+    );
+    let before = run_calcit(&snapshot, &["query", "def", "app.main/main!", "--format", "json"]);
+    assert_success(&before, "capture predicate tests");
+    let args = [
+      "fix",
+      "--ns",
+      "app.main",
+      "--def",
+      "main!",
+      "--rule",
+      rule,
+      "--include-attached",
+      "--format",
+      "json",
+    ];
+    let preview = run_calcit(&snapshot, &args);
+    assert_success(&preview, rule);
+    let report: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    let suggestions = report["data"]["suggestions"].as_array().unwrap();
+    assert_eq!(
+      suggestions.iter().filter(|s| s["applicability"] == "machine-applicable").count(),
+      1,
+      "{report}"
+    );
+    assert_eq!(
+      suggestions.iter().filter(|s| s["applicability"] == "requires-review").count(),
+      if predicate == "some?" { 3 } else { 1 },
+      "{report}"
+    );
+    let mut apply = args.to_vec();
+    apply.extend([
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().unwrap(),
+    ]);
+    assert_success(&run_calcit(&snapshot, &apply), "apply proven predicate only");
+    let after = run_calcit(&snapshot, &["query", "def", "app.main/main!", "--format", "json"]);
+    assert_success(&after, "capture retained predicate boundaries");
+    let before: serde_json::Value = serde_json::from_slice(&before.stdout).unwrap();
+    let after: serde_json::Value = serde_json::from_slice(&after.stdout).unwrap();
+    for name in ["opaque", "quoted-data", "function-identity"] {
+      let find = |value: &serde_json::Value| {
+        value["data"]["tests"]
+          .as_array()
+          .unwrap()
+          .iter()
+          .find(|test| test["name"] == name)
+          .cloned()
+      };
+      assert_eq!(find(&before), find(&after), "{rule}: preserve {name}");
+    }
+    assert_success(
+      &run_calcit(&snapshot, &["test", "app.main/main!", "--require-match"]),
+      "unchanged predicate assertions after migration",
+    );
+  }
+}
+
+#[test]
 fn attached_method_alias_fix_preserves_unproven_regions_and_quoted_data() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
@@ -111,6 +217,14 @@ fn attached_method_alias_fix_preserves_unproven_regions_and_quoted_data() {
 fn method_alias_fix_reuses_receiver_proofs_in_attached_tests_and_examples() {
   // The host checks the transaction protocol; each Calcit assertion is replayed before and after migration.
   for (rule, code) in [
+    (
+      "core-non-nil-predicate-v1",
+      "quote $ do (assert= true $ some? 1) (assert= false $ some? nil)",
+    ),
+    (
+      "core-integer-predicate-v1",
+      "quote $ do (assert= true $ round? 2) (assert= false $ round? 1.2) (assert= true $ .round? 2)",
+    ),
     ("core-list-fold-v1", "quote $ assert= 6 $ .reduce ([] 1 2 3) 0 +"),
     ("core-list-intersperse-v1", "quote $ assert= ([] 1 0 2) $ .join ([] 1 2) 0"),
     (
@@ -916,6 +1030,13 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
       false,
     ),
     ("recursive-only", "Number", "Number", "recur x", true),
+    (
+      "nested-tail-owner",
+      "Number",
+      "Number",
+      "if (&< x 1) 0 (let ((step (fn (y) (recur x)))) (step x))",
+      true,
+    ),
     ("wrong-tail-arity", "Number", "Number", "if (&< x 1) 0 (recur x x)", true),
     ("wrong-tail-argument", "Number", "Number", "if (&< x 1) 0 (recur |invalid)", true),
     ("open-tail-result", "Dynamic", "Number", "if true x (recur x)", true),

@@ -48,9 +48,10 @@ calcit calcit.cirru fix --rule core-list-join-string-v1 --include-attached --for
 预览不写入文件；应用时仍须核对 revision 并传 `--expect-revision`，随后运行附带测试。
 不传 `--include-attached` 时仍只扫描 `:code`。
 
-当前支持显式的 `core-function-alias-v1`，以及 List fold/intersperse/flat-map/join-string/get、
+当前支持显式的 `core-function-alias-v1`、non-nil/integer predicate 规则，以及 List fold/intersperse/flat-map/join-string/get、
 Map distinct-values、Set include、collection combine、predicate method 和 effect method 等已有方法等价改名规则。
 附带方法改写与 `:code` 共享接收者类型、方法实现和源码来源的证明，局部 `let` 类型由实际预处理结果保留。
+`round?` 的 reader 调用头与 Number 方法迁移同时覆盖，仍保留引号、局部遮蔽和未知宏保护。
 一个示例区域中混有需要 review 的表达式时，整个区域暂不自动改写。
 其他规则与 preset 的附带覆盖尚未实现，
 不支持的组合会报错，不会静默跳过。下文各条规则的默认扫描范围保持不变。
