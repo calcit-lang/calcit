@@ -5852,6 +5852,40 @@
                 foldl-shortcut ([] 1 2 3) 0 99 $ fn (acc x)
                   :: false $ + acc x
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |proven-shortcut-bool)
+              :code $ quote $ let
+                  result $ foldl-shortcut ([] 1 2) true true $ fn (acc item) (:: true false)
+                assert-type result 'Bool
+                assert= false result
+              :tags $ #{} :core :shortcut-fold-proof :unit
+            %{} 'TestEntry (:name |proven-shortcut-payload)
+              :code $ quote $ let
+                  result $ foldl-shortcut ([] 1 2 3) 0 99 $ fn (acc item)
+                    let
+                        next $ + acc item
+                      if (= item 2) (:: true next) (:: false next)
+                assert-type result 'Number
+                assert= 3 result
+              :tags $ #{} :core :shortcut-fold-proof :unit
+            %{} 'TestEntry (:name |shortcut-default-and-source)
+              :code $ quote $ let
+                  items $ [] 1 2 3
+                assert= 99 $ foldl-shortcut items 0 99 $ fn (acc item)
+                  :: false $ + acc item
+                assert= ([] 1 2 3) items
+              :tags $ #{} :core :shortcut-fold-proof :unit
+            %{} 'TestEntry (:name |shortcut-empty-default)
+              :code $ quote $ let
+                  result $ foldl-shortcut ([]) 0 99 $ fn (acc item) (:: true 0)
+                assert-type result 'Number
+                assert= 99 result
+              :tags $ #{} :core :shortcut-fold-proof :unit
+            %{} 'TestEntry (:name |shortcut-right-order)
+              :code $ quote $ let
+                  result $ foldr-shortcut ([] 1 2 3) 0 99 $ fn (acc item) (:: true item)
+                assert-type result 'Number
+                assert= 3 result
+              :tags $ #{} :core :shortcut-fold-proof :unit
         'foldr-shortcut $ %{} 'CodeEntry
           :doc "|Internal right fold with early termination. Syntax: (foldr-shortcut list initial default reducer). The reducer receives accumulator and element, then returns an anonymous enum `:: Bool accumulator`; true returns its accumulator immediately, false continues, and exhaustion returns default."
           :code $ quote &runtime-implementation

@@ -191,6 +191,9 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   字面量列表的 `&` 展开逐项复用参数证明；无法静态确定参数布局的展开保留为人工 review，已确定的类型矛盾以 `E_CALL_ARGUMENT_MISMATCH` 阻断审计。
   显式开放参数仍允许传递 Dynamic；decoder 成功分支提供的真实类型证据可以用于具体调用。
   独立证明的 identity 和显式 `Dynamic -> Dynamic` 不产生建议；矛盾返回或未解决的断言、强转边界阻止审计，不能被隐藏。
+  短路 fold 使用 initial/default 的共同累积契约，并检查实际 reducer 的 Bool 控制位和各分支 payload。
+  可读取的预处理函数体能提供证据；单独的 `Enum` 返回声明不证明这些槽位。开放 callback、未知 payload
+  或无法追溯实现的值仍需 review；依赖函数自己的证明错误不会因为 fold 获得具体类型而被隐藏。
   replacement 为空，`--apply` 不修改代码或业务契约。只有 producer 实现可独立证明且缺少 schema 时，
   才另用现有 `synthesize-schema-v1` 审阅 metadata 候选；它仍执行独立证据、调用点一致性与原子写入门禁。
   此规则只审计 definition `:code`，须使用严格模式；strict workflow 已包含此检查，默认 preset 不变。
