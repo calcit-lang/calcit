@@ -4364,11 +4364,15 @@ fn try_rewrite_struct_enum_constructor_head_call(
     let mut struct_items: Vec<Calcit> = Vec::with_capacity(struct_def.fields.len() * 2 + 2);
     struct_items.push(Calcit::Proc(CalcitProc::NativeStruct));
     struct_items.push(struct_ref_node);
+    // Layout order is not evaluation order. Explicit payloads must retain their
+    // source order; runtimes map each tag to its nominal storage slot.
+    struct_items.extend(args_items.iter().cloned());
     for (field_idx, field) in struct_def.fields.iter().enumerate() {
+      if provided_fields.contains_key(field) {
+        continue;
+      }
       struct_items.push(Calcit::Tag(field.to_owned()));
-      if let Some(value) = provided_fields.get(field) {
-        struct_items.push((*value).to_owned());
-      } else if struct_def
+      if struct_def
         .field_types
         .get(field_idx)
         .is_some_and(|field_type| field_type.is_option_type())
