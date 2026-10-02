@@ -634,15 +634,40 @@ const scenarios = [
     },
   },
   {
+    name: "strict proven workflow manifest",
+    args: ["tests/fixtures/enum-impl-cycle.cirru", "fix", "--workflow", "strict", "--format", "json"],
+    check(result) {
+      const workflow = result.data?.workflow;
+      if (result.schema_version !== 1 || result.command !== "fix" || workflow?.workflow !== "strict-v1" ||
+          workflow.mode !== "preview" || workflow.status !== "planned" || result.diagnostics?.length !== 0) {
+        throw new Error("proven nominal cycle must retain a successful strict plan without dependency proof errors");
+      }
+      if (!workflow.resume?.revision?.startsWith("md5:") || workflow.resume?.apply_command?.[0] !== "calcit" ||
+          workflow.verification?.commands?.[0]?.[0] !== "calcit") {
+        throw new Error("proven workflow lost its revision-bound resume or verification commands");
+      }
+    },
+  },
+  {
     name: "strict project workflow manifest",
     args: ["tests/fixtures/fix-command.cirru", "fix", "--workflow", "strict", "--format", "json"],
+    expectedStatus: 1,
     check(result) {
       const workflow = result.data?.workflow;
       if (result.schema_version !== 1 || result.command !== "fix" || workflow?.workflow !== "strict-v1") {
         throw new Error("unexpected strict workflow envelope");
       }
-      if (workflow.mode !== "preview" || workflow.status !== "planned" || workflow.safe_fixes?.preset !== "surface-latest-v2") {
+      if (workflow.mode !== "preview" || workflow.status !== "requires-review" || workflow.safe_fixes?.preset !== "surface-latest-v2") {
         throw new Error("strict workflow lost its plan or safe preset identity");
+      }
+      const expected = [
+        ["W_FN_RETURN_TYPE_MISMATCH", "fix-command.main/fixable"],
+        ["W_FN_ARG_TYPE_MISMATCH", "fix-command.main/option-struct-field"],
+        ["W_FN_ARG_TYPE_MISMATCH", "fix-command.main/union-struct-field"],
+      ];
+      if (result.diagnostics?.length !== expected.length ||
+          expected.some(([code, definition]) => !result.diagnostics.some(item => item.code === code && item.definition === definition))) {
+        throw new Error("migration review must report exact project contract warnings, not unrelated core proof debt");
       }
       if (!workflow.resume?.revision?.startsWith("md5:") || workflow.resume?.apply_command?.[0] !== "calcit") {
         throw new Error("strict workflow lost its resumable revision-bound command");

@@ -500,9 +500,92 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
     ),
     "declare closed sink",
   );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.returns/rest-sink",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn rest-sink (x & items)\n  , x",
+      ],
+    ),
+    "add rest sink",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.returns/rest-sink",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:rest 'Number) (:return 'Number)",
+      ],
+    ),
+    "declare closed rest sink",
+  );
+  for (name, code, schema) in [
+    (
+      "identity-list",
+      "quote $ defn identity-list (xs)\n  , xs",
+      "quote $ :: 'Fn $ {} (:generics $ [] 'T) (:args $ [] $ :: 'List 'T) (:return $ :: 'List 'T)",
+    ),
+    (
+      "choose-first",
+      "quote $ defn choose-first (x y)\n  , x",
+      "quote $ :: 'Fn $ {} (:generics $ [] 'T) (:args $ [] 'T 'T) (:return 'T)",
+    ),
+  ] {
+    let target = format!("fix-command.returns/{name}");
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", &target, "--input-format", "cirru", "--code", code]),
+      "add generic helper",
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", &target, "--input-format", "cirru", "--code", schema]),
+      "declare generic helper",
+    );
+  }
   for (name, argument, returns, body, rejected) in [
     ("closed", "Number", "Number", ", x", false),
+    ("closed-tail", "Number", "Number", "if (&< x 1) 0 (recur (&- x 1))", false),
+    (
+      "closed-tail-let",
+      "Number",
+      "Number",
+      "let ((next (&- x 1))) (if (&< x 1) 0 (recur next))",
+      false,
+    ),
+    (
+      "closed-tail-do",
+      "Number",
+      "Number",
+      "if (&< x 1) 0 (do (&+ x 0) (recur (&- x 1)))",
+      false,
+    ),
+    ("recursive-only", "Number", "Number", "recur x", true),
+    ("wrong-tail-arity", "Number", "Number", "if (&< x 1) 0 (recur x x)", true),
+    ("wrong-tail-argument", "Number", "Number", "if (&< x 1) 0 (recur |invalid)", true),
+    ("open-tail-result", "Dynamic", "Number", "if true x (recur x)", true),
     ("generic", "T", "T", ", x", false),
+    ("generic-tail", "T", "T", "if (identical? x x) x (recur x)", false),
+    ("changed-generic-tail", "T", "T", "if (identical? x x) x (recur |invalid)", true),
+    (
+      "nested-generic-call",
+      "List (:: 'List 'T)",
+      "List (:: 'List 'T)",
+      "identity-list x",
+      false,
+    ),
+    ("rigid-generic-call", "T", "T", "choose-first x |invalid", true),
+    ("late-open-generic-call", "Dynamic", "Number", "choose-first 1 x", true),
+    ("early-open-generic-call", "Dynamic", "Number", "choose-first x 1", true),
     ("open-storage", "Dynamic", "Dynamic", ", x", false),
     ("open-result", "Dynamic", "Number", ", x", true),
     ("wrapped-result", "Dynamic", "Number", "open-result x", true),
@@ -518,6 +601,12 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
     ("spread-call", "Dynamic", "Number", "sink & ([] x)", true),
     ("closed-spread-call", "Number", "Number", "sink & ([] x)", false),
     ("unknown-spread-call", "Dynamic", "Number", "sink & x", true),
+    ("typed-rest-spread", "List 'Number", "Number", "rest-sink 1 & x", false),
+    ("wrong-rest-spread", "List 'String", "Number", "rest-sink 1 & x", true),
+    ("open-rest-spread", "List 'Dynamic", "Number", "rest-sink 1 & x", true),
+    ("unknown-rest-spread", "Dynamic", "Number", "rest-sink 1 & x", true),
+    ("missing-fixed-rest-spread", "List 'Number", "Number", "rest-sink & x", true),
+    ("typed-fixed-spread", "List 'Number", "Number", "sink & x", true),
     ("local-spread-call", "Dynamic", "Number", "let ((f sink)) (f & ([] x))", true),
     ("proc-spread-call", "Dynamic", "Number", "&+ 1 & ([] x)", true),
     ("core-spread-call", "Dynamic", "Number", "&call-spread sink & ([] x)", true),
@@ -557,8 +646,22 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
           "cirru",
           "--code",
           &format!(
-            "quote $ :: 'Fn $ {{}} (:args $ [] '{argument}) (:return '{returns}){}",
-            if argument == "T" { " (:generics $ [] 'T)" } else { "" }
+            "quote $ :: 'Fn $ {{}} (:args $ [] {}) (:return {}){}",
+            if argument.contains(' ') {
+              format!("(:: '{argument})")
+            } else {
+              format!("'{argument}")
+            },
+            if returns.contains(' ') {
+              format!("(:: '{returns})")
+            } else {
+              format!("'{returns}")
+            },
+            if argument == "T" || argument.contains("'T") {
+              " (:generics $ [] 'T)"
+            } else {
+              ""
+            }
           ),
         ],
       ),
@@ -575,6 +678,15 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
     ];
     let output = run_fix(&snapshot, &[selectors.as_slice(), &["--def", name]].concat());
     assert_eq!(output.status.success(), !rejected, "{}", String::from_utf8_lossy(&output.stderr));
+    if name == "wrong-rest-spread" {
+      // A definite contradiction is a hard compiler error, not a migration suggestion.
+      let stderr = String::from_utf8_lossy(&output.stderr);
+      assert!(stderr.contains("E_CALL_ARGUMENT_MISMATCH"), "{stderr}");
+      assert!(stderr.contains("wrong-rest-spread @3.3"), "{stderr}");
+      assert!(output.stdout.is_empty());
+      assert_eq!(fs::read(&snapshot).unwrap(), original);
+      continue;
+    }
     let report = if name == "wrapped-result" {
       assert!(String::from_utf8_lossy(&output.stderr).contains("outside the selected project scope"));
       serde_json::Value::Null
@@ -607,6 +719,11 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
             "postfix-call",
             "spread-call",
             "unknown-spread-call",
+            "typed-fixed-spread",
+            "missing-fixed-rest-spread",
+            "open-rest-spread",
+            "unknown-rest-spread",
+            "rigid-generic-call",
             "local-spread-call",
             "proc-spread-call",
             "core-spread-call"
@@ -2028,6 +2145,38 @@ fn parse_stdout(output: &Output) -> serde_json::Value {
       String::from_utf8_lossy(&output.stderr)
     )
   })
+}
+
+fn assert_migration_fixture_contract_diagnostics(report: &serde_json::Value, migrated: bool) {
+  let expected = [
+    (
+      if migrated {
+        "E_CALL_ARGUMENT_UNPROVEN"
+      } else {
+        "W_FN_RETURN_TYPE_MISMATCH"
+      },
+      "fix-command.main/fixable",
+    ),
+    ("W_FN_ARG_TYPE_MISMATCH", "fix-command.main/option-struct-field"),
+    ("W_FN_ARG_TYPE_MISMATCH", "fix-command.main/union-struct-field"),
+  ];
+  let diagnostics = report["diagnostics"].as_array().expect("workflow diagnostics should be an array");
+  assert_eq!(diagnostics.len(), expected.len(), "{diagnostics:?}");
+  for (code, definition) in expected {
+    assert!(
+      diagnostics
+        .iter()
+        .any(|item| item["code"] == code && item["definition"] == definition),
+      "missing {code} at {definition}: {diagnostics:?}"
+    );
+  }
+  if migrated {
+    let diagnostic = diagnostics
+      .iter()
+      .find(|item| item["definition"] == "fix-command.main/fixable")
+      .unwrap();
+    assert!(diagnostic["message"].as_str().unwrap().contains("expected `:enum`, got `dynamic`"));
+  }
 }
 
 fn assert_success(output: &Output, context: &str) {
@@ -5182,19 +5331,13 @@ fn strict_workflow_composes_a_resumable_project_manifest() {
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
 
   let preview = run_fix(&snapshot, &["--workflow", "strict", "--format", "json"]);
-  assert!(!preview.status.success(), "legacy helpers still need return proof");
+  assert!(!preview.status.success(), "project migration contracts still need review");
   let report = parse_stdout(&preview);
   let workflow = &report["data"]["workflow"];
   assert_eq!(workflow["workflow"], "strict-v1");
   assert_eq!(workflow["mode"], "preview");
   assert_eq!(workflow["status"], "requires-review");
-  assert!(
-    report["diagnostics"]
-      .as_array()
-      .unwrap()
-      .iter()
-      .any(|item| item["code"] == "E_FN_RETURN_UNPROVEN")
-  );
+  assert_migration_fixture_contract_diagnostics(&report, false);
   assert_eq!(workflow["safe_fixes"]["preset"], "surface-latest-v2");
   assert!(workflow["safe_fixes"]["suggestions"].as_u64().is_some_and(|count| count > 0));
   assert_eq!(workflow["entries"][0]["name"], "default");
@@ -5519,13 +5662,7 @@ fn strict_workflow_applies_safe_fixes_without_claiming_unproven_contracts() {
   assert!(!verification.status.success());
   let verification_report = parse_stdout(&verification);
   assert_eq!(verification_report["data"]["workflow"]["status"], "failed");
-  assert!(
-    verification_report["diagnostics"]
-      .as_array()
-      .unwrap()
-      .iter()
-      .any(|item| item["code"] == "E_FN_RETURN_UNPROVEN")
-  );
+  assert_migration_fixture_contract_diagnostics(&verification_report, true);
   assert_eq!(verification_report["data"]["workflow"]["safe_fixes"]["status"], "clear");
   assert!(
     verification_report["data"]["workflow"]["verification"]["results"]
@@ -7165,13 +7302,7 @@ fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
   );
   let workflow = parse_stdout(&workflow);
   assert_eq!(workflow["data"]["workflow"]["status"], "requires-review");
-  assert!(
-    workflow["diagnostics"]
-      .as_array()
-      .unwrap()
-      .iter()
-      .any(|item| item["code"] == "E_FN_RETURN_UNPROVEN")
-  );
+  assert_migration_fixture_contract_diagnostics(&workflow, false);
   assert!(
     workflow["data"]["workflow"]["review_required"]["schema_candidates"]
       .as_array()

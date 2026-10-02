@@ -2089,8 +2089,9 @@ mod type_query_tests {
       code_to_calcit(&Cirru::Leaf(Arc::from("Person")), "test-struct.main", "test-struct", vec![]).expect("Person symbol should parse");
     let person_type = runner::preprocess::infer_static_type_from_expr(&person_symbol).expect("Person type should infer statically");
     assert!(
-      matches!(person_type.as_ref(), CalcitTypeAnnotation::TypeRef(name, _) if name.as_ref() == "test-struct.main/Person"),
-      "data definitions should remain named type refs rather than synthetic struct instances: {person_type}"
+      matches!(person_type.as_ref(), CalcitTypeAnnotation::StructDef(definition)
+        if definition.definition_ref.as_deref() == Some("test-struct.main/Person")),
+      "definition expressions should retain definition identity rather than instance evidence: {person_type}"
     );
     let (queried_person_type, source) =
       resolve_type_query_target(&snapshot, "test-struct.main/Person").expect("type query should infer defstruct type");
@@ -2364,6 +2365,17 @@ fn resolve_type_query_target(snapshot: &snapshot::Snapshot, target: &str) -> Res
     if let Some(inferred) = runner::preprocess::infer_static_type_from_expr(&symbol)
       && !matches!(inferred.as_ref(), CalcitTypeAnnotation::Dynamic)
     {
+      // A named type query describes instances; expression inference keeps
+      // the imported definition object distinct from those instances.
+      if matches!(
+        inferred.as_ref(),
+        CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_)
+      ) {
+        return Ok((
+          Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(target), Arc::new(vec![]))),
+          "definition inference",
+        ));
+      }
       return Ok((inferred, "definition inference"));
     }
 

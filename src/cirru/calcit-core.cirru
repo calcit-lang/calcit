@@ -583,8 +583,15 @@
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Enum
-            :return $ :: 'Optional 'Tag
+            :return $ :: 'Optional 'EnumDef
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |nominal-definition-evidence)
+            :code $ quote $ let
+                value $ Option :some 1
+              assert= Option $ &enum:definition value
+              assert-type (&enum:definition value) 'EnumDef
+              assert= nil $ &enum:definition $ %:: _ :anonymous 1
+            :tags $ #{} :nominal-definition-proof :unit
         '&enum:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to an enum value.")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1260,6 +1267,9 @@
           :code $ quote $ defn &list:map (xs f)
             foldl xs ([])
               defn %&list:map (acc x)
+                hint-fn $ {}
+                  :args $ [] (:: 'List 'U) 'T
+                  :return $ :: 'List 'U
                 append acc $ f x
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -1269,11 +1279,22 @@
             :generics $ [] 'T 'U
             :return $ :: 'List 'U
           :tags $ #{} :internal
-          :tests $ [] $ %{} 'TestEntry (:name |maps-items-with-function)
-            :code $ quote $ assert= ([] 4 5 6)
-              &list:map ([] 1 2 3)
-                fn (x) (+ x 3)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |maps-items-with-function)
+              :code $ quote $ assert= ([] 4 5 6)
+                &list:map ([] 1 2 3)
+                  fn (x) (+ x 3)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |typed-empty-accumulator)
+              :code $ quote $ do
+                assert= ([])
+                  &list:map ([]) &str
+                assert= ([] |1 |2)
+                  &list:map ([] 1 2) &str
+                assert-type
+                  &list:map ([] 1 2) &str
+                  :: 'List 'String
+              :tags $ #{} :generic-fold-proof :unit
         '&list:map-pair $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:map-pair (xs f)
             if (list? xs)
@@ -2121,21 +2142,23 @@
               assert= |1 $ &str 1
             :tags $ #{} :core :unit
         '&str-spaced $ %{} 'CodeEntry
-          :doc "|Internal function for joining strings with spaces, used by str-spaced"
+          :doc "|内部 String 拼接函数；仅供 str-spaced 在过滤 nil、完成文本转换后调用。head? 表示首项是否免于前置空格。"
           :code $ quote $ defn &str-spaced (head? x0 & xs)
-            if (&list:empty? xs)
-              if head? (&str x0)
-                if (nil? x0) | $ &str:concat "| " x0
-              if (non-nil? x0)
-                &str:concat
-                  if head? (&str x0) (&str:concat "| " x0)
-                  &str-spaced false & xs
-                &str-spaced head? & xs
+            let
+                prefix $ if head? x0 $ &str:concat "| " x0
+              if (&list:empty? xs) prefix $ &str:concat prefix $ &str-spaced false (&list:nth xs 0) & (&list:rest xs)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:rest 'T) (:return 'String)
-            :args $ [] 'Bool 'T
-            :generics $ [] 'T
+          :schema $ :: 'Fn $ {} (:rest 'String) (:return 'String)
+            :args $ [] 'Bool 'String
           :tags $ #{} :internal
+          :tests $ [] $ %{} 'TestEntry (:name |nonempty-rest-contract)
+            :code $ quote $ do
+              assert= |A $ &str-spaced true |A
+              assert= "| A" $ &str-spaced false |A
+              assert= "|A B" $ &str-spaced true |A |B
+              assert= "| A B" $ &str-spaced false |A |B
+              assert= "| B" $ &str-spaced true | |B
+            :tags $ #{} :tail-return-proof :unit
         '&str:compare $ %{} 'CodeEntry
           :doc "|internal function for string comparison\nSyntax: (&str:compare a b)\nParams: a (string), b (string)\nReturns: number\nCompares strings lexicographically, returns -1, 0, or 1"
           :code $ quote &runtime-implementation
@@ -3174,16 +3197,38 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :data :internal
-          :tests $ [] $ %{} 'TestEntry (:name |direct-construction-preserves-value-and-failure)
-            :code $ quote $ do
-              assert= (%ok 3) (Result :ok 3)
-              assert= (%err |bad) (Result :err |bad)
-              assert= 3 $ .unwrap-or (Result :ok 3) 0
-              assert= 0 $ .unwrap-or (Result :err |bad) 0
-              assert= true $ try
-                Result :ok $ raise |boom
-                fn (message) (= message |boom)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |direct-construction-preserves-value-and-failure)
+              :code $ quote $ do
+                assert= (%ok 3) (Result :ok 3)
+                assert= (%err |bad) (Result :err |bad)
+                assert= 3 $ .unwrap-or (Result :ok 3) 0
+                assert= 0 $ .unwrap-or (Result :err |bad) 0
+                assert= true $ try
+                  Result :ok $ raise |boom
+                  fn (message) (= message |boom)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |constructor-branch-evidence)
+              :code $ quote $ let
+                  project $ fn (input)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Result 'Number 'String
+                      :return $ :: 'Result 'Number 'String
+                    match input
+                      (:ok value) (Result :ok value)
+                      (:err reason) (Result :err reason)
+                  choose $ fn (flag)
+                    hint-fn $ {}
+                      :args $ [] 'Bool
+                      :return $ :: 'Result 'Number 'String
+                    if flag (Result :ok 1) (Result :err |failed)
+                assert= (Result :ok 1)
+                  project $ Result :ok 1
+                assert= (Result :err |failed)
+                  project $ Result :err |failed
+                assert= (Result :ok 1) (choose true)
+                assert= (Result :err |failed) (choose false)
+              :tags $ #{} :nominal-branch-proof :unit
         'ResultMappableImpl $ %{} 'CodeEntry (:doc "|Trait impl for Mappable on Result")
           :code $ quote $ defimpl ResultMappableImpl Mappable (.map result:map)
           :examples $ []
@@ -3618,6 +3663,16 @@
             :expansion $ :: 'Expr 'Unit
             :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
           :tags $ #{} :control :log :macro
+          :tests $ [] $ %{} 'TestEntry (:name |wrapped-raise-unit)
+            :code $ quote $ let
+                check $ fn ()
+                  hint-fn $ {}
+                    :args $ []
+                    :return $ quote Unit
+                  assert= 1 1
+              assert-type (check) 'Unit
+              check
+            :tags $ #{} :tail-return-proof :unit
         'assoc $ %{} 'CodeEntry
           :doc "|Associate a key or index in maps, lists, enums, and structs."
           :code $ quote $ defn assoc (x k v)
@@ -5829,6 +5884,32 @@
               {} (:return 'Bool)
                 :args $ [] 'T 'T
             :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |independent-bool-exits)
+              :code $ quote $ do
+                assert= true $ foldl-compare ([] 1 2 3 4) 0 &<
+                assert= false $ foldl-compare ([] 1 3 2 4) 0 &<
+                assert= true $ foldl-compare ([]) 0 &<
+              :tags $ #{} :tail-return-proof :unit
+            %{} 'TestEntry (:name |independent-number-exits)
+              :code $ quote $ assert= 0
+                loop
+                    n 4
+                  let
+                      next $ &- n 1
+                    if (&< n 1) 0 $ do (&+ n 0) (recur next)
+              :tags $ #{} :tail-return-proof :unit
+            %{} 'TestEntry (:name |typed-number-exits)
+              :code $ quote $ let
+                  step $ fn (n)
+                    hint-fn $ {}
+                      :args $ [] $ quote Number
+                      :return $ quote Number
+                    let
+                        next $ &- n 1
+                      if (&< n 1) 0 $ do (&+ n 0) (recur next)
+                assert= 0 $ step 4
+              :tags $ #{} :tail-return-proof :unit
         'foldl-shortcut $ %{} 'CodeEntry
           :doc "|Internal left fold with early termination. Syntax: (foldl-shortcut list initial default reducer). The reducer receives accumulator and element, then returns an anonymous enum `:: Bool accumulator`; true returns its accumulator immediately, false continues, and exhaustion returns default."
           :code $ quote &runtime-implementation
@@ -6169,7 +6250,7 @@
                   and
                     or (tag? k) (string? k) (symbol? k)
                     &struct:contains? base k
-                  %some $ &struct:get base k
+                  %some $ &struct:get base $ turn-tag k
                   %none
               (or (list? base) (string? base) (enum? base))
                 if (number? k) (nth base k) (%none)
@@ -6227,11 +6308,15 @@
             %{} 'TestEntry (:name |reads-runtime-struct-from-open-value)
               :code $ quote $ let
                   open-path $ assert-type (FsPath :value |demo) 'Dynamic
-                assert= (%some |demo) (get open-path :value)
-                assert= (%some |demo) (get open-path |value)
-                assert= (%none) (get open-path :missing)
-                assert= (%none) (get open-path 0)
-              :tags $ #{} :core :unit
+                assert= (Option :some |demo) (get open-path :value)
+                assert= (Option :some |demo) (get open-path |value)
+                assert= (Option :some |demo) (get open-path 'value)
+                assert= (Option :none) (get open-path :missing)
+                assert= (Option :none) (get open-path |missing)
+                assert= (Option :none) (get open-path 0)
+                assert= (Option :none) (get open-path true)
+                assert= (Option :none) (get open-path nil)
+              :tags $ #{} :checked-exit-proof :core :unit
             %{} 'TestEntry (:name |reads-tag-keys-via-postfix)
               :code $ quote $ let
                   dict $ &{} :a 1
@@ -6599,6 +6684,41 @@
                 assert= 3 $ sink & $ [] 3
                 assert= 4 $ &+ 1 & $ [] 3
               :tags $ #{} :call-boundary :concrete-call-proof
+            %{} 'TestEntry (:name |nested-generic-call-scope)
+              :code $ quote $ let
+                  identity-list $ fn (xs)
+                    hint-fn $ :: 'Fn $ {}
+                      :generics $ [] 'T
+                      :args $ [] $ :: 'List 'T
+                      :return $ :: 'List 'T
+                    , xs
+                  forward $ fn (xs)
+                    hint-fn $ :: 'Fn $ {}
+                      :generics $ [] 'T
+                      :args $ [] $ :: 'List (:: 'Optional 'T)
+                      :return $ :: 'List $ :: 'Optional 'T
+                    identity-list xs
+                assert= ([] 1 2)
+                  forward $ [] 1 2
+                assert= ([])
+                  forward $ []
+              :tags $ #{} :generic-call-proof :unit
+            %{} 'TestEntry (:name |raise-only-return-contract)
+              :code $ quote $ let
+                  fail $ fn (flag)
+                    hint-fn $ {}
+                      :args $ [] 'Bool
+                      :return 'Number
+                    if flag
+                      let
+                          value 1
+                        raise |left
+                      raise |right
+                assert= true $ try (fail true)
+                  fn (message) (= message |left)
+                assert= true $ try (fail false)
+                  fn (message) (= message |right)
+              :tags $ #{} :checked-exit-proof :unit
         'identical? $ %{} 'CodeEntry
           :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
           :code $ quote &runtime-implementation
@@ -7910,6 +8030,17 @@
           :tests $ [] $ %{} 'TestEntry (:name |flips-number-sign)
             :code $ quote $ assert= 4 (negate -4)
             :tags $ #{} :core :unit
+        'nil->option $ %{} 'CodeEntry
+          :doc "|Convert a possibly-nil value into nominal Option<T>: nil becomes %none, anything else %some. Preferred spelling of the legacy optionally; both share one implementation."
+          :code $ quote $ defn nil->option (s) (optionally s)
+          :examples $ []
+            quote $ assert= (%some 1) (nil->option 1)
+            quote $ assert= (%none) (nil->option nil)
+            quote $ assert= Option $ &enum:definition (nil->option 1)
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Optional 'T
+            :generics $ [] 'T
+            :return $ :: 'Option 'T
         'nil? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is nil")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -8483,17 +8614,6 @@
             quote $ assert= (%some 1) (optionally 1)
             quote $ assert= (%none) (optionally nil)
             quote $ assert= Option $ &enum:definition (optionally 1)
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Optional 'T
-            :generics $ [] 'T
-            :return $ :: 'Option 'T
-        'nil->option $ %{} 'CodeEntry
-          :doc "|Convert a possibly-nil value into nominal Option<T>: nil becomes %none, anything else %some. Preferred spelling of the legacy optionally; both share one implementation."
-          :code $ quote $ defn nil->option (s) (optionally s)
-          :examples $ []
-            quote $ assert= (%some 1) (nil->option 1)
-            quote $ assert= (%none) (nil->option nil)
-            quote $ assert= Option $ &enum:definition (nil->option 1)
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Optional 'T
             :generics $ [] 'T
@@ -9475,16 +9595,31 @@
                   do (println |unicode-search-needle) "|中"
             :tags $ #{} :core :unicode :unit
         'str-spaced $ %{} 'CodeEntry
-          :doc "|converts values to string and joins them with spaces"
-          :code $ quote $ defn str-spaced (& xs) (&str-spaced true & xs)
+          :doc "|至少传一个值，将非 nil 值转为文本并用空格连接。单个 nil 或全 nil 返回空字符串；空文本保留拼接位置。未知长度 spread 必须先确认非空并显式传入首项。"
+          :code $ quote $ defn str-spaced (x0 & xs)
+            let
+                texts $ &list:map
+                  &list:filter (&list:prepend xs x0) non-nil?
+                  , &str
+              if (&list:empty? texts) | $ &str-spaced true (&list:nth texts 0) & $ &list:rest texts
           :examples $ []
             quote $ assert= "|a b c" $ str-spaced |a |b |c
             quote $ assert= "|1 2 3" $ str-spaced 1 2 3
           :schema $ :: 'Fn $ {} (:rest 'Dynamic) (:return 'String)
-            :args $ []
-          :tests $ [] $ %{} 'TestEntry (:name |joins-non-nil-values)
-            :code $ quote $ assert= "|a c 12" (str-spaced |a nil |c 12)
-            :tags $ #{} :core :unit
+            :args $ [] 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |joins-non-nil-values)
+              :code $ quote $ assert= "|a c 12" (str-spaced |a nil |c 12)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |heterogeneous-formatting-contract)
+              :code $ quote $ do
+                assert= |A $ str-spaced |A
+                assert= "|A B" $ str-spaced nil |A nil |B
+                assert= | $ str-spaced nil nil
+                assert= "| B" $ str-spaced | |B
+                assert= "|A 12 false" $ str-spaced |A nil 12 false
+                assert= | $ str-spaced nil
+              :tags $ #{} :core :tail-return-proof :unit
         'string? $ %{} 'CodeEntry (:doc "|checks if value is a string")
           :code $ quote &runtime-implementation
           :examples $ []

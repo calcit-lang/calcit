@@ -614,6 +614,11 @@ fn to_js_code(
           CalcitProc::NativeListAppend => CalcitProc::Append,
           CalcitProc::NativeListPrepend => CalcitProc::Prepend,
           CalcitProc::NativeListButlast => CalcitProc::Butlast,
+          CalcitProc::NativeListSort => CalcitProc::Sort,
+          CalcitProc::NativeListRange => CalcitProc::Range,
+          CalcitProc::NativeListFoldl => CalcitProc::Foldl,
+          CalcitProc::NativeListFoldlShortcut => CalcitProc::FoldlShortcut,
+          CalcitProc::NativeListQ => CalcitProc::ListQuestion,
           _ => *s,
         };
         // println!("gen proc {} under {}", s, ns,);
@@ -2384,9 +2389,16 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       }
 
       match &compiled_def.kind {
-        // probably not work here
         program::CompiledDefKind::Proc => {
-          writeln!(defs_code, "\nvar {} = $procs.{};", escape_var(&def), escape_var(&def)).expect("write");
+          // A definition alias is not necessarily a runtime export with the
+          // same name. Emit its actual value through the shared proc mapping.
+          writeln!(
+            defs_code,
+            "\nexport var {} = {};",
+            escape_var(&def),
+            to_js_code(&compiled_def.codegen_form, ns, &def_names, &file_imports, &collected_tags, None)?
+          )
+          .expect("write");
         }
         program::CompiledDefKind::Fn => {
           if let Some(ffi) = program::lookup_def_ffi(ns, &def)

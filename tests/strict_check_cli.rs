@@ -195,14 +195,14 @@ fn trait_bearing_enum_cycle_preserves_nominal_evidence_in_graph_checks() {
   assert_success(&run_calcit(&snapshot, &["test", "--require-match"]), "attached nominal method test");
   let original = fs::read(&snapshot).unwrap();
   let workflow = run_calcit(&snapshot, &["fix", "--workflow", "strict", "--verify", "--format", "json"]);
-  // Graph validation and independent return proof are separate obligations.
-  // The legacy core dependency must not hide successful nominal cycle checks.
-  assert!(
-    !workflow.status.success(),
-    "unproven dependency returns must block strict verification"
+  // Both graph validation and independent return proof must succeed, including
+  // assert='s lexical raise branch and the recursive equality dependency.
+  assert_success(
+    &workflow,
+    "strict verification must preserve nominal cycle and independent exit evidence",
   );
   let report: serde_json::Value = serde_json::from_slice(&workflow.stdout).expect("strict workflow must preserve a structured report");
-  assert_eq!(report["data"]["workflow"]["status"], "failed");
+  assert_eq!(report["data"]["workflow"]["status"], "passed");
   let results = report["data"]["workflow"]["verification"]["results"].as_array().unwrap();
   assert_eq!(results.len(), 1);
   assert_eq!(results[0]["status"], "passed");
@@ -210,11 +210,7 @@ fn trait_bearing_enum_cycle_preserves_nominal_evidence_in_graph_checks() {
   assert_eq!(definitions.len(), 7);
   assert!(definitions.iter().all(|definition| definition["status"] == "passed"));
   let diagnostics = report["diagnostics"].as_array().unwrap();
-  assert_eq!(diagnostics.len(), 1);
-  assert_eq!(diagnostics[0]["code"], "E_FN_RETURN_UNPROVEN");
-  // Open-fold accumulator proof now establishes every?'s Bool result.
-  // The next independent generic equality obligation must remain visible.
-  assert_eq!(diagnostics[0]["definition"], "calcit.core/foldl-compare");
+  assert!(diagnostics.is_empty(), "{diagnostics:?}");
   assert_eq!(fs::read(&snapshot).unwrap(), original);
 
   assert_success(

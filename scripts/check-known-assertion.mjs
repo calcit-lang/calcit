@@ -16,6 +16,7 @@ try {
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
   const coreOriginal = await readFile(snapshot);
   run("fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.core", "--def", "every?", "--format", "edn");
+  run("fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.core", "--def", "foldl-compare", "--format", "edn");
   assert.deepEqual(await readFile(snapshot), coreOriginal);
   run("test", "--tag", "assert-boundary", "--require-match");
   const response = JSON.parse(run("query", "def", "calcit.core/assert-type", "--format", "json"));
@@ -30,6 +31,9 @@ try {
   run("test", "calcit.core/hint-fn", "--tag", "call-boundary", "--require-match");
   const callTests = returnResponse.data.tests.filter(test => test.tags.includes("call-boundary"));
   assert.equal(callTests.length, 8);
+  run("test", "calcit.core/hint-fn", "--tag", "generic-call-proof", "--require-match");
+  const genericTests = returnResponse.data.tests.filter(test => test.tags.includes("generic-call-proof"));
+  assert.equal(genericTests.length, 1);
   run("test", "calcit.core/hint-fn", "--tag", "hint-value-boundary", "--require-match");
   const hintTests = returnResponse.data.tests.filter(test => test.tags.includes("hint-value-boundary"));
   assert.equal(hintTests.length, 5);
@@ -48,6 +52,112 @@ try {
   run("edit", "add-ns", "calcit.assert-evidence");
   const setBody = trees => run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite",
     "--input-format", "json-ast", "--code", JSON.stringify(["defwasm-export", "run-tests", [], ...trees, "1"]));
+  run("test", "calcit.core/foldl-compare", "--tag", "tail-return-proof", "--require-match");
+  const tailResponse = JSON.parse(run("query", "def", "calcit.core/foldl-compare", "--format", "json"));
+  const tailTests = tailResponse.data.tests.filter(test => test.tags.includes("tail-return-proof"));
+  assert.equal(tailTests.length, 3);
+  run("test", "calcit.core/&str-spaced", "--tag", "tail-return-proof", "--require-match");
+  const restResponse = JSON.parse(run("query", "def", "calcit.core/&str-spaced", "--format", "json"));
+  const restTests = restResponse.data.tests.filter(test => test.tags.includes("tail-return-proof"));
+  assert.equal(restTests.length, 1);
+  run("test", "calcit.core/str-spaced", "--tag", "tail-return-proof", "--require-match");
+  const formattingResponse = JSON.parse(run("query", "def", "calcit.core/str-spaced", "--format", "json"));
+  const formattingTests = formattingResponse.data.tests.filter(test => test.tags.includes("tail-return-proof"));
+  assert.equal(formattingTests.length, 1);
+  run("test", "calcit.core/&list:map", "--tag", "generic-fold-proof", "--require-match");
+  const mappingResponse = JSON.parse(run("query", "def", "calcit.core/&list:map", "--format", "json"));
+  const mappingTests = mappingResponse.data.tests.filter(test => test.tags.includes("generic-fold-proof"));
+  assert.equal(mappingTests.length, 1);
+  run("test", "calcit.core/&enum:definition", "--tag", "nominal-definition-proof", "--require-match");
+  const definitionResponse = JSON.parse(run("query", "def", "calcit.core/&enum:definition", "--format", "json"));
+  const definitionTests = definitionResponse.data.tests.filter(test => test.tags.includes("nominal-definition-proof"));
+  assert.equal(definitionTests.length, 1);
+  run("test", "calcit.core/assert=", "--tag", "tail-return-proof", "--require-match");
+  const assertionResponse = JSON.parse(run("query", "def", "calcit.core/assert=", "--format", "json"));
+  const assertionTests = assertionResponse.data.tests.filter(test => test.tags.includes("tail-return-proof"));
+  assert.equal(assertionTests.length, 1);
+  run("test", "calcit.core/Result", "--tag", "nominal-branch-proof", "--require-match");
+  const resultResponse = JSON.parse(run("query", "def", "calcit.core/Result", "--format", "json"));
+  const resultTests = resultResponse.data.tests.filter(test => test.tags.includes("nominal-branch-proof"));
+  assert.equal(resultTests.length, 1);
+  run("test", "--tag", "checked-exit-proof", "--require-match");
+  const exitResponse = JSON.parse(run("query", "def", "calcit.core/hint-fn", "--format", "json"));
+  const exitTests = exitResponse.data.tests.filter(test => test.tags.includes("checked-exit-proof"));
+  const getResponse = JSON.parse(run("query", "def", "calcit.core/get", "--format", "json"));
+  const getTests = getResponse.data.tests.filter(test => test.tags.includes("checked-exit-proof"));
+  assert.equal(exitTests.length, 1);
+  assert.equal(getTests.length, 1);
+  run("test", "calcit.core/&list:apply", "--require-match");
+  const applyResponse = JSON.parse(run("query", "def", "calcit.core/&list:apply", "--format", "json"));
+  const applyTests = applyResponse.data.tests.filter(test => test.name === "preserves-homogeneous-function-result-types");
+  assert.equal(applyTests.length, 1);
+  setBody([...tailTests, ...restTests, ...genericTests, ...formattingTests, ...mappingTests, ...definitionTests, ...assertionTests, ...resultTests, ...exitTests, ...getTests, ...applyTests].map(test => test.code));
+  run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
+  run("config", "set", "init-fn", "calcit.assert-evidence/run-tests");
+  run("config", "set", "reload-fn", "calcit.assert-evidence/run-tests");
+  run();
+  const tailOutput = join(project, "tail-exits-js");
+  run("--emit-path", tailOutput, "js");
+  const tailGenerated = await import(pathToFileURL(join(tailOutput, "calcit.assert-evidence.mjs")).href);
+  assert.equal(tailGenerated.run_tests(), 1);
+  const scalarTailTests = tailTests.filter(test => test.name === "typed-number-exits");
+  assert.equal(scalarTailTests.length, 1);
+  setBody(scalarTailTests.map(test => test.code));
+  const closureTailOutput = join(project, "closure-tail-wasm");
+  const closureTail = spawnSync(binary, [snapshot, "wasm", "--emit-path", closureTailOutput], options);
+  if (closureTail.error) throw closureTail.error;
+  assert.equal(closureTail.status, 1);
+  assert.match(closureTail.stderr, /recur in a statically specialized closure is not yet supported/);
+  await assert.rejects(readFile(join(closureTailOutput, "program.wasm")), { code: "ENOENT" });
+  // Replay the same recurrence as a named function, the currently supported
+  // WASM ownership boundary; local closure recur remains explicitly rejected.
+  const stepCode = scalarTailTests[0].code[1][0][1];
+  assert.equal(stepCode[0], "fn");
+  assert.equal(stepCode[2][0], "hint-fn");
+  run("edit", "def", "calcit.assert-evidence/tail-step", "--input-format", "json-ast", "--code",
+    JSON.stringify(["defn", "tail-step", ...stepCode.slice(1)]));
+  run("edit", "schema", "calcit.assert-evidence/tail-step", "--input-format", "json-ast", "--code",
+    JSON.stringify(["::", "'Fn", stepCode[2][1]]));
+  setBody([["assert=", "0", ["tail-step", "4"]]]);
+  const tailWasmOutput = join(project, "tail-exits-wasm");
+  run("wasm", "--emit-path", tailWasmOutput);
+  const tailModule = new WebAssembly.Module(await readFile(join(tailWasmOutput, "program.wasm")));
+  const tailImports = {};
+  for (const item of WebAssembly.Module.imports(tailModule)) {
+    assert.equal(item.kind, "function");
+    tailImports[item.module] ??= {};
+    tailImports[item.module][item.name] = () => { throw new Error(`unexpected tail import ${item.module}.${item.name}`); };
+  }
+  assert.equal(new WebAssembly.Instance(tailModule, tailImports).exports["run-tests"](), 1);
+  // A common input context cannot invent a common concrete output for the
+  // members of a function list, including independently open callback bodies.
+  for (const [name, callbacks] of [
+    ["mixed-callable-outputs", [["fn", ["x"], ["str", "x"]], ["fn", ["x"], ["+", "x", "1"]]]],
+    ["open-callable-output", [["fn", ["x"], ["parse-cirru-edn", "|1"]]]],
+  ]) {
+    setBody([["assert-type", [".apply", ["[]", "1", "2"], ["[]", ...callbacks]], ["::", "'List", "'String"]]]);
+    const original = await readFile(snapshot);
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "assert-type-proof-v1", "--ns", "calcit.assert-evidence", "--def", "run-tests", "--format", "edn"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_ASSERT_TYPE_UNPROVEN|E_ASSERT_TYPE_MISMATCH|E_ERASED_GENERIC_RELATION|E_CALL_ARGUMENT_UNPROVEN/);
+    assert.deepEqual(await readFile(snapshot), original);
+  }
+  setBody([["str-spaced"]]);
+  const zeroArgumentOriginal = await readFile(snapshot);
+  for (const mode of [[], ["--check-only"], ["js"], ["wasm"], ["wasi"]]) {
+    const destination = join(project, `empty-format-${mode[0] ?? "native"}`);
+    const rejected = spawnSync(binary, [snapshot, "--emit-path", destination, ...mode], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
+    const arityDiagnostic = mode.includes("js")
+      ? await readFile(join(destination, "calcit.build-errors.mjs"), "utf8")
+      : rejected.stderr;
+    assert.match(arityDiagnostic, /lack of args in str-spaced/);
+    assert.deepEqual(await readFile(snapshot), zeroArgumentOriginal);
+    await assert.rejects(readFile(join(destination, "program.wasm")), { code: "ENOENT" });
+  }
   run("test", "calcit.core/foldl-shortcut", "--tag", "shortcut-fold-proof", "--require-match");
   const shortcutResponse = JSON.parse(run("query", "def", "calcit.core/foldl-shortcut", "--format", "json"));
   const shortcutTests = shortcutResponse.data.tests.filter(test => test.tags.includes("shortcut-fold-proof"));
@@ -114,6 +224,40 @@ try {
     assert.deepEqual(await readFile(snapshot), original);
   }
   run("edit", "rm-def", "calcit.assert-evidence/shadow-proof");
+  for (const [name, parameters, body, args, diagnostic] of [
+    ["recursive-cycle", ["value"], ["recur", "value"], ["[]", "'Number"], /E_FN_RETURN_UNPROVEN/],
+    ["reserved-raise-binding", ["raise"], ["raise", "|returns"], ["[]", ["::", "'Fn", ["{}", [":args", ["[]", "'String"]], [":return", "'String"]]]], /expected defn args to be symbols, got: \(&proc raise\)/],
+  ]) {
+    run("edit", "def", "calcit.assert-evidence/exit-proof", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "exit-proof", parameters, body]));
+    run("edit", "schema", "calcit.assert-evidence/exit-proof", "--input-format", "json-ast", "--code",
+      JSON.stringify(["::", "'Fn", ["{}", [":args", args], [":return", "'Number"]]]));
+    const original = await readFile(snapshot);
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.assert-evidence", "--def", "exit-proof", "--format", "edn"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, diagnostic);
+    assert.deepEqual(await readFile(snapshot), original);
+    run("edit", "rm-def", "calcit.assert-evidence/exit-proof");
+  }
+  // A constructor's absent slot is not an actual Dynamic payload or open value.
+  for (const [name, inputType, left, right] of [
+    ["used-open-payload", "'Dynamic", ["Result", ":ok", "raw"], ["Result", ":err", "|failed"]],
+    ["open-result-instance", ["::", "'Result", "'Dynamic", "'String"], "raw", ["Result", ":err", "|failed"]],
+    ["same-variant-open-payload", "'Dynamic", ["Result", ":ok", "1"], ["Result", ":ok", "raw"]],
+  ]) {
+    run("edit", "def", "calcit.assert-evidence/open-result", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "open-result", ["raw", "flag"], ["if", "flag", left, right]]));
+    run("edit", "schema", "calcit.assert-evidence/open-result", "--input-format", "json-ast", "--code",
+      JSON.stringify(["::", "'Fn", ["{}", [":args", ["[]", inputType, "'Bool"]], [":return", ["::", "'Result", "'Number", "'String"]]]]));
+    const original = await readFile(snapshot);
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.assert-evidence", "--def", "open-result", "--format", "edn"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_FN_RETURN_UNPROVEN/);
+    assert.deepEqual(await readFile(snapshot), original);
+    run("edit", "rm-def", "calcit.assert-evidence/open-result");
+  }
   // Known initial/default values do not prove an externally supplied reducer.
   run("edit", "def", "calcit.assert-evidence/open-shortcut", "--input-format", "json-ast", "--code",
     JSON.stringify(["defn", "open-shortcut", ["callback"], ["foldl-shortcut", ["[]", "1"], "0", "0", "callback"]]));

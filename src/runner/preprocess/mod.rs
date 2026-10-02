@@ -21,7 +21,7 @@ use crate::{
   codegen, program, runner,
 };
 
-use crate::calcit::type_annotation::{TypeBoundaryReason, TypeProof};
+use crate::calcit::type_annotation::{CallTypeProof, TypeBoundaryReason, TypeProof};
 use checked_call_contract::{
   CheckedCallLowering, checked_call_contract_arity, resolve_bound_type_slot_chain, resolve_checked_call_contract,
 };
@@ -66,6 +66,62 @@ fn callback_parameter_context(signature: Arc<CalcitFnTypeAnnotation>) -> Arc<Cal
   let mut context = signature.as_ref().clone();
   context.features = Arc::new(HashSet::new());
   Arc::new(context)
+}
+
+/// Carry collection member contexts into literal callbacks before evidence erasure.
+fn preprocess_argument_with_context(
+  expr: &Calcit,
+  expected: Option<&Arc<CalcitTypeAnnotation>>,
+  scope_defs: &HashSet<Arc<str>>,
+  scope_types: &mut ScopeTypes,
+  file_ns: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  let member = match expected.map(AsRef::as_ref) {
+    Some(CalcitTypeAnnotation::List(member)) => Some((CalcitProc::List, member)),
+    Some(CalcitTypeAnnotation::Set(member)) => Some((CalcitProc::Set, member)),
+    _ => None,
+  };
+  if let Some((constructor, member)) = member
+    && let Calcit::List(items) = expr
+    && let Some(head) = items.first()
+    && (matches!(head, Calcit::Proc(proc) if *proc == constructor)
+      || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == constructor.as_ref())
+      || matches!(head, Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == constructor.as_ref()))
+    && !items.iter().skip(1).any(|item| {
+      matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) || matches!(item, Calcit::Symbol { sym, .. } if sym.as_ref() == "&")
+    })
+  {
+    let processed_head = preprocess_expr(head, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+    if matches!(processed_head, Calcit::Proc(proc) if proc == constructor) {
+      let mut processed = vec![processed_head];
+      for item in items.iter().skip(1) {
+        processed.push(preprocess_argument_with_context(
+          item,
+          Some(member),
+          scope_defs,
+          scope_types,
+          file_ns,
+          check_warnings,
+          call_stack,
+        )?);
+      }
+      reject_pending_async_arguments(&processed[0], &CalcitList::from(&processed[1..]), scope_types, call_stack)?;
+      return Ok(Calcit::from(processed));
+    }
+  }
+  let previous = EXPECTED_FN_TYPE.with(|cell| {
+    let mut slot = cell.borrow_mut();
+    let previous = slot.take();
+    *slot = expected
+      .and_then(|annotation| annotation.resolve_to_fn())
+      .map(callback_parameter_context);
+    previous
+  });
+  let result = preprocess_expr(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack);
+  EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous);
+  result
 }
 
 #[cfg(not(test))]
@@ -2728,7 +2784,15 @@ fn preprocess_list_call(
                 *slot = expected_fn.map(callback_parameter_context);
                 previous
               });
-              let processed = preprocess_expr(arg, scope_defs, scope_types, file_ns, check_warnings, call_stack);
+              let processed = preprocess_argument_with_context(
+                arg,
+                expected_method_args.as_ref().and_then(|types| types.get(arg_idx)),
+                scope_defs,
+                scope_types,
+                file_ns,
+                check_warnings,
+                call_stack,
+              );
               EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous_fn);
               processed_args = processed_args.push(processed?);
             }
@@ -3275,14 +3339,12 @@ fn preprocess_list_call(
             }
             // Prefix methods share the receiver-specialized callback contract
             // used by postfix methods. Process the receiver before deriving it.
-            let expected_fn = if !has_spread
+            let expected_type = if !has_spread
               && let Calcit::Method(name, calcit::MethodKind::Invoke(_)) = &head_form
               && let Some(receiver) = ys.get(1)
               && let Some(receiver_type) = resolve_type_value(receiver, scope_types)
             {
-              expected_method_argument_types(receiver_type.as_ref(), name)
-                .and_then(|types| types.get(ys.len() - 2).cloned())
-                .and_then(|expected| expected.resolve_to_fn())
+              expected_method_argument_types(receiver_type.as_ref(), name).and_then(|types| types.get(ys.len() - 2).cloned())
             } else if !has_spread
               && ys.len() == 2
               && let Calcit::Proc(proc @ (CalcitProc::Sort | CalcitProc::NativeListSort)) = &head_form
@@ -3292,7 +3354,7 @@ fn preprocess_list_call(
               // Use the same list member contract as the later proc argument check.
               let candidate_args = CalcitList::from(&[receiver.to_owned(), a.to_owned()]);
               specialize_collection_sort_expected_types(&candidate_args, scope_types, &signature.arg_types)
-                .and_then(|types| types.get(1).and_then(|expected| expected.resolve_to_fn()))
+                .and_then(|types| types.get(1).cloned())
             } else if !has_spread
               && let Calcit::Proc(
                 proc @ (CalcitProc::Foldl
@@ -3317,7 +3379,7 @@ fn preprocess_list_call(
               candidate_args.push(a.to_owned());
               let candidate_args = CalcitList::from(candidate_args.as_slice());
               type_checking::specialize_collection_fold_expected_types(&candidate_args, scope_types, &signature.arg_types)
-                .and_then(|types| types.last().and_then(|expected| expected.resolve_to_fn()))
+                .and_then(|types| types.last().cloned())
             } else if !has_spread {
               // A local/indirect callable has the same input contract as a named
               // function. Supply it before checking an inline callback body;
@@ -3328,11 +3390,11 @@ fn preprocess_list_call(
                   .get(ys.len() - 1)
                   .or(signature.rest_type.as_ref())
                   .map(|expected| expected.substitute_type_vars(&callable_bindings))
-                  .and_then(|expected| expected.resolve_to_fn())
               })
             } else {
               None
             };
+            let expected_fn = expected_type.as_ref().and_then(|expected| expected.resolve_to_fn());
             let has_callback_contract = callable_contract.is_some()
               || matches!(&head_form, Calcit::Method(_, calcit::MethodKind::Invoke(_)))
               || matches!(
@@ -3355,7 +3417,19 @@ fn preprocess_list_call(
                 previous
               })
             });
-            let result = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack);
+            let result = if has_callback_contract {
+              preprocess_argument_with_context(
+                a,
+                expected_type.as_ref(),
+                scope_defs,
+                scope_types,
+                file_ns,
+                check_warnings,
+                call_stack,
+              )
+            } else {
+              preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)
+            };
             if let Some(previous_fn) = previous_fn {
               EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous_fn);
             }
@@ -3616,7 +3690,7 @@ fn preprocess_list_call(
           if REQUIRE_ASSERTION_PROOF.with(Cell::get)
             && let Some(contract) = proc.get_type_signature()
             && let CalcitTypeAnnotation::Fn(signature) =
-              CalcitTypeAnnotation::from_function_parts(contract.arg_types.clone(), contract.return_type.clone())
+              CalcitTypeAnnotation::from_proc_parts(contract.arg_types.clone(), contract.return_type.clone())
           {
             reject_strict_unproven_generic_relation(
               &Calcit::Proc(*proc),
@@ -3625,6 +3699,7 @@ fn preprocess_list_call(
               scope_types,
               file_ns,
               call_stack,
+              call_location.clone(),
             )?;
           }
 
@@ -3668,7 +3743,15 @@ fn preprocess_list_call(
               && let Some(signature) = local_type.resolve_to_fn()
             {
               reject_strict_dynamic_nominal_argument(&head_form, &updated_args, &signature, scope_types, file_ns, call_stack)?;
-              reject_strict_unproven_generic_relation(&head_form, &updated_args, &signature, scope_types, file_ns, call_stack)?;
+              reject_strict_unproven_generic_relation(
+                &head_form,
+                &updated_args,
+                &signature,
+                scope_types,
+                file_ns,
+                call_stack,
+                call_info.call_location.clone(),
+              )?;
             }
             check_local_fn_call_arg_types(&head_form, local, &updated_args, scope_types, &call_info, check_warnings);
           }
@@ -3901,7 +3984,15 @@ fn preprocess_known_function_call(
       EXPECTED_STRUCT_TYPE.with(|cell| cell.borrow_mut().replace(struct_def));
     }
 
-    let result = preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack);
+    let result = preprocess_argument_with_context(
+      a,
+      expected_type.as_ref(),
+      scope_defs,
+      scope_types,
+      file_ns,
+      check_warnings,
+      call_stack,
+    );
 
     // Always clear the hints after preprocessing, even on error
     EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = None);
@@ -3943,6 +4034,7 @@ fn preprocess_known_function_call(
       scope_types,
       file_ns,
       call_stack,
+      call_location.clone(),
     )?;
   }
   reject_pending_async_arguments(&head_form, &processed_call_args, scope_types, call_stack)?;
@@ -4038,6 +4130,7 @@ fn preprocess_known_function_call(
       scope_types,
       file_ns,
       call_stack,
+      call_location.clone(),
     )?;
     check_user_fn_arg_types(info.as_ref(), &head_form, &current_args, scope_types, call_info, check_warnings);
   }
@@ -5268,7 +5361,7 @@ fn reject_unproven_struct_update(
       unreachable!("function parts produce a function signature")
     };
     reject_strict_unproven_generic_relation(
-      head, args, &signature, scope_types, file_ns, call_stack,
+      head, args, &signature, scope_types, file_ns, call_stack, field.get_location().or_else(|| receiver.get_location()),
     ).map_err(|mut error| {
       error.hint = Some(format!("Nominal field :{field_name}; prove the assigned value before updating this field. A wrapper or return declaration is not a checked conversion.").into_boxed_str());
       error
@@ -7200,7 +7293,7 @@ fn validate_method_call(
         fn_kind: SchemaKind::Fn,
         features: Arc::new(HashSet::new()),
       };
-      reject_strict_unproven_generic_relation(head, args, &signature, scope_types, file_ns, call_stack)?;
+      reject_strict_unproven_generic_relation(head, args, &signature, scope_types, file_ns, call_stack, head.get_location())?;
     }
   }
 
@@ -8233,7 +8326,7 @@ fn static_method_contract_with_impls(
             Some(source_schema)
           } else {
             proc.get_type_signature().map(|signature| {
-              Arc::new(CalcitTypeAnnotation::from_function_parts(
+              Arc::new(CalcitTypeAnnotation::from_proc_parts(
                 signature.arg_types.clone(),
                 signature.return_type.clone(),
               ))
@@ -9378,10 +9471,12 @@ pub fn preprocess_defn(
         info.at_def.to_owned(),
         location.to_owned().unwrap_or_default(),
       );
+      let lexical_generics =
+        crate::calcit::type_annotation::free_type_variable_names(&ctx.scope_types.values().cloned().collect::<Vec<_>>());
       let body_fn_hint = args
         .iter()
         .skip(2)
-        .find_map(CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form)
+        .find_map(|form| CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form_in_scope(form, &lexical_generics))
         .and_then(|annotation| match annotation.as_ref() {
           CalcitTypeAnnotation::Fn(fn_annotation) => Some(fn_annotation.clone()),
           _ => None,
@@ -9604,6 +9699,13 @@ pub fn preprocess_defn(
       // Check function return type if declared
       // Extract return type hint from processed body (after preprocessing)
       let mut detected_return_type = detect_return_type_hint_from_processed_body(&processed_body);
+      if let Some(CalcitTypeAnnotation::Fn(signature)) = processed_body
+        .iter()
+        .find_map(|form| CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form_in_scope(form, &lexical_generics))
+        .as_deref()
+      {
+        detected_return_type = signature.return_type.clone();
+      }
       if strict_generated_by_macro
         && matches!(detected_return_type.as_ref(), CalcitTypeAnnotation::Dynamic)
         && let Some(inferred) = processed_body.last().and_then(|body| resolve_type_value(body, &body_types))
@@ -9671,6 +9773,7 @@ pub fn preprocess_defn(
             .as_ref()
             .is_some_and(|signature| signature.is_async_invocation()),
           &body_types,
+          (!has_marked_args).then_some(recur_param_types.as_slice()),
           CallTypeCheckInfo {
             file_ns: ctx.file_ns,
             def_name: def_name.as_ref(),
@@ -10000,8 +10103,11 @@ pub fn preprocess_hint_fn(
   // The two-argument form annotates an existing local function value. Keep the annotation in
   // lexical scope so later calls, callback checks, and `type-at` retain the complete signature.
   // The one-argument form is metadata injected into a function body and has no target to refine.
+  let lexical_generics =
+    crate::calcit::type_annotation::free_type_variable_names(&ctx.scope_types.values().cloned().collect::<Vec<_>>());
   if args.len() >= 2
-    && let Some(type_entry) = CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(&Calcit::from(ys.clone()))
+    && let Some(type_entry) =
+      CalcitTypeAnnotation::extract_fn_annotation_from_hint_form_in_scope(&Calcit::from(ys.clone()), &lexical_generics)
     && let Some(target_raw) = args.first()
   {
     let target_form = preprocess_expr(
@@ -10717,7 +10823,7 @@ fn reject_strict_unproven_specialized_contract(
 }
 
 fn empty_container_has_no_type_evidence(arg: &Calcit, expected: &CalcitTypeAnnotation) -> bool {
-  let expects_generic = expected.contains_type_var();
+  let expects_generic = matches!(expected, CalcitTypeAnnotation::TypeVar(_));
   match (arg, expected) {
     (Calcit::List(values), _) if expects_generic && values.is_empty() => true,
     (Calcit::List(values), _) if expects_generic && values.len() == 1 => matches!(
@@ -10740,6 +10846,22 @@ fn empty_container_has_no_type_evidence(arg: &Calcit, expected: &CalcitTypeAnnot
     }
     _ => false,
   }
+}
+
+#[cfg(test)]
+#[test]
+fn empty_container_context_preserves_the_container_family() {
+  let t = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+  let list = Calcit::from(vec![Calcit::Proc(CalcitProc::List)]);
+  let map = Calcit::from(vec![Calcit::Proc(CalcitProc::NativeMap)]);
+  let set = Calcit::from(vec![Calcit::Proc(CalcitProc::Set)]);
+  let expected_list = CalcitTypeAnnotation::List(t.clone());
+  assert!(empty_container_has_no_type_evidence(&list, &expected_list));
+  assert!(!empty_container_has_no_type_evidence(&map, &expected_list));
+  assert!(!empty_container_has_no_type_evidence(&set, &expected_list));
+  assert!(empty_container_has_no_type_evidence(&map, &t));
+  let callback = CalcitTypeAnnotation::from_function_parts(vec![t.clone()], t);
+  assert!(!empty_container_has_no_type_evidence(&list, &callback));
 }
 
 fn find_unproven_generic_argument(
@@ -10782,7 +10904,15 @@ fn find_unproven_generic_argument(
       .is_some_and(|actual| contains_dynamic_type(actual.as_ref()))
   });
 
-  let mut bindings = HashMap::new();
+  let expected_types = argument_contracts
+    .iter()
+    .map(|(_, _, expected)| (*expected).clone())
+    .collect::<Vec<_>>();
+  let actual_types = args
+    .iter()
+    .filter_map(|arg| resolve_type_value(arg, scope_types))
+    .collect::<Vec<_>>();
+  let mut call_proof = CallTypeProof::new(&signature.generics, &expected_types, &actual_types);
   let mut inspect = |index: usize, arg: &Calcit, expected: &Arc<CalcitTypeAnnotation>| {
     if matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic) {
       return None;
@@ -10812,7 +10942,7 @@ fn find_unproven_generic_argument(
         contradictory: false,
       });
     };
-    let proof = actual.prove_available_bindings(expected, &mut bindings);
+    let proof = call_proof.prove(&actual, expected);
     ((matches!(proof, TypeProof::NeedsBoundary(_)) || audit && proof.is_mismatch())
       && (audit
         || matches!(
@@ -10836,6 +10966,32 @@ fn find_unproven_generic_argument(
   None
 }
 
+/// Project a single final spread onto a known rest contract for proof only.
+/// The source operand is retained once; code generation still sees the original call.
+fn typed_rest_spread_contract(signature: &CalcitFnTypeAnnotation, args: &CalcitList) -> Option<(CalcitList, CalcitFnTypeAnnotation)> {
+  let trailing_rest = signature.arg_types.last().and_then(|annotation| match annotation.as_ref() {
+    CalcitTypeAnnotation::Variadic(inner) => Some(inner.clone()),
+    _ => None,
+  });
+  let rest = signature.rest_type.clone().or_else(|| trailing_rest.clone())?;
+  let fixed_count = signature.arg_types.len() - usize::from(trailing_rest.is_some());
+  let spread_index = args
+    .iter()
+    .position(|argument| matches!(argument, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))?;
+  // Unknown length must never satisfy a missing fixed parameter, consume a
+  // later argument, or make the position of another spread ambiguous.
+  if spread_index != fixed_count || args.len() != fixed_count + 2 {
+    return None;
+  }
+  let mut contract = signature.clone();
+  contract.arg_types.truncate(fixed_count);
+  contract.arg_types.push(Arc::new(CalcitTypeAnnotation::List(rest)));
+  contract.rest_type = None;
+  let mut projected = args.iter().take(fixed_count).cloned().collect::<Vec<_>>();
+  projected.push(args.get(fixed_count + 1)?.clone());
+  Some((CalcitList::from(projected.as_slice()), contract))
+}
+
 fn reject_strict_unproven_generic_relation(
   head: &Calcit,
   args: &CalcitList,
@@ -10843,28 +10999,42 @@ fn reject_strict_unproven_generic_relation(
   scope_types: &ScopeTypes,
   file_ns: &str,
   call_stack: &CallStackList,
+  call_location: Option<NodeLocation>,
 ) -> Result<(), CalcitErr> {
   let audit = REQUIRE_ASSERTION_PROOF.with(Cell::get);
   if !audit && (!strict_types_enabled() || !should_emit_project_source_lint(file_ns)) {
     return Ok(());
   }
   let expanded_args;
+  let mut spread_signature = None;
   let args = if audit && args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
-    expanded_args = type_inference::expand_literal_call_arguments(args).map_err(|operand| {
-        CalcitErr::use_msg_stack_location_with_code(
-          CalcitErrKind::Type,
-          format!(
-            "call to `{head}` cannot independently prove spread arguments without a statically available argument list; expose the fixed arguments or review the open call boundary"
-          ),
-          "E_CALL_ARGUMENT_UNPROVEN",
-          call_stack,
-          operand.and_then(Calcit::get_location).or_else(|| head.get_location()),
-        )
-    })?;
+    expanded_args = match type_inference::expand_literal_call_arguments(args) {
+      Ok(expanded) => expanded,
+      Err(operand) => {
+        if let Some((projected, contract)) = typed_rest_spread_contract(signature, args) {
+          spread_signature = Some(contract);
+          projected
+        } else {
+          return Err(CalcitErr::use_msg_stack_location_with_code(
+            CalcitErrKind::Type,
+            format!(
+              "call to `{head}` cannot independently prove spread arguments without a statically available argument list; expose the fixed arguments or review the open call boundary"
+            ),
+            "E_CALL_ARGUMENT_UNPROVEN",
+            call_stack,
+            operand
+              .and_then(Calcit::get_location)
+              .or_else(|| head.get_location())
+              .or(call_location.clone()),
+          ));
+        }
+      }
+    };
     &expanded_args
   } else {
     args
   };
+  let signature = spread_signature.as_ref().unwrap_or(signature);
   // Collection construction transports values; prove against the independently
   // inferred common element types, not a homogeneous T chosen by the first item.
   // A heterogeneous/open collection stays open at its later concrete sink.
@@ -10913,7 +11083,10 @@ fn reject_strict_unproven_generic_relation(
       ),
       "E_CALL_ARGUMENT_MISMATCH",
       call_stack,
-      argument.and_then(Calcit::get_location).or_else(|| head.get_location()),
+      argument
+        .and_then(Calcit::get_location)
+        .or_else(|| head.get_location())
+        .or(call_location.clone()),
     ));
   }
   let mut error = CalcitErr::use_msg_stack_location_with_code(
@@ -10938,7 +11111,10 @@ fn reject_strict_unproven_generic_relation(
       "E_ERASED_GENERIC_RELATION"
     },
     call_stack,
-    argument.and_then(Calcit::get_location).or_else(|| head.get_location()),
+    argument
+      .and_then(Calcit::get_location)
+      .or_else(|| head.get_location())
+      .or(call_location),
   );
   if audit && let CalcitTypeAnnotation::Fn(contract) = expected.as_ref() {
     let mut features = contract
@@ -11381,6 +11557,79 @@ mod tests {
   };
   use crate::data::cirru::code_to_calcit;
   use cirru_parser::Cirru;
+
+  #[test]
+  fn rest_spread_proof_projection_preserves_operand_and_fixed_arity() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let mut signature = CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![number.clone()],
+      return_type: number.clone(),
+      fn_kind: SchemaKind::Fn,
+      rest_type: Some(number.clone()),
+      features: Arc::new(HashSet::new()),
+    };
+    let spread = Calcit::Syntax(CalcitSyntax::ArgSpread, Arc::from("tests.spread"));
+    let operand = Calcit::Symbol {
+      sym: Arc::from("items"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.spread"),
+        at_def: Arc::from("main"),
+      }),
+      location: None,
+    };
+    let args = CalcitList::from(&[Calcit::Number(1.0), spread.clone(), operand.clone()] as &[Calcit]);
+    let (projected, contract) = typed_rest_spread_contract(&signature, &args).expect("fixed prefix and final rest spread");
+    assert_eq!(projected.to_vec(), vec![Calcit::Number(1.0), operand.clone()]);
+    assert_eq!(args.len(), 3, "proof projection must not mutate the executable call");
+    assert!(contract.rest_type.is_none());
+    let expected = contract.arg_types.last().unwrap();
+    let mut callable = operand.clone();
+    if let Calcit::Symbol { sym, .. } = &mut callable {
+      *sym = Arc::from("sink");
+    }
+    let call = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::CallSpread, Arc::from("tests.spread")),
+      callable,
+      Calcit::Number(1.0),
+      spread.clone(),
+      operand.clone(),
+    ]);
+    let mut scope = ScopeTypes::from([(Arc::from("sink"), Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature.clone()))))]);
+    for (element, accepted) in [
+      (number.clone(), true),
+      (Arc::new(CalcitTypeAnnotation::String), false),
+      (calcit::DYNAMIC_TYPE.clone(), false),
+    ] {
+      let actual = CalcitTypeAnnotation::List(element);
+      assert_eq!(actual.prove_with_bindings(expected, &mut HashMap::new()).is_proven(), accepted);
+      scope.insert(Arc::from("items"), Arc::new(actual));
+      assert_eq!(resolve_type_value(&call, &scope), accepted.then(|| number.clone()));
+    }
+    assert!(
+      !CalcitTypeAnnotation::Dynamic
+        .prove_with_bindings(expected, &mut HashMap::new())
+        .is_proven()
+    );
+    for invalid in [
+      vec![spread.clone(), operand.clone()],
+      vec![Calcit::Number(1.0), spread.clone(), operand.clone(), Calcit::Number(2.0)],
+      vec![Calcit::Number(1.0), spread.clone(), operand.clone(), spread, operand],
+    ] {
+      assert!(typed_rest_spread_contract(&signature, &CalcitList::from(invalid.as_slice())).is_none());
+    }
+    signature.rest_type = None;
+    assert!(
+      typed_rest_spread_contract(&signature, &args).is_none(),
+      "fixed arity still requires known spread length"
+    );
+    signature.arg_types.push(Arc::new(CalcitTypeAnnotation::Variadic(number)));
+    assert!(
+      typed_rest_spread_contract(&signature, &args).is_some(),
+      "proc variadic contracts use the same projection"
+    );
+  }
 
   #[test]
   fn helper_recursion_scan_rejects_qualified_recur_before_concrete_return() {
@@ -13383,6 +13632,7 @@ mod tests {
         &declared,
         false,
         &ScopeTypes::new(),
+        None,
         CallTypeCheckInfo {
           file_ns: "tests.strict-nil",
           def_name: "unit-step",
@@ -19500,6 +19750,7 @@ mod tests {
       &scope_types,
       "tests.generic-relation",
       &CallStackList::default(),
+      None,
     )
     .expect("a pure identity transports Dynamic without claiming a concrete payload");
 
@@ -19562,6 +19813,7 @@ mod tests {
       &callback_scope,
       "tests.generic-relation",
       &CallStackList::default(),
+      None,
     )
     .expect_err("a Number-only callback cannot consume an open Dynamic payload");
     assert_eq!(error.code.as_deref(), Some("E_ERASED_GENERIC_RELATION"));

@@ -258,6 +258,8 @@ schema 候选没有 unresolved slot 也可能需要 review；检查 `:origin-cha
 
 `fix --workflow strict` 已组合 spread、unsafe、assert、return、callable 与 nominal-write 证明。先看顶层 diagnostics：有证明错误时 preview/apply 为 `requires-review`、verify 为 `failed`，不能把普通 entry 检查通过视为全部证明完成。apply 可提交安全迁移，但不会修复待审证明；按实际新 revision 恢复。没有源码位置或来自依赖的错误只保留诊断，不猜可编辑位置。每个定义只报告首错，tests/examples 仍单独验证。
 
+类型义务应归属到实际 producer 或调用位置。必然抛错的退出不产生违约返回值，但不提供具体值类型；只有尾递归而没有独立值退出，仍不能证明具体返回类型。安全改名也不会把原来的 Dynamic 输入变成 Enum：例如旧调用迁移到 `enum-definition` 后，开放输入仍需要在真实边界校验或声明已知 Enum 契约，不能自动加 cast。项目本身的返回/参数类型警告同样会阻止 strict workflow 完成；安全迁移已应用不等于整个项目已通过。
+
 单独检查具体返回声明的实现证据，使用 `calcit fix --rule concrete-return-proof-v1 --ns <ns> --def <name> --format edn`。
 沿报告导航到真实 producer，不能把 wrapper 的返回 schema 当成转换。缺证据建议只供 review；
 修正边界或独立证明实现后再检查，只有缺省 metadata 才考虑既有 synthesis，不猜类型或 decoder。
