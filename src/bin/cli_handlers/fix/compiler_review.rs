@@ -13,19 +13,48 @@ pub(super) fn compile_boundary_review(
   snapshot: &Snapshot,
   snapshot_file: &str,
   definitions: &[(String, String)],
+  rule: &'static str,
 ) -> Result<BoundaryReview, String> {
   if !runner::preprocess::is_strict_types_enabled() {
-    return Err("unsafe-coerce-boundary-v1 requires strict types; compatibility mode cannot prove a lexical FFI boundary.".to_owned());
+    return Err(format!(
+      "{rule} requires strict types; compatibility mode cannot establish independent proof."
+    ));
   }
   let warnings = RefCell::new(Vec::new());
   let mut suggestions = Vec::new();
   let mut diagnostics = Vec::new();
   let mut seen = HashSet::new();
   for (namespace, definition) in definitions {
-    if let Err(error) = runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default()) {
-      if error.code() != Some(UNSAFE_COERCE_BOUNDARY_DIAGNOSTIC) {
-        return Err(format!("Failed to preprocess fix target {namespace}/{definition}: {error}"));
-      }
+    let result = if rule == ASSERT_TYPE_PROOF_RULE {
+      runner::preprocess::with_assertion_proof(|| {
+        // Reprocess the selected source even if another definition compiled it
+        // earlier. Cached local annotations are not pre-assertion evidence.
+        runner::preprocess::trace_definition_source_expressions(namespace, definition, &warnings, &CallStackList::default()).map(|_| ())
+      })
+    } else {
+      runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default()).map(|_| ())
+    };
+    if rule == ASSERT_TYPE_PROOF_RULE
+      && let Some(warning) = warnings
+        .borrow()
+        .iter()
+        .find(|warning| warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH"))
+    {
+      // A contradictory implementation cannot lend its declared return type
+      // to an assertion, even when ordinary checking reports it as a warning.
+      return Err(format!(
+        "Assertion proof audit cannot borrow a contradictory producer contract: {}",
+        warning
+      ));
+    }
+    if let Err(error) = result {
+      let diagnostic_code = match (rule, error.code()) {
+        (UNSAFE_COERCE_BOUNDARY_RULE, Some(UNSAFE_COERCE_BOUNDARY_DIAGNOSTIC)) => UNSAFE_COERCE_BOUNDARY_DIAGNOSTIC,
+        (ASSERT_TYPE_PROOF_RULE, Some(ASSERT_TYPE_PROOF_DIAGNOSTIC)) => ASSERT_TYPE_PROOF_DIAGNOSTIC,
+        (ASSERT_TYPE_PROOF_RULE, Some("E_ASSERT_TYPE_MISMATCH")) => "E_ASSERT_TYPE_MISMATCH",
+        (ASSERT_TYPE_PROOF_RULE, Some("E_FN_RETURN_UNPROVEN")) => "E_FN_RETURN_UNPROVEN",
+        _ => return Err(format!("Failed to preprocess fix target {namespace}/{definition}: {error}")),
+      };
       let location = error
         .location
         .as_ref()
@@ -74,12 +103,12 @@ pub(super) fn compile_boundary_review(
         })
         .collect::<Vec<_>>();
       suggestions.push(FixSuggestion {
-        rule_id: UNSAFE_COERCE_BOUNDARY_RULE,
-        diagnostic_code: UNSAFE_COERCE_BOUNDARY_DIAGNOSTIC,
+        rule_id: rule,
+        diagnostic_code,
         semantic_layer: "surface",
         source_file: snapshot_file.to_owned(),
         definition: definition_id,
-        path: format!("code{}", format_path(&path)),
+        path: if path.is_empty() { "code".to_owned() } else { format!("code{}", format_path(&path)) },
         fingerprint: node_fingerprint(&original),
         origin_chain: vec![serde_json::json!({
           "kind": "compiler-diagnostic",

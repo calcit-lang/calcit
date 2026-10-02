@@ -21,8 +21,8 @@ use super::checked_call_contract::resolve_checked_call_contract;
 use super::type_inference::{async_invocation_result, infer_struct_field_type, infer_unhinted_callback_signature};
 use crate::calcit::type_annotation::TypeProof;
 use crate::calcit::{
-  self, Calcit, CalcitFn, CalcitGenericBound, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax, CalcitTypeAnnotation, LocatedWarning,
-  NodeLocation,
+  self, Calcit, CalcitErr, CalcitErrKind, CalcitFn, CalcitGenericBound, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax,
+  CalcitTypeAnnotation, LocatedWarning, NodeLocation,
 };
 use crate::program;
 
@@ -1041,11 +1041,11 @@ pub(crate) fn check_function_return_type(
   scope_types: &ScopeTypes,
   info: CallTypeCheckInfo<'_>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
-) {
+) -> Result<(), CalcitErr> {
   let file_ns = info.file_ns;
   let def_name = info.def_name;
   if matches!(**declared_return_type, CalcitTypeAnnotation::Dynamic) {
-    return;
+    return Ok(());
   }
 
   // Generated schema hints are metadata, just as in the runtime body. Check
@@ -1056,8 +1056,32 @@ pub(crate) fn check_function_return_type(
     .find(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
     .unwrap_or(&Calcit::Nil);
 
-  let Some(actual_type) = resolve_type_value(last_expr, scope_types) else {
-    return;
+  let actual_type = resolve_type_value(last_expr, scope_types);
+  let audit = super::REQUIRE_ASSERTION_PROOF.with(std::cell::Cell::get);
+  let unproven = |actual: &str| {
+    let location = last_expr
+      .get_location()
+      .filter(|location| location.ns.as_ref() == file_ns && location.def.as_ref() == def_name)
+      .or_else(|| {
+        // A lowered tail can lose its coordinate. The declaration still has
+        // an exact source owner; never attribute its proof debt to a caller.
+        program::lookup_def_code(file_ns, def_name)
+          .map(|_| NodeLocation::new(Arc::from(file_ns), Arc::from(def_name), Arc::new(vec![])))
+      })
+      .or(info.call_location.clone());
+    CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!(
+        "Function `{file_ns}/{def_name}` has no independent return proof: expected `{}`, got `{actual}`; a declared return type is not a checked conversion",
+        diagnostic_type_string(declared_return_type)
+      ),
+      "E_FN_RETURN_UNPROVEN",
+      &crate::call_stack::CallStackList::default(),
+      location,
+    )
+  };
+  let Some(actual_type) = actual_type else {
+    return if audit { Err(unproven("unknown")) } else { Ok(()) };
   };
   // Async functions adopt a pending tail result; a synchronous function must
   // retain the pending wrapper rather than claim its logical result as a value.
@@ -1070,7 +1094,11 @@ pub(crate) fn check_function_return_type(
   let mut bindings = HashMap::new();
   // Keep unproven boundaries on the existing migration path, but never let
   // an open callable hide a definite contradiction with the return contract.
-  let compatible = match actual_type.prove_with_bindings(declared_return_type, &mut bindings) {
+  let proof = actual_type.prove_with_bindings(declared_return_type, &mut bindings);
+  if audit && matches!(proof, TypeProof::NeedsBoundary(_)) {
+    return Err(unproven(&diagnostic_type_string(actual_type.as_ref())));
+  }
+  let compatible = match proof {
     TypeProof::Proven => true,
     TypeProof::Mismatch => false,
     TypeProof::NeedsBoundary(_) => actual_type.compatible_with_bindings(declared_return_type, &mut bindings),
@@ -1094,6 +1122,7 @@ pub(crate) fn check_function_return_type(
       check_warnings,
     );
   }
+  Ok(())
 }
 
 #[cfg(test)]
@@ -1179,7 +1208,8 @@ mod tests {
         call_location: None,
       },
       &warnings,
-    );
+    )
+    .expect("ordinary checking retains return warnings");
 
     let warnings = warnings.borrow();
     assert_eq!(warnings.len(), 1, "a generic payload must not erase the Result wrapper contract");
@@ -1222,7 +1252,8 @@ mod tests {
         call_location: None,
       },
       &warnings,
-    );
+    )
+    .expect("ordinary checking retains generic return compatibility");
 
     assert!(warnings.borrow().is_empty(), "matching generic wrappers should remain valid");
   }

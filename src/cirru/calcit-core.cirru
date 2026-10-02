@@ -3571,6 +3571,27 @@
               :code $ quote $ assert= ([] 1 2)
                 assert-type ([] 1 2) (:: 'List 'Number)
               :tags $ #{} :assert-boundary :unit
+            %{} 'TestEntry (:name |proven-generic-identity)
+              :code $ quote $ assert= 3
+                let
+                    keep-value $ fn (x)
+                      hint-fn $ {}
+                        :generics $ [] 'T
+                        :args $ [] 'T
+                        :return 'T
+                      assert-type x 'T
+                  keep-value 3
+              :tags $ #{} :assert-boundary :unit
+            %{} 'TestEntry (:name |preserves-explicit-open-identity)
+              :code $ quote $ assert= |value
+                let
+                    keep-value $ fn (x)
+                      hint-fn $ {}
+                        :args $ [] 'Dynamic
+                        :return 'Dynamic
+                      assert-type x 'Dynamic
+                  keep-value |value
+              :tags $ #{} :assert-boundary :unit
         'assert= $ %{} 'CodeEntry
           :doc "|asserts that two values are equal, raises error showing both values if not"
           :code $ quote $ defmacro assert= (a b)
