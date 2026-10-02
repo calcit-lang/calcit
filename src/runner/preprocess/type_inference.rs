@@ -341,6 +341,72 @@ fn core_result_err_payload_types<'a>(
   Some((actual_error.as_ref(), expected_error.as_ref()))
 }
 
+/// Join nominal enum slots using actual constructor payload participation.
+/// Missing phantom slots carry no evidence; open values and used Dynamic slots do.
+fn merge_nominal_enum_branches<'a>(
+  branches: impl IntoIterator<Item = (&'a Calcit, &'a Arc<CalcitTypeAnnotation>, &'a ScopeTypes)>,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  let mut prototype: Option<Arc<CalcitEnumDef>> = None;
+  let mut slots: Vec<Option<Arc<CalcitTypeAnnotation>>> = Vec::new();
+  let mut missing_evidence = false;
+  for (expr, annotation, scope) in branches {
+    let CalcitTypeAnnotation::Enum(definition, arguments) = annotation.as_ref() else {
+      return None;
+    };
+    if definition.generics().len() != arguments.len() {
+      return None;
+    }
+    if let Some(previous) = &prototype {
+      if previous != definition {
+        return None;
+      }
+    } else {
+      prototype = Some(definition.clone());
+      slots.resize(arguments.len(), None);
+    }
+    let participation = if let Calcit::List(items) = expr
+      && matches!(
+        items.first(),
+        Some(Calcit::Proc(CalcitProc::NativeEnumNew | CalcitProc::NativeNamedEnumNew))
+      )
+      && let Some(Calcit::Tag(tag)) = items.get(2)
+      && resolve_enum_value(items.get(1)?, scope).as_ref() == Some(definition.as_ref())
+      && let Some(variant) = definition.find_variant_by_name(tag.ref_str())
+      && items.len() == variant.arity() + 3
+    {
+      Some(crate::calcit::type_annotation::free_type_variable_names(variant.payload_types()))
+    } else {
+      None
+    };
+    for (index, argument) in arguments.iter().enumerate() {
+      if matches!(argument.as_ref(), CalcitTypeAnnotation::Dynamic)
+        && participation
+          .as_ref()
+          .is_some_and(|used| !used.contains(&definition.generics()[index]))
+      {
+        missing_evidence = true;
+        continue;
+      }
+      slots[index] = Some(match slots[index].take() {
+        Some(previous) => merge_if_branch_types(previous, argument.clone())?,
+        None => argument.clone(),
+      });
+    }
+  }
+  if !missing_evidence {
+    return None;
+  }
+  Some(Arc::new(CalcitTypeAnnotation::Enum(
+    prototype?,
+    Arc::new(
+      slots
+        .into_iter()
+        .map(|slot| slot.unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()))
+        .collect(),
+    ),
+  )))
+}
+
 fn merge_result_constructor_branches(
   true_expr: &Calcit,
   true_type: &CalcitTypeAnnotation,
@@ -412,7 +478,8 @@ pub(crate) fn infer_if_return_type(xs: &CalcitList, scope_types: &ScopeTypes) ->
     }
     let true_type = resolve_type_value(true_expr, scope_types)?;
     let false_type = resolve_type_value(false_expr, scope_types)?;
-    merge_result_constructor_branches(true_expr, true_type.as_ref(), false_expr, false_type.as_ref())
+    merge_nominal_enum_branches([(true_expr, &true_type, scope_types), (false_expr, &false_type, scope_types)])
+      .or_else(|| merge_result_constructor_branches(true_expr, true_type.as_ref(), false_expr, false_type.as_ref()))
       .or_else(|| merge_option_absence_branch(true_expr, &true_type, false_expr, &false_type))
       .or_else(|| merge_if_branch_types(true_type, false_type))
   } else {
@@ -476,10 +543,13 @@ pub(crate) fn infer_function_exit_type(
         };
         match (left_exit, right_exit) {
           (Exit::Transfer, other) | (other, Exit::Transfer) => Some(other),
-          (Exit::Value(left_type), Exit::Value(right_type)) => merge_result_constructor_branches(left, &left_type, right, &right_type)
-            .or_else(|| merge_option_absence_branch(left, &left_type, right, &right_type))
-            .or_else(|| merge_if_branch_types(left_type, right_type))
-            .map(Exit::Value),
+          (Exit::Value(left_type), Exit::Value(right_type)) => {
+            merge_nominal_enum_branches([(left, &left_type, scope), (right, &right_type, scope)])
+              .or_else(|| merge_result_constructor_branches(left, &left_type, right, &right_type))
+              .or_else(|| merge_option_absence_branch(left, &left_type, right, &right_type))
+              .or_else(|| merge_if_branch_types(left_type, right_type))
+              .map(Exit::Value)
+          }
         }
       }
       _ => resolve_type_value(expr, scope).map(Exit::Value),
@@ -556,7 +626,7 @@ fn core_let_scope(items: &CalcitList, scope_types: &ScopeTypes) -> ScopeTypes {
 
 /// Merge the body types of a preprocessed `match` expression.
 fn infer_match_return_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
-  let mut inferred: Option<Arc<CalcitTypeAnnotation>> = None;
+  let mut branches = Vec::new();
   for (pattern, branch_expr) in preprocessed_match_branches(xs)? {
     if expression_definitely_diverges(branch_expr) {
       continue;
@@ -564,6 +634,13 @@ fn infer_match_return_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<
     let mut branch_scope = scope_types.clone();
     bind_pattern_scope(pattern, &mut branch_scope);
     let branch_type = resolve_type_value(branch_expr, &branch_scope)?;
+    branches.push((branch_expr, branch_type, branch_scope));
+  }
+  if let Some(joined) = merge_nominal_enum_branches(branches.iter().map(|(expr, annotation, scope)| (*expr, annotation, scope))) {
+    return Some(joined);
+  }
+  let mut inferred: Option<Arc<CalcitTypeAnnotation>> = None;
+  for (_, branch_type, _) in branches {
     inferred = Some(match inferred {
       Some(previous) => merge_if_branch_types(previous, branch_type)?,
       None => branch_type,
@@ -627,6 +704,9 @@ fn resolve_generic_return_type_parts<'a>(
       break;
     };
     if matches!(**expected_type, CalcitTypeAnnotation::Dynamic) {
+      continue;
+    }
+    if super::empty_container_has_no_type_evidence(arg, expected_type) {
       continue;
     }
     let actual_type = resolve_type_value(arg, scope_types).or_else(|| match arg {
@@ -984,11 +1064,34 @@ fn merge_guaranteed_impl_returns(
   }
 }
 
-fn expression_definitely_diverges(expr: &Calcit) -> bool {
-  let Calcit::List(items) = expr else { return false };
-  matches!(items.first(), Some(Calcit::Proc(CalcitProc::Raise)))
-    || matches!(items.first(), Some(Calcit::Import(CalcitImport { ns, def, .. })) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "raise")
-    || matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "raise")
+pub(crate) fn expression_definitely_diverges(expr: &Calcit) -> bool {
+  // Inspect only guaranteed exits, not conditional initializers or recur.
+  // An iterative walk also handles deeply expanded lexical wrappers.
+  let mut pending = vec![expr];
+  while let Some(expr) = pending.pop() {
+    let Calcit::List(items) = expr else { return false };
+    match items.first() {
+      Some(Calcit::Proc(CalcitProc::Raise)) => {}
+      Some(Calcit::Import(CalcitImport { ns, def, .. })) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "raise" => {}
+      Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) if items.len() >= 3 => {
+        pending.push(items.get(items.len() - 1).expect("validated lexical tail"));
+      }
+      Some(Calcit::Syntax(CalcitSyntax::If, _)) if items.len() == 4 => {
+        pending.extend(items.iter().skip(2));
+      }
+      Some(Calcit::Syntax(CalcitSyntax::Match, _)) => {
+        let Some(branches) = preprocessed_match_bodies(items) else {
+          return false;
+        };
+        if branches.is_empty() {
+          return false;
+        }
+        pending.extend(branches);
+      }
+      _ => return false,
+    }
+  }
+  true
 }
 
 fn enrich_declared_struct_return_with_impls(
@@ -1711,10 +1814,12 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
 
 fn infer_preprocessed_function_type(xs: &CalcitList) -> Arc<CalcitTypeAnnotation> {
   let is_async = xs.iter().skip(3).any(CalcitTypeAnnotation::hint_form_marks_async);
+  let (parameter_types, inferred_rest_type) = infer_preprocessed_function_parameters(xs.get(2));
+  let lexical_generics = crate::calcit::type_annotation::lexical_type_variables_in_forms(xs.iter().skip(2));
   let hinted = xs
     .iter()
     .skip(3)
-    .find_map(CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form);
+    .find_map(|form| CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form_in_scope(form, &lexical_generics));
   let Some(hinted) = hinted else {
     // Keep ordinary unhinted callbacks dynamic: inferring their return type can
     // retroactively tighten existing higher-order calls. A zero-argument thunk
@@ -1738,7 +1843,6 @@ fn infer_preprocessed_function_type(xs: &CalcitList) -> Arc<CalcitTypeAnnotation
     return mark_async_callable(hinted, is_async);
   };
 
-  let (parameter_types, inferred_rest_type) = infer_preprocessed_function_parameters(xs.get(2));
   let mut arg_types = fn_annotation.arg_types.clone();
   for parameter_type in parameter_types.iter().skip(arg_types.len()) {
     arg_types.push(parameter_type.clone());
@@ -2057,6 +2161,15 @@ fn infer_impl_attachment_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Opti
 ///
 /// Extracted from the large `Calcit::Proc` arm of `infer_type_from_expr` for clarity.
 fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  if matches!(proc, CalcitProc::NativeEnumDefinition)
+    && let Some(receiver) = xs.get(1).and_then(|value| resolve_type_value(value, scope_types))
+    && receiver.is_proven_for(&CalcitTypeAnnotation::AnonymousEnum)
+    && let Some(definition) = receiver.resolve_to_enum()
+  {
+    // A proven nominal value always carries its definition. Anonymous or
+    // nullable inputs retain the proc's open, nullable result contract.
+    return Some(Arc::new(CalcitTypeAnnotation::EnumDef(Arc::new(definition))));
+  }
   if matches!(proc, CalcitProc::NativeTraitNew)
     && let Some(trait_def) = infer_trait_value(xs)
   {
@@ -2115,12 +2228,9 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   {
     return Some(return_type);
   }
-  if matches!(proc, CalcitProc::Foldl)
-    && let (Some(initial_value), Some(reducer)) = (xs.get(2), xs.get(3))
-    && let (Some(initial_type), Some(reducer_type)) = (
-      resolve_type_value(initial_value, scope_types),
-      resolve_type_value(reducer, scope_types),
-    )
+  if matches!(proc, CalcitProc::Foldl | CalcitProc::NativeListFoldl)
+    && let Some(reducer) = xs.get(3)
+    && let Some(reducer_type) = resolve_type_value(reducer, scope_types)
   {
     // Return proof and callback preprocessing share the same input contract.
     if let Some(expected) = super::type_checking::specialize_collection_fold_expected_types(
@@ -2130,7 +2240,7 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
     ) && matches!(reducer_type.as_ref(), CalcitTypeAnnotation::Fn(_))
       && reducer_type.as_ref().is_proven_for(&expected[2])
     {
-      return Some(initial_type);
+      return Some(expected[1].clone());
     }
   }
   // `&list:nth` retains its unchecked payload type for guarded core macro
@@ -2333,7 +2443,7 @@ fn infer_definition_value_type_inner(ns: &str, def: &str) -> Option<Arc<CalcitTy
   // concrete shape is declared in the source form. Resolve the nominal name
   // before looking at compiled metadata: preprocessing a `defstruct` can
   // temporarily expose an implementation helper, which must not replace the
-  // public `namespace/Definition` type seen by callers.
+  // source-owned definition object or conflate it with an instance type.
   let schema_is_data_definition_marker = match schema.as_ref() {
     CalcitTypeAnnotation::Dynamic => true,
     CalcitTypeAnnotation::Custom(value) => {
@@ -2344,7 +2454,13 @@ fn infer_definition_value_type_inner(ns: &str, def: &str) -> Option<Arc<CalcitTy
   if schema_is_data_definition_marker {
     let named_type = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), Arc::new(vec![])));
     let source_is_nominal = program::lookup_def_code(ns, def).is_some_and(|code| code_resolves_to_nominal_type_def(&code));
-    if source_is_nominal || named_type.resolve_to_struct().is_some() || named_type.resolve_to_enum().is_some() {
+    if source_is_nominal {
+      if let Some(definition) = named_type.resolve_to_enum() {
+        return Some(Arc::new(CalcitTypeAnnotation::EnumDef(Arc::new(definition))));
+      }
+      if let Some(definition) = named_type.resolve_to_struct() {
+        return Some(Arc::new(CalcitTypeAnnotation::StructDef(Arc::new(definition))));
+      }
       return Some(named_type);
     }
   }
@@ -3204,9 +3320,35 @@ mod tests {
       Some(option_number.clone())
     );
     assert_eq!(
-      infer_if_return_type(&if_expr(raise, live.clone()), &ScopeTypes::new()),
+      infer_if_return_type(&if_expr(raise.clone(), live.clone()), &ScopeTypes::new()),
       Some(option_number.clone())
     );
+    let wrapped = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from("tests.raise")),
+      Calcit::from(Vec::<Calcit>::new()),
+      Calcit::Nil,
+      raise.clone(),
+    ]);
+    assert_eq!(
+      infer_function_exit_type(
+        &Calcit::List(if_expr(wrapped.clone(), live.clone()).into()),
+        &ScopeTypes::new(),
+        &[]
+      ),
+      Some(option_number.clone())
+    );
+    assert!(expression_definitely_diverges(&Calcit::List(
+      if_expr(wrapped.clone(), raise).into()
+    )));
+    assert!(!expression_definitely_diverges(&Calcit::List(
+      if_expr(wrapped, live.clone()).into()
+    )));
+    assert!(!expression_definitely_diverges(&proc_call(CalcitProc::Recur, vec![])));
+    let local_raise = Calcit::from(vec![
+      local("raise", calcit::DYNAMIC_TYPE.clone()),
+      Calcit::Str(Arc::from("returns")),
+    ]);
+    assert!(!expression_definitely_diverges(&local_raise));
     assert_ne!(
       infer_if_return_type(&if_expr(live, local("open", calcit::DYNAMIC_TYPE.clone())), &ScopeTypes::new()),
       Some(option_number)
@@ -3322,6 +3464,69 @@ mod tests {
     // Unrelated payloads must not fabricate a shared Option.
     let option_string = option(Arc::new(CalcitTypeAnnotation::String));
     assert!(merge_if_branch_types(number, option_string).is_none());
+  }
+
+  #[test]
+  fn nominal_branch_participation_preserves_used_dynamic_and_open_values() {
+    let t = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let e = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("E")));
+    let mut schema = CalcitStructDef::from_fields(
+      EdnTag::from("Choice"),
+      vec![EdnTag::from("left"), EdnTag::from("right"), EdnTag::from("empty")],
+    );
+    schema.generics = Arc::new(vec![Arc::from("T"), Arc::from("E")]);
+    let definition = CalcitEnumDef::from_struct(CalcitStructValue {
+      struct_ref: Arc::new(schema),
+      values: Arc::new(vec![
+        Calcit::from(vec![t.to_calcit()]),
+        Calcit::from(vec![e.to_calcit()]),
+        Calcit::from(Vec::<Calcit>::new()),
+      ]),
+    })
+    .unwrap();
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let string = Arc::new(CalcitTypeAnnotation::String);
+    let annotation = |left, right| {
+      Arc::new(CalcitTypeAnnotation::Enum(
+        Arc::new(definition.clone()),
+        Arc::new(vec![left, right]),
+      ))
+    };
+    let constructor = |tag, payload: Vec<Calcit>| {
+      let mut args = vec![Calcit::EnumDef(definition.clone()), Calcit::Tag(EdnTag::from(tag))];
+      args.extend(payload);
+      proc_call(CalcitProc::NativeEnumNew, args)
+    };
+    let left = constructor("left", vec![Calcit::Number(1.0)]);
+    let right = constructor("right", vec![Calcit::Str(Arc::from("failed"))]);
+    let empty = constructor("empty", vec![]);
+    let left_type = annotation(number.clone(), calcit::DYNAMIC_TYPE.clone());
+    let right_type = annotation(calcit::DYNAMIC_TYPE.clone(), string.clone());
+    let open_type = annotation(calcit::DYNAMIC_TYPE.clone(), calcit::DYNAMIC_TYPE.clone());
+    let scope = ScopeTypes::new();
+    assert_eq!(
+      merge_nominal_enum_branches([
+        (&empty, &open_type, &scope),
+        (&left, &left_type, &scope),
+        (&right, &right_type, &scope)
+      ]),
+      Some(annotation(number, string.clone()))
+    );
+    let open = local("open", open_type.clone());
+    assert_eq!(
+      merge_nominal_enum_branches([(&open, &open_type, &scope), (&right, &right_type, &scope)]),
+      Some(open_type.clone())
+    );
+    let dynamic_left = constructor("left", vec![local("payload", calcit::DYNAMIC_TYPE.clone())]);
+    assert_eq!(
+      merge_nominal_enum_branches([(&dynamic_left, &open_type, &scope), (&right, &right_type, &scope)]),
+      Some(annotation(calcit::DYNAMIC_TYPE.clone(), string))
+    );
+    let malformed = constructor("empty", vec![Calcit::Number(1.0)]);
+    assert_eq!(
+      merge_nominal_enum_branches([(&malformed, &open_type, &scope), (&right, &right_type, &scope)]),
+      Some(open_type)
+    );
   }
 
   #[test]
@@ -3457,6 +3662,35 @@ mod tests {
           && matches!(args.as_slice(), [ok, err]
             if matches!(ok.as_ref(), CalcitTypeAnnotation::Dynamic)
               && matches!(err.as_ref(), CalcitTypeAnnotation::Dynamic))));
+  }
+
+  #[test]
+  fn empty_literal_does_not_erase_a_generic_return_anchor() {
+    let payload = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("U")));
+    let concrete = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::String)));
+    let anchor = local("anchor", concrete.clone());
+    let empty = Calcit::from(vec![Calcit::Proc(CalcitProc::List)]);
+    let inferred = resolve_generic_return_type_parts(
+      &[Arc::from("U")],
+      &[payload.clone(), payload.clone()],
+      None,
+      &payload,
+      [&empty, &anchor].into_iter(),
+      &ScopeTypes::new(),
+    )
+    .expect("an empty literal has no member evidence to bind U");
+    assert_eq!(inferred, concrete);
+    let open = local("open", calcit::DYNAMIC_TYPE.clone());
+    let inferred = resolve_generic_return_type_parts(
+      &[Arc::from("U")],
+      &[payload.clone(), payload.clone()],
+      None,
+      &payload,
+      [&open, &anchor].into_iter(),
+      &ScopeTypes::new(),
+    )
+    .expect("an explicit Dynamic is evidence, unlike an empty literal");
+    assert_eq!(inferred, calcit::DYNAMIC_TYPE.clone());
   }
 
   #[test]
@@ -4267,6 +4501,27 @@ mod tests {
       ]),
     })
     .expect("valid generic enum fixture");
+
+    let nominal = Arc::new(CalcitTypeAnnotation::Enum(
+      Arc::new(enum_def.clone()),
+      Arc::new(vec![calcit::DYNAMIC_TYPE.clone()]),
+    ));
+    let expression = proc_call(CalcitProc::NativeEnumDefinition, vec![local("value", nominal.clone())]);
+    assert!(matches!(infer_type_from_expr(&expression, &ScopeTypes::new()).as_deref(),
+      Some(CalcitTypeAnnotation::EnumDef(definition)) if definition.name() == enum_def.name()));
+    for open in [
+      Arc::new(CalcitTypeAnnotation::Optional(nominal)),
+      Arc::new(CalcitTypeAnnotation::AnonymousEnum),
+    ] {
+      let expression = proc_call(CalcitProc::NativeEnumDefinition, vec![local("value", open)]);
+      assert!(
+        matches!(
+          infer_type_from_expr(&expression, &ScopeTypes::new()).as_deref(),
+          Some(CalcitTypeAnnotation::Optional(_))
+        ),
+        "nullable or anonymous evidence must not prove a nominal definition"
+      );
+    }
 
     let none_call = CalcitList::from(&[
       Calcit::Proc(CalcitProc::NativeNamedEnumNew),

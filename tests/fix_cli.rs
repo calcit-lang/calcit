@@ -2147,6 +2147,38 @@ fn parse_stdout(output: &Output) -> serde_json::Value {
   })
 }
 
+fn assert_migration_fixture_contract_diagnostics(report: &serde_json::Value, migrated: bool) {
+  let expected = [
+    (
+      if migrated {
+        "E_CALL_ARGUMENT_UNPROVEN"
+      } else {
+        "W_FN_RETURN_TYPE_MISMATCH"
+      },
+      "fix-command.main/fixable",
+    ),
+    ("W_FN_ARG_TYPE_MISMATCH", "fix-command.main/option-struct-field"),
+    ("W_FN_ARG_TYPE_MISMATCH", "fix-command.main/union-struct-field"),
+  ];
+  let diagnostics = report["diagnostics"].as_array().expect("workflow diagnostics should be an array");
+  assert_eq!(diagnostics.len(), expected.len(), "{diagnostics:?}");
+  for (code, definition) in expected {
+    assert!(
+      diagnostics
+        .iter()
+        .any(|item| item["code"] == code && item["definition"] == definition),
+      "missing {code} at {definition}: {diagnostics:?}"
+    );
+  }
+  if migrated {
+    let diagnostic = diagnostics
+      .iter()
+      .find(|item| item["definition"] == "fix-command.main/fixable")
+      .unwrap();
+    assert!(diagnostic["message"].as_str().unwrap().contains("expected `:enum`, got `dynamic`"));
+  }
+}
+
 fn assert_success(output: &Output, context: &str) {
   assert!(
     output.status.success(),
@@ -5299,19 +5331,13 @@ fn strict_workflow_composes_a_resumable_project_manifest() {
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
 
   let preview = run_fix(&snapshot, &["--workflow", "strict", "--format", "json"]);
-  assert!(!preview.status.success(), "legacy helpers still need return proof");
+  assert!(!preview.status.success(), "project migration contracts still need review");
   let report = parse_stdout(&preview);
   let workflow = &report["data"]["workflow"];
   assert_eq!(workflow["workflow"], "strict-v1");
   assert_eq!(workflow["mode"], "preview");
   assert_eq!(workflow["status"], "requires-review");
-  assert!(
-    report["diagnostics"]
-      .as_array()
-      .unwrap()
-      .iter()
-      .any(|item| item["code"] == "E_FN_RETURN_UNPROVEN")
-  );
+  assert_migration_fixture_contract_diagnostics(&report, false);
   assert_eq!(workflow["safe_fixes"]["preset"], "surface-latest-v2");
   assert!(workflow["safe_fixes"]["suggestions"].as_u64().is_some_and(|count| count > 0));
   assert_eq!(workflow["entries"][0]["name"], "default");
@@ -5636,13 +5662,7 @@ fn strict_workflow_applies_safe_fixes_without_claiming_unproven_contracts() {
   assert!(!verification.status.success());
   let verification_report = parse_stdout(&verification);
   assert_eq!(verification_report["data"]["workflow"]["status"], "failed");
-  assert!(
-    verification_report["diagnostics"]
-      .as_array()
-      .unwrap()
-      .iter()
-      .any(|item| item["code"] == "E_FN_RETURN_UNPROVEN")
-  );
+  assert_migration_fixture_contract_diagnostics(&verification_report, true);
   assert_eq!(verification_report["data"]["workflow"]["safe_fixes"]["status"], "clear");
   assert!(
     verification_report["data"]["workflow"]["verification"]["results"]
@@ -7282,13 +7302,7 @@ fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
   );
   let workflow = parse_stdout(&workflow);
   assert_eq!(workflow["data"]["workflow"]["status"], "requires-review");
-  assert!(
-    workflow["diagnostics"]
-      .as_array()
-      .unwrap()
-      .iter()
-      .any(|item| item["code"] == "E_FN_RETURN_UNPROVEN")
-  );
+  assert_migration_fixture_contract_diagnostics(&workflow, false);
   assert!(
     workflow["data"]["workflow"]["review_required"]["schema_candidates"]
       .as_array()

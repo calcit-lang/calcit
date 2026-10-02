@@ -583,8 +583,15 @@
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Enum
-            :return $ :: 'Optional 'Tag
+            :return $ :: 'Optional 'EnumDef
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |nominal-definition-evidence)
+            :code $ quote $ let
+                value $ Option :some 1
+              assert= Option $ &enum:definition value
+              assert-type (&enum:definition value) 'EnumDef
+              assert= nil $ &enum:definition $ %:: _ :anonymous 1
+            :tags $ #{} :nominal-definition-proof :unit
         '&enum:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to an enum value.")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -1260,6 +1267,9 @@
           :code $ quote $ defn &list:map (xs f)
             foldl xs ([])
               defn %&list:map (acc x)
+                hint-fn $ {}
+                  :args $ [] (:: 'List 'U) 'T
+                  :return $ :: 'List 'U
                 append acc $ f x
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -1269,11 +1279,22 @@
             :generics $ [] 'T 'U
             :return $ :: 'List 'U
           :tags $ #{} :internal
-          :tests $ [] $ %{} 'TestEntry (:name |maps-items-with-function)
-            :code $ quote $ assert= ([] 4 5 6)
-              &list:map ([] 1 2 3)
-                fn (x) (+ x 3)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |maps-items-with-function)
+              :code $ quote $ assert= ([] 4 5 6)
+                &list:map ([] 1 2 3)
+                  fn (x) (+ x 3)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |typed-empty-accumulator)
+              :code $ quote $ do
+                assert= ([])
+                  &list:map ([]) &str
+                assert= ([] |1 |2)
+                  &list:map ([] 1 2) &str
+                assert-type
+                  &list:map ([] 1 2) &str
+                  :: 'List 'String
+              :tags $ #{} :generic-fold-proof :unit
         '&list:map-pair $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:map-pair (xs f)
             if (list? xs)
@@ -3176,16 +3197,38 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :data :internal
-          :tests $ [] $ %{} 'TestEntry (:name |direct-construction-preserves-value-and-failure)
-            :code $ quote $ do
-              assert= (%ok 3) (Result :ok 3)
-              assert= (%err |bad) (Result :err |bad)
-              assert= 3 $ .unwrap-or (Result :ok 3) 0
-              assert= 0 $ .unwrap-or (Result :err |bad) 0
-              assert= true $ try
-                Result :ok $ raise |boom
-                fn (message) (= message |boom)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |direct-construction-preserves-value-and-failure)
+              :code $ quote $ do
+                assert= (%ok 3) (Result :ok 3)
+                assert= (%err |bad) (Result :err |bad)
+                assert= 3 $ .unwrap-or (Result :ok 3) 0
+                assert= 0 $ .unwrap-or (Result :err |bad) 0
+                assert= true $ try
+                  Result :ok $ raise |boom
+                  fn (message) (= message |boom)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |constructor-branch-evidence)
+              :code $ quote $ let
+                  project $ fn (input)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Result 'Number 'String
+                      :return $ :: 'Result 'Number 'String
+                    match input
+                      (:ok value) (Result :ok value)
+                      (:err reason) (Result :err reason)
+                  choose $ fn (flag)
+                    hint-fn $ {}
+                      :args $ [] 'Bool
+                      :return $ :: 'Result 'Number 'String
+                    if flag (Result :ok 1) (Result :err |failed)
+                assert= (Result :ok 1)
+                  project $ Result :ok 1
+                assert= (Result :err |failed)
+                  project $ Result :err |failed
+                assert= (Result :ok 1) (choose true)
+                assert= (Result :err |failed) (choose false)
+              :tags $ #{} :nominal-branch-proof :unit
         'ResultMappableImpl $ %{} 'CodeEntry (:doc "|Trait impl for Mappable on Result")
           :code $ quote $ defimpl ResultMappableImpl Mappable (.map result:map)
           :examples $ []
@@ -3620,6 +3663,16 @@
             :expansion $ :: 'Expr 'Unit
             :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
           :tags $ #{} :control :log :macro
+          :tests $ [] $ %{} 'TestEntry (:name |wrapped-raise-unit)
+            :code $ quote $ let
+                check $ fn ()
+                  hint-fn $ {}
+                    :args $ []
+                    :return $ quote Unit
+                  assert= 1 1
+              assert-type (check) 'Unit
+              check
+            :tags $ #{} :tail-return-proof :unit
         'assoc $ %{} 'CodeEntry
           :doc "|Associate a key or index in maps, lists, enums, and structs."
           :code $ quote $ defn assoc (x k v)
@@ -6197,7 +6250,7 @@
                   and
                     or (tag? k) (string? k) (symbol? k)
                     &struct:contains? base k
-                  %some $ &struct:get base k
+                  %some $ &struct:get base $ turn-tag k
                   %none
               (or (list? base) (string? base) (enum? base))
                 if (number? k) (nth base k) (%none)
@@ -6255,11 +6308,15 @@
             %{} 'TestEntry (:name |reads-runtime-struct-from-open-value)
               :code $ quote $ let
                   open-path $ assert-type (FsPath :value |demo) 'Dynamic
-                assert= (%some |demo) (get open-path :value)
-                assert= (%some |demo) (get open-path |value)
-                assert= (%none) (get open-path :missing)
-                assert= (%none) (get open-path 0)
-              :tags $ #{} :core :unit
+                assert= (Option :some |demo) (get open-path :value)
+                assert= (Option :some |demo) (get open-path |value)
+                assert= (Option :some |demo) (get open-path 'value)
+                assert= (Option :none) (get open-path :missing)
+                assert= (Option :none) (get open-path |missing)
+                assert= (Option :none) (get open-path 0)
+                assert= (Option :none) (get open-path true)
+                assert= (Option :none) (get open-path nil)
+              :tags $ #{} :checked-exit-proof :core :unit
             %{} 'TestEntry (:name |reads-tag-keys-via-postfix)
               :code $ quote $ let
                   dict $ &{} :a 1
@@ -6646,6 +6703,22 @@
                 assert= ([])
                   forward $ []
               :tags $ #{} :generic-call-proof :unit
+            %{} 'TestEntry (:name |raise-only-return-contract)
+              :code $ quote $ let
+                  fail $ fn (flag)
+                    hint-fn $ {}
+                      :args $ [] 'Bool
+                      :return 'Number
+                    if flag
+                      let
+                          value 1
+                        raise |left
+                      raise |right
+                assert= true $ try (fail true)
+                  fn (message) (= message |left)
+                assert= true $ try (fail false)
+                  fn (message) (= message |right)
+              :tags $ #{} :checked-exit-proof :unit
         'identical? $ %{} 'CodeEntry
           :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
           :code $ quote &runtime-implementation

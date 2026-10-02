@@ -22,10 +22,10 @@ pub fn defn(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str) -> Re
   match (expr.first(), expr.get(1)) {
     (Some(Calcit::Symbol { sym: s, .. }), Some(Calcit::List(xs))) => {
       let body_items = expr.skip(2)?.to_vec();
-      let return_type = detect_return_type_hint(&body_items);
+      let mut return_type = detect_return_type_hint(&body_items);
       let generics = detect_fn_generics(&body_items);
-      let where_bounds = detect_fn_where_bounds(&body_items);
-      let declared_rest_type = detect_fn_rest_type(&body_items);
+      let mut where_bounds = detect_fn_where_bounds(&body_items);
+      let mut declared_rest_type = detect_fn_rest_type(&body_items);
       let parsed_args = get_raw_args_fn(xs)?;
       let param_symbols = match collect_param_symbols(xs) {
         Ok(params) => params,
@@ -39,6 +39,18 @@ pub fn defn(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str) -> Re
         .iter()
         .find_map(|f| CalcitTypeAnnotation::extract_arg_types_from_hint_form(f, &param_symbols))
         .unwrap_or_else(|| CalcitTypeAnnotation::collect_arg_type_hints_from_body(&body_items, &param_symbols, generics.as_ref()));
+      let lexical_generics = crate::calcit::type_annotation::lexical_type_variables_in_forms(xs.iter().chain(body_items.iter()));
+      if let Some(CalcitTypeAnnotation::Fn(signature)) = body_items
+        .iter()
+        .find_map(|form| CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form_in_scope(form, &lexical_generics))
+        .as_deref()
+      {
+        arg_types = signature.arg_types.clone();
+        arg_types.resize(param_symbols.len(), calcit::DYNAMIC_TYPE.clone());
+        return_type = signature.return_type.clone();
+        where_bounds = signature.where_bounds.clone();
+        declared_rest_type = signature.rest_type.clone();
+      }
       // Fallback: if all arg_types are Dynamic (assert-type was preprocessed away),
       // extract types from Local nodes in the preprocessed args list
       if file_ns != calcit::CORE_NS && arg_types.iter().all(|t| matches!(t.as_ref(), CalcitTypeAnnotation::Dynamic)) {

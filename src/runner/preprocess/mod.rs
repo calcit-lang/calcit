@@ -9389,10 +9389,12 @@ pub fn preprocess_defn(
         info.at_def.to_owned(),
         location.to_owned().unwrap_or_default(),
       );
+      let lexical_generics =
+        crate::calcit::type_annotation::free_type_variable_names(&ctx.scope_types.values().cloned().collect::<Vec<_>>());
       let body_fn_hint = args
         .iter()
         .skip(2)
-        .find_map(CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form)
+        .find_map(|form| CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form_in_scope(form, &lexical_generics))
         .and_then(|annotation| match annotation.as_ref() {
           CalcitTypeAnnotation::Fn(fn_annotation) => Some(fn_annotation.clone()),
           _ => None,
@@ -9615,6 +9617,13 @@ pub fn preprocess_defn(
       // Check function return type if declared
       // Extract return type hint from processed body (after preprocessing)
       let mut detected_return_type = detect_return_type_hint_from_processed_body(&processed_body);
+      if let Some(CalcitTypeAnnotation::Fn(signature)) = processed_body
+        .iter()
+        .find_map(|form| CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form_in_scope(form, &lexical_generics))
+        .as_deref()
+      {
+        detected_return_type = signature.return_type.clone();
+      }
       if strict_generated_by_macro
         && matches!(detected_return_type.as_ref(), CalcitTypeAnnotation::Dynamic)
         && let Some(inferred) = processed_body.last().and_then(|body| resolve_type_value(body, &body_types))
@@ -10012,8 +10021,11 @@ pub fn preprocess_hint_fn(
   // The two-argument form annotates an existing local function value. Keep the annotation in
   // lexical scope so later calls, callback checks, and `type-at` retain the complete signature.
   // The one-argument form is metadata injected into a function body and has no target to refine.
+  let lexical_generics =
+    crate::calcit::type_annotation::free_type_variable_names(&ctx.scope_types.values().cloned().collect::<Vec<_>>());
   if args.len() >= 2
-    && let Some(type_entry) = CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(&Calcit::from(ys.clone()))
+    && let Some(type_entry) =
+      CalcitTypeAnnotation::extract_fn_annotation_from_hint_form_in_scope(&Calcit::from(ys.clone()), &lexical_generics)
     && let Some(target_raw) = args.first()
   {
     let target_form = preprocess_expr(
@@ -10729,7 +10741,7 @@ fn reject_strict_unproven_specialized_contract(
 }
 
 fn empty_container_has_no_type_evidence(arg: &Calcit, expected: &CalcitTypeAnnotation) -> bool {
-  let expects_generic = expected.contains_type_var();
+  let expects_generic = matches!(expected, CalcitTypeAnnotation::TypeVar(_));
   match (arg, expected) {
     (Calcit::List(values), _) if expects_generic && values.is_empty() => true,
     (Calcit::List(values), _) if expects_generic && values.len() == 1 => matches!(
@@ -10752,6 +10764,22 @@ fn empty_container_has_no_type_evidence(arg: &Calcit, expected: &CalcitTypeAnnot
     }
     _ => false,
   }
+}
+
+#[cfg(test)]
+#[test]
+fn empty_container_context_preserves_the_container_family() {
+  let t = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+  let list = Calcit::from(vec![Calcit::Proc(CalcitProc::List)]);
+  let map = Calcit::from(vec![Calcit::Proc(CalcitProc::NativeMap)]);
+  let set = Calcit::from(vec![Calcit::Proc(CalcitProc::Set)]);
+  let expected_list = CalcitTypeAnnotation::List(t.clone());
+  assert!(empty_container_has_no_type_evidence(&list, &expected_list));
+  assert!(!empty_container_has_no_type_evidence(&map, &expected_list));
+  assert!(!empty_container_has_no_type_evidence(&set, &expected_list));
+  assert!(empty_container_has_no_type_evidence(&map, &t));
+  let callback = CalcitTypeAnnotation::from_function_parts(vec![t.clone()], t);
+  assert!(!empty_container_has_no_type_evidence(&list, &callback));
 }
 
 fn find_unproven_generic_argument(

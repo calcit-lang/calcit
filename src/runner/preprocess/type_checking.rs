@@ -258,11 +258,28 @@ pub(super) fn specialize_collection_fold_expected_types(
     CalcitTypeAnnotation::Dynamic => crate::calcit::DYNAMIC_TYPE.clone(),
     _ => return None,
   };
-  let accumulator_type = resolve_type_value(args.get(1)?, scope_types)?;
+  let initial = args.get(1)?;
+  let mut accumulator_type = resolve_type_value(initial, scope_types)?;
+  let shortcut = expected_types.len() == 4;
+  if !shortcut
+    && let Some(callback) = resolve_type_value(args.get(2)?, scope_types).and_then(|annotation| annotation.resolve_to_nonoptional_fn())
+    && let Some(parameter) = callback.arg_types.first()
+    && matches!(
+      (accumulator_type.as_ref(), parameter.as_ref()),
+      (CalcitTypeAnnotation::List(_), CalcitTypeAnnotation::List(_))
+        | (CalcitTypeAnnotation::Set(_), CalcitTypeAnnotation::Set(_))
+        | (CalcitTypeAnnotation::Map(_, _), CalcitTypeAnnotation::Map(_, _))
+    )
+    && super::empty_container_has_no_type_evidence(initial, parameter)
+  {
+    // An empty literal inhabits the same container family at any element type.
+    // Use the callback's input contract, never its declared output, as context.
+    // A nonempty/open value retains its own evidence; callback output is checked later.
+    accumulator_type = parameter.clone();
+  }
   let mut specialized = expected_types.to_vec();
   specialized[0] = receiver_type;
   specialized[1] = accumulator_type.clone();
-  let shortcut = expected_types.len() == 4;
   if shortcut {
     specialized[2] = accumulator_type.clone();
   }
@@ -1068,6 +1085,13 @@ pub(crate) fn check_function_return_type(
     .find(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
     .unwrap_or(&Calcit::Nil);
 
+  // A proven raise exit produces no value that could violate the declaration.
+  // This proves only the return obligation, never a concrete inferred value;
+  // validated recur alone still cannot establish an independent return type.
+  if super::type_inference::expression_definitely_diverges(last_expr) {
+    return Ok(());
+  }
+
   let actual_type = recur_parameters.map_or_else(
     || resolve_type_value(last_expr, scope_types),
     |parameters| super::type_inference::infer_function_exit_type(last_expr, scope_types, parameters),
@@ -1602,6 +1626,42 @@ mod tests {
     ]);
 
     assert!(specialize_core_expected_types(&fn_info, &args, &ScopeTypes::new(), &fn_info.arg_types).is_none());
+  }
+
+  #[test]
+  fn empty_fold_accumulator_uses_only_same_family_callback_input() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let string = Arc::new(CalcitTypeAnnotation::String);
+    let typed_list = Arc::new(CalcitTypeAnnotation::List(number));
+    let open_list = Arc::new(CalcitTypeAnnotation::List(crate::calcit::DYNAMIC_TYPE.clone()));
+    let callback = Arc::new(CalcitTypeAnnotation::from_function_parts(
+      vec![typed_list.clone(), string.clone()],
+      typed_list.clone(),
+    ));
+    let expected = vec![crate::calcit::DYNAMIC_TYPE.clone(); 3];
+    let args = |initial| {
+      CalcitList::from(&[
+        make_local("items", Arc::new(CalcitTypeAnnotation::List(string.clone()))),
+        initial,
+        make_local("callback", callback.clone()),
+      ])
+    };
+    let empty_list = Calcit::from(vec![Calcit::Proc(CalcitProc::List)]);
+    let specialized = specialize_collection_fold_expected_types(&args(empty_list), &ScopeTypes::new(), &expected).unwrap();
+    assert_eq!(specialized[1], typed_list);
+    for initial in [
+      make_local("open", open_list.clone()),
+      Calcit::from(vec![Calcit::Proc(CalcitProc::List), Calcit::Str(Arc::from("existing"))]),
+      Calcit::from(vec![Calcit::Proc(CalcitProc::Set)]),
+      Calcit::Number(0.0),
+    ] {
+      let original = resolve_type_value(&initial, &ScopeTypes::new()).unwrap();
+      let specialized = specialize_collection_fold_expected_types(&args(initial), &ScopeTypes::new(), &expected).unwrap();
+      assert_eq!(
+        specialized[1], original,
+        "only an empty literal of the same family supplies no conflicting element evidence"
+      );
+    }
   }
 
   #[test]

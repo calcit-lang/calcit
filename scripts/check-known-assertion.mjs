@@ -64,7 +64,30 @@ try {
   const formattingResponse = JSON.parse(run("query", "def", "calcit.core/str-spaced", "--format", "json"));
   const formattingTests = formattingResponse.data.tests.filter(test => test.tags.includes("tail-return-proof"));
   assert.equal(formattingTests.length, 1);
-  setBody([...tailTests, ...restTests, ...genericTests, ...formattingTests].map(test => test.code));
+  run("test", "calcit.core/&list:map", "--tag", "generic-fold-proof", "--require-match");
+  const mappingResponse = JSON.parse(run("query", "def", "calcit.core/&list:map", "--format", "json"));
+  const mappingTests = mappingResponse.data.tests.filter(test => test.tags.includes("generic-fold-proof"));
+  assert.equal(mappingTests.length, 1);
+  run("test", "calcit.core/&enum:definition", "--tag", "nominal-definition-proof", "--require-match");
+  const definitionResponse = JSON.parse(run("query", "def", "calcit.core/&enum:definition", "--format", "json"));
+  const definitionTests = definitionResponse.data.tests.filter(test => test.tags.includes("nominal-definition-proof"));
+  assert.equal(definitionTests.length, 1);
+  run("test", "calcit.core/assert=", "--tag", "tail-return-proof", "--require-match");
+  const assertionResponse = JSON.parse(run("query", "def", "calcit.core/assert=", "--format", "json"));
+  const assertionTests = assertionResponse.data.tests.filter(test => test.tags.includes("tail-return-proof"));
+  assert.equal(assertionTests.length, 1);
+  run("test", "calcit.core/Result", "--tag", "nominal-branch-proof", "--require-match");
+  const resultResponse = JSON.parse(run("query", "def", "calcit.core/Result", "--format", "json"));
+  const resultTests = resultResponse.data.tests.filter(test => test.tags.includes("nominal-branch-proof"));
+  assert.equal(resultTests.length, 1);
+  run("test", "--tag", "checked-exit-proof", "--require-match");
+  const exitResponse = JSON.parse(run("query", "def", "calcit.core/hint-fn", "--format", "json"));
+  const exitTests = exitResponse.data.tests.filter(test => test.tags.includes("checked-exit-proof"));
+  const getResponse = JSON.parse(run("query", "def", "calcit.core/get", "--format", "json"));
+  const getTests = getResponse.data.tests.filter(test => test.tags.includes("checked-exit-proof"));
+  assert.equal(exitTests.length, 1);
+  assert.equal(getTests.length, 1);
+  setBody([...tailTests, ...restTests, ...genericTests, ...formattingTests, ...mappingTests, ...definitionTests, ...assertionTests, ...resultTests, ...exitTests, ...getTests].map(test => test.code));
   run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
   run("config", "set", "init-fn", "calcit.assert-evidence/run-tests");
@@ -183,6 +206,40 @@ try {
     assert.deepEqual(await readFile(snapshot), original);
   }
   run("edit", "rm-def", "calcit.assert-evidence/shadow-proof");
+  for (const [name, parameters, body, args, diagnostic] of [
+    ["recursive-cycle", ["value"], ["recur", "value"], ["[]", "'Number"], /E_FN_RETURN_UNPROVEN/],
+    ["reserved-raise-binding", ["raise"], ["raise", "|returns"], ["[]", ["::", "'Fn", ["{}", [":args", ["[]", "'String"]], [":return", "'String"]]]], /expected defn args to be symbols, got: \(&proc raise\)/],
+  ]) {
+    run("edit", "def", "calcit.assert-evidence/exit-proof", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "exit-proof", parameters, body]));
+    run("edit", "schema", "calcit.assert-evidence/exit-proof", "--input-format", "json-ast", "--code",
+      JSON.stringify(["::", "'Fn", ["{}", [":args", args], [":return", "'Number"]]]));
+    const original = await readFile(snapshot);
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.assert-evidence", "--def", "exit-proof", "--format", "edn"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, diagnostic);
+    assert.deepEqual(await readFile(snapshot), original);
+    run("edit", "rm-def", "calcit.assert-evidence/exit-proof");
+  }
+  // A constructor's absent slot is not an actual Dynamic payload or open value.
+  for (const [name, inputType, left, right] of [
+    ["used-open-payload", "'Dynamic", ["Result", ":ok", "raw"], ["Result", ":err", "|failed"]],
+    ["open-result-instance", ["::", "'Result", "'Dynamic", "'String"], "raw", ["Result", ":err", "|failed"]],
+    ["same-variant-open-payload", "'Dynamic", ["Result", ":ok", "1"], ["Result", ":ok", "raw"]],
+  ]) {
+    run("edit", "def", "calcit.assert-evidence/open-result", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "open-result", ["raw", "flag"], ["if", "flag", left, right]]));
+    run("edit", "schema", "calcit.assert-evidence/open-result", "--input-format", "json-ast", "--code",
+      JSON.stringify(["::", "'Fn", ["{}", [":args", ["[]", inputType, "'Bool"]], [":return", ["::", "'Result", "'Number", "'String"]]]]));
+    const original = await readFile(snapshot);
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.assert-evidence", "--def", "open-result", "--format", "edn"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_FN_RETURN_UNPROVEN/);
+    assert.deepEqual(await readFile(snapshot), original);
+    run("edit", "rm-def", "calcit.assert-evidence/open-result");
+  }
   // Known initial/default values do not prove an externally supplied reducer.
   run("edit", "def", "calcit.assert-evidence/open-shortcut", "--input-format", "json-ast", "--code",
     JSON.stringify(["defn", "open-shortcut", ["callback"], ["foldl-shortcut", ["[]", "1"], "0", "0", "callback"]]));
