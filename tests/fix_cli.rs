@@ -59,6 +59,7 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
     ("postfix-call", "Dynamic", "Number", "3 .rem x", true),
     ("closed-method-call", "Number", "Number", ".rem 3 x", false),
     ("closed-postfix-call", "Number", "Number", "3 .rem x", false),
+    ("cond-call", "Bool", "Number", "cond (x 1) (true 2)", false),
     (
       "checked-call",
       "Dynamic",
@@ -193,6 +194,39 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
       ],
     ),
     "create a definite call contradiction",
+  );
+  let original = fs::read(&snapshot).unwrap();
+  let mismatch = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "concrete-return-proof-v1",
+      "--ns",
+      "fix-command.returns",
+      "--def",
+      "closed-call",
+      "--format",
+      "edn",
+    ],
+  );
+  assert!(!mismatch.status.success());
+  assert!(String::from_utf8_lossy(&mismatch.stderr).contains("W_FN_ARG_TYPE_MISMATCH"));
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.returns/closed-call",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn closed-call (x) $ cond (true (sink x))",
+      ],
+    ),
+    "retain runtime contradictions after macro expansion",
   );
   let original = fs::read(&snapshot).unwrap();
   let mismatch = run_fix(

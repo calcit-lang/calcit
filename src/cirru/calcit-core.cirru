@@ -6507,6 +6507,16 @@
                       (:err reason) (raise reason)
                 assert= 4 $ decode-and-increment 3
               :tags $ #{} :call-boundary :concrete-call-proof
+            %{} 'TestEntry (:name |concrete-call-after-cond-expansion)
+              :code $ quote $ let
+                  choose $ fn (flag)
+                    hint-fn $ {}
+                      :args $ [] 'Bool
+                      :return 'Number
+                    cond (flag 1) (true 2)
+                assert= 1 $ choose true
+                assert= 2 $ choose false
+              :tags $ #{} :call-boundary :concrete-call-proof
         'identical? $ %{} 'CodeEntry
           :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
           :code $ quote &runtime-implementation

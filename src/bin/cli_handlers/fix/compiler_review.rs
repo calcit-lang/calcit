@@ -8,7 +8,16 @@ pub(super) struct BoundaryReview {
 }
 
 pub(super) fn is_contradictory_proof_warning(warning: &LocatedWarning) -> bool {
-  warning.code().is_some_and(|code| code.ends_with("_MISMATCH"))
+  if !warning.code().is_some_and(|code| code.ends_with("_MISMATCH")) {
+    return false;
+  }
+  let owner = warning.location();
+  // Macro implementation contracts describe syntax production. The proof
+  // pass checks the expanded runtime expression in its caller's scope.
+  !matches!(
+    program::lookup_def_schema(&owner.ns, &owner.def).as_ref(),
+    CalcitTypeAnnotation::Macro(_)
+  )
 }
 
 /// Preserve strict compiler rejection and expose only source-owned review targets.

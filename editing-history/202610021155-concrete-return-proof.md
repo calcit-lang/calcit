@@ -27,3 +27,7 @@
 参数审计同时暴露了共享证明关系的方向性问题：具体 Fn 保存为开放 Fn 不需要凭空获得新能力，
 应可证明；开放 Fn 用于具体签名则仍需边界证据。修正共同关系，并在 hint-fn 的 :tests 中加入
 函数保存与 checked decoder 调用案例，由现有 runner 回放 native/JS 和显式 proof pass。
+
+Respo 回归暴露 `cond` 宏实现中语法树操作的历史 warning 被误当作运行时返回矛盾。
+warning 过滤依据定义的 Macro schema 区分编译期实现与展开后的运行时代码，和已有 proof pass 的
+macro policy 保持一致；展开后的实参类型矛盾仍须失败。补充 cond 的 definition :tests 与 CLI 拒绝回归。
