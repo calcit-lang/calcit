@@ -57,6 +57,21 @@ aliases:
 这些行为由 `try-decode-map-as` 自身的 `:tests` 固定，既有 runner 读取同一表达式
 回放 native/JS，并检查原 alias 的 proof preview 拒绝且不写回。
 
+## 开放集合与具体累积结果
+
+`foldl` 和短路 fold 分别保留集合元素与 accumulator 的证据。显式 `Dynamic`
+集合不提供元素类型；如果初值、默认值及 reducer 的实际返回都能独立证明为
+`Number` 或 `Bool`，累积结果可以保持具体类型。回调的参数契约应明确说明怎样
+处理开放元素，不能仅声明返回类型或使用 `assert-type` 把元素当成具体值。
+显式返回证明审计会保留开放参数证据；普通入口的全面收紧仍以真实消费者迁移为前提。
+
+```bash
+calcit src/cirru/calcit-core.cirru test calcit.core/foldl-shortcut --tag open-fold-proof --require-match
+```
+
+分支合并中，只要一个可达分支仍是根级 `Dynamic`，结果就不能仅凭另一个分支的
+Map/List 形状变具体。需要在开放输入处 decode 或通过真实的运行时判别获取证据。
+
 ## Trait 与 derive 的选择
 
 这五例不需要新增 derive 语法：字段、容器元素、nominal initializer 与 decoder 已能表达必要契约。

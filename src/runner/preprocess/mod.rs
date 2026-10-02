@@ -9494,7 +9494,10 @@ pub fn preprocess_defn(
           }))
           .collect::<Vec<_>>();
         for (param_sym, arg_type) in param_symbols.iter().zip(parameter_types) {
-          if !matches!(arg_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
+          // Proof audits retain explicit open parameter evidence. Ordinary
+          // compilation keeps its existing rollout policy until consumer
+          // nominal-predicate boundaries have independently proven narrowing.
+          if !matches!(arg_type.as_ref(), CalcitTypeAnnotation::Dynamic) || REQUIRE_ASSERTION_PROOF.with(Cell::get) {
             body_types.insert(param_sym.to_owned(), arg_type);
           }
         }

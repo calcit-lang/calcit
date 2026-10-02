@@ -5886,6 +5886,44 @@
                 assert-type result 'Number
                 assert= 3 result
               :tags $ #{} :core :shortcut-fold-proof :unit
+            %{} 'TestEntry (:name |open-receiver-proven-bool)
+              :code $ quote $ let
+                  all-proven $ fn (xs predicate)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic $ :: 'Fn
+                        {}
+                          :args $ [] 'Dynamic
+                          :return 'Bool
+                      :return 'Bool
+                    foldl-shortcut xs true true $ fn (acc item)
+                      if (predicate item) (:: false acc) (:: true false)
+                  answer $ all-proven ([] 1)
+                    fn (item) true
+                assert-type answer 'Bool
+                assert= true answer
+              :tags $ #{} :open-fold-proof :unit
+            %{} 'TestEntry (:name |open-receiver-empty-default)
+              :code $ quote $ let
+                  reduce-open $ fn (xs)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic
+                      :return 'Number
+                    foldl-shortcut xs 0 7 $ fn (acc item) (:: false acc)
+                  answer $ reduce-open $ []
+                assert-type answer 'Number
+                assert= 7 answer
+              :tags $ #{} :open-fold-proof :unit
+            %{} 'TestEntry (:name |open-receiver-ordinary-fold)
+              :code $ quote $ let
+                  reduce-open $ fn (xs)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic
+                      :return 'Number
+                    foldl xs 0 $ fn (acc item) (&+ acc 1)
+                  answer $ reduce-open $ [] 1 2
+                assert-type answer 'Number
+                assert= 2 answer
+              :tags $ #{} :open-fold-proof :unit
         'foldr-shortcut $ %{} 'CodeEntry
           :doc "|Internal right fold with early termination. Syntax: (foldr-shortcut list initial default reducer). The reducer receives accumulator and element, then returns an anonymous enum `:: Bool accumulator`; true returns its accumulator immediately, false continues, and exhaustion returns default."
           :code $ quote &runtime-implementation
