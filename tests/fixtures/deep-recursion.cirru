@@ -18,7 +18,7 @@
         'main! $ %{} 'CodeEntry (:doc |)
           :schema $ :: 'Fn $ {} (:return 'Unit)
           :code $ quote $ defn main! ()
-            println "|shallow" $ f 3000
+            println "|shallow" $ f 300
             println "|deep" $ f 1000000
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (println |reload)

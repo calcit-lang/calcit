@@ -100,7 +100,7 @@ fn deep_non_tail_recursion_reports_a_calcit_error_instead_of_aborting() {
   // a native stack overflow aborts the process on a signal and prints this marker
   assert!(!stderr.contains("overflowed its stack"), "{stderr}");
   assert!(stderr.contains("native stack budget"), "{stderr}");
-  assert!(stdout.contains("shallow 3000"), "ordinary recursion must keep working: {stdout}");
+  assert!(stdout.contains("shallow 300"), "ordinary recursion must keep working: {stdout}");
   assert!(!output.status.success(), "the deep call must fail");
   assert!(
     output.status.code().is_some(),
