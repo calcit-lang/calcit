@@ -115,9 +115,19 @@ jobs:
           toolchain: 1.98.1
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
+      - name: Cache published Calcit tools
+        id: published_tools
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/calcit
+            ~/.cargo/bin/calcit-bindgen
+          key: published-tools-${{ runner.os }}-calcit-0.18.0-bindgen-0.1.7-rust-1.98.1
       - name: Install published Calcit 0.18.0
+        if: steps.published_tools.outputs.cache-hit != 'true'
         run: cargo install calcit --version 0.18.0 --locked
       - name: Install published calcit-bindgen 0.1.7
+        if: steps.published_tools.outputs.cache-hit != 'true'
         run: cargo install calcit-bindgen --version 0.1.7 --locked
       - name: Run the published-version business loop
         run: bash scripts/test-published-wasi-http-business.sh
@@ -267,16 +277,37 @@ jobs:
           && bash scripts/test-js-command.sh
 
       - name: "verify shared Calcit backend contracts"
+        # Each script owns a temporary project directory and only reads the prebuilt
+        # debug binary, so they run concurrently; wall time is the slowest script.
         run: |
           node --test scripts/core-api-contract.test.mjs
-          node scripts/core-api-contract.mjs
-          node scripts/check-string-unicode.mjs
-          node scripts/check-numeric-predicate.mjs
-          node scripts/check-nil-predicate.mjs
-          node scripts/check-monotonic-clock-js.mjs
-          node scripts/check-helper-inference.mjs
-          node scripts/check-parse-boundary.mjs
-          node scripts/check-known-assertion.mjs
+          scripts=(
+            core-api-contract
+            check-string-unicode
+            check-numeric-predicate
+            check-nil-predicate
+            check-monotonic-clock-js
+            check-helper-inference
+            check-parse-boundary
+            check-known-assertion
+          )
+          logs="$RUNNER_TEMP/backend-contracts"
+          mkdir -p "$logs"
+          pids=()
+          for script in "${scripts[@]}"; do
+            node "scripts/$script.mjs" >"$logs/$script.log" 2>&1 &
+            pids+=("$!")
+          done
+          failed=0
+          for index in "${!scripts[@]}"; do
+            script="${scripts[$index]}"
+            if wait "${pids[$index]}"; then status="passed"; else status="FAILED"; failed=1; fi
+            echo "::group::$script $status"
+            cat "$logs/$script.log"
+            echo "::endgroup::"
+            if [ "$status" = "FAILED" ]; then echo "::error::$script failed"; fi
+          done
+          exit "$failed"
 
       - name: "run generated namespace-import regression in Node"
         run: CALCIT_JS_NAMESPACE_IMPORT_RUNTIME=1 cargo test --test js_namespace_import_cli
