@@ -527,7 +527,7 @@ impl Hash for Calcit {
       Struct(CalcitStructValue { struct_ref, values, .. }) => {
         "record:".hash(_state);
         struct_ref.name.hash(_state);
-        // `definition_ref` is left out on purpose: untyped and nominal values may be equal
+        struct_ref.definition_ref.hash(_state);
         struct_ref.fields.hash(_state);
         values.hash(_state);
       }
@@ -1857,11 +1857,17 @@ mod tests {
     assert_eq!(a.cmp(&reloaded), Equal);
     assert_eq!(calcit_hash(&a), calcit_hash(&reloaded));
 
-    // untyped data (no definition) still equals a nominal value of the same shape and hashes alike
+    // untyped data (no definition) is a separate identity class: it equals neither distinct
+    // nominal definition, so equality stays transitive and agrees with `Ord` and `Hash`
     let untyped = build(None, 1.0);
-    assert_eq!(untyped, a);
-    assert_eq!(calcit_hash(&untyped), calcit_hash(&a));
-    assert_ne!(untyped, build(Some("app.a/Point"), 2.0));
-    assert_ne!(build(None, 1.0), build(None, 2.0));
+    assert_ne!(untyped, a);
+    assert_ne!(untyped, b);
+    assert_ne!(untyped.cmp(&a), Equal);
+    assert_ne!(untyped.cmp(&b), Equal);
+    assert_ne!(calcit_hash(&untyped), calcit_hash(&a));
+    assert_ne!(calcit_hash(&untyped), calcit_hash(&b));
+    assert_eq!(untyped, build(None, 1.0));
+    assert_eq!(untyped.cmp(&build(None, 1.0)), Equal);
+    assert_ne!(untyped, build(None, 2.0));
   }
 }
