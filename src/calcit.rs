@@ -506,7 +506,8 @@ impl Hash for Calcit {
         code.hash(_state);
       }
       Recur(v) => {
-        "list:".hash(_state);
+        // distinct from `List`: a `recur` request is control flow, not list data
+        "recur:".hash(_state);
         v.hash(_state);
       }
       List(v) => {
@@ -1488,6 +1489,16 @@ mod tests {
     let mut hasher = DefaultHasher::new();
     value.hash(&mut hasher);
     hasher.finish()
+  }
+
+  #[test]
+  fn recur_requests_do_not_hash_like_lists() {
+    let items = vec![Calcit::Number(1.0), Calcit::Number(2.0)];
+    let recur = Calcit::Recur(items.clone());
+    let list = Calcit::from(items);
+    assert_ne!(recur, list);
+    assert_ne!(calcit_hash(&recur), calcit_hash(&list));
+    assert_eq!(calcit_hash(&recur), calcit_hash(&recur.clone()));
   }
 
   #[test]
