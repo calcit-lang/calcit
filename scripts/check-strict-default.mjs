@@ -47,6 +47,41 @@ function expectStatus(result, expected, label) {
 const scoped = run(["calcit/type-fail/unsafe-coerce-scoped-strict.cirru", "--check-only"]);
 expectStatus(scoped, 0, "default strict valid fixture");
 
+const asyncWatcher = run(["eval", `fn (counter)
+  hint-fn $ {}
+    :args $ [] $ :: 'Ref 'Number
+    :return 'Unit
+  add-watch! counter :changes $ fn (current previous)
+    hint-fn $ {}
+      :args $ [] 'Number 'Number
+      :return 'Unit
+      :async true
+    , &unit`]);
+expectStatus(asyncWatcher, 1, "an explicitly async watcher still violates the synchronous callback contract");
+assert.match(asyncWatcher.stderr, /got `async fn\(:number, :number\) -> :unit`/);
+
+const asyncDefinition = run(["src/cirru/calcit-core.cirru", "query", "def", "calcit.core/fn", "--format", "json"]);
+expectStatus(asyncDefinition, 0, "read the definition-attached async scope contract");
+const asyncTest = JSON.parse(asyncDefinition.stdout).data.tests.find(test => test.name === "async-scope-keeps-local-callbacks-sync");
+assert.ok(asyncTest, "the shared async scope contract must exist");
+const asyncFixture = await mkdtemp(join(resolve("target"), "async-scope-replay-"));
+try {
+  const snapshot = join(asyncFixture, "calcit.cirru");
+  await copyFile("src/cirru/calcit-core.cirru", snapshot);
+  await symlink(resolve("node_modules"), join(asyncFixture, "node_modules"), "dir");
+  expectStatus(run([snapshot, "edit", "def", "calcit.core/async-scope-replay", "--input-format", "json-ast",
+    "--code", JSON.stringify(["defn", "async-scope-replay", [], asyncTest.code, "1"])]), 0,
+    "assemble the shared async scope replay");
+  const selection = ["--init-fn", "calcit.core/async-scope-replay", "--reload-fn", "calcit.core/async-scope-replay"];
+  expectStatus(run([snapshot, ...selection]), 0, "native async scope replay");
+  const output = join(asyncFixture, "js-out");
+  expectStatus(run([snapshot, ...selection, "--emit-path", output, "js"]), 0, "JS async scope generation");
+  const generated = await import(pathToFileURL(join(output, "calcit.core.mjs")).href);
+  assert.equal(generated.async_scope_replay(), 1, "JS preserves the shared async scope contract");
+} finally {
+  await rm(asyncFixture, { recursive: true, force: true });
+}
+
 const explicitStrict = run(["calcit/type-fail/unsafe-coerce-scoped-strict.cirru", "--strict-types", "--check-only"]);
 expectStatus(explicitStrict, 0, "explicit strict accepts a checked open boundary without a quality budget");
 

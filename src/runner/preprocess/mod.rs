@@ -342,8 +342,8 @@ thread_local! {
   /// field types and inject EXPECTED_FN_TYPE for Fn-typed fields.
   /// This enables type propagation through struct literals (e.g., `:on-click $ fn (e d!) ...` in DomProps).
   static EXPECTED_STRUCT_TYPE: RefCell<Option<CalcitStructDef>> = const { RefCell::new(None) };
-  /// Feature flags of the current function being preprocessed.
-  /// Used to check whether js-ffi calls are permitted.
+  /// Lexical capability permissions of the current function being preprocessed.
+  /// Invocation metadata such as async stays on the owning callable.
   static CURRENT_FN_FEATURES: RefCell<Option<Arc<HashSet<EdnTag>>>> = const { RefCell::new(None) };
   static PREPROCESS_DEPTH: Cell<usize> = const { Cell::new(0) };
 }
@@ -9648,7 +9648,24 @@ pub fn preprocess_defn(
             None => parent.clone(),
           });
         }
-        *guard = current;
+        // Async changes invocation semantics; it is not an inheritable permission.
+        // Preserve real capabilities without marking nested callbacks as async.
+        *guard = current.map(|features| {
+          if features
+            .iter()
+            .any(|feature| feature.ref_str() == crate::calcit::type_annotation::ASYNC_INVOCATION_FEATURE)
+          {
+            Arc::new(
+              features
+                .iter()
+                .filter(|feature| feature.ref_str() != crate::calcit::type_annotation::ASYNC_INVOCATION_FEATURE)
+                .cloned()
+                .collect(),
+            )
+          } else {
+            features
+          }
+        });
         old
       });
       let feature_scope = FunctionFeaturesScope {
