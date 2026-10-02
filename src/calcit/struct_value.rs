@@ -18,7 +18,15 @@ pub struct CalcitStructValue {
 
 impl PartialEq for CalcitStructValue {
   fn eq(&self, other: &Self) -> bool {
-    self.struct_ref.name == other.struct_ref.name && self.struct_ref.fields == other.struct_ref.fields && self.values == other.values
+    // Identity is (name, definition path "ns/def", fields, values), the same key `Hash` and `Ord` use,
+    // so the three stay consistent and equality is transitive. A value without a definition path
+    // (untyped data such as `parse-cirru-edn` output) is its own identity class; decode with
+    // `parse-cirru-edn-as` when a nominal value is needed. The path is not a pointer, so values from
+    // a definition re-created by hot code swapping stay equal.
+    self.struct_ref.name == other.struct_ref.name
+      && self.struct_ref.definition_ref == other.struct_ref.definition_ref
+      && self.struct_ref.fields == other.struct_ref.fields
+      && self.values == other.values
   }
 }
 

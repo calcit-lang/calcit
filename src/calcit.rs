@@ -527,6 +527,7 @@ impl Hash for Calcit {
       Struct(CalcitStructValue { struct_ref, values, .. }) => {
         "record:".hash(_state);
         struct_ref.name.hash(_state);
+        struct_ref.definition_ref.hash(_state);
         struct_ref.fields.hash(_state);
         values.hash(_state);
       }
@@ -1832,5 +1833,41 @@ mod tests {
 
     assert_eq!(calcit_hash(&value), before);
     assert!(set.contains(&value));
+  }
+
+  #[test]
+  fn struct_values_from_different_definitions_are_not_equal() {
+    let build = |definition_ref: Option<&str>, value: f64| {
+      let mut def = CalcitStructDef::from_fields(EdnTag::new("Point"), vec![EdnTag::new("x")]);
+      def.definition_ref = definition_ref.map(Arc::from);
+      Calcit::Struct(CalcitStructValue {
+        struct_ref: Arc::new(def),
+        values: Arc::new(vec![Calcit::Number(value)]),
+      })
+    };
+
+    let a = build(Some("app.a/Point"), 1.0);
+    let b = build(Some("app.b/Point"), 1.0);
+    assert_ne!(a, b);
+    assert_ne!(a.cmp(&b), Equal);
+
+    // the same definition path stays equal, e.g. after hot code swapping re-creates the definition
+    let reloaded = build(Some("app.a/Point"), 1.0);
+    assert_eq!(a, reloaded);
+    assert_eq!(a.cmp(&reloaded), Equal);
+    assert_eq!(calcit_hash(&a), calcit_hash(&reloaded));
+
+    // untyped data (no definition) is a separate identity class: it equals neither distinct
+    // nominal definition, so equality stays transitive and agrees with `Ord` and `Hash`
+    let untyped = build(None, 1.0);
+    assert_ne!(untyped, a);
+    assert_ne!(untyped, b);
+    assert_ne!(untyped.cmp(&a), Equal);
+    assert_ne!(untyped.cmp(&b), Equal);
+    assert_ne!(calcit_hash(&untyped), calcit_hash(&a));
+    assert_ne!(calcit_hash(&untyped), calcit_hash(&b));
+    assert_eq!(untyped, build(None, 1.0));
+    assert_eq!(untyped.cmp(&build(None, 1.0)), Equal);
+    assert_ne!(untyped, build(None, 2.0));
   }
 }
