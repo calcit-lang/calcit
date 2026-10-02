@@ -40,8 +40,10 @@ try {
 
   // Execute the same Calcit attached-test trees in generated JS, not a second
   // JavaScript implementation of the language assertions.
-  const trees = ["echo-alias", "same-alias", "apply-alias", "rest-alias", "optional-alias"].flatMap(name => {
-    const context = JSON.parse(run("query", "context", `${ns}/${name}`, "--format", "json"));
+  const targets = ["echo-alias", "same-alias", "apply-alias", "rest-alias", "optional-alias"].map(name => `${ns}/${name}`);
+  targets.push("fix-command.reader/state-alias");
+  const trees = targets.flatMap(target => {
+    const context = JSON.parse(run("query", "context", target, "--format", "json"));
     assert.equal(context.data.tests.truncated, false);
     assert.equal(context.data.tests.items.length, 1);
     return context.data.tests.items.map(test => test.tree);
@@ -75,7 +77,7 @@ try {
   if (cycle.error) throw cycle.error;
   assert.ok(cycle.status === 0 || cycle.status === 1, `Cycle aborted: ${cycle.stderr}`);
   assert.ok(!cycle.stderr.includes("stack overflow"), cycle.stderr);
-  console.log("Source Fn aliases passed shared native/JS tests and strict argument/arity/generic/callback gates");
+  console.log("Source Fn aliases and same-named namespace/local values passed shared native/JS tests and strict argument/arity/generic/callback gates");
 } finally {
   await rm(project, { recursive: true, force: true });
 }

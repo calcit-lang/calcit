@@ -14,7 +14,7 @@ mod tags;
 use finger_vec::FingerVec;
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -167,20 +167,81 @@ fn read_js_ffi_expression(ns: &str, def: &str, source: &JsFfiSource) -> Result<J
   })
 }
 
-struct ImportsDict(HashSet<CalcitImport>);
+struct ImportsDict {
+  imports: HashSet<CalcitImport>,
+  namespace_bindings: HashMap<Arc<str>, String>,
+  reserved_bindings: HashSet<String>,
+  module_defs: HashMap<String, Arc<str>>,
+  shadowed_defs: HashSet<Arc<str>>,
+  self_refs: HashSet<Arc<str>>,
+}
 
 impl ImportsDict {
   fn new() -> Self {
-    ImportsDict(HashSet::new())
+    ImportsDict {
+      imports: HashSet::new(),
+      namespace_bindings: HashMap::new(),
+      reserved_bindings: HashSet::from(["$clt".to_owned(), "$procs".to_owned(), "_t_".to_owned()]),
+      module_defs: HashMap::new(),
+      shadowed_defs: HashSet::new(),
+      self_refs: HashSet::new(),
+    }
   }
 
   fn insert(&mut self, item: CalcitImport) {
     // println!("insert import: {:?}", item);
-    self.0.insert(item);
+    self.imports.insert(item);
   }
 
   fn is_empty(&self) -> bool {
-    self.0.is_empty()
+    self.imports.is_empty()
+  }
+
+  fn reserve_source_bindings(&mut self, code: &Calcit) {
+    match code {
+      Calcit::Local(local) => {
+        let binding = escape_var(&local.sym);
+        if let Some(def) = self.module_defs.get(&binding) {
+          self.shadowed_defs.insert(def.clone());
+        }
+        self.reserved_bindings.insert(binding);
+      }
+      Calcit::Symbol { sym, .. } if !has_ns_part(sym) => {
+        self.reserved_bindings.insert(escape_var(sym));
+      }
+      Calcit::Import(CalcitImport { info, .. }) => {
+        if let ImportInfo::JsDefault { alias, .. } = info.as_ref() {
+          self.reserved_bindings.insert(escape_var(alias));
+        }
+      }
+      Calcit::List(items) => {
+        for item in items.iter() {
+          self.reserve_source_bindings(item);
+        }
+      }
+      _ => {}
+    }
+  }
+
+  fn namespace_binding(&mut self, ns: &str) -> String {
+    if let Some(binding) = self.namespace_bindings.get(ns) {
+      return binding.clone();
+    }
+    let mut binding = escape_ns(ns);
+    while !self.reserved_bindings.insert(binding.clone()) {
+      binding.push('_');
+    }
+    self.namespace_bindings.insert(Arc::from(ns), binding.clone());
+    binding
+  }
+
+  fn same_namespace_reference(&mut self, ns: &str, def: &Arc<str>) -> String {
+    if self.shadowed_defs.contains(def) {
+      self.self_refs.insert(def.clone());
+      format!("(0, {}.{})", self.namespace_binding(ns), escape_var(def))
+    } else {
+      escape_var(def)
+    }
   }
 }
 
@@ -484,8 +545,25 @@ fn to_js_code(
               }
             }
             ImportInfo::NsAs { .. } => {
-              file_imports.borrow_mut().insert(item.to_owned());
-              Ok(format!("{}.{}", escape_ns(&item.ns), escape_var(def)))
+              if item.ns.as_ref() == ns {
+                Ok(file_imports.borrow_mut().same_namespace_reference(ns, def))
+              } else {
+                file_imports.borrow_mut().insert(item.to_owned());
+                let binding = file_imports.borrow_mut().namespace_binding(&item.ns);
+                Ok(format!("{binding}.{}", escape_var(def)))
+              }
+            }
+            ImportInfo::NsReferDef { .. } => {
+              // Referred and qualified definitions retain namespace identity instead
+              // of introducing a bare binding that can shadow module or lexical names.
+              if item.ns.as_ref() == ns {
+                Ok(file_imports.borrow_mut().same_namespace_reference(ns, def))
+              } else {
+                file_imports.borrow_mut().insert(item.to_owned());
+                let binding = file_imports.borrow_mut().namespace_binding(&item.ns);
+                // A named import used to call functions without a receiver.
+                Ok(format!("(0, {binding}.{})", escape_var(def)))
+              }
             }
             ImportInfo::JsDefault { alias, .. } => {
               // println!("Js Default: {:?}", info);
@@ -499,8 +577,10 @@ fn to_js_code(
               // below, so keep same-namespace references local at the emitter boundary.
               if item.ns.as_ref() != ns {
                 file_imports.borrow_mut().insert(item.to_owned());
+                Ok(escape_var(def))
+              } else {
+                Ok(file_imports.borrow_mut().same_namespace_reference(ns, def))
               }
-              Ok(escape_var(def))
             }
           }
         }
@@ -1255,7 +1335,7 @@ fn nominal_ref_to_js(
     ));
   };
   if target_ns.as_ref() == current_ns {
-    return Ok(escape_var(target_def));
+    return Ok(file_imports.borrow_mut().same_namespace_reference(current_ns, target_def));
   }
   if target_ns.as_ref() == calcit::CORE_NS {
     return Ok(format!("{}{}", get_proc_prefix(current_ns), escape_var(target_def)));
@@ -1271,7 +1351,8 @@ fn nominal_ref_to_js(
     }),
     def_id: None,
   });
-  Ok(format!("{}.{}", escape_ns(target_ns), escape_var(target_def)))
+  let binding = file_imports.borrow_mut().namespace_binding(target_ns);
+  Ok(format!("{binding}.{}", escape_var(target_def)))
 }
 
 /// a group of arguments related to scopes
@@ -2207,7 +2288,16 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
     // println!("\nstart handling: {}\n", ns);
     // side-effects, reset tracking state
 
-    let file_imports: RefCell<ImportsDict> = RefCell::new(ImportsDict::new());
+    let mut imports = ImportsDict::new();
+    imports.module_defs.extend(file.keys().map(|def| (escape_var(def), def.clone())));
+    // Reserve every lexical/module binding before choosing an import name, so
+    // later functions cannot accidentally shadow an earlier generated binding.
+    for (def, compiled) in &file.defs {
+      imports.reserved_bindings.insert(escape_var(def));
+      imports.reserve_source_bindings(&compiled.preprocessed_code);
+      imports.reserve_source_bindings(&compiled.codegen_form);
+    }
+    let file_imports: RefCell<ImportsDict> = RefCell::new(imports);
     let collected_tags: RefCell<HashSet<EdnTag>> = RefCell::new(HashSet::new());
 
     let mut defs_in_current: HashSet<Arc<str>> = HashSet::new();
@@ -2394,15 +2484,15 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
       direct_code.push_str(&snippets::tmpl_classes_registering())
     }
 
-    let collected_imports = file_imports.borrow();
+    let mut collected_imports = file_imports.borrow_mut();
     if !collected_imports.is_empty() {
-      let mut xs = collected_imports.0.iter().to_owned().collect::<Vec<_>>();
+      let mut xs = collected_imports.imports.iter().cloned().collect::<Vec<_>>();
       xs.sort();
       let mut emitted_namespace_imports = HashSet::new();
       for item in &xs {
         // println!("import item: {:?}", item);
         match &*item.info {
-          ImportInfo::NsAs { .. } => {
+          ImportInfo::NsAs { .. } | ImportInfo::NsReferDef { .. } => {
             // Source aliases and nominal schema references can request the same JS binding.
             if !emitted_namespace_imports.insert(&item.ns) {
               continue;
@@ -2412,7 +2502,8 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
             } else {
               to_js_import_name(&item.ns, true)
             };
-            write!(import_code, "\nimport * as {} from {import_target};", escape_ns(&item.ns)).expect("write");
+            let binding = collected_imports.namespace_binding(&item.ns);
+            write!(import_code, "\nimport * as {binding} from {import_target};").expect("write");
           }
           ImportInfo::JsDefault { alias, at_ns, .. } => {
             if is_cirru_string(&item.ns) {
@@ -2421,14 +2512,6 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
             } else {
               unreachable!("only js import leads to default ns, but got: {}", at_ns)
             }
-          }
-          ImportInfo::NsReferDef { .. } => {
-            let import_target = if is_cirru_string(&item.ns) {
-              wrap_js_str(&item.ns[1..])
-            } else {
-              to_js_import_name(&item.ns, true)
-            };
-            write!(import_code, "\nimport {{ {} }} from {import_target};", escape_var(&item.def)).expect("write");
           }
           ImportInfo::Core { at_ns } => {
             if at_ns == &item.ns {
@@ -2441,6 +2524,20 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           }
         }
       }
+    }
+
+    if !collected_imports.self_refs.is_empty() {
+      // Getters capture module bindings outside function scopes and preserve
+      // initialization order without introducing an ESM self-import.
+      let mut refs = collected_imports.self_refs.iter().cloned().collect::<Vec<_>>();
+      refs.sort();
+      let binding = collected_imports.namespace_binding(ns);
+      write!(import_code, "\nconst {binding} = {{").expect("write");
+      for def in refs {
+        let name = escape_var(&def);
+        write!(import_code, "get {name}() {{ return {name}; }},").expect("write");
+      }
+      import_code.push_str("};\n");
     }
 
     let tag_prefix = if &**ns == "calcit.core" { "" } else { "$clt." };
@@ -3326,6 +3423,30 @@ mod tests {
       file_imports.borrow().is_empty(),
       "same-namespace reference must not create an ESM self-import"
     );
+  }
+
+  #[test]
+  fn referred_external_functions_keep_unbound_call_semantics() {
+    let file_imports = RefCell::new(ImportsDict::new());
+    let import = Calcit::Import(CalcitImport {
+      ns: Arc::from("|external-module"),
+      def: Arc::from("probe"),
+      info: Arc::new(ImportInfo::NsReferDef {
+        at_ns: Arc::from("tests.consumer"),
+        at_def: Arc::from("main"),
+      }),
+      def_id: None,
+    });
+    let code = to_js_code(
+      &import,
+      "tests.consumer",
+      &HashSet::new(),
+      &file_imports,
+      &RefCell::new(HashSet::new()),
+      None,
+    )
+    .expect("external function reference");
+    assert_eq!(code, "(0, $external_module.probe)");
   }
 
   #[test]

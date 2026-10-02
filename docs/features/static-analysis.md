@@ -297,6 +297,14 @@ and implementation-completion status are separate concerns.
 
 Built-in types use **quoted symbols**: write `'String`, `'Number`, `'List`, `'Fn`, and `'Dynamic`. This keeps type syntax distinct from ordinary keyword/tag data. Lowercase tags such as `:string`, `:number`, and `:dynamic` remain load-compatible, but `calcit edit format` rewrites type positions to the symbol form. It does not rewrite ordinary tags such as enum variants, struct field keys, `:return` schema keys, or `:kind` values.
 
+### 顶层值的声明与实现
+
+顶层 `def` 的 `:schema` 需要与 initializer 的独立静态类型一致。已知 nominal Struct 不能声明为 Map，Number 不能声明为 String；确定矛盾会在检查和代码生成前报告 `E_SCHEMA_DEF_MISMATCH`，定位到定义的 initializer。修正声明或实际数据转换后再使用类型导向的方法，不用 `assert-type` 或 `unsafe-coerce` 掩盖矛盾。
+
+例如 `def initial-state $ LoginState :username | :password |` 的 schema 应是完整名义类型 `'app.comp.login/LoginState`，不是 `Map<Tag,String>`。`impl-traits` 为 EnumDef 附加方法后仍返回 EnumDef，不是 Impl；Impl 是 `defimpl` 产生的实现记录。
+
+显式 Dynamic 保存和暂时缺少静态证据仍沿用既有边界政策；这项检查不把缺证据当作确定矛盾，也不会为了推断而执行 initializer。`query type` 从 schema 发现的方法是声明信息，不能替代实现检查。本规则只覆盖不可变 `def`，不等同于 Ref 后续写入的证明。
+
 ### Function Parameter Types
 
 Function parameters should be annotated with function schema:

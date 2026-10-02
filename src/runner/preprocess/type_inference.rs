@@ -1766,7 +1766,8 @@ fn resolve_impl_annotation(value: &Calcit, scope_types: &ScopeTypes) -> Option<A
 /// `None` so the builtin signature provides a conservative open type instead
 /// of a nominal type with an incorrectly complete method table.
 fn infer_impl_attachment_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
-  let base = resolve_type_value(xs.get(1)?, scope_types)?;
+  let base_expr = xs.get(1)?;
+  let base = resolve_type_value(base_expr, scope_types)?;
   let impl_values = xs
     .iter()
     .skip(2)
@@ -1814,14 +1815,30 @@ fn infer_impl_attachment_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Opti
       Some(Arc::new(CalcitTypeAnnotation::EnumValue(Arc::new(attached))))
     }
     CalcitTypeAnnotation::TypeRef(_, args) => {
+      // The expression's source distinguishes a definition value from an
+      // instance whose schema refers to that same nominal definition.
+      let source_definition = match base_expr {
+        Calcit::Import(CalcitImport { ns, def, .. }) => program::lookup_def_code(ns, def),
+        Calcit::Symbol { sym, info, .. } => program::lookup_def_code(&info.at_ns, sym),
+        _ => None,
+      };
+      let is_definition_value = source_definition.as_ref().is_some_and(code_resolves_to_nominal_type_def);
       if let Some(mut attached) = base.resolve_to_struct() {
         attached.impls.extend(impl_values);
-        Some(Arc::new(CalcitTypeAnnotation::Struct(Arc::new(attached), args.clone())))
+        if is_definition_value {
+          Some(Arc::new(CalcitTypeAnnotation::StructDef(Arc::new(attached))))
+        } else {
+          Some(Arc::new(CalcitTypeAnnotation::Struct(Arc::new(attached), args.clone())))
+        }
       } else if let Some(mut attached) = base.resolve_to_enum() {
         let mut impls = attached.impls().to_vec();
         impls.extend(impl_values);
         attached.set_impls(impls);
-        Some(Arc::new(CalcitTypeAnnotation::Enum(Arc::new(attached), args.clone())))
+        if is_definition_value {
+          Some(Arc::new(CalcitTypeAnnotation::EnumDef(Arc::new(attached))))
+        } else {
+          Some(Arc::new(CalcitTypeAnnotation::Enum(Arc::new(attached), args.clone())))
+        }
       } else {
         None
       }
@@ -2179,6 +2196,30 @@ fn infer_definition_value_type_inner(ns: &str, def: &str) -> Option<Arc<CalcitTy
 /// Local nodes retain their lexical type information, while imports resolve from compiled metadata.
 pub fn infer_static_type_from_expr(expr: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
   infer_type_from_expr(expr, &ScopeTypes::new())
+}
+
+/// Prove a fixed call from already-processed expressions, without executing them.
+/// This uses the compiler's ordinary proof relation, not compatibility matching.
+pub fn fixed_call_arguments_are_proven(callable: &Calcit, arguments: &[Calcit]) -> bool {
+  let Some(signature) = infer_static_type_from_expr(callable).and_then(|annotation| annotation.resolve_to_nonoptional_fn()) else {
+    return false;
+  };
+  if signature.fn_kind != SchemaKind::Fn
+    || signature.rest_type.is_some()
+    || !signature.where_bounds.is_empty()
+    || signature.arg_types.len() != arguments.len()
+    || calcit::trailing_option_arg_count(&signature.arg_types, signature.arg_types.len()) > 0
+    || signature
+      .arg_types
+      .iter()
+      .any(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Optional(_)))
+  {
+    return false;
+  }
+  let mut bindings = HashMap::new();
+  arguments.iter().zip(&signature.arg_types).all(|(argument, expected)| {
+    infer_static_type_from_expr(argument).is_some_and(|actual| actual.prove_with_bindings(expected, &mut bindings).is_proven())
+  })
 }
 
 /// Resolve a declarative core nominal definition through the same value path

@@ -12,6 +12,7 @@ const run = (...args) => execFileSync(binary, args, {
 const traitSnapshot = resolve("calcit/test-traits.cirru");
 
 run(traitSnapshot, "test", "test-traits.main/add-with-trait", "--require-match");
+run(traitSnapshot);
 
 const fixture = await mkdtemp(join(tmpdir(), "calcit-map-add-trait-"));
 try {
@@ -19,7 +20,7 @@ try {
   const output = join(fixture, "js-out");
   run(traitSnapshot, "--emit-path", output, "js");
   const traits = await import(pathToFileURL(join(output, "test-traits.main.mjs")).href);
-  traits.test_add_trait();
+  traits.main_$x_();
 
   const snapshot = join(fixture, "calcit.cirru");
   await copyFile(traitSnapshot, snapshot);
@@ -36,7 +37,39 @@ try {
     rejected = true;
   }
   assert.ok(rejected, "legacy Map .add must not satisfy the nominal Add trait bound");
-  console.log("Map .add / Add trait boundary passed on native, generated JS, and strict negative checking");
+
+  // Replay every runtime fixture through strict source checking here.
+  // The existing strict-default runner owns explicit compatibility testing.
+  const definition = JSON.parse(run(traitSnapshot, "query", "def",
+    "test-traits.main/test-explicit-trait-call", "--format", "json"));
+  const runtimeTests = definition.data.tests.filter(test => test.tags.includes("trait-runtime"));
+  assert.equal(runtimeTests.length, 6);
+  const setRuntimeBody = tests => run(snapshot, "edit", "def", "test-traits.main/test-explicit-trait-call", "--overwrite",
+    "--input-format", "json-ast", "--code", JSON.stringify([
+      "defn", "test-explicit-trait-call", [], ...tests.map(test => test.code), "1",
+    ]));
+  const selection = ["--init-fn", "test-traits.main/test-explicit-trait-call",
+    "--reload-fn", "test-traits.main/test-explicit-trait-call"];
+  for (const test of runtimeTests) {
+    setRuntimeBody([test]);
+    for (const mode of [[], ["--check-only"], ["js"], ["wasm"], ["wasi"]]) {
+      assert.throws(() => run(snapshot, ...selection, ...mode), error => {
+        assert.match(`${error.stdout ?? ""}\n${error.stderr ?? ""}`, /E_DUPLICATE_TRAIT_IMPL/);
+        return true;
+      }, `${test.name}: strict selection must reject duplicate origins before execution or codegen`);
+    }
+  }
+  // Public deftrait accepts declarations, not a third default-body element.
+  // Native's internal defaults field is not a user-facing source feature.
+  setRuntimeBody([{ code: ["let", [["WithDefault", ["deftrait", "WithDefault",
+    [".render", ":fn", ["fn", ["self"], "|default"]]]]], "&unit"] }]);
+  for (const mode of [[], ["--check-only"], ["js"], ["wasm"], ["wasi"]]) {
+    assert.throws(() => run(snapshot, ...selection, ...mode), error => {
+      assert.match(`${error.stdout ?? ""}\n${error.stderr ?? ""}`, /deftrait expects each method as \(method type\)/);
+      return true;
+    }, "an unsupported default body must fail macro validation on every target");
+  }
+  console.log("Map .add / Add trait boundary passed on native, generated JS, and strict duplicate/default rejection");
 } finally {
   await rm(fixture, { recursive: true, force: true });
 }

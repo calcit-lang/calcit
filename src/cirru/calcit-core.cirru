@@ -3163,7 +3163,7 @@
           :doc "|Component Model 只读字节流标记类型。仅允许作为 async defwasm-export 的唯一直接参数；值由主机拥有，Calcit 代码不能构造、复制或访问原始句柄。"
           :code $ quote $ def ReadableByteStream (defstruct ReadableByteStream)
           :examples $ []
-          :schema $ :: 'Struct
+          :schema $ :: 'StructDef
           :tags $ #{} :data :internal
         'Result $ %{} 'CodeEntry
           :doc "|Calcit 泛型 Result<T,E> 的 nominal Enum 定义：用作公开 schema，也可直接调用 Result :ok value 或 Result :err error 构造值；已知接收者上优先使用 .method。%ok/%err 是待迁移的旧 helper。"
@@ -3279,7 +3279,7 @@
           :code $ quote $ def StreamConsumeError
             defenum StreamConsumeError $ :total-limit
           :examples $ []
-          :schema $ :: 'Enum
+          :schema $ :: 'EnumDef
           :tags $ #{} :data
         'StringDestruct $ %{} 'CodeEntry
           :doc "|Nominal result of destruct-str: none, or the first character with the remaining string."
@@ -3570,6 +3570,27 @@
             %{} 'TestEntry (:name |proven-list-expression)
               :code $ quote $ assert= ([] 1 2)
                 assert-type ([] 1 2) (:: 'List 'Number)
+              :tags $ #{} :assert-boundary :unit
+            %{} 'TestEntry (:name |proven-generic-identity)
+              :code $ quote $ assert= 3
+                let
+                    keep-value $ fn (x)
+                      hint-fn $ {}
+                        :generics $ [] 'T
+                        :args $ [] 'T
+                        :return 'T
+                      assert-type x 'T
+                  keep-value 3
+              :tags $ #{} :assert-boundary :unit
+            %{} 'TestEntry (:name |preserves-explicit-open-identity)
+              :code $ quote $ assert= |value
+                let
+                    keep-value $ fn (x)
+                      hint-fn $ {}
+                        :args $ [] 'Dynamic
+                        :return 'Dynamic
+                      assert-type x 'Dynamic
+                  keep-value |value
               :tags $ #{} :assert-boundary :unit
         'assert= $ %{} 'CodeEntry
           :doc "|asserts that two values are equal, raises error showing both values if not"
@@ -5020,6 +5041,42 @@
               :code $ quote $ assert= ([] 1 |two)
                 [] & $ [] 1 |two
               :tags $ #{} :core :spread-boundary :unit
+            %{} 'TestEntry (:name |fixed-call-spread-evaluates-arguments-once)
+              :code $ quote $ assert= ([] 3 |ab)
+                let
+                    *order $ atom |
+                    f $ fn (a b)
+                      hint-fn $ {}
+                        :args $ [] (quote Number) (quote Number)
+                        :return $ quote Number
+                      + a b
+                    result $ f & $ []
+                      do
+                        reset! *order $ str @*order |a
+                        , 1
+                      do
+                        reset! *order $ str @*order |b
+                        , 2
+                  [] result @*order
+              :tags $ #{} :core :spread-proof :unit
+            %{} 'TestEntry (:name |fixed-call-direct-evaluates-arguments-once)
+              :code $ quote $ assert= ([] 3 |ab)
+                let
+                    *order $ atom |
+                    f $ fn (a b)
+                      hint-fn $ {}
+                        :args $ [] (quote Number) (quote Number)
+                        :return $ quote Number
+                      + a b
+                    result $ f
+                      do
+                        reset! *order $ str @*order |a
+                        , 1
+                      do
+                        reset! *order $ str @*order |b
+                        , 2
+                  [] result @*order
+              :tags $ #{} :core :spread-proof :unit
         'dissoc-in $ %{} 'CodeEntry
           :doc "|Remove a nested key or index. An empty path leaves the input unchanged."
           :code $ quote $ defn dissoc-in (data path)

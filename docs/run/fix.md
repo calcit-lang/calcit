@@ -166,6 +166,38 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   只填补源码 schema 中已有的 `Dynamic` 洞。零参数函数、可推导返回值和 `Ref<T>` 等候选没有剩余洞时标记为
   `machine-applicable`；局部参数、嵌套泛型等位置仍缺少约束时保留精确路径并标记为 `needs-review`，即使传入 `--apply`
   也不写回。该规则不进入升级 preset，不处理 macro、data/trait/impl 声明，也不通过执行程序猜运行时类型。
+- `spread-call-proof-v1` 将有完整证明的 `f & ([] 1 2)` 改为 `f 1 2`，也支持 spread 前已有固定实参。
+  它读取唯一的编译器 source-expression、真实 List 构造器和固定 callable 契约，按通用类型关系逐项证明，
+  保留 head、实参的单次求值与顺序。预览先运行
+  `calcit fix --rule spread-call-proof-v1 --ns app.main --def run --format edn`；review 后再使用现有
+  `--apply --expect-revision <revision>`，写回仍经过 staged preprocess 和原子事务。该规则不进入默认 preset。
+  未知长度、开放实参、optional/rest、尚未证明的 trait bounds、多重 spread 或不唯一的 macro/source 映射
+  返回 `requires-review`，replacement 为空，传入 `--apply` 也不修改这些节点。quoted data 和函数参数声明不作为调用检查。
+- `unsafe-coerce-boundary-v1` 把现有 `E_UNSCOPED_UNSAFE_COERCE` 转为可导航的待审建议，运行
+  `calcit fix --rule unsafe-coerce-boundary-v1 --ns app.main --def run --format edn` 查看编译器位置、源码指纹、
+  词法函数位置与编译栈。先核对捕获、效果和失败路径，再人工选择 checked decoder 或显式 adapter。
+  建议的 replacement 为空，`--apply` 不修改源码或授予 `:js-ffi`。编译错误保留在 diagnostics 中，命令仍非零退出，
+  不能用预览成功替代 strict 编译。已有明确词法权限的 adapter 不生成建议；词法权限以编译器规则为准，
+  不因函数名、namespace 命名或调用者的权限推断独立 source definition 的权限。
+  此规则须使用严格类型模式，不进入默认 preset 或 strict workflow 的自动改写集合；只检查 definition `:code`，
+  每个 definition 在首个编译错误停止。修复后重新运行以发现后续错误；`:tests` / `:examples` 仍需独立验证。
+  不相关错误、依赖或所选 scope 外的错误、缺少源码定位的错误直接失败，不猜定位或隐藏问题。
+- `assert-type-proof-v1` 显式审计断言前的类型证据，运行
+  `calcit fix --rule assert-type-proof-v1 --ns app.main --def run --format edn` 查看原始输入位置和编译栈。
+  已知矛盾保留 `E_ASSERT_TYPE_MISMATCH`；开放输入、未知 callable 或未绑定泛型缺少证明时报告
+  `E_ASSERT_TYPE_UNPROVEN`。审计在更新局部类型之前停止，因此不能通过再加一层断言消除待审边界。
+  当前预处理涉及的函数体还须独立证明其具体返回契约；仅靠返回声明的 producer 报告
+  `E_FN_RETURN_UNPROVEN`，并定位其真实 source owner。Number identity、泛型 T identity 和明确的
+  Dynamic 保存/传递可以保持原写法；未知 T 不能靠目标 Number 获得证明。
+  producer 实现与返回声明矛盾时，既有 `W_FN_RETURN_TYPE_MISMATCH` 同样使审计失败，不能借用该声明获得空建议。
+  将报告中的 definition 与 path 传给 `calcit query type-at <definition> --path <path> --format edn`
+  可读取同一源码节点；展开后无法保留尾表达式坐标时，path 为声明根节点 `code`。
+  规则复用 compiler 的共同证明关系与既有 suggestion，不运行程序猜类型，也不自动补 schema、选择 decoder、
+  删除断言或插入强转。replacement 为空；`--apply` 不写入源码。报告保留 error，命令非零退出。
+  此项审计须使用严格模式，暂不进入默认 preset 或 strict workflow；普通编译的开放边界迁移策略保持不变。
+  所选定义与其依赖都重新预处理，不把入口预检或普通编译的缓存当成审计证明；递归继续使用既有编译 guard。
+  每个 definition 在首个错误停止，只检查 `:code`，`:tests` / `:examples` 需另行运行。
+  所选 scope 外、未知来源及其他编译错误会直接失败，不能将空报告当作这些路径已安全的证明。
 - `tag-match-to-match-v1` 与 `required-struct-field-v1` 属于只随 Calcit 0.14.15 发布的 migration bridge，不是当前 fix surface。
   升级旧项目时请固定使用 0.14.15 执行规则、review 输出并验证测试；迁移完成后再切换到 0.14.16 或更新版本。
   当前版本若显式请求这两个 rule，会返回稳定错误和上述版本提示，不会继续携带旧 planner 与分析特例。

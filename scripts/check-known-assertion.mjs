@@ -18,7 +18,7 @@ try {
   const response = JSON.parse(run("query", "def", "calcit.core/assert-type", "--format", "json"));
   assert.deepEqual(response.diagnostics, []);
   const tests = response.data.tests.filter(test => test.tags.includes("assert-boundary"));
-  assert.equal(tests.length, 6);
+  assert.equal(tests.length, 8);
   run("test", "calcit.core/hint-fn", "--tag", "return-boundary", "--require-match");
   const returnResponse = JSON.parse(run("query", "def", "calcit.core/hint-fn", "--format", "json"));
   assert.deepEqual(returnResponse.diagnostics, []);
@@ -322,7 +322,33 @@ try {
       }
     }
   }
-  console.log("Known assertions and return/call contracts rejected before native/JS/WASM/WASI; native/JS positives, JS async adoption and scalar WASM assertions passed");
+  await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  run("test", "--tag", "def-value-contract", "--require-match");
+  run("--check-only");
+  const defValueOutput = join(project, "def-value-js-out");
+  run("--emit-path", defValueOutput, "js");
+  const defValues = await import(pathToFileURL(join(defValueOutput, "app.main.mjs")).href);
+  defValues.verify_values();
+  for (const [target, schema] of [
+    ["app.values/initial-state", "quote $ :: 'Map 'Tag 'String"],
+    ["app.main/initial-state", "quote $ :: 'Map 'Tag 'String"],
+    ["app.main/state-alias", "quote $ :: 'Map 'Tag 'String"],
+    ["app.reader/state-alias", "quote $ :: 'Map 'Tag 'String"],
+    ["app.main/members", "quote $ :: 'Map 'String 'String"],
+    ["app.main/answer", "quote $ :: 'String"],
+  ]) {
+    await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+    run("edit", "schema", target, "--input-format", "cirru", "--code", schema);
+    const original = await readFile(snapshot);
+    for (const mode of [["--check-only"], ["js"], ["wasm", "--check-only"], ["wasi", "--check-only"]]) {
+      const result = spawnSync(binary, ["--emit-path", defValueOutput, snapshot, ...mode], options);
+      if (result.error) throw result.error;
+      assert.equal(result.status, 1, `${target} ${mode}\n${result.stdout}\n${result.stderr}`);
+      assert.ok(`${result.stdout}\n${result.stderr}`.includes("E_SCHEMA_DEF_MISMATCH"));
+      assert.deepEqual(await readFile(snapshot), original);
+    }
+  }
+  console.log("Known assertions and return/call contracts rejected before native/JS/WASM/WASI; native/JS positives, JS async adoption, scalar WASM assertions and top-level value schema contracts passed");
 } finally {
   await rm(project, { recursive: true, force: true });
 }
