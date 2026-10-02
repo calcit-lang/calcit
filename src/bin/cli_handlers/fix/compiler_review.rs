@@ -52,11 +52,22 @@ pub(super) fn compile_boundary_review(
     } else {
       runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default()).map(|_| ())
     };
-    if (workflow
-      || matches!(
+    if workflow {
+      for warning in warnings.borrow().iter().filter(|warning| is_contradictory_proof_warning(warning)) {
+        let mut diagnostic = warning.as_json();
+        diagnostic["severity"] = serde_json::json!("error");
+        diagnostic["phase"] = serde_json::json!("preprocess");
+        diagnostic["definition"] = serde_json::json!(format!("{}/{}", warning.location().ns, warning.location().def));
+        if !diagnostics.contains(&diagnostic) {
+          diagnostics.push(diagnostic);
+        }
+      }
+    }
+    if !workflow
+      && matches!(
         rule,
         ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE | CALLABLE_CONTRACT_PROOF_RULE | NOMINAL_WRITE_PROOF_RULE
-      ))
+      )
       && let Some(warning) = warnings.borrow().iter().find(|warning| is_contradictory_proof_warning(warning))
     {
       // A contradictory implementation cannot lend its declared return type

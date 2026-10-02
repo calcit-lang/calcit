@@ -110,8 +110,16 @@ fn ffi_evidence_supports_primary_edn_and_summary_only_output() {
 #[test]
 fn strict_workflow_reuses_ffi_boundary_evidence() {
   let output = run_strict_fix(&["--format", "json"]);
-  assert_success(&output);
+  assert!(!output.status.success(), "an opaque host return must not prove String");
   let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("stdout should contain one JSON report");
+  assert_eq!(report["data"]["workflow"]["status"], "requires-review");
+  assert!(
+    report["diagnostics"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .any(|item| item["code"] == "W_FN_RETURN_TYPE_MISMATCH")
+  );
   let boundaries = report["data"]["workflow"]["review_required"]["ffi_boundaries"]
     .as_array()
     .expect("strict workflow should contain FFI boundary evidence");
