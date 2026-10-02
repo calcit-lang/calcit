@@ -39,6 +39,8 @@ const CORE_RESULT_METHOD_RULE: &str = "core-result-method-v1";
 const CORE_RESULT_METHOD_DIAGNOSTIC: &str = "FIX_CORE_RESULT_METHOD";
 const CORE_NON_NIL_PREDICATE_RULE: &str = "core-non-nil-predicate-v1";
 const CORE_NON_NIL_PREDICATE_DIAGNOSTIC: &str = "FIX_CORE_NON_NIL_PREDICATE";
+const CORE_FUNCTION_ALIAS_RULE: &str = "core-function-alias-v1";
+const CORE_FUNCTION_ALIAS_DIAGNOSTIC: &str = "FIX_CORE_FUNCTION_ALIAS";
 const CORE_INTEGER_PREDICATE_RULE: &str = "core-integer-predicate-v1";
 const CORE_INTEGER_PREDICATE_DIAGNOSTIC: &str = "FIX_CORE_INTEGER_PREDICATE";
 const CORE_IDENTITY_CONVERSION_RULE: &str = "core-identity-conversion-v1";
@@ -478,8 +480,9 @@ pub(crate) fn handle_fix_command(
   let value_to_zero_arg_fn = selected_rules.contains(&VALUE_TO_ZERO_ARG_FN_RULE);
   let schema_synthesis = selected_rules.contains(&SYNTHESIZE_SCHEMA_RULE);
   let optional_parameters = selected_rules.contains(&OPTIONAL_PARAMETERS_RULE);
-  let core_predicate_rename =
-    selected_rules.contains(&CORE_NON_NIL_PREDICATE_RULE) || selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE);
+  let core_predicate_rename = selected_rules.contains(&CORE_NON_NIL_PREDICATE_RULE)
+    || selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE)
+    || selected_rules.contains(&CORE_FUNCTION_ALIAS_RULE);
   let semantic_refactor = semantic_rename || value_to_zero_arg_fn;
   let migration_rule =
     semantic_refactor || schema_synthesis || optional_parameters || core_predicate_rename || options.workflow.is_some();
@@ -633,6 +636,21 @@ pub(crate) fn handle_fix_command(
       &selected_definitions,
       CorePredicateRename::NonNil,
     )?);
+  }
+  if selected_rules.contains(&CORE_FUNCTION_ALIAS_RULE) {
+    for alias in [
+      CorePredicateRename::Optionally,
+      CorePredicateRename::JoinString,
+      CorePredicateRename::Join,
+      CorePredicateRename::Vals,
+    ] {
+      suggestions.extend(plan_core_predicate_rename_fixes(
+        &source_snapshot,
+        snapshot_file,
+        &selected_definitions,
+        alias,
+      )?);
+    }
   }
   if selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE) {
     suggestions.extend(plan_core_predicate_rename_fixes(
@@ -1183,6 +1201,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CORE_OPTION_METHOD_RULE
         | CORE_RESULT_METHOD_RULE
         | CORE_NON_NIL_PREDICATE_RULE
+        | CORE_FUNCTION_ALIAS_RULE
         | CORE_INTEGER_PREDICATE_RULE
         | CORE_IDENTITY_CONVERSION_RULE
         | CORE_PREDICATE_METHOD_RULE
@@ -1213,7 +1232,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
   {
     return Err(
       format!(
-        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_SET_INCLUDE_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_SET_INCLUDE_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
       ) + &format!(
         " Review-only compiler rules: `{UNSAFE_COERCE_BOUNDARY_RULE}`, `{ASSERT_TYPE_PROOF_RULE}`, `{CONCRETE_RETURN_PROOF_RULE}`, `{CALLABLE_CONTRACT_PROOF_RULE}`, `{NOMINAL_WRITE_PROOF_RULE}`."
       ),
@@ -1260,6 +1279,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_OPTION_METHOD_RULE
         | CORE_RESULT_METHOD_RULE
         | CORE_NON_NIL_PREDICATE_RULE
+        | CORE_FUNCTION_ALIAS_RULE
         | CORE_INTEGER_PREDICATE_RULE
         | CORE_IDENTITY_CONVERSION_RULE
         | CORE_PREDICATE_METHOD_RULE
@@ -1289,6 +1309,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_OPTION_METHOD_RULE => CORE_OPTION_METHOD_RULE,
         CORE_RESULT_METHOD_RULE => CORE_RESULT_METHOD_RULE,
         CORE_NON_NIL_PREDICATE_RULE => CORE_NON_NIL_PREDICATE_RULE,
+        CORE_FUNCTION_ALIAS_RULE => CORE_FUNCTION_ALIAS_RULE,
         CORE_INTEGER_PREDICATE_RULE => CORE_INTEGER_PREDICATE_RULE,
         CORE_IDENTITY_CONVERSION_RULE => CORE_IDENTITY_CONVERSION_RULE,
         CORE_PREDICATE_METHOD_RULE => CORE_PREDICATE_METHOD_RULE,
@@ -1406,6 +1427,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
     CORE_NON_NIL_PREDICATE_RULE => FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_NON_NIL_PREDICATE_DIAGNOSTIC,
+      evidence_source: "compiler-resolved-reference",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    CORE_FUNCTION_ALIAS_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: CORE_FUNCTION_ALIAS_DIAGNOSTIC,
       evidence_source: "compiler-resolved-reference",
       lifecycle: "semantic-refactor",
       source_version_required: false,
@@ -3805,13 +3833,31 @@ fn plan_core_nominal_method_fixes(
 enum CorePredicateRename {
   NonNil,
   Integer,
+  Optionally,
+  JoinString,
+  Join,
+  Vals,
 }
 
 impl CorePredicateRename {
+  /// Function aliases are distinct functions, so only direct calls are equivalent.
+  fn requires_call_head(self) -> bool {
+    matches!(self, Self::Optionally | Self::JoinString | Self::Join | Self::Vals)
+  }
+
   fn names(self) -> (&'static str, &'static str, &'static str, &'static str) {
     match self {
       Self::NonNil => ("some?", "non-nil?", CORE_NON_NIL_PREDICATE_RULE, CORE_NON_NIL_PREDICATE_DIAGNOSTIC),
       Self::Integer => ("round?", "integer?", CORE_INTEGER_PREDICATE_RULE, CORE_INTEGER_PREDICATE_DIAGNOSTIC),
+      Self::Optionally => (
+        "optionally",
+        "nil->option",
+        CORE_FUNCTION_ALIAS_RULE,
+        CORE_FUNCTION_ALIAS_DIAGNOSTIC,
+      ),
+      Self::JoinString => ("join-str", "join-string", CORE_FUNCTION_ALIAS_RULE, CORE_FUNCTION_ALIAS_DIAGNOSTIC),
+      Self::Join => ("join", "intersperse", CORE_FUNCTION_ALIAS_RULE, CORE_FUNCTION_ALIAS_DIAGNOSTIC),
+      Self::Vals => ("vals", "distinct-values", CORE_FUNCTION_ALIAS_RULE, CORE_FUNCTION_ALIAS_DIAGNOSTIC),
     }
   }
 }
@@ -3876,15 +3922,24 @@ fn plan_core_predicate_rename_fixes(
         continue;
       };
       let macro_origin = usage.macro_origin.clone();
-      let review = (!macro_origin
-        .iter()
-        .all(|origin| preserves_nominal_method_call_through_macro(origin)))
-      .then(|| {
-        format!(
-          "The core predicate reference crosses macro expansion {}; review whether the macro observes the source spelling.",
-          macro_origin.join(" -> ")
-        )
-      });
+      // Preferred aliases are separate forwarding functions, so a first-class
+      // reference changes function identity even though direct calls agree.
+      let first_class_alias = rule.requires_call_head() && path.last() != Some(&0);
+      let review = if first_class_alias {
+        Some(format!(
+          "`{old_name}` is used as a first-class value, and `{new_name}` is a separate function with its own identity; review before renaming."
+        ))
+      } else {
+        (!macro_origin
+          .iter()
+          .all(|origin| preserves_nominal_method_call_through_macro(origin)))
+        .then(|| {
+          format!(
+            "The core reference crosses macro expansion {}; review whether the macro observes the source spelling.",
+            macro_origin.join(" -> ")
+          )
+        })
+      };
       planned
         .entry(path)
         .and_modify(|(_, _, origins, current_review)| {
@@ -3922,7 +3977,7 @@ fn plan_core_predicate_rename_fixes(
       let original_node = Cirru::leaf(original_leaf.as_str());
       let replacement_node = Cirru::leaf(replacement.as_str());
       let machine_applicable = review.is_none();
-      let message = review.unwrap_or_else(|| format!("Use the explicit core predicate `{new_name}`; this changes only the resolved name and preserves argument evaluation and predicate semantics."));
+      let message = review.unwrap_or_else(|| format!("Use the preferred core name `{new_name}`; both names resolve to the same implementation, so this changes only the resolved name and preserves argument evaluation."));
       suggestions.push(FixSuggestion {
         rule_id,
         diagnostic_code,
