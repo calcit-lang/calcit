@@ -41,3 +41,5 @@ PR review 指出两个共享证据入口遗漏：仅声明返回值的 metadata 
 原始 runtime form 的参数收集和 runtime proc 的泛型归属属于预处理之外的内部 metadata invariant，使用 Rust 精确回归；用户可观察 callback 行为仍由既有 Calcit definition tests 与 native/JS 回放覆盖。补丁须重新构建和验证，上一 HEAD 的通过不代替本轮验收。
 
 新增 proc definition alias 的 Calcit `.map` 附带测试后，native 通过，但生成 JS 报 `$procs is not defined`：Proc definition 分支假定定义名就是 runtime export 名，且假定命名空间已经导入 `$procs`。该分支改为复用实际 codegen value 的普通表达式生成与 namespace-aware proc 映射，并导出 alias 绑定。保留方法调用和原函数身份，不添加额外 runtime import 或 wrapper。既有 source-alias 运行器跨命名空间回放该测试，同时验证真实 alias 可被导入。
+
+增量 review 进一步指出内部 List proc 的共享 JS 映射只覆盖 append/prepend/butlast，遗漏 sort/range/foldl/foldl-shortcut/list?，导致真实 definition alias 导出 undefined。补齐同一映射入口，并在既有 fixture 的 Calcit `:tests` 中分别断言排序、步进 range、fold、提前退出和 List predicate；既有运行器跨命名空间回放全部断言，不复制 JS 语义断言或增加测试入口。

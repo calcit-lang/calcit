@@ -66,6 +66,21 @@
                   [] ([]) ([] 1)
                   , fix-command.alias-evidence/empty-proc
             :tags $ #{} :alias-contract :unit
+        'fold-proc $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def fold-proc &list:foldl
+          :examples $ []
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-internal-proc)
+            :code $ quote $ assert= 6
+              fix-command.alias-evidence/fold-proc ([] 1 2 3) 0 &+
+            :tags $ #{} :alias-contract :unit
+        'list-question-proc $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def list-question-proc &list?
+          :examples $ []
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-internal-proc)
+            :code $ quote $ do
+              assert= true $ fix-command.alias-evidence/list-question-proc $ [] 1
+              assert= false $ fix-command.alias-evidence/list-question-proc 1
+            :tags $ #{} :alias-contract :unit
         'optional-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def optional-alias fix-command.alias-evidence/optional-text
           :examples $ []
@@ -80,6 +95,12 @@
               :args $ [] $ :: 'Option 'String
             .unwrap-or x |fallback
           :examples $ []
+        'range-proc $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def range-proc &list:range
+          :examples $ []
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-internal-proc)
+            :code $ quote $ assert= ([] 1 3 5) (fix-command.alias-evidence/range-proc 1 7 2)
+            :tags $ #{} :alias-contract :unit
         'rest-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def rest-alias fix-command.alias-evidence/rest-count
           :examples $ []
@@ -109,6 +130,21 @@
               :args $ [] 'T 'T
             , left
           :examples $ []
+        'shortcut-proc $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def shortcut-proc &list:foldl-shortcut
+          :examples $ []
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-internal-proc)
+            :code $ quote $ assert= 3
+              fix-command.alias-evidence/shortcut-proc ([] 1 2 3) 0 99 $ fn (acc x)
+                :: (&= x 2) (&+ acc x)
+            :tags $ #{} :alias-contract :unit
+        'sort-proc $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def sort-proc &list:sort
+          :examples $ []
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-internal-proc)
+            :code $ quote $ assert= ([] 1 2 3)
+              fix-command.alias-evidence/sort-proc ([] 3 1 2) &-
+            :tags $ #{} :alias-contract :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns fix-command.alias-evidence
     'fix-command.left $ %{} 'FileEntry

@@ -40,7 +40,10 @@ try {
 
   // Execute the same Calcit attached-test trees in generated JS, not a second
   // JavaScript implementation of the language assertions.
-  const targets = ["echo-alias", "same-alias", "apply-alias", "rest-alias", "optional-alias", "empty-proc"].map(name => `${ns}/${name}`);
+  const targets = [
+    "echo-alias", "same-alias", "apply-alias", "rest-alias", "optional-alias", "empty-proc",
+    "sort-proc", "range-proc", "fold-proc", "shortcut-proc", "list-question-proc",
+  ].map(name => `${ns}/${name}`);
   targets.push("fix-command.reader/state-alias");
   const trees = targets.flatMap(target => {
     const context = JSON.parse(run("query", "context", target, "--format", "json"));

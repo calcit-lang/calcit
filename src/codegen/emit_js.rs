@@ -614,6 +614,11 @@ fn to_js_code(
           CalcitProc::NativeListAppend => CalcitProc::Append,
           CalcitProc::NativeListPrepend => CalcitProc::Prepend,
           CalcitProc::NativeListButlast => CalcitProc::Butlast,
+          CalcitProc::NativeListSort => CalcitProc::Sort,
+          CalcitProc::NativeListRange => CalcitProc::Range,
+          CalcitProc::NativeListFoldl => CalcitProc::Foldl,
+          CalcitProc::NativeListFoldlShortcut => CalcitProc::FoldlShortcut,
+          CalcitProc::NativeListQ => CalcitProc::ListQuestion,
           _ => *s,
         };
         // println!("gen proc {} under {}", s, ns,);
