@@ -249,6 +249,9 @@ let defaultHash_enum = valueHash("enum:");
 let defaultHash_cirru_quote = valueHash("cirru-quote:");
 
 let defaultHash_unknown = valueHash("unknown:");
+let defaultHash_buffer = valueHash("buffer:");
+/** Identity hashes for host values, kept outside the objects so frozen or DOM objects are never mutated. */
+let hostValueHashes = new WeakMap<object, Hash>();
 
 let fnHashCounter = 0;
 let jsObjectHashCounter = 0;
@@ -291,15 +294,20 @@ export let hashFunction = (x: CalcitValue): Hash => {
   if (typeof x === "function") {
     // method values are closures created on the fly (see invoke_method_closure);
     // hash by method name so equal methods share the same hash, matching isEqual
+    // cache in a WeakMap instead of writing onto the function, so frozen functions hash safely
+    const cachedFn = hostValueHashes.get(x as object);
+    if (cachedFn != null) {
+      return cachedFn;
+    }
     const methodName = (x as { __calcitMethodName?: string }).__calcitMethodName;
     if (methodName != null) {
       let h = mergeValueHash(defaultHash_fn, methodName);
-      (x as any)[calcit_dirty_hash_key] = h;
+      hostValueHashes.set(x as object, h);
       return h;
     }
     fnHashCounter = fnHashCounter + 1;
     let h = mergeValueHash(defaultHash_fn, fnHashCounter);
-    (x as any)[calcit_dirty_hash_key] = h;
+    hostValueHashes.set(x as object, h);
     return h;
   }
   if (x instanceof CalcitRef) {
@@ -424,15 +432,28 @@ export let hashFunction = (x: CalcitValue): Hash => {
     base = hashCirru(base, x.value);
     return base;
   }
-  console.warn(`[warn] calcit-js has no method for hashing this: ${x}`);
-  // currently we use dirty solution here to generate a custom hash
-  // probably happening in .to-pairs of maps, putting a js object into a set
-  // better forbid this, use .to-list instead
-  let hashJsObject = defaultHash_unknown;
+  if (x instanceof Uint8Array) {
+    // Buffers are values: equal bytes must hash equally, matching native Buffer equality.
+    let base = mergeValueHash(defaultHash_buffer, x.length);
+    for (let idx = 0; idx < x.length; idx++) {
+      base = mergeValueHash(base, x[idx]);
+    }
+    return base;
+  }
+  if (typeof x === "object" || typeof x === "function") {
+    // Host values compare by identity, so they hash by identity as well.
+    let cached = hostValueHashes.get(x as object);
+    if (cached != null) {
+      return cached;
+    }
+    jsObjectHashCounter = jsObjectHashCounter + 1;
+    let hashHostValue = mergeValueHash(defaultHash_unknown, jsObjectHashCounter);
+    hostValueHashes.set(x as object, hashHostValue);
+    return hashHostValue;
+  }
+  console.warn(`[warn] calcit-js has no method for hashing this: ${String(x)}`);
   jsObjectHashCounter = jsObjectHashCounter + 1;
-  hashJsObject = mergeValueHash(hashJsObject, jsObjectHashCounter);
-  (x as any)[calcit_dirty_hash_key] = hashJsObject;
-  return hashJsObject;
+  return mergeValueHash(defaultHash_unknown, jsObjectHashCounter);
 };
 
 /// traverse Cirru tree to make unique hash
@@ -859,6 +880,22 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
     if (y instanceof CalcitTrait) {
       return x.name === y.name;
     }
+    return false;
+  }
+  if (x instanceof Uint8Array) {
+    if (!(y instanceof Uint8Array) || x.length !== y.length) {
+      return false;
+    }
+    for (let idx = 0; idx < x.length; idx++) {
+      if (x[idx] !== y[idx]) {
+        return false;
+      }
+    }
+    return true;
+  }
+  if (tx === "object") {
+    // Host objects (DOM nodes, JS class instances, BufList) compare by identity;
+    // identical references were accepted at the top of this function.
     return false;
   }
   throw new Error("Missing handler for this type");
