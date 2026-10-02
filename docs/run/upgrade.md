@@ -80,6 +80,22 @@ assert= true $ round? 9007199254740992
 
 已证明旧新方法同属 core 实现时，可显式预览 `calcit calcit.cirru fix --rule core-predicate-method-v1 --format edn`，审阅建议和 revision 后再应用。规则不迁移 Struct/Enum、`Contains` trait、自定义同名方法、开放接收者或 attached `:tests` / `:examples`；这些位置需要人工检查。原有方法仍保留原义，不会因新名字而改变失败行为。完整边界见 [API 命名角色](../features/api-roles.md#谓词与成员查询) 与 [fix 规则](fix.md)。
 
+## 兼容入口的退场节奏
+
+维护者决定：非 patch 版本允许 breaking change，用于废弃旧的不合理用法；patch 版本不删除入口，也不新增会让严格检查失败的诊断。流程是先发布新入口与 guarded fix rule，再在下一个非 patch 版本删除旧入口，并在本文列出删除项与迁移命令。
+
+下面三组旧入口在 0.28.0-alpha.3 实测中按 Rust/Clojure 习惯书写时能通过类型检查，但结果与直觉不符，计划在 0.28.0 之后的第一个非 patch 版本删除，早于其他兼容名：
+
+| 旧入口 | 实测行为 | 首选替代 | 迁移命令 |
+|---|---|---|---|
+| `.join` | 返回插入分隔符的 List，放入 `str` 也不报错 | `.intersperse`；字符串用 `.join-string` | `calcit calcit.cirru fix --rule core-list-intersperse-v1 --format edn` |
+| `.values` | 值重复时只剩去重后的 Set 元素 | `.distinct-values` | `calcit calcit.cirru fix --rule core-map-distinct-values-v1 --format edn` |
+| List/String `.contains?` | 判断下标，不判断成员 | `.contains-index?`；成员判断用 `.includes?` | `calcit calcit.cirru fix --rule core-predicate-method-v1 --format edn` |
+
+上述 fix 规则只处理接收者类型已证明、旧新方法共享同一 core 实现的方法调用；函数形式的 `join` / `vals`、Dynamic 接收者与一等函数引用需要人工审阅。`calcit query type` 对已证明的接收者会把旧方法标为 compatibility 并给出首选名与 fix 规则，可用来确认调用点是否属于上表。迁移规则始终是预览、审阅 revision、应用、再次预览并运行项目测试。
+
+其余已有决策的兼容名（`turn-*`、`some?`、`round?`、`foldl'` / `reduce`、`%some` / `%none` / `%ok` / `%err` 等）按同一节奏处理。具体删除版本在发布前于本文更新，此处不预先承诺。
+
 ## WASM 的 nil 类型证据
 
 WASM 后端现在依据静态类型证据 lowering `nil?`，从而让 `some? false`、`some? 0` 与 native、JavaScript 保持一致。当前 scalar ABI 中 nil、false 与数值 0 的位表示不能单靠运行时比较区分；因此具体类型的参数会直接得到确定的 nil 判断结果，同时原表达式仍严格求值一次，不会跳过副作用。
