@@ -39,14 +39,20 @@ calcit calcit.cirru fix --ns app.main --def render! --format edn
 
 ```bash
 calcit calcit.cirru fix --rule core-function-alias-v1 --include-attached --format edn
+calcit calcit.cirru fix --rule core-list-join-string-v1 --include-attached --format edn
 ```
 
 该选择复用编译器的引用解析与 Snapshot 原子事务。一个测试或示例区域里的多个旧名合并成一个操作，
-保留断言、标签、实参顺序与示例顺序；引号、一等函数身份和未知宏边界仍返回 `requires-review`，
-局部同名 binding 不改写。预览不写入文件；应用时仍须核对 revision 并传 `--expect-revision`，随后运行附带测试。
+保留断言、标签、实参顺序与示例顺序。函数旧名的引号、一等函数身份和未知宏边界仍返回 `requires-review`；
+方法规则保留 quoted data，无法证明接收者或宏来源时要求 review，局部同名 binding 不改写。
+预览不写入文件；应用时仍须核对 revision 并传 `--expect-revision`，随后运行附带测试。
 不传 `--include-attached` 时仍只扫描 `:code`。
 
-当前 `--include-attached` 仅支持显式的 `core-function-alias-v1`；其他规则与 preset 的附带覆盖尚未实现，
+当前支持显式的 `core-function-alias-v1`，以及 List fold/intersperse/flat-map/join-string/get、
+Map distinct-values、Set include、collection combine、predicate method 和 effect method 等已有方法等价改名规则。
+附带方法改写与 `:code` 共享接收者类型、方法实现和源码来源的证明，局部 `let` 类型由实际预处理结果保留。
+一个示例区域中混有需要 review 的表达式时，整个区域暂不自动改写。
+其他规则与 preset 的附带覆盖尚未实现，
 不支持的组合会报错，不会静默跳过。下文各条规则的默认扫描范围保持不变。
 
 不带 `--ns` 的整项目预览覆盖所有 named entry 的源码，因此按 target 中立的方式规划改写；例如 browser 默认入口不会阻止扫描

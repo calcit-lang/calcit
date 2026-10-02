@@ -651,13 +651,6 @@ pub(crate) fn handle_fix_command(
         alias,
       )?);
     }
-    if options.include_attached {
-      suggestions.extend(plan_attached_core_alias_fixes(
-        &source_snapshot,
-        snapshot_file,
-        &selected_definitions,
-      )?);
-    }
   }
   if selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE) {
     suggestions.extend(plan_core_predicate_rename_fixes(
@@ -790,6 +783,14 @@ pub(crate) fn handle_fix_command(
   }
   if selected_rules.contains(&NAMED_STRUCT_CONSTRUCTOR_RULE) {
     constructor_kinds.push(NominalKind::Struct);
+  }
+  if options.include_attached {
+    suggestions.extend(plan_attached_fixes(
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+      &selected_rules,
+    )?);
   }
   let compose_redundant_do = selected_rules.contains(&REDUNDANT_DO_RULE);
   let compose_single_expression_do = selected_rules.contains(&SINGLE_EXPRESSION_DO_RULE);
@@ -1125,9 +1126,9 @@ fn fix_scope_args(options: &FixCommand) -> Vec<String> {
 /// Reject ambiguous modes, incomplete scopes, and unknown stable rule IDs.
 fn validate_options(options: &FixCommand) -> Result<(), String> {
   StructuredOutputFormat::parse(&options.format, "fix")?;
-  if options.include_attached && options.rule.as_deref() != Some(CORE_FUNCTION_ALIAS_RULE) {
+  if options.include_attached && !options.rule.as_deref().is_some_and(supports_attached_migrations) {
     return Err(
-      "`--include-attached` currently requires `--rule core-function-alias-v1`; other attached migrations are not implemented yet."
+      "`--include-attached` requires an explicitly supported function-alias or method-alias rule; attached coverage for other rules and presets is not implemented yet."
         .to_owned(),
     );
   }
@@ -3916,13 +3917,23 @@ impl CorePredicateRename {
   }
 }
 
-/// Rewrite proven core predicate references. The qualified replacement cannot
-/// be captured by a local or imported name.
-fn plan_attached_core_alias_fixes(
+fn supports_attached_migrations(rule: &str) -> bool {
+  rule == CORE_FUNCTION_ALIAS_RULE
+    || (rule != CORE_INTEGER_PREDICATE_RULE
+      && QUERYABLE_METHOD_ALIASES
+        .iter()
+        .chain(CORE_EFFECT_METHOD_ALIASES)
+        .any(|alias| alias.rule_id == rule))
+}
+
+/// Apply existing source proofs to one metadata region without registering synthetic definitions.
+fn plan_attached_fixes(
   snapshot: &Snapshot,
   snapshot_file: &str,
   selected_definitions: &[(String, String)],
+  selected_rules: &[&'static str],
 ) -> Result<Vec<FixSuggestion>, String> {
+  let metadata = fix_rule_metadata(selected_rules[0]);
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
     let entry = &snapshot.files[namespace].defs[definition];
@@ -3959,7 +3970,9 @@ fn plan_attached_core_alias_fixes(
           CorePredicateRename::Vals,
         ] {
           let (old, new, _, _) = alias.names();
-          if !cirru_contains_target_reference(source, namespace, "calcit.core", old) {
+          if !selected_rules.contains(&CORE_FUNCTION_ALIAS_RULE)
+            || !cirru_contains_target_reference(source, namespace, "calcit.core", old)
+          {
             continue;
           }
           let label = format!("{namespace}/{definition} {region}[{index}]");
@@ -3988,6 +4001,36 @@ fn plan_attached_core_alias_fixes(
             Err(error) => blockers.push(error),
           }
         }
+        for alias in QUERYABLE_METHOD_ALIASES
+          .iter()
+          .chain(CORE_EFFECT_METHOD_ALIASES)
+          .filter(|alias| selected_rules.contains(&alias.rule_id))
+        {
+          let wrapper = Cirru::List(vec![Cirru::leaf("fn"), Cirru::List(vec![]), source.clone()]);
+          let synthetic_def = format!("&calcit:fix-attached:{definition}:{region}:{index}");
+          match plan_core_method_alias_source(snapshot_file, namespace, &synthetic_def, &wrapper, None, *alias) {
+            Ok(candidates) => {
+              for candidate in candidates {
+                let Some(path) = candidate.target_path.strip_prefix(&[2]) else {
+                  blockers.push("Compiler suggestion points outside its attached source wrapper.".to_owned());
+                  continue;
+                };
+                match candidate.operation {
+                  Some(FixOperation::ReplaceLeaf { original, replacement }) => {
+                    replace_attached_source_node(source, path, &original, &Cirru::leaf(replacement))?;
+                    origins.extend(candidate.origin_chain);
+                    origins.push(
+                      serde_json::json!({"kind": "resolved-attached-source", "path": format_path(path), "rule_id": alias.rule_id}),
+                    );
+                  }
+                  None => blockers.push(candidate.message),
+                  _ => return Err("Attached method alias produced a non-leaf operation.".to_owned()),
+                }
+              }
+            }
+            Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
+          }
+        }
       }
       if origins.is_empty() && blockers.is_empty() {
         continue;
@@ -4010,8 +4053,8 @@ fn plan_attached_core_alias_fixes(
         None
       };
       suggestions.push(FixSuggestion {
-        rule_id: CORE_FUNCTION_ALIAS_RULE,
-        diagnostic_code: CORE_FUNCTION_ALIAS_DIAGNOSTIC,
+        rule_id: metadata.rule_id,
+        diagnostic_code: metadata.diagnostic_code,
         semantic_layer: "surface",
         source_file: snapshot_file.to_owned(),
         definition: format!("{namespace}/{definition}"),
@@ -5143,133 +5186,165 @@ fn plan_core_method_alias_fixes(
       .get(namespace)
       .and_then(|file| file.defs.get(definition))
       .ok_or_else(|| format!("Selected definition `{namespace}/{definition}` is missing from the source snapshot."))?;
-    if list_head(&entry.code) == Some("defmacro") {
-      continue;
-    }
-    let mut calls = Vec::new();
-    collect_method_alias_calls(&entry.code, &mut Vec::new(), &mut calls, rule);
-    if calls.is_empty() {
-      continue;
-    }
-    let usages =
-      runner::preprocess::trace_definition_source_usages(namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
-        .map_err(|failure| failure.msg)?;
-    let compiled = program::lookup_compiled_def(namespace, definition);
-    let expressions = runner::preprocess::trace_definition_source_expressions(
+    suggestions.extend(plan_core_method_alias_source(
+      snapshot_file,
       namespace,
       definition,
-      &RefCell::new(Vec::new()),
-      &CallStackList::default(),
+      &entry.code,
+      program::lookup_compiled_def(namespace, definition),
+      rule,
+    )?);
+  }
+  Ok(suggestions)
+}
+
+/// Share receiver and method proof between definition code and attached source.
+fn plan_core_method_alias_source(
+  snapshot_file: &str,
+  namespace: &str,
+  definition: &str,
+  source: &Cirru,
+  compiled: Option<program::CompiledDef>,
+  rule: MethodAliasRule,
+) -> Result<Vec<FixSuggestion>, String> {
+  let mut suggestions = Vec::new();
+  if list_head(source) == Some("defmacro") {
+    return Ok(suggestions);
+  }
+  let mut calls = Vec::new();
+  collect_method_alias_calls(source, &mut Vec::new(), &mut calls, rule);
+  if calls.is_empty() {
+    return Ok(suggestions);
+  }
+  let parsed = code_to_calcit(source, namespace, definition, vec![]).map_err(|error| error.to_string())?;
+  let usages =
+    runner::preprocess::trace_source_usages(&parsed, namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
+      .map_err(|failure| failure.msg)?;
+  let (preprocessed, expressions) =
+    runner::preprocess::trace_source_expressions(&parsed, namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
+      .map_err(|failure| failure.msg)?;
+  for call in calls {
+    let receiver = match &call.compact_receiver {
+      Some(name) => Cirru::leaf(name.as_str()),
+      None => navigate_to_path(source, &call.receiver_path)?,
+    };
+    let source_receiver = code_to_calcit(
+      &receiver,
+      namespace,
+      definition,
+      call
+        .receiver_path
+        .iter()
+        .map(|index| u16::try_from(*index).map_err(|_| format!("Path index {index} exceeds Snapshot coordinate range")))
+        .collect::<Result<Vec<_>, _>>()?,
     )
-    .map_err(|failure| failure.msg)?;
-    for call in calls {
-      let receiver = match &call.compact_receiver {
-        Some(name) => Cirru::leaf(name.as_str()),
-        None => navigate_to_path(&entry.code, &call.receiver_path)?,
-      };
-      let source_receiver = code_to_calcit(
-        &receiver,
-        namespace,
-        definition,
-        call
-          .receiver_path
-          .iter()
-          .map(|index| u16::try_from(*index).map_err(|_| format!("Path index {index} exceeds Snapshot coordinate range")))
-          .collect::<Result<Vec<_>, _>>()?,
-      )
-      .map_err(|error| error.to_string())?;
-      let inferred = compiled
-        .as_ref()
-        .filter(|_| !matches!(receiver, Cirru::Leaf(_)) || !matches!(source_receiver, Calcit::List(_)))
-        .and_then(|compiled| {
-          super::query::find_preprocessed_node_at_path(
-            &compiled.preprocessed_code,
-            namespace,
-            definition,
-            &call.receiver_path,
-            matches!(receiver, Cirru::List(_)),
-          )
-        })
+    .map_err(|error| error.to_string())?;
+    // Reader shorthand such as @cell is a call, not the located Ref leaf inside it.
+    let direct_source_shape = !matches!(receiver, Cirru::Leaf(_)) || !matches!(source_receiver, Calcit::List(_));
+    let inferred = compiled
+      .as_ref()
+      .filter(|_| direct_source_shape)
+      .and_then(|compiled| {
+        super::query::find_preprocessed_node_at_path(
+          &compiled.preprocessed_code,
+          namespace,
+          definition,
+          &call.receiver_path,
+          matches!(receiver, Cirru::List(_)),
+        )
+      })
+      .and_then(runner::preprocess::infer_static_type_from_expr)
+      .or_else(|| {
+        if !direct_source_shape {
+          return None;
+        }
+        super::query::find_preprocessed_node_at_path(
+          &preprocessed,
+          namespace,
+          definition,
+          &call.receiver_path,
+          matches!(receiver, Cirru::List(_)),
+        )
         .and_then(runner::preprocess::infer_static_type_from_expr)
-        .or_else(|| {
-          runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &call.receiver_path)
-            .and_then(|item| item.inferred_type.clone())
-        })
-        .or_else(|| super::query::infer_type_at_target(&source_receiver, None));
-      let resolved = inferred
+      })
+      .or_else(|| {
+        runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &call.receiver_path)
+          .and_then(|item| item.inferred_type.clone())
+      })
+      .or_else(|| super::query::infer_type_at_target(&source_receiver, None));
+    let resolved = inferred
+      .as_ref()
+      .map(|annotation| runner::preprocess::resolve_namespace_type_refs_for_body(annotation.clone(), namespace));
+    if rule.rule_id == CORE_COLLECTION_COMBINE_RULE
+      && !resolved
         .as_ref()
-        .map(|annotation| runner::preprocess::resolve_namespace_type_refs_for_body(annotation.clone(), namespace));
-      if rule.rule_id == CORE_COLLECTION_COMBINE_RULE
-        && !resolved
-          .as_ref()
-          .is_some_and(|annotation| rule.receiver.matches(annotation.as_ref()))
-      {
-        continue;
-      }
-      if resolved.as_ref().is_some_and(|annotation| {
-        !rule.receiver.matches(annotation.as_ref())
-          && !matches!(
-            annotation.as_ref(),
-            CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_)
-          )
-      }) {
-        continue;
-      }
-      let proven_same_impl = resolved
-        .as_ref()
-        .is_some_and(|annotation| method_alias_contract_is_proven(annotation.as_ref(), rule));
-      let machine_applicable =
-        proven_same_impl && method_source_context_is_stable(&entry.code, &call.call_path, namespace, definition, &usages);
-      let original_node = navigate_to_path(&entry.code, &call.method_path)?;
-      let original_leaf = match &original_node {
-        Cirru::Leaf(name) => name.as_ref(),
-        Cirru::List(_) => return Err("Method alias candidate must be a source leaf.".to_owned()),
-      };
-      let replacement_leaf = match &call.compact_receiver {
-        Some(name) => format!("{name}{}", rule.new_method),
-        None => rule.new_method.to_owned(),
-      };
-      let replacement_node = Cirru::leaf(replacement_leaf.as_str());
-      let mut method_evidence = serde_json::json!({
-        "kind": "receiver-method-query",
-        "receiver_type": inferred.as_ref().map(|annotation| annotation.describe()),
-        "same_core_implementation": proven_same_impl,
-      });
-      if rule.rule_id == CORE_LIST_FOLD_RULE {
-        method_evidence["same_core_fold_implementation"] = serde_json::json!(proven_same_impl);
-      }
-      suggestions.push(FixSuggestion {
-        rule_id: rule.rule_id,
-        diagnostic_code: rule.diagnostic_code,
-        semantic_layer: "surface",
-        source_file: snapshot_file.to_owned(),
-        definition: format!("{namespace}/{definition}"),
-        path: format!("code{}", format_path(&call.method_path)),
-        fingerprint: node_fingerprint(&original_node),
-        origin_chain: vec![method_evidence],
-        original: quoted_json(&original_node),
-        replacement: machine_applicable.then(|| quoted_json(&replacement_node)),
-        applicability: if machine_applicable {
-          "machine-applicable"
-        } else {
-          "requires-review"
-        },
-        message: if machine_applicable {
-          rule.message.to_owned()
-        } else {
-          format!(
-            "Cannot prove a concrete {} receiver, matching method implementation, or stable source context; review `{}` manually.",
-            rule.receiver.name(),
-            rule.old_method
-          )
-        },
-        target_path: call.method_path,
-        operation: machine_applicable.then_some(FixOperation::ReplaceLeaf {
-          original: original_leaf.to_owned(),
-          replacement: replacement_leaf,
-        }),
-      });
+        .is_some_and(|annotation| rule.receiver.matches(annotation.as_ref()))
+    {
+      continue;
     }
+    if resolved.as_ref().is_some_and(|annotation| {
+      !rule.receiver.matches(annotation.as_ref())
+        && !matches!(
+          annotation.as_ref(),
+          CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_)
+        )
+    }) {
+      continue;
+    }
+    let proven_same_impl = resolved
+      .as_ref()
+      .is_some_and(|annotation| method_alias_contract_is_proven(annotation.as_ref(), rule));
+    let machine_applicable =
+      proven_same_impl && method_source_context_is_stable(source, &call.call_path, namespace, definition, &usages);
+    let original_node = navigate_to_path(source, &call.method_path)?;
+    let original_leaf = match &original_node {
+      Cirru::Leaf(name) => name.as_ref(),
+      Cirru::List(_) => return Err("Method alias candidate must be a source leaf.".to_owned()),
+    };
+    let replacement_leaf = match &call.compact_receiver {
+      Some(name) => format!("{name}{}", rule.new_method),
+      None => rule.new_method.to_owned(),
+    };
+    let replacement_node = Cirru::leaf(replacement_leaf.as_str());
+    let mut method_evidence = serde_json::json!({
+      "kind": "receiver-method-query",
+      "receiver_type": inferred.as_ref().map(|annotation| annotation.describe()),
+      "same_core_implementation": proven_same_impl,
+    });
+    if rule.rule_id == CORE_LIST_FOLD_RULE {
+      method_evidence["same_core_fold_implementation"] = serde_json::json!(proven_same_impl);
+    }
+    suggestions.push(FixSuggestion {
+      rule_id: rule.rule_id,
+      diagnostic_code: rule.diagnostic_code,
+      semantic_layer: "surface",
+      source_file: snapshot_file.to_owned(),
+      definition: format!("{namespace}/{definition}"),
+      path: format!("code{}", format_path(&call.method_path)),
+      fingerprint: node_fingerprint(&original_node),
+      origin_chain: vec![method_evidence],
+      original: quoted_json(&original_node),
+      replacement: machine_applicable.then(|| quoted_json(&replacement_node)),
+      applicability: if machine_applicable {
+        "machine-applicable"
+      } else {
+        "requires-review"
+      },
+      message: if machine_applicable {
+        rule.message.to_owned()
+      } else {
+        format!(
+          "Cannot prove a concrete {} receiver, matching method implementation, or stable source context; review `{}` manually.",
+          rule.receiver.name(),
+          rule.old_method
+        )
+      },
+      target_path: call.method_path,
+      operation: machine_applicable.then_some(FixOperation::ReplaceLeaf {
+        original: original_leaf.to_owned(),
+        replacement: replacement_leaf,
+      }),
+    });
   }
   Ok(suggestions)
 }

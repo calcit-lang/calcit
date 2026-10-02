@@ -7,6 +7,225 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn attached_method_alias_fix_preserves_unproven_regions_and_quoted_data() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  for (target, code, overwrite) in [
+    ("app.main/main!", "quote $ defn main! ()\n  , &unit", true),
+    ("app.main/opaque", "quote $ defmacro opaque (x)\n  , x", false),
+  ] {
+    let mut args = vec!["edit", "def", target, "--input-format", "cirru", "--code", code];
+    if overwrite {
+      args.push("--overwrite");
+    }
+    assert_success(&run_calcit(&snapshot, &args), "create attached boundary fixture");
+  }
+  for (name, code) in [
+    ("safe", "quote $ assert= |a-b $ .join-str ([] |a |b) |-"),
+    ("opaque-contract", "quote $ assert= |a-b $ opaque $ .join-str ([] |a |b) |-"),
+    (
+      "quoted-data",
+      "quote $ assert= (quote $ .join-str ([] |a |b) |-) (quote $ .join-str ([] |a |b) |-)",
+    ),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "add-test",
+          "app.main/main!",
+          name,
+          "--tags",
+          "unit,upgrade",
+          "--input-format",
+          "cirru",
+          "--code",
+          code,
+        ],
+      ),
+      "attach boundary semantics",
+    );
+  }
+  for code in ["quote $ .join-str ([] |a |b) |-", "quote $ fn (xs) $ xs .join-str |-"] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "add-example", "app.main/main!", "--input-format", "cirru", "--code", code],
+      ),
+      "attach mixed evidence examples",
+    );
+  }
+  assert_success(
+    &run_calcit(&snapshot, &["test", "app.main/main!", "--require-match"]),
+    "original boundary semantics",
+  );
+  let args = [
+    "fix",
+    "--ns",
+    "app.main",
+    "--def",
+    "main!",
+    "--rule",
+    "core-list-join-string-v1",
+    "--include-attached",
+    "--format",
+    "json",
+  ];
+  let preview = run_calcit(&snapshot, &args);
+  assert_success(&preview, "boundary preview");
+  let report: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+  let suggestions = report["data"]["suggestions"].as_array().unwrap();
+  assert_eq!(
+    suggestions.iter().filter(|s| s["applicability"] == "machine-applicable").count(),
+    1,
+    "{report}"
+  );
+  assert_eq!(
+    suggestions.iter().filter(|s| s["applicability"] == "requires-review").count(),
+    2,
+    "{report}"
+  );
+  assert!(!suggestions.iter().any(|s| s["path"] == "tests.quoted-data"));
+  let examples_before = run_calcit(&snapshot, &["query", "def", "app.main/main!", "--format", "json"]);
+  assert_success(&examples_before, "capture original examples");
+  let mut apply = args.to_vec();
+  apply.extend(["--apply", "--allow-no-vcs"]);
+  assert_success(&run_calcit(&snapshot, &apply), "apply only safe attached test");
+  let examples_after = run_calcit(&snapshot, &["query", "def", "app.main/main!", "--format", "json"]);
+  assert_success(&examples_after, "capture unchanged examples");
+  let before: serde_json::Value = serde_json::from_slice(&examples_before.stdout).unwrap();
+  let after: serde_json::Value = serde_json::from_slice(&examples_after.stdout).unwrap();
+  assert_eq!(
+    before["data"]["examples"], after["data"]["examples"],
+    "a blocked metadata region must not be partially rewritten"
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["test", "app.main/main!", "--require-match"]),
+    "retained boundary semantics",
+  );
+}
+
+#[test]
+fn method_alias_fix_reuses_receiver_proofs_in_attached_tests_and_examples() {
+  // The host checks the transaction protocol; each Calcit assertion is replayed before and after migration.
+  for (rule, code) in [
+    ("core-list-fold-v1", "quote $ assert= 6 $ .reduce ([] 1 2 3) 0 +"),
+    ("core-list-intersperse-v1", "quote $ assert= ([] 1 0 2) $ .join ([] 1 2) 0"),
+    (
+      "core-list-flat-map-v1",
+      "quote $ assert= ([] 1 1 2 2) $ .bind ([] 1 2) $ fn (x) ([] x x)",
+    ),
+    (
+      "core-list-join-string-v1",
+      "quote $ assert= |a-b $ let ((xs $ [] |a |b)) (xs .join-str |- )",
+    ),
+    ("core-list-get-v1", "quote $ assert= (Option :some 1) $ .nth ([] 1) 0"),
+    (
+      "core-map-distinct-values-v1",
+      "quote $ assert= (#{} 1 2) $ .values $ {} (:a 1) (:b 2)",
+    ),
+    ("core-set-include-v1", "quote $ assert= (#{} 1 2) $ .add (#{} 1) 2"),
+    (
+      "core-collection-combine-v1",
+      "quote $ assert= ({} (:a 1) (:b 2)) $ .mappend ({} (:a 1)) ({} (:b 2))",
+    ),
+    ("core-predicate-method-v1", "quote $ assert= true $ .contains? ([] 10) 0"),
+    ("core-effect-method-v1", ""),
+  ] {
+    let directory = TestDirectory::create();
+    let snapshot = directory.path().join("calcit.cirru");
+    let code = if rule == "core-effect-method-v1" {
+      // The missing parent keeps this observable file-effect error inside the owned test directory.
+      format!(
+        "quote $ assert= true $ .err? $ .write-text (fs:path |{}) |payload",
+        directory.path().join("missing/out.txt").display()
+      )
+    } else {
+      code.to_owned()
+    };
+    fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          "app.main/main!",
+          "--overwrite",
+          "--input-format",
+          "cirru",
+          "--code",
+          "quote $ defn main! ()\n  , &unit",
+        ],
+      ),
+      "create attached method entry",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "add-test",
+          "app.main/main!",
+          "method-contract",
+          "--tags",
+          "unit,upgrade",
+          "--input-format",
+          "cirru",
+          "--code",
+          &code,
+        ],
+      ),
+      "attach method assertion",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "add-example", "app.main/main!", "--input-format", "cirru", "--code", &code],
+      ),
+      "attach method example",
+    );
+    assert_success(&run_calcit(&snapshot, &["test", "app.main/main!", "--require-match"]), rule);
+    let before = fs::read(&snapshot).unwrap();
+    let args = [
+      "fix",
+      "--ns",
+      "app.main",
+      "--def",
+      "main!",
+      "--rule",
+      rule,
+      "--include-attached",
+      "--format",
+      "json",
+    ];
+    let preview = run_calcit(&snapshot, &args);
+    assert_success(&preview, rule);
+    let report: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    let suggestions = report["data"]["suggestions"].as_array().unwrap();
+    assert_eq!(suggestions.len(), 2, "{rule}: {report}");
+    assert!(
+      suggestions
+        .iter()
+        .all(|suggestion| suggestion["applicability"] == "machine-applicable"),
+      "{rule}: {report}"
+    );
+    assert_eq!(fs::read(&snapshot).unwrap(), before);
+    let mut apply_args = args.to_vec();
+    let revision = report["revision"].as_str().unwrap();
+    apply_args.extend(["--apply", "--allow-no-vcs", "--expect-revision", revision]);
+    assert_success(&run_calcit(&snapshot, &apply_args), rule);
+    assert_success(&run_calcit(&snapshot, &["test", "app.main/main!", "--require-match"]), rule);
+    let repeated = run_calcit(&snapshot, &args);
+    assert_success(&repeated, rule);
+    let report: serde_json::Value = serde_json::from_slice(&repeated.stdout).unwrap();
+    assert!(report["data"]["suggestions"].as_array().unwrap().is_empty(), "{rule}: {report}");
+  }
+}
+
+#[test]
 fn function_alias_fix_covers_attached_regions_without_rewriting_identity_or_shadowing() {
   // Rust checks the CLI transaction protocol; Calcit attached tests define the behavior.
   let directory = TestDirectory::create();

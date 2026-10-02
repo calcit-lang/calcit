@@ -133,6 +133,7 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
     CalcitCommand::Fix(opts) => {
       push_switch(&mut tokens, "apply", opts.apply);
       push_switch(&mut tokens, "dry-run", opts.dry_run);
+      push_switch(&mut tokens, "include-attached", opts.include_attached);
       push_value(&mut tokens, "format", &opts.format, Some("human"));
       push_optional(&mut tokens, "ns", opts.ns.as_deref(), "all project namespaces");
       push_optional(&mut tokens, "def", opts.definition.as_deref(), "all definitions");

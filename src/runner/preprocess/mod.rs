@@ -197,13 +197,26 @@ pub fn trace_definition_source_expressions(
       Some(NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::new(vec![]))),
     )
   })?;
+  trace_source_expressions(&code, ns, def, check_warnings, call_stack).map(|(_, expressions)| expressions)
+}
+
+/// Trace caller-provided source through the same expression evidence collector.
+/// Return the processed form as well so local receiver type evidence is retained.
+/// Attached expressions do not need registration in the global definition map.
+pub fn trace_source_expressions(
+  code: &Calcit,
+  ns: &str,
+  def: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<(Calcit, Vec<SourceExpressionEvidence>), CalcitErr> {
   let previous = SOURCE_EXPRESSION_TRACE.with(|trace| trace.replace(Some(Vec::new())));
   debug_assert!(previous.is_none(), "source expression traces must not be nested");
   let mut scope_types = ScopeTypes::new();
   let result = builtins::meta::with_compiling_def(ns, def, || {
     calcit::with_type_annotation_warning_context(format!("{ns}/{def}"), || {
-      let mut compile = || preprocess_expr(&code, &HashSet::new(), &mut scope_types, ns, check_warnings, call_stack);
-      if matches!(&code, Calcit::List(forms) if matches!(forms.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defmacro"))
+      let mut compile = || preprocess_expr(code, &HashSet::new(), &mut scope_types, ns, check_warnings, call_stack);
+      if matches!(code, Calcit::List(forms) if matches!(forms.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defmacro"))
       {
         with_assertion_proof_policy(false, compile)
       } else {
@@ -212,7 +225,7 @@ pub fn trace_definition_source_expressions(
     })
   });
   let expressions = SOURCE_EXPRESSION_TRACE.with(|trace| trace.replace(previous).unwrap_or_default());
-  result.map(|_| expressions)
+  result.map(|processed| (processed, expressions))
 }
 
 /// A source coordinate is usable only when preprocessing produced one unique call at that path.
