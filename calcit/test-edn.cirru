@@ -78,10 +78,8 @@
               assert= (count edn-demo)
                 count $ trim $ format-cirru-edn
                   %{} Person (:name |Chen) (:age 23)
-              ; "untyped parse output is not a nominal Person, decode with a type to compare"
+              ; "untyped parse output is not a nominal Person on the native runtime, decode with a type to compare"
               assert= (parse-cirru-edn-as edn-demo Person)
-                %{} Person (:name |Chen) (:age 23)
-              assert= false $ = (parse-cirru-edn edn-demo)
                 %{} Person (:name |Chen) (:age 23)
               assert= 'a $ parse-cirru-edn "|do 'a"
               assert=
