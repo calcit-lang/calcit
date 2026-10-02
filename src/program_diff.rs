@@ -1584,7 +1584,7 @@ mod tests {
   };
   use crate::calcit::DYNAMIC_TYPE;
   use crate::snapshot::{CodeEntry, SnapshotEntry, SnapshotRunMode, TestEntry};
-  use cirru_edn::EdnTag;
+  use cirru_edn::{Edn, EdnTag};
   use cirru_parser::Cirru;
   use std::collections::{HashMap, HashSet};
 
