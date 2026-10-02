@@ -25,3 +25,15 @@ WASM 回归也暴露已有 attachment 推断把表达式位置的命名 StructDe
 Calcit fixture 的 `:tests` 验证 nominal 值、本地及跨 namespace alias、Map、Number、String 和明确 Dynamic 保存。既有 assertion runner 回放同一 Calcit 验证函数到 native/JS，并检查矛盾在各 target 的 preprocessing 阶段被拒绝；不声称 WASM 已支持这些 nominal 值的运行。
 
 Rust CLI 测试只覆盖 schema mutation、严格/keep-going 检查、JS 生成拒绝、原始 Snapshot 不变与无新增输出产物。正式提交前仍须完成 fmt、Clippy、完整 Rust/JS 集成和真实消费者验证；单个通过或本历史文件不是全部门禁成功的证明。
+
+## Snapshot 缓存发布路径 review 修复
+
+完整 review 指出 `compile_source_def_for_snapshot` 直接发布编译缓存，未经过新的 initializer
+证明。代码核实该路径被 Snapshot/query/type coverage/schema synthesis 使用，后续 ordinary
+preprocessing 的 cache hit 会直接返回，确有遗漏。该入口复用同一个校验 helper 后才发布，
+不复制类型规则、不把消费者的检查结果或声明当成证明。新增低层测试检查错误没有进入缓存，
+后续普通入口仍拒绝错误，合法 Number 与显式 Dynamic 缓存仍可重用；共享 Calcit 语义 fixture 保留。
+低层回归加载真实 embedded core，确保 `def` macro 实际展开而不是缺失 core 时留下未解析的表达式。
+同一测试在移除 Snapshot 校验时实际错误成功（测试失败），恢复校验后通过；错误不入缓存，
+随后普通入口仍拒绝，合法 Number 与显式 Dynamic 保持缓存复用。完整验证仍须通过，
+不把定向测试当成新 HEAD 的完整验收。
