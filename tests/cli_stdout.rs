@@ -107,3 +107,36 @@ fn deep_non_tail_recursion_reports_a_calcit_error_instead_of_aborting() {
     "the process must exit normally, not die from a signal"
   );
 }
+
+#[test]
+fn recur_outside_tail_position_is_rejected_by_the_check() {
+  let fixture = documentation_fixture();
+  let run = |init_fn: &str| {
+    calcit(fixture.path())
+      .arg("tests/fixtures/non-tail-recur.cirru")
+      .args(["--init-fn", init_fn, "--check-only"])
+      .output()
+      .expect("run non-tail recur fixture")
+  };
+
+  let ok = run("app.main/ok-loop");
+  assert!(
+    ok.status.success(),
+    "a recur in tail position must keep working: {}",
+    String::from_utf8_lossy(&ok.stderr)
+  );
+
+  for target in ["app.main/bad-in-list", "app.main/bad-in-str", "app.main/bad-before-tail"] {
+    let output = run(target);
+    let report = format!(
+      "{}{}",
+      String::from_utf8_lossy(&output.stdout),
+      String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!output.status.success(), "{target} must fail the check: {report}");
+    assert!(
+      report.contains("tail position"),
+      "{target} must explain the tail position rule: {report}"
+    );
+  }
+}

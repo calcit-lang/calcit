@@ -4708,6 +4708,85 @@ fn check_recur_args_in_expr(
   }
 }
 
+/// Warn about `recur` calls that are not in tail position of the enclosing function body.
+///
+/// Only forms whose tail semantics are known are followed: `if` branches, the body of `&let`
+/// and calls (whose operator and arguments are never in tail position). Other syntax forms
+/// (`try`, `match`, quoting, nested functions...) are left alone to avoid false positives.
+fn check_recur_tail_position(
+  expr: &Calcit,
+  in_tail: bool,
+  file_ns: &str,
+  def_name: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  let warn_not_tail = |expr: &Calcit| {
+    let location = expr
+      .get_location()
+      .unwrap_or_else(|| NodeLocation::new(Arc::from(file_ns), Arc::from(def_name), Arc::new(vec![])));
+    gen_check_warning_with_location(
+      format!(
+        "[Warn] recur must be in tail position of the function body, its value would leak as data in {file_ns}/{def_name}\n[警告] recur 必须位于函数体的尾部位置, 否则其结果会作为普通数据泄漏: {file_ns}/{def_name}"
+      ),
+      location,
+      check_warnings,
+    );
+  };
+  match expr {
+    Calcit::Recur(args) => {
+      if !in_tail {
+        warn_not_tail(expr);
+      }
+      for arg in args {
+        check_recur_tail_position(arg, false, file_ns, def_name, check_warnings);
+      }
+    }
+    Calcit::List(xs) => {
+      let Some(head) = xs.first() else {
+        return;
+      };
+      match head {
+        Calcit::Syntax(CalcitSyntax::If, _) => {
+          for (idx, item) in xs.iter().enumerate().skip(1) {
+            check_recur_tail_position(item, in_tail && idx >= 2, file_ns, def_name, check_warnings);
+          }
+        }
+        Calcit::Syntax(CalcitSyntax::CoreLet, _) => {
+          let last = xs.len() - 1;
+          for (idx, item) in xs.iter().enumerate().skip(1) {
+            if idx == 1 {
+              // binding pair: the bound value is never in tail position
+              if let Calcit::List(pair) = item {
+                for value in pair.iter().skip(1) {
+                  check_recur_tail_position(value, false, file_ns, def_name, check_warnings);
+                }
+              }
+            } else {
+              check_recur_tail_position(item, in_tail && idx == last, file_ns, def_name, check_warnings);
+            }
+          }
+        }
+        // other syntax forms have their own scoping or evaluation rules, not analysed here
+        Calcit::Syntax(_, _) => {}
+        Calcit::Proc(CalcitProc::Recur) => {
+          if !in_tail {
+            warn_not_tail(expr);
+          }
+          for arg in xs.iter().skip(1) {
+            check_recur_tail_position(arg, false, file_ns, def_name, check_warnings);
+          }
+        }
+        _ => {
+          for item in xs.iter() {
+            check_recur_tail_position(item, false, file_ns, def_name, check_warnings);
+          }
+        }
+      }
+    }
+    _ => {}
+  }
+}
+
 /// Check struct field access during preprocessing
 /// Validates that field names exist in struct types when type information is available
 fn check_struct_field_access(
@@ -9574,6 +9653,21 @@ pub fn preprocess_defn(
         // 1. Functions with marked args (& or ?) - complex arity rules
         // 2. calcit.core functions - external library, should be fixed separately
         let is_core_ns = ctx.file_ns == calcit::CORE_NS;
+        if !is_core_ns {
+          // the last non-hint form is the returned value, earlier forms are evaluated for effects only
+          let tail_index = processed_body
+            .iter()
+            .rposition(|form| !matches!(form, Calcit::List(xs) if matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::HintFn, _)))));
+          for (idx, body_expr) in processed_body.iter().enumerate() {
+            check_recur_tail_position(
+              body_expr,
+              Some(idx) == tail_index,
+              ctx.file_ns,
+              def_name.as_ref(),
+              ctx.check_warnings,
+            );
+          }
+        }
         if !has_marked_args && !is_core_ns {
           let expected_arity = param_symbols.len();
           for body_expr in &processed_body {
