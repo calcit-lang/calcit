@@ -584,6 +584,8 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
       false,
     ),
     ("rigid-generic-call", "T", "T", "choose-first x |invalid", true),
+    ("late-open-generic-call", "Dynamic", "Number", "choose-first 1 x", true),
+    ("early-open-generic-call", "Dynamic", "Number", "choose-first x 1", true),
     ("open-storage", "Dynamic", "Dynamic", ", x", false),
     ("open-result", "Dynamic", "Number", ", x", true),
     ("wrapped-result", "Dynamic", "Number", "open-result x", true),

@@ -291,6 +291,17 @@ impl CallTypeProof {
   }
 
   pub(crate) fn prove(&mut self, actual: &CalcitTypeAnnotation, expected: &CalcitTypeAnnotation) -> TypeProof {
+    // A direct, callee-owned generic can transport an explicitly open value.
+    // Do not retain a concrete result inferred from an earlier peer argument.
+    // Captured caller variables and nested concrete contracts are not transport.
+    if matches!(actual, CalcitTypeAnnotation::Dynamic)
+      && let CalcitTypeAnnotation::TypeVar(name) = expected
+      && let Some(fresh) = self.renaming.get(name)
+      && let CalcitTypeAnnotation::TypeVar(fresh_name) = fresh.as_ref()
+    {
+      self.bindings.insert(fresh_name.clone(), DYNAMIC_TYPE.clone());
+      return TypeProof::Proven;
+    }
     let expected = expected.substitute_type_vars(&self.renaming);
     let mut staged = self.bindings.clone();
     let proof = actual.prove_available_bindings(&expected, &mut staged);
@@ -7040,7 +7051,23 @@ mod tests {
     let mut captured = CallTypeProof::new(&[], &[t.clone()], &[t.clone()]);
     assert!(captured.prove(&t, &t).is_proven());
     assert!(!captured.prove(&CalcitTypeAnnotation::String, &t).is_proven());
+    assert!(!captured.prove(&CalcitTypeAnnotation::Dynamic, &t).is_proven());
     assert_eq!(captured.result_or_open(&t), t);
+  }
+
+  #[test]
+  fn call_type_proof_does_not_keep_concrete_precision_after_dynamic_transport() {
+    let t = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    for actual in [[number.clone(), DYNAMIC_TYPE.clone()], [DYNAMIC_TYPE.clone(), number.clone()]] {
+      let mut proof = CallTypeProof::new(&[Arc::from("T")], &[t.clone()], &actual);
+      for argument in &actual {
+        assert!(proof.prove(argument, &t).is_proven());
+      }
+      assert_eq!(proof.result(&t), Some(DYNAMIC_TYPE.clone()));
+      let mut concrete = CallTypeProof::new(&[], &[number.clone()], &actual);
+      assert!(!concrete.prove(&CalcitTypeAnnotation::Dynamic, &number).is_proven());
+    }
   }
 
   #[test]
