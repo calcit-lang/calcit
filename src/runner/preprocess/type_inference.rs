@@ -1361,7 +1361,18 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
         Calcit::Local(local) => {
           let type_ann = &local.type_info;
           if let Some(fn_type) = type_ann.resolve_to_nonoptional_fn() {
-            Some(invocation_return_type(&fn_type, fn_type.return_type.clone(), false))
+            let returned = resolve_generic_return_type_parts(
+              &fn_type.generics,
+              &fn_type.arg_types,
+              fn_type.rest_type.as_ref(),
+              &fn_type.return_type,
+              xs.iter().skip(1),
+              scope_types,
+            )
+            .or_else(|| {
+              (fn_type.generics.is_empty() || !fn_type.return_type.contains_type_var()).then(|| fn_type.return_type.clone())
+            })?;
+            Some(invocation_return_type(&fn_type, returned, false))
           } else {
             match type_ann.as_ref() {
               CalcitTypeAnnotation::DynFn => Some(calcit::DYNAMIC_TYPE.clone()),
@@ -1551,7 +1562,18 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
         Calcit::List(_) => {
           if let Some(head_type) = infer_type_from_expr(head, scope_types) {
             if let Some(fn_type) = head_type.resolve_to_nonoptional_fn() {
-              Some(invocation_return_type(&fn_type, fn_type.return_type.clone(), false))
+              let returned = resolve_generic_return_type_parts(
+                &fn_type.generics,
+                &fn_type.arg_types,
+                fn_type.rest_type.as_ref(),
+                &fn_type.return_type,
+                xs.iter().skip(1),
+                scope_types,
+              )
+              .or_else(|| {
+                (fn_type.generics.is_empty() || !fn_type.return_type.contains_type_var()).then(|| fn_type.return_type.clone())
+              })?;
+              Some(invocation_return_type(&fn_type, returned, false))
             } else {
               match head_type.as_ref() {
                 CalcitTypeAnnotation::DynFn => Some(calcit::DYNAMIC_TYPE.clone()),

@@ -50,6 +50,10 @@ try {
   assert.equal(concreteCalls.length, 4);
   setBody(concreteCalls.map(test => test.code));
   run("fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.assert-evidence", "--def", "run-tests", "--format", "edn");
+  const callableTests = callTests.filter(test => ["fixed-callback-call-contract", "typed-callable-to-open-storage"].includes(test.name));
+  assert.equal(callableTests.length, 2);
+  setBody(callableTests.map(test => test.code));
+  run("fix", "--rule", "callable-contract-proof-v1", "--ns", "calcit.assert-evidence", "--def", "run-tests", "--format", "edn");
   setBody([...tests, ...returnTests, ...callTests, ...hintTests, ...asyncTests, ...quoteTests].map(test => test.code));
   run();
   const output = join(project, "js-out");

@@ -260,6 +260,10 @@ schema 候选没有 unresolved slot 也可能需要 review；检查 `:origin-cha
 沿报告导航到真实 producer，不能把 wrapper 的返回 schema 当成转换。缺证据建议只供 review；
 修正边界或独立证明实现后再检查，只有缺省 metadata 才考虑既有 synthesis，不猜类型或 decoder。
 
+检查 callback 传入具体签名时的证明，使用 `calcit fix --rule callable-contract-proof-v1 --ns <ns> --def <name> --format edn`。
+裸 `Fn` 保存/传递不需要补成猜测的签名；具体调用缺少证明时按报告的 source path 审阅参数、rest、返回值与 features。
+规则复用共享 compiler proof，较早的其他参数错误也可能先报告；建议不写回，不用 `fn?` 或新增强转代替签名证明。
+
 CLI 入口按任务收敛：entry 语义验证使用 `--check-only`，只读事实使用 `query`/`analyze`，可证明的检测与改写统一使用
 `fix` preview/apply，用户指定的结构修改使用 `edit`/`tree`/`cursor`。不要为一条检测或 migration rule 猜测新的顶层命令；
 完整边界见 `calcit docs read workflow-entrypoints.md --full`。

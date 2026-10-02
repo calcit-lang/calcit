@@ -57,6 +57,16 @@ use strum::ParseError;
 
 pub(crate) type ScopeTypes = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
 
+/// A callee supplies contextual types, never lexical permissions or async syntax.
+fn callback_parameter_context(signature: Arc<CalcitFnTypeAnnotation>) -> Arc<CalcitFnTypeAnnotation> {
+  if signature.features.is_empty() {
+    return signature;
+  }
+  let mut context = signature.as_ref().clone();
+  context.features = Arc::new(HashSet::new());
+  Arc::new(context)
+}
+
 #[cfg(not(test))]
 static WARN_DYN_METHOD: AtomicBool = AtomicBool::new(false);
 #[cfg(not(test))]
@@ -2708,7 +2718,7 @@ fn preprocess_list_call(
               let previous_fn = EXPECTED_FN_TYPE.with(|cell| {
                 let mut slot = cell.borrow_mut();
                 let previous = slot.take();
-                *slot = expected_fn;
+                *slot = expected_fn.map(callback_parameter_context);
                 previous
               });
               let processed = preprocess_expr(arg, scope_defs, scope_types, file_ns, check_warnings, call_stack);
@@ -3233,7 +3243,7 @@ fn preprocess_list_call(
               && let Some(field_type) = struct_def.field_types.get(field_idx)
               && let Some(fn_annot) = field_type.resolve_to_fn()
             {
-              EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().replace(fn_annot));
+              EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().replace(callback_parameter_context(fn_annot)));
             }
 
             let result = preprocess_expr(item, scope_defs, scope_types, file_ns, check_warnings, call_stack);
@@ -3248,6 +3258,8 @@ fn preprocess_list_call(
             ys = ys.push(form);
           }
         } else {
+          let callable_contract = resolve_type_value(&head_form, scope_types).and_then(|annotation| annotation.resolve_to_fn());
+          let mut callable_bindings = HashMap::new();
           args.traverse_result::<CalcitErr>(&mut |a| {
             if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = a {
               has_spread = true;
@@ -3283,10 +3295,23 @@ fn preprocess_list_call(
               let candidate_args = CalcitList::from(&[receiver.to_owned(), initial.to_owned(), a.to_owned()]);
               type_checking::specialize_collection_fold_expected_types(&candidate_args, scope_types, &signature.arg_types)
                 .and_then(|types| types.get(2).and_then(|expected| expected.resolve_to_fn()))
+            } else if !has_spread {
+              // A local/indirect callable has the same input contract as a named
+              // function. Supply it before checking an inline callback body;
+              // do not invent a signature for an open Fn/DynFn value.
+              callable_contract.as_ref().and_then(|signature| {
+                signature
+                  .arg_types
+                  .get(ys.len() - 1)
+                  .or(signature.rest_type.as_ref())
+                  .map(|expected| expected.substitute_type_vars(&callable_bindings))
+                  .and_then(|expected| expected.resolve_to_fn())
+              })
             } else {
               None
             };
-            let has_callback_contract = matches!(&head_form, Calcit::Method(_, calcit::MethodKind::Invoke(_)))
+            let has_callback_contract = callable_contract.is_some()
+              || matches!(&head_form, Calcit::Method(_, calcit::MethodKind::Invoke(_)))
               || matches!(
                 &head_form,
                 Calcit::Proc(CalcitProc::Sort | CalcitProc::NativeListSort | CalcitProc::Foldl | CalcitProc::NativeListFoldl)
@@ -3295,7 +3320,7 @@ fn preprocess_list_call(
               EXPECTED_FN_TYPE.with(|cell| {
                 let mut slot = cell.borrow_mut();
                 let previous = slot.take();
-                *slot = expected_fn;
+                *slot = expected_fn.map(callback_parameter_context);
                 previous
               })
             });
@@ -3304,6 +3329,20 @@ fn preprocess_list_call(
               EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous_fn);
             }
             let form = result?;
+            // Specialize callback context using proven preceding inputs;
+            // open values must not manufacture concrete bindings.
+            if !has_spread
+              && let Some(signature) = callable_contract.as_ref()
+              && let Some(expected) = signature.arg_types.get(ys.len() - 1).or(signature.rest_type.as_ref())
+              && !empty_container_has_no_type_evidence(&form, expected.as_ref())
+              && let Some(actual) = resolve_type_value(&form, scope_types)
+              && !contains_dynamic_type(actual.as_ref())
+            {
+              let mut candidate = callable_bindings.clone();
+              if actual.prove_with_bindings(expected.as_ref(), &mut candidate).is_proven() {
+                callable_bindings = candidate;
+              }
+            }
             ys = ys.push(form);
             Ok(())
           })?;
@@ -3837,7 +3876,7 @@ fn preprocess_known_function_call(
     };
 
     if let Some(fn_annot) = expected_fn {
-      EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().replace(fn_annot));
+      EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().replace(callback_parameter_context(fn_annot)));
     }
     if let Some(struct_def) = expected_struct {
       EXPECTED_STRUCT_TYPE.with(|cell| cell.borrow_mut().replace(struct_def));
@@ -10611,7 +10650,7 @@ fn reject_strict_unproven_generic_relation(
       argument.and_then(Calcit::get_location).or_else(|| head.get_location()),
     ));
   }
-  Err(CalcitErr::use_msg_stack_location_with_code(
+  let mut error = CalcitErr::use_msg_stack_location_with_code(
     CalcitErrKind::Type,
     if audit {
       format!(
@@ -10634,7 +10673,23 @@ fn reject_strict_unproven_generic_relation(
     },
     call_stack,
     argument.and_then(Calcit::get_location).or_else(|| head.get_location()),
-  ))
+  );
+  if audit && let CalcitTypeAnnotation::Fn(contract) = expected.as_ref() {
+    let mut features = contract
+      .features
+      .iter()
+      .map(|feature| feature.ref_str())
+      .filter(|feature| *feature != calcit::type_annotation::ASYNC_INVOCATION_FEATURE)
+      .collect::<Vec<_>>();
+    features.sort_unstable();
+    error.hint = Some(format!(
+      "Expected callable: {}; rest: {}; declared features: [{}]. Features describe the declared boundary; this diagnostic grants none. Review the source argument before its signature was erased, not just fn? at runtime.",
+      expected.to_brief_string(),
+      contract.rest_type.as_ref().map(|rest| rest.to_brief_string()).unwrap_or_else(|| "none".to_owned()),
+      features.join(", "),
+    ).into_boxed_str());
+  }
+  Err(error)
 }
 
 fn contains_nominal_contract(annotation: &CalcitTypeAnnotation) -> bool {
