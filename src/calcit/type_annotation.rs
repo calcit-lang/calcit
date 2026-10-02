@@ -6522,8 +6522,8 @@ mod tests {
       CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
-        arg_types: vec![arg],
-        return_type: Arc::new(CalcitTypeAnnotation::Unit),
+        arg_types: vec![arg.clone()],
+        return_type: arg,
         fn_kind: SchemaKind::Fn,
         rest_type: None,
         features: Arc::new(HashSet::new()),
