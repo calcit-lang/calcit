@@ -134,6 +134,28 @@ pub(super) fn emit_struct_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
       field_args.len()
     ));
   }
+  // Validate the complete mapping before emitting allocation or payload code.
+  // Source evaluation order is independent of the nominal storage layout.
+  let mut seen = BTreeSet::new();
+  let field_slots = field_args
+    .as_chunks::<2>()
+    .0
+    .iter()
+    .map(|pair| {
+      let Calcit::Tag(tag) = &pair[0] else {
+        return Err("&%{}: expected a literal field tag".to_owned());
+      };
+      let slot = struct_def
+        .fields
+        .iter()
+        .position(|field| field == tag)
+        .ok_or_else(|| format!("&%{{}}: unknown field :{tag}"))?;
+      if !seen.insert(slot) {
+        return Err(format!("&%{{}}: duplicate field :{tag}"));
+      }
+      Ok(slot)
+    })
+    .collect::<Result<Vec<_>, String>>()?;
 
   // Resolve the full definition identity, independently of the display name.
   let struct_tag_id = ctx.struct_layouts.id(&struct_def)?;
@@ -156,13 +178,12 @@ pub(super) fn emit_struct_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   ctx.emit(f64_const(struct_tag_id as f64));
   ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
 
-  // Store each field value at offset (2 + i) * 8
-  // field_args layout: [:tag0, val0, :tag1, val1, ...]
-  for i in 0..field_count {
+  // Evaluate in source order and store in the slot selected by each field tag.
+  for (i, slot) in field_slots.into_iter().enumerate() {
     let value_expr = &field_args[i * 2 + 1]; // skip the tag, take the value
     ctx.emit(Instruction::LocalGet(ptr_local));
     emit_expr(ctx, value_expr)?;
-    ctx.emit(Instruction::F64Store(mem_arg_f64(((2 + i) * 8) as u64)));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(((2 + slot) * 8) as u64)));
   }
 
   // Return pointer as f64

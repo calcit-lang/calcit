@@ -21,30 +21,15 @@ const inst = new WebAssembly.Instance(mod, {
   io: {
     // log_value(v: f64) — decode v and print using host memory view
     log_value: (v) => {
-      const mem = new DataView(inst.exports.memory.buffer);
-      // f64 pointer: if it looks like a heap address, read type_tag from header
-      const raw = v;
-      // Try to read as a heap pointer (i32 stored in f64)
-      const ptr = raw | 0; // truncate to i32
-      const HEAP_MAGIC = 0xca1c17a9 | 0;
-      if (ptr >= 16 && ptr < mem.byteLength - 8) {
-        const magic = mem.getInt32(ptr - 8, true);
-        if (magic === HEAP_MAGIC) {
-          const typeTag = mem.getInt32(ptr - 4, true);
-          if (typeTag === 10) {
-            // string: read byte_len then UTF-8 bytes
-            const byteLen = mem.getFloat64(ptr, true);
-            const bytes = new Uint8Array(mem.buffer, ptr + 8, byteLen);
-            const str = new TextDecoder().decode(bytes);
-            console.log("[wasm-println]", str);
-            wasmLog.push(str);
-            return 0;
-          }
-        }
+      const text = readWasmStr(v);
+      if (text !== null) {
+        console.log("[wasm-println]", text);
+        wasmLog.push(text);
+        return 0;
       }
       // Fall back: print as number
-      console.log("[wasm-println]", raw);
-      wasmLog.push(raw);
+      console.log("[wasm-println]", v);
+      wasmLog.push(v);
       return 0;
     },
     // log_str(ptr) — log a heap string directly (efficient string logging)
@@ -332,6 +317,18 @@ check("test-enum-map-set-inequality()", 1, e["test-enum-map-set-inequality"]);
 // --- Struct tests ---
 check("test-struct-sum(3,4)", 7, e["test-struct-sum"], 3, 4);
 check("test-struct-sum(10,20)", 30, e["test-struct-sum"], 10, 20);
+for (const [name, expected] of [
+  ["test-struct-field-order", ["struct-order-y", "struct-order-x"]],
+  ["test-struct-field-order-forward", ["struct-order-x", "struct-order-y"]],
+]) {
+  const start = wasmLog.length;
+  check(`${name}()`, 1, e[name]);
+  assert.deepEqual(wasmLog.slice(start), expected, "Struct payloads must evaluate once in source order");
+}
+const fieldFailureStart = wasmLog.length;
+assert.throws(() => e["test-struct-field-order-failure"](0), WebAssembly.RuntimeError);
+assert.deepEqual(wasmLog.slice(fieldFailureStart).filter(value => typeof value === "string" && value.startsWith("struct-failure-")),
+  ["struct-failure-y"], "Later fields must not run after failure");
 check("test-struct-matches-true()", 1, e["test-struct-matches-true"]);
 check("test-struct-field-tag()", 1, e["test-struct-field-tag"]);
 check("test-struct-contains-field()", 1, e["test-struct-contains-field"]);

@@ -6,6 +6,11 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const binary = resolve(process.env.CALCIT_BIN ?? "target/debug/calcit");
+const nativeTrace = execFileSync(binary, ["calcit/test-wasm.cirru", "test", "--tag", "struct-field-order", "--require-match"], { encoding: "utf8" });
+assert.deepEqual(nativeTrace.split(/\r?\n/).filter(line => line.startsWith("struct-order-")),
+  ["struct-order-y", "struct-order-x", "struct-order-x", "struct-order-y"]);
+const nativeFailure = execFileSync(binary, ["calcit/test-wasm.cirru", "test", "--tag", "struct-field-failure", "--require-match"], { encoding: "utf8" });
+assert.deepEqual(nativeFailure.split(/\r?\n/).filter(line => line.startsWith("struct-failure-")), ["struct-failure-y"]);
 const typeQuery = JSON.parse(execFileSync(binary, ["calcit/test-wasm.cirru", "query", "type", "test-wasm.main/Point", "--format", "json"], { encoding: "utf8" }));
 const fieldMethod = typeQuery.data.methods.find((method) => method.name === ".contains-field?");
 assert.equal(fieldMethod?.status, "proven", "Agent method discovery must prove the Struct field contract");
@@ -21,6 +26,19 @@ try {
   await symlink(resolve("node_modules"), join(output, "node_modules"), "dir");
   execFileSync(binary, ["--emit-path", output, "calcit/test-wasm.cirru", "js"], { stdio: "pipe" });
   const compiled = await import(pathToFileURL(join(output, "test-wasm.main.mjs")).href);
+  const trace = [];
+  const originalLog = console.log;
+  try {
+    console.log = (...values) => trace.push(values.join(" "));
+    assert.equal(compiled.test_struct_field_order(), 1);
+    assert.equal(compiled.test_struct_field_order_forward(), 1);
+    assert.deepEqual(trace, ["struct-order-y", "struct-order-x", "struct-order-x", "struct-order-y"]);
+    trace.length = 0;
+    assert.throws(() => compiled.test_struct_field_order_failure(0));
+    assert.deepEqual(trace, ["struct-failure-y"]);
+  } finally {
+    console.log = originalLog;
+  }
   assert.equal(compiled.test_struct_contains_field(), 1, "generated JS must preserve the Tag field predicate");
   assert.equal(compiled.test_struct_nominal_equality(), 1, "generated JS must preserve definition identity and structural equality");
   assert.equal(compiled.test_struct_hash(), 1, "equal nested Struct values must have equal hashes");

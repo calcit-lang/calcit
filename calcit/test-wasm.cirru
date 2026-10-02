@@ -1694,6 +1694,51 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-struct-field-order $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-struct-field-order ()
+            let
+                point $ Point :y
+                  do (println |struct-order-y) 2
+                  , :x $ do (println |struct-order-x) 1
+              assert= 1 $ :x point
+              assert= 2 $ :y point
+              , 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |source-field-order)
+            :code $ quote $ assert= 1 (test-struct-field-order)
+            :tags $ #{} :struct-field-order :unit :wasm
+        'test-struct-field-order-failure $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-struct-field-order-failure (flag)
+            let
+                point $ Point :y
+                  do (println |struct-failure-y) (assert= flag 1) 2
+                  , :x $ do (println |struct-failure-x) 1
+              + (:x point) (:y point)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |source-failure-order)
+            :code $ quote $ assert= 0
+              try (test-struct-field-order-failure 0)
+                fn (error) 0
+            :tags $ #{} :struct-field-failure :unit
+        'test-struct-field-order-forward $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-struct-field-order-forward ()
+            let
+                point $ Point :x
+                  do (println |struct-order-x) 1
+                  , :y $ do (println |struct-order-y) 2
+              assert= 1 $ :x point
+              assert= 2 $ :y point
+              , 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |source-field-order)
+            :code $ quote $ assert= 1 (test-struct-field-order-forward)
+            :tags $ #{} :struct-field-order :unit :wasm
         'test-struct-field-tag $ %{} 'CodeEntry (:doc "|struct field-tag resolves by index")
           :code $ quote $ defwasm-export test-struct-field-tag ()
             &let
