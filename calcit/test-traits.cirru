@@ -370,8 +370,22 @@
             ; String comparison $ lexicographic
             assert= -1 $ &compare |apple |banana
             assert= 1 $ &compare |zebra |apple
-            ; List comparison $ not yet implemented in compare form
-            ; assert= :lt $ compare ([] 1 2) ([] 1 3)
+            ; composite values compare by their elements, never by display text
+            assert= -1 $ &compare ([] 2) ([] 10)
+            assert= 1 $ &compare ([] 10) ([] 2)
+            assert= 0 $ &compare ([] 1 2) ([] 1 2)
+            assert= -1 $ &compare ([]) ([] 0)
+            assert= -1 $ &compare ([] 1) ([] 1 0)
+            assert= -1 $ &compare ([] 1 2) ([] 1 3)
+            assert= -1 $ &compare ([] ([] 2)) ([] ([] 10))
+            assert= -1 $ &compare (#{} 2 3) (#{} 2 3 4)
+            assert= -1 $ &compare (#{} 2 3) (#{} 2 10)
+            assert= 1 $ &compare (#{} 10 3) (#{} 2 4)
+            assert= 0 $ &compare (#{} 3 2) (#{} 2 3)
+            assert= -1 $ &compare ({} (:a 2)) ({} (:a 10))
+            assert= -1 $ &compare ({} (:a 1)) ({} (:a 1) (:b 1))
+            assert= 1 $ &compare ({} (:b 1)) ({} (:a 1))
+            assert= 0 $ &compare ({} (:a 1) (:b 2)) ({} (:b 2) (:a 1))
             do
               assert= -1 $ .compare 1 2
               assert= 0 $ .compare 2 2

@@ -104,6 +104,18 @@ let rawCompare = (x: any, y: any): number => {
   }
 };
 
+/** lexicographic order over two sequences of values, a shorter prefix sorts first (same as Rust `Vec::cmp`) */
+let compareSequences = (xs: CalcitValue[], ys: CalcitValue[]): number => {
+  let n = Math.min(xs.length, ys.length);
+  for (let i = 0; i < n; i++) {
+    let order = _$n_compare(xs[i], ys[i]);
+    if (order !== 0) return order;
+  }
+  return rawCompare(xs.length, ys.length);
+};
+
+let listToArray = (x: CalcitList | CalcitSliceList): CalcitValue[] => Array.from(x.items());
+
 export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
   if (a === b) return 0;
   let ta = typeAsInt(a);
@@ -151,6 +163,37 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
       }
       case PseudoTypeIndex.cirru_quote:
         return rawCompare(a, b); // TODO not stable
+      case PseudoTypeIndex.list:
+        return compareSequences(listToArray(a as CalcitList), listToArray(b as CalcitList));
+      case PseudoTypeIndex.enum_value: {
+        const left = a as CalcitEnumValue;
+        const right = b as CalcitEnumValue;
+        const tagOrder = _$n_compare(left.tag, right.tag);
+        if (tagOrder !== 0) return tagOrder;
+        return compareSequences(left.extra, right.extra);
+      }
+      case PseudoTypeIndex.set: {
+        // like native: smaller sets first, then the sorted elements
+        const left = Array.from((a as CalcitSet).values());
+        const right = Array.from((b as CalcitSet).values());
+        const sizeOrder = rawCompare(left.length, right.length);
+        if (sizeOrder !== 0) return sizeOrder;
+        return compareSequences(left.sort(_$n_compare), right.sort(_$n_compare));
+      }
+      case PseudoTypeIndex.map: {
+        // like native: smaller maps first, then the (key, value) pairs sorted by key and value
+        const sortPairs = (pairs: Array<[CalcitValue, CalcitValue]>) =>
+          pairs.sort((x, y) => _$n_compare(x[0], y[0]) || _$n_compare(x[1], y[1]));
+        const left = sortPairs((a as CalcitMap).pairs());
+        const right = sortPairs((b as CalcitMap).pairs());
+        const sizeOrder = rawCompare(left.length, right.length);
+        if (sizeOrder !== 0) return sizeOrder;
+        for (let i = 0; i < left.length; i++) {
+          const order = _$n_compare(left[i][0], right[i][0]) || _$n_compare(left[i][1], right[i][1]);
+          if (order !== 0) return order;
+        }
+        return 0;
+      }
       default:
         // TODO, need more accurate solution
         if (a < b) {
