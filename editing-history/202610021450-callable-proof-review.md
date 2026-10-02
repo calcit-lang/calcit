@@ -19,3 +19,5 @@
 来源传播链、自动 metadata synthesis 与 strict workflow 的完整集成仍需按 #1539 后续验收，不因新增规则入口就宣称全部完成。
 
 CI 的完整 core 回放还发现 `add-watch` 的 callback 收到未实例化的 `T`，而后续参数检查已从 `Ref<Number>` 推导出 Number。间接调用的预处理现在复用通用类型证明，从此前已经处理的实参逐步收集 bindings，再替换 callback 上下文；Dynamic 与没有元素证据的空集合不产生绑定。附加定义测试通过 watch 的新旧数值求和验证推导和运行结果，不靠手写 callback schema 掩盖问题。
+
+Review 要求的泛型审计正反例进一步发现：泛型函数存入局部变量后，调用结果直接返回未替换的 `T`。局部与嵌套 callable 调用复用已有泛型返回推导，根据实参替换自身泛型；不是该 callable 自身声明的外层符号类型继续保留，避免破坏 generic helper 内部 callback 的 `T -> T` 关系。测试同时覆盖直接、局部、嵌套调用与擦除签名后的拒绝。

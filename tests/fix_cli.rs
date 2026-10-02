@@ -20,6 +20,20 @@ fn callable_contract_proof_preserves_open_storage_and_reviews_concrete_use() {
     ("erased", "'Fn", "'Number", "consume callback"),
     ("open-input", "'Dynamic", "'Number", "consume callback"),
     ("closed", callback, "'Number", "consume callback"),
+    ("generic-closed", callback, "'Number", "generic-consume 1 callback"),
+    ("generic-erased", "'Fn", "'Number", "generic-consume 1 callback"),
+    (
+      "generic-nested",
+      "'Fn",
+      "'Number",
+      "(if true generic-consume generic-consume) 1 (fn (n) (&+ n 1))",
+    ),
+    (
+      "generic-inline",
+      "'Fn",
+      "'Number",
+      "let ((apply-one generic-consume)) (apply-one 1 (fn (n) (&+ n 1)))",
+    ),
     ("storage", "'Fn", "'Fn", ", callback"),
     (
       "watch-context",
@@ -90,10 +104,43 @@ fn callable_contract_proof_preserves_open_storage_and_reviews_concrete_use() {
       "declare callable contract",
     );
   }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/generic-consume",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn generic-consume (value callback)\n  callback value",
+      ],
+    ),
+    "install generic callable source",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "fix-command.main/generic-consume",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:generics $ [] 'T) (:args $ [] 'T (:: 'Fn $ {} (:args $ [] 'T) (:return 'T))) (:return 'T)",
+      ],
+    ),
+    "declare generic callable contract",
+  );
   for (name, code) in [
     ("closed", "quote $ assert= 2 $ closed $ fn (n) (&+ n 1)"),
     ("storage", "quote $ assert= true $ fn? $ storage $ fn (n) (&+ n 1)"),
     ("watch-context", "quote $ assert= 3 $ watch-context $ fn (n) (&+ n 1)"),
+    ("generic-closed", "quote $ assert= 2 $ generic-closed $ fn (n) (&+ n 1)"),
+    ("generic-inline", "quote $ assert= 2 $ generic-inline $ fn (n) (&+ n 1)"),
+    ("generic-nested", "quote $ assert= 2 $ generic-nested $ fn (n) (&+ n 1)"),
   ] {
     let target = format!("fix-command.main/{name}");
     assert_success(
@@ -131,6 +178,10 @@ fn callable_contract_proof_preserves_open_storage_and_reviews_concrete_use() {
     ("closed-feature", false),
     ("owned-feature", false),
     ("watch-context", false),
+    ("generic-closed", false),
+    ("generic-inline", false),
+    ("generic-nested", false),
+    ("generic-erased", true),
     ("erased-async", true),
   ] {
     let selectors = [
@@ -153,8 +204,14 @@ fn callable_contract_proof_preserves_open_storage_and_reviews_concrete_use() {
       assert_eq!(suggestion["diagnostic_code"], "E_CALL_ARGUMENT_UNPROVEN");
       assert_eq!(suggestion["applicability"], "requires-review");
       assert!(suggestion["replacement"].is_null());
-      assert_eq!(suggestion["path"], "code@3.1");
-      assert!(suggestion["message"].as_str().unwrap().contains("-> :number"));
+      assert_eq!(suggestion["path"], if name == "generic-erased" { "code@3.2" } else { "code@3.1" });
+      assert!(
+        suggestion["message"]
+          .as_str()
+          .unwrap()
+          .contains(if name == "generic-erased" { "-> 'T" } else { "-> :number" }),
+        "{suggestion}"
+      );
       let hint = suggestion["origin_chain"][0]["diagnostic"]["hint"].as_str().unwrap();
       assert!(hint.contains(if name == "erased-rest" { "rest: :number" } else { "rest: none" }));
       assert!(
