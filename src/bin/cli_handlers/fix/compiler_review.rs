@@ -27,6 +27,7 @@ pub(super) fn compile_boundary_review(
   snapshot_file: &str,
   definitions: &[(String, String)],
   rule: &'static str,
+  workflow: bool,
 ) -> Result<BoundaryReview, String> {
   if !runner::preprocess::is_strict_types_enabled() {
     return Err(format!(
@@ -38,10 +39,11 @@ pub(super) fn compile_boundary_review(
   let mut diagnostics = Vec::new();
   let mut seen = HashSet::new();
   for (namespace, definition) in definitions {
-    let result = if matches!(
-      rule,
-      ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE | CALLABLE_CONTRACT_PROOF_RULE | NOMINAL_WRITE_PROOF_RULE
-    ) {
+    let result = if workflow
+      || matches!(
+        rule,
+        ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE | CALLABLE_CONTRACT_PROOF_RULE | NOMINAL_WRITE_PROOF_RULE
+      ) {
       runner::preprocess::with_assertion_proof(|| {
         // Reprocess the selected source even if another definition compiled it
         // earlier. Cached local annotations are not pre-assertion evidence.
@@ -50,16 +52,39 @@ pub(super) fn compile_boundary_review(
     } else {
       runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default()).map(|_| ())
     };
-    if matches!(
-      rule,
-      ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE | CALLABLE_CONTRACT_PROOF_RULE | NOMINAL_WRITE_PROOF_RULE
-    ) && let Some(warning) = warnings.borrow().iter().find(|warning| is_contradictory_proof_warning(warning))
+    if (workflow
+      || matches!(
+        rule,
+        ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE | CALLABLE_CONTRACT_PROOF_RULE | NOMINAL_WRITE_PROOF_RULE
+      ))
+      && let Some(warning) = warnings.borrow().iter().find(|warning| is_contradictory_proof_warning(warning))
     {
       // A contradictory implementation cannot lend its declared return type
       // to an assertion, even when ordinary checking reports it as a warning.
       return Err(format!("{rule} cannot borrow a contradictory producer contract: {}", warning));
     }
     if let Err(error) = result {
+      // One compiler pass serves the combined workflow; keep existing rule identifiers.
+      let rule = if workflow {
+        match error.code() {
+          Some(UNSAFE_COERCE_BOUNDARY_DIAGNOSTIC) => UNSAFE_COERCE_BOUNDARY_RULE,
+          Some(ASSERT_TYPE_PROOF_DIAGNOSTIC | "E_ASSERT_TYPE_MISMATCH") => ASSERT_TYPE_PROOF_RULE,
+          Some(CONCRETE_RETURN_PROOF_DIAGNOSTIC) => CONCRETE_RETURN_PROOF_RULE,
+          Some("E_CALL_ARGUMENT_UNPROVEN") if error.hint.as_deref().is_some_and(|hint| hint.starts_with("Nominal field")) => {
+            NOMINAL_WRITE_PROOF_RULE
+          }
+          Some("E_CALL_ARGUMENT_UNPROVEN") => CALLABLE_CONTRACT_PROOF_RULE,
+          _ => {
+            let diagnostic = boundary_diagnostic(&error, &format!("{namespace}/{definition}"));
+            if !diagnostics.contains(&diagnostic) {
+              diagnostics.push(diagnostic);
+            }
+            continue;
+          }
+        }
+      } else {
+        rule
+      };
       let diagnostic_code = match (rule, error.code()) {
         (UNSAFE_COERCE_BOUNDARY_RULE, Some(UNSAFE_COERCE_BOUNDARY_DIAGNOSTIC)) => UNSAFE_COERCE_BOUNDARY_DIAGNOSTIC,
         (ASSERT_TYPE_PROOF_RULE, Some(ASSERT_TYPE_PROOF_DIAGNOSTIC)) => ASSERT_TYPE_PROOF_DIAGNOSTIC,
@@ -72,6 +97,24 @@ pub(super) fn compile_boundary_review(
         ) => "E_CALL_ARGUMENT_UNPROVEN",
         _ => return Err(format!("Failed to preprocess fix target {namespace}/{definition}: {error}")),
       };
+      if workflow
+        && error.location.as_ref().is_none_or(|location| {
+          !definitions
+            .iter()
+            .any(|(ns, def)| ns == location.ns.as_ref() && def == location.def.as_ref())
+        })
+      {
+        // Preserve an unlocated/dependency error without inventing a writable source path.
+        let owner = error.location.as_ref().map_or_else(
+          || format!("{namespace}/{definition}"),
+          |location| format!("{}/{}", location.ns, location.def),
+        );
+        let diagnostic = boundary_diagnostic(&error, &owner);
+        if !diagnostics.contains(&diagnostic) {
+          diagnostics.push(diagnostic);
+        }
+        continue;
+      }
       let location = error
         .location
         .as_ref()

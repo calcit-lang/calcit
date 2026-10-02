@@ -4896,18 +4896,175 @@ fn optional_parameter_rule_keeps_multiple_trailing_candidates_review_only() {
 }
 
 #[test]
+fn strict_workflow_checks_proofs_and_resumes_without_fabricating_repairs() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/wasi-command-03-exit.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/main!",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn main! () &unit",
+      ],
+    ),
+    "use a side-effect-free entry",
+  );
+  for (name, body, returns) in [
+    ("store-open", "([] value)", "(:: 'List 'Dynamic)"),
+    ("unproven", "(assert-type value Number) value", "'Number"),
+  ] {
+    let target = format!("app.main/{name}");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ defn {name} (value) {body}"),
+        ],
+      ),
+      "create proof fixture",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "schema",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ :: 'Fn $ {{}} (:args $ [] 'Dynamic) (:return {returns})"),
+        ],
+      ),
+      "declare fixture boundary",
+    );
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        "app.main/store-open",
+        "transports-open-values",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ assert= ([] 1) $ store-open 1",
+      ],
+    ),
+    "attach open-storage behavior",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["test", "app.main/store-open", "--require-match"]),
+    "run storage behavior",
+  );
+  let before = fs::read(&snapshot).unwrap();
+  let preview = run_fix(&snapshot, &["--workflow", "strict", "--format", "json"]);
+  assert!(!preview.status.success());
+  let report = parse_stdout(&preview);
+  assert_eq!(report["data"]["workflow"]["status"], "requires-review");
+  assert_eq!(report["diagnostics"].as_array().unwrap().len(), 1);
+  assert_eq!(report["diagnostics"][0]["code"], "E_ASSERT_TYPE_UNPROVEN");
+  assert_eq!(report["data"]["suggestions"][0]["rule_id"], "assert-type-proof-v1");
+  assert!(report["data"]["suggestions"][0]["replacement"].is_null());
+  let revision = report["revision"].as_str().unwrap();
+  for mode in ["--apply", "--verify"] {
+    let mut args = vec!["--workflow", "strict", mode, "--expect-revision", revision, "--format", "json"];
+    if mode == "--apply" {
+      args.push("--allow-no-vcs");
+    }
+    let output = run_fix(&snapshot, &args);
+    assert!(!output.status.success());
+    let result = parse_stdout(&output);
+    assert_eq!(result["diagnostics"][0]["code"], "E_ASSERT_TYPE_UNPROVEN");
+    assert_eq!(
+      result["data"]["workflow"]["status"],
+      if mode == "--verify" { "failed" } else { "requires-review" }
+    );
+    assert_eq!(fs::read(&snapshot).unwrap(), before);
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/unproven",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn unproven (value) 1",
+      ],
+    ),
+    "independently prove return without narrowing open input",
+  );
+  let proven = run_fix(&snapshot, &["--workflow", "strict", "--verify", "--format", "edn"]);
+  assert_success(&proven, "verify repaired proof and retained open storage");
+  cirru_edn::parse(&String::from_utf8_lossy(&proven.stdout)).expect("one native workflow report");
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "app.main/store-open",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return $ :: 'List 'Number)",
+      ],
+    ),
+    "request a concrete storage contract",
+  );
+  let concrete = run_fix(&snapshot, &["--workflow", "strict", "--format", "json"]);
+  assert!(!concrete.status.success());
+  assert!(
+    parse_stdout(&concrete)["diagnostics"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .any(|item| item["code"] == "E_FN_RETURN_UNPROVEN")
+  );
+}
+
+#[test]
 fn strict_workflow_composes_a_resumable_project_manifest() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
 
   let preview = run_fix(&snapshot, &["--workflow", "strict", "--format", "json"]);
-  assert_success(&preview, "strict workflow plan");
+  assert!(!preview.status.success(), "legacy helpers still need return proof");
   let report = parse_stdout(&preview);
   let workflow = &report["data"]["workflow"];
   assert_eq!(workflow["workflow"], "strict-v1");
   assert_eq!(workflow["mode"], "preview");
-  assert_eq!(workflow["status"], "planned");
+  assert_eq!(workflow["status"], "requires-review");
+  assert!(
+    report["diagnostics"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .any(|item| item["code"] == "E_FN_RETURN_UNPROVEN")
+  );
   assert_eq!(workflow["safe_fixes"]["preset"], "surface-latest-v2");
   assert!(workflow["safe_fixes"]["suggestions"].as_u64().is_some_and(|count| count > 0));
   assert_eq!(workflow["entries"][0]["name"], "default");
@@ -4969,9 +5126,16 @@ fn strict_workflow_plans_cross_namespace_macro_generated_ffi() {
   assert_success(&check, "cross-namespace macro FFI check-only");
 
   let preview = run_fix(&snapshot, &["--workflow", "strict", "--format", "json"]);
-  assert_success(&preview, "cross-namespace macro FFI strict workflow plan");
+  assert!(!preview.status.success(), "untyped generated helpers still require evidence");
   let report = parse_stdout(&preview);
-  assert_eq!(report["data"]["workflow"]["status"], "planned");
+  assert_eq!(report["data"]["workflow"]["status"], "requires-review");
+  assert!(
+    report["diagnostics"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .any(|item| { item["code"] == "E_CALL_ARGUMENT_UNPROVEN" && item["definition"] == "defprobe.main/gen%" })
+  );
 }
 
 #[test]
@@ -5190,13 +5354,13 @@ fn whole_project_fix_previews_node_only_definitions_without_weakening_entry_chec
 }
 
 #[test]
-fn strict_workflow_applies_safe_fixes_and_verifies_the_result() {
+fn strict_workflow_applies_safe_fixes_without_claiming_unproven_contracts() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
 
   let preview = run_fix(&snapshot, &["--workflow", "strict", "--format", "json"]);
-  assert_success(&preview, "strict workflow plan");
+  assert!(!preview.status.success());
   let preview_report = parse_stdout(&preview);
   let revision = preview_report["revision"].as_str().expect("workflow revision should be text");
 
@@ -5213,15 +5377,25 @@ fn strict_workflow_applies_safe_fixes_and_verifies_the_result() {
       "json",
     ],
   );
-  assert_success(&applied, "strict workflow apply");
+  assert!(
+    !applied.status.success(),
+    "safe migrations do not discharge unrelated proof obligations"
+  );
   let applied_report = parse_stdout(&applied);
-  assert_eq!(applied_report["data"]["workflow"]["status"], "applied");
+  assert_eq!(applied_report["data"]["workflow"]["status"], "requires-review");
   assert_eq!(applied_report["data"]["workflow"]["safe_fixes"]["status"], "applied");
 
   let verification = run_fix(&snapshot, &["--workflow", "strict", "--verify", "--format", "json"]);
-  assert_success(&verification, "strict workflow verification");
+  assert!(!verification.status.success());
   let verification_report = parse_stdout(&verification);
-  assert_eq!(verification_report["data"]["workflow"]["status"], "passed");
+  assert_eq!(verification_report["data"]["workflow"]["status"], "failed");
+  assert!(
+    verification_report["diagnostics"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .any(|item| item["code"] == "E_FN_RETURN_UNPROVEN")
+  );
   assert_eq!(verification_report["data"]["workflow"]["safe_fixes"]["status"], "clear");
   assert!(
     verification_report["data"]["workflow"]["verification"]["results"]
@@ -10548,8 +10722,15 @@ fn strict_workflow_surfaces_ffi_boundary_defexternal_skeletons() {
   fs::write(&snapshot, FFI_BOUNDARY_FIXTURE).expect("ffi boundary fixture should write");
 
   let preview = run_fix(&snapshot, &["--workflow", "strict", "--format", "json"]);
-  assert_success(&preview, "strict workflow plan");
+  assert!(!preview.status.success(), "untyped field access must remain a compiler error");
   let report = parse_stdout(&preview);
+  assert!(
+    report["diagnostics"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .any(|item| item["code"] == "E_UNTYPED_JS_OBJECT_ACCESS")
+  );
   let boundaries = report["data"]["workflow"]["review_required"]["ffi_boundaries"]
     .as_array()
     .expect("ffi boundaries should be an array");
