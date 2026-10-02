@@ -481,8 +481,9 @@ impl Hash for Calcit {
       }
       BufList(items) => {
         "buf-list:".hash(_state);
-        let items = items.lock().expect("BufList lock");
-        items.hash(_state);
+        // BufList is mutable, so it has identity semantics like `Ref`: content-based hashing
+        // would change after a push and lose the value inside any hashed container.
+        (Arc::as_ptr(items) as usize).hash(_state);
       }
       CirruQuote(code) => {
         "cirru-quote:".hash(_state);
@@ -686,11 +687,8 @@ impl Ord for Calcit {
       (Buffer(..), _) => Less,
       (_, Buffer(..)) => Greater,
 
-      (BufList(a), BufList(b)) => {
-        let a = a.lock().expect("BufList lock");
-        let b = b.lock().expect("BufList lock");
-        a.cmp(&*b)
-      }
+      // identity order, see the note in `Hash`; never locks, so comparing a list with itself is safe
+      (BufList(a), BufList(b)) => (Arc::as_ptr(a) as usize).cmp(&(Arc::as_ptr(b) as usize)),
       (BufList(_), _) => Less,
       (_, BufList(_)) => Greater,
 
@@ -789,11 +787,7 @@ impl PartialEq for Calcit {
       (Ref(a, _), Ref(b, _)) => a == b,
       (Enum(a), Enum(b)) => a == b,
       (Buffer(b), Buffer(d)) => b == d,
-      (BufList(a), BufList(b)) => {
-        let a = a.lock().expect("BufList lock");
-        let b = b.lock().expect("BufList lock");
-        *a == *b
-      }
+      (BufList(a), BufList(b)) => Arc::ptr_eq(a, b),
       (CirruQuote(b), CirruQuote(d)) => b == d,
       (List(a), List(b)) => a == b,
       (Set(a), Set(b)) => a == b,
@@ -1761,6 +1755,37 @@ mod tests {
       assert_eq!(value.cmp(&cloned), Equal);
       assert_eq!(calcit_hash(&value), calcit_hash(&cloned));
     }
+  }
+
+  #[test]
+  fn buf_list_compares_by_identity_without_locking() {
+    let a = Calcit::BufList(Arc::new(Mutex::new(vec![Calcit::Number(1.0)])));
+    let same_content = Calcit::BufList(Arc::new(Mutex::new(vec![Calcit::Number(1.0)])));
+    let alias = a.clone();
+
+    // self comparison used to lock the same mutex twice and hang
+    assert_eq!(a, a);
+    assert_eq!(a, alias);
+    assert_eq!(a.cmp(&alias), std::cmp::Ordering::Equal);
+    assert_ne!(a, same_content);
+    assert_ne!(a.cmp(&same_content), std::cmp::Ordering::Equal);
+    assert_eq!(calcit_hash(&a), calcit_hash(&alias));
+  }
+
+  #[test]
+  fn buf_list_hash_is_stable_across_mutation() {
+    let buf = Arc::new(Mutex::new(Vec::new()));
+    let value = Calcit::BufList(buf.clone());
+    let before = calcit_hash(&value);
+
+    let mut set: rpds::HashTrieSetSync<Calcit> = rpds::HashTrieSetSync::new_sync();
+    set = set.insert(value.clone());
+    buf.lock().expect("BufList lock").push(Calcit::Number(1.0));
+    // a self-referencing push must not recurse into hashing or comparison either
+    buf.lock().expect("BufList lock").push(value.clone());
+
+    assert_eq!(calcit_hash(&value), before);
+    assert!(set.contains(&value));
   }
 
   #[test]
