@@ -2022,9 +2022,7 @@ pub fn preprocess_expr(
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   // the native stack guard targets runtime recursion; preprocessing and macro expansion are exempt
-  runner::with_stack_guard_suspended(|| {
-    preprocess_expr_unguarded(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack)
-  })
+  runner::with_stack_guard_suspended(|| preprocess_expr_unguarded(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack))
 }
 
 fn preprocess_expr_unguarded(
