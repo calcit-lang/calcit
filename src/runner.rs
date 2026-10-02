@@ -37,6 +37,24 @@ thread_local! {
   static SHUTDOWN_CHECK_COUNTDOWN: Cell<u16> = const { Cell::new(0) };
   static SHUTDOWN_CHECK_SUSPENDED: Cell<u16> = const { Cell::new(0) };
   static STACK_GUARD: Cell<Option<StackGuard>> = const { Cell::new(None) };
+  static STACK_GUARD_SUSPENDED: Cell<u16> = const { Cell::new(0) };
+}
+
+struct StackGuardSuspension;
+
+impl Drop for StackGuardSuspension {
+  fn drop(&mut self) {
+    STACK_GUARD_SUSPENDED.with(|depth| depth.set(depth.get().saturating_sub(1)));
+  }
+}
+
+/// Run `f` with the stack guard paused. Preprocessing (including macro expansion) recurses with the
+/// shape of the source and legitimately uses most of the thread stack on large inputs, so the guard
+/// only watches user program recursion and the next check after preprocessing sees the real depth.
+pub fn with_stack_guard_suspended<T>(f: impl FnOnce() -> T) -> T {
+  STACK_GUARD_SUSPENDED.with(|depth| depth.set(depth.get().saturating_add(1)));
+  let _suspension = StackGuardSuspension;
+  f()
 }
 
 fn current_stack_address() -> usize {
@@ -62,6 +80,9 @@ fn check_stack_budget(call_stack: &CallStackList) -> Result<(), CalcitErr> {
   let Some(guard) = STACK_GUARD.with(Cell::get) else {
     return Ok(());
   };
+  if STACK_GUARD_SUSPENDED.with(Cell::get) > 0 {
+    return Ok(());
+  }
   // stacks grow downward on every supported target, so used bytes = base - current
   if guard.base.saturating_sub(current_stack_address()) > guard.budget {
     Err(CalcitErr::use_msg_stack_location_with_hint(
