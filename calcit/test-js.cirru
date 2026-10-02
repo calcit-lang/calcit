@@ -239,6 +239,10 @@
             js/console.log "|Dates in difference syntax" $ .!now $ unsafe-coerce js/Date test-js.main/TestDate
             js/console.log $ .-PI $ unsafe-coerce js/Math test-js.main/TestMath
             js/console.log $ aget (unsafe-coerce js/Math test-js.main/TestMath) |PI
+            ; "a local named like a JS global must not shadow `js/...` (#1687)"
+            let
+                Math $ unsafe-coerce js/Math test-js.main/TestMath
+              assert= (.-PI Math) js/Math.PI
             let
                 a js/{}
               aset a |name |demo
