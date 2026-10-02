@@ -16,6 +16,7 @@ try {
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
   const coreOriginal = await readFile(snapshot);
   run("fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.core", "--def", "every?", "--format", "edn");
+  run("fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.core", "--def", "foldl-compare", "--format", "edn");
   assert.deepEqual(await readFile(snapshot), coreOriginal);
   run("test", "--tag", "assert-boundary", "--require-match");
   const response = JSON.parse(run("query", "def", "calcit.core/assert-type", "--format", "json"));
@@ -30,6 +31,9 @@ try {
   run("test", "calcit.core/hint-fn", "--tag", "call-boundary", "--require-match");
   const callTests = returnResponse.data.tests.filter(test => test.tags.includes("call-boundary"));
   assert.equal(callTests.length, 8);
+  run("test", "calcit.core/hint-fn", "--tag", "generic-call-proof", "--require-match");
+  const genericTests = returnResponse.data.tests.filter(test => test.tags.includes("generic-call-proof"));
+  assert.equal(genericTests.length, 1);
   run("test", "calcit.core/hint-fn", "--tag", "hint-value-boundary", "--require-match");
   const hintTests = returnResponse.data.tests.filter(test => test.tags.includes("hint-value-boundary"));
   assert.equal(hintTests.length, 5);
@@ -48,6 +52,24 @@ try {
   run("edit", "add-ns", "calcit.assert-evidence");
   const setBody = trees => run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite",
     "--input-format", "json-ast", "--code", JSON.stringify(["defwasm-export", "run-tests", [], ...trees, "1"]));
+  run("test", "calcit.core/foldl-compare", "--tag", "tail-return-proof", "--require-match");
+  const tailResponse = JSON.parse(run("query", "def", "calcit.core/foldl-compare", "--format", "json"));
+  const tailTests = tailResponse.data.tests.filter(test => test.tags.includes("tail-return-proof"));
+  assert.equal(tailTests.length, 2);
+  run("test", "calcit.core/&str-spaced", "--tag", "tail-return-proof", "--require-match");
+  const restResponse = JSON.parse(run("query", "def", "calcit.core/&str-spaced", "--format", "json"));
+  const restTests = restResponse.data.tests.filter(test => test.tags.includes("tail-return-proof"));
+  assert.equal(restTests.length, 1);
+  setBody([...tailTests, ...restTests, ...genericTests].map(test => test.code));
+  run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
+  run("config", "set", "init-fn", "calcit.assert-evidence/run-tests");
+  run("config", "set", "reload-fn", "calcit.assert-evidence/run-tests");
+  run();
+  const tailOutput = join(project, "tail-exits-js");
+  run("--emit-path", tailOutput, "js");
+  const tailGenerated = await import(pathToFileURL(join(tailOutput, "calcit.assert-evidence.mjs")).href);
+  assert.equal(tailGenerated.run_tests(), 1);
   run("test", "calcit.core/foldl-shortcut", "--tag", "shortcut-fold-proof", "--require-match");
   const shortcutResponse = JSON.parse(run("query", "def", "calcit.core/foldl-shortcut", "--format", "json"));
   const shortcutTests = shortcutResponse.data.tests.filter(test => test.tags.includes("shortcut-fold-proof"));

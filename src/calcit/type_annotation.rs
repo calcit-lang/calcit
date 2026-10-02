@@ -220,6 +220,111 @@ pub static DYNAMIC_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::new(|| 
 
 pub(crate) type TypeBindings = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
 
+/// One call's inference variables are distinct from the caller's rigid variables.
+/// Source annotations and diagnostics keep their original names.
+pub(crate) struct CallTypeProof {
+  renaming: TypeBindings,
+  bindings: TypeBindings,
+  fresh_names: HashSet<Arc<str>>,
+}
+
+fn type_variable_names(types: &[Arc<CalcitTypeAnnotation>]) -> HashSet<Arc<str>> {
+  let mut names = HashSet::new();
+  let mut pending = types.iter().map(Arc::as_ref).collect::<Vec<_>>();
+  while let Some(annotation) = pending.pop() {
+    match annotation {
+      CalcitTypeAnnotation::TypeVar(name) => {
+        names.insert(name.clone());
+      }
+      CalcitTypeAnnotation::TypeRef(_, args) | CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::Enum(_, args) => {
+        pending.extend(args.iter().map(Arc::as_ref));
+      }
+      CalcitTypeAnnotation::List(inner)
+      | CalcitTypeAnnotation::Set(inner)
+      | CalcitTypeAnnotation::Ref(inner)
+      | CalcitTypeAnnotation::Optional(inner)
+      | CalcitTypeAnnotation::JsNullish(inner)
+      | CalcitTypeAnnotation::Variadic(inner) => pending.push(inner),
+      CalcitTypeAnnotation::Map(key, value) => {
+        pending.push(key);
+        pending.push(value);
+      }
+      CalcitTypeAnnotation::Fn(signature) => {
+        pending.extend(signature.arg_types.iter().map(Arc::as_ref));
+        pending.push(&signature.return_type);
+        if let Some(rest) = &signature.rest_type {
+          pending.push(rest);
+        }
+      }
+      _ => {}
+    }
+  }
+  names
+}
+
+impl CallTypeProof {
+  pub(crate) fn new(generics: &[Arc<str>], expected: &[Arc<CalcitTypeAnnotation>], actual: &[Arc<CalcitTypeAnnotation>]) -> Self {
+    let mut occupied = type_variable_names(actual);
+    occupied.extend(type_variable_names(expected));
+    let mut ordered = generics.to_vec();
+    ordered.sort();
+    ordered.dedup();
+    let mut renaming = TypeBindings::new();
+    let mut fresh_names = HashSet::new();
+    let mut index = 0;
+    for name in ordered {
+      let fresh = loop {
+        let candidate: Arc<str> = Arc::from(format!("#call-type:{index}"));
+        index += 1;
+        if occupied.insert(candidate.clone()) {
+          break candidate;
+        }
+      };
+      fresh_names.insert(fresh.clone());
+      renaming.insert(name, Arc::new(CalcitTypeAnnotation::TypeVar(fresh)));
+    }
+    Self {
+      renaming,
+      bindings: TypeBindings::new(),
+      fresh_names,
+    }
+  }
+
+  pub(crate) fn prove(&mut self, actual: &CalcitTypeAnnotation, expected: &CalcitTypeAnnotation) -> TypeProof {
+    let expected = expected.substitute_type_vars(&self.renaming);
+    let mut staged = self.bindings.clone();
+    let proof = actual.prove_available_bindings(&expected, &mut staged);
+    // A later argument cannot specialize a lexical caller variable merely
+    // because the callee's fresh variable was previously bound to it.
+    if staged.keys().any(|name| !self.fresh_names.contains(name)) {
+      return TypeProof::NeedsBoundary(TypeBoundaryReason::UnboundTypeVariable);
+    }
+    if !proof.is_mismatch() {
+      self.bindings = staged;
+    }
+    proof
+  }
+
+  pub(crate) fn result(&self, expected: &CalcitTypeAnnotation) -> Option<Arc<CalcitTypeAnnotation>> {
+    let resolved = expected.substitute_type_vars(&self.renaming).substitute_type_vars(&self.bindings);
+    if self.fresh_names.iter().any(|name| resolved.contains_type_var_named(name)) {
+      None
+    } else {
+      Some(resolved)
+    }
+  }
+
+  /// Ordinary inference retains its existing open-payload fallback; proof
+  /// consumers use `result` when all callee variables must have evidence.
+  pub(crate) fn result_or_open(&self, expected: &CalcitTypeAnnotation) -> Arc<CalcitTypeAnnotation> {
+    let mut bindings = self.bindings.clone();
+    for name in &self.fresh_names {
+      bindings.entry(name.clone()).or_insert_with(|| DYNAMIC_TYPE.clone());
+    }
+    expected.substitute_type_vars(&self.renaming).substitute_type_vars(&bindings)
+  }
+}
+
 const TYPE_DIAGNOSTIC_DEPTH_LIMIT: usize = 32;
 
 struct CompatibilityRelationGuard {
@@ -5015,7 +5120,7 @@ impl CalcitTypeAnnotation {
       Calcit::Import(import) => Self::from_import(import).unwrap_or(Self::Dynamic),
       Calcit::Proc(proc) => {
         if let Some(signature) = proc.get_type_signature() {
-          Self::from_function_parts(signature.arg_types.clone(), signature.return_type.clone())
+          Self::from_proc_parts(signature.arg_types.clone(), signature.return_type.clone())
         } else {
           Self::Dynamic
         }
@@ -5058,6 +5163,21 @@ impl CalcitTypeAnnotation {
       rest_type,
       features: Arc::new(HashSet::new()),
     }))
+  }
+
+  /// Proc signatures implicitly quantify their type variables; ordinary
+  /// function parts may instead refer to rigid variables captured from a caller.
+  pub(crate) fn from_proc_parts(arg_types: Vec<Arc<CalcitTypeAnnotation>>, return_type: Arc<CalcitTypeAnnotation>) -> Self {
+    let mut types = arg_types.clone();
+    types.push(return_type.clone());
+    let mut generics = type_variable_names(&types).into_iter().collect::<Vec<_>>();
+    generics.sort();
+    let Self::Fn(signature) = Self::from_function_parts(arg_types, return_type) else {
+      unreachable!()
+    };
+    let mut signature = signature.as_ref().clone();
+    signature.generics = Arc::new(generics);
+    Self::Fn(Arc::new(signature))
   }
 
   /// Preserve the complete callable schema carried by a runtime function.
@@ -6881,6 +7001,46 @@ mod tests {
     assert!(type_var.compatible_with_bindings(&type_var, &mut bindings));
     assert!(type_var.compatible_with_bindings(&type_var, &mut bindings));
     assert!(bindings.is_empty(), "an identical type variable needs no self-binding");
+  }
+
+  #[test]
+  fn call_type_proof_isolates_callee_variables_and_keeps_callers_rigid() {
+    let t = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let optional_t = Arc::new(CalcitTypeAnnotation::Optional(t.clone()));
+    let actual = Arc::new(CalcitTypeAnnotation::List(optional_t.clone()));
+    let expected = Arc::new(CalcitTypeAnnotation::List(t.clone()));
+    let names = [Arc::from("T")];
+    let mut proof = CallTypeProof::new(&names, &[expected.clone(), t.clone()], &[actual.clone()]);
+    assert!(proof.prove(&actual, &expected).is_proven());
+    assert_eq!(proof.result(&t), Some(optional_t.clone()));
+    assert!(!proof.result(&t).unwrap().to_brief_string().contains("#call-type"));
+    let conflicting = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::String));
+    assert!(!proof.prove(&conflicting, &expected).is_proven());
+    assert_eq!(proof.result(&t), Some(optional_t));
+
+    let mut rigid = CallTypeProof::new(&names, &[t.clone()], &[t.clone()]);
+    assert!(rigid.prove(&t, &t).is_proven());
+    assert!(!rigid.prove(&CalcitTypeAnnotation::Number, &t).is_proven());
+    assert_eq!(rigid.result(&t), Some(t.clone()));
+
+    let mut independent = CallTypeProof::new(&names, &[t.clone()], &[Arc::new(CalcitTypeAnnotation::String)]);
+    assert!(independent.prove(&CalcitTypeAnnotation::String, &t).is_proven());
+    assert_eq!(independent.result(&t), Some(Arc::new(CalcitTypeAnnotation::String)));
+    assert!(!independent.prove(&CalcitTypeAnnotation::Number, &t).is_proven());
+
+    let closed = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number)));
+    let open = Arc::new(CalcitTypeAnnotation::List(DYNAMIC_TYPE.clone()));
+    let mut boundary = CallTypeProof::new(&[], &[closed.clone()], &[open.clone()]);
+    assert!(!boundary.prove(&open, &closed).is_proven());
+    assert!(
+      !CalcitTypeAnnotation::Optional(t.clone())
+        .prove_with_bindings(&t, &mut TypeBindings::new())
+        .is_proven()
+    );
+    let mut captured = CallTypeProof::new(&[], &[t.clone()], &[t.clone()]);
+    assert!(captured.prove(&t, &t).is_proven());
+    assert!(!captured.prove(&CalcitTypeAnnotation::String, &t).is_proven());
+    assert_eq!(captured.result_or_open(&t), t);
   }
 
   #[test]

@@ -31,7 +31,7 @@ fn callable_type(value: &Calcit) -> Option<CalcitTypeAnnotation> {
     Calcit::Fn { info, .. } => Some(CalcitTypeAnnotation::from_calcit_fn(info)),
     Calcit::Proc(proc) => proc
       .get_type_signature()
-      .map(|signature| CalcitTypeAnnotation::from_function_parts(signature.arg_types.clone(), signature.return_type.clone())),
+      .map(|signature| CalcitTypeAnnotation::from_proc_parts(signature.arg_types.clone(), signature.return_type.clone())),
     _ => None,
   }
 }

@@ -2129,13 +2129,23 @@
               if (non-nil? x0)
                 &str:concat
                   if head? (&str x0) (&str:concat "| " x0)
-                  &str-spaced false & xs
-                &str-spaced head? & xs
+                  &str-spaced false (&list:nth xs 0) & $ &list:rest xs
+                &str-spaced head? (&list:nth xs 0) & $ &list:rest xs
           :examples $ []
-          :schema $ :: 'Fn $ {} (:rest 'T) (:return 'String)
-            :args $ [] 'Bool 'T
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'Bool $ :: 'Optional 'T
             :generics $ [] 'T
+            :rest $ :: 'Optional 'T
           :tags $ #{} :internal
+          :tests $ [] $ %{} 'TestEntry (:name |nonempty-rest-contract)
+            :code $ quote $ do
+              assert= |A $ &str-spaced true |A
+              assert= "| A" $ &str-spaced false |A
+              assert= "|A B" $ &str-spaced true nil |A nil |B
+              assert= "| A B" $ &str-spaced false nil |A nil |B
+              assert= | $ &str-spaced true nil nil
+              assert= "| B" $ &str-spaced true | |B
+            :tags $ #{} :tail-return-proof :unit
         '&str:compare $ %{} 'CodeEntry
           :doc "|internal function for string comparison\nSyntax: (&str:compare a b)\nParams: a (string), b (string)\nReturns: number\nCompares strings lexicographically, returns -1, 0, or 1"
           :code $ quote &runtime-implementation
@@ -5829,6 +5839,21 @@
               {} (:return 'Bool)
                 :args $ [] 'T 'T
             :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |independent-bool-exits)
+              :code $ quote $ do
+                assert= true $ foldl-compare ([] 1 2 3 4) 0 &<
+                assert= false $ foldl-compare ([] 1 3 2 4) 0 &<
+                assert= true $ foldl-compare ([]) 0 &<
+              :tags $ #{} :tail-return-proof :unit
+            %{} 'TestEntry (:name |independent-number-exits)
+              :code $ quote $ assert= 0
+                loop
+                    n 4
+                  let
+                      next $ &- n 1
+                    if (&< n 1) 0 $ do (&+ n 0) (recur next)
+              :tags $ #{} :tail-return-proof :unit
         'foldl-shortcut $ %{} 'CodeEntry
           :doc "|Internal left fold with early termination. Syntax: (foldl-shortcut list initial default reducer). The reducer receives accumulator and element, then returns an anonymous enum `:: Bool accumulator`; true returns its accumulator immediately, false continues, and exhaustion returns default."
           :code $ quote &runtime-implementation
@@ -6599,6 +6624,25 @@
                 assert= 3 $ sink & $ [] 3
                 assert= 4 $ &+ 1 & $ [] 3
               :tags $ #{} :call-boundary :concrete-call-proof
+            %{} 'TestEntry (:name |nested-generic-call-scope)
+              :code $ quote $ let
+                  identity-list $ fn (xs)
+                    hint-fn $ :: 'Fn $ {}
+                      :generics $ [] 'T
+                      :args $ [] $ :: 'List 'T
+                      :return $ :: 'List 'T
+                    , xs
+                  forward $ fn (xs)
+                    hint-fn $ :: 'Fn $ {}
+                      :generics $ [] 'T
+                      :args $ [] $ :: 'List (:: 'Optional 'T)
+                      :return $ :: 'List $ :: 'Optional 'T
+                    identity-list xs
+                assert= ([] 1 2)
+                  forward $ [] 1 2
+                assert= ([])
+                  forward $ []
+              :tags $ #{} :generic-call-proof :unit
         'identical? $ %{} 'CodeEntry
           :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
           :code $ quote &runtime-implementation
@@ -7910,6 +7954,17 @@
           :tests $ [] $ %{} 'TestEntry (:name |flips-number-sign)
             :code $ quote $ assert= 4 (negate -4)
             :tags $ #{} :core :unit
+        'nil->option $ %{} 'CodeEntry
+          :doc "|Convert a possibly-nil value into nominal Option<T>: nil becomes %none, anything else %some. Preferred spelling of the legacy optionally; both share one implementation."
+          :code $ quote $ defn nil->option (s) (optionally s)
+          :examples $ []
+            quote $ assert= (%some 1) (nil->option 1)
+            quote $ assert= (%none) (nil->option nil)
+            quote $ assert= Option $ &enum:definition (nil->option 1)
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Optional 'T
+            :generics $ [] 'T
+            :return $ :: 'Option 'T
         'nil? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is nil")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -8483,17 +8538,6 @@
             quote $ assert= (%some 1) (optionally 1)
             quote $ assert= (%none) (optionally nil)
             quote $ assert= Option $ &enum:definition (optionally 1)
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Optional 'T
-            :generics $ [] 'T
-            :return $ :: 'Option 'T
-        'nil->option $ %{} 'CodeEntry
-          :doc "|Convert a possibly-nil value into nominal Option<T>: nil becomes %none, anything else %some. Preferred spelling of the legacy optionally; both share one implementation."
-          :code $ quote $ defn nil->option (s) (optionally s)
-          :examples $ []
-            quote $ assert= (%some 1) (nil->option 1)
-            quote $ assert= (%none) (nil->option nil)
-            quote $ assert= Option $ &enum:definition (nil->option 1)
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Optional 'T
             :generics $ [] 'T

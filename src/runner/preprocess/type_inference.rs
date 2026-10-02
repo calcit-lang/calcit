@@ -292,12 +292,22 @@ fn core_option_none_without_payload(expr: &Calcit, actual_type: &CalcitTypeAnnot
 
 // A known error has no success payload. Bind E from the actual error while
 // leaving T for a later fallback; an open Result is not proof of an error.
+#[cfg(test)]
 fn bind_core_result_err_without_ok_payload(
   expr: &Calcit,
   actual_type: &CalcitTypeAnnotation,
   expected_type: &CalcitTypeAnnotation,
   bindings: &mut HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
 ) -> Option<bool> {
+  let (actual_error, expected_error) = core_result_err_payload_types(expr, actual_type, expected_type)?;
+  Some(!actual_error.prove_available_bindings(expected_error, bindings).is_mismatch())
+}
+
+fn core_result_err_payload_types<'a>(
+  expr: &Calcit,
+  actual_type: &'a CalcitTypeAnnotation,
+  expected_type: &'a CalcitTypeAnnotation,
+) -> Option<(&'a CalcitTypeAnnotation, &'a CalcitTypeAnnotation)> {
   let Calcit::List(items) = expr else { return None };
   let is_core_err = match (items.len(), items.first(), items.get(1), items.get(2)) {
     (2, Some(Calcit::Import(CalcitImport { ns, def, .. })), _, _) => ns.as_ref() == calcit::CORE_NS && def.as_ref() == "%err",
@@ -328,12 +338,7 @@ fn bind_core_result_err_without_ok_payload(
   if !matches!(actual_ok.as_ref(), CalcitTypeAnnotation::Dynamic) || !matches!(expected_ok.as_ref(), CalcitTypeAnnotation::TypeVar(_)) {
     return None;
   }
-  Some(
-    !actual_error
-      .as_ref()
-      .prove_available_bindings(expected_error.as_ref(), bindings)
-      .is_mismatch(),
-  )
+  Some((actual_error.as_ref(), expected_error.as_ref()))
 }
 
 fn merge_result_constructor_branches(
@@ -413,6 +418,78 @@ pub(crate) fn infer_if_return_type(xs: &CalcitList, scope_types: &ScopeTypes) ->
   } else {
     let true_type = resolve_type_value(true_expr, scope_types)?;
     Some(Arc::new(CalcitTypeAnnotation::Optional(true_type)))
+  }
+}
+
+/// Infer independent function exits without assigning a value type to tail recur.
+/// A transfer is valid only against the current lexical parameter contract.
+/// Ordinary expression inference intentionally continues to treat recur as unknown.
+pub(crate) fn infer_function_exit_type(
+  expr: &Calcit,
+  scope_types: &ScopeTypes,
+  parameters: &[Arc<CalcitTypeAnnotation>],
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  enum Exit {
+    Value(Arc<CalcitTypeAnnotation>),
+    Transfer,
+  }
+
+  fn infer(expr: &Calcit, scope: &ScopeTypes, parameters: &[Arc<CalcitTypeAnnotation>]) -> Option<Exit> {
+    let Calcit::List(items) = expr else {
+      return resolve_type_value(expr, scope).map(Exit::Value);
+    };
+    match items.first()? {
+      Calcit::Proc(CalcitProc::Recur) => {
+        if items.len() != parameters.len() + 1 {
+          return None;
+        }
+        let mut bindings = HashMap::new();
+        for (argument, expected) in items.iter().skip(1).zip(parameters) {
+          if !matches!(
+            resolve_type_value(argument, scope)?.prove_with_bindings(expected, &mut bindings),
+            crate::calcit::type_annotation::TypeProof::Proven
+          ) || !bindings.is_empty()
+          {
+            // Recur preserves the current instantiation. Unlike a new call,
+            // it cannot infer fresh substitutions for lexical type variables.
+            return None;
+          }
+        }
+        Some(Exit::Transfer)
+      }
+      Calcit::Syntax(CalcitSyntax::CoreLet, _) => {
+        let tail = items.get(items.len().checked_sub(1)?)?;
+        infer(tail, &core_let_scope(items, scope), parameters)
+      }
+      Calcit::Syntax(CalcitSyntax::If, _) if items.len() == 4 => {
+        let left = items.get(2)?;
+        let right = items.get(3)?;
+        let left_exit = if expression_definitely_diverges(left) {
+          Exit::Transfer
+        } else {
+          infer(left, scope, parameters)?
+        };
+        let right_exit = if expression_definitely_diverges(right) {
+          Exit::Transfer
+        } else {
+          infer(right, scope, parameters)?
+        };
+        match (left_exit, right_exit) {
+          (Exit::Transfer, other) | (other, Exit::Transfer) => Some(other),
+          (Exit::Value(left_type), Exit::Value(right_type)) => merge_result_constructor_branches(left, &left_type, right, &right_type)
+            .or_else(|| merge_option_absence_branch(left, &left_type, right, &right_type))
+            .or_else(|| merge_if_branch_types(left_type, right_type))
+            .map(Exit::Value),
+        }
+      }
+      _ => resolve_type_value(expr, scope).map(Exit::Value),
+    }
+  }
+
+  match infer(expr, scope_types, parameters)? {
+    Exit::Value(value) => Some(value),
+    // A recursive cycle alone cannot independently establish a return contract.
+    Exit::Transfer => None,
   }
 }
 
@@ -532,13 +609,20 @@ fn resolve_generic_return_type_parts<'a>(
     return None;
   }
 
-  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
-  let mut propagated_generics: HashSet<Arc<str>> = HashSet::new();
+  let call_args = call_args.collect::<Vec<_>>();
+  let actual_types = call_args
+    .iter()
+    .filter_map(|arg| resolve_type_value(arg, scope_types))
+    .collect::<Vec<_>>();
+  let mut expected_types = arg_types.to_vec();
+  expected_types.extend(rest_type.cloned());
+  expected_types.push(return_type.clone());
+  let mut call_proof = crate::calcit::type_annotation::CallTypeProof::new(generics, &expected_types, &actual_types);
 
   // Match fixed and variadic actual arguments against the declared types.
   // Rest-only generic functions otherwise lose their payload type before a
   // typed receiver method has a chance to specialize.
-  for (idx, arg) in call_args.enumerate() {
+  for (idx, arg) in call_args.into_iter().enumerate() {
     let Some(expected_type) = arg_types.get(idx).or(rest_type) else {
       break;
     };
@@ -554,56 +638,21 @@ fn resolve_generic_return_type_parts<'a>(
       }
       _ => None,
     })?;
-    if matches!(actual_type.as_ref(), CalcitTypeAnnotation::Dynamic)
-      && let CalcitTypeAnnotation::TypeVar(var) = expected_type.as_ref()
-      && generics.iter().any(|generic| generic == var)
-    {
-      bindings.insert(var.clone(), calcit::DYNAMIC_TYPE.clone());
-      continue;
-    }
     if core_option_none_without_payload(arg, actual_type.as_ref(), expected_type.as_ref()) {
       continue;
     }
-    if let Some(compatible) = bind_core_result_err_without_ok_payload(arg, actual_type.as_ref(), expected_type.as_ref(), &mut bindings)
-    {
-      if !compatible {
+    if let Some((actual_error, expected_error)) = core_result_err_payload_types(arg, actual_type.as_ref(), expected_type.as_ref()) {
+      if call_proof.prove(actual_error, expected_error).is_mismatch() {
         return None;
       }
       continue;
     }
-    for generic in generics {
-      if expected_type.contains_type_var_named(generic) && actual_type.contains_type_var_named(generic) {
-        propagated_generics.insert(generic.clone());
-      }
-    }
-    if actual_type
-      .as_ref()
-      .prove_available_bindings(expected_type.as_ref(), &mut bindings)
-      .is_mismatch()
-    {
+    if call_proof.prove(actual_type.as_ref(), expected_type.as_ref()).is_mismatch() {
       return None;
     }
   }
 
-  for generic in generics {
-    if !propagated_generics.contains(generic) {
-      bindings.entry(generic.clone()).or_insert_with(|| calcit::DYNAMIC_TYPE.clone());
-    }
-  }
-
-  let resolved = return_type.substitute_type_vars(&bindings);
-  // A generic caller may pass its own type variable through a generic helper.
-  // Preserve that symbolic relation instead of degrading it to Dynamic merely
-  // because both lexical contracts use the same stable type-variable name.
-  let unresolved_are_propagated = generics
-    .iter()
-    .filter(|generic| resolved.contains_type_var_named(generic))
-    .all(|generic| propagated_generics.contains(generic));
-  if resolved.contains_type_var() && !unresolved_are_propagated {
-    None
-  } else {
-    Some(resolved)
-  }
+  Some(call_proof.result_or_open(return_type))
 }
 
 pub(crate) fn infer_return_type_from_compiled_callable(
@@ -1309,7 +1358,7 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
     Calcit::Proc(proc) => proc
       .get_type_signature()
       .map(|signature| {
-        Arc::new(CalcitTypeAnnotation::from_function_parts(
+        Arc::new(CalcitTypeAnnotation::from_proc_parts(
           signature.arg_types.clone(),
           signature.return_type.clone(),
         ))
@@ -1335,8 +1384,31 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
         Calcit::Syntax(CalcitSyntax::CallSpread, _) => {
           let callable = xs.get(1)?;
           let arguments = xs.drop_left().drop_left();
-          let expanded = expand_literal_call_arguments(&arguments).ok()?;
-          infer_type_from_expr(&Calcit::from(expanded.push_left(callable.clone())), scope_types)
+          if let Ok(expanded) = expand_literal_call_arguments(&arguments) {
+            return infer_type_from_expr(&Calcit::from(expanded.push_left(callable.clone())), scope_types);
+          }
+          let annotation = resolve_type_value(callable, scope_types)?;
+          let CalcitTypeAnnotation::Fn(signature) = annotation.as_ref() else {
+            return None;
+          };
+          let (projected, contract) = super::typed_rest_spread_contract(signature, &arguments)?;
+          let actual_types = projected
+            .iter()
+            .map(|argument| resolve_type_value(argument, scope_types))
+            .collect::<Option<Vec<_>>>()?;
+          let mut expected_types = contract.arg_types.clone();
+          expected_types.push(contract.return_type.clone());
+          let mut call_proof = crate::calcit::type_annotation::CallTypeProof::new(&contract.generics, &expected_types, &actual_types);
+          for (argument, expected) in projected.iter().zip(&contract.arg_types) {
+            if !call_proof
+              .prove(resolve_type_value(argument, scope_types)?.as_ref(), expected)
+              .is_proven()
+            {
+              return None;
+            }
+          }
+          let logical_return = call_proof.result(&contract.return_type)?;
+          Some(invocation_return_type(&contract, logical_return, false))
         }
         // Hints refine the surrounding function or a local binding, but the
         // hint expression itself returns Nil; it never wraps a function value.
@@ -1520,35 +1592,36 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
           let CalcitTypeAnnotation::Fn(info) = method_type.as_ref() else {
             return Some(calcit::DYNAMIC_TYPE.clone());
           };
-          let mut bindings = HashMap::new();
-          for (argument, expected) in xs.iter().skip(1).zip(info.arg_types.iter()) {
+          let actual_types = xs
+            .iter()
+            .skip(1)
+            .filter_map(|argument| resolve_type_value(argument, scope_types))
+            .collect::<Vec<_>>();
+          let mut expected_types = info.arg_types.clone();
+          expected_types.extend(info.rest_type.iter().cloned());
+          expected_types.push(info.return_type.clone());
+          let mut call_proof = crate::calcit::type_annotation::CallTypeProof::new(&info.generics, &expected_types, &actual_types);
+          for (index, argument) in xs.iter().skip(1).enumerate() {
+            let Some(expected) = info.arg_types.get(index).or(info.rest_type.as_ref()) else {
+              break;
+            };
             let Some(actual) = resolve_type_value(argument, scope_types) else {
               continue;
             };
             if core_option_none_without_payload(argument, actual.as_ref(), expected.as_ref()) {
               continue;
             }
-            if let Some(compatible) =
-              bind_core_result_err_without_ok_payload(argument, actual.as_ref(), expected.as_ref(), &mut bindings)
-            {
-              if !compatible {
+            if let Some((actual_error, expected_error)) = core_result_err_payload_types(argument, actual.as_ref(), expected.as_ref()) {
+              if call_proof.prove(actual_error, expected_error).is_mismatch() {
                 return Some(calcit::DYNAMIC_TYPE.clone());
               }
               continue;
             }
-            if actual
-              .as_ref()
-              .prove_available_bindings(expected.as_ref(), &mut bindings)
-              .is_mismatch()
-            {
+            if call_proof.prove(actual.as_ref(), expected.as_ref()).is_mismatch() {
               return Some(calcit::DYNAMIC_TYPE.clone());
             }
           }
-          Some(invocation_return_type(
-            info,
-            info.return_type.substitute_type_vars(&bindings),
-            false,
-          ))
+          Some(invocation_return_type(info, call_proof.result_or_open(&info.return_type), false))
         }
 
         // Method access: infer struct field type when available
@@ -2990,6 +3063,61 @@ mod tests {
       value.as_deref(),
       Some(CalcitTypeAnnotation::JsNullish(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::JsObject)
     ));
+  }
+
+  #[test]
+  fn function_exit_evidence_keeps_tail_transfers_out_of_expression_types() {
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let recur = |arguments: Vec<Calcit>| {
+      let mut call = vec![Calcit::Proc(CalcitProc::Recur)];
+      call.extend(arguments);
+      Calcit::from(call)
+    };
+    let branch = |left, right| {
+      Calcit::from(vec![
+        Calcit::Syntax(CalcitSyntax::If, "tests.exits".into()),
+        Calcit::Bool(true),
+        left,
+        right,
+      ])
+    };
+    let parameters = [number.clone()];
+    let mut scope = ScopeTypes::new();
+    scope.insert(Arc::from("open"), calcit::DYNAMIC_TYPE.clone());
+    let transfer = recur(vec![Calcit::Number(2.0)]);
+    let live = branch(Calcit::Number(1.0), transfer.clone());
+    assert_eq!(infer_function_exit_type(&live, &scope, &parameters), Some(number.clone()));
+    assert!(
+      resolve_type_value(&live, &scope).is_none(),
+      "ordinary expressions do not acquire recur authority"
+    );
+    assert!(
+      infer_function_exit_type(&transfer, &scope, &parameters).is_none(),
+      "a cycle is not independent return evidence"
+    );
+    for invalid in [
+      recur(vec![]),
+      recur(vec![Calcit::Str("bad".into())]),
+      recur(vec![local("open", calcit::DYNAMIC_TYPE.clone())]),
+    ] {
+      assert!(infer_function_exit_type(&branch(Calcit::Number(1.0), invalid), &scope, &parameters).is_none());
+    }
+    let open = local("open", calcit::DYNAMIC_TYPE.clone());
+    assert_eq!(
+      infer_function_exit_type(&branch(open, transfer), &scope, &parameters),
+      Some(calcit::DYNAMIC_TYPE.clone())
+    );
+    assert!(infer_function_exit_type(&branch(Calcit::Number(1.0), Calcit::Str("bad".into())), &scope, &parameters).is_none());
+    let generic = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    scope.insert(Arc::from("item"), generic.clone());
+    let generic_parameters = [generic.clone()];
+    let same_instantiation = branch(Calcit::Number(1.0), recur(vec![local("item", generic)]));
+    assert_eq!(
+      infer_function_exit_type(&same_instantiation, &scope, &generic_parameters),
+      Some(number)
+    );
+    let changed_instantiation = branch(Calcit::Number(1.0), recur(vec![Calcit::Number(2.0)]));
+    assert!(infer_function_exit_type(&changed_instantiation, &scope, &generic_parameters).is_none());
   }
 
   #[test]

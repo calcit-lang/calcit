@@ -1050,6 +1050,7 @@ pub(crate) fn check_function_return_type(
   declared_return_type: &Arc<CalcitTypeAnnotation>,
   async_invocation: bool,
   scope_types: &ScopeTypes,
+  recur_parameters: Option<&[Arc<CalcitTypeAnnotation>]>,
   info: CallTypeCheckInfo<'_>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) -> Result<(), CalcitErr> {
@@ -1067,7 +1068,10 @@ pub(crate) fn check_function_return_type(
     .find(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
     .unwrap_or(&Calcit::Nil);
 
-  let actual_type = resolve_type_value(last_expr, scope_types);
+  let actual_type = recur_parameters.map_or_else(
+    || resolve_type_value(last_expr, scope_types),
+    |parameters| super::type_inference::infer_function_exit_type(last_expr, scope_types, parameters),
+  );
   let audit = super::REQUIRE_ASSERTION_PROOF.with(std::cell::Cell::get);
   let unproven = |actual: &str| {
     let location = last_expr
@@ -1217,6 +1221,7 @@ mod tests {
       &expected,
       false,
       &ScopeTypes::new(),
+      None,
       CallTypeCheckInfo {
         file_ns: "tests.return",
         def_name: "callback",
@@ -1261,6 +1266,7 @@ mod tests {
       &expected,
       false,
       &scope_types,
+      None,
       CallTypeCheckInfo {
         file_ns: "tests.return",
         def_name: "callback",
