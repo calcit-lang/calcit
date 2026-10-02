@@ -105,6 +105,14 @@ name = "calcit-wasi-preprocess-harness"
 path = "src/bin/wasi_preprocess_harness.rs"
 required-features = ["internal-wasi-preprocess-harness"]
 
+# Used by CI to run the CLI-heavy contract scripts: much faster to run than the debug
+# build, much faster to build than `release` (no LTO, parallel codegen units).
+[profile.ci]
+inherits = "release"
+lto = false
+opt-level = 1
+codegen-units = 16
+
 [profile.release]
 lto = true
 opt-level = "s"

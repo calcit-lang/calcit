@@ -276,38 +276,24 @@ jobs:
           && node scripts/check-struct-field-js.mjs
           && bash scripts/test-js-command.sh
 
+      - name: "build optimized CLI for the backend contract scripts"
+        # Every script starts the CLI many times and each start preprocesses the whole
+        # core library, which is an order of magnitude slower in the debug build.
+        run: cargo build --profile ci --bin calcit
+
       - name: "verify shared Calcit backend contracts"
-        # Each script owns a temporary project directory and only reads the prebuilt
-        # debug binary, so they run concurrently; wall time is the slowest script.
+        env:
+          CALCIT_BIN: target/ci/calcit
         run: |
           node --test scripts/core-api-contract.test.mjs
-          scripts=(
-            core-api-contract
-            check-string-unicode
-            check-numeric-predicate
-            check-nil-predicate
-            check-monotonic-clock-js
-            check-helper-inference
-            check-parse-boundary
-            check-known-assertion
-          )
-          logs="$RUNNER_TEMP/backend-contracts"
-          mkdir -p "$logs"
-          pids=()
-          for script in "${scripts[@]}"; do
-            node "scripts/$script.mjs" >"$logs/$script.log" 2>&1 &
-            pids+=("$!")
-          done
-          failed=0
-          for index in "${!scripts[@]}"; do
-            script="${scripts[$index]}"
-            if wait "${pids[$index]}"; then status="passed"; else status="FAILED"; failed=1; fi
-            echo "::group::$script $status"
-            cat "$logs/$script.log"
-            echo "::endgroup::"
-            if [ "$status" = "FAILED" ]; then echo "::error::$script failed"; fi
-          done
-          exit "$failed"
+          node scripts/core-api-contract.mjs
+          node scripts/check-string-unicode.mjs
+          node scripts/check-numeric-predicate.mjs
+          node scripts/check-nil-predicate.mjs
+          node scripts/check-monotonic-clock-js.mjs
+          node scripts/check-helper-inference.mjs
+          node scripts/check-parse-boundary.mjs
+          node scripts/check-known-assertion.mjs
 
       - name: "run generated namespace-import regression in Node"
         run: CALCIT_JS_NAMESPACE_IMPORT_RUNTIME=1 cargo test --test js_namespace_import_cli
