@@ -51,6 +51,9 @@ pub fn unescape_symbol_from_js(name: &str) -> String {
 
 thread_local! {
   static INLINE_ALL_ARGS: Cell<bool> = const { Cell::new(false) };
+  /// Escaped names of `let` bindings whose initializer is being emitted. The JS `let`
+  /// is already in its temporal dead zone there, so a same-name host global must be qualified.
+  static PENDING_LET_BINDINGS: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
 }
 
 static JS_NAMESPACE_SOURCES: LazyLock<RwLock<std::collections::HashMap<String, crate::JsNamespaceSource>>> =
@@ -496,12 +499,22 @@ fn js_module_binds_name(ns: &str, root: &str) -> bool {
 /// module, so qualify the reference with `globalThis.` whenever a collision
 /// exists. This keeps `js/Element` pointed at `globalThis.Element` even when the
 /// same module imports a Calcit schema named `Element`.
+#[cfg(test)]
 fn qualify_js_host_global(ns: &str, code: &str) -> String {
+  qualify_js_host_global_in_scope(ns, code, &HashSet::new())
+}
+
+/// A lexical binding (function parameter or `let`) with the same name as a `js/...`
+/// root also shadows the host global, and a `let` initializer even hits its own
+/// temporal dead zone, so those collisions are qualified like module bindings.
+fn qualify_js_host_global_in_scope(ns: &str, code: &str, local_defs: &HashSet<Arc<str>>) -> String {
   let root = code.split(['.', '?', '[']).next().unwrap_or(code);
   if root.is_empty() || root == "globalThis" || !is_plain_js_identifier(root) {
     return code.to_owned();
   }
-  if js_module_binds_name(ns, root) {
+  let local_collision = local_defs.iter().any(|name| escape_var(name.as_ref()) == root)
+    || PENDING_LET_BINDINGS.with(|pending| pending.borrow().iter().any(|name| name == root));
+  if local_collision || js_module_binds_name(ns, root) {
     format!("globalThis.{code}")
   } else {
     code.to_owned()
@@ -671,7 +684,7 @@ fn to_js_code(
         let proc_prefix = get_proc_prefix(ns);
         Ok(format!("new {proc_prefix}CalcitCirruQuote({})", cirru_to_js(code)?))
       }
-      Calcit::RawCode(calcit::RawCodeType::Js, code) => Ok(qualify_js_host_global(ns, code)),
+      Calcit::RawCode(calcit::RawCodeType::Js, code) => Ok(qualify_js_host_global_in_scope(ns, code, local_defs)),
       a => Err(format!(
         "cannot emit JS for compiler-only value `{a}`; preprocessing should lower data definitions to runtime references"
       )),
@@ -1488,7 +1501,10 @@ fn gen_let_code(
           Calcit::Local(CalcitLocal { sym, .. }) => {
             // TODO `let` inside expressions makes syntax error
             let left = escape_var(sym);
-            let right = to_js_code(&def_code, ns, &scoped_defs, file_imports, tags, None)?;
+            PENDING_LET_BINDINGS.with(|pending| pending.borrow_mut().push(left.clone()));
+            let right = to_js_code(&def_code, ns, &scoped_defs, file_imports, tags, None);
+            PENDING_LET_BINDINGS.with(|pending| pending.borrow_mut().pop());
+            let right = right?;
             writeln!(defs_code, "let {left} = {right};").expect("write");
 
             if scoped_defs.contains(sym) {
@@ -3042,6 +3058,28 @@ mod tests {
     assert_eq!(qualify_js_host_global(ns, "globalThis.Element"), "globalThis.Element");
     assert_eq!(qualify_js_host_global(ns, "Array.from"), "Array.from");
     assert_eq!(qualify_js_host_global(ns, "typeof"), "typeof");
+  }
+
+  #[test]
+  fn js_host_global_reference_qualifies_on_lexical_binding_collision() {
+    let ns = "tests.emit-js-global-local-shadow";
+    let empty = HashSet::new();
+    let locals: HashSet<Arc<str>> = HashSet::from([Arc::from("location")]);
+
+    // A parameter or enclosing `let` named like the global shadows it.
+    assert_eq!(qualify_js_host_global_in_scope(ns, "location", &locals), "globalThis.location");
+    assert_eq!(
+      qualify_js_host_global_in_scope(ns, "location.host", &locals),
+      "globalThis.location.host"
+    );
+    assert_eq!(qualify_js_host_global_in_scope(ns, "document", &locals), "document");
+    assert_eq!(qualify_js_host_global_in_scope(ns, "location", &empty), "location");
+
+    // The initializer of a `let` sits in the binding's own temporal dead zone.
+    PENDING_LET_BINDINGS.with(|pending| pending.borrow_mut().push("location".to_owned()));
+    assert_eq!(qualify_js_host_global_in_scope(ns, "location", &empty), "globalThis.location");
+    PENDING_LET_BINDINGS.with(|pending| pending.borrow_mut().pop());
+    assert_eq!(qualify_js_host_global_in_scope(ns, "location", &empty), "location");
   }
 
   #[test]
