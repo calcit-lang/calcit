@@ -10,6 +10,8 @@
 
 不引入新的表层类型或 every? 特例，不按 initial/default 猜未知 callback 返回。开放 callback、未知 payload 和无法读取实现的值保留未证明。命名函数只读取已有 compiled source，不为证明求值 thunk。
 
+自查发现 caller 的 Number 参数与 reducer 内 Dynamic let 同名时，旧实现会错误借用 caller 证据。修复统一的 let/match 词法推导，Dynamic binder 也必须遮蔽外层同名证据；callback 参数独立绑定，具名实现不继承 caller scope。加入 let/match 同名负例，实际错误返回 String 不能再被证明为 Number。
+
 ## 验证
 
 语义放在 core definition `:tests`，既有 assertion runner 从这些源码表达式回放 native/JS 和显式 proof。负例覆盖控制位、payload、default、开放内容及混合分支，preview 保持源文件字节不变。WASM 能力和 core decoder 的剩余义务按实际结果记录，不把普通执行成功写成完整证明成功。

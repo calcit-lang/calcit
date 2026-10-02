@@ -412,7 +412,7 @@ pub(crate) fn infer_if_return_type(xs: &CalcitList, scope_types: &ScopeTypes) ->
 }
 
 /// Read branch bodies from either the pair-based or indexed enum representation.
-fn preprocessed_match_bodies(xs: &CalcitList) -> Option<Vec<&Calcit>> {
+fn preprocessed_match_branches(xs: &CalcitList) -> Option<Vec<(&Calcit, &Calcit)>> {
   if xs.len() < 3 {
     return None;
   }
@@ -433,19 +433,51 @@ fn preprocessed_match_bodies(xs: &CalcitList) -> Option<Vec<&Calcit>> {
     if pair.len() != 2 {
       return None;
     }
-    bodies.push(pair.get(1)?);
+    bodies.push((pair.first()?, pair.get(1)?));
   }
   Some(bodies)
+}
+
+fn preprocessed_match_bodies(xs: &CalcitList) -> Option<Vec<&Calcit>> {
+  Some(preprocessed_match_branches(xs)?.into_iter().map(|(_, body)| body).collect())
+}
+
+/// A Dynamic binder must shadow same-named outer evidence, too.
+fn bind_pattern_scope(pattern: &Calcit, scope: &mut ScopeTypes) {
+  match pattern {
+    Calcit::Local(local) => {
+      scope.insert(local.sym.clone(), local.type_info.clone());
+    }
+    Calcit::List(items) => {
+      for item in items.iter() {
+        bind_pattern_scope(item, scope);
+      }
+    }
+    _ => {}
+  }
+}
+
+fn core_let_scope(items: &CalcitList, scope_types: &ScopeTypes) -> ScopeTypes {
+  let mut scope = scope_types.clone();
+  if let Some(Calcit::List(pair)) = items.get(1)
+    && let (Some(Calcit::Local(local)), Some(value)) = (pair.first(), pair.get(1))
+  {
+    let evidence = resolve_type_value(value, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
+    scope.insert(local.sym.clone(), evidence);
+  }
+  scope
 }
 
 /// Merge the body types of a preprocessed `match` expression.
 fn infer_match_return_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
   let mut inferred: Option<Arc<CalcitTypeAnnotation>> = None;
-  for branch_expr in preprocessed_match_bodies(xs)? {
+  for (pattern, branch_expr) in preprocessed_match_branches(xs)? {
     if expression_definitely_diverges(branch_expr) {
       continue;
     }
-    let branch_type = resolve_type_value(branch_expr, scope_types)?;
+    let mut branch_scope = scope_types.clone();
+    bind_pattern_scope(pattern, &mut branch_scope);
+    let branch_type = resolve_type_value(branch_expr, &branch_scope)?;
     inferred = Some(match inferred {
       Some(previous) => merge_if_branch_types(previous, branch_type)?,
       None => branch_type,
@@ -1306,7 +1338,7 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
           // &let has format: (&let (binding) body...)
           // The last element is the return value
           if xs.len() > 1 {
-            infer_type_from_expr(&xs[xs.len() - 1], scope_types)
+            infer_type_from_expr(&xs[xs.len() - 1], &core_let_scope(xs, scope_types))
           } else {
             None
           }
@@ -2421,16 +2453,18 @@ fn shortcut_payload_is_proven(expr: &Calcit, accumulator: &CalcitTypeAnnotation,
     }
     Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) => items
       .get(items.len().saturating_sub(1))
-      .is_some_and(|tail| shortcut_payload_is_proven(tail, accumulator, scope_types)),
+      .is_some_and(|tail| shortcut_payload_is_proven(tail, accumulator, &core_let_scope(items, scope_types))),
     Some(Calcit::Syntax(CalcitSyntax::If, _)) if items.len() == 4 => [items.get(2), items.get(3)].into_iter().all(|branch| {
       branch
         .is_some_and(|branch| expression_definitely_diverges(branch) || shortcut_payload_is_proven(branch, accumulator, scope_types))
     }),
-    Some(Calcit::Syntax(CalcitSyntax::Match, _)) => preprocessed_match_bodies(items).is_some_and(|branches| {
+    Some(Calcit::Syntax(CalcitSyntax::Match, _)) => preprocessed_match_branches(items).is_some_and(|branches| {
       !branches.is_empty()
-        && branches
-          .into_iter()
-          .all(|branch| expression_definitely_diverges(branch) || shortcut_payload_is_proven(branch, accumulator, scope_types))
+        && branches.into_iter().all(|(pattern, branch)| {
+          let mut branch_scope = scope_types.clone();
+          bind_pattern_scope(pattern, &mut branch_scope);
+          expression_definitely_diverges(branch) || shortcut_payload_is_proven(branch, accumulator, &branch_scope)
+        })
     }),
     _ => false,
   }
@@ -2452,7 +2486,9 @@ fn infer_shortcut_fold_return(xs: &CalcitList, scope_types: &ScopeTypes) -> Opti
   // Use compiled source only: resolving a runtime thunk here could re-enter
   // preprocessing, and open callable metadata cannot prove enum slot values.
   let owned;
+  let mut reducer_scope = scope_types.clone();
   let reducer = if let Calcit::Import(import) = reducer {
+    reducer_scope.clear();
     owned = program::lookup_compiled_def(&import.ns, &import.def)?.preprocessed_code;
     &owned
   } else {
@@ -2466,6 +2502,7 @@ fn infer_shortcut_fold_return(xs: &CalcitList, scope_types: &ScopeTypes) -> Opti
   if rest.is_some() || arg_types.len() != 2 {
     return None;
   }
+  bind_pattern_scope(body.get(2)?, &mut reducer_scope);
   let signature = CalcitTypeAnnotation::from_function_parts(arg_types, Arc::new(CalcitTypeAnnotation::AnonymousEnum));
   if !signature.is_proven_for(expected.get(3)?) {
     return None;
@@ -2479,7 +2516,7 @@ fn infer_shortcut_fold_return(xs: &CalcitList, scope_types: &ScopeTypes) -> Opti
     .skip(3)
     .filter(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
     .last()?;
-  shortcut_payload_is_proven(tail, &accumulator, scope_types).then_some(accumulator)
+  shortcut_payload_is_proven(tail, &accumulator, &reducer_scope).then_some(accumulator)
 }
 
 fn infer_enum_annotation(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {

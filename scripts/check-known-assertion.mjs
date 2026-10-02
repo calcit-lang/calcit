@@ -87,6 +87,23 @@ try {
     assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_ASSERT_TYPE_UNPROVEN|W_PROC_ARG_TYPE_MISMATCH|contradictory producer contract/);
     assert.deepEqual(await readFile(snapshot), original);
   }
+  // A typed caller's name must not lend proof to a shadowing Dynamic local.
+  for (const shadowBody of [
+    ["let", [["payload", ["parse-cirru-edn", "|do |bad"]]], ["::", "true", "payload"]],
+    ["match", ["Option", ":some", ["parse-cirru-edn", "|do |bad"]], [[":some", "payload"], ["::", "true", "payload"]], [[":none"], ["::", "true", "acc"]]],
+  ]) {
+    run("edit", "def", "calcit.assert-evidence/shadow-proof", "--overwrite", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "shadow-proof", ["payload"], ["foldl-shortcut", ["[]", "1"], "0", "0", ["fn", ["acc", "item"], shadowBody]]]));
+    run("edit", "schema", "calcit.assert-evidence/shadow-proof", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)");
+    const original = await readFile(snapshot);
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.assert-evidence", "--def", "shadow-proof", "--format", "edn"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_FN_RETURN_UNPROVEN/);
+    assert.deepEqual(await readFile(snapshot), original);
+  }
+  run("edit", "rm-def", "calcit.assert-evidence/shadow-proof");
   setBody([...tests, ...returnTests, ...callTests, ...hintTests, ...asyncTests, ...quoteTests].map(test => test.code));
   run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
