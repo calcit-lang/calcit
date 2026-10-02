@@ -202,6 +202,13 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   该入口运行共享 compiler proof，不另建 callable 检查器；同一定义较早的非 callable 参数缺证据也会先报告。
   矛盾类型、未解决的返回/断言错误或 scope 外错误会阻止审计。每个定义只定位首个错误，只扫描 `:code`；
   `:tests` 与 `:examples` 仍需另行验证。当前规则要求严格模式，不进入默认 preset 或 strict workflow 的自动写回集合。
+- `nominal-write-proof-v1` 检查名义 Struct 的字段写入，运行
+  `calcit fix --rule nominal-write-proof-v1 --ns app.main --def update --format edn`。
+  `state .assoc :count incoming` 沿真实选中的方法实现读取字段契约；Number 字段接受已证明的 Number，
+  Dynamic 输入保留 `E_CALL_ARGUMENT_UNPROVEN`，报告实际 value 位置及字段名，不自动插入强转或改成 Map。
+  prefix/postfix 方法与底层写入复用同一证明关系；用户自定义实现不因方法同名而被当作 core 写入。
+  明确类型矛盾或不存在的字段阻断审计，较早的其他 compiler 错误仍会先报告。
+  建议只供 review，replacement 为空；只扫描 `:code`，不进入默认 preset 或 strict workflow 自动写回集合。
 - `assert-type-proof-v1` 显式审计断言前的类型证据，运行
   `calcit fix --rule assert-type-proof-v1 --ns app.main --def run --format edn` 查看原始输入位置和编译栈。
   已知矛盾保留 `E_ASSERT_TYPE_MISMATCH`；开放输入、未知 callable 或未绑定泛型缺少证明时报告

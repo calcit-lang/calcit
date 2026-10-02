@@ -256,6 +256,68 @@ pub(super) fn try_parse_defrecord_form(code: &Calcit) -> Option<CalcitStructDef>
 /// Emit `&struct:nth struct_value idx_literal tag_literal` — O(1) field access by index.
 ///
 /// `idx` must be a compile-time Number constant.
+/// Copy a nominal value before updating a statically selected field.
+pub(super) fn emit_struct_assoc_at(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(4, args, "&struct:assoc-at requires 4 args (struct, index, tag, value)")?;
+  let (Calcit::Number(index), Calcit::Tag(field)) = (&args[1], &args[2]) else {
+    return Err("&struct:assoc-at requires a static field index and tag in WASM".into());
+  };
+  if !index.is_finite() || *index < 0.0 || index.fract() != 0.0 || *index > (u32::MAX / 8 - 2) as f64 {
+    return Err("&struct:assoc-at field index is out of range".into());
+  }
+  let index = *index as usize;
+  let field_id = ctx.tag_index.get(field.ref_str()).copied().ok_or("unknown Struct field tag")?;
+  let mut layouts = ctx
+    .struct_layouts
+    .field_tags
+    .iter()
+    .filter_map(|(id, fields)| (fields.get(index) == Some(&field_id)).then_some(*id))
+    .collect::<Vec<_>>();
+  layouts.sort_unstable();
+
+  let src = emit_ptr_to_i32(ctx, &args[0])?;
+  let value = ctx.alloc_local();
+  emit_expr(ctx, &args[3])?;
+  ctx.emit(Instruction::LocalSet(value));
+
+  // Validate metadata against the actual nominal layout before touching fields.
+  ctx.emit(Instruction::I32Const(0));
+  for layout in layouts {
+    ctx.emit(Instruction::LocalGet(src));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+    ctx.emit(f64_const(layout as f64));
+    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::I32Or);
+  }
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+
+  let count = emit_load_count_i32(ctx, src);
+  let slots = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32Const(2));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(slots));
+  let size = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(slots));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::LocalSet(size));
+  let dst = ctx.alloc_local_typed(ValType::I32);
+  emit_bump_alloc_dynamic(ctx, size, dst, "struct");
+  let dst_base = emit_addr_offset(ctx, dst, 0);
+  let src_base = emit_addr_offset(ctx, src, 0);
+  emit_copy_f64_loop(ctx, dst_base, src_base, slots);
+  ctx.emit(Instruction::LocalGet(dst));
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(((index + 2) * 8) as u64)));
+  ctx.emit(Instruction::LocalGet(dst));
+  ctx.emit(Instruction::F64ConvertI32U);
+  Ok(())
+}
+
 pub(super) fn emit_struct_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   // args: [struct_value_expr, idx_expr, tag_expr]
   if args.len() < 2 {

@@ -264,6 +264,10 @@ schema 候选没有 unresolved slot 也可能需要 review；检查 `:origin-cha
 裸 `Fn` 保存/传递不需要补成猜测的签名；具体调用缺少证明时按报告的 source path 审阅参数、rest、返回值与 features。
 规则复用共享 compiler proof，较早的其他参数错误也可能先报告；建议不写回，不用 `fn?` 或新增强转代替签名证明。
 
+检查 Struct 字段写入，使用 `calcit fix --rule nominal-write-proof-v1 --ns <ns> --def <name> --format edn`。
+保留正常 `.assoc` 方法调用，由已选实现和字段声明提供契约；缺证据时按 value 的 source path 定位输入边界，
+不把 Struct 改成 Map、不扩大字段类型、不自动添加强转。建议只供 review，其他较早的编译错误仍会阻止审计。
+
 CLI 入口按任务收敛：entry 语义验证使用 `--check-only`，只读事实使用 `query`/`analyze`，可证明的检测与改写统一使用
 `fix` preview/apply，用户指定的结构修改使用 `edit`/`tree`/`cursor`。不要为一条检测或 migration rule 猜测新的顶层命令；
 完整边界见 `calcit docs read workflow-entrypoints.md --full`。

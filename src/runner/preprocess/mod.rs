@@ -3357,6 +3357,7 @@ fn preprocess_list_call(
         validate_method_call(&head_form, &processed_args, scope_types, file_ns, call_stack)?;
         check_struct_field_access(&head_form, &processed_args, scope_types, file_ns, call_stack, check_warnings);
         check_struct_update_fields(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
+        reject_unproven_struct_update(&head_form, &processed_args, scope_types, file_ns, call_stack)?;
         check_struct_method_args(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
         check_typed_js_field_operation(
           &head_form,
@@ -3393,21 +3394,8 @@ fn preprocess_list_call(
         }
 
         // Optimize &struct:assoc to &struct:assoc-at when field index can be resolved at compile time
-        if matches!(&head_form, Calcit::Proc(CalcitProc::NativeStructAssoc))
-          && processed_args.len() == 3
-          && let (Some(struct_arg), Some(Calcit::Tag(field_tag)), Some(value_arg)) =
-            (processed_args.first(), processed_args.get(1), processed_args.get(2))
-          && let Some(type_info) = resolve_type_value(struct_arg, scope_types)
-          && let Some(struct_def) = type_info.as_ref().resolve_to_struct()
-          && let Some(idx) = struct_def.index_of(field_tag.ref_str())
-        {
-          ys = CalcitList::new_inner_from(&[
-            Calcit::Proc(CalcitProc::NativeStructAssocAt),
-            struct_arg.to_owned(),
-            Calcit::Number(idx as f64),
-            Calcit::Tag(field_tag.to_owned()),
-            value_arg.to_owned(),
-          ]);
+        if let Some(indexed_call) = lower_static_struct_assoc(&head_form, &processed_args, scope_types) {
+          ys = CalcitList::new_inner_from(&indexed_call);
         }
 
         // Optimize &struct:with to &struct:with-at when all field indices can be resolved at compile time
@@ -5087,6 +5075,98 @@ fn warn_on_raw_struct_field_access(
   );
 }
 
+fn struct_update_pairs<'a>(head: &Calcit, args: &'a CalcitList) -> Option<Vec<(usize, &'a Calcit, &'a Calcit)>> {
+  Some(match head {
+    Calcit::Proc(CalcitProc::NativeStructAssoc) if args.len() == 3 => match (args.get(1), args.get(2)) {
+      (Some(field), Some(value)) => vec![(2, field, value)],
+      _ => return None,
+    },
+    Calcit::Proc(CalcitProc::NativeStructAssocAt) if args.len() == 4 => match (args.get(2), args.get(3)) {
+      (Some(field), Some(value)) => vec![(3, field, value)],
+      _ => return None,
+    },
+    Calcit::Proc(CalcitProc::NativeStructWith) if args.len() >= 3 && (args.len() - 1).is_multiple_of(2) => {
+      let items = args.iter().skip(1).collect::<Vec<_>>();
+      items
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .enumerate()
+        .map(|(index, pair)| (2 + index * 2, pair[0], pair[1]))
+        .collect()
+    }
+    Calcit::Proc(CalcitProc::NativeStructWithAt) if args.len() >= 4 && (args.len() - 1).is_multiple_of(3) => {
+      let items = args.iter().skip(1).collect::<Vec<_>>();
+      items
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .enumerate()
+        .map(|(index, triple)| (3 + index * 3, triple[1], triple[2]))
+        .collect()
+    }
+    _ => return None,
+  })
+}
+
+/// Apply the shared directional proof to a concrete nominal field write.
+fn reject_unproven_struct_update(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  if !REQUIRE_ASSERTION_PROOF.with(Cell::get) {
+    return Ok(());
+  }
+  let Some(pairs) = struct_update_pairs(head, args) else {
+    return Ok(());
+  };
+  let Some(receiver) = args.first() else { return Ok(()) };
+  for (index, field, _) in pairs {
+    let field_name = match field {
+      Calcit::Tag(tag) => tag.ref_str(),
+      Calcit::Str(name) => name.as_ref(),
+      _ => {
+        return Err(CalcitErr::use_msg_stack_location_with_code(
+          CalcitErrKind::Type,
+          "nominal write requires a statically resolved field before its value contract can be proved",
+          "E_CALL_ARGUMENT_UNPROVEN",
+          call_stack,
+          field.get_location().or_else(|| receiver.get_location()),
+        ));
+      }
+    };
+    let Some(expected) = infer_struct_field_type(receiver, field_name, scope_types) else {
+      return Err(CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        format!("nominal write cannot resolve field :{field_name} on the receiver"),
+        if resolve_type_value(receiver, scope_types).is_some_and(|ty| ty.resolve_to_struct().is_some()) {
+          "E_CALL_ARGUMENT_MISMATCH"
+        } else {
+          "E_CALL_ARGUMENT_UNPROVEN"
+        },
+        call_stack,
+        field.get_location().or_else(|| receiver.get_location()),
+      ));
+    };
+    let mut expected_types = vec![calcit::DYNAMIC_TYPE.clone(); args.len()];
+    expected_types[index] = expected;
+    let CalcitTypeAnnotation::Fn(signature) = CalcitTypeAnnotation::from_function_parts(expected_types, calcit::DYNAMIC_TYPE.clone())
+    else {
+      unreachable!("function parts produce a function signature")
+    };
+    reject_strict_unproven_generic_relation(
+      head, args, &signature, scope_types, file_ns, call_stack,
+    ).map_err(|mut error| {
+      error.hint = Some(format!("Nominal field :{field_name}; prove the assigned value before updating this field. A wrapper or return declaration is not a checked conversion.").into_boxed_str());
+      error
+    })?;
+  }
+  Ok(())
+}
+
 /// Validate statically known struct updates before they are rewritten to the indexed runtime procs.
 /// This is the checking counterpart to preserving the receiver's nominal return type in inference.
 fn check_struct_update_fields(
@@ -5097,28 +5177,10 @@ fn check_struct_update_fields(
   def_name: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
-  let pairs: Vec<(&Calcit, &Calcit)> = match head {
-    Calcit::Proc(CalcitProc::NativeStructAssoc) if args.len() == 3 => match (args.get(1), args.get(2)) {
-      (Some(field), Some(value)) => vec![(field, value)],
-      _ => return,
-    },
-    Calcit::Proc(CalcitProc::NativeStructAssocAt) if args.len() == 4 => match (args.get(2), args.get(3)) {
-      (Some(field), Some(value)) => vec![(field, value)],
-      _ => return,
-    },
-    Calcit::Proc(CalcitProc::NativeStructWith) if args.len() >= 3 && (args.len() - 1).is_multiple_of(2) => {
-      let items = args.iter().skip(1).collect::<Vec<_>>();
-      items.as_chunks::<2>().0.iter().map(|pair| (pair[0], pair[1])).collect()
-    }
-    Calcit::Proc(CalcitProc::NativeStructWithAt) if args.len() >= 4 && (args.len() - 1).is_multiple_of(3) => {
-      let items = args.iter().skip(1).collect::<Vec<_>>();
-      items.as_chunks::<3>().0.iter().map(|triple| (triple[1], triple[2])).collect()
-    }
-    _ => return,
-  };
+  let Some(pairs) = struct_update_pairs(head, args) else { return };
 
   let Some(struct_arg) = args.first() else { return };
-  for (field_arg, value_arg) in pairs {
+  for (_, field_arg, value_arg) in pairs {
     check_field_in_struct(struct_arg, field_arg, scope_types, file_ns, check_warnings);
 
     let field_name = match field_arg {
@@ -5418,6 +5480,7 @@ fn check_struct_method_args(
   let Some(method_entry) = find_method_entry_for_type(type_value.as_ref(), &impl_values, method_str) else {
     return; // Method not found (will be caught by validate_method_call)
   };
+  check_struct_update_fields(method_entry, args, scope_types, file_ns, def_name, check_warnings);
 
   // Get function info from method entry
   let declared_schema = match method_entry {
@@ -6938,7 +7001,31 @@ fn synthesize_nominal_impl_callable(
   })))
 }
 
+/// Share static field lowering between direct calls and resolved methods.
+fn lower_static_struct_assoc(head: &Calcit, args: &CalcitList, scope_types: &ScopeTypes) -> Option<Vec<Calcit>> {
+  if !matches!(head, Calcit::Proc(CalcitProc::NativeStructAssoc)) || args.len() != 3 {
+    return None;
+  }
+  let receiver = args.first()?;
+  let Calcit::Tag(field) = args.get(1)? else {
+    return None;
+  };
+  let receiver_type = resolve_type_value(receiver, scope_types)?;
+  let definition = receiver_type.resolve_to_struct()?;
+  let index = definition.index_of(field.ref_str())?;
+  Some(vec![
+    Calcit::Proc(CalcitProc::NativeStructAssocAt),
+    receiver.to_owned(),
+    Calcit::Number(index as f64),
+    Calcit::Tag(field.to_owned()),
+    args.get(2)?.to_owned(),
+  ])
+}
+
 fn build_inlined_call(callable_head: Calcit, args: &CalcitList, scope_types: &ScopeTypes) -> Calcit {
+  if let Some(indexed_call) = lower_static_struct_assoc(&callable_head, args, scope_types) {
+    return Calcit::from(indexed_call);
+  }
   let mut call_nodes: Vec<Calcit> = Vec::with_capacity(args.len() + 1);
   call_nodes.push(callable_head);
   for item in args.iter() {
@@ -7097,7 +7184,10 @@ fn validate_method_call(
         head.get_location(),
       ));
     }
-    ImplMethodResolution::Selected(_) => return Ok(()),
+    ImplMethodResolution::Selected(candidate) => {
+      reject_unproven_struct_update(candidate.entry, args, scope_types, file_ns, call_stack)?;
+      return Ok(());
+    }
     ImplMethodResolution::Ambiguous(candidates) if strict_types_enabled() => {
       let origins = candidates.iter().map(impl_candidate_origin).collect::<Vec<_>>();
       let duplicate_origin = candidates
@@ -7765,6 +7855,18 @@ fn resolve_impl_method<'a>(type_ref: &CalcitTypeAnnotation, impls: &'a [Arc<Calc
 }
 
 fn is_builtin_method_candidate(type_ref: &CalcitTypeAnnotation, candidate: &ImplMethodCandidate<'_>) -> bool {
+  if type_ref.resolve_to_struct().is_some() {
+    // Trust the actual core table, not a user-created bag with the same name.
+    // Nominal user implementations still participate in normal resolution.
+    return candidate.impl_value.is_inherent()
+      && resolve_core_impls("&core-struct-impls").is_some_and(|impls| {
+        impls.iter().any(|builtin| {
+          builtin.name() == candidate.impl_value.name()
+            && Arc::ptr_eq(&builtin.fields, &candidate.impl_value.fields)
+            && Arc::ptr_eq(&builtin.values, &candidate.impl_value.values)
+        })
+      });
+  }
   let expected_name = match type_ref {
     CalcitTypeAnnotation::List(_) => "&core-list-methods",
     CalcitTypeAnnotation::String => "&core-string-methods",
@@ -13451,7 +13553,7 @@ mod tests {
     let _strict = StrictTypesGuard::new(true);
     let mut nominal = CalcitStructDef::from_fields(EdnTag::new("Card"), vec![]);
     nominal.impls = vec![Arc::new(CalcitImpl {
-      name: EdnTag::new("LegacyRenderMethods"),
+      name: EdnTag::new("&core-struct-methods"),
       origin: None,
       fields: Arc::new(vec![EdnTag::new("render")]),
       values: Arc::new(vec![Calcit::Nil]),
@@ -13469,7 +13571,7 @@ mod tests {
     )
     .expect_err("strict typed source must not dispatch through an originless method bag");
     assert_eq!(error.code(), Some("E_ORIGINLESS_METHOD_DISPATCH"));
-    assert!(error.msg.contains("LegacyRenderMethods"), "error: {error}");
+    assert!(error.msg.contains("&core-struct-methods"), "error: {error}");
     assert!(error.msg.contains("deftrait"), "error: {error}");
   }
 
