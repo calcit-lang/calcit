@@ -1766,7 +1766,8 @@ fn resolve_impl_annotation(value: &Calcit, scope_types: &ScopeTypes) -> Option<A
 /// `None` so the builtin signature provides a conservative open type instead
 /// of a nominal type with an incorrectly complete method table.
 fn infer_impl_attachment_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
-  let base = resolve_type_value(xs.get(1)?, scope_types)?;
+  let base_expr = xs.get(1)?;
+  let base = resolve_type_value(base_expr, scope_types)?;
   let impl_values = xs
     .iter()
     .skip(2)
@@ -1814,14 +1815,30 @@ fn infer_impl_attachment_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Opti
       Some(Arc::new(CalcitTypeAnnotation::EnumValue(Arc::new(attached))))
     }
     CalcitTypeAnnotation::TypeRef(_, args) => {
+      // The expression's source distinguishes a definition value from an
+      // instance whose schema refers to that same nominal definition.
+      let source_definition = match base_expr {
+        Calcit::Import(CalcitImport { ns, def, .. }) => program::lookup_def_code(ns, def),
+        Calcit::Symbol { sym, info, .. } => program::lookup_def_code(&info.at_ns, sym),
+        _ => None,
+      };
+      let is_definition_value = source_definition.as_ref().is_some_and(code_resolves_to_nominal_type_def);
       if let Some(mut attached) = base.resolve_to_struct() {
         attached.impls.extend(impl_values);
-        Some(Arc::new(CalcitTypeAnnotation::Struct(Arc::new(attached), args.clone())))
+        if is_definition_value {
+          Some(Arc::new(CalcitTypeAnnotation::StructDef(Arc::new(attached))))
+        } else {
+          Some(Arc::new(CalcitTypeAnnotation::Struct(Arc::new(attached), args.clone())))
+        }
       } else if let Some(mut attached) = base.resolve_to_enum() {
         let mut impls = attached.impls().to_vec();
         impls.extend(impl_values);
         attached.set_impls(impls);
-        Some(Arc::new(CalcitTypeAnnotation::Enum(Arc::new(attached), args.clone())))
+        if is_definition_value {
+          Some(Arc::new(CalcitTypeAnnotation::EnumDef(Arc::new(attached))))
+        } else {
+          Some(Arc::new(CalcitTypeAnnotation::Enum(Arc::new(attached), args.clone())))
+        }
       } else {
         None
       }

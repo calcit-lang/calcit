@@ -591,6 +591,7 @@ fn ensure_ns_def_preprocessed(
       });
       CURRENT_FN_FEATURES.with(|cell| *cell.borrow_mut() = saved_features);
       let resolved_code = resolved_result?;
+      check_top_level_value_schema(ns, def, &code, &resolved_code, &scope_types, &next_stack)?;
       store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
 
       Ok(())
@@ -613,6 +614,46 @@ fn ensure_ns_def_preprocessed(
 
   let Some(()) = result? else { return Ok(()) };
   Ok(())
+}
+
+/// Check independently resolved immutable initializers before publishing their schema.
+fn check_top_level_value_schema(
+  ns: &str,
+  def: &str,
+  source: &Calcit,
+  resolved: &Calcit,
+  scope_types: &ScopeTypes,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  let Calcit::List(forms) = source else { return Ok(()) };
+  if !matches!(forms.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "def") {
+    return Ok(());
+  }
+  let expected = program::lookup_def_schema(ns, def);
+  let Some(actual) = resolve_type_value(resolved, scope_types) else {
+    return Ok(());
+  };
+  // Preserve the existing migration policy for open evidence; a definite
+  // contradiction must never become a consumer's dispatch contract.
+  if !matches!(actual.prove_with_bindings(&expected, &mut HashMap::new()), TypeProof::Mismatch) {
+    return Ok(());
+  }
+  let location = forms
+    .get(2)
+    .and_then(Calcit::get_location)
+    .filter(|location| location.ns.as_ref() == ns && location.def.as_ref() == def)
+    .unwrap_or_else(|| NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::new(vec![2])));
+  Err(CalcitErr::use_msg_stack_location_with_code(
+    CalcitErrKind::Type,
+    format!(
+      "Value `{ns}/{def}` declares type `{}`, but its initializer has type `{}`",
+      expected.to_brief_string(),
+      actual.to_brief_string()
+    ),
+    "E_SCHEMA_DEF_MISMATCH",
+    call_stack,
+    Some(location),
+  ))
 }
 
 pub fn ensure_ns_def_compiled(
@@ -1291,6 +1332,7 @@ pub fn compile_source_def_for_snapshot(
     })
   })?;
 
+  check_top_level_value_schema(ns, def, &code, &resolved_code, &scope_types, call_stack)?;
   store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
 
   Ok(())
@@ -14638,6 +14680,63 @@ mod tests {
     )
     .expect("external-object traits remain statically checked");
     assert!(typed_warnings.borrow().is_empty());
+  }
+
+  #[test]
+  fn snapshot_compilation_never_caches_contradictory_value_schemas() {
+    let _guard = lock_preprocess_test_state();
+    let core = crate::load_core_snapshot().expect("embedded core");
+    program::PROGRAM_CODE_DATA
+      .write()
+      .unwrap()
+      .extend(program::extract_program_data(&core).expect("core source definitions"));
+    let ns = "tests.snapshot-value-schema";
+    let mut defs = HashMap::new();
+    for (name, schema) in [
+      ("invalid", Arc::new(CalcitTypeAnnotation::String)),
+      ("valid", Arc::new(CalcitTypeAnnotation::Number)),
+      ("open", calcit::DYNAMIC_TYPE.clone()),
+    ] {
+      let code = code_to_calcit(
+        &Cirru::List(vec![Cirru::leaf("def"), Cirru::leaf(name), Cirru::leaf("42")]),
+        ns,
+        name,
+        vec![],
+      )
+      .expect("source initializer");
+      defs.insert(
+        Arc::from(name),
+        program::ProgramDefEntry {
+          code,
+          schema,
+          doc: Arc::from(""),
+          examples: vec![],
+          ffi: None,
+        },
+      );
+    }
+    program::PROGRAM_CODE_DATA.write().unwrap().insert(
+      Arc::from(ns),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs,
+      },
+    );
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+    let error = compile_source_def_for_snapshot(ns, "invalid", &warnings, &stack).expect_err("snapshot must reject before caching");
+    assert_eq!(error.code.as_deref(), Some("E_SCHEMA_DEF_MISMATCH"));
+    assert!(program::lookup_compiled_def(ns, "invalid").is_none());
+    let error = ensure_ns_def_compiled(ns, "invalid", &warnings, &stack).expect_err("ordinary check must not borrow an invalid cache");
+    assert_eq!(error.code.as_deref(), Some("E_SCHEMA_DEF_MISMATCH"));
+    assert!(program::lookup_compiled_def(ns, "invalid").is_none());
+    for name in ["valid", "open"] {
+      compile_source_def_for_snapshot(ns, name, &warnings, &stack).expect("valid snapshot publication");
+      let before = program::lookup_compiled_def(ns, name).expect("valid compiled value");
+      ensure_ns_def_compiled(ns, name, &warnings, &stack).expect("reuse valid snapshot cache");
+      let after = program::lookup_compiled_def(ns, name).expect("valid cache retained");
+      assert_eq!(before, after);
+    }
   }
 
   #[test]
