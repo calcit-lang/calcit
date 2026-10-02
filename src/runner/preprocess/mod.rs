@@ -3394,21 +3394,8 @@ fn preprocess_list_call(
         }
 
         // Optimize &struct:assoc to &struct:assoc-at when field index can be resolved at compile time
-        if matches!(&head_form, Calcit::Proc(CalcitProc::NativeStructAssoc))
-          && processed_args.len() == 3
-          && let (Some(struct_arg), Some(Calcit::Tag(field_tag)), Some(value_arg)) =
-            (processed_args.first(), processed_args.get(1), processed_args.get(2))
-          && let Some(type_info) = resolve_type_value(struct_arg, scope_types)
-          && let Some(struct_def) = type_info.as_ref().resolve_to_struct()
-          && let Some(idx) = struct_def.index_of(field_tag.ref_str())
-        {
-          ys = CalcitList::new_inner_from(&[
-            Calcit::Proc(CalcitProc::NativeStructAssocAt),
-            struct_arg.to_owned(),
-            Calcit::Number(idx as f64),
-            Calcit::Tag(field_tag.to_owned()),
-            value_arg.to_owned(),
-          ]);
+        if let Some(indexed_call) = lower_static_struct_assoc(&head_form, &processed_args, scope_types) {
+          ys = CalcitList::new_inner_from(&indexed_call);
         }
 
         // Optimize &struct:with to &struct:with-at when all field indices can be resolved at compile time
@@ -7014,7 +7001,31 @@ fn synthesize_nominal_impl_callable(
   })))
 }
 
+/// Share static field lowering between direct calls and resolved methods.
+fn lower_static_struct_assoc(head: &Calcit, args: &CalcitList, scope_types: &ScopeTypes) -> Option<Vec<Calcit>> {
+  if !matches!(head, Calcit::Proc(CalcitProc::NativeStructAssoc)) || args.len() != 3 {
+    return None;
+  }
+  let receiver = args.first()?;
+  let Calcit::Tag(field) = args.get(1)? else {
+    return None;
+  };
+  let receiver_type = resolve_type_value(receiver, scope_types)?;
+  let definition = receiver_type.resolve_to_struct()?;
+  let index = definition.index_of(field.ref_str())?;
+  Some(vec![
+    Calcit::Proc(CalcitProc::NativeStructAssocAt),
+    receiver.to_owned(),
+    Calcit::Number(index as f64),
+    Calcit::Tag(field.to_owned()),
+    args.get(2)?.to_owned(),
+  ])
+}
+
 fn build_inlined_call(callable_head: Calcit, args: &CalcitList, scope_types: &ScopeTypes) -> Calcit {
+  if let Some(indexed_call) = lower_static_struct_assoc(&callable_head, args, scope_types) {
+    return Calcit::from(indexed_call);
+  }
   let mut call_nodes: Vec<Calcit> = Vec::with_capacity(args.len() + 1);
   call_nodes.push(callable_head);
   for item in args.iter() {

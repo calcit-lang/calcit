@@ -10,6 +10,8 @@ Struct 的内置方法识别依赖当前真实 core 表共享的字段和值存�
 
 普通方法调用仍由编译器选择并 lowering 为底层调用。字段/值提取与现有 Struct 更新检查共享，审计通过已有方向性参数证明验证 value，不建立第二套兼容关系。前后缀方法与底层写入都应用相同证明，保留真实实参序号和 value 位置。Dynamic 字段本身仍是开放边界。
 
+跨后端回放发现，方法解析后的 `&struct:assoc` 没有经过直接调用路径的静态字段索引 lowering，导致 WASM 拒绝编译。将这一 lowering 提取为直接调用与已解析方法共用的函数，保留 receiver/value 各求值一次及顺序，不将测试改写为 native call。
+
 `nominal-write-proof-v1` 复用现有 compiler-review adapter、诊断编号、EDN/JSON envelope 与无写回策略。它不改变默认全面收紧的发布时间，也不自动改字段声明、插入强转或把 Struct 改成 Map。先前 helper 错误仍阻断审计，不能伪装成空建议。
 
 ## 验证与剩余范围
