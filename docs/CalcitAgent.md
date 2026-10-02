@@ -29,6 +29,10 @@ Calcit 0.14 起，普通运行、检查和代码生成默认启用严格预处�
 `--compat-types` 暂时恢复旧 warning 行为；`--strict-types` 显式确认严格诊断，并在执行或代码生成前检查所选入口，
 不额外运行 Dynamic 数量或 quality baseline 门槛。两种开关不能同时使用。Agent 不应把兼容开关写进新项目或长期 CI。
 
+业务迁移先区分静态契约矛盾和真正开放的输入：decode 后使用 `Result :ok` 的受检 payload，
+不要继续传原始 Map，也不要用 `assert-type` 冒充运行时校验。
+见[业务数据的类型边界](features/typed-application-boundaries.md)的五类 Diary 最小用例与 native/JS 回放命令。
+
 CLI 不传格式参数时保持适合人类 review 的 Markdown-compatible 输出。需要稳定字段与自动分支时，Calcit 自有工作流优先选择 `--format edn`，因为 Cirru EDN 会保留 tag、symbol 等原生数据语义；只有对接 JSON-only 工具或既有 JSON consumer 时才显式选择 `--format json`。尚未提供 EDN 的旧命令可暂时使用 JSON，后续按共享 envelope 逐步迁移，不应为此增加新顶层入口。
 
 遇到 `%some`、`.unwrap`、`option:unwrap`、`&str:includes?` 等不同层次的名字，先按 [API 命名角色](features/api-roles.md) 区分类型名、构造器、方法、命名空间函数和内部实现。查方法先用 `calcit query type` 确认接收者与 `proven` 契约，再通过 `query def/context --format edn` 读实现与标签；不要因为 `query type` 给出了 `&` 或 `option:*` 的 definition path，就把内部定义改成应用的推荐调用。

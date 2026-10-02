@@ -11,6 +11,9 @@ aliases:
 
 # Traits
 
+业务迁移中，trait 证明行为能力，decoder 证明输入数据形状；二者不能相互替代。
+参见[业务数据的类型边界](typed-application-boundaries.md)中的五类迁移证据与 derive 选择。
+
 Calcit provides a lightweight nominal trait system for attaching method implementations to struct/enum definitions and for describing capabilities of built-in values. The historical prototype/class terminology is no longer the design model; see [Polymorphism](polymorphism.md) for the unified dispatch rules.
 
 Keep two concepts separate:

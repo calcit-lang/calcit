@@ -324,11 +324,24 @@ try {
   }
   await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
   run("test", "--tag", "def-value-contract", "--require-match");
+  run("test", "--tag", "diary-boundary", "--require-match");
+  const diaryResponse = JSON.parse(run("query", "def", "app.main/verify-login-decode", "--format", "json"));
+  assert.deepEqual(diaryResponse.diagnostics, []);
+  const diaryTests = diaryResponse.data.tests.filter(test => test.tags.includes("diary-boundary"));
+  assert.equal(diaryTests.length, 5);
+  // Compile the definition-attached expressions themselves, not a JS rewrite
+  // of the application boundary semantics.
+  run("edit", "def", "app.main/verify-diary-boundaries", "--input-format", "json-ast", "--code",
+    JSON.stringify(["defn", "verify-diary-boundaries", [], ...diaryTests.map(test => test.code), "&unit"]));
+  run("edit", "schema", "app.main/verify-diary-boundaries", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+  run("config", "set", "init-fn", "app.main/verify-diary-boundaries");
   run("--check-only");
   const defValueOutput = join(project, "def-value-js-out");
   run("--emit-path", defValueOutput, "js");
   const defValues = await import(pathToFileURL(join(defValueOutput, "app.main.mjs")).href);
   defValues.verify_values();
+  defValues.verify_diary_boundaries();
   for (const [target, schema] of [
     ["app.values/initial-state", "quote $ :: 'Map 'Tag 'String"],
     ["app.main/initial-state", "quote $ :: 'Map 'Tag 'String"],
@@ -348,7 +361,7 @@ try {
       assert.deepEqual(await readFile(snapshot), original);
     }
   }
-  console.log("Known assertions and return/call contracts rejected before native/JS/WASM/WASI; native/JS positives, JS async adoption, scalar WASM assertions and top-level value schema contracts passed");
+  console.log("Known assertions and return/call contracts rejected before native/JS/WASM/WASI; native/JS positives, JS async adoption, scalar WASM assertions, top-level value schema contracts and five Diary boundaries passed");
 } finally {
   await rm(project, { recursive: true, force: true });
 }
