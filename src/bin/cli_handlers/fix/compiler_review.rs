@@ -133,7 +133,7 @@ pub(super) fn compile_boundary_review(
   })
 }
 
-fn boundary_diagnostic(error: &CalcitErr, definition: &str) -> Value {
+pub(super) fn boundary_diagnostic(error: &CalcitErr, definition: &str) -> Value {
   serde_json::json!({
     "code": error.code(),
     "phase": "preprocess",

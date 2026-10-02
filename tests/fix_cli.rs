@@ -5372,6 +5372,253 @@ fn value_to_zero_arg_fn_wraps_reads_used_as_callees() {
 }
 
 #[test]
+fn schema_synthesis_never_uses_an_unproven_assertion_as_machine_evidence() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy synthesis proof fixture");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "fix-command.main/asserted-number",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn asserted-number ()\n  let\n      value $ parse-cirru-edn \"|do nil\"\n    assert-type value 'Number\n    , value",
+      ],
+    ),
+    "create independent source evidence regression",
+  );
+  let original = fs::read(&snapshot).expect("read original source bytes");
+  let arguments = [
+    "--rule",
+    "synthesize-schema-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "asserted-number",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &arguments);
+  assert_eq!(fs::read(&snapshot).unwrap(), original, "preview must be read-only");
+  assert_success(&preview, "preview unproven candidate as review evidence");
+  let report = parse_stdout(&preview);
+  let suggestion = &report["data"]["suggestions"][0];
+  assert_eq!(suggestion["applicability"], "needs-review", "{report}");
+  assert!(
+    suggestion["origin_chain"].as_array().unwrap().iter().any(|evidence| {
+      evidence["kind"] == "compiler-diagnostic"
+        && evidence["diagnostic"]["code"] == "E_ASSERT_TYPE_UNPROVEN"
+        && evidence["diagnostic"]["location"]["ns"] == "fix-command.main"
+        && evidence["diagnostic"]["location"]["def"] == "asserted-number"
+        && evidence["diagnostic"]["location"]["coord"] == serde_json::json!([3, 2, 1])
+    }),
+    "review must locate the actual assertion, not an unrelated audit failure: {report}"
+  );
+  let mut apply_arguments = arguments.to_vec();
+  apply_arguments.extend(["--apply", "--allow-no-vcs"]);
+  let applied = run_fix(&snapshot, &apply_arguments);
+  assert_success(&applied, "apply retains review-only source");
+  let after_apply = fs::read(&snapshot).unwrap();
+  assert_eq!(
+    after_apply, original,
+    "apply must not write a concrete return schema using unproven assertion metadata"
+  );
+}
+
+#[test]
+fn schema_synthesis_requires_independent_producer_and_coercion_evidence() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy producer proof fixture");
+  for (name, source, schema) in [
+    (
+      "unproven-producer",
+      "quote $ defn unproven-producer ()\n  parse-cirru-edn \"|do nil\"",
+      Some("quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"),
+    ),
+    ("producer-consumer", "quote $ defn producer-consumer ()\n  unproven-producer", None),
+    (
+      "coerced-number",
+      "quote $ defn coerced-number ()\n  unsafe-coerce (parse-cirru-edn \"|do nil\") 'Number",
+      Some("quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic) (:features $ #{} :js-ffi)"),
+    ),
+    ("argument-proof", "quote $ defn argument-proof (value)\n  , 3", None),
+    (
+      "coerced-caller",
+      "quote $ defn coerced-caller ()\n  argument-proof $ unsafe-coerce (parse-cirru-edn \"|do nil\") 'Number",
+      Some("quote $ :: 'Fn $ {} (:args $ []) (:return 'Number) (:features $ #{} :js-ffi)"),
+    ),
+    ("owner-proof", "quote $ defn owner-proof (value)\n  , 3", None),
+    (
+      "unproven-owner",
+      "quote $ defn unproven-owner ()\n  owner-proof 3\n  let\n      value $ parse-cirru-edn \"|do nil\"\n    assert-type value 'Number\n    , value",
+      Some("quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"),
+    ),
+  ] {
+    let target = format!("fix-command.main/{name}");
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", &target, "--input-format", "cirru", "--code", source]),
+      "create proof chain source",
+    );
+    if let Some(schema) = schema {
+      assert_success(
+        &run_calcit(&snapshot, &["edit", "schema", &target, "--input-format", "cirru", "--code", schema]),
+        "declare the original producer or explicit trusted boundary",
+      );
+    }
+  }
+  for name in ["producer-consumer", "coerced-number", "argument-proof", "owner-proof"] {
+    let original = fs::read(&snapshot).unwrap();
+    let arguments = [
+      "--rule",
+      "synthesize-schema-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      name,
+      "--format",
+      "json",
+    ];
+    let preview = run_fix(&snapshot, &arguments);
+    assert_success(&preview, "review unproven producer or trusted coercion");
+    let report = parse_stdout(&preview);
+    assert_eq!(
+      report["data"]["suggestions"][0]["applicability"], "needs-review",
+      "{name}: {report}"
+    );
+    if name == "owner-proof" {
+      assert!(
+        report["data"]["suggestions"][0]["origin_chain"]
+          .as_array()
+          .unwrap()
+          .iter()
+          .any(|evidence| {
+            evidence["kind"] == "compiler-diagnostic"
+              && evidence["diagnostic"]["code"] == "E_ASSERT_TYPE_UNPROVEN"
+              && evidence["diagnostic"]["location"]["def"] == "unproven-owner"
+              && evidence["diagnostic"]["location"]["coord"] == serde_json::json!([4, 2, 1])
+          }),
+        "the audit must recheck a warmed call-site owner, rather than reuse trusted compiled metadata: {report}"
+      );
+    }
+    let mut apply_arguments = arguments.to_vec();
+    apply_arguments.extend(["--apply", "--allow-no-vcs"]);
+    assert_success(&run_fix(&snapshot, &apply_arguments), "do not write unproven schema");
+    assert_eq!(fs::read(&snapshot).unwrap(), original, "{name} must retain source bytes");
+  }
+}
+
+#[test]
+fn schema_synthesis_keeps_proven_assertions_decoders_and_discarded_coercions() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy independent positive fixture");
+  for (name, source, trusted) in [
+    (
+      "literal-proof",
+      "quote $ defn literal-proof ()\n  let\n      value 3\n    assert-type value 'Number\n    , value",
+      false,
+    ),
+    (
+      "decoded-proof",
+      "quote $ defn decoded-proof ()\n  parse-cirru-edn-as \"|do 3\" 'Number",
+      false,
+    ),
+    (
+      "discarded-coercion",
+      "quote $ defn discarded-coercion ()\n  unsafe-coerce (parse-cirru-edn \"|do nil\") 'Number\n  , 3",
+      true,
+    ),
+  ] {
+    let target = format!("fix-command.main/{name}");
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", &target, "--input-format", "cirru", "--code", source]),
+      "create independently proven implementation",
+    );
+    if trusted {
+      assert_success(
+        &run_calcit(
+          &snapshot,
+          &[
+            "edit",
+            "schema",
+            &target,
+            "--input-format",
+            "cirru",
+            "--code",
+            "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic) (:features $ #{} :js-ffi)",
+          ],
+        ),
+        "keep the explicitly reviewed boundary unchanged",
+      );
+    }
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "add-test",
+          &target,
+          "returns-independent-number",
+          "--tags",
+          "unit",
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ assert= 3 $ {name}"),
+        ],
+      ),
+      "attach user-visible Calcit contract",
+    );
+    let preview = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "synthesize-schema-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&preview, "preview independent implementation");
+    let report = parse_stdout(&preview);
+    assert_eq!(
+      report["data"]["suggestions"][0]["applicability"], "machine-applicable",
+      "{name}: {report}"
+    );
+    assert_success(
+      &run_fix(
+        &snapshot,
+        &[
+          "--rule",
+          "synthesize-schema-v1",
+          "--ns",
+          "fix-command.main",
+          "--def",
+          name,
+          "--apply",
+          "--allow-no-vcs",
+          "--format",
+          "json",
+        ],
+      ),
+      "apply independent schema",
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["test", &target, "--require-match"]),
+      "run attached language contract",
+    );
+  }
+}
+
+#[test]
 fn schema_synthesis_applies_exact_compiler_evidence_and_is_target_stable() {
   let directory = TestDirectory::create();
   let native_snapshot = directory.path().join("native.cirru");
@@ -5482,7 +5729,8 @@ fn schema_synthesis_applies_exact_compiler_evidence_and_is_target_stable() {
       .as_array()
       .expect("origin chain should be an array")
       .iter()
-      .any(|evidence| evidence["kind"] == "resolved-callsite-arguments" && evidence["slot"] == "schema.args.0")
+      .any(|evidence| evidence["kind"] == "resolved-callsite-arguments" && evidence["slot"] == "schema.args.0"),
+    "call-site proof evidence: {native_argument_report}"
   );
   assert_eq!(
     native_argument_report["data"]["suggestions"][0]["replacement"]["value"],
@@ -5738,13 +5986,16 @@ fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
       .iter()
       .any(|candidate| { candidate["definition"] == "fix-command.main/evidence-number" && candidate["confidence"] == "exact" })
   );
-  assert!(schemas.iter().any(|candidate| {
-    candidate["definition"] == "fix-command.main/conflicting-evidence"
-      && candidate["confidence"] == "conflict"
-      && candidate["evidence"]
-        .as_array()
-        .is_some_and(|evidence| evidence.iter().any(|item| item["kind"] == "conflicting-callsite-arguments"))
-  }));
+  assert!(
+    schemas.iter().any(|candidate| {
+      candidate["definition"] == "fix-command.main/conflicting-evidence"
+        && candidate["confidence"] == "conflict"
+        && candidate["evidence"]
+          .as_array()
+          .is_some_and(|evidence| evidence.iter().any(|item| item["kind"] == "conflicting-callsite-arguments"))
+    }),
+    "schema candidates: {schemas:?}"
+  );
   assert!(schemas.iter().any(|candidate| {
     candidate["definition"] == "fix-command.main/evidence-add-one"
       && candidate["confidence"] == "usage-derived"

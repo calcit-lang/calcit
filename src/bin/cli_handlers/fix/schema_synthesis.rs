@@ -283,6 +283,7 @@ fn merge_callsite_argument_evidence(
   let mut blocked = vec![false; signature.arg_types.len()];
   let mut observed: Vec<HashSet<String>> = vec![HashSet::new(); signature.arg_types.len()];
   let mut unavailable_owners = Vec::new();
+  let mut evidence = Vec::new();
   for (owner_ns, owner_def) in project_definitions {
     if is_sample_namespace(owner_ns) {
       continue;
@@ -301,9 +302,6 @@ fn merge_callsite_argument_evidence(
       }
       return Err(failure.msg);
     }
-    let Some(compiled) = program::lookup_compiled_def(owner_ns, owner_def) else {
-      continue;
-    };
     let usages = match runner::preprocess::trace_definition_source_usages(owner_ns, owner_def, &warnings, &CallStackList::default()) {
       Ok(usages) => usages,
       Err(_) if tolerate_unavailable_owners => {
@@ -312,80 +310,121 @@ fn merge_callsite_argument_evidence(
       }
       Err(failure) => return Err(failure.msg),
     };
-    for usage in usages {
-      if usage.target_ns.as_ref() != target_ns || usage.target_def.as_ref() != target_def {
-        continue;
-      }
-      if owner_is_macro {
-        blocked.fill(true);
-        continue;
-      }
-      let Some(location) = usage.location else {
-        blocked.fill(true);
-        continue;
+    let usages = usages
+      .into_iter()
+      .filter(|usage| usage.target_ns.as_ref() == target_ns && usage.target_def.as_ref() == target_def)
+      .collect::<Vec<_>>();
+    if usages.is_empty() {
+      continue;
+    }
+    if owner_is_macro {
+      blocked.fill(true);
+      continue;
+    }
+    // Call-site arguments require the same independent evidence as a return.
+    // Audit only actual source owners, never unrelated inventory definitions.
+    let owner_warnings = RefCell::new(Vec::new());
+    let owner_proof = runner::preprocess::with_assertion_proof(|| -> Result<(), String> {
+      runner::preprocess::compile_source_def_for_snapshot(owner_ns, owner_def, &owner_warnings, &CallStackList::default()).map_err(
+        |error| {
+          evidence.push(serde_json::json!({
+            "kind": "compiler-diagnostic",
+            "target": format!("{owner_ns}/{owner_def}"),
+            "diagnostic": super::compiler_review::boundary_diagnostic(&error, &format!("{owner_ns}/{owner_def}")),
+          }));
+          error.to_string()
+        },
+      )?;
+      let Some(compiled) = program::lookup_compiled_def(owner_ns, owner_def) else {
+        return Err(format!("No compiled call-site evidence for `{owner_ns}/{owner_def}`."));
       };
-      if !usage.macro_origin.is_empty() || location.ns.as_ref() != owner_ns || location.def.as_ref() != owner_def {
-        blocked.fill(true);
-        continue;
-      }
-      let mut call_path = location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>();
-      if call_path.pop() != Some(0) {
-        blocked.fill(true);
-        continue;
-      }
-      let source_call = navigate_to_path(&source_entry.code, &call_path)?;
-      let Cirru::List(source_items) = source_call else {
-        blocked.fill(true);
-        continue;
-      };
-      if source_items.len().saturating_sub(1) != signature.arg_types.len() {
-        blocked.fill(true);
-        continue;
-      }
-      for (index, source_argument) in source_items.iter().skip(1).enumerate() {
-        let mut argument_path = call_path.clone();
-        argument_path.push(index + 1);
-        let source_argument = code_to_calcit(
-          source_argument,
-          owner_ns,
-          owner_def,
-          argument_path
-            .iter()
-            .map(|value| {
-              u16::try_from(*value).map_err(|_| format!("Source path index `{value}` exceeds the compiler coordinate range."))
-            })
-            .collect::<Result<Vec<_>, _>>()?,
-        )?;
-        let processed_argument = super::super::query::find_preprocessed_node_at_path(
-          &compiled.preprocessed_code,
-          owner_ns,
-          owner_def,
-          &argument_path,
-          matches!(source_items[index + 1], Cirru::List(_)),
-        );
-        let Some(candidate) = super::super::query::infer_type_at_target(&source_argument, processed_argument)
-          .map(|value| normalize_inferred_schema(&value))
-        else {
-          blocked[index] = true;
+      for usage in usages {
+        let Some(location) = usage.location else {
+          blocked.fill(true);
           continue;
         };
-        if matches!(candidate.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn) {
-          blocked[index] = true;
+        if !usage.macro_origin.is_empty() || location.ns.as_ref() != owner_ns || location.def.as_ref() != owner_def {
+          blocked.fill(true);
           continue;
         }
-        observed[index].insert(candidate.to_brief_string());
-        match &candidates[index] {
-          Some(current) if current != &candidate => blocked[index] = true,
-          Some(_) => {}
-          None => candidates[index] = Some(candidate),
+        let mut call_path = location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>();
+        if call_path.pop() != Some(0) {
+          blocked.fill(true);
+          continue;
         }
-        paths[index].push(format!("{owner_ns}/{owner_def}{}", format_path(&call_path)));
+        let source_call = navigate_to_path(&source_entry.code, &call_path)?;
+        let Cirru::List(source_items) = source_call else {
+          blocked.fill(true);
+          continue;
+        };
+        if source_items.len().saturating_sub(1) != signature.arg_types.len() {
+          blocked.fill(true);
+          continue;
+        }
+        for (index, source_argument) in source_items.iter().skip(1).enumerate() {
+          let mut argument_path = call_path.clone();
+          argument_path.push(index + 1);
+          let source_argument = code_to_calcit(
+            source_argument,
+            owner_ns,
+            owner_def,
+            argument_path
+              .iter()
+              .map(|value| {
+                u16::try_from(*value).map_err(|_| format!("Source path index `{value}` exceeds the compiler coordinate range."))
+              })
+              .collect::<Result<Vec<_>, _>>()?,
+          )?;
+          let processed_argument = super::super::query::find_preprocessed_node_at_path(
+            &compiled.preprocessed_code,
+            owner_ns,
+            owner_def,
+            &argument_path,
+            matches!(source_items[index + 1], Cirru::List(_)),
+          );
+          let Some(candidate) = super::super::query::infer_type_at_target(&source_argument, processed_argument)
+            .map(|value| normalize_inferred_schema(&value))
+          else {
+            blocked[index] = true;
+            continue;
+          };
+          if matches!(candidate.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn) {
+            blocked[index] = true;
+            continue;
+          }
+          observed[index].insert(candidate.to_brief_string());
+          match &candidates[index] {
+            Some(current) if current != &candidate => blocked[index] = true,
+            Some(_) => {}
+            None => candidates[index] = Some(candidate),
+          }
+          paths[index].push(format!("{owner_ns}/{owner_def}{}", format_path(&call_path)));
+        }
+      }
+      Ok(())
+    });
+    let contradictory = owner_warnings
+      .borrow()
+      .iter()
+      .any(|warning| warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH"));
+    if owner_proof.is_err() || contradictory {
+      blocked.fill(true);
+      unavailable_owners.push(format!("{owner_ns}/{owner_def}"));
+      for warning in owner_warnings
+        .borrow()
+        .iter()
+        .filter(|warning| warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH"))
+      {
+        evidence.push(serde_json::json!({
+          "kind": "compiler-diagnostic",
+          "target": format!("{owner_ns}/{owner_def}"),
+          "diagnostic": warning.as_json(),
+        }));
       }
     }
   }
 
   let mut updated = signature.as_ref().clone();
-  let mut evidence = Vec::new();
   for (index, current) in updated.arg_types.iter_mut().enumerate() {
     if !matches!(current.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn) {
       continue;
@@ -463,6 +502,7 @@ fn schema_candidate_for_definition(
     }));
   };
   let inferred = normalize_inferred_schema(&inferred);
+  let implementation_evidence = inferred.clone();
   let mut compiled_evidence = Vec::new();
   collect_compiled_refinement_evidence(entry.schema.as_ref(), inferred.as_ref(), "schema", &mut compiled_evidence);
   let (inferred, mut callsite_evidence) = merge_callsite_argument_evidence(
@@ -476,6 +516,52 @@ fn schema_candidate_for_definition(
   let candidate = refine_schema_holes(&entry.schema, &inferred);
   if candidate == entry.schema {
     return Ok(None);
+  }
+
+  let proof_warnings = RefCell::new(Vec::new());
+  // A closed candidate is not independent evidence. Preserve it for review,
+  // but recheck the source and producers before granting automatic writeback.
+  // Missing schemas remain valid migration inputs during this proof pass.
+  let proof_result = with_legacy_migration_mode(|| {
+    runner::preprocess::with_assertion_proof(|| {
+      runner::preprocess::ensure_ns_def_compiled(namespace, definition, &proof_warnings, &CallStackList::default())?;
+      Ok::<_, calcit::calcit::CalcitErr>(runner::preprocess::infer_compiled_definition_implementation_type(
+        namespace, definition,
+      ))
+    })
+  });
+  let mut unproven = false;
+  match proof_result {
+    Err(error) => {
+      unproven = true;
+      callsite_evidence.push(serde_json::json!({
+        "kind": "compiler-diagnostic",
+        "target": format!("{namespace}/{definition}"),
+        "diagnostic": super::compiler_review::boundary_diagnostic(&error, &format!("{namespace}/{definition}")),
+      }));
+    }
+    Ok(actual) => {
+      let actual = actual.map(|annotation| normalize_inferred_schema(&annotation));
+      if !actual.as_ref().is_some_and(|actual| actual.is_proven_for(&implementation_evidence)) {
+        unproven = true;
+        callsite_evidence.push(serde_json::json!({
+          "kind": "compiled-expression-type",
+          "slot": "schema",
+          "inferred": actual.as_ref().map(|annotation| annotation.to_brief_string()),
+          "expected": implementation_evidence.to_brief_string(),
+        }));
+      }
+    }
+  }
+  for warning in proof_warnings.borrow().iter() {
+    if warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH") {
+      unproven = true;
+      callsite_evidence.push(serde_json::json!({
+        "kind": "compiler-diagnostic",
+        "target": format!("{namespace}/{definition}"),
+        "diagnostic": warning.as_json(),
+      }));
+    }
   }
 
   let replacement_node = schema_edn_to_source_node(&calcit::snapshot::schema_annotation_to_edn(candidate.as_ref()))?;
@@ -501,7 +587,7 @@ fn schema_candidate_for_definition(
   let has_unavailable = callsite_evidence.iter().any(|item| item["kind"] == "unavailable-callsite-owners");
   let confidence = if has_conflict {
     "conflict"
-  } else if !unresolved_slots.is_empty() || has_unavailable {
+  } else if !unresolved_slots.is_empty() || has_unavailable || unproven {
     "boundary-unknown"
   } else if usage_derived {
     "usage-derived"
@@ -656,7 +742,7 @@ pub(super) fn plan_schema_synthesis(
       .ok_or_else(|| format!("Schema evidence for `{namespace}/{definition}` omitted the Cirru candidate value."))?,
   )?;
   let unresolved = evidence_candidate.unresolved_slots;
-  let machine_applicable = unresolved.is_empty();
+  let machine_applicable = unresolved.is_empty() && matches!(evidence_candidate.confidence, "exact" | "usage-derived");
   Ok(vec![FixSuggestion {
     rule_id: SYNTHESIZE_SCHEMA_RULE,
     diagnostic_code: SYNTHESIZE_SCHEMA_DIAGNOSTIC,
@@ -671,6 +757,8 @@ pub(super) fn plan_schema_synthesis(
     applicability: if machine_applicable { "machine-applicable" } else { "needs-review" },
     message: if machine_applicable {
       "Fill schema holes from the existing preprocessor and bottom-up inference result.".to_owned()
+    } else if unresolved.is_empty() {
+      "The inferred candidate has no independent implementation proof; inspect the compiler evidence before applying.".to_owned()
     } else {
       format!(
         "The inferred candidate preserves unresolved slots at {}; review or add constraints before applying.",

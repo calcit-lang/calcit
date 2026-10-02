@@ -283,6 +283,8 @@ and implementation-completion status are separate concerns.
 
 这些 evidence 不增加 warning 数量或质量预算。未传对应开关时不会执行额外扫描；`--summary-only` 只保留 `data.summary` 中的候选总数，不保留候选详情。候选 helper 仅在 schema 精确相同时给出，并优先排列依赖模块；trait/adapter manifest 始终标记 `review-required`，不得自动插入 `unsafe-coerce`、选择 nullable 业务语义或扩展 Interface IR 生命周期字段。
 
+schema 候选即使没有剩余洞，仍需独立实现证明。返回声明、未证明的断言和强转目标类型不足以授予自动写回；证明不足时保留 `boundary-unknown` 候选及原始编译器证据，不中断其他定义的只读查询。
+
 普通执行、编译和严格检查只依据类型推导产生确定的 warning/error。需要迁移存量代码时，显式运行 `calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format edn`，按 definition/path 返回源码处理；不要把命中数量解释成类型正确性，也不要围绕数量增加阈值或分类规则。
 
 `code-dynamic` 只定位活动代码中的类型位置：`quote` 与 `quasiquote` 中作为数据保存的 `:dynamic` 不计入结果，`~` / `~@` 展开后重新进入活动代码的表达式仍会定位。此报告不判断类型关系；需要确认能否通过检查时仍以默认严格诊断为准。
