@@ -1107,7 +1107,8 @@ pub fn lookup_default_target_in_import(at_ns: &str, alias: &str) -> Option<Arc<s
   }
 }
 
-// Dirty mutating global states
+/// Store a resolved value with its source declaration identity when missing.
+/// Unevaluated thunks remain lazy; aliases preserve an existing identity.
 pub fn write_runtime_ready(ns: &str, def: &str, value: Calcit) -> Result<(), String> {
   let def_id = ensure_def_id(ns, def);
 
