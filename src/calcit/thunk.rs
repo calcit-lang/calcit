@@ -35,7 +35,7 @@ impl CalcitThunk {
 
         // println!("from thunk: {}", sym);
         let runtime_value = match evaluate_expr(code, scope, &info.ns, call_stack) {
-          Ok(value) => value,
+          Ok(value) => program::with_runtime_definition_ref(&info.ns, &info.def, value),
           Err(e) => {
             program::mark_runtime_def_errored(&info.ns, &info.def, Arc::from(e.to_string()));
             return Err(e);

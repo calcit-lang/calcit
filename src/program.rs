@@ -1113,19 +1113,21 @@ pub fn write_runtime_ready(ns: &str, def: &str, value: Calcit) -> Result<(), Str
 
   match value {
     Calcit::Thunk(CalcitThunk::Code { code, info }) => write_runtime_lazy(def_id, code, info),
-    Calcit::Trait(trait_def) if trait_def.definition_ref.is_none() => {
-      write_runtime_value(def_id, Calcit::Trait(trait_def.with_definition_ref(ns, def)))
-    }
-    Calcit::StructDef(struct_def) if struct_def.definition_ref.is_none() => {
-      write_runtime_value(def_id, Calcit::StructDef(struct_def.with_definition_ref(ns, def)))
-    }
-    Calcit::EnumDef(enum_def) if enum_def.definition_ref().is_none() => {
-      write_runtime_value(def_id, Calcit::EnumDef(enum_def.with_definition_ref(ns, def)))
-    }
-    other => write_runtime_value(def_id, other),
+    other => write_runtime_value(def_id, with_runtime_definition_ref(ns, def, other)),
   }
 
   Ok(())
+}
+
+/// Qualify metadata once, before either storing it or returning it to a caller.
+/// Aliases and trait decoration must retain an existing declaration identity.
+pub(crate) fn with_runtime_definition_ref(ns: &str, def: &str, value: Calcit) -> Calcit {
+  match value {
+    Calcit::Trait(trait_def) if trait_def.definition_ref.is_none() => Calcit::Trait(trait_def.with_definition_ref(ns, def)),
+    Calcit::StructDef(struct_def) if struct_def.definition_ref.is_none() => Calcit::StructDef(struct_def.with_definition_ref(ns, def)),
+    Calcit::EnumDef(enum_def) if enum_def.definition_ref().is_none() => Calcit::EnumDef(enum_def.with_definition_ref(ns, def)),
+    other => other,
+  }
 }
 
 #[derive(Debug, Clone)]

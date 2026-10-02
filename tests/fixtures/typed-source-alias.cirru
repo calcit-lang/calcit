@@ -10,6 +10,38 @@
   :files $ {}
     'fix-command.alias-evidence $ %{} 'FileEntry
       :defs $ {}
+        'AliasBase $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct AliasBase (:value 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'AliasEnriched $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def AliasEnriched (impl-traits AliasBase AliasMarkerImpl)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'AliasMarker $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait AliasMarker
+          :examples $ []
+          :schema $ :: 'Trait
+        'AliasMarkerImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl AliasMarkerImpl AliasMarker
+          :examples $ []
+          :schema $ :: 'Impl
+        'ChoiceBase $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum ChoiceBase (:value 'Number)
+          :examples $ []
+          :schema $ :: 'EnumDef
+        'ChoiceEnriched $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def ChoiceEnriched (impl-traits ChoiceBase AliasMarkerImpl)
+          :examples $ []
+          :schema $ :: 'EnumDef
+        'OtherBase $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct OtherBase (:value 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'OtherChoice $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum OtherChoice (:value 'Number)
+          :examples $ []
+          :schema $ :: 'EnumDef
         'apply-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def apply-alias fix-command.alias-evidence/apply-text
           :examples $ []
@@ -29,6 +61,28 @@
                 , 'String
             f x
           :examples $ []
+        'consume-base $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn consume-base (value) (:value value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'fix-command.alias-evidence/AliasBase
+          :tests $ [] $ %{} 'TestEntry (:name |trait-bearing-producer)
+            :code $ quote $ do
+              assert= 1 $ fix-command.alias-evidence/consume-base $ fix-command.alias-evidence/produce-enriched
+              assert= 2 $ fix-command.alias-evidence/consume-base $ fix-command.alias-evidence/AliasBase :value 2
+              , &unit
+            :tags $ #{} :alias-contract
+        'consume-choice $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn consume-choice (value) &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] 'fix-command.alias-evidence/ChoiceBase
+          :tests $ [] $ %{} 'TestEntry (:name |trait-bearing-producer)
+            :code $ quote $ do
+              assert= &unit $ fix-command.alias-evidence/consume-choice $ fix-command.alias-evidence/produce-choice
+              assert= &unit $ fix-command.alias-evidence/consume-choice $ fix-command.alias-evidence/ChoiceBase :value 2
+              , &unit
+            :tags $ #{} :alias-contract
         'echo-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def echo-alias fix-command.alias-evidence/echo-string
           :examples $ []
@@ -95,6 +149,16 @@
               :args $ [] $ :: 'Option 'String
             .unwrap-or x |fallback
           :examples $ []
+        'produce-choice $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn produce-choice () (ChoiceEnriched :value 1)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'fix-command.alias-evidence/ChoiceEnriched)
+            :args $ []
+        'produce-enriched $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn produce-enriched () (AliasEnriched :value 1)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'fix-command.alias-evidence/AliasEnriched)
+            :args $ []
         'range-proc $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def range-proc &list:range
           :examples $ []
@@ -156,8 +220,12 @@
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns fix-command.left
     'fix-command.other-side $ %{} 'FileEntry
-      :defs $ {} $ 'state-alias
-        %{} 'CodeEntry (:doc |)
+      :defs $ {}
+        'AliasBase $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct AliasBase (:value 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'state-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def state-alias 40
           :examples $ []
           :schema $ :: 'Number
