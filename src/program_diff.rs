@@ -740,11 +740,10 @@ pub(crate) fn diff_code_entry(label: &str, old: Option<&CodeEntry>, new: Option<
         diff_string("doc", Some(old.doc.as_str()), Some(new.doc.as_str())),
         diff_string("schema", Some(&old.schema.to_string()), Some(&new.schema.to_string())),
         diff_tag_set("tags", &old.tags, &new.tags),
-        diff_optional_string(
-          "ffi",
-          old.ffi.as_ref().map(|value| value.to_string()).as_deref(),
-          new.ffi.as_ref().map(|value| value.to_string()).as_deref(),
-        ),
+        {
+          let (old_ffi, new_ffi) = optional_edn_texts(old.ffi.as_ref(), new.ffi.as_ref());
+          diff_optional_string("ffi", old_ffi.as_deref(), new_ffi.as_deref())
+        },
         diff_cirru_list("examples", &old.examples, &new.examples),
         diff_tests("tests", &old.tests, &new.tests),
         diff_cirru("code", Some(&old.code), Some(&new.code), "0"),
@@ -754,6 +753,28 @@ pub(crate) fn diff_code_entry(label: &str, old: Option<&CodeEntry>, new: Option<
     (None, Some(value)) => build_code_entry_tree(label, value, DiffStatus::Added),
     (Some(value), None) => build_code_entry_tree(label, value, DiffStatus::Removed),
     (None, None) => DiffNode::new(label, DiffStatus::Unchanged),
+  }
+}
+
+/// Render two EDN values for comparison. Equal values must render to identical text:
+/// map and set display order is not canonical, so comparing display text reports
+/// reordered but structurally equal values as changes.
+fn edn_texts(old: &Edn, new: &Edn) -> (String, String) {
+  let old_text = old.to_string();
+  if old == new {
+    (old_text.clone(), old_text)
+  } else {
+    (old_text, new.to_string())
+  }
+}
+
+fn optional_edn_texts(old: Option<&Edn>, new: Option<&Edn>) -> (Option<String>, Option<String>) {
+  match (old, new) {
+    (Some(old), Some(new)) => {
+      let (old_text, new_text) = edn_texts(old, new);
+      (Some(old_text), Some(new_text))
+    }
+    (old, new) => (old.map(|value| value.to_string()), new.map(|value| value.to_string())),
   }
 }
 
@@ -1563,7 +1584,7 @@ mod tests {
   };
   use crate::calcit::DYNAMIC_TYPE;
   use crate::snapshot::{CodeEntry, SnapshotEntry, SnapshotRunMode, TestEntry};
-  use cirru_edn::EdnTag;
+  use cirru_edn::{Edn, EdnTag};
   use cirru_parser::Cirru;
   use std::collections::{HashMap, HashSet};
 
@@ -1724,6 +1745,34 @@ mod tests {
     let type_slots = child(&diff, "type-slots");
     assert_eq!(type_slots.status, DiffStatus::Added);
     assert_eq!(child(type_slots, ":dispatch-op").status, DiffStatus::Added);
+  }
+
+  #[test]
+  fn ffi_metadata_is_compared_structurally_not_by_display_order() {
+    let keys: Vec<String> = (0..24).map(|index| format!("(:key-{index} |value-{index})")).collect();
+    let forward = cirru_edn::parse(&format!("{{}} {}", keys.join(" "))).expect("forward ffi map");
+    let backward =
+      cirru_edn::parse(&format!("{{}} {}", keys.iter().rev().cloned().collect::<Vec<_>>().join(" "))).expect("reversed ffi map");
+    assert_eq!(forward, backward, "fixture maps must be structurally equal");
+
+    let entry = |ffi: Option<Edn>| CodeEntry {
+      doc: String::new(),
+      examples: vec![],
+      tests: vec![],
+      tags: HashSet::new(),
+      code: leaf("nil"),
+      schema: DYNAMIC_TYPE.clone(),
+      ffi,
+    };
+    let unchanged = diff_code_entry("demo", Some(&entry(Some(forward.clone()))), Some(&entry(Some(backward))));
+    assert_eq!(child(&unchanged, "ffi").status, DiffStatus::Unchanged);
+    assert_eq!(unchanged.status, DiffStatus::Unchanged);
+
+    let changed = cirru_edn::parse("{} (:key-0 |other)").expect("changed ffi map");
+    let modified = diff_code_entry("demo", Some(&entry(Some(forward.clone()))), Some(&entry(Some(changed))));
+    assert_eq!(child(&modified, "ffi").status, DiffStatus::Modified);
+    let added = diff_code_entry("demo", Some(&entry(None)), Some(&entry(Some(forward))));
+    assert_eq!(child(&added, "ffi").status, DiffStatus::Added);
   }
 
   #[test]
