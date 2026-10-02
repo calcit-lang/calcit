@@ -207,6 +207,11 @@ fn merge_if_branch_types(
   true_type: Arc<CalcitTypeAnnotation>,
   false_type: Arc<CalcitTypeAnnotation>,
 ) -> Option<Arc<CalcitTypeAnnotation>> {
+  // Root Dynamic admits every value shape. A container with several open
+  // slots cannot outrank it merely by accumulating a larger heuristic score.
+  if matches!(true_type.as_ref(), CalcitTypeAnnotation::Dynamic) || matches!(false_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
+    return Some(calcit::DYNAMIC_TYPE.clone());
+  }
   if let Some(joined) = compatible_if_join(&true_type, &false_type) {
     return Some(joined);
   }
@@ -2038,27 +2043,21 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
     return Some(return_type);
   }
   if matches!(proc, CalcitProc::Foldl)
-    && let (Some(receiver), Some(initial_value), Some(reducer)) = (xs.get(1), xs.get(2), xs.get(3))
-    && let (Some(receiver_type), Some(initial_type), Some(reducer_type)) = (
-      resolve_type_value(receiver, scope_types),
+    && let (Some(initial_value), Some(reducer)) = (xs.get(2), xs.get(3))
+    && let (Some(initial_type), Some(reducer_type)) = (
       resolve_type_value(initial_value, scope_types),
       resolve_type_value(reducer, scope_types),
     )
   {
-    let member_type = match receiver_type.as_ref() {
-      CalcitTypeAnnotation::List(item_type) | CalcitTypeAnnotation::Set(item_type)
-        if !matches!(item_type.as_ref(), CalcitTypeAnnotation::Syntax(_)) =>
-      {
-        Some(item_type.clone())
-      }
-      CalcitTypeAnnotation::Map(_, _) => Some(Arc::new(CalcitTypeAnnotation::List(calcit::DYNAMIC_TYPE.clone()))),
-      _ => None,
-    };
-    if let Some(member_type) = member_type {
-      let expected_reducer = CalcitTypeAnnotation::from_function_parts(vec![initial_type.clone(), member_type], initial_type.clone());
-      if matches!(reducer_type.as_ref(), CalcitTypeAnnotation::Fn(_)) && reducer_type.as_ref().is_proven_for(&expected_reducer) {
-        return Some(initial_type);
-      }
+    // Return proof and callback preprocessing share the same input contract.
+    if let Some(expected) = super::type_checking::specialize_collection_fold_expected_types(
+      &xs.drop_left(),
+      scope_types,
+      &vec![calcit::DYNAMIC_TYPE.clone(); 3],
+    ) && matches!(reducer_type.as_ref(), CalcitTypeAnnotation::Fn(_))
+      && reducer_type.as_ref().is_proven_for(&expected[2])
+    {
+      return Some(initial_type);
     }
   }
   // `&list:nth` retains its unchecked payload type for guarded core macro
@@ -2411,7 +2410,11 @@ pub fn infer_compiled_definition_implementation_type(ns: &str, def: &str) -> Opt
           returned = Some(form);
         }
       }
-      let return_type = returned.and_then(|body| resolve_type_value(body, &ScopeTypes::new()))?;
+      // Reconstruct lexical parameter evidence from the compiled definition,
+      // including open inputs. Missing scope is not an explicit Dynamic input.
+      let mut parameter_scope = ScopeTypes::new();
+      bind_pattern_scope(items.get(2)?, &mut parameter_scope);
+      let return_type = returned.and_then(|body| resolve_type_value(body, &parameter_scope))?;
       let mut signature = CalcitFnTypeAnnotation {
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
@@ -3036,6 +3039,19 @@ mod tests {
       merge_if_branch_types(calcit::DYNAMIC_TYPE.clone(), Arc::new(CalcitTypeAnnotation::Number)).as_deref(),
       Some(CalcitTypeAnnotation::Dynamic)
     ));
+    let open_map = Arc::new(CalcitTypeAnnotation::Map(
+      calcit::DYNAMIC_TYPE.clone(),
+      calcit::DYNAMIC_TYPE.clone(),
+    ));
+    for (left, right) in [
+      (open_map.clone(), calcit::DYNAMIC_TYPE.clone()),
+      (calcit::DYNAMIC_TYPE.clone(), open_map),
+    ] {
+      assert!(matches!(
+        merge_if_branch_types(left, right).as_deref(),
+        Some(CalcitTypeAnnotation::Dynamic)
+      ));
+    }
   }
 
   #[test]

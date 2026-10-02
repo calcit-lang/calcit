@@ -237,6 +237,8 @@ fn specialize_list_sort_by_expected_types(
   Some(specialized)
 }
 
+/// Keep accumulator evidence independent of an explicitly open receiver.
+/// An open member stays Dynamic; reducer result proof remains a separate obligation.
 pub(super) fn specialize_collection_fold_expected_types(
   args: &CalcitList,
   scope_types: &ScopeTypes,
@@ -253,6 +255,7 @@ pub(super) fn specialize_collection_fold_expected_types(
       item_type.clone()
     }
     CalcitTypeAnnotation::Map(_, _) => Arc::new(CalcitTypeAnnotation::List(crate::calcit::DYNAMIC_TYPE.clone())),
+    CalcitTypeAnnotation::Dynamic => crate::calcit::DYNAMIC_TYPE.clone(),
     _ => return None,
   };
   let accumulator_type = resolve_type_value(args.get(1)?, scope_types)?;

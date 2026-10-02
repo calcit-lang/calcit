@@ -9494,9 +9494,10 @@ pub fn preprocess_defn(
           }))
           .collect::<Vec<_>>();
         for (param_sym, arg_type) in param_symbols.iter().zip(parameter_types) {
-          if !matches!(arg_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
-            body_types.insert(param_sym.to_owned(), arg_type);
-          }
+          // Preserve an explicitly open parameter as scoped evidence too.
+          // Absence means unresolved; Dynamic must not erase independent
+          // accumulator context or inherit a shadowed outer binding.
+          body_types.insert(param_sym.to_owned(), arg_type);
         }
       }
 
