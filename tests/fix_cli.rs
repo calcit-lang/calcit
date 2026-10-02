@@ -8503,6 +8503,129 @@ fn core_nominal_predicate_rules_migrate_proven_calls_idempotently() {
 }
 
 #[test]
+fn core_function_alias_rule_renames_resolved_legacy_functions_and_is_idempotent() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  let target = "fix-command.main/legacy-function-aliases";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn legacy-function-aliases ()\n  assert= (#{} 1 2) $ vals $ {} (:a 1) (:b 2)\n  assert= |a,b $ join-str ([] |a |b) |,\n  assert= ([] |a |, |b) $ join ([] |a |b) |,\n  assert= (%some 1) $ optionally 1\n  , true",
+      ],
+    ),
+    "install legacy function alias calls",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)",
+      ],
+    ),
+    "declare legacy function alias source",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        target,
+        "preserves-results",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ assert= true $ legacy-function-aliases",
+      ],
+    ),
+    "attach legacy function alias behavior test",
+  );
+
+  let args = [
+    "--rule",
+    "core-function-alias-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "legacy-function-aliases",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &args);
+  assert_success(&preview, "function alias preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions should be an array");
+  assert_eq!(suggestions.len(), 4, "{report}");
+  assert!(
+    suggestions
+      .iter()
+      .all(|suggestion| { suggestion["rule_id"] == "core-function-alias-v1" && suggestion["applicability"] == "machine-applicable" })
+  );
+  for legacy in ["vals", "join-str", "join", "optionally"] {
+    let expected = format!("calcit.core/{legacy}");
+    assert!(
+      suggestions
+        .iter()
+        .any(|suggestion| suggestion["origin_chain"][0]["target"] == expected.as_str()),
+      "missing {legacy}: {report}"
+    );
+  }
+  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
+
+  let applied = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-function-alias-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "legacy-function-aliases",
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().expect("preview revision"),
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied, "function alias apply");
+  let updated = fs::read_to_string(&snapshot).expect("updated Snapshot should read");
+  for preferred in [
+    "calcit.core/distinct-values",
+    "calcit.core/join-string",
+    "calcit.core/intersperse",
+    "calcit.core/nil->option",
+  ] {
+    assert!(updated.contains(preferred), "{preferred} missing after migration");
+  }
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "function alias behavior after migration",
+  );
+
+  let repeated = run_fix(&snapshot, &args);
+  assert_success(&repeated, "function alias idempotence preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
+}
+
+#[test]
 fn core_non_nil_predicate_rule_uses_resolved_references_and_is_idempotent() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
