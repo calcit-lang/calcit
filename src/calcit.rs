@@ -1758,6 +1758,16 @@ mod tests {
   }
 
   #[test]
+  fn node_location_uses_dot_separator() {
+    let loc = NodeLocation::new(
+      Arc::from("app.comp.sidebar"),
+      Arc::from("comp-sidebar"),
+      Arc::from(vec![3, 2, 1, 0]),
+    );
+    assert_eq!(loc.to_string(), "app.comp.sidebar/comp-sidebar @3.2.1.0");
+  }
+
+  #[test]
   fn buf_list_compares_by_identity_without_locking() {
     let a = Calcit::BufList(Arc::new(Mutex::new(vec![Calcit::Number(1.0)])));
     let same_content = Calcit::BufList(Arc::new(Mutex::new(vec![Calcit::Number(1.0)])));
@@ -1786,15 +1796,5 @@ mod tests {
 
     assert_eq!(calcit_hash(&value), before);
     assert!(set.contains(&value));
-  }
-
-  #[test]
-  fn node_location_uses_dot_separator() {
-    let loc = NodeLocation::new(
-      Arc::from("app.comp.sidebar"),
-      Arc::from("comp-sidebar"),
-      Arc::from(vec![3, 2, 1, 0]),
-    );
-    assert_eq!(loc.to_string(), "app.comp.sidebar/comp-sidebar @3.2.1.0");
   }
 }
