@@ -42,6 +42,21 @@ aliases:
 静态 Map 访问用 `get` 并处理 `Option`；`:field value` 表示已声明 Struct 的必需字段。
 业务层不要为了避开缺失 key 或错误 key 类型而混用两者。
 
+## Ref decode 与原 alias
+
+`try-decode-map-as raw (:: 'Ref 'Number)` 检查当前 payload；成功结果中的
+`Ref<Number>` 是一个新 cell，不是原 Ref 的原地类型转换。修改原 cell 或其 alias
+不会改变受检结果，修改受检结果也不会改变原 cell。失败返回带 `.value` 路径的错误，
+原 cell 的值保持不变。
+
+原来的 `Ref<Dynamic>` 及其 alias 仍然开放。即使位于 decode 成功分支，
+`assert-type alias (:: 'Ref 'Number)` 也没有独立证明；Agent 不应添加断言、unsafe
+或 schema 来假装原 alias 已安全。需要保留原 Ref 身份时，应人工确认受检写入与
+共享 alias 的业务契约，而不是自动把旧 cell 换成新 cell。
+
+这些行为由 `try-decode-map-as` 自身的 `:tests` 固定，既有 runner 读取同一表达式
+回放 native/JS，并检查原 alias 的 proof preview 拒绝且不写回。
+
 ## Trait 与 derive 的选择
 
 这五例不需要新增 derive 语法：字段、容器元素、nominal initializer 与 decoder 已能表达必要契约。
@@ -58,6 +73,7 @@ aliases:
 ```bash
 calcit tests/fixtures/def-value-schema.cirru query def app.main/verify-login-decode --format edn
 calcit tests/fixtures/def-value-schema.cirru test --tag diary-boundary --require-match
+calcit src/cirru/calcit-core.cirru test calcit.core/try-decode-map-as --tag ref-alias-boundary --require-match
 yarn check-strict-default
 ```
 
@@ -69,4 +85,4 @@ initializer、alias 与 Map key schema，检查 source 字节不变。JSON 仅�
 
 - 这些最小用例不证明完整 Diary 迁移、浏览器 localStorage、网络重连或文件原子替换已经完成。
 - `List<String>` 不证明恰好两个元素，credentials 的长度和业务有效性需另行检查。
-- WASM/WASI typed decoder 尚未支持，这组 decode 用例只验证 native/JS，不能宣称三后端 parity。
+- 这组 nominal/map/Ref decode 用例只验证 native/JS；`try-decode-map-as` 的 WASM 回放明确 unsupported 且不生成产物，不宣称三后端 parity。

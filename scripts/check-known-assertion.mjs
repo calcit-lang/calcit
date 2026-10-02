@@ -38,6 +38,10 @@ try {
   assert.deepEqual(quoteResponse.diagnostics, []);
   const quoteTests = quoteResponse.data.tests.filter(test => test.tags.includes("quote-return-boundary"));
   assert.equal(quoteTests.length, 3);
+  run("test", "calcit.core/try-decode-map-as", "--tag", "ref-alias-boundary", "--require-match");
+  const refResponse = JSON.parse(run("query", "def", "calcit.core/try-decode-map-as", "--format", "json"));
+  const refTests = refResponse.data.tests.filter(test => test.tags.includes("ref-alias-boundary"));
+  assert.equal(refTests.length, 2);
   run("edit", "add-ns", "calcit.assert-evidence");
   const setBody = trees => run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite",
     "--input-format", "json-ast", "--code", JSON.stringify(["defwasm-export", "run-tests", [], ...trees, "1"]));
@@ -116,6 +120,31 @@ try {
   assert.match(`${openShortcut.stdout}\n${openShortcut.stderr}`, /E_FN_RETURN_UNPROVEN/);
   assert.deepEqual(await readFile(snapshot), openShortcutOriginal);
   run("edit", "rm-def", "calcit.assert-evidence/open-shortcut");
+  setBody(refTests.map(test => test.code));
+  run();
+  const refOutput = join(project, "ref-alias-js");
+  run("--emit-path", refOutput, "js");
+  const refGenerated = await import(pathToFileURL(join(refOutput, "calcit.assert-evidence.mjs")).href);
+  assert.equal(refGenerated.run_tests(), 1);
+  setBody([["try-decode-map-as", "nil", ["::", "'Ref", "'Number"]]]);
+  const refWasmOutput = join(project, "ref-decode-wasm");
+  const refWasm = spawnSync(binary, [snapshot, "wasm", "--emit-path", refWasmOutput], options);
+  if (refWasm.error) throw refWasm.error;
+  assert.notEqual(refWasm.status, 0, `${refWasm.stdout}\n${refWasm.stderr}`);
+  assert.match(`${refWasm.stdout}\n${refWasm.stderr}`, /try-decode-map-as is not yet supported in WASM codegen/);
+  await assert.rejects(readFile(join(refWasmOutput, "program.wasm")), { code: "ENOENT" });
+  // Decoding produces a new cell; proof must never narrow the original alias.
+  run("edit", "def", "calcit.assert-evidence/alias-proof", "--input-format", "json-ast", "--code",
+    JSON.stringify(["defn", "alias-proof", ["raw"], ["let", [["alias", "raw"]], ["match", ["try-decode-map-as", "raw", ["::", "'Ref", "'Number"]], [[":ok", "decoded"], ["assert-type", "alias", ["::", "'Ref", "'Number"]]], [[":err", "_"], "nil"]]]]));
+  run("edit", "schema", "calcit.assert-evidence/alias-proof", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ [] $ :: 'Ref 'Dynamic) (:return 'Nil)");
+  const aliasOriginal = await readFile(snapshot);
+  const aliasProof = spawnSync(binary, [snapshot, "fix", "--rule", "assert-type-proof-v1", "--ns", "calcit.assert-evidence", "--def", "alias-proof", "--format", "edn"], options);
+  if (aliasProof.error) throw aliasProof.error;
+  assert.equal(aliasProof.status, 1, `${aliasProof.stdout}\n${aliasProof.stderr}`);
+  assert.match(`${aliasProof.stdout}\n${aliasProof.stderr}`, /E_ASSERT_TYPE_UNPROVEN/);
+  assert.deepEqual(await readFile(snapshot), aliasOriginal);
+  run("edit", "rm-def", "calcit.assert-evidence/alias-proof");
   setBody([...tests, ...returnTests, ...callTests, ...hintTests, ...asyncTests, ...quoteTests].map(test => test.code));
   run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");

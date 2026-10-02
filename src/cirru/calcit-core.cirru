@@ -9891,6 +9891,36 @@
                     (:ok _) (raise "|parsing does not validate nested payload types")
                 (:err message) (raise message)
               :tags $ #{} :parse-boundary :unit
+            %{} 'TestEntry (:name |decoded-ref-keeps-original-alias-open)
+              :code $ quote $ let
+                  original $ atom $ parse-cirru-edn "|do 1"
+                  alias original
+                match
+                  try-decode-map-as original $ :: 'Ref 'Number
+                  (:ok decoded)
+                    do
+                      assert-type decoded $ :: 'Ref 'Number
+                      reset! alias |bad
+                      assert= 1 $ deref decoded
+                      assert= |bad $ deref original
+                      reset! decoded 2
+                      assert= |bad $ deref alias
+                      assert= 2 $ deref decoded
+                  (:err message) (raise message)
+              :tags $ #{} :ref-alias-boundary :unit
+            %{} 'TestEntry (:name |rejected-ref-decode-preserves-original)
+              :code $ quote $ let
+                  original $ atom $ parse-cirru-edn "|do |bad"
+                  alias original
+                match
+                  try-decode-map-as original $ :: 'Ref 'Number
+                  (:err message)
+                    do
+                      assert= true $ .includes? message |.value
+                      assert= |bad $ deref original
+                      assert= |bad $ deref alias
+                  (:ok _) (raise "|invalid ref payload was accepted")
+              :tags $ #{} :ref-alias-boundary :unit
         'try-parse-cirru $ %{} 'CodeEntry
           :doc "|Parse Cirru as Result<CirruQuote,String>; errors are returned instead of raised. Prefer the .parse-cirru String method in user code."
           :code $ quote $ defn try-parse-cirru (source)
