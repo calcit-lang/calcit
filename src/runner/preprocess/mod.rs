@@ -52,7 +52,7 @@ use std::sync::{LazyLock, RwLock};
 use std::{cell::RefCell, vec};
 
 use cirru_edn::EdnTag;
-use im_ternary_tree::TernaryTreeList;
+use finger_vec::FingerVec;
 use strum::ParseError;
 
 pub(crate) type ScopeTypes = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
@@ -8078,7 +8078,7 @@ pub fn preprocess_each_items(
   args: &CalcitList,
   ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
+  let mut xs: FingerVec<Calcit> = FingerVec::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
   args.traverse_result::<CalcitErr>(&mut |a| {
     let form = preprocess_expr(a, ctx.scope_defs, ctx.scope_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
     xs = xs.push_right(form);
@@ -8149,7 +8149,7 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
     _ => {}
   }
 
-  let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
+  let mut xs: FingerVec<Calcit> = FingerVec::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
   xs = xs.push_right(cond_form);
   xs = xs.push_right(true_form);
   if let Some(f) = false_form {
@@ -8925,7 +8925,7 @@ pub fn preprocess_defn(
   ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
   // println!("defn args: {}", primes::CrListWrap(args.to_owned()));
-  let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
+  let mut xs: FingerVec<Calcit> = FingerVec::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
   match (args.first(), args.get(1)) {
     (
       Some(Calcit::Symbol {
@@ -9263,7 +9263,7 @@ pub fn preprocess_defn(
           ]);
           let mut forms = xs.to_vec();
           forms.insert(3, hint.clone());
-          xs = TernaryTreeList::from(forms);
+          xs = FingerVec::from(forms);
           processed_body.insert(0, hint);
         } else {
           // Compatibility mode retains its previous open contract, while
@@ -9539,7 +9539,7 @@ pub fn preprocess_quote(
   _scope_defs: &HashSet<Arc<str>>,
   _file_ns: &str,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
+  let mut xs: FingerVec<Calcit> = FingerVec::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
 
   args.traverse_result::<CalcitErr>(&mut |a| {
     xs = xs.push_right(a.to_owned());
@@ -9554,7 +9554,7 @@ pub fn preprocess_defatom(
   args: &CalcitList,
   ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
+  let mut xs: FingerVec<Calcit> = FingerVec::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
 
   args.traverse_result::<CalcitErr>(&mut |a| {
     // TODO
@@ -9572,7 +9572,7 @@ pub fn preprocess_quasiquote(
   args: &CalcitList,
   ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
-  let mut xs: TernaryTreeList<Calcit> = TernaryTreeList::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
+  let mut xs: FingerVec<Calcit> = FingerVec::from(&[Calcit::Syntax(head.to_owned(), Arc::from(head_ns))]);
 
   args.traverse_result::<CalcitErr>(&mut |a| {
     let form = preprocess_quasiquote_internal(a, ctx.scope_defs, ctx.scope_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
@@ -11381,7 +11381,7 @@ mod tests {
 
   #[test]
   fn executable_conversion_makes_syntax_contiguous_and_keeps_quoted_lists_persistent() {
-    let quoted = Calcit::List(Arc::new(CalcitList::List(TernaryTreeList::from(vec![
+    let quoted = Calcit::List(Arc::new(CalcitList::List(FingerVec::from(vec![
       Calcit::Number(1.0),
       Calcit::Number(2.0),
     ]))));

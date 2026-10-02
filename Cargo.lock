@@ -242,9 +242,9 @@ dependencies = [
  "cirru_parser",
  "colored",
  "ctrlc",
+ "finger_vec",
  "getrandom 0.3.3",
  "hex",
- "im_ternary_tree",
  "libloading",
  "md-5",
  "notify",
@@ -802,6 +802,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7fd99930f64d146689264c637b5af2f0233a933bef0d8570e2526bf9e083192d"
 
 [[package]]
+name = "finger_vec"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c89020e5c67a3da39d95eea28396d752b4fd76e857f76fbf4e24a2799ed1fdd8"
+
+[[package]]
 name = "flate2"
 version = "1.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1212,12 +1218,6 @@ dependencies = [
  "icu_normalizer",
  "icu_properties",
 ]
-
-[[package]]
-name = "im_ternary_tree"
-version = "0.0.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b21d17f676465859589cf34e88c66d40d6bc8c2857176a34ac835f21f055919a"
 
 [[package]]
 name = "indexmap"

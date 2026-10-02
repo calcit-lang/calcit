@@ -11,7 +11,7 @@ mod snippets;
 mod symbols;
 mod tags;
 
-use im_ternary_tree::TernaryTreeList;
+use finger_vec::FingerVec;
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -1893,7 +1893,7 @@ fn wrap_call_with_prelude(prelude: String, call_code: String, return_label: Opti
 }
 
 fn list_to_js_code(
-  xs: &TernaryTreeList<Calcit>,
+  xs: &FingerVec<Calcit>,
   ns: &str,
   local_defs: HashSet<Arc<str>>,
   return_label: &str,
@@ -2115,7 +2115,7 @@ fn gen_js_func(
     format!("[ {args_code} ] = {{ret_var}}.args;")
   };
 
-  let mut body: TernaryTreeList<Calcit> = TernaryTreeList::Empty;
+  let mut body: FingerVec<Calcit> = FingerVec::new();
   let mut async_prefix = if params.async_invocation {
     String::from("async ")
   } else {

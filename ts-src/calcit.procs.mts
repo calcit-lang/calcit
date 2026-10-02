@@ -53,7 +53,7 @@ import { CalcitSet } from "./js-set.mjs";
 import { CalcitEnumValue } from "./js-enum-value.mjs";
 import { to_calcit_data, extract_cirru_edn, extract_cirru_edn_for_typed, CalcitCirruQuote } from "./js-cirru.mjs";
 import { TypedEdnSetView } from "./typed-edn.mjs";
-import { initTernaryTreeList } from "@calcit/ternary-tree";
+import { FingerVec } from "@calcit/finger-vec";
 
 let inNodeJs = typeof process !== "undefined" && process?.release?.name === "node";
 
@@ -1595,7 +1595,7 @@ export let get_env = _$n_get_env;
 
 export let _$n_get_args = (): CalcitList => {
   const args = inNodeJs ? process.argv : [];
-  return new CalcitList(initTernaryTreeList(args));
+  return new CalcitList(FingerVec.from(args));
 };
 
 export let get_args = _$n_get_args;
