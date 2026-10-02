@@ -432,8 +432,17 @@ impl Hash for Calcit {
       }
       Number(n) => {
         "number:".hash(_state);
-        // TODO https://stackoverflow.com/q/39638363/883571
-        (*n as usize).hash(_state)
+        // hash the full bit pattern: `as usize` collapsed every negative number and every
+        // fraction below 1 into bucket 0, turning maps keyed by them into linear scans.
+        // `0.0 == -0.0` under Eq, so both must hash alike; NaN is normalized to one pattern.
+        let bits = if *n == 0.0 {
+          0u64
+        } else if n.is_nan() {
+          f64::NAN.to_bits()
+        } else {
+          n.to_bits()
+        };
+        bits.hash(_state)
       }
       Symbol { sym, .. } => {
         "symbol:".hash(_state);
@@ -1761,6 +1770,33 @@ mod tests {
       assert_eq!(value.cmp(&cloned), Equal);
       assert_eq!(calcit_hash(&value), calcit_hash(&cloned));
     }
+  }
+
+  #[test]
+  fn number_hash_distinguishes_negative_and_fractional_values() {
+    let samples = [-1.0, -2.0, -3.5, -1000.0, 0.5, 0.25, 0.125, 1.0, 2.0, 1e300, -1e300];
+    let mut seen = std::collections::HashSet::new();
+    for n in samples {
+      assert!(seen.insert(calcit_hash(&Calcit::Number(n))), "hash collision for {n}");
+    }
+  }
+
+  #[test]
+  fn number_hash_matches_eq_for_zero_and_nan() {
+    assert_eq!(Calcit::Number(0.0), Calcit::Number(-0.0));
+    assert_eq!(calcit_hash(&Calcit::Number(0.0)), calcit_hash(&Calcit::Number(-0.0)));
+    assert_eq!(calcit_hash(&Calcit::Number(f64::NAN)), calcit_hash(&Calcit::Number(-f64::NAN)));
+  }
+
+  #[test]
+  fn map_with_negative_and_fractional_keys_keeps_all_entries() {
+    let mut map: rpds::HashTrieMapSync<Calcit, Calcit> = rpds::HashTrieMapSync::new_sync();
+    for i in 0..2000 {
+      map = map.insert(Calcit::Number(-(i as f64) - 1.0), Calcit::Number(i as f64));
+      map = map.insert(Calcit::Number(i as f64 / 2000.0 + 0.0001), Calcit::Number(i as f64));
+    }
+    assert_eq!(map.size(), 4000);
+    assert_eq!(map.get(&Calcit::Number(-1001.0)), Some(&Calcit::Number(1000.0)));
   }
 
   #[test]
