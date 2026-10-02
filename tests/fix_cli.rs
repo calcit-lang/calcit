@@ -57,6 +57,8 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
     ("proc-call", "Dynamic", "Number", "&+ x 1", true),
     ("method-call", "Dynamic", "Number", ".rem 3 x", true),
     ("postfix-call", "Dynamic", "Number", "3 .rem x", true),
+    ("closed-method-call", "Number", "Number", ".rem 3 x", false),
+    ("closed-postfix-call", "Number", "Number", "3 .rem x", false),
     (
       "checked-call",
       "Dynamic",
