@@ -21,13 +21,14 @@ fn nominal_write_proof_checks_method_value_without_rewriting_source() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ defstruct WriteState (:count 'Number)",
+        "quote $ defstruct WriteState (:count 'Number) (:payload 'Dynamic)",
       ],
     ),
     "create nominal state",
   );
   for (name, input, body) in [
     ("write-known", "Number", "state .assoc :count incoming"),
+    ("write-storage", "Dynamic", "state .assoc :payload incoming"),
     ("write-open", "Dynamic", "state .assoc :count incoming"),
     ("write-prefix", "Dynamic", ".assoc state :count incoming"),
     ("write-wrong", "String", "state .assoc :count incoming"),
@@ -78,7 +79,7 @@ fn nominal_write_proof_checks_method_value_without_rewriting_source() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ assert= 2 $ :count $ write-known (WriteState :count 1) 2",
+        "quote $ assert= 2 $ :count $ write-known (WriteState :count 1 :payload nil) 2",
       ],
     ),
     "attach method semantics",
@@ -87,8 +88,30 @@ fn nominal_write_proof_checks_method_value_without_rewriting_source() {
     &run_calcit(&snapshot, &["test", "fix-command.main/write-known", "--require-match"]),
     "run method semantics",
   );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        "fix-command.main/write-storage",
+        "preserves-open-storage",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ assert= ([] 1 2) $ :payload $ write-storage (WriteState :count 1 :payload nil) ([] 1 2)",
+      ],
+    ),
+    "attach explicitly open storage semantics",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["test", "fix-command.main/write-storage", "--require-match"]),
+    "run explicitly open storage semantics",
+  );
   let original = fs::read(&snapshot).unwrap();
-  for name in ["write-known", "write-open", "write-prefix"] {
+  for name in ["write-known", "write-storage", "write-open", "write-prefix"] {
     let output = run_fix(
       &snapshot,
       &[
@@ -104,7 +127,7 @@ fn nominal_write_proof_checks_method_value_without_rewriting_source() {
     );
     let report = parse_stdout(&output);
     let suggestions = report["data"]["suggestions"].as_array().unwrap();
-    if name == "write-known" {
+    if matches!(name, "write-known" | "write-storage") {
       assert_success(&output, "accept proven nominal write");
       assert!(suggestions.is_empty());
     } else {
