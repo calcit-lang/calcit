@@ -250,6 +250,8 @@ JSON 中 definition 和 match 都带 `source`、`origin`，并用 `node_kind: le
 完成结构升级后，可用 `calcit fix --preset core-api-0.28-v1 --format edn` 一次预览 15 条已证明的核心 API 叶子改名，覆盖标量转换、谓词、集合方法和 core 效果方法。复用上述 revision 和 source 审阅流程；`source-coverage` 明确说明只扫描 `:code`，`:tests/:examples` 需人工核对。完整调用树的构造器、Option/Result helper 迁移仍单独运行对应规则，顺序见 `calcit docs read fix.md '0.28 核心 API 命名迁移'`。
 - 为单个 runtime value/function 补全缺失 schema 时，使用 `calcit fix --rule synthesize-schema-v1 --ns <ns> --def <name> --format edn`。它只复用正常 compiled inference 与普通项目源码中 resolver 确认、类型一致的全部调用点，填补已有 `Dynamic` 洞；`machine-applicable` 候选可按 revision 原子应用，带 `schema.args.<index>`、`schema.return...` 等 unresolved slot 的 `needs-review` 候选即使传 `--apply` 也不写回。tests/examples 的单个样本不能充当公共参数证明，不得为消除洞扩大成整个 `Dynamic`；macro、data/trait/impl contract 继续显式维护。
 
+schema 候选没有 unresolved slot 也可能需要 review；检查 `:origin-chain` 中的编译器诊断与实际实现证据，不能用返回声明、未证明断言或强转目标类型循环自证。此类候选保留可读报告，但 `--apply` 不写回。
+
 CLI 入口按任务收敛：entry 语义验证使用 `--check-only`，只读事实使用 `query`/`analyze`，可证明的检测与改写统一使用
 `fix` preview/apply，用户指定的结构修改使用 `edit`/`tree`/`cursor`。不要为一条检测或 migration rule 猜测新的顶层命令；
 完整边界见 `calcit docs read workflow-entrypoints.md --full`。

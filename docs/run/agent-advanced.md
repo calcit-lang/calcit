@@ -390,7 +390,8 @@ calcit calcit.cirru --check-only
 
 规则会保留已经声明的 generics、`:where`、features 和已知 slot，只用现有 bottom-up inference 以及普通项目源码中
 resolver 确认、类型一致的完整调用集合填洞。若 suggestion 是 `needs-review`，检查 `:origin-chain` 中的
-`:unresolved-slots`，补充真正的类型约束后重新预览；tests/examples 的单个样本不作为公共参数证明，也不要手工把整个值退化为
+`:unresolved-slots` 和编译器诊断，即使没有剩余洞，也必须确认实现具有独立证明；返回声明、未证明断言与强转契约不构成独立证据。
+补充真正的类型约束后重新预览；tests/examples 的单个样本不作为公共参数证明，也不要手工把整个值退化为
 `Dynamic`。该规则不是升级 preset，macro、data/trait/impl contract 继续显式声明。
 
 ### 迁移定义到另一命名空间（`mv-def`）
