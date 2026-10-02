@@ -1672,6 +1672,10 @@
                       = value $ Point :x 1 :y 2
                     (:err _) false
                   = (&hash decoded) (&hash expected)
+                  match other
+                    (:ok value)
+                      = value $ nominal/Point :x 1 :y 2
+                    (:err _) false
                   not $ &= decoded other
                 , 1 0
           :examples $ []
