@@ -12,6 +12,8 @@
 
 自查发现 caller 的 Number 参数与 reducer 内 Dynamic let 同名时，旧实现会错误借用 caller 证据。修复统一的 let/match 词法推导，Dynamic binder 也必须遮蔽外层同名证据；callback 参数独立绑定，具名实现不继承 caller scope。加入 let/match 同名负例，实际错误返回 String 不能再被证明为 Number。
 
+Review 补充发现 core-let 的最后一个局部变量仍直接读取 inline type，而没有读取刚建立的 scope。内部 lowering 最小回归在修复前得到 `Some(Dynamic)` 而不是 initializer 的 `Some(Number)`；尾部改用已有 `resolve_type_value`，同时验证 String initializer 与未知 initializer 遮蔽外层 Number。该精确 Rust 回归只验证用户源码通常已经附上类型的内部表示，表层与跨后端行为仍复用 Calcit `:tests`。既有 runner 另加入外部裸 Fn reducer 的无写回负例，防止只凭 initial/default 授予具体返回类型。
+
 ## 验证
 
 语义放在 core definition `:tests`，既有 assertion runner 从这些源码表达式回放 native/JS 和显式 proof。负例覆盖控制位、payload、default、开放内容及混合分支，preview 保持源文件字节不变。WASM 能力和 core decoder 的剩余义务按实际结果记录，不把普通执行成功写成完整证明成功。

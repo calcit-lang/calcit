@@ -1342,7 +1342,7 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
           // &let has format: (&let (binding) body...)
           // The last element is the return value
           if xs.len() > 1 {
-            infer_type_from_expr(&xs[xs.len() - 1], &core_let_scope(xs, scope_types))
+            resolve_type_value(&xs[xs.len() - 1], &core_let_scope(xs, scope_types))
           } else {
             None
           }
@@ -3918,6 +3918,27 @@ mod tests {
     let string_path = proc_call(CalcitProc::List, vec![Calcit::Number(0.0)]);
     assert!(fully_typed_literal_lookup_path(&CalcitTypeAnnotation::String, &string_path).is_some());
     assert!(fully_typed_literal_assoc_path(&CalcitTypeAnnotation::String, &string_path).is_none());
+  }
+
+  #[test]
+  fn core_let_tail_uses_initializer_evidence_in_lexical_scope() {
+    // This constructs the internal lowered representation: a source let usually
+    // annotates its local before this inference entrypoint sees it.
+    let mut outer = ScopeTypes::new();
+    outer.insert(Arc::from("x"), Arc::new(CalcitTypeAnnotation::Number));
+    for (initializer, expected) in [
+      (Calcit::Number(1.0), Arc::new(CalcitTypeAnnotation::Number)),
+      (Calcit::Str(Arc::from("text")), Arc::new(CalcitTypeAnnotation::String)),
+      (local("unknown", calcit::DYNAMIC_TYPE.clone()), calcit::DYNAMIC_TYPE.clone()),
+    ] {
+      let binder = local("x", calcit::DYNAMIC_TYPE.clone());
+      let expression = Calcit::from(vec![
+        Calcit::Syntax(CalcitSyntax::CoreLet, Arc::from("tests.let-scope")),
+        Calcit::from(vec![binder.clone(), initializer]),
+        binder,
+      ]);
+      assert_eq!(infer_type_from_expr(&expression, &outer), Some(expected));
+    }
   }
 
   #[test]

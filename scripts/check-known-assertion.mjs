@@ -104,6 +104,18 @@ try {
     assert.deepEqual(await readFile(snapshot), original);
   }
   run("edit", "rm-def", "calcit.assert-evidence/shadow-proof");
+  // Known initial/default values do not prove an externally supplied reducer.
+  run("edit", "def", "calcit.assert-evidence/open-shortcut", "--input-format", "json-ast", "--code",
+    JSON.stringify(["defn", "open-shortcut", ["callback"], ["foldl-shortcut", ["[]", "1"], "0", "0", "callback"]]));
+  run("edit", "schema", "calcit.assert-evidence/open-shortcut", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ [] 'Fn) (:return 'Number)");
+  const openShortcutOriginal = await readFile(snapshot);
+  const openShortcut = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.assert-evidence", "--def", "open-shortcut", "--format", "edn"], options);
+  if (openShortcut.error) throw openShortcut.error;
+  assert.equal(openShortcut.status, 1, `${openShortcut.stdout}\n${openShortcut.stderr}`);
+  assert.match(`${openShortcut.stdout}\n${openShortcut.stderr}`, /E_FN_RETURN_UNPROVEN/);
+  assert.deepEqual(await readFile(snapshot), openShortcutOriginal);
+  run("edit", "rm-def", "calcit.assert-evidence/open-shortcut");
   setBody([...tests, ...returnTests, ...callTests, ...hintTests, ...asyncTests, ...quoteTests].map(test => test.code));
   run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
