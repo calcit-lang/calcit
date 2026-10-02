@@ -12,6 +12,8 @@ Struct 的内置方法识别依赖当前真实 core 表共享的字段和值存�
 
 跨后端回放发现，方法解析后的 `&struct:assoc` 没有经过直接调用路径的静态字段索引 lowering，导致 WASM 拒绝编译。将这一 lowering 提取为直接调用与已解析方法共用的函数，保留 receiver/value 各求值一次及顺序，不将测试改写为 native call。
 
+WASM 后端原本也未实现 indexed 更新，因此补齐静态 index/tag 的 `&struct:assoc-at`：在求值后对实际名义布局验证字段元数据，复制包含定义身份的整个值，再写入目标字段。保留原值及其他字段，过期 index/tag 必须 trap，动态 index/tag 仍明确报告 unsupported。回放使用同一 Calcit `:tests` 验证原值、其他字段与定义身份；额外低层探针验证过期元数据不会静默写错字段。
+
 `nominal-write-proof-v1` 复用现有 compiler-review adapter、诊断编号、EDN/JSON envelope 与无写回策略。它不改变默认全面收紧的发布时间，也不自动改字段声明、插入强转或把 Struct 改成 Map。先前 helper 错误仍阻断审计，不能伪装成空建议。
 
 ## 验证与剩余范围

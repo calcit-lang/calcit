@@ -71,8 +71,8 @@ use runtime::{
 };
 use structs::{
   StructLayouts, collect_struct_layouts, component_struct_identity, emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth,
-  emit_named_enum_new, emit_struct_contains, emit_struct_count, emit_struct_def, emit_struct_field_tag, emit_struct_get,
-  emit_struct_get_name, emit_struct_matches, emit_struct_new, emit_struct_nth, emit_struct_to_map, resolve_struct_ref,
+  emit_named_enum_new, emit_struct_assoc_at, emit_struct_contains, emit_struct_count, emit_struct_def, emit_struct_field_tag,
+  emit_struct_get, emit_struct_get_name, emit_struct_matches, emit_struct_new, emit_struct_nth, emit_struct_to_map, resolve_struct_ref,
   try_parse_defrecord_form,
 };
 
@@ -6928,9 +6928,8 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeStructDefinition => emit_struct_def(ctx, args),
     CalcitProc::NativeStructGetName => emit_struct_get_name(ctx, args),
     CalcitProc::NativeStructToMap => emit_struct_to_map(ctx, args),
-    CalcitProc::NativeStructAssoc | CalcitProc::NativeStructAssocAt | CalcitProc::NativeStructWith => {
-      Err(format!("{proc} not yet supported in WASM codegen"))
-    }
+    CalcitProc::NativeStructAssocAt => emit_struct_assoc_at(ctx, args),
+    CalcitProc::NativeStructAssoc | CalcitProc::NativeStructWith => Err(format!("{proc} not yet supported in WASM codegen")),
     CalcitProc::NativeStructFromMap
     | CalcitProc::NativeStructExtendAs
     | CalcitProc::NativeStructImpls
