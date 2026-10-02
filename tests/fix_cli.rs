@@ -7029,8 +7029,19 @@ fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
   ));
 
   let workflow = run_fix(&snapshot, &["--workflow", "strict", "--format", "json"]);
-  assert_success(&workflow, "strict workflow schema evidence");
+  assert!(
+    !workflow.status.success(),
+    "schema candidates do not discharge existing compiler obligations"
+  );
   let workflow = parse_stdout(&workflow);
+  assert_eq!(workflow["data"]["workflow"]["status"], "requires-review");
+  assert!(
+    workflow["diagnostics"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .any(|item| item["code"] == "E_FN_RETURN_UNPROVEN")
+  );
   assert!(
     workflow["data"]["workflow"]["review_required"]["schema_candidates"]
       .as_array()
