@@ -18,7 +18,12 @@ pub struct CalcitStructValue {
 
 impl PartialEq for CalcitStructValue {
   fn eq(&self, other: &Self) -> bool {
-    self.struct_ref.name == other.struct_ref.name && self.struct_ref.fields == other.struct_ref.fields && self.values == other.values
+    // `definition_ref` ("ns/def") keeps same-named structs from different definitions apart;
+    // it is a path, not a pointer, so values stay comparable across hot code swapping.
+    self.struct_ref.name == other.struct_ref.name
+      && self.struct_ref.definition_ref == other.struct_ref.definition_ref
+      && self.struct_ref.fields == other.struct_ref.fields
+      && self.values == other.values
   }
 }
 

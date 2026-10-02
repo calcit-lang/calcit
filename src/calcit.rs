@@ -527,6 +527,7 @@ impl Hash for Calcit {
       Struct(CalcitStructValue { struct_ref, values, .. }) => {
         "record:".hash(_state);
         struct_ref.name.hash(_state);
+        struct_ref.definition_ref.hash(_state);
         struct_ref.fields.hash(_state);
         values.hash(_state);
       }
@@ -1832,5 +1833,33 @@ mod tests {
 
     assert_eq!(calcit_hash(&value), before);
     assert!(set.contains(&value));
+  }
+
+  #[test]
+  fn struct_values_from_different_definitions_are_not_equal() {
+    let build = |definition_ref: Option<&str>, value: f64| {
+      let mut def = CalcitStructDef::from_fields(EdnTag::new("Point"), vec![EdnTag::new("x")]);
+      def.definition_ref = definition_ref.map(Arc::from);
+      Calcit::Struct(CalcitStructValue {
+        struct_ref: Arc::new(def),
+        values: Arc::new(vec![Calcit::Number(value)]),
+      })
+    };
+
+    let a = build(Some("app.a/Point"), 1.0);
+    let b = build(Some("app.b/Point"), 1.0);
+    assert_ne!(a, b);
+    assert_ne!(a.cmp(&b), Equal);
+    assert_ne!(calcit_hash(&a), calcit_hash(&b));
+
+    // the same definition path stays equal, e.g. after hot code swapping re-creates the definition
+    let reloaded = build(Some("app.a/Point"), 1.0);
+    assert_eq!(a, reloaded);
+    assert_eq!(a.cmp(&reloaded), Equal);
+    assert_eq!(calcit_hash(&a), calcit_hash(&reloaded));
+
+    // anonymous structs (no definition) with the same shape still compare by content
+    assert_eq!(build(None, 1.0), build(None, 1.0));
+    assert_ne!(build(None, 1.0), build(None, 2.0));
   }
 }

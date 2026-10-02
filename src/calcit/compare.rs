@@ -219,8 +219,11 @@ pub(super) fn compare_map_values(a: &rpds::HashTrieMapSync<Calcit, Calcit>, b: &
 
 pub(super) fn compare_struct_values(a: &CalcitStructValue, b: &CalcitStructValue) -> Ordering {
   match a.struct_ref.name.cmp(&b.struct_ref.name) {
-    Equal => match a.struct_ref.fields.cmp(&b.struct_ref.fields) {
-      Equal => a.values.cmp(&b.values),
+    Equal => match a.struct_ref.definition_ref.cmp(&b.struct_ref.definition_ref) {
+      Equal => match a.struct_ref.fields.cmp(&b.struct_ref.fields) {
+        Equal => a.values.cmp(&b.values),
+        ord => ord,
+      },
       ord => ord,
     },
     ord => ord,
