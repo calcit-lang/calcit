@@ -184,6 +184,7 @@
             test-eq-trait
             ; Test Compare trait
             test-compare-trait
+            test-bit-shifts
             ; Test Add trait
             test-add-trait
             ; Test Len/Empty traits
@@ -358,6 +359,21 @@
               assert-traits enum_value Countable Contains
               assert-traits struct_value Countable Contains
             println "|  Collection traits: ✓"
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ []
+        'test-bit-shifts $ %{} 'CodeEntry (:doc "|Shift counts use their low five bits on every backend")
+          :code $ quote $ defn test-bit-shifts ()
+            assert= 4 $ bit-shl 1 2
+            assert= 1 $ bit-shl 1 32
+            assert= 2 $ bit-shl 1 33
+            assert= -2147483648 $ bit-shl 1 31
+            assert= -2147483648 $ bit-shl 1 -1
+            assert= 2 $ bit-shr 8 2
+            assert= 8 $ bit-shr 8 32
+            assert= -4 $ bit-shr -8 1
+            assert= -1 $ bit-shr -8 -1
+            assert= 0 $ bit-shr 5 100
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
