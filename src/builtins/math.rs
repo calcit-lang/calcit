@@ -245,7 +245,8 @@ pub fn sqrt(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn bit_shr(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
-      (Ok(value), Ok(step)) => Ok(Calcit::Number((value >> step) as f64)),
+      // only the low five bits of the step count, same as JS `>>` and WASM `i32.shr_s`
+      (Ok(value), Ok(step)) => Ok(Calcit::Number(value.wrapping_shr(step as u32) as f64)),
       (Err(e), _) => CalcitErr::err_str(
         CalcitErrKind::Type,
         format!("&math:bit-shr expected an integer for initial value, but received: {e}"),
@@ -269,7 +270,8 @@ pub fn bit_shr(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn bit_shl(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
-      (Ok(value), Ok(step)) => Ok(Calcit::Number((value << step) as f64)),
+      // only the low five bits of the step count, same as JS `<<` and WASM `i32.shl`
+      (Ok(value), Ok(step)) => Ok(Calcit::Number(value.wrapping_shl(step as u32) as f64)),
       (Err(e), _) => CalcitErr::err_str(
         CalcitErrKind::Type,
         format!("&math:bit-shl expected an integer for initial value, but received: {e}"),
@@ -416,5 +418,33 @@ mod remainder_safety_tests {
     }
     assert!(rem_numbers(1.0, 0.0).is_err());
     assert!(rem_numbers(i32::MIN as f64, -1.0).is_err());
+  }
+}
+
+#[cfg(test)]
+mod shift_safety_tests {
+  use super::{bit_shl, bit_shr};
+  use crate::calcit::Calcit;
+
+  fn shift(f: fn(&[Calcit]) -> Result<Calcit, crate::calcit::CalcitErr>, value: f64, step: f64) -> f64 {
+    match f(&[Calcit::Number(value), Calcit::Number(step)]) {
+      Ok(Calcit::Number(n)) => n,
+      other => panic!("expected a number, got {other:?}"),
+    }
+  }
+
+  #[test]
+  fn shift_counts_use_their_low_five_bits_without_panicking() {
+    // same results as JS `<<` / `>>` and WASM `i32.shl` / `i32.shr_s`
+    assert_eq!(shift(bit_shl, 1.0, 32.0), 1.0);
+    assert_eq!(shift(bit_shl, 1.0, 33.0), 2.0);
+    assert_eq!(shift(bit_shl, 1.0, -1.0), i32::MIN as f64);
+    assert_eq!(shift(bit_shr, 8.0, 32.0), 8.0);
+    assert_eq!(shift(bit_shr, -8.0, -1.0), -1.0);
+    assert_eq!(shift(bit_shr, 5.0, 100.0), 0.0);
+    for step in [i32::MIN as f64, -33.0, -1.0, 0.0, 31.0, 32.0, 1000.0, i32::MAX as f64] {
+      let _ = shift(bit_shl, 123.0, step);
+      let _ = shift(bit_shr, -123.0, step);
+    }
   }
 }
