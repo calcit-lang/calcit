@@ -271,7 +271,7 @@ pub(super) fn emit_struct_assoc_at(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
     .struct_layouts
     .field_tags
     .iter()
-    .filter_map(|(id, fields)| (fields.get(index) == Some(&field_id)).then_some(*id))
+    .filter_map(|(id, fields)| (fields.get(index) == Some(&field_id)).then_some((*id, fields.len())))
     .collect::<Vec<_>>();
   layouts.sort_unstable();
 
@@ -280,13 +280,57 @@ pub(super) fn emit_struct_assoc_at(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
   emit_expr(ctx, &args[3])?;
   ctx.emit(Instruction::LocalSet(value));
 
-  // Validate metadata against the actual nominal layout before touching fields.
+  // The receiver must be a live heap allocation before any of its metadata is read:
+  // inside the heap, followed by a valid allocation header that marks a Struct.
+  let struct_type_tag = get_type_tag(ctx, "struct") as i32;
+  ctx.emit(Instruction::LocalGet(src));
+  ctx.emit(Instruction::I32Const(HEAP_BASE + 8));
+  ctx.emit(Instruction::I32GeU);
+  ctx.emit(Instruction::LocalGet(src));
+  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  ctx.emit(Instruction::I32LtU);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalGet(src));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::I32Const(HEAP_MAGIC));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::LocalGet(src));
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::I32Load(mem_arg_i32(4)));
+  ctx.emit(Instruction::I32Const(struct_type_tag));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+
+  // Validate metadata against the actual nominal layout before touching fields:
+  // the layout id, the stored field count and the allocation bounds must all agree.
   ctx.emit(Instruction::I32Const(0));
-  for layout in layouts {
+  for (layout, field_count) in layouts {
     ctx.emit(Instruction::LocalGet(src));
     ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
     ctx.emit(f64_const(layout as f64));
     ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::LocalGet(src));
+    ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+    ctx.emit(f64_const(field_count as f64));
+    ctx.emit(Instruction::F64Eq);
+    ctx.emit(Instruction::I32And);
+    ctx.emit(Instruction::LocalGet(src));
+    ctx.emit(Instruction::I32Const(((2 + field_count) * 8) as i32));
+    ctx.emit(Instruction::I32Add);
+    ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+    ctx.emit(Instruction::I32LeU);
+    ctx.emit(Instruction::I32And);
     ctx.emit(Instruction::I32Or);
   }
   ctx.emit(Instruction::I32Eqz);
