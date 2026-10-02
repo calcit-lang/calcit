@@ -22,6 +22,12 @@ try {
   execFileSync(binary, ["--emit-path", output, "calcit/test-wasm.cirru", "js"], { stdio: "pipe" });
   const compiled = await import(pathToFileURL(join(output, "test-wasm.main.mjs")).href);
   assert.equal(compiled.test_struct_contains_field(), 1, "generated JS must preserve the Tag field predicate");
+  assert.equal(compiled.test_struct_nominal_equality(), 1, "generated JS must preserve definition identity and structural equality");
+  assert.equal(compiled.test_struct_hash(), 1, "equal nested Struct values must have equal hashes");
+  assert.equal(compiled.test_struct_map_key(), 1, "Map keys must preserve nominal Struct identity");
+  assert.equal(compiled.test_struct_container_hash(), 1, "hashing must recurse through containers of nominal values");
+  assert.equal(compiled.test_struct_layout_identity(), 1, "same-named definitions must retain their own field layout");
+  assert.equal(compiled.test_struct_edn_identity(), 1, "typed EDN decoding must restore the requested definition identity");
 } finally {
   await rm(output, { recursive: true, force: true });
 }

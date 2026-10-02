@@ -807,7 +807,7 @@ export let _$n_struct_$o_impl_traits = function (xs: CalcitValue, ...traits: Cal
   if (traits.length < 1) throw new Error("&struct:impl-traits takes 2+ arguments");
   if (!(xs instanceof CalcitStructValue)) throw new Error("&struct:impl-traits expected a struct value");
   const impls = traits.map((trait) => coerce_impl(trait, "&struct:impl-traits"));
-  const nextStruct = new CalcitStructDef(xs.name, xs.fields, xs.structRef.fieldTypes, xs.structRef.impls.concat(impls));
+  const nextStruct = new CalcitStructDef(xs.name, xs.fields, xs.structRef.fieldTypes, xs.structRef.impls.concat(impls), xs.structRef.definitionRef);
   return new CalcitStructValue(xs.name, xs.fields, xs.values, nextStruct);
 };
 
@@ -816,7 +816,7 @@ export let _$n_struct_def_$o_impl_traits = function (xs: CalcitValue, ...traits:
   if (!(xs instanceof CalcitStructDef)) throw new Error("&struct-def:impl-traits expected a struct definition");
   const addedImpls = traits.map((trait) => coerce_impl(trait, "&struct-def:impl-traits"));
   const baseImpls = xs.impls ?? [];
-  return new CalcitStructDef(xs.name, xs.fields, xs.fieldTypes, baseImpls.concat(addedImpls));
+  return new CalcitStructDef(xs.name, xs.fields, xs.fieldTypes, baseImpls.concat(addedImpls), xs.definitionRef);
 };
 
 export let _$n_enum_def_$o_impl_traits = function (xs: CalcitValue, ...traits: CalcitValue[]) {

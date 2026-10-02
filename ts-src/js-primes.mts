@@ -1,4 +1,4 @@
-import { CalcitTag, CalcitSymbol, CalcitFn, CalcitRecur } from "./calcit-data.mjs";
+import { CalcitTag, CalcitSymbol, CalcitFn, CalcitRecur, compareUnicodeStrings } from "./calcit-data.mjs";
 import { CalcitRef } from "./js-ref.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitStructValue } from "./js-struct-value.mjs";
@@ -125,6 +125,30 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
         return rawCompare(a, b);
       case PseudoTypeIndex.ref:
         return rawCompare((a as CalcitRef).path, (b as CalcitRef).path);
+      case PseudoTypeIndex.struct_value: {
+        const left = a as CalcitStructValue;
+        const right = b as CalcitStructValue;
+        const nameOrder = compareUnicodeStrings(left.name.value, right.name.value);
+        if (nameOrder !== 0) return nameOrder;
+        const leftRef = left.structRef.definitionRef;
+        const rightRef = right.structRef.definitionRef;
+        if (leftRef !== rightRef) {
+          if (leftRef == null) return -1;
+          if (rightRef == null) return 1;
+          return compareUnicodeStrings(leftRef, rightRef);
+        }
+        for (let index = 0; index < Math.min(left.fields.length, right.fields.length); index++) {
+          const fieldOrder = compareUnicodeStrings(left.fields[index].value, right.fields[index].value);
+          if (fieldOrder !== 0) return fieldOrder;
+        }
+        const fieldCountOrder = rawCompare(left.fields.length, right.fields.length);
+        if (fieldCountOrder !== 0) return fieldCountOrder;
+        for (let index = 0; index < Math.min(left.values.length, right.values.length); index++) {
+          const valueOrder = _$n_compare(left.values[index], right.values[index]);
+          if (valueOrder !== 0) return valueOrder;
+        }
+        return rawCompare(left.values.length, right.values.length);
+      }
       case PseudoTypeIndex.cirru_quote:
         return rawCompare(a, b); // TODO not stable
       default:

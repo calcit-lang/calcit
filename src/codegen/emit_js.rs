@@ -2456,9 +2456,11 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           gen_stack::push_call_stack(ns, &def, StackKind::Codegen, compiled_def.codegen_form.to_owned(), &[]);
           writeln!(
             vals_code,
-            "\nexport var {} = {};",
+            "\nexport var {} = {}bind_struct_definition({}, {});",
             escape_var(&def),
-            to_js_code(&compiled_def.codegen_form, ns, &def_names, &file_imports, &collected_tags, None)?
+            get_proc_prefix(ns),
+            to_js_code(&compiled_def.codegen_form, ns, &def_names, &file_imports, &collected_tags, None)?,
+            wrap_js_str(&format!("{ns}/{def}"))
           )
           .expect("write");
           gen_stack::pop_call_stack()

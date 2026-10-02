@@ -1584,6 +1584,9 @@ WebAssembly.instantiate(module, { host }).then(result => {
   }
   if (e["call-host-ping"]() !== undefined) throw new Error("imported Unit result should remain zero-result");
   const [profileNamePtr, profileNameLen] = allocateBytes(Buffer.from("Ada", "utf8"));
+  if (e["profile-stats-identity"](7.5) !== 1) {
+    throw new Error("lifted Struct must share constructor identity, not a same-named foreign definition");
+  }
   const [profileScoresPtr, profileScoresLen] = allocateNumberList([1, 2, 3]);
   const [profileOutcomePtr, profileOutcomeLen] = allocateNumberList([4, 5]);
   const directProfile = readProfile(e["echo-profile"](1, 1, profileNamePtr, profileNameLen, profileNamePtr, profileNameLen, 0, profileOutcomePtr, profileOutcomeLen, profileScoresPtr, profileScoresLen, 7.5));

@@ -8,21 +8,23 @@ export class CalcitStructDef {
   fieldTypes: CalcitValue[];
   impls: CalcitImpl[];
   cachedHash: number;
+  readonly definitionRef: string | null;
 
-  constructor(name: CalcitTag, fields: CalcitTag[], fieldTypes: CalcitValue[], impls: CalcitImpl[] = []) {
+  constructor(name: CalcitTag, fields: CalcitTag[], fieldTypes: CalcitValue[], impls: CalcitImpl[] = [], definitionRef: string | null = null) {
     const [canonicalFields, canonicalTypes] = canonicalizeTagPairs(fields, fieldTypes, "CalcitStructDef");
     this.name = name;
     this.fields = canonicalFields;
     this.fieldTypes = canonicalTypes;
-    this.impls = impls;
+    this.impls = impls ?? [];
     this.cachedHash = null;
+    this.definitionRef = definitionRef;
   }
 
   withImpls(impls: CalcitImpl | CalcitImpl[]): CalcitStructDef {
     if (impls instanceof CalcitImpl) {
-      return new CalcitStructDef(this.name, this.fields, this.fieldTypes, [impls]);
+      return new CalcitStructDef(this.name, this.fields, this.fieldTypes, [impls], this.definitionRef);
     } else if (Array.isArray(impls)) {
-      return new CalcitStructDef(this.name, this.fields, this.fieldTypes, impls);
+      return new CalcitStructDef(this.name, this.fields, this.fieldTypes, impls, this.definitionRef);
     }
     throw new Error("Expected an impl as implementation");
   }
@@ -40,4 +42,12 @@ export class CalcitStructDef {
     parts.push(")");
     return parts.join("");
   }
+}
+
+/** Match native definition binding without replacing an alias's existing identity. */
+export function bind_struct_definition(value: CalcitValue, definitionRef: string): CalcitValue {
+  if (value instanceof CalcitStructDef && value.definitionRef == null) {
+    return new CalcitStructDef(value.name, value.fields, value.fieldTypes, value.impls, definitionRef);
+  }
+  return value;
 }

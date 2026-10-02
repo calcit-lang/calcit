@@ -1754,7 +1754,7 @@ mod sort_tests {
         fn_has_rest: HashMap::new(),
         runtime_fn_index: HashMap::new(),
         tag_index: HashMap::new(),
-        struct_field_tags: HashMap::new(),
+        struct_layouts: Default::default(),
         string_pool: HashMap::new(),
         atom_globals: HashMap::new(),
         value_imports: HashMap::new(),

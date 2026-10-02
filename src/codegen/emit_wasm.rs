@@ -70,9 +70,10 @@ use runtime::{
   build_wasi_wait_fn, build_wasi_write_all_fn, build_wasi_write_text_fn, build_wasm_module, core_host_import, host_imports_for_target,
 };
 use structs::{
-  emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth, emit_named_enum_new, emit_struct_contains, emit_struct_count,
-  emit_struct_def, emit_struct_field_tag, emit_struct_get, emit_struct_get_name, emit_struct_matches, emit_struct_new, emit_struct_nth,
-  emit_struct_to_map, resolve_struct_ref, try_parse_defrecord_form,
+  StructLayouts, collect_struct_layouts, component_struct_identity, emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth,
+  emit_named_enum_new, emit_struct_contains, emit_struct_count, emit_struct_def, emit_struct_field_tag, emit_struct_get,
+  emit_struct_get_name, emit_struct_matches, emit_struct_new, emit_struct_nth, emit_struct_to_map, resolve_struct_ref,
+  try_parse_defrecord_form,
 };
 
 /// Low memory holds WASI scratch, the private Number formatter stack, and its
@@ -501,8 +502,11 @@ fn emit_wasm_impl(
     *tag_index.get("map").expect("map tag must exist") as i32,
     *tag_index.get("list").expect("list tag must exist") as i32,
     *tag_index.get("string").expect("string tag must exist") as i32,
-    *tag_index.get("enum").expect("enum tag must exist") as i32,
-    *tag_index.get("set").expect("set tag must exist") as i32,
+    (
+      *tag_index.get("enum").expect("enum tag must exist") as i32,
+      *tag_index.get("set").expect("set tag must exist") as i32,
+      *tag_index.get("struct").expect("struct tag must exist") as i32,
+    ),
   )?;
   if target == WasmTarget::Wasi && boundary == WasmBoundary::Native {
     let fd_write_idx = *index_host_imports(&host_imports)
@@ -671,11 +675,17 @@ fn emit_wasm_impl(
   let mut component_list_codecs = BTreeMap::new();
   let mut component_struct_codecs = BTreeMap::new();
   let mut component_variant_codecs = BTreeMap::new();
+  let component_types = if component_cabi_realloc_index.is_some() {
+    collect_component_compound_types(&program_data, &fn_defs, &component_import_adapters)?
+  } else {
+    Vec::new()
+  };
+  let struct_layouts = collect_struct_layouts(&program_data, &fn_defs, &component_types, &tag_index)?;
   if let Some(cabi_realloc_index) = component_cabi_realloc_index {
     let buffer_new_index = component_buffer_new_index.expect("Component boundary must install the Buffer constructor");
     let list_tag_id = *tag_index.get("list").expect("list tag must exist") as i32;
     let enum_tag_id = *tag_index.get("enum").expect("enum tag must exist") as i32;
-    for compound_type in collect_component_compound_types(&program_data, &fn_defs, &component_import_adapters)? {
+    for compound_type in component_types {
       let lift_index = num_imports + compiled_fns.len() as u32;
       let lower_index = lift_index + 1;
       match &compound_type {
@@ -698,9 +708,10 @@ fn emit_wasm_impl(
           compiled_fns.push(build_component_list_lower_fn(&compound_type, cabi_realloc_index, &codecs));
         }
         ComponentAbiType::Struct(record) => {
-          let nominal_tag_id = *tag_index
-            .get(record.tag.as_str())
-            .ok_or_else(|| format!("E_COMPONENT_ABI_STRUCT_TAG: `{}` is missing from the WASM tag index", record.id))?
+          let nominal_tag_id = *struct_layouts
+            .ids
+            .get(&component_struct_identity(record))
+            .ok_or_else(|| format!("E_COMPONENT_ABI_STRUCT_TAG: `{}` has no registered identity", record.id))?
             as i32;
           component_struct_codecs.insert(compound_type.clone(), ComponentStructCodec { lift_index, lower_index });
           let codecs = ComponentValueCodecs {
@@ -935,8 +946,6 @@ fn emit_wasm_impl(
     fn_table_index.insert(name.clone(), i as u32);
   }
 
-  let struct_field_tags = collect_struct_field_tags_from_program(&program_data, &tag_index);
-
   let mut static_fn_defs: HashMap<String, Arc<StaticFnDef>> = HashMap::new();
   for (ns, name, args, body) in &fn_defs {
     let Some(signature) = program_data
@@ -1024,7 +1033,7 @@ fn emit_wasm_impl(
     fn_has_rest,
     runtime_fn_index,
     tag_index,
-    struct_field_tags,
+    struct_layouts,
     string_pool,
     atom_globals,
     value_imports,
@@ -4799,7 +4808,7 @@ struct WasmCompileEnv {
   fn_has_rest: HashMap<String, u32>,
   runtime_fn_index: HashMap<String, u32>,
   tag_index: HashMap<String, u32>,
-  struct_field_tags: HashMap<u32, Vec<u32>>,
+  struct_layouts: StructLayouts,
   string_pool: HashMap<String, u32>,
   /// qualified atom name ("ns/def") → WASM global index
   atom_globals: HashMap<String, u32>,
@@ -4946,8 +4955,8 @@ struct WasmGenCtx {
   runtime_fn_index: HashMap<String, u32>,
   /// Tag name → integer ID map (compile-time constant, shared across all functions)
   tag_index: HashMap<String, u32>,
-  /// Struct tag id → field tag ids in index order.
-  struct_field_tags: HashMap<u32, Vec<u32>>,
+  /// Stable definition identities, display names, and field layouts.
+  struct_layouts: StructLayouts,
   /// Current block nesting depth relative to the recur loop
   /// (0 = directly inside the loop, 1 = inside one if/block, etc.)
   block_depth: u32,
@@ -5003,7 +5012,7 @@ impl WasmGenCtx {
       fn_has_rest: env.fn_has_rest,
       runtime_fn_index: env.runtime_fn_index,
       tag_index: env.tag_index,
-      struct_field_tags: env.struct_field_tags,
+      struct_layouts: env.struct_layouts,
       block_depth: 0,
       string_pool: env.string_pool,
       atom_globals: env.atom_globals,
@@ -5950,11 +5959,7 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
       ctx.emit(f64_const(id as f64));
     }
     Calcit::StructDef(s) => {
-      let tag_str = s.name.to_string();
-      let id = *ctx
-        .tag_index
-        .get(&tag_str)
-        .ok_or_else(|| format!("unknown struct tag in WASM codegen: {tag_str}"))?;
+      let id = ctx.struct_layouts.id(s)?;
       ctx.emit(f64_const(id as f64));
     }
     Calcit::Local(local) => {
@@ -5991,11 +5996,7 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
         // `[]` used as a bare expression — evaluates to an empty list.
         emit_list_new(ctx, &[])?;
       } else if let Ok(struct_def) = resolve_struct_ref(expr) {
-        let tag_str = struct_def.name.to_string();
-        let id = *ctx
-          .tag_index
-          .get(&tag_str)
-          .ok_or_else(|| format!("unknown struct tag in WASM codegen: {tag_str}"))?;
+        let id = ctx.struct_layouts.id(&struct_def)?;
         ctx.emit(f64_const(id as f64));
       } else if let Some(&slot) = ctx
         .fn_table_index
@@ -8589,10 +8590,16 @@ fn emit_equals_core_impl(ctx: &mut WasmGenCtx, a: u32, b: u32, structural_sets: 
   ctx.emit(Instruction::LocalSet(result));
   ctx.emit(Instruction::End); // end map if
 
-  // --- Enum comparison: variant tag and recursive payloads ---
+  // --- Enum/Struct comparison: identity and recursive payloads ---
   ctx.emit(Instruction::LocalGet(tag_a));
   ctx.emit(Instruction::I32Const(enum_tag));
   ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::LocalGet(tag_a));
+  ctx.emit(Instruction::I32Const(
+    *ctx.tag_index.get("struct").expect("struct tag must exist") as i32
+  ));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::I32Or);
   ctx.begin_block_if();
   ctx.emit(Instruction::LocalGet(a));
   ctx.emit(Instruction::LocalGet(b));
@@ -9144,44 +9151,6 @@ fn build_string_pool(
   (pool, data, heap_start)
 }
 
-fn collect_struct_field_tags_from_program(
-  program_data: &program::CompiledProgram,
-  tag_index: &HashMap<String, u32>,
-) -> HashMap<u32, Vec<u32>> {
-  let mut result = HashMap::new();
-
-  for file_info in program_data.values() {
-    for compiled in file_info.defs.values() {
-      let struct_def = compiled
-        .source_code
-        .iter()
-        .chain([&compiled.preprocessed_code, &compiled.codegen_form])
-        .find_map(|code| {
-          try_parse_defrecord_form(code).or_else(|| match crate::calcit::type_annotation::resolve_type_def_from_code(code) {
-            Some(Calcit::StructDef(struct_def)) => Some(struct_def),
-            _ => None,
-          })
-        });
-      let Some(struct_def) = struct_def else {
-        continue;
-      };
-
-      let Some(struct_tag_id) = tag_index.get(struct_def.name.ref_str()) else {
-        continue;
-      };
-
-      let field_tag_ids = struct_def
-        .fields
-        .iter()
-        .filter_map(|field| tag_index.get(field.ref_str()).copied())
-        .collect::<Vec<_>>();
-      result.insert(*struct_tag_id, field_tag_ids);
-    }
-  }
-
-  result
-}
-
 /// If `expr` is a literal enum constructor `(NativeEnum :tag val0 val1...)` with only
 /// literal args (Tag, Str, Number, Bool, Nil, Unit), return its lispy string representation.
 /// Used both to pre-intern the string and to emit it as a constant in `emit_turn_string`.
@@ -9548,7 +9517,7 @@ mod tests {
       fn_has_rest: HashMap::new(),
       runtime_fn_index: HashMap::new(),
       tag_index: HashMap::new(),
-      struct_field_tags: HashMap::new(),
+      struct_layouts: Default::default(),
       string_pool: HashMap::new(),
       atom_globals: HashMap::new(),
       value_imports: HashMap::new(),

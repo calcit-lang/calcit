@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { cp, mkdtemp, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
@@ -8,6 +8,10 @@ const repository = fileURLToPath(new URL("..", import.meta.url));
 const fixture = await mkdtemp(join(repository, "target/js-ffi-fixture-"));
 const relocated = await mkdtemp(join(repository, "target/js-ffi-relocated-"));
 try {
+  // A shared target directory must not select another checkout's runtime.
+  for (const directory of [fixture, relocated]) {
+    await symlink(resolve(repository, "node_modules"), join(directory, "node_modules"), "dir");
+  }
   const input = join(fixture, "calcit.cirru");
   const output = join(fixture, "generated");
   await cp(resolve(repository, "calcit/js-ffi-consumer.cirru"), input);

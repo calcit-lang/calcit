@@ -3653,8 +3653,7 @@ pub(super) fn build_runtime_fns(
   map_tag: i32,
   list_tag: i32,
   string_tag: i32,
-  enum_tag: i32,
-  set_tag: i32,
+  (enum_tag, set_tag, struct_tag): (i32, i32, i32),
 ) -> Result<(Vec<CompiledFn>, HashMap<String, u32>), String> {
   let mut fn_index = HashMap::new();
   let (mut fns, _) = number_format::load_number_functions(base_index, number_stack_global)?;
@@ -3883,18 +3882,15 @@ pub(super) fn build_runtime_fns(
 
   let map_key_hash_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_key_hash"), map_key_hash_idx);
-  fns.push(build_rt_map_key_hash(string_tag, hash_idx));
+  fn_index.insert(String::from("__rt_value_hash"), map_key_hash_idx);
+  let value_hash_slot = fns.len();
+  // Fill these mutually dependent helpers once the map and equality indices exist.
+  fns.push(build_rt_hash_f64());
 
   let map_key_equal_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_key_equal"), map_key_equal_idx);
-  fns.push(build_rt_map_key_equal(string_tag, str_compare_idx));
-
-  // __rt_hash_list_or_set(ptr: i32) -> i32
-  // XOR-based content hash over all elements (order-independent for sets, order-dependent for lists).
-  // Both sets and lists have identical memory layout, so one function suffices.
-  let hash_list_idx = base_index + fns.len() as u32;
-  fn_index.insert(String::from("__rt_hash_list_or_set"), hash_list_idx);
-  fns.push(build_rt_hash_list_or_set(hash_idx));
+  let key_equal_slot = fns.len();
+  fns.push(build_rt_hash_f64());
 
   let map_root_assoc_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_map_root_assoc"), map_root_assoc_idx);
@@ -4042,13 +4038,13 @@ pub(super) fn build_runtime_fns(
   fns.push(build_rt_str_split(string_tag, list_tag, str_find_from_idx, utf8_char_len_idx));
 
   // value-equal: __rt_value_equal(a: f64, b: f64) → i32 (1=equal, 0=not)
-  // Deep equality for strings, lists, and enum payloads.
+  // Deep equality for strings, containers, and nominal payloads.
   let value_equal_idx = base_index + fns.len() as u32;
   let map_equal_idx = value_equal_idx + 1;
   let set_equal_idx = value_equal_idx + 2;
   fn_index.insert(String::from("__rt_value_equal"), value_equal_idx);
   fns.push(build_rt_value_equal(
-    (string_tag, list_tag, enum_tag, map_tag, set_tag),
+    (string_tag, list_tag, enum_tag, map_tag, set_tag, struct_tag),
     (str_compare_idx, value_equal_idx, map_equal_idx, set_equal_idx),
   ));
 
@@ -4058,6 +4054,12 @@ pub(super) fn build_runtime_fns(
 
   fn_index.insert(String::from("__rt_set_equal"), set_equal_idx);
   fns.push(build_rt_set_equal(value_equal_idx));
+
+  fns[value_hash_slot] = build_rt_value_hash(
+    (string_tag, list_tag, enum_tag, map_tag, set_tag, struct_tag),
+    (hash_idx, map_key_hash_idx, map_linearize_idx),
+  );
+  fns[key_equal_slot] = build_rt_map_key_equal(value_equal_idx);
 
   Ok((fns, fn_index))
 }
@@ -4246,64 +4248,16 @@ fn rt_emit_copy_slots(builder: &mut RuntimeFnBuilder, copy_fn_idx: u32, dst_loca
   builder.emit(Instruction::Call(copy_fn_idx));
 }
 
-fn build_rt_hash_list_or_set(hash_f64_idx: u32) -> CompiledFn {
-  // params: ptr: i32
-  // Returns i32 hash via XOR of each element's hash — order-independent.
-  // Layout: [count: f64 at ptr][elem0: f64 at ptr+8] ...
-  let mut b = RuntimeFnBuilder::new(1); // param: ptr (i32)
-  let count = b.alloc_i32();
-  let i = b.alloc_i32();
-  let acc = b.alloc_i32();
-  let elem_addr = b.alloc_i32();
-  // count = i32(f64.load[ptr])
-  b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::F64Load(mem_arg_f64(0)));
-  b.emit(Instruction::I32TruncF64U);
-  b.emit(Instruction::LocalSet(count));
-  // i = 0; acc = 0
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::LocalSet(i));
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::LocalSet(acc));
-  // loop
-  b.emit(Instruction::Block(BlockType::Empty));
-  b.emit(Instruction::Loop(BlockType::Empty));
-  // if i >= count break
-  b.emit(Instruction::LocalGet(i));
-  b.emit(Instruction::LocalGet(count));
-  b.emit(Instruction::I32GeU);
-  b.emit(Instruction::BrIf(1)); // break outer block
-  // elem_addr = ptr + 8 + i*8
-  b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::I32Const(8));
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalGet(i));
-  b.emit(Instruction::I32Const(3)); // * 8 = << 3
-  b.emit(Instruction::I32Shl);
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalSet(elem_addr));
-  // acc ^= hash_f64(f64.load[elem_addr])
-  b.emit(Instruction::LocalGet(acc));
-  b.emit(Instruction::LocalGet(elem_addr));
-  b.emit(Instruction::F64Load(mem_arg_f64(0)));
-  b.emit(Instruction::Call(hash_f64_idx));
-  b.emit(Instruction::I32Xor);
-  b.emit(Instruction::LocalSet(acc));
-  // i += 1
-  b.emit(Instruction::LocalGet(i));
-  b.emit(Instruction::I32Const(1));
-  b.emit(Instruction::I32Add);
-  b.emit(Instruction::LocalSet(i));
-  b.emit(Instruction::Br(0)); // continue loop
-  b.emit(Instruction::End); // end loop
-  b.emit(Instruction::End); // end block
-  // return acc
-  b.emit(Instruction::LocalGet(acc));
-  b.finish(vec![ValType::I32], vec![ValType::I32])
-}
-
 fn build_rt_hash_f64() -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(1);
+  // Equality identifies -0 with +0, so their hashes must also agree.
+  b.emit(Instruction::LocalGet(0));
+  b.emit(f64_const(0.0));
+  b.emit(Instruction::F64Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
   b.emit(Instruction::LocalGet(0));
   b.emit(Instruction::I64ReinterpretF64);
   b.emit(Instruction::I64Const(32));
@@ -4316,16 +4270,22 @@ fn build_rt_hash_f64() -> CompiledFn {
   b.finish(vec![ValType::F64], vec![ValType::I32])
 }
 
-fn build_rt_map_key_hash(string_tag: i32, hash_f64_idx: u32) -> CompiledFn {
+/// Hash the same recursive value structure that participates in equality.
+/// The numeric hash is backend-local; equal values must share a hash.
+fn build_rt_value_hash(
+  (string_tag, list_tag, enum_tag, map_tag, set_tag, struct_tag): (i32, i32, i32, i32, i32, i32),
+  (scalar_hash_idx, self_idx, map_linearize_idx): (u32, u32, u32),
+) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(1);
   let ptr = b.alloc_i32();
-  let len = b.alloc_i32();
+  let tag = b.alloc_i32();
+  let count = b.alloc_i32();
   let i = b.alloc_i32();
   let hash = b.alloc_i32();
+  let item_hash = b.alloc_i32();
+  let nominal = b.alloc_i32();
 
-  // Heap values use integral logical pointers below the current bump pointer.
-  // Only strings need content hashing here; other scalar keys keep the stable
-  // f64 hash used by the existing runtime.
+  // Check range before converting: negative numbers, NaN and infinities are scalars.
   b.emit(Instruction::LocalGet(0));
   b.emit(f64_const((HEAP_BASE + 8) as f64));
   b.emit(Instruction::F64Ge);
@@ -4334,43 +4294,67 @@ fn build_rt_map_key_hash(string_tag: i32, hash_f64_idx: u32) -> CompiledFn {
   b.emit(Instruction::F64ConvertI32U);
   b.emit(Instruction::F64Lt);
   b.emit(Instruction::I32And);
-  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::LocalGet(0));
   b.emit(Instruction::I32TruncF64U);
+  b.emit(Instruction::LocalSet(ptr));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(ptr));
   b.emit(Instruction::F64ConvertI32U);
   b.emit(Instruction::F64Eq);
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Sub);
+  b.emit(Instruction::I32Load(mem_arg_i32(0)));
+  b.emit(Instruction::I32Const(HEAP_MAGIC));
+  b.emit(Instruction::I32Eq);
   b.emit(Instruction::I32And);
-  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
-  b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::I32TruncF64U);
-  b.emit(Instruction::LocalTee(ptr));
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(ptr));
   b.emit(Instruction::I32Const(4));
   b.emit(Instruction::I32Sub);
   b.emit(Instruction::I32Load(mem_arg_i32(0)));
-  b.emit(Instruction::I32Const(string_tag));
-  b.emit(Instruction::I32Eq);
-  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
+  b.emit(Instruction::LocalSet(tag));
+  for (index, kind) in [string_tag, list_tag, enum_tag, struct_tag, set_tag, map_tag]
+    .into_iter()
+    .enumerate()
+  {
+    b.emit(Instruction::LocalGet(tag));
+    b.emit(Instruction::I32Const(kind));
+    b.emit(Instruction::I32Eq);
+    if index > 0 {
+      b.emit(Instruction::I32Or);
+    }
+  }
+  b.emit(Instruction::I32Eqz);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::Call(scalar_hash_idx));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
   b.emit(Instruction::LocalGet(ptr));
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
   b.emit(Instruction::I32TruncF64U);
-  b.emit(Instruction::LocalSet(len));
+  b.emit(Instruction::LocalSet(count));
+
+  // Strings use byte content, not allocation identity.
+  b.emit(Instruction::LocalGet(tag));
+  b.emit(Instruction::I32Const(string_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::I32Const(0x811c_9dc5u32 as i32));
   b.emit(Instruction::LocalSet(hash));
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::LocalSet(i));
   b.emit(Instruction::Block(BlockType::Empty));
   b.emit(Instruction::Loop(BlockType::Empty));
   b.emit(Instruction::LocalGet(i));
-  b.emit(Instruction::LocalGet(len));
+  b.emit(Instruction::LocalGet(count));
   b.emit(Instruction::I32GeU);
   b.emit(Instruction::BrIf(1));
   b.emit(Instruction::LocalGet(hash));
   b.emit(Instruction::LocalGet(ptr));
-  b.emit(Instruction::I32Const(8));
-  b.emit(Instruction::I32Add);
   b.emit(Instruction::LocalGet(i));
   b.emit(Instruction::I32Add);
-  b.emit(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.emit(Instruction::I32Load8U(mem_arg_byte(8)));
   b.emit(Instruction::I32Xor);
   b.emit(Instruction::I32Const(0x0100_0193));
   b.emit(Instruction::I32Mul);
@@ -4383,88 +4367,122 @@ fn build_rt_map_key_hash(string_tag: i32, hash_f64_idx: u32) -> CompiledFn {
   b.emit(Instruction::End);
   b.emit(Instruction::End);
   b.emit(Instruction::LocalGet(hash));
-  b.emit(Instruction::Else);
-  b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::Call(hash_f64_idx));
+  b.emit(Instruction::Return);
   b.emit(Instruction::End);
-  b.emit(Instruction::Else);
-  b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::Call(hash_f64_idx));
+
+  for (index, kind) in [list_tag, enum_tag, struct_tag, set_tag, map_tag].into_iter().enumerate() {
+    b.emit(Instruction::LocalGet(tag));
+    b.emit(Instruction::I32Const(kind));
+    b.emit(Instruction::I32Eq);
+    if index > 0 {
+      b.emit(Instruction::I32Or);
+    }
+  }
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(tag));
+  b.emit(Instruction::LocalSet(hash));
+  b.emit(Instruction::LocalGet(tag));
+  b.emit(Instruction::I32Const(enum_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::LocalGet(tag));
+  b.emit(Instruction::I32Const(struct_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::LocalTee(nominal));
+  b.emit(Instruction::If(BlockType::Empty));
+  // Include the enum variant or complete nominal Struct layout identity.
+  b.emit(Instruction::LocalGet(hash));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::F64Load(mem_arg_f64(8)));
+  b.emit(Instruction::Call(scalar_hash_idx));
+  b.emit(Instruction::I32Xor);
+  b.emit(Instruction::LocalSet(hash));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(ptr));
   b.emit(Instruction::End);
+
+  b.emit(Instruction::LocalGet(tag));
+  b.emit(Instruction::I32Const(map_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::Call(map_linearize_idx));
+  b.emit(Instruction::LocalSet(ptr));
+  b.emit(Instruction::End);
+
+  // Lists and nominal payloads are ordered. Sets and map entries are unordered.
+  b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::LocalSet(i));
+  b.emit(Instruction::Block(BlockType::Empty));
+  b.emit(Instruction::Loop(BlockType::Empty));
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::LocalGet(count));
+  b.emit(Instruction::I32GeU);
+  b.emit(Instruction::BrIf(1));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::F64Load(mem_arg_f64(8)));
+  b.emit(Instruction::Call(self_idx));
+  b.emit(Instruction::LocalSet(item_hash));
+  b.emit(Instruction::LocalGet(tag));
+  b.emit(Instruction::I32Const(map_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(item_hash));
+  b.emit(Instruction::I32Const(0x0100_0193));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::F64Load(mem_arg_f64(16)));
+  b.emit(Instruction::Call(self_idx));
+  b.emit(Instruction::I32Xor);
+  b.emit(Instruction::LocalSet(item_hash));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(ptr));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(tag));
+  b.emit(Instruction::I32Const(list_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::LocalGet(nominal));
+  b.emit(Instruction::I32Or);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::LocalGet(hash));
+  b.emit(Instruction::I32Const(0x0100_0193));
+  b.emit(Instruction::I32Mul);
+  b.emit(Instruction::LocalSet(hash));
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(hash));
+  b.emit(Instruction::LocalGet(item_hash));
+  b.emit(Instruction::I32Xor);
+  b.emit(Instruction::LocalSet(hash));
+  b.emit(Instruction::LocalGet(ptr));
+  b.emit(Instruction::I32Const(8));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(ptr));
+  b.emit(Instruction::LocalGet(i));
+  b.emit(Instruction::I32Const(1));
+  b.emit(Instruction::I32Add);
+  b.emit(Instruction::LocalSet(i));
+  b.emit(Instruction::Br(0));
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(hash));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::End);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::Call(scalar_hash_idx));
   b.finish(vec![ValType::F64], vec![ValType::I32])
 }
 
-fn build_rt_map_key_equal(string_tag: i32, str_compare_idx: u32) -> CompiledFn {
+fn build_rt_map_key_equal(value_equal_idx: u32) -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(2);
-  let ptr_a = b.alloc_i32();
-  let ptr_b = b.alloc_i32();
-
   b.emit(Instruction::LocalGet(0));
   b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::F64Eq);
-  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
-  b.emit(Instruction::I32Const(1));
-  b.emit(Instruction::Else);
-  b.emit(Instruction::LocalGet(0));
-  b.emit(f64_const((HEAP_BASE + 8) as f64));
-  b.emit(Instruction::F64Ge);
-  b.emit(Instruction::LocalGet(1));
-  b.emit(f64_const((HEAP_BASE + 8) as f64));
-  b.emit(Instruction::F64Ge);
-  b.emit(Instruction::I32And);
-  b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
-  b.emit(Instruction::F64ConvertI32U);
-  b.emit(Instruction::F64Lt);
-  b.emit(Instruction::I32And);
-  b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::I32TruncF64U);
-  b.emit(Instruction::F64ConvertI32U);
-  b.emit(Instruction::F64Eq);
-  b.emit(Instruction::I32And);
-  b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
-  b.emit(Instruction::F64ConvertI32U);
-  b.emit(Instruction::F64Lt);
-  b.emit(Instruction::I32And);
-  b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::I32TruncF64U);
-  b.emit(Instruction::F64ConvertI32U);
-  b.emit(Instruction::F64Eq);
-  b.emit(Instruction::I32And);
-  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
-  b.emit(Instruction::LocalGet(0));
-  b.emit(Instruction::I32TruncF64U);
-  b.emit(Instruction::LocalTee(ptr_a));
-  b.emit(Instruction::I32Const(4));
-  b.emit(Instruction::I32Sub);
-  b.emit(Instruction::I32Load(mem_arg_i32(0)));
-  b.emit(Instruction::I32Const(string_tag));
-  b.emit(Instruction::I32Eq);
-  b.emit(Instruction::LocalGet(1));
-  b.emit(Instruction::I32TruncF64U);
-  b.emit(Instruction::LocalTee(ptr_b));
-  b.emit(Instruction::I32Const(4));
-  b.emit(Instruction::I32Sub);
-  b.emit(Instruction::I32Load(mem_arg_i32(0)));
-  b.emit(Instruction::I32Const(string_tag));
-  b.emit(Instruction::I32Eq);
-  b.emit(Instruction::I32And);
-  b.emit(Instruction::If(BlockType::Result(ValType::I32)));
-  b.emit(Instruction::LocalGet(ptr_a));
-  b.emit(Instruction::LocalGet(ptr_b));
-  b.emit(Instruction::Call(str_compare_idx));
-  b.emit(f64_const(0.0));
-  b.emit(Instruction::F64Eq);
-  b.emit(Instruction::Else);
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::End);
-  b.emit(Instruction::Else);
-  b.emit(Instruction::I32Const(0));
-  b.emit(Instruction::End);
-  b.emit(Instruction::End);
+  b.emit(Instruction::Call(value_equal_idx));
   b.finish(vec![ValType::F64, ValType::F64], vec![ValType::I32])
 }
 
@@ -8770,10 +8788,11 @@ fn build_rt_set_equal(value_equal_idx: u32) -> CompiledFn {
 /// - Strings: byte-by-byte comparison via __rt_str_compare.
 /// - Lists: element-wise recursive comparison.
 /// - Enums (including Option/Result): variant and payload comparison.
+/// - Structs: definition/layout identity and recursive field comparison.
 /// - Maps and Sets: recursive structural comparison.
 /// - Other heap objects: pointer (f64) equality.
 fn build_rt_value_equal(
-  (string_tag, list_tag, enum_tag, map_tag, set_tag): (i32, i32, i32, i32, i32),
+  (string_tag, list_tag, enum_tag, map_tag, set_tag, struct_tag): (i32, i32, i32, i32, i32, i32),
   (str_compare_idx, self_idx, map_equal_idx, set_equal_idx): (u32, u32, u32, u32),
 ) -> CompiledFn {
   // params: 0 = a (f64), 1 = b (f64)
@@ -8964,8 +8983,12 @@ fn build_rt_value_equal(
   b.emit(Instruction::LocalGet(tag_a));
   b.emit(Instruction::I32Const(enum_tag));
   b.emit(Instruction::I32Eq);
+  b.emit(Instruction::LocalGet(tag_a));
+  b.emit(Instruction::I32Const(struct_tag));
+  b.emit(Instruction::I32Eq);
+  b.emit(Instruction::I32Or);
   b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
-  // Enum layout: payload count, variant tag, then payload values.
+  // Enum/Struct layout: count, variant/definition identity, then recursive values.
   b.emit(Instruction::LocalGet(ptr_a));
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
   b.emit(Instruction::I32TruncF64U);

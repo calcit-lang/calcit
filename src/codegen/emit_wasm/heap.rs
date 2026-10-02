@@ -17,66 +17,9 @@ pub(super) fn emit_hash_proc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   if args.len() != 1 {
     return Err("&hash expects 1 arg".into());
   }
-  // Evaluate the argument to an f64 value.
   emit_expr(ctx, &args[0])?;
-  let val = ctx.alloc_local(); // f64
-  ctx.emit(Instruction::LocalSet(val));
-
-  // Check at runtime if val is a heap pointer: HEAP_BASE+8 <= val < memory_size.
-  let mem_size_f64 = ctx.alloc_local(); // f64
-  ctx.emit(Instruction::MemorySize(0));
-  ctx.emit(Instruction::I32Const(16));
-  ctx.emit(Instruction::I32Shl);
-  ctx.emit(Instruction::F64ConvertI32U);
-  ctx.emit(Instruction::LocalSet(mem_size_f64));
-
-  let is_heap = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(val));
-  ctx.emit(f64_const((HEAP_BASE + 8) as f64));
-  ctx.emit(Instruction::F64Ge);
-  ctx.emit(Instruction::LocalGet(val));
-  ctx.emit(Instruction::LocalGet(mem_size_f64));
-  ctx.emit(Instruction::F64Lt);
-  ctx.emit(Instruction::I32And);
-  ctx.emit(Instruction::LocalSet(is_heap));
-
-  // Further confirm via HEAP_MAGIC at raw_base = (val - 8). Without this,
-  // small numeric values (e.g. 42) accidentally fall into the heap range and
-  // get treated as heap pointers.
-  ctx.emit(Instruction::LocalGet(is_heap));
-  ctx.begin_block_if();
-  let raw_base = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(val));
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::I32Const(8));
-  ctx.emit(Instruction::I32Sub);
-  ctx.emit(Instruction::LocalSet(raw_base));
-  ctx.emit(Instruction::LocalGet(raw_base));
-  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
-  ctx.emit(Instruction::I32Const(HEAP_MAGIC));
-  ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::LocalSet(is_heap));
-  ctx.emit(Instruction::End);
-
-  let result_i32 = ctx.alloc_local_typed(ValType::I32);
-
-  // if is_heap: content hash via __rt_hash_list_or_set
-  ctx.emit(Instruction::LocalGet(is_heap));
-  ctx.begin_block_if();
-  ctx.emit(Instruction::LocalGet(val));
-  ctx.emit(Instruction::I32TruncF64U);
-  let hash_list_idx = *ctx.runtime_fn_index.get("__rt_hash_list_or_set").expect("hash_list_or_set");
-  ctx.emit(Instruction::Call(hash_list_idx));
-  ctx.emit(Instruction::LocalSet(result_i32));
-  ctx.emit(Instruction::Else);
-  // else: scalar hash via __rt_hash_f64
-  ctx.emit(Instruction::LocalGet(val));
-  let hash_f64_idx = *ctx.runtime_fn_index.get("__rt_hash_f64").expect("hash_f64");
-  ctx.emit(Instruction::Call(hash_f64_idx));
-  ctx.emit(Instruction::LocalSet(result_i32));
-  ctx.emit(Instruction::End);
-
-  ctx.emit(Instruction::LocalGet(result_i32));
+  let hash_idx = *ctx.runtime_fn_index.get("__rt_value_hash").expect("value hash");
+  ctx.emit(Instruction::Call(hash_idx));
   ctx.emit(Instruction::F64ConvertI32U);
   Ok(())
 }

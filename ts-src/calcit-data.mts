@@ -128,18 +128,23 @@ export let getStringName = (x: CalcitValue): string => {
 
 /** Compare tag names by Unicode scalar value, matching Rust `str` ordering. */
 export function compareTagNames(x: CalcitTag, y: CalcitTag): number {
+  return compareUnicodeStrings(x.value, y.value);
+}
+
+/** Compare scalar values, matching Rust string ordering rather than UTF-16. */
+export function compareUnicodeStrings(x: string, y: string): number {
   let xIdx = 0;
   let yIdx = 0;
-  while (xIdx < x.value.length && yIdx < y.value.length) {
-    const xCode = x.value.codePointAt(xIdx)!;
-    const yCode = y.value.codePointAt(yIdx)!;
+  while (xIdx < x.length && yIdx < y.length) {
+    const xCode = x.codePointAt(xIdx)!;
+    const yCode = y.codePointAt(yIdx)!;
     if (xCode < yCode) return -1;
     if (xCode > yCode) return 1;
     xIdx += xCode > 0xffff ? 2 : 1;
     yIdx += yCode > 0xffff ? 2 : 1;
   }
-  if (xIdx < x.value.length) return 1;
-  if (yIdx < y.value.length) return -1;
+  if (xIdx < x.length) return 1;
+  if (yIdx < y.length) return -1;
   return 0;
 }
 
@@ -370,6 +375,8 @@ export let hashFunction = (x: CalcitValue): Hash => {
   }
   if (x instanceof CalcitStructValue) {
     let base = defaultHash_record;
+    base = mergeValueHash(base, hashFunction(x.name));
+    base = mergeValueHash(base, hashFunction(x.structRef.definitionRef));
     for (let idx = 0; idx < x.fields.length; idx++) {
       base = mergeValueHash(base, hashFunction(x.fields[idx]));
       base = mergeValueHash(base, hashFunction(x.values[idx]));
@@ -790,6 +797,9 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
   if (x instanceof CalcitStructValue) {
     if (y instanceof CalcitStructValue) {
       if (x.name !== y.name) {
+        return false;
+      }
+      if (x.structRef.definitionRef !== y.structRef.definitionRef) {
         return false;
       }
       if (!fieldsEqual(x.fields, y.fields)) {
