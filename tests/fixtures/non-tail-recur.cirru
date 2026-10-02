@@ -35,5 +35,10 @@
             :args $ []
           :code $ quote $ defn main! ()
             println $ ok-loop
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () (println |reload)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)
