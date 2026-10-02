@@ -3259,6 +3259,7 @@ fn preprocess_list_call(
           }
         } else {
           let callable_contract = resolve_type_value(&head_form, scope_types).and_then(|annotation| annotation.resolve_to_fn());
+          let mut callable_bindings = HashMap::new();
           args.traverse_result::<CalcitErr>(&mut |a| {
             if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = a {
               has_spread = true;
@@ -3303,6 +3304,7 @@ fn preprocess_list_call(
                   .arg_types
                   .get(ys.len() - 1)
                   .or(signature.rest_type.as_ref())
+                  .map(|expected| expected.substitute_type_vars(&callable_bindings))
                   .and_then(|expected| expected.resolve_to_fn())
               })
             } else {
@@ -3327,6 +3329,20 @@ fn preprocess_list_call(
               EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous_fn);
             }
             let form = result?;
+            // Specialize callback context using proven preceding inputs;
+            // open values must not manufacture concrete bindings.
+            if !has_spread
+              && let Some(signature) = callable_contract.as_ref()
+              && let Some(expected) = signature.arg_types.get(ys.len() - 1).or(signature.rest_type.as_ref())
+              && !empty_container_has_no_type_evidence(&form, expected.as_ref())
+              && let Some(actual) = resolve_type_value(&form, scope_types)
+              && !contains_dynamic_type(actual.as_ref())
+            {
+              let mut candidate = callable_bindings.clone();
+              if actual.prove_with_bindings(expected.as_ref(), &mut candidate).is_proven() {
+                callable_bindings = candidate;
+              }
+            }
             ys = ys.push(form);
             Ok(())
           })?;

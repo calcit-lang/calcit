@@ -22,6 +22,12 @@ fn callable_contract_proof_preserves_open_storage_and_reviews_concrete_use() {
     ("closed", callback, "'Number", "consume callback"),
     ("storage", "'Fn", "'Fn", ", callback"),
     (
+      "watch-context",
+      "'Fn",
+      "'Number",
+      "let ((watched (atom 1)) (observed (atom 0))) (add-watch watched :proof (fn (current previous) (reset! observed (&+ current previous)) &unit)) (reset! watched 2) (remove-watch watched :proof) (deref observed)",
+    ),
+    (
       "owned-feature",
       "'Fn",
       "'Number",
@@ -87,6 +93,7 @@ fn callable_contract_proof_preserves_open_storage_and_reviews_concrete_use() {
   for (name, code) in [
     ("closed", "quote $ assert= 2 $ closed $ fn (n) (&+ n 1)"),
     ("storage", "quote $ assert= true $ fn? $ storage $ fn (n) (&+ n 1)"),
+    ("watch-context", "quote $ assert= 3 $ watch-context $ fn (n) (&+ n 1)"),
   ] {
     let target = format!("fix-command.main/{name}");
     assert_success(
@@ -123,6 +130,7 @@ fn callable_contract_proof_preserves_open_storage_and_reviews_concrete_use() {
     ("erased-feature", true),
     ("closed-feature", false),
     ("owned-feature", false),
+    ("watch-context", false),
     ("erased-async", true),
   ] {
     let selectors = [

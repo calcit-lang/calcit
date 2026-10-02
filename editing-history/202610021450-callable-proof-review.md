@@ -17,3 +17,5 @@
 语义正例附加为 Calcit definition `:tests`，覆盖结构化 callback 调用与裸 Fn 保存。现有 CLI 测试覆盖缺证据定位、rest/features、EDN/JSON 输出、preview/apply 保持 bytes 不变；parser 回归覆盖嵌套签名 metadata roundtrip 与保留 marker 过滤。继续使用既有完整测试门禁，不新增运行器。
 
 来源传播链、自动 metadata synthesis 与 strict workflow 的完整集成仍需按 #1539 后续验收，不因新增规则入口就宣称全部完成。
+
+CI 的完整 core 回放还发现 `add-watch` 的 callback 收到未实例化的 `T`，而后续参数检查已从 `Ref<Number>` 推导出 Number。间接调用的预处理现在复用通用类型证明，从此前已经处理的实参逐步收集 bindings，再替换 callback 上下文；Dynamic 与没有元素证据的空集合不产生绑定。附加定义测试通过 watch 的新旧数值求和验证推导和运行结果，不靠手写 callback schema 掩盖问题。
