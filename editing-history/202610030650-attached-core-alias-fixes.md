@@ -51,3 +51,9 @@ reader 的 `@ref` 则要保留原形状保护：源码叶代表 deref 调用，�
 不把附带根表达式误当成函数 variadic body。单表达式根可解包，多表达式根必须保留顺序容器。
 未知宏沿用既有执行上下文门禁，整个 metadata 区域进入 review；quoted data 原样保留。
 顺便对齐已有 splicing helper 的 `let[]` body 支持与路径收集规则，避免同一规则两处不一致。
+
+Option/Result 旧 helper 构造器提取共享 source 入口，普通定义与附带表达式复用同一 compiler usage、
+arity、类型名遮蔽和嵌套 replacement 证明。已明确保持一次执行的 fn/do/assert= 复用现有宏边界契约，
+未知宏不放行。结构化子树替换继续核对原 AST，多个构造器合成原子 metadata 操作。
+语义回放覆盖四个 helper、嵌套 Option/Result 与状态写入一次；局部 Option 遮蔽本来就会被编译器拒绝，
+因此负例单独验证改写前后仍拒绝，不把它改成成功断言，也不扩大 Dynamic。

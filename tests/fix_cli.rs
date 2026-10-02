@@ -7,6 +7,118 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn attached_constructor_fix_preserves_identity_shadowing_and_opaque_macros() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  assert_success(&run_calcit(&snapshot, &["query", "config"]), "inspect constructor fixture");
+  for (target, code, overwrite) in [
+    ("app.main/main!", "quote $ defn main! ()\n  , &unit", true),
+    ("app.main/opaque", "quote $ defmacro opaque (x)\n  , x", false),
+  ] {
+    let mut args = vec!["edit", "def", target, "--input-format", "cirru", "--code", code];
+    if overwrite {
+      args.push("--overwrite");
+    }
+    assert_success(&run_calcit(&snapshot, &args), "create constructor boundary fixture");
+  }
+  for (name, code) in [
+    ("safe", "quote $ assert= (Option :some 1) (%some 1)"),
+    ("opaque", "quote $ assert= (Option :some 1) $ opaque $ %some 1"),
+    ("identity", "quote $ assert= %some %some"),
+    (
+      "shadow",
+      "quote $ let ((Option 1)) (assert= (calcit.core/Option :some Option) (%some Option))",
+    ),
+    ("quoted-data", "quote $ assert= (quote $ %some 1) (quote $ %some 1)"),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "add-test",
+          "app.main/main!",
+          name,
+          "--tags",
+          if name == "shadow" { "unit,upgrade,shadow" } else { "unit,upgrade" },
+          "--input-format",
+          "cirru",
+          "--code",
+          code,
+        ],
+      ),
+      "attach constructor boundary assertion",
+    );
+  }
+  assert_success(
+    &run_calcit(&snapshot, &["test", "app.main/main!", "--exclude-tag", "shadow", "--require-match"]),
+    "original constructor boundaries",
+  );
+  let shadow_before = run_calcit(&snapshot, &["test", "app.main/main!", "--name", "shadow", "--require-match"]);
+  assert!(!shadow_before.status.success());
+  assert!(String::from_utf8_lossy(&shadow_before.stderr).contains("shadowed `calcit.core/Option`"));
+  let before = run_calcit(&snapshot, &["query", "def", "app.main/main!", "--format", "json"]);
+  assert_success(&before, "capture constructor source");
+  let args = [
+    "fix",
+    "--ns",
+    "app.main",
+    "--def",
+    "main!",
+    "--rule",
+    "core-nominal-constructor-v1",
+    "--include-attached",
+    "--format",
+    "json",
+  ];
+  let preview = run_calcit(&snapshot, &args);
+  assert_success(&preview, "constructor boundary preview");
+  let report: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+  let suggestions = report["data"]["suggestions"].as_array().unwrap();
+  assert_eq!(
+    suggestions.iter().filter(|s| s["applicability"] == "machine-applicable").count(),
+    1,
+    "{report}"
+  );
+  assert_eq!(
+    suggestions.iter().filter(|s| s["applicability"] == "requires-review").count(),
+    3,
+    "{report}"
+  );
+  let mut apply = args.to_vec();
+  apply.extend([
+    "--apply",
+    "--allow-no-vcs",
+    "--expect-revision",
+    report["revision"].as_str().unwrap(),
+  ]);
+  assert_success(&run_calcit(&snapshot, &apply), "apply proven constructor only");
+  let after = run_calcit(&snapshot, &["query", "def", "app.main/main!", "--format", "json"]);
+  assert_success(&after, "capture retained constructor source");
+  let before: serde_json::Value = serde_json::from_slice(&before.stdout).unwrap();
+  let after: serde_json::Value = serde_json::from_slice(&after.stdout).unwrap();
+  for name in ["opaque", "identity", "shadow", "quoted-data"] {
+    let find = |value: &serde_json::Value| {
+      value["data"]["tests"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|test| test["name"] == name)
+        .cloned()
+    };
+    assert_eq!(find(&before), find(&after), "preserve {name}");
+  }
+  assert_success(
+    &run_calcit(&snapshot, &["test", "app.main/main!", "--exclude-tag", "shadow", "--require-match"]),
+    "unchanged constructor assertions",
+  );
+  let shadow_after = run_calcit(&snapshot, &["test", "app.main/main!", "--name", "shadow", "--require-match"]);
+  assert!(!shadow_after.status.success());
+  assert!(String::from_utf8_lossy(&shadow_after.stderr).contains("shadowed `calcit.core/Option`"));
+}
+
+#[test]
 fn attached_do_rules_preserve_root_sequence_and_macro_data() {
   for rule in ["redundant-do-v1", "single-expression-do-v1"] {
     let directory = TestDirectory::create();
@@ -303,6 +415,14 @@ fn attached_method_alias_fix_preserves_unproven_regions_and_quoted_data() {
 fn method_alias_fix_reuses_receiver_proofs_in_attached_tests_and_examples() {
   // The host checks the transaction protocol; each Calcit assertion is replayed before and after migration.
   for (rule, code) in [
+    (
+      "core-nominal-constructor-v1",
+      "quote $ do\n  assert= (Option :some $ Result :ok 1) $ %some $ %ok 1\n  assert= (Option :none) (%none)\n  assert= (Result :err |bad) (%err |bad)",
+    ),
+    (
+      "core-nominal-constructor-v1",
+      "quote $ let ((cell (atom 0)))\n  assert= (Option :some 1) $ %some $ do (reset! cell (+ @cell 1)) @cell\n  assert= @cell 1",
+    ),
     (
       "redundant-do-v1",
       "quote $ do\n  assert= 3 $ let ((x 1))\n    do\n      assert= x 1\n      do\n        assert= (+ x 1) 2\n        + x 2\n  assert= 4 4",

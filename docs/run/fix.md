@@ -56,6 +56,8 @@ Map distinct-values、Set include、collection combine、predicate method 和 ef
 `redundant-do-v1` 与 `single-expression-do-v1` 也支持附带区域，复用原 body 规则。
 最外层多表达式 `do` 保留，只有真实 variadic body 内的 wrapper 能拆开；单表达式 wrapper 可直接解包。
 quoted data 不改写，未知宏中无法证明执行上下文的区域保留 review。
+`core-nominal-constructor-v1` 支持把附带调用的 `%some` / `%none` / `%ok` / `%err` 改为 Option/Result 直接构造。
+嵌套 payload 保留原位置并只求值一次；一等函数值、名义类型遮蔽或未知宏来源要求 review。
 其他规则与 preset 的附带覆盖尚未实现，
 不支持的组合会报错，不会静默跳过。下文各条规则的默认扫描范围保持不变。
 
