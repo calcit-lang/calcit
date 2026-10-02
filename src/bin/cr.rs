@@ -382,7 +382,10 @@ fn analysis_program_entries(
   })
 }
 
-#[cfg(not(target_os = "macos"))]
+/// Stack size of the codegen thread, see the note where it is spawned.
+const CODEGEN_STACK_SIZE: usize = 64 * 1024 * 1024;
+
+/// Stack size of the thread that runs the CLI; on macOS `build.rs` reserves the same size for the main thread.
 const CLI_STACK_SIZE: usize = 32 * 1024 * 1024;
 
 #[cfg(target_os = "macos")]
@@ -429,6 +432,8 @@ fn resolve_public_wasm_options(
 }
 
 fn run_cli() -> Result<(), String> {
+  // deep non-tail recursion should surface as a Calcit error, not a native stack overflow abort
+  calcit::runner::arm_stack_guard(CLI_STACK_SIZE);
   let cli_args: ToplevelCalcit = argh::from_env();
   let active_input = match &cli_args.subcommand {
     Some(CalcitCommand::EmitWasm(command)) => command.input.as_deref().unwrap_or(&cli_args.input),
@@ -1874,8 +1879,9 @@ fn run_codegen_with_timeout(
     // can be deeply recursive in real module graphs (for example UI ->
     // Markdown -> math parser helpers). Keep this above the ordinary Rust
     // thread default so the CLI returns diagnostics instead of aborting.
-    .stack_size(64 * 1024 * 1024)
+    .stack_size(CODEGEN_STACK_SIZE)
     .spawn(move || {
+      calcit::runner::arm_stack_guard(CODEGEN_STACK_SIZE);
       let result = run_codegen(&entries, &emit_path, ir_mode, verbose);
       let _ = tx.send(result);
     })

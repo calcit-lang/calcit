@@ -21,9 +21,83 @@ use cirru_edn::EdnTag;
 
 const SHUTDOWN_CHECK_INTERVAL: u16 = 256;
 
+/// Native stack kept free below the guarded budget, so unwinding the error and printing the
+/// Calcit call stack still has room to run after the guard trips.
+const STACK_GUARD_MARGIN: usize = 4 * 1024 * 1024;
+
+#[derive(Clone, Copy)]
+struct StackGuard {
+  /// address near the top of the stack when the guard was armed
+  base: usize,
+  /// bytes of native stack evaluation may use before a Calcit error is raised
+  budget: usize,
+}
+
 thread_local! {
   static SHUTDOWN_CHECK_COUNTDOWN: Cell<u16> = const { Cell::new(0) };
   static SHUTDOWN_CHECK_SUSPENDED: Cell<u16> = const { Cell::new(0) };
+  static STACK_GUARD: Cell<Option<StackGuard>> = const { Cell::new(None) };
+  static STACK_GUARD_SUSPENDED: Cell<u16> = const { Cell::new(0) };
+}
+
+struct StackGuardSuspension;
+
+impl Drop for StackGuardSuspension {
+  fn drop(&mut self) {
+    STACK_GUARD_SUSPENDED.with(|depth| depth.set(depth.get().saturating_sub(1)));
+  }
+}
+
+/// Run `f` with the stack guard paused. Preprocessing (including macro expansion) recurses with the
+/// shape of the source and legitimately uses most of the thread stack on large inputs, so the guard
+/// only watches user program recursion and the next check after preprocessing sees the real depth.
+pub fn with_stack_guard_suspended<T>(f: impl FnOnce() -> T) -> T {
+  STACK_GUARD_SUSPENDED.with(|depth| depth.set(depth.get().saturating_add(1)));
+  let _suspension = StackGuardSuspension;
+  f()
+}
+
+fn current_stack_address() -> usize {
+  let marker = 0u8;
+  std::hint::black_box(&marker) as *const u8 as usize
+}
+
+/// Arm the native stack guard on the current thread. `stack_size` is the total stack size of this
+/// thread; call it near the start of the thread that evaluates Calcit code.
+///
+/// Without it (library users, unit tests) nothing is checked. Once armed, evaluation that would
+/// run deeper than `stack_size` minus a safety margin fails with a Calcit error carrying the call
+/// stack, instead of aborting the whole process with a native stack overflow.
+pub fn arm_stack_guard(stack_size: usize) {
+  let guard = StackGuard {
+    base: current_stack_address(),
+    budget: stack_size.saturating_sub(STACK_GUARD_MARGIN),
+  };
+  STACK_GUARD.with(|cell| cell.set(Some(guard)));
+}
+
+fn check_stack_budget(call_stack: &CallStackList) -> Result<(), CalcitErr> {
+  let Some(guard) = STACK_GUARD.with(Cell::get) else {
+    return Ok(());
+  };
+  if STACK_GUARD_SUSPENDED.with(Cell::get) > 0 {
+    return Ok(());
+  }
+  // stacks grow downward on every supported target, so used bytes = base - current
+  if guard.base.saturating_sub(current_stack_address()) > guard.budget {
+    Err(CalcitErr::use_msg_stack_location_with_hint(
+      CalcitErrKind::Unexpected,
+      format!(
+        "call depth exceeded the native stack budget ({} MiB); the recursion is too deep",
+        guard.budget / (1024 * 1024)
+      ),
+      call_stack,
+      None,
+      "non-tail recursion uses native stack per call; rewrite it with `loop`/`recur` (or a tail call), or process the data iteratively",
+    ))
+  } else {
+    Ok(())
+  }
 }
 
 struct ShutdownCheckGuard;
@@ -219,6 +293,7 @@ fn evaluate_number_binary_call(
 
 pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   check_shutdown(call_stack)?;
+  check_stack_budget(call_stack)?;
   // println!("eval code: {}", expr.lisp_str());
   use Calcit::*;
 
