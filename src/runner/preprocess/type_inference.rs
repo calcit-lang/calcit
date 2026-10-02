@@ -1994,6 +1994,13 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   {
     return Some(Arc::new(CalcitTypeAnnotation::Ref(initial_type)));
   }
+  if matches!(
+    proc,
+    CalcitProc::FoldlShortcut | CalcitProc::FoldrShortcut | CalcitProc::NativeListFoldlShortcut
+  ) && let Some(return_type) = infer_shortcut_fold_return(xs, scope_types)
+  {
+    return Some(return_type);
+  }
   if matches!(proc, CalcitProc::Foldl)
     && let (Some(receiver), Some(initial_value), Some(reducer)) = (xs.get(1), xs.get(2), xs.get(3))
     && let (Some(receiver_type), Some(initial_type), Some(reducer_type)) = (
@@ -2396,6 +2403,84 @@ pub fn infer_compiled_definition_implementation_type(ns: &str, def: &str) -> Opt
 // ---------------------------------------------------------------------------
 // Specialised inference helpers
 // ---------------------------------------------------------------------------
+
+/// Anonymous enum schemas do not describe their control/payload slots. Inspect
+/// the actual reducer implementation instead of trusting a declared Enum return.
+fn shortcut_payload_is_proven(expr: &Calcit, accumulator: &CalcitTypeAnnotation, scope_types: &ScopeTypes) -> bool {
+  let Calcit::List(items) = expr else { return false };
+  match items.first() {
+    Some(Calcit::Proc(CalcitProc::NativeEnum)) if items.len() == 3 => {
+      items
+        .get(1)
+        .and_then(|control| resolve_type_value(control, scope_types))
+        .is_some_and(|control| control.is_proven_for(&CalcitTypeAnnotation::Bool))
+        && items
+          .get(2)
+          .and_then(|payload| resolve_type_value(payload, scope_types))
+          .is_some_and(|payload| payload.is_proven_for(accumulator))
+    }
+    Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) => items
+      .get(items.len().saturating_sub(1))
+      .is_some_and(|tail| shortcut_payload_is_proven(tail, accumulator, scope_types)),
+    Some(Calcit::Syntax(CalcitSyntax::If, _)) if items.len() == 4 => [items.get(2), items.get(3)].into_iter().all(|branch| {
+      branch
+        .is_some_and(|branch| expression_definitely_diverges(branch) || shortcut_payload_is_proven(branch, accumulator, scope_types))
+    }),
+    Some(Calcit::Syntax(CalcitSyntax::Match, _)) => preprocessed_match_bodies(items).is_some_and(|branches| {
+      !branches.is_empty()
+        && branches
+          .into_iter()
+          .all(|branch| expression_definitely_diverges(branch) || shortcut_payload_is_proven(branch, accumulator, scope_types))
+    }),
+    _ => false,
+  }
+}
+
+fn infer_shortcut_fold_return(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  if xs.len() != 5 {
+    return None;
+  }
+  let accumulator = resolve_type_value(xs.get(2)?, scope_types)?;
+  let default = resolve_type_value(xs.get(3)?, scope_types)?;
+  if !default.is_proven_for(&accumulator) || super::contains_dynamic_type(&accumulator) {
+    return None;
+  }
+  let args = xs.drop_left();
+  let expected =
+    super::type_checking::specialize_collection_fold_expected_types(&args, scope_types, &vec![calcit::DYNAMIC_TYPE.clone(); 4])?;
+  let reducer = xs.get(4)?;
+  // Use compiled source only: resolving a runtime thunk here could re-enter
+  // preprocessing, and open callable metadata cannot prove enum slot values.
+  let owned;
+  let reducer = if let Calcit::Import(import) = reducer {
+    owned = program::lookup_compiled_def(&import.ns, &import.def)?.preprocessed_code;
+    &owned
+  } else {
+    reducer
+  };
+  let Calcit::List(body) = reducer else { return None };
+  if !matches!(body.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _))) {
+    return None;
+  }
+  let (arg_types, rest) = infer_preprocessed_function_parameters(body.get(2));
+  if rest.is_some() || arg_types.len() != 2 {
+    return None;
+  }
+  let signature = CalcitTypeAnnotation::from_function_parts(arg_types, Arc::new(CalcitTypeAnnotation::AnonymousEnum));
+  if !signature.is_proven_for(expected.get(3)?) {
+    return None;
+  }
+  let annotation = infer_preprocessed_function_type(body);
+  if annotation.resolve_to_fn().is_some_and(|signature| signature.is_async_invocation()) {
+    return None;
+  }
+  let tail = body
+    .iter()
+    .skip(3)
+    .filter(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
+    .last()?;
+  shortcut_payload_is_proven(tail, &accumulator, scope_types).then_some(accumulator)
+}
 
 fn infer_enum_annotation(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
   if xs.len() < 3 {

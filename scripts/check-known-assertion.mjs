@@ -41,6 +41,52 @@ try {
   run("edit", "add-ns", "calcit.assert-evidence");
   const setBody = trees => run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite",
     "--input-format", "json-ast", "--code", JSON.stringify(["defwasm-export", "run-tests", [], ...trees, "1"]));
+  run("test", "calcit.core/foldl-shortcut", "--tag", "shortcut-fold-proof", "--require-match");
+  const shortcutResponse = JSON.parse(run("query", "def", "calcit.core/foldl-shortcut", "--format", "json"));
+  const shortcutTests = shortcutResponse.data.tests.filter(test => test.tags.includes("shortcut-fold-proof"));
+  assert.equal(shortcutTests.length, 5);
+  // Audit the typed boundary independently of assert='s generic equality
+  // implementation, whose separate core proof obligations remain visible.
+  const directShortcutTests = shortcutTests.filter(test => ["proven-shortcut-bool", "shortcut-empty-default", "shortcut-right-order"].includes(test.name));
+  assert.equal(directShortcutTests.length, 3);
+  setBody(directShortcutTests.map(test => test.code.slice(0, -1)));
+  run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
+  run("config", "set", "init-fn", "calcit.assert-evidence/run-tests");
+  run("config", "set", "reload-fn", "calcit.assert-evidence/run-tests");
+  run("fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.assert-evidence", "--def", "run-tests", "--format", "edn");
+  setBody(shortcutTests.map(test => test.code));
+  const shortcutWasmOutput = join(project, "shortcut-wasm");
+  run("wasm", "--emit-path", shortcutWasmOutput);
+  const shortcutModule = new WebAssembly.Module(await readFile(join(shortcutWasmOutput, "program.wasm")));
+  const shortcutImports = {};
+  for (const item of WebAssembly.Module.imports(shortcutModule)) {
+    assert.equal(item.kind, "function");
+    shortcutImports[item.module] ??= {};
+    shortcutImports[item.module][item.name] = () => { throw new Error(`unexpected shortcut import ${item.module}.${item.name}`); };
+  }
+  assert.equal(new WebAssembly.Instance(shortcutModule, shortcutImports).exports["run-tests"](), 1);
+  run();
+  const shortcutOutput = join(project, "shortcut-js-out");
+  run("--emit-path", shortcutOutput, "js");
+  const shortcutGenerated = await import(pathToFileURL(join(shortcutOutput, "calcit.assert-evidence.mjs")).href);
+  assert.equal(shortcutGenerated.run_tests(), 1);
+  for (const [name, defaultValue, callback, items = ["[]", "1", "2"]] of [
+    ["wrong-payload", "0", ["fn", ["acc", "item"], ["::", "true", "|bad"]]],
+    ["wrong-control", "0", ["fn", ["acc", "item"], ["::", "1", "acc"]]],
+    ["missing-payload", "0", ["fn", ["acc", "item"], ["::", "true"]]],
+    ["wrong-default", "|bad", ["fn", ["acc", "item"], ["::", "true", "acc"]]],
+    ["open-payload", "0", ["fn", ["acc", "item"], ["::", "true", ["parse-cirru-edn", "|do 1"]]]],
+    ["mixed-branches", "0", ["fn", ["acc", "item"], ["if", "item", ["::", "true", "acc"], ["::", "false", "|bad"]]], ["[]", "true", "false"]],
+  ]) {
+    setBody([["assert-type", ["foldl-shortcut", items, "0", defaultValue, callback], "'Number"]]);
+    const original = await readFile(snapshot);
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "assert-type-proof-v1", "--ns", "calcit.assert-evidence", "--def", "run-tests", "--format", "edn"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_ASSERT_TYPE_UNPROVEN|W_PROC_ARG_TYPE_MISMATCH|contradictory producer contract/);
+    assert.deepEqual(await readFile(snapshot), original);
+  }
   setBody([...tests, ...returnTests, ...callTests, ...hintTests, ...asyncTests, ...quoteTests].map(test => test.code));
   run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");

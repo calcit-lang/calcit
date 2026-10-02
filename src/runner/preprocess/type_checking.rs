@@ -259,9 +259,17 @@ pub(super) fn specialize_collection_fold_expected_types(
   let mut specialized = expected_types.to_vec();
   specialized[0] = receiver_type;
   specialized[1] = accumulator_type.clone();
-  specialized[2] = Arc::new(CalcitTypeAnnotation::from_function_parts(
+  let shortcut = expected_types.len() == 4;
+  if shortcut {
+    specialized[2] = accumulator_type.clone();
+  }
+  specialized[if shortcut { 3 } else { 2 }] = Arc::new(CalcitTypeAnnotation::from_function_parts(
     vec![accumulator_type.clone(), member_type],
-    accumulator_type,
+    if shortcut {
+      Arc::new(CalcitTypeAnnotation::AnonymousEnum)
+    } else {
+      accumulator_type
+    },
   ));
   Some(specialized)
 }
@@ -592,7 +600,7 @@ pub(crate) fn check_proc_arg_types(
   }
 
   let expected_types = match proc {
-    CalcitProc::Foldl => {
+    CalcitProc::Foldl | CalcitProc::FoldlShortcut | CalcitProc::FoldrShortcut | CalcitProc::NativeListFoldlShortcut => {
       specialize_collection_fold_expected_types(args, scope_types, &signature.arg_types).unwrap_or_else(|| signature.arg_types.clone())
     }
     CalcitProc::Sort | CalcitProc::NativeListSort => {
