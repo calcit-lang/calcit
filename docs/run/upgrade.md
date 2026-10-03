@@ -159,6 +159,14 @@ trait 的 where 约束现在使用能力证明，而不是把未绑定泛型静�
 
 `loop` 初始值和 `apply` 的无 spread 字面量实参保留各位置的类型，立即调用的固定参数函数可从输入推断参数。显式 `hint-fn` 优先，不能因为调用点传入 List 就把已声明的 Dynamic 参数悄悄改成 List 或 Countable；这种开放合同仍须在函数内部收窄。合法 typed loop 不需要为了通过检查改用低层计数或重复插入断言。
 
+## 宿主句柄不参与值比较与哈希
+
+已声明为 external-object trait 的值在 `=`、`not=`、`&=` 中比较，或作为 Set 成员、Map 键使用时，检查报告
+`W_HOST_VALUE_EQUALITY`，严格模式下构建失败。运行时宿主对象只按引用身份比较，旧写法得到的也只是身份结果。
+
+迁移时按原意选择：判断是否同一个宿主对象改用 `identical?`；按内容比较或建立索引时，先在适配器内取出 id、
+文本等 Calcit 数据再比较。这一检查不提供自动改写，裸 `JsObject` 与 `Dynamic` 值不受影响。
+
 ## String 到 Tag/Symbol 的类型化转换
 
 新代码用 `to-tag: String -> Tag`、`to-symbol: String -> Symbol`。旧 `turn-tag` / `turn-symbol` 的 native/JS 运行时还接受 Tag/Symbol 输入，不能按词形全局替换。`calcit fix --rule core-identity-conversion-v1 --format edn` 只对内建调用且参数已证明为 String 的稳定源码提供自动迁移；Dynamic、非 String、quote、未知 macro 和一等函数引用需人工审阅。预览后携带 revision 应用，再重复预览并运行项目测试。WASM 缺少动态 Tag/Symbol intern；改名不会让原来不支持的调用变得可编译。

@@ -1036,6 +1036,45 @@ fn strict_type_fail_js_nullish_predicate_reports_stable_error_code() {
 }
 
 #[test]
+fn strict_type_fail_host_value_equality_reports_stable_warning_code() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_fixture_entries("calcit/type-fail/host-value-equality-strict.cirru");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("host equality misuse should preprocess with warnings");
+    let warnings = warnings.borrow();
+    let host_warnings = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_HOST_VALUE_EQUALITY"))
+      .map(|warning| warning.message().to_owned())
+      .collect::<Vec<_>>();
+    for (definition, position) in [
+      ("same-counter?", "compares arg 1 by value"),
+      ("same-counter?", "compares arg 2 by value"),
+      ("host-member", "hashes arg 1 as a Set member"),
+      ("counter-key", "hashes arg 1 as a Map key"),
+    ] {
+      assert!(
+        host_warnings
+          .iter()
+          .any(|message| message.contains(position) && message.contains(&format!("main/{definition}"))),
+        "missing `{position}` diagnostic for {definition}: {host_warnings:?}"
+      );
+    }
+    assert_eq!(
+      host_warnings.len(),
+      4,
+      "plain JsObject and explicit identity must stay accepted: {host_warnings:?}"
+    );
+    assert!(
+      host_warnings.iter().all(|message| message.contains("identical?")),
+      "identity migration should be actionable: {host_warnings:?}"
+    );
+  });
+}
+
+#[test]
 fn strict_type_fail_unsafe_coerce_requires_lexical_ffi_scope() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();

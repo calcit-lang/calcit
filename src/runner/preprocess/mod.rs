@@ -5,8 +5,8 @@ mod type_checking;
 mod type_inference;
 mod type_rewriting;
 
-pub(crate) use js_ffi::trait_is_external_object;
 use js_ffi::*;
+pub(crate) use js_ffi::{is_host_value_type, trait_is_external_object};
 
 use crate::{
   builtins::{self, is_js_syntax_procs, is_proc_name, is_registered_proc},

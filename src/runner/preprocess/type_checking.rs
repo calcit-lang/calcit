@@ -566,6 +566,68 @@ where
   check_generic_trait_bounds(&ctx, &bindings);
 }
 
+/// Where a call compares or hashes an argument by value.
+#[derive(Clone, Copy)]
+enum ValueIdentityRole {
+  Equality,
+  SetMember,
+  MapKey,
+}
+
+/// Argument positions that a core call compares or hashes by value.
+fn proc_value_identity_positions(proc: &CalcitProc, arg_count: usize) -> Vec<(usize, ValueIdentityRole)> {
+  use ValueIdentityRole::*;
+  match proc {
+    CalcitProc::NativeEquals => (0..arg_count).map(|idx| (idx, Equality)).collect(),
+    CalcitProc::Set => (0..arg_count).map(|idx| (idx, SetMember)).collect(),
+    CalcitProc::NativeInclude | CalcitProc::NativeExclude | CalcitProc::NativeSetIncludes => vec![(1, SetMember)],
+    CalcitProc::NativeMap => (0..arg_count).step_by(2).map(|idx| (idx, MapKey)).collect(),
+    CalcitProc::NativeMapAssoc => (1..arg_count).step_by(2).map(|idx| (idx, MapKey)).collect(),
+    CalcitProc::NativeMapDissoc => (1..arg_count).map(|idx| (idx, MapKey)).collect(),
+    CalcitProc::NativeMapGet | CalcitProc::NativeMapContains => vec![(1, MapKey)],
+    _ => vec![],
+  }
+}
+
+/// Reject value equality and hashing on values statically proven to be
+/// external-object host handles. Dynamic, `JsObject` and unresolved arguments
+/// stay open.
+fn check_host_value_identity(
+  head_name: &str,
+  args: &CalcitList,
+  positions: &[(usize, ValueIdentityRole)],
+  scope_types: &ScopeTypes,
+  call: &CallTypeCheckInfo<'_>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  let CallTypeCheckInfo { file_ns, def_name, .. } = *call;
+  for &(idx, role) in positions {
+    let Some(arg) = args.get(idx) else { continue };
+    let Some(actual_type) = resolve_type_value(arg, scope_types) else {
+      continue;
+    };
+    if !super::is_host_value_type(actual_type.as_ref()) {
+      continue;
+    }
+    let position = match role {
+      ValueIdentityRole::Equality => format!("compares arg {} by value", idx + 1),
+      ValueIdentityRole::SetMember => format!("hashes arg {} as a Set member", idx + 1),
+      ValueIdentityRole::MapKey => format!("hashes arg {} as a Map key", idx + 1),
+    };
+    let warning_location = arg.get_location().or_else(|| call.call_location.clone());
+    gen_check_warning_code_at(
+      format!(
+        "[Warn] `{head_name}` {position}, but `{}` is a host value with no value equality or hash; compare host references with `identical?` or decode the host value into Calcit data first, at {file_ns}/{def_name}",
+        diagnostic_type_string(actual_type.as_ref()),
+      ),
+      "W_HOST_VALUE_EQUALITY",
+      file_ns,
+      warning_location,
+      check_warnings,
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Public check functions
 // ---------------------------------------------------------------------------
@@ -635,6 +697,19 @@ pub(crate) fn check_proc_arg_types(
       check_warnings,
     );
   }
+
+  check_host_value_identity(
+    proc.as_ref(),
+    args,
+    &proc_value_identity_positions(proc, actual_count),
+    scope_types,
+    &CallTypeCheckInfo {
+      file_ns,
+      def_name,
+      call_location: call_location.clone(),
+    },
+    check_warnings,
+  );
 
   if matches!(
     proc,
@@ -747,6 +822,23 @@ pub(crate) fn check_core_fn_arg_types(
 ) {
   if fn_info.def_ns.as_ref() != calcit::CORE_NS {
     return;
+  }
+
+  if matches!(fn_info.name.as_ref(), "=" | "not=") {
+    let positions = (0..args.len()).map(|idx| (idx, ValueIdentityRole::Equality)).collect::<Vec<_>>();
+    let head_name = format!("calcit.core/{}", fn_info.name);
+    check_host_value_identity(
+      &head_name,
+      args,
+      &positions,
+      scope_types,
+      &CallTypeCheckInfo {
+        file_ns,
+        def_name,
+        call_location: call_location.clone(),
+      },
+      check_warnings,
+    );
   }
 
   if !fn_info.arg_types.is_empty()

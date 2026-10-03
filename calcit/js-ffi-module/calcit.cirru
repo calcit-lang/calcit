@@ -75,6 +75,13 @@
                 assert= 1 $ deref calls
                 assert= 3 $ host :total
               :tags $ #{} :unit
+            %{} 'TestEntry (:name |explicit-identity)
+              :code $ quote $ let
+                  host $ checked-counter-host $ make-counter-host 3
+                  other $ checked-counter-host $ make-counter-host 3
+                assert= true $ identical? host host
+                assert= false $ identical? host other
+              :tags $ #{} :unit
         'count-a $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn count-a () 0
           :examples $ []
