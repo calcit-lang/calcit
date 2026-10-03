@@ -695,6 +695,17 @@ try {
     ["loop-asserted", "defn loop-asserted () $ loop ((n 0) (value (Option :none))) (assert-type value (:: 'Option 'Number)) (if (&< n 1) (recur 1 (Option :some 7)) (value .unwrap-or 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
     ["loop-once-log", "defmacro loop-once-log () (println |loop-expansion-token) (quasiquote 7)", ":: 'Macro $ {} (:required $ []) (:capabilities $ #{} :log) (:expansion $ :: 'Expr 'Number)"],
     ["require-string-expression", "defmacro require-string-expression (value) (quasiquote 42)", ":: 'Macro $ {} (:required $ [] $ :: 'Expr 'String) (:expansion $ :: 'Expr 'Number)"],
+    ["require-string-option", "defmacro require-string-option (value) (quasiquote 42)", ":: 'Macro $ {} (:required $ [] $ :: 'Expr $ :: 'Option 'String) (:expansion $ :: 'Expr 'Number)"],
+    ["string-option-recur", "defmacro string-option-recur (value replacement pending?) (if pending? (recur replacement replacement false) (quasiquote 42))", ":: 'Macro $ {} (:required $ [] (:: 'Expr (:: 'Option 'String)) 'Syntax 'Syntax) (:expansion $ :: 'Expr 'Number)"],
+    ["string-option-result", "defmacro string-option-result (value) , value", ":: 'Macro $ {} (:required $ [] 'Syntax) (:expansion $ :: 'Expr $ :: 'Option 'String)"],
+    ["string-option-head", "defmacro string-option-head (value) (quasiquote $ fn () 42)", ":: 'Macro $ {} (:required $ [] $ :: 'Expr $ :: 'Option 'String) (:expansion $ :: 'Expr $ :: 'Fn $ {} (:args $ []) (:return 'Number))"],
+    ["string-option-type", "defmacro string-option-type (value) (quasiquote Option)", ":: 'Macro $ {} (:required $ [] $ :: 'Expr $ :: 'Option 'String) (:expansion $ :: 'Expr 'EnumDef)"],
+    ["loop-generic-identity", "defmacro loop-generic-identity (value) , value", ":: 'Macro $ {} (:generics $ [] 'T) (:required $ [] $ :: 'Expr 'T) (:expansion $ :: 'Expr 'T)"],
+    ["loop-occurrence-log", "defmacro loop-occurrence-log () (println |loop-occurrence-token) (quasiquote 7)", ":: 'Macro $ {} (:required $ []) (:capabilities $ #{} :log) (:expansion $ :: 'Expr 'Number)"],
+    ["loop-repeat-source", "defmacro loop-repeat-source (form) (quasiquote $ &let () (~ form) (~ form))", ":: 'Macro $ {} (:required $ [] 'Syntax) (:expansion $ :: 'Expr 'Number)"],
+    ["loop-duplicated-effects", "defn loop-duplicated-effects () $ loop ((n 0) (value (Option :none))) (if (&< n 1) (recur 1 (Option :some (loop-repeat-source (loop-occurrence-log)))) (value .unwrap-or 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
+    ["loop-captured-effects", "defn loop-captured-effects () $ loop ((n 0) (value (Option :none))) (let ((render (fn () (loop-occurrence-log)))) (if (&< n 1) (recur 1 (Option :some (render))) (value .unwrap-or 0)))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
+    ["loop-head-effects", "defn loop-head-effects () $ loop ((n 0) (value (Option :none))) (if (&< n 1) (recur 1 (Option :some ((fn () (loop-occurrence-log))))) (value .unwrap-or 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
     ["loop-expansion-once", "defn loop-expansion-once () $ loop ((n 0) (value (Option :none))) (if (&< n 1) (recur 1 (Option :some (loop-once-log))) (value .unwrap-or 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
     ["recursive-count", `defn recursive-count (node)
   match node
@@ -805,16 +816,32 @@ try {
   assert= 42 $ loop ((n 0) (value (Option :none))) (if (&< n 1) (if (&< n 1) (recur 1 (Option :some 7)) ()) 42)
   assert= 42 $ loop ((n 0) (value (Option :none))) (if (&< n 1) (if (&>= n 1) () (recur 1 (Option :some 7))) 42)`);
   run("test", "calcit.assert-evidence/recursive-count", "--tag", "recursive-empty-tail", "--require-match");
+  run("edit", "add-test", "calcit.assert-evidence/recursive-count", "loop-macro-contracts", "--tags", "recursive-fields",
+    "--input-format", "cirru", "--code", `quote $ do
+  assert= 42 $ loop ((n 0) (value (Option :none))) (require-string-option value) (if (&< n 1) (recur 1 (Option :some |kept)) 42)
+  assert= 42 $ loop ((n 0) (value (Option :none))) (string-option-recur (Option :none) value true) (if (&< n 1) (recur 1 (Option :some |kept)) 42)
+  assert= 42 $ loop ((n 0) (value (Option :none))) (let ((alias value)) (require-string-option alias)) (if (&< n 1) (recur 1 (Option :some |kept)) 42)
+  assert= 42 $ loop ((n 0) (value (Option :none))) (let ((check (fn () (require-string-option value)))) (check)) (if (&< n 1) (recur 1 (Option :some |kept)) 42)
+  assert= 42 $ loop ((n 0) (value (Option :none))) (let ((value (Option :some |kept))) (require-string-option value)) (if (&< n 1) (recur 1 (Option :some 7)) 42)
+  assert= 42 $ loop ((n 0) (value (Option :none))) ((string-option-head value)) (if (&< n 1) (recur 1 (Option :some |kept)) 42)
+  assert= 42 $ loop ((n 0) (value (Option :none))) ((string-option-type value) :some 7) (if (&< n 1) (recur 1 (Option :some |kept)) 42)
+  assert= 42 $ loop ((n 0) (value (Option :none))) (string-option-result value) (if (&< n 1) (recur 1 (Option :some |kept)) 42)
+  assert= 7 $ loop ((n 0) (value (Option :none))) (if (&< n 1) (recur 1 (Option :some 7)) ((loop-generic-identity value) .unwrap-or 0))
+  assert= 7 $ loop-duplicated-effects
+  assert= 7 $ loop-captured-effects
+  assert= 7 $ loop-head-effects`);
   run("test", "calcit.assert-evidence/recursive-count", "--tag", "recursive-fields", "--require-match");
   const recursiveTests = JSON.parse(run("query", "def", "calcit.assert-evidence/recursive-count", "--format", "json"))
     .data.tests.filter(test => test.tags.includes("recursive-fields"));
-  assert.equal(recursiveTests.length, 1);
+  assert.equal(recursiveTests.length, 2);
   setBody(recursiveTests.map(test => test.code));
   const loggedLoop = spawnSync(binary, [snapshot, "--check-only"], options);
   if (loggedLoop.error) throw loggedLoop.error;
   assert.equal(loggedLoop.status, 0, `${loggedLoop.stdout}\n${loggedLoop.stderr}`);
   assert.equal((`${loggedLoop.stdout}\n${loggedLoop.stderr}`.match(/loop-expansion-token/g) ?? []).length, 1,
     "solving loop input constraints must not repeat an effectful macro expansion");
+  assert.equal((`${loggedLoop.stdout}\n${loggedLoop.stderr}`.match(/loop-occurrence-token/g) ?? []).length, 4,
+    "two interpolated occurrences and two nested function occurrences must each expand exactly once");
   run();
   const recursiveOutput = join(project, "recursive-fields-js");
   run("--emit-path", recursiveOutput, "js");
@@ -834,6 +861,15 @@ try {
     ["wrong-macro-local", "let ((value 7)) (require-string-expression value)"],
     ["wrong-macro-alias", "let ((value 7) (alias value)) (require-string-expression alias)"],
     ["wrong-macro-capture", "let ((value 7) (render (fn () (require-string-expression value)))) (render)"],
+    ["wrong-macro-loop", "loop ((n 0) (value (Option :none))) (require-string-option value) (if (&< n 1) (recur 1 (Option :some 7)) 42)"],
+    ["wrong-macro-internal-recur", "loop ((n 0) (value (Option :none))) (string-option-recur (Option :none) value true) (if (&< n 1) (recur 1 (Option :some 7)) 42)"],
+    ["wrong-macro-loop-alias", "loop ((n 0) (value (Option :none))) (let ((alias value)) (require-string-option alias)) (if (&< n 1) (recur 1 (Option :some 7)) 42)"],
+    ["wrong-macro-loop-capture", "loop ((n 0) (value (Option :none))) (let ((check (fn () (require-string-option value)))) (check)) (if (&< n 1) (recur 1 (Option :some 7)) 42)"],
+    ["wrong-macro-loop-head", "loop ((n 0) (value (Option :none))) ((string-option-head value)) (if (&< n 1) (recur 1 (Option :some 7)) 42)"],
+    ["wrong-macro-loop-constructor-head", "loop ((n 0) (value (Option :none))) ((string-option-type value) :some 7) (if (&< n 1) (recur 1 (Option :some 7)) 42)"],
+    ["wrong-macro-result-loop", "loop ((n 0) (value (Option :none))) (string-option-result value) (if (&< n 1) (recur 1 (Option :some 7)) 42)"],
+    ["wrong-macro-result-alias", "loop ((n 0) (value (Option :none))) (let ((alias value)) (string-option-result alias)) (if (&< n 1) (recur 1 (Option :some 7)) 42)"],
+    ["wrong-macro-result-capture", "loop ((n 0) (value (Option :none))) (let ((check (fn () (string-option-result value) 42))) (check)) (if (&< n 1) (recur 1 (Option :some 7)) 42)"],
     ["wrong-matched-loop-payload", "loop ((tree (Option :none))) (match tree ((:none) (recur (Option :some |wrong))) ((:some payload) (RecursiveComponent :tree (Option :some payload))))"],
     ["contradictory-loop-assertion", "loop ((n 0) (value (Option :none))) (assert-type value (:: 'Option 'String)) (if (&< n 1) (recur 1 (Option :some 7)) 42)"],
     ["contradictory-captured-loop-assertion", "loop ((n 0) (value (Option :none))) (let ((check (fn () (assert-type value (:: 'Option 'String)) 42))) (if (&< n 1) (recur 1 (Option :some 7)) (check)))"],
@@ -861,7 +897,8 @@ try {
     run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
       `quote $ defwasm-export run-tests () (${expression}) 1`);
     const original = await readFile(snapshot);
-    const expectedDiagnostic = name.startsWith("wrong-macro-") ? /E_MACRO_INPUT_EXPR_TYPE/
+    const expectedDiagnostic = name.startsWith("wrong-macro-result-") ? /E_MACRO_EXPANSION_EXPR_TYPE/
+      : name.startsWith("wrong-macro-") ? /E_MACRO_INPUT_EXPR_TYPE/
       : name.startsWith("contradictory-") ? /E_ASSERT_TYPE_MISMATCH/
       : name.startsWith("unproven-") ? /E_ASSERT_TYPE_UNPROVEN/
       : name === "wrong-variant-payload" ? /Enum `RecursiveNode::element` payload 1 expects type/
