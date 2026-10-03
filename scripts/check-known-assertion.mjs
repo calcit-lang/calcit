@@ -661,6 +661,8 @@ try {
     ["BroadNodeHolder", "defstruct BroadNodeHolder (:cell $ :: 'calcit.assert-evidence/RecursiveCell 'Struct) (:tree $ :: 'Option 'Struct)", "'StructDef"],
     ["SpecificNodeHolder", "defstruct SpecificNodeHolder (:cell $ :: 'calcit.assert-evidence/RecursiveCell 'calcit.assert-evidence/RecursiveElement) (:tree $ :: 'Option 'calcit.assert-evidence/RecursiveElement)", "'StructDef"],
     ["make-broad-element", "defn make-broad-element () $ RecursiveElement :children $ []", ":: 'Fn $ {} (:args $ []) (:return 'Struct)"],
+    ["make-empty-tree", "defn make-empty-tree () $ Option :none", ":: 'Fn $ {} (:args $ []) (:return $ :: 'Option 'Dynamic)"],
+    ["make-open-tree", "defn make-open-tree () $ Option :some 1", ":: 'Fn $ {} (:args $ []) (:return $ :: 'Option 'Dynamic)"],
     ["recursive-count", `defn recursive-count (node)
   match node
     (:element element)
@@ -681,6 +683,7 @@ try {
     wrapped $ RecursiveNode :element leaf
     present $ %{} RecursiveComponent (:tree $ Option :some wrapped)
     absent $ RecursiveComponent :tree $ Option :none
+    from-wrapper $ RecursiveComponent :tree $ make-empty-tree
     broad $ BroadNodeHolder :cell (RecursiveCell :value leaf) :tree $ Option :some leaf
     parent $ %{} RecursiveElement $ :children
       []
@@ -689,6 +692,7 @@ try {
         RecursivePair :key 2 :node wrapped
   assert= 3 $ recursive-count $ RecursiveNode :element parent
   assert= 0 $ recursive-count $ RecursiveNode :component absent
+  assert= 0 $ recursive-count $ RecursiveNode :component from-wrapper
   assert= true $ struct? $ :value $ :cell broad
   assert= true $ struct? $ (:tree broad).unwrap
   assert= |string-key $ :key $ &list:nth (:children parent) 0
@@ -709,6 +713,7 @@ try {
     ["wrong-scalar-head", "WriteState :count |wrong :label |kept"],
     ["broad-enum-payload", "SpecificNodeHolder :cell (RecursiveCell :value (RecursiveElement :children ([]))) :tree $ Option :some $ make-broad-element"],
     ["broad-struct-payload", "SpecificNodeHolder :cell (RecursiveCell :value (make-broad-element)) :tree $ Option :none"],
+    ["open-enum-payload", "RecursiveComponent :tree $ make-open-tree"],
     ["wrong-variant-payload", "RecursiveNode :element $ RecursiveComponent :tree $ Option :none"],
     ["unwrapped-node-literal", "%{} RecursivePair (:key :a) (:node $ %{} RecursiveElement (:children $ []))"],
     ["unwrapped-node-head", "RecursivePair :key :a :node $ RecursiveElement :children $ []"],
@@ -728,7 +733,7 @@ try {
       assert.match(diagnostics, /expects type|does not exist in struct/);
       assert.match(diagnostics, /calcit.assert-evidence/);
       const field = name.startsWith("wrong-scalar") ? "count"
-        : name === "broad-enum-payload" ? "tree"
+        : name === "broad-enum-payload" || name === "open-enum-payload" ? "tree"
         : name === "broad-struct-payload" ? "cell"
         : name.startsWith("unwrapped-node") ? "node"
         : name.startsWith("raw-pair-list") ? "children" : null;

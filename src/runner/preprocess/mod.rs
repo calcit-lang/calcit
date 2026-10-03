@@ -5542,8 +5542,11 @@ fn check_struct_construction_fields(
     if matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic) {
       continue;
     }
+    if empty_container_has_no_type_evidence(pair[1], expected) {
+      continue;
+    }
     if let Some(actual) = resolve_type_value(pair[1], scope_types)
-      && !actual.is_compatible_with(expected)
+      && !type_inference::constructor_payload_is_proven(pair[1], &actual, expected, scope_types)
     {
       gen_check_warning_code_at_with_types(
         format!(
