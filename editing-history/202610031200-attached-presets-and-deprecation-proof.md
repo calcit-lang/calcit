@@ -8,6 +8,8 @@
 
 弃用报告保留 reader-resolved builtin 调用，并在普通函数解析成功时用现有 compiler source usage trace 判断目标与局部遮蔽。推荐方法允许复用旧内部 helper，不因 lowering 的实现名字而成为弃用调用。无法完成预处理的定义仍保留既有保守 source 报告，不把它宣称为完整类型证明。
 
+候选为空的函数不展开其调用图，避免仅为确认空报告而执行无关宏的编译期输出。候选收集复用 program import resolver，保留仅通过 namespace alias 或 refer 导入的弃用调用；非空候选再进入原编译器证明。Agent JSON stdout 检查与含输出宏的临时 Snapshot 覆盖此边界。
+
 ## 验证
 
 CLI 协议回归在临时 Snapshot 中通过结构化命令构造 Calcit 附带断言，验证 preview 不写入、revision 保护、原子应用、原断言重放与幂等。额外覆盖歧义、未知 macro、quoted data、局部同名参数、namespace alias 与推荐方法。

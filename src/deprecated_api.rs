@@ -110,10 +110,13 @@ fn collect_uses(
       Calcit::Import(import) => push_use(uses, targets, import.ns.as_ref(), import.def.as_ref(), path),
       Calcit::Symbol { sym, .. } => {
         if let Some((namespace, definition)) = sym.rsplit_once('/') {
-          push_use(uses, targets, namespace, definition, path);
+          let resolved_namespace = program::lookup_ns_target_in_import(current_namespace, namespace);
+          push_use(uses, targets, resolved_namespace.as_deref().unwrap_or(namespace), definition, path);
         } else {
           push_use(uses, targets, current_namespace, sym.as_ref(), path);
-          if !definitions.contains(&(current_namespace.to_owned(), sym.to_string())) {
+          if let Some(imported_namespace) = program::lookup_def_target_in_import(current_namespace, sym.as_ref()) {
+            push_use(uses, targets, imported_namespace.as_ref(), sym.as_ref(), path);
+          } else if !definitions.contains(&(current_namespace.to_owned(), sym.to_string())) {
             push_use(uses, targets, calcit::calcit::CORE_NS, sym.as_ref(), path);
           }
         }
@@ -239,7 +242,12 @@ pub fn collect_deprecated_api_rows(
     for (definition, entry) in &file.defs {
       let mut uses = vec![];
       collect_uses(&entry.code, namespace, &targets, &definitions, &mut vec![], &mut uses);
-      if resolver_ready && let Some(resolved) = resolved_function_uses(&entry.code, namespace, definition, &targets, &uses) {
+      // Do not compile unrelated call graphs merely to confirm an empty report.
+      // Their macros may have compile-time effects that a metadata query must not trigger.
+      if resolver_ready
+        && !uses.is_empty()
+        && let Some(resolved) = resolved_function_uses(&entry.code, namespace, definition, &targets, &uses)
+      {
         uses = resolved;
       }
       uses.sort_by(|left, right| {

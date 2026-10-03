@@ -20,6 +20,13 @@ fn deprecation_report_shares_core_metadata_and_excludes_local_and_quoted_calls()
     ),
     ("app.main/local", "quote $ defn local (some?)\n  some? 1", false),
     ("app.main/quoted", "quote $ defn quoted ()\n  quote $ some? 1", false),
+    ("app.main/alias-only", "quote $ defn alias-only ()\n  compat/optionally nil", false),
+    (
+      "app.main/noisy",
+      "quote $ defmacro noisy ()\n  println |metadata-query-must-not-expand-unrelated-macro\n  quote 1",
+      false,
+    ),
+    ("app.main/unrelated", "quote $ defn unrelated ()\n  noisy", false),
     (
       "app.main/preferred",
       "quote $ defn preferred ()\n  nil->option nil\n  non-nil? 1\n  .join-string ([] |a |b) |-\n  .intersperse ([] 1 2) 0\n  .distinct-values $ {} (:a 1)\n  monotonic-time-ms",
@@ -51,9 +58,10 @@ fn deprecation_report_shares_core_metadata_and_excludes_local_and_quoted_calls()
   assert_success(&output, "report legacy core calls");
   let report = parse_stdout(&output);
   let rows = report["data"]["definitions"].as_array().unwrap();
-  assert_eq!(rows.len(), 1, "{report}");
-  assert_eq!(rows[0]["name"], "legacy", "{report}");
-  assert_eq!(report["data"]["summary"]["calls"], 10, "{report}");
+  assert_eq!(rows.len(), 2, "{report}");
+  let legacy = rows.iter().find(|row| row["name"] == "legacy").unwrap();
+  assert_eq!(report["data"]["summary"]["calls"], 11, "{report}");
+  assert!(!String::from_utf8_lossy(&output.stdout).contains("metadata-query-must-not-expand-unrelated-macro"));
   for (old, preferred) in [
     ("optionally", "nil->option"),
     ("some?", "non-nil?"),
@@ -67,7 +75,7 @@ fn deprecation_report_shares_core_metadata_and_excludes_local_and_quoted_calls()
     ("remove-watch", "remove-watch!"),
   ] {
     let target = format!("calcit.core/{old}");
-    let usage = rows[0]["uses"]
+    let usage = legacy["uses"]
       .as_array()
       .unwrap()
       .iter()
