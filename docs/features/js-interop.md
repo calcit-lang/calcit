@@ -394,6 +394,18 @@ defn read-title (element)
     node .text
 ```
 
+external-object trait 的值是宿主句柄，运行时按引用身份比较和哈希。静态检查对 `=`、`not=`、`&=` 的参数，
+以及 `#{}`、`&include`/`&exclude`、Map 字面量与 `assoc`/`get`/`dissoc`/`contains?` 的 Set 成员和 Map 键报告
+`W_HOST_VALUE_EQUALITY`（严格模式下即错误）。需要判断是否同一个宿主对象时用 `identical?`；需要按内容比较或
+作为键时，先在适配器内解码成 Calcit 数据（例如取出 id 字符串）：
+
+```cirru.no-check
+defn same-element? (a b)
+  identical? a b
+```
+
+裸 `JsObject` 与 `Dynamic` 不在此检查之内：属性读取得到的 `JsObject` 可能是字符串或数字。
+
 要点：
 
 - 方法调用写成 `(receiver .method args...)`；`.method` 走 external-object trait 的静态派发，

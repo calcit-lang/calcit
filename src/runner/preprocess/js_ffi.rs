@@ -551,6 +551,17 @@ pub(super) fn is_external_trait_field(type_value: &CalcitTypeAnnotation, field_n
     .is_some_and(|traits| find_trait_field_type(&traits, field_name).is_some_and(|(trait_def, _)| trait_is_external_object(trait_def)))
 }
 
+/// Values of a declared external-object trait are host handles with no
+/// structural `Eq`/hash evidence; at runtime they compare and hash by reference
+/// identity only. Plain `JsObject` stays open: raw property reads type any JS
+/// value, including strings and numbers, as `JsObject`.
+pub(crate) fn is_host_value_type(type_value: &CalcitTypeAnnotation) -> bool {
+  match type_value {
+    CalcitTypeAnnotation::Optional(inner) | CalcitTypeAnnotation::JsNullish(inner) => is_host_value_type(inner.as_ref()),
+    _ => trait_list_from_type(type_value).is_some_and(|traits| traits.iter().any(|trait_def| trait_is_external_object(trait_def))),
+  }
+}
+
 pub(crate) fn trait_is_external_object(trait_def: &CalcitTrait) -> bool {
   let Some(def_ref) = trait_def.definition_ref.as_deref() else {
     return false;

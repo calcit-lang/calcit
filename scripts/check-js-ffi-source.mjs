@@ -118,9 +118,9 @@ try {
 
   // Replay the actual attached Calcit expressions, rather than JS copies of their assertions.
   const hostContext = JSON.parse(execFileSync(resolve(repository, "target/debug/calcit"),
-    [input, "query", "context", "app.main/checked-counter-host", "--format", "json"], { cwd: fixture, encoding: "utf8" }));
+    [input, "query", "context", "app.main/checked-counter-host", "--test-limit", "8", "--format", "json"], { cwd: fixture, encoding: "utf8" }));
   assert.equal(hostContext.data.tests.truncated, false);
-  assert.equal(hostContext.data.tests.items.length, 3);
+  assert.equal(hostContext.data.tests.items.length, 4);
   const hostEntry = ["defn", "replay-host-tests!", [], ...hostContext.data.tests.items.map(test => test.tree), "&unit"];
   execFileSync(resolve(repository, "target/debug/calcit"), [moduleSnapshot, "edit", "def", "app.main/replay-host-tests!",
     "--input-format", "json-ast", "--code", JSON.stringify(hostEntry)], { cwd: fixture });
@@ -186,6 +186,12 @@ try {
   mutateCast("def", "quote $ defn checked-counter-host (value) (js-cast value)");
   rejectCast(/expects a value and an external-object trait/);
   mutateCast("def", checkedBody);
+  // Host handles have no value equality; the replay entry is rebuilt from source above when needed.
+  execFileSync(resolve(repository, "target/debug/calcit"), [moduleSnapshot, "edit", "def", "app.main/replay-host-tests!", "--overwrite",
+    "--input-format", "cirru", "--code",
+    "quote $ defn replay-host-tests! () $ let ((host $ checked-counter-host $ make-counter-host 3)) (assert= true $ = host host) &unit"],
+    { cwd: fixture, stdio: "pipe" });
+  rejectCast(/W_HOST_VALUE_EQUALITY[^\n]*identical\?/);
 
   const fileExpression = join(fixture, "js-ffi-module/js-ffi-assets/add-two.js");
   const originalExpression = await readFile(fileExpression, "utf8");
