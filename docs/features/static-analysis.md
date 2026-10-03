@@ -903,8 +903,6 @@ defn calculate-area (width height) (; Types inferred from arithmetic operations)
 
 ### 3. Add Assertions for Critical Code
 
-辅助函数也需要声明集合元素类型。`assert-type` 检查已有证明，不会把开放的 `Dynamic` 转换成可用于 `map` 的集合。
-
 ```cirru
 let
     dangerous-operation $ fn (data)
@@ -1115,3 +1113,7 @@ Static type analysis:
 - [Polymorphism](polymorphism.md) - Object-oriented programming patterns
 - [Macros](macros.md) - Metaprogramming and code generation
 - [Data](../data.md) - Data types and structures
+
+## 限制
+
+集合辅助函数需要完整的元素类型合同，`assert-type` 只检查已有证明，不能把开放的 `Dynamic` 转换为可用于 `map` 的集合。

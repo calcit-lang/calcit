@@ -263,7 +263,7 @@ let
 
 ### Early Return Pattern
 
-把输入声明为 `List<Number>`，并用 `Option<List<Number>>` 表达验证结果；`if-let` 解包后保留集合的元素类型。
+把输入声明为 `List<Number>`，并用 `Option<List<Number>>` 表达验证结果；`if-let` 解包后保留集合的元素类型。这个示例区分空输入与包含负数的无效输入。
 
 ```cirru
 let
@@ -272,9 +272,11 @@ let
       hint-fn $ {}
         :args $ [] $ :: 'List 'Number
         :return $ :: 'Option $ :: 'List 'Number
-      if (= (count data) 0)
-        assert-type (Option :none) (:: 'Option $ :: 'List 'Number)
+      if
+        and (> (count data) 0)
+          every? data $ fn (x) (>= x 0)
         Option :some data
+        assert-type (Option :none) (:: 'Option $ :: 'List 'Number)
     transform-data $ fn (validated)
       hint-fn $ {}
         :args $ [] $ :: 'List 'Number
@@ -295,6 +297,7 @@ let
   assert= (:: :ok $ [] 2 4 6) (process-data $ [] 1 2 3)
   assert= (:: :err |Empty-data)
     process-data $ assert-type ([]) (:: 'List 'Number)
+  assert= (:: :err |Invalid-data) (process-data $ [] 1 -2 3)
 ```
 
 ### Pipeline Pattern
