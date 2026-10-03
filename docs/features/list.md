@@ -96,14 +96,14 @@ let
 
 ### 索引范围与元素成员
 
-`xs.contains? index` 检查 Number 索引是否在有效范围内；`xs.includes? value` 检查列表中是否有指定的 `T` 元素。两者不是别名：查询元素时不要把值误传给 `.contains?`。
+`xs .contains-index? index` 检查 Number 索引是否在有效范围内；`xs .includes? value` 检查列表中是否有指定的 `T` 元素。两者不是别名：查询元素时不要把值误传给 `.contains-index?`。List 的旧 `.contains?` 方法已在 0.29.0 删除。
 
 ```cirru
 let
     xs $ [] :a :b :c
-  println $ xs.contains? 1
+  println $ xs.contains-index? 1
   ; => true
-  println $ xs.contains? 3
+  println $ xs.contains-index? 3
   ; => false
   println $ xs.includes? :b
   ; => true

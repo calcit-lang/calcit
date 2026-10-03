@@ -55,16 +55,12 @@ const CORE_COLLECTION_LEN_RULE: &str = "core-collection-len-v1";
 const CORE_COLLECTION_LEN_DIAGNOSTIC: &str = "FIX_CORE_COLLECTION_LEN";
 const CORE_LIST_FOLD_RULE: &str = "core-list-fold-v1";
 const CORE_LIST_FOLD_DIAGNOSTIC: &str = "FIX_CORE_LIST_FOLD";
-const CORE_LIST_INTERSPERSE_RULE: &str = "core-list-intersperse-v1";
-const CORE_LIST_INTERSPERSE_DIAGNOSTIC: &str = "FIX_CORE_LIST_INTERSPERSE";
 const CORE_LIST_FLAT_MAP_RULE: &str = "core-list-flat-map-v1";
 const CORE_LIST_FLAT_MAP_DIAGNOSTIC: &str = "FIX_CORE_LIST_FLAT_MAP";
 const CORE_LIST_JOIN_STRING_RULE: &str = "core-list-join-string-v1";
 const CORE_LIST_JOIN_STRING_DIAGNOSTIC: &str = "FIX_CORE_LIST_JOIN_STRING";
 const CORE_LIST_GET_RULE: &str = "core-list-get-v1";
 const CORE_LIST_GET_DIAGNOSTIC: &str = "FIX_CORE_LIST_GET";
-const CORE_MAP_DISTINCT_VALUES_RULE: &str = "core-map-distinct-values-v1";
-const CORE_MAP_DISTINCT_VALUES_DIAGNOSTIC: &str = "FIX_CORE_MAP_DISTINCT_VALUES";
 const CORE_COLLECTION_COMBINE_RULE: &str = "core-collection-combine-v1";
 const CORE_COLLECTION_COMBINE_DIAGNOSTIC: &str = "FIX_CORE_COLLECTION_COMBINE";
 const CORE_EFFECT_METHOD_RULE: &str = "core-effect-method-v1";
@@ -111,7 +107,7 @@ const SURFACE_LATEST_V2_RULES: [&str; 5] = [
   SINGLE_EXPRESSION_DO_RULE,
 ];
 // These proven renames replace leaves only, so nested calls retain their source paths.
-const CORE_API_028_V1_RULES: [&str; 15] = [
+const CORE_API_028_V1_RULES: [&str; 13] = [
   CORE_NON_NIL_PREDICATE_RULE,
   CORE_INTEGER_PREDICATE_RULE,
   CORE_IDENTITY_CONVERSION_RULE,
@@ -120,11 +116,9 @@ const CORE_API_028_V1_RULES: [&str; 15] = [
   CORE_SET_INCLUDE_RULE,
   CORE_COLLECTION_LEN_RULE,
   CORE_LIST_FOLD_RULE,
-  CORE_LIST_INTERSPERSE_RULE,
   CORE_LIST_FLAT_MAP_RULE,
   CORE_LIST_JOIN_STRING_RULE,
   CORE_LIST_GET_RULE,
-  CORE_MAP_DISTINCT_VALUES_RULE,
   CORE_COLLECTION_COMBINE_RULE,
   CORE_EFFECT_METHOD_RULE,
 ];
@@ -695,14 +689,6 @@ pub(crate) fn handle_fix_command(
       LIST_FOLD_ALIAS,
     )?);
   }
-  if selected_rules.contains(&CORE_LIST_INTERSPERSE_RULE) {
-    suggestions.extend(plan_core_method_alias_fixes(
-      &source_snapshot,
-      snapshot_file,
-      &selected_definitions,
-      LIST_INTERSPERSE_ALIAS,
-    )?);
-  }
   if selected_rules.contains(&CORE_LIST_FLAT_MAP_RULE) {
     suggestions.extend(plan_core_method_alias_fixes(
       &source_snapshot,
@@ -727,14 +713,6 @@ pub(crate) fn handle_fix_command(
       LIST_GET_ALIAS,
     )?);
   }
-  if selected_rules.contains(&CORE_MAP_DISTINCT_VALUES_RULE) {
-    suggestions.extend(plan_core_method_alias_fixes(
-      &source_snapshot,
-      snapshot_file,
-      &selected_definitions,
-      MAP_DISTINCT_VALUES_ALIAS,
-    )?);
-  }
   if selected_rules.contains(&CORE_SET_INCLUDE_RULE) {
     suggestions.extend(plan_core_method_alias_fixes(
       &source_snapshot,
@@ -755,13 +733,7 @@ pub(crate) fn handle_fix_command(
   }
   if selected_rules.contains(&CORE_PREDICATE_METHOD_RULE) {
     let mut predicate_suggestions = Vec::new();
-    for rule in [
-      LIST_CONTAINS_INDEX_ALIAS,
-      STRING_CONTAINS_INDEX_ALIAS,
-      MAP_CONTAINS_KEY_ALIAS,
-      MAP_CONTAINS_VALUE_ALIAS,
-      SET_INCLUDES_ALIAS,
-    ] {
+    for rule in [MAP_CONTAINS_KEY_ALIAS, MAP_CONTAINS_VALUE_ALIAS, SET_INCLUDES_ALIAS] {
       predicate_suggestions.extend(plan_core_method_alias_fixes(
         &source_snapshot,
         snapshot_file,
@@ -1252,11 +1224,9 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CORE_SET_INCLUDE_RULE
         | CORE_COLLECTION_LEN_RULE
         | CORE_LIST_FOLD_RULE
-        | CORE_LIST_INTERSPERSE_RULE
         | CORE_LIST_FLAT_MAP_RULE
         | CORE_LIST_JOIN_STRING_RULE
         | CORE_LIST_GET_RULE
-        | CORE_MAP_DISTINCT_VALUES_RULE
         | CORE_COLLECTION_COMBINE_RULE
         | CORE_EFFECT_METHOD_RULE
         | RENAME_DEFINITION_RULE
@@ -1275,7 +1245,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
   {
     return Err(
       format!(
-        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_SET_INCLUDE_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_LIST_INTERSPERSE_RULE}`, `{CORE_MAP_DISTINCT_VALUES_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_SET_INCLUDE_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
       ) + &format!(
         " Review-only compiler rules: `{UNSAFE_COERCE_BOUNDARY_RULE}`, `{ASSERT_TYPE_PROOF_RULE}`, `{CONCRETE_RETURN_PROOF_RULE}`, `{CALLABLE_CONTRACT_PROOF_RULE}`, `{NOMINAL_WRITE_PROOF_RULE}`."
       ),
@@ -1330,11 +1300,9 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_SET_INCLUDE_RULE
         | CORE_COLLECTION_LEN_RULE
         | CORE_LIST_FOLD_RULE
-        | CORE_LIST_INTERSPERSE_RULE
         | CORE_LIST_FLAT_MAP_RULE
         | CORE_LIST_JOIN_STRING_RULE
         | CORE_LIST_GET_RULE
-        | CORE_MAP_DISTINCT_VALUES_RULE
         | CORE_COLLECTION_COMBINE_RULE
         | CORE_EFFECT_METHOD_RULE
     ) {
@@ -1360,11 +1328,9 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_SET_INCLUDE_RULE => CORE_SET_INCLUDE_RULE,
         CORE_COLLECTION_LEN_RULE => CORE_COLLECTION_LEN_RULE,
         CORE_LIST_FOLD_RULE => CORE_LIST_FOLD_RULE,
-        CORE_LIST_INTERSPERSE_RULE => CORE_LIST_INTERSPERSE_RULE,
         CORE_LIST_FLAT_MAP_RULE => CORE_LIST_FLAT_MAP_RULE,
         CORE_LIST_JOIN_STRING_RULE => CORE_LIST_JOIN_STRING_RULE,
         CORE_LIST_GET_RULE => CORE_LIST_GET_RULE,
-        CORE_MAP_DISTINCT_VALUES_RULE => CORE_MAP_DISTINCT_VALUES_RULE,
         CORE_COLLECTION_COMBINE_RULE => CORE_COLLECTION_COMBINE_RULE,
         CORE_EFFECT_METHOD_RULE => CORE_EFFECT_METHOD_RULE,
         _ => OPTIONAL_PARAMETERS_RULE,
@@ -1530,13 +1496,6 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
-    CORE_LIST_INTERSPERSE_RULE => FixRuleMetadata {
-      rule_id,
-      diagnostic_code: CORE_LIST_INTERSPERSE_DIAGNOSTIC,
-      evidence_source: "proven-list-receiver-and-method-implementation",
-      lifecycle: "semantic-refactor",
-      source_version_required: false,
-    },
     CORE_LIST_FLAT_MAP_RULE => FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_LIST_FLAT_MAP_DIAGNOSTIC,
@@ -1555,13 +1514,6 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_LIST_GET_DIAGNOSTIC,
       evidence_source: "proven-list-receiver-and-method-implementation",
-      lifecycle: "semantic-refactor",
-      source_version_required: false,
-    },
-    CORE_MAP_DISTINCT_VALUES_RULE => FixRuleMetadata {
-      rule_id,
-      diagnostic_code: CORE_MAP_DISTINCT_VALUES_DIAGNOSTIC,
-      evidence_source: "proven-map-receiver-and-method-implementation",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -4995,7 +4947,6 @@ enum MethodReceiverKind {
   List,
   Map,
   Set,
-  String,
   Number,
   CoreStruct {
     definition: &'static str,
@@ -5009,7 +4960,6 @@ impl MethodReceiverKind {
       Self::List => matches!(annotation, CalcitTypeAnnotation::List(_)),
       Self::Map => matches!(annotation, CalcitTypeAnnotation::Map(_, _)),
       Self::Set => matches!(annotation, CalcitTypeAnnotation::Set(_)),
-      Self::String => matches!(annotation, CalcitTypeAnnotation::String),
       Self::Number => matches!(annotation, CalcitTypeAnnotation::Number),
       Self::CoreStruct { definition, .. } => annotation.resolve_to_struct().is_some_and(|base| {
         base.definition_ref.as_deref() == Some(definition)
@@ -5023,7 +4973,6 @@ impl MethodReceiverKind {
       Self::List => "List",
       Self::Map => "Map",
       Self::Set => "Set",
-      Self::String => "String",
       Self::Number => "Number",
       Self::CoreStruct { definition, .. } => definition,
     }
@@ -5053,30 +5002,6 @@ const NUMBER_INTEGER_PREDICATE_ALIAS: MethodAliasRule = MethodAliasRule {
   call_size: 2,
   variadic: false,
   message: "Use `.integer?` for Number; both methods resolve to the same core implementation and return Bool.",
-};
-
-const LIST_CONTAINS_INDEX_ALIAS: MethodAliasRule = MethodAliasRule {
-  rule_id: CORE_PREDICATE_METHOD_RULE,
-  diagnostic_code: CORE_PREDICATE_METHOD_DIAGNOSTIC,
-  receiver: MethodReceiverKind::List,
-  old_method: ".contains?",
-  new_method: ".contains-index?",
-  implementation: "calcit.core/&list:contains?",
-  call_size: 3,
-  variadic: false,
-  message: "Use `.contains-index?` for a List position; `.includes?` checks an element instead.",
-};
-
-const STRING_CONTAINS_INDEX_ALIAS: MethodAliasRule = MethodAliasRule {
-  rule_id: CORE_PREDICATE_METHOD_RULE,
-  diagnostic_code: CORE_PREDICATE_METHOD_DIAGNOSTIC,
-  receiver: MethodReceiverKind::String,
-  old_method: ".contains?",
-  new_method: ".contains-index?",
-  implementation: "calcit.core/&str:contains?",
-  call_size: 3,
-  variadic: false,
-  message: "Use `.contains-index?` for a String scalar position; `.includes?` checks a substring instead.",
 };
 
 const MAP_CONTAINS_KEY_ALIAS: MethodAliasRule = MethodAliasRule {
@@ -5139,18 +5064,6 @@ const LIST_FOLD_ALIAS: MethodAliasRule = MethodAliasRule {
   message: "Use `.fold` for seeded left-to-right List accumulation; both methods resolve to the same core implementation.",
 };
 
-const LIST_INTERSPERSE_ALIAS: MethodAliasRule = MethodAliasRule {
-  rule_id: CORE_LIST_INTERSPERSE_RULE,
-  diagnostic_code: CORE_LIST_INTERSPERSE_DIAGNOSTIC,
-  receiver: MethodReceiverKind::List,
-  old_method: ".join",
-  new_method: ".intersperse",
-  implementation: "calcit.core/intersperse",
-  call_size: 3,
-  variadic: false,
-  message: "Use `.intersperse` for List separator insertion; both methods resolve to the same core implementation.",
-};
-
 const LIST_FLAT_MAP_ALIAS: MethodAliasRule = MethodAliasRule {
   rule_id: CORE_LIST_FLAT_MAP_RULE,
   diagnostic_code: CORE_LIST_FLAT_MAP_DIAGNOSTIC,
@@ -5185,18 +5098,6 @@ const LIST_GET_ALIAS: MethodAliasRule = MethodAliasRule {
   call_size: 3,
   variadic: false,
   message: "Use .get for List positional lookup; both methods resolve to the same core implementation and return Option<T>.",
-};
-
-const MAP_DISTINCT_VALUES_ALIAS: MethodAliasRule = MethodAliasRule {
-  rule_id: CORE_MAP_DISTINCT_VALUES_RULE,
-  diagnostic_code: CORE_MAP_DISTINCT_VALUES_DIAGNOSTIC,
-  receiver: MethodReceiverKind::Map,
-  old_method: ".values",
-  new_method: ".distinct-values",
-  implementation: "calcit.core/distinct-values",
-  call_size: 2,
-  variadic: false,
-  message: "Use `.distinct-values` for a deduplicated Set of Map values; both methods resolve to the same core implementation.",
 };
 
 const MAP_MERGE_ALIAS: MethodAliasRule = MethodAliasRule {
@@ -5299,18 +5200,14 @@ const CORE_EFFECT_METHOD_ALIASES: &[MethodAliasRule] = &[
 /// Query and fix share these proven alias contracts; this is not a second API registry.
 const QUERYABLE_METHOD_ALIASES: &[MethodAliasRule] = &[
   NUMBER_INTEGER_PREDICATE_ALIAS,
-  LIST_CONTAINS_INDEX_ALIAS,
-  STRING_CONTAINS_INDEX_ALIAS,
   MAP_CONTAINS_KEY_ALIAS,
   MAP_CONTAINS_VALUE_ALIAS,
   SET_INCLUDES_ALIAS,
   SET_INCLUDE_ALIAS,
   LIST_FOLD_ALIAS,
-  LIST_INTERSPERSE_ALIAS,
   LIST_FLAT_MAP_ALIAS,
   LIST_JOIN_STRING_ALIAS,
   LIST_GET_ALIAS,
-  MAP_DISTINCT_VALUES_ALIAS,
   MAP_MERGE_ALIAS,
   SET_UNION_ALIAS,
 ];

@@ -1110,6 +1110,25 @@ fn strict_type_fail_trait_requires_reports_declaration_and_attachment_codes() {
 }
 
 #[test]
+fn strict_type_fail_retired_methods_report_migration_guidance() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    for (entry, method, replacement) in [
+      ("join-list", ".join", ".intersperse"),
+      ("values-map", ".values", ".distinct-values"),
+      ("contains-list", ".contains?", ".contains-index?"),
+      ("contains-string", ".contains?", ".contains-index?"),
+    ] {
+      let entries = load_fixture_entries_with_entry("calcit/type-fail/retired-method-strict.cirru", Some(entry));
+      let err = run_check_only(&entries).expect_err(&format!("retired {method} ({entry}) must fail strict check-only"));
+      assert!(err.contains("E_RETIRED_METHOD"), "{entry} should report E_RETIRED_METHOD: {err}");
+      assert!(err.contains(&format!("method `{method}`")), "{entry} should name {method}: {err}");
+      assert!(err.contains(replacement), "{entry} should suggest {replacement}: {err}");
+    }
+  });
+}
+
+#[test]
 fn strict_type_fail_unsafe_coerce_requires_lexical_ffi_scope() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();

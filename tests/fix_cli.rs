@@ -1376,7 +1376,6 @@ fn method_alias_fix_reuses_receiver_proofs_in_attached_tests_and_examples() {
       "quote $ do (assert= true $ round? 2) (assert= false $ round? 1.2) (assert= true $ .round? 2)",
     ),
     ("core-list-fold-v1", "quote $ assert= 6 $ .reduce ([] 1 2 3) 0 +"),
-    ("core-list-intersperse-v1", "quote $ assert= ([] 1 0 2) $ .join ([] 1 2) 0"),
     (
       "core-list-flat-map-v1",
       "quote $ assert= ([] 1 1 2 2) $ .bind ([] 1 2) $ fn (x) ([] x x)",
@@ -1386,16 +1385,12 @@ fn method_alias_fix_reuses_receiver_proofs_in_attached_tests_and_examples() {
       "quote $ assert= |a-b $ let ((xs $ [] |a |b)) (xs .join-str |- )",
     ),
     ("core-list-get-v1", "quote $ assert= (Option :some 1) $ .nth ([] 1) 0"),
-    (
-      "core-map-distinct-values-v1",
-      "quote $ assert= (#{} 1 2) $ .values $ {} (:a 1) (:b 2)",
-    ),
     ("core-set-include-v1", "quote $ assert= (#{} 1 2) $ .add (#{} 1) 2"),
     (
       "core-collection-combine-v1",
       "quote $ assert= ({} (:a 1) (:b 2)) $ .mappend ({} (:a 1)) ({} (:b 2))",
     ),
-    ("core-predicate-method-v1", "quote $ assert= true $ .contains? ([] 10) 0"),
+    ("core-predicate-method-v1", "quote $ assert= true $ .contains? ({} (:a 1)) :a"),
     ("core-effect-method-v1", ""),
   ] {
     let directory = TestDirectory::create();
@@ -4358,188 +4353,6 @@ fn list_fold_fix_preserves_quoted_and_macro_boundaries() {
 }
 
 #[test]
-fn list_intersperse_fix_preserves_separator_semantics_and_revision_guard() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-  let target = "fix-command.main/separator-values";
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "def",
-        target,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ defn separator-values (xs) (xs .join 0)",
-      ],
-    ),
-    "install List separator method",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        target,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return $ :: 'List 'Number)",
-      ],
-    ),
-    "declare List separator contract",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "add-test",
-        target,
-        "preserves-duplicates-empty-and-singleton",
-        "--tags",
-        "unit",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ do\n  assert= ([] 1 0 1 0 2) $ separator-values ([] 1 1 2)\n  assert= ([]) $ separator-values ([])\n  assert= ([] 7) $ separator-values ([] 7)",
-      ],
-    ),
-    "attach Calcit separator contract",
-  );
-  let selector = [
-    "--rule",
-    "core-list-intersperse-v1",
-    "--ns",
-    "fix-command.main",
-    "--def",
-    "separator-values",
-    "--format",
-    "json",
-  ];
-  let preview = run_fix(&snapshot, &selector);
-  assert_success(&preview, "intersperse preview");
-  let report = parse_stdout(&preview);
-  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
-  assert_eq!(suggestions.len(), 1, "{report}");
-  assert_eq!(suggestions[0]["applicability"], "machine-applicable", "{report}");
-  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
-  let stale = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-list-intersperse-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "separator-values",
-      "--apply",
-      "--allow-no-vcs",
-      "--expect-revision",
-      "stale-revision",
-      "--format",
-      "json",
-    ],
-  );
-  assert!(!stale.status.success(), "stale revision must reject apply");
-  let applied = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-list-intersperse-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "separator-values",
-      "--apply",
-      "--allow-no-vcs",
-      "--expect-revision",
-      report["revision"].as_str().expect("preview revision"),
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&applied, "intersperse apply");
-  assert_success(
-    &run_calcit(&snapshot, &["test", target, "--require-match"]),
-    "Calcit separator after migration",
-  );
-  let repeated = run_fix(&snapshot, &selector);
-  assert_success(&repeated, "idempotent intersperse preview");
-  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
-}
-
-#[test]
-fn list_intersperse_fix_preserves_quoted_and_macro_boundaries() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-  for (name, code) in [
-    ("quoted-join", "quote $ defn quoted-join ()\n  quote $ ([] 1 2) .join 0\n  , 0"),
-    ("pass-form", "quote $ defmacro pass-form (body) body"),
-    ("macro-join", "quote $ defn macro-join (xs) $ pass-form $ xs .join 0"),
-  ] {
-    assert_success(
-      &run_calcit(
-        &snapshot,
-        &[
-          "edit",
-          "def",
-          &format!("fix-command.main/{name}"),
-          "--input-format",
-          "cirru",
-          "--code",
-          code,
-        ],
-      ),
-      "install separator boundary source",
-    );
-  }
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        "fix-command.main/macro-join",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return $ :: 'List 'Number)",
-      ],
-    ),
-    "declare macro separator receiver",
-  );
-  for (name, expected) in [("quoted-join", 0), ("macro-join", 1)] {
-    let preview = run_fix(
-      &snapshot,
-      &[
-        "--rule",
-        "core-list-intersperse-v1",
-        "--ns",
-        "fix-command.main",
-        "--def",
-        name,
-        "--format",
-        "json",
-      ],
-    );
-    assert_success(&preview, "separator boundary preview");
-    let report = parse_stdout(&preview);
-    let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
-    assert_eq!(suggestions.len(), expected, "{name}: {report}");
-    if expected == 1 {
-      assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
-      assert!(suggestions[0]["replacement"].is_null(), "{report}");
-    }
-  }
-}
-
-#[test]
 fn list_flat_map_fix_preserves_typed_output_and_revision_guard() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
@@ -5224,206 +5037,6 @@ fn list_get_fix_keeps_user_defined_nth_method() {
   );
   assert_success(&preview, "custom index method preview");
   assert_eq!(parse_stdout(&preview)["data"]["suggestions"], serde_json::json!([]));
-}
-
-#[test]
-fn map_distinct_values_fix_preserves_deduplication_and_revision_guard() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-  let target = "fix-command.main/distinct-map-values";
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "def",
-        target,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ defn distinct-map-values (xs) (xs .values)",
-      ],
-    ),
-    "install Map values method",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        target,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'Map 'Tag 'Number) (:return $ :: 'Set 'Number)",
-      ],
-    ),
-    "declare Map values contract",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "add-test",
-        target,
-        "deduplicates-and-handles-empty",
-        "--tags",
-        "unit",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ do\n  assert= (#{} 1 2) $ distinct-map-values $ &{} :a 1 :b 2 :c 2\n  assert= (#{}) $ distinct-map-values $ &{}",
-      ],
-    ),
-    "attach Calcit deduplication contract",
-  );
-  let selector = [
-    "--rule",
-    "core-map-distinct-values-v1",
-    "--ns",
-    "fix-command.main",
-    "--def",
-    "distinct-map-values",
-    "--format",
-    "json",
-  ];
-  let preview = run_fix(&snapshot, &selector);
-  assert_success(&preview, "distinct-values preview");
-  let report = parse_stdout(&preview);
-  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
-  assert_eq!(suggestions.len(), 1, "{report}");
-  assert_eq!(suggestions[0]["applicability"], "machine-applicable", "{report}");
-  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
-  let stale = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-map-distinct-values-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "distinct-map-values",
-      "--apply",
-      "--allow-no-vcs",
-      "--expect-revision",
-      "stale-revision",
-      "--format",
-      "json",
-    ],
-  );
-  assert!(!stale.status.success(), "stale revision must reject apply");
-  let applied = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-map-distinct-values-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "distinct-map-values",
-      "--apply",
-      "--allow-no-vcs",
-      "--expect-revision",
-      report["revision"].as_str().expect("preview revision"),
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&applied, "distinct-values apply");
-  assert_success(
-    &run_calcit(&snapshot, &["test", target, "--require-match"]),
-    "Calcit deduplication after migration",
-  );
-  let repeated = run_fix(&snapshot, &selector);
-  assert_success(&repeated, "idempotent distinct-values preview");
-  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
-}
-
-#[test]
-fn map_distinct_values_fix_respects_quoted_macro_and_open_boundaries() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-  for (name, code) in [
-    (
-      "quoted-values",
-      "quote $ defn quoted-values ()\n  quote $ (&{} :a 1) .values\n  , 0",
-    ),
-    ("pass-form", "quote $ defmacro pass-form (body) body"),
-    ("macro-values", "quote $ defn macro-values (xs) $ pass-form $ xs .values"),
-    ("open-values", "quote $ defn open-values (xs) (xs .values)"),
-  ] {
-    assert_success(
-      &run_calcit(
-        &snapshot,
-        &[
-          "edit",
-          "def",
-          &format!("fix-command.main/{name}"),
-          "--input-format",
-          "cirru",
-          "--code",
-          code,
-        ],
-      ),
-      "install Map values boundary source",
-    );
-  }
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        "fix-command.main/macro-values",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'Map 'Tag 'Number) (:return $ :: 'Set 'Number)",
-      ],
-    ),
-    "declare the macro Map receiver",
-  );
-  for (name, expected) in [("quoted-values", 0), ("macro-values", 1)] {
-    let preview = run_fix(
-      &snapshot,
-      &[
-        "--rule",
-        "core-map-distinct-values-v1",
-        "--ns",
-        "fix-command.main",
-        "--def",
-        name,
-        "--format",
-        "json",
-      ],
-    );
-    assert_success(&preview, "Map values boundary preview");
-    let report = parse_stdout(&preview);
-    let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
-    assert_eq!(suggestions.len(), expected, "{name}: {report}");
-    if expected == 1 {
-      assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
-      assert!(suggestions[0]["replacement"].is_null(), "{report}");
-    }
-  }
-  let open = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-map-distinct-values-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "open-values",
-      "--format",
-      "json",
-    ],
-  );
-  assert!(!open.status.success(), "strict preprocessing must reject an untyped receiver");
 }
 
 #[test]
@@ -11080,7 +10693,7 @@ fn predicate_method_fix_migrates_only_proven_builtin_receivers() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ defn legacy-predicates ()\n  assert= true $ ([] 10 20) .contains? 1\n  assert= true $ \"|😀a\" .contains? 1\n  assert= true $ ({} (|key |value)) .contains? |key\n  assert= true $ ({} (|key |value)) .includes? |value\n  assert= true $ (#{} 10 20) .contains? 10\n  quote $ ([] 10) .contains? 0\n  , &unit",
+        "quote $ defn legacy-predicates ()\n  assert= true $ ({} (|key |value)) .contains? |key\n  assert= true $ ({} (|key |value)) .includes? |value\n  assert= true $ (#{} 10 20) .contains? 10\n  quote $ ([] 10) .contains? 0\n  , &unit",
       ],
     ),
     "install predicate method source",
@@ -11132,7 +10745,7 @@ fn predicate_method_fix_migrates_only_proven_builtin_receivers() {
   assert_success(&preview, "predicate method preview");
   let report = parse_stdout(&preview);
   let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
-  assert_eq!(suggestions.len(), 5, "{report}");
+  assert_eq!(suggestions.len(), 3, "{report}");
   let unique_paths = suggestions
     .iter()
     .map(|item| item["path"].as_str().expect("source path"))
@@ -11148,7 +10761,6 @@ fn predicate_method_fix_migrates_only_proven_builtin_receivers() {
     .iter()
     .map(|item| item["replacement"]["value"].as_str().unwrap_or_default())
     .collect::<Vec<_>>();
-  assert_eq!(replacements.iter().filter(|name| **name == ".contains-index?").count(), 2);
   assert!(replacements.contains(&".contains-key?"));
   assert!(replacements.contains(&".contains-value?"));
   assert!(replacements.contains(&".includes?"));
@@ -11189,7 +10801,6 @@ fn predicate_method_fix_migrates_only_proven_builtin_receivers() {
   );
   assert_success(&applied, "predicate method apply");
   let updated = fs::read_to_string(&snapshot).expect("updated Snapshot should read");
-  assert!(updated.contains(".contains-index?"));
   assert!(updated.contains(".contains-key?"));
   assert!(updated.contains(".contains-value?"));
   assert!(updated.contains(".contains? 0"), "quoted data must remain unchanged: {updated}");
@@ -11220,7 +10831,7 @@ fn predicate_method_fix_preserves_custom_methods_and_reviews_unknown_macros() {
     ("pass-form", "quote $ defmacro pass-form (body) body"),
     (
       "read-list-macro",
-      "quote $ defn read-list-macro () $ pass-form $ ([] 10) .contains? 0",
+      "quote $ defn read-list-macro () $ pass-form $ ({} (:a 1)) .contains? :a",
     ),
   ] {
     assert_success(
@@ -12707,7 +12318,7 @@ fn core_api_028_preset_composes_nested_leaf_renames_and_is_idempotent() {
     report["data"]["filters"]["source_coverage"]["manual_review_regions"],
     serde_json::json!(["tests", "examples"])
   );
-  assert_eq!(report["data"]["filters"]["expanded_rule_ids"].as_array().unwrap().len(), 15);
+  assert_eq!(report["data"]["filters"]["expanded_rule_ids"].as_array().unwrap().len(), 13);
   let suggestions = report["data"]["suggestions"].as_array().expect("suggestions");
   assert_eq!(suggestions.len(), 5, "nested aliases must all compose: {report}");
   assert!(

@@ -233,7 +233,7 @@ let
 - `range` - generate number range
 - `take`, `drop` - slice operations
 - `distinct` - remove duplicates
-- `xs .contains? index` / `&list:contains?` 检查索引是否在界内；`xs .includes? value` / `&list:includes?` 检查元素值是否存在。两者不能互换。
+- `xs .contains-index? index` / `&list:contains?` 检查索引是否在界内；`xs .includes? value` / `&list:includes?` 检查元素值是否存在。两者不能互换。
 
 ### Map Operations
 
@@ -267,7 +267,7 @@ let
 - `&str:replace` - replace substring
 - `str-find-index`, string `.find-index` - find position as `Option<Number>`
 - `&str:find-index` - internal raw search primitive (`-1` when absent)
-- `text .contains? index` - 检查字符串索引是否有效，不是子串搜索；`&str:contains?` 是内部 primitive
+- `text .contains-index? index` - 检查字符串索引是否有效，不是子串搜索；`&str:contains?` 是内部 primitive
 - `text .includes? fragment` - 子串测试；`&str:includes?` 是内部 primitive
 - `&str:pad-left`, `&str:pad-right` - padding
 - `parse-float` - parse number from string

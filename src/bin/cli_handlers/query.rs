@@ -1598,12 +1598,6 @@ mod type_query_tests {
 
     for (receiver, old_name, preferred_name, rule) in [
       (
-        parse_type_annotation_query(":: 'List 'Number").expect("list type"),
-        ".contains?",
-        ".contains-index?",
-        "core-predicate-method-v1",
-      ),
-      (
         parse_type_annotation_query(":: 'Map 'Tag 'Number").expect("map type"),
         ".contains?",
         ".contains-key?",

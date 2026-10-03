@@ -357,14 +357,14 @@
         '&core-list-impls $ %{} 'CodeEntry
           :doc "|Built-in implementation list for list\nNOTE: ordering matters; &core-list-methods must come before internal/&core-add-list-impl, otherwise list .add may be shadowed by Add trait :add."
           :code $ quote $ def &core-list-impls
-            [] &core-list-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-list-impl) (&impl::new Len internal/&core-len-list-impl) (&impl::new Mappable internal/&core-mappable-list-impl) (&impl::new Countable internal/&core-countable-list-impl) (&impl::new Contains internal/&core-contains-list-impl)
+            [] &core-list-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-list-impl) (&impl::new Len internal/&core-len-list-impl) (&impl::new Mappable internal/&core-mappable-list-impl) (&impl::new Countable internal/&core-countable-list-impl)
               &impl::new Sliceable $ :: :slice &list:slice
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
         '&core-list-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-list-methods
-            &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :bind mapcat) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains? &list:contains?) (:: :contains-index? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :flat-map mapcat) (:: :fold fold) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :intersperse intersperse) (:: :join intersperse) (:: :join-str join-str) (:: :join-string join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :nth get) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reduce fold) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
+            &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :bind mapcat) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains-index? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :flat-map mapcat) (:: :fold fold) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :intersperse intersperse) (:: :join-str join-str) (:: :join-string join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :nth get) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reduce fold) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -376,7 +376,7 @@
           :tags $ #{} :internal
         '&core-map-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-map-methods
-            &impl::new :&core-map-methods (:: :add &map:add-entry) (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :contains-key? &map:contains?) (:: :contains-value? &map:includes?) (:: :count &map:count) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :filter-map-kv filter-map-kv) (:: :get get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys &map:keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :mappend merge) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :distinct-values distinct-values) (:: :values distinct-values)
+            &impl::new :&core-map-methods (:: :add &map:add-entry) (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :contains-key? &map:contains?) (:: :contains-value? &map:includes?) (:: :count &map:count) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :filter-map-kv filter-map-kv) (:: :get get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys &map:keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :mappend merge) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :distinct-values distinct-values)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -425,7 +425,7 @@
           :tags $ #{} :internal
         '&core-string-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for string")
           :code $ quote $ def &core-string-impls
-            [] &core-string-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-string-impl) (&impl::new Len internal/&core-len-string-impl) (&impl::new Countable internal/&core-countable-string-impl) (&impl::new Contains internal/&core-contains-string-impl) (&impl::new Compare internal/&core-compare-string-impl)
+            [] &core-string-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-string-impl) (&impl::new Len internal/&core-len-string-impl) (&impl::new Countable internal/&core-countable-string-impl) (&impl::new Compare internal/&core-compare-string-impl)
               &impl::new Sliceable $ :: :slice &str:slice
               &impl::new ToString $ :: :to-string &turn-string
           :examples $ []
@@ -433,7 +433,7 @@
           :tags $ #{} :internal
         '&core-string-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-string-methods
-            &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :utf8-byte-count &str:utf8-byte-count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get get) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains? &str:contains?) (:: :contains-index? &str:contains?) (:: :includes? &str:includes?) (:: :nth nth) (:: :first first) (:: :last last) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare) (:: :parse-cirru try-parse-cirru) (:: :parse-cirru-list try-parse-cirru-list) (:: :parse-cirru-edn try-parse-cirru-edn) (:: :parse-json try-parse-json)
+            &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :utf8-byte-count &str:utf8-byte-count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get get) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains-index? &str:contains?) (:: :includes? &str:includes?) (:: :nth nth) (:: :first first) (:: :last last) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare) (:: :parse-cirru try-parse-cirru) (:: :parse-cirru-list try-parse-cirru-list) (:: :parse-cirru-edn try-parse-cirru-edn) (:: :parse-json try-parse-json)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -4365,7 +4365,8 @@
         'contains? $ %{} 'CodeEntry
           :doc "|Check whether a collection contains a key or index. Nil is not a collection."
           :code $ quote $ defn contains? (x k)
-            if (list? x) (&list:contains? x k) (.contains? x k)
+            if (list? x) (&list:contains? x k)
+              if (string? x) (&str:contains? x k) (.contains? x k)
           :examples $ []
             quote $ assert= true $ contains? ([] :a :b) 1
             quote $ assert= true $ contains?
@@ -4389,13 +4390,13 @@
               :code $ quote $ do
                 assert= true $
                   [] 10 20
-                  , .contains? 1
+                  , .contains-index? 1
                 assert= false $
                   [] 10 20
                   , .includes? 1
                 assert= false $
                   [] 10 20
-                  , .contains? 10
+                  , .contains-index? 10
                 assert= true $
                   [] 10 20
                   , .includes? 10
@@ -4411,7 +4412,7 @@
                 assert= true $
                   {} $ :key :value
                   , .includes? :value
-                assert= true $ "|😀a" .contains? 1
+                assert= true $ "|😀a" .contains-index? 1
                 assert= true $ "|😀a" .includes? |a
                 assert= true $
                   #{} 10 20
@@ -5307,10 +5308,6 @@
             %{} 'TestEntry (:name |receiver-method)
               :code $ quote $ assert= (#{} 1 2)
                 (&{} :a 1 :b 2 :c 2) .distinct-values
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |legacy-receiver-alias)
-              :code $ quote $ assert= (#{} 1)
-                (&{} :a 1 :b 1) .values
               :tags $ #{} :core :unit
         'do $ %{} 'CodeEntry
           :doc "|Evaluates expressions sequentially and returns the last result\nUseful for grouping side effects or multiple steps where only the final value matters."
@@ -7161,10 +7158,6 @@
             %{} 'TestEntry (:name |receiver-method)
               :code $ quote $ assert= ([] |a |, |b)
                 ([] |a |b) .intersperse |,
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |legacy-receiver-alias)
-              :code $ quote $ assert= ([] 1 0 2)
-                ([] 1 2) .join 0
               :tags $ #{} :core :unit
         'is-spreading-mark? $ %{} 'CodeEntry
           :doc "|internal function for detecting syntax &\nSyntax: (is-spreading-mark? value)\nParams: value (any)\nReturns: boolean\nReturns true if value is the spreading mark symbol &"
@@ -11054,11 +11047,6 @@
           :code $ quote $ def &core-contains-index-enum-impl
             &impl::new :&core-contains-index-enum-impl $ :: :contains-index? contains-index?
           :examples $ []
-        '&core-contains-list-impl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def &core-contains-list-impl
-            &impl::new :&core-contains-list-impl $ :: :contains? &list:contains?
-          :examples $ []
-          :schema $ :: 'Dynamic
         '&core-contains-map-impl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-contains-map-impl
             &impl::new :&core-contains-map-impl $ :: :contains? &map:contains?
@@ -11067,11 +11055,6 @@
         '&core-contains-set-impl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-contains-set-impl
             &impl::new :&core-contains-set-impl $ :: :contains? &set:includes?
-          :examples $ []
-          :schema $ :: 'Dynamic
-        '&core-contains-string-impl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def &core-contains-string-impl
-            &impl::new :&core-contains-string-impl $ :: :contains? &str:contains?
           :examples $ []
           :schema $ :: 'Dynamic
         '&core-contains-struct-impl $ %{} 'CodeEntry (:doc |)

@@ -189,21 +189,25 @@ trait 的 where 约束现在使用能力证明，而不是把未绑定泛型静�
 
 `contains?` 的旧方法形式依接收者表示不同命题，不能全局替换：List/String 检查索引，Map 检查键，Set 检查成员；Map 的旧 `.includes?` 则检查值。新代码首选 List/String `.contains-index?`、Map `.contains-key?` / `.contains-value?`，Set 成员保留 `.includes?`。String `.includes?` 判断子串，List `.includes?` 判断元素，均不得与索引判断混用。
 
-已证明旧新方法同属 core 实现时，可显式预览 `calcit calcit.cirru fix --rule core-predicate-method-v1 --format edn`，审阅建议和 revision 后再应用。规则不迁移 Struct/Enum、`Contains` trait、自定义同名方法、开放接收者或 attached `:tests` / `:examples`；这些位置需要人工检查。原有方法仍保留原义，不会因新名字而改变失败行为。完整边界见 [API 命名角色](../features/api-roles.md#谓词与成员查询) 与 [fix 规则](fix.md)。
+List/String 的旧 `.contains?` 已在 0.29.0 删除（见下文“兼容入口的退场节奏”），下面描述 0.28.x 的迁移与 Map/Set 部分。已证明旧新方法同属 core 实现时，可显式预览 `calcit calcit.cirru fix --rule core-predicate-method-v1 --format edn`，审阅建议和 revision 后再应用。规则不迁移 Struct/Enum、`Contains` trait、自定义同名方法、开放接收者或 attached `:tests` / `:examples`；这些位置需要人工检查。原有方法仍保留原义，不会因新名字而改变失败行为。完整边界见 [API 命名角色](../features/api-roles.md#谓词与成员查询) 与 [fix 规则](fix.md)。
 
 ## 兼容入口的退场节奏
 
 维护者决定：非 patch 版本允许 breaking change，用于废弃旧的不合理用法；patch 版本不删除入口，也不新增会让严格检查失败的诊断。流程是先发布新入口与 guarded fix rule，再在下一个非 patch 版本删除旧入口，并在本文列出删除项与迁移命令。
 
-下面三组旧入口在 0.28.0-alpha.3 实测中按 Rust/Clojure 习惯书写时能通过类型检查，但结果与直觉不符，计划在 0.28.0 之后的第一个非 patch 版本删除，早于其他兼容名：
+### 0.29.0 已删除：`.join`、Map `.values`、List/String `.contains?`
 
-| 旧入口 | 实测行为 | 首选替代 | 迁移命令 |
+下面三组旧方法在 0.28.0 按 Rust/Clojure 习惯书写时能通过类型检查，但结果与直觉不符，已在 0.29.0 删除。写下它们会得到 `E_RETIRED_METHOD`，信息里给出首选替代；List 与 String 同时不再实现 `Contains` trait，需要该 trait 的泛型约束请改用 Map、Set、Struct 或 Enum，或直接调用具名方法。
+
+| 已删除 | 0.28 的行为 | 首选替代 | 迁移（使用 0.28.x 的 CLI） |
 |---|---|---|---|
-| `.join` | 返回插入分隔符的 List，放入 `str` 也不报错 | `.intersperse`；字符串用 `.join-string` | `calcit calcit.cirru fix --rule core-list-intersperse-v1 --format edn` |
-| `.values` | 值重复时只剩去重后的 Set 元素 | `.distinct-values` | `calcit calcit.cirru fix --rule core-map-distinct-values-v1 --format edn` |
+| List `.join` | 返回插入分隔符的 List，放入 `str` 也不报错 | `.intersperse`；字符串用 `.join-string` | `calcit calcit.cirru fix --rule core-list-intersperse-v1 --format edn` |
+| Map `.values` | 值重复时只剩去重后的 Set 元素 | `.distinct-values` | `calcit calcit.cirru fix --rule core-map-distinct-values-v1 --format edn` |
 | List/String `.contains?` | 判断下标，不判断成员 | `.contains-index?`；成员判断用 `.includes?` | `calcit calcit.cirru fix --rule core-predicate-method-v1 --format edn` |
 
-上述 fix 规则只处理接收者类型已证明、旧新方法共享同一 core 实现的方法调用；函数形式的 `join` / `vals`、Dynamic 接收者与一等函数引用需要人工审阅。`calcit query type` 对已证明的接收者会把旧方法标为 compatibility 并给出首选名与 fix 规则，可用来确认调用点是否属于上表。迁移规则始终是预览、审阅 revision、应用、再次预览并运行项目测试。
+三条迁移规则随旧方法一起退役：0.29.0 的 CLI 不再提供 `core-list-intersperse-v1`、`core-map-distinct-values-v1`，`core-predicate-method-v1` 只保留 Map/Set 部分，`core-api-0.28-v1` preset 由 15 条规则减为 13 条。升级顺序是先在原工具链（0.28.x）上预览并应用这些规则，审阅 revision、再次预览并运行项目测试，然后才升级依赖和 CLI；规则只处理接收者类型已证明的方法调用，函数形式的 `join` / `vals`（仍可用，改名由 `core-function-alias-v1` 负责）、Dynamic 接收者与一等函数引用需要人工审阅。来不及迁移的项目会在严格检查时看到 `E_RETIRED_METHOD`，按提示逐处改名即可。
+
+函数形式 `contains?` 不变：List 按下标、String 按下标、Map 按键、Set 按成员，调用方式与结果同 0.28。
 
 其余已有决策的兼容名（`turn-*`、`some?`、`round?`、`foldl'` / `reduce`、`%some` / `%none` / `%ok` / `%err` 等）按同一节奏处理。具体删除版本在发布前于本文更新，此处不预先承诺。
 

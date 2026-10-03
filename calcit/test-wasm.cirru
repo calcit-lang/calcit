@@ -610,14 +610,14 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-        'test-list-contains-method $ %{} 'CodeEntry (:doc "|.contains? dispatches on list")
+        'test-list-contains-method $ %{} 'CodeEntry (:doc "|.contains-index? dispatches on list")
           :code $ quote $ defwasm-export test-list-contains-method ()
             &+
               if
-                .contains? ([] 10 20 30) 1
+                .contains-index? ([] 10 20 30) 1
                 , 1 0
               if
-                .contains? ([] 10 20 30) 9
+                .contains-index? ([] 10 20 30) 9
                 , 10 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
