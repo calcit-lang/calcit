@@ -56,7 +56,7 @@ calcit calcit.cirru fix --workflow strict --format edn
 ```
 
 lockfile 与依赖未变时，只需要 immutable 安装；Snapshot 已规范化时跳过 format。
-按预览中的实际 revision 恢复相同选择，安全迁移与验证仍走同一 workflow：
+按预览中的实际 revision 重跑同一 strict workflow；不要向 strict 命令传入 selector 参数：
 
 ```bash
 calcit calcit.cirru fix --workflow strict --apply --expect-revision '<已审阅 manifest 的 revision>' --format edn
@@ -65,7 +65,7 @@ calcit calcit.cirru fix --workflow strict --verify --format edn
 
 迁移动作按以下三类处理，而不是按旧版本猜一个 preset：
 
-- **可证明自动迁移**：只应用报告中可自动应用的候选，保留相同 selectors 和 revision。附带区域需另选已支持的规则，例如 `calcit calcit.cirru fix --preset core-api-0.28-v1 --include-attached --format edn`；应用后运行原 `:tests` / `:examples`，以 `source-coverage` 判断范围。
+- **可证明自动迁移**：strict workflow 只应用报告中可自动应用的候选，并沿用预览 revision。需显式选择规则或 preset（包括附带区域）时，使用独立的规则/preset 路径，例如 `calcit calcit.cirru fix --preset core-api-0.28-v1 --include-attached --format edn`，在该路径保留相同 selectors 和 revision；应用后运行原 `:tests` / `:examples`，以 `source-coverage` 判断范围。
 - **项目级需审阅事务**：旧 helper 或库调用形状使用 [项目级结构改写](fix.md#项目级结构改写)；`--pattern` / `--replace` 的所有候选都需审阅，应用前暂存严格检查不能证明业务语义等价。schema、decoder、FFI 信任和业务默认值由实际合同决定。
 - **仅文档提示**：行为变化、旧桥梁的适用工具链和未支持的后端由本页对应章节说明；没有唯一等价改法时保留明确待办，不猜 replacement。
 
