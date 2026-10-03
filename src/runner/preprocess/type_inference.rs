@@ -1695,36 +1695,7 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
           let CalcitTypeAnnotation::Fn(info) = method_type.as_ref() else {
             return Some(calcit::DYNAMIC_TYPE.clone());
           };
-          let actual_types = xs
-            .iter()
-            .skip(1)
-            .filter_map(|argument| resolve_type_value(argument, scope_types))
-            .collect::<Vec<_>>();
-          let mut expected_types = info.arg_types.clone();
-          expected_types.extend(info.rest_type.iter().cloned());
-          expected_types.push(info.return_type.clone());
-          let mut call_proof = crate::calcit::type_annotation::CallTypeProof::new(&info.generics, &expected_types, &actual_types);
-          for (index, argument) in xs.iter().skip(1).enumerate() {
-            let Some(expected) = info.arg_types.get(index).or(info.rest_type.as_ref()) else {
-              break;
-            };
-            let Some(actual) = resolve_type_value(argument, scope_types) else {
-              continue;
-            };
-            if core_option_none_without_payload(argument, actual.as_ref(), expected.as_ref()) {
-              continue;
-            }
-            if let Some((actual_error, expected_error)) = core_result_err_payload_types(argument, actual.as_ref(), expected.as_ref()) {
-              if call_proof.prove(actual_error, expected_error).is_mismatch() {
-                return Some(calcit::DYNAMIC_TYPE.clone());
-              }
-              continue;
-            }
-            if call_proof.prove(actual.as_ref(), expected.as_ref()).is_mismatch() {
-              return Some(calcit::DYNAMIC_TYPE.clone());
-            }
-          }
-          Some(invocation_return_type(info, call_proof.result_or_open(&info.return_type), false))
+          Some(infer_typed_method_result(info, xs.iter().skip(1), scope_types))
         }
 
         // Method access: infer struct field type when available
@@ -2161,10 +2132,100 @@ fn infer_impl_attachment_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Opti
   }
 }
 
+/// Preserve a nominal method contract through origin-qualified trait lowering.
+fn lowered_trait_method_signature(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitFnTypeAnnotation>> {
+  let trait_def = match xs.get(1)? {
+    Calcit::Trait(definition) => definition.clone(),
+    Calcit::Import(import) => lookup_source_backed_trait_def(&import.ns, &import.def)?.with_definition_ref(&import.ns, &import.def),
+    local @ Calcit::Local(_) => match resolve_type_value(local, scope_types)?.as_ref() {
+      CalcitTypeAnnotation::Trait(definition) => definition.as_ref().clone(),
+      _ => return None,
+    },
+    _ => return None,
+  };
+  let method_name = match xs.get(2)? {
+    Calcit::Tag(name) => name.ref_str(),
+    Calcit::Symbol { sym, .. } | Calcit::Str(sym) => sym.as_ref(),
+    _ => return None,
+  };
+  let receiver_type = resolve_type_value(xs.get(3)?, scope_types)?;
+  let matching_count = if let Some(traits) = trait_list_from_type(receiver_type.as_ref()) {
+    traits.iter().filter(|candidate| candidate.has_same_origin(&trait_def)).count()
+  } else {
+    get_impls_from_type(receiver_type.as_ref())?
+      .iter()
+      .filter(|candidate| candidate.implements_trait(&trait_def))
+      .count()
+  };
+  if matching_count != 1 {
+    return None;
+  }
+  trait_def
+    .method_index(method_name)
+    .and_then(|index| trait_def.method_types.get(index))?
+    .resolve_to_nonoptional_fn()
+}
+
+/// Surface and lowered methods share argument proof and result substitution.
+fn infer_typed_method_result<'a>(
+  signature: &CalcitFnTypeAnnotation,
+  arguments: impl Iterator<Item = &'a Calcit>,
+  scope_types: &ScopeTypes,
+) -> Arc<CalcitTypeAnnotation> {
+  let arguments = arguments.collect::<Vec<_>>();
+  let required = signature.arg_types.len() - calcit::trailing_option_arg_count(&signature.arg_types, signature.arg_types.len());
+  if arguments.len() < required || signature.rest_type.is_none() && arguments.len() > signature.arg_types.len() {
+    return calcit::DYNAMIC_TYPE.clone();
+  }
+  let Some(actual_types) = arguments
+    .iter()
+    .map(|argument| resolve_type_value(argument, scope_types))
+    .collect::<Option<Vec<_>>>()
+  else {
+    return calcit::DYNAMIC_TYPE.clone();
+  };
+  let mut expected_types = signature.arg_types.clone();
+  expected_types.extend(signature.rest_type.iter().cloned());
+  expected_types.push(signature.return_type.clone());
+  let mut proof = crate::calcit::type_annotation::CallTypeProof::new(&signature.generics, &expected_types, &actual_types);
+  for (index, (argument, actual)) in arguments.iter().zip(&actual_types).enumerate() {
+    let Some(expected) = signature.arg_types.get(index).or(signature.rest_type.as_ref()) else {
+      return calcit::DYNAMIC_TYPE.clone();
+    };
+    if core_option_none_without_payload(argument, actual.as_ref(), expected.as_ref()) {
+      continue;
+    }
+    let proven =
+      if let Some((actual_error, expected_error)) = core_result_err_payload_types(argument, actual.as_ref(), expected.as_ref()) {
+        proof.prove(actual_error, expected_error)
+      } else {
+        proof.prove(actual.as_ref(), expected.as_ref())
+      };
+    if !proven.is_proven() {
+      return calcit::DYNAMIC_TYPE.clone();
+    }
+  }
+  for bound in signature.where_bounds.iter() {
+    let variable = CalcitTypeAnnotation::TypeVar(bound.name.clone());
+    if !proof
+      .result(&variable)
+      .is_some_and(|actual| actual.is_proven_for(&bound.as_type_annotation()))
+    {
+      return calcit::DYNAMIC_TYPE.clone();
+    }
+  }
+  invocation_return_type(signature, proof.result_or_open(&signature.return_type), false)
+}
+
 /// Infer the return type of a built-in proc call expression.
 ///
 /// Extracted from the large `Calcit::Proc` arm of `infer_type_from_expr` for clarity.
 fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  if matches!(proc, CalcitProc::NativeTraitCall)
+    && let Some(signature) = lowered_trait_method_signature(xs, scope_types)
+  {
+    return Some(infer_typed_method_result(&signature, xs.iter().skip(3), scope_types));
+  }
   if matches!(proc, CalcitProc::NativeEnumDefinition)
     && let Some(receiver) = xs.get(1).and_then(|value| resolve_type_value(value, scope_types))
     && receiver.is_proven_for(&CalcitTypeAnnotation::AnonymousEnum)
@@ -3123,6 +3184,53 @@ mod tests {
       location: None,
       type_info,
     })
+  }
+
+  #[test]
+  fn lowered_trait_contract_requires_unique_nominal_origin_and_proven_arguments() {
+    let generic = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let signature = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![generic, Arc::new(CalcitTypeAnnotation::String)],
+      return_type: Arc::new(CalcitTypeAnnotation::Number),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+    let origin = CalcitTrait::new_runtime(EdnTag::from("Render"), vec![EdnTag::from("render")], vec![signature.clone()]);
+    let foreign = CalcitTrait::new_runtime(EdnTag::from("Render"), vec![EdnTag::from("render")], vec![signature]);
+    let receiver = |traits| typed_local("receiver", Arc::new(CalcitTypeAnnotation::TraitSet(Arc::new(traits))));
+    let call = |receiver, argument| {
+      proc_call(
+        CalcitProc::NativeTraitCall,
+        vec![
+          Calcit::Trait(origin.clone()),
+          Calcit::Tag(EdnTag::from("render")),
+          receiver,
+          argument,
+        ],
+      )
+    };
+    let matching = receiver(vec![Arc::new(origin.clone())]);
+    assert_eq!(
+      infer_type_from_expr(&call(matching.clone(), Calcit::Str(Arc::from("prefix"))), &ScopeTypes::new()),
+      Some(Arc::new(CalcitTypeAnnotation::Number))
+    );
+    for invalid in [
+      call(receiver(vec![Arc::new(foreign)]), Calcit::Str(Arc::from("prefix"))),
+      call(
+        receiver(vec![Arc::new(origin.clone()), Arc::new(origin.clone())]),
+        Calcit::Str(Arc::from("prefix")),
+      ),
+      call(matching.clone(), Calcit::Number(1.0)),
+      call(matching, typed_local("open", calcit::DYNAMIC_TYPE.clone())),
+    ] {
+      assert_eq!(
+        infer_type_from_expr(&invalid, &ScopeTypes::new()),
+        Some(calcit::DYNAMIC_TYPE.clone())
+      );
+    }
   }
 
   #[test]

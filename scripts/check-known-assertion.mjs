@@ -740,7 +740,43 @@ try {
       assert.deepEqual(await readFile(snapshot), original);
     }
   }
-  console.log("Known assertions and return/call contracts rejected before native/JS/WASM/WASI; native/JS positives, JS async adoption, scalar WASM assertions, top-level value schema contracts and five Diary boundaries passed");
+  await copyFile("tests/fixtures/trait-bound-return.cirru", snapshot);
+  const traitOriginal = await readFile(snapshot);
+  run("test", "--require-match");
+  run("fix", "--workflow", "strict", "--verify", "--format", "edn");
+  assert.deepEqual(await readFile(snapshot), traitOriginal);
+  const traitTests = [];
+  for (const definition of ["checked-count", "render-with-trait", "identity-with-trait", "typed-rest-forward"]) {
+    const response = JSON.parse(run("query", "def", `fix-command.main/${definition}`, "--format", "json"));
+    assert.equal(response.data.tests.length, 1);
+    traitTests.push(...response.data.tests.map(test => test.code));
+  }
+  run("edit", "def", "fix-command.main/main!", "--overwrite", "--input-format", "json-ast", "--code",
+    JSON.stringify(["defn", "main!", [], ...traitTests, "&unit"]));
+  run("--check-only");
+  const traitOutput = join(project, "trait-return-js");
+  run("--emit-path", traitOutput, "js");
+  const traitGenerated = await import(pathToFileURL(join(traitOutput, "fix-command.main.mjs")).href);
+  traitGenerated.main_$x_();
+  for (const [name, target, command, code] of [
+    ["wrong-result", "checked-count", "schema", "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'String) (:generics $ [] 'T) (:where $ {} $ 'T 'Countable)"],
+    ["open-generic-result", "identity-with-trait", "schema", "quote $ :: 'Fn $ {} (:args $ [] 'T 'U) (:return 'String) (:generics $ [] 'T 'U) (:where $ {} $ 'T 'fix-command.main/Renderable)"],
+    ["dynamic-argument", "render-with-trait", "schema", "quote $ :: 'Fn $ {} (:args $ [] 'T 'Dynamic) (:return 'String) (:generics $ [] 'T) (:where $ {} $ 'T 'fix-command.main/Renderable)"],
+    ["open-receiver", "checked-count", "schema", "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'Number) (:generics $ [] 'T)"],
+    ["wrong-argument", "render-with-trait", "def", "quote $ defn render-with-trait (value prefix) (.render value 1)"],
+    ["missing-argument", "render-with-trait", "def", "quote $ defn render-with-trait (value prefix) (.render value)"],
+    ["extra-argument", "render-with-trait", "def", "quote $ defn render-with-trait (value prefix) (.render value prefix prefix)"],
+  ]) {
+    await copyFile("tests/fixtures/trait-bound-return.cirru", snapshot);
+    run("edit", command, `fix-command.main/${target}`, ...(command === "def" ? ["--overwrite"] : []),
+      "--input-format", "cirru", "--code", code);
+    const original = await readFile(snapshot);
+    const rejected = spawnSync(binary, [snapshot, "fix", "--workflow", "strict", "--verify", "--format", "edn"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
+    assert.deepEqual(await readFile(snapshot), original);
+  }
+  console.log("Known assertions and return/call contracts rejected before native/JS/WASM/WASI; native/JS positives, JS async adoption, scalar WASM assertions, value schema contracts, Diary boundaries and lowered trait return proofs passed");
 } finally {
   await rm(project, { recursive: true, force: true });
 }

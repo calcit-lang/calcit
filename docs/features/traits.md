@@ -224,6 +224,8 @@ When running `warn-dyn-method`, preprocess emits extra diagnostics for:
 
 Method checking, callback signature inference, static lowering, and these diagnostics consume the same candidate resolution. Trait requirements are de-duplicated by nominal origin and normalized independently of declaration order. A requires cycle or a reachable method/default without callable signature metadata is invalid static evidence; it cannot satisfy a generic `:where` bound.
 
+泛型函数通过 `:where` 声明接收者的 trait 能力后，方法调用在内部改写为来源限定的 trait 调用，仍保留该方法签名的返回类型。例如 `T: Countable` 的 `x .count` 可以证明 Number 返回值；自定义 trait 同样根据参数证明替换泛型返回类型。源码继续使用方法调用，不需要改成低层调用或插入 `unsafe-coerce`。
+
 ## Docs as tests
 
 Key trait docs examples are mirrored by executable smoke cases in `calcit/test-doc-smoke.cirru`, including:
