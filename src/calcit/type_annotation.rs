@@ -4718,13 +4718,21 @@ impl CalcitTypeAnnotation {
         if !nominal_matches {
           return false;
         }
+        // A TypeRef can be the actual or expected side. Preserve that
+        // direction for payloads: concrete Struct -> broad Struct is valid,
+        // while the reverse cannot prove a nominal identity.
+        let (actual_args, expected_args) = if matches!(self, Self::TypeRef(..)) {
+          (args, other_args)
+        } else {
+          (other_args, args)
+        };
         match (args.is_empty(), other_args.is_empty()) {
           (true, true) => true,
           (false, false) => {
-            args.len() == other_args.len()
-              && args
+            actual_args.len() == expected_args.len()
+              && actual_args
                 .iter()
-                .zip(other_args.iter())
+                .zip(expected_args.iter())
                 .all(|(x, y)| x.compatible_with_bindings(y, bindings))
           }
           (true, false) => Self::bind_declared_generics_from_applied_args(base.generics.as_ref(), other_args.as_ref(), bindings),
@@ -4738,13 +4746,18 @@ impl CalcitTypeAnnotation {
         if !nominal_matches {
           return false;
         }
+        let (actual_args, expected_args) = if matches!(self, Self::TypeRef(..)) {
+          (args, other_args)
+        } else {
+          (other_args, args)
+        };
         match (args.is_empty(), other_args.is_empty()) {
           (true, true) => true,
           (false, false) => {
-            args.len() == other_args.len()
-              && args
+            actual_args.len() == expected_args.len()
+              && actual_args
                 .iter()
-                .zip(other_args.iter())
+                .zip(expected_args.iter())
                 .all(|(x, y)| x.compatible_with_bindings(y, bindings))
           }
           (true, false) => Self::bind_declared_generics_from_applied_args(base.generics(), other_args.as_ref(), bindings),

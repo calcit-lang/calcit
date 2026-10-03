@@ -650,6 +650,89 @@ try {
   const nominalModule = new WebAssembly.Module(await readFile(join(nominalWasmOutput, "program.wasm")));
   assert.equal(new WebAssembly.Instance(nominalModule, imports).exports["run-tests"](), 1);
 
+  // Recursive nominal fields must be checked after nested constructors lower.
+  // This is the shared Respo #194 boundary, not a consumer-specific rule (#1553).
+  for (const [name, code, schema] of [
+    ["RecursiveNode", "defenum RecursiveNode (:element 'calcit.assert-evidence/RecursiveElement) (:component 'calcit.assert-evidence/RecursiveComponent)", "'EnumDef"],
+    ["RecursivePair", "defstruct RecursivePair (:key 'Dynamic) (:node 'calcit.assert-evidence/RecursiveNode)", "'StructDef"],
+    ["RecursiveElement", "defstruct RecursiveElement (:children $ :: 'List 'calcit.assert-evidence/RecursivePair)", "'StructDef"],
+    ["RecursiveComponent", "defstruct RecursiveComponent (:tree $ :: 'Option 'calcit.assert-evidence/RecursiveNode)", "'StructDef"],
+    ["RecursiveCell", "defstruct RecursiveCell ([] 'T) (:value 'T)", "'StructDef"],
+    ["BroadNodeHolder", "defstruct BroadNodeHolder (:cell $ :: 'calcit.assert-evidence/RecursiveCell 'Struct) (:tree $ :: 'Option 'Struct)", "'StructDef"],
+    ["SpecificNodeHolder", "defstruct SpecificNodeHolder (:cell $ :: 'calcit.assert-evidence/RecursiveCell 'calcit.assert-evidence/RecursiveElement) (:tree $ :: 'Option 'calcit.assert-evidence/RecursiveElement)", "'StructDef"],
+    ["make-broad-element", "defn make-broad-element () $ RecursiveElement :children $ []", ":: 'Fn $ {} (:args $ []) (:return 'Struct)"],
+    ["recursive-count", `defn recursive-count (node)
+  match node
+    (:element element)
+      inc $ foldl (:children element) 0 $ fn (total pair)
+        + total $ recursive-count $ :node pair
+    (:component component)
+      match (:tree component)
+        (:none) 0
+        (:some child) $ recursive-count child`, ":: 'Fn $ {} (:args $ [] 'calcit.assert-evidence/RecursiveNode) (:return 'Number)"],
+  ]) {
+    run("edit", "def", `calcit.assert-evidence/${name}`, "--input-format", "cirru", "--code", `quote $ ${code}`);
+    run("edit", "schema", `calcit.assert-evidence/${name}`, "--input-format", "cirru", "--code",
+      `quote ${schema.startsWith("::") ? "$ " : ""}${schema}`);
+  }
+  run("edit", "add-test", "calcit.assert-evidence/recursive-count", "recursive-nominal-fields", "--tags", "recursive-fields",
+    "--input-format", "cirru", "--code", `quote $ let
+    leaf $ RecursiveElement :children $ []
+    wrapped $ RecursiveNode :element leaf
+    present $ %{} RecursiveComponent (:tree $ Option :some wrapped)
+    absent $ RecursiveComponent :tree $ Option :none
+    broad $ BroadNodeHolder :cell (RecursiveCell :value leaf) :tree $ Option :some leaf
+    parent $ %{} RecursiveElement $ :children
+      []
+        %{} RecursivePair (:key |string-key) (:node $ RecursiveNode :component present)
+        RecursivePair :key :tag-key :node $ RecursiveNode :component absent
+        RecursivePair :key 2 :node wrapped
+  assert= 3 $ recursive-count $ RecursiveNode :element parent
+  assert= 0 $ recursive-count $ RecursiveNode :component absent
+  assert= true $ struct? $ :value $ :cell broad
+  assert= true $ struct? $ (:tree broad).unwrap
+  assert= |string-key $ :key $ &list:nth (:children parent) 0
+  assert= :tag-key $ :key $ &list:nth (:children parent) 1
+  assert= 2 $ :key $ &list:nth (:children parent) 2`);
+  run("test", "calcit.assert-evidence/recursive-count", "--tag", "recursive-fields", "--require-match");
+  const recursiveTests = JSON.parse(run("query", "def", "calcit.assert-evidence/recursive-count", "--format", "json"))
+    .data.tests.filter(test => test.tags.includes("recursive-fields"));
+  assert.equal(recursiveTests.length, 1);
+  setBody(recursiveTests.map(test => test.code));
+  run();
+  const recursiveOutput = join(project, "recursive-fields-js");
+  run("--emit-path", recursiveOutput, "js");
+  const recursiveJs = await import(pathToFileURL(join(recursiveOutput, "calcit.assert-evidence.mjs")).href);
+  assert.equal(recursiveJs.run_tests(), 1);
+  for (const [name, expression] of [
+    ["wrong-scalar-literal", "%{} WriteState (:count |wrong) (:label |kept)"],
+    ["wrong-scalar-head", "WriteState :count |wrong :label |kept"],
+    ["broad-enum-payload", "SpecificNodeHolder :cell (RecursiveCell :value (RecursiveElement :children ([]))) :tree $ Option :some $ make-broad-element"],
+    ["broad-struct-payload", "SpecificNodeHolder :cell (RecursiveCell :value (make-broad-element)) :tree $ Option :none"],
+    ["wrong-variant-payload", "RecursiveNode :element $ RecursiveComponent :tree $ Option :none"],
+    ["unwrapped-node-literal", "%{} RecursivePair (:key :a) (:node $ %{} RecursiveElement (:children $ []))"],
+    ["unwrapped-node-head", "RecursivePair :key :a :node $ RecursiveElement :children $ []"],
+    ["raw-pair-list-literal", "%{} RecursiveElement (:children $ [] $ [] :a $ RecursiveNode :element $ RecursiveElement :children $ [])"],
+    ["raw-pair-list-head", "RecursiveElement :children $ [] $ [] :a $ RecursiveNode :element $ RecursiveElement :children $ []"],
+    ["wrong-matched-field", "let ((node (RecursiveNode :component (RecursiveComponent :tree (Option :none))))) (match node ((:element element) (:children element)) ((:component component) (:children component)))"],
+  ]) {
+    run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defwasm-export run-tests () (${expression}) 1`);
+    const original = await readFile(snapshot);
+    for (const mode of [[], ["--check-only"], ["js"], ["wasm"], ["wasm", "--check-only"], ["wasi"], ["wasi", "--check-only"]]) {
+      const destination = join(project, `recursive-rejected-${name}-${mode.join("-") || "native"}`);
+      const rejected = spawnSync(binary, [snapshot, "--emit-path", destination, ...mode], options);
+      if (rejected.error) throw rejected.error;
+      assert.equal(rejected.status, 1, `${name} ${mode}\n${rejected.stdout}\n${rejected.stderr}`);
+      const diagnostics = `${rejected.stdout}\n${rejected.stderr}`;
+      assert.match(diagnostics, /expects type|does not exist in struct/);
+      assert.match(diagnostics, /calcit.assert-evidence/);
+      await assertRejectedArtifacts(destination, `${name} ${mode}`, /expects type|does not exist in struct/);
+      assert.deepEqual(await readFile(snapshot), original);
+    }
+  }
+  setBody(nominalTests.map(test => test.code));
+
   // Raw WASM exports let the host supply malformed pointers despite source
   // schemas. Keep ordinary method calls and probe the allocation boundary.
   for (const [name, parameters, body, schema] of [
