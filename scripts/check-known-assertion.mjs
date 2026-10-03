@@ -11,13 +11,17 @@ const snapshot = join(project, "calcit.cirru");
 const options = { encoding: "utf8", stdio: "pipe", timeout: 60000, maxBuffer: 16 * 1024 * 1024 };
 const run = (...args) => execFileSync(binary, [snapshot, ...args], options);
 
-async function assertRejectedArtifacts(output, label, diagnostic) {
+async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnosticArtifact = false) {
   const artifacts = await readdir(output).catch(error => {
     if (error.code !== "ENOENT") throw error;
     return [];
   });
   assert.deepEqual(artifacts.filter(file => file !== "calcit.build-errors.mjs"), [],
     `${label}: rejected preprocessing must not emit application or WASM artifacts`);
+  if (requireDiagnosticArtifact) {
+    assert.ok(artifacts.includes("calcit.build-errors.mjs"),
+      `${label}: JS rejection must emit calcit.build-errors.mjs`);
+  }
   if (artifacts.includes("calcit.build-errors.mjs")) {
     assert.match(await readFile(join(output, "calcit.build-errors.mjs"), "utf8"), diagnostic);
   }
@@ -876,7 +880,7 @@ try {
         assert.match(diagnostics, /@calcit\.assert-evidence\/run-tests @[0-9]/,
           "constructor diagnostics must locate the source call, not only a generated macro");
       }
-      await assertRejectedArtifacts(destination, `${name} ${mode}`, expectedDiagnostic);
+      await assertRejectedArtifacts(destination, `${name} ${mode}`, expectedDiagnostic, mode.includes("js"));
       assert.deepEqual(await readFile(snapshot), original);
     }
   }
