@@ -242,7 +242,9 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   保留 head、实参的单次求值与顺序。预览先运行
   `calcit fix --rule spread-call-proof-v1 --ns app.main --def run --format edn`；review 后再使用现有
   `--apply --expect-revision <revision>`，写回仍经过 staged preprocess 和原子事务。该规则不进入默认 preset。
-  未知长度、开放实参、optional/rest、尚未证明的 trait bounds、多重 spread 或不唯一的 macro/source 映射
+  已证明的固定参数加末尾 rest 调用保持原样：固定参数类型、spread 的 List 元素与 rest 合同一致时，
+  变长调用本来就合法，不产生修复或待审建议，也不把它展开成固定 arity。
+  未证明的未知长度、开放实参、可选固定参数、尚未证明的 trait bounds、多重 spread 或不唯一的 macro/source 映射
   返回 `requires-review`，replacement 为空，传入 `--apply` 也不修改这些节点。quoted data 和函数参数声明不作为调用检查。
 - `unsafe-coerce-boundary-v1` 把现有 `E_UNSCOPED_UNSAFE_COERCE` 转为可导航的待审建议，运行
   `calcit fix --rule unsafe-coerce-boundary-v1 --ns app.main --def run --format edn` 查看编译器位置、源码指纹、

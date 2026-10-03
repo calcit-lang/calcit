@@ -3677,9 +3677,13 @@ fn spread_fix_preserves_rest_optional_and_unknown_macro_boundaries() {
     assert_success(&result, name);
     let report = parse_stdout(&result);
     let suggestions = report["data"]["suggestions"].as_array().unwrap();
-    assert_eq!(suggestions.len(), 1, "{name}: {report}");
-    assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
-    assert!(suggestions[0]["replacement"].is_null(), "{report}");
+    if name == "rest-spread" {
+      assert!(suggestions.is_empty(), "a proven rest call needs no rewrite/review: {report}");
+    } else {
+      assert_eq!(suggestions.len(), 1, "{name}: {report}");
+      assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
+      assert!(suggestions[0]["replacement"].is_null(), "{report}");
+    }
     assert_eq!(fs::read(&snapshot).unwrap(), before);
     if name.ends_with("macro-headed-spread") {
       assert_success(
@@ -3687,6 +3691,88 @@ fn spread_fix_preserves_rest_optional_and_unknown_macro_boundaries() {
         "replay retained macro syntax",
       );
     }
+  }
+}
+
+#[test]
+fn typed_rest_spread_is_already_valid_and_remains_unmodified() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/typed-rest-spread.cirru", &snapshot).expect("copy fixture");
+  let target = "fix-command.main/typed-rest-forward";
+  let before = fs::read(&snapshot).unwrap();
+  for _ in 0..2 {
+    let result = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "spread-call-proof-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        "typed-rest-forward",
+        "--format",
+        "json",
+        "--apply",
+        "--allow-no-vcs",
+      ],
+    );
+    assert_success(&result, "typed rest is not a migration candidate");
+    let report = parse_stdout(&result);
+    assert!(report["data"]["suggestions"].as_array().unwrap().is_empty(), "{report}");
+    assert_eq!(
+      fs::read(&snapshot).unwrap(),
+      before,
+      "do not expand or replace the variable-length call"
+    );
+  }
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "run attached rest semantics",
+  );
+  for (name, input, call) in [
+    ("wrong-rest", "(:: 'List 'String)", "sink |numbers & xs"),
+    ("wrong-fixed", "(:: 'List 'Number)", "sink 1 & xs"),
+    ("open-rest", "'Dynamic", "sink |numbers & xs"),
+    ("missing-fixed", "(:: 'List 'Number)", "sink & xs"),
+  ] {
+    let target = format!("fix-command.main/{name}");
+    let source = format!(
+      "quote $ defn {name} (xs)\n  let\n      sink $ fn (label & values)\n        hint-fn $ {{}} (:args $ [] 'String) (:rest 'Number) (:return 'Number)\n        values .len\n    {call}"
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", &target, "--input-format", "cirru", "--code", &source]),
+      "add unproved rest boundary",
+    );
+    let schema = format!("quote $ :: 'Fn $ {{}} (:args $ [] {input}) (:return 'Number)");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "schema", &target, "--input-format", "cirru", "--code", &schema],
+      ),
+      "add unproved rest schema",
+    );
+    let before = fs::read(&snapshot).unwrap();
+    let result = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "spread-call-proof-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&result, "retain the rest call for review");
+    let report = parse_stdout(&result);
+    let suggestions = report["data"]["suggestions"].as_array().unwrap();
+    assert_eq!(suggestions.len(), 1, "{name}: {report}");
+    assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
+    assert!(suggestions[0]["replacement"].is_null());
+    assert_eq!(fs::read(&snapshot).unwrap(), before);
   }
 }
 
