@@ -63,6 +63,10 @@ quoted data 不改写，未知宏中无法证明执行上下文的区域保留 r
 `core-option-method-v1`、`core-result-method-v1` 支持附带 helper 调用：
 接收者和 fallback 的类型证明、方法实现与宏来源要求和普通定义相同。
 局部绑定只收集真实绑定位置，初始化表达式中的类型名不视为遮蔽。
+转换规则 `core-identity-conversion-v1`、`core-list-add-v1` 和 `core-collection-len-v1` 也支持附带区域，
+与普通定义共用实参类型、方法实现和源码上下文证明；局部接收者保留实际预处理类型，
+reader 展开的调用不会被误认成其中叶节点的类型。Set `.add` 不被 List 规则改写，
+String 长度继续按 Unicode 标量计数，未知宏保留 review，quoted data 原样保留。
 其他规则与 preset 的附带覆盖尚未实现，
 不支持的组合会报错，不会静默跳过。下文各条规则的默认扫描范围保持不变。
 

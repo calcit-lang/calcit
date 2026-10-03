@@ -7,6 +7,91 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn attached_conversion_and_collection_rules_preserve_opaque_and_quoted_source() {
+  // Calcit assertions retain the semantic contract; Rust checks the non-writing review transaction.
+  for (rule, expected, call) in [
+    ("core-identity-conversion-v1", ":a", "turn-tag |a"),
+    ("core-list-add-v1", "([] 1 2)", ".add ([] 1) 2"),
+    ("core-collection-len-v1", "2", ".count ([] 1 2)"),
+  ] {
+    let directory = TestDirectory::create();
+    let snapshot = directory.path().join("calcit.cirru");
+    fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+    assert_success(&run_calcit(&snapshot, &["query", "config"]), "inspect remaining rule fixture");
+    for (target, code, overwrite) in [
+      ("app.main/main!", "quote $ defn main! ()\n  , &unit", true),
+      ("app.main/opaque", "quote $ defmacro opaque (x)\n  , x", false),
+    ] {
+      let mut args = vec!["edit", "def", target, "--input-format", "cirru", "--code", code];
+      if overwrite {
+        args.push("--overwrite");
+      }
+      assert_success(&run_calcit(&snapshot, &args), "create remaining rule boundary fixture");
+    }
+    for (name, code) in [
+      ("opaque", format!("quote $ assert= {expected} $ opaque $ {call}")),
+      ("quoted-data", format!("quote $ assert= (quote $ {call}) (quote $ {call})")),
+    ] {
+      assert_success(
+        &run_calcit(
+          &snapshot,
+          &[
+            "edit",
+            "add-test",
+            "app.main/main!",
+            name,
+            "--tags",
+            "unit,upgrade",
+            "--input-format",
+            "cirru",
+            "--code",
+            &code,
+          ],
+        ),
+        "attach remaining rule boundary assertion",
+      );
+    }
+    assert_success(
+      &run_calcit(&snapshot, &["test", "app.main/main!", "--require-match"]),
+      "original remaining rule boundaries",
+    );
+    let original = fs::read(&snapshot).unwrap();
+    let args = [
+      "fix",
+      "--ns",
+      "app.main",
+      "--def",
+      "main!",
+      "--rule",
+      rule,
+      "--include-attached",
+      "--format",
+      "json",
+    ];
+    let preview = run_calcit(&snapshot, &args);
+    assert_success(&preview, "remaining rule boundary preview");
+    let report: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    let suggestions = report["data"]["suggestions"].as_array().unwrap();
+    assert_eq!(suggestions.len(), 1, "{rule}: {report}");
+    assert_eq!(suggestions[0]["path"], "tests.opaque", "{rule}: {report}");
+    assert_eq!(suggestions[0]["applicability"], "requires-review", "{rule}: {report}");
+    let mut apply = args.to_vec();
+    apply.extend([
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().unwrap(),
+    ]);
+    assert_success(&run_calcit(&snapshot, &apply), "retain remaining rule boundaries");
+    assert_eq!(fs::read(&snapshot).unwrap(), original);
+    assert_success(
+      &run_calcit(&snapshot, &["test", "app.main/main!", "--require-match"]),
+      "unchanged remaining rule boundaries",
+    );
+  }
+}
+
+#[test]
 fn attached_nominal_methods_preserve_identity_shadowing_and_opaque_source() {
   // The CLI protocol is checked here; unchanged Calcit assertions define the semantic boundaries.
   for (rule, helper, constructor) in [
@@ -609,6 +694,18 @@ fn attached_method_alias_fix_preserves_unproven_regions_and_quoted_data() {
 fn method_alias_fix_reuses_receiver_proofs_in_attached_tests_and_examples() {
   // The host checks the transaction protocol; each Calcit assertion is replayed before and after migration.
   for (rule, code) in [
+    (
+      "core-identity-conversion-v1",
+      "quote $ do\n  assert= :a $ turn-tag |a\n  assert= 'a $ turn-symbol |a\n  assert= |1 $ let ((value 1)) (turn-string value)",
+    ),
+    (
+      "core-list-add-v1",
+      "quote $ do\n  assert= ([] 1 2) $ .add ([] 1) 2\n  assert= ([] 1 2) $ let ((values $ [] 1)) (values .add 2)\n  assert= (#{} 1 2) $ .add (#{} 1) 2",
+    ),
+    (
+      "core-collection-len-v1",
+      "quote $ do\n  assert= 2 $ .count ([] 1 2)\n  assert= 3 $ .count |a中😀\n  assert= 1 $ let ((values $ {} (:a 1))) (values .count)\n  assert= 2 $ .count (#{} 1 2)",
+    ),
     (
       "core-option-method-v1",
       "quote $ do\n  assert= 1 $ option:unwrap $ Option :some 1\n  assert= 2 $ option:unwrap-or (Option :none) 2\n  assert= true $ let ((value $ Option :some 1)) (option:some? value)",

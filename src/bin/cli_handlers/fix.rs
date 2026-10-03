@@ -3991,6 +3991,9 @@ fn supports_attached_migrations(rule: &str) -> bool {
       | CORE_NOMINAL_CONSTRUCTOR_RULE
       | CORE_OPTION_METHOD_RULE
       | CORE_RESULT_METHOD_RULE
+      | CORE_IDENTITY_CONVERSION_RULE
+      | CORE_LIST_ADD_RULE
+      | CORE_COLLECTION_LEN_RULE
       | NAMED_ENUM_CONSTRUCTOR_RULE
       | NAMED_STRUCT_CONSTRUCTOR_RULE
       | REDUNDANT_DO_RULE
@@ -4130,6 +4133,24 @@ fn plan_attached_fixes(
         }
         if selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE) {
           match plan_core_predicate_rename_source(snapshot_file, namespace, &synthetic_def, &wrapper, CorePredicateRename::Integer) {
+            Ok(planned) => candidates.extend(planned),
+            Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
+          }
+        }
+        if selected_rules.contains(&CORE_IDENTITY_CONVERSION_RULE) {
+          match plan_core_identity_conversion_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper) {
+            Ok(planned) => candidates.extend(planned),
+            Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
+          }
+        }
+        if selected_rules.contains(&CORE_LIST_ADD_RULE) {
+          match plan_core_list_add_source(snapshot_file, namespace, &synthetic_def, &wrapper) {
+            Ok(planned) => candidates.extend(planned),
+            Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
+          }
+        }
+        if selected_rules.contains(&CORE_COLLECTION_LEN_RULE) {
+          match plan_core_collection_len_source(snapshot_file, namespace, &synthetic_def, &wrapper) {
             Ok(planned) => candidates.extend(planned),
             Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
           }
@@ -4448,188 +4469,222 @@ fn plan_core_identity_conversion_fixes(
       .defs
       .get(definition)
       .ok_or_else(|| format!("Selected definition `{namespace}/{definition}` is missing from the source snapshot."))?;
-    if list_head(&entry.code) == Some("defmacro") {
-      continue;
-    }
-    let mut calls = Vec::new();
-    collect_identity_conversion_calls(&entry.code, &mut Vec::new(), &mut calls);
-    if calls.is_empty() {
-      continue;
-    }
-    let mut local_bindings = HashSet::new();
-    collect_potential_local_bindings(&entry.code, &mut local_bindings);
-    let compiled = program::lookup_compiled_def(namespace, definition);
-    let expressions = runner::preprocess::trace_definition_source_expressions(
+    suggestions.extend(plan_core_identity_conversion_source(
+      snapshot,
+      snapshot_file,
       namespace,
       definition,
-      &RefCell::new(Vec::new()),
-      &CallStackList::default(),
-    )
-    .map_err(|failure| failure.msg)?;
-    let usages =
-      runner::preprocess::trace_definition_source_usages(namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
-        .map_err(|failure| failure.msg)?;
-    for (call_path, head_path, argument_path) in calls {
-      let head = navigate_to_path(&entry.code, &head_path)?;
-      let Cirru::Leaf(old_name) = &head else {
-        continue;
-      };
-      if local_bindings.contains(old_name.as_ref()) || file.defs.contains_key(old_name.as_ref()) {
-        continue;
-      }
-      let expected_proc = match old_name.as_ref() {
-        "turn-symbol" => CalcitProc::TurnSymbol,
-        "turn-tag" => CalcitProc::TurnTag,
-        "turn-string" => CalcitProc::TurnString,
-        _ => continue,
-      };
-      let parsed_head = code_to_calcit(
-        &head,
-        namespace,
-        definition,
-        head_path
-          .iter()
-          .map(|index| u16::try_from(*index).map_err(|_| format!("Path index {index} exceeds Snapshot coordinate range")))
-          .collect::<Result<Vec<_>, _>>()?,
-      )
-      .map_err(|error| error.to_string())?;
-      let resolved_core_wrapper = old_name.as_ref() == "turn-string"
-        && matches!(parsed_head, Calcit::Symbol { .. })
-        && usages.iter().any(|usage| {
-          usage.target_ns.as_ref() == calcit::calcit::CORE_NS
-            && usage.target_def.as_ref() == "turn-string"
-            && usage.location.as_ref().is_some_and(|location| {
-              location.ns.as_ref() == namespace
-                && location.def.as_ref() == definition
-                && location.coord.iter().map(|index| usize::from(*index)).eq(head_path.iter().copied())
-            })
-        });
-      if !matches!(parsed_head, Calcit::Proc(proc) if proc == expected_proc) && !resolved_core_wrapper {
-        continue;
-      }
-      let argument = navigate_to_path(&entry.code, &argument_path)?;
-      let parsed_argument = code_to_calcit(
-        &argument,
-        namespace,
-        definition,
-        argument_path
-          .iter()
-          .map(|index| u16::try_from(*index).map_err(|_| format!("Path index {index} exceeds Snapshot coordinate range")))
-          .collect::<Result<Vec<_>, _>>()?,
-      )
-      .map_err(|error| error.to_string())?;
-      let inferred = compiled
-        .as_ref()
-        .and_then(|compiled| {
-          super::query::find_preprocessed_node_at_path(
-            &compiled.preprocessed_code,
-            namespace,
-            definition,
-            &argument_path,
-            matches!(argument, Cirru::List(_)),
-          )
-        })
-        .and_then(runner::preprocess::infer_static_type_from_expr)
-        .or_else(|| {
-          runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &argument_path)
-            .and_then(|item| item.inferred_type.clone())
-        })
-        .or_else(|| super::query::infer_type_at_target(&parsed_argument, None));
-      let resolved = inferred
-        .as_ref()
-        .map(|annotation| runner::preprocess::resolve_namespace_type_refs_for_body(annotation.clone(), namespace));
-      let proven_builtin_scalar = resolved.as_ref().is_some_and(|annotation| {
-        matches!(
-          annotation.as_ref(),
-          CalcitTypeAnnotation::Nil
-            | CalcitTypeAnnotation::Bool
-            | CalcitTypeAnnotation::Number
-            | CalcitTypeAnnotation::String
-            | CalcitTypeAnnotation::Tag
-            | CalcitTypeAnnotation::Symbol
-        )
-      });
-      let proven_argument = if expected_proc == CalcitProc::TurnString {
-        proven_builtin_scalar
-      } else {
-        resolved
-          .as_ref()
-          .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::String))
-      };
-      if resolved.as_ref().is_some_and(|annotation| {
-        !proven_argument
-          && !matches!(
-            annotation.as_ref(),
-            CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_)
-          )
-      }) {
-        continue;
-      }
-      let argument_crosses_macro = usages.iter().any(|usage| {
-        let Some(location) = &usage.location else {
-          return false;
-        };
-        location.ns.as_ref() == namespace
-          && location.def.as_ref() == definition
-          && location.coord.len() > argument_path.len()
-          && location
-            .coord
-            .iter()
-            .map(|index| usize::from(*index))
-            .zip(argument_path.iter().copied())
-            .all(|(index, expected)| index == expected)
-          && (!usage.macro_origin.is_empty()
-            || matches!(
-              program::lookup_compiled_def(&usage.target_ns, &usage.target_def).map(|compiled| compiled.kind),
-              Some(program::CompiledDefKind::Macro)
-            ))
-      });
-      let machine_applicable = proven_argument
-        && !argument_crosses_macro
-        && method_source_context_is_stable(&entry.code, &call_path, namespace, definition, &usages);
-      let new_name = match expected_proc {
-        CalcitProc::TurnTag => "to-tag",
-        CalcitProc::TurnSymbol => "to-symbol",
-        CalcitProc::TurnString => "to-string",
-        _ => unreachable!("only supported conversions are collected"),
-      };
-      let replacement = format!("calcit.core/{new_name}");
-      let replacement_node = Cirru::leaf(replacement.as_str());
-      suggestions.push(FixSuggestion {
-        rule_id: CORE_IDENTITY_CONVERSION_RULE,
-        diagnostic_code: CORE_IDENTITY_CONVERSION_DIAGNOSTIC,
-        semantic_layer: "surface",
-        source_file: snapshot_file.to_owned(),
-        definition: format!("{namespace}/{definition}"),
-        path: format!("code{}", format_path(&head_path)),
-        fingerprint: node_fingerprint(&head),
-        origin_chain: vec![serde_json::json!({
-          "kind": "resolved-core-conversion-and-argument-type",
-          "old_proc": old_name.as_ref(),
-          "argument_type": inferred.as_ref().map(|annotation| annotation.describe()),
-          "target": format!("calcit.core/{new_name}"),
-        })],
-        original: quoted_json(&head),
-        replacement: machine_applicable.then(|| quoted_json(&replacement_node)),
-        applicability: if machine_applicable {
-          "machine-applicable"
-        } else {
-          "requires-review"
-        },
-        message: if machine_applicable {
-          format!("Use `{new_name}` for a proven built-in argument; both paths call the same conversion once.")
-        } else if argument_crosses_macro {
-          format!("The argument to `{old_name}` crosses macro expansion; review this conversion manually.")
-        } else {
-          format!("Cannot prove an equivalent argument and stable source context for `{old_name}`; review this conversion manually.")
-        },
-        target_path: head_path,
-        operation: machine_applicable.then_some(FixOperation::ReplaceLeaf {
-          original: old_name.to_string(),
-          replacement,
-        }),
-      });
+      &entry.code,
+    )?);
+  }
+  Ok(suggestions)
+}
+
+/// Share the existing source and receiver proof with attached executable expressions.
+fn plan_core_identity_conversion_source(
+  snapshot: &Snapshot,
+  snapshot_file: &str,
+  namespace: &str,
+  definition: &str,
+  source: &Cirru,
+) -> Result<Vec<FixSuggestion>, String> {
+  let mut suggestions = Vec::new();
+  let file = snapshot
+    .files
+    .get(namespace)
+    .ok_or_else(|| format!("Selected namespace `{namespace}` is missing from the source snapshot."))?;
+  if list_head(source) == Some("defmacro") {
+    return Ok(suggestions);
+  }
+  let mut calls = Vec::new();
+  collect_identity_conversion_calls(source, &mut Vec::new(), &mut calls);
+  if calls.is_empty() {
+    return Ok(suggestions);
+  }
+  let mut local_bindings = HashSet::new();
+  collect_potential_local_bindings(source, &mut local_bindings);
+  let compiled = program::lookup_compiled_def(namespace, definition);
+  let parsed = code_to_calcit(source, namespace, definition, vec![]).map_err(|error| error.to_string())?;
+  let (preprocessed, expressions) =
+    runner::preprocess::trace_source_expressions(&parsed, namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
+      .map_err(|failure| failure.msg)?;
+  let usages =
+    runner::preprocess::trace_source_usages(&parsed, namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
+      .map_err(|failure| failure.msg)?;
+  for (call_path, head_path, argument_path) in calls {
+    let head = navigate_to_path(source, &head_path)?;
+    let Cirru::Leaf(old_name) = &head else {
+      continue;
+    };
+    if local_bindings.contains(old_name.as_ref()) || file.defs.contains_key(old_name.as_ref()) {
+      continue;
     }
+    let expected_proc = match old_name.as_ref() {
+      "turn-symbol" => CalcitProc::TurnSymbol,
+      "turn-tag" => CalcitProc::TurnTag,
+      "turn-string" => CalcitProc::TurnString,
+      _ => continue,
+    };
+    let parsed_head = code_to_calcit(
+      &head,
+      namespace,
+      definition,
+      head_path
+        .iter()
+        .map(|index| u16::try_from(*index).map_err(|_| format!("Path index {index} exceeds Snapshot coordinate range")))
+        .collect::<Result<Vec<_>, _>>()?,
+    )
+    .map_err(|error| error.to_string())?;
+    let resolved_core_wrapper = old_name.as_ref() == "turn-string"
+      && matches!(parsed_head, Calcit::Symbol { .. })
+      && usages.iter().any(|usage| {
+        usage.target_ns.as_ref() == calcit::calcit::CORE_NS
+          && usage.target_def.as_ref() == "turn-string"
+          && usage.location.as_ref().is_some_and(|location| {
+            location.ns.as_ref() == namespace
+              && location.def.as_ref() == definition
+              && location.coord.iter().map(|index| usize::from(*index)).eq(head_path.iter().copied())
+          })
+      });
+    if !matches!(parsed_head, Calcit::Proc(proc) if proc == expected_proc) && !resolved_core_wrapper {
+      continue;
+    }
+    let argument = navigate_to_path(source, &argument_path)?;
+    let parsed_argument = code_to_calcit(
+      &argument,
+      namespace,
+      definition,
+      argument_path
+        .iter()
+        .map(|index| u16::try_from(*index).map_err(|_| format!("Path index {index} exceeds Snapshot coordinate range")))
+        .collect::<Result<Vec<_>, _>>()?,
+    )
+    .map_err(|error| error.to_string())?;
+    let direct_source_shape = !matches!(argument, Cirru::Leaf(_)) || !matches!(parsed_argument, Calcit::List(_));
+    let inferred = compiled
+      .as_ref()
+      .filter(|_| direct_source_shape)
+      .and_then(|compiled| {
+        super::query::find_preprocessed_node_at_path(
+          &compiled.preprocessed_code,
+          namespace,
+          definition,
+          &argument_path,
+          matches!(argument, Cirru::List(_)),
+        )
+      })
+      .and_then(runner::preprocess::infer_static_type_from_expr)
+      .or_else(|| {
+        if !direct_source_shape {
+          return None;
+        }
+        super::query::find_preprocessed_node_at_path(
+          &preprocessed,
+          namespace,
+          definition,
+          &argument_path,
+          matches!(argument, Cirru::List(_)),
+        )
+        .and_then(runner::preprocess::infer_static_type_from_expr)
+      })
+      .or_else(|| {
+        runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &argument_path)
+          .and_then(|item| item.inferred_type.clone())
+      })
+      .or_else(|| super::query::infer_type_at_target(&parsed_argument, None));
+    let resolved = inferred
+      .as_ref()
+      .map(|annotation| runner::preprocess::resolve_namespace_type_refs_for_body(annotation.clone(), namespace));
+    let proven_builtin_scalar = resolved.as_ref().is_some_and(|annotation| {
+      matches!(
+        annotation.as_ref(),
+        CalcitTypeAnnotation::Nil
+          | CalcitTypeAnnotation::Bool
+          | CalcitTypeAnnotation::Number
+          | CalcitTypeAnnotation::String
+          | CalcitTypeAnnotation::Tag
+          | CalcitTypeAnnotation::Symbol
+      )
+    });
+    let proven_argument = if expected_proc == CalcitProc::TurnString {
+      proven_builtin_scalar
+    } else {
+      resolved
+        .as_ref()
+        .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::String))
+    };
+    if resolved.as_ref().is_some_and(|annotation| {
+      !proven_argument
+        && !matches!(
+          annotation.as_ref(),
+          CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_)
+        )
+    }) {
+      continue;
+    }
+    let argument_crosses_macro = usages.iter().any(|usage| {
+      let Some(location) = &usage.location else {
+        return false;
+      };
+      location.ns.as_ref() == namespace
+        && location.def.as_ref() == definition
+        && location.coord.len() > argument_path.len()
+        && location
+          .coord
+          .iter()
+          .map(|index| usize::from(*index))
+          .zip(argument_path.iter().copied())
+          .all(|(index, expected)| index == expected)
+        && (!usage.macro_origin.is_empty()
+          || matches!(
+            program::lookup_compiled_def(&usage.target_ns, &usage.target_def).map(|compiled| compiled.kind),
+            Some(program::CompiledDefKind::Macro)
+          ))
+    });
+    let machine_applicable =
+      proven_argument && !argument_crosses_macro && method_source_context_is_stable(source, &call_path, namespace, definition, &usages);
+    let new_name = match expected_proc {
+      CalcitProc::TurnTag => "to-tag",
+      CalcitProc::TurnSymbol => "to-symbol",
+      CalcitProc::TurnString => "to-string",
+      _ => unreachable!("only supported conversions are collected"),
+    };
+    let replacement = format!("calcit.core/{new_name}");
+    let replacement_node = Cirru::leaf(replacement.as_str());
+    suggestions.push(FixSuggestion {
+      rule_id: CORE_IDENTITY_CONVERSION_RULE,
+      diagnostic_code: CORE_IDENTITY_CONVERSION_DIAGNOSTIC,
+      semantic_layer: "surface",
+      source_file: snapshot_file.to_owned(),
+      definition: format!("{namespace}/{definition}"),
+      path: format!("code{}", format_path(&head_path)),
+      fingerprint: node_fingerprint(&head),
+      origin_chain: vec![serde_json::json!({
+        "kind": "resolved-core-conversion-and-argument-type",
+        "old_proc": old_name.as_ref(),
+        "argument_type": inferred.as_ref().map(|annotation| annotation.describe()),
+        "target": format!("calcit.core/{new_name}"),
+      })],
+      original: quoted_json(&head),
+      replacement: machine_applicable.then(|| quoted_json(&replacement_node)),
+      applicability: if machine_applicable {
+        "machine-applicable"
+      } else {
+        "requires-review"
+      },
+      message: if machine_applicable {
+        format!("Use `{new_name}` for a proven built-in argument; both paths call the same conversion once.")
+      } else if argument_crosses_macro {
+        format!("The argument to `{old_name}` crosses macro expansion; review this conversion manually.")
+      } else {
+        format!("Cannot prove an equivalent argument and stable source context for `{old_name}`; review this conversion manually.")
+      },
+      target_path: head_path,
+      operation: machine_applicable.then_some(FixOperation::ReplaceLeaf {
+        original: old_name.to_string(),
+        replacement,
+      }),
+    });
   }
   Ok(suggestions)
 }
@@ -4728,111 +4783,134 @@ fn plan_core_list_add_fixes(
       .get(namespace)
       .and_then(|file| file.defs.get(definition))
       .ok_or_else(|| format!("Selected definition `{namespace}/{definition}` is missing from the source snapshot."))?;
-    if list_head(&entry.code) == Some("defmacro") {
-      continue;
-    }
-    let mut calls = Vec::new();
-    collect_list_add_calls(&entry.code, &mut Vec::new(), &mut calls);
-    if calls.is_empty() {
-      continue;
-    }
-    let usages =
-      runner::preprocess::trace_definition_source_usages(namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
-        .map_err(|failure| failure.msg)?;
-    let compiled = program::lookup_compiled_def(namespace, definition);
-    let expressions = runner::preprocess::trace_definition_source_expressions(
+    suggestions.extend(plan_core_list_add_source(snapshot_file, namespace, definition, &entry.code)?);
+  }
+  Ok(suggestions)
+}
+
+/// Share the existing source and receiver proof with attached executable expressions.
+fn plan_core_list_add_source(
+  snapshot_file: &str,
+  namespace: &str,
+  definition: &str,
+  source: &Cirru,
+) -> Result<Vec<FixSuggestion>, String> {
+  let mut suggestions = Vec::new();
+  if list_head(source) == Some("defmacro") {
+    return Ok(suggestions);
+  }
+  let mut calls = Vec::new();
+  collect_list_add_calls(source, &mut Vec::new(), &mut calls);
+  if calls.is_empty() {
+    return Ok(suggestions);
+  }
+  let parsed = code_to_calcit(source, namespace, definition, vec![]).map_err(|error| error.to_string())?;
+  let usages =
+    runner::preprocess::trace_source_usages(&parsed, namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
+      .map_err(|failure| failure.msg)?;
+  let compiled = program::lookup_compiled_def(namespace, definition);
+  let (preprocessed, expressions) =
+    runner::preprocess::trace_source_expressions(&parsed, namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
+      .map_err(|failure| failure.msg)?;
+  for (call_path, method_path, receiver_path) in calls {
+    let receiver = navigate_to_path(source, &receiver_path)?;
+    let source_receiver = code_to_calcit(
+      &receiver,
       namespace,
       definition,
-      &RefCell::new(Vec::new()),
-      &CallStackList::default(),
+      receiver_path
+        .iter()
+        .map(|index| u16::try_from(*index).map_err(|_| format!("Path index {index} exceeds Snapshot coordinate range")))
+        .collect::<Result<Vec<_>, _>>()?,
     )
-    .map_err(|failure| failure.msg)?;
-    for (call_path, method_path, receiver_path) in calls {
-      let receiver = navigate_to_path(&entry.code, &receiver_path)?;
-      let source_receiver = code_to_calcit(
-        &receiver,
-        namespace,
-        definition,
-        receiver_path
-          .iter()
-          .map(|index| u16::try_from(*index).map_err(|_| format!("Path index {index} exceeds Snapshot coordinate range")))
-          .collect::<Result<Vec<_>, _>>()?,
-      )
-      .map_err(|error| error.to_string())?;
-      let inferred = compiled
-        .as_ref()
-        .filter(|_| !matches!(receiver, Cirru::Leaf(_)) || !matches!(source_receiver, Calcit::List(_)))
-        .and_then(|compiled| {
-          super::query::find_preprocessed_node_at_path(
-            &compiled.preprocessed_code,
-            namespace,
-            definition,
-            &receiver_path,
-            matches!(receiver, Cirru::List(_)),
-          )
-        })
-        .and_then(runner::preprocess::infer_static_type_from_expr)
-        .or_else(|| {
-          runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &receiver_path)
-            .and_then(|item| item.inferred_type.clone())
-        })
-        .or_else(|| super::query::infer_type_at_target(&source_receiver, None));
-      let resolved = inferred
-        .as_ref()
-        .map(|annotation| runner::preprocess::resolve_namespace_type_refs_for_body(annotation.clone(), namespace));
-      let concrete_list = resolved
-        .as_ref()
-        .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::List(_)));
-      let proven_same_impl = resolved
-        .as_ref()
-        .is_some_and(|annotation| list_add_alias_is_proven(annotation.as_ref()));
-      let definitely_other_type = resolved.as_ref().is_some_and(|resolved| {
-        !matches!(
-          resolved.as_ref(),
-          CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_)
+    .map_err(|error| error.to_string())?;
+    let direct_source_shape = !matches!(receiver, Cirru::Leaf(_)) || !matches!(source_receiver, Calcit::List(_));
+    let inferred = compiled
+      .as_ref()
+      .filter(|_| direct_source_shape)
+      .and_then(|compiled| {
+        super::query::find_preprocessed_node_at_path(
+          &compiled.preprocessed_code,
+          namespace,
+          definition,
+          &receiver_path,
+          matches!(receiver, Cirru::List(_)),
         )
-      });
-      if definitely_other_type {
-        continue;
-      }
-      let machine_applicable =
-        concrete_list && proven_same_impl && method_source_context_is_stable(&entry.code, &call_path, namespace, definition, &usages);
-      let original_node = navigate_to_path(&entry.code, &method_path)?;
-      let replacement_node = Cirru::leaf(".append");
-      suggestions.push(FixSuggestion {
-        rule_id: CORE_LIST_ADD_RULE,
-        diagnostic_code: CORE_LIST_ADD_DIAGNOSTIC,
-        semantic_layer: "surface",
-        source_file: snapshot_file.to_owned(),
-        definition: format!("{namespace}/{definition}"),
-        path: format!("code{}", format_path(&method_path)),
-        fingerprint: node_fingerprint(&original_node),
-        origin_chain: vec![serde_json::json!({
-          "kind": "receiver-method-query",
-          "receiver_type": inferred.as_ref().map(|annotation| annotation.describe()),
-          "same_core_append_implementation": proven_same_impl,
-        })],
-        original: quoted_json(&original_node),
-        replacement: machine_applicable.then(|| quoted_json(&replacement_node)),
-        applicability: if machine_applicable {
-          "machine-applicable"
-        } else {
-          "requires-review"
-        },
-        message: if machine_applicable {
-          "Use `.append` for one List element; both methods resolve to the same core implementation and preserve evaluation order."
-            .to_owned()
-        } else {
-          "Cannot prove a concrete List receiver, matching method implementation, or stable source context; review `.add` manually."
-            .to_owned()
-        },
-        target_path: method_path,
-        operation: machine_applicable.then_some(FixOperation::ReplaceLeaf {
-          original: ".add".to_owned(),
-          replacement: ".append".to_owned(),
-        }),
-      });
+      })
+      .and_then(runner::preprocess::infer_static_type_from_expr)
+      .or_else(|| {
+        if !direct_source_shape {
+          return None;
+        }
+        super::query::find_preprocessed_node_at_path(
+          &preprocessed,
+          namespace,
+          definition,
+          &receiver_path,
+          matches!(receiver, Cirru::List(_)),
+        )
+        .and_then(runner::preprocess::infer_static_type_from_expr)
+      })
+      .or_else(|| {
+        runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &receiver_path)
+          .and_then(|item| item.inferred_type.clone())
+      })
+      .or_else(|| super::query::infer_type_at_target(&source_receiver, None));
+    let resolved = inferred
+      .as_ref()
+      .map(|annotation| runner::preprocess::resolve_namespace_type_refs_for_body(annotation.clone(), namespace));
+    let concrete_list = resolved
+      .as_ref()
+      .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::List(_)));
+    let proven_same_impl = resolved
+      .as_ref()
+      .is_some_and(|annotation| list_add_alias_is_proven(annotation.as_ref()));
+    let definitely_other_type = resolved.as_ref().is_some_and(|resolved| {
+      !matches!(
+        resolved.as_ref(),
+        CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_)
+      )
+    });
+    if definitely_other_type {
+      continue;
     }
+    let machine_applicable =
+      concrete_list && proven_same_impl && method_source_context_is_stable(source, &call_path, namespace, definition, &usages);
+    let original_node = navigate_to_path(source, &method_path)?;
+    let replacement_node = Cirru::leaf(".append");
+    suggestions.push(FixSuggestion {
+      rule_id: CORE_LIST_ADD_RULE,
+      diagnostic_code: CORE_LIST_ADD_DIAGNOSTIC,
+      semantic_layer: "surface",
+      source_file: snapshot_file.to_owned(),
+      definition: format!("{namespace}/{definition}"),
+      path: format!("code{}", format_path(&method_path)),
+      fingerprint: node_fingerprint(&original_node),
+      origin_chain: vec![serde_json::json!({
+        "kind": "receiver-method-query",
+        "receiver_type": inferred.as_ref().map(|annotation| annotation.describe()),
+        "same_core_append_implementation": proven_same_impl,
+      })],
+      original: quoted_json(&original_node),
+      replacement: machine_applicable.then(|| quoted_json(&replacement_node)),
+      applicability: if machine_applicable {
+        "machine-applicable"
+      } else {
+        "requires-review"
+      },
+      message: if machine_applicable {
+        "Use `.append` for one List element; both methods resolve to the same core implementation and preserve evaluation order."
+          .to_owned()
+      } else {
+        "Cannot prove a concrete List receiver, matching method implementation, or stable source context; review `.add` manually."
+          .to_owned()
+      },
+      target_path: method_path,
+      operation: machine_applicable.then_some(FixOperation::ReplaceLeaf {
+        original: ".add".to_owned(),
+        replacement: ".append".to_owned(),
+      }),
+    });
   }
   Ok(suggestions)
 }
@@ -5578,109 +5656,132 @@ fn plan_core_collection_len_fixes(
       .get(namespace)
       .and_then(|file| file.defs.get(definition))
       .ok_or_else(|| format!("Selected definition `{namespace}/{definition}` is missing from the source snapshot."))?;
-    if list_head(&entry.code) == Some("defmacro") {
-      continue;
-    }
-    let mut calls = Vec::new();
-    collect_collection_count_calls(&entry.code, &mut Vec::new(), &mut calls);
-    if calls.is_empty() {
-      continue;
-    }
-    let usages =
-      runner::preprocess::trace_definition_source_usages(namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
-        .map_err(|failure| failure.msg)?;
-    let compiled = program::lookup_compiled_def(namespace, definition);
-    let expressions = runner::preprocess::trace_definition_source_expressions(
+    suggestions.extend(plan_core_collection_len_source(snapshot_file, namespace, definition, &entry.code)?);
+  }
+  Ok(suggestions)
+}
+
+/// Share the existing source and receiver proof with attached executable expressions.
+fn plan_core_collection_len_source(
+  snapshot_file: &str,
+  namespace: &str,
+  definition: &str,
+  source: &Cirru,
+) -> Result<Vec<FixSuggestion>, String> {
+  let mut suggestions = Vec::new();
+  if list_head(source) == Some("defmacro") {
+    return Ok(suggestions);
+  }
+  let mut calls = Vec::new();
+  collect_collection_count_calls(source, &mut Vec::new(), &mut calls);
+  if calls.is_empty() {
+    return Ok(suggestions);
+  }
+  let parsed = code_to_calcit(source, namespace, definition, vec![]).map_err(|error| error.to_string())?;
+  let usages =
+    runner::preprocess::trace_source_usages(&parsed, namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
+      .map_err(|failure| failure.msg)?;
+  let compiled = program::lookup_compiled_def(namespace, definition);
+  let (preprocessed, expressions) =
+    runner::preprocess::trace_source_expressions(&parsed, namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
+      .map_err(|failure| failure.msg)?;
+  for (call_path, method_path, receiver_path) in calls {
+    let receiver = navigate_to_path(source, &receiver_path)?;
+    let source_receiver = code_to_calcit(
+      &receiver,
       namespace,
       definition,
-      &RefCell::new(Vec::new()),
-      &CallStackList::default(),
+      receiver_path
+        .iter()
+        .map(|index| u16::try_from(*index).map_err(|_| format!("Path index {index} exceeds Snapshot coordinate range")))
+        .collect::<Result<Vec<_>, _>>()?,
     )
-    .map_err(|failure| failure.msg)?;
-    for (call_path, method_path, receiver_path) in calls {
-      let receiver = navigate_to_path(&entry.code, &receiver_path)?;
-      let source_receiver = code_to_calcit(
-        &receiver,
-        namespace,
-        definition,
-        receiver_path
-          .iter()
-          .map(|index| u16::try_from(*index).map_err(|_| format!("Path index {index} exceeds Snapshot coordinate range")))
-          .collect::<Result<Vec<_>, _>>()?,
-      )
-      .map_err(|error| error.to_string())?;
-      let inferred = compiled
-        .as_ref()
-        .and_then(|compiled| {
-          super::query::find_preprocessed_node_at_path(
-            &compiled.preprocessed_code,
-            namespace,
-            definition,
-            &receiver_path,
-            matches!(receiver, Cirru::List(_)),
-          )
-        })
+    .map_err(|error| error.to_string())?;
+    let direct_source_shape = !matches!(receiver, Cirru::Leaf(_)) || !matches!(source_receiver, Calcit::List(_));
+    let inferred = compiled
+      .as_ref()
+      .filter(|_| direct_source_shape)
+      .and_then(|compiled| {
+        super::query::find_preprocessed_node_at_path(
+          &compiled.preprocessed_code,
+          namespace,
+          definition,
+          &receiver_path,
+          matches!(receiver, Cirru::List(_)),
+        )
+      })
+      .and_then(runner::preprocess::infer_static_type_from_expr)
+      .or_else(|| {
+        if !direct_source_shape {
+          return None;
+        }
+        super::query::find_preprocessed_node_at_path(
+          &preprocessed,
+          namespace,
+          definition,
+          &receiver_path,
+          matches!(receiver, Cirru::List(_)),
+        )
         .and_then(runner::preprocess::infer_static_type_from_expr)
-        .or_else(|| {
-          runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &receiver_path)
-            .and_then(|item| item.inferred_type.clone())
-        })
-        .or_else(|| super::query::infer_type_at_target(&source_receiver, None));
-      let resolved = inferred
-        .as_ref()
-        .map(|annotation| runner::preprocess::resolve_namespace_type_refs_for_body(annotation.clone(), namespace));
-      let expected_definition = resolved
-        .as_ref()
-        .and_then(|annotation| collection_count_definition(annotation.as_ref()));
-      if resolved.as_ref().is_some_and(|annotation| {
-        !matches!(
-          annotation.as_ref(),
-          CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_)
-        ) && expected_definition.is_none()
-      }) {
-        continue;
-      }
-      let proven_same_impl = resolved
-        .as_ref()
-        .is_some_and(|annotation| collection_len_alias_is_proven(annotation.as_ref()));
-      let machine_applicable =
-        proven_same_impl && method_source_context_is_stable(&entry.code, &call_path, namespace, definition, &usages);
-      let original_node = navigate_to_path(&entry.code, &method_path)?;
-      let replacement_node = Cirru::leaf(".len");
-      suggestions.push(FixSuggestion {
-        rule_id: CORE_COLLECTION_LEN_RULE,
-        diagnostic_code: CORE_COLLECTION_LEN_DIAGNOSTIC,
-        semantic_layer: "surface",
-        source_file: snapshot_file.to_owned(),
-        definition: format!("{namespace}/{definition}"),
-        path: format!("code{}", format_path(&method_path)),
-        fingerprint: node_fingerprint(&original_node),
-        origin_chain: vec![serde_json::json!({
-          "kind": "receiver-method-query",
-          "receiver_type": inferred.as_ref().map(|annotation| annotation.describe()),
-          "same_core_count_implementation": proven_same_impl,
-        })],
-        original: quoted_json(&original_node),
-        replacement: machine_applicable.then(|| quoted_json(&replacement_node)),
-        applicability: if machine_applicable {
-          "machine-applicable"
-        } else {
-          "requires-review"
-        },
-        message: if machine_applicable {
-          "Use `.len` for built-in collection or String length; both methods resolve to the same core implementation."
-            .to_owned()
-        } else {
-          "Cannot prove a built-in collection/String receiver, matching method implementation, or stable source context; review `.count` manually."
-            .to_owned()
-        },
-        target_path: method_path,
-        operation: machine_applicable.then_some(FixOperation::ReplaceLeaf {
-          original: ".count".to_owned(),
-          replacement: ".len".to_owned(),
-        }),
-      });
+      })
+      .or_else(|| {
+        runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &receiver_path)
+          .and_then(|item| item.inferred_type.clone())
+      })
+      .or_else(|| super::query::infer_type_at_target(&source_receiver, None));
+    let resolved = inferred
+      .as_ref()
+      .map(|annotation| runner::preprocess::resolve_namespace_type_refs_for_body(annotation.clone(), namespace));
+    let expected_definition = resolved
+      .as_ref()
+      .and_then(|annotation| collection_count_definition(annotation.as_ref()));
+    if resolved.as_ref().is_some_and(|annotation| {
+      !matches!(
+        annotation.as_ref(),
+        CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::TypeVar(_)
+      ) && expected_definition.is_none()
+    }) {
+      continue;
     }
+    let proven_same_impl = resolved
+      .as_ref()
+      .is_some_and(|annotation| collection_len_alias_is_proven(annotation.as_ref()));
+    let machine_applicable = proven_same_impl && method_source_context_is_stable(source, &call_path, namespace, definition, &usages);
+    let original_node = navigate_to_path(source, &method_path)?;
+    let replacement_node = Cirru::leaf(".len");
+    suggestions.push(FixSuggestion {
+      rule_id: CORE_COLLECTION_LEN_RULE,
+      diagnostic_code: CORE_COLLECTION_LEN_DIAGNOSTIC,
+      semantic_layer: "surface",
+      source_file: snapshot_file.to_owned(),
+      definition: format!("{namespace}/{definition}"),
+      path: format!("code{}", format_path(&method_path)),
+      fingerprint: node_fingerprint(&original_node),
+      origin_chain: vec![serde_json::json!({
+        "kind": "receiver-method-query",
+        "receiver_type": inferred.as_ref().map(|annotation| annotation.describe()),
+        "same_core_count_implementation": proven_same_impl,
+      })],
+      original: quoted_json(&original_node),
+      replacement: machine_applicable.then(|| quoted_json(&replacement_node)),
+      applicability: if machine_applicable {
+        "machine-applicable"
+      } else {
+        "requires-review"
+      },
+      message: if machine_applicable {
+        "Use `.len` for built-in collection or String length; both methods resolve to the same core implementation."
+          .to_owned()
+      } else {
+        "Cannot prove a built-in collection/String receiver, matching method implementation, or stable source context; review `.count` manually."
+          .to_owned()
+      },
+      target_path: method_path,
+      operation: machine_applicable.then_some(FixOperation::ReplaceLeaf {
+        original: ".count".to_owned(),
+        replacement: ".len".to_owned(),
+      }),
+    });
   }
   Ok(suggestions)
 }

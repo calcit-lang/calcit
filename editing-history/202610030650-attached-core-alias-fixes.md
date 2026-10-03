@@ -72,3 +72,10 @@ Option/Result 方法 helper 提取同一 source planner，附带区域保留 com
 负例保留未知宏、函数身份、quoted data 与真实局部遮蔽；遮蔽本来被编译器拒绝，
 独立验证改写前后都保留该拒绝，而非把它改成运行成功。
 identity conversion、List add、collection len、preset/workflow 组合与弃用元数据仍未完成。
+
+继续提取 conversion、List add 与 collection len 的单 source planner，复用原有类型、实现与 source context 判据，
+没有附带专属的别名表或分析器。普通定义和附带表达式保留同一编译器 trace；处理后的 source 树用于恢复局部类型，
+reader shorthand 沿用真实调用形状保护。完整 fix CLI 回归 114 项通过：
+正例包括三种转换、局部 List/Map、Set add 不被 List 规则误改和 Unicode 标量长度；
+负例对三条规则分别保留未知宏与 quoted data，并验证 apply 不写入原 Snapshot。
+preset/workflow 组合与弃用元数据继续保持未完成。
