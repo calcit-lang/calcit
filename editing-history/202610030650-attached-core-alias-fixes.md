@@ -57,3 +57,18 @@ arity、类型名遮蔽和嵌套 replacement 证明。已明确保持一次执�
 未知宏不放行。结构化子树替换继续核对原 AST，多个构造器合成原子 metadata 操作。
 语义回放覆盖四个 helper、嵌套 Option/Result 与状态写入一次；局部 Option 遮蔽本来就会被编译器拒绝，
 因此负例单独验证改写前后仍拒绝，不把它改成成功断言，也不扩大 Dynamic。
+
+项目名义构造器继续共用 definition 与附带 source 的解析入口，保留嵌套 payload 的引用证明。
+带状态写入的正反字段顺序回放暴露共享 lowering 的语义问题，该问题已独立由 #1714 / #1715 修复；
+迁移本身不重新排序参数，不用修改断言预期补偿编译器行为。
+
+Option/Result 方法 helper 提取同一 source planner，附带区域保留 compiler usage、处理后的树与表达式证据。
+名义证明同时识别限定 TypeRef 和带相同限定定义来源的 Enum，不按短名称猜测。
+回归还发现原遮蔽扫描把 let 绑定的初始化表达式也当成绑定模式，导致初始化值里的 Option 被误判为局部名。
+绑定收集改为区分 let/loop 的 pair 列表与单 pair，只读取真实绑定位置。
+试验性的通用 Enum 解析变化已撤回；实际修复不需要改变类型解析、方法表或扩大 Dynamic。
+
+完整 fix CLI 回归 113 项通过，正例重放迁移前后同一 Calcit 断言并验证幂等。
+负例保留未知宏、函数身份、quoted data 与真实局部遮蔽；遮蔽本来被编译器拒绝，
+独立验证改写前后都保留该拒绝，而非把它改成运行成功。
+identity conversion、List add、collection len、preset/workflow 组合与弃用元数据仍未完成。

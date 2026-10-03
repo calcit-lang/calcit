@@ -58,6 +58,11 @@ Map distinct-values、Set include、collection combine、predicate method 和 ef
 quoted data 不改写，未知宏中无法证明执行上下文的区域保留 review。
 `core-nominal-constructor-v1` 支持把附带调用的 `%some` / `%none` / `%ok` / `%err` 改为 Option/Result 直接构造。
 嵌套 payload 保留原位置并只求值一次；一等函数值、名义类型遮蔽或未知宏来源要求 review。
+项目的 `named-enum-constructor-v1`、`named-struct-constructor-v1` 也支持附带区域，
+复用定义来源、字段完整性和嵌套 payload 证明，保留字段在源码中的求值顺序。
+`core-option-method-v1`、`core-result-method-v1` 支持附带 helper 调用：
+接收者和 fallback 的类型证明、方法实现与宏来源要求和普通定义相同。
+局部绑定只收集真实绑定位置，初始化表达式中的类型名不视为遮蔽。
 其他规则与 preset 的附带覆盖尚未实现，
 不支持的组合会报错，不会静默跳过。下文各条规则的默认扫描范围保持不变。
 
@@ -98,8 +103,8 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   的类型证据只报告 `requires-review`。已核实会单次保留调用的 core `let`、`cond`、`do`、
   `fn`、`assert=` 等展开可通过宏边界，但仍必须满足同一静态类型与方法契约；其他宏不自动放行。
   当前须显式指定 `--rule`，不改写已发布的 preset，
-  也不把内部 helper 立即删除。与构造器规则一样，改写只覆盖定义的 `:code`，不盲改
-  `:tests` / `:examples`。先预览、核对来源和 revision，再应用并运行严格检查与业务测试。
+  也不把内部 helper 立即删除。默认只覆盖定义的 `:code`；显式传 `--include-attached` 时，
+  附带 `:tests` / `:examples` 使用同一证明。先预览、核对来源和 revision，再应用并运行严格检查与业务测试。
 - `core-result-method-v1` 把 `result:ok?` / `result:err?` 改为 `value .ok?` / `value .err?`，
   也处理 `result:unwrap-or result fallback` 到 `result .unwrap-or fallback`；仍须证明 core 来源和
   同一个接收者方法契约，不因谓词返回 Bool 就跳过接收者类型检查。
@@ -108,7 +113,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   成功值有具体类型、方法契约已证明的 core `%ok` 也可迁移；备用值不能代替成功值的类型证据。
   普通 `Result<Dynamic,E>`、成功值来自 Dynamic 的 `%ok` / `Result :ok`、同名类型遮蔽、
   函数值和未知 macro 只给 `requires-review`；具名构造若缺少精确源码类型证据同样保留审阅。
-  与 Option 规则一样，本规则须显式选择，不修改已发布 preset，也不自动改写 `:tests` / `:examples`。
+  与 Option 规则一样，本规则须显式选择，不修改已发布 preset；通过 `--include-attached` 纳入 `:tests` / `:examples`。
   先运行 `calcit calcit.cirru fix --rule core-result-method-v1 --format edn` 预览，再带原样
   `--expect-revision` 应用；重复预览应为空，随后运行严格类型检查和项目测试。
   0.26.0 不删除 Option/Result 旧方法 helper；它们仍是 core method 的实现目标。应用可直接调用的

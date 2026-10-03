@@ -7,6 +7,200 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn attached_nominal_methods_preserve_identity_shadowing_and_opaque_source() {
+  // The CLI protocol is checked here; unchanged Calcit assertions define the semantic boundaries.
+  for (rule, helper, constructor) in [
+    ("core-option-method-v1", "option:some?", "Option :some 1"),
+    ("core-result-method-v1", "result:ok?", "Result :ok 1"),
+  ] {
+    let directory = TestDirectory::create();
+    let snapshot = directory.path().join("calcit.cirru");
+    fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+    assert_success(&run_calcit(&snapshot, &["query", "config"]), "inspect nominal method fixture");
+    for (target, code, overwrite) in [
+      ("app.main/main!", "quote $ defn main! ()\n  , &unit", true),
+      ("app.main/opaque", "quote $ defmacro opaque (x)\n  , x", false),
+    ] {
+      let mut args = vec!["edit", "def", target, "--input-format", "cirru", "--code", code];
+      if overwrite {
+        args.push("--overwrite");
+      }
+      assert_success(&run_calcit(&snapshot, &args), "create nominal method boundary fixture");
+    }
+    for (name, code) in [
+      ("opaque", format!("quote $ assert= true $ opaque $ {helper} $ {constructor}")),
+      ("identity", format!("quote $ assert= {helper} {helper}")),
+      (
+        "shadow",
+        format!("quote $ let (({helper} (fn (value) , false))) (assert= false $ {helper} $ {constructor})"),
+      ),
+      (
+        "quoted-data",
+        format!("quote $ assert= (quote $ {helper} $ {constructor}) (quote $ {helper} $ {constructor})"),
+      ),
+    ] {
+      assert_success(
+        &run_calcit(
+          &snapshot,
+          &[
+            "edit",
+            "add-test",
+            "app.main/main!",
+            name,
+            "--tags",
+            if name == "shadow" { "unit,upgrade,shadow" } else { "unit,upgrade" },
+            "--input-format",
+            "cirru",
+            "--code",
+            &code,
+          ],
+        ),
+        "attach nominal method boundary assertion",
+      );
+    }
+    assert_success(
+      &run_calcit(&snapshot, &["test", "app.main/main!", "--exclude-tag", "shadow", "--require-match"]),
+      "original method boundaries",
+    );
+    let shadow_before = run_calcit(&snapshot, &["test", "app.main/main!", "--name", "shadow", "--require-match"]);
+    assert!(!shadow_before.status.success());
+    assert!(String::from_utf8_lossy(&shadow_before.stderr).contains(&format!("shadowed `calcit.core/{helper}`")));
+    let original = fs::read(&snapshot).unwrap();
+    let args = [
+      "fix",
+      "--ns",
+      "app.main",
+      "--def",
+      "main!",
+      "--rule",
+      rule,
+      "--include-attached",
+      "--format",
+      "json",
+    ];
+    let preview = run_calcit(&snapshot, &args);
+    assert_success(&preview, "nominal method boundary preview");
+    let report: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    let suggestions = report["data"]["suggestions"].as_array().unwrap();
+    assert_eq!(suggestions.len(), 2, "{rule}: {report}");
+    assert!(
+      suggestions.iter().all(|item| item["applicability"] == "requires-review"),
+      "{rule}: {report}"
+    );
+    for name in ["opaque", "identity"] {
+      assert!(
+        suggestions.iter().any(|item| item["path"] == format!("tests.{name}")),
+        "{rule}: {report}"
+      );
+    }
+    let mut apply = args.to_vec();
+    apply.extend([
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().unwrap(),
+    ]);
+    assert_success(&run_calcit(&snapshot, &apply), "retain method boundaries");
+    assert_eq!(fs::read(&snapshot).unwrap(), original);
+    assert_success(
+      &run_calcit(&snapshot, &["test", "app.main/main!", "--exclude-tag", "shadow", "--require-match"]),
+      "unchanged method boundaries",
+    );
+    let shadow_after = run_calcit(&snapshot, &["test", "app.main/main!", "--name", "shadow", "--require-match"]);
+    assert!(!shadow_after.status.success());
+    assert!(String::from_utf8_lossy(&shadow_after.stderr).contains(&format!("shadowed `calcit.core/{helper}`")));
+  }
+}
+
+#[test]
+fn attached_named_constructors_preserve_unknown_macro_regions() {
+  for (rule, constructor) in [
+    ("named-enum-constructor-v1", "%:: Choice :none"),
+    ("named-struct-constructor-v1", "%{} Person (:name |Ada) (:age 1)"),
+  ] {
+    let directory = TestDirectory::create();
+    let snapshot = directory.path().join("calcit.cirru");
+    fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+    assert_success(&run_calcit(&snapshot, &["query", "config"]), "inspect named constructor fixture");
+    for (target, code, overwrite) in [
+      ("app.main/main!", "quote $ defn main! ()\n  , &unit", true),
+      ("app.main/Person", "quote $ defstruct Person (:name 'String) (:age 'Number)", false),
+      (
+        "app.main/Choice",
+        "quote $ defenum Choice (:none) (:person 'app.main/Person)",
+        false,
+      ),
+      ("app.main/opaque", "quote $ defmacro opaque (x)\n  , x", false),
+    ] {
+      let mut args = vec!["edit", "def", target, "--input-format", "cirru", "--code", code];
+      if overwrite {
+        args.push("--overwrite");
+      }
+      assert_success(&run_calcit(&snapshot, &args), "create named constructor fixture");
+    }
+    for (name, code) in [
+      ("opaque", format!("quote $ assert= ({constructor}) $ opaque $ {constructor}")),
+      (
+        "quoted-data",
+        format!("quote $ assert= (quote $ {constructor}) (quote $ {constructor})"),
+      ),
+    ] {
+      assert_success(
+        &run_calcit(
+          &snapshot,
+          &[
+            "edit",
+            "add-test",
+            "app.main/main!",
+            name,
+            "--tags",
+            "unit,upgrade",
+            "--input-format",
+            "cirru",
+            "--code",
+            &code,
+          ],
+        ),
+        "attach nominal boundary assertion",
+      );
+    }
+    assert_success(
+      &run_calcit(&snapshot, &["test", "app.main/main!", "--require-match"]),
+      "original named boundaries",
+    );
+    let before = fs::read(&snapshot).unwrap();
+    let args = [
+      "fix",
+      "--ns",
+      "app.main",
+      "--def",
+      "main!",
+      "--rule",
+      rule,
+      "--include-attached",
+      "--format",
+      "json",
+    ];
+    let preview = run_calcit(&snapshot, &args);
+    assert_success(&preview, rule);
+    let report: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    let suggestions = report["data"]["suggestions"].as_array().unwrap();
+    assert_eq!(suggestions.len(), 1, "{rule}: {report}");
+    assert_eq!(suggestions[0]["path"], "tests.opaque");
+    assert_eq!(suggestions[0]["applicability"], "requires-review");
+    let mut apply = args.to_vec();
+    apply.extend([
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().unwrap(),
+    ]);
+    assert_success(&run_calcit(&snapshot, &apply), "retain opaque nominal region");
+    assert_eq!(fs::read(&snapshot).unwrap(), before);
+  }
+}
+
+#[test]
 fn attached_constructor_fix_preserves_identity_shadowing_and_opaque_macros() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
@@ -416,6 +610,31 @@ fn method_alias_fix_reuses_receiver_proofs_in_attached_tests_and_examples() {
   // The host checks the transaction protocol; each Calcit assertion is replayed before and after migration.
   for (rule, code) in [
     (
+      "core-option-method-v1",
+      "quote $ do\n  assert= 1 $ option:unwrap $ Option :some 1\n  assert= 2 $ option:unwrap-or (Option :none) 2\n  assert= true $ let ((value $ Option :some 1)) (option:some? value)",
+    ),
+    (
+      "core-result-method-v1",
+      "quote $ do\n  assert= 1 $ result:unwrap-or (Result :ok 1) 0\n  assert= 2 $ result:unwrap-or (Result :err |bad) 2\n  assert= true $ let ((value $ Result :err |bad)) (result:err? value)",
+    ),
+    ("named-enum-constructor-v1", "quote $ assert= (Choice :none) (%:: Choice :none)"),
+    (
+      "named-struct-constructor-v1",
+      "quote $ assert= (Person :name |Ada :age 1) $ %{} Person (:name |Ada) (:age 1)",
+    ),
+    (
+      "named-struct-constructor-v1",
+      "quote $ assert= (Person :name |Ada :age 1) $ let ((cell (atom 0)))\n  %{} Person\n    :name $ do (reset! cell 1) |Ada\n    :age $ do (assert= @cell 1) @cell",
+    ),
+    (
+      "named-struct-constructor-v1",
+      "quote $ assert= (Person :name |Ada :age 1) $ let ((cell (atom 0)))\n  %{} Person\n    :age $ do (reset! cell 1) @cell\n    :name $ do (assert= @cell 1) |Ada",
+    ),
+    (
+      "named-enum-constructor-v1",
+      "quote $ assert= (Choice :person $ Person :name |Ada :age 1) $ %:: Choice :person $ %{} Person (:name |Ada) (:age 1)",
+    ),
+    (
       "core-nominal-constructor-v1",
       "quote $ do\n  assert= (Option :some $ Result :ok 1) $ %some $ %ok 1\n  assert= (Option :none) (%none)\n  assert= (Result :err |bad) (%err |bad)",
     ),
@@ -479,6 +698,17 @@ fn method_alias_fix_reuses_receiver_proofs_in_attached_tests_and_examples() {
       code.to_owned()
     };
     fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+    if rule.starts_with("named-") {
+      for (target, code) in [
+        ("app.main/Person", "quote $ defstruct Person (:name 'String) (:age 'Number)"),
+        ("app.main/Choice", "quote $ defenum Choice (:none) (:person 'app.main/Person)"),
+      ] {
+        assert_success(
+          &run_calcit(&snapshot, &["edit", "def", target, "--input-format", "cirru", "--code", code]),
+          "create shared nominal definitions",
+        );
+      }
+    }
     assert_success(
       &run_calcit(
         &snapshot,
