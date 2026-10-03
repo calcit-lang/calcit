@@ -341,6 +341,97 @@ fn core_result_err_payload_types<'a>(
   Some((actual_error.as_ref(), expected_error.as_ref()))
 }
 
+/// Check payload evidence without treating unused constructor slots as open values.
+pub(crate) fn constructor_payload_is_proven(
+  expr: &Calcit,
+  actual: &CalcitTypeAnnotation,
+  expected: &CalcitTypeAnnotation,
+  scope: &ScopeTypes,
+) -> bool {
+  if actual.is_proven_for(expected) {
+    return true;
+  }
+  // Legacy nullable fields store either nil or the inner value directly.
+  // Check their payload rather than treating this runtime shape as narrowing.
+  if let CalcitTypeAnnotation::Optional(expected_inner) | CalcitTypeAnnotation::JsNullish(expected_inner) = expected {
+    return match actual {
+      CalcitTypeAnnotation::Nil => true,
+      CalcitTypeAnnotation::Optional(actual_inner) | CalcitTypeAnnotation::JsNullish(actual_inner) => {
+        constructor_payload_is_proven(expr, actual_inner, expected_inner, scope)
+      }
+      _ => constructor_payload_is_proven(expr, actual, expected_inner, scope),
+    };
+  }
+  let Some(definition) = actual.resolve_to_enum() else { return false };
+  let arguments = match actual {
+    CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => args,
+    _ => return false,
+  };
+  let Some(used) = enum_constructor_type_participation(expr, &definition, scope) else {
+    return false;
+  };
+  let Some(expected_definition) = expected.resolve_to_enum() else {
+    return false;
+  };
+  let expected_arguments = match expected {
+    CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => args,
+    _ => return false,
+  };
+  if definition != expected_definition || arguments.len() != expected_arguments.len() {
+    return false;
+  }
+  let completed = arguments
+    .iter()
+    .zip(expected_arguments.iter())
+    .zip(definition.generics())
+    .map(|((actual, expected), name)| {
+      if matches!(actual.as_ref(), CalcitTypeAnnotation::Dynamic) && !used.contains(name) {
+        expected.clone()
+      } else {
+        actual.clone()
+      }
+    })
+    .collect();
+  CalcitTypeAnnotation::Enum(Arc::new(definition), Arc::new(completed)).is_proven_for(expected)
+}
+
+fn enum_constructor_type_participation(expr: &Calcit, definition: &CalcitEnumDef, scope: &ScopeTypes) -> Option<Vec<Arc<str>>> {
+  let Calcit::List(items) = expr else { return None };
+  // A compiled constructor wrapper also fixes the variant. Inspect its
+  // single tail constructor, never a schema-only promise or an arbitrary name.
+  let owned;
+  let items = if let Some(Calcit::Import(import)) = items.first() {
+    owned = program::lookup_compiled_def(&import.ns, &import.def)?.preprocessed_code;
+    let Calcit::List(body) = &owned else { return None };
+    if !matches!(body.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _))) {
+      return None;
+    }
+    let Calcit::List(tail) = body
+      .iter()
+      .skip(3)
+      .filter(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
+      .last()?
+    else {
+      return None;
+    };
+    tail
+  } else {
+    items
+  };
+  if !matches!(
+    items.first(),
+    Some(Calcit::Proc(CalcitProc::NativeEnumNew | CalcitProc::NativeNamedEnumNew))
+  ) {
+    return None;
+  }
+  let Calcit::Tag(tag) = items.get(2)? else { return None };
+  if resolve_enum_value(items.get(1)?, scope).as_ref() != Some(definition) {
+    return None;
+  }
+  let variant = definition.find_variant_by_name(tag.ref_str())?;
+  (items.len() == variant.arity() + 3).then(|| crate::calcit::type_annotation::free_type_variable_names(variant.payload_types()))
+}
+
 /// Join nominal enum slots using actual constructor payload participation.
 /// Missing phantom slots carry no evidence; open values and used Dynamic slots do.
 fn merge_nominal_enum_branches<'a>(
@@ -364,20 +455,7 @@ fn merge_nominal_enum_branches<'a>(
       prototype = Some(definition.clone());
       slots.resize(arguments.len(), None);
     }
-    let participation = if let Calcit::List(items) = expr
-      && matches!(
-        items.first(),
-        Some(Calcit::Proc(CalcitProc::NativeEnumNew | CalcitProc::NativeNamedEnumNew))
-      )
-      && let Some(Calcit::Tag(tag)) = items.get(2)
-      && resolve_enum_value(items.get(1)?, scope).as_ref() == Some(definition.as_ref())
-      && let Some(variant) = definition.find_variant_by_name(tag.ref_str())
-      && items.len() == variant.arity() + 3
-    {
-      Some(crate::calcit::type_annotation::free_type_variable_names(variant.payload_types()))
-    } else {
-      None
-    };
+    let participation = enum_constructor_type_participation(expr, definition, scope);
     for (index, argument) in arguments.iter().enumerate() {
       if matches!(argument.as_ref(), CalcitTypeAnnotation::Dynamic)
         && participation

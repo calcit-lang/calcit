@@ -103,6 +103,12 @@ assert= "| b" $ str-spaced | |b
 
 只有未知长度列表的展开调用需要审阅：`str-spaced & xs` 不能证明首项存在。应先由调用者确认非空，再显式传首项与剩余项；空列表如何处理属于业务决策，不自动插入 fallback、unsafe 或长度断言。此签名收敛安排在非 patch 升级中，不为这一情形新增 fix 规则。
 
+## 嵌套 Struct 构造的字段合同
+
+直接构造器与 `%{}` 在参数完成类型推导和 lowering 后检查相同的字段合同。递归声明中的名义类型同样生效：字段声明为 RenderNode Enum 时，不能直接放入 Element Struct；`List<ChildPair>` 不能用原来的二元 List 替代。应显式构造声明要求的 Enum 变体或 ChildPair 值，不能只增加 `assert-type` 或 `unsafe-coerce` 来绕过错误。
+
+这项修复不改变合法构造的字段求值顺序，也不把静态检查变成外部数据校验。开放输入仍需在原有 decode/验证边界处理；如何把业务值转为闭合节点属于人工迁移，不提供自动默认值或改写。
+
 ## 取余的跨后端语义
 
 `&number:rem` 和 Number `.rem` 在 native、JS、core WASM 与 WASI Component 上使用同一契约：两个操作数都必须是安全整数（绝对值不超过 `9007199254740991`），除数不能为 0（包括 `-0`）；结果为截断取余，符号跟随被除数，且不返回 `-0`。

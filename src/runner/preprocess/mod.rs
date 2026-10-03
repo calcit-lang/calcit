@@ -33,7 +33,7 @@ use type_checking::{
 use type_inference::{
   extract_literal_list_items, find_struct_lookup_in_literal_path, fully_typed_literal_assoc_path, fully_typed_literal_lookup_path,
   infer_struct_field_type, infer_struct_value_annotation, infer_type_from_expr, is_pending_async_value, resolve_enum_value,
-  resolve_program_value_for_preprocess, resolve_type_value,
+  resolve_program_value_for_preprocess, resolve_struct_value, resolve_type_value,
 };
 pub use type_inference::{
   fixed_call_arguments_are_proven, infer_compiled_definition_implementation_type, infer_static_type_from_expr,
@@ -3549,6 +3549,19 @@ fn preprocess_list_call(
             // Prefix methods share the receiver-specialized callback contract
             // used by postfix methods. Process the receiver before deriving it.
             let expected_type = if !has_spread
+              && matches!(&head_form, Calcit::Proc(CalcitProc::NativeStruct))
+              && ys.len() >= 3
+              && ys.len() % 2 == 1
+              && let (Some(prototype), Some(Calcit::Tag(field))) = (ys.get(1), ys.get(ys.len() - 1))
+            {
+              resolve_struct_value(prototype, scope_types).and_then(|value| {
+                let index = value.struct_ref.fields.iter().position(|candidate| candidate == field)?;
+                value.struct_ref.field_types.get(index).map(|expected| match expected.as_ref() {
+                  CalcitTypeAnnotation::JsNullish(inner) => inner.clone(),
+                  _ => expected.clone(),
+                })
+              })
+            } else if !has_spread
               && let Calcit::Method(name, calcit::MethodKind::Invoke(_)) = &head_form
               && let Some(receiver) = ys.get(1)
               && let Some(receiver_type) = resolve_type_value(receiver, scope_types)
@@ -3609,7 +3622,8 @@ fn preprocess_list_call(
               || matches!(
                 &head_form,
                 Calcit::Proc(
-                  CalcitProc::Sort
+                  CalcitProc::NativeStruct
+                    | CalcitProc::Sort
                     | CalcitProc::NativeListSort
                     | CalcitProc::Foldl
                     | CalcitProc::NativeListFoldl
@@ -3670,6 +3684,30 @@ fn preprocess_list_call(
         reject_pending_async_arguments(&head_form, &processed_args, scope_types, call_stack)?;
         validate_method_call(&head_form, &processed_args, scope_types, file_ns, call_stack)?;
         check_struct_field_access(&head_form, &processed_args, scope_types, file_ns, call_stack, check_warnings);
+        check_struct_construction_fields(
+          &head_form,
+          &processed_args,
+          scope_types,
+          file_ns,
+          &def_name,
+          call_location
+            .clone()
+            .filter(|location| location.def.as_ref() != GENERATED_DEF)
+            .or_else(|| find_preferred_macro_location(call_stack).filter(|location| location.def.as_ref() != GENERATED_DEF))
+            .or_else(|| {
+              call_stack.0.iter().find_map(|frame| {
+                let source =
+                  |location: &NodeLocation| location.def.as_ref() != GENERATED_DEF && location.ns.as_ref() != calcit::CORE_NS;
+                find_calcit_location_matching(&frame.code, source).or_else(|| {
+                  frame
+                    .args
+                    .iter()
+                    .find_map(|argument| find_calcit_location_matching(argument, source))
+                })
+              })
+            }),
+          check_warnings,
+        );
         check_struct_update_fields(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
         reject_unproven_struct_update(&head_form, &processed_args, scope_types, file_ns, call_stack)?;
         check_struct_method_args(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
@@ -4573,35 +4611,6 @@ fn try_rewrite_struct_enum_constructor_head_call(
           check_warnings,
         );
         return Ok(None);
-      }
-    }
-
-    for (field, value) in &provided_fields {
-      let Some(field_idx) = struct_def.fields.iter().position(|candidate| candidate == field) else {
-        continue;
-      };
-      let Some(expected_type) = struct_def.field_types.get(field_idx) else {
-        continue;
-      };
-      if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
-        continue;
-      }
-      if let Some(actual_type) = resolve_type_value(value, scope_types)
-        && !actual_type.as_ref().is_compatible_with(expected_type.as_ref())
-      {
-        gen_check_warning(
-          format!(
-            "[Warn] struct `{}` field `:{}` expects type `{}`, but got `{}` at {}/{}",
-            struct_def.name,
-            field,
-            expected_type.to_brief_string(),
-            actual_type.to_brief_string(),
-            file_ns,
-            def_name,
-          ),
-          file_ns,
-          check_warnings,
-        );
       }
     }
 
@@ -5530,6 +5539,64 @@ fn warn_on_raw_struct_field_access(
     field.get_location().or_else(|| receiver.get_location()),
     check_warnings,
   );
+}
+
+/// Check constructor payloads after lowering and preprocessing, when nested
+/// constructors have nominal evidence. Both public spellings reach this path.
+fn check_struct_construction_fields(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+  call_location: Option<NodeLocation>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  if !matches!(head, Calcit::Proc(CalcitProc::NativeStruct)) {
+    return;
+  }
+  let Some(prototype) = args.first() else { return };
+  let Some(value) = resolve_struct_value(prototype, scope_types) else {
+    return;
+  };
+  let items = args.iter().skip(1).collect::<Vec<_>>();
+  for pair in items.as_chunks::<2>().0 {
+    let Calcit::Tag(field) = pair[0] else { continue };
+    let Some(index) = value.struct_ref.fields.iter().position(|candidate| candidate == field) else {
+      continue;
+    };
+    let Some(expected) = value.struct_ref.field_types.get(index) else {
+      continue;
+    };
+    if matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic) {
+      continue;
+    }
+    if empty_container_has_no_type_evidence(pair[1], expected) {
+      continue;
+    }
+    if let Some(actual) = resolve_type_value(pair[1], scope_types)
+      && !type_inference::constructor_payload_is_proven(pair[1], &actual, expected, scope_types)
+    {
+      gen_check_warning_code_at_with_types(
+        format!(
+          "[Warn] struct `{}` field `:{field}` expects type `{}`, but got `{}` at {file_ns}/{def_name}",
+          value.struct_ref.name,
+          expected.to_brief_string(),
+          actual.to_brief_string(),
+        ),
+        "W_FN_ARG_TYPE_MISMATCH",
+        file_ns,
+        pair[1]
+          .get_location()
+          .filter(|location| location.def.as_ref() != GENERATED_DEF)
+          .or_else(|| call_location.clone())
+          .or_else(|| prototype.get_location()),
+        expected.to_brief_string(),
+        actual.to_brief_string(),
+        check_warnings,
+      );
+    }
+  }
 }
 
 fn struct_update_pairs<'a>(head: &Calcit, args: &'a CalcitList) -> Option<Vec<(usize, &'a Calcit, &'a Calcit)>> {
@@ -17441,32 +17508,6 @@ mod tests {
         .is_none()
     );
     assert!(warnings.borrow().is_empty());
-  }
-
-  #[test]
-  fn warns_on_struct_constructor_field_type_mismatch() {
-    use cirru_edn::EdnTag;
-
-    let mut point_struct = CalcitStructDef::from_fields(EdnTag::from("Point"), vec![EdnTag::from("x")]);
-    point_struct.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]);
-    let args = CalcitList::from(vec![Calcit::Tag(EdnTag::from("x")), Calcit::Str(Arc::from("wrong"))].as_slice());
-    let warnings = RefCell::new(vec![]);
-    let result = try_rewrite_struct_enum_constructor_head_call(
-      &Calcit::StructDef(point_struct),
-      &args,
-      &ScopeTypes::new(),
-      "tests.struct",
-      "demo",
-      &warnings,
-      &CallStackList::default(),
-    )
-    .expect("rewrite typed struct constructor");
-
-    assert!(result.is_some());
-    assert!(warnings.borrow().iter().any(|warning| {
-      let message = warning.to_string();
-      message.contains("field `:x`") && message.contains("expects type")
-    }));
   }
 
   #[test]
