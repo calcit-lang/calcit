@@ -11030,6 +11030,41 @@ fn typed_rest_spread_contract(signature: &CalcitFnTypeAnnotation, args: &CalcitL
   Some((CalcitList::from(projected.as_slice()), contract))
 }
 
+/// Recognize an already-valid rest spread without authorizing a source rewrite.
+/// Reuse the audit's projection and ordinary type proof; unknown callees,
+/// optional fixed parameters and unproved trait obligations remain reviewable.
+pub fn typed_rest_spread_call_is_proven(processed: &Calcit) -> bool {
+  let Calcit::List(call) = processed else { return false };
+  if !matches!(call.first(), Some(Calcit::Syntax(CalcitSyntax::CallSpread, _))) {
+    return false;
+  }
+  let Some(signature) = call
+    .get(1)
+    .and_then(type_inference::infer_static_type_from_expr)
+    .and_then(|annotation| annotation.resolve_to_nonoptional_fn())
+  else {
+    return false;
+  };
+  if signature.fn_kind != SchemaKind::Fn
+    || !signature.where_bounds.is_empty()
+    || signature
+      .arg_types
+      .iter()
+      .any(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Optional(_)))
+  {
+    return false;
+  }
+  let arguments = call.iter().skip(2).cloned().collect::<Vec<_>>();
+  let Some((projected, contract)) = typed_rest_spread_contract(&signature, &CalcitList::from(arguments.as_slice())) else {
+    return false;
+  };
+  let mut bindings = HashMap::new();
+  projected.iter().zip(&contract.arg_types).all(|(argument, expected)| {
+    type_inference::infer_static_type_from_expr(argument)
+      .is_some_and(|actual| actual.prove_with_bindings(expected, &mut bindings).is_proven())
+  })
+}
+
 fn reject_strict_unproven_generic_relation(
   head: &Calcit,
   args: &CalcitList,

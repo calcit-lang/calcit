@@ -117,15 +117,15 @@ pub(super) fn plan_spread_call_fixes(
       &CallStackList::default(),
     )
     .map_err(|failure| failure.msg)?;
-    let proven = calls
+    let stable_calls = calls
       .iter()
       .filter(|path| {
-        let Ok(source) = navigate_to_path(&entry.code, path) else {
+        let Ok(_) = navigate_to_path(&entry.code, path) else {
           return false;
         };
-        let Some(evidence) = runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, path) else {
+        if runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, path).is_none() {
           return false;
-        };
+        }
         let mut head_path = path.to_vec();
         head_path.push(0);
         let source_head_is_macro = usages.iter().any(|usage| {
@@ -140,7 +140,6 @@ pub(super) fn plan_spread_call_fixes(
           })
         });
         !source_head_is_macro
-          && fixed_spread_is_proven(&source, &evidence.processed)
           && method_source_context_is_stable(&entry.code, path, namespace, definition, &usages)
           && !usages.iter().any(|usage| {
             usage.location.as_ref().is_some_and(|location| {
@@ -162,7 +161,28 @@ pub(super) fn plan_spread_call_fixes(
       })
       .cloned()
       .collect::<HashSet<_>>();
+    let proven = stable_calls
+      .iter()
+      .filter(|path| {
+        let Ok(source) = navigate_to_path(&entry.code, path) else {
+          return false;
+        };
+        let Some(evidence) = runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, path) else {
+          return false;
+        };
+        fixed_spread_is_proven(&source, &evidence.processed)
+      })
+      .cloned()
+      .collect::<HashSet<_>>();
     for path in calls {
+      if stable_calls.contains(&path)
+        && runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &path)
+          .is_some_and(|evidence| runner::preprocess::typed_rest_spread_call_is_proven(&evidence.processed))
+      {
+        // A proven variadic call is already canonical. Preserve it rather
+        // than suggesting a fixed-arity rewrite or another review obligation.
+        continue;
+      }
       let machine_applicable = proven.contains(&path);
       if machine_applicable && proven.iter().any(|parent| parent.len() < path.len() && path.starts_with(parent)) {
         continue;
