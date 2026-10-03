@@ -2004,11 +2004,108 @@ fn normalize_static_metadata_form(value: &Calcit) -> Calcit {
 }
 
 fn infer_trait_value(xs: &CalcitList) -> Option<CalcitTrait> {
-  let args = xs.iter().skip(1).map(normalize_static_metadata_form).collect::<Vec<_>>();
+  let mut args = xs.iter().skip(1).map(normalize_static_metadata_form).collect::<Vec<_>>();
+  // Parents are evaluated trait values at runtime; statically, resolve each
+  // imported reference to its source-backed trait with a definition origin.
+  if let Some(Calcit::List(parents)) = xs.get(3) {
+    let resolved = parents
+      .iter()
+      .filter(|item| !matches!(item, Calcit::Proc(CalcitProc::List)))
+      .map(|item| match item {
+        Calcit::Import(import) => lookup_source_backed_trait_def(&import.ns, &import.def)
+          .map(|trait_def| Calcit::Trait(trait_def.with_definition_ref(&import.ns, &import.def))),
+        Calcit::Trait(trait_def) => Some(Calcit::Trait(trait_def.to_owned())),
+        _ => None,
+      })
+      .collect::<Option<Vec<_>>>()?;
+    args[2] = Calcit::from(CalcitList::from(resolved.as_slice()));
+  }
   match builtins::meta::trait_new(&args).ok()? {
     Calcit::Trait(trait_def) => Some(trait_def),
     _ => None,
   }
+}
+
+/// Static declaration check for `&trait::new name members parents`: every
+/// parent resolves to a trait of the same kind (external-object or ordinary),
+/// the reachable set has no cycle and member names stay unique.
+pub(crate) fn check_trait_requires_declaration(args: &CalcitList, file_ns: &str, def_name: &str) -> Option<String> {
+  let Some(Calcit::List(parents)) = args.get(2) else {
+    return None;
+  };
+  let mut resolved = vec![];
+  for parent in parents.iter().filter(|item| !matches!(item, Calcit::Proc(CalcitProc::List))) {
+    let trait_def = match parent {
+      Calcit::Trait(trait_def) => Some(trait_def.to_owned()),
+      Calcit::Import(import) => lookup_source_backed_trait_def(&import.ns, &import.def)
+        .map(|trait_def| trait_def.with_definition_ref(&import.ns, &import.def)),
+      _ => None,
+    };
+    match trait_def {
+      Some(trait_def) => resolved.push(Arc::new(trait_def)),
+      None => return Some(format!("trait {file_ns}/{def_name} 'requires `{parent}`, which is not a trait definition")),
+    }
+  }
+  let mut xs = vec![Calcit::Proc(CalcitProc::NativeTraitNew)];
+  xs.extend(args.iter().take(2).cloned());
+  let mut child = infer_trait_value(&CalcitList::from(xs.as_slice()))?.with_definition_ref(file_ns, def_name);
+  // Compare origins by source definition, as the source-resolved parents do.
+  child.runtime_id = None;
+  let child_external = program::lookup_def_ffi(file_ns, def_name).is_some_and(|ffi| match ffi {
+    cirru_edn::Edn::Map(value) => value
+      .get(&cirru_edn::Edn::tag("kind"))
+      .is_some_and(|kind| matches!(kind, cirru_edn::Edn::Tag(tag) if tag.ref_str() == "external-object")),
+    cirru_edn::Edn::Struct(value) => value
+      .pairs
+      .iter()
+      .any(|(key, kind)| key.ref_str() == "kind" && matches!(kind, cirru_edn::Edn::Tag(tag) if tag.ref_str() == "external-object")),
+    _ => false,
+  });
+  for parent in resolved.iter() {
+    if trait_is_external_object(parent) != child_external {
+      let kind = |external: bool| if external { "an external-object trait" } else { "an ordinary trait" };
+      return Some(format!(
+        "trait {file_ns}/{def_name} is {} but 'requires {}, which is {}",
+        kind(child_external),
+        parent.origin_label(),
+        kind(!child_external)
+      ));
+    }
+  }
+  child.with_requires(resolved).err()
+}
+
+/// Static check for `impl-traits`: every attached impl needs impls of all
+/// traits its origin requires on the same type.
+pub(crate) fn check_impl_attachment_requires(args: &CalcitList, scope_types: &ScopeTypes) -> Option<String> {
+  let base = resolve_type_value(args.first()?, scope_types)?;
+  let mut impls: Vec<Arc<CalcitImpl>> = match base.as_ref() {
+    CalcitTypeAnnotation::StructDef(definition)
+    | CalcitTypeAnnotation::Struct(definition, _)
+    | CalcitTypeAnnotation::StructValue(definition) => definition.impls.to_vec(),
+    CalcitTypeAnnotation::EnumDef(definition) | CalcitTypeAnnotation::Enum(definition, _) => definition.impls().to_vec(),
+    _ => return None,
+  };
+  for value in args.iter().skip(1) {
+    impls.push(resolve_impl_annotation(value, scope_types)?);
+  }
+  for imp in impls.iter() {
+    let origin = imp.origin()?;
+    let reachable = origin.normalized_reachable_traits().ok()?;
+    for required in reachable.iter().filter(|required| !required.has_same_origin(origin)) {
+      let attached = impls
+        .iter()
+        .any(|candidate| candidate.origin().is_some_and(|candidate_origin| candidate_origin.has_same_origin(required)));
+      if !attached {
+        return Some(format!(
+          "an impl of trait {} requires an impl of trait {} on the same type; attach one before or with it",
+          origin.origin_label(),
+          required.origin_label()
+        ));
+      }
+    }
+  }
+  None
 }
 
 /// Synthesize the concrete metadata type produced by `&impl::new` without

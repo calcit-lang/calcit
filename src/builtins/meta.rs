@@ -642,8 +642,8 @@ pub fn enum_definition(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() != 2 {
-    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&trait::new expected 2 arguments, but received:", xs);
+  if xs.len() != 2 && xs.len() != 3 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&trait::new expected 2 or 3 arguments, but received:", xs);
   }
   fn normalize_type_form(form: &Calcit) -> Calcit {
     match form {
@@ -774,7 +774,39 @@ pub fn trait_new(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
   };
 
-  Ok(Calcit::Trait(CalcitTrait::new_runtime(name, methods, method_types)))
+  let trait_def = CalcitTrait::new_runtime(name, methods, method_types);
+  let Some(requires_form) = xs.get(2) else {
+    return Ok(Calcit::Trait(trait_def));
+  };
+  let requires = trait_requires_from_value(requires_form, &trait_def.name)?;
+  match trait_def.with_requires(requires) {
+    Ok(trait_def) => Ok(Calcit::Trait(trait_def)),
+    Err(message) => Err(trait_requires_error(message)),
+  }
+}
+
+fn trait_requires_error(message: String) -> CalcitErr {
+  let mut error = CalcitErr::use_str(CalcitErrKind::Type, message);
+  error.code = Some(String::from("E_TRAIT_REQUIRES"));
+  error
+}
+
+/// Read the evaluated `'requires` list of a trait declaration.
+fn trait_requires_from_value(form: &Calcit, name: &cirru_edn::EdnTag) -> Result<Vec<Arc<CalcitTrait>>, CalcitErr> {
+  let Calcit::List(items) = form else {
+    return Err(trait_requires_error(format!(
+      "trait {name} expects its 'requires entries as a list of traits, but received: {form}"
+    )));
+  };
+  items
+    .iter()
+    .map(|item| match item {
+      Calcit::Trait(parent) => Ok(Arc::new(parent.to_owned())),
+      other => Err(trait_requires_error(format!(
+        "trait {name} 'requires expects a trait, but received: {other}"
+      ))),
+    })
+    .collect()
 }
 
 fn collect_trait_impls(xs: &[Calcit], proc_name: &str) -> Result<Vec<Arc<CalcitImpl>>, CalcitErr> {
@@ -793,6 +825,33 @@ fn collect_trait_impls(xs: &[Calcit], proc_name: &str) -> Result<Vec<Arc<CalcitI
   Ok(traits)
 }
 
+/// After attachment, every impl must find impls for all traits its origin
+/// requires on the same type; a child impl alone never proves its parents.
+fn check_required_trait_impls(impls: &[Arc<CalcitImpl>], proc_name: &str) -> Result<(), CalcitErr> {
+  for imp in impls {
+    let Some(origin) = imp.origin() else { continue };
+    let reachable = origin.normalized_reachable_traits().map_err(trait_requires_error)?;
+    for required in reachable.iter().filter(|required| !required.has_same_origin(origin)) {
+      let attached = impls
+        .iter()
+        .any(|candidate| candidate.origin().is_some_and(|candidate_origin| candidate_origin.has_same_origin(required)));
+      if !attached {
+        let mut error = CalcitErr::use_str(
+          CalcitErrKind::Type,
+          format!(
+            "{proc_name}: an impl of trait {} requires an impl of trait {} on the same type; attach one before or with it",
+            origin.origin_label(),
+            required.origin_label()
+          ),
+        );
+        error.code = Some(String::from("E_IMPL_MISSING_REQUIRED_TRAIT"));
+        return Err(error);
+      }
+    }
+  }
+  Ok(())
+}
+
 pub fn record_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() < 2 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&struct:impl-traits expected 2+ arguments, but received:", xs);
@@ -801,6 +860,7 @@ pub fn record_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Calcit::Struct(struct_value) => {
       let mut impls = struct_value.struct_ref.impls.clone();
       impls.extend(collect_trait_impls(&xs[1..], "&struct:impl-traits")?);
+      check_required_trait_impls(&impls, "&struct:impl-traits")?;
       let mut next_struct = (*struct_value.struct_ref).clone();
       next_struct.impls = impls;
 
@@ -846,6 +906,7 @@ pub fn tuple_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
         }
       };
       next_sum_type.impls.extend(collect_trait_impls(&xs[1..], "&enum:impl-traits")?);
+      check_required_trait_impls(&next_sum_type.impls, "&enum:impl-traits")?;
       Ok(Calcit::Enum(CalcitEnumValue {
         tag: enum_value.tag.to_owned(),
         extra: enum_value.extra.to_owned(),
@@ -872,6 +933,7 @@ pub fn struct_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       let mut next = struct_def.to_owned();
       let mut next_impls = next.impls.clone();
       next_impls.extend(collect_trait_impls(&xs[1..], "&struct-def:impl-traits")?);
+      check_required_trait_impls(&next_impls, "&struct-def:impl-traits")?;
       next.impls = next_impls;
       Ok(Calcit::StructDef(next))
     }
@@ -894,6 +956,7 @@ pub fn enum_impl_traits(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Calcit::EnumDef(enum_def) => {
       let mut next = enum_def.to_owned();
       next.impls.extend(collect_trait_impls(&xs[1..], "&enum-def:impl-traits")?);
+      check_required_trait_impls(&next.impls, "&enum-def:impl-traits")?;
       Ok(Calcit::EnumDef(next))
     }
     other => CalcitErr::err_str(
@@ -1764,6 +1827,24 @@ pub fn assert_traits(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit
         selected_impl.name(),
         trait_def.name,
         missing.join(" ")
+      ),
+      call_stack,
+      value.get_location(),
+    ));
+  }
+
+  // A child trait holds only when every required trait is also implemented.
+  let reachable = trait_def.normalized_reachable_traits().map_err(trait_requires_error)?;
+  if let Some(required) = reachable
+    .iter()
+    .filter(|required| !required.has_same_origin(&trait_def))
+    .find(|required| !impls.iter().any(|imp| imp.implements_trait(required)))
+  {
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Type,
+      format!(
+        "assert-traits failed: {value} implements {} but not its required trait {}",
+        trait_def.name, required.name
       ),
       call_stack,
       value.get_location(),

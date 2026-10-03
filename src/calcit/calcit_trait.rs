@@ -173,6 +173,33 @@ impl CalcitTrait {
     Ok(output)
   }
 
+  /// Attach required traits after checking that the reachable set has no
+  /// cycle and that no member name is declared by two reachable traits.
+  pub fn with_requires(mut self, requires: Vec<Arc<CalcitTrait>>) -> Result<Self, String> {
+    self.requires = Arc::new(requires);
+    self.validate_requires()?;
+    Ok(self)
+  }
+
+  /// A member name resolves to exactly one reachable trait, so a child trait
+  /// may not redeclare a parent member, even with an identical signature.
+  pub fn validate_requires(&self) -> Result<(), String> {
+    let reachable = self.normalized_reachable_traits()?;
+    let mut owners: Vec<(&EdnTag, String)> = vec![];
+    for trait_def in reachable.iter() {
+      for member in trait_def.methods.iter() {
+        if let Some((_, owner)) = owners.iter().find(|(name, _)| *name == member) {
+          return Err(format!(
+            "member `{member}` is declared by both {owner} and {}; keep it on one trait",
+            trait_def.origin_label()
+          ));
+        }
+        owners.push((member, trait_def.origin_label()));
+      }
+    }
+    Ok(())
+  }
+
   /// Validate every reachable method/default schema before it is used as
   /// static proof. A missing or non-callable signature is never Proven.
   pub fn validate_reachable_method_schemas(&self) -> Result<(), String> {

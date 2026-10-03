@@ -993,9 +993,9 @@ fn lookup_callable_ns_def_for_preprocess(
   }
 }
 
-fn resolve_trait_def_from_source_code(code: &Calcit) -> Option<CalcitTrait> {
+fn resolve_trait_def_from_source_code(code: &Calcit, file_ns: &str) -> Option<CalcitTrait> {
   if let Calcit::Thunk(thunk) = code {
-    return resolve_trait_def_from_source_code(thunk.get_code());
+    return resolve_trait_def_from_source_code(thunk.get_code(), file_ns);
   }
 
   let Calcit::List(items) = code else {
@@ -1008,7 +1008,7 @@ fn resolve_trait_def_from_source_code(code: &Calcit) -> Option<CalcitTrait> {
       || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == calcit::CORE_NS && &**def == "quote"))
     && let Some(inner) = items.get(1)
   {
-    return resolve_trait_def_from_source_code(inner);
+    return resolve_trait_def_from_source_code(inner, file_ns);
   }
 
   let head = items.first()?;
@@ -1016,19 +1016,33 @@ fn resolve_trait_def_from_source_code(code: &Calcit) -> Option<CalcitTrait> {
     || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "&trait::new")
     || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == calcit::CORE_NS && &**def == "&trait::new")
   {
-    return parse_trait_new_source(items.as_ref());
+    return parse_trait_new_source(items.as_ref(), file_ns);
   }
   if matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "deftrait")
     || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == calcit::CORE_NS && &**def == "deftrait")
   {
-    return parse_deftrait_source(items.as_ref());
+    return parse_deftrait_source(items.as_ref(), file_ns);
   }
 
   None
 }
 
 fn lookup_source_backed_trait_def(ns: &str, def: &str) -> Option<CalcitTrait> {
-  program::lookup_def_code(ns, def).and_then(|code| resolve_trait_def_from_source_code(&code))
+  thread_local! {
+    static ACTIVE_SOURCE_TRAITS: RefCell<Vec<(String, String)>> = const { RefCell::new(vec![]) };
+  }
+  // A requires cycle is reported by the declaration check; resolution stops
+  // at the repeated origin instead of recursing without bound.
+  let key = (ns.to_owned(), def.to_owned());
+  if ACTIVE_SOURCE_TRAITS.with(|active| active.borrow().contains(&key)) {
+    return None;
+  }
+  ACTIVE_SOURCE_TRAITS.with(|active| active.borrow_mut().push(key));
+  let resolved = program::lookup_def_code(ns, def).and_then(|code| resolve_trait_def_from_source_code(&code, ns));
+  ACTIVE_SOURCE_TRAITS.with(|active| {
+    active.borrow_mut().pop();
+  });
+  resolved
 }
 
 /// Resolve a source-declared trait without running project initialization.
@@ -1088,20 +1102,92 @@ fn parse_trait_method_specs_from_source<'a>(items: impl Iterator<Item = &'a Calc
   Some((methods, method_types, member_kinds))
 }
 
-fn parse_trait_new_source(items: &CalcitList) -> Option<CalcitTrait> {
+/// Whether a `deftrait` source entry is a `('requires Parent)` clause.
+fn is_trait_requires_entry(item: &Calcit) -> bool {
+  let Calcit::List(entry) = item else { return false };
+  let Some(Calcit::List(head)) = entry.first() else {
+    return false;
+  };
+  head.len() == 2
+    && (matches!(head.first(), Some(Calcit::Syntax(CalcitSyntax::Quote, _)))
+      || matches!(head.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "quote"))
+    && matches!(head.get(1), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "requires")
+}
+
+/// Resolve a parent trait reference written in `file_ns` to its definition.
+pub(crate) fn resolve_trait_reference_target(form: &Calcit, file_ns: &str) -> Option<(Arc<str>, Arc<str>)> {
+  match form {
+    Calcit::Import(CalcitImport { ns, def, .. }) => Some((ns.clone(), def.clone())),
+    Calcit::Symbol { sym, .. } => {
+      let raw_name = sym.as_ref();
+      if let Some((ns, name)) = raw_name.rsplit_once('/') {
+        Some((Arc::from(ns), Arc::from(name)))
+      } else if program::has_def_code(file_ns, raw_name) {
+        Some((Arc::from(file_ns), sym.clone()))
+      } else if let Some(target_ns) = program::lookup_def_target_in_import(file_ns, raw_name) {
+        Some((target_ns, sym.clone()))
+      } else if program::has_def_code(calcit::CORE_NS, raw_name) {
+        Some((Arc::from(calcit::CORE_NS), sym.clone()))
+      } else {
+        None
+      }
+    }
+    _ => None,
+  }
+}
+
+/// Source-backed parents of a trait; unresolved references are left to the
+/// declaration check, which reports them with `E_TRAIT_REQUIRES`.
+fn resolve_trait_requires_from_source<'a>(parents: impl Iterator<Item = &'a Calcit>, file_ns: &str) -> Vec<Arc<CalcitTrait>> {
+  parents
+    .filter_map(|parent| {
+      let (ns, def) = resolve_trait_reference_target(parent, file_ns)?;
+      lookup_source_backed_trait_def(&ns, &def).map(|trait_def| Arc::new(trait_def.with_definition_ref(&ns, &def)))
+    })
+    .collect()
+}
+
+fn with_source_requires(mut trait_def: CalcitTrait, requires: Vec<Arc<CalcitTrait>>) -> CalcitTrait {
+  trait_def.requires = Arc::new(requires);
+  trait_def
+}
+
+fn parse_trait_new_source(items: &CalcitList, file_ns: &str) -> Option<CalcitTrait> {
   let name = parse_trait_name_from_source(items.get(1)?)?;
   let method_specs = match items.get(2)? {
     Calcit::List(list) => list,
     _ => return None,
   };
   let (methods, method_types, member_kinds) = parse_trait_method_specs_from_source(method_specs.iter())?;
-  Some(CalcitTrait::new_with_member_kinds(name, methods, method_types, Some(member_kinds)))
+  let trait_def = CalcitTrait::new_with_member_kinds(name, methods, method_types, Some(member_kinds));
+  let requires = match items.get(3) {
+    None => vec![],
+    Some(Calcit::List(parents)) => resolve_trait_requires_from_source(
+      parents
+        .iter()
+        .filter(|item| !matches!(item, Calcit::Proc(CalcitProc::List)) && !matches!(item, Calcit::Symbol { sym, .. } if sym.as_ref() == "[]")),
+      file_ns,
+    ),
+    Some(_) => return None,
+  };
+  Some(with_source_requires(trait_def, requires))
 }
 
-fn parse_deftrait_source(items: &CalcitList) -> Option<CalcitTrait> {
+fn parse_deftrait_source(items: &CalcitList, file_ns: &str) -> Option<CalcitTrait> {
   let name = parse_trait_name_from_source(items.get(1)?)?;
-  let (methods, method_types, member_kinds) = parse_trait_method_specs_from_source(items.iter().skip(2))?;
-  Some(CalcitTrait::new_with_member_kinds(name, methods, method_types, Some(member_kinds)))
+  let (methods, method_types, member_kinds) =
+    parse_trait_method_specs_from_source(items.iter().skip(2).filter(|item| !is_trait_requires_entry(item)))?;
+  let parents = items
+    .iter()
+    .skip(2)
+    .filter(|item| is_trait_requires_entry(item))
+    .filter_map(|item| match item {
+      Calcit::List(entry) if entry.len() == 2 => entry.get(1),
+      _ => None,
+    })
+    .collect::<Vec<_>>();
+  let trait_def = CalcitTrait::new_with_member_kinds(name, methods, method_types, Some(member_kinds));
+  Some(with_source_requires(trait_def, resolve_trait_requires_from_source(parents.into_iter(), file_ns)))
 }
 
 fn resolve_where_bound_type_for_body(bound: &crate::calcit::CalcitGenericBound, file_ns: &str) -> Option<Arc<CalcitTypeAnnotation>> {
@@ -1126,7 +1212,7 @@ fn resolve_where_bound_type_for_body(bound: &crate::calcit::CalcitGenericBound, 
     };
 
     let resolved = program::lookup_def_code(&trait_ns, &trait_name)
-      .and_then(|code| resolve_trait_def_from_source_code(&code))?
+      .and_then(|code| resolve_trait_def_from_source_code(&code, &trait_ns))?
       .with_definition_ref(&trait_ns, &trait_name);
     traits.push(Arc::new(resolved));
   }
@@ -1404,7 +1490,7 @@ fn lookup_trait_ns_def_for_preprocess(
   Ok(
     program::lookup_compiled_def(raw_ns, raw_def)
       .and_then(|compiled| compiled.source_code)
-      .and_then(|code| resolve_trait_def_from_source_code(&code))
+      .and_then(|code| resolve_trait_def_from_source_code(&code, raw_ns))
       .map(|trait_def| trait_def.with_definition_ref(raw_ns, raw_def))
       .map(Arc::new),
   )
@@ -3807,6 +3893,35 @@ fn preprocess_list_call(
             call_location.clone(),
             check_warnings,
           );
+          let requires_error = match proc {
+            CalcitProc::NativeTraitNew => {
+              // `deftrait` expands inside `def`, so the enclosing definition
+              // comes from the call location rather than the macro context.
+              let trait_def_name = call_stack
+                .0
+                .iter()
+                .find(|frame| frame.ns.as_ref() == file_ns && !matches!(frame.kind, StackKind::Macro))
+                .map(|frame| frame.def.to_string())
+                .unwrap_or_else(|| def_name.to_string());
+              type_inference::check_trait_requires_declaration(&processed_args, file_ns, &trait_def_name)
+                .map(|message| (message, "E_TRAIT_REQUIRES"))
+            }
+            CalcitProc::NativeStructImplTraits
+            | CalcitProc::NativeEnumImplTraits
+            | CalcitProc::NativeStructValueImplTraits
+            | CalcitProc::NativeEnumValueImplTraits => type_inference::check_impl_attachment_requires(&processed_args, scope_types)
+              .map(|message| (message, "E_IMPL_MISSING_REQUIRED_TRAIT")),
+            _ => None,
+          };
+          if let Some((message, code)) = requires_error {
+            return Err(CalcitErr::use_msg_stack_location_with_code(
+              CalcitErrKind::Type,
+              message,
+              code,
+              call_stack,
+              call_location.clone(),
+            ));
+          }
           if REQUIRE_ASSERTION_PROOF.with(Cell::get)
             && let Some(contract) = proc.get_type_signature()
             && let CalcitTypeAnnotation::Fn(signature) =
@@ -4231,6 +4346,18 @@ fn preprocess_known_function_call(
       call_location.clone(),
       check_warnings,
     );
+    if info.def_ns.as_ref() == calcit::CORE_NS
+      && info.name.as_ref() == "impl-traits"
+      && let Some(message) = type_inference::check_impl_attachment_requires(&current_args, scope_types)
+    {
+      return Err(CalcitErr::use_msg_stack_location_with_code(
+        CalcitErrKind::Type,
+        message,
+        "E_IMPL_MISSING_REQUIRED_TRAIT",
+        call_stack,
+        call_location.clone(),
+      ));
+    }
     let effective_schema = effective_user_call_schema(info.as_ref());
     reject_strict_dynamic_nominal_argument(
       &head_form,
@@ -6643,7 +6770,7 @@ fn macro_name_is_external_object(macro_info: &crate::calcit::CalcitMacro, file_n
   });
   metadata_external
     || program::lookup_def_code(file_ns, def_name)
-      .and_then(|code| resolve_trait_def_from_source_code(&code))
+      .and_then(|code| resolve_trait_def_from_source_code(&code, file_ns))
       .is_some_and(|trait_def| trait_def.member_kinds.contains(&CalcitTraitMemberKind::Field))
 }
 
@@ -15173,7 +15300,7 @@ mod tests {
       vec![],
     )
     .expect("parse external trait");
-    let trait_def = resolve_trait_def_from_source_code(&trait_code)
+    let trait_def = resolve_trait_def_from_source_code(&trait_code, "tests.trait")
       .expect("resolve external trait")
       .with_definition_ref(ns, def);
     program::PROGRAM_CODE_DATA.write().expect("open program code").insert(
