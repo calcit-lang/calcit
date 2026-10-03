@@ -134,6 +134,9 @@ pub struct FixCommand {
   /// explicitly request preview mode; preview is also the default
   #[argh(switch, long = "dry-run")]
   pub dry_run: bool,
+  /// include definition tests and examples in supported migration rules
+  #[argh(switch, long = "include-attached")]
+  pub include_attached: bool,
   /// output format: human (default), edn (primary structured data), or json (interoperability)
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,

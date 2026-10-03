@@ -823,6 +823,23 @@ calcit calcit.cirru analyze weak-types \
 calcit calcit.cirru analyze deprecated --summary-only
 ```
 
+兼容函数的 `:deprecated` 标签与定义文档也可由 `query context` 查询：
+
+```bash
+calcit calcit.cirru query context calcit.core/optionally --format edn
+calcit calcit.cirru fix --preset surface-latest-v2 --include-attached --format edn
+calcit calcit.cirru fix --preset core-api-0.28-v1 --include-attached --format edn
+```
+
+函数形式的 `optionally`、`some?`、`join`、`join-str`、`vals`、`turn-str`、`turn-string`、
+`cpu-time`、`add-watch`、`remove-watch` 均由其定义文档提供首选名，不需要另一份迁移名称表。
+普通函数成功预处理时，弃用报告用编译器解析目标排除局部同名参数并识别 namespace alias；
+quoted data 不计为调用，推荐方法复用旧内部 helper 也不计为旧函数调用。
+无法预处理的定义保留保守 source 报告，仍需修正原编译问题后重新检查。
+这些新增标签会改变旧项目的 `deprecatedCalls` 预算，随非 patch 升级交付；入口本身仍保留，
+不要仅为压低预算删除断言或放宽类型。fix 的附带扫描需显式选择 `--include-attached`，
+先审阅 preview，再以新 revision 应用，随后重放 `:tests` 和业务入口。
+
 旧的 macro `Fn` / whole-`Dynamic` schema 不再作为运行时兼容格式：Snapshot loader 会在解析阶段以 definition 的完整 path 拒绝它。
 若旧 Snapshot 已经包含结构化 `CodeEntry` 和这类 schema，应使用最终兼容版本 Calcit 0.13.51 先将模块改成严格
 `Macro` contract（显式声明 `:required` / `:optional` / `:rest`、`:expansion` 和 `:capabilities`），再使用新版本检查。

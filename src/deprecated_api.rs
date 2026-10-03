@@ -1,9 +1,11 @@
 //! Deprecated API usage analysis for `calcit analyze deprecated`.
 
+use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Write;
+use std::sync::Arc;
 
-use calcit::calcit::Calcit;
+use calcit::calcit::{Calcit, CalcitSyntax};
 use calcit::cli_args::DeprecatedCommand;
 use calcit::{program, snapshot};
 
@@ -94,15 +96,27 @@ fn collect_uses(
     return;
   };
 
+  // Quoted source is data, not an API invocation or quality-budget debt.
+  if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::Quote, _)))
+    || matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "quote" || sym.as_ref() == "calcit.core/quote")
+  {
+    return;
+  }
+
   if let Some(head) = items.first() {
     match head {
+      // Reader-resolved builtins have no Symbol/Import node left to inspect.
+      Calcit::Proc(proc) => push_use(uses, targets, calcit::calcit::CORE_NS, proc.as_ref(), path),
       Calcit::Import(import) => push_use(uses, targets, import.ns.as_ref(), import.def.as_ref(), path),
       Calcit::Symbol { sym, .. } => {
         if let Some((namespace, definition)) = sym.rsplit_once('/') {
-          push_use(uses, targets, namespace, definition, path);
+          let resolved_namespace = program::lookup_ns_target_in_import(current_namespace, namespace);
+          push_use(uses, targets, resolved_namespace.as_deref().unwrap_or(namespace), definition, path);
         } else {
           push_use(uses, targets, current_namespace, sym.as_ref(), path);
-          if !definitions.contains(&(current_namespace.to_owned(), sym.to_string())) {
+          if let Some(imported_namespace) = program::lookup_def_target_in_import(current_namespace, sym.as_ref()) {
+            push_use(uses, targets, imported_namespace.as_ref(), sym.as_ref(), path);
+          } else if !definitions.contains(&(current_namespace.to_owned(), sym.to_string())) {
             push_use(uses, targets, calcit::calcit::CORE_NS, sym.as_ref(), path);
           }
         }
@@ -126,12 +140,90 @@ fn format_path(path: &[usize]) -> String {
   }
 }
 
+fn source_node_at<'a>(mut node: &'a Calcit, path: &[usize]) -> Option<&'a Calcit> {
+  for index in path {
+    let Calcit::List(children) = node else { return None };
+    node = children.get(*index)?;
+  }
+  Some(node)
+}
+
+/// Retain reader-resolved proc calls and use the compiler resolver for symbol calls.
+/// Failed source proofs keep the existing conservative static report.
+fn resolved_function_uses(
+  node: &Calcit,
+  namespace: &str,
+  definition: &str,
+  targets: &HashMap<(String, String), DeprecatedTarget>,
+  candidates: &[DeprecatedApiUse],
+) -> Option<Vec<DeprecatedApiUse>> {
+  let Calcit::List(items) = node else { return None };
+  if !matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defn") {
+    return None;
+  }
+  let warnings = RefCell::new(vec![]);
+  let references = calcit::runner::preprocess::trace_source_usages(
+    node,
+    namespace,
+    definition,
+    &warnings,
+    &calcit::call_stack::CallStackList::default(),
+  )
+  .ok()?;
+  let mut uses = candidates
+    .iter()
+    .filter(|usage| {
+      let Some(path) = usage.path.strip_prefix("code@") else {
+        return false;
+      };
+      let Ok(path) = path.split('.').map(str::parse::<usize>).collect::<Result<Vec<_>, _>>() else {
+        return false;
+      };
+      matches!(source_node_at(node, &path), Some(Calcit::List(children)) if matches!(children.first(), Some(Calcit::Proc(_))))
+    })
+    .cloned()
+    .collect::<Vec<_>>();
+  for reference in references {
+    let Some(location) = reference.location else { continue };
+    if location.ns.as_ref() != namespace || location.def.as_ref() != definition {
+      continue;
+    }
+    let mut path = location.coord.iter().map(|index| usize::from(*index)).collect::<Vec<_>>();
+    // A preferred method may legitimately lower to a legacy internal helper.
+    // Only explicit function calls represent legacy source spelling here.
+    if !matches!(source_node_at(node, &path), Some(Calcit::Symbol { .. } | Calcit::Import(_))) {
+      continue;
+    }
+    if path.pop() != Some(0) {
+      continue;
+    }
+    push_use(
+      &mut uses,
+      targets,
+      reference.target_ns.as_ref(),
+      reference.target_def.as_ref(),
+      &path,
+    );
+  }
+  Some(uses)
+}
+
 pub fn collect_deprecated_api_rows(
   options: &DeprecatedCommand,
   snapshot: &snapshot::Snapshot,
 ) -> Result<Vec<DeprecatedApiRow>, String> {
   let targets = deprecated_targets(snapshot);
   let program_data = program::extract_program_data(snapshot)?;
+  struct ResolutionGuard(bool);
+  impl Drop for ResolutionGuard {
+    fn drop(&mut self) {
+      calcit::runner::preprocess::set_strict_types(self.0);
+      let _ = program::clear_runtime_caches_for_reload(Arc::from("analyze.deprecated"), Arc::from("analyze.deprecated"), true);
+    }
+  }
+  let _guard = ResolutionGuard(calcit::runner::preprocess::is_strict_types_enabled());
+  calcit::runner::preprocess::set_strict_types(false);
+  let resolver_ready = !targets.is_empty() && crate::cli_handlers::prepare_program_for_type_query(snapshot).is_ok();
   let definitions = program_data
     .iter()
     .flat_map(|(namespace, file)| {
@@ -150,6 +242,14 @@ pub fn collect_deprecated_api_rows(
     for (definition, entry) in &file.defs {
       let mut uses = vec![];
       collect_uses(&entry.code, namespace, &targets, &definitions, &mut vec![], &mut uses);
+      // Do not compile unrelated call graphs merely to confirm an empty report.
+      // Their macros may have compile-time effects that a metadata query must not trigger.
+      if resolver_ready
+        && !uses.is_empty()
+        && let Some(resolved) = resolved_function_uses(&entry.code, namespace, definition, &targets, &uses)
+      {
+        uses = resolved;
+      }
       uses.sort_by(|left, right| {
         left
           .path
@@ -346,5 +446,26 @@ mod tests {
 
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].target_name, "record?");
+  }
+
+  #[test]
+  fn distinguishes_reader_resolved_builtin_calls_from_quoted_data() {
+    let expression = cirru_parser::parse("defn demo () (cpu-time) (quote (cpu-time))")
+      .expect("parse expression")
+      .into_iter()
+      .next()
+      .expect("one expression");
+    let code = code_to_calcit(&expression, "app.main", "demo", vec![]).expect("convert expression");
+    let targets = HashMap::from([(
+      (calcit::calcit::CORE_NS.to_owned(), "cpu-time".to_owned()),
+      DeprecatedTarget {
+        doc: "Prefer monotonic-time-ms.".to_owned(),
+      },
+    )]);
+    let mut uses = vec![];
+    collect_uses(&code, "app.main", &targets, &HashSet::new(), &mut vec![], &mut uses);
+    assert_eq!(uses.len(), 1);
+    assert_eq!(uses[0].path, "code@3");
+    assert_eq!(uses[0].target_name, "cpu-time");
   }
 }
