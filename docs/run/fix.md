@@ -46,7 +46,7 @@ calcit test '<修改后的 namespace/definition>' --require-match
 
 预览仅扫描项目源码，逐处给出位置、原始/替换 AST 与 fingerprint，不写入或执行这些表达式。
 默认跨项目 namespace；`--ns` / `--def` 可限定范围。`--include-attached` 同时处理 `:tests` 和 `:examples`，
-不传时报告这些区域仍需手动审阅。quote/quasiquote（含限定名）按语法保守跳过，不改 namespace imports、schema、doc 或 tags。
+不传时报告这些区域仍需手动审阅。quote/quasiquote（含限定名）按语法保守跳过；祖先模板也不能改变、丢弃或复制其中的数据，完整保留 quoted 参数的替换仍可预览。不改 namespace imports、schema、doc 或 tags。
 同名变量要求捕获的子树相等；模板中的变量必须在模式中出现。变量在模式与模板中的出现次数必须相同，
 否则拒绝静默丢弃或复制表达式。嵌套的原始匹配在同一次事务中合成，不再次匹配新生成的代码。
 

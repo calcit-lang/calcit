@@ -12,6 +12,7 @@
 
 嵌套原始命中由内向外合成为每个源码区域的一次替换，不重扫新生成代码；无法合成的重复变量/结构关系整批拒绝。
 quote/quasiquote（含限定名）按语法保守保护；tests/examples 使用各自的编辑接口保留标签和顺序。
+祖先模板也必须原样保留已有 quoted 子树及出现次数，否则跳过该候选；仍遍历未引用子节点，完整搬运 quoted 参数的替换不受影响。
 schema、doc、namespace imports 不作为模式扫描区域，也不自动补齐业务类型。
 
 ## 验证与旧源码
@@ -25,5 +26,7 @@ schema、doc、namespace imports 不作为模式扫描区域，也不自动补�
 内部 AST/绑定与事务协议用 Rust 测试；观察值写在通过 Calcit CLI 创建的附带断言中。
 已覆盖跨 namespace、嵌套命中、quote、测试/示例、模板变量错误、revision/VCS 拒绝、代码或仅附带区域类型错误回滚，以及旧非法调用修复后的严格暂存校验。
 Respo 的既有迁移副本已验证 `some?` 到 `non-nil?` 的显式事务，原 HTML 附带测试及同一断言的生成 JS 回放通过，用户原项目未改动。
-完整 all-features Cargo 回归、Clippy、TS 编译、两份文档代码块与 Agent CLI 协议检查已通过；全量集成检查及最新 HEAD CI/review、合并后 main 门禁仍须完成。
+完整 all-features Cargo 回归、Clippy、TS 编译、两份文档代码块与 Agent CLI 协议检查已通过。
+临时 node_modules 的运行时身份和共享 target 的包解析链接修正后，全量 `yarn check-all` 成功退出；祖先 quote 保护另有 AST/CLI 回归。
+最新 HEAD CI/review、合并后 main 门禁仍须完成。
 这些使用未发布候选的回放不作为正式版本的消费者兼容性证明。

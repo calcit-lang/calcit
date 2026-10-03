@@ -207,6 +207,18 @@ fn rewrite_region(
   region: &str,
   suggestions: &mut Vec<FixSuggestion>,
 ) -> Result<Cirru, String> {
+  fn quoted_regions<'a>(node: &'a Cirru, regions: &mut Vec<&'a Cirru>) {
+    if let Cirru::List(items) = node {
+      if matches!(items.first(), Some(Cirru::Leaf(head)) if matches!(head.rsplit('/').next(), Some("quote" | "quasiquote"))) {
+        regions.push(node);
+      } else {
+        for child in items {
+          quoted_regions(child, regions);
+        }
+      }
+    }
+  }
+
   fn visit(
     source: &Cirru,
     pattern: &Cirru,
@@ -242,6 +254,17 @@ fn rewrite_region(
         ));
       };
       let result = instantiate_reviewed_template(pattern, replacement, &bindings)?;
+      // An ancestor template must not rewrite or discard opaque quoted data.
+      // Preserve safe captures while still visiting its unquoted children.
+      let mut original_quotes = Vec::new();
+      quoted_regions(source, &mut original_quotes);
+      if !original_quotes.is_empty() {
+        let mut replacement_quotes = Vec::new();
+        quoted_regions(&result, &mut replacement_quotes);
+        if original_quotes != replacement_quotes {
+          return Ok(rewritten);
+        }
+      }
       if result != rewritten {
         changes.push((path.clone(), source.clone(), result.clone()));
       }
@@ -334,5 +357,64 @@ mod tests {
     .unwrap_err();
     assert!(error.contains("matched structure at @1"), "{error}");
     assert!(error.contains("literal parts or repeated-variable equality"), "{error}");
+  }
+
+  #[test]
+  fn structural_ancestor_templates_preserve_opaque_quoted_data() {
+    for quote in ["quote", "quasiquote", "calcit.core/quote", "calcit.core/quasiquote"] {
+      let source = parse_pattern(&format!("wrapper ({quote} (legacy 1)) (legacy 2)")).unwrap();
+      let mut suggestions = Vec::new();
+      for replacement in [
+        format!("wrapper ({quote} (preferred 1)) ?n"),
+        "wrapper ?n".to_owned(),
+        format!("wrapper ({quote} (legacy 1)) ({quote} (legacy 1)) ?n"),
+      ] {
+        let unchanged = rewrite_region(
+          &source,
+          &parse_pattern(&format!("wrapper ({quote} (legacy 1)) ?n")).unwrap(),
+          &parse_pattern(&replacement).unwrap(),
+          "calcit.cirru",
+          "app.main/main!",
+          "code",
+          &mut suggestions,
+        )
+        .unwrap();
+        assert_eq!(unchanged, source);
+        assert!(suggestions.is_empty());
+      }
+
+      let rewritten = rewrite_region(
+        &source,
+        &parse_pattern("legacy ?n").unwrap(),
+        &parse_pattern("preferred ?n").unwrap(),
+        "calcit.cirru",
+        "app.main/main!",
+        "code",
+        &mut suggestions,
+      )
+      .unwrap();
+      assert_eq!(
+        rewritten,
+        parse_pattern(&format!("wrapper ({quote} (legacy 1)) (preferred 2)")).unwrap()
+      );
+      assert_eq!(suggestions.len(), 1);
+
+      suggestions.clear();
+      let captured = rewrite_region(
+        &source,
+        &parse_pattern("wrapper ?quoted ?n").unwrap(),
+        &parse_pattern("preferred-wrapper ?quoted ?n").unwrap(),
+        "calcit.cirru",
+        "app.main/main!",
+        "code",
+        &mut suggestions,
+      )
+      .unwrap();
+      assert_eq!(
+        captured,
+        parse_pattern(&format!("preferred-wrapper ({quote} (legacy 1)) (legacy 2)")).unwrap()
+      );
+      assert_eq!(suggestions.len(), 1);
+    }
   }
 }

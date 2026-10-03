@@ -134,6 +134,24 @@ fn structural_rewrite_previews_and_applies_reviewed_source_and_attached_regions(
   // Rust checks the transaction protocol; unchanged Calcit assertions own the observable values.
   let (_directory, snapshot) = structural_rewrite_fixture();
   let original = fs::read(&snapshot).unwrap();
+  let quoted_ancestor = run_fix(
+    &snapshot,
+    &[
+      "--pattern",
+      "defn quoted ?args (quote (legacy 1)) ?result",
+      "--replace",
+      "defn quoted ?args (quote (preferred 1)) ?result",
+      "--ns",
+      "app.main",
+      "--def",
+      "quoted",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&quoted_ancestor, "preserve quoted data against an ancestor template");
+  assert!(parse_stdout(&quoted_ancestor)["data"]["suggestions"].as_array().unwrap().is_empty());
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
   let args = [
     "--pattern",
     "legacy ?n",
