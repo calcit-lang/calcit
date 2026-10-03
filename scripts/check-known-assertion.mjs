@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFile, mkdtemp, readFile, rm, symlink } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, readdir, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -780,7 +780,7 @@ try {
   // parameters and typed rest, rather than substituting low-level count calls.
   for (const [source, namespace, definitions, expectedCount, outputName] of [
     ["src/cirru/calcit-core.cirru", "calcit.core", ["count", "&map:destruct", "&map:diff-triple", "apply", "loop"], 11, "count-core-js"],
-    ["tests/fixtures/count-contract.cirru", "fix-command.main", ["typed-rest-forward", "nominal-counts", "checked-open-count", "local-bound-counts", "typed-loop-count"], 5, "count-contract-js"],
+    ["tests/fixtures/count-contract.cirru", "fix-command.main", ["typed-rest-forward", "nominal-counts", "checked-open-count", "checked-string-count", "checked-core-alias-count", "local-bound-counts", "typed-loop-count"], 7, "count-contract-js"],
   ]) {
     await copyFile(source, snapshot);
     const original = await readFile(snapshot);
@@ -831,7 +831,42 @@ try {
       `${name}: missing bound diagnostic\n${JSON.stringify(report.data.workflow)}`);
     assert.deepEqual(await readFile(snapshot), original);
   }
-  console.log("Known assertions and return/call contracts rejected before native/JS/WASM/WASI; native/JS positives, JS async adoption, scalar WASM assertions, value schema contracts, Diary boundaries, lowered trait return proofs and Countable count contracts passed");
+  // Same-name user functions return Bool, not a trusted core type predicate.
+  for (const name of ["string?", "list?", "map?", "set?", "enum?", "struct?"]) {
+    await copyFile("tests/fixtures/count-contract.cirru", snapshot);
+    run("edit", "add-ns", "fix-command.fake");
+    run("edit", "def", `fix-command.fake/${name}`, "--input-format", "cirru", "--code", "quote $ fn (value) true");
+    run("edit", "schema", `fix-command.fake/${name}`, "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Bool)");
+    // Calling the ordinary Bool-returning function remains legal. Only using
+    // its short name as evidence for an open value must be rejected.
+    run("eval", "--dep", `${project}/`, `assert= true $ fix-command.fake/${name} 1`);
+    run("edit", "def", "fix-command.main/rejected-predicate", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "rejected-predicate", ["value"], ["if", [`fix-command.fake/${name}`, "value"], ["count", "value"], "0"]]));
+    run("edit", "schema", "fix-command.main/rejected-predicate", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Number)");
+    run("edit", "def", "fix-command.main/main!", "--overwrite", "--input-format", "cirru", "--code",
+      "quote $ defn main! () (rejected-predicate 1) &unit");
+    const original = await readFile(snapshot);
+    for (const mode of [["--check-only"], [], ["js"], ["wasm"], ["wasi"]]) {
+      const rejected = spawnSync(binary, [snapshot, "--emit-path", join(project, "predicate-rejected"), ...mode], options);
+      if (rejected.error) throw rejected.error;
+      assert.equal(rejected.status, 1, `${name} ${mode.join(" ")}\n${rejected.stdout}\n${rejected.stderr}`);
+      assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_GENERIC_WHERE_BOUND_MISMATCH/);
+      assert.deepEqual(await readFile(snapshot), original);
+      const artifacts = await readdir(join(project, "predicate-rejected")).catch(error => {
+        if (error.code !== "ENOENT") throw error;
+        return [];
+      });
+      assert.deepEqual(artifacts.filter(file => file !== "calcit.build-errors.mjs"), [],
+        `${name}: rejected preprocessing must not emit application or WASM artifacts`);
+      if (artifacts.includes("calcit.build-errors.mjs")) {
+        assert.match(await readFile(join(project, "predicate-rejected", "calcit.build-errors.mjs"), "utf8"),
+          /W_GENERIC_WHERE_BOUND_MISMATCH/);
+      }
+    }
+  }
+  console.log("Known assertions and return/call contracts rejected before native/JS/WASM/WASI; native/JS positives, JS async adoption, scalar WASM assertions, value schema contracts, Diary boundaries, lowered trait return proofs, Countable count contracts and predicate origins passed");
 } finally {
   await rm(project, { recursive: true, force: true });
 }

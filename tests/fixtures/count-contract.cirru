@@ -18,6 +18,19 @@
           :code $ quote $ defstruct Person (:name 'String) (:age 'Number)
           :examples $ []
           :schema $ :: 'StructDef
+        'checked-core-alias-count $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn checked-core-alias-count (value)
+            if (core/string? value) (core/count value) 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry
+            :name |namespace-alias-retains-primitive-and-function-identity
+            :code $ quote $ do
+              assert= 3 $ checked-core-alias-count "|A😀𠮷"
+              assert= 0 $ checked-core-alias-count 1
+              assert= 0 $ checked-core-alias-count nil
+            :tags $ #{} :count-contract :predicate-origin :unit
         'checked-open-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn checked-open-count (value)
             if (list? value) (count value) (raise |expected-countable-list)
@@ -29,6 +42,18 @@
               assert= 0 $ checked-open-count $ []
               assert= 3 $ checked-open-count $ [] 1 2 3
             :tags $ #{} :count-contract :unit
+        'checked-string-count $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn checked-string-count (value)
+            if (calcit.core/string? value) (count value) 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |builtin-origin-narrows-only-strings)
+            :code $ quote $ do
+              assert= 3 $ checked-string-count "|A😀𠮷"
+              assert= 0 $ checked-string-count 1
+              assert= 0 $ checked-string-count nil
+            :tags $ #{} :count-contract :predicate-origin :unit
         'local-bound-counts $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn local-bound-counts ()
             let
@@ -108,3 +133,4 @@
             :tags $ #{} :unit
       :ns $ %{} 'NsEntry (:doc "|Fix command fixture.")
         :code $ quote $ ns fix-command.main
+          :require $ calcit.core :as core
