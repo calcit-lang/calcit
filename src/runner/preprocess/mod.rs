@@ -2765,6 +2765,103 @@ fn evaluate_macro_expansion(
   }
 }
 
+/// Keep macro-evaluation temporaries off the recursive ordinary-call path.
+#[inline(never)]
+fn preprocess_macro_call(
+  info: &CalcitMacro,
+  macro_id: &Arc<str>,
+  source: &CalcitList,
+  args: &CalcitList,
+  def_name: &str,
+  ctx: PreprocessContext,
+) -> Result<Calcit, CalcitErr> {
+  let macro_name = format!("{}/{}", info.def_ns, info.name);
+  runner::macro_metrics::record_expansion(&macro_name, info.signature.as_ref());
+  let macro_type_bindings = validate_macro_call_inputs(
+    info.name.as_ref(),
+    info.signature.as_ref(),
+    args,
+    ctx.scope_types,
+    ctx.call_stack,
+    ctx.call_location.clone(),
+  )?;
+
+  reject_legacy_trait_method_tag_syntax(info, args, ctx.file_ns, def_name, ctx.call_stack)?;
+
+  let code = Calcit::List(Arc::new(source.to_owned()));
+  let next_stack = ctx
+    .call_stack
+    .extend_owned(&info.def_ns, &info.name, StackKind::Macro, code, args.to_vec());
+
+  let native_lowered = if info.def_ns.as_ref() == calcit::CORE_NS {
+    match info.name.as_ref() {
+      "let" => try_lower_core_let_macro(args, ctx.file_ns),
+      "{}" => try_lower_core_map_macro(args),
+      _ => None,
+    }
+  } else {
+    None
+  };
+  if let Some(lowered) = native_lowered {
+    runner::macro_metrics::record_native_fast_path(&macro_name);
+    let _post_preprocess_timer =
+      runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::PostPreprocess);
+    return preprocess_expr(
+      &lowered,
+      ctx.scope_defs,
+      ctx.scope_types,
+      ctx.file_ns,
+      ctx.check_warnings,
+      &next_stack,
+    );
+  }
+
+  let expansion = evaluate_macro_expansion(
+    info,
+    macro_id,
+    &macro_name,
+    args,
+    macro_type_bindings,
+    &PreprocessContext {
+      scope_defs: ctx.scope_defs,
+      scope_types: ctx.scope_types,
+      file_ns: ctx.file_ns,
+      check_warnings: ctx.check_warnings,
+      call_stack: &next_stack,
+      call_location: ctx.call_location.clone(),
+    },
+  )?;
+  let _post_preprocess_timer =
+    runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::PostPreprocess);
+  let processed = preprocess_expr(
+    &expansion.code,
+    ctx.scope_defs,
+    ctx.scope_types,
+    ctx.file_ns,
+    ctx.check_warnings,
+    &next_stack,
+  )?;
+  validate_macro_expansion_result(
+    info.name.as_ref(),
+    info.signature.as_ref(),
+    (&expansion.code, &processed),
+    ctx.scope_types,
+    expansion.type_bindings,
+    &next_stack,
+    ctx.call_location,
+  )?;
+  if let Some(token) = expansion.cache_miss {
+    runner::macro_cache::store(
+      token,
+      &expansion.code,
+      expansion
+        .evaluator_gensym_end
+        .expect("cache miss evaluates the macro before storing its expansion"),
+    );
+  }
+  Ok(processed)
+}
+
 fn preprocess_list_call(
   xs: &CalcitList,
   scope_defs: &HashSet<Arc<str>>,
@@ -3218,77 +3315,21 @@ fn preprocess_list_call(
   // Thunk: invalid here
 
   match head_value {
-    Some(Calcit::Macro { id: macro_id, info }) => {
-      let macro_name = format!("{}/{}", info.def_ns, info.name);
-      runner::macro_metrics::record_expansion(&macro_name, info.signature.as_ref());
-      let macro_type_bindings = validate_macro_call_inputs(
-        info.name.as_ref(),
-        info.signature.as_ref(),
-        &args,
+    Some(Calcit::Macro { id: macro_id, info }) => preprocess_macro_call(
+      info.as_ref(),
+      &macro_id,
+      xs,
+      &args,
+      def_name.as_ref(),
+      PreprocessContext {
+        scope_defs,
         scope_types,
+        file_ns,
+        check_warnings,
         call_stack,
-        call_location.clone(),
-      )?;
-
-      reject_legacy_trait_method_tag_syntax(info.as_ref(), &args, file_ns, def_name.as_ref(), call_stack)?;
-
-      let code = Calcit::List(Arc::new(xs.to_owned()));
-      let next_stack = call_stack.extend_owned(&info.def_ns, &info.name, StackKind::Macro, code, args.to_vec());
-
-      let native_lowered = if info.def_ns.as_ref() == calcit::CORE_NS {
-        match info.name.as_ref() {
-          "let" => try_lower_core_let_macro(&args, file_ns),
-          "{}" => try_lower_core_map_macro(&args),
-          _ => None,
-        }
-      } else {
-        None
-      };
-      if let Some(lowered) = native_lowered {
-        runner::macro_metrics::record_native_fast_path(&macro_name);
-        let _post_preprocess_timer =
-          runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::PostPreprocess);
-        return preprocess_expr(&lowered, scope_defs, scope_types, file_ns, check_warnings, &next_stack);
-      }
-
-      let expansion = evaluate_macro_expansion(
-        info.as_ref(),
-        &macro_id,
-        &macro_name,
-        &args,
-        macro_type_bindings,
-        &PreprocessContext {
-          scope_defs,
-          scope_types,
-          file_ns,
-          check_warnings,
-          call_stack: &next_stack,
-          call_location: call_location.clone(),
-        },
-      )?;
-      let _post_preprocess_timer =
-        runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::PostPreprocess);
-      let processed = preprocess_expr(&expansion.code, scope_defs, scope_types, file_ns, check_warnings, &next_stack)?;
-      validate_macro_expansion_result(
-        info.name.as_ref(),
-        info.signature.as_ref(),
-        (&expansion.code, &processed),
-        scope_types,
-        expansion.type_bindings,
-        &next_stack,
         call_location,
-      )?;
-      if let Some(token) = expansion.cache_miss {
-        runner::macro_cache::store(
-          token,
-          &expansion.code,
-          expansion
-            .evaluator_gensym_end
-            .expect("cache miss evaluates the macro before storing its expansion"),
-        );
-      }
-      Ok(processed)
-    }
+      },
+    ),
 
     Some(Calcit::Fn { info, .. }) => preprocess_known_function_call(
       info,
