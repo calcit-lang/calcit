@@ -36,7 +36,7 @@ Calcit 的 CLI 按用户任务收敛入口，而不是按每条诊断或迁移�
 | --- | --- | --- |
 | 验证当前 entry 是否符合语言语义 | `calcit calcit.cirru --check-only` | 复用正常加载、严格预处理和目标检查，不写文件；迁移批量诊断使用同一入口的 `--keep-going` |
 | 查询与分析只读事实 | `calcit query ...`、`calcit analyze ...` | query 返回源码与配置事实；analyze 组合已有编译器事实，不建立第二套类型系统 |
-| 检测并应用可证明的源码规范化 | `calcit calcit.cirru fix ...` | 默认 preview 即检测；只有 machine-applicable 建议才能原子 apply |
+| 源码迁移与项目级模板改写 | `calcit calcit.cirru fix ...` | 编译器规则只自动应用已证明候选；显式 pattern/template 是需审阅的受保护事务 |
 | 执行用户明确指定的结构编辑 | `calcit edit ...`、`calcit tree ...`、`calcit cursor ...` | 修改意图来自用户，不冒充编译器自动修复 |
 
 `calcit test`、`calcit js`、`calcit wasm` 与 `calcit wasi` 是执行或目标生成入口，不再复制一套类型检查策略。它们与
@@ -66,6 +66,11 @@ calcit calcit.cirru fix --preset surface-latest-v2 \
 安全 preset、弱类型与 FFI review 边界、verification profiles 和恢复 revision。审阅后用同一 workflow 加
 `--apply --expect-revision <revision>`，最后以 `--verify` 逐 entry 检查。这个组合层不新增迁移规则，也不猜外部构建器；
 它只是把已有 `check`、`fix`、`analyze verify` 与 transaction 协议整理成一个可保存的 manifest。
+
+项目升级的推荐顺序见 [当前升级闭环](upgrade.md#当前升级闭环)，可用
+`calcit docs read upgrade.md '当前升级闭环'` 按章节读取。项目级 `--pattern` / `--replace` 仍复用 `fix`，
+其候选均为 `requires-review`；明确采用模板后才应用，严格暂存检查不证明语义等价。
+strict workflow 不支持整体 `--include-attached`，需要另选支持该范围的显式规则/preset 并运行附带断言。
 
 FFI 审阅也不增加顶层入口。按需运行
 `calcit calcit.cirru analyze weak-types --ffi-evidence --format edn`，取得按 operation 分类的 host、source path、

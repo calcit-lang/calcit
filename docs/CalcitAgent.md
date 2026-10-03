@@ -242,6 +242,9 @@ JSON 中 definition 和 match 都带 `source`、`origin`，并用 `node_kind: le
 
 编辑选择规则：
 
+项目升级先运行 `calcit docs read upgrade.md '当前升级闭环'`，按当前工具链、预览、受保护迁移和后端回归顺序处理。
+该章节区分自动迁移、项目级需审阅事务和仅文档提示；按实际失败再查详细规则，不先加载全部历史资料。
+
 - 新增/移动 definition，修改 namespace、import、schema、examples：`calcit edit`。
 - 一次局部节点修改：`calcit tree`，优先 `search-replace`，其次明确 path 的操作。
 - 在一个复杂表达式中连续移动和修改：`calcit cursor` 与 `@cursor`。

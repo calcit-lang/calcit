@@ -1,6 +1,6 @@
 ---
 title: "Calcit 项目升级手册（Respo / Lilac）"
-summary: "项目升级流程：依赖与工具链同步、entries/type-slots 迁移、静态质量审计、CI 与消费者回归"
+summary: "当前升级闭环：核对版本、受保护的源码与附带区域迁移、严格检查及真实后端验证"
 scope: "core"
 kind: "guide"
 category: "run"
@@ -23,6 +23,63 @@ related:
 它保证的是：先保留可回滚基线，再用 Calcit CLI 把依赖、Snapshot、配置、类型和行为问题分层暴露，
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
+
+## 当前升级闭环
+
+Agent 可直接运行 `calcit docs read upgrade.md '当前升级闭环'` 读取本节，再按失败位置查询后文；
+普通升级先使用这份流程，不需要先加载全部历史改名或审计报告。
+`docs read` 使用已安装的本地 guidebook checkout，升级时同步该文档来源；目录说明见 [文档索引](../docs-indexing.md)。
+
+| 阶段 | 操作 | 验收证据 |
+| --- | --- | --- |
+| 基线与版本 | 记录旧工具链的实际测试结果；核对 `deps.cirru :calcit-version`、CLI 与 `@calcit/procs` 的正式版本 | 可回滚提交、明确版本及项目 entry |
+| 依赖与表示 | 按已确认的版本更新依赖和 lockfile，安装后核对工具链；读取 mutation contract，再规范化 Snapshot | 工具链一致、规范化 diff 已审阅 |
+| 源码迁移 | 使用 strict workflow 预览；需要时另选支持附带区域的 preset/rule 或项目级模板 | revision、source coverage、待审位置及实际写入范围 |
+| 类型与行为 | 逐 entry 严格检查，运行原附带断言、示例及项目已有构建/运行命令 | 非零匹配的测试、真实 native/JS 或已支持 WASM/WASI 路径 |
+| 提交 | 审阅源码、宏生成引用、依赖模块及 CI/文档中的旧调用，再提交 PR | 最新 HEAD 的 CI/review；扫描失败或未覆盖不能当作清零 |
+
+依赖更新与安装由调用方明确执行。先在 Step A/B 确认目标版本与项目的 `packageManager`，再运行：
+
+```bash
+calcit --version
+caps --version
+caps upgrade --all
+caps
+yarn install
+caps verify --toolchain
+yarn install --immutable
+calcit docs agents --contract
+calcit calcit.cirru query config --format edn
+calcit calcit.cirru edit format
+git diff
+calcit calcit.cirru fix --workflow strict --format edn
+```
+
+lockfile 与依赖未变时，只需要 immutable 安装；Snapshot 已规范化时跳过 format。
+按预览中的实际 revision 恢复相同选择，安全迁移与验证仍走同一 workflow：
+
+```bash
+calcit calcit.cirru fix --workflow strict --apply --expect-revision '<已审阅 manifest 的 revision>' --format edn
+calcit calcit.cirru fix --workflow strict --verify --format edn
+```
+
+迁移动作按以下三类处理，而不是按旧版本猜一个 preset：
+
+- **可证明自动迁移**：只应用报告中可自动应用的候选，保留相同 selectors 和 revision。附带区域需另选已支持的规则，例如 `calcit calcit.cirru fix --preset core-api-0.28-v1 --include-attached --format edn`；应用后运行原 `:tests` / `:examples`，以 `source-coverage` 判断范围。
+- **项目级需审阅事务**：旧 helper 或库调用形状使用 [项目级结构改写](fix.md#项目级结构改写)；`--pattern` / `--replace` 的所有候选都需审阅，应用前暂存严格检查不能证明业务语义等价。schema、decoder、FFI 信任和业务默认值由实际合同决定。
+- **仅文档提示**：行为变化、旧桥梁的适用工具链和未支持的后端由本页对应章节说明；没有唯一等价改法时保留明确待办，不猜 replacement。
+
+当前规范化基于实际源码与类型证据，不维护版本 × rule/preset 矩阵。固定桥梁的消费者、适用写法与退场条件按
+[兼容入口的退场节奏](#兼容入口的退场节奏)核对；已退役桥梁使用其已发布 CLI，详见 [历史版本迁移记录](upgrade-history.md)。
+
+### 限制
+
+- strict workflow 的当前规则组合不支持整体 `--include-attached`；附带区域须使用已支持的显式规则/preset 并另行验证。
+- 预览因源码或依赖类型错误失败时先修复真实 producer；没有有效 manifest 和 revision 时不继续 apply。
+- `requires-review` 候选与严格类型错误分别处理：workflow 未通过时读取具体 gate，合法的变长 FFI 合同也可能需要人工审阅；不为清空报告改成固定参数、扩大 Dynamic 或删除门禁。
+- manifest 中未执行的 external gates 和零测试匹配都不是通过证据。
+- 版本不匹配时应安装项目固定 CLI 或显式升级合同，不绕过工具链 pin。
+- `--check-only`、生成成功或零语法命中不能代替目标后端运行及真实消费者回归。
 
 ## 显式 trait 调用的重复实现
 
@@ -392,26 +449,8 @@ ns app.main $ :require
 
 ### 快速命令清单
 
-```bash
-# 先按 Step A 核对 deps.cirru 和独立 caps 版本，再检查实际安装结果
-calcit --version
-caps --version
-caps upgrade --all
-caps
-corepack enable
-corepack prepare yarn@4.12.0 --activate
-yarn install
-yarn install --immutable
-calcit calcit.cirru edit format
-calcit calcit.cirru fix --rule redundant-do-v1 --format edn
-calcit calcit.cirru --check-only
-calcit calcit.cirru analyze deprecated --summary-only --format json
-calcit calcit.cirru analyze weak-types --intent unresolved,declared-unit,declared-optional --summary-only --format edn
-calcit calcit.cirru
-yarn vite build --base=./
-```
-
-说明：`yarn install` 只在 lockfile 迁移或依赖变更时需要；平时可直接从 `yarn install --immutable` 开始。
+使用页首 [当前升级闭环](#当前升级闭环) 的唯一命令清单；后文按实际失败阶段展开。
+项目自己的 test/build 命令从 `package.json` 和 CI 读取，Vite 或某种静态分析报告不是所有项目的默认升级门禁。
 
 旧项目遇到 `E_LEGACY_OPTIONAL_PARAM` 时，可先按单个定义检查原始 `?` 参数：
 
@@ -1038,7 +1077,7 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 3. `caps tree`（确认根开发依赖存在，同时传递模块的开发依赖未进入图）
 4. `yarn install --immutable`
 5. `calcit calcit.cirru edit format` 后审阅 Snapshot diff
-6. `calcit calcit.cirru fix --preset surface-latest-v2 --format edn`；应用后再次 preview，确认 suggestions 为空
+6. `calcit calcit.cirru fix --workflow strict --format edn`；审阅、应用后使用 `--verify`。所需附带迁移另选支持 `--include-attached` 的显式规则/preset，检查 coverage 并重跑原断言；待审候选保留为实际待办，不把零建议当作完整验收
 7. default 与每个 named entry 的 `--check-only`
 8. 需要定位未能静态分派的方法时，对相关 entry 运行只读 `analyze dynamic-methods --format json`
 9. 所有声明支持的 entry 行为测试（默认 once；watch 另行验收）
