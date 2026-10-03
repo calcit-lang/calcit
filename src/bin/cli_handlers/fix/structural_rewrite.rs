@@ -236,7 +236,10 @@ fn rewrite_region(
       // Match the original shape, then transport rewritten children. This
       // composes nested original matches once without matching generated code.
       let Some(bindings) = match_structure(&rewritten, pattern, false, true) else {
-        return Err("Nested rewrites invalidate repeated-variable equality; split and review the transactions.".to_owned());
+        return Err(format!(
+          "Nested rewrites change the matched structure at {} (literal parts or repeated-variable equality no longer match); split and review the transactions.",
+          format_path(path)
+        ));
       };
       let result = instantiate_reviewed_template(pattern, replacement, &bindings)?;
       if result != rewritten {
@@ -256,7 +259,7 @@ fn rewrite_region(
       semantic_layer: "source",
       source_file: snapshot_file.to_owned(),
       definition: owner.to_owned(),
-      path: if region == "code" { format_path(&path) } else if path.is_empty() { region.to_owned() } else { format!("{region}{}", format_path(&path)) },
+      path: if path.is_empty() { region.to_owned() } else { format!("{region}{}", format_path(&path)) },
       fingerprint: node_fingerprint(&original),
       origin_chain: Vec::new(),
       original: quoted_json(&original),
@@ -292,4 +295,44 @@ fn compile_rewrite_scope(
     }
   }
   Ok(warnings)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn structural_region_paths_label_root_and_nested_code_matches() {
+    for (source, expected) in [("legacy 1", "code"), ("wrapper (legacy 1)", "code@1")] {
+      let mut suggestions = Vec::new();
+      rewrite_region(
+        &parse_pattern(source).unwrap(),
+        &parse_pattern("legacy ?n").unwrap(),
+        &parse_pattern("preferred ?n").unwrap(),
+        "calcit.cirru",
+        "app.main/main!",
+        "code",
+        &mut suggestions,
+      )
+      .unwrap();
+      assert_eq!(suggestions.len(), 1);
+      assert_eq!(suggestions[0].path, expected);
+    }
+  }
+
+  #[test]
+  fn structural_nested_literal_changes_report_the_failed_path() {
+    let error = rewrite_region(
+      &parse_pattern("wrapper (a (a (a 1)))").unwrap(),
+      &parse_pattern("a (a ?x)").unwrap(),
+      &parse_pattern("b ?x").unwrap(),
+      "calcit.cirru",
+      "app.main/main!",
+      "code",
+      &mut Vec::new(),
+    )
+    .unwrap_err();
+    assert!(error.contains("matched structure at @1"), "{error}");
+    assert!(error.contains("literal parts or repeated-variable equality"), "{error}");
+  }
 }

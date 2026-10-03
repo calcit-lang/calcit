@@ -154,6 +154,13 @@ fn structural_rewrite_previews_and_applies_reviewed_source_and_attached_regions(
       .all(|item| item["applicability"] == "requires-review" && item.get("diagnostic_code").is_none())
   );
   assert!(suggestions.iter().any(|item| item["definition"] == "app.extra/second"));
+  assert!(
+    suggestions
+      .iter()
+      .filter(|item| item["path"].as_str().unwrap().starts_with("code"))
+      .count()
+      >= 3
+  );
   assert!(suggestions.iter().any(|item| item["path"] == "tests.direct@2"));
   assert!(!suggestions.iter().any(|item| item["definition"] == "app.main/quoted"));
   assert_eq!(report["data"]["changed"], false);
