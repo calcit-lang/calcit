@@ -1,6 +1,6 @@
 # RFC：trait 的 requires 声明
 
-状态：Draft
+状态：Partial
 
 日期：2026-10-03
 
@@ -12,7 +12,7 @@
 - `RFCs/09-19-external-object-declaration-shorthand-rfc.md`（`defexternal` 简写）
 - `docs/features/traits.md`、`docs/features/js-interop.md`
 
-> 表层写法已审阅（见文末“审阅结论”），实现按“实施步骤”推进。
+> 表层写法已审阅（见文末“审阅结论”）。实施步骤 1–3 已落地；步骤 4（js-ffi 事件 trait 迁移与 Respo 回归）在下游仓库进行。
 
 ## 摘要
 
@@ -145,7 +145,7 @@ deftrait Shape
 ### 热重载与查询
 
 - trait 值在求值时捕获父 trait 的值；父 trait 重新定义后，引用它的子 trait 按现有定义依赖重新求值，旧的 `runtime_id` 证据失效，不跨版本混用。
-- `calcit query def` 原样显示 `requires` 子句；`query type` 对子 trait 列出可达父 trait 的成员并标明来源 trait。
+- `calcit query def` 原样显示 `'requires` 子句；`query type` 对子 trait 列出可达父 trait 的成员并标明来源 trait（尚未实现，后续补齐）。
 
 ## 诊断
 

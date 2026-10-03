@@ -188,13 +188,14 @@ impl CalcitTrait {
     let mut owners: Vec<(&EdnTag, String)> = vec![];
     for trait_def in reachable.iter() {
       for member in trait_def.methods.iter() {
-        if let Some((_, owner)) = owners.iter().find(|(name, _)| *name == member) {
+        let label = trait_def.origin_label();
+        if let Some((_, owner)) = owners.iter().find(|(name, owner)| *name == member && *owner != label) {
           return Err(format!(
             "member `{member}` is declared by both {owner} and {}; keep it on one trait",
             trait_def.origin_label()
           ));
         }
-        owners.push((member, trait_def.origin_label()));
+        owners.push((member, label));
       }
     }
     Ok(())

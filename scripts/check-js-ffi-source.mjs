@@ -120,7 +120,7 @@ try {
   const hostContext = JSON.parse(execFileSync(resolve(repository, "target/debug/calcit"),
     [input, "query", "context", "app.main/checked-counter-host", "--test-limit", "8", "--format", "json"], { cwd: fixture, encoding: "utf8" }));
   assert.equal(hostContext.data.tests.truncated, false);
-  assert.equal(hostContext.data.tests.items.length, 4);
+  assert.equal(hostContext.data.tests.items.length, 5);
   const hostEntry = ["defn", "replay-host-tests!", [], ...hostContext.data.tests.items.map(test => test.tree), "&unit"];
   execFileSync(resolve(repository, "target/debug/calcit"), [moduleSnapshot, "edit", "def", "app.main/replay-host-tests!",
     "--input-format", "json-ast", "--code", JSON.stringify(hostEntry)], { cwd: fixture });

@@ -1163,9 +1163,9 @@ fn parse_trait_new_source(items: &CalcitList, file_ns: &str) -> Option<CalcitTra
   let requires = match items.get(3) {
     None => vec![],
     Some(Calcit::List(parents)) => resolve_trait_requires_from_source(
-      parents
-        .iter()
-        .filter(|item| !matches!(item, Calcit::Proc(CalcitProc::List)) && !matches!(item, Calcit::Symbol { sym, .. } if sym.as_ref() == "[]")),
+      parents.iter().filter(|item| {
+        !matches!(item, Calcit::Proc(CalcitProc::List)) && !matches!(item, Calcit::Symbol { sym, .. } if sym.as_ref() == "[]")
+      }),
       file_ns,
     ),
     Some(_) => return None,
@@ -1187,7 +1187,10 @@ fn parse_deftrait_source(items: &CalcitList, file_ns: &str) -> Option<CalcitTrai
     })
     .collect::<Vec<_>>();
   let trait_def = CalcitTrait::new_with_member_kinds(name, methods, method_types, Some(member_kinds));
-  Some(with_source_requires(trait_def, resolve_trait_requires_from_source(parents.into_iter(), file_ns)))
+  Some(with_source_requires(
+    trait_def,
+    resolve_trait_requires_from_source(parents.into_iter(), file_ns),
+  ))
 }
 
 fn resolve_where_bound_type_for_body(bound: &crate::calcit::CalcitGenericBound, file_ns: &str) -> Option<Arc<CalcitTypeAnnotation>> {
@@ -8348,7 +8351,11 @@ pub(crate) fn find_trait_field_type<'a>(
 ) -> Option<(&'a CalcitTrait, &'a Arc<CalcitTypeAnnotation>)> {
   // Fields declared by required traits are visible on the child; the
   // declaration check keeps member names unique across the reachable set.
-  fn search<'a>(trait_def: &'a CalcitTrait, field_name: &str, depth: usize) -> Option<(&'a CalcitTrait, &'a Arc<CalcitTypeAnnotation>)> {
+  fn search<'a>(
+    trait_def: &'a CalcitTrait,
+    field_name: &str,
+    depth: usize,
+  ) -> Option<(&'a CalcitTrait, &'a Arc<CalcitTypeAnnotation>)> {
     if let Some(field_idx) = trait_def.field_index(field_name)
       && let Some(field_type) = trait_def.method_types.get(field_idx)
     {

@@ -832,9 +832,11 @@ fn check_required_trait_impls(impls: &[Arc<CalcitImpl>], proc_name: &str) -> Res
     let Some(origin) = imp.origin() else { continue };
     let reachable = origin.normalized_reachable_traits().map_err(trait_requires_error)?;
     for required in reachable.iter().filter(|required| !required.has_same_origin(origin)) {
-      let attached = impls
-        .iter()
-        .any(|candidate| candidate.origin().is_some_and(|candidate_origin| candidate_origin.has_same_origin(required)));
+      let attached = impls.iter().any(|candidate| {
+        candidate
+          .origin()
+          .is_some_and(|candidate_origin| candidate_origin.has_same_origin(required))
+      });
       if !attached {
         let mut error = CalcitErr::use_str(
           CalcitErrKind::Type,

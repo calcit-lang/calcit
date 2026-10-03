@@ -254,7 +254,7 @@ export let _$n_trait_$o__$o_new = function (name: CalcitValue, methods: CalcitVa
   for (const reachable of traitDef.reachable()) {
     for (const member of reachable.methods) {
       const owner = owners.get(member.value);
-      if (owner != null) {
+      if (owner != null && owner !== reachable) {
         throw new Error(`member \`${member.value}\` is declared by both ${owner.name.toString()} and ${reachable.name.toString()}; keep it on one trait`);
       }
       owners.set(member.value, reachable);

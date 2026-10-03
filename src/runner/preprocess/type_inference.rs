@@ -2037,33 +2037,34 @@ pub(crate) fn check_trait_requires_declaration(args: &CalcitList, file_ns: &str,
   for parent in parents.iter().filter(|item| !matches!(item, Calcit::Proc(CalcitProc::List))) {
     let trait_def = match parent {
       Calcit::Trait(trait_def) => Some(trait_def.to_owned()),
-      Calcit::Import(import) => lookup_source_backed_trait_def(&import.ns, &import.def)
-        .map(|trait_def| trait_def.with_definition_ref(&import.ns, &import.def)),
+      Calcit::Import(import) => {
+        lookup_source_backed_trait_def(&import.ns, &import.def).map(|trait_def| trait_def.with_definition_ref(&import.ns, &import.def))
+      }
       _ => None,
     };
     match trait_def {
       Some(trait_def) => resolved.push(Arc::new(trait_def)),
-      None => return Some(format!("trait {file_ns}/{def_name} 'requires `{parent}`, which is not a trait definition")),
+      None => {
+        return Some(format!(
+          "trait {file_ns}/{def_name} 'requires `{parent}`, which is not a trait definition"
+        ));
+      }
     }
   }
-  let mut xs = vec![Calcit::Proc(CalcitProc::NativeTraitNew)];
-  xs.extend(args.iter().take(2).cloned());
-  let mut child = infer_trait_value(&CalcitList::from(xs.as_slice()))?.with_definition_ref(file_ns, def_name);
-  // Compare origins by source definition, as the source-resolved parents do.
+  // Source resolution also covers external-object field members, which the
+  // runtime constructor does not evaluate outside JS.
+  let mut child = lookup_source_backed_trait_def(file_ns, def_name)?.with_definition_ref(file_ns, def_name);
   child.runtime_id = None;
-  let child_external = program::lookup_def_ffi(file_ns, def_name).is_some_and(|ffi| match ffi {
-    cirru_edn::Edn::Map(value) => value
-      .get(&cirru_edn::Edn::tag("kind"))
-      .is_some_and(|kind| matches!(kind, cirru_edn::Edn::Tag(tag) if tag.ref_str() == "external-object")),
-    cirru_edn::Edn::Struct(value) => value
-      .pairs
-      .iter()
-      .any(|(key, kind)| key.ref_str() == "kind" && matches!(kind, cirru_edn::Edn::Tag(tag) if tag.ref_str() == "external-object")),
-    _ => false,
-  });
+  let child_external = trait_is_external_object(&child);
   for parent in resolved.iter() {
     if trait_is_external_object(parent) != child_external {
-      let kind = |external: bool| if external { "an external-object trait" } else { "an ordinary trait" };
+      let kind = |external: bool| {
+        if external {
+          "an external-object trait"
+        } else {
+          "an ordinary trait"
+        }
+      };
       return Some(format!(
         "trait {file_ns}/{def_name} is {} but 'requires {}, which is {}",
         kind(child_external),
@@ -2072,6 +2073,7 @@ pub(crate) fn check_trait_requires_declaration(args: &CalcitList, file_ns: &str,
       ));
     }
   }
+  child.requires = std::sync::Arc::new(vec![]);
   child.with_requires(resolved).err()
 }
 
@@ -2093,9 +2095,11 @@ pub(crate) fn check_impl_attachment_requires(args: &CalcitList, scope_types: &Sc
     let origin = imp.origin()?;
     let reachable = origin.normalized_reachable_traits().ok()?;
     for required in reachable.iter().filter(|required| !required.has_same_origin(origin)) {
-      let attached = impls
-        .iter()
-        .any(|candidate| candidate.origin().is_some_and(|candidate_origin| candidate_origin.has_same_origin(required)));
+      let attached = impls.iter().any(|candidate| {
+        candidate
+          .origin()
+          .is_some_and(|candidate_origin| candidate_origin.has_same_origin(required))
+      });
       if !attached {
         return Some(format!(
           "an impl of trait {} requires an impl of trait {} on the same type; attach one before or with it",

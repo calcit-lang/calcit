@@ -40,6 +40,12 @@
           :ffi $ {} (:backend :js) (:kind :external-object) (:target :node)
             :names $ {} $ :total |total-value
           :schema $ :: 'Trait
+        'TallyHost $ %{} 'CodeEntry
+          :doc "|External-object trait that inherits CounterHost members"
+          :code $ quote $ deftrait TallyHost ('requires CounterHost)
+          :examples $ []
+          :ffi $ {} (:backend :js) (:kind :external-object) (:target :node)
+          :schema $ :: 'Trait
         'base-name $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn base-name (x) x
           :examples $ []
@@ -82,6 +88,13 @@
                 assert= true $ identical? host host
                 assert= false $ identical? host other
               :tags $ #{} :unit
+            %{} 'TestEntry (:name |inherited-members)
+              :code $ quote $ let
+                  tally $ js-cast (make-counter-host 3) 'TallyHost
+                assert= 3 $ counter-total tally
+                assert= 3 $ tally :total
+                assert= 7 $ tally .add! 4
+              :tags $ #{} :unit
         'count-a $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn count-a () 0
           :examples $ []
@@ -97,6 +110,13 @@
             :js $ {} $ :file |js-ffi-assets/count.js
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+            :features $ #{} :js-ffi
+        'counter-total $ %{} 'CodeEntry
+          :doc "|Accepts any CounterHost, including traits that require it"
+          :code $ quote $ defn counter-total (host) (host :total)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'app.main/CounterHost
             :features $ #{} :js-ffi
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! ()
