@@ -85,6 +85,9 @@ try {
   expectStatus(run([snapshot, "edit", "def", "calcit.core/parameter-recheck-replay", "--input-format", "json-ast",
     "--code", JSON.stringify(["defn", "parameter-recheck-replay", [], ...hintTests.map(test => test.code), "1"])]), 0,
     "assemble source-hint recheck replay");
+  expectStatus(run([snapshot, "edit", "schema", "calcit.core/parameter-recheck-replay", "--input-format", "cirru",
+    "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"]), 0,
+    "declare the replay entry contract without annotating inferred loop parameters");
   const hintSelection = ["--init-fn", "calcit.core/parameter-recheck-replay", "--reload-fn", "calcit.core/parameter-recheck-replay"];
   // Compatibility regressions belong here, not in ordinary project entrypoints.
   for (const [mode, policy] of [["strict", []], ["compat", ["--compat-types"]]]) {
