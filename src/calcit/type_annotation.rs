@@ -217,6 +217,7 @@ thread_local! {
 }
 
 pub static DYNAMIC_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::new(|| Arc::new(CalcitTypeAnnotation::Dynamic));
+pub(crate) static NEVER_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::new(|| Arc::new(CalcitTypeAnnotation::Never));
 
 pub(crate) type TypeBindings = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
 
@@ -862,10 +863,13 @@ fn bounded_plain_type_relation<'a>(
     }
 
     match (actual, expected) {
+      // No inhabitant supplies a generic binding or an open boundary.
+      (Type::Never, _) => {}
       (Type::TypeVar(left), Type::TypeVar(right)) if left == right => {}
       // Other generic-variable relations need the binding-aware path below,
       // including when their exact inferred value is Dynamic.
       (Type::TypeVar(_), _) | (_, Type::TypeVar(_)) => return Ok(None),
+      (_, Type::Never) => return Ok(Some((Mismatch, stats))),
       (_, Type::Dynamic) => {}
       (Type::Dynamic, _) => {
         if matches!(mode, PlainRelationMode::Proof) {
@@ -1209,6 +1213,9 @@ impl CalcitNumericRefinement {
 /// Unified representation of type annotations propagated through preprocessing
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CalcitTypeAnnotation {
+  /// Internal bottom evidence: no value occupies this inferred payload slot.
+  /// Unlike Dynamic, it supplies no evidence to bind a generic variable.
+  Never,
   Bool,
   Number,
   /// A statically checked width/range refinement whose runtime value remains `Calcit::Number`.
@@ -1718,6 +1725,7 @@ impl CalcitTypeAnnotation {
       | Self::TraitSet(_)
       | Self::Custom(_) => Ok(()),
       Self::Bool
+      | Self::Never
       | Self::Number
       | Self::Numeric(_)
       | Self::String
@@ -1745,6 +1753,8 @@ impl CalcitTypeAnnotation {
 
   fn builtin_type_from_tag_name(name: &str) -> Option<Self> {
     match name {
+      // Round-trip compiler-generated hints without adding source symbol syntax.
+      "never" => Some(Self::Never),
       // `:any` is a legacy spelling of `:dynamic`. Keep accepting it at input
       // boundaries, but canonicalize immediately so downstream analysis cannot
       // accidentally treat the two spellings as different contracts.
@@ -1771,6 +1781,7 @@ impl CalcitTypeAnnotation {
 
   pub(crate) fn builtin_tag_name(&self) -> Option<&'static str> {
     match self {
+      Self::Never => Some("never"),
       Self::Custom(value) if Self::custom_keyword_matches(value, "any") => Some("dynamic"),
       Self::Bool => Some("bool"),
       Self::Number => Some("number"),
@@ -4499,6 +4510,12 @@ impl CalcitTypeAnnotation {
   }
 
   pub(crate) fn compatible_with_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> bool {
+    if matches!(self, Self::Never) {
+      return true;
+    }
+    if matches!(expected, Self::Never) {
+      return false;
+    }
     let _relation_guard = enter_compatibility_relation();
     // The bounded plain relation intentionally does not carry generic bindings.
     // Let the binding-aware matcher below specialize either side before taking
@@ -4583,6 +4600,8 @@ impl CalcitTypeAnnotation {
 
   fn compatible_one_with_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> bool {
     match (self, expected) {
+      (Self::Never, _) => true,
+      (_, Self::Never) => false,
       (Self::Macro(actual), Self::Macro(expected)) => actual == expected,
       (Self::Syntax(actual), Self::Syntax(expected)) => actual == expected,
       // Compatibility for annotations constructed by older embedders before
@@ -4708,13 +4727,18 @@ impl CalcitTypeAnnotation {
         if !nominal_matches {
           return false;
         }
+        let (actual_args, expected_args) = if matches!(self, Self::TypeRef(_, _)) {
+          (args, other_args)
+        } else {
+          (other_args, args)
+        };
         match (args.is_empty(), other_args.is_empty()) {
           (true, true) => true,
           (false, false) => {
             args.len() == other_args.len()
-              && args
+              && actual_args
                 .iter()
-                .zip(other_args.iter())
+                .zip(expected_args.iter())
                 .all(|(x, y)| x.compatible_with_bindings(y, bindings))
           }
           (true, false) => Self::bind_declared_generics_from_applied_args(base.generics.as_ref(), other_args.as_ref(), bindings),
@@ -4728,13 +4752,18 @@ impl CalcitTypeAnnotation {
         if !nominal_matches {
           return false;
         }
+        let (actual_args, expected_args) = if matches!(self, Self::TypeRef(_, _)) {
+          (args, other_args)
+        } else {
+          (other_args, args)
+        };
         match (args.is_empty(), other_args.is_empty()) {
           (true, true) => true,
           (false, false) => {
             args.len() == other_args.len()
-              && args
+              && actual_args
                 .iter()
-                .zip(other_args.iter())
+                .zip(expected_args.iter())
                 .all(|(x, y)| x.compatible_with_bindings(y, bindings))
           }
           (true, false) => Self::bind_declared_generics_from_applied_args(base.generics(), other_args.as_ref(), bindings),
@@ -4944,6 +4973,10 @@ impl CalcitTypeAnnotation {
   fn prove_with_staged_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> TypeProof {
     use TypeBoundaryReason as Boundary;
     use TypeProof::{Mismatch, NeedsBoundary, Proven};
+
+    if matches!(self, Self::Never) {
+      return Proven;
+    }
 
     match bounded_plain_type_relation(self, expected, PlainRelationMode::Proof) {
       Ok(Some((result, _))) => return result,
@@ -5530,6 +5563,7 @@ impl CalcitTypeAnnotation {
   /// This is the inverse of `parse_fn_schema_from_edn` + `edn_type_to_calcit` + `parse_type_annotation_form`.
   pub fn to_type_edn(&self) -> Edn {
     match self {
+      Self::Never => Edn::Tag(EdnTag::from("never")),
       // Simple builtin scalars
       Self::Dynamic => Edn::Symbol(Arc::from("Dynamic")),
       Self::Nil => Edn::Symbol(Arc::from("Nil")),
@@ -5773,6 +5807,7 @@ impl CalcitTypeAnnotation {
 
   fn variant_order(&self) -> u8 {
     match self {
+      Self::Never => 37,
       Self::Bool => 1,
       Self::Number => 2,
       Self::Numeric(_) => 3,
@@ -7286,6 +7321,29 @@ mod tests {
     assert!(!captured.prove(&CalcitTypeAnnotation::String, &t).is_proven());
     assert!(!captured.prove(&CalcitTypeAnnotation::Dynamic, &t).is_proven());
     assert_eq!(captured.result_or_open(&t), t);
+  }
+
+  #[test]
+  fn inferred_never_keeps_generic_bindings_and_ref_invariance_sound() {
+    let variable = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let mut proof = CallTypeProof::new(&[Arc::from("T")], std::slice::from_ref(&variable), &[]);
+    assert!(proof.prove(&CalcitTypeAnnotation::Never, &variable).is_proven());
+    assert_eq!(proof.result(&variable), None, "absence must not bind a live payload variable");
+    assert!(proof.prove(&number, &variable).is_proven());
+    assert_eq!(proof.result(&variable), Some(number.clone()));
+    assert!(CalcitTypeAnnotation::Never.is_proven_for(&number));
+    assert!(!number.is_proven_for(&CalcitTypeAnnotation::Never));
+    assert!(!DYNAMIC_TYPE.is_proven_for(&number));
+    let empty_ref = CalcitTypeAnnotation::Ref(NEVER_TYPE.clone());
+    let live_ref = CalcitTypeAnnotation::Ref(number);
+    assert!(!empty_ref.is_proven_for(&live_ref));
+    assert!(!live_ref.is_proven_for(&empty_ref));
+    assert_eq!(
+      CalcitTypeAnnotation::parse_type_annotation_from_edn(&CalcitTypeAnnotation::Never.to_type_edn()).as_ref(),
+      &CalcitTypeAnnotation::Never,
+    );
+    assert!(!value_matches_type_annotation(&Calcit::Number(1.0), &CalcitTypeAnnotation::Never));
   }
 
   #[test]
@@ -9004,6 +9062,7 @@ impl fmt::Display for CalcitTypeAnnotation {
 impl Hash for CalcitTypeAnnotation {
   fn hash<H: Hasher>(&self, state: &mut H) {
     match self {
+      Self::Never => "never".hash(state),
       Self::Bool => "bool".hash(state),
       Self::Number => "number".hash(state),
       Self::Numeric(kind) => {
@@ -9607,6 +9666,7 @@ impl CalcitFnTypeAnnotation {
 /// `Dynamic` types always match. `Nil` matches legacy Optional and JS-nullish boundary types.
 pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnotation) -> bool {
   match expected {
+    CalcitTypeAnnotation::Never => false,
     CalcitTypeAnnotation::Dynamic => true,
     CalcitTypeAnnotation::Nil => matches!(value, Calcit::Nil),
     CalcitTypeAnnotation::Unit => matches!(value, Calcit::Unit),

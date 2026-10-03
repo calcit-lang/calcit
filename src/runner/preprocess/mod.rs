@@ -5579,7 +5579,7 @@ fn check_struct_construction_fields(
       continue;
     }
     if let Some(actual) = resolve_type_value(pair[1], scope_types)
-      && !type_inference::constructor_payload_is_proven(pair[1], &actual, expected, scope_types)
+      && !type_inference::constructor_payload_is_proven(&actual, expected)
     {
       gen_check_warning_code_at_with_types(
         format!(

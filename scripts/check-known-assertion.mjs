@@ -553,7 +553,7 @@ try {
     ["assert-type (.map (Option :some 3) $ fn (x) ([] x)) (:: 'Option (:: 'List 'String))",
       ["expected `'Option<list<:string>>`", "got `'calcit.core/Option<list<:number>>`"]],
     ["assert-type (.map (Result :ok 3) $ fn (x) ([] x)) (:: 'Result (:: 'List 'String) 'String)",
-      ["expected `'Result<list<:string>, :string>`", "got `'calcit.core/Result<list<:number>, dynamic>`"]],
+      ["expected `'Result<list<:string>, :string>`", "got `'calcit.core/Result<list<:number>, :never>`"]],
     ["assert-type ({} (:a ([] 1))) (:: 'Map 'Tag (:: 'List 'String))",
       ["expected `map<:tag,list<:string>>`", "got `map<:tag,list<:number>>`"]],
     ["assert-type (#{} 1) (:: 'Set 'String)",
@@ -652,11 +652,23 @@ try {
 
   // Recursive nominal fields must be checked after nested constructors lower.
   // This is the shared Respo #194 boundary, not a consumer-specific rule (#1553).
+  run("edit", "add-ns", "calcit.constructor-wrappers");
+  for (const [name, expression] of [["empty-tree", "Option :none"], ["open-tree", "Option :some 1"]]) {
+    run("edit", "def", `calcit.constructor-wrappers/${name}`, "--input-format", "cirru", "--code",
+      `quote $ defn ${name} () $ ${expression}`);
+    run("edit", "schema", `calcit.constructor-wrappers/${name}`, "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'Option 'Dynamic)");
+  }
+  run("edit", "add-import", "calcit.assert-evidence", "--input-format", "cirru", "--code",
+    "quote $ calcit.constructor-wrappers :as wrappers");
   for (const [name, code, schema] of [
     ["RecursiveNode", "defenum RecursiveNode (:element 'calcit.assert-evidence/RecursiveElement) (:component 'calcit.assert-evidence/RecursiveComponent)", "'EnumDef"],
     ["RecursivePair", "defstruct RecursivePair (:key 'Dynamic) (:node 'calcit.assert-evidence/RecursiveNode)", "'StructDef"],
     ["RecursiveElement", "defstruct RecursiveElement (:children $ :: 'List 'calcit.assert-evidence/RecursivePair)", "'StructDef"],
     ["RecursiveComponent", "defstruct RecursiveComponent (:tree $ :: 'Option 'calcit.assert-evidence/RecursiveNode)", "'StructDef"],
+    ["RecursiveSignal", "defenum RecursiveSignal ([] 'T) (:idle) (:data 'T)", "'EnumDef"],
+    ["RecursiveSignalHolder", "defstruct RecursiveSignalHolder (:signal $ :: 'calcit.assert-evidence/RecursiveSignal 'calcit.assert-evidence/RecursiveNode)", "'StructDef"],
+    ["make-open-signal", "defn make-open-signal () $ RecursiveSignal :data 1", ":: 'Fn $ {} (:args $ []) (:return $ :: 'calcit.assert-evidence/RecursiveSignal 'Dynamic)"],
     ["RecursiveCell", "defstruct RecursiveCell ([] 'T) (:value 'T)", "'StructDef"],
     ["BroadNodeHolder", "defstruct BroadNodeHolder (:cell $ :: 'calcit.assert-evidence/RecursiveCell 'Struct) (:tree $ :: 'Option 'Struct)", "'StructDef"],
     ["SpecificNodeHolder", "defstruct SpecificNodeHolder (:cell $ :: 'calcit.assert-evidence/RecursiveCell 'calcit.assert-evidence/RecursiveElement) (:tree $ :: 'Option 'calcit.assert-evidence/RecursiveElement)", "'StructDef"],
@@ -665,6 +677,8 @@ try {
     ["make-open-tree", "defn make-open-tree () $ Option :some 1", ":: 'Fn $ {} (:args $ []) (:return $ :: 'Option 'Dynamic)"],
     ["CallbackHolder", "defstruct CallbackHolder (:handler $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number))", "'StructDef"],
     ["NullishCallbackHolder", "defstruct NullishCallbackHolder (:handler $ :: 'JsNullish $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number))", "'StructDef"],
+    ["imported-component", "defn imported-component (flag) $ RecursiveComponent :tree $ if flag (wrappers/empty-tree) (Option :some (RecursiveNode :element (RecursiveElement :children ([]))))", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'calcit.assert-evidence/RecursiveComponent)"],
+    ["joined-local-component", "defn joined-local-component (flag) $ let ((absent-tree (Option :none))) (RecursiveComponent :tree (if flag absent-tree (Option :some (RecursiveNode :element (RecursiveElement :children ([]))))))", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'calcit.assert-evidence/RecursiveComponent)"],
     ["recursive-count", `defn recursive-count (node)
   match node
     (:element element)
@@ -685,7 +699,18 @@ try {
     wrapped $ RecursiveNode :element leaf
     present $ %{} RecursiveComponent (:tree $ Option :some wrapped)
     absent $ RecursiveComponent :tree $ Option :none
+    absent-tree $ Option :none
+    absent-alias absent-tree
+    local-absent $ RecursiveComponent :tree absent-alias
+    folded-tree $ if true (Option :none) (Option :some wrapped)
+    folded-absent $ RecursiveComponent :tree folded-tree
+    imported-tree $ wrappers/empty-tree
+    local-imported $ RecursiveComponent :tree imported-tree
+    idle-signal $ RecursiveSignal :idle
+    signal-holder $ RecursiveSignalHolder :signal idle-signal
+    node-cell $ atom $ assert-type (Option :none) $ :: 'Option 'calcit.assert-evidence/RecursiveNode
     from-wrapper $ RecursiveComponent :tree $ make-empty-tree
+    from-import $ RecursiveComponent :tree $ wrappers/empty-tree
     broad $ BroadNodeHolder :cell (RecursiveCell :value leaf) :tree $ Option :some leaf
     callback $ CallbackHolder :handler $ fn (value) $ inc value
     literal-callback $ %{} CallbackHolder $ :handler $ fn (value) $ inc value
@@ -697,7 +722,18 @@ try {
         RecursivePair :key 2 :node wrapped
   assert= 3 $ recursive-count $ RecursiveNode :element parent
   assert= 0 $ recursive-count $ RecursiveNode :component absent
+  assert= 0 $ recursive-count $ RecursiveNode :component local-absent
+  assert= 0 $ recursive-count $ RecursiveNode :component folded-absent
+  assert= 0 $ recursive-count $ RecursiveNode :component local-imported
+  reset! node-cell $ Option :some wrapped
+  assert= 1 $ recursive-count $ RecursiveNode :component $ RecursiveComponent :tree $ deref node-cell
+  assert= 7 $ match (:signal signal-holder) ((:idle) 7) ((:data node) (recursive-count node))
   assert= 0 $ recursive-count $ RecursiveNode :component from-wrapper
+  assert= 0 $ recursive-count $ RecursiveNode :component from-import
+  assert= 1 $ recursive-count $ RecursiveNode :component $ imported-component false
+  assert= 0 $ recursive-count $ RecursiveNode :component $ imported-component true
+  assert= 1 $ recursive-count $ RecursiveNode :component $ joined-local-component false
+  assert= 0 $ recursive-count $ RecursiveNode :component $ joined-local-component true
   assert= true $ struct? $ :value $ :cell broad
   assert= true $ struct? $ (:tree broad).unwrap
   assert= 5 $ (:handler callback) 4
@@ -722,7 +758,11 @@ try {
     ["broad-enum-payload", "SpecificNodeHolder :cell (RecursiveCell :value (RecursiveElement :children ([]))) :tree $ Option :some $ make-broad-element"],
     ["broad-struct-payload", "SpecificNodeHolder :cell (RecursiveCell :value (make-broad-element)) :tree $ Option :none"],
     ["open-enum-payload", "RecursiveComponent :tree $ make-open-tree"],
+    ["open-local-payload", "let ((open-tree (make-open-tree))) (RecursiveComponent :tree open-tree)"],
+    ["wrong-empty-family", "let ((absent-tree (Option :none))) (RecursiveSignalHolder :signal absent-tree)"],
+    ["open-signal-local", "let ((open-signal (make-open-signal))) (RecursiveSignalHolder :signal open-signal)"],
     ["wrong-callback-return", "CallbackHolder :handler $ fn (value) |wrong"],
+    ["open-imported-branch", "(fn (flag) (RecursiveComponent :tree (if flag (wrappers/open-tree) (Option :some (RecursiveNode :element (RecursiveElement :children ([]))))))) false"],
     ["wrong-variant-payload", "RecursiveNode :element $ RecursiveComponent :tree $ Option :none"],
     ["unwrapped-node-literal", "%{} RecursivePair (:key :a) (:node $ %{} RecursiveElement (:children $ []))"],
     ["unwrapped-node-head", "RecursivePair :key :a :node $ RecursiveElement :children $ []"],
@@ -742,8 +782,9 @@ try {
       assert.match(diagnostics, /expects type|does not exist in struct/);
       assert.match(diagnostics, /calcit.assert-evidence/);
       const field = name.startsWith("wrong-scalar") ? "count"
-        : name === "broad-enum-payload" || name === "open-enum-payload" ? "tree"
+        : ["broad-enum-payload", "open-enum-payload", "open-local-payload", "open-imported-branch"].includes(name) ? "tree"
         : name === "broad-struct-payload" ? "cell"
+        : ["wrong-empty-family", "open-signal-local"].includes(name) ? "signal"
         : name === "wrong-callback-return" ? "handler"
         : name.startsWith("unwrapped-node") ? "node"
         : name.startsWith("raw-pair-list") ? "children" : null;

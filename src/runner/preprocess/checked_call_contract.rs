@@ -208,9 +208,13 @@ pub(crate) fn resolve_checked_call_contract(
     }),
     ("option:fold", T::TypeRef(_, type_args) | T::Enum(_, type_args)) if receiver_type.is_option_type() => {
       let input_type = type_args.first()?.clone();
-      let output_type = callback_return_type(args.get(1)?, scope_types)
-        .or_else(|| callback_return_type(args.get(2)?, scope_types))
-        .unwrap_or_else(|| Arc::new(T::TypeVar(Arc::from("OptionFoldOutput"))));
+      let absent_type = callback_return_type(args.get(1)?, scope_types);
+      let present_type = callback_return_type(args.get(2)?, scope_types);
+      let output_type = match (absent_type, present_type) {
+        (Some(absent), Some(present)) => super::type_inference::join_return_types(absent.clone(), present).unwrap_or(absent),
+        (Some(known), None) | (None, Some(known)) => known,
+        (None, None) => Arc::new(T::TypeVar(Arc::from("OptionFoldOutput"))),
+      };
       Some(CheckedCallContract {
         expected_types: Some(vec![
           receiver_type.clone(),
