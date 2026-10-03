@@ -764,8 +764,6 @@ try {
   assert= 7 $ loop-propagated
   assert= 8 $ loop-matched
   assert= 7 $ loop-asserted
-  assert= 42 $ loop ((n 0) (value (Option :none))) (if (&< n 1) (if true (recur 1 (Option :some 7)) ()) 42)
-  assert= 42 $ loop ((n 0) (value (Option :none))) (if (&< n 1) (if false () (recur 1 (Option :some 7))) 42)
   assert= 8 $ loop ((n 0) (value (Option :none))) (let ((echo-number (fn (input) (, input) (hint-fn ({} (:args ([] 'Number)) (:return 'Number)))))) (if (&< n 1) (recur 1 (Option :some 7)) (&+ (echo-number 7) 1)))
   assert= 42 $ loop
       n 0
@@ -797,6 +795,14 @@ try {
   assert= |string-key $ :key $ &list:nth (:children parent) 0
   assert= :tag-key $ :key $ &list:nth (:children parent) 1
   assert= 2 $ :key $ &list:nth (:children parent) 2`);
+  // Empty core expressions are not executable JS expressions. Keep this
+  // traversal regression attached to its definition but replay it natively.
+  run("edit", "add-test", "calcit.assert-evidence/recursive-count", "empty-tail-recheck", "--tags", "recursive-empty-tail",
+    "--input-format", "cirru", "--code", `quote $ do
+  assert= 42 $ loop ((n 0) (value (Option :none))) (if (&< n 1) (if true (recur 1 (Option :some 7)) ()) 42)
+  assert= 42 $ loop ((n 0) (value (Option :none))) (if (&< n 1) (if false () (recur 1 (Option :some 7))) 42)`);
+  run("test", "calcit.assert-evidence/recursive-count", "--tag", "recursive-empty-tail", "--require-match");
+  run("--compat-types", "test", "calcit.assert-evidence/recursive-count", "--tag", "recursive-empty-tail", "--require-match");
   run("test", "calcit.assert-evidence/recursive-count", "--tag", "recursive-fields", "--require-match");
   run("--compat-types", "test", "calcit.assert-evidence/recursive-count", "--tag", "recursive-fields", "--require-match");
   const recursiveTests = JSON.parse(run("query", "def", "calcit.assert-evidence/recursive-count", "--format", "json"))
