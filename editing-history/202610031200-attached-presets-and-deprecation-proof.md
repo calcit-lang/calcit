@@ -10,6 +10,8 @@
 
 候选为空的函数不展开其调用图，避免仅为确认空报告而执行无关宏的编译期输出。候选收集复用 program import resolver，保留仅通过 namespace alias 或 refer 导入的弃用调用；非空候选再进入原编译器证明。Agent JSON stdout 检查与含输出宏的临时 Snapshot 覆盖此边界。
 
+非空候选可能需要展开声明了 `:log` 的宏；弃用与 quality 报告复用已有 program-output guard，将分析过程的宏日志送到 stderr，stdout 只保存报告。日志仍可观察，原宏 capability 与运行时输出语义不变，不新增输出开关。
+
 ## 验证
 
 CLI 协议回归在临时 Snapshot 中通过结构化命令构造 Calcit 附带断言，验证 preview 不写入、revision 保护、原子应用、原断言重放与幂等。额外覆盖歧义、未知 macro、quoted data、局部同名参数、namespace alias 与推荐方法。

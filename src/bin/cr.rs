@@ -188,6 +188,7 @@ fn run_weak_types(
 }
 
 fn run_deprecated(options: &DeprecatedCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
+  let _output_guard = ProgramOutputGuard::new(true, false);
   match options.format.as_str() {
     "human" | "text" => print!("{}", deprecated_api::format_deprecated_api_report(options, snapshot)?),
     "json" => println!("{}", deprecated_api::format_deprecated_api_json(options, snapshot)?),
@@ -203,6 +204,7 @@ fn run_quality(options: &QualityCommand, snapshot: &snapshot::Snapshot) -> Resul
       options.format
     ));
   }
+  let _output_guard = ProgramOutputGuard::new(true, false);
   let effective =
     type_coverage::with_proven_helper_contracts(snapshot, options.ns.as_deref(), options.ns_prefix.as_deref(), options.deps)?;
   let outcome = quality_gate::analyze_quality(options, effective.as_ref())?;
@@ -1065,12 +1067,12 @@ struct TestReport {
   tests: Vec<TestReportRow>,
 }
 
-struct TestOutputGuard {
+struct ProgramOutputGuard {
   redirect_stdout: bool,
   silence_program_output: bool,
 }
 
-impl TestOutputGuard {
+impl ProgramOutputGuard {
   fn new(redirect_stdout: bool, silence_program_output: bool) -> Self {
     if redirect_stdout {
       injection::set_stdout_to_stderr(true);
@@ -1085,7 +1087,7 @@ impl TestOutputGuard {
   }
 }
 
-impl Drop for TestOutputGuard {
+impl Drop for ProgramOutputGuard {
   fn drop(&mut self) {
     if self.redirect_stdout {
       injection::set_stdout_to_stderr(false);
@@ -1138,7 +1140,7 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
     "json" => true,
     other => return Err(format!("Unknown test output format `{other}`. Expected `human` or `json`.")),
   };
-  let _output_guard = TestOutputGuard::new(json_mode, options.summary_only);
+  let _output_guard = ProgramOutputGuard::new(json_mode, options.summary_only);
   let scope = options.target.as_deref().map(parse_test_scope).transpose()?;
   if let Some((namespace, definition)) = &scope {
     let file = snapshot

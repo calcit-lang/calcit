@@ -7,6 +7,46 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn deprecation_and_quality_reports_keep_declared_macro_logs_off_stdout() {
+  // Rust checks output-channel purity; the repository macro supplies the declared logging boundary.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("calcit/test-hygienic.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "test-hygienic.main/legacy-with-macro",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn legacy-with-macro () $ some? $ test-hygienic.lib/add-11 1 2",
+      ],
+    ),
+    "create legacy call with a declared logging macro",
+  );
+  let before = fs::read(&snapshot).unwrap();
+  for command in ["deprecated", "quality"] {
+    let output = run_calcit(&snapshot, &["analyze", command, "--ns", "test-hygienic.main", "--format", "json"]);
+    if command == "deprecated" {
+      assert_success(&output, "report deprecation with macro logs");
+    } else {
+      assert_eq!(output.status.code(), Some(1), "quality must retain its existing debt failure");
+    }
+    let report = parse_stdout(&output);
+    assert_eq!(report["command"], format!("analyze.{command}"));
+    assert!(
+      String::from_utf8_lossy(&output.stderr).contains("internal c:"),
+      "macro logs must remain observable on stderr"
+    );
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("internal c:"));
+    assert_eq!(fs::read(&snapshot).unwrap(), before, "reports must preserve source");
+  }
+}
+
+#[test]
 fn deprecation_report_shares_core_metadata_and_excludes_local_and_quoted_calls() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
