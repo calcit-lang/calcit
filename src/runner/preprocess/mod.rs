@@ -8346,14 +8346,23 @@ pub(crate) fn find_trait_field_type<'a>(
   traits: &'a [Arc<CalcitTrait>],
   field_name: &str,
 ) -> Option<(&'a CalcitTrait, &'a Arc<CalcitTypeAnnotation>)> {
-  for trait_def in traits.iter().rev() {
+  // Fields declared by required traits are visible on the child; the
+  // declaration check keeps member names unique across the reachable set.
+  fn search<'a>(trait_def: &'a CalcitTrait, field_name: &str, depth: usize) -> Option<(&'a CalcitTrait, &'a Arc<CalcitTypeAnnotation>)> {
     if let Some(field_idx) = trait_def.field_index(field_name)
       && let Some(field_type) = trait_def.method_types.get(field_idx)
     {
-      return Some((trait_def.as_ref(), field_type));
+      return Some((trait_def, field_type));
     }
+    if depth == 0 {
+      return None;
+    }
+    trait_def
+      .requires
+      .iter()
+      .find_map(|required| search(required.as_ref(), field_name, depth - 1))
   }
-  None
+  traits.iter().rev().find_map(|trait_def| search(trait_def.as_ref(), field_name, 64))
 }
 
 fn collect_trait_method_names(traits: &[Arc<CalcitTrait>]) -> Vec<String> {

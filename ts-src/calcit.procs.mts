@@ -230,8 +230,8 @@ const trimDataDefinitionEntries = (entries: CalcitValue[]): CalcitValue[] => {
   return entries.slice(start);
 };
 
-export let _$n_trait_$o__$o_new = function (name: CalcitValue, methods: CalcitValue): CalcitTrait {
-  if (arguments.length !== 2) throw new Error("&trait::new expected 2 arguments");
+export let _$n_trait_$o__$o_new = function (name: CalcitValue, methods: CalcitValue, parents?: CalcitValue): CalcitTrait {
+  if (arguments.length !== 2 && arguments.length !== 3) throw new Error("&trait::new expected 2 or 3 arguments");
   const items = list_items(methods);
   const methodNames: CalcitValue[] = [];
   const methodTypes: CalcitValue[] = [];
@@ -243,7 +243,40 @@ export let _$n_trait_$o__$o_new = function (name: CalcitValue, methods: CalcitVa
     methodNames.push(pair[0]);
     methodTypes.push(pair[1]);
   }
-  return new CalcitTrait(name, methodNames, methodTypes);
+  const requires = parents == null ? [] : list_items(parents);
+  for (const parent of requires) {
+    if (!(parent instanceof CalcitTrait)) {
+      throw new Error(`trait ${toString(name, false)} 'requires expects a trait, but received: ${toString(parent, true)}`);
+    }
+  }
+  const traitDef = new CalcitTrait(name, methodNames, methodTypes, requires as CalcitTrait[]);
+  const owners = new Map<string, CalcitTrait>();
+  for (const reachable of traitDef.reachable()) {
+    for (const member of reachable.methods) {
+      const owner = owners.get(member.value);
+      if (owner != null) {
+        throw new Error(`member \`${member.value}\` is declared by both ${owner.name.toString()} and ${reachable.name.toString()}; keep it on one trait`);
+      }
+      owners.set(member.value, reachable);
+    }
+  }
+  return traitDef;
+};
+
+/** Every attached impl needs impls of all traits its origin requires on the same type. */
+let checkRequiredTraitImpls = (impls: (CalcitImpl | null | undefined)[], procName: string): void => {
+  for (const impl of impls) {
+    const origin = impl?.origin;
+    if (origin == null) continue;
+    for (const required of origin.reachable()) {
+      if (required === origin) continue;
+      if (!impls.some((candidate) => candidate?.origin === required)) {
+        throw new Error(
+          `${procName}: an impl of trait ${origin.name.toString()} requires an impl of trait ${required.name.toString()} on the same type; attach one before or with it`
+        );
+      }
+    }
+  }
 };
 
 export let _$n_assert_traits = function (value: CalcitValue, traitDef: CalcitValue): CalcitValue {
@@ -280,6 +313,12 @@ export let _$n_assert_traits = function (value: CalcitValue, traitDef: CalcitVal
       `assert-traits failed: impl ${selected.name.toString()} for trait ${traitDef.name.toString()} is incomplete. Missing: ${missing.join(
         " "
       )}`
+    );
+  }
+  const unmet = traitDef.reachable().find((required) => required !== traitDef && !impls.some((impl) => impl?.origin === required));
+  if (unmet != null) {
+    throw new Error(
+      `assert-traits failed: ${toString(value, true)} implements ${traitDef.name.toString()} but not its required trait ${unmet.name.toString()}`
     );
   }
   return value;
@@ -704,6 +743,7 @@ export let _$n_enum_$o_impl_traits = function (x: CalcitValue, ...traits: Calcit
   if (traits.length < 1) throw new Error("&enum:impl-traits takes 2+ arguments");
   if (!(x instanceof CalcitEnumValue)) throw new Error("&enum:impl-traits expects an enum value");
   const impls = traits.map((trait) => coerce_impl(trait, "&enum:impl-traits"));
+  checkRequiredTraitImpls([...(x.enumPrototype?.impls ?? []), ...impls], "&enum:impl-traits");
   let proto = x.enumPrototype;
   if (proto == null) {
     const tagName = x.tag instanceof CalcitTag ? x.tag : newTag("tag");
@@ -849,6 +889,7 @@ export let _$n_struct_$o_impl_traits = function (xs: CalcitValue, ...traits: Cal
   if (traits.length < 1) throw new Error("&struct:impl-traits takes 2+ arguments");
   if (!(xs instanceof CalcitStructValue)) throw new Error("&struct:impl-traits expected a struct value");
   const impls = traits.map((trait) => coerce_impl(trait, "&struct:impl-traits"));
+  checkRequiredTraitImpls(xs.structRef.impls.concat(impls), "&struct:impl-traits");
   const nextStruct = new CalcitStructDef(xs.name, xs.fields, xs.structRef.fieldTypes, xs.structRef.impls.concat(impls), xs.structRef.definitionRef);
   return new CalcitStructValue(xs.name, xs.fields, xs.values, nextStruct);
 };
@@ -858,6 +899,7 @@ export let _$n_struct_def_$o_impl_traits = function (xs: CalcitValue, ...traits:
   if (!(xs instanceof CalcitStructDef)) throw new Error("&struct-def:impl-traits expected a struct definition");
   const addedImpls = traits.map((trait) => coerce_impl(trait, "&struct-def:impl-traits"));
   const baseImpls = xs.impls ?? [];
+  checkRequiredTraitImpls(baseImpls.concat(addedImpls), "&struct-def:impl-traits");
   return new CalcitStructDef(xs.name, xs.fields, xs.fieldTypes, baseImpls.concat(addedImpls), xs.definitionRef);
 };
 
@@ -865,6 +907,7 @@ export let _$n_enum_def_$o_impl_traits = function (xs: CalcitValue, ...traits: C
   if (traits.length < 1) throw new Error("&enum-def:impl-traits takes 2+ arguments");
   const addedImpls = traits.map((trait) => coerce_impl(trait, "&enum-def:impl-traits"));
   if (xs instanceof CalcitEnumDef) {
+    checkRequiredTraitImpls([...(xs.impls ?? []), ...addedImpls], "&enum-def:impl-traits");
     return xs.withImpls(addedImpls);
   }
   throw new Error("&enum-def:impl-traits expected an enum definition");

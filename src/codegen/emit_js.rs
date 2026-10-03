@@ -269,6 +269,11 @@ fn external_js_property_name(type_hint: &Arc<calcit::CalcitTypeAnnotation>, name
     },
     _ => vec![],
   };
+  // An inherited member keeps the host name declared by the trait that owns it.
+  let trait_defs: Vec<Arc<calcit::CalcitTrait>> = trait_defs
+    .iter()
+    .flat_map(|trait_def| trait_def.normalized_reachable_traits().unwrap_or_else(|_| vec![trait_def.clone()]))
+    .collect();
   for trait_def in trait_defs.iter().rev() {
     let Some(def_ref) = trait_def.definition_ref.as_deref() else {
       continue;

@@ -2062,6 +2062,20 @@ impl CalcitTypeAnnotation {
 
   /// Match an actual trait reference against an expected one without letting
   /// an unqualified placeholder erase runtime identity in the reverse direction.
+  /// A trait value also has every trait it transitively requires, so it
+  /// may flow into a position that names one of them.
+  fn trait_upcasts_to_type_ref(actual: &CalcitTrait, name: &str) -> bool {
+    if Self::type_ref_matches_trait(name, actual) {
+      return true;
+    }
+    if actual.requires.is_empty() || actual.validate_reachable_method_schemas().is_err() {
+      return false;
+    }
+    actual
+      .normalized_reachable_traits()
+      .is_ok_and(|traits| traits.iter().any(|required| Self::type_ref_matches_trait(name, required)))
+  }
+
   fn trait_references_match(actual: &CalcitTrait, expected: &CalcitTrait) -> bool {
     actual.matches_reference(expected)
       || (actual.definition_ref.is_some() && expected.definition_ref.is_some() && expected.matches_reference(actual))
@@ -4790,8 +4804,8 @@ impl CalcitTypeAnnotation {
             .resolve_nominal_instance_type()
             .is_some_and(|instance| instance.satisfies_trait_bound(trait_def.as_ref()))
       }
-      (Self::Trait(trait_def), Self::TypeRef(name, args)) => args.is_empty() && Self::type_ref_matches_trait(name, trait_def.as_ref()),
-      (Self::Trait(a), Self::Trait(b)) => Self::trait_references_match(a, b),
+      (Self::Trait(trait_def), Self::TypeRef(name, args)) => args.is_empty() && Self::trait_upcasts_to_type_ref(trait_def, name),
+      (Self::Trait(a), Self::Trait(b)) => Self::trait_references_match(a, b) || Self::trait_annotation_proves(a, b),
       (Self::TraitSet(actual), Self::Trait(expected)) => {
         actual.iter().any(|trait_def| Self::trait_references_match(trait_def, expected))
       }
