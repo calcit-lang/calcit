@@ -683,6 +683,10 @@ try {
     ["folded-component", "defn folded-component (flag) $ RecursiveComponent :tree $ option:fold (if flag (Option :some true) (Option :none)) (fn () $ wrappers/empty-tree) (fn (present?) $ Option :some $ RecursiveNode :element $ RecursiveElement :children $ [])", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'calcit.assert-evidence/RecursiveComponent)"],
     ["folded-signal", "defn folded-signal (flag) $ RecursiveSignalHolder :signal $ option:fold (if flag (Option :some true) (Option :none)) (fn () $ RecursiveSignal :data $ RecursiveNode :element $ RecursiveElement :children $ []) (fn (present?) $ RecursiveSignal :idle)", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'calcit.assert-evidence/RecursiveSignalHolder)"],
     ["folded-open", "defn folded-open (flag) $ option:fold (if flag (Option :some true) (Option :none)) (fn () $ Option :none) (fn (present?) $ make-open-number)", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'Dynamic)"],
+    ["loop-component", "defn loop-component (flag) $ loop ((remaining (if flag 1 0)) (tree (Option :none))) (if (&> remaining 0) (recur (dec remaining) (Option :some (RecursiveNode :element (RecursiveElement :children ([]))))) (RecursiveComponent :tree tree))", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'calcit.assert-evidence/RecursiveComponent)"],
+    ["loop-signal", "defn loop-signal (flag) $ loop ((remaining (if flag 1 0)) (signal (RecursiveSignal :idle))) (if (&> remaining 0) (let ((next (RecursiveSignal :data (RecursiveNode :element (RecursiveElement :children ([])))))) (recur (dec remaining) next)) (RecursiveSignalHolder :signal signal))", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'calcit.assert-evidence/RecursiveSignalHolder)"],
+    ["loop-alias", "defn loop-alias () $ let ((absent (Option :none))) (loop ((n 0) (value absent)) (if (&< n 1) (let ((next (Option :some 7)) (alias next)) (recur 1 alias)) (option:unwrap-or value 0)))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
+    ["loop-propagated", "defn loop-propagated () $ loop ((n 0) (left (Option :none)) (right (Option :none))) (if (&< n 2) (recur (inc n) (Option :some 7) left) (option:unwrap-or right 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
     ["recursive-count", `defn recursive-count (node)
   match node
     (:element element)
@@ -744,6 +748,12 @@ try {
   assert= 1 $ match (:signal $ folded-signal false) ((:idle) 7) ((:data node) (recursive-count node))
   assert= 1 $ folded-open true
   assert= (Option :none) $ folded-open false
+  assert= 1 $ recursive-count $ RecursiveNode :component $ loop-component true
+  assert= 0 $ recursive-count $ RecursiveNode :component $ loop-component false
+  assert= 1 $ match (:signal $ loop-signal true) ((:idle) 0) ((:data node) (recursive-count node))
+  assert= 0 $ match (:signal $ loop-signal false) ((:idle) 0) ((:data node) (recursive-count node))
+  assert= 7 $ loop-alias
+  assert= 7 $ loop-propagated
   assert= true $ struct? $ :value $ :cell broad
   assert= true $ struct? $ (:tree broad).unwrap
   assert= 5 $ (:handler callback) 4
@@ -771,6 +781,13 @@ try {
     ["open-local-payload", "let ((open-tree (make-open-tree))) (RecursiveComponent :tree open-tree)"],
     ["wrong-fold-payload", "RecursiveComponent :tree $ option:fold (Option :some true) (fn () $ Option :none) (fn (present?) $ Option :some 1)"],
     ["open-fold-output", "(fn (flag) (RecursiveComponent :tree (option:fold (Option :some flag) (fn () (Option :none)) (fn (present?) (make-open-number))))) true"],
+    ["wrong-loop-payload-use", "loop ((n 0) (tree (Option :none))) (if (&< n 1) (recur 1 (Option :some |wrong)) (RecursiveComponent :tree tree))"],
+    ["open-loop-payload-use", "loop ((n 0) (tree (Option :none))) (if (&< n 1) (recur 1 (Option :some (make-open-number))) (RecursiveComponent :tree tree))"],
+    ["mixed-loop-payloads", "(fn (flag) (loop ((n 0) (tree (Option :none))) (if (&< n 1) (recur 1 (if flag (Option :some 1) (Option :some |wrong))) (RecursiveComponent :tree tree)))) true"],
+    ["wrong-loop-family", "loop ((n 0) (signal (RecursiveSignal :idle))) (if (&< n 1) (recur 1 (Option :some 1)) (RecursiveSignalHolder :signal signal))"],
+    ["invariant-loop-ref", "loop ((n 0) (cell (atom (Option :none)))) (if (&< n 1) (recur 1 (atom (Option :some 7))) (deref cell))"],
+    ["explicit-loop-contract", "loop ((n 0) (value (Option :none))) (hint-fn ({} (:args ([] 'Number (:: 'Option 'Number))) (:return 'Number))) (if (&< n 1) (recur 1 (Option :some |wrong)) (option:unwrap-or value 0))"],
+    ["explicit-loop-unknown-update", "(fn (flag) (loop ((n 0) (value (Option :none))) (hint-fn ({} (:args ([] 'Number (:: 'Option 'Number))) (:return 'Number))) (if (&< n 1) (recur 1 (Option :some (if flag 7 |wrong))) (option:unwrap-or value 0)))) true"],
     ["wrong-empty-family", "let ((absent-tree (Option :none))) (RecursiveSignalHolder :signal absent-tree)"],
     ["open-signal-local", "let ((open-signal (make-open-signal))) (RecursiveSignalHolder :signal open-signal)"],
     ["wrong-callback-return", "CallbackHolder :handler $ fn (value) |wrong"],
@@ -791,10 +808,10 @@ try {
       if (rejected.error) throw rejected.error;
       assert.equal(rejected.status, 1, `${name} ${mode}\n${rejected.stdout}\n${rejected.stderr}`);
       const diagnostics = `${rejected.stdout}\n${rejected.stderr}`;
-      assert.match(diagnostics, /expects type|does not exist in struct/);
+      assert.match(diagnostics, /expects type|does not exist in struct|E_DYNAMIC_NOMINAL_ARGUMENT/);
       assert.match(diagnostics, /calcit.assert-evidence/);
       const field = name.startsWith("wrong-scalar") ? "count"
-        : ["broad-enum-payload", "open-enum-payload", "open-local-payload", "open-imported-branch", "wrong-fold-payload", "open-fold-output"].includes(name) ? "tree"
+        : ["broad-enum-payload", "open-enum-payload", "open-local-payload", "open-imported-branch", "wrong-fold-payload", "open-fold-output", "wrong-loop-payload-use", "open-loop-payload-use"].includes(name) ? "tree"
         : name === "broad-struct-payload" ? "cell"
         : ["wrong-empty-family", "open-signal-local"].includes(name) ? "signal"
         : name === "wrong-callback-return" ? "handler"
@@ -806,7 +823,7 @@ try {
         assert.match(diagnostics, /@calcit\.assert-evidence\/run-tests @[0-9]/,
           "constructor diagnostics must locate the source call, not only a generated macro");
       }
-      await assertRejectedArtifacts(destination, `${name} ${mode}`, /expects type|does not exist in struct/);
+      await assertRejectedArtifacts(destination, `${name} ${mode}`, /expects type|does not exist in struct|E_DYNAMIC_NOMINAL_ARGUMENT/);
       assert.deepEqual(await readFile(snapshot), original);
     }
   }

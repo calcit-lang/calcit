@@ -1,0 +1,25 @@
+# 空 Enum 循环参数约束
+
+## 实际问题
+
+空 Option 绑定使用内部 Never 保留无 payload 的证据后，`loop` 的初值把参数固定为 `Option<Never>`；后续 `recur` 写入 `Option<Number>` 被拒绝。真实 Respo 的重复 key 检测因此从原有 62/74 降到 61/74，不能靠业务补注解、删除测试或扩大 Dynamic 收尾。
+
+## 决策
+
+对于没有 source schema 或显式函数 hint 的函数，只给参数中已证明为空的 Enum 泛型槽补约束。遍历已预处理的词法尾部 `recur`，复用现有分支返回类型合并；词法 let、match 分支绑定使用已有 scope 推导。引入真实 payload 后，从原 source 重新预处理同一函数体，使方法选择、参数节点、返回证明和各类型门禁使用同一个合同。
+
+只补仍为 Never 的直接 Enum 参数槽；具体参数、显式 Dynamic、公开函数合同和 Ref 均保持固定。不建立按 loop 或业务函数名授权的例外，不扫描原构造器形状补证据，不新增局部 provenance registry。不同 nominal 身份与不相容 payload 没有合法合并。多个参数间的传递会继续补剩余空槽，每次推进都消除至少一个直接空槽，不将递归地构造无限嵌套类型作为推导目标。若某次 transfer 缺少返回证据，不能沿用初始 Never：使用已有开放类型表示继续重检，具体字段必须要求真实证明；不能把缺失证据当作空 payload。
+
+尾部循环转移不产生返回值，复用现有独立函数退出证明推导生成函数的返回合同。只有真正的退出分支能提供返回类型；纯 recur 循环不能自行获得具体返回证明。引入新约束后仍重新检查整个原始函数体，不将原来对无值的证明用于后来实际承载的值。
+
+严格 `recur` 检查与独立退出证明使用相同的定向 proof，要求保持当前词法实例化，不按新调用为 rigid 泛型重新绑定；未知输入不能跳过校验。沿用 `W_RECUR_ARG_TYPE_MISMATCH`、expected/actual 与原 source 定位；非严格迁移模式保持原有兼容检查。
+
+## 验证
+
+在现有断言 runner 中通过结构化 CLI 添加 definition-attached Calcit 测试，native 与真实生成 JS 回放空 Option、任意用户 Enum、let 中的别名与跨参数的两阶段传递。七个负例与既有递归字段负例复用七种 native/check/JS/WASM/WASI 入口，要求错误 payload 的具体使用、开放输出、混合 payload、错误 nominal、invariant Ref 和显式合同被拒绝；不产生应用产物，不修改 Snapshot。
+
+真实 Respo 独立副本保持全部 74 项测试，循环回归恢复到 62/74，其余 12 项失败不由此改动掩盖。可变 Ref 的隐式写入推导仍是独立待解决事项，本补丁不宣布它或 milestone 已完成。完整 Cargo、Clippy 与集成结果以 PR 的最终 HEAD 记录为准。
+
+## 后续边界
+
+若终止分支在首次预处理阶段就要求对空 payload 做静态方法选择，例如 `(value .unwrap) .to-string`，尚不能先完成整个函数体再从 transfer 收集约束。当前仍明确报 `E_DYNAMIC_POSTFIX_METHOD`，不改成动态派发或授予方法权限。后续需要把词法递归约束求解前移到依赖它的静态选择之前，并与统一 typed-core 校验协同；不以逐个方法放行或新增检查阶段开关绕过。这个最小复现和 Ref 边界继续由原 issue 追踪。
