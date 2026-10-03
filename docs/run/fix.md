@@ -82,8 +82,8 @@ calcit calcit.cirru fix --preset surface-latest-v2 --include-attached --format e
 预览不写入文件；应用时仍须核对 revision 并传 `--expect-revision`，随后运行附带测试。
 不传 `--include-attached` 时仍只扫描 `:code`。
 
-当前支持显式的 `core-function-alias-v1`、non-nil/integer predicate 规则，以及 List fold/intersperse/flat-map/join-string/get、
-Map distinct-values、Set include、collection combine、predicate method 和 effect method 等已有方法等价改名规则。
+当前支持显式的 `core-function-alias-v1`、non-nil/integer predicate 规则，以及 List fold/flat-map/join-string/get、
+Set include、collection combine、predicate method 和 effect method 等已有方法等价改名规则。
 附带方法改写与 `:code` 共享接收者类型、方法实现和源码来源的证明，局部 `let` 类型由实际预处理结果保留。
 `round?` 的 reader 调用头与 Number 方法迁移同时覆盖，仍保留引号、局部遮蔽和未知宏保护。
 一个示例区域中混有需要 review 的表达式时，整个区域暂不自动改写。
@@ -101,8 +101,9 @@ quoted data 不改写，未知宏中无法证明执行上下文的区域保留 r
 与普通定义共用实参类型、方法实现和源码上下文证明；局部接收者保留实际预处理类型，
 reader 展开的调用不会被误认成其中叶节点的类型。Set `.add` 不被 List 规则改写，
 String 长度继续按 Unicode 标量计数，未知宏保留 review，quoted data 原样保留。
-`core-api-0.28-v1 --include-attached` 把原 preset 的 13 条规则组合应用于附带区域，
-不改变已发布 preset 的规则集合或不传 flag 时的扫描范围。同一区域中有需要 review 的表达式时不部分写入。
+`core-api-0.28-v1 --include-attached` 把该 preset 的 13 条规则组合应用于附带区域（0.29.0 起去掉了随旧方法退役的
+`core-list-intersperse-v1` 与 `core-map-distinct-values-v1`，原 15 条以 0.28.x 的 CLI 为准），
+不改变不传 flag 时的扫描范围。同一区域中有需要 review 的表达式时不部分写入。
 `removed-data-api-v1` 与 `surface-latest-v1/v2` 也支持附带区域；旧 API 使用编译器的现有诊断定位，
 `tuple?` 的值/定义含义选择仍需人工 review。组合规则逐步重新证明 source，整个测试或示例区域仍只产生一次原子替换。
 其他未覆盖规则的附带组合会列出不支持的规则并报错，不会静默跳过。
