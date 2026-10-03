@@ -13,3 +13,5 @@
 沿现有 count-contract fixture 追加两组 definition `:tests`，验证直接 core 引用、namespace alias、Unicode 字符串与非字符串分支；原五组测试和方法/函数表达式保持不变。既有运行器回放 native/JS，并构造六类同名用户谓词，在 check/native/JS/WASM/WASI 的预处理阶段拒绝 Countable 假证明，保持 Snapshot 字节不变且不生成应用/WASM 产物；保留 CLI 的空输出目录与含原诊断的 JS build-errors module。内部测试覆盖可信 Import、伪造 ImportInfo、未解析 Symbol 以及 nullable core 别名的正反收窄来源。
 
 本修复不自动推断任意用户 validator，也不把普通 Bool 签名当作名义 decoder；Respo 的 Component 边界和其他真实迁移仍需继续处理。关联 #1728、#1729、#1694、#1529 与 #1553。
+
+审查进一步确认 CLI 会保留项目提供的 `calcit.core`，所以 Import 的 namespace 不是可信来源。源代码谓词还需核对实际 embedded core 的 import、全部定义代码与 FFI 数据，避免不变的包装函数依赖被替换的同名谓词；doc/examples 的改动不改变执行身份，重新加载得到的名义 schema ID 也不作来源身份。期待值从 embedded source 生成并缓存，不维护第二份谓词注册表。实际 proc 身份保持可信，项目自定义 core 的 nullable 谓词正反分支由现有 runner 验证拒绝。

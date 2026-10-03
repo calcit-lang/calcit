@@ -8708,7 +8708,9 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
   // A Bool-returning user function is not a type guard merely because its
   // definition has the same short name as a core predicate.
   let Some(pred_name) = (match items.first() {
-    Some(Calcit::Import(CalcitImport { ns, def, .. })) if ns.as_ref() == calcit::CORE_NS => Some(def.as_ref()),
+    Some(Calcit::Import(CalcitImport { ns, def, .. })) if ns.as_ref() == calcit::CORE_NS && program::has_bundled_core_source() => {
+      Some(def.as_ref())
+    }
     Some(Calcit::Proc(proc)) => Some(proc.as_ref()),
     _ => None,
   }) else {
@@ -12886,6 +12888,11 @@ mod tests {
   #[test]
   fn js_nullish_ffi_values_require_safe_dereference_and_dedicated_predicates() {
     let _lock = lock_preprocess_test_state();
+    let core = crate::load_core_snapshot().expect("embedded core");
+    program::PROGRAM_CODE_DATA
+      .write()
+      .unwrap()
+      .extend(program::extract_program_data(&core).expect("core source"));
     let _strict = StrictTypesGuard::new(false);
     let sym: Arc<str> = Arc::from("host");
     let receiver = Calcit::Local(CalcitLocal {
@@ -12988,6 +12995,11 @@ mod tests {
   #[test]
   fn predicate_narrowing_requires_resolved_core_origin() {
     let _lock = lock_preprocess_test_state();
+    let core = crate::load_core_snapshot().expect("embedded core");
+    program::PROGRAM_CODE_DATA
+      .write()
+      .unwrap()
+      .extend(program::extract_program_data(&core).expect("core source"));
     let sym: Arc<str> = Arc::from("value");
     let target = Calcit::Local(CalcitLocal {
       idx: CalcitLocal::track_sym(&sym),
@@ -13042,6 +13054,25 @@ mod tests {
         "{name} core contract remains available"
       );
     }
+
+    // Changing even a dependency in a source-supplied core removes its
+    // provenance. A predicate's unchanged short name cannot restore it.
+    let mut source = program::PROGRAM_CODE_DATA.write().unwrap();
+    let entry = source.get_mut(calcit::CORE_NS).unwrap().defs.get_mut("js-nullish?").unwrap();
+    entry.code = Calcit::Bool(false);
+    drop(source);
+    for name in ["js-present?", "js-nullish?", "some?", "non-nil?"] {
+      let narrowed = extract_predicate_bindings(
+        &Calcit::from(vec![core_import(name, "tests.predicate-origin"), target.clone()]),
+        &scope_types,
+      );
+      assert!(
+        narrowed.true_binding.is_none() && narrowed.false_binding.is_none(),
+        "{name} needs bundled provenance"
+      );
+    }
+    let primitive = extract_predicate_bindings(&Calcit::from(vec![Calcit::Proc(CalcitProc::StringQuestion), target]), &scope_types);
+    assert!(primitive.true_binding.is_some(), "actual primitive identity remains trusted");
   }
 
   #[test]
