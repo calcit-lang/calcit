@@ -11,6 +11,18 @@ const snapshot = join(project, "calcit.cirru");
 const options = { encoding: "utf8", stdio: "pipe", timeout: 60000, maxBuffer: 16 * 1024 * 1024 };
 const run = (...args) => execFileSync(binary, [snapshot, ...args], options);
 
+async function assertRejectedArtifacts(output, label, diagnostic) {
+  const artifacts = await readdir(output).catch(error => {
+    if (error.code !== "ENOENT") throw error;
+    return [];
+  });
+  assert.deepEqual(artifacts.filter(file => file !== "calcit.build-errors.mjs"), [],
+    `${label}: rejected preprocessing must not emit application or WASM artifacts`);
+  if (artifacts.includes("calcit.build-errors.mjs")) {
+    assert.match(await readFile(join(output, "calcit.build-errors.mjs"), "utf8"), diagnostic);
+  }
+}
+
 try {
   await copyFile("src/cirru/calcit-core.cirru", snapshot);
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
@@ -849,21 +861,49 @@ try {
       "quote $ defn main! () (rejected-predicate 1) &unit");
     const original = await readFile(snapshot);
     for (const mode of [["--check-only"], [], ["js"], ["wasm"], ["wasi"]]) {
-      const rejected = spawnSync(binary, [snapshot, "--emit-path", join(project, "predicate-rejected"), ...mode], options);
+      const output = join(project, `predicate-rejected-${name}-${mode.join("-") || "native"}`);
+      const rejected = spawnSync(binary, [snapshot, "--emit-path", output, ...mode], options);
       if (rejected.error) throw rejected.error;
       assert.equal(rejected.status, 1, `${name} ${mode.join(" ")}\n${rejected.stdout}\n${rejected.stderr}`);
       assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_GENERIC_WHERE_BOUND_MISMATCH/);
       assert.deepEqual(await readFile(snapshot), original);
-      const artifacts = await readdir(join(project, "predicate-rejected")).catch(error => {
-        if (error.code !== "ENOENT") throw error;
-        return [];
-      });
-      assert.deepEqual(artifacts.filter(file => file !== "calcit.build-errors.mjs"), [],
-        `${name}: rejected preprocessing must not emit application or WASM artifacts`);
-      if (artifacts.includes("calcit.build-errors.mjs")) {
-        assert.match(await readFile(join(project, "predicate-rejected", "calcit.build-errors.mjs"), "utf8"),
-          /W_GENERIC_WHERE_BOUND_MISMATCH/);
-      }
+      await assertRejectedArtifacts(output, name, /W_GENERIC_WHERE_BOUND_MISMATCH/);
+    }
+  }
+  // A project may supply calcit.core instead of the embedded namespace.
+  // Its source-defined guards must not gain proofs from the namespace name.
+  for (const [name, answer, guardedBranch] of [["js-present?", "true", 1], ["js-nullish?", "false", 2]]) {
+    await copyFile("src/cirru/calcit-core.cirru", snapshot);
+    run("edit", "def", `calcit.core/${name}`, "--overwrite", "--input-format", "cirru", "--code", `quote $ defn ${name} (value) ${answer}`);
+    run("edit", "add-ns", "calcit.predicate-origin");
+    run("edit", "def", "calcit.predicate-origin/consume-present", "--input-format", "cirru", "--code",
+      "quote $ defn consume-present (value) &unit");
+    run("edit", "schema", "calcit.predicate-origin/consume-present", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'JsObject) (:return 'Unit)");
+    const branches = ["&unit", "&unit"];
+    branches[guardedBranch - 1] = ["consume-present", "value"];
+    const hint = ["hint-fn", ["{}", [":args", ["[]", ["::", "'JsNullish", "'JsObject"]]], [":return", "'Unit"], [":features", ["#{}", ":js-ffi"]]]];
+    run("edit", "def", "calcit.predicate-origin/rejected-guard", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "rejected-guard", ["value"], hint, ["if", [name, "value"], ...branches]]));
+    run("edit", "schema", "calcit.predicate-origin/rejected-guard", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] $ :: 'JsNullish 'JsObject) (:return 'Unit) (:features $ #{} :js-ffi)");
+    // Deliberately construct one host-nullability boundary for this rejection
+    // fixture; do not rely on a mismatched Unit argument or lazy Fn reflection.
+    run("edit", "def", "calcit.predicate-origin/main!", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "main!", [],
+        ["hint-fn", ["{}", [":args", ["[]"]], [":return", "'Unit"], [":features", ["#{}", ":js-ffi"]]]],
+        ["rejected-guard", ["unsafe-coerce", "&unit", ["::", "'JsNullish", "'JsObject"]]], "&unit"]));
+    run("config", "set", "init-fn", "calcit.predicate-origin/main!");
+    run("config", "set", "reload-fn", "calcit.predicate-origin/main!");
+    const original = await readFile(snapshot);
+    for (const mode of [["--check-only"], [], ["js"], ["wasm"], ["wasi"]]) {
+      const output = join(project, `source-predicate-rejected-${name}-${mode.join("-") || "native"}`);
+      const rejected = spawnSync(binary, [snapshot, "--emit-path", output, ...mode], options);
+      if (rejected.error) throw rejected.error;
+      assert.equal(rejected.status, 1, `${name} source core ${mode.join(" ")}\n${rejected.stderr}`);
+      assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_FN_ARG_TYPE_MISMATCH/);
+      assert.deepEqual(await readFile(snapshot), original);
+      await assertRejectedArtifacts(output, name, /W_FN_ARG_TYPE_MISMATCH/);
     }
   }
   console.log("Known assertions and return/call contracts rejected before native/JS/WASM/WASI; native/JS positives, JS async adoption, scalar WASM assertions, value schema contracts, Diary boundaries, lowered trait return proofs, Countable count contracts and predicate origins passed");
