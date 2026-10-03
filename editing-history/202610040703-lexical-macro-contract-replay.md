@@ -20,6 +20,16 @@
 
 嵌套函数使用子 frame，循环自身的重启使用一次性的 restart scope。独立 namespace 定义编译暂停外层 plan。所有 scope guard 在返回错误或 unwind 时恢复外层状态，不把失败编译的 plan 留给下一次编译。此内部生命周期通过 Rust invariant 测试覆盖。
 
+## 原始断言约束的保留
+
+完整回归与 Actions 的既有 `unproven-loop-assertion` 用例发现：仅重放原始 source 会丢失最初空值上已证明的断言约束。后续 `recur` 引入 `Option<Dynamic>` 时，普通开放边界策略允许 narrowing，错误地把该断言当作新的开放边界。
+
+同一词法 source plan 为断言保留“重检必须有独立输入证明”的布尔合同，不保存任何旧的局部类型。原有通用 assertion proof 门禁继续判断当前证据；source 的函数 frame、父宏及出现序号区分遮蔽、捕获和重复插入。模块因此命名为 `source_replay`，涵盖宏编译产物与 source 合同。
+
+没有为整个循环开启 assertion audit，也没有改变无关 Dynamic 边界的既有策略。直接、捕获及表达式断言的既有反例仍检查 `E_ASSERT_TYPE_UNPROVEN`；新增的合法 String、遮蔽和无关开放边界 `:tests` 防止过度收紧。
+
+原始 assertion 输入不执行 expanded-core 刷新，以免重建 Arc 后丢失宏的逻辑调用身份。只有携带旧 inline 类型的输入沿用原有刷新路径。直接及闭包捕获的 effectful assertion 输入各只展开一次，由同一运行器中的次数断言验证。
+
 ## 缓存、泛型和 capability
 
 初始参数与宏内部每一次 `recur` 都使用当前词法类型重新检查。最后一轮重新生成的泛型绑定用于展开结果合同；不保留旧 scope 的类型绑定。原有纯宏缓存也保存 `recur` 的输入 frame，warm hit 与 cold evaluation 使用相同最终绑定规则。

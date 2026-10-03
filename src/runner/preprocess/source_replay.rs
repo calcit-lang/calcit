@@ -20,6 +20,7 @@ pub(super) struct Expansion {
 enum SiteKind {
   Function,
   Macro,
+  Assertion,
 }
 
 #[derive(Clone, PartialEq, Eq, Hash)]
@@ -50,6 +51,7 @@ struct FunctionFrame {
   visits: HashMap<SourceSite, usize>,
   children: HashMap<Occurrence, usize>,
   macros: HashMap<Occurrence, MacroEntry>,
+  assertions: HashMap<Occurrence, (Arc<CalcitList>, bool)>,
 }
 
 impl FunctionFrame {
@@ -88,6 +90,49 @@ pub(super) struct Scope {
 impl Drop for Scope {
   fn drop(&mut self) {
     ACTIVE.with(|active| *active.borrow_mut() = self.previous.take());
+  }
+}
+
+/// Retain an existing assertion obligation, never its old local type evidence.
+pub(super) struct Assertion {
+  site: Option<(Rc<RefCell<Plan>>, usize, Occurrence)>,
+  pub required: bool,
+}
+
+impl Assertion {
+  pub fn at_source(source: &Arc<CalcitList>) -> Self {
+    let Some(active) = ACTIVE.with(|active| active.borrow().clone()) else {
+      return Self {
+        site: None,
+        required: false,
+      };
+    };
+    let mut plan = active.plan.borrow_mut();
+    let frame = &mut plan.frames[active.frame];
+    let occurrence = frame.next_occurrence(SourceSite {
+      parent_macro: active.parent_macro,
+      source: Arc::as_ptr(source) as usize,
+      kind: SiteKind::Assertion,
+    });
+    let required = frame
+      .assertions
+      .entry(occurrence.clone())
+      .or_insert_with(|| (source.clone(), false))
+      .1;
+    Self {
+      site: Some((active.plan.clone(), active.frame, occurrence)),
+      required,
+    }
+  }
+
+  pub fn retain_required(&self) {
+    if let Some((plan, frame, occurrence)) = &self.site {
+      plan.borrow_mut().frames[*frame]
+        .assertions
+        .get_mut(occurrence)
+        .expect("entered assertion source")
+        .1 = true;
+    }
   }
 }
 

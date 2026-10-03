@@ -1,7 +1,7 @@
 mod checked_call_contract;
 mod js_ffi;
-mod macro_replay;
 mod proof_provenance;
+mod source_replay;
 mod type_checking;
 mod type_inference;
 mod type_rewriting;
@@ -665,7 +665,7 @@ fn ensure_ns_def_preprocessed(
 
   let result = with_preprocess_compile_guard(ns, def, || match program::lookup_def_code(ns, def) {
     Some(code) => {
-      let _definition_replay_scope = macro_replay::Scope::pause_definition();
+      let _definition_replay_scope = source_replay::Scope::pause_definition();
       let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
 
       let mut scope_types = ScopeTypes::new();
@@ -2797,7 +2797,7 @@ fn preprocess_macro_call(
   def_name: &str,
   ctx: PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
-  let (replay_scope, retained) = macro_replay::Scope::enter_macro(source, macro_id, info);
+  let (replay_scope, retained) = source_replay::Scope::enter_macro(source, macro_id, info);
   let definition = retained
     .as_ref()
     .map(|retained| retained.definition.clone())
@@ -2930,7 +2930,7 @@ fn preprocess_list_call(
   let head = &xs[0];
   let call_location = derive_list_call_expr_location(xs);
   if matches!(head, Calcit::Symbol { .. } | Calcit::Import(_))
-    && let Some((macro_id, info)) = macro_replay::Scope::retained_static_callee(xs)
+    && let Some((macro_id, info)) = source_replay::Scope::retained_static_callee(xs)
   {
     return preprocess_macro_call(
       &info,
@@ -3582,7 +3582,7 @@ fn preprocess_list_call(
         }
         CalcitSyntax::AssertType => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
-          preprocess_assert_type(name, name_ns, &args, &mut ctx)
+          preprocess_assert_type_with_obligation(name, name_ns, &args, &mut ctx, Some(source_replay::Assertion::at_source(xs)))
         }
         CalcitSyntax::UnsafeCoerce => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
@@ -10281,7 +10281,7 @@ pub fn preprocess_defn(
       let feature_scope = FunctionFeaturesScope {
         previous: prev_features.clone(),
       };
-      let _macro_replay_scope = macro_replay::Scope::enter_function(
+      let _source_replay_scope = source_replay::Scope::enter_function(
         ys,
         !source_top_level_definition
           && !has_marked_args
@@ -10317,7 +10317,7 @@ pub fn preprocess_defn(
         inferred.arg_types = parameters;
         let previous = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().replace(Arc::new(inferred)));
         drop(feature_scope);
-        let _restart_replay = macro_replay::Scope::restart_function();
+        let _restart_replay = source_replay::Scope::restart_function();
         let result = preprocess_defn(head, head_ns, args, ctx);
         EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous);
         return result;
@@ -10815,6 +10815,16 @@ pub fn preprocess_assert_type(
   args: &CalcitList,
   ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
+  preprocess_assert_type_with_obligation(head, head_ns, args, ctx, None)
+}
+
+fn preprocess_assert_type_with_obligation(
+  head: &CalcitSyntax,
+  head_ns: &str,
+  args: &CalcitList,
+  ctx: &mut PreprocessContext,
+  retained: Option<source_replay::Assertion>,
+) -> Result<Calcit, CalcitErr> {
   if args.len() != 2 {
     return Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Arity,
@@ -10827,9 +10837,12 @@ pub fn preprocess_assert_type(
   let target_raw = args.get(0).unwrap();
   let type_form = args.get(1).unwrap();
 
-  let absence_obligation = resolve_type_value(target_raw, &ScopeTypes::new())
+  let expanded_absence = resolve_type_value(target_raw, &ScopeTypes::new())
     .is_some_and(|annotation| type_inference::has_payload_free_enum_slot(&annotation));
-  let refreshed_target = if absence_obligation {
+  let absence_obligation = retained.as_ref().is_some_and(|assertion| assertion.required) || expanded_absence;
+  // Only expanded core carries stale inline evidence. Original source must
+  // keep its identity so macros inside the assertion still evaluate once.
+  let refreshed_target = if expanded_absence {
     body_for_parameter_recheck(target_raw)
   } else {
     target_raw.clone()
@@ -10900,6 +10913,15 @@ pub fn preprocess_assert_type(
     Calcit::Local(local) => Some(local.type_info.clone()),
     _ => None,
   });
+  if current_type
+    .as_ref()
+    .is_some_and(|annotation| type_inference::has_payload_free_enum_slot(annotation))
+    && let Some(retained) = &retained
+  {
+    // A proof made on an empty input remains an obligation after refinement.
+    // Remember only the source contract, not an obsolete inferred type.
+    retained.retain_required();
+  }
   // Contradictory evidence is invalid for every expression, not just a local.
   // Open boundaries still require their separate migration policy; this check
   // neither manufactures proof nor changes their existing behavior.

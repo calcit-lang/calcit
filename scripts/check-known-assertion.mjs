@@ -702,6 +702,7 @@ try {
     ["string-option-type", "defmacro string-option-type (value) (quasiquote Option)", ":: 'Macro $ {} (:required $ [] $ :: 'Expr $ :: 'Option 'String) (:expansion $ :: 'Expr 'EnumDef)"],
     ["loop-generic-identity", "defmacro loop-generic-identity (value) , value", ":: 'Macro $ {} (:generics $ [] 'T) (:required $ [] $ :: 'Expr 'T) (:expansion $ :: 'Expr 'T)"],
     ["loop-occurrence-log", "defmacro loop-occurrence-log () (println |loop-occurrence-token) (quasiquote 7)", ":: 'Macro $ {} (:required $ []) (:capabilities $ #{} :log) (:expansion $ :: 'Expr 'Number)"],
+    ["loop-assertion-source", "defmacro loop-assertion-source (value) (println |loop-assertion-token) , value", ":: 'Macro $ {} (:generics $ [] 'T) (:required $ [] $ :: 'Expr 'T) (:capabilities $ #{} :log) (:expansion $ :: 'Expr 'T)"],
     ["loop-repeat-source", "defmacro loop-repeat-source (form) (quasiquote $ &let () (~ form) (~ form))", ":: 'Macro $ {} (:required $ [] 'Syntax) (:expansion $ :: 'Expr 'Number)"],
     ["loop-duplicated-effects", "defn loop-duplicated-effects () $ loop ((n 0) (value (Option :none))) (if (&< n 1) (recur 1 (Option :some (loop-repeat-source (loop-occurrence-log)))) (value .unwrap-or 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
     ["loop-captured-effects", "defn loop-captured-effects () $ loop ((n 0) (value (Option :none))) (let ((render (fn () (loop-occurrence-log)))) (if (&< n 1) (recur 1 (Option :some (render))) (value .unwrap-or 0)))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
@@ -816,7 +817,7 @@ try {
   assert= 42 $ loop ((n 0) (value (Option :none))) (if (&< n 1) (if (&< n 1) (recur 1 (Option :some 7)) ()) 42)
   assert= 42 $ loop ((n 0) (value (Option :none))) (if (&< n 1) (if (&>= n 1) () (recur 1 (Option :some 7))) 42)`);
   run("test", "calcit.assert-evidence/recursive-count", "--tag", "recursive-empty-tail", "--require-match");
-  run("edit", "add-test", "calcit.assert-evidence/recursive-count", "loop-macro-contracts", "--tags", "recursive-fields",
+  run("edit", "add-test", "calcit.assert-evidence/recursive-count", "loop-source-contracts", "--tags", "recursive-fields",
     "--input-format", "cirru", "--code", `quote $ do
   assert= 42 $ loop ((n 0) (value (Option :none))) (require-string-option value) (if (&< n 1) (recur 1 (Option :some |kept)) 42)
   assert= 42 $ loop ((n 0) (value (Option :none))) (string-option-recur (Option :none) value true) (if (&< n 1) (recur 1 (Option :some |kept)) 42)
@@ -829,7 +830,14 @@ try {
   assert= 7 $ loop ((n 0) (value (Option :none))) (if (&< n 1) (recur 1 (Option :some 7)) ((loop-generic-identity value) .unwrap-or 0))
   assert= 7 $ loop-duplicated-effects
   assert= 7 $ loop-captured-effects
-  assert= 7 $ loop-head-effects`);
+  assert= 7 $ loop-head-effects
+  assert= 42 $ loop ((n 0) (value (Option :none))) (assert-type value (:: 'Option 'String)) (if (&< n 1) (recur 1 (Option :some |kept)) 42)
+  assert= 42 $ loop ((n 0) (value (Option :none))) (let ((check (fn () (assert-type value (:: 'Option 'String)) 42))) (if (&< n 1) (recur 1 (Option :some |kept)) (check)))
+  assert= 42 $ loop ((n 0) (value (Option :none))) (assert-type (if (&< n 1) value value) (:: 'Option 'String)) (if (&< n 1) (recur 1 (Option :some |kept)) 42)
+  assert= 42 $ loop ((n 0) (value (Option :none))) (let ((value (Option :some |kept))) (assert-type value (:: 'Option 'String))) (if (&< n 1) (recur 1 (Option :some 7)) 42)
+  assert= 42 $ loop ((n 0) (value (Option :none))) (assert-type (make-open-number) 'Number) (if (&< n 1) (recur 1 (Option :some |kept)) 42)
+  assert= 42 $ loop ((n 0) (value (Option :none))) (assert-type (loop-assertion-source value) (:: 'Option 'String)) (if (&< n 1) (recur 1 (Option :some |kept)) 42)
+  assert= 42 $ loop ((n 0) (value (Option :none))) (let ((check (fn () (assert-type (loop-assertion-source value) (:: 'Option 'String)) 42))) (if (&< n 1) (recur 1 (Option :some |kept)) (check)))`);
   run("test", "calcit.assert-evidence/recursive-count", "--tag", "recursive-fields", "--require-match");
   const recursiveTests = JSON.parse(run("query", "def", "calcit.assert-evidence/recursive-count", "--format", "json"))
     .data.tests.filter(test => test.tags.includes("recursive-fields"));
@@ -842,6 +850,8 @@ try {
     "solving loop input constraints must not repeat an effectful macro expansion");
   assert.equal((`${loggedLoop.stdout}\n${loggedLoop.stderr}`.match(/loop-occurrence-token/g) ?? []).length, 4,
     "two interpolated occurrences and two nested function occurrences must each expand exactly once");
+  assert.equal((`${loggedLoop.stdout}\n${loggedLoop.stderr}`.match(/loop-assertion-token/g) ?? []).length, 2,
+    "direct and captured assertion inputs must keep their source identity during retries");
   run();
   const recursiveOutput = join(project, "recursive-fields-js");
   run("--emit-path", recursiveOutput, "js");
