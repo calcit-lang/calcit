@@ -1945,7 +1945,8 @@
                 assert= 4 $ &number:rem 4294967296 7
                 assert= 1 $ &number:rem 9007199254740991 10
                 assert= -1 $ &number:rem -9007199254740991 10
-                assert= (&/ 1 0) $ &/ 1 (&number:rem -4 2)
+                assert= (&/ 1 0)
+                  &/ 1 $ &number:rem -4 2
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |rejects-zero-and-non-safe-integers)
               :code $ quote $ do
@@ -4950,7 +4951,7 @@
                     if
                       &= 2 $ count entry
                       &list:nth entry 1
-                      raise $ str-spaced "|deftrait expects ('requires Trait) with one trait, got:" (format-to-lisp entry)
+                      raise $ str-spaced "|deftrait expects ('requires Trait) with one trait, got:" $ format-to-lisp entry
                 &let
                   normalized $ map
                     filter entries $ fn (entry)
@@ -6870,6 +6871,20 @@
                 assert= true $ try (fail false)
                   fn (message) (= message |right)
               :tags $ #{} :checked-exit-proof :unit
+            %{} 'TestEntry (:name |source-hint-survives-loop-parameter-recheck)
+              :code $ quote $ assert= 8
+                loop
+                    n 0
+                    value $ Option :none
+                  let
+                      echo-number $ fn (input) input $ hint-fn
+                        {}
+                          :args $ [] 'Number
+                          :return 'Number
+                    if (&< n 1)
+                      recur 1 $ Option :some 7
+                      &+ (echo-number 7) 1
+              :tags $ #{} :parameter-recheck :unit
         'identical? $ %{} 'CodeEntry
           :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
           :code $ quote &runtime-implementation

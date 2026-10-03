@@ -9707,6 +9707,80 @@ fn lower_self_tail_match_branch(branch: &Calcit, ns: &str, def: &str) -> Option<
   Some(Calcit::from(forms))
 }
 
+/// Keep expanded code for a type retry without freezing generated signatures.
+fn body_for_parameter_recheck(form: &Calcit) -> Calcit {
+  if let Calcit::Local(local) = form {
+    // Resolve lexical occurrences and bindings again against the new scope;
+    // their old payload-free types are no longer valid evidence.
+    return Calcit::Symbol {
+      sym: local.sym.clone(),
+      info: local.info.clone(),
+      location: local.location.clone(),
+    };
+  }
+  let Calcit::List(items) = form else { return form.clone() };
+  if matches!(
+    items.first(),
+    Some(Calcit::Syntax(CalcitSyntax::Quote | CalcitSyntax::Quasiquote, _))
+  ) {
+    return form.clone();
+  }
+  if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::AssertType, _)))
+    && items
+      .get(1)
+      .and_then(|target| resolve_type_value(target, &ScopeTypes::new()))
+      .is_some_and(|annotation| type_inference::has_payload_free_enum_slot(&annotation))
+  {
+    // Retain the original absence evidence only as an assertion obligation.
+    // The assertion handler refreshes its input from the new lexical scope.
+    return form.clone();
+  }
+  if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::Match, _)))
+    && let Some(branches) = type_inference::preprocessed_match_branches(items)
+  {
+    // Indexed matches contain a declaration and a slot table, not source
+    // branch pairs. Recreate the equivalent pairs before binding payloads.
+    let mut forms = items.iter().take(2).cloned().collect::<Vec<_>>();
+    forms.extend(
+      branches
+        .into_iter()
+        .map(|(pattern, body)| Calcit::from(vec![pattern.clone(), body.clone()])),
+    );
+    return Calcit::from(forms.iter().map(body_for_parameter_recheck).collect::<Vec<_>>());
+  }
+  let mut items = items.to_vec();
+  if items.len() == 4
+    && matches!(
+      items.first(),
+      Some(Calcit::Syntax(
+        CalcitSyntax::ParseCirruEdnAs | CalcitSyntax::TryParseCirruEdnAs | CalcitSyntax::DecodeMapAs | CalcitSyntax::TryDecodeMapAs,
+        _
+      ))
+    )
+    && items
+      .last()
+      .and_then(crate::calcit::data_shape::DataShapeGraph::from_calcit_handle)
+      .is_some()
+  {
+    // Decoder handles are derived core metadata, not source arguments.
+    // Rebuild the decoder from its retained type expression on the retry.
+    items.pop();
+  }
+  if matches!(
+    items.first(),
+    Some(Calcit::Syntax(
+      CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport,
+      _
+    ))
+  ) && matches!(items.last(), Some(Calcit::List(hint)) if hint.call_kind() == CalcitCallKind::GeneratedFnHint)
+  {
+    // Macro-generated functions append this signature after their source
+    // forms. Remove that one trailing copy, not the user's original hints.
+    items.pop();
+  }
+  Calcit::from(items.iter().map(body_for_parameter_recheck).collect::<Vec<_>>())
+}
+
 pub fn preprocess_defn(
   head: &CalcitSyntax,
   head_ns: &str,
@@ -9923,6 +9997,7 @@ pub fn preprocess_defn(
       // Inject declared argument types into the function body. Call-site checks alone are not
       // enough: without these bindings, local method dispatch and return inference inside a named
       // `defn` unnecessarily fall back to Dynamic. Anonymous callbacks still use EXPECTED_FN_TYPE.
+      let has_body_fn_hint = body_fn_hint.is_some();
       let mut effective_fn_schema: Option<Arc<CalcitFnTypeAnnotation>> = body_fn_hint.or_else(|| match def_schema.as_ref() {
         CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.clone()),
         CalcitTypeAnnotation::Dynamic => EXPECTED_FN_TYPE.with(|cell| cell.borrow().clone()),
@@ -10064,6 +10139,28 @@ pub fn preprocess_defn(
         Ok(())
       })?;
 
+      // An inferred empty enum input constrains only the first invocation.
+      // Its lexical tail transfers supply the missing payload constraints.
+      // Recheck the expanded body with those constraints so dispatch, locals
+      // and every ordinary type gate see the same contract on later turns.
+      // A source-owned schema or explicit hint is never inferred from recur.
+      if !source_top_level_definition
+        && !has_marked_args
+        && !has_body_fn_hint
+        && let Some(signature) = effective_fn_schema.as_ref()
+        && let Some(parameters) = type_inference::infer_recur_parameter_types(&processed_body, &body_types, &recur_param_types)
+      {
+        let mut inferred = signature.as_ref().clone();
+        inferred.arg_types = parameters;
+        let previous = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().replace(Arc::new(inferred)));
+        let mut rechecked_args = args.iter().take(2).cloned().collect::<Vec<_>>();
+        rechecked_args.extend(processed_body.iter().map(body_for_parameter_recheck));
+        drop(feature_scope);
+        let result = preprocess_defn(head, head_ns, &CalcitList::from(rechecked_args.as_slice()), ctx);
+        EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous);
+        return result;
+      }
+
       if infer_helper_schema {
         let inferred = type_inference::infer_unhinted_callback_signature(&xs.clone().into(), &body_types)
           .filter(inferred_helper_contract_is_closed)
@@ -10112,6 +10209,8 @@ pub fn preprocess_defn(
           .find(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
         && let Some(inferred) = if type_inference::expression_definitely_diverges(body) {
           Some(crate::calcit::type_annotation::NEVER_TYPE.clone())
+        } else if !has_marked_args {
+          type_inference::infer_function_exit_type(body, &body_types, &recur_param_types)
         } else {
           resolve_type_value(body, &body_types)
         }
@@ -10137,10 +10236,13 @@ pub fn preprocess_defn(
         None
       };
       if let Some(fn_annot) = generated_fn_schema.as_ref() {
-        let schema_hint = Calcit::from(vec![
-          Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(ctx.file_ns)),
-          fn_annot.to_schema_calcit(),
-        ]);
+        let schema_hint = Calcit::from(CalcitList::executable(
+          vec![
+            Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(ctx.file_ns)),
+            fn_annot.to_schema_calcit(),
+          ],
+          CalcitCallKind::GeneratedFnHint,
+        ));
         processed_body.push(schema_hint.clone());
         xs = xs.push_right(schema_hint);
       }
@@ -10555,8 +10657,15 @@ pub fn preprocess_assert_type(
   let target_raw = args.get(0).unwrap();
   let type_form = args.get(1).unwrap();
 
+  let absence_obligation = resolve_type_value(target_raw, &ScopeTypes::new())
+    .is_some_and(|annotation| type_inference::has_payload_free_enum_slot(&annotation));
+  let refreshed_target = if absence_obligation {
+    body_for_parameter_recheck(target_raw)
+  } else {
+    target_raw.clone()
+  };
   let target_form = preprocess_expr(
-    target_raw,
+    &refreshed_target,
     ctx.scope_defs,
     ctx.scope_types,
     ctx.file_ns,
@@ -10648,7 +10757,7 @@ pub fn preprocess_assert_type(
   }
   // Audit before the local scope update: an assertion cannot provide its own
   // input evidence, and a second assertion must not hide the first boundary.
-  if REQUIRE_ASSERTION_PROOF.with(Cell::get) && !assertion_proof.is_some_and(TypeProof::is_proven) {
+  if (absence_obligation || REQUIRE_ASSERTION_PROOF.with(Cell::get)) && !assertion_proof.is_some_and(TypeProof::is_proven) {
     let actual = current_type
       .as_ref()
       .map(|annotation| annotation.to_brief_string())
@@ -10670,6 +10779,7 @@ pub fn preprocess_assert_type(
   }
   if let Calcit::Local(local) = &asserted_target {
     let current_type = current_type.expect("local assertion has inline type evidence");
+    let retain_assertion = type_inference::has_payload_free_enum_slot(&current_type);
     let type_entry = if current_type.as_ref().is_compatible_with(asserted_type.as_ref())
       && annotation_dynamic_weight(current_type.as_ref()) < annotation_dynamic_weight(asserted_type.as_ref())
     {
@@ -10682,6 +10792,16 @@ pub fn preprocess_assert_type(
     let mut typed_local = local.to_owned();
     typed_local.type_info = type_entry;
 
+    if retain_assertion {
+      // Absence can prove this assertion before a loop acquires a payload.
+      // Keep its declared constraint for expanded-core retries, including
+      // assertions in closures that capture the loop parameter.
+      return Ok(Calcit::from(vec![
+        Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
+        asserted_target,
+        asserted_type_form,
+      ]));
+    }
     return Ok(Calcit::Local(typed_local));
   }
 
@@ -12502,6 +12622,46 @@ mod tests {
     assert!(build_indexed_match_table(&enum_def, &[match_branch("idle", "first"), match_branch("idle", "second")]).is_none());
     assert!(build_indexed_match_table(&enum_def, &[wildcard_match_branch("early"), match_branch("done", "late")]).is_none());
     assert!(build_indexed_match_table(&enum_def, &[match_branch("missing", "unknown")]).is_none());
+  }
+
+  #[test]
+  fn parameter_recheck_removes_only_marked_generated_hints() {
+    // Source cannot construct executable metadata. Test the provenance bit
+    // directly, independently of strict mode and program-owned definitions.
+    let signature = CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![],
+      return_type: Arc::new(CalcitTypeAnnotation::Number),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    };
+    let hint_items = vec![
+      Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests.recheck")),
+      signature.to_schema_calcit(),
+    ];
+    let source_hint = Calcit::from(hint_items.clone());
+    let generated_hint = Calcit::from(CalcitList::executable(hint_items, CalcitCallKind::GeneratedFnHint));
+    let definition = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::Defn, Arc::from("tests.recheck")),
+      code_to_calcit(&Cirru::leaf("nested"), "tests.recheck", "main", vec![]).expect("function name"),
+      Calcit::from(vec![]),
+      Calcit::Number(7.0),
+      source_hint.clone(),
+      generated_hint,
+    ]);
+    let retried = body_for_parameter_recheck(&definition);
+    let Calcit::List(forms) = &retried else {
+      panic!("expected definition")
+    };
+    assert_eq!(forms.len(), 5);
+    assert_eq!(forms.iter().last(), Some(&source_hint));
+    // Rechecking again must not mistake the now-trailing source hint for an
+    // inferred contract, including in a quoted definition.
+    assert_eq!(body_for_parameter_recheck(&retried), retried);
+    let quoted = Calcit::from(vec![Calcit::Syntax(CalcitSyntax::Quote, Arc::from("tests.recheck")), definition]);
+    assert_eq!(body_for_parameter_recheck(&quoted), quoted);
   }
 
   #[test]
