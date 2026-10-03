@@ -126,6 +126,9 @@ export let type_of = (x: any): CalcitTag => {
   throw new Error(`Unknown data ${x}`);
 };
 
+// The intrinsic getter reads typed-array slots across realms, ignoring a forged Symbol.toStringTag.
+const typedArrayTag = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), Symbol.toStringTag)!.get!;
+
 /** Check host member shape without invoking methods or claiming their signature is verified. */
 export const js_cast = (value: unknown, trait: string, fields: readonly string[], methods: readonly string[]): object => {
   const fail = (detail: string, cause?: unknown): never => {
@@ -137,7 +140,9 @@ export const js_cast = (value: unknown, trait: string, fields: readonly string[]
   // Keep the runtime's own value classification authoritative instead of another registry.
   let host: boolean;
   try {
-    host = value !== null && typeof value === "object" && !(value instanceof CalcitRecur) && type_of(value).value === "js-object";
+    host = value !== null && typeof value === "object"
+      && !(ArrayBuffer.isView(value) && typedArrayTag.call(value) === "Uint8Array")
+      && !(value instanceof CalcitRecur) && type_of(value).value === "js-object";
   } catch (cause) {
     return fail("host classification failed", cause);
   }

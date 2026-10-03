@@ -363,7 +363,9 @@ calcit calcit.cirru edit def app.browser/QueryHost --file snippet.cirru --input-
 ```
 
 在适配器边界可以用 `js-cast value 'QueryHost` 检查声明的宿主成员形状，之后用普通 Calcit 方法调用。
-该转换必须位于 schema 带 `:features $ #{} :js-ffi` 的函数中，目标是已声明的 external-object trait：
+该转换必须位于 schema 带 `:features $ #{} :js-ffi` 的函数中，目标是已声明的 external-object trait。
+这个词法要求在 `feature-policy.js-ffi` 为 `allow` 时仍然生效：策略可以放行普通宿主操作，但不会替适配器
+声明受检转换所需的能力。业务调用者无需继承适配器的 feature：
 
 ```cirru.no-check
 defn read-title (element)

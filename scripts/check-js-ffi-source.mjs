@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { cp, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { runInNewContext } from "node:vm";
 import * as procs from "../lib/calcit.procs.mjs";
 
 const repository = fileURLToPath(new URL("..", import.meta.url));
@@ -132,6 +133,13 @@ try {
   hostModule.replay_host_tests_$x_();
   const host = hostModule.make_counter_host(3);
   assert.equal(hostModule.checked_counter_host(host), host, "checked casts preserve frozen host identity");
+  const foreignBuffer = runInNewContext("new Uint8Array(1)");
+  assert.equal(foreignBuffer instanceof Uint8Array, false, "the fixture must use a different realm");
+  foreignBuffer["total-value"] = 3;
+  foreignBuffer.add = () => 3;
+  assert.throws(() => hostModule.checked_counter_host(foreignBuffer), /expected a JavaScript host object/);
+  Object.defineProperty(foreignBuffer, Symbol.toStringTag, { value: "Host" });
+  assert.throws(() => hostModule.checked_counter_host(foreignBuffer), /expected a JavaScript host object/);
   for (const value of [null, undefined, 1, "host", {}, { "total-value": 3, add: 7 }, procs._$L_(3), procs.newTag("host"), new Uint8Array(1)]) {
     assert.throws(() => hostModule.checked_counter_host(value), /js-cast app\.main\/CounterHost:/);
   }
@@ -165,6 +173,11 @@ try {
   };
   mutateCast("schema", "quote $ :: 'Fn $ {} (:args $ [] 'JsObject) (:return 'app.main/CounterHost)");
   rejectCast(/E_JS_FFI_FEATURE_REQUIRED/);
+  execFileSync(resolve(repository, "target/debug/calcit"), [input, "config", "set", "feature-policy.js-ffi", "allow"],
+    { cwd: fixture, stdio: "pipe" });
+  rejectCast(/E_JS_FFI_FEATURE_REQUIRED/);
+  execFileSync(resolve(repository, "target/debug/calcit"), [input, "config", "set", "feature-policy.js-ffi", "error"],
+    { cwd: fixture, stdio: "pipe" });
   mutateCast("schema", checkedSchema);
   for (const target of ["Number", "calcit.core/Len", "MissingHost"]) {
     mutateCast("def", `quote $ defn checked-counter-host (value) (js-cast value '${target})`);
