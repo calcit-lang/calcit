@@ -911,11 +911,11 @@ fn strict_type_fail_general_dynamic_method_reports_receiver_source() {
     assert!(err.contains("E_DYNAMIC_POSTFIX_METHOD"), "unexpected strict dispatch error: {err}");
     assert!(err.contains("`.custom`"), "method should be explicit: {err}");
     assert!(
-      err.contains("missing static receiver schema"),
+      err.contains("receiver schema that resolves to Dynamic"),
       "receiver source should be classified: {err}"
     );
     assert!(
-      err.contains("add a structured receiver schema"),
+      err.contains("narrow or validate the receiver"),
       "migration should be actionable: {err}"
     );
   });

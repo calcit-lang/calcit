@@ -906,14 +906,17 @@ defn calculate-area (width height) (; Types inferred from arithmetic operations)
 ```cirru
 let
     dangerous-operation $ fn (data)
+      hint-fn $ {}
+        :args $ [] $ :: 'List 'Number
+        :return $ :: 'List 'Number
       map data $ fn (x) (* x 2)
     critical-operation $ fn (data)
       hint-fn $ {}
-        :args $ [] :list
-        :return :list
+        :args $ [] $ :: 'List 'Number
+        :return $ :: 'List 'Number
       let
           checked data
-        assert-type checked :list
+        assert-type checked $ :: 'List 'Number
         ; Ensure the local value is still what we expect before processing
         dangerous-operation checked
   critical-operation $ [] 1 2 3
@@ -1110,3 +1113,7 @@ Static type analysis:
 - [Polymorphism](polymorphism.md) - Object-oriented programming patterns
 - [Macros](macros.md) - Metaprogramming and code generation
 - [Data](../data.md) - Data types and structures
+
+## 限制
+
+集合辅助函数需要完整的元素类型合同，`assert-type` 只检查已有证明，不能把开放的 `Dynamic` 转换为可用于 `map` 的集合。

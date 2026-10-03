@@ -56,6 +56,18 @@ try {
   for (const name of ["safe-string", "safe-number-string", "safe-tag-string", "safe-symbol-string", "safe-bool-string", "safe-nil-string"]) {
     run(snapshot, "test", `test-wasm.conversion/${name}`, "--require-match");
   }
+  // An explicit open input cannot acquire ToString merely from its use in
+  // the body. Invalid source must fail staged validation atomically, rather
+  // than being silently inferred as a capability-bearing parameter.
+  const invalidSource = await readFile(snapshot, "utf8");
+  const invalidPreview = spawnSync(binary, [snapshot, "fix", "--rule", rule, "--ns", "test-wasm.conversion", "--format", "json"],
+    { encoding: "utf8", timeout: 60000 });
+  assert.equal(invalidPreview.error, undefined);
+  assert.notEqual(invalidPreview.status, 0, "an unproven Dynamic conversion must block staged validation");
+  assert.match(invalidPreview.stderr, /W_GENERIC_WHERE_BOUND_MISMATCH/);
+  assert.equal(await readFile(snapshot, "utf8"), invalidSource, "failed validation must not write partial fixes");
+  run(snapshot, "query", "def", "test-wasm.conversion/dynamic-string");
+  run(snapshot, "edit", "rm-def", "test-wasm.conversion/dynamic-string");
   const before = await readFile(snapshot, "utf8");
   const preview = JSON.parse(run(snapshot, "fix", "--rule", rule, "--ns", "test-wasm.conversion", "--format", "json"));
   const applicable = preview.data.suggestions.filter((item) => item.applicability === "machine-applicable");
@@ -68,7 +80,6 @@ try {
     "Tag input must not be treated as the new String-only contract");
   assert.equal(preview.data.suggestions.find((item) => item.definition === "test-wasm.conversion/dynamic-tag")?.applicability, "requires-review");
   assert.equal(preview.data.suggestions.find((item) => item.definition === "test-wasm.conversion/dynamic-symbol")?.applicability, "requires-review");
-  assert.equal(preview.data.suggestions.find((item) => item.definition === "test-wasm.conversion/dynamic-string")?.applicability, "requires-review");
   assert.equal(preview.data.suggestions.find((item) => item.definition === "test-wasm.conversion/macro-tag")?.applicability, "requires-review");
   const macroArgument = preview.data.suggestions.find((item) => item.definition === "test-wasm.conversion/from-macro");
   assert.equal(macroArgument?.origin_chain?.[0]?.argument_type, "string", "the macro result must be proven String to exercise the provenance guard");

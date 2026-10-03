@@ -2513,6 +2513,67 @@ fn reject_pending_async_arguments(
   Ok(())
 }
 
+// Keep contextual signature temporaries off the ordinary recursive call path.
+#[inline(never)]
+fn preprocess_immediate_call_context(
+  xs: &CalcitList,
+  scope_defs: &HashSet<Arc<str>>,
+  scope_types: &mut ScopeTypes,
+  file_ns: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<Option<(Calcit, CalcitList)>, CalcitErr> {
+  let head = &xs[0];
+  let mut immediate_call = None;
+  // An immediately invoked source function has positional input evidence.
+  // Preserve it before compiling the body, rather than joining heterogeneous
+  // inputs into one open collection member. Explicit body hints still win.
+  if let Calcit::List(definition) = head
+    && let Some(definition_head) = definition.first()
+    && (matches!(definition_head, Calcit::Syntax(CalcitSyntax::Defn, _))
+      || matches!(definition_head, Calcit::Symbol { sym, .. } if matches!(sym.as_ref(), "fn" | "defn")))
+    && let Some(Calcit::List(parameters)) =
+      definition.get(if matches!(definition_head, Calcit::Symbol { sym, .. } if sym.as_ref() == "fn") {
+        1
+      } else {
+        2
+      })
+    && parameters.len() == xs.len().saturating_sub(1)
+    && parameters.iter().all(|parameter| {
+      matches!(parameter, Calcit::Local(_)) || matches!(parameter, Calcit::Symbol { sym, .. } if !matches!(sym.as_ref(), "&" | "?"))
+    })
+    && !xs.iter().skip(1).any(|arg| {
+      matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) || matches!(arg, Calcit::Symbol { sym, .. } if sym.as_ref() == "&")
+    })
+  {
+    let resolved_head = preprocess_expr(definition_head, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+    if matches!(resolved_head, Calcit::Syntax(CalcitSyntax::Defn, _))
+      || matches!(&resolved_head, Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "fn")
+    {
+      let mut processed_args = Vec::new();
+      let mut input_types = Vec::new();
+      for arg in xs.iter().skip(1) {
+        let processed = preprocess_expr(arg, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+        input_types.push(resolve_type_value(&processed, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()));
+        processed_args.push(processed);
+      }
+      let signature = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        arg_types: input_types,
+        return_type: calcit::DYNAMIC_TYPE.clone(),
+        rest_type: None,
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        fn_kind: SchemaKind::Fn,
+        features: Arc::new(HashSet::new()),
+      })));
+      let processed_head =
+        preprocess_argument_with_context(head, Some(&signature), scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+      immediate_call = Some((processed_head, CalcitList::from(processed_args.as_slice())));
+    }
+  }
+  Ok(immediate_call)
+}
+
 fn preprocess_list_call(
   xs: &CalcitList,
   scope_defs: &HashSet<Arc<str>>,
@@ -2523,8 +2584,38 @@ fn preprocess_list_call(
 ) -> Result<Calcit, CalcitErr> {
   let head = &xs[0];
   let call_location = derive_list_call_expr_location(xs);
-  let head_form = preprocess_expr(head, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
-  let args = xs.drop_left();
+  let (head_form, args) = match preprocess_immediate_call_context(xs, scope_defs, scope_types, file_ns, check_warnings, call_stack)? {
+    Some(call) => call,
+    None => (
+      preprocess_expr(head, scope_defs, scope_types, file_ns, check_warnings, call_stack)?,
+      xs.drop_left(),
+    ),
+  };
+  // A literal argument list has exact positional evidence and no observable
+  // allocation identity. Lower only the canonical helper, not a same-name
+  // user function, and leave nonliteral/spread-bearing lists on their own path.
+  if matches!(&head_form, Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "apply")
+    && args.len() == 2
+    && (resolve_type_value(&args[0], scope_types).is_some_and(|annotation| annotation.resolve_to_nonoptional_fn().is_some())
+      || matches!(&args[0], Calcit::List(definition) if
+        matches!(definition.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _)))
+          || matches!(definition.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "fn" || sym.as_ref() == "defn")))
+    && let Some(items) = extract_literal_list_items(&args[1])
+    && !items.iter().any(|item| {
+      matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) || matches!(item, Calcit::Symbol { sym, .. } if sym.as_ref() == "&")
+    })
+  {
+    let mut call = vec![args[0].clone()];
+    call.extend(items.into_iter().cloned());
+    return preprocess_list_call(
+      &CalcitList::from(call.as_slice()),
+      scope_defs,
+      scope_types,
+      file_ns,
+      check_warnings,
+      call_stack,
+    );
+  }
   let mut def_name = grab_def_name(head);
   if def_name.as_ref() == "??"
     && let Some(receiver) = args.first()
@@ -9611,12 +9702,10 @@ pub fn preprocess_defn(
           }))
           .collect::<Vec<_>>();
         for (param_sym, arg_type) in param_symbols.iter().zip(parameter_types) {
-          // Proof audits retain explicit open parameter evidence. Ordinary
-          // compilation keeps its existing rollout policy until consumer
-          // nominal-predicate boundaries have independently proven narrowing.
-          if !matches!(arg_type.as_ref(), CalcitTypeAnnotation::Dynamic) || REQUIRE_ASSERTION_PROOF.with(Cell::get) {
-            body_types.insert(param_sym.to_owned(), arg_type);
-          }
+          // An explicit open parameter is part of the callable contract. Body
+          // usage cannot silently replace it with the capability it needs.
+          // Predicates may still narrow that parameter in their success branch.
+          body_types.insert(param_sym.to_owned(), arg_type);
         }
       }
 

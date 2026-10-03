@@ -10343,7 +10343,7 @@ fn core_nominal_predicate_rules_migrate_proven_calls_idempotently() {
       "a raw Dynamic receiver must not produce an automatic rewrite"
     );
     let diagnostic = String::from_utf8_lossy(&preview.stderr);
-    assert!(diagnostic.contains("E_ERASED_GENERIC_RELATION"), "{diagnostic}");
+    assert!(diagnostic.contains("E_DYNAMIC_NOMINAL_ARGUMENT"), "{diagnostic}");
   }
 }
 

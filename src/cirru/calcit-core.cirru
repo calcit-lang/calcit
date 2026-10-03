@@ -1579,7 +1579,11 @@
                 let
                     parts $ &map:destruct m
                   if (non-nil? parts)
-                    assert= 3 $ count $ option:unwrap (last parts)
+                    let
+                        remaining-map $ option:unwrap $ last parts
+                      if (map? remaining-map)
+                        assert= 3 $ count remaining-map
+                        raise |expected-map-rest
                     raise |expected-non-empty-map
                 assert= 10 $ foldl m 0 $ fn (acc pair)
                   let[] (k v) pair $ &+ acc v
@@ -1616,14 +1620,16 @@
           :examples $ []
             quote $ let
                 triple $ &map:diff-triple (&{} :a 1 :b 2) (&{} :a 2 :c 3)
-              [] (nth triple 0) (nth triple 1)
-                count $ nth triple 2
+                common $ &list:nth triple 2
+              if (list? common)
+                [] (&list:nth triple 0) (&list:nth triple 1) (count common)
+                raise |expected-common-list
             quote $ let
                 triple $ &map:diff-triple (&{} :x 10 :y 20) (&{} :x 10 :y 99 :z 30)
-                drop-keys $ nth triple 0
-                new-diff $ nth triple 1
-                common-triples $ nth triple 2
-              list drop-keys new-diff common-triples
+                drop-keys $ &list:nth triple 0
+                new-diff $ &list:nth triple 1
+                common-triples $ &list:nth triple 2
+              [] drop-keys new-diff common-triples
           :schema $ :: 'Fn $ {} (:return 'Enum)
             :args $ [] (:: 'Map 'K 'V) (:: 'Map 'K 'W)
             :generics $ [] 'K 'V 'W
@@ -1632,14 +1638,20 @@
             :code $ quote $ do
               let
                   triple $ &map:diff-triple (&{} :a 1 :b 2) (&{} :a 2 :c 3)
+                  common $ &list:nth triple 2
                 assert= (#{} :b) (&list:nth triple 0)
                 assert= (&{} :c 3) (&list:nth triple 1)
-                assert= 1 $ count $ &list:nth triple 2
+                if (list? common)
+                  assert= 1 $ count common
+                  raise |expected-common-list
               let
                   same $ &map:diff-triple (&{} :a 1 :b 2) (&{} :a 1 :b 2)
+                  common $ &list:nth same 2
                 assert= (#{}) (&list:nth same 0)
                 assert= (&{}) (&list:nth same 1)
-                assert= 2 $ count $ &list:nth same 2
+                if (list? common)
+                  assert= 2 $ count common
+                  raise |expected-common-list
             :tags $ #{} :core :unit
         '&map:dissoc $ %{} 'CodeEntry
           :doc "|internal function for map dissociation\nSyntax: (&map:dissoc map key & keys)\nParams: map (Map<K,V>), key (K), keys (K, variadic)\nReturns: Map<K,V>\nReturns new map without specified keys"
@@ -3502,7 +3514,7 @@
                 assert= 3 $ "|a😀b" .len
               :tags $ #{} :core :naming-contract :unit
         'apply $ %{} 'CodeEntry
-          :doc "|Call a function with arguments spread from a list. Static analysis preserves the callable return type only when the list has a non-Dynamic homogeneous member satisfying every fixed/rest input and its known cardinality proves the callable arity; a rest-only callable does not require a known length. Otherwise the compatibility result remains Dynamic. Normalize heterogeneous arguments or call the function directly when positions differ."
+          :doc "|用列表实参调用函数。不含 spread 的列表字面量保留各位置的类型，canonical apply 可按原求值顺序 lowering 为直接调用；立即调用的固定参数函数由这些输入推断参数，显式 hint-fn 合同仍优先。非字面量列表需要同一非 Dynamic 成员类型满足全部固定/rest 参数，并由已知长度证明参数数量；纯 rest 函数无需已知长度。不能证明时返回类型保持 Dynamic，调用前应收窄或使用明确的函数合同。"
           :code $ quote $ defn apply (f args) (f & args)
           :examples $ []
             quote $ assert= 6 $ apply + ([] 1 2 3)
@@ -3511,10 +3523,65 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Fn $ :: 'List 'A
             :generics $ [] 'A
-          :tests $ [] $ %{} 'TestEntry (:name |spreads-list-arguments)
-            :code $ quote $ assert= 10
-              apply + $ [] 1 2 3 4
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |spreads-list-arguments)
+              :code $ quote $ assert= 10
+                apply + $ [] 1 2 3 4
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |literal-position-types)
+              :code $ quote $ do
+                assert= 3 $ apply
+                  fn (label values) (count values)
+                  [] |items $ [] 10 20 30
+                assert= 0 $ apply
+                  fn (label values) (count values)
+                  [] |items $ assert-type ([]) (:: List Number)
+              :tags $ #{} :core :count-contract :unit
+            %{} 'TestEntry (:name |preserves-evaluation-order)
+              :code $ quote $ let
+                  state $ atom 0
+                  result $ apply
+                    do (reset! state 1)
+                      fn (label values)
+                        hint-fn $ {}
+                          :args $ [] String $ :: List Number
+                          :return Number
+                        assert= 3 $ deref state
+                        count values
+                    []
+                      do
+                        assert= 1 $ deref state
+                        reset! state 2
+                        , |label
+                      do
+                        assert= 2 $ deref state
+                        reset! state 3
+                        [] 10 20 30
+                assert= 3 result
+                assert= 3 $ deref state
+              :tags $ #{} :core :count-contract :unit
+            %{} 'TestEntry (:name |preserves-statement-evaluation-order)
+              :code $ quote $ let
+                  state $ atom 0
+                apply
+                  do (reset! state 1)
+                    fn (label values)
+                      hint-fn $ {}
+                        :args $ [] String $ :: List Number
+                        :return Number
+                      assert= 3 $ deref state
+                      count values
+                  []
+                    do
+                      assert= 1 $ deref state
+                      reset! state 2
+                      , |label
+                    do
+                      assert= 2 $ deref state
+                      reset! state 3
+                      [] 10 20 30
+                assert= 3 $ deref state
+              :tags $ #{} :core :count-contract :unit
         'apply-args $ %{} 'CodeEntry
           :doc "|macro that applies a function to arguments, handles empty argument list specially"
           :code $ quote $ defmacro apply-args (args f)
@@ -4417,7 +4484,7 @@
                   pow (cos 1) 2
               :tags $ #{} :core :unit
         'count $ %{} 'CodeEntry
-          :doc "|Count items in a collection or string. Nil is rejected instead of being treated as empty."
+          :doc "|按 Countable 合同计数，返回 Number；集合与字符串使用原有长度单位，Struct 计字段数，Enum 包含 tag。泛型参数须声明 Countable 约束，Dynamic 使用前须收窄；nil 不作为空集合。"
           :code $ quote $ defn count (x)
             if (list? x) (&list:count x) (.count x)
           :examples $ []
@@ -4426,6 +4493,7 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'T
             :generics $ [] 'T
+            :where $ {} $ 'T 'Countable
           :tests $ []
             %{} 'TestEntry (:name |counts-set-members)
               :code $ quote $ assert= 4
@@ -4434,6 +4502,23 @@
             %{} 'TestEntry (:name |counts-string-characters)
               :code $ quote $ assert= 4 (count |good)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |empty-and-collection-counts)
+              :code $ quote $ do
+                assert= 0 $ count $ []
+                assert= 3 $ count $ [] 1 2 3
+                assert= 0 $ count $ {}
+                assert= 2 $ count $ {} (:a 1) (:b 2)
+                assert= 2 $ count $ #{} 1 1 2
+                assert= 0 $ count |
+                assert= 3 $ count "|A😀𠮷"
+              :tags $ #{} :core :count-contract :unit
+            %{} 'TestEntry (:name |nominal-field-and-tag-counts)
+              :code $ quote $ do
+                assert= 1 $ count $ FsPath :value |a.txt
+                assert= 1 $ count $ Option :none
+                assert= 2 $ count $ Option :some 42
+                assert= 2 $ count $ Result :ok 42
+              :tags $ #{} :core :count-contract :unit
         'cpu-time $ %{} 'CodeEntry
           :doc "|兼容旧名；首选 monotonic-time-ms。返回单调时钟的毫秒读数，只比较同一进程内两次调用的差值，不依赖绝对起点。"
           :code $ quote &runtime-implementation
@@ -4786,7 +4871,7 @@
                             assert "|defstruct expects each field as (:field type); check indentation if one field was nested under another" $ every? field-pairs $ fn (pair)
                               &let
                                 items $ data-definition-form pair
-                                and
+                                and (list? items)
                                   &= 2 $ count items
                                   tag? $ &list:first items
                             assert "|defstruct found malformed nested field syntax; check indentation around field pairs" $ every? field-pairs $ fn (pair)
@@ -7656,6 +7741,16 @@
             :required $ [] 'SyntaxList
             :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-standalone-loop-effects)
+            :code $ quote $ let
+                state $ atom 0
+              loop
+                  x 3
+                if (> x 0)
+                  do (swap! state + x)
+                    recur $ dec x
+              assert= 6 $ deref state
+            :tags $ #{} :core :count-contract :unit
         'macro? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn macro? (x)
             &= (type-of x) :macro

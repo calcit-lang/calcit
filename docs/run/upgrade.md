@@ -133,6 +133,20 @@ assert= true $ .round? -0
 assert= true $ round? 9007199254740992
 ```
 
+## count 的 Countable 合同
+
+本节的合同加强面向 0.29 非 patch 升级；已发布旧工具链仍以其实际 `query def/type` 为准，不把开发分支的行为当作旧版本保证。
+
+`count` 要求参数具备 `Countable` 能力，返回 `Number`。List、Map、Set 和 String 保持原有长度语义；Struct 计字段数，Enum 的计数包含 tag。String 按 Unicode 标量计数，不是 UTF-8 字节数或 JavaScript 的 UTF-16 长度。已知集合类型也可以使用其 `.len` 方法。
+
+泛型 helper 调用 `count` 时，需要在 Fn schema 的 `:where` 中声明 `T Countable`；名义 Struct/Enum 参数由编译器解析其声明并证明已有能力，无需改用低层计数原语。开放 `Dynamic` 在使用内容前须显式收窄，例如在 `list?`、`map?`、`set?` 或 `string?` 成功分支中计数。`nil` 不作为空集合，Number 和函数也不是可计数值。
+
+这项收紧不是等价改名，不提供自动插入类型转换、默认空集合或 `unsafe-coerce` 的 fix。升级时保留原有断言与失败行为，根据业务边界补充合同或类型谓词，再运行严格检查、定义附带测试和目标后端构建。
+
+trait 的 where 约束现在使用能力证明，而不是把未绑定泛型静默当作通过。若 helper 约束的是 Enum 的 payload 类型，空变体没有 payload 可供推断时，应补充确切的类型。例如已知接下来使用 `Maybe1<Number>`，可对直接空构造器写 `assert-type (Maybe1 :none) (:: 'Maybe1 'Number)`；这是编译期验证空构造器的类型，不是强转开放 Dynamic。单纯 `count (Option :none)` 约束的是整个 Enum 的计数能力，仍不需要补 payload 类型。
+
+`loop` 初始值和 `apply` 的无 spread 字面量实参保留各位置的类型，立即调用的固定参数函数可从输入推断参数。显式 `hint-fn` 优先，不能因为调用点传入 List 就把已声明的 Dynamic 参数悄悄改成 List 或 Countable；这种开放合同仍须在函数内部收窄。合法 typed loop 不需要为了通过检查改用低层计数或重复插入断言。
+
 ## String 到 Tag/Symbol 的类型化转换
 
 新代码用 `to-tag: String -> Tag`、`to-symbol: String -> Symbol`。旧 `turn-tag` / `turn-symbol` 的 native/JS 运行时还接受 Tag/Symbol 输入，不能按词形全局替换。`calcit fix --rule core-identity-conversion-v1 --format edn` 只对内建调用且参数已证明为 String 的稳定源码提供自动迁移；Dynamic、非 String、quote、未知 macro 和一等函数引用需人工审阅。预览后携带 revision 应用，再重复预览并运行项目测试。WASM 缺少动态 Tag/Symbol intern；改名不会让原来不支持的调用变得可编译。
