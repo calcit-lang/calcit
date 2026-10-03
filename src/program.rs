@@ -1033,6 +1033,37 @@ pub fn lookup_def_code(ns: &str, def: &str) -> Option<Calcit> {
   Some(entry.code.to_owned())
 }
 
+/// Source-defined core predicates only retain builtin proofs when their
+/// namespace, including dependencies and FFI contracts, is the bundled core.
+/// Compare against the actual embedded source rather than trusting its name.
+pub(crate) fn has_bundled_core_source() -> bool {
+  static BUNDLED_CORE: LazyLock<ProgramCodeData> = LazyLock::new(|| {
+    let snapshot = crate::load_core_snapshot().expect("embedded core snapshot");
+    snapshot
+      .files
+      .iter()
+      .filter(|(namespace, _)| !namespace.ends_with(".$meta"))
+      .map(|(namespace, file)| {
+        let name: Arc<str> = Arc::from(namespace.as_str());
+        let data = extract_file_data(file, name.clone()).expect("embedded core source");
+        (name, data)
+      })
+      .collect()
+  });
+  let source = PROGRAM_CODE_DATA.read().expect("read program code");
+  BUNDLED_CORE.iter().all(|(namespace, bundled)| {
+    source.get(namespace).is_some_and(|file| {
+      file.import_map == bundled.import_map
+        && bundled.defs.iter().all(|(name, expected)| {
+          file
+            .defs
+            .get(name)
+            .is_some_and(|entry| entry.code == expected.code && entry.ffi == expected.ffi)
+        })
+    })
+  })
+}
+
 pub fn lookup_def_schema(ns: &str, def: &str) -> Arc<CalcitTypeAnnotation> {
   let program_code = { PROGRAM_CODE_DATA.read().expect("read program code") };
   let file = match program_code.get(ns) {

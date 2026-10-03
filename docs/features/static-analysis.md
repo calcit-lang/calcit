@@ -1119,3 +1119,5 @@ Static type analysis:
 集合辅助函数需要完整的元素类型合同，`assert-type` 只检查已有证明，不能把开放的 `Dynamic` 转换为可用于 `map` 的集合。
 
 普通函数返回 `Bool` 或与内建谓词同名，不会赋予它类型收窄能力；开放输入仍需真实的内建判别、受检 decoder 或具名数据契约。
+
+项目提供自己的 `calcit.core` 时，namespace 名称不等于 bundled-core 来源；修改后的源代码谓词不自动继承 bundled-core 的收窄合同。
