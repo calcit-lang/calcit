@@ -7,9 +7,252 @@ use std::time::{SystemTime, UNIX_EPOCH};
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 #[test]
+fn deprecation_report_shares_core_metadata_and_excludes_local_and_quoted_calls() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  for (target, code, overwrite) in [
+    ("app.main/main!", "quote $ defn main! ()\n  , &unit", true),
+    (
+      "app.main/legacy",
+      "quote $ defn legacy ()\n  compat/optionally nil\n  some? 1\n  join ([] 1 2) 0\n  join-str ([] |a |b) |-\n  vals $ {} (:a 1)\n  turn-str 1\n  turn-string 1\n  cpu-time\n  let ((cell $ atom 0))\n    add-watch cell :key $ fn (new old) &unit\n    remove-watch cell :key",
+      false,
+    ),
+    ("app.main/local", "quote $ defn local (some?)\n  some? 1", false),
+    ("app.main/quoted", "quote $ defn quoted ()\n  quote $ some? 1", false),
+    (
+      "app.main/preferred",
+      "quote $ defn preferred ()\n  nil->option nil\n  non-nil? 1\n  .join-string ([] |a |b) |-\n  .intersperse ([] 1 2) 0\n  .distinct-values $ {} (:a 1)\n  monotonic-time-ms",
+      false,
+    ),
+  ] {
+    let mut args = vec!["edit", "def", target, "--input-format", "cirru", "--code", code];
+    if overwrite {
+      args.push("--overwrite");
+    }
+    assert_success(&run_calcit(&snapshot, &args), "create deprecation protocol fixture");
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-import",
+        "app.main",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ calcit.core :as compat",
+      ],
+    ),
+    "import legacy API through a namespace alias",
+  );
+  let output = run_calcit(&snapshot, &["analyze", "deprecated", "--ns", "app.main", "--format", "json"]);
+  assert_success(&output, "report legacy core calls");
+  let report = parse_stdout(&output);
+  let rows = report["data"]["definitions"].as_array().unwrap();
+  assert_eq!(rows.len(), 1, "{report}");
+  assert_eq!(rows[0]["name"], "legacy", "{report}");
+  assert_eq!(report["data"]["summary"]["calls"], 10, "{report}");
+  for (old, preferred) in [
+    ("optionally", "nil->option"),
+    ("some?", "non-nil?"),
+    ("join", "intersperse"),
+    ("join-str", "join-string"),
+    ("vals", "distinct-values"),
+    ("turn-str", "to-string"),
+    ("turn-string", "to-string"),
+    ("cpu-time", "monotonic-time-ms"),
+    ("add-watch", "add-watch!"),
+    ("remove-watch", "remove-watch!"),
+  ] {
+    let target = format!("calcit.core/{old}");
+    let usage = rows[0]["uses"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .find(|usage| usage["target"] == target)
+      .unwrap();
+    assert!(usage["documentation"].as_str().unwrap().contains(preferred), "{target}: {report}");
+    let context = run_calcit(&snapshot, &["query", "context", &target, "--format", "json"]);
+    assert_success(&context, "query shared migration metadata");
+    let context = parse_stdout(&context);
+    assert!(context.to_string().contains(preferred), "{target}: {context}");
+    assert!(context.to_string().contains("deprecated"), "{target}: {context}");
+  }
+}
+
+#[test]
+fn attached_surface_presets_compose_diagnostics_and_nested_constructors() {
+  // Rust verifies the guarded transaction; the unchanged Calcit assertion verifies the migrated program.
+  for selector in ["removed-data-api-v1", "surface-latest-v1", "surface-latest-v2"] {
+    let directory = TestDirectory::create();
+    let snapshot = directory.path().join("calcit.cirru");
+    fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+    for (target, code, overwrite) in [
+      ("app.main/main!", "quote $ defn main! ()\n  , &unit", true),
+      ("app.main/Choice", "quote $ defenum Choice (:none)", false),
+    ] {
+      let mut args = vec!["edit", "def", target, "--input-format", "cirru", "--code", code];
+      if overwrite {
+        args.push("--overwrite");
+      }
+      assert_success(&run_calcit(&snapshot, &args), "create attached surface fixture");
+    }
+    let code = "quote $ assert= (Option :some Choice) $ tuple-enum $ do $ %:: Choice :none";
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "add-test",
+          "app.main/main!",
+          "migration",
+          "--tags",
+          "unit,upgrade",
+          "--input-format",
+          "cirru",
+          "--code",
+          code,
+        ],
+      ),
+      "attach removed API assertion",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "add-example", "app.main/main!", "--input-format", "cirru", "--code", code],
+      ),
+      "attach removed API example",
+    );
+    let original = fs::read(&snapshot).unwrap();
+    let args = [
+      "fix",
+      "--ns",
+      "app.main",
+      "--def",
+      "main!",
+      if selector.starts_with("surface-") { "--preset" } else { "--rule" },
+      selector,
+      "--include-attached",
+      "--format",
+      "json",
+    ];
+    let preview = run_calcit(&snapshot, &args);
+    assert_success(&preview, "attached surface preview");
+    let report = parse_stdout(&preview);
+    let suggestions = report["data"]["suggestions"].as_array().unwrap();
+    assert_eq!(suggestions.len(), 2, "{selector}: {report}");
+    assert!(
+      suggestions
+        .iter()
+        .all(|suggestion| suggestion["applicability"] == "machine-applicable"),
+      "{selector}: {report}"
+    );
+    assert_eq!(fs::read(&snapshot).unwrap(), original);
+    let mut apply = args.to_vec();
+    apply.extend([
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().unwrap(),
+    ]);
+    assert_success(&run_calcit(&snapshot, &apply), "apply attached surface migration");
+    assert_success(
+      &run_calcit(&snapshot, &["test", "app.main/main!", "--require-match"]),
+      "unchanged migrated assertion",
+    );
+    let repeated = run_calcit(&snapshot, &args);
+    assert_success(&repeated, "attached surface migration idempotence");
+    assert!(parse_stdout(&repeated)["data"]["suggestions"].as_array().unwrap().is_empty());
+  }
+}
+
+#[test]
+fn attached_removed_data_diagnostics_preserve_ambiguous_and_opaque_regions() {
+  for selector in ["removed-data-api-v1", "surface-latest-v2"] {
+    let directory = TestDirectory::create();
+    let snapshot = directory.path().join("calcit.cirru");
+    fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+    for (target, code, overwrite) in [
+      ("app.main/main!", "quote $ defn main! ()\n  , &unit", true),
+      ("app.main/opaque", "quote $ defmacro opaque (x)\n  , x", false),
+    ] {
+      let mut args = vec!["edit", "def", target, "--input-format", "cirru", "--code", code];
+      if overwrite {
+        args.push("--overwrite");
+      }
+      assert_success(&run_calcit(&snapshot, &args), "create removed API boundary fixture");
+    }
+    for (name, code) in [
+      ("ambiguous", "quote $ tuple? 1"),
+      (
+        "opaque",
+        "quote $ do (tuple-enum $ Option :some 1) (opaque $ tuple-enum $ Option :some 2)",
+      ),
+      ("quoted", "quote $ assert= (quote $ tuple-enum 1) (quote $ tuple-enum 1)"),
+    ] {
+      assert_success(
+        &run_calcit(
+          &snapshot,
+          &[
+            "edit",
+            "add-test",
+            "app.main/main!",
+            name,
+            "--tags",
+            "unit,upgrade",
+            "--input-format",
+            "cirru",
+            "--code",
+            code,
+          ],
+        ),
+        "attach removed API boundary",
+      );
+    }
+    let original = fs::read(&snapshot).unwrap();
+    let args = [
+      "fix",
+      "--ns",
+      "app.main",
+      "--def",
+      "main!",
+      if selector.starts_with("surface-") { "--preset" } else { "--rule" },
+      selector,
+      "--include-attached",
+      "--format",
+      "json",
+    ];
+    let preview = run_calcit(&snapshot, &args);
+    assert_success(&preview, "removed API boundary preview");
+    let report = parse_stdout(&preview);
+    let suggestions = report["data"]["suggestions"].as_array().unwrap();
+    assert_eq!(suggestions.len(), 2, "{selector}: {report}");
+    assert!(
+      suggestions
+        .iter()
+        .all(|suggestion| suggestion["applicability"] == "requires-review"),
+      "{selector}: {report}"
+    );
+    assert!(!suggestions.iter().any(|suggestion| suggestion["path"] == "tests.quoted"));
+    let mut apply = args.to_vec();
+    apply.extend([
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      report["revision"].as_str().unwrap(),
+    ]);
+    assert_success(&run_calcit(&snapshot, &apply), "retain unresolved removed API regions");
+    assert_eq!(fs::read(&snapshot).unwrap(), original);
+  }
+}
+
+#[test]
 fn attached_conversion_and_collection_rules_preserve_opaque_and_quoted_source() {
   // Calcit assertions retain the semantic contract; Rust checks the non-writing review transaction.
   for (rule, expected, call) in [
+    ("core-api-0.28-v1", "2", ".count ([] 1 2)"),
     ("core-identity-conversion-v1", ":a", "turn-tag |a"),
     ("core-list-add-v1", "([] 1 2)", ".add ([] 1) 2"),
     ("core-collection-len-v1", "2", ".count ([] 1 2)"),
@@ -29,7 +272,14 @@ fn attached_conversion_and_collection_rules_preserve_opaque_and_quoted_source() 
       assert_success(&run_calcit(&snapshot, &args), "create remaining rule boundary fixture");
     }
     for (name, code) in [
-      ("opaque", format!("quote $ assert= {expected} $ opaque $ {call}")),
+      (
+        "opaque",
+        if rule == "core-api-0.28-v1" {
+          format!("quote $ do (assert= true $ some? 1) (assert= {expected} $ opaque $ {call})")
+        } else {
+          format!("quote $ assert= {expected} $ opaque $ {call}")
+        },
+      ),
       ("quoted-data", format!("quote $ assert= (quote $ {call}) (quote $ {call})")),
     ] {
       assert_success(
@@ -62,7 +312,7 @@ fn attached_conversion_and_collection_rules_preserve_opaque_and_quoted_source() 
       "app.main",
       "--def",
       "main!",
-      "--rule",
+      if rule == "core-api-0.28-v1" { "--preset" } else { "--rule" },
       rule,
       "--include-attached",
       "--format",
@@ -695,6 +945,10 @@ fn method_alias_fix_reuses_receiver_proofs_in_attached_tests_and_examples() {
   // The host checks the transaction protocol; each Calcit assertion is replayed before and after migration.
   for (rule, code) in [
     (
+      "core-api-0.28-v1",
+      "quote $ do\n  assert= true $ some? 1\n  assert= true $ round? 2\n  assert= :a $ turn-tag |a\n  assert= 2 $ .count $ .add ([] 1) 2\n  assert= (Option :some 1) $ .nth ([] 1) 0\n  assert= |a-b $ let ((values $ [] |a |b)) (values .join-str |-)",
+    ),
+    (
       "core-identity-conversion-v1",
       "quote $ do\n  assert= :a $ turn-tag |a\n  assert= 'a $ turn-symbol |a\n  assert= |1 $ let ((value 1)) (turn-string value)",
     ),
@@ -855,7 +1109,7 @@ fn method_alias_fix_reuses_receiver_proofs_in_attached_tests_and_examples() {
       "app.main",
       "--def",
       "main!",
-      "--rule",
+      if rule == "core-api-0.28-v1" { "--preset" } else { "--rule" },
       rule,
       "--include-attached",
       "--format",

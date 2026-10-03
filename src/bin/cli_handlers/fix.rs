@@ -1126,11 +1126,23 @@ fn fix_scope_args(options: &FixCommand) -> Vec<String> {
 /// Reject ambiguous modes, incomplete scopes, and unknown stable rule IDs.
 fn validate_options(options: &FixCommand) -> Result<(), String> {
   StructuredOutputFormat::parse(&options.format, "fix")?;
-  if options.include_attached && !options.rule.as_deref().is_some_and(supports_attached_migrations) {
-    return Err(
-      "`--include-attached` requires an explicitly supported function-alias or method-alias rule; attached coverage for other rules and presets is not implemented yet."
-        .to_owned(),
-    );
+  if options.include_attached {
+    let selected = selected_rule_ids(options);
+    let unsupported = selected
+      .iter()
+      .copied()
+      .filter(|rule| !supports_attached_migrations(rule))
+      .collect::<Vec<_>>();
+    if selected.is_empty() || !unsupported.is_empty() {
+      return Err(format!(
+        "`--include-attached` requires a fully supported explicit rule or preset; attached coverage is not implemented for: {}.",
+        if unsupported.is_empty() {
+          "the selected rule".to_owned()
+        } else {
+          unsupported.join(", ")
+        }
+      ));
+    }
   }
   if let Some(workflow) = options.workflow.as_deref()
     && workflow != "strict"
@@ -3215,45 +3227,84 @@ fn plan_removed_data_api_fixes(
     let Some(entry) = file.defs.get(location.def.as_ref()) else {
       continue;
     };
-    let coordinate = location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>();
-    let Some((target_path, original_leaf)) = resolve_fix_target(&entry.code, &coordinate) else {
+    let Some(suggestion) = removed_data_api_source_suggestion(snapshot_file, &entry.code, warning) else {
       continue;
     };
-    let Some((replacement_leaf, guidance)) = migration_for_source_leaf(&original_leaf) else {
-      continue;
-    };
-    let original_node = Cirru::leaf(original_leaf.as_str());
-    let replacement = replacement_leaf.as_ref().map(|leaf| quoted_json(&Cirru::leaf(leaf.as_str())));
-    let applicability = if replacement.is_some() {
-      "machine-applicable"
-    } else {
-      "requires-review"
-    };
-    let message = if replacement.is_some() {
-      format!("Replace `{original_leaf}` with `{guidance}`.")
-    } else {
-      format!("Choose the value or definition predicate for `{original_leaf}`: {guidance}.")
-    };
-    let suggestion = FixSuggestion {
-      rule_id: REMOVED_DATA_API_RULE,
-      diagnostic_code: REMOVED_DATA_API_DIAGNOSTIC,
-      semantic_layer: "surface",
-      source_file: snapshot_file.to_owned(),
-      definition: format!("{}/{}", location.ns, location.def),
-      path: format!("code{}", format_path(&target_path)),
-      fingerprint: node_fingerprint(&original_node),
-      origin_chain: vec![],
-      original: quoted_json(&original_node),
+    let key = (location.ns.to_string(), location.def.to_string(), suggestion.target_path.clone());
+    insert_fix_suggestion(&mut suggestions, key, suggestion)?;
+  }
+  Ok(suggestions.into_values().collect())
+}
+
+/// Map an existing compiler diagnostic back to its source leaf in any source region.
+fn removed_data_api_source_suggestion(snapshot_file: &str, source: &Cirru, warning: &LocatedWarning) -> Option<FixSuggestion> {
+  let location = warning.location();
+  let coordinate = location.coord.iter().map(|value| usize::from(*value)).collect::<Vec<_>>();
+  let (target_path, original_leaf) = resolve_fix_target(source, &coordinate)?;
+  let (replacement_leaf, guidance) = migration_for_source_leaf(&original_leaf)?;
+  let original_node = Cirru::leaf(original_leaf.as_str());
+  let replacement = replacement_leaf.as_ref().map(|leaf| quoted_json(&Cirru::leaf(leaf.as_str())));
+  let applicability = if replacement.is_some() {
+    "machine-applicable"
+  } else {
+    "requires-review"
+  };
+  let message = if replacement.is_some() {
+    format!("Replace `{original_leaf}` with `{guidance}`.")
+  } else {
+    format!("Choose the value or definition predicate for `{original_leaf}`: {guidance}.")
+  };
+  Some(FixSuggestion {
+    rule_id: REMOVED_DATA_API_RULE,
+    diagnostic_code: REMOVED_DATA_API_DIAGNOSTIC,
+    semantic_layer: "surface",
+    source_file: snapshot_file.to_owned(),
+    definition: format!("{}/{}", location.ns, location.def),
+    path: format!("code{}", format_path(&target_path)),
+    fingerprint: node_fingerprint(&original_node),
+    origin_chain: vec![],
+    original: quoted_json(&original_node),
+    replacement,
+    applicability,
+    message,
+    target_path: target_path.clone(),
+    operation: replacement_leaf.map(|replacement| FixOperation::ReplaceLeaf {
+      original: original_leaf,
       replacement,
-      applicability,
-      message,
-      target_path: target_path.clone(),
-      operation: replacement_leaf.map(|replacement| FixOperation::ReplaceLeaf {
-        original: original_leaf,
-        replacement,
-      }),
+    }),
+  })
+}
+
+fn plan_removed_data_api_source(
+  snapshot_file: &str,
+  namespace: &str,
+  definition: &str,
+  source: &Cirru,
+) -> Result<Vec<FixSuggestion>, String> {
+  let parsed = code_to_calcit(source, namespace, definition, vec![]).map_err(|error| error.to_string())?;
+  let warnings = RefCell::new(Vec::new());
+  let usages = with_legacy_migration_mode(|| {
+    runner::preprocess::trace_source_usages(&parsed, namespace, definition, &warnings, &CallStackList::default())
+      .map_err(|failure| failure.msg)
+  })?;
+  let mut suggestions = BTreeMap::new();
+  for warning in warnings.borrow().iter() {
+    let location = warning.location();
+    if warning.code() != Some(REMOVED_DATA_API_DIAGNOSTIC) || location.ns.as_ref() != namespace || location.def.as_ref() != definition {
+      continue;
+    }
+    let Some(mut suggestion) = removed_data_api_source_suggestion(snapshot_file, source, warning) else {
+      continue;
     };
-    let key = (location.ns.to_string(), location.def.to_string(), target_path);
+    let call_path = suggestion.target_path.strip_suffix(&[0]).unwrap_or(&suggestion.target_path);
+    if !method_source_context_is_stable(source, call_path, namespace, definition, &usages) {
+      suggestion.applicability = "requires-review";
+      suggestion.replacement = None;
+      suggestion.operation = None;
+      suggestion.message =
+        "The removed API reference crosses an unknown source context; review whether expansion observes its spelling.".to_owned();
+    }
+    let key = (namespace.to_owned(), definition.to_owned(), suggestion.target_path.clone());
     insert_fix_suggestion(&mut suggestions, key, suggestion)?;
   }
   Ok(suggestions.into_values().collect())
@@ -3985,7 +4036,8 @@ impl CorePredicateRename {
 fn supports_attached_migrations(rule: &str) -> bool {
   matches!(
     rule,
-    CORE_FUNCTION_ALIAS_RULE
+    REMOVED_DATA_API_RULE
+      | CORE_FUNCTION_ALIAS_RULE
       | CORE_NON_NIL_PREDICATE_RULE
       | CORE_INTEGER_PREDICATE_RULE
       | CORE_NOMINAL_CONSTRUCTOR_RULE
@@ -4096,98 +4148,111 @@ fn plan_attached_fixes(
             Err(error) => blockers.push(error),
           }
         }
-        let wrapper = Cirru::List(vec![Cirru::leaf("fn"), Cirru::List(vec![]), source.clone()]);
-        let synthetic_def = format!("&calcit:fix-attached:{definition}:{region}:{index}");
-        let mut candidates = Vec::new();
-        let kinds = [NominalKind::Enum, NominalKind::Struct]
-          .into_iter()
-          .filter(|kind| selected_rules.contains(&kind.rule_id()))
-          .collect::<Vec<_>>();
-        if !kinds.is_empty() {
-          match plan_named_constructor_source(
-            snapshot,
-            snapshot_file,
-            (namespace, &synthetic_def),
-            &wrapper,
-            &kinds,
-            (false, false),
-          ) {
-            Ok(planned) => candidates.extend(planned),
-            Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
-          }
-        }
-        if selected_rules.contains(&CORE_NOMINAL_CONSTRUCTOR_RULE) {
-          match plan_core_nominal_constructor_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper) {
-            Ok(planned) => candidates.extend(planned),
-            Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
-          }
-        }
-        for kind in [CoreNominalMethodKind::Option, CoreNominalMethodKind::Result] {
-          if !selected_rules.contains(&kind.rule_id()) {
-            continue;
-          }
-          match plan_core_nominal_method_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper, kind) {
-            Ok(planned) => candidates.extend(planned),
-            Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
-          }
-        }
-        if selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE) {
-          match plan_core_predicate_rename_source(snapshot_file, namespace, &synthetic_def, &wrapper, CorePredicateRename::Integer) {
-            Ok(planned) => candidates.extend(planned),
-            Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
-          }
-        }
-        if selected_rules.contains(&CORE_IDENTITY_CONVERSION_RULE) {
-          match plan_core_identity_conversion_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper) {
-            Ok(planned) => candidates.extend(planned),
-            Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
-          }
-        }
-        if selected_rules.contains(&CORE_LIST_ADD_RULE) {
-          match plan_core_list_add_source(snapshot_file, namespace, &synthetic_def, &wrapper) {
-            Ok(planned) => candidates.extend(planned),
-            Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
-          }
-        }
-        if selected_rules.contains(&CORE_COLLECTION_LEN_RULE) {
-          match plan_core_collection_len_source(snapshot_file, namespace, &synthetic_def, &wrapper) {
-            Ok(planned) => candidates.extend(planned),
-            Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
-          }
-        }
-        for alias in QUERYABLE_METHOD_ALIASES
-          .iter()
-          .chain(CORE_EFFECT_METHOD_ALIASES)
-          .filter(|alias| selected_rules.contains(&alias.rule_id))
-        {
-          match plan_core_method_alias_source(snapshot_file, namespace, &synthetic_def, &wrapper, None, *alias) {
-            Ok(planned) => candidates.extend(planned),
-            Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
-          }
-        }
-        for candidate in candidates {
-          let Some(path) = candidate.target_path.strip_prefix(&[2]) else {
-            blockers.push("Compiler suggestion points outside its attached source wrapper.".to_owned());
-            continue;
-          };
-          match candidate.operation {
-            Some(FixOperation::ReplaceNode { .. }) => {
-              let original = fix_source_json_to_cirru(&candidate.original)?;
-              let replacement =
-                fix_source_json_to_cirru(candidate.replacement.as_ref().ok_or("Missing attached subtree replacement")?)?;
-              replace_attached_source_tree(source, path, &original, &replacement)?;
-              origins.extend(candidate.origin_chain);
-              origins
-                .push(serde_json::json!({"kind": "resolved-attached-source", "path": format_path(path), "rule_id": candidate.rule_id}));
+        // Re-prove each rule against the source produced by preceding rules.
+        // Subtree replacements may change coordinates or fingerprints of nested calls.
+        for selected_rule in selected_rules {
+          let selected_rules = std::slice::from_ref(selected_rule);
+          let wrapper = Cirru::List(vec![Cirru::leaf("fn"), Cirru::List(vec![]), source.clone()]);
+          let synthetic_def = format!("&calcit:fix-attached:{definition}:{region}:{index}");
+          let mut candidates = Vec::new();
+          if selected_rules.contains(&REMOVED_DATA_API_RULE) {
+            match plan_removed_data_api_source(snapshot_file, namespace, &synthetic_def, &wrapper) {
+              Ok(planned) => candidates.extend(planned),
+              Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
             }
-            Some(FixOperation::ReplaceLeaf { original, replacement }) => {
-              replace_attached_source_node(source, path, &original, &Cirru::leaf(replacement))?;
-              origins.extend(candidate.origin_chain);
-              origins
-                .push(serde_json::json!({"kind": "resolved-attached-source", "path": format_path(path), "rule_id": candidate.rule_id}));
+          }
+          let kinds = [NominalKind::Enum, NominalKind::Struct]
+            .into_iter()
+            .filter(|kind| selected_rules.contains(&kind.rule_id()))
+            .collect::<Vec<_>>();
+          if !kinds.is_empty() {
+            match plan_named_constructor_source(
+              snapshot,
+              snapshot_file,
+              (namespace, &synthetic_def),
+              &wrapper,
+              &kinds,
+              (false, false),
+            ) {
+              Ok(planned) => candidates.extend(planned),
+              Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
             }
-            None => blockers.push(candidate.message),
-            _ => return Err("Attached source proof produced an unsupported operation.".to_owned()),
+          }
+          if selected_rules.contains(&CORE_NOMINAL_CONSTRUCTOR_RULE) {
+            match plan_core_nominal_constructor_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper) {
+              Ok(planned) => candidates.extend(planned),
+              Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
+            }
+          }
+          for kind in [CoreNominalMethodKind::Option, CoreNominalMethodKind::Result] {
+            if !selected_rules.contains(&kind.rule_id()) {
+              continue;
+            }
+            match plan_core_nominal_method_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper, kind) {
+              Ok(planned) => candidates.extend(planned),
+              Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
+            }
+          }
+          if selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE) {
+            match plan_core_predicate_rename_source(snapshot_file, namespace, &synthetic_def, &wrapper, CorePredicateRename::Integer) {
+              Ok(planned) => candidates.extend(planned),
+              Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
+            }
+          }
+          if selected_rules.contains(&CORE_IDENTITY_CONVERSION_RULE) {
+            match plan_core_identity_conversion_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper) {
+              Ok(planned) => candidates.extend(planned),
+              Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
+            }
+          }
+          if selected_rules.contains(&CORE_LIST_ADD_RULE) {
+            match plan_core_list_add_source(snapshot_file, namespace, &synthetic_def, &wrapper) {
+              Ok(planned) => candidates.extend(planned),
+              Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
+            }
+          }
+          if selected_rules.contains(&CORE_COLLECTION_LEN_RULE) {
+            match plan_core_collection_len_source(snapshot_file, namespace, &synthetic_def, &wrapper) {
+              Ok(planned) => candidates.extend(planned),
+              Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
+            }
+          }
+          for alias in QUERYABLE_METHOD_ALIASES
+            .iter()
+            .chain(CORE_EFFECT_METHOD_ALIASES)
+            .filter(|alias| selected_rules.contains(&alias.rule_id))
+          {
+            match plan_core_method_alias_source(snapshot_file, namespace, &synthetic_def, &wrapper, None, *alias) {
+              Ok(planned) => candidates.extend(planned),
+              Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
+            }
+          }
+          for candidate in candidates {
+            let Some(path) = candidate.target_path.strip_prefix(&[2]) else {
+              blockers.push("Compiler suggestion points outside its attached source wrapper.".to_owned());
+              continue;
+            };
+            match candidate.operation {
+              Some(FixOperation::ReplaceNode { .. }) => {
+                let original = fix_source_json_to_cirru(&candidate.original)?;
+                let replacement =
+                  fix_source_json_to_cirru(candidate.replacement.as_ref().ok_or("Missing attached subtree replacement")?)?;
+                replace_attached_source_tree(source, path, &original, &replacement)?;
+                origins.extend(candidate.origin_chain);
+                origins.push(
+                  serde_json::json!({"kind": "resolved-attached-source", "path": format_path(path), "rule_id": candidate.rule_id}),
+                );
+              }
+              Some(FixOperation::ReplaceLeaf { original, replacement }) => {
+                replace_attached_source_node(source, path, &original, &Cirru::leaf(replacement))?;
+                origins.extend(candidate.origin_chain);
+                origins.push(
+                  serde_json::json!({"kind": "resolved-attached-source", "path": format_path(path), "rule_id": candidate.rule_id}),
+                );
+              }
+              None => blockers.push(candidate.message),
+              _ => return Err("Attached source proof produced an unsupported operation.".to_owned()),
+            }
           }
         }
       }

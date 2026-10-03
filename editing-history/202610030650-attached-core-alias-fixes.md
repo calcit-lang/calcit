@@ -79,3 +79,9 @@ reader shorthand 沿用真实调用形状保护。完整 fix CLI 回归 114 项�
 正例包括三种转换、局部 List/Map、Set add 不被 List 规则误改和 Unicode 标量长度；
 负例对三条规则分别保留未知宏与 quoted data，并验证 apply 不写入原 Snapshot。
 preset/workflow 组合与弃用元数据继续保持未完成。
+
+core-api-0.28-v1 的原 15 条规则都有附带证明入口后，允许显式组合 --include-attached。
+选择校验检查整个展开集合，缺少覆盖的规则明确报错，不用部分成功冒充完整扫描。
+混合旧名、嵌套 count/add 和局部 receiver 的正例验证原子迁移、原断言回放与幂等；
+同一区域里的安全谓词与未知宏混合时整体保留 review，apply 不写入原 Snapshot。
+完整 fix CLI 回归 114 项通过。surface preset 中的 removed-data-api 诊断路径及弃用元数据仍未完成。

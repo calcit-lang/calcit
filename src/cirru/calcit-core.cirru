@@ -3371,7 +3371,7 @@
             :code $ quote $ assert= 4 (abs -4)
             :tags $ #{} :core :unit
         'add-watch $ %{} 'CodeEntry
-          :doc "|Register a watcher on a Ref<T>. Syntax: (add-watch ref tag-key callback). The key must be a Tag. The callback receives (new-value old-value), returns Unit, and add-watch itself returns Unit."
+          :doc "|兼容旧名；首选 add-watch!。给 Ref<T> 注册 Tag key 的 watcher；callback 接收新值和旧值并返回 Unit，注册本身返回 Unit。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
@@ -3379,7 +3379,7 @@
               {} (:return 'Unit)
                 :args $ [] 'T 'T
             :generics $ [] 'T
-          :tags $ #{} :builtin :internal :state :watch
+          :tags $ #{} :builtin :deprecated :internal :state :watch
         'add-watch! $ %{} 'CodeEntry
           :doc "|给 Ref<T> 注册 watcher。Tag key 不可重复；callback 接收新值和旧值，返回 Unit。注册会修改 Ref 的 watcher 状态；旧 add-watch 保留兼容。"
           :code $ quote $ defn add-watch! (ref key callback) (add-watch ref key callback)
@@ -4434,12 +4434,13 @@
             %{} 'TestEntry (:name |counts-string-characters)
               :code $ quote $ assert= 4 (count |good)
               :tags $ #{} :core :unit
-        'cpu-time $ %{} 'CodeEntry (:doc "|返回单调时钟的毫秒读数，用于测量经过时间。只比较同一进程内两次调用的差值，不依赖绝对起点。")
+        'cpu-time $ %{} 'CodeEntry
+          :doc "|兼容旧名；首选 monotonic-time-ms。返回单调时钟的毫秒读数，只比较同一进程内两次调用的差值，不依赖绝对起点。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-          :tags $ #{} :builtin :internal :io
+          :tags $ #{} :builtin :deprecated :internal :io
         'data-definition-form $ %{} 'CodeEntry
           :doc "|Normalize wrapped forms used by data-definition macros"
           :code $ quote $ defn data-definition-form (entry)
@@ -7058,7 +7059,8 @@
             :args $ [] 'T
             :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'join $ %{} 'CodeEntry (:doc |)
+        'join $ %{} 'CodeEntry
+          :doc "|兼容旧名；首选 intersperse 或 .intersperse，在 List<T> 的相邻元素之间插入同类型分隔项，仍返回 List<T>，不是文本拼接。"
           :code $ quote $ defn join (xs0 sep)
             apply-args
                 []
@@ -7080,6 +7082,7 @@
             :args $ [] (:: 'List 'T) 'T
             :generics $ [] 'T
             :return $ :: 'List 'T
+          :tags $ #{} :deprecated
           :tests $ [] $ %{} 'TestEntry (:name |inserts-separators-between-list-items)
             :code $ quote $ assert= ([] 1 10 2 10 3 10 4)
               join ([] 1 2 3 4) 10
@@ -7104,6 +7107,7 @@
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] (:: 'List 'T) 'String
             :generics $ [] 'T
+          :tags $ #{} :deprecated
           :tests $ [] $ %{} 'TestEntry (:name |renders-items-and-empty-list)
             :code $ quote $ do
               assert= |1-2-3 $ join-str ([] 1 2 3) |-
@@ -8645,7 +8649,7 @@
                 assert= 0 $ option:unwrap-or absent 0
             :tags $ #{} :core :unit
         'optionally $ %{} 'CodeEntry
-          :doc "|Convert a nullable Optional<T> value into nominal Option<T>. Legacy spelling kept for compatibility; prefer nil->option."
+          :doc "|兼容旧名；首选 nil->option，把 Optional<T> 转为名义 Option<T>，不改变 nil 和 payload 的含义。"
           :code $ quote $ defn optionally (s)
             if (nil? s) (%none) (%some s)
           :examples $ []
@@ -8656,6 +8660,7 @@
             :args $ [] $ :: 'Optional 'T
             :generics $ [] 'T
             :return $ :: 'Option 'T
+          :tags $ #{} :deprecated
         'or $ %{} 'CodeEntry
           :doc "|Logical disjunction macro. Skips later forms once a truthy (non-nil, non-false, non-Unit) value is found and returns it; when every form is falsey, returns the final form."
           :code $ quote $ defmacro or (item & xs)
@@ -9035,13 +9040,13 @@
             :generics $ [] 'T
           :tags $ #{} :builtin :internal :state
         'remove-watch $ %{} 'CodeEntry
-          :doc "|Remove a watcher from a Ref<T>. Syntax: (remove-watch ref tag-key). The key must be a Tag. Returns Unit; reports an error when the key is absent."
+          :doc "|兼容旧名；首选 remove-watch!。移除 Ref<T> 的 Tag key watcher，返回 Unit；key 不存在时仍报错。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ [] (:: 'Ref 'T) 'Tag
             :generics $ [] 'T
-          :tags $ #{} :builtin :internal :state :watch
+          :tags $ #{} :builtin :deprecated :internal :state :watch
         'remove-watch! $ %{} 'CodeEntry
           :doc "|按 Tag key 移除 Ref<T> 的 watcher，返回 Unit；key 不存在时报错。移除会修改 watcher 状态；旧 remove-watch 保留兼容。"
           :code $ quote $ defn remove-watch! (ref key) (remove-watch ref key)
@@ -9434,6 +9439,7 @@
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'T
             :generics $ [] 'T
+          :tags $ #{} :deprecated
           :tests $ []
             %{} 'TestEntry (:name |non-nil-is-not-option-variant)
               :code $ quote $ do
@@ -10316,7 +10322,7 @@
             :args $ [] 'T
             :generics $ [] 'T
             :where $ {} $ 'T 'ToString
-          :tags $ #{} :internal
+          :tags $ #{} :deprecated :internal
           :tests $ [] $ %{} 'TestEntry (:name |accepts-proven-scalars)
             :code $ quote $ do
               assert-type (turn-str 42) 'String
@@ -10335,7 +10341,7 @@
             :args $ [] 'T
             :generics $ [] 'T
             :where $ {} $ 'T 'ToString
-          :tags $ #{} :internal
+          :tags $ #{} :deprecated :internal
           :tests $ []
             %{} 'TestEntry (:name |accepts-proven-scalar-values)
               :code $ quote $ do
@@ -10563,7 +10569,8 @@
                     fn (value)
                       if (option:none? value) 1 $ raise |expected-missing-value
               :tags $ #{} :core :unit
-        'vals $ %{} 'CodeEntry (:doc |)
+        'vals $ %{} 'CodeEntry
+          :doc "|兼容旧名；首选 distinct-values 或 .distinct-values，取得 Map<K,V> 的去重值集合 Set<V>，不保证顺序，不保留重复值。"
           :code $ quote $ defn vals (x)
             &list:to-set $ &map:vals x
           :examples $ []
@@ -10575,6 +10582,7 @@
             :args $ [] $ :: 'Map 'K 'V
             :generics $ [] 'K 'V
             :return $ :: 'Set 'V
+          :tags $ #{} :deprecated
           :tests $ [] $ %{} 'TestEntry (:name |deduplicates-map-values)
             :code $ quote $ assert= (#{} 1 2)
               vals $ &{} :a 1 :b 2 :c 2
