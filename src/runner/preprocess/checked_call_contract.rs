@@ -109,9 +109,6 @@ pub(crate) fn resolve_checked_call_contract(
 ) -> Option<CheckedCallContract> {
   use CalcitTypeAnnotation as T;
 
-  if fn_def == "option:fold" && !super::strict_types_enabled() {
-    return None;
-  }
   let required_arity = checked_call_contract_arity(fn_ns, fn_def)?;
   if args.len() != required_arity {
     return None;
@@ -212,8 +209,10 @@ pub(crate) fn resolve_checked_call_contract(
       let present_type = callback_return_type(args.get(2)?, scope_types);
       let output_type = match (absent_type, present_type) {
         (Some(absent), Some(present)) => super::type_inference::join_return_types(absent.clone(), present).unwrap_or(absent),
-        (Some(known), None) | (None, Some(known)) => known,
-        (None, None) => Arc::new(T::TypeVar(Arc::from("OptionFoldOutput"))),
+        // A partial result is a lower constraint, not the other callback's
+        // declaration. Wait for both independently inferred outputs before
+        // checking a shared result, including in compatibility mode.
+        _ => Arc::new(T::TypeVar(Arc::from("OptionFoldOutput"))),
       };
       Some(CheckedCallContract {
         expected_types: Some(vec![
