@@ -263,22 +263,38 @@ let
 
 ### Early Return Pattern
 
+把输入声明为 `List<Number>`，并用 `Option<List<Number>>` 表达验证结果；`if-let` 解包后保留集合的元素类型。
+
 ```cirru
 let
     ; stub implementations for demonstration
-    validate-data $ fn (data) (if (= (count data) 0) nil data)
-    transform-data $ fn (validated) (map validated (fn (x) (* x 2)))
+    validate-data $ fn (data)
+      hint-fn $ {}
+        :args $ [] $ :: 'List 'Number
+        :return $ :: 'Option $ :: 'List 'Number
+      if (= (count data) 0)
+        assert-type (Option :none) (:: 'Option $ :: 'List 'Number)
+        Option :some data
+    transform-data $ fn (validated)
+      hint-fn $ {}
+        :args $ [] $ :: 'List 'Number
+        :return $ :: 'List 'Number
+      map validated $ fn (x) (* x 2)
     process-data $ defn process-data (data)
+      hint-fn $ {}
+        :args $ [] $ :: 'List 'Number
+        :return 'Enum
       if (empty? data)
         :: :err |Empty-data
-        let
-            validated $ validate-data data
-          if (nil? validated)
-            :: :err |Invalid-data
-            let
-                result $ transform-data validated
-              :: :ok result
-  process-data ([] 1 2 3)
+        if-let
+          validated $ validate-data data
+          let
+              result $ transform-data validated
+            :: :ok result
+          :: :err |Invalid-data
+  assert= (:: :ok $ [] 2 4 6) (process-data $ [] 1 2 3)
+  assert= (:: :err |Empty-data)
+    process-data $ assert-type ([]) (:: 'List 'Number)
 ```
 
 ### Pipeline Pattern

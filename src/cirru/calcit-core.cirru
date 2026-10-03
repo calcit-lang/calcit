@@ -1620,16 +1620,16 @@
           :examples $ []
             quote $ let
                 triple $ &map:diff-triple (&{} :a 1 :b 2) (&{} :a 2 :c 3)
-                common $ nth triple 2
+                common $ &list:nth triple 2
               if (list? common)
-                [] (nth triple 0) (nth triple 1) (count common)
+                [] (&list:nth triple 0) (&list:nth triple 1) (count common)
                 raise |expected-common-list
             quote $ let
                 triple $ &map:diff-triple (&{} :x 10 :y 20) (&{} :x 10 :y 99 :z 30)
-                drop-keys $ nth triple 0
-                new-diff $ nth triple 1
-                common-triples $ nth triple 2
-              list drop-keys new-diff common-triples
+                drop-keys $ &list:nth triple 0
+                new-diff $ &list:nth triple 1
+                common-triples $ &list:nth triple 2
+              [] drop-keys new-diff common-triples
           :schema $ :: 'Fn $ {} (:return 'Enum)
             :args $ [] (:: 'Map 'K 'V) (:: 'Map 'K 'W)
             :generics $ [] 'K 'V 'W
@@ -3559,16 +3559,6 @@
                         [] 10 20 30
                 assert= 3 result
                 assert= 3 $ deref state
-              :tags $ #{} :core :count-contract :unit
-            %{} 'TestEntry (:name |preserves-standalone-loop-effects)
-              :code $ quote $ let
-                  state $ atom 0
-                loop
-                    x 3
-                  if (> x 0)
-                    do (swap! state + x)
-                      recur $ dec x
-                assert= 6 $ deref state
               :tags $ #{} :core :count-contract :unit
             %{} 'TestEntry (:name |preserves-statement-evaluation-order)
               :code $ quote $ let
@@ -7751,6 +7741,16 @@
             :required $ [] 'SyntaxList
             :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-standalone-loop-effects)
+            :code $ quote $ let
+                state $ atom 0
+              loop
+                  x 3
+                if (> x 0)
+                  do (swap! state + x)
+                    recur $ dec x
+              assert= 6 $ deref state
+            :tags $ #{} :core :count-contract :unit
         'macro? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn macro? (x)
             &= (type-of x) :macro

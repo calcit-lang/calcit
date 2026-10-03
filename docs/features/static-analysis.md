@@ -903,17 +903,22 @@ defn calculate-area (width height) (; Types inferred from arithmetic operations)
 
 ### 3. Add Assertions for Critical Code
 
+辅助函数也需要声明集合元素类型。`assert-type` 检查已有证明，不会把开放的 `Dynamic` 转换成可用于 `map` 的集合。
+
 ```cirru
 let
     dangerous-operation $ fn (data)
+      hint-fn $ {}
+        :args $ [] $ :: 'List 'Number
+        :return $ :: 'List 'Number
       map data $ fn (x) (* x 2)
     critical-operation $ fn (data)
       hint-fn $ {}
-        :args $ [] :list
-        :return :list
+        :args $ [] $ :: 'List 'Number
+        :return $ :: 'List 'Number
       let
           checked data
-        assert-type checked :list
+        assert-type checked $ :: 'List 'Number
         ; Ensure the local value is still what we expect before processing
         dangerous-operation checked
   critical-operation $ [] 1 2 3

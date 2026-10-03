@@ -779,7 +779,7 @@ try {
   // Replay the attached count contract expressions, including nominal schema
   // parameters and typed rest, rather than substituting low-level count calls.
   for (const [source, namespace, definitions, expectedCount, outputName] of [
-    ["src/cirru/calcit-core.cirru", "calcit.core", ["count", "&map:destruct", "&map:diff-triple", "apply"], 11, "count-core-js"],
+    ["src/cirru/calcit-core.cirru", "calcit.core", ["count", "&map:destruct", "&map:diff-triple", "apply", "loop"], 11, "count-core-js"],
     ["tests/fixtures/count-contract.cirru", "fix-command.main", ["typed-rest-forward", "nominal-counts", "checked-open-count", "local-bound-counts", "typed-loop-count"], 5, "count-contract-js"],
   ]) {
     await copyFile(source, snapshot);
