@@ -19,6 +19,9 @@ try {
 
   const ns = "fix-command.alias-evidence";
   const cases = [
+    [`${ns}/consume-base (${ns}/OtherBase :value 1)`, "W_FN_ARG_TYPE_MISMATCH"],
+    [`${ns}/consume-base (fix-command.other-side/AliasBase :value 1)`, "W_FN_ARG_TYPE_MISMATCH"],
+    [`${ns}/consume-choice (${ns}/OtherChoice :value 1)`, "W_FN_ARG_TYPE_MISMATCH"],
     [`${ns}/echo-alias 3`, "W_FN_ARG_TYPE_MISMATCH"],
     [`${ns}/echo-chain 3`, "W_FN_ARG_TYPE_MISMATCH"],
     [`${ns}/echo-chain`, "expected 1 args"],
@@ -44,6 +47,8 @@ try {
     "echo-alias", "same-alias", "apply-alias", "rest-alias", "optional-alias", "empty-proc",
     "sort-proc", "range-proc", "fold-proc", "shortcut-proc", "list-question-proc",
   ].map(name => `${ns}/${name}`);
+  targets.push(`${ns}/consume-base`);
+  targets.push(`${ns}/consume-choice`);
   targets.push("fix-command.reader/state-alias");
   const trees = targets.flatMap(target => {
     const context = JSON.parse(run("query", "context", target, "--format", "json"));
