@@ -687,6 +687,10 @@ try {
     ["loop-signal", "defn loop-signal (flag) $ loop ((remaining (if flag 1 0)) (signal (RecursiveSignal :idle))) (if (&> remaining 0) (let ((next (RecursiveSignal :data (RecursiveNode :element (RecursiveElement :children ([])))))) (recur (dec remaining) next)) (RecursiveSignalHolder :signal signal))", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'calcit.assert-evidence/RecursiveSignalHolder)"],
     ["loop-alias", "defn loop-alias () $ let ((absent (Option :none))) (loop ((n 0) (value absent)) (if (&< n 1) (let ((next (Option :some 7)) (alias next)) (recur 1 alias)) (option:unwrap-or value 0)))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
     ["loop-propagated", "defn loop-propagated () $ loop ((n 0) (left (Option :none)) (right (Option :none))) (if (&< n 2) (recur (inc n) (Option :some 7) left) (option:unwrap-or right 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
+    ["loop-matched", "defn loop-matched () $ loop ((value (Option :none))) (match value ((:none) (recur (Option :some 7))) ((:some payload) (+ payload 1)))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
+    ["loop-decoded", "defn loop-decoded () $ loop ((n 0) (value (Option :none))) (if (&< n 1) (let ((decoded (decode-map-as ([] 7) (:: 'List 'Number)))) (recur 1 (Option :some (count decoded)))) (value .unwrap-or 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
+    ["loop-once-log", "defmacro loop-once-log () (println |loop-expansion-token) (quasiquote 7)", ":: 'Macro $ {} (:required $ []) (:capabilities $ #{} :log) (:expansion $ :: 'Expr 'Number)"],
+    ["loop-expansion-once", "defn loop-expansion-once () $ loop ((n 0) (value (Option :none))) (if (&< n 1) (recur 1 (Option :some (loop-once-log))) (value .unwrap-or 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
     ["recursive-count", `defn recursive-count (node)
   match node
     (:element element)
@@ -754,6 +758,15 @@ try {
   assert= 0 $ match (:signal $ loop-signal false) ((:idle) 0) ((:data node) (recursive-count node))
   assert= 7 $ loop-alias
   assert= 7 $ loop-propagated
+  assert= 8 $ loop-matched
+  assert= 1 $ loop-decoded
+  assert= 7 $ loop-expansion-once
+  assert= 7 $ loop
+      n 0
+      value $ Option :none
+    if (&< n 1)
+      recur 1 $ Option :some 7
+      value .unwrap-or 0
   assert= true $ struct? $ :value $ :cell broad
   assert= true $ struct? $ (:tree broad).unwrap
   assert= 5 $ (:handler callback) 4
@@ -767,6 +780,11 @@ try {
     .data.tests.filter(test => test.tags.includes("recursive-fields"));
   assert.equal(recursiveTests.length, 1);
   setBody(recursiveTests.map(test => test.code));
+  const loggedLoop = spawnSync(binary, [snapshot, "--check-only"], options);
+  if (loggedLoop.error) throw loggedLoop.error;
+  assert.equal(loggedLoop.status, 0, `${loggedLoop.stdout}\n${loggedLoop.stderr}`);
+  assert.equal((`${loggedLoop.stdout}\n${loggedLoop.stderr}`.match(/loop-expansion-token/g) ?? []).length, 1,
+    "solving loop input constraints must not repeat an effectful macro expansion");
   run();
   const recursiveOutput = join(project, "recursive-fields-js");
   run("--emit-path", recursiveOutput, "js");
@@ -782,6 +800,7 @@ try {
     ["wrong-fold-payload", "RecursiveComponent :tree $ option:fold (Option :some true) (fn () $ Option :none) (fn (present?) $ Option :some 1)"],
     ["open-fold-output", "(fn (flag) (RecursiveComponent :tree (option:fold (Option :some flag) (fn () (Option :none)) (fn (present?) (make-open-number))))) true"],
     ["wrong-loop-payload-use", "loop ((n 0) (tree (Option :none))) (if (&< n 1) (recur 1 (Option :some |wrong)) (RecursiveComponent :tree tree))"],
+    ["wrong-matched-loop-payload", "loop ((tree (Option :none))) (match tree ((:none) (recur (Option :some |wrong))) ((:some payload) (RecursiveComponent :tree (Option :some payload))))"],
     ["open-loop-payload-use", "loop ((n 0) (tree (Option :none))) (if (&< n 1) (recur 1 (Option :some (make-open-number))) (RecursiveComponent :tree tree))"],
     ["mixed-loop-payloads", "(fn (flag) (loop ((n 0) (tree (Option :none))) (if (&< n 1) (recur 1 (if flag (Option :some 1) (Option :some |wrong))) (RecursiveComponent :tree tree)))) true"],
     ["wrong-loop-family", "loop ((n 0) (signal (RecursiveSignal :idle))) (if (&< n 1) (recur 1 (Option :some 1)) (RecursiveSignalHolder :signal signal))"],
@@ -811,7 +830,7 @@ try {
       assert.match(diagnostics, /expects type|does not exist in struct|E_DYNAMIC_NOMINAL_ARGUMENT/);
       assert.match(diagnostics, /calcit.assert-evidence/);
       const field = name.startsWith("wrong-scalar") ? "count"
-        : ["broad-enum-payload", "open-enum-payload", "open-local-payload", "open-imported-branch", "wrong-fold-payload", "open-fold-output", "wrong-loop-payload-use", "open-loop-payload-use"].includes(name) ? "tree"
+        : ["broad-enum-payload", "open-enum-payload", "open-local-payload", "open-imported-branch", "wrong-fold-payload", "open-fold-output", "wrong-loop-payload-use", "wrong-matched-loop-payload", "open-loop-payload-use"].includes(name) ? "tree"
         : name === "broad-struct-payload" ? "cell"
         : ["wrong-empty-family", "open-signal-local"].includes(name) ? "signal"
         : name === "wrong-callback-return" ? "handler"

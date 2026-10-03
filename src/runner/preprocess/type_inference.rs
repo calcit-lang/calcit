@@ -694,7 +694,7 @@ pub(crate) fn infer_function_exit_type(
 
 /// Read pattern/body pairs from pair-based or indexed preprocessed matches.
 /// Absent indexed branches are skipped; malformed branch pairs reject inference.
-fn preprocessed_match_branches(xs: &CalcitList) -> Option<Vec<(&Calcit, &Calcit)>> {
+pub(super) fn preprocessed_match_branches(xs: &CalcitList) -> Option<Vec<(&Calcit, &Calcit)>> {
   if xs.len() < 3 {
     return None;
   }

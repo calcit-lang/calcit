@@ -9707,6 +9707,87 @@ fn lower_self_tail_match_branch(branch: &Calcit, ns: &str, def: &str) -> Option<
   Some(Calcit::from(forms))
 }
 
+/// Keep expanded code for a type retry without freezing generated signatures.
+fn body_for_parameter_recheck(form: &Calcit, file_ns: &str) -> Calcit {
+  if let Calcit::Local(local) = form {
+    // Resolve lexical occurrences and bindings again against the new scope;
+    // their old payload-free types are no longer valid evidence.
+    return Calcit::Symbol {
+      sym: local.sym.clone(),
+      info: local.info.clone(),
+      location: local.location.clone(),
+    };
+  }
+  let Calcit::List(items) = form else { return form.clone() };
+  if matches!(
+    items.first(),
+    Some(Calcit::Syntax(CalcitSyntax::Quote | CalcitSyntax::Quasiquote, _))
+  ) {
+    return form.clone();
+  }
+  if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::Match, _)))
+    && let Some(branches) = type_inference::preprocessed_match_branches(items)
+  {
+    // Indexed matches contain a declaration and a slot table, not source
+    // branch pairs. Recreate the equivalent pairs before binding payloads.
+    let mut forms = items.iter().take(2).cloned().collect::<Vec<_>>();
+    forms.extend(
+      branches
+        .into_iter()
+        .map(|(pattern, body)| Calcit::from(vec![pattern.clone(), body.clone()])),
+    );
+    return Calcit::from(
+      forms
+        .iter()
+        .map(|item| body_for_parameter_recheck(item, file_ns))
+        .collect::<Vec<_>>(),
+    );
+  }
+  let mut items = items.to_vec();
+  if items.len() == 4
+    && matches!(
+      items.first(),
+      Some(Calcit::Syntax(
+        CalcitSyntax::ParseCirruEdnAs | CalcitSyntax::TryParseCirruEdnAs | CalcitSyntax::DecodeMapAs | CalcitSyntax::TryDecodeMapAs,
+        _
+      ))
+    )
+    && items
+      .last()
+      .and_then(crate::calcit::data_shape::DataShapeGraph::from_calcit_handle)
+      .is_some()
+  {
+    // Decoder handles are derived core metadata, not source arguments.
+    // Rebuild the decoder from its retained type expression on the retry.
+    items.pop();
+  }
+  if matches!(
+    items.first(),
+    Some(Calcit::Syntax(
+      CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport,
+      _
+    ))
+  ) && let Some(Calcit::Symbol { sym, .. }) = items.get(1)
+    && !program::has_def_code(file_ns, sym)
+    && items.last().is_some_and(|last| {
+      matches!(
+        CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form(last).as_deref(),
+        Some(CalcitTypeAnnotation::Fn(_))
+      )
+    })
+  {
+    // Macro-generated functions append this signature after their source
+    // forms. Remove that one trailing copy, not the user's original hints.
+    items.pop();
+  }
+  Calcit::from(
+    items
+      .iter()
+      .map(|item| body_for_parameter_recheck(item, file_ns))
+      .collect::<Vec<_>>(),
+  )
+}
+
 pub fn preprocess_defn(
   head: &CalcitSyntax,
   head_ns: &str,
@@ -10067,7 +10148,7 @@ pub fn preprocess_defn(
 
       // An inferred empty enum input constrains only the first invocation.
       // Its lexical tail transfers supply the missing payload constraints.
-      // Reprocess the source body with those constraints so dispatch, locals
+      // Recheck the expanded body with those constraints so dispatch, locals
       // and every ordinary type gate see the same contract on later turns.
       // A source-owned schema or explicit hint is never inferred from recur.
       if !source_top_level_definition
@@ -10079,8 +10160,10 @@ pub fn preprocess_defn(
         let mut inferred = signature.as_ref().clone();
         inferred.arg_types = parameters;
         let previous = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().replace(Arc::new(inferred)));
+        let mut rechecked_args = args.iter().take(2).cloned().collect::<Vec<_>>();
+        rechecked_args.extend(processed_body.iter().map(|form| body_for_parameter_recheck(form, ctx.file_ns)));
         drop(feature_scope);
-        let result = preprocess_defn(head, head_ns, args, ctx);
+        let result = preprocess_defn(head, head_ns, &CalcitList::from(rechecked_args.as_slice()), ctx);
         EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous);
         return result;
       }
