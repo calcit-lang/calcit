@@ -163,13 +163,11 @@ const scenarios = [
       assert.deepEqual(fold.call_types.parameters[1].slice(0, 2), ["::", "'Fn"]);
       assert.equal(fold.call_types.returns, "'U");
       const intersperse = result.data.methods.find((method) => method.name === ".intersperse");
-      const join = result.data.methods.find((method) => method.name === ".join");
+      assert.ok(!result.data.methods.some((method) => method.name === ".join"), ".join was retired from List");
       assert.equal(intersperse?.status, "proven");
       assert.equal(intersperse?.definition, "calcit.core/intersperse");
       assert.deepEqual(intersperse?.parameter_types, ["number"]);
       assert.equal(intersperse?.return_type, "list<number>");
-      assert.deepEqual(join?.parameter_types, intersperse?.parameter_types);
-      assert.equal(join?.definition, intersperse?.definition);
       const flatMap = result.data.methods.find((method) => method.name === ".flat-map");
       const bind = result.data.methods.find((method) => method.name === ".bind");
       assert.equal(flatMap?.status, "proven");
@@ -216,14 +214,11 @@ const scenarios = [
     args: ["calcit/test.cirru", "query", "type", ":: 'Map 'Tag 'Number", "--format", "json"],
     check(result) {
       const distinctValues = result.data.methods.find((method) => method.name === ".distinct-values");
-      const values = result.data.methods.find((method) => method.name === ".values");
+      assert.ok(!result.data.methods.some((method) => method.name === ".values"), ".values was retired from Map");
       assert.equal(distinctValues?.status, "proven");
       assert.equal(distinctValues?.definition, "calcit.core/distinct-values");
       assert.deepEqual(distinctValues?.parameter_types, []);
       assert.equal(distinctValues?.return_type, "set<number>");
-      assert.deepEqual(values?.parameter_types, distinctValues?.parameter_types);
-      assert.equal(values?.return_type, distinctValues?.return_type);
-      assert.equal(values?.definition, distinctValues?.definition);
     },
   },
   {
@@ -1035,7 +1030,7 @@ for (const { name, base, expectedStatus = 0, check } of [
   {
     name: "builtin type EDN",
     base: ["calcit/test.cirru", "query", "type", "'String"],
-    check: (result) => assert.ok(result.data.methods.some((method) => method.name === ".contains?")),
+    check: (result) => assert.ok(result.data.methods.some((method) => method.name === ".contains-index?")),
   },
   {
     name: "variadic list method EDN",

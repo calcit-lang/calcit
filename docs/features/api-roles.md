@@ -65,7 +65,7 @@ The public, human-facing form is distinct from macro-expanded core definitions a
 | `option:unwrap value`、`option:unwrap-or value fallback` | `value .unwrap`、`value .unwrap-or fallback` | `core-option-method-v1` 只自动改写接收者有编译器证明的调用；core 空 Option 可由具体 fallback 补足类型，其他开放类型、未知 macro、函数值引用仍需人工确认 |
 | `result:unwrap-or result fallback` | `result .unwrap-or fallback` | `core-result-method-v1` 只改写目标方法已证明的调用；core `:err` 可由具体 fallback 确定成功类型，同时保留错误类型；开放 Result、`:ok` 动态值和遮蔽调用仍需审阅 |
 | `option:some?` / `option:none?`、`result:ok?` / `result:err?` | `value .some?` / `.none?`、`value .ok?` / `.err?` | 沿用对应 Option / Result 方法规则，仍须证明接收者名义类型及同一 core 方法；裸 Dynamic 不能借 Bool 返回值绕过类型检查 |
-| `&str:includes? text fragment`（容易被误记为 `&string:include?`） | `text .includes? fragment` | 当前内部定义的准确拼写是 `&str:includes?`；旧 `.contains?` 对 String 检查索引，其首选名为 `.contains-index?`，不能把索引与子串查询机械互换 |
+| `&str:includes? text fragment`（容易被误记为 `&string:include?`） | `text .includes? fragment` | 当前内部定义的准确拼写是 `&str:includes?`；String 的旧 `.contains?` 检查索引，已在 0.29.0 删除，索引查询使用 `.contains-index?`，不能把索引与子串查询机械互换 |
 | 静态 `%:: Enum :variant payload`、`%{} Struct (:field value)` | `Enum :variant payload`、`Struct :field value` | 只有类型定义能静态解析、variant/字段契约可证明时才自动修复；动态 prototype 边界仍可显式使用低层形式 |
 
 这张对照表只规定**公开源码的首选写法**，不是要求一次删除所有内部实现名。内部函数即使仍出现在 `query type` 的定义路径中，也不得反向成为 Agent 推荐的应用代码。
@@ -96,7 +96,7 @@ String 的 `.len`（兼容 `.count`）、`.get/.nth/.slice` 与 `.find-index` �
 | --- | --- | --- |
 | `some?: T -> Bool`，仅排除 nil；Option none 也为 true | **已提供** `non-nil?: T -> Bool`；`some?` 暂留兼容 | 等价改名，不自动改成 Option `.some?`；WASM 已以类型证据修复 false/0 误判，fix 仅改写 compiler-resolved core 引用 |
 | Option `.some?/.none?: Option<T> -> Bool`；Result `.ok?/.err?: Result<T,E> -> Bool` | **保留**，判断名义 variant | 空值、false 和 nil payload 不改变 variant；既有 helper 退场条件仍适用 |
-| List/String `.contains?: (receiver, Number) -> Bool`，检查索引 | **已提供** `.contains-index?`，签名与原有错误行为不变 | List 的负数/小数/非有限索引返回 false；String 的负数/小数报错、越界返回 false。只迁移已证明的接收者；它不是元素或子串查询，可显式预览 `core-predicate-method-v1` |
+| List/String `.contains?: (receiver, Number) -> Bool`，检查索引 | **已提供** `.contains-index?`，签名与原有错误行为不变；旧 `.contains?` 已在 0.29.0 删除 | List 的负数/小数/非有限索引返回 false；String 的负数/小数报错、越界返回 false。它不是元素或子串查询；旧调用报 `E_RETIRED_METHOD`，自动迁移需用 0.28.x 的 CLI 运行 `core-predicate-method-v1` |
 | Map `.contains?: (Map<K,V>, K) -> Bool`；`.includes?: (Map<K,V>, V) -> Bool` | **已提供** `.contains-key?`、`.contains-value?`，分别接收 K/V | 即使 K 与 V 同型，两种命题也不同；仅用显式 `core-predicate-method-v1` 迁移已证明的 core 方法 |
 | Struct `.contains?` 检查字段；Enum `.contains?` 检查 tag 与 payload 位置 | Struct **已提供** `.contains-field? Tag -> Bool` 与 `contains-field? Struct Tag -> Bool`；Enum **已提供** `.contains-index? Number -> Bool` | Struct 新接口仅以 Tag 字段名承诺跨目标一致；旧底层 `&struct:contains?` 在 native/JS 还接受 String/Symbol，但不据此扩大新接口类型。Enum 的 0 是 tag，1 起是 payload；新方法仅接受非负有限整数，旧 `.contains?` 会将范围内小数误判为存在，不可无条件自动迁移。自定义 `Contains` 仍需单独证明 |
 | String `.includes?: (String, String) -> Bool`；List/Set `.includes?: (C<T>, T) -> Bool` | **保留** `.includes?`；Set `.contains?` 的同义入口迁到 `.includes?` | String 是子串，其余为成员；Set 别名只在证明实际实现后迁移，不全局替换 Contains trait |
@@ -118,7 +118,7 @@ do
     , .some?
   assert= true $
     [] 10 20
-    , .contains? 1
+    , .contains-index? 1
   assert= false $
     [] 10 20
     , .includes? 1
@@ -140,9 +140,9 @@ do
 | List `.add/.append: (List<T>, T) -> List<T>`；底层 Add trait 是两 List 组合 | **保留** `.append` 与 `.concat`，退场 List 单元素 `.add` 别名 | 先解决 originless `.add` 遮蔽；旧入口失效后也不能静默暴露另一种参数语义。名义 `Add` 调用/泛型界限保留单独验证 |
 | Map `.assoc: (Map<K,V>, K,V) -> Map<K,V>` / `.dissoc: (Map<K,V>, K, & K) -> Map<K,V>`；Set `include/exclude` 返回新 Set | **本阶段首选**现有持久集合入口；不新增 Map/Set `.insert/.remove`，见 [#1479](https://github.com/calcit-lang/calcit/issues/1479) | Rust 同名方法可能暗示原地修改与不同返回值。Set `.add` 与 `.include` 同指 core `include`，可显式用 `core-set-include-v1` 迁移已证明的调用；Map `.add` 只验证二元 List entry 的形状，不能证明 key/value 为 K/V，查询状态为 `open`，结果类型降为 `Map<Dynamic,Dynamic>`。旧入口保留人工兼容，不自动改写为 `.assoc` |
 | `foldl/.foldl/foldl'/reduce/.reduce: (List<T>, U, (U,T)->U) -> U` | **已引入** seeded `.fold`；`foldl'` 的内部备选实现与旧别名退场留给 [#1458](https://github.com/calcit-lang/calcit/issues/1458) | 保持左到右、空 List 返回初值、异类型 accumulator、callback 次数；不把旧 reduce 换成无初值语义。新方法证明不弱于现有 `.reduce` |
-| `join/.join: (List<T>, T) -> List<T>` | **已引入** `intersperse/.intersperse`；旧名暂保留兼容 | 只插入同类型分隔项，保持空/单项/重复值/顺序；不改成 String 返回，也不与 `join-str` 混用 |
+| `join/.join: (List<T>, T) -> List<T>` | **已引入** `intersperse/.intersperse`；`.join` 方法已在 0.29.0 删除，前缀 `join` 暂保留兼容 | 只插入同类型分隔项，保持空/单项/重复值/顺序；不改成 String 返回，也不与 `join-str` 混用 |
 | `join-str/.join-str: (List<T>, String) -> String`，逐项格式化 | **已引入** `join-string/.join-string` | 保留 List<T>、原有显示规则和空 List 结果；旧名暂留兼容，不与返回 List 的 `intersperse` 混淆 |
-| `vals` / Map `.values: Map<K,V> -> Set<V>`，去重 | **已引入** `distinct-values/.distinct-values`；旧名暂保留兼容 | 新旧都返回去重 Set，顺序不保证；保留重复值的视图是独立语义任务，本轮不复用旧名 |
+| `vals` / Map `.values: Map<K,V> -> Set<V>`，去重 | **已引入** `distinct-values/.distinct-values`；`.values` 方法已在 0.29.0 删除，前缀 `vals` 暂保留兼容 | 新旧都返回去重 Set，顺序不保证；保留重复值的视图是独立语义任务，本轮不复用旧名 |
 | List `mapcat/.bind: (List<T>, (T)->List<U>) -> List<U>` | **已引入** `.flat-map` | 保持顺序、展平一层、callback 次数与具体 U；Fn `.bind` 是不同组合，**暂缓** |
 
 Map/Set 更新均返回新集合，不修改原接收者。Map `.assoc key value` 替换已有 key，`.dissoc key` 忽略不存在的 key；Set `.include item` 去重，`.exclude item` 忽略不存在的元素，二者还接受更多同型元素。空集合遵循相同规则。Set `.add` 与 `.include` 是同一实现；Map `.add ([] key value)` 则先断言 entry 恰为二元 List，非法形状会失败，且无法从 `List<T>` 证明 key/value 分别符合 K/V。因此 Map `.add` 既不是 `.assoc` 的同签名别名，也不使 Map 实现 `Add` trait；`where T: Add` 的泛型调用会拒绝 Map，用户自定义的 `Add` impl 仍按其名义 trait 派发。
@@ -156,11 +156,11 @@ Map/Set 更新均返回新集合，不修改原接收者。Map `.assoc key value
 
 长度迁移的小批次使用显式 `core-collection-len-v1`：只在 List/Map/Set/String 的 `.count` 与 `.len` 同指对应 core 实现、方法契约已证明时改写。Struct/Enum 的 `.count` 另有语义，用户自定义 trait 也不据名字猜测；这不是一次全局文本替换。见 [fix 规则](../run/fix.md)。
 
-List 分隔元素的小批次使用显式 `core-list-intersperse-v1`：仅当具体 List 上 `.join` 和 `.intersperse` 同指 `calcit.core/intersperse` 且契约已证明时改写方法调用。前缀 `join` 与返回 String 的 `join-str` 不在规则范围，旧名暂保留以便分批迁移。
+List 分隔元素的方法迁移曾使用 `core-list-intersperse-v1`（仅 0.28.x 的 CLI 提供），`.join` 方法已在 0.29.0 删除。前缀 `join` 与返回 String 的 `join-str` 不在规则范围，旧名暂保留以便分批迁移。
 
 List 文本拼接使用 `join-string` / `.join-string`，逐项沿用 `join-str` 的显示转换并插入 String 分隔符，空 List 返回空字符串；这不是返回 List 的 `intersperse`。显式 `core-list-join-string-v1` 只迁移具体 List 且旧新方法同指 `calcit.core/join-str`、类型契约一致的 `.join-str` 调用。前缀 `join-str` 需要独立审阅，不在此 fix 范围。
 
-Map 去重值使用 `distinct-values` / `.distinct-values`，返回 `Set<V>`，不是保留重复值的 List。旧 `.values` 方法可用显式 `core-map-distinct-values-v1` 迁移：只有具体 Map 上旧、新方法均已证明指向同一实现且契约一致时才自动改写；前缀 `vals`、开放接收者与用户方法不按名字改写。
+Map 去重值使用 `distinct-values` / `.distinct-values`，返回 `Set<V>`，不是保留重复值的 List。旧 `.values` 方法已在 0.29.0 删除，曾提供的 `core-map-distinct-values-v1` 仅 0.28.x 的 CLI 可用；前缀 `vals`、开放接收者与用户方法不按名字改写。
 
 List 展平映射优先使用 `.flat-map`：回调对每个元素调用一次，返回 List 并按顺序展平一层，类型从 `List<T>` 与 `Fn(T)->List<U>` 推断为 `List<U>`。旧 List `.bind` 与新方法同指 `calcit.core/mapcat`，可用显式 `core-list-flat-map-v1` 在具体 List 且契约证明一致时迁移；前缀 `mapcat` 暂留，Fn `.bind` 不按名字替换。
 

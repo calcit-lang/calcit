@@ -2966,7 +2966,11 @@ fn preprocess_list_call(
           let is_display_contract = matches!(method_name.as_ref(), "show" | "debug")
             && !matches!(type_info.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::JsObject);
 
-          if is_nominal_or_trait || has_known_method || is_display_contract {
+          // A retired method name stays on the typed path so validation can
+          // report the migration instead of a confusing prefix-call failure.
+          let is_retired_method = retired_method_migration(type_info.as_ref(), method_name.as_ref()).is_some();
+
+          if is_nominal_or_trait || has_known_method || is_display_contract || is_retired_method {
             // Rewrite to (.method expr remaining_args...) — already handled by codegen
             let is_external = trait_list_from_type(type_info.as_ref())
               .is_some_and(|traits| traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref())));
@@ -6970,10 +6974,8 @@ fn try_specialize_polymorphic_call(
     ("empty?", T::Set(_)) => NativeSetEmpty,
     ("empty?", T::String) => NativeStrEmpty,
     // contains?
-    ("contains?", T::List(_)) => NativeListContains,
     ("contains?", T::Map(_, _)) => NativeMapContains,
     ("contains?", T::Set(_)) => NativeSetIncludes,
-    ("contains?", T::String) => NativeStrContains,
     ("contains?", T::StructValue(_)) => NativeStructContains,
     // rest
     ("rest", T::List(_)) => NativeListRest,
@@ -7492,6 +7494,28 @@ fn build_inlined_call(callable_head: Calcit, args: &CalcitList, scope_types: &Sc
   Calcit::from(CalcitList::executable(call_nodes, kind))
 }
 
+/// Method names removed in 0.29.0 whose old behaviour is easy to mistake for the
+/// obvious one. Returns the migration guidance for a receiver that used to
+/// resolve the name through its core method table.
+fn retired_method_migration(receiver: &CalcitTypeAnnotation, method_name: &str) -> Option<&'static str> {
+  use CalcitTypeAnnotation as T;
+  match (receiver, method_name) {
+    (T::List(_), "join") => {
+      Some("`.join` returned a List with the separator inserted; use `.intersperse` for that List, or `.join-string` to build a String")
+    }
+    (T::Map(_, _), "values") => Some(
+      "`.values` returned the de-duplicated values as a Set; use `.distinct-values` for that Set (`.vals` and `vals` are the function forms)",
+    ),
+    (T::List(_), "contains?") => {
+      Some("`.contains?` checked a List position, not an element; use `.contains-index?` for a position or `.includes?` for an element")
+    }
+    (T::String, "contains?") => Some(
+      "`.contains?` checked a String scalar position, not a substring; use `.contains-index?` for a position or `.includes?` for a substring",
+    ),
+    _ => None,
+  }
+}
+
 fn append_string_method_receiver_hint(mut message: String, method_name: &str, type_desc: &str) -> String {
   let replacement = match method_name {
     "trim" => "trim",
@@ -7690,6 +7714,15 @@ fn validate_method_call(
   }
   let methods_list = methods.join(" ");
   let type_desc = describe_type(type_value.as_ref());
+  if let Some(migration) = retired_method_migration(type_value.as_ref(), method_name) {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!("method `.{method_name}` for {type_desc} was retired: {migration}"),
+      "E_RETIRED_METHOD",
+      call_stack,
+      head.get_location(),
+    ));
+  }
   Err(CalcitErr::use_msg_stack_location(
     CalcitErrKind::Type,
     append_string_method_receiver_hint(
