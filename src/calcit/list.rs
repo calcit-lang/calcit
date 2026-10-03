@@ -8,13 +8,15 @@ use finger_vec::FingerVec;
 
 use crate::Calcit;
 
-/// Internal execution metadata attached to contiguous call nodes. It never
+/// Internal metadata attached to contiguous call nodes. It never
 /// changes the language-level list value represented by the stored items.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CalcitCallKind {
   #[default]
   Normal,
   NumberBinary(CalcitNumberBinaryOp),
+  /// A compiler-appended signature, distinct from source-authored hints.
+  GeneratedFnHint,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]

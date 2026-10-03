@@ -491,29 +491,34 @@ pub(crate) fn infer_recur_parameter_types(
   while let Some((expr, scope)) = pending.pop() {
     let arguments = match expr {
       Calcit::Recur(arguments) => arguments.iter().collect::<Vec<_>>(),
-      Calcit::List(items) => match items.first()? {
-        Calcit::Proc(CalcitProc::Recur) => items.iter().skip(1).collect(),
-        Calcit::Syntax(CalcitSyntax::CoreLet, _) => {
-          if let Some(tail) = items.get(items.len().checked_sub(1)?) {
-            pending.push((tail, core_let_scope(items, &scope)));
+      Calcit::List(items) => {
+        let Some(head) = items.first() else {
+          continue;
+        };
+        match head {
+          Calcit::Proc(CalcitProc::Recur) => items.iter().skip(1).collect(),
+          Calcit::Syntax(CalcitSyntax::CoreLet, _) => {
+            if let Some(tail) = items.get(items.len().checked_sub(1)?) {
+              pending.push((tail, core_let_scope(items, &scope)));
+            }
+            continue;
           }
-          continue;
-        }
-        Calcit::Syntax(CalcitSyntax::If, _) => {
-          pending.extend(items.iter().skip(2).map(|branch| (branch, scope.clone())));
-          continue;
-        }
-        Calcit::Syntax(CalcitSyntax::Match, _) => {
-          for (pattern, branch) in preprocessed_match_branches(items)? {
-            let mut branch_scope = scope.clone();
-            bind_pattern_scope(pattern, &mut branch_scope);
-            pending.push((branch, branch_scope));
+          Calcit::Syntax(CalcitSyntax::If, _) => {
+            pending.extend(items.iter().skip(2).map(|branch| (branch, scope.clone())));
+            continue;
           }
-          continue;
+          Calcit::Syntax(CalcitSyntax::Match, _) => {
+            for (pattern, branch) in preprocessed_match_branches(items)? {
+              let mut branch_scope = scope.clone();
+              bind_pattern_scope(pattern, &mut branch_scope);
+              pending.push((branch, branch_scope));
+            }
+            continue;
+          }
+          // A function-valued expression or a quote is not a lexical transfer.
+          _ => continue,
         }
-        // A function-valued expression or a quote is not a lexical transfer.
-        _ => continue,
-      },
+      }
       _ => continue,
     };
     if arguments.len() != parameters.len() {
