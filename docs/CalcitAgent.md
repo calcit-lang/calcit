@@ -251,7 +251,7 @@ JSON 中 definition 和 match 都带 `source`、`origin`，并用 `node_kind: le
 - definition 与静态 usage 一起重命名时，使用 `calcit fix --rule rename-definition-v1 --ns <ns> --def <old> --to <new> --format edn`，不要组合 `query search` 与文本替换猜调用点。普通 code、`:tests`、examples、schema 与 imports 会进入同一原子事务；macro、quoted data、dependency source 或缺少 source coordinate 的 blocker 会使事务整体拒绝，此时不得绕过为 declaration-only 改名。
 - 把 `(def name value)` 及其静态读取一起改成零参数函数时，使用 `calcit fix --rule value-to-zero-arg-fn-v1 --ns <ns> --def <name> --format edn`。该操作把初始化时的一次求值改成每次调用求值，会影响副作用、环境读取、对象身份、分配成本和缓存，Agent 必须展示并审阅这项语义变化，不能把它当作等价 lint fix 或加入 preset。普通 code、`:tests`、examples 与目标 schema 会原子更新；macro、quoted data、dependency source、schema type reference、自引用或缺少 source coordinate 时保持 fail closed。
 
-完成结构升级后，可用 `calcit fix --preset core-api-0.28-v1 --format edn` 一次预览 15 条已证明的核心 API 叶子改名，覆盖标量转换、谓词、集合方法和 core 效果方法。复用上述 revision 和 source 审阅流程；`source-coverage` 明确说明只扫描 `:code`，`:tests/:examples` 需人工核对。完整调用树的构造器、Option/Result helper 迁移仍单独运行对应规则，顺序见 `calcit docs read fix.md '0.28 核心 API 命名迁移'`。
+完成结构升级后，可用 `calcit fix --preset core-api-0.28-v1 --include-attached --format edn` 一次预览 15 条已证明的核心 API 叶子改名，覆盖标量转换、谓词、集合方法和 core 效果方法，以及附带的 `:tests` / `:examples`。不传 `--include-attached` 时仍只扫描 `:code`，以 `source-coverage` 为准。附带区域复用普通源码的类型、实现来源和求值语义证明；同一区域混有需要 review 的表达式时不部分写入，也不改变测试预期。应用时重复相同 selectors 和 flag，再传 `--apply --expect-revision`；随后运行附带测试和示例检查。完整调用树的构造器、Option/Result helper 迁移仍单独运行对应规则；`surface-latest-v1/v2` 也支持附带区域。未支持的规则组合明确报错，不静默忽略。详见 `calcit docs read fix.md --full`。
 - 为单个 runtime value/function 补全缺失 schema 时，使用 `calcit fix --rule synthesize-schema-v1 --ns <ns> --def <name> --format edn`。它只复用正常 compiled inference 与普通项目源码中 resolver 确认、类型一致的全部调用点，填补已有 `Dynamic` 洞；`machine-applicable` 候选可按 revision 原子应用，带 `schema.args.<index>`、`schema.return...` 等 unresolved slot 的 `needs-review` 候选即使传 `--apply` 也不写回。tests/examples 的单个样本不能充当公共参数证明，不得为消除洞扩大成整个 `Dynamic`；macro、data/trait/impl contract 继续显式维护。
 
 schema 候选没有 unresolved slot 也可能需要 review；检查 `:origin-chain` 中的编译器诊断与实际实现证据，不能用返回声明、未证明断言或强转目标类型循环自证。此类候选保留可读报告，但 `--apply` 不写回。
@@ -570,7 +570,7 @@ let
 `calcit query type calcit.core/FsPath --format edn`（或查询 `FfiTask`、`FfiResponse`）确认
 `preferred` / `compatibility` 和类型签名，再显式预览
 `calcit calcit.cirru fix --rule core-effect-method-v1 --format edn`。只有来源与接收者均已证明的
-definition `:code` 调用会自动改写；attached tests/examples 和未知宏需人工审阅。
+definition `:code` 调用默认进入预览；传 `--include-attached` 可用相同证明迁移附带测试与示例。未知宏或无法证明的区域仍需人工审阅。
 这些文件效果支持 native 与生成的 JavaScript。WASI command 还支持基于 preopen 的
 文本读写与 `.read-dir`；core WASM 明确拒绝宿主文件效果，`.walk-dir` 尚未接入 WASI。
 
@@ -587,27 +587,27 @@ Option 容器；Result 错误类型需要转换时显式使用 `.map-err`。
 
 普通值的非 nil 判断使用 `non-nil?`；旧 `some?` 只作为同义兼容入口，不能与 Option `.some?` 混淆。可用 `calcit fix --rule core-non-nil-predicate-v1 --format edn` 预览等价改名；规则只接受编译器已解析的 core 引用，未知 macro 保留 review，不会把 Option 判断或用户同名函数按词形替换。`JsNullish<T>` 继续使用 `js-present?` / `js-nullish?`，不能借 `non-nil?` 擦除宿主边界。
 
-List 单元素追加首选 `.append`，List 拼接用 `.concat`。迁移旧 `.add` 可显式运行 `calcit fix --rule core-list-add-v1 --format edn`：仅当具体 List 接收者与旧、新方法同指 `calcit.core/append` 且源码上下文稳定时提供可应用建议；Set/Map、开放类型与未知 macro 不得按字面改写。先预览，再携带原 revision 应用并重复预览；definition 附带的 `:tests` / `:examples` 不在本规则的自动覆盖范围内。
+List 单元素追加首选 `.append`，List 拼接用 `.concat`。迁移旧 `.add` 可显式运行 `calcit fix --rule core-list-add-v1 --format edn`：仅当具体 List 接收者与旧、新方法同指 `calcit.core/append` 且源码上下文稳定时提供可应用建议；Set/Map、开放类型与未知 macro 不得按字面改写。先预览，再携带原 revision 应用并重复预览；附带的 `:tests` / `:examples` 可传 `--include-attached` 纳入同一证明与原子事务。
 
-判断 Number 是否有限且恰好没有小数部分时，首选 `integer? value` 或 `value .integer?`；返回 Bool，不代表安全整数范围或整数类型 refinement。旧 `round?/.round?` 暂留同义兼容。可显式用 `core-integer-predicate-v1` 预览：reader 解析为内建 Proc 的单参数 `round?` 调用，以及静态 Number 接收者且同实现同契约的 `.round?` 方法可自动改写；quoted 数据、自定义同名方法、开放接收者与未知 macro 不按词形批量替换。附带的 `:tests` / `:examples` 需人工检查。使用前可查询 `calcit.core/integer?` 的公开 schema 和 Number 方法契约。
+判断 Number 是否有限且恰好没有小数部分时，首选 `integer? value` 或 `value .integer?`；返回 Bool，不代表安全整数范围或整数类型 refinement。旧 `round?/.round?` 暂留同义兼容。可显式用 `core-integer-predicate-v1` 预览：reader 解析为内建 Proc 的单参数 `round?` 调用，以及静态 Number 接收者且同实现同契约的 `.round?` 方法可自动改写；quoted 数据、自定义同名方法、开放接收者与未知 macro 不按词形批量替换。附带的 `:tests` / `:examples` 可传 `--include-attached` 纳入相同证明。使用前可查询 `calcit.core/integer?` 的公开 schema 和 Number 方法契约。
 
-索引、键和值查询先看接收者类型：List/String 用 `.contains-index? Number` 判断有效位置，Enum 也提供 `.contains-index? Number`，其中 0 是 tag、1 起是 payload；Map<K,V> 用 `.contains-key? K` 与 `.contains-value? V` 分别判断键和值，即使 K/V 同型也不能混用。List/Set 的元素成员和 String 子串仍用 `.includes?`。Enum 新方法要求非负有限整数，旧 `.contains?` 对范围内小数会返回 true，因此不能机械迁移。可显式用 `core-predicate-method-v1` 预览已证明的 List/String/Map builtin 方法等价迁移；它不处理 attached `:tests` / `:examples`、Struct/Enum、`Contains` trait 或自定义同名方法，不要按词形替换。List 索引的小数、负数和非有限值返回 false，JS 与 WASM 也遵守该契约。
+索引、键和值查询先看接收者类型：List/String 用 `.contains-index? Number` 判断有效位置，Enum 也提供 `.contains-index? Number`，其中 0 是 tag、1 起是 payload；Map<K,V> 用 `.contains-key? K` 与 `.contains-value? V` 分别判断键和值，即使 K/V 同型也不能混用。List/Set 的元素成员和 String 子串仍用 `.includes?`。Enum 新方法要求非负有限整数，旧 `.contains?` 对范围内小数会返回 true，因此不能机械迁移。可显式用 `core-predicate-method-v1` 预览已证明的 List/String/Map builtin 方法等价迁移；传 `--include-attached` 可覆盖附带区域；它仍不处理 Struct/Enum、`Contains` trait 或自定义同名方法，不要按词形替换。List 索引的小数、负数和非有限值返回 false，JS 与 WASM 也遵守该契约。
 
 持久集合更新首选 Map `.assoc key value` / `.dissoc key` 与 Set `.include item` / `.exclude item`，均返回新集合，不表示原地修改。Set `.add` 的同义调用可显式用 `core-set-include-v1` 预览，仅在具体 Set 接收者和同一 core 实现已证明时自动迁移；Map `.add` 接受二元 entry，无法在现有 `List<T>` 中分别证明 key/value 类型，`query type` 会将其标为 `open`，结果仅有 `Map<Dynamic,Dynamic>` 边界。不要在新代码中生成该调用，也不能按词形改成 `.assoc`；旧调用需逐项人工迁移。目前不新增 Rust 风格 `.insert/.remove`。
 
 Struct 字段存在性使用 `.contains-field? :field` 或 `contains-field? value :field`，参数必须是 Tag，返回 Bool，字段不存在返回 false。此接口在 native、生成 JS 与现有 WASM 子集有相同命题；旧底层 `&struct:contains?` 在 native/JS 还接受 String/Symbol，属于兼容行为，不代表新接口可接受这些输入。当前 `core-predicate-method-v1` 不迁移 Struct；遇到旧 `.contains?`、自定义 `Contains` trait 或反射式字段名时先核对来源与目标支持范围。
 
-String 到名义标识使用 `to-tag: String -> Tag` 与 `to-symbol: String -> Symbol`；新代码不要用 `turn-tag/turn-symbol` 表达任意类型的强制转换。旧入口为 core 宏及现有消费者保留，运行时接受额外输入不扩大新 API 的严格契约。可显式用 `calcit fix --rule core-identity-conversion-v1 --format edn` 预览：仅在完整内建调用的参数被证明为 String、源码上下文稳定时自动迁移；Dynamic、非 String、quote、macro 与一等函数引用不自动改写，`:tests` / `:examples` 需人工检查。`turn-string`、`str`、`.show/.debug` 也不能混作同一种显示或转换。当前 native/JS 已验证，WASM 缺少运行时 Tag/Symbol intern，不能使用新转换；`turn-tag` 的 WASM lowering 现显式拒绝，而不再把 String 错当 Tag。
+String 到名义标识使用 `to-tag: String -> Tag` 与 `to-symbol: String -> Symbol`；新代码不要用 `turn-tag/turn-symbol` 表达任意类型的强制转换。旧入口为 core 宏及现有消费者保留，运行时接受额外输入不扩大新 API 的严格契约。可显式用 `calcit fix --rule core-identity-conversion-v1 --format edn` 预览：仅在完整内建调用的参数被证明为 String、源码上下文稳定时自动迁移；Dynamic、非 String、quote、macro 与一等函数引用不自动改写，附带区域可传 `--include-attached` 纳入同样的源码证明。`turn-string`、`str`、`.show/.debug` 也不能混作同一种显示或转换。当前 native/JS 已验证，WASM 缺少运行时 Tag/Symbol intern，不能使用新转换；`turn-tag` 的 WASM lowering 现显式拒绝，而不再把 String 错当 Tag。
 
 对旧 `turn-string`，同一 fix 仅在内建 Nil、Bool、Number、String、Tag、Symbol 参数已证明时改为 `to-string`；这些内建 trait 方法调用相同的内部 `&turn-string`。旧入口本身现在也要求 `T: ToString`，因此 List/Map/Unit/开放 Dynamic 会在严格预处理时报错，而用户自定义实现仍可调用。自定义 `ToString`、开放 Dynamic、集合及无法稳定定位的源码不自动改写。`str`、`.show/.debug` 仍是不同显示职责，不应加入此迁移。
 
 测量经过时间使用 `monotonic-time-ms`，返回 Number 毫秒；只比较同一次运行中的两次读数，不把它当 Unix 时间戳或 CPU 使用量。旧 `cpu-time` 暂留兼容。`unix-time-ms` 是可能受宿主校时影响的 epoch 毫秒。新单调时钟名复用已有 native/JS/WASI Preview 1 实现；WASI 0.3 command 目前不支持时钟，应保留显式 capability 错误，不自行回退。
 
-List 带初始值的从左到右累加首选 `.fold initial reducer`，空 List 返回初值，累加器类型可不同于元素类型。旧 `.reduce` 方法可用 `core-list-fold-v1` 或 `core-api-0.28-v1` preset 预览和迁移：仅具体 List 的旧、新方法契约都 proven 且指向同一 core 实现时自动改写；前缀 `reduce`、开放接收者和用户方法保留人工审阅，`:tests` / `:examples` 人工核对。
+List 带初始值的从左到右累加首选 `.fold initial reducer`，空 List 返回初值，累加器类型可不同于元素类型。旧 `.reduce` 方法可用 `core-list-fold-v1` 或 `core-api-0.28-v1` preset 预览和迁移：仅具体 List 的旧、新方法契约都 proven 且指向同一 core 实现时自动改写；前缀 `reduce`、开放接收者和用户方法保留人工审阅；附带区域可传 `--include-attached` 纳入同一事务。
 
-List 元素间插入同类型分隔值首选 `.intersperse separator`，结果仍是 List；需要 String 时使用 `.join-string`。旧 `.join` 方法可用 `core-list-intersperse-v1` 或 `core-api-0.28-v1` preset 迁移，仅具体 List 的两种方法契约均 proven 且同指 `calcit.core/intersperse` 时自动改写。前缀 `join`、未知 macro 和附带的 `:tests` / `:examples` 仍需人工核对。
+List 元素间插入同类型分隔值首选 `.intersperse separator`，结果仍是 List；需要 String 时使用 `.join-string`。旧 `.join` 方法可用 `core-list-intersperse-v1` 或 `core-api-0.28-v1` preset 迁移，仅具体 List 的两种方法契约均 proven 且同指 `calcit.core/intersperse` 时自动改写。前缀 `join` 使用 `core-function-alias-v1` 单独迁移；附带区域可传 `--include-attached` 纳入证明，未知 macro 保留 review。
 
-Map 的去重值集合首选 `.distinct-values` / `distinct-values`，返回 `Set<V>`；旧 `.values` / `vals` 的返回值也是去重 Set，不应误认成保留重复值的 List。旧方法可用 `core-map-distinct-values-v1` 或 `core-api-0.28-v1` preset 迁移，自动改写仅限具体 Map 的新旧方法契约均 proven、同指 `calcit.core/distinct-values` 的完整调用。前缀 `vals`、开放接收者、用户方法和附带的 `:tests` / `:examples` 仍需人工核对。
+Map 的去重值集合首选 `.distinct-values` / `distinct-values`，返回 `Set<V>`；旧 `.values` / `vals` 的返回值也是去重 Set，不应误认成保留重复值的 List。旧方法可用 `core-map-distinct-values-v1` 或 `core-api-0.28-v1` preset 迁移，自动改写仅限具体 Map 的新旧方法契约均 proven、同指 `calcit.core/distinct-values` 的完整调用。前缀 `vals` 使用 `core-function-alias-v1` 单独迁移；附带区域可传 `--include-attached` 纳入证明，开放接收者和用户方法仍需人工核对。
 
 0.26.0 不删除旧 `option:*` / `result:*` 方法 helper：它们仍是 core method 的实现目标，不应在新应用代码中直接调用。其应用兼容入口最早于 0.27.0、且真实消费者在匹配的发布版依赖上迁移并通过严格检查、运行测试、Agent 文档和受影响 backend 验证，以及 core method 实现解耦后，才可考虑删除。完整条件见 [API 角色与命名](features/api-roles.md#旧方法-helper-的退场条件)；不能仅凭 fix 预览为空就推断可以删除。
 
