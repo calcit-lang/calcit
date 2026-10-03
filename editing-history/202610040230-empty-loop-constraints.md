@@ -30,6 +30,8 @@ Ref 负例使用显式固定的 `Ref<Option<Dynamic>>` 合同，拒绝转入具�
 
 ## 后续边界
 
+签名保留回归直接存入 core `hint-fn` 的附带测试并标记为 unit。默认工作流继续严格检查；兼容回放复用允许显式测试该边界的 `check-strict-default.mjs`，不为普通 runner 增加兼容开关或放宽入口扫描。结构化 CLI 写入同时规范化了两处既有括号/缩进，AST 语义不变。
+
 Review 补充了两条同一重检路径的边界。尾部遍历遇到空 core 列表时只跳过该分支，继续收集其他分支的转移约束；native 附带测试覆盖两种分支顺序，空分支不被执行。裸空 core 表达式目前不能生成有效 JS，独立 tag 只回放 native，不混入 JS 正例，也不借此次修复新增空表达式的跨后端语义。编译器追加的末尾签名复用现有 executable call metadata 标记来源，重检只删除带标记的签名，不再用定义是否属于 Snapshot 猜测来源。用户末尾 `hint-fn` 在严格与兼容模式的 native/JS 都保留；内部标记不能由 source 构造，也不改变列表值语义。低层 Rust 测试仅验证标记与 quote 的保留规则，不另建来源表或公开语法。
 
 若终止分支在首次预处理阶段就要求对空 payload 做静态方法选择，例如 `(value .unwrap) .to-string`，尚不能先完成整个函数体再从 transfer 收集约束。当前仍明确报 `E_DYNAMIC_POSTFIX_METHOD`，不改成动态派发或授予方法权限。后续需要把词法递归约束求解前移到依赖它的静态选择之前，并与统一 typed-core 校验协同；不以逐个方法放行或新增检查阶段开关绕过。这个最小复现和 Ref 边界继续由原 issue 追踪。

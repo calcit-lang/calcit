@@ -764,7 +764,6 @@ try {
   assert= 7 $ loop-propagated
   assert= 8 $ loop-matched
   assert= 7 $ loop-asserted
-  assert= 8 $ loop ((n 0) (value (Option :none))) (let ((echo-number (fn (input) (, input) (hint-fn ({} (:args ([] 'Number)) (:return 'Number)))))) (if (&< n 1) (recur 1 (Option :some 7)) (&+ (echo-number 7) 1)))
   assert= 42 $ loop
       n 0
       cell $ atom $ assert-type (Option :none) $ :: 'Option 'Dynamic
@@ -802,9 +801,7 @@ try {
   assert= 42 $ loop ((n 0) (value (Option :none))) (if (&< n 1) (if true (recur 1 (Option :some 7)) ()) 42)
   assert= 42 $ loop ((n 0) (value (Option :none))) (if (&< n 1) (if false () (recur 1 (Option :some 7))) 42)`);
   run("test", "calcit.assert-evidence/recursive-count", "--tag", "recursive-empty-tail", "--require-match");
-  run("--compat-types", "test", "calcit.assert-evidence/recursive-count", "--tag", "recursive-empty-tail", "--require-match");
   run("test", "calcit.assert-evidence/recursive-count", "--tag", "recursive-fields", "--require-match");
-  run("--compat-types", "test", "calcit.assert-evidence/recursive-count", "--tag", "recursive-fields", "--require-match");
   const recursiveTests = JSON.parse(run("query", "def", "calcit.assert-evidence/recursive-count", "--format", "json"))
     .data.tests.filter(test => test.tags.includes("recursive-fields"));
   assert.equal(recursiveTests.length, 1);
@@ -819,10 +816,6 @@ try {
   run("--emit-path", recursiveOutput, "js");
   const recursiveJs = await import(pathToFileURL(join(recursiveOutput, "calcit.assert-evidence.mjs")).href);
   assert.equal(recursiveJs.run_tests(), 1);
-  const recursiveCompatOutput = join(project, "recursive-fields-compat-js");
-  run("--compat-types", "--emit-path", recursiveCompatOutput, "js");
-  const recursiveCompatJs = await import(pathToFileURL(join(recursiveCompatOutput, "calcit.assert-evidence.mjs")).href);
-  assert.equal(recursiveCompatJs.run_tests(), 1);
   for (const [name, expression] of [
     ["wrong-scalar-literal", "%{} WriteState (:count |wrong) (:label |kept)"],
     ["wrong-scalar-head", "WriteState :count |wrong :label |kept"],

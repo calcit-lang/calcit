@@ -78,6 +78,25 @@ try {
   expectStatus(run([snapshot, ...selection, "--emit-path", output, "js"]), 0, "JS async scope generation");
   const generated = await import(pathToFileURL(join(output, "calcit.core.mjs")).href);
   assert.equal(generated.async_scope_replay(), 1, "JS preserves the shared async scope contract");
+  const hintDefinition = run(["src/cirru/calcit-core.cirru", "query", "def", "calcit.core/hint-fn", "--format", "json"]);
+  expectStatus(hintDefinition, 0, "read source-hint recheck contract");
+  const hintTests = JSON.parse(hintDefinition.stdout).data.tests.filter(test => test.tags.includes("parameter-recheck"));
+  assert.equal(hintTests.length, 1);
+  expectStatus(run([snapshot, "edit", "def", "calcit.core/parameter-recheck-replay", "--input-format", "json-ast",
+    "--code", JSON.stringify(["defn", "parameter-recheck-replay", [], ...hintTests.map(test => test.code), "1"])]), 0,
+    "assemble source-hint recheck replay");
+  const hintSelection = ["--init-fn", "calcit.core/parameter-recheck-replay", "--reload-fn", "calcit.core/parameter-recheck-replay"];
+  // Compatibility regressions belong here, not in ordinary project entrypoints.
+  for (const [mode, policy] of [["strict", []], ["compat", ["--compat-types"]]]) {
+    expectStatus(run(["src/cirru/calcit-core.cirru", ...policy, "test", "calcit.core/hint-fn", "--tag", "parameter-recheck", "--require-match"]), 0,
+      `${mode} source-hint attached test`);
+    expectStatus(run([snapshot, ...policy, ...hintSelection]), 0, `${mode} source-hint native replay`);
+    const hintOutput = join(asyncFixture, `hint-recheck-${mode}`);
+    expectStatus(run([snapshot, ...policy, ...hintSelection, "--emit-path", hintOutput, "js"]), 0,
+      `${mode} source-hint JS generation`);
+    const replay = await import(pathToFileURL(join(hintOutput, "calcit.core.mjs")).href);
+    assert.equal(replay.parameter_recheck_replay(), 1, `${mode} JS preserves the trailing source hint`);
+  }
 } finally {
   await rm(asyncFixture, { recursive: true, force: true });
 }
