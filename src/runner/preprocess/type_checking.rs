@@ -1153,24 +1153,35 @@ pub(crate) fn check_recur_arg_types(
   }
   let head = Calcit::Proc(CalcitProc::Recur);
   let args = CalcitList::from(args);
-  check_arg_types_loop(
-    CheckContext {
-      head_form: &head,
-      args: &args,
-      expected_types,
-      where_bounds: &[],
-      scope_types,
-      file_ns,
-      call_location,
-      warning_code: "W_RECUR_ARG_TYPE_MISMATCH",
-      check_warnings,
-    },
-    |index, expected, actual, expression| {
-      format!(
-        "[Warn] `recur` argument {index} expects type `{expected}`, but got `{actual}` in {file_ns}/{def_name}\n  Expression: `{expression}`"
-      )
-    },
-  );
+  let context = CheckContext {
+    head_form: &head,
+    args: &args,
+    expected_types,
+    where_bounds: &[],
+    scope_types,
+    file_ns,
+    call_location,
+    warning_code: "W_RECUR_ARG_TYPE_MISMATCH",
+    check_warnings,
+  };
+  let message = |index, expected: &str, actual: &str, expression| {
+    format!(
+      "[Warn] `recur` argument {index} expects type `{expected}`, but got `{actual}` in {file_ns}/{def_name}\n  Expression: `{expression}`"
+    )
+  };
+  if super::strict_types_enabled() {
+    // A tail transfer preserves its lexical instantiation; it is not a new
+    // generic call. Unknown inputs cannot reuse earlier parameter evidence.
+    for (index, (argument, expected)) in args.iter().zip(expected_types).enumerate() {
+      let actual = resolve_type_value(argument, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
+      let mut bindings = HashMap::new();
+      if !actual.prove_with_bindings(expected, &mut bindings).is_proven() || !bindings.is_empty() {
+        context.emit_warning(index + 1, expected.as_ref(), actual.as_ref(), message);
+      }
+    }
+  } else {
+    check_arg_types_loop(context, message);
+  }
 }
 
 // ---------------------------------------------------------------------------

@@ -465,6 +465,79 @@ pub(crate) fn join_return_types(
   merge_nominal_enum_branches([&left, &right]).or_else(|| merge_if_branch_types(left, right))
 }
 
+/// Join lexical tail-transfer inputs into payload-free inferred enum slots.
+/// Concrete parameters, explicit Dynamic, nested functions and Ref stay fixed.
+pub(crate) fn infer_recur_parameter_types(
+  body: &[Calcit],
+  scope_types: &ScopeTypes,
+  parameters: &[Arc<CalcitTypeAnnotation>],
+) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+  let eligible = parameters
+    .iter()
+    .map(|parameter| {
+      matches!(parameter.as_ref(), CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args)
+      if args.iter().any(|arg| matches!(arg.as_ref(), CalcitTypeAnnotation::Never)) && parameter.resolve_to_enum().is_some())
+    })
+    .collect::<Vec<_>>();
+  if !eligible.iter().any(|eligible| *eligible) {
+    return None;
+  }
+  let mut inferred = parameters.to_vec();
+  let tail = body.iter().rev().find(|form| !builtins::syntax::is_function_metadata_hint(form))?;
+  let mut pending = vec![(tail, scope_types.clone())];
+  while let Some((expr, scope)) = pending.pop() {
+    let arguments = match expr {
+      Calcit::Recur(arguments) => arguments.iter().collect::<Vec<_>>(),
+      Calcit::List(items) => match items.first()? {
+        Calcit::Proc(CalcitProc::Recur) => items.iter().skip(1).collect(),
+        Calcit::Syntax(CalcitSyntax::CoreLet, _) => {
+          if let Some(tail) = items.get(items.len().checked_sub(1)?) {
+            pending.push((tail, core_let_scope(items, &scope)));
+          }
+          continue;
+        }
+        Calcit::Syntax(CalcitSyntax::If, _) => {
+          pending.extend(items.iter().skip(2).map(|branch| (branch, scope.clone())));
+          continue;
+        }
+        Calcit::Syntax(CalcitSyntax::Match, _) => {
+          for (pattern, branch) in preprocessed_match_branches(items)? {
+            let mut branch_scope = scope.clone();
+            bind_pattern_scope(pattern, &mut branch_scope);
+            pending.push((branch, branch_scope));
+          }
+          continue;
+        }
+        // A function-valued expression or a quote is not a lexical transfer.
+        _ => continue,
+      },
+      _ => continue,
+    };
+    if arguments.len() != parameters.len() {
+      continue;
+    }
+    for (index, argument) in arguments.into_iter().enumerate() {
+      if !eligible[index] {
+        continue;
+      }
+      // Missing transfer evidence is not evidence of an empty slot. Keep
+      // such an input open so rechecking cannot use the initial Never as
+      // proof for values that a later iteration may actually carry.
+      let actual = resolve_type_value(argument, &scope).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
+      let joined = join_return_types(inferred[index].clone(), actual)?;
+      // Preserve the body's resolved representation: a named Enum may also
+      // have a TypeRef spelling, but that spelling is not a new constraint.
+      inferred[index] = match (parameters[index].as_ref(), joined.as_ref()) {
+        (CalcitTypeAnnotation::Enum(definition, _), CalcitTypeAnnotation::TypeRef(_, args)) => {
+          Arc::new(CalcitTypeAnnotation::Enum(definition.clone(), args.clone()))
+        }
+        _ => joined,
+      };
+    }
+  }
+  (inferred != parameters).then_some(inferred)
+}
+
 fn merge_result_constructor_branches(
   true_expr: &Calcit,
   true_type: &CalcitTypeAnnotation,

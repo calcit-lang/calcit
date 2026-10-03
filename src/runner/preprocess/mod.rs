@@ -9923,6 +9923,7 @@ pub fn preprocess_defn(
       // Inject declared argument types into the function body. Call-site checks alone are not
       // enough: without these bindings, local method dispatch and return inference inside a named
       // `defn` unnecessarily fall back to Dynamic. Anonymous callbacks still use EXPECTED_FN_TYPE.
+      let has_body_fn_hint = body_fn_hint.is_some();
       let mut effective_fn_schema: Option<Arc<CalcitFnTypeAnnotation>> = body_fn_hint.or_else(|| match def_schema.as_ref() {
         CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.clone()),
         CalcitTypeAnnotation::Dynamic => EXPECTED_FN_TYPE.with(|cell| cell.borrow().clone()),
@@ -10064,6 +10065,26 @@ pub fn preprocess_defn(
         Ok(())
       })?;
 
+      // An inferred empty enum input constrains only the first invocation.
+      // Its lexical tail transfers supply the missing payload constraints.
+      // Reprocess the source body with those constraints so dispatch, locals
+      // and every ordinary type gate see the same contract on later turns.
+      // A source-owned schema or explicit hint is never inferred from recur.
+      if !source_top_level_definition
+        && !has_marked_args
+        && !has_body_fn_hint
+        && let Some(signature) = effective_fn_schema.as_ref()
+        && let Some(parameters) = type_inference::infer_recur_parameter_types(&processed_body, &body_types, &recur_param_types)
+      {
+        let mut inferred = signature.as_ref().clone();
+        inferred.arg_types = parameters;
+        let previous = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().replace(Arc::new(inferred)));
+        drop(feature_scope);
+        let result = preprocess_defn(head, head_ns, args, ctx);
+        EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous);
+        return result;
+      }
+
       if infer_helper_schema {
         let inferred = type_inference::infer_unhinted_callback_signature(&xs.clone().into(), &body_types)
           .filter(inferred_helper_contract_is_closed)
@@ -10112,6 +10133,8 @@ pub fn preprocess_defn(
           .find(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
         && let Some(inferred) = if type_inference::expression_definitely_diverges(body) {
           Some(crate::calcit::type_annotation::NEVER_TYPE.clone())
+        } else if !has_marked_args {
+          type_inference::infer_function_exit_type(body, &body_types, &recur_param_types)
         } else {
           resolve_type_value(body, &body_types)
         }
