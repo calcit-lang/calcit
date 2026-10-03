@@ -657,12 +657,18 @@ const scenarios = [
       }
       const expected = [
         ["W_FN_RETURN_TYPE_MISMATCH", "fix-command.main/fixable"],
-        ["W_FN_ARG_TYPE_MISMATCH", "fix-command.main/option-struct-field"],
-        ["W_FN_ARG_TYPE_MISMATCH", "fix-command.main/union-struct-field"],
+        ["E_CALL_ARGUMENT_MISMATCH", "fix-command.main/option-struct-field"],
+        ["E_CALL_ARGUMENT_MISMATCH", "fix-command.main/union-struct-field"],
       ];
       if (result.diagnostics?.length !== expected.length ||
           expected.some(([code, definition]) => !result.diagnostics.some(item => item.code === code && item.definition === definition))) {
-        throw new Error("migration review must report exact project contract warnings, not unrelated core proof debt");
+        throw new Error("migration review must report exact project contract diagnostics, not unrelated core proof debt");
+      }
+      for (const definition of ["fix-command.main/option-struct-field", "fix-command.main/union-struct-field"]) {
+        const diagnostic = result.diagnostics.find(item => item.definition === definition);
+        assert.ok(diagnostic.message.includes("argument 2: expected `:number`, got `:tag`"));
+        assert.equal(diagnostic.location.ns, "fix-command.main");
+        assert.deepEqual(diagnostic.location.coord, [3]);
       }
       if (!workflow.resume?.revision?.startsWith("md5:") || workflow.resume?.apply_command?.[0] !== "calcit") {
         throw new Error("strict workflow lost its resumable revision-bound command");
