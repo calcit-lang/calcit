@@ -9725,6 +9725,16 @@ fn body_for_parameter_recheck(form: &Calcit, file_ns: &str) -> Calcit {
   ) {
     return form.clone();
   }
+  if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::AssertType, _)))
+    && items
+      .get(1)
+      .and_then(|target| resolve_type_value(target, &ScopeTypes::new()))
+      .is_some_and(|annotation| type_inference::has_payload_free_enum_slot(&annotation))
+  {
+    // Retain the original absence evidence only as an assertion obligation.
+    // The assertion handler refreshes its input from the new lexical scope.
+    return form.clone();
+  }
   if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::Match, _)))
     && let Some(branches) = type_inference::preprocessed_match_branches(items)
   {
@@ -10661,8 +10671,15 @@ pub fn preprocess_assert_type(
   let target_raw = args.get(0).unwrap();
   let type_form = args.get(1).unwrap();
 
+  let absence_obligation = resolve_type_value(target_raw, &ScopeTypes::new())
+    .is_some_and(|annotation| type_inference::has_payload_free_enum_slot(&annotation));
+  let refreshed_target = if absence_obligation {
+    body_for_parameter_recheck(target_raw, ctx.file_ns)
+  } else {
+    target_raw.clone()
+  };
   let target_form = preprocess_expr(
-    target_raw,
+    &refreshed_target,
     ctx.scope_defs,
     ctx.scope_types,
     ctx.file_ns,
@@ -10754,7 +10771,7 @@ pub fn preprocess_assert_type(
   }
   // Audit before the local scope update: an assertion cannot provide its own
   // input evidence, and a second assertion must not hide the first boundary.
-  if REQUIRE_ASSERTION_PROOF.with(Cell::get) && !assertion_proof.is_some_and(TypeProof::is_proven) {
+  if (absence_obligation || REQUIRE_ASSERTION_PROOF.with(Cell::get)) && !assertion_proof.is_some_and(TypeProof::is_proven) {
     let actual = current_type
       .as_ref()
       .map(|annotation| annotation.to_brief_string())
@@ -10795,7 +10812,7 @@ pub fn preprocess_assert_type(
       // assertions in closures that capture the loop parameter.
       return Ok(Calcit::from(vec![
         Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
-        Calcit::Local(typed_local),
+        asserted_target,
         asserted_type_form,
       ]));
     }

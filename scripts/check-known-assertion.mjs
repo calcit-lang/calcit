@@ -689,7 +689,6 @@ try {
     ["loop-propagated", "defn loop-propagated () $ loop ((n 0) (left (Option :none)) (right (Option :none))) (if (&< n 2) (recur (inc n) (Option :some 7) left) (option:unwrap-or right 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
     ["loop-matched", "defn loop-matched () $ loop ((value (Option :none))) (match value ((:none) (recur (Option :some 7))) ((:some payload) (+ payload 1)))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
     ["loop-asserted", "defn loop-asserted () $ loop ((n 0) (value (Option :none))) (assert-type value (:: 'Option 'Number)) (if (&< n 1) (recur 1 (Option :some 7)) (value .unwrap-or 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
-    ["loop-decoded", "defn loop-decoded () $ loop ((n 0) (value (Option :none))) (if (&< n 1) (let ((decoded (decode-map-as ([] 7) (:: 'List 'Number)))) (recur 1 (Option :some (count decoded)))) (value .unwrap-or 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
     ["loop-once-log", "defmacro loop-once-log () (println |loop-expansion-token) (quasiquote 7)", ":: 'Macro $ {} (:required $ []) (:capabilities $ #{} :log) (:expansion $ :: 'Expr 'Number)"],
     ["loop-expansion-once", "defn loop-expansion-once () $ loop ((n 0) (value (Option :none))) (if (&< n 1) (recur 1 (Option :some (loop-once-log))) (value .unwrap-or 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
     ["recursive-count", `defn recursive-count (node)
@@ -761,7 +760,14 @@ try {
   assert= 7 $ loop-propagated
   assert= 8 $ loop-matched
   assert= 7 $ loop-asserted
-  assert= 1 $ loop-decoded
+  assert= 1 $ loop
+      n 0
+      value $ Option :none
+    if (&< n 1)
+      let
+          decoded $ decode-map-as ([] 7) $ :: 'List 'Number
+        recur 1 $ Option :some $ count decoded
+      value .unwrap-or 0
   assert= 7 $ loop-expansion-once
   assert= 7 $ loop
       n 0
@@ -805,6 +811,10 @@ try {
     ["wrong-matched-loop-payload", "loop ((tree (Option :none))) (match tree ((:none) (recur (Option :some |wrong))) ((:some payload) (RecursiveComponent :tree (Option :some payload))))"],
     ["contradictory-loop-assertion", "loop ((n 0) (value (Option :none))) (assert-type value (:: 'Option 'String)) (if (&< n 1) (recur 1 (Option :some 7)) 42)"],
     ["contradictory-captured-loop-assertion", "loop ((n 0) (value (Option :none))) (let ((check (fn () (assert-type value (:: 'Option 'String)) 42))) (if (&< n 1) (recur 1 (Option :some 7)) (check)))"],
+    ["unproven-loop-assertion", "loop ((n 0) (value (Option :none))) (assert-type value (:: 'Option 'String)) (if (&< n 1) (recur 1 (Option :some (make-open-number))) 42)"],
+    ["unproven-captured-loop-assertion", "loop ((n 0) (value (Option :none))) (let ((check (fn () (assert-type value (:: 'Option 'String)) 42))) (if (&< n 1) (recur 1 (Option :some (make-open-number))) (check)))"],
+    ["unproven-loop-expression-assertion", "loop ((n 0) (value (Option :none))) (assert-type (if (&< n 1) value value) (:: 'Option 'String)) (if (&< n 1) (recur 1 (Option :some (make-open-number))) 42)"],
+    ["unproven-captured-loop-expression-assertion", "loop ((n 0) (value (Option :none))) (let ((check (fn () (assert-type (if (&< n 1) value value) (:: 'Option 'String)) 42))) (if (&< n 1) (recur 1 (Option :some (make-open-number))) (check)))"],
     ["open-loop-payload-use", "loop ((n 0) (tree (Option :none))) (if (&< n 1) (recur 1 (Option :some (make-open-number))) (RecursiveComponent :tree tree))"],
     ["mixed-loop-payloads", "(fn (flag) (loop ((n 0) (tree (Option :none))) (if (&< n 1) (recur 1 (if flag (Option :some 1) (Option :some |wrong))) (RecursiveComponent :tree tree)))) true"],
     ["wrong-loop-family", "loop ((n 0) (signal (RecursiveSignal :idle))) (if (&< n 1) (recur 1 (Option :some 1)) (RecursiveSignalHolder :signal signal))"],
@@ -831,11 +841,15 @@ try {
       if (rejected.error) throw rejected.error;
       assert.equal(rejected.status, 1, `${name} ${mode}\n${rejected.stdout}\n${rejected.stderr}`);
       const diagnostics = `${rejected.stdout}\n${rejected.stderr}`;
-      assert.match(diagnostics, /expects type|does not exist in struct|E_DYNAMIC_NOMINAL_ARGUMENT|E_ASSERT_TYPE_MISMATCH/);
+      assert.match(diagnostics, /expects type|does not exist in struct|E_DYNAMIC_NOMINAL_ARGUMENT|E_ASSERT_TYPE_MISMATCH|E_ASSERT_TYPE_UNPROVEN/);
       assert.match(diagnostics, /calcit.assert-evidence/);
       if (name === "contradictory-loop-assertion" || name === "contradictory-captured-loop-assertion") {
         assert.match(diagnostics, /E_ASSERT_TYPE_MISMATCH/);
         assert.match(diagnostics, /assert-type cannot prove local `value`/);
+      }
+      if (name.startsWith("unproven-") && name.endsWith("-assertion")) {
+        assert.match(diagnostics, /E_ASSERT_TYPE_UNPROVEN/);
+        assert.match(diagnostics, /assert-type lacks independent input proof/);
       }
       const field = name.startsWith("wrong-scalar") ? "count"
         : ["broad-enum-payload", "open-enum-payload", "open-local-payload", "open-imported-branch", "wrong-fold-payload", "open-fold-output", "wrong-loop-payload-use", "wrong-matched-loop-payload", "open-loop-payload-use"].includes(name) ? "tree"
@@ -850,7 +864,7 @@ try {
         assert.match(diagnostics, /@calcit\.assert-evidence\/run-tests @[0-9]/,
           "constructor diagnostics must locate the source call, not only a generated macro");
       }
-      await assertRejectedArtifacts(destination, `${name} ${mode}`, /expects type|does not exist in struct|E_DYNAMIC_NOMINAL_ARGUMENT|E_ASSERT_TYPE_MISMATCH/);
+      await assertRejectedArtifacts(destination, `${name} ${mode}`, /expects type|does not exist in struct|E_DYNAMIC_NOMINAL_ARGUMENT|E_ASSERT_TYPE_MISMATCH|E_ASSERT_TYPE_UNPROVEN/);
       assert.deepEqual(await readFile(snapshot), original);
     }
   }
