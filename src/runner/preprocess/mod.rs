@@ -12,10 +12,11 @@ use crate::{
   builtins::{self, is_js_syntax_procs, is_proc_name, is_registered_proc},
   calcit::{
     self, Calcit, CalcitArgLabel, CalcitCallKind, CalcitErr, CalcitErrKind, CalcitFn, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImpl,
-    CalcitImport, CalcitList, CalcitLocal, CalcitNumberBinaryOp, CalcitProc, CalcitScope, CalcitStructDef, CalcitSymbolInfo,
-    CalcitSyntax, CalcitTrait, CalcitTraitMemberKind, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo, LocatedWarning,
-    MacroExpansionType, MacroSignature, MacroSyntaxType, NodeLocation, ParamShape, ParamShapeToken, RawCodeType, SchemaKind,
-    brief_type_of_value, pop_type_slot_override, push_type_slot_override, register_type_slot, validate_definition_schema_shape,
+    CalcitImport, CalcitList, CalcitLocal, CalcitMacro, CalcitNumberBinaryOp, CalcitProc, CalcitScope, CalcitStructDef,
+    CalcitSymbolInfo, CalcitSyntax, CalcitTrait, CalcitTraitMemberKind, CalcitTypeAnnotation, GENERATED_DEF, ImportInfo,
+    LocatedWarning, MacroExpansionType, MacroSignature, MacroSyntaxType, NodeLocation, ParamShape, ParamShapeToken, RawCodeType,
+    SchemaKind, brief_type_of_value, pop_type_slot_override, push_type_slot_override, register_type_slot,
+    validate_definition_schema_shape,
   },
   call_stack::{CallStackList, StackKind, find_preferred_macro_location},
   codegen, program, runner,
@@ -2675,6 +2676,192 @@ fn preprocess_immediate_call_context(
   Ok(immediate_call)
 }
 
+/// Raw macro output and the evidence needed to validate and commit it later.
+/// Cache entries are committed only after preprocessing and result validation.
+struct EvaluatedMacroExpansion {
+  code: Calcit,
+  type_bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
+  cache_miss: Option<runner::macro_cache::CacheMiss>,
+  evaluator_gensym_end: Option<usize>,
+}
+
+/// Evaluate a macro once without selecting methods in its expansion.
+/// The caller retains the macro stack and validates the resulting core code.
+fn evaluate_macro_expansion(
+  info: &CalcitMacro,
+  macro_id: &Arc<str>,
+  macro_name: &str,
+  args: &CalcitList,
+  mut type_bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
+  ctx: &PreprocessContext,
+) -> Result<EvaluatedMacroExpansion, CalcitErr> {
+  let mut current_values = args.to_vec();
+  let mut body_scope = CalcitScope::default();
+  let frame_checkpoint = body_scope.frame_checkpoint();
+  let mut cache_lookup = Some(runner::macro_cache::lookup(
+    macro_name,
+    macro_id,
+    info.signature.as_ref(),
+    &current_values,
+    ctx.call_location.as_ref(),
+    ctx.file_ns,
+  ));
+  match cache_lookup.as_ref().expect("macro cache lookup") {
+    runner::macro_cache::CacheLookup::Hit(_) => runner::macro_metrics::record_cache_hit(macro_name),
+    runner::macro_cache::CacheLookup::Miss { reason, .. } => {
+      runner::macro_metrics::record_cache_miss(macro_name, reason, *reason != "cold-call-site")
+    }
+    runner::macro_cache::CacheLookup::Bypass(reason) => runner::macro_metrics::record_cache_bypass(macro_name, reason),
+  }
+  let mut cache_miss = None;
+  let mut evaluator_gensym_end = None;
+  loop {
+    body_scope.restore_frame(frame_checkpoint);
+    runner::bind_marked_args(&mut body_scope, &info.args, &current_values, ctx.call_stack)?;
+    let code = match cache_lookup.take() {
+      Some(runner::macro_cache::CacheLookup::Hit(code)) => code,
+      lookup => {
+        if let Some(runner::macro_cache::CacheLookup::Miss { token, .. }) = lookup {
+          cache_miss = Some(token);
+        }
+        let evaluator_timer = runner::macro_metrics::PhaseTimer::start(macro_name, runner::macro_metrics::MacroMetricPhase::Evaluator);
+        let evaluate_body = || {
+          with_assertion_proof_policy(false, || {
+            runner::evaluate_lines(&info.body.to_vec(), &body_scope, ctx.file_ns, ctx.call_stack)
+          })
+        };
+        let evaluated = runner::macro_capability::with_macro_context(
+          Arc::from(macro_name),
+          info.signature.capabilities.clone(),
+          ctx.call_location.clone(),
+          evaluate_body,
+        )?;
+        evaluator_gensym_end = Some(builtins::meta::current_gensym_index(ctx.file_ns));
+        drop(evaluator_timer);
+        evaluated
+      }
+    };
+    match code {
+      Calcit::Recur(values) => {
+        current_values = values;
+        type_bindings = validate_macro_call_inputs(
+          info.name.as_ref(),
+          info.signature.as_ref(),
+          &CalcitList::from(current_values.as_slice()),
+          ctx.scope_types,
+          ctx.call_stack,
+          ctx.call_location.clone(),
+        )?;
+      }
+      code => {
+        return Ok(EvaluatedMacroExpansion {
+          code,
+          type_bindings,
+          cache_miss,
+          evaluator_gensym_end,
+        });
+      }
+    }
+  }
+}
+
+/// Keep macro-evaluation temporaries off the recursive ordinary-call path.
+#[inline(never)]
+fn preprocess_macro_call(
+  info: &CalcitMacro,
+  macro_id: &Arc<str>,
+  source: &CalcitList,
+  args: &CalcitList,
+  def_name: &str,
+  ctx: PreprocessContext,
+) -> Result<Calcit, CalcitErr> {
+  let macro_name = format!("{}/{}", info.def_ns, info.name);
+  runner::macro_metrics::record_expansion(&macro_name, info.signature.as_ref());
+  let macro_type_bindings = validate_macro_call_inputs(
+    info.name.as_ref(),
+    info.signature.as_ref(),
+    args,
+    ctx.scope_types,
+    ctx.call_stack,
+    ctx.call_location.clone(),
+  )?;
+
+  reject_legacy_trait_method_tag_syntax(info, args, ctx.file_ns, def_name, ctx.call_stack)?;
+
+  let code = Calcit::List(Arc::new(source.to_owned()));
+  let next_stack = ctx
+    .call_stack
+    .extend_owned(&info.def_ns, &info.name, StackKind::Macro, code, args.to_vec());
+
+  let native_lowered = if info.def_ns.as_ref() == calcit::CORE_NS {
+    match info.name.as_ref() {
+      "let" => try_lower_core_let_macro(args, ctx.file_ns),
+      "{}" => try_lower_core_map_macro(args),
+      _ => None,
+    }
+  } else {
+    None
+  };
+  if let Some(lowered) = native_lowered {
+    runner::macro_metrics::record_native_fast_path(&macro_name);
+    let _post_preprocess_timer =
+      runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::PostPreprocess);
+    return preprocess_expr(
+      &lowered,
+      ctx.scope_defs,
+      ctx.scope_types,
+      ctx.file_ns,
+      ctx.check_warnings,
+      &next_stack,
+    );
+  }
+
+  let expansion = evaluate_macro_expansion(
+    info,
+    macro_id,
+    &macro_name,
+    args,
+    macro_type_bindings,
+    &PreprocessContext {
+      scope_defs: ctx.scope_defs,
+      scope_types: ctx.scope_types,
+      file_ns: ctx.file_ns,
+      check_warnings: ctx.check_warnings,
+      call_stack: &next_stack,
+      call_location: ctx.call_location.clone(),
+    },
+  )?;
+  let _post_preprocess_timer =
+    runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::PostPreprocess);
+  let processed = preprocess_expr(
+    &expansion.code,
+    ctx.scope_defs,
+    ctx.scope_types,
+    ctx.file_ns,
+    ctx.check_warnings,
+    &next_stack,
+  )?;
+  validate_macro_expansion_result(
+    info.name.as_ref(),
+    info.signature.as_ref(),
+    (&expansion.code, &processed),
+    ctx.scope_types,
+    expansion.type_bindings,
+    &next_stack,
+    ctx.call_location,
+  )?;
+  if let Some(token) = expansion.cache_miss {
+    runner::macro_cache::store(
+      token,
+      &expansion.code,
+      expansion
+        .evaluator_gensym_end
+        .expect("cache miss evaluates the macro before storing its expansion"),
+    );
+  }
+  Ok(processed)
+}
+
 fn preprocess_list_call(
   xs: &CalcitList,
   scope_defs: &HashSet<Arc<str>>,
@@ -3128,133 +3315,21 @@ fn preprocess_list_call(
   // Thunk: invalid here
 
   match head_value {
-    Some(Calcit::Macro { id: macro_id, info }) => {
-      let macro_name = format!("{}/{}", info.def_ns, info.name);
-      runner::macro_metrics::record_expansion(&macro_name, info.signature.as_ref());
-      let mut current_values: Vec<Calcit> = args.to_vec();
-      let mut macro_type_bindings = validate_macro_call_inputs(
-        info.name.as_ref(),
-        info.signature.as_ref(),
-        &args,
+    Some(Calcit::Macro { id: macro_id, info }) => preprocess_macro_call(
+      info.as_ref(),
+      &macro_id,
+      xs,
+      &args,
+      def_name.as_ref(),
+      PreprocessContext {
+        scope_defs,
         scope_types,
-        call_stack,
-        call_location.clone(),
-      )?;
-
-      reject_legacy_trait_method_tag_syntax(info.as_ref(), &args, file_ns, def_name.as_ref(), call_stack)?;
-
-      // println!("eval macro: {}", primes::CrListWrap(xs.to_owned()));
-      // println!("macro... {} {}", x, CrListWrap(current_values.to_owned()));
-
-      let code = Calcit::List(Arc::new(xs.to_owned()));
-      let next_stack = call_stack.extend_owned(&info.def_ns, &info.name, StackKind::Macro, code, args.to_vec());
-
-      let native_lowered = if info.def_ns.as_ref() == calcit::CORE_NS {
-        match info.name.as_ref() {
-          "let" => try_lower_core_let_macro(&args, file_ns),
-          "{}" => try_lower_core_map_macro(&args),
-          _ => None,
-        }
-      } else {
-        None
-      };
-      if let Some(lowered) = native_lowered {
-        runner::macro_metrics::record_native_fast_path(&macro_name);
-        let _post_preprocess_timer =
-          runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::PostPreprocess);
-        return preprocess_expr(&lowered, scope_defs, scope_types, file_ns, check_warnings, &next_stack);
-      }
-
-      let mut body_scope = CalcitScope::default();
-      let frame_checkpoint = body_scope.frame_checkpoint();
-
-      let mut cache_lookup = Some(runner::macro_cache::lookup(
-        &macro_name,
-        &macro_id,
-        info.signature.as_ref(),
-        &current_values,
-        call_location.as_ref(),
         file_ns,
-      ));
-      match cache_lookup.as_ref().expect("macro cache lookup") {
-        runner::macro_cache::CacheLookup::Hit(_) => runner::macro_metrics::record_cache_hit(&macro_name),
-        runner::macro_cache::CacheLookup::Miss { reason, .. } => {
-          runner::macro_metrics::record_cache_miss(&macro_name, reason, *reason != "cold-call-site")
-        }
-        runner::macro_cache::CacheLookup::Bypass(reason) => runner::macro_metrics::record_cache_bypass(&macro_name, reason),
-      }
-
-      let execute_macro = || -> Result<Calcit, CalcitErr> {
-        let mut cache_miss = None;
-        let mut evaluator_gensym_end = None;
-        loop {
-          // need to handle recursion
-          body_scope.restore_frame(frame_checkpoint);
-          runner::bind_marked_args(&mut body_scope, &info.args, &current_values, &next_stack)?;
-          let code = match cache_lookup.take() {
-            Some(runner::macro_cache::CacheLookup::Hit(code)) => code,
-            lookup => {
-              if let Some(runner::macro_cache::CacheLookup::Miss { token, .. }) = lookup {
-                cache_miss = Some(token);
-              }
-              let evaluator_timer =
-                runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::Evaluator);
-              let evaluate_body = || {
-                with_assertion_proof_policy(false, || {
-                  runner::evaluate_lines(&info.body.to_vec(), &body_scope, file_ns, &next_stack)
-                })
-              };
-              let evaluated = runner::macro_capability::with_macro_context(
-                Arc::from(macro_name.as_str()),
-                info.signature.capabilities.clone(),
-                call_location.clone(),
-                evaluate_body,
-              )?;
-              evaluator_gensym_end = Some(builtins::meta::current_gensym_index(file_ns));
-              drop(evaluator_timer);
-              evaluated
-            }
-          };
-          match code {
-            Calcit::Recur(ys) => {
-              current_values = ys;
-              let recur_args = CalcitList::from(current_values.as_slice());
-              macro_type_bindings = validate_macro_call_inputs(
-                info.name.as_ref(),
-                info.signature.as_ref(),
-                &recur_args,
-                scope_types,
-                &next_stack,
-                call_location.clone(),
-              )?;
-            }
-            _ => {
-              let _post_preprocess_timer =
-                runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::PostPreprocess);
-              let processed = preprocess_expr(&code, scope_defs, scope_types, file_ns, check_warnings, &next_stack)?;
-              validate_macro_expansion_result(
-                info.name.as_ref(),
-                info.signature.as_ref(),
-                (&code, &processed),
-                scope_types,
-                macro_type_bindings,
-                &next_stack,
-                call_location.clone(),
-              )?;
-              if let Some(token) = cache_miss.take() {
-                runner::macro_cache::store(
-                  token,
-                  &code,
-                  evaluator_gensym_end.expect("cache miss evaluates the macro before storing its expansion"),
-                );
-              }
-              return Ok(processed);
-            }
-          }
-        }
-      };
-      execute_macro()
-    }
+        check_warnings,
+        call_stack,
+        call_location,
+      },
+    ),
 
     Some(Calcit::Fn { info, .. }) => preprocess_known_function_call(
       info,

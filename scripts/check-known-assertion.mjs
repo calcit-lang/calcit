@@ -694,6 +694,7 @@ try {
     ["loop-matched", "defn loop-matched () $ loop ((value (Option :none))) (match value ((:none) (recur (Option :some 7))) ((:some payload) (+ payload 1)))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
     ["loop-asserted", "defn loop-asserted () $ loop ((n 0) (value (Option :none))) (assert-type value (:: 'Option 'Number)) (if (&< n 1) (recur 1 (Option :some 7)) (value .unwrap-or 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
     ["loop-once-log", "defmacro loop-once-log () (println |loop-expansion-token) (quasiquote 7)", ":: 'Macro $ {} (:required $ []) (:capabilities $ #{} :log) (:expansion $ :: 'Expr 'Number)"],
+    ["require-string-expression", "defmacro require-string-expression (value) (quasiquote 42)", ":: 'Macro $ {} (:required $ [] $ :: 'Expr 'String) (:expansion $ :: 'Expr 'Number)"],
     ["loop-expansion-once", "defn loop-expansion-once () $ loop ((n 0) (value (Option :none))) (if (&< n 1) (recur 1 (Option :some (loop-once-log))) (value .unwrap-or 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
     ["recursive-count", `defn recursive-count (node)
   match node
@@ -764,6 +765,9 @@ try {
   assert= 7 $ loop-propagated
   assert= 8 $ loop-matched
   assert= 7 $ loop-asserted
+  assert= 42 $ let ((value |kept)) (require-string-expression value)
+  assert= 42 $ let ((value |kept) (alias value)) (require-string-expression alias)
+  assert= 42 $ let ((value |kept) (render (fn () (require-string-expression value)))) (render)
   assert= 42 $ loop
       n 0
       cell $ atom $ assert-type (Option :none) $ :: 'Option 'Dynamic
@@ -826,6 +830,10 @@ try {
     ["wrong-fold-payload", "RecursiveComponent :tree $ option:fold (Option :some true) (fn () $ Option :none) (fn (present?) $ Option :some 1)"],
     ["open-fold-output", "(fn (flag) (RecursiveComponent :tree (option:fold (Option :some flag) (fn () (Option :none)) (fn (present?) (make-open-number))))) true"],
     ["wrong-loop-payload-use", "loop ((n 0) (tree (Option :none))) (if (&< n 1) (recur 1 (Option :some |wrong)) (RecursiveComponent :tree tree))"],
+    ["wrong-macro-literal", "require-string-expression 7"],
+    ["wrong-macro-local", "let ((value 7)) (require-string-expression value)"],
+    ["wrong-macro-alias", "let ((value 7) (alias value)) (require-string-expression alias)"],
+    ["wrong-macro-capture", "let ((value 7) (render (fn () (require-string-expression value)))) (render)"],
     ["wrong-matched-loop-payload", "loop ((tree (Option :none))) (match tree ((:none) (recur (Option :some |wrong))) ((:some payload) (RecursiveComponent :tree (Option :some payload))))"],
     ["contradictory-loop-assertion", "loop ((n 0) (value (Option :none))) (assert-type value (:: 'Option 'String)) (if (&< n 1) (recur 1 (Option :some 7)) 42)"],
     ["contradictory-captured-loop-assertion", "loop ((n 0) (value (Option :none))) (let ((check (fn () (assert-type value (:: 'Option 'String)) 42))) (if (&< n 1) (recur 1 (Option :some 7)) (check)))"],
@@ -853,7 +861,8 @@ try {
     run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
       `quote $ defwasm-export run-tests () (${expression}) 1`);
     const original = await readFile(snapshot);
-    const expectedDiagnostic = name.startsWith("contradictory-") ? /E_ASSERT_TYPE_MISMATCH/
+    const expectedDiagnostic = name.startsWith("wrong-macro-") ? /E_MACRO_INPUT_EXPR_TYPE/
+      : name.startsWith("contradictory-") ? /E_ASSERT_TYPE_MISMATCH/
       : name.startsWith("unproven-") ? /E_ASSERT_TYPE_UNPROVEN/
       : name === "wrong-variant-payload" ? /Enum `RecursiveNode::element` payload 1 expects type/
       : name === "wrong-matched-field" ? /Field `:children` does not exist in struct `RecursiveComponent`/
