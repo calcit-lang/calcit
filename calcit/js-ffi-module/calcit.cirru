@@ -31,6 +31,15 @@
           :require $ app.main :refer $ plus-two base-name count-a
     'app.main $ %{} 'FileEntry
       :defs $ {}
+        'CounterHost $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait CounterHost (:total 'Number)
+            .add! $ :: 'Fn $ {}
+              :args $ [] 'CounterHost 'Number
+              :return 'Number
+          :examples $ []
+          :ffi $ {} (:backend :js) (:kind :external-object) (:target :node)
+            :names $ {} $ :total |total-value
+          :schema $ :: 'Trait
         'base-name $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn base-name (x) x
           :examples $ []
@@ -40,6 +49,32 @@
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String
             :features $ #{} :js-ffi
+        'checked-counter-host $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn checked-counter-host (value) (js-cast value 'CounterHost)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.main/CounterHost)
+            :args $ [] 'JsObject
+            :features $ #{} :js-ffi
+          :tests $ []
+            %{} 'TestEntry (:name |mapped-field)
+              :code $ quote $ let
+                  host $ checked-counter-host $ make-counter-host 3
+                assert= 3 $ host :total
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |method-receiver)
+              :code $ quote $ let
+                  host $ checked-counter-host $ make-counter-host 3
+                assert= 7 $ host .add! 4
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |single-evaluation)
+              :code $ quote $ let
+                  calls $ atom 0
+                  host $ js-cast
+                    do (swap! calls inc) (make-counter-host 3)
+                    , 'CounterHost
+                assert= 1 $ deref calls
+                assert= 3 $ host :total
+              :tags $ #{} :unit
         'count-a $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn count-a () 0
           :examples $ []
@@ -64,6 +99,14 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'make-counter-host $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn make-counter-host (value) (&js-object)
+          :examples $ []
+          :ffi $ {} (:target :node)
+            :js $ {} $ :file |js-ffi-assets/counter-host.js
+          :schema $ :: 'Fn $ {} (:return 'JsObject)
+            :args $ [] 'Number
+            :features $ #{} :js-ffi
         'plus-one $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn plus-one (x) x
           :examples $ []

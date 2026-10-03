@@ -3241,6 +3241,10 @@ fn preprocess_list_call(
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_unsafe_coerce(name, name_ns, &args, &mut ctx)
         }
+        CalcitSyntax::JsCast => {
+          let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
+          preprocess_js_cast(name_ns, &args, &mut ctx)
+        }
         CalcitSyntax::ParseCirruEdnAs | CalcitSyntax::TryParseCirruEdnAs => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_parse_cirru_edn_as(name, name_ns, &args, &mut ctx)

@@ -126,6 +126,48 @@ export let type_of = (x: any): CalcitTag => {
   throw new Error(`Unknown data ${x}`);
 };
 
+// The intrinsic getter reads typed-array slots across realms, ignoring a forged Symbol.toStringTag.
+const typedArrayTag = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), Symbol.toStringTag)!.get!;
+
+/** Check host member shape without invoking methods or claiming their signature is verified. */
+export const js_cast = (value: unknown, trait: string, fields: readonly string[], methods: readonly string[]): object => {
+  const fail = (detail: string, cause?: unknown): never => {
+    const error = new TypeError(`js-cast ${trait}: ${detail}`);
+    Object.defineProperty(error, "cause", { value: cause, configurable: true });
+    throw error;
+  };
+  // Calcit objects (including Buffers) are not interchangeable with external handles.
+  // Keep the runtime's own value classification authoritative instead of another registry.
+  let host: boolean;
+  try {
+    host = value !== null && typeof value === "object"
+      && !(ArrayBuffer.isView(value) && typedArrayTag.call(value) === "Uint8Array")
+      && !(value instanceof CalcitRecur) && type_of(value).value === "js-object";
+  } catch (cause) {
+    return fail("host classification failed", cause);
+  }
+  if (!host || value === null || typeof value !== "object") return fail("expected a JavaScript host object");
+  for (const field of fields) {
+    let present: boolean;
+    try {
+      present = field in value;
+    } catch (cause) {
+      return fail(`field ${JSON.stringify(field)} lookup failed`, cause);
+    }
+    if (!present) return fail(`missing field ${JSON.stringify(field)}`);
+  }
+  for (const method of methods) {
+    let member: unknown;
+    try {
+      member = Reflect.get(value, method);
+    } catch (cause) {
+      return fail(`method ${JSON.stringify(method)} lookup failed`, cause);
+    }
+    if (typeof member !== "function") return fail(`method ${JSON.stringify(method)} is not callable`);
+  }
+  return value;
+};
+
 const list_items = (item: CalcitValue): CalcitValue[] => {
   if (item instanceof CalcitList || item instanceof CalcitSliceList) {
     return Array.from(item.items());

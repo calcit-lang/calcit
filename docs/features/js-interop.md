@@ -362,7 +362,29 @@ deftrait QueryHost
 calcit calcit.cirru edit def app.browser/QueryHost --file snippet.cirru --input-format cirru
 ```
 
-在适配器边界把宿主值 `unsafe-coerce` 一次，之后用普通 Calcit 方法调用：
+在适配器边界可以用 `js-cast value 'QueryHost` 检查声明的宿主成员形状，之后用普通 Calcit 方法调用。
+该转换必须位于 schema 带 `:features $ #{} :js-ffi` 的函数中，目标是已声明的 external-object trait。
+这个词法要求在 `feature-policy.js-ffi` 为 `allow` 时仍然生效：策略可以放行普通宿主操作，但不会替适配器
+声明受检转换所需的能力。业务调用者无需继承适配器的 feature：
+
+```cirru.no-check
+defn read-title (element)
+  let
+      host $ js-cast element 'QueryHost
+      node $ host .query |.app
+    node .text
+```
+
+`js-cast` 按 `:names` 与默认名称映射检查字段存在、方法为函数；输入只求值一次，成功返回同一个宿主对象。
+检查可见的原型成员，不写入属性或调用方法，冻结对象也可使用；字段 presence 不读取 getter，方法 getter
+或 Proxy trap 抛错会成为带原异常 `cause` 的 `TypeError`。失败信息包含 trait 来源与成员名称。
+Calcit 容器、名义值与 Buffer 不能冒充宿主对象；null/undefined 与原始值也会失败。
+
+成员形状不是深层数据解码：字段的值类型、方法参数/返回类型仍是外部声明的信任合同，检查不会执行方法来
+猜测签名，也不证明 Promise payload 或后来改变的属性。来自不可信数据的内容仍需 decoder；不要据此批量
+删除已有边界验证。native 与 WASM 不执行这种 JS 宿主转换。
+
+确实无法检查形状且已有外部信任证据的边界保留 `unsafe-coerce`，不要为了降低预算改用无效的检查：
 
 ```cirru.no-check
 defn read-title (element)
