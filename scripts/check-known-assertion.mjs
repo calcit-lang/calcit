@@ -798,8 +798,8 @@ try {
   // traversal regression attached to its definition but replay it natively.
   run("edit", "add-test", "calcit.assert-evidence/recursive-count", "empty-tail-recheck", "--tags", "recursive-empty-tail",
     "--input-format", "cirru", "--code", `quote $ do
-  assert= 42 $ loop ((n 0) (value (Option :none))) (if (&< n 1) (if true (recur 1 (Option :some 7)) ()) 42)
-  assert= 42 $ loop ((n 0) (value (Option :none))) (if (&< n 1) (if false () (recur 1 (Option :some 7))) 42)`);
+  assert= 42 $ loop ((n 0) (value (Option :none))) (if (&< n 1) (if (&< n 1) (recur 1 (Option :some 7)) ()) 42)
+  assert= 42 $ loop ((n 0) (value (Option :none))) (if (&< n 1) (if (&>= n 1) () (recur 1 (Option :some 7))) 42)`);
   run("test", "calcit.assert-evidence/recursive-count", "--tag", "recursive-empty-tail", "--require-match");
   run("test", "calcit.assert-evidence/recursive-count", "--tag", "recursive-fields", "--require-match");
   const recursiveTests = JSON.parse(run("query", "def", "calcit.assert-evidence/recursive-count", "--format", "json"))
