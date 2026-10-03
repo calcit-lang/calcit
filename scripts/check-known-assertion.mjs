@@ -727,6 +727,17 @@ try {
       const diagnostics = `${rejected.stdout}\n${rejected.stderr}`;
       assert.match(diagnostics, /expects type|does not exist in struct/);
       assert.match(diagnostics, /calcit.assert-evidence/);
+      const field = name.startsWith("wrong-scalar") ? "count"
+        : name === "broad-enum-payload" ? "tree"
+        : name === "broad-struct-payload" ? "cell"
+        : name.startsWith("unwrapped-node") ? "node"
+        : name.startsWith("raw-pair-list") ? "children" : null;
+      if (field !== null) {
+        assert.match(diagnostics, /W_FN_ARG_TYPE_MISMATCH/);
+        assert.ok(diagnostics.includes(`field \`:${field}\` expects type`), diagnostics);
+        assert.match(diagnostics, /@calcit\.assert-evidence\/run-tests @[0-9]/,
+          "constructor diagnostics must locate the source call, not only a generated macro");
+      }
       await assertRejectedArtifacts(destination, `${name} ${mode}`, /expects type|does not exist in struct/);
       assert.deepEqual(await readFile(snapshot), original);
     }
