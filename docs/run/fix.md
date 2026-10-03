@@ -1,6 +1,6 @@
 ---
 title: "Compiler-guided Source Fixes"
-summary: "使用 calcit fix 预览并原子应用带 revision、fingerprint 与 quoted AST 的编译器指导型迁移"
+summary: "使用 calcit fix 预览编译器指导型迁移，或审阅并原子应用项目级结构改写"
 scope: "core"
 kind: "guide"
 category: "run"
@@ -26,6 +26,38 @@ leads_to:
 
 `calcit fix` 是所有“检测并改写可证明问题”的统一入口，不再为单条规则增加 `analyze detect-*` 或新的顶层命令。
 入口分工与兼容读取边界见 [Calcit CLI 工作流入口收敛](workflow-entrypoints.md)。
+
+项目自己的旧 helper 或调用形状可使用本页的 `--pattern` / `--replace`，不需要给编译器增加专用迁移规则。
+该模式是需人工审阅的语法改写，不属于下文可证明等价的自动迁移。
+
+## 项目级结构改写
+
+使用一个 Cirru 表达式作为模式和模板，`?name` 绑定完整子树。表达式最外层不需要括号：
+
+```bash
+calcit calcit.cirru fix --pattern 'old-helper ?xs ?sep' \
+  --replace '.join-string ?xs ?sep' --include-attached --format edn
+calcit calcit.cirru fix --pattern 'old-helper ?xs ?sep' \
+  --replace '.join-string ?xs ?sep' --include-attached \
+  --apply --expect-revision '<预览中的 revision>' --format edn
+calcit --check-only
+calcit test '<修改后的 namespace/definition>' --require-match
+```
+
+预览仅扫描项目源码，逐处给出位置、原始/替换 AST 与 fingerprint，不写入或执行这些表达式。
+默认跨项目 namespace；`--ns` / `--def` 可限定范围。`--include-attached` 同时处理 `:tests` 和 `:examples`，
+不传时报告这些区域仍需手动审阅。quote/quasiquote（含限定名）按语法保守跳过，不改 namespace imports、schema、doc 或 tags。
+同名变量要求捕获的子树相等；模板中的变量必须在模式中出现。变量在模式与模板中的出现次数必须相同，
+否则拒绝静默丢弃或复制表达式。嵌套的原始匹配在同一次事务中合成，不再次匹配新生成的代码。
+
+所有候选始终标为 `requires-review`：操作者须核对 binding、求值顺序、失败行为与业务含义。
+变量次数相同、类型检查成功都不证明语义等价；`--apply` 表示明确采用已审阅的模式和模板，不把候选升级为 `machine-applicable`。
+应用沿用 revision、VCS、工具链版本与原子事务门禁，先在暂存 Snapshot 严格预处理所选源码；纳入附带区域时也检查测试与示例，
+不执行它们的运行时主体。任何暂存错误或 warning 都拒绝发布整批修改，并报告暂存诊断，原文件不变。
+旧源码本身可以不通过类型检查，只要明确审阅后的候选通过门禁；这不会自动增加 schema、cast、Dynamic 或 FFI 权限。
+成功后仍需运行原断言以及项目目标的 native/JS/WASM 检查。此模式不能与 `--rule`、`--preset`、`--workflow`、`--verify` 或 `--to` 混用。
+
+## 编译器指导型迁移
 
 `calcit fix` 把编译器已经能够唯一判断的迁移建议映射回 Snapshot source AST。默认命令只做预览；它会在同目录的
 staged Snapshot 上尝试替换并重新编译选定 scope，成功后仍不写入原文件：

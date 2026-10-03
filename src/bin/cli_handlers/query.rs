@@ -6467,32 +6467,12 @@ fn contains_pattern(node: &Cirru, pattern: &Cirru) -> bool {
 
 /// Check if node matches pattern as a prefix (allows node to be longer than pattern)
 fn matches_prefix_structure(node: &Cirru, pattern: &Cirru) -> bool {
-  match (node, pattern) {
-    (Cirru::Leaf(s1), Cirru::Leaf(s2)) => s1.as_ref() == s2.as_ref(),
-    (Cirru::List(items1), Cirru::List(items2)) => {
-      // Pattern must not be longer than node
-      if items2.len() > items1.len() {
-        return false;
-      }
-      // Check if pattern matches the prefix of node
-      items2
-        .iter()
-        .enumerate()
-        .all(|(i, pattern_item)| matches_prefix_structure(&items1[i], pattern_item))
-    }
-    _ => false,
-  }
+  super::structural_pattern::match_structure(node, pattern, true, false).is_some()
 }
 
 /// Check if node exactly matches pattern structure
 fn matches_exact_structure(node: &Cirru, pattern: &Cirru) -> bool {
-  match (node, pattern) {
-    (Cirru::Leaf(s1), Cirru::Leaf(s2)) => s1.as_ref() == s2.as_ref(),
-    (Cirru::List(items1), Cirru::List(items2)) => {
-      items1.len() == items2.len() && items1.iter().zip(items2.iter()).all(|(n1, n2)| matches_exact_structure(n1, n2))
-    }
-    _ => false,
-  }
+  super::structural_pattern::match_structure(node, pattern, false, false).is_some()
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

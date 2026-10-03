@@ -139,6 +139,8 @@ fn render_command_echo(cli_args: &ToplevelCalcit) -> Option<String> {
       push_optional(&mut tokens, "def", opts.definition.as_deref(), "all definitions");
       push_optional(&mut tokens, "rule", opts.rule.as_deref(), "all available rules");
       push_optional(&mut tokens, "preset", opts.preset.as_deref(), "no migration preset");
+      push_optional(&mut tokens, "pattern", opts.pattern.as_deref(), "no structural pattern");
+      push_optional(&mut tokens, "replace", opts.replacement.as_deref(), "no structural template");
       push_optional(&mut tokens, "workflow", opts.workflow.as_deref(), "no project workflow");
       push_switch(&mut tokens, "verify", opts.verify);
       push_optional(
@@ -189,7 +191,7 @@ fn render_command_explanation(cli_args: &ToplevelCalcit) -> Option<String> {
     CalcitCommand::Ffi(_) => Some("exports versioned typed FFI Interface IR from local typed raw bindings".to_owned()),
     CalcitCommand::Cirru(cmd) => render_cirru_explanation(cmd),
     CalcitCommand::Test(_) => Some("discovers and runs definition-attached tests".to_owned()),
-    CalcitCommand::Fix(_) => Some("previews or applies deterministic compiler-guided source migrations".to_owned()),
+    CalcitCommand::Fix(_) => Some("previews or applies compiler-guided migrations or reviewed structural rewrites".to_owned()),
     _ => None,
   }
 }

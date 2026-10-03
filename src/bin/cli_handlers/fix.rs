@@ -148,6 +148,7 @@ enum FixOperation {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 struct FixSuggestion {
   rule_id: &'static str,
+  #[serde(skip_serializing_if = "str::is_empty")]
   diagnostic_code: &'static str,
   semantic_layer: &'static str,
   source_file: String,
@@ -460,6 +461,9 @@ pub(crate) fn handle_fix_command(
   project_namespaces: &HashSet<String>,
   snapshot_file: &str,
 ) -> Result<(), String> {
+  if options.pattern.is_some() || options.replacement.is_some() {
+    return structural_rewrite::handle_pattern_rewrite(options, compiled_snapshot, project_namespaces, snapshot_file);
+  }
   validate_options(options)?;
   // A whole-project plan covers definitions from every named entry, so it has
   // no single host target. Entry-scoped checks still enforce their own target.
@@ -1046,17 +1050,7 @@ pub(crate) fn handle_fix_command(
     next: vec![],
   };
 
-  match StructuredOutputFormat::parse(&options.format, "fix")? {
-    StructuredOutputFormat::Json => println!(
-      "{}",
-      serde_json::to_string(&report).map_err(|error| format!("Failed to serialize fix result: {error}"))?
-    ),
-    StructuredOutputFormat::Edn => {
-      let value = serde_json::to_value(&report).map_err(|error| format!("Failed to encode fix result: {error}"))?;
-      println!("{}", format_json_value_as_edn(&value)?);
-    }
-    StructuredOutputFormat::Human => print_human_report(&report),
-  }
+  emit_fix_report(&report, &options.format)?;
   if !report.diagnostics.is_empty() {
     Err(if options.apply && transaction.changed {
       "Compiler proof review required; only the reported safe migrations were applied. Review the remaining input evidence or lexical boundary; no proof repair, cast or FFI permission was inserted."
@@ -1068,6 +1062,21 @@ pub(crate) fn handle_fix_command(
   } else {
     Ok(())
   }
+}
+
+fn emit_fix_report(report: &FixReport<'_>, format: &str) -> Result<(), String> {
+  match StructuredOutputFormat::parse(format, "fix")? {
+    StructuredOutputFormat::Json => println!(
+      "{}",
+      serde_json::to_string(report).map_err(|error| format!("Failed to serialize fix result: {error}"))?
+    ),
+    StructuredOutputFormat::Edn => {
+      let value = serde_json::to_value(report).map_err(|error| format!("Failed to encode fix result: {error}"))?;
+      println!("{}", format_json_value_as_edn(&value)?);
+    }
+    StructuredOutputFormat::Human => print_human_report(report),
+  }
+  Ok(())
 }
 
 struct FixTargetScope(Option<crate::snapshot::SnapshotTarget>);
@@ -2040,6 +2049,7 @@ fn plan_definition_rename(
 mod compiler_review;
 pub(crate) mod schema_synthesis;
 mod spread_call;
+mod structural_rewrite;
 use schema_synthesis::plan_schema_synthesis;
 
 /// Surface legacy omission markers from the unexpanded Snapshot without implying a safe rewrite.
@@ -6815,7 +6825,14 @@ fn guard_git_worktree(snapshot_file: &str, allow_dirty: bool, allow_no_vcs: bool
 
 /// Render the compact human view without changing the JSON protocol.
 fn print_human_report(report: &FixReport<'_>) {
-  println!("# Compiler-guided source fixes\n");
+  println!(
+    "# {}\n",
+    if report.data.filters.rule_id == "pattern" {
+      "Reviewed structural source rewrites"
+    } else {
+      "Compiler-guided source fixes"
+    }
+  );
   println!("- mode: `{}`", report.data.mode);
   println!("- revision: `{}`", report.revision);
   if let Some(preset) = report.data.filters.preset_id {
@@ -6864,6 +6881,12 @@ fn print_human_report(report: &FixReport<'_>) {
   }
   if report.data.mode == "preview" && report.data.changed {
     println!("\n## Next step\n\nRun `calcit fix --apply` after reviewing this plan.");
+  }
+  if report.data.mode == "preview" && report.data.filters.rule_id == "pattern" && !report.data.suggestions.is_empty() {
+    println!(
+      "\n## Next step\n\nReview the pattern/template and every candidate, then repeat the same selection with `--apply --expect-revision '{}'`. Type validation runs before publishing; it does not prove semantic equivalence.",
+      report.revision
+    );
   }
 }
 
