@@ -1261,8 +1261,15 @@ export let _$n__ = (a: number, b: number): number => {
 export let _$n__SLSH_ = (a: number, b: number): number => {
   return a / b;
 };
+/** Truncated remainder over safe integers, matching native and WASM; the result is never `-0`. */
 export let _$n_number_$o_rem = (a: number, b: number): number => {
-  return a % b;
+  if (!Number.isSafeInteger(a) || !Number.isSafeInteger(b)) {
+    throw new Error(`&number:rem requires safe integers, but received: ${toString(a, false)} ${toString(b, false)}`);
+  }
+  if (b === 0) {
+    throw new Error("&number:rem divisor must not be zero");
+  }
+  return (a % b) + 0;
 };
 export let _$n_number_$o_fits_$q_ = (value: number, target: CalcitTag): boolean => {
   if (!(target instanceof CalcitTag)) {

@@ -103,15 +103,27 @@ assert= "| b" $ str-spaced | |b
 
 只有未知长度列表的展开调用需要审阅：`str-spaced & xs` 不能证明首项存在。应先由调用者确认非空，再显式传首项与剩余项；空列表如何处理属于业务决策，不自动插入 fallback、unsafe 或长度断言。此签名收敛安排在非 patch 升级中，不为这一情形新增 fix 规则。
 
-## native 取余的错误恢复
+## 取余的跨后端语义
 
-native 的 `&number:rem` 和 Number `.rem` 遇到零除数（包括 `-0`）时返回可由 `try` 捕获的 Calcit 错误，消息为 `&number:rem divisor must not be zero`；内部 i32 取余溢出（例如 `-2147483648` 除以 `-1`）返回 `&number:rem integer remainder overflow`。此前这两类输入直接触发 Rust panic，无法由 Calcit `try` 恢复。
+`&number:rem` 和 Number `.rem` 在 native、JS、core WASM 与 WASI Component 上使用同一契约：两个操作数都必须是安全整数（绝对值不超过 `9007199254740991`），除数不能为 0（包括 `-0`）；结果为截断取余，符号跟随被除数，且不返回 `-0`。
 
-这项修复保持既有成功值和整数转换行为，不提供自动源码改写。需要错误恢复的业务可自行决定如何处理 `try` 的错误，不自动补默认值。
+```cirru
+assert= -1 $ &number:rem -7 3
+assert= 1 $ .rem 7 -3
+assert= 4 $ &number:rem 4294967296 7
+assert= "|&number:rem requires safe integers, but received: 5.5 2" $ try (&number:rem 5.5 2)
+  fn (error) error
+```
 
-### 限制
+native 与 JS 对越界输入抛出可由 `try` 捕获的错误：零除数为 `&number:rem divisor must not be zero`，小数、NaN、Infinity 或超出安全整数范围为 `&number:rem requires safe integers, but received: <a> <b>`。WASM 对同样的输入 trap。
 
-- native 仍沿用整数取余与既有 i32 转换；JS/WASM 的小数、零除数和大整数行为尚未统一，不能把此崩溃修复理解为跨后端数值对齐。
+升级时的行为变化：
+
+- JS/WASM 此前对小数做浮点取余（`rem 5.5 2` 为 `1.5`），零除数返回 NaN；现在两者都报错。依赖小数取余的代码需要改为显式的浮点计算，例如基于 `floor` 的 `&- a $ &* b $ floor (&/ a b)`，舍入方式由业务决定。
+- native 此前把超出 i32 的整数饱和截断后取余（`rem 4294967296 7` 得到 `1`），`-2147483648` 除以 `-1` 报溢出错误；现在按安全整数精确计算，分别得到 `4` 和 `0`。
+- native 此前按 EPSILON 容差把非常接近整数的小数当作整数；现在要求恰好没有小数部分。
+
+这些都是语义修复，不提供自动源码改写；需要错误恢复的业务自行处理 `try` 的错误，不自动补默认值。
 
 ## 整数谓词的跨目标语义修复
 

@@ -214,7 +214,7 @@ let
 - `sin`, `cos` - trigonometric functions
 - `&max`, `&min` - binary min/max
 - `&number:fract` - fractional part
-- `&number:rem` - remainder
+- `&number:rem` - truncated remainder of safe integers (errors on fractions or a zero divisor)
 - `&number:format` - format number
 - `bit-shl`, `bit-shr`, `bit-and`, `bit-or`, `bit-xor`, `bit-not`
 
