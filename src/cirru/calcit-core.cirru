@@ -1927,27 +1927,39 @@
             :code $ quote $ assert= 0.8 (&number:fract 1.8)
             :tags $ #{} :core :unit
         '&number:rem $ %{} 'CodeEntry
-          :doc "|internal function for number remainder\nSyntax: (&number:rem a b)\nParams: a (number), b (number)\nReturns: number\nReturns remainder of a divided by b"
+          :doc "|internal function for number remainder\nSyntax: (&number:rem a b)\nParams: a (safe integer), b (non-zero safe integer)\nReturns: number\nReturns the truncated remainder of a divided by b, taking the sign of a. Fractions, values beyond +/-9007199254740991 and a zero divisor raise an error on every backend."
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
           :tests $ []
-            %{} 'TestEntry (:name |calculates-remainder)
+            %{} 'TestEntry (:name |calculates-truncated-remainder)
               :code $ quote $ do
                 assert= 1 $ &number:rem 33 4
                 assert= 2 $ &number:rem 11 3
+                assert= -1 $ &number:rem -7 3
+                assert= 1 $ &number:rem 7 -3
+                assert= -1 $ .rem -7 -3
+                assert= 0 $ &number:rem -2147483648 -1
+                assert= 4 $ &number:rem 4294967296 7
+                assert= 1 $ &number:rem 9007199254740991 10
+                assert= -1 $ &number:rem -9007199254740991 10
+                assert= (&/ 1 0) $ &/ 1 (&number:rem -4 2)
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |reports-native-remainder-errors)
+            %{} 'TestEntry (:name |rejects-zero-and-non-safe-integers)
               :code $ quote $ do
                 assert= "|&number:rem divisor must not be zero" $ try (&number:rem 1 0)
                   fn (error) error
                 assert= "|&number:rem divisor must not be zero" $ try (1 .rem -0)
                   fn (error) error
-                assert= "|&number:rem integer remainder overflow" $ try (&number:rem -2147483648 -1)
+                assert= "|&number:rem requires safe integers, but received: 5.5 2" $ try (&number:rem 5.5 2)
                   fn (error) error
-              :tags $ #{} :core :native :unit
+                assert= "|&number:rem requires safe integers, but received: 5 0.5" $ try (.rem 5 0.5)
+                  fn (error) error
+                assert= "|&number:rem requires safe integers, but received: 9007199254740992 3" $ try (&number:rem 9007199254740992 3)
+                  fn (error) error
+              :tags $ #{} :core :unit
         '&parse-float $ %{} 'CodeEntry
           :doc "|internal function for parsing float\nSyntax: (parse-float s)\nParams: s (string)\nReturns: number or nil\nParses string as floating point number, returns nil if invalid"
           :code $ quote &runtime-implementation

@@ -6703,7 +6703,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeMultiply => emit_binary(ctx, Instruction::F64Mul, args),
     CalcitProc::NativeDivide => emit_binary(ctx, Instruction::F64Div, args),
     CalcitProc::NativeNumberRem => {
-      // a - trunc(a/b) * b
+      // Truncated remainder over safe integers; traps where native and JS raise an error.
       if args.len() != 2 {
         return Err("rem expects 2 args".into());
       }
@@ -6713,14 +6713,33 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       ctx.emit(Instruction::LocalSet(a));
       emit_expr(ctx, &args[1])?;
       ctx.emit(Instruction::LocalSet(b));
+      let mut checks = Vec::new();
+      for operand in [a, b] {
+        checks.extend([
+          Instruction::LocalGet(operand),
+          Instruction::F64Trunc,
+          Instruction::LocalGet(operand),
+          Instruction::F64Ne,
+          Instruction::LocalGet(operand),
+          Instruction::F64Abs,
+          f64_const(9_007_199_254_740_991.0),
+          Instruction::F64Gt,
+          Instruction::I32Or,
+        ]);
+        component_trap_if(&mut checks);
+      }
+      checks.extend([Instruction::LocalGet(b), f64_const(0.0), Instruction::F64Eq]);
+      component_trap_if(&mut checks);
+      for instruction in checks {
+        ctx.emit(instruction);
+      }
+      // Safe integers convert to i64 exactly, so the integer remainder is exact and never `-0`.
       ctx.emit(Instruction::LocalGet(a));
-      ctx.emit(Instruction::LocalGet(a));
+      ctx.emit(Instruction::I64TruncF64S);
       ctx.emit(Instruction::LocalGet(b));
-      ctx.emit(Instruction::F64Div);
-      ctx.emit(Instruction::F64Trunc);
-      ctx.emit(Instruction::LocalGet(b));
-      ctx.emit(Instruction::F64Mul);
-      ctx.emit(Instruction::F64Sub);
+      ctx.emit(Instruction::I64TruncF64S);
+      ctx.emit(Instruction::I64RemS);
+      ctx.emit(Instruction::F64ConvertI64S);
       Ok(())
     }
 

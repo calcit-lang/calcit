@@ -29,8 +29,11 @@ const refinementTests = ["int8", "int16", "int32", "int64", "uint8", "uint16", "
       `${name} must retain its reviewed success, rejection and type assertions`);
     return attached;
   });
-const predicateTests = [...roundTests, ...integerTests];
-const tests = [...predicateTests, ...refinementTests];
+const remTests = definitions["'&number:rem"].tests;
+assert.deepEqual(remTests.map(test => test.name), ["calculates-truncated-remainder", "rejects-zero-and-non-safe-integers"]);
+// WASM has no recoverable try; its rem traps are checked by scripts/test-wasm.mjs instead.
+const predicateTests = [...roundTests, ...integerTests, remTests[0]];
+const tests = [...predicateTests, ...refinementTests, remTests[1]];
 const expectedTrace = [
   "integer-free-argument", "integer-method-argument", "integer-alias-free-argument", "integer-alias-method-argument",
 ];
@@ -60,7 +63,7 @@ try {
     console.log = originalLog;
   }
   assert.deepEqual(jsTrace, expectedTrace, "JS must evaluate each predicate argument exactly once");
-  console.log("Numeric predicate and refinement definition tests passed on native / generated JS");
+  console.log("Numeric predicate, refinement and remainder definition tests passed on native / generated JS");
 
   // The Int8 test also uses a throwing EDN parser unavailable in WASM.
   // Keep its full AST on native/JS; do not strip assertions to claim target parity.
@@ -88,7 +91,7 @@ try {
   assert.equal(typeof wasm.exports["run-tests"], "function");
   wasm.exports["run-tests"]();
   assert.deepEqual(wasmTrace, expectedTrace, "WASM must evaluate each predicate argument exactly once");
-  console.log("Numeric predicate definition tests passed on core WASM; refinement conversion tests are native/JS only");
+  console.log("Numeric predicate and remainder definition tests passed on core WASM; refinement conversion and remainder error tests are native/JS only");
 
   // The Component CI job supplies the pinned Wasmtime executable explicitly.
   if (process.env.WASMTIME_CLI) {

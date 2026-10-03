@@ -2,7 +2,7 @@ use crate::builtins::meta::type_of;
 use crate::calcit::type_annotation::CalcitNumericRefinement;
 use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitProc, format_proc_examples_hint};
 
-use crate::util::number::f64_to_i32;
+use crate::util::number::{f64_to_i32, format_calcit_number};
 
 pub fn binary_add(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
@@ -140,21 +140,26 @@ pub fn rem(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+/// Largest integer that every backend represents exactly as an f64 (JS `Number.MAX_SAFE_INTEGER`).
+const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+
+fn safe_integer(value: f64) -> Option<i64> {
+  (value.fract() == 0.0 && value.abs() <= MAX_SAFE_INTEGER).then_some(value as i64)
+}
+
+/// Truncated remainder over safe integers; the result takes the dividend's sign and is never `-0`.
 pub(crate) fn rem_numbers(base: f64, step: f64) -> Result<Calcit, CalcitErr> {
-  match (f64_to_i32(base), f64_to_i32(step)) {
-    (Ok(a), Ok(b)) => match a.checked_rem(b) {
-      Some(value) => Ok(Calcit::Number(value as f64)),
-      None => CalcitErr::err_str(
-        CalcitErrKind::Type,
-        if b == 0 {
-          "&number:rem divisor must not be zero"
-        } else {
-          "&number:rem integer remainder overflow"
-        },
+  match (safe_integer(base), safe_integer(step)) {
+    (Some(_), Some(0)) => CalcitErr::err_str(CalcitErrKind::Type, "&number:rem divisor must not be zero"),
+    (Some(a), Some(b)) => Ok(Calcit::Number((a % b) as f64)),
+    _ => CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!(
+        "&number:rem requires safe integers, but received: {} {}",
+        format_calcit_number(base),
+        format_calcit_number(step)
       ),
-    },
-    (Err(a), _) => CalcitErr::err_str(CalcitErrKind::Type, a),
-    (_, Err(a)) => CalcitErr::err_str(CalcitErrKind::Type, a),
+    ),
   }
 }
 
@@ -390,7 +395,8 @@ pub fn bit_not(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 #[cfg(test)]
 mod remainder_safety_tests {
-  use super::rem_numbers;
+  use super::{MAX_SAFE_INTEGER, rem_numbers};
+  use crate::calcit::Calcit;
 
   #[test]
   fn native_remainder_errors_never_unwind() {
@@ -401,6 +407,9 @@ mod remainder_safety_tests {
       -1.0,
       i32::MIN as f64,
       i32::MAX as f64,
+      MAX_SAFE_INTEGER,
+      -MAX_SAFE_INTEGER,
+      MAX_SAFE_INTEGER + 1.0,
       f64::MIN,
       f64::MAX,
       0.5,
@@ -417,7 +426,9 @@ mod remainder_safety_tests {
       }
     }
     assert!(rem_numbers(1.0, 0.0).is_err());
-    assert!(rem_numbers(i32::MIN as f64, -1.0).is_err());
+    assert!(rem_numbers(MAX_SAFE_INTEGER + 1.0, 3.0).is_err());
+    assert_eq!(rem_numbers(i32::MIN as f64, -1.0), Ok(Calcit::Number(0.0)));
+    assert_eq!(rem_numbers(-MAX_SAFE_INTEGER, -1.0), Ok(Calcit::Number(0.0)));
   }
 }
 
