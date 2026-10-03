@@ -353,10 +353,12 @@ pub(crate) fn constructor_payload_is_proven(
   }
   // Legacy nullable fields store either nil or the inner value directly.
   // Check their payload rather than treating this runtime shape as narrowing.
-  if let CalcitTypeAnnotation::Optional(expected_inner) = expected {
+  if let CalcitTypeAnnotation::Optional(expected_inner) | CalcitTypeAnnotation::JsNullish(expected_inner) = expected {
     return match actual {
       CalcitTypeAnnotation::Nil => true,
-      CalcitTypeAnnotation::Optional(actual_inner) => constructor_payload_is_proven(expr, actual_inner, expected_inner, scope),
+      CalcitTypeAnnotation::Optional(actual_inner) | CalcitTypeAnnotation::JsNullish(actual_inner) => {
+        constructor_payload_is_proven(expr, actual_inner, expected_inner, scope)
+      }
       _ => constructor_payload_is_proven(expr, actual, expected_inner, scope),
     };
   }

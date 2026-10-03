@@ -3549,6 +3549,19 @@ fn preprocess_list_call(
             // Prefix methods share the receiver-specialized callback contract
             // used by postfix methods. Process the receiver before deriving it.
             let expected_type = if !has_spread
+              && matches!(&head_form, Calcit::Proc(CalcitProc::NativeStruct))
+              && ys.len() >= 3
+              && ys.len() % 2 == 1
+              && let (Some(prototype), Some(Calcit::Tag(field))) = (ys.get(1), ys.get(ys.len() - 1))
+            {
+              resolve_struct_value(prototype, scope_types).and_then(|value| {
+                let index = value.struct_ref.fields.iter().position(|candidate| candidate == field)?;
+                value.struct_ref.field_types.get(index).map(|expected| match expected.as_ref() {
+                  CalcitTypeAnnotation::JsNullish(inner) => inner.clone(),
+                  _ => expected.clone(),
+                })
+              })
+            } else if !has_spread
               && let Calcit::Method(name, calcit::MethodKind::Invoke(_)) = &head_form
               && let Some(receiver) = ys.get(1)
               && let Some(receiver_type) = resolve_type_value(receiver, scope_types)
@@ -3609,7 +3622,8 @@ fn preprocess_list_call(
               || matches!(
                 &head_form,
                 Calcit::Proc(
-                  CalcitProc::Sort
+                  CalcitProc::NativeStruct
+                    | CalcitProc::Sort
                     | CalcitProc::NativeListSort
                     | CalcitProc::Foldl
                     | CalcitProc::NativeListFoldl
@@ -3676,7 +3690,22 @@ fn preprocess_list_call(
           scope_types,
           file_ns,
           &def_name,
-          call_location.clone().or_else(|| find_preferred_macro_location(call_stack)),
+          call_location
+            .clone()
+            .filter(|location| location.def.as_ref() != GENERATED_DEF)
+            .or_else(|| find_preferred_macro_location(call_stack).filter(|location| location.def.as_ref() != GENERATED_DEF))
+            .or_else(|| {
+              call_stack.0.iter().find_map(|frame| {
+                let source =
+                  |location: &NodeLocation| location.def.as_ref() != GENERATED_DEF && location.ns.as_ref() != calcit::CORE_NS;
+                find_calcit_location_matching(&frame.code, source).or_else(|| {
+                  frame
+                    .args
+                    .iter()
+                    .find_map(|argument| find_calcit_location_matching(argument, source))
+                })
+              })
+            }),
           check_warnings,
         );
         check_struct_update_fields(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
@@ -5559,6 +5588,7 @@ fn check_struct_construction_fields(
         file_ns,
         pair[1]
           .get_location()
+          .filter(|location| location.def.as_ref() != GENERATED_DEF)
           .or_else(|| call_location.clone())
           .or_else(|| prototype.get_location()),
         expected.to_brief_string(),

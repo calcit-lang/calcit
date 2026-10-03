@@ -663,6 +663,8 @@ try {
     ["make-broad-element", "defn make-broad-element () $ RecursiveElement :children $ []", ":: 'Fn $ {} (:args $ []) (:return 'Struct)"],
     ["make-empty-tree", "defn make-empty-tree () $ Option :none", ":: 'Fn $ {} (:args $ []) (:return $ :: 'Option 'Dynamic)"],
     ["make-open-tree", "defn make-open-tree () $ Option :some 1", ":: 'Fn $ {} (:args $ []) (:return $ :: 'Option 'Dynamic)"],
+    ["CallbackHolder", "defstruct CallbackHolder (:handler $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number))", "'StructDef"],
+    ["NullishCallbackHolder", "defstruct NullishCallbackHolder (:handler $ :: 'JsNullish $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number))", "'StructDef"],
     ["recursive-count", `defn recursive-count (node)
   match node
     (:element element)
@@ -685,6 +687,9 @@ try {
     absent $ RecursiveComponent :tree $ Option :none
     from-wrapper $ RecursiveComponent :tree $ make-empty-tree
     broad $ BroadNodeHolder :cell (RecursiveCell :value leaf) :tree $ Option :some leaf
+    callback $ CallbackHolder :handler $ fn (value) $ inc value
+    literal-callback $ %{} CallbackHolder $ :handler $ fn (value) $ inc value
+    nullish-callback $ NullishCallbackHolder :handler nil
     parent $ %{} RecursiveElement $ :children
       []
         %{} RecursivePair (:key |string-key) (:node $ RecursiveNode :component present)
@@ -695,6 +700,9 @@ try {
   assert= 0 $ recursive-count $ RecursiveNode :component from-wrapper
   assert= true $ struct? $ :value $ :cell broad
   assert= true $ struct? $ (:tree broad).unwrap
+  assert= 5 $ (:handler callback) 4
+  assert= 5 $ (:handler literal-callback) 4
+  assert= nil $ :handler nullish-callback
   assert= |string-key $ :key $ &list:nth (:children parent) 0
   assert= :tag-key $ :key $ &list:nth (:children parent) 1
   assert= 2 $ :key $ &list:nth (:children parent) 2`);
@@ -714,6 +722,7 @@ try {
     ["broad-enum-payload", "SpecificNodeHolder :cell (RecursiveCell :value (RecursiveElement :children ([]))) :tree $ Option :some $ make-broad-element"],
     ["broad-struct-payload", "SpecificNodeHolder :cell (RecursiveCell :value (make-broad-element)) :tree $ Option :none"],
     ["open-enum-payload", "RecursiveComponent :tree $ make-open-tree"],
+    ["wrong-callback-return", "CallbackHolder :handler $ fn (value) |wrong"],
     ["wrong-variant-payload", "RecursiveNode :element $ RecursiveComponent :tree $ Option :none"],
     ["unwrapped-node-literal", "%{} RecursivePair (:key :a) (:node $ %{} RecursiveElement (:children $ []))"],
     ["unwrapped-node-head", "RecursivePair :key :a :node $ RecursiveElement :children $ []"],
@@ -735,6 +744,7 @@ try {
       const field = name.startsWith("wrong-scalar") ? "count"
         : name === "broad-enum-payload" || name === "open-enum-payload" ? "tree"
         : name === "broad-struct-payload" ? "cell"
+        : name === "wrong-callback-return" ? "handler"
         : name.startsWith("unwrapped-node") ? "node"
         : name.startsWith("raw-pair-list") ? "children" : null;
       if (field !== null) {
