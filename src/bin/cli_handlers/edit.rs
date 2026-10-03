@@ -787,7 +787,7 @@ fn validate_staged_fix(
     if let Some(allowed) = allowed_warning_identities {
       let current = serde_json::from_slice::<Vec<String>>(&output.stdout).map_err(|error| {
         format!(
-          "Staged semantic-rename validation returned invalid warning evidence: {error}\nstdout:\n{}\nstderr:\n{}",
+          "Staged fix validation returned invalid warning evidence: {error}\nstdout:\n{}\nstderr:\n{}",
           String::from_utf8_lossy(&output.stdout).trim_end(),
           String::from_utf8_lossy(&output.stderr).trim_end()
         )
@@ -795,7 +795,7 @@ fn validate_staged_fix(
       let unexpected = staged_warning_difference(allowed, &current);
       if !unexpected.is_empty() {
         return Err(format!(
-          "Staged semantic rename introduced compiler warnings; no changes were written:\n{}",
+          "Staged fix introduced compiler warnings; no changes were written:\n{}",
           unexpected.join("\n")
         ));
       }

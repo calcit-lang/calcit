@@ -6,6 +6,319 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+fn structural_rewrite_fixture() -> (TestDirectory, PathBuf) {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(&snapshot, &["query", "config", "--format", "json"]),
+    "inspect rewrite fixture configuration",
+  );
+  for (name, code, overwrite) in [
+    ("main!", "quote $ defn main! () &unit", true),
+    ("legacy", "quote $ defn legacy (n) (&+ n 1)", false),
+    ("preferred", "quote $ defn preferred (n) (&+ n 1)", false),
+    ("wrapper", "quote $ defn wrapper () (legacy $ legacy 1)", false),
+    ("quoted", "quote $ defn quoted () (quote $ legacy 1) &unit", false),
+  ] {
+    let target = format!("app.main/{name}");
+    let mut args = vec!["edit", "def", &target, "--input-format", "cirru", "--code", code];
+    if overwrite {
+      args.push("--overwrite");
+    }
+    assert_success(&run_calcit(&snapshot, &args), "create structural rewrite source");
+  }
+  for name in ["legacy", "preferred"] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "schema",
+          &format!("app.main/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+        ],
+      ),
+      "declare helper contract",
+    );
+  }
+  assert_success(&run_calcit(&snapshot, &["edit", "add-ns", "app.extra"]), "add second namespace");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-import",
+        "app.extra",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ app.main :refer $ legacy preferred",
+      ],
+    ),
+    "import reviewed helpers",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.extra/second",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn second () (legacy 3)",
+      ],
+    ),
+    "create cross-namespace call",
+  );
+  for (target, returns) in [
+    ("app.main/main!", "Unit"),
+    ("app.main/quoted", "Unit"),
+    ("app.main/wrapper", "Number"),
+    ("app.extra/second", "Number"),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "schema",
+          target,
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ :: 'Fn $ {{}} (:args $ []) (:return '{returns})"),
+        ],
+      ),
+      "declare zero-argument source contract",
+    );
+  }
+  for (name, code) in [
+    ("direct", "quote $ assert= 2 $ legacy 1"),
+    ("nested", "quote $ assert= 3 $ wrapper"),
+    ("quoted-data", "quote $ assert= (quote $ legacy 1) (quote $ legacy 1)"),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "add-test",
+          "app.main/main!",
+          name,
+          "--tags",
+          "unit,structural",
+          "--input-format",
+          "cirru",
+          "--code",
+          code,
+        ],
+      ),
+      "attach Calcit semantics",
+    );
+  }
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "examples", "app.main/main!", "--code", "quote $ legacy 2"]),
+    "attach example",
+  );
+  (directory, snapshot)
+}
+
+#[test]
+fn structural_rewrite_previews_and_applies_reviewed_source_and_attached_regions() {
+  // Rust checks the transaction protocol; unchanged Calcit assertions own the observable values.
+  let (_directory, snapshot) = structural_rewrite_fixture();
+  let original = fs::read(&snapshot).unwrap();
+  let quoted_ancestor = run_fix(
+    &snapshot,
+    &[
+      "--pattern",
+      "defn quoted ?args (quote (legacy 1)) ?result",
+      "--replace",
+      "defn quoted ?args (quote (preferred 1)) ?result",
+      "--ns",
+      "app.main",
+      "--def",
+      "quoted",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&quoted_ancestor, "preserve quoted data against an ancestor template");
+  assert!(parse_stdout(&quoted_ancestor)["data"]["suggestions"].as_array().unwrap().is_empty());
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+  let args = [
+    "--pattern",
+    "legacy ?n",
+    "--replace",
+    "preferred ?n",
+    "--include-attached",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &args);
+  assert_success(&preview, "preview all structural matches");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().unwrap();
+  assert_eq!(suggestions.len(), 5, "nested calls, second namespace, test and example: {report}");
+  assert!(
+    suggestions
+      .iter()
+      .all(|item| item["applicability"] == "requires-review" && item.get("diagnostic_code").is_none())
+  );
+  assert!(suggestions.iter().any(|item| item["definition"] == "app.extra/second"));
+  assert!(
+    suggestions
+      .iter()
+      .filter(|item| item["path"].as_str().unwrap().starts_with("code"))
+      .count()
+      >= 3
+  );
+  assert!(suggestions.iter().any(|item| item["path"] == "tests.direct@2"));
+  assert!(!suggestions.iter().any(|item| item["definition"] == "app.main/quoted"));
+  assert_eq!(report["data"]["changed"], false);
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+  let revision = report["revision"].as_str().unwrap();
+  for (extra, expected) in [
+    (vec!["--apply", "--allow-no-vcs"], "requires --expect-revision"),
+    (
+      vec!["--apply", "--expect-revision", "md5:stale", "--allow-no-vcs"],
+      "revision mismatch",
+    ),
+    (vec!["--apply", "--expect-revision", revision], "not inside a Git worktree"),
+  ] {
+    let output = run_fix(&snapshot, &[args.as_slice(), &extra].concat());
+    assert!(!output.status.success());
+    assert!(
+      String::from_utf8_lossy(&output.stderr).contains(expected),
+      "{}",
+      String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read(&snapshot).unwrap(), original);
+  }
+  let applied = run_fix(
+    &snapshot,
+    &[args.as_slice(), &["--apply", "--expect-revision", revision, "--allow-no-vcs"]].concat(),
+  );
+  assert_success(&applied, "apply reviewed transaction");
+  let applied = parse_stdout(&applied);
+  assert_eq!(applied["data"]["changed"], true);
+  assert_eq!(applied["data"]["validation"]["status"], "passed");
+  let tests = run_calcit(&snapshot, &["test", "app.main/main!", "--require-match", "--format", "json"]);
+  assert_success(&tests, "replay original Calcit assertions");
+  assert_eq!(parse_stdout(&tests)["passed"], 3);
+  let replay = run_fix(&snapshot, &args);
+  assert_success(&replay, "replay idempotent helper rename");
+  assert!(parse_stdout(&replay)["data"]["suggestions"].as_array().unwrap().is_empty());
+  let edn = run_fix(&snapshot, &[args[..args.len() - 1].as_ref(), &["edn"]].concat());
+  assert_success(&edn, "native structured replay");
+  cirru_edn::parse(&String::from_utf8_lossy(&edn.stdout)).unwrap();
+}
+
+#[test]
+fn structural_rewrite_rejects_unsafe_templates_and_rolls_back_new_type_errors() {
+  let (_directory, snapshot) = structural_rewrite_fixture();
+  let original = fs::read(&snapshot).unwrap();
+  for (pattern, replacement, expected) in [
+    ("legacy ?n", "preferred ?unknown", "not bound"),
+    ("legacy ?n", "preferred 1", "from 1 to 0"),
+    ("legacy ?n", "preferred ?n ?n", "from 1 to 2"),
+    ("missing ?n", "preferred ?unknown", "not bound"),
+  ] {
+    let output = run_fix(&snapshot, &["--pattern", pattern, "--replace", replacement, "--format", "json"]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains(expected));
+    assert_eq!(fs::read(&snapshot).unwrap(), original);
+  }
+  for scope in [Vec::new(), vec!["--ns", "app.main", "--def", "main!"]] {
+    let args = [
+      "--pattern",
+      "legacy ?n",
+      "--replace",
+      "&+ ?n |invalid",
+      "--include-attached",
+      "--format",
+      "json",
+    ];
+    let preview = run_fix(&snapshot, &[args.as_slice(), &scope].concat());
+    assert_success(&preview, "inspect syntactic rewrite before type validation");
+    let report = parse_stdout(&preview);
+    assert!(!report["data"]["suggestions"].as_array().unwrap().is_empty());
+    let revision = report["revision"].as_str().unwrap();
+    let output = run_fix(
+      &snapshot,
+      &[
+        args.as_slice(),
+        &scope,
+        &["--apply", "--expect-revision", revision, "--allow-no-vcs"],
+      ]
+      .concat(),
+    );
+    assert!(!output.status.success());
+    assert!(
+      String::from_utf8_lossy(&output.stderr).contains("no changes were written"),
+      "{}",
+      String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+      fs::read(&snapshot).unwrap(),
+      original,
+      "code and attached-only errors must roll back together"
+    );
+  }
+}
+
+#[test]
+fn structural_rewrite_can_repair_an_invalid_legacy_call_only_after_strict_staged_validation() {
+  let (_directory, snapshot) = structural_rewrite_fixture();
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/wrapper",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn wrapper () (removed-helper 1)",
+      ],
+    ),
+    "install an invalid legacy call",
+  );
+  let original = fs::read(&snapshot).unwrap();
+  let args = [
+    "--pattern",
+    "removed-helper ?n",
+    "--replace",
+    "preferred ?n",
+    "--ns",
+    "app.main",
+    "--def",
+    "wrapper",
+    "--format",
+    "json",
+  ];
+  let preview = run_fix(&snapshot, &args);
+  assert_success(&preview, "preview legacy syntax without granting type proof");
+  let report = parse_stdout(&preview);
+  assert_eq!(report["data"]["suggestions"][0]["applicability"], "requires-review");
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+  let revision = report["revision"].as_str().unwrap();
+  let apply = run_fix(
+    &snapshot,
+    &[args.as_slice(), &["--apply", "--expect-revision", revision, "--allow-no-vcs"]].concat(),
+  );
+  assert_success(&apply, "publish only the strictly valid repaired candidate");
+  assert_eq!(parse_stdout(&apply)["data"]["validation"]["status"], "passed");
+}
+
 #[test]
 fn deprecation_and_quality_reports_keep_declared_macro_logs_off_stdout() {
   // Rust checks output-channel purity; the repository macro supplies the declared logging boundary.

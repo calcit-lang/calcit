@@ -365,6 +365,11 @@ calcit query search '|New title' --filter 'app.main/comp-page' --exact
 
 多匹配时 `search-replace` 会拒绝猜测；查看候选后用 `--pick <N>`，或改用 search → cursor → apply。
 
+同一调用形状跨多个定义时，先用 `calcit fix --pattern 'old-helper ?x' --replace 'new-helper ?x' --format edn`
+逐处预览，再以同一选择和 `--apply --expect-revision '<revision>'` 明确采用已审阅的模板。
+需要纳入附带测试/示例时加 `--include-attached`。这不是语义证明型自动修复；变量绑定、quote 保护、VCS 和暂存严格检查的边界见
+[项目级结构改写](run/fix.md#项目级结构改写)，成功后仍运行原断言与目标 backend。
+
 `--set-cursor` 会选中匹配 leaf。若要在它所在的表达式旁插入 sibling，先移动到 parent；插入后 cursor 仍跟随原表达式，再用 `next` 选中新节点：
 
 ```bash

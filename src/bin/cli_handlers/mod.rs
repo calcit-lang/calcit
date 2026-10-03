@@ -22,6 +22,7 @@ mod program_diff;
 mod query;
 mod scaffold;
 mod stdout;
+mod structural_pattern;
 mod structured_output;
 #[cfg(test)]
 mod test_support;

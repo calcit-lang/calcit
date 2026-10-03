@@ -126,7 +126,7 @@ pub enum CalcitCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "fix")]
-/// preview or apply deterministic compiler-guided source migrations
+/// preview or apply compiler-guided migrations or reviewed structural source rewrites
 pub struct FixCommand {
   /// write applicable fixes atomically after validation
   #[argh(switch)]
@@ -152,6 +152,12 @@ pub struct FixCommand {
   /// select surface-latest-v1, surface-latest-v2, or core-api-0.28-v1 migration rules
   #[argh(option)]
   pub preset: Option<String>,
+  /// match one exact Cirru source pattern with ?name subtree variables (reviewed syntax only)
+  #[argh(option)]
+  pub pattern: Option<String>,
+  /// replacement Cirru template for --pattern; does not prove semantic equivalence
+  #[argh(option, long = "replace")]
+  pub replacement: Option<String>,
   /// compose a project workflow; currently supports strict
   #[argh(option)]
   pub workflow: Option<String>,
