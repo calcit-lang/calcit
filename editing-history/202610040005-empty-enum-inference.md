@@ -32,6 +32,8 @@ Never 是无值证据，不产生运行时值，不参与泛型绑定；现有�
 
 共同合同同时识别拥有 `calcit.core/Option` 声明身份的已实例化 Enum；只重名的用户 Enum 不获得此语义。各个严格调用门禁使用同一接收者专门化合同，避免在已合并为开放结果后又按原始泛型签名重新绑定到空返回。函数显式声明的 Dynamic 返回属于已知开放合同，不再被当作缺少信息的洞；这不改变普通无 schema / DynFn 的历史推导路径。新增负例在非恒定参数下折叠空 Option 与合法 EDN 解析所得开放值，必须由具体字段的类型门禁拒绝，而不是靠运行时 EDN 格式错误失败。
 
+共享门禁在既有迁移 fixture 的 Enum/Option 接收者 `get person :name` 上更早报告既有 `E_CALL_ARGUMENT_MISMATCH`：Enum 索引应为 Number，Tag 不是合法参数。三个工作流回归仍断言拒绝，并将原来的宽泛 warning 编号断言更新为这一具体错误，同时检查错误参数、expected/actual 和 source 坐标；不修改业务 fixture 或放宽预期。
+
 候选尚不能合并：真实 Respo 回放新增 loop 初始空 Option 与后续 `recur` 的 Number payload 冲突（61/74，相比前候选 62/74）；应修复核心局部约束推导，不能删除下游测试或静默修改 loop 业务。最小复现是 `loop ((n 0) (value (Option :none))) (if (&< n 1) (recur 1 (Option :some 7)) (option:unwrap-or value 0))`，候选仍报告第二个 recur 参数的类型冲突。
 
 Ref 的显式初值上下文已经可用，但是否要求旧写法补上下文、还是继续推导后续写入约束，已请求维护者选择。在确认方案和补齐上述回归前保持 Draft，不发布、不合并。

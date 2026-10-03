@@ -3866,8 +3866,8 @@ fn assert_migration_fixture_contract_diagnostics(report: &serde_json::Value, mig
       },
       "fix-command.main/fixable",
     ),
-    ("W_FN_ARG_TYPE_MISMATCH", "fix-command.main/option-struct-field"),
-    ("W_FN_ARG_TYPE_MISMATCH", "fix-command.main/union-struct-field"),
+    ("E_CALL_ARGUMENT_MISMATCH", "fix-command.main/option-struct-field"),
+    ("E_CALL_ARGUMENT_MISMATCH", "fix-command.main/union-struct-field"),
   ];
   let diagnostics = report["diagnostics"].as_array().expect("workflow diagnostics should be an array");
   assert_eq!(diagnostics.len(), expected.len(), "{diagnostics:?}");
@@ -3878,6 +3878,17 @@ fn assert_migration_fixture_contract_diagnostics(report: &serde_json::Value, mig
         .any(|item| item["code"] == code && item["definition"] == definition),
       "missing {code} at {definition}: {diagnostics:?}"
     );
+  }
+  for definition in ["fix-command.main/option-struct-field", "fix-command.main/union-struct-field"] {
+    let diagnostic = diagnostics.iter().find(|item| item["definition"] == definition).unwrap();
+    assert!(
+      diagnostic["message"]
+        .as_str()
+        .unwrap()
+        .contains("argument 2: expected `:number`, got `:tag`")
+    );
+    assert_eq!(diagnostic["location"]["ns"], "fix-command.main");
+    assert_eq!(diagnostic["location"]["coord"], serde_json::json!([3]));
   }
   if migrated {
     let diagnostic = diagnostics
