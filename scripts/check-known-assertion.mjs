@@ -842,13 +842,18 @@ try {
     run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
       `quote $ defwasm-export run-tests () (${expression}) 1`);
     const original = await readFile(snapshot);
+    const expectedDiagnostic = name.startsWith("contradictory-") ? /E_ASSERT_TYPE_MISMATCH/
+      : name.startsWith("unproven-") ? /E_ASSERT_TYPE_UNPROVEN/
+      : name === "wrong-variant-payload" ? /Enum `RecursiveNode::element` payload 1 expects type/
+      : name === "wrong-matched-field" ? /Field `:children` does not exist in struct `RecursiveComponent`/
+      : /expects type/;
     for (const mode of [[], ["--check-only"], ["js"], ["wasm"], ["wasm", "--check-only"], ["wasi"], ["wasi", "--check-only"]]) {
       const destination = join(project, `recursive-rejected-${name}-${mode.join("-") || "native"}`);
       const rejected = spawnSync(binary, [snapshot, "--emit-path", destination, ...mode], options);
       if (rejected.error) throw rejected.error;
       assert.equal(rejected.status, 1, `${name} ${mode}\n${rejected.stdout}\n${rejected.stderr}`);
       const diagnostics = `${rejected.stdout}\n${rejected.stderr}`;
-      assert.match(diagnostics, /expects type|does not exist in struct|E_DYNAMIC_NOMINAL_ARGUMENT|E_ASSERT_TYPE_MISMATCH|E_ASSERT_TYPE_UNPROVEN/);
+      assert.match(diagnostics, expectedDiagnostic);
       assert.match(diagnostics, /calcit.assert-evidence/);
       if (name === "contradictory-loop-assertion" || name === "contradictory-captured-loop-assertion") {
         assert.match(diagnostics, /E_ASSERT_TYPE_MISMATCH/);
@@ -871,7 +876,7 @@ try {
         assert.match(diagnostics, /@calcit\.assert-evidence\/run-tests @[0-9]/,
           "constructor diagnostics must locate the source call, not only a generated macro");
       }
-      await assertRejectedArtifacts(destination, `${name} ${mode}`, /expects type|does not exist in struct|E_DYNAMIC_NOMINAL_ARGUMENT|E_ASSERT_TYPE_MISMATCH|E_ASSERT_TYPE_UNPROVEN/);
+      await assertRejectedArtifacts(destination, `${name} ${mode}`, expectedDiagnostic);
       assert.deepEqual(await readFile(snapshot), original);
     }
   }
