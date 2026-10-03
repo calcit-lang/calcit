@@ -1647,7 +1647,10 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
     Calcit::Import(CalcitImport { info, .. }) if matches!(info.as_ref(), ImportInfo::JsDefault { .. }) => Some(js_host_value_type()),
     Calcit::Import(CalcitImport { ns, def, .. }) => infer_definition_value_type(ns, def),
     Calcit::Symbol { sym, .. } if sym.starts_with("js/") => Some(js_nullish_host_value_type()),
-    Calcit::Symbol { sym, info, .. } => infer_definition_value_type(&info.at_ns, sym),
+    Calcit::Symbol { sym, info, .. } => scope_types
+      .get(sym)
+      .cloned()
+      .or_else(|| infer_definition_value_type(&info.at_ns, sym)),
     Calcit::RawCode(..) => Some(js_nullish_host_value_type()),
 
     // Local variable: read type_info
