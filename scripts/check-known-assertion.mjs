@@ -675,7 +675,7 @@ try {
     ["make-broad-element", "defn make-broad-element () $ RecursiveElement :children $ []", ":: 'Fn $ {} (:args $ []) (:return 'Struct)"],
     ["make-empty-tree", "defn make-empty-tree () $ Option :none", ":: 'Fn $ {} (:args $ []) (:return $ :: 'Option 'Dynamic)"],
     ["make-open-tree", "defn make-open-tree () $ Option :some 1", ":: 'Fn $ {} (:args $ []) (:return $ :: 'Option 'Dynamic)"],
-    ["make-open-number", "defn make-open-number () $ parse-cirru-edn \"|do 1\"", ":: 'Fn $ {} (:args $ []) (:return 'Dynamic)"],
+    ["make-open-number", "defn make-open-number () 1", ":: 'Fn $ {} (:args $ []) (:return 'Dynamic)"],
     ["CallbackHolder", "defstruct CallbackHolder (:handler $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number))", "'StructDef"],
     ["NullishCallbackHolder", "defstruct NullishCallbackHolder (:handler $ :: 'JsNullish $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number))", "'StructDef"],
     ["imported-component", "defn imported-component (flag) $ RecursiveComponent :tree $ if flag (wrappers/empty-tree) (Option :some (RecursiveNode :element (RecursiveElement :children ([]))))", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'calcit.assert-evidence/RecursiveComponent)"],
