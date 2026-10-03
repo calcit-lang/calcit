@@ -523,6 +523,11 @@ with `E_ASYNC_INVOCATION_REQUIRES_AWAIT`. Function aliases and callback schemas
 retain this contract, so async and synchronous callbacks are not interchangeable.
 The checker does not insert `await`, retry calls, or model effects automatically.
 
+`:async` 只描述当前函数自身的调用方式，不会从外层函数继承到局部 `fn`。
+局部函数未声明 `:async true` 或显式声明 `:async false` 时保持同步，
+可以作为同步 watcher 回调。局部函数自身声明 `:async true` 时，仍必须满足
+异步回调合同。真正的宿主调用权限（例如 `js-ffi`）继续按词法作用域继承。
+
 ```cirru.no-check
 let
     fetch-data $ fn () nil

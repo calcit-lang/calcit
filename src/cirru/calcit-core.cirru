@@ -5793,6 +5793,44 @@
             :expansion $ :: 'Expr 'Dynamic
             :required $ [] 'SyntaxList
           :tags $ #{} :macro
+          :tests $ [] $ %{} 'TestEntry (:name |async-scope-keeps-local-callbacks-sync)
+            :code $ quote $ let
+                explicit-sync $ fn (counter)
+                  hint-fn $ {}
+                    :args $ [] $ :: 'Ref 'Number
+                    :return 'Unit
+                    :async true
+                  add-watch! counter :changes $ fn (current previous)
+                    hint-fn $ {}
+                      :args $ [] 'Number 'Number
+                      :return 'Unit
+                      :async false
+                    , &unit
+                implicit-sync $ fn (counter)
+                  hint-fn $ {}
+                    :args $ [] $ :: 'Ref 'Number
+                    :return 'Unit
+                    :async true
+                  add-watch! counter :changes $ fn (current previous) &unit
+                accept-async $ fn (callback)
+                  hint-fn $ {}
+                    :args $ [] $ :: 'Fn
+                      {}
+                        :args $ [] 'Number 'Number
+                        :return 'Unit
+                        :async true
+                    :return 'Unit
+                  assert= true $ fn? callback
+                  , &unit
+              assert= true $ fn? explicit-sync
+              assert= true $ fn? implicit-sync
+              assert= &unit $ accept-async $ fn (current previous)
+                hint-fn $ {}
+                  :args $ [] 'Number 'Number
+                  :return 'Unit
+                  :async true
+                , &unit
+            :tags $ #{} :core :unit
         'fn? $ %{} 'CodeEntry (:doc "|Check if a value is a function")
           :code $ quote &runtime-implementation
           :examples $ []
