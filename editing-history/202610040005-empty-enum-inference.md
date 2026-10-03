@@ -26,6 +26,12 @@ Never 是无值证据，不产生运行时值，不参与泛型绑定；现有�
 
 完整 Cirru suite 的 `when-let` 通过 `option:fold` 使用多个 callback，前一个空 callback 的返回信息曾被过早当作后一 callback 的刚性期望。共同返回合同现在在普通和严格模式都生效；只有两个 callback 都有独立返回证据后才合并类型，不以部分返回证据声明另一个 callback。完整 native Cirru suite 和 definition-attached 严格 native / JS 正例通过，涵盖空值在两侧、任意 nominal 返回 Enum 与导入 wrapper；错误 fold payload 继续通过七种入口拒绝。未添加 Dynamic 或按 source 函数名授权的新例外。
 
+后续 CI 发现开放 callback 的未绑定返回变量被写入生成 hint，又被当作已声明的实际返回类型，阻断已有开放 Option 传输测试。生成函数不再把未绑定的期望返回变量充当输出证据；实际开放返回参与共同结果合并时保持开放，不能被另一侧 Number 缩窄。复用现有 `expression_definitely_diverges` 对仅抛错的回调提供内部无值返回证据，不把 `recur` 循环或未知调用当作不返回证明。严格 core 附带测试 449/449 通过；已有开放 Option、失败传递用例保持原样，新增开放 fold 结果进入具体字段时的七入口拒绝回放。
+
+开放结果负例还暴露：生成 hint 内的具体返回上下文不能反过来成为共同结果的独立证明。`option:fold` 优先读取回调最后一个非 metadata 表达式的返回证据，包括明确的 Dynamic；普通 map 等单输出操作保留原来的分阶段推导，不扩大本次修复范围。没有把所有未知或 DynFn 调用都改为严格开放返回，也没有新增公开类型、入口或按业务函数名授权。修复后严格 core 449 项、native Cirru suite 和已有方法名/谓词 native、JS、core WASM 回放通过；全量验证结果以 PR 中最终 HEAD 的记录为准。
+
+共同合同同时识别拥有 `calcit.core/Option` 声明身份的已实例化 Enum；只重名的用户 Enum 不获得此语义。各个严格调用门禁使用同一接收者专门化合同，避免在已合并为开放结果后又按原始泛型签名重新绑定到空返回。函数显式声明的 Dynamic 返回属于已知开放合同，不再被当作缺少信息的洞；这不改变普通无 schema / DynFn 的历史推导路径。新增负例在非恒定参数下折叠空 Option 与合法 EDN 解析所得开放值，必须由具体字段的类型门禁拒绝，而不是靠运行时 EDN 格式错误失败。
+
 候选尚不能合并：真实 Respo 回放新增 loop 初始空 Option 与后续 `recur` 的 Number payload 冲突（61/74，相比前候选 62/74）；应修复核心局部约束推导，不能删除下游测试或静默修改 loop 业务。最小复现是 `loop ((n 0) (value (Option :none))) (if (&< n 1) (recur 1 (Option :some 7)) (option:unwrap-or value 0))`，候选仍报告第二个 recur 参数的类型冲突。
 
 Ref 的显式初值上下文已经可用，但是否要求旧写法补上下文、还是继续推导后续写入约束，已请求维护者选择。在确认方案和补齐上述回归前保持 Draft，不发布、不合并。

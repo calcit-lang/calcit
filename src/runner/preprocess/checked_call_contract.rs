@@ -34,6 +34,25 @@ fn fn_type(args: Vec<Arc<CalcitTypeAnnotation>>, return_type: Arc<CalcitTypeAnno
 }
 
 fn callback_return_type(callback: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  callback_result_evidence(callback, scope_types, false)
+}
+
+fn callback_result_evidence(callback: &Calcit, scope_types: &ScopeTypes, preserve_open: bool) -> Option<Arc<CalcitTypeAnnotation>> {
+  // A generated hint may include the caller's expected output. Join the
+  // executable body evidence instead, including explicit Dynamic, so context
+  // cannot turn an open branch into an independently proven concrete result.
+  if preserve_open
+    && let Calcit::List(items) = callback
+    && matches!(items.first(), Some(Calcit::Syntax(crate::calcit::CalcitSyntax::Defn, _)))
+    && let Some(body) = items
+      .iter()
+      .skip(3)
+      .filter(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
+      .last()
+    && let Some(return_type) = resolve_type_value(body, scope_types)
+  {
+    return Some(return_type);
+  }
   let embedded_schema = || {
     let Calcit::List(items) = callback else { return None };
     items
@@ -43,7 +62,9 @@ fn callback_return_type(callback: &Calcit, scope_types: &ScopeTypes) -> Option<A
   };
   let callback_type = embedded_schema().or_else(|| resolve_type_value(callback, scope_types))?;
   match callback_type.as_ref() {
-    CalcitTypeAnnotation::Fn(signature) if !matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Dynamic) => {
+    CalcitTypeAnnotation::Fn(signature)
+      if preserve_open || !matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Dynamic) =>
+    {
       Some(signature.return_type.clone())
     }
     _ => None,
@@ -203,10 +224,14 @@ pub(crate) fn resolve_checked_call_contract(
       return_type: Arc::new(T::Unit),
       lowering: None,
     }),
-    ("option:fold", T::TypeRef(_, type_args) | T::Enum(_, type_args)) if receiver_type.is_option_type() => {
+    ("option:fold", T::TypeRef(_, type_args) | T::Enum(_, type_args))
+      if receiver_type.is_option_type()
+        || matches!(receiver_type.as_ref(), T::Enum(definition, args)
+          if args.len() == 1 && definition.definition_ref().is_some_and(|name| name.as_ref() == "calcit.core/Option")) =>
+    {
       let input_type = type_args.first()?.clone();
-      let absent_type = callback_return_type(args.get(1)?, scope_types);
-      let present_type = callback_return_type(args.get(2)?, scope_types);
+      let absent_type = callback_result_evidence(args.get(1)?, scope_types, true);
+      let present_type = callback_result_evidence(args.get(2)?, scope_types, true);
       let output_type = match (absent_type, present_type) {
         (Some(absent), Some(present)) => super::type_inference::join_return_types(absent.clone(), present).unwrap_or(absent),
         // A partial result is a lower constraint, not the other callback's

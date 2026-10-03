@@ -891,7 +891,9 @@ pub(crate) fn infer_return_type_from_compiled_callable(
       call_expr.iter().skip(1),
       scope_types,
     )
-    .or_else(|| (!matches!(info.return_type.as_ref(), CalcitTypeAnnotation::Dynamic)).then(|| info.return_type.clone()));
+    // An explicit Dynamic result is a known open contract, not missing
+    // inference. Do not let the caller's concrete context fill that gap.
+    .or_else(|| (!info.return_type.contains_type_var()).then(|| info.return_type.clone()));
     if let Some(declared_return) = declared_return {
       // A public schema remains authoritative for the nominal shape and type
       // arguments, but an implementation can construct that same nominal

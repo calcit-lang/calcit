@@ -675,12 +675,14 @@ try {
     ["make-broad-element", "defn make-broad-element () $ RecursiveElement :children $ []", ":: 'Fn $ {} (:args $ []) (:return 'Struct)"],
     ["make-empty-tree", "defn make-empty-tree () $ Option :none", ":: 'Fn $ {} (:args $ []) (:return $ :: 'Option 'Dynamic)"],
     ["make-open-tree", "defn make-open-tree () $ Option :some 1", ":: 'Fn $ {} (:args $ []) (:return $ :: 'Option 'Dynamic)"],
+    ["make-open-number", "defn make-open-number () $ parse-cirru-edn \"|do 1\"", ":: 'Fn $ {} (:args $ []) (:return 'Dynamic)"],
     ["CallbackHolder", "defstruct CallbackHolder (:handler $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number))", "'StructDef"],
     ["NullishCallbackHolder", "defstruct NullishCallbackHolder (:handler $ :: 'JsNullish $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number))", "'StructDef"],
     ["imported-component", "defn imported-component (flag) $ RecursiveComponent :tree $ if flag (wrappers/empty-tree) (Option :some (RecursiveNode :element (RecursiveElement :children ([]))))", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'calcit.assert-evidence/RecursiveComponent)"],
     ["joined-local-component", "defn joined-local-component (flag) $ let ((absent-tree (Option :none))) (RecursiveComponent :tree (if flag absent-tree (Option :some (RecursiveNode :element (RecursiveElement :children ([]))))))", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'calcit.assert-evidence/RecursiveComponent)"],
     ["folded-component", "defn folded-component (flag) $ RecursiveComponent :tree $ option:fold (if flag (Option :some true) (Option :none)) (fn () $ wrappers/empty-tree) (fn (present?) $ Option :some $ RecursiveNode :element $ RecursiveElement :children $ [])", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'calcit.assert-evidence/RecursiveComponent)"],
     ["folded-signal", "defn folded-signal (flag) $ RecursiveSignalHolder :signal $ option:fold (if flag (Option :some true) (Option :none)) (fn () $ RecursiveSignal :data $ RecursiveNode :element $ RecursiveElement :children $ []) (fn (present?) $ RecursiveSignal :idle)", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'calcit.assert-evidence/RecursiveSignalHolder)"],
+    ["folded-open", "defn folded-open (flag) $ option:fold (if flag (Option :some true) (Option :none)) (fn () $ Option :none) (fn (present?) $ make-open-number)", ":: 'Fn $ {} (:args $ [] 'Bool) (:return 'Dynamic)"],
     ["recursive-count", `defn recursive-count (node)
   match node
     (:element element)
@@ -740,6 +742,8 @@ try {
   assert= 0 $ recursive-count $ RecursiveNode :component $ folded-component false
   assert= 7 $ match (:signal $ folded-signal true) ((:idle) 7) ((:data node) (recursive-count node))
   assert= 1 $ match (:signal $ folded-signal false) ((:idle) 7) ((:data node) (recursive-count node))
+  assert= 1 $ folded-open true
+  assert= (Option :none) $ folded-open false
   assert= true $ struct? $ :value $ :cell broad
   assert= true $ struct? $ (:tree broad).unwrap
   assert= 5 $ (:handler callback) 4
@@ -766,6 +770,7 @@ try {
     ["open-enum-payload", "RecursiveComponent :tree $ make-open-tree"],
     ["open-local-payload", "let ((open-tree (make-open-tree))) (RecursiveComponent :tree open-tree)"],
     ["wrong-fold-payload", "RecursiveComponent :tree $ option:fold (Option :some true) (fn () $ Option :none) (fn (present?) $ Option :some 1)"],
+    ["open-fold-output", "(fn (flag) (RecursiveComponent :tree (option:fold (Option :some flag) (fn () (Option :none)) (fn (present?) (make-open-number))))) true"],
     ["wrong-empty-family", "let ((absent-tree (Option :none))) (RecursiveSignalHolder :signal absent-tree)"],
     ["open-signal-local", "let ((open-signal (make-open-signal))) (RecursiveSignalHolder :signal open-signal)"],
     ["wrong-callback-return", "CallbackHolder :handler $ fn (value) |wrong"],
@@ -789,7 +794,7 @@ try {
       assert.match(diagnostics, /expects type|does not exist in struct/);
       assert.match(diagnostics, /calcit.assert-evidence/);
       const field = name.startsWith("wrong-scalar") ? "count"
-        : ["broad-enum-payload", "open-enum-payload", "open-local-payload", "open-imported-branch", "wrong-fold-payload"].includes(name) ? "tree"
+        : ["broad-enum-payload", "open-enum-payload", "open-local-payload", "open-imported-branch", "wrong-fold-payload", "open-fold-output"].includes(name) ? "tree"
         : name === "broad-struct-payload" ? "cell"
         : ["wrong-empty-family", "open-signal-local"].includes(name) ? "signal"
         : name === "wrong-callback-return" ? "handler"
