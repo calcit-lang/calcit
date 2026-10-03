@@ -465,6 +465,12 @@ pub(crate) fn join_return_types(
   merge_nominal_enum_branches([&left, &right]).or_else(|| merge_if_branch_types(left, right))
 }
 
+/// Whether an enum retains direct absence evidence that payload inference may refine.
+pub(super) fn has_payload_free_enum_slot(annotation: &CalcitTypeAnnotation) -> bool {
+  matches!(annotation, CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args)
+    if args.iter().any(|arg| matches!(arg.as_ref(), CalcitTypeAnnotation::Never)) && annotation.resolve_to_enum().is_some())
+}
+
 /// Join lexical tail-transfer inputs into payload-free inferred enum slots.
 /// Concrete parameters, explicit Dynamic, nested functions and Ref stay fixed.
 pub(crate) fn infer_recur_parameter_types(
@@ -474,10 +480,7 @@ pub(crate) fn infer_recur_parameter_types(
 ) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
   let eligible = parameters
     .iter()
-    .map(|parameter| {
-      matches!(parameter.as_ref(), CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args)
-      if args.iter().any(|arg| matches!(arg.as_ref(), CalcitTypeAnnotation::Never)) && parameter.resolve_to_enum().is_some())
-    })
+    .map(|parameter| has_payload_free_enum_slot(parameter))
     .collect::<Vec<_>>();
   if !eligible.iter().any(|eligible| *eligible) {
     return None;

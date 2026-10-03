@@ -10776,6 +10776,7 @@ pub fn preprocess_assert_type(
   }
   if let Calcit::Local(local) = &asserted_target {
     let current_type = current_type.expect("local assertion has inline type evidence");
+    let retain_assertion = type_inference::has_payload_free_enum_slot(&current_type);
     let type_entry = if current_type.as_ref().is_compatible_with(asserted_type.as_ref())
       && annotation_dynamic_weight(current_type.as_ref()) < annotation_dynamic_weight(asserted_type.as_ref())
     {
@@ -10788,6 +10789,16 @@ pub fn preprocess_assert_type(
     let mut typed_local = local.to_owned();
     typed_local.type_info = type_entry;
 
+    if retain_assertion {
+      // Absence can prove this assertion before a loop acquires a payload.
+      // Keep its declared constraint for expanded-core retries, including
+      // assertions in closures that capture the loop parameter.
+      return Ok(Calcit::from(vec![
+        Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
+        Calcit::Local(typed_local),
+        asserted_type_form,
+      ]));
+    }
     return Ok(Calcit::Local(typed_local));
   }
 

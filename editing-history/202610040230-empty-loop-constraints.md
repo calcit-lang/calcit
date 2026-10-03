@@ -10,6 +10,8 @@
 
 不能为了重检再次展开原 source：有日志等副作用的宏会重复执行。保留展开结果与引用身份，重新绑定局部节点，去除生成函数末尾的一份编译器签名，但保留 source 显式 hint。已索引的 match 使用现有分支读取器恢复等价分支对，再重新推导 payload；decoder 从保留的类型表达式重新派生内部 handle；引用与语法引用不重写。不为此启用宏缓存、跳过类型门禁或增加新的公开配置。
 
+局部 `assert-type` 原来会直接消除为带类型的 Local，但依赖空 Enum 证明的断言不能提前消失：后续循环引入真实 payload 后，仍必须满足声明。复用空槽谓词，为这种断言暂时保留现有 AssertType core 形式，后续重检验证实际类型再执行原有 Local lowering；捕获循环参数的闭包内也适用。不新建断言记录表，也不重复执行宏。正常的具体断言保留既有 lowering。
+
 只补仍为 Never 的直接 Enum 参数槽；具体参数、显式 Dynamic、公开函数合同和 Ref 均保持固定。不建立按 loop 或业务函数名授权的例外，不扫描原构造器形状补证据，不新增局部 provenance registry。不同 nominal 身份与不相容 payload 没有合法合并。多个参数间的传递会继续补剩余空槽，每次推进都消除至少一个直接空槽，不将递归地构造无限嵌套类型作为推导目标。若某次 transfer 缺少返回证据，不能沿用初始 Never：使用已有开放类型表示继续重检，具体字段必须要求真实证明；不能把缺失证据当作空 payload。
 
 尾部循环转移不产生返回值，复用现有独立函数退出证明推导生成函数的返回合同。只有真正的退出分支能提供返回类型；纯 recur 循环不能自行获得具体返回证明。引入新约束后仍重新检查整个展开后的函数体，不将原来对无值的证明用于后来实际承载的值。
@@ -18,7 +20,7 @@
 
 ## 验证
 
-在现有断言 runner 中通过结构化 CLI 添加 definition-attached Calcit 测试，native 与真实生成 JS 回放空 Option、任意用户 Enum、let 中的别名、match payload、decoder、普通 `.unwrap-or` 方法与跨参数的两阶段传递。另用带日志的宏验证一次编译中只展开一次。八个负例与既有递归字段负例复用七种 native/check/JS/WASM/WASI 入口，要求错误 payload 的具体使用、开放输出、混合 payload、错误 nominal、invariant Ref 和显式合同被拒绝；不产生应用产物，不修改 Snapshot。
+在现有断言 runner 中通过结构化 CLI 添加 definition-attached Calcit 测试，native 与真实生成 JS 回放空 Option、任意用户 Enum、let 中的别名、match payload、decoder、普通 `.unwrap-or` 方法、合法显式断言与跨参数的两阶段传递。另用带日志的宏验证一次编译中只展开一次。十个负例与既有递归字段负例复用七种 native/check/JS/WASM/WASI 入口，要求错误 payload 的具体使用、开放输出、混合 payload、错误 nominal、invariant Ref、显式合同，以及直接或闭包内相矛盾的断言被拒绝；不产生应用产物，不修改 Snapshot。
 
 真实 Respo 独立副本保持全部 74 项测试，循环回归恢复到 62/74，其余 12 项失败不由此改动掩盖。可变 Ref 的隐式写入推导仍是独立待解决事项，本补丁不宣布它或 milestone 已完成。完整 Cargo、Clippy 与集成结果以 PR 的最终 HEAD 记录为准。
 
