@@ -2111,6 +2111,12 @@ pub fn preprocess_expr(
   runner::with_stack_guard_suspended(|| preprocess_expr_unguarded(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack))
 }
 
+/// Qualified core primitives resolve to their runtime identity, not the
+/// source metadata placeholder. User namespaces never acquire this identity.
+fn resolved_core_proc(namespace: &str, definition: &str) -> Option<CalcitProc> {
+  (namespace == calcit::CORE_NS).then(|| definition.parse().ok()).flatten()
+}
+
 fn preprocess_expr_unguarded(
   expr: &Calcit,
   scope_defs: &HashSet<Arc<str>>,
@@ -2148,6 +2154,9 @@ fn preprocess_expr_unguarded(
             if target_ns.as_ref() == calcit::CORE_NS && def_part.as_ref() == "tag-match" {
               return Err(removed_tag_match_error(expr, call_stack));
             }
+            if let Some(proc) = resolved_core_proc(&target_ns, &def_part) {
+              return Ok(Calcit::Proc(proc));
+            }
             // make sure the target is preprocessed
             ensure_ns_def_compiled(&target_ns, &def_part, check_warnings, call_stack)?;
 
@@ -2164,6 +2173,9 @@ fn preprocess_expr_unguarded(
             Ok(retain_resolved_source_usage(form, expr, call_stack))
           } else if program::has_def_code(&ns_alias, &def_part) {
             // refer to namespace/def directly for some usages
+            if let Some(proc) = resolved_core_proc(&ns_alias, &def_part) {
+              return Ok(Calcit::Proc(proc));
+            }
 
             // make sure the target is preprocessed
             ensure_ns_def_compiled(&ns_alias, &def_part, check_warnings, call_stack)?;
@@ -8693,9 +8705,10 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
   if items.len() != 2 {
     return empty;
   }
+  // A Bool-returning user function is not a type guard merely because its
+  // definition has the same short name as a core predicate.
   let Some(pred_name) = (match items.first() {
-    Some(Calcit::Symbol { sym, .. }) => Some(sym.as_ref()),
-    Some(Calcit::Import(CalcitImport { def, .. })) => Some(def.as_ref()),
+    Some(Calcit::Import(CalcitImport { ns, def, .. })) if ns.as_ref() == calcit::CORE_NS => Some(def.as_ref()),
     Some(Calcit::Proc(proc)) => Some(proc.as_ref()),
     _ => None,
   }) else {
@@ -12955,14 +12968,14 @@ mod tests {
       Arc::new(CalcitTypeAnnotation::JsNullish(Arc::new(CalcitTypeAnnotation::JsObject))),
     );
     let predicate = Calcit::from(vec![
-      Calcit::Symbol {
-        sym: Arc::from("js-present?"),
-        info: Arc::new(CalcitSymbolInfo {
+      Calcit::Import(CalcitImport {
+        ns: Arc::from(calcit::CORE_NS),
+        def: Arc::from("js-present?"),
+        info: Arc::new(ImportInfo::Core {
           at_ns: Arc::from("tests.js-ffi"),
-          at_def: Arc::from("demo"),
         }),
-        location: None,
-      },
+        def_id: None,
+      }),
       receiver,
     ]);
     let narrowing = extract_predicate_bindings(&predicate, &scope_types);
@@ -12970,6 +12983,65 @@ mod tests {
       narrowing.true_binding,
       Some((name, inferred)) if name.as_ref() == "host" && matches!(inferred.as_ref(), CalcitTypeAnnotation::JsObject)
     ));
+  }
+
+  #[test]
+  fn predicate_narrowing_requires_resolved_core_origin() {
+    let _lock = lock_preprocess_test_state();
+    let sym: Arc<str> = Arc::from("value");
+    let target = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&sym),
+      sym: sym.clone(),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.predicate-origin"),
+        at_def: Arc::from("check"),
+      }),
+      location: None,
+      type_info: calcit::DYNAMIC_TYPE.clone(),
+    });
+    let scope_types = ScopeTypes::from([(
+      sym,
+      Arc::new(CalcitTypeAnnotation::JsNullish(Arc::new(CalcitTypeAnnotation::String))),
+    )]);
+    for name in ["string?", "list?", "nil?", "some?", "non-nil?", "js-nullish?", "js-present?"] {
+      let heads = [
+        core_import(name, "tests.predicate-origin"),
+        Calcit::Import(CalcitImport {
+          ns: Arc::from("tests.user"),
+          def: Arc::from(name),
+          info: Arc::new(ImportInfo::Core {
+            at_ns: Arc::from("tests.predicate-origin"),
+          }),
+          def_id: None,
+        }),
+        Calcit::Symbol {
+          sym: Arc::from(name),
+          info: Arc::new(CalcitSymbolInfo {
+            at_ns: Arc::from("tests.predicate-origin"),
+            at_def: Arc::from("check"),
+          }),
+          location: None,
+        },
+      ];
+      for head in &heads[1..] {
+        let narrowing = extract_predicate_bindings(&Calcit::from(vec![head.clone(), target.clone()]), &scope_types);
+        assert!(
+          narrowing.true_binding.is_none(),
+          "{name} must not grant evidence without core origin"
+        );
+        assert!(
+          narrowing.false_binding.is_none(),
+          "{name} must not grant inverse evidence without core origin"
+        );
+      }
+      // Core aliases preserve their existing contracts, including predicates
+      // whose success branch does not refine this particular nullable input.
+      let trusted = extract_predicate_bindings(&Calcit::from(vec![heads[0].clone(), target.clone()]), &scope_types);
+      assert!(
+        trusted.true_binding.is_some() || trusted.false_binding.is_some(),
+        "{name} core contract remains available"
+      );
+    }
   }
 
   #[test]
