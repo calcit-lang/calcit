@@ -24,6 +24,8 @@
 
 decoder 的正例直接放在 native/JS 附带测试中，而不是留作独立程序定义。WASM 会收集独立函数，尚不支持的 decoder 不能污染后续无关的 nominal-write WASM fixture；保持后端的 unsupported 边界，不增加强制编译放行或类型豁免。
 
+Ref 负例使用显式固定的 `Ref<Option<Dynamic>>` 合同，拒绝转入具体 `Ref<Option<Number>>`：前者允许写入任意 payload，不能因此放宽后者可变内容的类型。对应正例允许转入同样显式的 Ref 合同并仅存储开放数据。不把尚待完善的未注解空 Ref 推导写成永久拒绝契约，也不要求业务为此次循环推导修复补 Ref 注解。
+
 真实 Respo 独立副本保持全部 74 项测试，循环回归恢复到 62/74，其余 12 项失败不由此改动掩盖。可变 Ref 的隐式写入推导仍是独立待解决事项，本补丁不宣布它或 milestone 已完成。完整 Cargo、Clippy 与集成结果以 PR 的最终 HEAD 记录为准。
 
 ## 后续边界

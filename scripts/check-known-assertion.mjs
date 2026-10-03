@@ -760,6 +760,13 @@ try {
   assert= 7 $ loop-propagated
   assert= 8 $ loop-matched
   assert= 7 $ loop-asserted
+  assert= 42 $ loop
+      n 0
+      cell $ atom $ assert-type (Option :none) $ :: 'Option 'Dynamic
+    hint-fn $ {} (:args $ [] 'Number $ :: 'Ref $ :: 'Option 'Dynamic) (:return 'Number)
+    if (&< n 1)
+      recur 1 $ atom $ assert-type (Option :some 7) $ :: 'Option 'Dynamic
+      , 42
   assert= 1 $ loop
       n 0
       value $ Option :none
@@ -818,7 +825,7 @@ try {
     ["open-loop-payload-use", "loop ((n 0) (tree (Option :none))) (if (&< n 1) (recur 1 (Option :some (make-open-number))) (RecursiveComponent :tree tree))"],
     ["mixed-loop-payloads", "(fn (flag) (loop ((n 0) (tree (Option :none))) (if (&< n 1) (recur 1 (if flag (Option :some 1) (Option :some |wrong))) (RecursiveComponent :tree tree)))) true"],
     ["wrong-loop-family", "loop ((n 0) (signal (RecursiveSignal :idle))) (if (&< n 1) (recur 1 (Option :some 1)) (RecursiveSignalHolder :signal signal))"],
-    ["invariant-loop-ref", "loop ((n 0) (cell (atom (Option :none)))) (if (&< n 1) (recur 1 (atom (Option :some 7))) (deref cell))"],
+    ["invariant-loop-ref", "let ((fixed (assert-type (atom (Option :some 7)) (:: 'Ref (:: 'Option 'Number))))) (loop ((n 0) (cell (atom (assert-type (Option :none) (:: 'Option 'Dynamic))))) (hint-fn ({} (:args ([] 'Number (:: 'Ref (:: 'Option 'Dynamic)))) (:return 'Number))) (if (&< n 1) (recur 1 fixed) 42))"],
     ["explicit-loop-contract", "loop ((n 0) (value (Option :none))) (hint-fn ({} (:args ([] 'Number (:: 'Option 'Number))) (:return 'Number))) (if (&< n 1) (recur 1 (Option :some |wrong)) (option:unwrap-or value 0))"],
     ["explicit-loop-unknown-update", "(fn (flag) (loop ((n 0) (value (Option :none))) (hint-fn ({} (:args ([] 'Number (:: 'Option 'Number))) (:return 'Number))) (if (&< n 1) (recur 1 (Option :some (if flag 7 |wrong))) (option:unwrap-or value 0)))) true"],
     ["wrong-empty-family", "let ((absent-tree (Option :none))) (RecursiveSignalHolder :signal absent-tree)"],
