@@ -4404,6 +4404,19 @@ fn preprocess_known_function_call(
       ));
     }
     let effective_schema = effective_user_call_schema(info.as_ref());
+    let effective_schema = if let Some(contract) = checked_contract.as_ref()
+      && let Some(expected_types) = contract.expected_types.as_ref()
+    {
+      // Every gate must check the same receiver-specialized contract. Rebinding
+      // a shared output against the original generic schema would narrow it
+      // again after the independently inferred callback results were joined.
+      let mut signature = effective_schema.as_ref().clone();
+      signature.arg_types = expected_types.clone();
+      signature.return_type = contract.return_type.clone();
+      Arc::new(signature)
+    } else {
+      effective_schema
+    };
     reject_strict_dynamic_nominal_argument(
       &head_form,
       &current_args,
@@ -5579,7 +5592,7 @@ fn check_struct_construction_fields(
       continue;
     }
     if let Some(actual) = resolve_type_value(pair[1], scope_types)
-      && !type_inference::constructor_payload_is_proven(pair[1], &actual, expected, scope_types)
+      && !type_inference::constructor_payload_is_proven(&actual, expected)
     {
       gen_check_warning_code_at_with_types(
         format!(
@@ -10093,7 +10106,15 @@ pub fn preprocess_defn(
       }
       if strict_generated_by_macro
         && matches!(detected_return_type.as_ref(), CalcitTypeAnnotation::Dynamic)
-        && let Some(inferred) = processed_body.last().and_then(|body| resolve_type_value(body, &body_types))
+        && let Some(body) = processed_body
+          .iter()
+          .rev()
+          .find(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
+        && let Some(inferred) = if type_inference::expression_definitely_diverges(body) {
+          Some(crate::calcit::type_annotation::NEVER_TYPE.clone())
+        } else {
+          resolve_type_value(body, &body_types)
+        }
         && !matches!(inferred.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
       {
         detected_return_type = inferred;
@@ -10101,7 +10122,10 @@ pub fn preprocess_defn(
       let generated_fn_schema = if matches!(def_schema.as_ref(), CalcitTypeAnnotation::Dynamic) && strict_generated_by_macro {
         effective_fn_schema.as_ref().map(|schema| {
           let mut schema = schema.as_ref().to_owned();
-          if !matches!(detected_return_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
+          // An unresolved output slot is not evidence of a concrete result.
+          // Keep explicit open returns instead of leaking temporary variables
+          // into the generated callable contract.
+          if !matches!(detected_return_type.as_ref(), CalcitTypeAnnotation::Dynamic) || schema.return_type.contains_type_var() {
             schema.return_type = detected_return_type.clone();
           }
           if let Some(parent) = prev_features.as_ref() {

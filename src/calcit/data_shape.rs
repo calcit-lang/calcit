@@ -425,6 +425,7 @@ impl GraphBuilder {
 
   fn build_type(&mut self, target: &CalcitTypeAnnotation, default_ns: &str) -> Result<usize, DataShapeError> {
     match target {
+      CalcitTypeAnnotation::Never => Err(unsupported_type("inferred uninhabited payload has no decodable value")),
       CalcitTypeAnnotation::Nil => Ok(self.push(DataShapeNode::Nil)),
       CalcitTypeAnnotation::Unit => Ok(self.push(DataShapeNode::Unit)),
       CalcitTypeAnnotation::Bool => Ok(self.push(DataShapeNode::Bool)),

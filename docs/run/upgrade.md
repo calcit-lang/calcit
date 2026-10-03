@@ -107,6 +107,10 @@ assert= "| b" $ str-spaced | |b
 
 直接构造器与 `%{}` 在参数完成类型推导和 lowering 后检查相同的字段合同。递归声明中的名义类型同样生效：字段声明为 RenderNode Enum 时，不能直接放入 Element Struct；`List<ChildPair>` 不能用原来的二元 List 替代。应显式构造声明要求的 Enum 变体或 ChildPair 值，不能只增加 `assert-type` 或 `unsafe-coerce` 来绕过错误。
 
+空 Enum 变体会保留未承载值的泛型信息。先将 `Option :none` 绑定到局部变量、再次取别名或作为 `if` 分支，再用于具体 Option 字段，同样合法；普通 Calcit import 的薄构造 wrapper 也适用。这项推导依据实际变体，不依赖 `Option` 名字。返回 schema 为 `Option<Dynamic>` 且实际变体可能承载开放值的函数，仍不能证明具体 payload 类型。
+
+可变 Ref 的 payload 合同需要覆盖后续写入，而不只是初始空值。用 `atom` 创建将来会保存具体值的 Ref 时，在初始化表达式中明确该合同，例如 `atom $ assert-type (Option :none) $ :: 'Option 'Number`。这里验证的是合法空变体到声明类型的关系，不是给已有 Ref 强转类型；后续 `reset!` 仍会拒绝不符合 Number 合同的 payload。未补充上下文的空值不会自动变成可写入任意类型的 Dynamic Ref。
+
 这项修复不改变合法构造的字段求值顺序，也不把静态检查变成外部数据校验。开放输入仍需在原有 decode/验证边界处理；如何把业务值转为闭合节点属于人工迁移，不提供自动默认值或改写。
 
 ## 取余的跨后端语义
