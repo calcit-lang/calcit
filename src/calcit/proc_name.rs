@@ -1216,7 +1216,7 @@ impl CalcitProc {
       }),
       NativeTraitNew => Some(ProcTypeSignature {
         return_type: some_tag("trait"),
-        arg_types: vec![dynamic_tag(), some_tag("list")],
+        arg_types: vec![dynamic_tag(), some_tag("list"), some_tag("list")],
       }),
       NativeImplNew => Some(ProcTypeSignature {
         return_type: some_tag("impl"),
@@ -1545,7 +1545,7 @@ impl CalcitProc {
     match self {
       GenerateId | Range | NativeListRange => 2,
       NativeInspectMethods | NativeInspectType | Trim | NativeStrSlice | Sort | NativeListSort | NativeListSlice | NativeStructNth
-      | ReadDir | GetEnv | ParseCirruEdn | FormatCirru | FormatCirruEdn | Todo => 1,
+      | ReadDir | GetEnv | ParseCirruEdn | FormatCirru | FormatCirruEdn | Todo | NativeTraitNew => 1,
       _ => 0,
     }
   }

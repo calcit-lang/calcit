@@ -2834,6 +2834,9 @@ fn normalize_defexternal_code(code: Cirru, owner: &str) -> Result<(Cirru, Edn), 
           .ok_or_else(|| format!("{owner}: `defexternal` `:writable` is missing a set"))?;
         writable.extend(parse_defexternal_writable(value, owner)?);
       }
+      "'requires" => {
+        members.push(Cirru::List(vec![parts[0].clone(), parts[1].clone()]));
+      }
       ":backend" | ":kind" => {
         return Err(format!(
           "{owner}: `defexternal` does not accept `{head}`; it always produces `:backend :js` and `:kind :external-object`"

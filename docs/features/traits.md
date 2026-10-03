@@ -320,6 +320,29 @@ let
       (:none) false
 ```
 
+## 父 trait：`'requires`
+
+`deftrait` 内的 `('requires Parent)` 子句声明“具备本 trait 的值也必须具备 `Parent`”。每个子句写一个父 trait，可以重复；
+子句头是 Symbol `'requires`，与 Tag 形式的成员键区分。
+
+```cirru.no-check
+deftrait Labeled
+  .label $ :: 'Fn $ {} (:args $ [] 'Labeled) (:return 'String)
+
+deftrait Greeting
+  'requires Labeled
+  .greeting $ :: 'Fn $ {} (:args $ [] 'Greeting) (:return 'String)
+
+def Greeter $ impl-traits (defstruct Greeter (:name 'String)) LabeledImpl GreetingImpl
+```
+
+- `defimpl GreetingImpl Greeting` 只实现 `Greeting` 自己的方法；`impl-traits` 挂载时同一类型必须也挂载了全部父 trait 的实现，
+  否则报 `E_IMPL_MISSING_REQUIRED_TRAIT`。`assert-traits value Greeting` 同样检查父 trait 的实现。
+- `:where T Greeting` 的函数体可以调用 `.label`；`Greeting` 类型的值可以传给要求 `Labeled` 的位置，反方向需要显式检查。
+- 子 trait 不能重复声明父 trait 已有的成员（即使签名相同），两个父 trait 之间也不能重名；`'requires` 的值必须是 trait，
+  不能形成环，external-object trait 只能 require external-object trait。这些声明错误统一报 `E_TRAIT_REQUIRES`。
+- external-object trait 的继承用法见 [JavaScript Interop](js-interop.md)。
+
 ## Checking trait requirements
 
 `assert-traits` checks at runtime that a value contains one complete impl whose origin is the requested trait. It returns the value unchanged if the check passes. A same-named method from another trait or an inherent method bag is not sufficient.

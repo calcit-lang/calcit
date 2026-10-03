@@ -4937,34 +4937,52 @@
             :required $ [] 'Syntax
           :tags $ #{} :macro
         'deftrait $ %{} 'CodeEntry
-          :doc "|定义 trait。普通方法使用 `.method` 键，例如 `(deftrait Shape (.draw (:: 'Fn $ {} (:args [...]) (:return 'Unit))))`；只有带 `:ffi {:kind :external-object}` 的宿主属性使用 `:field` 键。省略完整签名时，`:fn` 表示动态函数类型。展开为 `&trait::new`。"
-          :code $ quote $ defmacro deftrait (name & methods)
-            if (every? methods list?) &unit $ raise "|deftrait expects each method as (method type) pair"
+          :doc "|定义 trait。普通方法使用 `.method` 键，例如 `(deftrait Shape (.draw (:: 'Fn $ {} (:args [...]) (:return 'Unit))))`；只有带 `:ffi {:kind :external-object}` 的宿主属性使用 `:field` 键。省略完整签名时，`:fn` 表示动态函数类型。`('requires Parent)` 子句声明父 trait（每个子句一个，可重复），具备本 trait 的值也须具备父 trait。展开为 `&trait::new`。"
+          :code $ quote $ defmacro deftrait (name & entries)
+            if (every? entries list?) &unit $ raise "|deftrait expects each method as (method type) pair"
             &let
-              normalized $ map methods $ fn (entry)
-                &let
-                  items $ if
-                    &= [] $ &list:first entry
-                    &list:rest entry
-                    , entry
-                  do
+              requires-entry? $ fn (entry)
+                &= (quote 'requires) (&list:first entry)
+              &let
+                parents $ map (filter entries requires-entry?)
+                  fn (entry)
                     if
-                      &= 2 $ count items
-                      , &unit $ raise $ str-spaced "|deftrait expects each method as (method type), got:" (format-to-lisp entry)
-                    let
-                        m0 $ &list:first items
-                        t0 $ &list:nth items 1
-                        k0 $ if (tag? m0) m0 $ if
-                          &= :method $ type-of m0
+                      &= 2 $ count entry
+                      &list:nth entry 1
+                      raise $ str-spaced "|deftrait expects ('requires Trait) with one trait, got:" (format-to-lisp entry)
+                &let
+                  normalized $ map
+                    filter entries $ fn (entry)
+                      not $ requires-entry? entry
+                    fn (entry)
+                      &let
+                        items $ if
+                          &= [] $ &list:first entry
+                          &list:rest entry
+                          , entry
+                        do
+                          if
+                            &= 2 $ count items
+                            , &unit $ raise $ str-spaced "|deftrait expects each method as (method type), got:" (format-to-lisp entry)
                           let
-                              s $ format-to-lisp m0
-                            turn-tag $ &str:slice s 1 $ count s
-                          raise $ str-spaced "|deftrait expects method key as :tag or .method, got:" m0
-                        t1 $ internal/normalize-trait-type t0
-                      quasiquote $ [] ~k0 $ quote ~t1
-              quasiquote $ def ~name $ &trait::new
-                ~ $ turn-tag name
-                [] ~@normalized
+                              m0 $ &list:first items
+                              t0 $ &list:nth items 1
+                              k0 $ if (tag? m0) m0 $ if
+                                &= :method $ type-of m0
+                                let
+                                    s $ format-to-lisp m0
+                                  turn-tag $ &str:slice s 1 $ count s
+                                raise $ str-spaced "|deftrait expects method key as :tag or .method, got:" m0
+                              t1 $ internal/normalize-trait-type t0
+                            quasiquote $ [] ~k0 $ quote ~t1
+                  if (&list:empty? parents)
+                    quasiquote $ def ~name $ &trait::new
+                      ~ $ turn-tag name
+                      [] ~@normalized
+                    quasiquote $ def ~name $ &trait::new
+                      ~ $ turn-tag name
+                      [] ~@normalized
+                      [] ~@parents
           :examples $ []
           :schema $ :: 'Macro $ {} (:rest 'SyntaxList)
             :capabilities $ #{}

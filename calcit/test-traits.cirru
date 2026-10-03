@@ -76,6 +76,38 @@
           :code $ quote $ def DemoZapB (impl-traits Demo0 MyZapBImpl MyZapAImpl)
           :examples $ []
           :schema $ :: 'EnumDef
+        'Greeter $ %{} 'CodeEntry
+          :doc "|Struct carrying both a required trait impl and its child"
+          :code $ quote $ def Greeter
+            impl-traits
+              defstruct Greeter $ :name 'String
+              , LabeledImpl GreetingImpl
+          :examples $ []
+          :schema $ :: 'StructDef
+        'Greeting $ %{} 'CodeEntry (:doc "|Trait that requires Labeled")
+          :code $ quote $ deftrait Greeting ('requires Labeled)
+            .greeting $ :: 'Fn $ {} (:return 'String)
+              :args $ [] 'test-traits.main/Greeting
+          :examples $ []
+          :schema $ :: 'Trait
+        'GreetingImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl GreetingImpl Greeting
+            .greeting $ fn (g)
+              str "|hello " $ :name $ assert-type g Greeter
+          :examples $ []
+          :schema $ :: 'Impl
+        'Labeled $ %{} 'CodeEntry (:doc "|Parent trait required by Greeting")
+          :code $ quote $ deftrait Labeled
+            .label $ :: 'Fn $ {} (:return 'String)
+              :args $ [] 'test-traits.main/Labeled
+          :examples $ []
+          :schema $ :: 'Trait
+        'LabeledImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl LabeledImpl Labeled
+            .label $ fn (g)
+              :name $ assert-type g Greeter
+          :examples $ []
+          :schema $ :: 'Impl
         'MyBar $ %{} 'CodeEntry (:doc "|Trait for tuple override test")
           :code $ quote $ deftrait MyBar (.bar :fn)
           :examples $ []
@@ -169,6 +201,15 @@
             :args $ [] 'T
             :generics $ [] 'T
             :where $ {} $ 'T 'Countable
+        'describe-greeting $ %{} 'CodeEntry
+          :doc "|A Greeting bound also proves the required Labeled methods"
+          :code $ quote $ defn describe-greeting (x)
+            str (x .greeting) "| / " $ x .label
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'T
+            :generics $ [] 'T
+            :where $ {} $ 'T 'Greeting
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (&init-builtin-impls!) (println "|Testing built-in traits...")
             ; Test Debug trait - all types should have it
@@ -195,6 +236,8 @@
             test-assert-trait
             ; Debug helpers: methods introspection
             test-method-introspection
+            ; Test 'requires between ordinary traits
+            test-trait-requires
             assert= true $ test-qualified-contains-boundary
             println "|All trait tests passed!"
           :examples $ []
@@ -804,6 +847,16 @@
           :tests $ [] $ %{} 'TestEntry (:name |dispatches-by-bound-trait)
             :code $ quote $ assert= true (test-qualified-contains-boundary)
             :tags $ #{} :predicate :trait :unit
+        'test-trait-requires $ %{} 'CodeEntry (:doc "|Test 'requires between ordinary traits")
+          :code $ quote $ defn test-trait-requires ()
+            let
+                g $ Greeter :name |Ada
+              assert= "|hello Ada / Ada" $ describe-greeting g
+              assert= g $ assert-traits g Greeting
+              assert= g $ assert-traits g Labeled
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-turn-str-custom $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-turn-str-custom ()
             let

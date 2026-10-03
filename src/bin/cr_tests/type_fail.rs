@@ -1075,6 +1075,41 @@ fn strict_type_fail_host_value_equality_reports_stable_warning_code() {
 }
 
 #[test]
+fn strict_type_fail_trait_requires_reports_declaration_and_attachment_codes() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    for (fixture, code, detail) in [
+      ("trait-requires-cycle-strict", "E_TRAIT_REQUIRES", "trait requires cycle"),
+      (
+        "trait-requires-member-conflict-strict",
+        "E_TRAIT_REQUIRES",
+        "member `label` is declared by both",
+      ),
+      (
+        "trait-requires-not-trait-strict",
+        "E_TRAIT_REQUIRES",
+        "which is not a trait definition",
+      ),
+      (
+        "trait-requires-kind-mismatch-strict",
+        "E_TRAIT_REQUIRES",
+        "is an external-object trait but 'requires",
+      ),
+      (
+        "impl-missing-required-trait-strict",
+        "E_IMPL_MISSING_REQUIRED_TRAIT",
+        "requires an impl of trait",
+      ),
+    ] {
+      let entries = load_fixture_entries(&format!("calcit/type-fail/{fixture}.cirru"));
+      let err = run_check_only(&entries).expect_err(&format!("{fixture} must fail strict check-only"));
+      assert!(err.contains(code), "{fixture} should report {code}: {err}");
+      assert!(err.contains(detail), "{fixture} should explain `{detail}`: {err}");
+    }
+  });
+}
+
+#[test]
 fn strict_type_fail_unsafe_coerce_requires_lexical_ffi_scope() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
