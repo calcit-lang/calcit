@@ -81,6 +81,9 @@ pub enum CalcitSyntax {
   /// Explicitly attach a type annotation without a runtime validation.
   #[strum(serialize = "unsafe-coerce")]
   UnsafeCoerce,
+  /// Check a JavaScript host object's declared external-trait member shape.
+  #[strum(serialize = "js-cast")]
+  JsCast,
   /// Parse Cirru EDN and deeply validate/construct the declared closed type.
   #[strum(serialize = "parse-cirru-edn-as")]
   ParseCirruEdnAs,
@@ -168,7 +171,7 @@ impl CalcitSyntax {
         param_types: vec![value_t.clone(), dyn_t.clone()],
         return_type: value_t.clone(),
       }),
-      UnsafeCoerce => Some(SyntaxTypeSignature {
+      UnsafeCoerce | JsCast => Some(SyntaxTypeSignature {
         param_names: vec!["value", "type"],
         param_types: vec![dyn_t.clone(), dyn_t.clone()],
         return_type: dyn_t.clone(),

@@ -14,7 +14,7 @@ mod tags;
 use finger_vec::FingerVec;
 
 use std::cell::{Cell, RefCell};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -838,6 +838,36 @@ fn gen_call_code(
           )),
           None => Err(String::from("unsafe-coerce expected a value")),
         },
+        CalcitSyntax::JsCast => {
+          let (Some(value), Some(Calcit::Trait(trait_def))) = (body.first(), body.get(1)) else {
+            return Err(String::from("js-cast requires its resolved external-object trait"));
+          };
+          let mut fields = BTreeSet::new();
+          let mut methods = BTreeSet::new();
+          for required in trait_def.normalized_reachable_traits()? {
+            let hint = Arc::new(CalcitTypeAnnotation::Trait(required.clone()));
+            for (member, kind) in required.methods.iter().zip(required.member_kinds.iter()) {
+              let host_name = escape_cirru_str(&external_js_property_name(&hint, member.ref_str()));
+              match kind {
+                calcit::CalcitTraitMemberKind::Field => {
+                  fields.insert(host_name);
+                }
+                calcit::CalcitTraitMemberKind::Method => {
+                  methods.insert(host_name);
+                }
+              }
+            }
+          }
+          let value_code = to_js_code(value, ns, local_defs, file_imports, tags, None)?;
+          let call = format!(
+            "{}js_cast({value_code}, {}, [{}], [{}])",
+            get_proc_prefix(ns),
+            escape_cirru_str(&trait_def.origin_label()),
+            fields.into_iter().collect::<Vec<_>>().join(", "),
+            methods.into_iter().collect::<Vec<_>>().join(", "),
+          );
+          Ok(wrap_call_with_prelude(String::new(), call, return_label, detect_await(&body)))
+        }
         CalcitSyntax::ParseCirruEdnAs => match (body.first(), body.get(1)) {
           (Some(text), Some(type_form)) if body.len() == 2 || body.len() == 3 => {
             let graph = match body.get(2).and_then(DataShapeGraph::from_calcit_handle) {

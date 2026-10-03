@@ -30,6 +30,7 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Resul
       "defwasm-export" => Ok(Calcit::Syntax(CalcitSyntax::DefWasmExport, ns.into())),
       "defwasm-import" => Ok(Calcit::Syntax(CalcitSyntax::DefWasmImport, ns.into())),
       "unsafe-coerce" => Ok(Calcit::Syntax(CalcitSyntax::UnsafeCoerce, ns.into())),
+      "js-cast" => Ok(Calcit::Syntax(CalcitSyntax::JsCast, ns.into())),
       "parse-cirru-edn-as" => Ok(Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs, ns.into())),
       "try-parse-cirru-edn-as" => Ok(Calcit::Syntax(CalcitSyntax::TryParseCirruEdnAs, ns.into())),
       "decode-map-as" => Ok(Calcit::Syntax(CalcitSyntax::DecodeMapAs, ns.into())),

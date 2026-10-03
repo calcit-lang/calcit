@@ -7,6 +7,70 @@
 
 use super::*;
 
+/// Keep host capability checking distinct from both data decoding and unchecked casts.
+pub(super) fn preprocess_js_cast(head_ns: &str, args: &CalcitList, ctx: &mut PreprocessContext) -> Result<Calcit, CalcitErr> {
+  let location = args.first().and_then(Calcit::get_location);
+  let fail = |kind, message| CalcitErr::use_msg_stack_location(kind, message, ctx.call_stack, location.clone());
+  if args.len() != 2 {
+    return Err(fail(
+      CalcitErrKind::Arity,
+      String::from("js-cast expects a value and an external-object trait"),
+    ));
+  }
+  if !current_function_has_js_ffi_feature() {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      "js-cast requires a lexical :js-ffi feature on the adapter function",
+      "E_JS_FFI_FEATURE_REQUIRED",
+      ctx.call_stack,
+      location,
+    ));
+  }
+  let target = resolve_program_trait_refs_for_body(resolve_namespace_type_refs_for_body(
+    CalcitTypeAnnotation::parse_type_annotation_form_with_generics(args.get(1).expect("checked arity"), &[]),
+    ctx.file_ns,
+  ));
+  let CalcitTypeAnnotation::Trait(trait_def) = target.as_ref() else {
+    return Err(fail(
+      CalcitErrKind::Type,
+      String::from("js-cast target must be a declared external-object trait"),
+    ));
+  };
+  trait_def
+    .validate_reachable_method_schemas()
+    .map_err(|message| fail(CalcitErrKind::Type, message))?;
+  for required in trait_def
+    .normalized_reachable_traits()
+    .map_err(|message| fail(CalcitErrKind::Type, message))?
+  {
+    if !trait_is_external_object(required.as_ref()) {
+      return Err(fail(
+        CalcitErrKind::Type,
+        format!("js-cast target {} is not an external-object trait", required.origin_label()),
+      ));
+    }
+    if let Some((ns, def)) = required.definition_ref.as_deref().and_then(|path| path.rsplit_once('/'))
+      && let Some(ffi) = program::lookup_def_ffi(ns, def)
+      && let Some(target) = ffi_metadata_target(&ffi)
+    {
+      validate_js_ffi_target(target, "js-cast", location.clone(), ctx.file_ns, def, ctx.call_stack)?;
+    }
+  }
+  let value = preprocess_expr(
+    args.first().expect("checked arity"),
+    ctx.scope_defs,
+    ctx.scope_types,
+    ctx.file_ns,
+    ctx.check_warnings,
+    ctx.call_stack,
+  )?;
+  Ok(Calcit::from(vec![
+    Calcit::Syntax(CalcitSyntax::JsCast, Arc::from(head_ns)),
+    value,
+    target.to_calcit(),
+  ]))
+}
+
 /// Capability validation for operations that lower directly to JavaScript.
 ///
 /// This deliberately runs after ordinary resolution and does not alter type

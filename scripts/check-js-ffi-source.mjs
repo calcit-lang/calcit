@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { cp, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import * as procs from "../lib/calcit.procs.mjs";
 
 const repository = fileURLToPath(new URL("..", import.meta.url));
 const fixture = await mkdtemp(join(repository, "target/js-ffi-fixture-"));
@@ -113,6 +114,66 @@ try {
   assert.equal(module.count_a(), 3);
   assert.equal(api.next_count(), 4, "normal Calcit imports must share one JS FFI definition instance");
   assert.notEqual(module.count_a, module.count_b, "each Calcit definition receives its own expression instance");
+
+  // Replay the actual attached Calcit expressions, rather than JS copies of their assertions.
+  const hostContext = JSON.parse(execFileSync(resolve(repository, "target/debug/calcit"),
+    [input, "query", "context", "app.main/checked-counter-host", "--format", "json"], { cwd: fixture, encoding: "utf8" }));
+  assert.equal(hostContext.data.tests.truncated, false);
+  assert.equal(hostContext.data.tests.items.length, 3);
+  const hostEntry = ["defn", "replay-host-tests!", [], ...hostContext.data.tests.items.map(test => test.tree), "&unit"];
+  execFileSync(resolve(repository, "target/debug/calcit"), [moduleSnapshot, "edit", "def", "app.main/replay-host-tests!",
+    "--input-format", "json-ast", "--code", JSON.stringify(hostEntry)], { cwd: fixture });
+  execFileSync(resolve(repository, "target/debug/calcit"), [moduleSnapshot, "edit", "schema", "app.main/replay-host-tests!",
+    "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit) (:features $ #{} :js-ffi)"], { cwd: fixture });
+  const hostOutput = join(fixture, "host-generated");
+  execFileSync(resolve(repository, "target/debug/calcit"), [input, "--init-fn", "app.main/replay-host-tests!",
+    "--emit-path", hostOutput, "js"], { cwd: fixture, encoding: "utf8", stdio: "pipe" });
+  const hostModule = await import(pathToFileURL(join(hostOutput, "app.main.mjs")).href);
+  hostModule.replay_host_tests_$x_();
+  const host = hostModule.make_counter_host(3);
+  assert.equal(hostModule.checked_counter_host(host), host, "checked casts preserve frozen host identity");
+  for (const value of [null, undefined, 1, "host", {}, { "total-value": 3, add: 7 }, procs._$L_(3), procs.newTag("host"), new Uint8Array(1)]) {
+    assert.throws(() => hostModule.checked_counter_host(value), /js-cast app\.main\/CounterHost:/);
+  }
+  const inherited = Object.create(host);
+  assert.equal(hostModule.checked_counter_host(inherited), inherited, "host members may come from a prototype");
+  const underlying = new Error("host getter failed");
+  const hostile = { "total-value": 3, get add() { throw underlying; } };
+  assert.throws(() => hostModule.checked_counter_host(hostile), error => error instanceof TypeError && error.cause === underlying);
+  const fieldGetter = { get "total-value"() { throw underlying; }, add() { return 3; } };
+  assert.equal(hostModule.checked_counter_host(fieldGetter), fieldGetter, "field-presence checks do not invoke getters");
+  const trapping = new Proxy(host, { has() { throw underlying; } });
+  assert.throws(() => hostModule.checked_counter_host(trapping), error => error instanceof TypeError && error.cause === underlying);
+  // A shape check must not be represented as validation of foreign signatures.
+  const declaredTrust = { "total-value": "wrong", add() { return "wrong"; } };
+  assert.equal(hostModule.checked_counter_host(declaredTrust), declaredTrust);
+  const castNative = spawnSync(resolve(repository, "target/debug/calcit"), [input, "--init-fn", "app.main/replay-host-tests!"],
+    { cwd: fixture, encoding: "utf8" });
+  assert.notEqual(castNative.status, 0);
+  assert.match(castNative.stderr, /unavailable in the native runtime/);
+
+  const checkedSchema = "quote $ :: 'Fn $ {} (:args $ [] 'JsObject) (:return 'app.main/CounterHost) (:features $ #{} :js-ffi)";
+  const checkedBody = "quote $ defn checked-counter-host (value) (js-cast value 'CounterHost)";
+  const mutateCast = (command, code) => execFileSync(resolve(repository, "target/debug/calcit"),
+    [moduleSnapshot, "edit", command, "app.main/checked-counter-host", ...(command === "def" ? ["--overwrite"] : []),
+      "--input-format", "cirru", "--code", code], { cwd: fixture, stdio: "pipe" });
+  const rejectCast = pattern => {
+    const checked = spawnSync(resolve(repository, "target/debug/calcit"),
+      [input, "--init-fn", "app.main/replay-host-tests!", "--emit-path", hostOutput, "js"], { cwd: fixture, encoding: "utf8" });
+    assert.notEqual(checked.status, 0, "invalid cast contracts must fail before JS execution");
+    assert.match(`${checked.stdout}\n${checked.stderr}`, pattern);
+  };
+  mutateCast("schema", "quote $ :: 'Fn $ {} (:args $ [] 'JsObject) (:return 'app.main/CounterHost)");
+  rejectCast(/E_JS_FFI_FEATURE_REQUIRED/);
+  mutateCast("schema", checkedSchema);
+  for (const target of ["Number", "calcit.core/Len", "MissingHost"]) {
+    mutateCast("def", `quote $ defn checked-counter-host (value) (js-cast value '${target})`);
+    rejectCast(/external-object trait/);
+  }
+  mutateCast("def", "quote $ defn checked-counter-host (value) (js-cast value)");
+  rejectCast(/expects a value and an external-object trait/);
+  mutateCast("def", checkedBody);
+
   const fileExpression = join(fixture, "js-ffi-module/js-ffi-assets/add-two.js");
   const originalExpression = await readFile(fileExpression, "utf8");
   const buildContractCase = (name) => {

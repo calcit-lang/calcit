@@ -1555,7 +1555,7 @@ pub(crate) fn infer_type_from_expr(expr: &Calcit, scope_types: &ScopeTypes) -> O
         Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _) if super::REQUIRE_ASSERTION_PROOF.with(std::cell::Cell::get) => {
           xs.get(1).and_then(|input| resolve_type_value(input, scope_types))
         }
-        Calcit::Syntax(CalcitSyntax::AssertType | CalcitSyntax::UnsafeCoerce, _) => xs
+        Calcit::Syntax(CalcitSyntax::AssertType | CalcitSyntax::UnsafeCoerce | CalcitSyntax::JsCast, _) => xs
           .get(2)
           .map(|form| CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &[]))
           .map(resolve_program_trait_refs_for_body),

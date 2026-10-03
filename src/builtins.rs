@@ -651,6 +651,7 @@ pub fn handle_syntax(
     MacroInterpolateSpread => CalcitErr::err_nodes(CalcitErrKind::Syntax, "`~@` cannot be used as operator", &nodes.to_vec()),
     AssertType => syntax::assert_type(nodes, scope, file_ns, call_stack),
     UnsafeCoerce => syntax::unsafe_coerce(nodes, scope, file_ns, call_stack),
+    JsCast => CalcitErr::err_str(CalcitErrKind::Syntax, "js-cast is unavailable in the native runtime"),
     ParseCirruEdnAs => syntax::parse_cirru_edn_as(nodes, scope, file_ns, call_stack),
     TryParseCirruEdnAs => syntax::try_parse_cirru_edn_as(nodes, scope, file_ns, call_stack),
     DecodeMapAs => syntax::decode_map_as(nodes, scope, file_ns, call_stack),
