@@ -776,7 +776,62 @@ try {
     assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
     assert.deepEqual(await readFile(snapshot), original);
   }
-  console.log("Known assertions and return/call contracts rejected before native/JS/WASM/WASI; native/JS positives, JS async adoption, scalar WASM assertions, value schema contracts, Diary boundaries and lowered trait return proofs passed");
+  // Replay the attached count contract expressions, including nominal schema
+  // parameters and typed rest, rather than substituting low-level count calls.
+  for (const [source, namespace, definitions, expectedCount, outputName] of [
+    ["src/cirru/calcit-core.cirru", "calcit.core", ["count", "&map:destruct", "&map:diff-triple", "apply"], 11, "count-core-js"],
+    ["tests/fixtures/count-contract.cirru", "fix-command.main", ["typed-rest-forward", "nominal-counts", "checked-open-count", "local-bound-counts", "typed-loop-count"], 5, "count-contract-js"],
+  ]) {
+    await copyFile(source, snapshot);
+    const original = await readFile(snapshot);
+    const expressions = [];
+    for (const definition of definitions) {
+      run("test", `${namespace}/${definition}`, "--require-match");
+      const response = JSON.parse(run("query", "def", `${namespace}/${definition}`, "--format", "json"));
+      assert.deepEqual(response.diagnostics, []);
+      expressions.push(...response.data.tests.map(test => test.code));
+    }
+    assert.equal(expressions.length, expectedCount);
+    assert.deepEqual(await readFile(snapshot), original);
+    run("edit", "def", `${namespace}/replay-count-tests`, "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "replay-count-tests", [], ...expressions, "&unit"]));
+    run("edit", "schema", `${namespace}/replay-count-tests`, "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+    run("config", "set", "init-fn", `${namespace}/replay-count-tests`);
+    run("config", "set", "reload-fn", `${namespace}/replay-count-tests`);
+    run("--check-only");
+    const output = join(project, outputName);
+    run("--emit-path", output, "js");
+    const generated = await import(pathToFileURL(join(output, `${namespace}.mjs`)).href);
+    generated.replay_count_tests();
+  }
+  for (const [name, body, schema] of [
+    ["nil", ["count", "nil"], "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"],
+    ["number", ["count", "1"], "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"],
+    ["function", ["count", ["fn", [], "1"]], "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"],
+    ["dynamic", ["count", "value"], "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Number)"],
+    ["unbounded-generic", ["count", "value"], "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'Number) (:generics $ [] 'T)"],
+    ["explicit-open-inline", [["fn", ["value"], ["hint-fn", ["{}", [":args", ["[]", "'Dynamic"]], [":return", "'Number"]]], ["count", "value"]], ["[]", "1", "2"]],
+      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"],
+  ]) {
+    await copyFile("tests/fixtures/count-contract.cirru", snapshot);
+    run("edit", "def", "fix-command.main/rejected-count", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "rejected-count", name === "dynamic" || name === "unbounded-generic" ? ["value"] : [], body]));
+    run("edit", "schema", "fix-command.main/rejected-count", "--input-format", "cirru", "--code", schema);
+    run("edit", "def", "fix-command.main/main!", "--overwrite", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "main!", [], ["rejected-count", ...(name === "dynamic" ? [["parse-cirru-edn", "|1"]] : name === "unbounded-generic" ? ["1"] : [])], "&unit"]));
+    const original = await readFile(snapshot);
+    const rejected = spawnSync(binary, [snapshot, "fix", "--workflow", "strict", "--verify", "--format", "json"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
+    const report = JSON.parse(rejected.stdout);
+    // Read the actual failed workflow, not the available-rule catalog.
+    assert.equal(report.data.workflow.status, "failed");
+    assert.ok(JSON.stringify(report.data.workflow).includes("W_GENERIC_WHERE_BOUND_MISMATCH"),
+      `${name}: missing bound diagnostic\n${JSON.stringify(report.data.workflow)}`);
+    assert.deepEqual(await readFile(snapshot), original);
+  }
+  console.log("Known assertions and return/call contracts rejected before native/JS/WASM/WASI; native/JS positives, JS async adoption, scalar WASM assertions, value schema contracts, Diary boundaries, lowered trait return proofs and Countable count contracts passed");
 } finally {
   await rm(project, { recursive: true, force: true });
 }

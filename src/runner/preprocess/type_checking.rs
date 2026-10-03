@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use super::checked_call_contract::resolve_checked_call_contract;
 use super::type_inference::{async_invocation_result, infer_struct_field_type, infer_unhinted_callback_signature};
-use crate::calcit::type_annotation::TypeProof;
+use crate::calcit::type_annotation::{CallTypeProof, TypeProof};
 use crate::calcit::{
   self, Calcit, CalcitErr, CalcitErrKind, CalcitFn, CalcitGenericBound, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax,
   CalcitTypeAnnotation, LocatedWarning, NodeLocation,
@@ -86,6 +86,36 @@ fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str
     return;
   }
 
+  // Core specialization can replace a declared generic parameter with a
+  // concrete receiver/callback contract. Recover bound evidence from the
+  // declaration rather than treating that erased slot as an unknown input.
+  let declared = match ctx.head_form {
+    Calcit::Import(import) => Some(program::lookup_def_schema(&import.ns, &import.def)),
+    _ => resolve_type_value(ctx.head_form, ctx.scope_types),
+  };
+  let call_proof = declared
+    .as_ref()
+    .and_then(|annotation| annotation.resolve_to_fn())
+    .map(|signature| {
+      let parameters = expected_types_with_rest(&signature.arg_types, signature.rest_type.as_ref());
+      let actual_types = ctx
+        .args
+        .iter()
+        .map(|argument| resolve_type_value(argument, ctx.scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()))
+        .collect::<Vec<_>>();
+      let mut proof = CallTypeProof::new(&signature.generics, &parameters, &actual_types);
+      for (index, parameter) in parameters.iter().enumerate() {
+        let (parameter, limit) = match parameter.as_ref() {
+          CalcitTypeAnnotation::Variadic(inner) => (inner.as_ref(), usize::MAX),
+          parameter => (parameter, 1),
+        };
+        for actual in actual_types.iter().skip(index).take(limit) {
+          proof.prove(actual, parameter);
+        }
+      }
+      proof
+    });
+
   let expr_str = format!(
     "{} {}",
     ctx.head_form,
@@ -93,13 +123,17 @@ fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str
   );
 
   for bound in ctx.where_bounds {
-    let Some(actual_type) = bindings.get(&bound.name) else {
-      continue;
-    };
+    // An unbound variable is not evidence for a required capability. This also
+    // covers a caller/callee generic with the same spelling: compatibility can
+    // accept that identity without producing a concrete binding.
+    let variable = CalcitTypeAnnotation::TypeVar(bound.name.clone());
+    let actual_type = call_proof
+      .as_ref()
+      .and_then(|proof| proof.result(&variable))
+      .or_else(|| call_proof.is_none().then(|| bindings.get(&bound.name).cloned()).flatten())
+      .unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::TypeVar(bound.name.clone())));
     let required = bound.as_type_annotation();
-    if !matches!(actual_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
-      && actual_type.as_ref().is_compatible_with(required.as_ref())
-    {
+    if actual_type.as_ref().is_proven_for(required.as_ref()) {
       continue;
     }
 
@@ -111,7 +145,7 @@ fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str
       format!(
         "[Warn] call binds generic `'{}' to `{}`, but it does not satisfy trait bound `{}` at {}/{}\n  Expression: `{}`",
         bound.name,
-        diagnostic_type_string(actual_type),
+        diagnostic_type_string(actual_type.as_ref()),
         diagnostic_type_string(required.as_ref()),
         ctx.file_ns,
         match ctx.head_form {

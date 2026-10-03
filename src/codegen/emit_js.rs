@@ -1300,13 +1300,24 @@ fn gen_call_code(
       }
     },
     _ => {
-      let (prelude, args_code) =
+      let (mut prelude, args_code) =
         gen_call_args_with_temps(&body, ns, local_defs, file_imports, tags, return_label.is_some(), inline_all)?;
-      let callee = if is_native_map_reference(&head) {
+      let mut callee = if is_native_map_reference(&head) {
         format!("{proc_prefix}{}", escape_var(CalcitProc::NativeMap.as_ref()))
       } else {
         to_js_code(&head, ns, local_defs, file_imports, tags, None)?
       };
+      if matches!(&head, Calcit::List(_) | Calcit::Fn { .. }) {
+        // A literal function in statement position must be an expression,
+        // not a declaration followed by an unrelated parenthesized value.
+        // Evaluate a computed callee before any hoisted argument effects.
+        callee = format!("({callee})");
+        if !prelude.is_empty() {
+          let callable = js_gensym("callee");
+          prelude = format!("let {callable} = {callee};\n{prelude}");
+          callee = callable;
+        }
+      }
       let call_code = format!("{callee}({args_code})");
       Ok(wrap_call_with_prelude(prelude, call_code, return_label, detect_await(&body)))
     }

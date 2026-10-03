@@ -175,7 +175,7 @@
                       str-spaced |swapped (right .debug) (left .debug)
               println "|Testing generic enum where-bounds..."
               assert= |1 $ render-maybe $ %:: Maybe1 :some 1
-              assert= |none $ render-maybe $ %:: Maybe1 :none
+              assert= |none $ render-maybe $ assert-type (Maybe1 :none) (:: 'Maybe1 'Number)
               assert= (str-spaced |pair |1 |hi)
                 render-duo $ %:: Duo :pair 1 |hi
               assert= (str-spaced |swapped |hi |1)

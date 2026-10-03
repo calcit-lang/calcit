@@ -2373,7 +2373,11 @@ impl CalcitTypeAnnotation {
   }
 
   fn parse_trait_bounds_value(form: &Calcit, generics: &[Arc<str>], strict_named_refs: bool) -> Option<Vec<Arc<CalcitTrait>>> {
-    if let Calcit::List(items) = form {
+    // Macro expansion turns a quoted name into a quote expression. It denotes
+    // one bound, not a list of bounds whose first member is the quote syntax.
+    if let Calcit::List(items) = form
+      && Self::parse_type_var_form(form).is_none()
+    {
       let start = if items.first().map(Self::is_args_list_head).unwrap_or(false) {
         1
       } else {
@@ -4403,7 +4407,25 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  fn resolve_nominal_instance_type(&self) -> Option<Self> {
+    // A nominal reference in a value schema denotes an instance, not the
+    // declaration's StructDef/EnumDef metadata. Reuse source-backed resolution
+    // before checking the same capabilities as an already resolved instance.
+    if let Self::TypeRef(_, arguments) = self {
+      if let Some(definition) = self.resolve_to_struct() {
+        return Some(Self::Struct(Arc::new(definition), arguments.clone()));
+      }
+      if let Some(definition) = self.resolve_to_enum() {
+        return Some(Self::Enum(Arc::new(definition), arguments.clone()));
+      }
+    }
+    None
+  }
+
   fn satisfies_trait_bound(&self, expected_trait: &CalcitTrait) -> bool {
+    if let Some(instance) = self.resolve_nominal_instance_type() {
+      return instance.satisfies_trait_bound(expected_trait);
+    }
     match self {
       Self::Trait(actual_trait) if Self::trait_annotation_proves(actual_trait, expected_trait) => {
         return true;
@@ -4762,9 +4784,13 @@ impl CalcitTypeAnnotation {
             .zip(b_args.iter())
             .all(|(x, y)| x.compatible_with_bindings(y, bindings))
       }
-      (Self::TypeRef(name, args), Self::Trait(trait_def)) | (Self::Trait(trait_def), Self::TypeRef(name, args)) => {
+      (Self::TypeRef(name, args), Self::Trait(trait_def)) => {
         args.is_empty() && Self::type_ref_matches_trait(name, trait_def.as_ref())
+          || self
+            .resolve_nominal_instance_type()
+            .is_some_and(|instance| instance.satisfies_trait_bound(trait_def.as_ref()))
       }
+      (Self::Trait(trait_def), Self::TypeRef(name, args)) => args.is_empty() && Self::type_ref_matches_trait(name, trait_def.as_ref()),
       (Self::Trait(a), Self::Trait(b)) => Self::trait_references_match(a, b),
       (Self::TraitSet(actual), Self::Trait(expected)) => {
         actual.iter().any(|trait_def| Self::trait_references_match(trait_def, expected))
@@ -4919,6 +4945,12 @@ impl CalcitTypeAnnotation {
       Ok(Some((result, _))) => return result,
       Err(_) => return NeedsBoundary(Boundary::TypeComplexityLimit),
       Ok(None) => {}
+    }
+
+    if matches!(expected, Self::Trait(_) | Self::TraitSet(_))
+      && let Some(instance) = self.resolve_nominal_instance_type()
+    {
+      return instance.prove_with_staged_bindings(expected, bindings);
     }
 
     match (self, expected) {
@@ -6740,6 +6772,62 @@ mod tests {
     assert!(!number.is_compatible_with(&CalcitTypeAnnotation::Trait(core_show)));
     assert!(!number.is_compatible_with(&CalcitTypeAnnotation::Trait(user_debug)));
     assert!(!number.is_compatible_with(&CalcitTypeAnnotation::Trait(runtime_user_debug)));
+  }
+
+  #[test]
+  fn nominal_reference_capability_proofs_preserve_origin_and_direction() {
+    use crate::program::{PROGRAM_CODE_DATA, ProgramDefEntry, ProgramFileData, lock_program_test_state};
+
+    let _guard = lock_program_test_state();
+    register_program_lookups(
+      crate::program::lookup_runtime_ready,
+      crate::program::lookup_def_code,
+      crate::program::lookup_def_schema,
+    );
+    let mut definition = CalcitStructDef::from_fields(EdnTag::new("Box"), vec![EdnTag::new("value")]);
+    definition.definition_ref = Some(Arc::from("tests.nominal-capability/Box"));
+    definition.generics = Arc::new(vec![Arc::from("T")]);
+    let definition = Arc::new(definition);
+    PROGRAM_CODE_DATA.write().expect("seed nominal declaration").insert(
+      Arc::from("tests.nominal-capability"),
+      ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(
+          Arc::from("Box"),
+          ProgramDefEntry {
+            code: Calcit::from(vec![
+              symbol("defstruct"),
+              Calcit::Str(Arc::from("Box")),
+              Calcit::from(vec![symbol("[]"), symbol("T")]),
+              Calcit::from(vec![Calcit::Tag(EdnTag::new("value")), symbol("T")]),
+            ]),
+            schema: Arc::new(CalcitTypeAnnotation::StructDef(definition.clone())),
+            doc: Arc::from(""),
+            examples: vec![],
+            ffi: None,
+          },
+        )]),
+      },
+    );
+    let arguments = Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]);
+    let instance = CalcitTypeAnnotation::TypeRef(Arc::from("tests.nominal-capability/Box"), arguments.clone());
+    let CalcitTypeAnnotation::Struct(resolved, resolved_arguments) = instance.resolve_nominal_instance_type().expect("instance") else {
+      panic!("expected nominal struct instance");
+    };
+    assert_eq!(resolved.definition_ref, definition.definition_ref);
+    assert_eq!(resolved_arguments, arguments);
+    let capability = CalcitTypeAnnotation::Trait(Arc::new(CalcitTrait::new_reference("calcit.core/Countable")));
+    assert!(instance.is_compatible_with(&capability));
+    assert!(instance.is_proven_for(&capability));
+    assert!(!capability.is_compatible_with(&instance));
+    assert!(!capability.is_proven_for(&instance));
+    assert!(!CalcitTypeAnnotation::StructDef(definition).is_proven_for(&capability));
+    let same_name = CalcitTypeAnnotation::Trait(Arc::new(CalcitTrait::new_reference("tests.nominal-capability/Countable")));
+    assert!(!instance.is_compatible_with(&same_name));
+    assert!(!instance.is_proven_for(&same_name));
+    let missing = CalcitTypeAnnotation::TypeRef(Arc::from("tests.nominal-capability/Missing"), Arc::new(vec![]));
+    assert!(!missing.is_compatible_with(&capability));
+    assert!(!missing.is_proven_for(&capability));
   }
 
   #[test]
