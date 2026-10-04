@@ -286,7 +286,7 @@ let
 - `enum-definition` - get the definition as `Option<EnumDef>`
 - `destruct-list`, `destruct-map`, `destruct-set`, `destruct-str` - split collections using nominal `*Destruct` enums
 - `enum?`, `enum-def?` - distinguish values from definitions
-- `data-view` - classify a Dynamic value into the nominal `Data` enum for `match`
+- `data-view` - 将开放值分类为 `Data` enum，供 `match` 分派；集合元素与复杂 payload 仍需进一步类型证明
 
 ### Struct Operations
 

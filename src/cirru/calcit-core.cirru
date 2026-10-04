@@ -2930,7 +2930,7 @@
           :schema $ :: 'Trait
           :tags $ #{} :trait
         'Data $ %{} 'CodeEntry
-          :doc "||Closed nominal view of a Dynamic value used by data-view. Each variant carries the original value with at most one level of type information; interpreter-internal values fall into :other."
+          :doc "|Closed nominal view of an open value. Scalar and collection variants retain one level of type evidence. Function, enum, struct and ref payloads remain Dynamic; other contains values outside the named categories, including definitions and buffers."
           :code $ quote $ defenum Data (:nil) (:bool 'Bool) (:number 'Number) (:string 'String) (:tag 'Tag) (:symbol 'Symbol)
             :list $ :: 'List 'Dynamic
             :map $ :: 'Map 'Dynamic 'Dynamic
@@ -4661,24 +4661,25 @@
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Dynamic
         'data-view $ %{} 'CodeEntry
-          :doc "||Classify a Dynamic value into the nominal Data enum so it can be inspected with match instead of type predicates or type-of."
+          :doc "|Classify an open value as Data for exhaustive match. Scalar payloads are typed; collection elements and function/enum/struct/ref/other payloads stay Dynamic and need further evidence before concrete use."
           :code $ quote $ defn data-view (x)
             cond
-                nil? x
-                %:: Data :nil
-              (bool? x) (%:: Data :bool x)
-              (number? x) (%:: Data :number x)
-              (string? x) (%:: Data :string x)
-              (tag? x) (%:: Data :tag x)
-              (symbol? x) (%:: Data :symbol x)
-              (list? x) (%:: Data :list x)
-              (map? x) (%:: Data :map x)
-              (set? x) (%:: Data :set x)
-              (fn? x) (%:: Data :fn x)
-              (enum? x) (%:: Data :enum x)
-              (struct? x) (%:: Data :struct x)
-              (ref? x) (%:: Data :ref x)
-              true $ %:: Data :other x
+                or (enum-def? x) (struct-def? x)
+                Data :other x
+              (nil? x) (Data :nil)
+              (bool? x) (Data :bool x)
+              (number? x) (Data :number x)
+              (string? x) (Data :string x)
+              (tag? x) (Data :tag x)
+              (symbol? x) (Data :symbol x)
+              (list? x) (Data :list x)
+              (map? x) (Data :map x)
+              (set? x) (Data :set x)
+              (fn? x) (Data :fn x)
+              (enum? x) (Data :enum x)
+              (struct? x) (Data :struct x)
+              (ref? x) (Data :ref x)
+              true $ Data :other x
           :examples $ [] $ quote
             assert= |str $ match (data-view |a)
               (:string s) |str
@@ -4686,48 +4687,103 @@
           :schema $ :: 'Fn $ {} (:return 'Data)
             :args $ [] 'Dynamic
           :tags $ #{} :core
-          :tests $ [] $ %{} 'TestEntry (:name |classifies-values)
-            :code $ quote $ do
-              assert= :nil $ match (data-view nil)
-                (:nil) :nil
-                _ :other
-              assert= |bool $ match (data-view true)
-                (:bool b) (if b |bool |false)
-                _ |other
-              assert= 2 $ match (data-view 1)
-                (:number n) (&+ n 1)
-                _ 0
-              assert= |str $ match (data-view |a)
-                (:string s) |str
-                _ |other
-              assert= :tag $ match (data-view :a)
-                (:tag t) :tag
-                _ :other
-              assert= 3 $ match
-                data-view $ [] 1 2 3
-                (:list xs) (count xs)
-                _ 0
-              assert= 1 $ match
-                data-view $ {} $ :a 1
-                (:map m) (count m)
-                _ 0
-              assert= 1 $ match
-                data-view $ #{} 1
-                (:set s) (count s)
-                _ 0
-              assert= :fn $ match
-                data-view $ fn (x) x
-                (:fn _) :fn
-                _ :other
-              assert= :enum $ match
-                data-view $ %:: Option :some 1
-                (:enum _) :enum
-                _ :other
-              assert= :other $ match
-                data-view $ &buffer 1
-                (:other _) :other
-                _ :none
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |classifies-values)
+              :code $ quote $ do
+                assert= :nil $ match (data-view nil)
+                  (:nil) :nil
+                  _ :other
+                assert= |bool $ match (data-view true)
+                  (:bool b) (if b |bool |false)
+                  _ |other
+                assert= 2 $ match (data-view 1)
+                  (:number n) (&+ n 1)
+                  _ 0
+                assert= |str $ match (data-view |a)
+                  (:string s) |str
+                  _ |other
+                assert= :tag $ match (data-view :a)
+                  (:tag t) :tag
+                  _ :other
+                assert= 3 $ match
+                  data-view $ [] 1 2 3
+                  (:list xs) (count xs)
+                  _ 0
+                assert= 1 $ match
+                  data-view $ {} $ :a 1
+                  (:map m) (count m)
+                  _ 0
+                assert= 1 $ match
+                  data-view $ #{} 1
+                  (:set s) (count s)
+                  _ 0
+                assert= :fn $ match
+                  data-view $ fn (x) x
+                  (:fn _) :fn
+                  _ :other
+                assert= :enum $ match
+                  data-view $ Option :some 1
+                  (:enum _) :enum
+                  _ :other
+                assert= :other $ match
+                  data-view $ &buffer 1
+                  (:other _) :other
+                  _ :none
+              :tags $ #{} :core :data-view :unit
+            %{} 'TestEntry (:name |classifies-symbol-struct-ref)
+              :code $ quote $ do
+                assert= (Data :symbol 'sample) (data-view 'sample)
+                let
+                    value $ MapEntry :key :sample :value 42
+                  assert= (Data :struct value) (data-view value)
+                let
+                    value $ atom 42
+                  assert= (Data :ref value) (data-view value)
+                assert= (Data :bool false) (data-view false)
+              :tags $ #{} :core :data-view :unit
+            %{} 'TestEntry (:name |preserves-shallow-payloads)
+              :code $ quote $ do
+                assert= (Data :string |text) (data-view |text)
+                assert= (Data :tag :sample) (data-view :sample)
+                assert=
+                  Data :enum $ Option :none
+                  data-view $ Option :none
+                assert=
+                  Data :list $ [] 1 |text nil
+                  data-view $ [] 1 |text nil
+                assert=
+                  Data :map $ {} (:number 1) (:text |text)
+                  data-view $ {} (:number 1) (:text |text)
+                assert=
+                  Data :set $ #{} 1 |text
+                  data-view $ #{} 1 |text
+                assert= (Data :other Data) (data-view Data)
+                assert= (Data :other MapEntry) (data-view MapEntry)
+              :tags $ #{} :core :data-view :unit
+            %{} 'TestEntry (:name |exhaustive-view)
+              :code $ quote $ let
+                  classify $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic
+                      :return 'Tag
+                    match (data-view x)
+                      (:nil) :nil
+                      (:bool _) :bool
+                      (:number _) :number
+                      (:string _) :string
+                      (:tag _) :tag
+                      (:symbol _) :symbol
+                      (:list _) :list
+                      (:map _) :map
+                      (:set _) :set
+                      (:fn _) :fn
+                      (:enum _) :enum
+                      (:struct _) :struct
+                      (:ref _) :ref
+                      (:other _) :other
+                assert= :number $ classify 42
+                assert= :other $ classify Data
+              :tags $ #{} :core :data-view :unit
         'dec $ %{} 'CodeEntry (:doc "|Decrements a number by 1")
           :code $ quote $ defn dec (x) (&- x 1)
           :examples $ []

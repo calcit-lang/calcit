@@ -287,7 +287,9 @@ defn preview (x)
     _ |other
 ```
 
-`Data` 的变体是 `:nil` `:bool` `:number` `:string` `:tag` `:symbol` `:list` `:map` `:set` `:fn` `:enum` `:struct` `:ref` `:other`。`:list` / `:map` / `:set` 的 payload 是 `List<Dynamic>` / `Map<Dynamic,Dynamic>` / `Set<Dynamic>`，转换不会深入元素。解释器内部值统一归入 `:other`。二选一的判断仍然使用 `string?` 等谓词。
+`Data` 的变体是 `:nil` `:bool` `:number` `:string` `:tag` `:symbol` `:list` `:map` `:set` `:fn` `:enum` `:struct` `:ref` `:other`。标量分支提供对应的具体类型；`:list` / `:map` / `:set` 的 payload 是 `List<Dynamic>` / `Map<Dynamic,Dynamic>` / `Set<Dynamic>`，转换不会深入元素。集合元素以及 `:fn` / `:enum` / `:struct` / `:ref` / `:other` 的 payload 仍是 Dynamic，具体使用前需要进一步 decode 或类型证明。
+
+`:other` 保留不属于前面类别的值，包括 Buffer、类型定义和后端内部或宿主值。二选一的判断仍然使用 `string?` 等谓词。`data-view` 是普通 core 函数，通过现有谓词构造 Data；这里不承诺消除 enum 分配。
 
 ## Common Patterns
 
