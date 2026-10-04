@@ -9594,9 +9594,9 @@ fn process_match(
   let mut enum_bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
   if let Some((enum_def, applied_args)) = enum_match.as_ref() {
     for (name, applied) in enum_def.generics().iter().zip(applied_args.iter()) {
-      if !matches!(applied.as_ref(), CalcitTypeAnnotation::Dynamic) {
-        enum_bindings.insert(name.clone(), applied.clone());
-      }
+      // An explicitly open payload is evidence, not an unbound variable that
+      // a branch join or a declared trait bound may narrow later.
+      enum_bindings.insert(name.clone(), applied.clone());
     }
     for bound in enum_def.where_bounds() {
       if !enum_bindings.contains_key(&bound.name)
