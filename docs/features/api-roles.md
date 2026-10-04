@@ -215,7 +215,7 @@ do
 | `reset!/swap!`；旧 `add-watch/remove-watch` | **已提供** `add-watch!/remove-watch!` 作为 Ref watcher 的首选注册/移除入口；旧名暂留底层兼容 | 两组调用共享原实现与 `Ref<T>`、`Tag`、`Unit` 契约；重复/缺失 key 仍报错，callback 次数不变；本阶段不自动改写未知同名调用 |
 | FsPath 旧 `.write-text`；js-ffi `write-text!` | core **已提供** `.write-text!`；模块 **保留**已有 `!` | core 仍 `(FsPath,String)->Result<Unit,String>`，旧方法暂留兼容且共用实现；`core-effect-method-v1` 仅在类型与来源已证明时改写 core 调用；js-ffi 原有 Unit/throw/async 契约不因命名一致而自动统一 |
 | FfiTask `.cancel/.cancel-with`，FfiResponse `.resolve/.reject` | **已提供** `.cancel!/.cancel-with!/.resolve!/.reject!`；旧名暂留兼容 | 新旧方法共用宿主实现，保持泛型、签名、exactly-once、释放与失败行为；`core-effect-method-v1` 可受控改写已证明调用，不能用返回 Bool 或命名代替生命周期证明 |
-| `.read-text/.read-dir/.walk-dir`、`get-args/get-env`；std `read-file!/read-dir!/walk-dir!` | **保留**core 查询名字；std 的首选 `read-file/read-dir/walk-dir` 已随模块 **0.2.36** 发布 | [std #75](https://github.com/calcit-lang/calcit.std/pull/75) 保留旧名兼容及原参数、返回与失败模型；[0.2.36](https://github.com/calcit-lang/calcit.std/releases/tag/0.2.36) 配套 Calcit **0.28.0-alpha.3**，已由实际 tag 安装及 native 文本读取、目录枚举、递归读取测试验证，仍是明确标记的预发布组合，不增加新宿主能力或暗示稳定版验收完成 |
+| `.read-text/.read-dir/.walk-dir`、`get-args/get-env`；std `read-file!/read-dir!/walk-dir!` | **保留**core 查询名字；std 的首选 `read-file/read-dir/walk-dir` 已随模块 **0.2.36** 首次发布 | 当前正式源码组合为 [std 0.2.37](https://github.com/calcit-lang/calcit.std/releases/tag/0.2.37) 与 Calcit **0.28.0**，保持原参数、返回与失败模型，已验证 native 文本读取、目录枚举、递归读取与 FFI 生命周期。历史 [0.2.36](https://github.com/calcit-lang/calcit.std/releases/tag/0.2.36) 配套 **0.28.0-alpha.3**，其 tag 与预发布工具链要求不随新版本改写 |
 | `cpu-time: () -> Number` 实际为单调毫秒；`unix-time-ms` | **已提供** `monotonic-time-ms: () -> Number`；旧 `cpu-time` 暂留，`unix-time-ms` 保留 | 新入口复用旧时钟实现，只在同一运行内比较经过时间；native、JS、WASI Preview 1 可用，WASI 0.3 command 时钟仍明确不支持。std `get-time!/get-timestamp` 先核对返回模型再定映射 |
 | 定时器注册/取消、`on-ctrl-c`；随机数、ID 生成 | **目标**注册/取消使用 `!`；随机/ID 的具体词汇 **暂缓** | 区分产生值与改变资源状态，核对 async、句柄和 callback；不按字符串后缀批量处理 |
 | `println/echo/eprintln/read-stdin-text/wait-ms` | **保留**这些有限、按名明确的效果例外 | 输出、消费 stdin 和等待仍有真实效果；不是“所有 read-/print- 都自动例外” |
@@ -346,3 +346,8 @@ Result 的 `result:ok?` / `result:err?` / `result:unwrap-or` 沿用单独的 `co
 0.26.0 只收敛**应用源码的首选入口**，不直接删除 `option:some?`、`option:none?`、`option:unwrap`、`option:unwrap-or`、`result:ok?`、`result:err?`、`result:unwrap-or`。这些名字目前也是 core trait method 的实现目标；直接删除会破坏推荐的 `.method`，而不是仅移除旧别名。旧 helper 暂作内部兼容实现，不把它们和方法并列推荐，也不把内部调用数量当作应用迁移进度。
 
 最早在 0.27.0 考虑移除其**应用可直接调用**的兼容入口，且须同时满足：真实消费者在发布版 Calcit 与匹配的运行时依赖上完成严格类型和运行测试；对消费者 Snapshot 重复运行对应 fix 无可自动改写的旧调用，剩余 `requires-review` 已逐一处置；Agent 查询、升级文档与示例只推荐方法；至少经历一个已发布版本的迁移窗口；JS/native 及实际受影响的 WASM/WASI 路径验证通过；core method 实现已与将删除的入口解耦，并有 Calcit `:tests` 证明行为不变。任一条件未满足就继续保留兼容入口，记录原因和下一次检查的版本，不通过扩大 Dynamic 或机械替换绕过。此约束不适用于无自然接收者的模块函数，也不承诺把所有 `result:*` / `option:*` 内部实现一并移除。
+
+## 限制
+
+- std 0.2.37 发布的是源码模块，不代表预编译 dylib 已发布。
+- 当前发布版组合的回归验证不代表所有下游已完成迁移。
