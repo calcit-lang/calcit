@@ -725,7 +725,7 @@ fn preprocessed_match_bodies(xs: &CalcitList) -> Option<Vec<&Calcit>> {
 }
 
 /// A Dynamic binder must shadow same-named outer evidence, too.
-fn bind_pattern_scope(pattern: &Calcit, scope: &mut ScopeTypes) {
+pub(super) fn bind_pattern_scope(pattern: &Calcit, scope: &mut ScopeTypes) {
   match pattern {
     Calcit::Local(local) => {
       scope.insert(local.sym.clone(), local.type_info.clone());

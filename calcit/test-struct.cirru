@@ -153,6 +153,105 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
+        'nullable-callback-choice $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nullable-callback-choice (present?) (if present? NullableEvent nil)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Bool
+            :return $ :: 'JsNullish 'test-struct.main/NullableEvent
+          :tests $ [] $ %{} 'TestEntry (:name |nullable-exit-evidence)
+            :code $ quote $ let ()
+              assert= NullableEvent $ nullable-callback-choice true
+              assert= nil $ nullable-callback-choice false
+            :tags $ #{} :contextual-proof
+        'nullable-choice $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nullable-choice (present? value) (if present? value nil)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Bool 'Number
+            :return $ :: 'JsNullish 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |nullable-exit-evidence)
+            :code $ quote $ let ()
+              assert= 7 $ nullable-choice true 7
+              assert= nil $ nullable-choice false 7
+            :tags $ #{} :contextual-proof
+        'nullable-implicit-choice $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nullable-implicit-choice (present? value) (if present? value)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Bool 'Number
+            :return $ :: 'JsNullish 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |nullable-exit-evidence)
+            :code $ quote $ let ()
+              assert= 7 $ nullable-implicit-choice true 7
+              assert= nil $ nullable-implicit-choice false 7
+            :tags $ #{} :contextual-proof
+        'nullable-let-choice $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nullable-let-choice (present? value)
+            let
+                selected $ if present? value nil
+                alias selected
+              , alias
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Bool 'Number
+            :return $ :: 'JsNullish 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |nullable-exit-evidence)
+            :code $ quote $ let ()
+              assert= 7 $ nullable-let-choice true 7
+              assert= nil $ nullable-let-choice false 7
+            :tags $ #{} :contextual-proof
+        'nullable-match $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nullable-match (selected)
+            match selected
+              (:some value) value
+              (:none) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Option 'Number
+            :return $ :: 'JsNullish 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |nullable-exit-evidence)
+            :code $ quote $ let ()
+              assert= 7 $ nullable-match $ Option :some 7
+              assert= nil $ nullable-match $ Option :none
+            :tags $ #{} :contextual-proof
+        'nullable-raised-choice $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nullable-raised-choice (present? value)
+            if present? value $ raise |no-value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Bool 'Number
+            :return $ :: 'JsNullish 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |nullable-exit-evidence)
+            :code $ quote $ assert= 7 (nullable-raised-choice true 7)
+            :tags $ #{} :contextual-proof
+        'nullable-reversed-choice $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nullable-reversed-choice (present? value) (if present? nil value)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Bool 'Number
+            :return $ :: 'JsNullish 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |nullable-exit-evidence)
+            :code $ quote $ let ()
+              assert= nil $ nullable-reversed-choice true 7
+              assert= 7 $ nullable-reversed-choice false 7
+            :tags $ #{} :contextual-proof
+        'nullable-shadow-choice $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nullable-shadow-choice (present? value)
+            let
+                selected $ if present? value nil
+              let
+                  selected selected
+                , selected
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Bool 'Number
+            :return $ :: 'JsNullish 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |nullable-exit-evidence)
+            :code $ quote $ let ()
+              assert= 7 $ nullable-shadow-choice true 7
+              assert= nil $ nullable-shadow-choice false 7
+            :tags $ #{} :contextual-proof
         'read-asserted-map-literal-store $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-asserted-map-literal-store (source)
             let

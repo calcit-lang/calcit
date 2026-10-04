@@ -1198,6 +1198,112 @@ pub(crate) fn detect_return_type_hint_from_processed_body(processed_body: &[Calc
   crate::calcit::DYNAMIC_TYPE.clone()
 }
 
+/// Check independent exits before a lossy synthesized join. Evidence is local
+/// to this expected contract: it never changes a binder's inferred annotation.
+/// Open generic contracts continue through the existing substitution checker.
+fn expression_proves_return(expr: &Calcit, expected: &CalcitTypeAnnotation, scope: &ScopeTypes, async_invocation: bool) -> bool {
+  if expected.contains_type_var() {
+    return false;
+  }
+
+  struct ReturnCheck<'a> {
+    expected: &'a CalcitTypeAnnotation,
+    remaining: usize,
+  }
+
+  impl ReturnCheck<'_> {
+    fn check(
+      &mut self,
+      expr: &Calcit,
+      scope: &ScopeTypes,
+      aliases: &HashMap<Arc<str>, bool>,
+      async_invocation: bool,
+      depth: usize,
+    ) -> bool {
+      if self.remaining == 0 || depth > 128 {
+        return false;
+      }
+      self.remaining -= 1;
+      if super::type_inference::expression_definitely_diverges(expr) {
+        return true;
+      }
+      if let Calcit::Local(local) = expr
+        && aliases.get(&local.sym) == Some(&true)
+      {
+        return true;
+      }
+      if let Calcit::List(items) = expr {
+        match items.first() {
+          Some(Calcit::Syntax(CalcitSyntax::If, _)) if matches!(items.len(), 3 | 4) => {
+            return self.check(items.get(2).unwrap(), scope, aliases, async_invocation, depth + 1)
+              && self.check(items.get(3).unwrap_or(&Calcit::Nil), scope, aliases, async_invocation, depth + 1);
+          }
+          Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) if items.len() >= 3 => {
+            let Some(Calcit::List(pair)) = items.get(1) else { return false };
+            let (Some(Calcit::Local(local)), Some(value)) = (pair.first(), pair.get(1)) else {
+              return false;
+            };
+            // Check the initializer in its parent environment. A shadowing
+            // binding replaces prior proof even when its new type is Dynamic.
+            let proven = self.check(value, scope, aliases, false, depth + 1);
+            let mut body_aliases = aliases.clone();
+            body_aliases.insert(local.sym.clone(), proven);
+            let mut body_scope = scope.clone();
+            body_scope.insert(local.sym.clone(), local.type_info.clone());
+            return self.check(
+              items.get(items.len() - 1).unwrap(),
+              &body_scope,
+              &body_aliases,
+              async_invocation,
+              depth + 1,
+            );
+          }
+          Some(Calcit::Syntax(CalcitSyntax::Match, _)) => {
+            let Some(branches) = super::type_inference::preprocessed_match_branches(items) else {
+              return false;
+            };
+            if branches.is_empty() {
+              return false;
+            }
+            return branches.into_iter().all(|(pattern, body)| {
+              let mut branch_scope = scope.clone();
+              super::type_inference::bind_pattern_scope(pattern, &mut branch_scope);
+              let mut branch_aliases = aliases.clone();
+              let mut pending = vec![pattern];
+              while let Some(node) = pending.pop() {
+                match node {
+                  Calcit::Local(local) => {
+                    branch_aliases.remove(&local.sym);
+                  }
+                  Calcit::List(nodes) => pending.extend(nodes.iter()),
+                  _ => {}
+                }
+              }
+              self.check(body, &branch_scope, &branch_aliases, async_invocation, depth + 1)
+            });
+          }
+          _ => {}
+        }
+      }
+      let Some(actual) = resolve_type_value(expr, scope) else {
+        return false;
+      };
+      let actual = if async_invocation {
+        async_invocation_result(actual.as_ref()).unwrap_or(actual)
+      } else {
+        actual
+      };
+      actual.is_proven_for(self.expected)
+    }
+  }
+
+  ReturnCheck {
+    expected,
+    remaining: 16_384,
+  }
+  .check(expr, scope, &HashMap::new(), async_invocation, 0)
+}
+
 /// Check function return type matches declared return_type.
 pub(crate) fn check_function_return_type(
   fn_body: &[Calcit],
@@ -1275,6 +1381,13 @@ pub(crate) fn check_function_return_type(
   // Keep unproven boundaries on the existing migration path, but never let
   // an open callable hide a definite contradiction with the return contract.
   let proof = actual_type.prove_with_bindings(declared_return_type, &mut bindings);
+  let proof = if !matches!(proof, TypeProof::Proven)
+    && expression_proves_return(last_expr, declared_return_type, scope_types, async_invocation)
+  {
+    TypeProof::Proven
+  } else {
+    proof
+  };
   if audit && matches!(proof, TypeProof::NeedsBoundary(_)) {
     return Err(unproven(&diagnostic_type_string(actual_type.as_ref())));
   }
