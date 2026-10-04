@@ -111,6 +111,44 @@
                   stored $ NullableEventStore :handlers handlers
                 assert= handlers $ :handlers stored
               :tags $ #{} :js-nullish-container
+            %{} 'TestEntry (:name |mixed-callback-members)
+              :code $ quote $ let
+                  callback $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] Number
+                      :return Unit
+                    , &unit
+                  stored $ NullableEventStore :handlers $ {} (:click callback) (:focus nil)
+                assert=
+                  {} (:click callback) (:focus nil)
+                  :handlers stored
+              :tags $ #{} :collection-proof
+            %{} 'TestEntry (:name |reversed-callback-members)
+              :code $ quote $ let
+                  stored $ NullableEventStore :handlers $ {} (:focus nil) (:click NullableEvent)
+                assert=
+                  {} (:focus nil) (:click NullableEvent)
+                  :handlers stored
+              :tags $ #{} :collection-proof
+        'NullableLiteralStore $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NullableLiteralStore
+            :items $ :: List $ :: JsNullish Number
+            :unique $ :: Set $ :: JsNullish Number
+            :nested $ :: Map Tag $ :: List
+              :: Map Tag $ :: JsNullish Number
+          :examples $ []
+          :schema $ :: 'StructDef
+          :tests $ [] $ %{} 'TestEntry (:name |nested-literal-members)
+            :code $ quote $ let
+                stored $ NullableLiteralStore :items ([] 7 nil) :unique (#{} nil 7) :nested $ {}
+                  :group $ [] $ {} (:present 7) (:absent nil)
+              assert= ([] 7 nil) (:items stored)
+              assert= (#{} nil 7) (:unique stored)
+              assert=
+                {} $ :group $ []
+                  {} (:present 7) (:absent nil)
+                :nested stored
+            :tags $ #{} :collection-proof
         'NullableNumberStore $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NullableNumberStore
             :values $ :: Map Tag $ :: JsNullish Number
@@ -132,6 +170,19 @@
                 assert= absent $ :values stored
                 assert= ([] absent) (:nested stored)
               :tags $ #{} :js-nullish-container
+            %{} 'TestEntry (:name |mixed-literal-members)
+              :code $ quote $ let
+                  stored $ NullableNumberStore :values
+                    {} (:present 7) (:absent nil)
+                    , :nested $ []
+                      {} (:absent nil) (:present 7)
+                assert=
+                  {} (:present 7) (:absent nil)
+                  :values stored
+                assert=
+                  [] $ {} (:absent nil) (:present 7)
+                  :nested stored
+              :tags $ #{} :collection-proof
         'Person $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Person
             :name $ :: 'Optional 'String
@@ -148,6 +199,27 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'test-struct.main/Point2D
+        'checked-literal-alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn checked-literal-alias ()
+            let
+                values $ assert-type
+                  {} (:present 7) (:absent nil)
+                  :: 'Map 'Tag $ :: 'JsNullish 'Number
+                alias values
+              NullableNumberStore :values alias :nested $ [] alias
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'test-struct.main/NullableNumberStore)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |literal-contract)
+            :code $ quote $ let
+                stored $ checked-literal-alias
+              assert=
+                {} (:present 7) (:absent nil)
+                :values stored
+              assert=
+                [] $ {} (:present 7) (:absent nil)
+                :nested stored
+            :tags $ #{} :collection-proof
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (test-struct) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-struct-with) (test-loose-struct-rewrite) (test-map-to-struct) (test-postfix) (do true)
           :examples $ []
@@ -201,6 +273,25 @@
               assert= 7 $ nullable-let-choice true 7
               assert= nil $ nullable-let-choice false 7
             :tags $ #{} :contextual-proof
+        'nullable-literal-return $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nullable-literal-return (present?)
+            let
+                values $ {} (:present 7) (:absent nil)
+                alias values
+              if present? alias $ {} $ :absent nil
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Bool
+            :return $ :: 'Map 'Tag $ :: 'JsNullish 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |literal-contract)
+            :code $ quote $ let ()
+              assert=
+                {} (:present 7) (:absent nil)
+                nullable-literal-return true
+              assert=
+                {} $ :absent nil
+                nullable-literal-return false
+            :tags $ #{} :collection-proof
         'nullable-match $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nullable-match (selected)
             match selected
@@ -252,6 +343,15 @@
               assert= 7 $ nullable-shadow-choice true 7
               assert= nil $ nullable-shadow-choice false 7
             :tags $ #{} :contextual-proof
+        'nullish-literal-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nullish-literal-list () ([] 7 nil)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'JsNullish $ :: 'List (:: 'JsNullish 'Number)
+          :tests $ [] $ %{} 'TestEntry (:name |literal-contract)
+            :code $ quote $ assert= ([] 7 nil) (nullish-literal-list)
+            :tags $ #{} :collection-proof
         'read-asserted-map-literal-store $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-asserted-map-literal-store (source)
             let

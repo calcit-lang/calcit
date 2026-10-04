@@ -33,6 +33,94 @@ try {
   await copyFile("calcit/test-struct.cirru", snapshot);
   await copyFile("calcit/util.cirru", join(project, "util.cirru"));
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
+  // Validate each stored member before homogeneous synthesis erases a mixed
+  // literal. The same source tests must survive native and JS compilation.
+  run("test", "--tag", "collection-proof", "--require-match");
+  const collectionOwners = ["NullableNumberStore", "NullableEventStore", "NullableLiteralStore",
+    "nullable-literal-return", "nullish-literal-list", "checked-literal-alias"];
+  const collectionTests = collectionOwners.flatMap(name =>
+    JSON.parse(run("query", "def", `test-struct.main/${name}`, "--format", "json")).data.tests
+      .filter(test => test.tags.includes("collection-proof")));
+  assert.equal(collectionTests.length, 7);
+  for (const [name, rule] of [["nullable-literal-return", "concrete-return-proof-v1"],
+    ["nullish-literal-list", "concrete-return-proof-v1"], ["checked-literal-alias", "assert-type-proof-v1"]]) {
+    const before = await readFile(snapshot);
+    run("fix", "--rule", rule, "--ns", "test-struct.main", "--def", name, "--format", "edn");
+    assert.deepEqual(await readFile(snapshot), before);
+  }
+  run("edit", "def", "test-struct.main/collection-replay", "--input-format", "json-ast", "--code",
+    JSON.stringify(["defn", "collection-replay", [], ...collectionTests.map(test => test.code), "&unit"]));
+  run("edit", "schema", "test-struct.main/collection-replay", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+  const collectionEntry = ["--init-fn", "test-struct.main/collection-replay", "--reload-fn", "test-struct.main/collection-replay"];
+  run(...collectionEntry);
+  const collectionOutput = join(project, "collection-js");
+  run(...collectionEntry, "--emit-path", collectionOutput, "js");
+  (await import(pathToFileURL(join(collectionOutput, "test-struct.main.mjs")).href)).collection_replay();
+  for (const [label, parameters, argumentTypes, body] of [
+    ["mixed-wrong-payload", [], "[]", "NullableNumberStore :values ({} (:live |wrong) (:absent nil)) :nested ([])"],
+    ["mixed-wrong-key", [], "[]", "NullableNumberStore :values ({} (|live 7) (:absent nil)) :nested ([])"],
+    ["nested-wrong-payload", [], "[]", "NullableLiteralStore :items ([]) :unique (#{}) :nested ({} (:group ([] ({} (:live |wrong) (:absent nil)))))"],
+    ["list-wrong-payload", [], "[]", "NullableLiteralStore :items ([] 7 |wrong nil) :unique (#{}) :nested ({})"],
+    ["set-wrong-payload", [], "[]", "NullableLiteralStore :items ([]) :unique (#{} 7 |wrong nil) :nested ({})"],
+    ["mixed-wrong-callback-input", [], "[]", "NullableEventStore :handlers ({} (:click (fn (value) (hint-fn $ {} (:args ([] String)) (:return Unit)) &unit)) (:focus nil))"],
+    ["mixed-wrong-callback-return", [], "[]", "NullableEventStore :handlers ({} (:click (fn (value) (hint-fn $ {} (:args ([] Number)) (:return Number)) 1)) (:focus nil))"],
+    ["mixed-wrong-callback-arity", [], "[]", "NullableEventStore :handlers ({} (:click (fn (left right) (hint-fn $ {} (:args ([] Number Number)) (:return Unit)) &unit)) (:focus nil))"],
+    ["mixed-open-callback", ["callback"], "[] 'Fn", "NullableEventStore :handlers ({} (:click callback) (:focus nil))"],
+    ["mixed-open-member", ["raw"], "[] 'Dynamic", "NullableNumberStore :values ({} (:live raw) (:absent nil)) :nested ([])"],
+    ["mixed-optional-member", [], "[]", "NullableNumberStore :values ({} (:live (&parse-float |1)) (:absent nil)) :nested ([])"],
+    ["open-container", ["values"], "[] $ :: 'Map 'Tag 'Dynamic", "NullableNumberStore :values values :nested ([])"],
+    ["alias-contract-confusion", [], "[]", "NullableNumberStore :values (let ((values ({} (:live 7) (:absent nil)))) ({} (:nested values) (:absent nil))) :nested ([])"],
+    ["alias-shadowed-member", ["raw"], "[] 'Dynamic", "NullableNumberStore :values (let ((values ({} (:live 7) (:absent nil)))) (let ((values raw)) ({} (:live values) (:absent nil)))) :nested ([])"],
+  ]) {
+    const target = "test-struct.main/collection-rejected";
+    run("edit", "def", target, "--overwrite", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "collection-rejected", parameters, JSON.parse(run("cirru", "parse", "-e", body))]));
+    run("edit", "schema", target, "--input-format", "cirru", "--code",
+      `quote $ :: 'Fn $ {} (:args $ ${argumentTypes}) (:return 'Dynamic)`);
+    const before = await readFile(snapshot);
+    for (const mode of [["--check-only"], ["js"]]) {
+      const output = join(project, `collection-${label}-${mode[0] === "js" ? "js" : "native"}`);
+      const rejected = spawnSync(binary, [snapshot, "--init-fn", target, "--reload-fn", target,
+        "--emit-path", output, ...mode], options);
+      if (rejected.error) throw rejected.error;
+      assert.equal(rejected.status, 1, `${label}\n${rejected.stdout}\n${rejected.stderr}`);
+      assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_FN_ARG_TYPE_MISMATCH/);
+      assert.deepEqual(await readFile(snapshot), before);
+      if (mode[0] === "js") await assertRejectedArtifacts(output, label, /W_FN_ARG_TYPE_MISMATCH/, true);
+    }
+  }
+  for (const [label, parameters, argumentTypes, member] of [
+    ["asserted-wrong-member", [], "[]", "|wrong"],
+    ["asserted-open-member", ["raw"], "[] 'Dynamic", "raw"],
+  ]) {
+    const target = "test-struct.main/collection-rejected";
+    run("edit", "def", target, "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defn collection-rejected (${parameters.join(" ")}) $ assert-type ({} (:live ${member}) (:absent nil)) $ :: 'Map 'Tag $ :: 'JsNullish 'Number`);
+    run("edit", "schema", target, "--input-format", "cirru", "--code",
+      `quote $ :: 'Fn $ {} (:args $ ${argumentTypes}) (:return 'Dynamic)`);
+    const before = await readFile(snapshot);
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "assert-type-proof-v1", "--ns", "test-struct.main",
+      "--def", "collection-rejected", "--format", "edn"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${label}\n${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_ASSERT_TYPE_UNPROVEN|E_ASSERT_TYPE_MISMATCH/);
+    assert.deepEqual(await readFile(snapshot), before);
+  }
+  // Adopting a Promise as the whole async return does not await a stored member.
+  const pendingTarget = "test-struct.main/collection-rejected";
+  run("edit", "def", pendingTarget, "--overwrite", "--input-format", "cirru", "--code",
+    "quote $ defn collection-rejected () (hint-fn $ {} (:async true) (:args ([])) (:return $ :: List Number)) (let ((load (fn (x) (hint-fn $ {} (:async true) (:args ([] Number)) (:return Number)) x))) ([] (load 1)))");
+  run("edit", "schema", pendingTarget, "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:async true) (:args ([])) (:return $ :: 'List 'Number)");
+  const pendingOriginal = await readFile(snapshot);
+  const pendingAudit = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "test-struct.main",
+    "--def", "collection-rejected", "--format", "edn"], options);
+  if (pendingAudit.error) throw pendingAudit.error;
+  assert.equal(pendingAudit.status, 1, `${pendingAudit.stdout}\n${pendingAudit.stderr}`);
+  assert.match(`${pendingAudit.stdout}\n${pendingAudit.stderr}`, /E_ASYNC_INVOCATION_REQUIRES_AWAIT/);
+  assert.deepEqual(await readFile(snapshot), pendingOriginal);
+  run("edit", "rm-def", pendingTarget);
   // Check the stored exits, not a nullable join masquerading as a conversion.
   const returnNames = ["nullable-choice", "nullable-reversed-choice", "nullable-match", "nullable-let-choice",
     "nullable-implicit-choice", "nullable-shadow-choice", "nullable-callback-choice", "nullable-raised-choice"];
