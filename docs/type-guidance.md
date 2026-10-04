@@ -97,6 +97,12 @@ loop
 
 普通 `defn` 在真正的尾位置直接调用自身时，编译器会在完成现有调用与返回类型检查后，复用 `recur` 的帧复用路径；例如 `list-match` 分支最后的 `(walk rest-items)` 可以遍历长列表而不增长 native 调用栈。此优化只适用于解析到当前顶层定义的直接调用，以及 `if`、`let`、`match` 的尾分支；被局部变量遮蔽的同名函数、间接调用、嵌套函数和非尾调用不改写。带可选或剩余参数等特殊参数形式的函数暂不自动改写。显式 `recur` 仍适合需要清楚表达循环意图的地方。
 
+## JavaScript 可空值的容器合同
+
+`JsNullish<T>` 表示 JavaScript 边界上可能缺席的值。已经证明为 `T` 的值和 `nil` 可以进入这个合同；同一关系递归适用于不可变 List、Map 与 Set，不需要逐层插入转换。例如一个保存 `Map<Tag,JsNullish<Number>>` 的 Struct 字段可以接收 `{:count 1}` 或 `{:count nil}`，具体回调同样可以存入可空回调表，其参数、返回值和 arity 仍按完整签名检查。
+
+反方向仍需要检查：`JsNullish<T>` 不能直接作为 `T` 使用，Dynamic 元素也不能仅凭容器声明变成具体元素。可变 `Ref<T>` 保持不变性，不能把 `Ref<Number>` 扩大为 `Ref<JsNullish<Number>>` 后写入 `nil`。这项关系不把历史 `Optional<T>` 与 `JsNullish<T>` 混同，Calcit 自身的缺席值继续使用名义 `Option<T>`。
+
 ## Dynamic 是边界，不是默认多态
 
 普通泛型函数会按实参顺序传递已知的类型关系。例如 `filter-map-kv` 接收 `Map<String,Number>` 时，后续回调的参数可推为 `String` 和 `Number`；回调返回的 `MapEntryDecision<R,S>` 也保留泛型实参，让结果 `Map<R,S>` 继续约束后续写入。无需为了传递这些关系手工增加 `hint-fn` 或 `assert-type`。如果输入本身是显式 `Dynamic`，推断不会凭空把它收窄为某个具体类型，仍应在真实边界处 decode 或 narrow。

@@ -28,8 +28,58 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
-  await copyFile("src/cirru/calcit-core.cirru", snapshot);
+  // Replay the stored language contracts; nullability introduction must not
+  // authorize elimination, mutable widening, or unproved callback signatures.
+  await copyFile("calcit/test-struct.cirru", snapshot);
+  await copyFile("calcit/util.cirru", join(project, "util.cirru"));
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
+  run("test", "--tag", "js-nullish-container", "--require-match");
+  const nullishTests = ["NullableNumberStore", "NullableEventStore"].flatMap(name =>
+    JSON.parse(run("query", "def", `test-struct.main/${name}`, "--format", "json")).data.tests
+      .filter(test => test.tags.includes("js-nullish-container")));
+  assert.equal(nullishTests.length, 4);
+  run("edit", "def", "test-struct.main/nullish-replay", "--input-format", "json-ast", "--code",
+    JSON.stringify(["defn", "nullish-replay", [], ...nullishTests.map(test => test.code), "&unit"]));
+  run("edit", "schema", "test-struct.main/nullish-replay", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+  const nullishEntry = ["--init-fn", "test-struct.main/nullish-replay", "--reload-fn", "test-struct.main/nullish-replay"];
+  run(...nullishEntry);
+  const nullishOutput = join(project, "nullish-js");
+  run(...nullishEntry, "--emit-path", nullishOutput, "js");
+  (await import(pathToFileURL(join(nullishOutput, "test-struct.main.mjs")).href)).nullish_replay();
+  run("edit", "def", "test-struct.main/ConcreteNumberStore", "--input-format", "cirru", "--code",
+    "quote $ defstruct ConcreteNumberStore $ :values $ :: Map Tag Number");
+  run("edit", "schema", "test-struct.main/ConcreteNumberStore", "--input-format", "cirru", "--code", "quote 'StructDef");
+  run("edit", "def", "test-struct.main/NullableRefStore", "--input-format", "cirru", "--code",
+    "quote $ defstruct NullableRefStore $ :cell $ :: Ref $ :: JsNullish Number");
+  run("edit", "schema", "test-struct.main/NullableRefStore", "--input-format", "cirru", "--code", "quote 'StructDef");
+  for (const [label, args, body, schema] of [
+    ["wrong-payload", [], "NullableNumberStore :values ({} (:a |wrong)) :nested ([])", ":: 'Fn $ {} (:args ([])) (:return 'Dynamic)"],
+    ["open-members", ["values"], "NullableNumberStore :values values :nested ([])", ":: 'Fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)"],
+    ["wrong-key", [], "NullableNumberStore :values ({} (|a 1)) :nested ([])", ":: 'Fn $ {} (:args ([])) (:return 'Dynamic)"],
+    ["wrong-callback-input", [], "NullableEventStore :handlers $ {} $ :click $ fn (value) (hint-fn $ {} (:args $ [] 'String) (:return 'Unit)) &unit", ":: 'Fn $ {} (:args ([])) (:return 'Dynamic)"],
+    ["wrong-callback-return", [], "NullableEventStore :handlers $ {} $ :click $ fn (value) (hint-fn $ {} (:args $ [] 'Number) (:return 'Number)) 1", ":: 'Fn $ {} (:args ([])) (:return 'Dynamic)"],
+    ["wrong-callback-arity", [], "NullableEventStore :handlers $ {} $ :click $ fn (left right) (hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Unit)) &unit", ":: 'Fn $ {} (:args ([])) (:return 'Dynamic)"],
+    ["erased-callback", ["callback"], "NullableEventStore :handlers $ {} (:click callback)", ":: 'Fn $ {} (:args $ [] 'Fn) (:return 'Dynamic)"],
+    ["nullable-elimination", ["values"], "ConcreteNumberStore :values values", ":: 'Fn $ {} (:args $ [] $ :: 'Map 'Tag $ :: 'JsNullish 'Number) (:return 'Dynamic)"],
+    ["mutable-widening", ["cell"], "NullableRefStore :cell cell", ":: 'Fn $ {} (:args $ [] $ :: 'Ref 'Number) (:return 'Dynamic)"],
+  ]) {
+    run("edit", "def", "test-struct.main/nullish-rejected", "--overwrite", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "nullish-rejected", args, JSON.parse(run("cirru", "parse", "-e", body))]));
+    run("edit", "schema", "test-struct.main/nullish-rejected", "--input-format", "cirru", "--code", `quote $ ${schema}`);
+    const original = await readFile(snapshot);
+    for (const mode of [["--check-only"], ["js"]]) {
+      const output = join(project, `nullish-${label}-${mode[0] === "js" ? "js" : "native"}`);
+      const rejected = spawnSync(binary, [snapshot, "--init-fn", "test-struct.main/nullish-rejected",
+        "--reload-fn", "test-struct.main/nullish-rejected", "--emit-path", output, ...mode], options);
+      if (rejected.error) throw rejected.error;
+      assert.equal(rejected.status, 1, `${label}\n${rejected.stdout}\n${rejected.stderr}`);
+      assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_FN_ARG_TYPE_MISMATCH/);
+      assert.deepEqual(await readFile(snapshot), original);
+      if (mode[0] === "js") await assertRejectedArtifacts(output, label, /W_FN_ARG_TYPE_MISMATCH/, true);
+    }
+  }
+  await copyFile("src/cirru/calcit-core.cirru", snapshot);
   // Replay the attached open-value view contracts without inventing deep proof.
   run("test", "calcit.core/data-view", "--tag", "data-view", "--require-match");
   const dataView = JSON.parse(run("query", "def", "calcit.core/data-view", "--format", "json"));

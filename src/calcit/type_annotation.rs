@@ -988,7 +988,10 @@ fn bounded_plain_type_relation<'a>(
           return Ok(Some((Mismatch, stats)));
         }
       }
-      (Type::Nil, Type::Optional(_)) | (Type::Nil, Type::JsNullish(_)) => {
+      // Introducing host nullability preserves the payload evidence. Only
+      // elimination requires a checked boundary; containers recurse here too.
+      (Type::Nil, Type::JsNullish(_)) => {}
+      (Type::Nil, Type::Optional(_)) => {
         if matches!(mode, PlainRelationMode::Proof) {
           result = result.and(NeedsBoundary(Boundary::LegacyNullish));
         }
@@ -1000,9 +1003,6 @@ fn bounded_plain_type_relation<'a>(
         worklist.push((plain, inner.as_ref(), depth + 1));
       }
       (plain, Type::JsNullish(inner)) if !matches!(plain, Type::Optional(_) | Type::JsNullish(_)) => {
-        if matches!(mode, PlainRelationMode::Proof) {
-          result = result.and(NeedsBoundary(Boundary::LegacyNullish));
-        }
         worklist.push((plain, inner.as_ref(), depth + 1));
       }
       (Type::Optional(inner) | Type::JsNullish(inner), plain) if !matches!(plain, Type::Optional(_) | Type::JsNullish(_)) => {
@@ -5065,11 +5065,13 @@ impl CalcitTypeAnnotation {
           .prove_with_staged_bindings(expected, bindings)
           .and(NeedsBoundary(Boundary::LegacyNullish))
       }
-      (actual, Self::Optional(expected) | Self::JsNullish(expected)) if !matches!(actual, Self::Optional(_) | Self::JsNullish(_)) => {
-        actual
-          .prove_with_staged_bindings(expected, bindings)
-          .and(NeedsBoundary(Boundary::LegacyNullish))
+      (Self::Nil, Self::JsNullish(_)) => Proven,
+      (actual, Self::JsNullish(expected)) if !matches!(actual, Self::Optional(_) | Self::JsNullish(_)) => {
+        actual.prove_with_staged_bindings(expected, bindings)
       }
+      (actual, Self::Optional(expected)) if !matches!(actual, Self::Optional(_) | Self::JsNullish(_)) => actual
+        .prove_with_staged_bindings(expected, bindings)
+        .and(NeedsBoundary(Boundary::LegacyNullish)),
       (_, Self::Optional(_)) | (Self::Optional(_), _) | (_, Self::JsNullish(_)) | (Self::JsNullish(_), _) => {
         if self.compatible_with_bindings(expected, &mut bindings.clone()) {
           NeedsBoundary(Boundary::LegacyNullish)
