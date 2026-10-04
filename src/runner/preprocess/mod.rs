@@ -1,6 +1,7 @@
 mod checked_call_contract;
 mod js_ffi;
 mod proof_provenance;
+mod source_replay;
 mod type_checking;
 mod type_inference;
 mod type_rewriting;
@@ -664,6 +665,7 @@ fn ensure_ns_def_preprocessed(
 
   let result = with_preprocess_compile_guard(ns, def, || match program::lookup_def_code(ns, def) {
     Some(code) => {
+      let _definition_replay_scope = source_replay::Scope::pause_definition();
       let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
 
       let mut scope_types = ScopeTypes::new();
@@ -2680,6 +2682,7 @@ fn preprocess_immediate_call_context(
 /// Cache entries are committed only after preprocessing and result validation.
 struct EvaluatedMacroExpansion {
   code: Calcit,
+  recur_inputs: Vec<Vec<Calcit>>,
   type_bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
   cache_miss: Option<runner::macro_cache::CacheMiss>,
   evaluator_gensym_end: Option<usize>,
@@ -2707,7 +2710,7 @@ fn evaluate_macro_expansion(
     ctx.file_ns,
   ));
   match cache_lookup.as_ref().expect("macro cache lookup") {
-    runner::macro_cache::CacheLookup::Hit(_) => runner::macro_metrics::record_cache_hit(macro_name),
+    runner::macro_cache::CacheLookup::Hit { .. } => runner::macro_metrics::record_cache_hit(macro_name),
     runner::macro_cache::CacheLookup::Miss { reason, .. } => {
       runner::macro_metrics::record_cache_miss(macro_name, reason, *reason != "cold-call-site")
     }
@@ -2715,11 +2718,28 @@ fn evaluate_macro_expansion(
   }
   let mut cache_miss = None;
   let mut evaluator_gensym_end = None;
+  let mut recur_inputs = vec![];
   loop {
     body_scope.restore_frame(frame_checkpoint);
     runner::bind_marked_args(&mut body_scope, &info.args, &current_values, ctx.call_stack)?;
     let code = match cache_lookup.take() {
-      Some(runner::macro_cache::CacheLookup::Hit(code)) => code,
+      Some(runner::macro_cache::CacheLookup::Hit {
+        code,
+        recur_inputs: cached_inputs,
+      }) => {
+        for inputs in &cached_inputs {
+          type_bindings = validate_macro_call_inputs(
+            info.name.as_ref(),
+            info.signature.as_ref(),
+            &CalcitList::from(inputs.as_slice()),
+            ctx.scope_types,
+            ctx.call_stack,
+            ctx.call_location.clone(),
+          )?;
+        }
+        recur_inputs = cached_inputs;
+        code
+      }
       lookup => {
         if let Some(runner::macro_cache::CacheLookup::Miss { token, .. }) = lookup {
           cache_miss = Some(token);
@@ -2743,6 +2763,7 @@ fn evaluate_macro_expansion(
     };
     match code {
       Calcit::Recur(values) => {
+        recur_inputs.push(values.clone());
         current_values = values;
         type_bindings = validate_macro_call_inputs(
           info.name.as_ref(),
@@ -2756,6 +2777,7 @@ fn evaluate_macro_expansion(
       code => {
         return Ok(EvaluatedMacroExpansion {
           code,
+          recur_inputs,
           type_bindings,
           cache_miss,
           evaluator_gensym_end,
@@ -2768,16 +2790,24 @@ fn evaluate_macro_expansion(
 /// Keep macro-evaluation temporaries off the recursive ordinary-call path.
 #[inline(never)]
 fn preprocess_macro_call(
-  info: &CalcitMacro,
+  info: &Arc<CalcitMacro>,
   macro_id: &Arc<str>,
-  source: &CalcitList,
+  source: &Arc<CalcitList>,
   args: &CalcitList,
   def_name: &str,
   ctx: PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
+  let (replay_scope, retained) = source_replay::Scope::enter_macro(source, macro_id, info);
+  let definition = retained
+    .as_ref()
+    .map(|retained| retained.definition.clone())
+    .unwrap_or_else(|| info.clone());
+  let info = definition.as_ref();
   let macro_name = format!("{}/{}", info.def_ns, info.name);
-  runner::macro_metrics::record_expansion(&macro_name, info.signature.as_ref());
-  let macro_type_bindings = validate_macro_call_inputs(
+  if retained.is_none() {
+    runner::macro_metrics::record_expansion(&macro_name, info.signature.as_ref());
+  }
+  let mut macro_type_bindings = validate_macro_call_inputs(
     info.name.as_ref(),
     info.signature.as_ref(),
     args,
@@ -2788,12 +2818,14 @@ fn preprocess_macro_call(
 
   reject_legacy_trait_method_tag_syntax(info, args, ctx.file_ns, def_name, ctx.call_stack)?;
 
-  let code = Calcit::List(Arc::new(source.to_owned()));
+  let code = Calcit::List(source.clone());
   let next_stack = ctx
     .call_stack
     .extend_owned(&info.def_ns, &info.name, StackKind::Macro, code, args.to_vec());
 
-  let native_lowered = if info.def_ns.as_ref() == calcit::CORE_NS {
+  let native_lowered = if let Some(retained) = retained.as_ref().filter(|retained| retained.native_lowered) {
+    Some(retained.code.clone())
+  } else if retained.is_none() && info.def_ns.as_ref() == calcit::CORE_NS {
     match info.name.as_ref() {
       "let" => try_lower_core_let_macro(args, ctx.file_ns),
       "{}" => try_lower_core_map_macro(args),
@@ -2803,7 +2835,10 @@ fn preprocess_macro_call(
     None
   };
   if let Some(lowered) = native_lowered {
-    runner::macro_metrics::record_native_fast_path(&macro_name);
+    if retained.is_none() {
+      replay_scope.retain_native_expansion(&lowered);
+      runner::macro_metrics::record_native_fast_path(&macro_name);
+    }
     let _post_preprocess_timer =
       runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::PostPreprocess);
     return preprocess_expr(
@@ -2816,21 +2851,42 @@ fn preprocess_macro_call(
     );
   }
 
-  let expansion = evaluate_macro_expansion(
-    info,
-    macro_id,
-    &macro_name,
-    args,
-    macro_type_bindings,
-    &PreprocessContext {
-      scope_defs: ctx.scope_defs,
-      scope_types: ctx.scope_types,
-      file_ns: ctx.file_ns,
-      check_warnings: ctx.check_warnings,
-      call_stack: &next_stack,
-      call_location: ctx.call_location.clone(),
-    },
-  )?;
+  let expansion = if let Some(retained) = retained {
+    for inputs in &retained.recur_inputs {
+      macro_type_bindings = validate_macro_call_inputs(
+        info.name.as_ref(),
+        info.signature.as_ref(),
+        &CalcitList::from(inputs.as_slice()),
+        ctx.scope_types,
+        &next_stack,
+        ctx.call_location.clone(),
+      )?;
+    }
+    EvaluatedMacroExpansion {
+      code: retained.code,
+      recur_inputs: retained.recur_inputs,
+      type_bindings: macro_type_bindings,
+      cache_miss: None,
+      evaluator_gensym_end: None,
+    }
+  } else {
+    evaluate_macro_expansion(
+      info,
+      macro_id,
+      &macro_name,
+      args,
+      macro_type_bindings,
+      &PreprocessContext {
+        scope_defs: ctx.scope_defs,
+        scope_types: ctx.scope_types,
+        file_ns: ctx.file_ns,
+        check_warnings: ctx.check_warnings,
+        call_stack: &next_stack,
+        call_location: ctx.call_location.clone(),
+      },
+    )?
+  };
+  replay_scope.retain_expansion(&expansion.code, &expansion.recur_inputs);
   let _post_preprocess_timer =
     runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::PostPreprocess);
   let processed = preprocess_expr(
@@ -2854,6 +2910,7 @@ fn preprocess_macro_call(
     runner::macro_cache::store(
       token,
       &expansion.code,
+      &expansion.recur_inputs,
       expansion
         .evaluator_gensym_end
         .expect("cache miss evaluates the macro before storing its expansion"),
@@ -2863,7 +2920,7 @@ fn preprocess_macro_call(
 }
 
 fn preprocess_list_call(
-  xs: &CalcitList,
+  xs: &Arc<CalcitList>,
   scope_defs: &HashSet<Arc<str>>,
   scope_types: &mut ScopeTypes,
   file_ns: &str,
@@ -2872,6 +2929,25 @@ fn preprocess_list_call(
 ) -> Result<Calcit, CalcitErr> {
   let head = &xs[0];
   let call_location = derive_list_call_expr_location(xs);
+  if matches!(head, Calcit::Symbol { .. } | Calcit::Import(_))
+    && let Some((macro_id, info)) = source_replay::Scope::retained_static_callee(xs)
+  {
+    return preprocess_macro_call(
+      &info,
+      &macro_id,
+      xs,
+      &xs.drop_left(),
+      grab_def_name(head).as_ref(),
+      PreprocessContext {
+        scope_defs,
+        scope_types,
+        file_ns,
+        check_warnings,
+        call_stack,
+        call_location,
+      },
+    );
+  }
   let (head_form, args) = match preprocess_immediate_call_context(xs, scope_defs, scope_types, file_ns, check_warnings, call_stack)? {
     Some(call) => call,
     None => (
@@ -2896,7 +2972,7 @@ fn preprocess_list_call(
     let mut call = vec![args[0].clone()];
     call.extend(items.into_iter().cloned());
     return preprocess_list_call(
-      &CalcitList::from(call.as_slice()),
+      &Arc::new(CalcitList::from(call.as_slice())),
       scope_defs,
       scope_types,
       file_ns,
@@ -3316,7 +3392,7 @@ fn preprocess_list_call(
 
   match head_value {
     Some(Calcit::Macro { id: macro_id, info }) => preprocess_macro_call(
-      info.as_ref(),
+      &info,
       &macro_id,
       xs,
       &args,
@@ -3506,7 +3582,7 @@ fn preprocess_list_call(
         }
         CalcitSyntax::AssertType => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
-          preprocess_assert_type(name, name_ns, &args, &mut ctx)
+          preprocess_assert_type_with_obligation(name, name_ns, &args, &mut ctx, Some(source_replay::Assertion::at_source(xs)))
         }
         CalcitSyntax::UnsafeCoerce => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
@@ -10072,10 +10148,13 @@ pub fn preprocess_defn(
       // Inject declared argument types into the function body. Call-site checks alone are not
       // enough: without these bindings, local method dispatch and return inference inside a named
       // `defn` unnecessarily fall back to Dynamic. Anonymous callbacks still use EXPECTED_FN_TYPE.
+      // The expected contract belongs to this function expression, not to
+      // unrelated functions nested in its body or returned by a later macro.
+      let expected_fn_schema = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().take());
       let has_body_fn_hint = body_fn_hint.is_some();
       let mut effective_fn_schema: Option<Arc<CalcitFnTypeAnnotation>> = body_fn_hint.or_else(|| match def_schema.as_ref() {
         CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.clone()),
-        CalcitTypeAnnotation::Dynamic => EXPECTED_FN_TYPE.with(|cell| cell.borrow().clone()),
+        CalcitTypeAnnotation::Dynamic => expected_fn_schema,
         _ => None,
       });
       if source_owned
@@ -10202,6 +10281,15 @@ pub fn preprocess_defn(
       let feature_scope = FunctionFeaturesScope {
         previous: prev_features.clone(),
       };
+      let _source_replay_scope = source_replay::Scope::enter_function(
+        ys,
+        !source_top_level_definition
+          && !has_marked_args
+          && !has_body_fn_hint
+          && recur_param_types
+            .iter()
+            .any(|parameter| type_inference::has_payload_free_enum_slot(parameter)),
+      );
 
       args.traverse_result::<CalcitErr>(&mut |a| {
         if to_skip > 0 {
@@ -10216,7 +10304,7 @@ pub fn preprocess_defn(
 
       // An inferred empty enum input constrains only the first invocation.
       // Its lexical tail transfers supply the missing payload constraints.
-      // Recheck the expanded body with those constraints so dispatch, locals
+      // Replay retained source with those constraints so dispatch, locals
       // and every ordinary type gate see the same contract on later turns.
       // A source-owned schema or explicit hint is never inferred from recur.
       if !source_top_level_definition
@@ -10228,10 +10316,9 @@ pub fn preprocess_defn(
         let mut inferred = signature.as_ref().clone();
         inferred.arg_types = parameters;
         let previous = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().replace(Arc::new(inferred)));
-        let mut rechecked_args = args.iter().take(2).cloned().collect::<Vec<_>>();
-        rechecked_args.extend(processed_body.iter().map(body_for_parameter_recheck));
         drop(feature_scope);
-        let result = preprocess_defn(head, head_ns, &CalcitList::from(rechecked_args.as_slice()), ctx);
+        let _restart_replay = source_replay::Scope::restart_function();
+        let result = preprocess_defn(head, head_ns, args, ctx);
         EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous);
         return result;
       }
@@ -10359,7 +10446,7 @@ pub fn preprocess_defn(
             .as_ref()
             .is_some_and(|signature| signature.is_async_invocation()),
           &body_types,
-          (!has_marked_args).then_some(recur_param_types.as_slice()),
+          (!has_marked_args && !matches!(head, CalcitSyntax::Defmacro)).then_some(recur_param_types.as_slice()),
           CallTypeCheckInfo {
             file_ns: ctx.file_ns,
             def_name: def_name.as_ref(),
@@ -10397,11 +10484,19 @@ pub fn preprocess_defn(
         }
         if !has_marked_args && !is_core_ns {
           let expected_arity = param_symbols.len();
+          // Macro transfers carry source syntax and start a fresh generic
+          // instantiation. Their inputs are checked by the macro evaluator,
+          // including retained retries; keep the lexical arity check here.
+          let expected_types = if matches!(head, CalcitSyntax::Defmacro) {
+            &[][..]
+          } else {
+            recur_param_types.as_slice()
+          };
           for body_expr in &processed_body {
             check_recur_args_in_expr(
               body_expr,
               expected_arity,
-              &recur_param_types,
+              expected_types,
               &body_types,
               ctx.file_ns,
               def_name.as_ref(),
@@ -10720,6 +10815,16 @@ pub fn preprocess_assert_type(
   args: &CalcitList,
   ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
+  preprocess_assert_type_with_obligation(head, head_ns, args, ctx, None)
+}
+
+fn preprocess_assert_type_with_obligation(
+  head: &CalcitSyntax,
+  head_ns: &str,
+  args: &CalcitList,
+  ctx: &mut PreprocessContext,
+  retained: Option<source_replay::Assertion>,
+) -> Result<Calcit, CalcitErr> {
   if args.len() != 2 {
     return Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Arity,
@@ -10732,9 +10837,12 @@ pub fn preprocess_assert_type(
   let target_raw = args.get(0).unwrap();
   let type_form = args.get(1).unwrap();
 
-  let absence_obligation = resolve_type_value(target_raw, &ScopeTypes::new())
+  let expanded_absence = resolve_type_value(target_raw, &ScopeTypes::new())
     .is_some_and(|annotation| type_inference::has_payload_free_enum_slot(&annotation));
-  let refreshed_target = if absence_obligation {
+  let absence_obligation = retained.as_ref().is_some_and(|assertion| assertion.required) || expanded_absence;
+  // Only expanded core carries stale inline evidence. Original source must
+  // keep its identity so macros inside the assertion still evaluate once.
+  let refreshed_target = if expanded_absence {
     body_for_parameter_recheck(target_raw)
   } else {
     target_raw.clone()
@@ -10805,6 +10913,15 @@ pub fn preprocess_assert_type(
     Calcit::Local(local) => Some(local.type_info.clone()),
     _ => None,
   });
+  if current_type
+    .as_ref()
+    .is_some_and(|annotation| type_inference::has_payload_free_enum_slot(annotation))
+    && let Some(retained) = &retained
+  {
+    // A proof made on an empty input remains an obligation after refinement.
+    // Remember only the source contract, not an obsolete inferred type.
+    retained.retain_required();
+  }
   // Contradictory evidence is invalid for every expression, not just a local.
   // Open boundaries still require their separate migration policy; this check
   // neither manufactures proof nor changes their existing behavior.
@@ -12366,6 +12483,96 @@ mod tests {
       }),
       location: Some(Arc::from(vec![1, 2, 3])),
     }
+  }
+
+  #[test]
+  fn cached_macro_recur_rebinds_final_generic_contract() {
+    // Cache hits and exact runtime identities cannot be requested through the
+    // source test API. Exercise that internal boundary with a lowered macro.
+    let _guard = runner::macro_cache::TEST_LOCK.lock().expect("serialize macro cache tests");
+    runner::macro_cache::reset(true);
+    let signature = strict_macro_signature(
+      vec![MacroSyntaxType::Expr(Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T"))))],
+      vec![],
+      None,
+      MacroExpansionType::Expr(Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))),
+    );
+    let idx = CalcitLocal::track_sym(&Arc::from("cached-macro-value"));
+    let local = Calcit::Local(CalcitLocal {
+      idx,
+      sym: Arc::from("cached-macro-value"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.macro-cache-recur"),
+        at_def: Arc::from("normalize"),
+      }),
+      location: None,
+      type_info: calcit::DYNAMIC_TYPE.clone(),
+    });
+    let output = Calcit::new_str("normalized");
+    let info = CalcitMacro {
+      name: Arc::from("normalize"),
+      def_ns: Arc::from("tests.macro-cache-recur"),
+      args: Arc::new(vec![CalcitArgLabel::Idx(idx)]),
+      body: Arc::new(vec![Calcit::from(vec![
+        Calcit::Syntax(CalcitSyntax::If, Arc::from("tests.macro-cache-recur")),
+        Calcit::from(vec![Calcit::Proc(CalcitProc::NumberQuestion), local]),
+        Calcit::from(vec![Calcit::Proc(CalcitProc::Recur), output.clone()]),
+        output.clone(),
+      ])]),
+      signature: Arc::new(signature),
+    };
+    let inputs = CalcitList::from(&[Calcit::Number(1.0)] as &[Calcit]);
+    let id = Arc::from("cached-macro-recur");
+    let scope_defs = HashSet::new();
+    let mut scope_types = ScopeTypes::new();
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+    let ctx = PreprocessContext {
+      scope_defs: &scope_defs,
+      scope_types: &mut scope_types,
+      file_ns: "tests.macro-cache-recur",
+      check_warnings: &warnings,
+      call_stack: &stack,
+      call_location: Some(NodeLocation::new(
+        Arc::from("tests.macro-cache-recur"),
+        Arc::from("main"),
+        Arc::new(vec![2]),
+      )),
+    };
+    for cached in [false, true] {
+      let initial =
+        validate_macro_call_inputs("normalize", &info.signature, &inputs, ctx.scope_types, &stack, None).expect("initial Number input");
+      assert_eq!(initial.get("T").map(Arc::as_ref), Some(&CalcitTypeAnnotation::Number));
+      let expansion = evaluate_macro_expansion(&info, &id, "tests.macro-cache-recur/normalize", &inputs, initial, &ctx)
+        .expect("cold and warm macro evaluation");
+      assert_eq!(expansion.code, output);
+      assert_eq!(expansion.recur_inputs, vec![vec![output.clone()]]);
+      assert_eq!(
+        expansion.type_bindings.get("T").map(Arc::as_ref),
+        Some(&CalcitTypeAnnotation::String)
+      );
+      validate_macro_expansion_result(
+        "normalize",
+        &info.signature,
+        (&expansion.code, &expansion.code),
+        ctx.scope_types,
+        expansion.type_bindings,
+        &stack,
+        None,
+      )
+      .expect("result follows the final recur binding, not the initial Number input");
+      if cached {
+        assert!(expansion.cache_miss.is_none(), "second evaluation must actually hit the cache");
+      } else {
+        runner::macro_cache::store(
+          expansion.cache_miss.expect("first evaluation must miss"),
+          &expansion.code,
+          &expansion.recur_inputs,
+          expansion.evaluator_gensym_end.expect("evaluator gensym end"),
+        );
+      }
+    }
+    runner::macro_cache::reset(false);
   }
 
   #[test]
@@ -20979,7 +21186,7 @@ mod tests {
     let call = CalcitList::from(&[Calcit::Proc(CalcitProc::NativeStr), invocation] as &[Calcit]);
 
     let error = preprocess_list_call(
-      &call,
+      &Arc::new(call),
       &HashSet::new(),
       &mut ScopeTypes::new(),
       "tests.async",
@@ -21018,7 +21225,7 @@ mod tests {
     let call = CalcitList::from(&[pending_receiver, Calcit::Tag(EdnTag::from("name"))] as &[Calcit]);
 
     let error = preprocess_list_call(
-      &call,
+      &Arc::new(call),
       &HashSet::new(),
       &mut ScopeTypes::new(),
       "tests.async",

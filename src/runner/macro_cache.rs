@@ -11,6 +11,9 @@ const MAX_ENTRIES: usize = 8_192;
 static ENABLED: AtomicBool = AtomicBool::new(false);
 static CACHE: LazyLock<Mutex<HashMap<MacroCallSite, CachedExpansion>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
 
+#[cfg(test)]
+pub(super) static TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct MacroCallSite {
   macro_name: Arc<str>,
@@ -27,6 +30,7 @@ struct CachedExpansion {
   signature_hash: u64,
   inputs: Vec<Calcit>,
   output: Calcit,
+  recur_inputs: Vec<Vec<Calcit>>,
   gensym_start: usize,
   gensym_delta: usize,
 }
@@ -42,7 +46,7 @@ pub struct CacheMiss {
 
 #[derive(Debug)]
 pub enum CacheLookup {
-  Hit(Calcit),
+  Hit { code: Calcit, recur_inputs: Vec<Vec<Calcit>> },
   Miss { token: CacheMiss, reason: &'static str },
   Bypass(&'static str),
 }
@@ -135,12 +139,16 @@ pub fn lookup(
     }
 
     let output = entry.output.clone();
+    let recur_inputs = entry.recur_inputs.clone();
     let gensym_delta = entry.gensym_delta;
     drop(cache);
     if gensym_delta > 0 {
       meta::advance_gensym_index(file_ns, gensym_delta);
     }
-    return CacheLookup::Hit(output);
+    return CacheLookup::Hit {
+      code: output,
+      recur_inputs,
+    };
   }
 
   CacheLookup::Miss {
@@ -157,7 +165,7 @@ pub fn lookup(
 
 /// Store an expansion with the gensym position captured immediately after the
 /// macro evaluator returned, before recursively preprocessing its output.
-pub fn store(token: CacheMiss, output: &Calcit, evaluator_gensym_end: usize) {
+pub fn store(token: CacheMiss, output: &Calcit, recur_inputs: &[Vec<Calcit>], evaluator_gensym_end: usize) {
   if !is_enabled() {
     return;
   }
@@ -166,6 +174,7 @@ pub fn store(token: CacheMiss, output: &Calcit, evaluator_gensym_end: usize) {
     signature_hash: token.signature_hash,
     inputs: token.inputs,
     output: output.clone(),
+    recur_inputs: recur_inputs.to_vec(),
     gensym_start: token.gensym_start,
     gensym_delta: evaluator_gensym_end.saturating_sub(token.gensym_start),
   };
@@ -181,8 +190,6 @@ mod tests {
   use super::*;
   use crate::calcit::MacroExpansionType;
   use std::collections::HashSet;
-
-  static TEST_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
   fn pure_signature() -> MacroSignature {
     MacroSignature {
@@ -219,7 +226,7 @@ mod tests {
       panic!("first lookup should miss");
     };
     assert_eq!(reason, "cold-call-site");
-    store(token, &Calcit::Number(2.0), meta::current_gensym_index("app.main"));
+    store(token, &Calcit::Number(2.0), &[], meta::current_gensym_index("app.main"));
 
     assert!(matches!(
       lookup(
@@ -230,7 +237,10 @@ mod tests {
         Some(&location(&[1, 2])),
         "app.main"
       ),
-      CacheLookup::Hit(Calcit::Number(2.0))
+      CacheLookup::Hit {
+        code: Calcit::Number(2.0),
+        ..
+      }
     ));
 
     let CacheLookup::Miss { reason, .. } = lookup(
@@ -257,7 +267,7 @@ mod tests {
     let CacheLookup::Miss { token, .. } = lookup("calcit.core/id", &old_id, &signature, &[], Some(&call_location), "app.main") else {
       panic!("first lookup should miss");
     };
-    store(token, &Calcit::Unit, meta::current_gensym_index("app.main"));
+    store(token, &Calcit::Unit, &[], meta::current_gensym_index("app.main"));
 
     let CacheLookup::Miss { reason, .. } = lookup(
       "calcit.core/id",
@@ -294,7 +304,7 @@ mod tests {
       };
       assert_eq!(meta::current_gensym_index("app.main"), 1);
       meta::advance_gensym_index("app.main", 2);
-      store(token, &Calcit::new_str("generated"), meta::current_gensym_index("app.main"));
+      store(token, &Calcit::new_str("generated"), &[], meta::current_gensym_index("app.main"));
       Ok::<(), ()>(())
     })
     .expect("store generated expansion");
@@ -309,7 +319,7 @@ mod tests {
           Some(&call_location),
           "app.main"
         ),
-        CacheLookup::Hit(_)
+        CacheLookup::Hit { .. }
       ));
       assert_eq!(meta::current_gensym_index("app.main"), 3);
       Ok::<(), ()>(())
@@ -356,7 +366,7 @@ mod tests {
       meta::advance_gensym_index("app.main", 1);
       let evaluator_gensym_end = meta::current_gensym_index("app.main");
       meta::advance_gensym_index("app.main", 2);
-      store(token, &Calcit::new_str("inner-macro-call"), evaluator_gensym_end);
+      store(token, &Calcit::new_str("inner-macro-call"), &[], evaluator_gensym_end);
       Ok::<usize, ()>(meta::current_gensym_index("app.main"))
     })
     .expect("store outer expansion");
@@ -364,7 +374,7 @@ mod tests {
     let hit_following_gensym = meta::with_compiling_def("app.main", "main!", || {
       assert!(matches!(
         lookup("app.main/outer-macro", &macro_id, &signature, &[], Some(&call_location), "app.main"),
-        CacheLookup::Hit(_)
+        CacheLookup::Hit { .. }
       ));
       // Recursive preprocessing still expands the inner macro on a cache hit.
       meta::advance_gensym_index("app.main", 2);
