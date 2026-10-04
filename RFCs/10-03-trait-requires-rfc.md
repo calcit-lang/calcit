@@ -146,7 +146,7 @@ deftrait Shape
 ### 热重载与查询
 
 - trait 值在求值时捕获父 trait 的值；父 trait 重新定义后，引用它的子 trait 按现有定义依赖重新求值，旧的 `runtime_id` 证据失效，不跨版本混用。
-- `calcit query def` 原样显示 `requires` 子句；`query type` 对子 trait 列出可达父 trait 的成员并标明来源 trait（尚未实现，后续补齐）。
+- `calcit query def` 原样显示 `requires` 子句；`query type` 对子 trait 列出可达父 trait 的成员并标明来源 trait。
 
 ## 诊断
 

@@ -339,8 +339,6 @@ def Greeter $ impl-traits (defstruct Greeter (:name 'String)) LabeledImpl Greeti
 - `defimpl GreetingImpl Greeting` 只实现 `Greeting` 自己的方法；`impl-traits` 挂载时同一类型必须也挂载了全部父 trait 的实现，
   否则报 `E_IMPL_MISSING_REQUIRED_TRAIT`。`assert-traits value Greeting` 同样检查父 trait 的实现。
 - `:where T Greeting` 的函数体可以调用 `.label`；`Greeting` 类型的值可以传给要求 `Labeled` 的位置，反方向需要显式检查。
-- 子 trait 不能重复声明父 trait 已有的成员（即使签名相同），两个父 trait 之间也不能重名；`requires` 的值必须是 trait，
-  不能形成环，external-object trait 只能 require external-object trait。这些声明错误统一报 `E_TRAIT_REQUIRES`。
 - external-object trait 的继承用法见 [JavaScript Interop](js-interop.md)。
 
 ## Checking trait requirements
@@ -396,3 +394,9 @@ Expected output:
 ## 限制
 
 - `deftrait` 当前只支持 `(method type)` 声明，不支持在该条目中附加默认方法体。
+- 子 trait 不能重复声明父 trait 已有的成员，即使签名相同。
+- 两个父 trait 之间不能有同名成员。
+- `requires` 的值必须是 trait。
+- `requires` 不能形成环。
+- external-object trait 只能 require external-object trait。
+- 以上声明错误统一报 `E_TRAIT_REQUIRES`。

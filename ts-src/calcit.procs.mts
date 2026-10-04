@@ -246,7 +246,7 @@ export let _$n_trait_$o__$o_new = function (name: CalcitValue, methods: CalcitVa
   const requires = parents == null ? [] : list_items(parents);
   for (const parent of requires) {
     if (!(parent instanceof CalcitTrait)) {
-      throw new Error(`trait ${toString(name, false)} requires expects a trait, but received: ${toString(parent, true)}`);
+      throw new Error(`trait ${toString(name, false)}: each requires entry must be a trait, but received: ${toString(parent, true)}`);
     }
   }
   const traitDef = new CalcitTrait(name, methodNames, methodTypes, requires as CalcitTrait[]);

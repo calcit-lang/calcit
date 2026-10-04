@@ -810,7 +810,7 @@ fn trait_requires_from_value(form: &Calcit, name: &cirru_edn::EdnTag) -> Result<
     .map(|item| match item {
       Calcit::Trait(parent) => Ok(Arc::new(parent.to_owned())),
       other => Err(trait_requires_error(format!(
-        "trait {name} requires expects a trait, but received: {other}"
+        "trait {name}: each requires entry must be a trait, but received: {other}"
       ))),
     })
     .collect()
