@@ -576,7 +576,7 @@ export let format_cirru_edn = (data: CalcitValue, useInline: boolean = true): st
     let quoted = writeCirruCode([[to_cirru_edn(data)]], { useInline: useInline }).trim();
     return "\ndo " + quoted + "\n";
   }
-  if (typeof data === "boolean") {
+  if (typeof data === "boolean" || typeof data === "number") {
     return "\ndo " + to_cirru_edn(data) + "\n";
   }
   if (data instanceof CalcitSymbol) {

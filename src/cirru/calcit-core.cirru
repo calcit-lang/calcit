@@ -10317,13 +10317,49 @@
           :schema $ :: 'Fn $ {}
             :args $ [] 'String
             :return $ :: 'Result 'Dynamic 'String
-          :tests $ [] $ %{} 'TestEntry (:name |result-method-contract)
-            :code $ quote $ do
-              assert= true $ result:ok? $ |[] .parse-cirru-edn
-              assert= true $ result:err? $
-                char-from-code 41
-                , .parse-cirru-edn
-              assert-type (|[] .parse-cirru-edn) (:: 'Result 'Dynamic 'String)
+          :tests $ []
+            %{} 'TestEntry (:name |result-method-contract)
+              :code $ quote $ do
+                assert= true $ result:ok? $ |[] .parse-cirru-edn
+                assert= true $ result:err? $
+                  char-from-code 41
+                  , .parse-cirru-edn
+                assert-type (|[] .parse-cirru-edn) (:: 'Result 'Dynamic 'String)
+            %{} 'TestEntry (:name |scalar-format-roundtrip)
+              :code $ quote $
+                [] true false
+                , .each
+                  fn (inline?)
+                    assert= (Result :ok 0)
+                      try-parse-cirru-edn $ format-cirru-edn 0 inline?
+                    assert= (Result :ok 42)
+                      try-parse-cirru-edn $ format-cirru-edn 42 inline?
+                    assert= (Result :ok -42)
+                      try-parse-cirru-edn $ format-cirru-edn -42 inline?
+                    assert= (Result :ok 1.25)
+                      try-parse-cirru-edn $ format-cirru-edn 1.25 inline?
+                    assert= (Result :ok -1.25)
+                      try-parse-cirru-edn $ format-cirru-edn -1.25 inline?
+                    assert= (Result :ok 1e-20)
+                      try-parse-cirru-edn $ format-cirru-edn 1e-20 inline?
+                    assert= (Result :ok 1e20)
+                      try-parse-cirru-edn $ format-cirru-edn 1e20 inline?
+                    assert= (Result :ok nil)
+                      try-parse-cirru-edn $ format-cirru-edn nil inline?
+                    assert= (Result :ok true)
+                      try-parse-cirru-edn $ format-cirru-edn true inline?
+                    assert= (Result :ok false)
+                      try-parse-cirru-edn $ format-cirru-edn false inline?
+                    assert= (Result :ok |)
+                      try-parse-cirru-edn $ format-cirru-edn | inline?
+                    assert= (Result :ok "|hello world")
+                      try-parse-cirru-edn $ format-cirru-edn "|hello world" inline?
+                    assert= (Result :ok :sample)
+                      try-parse-cirru-edn $ format-cirru-edn :sample inline?
+                    assert= (Result :ok 'sample)
+                      try-parse-cirru-edn $ format-cirru-edn 'sample inline?
+                    , &unit
+              :tags $ #{} :parse-boundary :unit
         'try-parse-cirru-edn-as $ %{} 'CodeEntry
           :doc "|把 Cirru EDN 文本解析为编译期推导的闭合类型，返回 Result<T,String>。运行时语法或 shape 错误返回 :err；无效或开放 TypeExpr 在编译期拒绝，不靠目标类型假定 payload 已验证。Native 与 JavaScript 支持闭合 shape；WASM 复用同一 DataShapeGraph，支持 nil、Bool、Number、numeric refinement、bare/quoted String、编译产物已知 tag，以及递归闭合 List、Map、Struct、Enum（含 Option/Result）。WASM Map key 仅支持 nil、Bool、Number/refinement、String、Tag 等标量；集合或 nominal key 以 E_WASM_EDN_MAP_KEY 在代码生成阶段拒绝。Unit shape 可被代码生成接受，但 Cirru EDN 无 Unit 文本表示，非空 Map 的 Unit key 无法成功解码。WASM 输入上限 64 KiB，List 上限 4096 项，Map 上限 2048 项；decoder shape 的嵌套深度上限为 32，超出时以 E_WASM_EDN_DEPTH 在代码生成阶段拒绝。quoted String 支持 formatter 使用的换行、tab、quote 与 backslash escape，String key 按内容查询。超限文本或集合、非法文本、越界数值、未知 tag 和不匹配 nominal payload 返回 :err；开放 shape 或 unsupported target 在编译期明确拒绝，不回退为 Dynamic。语法：try-parse-cirru-edn-as text TypeExpr。"
           :code $ quote $ def try-parse-cirru-edn-as &runtime-implementation
