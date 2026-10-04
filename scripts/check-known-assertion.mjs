@@ -892,6 +892,8 @@ try {
     ["recursive-pre-dispatch-slot", "loop ((value (Option :none))) (recur (Option :some value))"],
     ["indirect-recursive-pre-dispatch-slots", "loop ((left (Option :none)) (right (Option :none))) (recur (Option :some right) left)"],
     ["nonexhaustive-pre-dispatch-match", "loop ((n 0) (value (Option :none))) (match value ((:none) (if (&< n 1) (recur 1 (Option :some 7)) 42)))"],
+    ["duplicate-pre-dispatch-constructor-field", "loop ((n 0) (value (Option :none))) (WriteState :count 1 :label |kept :count 2) (if (&< n 1) (recur 1 (Option :some 7)) 42)"],
+    ["unknown-pre-dispatch-constructor-variant", "loop ((n 0) (value (Option :none))) (Option :unknown) (if (&< n 1) (recur 1 (Option :some 7)) 42)"],
     ["wrong-macro-literal", "require-string-expression 7"],
     ["wrong-macro-local", "let ((value 7)) (require-string-expression value)"],
     ["wrong-macro-alias", "let ((value 7) (alias value)) (require-string-expression alias)"],
@@ -934,6 +936,8 @@ try {
     const original = await readFile(snapshot);
     const expectedDiagnostic = name.startsWith("open-pre-dispatch-") ? /E_DYNAMIC_POSTFIX_METHOD/
       : name === "nonexhaustive-pre-dispatch-match" ? /match on `Option` is not exhaustive/
+      : name === "duplicate-pre-dispatch-constructor-field" ? /duplicate field `:count`/
+      : name === "unknown-pre-dispatch-constructor-variant" ? /enum `Option` does not have variant `:unknown`/
       : ["recursive-pre-dispatch-slot", "indirect-recursive-pre-dispatch-slots"].includes(name) ? /W_RECUR_ARG_TYPE_MISMATCH/
       : ["wrong-pre-dispatch-method", "wrong-static-literal-method", "wrong-static-expression-method"].includes(name) ? /unknown method `.unknown-method`/
       : name.startsWith("wrong-macro-result-") ? /E_MACRO_EXPANSION_EXPR_TYPE/
@@ -952,6 +956,12 @@ try {
       if (name === "nonexhaustive-pre-dispatch-match") {
         assert.equal((diagnostics.match(/match on `Option` is not exhaustive/g) ?? []).length, 1,
           `${mode}: preparation must defer ordinary match warnings to the actual checking stage`);
+      }
+      if (name === "duplicate-pre-dispatch-constructor-field" || name === "unknown-pre-dispatch-constructor-variant") {
+        const constructorWarning = name === "duplicate-pre-dispatch-constructor-field"
+          ? /duplicate field `:count`/g : /enum `Option` does not have variant `:unknown`/g;
+        assert.equal((diagnostics.match(constructorWarning) ?? []).length, 1,
+          `${mode}: preparation must defer skipped constructor warnings to ordinary source checking`);
       }
       assert.match(diagnostics, expectedDiagnostic);
       assert.match(diagnostics, /calcit.assert-evidence/);

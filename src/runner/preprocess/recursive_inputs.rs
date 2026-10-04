@@ -125,13 +125,16 @@ fn prepare(expr: &Calcit, mut ctx: PreprocessContext, constraints: &mut Constrai
         )?);
       }
       let args = CalcitList::from(arguments.as_slice());
+      // Preparation only projects constructor types. Ordinary source checking
+      // reports skipped rewrites once, after recursive inputs have converged.
+      let prepare_warnings = RefCell::new(Vec::new());
       if let Some(constructor) = try_rewrite_struct_enum_constructor_head_call(
         &head,
         &args,
         ctx.scope_types,
         ctx.file_ns,
         grab_def_name(source_head).as_ref(),
-        ctx.check_warnings,
+        &prepare_warnings,
         ctx.call_stack,
       )? {
         return Ok(constructor);
