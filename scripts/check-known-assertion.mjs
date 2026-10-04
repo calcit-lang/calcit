@@ -1135,6 +1135,52 @@ try {
     }
   }
 
+  // Optional adds nil, not a stricter contract for proven empty literals.
+  await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  run("test", "--tag", "optional-empty-field", "--require-match");
+  const optionalTests = ["verify-empty", "verify-nil"].flatMap(name => {
+    const report = JSON.parse(run("query", "def", `app.empty-fields/${name}`, "--format", "json"));
+    assert.deepEqual(report.diagnostics, []);
+    assert.equal(report.data.tests.length, 1);
+    return report.data.tests.map(test => test.code);
+  });
+  run("edit", "def", "app.empty-fields/replay!", "--input-format", "json-ast", "--code",
+    JSON.stringify(["defn", "replay!", [], ...optionalTests, "&unit"]));
+  run("edit", "schema", "app.empty-fields/replay!", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+  run("config", "set", "init-fn", "app.empty-fields/replay!");
+  run("config", "set", "reload-fn", "app.empty-fields/replay!");
+  run("--check-only");
+  const optionalOutput = join(project, "optional-empty-js");
+  run("--emit-path", optionalOutput, "js");
+  const optionalModule = await import(pathToFileURL(join(optionalOutput, "app.empty-fields.mjs")).href);
+  optionalModule.replay_$x_();
+  for (const [name, field, value] of [
+    ["list-is-not-map", ":mapping", "[]"],
+    ["set-is-not-map", ":mapping", "#{}"],
+    ["map-is-not-list", ":items", "{}"],
+    ["list-is-not-set", ":members", "[]"],
+    ["wrong-map-key", ":mapping", "{} (|key |value)"],
+    ["wrong-map-value", ":mapping", "{} (:key 42)"],
+    ["wrong-list-value", ":items", "[] |wrong"],
+    ["wrong-set-value", ":members", "#{} 42"],
+    ["open-map-is-not-literal", ":mapping", "open-map"],
+  ]) {
+    const fields = [":mapping", ":items", ":members"].map(key => `${key} ${key === field ? `(${value})` : "nil"}`).join(" ");
+    run("edit", "def", "app.empty-fields/replay!", "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defn replay! () (Fields ${fields}) &unit`);
+    const original = await readFile(snapshot);
+    for (const mode of [["--check-only"], ["js"]]) {
+      const output = join(project, `optional-${name}-${mode[0] === "js" ? "js" : "native"}`);
+      const result = spawnSync(binary, ["--emit-path", output, snapshot, ...mode], options);
+      if (result.error) throw result.error;
+      assert.equal(result.status, 1, `${name} ${mode}\n${result.stdout}\n${result.stderr}`);
+      assert.match(`${result.stdout}\n${result.stderr}`, /W_FN_ARG_TYPE_MISMATCH/);
+      assert.deepEqual(await readFile(snapshot), original);
+      if (mode[0] === "js") await assertRejectedArtifacts(output, name, /W_FN_ARG_TYPE_MISMATCH/, true);
+    }
+  }
+
   await copyFile("tests/fixtures/trait-bound-return.cirru", snapshot);
   const traitOriginal = await readFile(snapshot);
   run("test", "--require-match");

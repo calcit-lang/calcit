@@ -11787,6 +11787,9 @@ fn reject_strict_unproven_specialized_contract(
 }
 
 fn empty_container_has_no_type_evidence(arg: &Calcit, expected: &CalcitTypeAnnotation) -> bool {
+  if let CalcitTypeAnnotation::Optional(inner) = expected {
+    return empty_container_has_no_type_evidence(arg, inner);
+  }
   let expects_generic = matches!(expected, CalcitTypeAnnotation::TypeVar(_));
   match (arg, expected) {
     (Calcit::List(values), _) if expects_generic && values.is_empty() => true,

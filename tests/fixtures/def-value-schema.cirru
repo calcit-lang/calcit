@@ -8,6 +8,49 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
+    'app.empty-fields $ %{} 'FileEntry
+      :defs $ {}
+        'Fields $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Fields
+            :mapping $ :: 'Optional $ :: 'Map 'Tag 'String
+            :items $ :: 'Optional $ :: 'List 'Number
+            :members $ :: 'Optional $ :: 'Set 'String
+          :examples $ []
+          :schema $ :: 'StructDef
+        'open-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn open-map () ({})
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Map 'Tag 'Dynamic
+        'verify-empty $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn verify-empty ()
+            let
+                value $ Fields :mapping ({}) :items ([]) :members $ #{}
+              assert= ({}) (:mapping value)
+              assert= ([]) (:items value)
+              assert= (#{}) (:members value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |optional-empty-container-literals)
+            :code $ quote $ verify-empty
+            :tags $ #{} :optional-empty-field
+        'verify-nil $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn verify-nil ()
+            let
+                value $ Fields :mapping nil :items nil :members nil
+              assert= nil $ :mapping value
+              assert= nil $ :items value
+              assert= nil $ :members value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |optional-nil-container-fields)
+            :code $ quote $ verify-nil
+            :tags $ #{} :optional-empty-field
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.empty-fields
     'app.field-consumer $ %{} 'FileEntry
       :defs $ {}
         'User $ %{} 'CodeEntry (:doc |)

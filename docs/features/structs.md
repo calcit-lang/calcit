@@ -46,6 +46,10 @@ defstruct Person (:name 'String) (:age 'Number) (:position 'Tag)
 这个规则同样覆盖 Optional 和嵌套容器。泛型字段先解析声明中的具名类型，再代入调用方已证明的参数，
 不需要把合法本地类型名全部改为全限定名，也不需要增加 `unsafe-coerce`。
 
+Optional 容器字段可以接收 `nil` 或对应种类的字面量空容器，例如
+`Optional<Map<Tag,String>>` 接收 `{}`。空 Map、List、Set 的种类仍有区别；
+声明为开放容器的函数返回值不因当前实现返回空值而获得具体元素类型证明。
+
 ## Generic Structs
 
 `defstruct` also accepts an optional generics list right after the type name. Declare generic slots with quoted symbols, then apply the named type in schemas with `(:: 'TypeName ...)`.
