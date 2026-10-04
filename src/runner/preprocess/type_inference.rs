@@ -471,22 +471,17 @@ pub(super) fn has_payload_free_enum_slot(annotation: &CalcitTypeAnnotation) -> b
     if args.iter().any(|arg| matches!(arg.as_ref(), CalcitTypeAnnotation::Never)) && annotation.resolve_to_enum().is_some())
 }
 
-/// Join lexical tail-transfer inputs into payload-free inferred enum slots.
-/// Concrete parameters, explicit Dynamic, nested functions and Ref stay fixed.
-pub(crate) fn infer_recur_parameter_types(
+/// Collect lexical tail-transfer evidence without completing unresolved inputs.
+/// Nested functions and quoted data do not belong to the current transfer scope.
+pub(super) fn lexical_recur_inputs(
   body: &[Calcit],
   scope_types: &ScopeTypes,
-  parameters: &[Arc<CalcitTypeAnnotation>],
-) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
-  let eligible = parameters
-    .iter()
-    .map(|parameter| has_payload_free_enum_slot(parameter))
-    .collect::<Vec<_>>();
-  if !eligible.iter().any(|eligible| *eligible) {
-    return None;
-  }
-  let mut inferred = parameters.to_vec();
-  let tail = body.iter().rev().find(|form| !builtins::syntax::is_function_metadata_hint(form))?;
+  arity: usize,
+) -> Vec<Vec<Option<Arc<CalcitTypeAnnotation>>>> {
+  let mut transfers = Vec::new();
+  let Some(tail) = body.iter().rev().find(|form| !builtins::syntax::is_function_metadata_hint(form)) else {
+    return transfers;
+  };
   let mut pending = vec![(tail, scope_types.clone())];
   while let Some((expr, scope)) = pending.pop() {
     let arguments = match expr {
@@ -498,7 +493,7 @@ pub(crate) fn infer_recur_parameter_types(
         match head {
           Calcit::Proc(CalcitProc::Recur) => items.iter().skip(1).collect(),
           Calcit::Syntax(CalcitSyntax::CoreLet, _) => {
-            if let Some(tail) = items.get(items.len().checked_sub(1)?) {
+            if let Some(tail) = items.iter().last() {
               pending.push((tail, core_let_scope(items, &scope)));
             }
             continue;
@@ -508,7 +503,10 @@ pub(crate) fn infer_recur_parameter_types(
             continue;
           }
           Calcit::Syntax(CalcitSyntax::Match, _) => {
-            for (pattern, branch) in preprocessed_match_branches(items)? {
+            let Some(branches) = preprocessed_match_branches(items) else {
+              continue;
+            };
+            for (pattern, branch) in branches {
               let mut branch_scope = scope.clone();
               bind_pattern_scope(pattern, &mut branch_scope);
               pending.push((branch, branch_scope));
@@ -521,29 +519,12 @@ pub(crate) fn infer_recur_parameter_types(
       }
       _ => continue,
     };
-    if arguments.len() != parameters.len() {
+    if arguments.len() != arity {
       continue;
     }
-    for (index, argument) in arguments.into_iter().enumerate() {
-      if !eligible[index] {
-        continue;
-      }
-      // Missing transfer evidence is not evidence of an empty slot. Keep
-      // such an input open so rechecking cannot use the initial Never as
-      // proof for values that a later iteration may actually carry.
-      let actual = resolve_type_value(argument, &scope).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
-      let joined = join_return_types(inferred[index].clone(), actual)?;
-      // Preserve the body's resolved representation: a named Enum may also
-      // have a TypeRef spelling, but that spelling is not a new constraint.
-      inferred[index] = match (parameters[index].as_ref(), joined.as_ref()) {
-        (CalcitTypeAnnotation::Enum(definition, _), CalcitTypeAnnotation::TypeRef(_, args)) => {
-          Arc::new(CalcitTypeAnnotation::Enum(definition.clone(), args.clone()))
-        }
-        _ => joined,
-      };
-    }
+    transfers.push(arguments.into_iter().map(|argument| resolve_type_value(argument, &scope)).collect());
   }
-  (inferred != parameters).then_some(inferred)
+  transfers
 }
 
 fn merge_result_constructor_branches(
@@ -761,23 +742,31 @@ fn core_let_scope(items: &CalcitList, scope_types: &ScopeTypes) -> ScopeTypes {
   scope
 }
 
-/// Merge the body types of a preprocessed `match` expression.
-fn infer_match_return_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+/// Project each reachable match branch's result in its lexical payload scope.
+pub(super) fn match_branch_types(xs: &CalcitList, scope_types: &ScopeTypes) -> Vec<Option<Arc<CalcitTypeAnnotation>>> {
   let mut branches = Vec::new();
-  for (pattern, branch_expr) in preprocessed_match_branches(xs)? {
+  let Some(pairs) = preprocessed_match_branches(xs) else {
+    return branches;
+  };
+  for (pattern, branch_expr) in pairs {
     if expression_definitely_diverges(branch_expr) {
       continue;
     }
     let mut branch_scope = scope_types.clone();
     bind_pattern_scope(pattern, &mut branch_scope);
-    let branch_type = resolve_type_value(branch_expr, &branch_scope)?;
-    branches.push((branch_expr, branch_type, branch_scope));
+    branches.push(resolve_type_value(branch_expr, &branch_scope));
   }
-  if let Some(joined) = merge_nominal_enum_branches(branches.iter().map(|(_, annotation, _)| annotation)) {
+  branches
+}
+
+/// Merge the body types of a preprocessed `match` expression.
+fn infer_match_return_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  let branches = match_branch_types(xs, scope_types).into_iter().collect::<Option<Vec<_>>>()?;
+  if let Some(joined) = merge_nominal_enum_branches(branches.iter()) {
     return Some(joined);
   }
   let mut inferred: Option<Arc<CalcitTypeAnnotation>> = None;
-  for (_, branch_type, _) in branches {
+  for branch_type in branches {
     inferred = Some(match inferred {
       Some(previous) => merge_if_branch_types(previous, branch_type)?,
       None => branch_type,

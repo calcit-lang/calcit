@@ -1,0 +1,31 @@
+# 先求解词法递归输入，再选择静态方法
+
+## 范围与依据
+
+关联 #1737 的第七项验收与 #1553。已合并的重检方案保留宏输入、展开结果及断言合同，但首次方法选择仍发生在循环参数收紧之前。`(value .unwrap) .to-string` 因此先看到空 payload，无法使用后续 `recur` 提供的 Number。这里前移求解阶段，不要求业务更换方法源码、补注解或使用 native call；不改变尚待维护者确认的可变空 Ref 策略。
+
+## 阶段与约束
+
+复用既有 Calcit source 和展开后的表达式表示，先解析名称并展开宏，保留尚未选定实现的方法表达式。只有局部推导参数中已证明未承载值的 Enum 泛型槽参与求解；明确参数、显式 Dynamic 与 Ref 不扩大范围。内部槽复用 TypeVar 表示 Unknown，与用户开放值分开。
+
+从词法尾部 recur 收集输入，使用现有方向性 proof 提取名义泛型替换，求解至参数不再变化。直接和间接的无限递归替换由 occurs-check 拒绝，不用固定重试次数掩盖未收敛关系。不可推导的局部输入不能当作空值；不同 nominal 身份及错误 payload 最终仍经过原有严格检查。
+
+`if` 和 `match` 的分支也向同一个求解上下文提交内部槽方程。仅把合并结果当作已有类型，会在 `Option<未知槽>` 与 `Option<Number>` 合并时丢掉 Number，使真实 Respo 的 duplicate-key 检查新增失败；保留分支方程后不需要修改下游表达式或测试。用户声明的泛型不会因此被反向收紧。
+
+求解完成后，普通预处理重新消费原始 source，执行原有参数、返回、recur、macro 与 assertion 门禁及静态方法 lowering。不把准备树作为已检查结果，不通过 lenient prepass 或诊断抑制绕过门禁。已知不可调用的静态接收者上不存在的方法也必须进入普通方法验证，不能漏到运行时的操作符错误；可调用接收者继续接受方法值作为普通实参。
+
+准备阶段复用 match 的解析与 payload scope，不重复输出普通类型告警。一个实际非穷尽 match 最初在两轮准备与正式检查中输出三次相同消息；分支 arity、variant 和穷尽性告警只由正式检查报告一次，现有严格门禁仍拒绝该程序。七种入口的反例同时验证唯一报告和无应用产物，不增加诊断统计功能。
+
+## 宏求值、缓存与生命周期
+
+准备和检查使用同一个词法 source plan。每个函数及父展开中的逻辑出现保持独立 frame，求解轮次只重置遍历序号；重复插入同一个 Arc 的两次调用仍分别求值。复用的仅是本次编译的宏 source、callee 和展开结果，不缓存局部类型。宏内部 recur、输入及结果仍按当前 scope 重新验证。
+
+纯宏的 cache miss token 与 evaluator gensym 终点保留到真正的检查阶段，只有检查成功才提交缓存一次。带 capability 的宏不进入跨编译纯缓存。准备与检查共享词法 capability 的处理，async invocation 标记不作为内层权限继承。返回错误、独立定义编译及 unwind 的恢复继续由 scope guard 负责。
+
+断言不能给其依赖的未决循环槽提供自己的类型证明，但独立 producer 上原有的显式 narrowing 上下文也不能丢失。复查发现一律移除准备树中的断言，会让已显式断言为 Number 的独立 Dynamic producer 仍把循环参数推为 Dynamic。准备阶段只投影掉依赖未决输入或已有独立证明义务的断言；其他断言保留原有类型上下文，最终仍由普通 checker 授权，不在准备阶段扩大其合法范围。既有依赖循环的直接、捕获和表达式断言反例继续拒绝。
+
+## 验证
+
+扩展现有 `check-known-assertion.mjs`，通过结构化 CLI 创建 definition `:tests`。用户语义覆盖两个分支顺序、别名、捕获、遮蔽、分阶段和跨槽传播、if/match 合并，以及 effectful 宏的求值次数；native 与真实生成 JS 回放相同表达式。开放 payload、未知方法、直接及间接递归槽方程用既有七种 native/check/JS/WASM/WASI 模式验证预处理拒绝、source 不变和无应用产物。
+
+Rust 只调整 source plan 的 frame 重放与错误恢复 invariant 测试。完整 Cargo、Clippy、check-all 与真实 Respo 全部 74 项测试继续作为门禁；最终结果记录在 PR。没有新增公开类型语法、命令、诊断编号、检查脚本或固定迁移规则，也不把 native/JS 正例通过写成新增 WASM 递归支持。

@@ -1,6 +1,7 @@
 mod checked_call_contract;
 mod js_ffi;
 mod proof_provenance;
+mod recursive_inputs;
 mod source_replay;
 mod type_checking;
 mod type_inference;
@@ -366,6 +367,23 @@ thread_local! {
 /// Restore lexical permissions on every exit, including errors and unwinding.
 struct FunctionFeaturesScope {
   previous: Option<Arc<HashSet<EdnTag>>>,
+}
+
+fn lexical_function_features(features: Arc<HashSet<EdnTag>>) -> Arc<HashSet<EdnTag>> {
+  if features
+    .iter()
+    .any(|feature| feature.ref_str() == crate::calcit::type_annotation::ASYNC_INVOCATION_FEATURE)
+  {
+    Arc::new(
+      features
+        .iter()
+        .filter(|feature| feature.ref_str() != crate::calcit::type_annotation::ASYNC_INVOCATION_FEATURE)
+        .cloned()
+        .collect(),
+    )
+  } else {
+    features
+  }
 }
 
 impl Drop for FunctionFeaturesScope {
@@ -2797,6 +2815,40 @@ fn preprocess_macro_call(
   def_name: &str,
   ctx: PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
+  process_macro_source(info, macro_id, source, args, def_name, ctx, MacroSourcePhase::Check)
+}
+
+enum MacroSourcePhase<'a> {
+  Prepare(&'a mut recursive_inputs::Constraints),
+  Check,
+}
+
+impl MacroSourcePhase<'_> {
+  fn process(&mut self, code: &Calcit, ctx: PreprocessContext) -> Result<Calcit, CalcitErr> {
+    match self {
+      Self::Prepare(constraints) => recursive_inputs::prepare_expression(code, ctx, constraints),
+      Self::Check => preprocess_expr(
+        code,
+        ctx.scope_defs,
+        ctx.scope_types,
+        ctx.file_ns,
+        ctx.check_warnings,
+        ctx.call_stack,
+      ),
+    }
+  }
+}
+
+#[inline(never)]
+fn process_macro_source(
+  info: &Arc<CalcitMacro>,
+  macro_id: &Arc<str>,
+  source: &Arc<CalcitList>,
+  args: &CalcitList,
+  def_name: &str,
+  ctx: PreprocessContext,
+  mut phase: MacroSourcePhase,
+) -> Result<Calcit, CalcitErr> {
   let (replay_scope, retained) = source_replay::Scope::enter_macro(source, macro_id, info);
   let definition = retained
     .as_ref()
@@ -2841,13 +2893,16 @@ fn preprocess_macro_call(
     }
     let _post_preprocess_timer =
       runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::PostPreprocess);
-    return preprocess_expr(
+    return phase.process(
       &lowered,
-      ctx.scope_defs,
-      ctx.scope_types,
-      ctx.file_ns,
-      ctx.check_warnings,
-      &next_stack,
+      PreprocessContext {
+        scope_defs: ctx.scope_defs,
+        scope_types: ctx.scope_types,
+        file_ns: ctx.file_ns,
+        check_warnings: ctx.check_warnings,
+        call_stack: &next_stack,
+        call_location: ctx.call_location,
+      },
     );
   }
 
@@ -2887,15 +2942,23 @@ fn preprocess_macro_call(
     )?
   };
   replay_scope.retain_expansion(&expansion.code, &expansion.recur_inputs);
+  let local_cache_commit = replay_scope.retain_cache_commit(
+    expansion
+      .cache_miss
+      .map(|token| (token, expansion.evaluator_gensym_end.expect("evaluated macro gensym boundary"))),
+  );
   let _post_preprocess_timer =
     runner::macro_metrics::PhaseTimer::start(&macro_name, runner::macro_metrics::MacroMetricPhase::PostPreprocess);
-  let processed = preprocess_expr(
+  let processed = phase.process(
     &expansion.code,
-    ctx.scope_defs,
-    ctx.scope_types,
-    ctx.file_ns,
-    ctx.check_warnings,
-    &next_stack,
+    PreprocessContext {
+      scope_defs: ctx.scope_defs,
+      scope_types: ctx.scope_types,
+      file_ns: ctx.file_ns,
+      check_warnings: ctx.check_warnings,
+      call_stack: &next_stack,
+      call_location: ctx.call_location.clone(),
+    },
   )?;
   validate_macro_expansion_result(
     info.name.as_ref(),
@@ -2906,15 +2969,10 @@ fn preprocess_macro_call(
     &next_stack,
     ctx.call_location,
   )?;
-  if let Some(token) = expansion.cache_miss {
-    runner::macro_cache::store(
-      token,
-      &expansion.code,
-      &expansion.recur_inputs,
-      expansion
-        .evaluator_gensym_end
-        .expect("cache miss evaluates the macro before storing its expansion"),
-    );
+  if matches!(phase, MacroSourcePhase::Check)
+    && let Some((token, gensym_end)) = replay_scope.take_cache_commit().or(local_cache_commit)
+  {
+    runner::macro_cache::store(token, &expansion.code, &expansion.recur_inputs, gensym_end);
   }
   Ok(processed)
 }
@@ -3205,11 +3263,9 @@ fn preprocess_list_call(
         if matches!(method_kind, calcit::MethodKind::Invoke(_))
           && let Some(type_info) = resolve_type_value(&head_form, scope_types)
         {
-          // Nominal and trait receivers always use method syntax, including the
-          // unknown-method error path. Other statically known values participate
-          // only when their actual method table contains the requested method;
-          // this keeps `(f .map)` available as an ordinary function argument while
-          // allowing typed values such as `n .show` and `xs .map callback`.
+          // Non-callable static receivers always use method syntax, including
+          // unknown methods. Callable receivers still accept method values as
+          // ordinary arguments, such as `(f .map)`.
           let is_nominal_or_trait = type_info.as_ref().resolve_to_struct().is_some()
             || type_info.as_ref().resolve_to_enum().is_some()
             // A quoted named type can remain as a TypeRef while the core value is
@@ -3217,7 +3273,11 @@ fn preprocess_list_call(
             // method dispatch/codegen does not require resolving its impl table.
             || matches!(type_info.as_ref(), CalcitTypeAnnotation::TypeRef(..))
             || trait_list_from_type(type_info.as_ref()).is_some();
-          let has_known_method = static_method_descriptors(type_info.as_ref()).is_some_and(|methods| {
+          let static_methods = static_method_descriptors(type_info.as_ref());
+          let has_static_receiver = static_methods.is_some()
+            && type_info.resolve_to_fn().is_none()
+            && !matches!(type_info.as_ref(), CalcitTypeAnnotation::DynFn | CalcitTypeAnnotation::TypeVar(_));
+          let has_known_method = static_methods.is_some_and(|methods| {
             let expected = format!(".{method_name}");
             methods.iter().any(|method| method.name == expected)
           });
@@ -3233,7 +3293,7 @@ fn preprocess_list_call(
           // report the migration instead of a confusing prefix-call failure.
           let is_retired_method = retired_method_migration(type_info.as_ref(), method_name.as_ref()).is_some();
 
-          if is_nominal_or_trait || has_known_method || is_display_contract || is_retired_method {
+          if is_nominal_or_trait || has_static_receiver || has_known_method || is_display_contract || is_retired_method {
             // Rewrite to (.method expr remaining_args...) — already handled by codegen
             let is_external = trait_list_from_type(type_info.as_ref())
               .is_some_and(|traits| traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref())));
@@ -9301,6 +9361,17 @@ fn build_indexed_match_table(enum_def: &calcit::CalcitEnumDef, branches: &[Calci
 /// - a list `(:tag binding1 binding2 ...)` for enum variant matching
 /// - the symbol `_` for a wildcard/default case
 fn preprocess_match(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mut PreprocessContext) -> Result<Calcit, CalcitErr> {
+  process_match(head, head_ns, args, ctx, MacroSourcePhase::Check)
+}
+
+fn process_match(
+  head: &CalcitSyntax,
+  head_ns: &str,
+  args: &CalcitList,
+  ctx: &mut PreprocessContext,
+  mut phase: MacroSourcePhase,
+) -> Result<Calcit, CalcitErr> {
+  let checking = matches!(phase, MacroSourcePhase::Check);
   if args.is_empty() {
     return Err(CalcitErr::use_msg_stack(
       CalcitErrKind::Syntax,
@@ -9324,13 +9395,9 @@ fn preprocess_match(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: 
   let mut xs: Vec<Calcit> = vec![Calcit::Syntax(head.to_owned(), Arc::from(head_ns))];
 
   // Preprocess the value expression
-  let value_form = preprocess_expr(
+  let value_form = phase.process(
     args.first().unwrap(),
-    ctx.scope_defs,
-    ctx.scope_types,
-    ctx.file_ns,
-    ctx.check_warnings,
-    ctx.call_stack,
+    PreprocessContext::new(ctx.scope_defs, ctx.scope_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack),
   )?;
 
   // Try to infer enum type from the value expression for exhaustiveness checking
@@ -9394,13 +9461,9 @@ fn preprocess_match(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: 
       // Wildcard: `_`
       Calcit::Symbol { sym, .. } if sym.as_ref() == "_" => {
         has_wildcard = true;
-        let processed_body = preprocess_expr(
+        let processed_body = phase.process(
           body,
-          ctx.scope_defs,
-          ctx.scope_types,
-          ctx.file_ns,
-          ctx.check_warnings,
-          ctx.call_stack,
+          PreprocessContext::new(ctx.scope_defs, ctx.scope_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack),
         )?;
         xs.push(Calcit::from(CalcitList::from(&[pattern.to_owned(), processed_body])));
       }
@@ -9419,7 +9482,7 @@ fn preprocess_match(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: 
         };
 
         // Validate variant exists in enum and check arity
-        if let Some(enum_def) = enum_def {
+        if checking && let Some(enum_def) = enum_def {
           if let Some(variant) = enum_def.find_variant_by_name(pat_tag) {
             let expected_arity = variant.arity();
             let actual_arity = pat_xs.len() - 1;
@@ -9499,7 +9562,10 @@ fn preprocess_match(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: 
           }
         }
 
-        let processed_body = preprocess_expr(body, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
+        let processed_body = phase.process(
+          body,
+          PreprocessContext::new(&body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack),
+        )?;
         xs.push(Calcit::from(CalcitList::from(&[
           Calcit::from(CalcitList::from(processed_pattern.as_slice())),
           processed_body,
@@ -9516,8 +9582,14 @@ fn preprocess_match(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: 
     }
   }
 
+  if let MacroSourcePhase::Prepare(constraints) = &mut phase {
+    let branch_types = type_inference::match_branch_types(&CalcitList::from(xs.as_slice()), ctx.scope_types);
+    constraints.join_branches(branch_types, ctx)?;
+  }
+
   // Exhaustiveness checking
-  if let Some(enum_def) = enum_def
+  if checking
+    && let Some(enum_def) = enum_def
     && !has_wildcard
   {
     let all_variants: BTreeSet<&str> = enum_def.variants().iter().map(|v| v.tag.ref_str()).collect();
@@ -10218,15 +10290,11 @@ pub fn preprocess_defn(
           local.type_info = type_info.clone();
         }
       }
-      let recur_param_types = param_symbols
+      let mut recur_param_types = param_symbols
         .iter()
         .map(|symbol| body_types.get(symbol).cloned().unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()))
         .collect::<Vec<_>>();
       xs = xs.push_right(Calcit::from(zs.clone()));
-      let mut proof_bindings = proof_provenance::BindingScope::new();
-      for parameter in &zs {
-        proof_bindings.bind(parameter, None, &body_types);
-      }
 
       let mut to_skip = 2;
       let mut processed_body: Vec<Calcit> = vec![];
@@ -10260,22 +10328,7 @@ pub fn preprocess_defn(
         }
         // Async changes invocation semantics; it is not an inheritable permission.
         // Preserve real capabilities without marking nested callbacks as async.
-        *guard = current.map(|features| {
-          if features
-            .iter()
-            .any(|feature| feature.ref_str() == crate::calcit::type_annotation::ASYNC_INVOCATION_FEATURE)
-          {
-            Arc::new(
-              features
-                .iter()
-                .filter(|feature| feature.ref_str() != crate::calcit::type_annotation::ASYNC_INVOCATION_FEATURE)
-                .cloned()
-                .collect(),
-            )
-          } else {
-            features
-          }
-        });
+        *guard = current.map(lexical_function_features);
         old
       });
       let feature_scope = FunctionFeaturesScope {
@@ -10291,6 +10344,44 @@ pub fn preprocess_defn(
             .any(|parameter| type_inference::has_payload_free_enum_slot(parameter)),
       );
 
+      if !source_top_level_definition
+        && !has_marked_args
+        && !has_body_fn_hint
+        && recur_param_types
+          .iter()
+          .any(|parameter| type_inference::has_payload_free_enum_slot(parameter))
+      {
+        let parameters = recursive_inputs::solve(
+          args,
+          &param_symbols,
+          &recur_param_types,
+          PreprocessContext::new(&body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack),
+        )?;
+        for (symbol, annotation) in param_symbols.iter().zip(&parameters) {
+          body_types.insert(symbol.clone(), annotation.clone());
+        }
+        for parameter in &mut zs {
+          if let Calcit::Local(local) = parameter
+            && let Some(annotation) = body_types.get(&local.sym)
+          {
+            local.type_info = annotation.clone();
+          }
+        }
+        let mut forms = xs.to_vec();
+        forms[2] = Calcit::from(zs.clone());
+        xs = FingerVec::from(forms);
+        if let Some(signature) = effective_fn_schema.as_ref() {
+          let mut inferred = signature.as_ref().clone();
+          inferred.arg_types = parameters.clone();
+          effective_fn_schema = Some(Arc::new(inferred));
+        }
+        recur_param_types = parameters;
+      }
+      let mut proof_bindings = proof_provenance::BindingScope::new();
+      for parameter in &zs {
+        proof_bindings.bind(parameter, None, &body_types);
+      }
+
       args.traverse_result::<CalcitErr>(&mut |a| {
         if to_skip > 0 {
           to_skip -= 1;
@@ -10301,27 +10392,6 @@ pub fn preprocess_defn(
         xs = xs.push_right(form);
         Ok(())
       })?;
-
-      // An inferred empty enum input constrains only the first invocation.
-      // Its lexical tail transfers supply the missing payload constraints.
-      // Replay retained source with those constraints so dispatch, locals
-      // and every ordinary type gate see the same contract on later turns.
-      // A source-owned schema or explicit hint is never inferred from recur.
-      if !source_top_level_definition
-        && !has_marked_args
-        && !has_body_fn_hint
-        && let Some(signature) = effective_fn_schema.as_ref()
-        && let Some(parameters) = type_inference::infer_recur_parameter_types(&processed_body, &body_types, &recur_param_types)
-      {
-        let mut inferred = signature.as_ref().clone();
-        inferred.arg_types = parameters;
-        let previous = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().replace(Arc::new(inferred)));
-        drop(feature_scope);
-        let _restart_replay = source_replay::Scope::restart_function();
-        let result = preprocess_defn(head, head_ns, args, ctx);
-        EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous);
-        return result;
-      }
 
       if infer_helper_schema {
         let inferred = type_inference::infer_unhinted_callback_signature(&xs.clone().into(), &body_types)
