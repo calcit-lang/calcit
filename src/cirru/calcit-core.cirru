@@ -4042,7 +4042,7 @@
                   assert= 1 $ deref counter
               :tags $ #{} :core :unit
         'case-default $ %{} 'CodeEntry
-          :doc "|Case macro variant with an explicit default branch\nEvaluates the target once, compares it against pattern/result pairs, and falls back to the provided default when no pattern matches."
+          :doc "|兼容旧名；首选 match：`match x (:a 1) (_ default)`。所有模式都是字面量（tag、字符串、数字、bool）时展开为 match，默认值成为末尾的 `_` 分支；模式是表达式时回退到 &case。"
           :code $ quote $ defmacro case-default (item default & patterns)
             if (&list:empty? patterns)
               raise $ str-spaced "|Expected patterns for case-default, got empty after:" default
@@ -4076,7 +4076,7 @@
             :capabilities $ #{}
             :expansion $ :: 'Expr 'Dynamic
             :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
-          :tags $ #{} :macro
+          :tags $ #{} :deprecated :macro
           :tests $ [] $ %{} 'TestEntry (:name |literal-patterns-use-match)
             :code $ quote $ let
                 pick $ fn (x)

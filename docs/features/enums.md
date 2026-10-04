@@ -220,7 +220,7 @@ match action
 - 预处理阶段对重复的字面量、与被匹配值已知类型不符的字面量（例如 `Option` 值写了 `:some` 而不是 `(:some)`）给出 `[Warn]`。
 - tag、字符串这类开放集合不做穷尽性检查；需要穷尽性时定义 enum。
 
-`case` 与 `case-default` 在所有模式都是字面量时展开为这种 `match`（`case-default` 的默认值成为末尾的 `_` 分支）。新代码请直接写 `match`；模式是表达式或变量的旧写法仍由 `&case` 处理，后续会随下游迁移逐步废弃。
+`case` 与 `case-default` 在所有模式都是字面量时展开为这种 `match`（`case-default` 的默认值成为末尾的 `_` 分支）。`case-default` 已标记 `:deprecated`，请改写为 `match` 加 `_` 分支；模式是表达式或变量的旧写法仍由 `&case` 处理，需要时改用 `cond`。
 
 ### No-match runtime error
 

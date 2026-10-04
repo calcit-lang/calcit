@@ -348,7 +348,8 @@ let
 - `if` - conditional
 - `when`, `when-not` - single-branch conditionals
 - `cond` - multi-way conditional; requires a final `(true value)` branch
-- `case`, `case-default` - 值分派兼容宏；模式全是字面量时展开为 `match`，新代码请直接用 `match`
+- `case` - 值分派兼容宏；模式全是字面量时展开为 `match`，新代码请直接用 `match`
+- `case-default` - 已弃用，改用 `match` 加末尾 `_` 分支
 - `&case` - internal case macro，仅处理表达式模式
 - `match` - 对具名和匿名 enum 使用首选的原生模式匹配；也支持 tag/字符串/数字等字面量模式
 - `struct-match` - struct pattern matching
