@@ -16,11 +16,11 @@
     %{} 'FileEntry
       :defs $ {}
         'TraitA $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait TraitA ('requires TraitB) (.a :fn)
+          :code $ quote $ deftrait TraitA (requires TraitB) (.a :fn)
           :examples $ []
           :schema $ :: 'Trait
         'TraitB $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait TraitB ('requires TraitA) (.b :fn)
+          :code $ quote $ deftrait TraitB (requires TraitA) (.b :fn)
           :examples $ []
           :schema $ :: 'Trait
         'main! $ %{} 'CodeEntry (:doc |)

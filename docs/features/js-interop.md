@@ -394,13 +394,13 @@ defn read-title (element)
     node .text
 ```
 
-external-object trait 可以用 `'requires` 继承另一个 external-object trait 的字段与方法，子 trait 的值可以直接传给要求父 trait 的位置，
+external-object trait 可以用 `requires` 继承另一个 external-object trait 的字段与方法，子 trait 的值可以直接传给要求父 trait 的位置，
 继承成员沿用父 trait 的 `:names` 宿主名映射；`js-cast` 检查子 trait 与全部父 trait 的成员。从父 trait 得到子 trait 仍需 `js-cast`：
 
 ```cirru.no-check
 defexternal KeyboardEventHost
   :target :browser
-  'requires EventHost
+  requires EventHost
   :key 'String
 ```
 

@@ -16,7 +16,7 @@
     %{} 'FileEntry
       :defs $ {}
         'HostChild $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait HostChild ('requires Plain) (:size 'Number)
+          :code $ quote $ deftrait HostChild (requires Plain) (:size 'Number)
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object) (:target :node)
           :schema $ :: 'Trait

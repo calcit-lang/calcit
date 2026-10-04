@@ -798,11 +798,11 @@ fn trait_requires_error(message: String) -> CalcitErr {
   error
 }
 
-/// Read the evaluated `'requires` list of a trait declaration.
+/// Read the evaluated `requires` list of a trait declaration.
 fn trait_requires_from_value(form: &Calcit, name: &cirru_edn::EdnTag) -> Result<Vec<Arc<CalcitTrait>>, CalcitErr> {
   let Calcit::List(items) = form else {
     return Err(trait_requires_error(format!(
-      "trait {name} expects its 'requires entries as a list of traits, but received: {form}"
+      "trait {name} expects its requires entries as a list of traits, but received: {form}"
     )));
   };
   items
@@ -810,7 +810,7 @@ fn trait_requires_from_value(form: &Calcit, name: &cirru_edn::EdnTag) -> Result<
     .map(|item| match item {
       Calcit::Trait(parent) => Ok(Arc::new(parent.to_owned())),
       other => Err(trait_requires_error(format!(
-        "trait {name} 'requires expects a trait, but received: {other}"
+        "trait {name} requires expects a trait, but received: {other}"
       ))),
     })
     .collect()

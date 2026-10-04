@@ -16,7 +16,7 @@
     %{} 'FileEntry
       :defs $ {}
         'Child $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait Child ('requires inc) (.label :fn)
+          :code $ quote $ deftrait Child (requires inc) (.label :fn)
           :examples $ []
           :schema $ :: 'Trait
         'main! $ %{} 'CodeEntry (:doc |)

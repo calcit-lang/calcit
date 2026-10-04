@@ -85,7 +85,7 @@
           :examples $ []
           :schema $ :: 'StructDef
         'Greeting $ %{} 'CodeEntry (:doc "|Trait that requires Labeled")
-          :code $ quote $ deftrait Greeting ('requires Labeled)
+          :code $ quote $ deftrait Greeting (requires Labeled)
             .greeting $ :: 'Fn $ {} (:return 'String)
               :args $ [] 'test-traits.main/Greeting
           :examples $ []
@@ -236,7 +236,7 @@
             test-assert-trait
             ; Debug helpers: methods introspection
             test-method-introspection
-            ; Test 'requires between ordinary traits
+            ; Test requires between ordinary traits
             test-trait-requires
             assert= true $ test-qualified-contains-boundary
             println "|All trait tests passed!"
@@ -845,7 +845,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |dispatches-by-bound-trait)
             :code $ quote $ assert= true (test-qualified-contains-boundary)
             :tags $ #{} :predicate :trait :unit
-        'test-trait-requires $ %{} 'CodeEntry (:doc "|Test 'requires between ordinary traits")
+        'test-trait-requires $ %{} 'CodeEntry (:doc "|Test requires between ordinary traits")
           :code $ quote $ defn test-trait-requires ()
             let
                 g $ Greeter :name |Ada

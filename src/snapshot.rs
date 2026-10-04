@@ -2834,7 +2834,7 @@ fn normalize_defexternal_code(code: Cirru, owner: &str) -> Result<(Cirru, Edn), 
           .ok_or_else(|| format!("{owner}: `defexternal` `:writable` is missing a set"))?;
         writable.extend(parse_defexternal_writable(value, owner)?);
       }
-      "'requires" => {
+      "requires" | "'requires" => {
         members.push(Cirru::List(vec![parts[0].clone(), parts[1].clone()]));
       }
       ":backend" | ":kind" => {
@@ -3821,6 +3821,26 @@ mod tests {
     let names = ffi.get(&Edn::tag("names")).expect("names should exist");
     let names = names.view_map().expect("names should be a map");
     assert_eq!(names.get(&Edn::tag("query")), Some(&Edn::str("querySelector")));
+  }
+
+  #[test]
+  fn defexternal_keeps_bare_and_quoted_requires_clause() {
+    for head in ["requires", "'requires"] {
+      let source = format!("defexternal KeyEvent\n  :target :browser\n  {head} EventHost\n  :key 'String");
+      let (code, _) = normalize_defexternal_code(parse_one(&source), "demo/KeyEvent").expect("defexternal should expand");
+      let Cirru::List(items) = &code else {
+        panic!("expanded code should be a list");
+      };
+      assert!(
+        items.iter().any(|item| matches!(
+          item,
+          Cirru::List(clause)
+            if matches!(clause.first(), Some(Cirru::Leaf(leaf)) if leaf.as_ref() == head)
+              && matches!(clause.get(1), Some(Cirru::Leaf(parent)) if parent.as_ref() == "EventHost")
+        )),
+        "{head} clause should be kept: {code:?}"
+      );
+    }
   }
 
   #[test]

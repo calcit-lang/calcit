@@ -1123,16 +1123,20 @@ fn parse_trait_method_specs_from_source<'a>(items: impl Iterator<Item = &'a Calc
   Some((methods, method_types, member_kinds))
 }
 
-/// Whether a `deftrait` source entry is a `('requires Parent)` clause.
+/// Whether a `deftrait` source entry is a `(requires Parent)` clause; the legacy
+/// `('requires Parent)` head is still accepted.
 fn is_trait_requires_entry(item: &Calcit) -> bool {
   let Calcit::List(entry) = item else { return false };
-  let Some(Calcit::List(head)) = entry.first() else {
-    return false;
-  };
-  head.len() == 2
-    && (matches!(head.first(), Some(Calcit::Syntax(CalcitSyntax::Quote, _)))
-      || matches!(head.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "quote"))
-    && matches!(head.get(1), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "requires")
+  match entry.first() {
+    Some(Calcit::Symbol { sym, .. }) => sym.as_ref() == "requires",
+    Some(Calcit::List(head)) => {
+      head.len() == 2
+        && (matches!(head.first(), Some(Calcit::Syntax(CalcitSyntax::Quote, _)))
+          || matches!(head.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "quote"))
+        && matches!(head.get(1), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "requires")
+    }
+    _ => false,
+  }
 }
 
 /// Resolve a parent trait reference written in `file_ns` to its definition.

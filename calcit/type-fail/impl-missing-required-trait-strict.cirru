@@ -16,7 +16,7 @@
     %{} 'FileEntry
       :defs $ {}
         'Child $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ deftrait Child ('requires Parent) (.greet :fn)
+          :code $ quote $ deftrait Child (requires Parent) (.greet :fn)
           :examples $ []
           :schema $ :: 'Trait
         'ChildImpl $ %{} 'CodeEntry (:doc |)
