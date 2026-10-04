@@ -8542,15 +8542,12 @@ enum TraitMethodResolution {
   Invalid(String),
 }
 
-/// Resolve a trait-set method once for checking, callback inference and
-/// diagnostics. Candidates are de-duplicated by nominal origin, never by the
-/// short trait name. The vector remains in compatibility precedence order.
-fn resolve_trait_method(traits: &[Arc<CalcitTrait>], method_name: &str) -> TraitMethodResolution {
+/// Share the validated, origin-deduplicated trait closure between dispatch
+/// selection and method discovery, preserving compatibility precedence.
+fn reachable_dispatch_traits(traits: &[Arc<CalcitTrait>]) -> Result<Vec<Arc<CalcitTrait>>, String> {
   let mut reachable: Vec<Arc<CalcitTrait>> = vec![];
   for trait_def in traits.iter().rev() {
-    if let Err(error) = trait_def.validate_reachable_method_schemas() {
-      return TraitMethodResolution::Invalid(error);
-    }
+    trait_def.validate_reachable_method_schemas()?;
     let Ok(required) = trait_def.normalized_reachable_traits() else {
       unreachable!("schema validation already checked requires cycles")
     };
@@ -8561,6 +8558,17 @@ fn resolve_trait_method(traits: &[Arc<CalcitTrait>], method_name: &str) -> Trait
       }
     }
   }
+  Ok(reachable)
+}
+
+/// Resolve a trait-set method once for checking, callback inference and
+/// diagnostics. Candidates are de-duplicated by nominal origin, never by the
+/// short trait name. The vector remains in compatibility precedence order.
+fn resolve_trait_method(traits: &[Arc<CalcitTrait>], method_name: &str) -> TraitMethodResolution {
+  let reachable = match reachable_dispatch_traits(traits) {
+    Ok(reachable) => reachable,
+    Err(error) => return TraitMethodResolution::Invalid(error),
+  };
 
   let mut candidates: Vec<TraitMethodCandidate> = vec![];
   for trait_def in reachable {
@@ -8994,12 +9002,12 @@ fn static_method_contract_with_impls(
 
 /// List methods available for a statically known type, ordered from higher to
 /// lower dispatch precedence. Returns `None` when method metadata cannot be
-/// resolved (for example for a dynamic or external JS type).
+/// resolved (for example for a dynamic or untyped external JS value).
 pub fn static_method_descriptors(type_value: &CalcitTypeAnnotation) -> Option<Vec<StaticMethodDescriptor>> {
   if let Some(traits) = trait_list_from_type(type_value) {
     let mut seen = HashSet::new();
     let mut methods = vec![];
-    for trait_def in traits.iter().rev() {
+    for trait_def in reachable_dispatch_traits(&traits).ok()? {
       for (method, kind) in trait_def.methods.iter().zip(trait_def.member_kinds.iter()) {
         if *kind != CalcitTraitMemberKind::Method {
           continue;
@@ -14977,6 +14985,46 @@ mod tests {
     assert!(conflict.return_type.is_none());
 
     assert!(static_method_contracts(&CalcitTypeAnnotation::Dynamic).is_none());
+  }
+
+  #[test]
+  fn static_method_discovery_reuses_transitive_dispatch_origins_and_open_evidence() {
+    let root = Arc::new(
+      CalcitTrait::new_with_member_kinds(
+        EdnTag::new("Root"),
+        vec![EdnTag::new("render"), EdnTag::new("total")],
+        vec![Arc::new(CalcitTypeAnnotation::DynFn), Arc::new(CalcitTypeAnnotation::Number)],
+        Some(vec![CalcitTraitMemberKind::Method, CalcitTraitMemberKind::Field]),
+      )
+      .with_definition_ref("app.base", "Root"),
+    );
+    let mut left = source_trait("app.left", "Left", "left").as_ref().clone();
+    left.requires = Arc::new(vec![root.clone()]);
+    let mut right = source_trait("app.right", "Right", "right").as_ref().clone();
+    right.requires = Arc::new(vec![root.clone()]);
+    let mut child = source_trait("app.child", "Child", "child").as_ref().clone();
+    child.requires = Arc::new(vec![Arc::new(left), Arc::new(right)]);
+    let receiver = CalcitTypeAnnotation::Trait(Arc::new(child));
+    let methods = static_method_contracts(&receiver).expect("diamond method metadata should resolve");
+    assert_eq!(methods.len(), 4, "deduplicate shared parent by origin and exclude fields");
+    let (descriptor, contract) = methods.iter().find(|(item, _)| item.name == ".render").unwrap();
+    assert_eq!(descriptor.origin, "app.base/Root");
+    assert_eq!(contract.definition.as_deref(), Some("app.base/Root"));
+    assert_eq!(contract.status, "open", "inherited DynFn must not become proven");
+    assert!(contract.arg_types.is_none());
+
+    let trait_set = CalcitTypeAnnotation::TraitSet(Arc::new(vec![root.clone(), source_trait("app.other", "Root", "render")]));
+    let ambiguous = static_method_contracts(&trait_set).expect("trait-set methods should resolve");
+    assert_eq!(ambiguous.len(), 1, "same method name has one ambiguous entry");
+    assert_eq!(ambiguous[0].1.status, "ambiguous", "same short name is not the same origin");
+
+    let mut incomplete = root.as_ref().clone();
+    incomplete.method_types = Arc::new(vec![]);
+    assert!(static_method_contracts(&CalcitTypeAnnotation::Trait(Arc::new(incomplete))).is_none());
+
+    let mut cycle = root.as_ref().clone();
+    cycle.requires = Arc::new(vec![root]);
+    assert!(static_method_contracts(&CalcitTypeAnnotation::Trait(Arc::new(cycle))).is_none());
   }
 
   #[test]

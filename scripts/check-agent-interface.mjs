@@ -120,6 +120,33 @@ const scenarios = [
     },
   },
   {
+    name: "ordinary trait query includes required methods with their source origin",
+    args: ["calcit/test-traits.cirru", "query", "type", "test-traits.main/Greeting", "--format", "json"],
+    check(result) {
+      assert.equal(result.data.resolved_from, "source trait definition");
+      assert.deepEqual(result.data.methods.map(method => method.name), [".greeting", ".label"]);
+      const method = result.data.methods.find(method => method.name === ".label");
+      assert.equal(method.origin, "test-traits.main/Labeled");
+      assert.equal(method.definition, "test-traits.main/Labeled");
+      assert.equal(method.status, "proven");
+      assert.deepEqual(method.parameter_types, []);
+      assert.equal(method.return_type, "string");
+    },
+  },
+  {
+    name: "external trait query includes inherited methods but not fields",
+    args: ["calcit/js-ffi-consumer.cirru", "query", "type", "app.main/TallyHost", "--format", "json"],
+    check(result) {
+      assert.deepEqual(result.data.methods.map(method => method.name), [".add!"]);
+      const method = result.data.methods[0];
+      assert.equal(method.origin, "app.main/CounterHost");
+      assert.equal(method.definition, "app.main/CounterHost");
+      assert.equal(method.status, "proven");
+      assert.deepEqual(method.parameter_types, ["number"]);
+      assert.equal(method.return_type, "number");
+    },
+  },
+  {
     name: "FsPath write method leads to a safe canonical example",
     args: ["calcit/test.cirru", "query", "type", "calcit.core/FsPath", "--format", "json"],
     check(result) {
@@ -1033,6 +1060,15 @@ const parseEdnRaw = (text, name) => {
 const parseEdnEnvelope = (text, name, reference) => normalizeEdnKeys(parseEdnRaw(text, name), reference);
 const querySnapshotBefore = readFileSync("calcit/test.cirru");
 for (const { name, base, expectedStatus = 0, check } of [
+  {
+    name: "required external method EDN",
+    base: ["calcit/js-ffi-consumer.cirru", "query", "type", "app.main/TallyHost"],
+    check: (result) => {
+      assert.deepEqual(result.data.methods.map(method => method.name), [".add!"]);
+      assert.equal(result.data.methods[0].origin, "app.main/CounterHost");
+      assert.equal(result.data.methods[0].status, "proven");
+    },
+  },
   {
     name: "builtin type EDN",
     base: ["calcit/test.cirru", "query", "type", "'String"],
