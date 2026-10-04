@@ -33,6 +33,73 @@ try {
   await copyFile("calcit/test-struct.cirru", snapshot);
   await copyFile("calcit/util.cirru", join(project, "util.cirru"));
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
+  // Check the stored exits, not a nullable join masquerading as a conversion.
+  const returnNames = ["nullable-choice", "nullable-reversed-choice", "nullable-match", "nullable-let-choice",
+    "nullable-implicit-choice", "nullable-shadow-choice", "nullable-callback-choice", "nullable-raised-choice"];
+  run("test", "--tag", "contextual-proof", "--require-match");
+  const contextualTests = returnNames.flatMap(name =>
+    JSON.parse(run("query", "def", `test-struct.main/${name}`, "--format", "json")).data.tests
+      .filter(test => test.tags.includes("contextual-proof")));
+  assert.equal(contextualTests.length, 8);
+  for (const name of returnNames) {
+    const before = await readFile(snapshot);
+    run("fix", "--rule", "concrete-return-proof-v1", "--ns", "test-struct.main", "--def", name, "--format", "edn");
+    assert.deepEqual(await readFile(snapshot), before);
+  }
+  run("edit", "def", "test-struct.main/contextual-replay", "--input-format", "json-ast", "--code",
+    JSON.stringify(["defn", "contextual-replay", [], ...contextualTests.map(test => test.code), "&unit"]));
+  run("edit", "schema", "test-struct.main/contextual-replay", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+  const contextualEntry = ["--init-fn", "test-struct.main/contextual-replay", "--reload-fn", "test-struct.main/contextual-replay"];
+  run(...contextualEntry);
+  const contextualOutput = join(project, "contextual-js");
+  run(...contextualEntry, "--emit-path", contextualOutput, "js");
+  (await import(pathToFileURL(join(contextualOutput, "test-struct.main.mjs")).href)).contextual_replay();
+  const nullableNumber = ":: 'JsNullish 'Number";
+  const nullableCallback = ":: 'JsNullish 'test-struct.main/NullableEvent";
+  for (const [label, parameters, argumentTypes, body, resultType, definite] of [
+    ["wrong-live-payload", [], "[]", "if flag |bad nil", nullableNumber, true],
+    ["wrong-reversed-payload", [], "[]", "if flag nil |bad", nullableNumber, true],
+    ["open-live-payload", ["raw"], "[] 'Dynamic", "if flag raw nil", nullableNumber, false],
+    ["alias-shadow", ["raw"], "[] 'Dynamic", "let ((selected (if flag 7 nil))) (let ((selected raw)) selected)", nullableNumber, false],
+    ["match-shadow", ["raw"], "[] $ :: 'Option 'Dynamic", "let ((selected (if flag 7 nil))) (match raw ((:some selected) selected) ((:none) nil))", nullableNumber, false],
+    ["nullish-elimination", ["raw"], `[] $ ${nullableNumber}`, "if flag raw 7", "'Number", true],
+    ["stored-optional", [], "[]", "&parse-float |1", nullableNumber, true],
+    ["wrong-callback-input", [], "[]", "if flag (fn (value) (hint-fn $ {} (:args ([] 'String)) (:return 'Unit)) &unit) nil", nullableCallback, true],
+    ["wrong-callback-return", [], "[]", "if flag (fn (value) (hint-fn $ {} (:args ([] 'Number)) (:return 'Number)) 1) nil", nullableCallback, true],
+    ["wrong-callback-arity", [], "[]", "if flag (fn (left right) (hint-fn $ {} (:args ([] 'Number 'Number)) (:return 'Unit)) &unit) nil", nullableCallback, true],
+    ["open-callback", ["raw"], "[] 'Fn", "if flag raw nil", nullableCallback, false],
+    ["recursive-cycle", ["value"], "[] 'Number", "recur flag value", nullableNumber, false],
+  ]) {
+    const target = "test-struct.main/contextual-rejected";
+    run("edit", "def", target, "--overwrite", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "contextual-rejected", ["flag", ...parameters], JSON.parse(run("cirru", "parse", "-e", body))]));
+    run("edit", "schema", target, "--input-format", "json-ast", "--code",
+      JSON.stringify(["::", "'Fn", ["{}", [":args", ["[]", "'Bool", ...JSON.parse(run("cirru", "parse", "-e", argumentTypes)).slice(1)]],
+        [":return", resultType.startsWith("::") ? JSON.parse(run("cirru", "parse", "-e", resultType)) : resultType]]]));
+    const original = await readFile(snapshot);
+    const audit = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "test-struct.main",
+      "--def", "contextual-rejected", "--format", "edn"], options);
+    if (audit.error) throw audit.error;
+    assert.equal(audit.status, 1, `${label}\n${audit.stdout}\n${audit.stderr}`);
+    assert.match(`${audit.stdout}\n${audit.stderr}`, /E_FN_RETURN_UNPROVEN|W_FN_RETURN_TYPE_MISMATCH/);
+    assert.deepEqual(await readFile(snapshot), original);
+    // Ordinary compilation retains its migration policy for open returns,
+    // while definite contradictions must fail on both existing backends.
+    if (definite) {
+      for (const mode of [["--check-only"], ["js"]]) {
+        const output = join(project, `contextual-${label}-${mode[0] === "js" ? "js" : "native"}`);
+        const rejected = spawnSync(binary, [snapshot, "--init-fn", target, "--reload-fn", target,
+          "--emit-path", output, ...mode], options);
+        if (rejected.error) throw rejected.error;
+        assert.equal(rejected.status, 1, `${label}\n${rejected.stdout}\n${rejected.stderr}`);
+        assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_FN_RETURN_TYPE_MISMATCH/);
+        assert.deepEqual(await readFile(snapshot), original);
+        if (mode[0] === "js") await assertRejectedArtifacts(output, label, /W_FN_RETURN_TYPE_MISMATCH/, true);
+      }
+    }
+  }
+  run("edit", "rm-def", "test-struct.main/contextual-rejected");
   run("test", "--tag", "js-nullish-container", "--require-match");
   const nullishTests = ["NullableNumberStore", "NullableEventStore"].flatMap(name =>
     JSON.parse(run("query", "def", `test-struct.main/${name}`, "--format", "json")).data.tests

@@ -103,6 +103,8 @@ loop
 
 反方向仍需要检查：`JsNullish<T>` 不能直接作为 `T` 使用，Dynamic 元素也不能仅凭容器声明变成具体元素。可变 `Ref<T>` 保持不变性，不能把 `Ref<Number>` 扩大为 `Ref<JsNullish<Number>>` 后写入 `nil`。这项关系不把历史 `Optional<T>` 与 `JsNullish<T>` 混同，Calcit 自身的缺席值继续使用名义 `Option<T>`。
 
+声明返回 `JsNullish<T>` 的函数按各个退出值检查。例如 `if present? value nil` 在 `value` 已证明为 `T` 时满足声明；反向分支、`match` 的已知 payload 和函数尾部 `let` 的局部别名采用同一检查。无需为了中间合并出的遗留 Optional 插入转换。初始化值按父作用域验证，新绑定和 match payload 遮蔽同名外层变量的证据。返回检查不修改局部变量的推断类型，也不把 raw primitive 返回的 `Optional<T>` 当成 `JsNullish<T>`。
+
 ## Dynamic 是边界，不是默认多态
 
 普通泛型函数会按实参顺序传递已知的类型关系。例如 `filter-map-kv` 接收 `Map<String,Number>` 时，后续回调的参数可推为 `String` 和 `Number`；回调返回的 `MapEntryDecision<R,S>` 也保留泛型实参，让结果 `Map<R,S>` 继续约束后续写入。无需为了传递这些关系手工增加 `hint-fn` 或 `assert-type`。如果输入本身是显式 `Dynamic`，推断不会凭空把它收窄为某个具体类型，仍应在真实边界处 decode 或 narrow。
