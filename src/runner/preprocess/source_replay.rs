@@ -1,4 +1,4 @@
-//! Retain evaluated source during lexical function constraint retries.
+//! Retain evaluated source through lexical constraint solving and checking.
 //! This plan is scoped to one compilation, not a cache of local type evidence.
 
 use std::cell::RefCell;
@@ -43,6 +43,7 @@ struct MacroEntry {
   definition: Arc<CalcitMacro>,
   id: usize,
   expansion: Option<Expansion>,
+  cache_commit: Option<(crate::runner::macro_cache::CacheMiss, usize)>,
 }
 
 #[derive(Default)]
@@ -74,7 +75,6 @@ struct Active {
   plan: Rc<RefCell<Plan>>,
   frame: usize,
   parent_macro: Option<usize>,
-  restart: bool,
 }
 
 thread_local! {
@@ -148,9 +148,7 @@ impl Scope {
     let previous = ACTIVE.with(|active| active.borrow().clone());
     let next = if let Some(enclosing) = previous.as_ref() {
       let mut plan = enclosing.plan.borrow_mut();
-      let frame = if enclosing.restart {
-        enclosing.frame
-      } else {
+      let frame = {
         // Interpolated source may share an Arc at multiple logical sites.
         // A parent expansion and an occurrence ordinal keep those distinct.
         let occurrence = plan.frames[enclosing.frame].next_occurrence(SourceSite {
@@ -175,7 +173,6 @@ impl Scope {
         plan: enclosing.plan.clone(),
         frame,
         parent_macro: enclosing.parent_macro,
-        restart: false,
       })
     } else if needs_constraints {
       Some(Active {
@@ -188,25 +185,11 @@ impl Scope {
         })),
         frame: 0,
         parent_macro: None,
-        restart: false,
       })
     } else {
       None
     };
     ACTIVE.with(|active| *active.borrow_mut() = next);
-    Self {
-      previous,
-      macro_entry: None,
-    }
-  }
-
-  pub fn restart_function() -> Self {
-    let previous = ACTIVE.with(|active| active.borrow().clone());
-    if let Some(enclosing) = previous.as_ref() {
-      let mut next = enclosing.clone();
-      next.restart = true;
-      ACTIVE.with(|active| *active.borrow_mut() = Some(next));
-    }
     Self {
       previous,
       macro_entry: None,
@@ -263,6 +246,7 @@ impl Scope {
           definition: definition.clone(),
           id,
           expansion: None,
+          cache_commit: None,
         },
       );
     }
@@ -272,7 +256,6 @@ impl Scope {
       plan: enclosing.plan.clone(),
       frame: enclosing.frame,
       parent_macro: Some(entry.id),
-      restart: false,
     };
     let macro_entry = Some((enclosing.plan.clone(), enclosing.frame, occurrence));
     drop(plan);
@@ -286,6 +269,39 @@ impl Scope {
 
   pub fn retain_native_expansion(&self, code: &Calcit) {
     self.retain(code, &[], true);
+  }
+
+  pub fn retain_cache_commit(
+    &self,
+    commit: Option<(crate::runner::macro_cache::CacheMiss, usize)>,
+  ) -> Option<(crate::runner::macro_cache::CacheMiss, usize)> {
+    let Some((plan, frame, occurrence)) = &self.macro_entry else {
+      return commit;
+    };
+    if commit.is_some() {
+      plan.borrow_mut().frames[*frame]
+        .macros
+        .get_mut(occurrence)
+        .expect("entered macro occurrence")
+        .cache_commit = commit;
+    }
+    None
+  }
+
+  pub fn take_cache_commit(&self) -> Option<(crate::runner::macro_cache::CacheMiss, usize)> {
+    let (plan, frame, occurrence) = self.macro_entry.as_ref()?;
+    plan.borrow_mut().frames[*frame]
+      .macros
+      .get_mut(occurrence)
+      .expect("entered macro occurrence")
+      .cache_commit
+      .take()
+  }
+
+  pub fn rewind_function() {
+    if let Some(active) = ACTIVE.with(|active| active.borrow().clone()) {
+      active.plan.borrow_mut().frames[active.frame].visits.clear();
+    }
   }
 
   fn retain(&self, code: &Calcit, recur_inputs: &[Vec<Calcit>], native_lowered: bool) {
@@ -308,7 +324,7 @@ mod tests {
   use std::panic::{AssertUnwindSafe, catch_unwind};
 
   #[test]
-  fn restores_lexical_plan_after_definition_pause_retry_and_unwind() {
+  fn restores_lexical_plan_after_definition_pause_rewind_and_unwind() {
     assert!(ACTIVE.with(|active| active.borrow().is_none()));
     let parameters = Arc::new(CalcitList::default());
     let root = Scope::enter_function(&parameters, true);
@@ -320,13 +336,19 @@ mod tests {
       assert!(ACTIVE.with(|active| active.borrow().is_none()));
     }
     assert!(ACTIVE.with(|active| Rc::ptr_eq(&active.borrow().as_ref().unwrap().plan, &initial.plan)));
+    let child_frame = {
+      let _child = Scope::enter_function(&parameters, false);
+      ACTIVE.with(|active| active.borrow().as_ref().unwrap().frame)
+    };
+    Scope::rewind_function();
     {
-      let _restart = Scope::restart_function();
-      let _retry = Scope::enter_function(&parameters, false);
-      let retry = ACTIVE.with(|active| active.borrow().clone()).expect("retry plan");
-      assert!(Rc::ptr_eq(&retry.plan, &initial.plan));
-      assert_eq!(retry.frame, initial.frame);
-      assert!(!retry.restart, "restart applies to only the retried function");
+      let _child = Scope::enter_function(&parameters, false);
+      let replay = ACTIVE.with(|active| active.borrow().clone()).expect("replay plan");
+      assert!(Rc::ptr_eq(&replay.plan, &initial.plan));
+      assert_eq!(
+        replay.frame, child_frame,
+        "preparation and checking reuse one lexical function occurrence"
+      );
     }
     let unwound = catch_unwind(AssertUnwindSafe(|| {
       let _nested = Scope::enter_function(&parameters, false);
@@ -337,7 +359,6 @@ mod tests {
     let restored = ACTIVE.with(|active| active.borrow().clone()).expect("enclosing plan after unwind");
     assert!(Rc::ptr_eq(&restored.plan, &initial.plan));
     assert_eq!(restored.frame, initial.frame);
-    assert!(!restored.restart);
     drop(root);
     assert!(
       ACTIVE.with(|active| active.borrow().is_none()),

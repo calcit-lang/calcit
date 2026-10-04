@@ -707,6 +707,18 @@ try {
     ["loop-duplicated-effects", "defn loop-duplicated-effects () $ loop ((n 0) (value (Option :none))) (if (&< n 1) (recur 1 (Option :some (loop-repeat-source (loop-occurrence-log)))) (value .unwrap-or 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
     ["loop-captured-effects", "defn loop-captured-effects () $ loop ((n 0) (value (Option :none))) (let ((render (fn () (loop-occurrence-log)))) (if (&< n 1) (recur 1 (Option :some (render))) (value .unwrap-or 0)))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
     ["loop-head-effects", "defn loop-head-effects () $ loop ((n 0) (value (Option :none))) (if (&< n 1) (recur 1 (Option :some ((fn () (loop-occurrence-log))))) (value .unwrap-or 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
+    ["first-method-direct", "defn first-method-direct () $ loop ((n 0) (value (Option :none))) (if (&< n 1) (recur 1 (Option :some 7)) ((value .unwrap) .to-string))", ":: 'Fn $ {} (:args $ []) (:return 'String)"],
+    ["first-method-reversed", "defn first-method-reversed () $ loop ((n 0) (value (Option :none))) (if (&>= n 1) ((value .unwrap) .to-string) (recur 1 (Option :some 7)))", ":: 'Fn $ {} (:args $ []) (:return 'String)"],
+    ["first-method-alias", "defn first-method-alias () $ loop ((n 0) (value (Option :none))) (let ((alias value)) (if (&< n 1) (recur 1 (Option :some 7)) ((alias .unwrap) .to-string)))", ":: 'Fn $ {} (:args $ []) (:return 'String)"],
+    ["first-method-captured", "defn first-method-captured () $ loop ((n 0) (value (Option :none))) (let ((render (fn () ((value .unwrap) .to-string)))) (if (&< n 1) (recur 1 (Option :some 7)) (render)))", ":: 'Fn $ {} (:args $ []) (:return 'String)"],
+    ["first-method-shadowed", "defn first-method-shadowed () $ loop ((n 0) (value (Option :none))) (let ((alias value) (value (Option :some |shadow))) (assert= |shadow ((value .unwrap) .to-string)) (if (&< n 1) (recur 1 (Option :some 7)) ((alias .unwrap) .to-string)))", ":: 'Fn $ {} (:args $ []) (:return 'String)"],
+    ["first-method-effects", "defn first-method-effects () $ loop ((n 0) (value (Option :none))) (if (&< n 1) (recur 1 (Option :some (loop-occurrence-log))) ((value .unwrap) .to-string))", ":: 'Fn $ {} (:args $ []) (:return 'String)"],
+    ["first-method-forwarded", "defn first-method-forwarded () $ loop ((n 0) (left (Option :none)) (right (Option :none))) (if (&< n 2) (recur (inc n) (Option :some 7) left) ((right .unwrap) .to-string))", ":: 'Fn $ {} (:args $ []) (:return 'String)"],
+    ["first-method-staged", "defn first-method-staged () $ loop ((n 0) (left (Option :none)) (right (Option :none))) (if (&< n 1) (recur 1 (Option :some 7) right) (if (&< n 2) (recur 2 left (Option :some (left .unwrap))) ((right .unwrap) .to-string)))", ":: 'Fn $ {} (:args $ []) (:return 'String)"],
+    ["first-method-match-join", "defn first-method-match-join () $ loop ((n 0) (value (Option :none))) (let ((next (match value ((:none) (Option :some 7)) ((:some payload) value)))) (if (&< n 1) (recur 1 next) ((value .unwrap) .to-string)))", ":: 'Fn $ {} (:args $ []) (:return 'String)"],
+    ["first-method-if-join", "defn first-method-if-join () $ loop ((n 0) (value (Option :none))) (let ((next (if (&>= n 1) value (Option :some 7)))) (if (&< n 1) (recur 1 next) ((value .unwrap) .to-string)))", ":: 'Fn $ {} (:args $ []) (:return 'String)"],
+    ["first-method-open-seven", "defn first-method-open-seven () 7", ":: 'Fn $ {} (:args $ []) (:return 'Dynamic)"],
+    ["first-method-independent-boundary", "defn first-method-independent-boundary () $ loop ((n 0) (value (Option :none))) (if (&< n 1) (recur 1 (Option :some (assert-type (first-method-open-seven) 'Number))) ((value .unwrap) .to-string))", ":: 'Fn $ {} (:args $ []) (:return 'String)"],
     ["loop-expansion-once", "defn loop-expansion-once () $ loop ((n 0) (value (Option :none))) (if (&< n 1) (recur 1 (Option :some (loop-once-log))) (value .unwrap-or 0))", ":: 'Fn $ {} (:args $ []) (:return 'Number)"],
     ["recursive-count", `defn recursive-count (node)
   match node
@@ -838,18 +850,22 @@ try {
   assert= 42 $ loop ((n 0) (value (Option :none))) (assert-type (make-open-number) 'Number) (if (&< n 1) (recur 1 (Option :some |kept)) 42)
   assert= 42 $ loop ((n 0) (value (Option :none))) (assert-type (loop-assertion-source value) (:: 'Option 'String)) (if (&< n 1) (recur 1 (Option :some |kept)) 42)
   assert= 42 $ loop ((n 0) (value (Option :none))) (let ((check (fn () (assert-type (loop-assertion-source value) (:: 'Option 'String)) 42))) (if (&< n 1) (recur 1 (Option :some |kept)) (check)))`);
+  for (const name of ["first-method-direct", "first-method-reversed", "first-method-alias", "first-method-captured", "first-method-shadowed", "first-method-effects", "first-method-forwarded", "first-method-staged", "first-method-match-join", "first-method-if-join", "first-method-independent-boundary"]) {
+    run("edit", "add-test", "calcit.assert-evidence/recursive-count", name, "--tags", "recursive-fields,recursive-method-phase",
+      "--input-format", "cirru", "--code", `quote $ assert= |7 $ ${name}`);
+  }
   run("test", "calcit.assert-evidence/recursive-count", "--tag", "recursive-fields", "--require-match");
   const recursiveTests = JSON.parse(run("query", "def", "calcit.assert-evidence/recursive-count", "--format", "json"))
     .data.tests.filter(test => test.tags.includes("recursive-fields"));
-  assert.equal(recursiveTests.length, 2);
+  assert.equal(recursiveTests.length, 13);
   setBody(recursiveTests.map(test => test.code));
   const loggedLoop = spawnSync(binary, [snapshot, "--check-only"], options);
   if (loggedLoop.error) throw loggedLoop.error;
   assert.equal(loggedLoop.status, 0, `${loggedLoop.stdout}\n${loggedLoop.stderr}`);
   assert.equal((`${loggedLoop.stdout}\n${loggedLoop.stderr}`.match(/loop-expansion-token/g) ?? []).length, 1,
     "solving loop input constraints must not repeat an effectful macro expansion");
-  assert.equal((`${loggedLoop.stdout}\n${loggedLoop.stderr}`.match(/loop-occurrence-token/g) ?? []).length, 4,
-    "two interpolated occurrences and two nested function occurrences must each expand exactly once");
+  assert.equal((`${loggedLoop.stdout}\n${loggedLoop.stderr}`.match(/loop-occurrence-token/g) ?? []).length, 5,
+    "two interpolated occurrences, two nested function occurrences and a pre-dispatch transfer must each expand exactly once");
   assert.equal((`${loggedLoop.stdout}\n${loggedLoop.stderr}`.match(/loop-assertion-token/g) ?? []).length, 2,
     "direct and captured assertion inputs must keep their source identity during retries");
   run();
@@ -867,6 +883,17 @@ try {
     ["wrong-fold-payload", "RecursiveComponent :tree $ option:fold (Option :some true) (fn () $ Option :none) (fn (present?) $ Option :some 1)"],
     ["open-fold-output", "(fn (flag) (RecursiveComponent :tree (option:fold (Option :some flag) (fn () (Option :none)) (fn (present?) (make-open-number))))) true"],
     ["wrong-loop-payload-use", "loop ((n 0) (tree (Option :none))) (if (&< n 1) (recur 1 (Option :some |wrong)) (RecursiveComponent :tree tree))"],
+    ["open-pre-dispatch-payload", "loop ((n 0) (value (Option :none))) (if (&< n 1) (recur 1 (Option :some (make-open-number))) ((value .unwrap) .to-string))"],
+    ["open-pre-dispatch-alias", "loop ((n 0) (value (Option :none))) (let ((alias value)) (if (&< n 1) (recur 1 (Option :some (make-open-number))) ((alias .unwrap) .to-string)))"],
+    ["open-pre-dispatch-capture", "loop ((n 0) (value (Option :none))) (let ((render (fn () ((value .unwrap) .to-string)))) (if (&< n 1) (recur 1 (Option :some (make-open-number))) (render)))"],
+    ["wrong-pre-dispatch-method", "loop ((n 0) (value (Option :none))) (if (&< n 1) (recur 1 (Option :some 7)) ((value .unwrap) .unknown-method))"],
+    ["wrong-static-literal-method", "7 .unknown-method"],
+    ["wrong-static-expression-method", "(+ 3 4) .unknown-method"],
+    ["recursive-pre-dispatch-slot", "loop ((value (Option :none))) (recur (Option :some value))"],
+    ["indirect-recursive-pre-dispatch-slots", "loop ((left (Option :none)) (right (Option :none))) (recur (Option :some right) left)"],
+    ["nonexhaustive-pre-dispatch-match", "loop ((n 0) (value (Option :none))) (match value ((:none) (if (&< n 1) (recur 1 (Option :some 7)) 42)))"],
+    ["duplicate-pre-dispatch-constructor-field", "loop ((n 0) (value (Option :none))) (WriteState :count 1 :label |kept :count 2) (if (&< n 1) (recur 1 (Option :some 7)) 42)"],
+    ["unknown-pre-dispatch-constructor-variant", "loop ((n 0) (value (Option :none))) (Option :unknown) (if (&< n 1) (recur 1 (Option :some 7)) 42)"],
     ["wrong-macro-literal", "require-string-expression 7"],
     ["wrong-macro-local", "let ((value 7)) (require-string-expression value)"],
     ["wrong-macro-alias", "let ((value 7) (alias value)) (require-string-expression alias)"],
@@ -907,7 +934,13 @@ try {
     run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
       `quote $ defwasm-export run-tests () (${expression}) 1`);
     const original = await readFile(snapshot);
-    const expectedDiagnostic = name.startsWith("wrong-macro-result-") ? /E_MACRO_EXPANSION_EXPR_TYPE/
+    const expectedDiagnostic = name.startsWith("open-pre-dispatch-") ? /E_DYNAMIC_POSTFIX_METHOD/
+      : name === "nonexhaustive-pre-dispatch-match" ? /match on `Option` is not exhaustive/
+      : name === "duplicate-pre-dispatch-constructor-field" ? /duplicate field `:count`/
+      : name === "unknown-pre-dispatch-constructor-variant" ? /enum `Option` does not have variant `:unknown`/
+      : ["recursive-pre-dispatch-slot", "indirect-recursive-pre-dispatch-slots"].includes(name) ? /W_RECUR_ARG_TYPE_MISMATCH/
+      : ["wrong-pre-dispatch-method", "wrong-static-literal-method", "wrong-static-expression-method"].includes(name) ? /unknown method `.unknown-method`/
+      : name.startsWith("wrong-macro-result-") ? /E_MACRO_EXPANSION_EXPR_TYPE/
       : name.startsWith("wrong-macro-") ? /E_MACRO_INPUT_EXPR_TYPE/
       : name.startsWith("contradictory-") ? /E_ASSERT_TYPE_MISMATCH/
       : name.startsWith("unproven-") ? /E_ASSERT_TYPE_UNPROVEN/
@@ -920,6 +953,16 @@ try {
       if (rejected.error) throw rejected.error;
       assert.equal(rejected.status, 1, `${name} ${mode}\n${rejected.stdout}\n${rejected.stderr}`);
       const diagnostics = `${rejected.stdout}\n${rejected.stderr}`;
+      if (name === "nonexhaustive-pre-dispatch-match") {
+        assert.equal((diagnostics.match(/match on `Option` is not exhaustive/g) ?? []).length, 1,
+          `${mode}: preparation must defer ordinary match warnings to the actual checking stage`);
+      }
+      if (name === "duplicate-pre-dispatch-constructor-field" || name === "unknown-pre-dispatch-constructor-variant") {
+        const constructorWarning = name === "duplicate-pre-dispatch-constructor-field"
+          ? /duplicate field `:count`/g : /enum `Option` does not have variant `:unknown`/g;
+        assert.equal((diagnostics.match(constructorWarning) ?? []).length, 1,
+          `${mode}: preparation must defer skipped constructor warnings to ordinary source checking`);
+      }
       assert.match(diagnostics, expectedDiagnostic);
       assert.match(diagnostics, /calcit.assert-evidence/);
       if (name === "contradictory-loop-assertion" || name === "contradictory-captured-loop-assertion") {
