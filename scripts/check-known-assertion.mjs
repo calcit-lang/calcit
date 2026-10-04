@@ -1184,8 +1184,10 @@ try {
   // Nullable branch evidence must survive local bindings without proving open values.
   await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
   run("test", "--tag", "nullable-branch-binding", "--require-match");
+  run("test", "--tag", "open-match-payload", "--require-match");
   const bindingTests = ["lookup-inline", "lookup-local", "if-value-first", "if-nil-first",
-    "choose-option", "choose-nullable", "choose-nil"].flatMap(name => {
+    "choose-option", "choose-nullable", "choose-nil", "decode-lookup", "decode-option",
+    "decode-result", "retain-open"].flatMap(name => {
     const report = JSON.parse(run("query", "def", `app.binding-proof/${name}`, "--format", "json"));
     assert.deepEqual(report.diagnostics, []);
     assert.equal(report.data.tests.length, 1);
@@ -1219,6 +1221,12 @@ try {
     ["string-is-not-value", "'String", "if present value nil", "Box :value selected"],
     ["nil-is-not-option", "(:: 'Option 'String)", "if present value nil", "RequiredOption :value selected"],
     ["wrong-match-payload", "(:: 'Map 'String 'String)", "match (value .get |key) ((:some item) item) ((:none) nil)", "Box :value selected"],
+    ["open-map-match", "(:: 'Map 'String 'Dynamic)", "match (value .get |key) ((:some item) item) ((:none) nil)", "Box :value selected"],
+    ["reversed-open-map-match", "(:: 'Map 'String 'Dynamic)", "match (value .get |key) ((:none) nil) ((:some item) item)", "Box :value selected"],
+    ["open-option-match", "(:: 'Option 'Dynamic)", "match value ((:some item) item) ((:none) nil)", "Box :value selected"],
+    ["open-result-ok-match", "(:: 'Result 'Dynamic 'String)", "match value ((:ok item) item) ((:err reason) nil)", "Box :value selected"],
+    ["open-result-err-match", "(:: 'Result 'String 'Dynamic)", "match value ((:ok item) nil) ((:err reason) reason)", "Box :value selected"],
+    ["open-payload-alias", "(:: 'Option 'Dynamic)", "match value ((:some item) item) ((:none) nil)", "let ((alias selected)) (Box :value alias)"],
   ]) {
     run("edit", "def", "app.binding-proof/rejected", "--overwrite", "--input-format", "cirru", "--code",
       `quote $ defn rejected (present value) (let ((selected (${expression}))) (${consumer}) &unit)`);

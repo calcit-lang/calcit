@@ -15,6 +15,10 @@
             :value $ :: 'Optional 'app.binding-proof/Value
           :examples $ []
           :schema $ :: 'StructDef
+        'OpenBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct OpenBox (:value 'Dynamic)
+          :examples $ []
+          :schema $ :: 'StructDef
         'OptionBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct OptionBox
             :value $ :: 'Optional $ :: 'Option 'String
@@ -74,6 +78,76 @@
                 OptionBox :value $ Option :none
                 choose-option true $ Option :none
             :tags $ #{} :nullable-branch-binding
+        'decode-lookup $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn decode-lookup (input)
+            let
+                selected $ match (input .get |key)
+                  (:some raw)
+                    match (try-decode-map-as raw app.binding-proof/Value)
+                      (:ok typed) typed
+                      (:err reason) nil
+                  (:none) nil
+              Box :value selected
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/Box)
+            :args $ [] $ :: 'Map 'String 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |checked-and-open-payloads)
+            :code $ quote $ do
+              assert=
+                Box :value $ Value :text |ok
+                decode-lookup $ {} $ |key
+                  {} $ :text |ok
+              assert= (Box :value nil)
+                decode-lookup $ {} $ |key 42
+              assert= (Box :value nil)
+                decode-lookup $ {} $ |other 42
+            :tags $ #{} :open-match-payload
+        'decode-option $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn decode-option (input)
+            let
+                selected $ match input
+                  (:some raw)
+                    match (try-decode-map-as raw app.binding-proof/Value)
+                      (:ok typed) typed
+                      (:err reason) nil
+                  (:none) nil
+              Box :value selected
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/Box)
+            :args $ [] $ :: 'Option 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |checked-and-open-payloads)
+            :code $ quote $ do
+              assert=
+                Box :value $ Value :text |ok
+                decode-option $ Option :some $ {} (:text |ok)
+              assert= (Box :value nil)
+                decode-option $ Option :some 42
+              assert= (Box :value nil)
+                decode-option $ Option :none
+            :tags $ #{} :open-match-payload
+        'decode-result $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn decode-result (input)
+            let
+                selected $ match input
+                  (:ok raw)
+                    match (try-decode-map-as raw app.binding-proof/Value)
+                      (:ok typed) typed
+                      (:err reason) nil
+                  (:err reason) nil
+              Box :value selected
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/Box)
+            :args $ [] $ :: 'Result 'Dynamic 'String
+          :tests $ [] $ %{} 'TestEntry (:name |checked-and-open-payloads)
+            :code $ quote $ do
+              assert=
+                Box :value $ Value :text |ok
+                decode-result $ Result :ok $ {} (:text |ok)
+              assert= (Box :value nil)
+                decode-result $ Result :ok 42
+              assert= (Box :value nil)
+                decode-result $ Result :err |missing
+            :tags $ #{} :open-match-payload
         'if-nil-first $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn if-nil-first (present)
             let
@@ -140,6 +214,29 @@
                 Box :value $ Value :text |ok
                 lookup-local $ {} $ |key (Value :text |ok)
             :tags $ #{} :nullable-branch-binding
+        'retain-open $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn retain-open (input)
+            let
+                selected $ match input
+                  (:some value) value
+                  (:none) nil
+              OpenBox :value selected
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/OpenBox)
+            :args $ [] $ :: 'Option 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |checked-and-open-payloads)
+            :code $ quote $ do
+              assert= (Result :ok 42)
+                try-decode-map-as
+                  :value $ retain-open $ Option :some 42
+                  , 'Number
+              assert= (Result :ok |text)
+                try-decode-map-as
+                  :value $ retain-open $ Option :some |text
+                  , 'String
+              assert= true $ nil? $ :value
+                retain-open $ Option :none
+            :tags $ #{} :open-match-payload
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.binding-proof
     'app.empty-fields $ %{} 'FileEntry
