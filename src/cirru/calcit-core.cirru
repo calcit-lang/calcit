@@ -3997,27 +3997,50 @@
               not $ every? patterns $ fn (pair)
                 &= 2 $ &list:count pair
               raise $ str-spaced "|case expects each pattern as pair, got:" patterns
-            &let
-              v $ gensym |v
-              quasiquote $ &let (~v ~item)
-                &case ~v
-                  raise $ str-spaced |case |found |no |matching |pattern |for: ~v
-                  , ~@patterns
+            if
+              every? patterns $ fn (pair)
+                hint-fn $ {}
+                  :args $ [] 'List
+                  :return 'Bool
+                &let
+                  p $ &list:first pair
+                  or (tag? p) (string? p) (number? p) (bool? p)
+              quasiquote $ match ~item ~@patterns
+              &let
+                v $ gensym |v
+                quasiquote $ &let (~v ~item)
+                  &case ~v
+                    raise $ str-spaced |case |found |no |matching |pattern |for: ~v
+                    , ~@patterns
           :examples $ []
           :schema $ :: 'Macro $ {} (:rest 'SyntaxList)
             :capabilities $ #{}
             :expansion $ :: 'Expr 'Dynamic
             :required $ [] $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
-          :tests $ [] $ %{} 'TestEntry (:name |matches-tag-or-falls-to-expression)
-            :code $ quote $ let
-                detect-x $ fn (x)
-                  case x (1 |one) (2 |two) (x |else)
-              do
-                assert= (detect-x 1) |one
-                assert= (detect-x 2) |two
-                assert= (detect-x 3) |else
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |matches-tag-or-falls-to-expression)
+              :code $ quote $ let
+                  detect-x $ fn (x)
+                    case x (1 |one) (2 |two) (x |else)
+                do
+                  assert= (detect-x 1) |one
+                  assert= (detect-x 2) |two
+                  assert= (detect-x 3) |else
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |literal-match-evaluates-once)
+              :code $ quote $ do
+                assert= |hit $ match :b (:a |miss) (:b |hit)
+                assert= |hit $ match 2 (1 |miss) (2 |hit)
+                ; "the matched value is evaluated once"
+                let
+                    counter $ atom 0
+                  match
+                    do (swap! counter &+ 1) :a
+                    :a |a
+                    _ |other
+                  assert= 1 $ deref counter
+              :tags $ #{} :core :unit
         'case-default $ %{} 'CodeEntry
           :doc "|Case macro variant with an explicit default branch\nEvaluates the target once, compares it against pattern/result pairs, and falls back to the provided default when no pattern matches."
           :code $ quote $ defmacro case-default (item default & patterns)
@@ -4033,9 +4056,18 @@
                   :return 'Bool
                 &= 2 $ &list:count pair
               raise $ str-spaced "|case-default expects each pattern as pair, got:" patterns
-            &let
-              v $ gensym |v
-              quasiquote $ &let (~v ~item) (&case ~v ~default ~@patterns)
+            if
+              every? patterns $ fn (pair)
+                hint-fn $ {}
+                  :args $ [] 'List
+                  :return 'Bool
+                &let
+                  p $ &list:first pair
+                  or (tag? p) (string? p) (number? p) (bool? p)
+              quasiquote $ match ~item ~@patterns $ _ ~default
+              &let
+                v $ gensym |v
+                quasiquote $ &let (~v ~item) (&case ~v ~default ~@patterns)
           :examples $ []
             quote $ assert= |two $ case-default 2 |none (1 |one) (2 |two)
             quote $ assert= |none $ case-default 3 |none (1 |one)
@@ -4045,6 +4077,21 @@
             :expansion $ :: 'Expr 'Dynamic
             :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
           :tags $ #{} :macro
+          :tests $ [] $ %{} 'TestEntry (:name |literal-patterns-use-match)
+            :code $ quote $ let
+                pick $ fn (x)
+                  match x (:mount |m) (:update |u) (|text |s) (1 |n) (true |b) (nil |nil) (_ |other)
+              assert= |m $ pick :mount
+              assert= |u $ pick :update
+              assert= |s $ pick |text
+              assert= |n $ pick 1
+              assert= |b $ pick true
+              assert= |nil $ pick nil
+              assert= |other $ pick :unknown
+              assert= |other $ pick 2
+              assert= |two $ case-default 2 |none (1 |one) (2 |two)
+              assert= |fallback $ case-default (&+ 2 3) |fallback (1 |one) (2 |two)
+            :tags $ #{} :core :unit
         'ceil $ %{} 'CodeEntry
           :doc "|internal function for ceiling operation\nSyntax: (ceil n)\nParams: n (number)\nReturns: number\nReturns smallest integer greater than or equal to n"
           :code $ quote &runtime-implementation

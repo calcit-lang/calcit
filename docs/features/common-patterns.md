@@ -1,6 +1,6 @@
 ---
 title: "Common Patterns"
-summary: "实用编程模式：集合操作、错误处理、字符串处理、状态管理、控制流（含 case-default/try/cond/pipe）、文件操作"
+summary: "实用编程模式：集合操作、错误处理、字符串处理、状态管理、控制流（含 match/try/cond/pipe）、文件操作"
 scope: "core"
 kind: "guide"
 category: "features"
@@ -338,21 +338,22 @@ defn fibonacci (n)
         recur b (&+ a b) (&- n 1)
 ```
 
-### `case-default` (Multi-branch dispatch)
+### `match` with literal patterns (Multi-branch dispatch)
 
-`case-default` dispatches on a value against multiple patterns with a fallback:
+`match` dispatches on a value against literal patterns, with `_` as the fallback:
 
 ```cirru.no-check
-case-default action nil
+match action
   :mount $ do
     js/console.log |Mounted
   :update $ do
     js/console.log |Updated
   :unmount $ do
     js/console.log |Unmounted
+  _ nil
 ```
 
-The first argument is the value to match, the second is the default/fallback, followed by pattern-result pairs. Useful for lifecycle hooks, event handling, and state machine transitions.
+The first argument is the value to match, followed by pattern-result pairs and an optional final `_` branch. Useful for lifecycle hooks, event handling, and state machine transitions. The older `case-default action nil ...` form (default as the second argument) still works and expands to the same `match` when all patterns are literals.
 
 ## Working with Files
 

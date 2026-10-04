@@ -203,6 +203,25 @@ let
   ; => round
 ```
 
+### 字面量模式
+
+`match` 的分支也可以直接比较普通 tag、字符串、数字、`true`/`false` 和 `nil`，用于对非 enum 的值分派。字面量模式写成不带括号的值，`(:tag ...)` 仍然表示 enum 变体：
+
+```cirru.no-check
+match action
+  :mount $ setup! target
+  :before-update $ cleanup! target
+  _ &unit
+```
+
+- 匹配按值相等，从上到下取第一个命中的分支，被匹配的值只求值一次。
+- 通配符 `_` 只能放在最后；没有 `_` 且无分支命中时，运行时报错 `match: no matching branch for literal value: <value>`。
+- 同一个 `match` 不能混用字面量模式和 enum 模式。
+- 预处理阶段对重复的字面量、与被匹配值已知类型不符的字面量（例如 `Option` 值写了 `:some` 而不是 `(:some)`）给出 `[Warn]`。
+- tag、字符串这类开放集合不做穷尽性检查；需要穷尽性时定义 enum。
+
+`case` 与 `case-default` 在所有模式都是字面量时展开为这种 `match`（`case-default` 的默认值成为末尾的 `_` 分支）。新代码请直接写 `match`；模式是表达式或变量的旧写法仍由 `&case` 处理，后续会随下游迁移逐步废弃。
+
 ### No-match runtime error
 
 If no branch matches at runtime (and no `_` wildcard is present), `match` throws:

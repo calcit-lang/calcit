@@ -9294,6 +9294,161 @@ fn build_indexed_match_table(enum_def: &calcit::CalcitEnumDef, branches: &[Calci
   Some(Calcit::from(CalcitList::Vector(slots)))
 }
 
+/// A `match` branch pattern that compares by value instead of destructuring an enum.
+fn is_match_literal_pattern(pattern: &Calcit) -> bool {
+  matches!(
+    pattern,
+    Calcit::Tag(_) | Calcit::Str(_) | Calcit::Number(_) | Calcit::Bool(_) | Calcit::Nil
+  )
+}
+
+/// Short type name used in literal `match` diagnostics.
+fn match_literal_kind(pattern: &Calcit) -> &'static str {
+  match pattern {
+    Calcit::Tag(_) => "tag",
+    Calcit::Str(_) => "string",
+    Calcit::Number(_) => "number",
+    Calcit::Bool(_) => "bool",
+    _ => "nil",
+  }
+}
+
+/// Lower `match` over literal patterns (`:tag`, `|str`, `1`, `true`, `nil`, plus an optional trailing `_`)
+/// into `&let` + an `if` chain, so every backend shares the existing value-equality semantics.
+/// Returns `None` when the form uses enum patterns, which stay on the enum path.
+fn try_lower_literal_match(args: &CalcitList, ctx: &mut PreprocessContext) -> Result<Option<Calcit>, CalcitErr> {
+  let mut pairs: Vec<(&Calcit, &Calcit)> = vec![];
+  let mut has_literal = false;
+  for branch in args.iter().skip(1) {
+    let Calcit::List(pair) = branch else {
+      return Ok(None);
+    };
+    if pair.len() != 2 {
+      return Ok(None);
+    }
+    has_literal |= is_match_literal_pattern(&pair[0]);
+    pairs.push((&pair[0], &pair[1]));
+  }
+  if !has_literal {
+    return Ok(None);
+  }
+
+  let mut literals: Vec<(&Calcit, &Calcit)> = vec![];
+  let mut default_body: Option<&Calcit> = None;
+  for (idx, (pattern, body)) in pairs.iter().enumerate() {
+    match pattern {
+      Calcit::Symbol { sym, .. } if sym.as_ref() == "_" => {
+        if idx + 1 != pairs.len() {
+          return Err(CalcitErr::use_msg_stack_location(
+            CalcitErrKind::Syntax,
+            "match wildcard `_` must be the last branch of a literal match".to_owned(),
+            ctx.call_stack,
+            pattern.get_location(),
+          ));
+        }
+        default_body = Some(body);
+      }
+      p if is_match_literal_pattern(p) => {
+        if let Some((previous, _)) = literals.iter().find(|(seen, _)| *seen == *pattern) {
+          gen_check_warning(
+            format!(
+              "[Warn] match: duplicated literal pattern `{previous}`, later branch is unreachable, at {}/{}",
+              ctx.file_ns,
+              ctx.call_stack.0.first().map(|f| f.def.as_ref()).unwrap_or("?")
+            ),
+            ctx.file_ns,
+            ctx.check_warnings,
+          );
+        }
+        literals.push((pattern, body));
+      }
+      other => {
+        return Err(CalcitErr::use_msg_stack_location(
+          CalcitErrKind::Syntax,
+          format!("match mixes literal patterns with enum pattern, got: {other}"),
+          ctx.call_stack,
+          other.get_location(),
+        ));
+      }
+    }
+  }
+
+  let file_ns = ctx.file_ns;
+  let value_sym = generated_path_symbol("match_v", file_ns, ctx.call_stack)?;
+  let mut chain = match default_body {
+    Some(body) => body.to_owned(),
+    None => generated_call(vec![
+      Calcit::Proc(CalcitProc::Raise),
+      generated_core_call(
+        "str-spaced",
+        vec![
+          Calcit::Str(Arc::from("match: no matching branch for literal value:")),
+          value_sym.to_owned(),
+        ],
+        file_ns,
+      ),
+    ]),
+  };
+  for (pattern, body) in literals.iter().rev() {
+    chain = generated_if(
+      generated_call(vec![
+        Calcit::Proc(CalcitProc::NativeEquals),
+        value_sym.to_owned(),
+        (*pattern).to_owned(),
+      ]),
+      (*body).to_owned(),
+      chain,
+      file_ns,
+    );
+  }
+  let lowered = generated_let(value_sym, args[0].to_owned(), chain, file_ns);
+  let processed = preprocess_expr(
+    &lowered,
+    ctx.scope_defs,
+    ctx.scope_types,
+    file_ns,
+    ctx.check_warnings,
+    ctx.call_stack,
+  )?;
+
+  // The matched value is the second element of the processed `&let` binding pair.
+  if let Calcit::List(items) = &processed
+    && let Some(Calcit::List(binding)) = items.get(1)
+    && let Some(value_form) = binding.get(1)
+    && let Some(value_type) = infer_type_from_expr(value_form, ctx.scope_types)
+  {
+    for (pattern, _) in literals.iter() {
+      let mismatch = match (value_type.as_ref(), pattern) {
+        (CalcitTypeAnnotation::Tag, p) => !matches!(p, Calcit::Tag(_) | Calcit::Nil),
+        (CalcitTypeAnnotation::String, p) => !matches!(p, Calcit::Str(_) | Calcit::Nil),
+        (CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_), p) => !matches!(p, Calcit::Number(_) | Calcit::Nil),
+        (CalcitTypeAnnotation::Bool, p) => !matches!(p, Calcit::Bool(_) | Calcit::Nil),
+        (t, _) if t.resolve_to_enum().is_some() => true,
+        _ => false,
+      };
+      if mismatch {
+        let hint = if value_type.resolve_to_enum().is_some() && matches!(pattern, Calcit::Tag(_)) {
+          format!("; matching enum variants needs `({pattern})` instead of `{pattern}`")
+        } else {
+          String::new()
+        };
+        gen_check_warning(
+          format!(
+            "[Warn] match: {} pattern `{pattern}` can never equal a value of type {}{hint}, at {}/{}",
+            match_literal_kind(pattern),
+            value_type.to_brief_string(),
+            file_ns,
+            ctx.call_stack.0.first().map(|f| f.def.as_ref()).unwrap_or("?")
+          ),
+          file_ns,
+          ctx.check_warnings,
+        );
+      }
+    }
+  }
+  Ok(Some(processed))
+}
+
 /// Preprocess `match` syntax and perform exhaustiveness checking.
 /// Input form (pair-based): `(match <value> (<pattern1> <body1>) (<pattern2> <body2>) ...)`
 ///
@@ -9319,6 +9474,10 @@ fn preprocess_match(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: 
       "match expected value followed by (pattern body) pairs, got 0 branches".to_owned(),
       ctx.call_stack,
     ));
+  }
+
+  if let Some(lowered) = try_lower_literal_match(args, ctx)? {
+    return Ok(lowered);
   }
 
   let mut xs: Vec<Calcit> = vec![Calcit::Syntax(head.to_owned(), Arc::from(head_ns))];
@@ -21235,5 +21394,91 @@ mod tests {
     .expect_err("pending async receivers must be awaited before postfix calls");
     assert_eq!(error.code.as_deref(), Some("E_ASYNC_INVOCATION_REQUIRES_AWAIT"));
     assert!(error.msg.contains("receiver"));
+  }
+
+  fn match_wildcard() -> Calcit {
+    Calcit::Symbol {
+      sym: Arc::from("_"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.literal-match"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+    }
+  }
+
+  fn literal_match_form(value_type: Arc<CalcitTypeAnnotation>, patterns: Vec<Calcit>) -> (Result<Calcit, CalcitErr>, Vec<String>) {
+    let x: Arc<str> = Arc::from("x");
+    let value = Calcit::Local(CalcitLocal {
+      idx: CalcitLocal::track_sym(&x),
+      sym: x.clone(),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.literal-match"),
+        at_def: Arc::from("demo"),
+      }),
+      location: None,
+      type_info: value_type.clone(),
+    });
+    let mut items = vec![Calcit::Syntax(CalcitSyntax::Match, Arc::from("tests.literal-match")), value];
+    items.extend(
+      patterns
+        .into_iter()
+        .map(|pattern| Calcit::from(CalcitList::from(&[pattern, Calcit::Number(1.0)] as &[Calcit]))),
+    );
+    let form = Calcit::from(CalcitList::from(items.as_slice()));
+    let mut scope_types: ScopeTypes = ScopeTypes::new();
+    scope_types.insert(x.clone(), value_type);
+    let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
+    scope_defs.insert(x);
+    let warnings = RefCell::new(vec![]);
+    let result = preprocess_expr(
+      &form,
+      &scope_defs,
+      &mut scope_types,
+      "tests.literal-match",
+      &warnings,
+      &CallStackList::default(),
+    );
+    let messages = warnings.borrow().iter().map(|w| w.message().to_string()).collect();
+    (result, messages)
+  }
+
+  #[test]
+  fn literal_match_lowers_to_value_comparison() {
+    let (result, warnings) = literal_match_form(
+      Arc::new(CalcitTypeAnnotation::Tag),
+      vec![Calcit::tag("a"), Calcit::tag("b"), match_wildcard()],
+    );
+    let lowered = result.expect("literal match preprocesses");
+    assert!(warnings.is_empty(), "{warnings:?}");
+    let Calcit::List(items) = lowered else {
+      panic!("expected lowered list");
+    };
+    assert!(matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::CoreLet, _))));
+  }
+
+  #[test]
+  fn literal_match_warns_on_duplicate_and_mismatched_patterns() {
+    let (result, warnings) = literal_match_form(
+      Arc::new(CalcitTypeAnnotation::Tag),
+      vec![Calcit::tag("a"), Calcit::tag("a"), Calcit::Str(Arc::from("b")), match_wildcard()],
+    );
+    result.expect("literal match preprocesses");
+    assert!(
+      warnings.iter().any(|w| w.contains("duplicated literal pattern `:a`")),
+      "{warnings:?}"
+    );
+    assert!(
+      warnings.iter().any(|w| w.contains("string pattern `|b` can never equal")),
+      "{warnings:?}"
+    );
+  }
+
+  #[test]
+  fn literal_match_rejects_mixing_with_enum_patterns() {
+    let enum_pattern = Calcit::from(CalcitList::from(&[Calcit::tag("some")] as &[Calcit]));
+    let (result, _) = literal_match_form(Arc::new(CalcitTypeAnnotation::Dynamic), vec![Calcit::tag("a"), enum_pattern]);
+    let error = result.expect_err("mixed patterns are rejected");
+    assert!(error.msg.contains("mixes literal patterns with enum pattern"), "{}", error.msg);
   }
 }
