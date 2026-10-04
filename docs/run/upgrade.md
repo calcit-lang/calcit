@@ -927,6 +927,23 @@ quoted data 不计为调用，推荐方法复用旧内部 helper 也不计为旧
 不要仅为压低预算删除断言或放宽类型。fix 的附带扫描需显式选择 `--include-attached`，
 先审阅 preview，再以新 revision 应用，随后重放 `:tests` 和业务入口。
 
+`case-default` 已标记 `:deprecated`，首选原生 `match`。所有模式都是字面量时两者等价，迁移时把第二个参数（默认值）挪到末尾的 `_` 分支：
+
+```cirru.no-check
+; 旧写法
+case-default kind style-default
+  :primary style-primary
+  :danger style-danger
+
+; 新写法
+match kind
+  :primary style-primary
+  :danger style-danger
+  _ style-default
+```
+
+模式是表达式或变量时 `match` 不适用，改用 `cond`。`case` 暂未标记弃用，字面量模式下同样展开为 `match`。入口本身仍保留，随后续非 patch 版本再评估删除。
+
 旧的 macro `Fn` / whole-`Dynamic` schema 不再作为运行时兼容格式：Snapshot loader 会在解析阶段以 definition 的完整 path 拒绝它。
 若旧 Snapshot 已经包含结构化 `CodeEntry` 和这类 schema，应使用最终兼容版本 Calcit 0.13.51 先将模块改成严格
 `Macro` contract（显式声明 `:required` / `:optional` / `:rest`、`:expansion` 和 `:capabilities`），再使用新版本检查。

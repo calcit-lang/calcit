@@ -36,12 +36,12 @@ defmacro if-not (condition true-branch ? false-branch)
 To create new variables inside macro definitions, use `(gensym)` or `(gensym |name)`:
 
 ```cirru
-defmacro case (item default & patterns)
+defmacro twice (item)
   &let
     v (gensym |v)
     quasiquote
       &let (~v ~item)
-        &case ~v ~default ~@patterns
+        + ~v ~v
 ```
 
 For macros that need multiple fresh symbols, use `with-gensyms` from `calcit.core`:

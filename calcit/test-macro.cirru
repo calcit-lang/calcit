@@ -30,23 +30,40 @@
               assert= (detect-x 3) |else
             inside-eval: (&reset-gensym-index!)
               assert=
-                macroexpand-all $ quote $ case (+ 1 2) (1 |one) (2 |two) (3 |three)
+                macroexpand-all $ quote $ case (+ 1 2)
+                  (+ 0 1) |one
+                  (+ 0 2) |two
+                  (+ 0 3) |three
                 macroexpand-all $ quote $ &let
                   v__1 $ calcit.core/+ 1 2
-                  if (&= v__1 1) |one $ if (&= v__1 2) |two $ if (&= v__1 3) |three
-                    raise $ str-spaced |case |found |no |matching |pattern |for: v__1
+                  if
+                    &= v__1 $ calcit.core/+ 0 1
+                    , |one $ if
+                      &= v__1 $ calcit.core/+ 0 2
+                      , |two $ if
+                        &= v__1 $ calcit.core/+ 0 3
+                        , |three
+                          raise $ str-spaced |case |found |no |matching |pattern |for: v__1
               assert=
-                macroexpand $ quote $ case (+ 1 2) (1 |one) (2 |two) (3 |three)
+                macroexpand $ quote $ case (+ 1 2)
+                  (+ 0 1) |one
+                  (+ 0 2) |two
+                  (+ 0 3) |three
                 quote $ &let
                   v__2 $ + 1 2
                   &case v__2
                     raise $ str-spaced |case |found |no |matching |pattern |for: v__2
-                    1 |one
-                    2 |two
-                    3 |three
+                    (+ 0 1) |one
+                    (+ 0 2) |two
+                    (+ 0 3) |three
               assert=
                 macroexpand $ quote $ &case v__2 nil (1 |one) (2 |two) (3 |three)
                 quote $ if (&= v__2 1) |one $ &case v__2 nil (2 |two) (3 |three)
+              ; "literal patterns expand to match"
+              assert=
+                macroexpand $ quote $ case (+ 1 2) (1 |one) (2 |two) (3 |three)
+                quote $ match (+ 1 2) (1 |one) (2 |two) (3 |three)
+            assert= |two $ case (+ 1 1) (1 |one) (2 |two) (3 |three)
           :examples $ []
           :schema $ :: 'Dynamic
         'test-detector $ %{} 'CodeEntry (:doc |)

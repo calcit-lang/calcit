@@ -45,9 +45,17 @@
               assert= (detect-x 3) |else
             inside-eval: (&reset-gensym-index!)
               assert=
-                macroexpand $ quote $ case-default x |nothing (1 |one) (2 |two)
+                macroexpand $ quote $ case-default x |nothing
+                  (+ 0 1) |one
+                  (+ 0 2) |two
                 quote $ &let (v__1 x)
-                  &case v__1 |nothing (1 |one) (2 |two)
+                  &case v__1 |nothing
+                    (+ 0 1) |one
+                    (+ 0 2) |two
+              ; "literal patterns expand to match with a trailing wildcard"
+              assert=
+                macroexpand $ quote $ case-default x |nothing (1 |one) (2 |two)
+                quote $ match x (1 |one) (2 |two) (_ |nothing)
             &let
               detect-x $ fn (x)
                 case-default x |nothing (1 |one) (2 |two)
