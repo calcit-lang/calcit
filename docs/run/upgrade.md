@@ -187,7 +187,7 @@ trait 的 where 约束现在使用能力证明，而不是把未绑定泛型静�
 
 已发布的正式 [0.28.0](https://github.com/calcit-lang/calcit/releases/tag/0.28.0) 包含运行时 Number 的精确文本格式化与已证明的 trait 调用，不需要等待 0.29.0。core WASM 与 WASI 0.3 对这些 `f64` 值使用与 native/JS 一致的最短十进制规则；`to-string` 的 Number 方法通过已证明的 `ToString` trait 实现进入同一运行时路径，不是新增的名称特判或 host import。
 
-这项能力首次随 [0.28.0-alpha.1](https://github.com/calcit-lang/calcit/releases/tag/0.28.0-alpha.1) 发布。更早的 0.28 开发安全修复阶段，旧 `turn-string` 只保证绝对值不超过 2^53 的有限整数，小数、负零、超范围整数和非有限值会陷阱；不要把这个历史限制当作正式 0.28.0 的支持范围。未证明的开放 `Dynamic`、二义 trait 与一等函数边界仍可能被静态拒绝，Number 支持不等于任意动态值都可转换。
+这项能力首次随 [0.28.0-alpha.1](https://github.com/calcit-lang/calcit/releases/tag/0.28.0-alpha.1) 发布。更早的 0.28 开发安全修复阶段，旧 `turn-string` 只保证绝对值不超过 2^53 的有限整数，小数、负零、超范围整数和非有限值会陷阱；不要把这个历史限制当作正式 0.28.0 的支持范围。
 
 这也修正了 native 与 JS 在极少数 `f64` 最短表示末位上的分歧：统一采用 JS/Ryū 的选择。Number 二进制值和解析规则不变，但依赖数字文本逐字节相等的缓存键、快照或外部协议应在升级时重新比对。需要明确显示 Calcit 值或序列化结构数据时，分别使用 Debug/Show 或 Cirru EDN，不要把 `to-string` 当作通用序列化。
 
@@ -1155,3 +1155,9 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 具体表达式可用诊断返回的 Snapshot path 调用 `calcit query type-at <ns/def> --path code@... --format edn`；只有对接 JSON-only consumer 时才显式改用 JSON。
 
 call graph 的 `--show-unused` 只能作为 entry-relative 线索；公开 API 和替代入口可能被列为 unreachable，不能据此自动删除。
+
+## 限制
+
+- Number 精确文本支持不允许把未经解码、无法证明 `ToString` 的开放 `Dynamic` 自动当作可转换值。
+- 二义的 trait 调用仍可能被静态拒绝。
+- 未证明的一等函数边界仍可能被静态拒绝。
