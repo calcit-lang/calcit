@@ -33,16 +33,25 @@ Agent 可直接运行 `calcit docs read upgrade.md '当前升级闭环'` 读取�
 | 阶段 | 操作 | 验收证据 |
 | --- | --- | --- |
 | 基线与版本 | 记录旧工具链的实际测试结果；核对 `deps.cirru :calcit-version`、CLI 与 `@calcit/procs` 的正式版本 | 可回滚提交、明确版本及项目 entry |
+| 旧版迁移桥梁 | 核对目标版本的删除项；仍需旧 CLI 的规则先在原工具链下预览、审阅并应用，再运行原测试 | 桥梁所需的已发布 CLI、迁移 diff、附带区域与后端验证 |
 | 依赖与表示 | 按已确认的版本更新依赖和 lockfile，安装后核对工具链；读取 mutation contract，再规范化 Snapshot | 工具链一致、规范化 diff 已审阅 |
 | 源码迁移 | 使用 strict workflow 预览；需要时另选支持附带区域的 preset/rule 或项目级模板 | revision、source coverage、待审位置及实际写入范围 |
 | 类型与行为 | 逐 entry 严格检查，运行原附带断言、示例及项目已有构建/运行命令 | 非零匹配的测试、真实 native/JS 或已支持 WASM/WASI 路径 |
 | 提交 | 审阅源码、宏生成引用、依赖模块及 CI/文档中的旧调用，再提交 PR | 最新 HEAD 的 CI/review；扫描失败或未覆盖不能当作清零 |
 
-依赖更新与安装由调用方明确执行。先在 Step A/B 确认目标版本与项目的 `packageManager`，再运行：
+先只读核对当前版本与项目配置，并保存原工具链的测试基线：
 
 ```bash
 calcit --version
 caps --version
+calcit calcit.cirru query config --format edn
+```
+
+**需要旧版迁移桥梁时，先迁移源码，再升级工具链。** 例如 0.28.x → 0.29.0，List `.join`、Map `.values`、List/String `.contains?` 的迁移入口在目标 CLI 中已退役或缩小范围，应先阅读本页“兼容入口的退场节奏”，用匹配项目的 0.28.x CLI 预览、携带 revision 应用并运行原测试。附带测试/示例、宏生成引用和依赖源码需单独核对；这些位置不因普通代码扫描为空就视为完成。若已安装目标 CLI，可通过原已发布 CLI 的绝对路径执行旧阶段，不修改版本 pin 来绕过校验。
+
+没有此类旧桥梁需求，或旧阶段已验证完成后，再确认 Step A/B 中的目标版本与项目 `packageManager`。依赖更新与安装由调用方明确执行：`caps upgrade --all` 会修改依赖选择，不是只读预览，只在已确认所有依赖均按该策略升级时执行；保留特定版本的项目按已审阅版本更新声明，然后安装。
+
+```bash
 caps upgrade --all
 caps
 yarn install
@@ -79,6 +88,7 @@ calcit calcit.cirru fix --workflow strict --verify --format edn
 - `requires-review` 候选与严格类型错误分别处理：workflow 未通过时读取具体 gate，合法的变长 FFI 合同也可能需要人工审阅；不为清空报告改成固定参数、扩大 Dynamic 或删除门禁。
 - manifest 中未执行的 external gates 和零测试匹配都不是通过证据。
 - 版本不匹配时应安装项目固定 CLI 或显式升级合同，不绕过工具链 pin。
+- 已退役规则不能用目标 CLI 重新获得；先用对应旧版桥梁，或按具体诊断人工迁移，不反复更换 preset 猜测。
 - `--check-only`、生成成功或零语法命中不能代替目标后端运行及真实消费者回归。
 
 ## 显式 trait 调用的重复实现
