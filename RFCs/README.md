@@ -54,7 +54,7 @@
 | `08-29-snapshot-symbol-keys-and-tag-match-deprecation-rfc.md` | Implemented | Snapshot namespace/definition key 宽读 String/Symbol、窄写 Symbol；`tag-match` 普通废弃并迁移到原生 `match`。 |
 | `09-12-layered-semantics-and-agent-fixes-rfc.md`      | Active      | 已接受的当前分层语义与 Agent source-fix 契约；跨层语义以此为准。                         |
 | `09-19-external-object-declaration-shorthand-rfc.md` | Partial | `defexternal` 简写声明 external-object trait，lowering 为等价 `deftrait` + `:ffi` 元数据；P1（载入期规范化）与 P2（`calcit edit def` 写入、写盘 schema 归一化与快速失败）已落地，P3 待评估。 |
-| `10-03-trait-requires-rfc.md` | Partial | `deftrait` / `defexternal` 的 `'requires` 子句：external-object trait 隐式上转与继承成员，普通 trait 挂载时要求父 trait 实现；core 已实现，js-ffi 迁移待做（#1535、#1704）。 |
+| `10-03-trait-requires-rfc.md` | Partial | `deftrait` / `defexternal` 的 `requires` 子句：external-object trait 隐式上转与继承成员，普通 trait 挂载时要求父 trait 实现；core 已实现，js-ffi 迁移待做（#1535、#1704）。 |
 
 ## 历史状态与后续维护
 

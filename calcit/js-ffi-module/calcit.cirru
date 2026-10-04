@@ -42,7 +42,7 @@
           :schema $ :: 'Trait
         'TallyHost $ %{} 'CodeEntry
           :doc "|External-object trait that inherits CounterHost members"
-          :code $ quote $ deftrait TallyHost ('requires CounterHost)
+          :code $ quote $ deftrait TallyHost (requires CounterHost)
           :examples $ []
           :ffi $ {} (:backend :js) (:kind :external-object) (:target :node)
           :schema $ :: 'Trait

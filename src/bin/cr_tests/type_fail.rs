@@ -1093,7 +1093,7 @@ fn strict_type_fail_trait_requires_reports_declaration_and_attachment_codes() {
       (
         "trait-requires-kind-mismatch-strict",
         "E_TRAIT_REQUIRES",
-        "is an external-object trait but 'requires",
+        "is an external-object trait but requires",
       ),
       (
         "impl-missing-required-trait-strict",

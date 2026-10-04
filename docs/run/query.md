@@ -230,7 +230,7 @@ calcit query type "'Number" --format edn
 
 `query type` 只加载和预处理静态元数据，不执行项目的 init/reload 函数。默认 Markdown 按已证明首选、未归类、兼容入口分组；显式 EDN/JSON 保持原有方法列表和分派优先级，每项仍可追溯贡献该方法的实现。查询定义时先使用显式 schema，再尝试静态源码推断。因此，即使 `defstruct`、`defenum` 的 entry schema 为 Dynamic，也能在不构造运行时值的情况下查看名义类型及方法；若两种证据都不足，请查询具体类型标注。
 
-通过 `('requires Parent)` 获得的方法也列在同一个 `methods` 中，`origin` / `definition` 指向实际声明它的父 trait；传递继承和重复路径复用正常静态分派的解析，不生成另一套方法注册表。普通 trait 与 external-object trait 使用同一规则。例如：
+通过 `(requires Parent)` 获得的方法也列在同一个 `methods` 中，`origin` / `definition` 指向实际声明它的父 trait；传递继承和重复路径复用正常静态分派的解析，不生成另一套方法注册表。普通 trait 与 external-object trait 使用同一规则。例如：
 
 ```bash
 calcit calcit/test-traits.cirru query type test-traits.main/Greeting --format edn

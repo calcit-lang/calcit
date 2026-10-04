@@ -2214,7 +2214,7 @@ pub(crate) fn check_trait_requires_declaration(args: &CalcitList, file_ns: &str,
       Some(trait_def) => resolved.push(Arc::new(trait_def)),
       None => {
         return Some(format!(
-          "trait {file_ns}/{def_name} 'requires `{parent}`, which is not a trait definition"
+          "trait {file_ns}/{def_name} requires `{parent}`, which is not a trait definition"
         ));
       }
     }
@@ -2234,7 +2234,7 @@ pub(crate) fn check_trait_requires_declaration(args: &CalcitList, file_ns: &str,
         }
       };
       return Some(format!(
-        "trait {file_ns}/{def_name} is {} but 'requires {}, which is {}",
+        "trait {file_ns}/{def_name} is {} but requires {}, which is {}",
         kind(child_external),
         parent.origin_label(),
         kind(!child_external)

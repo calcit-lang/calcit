@@ -12,11 +12,12 @@
 - `RFCs/09-19-external-object-declaration-shorthand-rfc.md`（`defexternal` 简写）
 - `docs/features/traits.md`、`docs/features/js-interop.md`
 
+> 后续修订：子句头由 `'requires` 简化为裸 `requires`，原 `'requires` 写法继续接受。
 > 表层写法已审阅（见文末“审阅结论”）。实施步骤 1–3 已落地；步骤 4（js-ffi 事件 trait 迁移与 Respo 回归）在下游仓库进行。
 
 ## 摘要
 
-为 `deftrait` 与 `defexternal` 增加一个局部子句 `'requires`，声明“具备本 trait 的值也必须具备另一个 trait”。
+为 `deftrait` 与 `defexternal` 增加一个局部子句 `requires`，声明“具备本 trait 的值也必须具备另一个 trait”。
 它只填充已有的内部字段 `CalcitTrait.requires`，复用已经实现的传递规范化、环检测与按 origin 判等，
 不新增类型种类，也不引入隐式的全局实现搜索。
 
@@ -71,7 +72,7 @@ deftrait KeyboardEventHost
 ```cirru.no-check
 defexternal KeyboardEventHost
   :target :browser
-  'requires EventHost
+  requires EventHost
   :key 'String
   :code 'String
 
@@ -90,17 +91,17 @@ defn on-key (event)
 
 ## 表层写法
 
-`'requires` 是 trait 声明内的一个子句，头部是引用符号 `'requires`（Symbol），值是一个 trait 引用：
+`requires` 是 trait 声明内的一个子句，头部是符号 `requires`（Symbol），值是一个 trait 引用：
 
 ```cirru.no-check
 deftrait Shape
-  'requires Debug
-  'requires app.geometry/HasArea
+  requires Debug
+  requires app.geometry/HasArea
   .draw $ :: 'Fn $ {} (:args $ [] 'Shape) (:return 'Unit)
 ```
 
 - 每个子句恰好一个 trait，需要多个父 trait 时重复书写；与 `defexternal` 已有的“每个条目一个值”规则一致。
-- 成员键只能是 `:field`（Tag）或 `.method`，子句头是 Symbol `'requires`，与 Tag 形式的成员键（包括名为 `:requires` 的宿主字段）
+- 成员键只能是 `:field`（Tag）或 `.method`，子句头是 Symbol `requires`，与 Tag 形式的成员键（包括名为 `:requires` 的宿主字段）
   在类型上区分；旧代码中不存在以 Symbol 开头的成员条目，因此这是纯增量写法。
 - trait 引用按普通符号解析（`:require` 导入、命名空间限定），因此天然携带 nominal origin；不接受 tag 或字符串。
 - `defexternal` 使用同一子句；规范化后的 Snapshot 存储为 `deftrait` 代码中的同一子句，不放进 `:ffi` 元数据。
@@ -145,13 +146,13 @@ deftrait Shape
 ### 热重载与查询
 
 - trait 值在求值时捕获父 trait 的值；父 trait 重新定义后，引用它的子 trait 按现有定义依赖重新求值，旧的 `runtime_id` 证据失效，不跨版本混用。
-- `calcit query def` 原样显示 `'requires` 子句；`query type` 对子 trait 列出可达父 trait 的成员并标明来源 trait（尚未实现，后续补齐）。
+- `calcit query def` 原样显示 `requires` 子句；`query type` 对子 trait 列出可达父 trait 的成员并标明来源 trait。
 
 ## 诊断
 
 | 情形 | 诊断 |
 | --- | --- |
-| `'requires` 的值不是 trait、可达集合出现环、external-object 与普通 trait 互相 require、可达成员重名 | `E_TRAIT_REQUIRES`，信息区分具体原因；环沿用现有路径文本 |
+| `requires` 的值不是 trait、可达集合出现环、external-object 与普通 trait 互相 require、可达成员重名 | `E_TRAIT_REQUIRES`，信息区分具体原因；环沿用现有路径文本 |
 | 挂载子 trait 实现但缺少父 trait 实现 | `E_IMPL_MISSING_REQUIRED_TRAIT` |
 
 分两个编号是因为修复位置不同：前者改 trait 声明，后者改 `impl-traits` 挂载。现有 `E_DUPLICATE_TRAIT_IMPL`、
@@ -165,7 +166,7 @@ deftrait Shape
 | `KeyboardEventHost` 接收者调用 `.prevent-default!`、读取 `:event-type` | 通过，解析到 `EventHost` |
 | `EventHost` 值传给 `KeyboardEventHost` 参数 | 类型错误；`js-cast` 后通过 |
 | `js-cast value 'KeyboardEventHost` 缺少父 trait 的宿主成员 | 运行时契约错误，信息含父 trait 成员名 |
-| `A 'requires B`、`B 'requires A` | `E_TRAIT_REQUIRES`（环） |
+| `A requires B`、`B requires A` | `E_TRAIT_REQUIRES`（环） |
 | 两条路径到达同一父 trait（菱形） | 通过，按 origin 去重 |
 | 不同命名空间的同名 trait 作为父 trait | 视为不同 trait |
 | 子 trait 与父 trait 声明同名成员（含相同签名） | `E_TRAIT_REQUIRES`（成员重名） |
@@ -185,7 +186,7 @@ deftrait Shape
 ## 兼容与迁移
 
 - 纯增量语法；已有 trait 的 `requires` 为空，行为不变。
-- js-ffi 的事件 trait 可在下游 PR 中改为 `'requires EventHost` 并删除重复成员；这会把原来按值拒绝的跨事件传参变为允许，属于放宽，不影响已有调用。重复的泛型 `unsafe-coerce` 入口按 #1704 缺口 1 逐个迁移为 `js-cast`，不批量自动改写。
+- js-ffi 的事件 trait 可在下游 PR 中改为 `requires EventHost` 并删除重复成员；这会把原来按值拒绝的跨事件传参变为允许，属于放宽，不影响已有调用。重复的泛型 `unsafe-coerce` 入口按 #1704 缺口 1 逐个迁移为 `js-cast`，不批量自动改写。
 - 不提供 `calcit fix` 规则：是否建立继承关系由维护者判断。
 
 ## 非目标
@@ -203,6 +204,6 @@ deftrait Shape
 
 ## 审阅结论
 
-1. 子句头使用 Symbol `'requires`，与 Tag 成员键区分。
+1. 子句头使用 Symbol `requires`，与 Tag 成员键区分。
 2. 子 trait 与父 trait 同名成员一律报错，已有重复由 AI 按诊断迁移。
 3. 声明期错误合并为 `E_TRAIT_REQUIRES`，挂载期保留 `E_IMPL_MISSING_REQUIRED_TRAIT`。
