@@ -8,6 +8,140 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
+    'app.binding-proof $ %{} 'FileEntry
+      :defs $ {}
+        'Box $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Box
+            :value $ :: 'Optional 'app.binding-proof/Value
+          :examples $ []
+          :schema $ :: 'StructDef
+        'OptionBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct OptionBox
+            :value $ :: 'Optional $ :: 'Option 'String
+          :examples $ []
+          :schema $ :: 'StructDef
+        'Value $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Value (:text 'String)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'choose-nil $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn choose-nil (present)
+            let
+                selected $ if present nil nil
+              Box :value selected
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/Box)
+            :args $ [] 'Bool
+          :tests $ [] $ %{} 'TestEntry (:name |both-branches)
+            :code $ quote $ do
+              assert= (Box :value nil) (choose-nil true)
+              assert= (Box :value nil) (choose-nil false)
+            :tags $ #{} :nullable-branch-binding
+        'choose-nullable $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn choose-nullable (present box)
+            let
+                selected $ if present (:value box) nil
+              Box :value selected
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/Box)
+            :args $ [] 'Bool 'app.binding-proof/Box
+          :tests $ [] $ %{} 'TestEntry (:name |both-branches)
+            :code $ quote $ do
+              assert= (Box :value nil)
+                choose-nullable false $ Box :value $ Value :text |ok
+              assert= (Box :value nil)
+                choose-nullable true $ Box :value nil
+              assert=
+                Box :value $ Value :text |ok
+                choose-nullable true $ Box :value $ Value :text |ok
+            :tags $ #{} :nullable-branch-binding
+        'choose-option $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn choose-option (present value)
+            let
+                selected $ if present value nil
+              OptionBox :value selected
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/OptionBox)
+            :args $ [] 'Bool $ :: 'Option 'String
+          :tests $ [] $ %{} 'TestEntry (:name |both-branches)
+            :code $ quote $ do
+              assert= (OptionBox :value nil)
+                choose-option false $ Option :some |ok
+              assert=
+                OptionBox :value $ Option :some |ok
+                choose-option true $ Option :some |ok
+              assert=
+                OptionBox :value $ Option :none
+                choose-option true $ Option :none
+            :tags $ #{} :nullable-branch-binding
+        'if-nil-first $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn if-nil-first (present)
+            let
+                selected $ if present nil $ Value :text |ok
+                alias selected
+              Box :value alias
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/Box)
+            :args $ [] 'Bool
+          :tests $ [] $ %{} 'TestEntry (:name |both-branches)
+            :code $ quote $ do
+              assert=
+                Box :value $ Value :text |ok
+                if-nil-first false
+              assert= (Box :value nil) (if-nil-first true)
+            :tags $ #{} :nullable-branch-binding
+        'if-value-first $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn if-value-first (present)
+            let
+                selected $ if present (Value :text |ok) nil
+                alias selected
+              Box :value alias
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/Box)
+            :args $ [] 'Bool
+          :tests $ [] $ %{} 'TestEntry (:name |both-branches)
+            :code $ quote $ do
+              assert=
+                Box :value $ Value :text |ok
+                if-value-first true
+              assert= (Box :value nil) (if-value-first false)
+            :tags $ #{} :nullable-branch-binding
+        'lookup-inline $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn lookup-inline (items)
+            Box :value $ match (items .get |key)
+              (:some value) value
+              (:none) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/Box)
+            :args $ [] $ :: 'Map 'String 'app.binding-proof/Value
+          :tests $ [] $ %{} 'TestEntry (:name |present-and-missing)
+            :code $ quote $ do
+              assert= (Box :value nil)
+                lookup-inline $ {} $ |other (Value :text |ok)
+              assert=
+                Box :value $ Value :text |ok
+                lookup-inline $ {} $ |key (Value :text |ok)
+            :tags $ #{} :nullable-branch-binding
+        'lookup-local $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn lookup-local (items)
+            let
+                selected $ match (items .get |key)
+                  (:some value) value
+                  (:none) nil
+              Box :value selected
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.binding-proof/Box)
+            :args $ [] $ :: 'Map 'String 'app.binding-proof/Value
+          :tests $ [] $ %{} 'TestEntry (:name |present-and-missing)
+            :code $ quote $ do
+              assert= (Box :value nil)
+                lookup-local $ {} $ |other (Value :text |ok)
+              assert=
+                Box :value $ Value :text |ok
+                lookup-local $ {} $ |key (Value :text |ok)
+            :tags $ #{} :nullable-branch-binding
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.binding-proof
     'app.empty-fields $ %{} 'FileEntry
       :defs $ {}
         'Fields $ %{} 'CodeEntry (:doc |)

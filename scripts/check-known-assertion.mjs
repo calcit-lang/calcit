@@ -1181,6 +1181,62 @@ try {
     }
   }
 
+  // Nullable branch evidence must survive local bindings without proving open values.
+  await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  run("test", "--tag", "nullable-branch-binding", "--require-match");
+  const bindingTests = ["lookup-inline", "lookup-local", "if-value-first", "if-nil-first",
+    "choose-option", "choose-nullable", "choose-nil"].flatMap(name => {
+    const report = JSON.parse(run("query", "def", `app.binding-proof/${name}`, "--format", "json"));
+    assert.deepEqual(report.diagnostics, []);
+    assert.equal(report.data.tests.length, 1);
+    return report.data.tests.map(test => test.code);
+  });
+  run("edit", "def", "app.binding-proof/replay!", "--input-format", "json-ast", "--code",
+    JSON.stringify(["defn", "replay!", [], ...bindingTests, "&unit"]));
+  run("edit", "schema", "app.binding-proof/replay!", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+  run("config", "set", "init-fn", "app.binding-proof/replay!");
+  run("config", "set", "reload-fn", "app.binding-proof/replay!");
+  run("--check-only");
+  const bindingOutput = join(project, "nullable-binding-js");
+  run("--emit-path", bindingOutput, "js");
+  const bindingModule = await import(pathToFileURL(join(bindingOutput, "app.binding-proof.mjs")).href);
+  bindingModule.replay_$x_();
+  run("edit", "def", "app.binding-proof/RequiredValue", "--input-format", "cirru", "--code",
+    "quote $ defstruct RequiredValue (:value 'app.binding-proof/Value)");
+  run("edit", "schema", "app.binding-proof/RequiredValue", "--input-format", "cirru", "--code", "quote 'StructDef");
+  run("edit", "def", "app.binding-proof/RequiredOption", "--input-format", "cirru", "--code",
+    "quote $ defstruct RequiredOption (:value (:: 'Option 'String))");
+  run("edit", "schema", "app.binding-proof/RequiredOption", "--input-format", "cirru", "--code", "quote 'StructDef");
+  run("config", "set", "init-fn", "app.binding-proof/rejected");
+  run("config", "set", "reload-fn", "app.binding-proof/rejected");
+  for (const [name, type, expression, consumer] of [
+    ["nullable-is-not-value", "'app.binding-proof/Value", "if present value nil", "RequiredValue :value selected"],
+    ["reversed-nullable-is-not-value", "'app.binding-proof/Value", "if present nil value", "RequiredValue :value selected"],
+    ["open-is-not-value", "'Dynamic", "if present value nil", "Box :value selected"],
+    ["reversed-open-is-not-value", "'Dynamic", "if present nil value", "Box :value selected"],
+    ["foreign-is-not-value", "'app.field-consumer/User", "if present value nil", "Box :value selected"],
+    ["string-is-not-value", "'String", "if present value nil", "Box :value selected"],
+    ["nil-is-not-option", "(:: 'Option 'String)", "if present value nil", "RequiredOption :value selected"],
+    ["wrong-match-payload", "(:: 'Map 'String 'String)", "match (value .get |key) ((:some item) item) ((:none) nil)", "Box :value selected"],
+  ]) {
+    run("edit", "def", "app.binding-proof/rejected", "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defn rejected (present value) (let ((selected (${expression}))) (${consumer}) &unit)`);
+    run("edit", "schema", "app.binding-proof/rejected", "--input-format", "cirru", "--code",
+      `quote $ :: 'Fn $ {} (:args ([] 'Bool ${type})) (:return 'Unit)`);
+    const original = await readFile(snapshot);
+    for (const mode of [["--check-only"], ["js"]]) {
+      const output = join(project, `binding-${name}-${mode[0] === "js" ? "js" : "native"}`);
+      const result = spawnSync(binary, ["--emit-path", output, snapshot, ...mode], options);
+      if (result.error) throw result.error;
+      assert.equal(result.status, 1, `${name} ${mode}\n${result.stdout}\n${result.stderr}`);
+      const diagnostic = /W_FN_ARG_TYPE_MISMATCH/;
+      assert.match(`${result.stdout}\n${result.stderr}`, diagnostic);
+      assert.deepEqual(await readFile(snapshot), original);
+      if (mode[0] === "js") await assertRejectedArtifacts(output, name, diagnostic, true);
+    }
+  }
+
   await copyFile("tests/fixtures/trait-bound-return.cirru", snapshot);
   const traitOriginal = await readFile(snapshot);
   run("test", "--require-match");

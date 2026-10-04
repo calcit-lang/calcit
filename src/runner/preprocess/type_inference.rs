@@ -222,6 +222,16 @@ fn merge_if_branch_types(
     return Some(joined);
   }
 
+  // A live value joined with nil keeps its evidence and the possibility of
+  // absence. Existing nullable types were handled by compatibility above;
+  // this is not a nominal Option constructor or evidence for an open value.
+  if matches!(true_type.as_ref(), CalcitTypeAnnotation::Nil) {
+    return Some(Arc::new(CalcitTypeAnnotation::Optional(false_type)));
+  }
+  if matches!(false_type.as_ref(), CalcitTypeAnnotation::Nil) {
+    return Some(Arc::new(CalcitTypeAnnotation::Optional(true_type)));
+  }
+
   // The branches share no compatible annotation. When one side is a schema
   // `Option<T>`, widen the other branch back into the wrapper so the
   // possibility of absence is not erased; otherwise an unchecked operation
