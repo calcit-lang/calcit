@@ -105,6 +105,8 @@ loop
 
 声明返回 `JsNullish<T>` 的函数按各个退出值检查。例如 `if present? value nil` 在 `value` 已证明为 `T` 时满足声明；反向分支、`match` 的已知 payload 和函数尾部 `let` 的局部别名采用同一检查。无需为了中间合并出的遗留 Optional 插入转换。初始化值按父作用域验证，新绑定和 match payload 遮蔽同名外层变量的证据。返回检查不修改局部变量的推断类型，也不把 raw primitive 返回的 `Optional<T>` 当成 `JsNullish<T>`。
 
+已知字段、返回或显式 `assert-type` 合同也会逐项检查 List、Map、Set 字面量。例如 `Map<Tag,JsNullish<EventHandler>>` 可以接收 `{} (:click typed-handler) (:focus nil)`，嵌套集合采用同一规则；每个回调仍须具有兼容的完整签名。需要保存并复用混合集合时，可以在字面量处用 `assert-type` 明确检查合同。没有期望合同的异质集合仍按既有规则推导，开放的 Map 参数不会因此获得具体成员类型。检查不改变运行值，异步返回也不会自动等待集合中的 Promise。
+
 ## Dynamic 是边界，不是默认多态
 
 普通泛型函数会按实参顺序传递已知的类型关系。例如 `filter-map-kv` 接收 `Map<String,Number>` 时，后续回调的参数可推为 `String` 和 `Number`；回调返回的 `MapEntryDecision<R,S>` 也保留泛型实参，让结果 `Map<R,S>` 继续约束后续写入。无需为了传递这些关系手工增加 `hint-fn` 或 `assert-type`。如果输入本身是显式 `Dynamic`，推断不会凭空把它收窄为某个具体类型，仍应在真实边界处 decode 或 narrow。

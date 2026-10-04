@@ -5810,6 +5810,7 @@ fn check_struct_construction_fields(
     }
     if let Some(actual) = resolve_type_value(pair[1], scope_types)
       && !type_inference::constructor_payload_is_proven(&actual, &expected)
+      && !type_checking::expression_is_proven_for(pair[1], &expected, scope_types, false)
     {
       gen_check_warning_code_at_with_types(
         format!(
@@ -11168,9 +11169,14 @@ fn preprocess_assert_type_with_obligation(
   // Contradictory evidence is invalid for every expression, not just a local.
   // Open boundaries still require their separate migration policy; this check
   // neither manufactures proof nor changes their existing behavior.
-  let assertion_proof = current_type
+  let mut assertion_proof = current_type
     .as_ref()
     .map(|actual| actual.prove_with_bindings(asserted_type.as_ref(), &mut HashMap::new()));
+  if !assertion_proof.is_some_and(TypeProof::is_proven)
+    && type_checking::expression_is_proven_for(&asserted_target, &asserted_type, ctx.scope_types, false)
+  {
+    assertion_proof = Some(TypeProof::Proven);
+  }
   if let Some(current_type) = &current_type
     && assertion_proof.is_some_and(TypeProof::is_mismatch)
   {
