@@ -6,4 +6,4 @@
 
 在通用 proof 的迭代路径与 binding-aware 路径中，允许 Nil 加入 JsNullish，允许已证明的 payload 加入 JsNullish；容器递归、函数 variance 和 Ref 的双向证明复用原关系。移除 JsNullish 仍保留边界，历史 Optional 的关系不变，不改 runtime 值、不改 source lowering、不增加诊断编号或公开命令。
 
-四组语义用例保存在 test-struct 的定义 `:tests`；现有 check-known-assertion 读取原 AST 在 native 和真实生成 JS 重放，并验证错误 payload、键、callback 输入/输出/arity、擦除 Fn、Dynamic、nullable elimination 与 mutable widening 的编译拒绝及 Snapshot 不写回。Respo 回归准确记录剩余 branch join 与混合 literal 问题，不据此宣称整个迁移完成。关联 #1768、#1529、#1694、#1553。
+五组语义用例保存在 test-struct 的定义 `:tests`；现有 check-known-assertion 读取原 AST 在 native 和真实生成 JS 重放，并验证错误 payload、键、callback 输入/输出/arity、擦除 Fn、Dynamic、nullable elimination 与 mutable widening 的编译拒绝及 Snapshot 不写回。额外的函数 variance 用例允许接受更多输入的回调，拒绝不能处理 nullish 参数的窄回调。Respo 回归准确记录剩余 branch join 与混合 literal 问题，不据此宣称整个迁移完成。关联 #1768、#1529、#1694、#1553。

@@ -37,7 +37,7 @@ try {
   const nullishTests = ["NullableNumberStore", "NullableEventStore"].flatMap(name =>
     JSON.parse(run("query", "def", `test-struct.main/${name}`, "--format", "json")).data.tests
       .filter(test => test.tags.includes("js-nullish-container")));
-  assert.equal(nullishTests.length, 4);
+  assert.equal(nullishTests.length, 5);
   run("edit", "def", "test-struct.main/nullish-replay", "--input-format", "json-ast", "--code",
     JSON.stringify(["defn", "nullish-replay", [], ...nullishTests.map(test => test.code), "&unit"]));
   run("edit", "schema", "test-struct.main/nullish-replay", "--input-format", "cirru", "--code",
@@ -53,6 +53,9 @@ try {
   run("edit", "def", "test-struct.main/NullableRefStore", "--input-format", "cirru", "--code",
     "quote $ defstruct NullableRefStore $ :cell $ :: Ref $ :: JsNullish Number");
   run("edit", "schema", "test-struct.main/NullableRefStore", "--input-format", "cirru", "--code", "quote 'StructDef");
+  run("edit", "def", "test-struct.main/NullableInputCallbackStore", "--input-format", "cirru", "--code",
+    "quote $ defstruct NullableInputCallbackStore $ :handlers $ :: Map Tag $ :: JsNullish $ :: Fn $ {} (:args $ [] $ :: JsNullish Number) (:return Unit)");
+  run("edit", "schema", "test-struct.main/NullableInputCallbackStore", "--input-format", "cirru", "--code", "quote 'StructDef");
   for (const [label, args, body, schema] of [
     ["wrong-payload", [], "NullableNumberStore :values ({} (:a |wrong)) :nested ([])", ":: 'Fn $ {} (:args ([])) (:return 'Dynamic)"],
     ["open-members", ["values"], "NullableNumberStore :values values :nested ([])", ":: 'Fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)"],
@@ -60,6 +63,7 @@ try {
     ["wrong-callback-input", [], "NullableEventStore :handlers $ {} $ :click $ fn (value) (hint-fn $ {} (:args $ [] 'String) (:return 'Unit)) &unit", ":: 'Fn $ {} (:args ([])) (:return 'Dynamic)"],
     ["wrong-callback-return", [], "NullableEventStore :handlers $ {} $ :click $ fn (value) (hint-fn $ {} (:args $ [] 'Number) (:return 'Number)) 1", ":: 'Fn $ {} (:args ([])) (:return 'Dynamic)"],
     ["wrong-callback-arity", [], "NullableEventStore :handlers $ {} $ :click $ fn (left right) (hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Unit)) &unit", ":: 'Fn $ {} (:args ([])) (:return 'Dynamic)"],
+    ["narrower-callback-input", [], "NullableInputCallbackStore :handlers $ {} $ :click NullableEvent", ":: 'Fn $ {} (:args ([])) (:return 'Dynamic)"],
     ["erased-callback", ["callback"], "NullableEventStore :handlers $ {} (:click callback)", ":: 'Fn $ {} (:args $ [] 'Fn) (:return 'Dynamic)"],
     ["nullable-elimination", ["values"], "ConcreteNumberStore :values values", ":: 'Fn $ {} (:args $ [] $ :: 'Map 'Tag $ :: 'JsNullish 'Number) (:return 'Dynamic)"],
     ["mutable-widening", ["cell"], "NullableRefStore :cell cell", ":: 'Fn $ {} (:args $ [] $ :: 'Ref 'Number) (:return 'Dynamic)"],

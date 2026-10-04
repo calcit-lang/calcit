@@ -100,6 +100,17 @@
                   stored $ NullableEventStore :handlers handlers
                 assert= handlers $ :handlers stored
               :tags $ #{} :js-nullish-container
+            %{} 'TestEntry (:name |wider-callback-input)
+              :code $ quote $ let
+                  callback $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] $ :: JsNullish Number
+                      :return Unit
+                    , &unit
+                  handlers $ {} $ :click callback
+                  stored $ NullableEventStore :handlers handlers
+                assert= handlers $ :handlers stored
+              :tags $ #{} :js-nullish-container
         'NullableNumberStore $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NullableNumberStore
             :values $ :: Map Tag $ :: JsNullish Number
