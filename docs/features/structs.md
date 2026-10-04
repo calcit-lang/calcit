@@ -38,6 +38,14 @@ Each field is a pair of `(:field-name type)`. Use quoted-symbol types such as `'
 defstruct Person (:name 'String) (:age 'Number) (:position 'Tag)
 ```
 
+### 字段类型的声明来源
+
+字段中的类型名按 `defstruct` 所在 namespace 及其显式 import 解析，而不是按调用者解析。
+例如 `Database` 声明 `:users $ :: 'Map 'String 'User` 时，其他 namespace 通过普通 import
+构造、读取或更新该字段，仍使用声明处的 `User`；调用者自己也定义了 `User`，不代表两者可以互换。
+这个规则同样覆盖 Optional 和嵌套容器。泛型字段先解析声明中的具名类型，再代入调用方已证明的参数，
+不需要把合法本地类型名全部改为全限定名，也不需要增加 `unsafe-coerce`。
+
 ## Generic Structs
 
 `defstruct` also accepts an optional generics list right after the type name. Declare generic slots with quoted symbols, then apply the named type in schemas with `(:: 'TypeName ...)`.

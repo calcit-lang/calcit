@@ -5797,17 +5797,19 @@ fn check_struct_construction_fields(
     let Some(index) = value.struct_ref.fields.iter().position(|candidate| candidate == field) else {
       continue;
     };
-    let Some(expected) = value.struct_ref.field_types.get(index) else {
+    let Some(expected) =
+      type_inference::resolve_struct_field_type_by_index(&CalcitTypeAnnotation::StructValue(value.struct_ref.clone()), index)
+    else {
       continue;
     };
     if matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic) {
       continue;
     }
-    if empty_container_has_no_type_evidence(pair[1], expected) {
+    if empty_container_has_no_type_evidence(pair[1], &expected) {
       continue;
     }
     if let Some(actual) = resolve_type_value(pair[1], scope_types)
-      && !type_inference::constructor_payload_is_proven(&actual, expected)
+      && !type_inference::constructor_payload_is_proven(&actual, &expected)
     {
       gen_check_warning_code_at_with_types(
         format!(

@@ -8,6 +8,120 @@
       :modules $ []
       :type-slots $ {}
   :files $ {}
+    'app.field-consumer $ %{} 'FileEntry
+      :defs $ {}
+        'User $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct User (:name 'String)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'make-local-user $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn make-local-user () (User :name |Caller)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.field-consumer/User)
+            :args $ []
+        'verify-generic $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn verify-generic ()
+            let
+                user $ owner/make-user
+                value $ owner/Envelope :user user :value 42
+              assert-type (:value value) 'Number
+              assert= 42 $ :value value
+              assert= |Ada $ :name $ :user value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |declaration-owned-generic)
+            :code $ quote $ verify-generic
+            :tags $ #{} :struct-field-origin
+        'verify-generic-origin $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn verify-generic-origin ()
+            let
+                value $ owner/Envelope :user (owner/make-user) :value $ make-local-user
+              assert-type (:value value) 'app.field-consumer/User
+              assert= |Caller $ :name $ :value value
+              assert= |Ada $ :name $ :user value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |caller-owned-generic-argument)
+            :code $ quote $ verify-generic-origin
+            :tags $ #{} :struct-field-origin
+        'verify-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn verify-map ()
+            let
+                user $ owner/make-user
+                db $ owner/Database :users
+                  {} $ |one user
+                  , :maybe nil
+                found $ -> (:users db) (.get |one) (.unwrap)
+              assert= |Ada $ :name found
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |declaration-owned-map)
+            :code $ quote $ verify-map
+            :tags $ #{} :struct-field-origin
+        'verify-optional $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn verify-optional ()
+            let
+                user $ owner/make-user
+                db $ owner/Database :users
+                  {} $ |one user
+                  , :maybe user
+              assert= user $ :maybe db
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |declaration-owned-optional)
+            :code $ quote $ verify-optional
+            :tags $ #{} :struct-field-origin
+        'verify-update $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn verify-update ()
+            let
+                user $ owner/make-user
+                original $ owner/Database :users
+                  {} $ |one user
+                  , :maybe nil
+                updated $ original .assoc :maybe user
+                changed $ updated .assoc :users $ {} (|two user)
+              assert= nil $ :maybe original
+              assert= user $ :maybe changed
+              assert= (Option :none)
+                get (:users original) |two
+              assert= (Option :some user)
+                get (:users changed) |two
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |declaration-owned-update)
+            :code $ quote $ verify-update
+            :tags $ #{} :struct-field-origin
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.field-consumer
+          :require $ app.field-owner :as owner
+    'app.field-owner $ %{} 'FileEntry
+      :defs $ {}
+        'Database $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Database
+            :users $ :: 'Map 'String 'User
+            :maybe $ :: 'Optional 'User
+          :examples $ []
+          :schema $ :: 'StructDef
+        'Envelope $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Envelope ([] 'T) (:user 'User) (:value 'T)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'User $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct User (:name 'String)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'make-user $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn make-user () (User :name |Ada)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.field-owner/User)
+            :args $ []
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.field-owner
     'app.main $ %{} 'FileEntry
       :defs $ {}
         'answer $ %{} 'CodeEntry (:doc |)

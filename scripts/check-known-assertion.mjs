@@ -1094,6 +1094,47 @@ try {
       assert.deepEqual(await readFile(snapshot), original);
     }
   }
+  // Declaration-owned field names must survive construction, reads and updates.
+  await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  run("test", "--tag", "struct-field-origin", "--require-match");
+  const fieldTests = ["verify-map", "verify-optional", "verify-generic", "verify-generic-origin", "verify-update"].flatMap(name => {
+    const report = JSON.parse(run("query", "def", `app.field-consumer/${name}`, "--format", "json"));
+    assert.deepEqual(report.diagnostics, []);
+    assert.equal(report.data.tests.length, 1);
+    return report.data.tests.map(test => test.code);
+  });
+  run("edit", "def", "app.field-consumer/replay!", "--input-format", "json-ast", "--code",
+    JSON.stringify(["defn", "replay!", [], ...fieldTests, "&unit"]));
+  run("edit", "schema", "app.field-consumer/replay!", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+  run("config", "set", "init-fn", "app.field-consumer/replay!");
+  run("config", "set", "reload-fn", "app.field-consumer/replay!");
+  run("--check-only");
+  const fieldOutput = join(project, "field-origin-js");
+  run("--emit-path", fieldOutput, "js");
+  const fieldModule = await import(pathToFileURL(join(fieldOutput, "app.field-consumer.mjs")).href);
+  fieldModule.replay_$x_();
+  for (const [name, expression] of [
+    ["foreign-map-value", "owner/Database :users ({} (|one (User :name |wrong-origin))) :maybe nil"],
+    ["wrong-map-value", "owner/Database :users ({} (|one 42)) :maybe nil"],
+    ["foreign-optional-value", "owner/Database :users ({}) :maybe (User :name |wrong-origin)"],
+    ["foreign-generic-field", "owner/Envelope :user (User :name |wrong-origin) :value 42"],
+    ["foreign-update", "let ((db (owner/Database :users ({}) :maybe nil))) (db .assoc :maybe (User :name |wrong-origin))"],
+  ]) {
+    run("edit", "def", "app.field-consumer/replay!", "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defn replay! () (${expression}) &unit`);
+    const original = await readFile(snapshot);
+    for (const mode of [["--check-only"], ["js"]]) {
+      const output = join(project, `field-${name}-${mode[0] === "js" ? "js" : "native"}`);
+      const result = spawnSync(binary, ["--emit-path", output, snapshot, ...mode], options);
+      if (result.error) throw result.error;
+      assert.equal(result.status, 1, `${name} ${mode}\n${result.stdout}\n${result.stderr}`);
+      assert.match(`${result.stdout}\n${result.stderr}`, /expects type|W_FN_ARG_TYPE_MISMATCH/);
+      assert.deepEqual(await readFile(snapshot), original);
+      if (mode[0] === "js") await assertRejectedArtifacts(output, name, /expects type|W_FN_ARG_TYPE_MISMATCH/, true);
+    }
+  }
+
   await copyFile("tests/fixtures/trait-bound-return.cirru", snapshot);
   const traitOriginal = await readFile(snapshot);
   run("test", "--require-match");

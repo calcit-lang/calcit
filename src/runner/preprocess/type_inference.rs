@@ -3209,29 +3209,23 @@ fn resolve_struct_field_type(type_info: &CalcitTypeAnnotation, field_name: &str)
   resolve_struct_field_type_by_index(type_info, idx)
 }
 
-fn resolve_struct_field_type_by_index(type_info: &CalcitTypeAnnotation, idx: usize) -> Option<Arc<CalcitTypeAnnotation>> {
-  match type_info {
-    CalcitTypeAnnotation::Optional(inner) => resolve_struct_field_type_by_index(inner.as_ref(), idx),
-    CalcitTypeAnnotation::StructValue(struct_def) => struct_def.field_types.get(idx).cloned(),
-    CalcitTypeAnnotation::Struct(struct_def, args) => {
-      let field_type = struct_def.field_types.get(idx)?.clone();
-      Some(substitute_declared_generics(
-        struct_def.generics.as_ref(),
-        args.as_ref(),
-        field_type.as_ref(),
-      ))
-    }
-    CalcitTypeAnnotation::TypeRef(_, args) => {
-      let (struct_def, definition_ref) = type_info.resolve_to_struct_with_ref()?;
-      let field_type = struct_def.field_types.get(idx)?.clone();
-      let resolved = substitute_declared_generics(struct_def.generics.as_ref(), args.as_ref(), field_type.as_ref());
-      Some(match definition_ref {
-        Some((declaring_ns, _)) => resolve_namespace_type_refs_for_body(resolved, &declaring_ns),
-        None => resolved,
-      })
-    }
-    _ => None,
+pub(crate) fn resolve_struct_field_type_by_index(type_info: &CalcitTypeAnnotation, idx: usize) -> Option<Arc<CalcitTypeAnnotation>> {
+  if let CalcitTypeAnnotation::Optional(inner) = type_info {
+    return resolve_struct_field_type_by_index(inner, idx);
   }
+  let (struct_def, definition_ref) = type_info.resolve_to_struct_with_ref()?;
+  let field_type = struct_def.field_types.get(idx)?.clone();
+  // Resolve declaration-owned names before substituting caller-owned generic
+  // arguments, and use the same contract for reads, writes and construction.
+  let field_type = match definition_ref {
+    Some((declaring_ns, _)) => resolve_namespace_type_refs_for_body(field_type, &declaring_ns),
+    None => field_type,
+  };
+  let args = match type_info {
+    CalcitTypeAnnotation::Struct(_, args) | CalcitTypeAnnotation::TypeRef(_, args) => args.as_slice(),
+    _ => &[],
+  };
+  Some(substitute_declared_generics(&struct_def.generics, args, &field_type))
 }
 
 fn substitute_declared_generics(
@@ -3260,7 +3254,11 @@ fn infer_struct_applied_args<'a>(
   }
 
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
-  for (value, expected_type) in values.zip(struct_def.field_types.iter()) {
+  let prototype = CalcitTypeAnnotation::StructValue(Arc::new(struct_def.clone()));
+  for (index, value) in values.enumerate() {
+    let Some(expected_type) = resolve_struct_field_type_by_index(&prototype, index) else {
+      return struct_def.generics.iter().map(|_| calcit::DYNAMIC_TYPE.clone()).collect();
+    };
     let actual_type = resolve_type_value(value, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
     if !actual_type
       .as_ref()
