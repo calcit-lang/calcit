@@ -1216,6 +1216,8 @@ pub(super) fn expression_is_proven_for(
   }
 
   impl ExpressionCheck {
+    /// Check one expression within the shared budget and lexical environment.
+    /// Alias contracts are scoped evidence; only whole async returns adopt Promises.
     fn check<'a>(
       &mut self,
       expr: &Calcit,
