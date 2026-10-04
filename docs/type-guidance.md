@@ -99,7 +99,7 @@ loop
 
 ## JavaScript 可空值的容器合同
 
-`JsNullish<T>` 表示 JavaScript 边界上可能缺席的值。已经证明为 `T` 的值和 `nil` 可以进入这个合同；同一关系递归适用于不可变 List、Map 与 Set，不需要逐层插入转换。例如一个保存 `Map<Tag,JsNullish<Number>>` 的 Struct 字段可以接收 `{:count 1}` 或 `{:count nil}`，具体回调同样可以存入可空回调表，其参数、返回值和 arity 仍按完整签名检查。
+`JsNullish<T>` 表示 JavaScript 边界上可能缺席的值。已经证明为 `T` 的值和 `nil` 可以进入这个合同；同一关系递归适用于不可变 List、Map 与 Set，不需要逐层插入转换。例如一个保存 `Map<Tag,JsNullish<Number>>` 的 Struct 字段可以接收 `{} (:count 1)` 或 `{} (:count nil)`，具体回调同样可以存入可空回调表，其参数、返回值和 arity 仍按完整签名检查。
 
 反方向仍需要检查：`JsNullish<T>` 不能直接作为 `T` 使用，Dynamic 元素也不能仅凭容器声明变成具体元素。可变 `Ref<T>` 保持不变性，不能把 `Ref<Number>` 扩大为 `Ref<JsNullish<Number>>` 后写入 `nil`。这项关系不把历史 `Optional<T>` 与 `JsNullish<T>` 混同，Calcit 自身的缺席值继续使用名义 `Option<T>`。
 
