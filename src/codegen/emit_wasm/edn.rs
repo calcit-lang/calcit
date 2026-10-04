@@ -39,12 +39,14 @@ pub(super) fn emit_format_cirru_edn(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
     _ => inferred_type,
   };
 
+  validate_edn_format_mode(value_type.as_ref(), args.get(1))?;
+
   emit_expr(ctx, &args[0])?;
   let value = ctx.alloc_local();
   ctx.emit(Instruction::LocalSet(value));
 
-  // Preserve eager argument evaluation even though the native implementation
-  // currently ignores the compatibility formatting flag.
+  // Scalar layout is independent of the flag; supported container flags are
+  // literal true. Preserve eager evaluation without silently discarding a mode.
   if let Some(flag) = args.get(1) {
     emit_expr(ctx, flag)?;
     ctx.emit(Instruction::Drop);
@@ -59,6 +61,17 @@ pub(super) fn emit_format_cirru_edn(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
   let with_leading_line = concat_with_literal(ctx, "\n", with_prefix)?;
   let output = concat_with_literal_after(ctx, with_leading_line, "\n")?;
   ctx.emit(Instruction::LocalGet(output));
+  Ok(())
+}
+
+fn validate_edn_format_mode(value_type: &CalcitTypeAnnotation, flag: Option<&Calcit>) -> Result<(), String> {
+  if !is_edn_scalar(value_type) && flag.is_some_and(|flag| !matches!(flag, Calcit::Bool(true))) {
+    return Err(
+      "E_WASM_EDN_FORMAT_MODE: container formatting requires an omitted or literal true inline flag; non-inline and runtime modes are unsupported"
+        .to_string(),
+    );
+  }
+
   Ok(())
 }
 
@@ -812,6 +825,17 @@ fn emit_edn_concat_limit_check(ctx: &mut WasmGenCtx, left_ptr: u32, right_ptr: u
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn container_modes_fail_closed_without_affecting_scalar_layout() {
+    let container = CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::String));
+    validate_edn_format_mode(&container, None).expect("default inline layout is supported");
+    validate_edn_format_mode(&container, Some(&Calcit::Bool(true))).expect("literal inline layout is supported");
+    let error = validate_edn_format_mode(&container, Some(&Calcit::Bool(false))).expect_err("non-inline layout is not implemented");
+    assert!(error.starts_with("E_WASM_EDN_FORMAT_MODE:"));
+    validate_edn_format_mode(&CalcitTypeAnnotation::String, Some(&Calcit::Bool(false)))
+      .expect("scalar layout is independent of the flag");
+  }
 
   #[test]
   fn formats_number_literals_with_native_cirru_edn_bytes() {

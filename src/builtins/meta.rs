@@ -356,8 +356,15 @@ pub fn parse_cirru_edn(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn format_cirru_edn(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(a) => {
+      let use_inline = match xs.get(1) {
+        None => true,
+        Some(Calcit::Bool(value)) => *value,
+        Some(_) => return CalcitErr::err_str(CalcitErrKind::Type, "format-cirru-edn requires a boolean inline option"),
+      };
       let raw = edn::calcit_to_edn(a)?;
-      Ok(Calcit::Str(cirru_edn::format(&edn::sanitize_edn_for_format(&raw), true)?.into()))
+      Ok(Calcit::Str(
+        cirru_edn::format(&edn::sanitize_edn_for_format(&raw), use_inline)?.into(),
+      ))
     }
     None => {
       let hint = format_proc_examples_hint(&CalcitProc::FormatCirruEdn).unwrap_or_default();
@@ -2412,6 +2419,15 @@ mod tests {
         error.msg.contains("format-cirru-one-liner expected a list"),
         "unexpected error: {error:?}"
       );
+    }
+  }
+
+  #[test]
+  fn cirru_edn_formatter_rejects_non_boolean_flags_at_runtime() {
+    for invalid in [Calcit::Nil, Calcit::Number(0.0), Calcit::new_str("false")] {
+      let error = format_cirru_edn(&[Calcit::Number(42.0), invalid]).expect_err("host flags require Bool values");
+      assert_eq!(error.kind, CalcitErrKind::Type);
+      assert!(error.msg.contains("boolean inline option"));
     }
   }
 

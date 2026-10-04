@@ -569,6 +569,9 @@ export let extract_cirru_edn_for_typed = (x: CirruEdnFormat, options: CalcitValu
 };
 
 export let format_cirru_edn = (data: CalcitValue, useInline: boolean = true): string => {
+  if (typeof useInline !== "boolean") {
+    throw new Error("format-cirru-edn requires a boolean inline option");
+  }
   if (data == null) {
     return "\ndo nil" + "\n";
   }
