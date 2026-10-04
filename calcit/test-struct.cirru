@@ -71,6 +71,67 @@
             :code $ quote $ let
                 store $ MapLiteralStore :text |ok
               assert= |ok $ :text store
+        'NullableEvent $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def NullableEvent
+            fn (value) &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] 'Number
+        'NullableEventStore $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NullableEventStore
+            :handlers $ :: Map Tag $ :: JsNullish test-struct.main/NullableEvent
+          :examples $ []
+          :schema $ :: 'StructDef
+          :tests $ []
+            %{} 'TestEntry (:name |named-callback-members)
+              :code $ quote $ let
+                  handlers $ {} $ :click NullableEvent
+                  stored $ NullableEventStore :handlers handlers
+                assert= handlers $ :handlers stored
+              :tags $ #{} :js-nullish-container
+            %{} 'TestEntry (:name |typed-callback-members)
+              :code $ quote $ let
+                  callback $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Unit
+                    , &unit
+                  handlers $ {} $ :click callback
+                  stored $ NullableEventStore :handlers handlers
+                assert= handlers $ :handlers stored
+              :tags $ #{} :js-nullish-container
+            %{} 'TestEntry (:name |wider-callback-input)
+              :code $ quote $ let
+                  callback $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] $ :: JsNullish Number
+                      :return Unit
+                    , &unit
+                  handlers $ {} $ :click callback
+                  stored $ NullableEventStore :handlers handlers
+                assert= handlers $ :handlers stored
+              :tags $ #{} :js-nullish-container
+        'NullableNumberStore $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NullableNumberStore
+            :values $ :: Map Tag $ :: JsNullish Number
+            :nested $ :: List $ :: Map Tag (:: JsNullish Number)
+          :examples $ []
+          :schema $ :: 'StructDef
+          :tests $ []
+            %{} 'TestEntry (:name |concrete-members)
+              :code $ quote $ let
+                  numbers $ {} $ :a 1
+                  stored $ NullableNumberStore :values numbers :nested $ [] numbers
+                assert= numbers $ :values stored
+                assert= ([] numbers) (:nested stored)
+              :tags $ #{} :js-nullish-container
+            %{} 'TestEntry (:name |nil-members)
+              :code $ quote $ let
+                  absent $ {} $ :a nil
+                  stored $ NullableNumberStore :values absent :nested $ [] absent
+                assert= absent $ :values stored
+                assert= ([] absent) (:nested stored)
+              :tags $ #{} :js-nullish-container
         'Person $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Person
             :name $ :: 'Optional 'String
