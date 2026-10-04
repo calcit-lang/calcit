@@ -557,7 +557,6 @@ const extract_cirru_edn_inner = (x: CirruEdnFormat, options: CalcitValue, preser
       return atom(extract_cirru_edn_inner(x[1], options, preserveSourceEntries));
     }
   }
-  console.error(x);
   throw new Error(`Unexpected data from EDN: ${x}`);
 };
 

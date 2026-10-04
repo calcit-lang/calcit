@@ -12,6 +12,23 @@ const options = { encoding: "utf8", stdio: "pipe", timeout: 60000, maxBuffer: 16
 const run = (...args) => execFileSync(binary, [snapshot, ...args], options);
 
 try {
+  // Host output cannot be observed by a Calcit definition test. Rejecting
+  // private EDN must leave error reporting to the caller, not log its payload.
+  const runtime = await import(new URL("../lib/calcit.procs.mjs", import.meta.url));
+  const originalError = console.error;
+  const errors = [];
+  console.error = (...args) => errors.push(args);
+  try {
+    const shape = { version: 3, root: 0, fingerprint: "quiet-edn-parse", nodes: [{ kind: "nil" }] };
+    for (const text of ["{", "nil", "42", "|fixture-password", "[] (invalid |fixture-password)"]) {
+      assert.throws(() => runtime.parse_cirru_edn(text), /Unexpected data from EDN/);
+      assert.throws(() => runtime.parse_cirru_edn_as(text, shape), /Unexpected data from EDN/);
+    }
+    assert.deepEqual(errors, [], "rejected EDN must not print raw credentials to console.error");
+  } finally {
+    console.error = originalError;
+  }
+
   await copyFile("src/cirru/calcit-core.cirru", snapshot);
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
   run("test", "--tag", "parse-boundary", "--require-match");
