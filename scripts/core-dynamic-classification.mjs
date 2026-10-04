@@ -119,6 +119,7 @@ const openDataBoundaries = new Set([
   "data-definition-form",
   "data-definition-malformed-nesting?",
   "data-definition-where-form?",
+  "data-view",
   "decode-map-as",
   "json-parse",
   "parse-cirru-edn",

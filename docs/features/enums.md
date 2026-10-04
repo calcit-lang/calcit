@@ -272,6 +272,25 @@ let
   ; => true
 ```
 
+## 按运行时类型分派：`data-view`
+
+`data-view` 把一个 Dynamic 值转换成封闭的 `Data` enum，之后用 `match` 分派，分支里的 payload 带有类型：
+
+```cirru
+defn preview (x)
+  match (data-view x)
+    (:nil) |nil
+    (:string s) $ to-lispy-string s
+    (:number n) $ str n
+    (:list xs) $ str |List/ (count xs)
+    (:map m) $ str |Map/ (count m)
+    _ |other
+```
+
+`Data` 的变体是 `:nil` `:bool` `:number` `:string` `:tag` `:symbol` `:list` `:map` `:set` `:fn` `:enum` `:struct` `:ref` `:other`。标量分支提供对应的具体类型；`:list` / `:map` / `:set` 的 payload 是 `List<Dynamic>` / `Map<Dynamic,Dynamic>` / `Set<Dynamic>`，转换不会深入元素。集合元素以及 `:fn` / `:enum` / `:struct` / `:ref` / `:other` 的 payload 仍是 Dynamic，具体使用前需要进一步 decode 或类型证明。
+
+`:other` 保留不属于前面类别的值，包括 Buffer、类型定义和后端内部或宿主值。二选一的判断仍然使用 `string?` 等谓词。`data-view` 是普通 core 函数，通过现有谓词构造 Data；这里不承诺消除 enum 分配。
+
 ## Common Patterns
 
 ### Result / Either type

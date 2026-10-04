@@ -30,6 +30,54 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 try {
   await copyFile("src/cirru/calcit-core.cirru", snapshot);
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
+  // Replay the attached open-value view contracts without inventing deep proof.
+  run("test", "calcit.core/data-view", "--tag", "data-view", "--require-match");
+  const dataView = JSON.parse(run("query", "def", "calcit.core/data-view", "--format", "json"));
+  assert.deepEqual(dataView.diagnostics, []);
+  const dataViewTests = dataView.data.tests.filter(test => test.tags.includes("data-view"));
+  assert.deepEqual(dataViewTests.map(test => test.name).sort(), [
+    "classifies-symbol-struct-ref", "classifies-values", "exhaustive-view", "preserves-shallow-payloads",
+  ]);
+  run("edit", "add-ns", "calcit.data-view-replay");
+  run("edit", "def", "calcit.data-view-replay/run!", "--input-format", "json-ast", "--code",
+    JSON.stringify(["defn", "run!", [], ...dataViewTests.map(test => test.code), "&unit"]));
+  run("edit", "schema", "calcit.data-view-replay/run!", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+  const dataViewEntry = ["--init-fn", "calcit.data-view-replay/run!", "--reload-fn", "calcit.data-view-replay/run!"];
+  run(...dataViewEntry);
+  const dataViewOutput = join(project, "data-view-js");
+  run(...dataViewEntry, "--emit-path", dataViewOutput, "js");
+  const dataViewModule = await import(pathToFileURL(join(dataViewOutput, "calcit.data-view-replay.mjs")).href);
+  dataViewModule.run_$x_();
+  run("edit", "def", "calcit.data-view-replay/number-only", "--input-format", "cirru", "--code",
+    "quote $ defn number-only (x) (&+ x 1)");
+  run("edit", "schema", "calcit.data-view-replay/number-only", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'Number)");
+  run("edit", "def", "calcit.data-view-replay/RequiredNumber", "--input-format", "cirru", "--code",
+    "quote $ defstruct RequiredNumber (:value 'Number)");
+  run("edit", "schema", "calcit.data-view-replay/RequiredNumber", "--input-format", "cirru", "--code", "quote 'StructDef");
+  for (const [label, body, diagnostic] of [
+    ["wrong-scalar", "match (data-view |text) ((:string value) (number-only value)) (_ 0)", /W_FN_ARG_TYPE_MISMATCH/],
+    ["open-list-element", "match (data-view ([] 1)) ((:list items) (do (RequiredNumber :value (&list:nth items 0)) 0)) (_ 0)", /W_FN_ARG_TYPE_MISMATCH/],
+    ["non-exhaustive", "match (data-view 1) ((:number value) value)", /non-exhaustive|not exhaustive|W_MATCH/],
+  ]) {
+    run("edit", "def", "calcit.data-view-replay/rejected", "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defn rejected () (${body})`);
+    run("edit", "schema", "calcit.data-view-replay/rejected", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args ([])) (:return 'Number)");
+    const before = await readFile(snapshot);
+    for (const mode of [["--check-only"], ["js"]]) {
+      const output = join(project, `data-view-${label}-${mode[0] === "js" ? "js" : "native"}`);
+      const result = spawnSync(binary, [snapshot, "--init-fn", "calcit.data-view-replay/rejected",
+        "--reload-fn", "calcit.data-view-replay/rejected", "--emit-path", output, ...mode], options);
+      if (result.error) throw result.error;
+      assert.equal(result.status, 1, `${label}: ${result.stdout}\n${result.stderr}`);
+      assert.match(`${result.stdout}\n${result.stderr}`, diagnostic);
+      assert.deepEqual(await readFile(snapshot), before);
+      if (mode[0] === "js") await assertRejectedArtifacts(output, label, diagnostic, true);
+    }
+  }
+  await copyFile("src/cirru/calcit-core.cirru", snapshot);
   const coreOriginal = await readFile(snapshot);
   run("fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.core", "--def", "every?", "--format", "edn");
   run("fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.core", "--def", "foldl-compare", "--format", "edn");
