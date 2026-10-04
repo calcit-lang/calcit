@@ -107,6 +107,21 @@ try {
     assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_ASSERT_TYPE_UNPROVEN|E_ASSERT_TYPE_MISMATCH/);
     assert.deepEqual(await readFile(snapshot), before);
   }
+  // Empty producers still lack independent concrete element/key evidence.
+  for (const [literal, resultType] of [["[]", ":: 'List 'Number"], ["#{}", ":: 'Set 'Number"],
+    ["{}", ":: 'Map 'Tag 'Dynamic"]]) {
+    run("edit", "def", "test-struct.main/collection-rejected", "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defn collection-rejected () $ ${literal}`);
+    run("edit", "schema", "test-struct.main/collection-rejected", "--input-format", "cirru", "--code",
+      `quote $ :: 'Fn $ {} (:args ([])) (:return $ ${resultType})`);
+    const before = await readFile(snapshot);
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "test-struct.main",
+      "--def", "collection-rejected", "--format", "edn"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${literal}\n${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_FN_RETURN_UNPROVEN/);
+    assert.deepEqual(await readFile(snapshot), before);
+  }
   // Adopting a Promise as the whole async return does not await a stored member.
   const pendingTarget = "test-struct.main/collection-rejected";
   run("edit", "def", pendingTarget, "--overwrite", "--input-format", "cirru", "--code",

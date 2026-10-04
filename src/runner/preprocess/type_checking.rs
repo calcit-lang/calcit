@@ -1310,18 +1310,24 @@ pub(super) fn expression_is_proven_for(
         }
         match (items.first(), literal_expected) {
           (Some(Calcit::Proc(CalcitProc::List)), CalcitTypeAnnotation::List(member))
-          | (Some(Calcit::Proc(CalcitProc::Set)), CalcitTypeAnnotation::Set(member)) => {
+          | (Some(Calcit::Proc(CalcitProc::Set)), CalcitTypeAnnotation::Set(member))
+            if items.len() > 1 =>
+          {
             return items
               .iter()
               .skip(1)
               .all(|value| self.check(value, member, scope, aliases, false, depth + 1));
           }
-          (Some(Calcit::Proc(CalcitProc::NativeMap)), CalcitTypeAnnotation::Map(key, value)) if (items.len() - 1).is_multiple_of(2) => {
+          (Some(Calcit::Proc(CalcitProc::NativeMap)), CalcitTypeAnnotation::Map(key, value))
+            if items.len() > 1 && (items.len() - 1).is_multiple_of(2) =>
+          {
             return (1..items.len()).step_by(2).all(|index| {
               self.check(items.get(index).unwrap(), key, scope, aliases, false, depth + 1)
                 && self.check(items.get(index + 1).unwrap(), value, scope, aliases, false, depth + 1)
             });
           }
+          // Empty literals retain existing boundary policy: no members can
+          // independently establish a producer's concrete key/element type.
           _ => {}
         }
       }
