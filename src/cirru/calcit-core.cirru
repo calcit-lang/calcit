@@ -2929,6 +2929,20 @@
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
+        'Data $ %{} 'CodeEntry
+          :doc "||Closed nominal view of a Dynamic value used by data-view. Each variant carries the original value with at most one level of type information; interpreter-internal values fall into :other."
+          :code $ quote $ defenum Data (:nil) (:bool 'Bool) (:number 'Number) (:string 'String) (:tag 'Tag) (:symbol 'Symbol)
+            :list $ :: 'List 'Dynamic
+            :map $ :: 'Map 'Dynamic 'Dynamic
+            :set $ :: 'Set 'Dynamic
+            :fn 'Dynamic
+            :enum 'Dynamic
+            :struct 'Dynamic
+            :ref 'Dynamic
+            :other 'Dynamic
+          :examples $ []
+          :schema $ :: 'EnumDef
+          :tags $ #{} :data
         'Debug $ %{} 'CodeEntry
           :doc "|Core trait: Debug. All built-in Calcit values implement this diagnostic representation."
           :code $ quote $ deftrait Debug
@@ -4646,6 +4660,74 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Dynamic
+        'data-view $ %{} 'CodeEntry
+          :doc "||Classify a Dynamic value into the nominal Data enum so it can be inspected with match instead of type predicates or type-of."
+          :code $ quote $ defn data-view (x)
+            cond
+                nil? x
+                %:: Data :nil
+              (bool? x) (%:: Data :bool x)
+              (number? x) (%:: Data :number x)
+              (string? x) (%:: Data :string x)
+              (tag? x) (%:: Data :tag x)
+              (symbol? x) (%:: Data :symbol x)
+              (list? x) (%:: Data :list x)
+              (map? x) (%:: Data :map x)
+              (set? x) (%:: Data :set x)
+              (fn? x) (%:: Data :fn x)
+              (enum? x) (%:: Data :enum x)
+              (struct? x) (%:: Data :struct x)
+              (ref? x) (%:: Data :ref x)
+              true $ %:: Data :other x
+          :examples $ [] $ quote
+            assert= |str $ match (data-view |a)
+              (:string s) |str
+              _ |other
+          :schema $ :: 'Fn $ {} (:return 'Data)
+            :args $ [] 'Dynamic
+          :tags $ #{} :core
+          :tests $ [] $ %{} 'TestEntry (:name |classifies-values)
+            :code $ quote $ do
+              assert= :nil $ match (data-view nil)
+                (:nil) :nil
+                _ :other
+              assert= |bool $ match (data-view true)
+                (:bool b) (if b |bool |false)
+                _ |other
+              assert= 2 $ match (data-view 1)
+                (:number n) (&+ n 1)
+                _ 0
+              assert= |str $ match (data-view |a)
+                (:string s) |str
+                _ |other
+              assert= :tag $ match (data-view :a)
+                (:tag t) :tag
+                _ :other
+              assert= 3 $ match
+                data-view $ [] 1 2 3
+                (:list xs) (count xs)
+                _ 0
+              assert= 1 $ match
+                data-view $ {} $ :a 1
+                (:map m) (count m)
+                _ 0
+              assert= 1 $ match
+                data-view $ #{} 1
+                (:set s) (count s)
+                _ 0
+              assert= :fn $ match
+                data-view $ fn (x) x
+                (:fn _) :fn
+                _ :other
+              assert= :enum $ match
+                data-view $ %:: Option :some 1
+                (:enum _) :enum
+                _ :other
+              assert= :other $ match
+                data-view $ &buffer 1
+                (:other _) :other
+                _ :none
+            :tags $ #{} :core :unit
         'dec $ %{} 'CodeEntry (:doc "|Decrements a number by 1")
           :code $ quote $ defn dec (x) (&- x 1)
           :examples $ []

@@ -286,6 +286,7 @@ let
 - `enum-definition` - get the definition as `Option<EnumDef>`
 - `destruct-list`, `destruct-map`, `destruct-set`, `destruct-str` - split collections using nominal `*Destruct` enums
 - `enum?`, `enum-def?` - distinguish values from definitions
+- `data-view` - classify a Dynamic value into the nominal `Data` enum for `match`
 
 ### Struct Operations
 
