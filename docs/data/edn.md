@@ -34,6 +34,10 @@ cat calcit.cirru | calcit cirru parse-edn --file -
 
 闭合类型数据使用 `try-parse-cirru-edn-as text TypeExpr` 获取 `Result<T,String>`；`parse-cirru-edn-as` 是会抛错的兼容形式。已求值的开放值可用 `decode-map-as value TypeExpr` 验证。序列化入口是 `format-cirru-edn value`。
 
+native 和 JavaScript 的 `format-cirru-edn value inline?` 接受可选 Bool 参数，省略时为 `true`；传 `false` 请求展开式容器布局，解析后的数据不变。标量根节点在两种布局下都使用 `do <值>`，Number 也可独立往返。
+
+WASM 的容器格式化目前只支持省略参数或显式字面量 `true`；`false` 和运行时模式会明确报告 `E_WASM_EDN_FORMAT_MODE`，不静默忽略。已支持的标量布局不受此参数影响，仍保持参数的求值顺序；具体闭合数据和数值支持范围见 [WASM 格式化边界](../../scripts/wasm-validation.md#cirru-edn-格式化边界)。
+
 ## Recoverable parsing with Result
 
 严格类型代码优先使用返回 `Result` 的 String 方法，以便处理格式错误：

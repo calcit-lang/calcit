@@ -83,6 +83,8 @@ WASM 的 Number、Bool、nil 和 tag id 当前共用 f64 value ABI，运行时�
 
 当前支持 nil、Bool、String、tag、整数 numeric refinement、直接 Number 字面量，以及闭合的递归 `List<T>`、`Map<K,V>`、Struct 与 Enum；`Option<T>`、`Result<T,E>` 作为 core nominal Enum 复用同一路径。嵌套容器和 nominal payload 使用 Cirru EDN 的括号表达式布局，仍由编译期类型决定，而不是回退为 Dynamic。直接 Number 字面量在 codegen 时复用 native formatter，保留精确字节语义。Map key 仍限定为可按 native 规则稳定排序的标量，value 可以是闭合递归值。输出与 native compact formatter 一样带首尾换行，字符串遵循 Cirru leaf 的 `|text` / `"|quoted text"` 规则。WASM formatter 的单次输出分配上限为 64 KiB，超过上限会在分配前 trap；回归脚本还会把真实 Wasmtime 输出逐值交给 `cirru_edn` 重新解析。`Dynamic`、未解析类型变量与运行时普通 `Number` 仍以稳定诊断明确拒绝，不能静默猜测或输出占位数据。
 
+容器布局支持省略 `inline?` 参数或显式字面量 `true`，传 `false` 或运行时 Bool 时以 `E_WASM_EDN_FORMAT_MODE` 在 codegen 阶段拒绝且不输出产物。该诊断表示闭合数据的布局能力暂未实现，不要求用户放宽数据类型。已支持的标量与直接 Number 字面量在两种布局下都使用 `do` 根节点，仍保持可选参数的求值顺序。现有 `check-parse-boundary.mjs` 从 definition `:tests` 回放支持子集到真实 WASM，并检查不支持模式的拒绝边界。
+
 `try-parse-cirru-edn-as` 的 WASM 实现直接消费预处理阶段生成的同一份闭合 `DataShapeGraph`，不先解析成 `Dynamic`，也不引入第二套 decoder API。当前支持 nil、Bool、Number、整数/浮点 refinement、bare 或 quoted/escaped String、编译产物已知 tag，以及递归闭合的 `List<T>`、`Map<K,V>`、Struct 与 Enum；Enum 的类型名、variant、payload 数量和每项 payload shape 都在生成的专用 parser 中验证，Option/Result 不走旁路。嵌套格式化器输出的括号表达式会在进入子节点时解开，再交给对应的静态 shape parser。标量接受 bare token 和 formatter 产生的顶层 `do token`。quoted String 只接受 formatter 使用的 `\n`、`\t`、`\"`、`\\` 四种 escape，未知或截断 escape 返回语法错误。输入上限为 64 KiB，List 另设 4096 item 上限，Map 另设 2048 entry 上限；超限、语法错误、numeric refinement 越界、未知 tag 或 nominal Enum 不匹配都返回稳定的 `Result :err`，不触发 trap。Map 的运行时 String key 按 UTF-8 内容 hash 和比较，因此 parser 新建的 key 可由等值字符串稳定查询。
 
 这项能力复用现有 core API，不增加新的 CLI 或 Calcit 表层入口。WASI 文件工作流仍通过 `fs:path` 的 typed read/write API 组合。
