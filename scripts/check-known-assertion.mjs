@@ -929,6 +929,9 @@ try {
   // Recursive nominal fields must be checked after nested constructors lower.
   // This is the shared Respo #194 boundary, not a consumer-specific rule (#1553).
   run("edit", "add-ns", "calcit.constructor-wrappers");
+  run("edit", "def", "calcit.constructor-wrappers/ImportedShape", "--input-format", "cirru", "--code",
+    "quote $ defstruct ImportedShape (:left 'Number) (:right 'Number)");
+  run("edit", "schema", "calcit.constructor-wrappers/ImportedShape", "--input-format", "cirru", "--code", "quote 'StructDef");
   for (const [name, expression] of [["empty-tree", "Option :none"], ["open-tree", "Option :some 1"]]) {
     run("edit", "def", `calcit.constructor-wrappers/${name}`, "--input-format", "cirru", "--code",
       `quote $ defn ${name} () $ ${expression}`);
@@ -1202,11 +1205,29 @@ try {
     ["raw-pair-list-literal", "%{} RecursiveElement (:children $ [] $ [] :a $ RecursiveNode :element $ RecursiveElement :children $ [])"],
     ["raw-pair-list-head", "RecursiveElement :children $ [] $ [] :a $ RecursiveNode :element $ RecursiveElement :children $ []"],
     ["wrong-matched-field", "let ((node (RecursiveNode :component (RecursiveComponent :tree (Option :none))))) (match node ((:element element) (:children element)) ((:component component) (:children component)))"],
+    ["raw-shape-missing", "%{} WriteState (:count 1)"],
+    ["raw-shape-duplicate", "%{} WriteState (:count 1) (:count 2)"],
+    ["raw-shape-unknown", "%{} WriteState (:count 1) (:other |wrong)"],
+    ["raw-shape-string-unknown", "%{} WriteState (:count 1) (|other |wrong)"],
+    ["raw-shape-string-duplicate", "%{} WriteState (|count 1) (|count 2)"],
+    ["raw-shape-symbol-unknown", "%{} WriteState (:count 1) ('other |wrong)"],
+    ["raw-shape-invalid-key", "%{} WriteState (:count 1) (42 |wrong)"],
+    ["raw-shape-invalid-quoted-key", "%{} WriteState (:count 1) ((quote true) |wrong)"],
+    ["raw-shape-string-payload", "%{} WriteState (|count |wrong) (|label |kept)"],
+    ["raw-shape-symbol-payload", "%{} WriteState ('count |wrong) ('label |kept)"],
+    ["raw-shape-local-alias", "let ((Shape WriteState)) (%{} Shape (:count 1))"],
+    ["raw-shape-imported", "%{} wrappers/ImportedShape (:left 1)"],
+    ["raw-shape-imported-alias", "let ((Shape wrappers/ImportedShape)) (%{} Shape (:left 1))"],
+    ["raw-shape-payload", "%{} WriteState (:count |wrong) (:label |kept)"],
   ]) {
     run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
       `quote $ defwasm-export run-tests () (${expression}) 1`);
     const original = await readFile(snapshot);
-    const expectedDiagnostic = name.startsWith("open-pre-dispatch-") ? /E_DYNAMIC_POSTFIX_METHOD/
+    const expectedDiagnostic = ["raw-shape-duplicate", "raw-shape-string-duplicate"].includes(name) ? /construction duplicate field `:count`/
+      : ["raw-shape-unknown", "raw-shape-string-unknown", "raw-shape-symbol-unknown"].includes(name) ? /construction unknown field `:other`/
+      : name.startsWith("raw-shape-invalid-") ? /field key must be a Tag, String or Symbol/
+      : name.startsWith("raw-shape-") && !name.endsWith("-payload") ? /construction expected 2 fields, but received 1/
+      : name.startsWith("open-pre-dispatch-") ? /E_DYNAMIC_POSTFIX_METHOD/
       : name === "nonexhaustive-pre-dispatch-match" ? /match on `Option` is not exhaustive/
       : name === "duplicate-pre-dispatch-constructor-field" ? /duplicate field `:count`/
       : name === "unknown-pre-dispatch-constructor-variant" ? /enum `Option` does not have variant `:unknown`/
@@ -1237,6 +1258,11 @@ try {
       }
       assert.match(diagnostics, expectedDiagnostic);
       assert.match(diagnostics, /calcit.assert-evidence/);
+      if (name.startsWith("raw-shape-")) {
+        assert.match(diagnostics, /W_FN_ARG_TYPE_MISMATCH/);
+        assert.match(diagnostics, /@calcit\.assert-evidence\/run-tests @[0-9]/,
+          "resolved raw constructors must locate the source call");
+      }
       if (name === "contradictory-loop-assertion" || name === "contradictory-captured-loop-assertion") {
         assert.match(diagnostics, /E_ASSERT_TYPE_MISMATCH/);
         assert.match(diagnostics, /assert-type cannot prove local `value`/);

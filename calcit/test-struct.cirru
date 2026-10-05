@@ -566,6 +566,51 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
             :features $ #{} :js-ffi
+        'test-struct-complete-construction $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn test-struct-complete-construction ()
+            let
+                Shape Point2D
+                complete $ %{} Point2D (:y 2) (:x 1)
+                alias $ %{} Shape (:x 1) (:y 2)
+                dynamic $ fn (prototype)
+                  hint-fn $ {}
+                    :args $ [] 'StructDef
+                    :return 'Dynamic
+                  %{} prototype (:x 1) (:y 2)
+              assert= complete alias
+              assert= complete $ dynamic Point2D
+              , 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ []
+            %{} 'TestEntry (:name |complete-alias-dynamic)
+              :code $ quote $ assert= 1 (test-struct-complete-construction)
+              :tags $ #{} :struct-shape :unit
+            %{} 'TestEntry (:name |string-field-names)
+              :code $ quote $ assert= (Point2D :x 1 :y 2)
+                %{} Point2D (|x 1) (|y 2)
+              :tags $ #{} :struct-field-names :unit
+            %{} 'TestEntry (:name |symbol-field-names)
+              :code $ quote $ assert= (Point2D :x 1 :y 2)
+                %{} Point2D ('x 1) ('y 2)
+              :tags $ #{} :struct-field-names :unit
+            %{} 'TestEntry (:name |runtime-field-names)
+              :code $ quote $ let
+                  x-name |x
+                  y-name |y
+                assert= (Point2D :x 1 :y 2)
+                  %{} Point2D (x-name 1) (y-name 2)
+              :tags $ #{} :struct-field-names :unit
+            %{} 'TestEntry (:name |runtime-duplicate-field-names)
+              :code $ quote $ let
+                  field-name |x
+                assert= :rejected $ try
+                  do
+                    %{} Point2D (field-name 1) (field-name 2)
+                    , :accepted
+                  fn (error) :rejected
+              :tags $ #{} :struct-field-names :unit
         'test-struct-with $ %{} 'CodeEntry (:doc "|test struct-with")
           :code $ quote $ fn () (log-title "|Testing struct-with")
             let

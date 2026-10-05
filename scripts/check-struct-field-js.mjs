@@ -11,6 +11,8 @@ assert.deepEqual(nativeTrace.split(/\r?\n/).filter(line => line.startsWith("stru
   ["struct-order-y", "struct-order-x", "struct-order-x", "struct-order-y"]);
 const nativeFailure = execFileSync(binary, ["calcit/test-wasm.cirru", "test", "--tag", "struct-field-failure", "--require-match"], { encoding: "utf8" });
 assert.deepEqual(nativeFailure.split(/\r?\n/).filter(line => line.startsWith("struct-failure-")), ["struct-failure-y"]);
+execFileSync(binary, ["calcit/test-struct.cirru", "test", "--tag", "struct-shape", "--require-match"], { stdio: "pipe" });
+execFileSync(binary, ["calcit/test-struct.cirru", "test", "--tag", "struct-field-names", "--require-match"], { stdio: "pipe" });
 const typeQuery = JSON.parse(execFileSync(binary, ["calcit/test-wasm.cirru", "query", "type", "test-wasm.main/Point", "--format", "json"], { encoding: "utf8" }));
 const fieldMethod = typeQuery.data.methods.find((method) => method.name === ".contains-field?");
 assert.equal(fieldMethod?.status, "proven", "Agent method discovery must prove the Struct field contract");
@@ -40,6 +42,14 @@ try {
     console.log = originalLog;
   }
   assert.equal(compiled.test_struct_contains_field(), 1, "generated JS must preserve the Tag field predicate");
+  const shapeOutput = join(output, "struct-shape");
+  execFileSync(binary, ["calcit/test-struct.cirru",
+    "--init-fn", "test-struct.main/test-struct-complete-construction",
+    "--reload-fn", "test-struct.main/test-struct-complete-construction",
+    "--emit-path", shapeOutput, "js"], { stdio: "pipe" });
+  const shapeJs = await import(pathToFileURL(join(shapeOutput, "test-struct.main.mjs")).href);
+  assert.equal(shapeJs.test_struct_complete_construction(), 1,
+    "complete constructors must preserve aliases and dynamic prototypes");
   assert.equal(compiled.test_struct_nominal_equality(), 1, "generated JS must preserve definition identity and structural equality");
   assert.equal(compiled.test_struct_hash(), 1, "equal nested Struct values must have equal hashes");
   assert.equal(compiled.test_struct_map_key(), 1, "Map keys must preserve nominal Struct identity");

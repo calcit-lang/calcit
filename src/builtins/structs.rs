@@ -858,6 +858,10 @@ fn call_struct_with_prototype(struct_value: &CalcitStructValue, xs: &[Calcit]) -
       },
       Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match struct_value.index_of(s) {
         Some(pos) => {
+          if seen_positions[pos] {
+            return CalcitErr::err_str(CalcitErrKind::Type, format!("&%{{{{}}}} duplicate field: :{s}"));
+          }
+          seen_positions[pos] = true;
           // Validate field value type against struct field_types
           if let Some(expected_type) = struct_ref.field_types.get(pos) {
             if !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
