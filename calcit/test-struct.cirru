@@ -49,6 +49,11 @@
           :code $ quote $ defstruct City (:name 'String) (:province 'String)
           :examples $ []
           :schema $ :: 'StructDef
+        'ContextBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct ContextBox ([] 'T) (:value 'T)
+            :count $ :: 'Option 'Number
+          :examples $ []
+          :schema $ :: 'StructDef
         'Demo $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Demo (:a 'Dynamic) (:b 'Dynamic) (:c 'Dynamic) (:d 'Dynamic)
           :examples $ []
@@ -363,6 +368,21 @@
           :tests $ [] $ %{} 'TestEntry (:name |assert-type-statement-narrows-struct)
             :code $ quote $ assert= |ok
               read-asserted-map-literal-store $ MapLiteralStore :text |ok
+        'read-context-box $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-context-box (box)
+            .unwrap-or (:count box) 160
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'test-struct.main/ContextBox 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |generic-contextual-constructors)
+            :code $ quote $ let ()
+              assert= 7 $ read-context-box $ ContextBox :value 1 :count (Option :some 7)
+              assert= 8 $ read-context-box $ {} (:value |text)
+                :count $ Option :some 8
+              assert= 160 $ read-context-box $ {} (:value 1)
+                :count $ Option :none
+            :tags $ #{} :nominal-contextual
         'read-let-asserted-map-literal-store $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-let-asserted-map-literal-store (source)
             let
@@ -373,6 +393,19 @@
           :tests $ [] $ %{} 'TestEntry (:name |assert-type-expression-narrows-struct)
             :code $ quote $ assert= |ok
               read-let-asserted-map-literal-store $ MapLiteralStore :text |ok
+        'read-number-box $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-number-box (box)
+            + (:value box)
+              .unwrap-or (:count box) 160
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'test-struct.main/ContextBox 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |concrete-contextual-constructors)
+            :code $ quote $ let ()
+              assert= 9 $ read-number-box $ ContextBox :value 1 :count (Option :some 8)
+              assert= 9 $ read-number-box $ {} (:value 1)
+                :count $ Option :some 8
+            :tags $ #{} :nominal-contextual
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (println |reloaded)
           :examples $ []
