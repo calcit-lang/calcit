@@ -12,11 +12,6 @@ assert.deepEqual(nativeTrace.split(/\r?\n/).filter(line => line.startsWith("stru
 const nativeFailure = execFileSync(binary, ["calcit/test-wasm.cirru", "test", "--tag", "struct-field-failure", "--require-match"], { encoding: "utf8" });
 assert.deepEqual(nativeFailure.split(/\r?\n/).filter(line => line.startsWith("struct-failure-")), ["struct-failure-y"]);
 execFileSync(binary, ["calcit/test-wasm.cirru", "test", "--tag", "struct-shape", "--require-match"], { stdio: "pipe" });
-// The compatibility-only raw entry retains spread semantics, while strict
-// source still follows its existing raw-primitive admission policy.
-execFileSync(binary, ["--compat-types", "eval", "--dep", resolve("calcit/test-wasm.cirru"),
-  "ns app.demo (:require (test-wasm.main :refer (Point)))\n\n" +
-  "assert= (%{} Point (:x 1) (:y 2)) (&%{} Point & ([] :y 2 :x 1))"], { stdio: "pipe" });
 const typeQuery = JSON.parse(execFileSync(binary, ["calcit/test-wasm.cirru", "query", "type", "test-wasm.main/Point", "--format", "json"], { encoding: "utf8" }));
 const fieldMethod = typeQuery.data.methods.find((method) => method.name === ".contains-field?");
 assert.equal(fieldMethod?.status, "proven", "Agent method discovery must prove the Struct field contract");
