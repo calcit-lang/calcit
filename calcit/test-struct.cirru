@@ -188,6 +188,22 @@
                   [] $ {} (:absent nil) (:present 7)
                   :nested stored
               :tags $ #{} :collection-proof
+        'OptionalFields $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct OptionalFields
+            :count $ :: 'Optional 'Number
+            :label $ :: 'Optional 'String
+          :examples $ []
+          :schema $ :: 'StructDef
+          :tests $ [] $ %{} 'TestEntry (:name |direct-constructor-admits-concrete-and-nil)
+            :code $ quote $ do
+              assert= 0 $ :count $ OptionalFields :count 0 :label nil
+              assert= nil $ :count $ OptionalFields :count nil :label |saved
+            :tags $ #{} :optional-proof :unit
+        'OptionalGeneric $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct OptionalGeneric ([] 'T)
+            :value $ :: 'Optional 'T
+          :examples $ []
+          :schema $ :: 'StructDef
         'Person $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Person
             :name $ :: 'Optional 'String
@@ -410,6 +426,38 @@
           :code $ quote $ defn reload! () (println |reloaded)
           :examples $ []
           :schema $ :: 'Dynamic
+        'set-optional-fields $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn set-optional-fields (amount label)
+            struct-with (OptionalFields :count nil :label nil) (:count amount) (:label label)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'test-struct.main/OptionalFields)
+            :args $ [] 'Number 'String
+          :tests $ []
+            %{} 'TestEntry (:name |concrete-fields-enter-optional)
+              :code $ quote $ assert= (OptionalFields :count 7 :label |saved) (set-optional-fields 7 |saved)
+              :tags $ #{} :optional-proof :unit
+            %{} 'TestEntry (:name |zero-and-empty-string-remain-values)
+              :code $ quote $ assert= (OptionalFields :count 0 :label |) (set-optional-fields 0 |)
+              :tags $ #{} :optional-proof :unit
+            %{} 'TestEntry (:name |nil-writes-remain-valid)
+              :code $ quote $ assert= (OptionalFields :count nil :label nil)
+                struct-with (set-optional-fields 7 |saved) (:count nil) (:label nil)
+              :tags $ #{} :optional-proof :unit
+        'set-optional-generic $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn set-optional-generic (record value)
+            struct-with record $ :value value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'test-struct.main/OptionalGeneric 'T) 'T
+            :generics $ [] 'T
+            :return $ :: 'test-struct.main/OptionalGeneric 'T
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-generic-payload-evidence)
+            :code $ quote $ do
+              assert= (OptionalGeneric :value 9)
+                set-optional-generic (OptionalGeneric :value 1) 9
+              assert= (OptionalGeneric :value |)
+                set-optional-generic (OptionalGeneric :value |saved) |
+            :tags $ #{} :optional-proof :unit
         'sum-point $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn sum-point (p)
             &+ (:x p) (:y p)

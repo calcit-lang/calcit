@@ -988,18 +988,10 @@ fn bounded_plain_type_relation<'a>(
           return Ok(Some((Mismatch, stats)));
         }
       }
-      // Introducing host nullability preserves the payload evidence. Only
+      // Introducing nullability preserves the payload evidence. Only
       // elimination requires a checked boundary; containers recurse here too.
-      (Type::Nil, Type::JsNullish(_)) => {}
-      (Type::Nil, Type::Optional(_)) => {
-        if matches!(mode, PlainRelationMode::Proof) {
-          result = result.and(NeedsBoundary(Boundary::LegacyNullish));
-        }
-      }
+      (Type::Nil, Type::JsNullish(_) | Type::Optional(_)) => {}
       (plain, Type::Optional(inner)) if !matches!(plain, Type::Optional(_) | Type::JsNullish(_)) => {
-        if matches!(mode, PlainRelationMode::Proof) {
-          result = result.and(NeedsBoundary(Boundary::LegacyNullish));
-        }
         worklist.push((plain, inner.as_ref(), depth + 1));
       }
       (plain, Type::JsNullish(inner)) if !matches!(plain, Type::Optional(_) | Type::JsNullish(_)) => {
@@ -5012,6 +5004,12 @@ impl CalcitTypeAnnotation {
         }
       },
       (_, Self::Dynamic) => Proven,
+      (Self::Nil, Self::JsNullish(_) | Self::Optional(_)) => Proven,
+      // Lift the expected payload before handling an unbound actual variable:
+      // T proves Optional<T>, but still cannot prove an unrelated concrete type.
+      (actual, Self::JsNullish(expected) | Self::Optional(expected)) if !matches!(actual, Self::Optional(_) | Self::JsNullish(_)) => {
+        actual.prove_with_staged_bindings(expected, bindings)
+      }
       (Self::TypeVar(var), expected_type) => match bindings.get(var).cloned() {
         Some(bound) => bound.prove_with_staged_bindings(expected_type, bindings),
         None if expected_type.contains_type_var_named_with_bindings(var, bindings) => NeedsBoundary(Boundary::RecursiveTypeVariable),
@@ -5065,13 +5063,6 @@ impl CalcitTypeAnnotation {
           .prove_with_staged_bindings(expected, bindings)
           .and(NeedsBoundary(Boundary::LegacyNullish))
       }
-      (Self::Nil, Self::JsNullish(_)) => Proven,
-      (actual, Self::JsNullish(expected)) if !matches!(actual, Self::Optional(_) | Self::JsNullish(_)) => {
-        actual.prove_with_staged_bindings(expected, bindings)
-      }
-      (actual, Self::Optional(expected)) if !matches!(actual, Self::Optional(_) | Self::JsNullish(_)) => actual
-        .prove_with_staged_bindings(expected, bindings)
-        .and(NeedsBoundary(Boundary::LegacyNullish)),
       (_, Self::Optional(_)) | (Self::Optional(_), _) | (_, Self::JsNullish(_)) | (Self::JsNullish(_), _) => {
         if self.compatible_with_bindings(expected, &mut bindings.clone()) {
           NeedsBoundary(Boundary::LegacyNullish)
