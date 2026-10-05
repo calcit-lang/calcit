@@ -566,6 +566,26 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
             :features $ #{} :js-ffi
+        'test-struct-complete-construction $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn test-struct-complete-construction ()
+            let
+                Shape Point2D
+                complete $ %{} Point2D (:y 2) (:x 1)
+                alias $ %{} Shape (:x 1) (:y 2)
+                dynamic $ fn (prototype)
+                  hint-fn $ {}
+                    :args $ [] 'StructDef
+                    :return 'Dynamic
+                  %{} prototype (:x 1) (:y 2)
+              assert= complete alias
+              assert= complete $ dynamic Point2D
+              , 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |complete-alias-dynamic)
+            :code $ quote $ assert= 1 (test-struct-complete-construction)
+            :tags $ #{} :struct-shape :unit
         'test-struct-with $ %{} 'CodeEntry (:doc "|test struct-with")
           :code $ quote $ fn () (log-title "|Testing struct-with")
             let

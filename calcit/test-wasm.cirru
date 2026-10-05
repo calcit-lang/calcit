@@ -1614,26 +1614,6 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-        'test-struct-complete-construction $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn test-struct-complete-construction ()
-            let
-                Shape Point
-                complete $ %{} Point (:y 2) (:x 1)
-                alias $ %{} Shape (:x 1) (:y 2)
-                dynamic $ fn (prototype)
-                  hint-fn $ {}
-                    :args $ [] 'StructDef
-                    :return 'Dynamic
-                  %{} prototype (:x 1) (:y 2)
-              assert= complete alias
-              assert= complete $ dynamic Point
-              , 1
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
-          :tests $ [] $ %{} 'TestEntry (:name |complete-alias-dynamic)
-            :code $ quote $ assert= 1 (test-struct-complete-construction)
-            :tags $ #{} :struct-shape :unit
         'test-struct-container-hash $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-struct-container-hash ()
             let
