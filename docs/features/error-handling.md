@@ -36,6 +36,22 @@ let
   ; => caught: something-went-wrong
 ```
 
+## `try` 的类型推断
+
+`try` 合并正常表达式与错误处理器的返回类型。错误处理器收到 `String`；未标注的匿名函数可从这里获得参数类型，返回类型仍从函数体独立推断。两边都是 `Bool` 时结果为 `Bool`；`Option :some` / `Option :none` 和 `Result :ok` / `Result :err` 使用现有的名义类型分支合流规则。
+
+```cirru
+let
+    result $ try (Result :ok 7)
+      fn (message)
+        Result :err message
+  assert-type result $ :: 'Result 'Number 'String
+```
+
+正常分支直接 `raise` 时只有处理器产生值；处理器直接 `raise` 时只保留正常值类型。处理器表达式仍然仅在错误发生后求值，类型推断不执行处理器，也不改写求值顺序。
+
+限制：未知或 `Dynamic` 返回值仍需在真实边界解码；外层返回声明不能替代实现证明，也不会授予处理器 `:js-ffi` 权限。本规则覆盖 native 与 JavaScript；不新增 WASM 的 `try` 支持。
+
 ## Raising from a Function
 
 ```cirru

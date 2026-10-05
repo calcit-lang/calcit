@@ -3597,6 +3597,57 @@ fn preprocess_list_call(
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           Ok(preprocess_if(name, name_ns, &args, &mut ctx)?)
         }
+        CalcitSyntax::Try if args.len() == 2 => {
+          // The runtime supplies a String only on failure. Contextualize the
+          // handler input, never its result or lexical permissions; retain the
+          // original lazy handler expression in the executable syntax.
+          let body = preprocess_argument_with_context(&args[0], None, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+          let expected = Arc::new(CalcitTypeAnnotation::from_function_parts(
+            vec![Arc::new(CalcitTypeAnnotation::String)],
+            calcit::DYNAMIC_TYPE.clone(),
+          ));
+          let handler = preprocess_argument_with_context(
+            &args[1],
+            Some(&expected),
+            scope_defs,
+            scope_types,
+            file_ns,
+            check_warnings,
+            call_stack,
+          )?;
+          if !type_inference::expression_definitely_diverges(&handler) {
+            check_callable_type(&handler, scope_types, file_ns, &def_name, check_warnings);
+          }
+          if let Some(annotation) = resolve_type_value(&handler, scope_types)
+            && let Some(signature) = annotation.resolve_to_nonoptional_fn()
+          {
+            let error_args = CalcitList::from(&[Calcit::Str(Arc::from(""))][..]);
+            reject_strict_unproven_generic_relation(
+              &handler,
+              &error_args,
+              &signature,
+              scope_types,
+              file_ns,
+              call_stack,
+              call_location.clone(),
+            )?;
+            // Reuse ordinary callable checking. This synthetic binding is
+            // proof-only and never enters the source or executable tree.
+            let sym: Arc<str> = Arc::from("try-handler");
+            let local = CalcitLocal {
+              idx: CalcitLocal::track_sym(&sym),
+              sym,
+              info: Arc::new(CalcitSymbolInfo {
+                at_ns: Arc::from(file_ns),
+                at_def: def_name.clone(),
+              }),
+              location: handler.get_location().map(|location| location.coord),
+              type_info: annotation,
+            };
+            check_local_fn_call_arg_types(&handler, &local, &error_args, scope_types, &call_info, check_warnings);
+          }
+          Ok(Calcit::from(vec![head_form, body, handler]))
+        }
         CalcitSyntax::Try
         | CalcitSyntax::Macroexpand
         | CalcitSyntax::MacroexpandAll

@@ -706,6 +706,199 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
+        'try-bool $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn try-bool (fail?)
+            try
+              if fail? (raise |fixture-failure) true
+              fn (message) false
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Bool
+          :tests $ []
+            %{} 'TestEntry (:name |normal-bool)
+              :code $ quote $ assert= true (try-bool false)
+              :tags $ #{} :try-proof :unit
+            %{} 'TestEntry (:name |caught-bool)
+              :code $ quote $ assert= false (try-bool true)
+              :tags $ #{} :try-proof :unit
+        'try-effect-order $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn try-effect-order (fail?)
+            let
+                events $ atom $ [] |start
+              try
+                let ()
+                  reset! events $ .append (deref events) |body
+                  if fail? (raise |fixture-failure) 7
+                let ()
+                  reset! events $ .append (deref events) |handler-eval
+                  fn (message) (assert= |fixture-failure message)
+                    reset! events $ .append (deref events) |handler-call
+                    , 0
+              deref events
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Bool
+            :return $ :: 'List 'String
+          :tests $ []
+            %{} 'TestEntry (:name |normal-evaluation-order)
+              :code $ quote $ assert= ([] |start |body) (try-effect-order false)
+              :tags $ #{} :try-proof :unit
+            %{} 'TestEntry (:name |caught-evaluation-order)
+              :code $ quote $ assert= ([] |start |body |handler-eval |handler-call) (try-effect-order true)
+              :tags $ #{} :try-proof :unit
+        'try-factory-never $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn try-factory-never (fail?)
+            try
+              if fail? (raise |fixture-failure) 7
+              raise |handler-failure
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Bool
+          :tests $ []
+            %{} 'TestEntry (:name |normal-does-not-evaluate-raising-factory)
+              :code $ quote $ assert= 7 (try-factory-never false)
+              :tags $ #{} :try-proof :unit
+            %{} 'TestEntry (:name |raising-factory-failure-propagates)
+              :code $ quote $ assert= |handler-failure
+                try (try-factory-never true)
+                  fn (message) message
+              :tags $ #{} :try-proof :unit
+        'try-handler-never $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn try-handler-never (fail?)
+            try
+              if fail? (raise |fixture-failure) 7
+              fn (message) (raise message)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Bool
+          :tests $ []
+            %{} 'TestEntry (:name |raise-has-no-caught-value)
+              :code $ quote $ assert= 7 (try-handler-never false)
+              :tags $ #{} :try-proof :unit
+            %{} 'TestEntry (:name |handler-failure-propagates)
+              :code $ quote $ assert= |fixture-failure
+                try (try-handler-never true)
+                  fn (message) message
+              :tags $ #{} :try-proof :unit
+        'try-hinted-handler $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn try-hinted-handler (fail?)
+            try
+              if fail? (raise |fixture-failure) true
+              fn (message)
+                hint-fn $ {}
+                  :args $ [] 'String
+                  :return 'Bool
+                , false
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Bool
+          :tests $ []
+            %{} 'TestEntry (:name |normal)
+              :code $ quote $ assert= true (try-hinted-handler false)
+              :tags $ #{} :try-proof :unit
+            %{} 'TestEntry (:name |caught)
+              :code $ quote $ assert= false (try-hinted-handler true)
+              :tags $ #{} :try-proof :unit
+        'try-imported-handler $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn try-imported-handler (fail?)
+            try
+              if fail? (raise |fixture-failure) |normal
+              , identity
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'Bool
+          :tests $ []
+            %{} 'TestEntry (:name |normal)
+              :code $ quote $ assert= |normal (try-imported-handler false)
+              :tags $ #{} :try-proof :unit
+            %{} 'TestEntry (:name |caught)
+              :code $ quote $ assert= |fixture-failure (try-imported-handler true)
+              :tags $ #{} :try-proof :unit
+        'try-lazy! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn try-lazy! ()
+            let
+                counter $ atom 0
+              assert= 7 $ try 7 $ let () (reset! counter 1)
+                fn (message) 0
+              deref counter
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |handler-factory-is-lazy)
+            :code $ quote $ assert= 0 (try-lazy!)
+            :tags $ #{} :try-proof :unit
+        'try-normal-never $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn try-normal-never ()
+            try (raise |fixture-failure)
+              fn (message) message
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |raise-has-no-normal-value)
+            :code $ quote $ assert= |fixture-failure (try-normal-never)
+            :tags $ #{} :try-proof :unit
+        'try-option $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn try-option (fail?)
+            try
+              if fail? (raise |fixture-failure) (Option :some 7)
+              fn (message) (Option :none)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Bool
+            :return $ :: 'Option 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |normal-option)
+              :code $ quote $ assert= (Option :some 7) (try-option false)
+              :tags $ #{} :try-proof :unit
+            %{} 'TestEntry (:name |caught-option)
+              :code $ quote $ assert= (Option :none) (try-option true)
+              :tags $ #{} :try-proof :unit
+        'try-proc-handler $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn try-proc-handler (fail?)
+            try
+              if fail? (raise |fixture-failure) 7
+              , &str:count
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Bool
+          :tests $ []
+            %{} 'TestEntry (:name |normal)
+              :code $ quote $ assert= 7 (try-proc-handler false)
+              :tags $ #{} :try-proof :unit
+            %{} 'TestEntry (:name |caught)
+              :code $ quote $ assert= 15 (try-proc-handler true)
+              :tags $ #{} :try-proof :unit
+        'try-result $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn try-result (fail?)
+            try
+              if fail? (raise |fixture-failure) (Result :ok 7)
+              fn (message) (Result :err message)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Bool
+            :return $ :: 'Result 'Number 'String
+          :tests $ []
+            %{} 'TestEntry (:name |normal-result)
+              :code $ quote $ assert= (Result :ok 7) (try-result false)
+              :tags $ #{} :try-proof :unit
+            %{} 'TestEntry (:name |caught-result)
+              :code $ quote $ assert= (Result :err |fixture-failure) (try-result true)
+              :tags $ #{} :try-proof :unit
+        'try-string $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn try-string (fail?)
+            try
+              if fail? (raise |fixture-failure) |normal
+              fn (message) message
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'Bool
+          :tests $ []
+            %{} 'TestEntry (:name |normal-string)
+              :code $ quote $ assert= |normal (try-string false)
+              :tags $ #{} :try-proof :unit
+            %{} 'TestEntry (:name |caught-string-input)
+              :code $ quote $ assert= |fixture-failure (try-string true)
+              :tags $ #{} :try-proof :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-struct.main
           :require $ util.core :refer $ log-title inside-js:

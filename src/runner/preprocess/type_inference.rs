@@ -618,6 +618,47 @@ pub(crate) fn infer_if_return_type(xs: &CalcitList, scope_types: &ScopeTypes) ->
   }
 }
 
+/// Join normal and caught values without evaluating the lazy handler. Its
+/// invocation consumes the runtime's String error, not the enclosing return
+/// declaration. Unknown or incompatible handler inputs retain missing proof.
+fn infer_try_return_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  if xs.len() != 3 {
+    return None;
+  }
+  let body = xs.get(1)?;
+  let handler = xs.get(2)?;
+  if expression_definitely_diverges(handler) {
+    return if expression_definitely_diverges(body) {
+      Some(crate::calcit::type_annotation::NEVER_TYPE.clone())
+    } else {
+      resolve_type_value(body, scope_types)
+    };
+  }
+  let signature = resolve_type_value(handler, scope_types)?.resolve_to_nonoptional_fn()?;
+  if signature.fn_kind != SchemaKind::Fn
+    || signature.arg_types.len() > 1
+    || signature.arg_types.is_empty() && signature.rest_type.is_none()
+  {
+    return None;
+  }
+  let argument = Calcit::Str(Arc::from(""));
+  let expected = signature.arg_types.first().or(signature.rest_type.as_ref())?;
+  let mut bindings = HashMap::new();
+  if !CalcitTypeAnnotation::String
+    .prove_with_bindings(expected, &mut bindings)
+    .is_proven()
+  {
+    return None;
+  }
+  let call = Calcit::from(vec![handler.clone(), argument]);
+  let caught = resolve_type_value(&call, scope_types)?;
+  if expression_definitely_diverges(body) {
+    return Some(caught);
+  }
+  let normal = resolve_type_value(body, scope_types)?;
+  merge_nominal_enum_branches([&normal, &caught]).or_else(|| merge_if_branch_types(normal, caught))
+}
+
 /// Infer independent function exits without assigning a value type to tail recur.
 /// A transfer is valid only against the current lexical parameter contract.
 /// Ordinary expression inference intentionally continues to treat recur as unknown.
@@ -1706,6 +1747,7 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
           }
         }
         Calcit::Syntax(CalcitSyntax::If, _) => infer_if_return_type(xs, scope_types),
+        Calcit::Syntax(CalcitSyntax::Try, _) => infer_try_return_type(xs, scope_types),
         Calcit::Syntax(CalcitSyntax::Match, _) => infer_match_return_type(xs, scope_types),
 
         // A preprocessed function remains a syntax list until runtime construction. Preserve an
@@ -1996,7 +2038,15 @@ fn infer_preprocessed_function_type(xs: &CalcitList) -> Arc<CalcitTypeAnnotation
     return mark_async_callable(hinted, is_async);
   };
 
-  let mut arg_types = fn_annotation.arg_types.clone();
+  // Contextual metadata cannot invent lexical parameters. In particular, a
+  // zero-argument callback does not become unary because its callee expects
+  // a String input. Keep the actual fixed call shape alongside its evidence.
+  let mut arg_types = fn_annotation
+    .arg_types
+    .iter()
+    .take(parameter_types.len())
+    .cloned()
+    .collect::<Vec<_>>();
   for parameter_type in parameter_types.iter().skip(arg_types.len()) {
     arg_types.push(parameter_type.clone());
   }
