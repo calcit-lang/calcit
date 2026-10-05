@@ -8,6 +8,8 @@ Alerts prompt 的 DomProps 迁移暴露出遗漏字段的 `%{}` 构造可以通�
 
 Review 提醒非 Tag key 不能被当作字段覆盖证明，但 native 原有 String 和引用 Symbol 名称是合法的，因此不直接禁止非 Tag。同一字面量名称 resolver 用于结构和 payload 验证，拒绝已知重复/未知名称及 Number/Bool/nil/Unit key。保留运行时字段名与最终运行时校验；必要的参数数量检查不是向类型系统输出完整性证明。
 
+核对运行时发现 String/Symbol 分支没有沿用 Tag 分支的重复字段守卫；动态 String 名称重复时可能留下未初始化字段。因此补齐同一个 `seen_positions` 守卫，合法动态名称继续可用，重复名称统一失败，并用附带 Calcit 测试验证失败而不是返回残缺 nominal 值。
+
 ## 验证
 
 Calcit definition `:tests` 保存完整构造、重排、局部别名和动态 prototype 的正例，现有 Struct JS 回放执行同一函数。现有已知断言运行器加入缺字段、重复字段、未知字段、局部别名、跨 namespace prototype/别名和错误 payload，在 native、check-only、JS、WASM/WASI 及其 check-only 模式验证拒绝、源码定位和无应用产物。

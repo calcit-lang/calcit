@@ -602,6 +602,15 @@
                 assert= (Point2D :x 1 :y 2)
                   %{} Point2D (x-name 1) (y-name 2)
               :tags $ #{} :struct-field-names :unit
+            %{} 'TestEntry (:name |runtime-duplicate-field-names)
+              :code $ quote $ let
+                  field-name |x
+                assert= :rejected $ try
+                  do
+                    %{} Point2D (field-name 1) (field-name 2)
+                    , :accepted
+                  fn (error) :rejected
+              :tags $ #{} :struct-field-names :unit
         'test-struct-with $ %{} 'CodeEntry (:doc "|test struct-with")
           :code $ quote $ fn () (log-title "|Testing struct-with")
             let
