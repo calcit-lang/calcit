@@ -4592,7 +4592,24 @@ fn preprocess_known_function_call(
     // Rebuild ys only once after all rewrites
     if any_rewritten {
       let mut new_ys = CalcitList::new_inner_from(std::slice::from_ref(&head_form));
-      for item in current_args.iter() {
+      for (item, original) in current_args.iter().zip(ys.iter().skip(1)) {
+        // Contextual lowering happens after argument preprocessing. Validate
+        // the manufactured constructor with the same field contract as source
+        // constructors, before its nominal type can hide invalid payloads.
+        if item != original
+          && let Calcit::List(constructor) = item
+          && let Some(head) = constructor.first()
+        {
+          check_struct_construction_fields(
+            head,
+            &constructor.drop_left(),
+            scope_types,
+            file_ns,
+            def_name,
+            call_location.clone(),
+            check_warnings,
+          );
+        }
         new_ys = new_ys.push(item.to_owned());
       }
       ys = new_ys;

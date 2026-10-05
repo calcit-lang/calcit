@@ -33,6 +33,52 @@ try {
   await copyFile("calcit/test-struct.cirru", snapshot);
   await copyFile("calcit/util.cirru", join(project, "util.cirru"));
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
+  // Contextual nominal literals must pass the ordinary constructor checks
+  // after lowering, before the nominal wrapper hides its field payloads.
+  run("test", "--tag", "nominal-contextual", "--require-match");
+  const contextualNominalTests = ["read-context-box", "read-number-box"].flatMap(name =>
+    JSON.parse(run("query", "def", `test-struct.main/${name}`, "--format", "json")).data.tests
+      .filter(test => test.tags.includes("nominal-contextual")));
+  assert.equal(contextualNominalTests.length, 2);
+  run("edit", "def", "test-struct.main/nominal-replay", "--input-format", "json-ast", "--code",
+    JSON.stringify(["defn", "nominal-replay", [], ...contextualNominalTests.map(test => test.code), "&unit"]));
+  run("edit", "schema", "test-struct.main/nominal-replay", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+  const contextualNominalEntry = ["--init-fn", "test-struct.main/nominal-replay", "--reload-fn", "test-struct.main/nominal-replay"];
+  run(...contextualNominalEntry);
+  const contextualNominalOutput = join(project, "nominal-js");
+  run(...contextualNominalEntry, "--emit-path", contextualNominalOutput, "js");
+  (await import(pathToFileURL(join(contextualNominalOutput, "test-struct.main.mjs")).href)).nominal_replay();
+  for (const [label, body] of [
+    ["generic-wrong-field", "read-context-box $ {} (:value 1) (:count 160)"],
+    ["concrete-wrong-field", "read-number-box $ {} (:value 1) (:count 160)"],
+    ["wrong-option-payload", "read-context-box $ {} (:value 1) (:count $ Option :some |wrong)"],
+    ["missing-required-field", "read-context-box $ {} (:value 1)"],
+    ["unknown-field", "read-context-box $ {} (:value 1) (:count $ Option :none) (:extra 1)"],
+    ["concrete-generic-mismatch", "read-number-box $ {} (:value |wrong) (:count $ Option :none)"],
+    ["loose-wrong-field", "read-context-box $ ?{} :value 1 :count 160"],
+  ]) {
+    const target = "test-struct.main/nominal-rejected";
+    run("edit", "def", target, "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defn nominal-rejected () $ ${body}`);
+    run("edit", "schema", target, "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args ([])) (:return 'Number)");
+    const original = await readFile(snapshot);
+    const diagnostic = /W_FN_ARG_TYPE_MISMATCH|E_CALL_ARGUMENT_MISMATCH|E_CALL_ARGUMENT_UNPROVEN|map-to-struct rewrite skipped/;
+    for (const mode of [["--check-only"], [], ["js"]]) {
+      const output = join(project, `nominal-${label}-${mode[0] ?? "native"}`);
+      const rejected = spawnSync(binary, [snapshot, "--init-fn", target, "--reload-fn", target,
+        "--emit-path", output, ...mode], options);
+      if (rejected.error) throw rejected.error;
+      assert.equal(rejected.status, 1, `${label}\n${rejected.stdout}\n${rejected.stderr}`);
+      assert.match(`${rejected.stdout}\n${rejected.stderr}`, diagnostic);
+      assert.deepEqual(await readFile(snapshot), original);
+      if (mode[0] === "js") {
+        await assertRejectedArtifacts(output, label, diagnostic, true);
+      }
+    }
+  }
+  run("edit", "rm-def", "test-struct.main/nominal-rejected");
   // Validate each stored member before homogeneous synthesis erases a mixed
   // literal. The same source tests must survive native and JS compilation.
   run("test", "--tag", "collection-proof", "--require-match");
