@@ -1208,6 +1208,13 @@ try {
     ["raw-shape-missing", "%{} WriteState (:count 1)"],
     ["raw-shape-duplicate", "%{} WriteState (:count 1) (:count 2)"],
     ["raw-shape-unknown", "%{} WriteState (:count 1) (:other |wrong)"],
+    ["raw-shape-string-unknown", "%{} WriteState (:count 1) (|other |wrong)"],
+    ["raw-shape-string-duplicate", "%{} WriteState (|count 1) (|count 2)"],
+    ["raw-shape-symbol-unknown", "%{} WriteState (:count 1) ('other |wrong)"],
+    ["raw-shape-invalid-key", "%{} WriteState (:count 1) (42 |wrong)"],
+    ["raw-shape-invalid-quoted-key", "%{} WriteState (:count 1) ((quote true) |wrong)"],
+    ["raw-shape-string-payload", "%{} WriteState (|count |wrong) (|label |kept)"],
+    ["raw-shape-symbol-payload", "%{} WriteState ('count |wrong) ('label |kept)"],
     ["raw-shape-local-alias", "let ((Shape WriteState)) (%{} Shape (:count 1))"],
     ["raw-shape-imported", "%{} wrappers/ImportedShape (:left 1)"],
     ["raw-shape-imported-alias", "let ((Shape wrappers/ImportedShape)) (%{} Shape (:left 1))"],
@@ -1216,9 +1223,10 @@ try {
     run("edit", "def", "calcit.assert-evidence/run-tests", "--overwrite", "--input-format", "cirru", "--code",
       `quote $ defwasm-export run-tests () (${expression}) 1`);
     const original = await readFile(snapshot);
-    const expectedDiagnostic = name === "raw-shape-duplicate" ? /construction duplicate field `:count`/
-      : name === "raw-shape-unknown" ? /construction unknown field `:other`/
-      : name.startsWith("raw-shape-") && name !== "raw-shape-payload" ? /construction expected 2 fields, but received 1/
+    const expectedDiagnostic = ["raw-shape-duplicate", "raw-shape-string-duplicate"].includes(name) ? /construction duplicate field `:count`/
+      : ["raw-shape-unknown", "raw-shape-string-unknown", "raw-shape-symbol-unknown"].includes(name) ? /construction unknown field `:other`/
+      : name.startsWith("raw-shape-invalid-") ? /field key must be a Tag, String or Symbol/
+      : name.startsWith("raw-shape-") && !name.endsWith("-payload") ? /construction expected 2 fields, but received 1/
       : name.startsWith("open-pre-dispatch-") ? /E_DYNAMIC_POSTFIX_METHOD/
       : name === "nonexhaustive-pre-dispatch-match" ? /match on `Option` is not exhaustive/
       : name === "duplicate-pre-dispatch-constructor-field" ? /duplicate field `:count`/

@@ -12,6 +12,7 @@ assert.deepEqual(nativeTrace.split(/\r?\n/).filter(line => line.startsWith("stru
 const nativeFailure = execFileSync(binary, ["calcit/test-wasm.cirru", "test", "--tag", "struct-field-failure", "--require-match"], { encoding: "utf8" });
 assert.deepEqual(nativeFailure.split(/\r?\n/).filter(line => line.startsWith("struct-failure-")), ["struct-failure-y"]);
 execFileSync(binary, ["calcit/test-struct.cirru", "test", "--tag", "struct-shape", "--require-match"], { stdio: "pipe" });
+execFileSync(binary, ["calcit/test-struct.cirru", "test", "--tag", "struct-field-names", "--require-match"], { stdio: "pipe" });
 const typeQuery = JSON.parse(execFileSync(binary, ["calcit/test-wasm.cirru", "query", "type", "test-wasm.main/Point", "--format", "json"], { encoding: "utf8" }));
 const fieldMethod = typeQuery.data.methods.find((method) => method.name === ".contains-field?");
 assert.equal(fieldMethod?.status, "proven", "Agent method discovery must prove the Struct field contract");

@@ -5773,6 +5773,24 @@ fn warn_on_raw_struct_field_access(
   );
 }
 
+fn struct_constructor_field_literal(field: &Calcit) -> &Calcit {
+  if let Calcit::List(items) = field
+    && items.len() == 2
+    && matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::Quote, _)))
+  {
+    return &items[1];
+  }
+  field
+}
+
+fn struct_constructor_field_name(field: &Calcit) -> Option<&str> {
+  match struct_constructor_field_literal(field) {
+    Calcit::Tag(name) => Some(name.ref_str()),
+    Calcit::Str(name) | Calcit::Symbol { sym: name, .. } => Some(name),
+    _ => None,
+  }
+}
+
 /// Check resolved constructor shapes and payloads after lowering. Both public
 /// spellings reach this path; spread-bearing shapes remain runtime contracts.
 fn check_struct_construction_fields(
@@ -5800,8 +5818,16 @@ fn check_struct_construction_fields(
       None
     };
     for pair in items.as_chunks::<2>().0 {
-      let Calcit::Tag(field) = pair[0] else { continue };
-      if !value.struct_ref.fields.contains(field) {
+      let Some(field) = struct_constructor_field_name(pair[0]) else {
+        if matches!(
+          struct_constructor_field_literal(pair[0]),
+          Calcit::Nil | Calcit::Bool(_) | Calcit::Number(_) | Calcit::Unit
+        ) {
+          problem.get_or_insert_with(|| "field key must be a Tag, String or Symbol".to_owned());
+        }
+        continue;
+      };
+      if !value.struct_ref.fields.iter().any(|candidate| candidate.ref_str() == field) {
         problem.get_or_insert_with(|| format!("unknown field `:{field}`"));
       } else if !seen.insert(field) {
         problem.get_or_insert_with(|| format!("duplicate field `:{field}`"));
@@ -5830,8 +5856,10 @@ fn check_struct_construction_fields(
     }
   }
   for pair in items.as_chunks::<2>().0 {
-    let Calcit::Tag(field) = pair[0] else { continue };
-    let Some(index) = value.struct_ref.fields.iter().position(|candidate| candidate == field) else {
+    let Some(field) = struct_constructor_field_name(pair[0]) else {
+      continue;
+    };
+    let Some(index) = value.struct_ref.fields.iter().position(|candidate| candidate.ref_str() == field) else {
       continue;
     };
     let Some(expected) =

@@ -4,7 +4,9 @@
 
 Alerts prompt 的 DomProps 迁移暴露出遗漏字段的 `%{}` 构造可以通过默认严格检查和 JS codegen，却在实际生成的 JS 执行时报错。最小复现和验收由 #1776 跟踪；这属于 #1553 展开后校验的共同语义，不增加模块特例或新的 analyzer。
 
-在既有 `check_struct_construction_fields` 中，解析出 nominal prototype 后同时验证固定参数的字段数量、重复 tag 与未知 tag，并保留原有字段 payload 证明。复用 `W_FN_ARG_TYPE_MISMATCH` 和已有调用位置选择。包含参数展开时不根据未展开的 AST 数量判断完整性；真正动态的 prototype 继续由运行时验证。不增加默认值、不扩大 Dynamic、不改写业务源码。
+在既有 `check_struct_construction_fields` 中，解析出 nominal prototype 后同时验证固定参数的字段数量、重复或未知字面量字段名，并保留字段 payload 证明。复用 `W_FN_ARG_TYPE_MISMATCH` 和已有调用位置选择。包含参数展开时不根据未展开的 AST 数量判断完整性；真正动态的 prototype 继续由运行时验证。不增加默认值、不扩大 Dynamic、不改写业务源码。
+
+Review 提醒非 Tag key 不能被当作字段覆盖证明，但 native 原有 String 和引用 Symbol 名称是合法的，因此不直接禁止非 Tag。同一字面量名称 resolver 用于结构和 payload 验证，拒绝已知重复/未知名称及 Number/Bool/nil/Unit key。保留运行时字段名与最终运行时校验；必要的参数数量检查不是向类型系统输出完整性证明。
 
 ## 验证
 

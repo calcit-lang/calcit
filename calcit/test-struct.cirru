@@ -583,9 +583,25 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-          :tests $ [] $ %{} 'TestEntry (:name |complete-alias-dynamic)
-            :code $ quote $ assert= 1 (test-struct-complete-construction)
-            :tags $ #{} :struct-shape :unit
+          :tests $ []
+            %{} 'TestEntry (:name |complete-alias-dynamic)
+              :code $ quote $ assert= 1 (test-struct-complete-construction)
+              :tags $ #{} :struct-shape :unit
+            %{} 'TestEntry (:name |string-field-names)
+              :code $ quote $ assert= (Point2D :x 1 :y 2)
+                %{} Point2D (|x 1) (|y 2)
+              :tags $ #{} :struct-field-names :unit
+            %{} 'TestEntry (:name |symbol-field-names)
+              :code $ quote $ assert= (Point2D :x 1 :y 2)
+                %{} Point2D ('x 1) ('y 2)
+              :tags $ #{} :struct-field-names :unit
+            %{} 'TestEntry (:name |runtime-field-names)
+              :code $ quote $ let
+                  x-name |x
+                  y-name |y
+                assert= (Point2D :x 1 :y 2)
+                  %{} Point2D (x-name 1) (y-name 2)
+              :tags $ #{} :struct-field-names :unit
         'test-struct-with $ %{} 'CodeEntry (:doc "|test struct-with")
           :code $ quote $ fn () (log-title "|Testing struct-with")
             let
