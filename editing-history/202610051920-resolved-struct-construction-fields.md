@@ -1,0 +1,13 @@
+# 已解析 Struct 构造的字段完整性
+
+## 问题与决策
+
+Alerts prompt 的 DomProps 迁移暴露出遗漏字段的 `%{}` 构造可以通过默认严格检查和 JS codegen，却在实际生成的 JS 执行时报错。最小复现和验收由 #1776 跟踪；这属于 #1553 展开后校验的共同语义，不增加模块特例或新的 analyzer。
+
+在既有 `check_struct_construction_fields` 中，解析出 nominal prototype 后同时验证固定参数的字段数量、重复 tag 与未知 tag，并保留原有字段 payload 证明。复用 `W_FN_ARG_TYPE_MISMATCH` 和已有调用位置选择。包含参数展开时不根据未展开的 AST 数量判断完整性；真正动态的 prototype 继续由运行时验证。不增加默认值、不扩大 Dynamic、不改写业务源码。
+
+## 验证
+
+Calcit definition `:tests` 保存完整构造、重排、局部别名和动态 prototype 的正例，现有 Struct JS 回放执行同一函数。现有已知断言运行器加入缺字段、重复字段、未知字段、局部别名、跨 namespace prototype/别名和错误 payload，在 native、check-only、JS、WASM/WASI 及其 check-only 模式验证拒绝、源码定位和无应用产物。
+
+保留原有字段求值/失败顺序、命名构造、Option 和 native/JS/WASM 回归；本次不调整 raw primitive 的严格入口限制，也不以检查通过代替真正执行验证。

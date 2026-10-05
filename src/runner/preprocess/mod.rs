@@ -5773,8 +5773,8 @@ fn warn_on_raw_struct_field_access(
   );
 }
 
-/// Check constructor payloads after lowering and preprocessing, when nested
-/// constructors have nominal evidence. Both public spellings reach this path.
+/// Check resolved constructor shapes and payloads after lowering. Both public
+/// spellings reach this path; spread-bearing shapes remain runtime contracts.
 fn check_struct_construction_fields(
   head: &Calcit,
   args: &CalcitList,
@@ -5792,6 +5792,43 @@ fn check_struct_construction_fields(
     return;
   };
   let items = args.iter().skip(1).collect::<Vec<_>>();
+  if !items.iter().any(|item| matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
+    let mut seen = HashSet::new();
+    let mut problem = if !items.len().is_multiple_of(2) {
+      Some("expected field/value pairs".to_owned())
+    } else {
+      None
+    };
+    for pair in items.as_chunks::<2>().0 {
+      let Calcit::Tag(field) = pair[0] else { continue };
+      if !value.struct_ref.fields.contains(field) {
+        problem.get_or_insert_with(|| format!("unknown field `:{field}`"));
+      } else if !seen.insert(field) {
+        problem.get_or_insert_with(|| format!("duplicate field `:{field}`"));
+      }
+    }
+    if items.len() / 2 != value.struct_ref.fields.len() {
+      problem.get_or_insert_with(|| {
+        format!(
+          "expected {} fields, but received {}",
+          value.struct_ref.fields.len(),
+          items.len() / 2
+        )
+      });
+    }
+    if let Some(problem) = problem {
+      gen_check_warning_code_at(
+        format!(
+          "[Warn] struct `{}` construction {problem} at {file_ns}/{def_name}",
+          value.struct_ref.name
+        ),
+        "W_FN_ARG_TYPE_MISMATCH",
+        file_ns,
+        call_location.clone().or_else(|| prototype.get_location()),
+        check_warnings,
+      );
+    }
+  }
   for pair in items.as_chunks::<2>().0 {
     let Calcit::Tag(field) = pair[0] else { continue };
     let Some(index) = value.struct_ref.fields.iter().position(|candidate| candidate == field) else {

@@ -590,6 +590,12 @@ let
 
 ## Built-in Type Checks
 
+### Struct 构造完整性
+
+能够静态解析的 Struct 构造会在 macro 展开后的同一校验路径中检查字段数量、重复 tag、未知 tag 和字段值类型。不完整的 `%{} Point (:x 1)` 不再等到 native 执行或生成的 JS 才报错；默认严格检查使用现有 `W_FN_ARG_TYPE_MISMATCH` 定位到源码构造调用，并阻止生成应用产物。
+
+推荐使用 `Point :x 1 :y 2`。低层 `%{}` 构造仍要求提供全部字段，不会自动补 `nil`；直接命名构造器既有的 Option 字段省略规则保持不变。完整字段的源码求值顺序、真实动态 prototype 以及允许参数展开的运行时路径保持原语义，编译器不将缺少静态证据当作字段完整性的证明。
+
 ### Function Arity Checking
 
 The system validates that function calls have the correct number of arguments:
