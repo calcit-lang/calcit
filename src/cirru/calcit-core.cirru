@@ -7243,6 +7243,32 @@
                   if &unit |yes $ raise |else-failure
                   fn (message) message
               :tags $ #{} :core :truthiness :unit
+            %{} 'TestEntry (:name |direct-unsafe-bool-keeps-runtime-truthiness)
+              :code $ quote $ let
+                  choose $ fn (condition)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic
+                      :return 'String
+                      :features $ #{} :js-ffi
+                    if (unsafe-coerce condition 'Bool) |yes |no
+                assert= |no $ choose nil
+                assert= |no $ choose false
+                assert= |no $ choose &unit
+                assert= |yes $ choose true
+                assert= |yes $ choose 0
+                assert= |yes $ choose -0
+                assert= |yes $ choose |
+                assert= |yes $ let
+                    choose-expression $ fn (condition)
+                      hint-fn $ {}
+                        :args $ [] 'Dynamic
+                        :return 'String
+                        :features $ #{} :js-ffi
+                      let
+                          result $ if (unsafe-coerce condition 'Bool) |yes |no
+                        , result
+                  choose-expression 0
+              :tags $ #{} :core :truthiness :unit
         'if-let $ %{} 'CodeEntry
           :doc "|Consume Option<T>, bind its payload in the some branch, and evaluate the explicit none branch without calling unwrap."
           :code $ quote $ defmacro if-let (pair then ? else)

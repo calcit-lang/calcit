@@ -34,12 +34,12 @@ try {
   const truthinessOriginal = await readFile(truthinessCore);
   const truthinessRun = (...args) => execFileSync(binary, [truthinessCore, ...args], options);
   const truthinessReport = JSON.parse(truthinessRun("test", "--tag", "truthiness", "--summary-only", "--require-match", "--format", "json"));
-  assert.equal(truthinessReport.selected, 11);
-  assert.equal(truthinessReport.passed, 11);
+  assert.equal(truthinessReport.selected, 12);
+  assert.equal(truthinessReport.passed, 12);
   const truthinessTests = ["if", "or", "and"].flatMap(name =>
     JSON.parse(truthinessRun("query", "def", `calcit.core/${name}`, "--format", "json")).data.tests
       .filter(test => test.tags.includes("truthiness")));
-  assert.equal(truthinessTests.length, 11);
+  assert.equal(truthinessTests.length, 12);
   const truthinessSnapshot = join(project, "truthiness.cirru");
   await copyFile(truthinessCore, truthinessSnapshot);
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
