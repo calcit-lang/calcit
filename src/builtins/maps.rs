@@ -4,6 +4,32 @@ use crate::builtins::meta::type_of;
 use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitList, CalcitProc, CalcitStructValue, format_proc_examples_hint};
 
 use crate::util::number::is_even;
+use crate::{builtins, call_stack::CallStackList, runner};
+
+/// Fold the original map iterator without erasing its key/value relation into a pair list.
+pub fn fold_kv(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+  if xs.len() != 3 {
+    return CalcitErr::err_nodes(CalcitErrKind::Arity, "&map:fold-kv expected 3 arguments, but received:", xs);
+  }
+  let Calcit::Map(entries) = &xs[0] else {
+    return CalcitErr::err_nodes(CalcitErrKind::Type, "&map:fold-kv expected a map, but received:", xs);
+  };
+  let mut accumulator = xs[1].clone();
+  match &xs[2] {
+    Calcit::Fn { info, .. } => {
+      for (key, value) in entries {
+        accumulator = runner::run_fn(&[accumulator, key.clone(), value.clone()], info, call_stack)?;
+      }
+    }
+    Calcit::Proc(proc) => {
+      for (key, value) in entries {
+        accumulator = builtins::handle_proc(*proc, &[accumulator, key.clone(), value.clone()], call_stack)?;
+      }
+    }
+    _ => return CalcitErr::err_nodes(CalcitErrKind::Type, "&map:fold-kv expected a callback function, but received:", xs),
+  }
+  Ok(accumulator)
+}
 
 pub fn call_new_map(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if is_even(xs.len()) {

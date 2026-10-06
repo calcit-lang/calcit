@@ -2303,11 +2303,12 @@ try {
   }
   // Replay attached callable and collection contracts, including nominal schema
   // parameters and typed rest, without replacing the original expressions.
-  for (const [source, namespace, definitions, expectedCount, outputName] of [
+  for (const [source, namespace, definitions, expectedCount, outputName, replayNamespace = namespace] of [
     ["src/cirru/calcit-core.cirru", "calcit.core", ["count", "&map:destruct", "&map:diff-triple", "apply", "loop"], 11, "count-core-js"],
     ["tests/fixtures/count-contract.cirru", "fix-command.main", ["typed-rest-forward", "nominal-counts", "checked-open-count", "checked-string-count", "checked-core-alias-count", "local-bound-counts", "typed-loop-count"], 7, "count-contract-js"],
     ["tests/fixtures/typed-rest-spread.cirru", "fix-command.main", ["typed-rest-forward"], 2, "typed-rest-spread-js"],
     ["src/cirru/calcit-core.cirru", "calcit.core", ["str", "concat"], 3, "core-rest-prefix-js"],
+    ["src/cirru/calcit-core.cirru", "calcit.core", ["map-list-kv", "filter-map-kv", "&map:filter-kv", "map-entries"], 13, "typed-map-kv-js", "calcit.map-kv-replay"],
   ]) {
     await copyFile(source, snapshot);
     const original = await readFile(snapshot);
@@ -2320,17 +2321,61 @@ try {
     }
     assert.equal(expressions.length, expectedCount);
     assert.deepEqual(await readFile(snapshot), original);
-    run("edit", "def", `${namespace}/replay-count-tests`, "--input-format", "json-ast", "--code",
+    if (replayNamespace !== namespace) run("edit", "add-ns", replayNamespace);
+    run("edit", "def", `${replayNamespace}/replay-count-tests`, "--input-format", "json-ast", "--code",
       JSON.stringify(["defn", "replay-count-tests", [], ...expressions, "&unit"]));
-    run("edit", "schema", `${namespace}/replay-count-tests`, "--input-format", "cirru", "--code",
+    run("edit", "schema", `${replayNamespace}/replay-count-tests`, "--input-format", "cirru", "--code",
       "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
-    run("config", "set", "init-fn", `${namespace}/replay-count-tests`);
-    run("config", "set", "reload-fn", `${namespace}/replay-count-tests`);
+    run("config", "set", "init-fn", `${replayNamespace}/replay-count-tests`);
+    run("config", "set", "reload-fn", `${replayNamespace}/replay-count-tests`);
     run("--check-only");
     const output = join(project, outputName);
     run("--emit-path", output, "js");
-    const generated = await import(pathToFileURL(join(output, `${namespace}.mjs`)).href);
+    const generated = await import(pathToFileURL(join(output, `${replayNamespace}.mjs`)).href);
     generated.replay_count_tests();
+  }
+  // Original Map callback types stay constrained; a typed internal fold must
+  // not specialize open payloads or accept contradictory input/output contracts.
+  for (const [name, input, body, outputType, generics = ""] of [
+    ["wrong-key", "(:: 'Map 'Number 'Number)", "map-list-kv xs $ fn (key value) (hint-fn $ {} (:args $ [] 'String 'Number) (:return 'Number)) value", "(:: 'List 'Number)"],
+    ["wrong-value", "(:: 'Map 'String 'Number)", "map-list-kv xs $ fn (key value) (hint-fn $ {} (:args $ [] 'String 'String) (:return 'String)) value", "(:: 'List 'String)"],
+    ["open-value", "(:: 'Map 'String 'Dynamic)", "map-list-kv xs $ fn (key value) (hint-fn $ {} (:args $ [] 'String 'Number) (:return 'Number)) value", "(:: 'List 'Number)"],
+    ["wrong-result", "(:: 'Map 'String 'Number)", "map-list-kv xs $ fn (key value) |wrong", "(:: 'List 'Number)"],
+    ["wrong-decision", "(:: 'Map 'String 'Number)", "filter-map-kv xs $ fn (key value) true", "(:: 'Map 'String 'Number)"],
+    ["wrong-predicate", "(:: 'Map 'String 'Number)", "xs .filter-kv $ fn (key value) 1", "(:: 'Map 'String 'Number)"],
+    ["rigid-key", "(:: 'Map 'K 'V)", "map-list-kv xs $ fn (key value) (hint-fn $ {} (:args $ [] 'String 'V) (:return 'V)) value", "(:: 'List 'V)", "(:generics $ [] 'K 'V)"],
+    ["rigid-result", "(:: 'Map 'K 'V)", "map-list-kv xs $ fn (key value) key", "(:: 'List 'U)", "(:generics $ [] 'K 'V 'U)"],
+  ]) {
+    await copyFile("tests/fixtures/count-contract.cirru", snapshot);
+    run("edit", "def", "fix-command.main/rejected-map", "--input-format", "cirru", "--code",
+      `quote $ defn rejected-map (xs) (${body})`);
+    run("edit", "schema", "fix-command.main/rejected-map", "--input-format", "cirru", "--code",
+      `quote $ :: 'Fn $ {} (:args $ [] ${input}) (:return ${outputType}) ${generics}`);
+    const original = await readFile(snapshot);
+    if (generics) {
+      // Generic declarations are audited independently rather than trusted
+      // through entry-only preprocessing of an uninstantiated function.
+      const rejected = spawnSync(binary, [snapshot, "fix", "--workflow", "strict", "--verify",
+        "--format", "json"], options);
+      if (rejected.error) throw rejected.error;
+      assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
+      const report = JSON.parse(rejected.stdout);
+      assert.ok(report.diagnostics.some(diagnostic => diagnostic.definition === "fix-command.main/rejected-map"
+        && /^(?:E_CALL_ARGUMENT_UNPROVEN|E_CONCRETE_RETURN_UNPROVEN|E_ERASED_GENERIC_RELATION)$/.test(diagnostic.code)),
+        `${name}: missing independent generic proof diagnostic\n${rejected.stdout}`);
+      assert.deepEqual(await readFile(snapshot), original);
+      continue;
+    }
+    for (const mode of [[], ["js"]]) {
+      const output = join(project, `map-rejected-${name}-${mode[0] ?? "native"}`);
+      const rejected = spawnSync(binary, [snapshot, "--init-fn", "fix-command.main/rejected-map",
+        "--reload-fn", "fix-command.main/rejected-map", ...(mode.length === 0 ? ["--check-only"] : []), "--emit-path", output, ...mode], options);
+      if (rejected.error) throw rejected.error;
+      assert.equal(rejected.status, 1, `${name} ${mode}\n${rejected.stdout}\n${rejected.stderr}`);
+      assert.match(`${rejected.stdout}\n${rejected.stderr}`, /(?:W_FN_ARG_TYPE_MISMATCH|W_METHOD_ARG_TYPE_MISMATCH|W_FN_RETURN_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN|E_ERASED_GENERIC_RELATION)/);
+      assert.deepEqual(await readFile(snapshot), original);
+      await assertRejectedArtifacts(output, name, /(?:W_FN_ARG_TYPE_MISMATCH|W_METHOD_ARG_TYPE_MISMATCH|W_FN_RETURN_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN|E_ERASED_GENERIC_RELATION)/, mode[0] === "js");
+    }
   }
   for (const [name, body, schema] of [
     ["nil", ["count", "nil"], "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"],

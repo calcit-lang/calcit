@@ -2668,7 +2668,7 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   {
     return Some(return_type);
   }
-  if matches!(proc, CalcitProc::Foldl | CalcitProc::NativeListFoldl)
+  if matches!(proc, CalcitProc::Foldl | CalcitProc::NativeListFoldl | CalcitProc::NativeMapFoldKv)
     && let Some(reducer) = xs.get(3)
     && let Some(reducer_type) = resolve_type_value(reducer, scope_types)
   {
@@ -2676,7 +2676,7 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
     if let Some(expected) = super::type_checking::specialize_collection_fold_expected_types(
       &xs.drop_left(),
       scope_types,
-      &vec![calcit::DYNAMIC_TYPE.clone(); 3],
+      &proc.get_type_signature()?.arg_types,
     ) && matches!(reducer_type.as_ref(), CalcitTypeAnnotation::Fn(_))
       && reducer_type.as_ref().is_proven_for(&expected[2])
     {

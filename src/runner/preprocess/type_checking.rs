@@ -282,19 +282,24 @@ pub(super) fn specialize_collection_fold_expected_types(
     return None;
   }
   let receiver_type = resolve_type_value(args.first()?, scope_types)?;
-  let member_type = match receiver_type.as_ref() {
+  let shortcut = expected_types.len() == 4;
+  let separate_key_value = !shortcut
+    && expected_types[2]
+      .resolve_to_nonoptional_fn()
+      .is_some_and(|callback| callback.arg_types.len() == 3);
+  let member_types = match receiver_type.as_ref() {
+    CalcitTypeAnnotation::Map(key, value) if separate_key_value => vec![key.clone(), value.clone()],
     CalcitTypeAnnotation::List(item_type) | CalcitTypeAnnotation::Set(item_type)
-      if !matches!(item_type.as_ref(), CalcitTypeAnnotation::Syntax(_)) =>
+      if !separate_key_value && !matches!(item_type.as_ref(), CalcitTypeAnnotation::Syntax(_)) =>
     {
-      item_type.clone()
+      vec![item_type.clone()]
     }
-    CalcitTypeAnnotation::Map(_, _) => Arc::new(CalcitTypeAnnotation::List(crate::calcit::DYNAMIC_TYPE.clone())),
-    CalcitTypeAnnotation::Dynamic => crate::calcit::DYNAMIC_TYPE.clone(),
+    CalcitTypeAnnotation::Map(_, _) => vec![Arc::new(CalcitTypeAnnotation::List(crate::calcit::DYNAMIC_TYPE.clone()))],
+    CalcitTypeAnnotation::Dynamic if !separate_key_value => vec![crate::calcit::DYNAMIC_TYPE.clone()],
     _ => return None,
   };
   let initial = args.get(1)?;
   let mut accumulator_type = resolve_type_value(initial, scope_types)?;
-  let shortcut = expected_types.len() == 4;
   if !shortcut
     && let Some(callback) = resolve_type_value(args.get(2)?, scope_types).and_then(|annotation| annotation.resolve_to_nonoptional_fn())
     && let Some(parameter) = callback.arg_types.first()
@@ -317,8 +322,10 @@ pub(super) fn specialize_collection_fold_expected_types(
   if shortcut {
     specialized[2] = accumulator_type.clone();
   }
+  let mut callback_inputs = vec![accumulator_type.clone()];
+  callback_inputs.extend(member_types);
   specialized[if shortcut { 3 } else { 2 }] = Arc::new(CalcitTypeAnnotation::from_function_parts(
-    vec![accumulator_type.clone(), member_type],
+    callback_inputs,
     if shortcut {
       Arc::new(CalcitTypeAnnotation::AnonymousEnum)
     } else {
@@ -729,7 +736,11 @@ pub(crate) fn check_proc_arg_types(
   }
 
   let expected_types = match proc {
-    CalcitProc::Foldl | CalcitProc::FoldlShortcut | CalcitProc::FoldrShortcut | CalcitProc::NativeListFoldlShortcut => {
+    CalcitProc::Foldl
+    | CalcitProc::NativeMapFoldKv
+    | CalcitProc::FoldlShortcut
+    | CalcitProc::FoldrShortcut
+    | CalcitProc::NativeListFoldlShortcut => {
       specialize_collection_fold_expected_types(args, scope_types, &signature.arg_types).unwrap_or_else(|| signature.arg_types.clone())
     }
     CalcitProc::Sort | CalcitProc::NativeListSort => {

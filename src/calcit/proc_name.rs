@@ -400,6 +400,8 @@ pub enum CalcitProc {
   NativeMapDissoc,
   #[strum(serialize = "&map:to-list")]
   NativeMapToList,
+  #[strum(serialize = "&map:fold-kv")]
+  NativeMapFoldKv,
   #[strum(serialize = "&map:count")]
   NativeMapCount,
   #[strum(serialize = "&map:empty?")]
@@ -1080,6 +1082,17 @@ impl CalcitProc {
       NativeMapToList => Some(ProcTypeSignature {
         return_type: list_of(list_of(dynamic_tag())),
         arg_types: vec![map_of(type_var("K"), type_var("V"))],
+      }),
+      NativeMapFoldKv => Some(ProcTypeSignature {
+        return_type: type_var("A"),
+        arg_types: vec![
+          map_of(type_var("K"), type_var("V")),
+          type_var("A"),
+          Arc::new(CalcitTypeAnnotation::from_function_parts(
+            vec![type_var("A"), type_var("K"), type_var("V")],
+            type_var("A"),
+          )),
+        ],
       }),
       NativeMapGet => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
