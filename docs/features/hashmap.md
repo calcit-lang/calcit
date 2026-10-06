@@ -178,6 +178,21 @@ The method form is also available as `.filter-map-kv`. Use it when the result
 must remain a map or entries may be dropped; its nominal decision lets the
 compiler relate callback payloads to the resulting map's key and value types.
 
+### 保留键和值的类型
+
+`map-list-kv`、`map-entries`、`.filter-kv` 与 `.filter-map-kv` 直接保留
+`Map<K,V>` 的键值关系；回调可使用具体的键类型与值的名义字段，无需先把
+entry 转成 `List<Dynamic>` 再读取两个槽位。泛型函数也保留外层 `K`、`V`
+以及输出类型之间的关系，不需要在内部回调重新声明同名泛型。
+
+原有调用方式不变。每个 entry 调用一次回调，空 Map 不调用回调，错误仍然
+向调用者传播。Map 的迭代顺序不是稳定排序承诺；展示时需要确定顺序，应显式排序。
+
+#### 限制
+
+- 显式 `Dynamic` 内容仍需 decode 或 narrow，不能靠回调类型标注将其变成具体类型。
+- 内部键值 fold 不是新增的应用入口，应用代码继续使用上述 API。
+
 ### `to-pairs` — convert to set of pairs
 
 ```cirru

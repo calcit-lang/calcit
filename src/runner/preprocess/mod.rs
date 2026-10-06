@@ -3851,13 +3851,14 @@ fn preprocess_list_call(
             } else if !has_spread
               && let Calcit::Proc(
                 proc @ (CalcitProc::Foldl
+                | CalcitProc::NativeMapFoldKv
                 | CalcitProc::NativeListFoldl
                 | CalcitProc::FoldlShortcut
                 | CalcitProc::FoldrShortcut
                 | CalcitProc::NativeListFoldlShortcut),
               ) = &head_form
               && ys.len()
-                == if matches!(proc, CalcitProc::Foldl | CalcitProc::NativeListFoldl) {
+                == if matches!(proc, CalcitProc::Foldl | CalcitProc::NativeListFoldl | CalcitProc::NativeMapFoldKv) {
                   3
                 } else {
                   4
@@ -3897,6 +3898,7 @@ fn preprocess_list_call(
                     | CalcitProc::Sort
                     | CalcitProc::NativeListSort
                     | CalcitProc::Foldl
+                    | CalcitProc::NativeMapFoldKv
                     | CalcitProc::NativeListFoldl
                     | CalcitProc::FoldlShortcut
                     | CalcitProc::FoldrShortcut

@@ -2960,6 +2960,20 @@ export function _$n_trait_call(traitDef: CalcitValue, method: CalcitValue, obj: 
   );
 }
 
+export let _$n_map_$o_fold_kv = (m: CalcitValue, initial: CalcitValue, reducer: CalcitFn): CalcitValue => {
+  if (!(m instanceof CalcitMap || m instanceof CalcitSliceMap)) {
+    throw new Error("&map:fold-kv expected a Map");
+  }
+  if (typeof reducer !== "function") {
+    throw new Error("&map:fold-kv expected a callback function");
+  }
+  let accumulator = initial;
+  for (const [key, value] of m.pairs()) {
+    accumulator = reducer(accumulator, key, value);
+  }
+  return accumulator;
+};
+
 export let _$n_map_$o_to_list = (m: CalcitValue): CalcitSliceList => {
   if (m instanceof CalcitMap || m instanceof CalcitSliceMap) {
     let ys = [];

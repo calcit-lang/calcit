@@ -3713,6 +3713,29 @@ fn diary_core_rest_and_cancel_boundaries_have_independent_proof() {
 }
 
 #[test]
+fn typed_map_helpers_have_independent_key_value_and_return_proof() {
+  // CLI protocol coverage; ordinary callback/effect semantics remain in core :tests.
+  let snapshot = Path::new("src/cirru/calcit-core.cirru");
+  let before = fs::read(snapshot).unwrap();
+  for definition in ["map-list-kv", "filter-map-kv", "&map:filter-kv", "map-entries"] {
+    for rule in ["callable-contract-proof-v1", "concrete-return-proof-v1"] {
+      let output = run_fix(
+        snapshot,
+        &["--rule", rule, "--ns", "calcit.core", "--def", definition, "--format", "json"],
+      );
+      assert_success(&output, definition);
+      let report = parse_stdout(&output);
+      assert!(report["diagnostics"].as_array().unwrap().is_empty(), "{definition}: {report}");
+      assert!(
+        report["data"]["suggestions"].as_array().unwrap().is_empty(),
+        "{definition}: {report}"
+      );
+      assert_eq!(fs::read(snapshot).unwrap(), before, "a proof audit must not change source");
+    }
+  }
+}
+
+#[test]
 fn typed_rest_spread_is_already_valid_and_remains_unmodified() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

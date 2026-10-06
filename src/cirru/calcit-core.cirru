@@ -1715,16 +1715,12 @@
             :tags $ #{} :core :unit
         '&map:filter-kv $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &map:filter-kv (xs f)
-            reduce (&map:to-list xs) (&map:empty xs)
-              defn %map:filter-kv (acc x)
+            &map:fold-kv xs (&map:empty xs)
+              fn (acc key value)
                 hint-fn $ {}
-                  :args $ [] (:: 'Map 'K 'V) (:: 'List 'Dynamic)
+                  :args $ [] (:: 'Map 'K 'V) 'K 'V
                   :return $ :: 'Map 'K 'V
-                  :generics $ [] 'K 'V
-                if
-                  f (&list:nth x 0) (&list:nth x 1)
-                  &map:assoc acc (&list:nth x 0) (&list:nth x 1)
-                  , acc
+                if (f key value) (&map:assoc acc key value) acc
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'Map 'K 'V)
@@ -1733,11 +1729,43 @@
             :generics $ [] 'K 'V
             :return $ :: 'Map 'K 'V
           :tags $ #{} :internal
-          :tests $ [] $ %{} 'TestEntry (:name |filters-map-keys-and-values)
-            :code $ quote $ assert= (&{} :b 2)
-              &map:filter-kv (&{} :a 1 :b 2)
-                fn (k v) (> v 1)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |filters-map-keys-and-values)
+              :code $ quote $ assert= (&{} :b 2)
+                &map:filter-kv (&{} :a 1 :b 2)
+                  fn (k v) (> v 1)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-typed-fields-and-effects)
+              :code $ quote $ let
+                  input $ {}
+                    |a $ FsPath :value |first
+                    |b $ FsPath :value |second
+                  calls $ atom 0
+                  selected $ input .filter-kv $ fn (key path) (swap! calls inc)
+                    and (= key |b)
+                      = (:value path) |second
+                assert-type selected $ :: 'Map 'String 'FsPath
+                assert=
+                  {} $ |b $ FsPath :value |second
+                  , selected
+                assert= 2 $ deref calls
+                assert= ({})
+                  &map:filter-kv ({})
+                    fn (key value) (raise |empty-filter-must-not-run)
+                assert= |filter-callback-failed $ try
+                  input .filter-kv $ fn (key value) (raise |filter-callback-failed)
+                  fn (error) error
+              :tags $ #{} :core :map-kv-proof :unit
+        '&map:fold-kv $ %{} 'CodeEntry
+          :doc "|内部 Map 键值 fold，直接传递 accumulator、key、value，保留类型关系；应用代码使用已有 map-list-kv、filter-map-kv 或 Map .filter-kv。"
+          :code $ quote &runtime-implementation
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'A)
+            :args $ [] (:: 'Map 'K 'V) 'A $ :: 'Fn
+              {} (:return 'A)
+                :args $ [] 'A 'K 'V
+            :generics $ [] 'K 'V 'A
+          :tags $ #{} :builtin :internal
         '&map:get $ %{} 'CodeEntry
           :doc "|internal function for getting map value\nSyntax: (&map:get map key) or (&map:get map key default)\nParams: map (map), key (any), default (any, optional)\nReturns: any\nGets value for key, returns default if key not found"
           :code $ quote &runtime-implementation
@@ -5890,18 +5918,14 @@
         'filter-map-kv $ %{} 'CodeEntry
           :doc "|Transforms and filters map entries with a typed MapEntryDecision callback. Return :keep with the output key/value or :drop to omit an entry."
           :code $ quote $ defn filter-map-kv (xs f)
-            foldl xs ({})
-              defn %filter-map-kv (acc pair)
+            &map:fold-kv xs ({})
+              fn (acc key value)
                 hint-fn $ {}
-                  :args $ [] 'Map 'List
-                  :return 'Map
-                let
-                    key $ &list:nth pair 0
-                    value $ &list:nth pair 1
-                    decision $ f key value
-                  match decision
-                    (:keep next-key next-value) (&map:assoc acc next-key next-value)
-                    (:drop) acc
+                  :args $ [] (:: 'Map 'R 'S) 'K 'V
+                  :return $ :: 'Map 'R 'S
+                match (f key value)
+                  (:keep next-key next-value) (&map:assoc acc next-key next-value)
+                  (:drop) acc
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'Map 'K 'V)
@@ -5944,6 +5968,38 @@
                 assert-type selected $ :: 'Map 'Tag 'String
                 assert= |1 $ &map:get selected :a
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-captured-generic-relations)
+              :code $ quote $ let
+                  choose $ fn (xs f)
+                    hint-fn $ {}
+                      :args $ [] (:: 'Map 'K 'V)
+                        :: 'Fn $ {}
+                          :args $ [] 'K 'V
+                          :return $ :: 'MapEntryDecision 'R 'S
+                      :generics $ [] 'K 'V 'R 'S
+                      :return $ :: 'Map 'R 'S
+                    xs .filter-map-kv f
+                  selected $ choose
+                    {}
+                      |a $ FsPath :value |first
+                      |b $ FsPath :value |second
+                    fn (key path)
+                      MapEntryDecision :keep (to-tag key) (:value path)
+                assert-type selected $ :: 'Map 'Tag 'String
+                assert=
+                  {} (:a |first) (:b |second)
+                  , selected
+              :tags $ #{} :core :map-kv-proof :unit
+            %{} 'TestEntry (:name |preserves-collision-iterator-last-value)
+              :code $ quote $ let
+                  input $ {} (:a 1) (:b 2) (:c 3)
+                  values $ map-list-kv input $ fn (key value) value
+                  result $ input .filter-map-kv $ fn (key value) (MapEntryDecision :keep :shared value)
+                assert-type result $ :: 'Map 'Tag 'Number
+                assert=
+                  {} $ :shared $ -> values (.last) (.unwrap)
+                  , result
+              :tags $ #{} :core :map-kv-proof :unit
         'filter-not $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn filter-not (xs f)
             filter xs $ defn %filter-not (x)
@@ -8479,12 +8535,12 @@
         'map-list-kv $ %{} 'CodeEntry
           :doc "|Collects one output value per map entry with a typed key/value callback. Returns List<U> from Map<K,V> and Fn(K,V)->U without erasing the key/value relation."
           :code $ quote $ defn map-list-kv (xs f)
-            foldl xs ([])
-              defn %map-list-kv (acc pair)
+            &map:fold-kv xs ([])
+              fn (acc key value)
                 hint-fn $ {}
-                  :args $ [] (:: 'List 'U) (:: 'List 'Dynamic)
+                  :args $ [] (:: 'List 'U) 'K 'V
                   :return $ :: 'List 'U
-                append acc $ f (&list:nth pair 0) (&list:nth pair 1)
+                append acc $ f key value
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'Map 'K 'V)
@@ -8492,15 +8548,47 @@
                 :args $ [] 'K 'V
             :generics $ [] 'K 'V 'U
             :return $ :: 'List 'U
-          :tests $ [] $ %{} 'TestEntry (:name |collects-typed-key-value-results)
-            :code $ quote $ do
-              assert= (#{} 10 20)
-                &list:to-set $ map-list-kv (&{} :a 1 :b 2)
-                  fn (key value) (* value 10)
-              assert= (#{} |a=1 |b=2)
-                &list:to-set $ map-list-kv (&{} |a 1 |b 2)
-                  fn (key value) (str key |= value)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |collects-typed-key-value-results)
+              :code $ quote $ do
+                assert= (#{} 10 20)
+                  &list:to-set $ map-list-kv (&{} :a 1 :b 2)
+                    fn (key value) (* value 10)
+                assert= (#{} |a=1 |b=2)
+                  &list:to-set $ map-list-kv (&{} |a 1 |b 2)
+                    fn (key value) (str key |= value)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-nominal-key-value-fields)
+              :code $ quote $ let
+                  input $ {}
+                    |a $ FsPath :value |first
+                    |b $ FsPath :value |second
+                  result $ map-list-kv input $ fn (key path)
+                    str key |= $ :value path
+                assert-type result $ :: 'List 'String
+                assert= (#{} |a=first |b=second) (result .to-set)
+              :tags $ #{} :core :map-kv-proof :unit
+            %{} 'TestEntry (:name |preserves-iteration-effects-and-failure)
+              :code $ quote $ let
+                  input $ {} (:a 1) (:b 2) (:c 3)
+                  calls $ atom 0
+                  source-calls $ atom 0
+                  result $ map-list-kv
+                    do (swap! source-calls inc) input
+                    fn (key value) (swap! calls inc) value
+                  expected $ foldl input ([])
+                    fn (acc pair)
+                      append acc $ &list:nth pair 1
+                assert= expected result
+                assert= 1 $ deref source-calls
+                assert= 3 $ deref calls
+                assert= ([])
+                  map-list-kv ({})
+                    fn (key value) (raise |empty-callback-must-not-run)
+                assert= |map-callback-failed $ try
+                  map-list-kv input $ fn (key value) (raise |map-callback-failed)
+                  fn (error) error
+              :tags $ #{} :core :map-kv-proof :unit
         'map? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is a map")
           :code $ quote &runtime-implementation
           :examples $ []

@@ -545,6 +545,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     ToPairs => maps::to_pairs(args),
     NativeMergeNonNil => maps::call_merge_non_nil(args),
     NativeMapToList => maps::to_list(args),
+    NativeMapFoldKv => maps::fold_kv(args, call_stack),
     NativeMapCount => maps::count(args),
     NativeMapEmpty => maps::empty_ques(args),
     NativeMapContains => maps::contains_ques(args),
