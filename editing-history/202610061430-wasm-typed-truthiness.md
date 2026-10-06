@@ -16,6 +16,6 @@ unsafe-coerce 在 native/JS 保留原值；WASM 不能把 Number 0 当 Bool fals
 
 ## 验证安排与边界
 
-新增语义放在 core if 的 definition :tests：数字、非有限数字、可空 Bool/String、函数和定义值；副作用次数使用 test-struct 的附带测试。既有 check-known-assertion runner 在 native/JS 回放全部同源 AST，并在 WASM 回放支持的完整组与全局状态副作用合同。脚本专属检查限于真实导出的 f64 参数、零函数槽位、空字符串地址和拒绝产物的 ABI 边界；原有严格正反例继续完整执行。
+新增语义放在 core if 的 definition :tests：数字、非有限数字、可空 Bool/String、函数和定义值；副作用次数使用 test-struct 的附带测试。既有 check-known-assertion runner 在 native/JS 回放全部同源 AST，并在 WASM 回放支持的完整组与全局状态副作用合同。review 补充从原有异常传播测试提取三个完整 if 表达式，分别验证条件、选中 then/else 分支的 raise 在真实 WebAssembly 中产生 RuntimeError；只移除外层 try 捕获，不改表达式或声称支持 WASM try。脚本专属检查限于真实导出的 f64 参数、零函数槽位、空字符串地址和拒绝产物的 ABI 边界；原有严格正反例继续完整执行。
 
 这不提供完整 Dynamic ABI、任意闭包或所有异常捕获能力，不改变 native/JS 语义，不代表新版本已正式发布。PR 最新 HEAD 的 review/CI、合并后的精确 main workflow 与正式包验收仍是交付门禁。

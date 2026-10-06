@@ -97,6 +97,23 @@ try {
     "zero-empty-and-falsey-values-preserve-existing-contract", "function-and-definition-values-are-truthy",
   ].includes(test.name));
   assert.equal(truthinessWasmTests.length, 10);
+  // Preserve the stored error expressions, but leave the native/JS try handler
+  // outside the WASM boundary: raise must propagate as a real runtime trap.
+  const truthinessErrorTest = truthinessTests.find(test => test.name === "condition-and-selected-branch-errors-propagate");
+  assert.ok(truthinessErrorTest);
+  assert.equal(truthinessErrorTest.code[0], "do");
+  assert.equal(truthinessErrorTest.code.length, 4);
+  const truthinessTraps = ["condition", "then", "else"].map((name, index) => {
+    const assertion = truthinessErrorTest.code[index + 1];
+    assert.equal(assertion[0], "assert=");
+    assert.equal(assertion[1], `|${name}-failure`);
+    assert.equal(assertion[2][0], "try");
+    const expression = assertion[2][1];
+    assert.equal(expression[0], "if");
+    assert.equal(expression.length, 4);
+    assert.deepEqual(expression[index + 1], ["raise", `|${name}-failure`]);
+    return { name: `trap-${name}`, expression };
+  });
   const truthinessWasmSnapshot = join(project, "truthiness-wasm.cirru");
   await copyFile(truthinessCore, truthinessWasmSnapshot);
   const truthinessWasmRun = (...args) => execFileSync(binary, [truthinessWasmSnapshot, ...args], options);
@@ -106,6 +123,12 @@ try {
       JSON.stringify(["defwasm-export", "run-tests", [], ...truthinessWasmTests.map(test => test.code), "&unit"])],
     ["edit", "schema", "calcit.truthiness-wasm/run-tests", "--input-format", "cirru", "--code",
       "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)"],
+    ...truthinessTraps.flatMap(({ name, expression }) => [
+      ["edit", "def", `calcit.truthiness-wasm/${name}`, "--input-format", "json-ast", "--code",
+        JSON.stringify(["defwasm-export", name, [], expression])],
+      ["edit", "schema", `calcit.truthiness-wasm/${name}`, "--input-format", "cirru", "--code",
+        "quote $ :: 'Fn $ {} (:args ([])) (:return 'String)"],
+    ]),
   ];
   const truthinessWasmRevision = JSON.parse(truthinessWasmRun("query", "config", "--format", "json")).revision;
   const truthinessWasmTransaction = ["edit", "transaction", "--code", JSON.stringify(truthinessWasmOperations),
@@ -122,6 +145,10 @@ try {
     (truthinessWasmImports[module] ??= {})[name] = () => { throw new Error(`unexpected truthiness host call: ${module}/${name}`); };
   }
   new WebAssembly.Instance(truthinessWasmModule, truthinessWasmImports).exports["run-tests"]();
+  for (const { name } of truthinessTraps) {
+    assert.throws(() => new WebAssembly.Instance(truthinessWasmModule, truthinessWasmImports).exports[name](),
+      WebAssembly.RuntimeError, `${name}: the original condition or selected branch error must trap`);
+  }
   assert.deepEqual(await readFile(truthinessCore), truthinessOriginal);
 
   // Use a stored global-backed Calcit contract to verify single evaluation
