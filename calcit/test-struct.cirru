@@ -399,6 +399,82 @@
               assert= 160 $ read-context-box $ {} (:value 1)
                 :count $ Option :none
             :tags $ #{} :nominal-contextual
+        'read-env-default $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-env-default (name fallback) (&get-env name fallback)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'String 'String
+            :features $ #{} :env :io
+          :tests $ []
+            %{} 'TestEntry (:name |env-raw-and-defaults-preserve-values)
+              :code $ quote $ let
+                  missing-name |__CALCIT_ENV_MISSING_7E01__
+                  present-name |__CALCIT_ENV_PROOF_1788__
+                assert= nil $ &get-env missing-name
+                assert= | $ read-env-default missing-name |
+                assert= |fallback $ read-env-default missing-name |fallback
+                assert= (Option :none) (read-env-null-default missing-name)
+                assert= (get-env present-name) (read-env-null-default present-name)
+                assert= 0 $ read-env-number-default missing-name 0
+                assert= false $ read-env-open-default missing-name false
+                assert= ([] 1)
+                  read-env-open-default missing-name $ [] 1
+                assert=
+                  if
+                    nil? $ &get-env present-name
+                    , |fallback $ &get-env present-name
+                  read-env-default present-name |fallback
+              :tags $ #{} :env-proof
+            %{} 'TestEntry (:name |env-fallback-is-eager-and-evaluated-once)
+              :code $ quote $ let
+                  effects $ atom 0
+                assert= (&get-env |__CALCIT_ENV_PROOF_1788__ |fallback)
+                  &get-env |__CALCIT_ENV_PROOF_1788__ $ let ()
+                    reset! effects $ inc $ deref effects
+                    , |fallback
+                assert= 1 $ deref effects
+                assert= |eager-fallback $ try
+                  &get-env |__CALCIT_ENV_PROOF_1788__ $ raise |eager-fallback
+                  fn (message) message
+              :tags $ #{} :env-proof
+        'read-env-null-default $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-env-null-default (name)
+            optionally $ &get-env name nil
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :features $ #{} :env :io
+            :return $ :: 'Option 'String
+        'read-env-number-default $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-env-number-default (name fallback) (&get-env name fallback)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'String 'Number
+            :features $ #{} :env :io
+        'read-env-open-default $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-env-open-default (name fallback) (&get-env name fallback)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'String 'Dynamic
+            :features $ #{} :env :io
+        'read-env-option $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-env-option (name)
+            let
+                key name
+              optionally $ &get-env key
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :features $ #{} :env :io
+            :return $ :: 'Option 'String
+          :tests $ [] $ %{} 'TestEntry (:name |env-wrapper-retains-producer-evidence)
+            :code $ quote $ let
+                missing-name |__CALCIT_ENV_MISSING_7E01__
+                present-name |__CALCIT_ENV_PROOF_1788__
+              assert= (get-env present-name) (read-env-option present-name)
+              assert= (Option :none) (read-env-option missing-name)
+              assert= |fallback $ .unwrap-or (read-env-option missing-name) |fallback
+            :tags $ #{} :env-proof
         'read-let-asserted-map-literal-store $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-let-asserted-map-literal-store (source)
             let

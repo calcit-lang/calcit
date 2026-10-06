@@ -296,6 +296,92 @@ try {
   // authorize elimination, mutable widening, or unproved callback signatures.
   await copyFile("calcit/test-struct.cirru", snapshot);
   await copyFile("calcit/util.cirru", join(project, "util.cirru"));
+  // Environment results come from the raw operation, not a wrapper's return
+  // declaration. Replay the same stored contracts with controlled host values.
+  const envOwners = ["read-env-option", "read-env-default", "read-env-null-default",
+    "read-env-open-default", "read-env-number-default"];
+  const envDefinitions = envOwners.map(name =>
+    JSON.parse(run("query", "def", `test-struct.main/${name}`, "--format", "json")).data);
+  const envTests = envDefinitions.flatMap(definition => definition.tests.filter(test => test.tags.includes("env-proof")));
+  const envCoreTests = JSON.parse(truthinessRun("query", "def", "calcit.core/get-env", "--format", "json")).data.tests;
+  assert.equal(envTests.length, 3);
+  assert.equal(envCoreTests.length, 2);
+  const envSnapshot = join(project, "env-workflow.cirru");
+  await copyFile("tests/fixtures/deep-recursion.cirru", envSnapshot);
+  const envRun = (...args) => execFileSync(binary, [envSnapshot, ...args], options);
+  const envOperations = [["edit", "rm-def", "app.main/f"]];
+  for (const definition of envDefinitions) {
+    const name = definition.id.split("/")[1];
+    assert.equal(definition.schema[0], "{}");
+    assert.deepEqual(definition.schema.find(field => field[0] === ":kind"), [":kind", ":fn"]);
+    const schema = ["::", "'Fn", ["{}", ...definition.schema.slice(1).filter(field => field[0] !== ":kind")]];
+    envOperations.push(
+      ["edit", "def", `app.main/${name}`, "--input-format", "json-ast", "--code", JSON.stringify(definition.code)],
+      ["edit", "schema", `app.main/${name}`, "--input-format", "json-ast", "--code", JSON.stringify(schema)],
+    );
+  }
+  envOperations.push(
+    ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "main!", [], ...[...envCoreTests, ...envTests].map(test => test.code), "&unit"])],
+    ["edit", "def", "app.main/reload!", "--overwrite", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "reload!", [], "&unit"])],
+  );
+  const envRevision = JSON.parse(envRun("query", "config", "--format", "json")).revision;
+  const envTransaction = ["edit", "transaction", "--code", JSON.stringify(envOperations), "--expect-revision", envRevision, "--format", "json"];
+  const envBefore = await readFile(envSnapshot);
+  envRun(...envTransaction, "--dry-run");
+  assert.deepEqual(await readFile(envSnapshot), envBefore);
+  envRun(...envTransaction);
+  const envSource = await readFile(envSnapshot);
+  envRun("fix", "--workflow", "strict", "--verify", "--format", "edn");
+  assert.deepEqual(await readFile(envSnapshot), envSource);
+  const envOutput = join(project, "env-js");
+  envRun("--emit-path", envOutput, "js");
+  const envModule = await import(pathToFileURL(join(envOutput, "app.main.mjs")).href);
+  const envKey = "__CALCIT_ENV_PROOF_1788__";
+  const missingEnvKey = "__CALCIT_ENV_MISSING_7E01__";
+  const savedEnv = new Map([envKey, missingEnvKey].map(key => [key, process.env[key]]));
+  try {
+    delete process.env[missingEnvKey];
+    for (const value of [undefined, "", "hello", "你好 🌱"]) {
+      if (value === undefined) delete process.env[envKey];
+      else process.env[envKey] = value;
+      execFileSync(binary, [envSnapshot], { ...options, env: process.env });
+      envModule.main_$x_();
+      // The host supplies exact text. Empty text is present, never None or a
+      // fallback; native and generated JS replay the stored assertions above.
+      assert.equal(envModule.read_env_default(envKey, "fallback"), value ?? "fallback");
+    }
+  } finally {
+    for (const [key, value] of savedEnv) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+  assert.deepEqual(await readFile(envSnapshot), envSource);
+  // A fallback with genuinely open or incompatible evidence cannot be
+  // narrowed by the caller's return declaration, including through an alias.
+  for (const [name, args, types, body, returned] of [
+    ["env-wrong-number", ["name", "fallback"], ["'String", "'Number"], ["&get-env", "name", "fallback"], "'String"],
+    ["env-open-text", ["name", "fallback"], ["'String", "'Dynamic"], ["&get-env", "name", "fallback"], "'String"],
+    ["env-nil-text", ["name"], ["'String"], ["&get-env", "name", "nil"], "'String"],
+    ["env-optional-number", ["name"], ["'String"], ["optionally", ["&get-env", "name"]], ["::", "'Option", "'Number"]],
+    ["env-alias-text", ["name", "fallback"], ["'String", "'Dynamic"],
+      ["let", [["alias", "fallback"]], ["&get-env", "name", "alias"]], "'String"],
+  ]) {
+    const target = `app.main/${name}`;
+    envRun("edit", "def", target, "--input-format", "json-ast", "--code", JSON.stringify(["defn", name, args, body]));
+    envRun("edit", "schema", target, "--input-format", "json-ast", "--code",
+      JSON.stringify(["::", "'Fn", ["{}", [":args", ["[]", ...types]], [":return", returned]]]));
+    const before = await readFile(envSnapshot);
+    const rejected = spawnSync(binary, [envSnapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", name, "--format", "json"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, target);
+    const diagnostics = JSON.parse(rejected.stdout).diagnostics;
+    assert.ok(diagnostics.some(d => d.code === "E_FN_RETURN_UNPROVEN" && d.definition === target), target);
+    assert.deepEqual(await readFile(envSnapshot), before);
+  }
+
   // Join independent normal/handler results, preserving the runtime's String
   // input and lazy effects. Replay the attached AST on both supported backends.
   const tryOwners = ["try-bool", "try-string", "try-option", "try-result", "try-normal-never",
