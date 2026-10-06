@@ -7327,6 +7327,12 @@
                     let
                         alias value
                       if alias |yes |no
+                  erase-refinement $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'UInt32
+                      :return 'Number
+                      :features $ #{} :js-ffi
+                    unsafe-coerce value 'Number
                 assert= |yes $ choose-number 0
                 assert= |yes $ choose-alias 0
                 assert= |yes $ choose-number -0
@@ -7341,6 +7347,18 @@
                 assert= |yes $ choose-alias $ &/ 1 0
                 assert= |yes $ choose-number $ &/ -1 0
                 assert= |yes $ choose-alias $ &/ -1 0
+                assert= 0 $ erase-refinement $ assert-type 0 'UInt32
+                assert= |yes $ if
+                  erase-refinement $ assert-type 0 'UInt32
+                  , |yes |no
+                assert= 7 $ erase-refinement $ assert-type 7 'UInt32
+                assert= |yes $ if
+                  erase-refinement $ assert-type 7 'UInt32
+                  , |yes |no
+                assert= 4294967295 $ erase-refinement $ assert-type 4294967295 'UInt32
+                assert= |yes $ if
+                  erase-refinement $ assert-type 4294967295 'UInt32
+                  , |yes |no
               :tags $ #{} :core :truthiness :unit
             %{} 'TestEntry (:name |nullable-bool-and-text-conditions)
               :code $ quote $ let

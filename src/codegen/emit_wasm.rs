@@ -6154,7 +6154,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         }
         emit_expr(ctx, &args_list[0])
       }
-      // Erasure and identical annotations preserve the existing scalar value.
+      // Proven widening and erasure preserve the existing scalar value.
       // Reinterpretation cannot restore the identity erased by the f64 ABI.
       CalcitSyntax::UnsafeCoerce => {
         if args_list.len() != 2 {
@@ -6162,7 +6162,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         }
         let target = CalcitTypeAnnotation::parse_type_annotation_form(&args_list[1]);
         if matches!(target.as_ref(), CalcitTypeAnnotation::Dynamic)
-          || infer_wasm_static_type(ctx, &args_list[0]).is_some_and(|actual| actual == target)
+          || infer_wasm_static_type(ctx, &args_list[0]).is_some_and(|actual| actual == target || actual.is_proven_for(&target))
         {
           emit_expr(ctx, &args_list[0])
         } else {

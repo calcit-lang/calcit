@@ -145,5 +145,5 @@ $ calcit eval 'println $ format-to-cirru $ macroexpand $ quote $ let ((a 1) (b 2
 ## 限制
 
 - 当前 WASM 标量 ABI 无法区分未证明的开放条件或可空数字中的 nil 与 0，这些路径报告 `E_WASM_NIL_TYPE_EVIDENCE`。
-- WASM 的 `unsafe-coerce` 仅支持擦除到 Dynamic 或保持相同类型的表示，其他重新标注报告 `E_WASM_UNSUPPORTED_JS_FFI`。
+- WASM 的 `unsafe-coerce` 支持保持相同类型、已证明的静态提升（如 UInt32 擦除到 Number）或擦除到 Dynamic，未证明的重新标注报告 `E_WASM_UNSUPPORTED_JS_FFI`。
 - 共同真假值语义不表示 WASM 已支持所有条件中的运算；尚未支持的操作仍按目标边界报错。

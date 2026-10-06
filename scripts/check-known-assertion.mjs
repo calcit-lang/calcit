@@ -195,6 +195,7 @@ try {
     ...["main!", "reload!"].map(name => ["edit", "def", `app.main/${name}`, "--overwrite",
       "--input-format", "json-ast", "--code", JSON.stringify(["defn", name, [], "&unit"])]),
     ...scalarDefinition("choose-number", ["value"], ["'Number"], ["if", "value", "1", "2"]),
+    ...scalarDefinition("erase-refinement", ["value"], ["'UInt32"], ["unsafe-coerce", "value", "'Number"], "'Number", [":js-ffi"]),
     ...scalarDefinition("choose-alias", ["value"], ["'Number"], ["let", [["alias", "value"]], ["if", "alias", "1", "2"]]),
     ...scalarDefinition("choose-bool", ["value"], ["'Bool"], ["if", "value", "1", "2"]),
     // Nullable evidence is inferred inside the function; public schemas keep
@@ -221,6 +222,7 @@ try {
     assert.equal(scalarExports["choose-number"](value), 1);
     assert.equal(scalarExports["choose-alias"](value), 1);
   }
+  for (const value of [0, 7, 4294967295]) assert.equal(scalarExports["erase-refinement"](value), value);
   for (const name of ["choose-bool", "choose-nullable-bool"]) {
     assert.equal(scalarExports[name](0), 2);
     assert.equal(scalarExports[name](1), 1);
@@ -248,6 +250,8 @@ try {
       ["unsafe-coerce", "0", "'Bool"]]]], ["if", ["as-bool"], "1", "2"]], /E_WASM_UNSUPPORTED_JS_FFI/, [":js-ffi"]],
     ["unsafe-nil", [], [], ["if", ["unsafe-coerce", "nil", "'Number"], "1", "2"], /E_WASM_UNSUPPORTED_JS_FFI/, [":js-ffi"]],
     ["unsafe-unit", [], [], ["if", ["unsafe-coerce", "&unit", "'Number"], "1", "2"], /E_WASM_UNSUPPORTED_JS_FFI/, [":js-ffi"]],
+    ["unsafe-refinement", ["value"], ["'Number"], ["let", [["refined", ["unsafe-coerce", "value", "'UInt32"]]],
+      ["if", "refined", "1", "2"]], /E_WASM_UNSUPPORTED_JS_FFI/, [":js-ffi"]],
   ]) {
     scalarEdit(scalarDefinition(`reject-${label}`, parameters, types, body, "'Number", features));
     for (const [target, extra] of [["wasm", []], ["wasi", ["--boundary", "native"]]]) {
