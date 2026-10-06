@@ -6772,6 +6772,22 @@
             :features $ #{} :env :io
             :return $ :: 'Option 'String
           :tags $ #{} :env :io
+          :tests $ []
+            %{} 'TestEntry (:name |missing-env-keeps-nominal-string-option)
+              :code $ quote $ let
+                  missing-name |__CALCIT_ENV_MISSING_7E01__
+                assert= (Option :none) (get-env missing-name)
+                assert= |fallback $ .unwrap-or (get-env missing-name) |fallback
+              :tags $ #{} :core :env-proof :unit
+            %{} 'TestEntry (:name |present-env-preserves-text-and-absence)
+              :code $ quote $ let
+                  raw $ &get-env |__CALCIT_ENV_PROOF_1788__
+                  value $ get-env |__CALCIT_ENV_PROOF_1788__
+                assert= (optionally raw) value
+                assert=
+                  if (nil? raw) |fallback raw
+                  .unwrap-or value |fallback
+              :tags $ #{} :core :env-proof :unit
         'get-in $ %{} 'CodeEntry
           :doc "|Get a nested value as Option<Dynamic>; none represents a missing path or nil encountered during traversal."
           :code $ quote $ defn get-in (base path)

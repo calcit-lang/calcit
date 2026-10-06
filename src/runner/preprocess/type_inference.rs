@@ -2557,6 +2557,30 @@ fn infer_typed_method_result<'a>(
 ///
 /// Extracted from the large `Calcit::Proc` arm of `infer_type_from_expr` for clarity.
 fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  if matches!(proc, CalcitProc::GetEnv)
+    && matches!(xs.len(), 2 | 3)
+    && let Some(name_type) = xs.get(1).and_then(|name| resolve_type_value(name, scope_types))
+    && name_type.is_proven_for(&CalcitTypeAnnotation::String)
+  {
+    // The raw one-argument operation can only return text or nil. Its broad
+    // first-class signature also admits legacy arbitrary fallbacks, whose
+    // independent evidence must participate in the actual call's result.
+    let text = Arc::new(CalcitTypeAnnotation::String);
+    return Some(match xs.get(2) {
+      None => wrap_optional_type(text),
+      Some(fallback) => match resolve_type_value(fallback, scope_types) {
+        // Arguments evaluate before the environment lookup, not lazily in
+        // its missing-value branch.
+        Some(value) if matches!(value.as_ref(), CalcitTypeAnnotation::Never) => value,
+        Some(value) => merge_if_branch_types(text.clone(), value.clone())
+          // A compatibility join must not fabricate a nominal wrapper for
+          // the actual String branch. Both producers must prove the result.
+          .filter(|joined| text.is_proven_for(joined) && value.is_proven_for(joined))
+          .unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()),
+        None => calcit::DYNAMIC_TYPE.clone(),
+      },
+    });
+  }
   if matches!(proc, CalcitProc::NativeTraitCall)
     && let Some(signature) = lowered_trait_method_signature(xs, scope_types)
   {
