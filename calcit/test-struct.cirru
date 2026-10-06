@@ -424,6 +424,10 @@
                     nil? $ &get-env present-name
                     , |fallback $ &get-env present-name
                   read-env-default present-name |fallback
+                assert= (Option :none)
+                  read-env-open-default missing-name $ Option :none
+                assert= (Option :some |fallback)
+                  read-env-open-default missing-name $ Option :some |fallback
               :tags $ #{} :env-proof
             %{} 'TestEntry (:name |env-fallback-is-eager-and-evaluated-once)
               :code $ quote $ let

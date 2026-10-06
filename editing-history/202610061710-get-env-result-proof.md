@@ -11,6 +11,8 @@
 fallback 返回内部 nullable String。有 fallback 时，将真实 String 分支与该参数
 独立证据通过既有分支 join 合并；nil 保留缺失可能，String 可形成 String，开放
 或异构输入保留开放结果。参数先求值；若其证据是 Never，不把它当作可选的惰性分支。
+兼容性 join 后，还要求两个独立 producer 都能证明合并结果；普通 String 与名义
+Option 默认值不能仅靠历史兼容关系被合并成实际并不存在的 Option 包装。
 
 这是内部 synthesis 的精度修复，不是新增表层 overload 或 fallback 类型限制。
 raw proc 的一等宽签名与 native/JS/WASM 实现不变；没有新诊断、迁移规则或 runtime

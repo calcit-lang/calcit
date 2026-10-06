@@ -2572,7 +2572,11 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
         // Arguments evaluate before the environment lookup, not lazily in
         // its missing-value branch.
         Some(value) if matches!(value.as_ref(), CalcitTypeAnnotation::Never) => value,
-        Some(value) => merge_if_branch_types(text, value).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()),
+        Some(value) => merge_if_branch_types(text.clone(), value.clone())
+          // A compatibility join must not fabricate a nominal wrapper for
+          // the actual String branch. Both producers must prove the result.
+          .filter(|joined| text.is_proven_for(joined) && value.is_proven_for(joined))
+          .unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()),
         None => calcit::DYNAMIC_TYPE.clone(),
       },
     });

@@ -366,6 +366,8 @@ try {
     ["env-open-text", ["name", "fallback"], ["'String", "'Dynamic"], ["&get-env", "name", "fallback"], "'String"],
     ["env-nil-text", ["name"], ["'String"], ["&get-env", "name", "nil"], "'String"],
     ["env-optional-number", ["name"], ["'String"], ["optionally", ["&get-env", "name"]], ["::", "'Option", "'Number"]],
+    ["env-nominal-default", ["name", "fallback"], ["'String", ["::", "'Option", "'String"]],
+      ["&get-env", "name", "fallback"], ["::", "'Option", "'String"]],
     ["env-alias-text", ["name", "fallback"], ["'String", "'Dynamic"],
       ["let", [["alias", "fallback"]], ["&get-env", "name", "alias"]], "'String"],
   ]) {
@@ -377,8 +379,15 @@ try {
     const rejected = spawnSync(binary, [envSnapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", name, "--format", "json"], options);
     if (rejected.error) throw rejected.error;
     assert.equal(rejected.status, 1, target);
-    const diagnostics = JSON.parse(rejected.stdout).diagnostics;
-    assert.ok(diagnostics.some(d => d.code === "E_FN_RETURN_UNPROVEN" && d.definition === target), target);
+    if (rejected.stdout.trim()) {
+      const diagnostics = JSON.parse(rejected.stdout).diagnostics;
+      assert.ok(diagnostics.some(d => d.code === "E_FN_RETURN_UNPROVEN" && d.definition === target), target);
+    } else {
+      // A concrete mismatch can fail ordinary preprocessing before the proof
+      // preview is produced. Require the actual return diagnostic and owner.
+      assert.match(rejected.stderr, /W_FN_RETURN_TYPE_MISMATCH/, `${target}: ${rejected.stderr}`);
+      assert.ok(rejected.stderr.includes(name), target);
+    }
     assert.deepEqual(await readFile(envSnapshot), before);
   }
 
