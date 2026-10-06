@@ -868,6 +868,26 @@
             %{} 'TestEntry (:name |caught)
               :code $ quote $ assert= 15 (try-proc-handler true)
               :tags $ #{} :try-proof :unit
+        'try-rest-handler $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn try-rest-handler (fail?)
+            try
+              if fail? (raise |fixture-failure) 7
+              fn (& messages)
+                hint-fn $ {}
+                  :args $ []
+                  :rest 'String
+                  :return 'Number
+                .count messages
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Bool
+          :tests $ []
+            %{} 'TestEntry (:name |normal-value)
+              :code $ quote $ assert= 7 (try-rest-handler false)
+              :tags $ #{} :try-proof :unit
+            %{} 'TestEntry (:name |handler-receives-one-string-in-list)
+              :code $ quote $ assert= 1 (try-rest-handler true)
+              :tags $ #{} :try-proof :unit
         'try-result $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn try-result (fail?)
             try

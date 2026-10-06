@@ -50,6 +50,8 @@ let
 
 正常分支直接 `raise` 时只有处理器产生值；处理器直接 `raise` 时只保留正常值类型。处理器表达式仍然仅在错误发生后求值，类型推断不执行处理器，也不改写求值顺序。
 
+variadic handler 通过自己的 `hint-fn :rest 'String` 合同描述错误参数，函数体的 rest 绑定为 `List<String>`，不是单个 String。
+
 限制：未知或 `Dynamic` 返回值仍需在真实边界解码；外层返回声明不能替代实现证明，也不会授予处理器 `:js-ffi` 权限。本规则覆盖 native 与 JavaScript；不新增 WASM 的 `try` 支持。
 
 ## Raising from a Function

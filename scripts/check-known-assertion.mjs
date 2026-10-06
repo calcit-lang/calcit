@@ -36,12 +36,12 @@ try {
   // Join independent normal/handler results, preserving the runtime's String
   // input and lazy effects. Replay the attached AST on both supported backends.
   const tryOwners = ["try-bool", "try-string", "try-option", "try-result", "try-normal-never",
-    "try-handler-never", "try-lazy!", "try-effect-order", "try-imported-handler", "try-proc-handler", "try-hinted-handler", "try-factory-never"];
+    "try-handler-never", "try-lazy!", "try-effect-order", "try-imported-handler", "try-proc-handler", "try-hinted-handler", "try-factory-never", "try-rest-handler"];
   run("test", "--tag", "try-proof", "--require-match");
   const tryDefinitions = tryOwners.map(name =>
     JSON.parse(run("query", "def", `test-struct.main/${name}`, "--format", "json")).data);
   const tryTests = tryDefinitions.flatMap(definition => definition.tests.filter(test => test.tags.includes("try-proof")));
-  assert.equal(tryTests.length, 22);
+  assert.equal(tryTests.length, 24);
   for (const name of tryOwners) {
     const original = await readFile(snapshot);
     run("fix", "--rule", "concrete-return-proof-v1", "--ns", "test-struct.main", "--def", name, "--format", "edn");
@@ -103,6 +103,8 @@ try {
     ["not-callable", "'Bool", "try 7 1", true],
     ["too-few-handler-parameters", "'Bool", "try 7 $ fn () 0", false],
     ["hint-cannot-invent-handler-parameters", "'Bool", "try 7 $ fn () (hint-fn $ {} (:args ([] 'String)) (:return 'Number)) 0", false],
+    ["fixed-context-cannot-prove-rest-inputs", "'Bool", "try 7 $ fn (& messages) 0", false],
+    ["wrong-rest-input", "'Bool", "try 7 $ fn (& messages) (hint-fn $ {} (:args ([])) (:rest 'Number) (:return 'Number)) (.count messages)", true],
     ["too-many-handler-parameters", "'Bool", "try 7 $ fn (message other) 0", false],
     ["open-normal-value", "'Dynamic", "try raw $ fn (message) 0", false],
     ["open-handler-value", "'Dynamic", "try 7 $ fn (message) raw", false],
