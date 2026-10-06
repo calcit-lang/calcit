@@ -28,11 +28,100 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
+  // These are shared surface contracts, not JavaScript coercion rules. Replay
+  // the exact attached ASTs before testing compiler rejection boundaries.
+  const truthinessCore = "src/cirru/calcit-core.cirru";
+  const truthinessOriginal = await readFile(truthinessCore);
+  const truthinessRun = (...args) => execFileSync(binary, [truthinessCore, ...args], options);
+  const truthinessReport = JSON.parse(truthinessRun("test", "--tag", "truthiness", "--summary-only", "--require-match", "--format", "json"));
+  assert.equal(truthinessReport.selected, 11);
+  assert.equal(truthinessReport.passed, 11);
+  const truthinessTests = ["if", "or", "and"].flatMap(name =>
+    JSON.parse(truthinessRun("query", "def", `calcit.core/${name}`, "--format", "json")).data.tests
+      .filter(test => test.tags.includes("truthiness")));
+  assert.equal(truthinessTests.length, 11);
+  const truthinessSnapshot = join(project, "truthiness.cirru");
+  await copyFile(truthinessCore, truthinessSnapshot);
+  await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
+  const replay = (...args) => execFileSync(binary, [truthinessSnapshot, ...args], options);
+  const truthinessOperations = [["edit", "add-ns", "calcit.truthiness"]];
+  for (const [name, type] of [["choose-open", "'Dynamic"], ["choose-bool", "'Bool"]]) {
+    truthinessOperations.push(
+      ["edit", "def", `calcit.truthiness/${name}`, "--input-format", "json-ast", "--code",
+        JSON.stringify(["defn", name, ["condition"], ["if", "condition", "|yes", "|no"]])],
+      ["edit", "schema", `calcit.truthiness/${name}`, "--input-format", "cirru", "--code",
+        `quote $ :: 'Fn $ {} (:args ([] ${type})) (:return 'String)`],
+    );
+  }
+  truthinessOperations.push(
+    ["edit", "def", "calcit.truthiness/run-tests", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "run-tests", [], ...truthinessTests.map(test => test.code),
+        ["assert=", "|yes", ["choose-open", "0"]], ["assert=", "|no", ["choose-bool", "false"]], "&unit"])],
+    ["edit", "schema", "calcit.truthiness/run-tests", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)"],
+  );
+  const truthinessRevision = JSON.parse(replay("query", "config", "--format", "json")).revision;
+  const truthinessTransaction = ["edit", "transaction", "--code", JSON.stringify(truthinessOperations),
+    "--expect-revision", truthinessRevision, "--format", "json"];
+  replay(...truthinessTransaction, "--dry-run");
+  replay(...truthinessTransaction);
+  const truthinessEntry = ["--init-fn", "calcit.truthiness/run-tests", "--reload-fn", "calcit.truthiness/run-tests"];
+  replay(...truthinessEntry);
+  const truthinessOutput = join(project, "truthiness-js");
+  replay(...truthinessEntry, "--emit-path", truthinessOutput, "js");
+  const truthinessModule = await import(pathToFileURL(join(truthinessOutput, "calcit.truthiness.mjs")).href);
+  truthinessModule.run_tests();
+  // Host-only values are not Calcit source literals. Strict identity checks
+  // must never invoke coercion hooks or treat NaN/zero/empty text as falsey.
+  for (const value of [null, undefined, false]) assert.equal(truthinessModule.choose_open(value), "no");
+  for (const value of [0, -0, "", NaN, Infinity, {}, [], Symbol("host"),
+    { [Symbol.toPrimitive]() { throw new Error("coercion must not run"); } }]) {
+    assert.equal(truthinessModule.choose_open(value), "yes");
+  }
+  assert.equal(truthinessModule.choose_bool(true), "yes");
+  assert.equal(truthinessModule.choose_bool(false), "no");
+  const truthinessCode = await readFile(join(truthinessOutput, "calcit.truthiness.mjs"), "utf8");
+  assert.match(truthinessCode, /if \(condition\)/, "proven Bool conditions should retain direct JS branches");
+  assert.match(truthinessCode, /_calcit_truthy\(condition\)/, "open conditions must use Calcit truthiness");
+  assert.deepEqual(await readFile(truthinessCore), truthinessOriginal);
+
+  // The current scalar WASM ABI supports Bool and statically falsey
+  // conditions here; wider truthiness parity is tracked separately.
+  const truthinessWasmTests = truthinessTests.filter(test => [
+    "only-nil-false-unit-select-else", "typed-bool-conditions-preserve-both-branches",
+  ].includes(test.name));
+  assert.equal(truthinessWasmTests.length, 2);
+  const truthinessWasmSnapshot = join(project, "truthiness-wasm.cirru");
+  await copyFile(truthinessCore, truthinessWasmSnapshot);
+  const truthinessWasmRun = (...args) => execFileSync(binary, [truthinessWasmSnapshot, ...args], options);
+  const truthinessWasmOperations = [
+    ["edit", "add-ns", "calcit.truthiness-wasm"],
+    ["edit", "def", "calcit.truthiness-wasm/run-tests", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defwasm-export", "run-tests", [], ...truthinessWasmTests.map(test => test.code), "&unit"])],
+    ["edit", "schema", "calcit.truthiness-wasm/run-tests", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)"],
+  ];
+  const truthinessWasmRevision = JSON.parse(truthinessWasmRun("query", "config", "--format", "json")).revision;
+  const truthinessWasmTransaction = ["edit", "transaction", "--code", JSON.stringify(truthinessWasmOperations),
+    "--expect-revision", truthinessWasmRevision, "--format", "json"];
+  truthinessWasmRun(...truthinessWasmTransaction, "--dry-run");
+  truthinessWasmRun(...truthinessWasmTransaction);
+  const truthinessWasmOutput = join(project, "truthiness-wasm");
+  execFileSync(binary, ["wasm", truthinessWasmSnapshot, "--init-fn", "calcit.truthiness-wasm/run-tests",
+    "--reload-fn", "calcit.truthiness-wasm/run-tests", "--emit-path", truthinessWasmOutput], options);
+  const truthinessWasmModule = new WebAssembly.Module(await readFile(join(truthinessWasmOutput, "program.wasm")));
+  const truthinessWasmImports = {};
+  for (const { module, name, kind } of WebAssembly.Module.imports(truthinessWasmModule)) {
+    assert.equal(kind, "function");
+    (truthinessWasmImports[module] ??= {})[name] = () => { throw new Error(`unexpected truthiness host call: ${module}/${name}`); };
+  }
+  new WebAssembly.Instance(truthinessWasmModule, truthinessWasmImports).exports["run-tests"]();
+  assert.deepEqual(await readFile(truthinessCore), truthinessOriginal);
+
   // Replay the stored language contracts; nullability introduction must not
   // authorize elimination, mutable widening, or unproved callback signatures.
   await copyFile("calcit/test-struct.cirru", snapshot);
   await copyFile("calcit/util.cirru", join(project, "util.cirru"));
-  await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
   // Join independent normal/handler results, preserving the runtime's String
   // input and lazy effects. Replay the attached AST on both supported backends.
   const tryOwners = ["try-bool", "try-string", "try-option", "try-result", "try-normal-never",

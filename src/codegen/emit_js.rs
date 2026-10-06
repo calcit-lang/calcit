@@ -1848,6 +1848,25 @@ fn gen_indexed_match_code(
   }
 }
 
+fn gen_condition_code(
+  condition: &Calcit,
+  ns: &str,
+  local_defs: &HashSet<Arc<str>>,
+  file_imports: &RefCell<ImportsDict>,
+  tags: &RefCell<HashSet<EdnTag>>,
+) -> Result<String, String> {
+  let code = to_js_code(condition, ns, local_defs, file_imports, tags, None)?;
+  // Reuse lexical/compiled type evidence, not JavaScript coercion. The helper
+  // evaluates an open condition once and compares only nil, Unit and false.
+  if crate::runner::preprocess::infer_static_type_from_expr(condition)
+    .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Bool))
+  {
+    Ok(code)
+  } else {
+    Ok(format!("{}_calcit_truthy({code})", get_proc_prefix(ns)))
+  }
+}
+
 fn gen_if_code(
   body: &CalcitList,
   local_defs: &HashSet<Arc<str>>,
@@ -1873,7 +1892,7 @@ fn gen_if_code(
       let mut expr = String::from("");
       let mut depth = 0;
       loop {
-        let cond_code = to_js_code(&cond_node, ns, local_defs, file_imports, tags, None)?;
+        let cond_code = gen_condition_code(&cond_node, ns, local_defs, file_imports, tags)?;
         let true_code = to_js_code_inline(&true_node, ns, local_defs, file_imports, tags, None)?;
         write!(expr, "({cond_code} ? {true_code} : ").expect("write");
         depth += 1;
@@ -1908,7 +1927,7 @@ fn gen_if_code(
     }
 
     loop {
-      let cond_code = to_js_code(&cond_node, ns, local_defs, file_imports, tags, None)?;
+      let cond_code = gen_condition_code(&cond_node, ns, local_defs, file_imports, tags)?;
       let true_code = to_js_code(&true_node, ns, local_defs, file_imports, tags, Some(return_label))?;
       let else_mark = if need_else { " else " } else { "" };
 

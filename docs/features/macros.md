@@ -12,6 +12,26 @@ aliases:
 
 Calcit macros extend the language by transforming syntax trees during preprocessing. A `defmacro` block returns lists, symbols, and literals:
 
+## 条件与短路求值
+
+`if` 只把 `nil`、`false` 和 `&unit` 视为假值；`0`、负零、空字符串、空集合和 `Option :none` 都是真值。
+条件只求值一次，只执行选中的分支；省略 else 时，假值分支返回 `nil`。
+`or` 返回遇到的第一个真值，全部为假时返回最后一个值；`and` 遇到假值时返回 `false`，否则返回最后一个值。
+这些是 Calcit 语义，不使用 JavaScript 的自动布尔转换。
+
+```cirru
+assert= |then $ if 0 |then |else
+assert= |then $ if | |then |else
+assert= |else $ if &unit |then |else
+assert= 0 $ or 0 7
+assert= | $ or | |fallback
+assert= |done $ and 0 | |done
+assert= false $ and nil |unselected
+```
+
+已证明为 `Bool` 的条件可直接生成布尔分支；其他条件仍遵守以上真假值规则。
+JS 的 `null`/`undefined` 分别承载 `nil`/`Unit`；真假值判断不是宿主对象的受检解码，不能替代 FFI 类型边界。
+
 ## Quick Recipes
 
 - **Define**: `defmacro my-macro (x) ...`
@@ -106,6 +126,10 @@ $ calcit eval 'println $ format-to-lisp $ macroexpand-all $ quote $ let ((a 1) (
 ```
 
 `macroexpand`, `macroexpand-1`, and `macroexpand-all` also print the expansion chain on stderr when nested macros are involved (for example `m1 -> m2 -> m3`). This is useful when a call site expands through helper macros before reaching final syntax.
+
+## 限制
+
+- 当前 WASM 标量条件仍按非零值判断；上述非 Bool 条件的完整真假值契约尚未对齐，跨目标代码暂优先使用明确的 Bool 条件。
 
 The syntax `macroexpand` only expand syntax tree once:
 
