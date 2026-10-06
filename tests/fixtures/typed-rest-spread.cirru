@@ -33,10 +33,30 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] $ :: 'List 'Number
-          :tests $ [] $ %{} 'TestEntry (:name |nonempty-and-empty)
-            :code $ quote $ do
-              assert= 3 $ typed-rest-forward $ [] 1 2 3
-              assert= 0 $ typed-rest-forward $ []
-            :tags $ #{} :unit
+          :tests $ []
+            %{} 'TestEntry (:name |nonempty-and-empty)
+              :code $ quote $ do
+                assert= 3 $ typed-rest-forward $ [] 1 2 3
+                assert= 0 $ typed-rest-forward $ []
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |explicit-rest-prefix)
+              :code $ quote $ let
+                  calls $ atom 0
+                  sink $ fn (label & values)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :rest 'Number
+                      :return 'Number
+                    values .len
+                  source $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return $ :: 'List 'Number
+                    reset! calls $ inc @calls
+                    [] 30 40
+                assert= 4 $ sink |numbers 10 20 & $ source
+                assert= 1 @calls
+                assert= 2 $ sink |numbers 10 20 & $ []
+              :tags $ #{} :unit
       :ns $ %{} 'NsEntry (:doc "|Fix command fixture.")
         :code $ quote $ ns fix-command.main

@@ -2301,11 +2301,13 @@ try {
     assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
     assert.deepEqual(await readFile(snapshot), original);
   }
-  // Replay the attached count contract expressions, including nominal schema
-  // parameters and typed rest, rather than substituting low-level count calls.
+  // Replay attached callable and collection contracts, including nominal schema
+  // parameters and typed rest, without replacing the original expressions.
   for (const [source, namespace, definitions, expectedCount, outputName] of [
     ["src/cirru/calcit-core.cirru", "calcit.core", ["count", "&map:destruct", "&map:diff-triple", "apply", "loop"], 11, "count-core-js"],
     ["tests/fixtures/count-contract.cirru", "fix-command.main", ["typed-rest-forward", "nominal-counts", "checked-open-count", "checked-string-count", "checked-core-alias-count", "local-bound-counts", "typed-loop-count"], 7, "count-contract-js"],
+    ["tests/fixtures/typed-rest-spread.cirru", "fix-command.main", ["typed-rest-forward"], 2, "typed-rest-spread-js"],
+    ["src/cirru/calcit-core.cirru", "calcit.core", ["str", "concat"], 3, "core-rest-prefix-js"],
   ]) {
     await copyFile(source, snapshot);
     const original = await readFile(snapshot);
