@@ -3,11 +3,6 @@ import pkg from "./package.json" with { type: "json" };
 export const calcit_version = pkg.version;
 export const calcit_package_json = pkg;
 
-/** Internal conditional lowering; do not coerce or decode host values. */
-export function _calcit_truthy(value: unknown): boolean {
-  return value !== null && value !== undefined && value !== false;
-}
-
 import { parse, ICirruNode } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
 

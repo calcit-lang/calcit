@@ -29,7 +29,7 @@ assert= |done $ and 0 | |done
 assert= false $ and nil |unselected
 ```
 
-已证明为 `Bool` 的条件可直接生成布尔分支；其他条件仍遵守以上真假值规则。
+JS 条件统一生成一次求值的真假值表达式；`Bool` 和其他条件都遵守以上规则，不依赖新增 runtime helper。
 JS 的 `null`/`undefined` 分别承载 `nil`/`Unit`；真假值判断不是宿主对象的受检解码，不能替代 FFI 类型边界。
 
 ## Quick Recipes

@@ -1848,7 +1848,7 @@ fn gen_indexed_match_code(
   }
 }
 
-/// Preserve Calcit truthiness, using direct JS branches only for Bool evidence.
+/// Preserve Calcit truthiness with one evaluation and no runtime ABI dependency.
 fn gen_condition_code(
   condition: &Calcit,
   ns: &str,
@@ -1857,21 +1857,9 @@ fn gen_condition_code(
   tags: &RefCell<HashSet<EdnTag>>,
 ) -> Result<String, String> {
   let code = to_js_code(condition, ns, local_defs, file_imports, tags, None)?;
-  let is_unsafe_coerce = matches!(
-    condition,
-    Calcit::List(nodes) if matches!(nodes.first(), Some(Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _)))
-  );
-  // Reuse lexical/compiled type evidence, not JavaScript coercion. The helper
-  // evaluates an open condition once and compares only nil, Unit and false.
-  // An unchecked coercion preserves its input value, not a proven Bool.
-  if !is_unsafe_coerce
-    && crate::runner::preprocess::infer_static_type_from_expr(condition)
-      .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Bool))
-  {
-    Ok(code)
-  } else {
-    Ok(format!("{}_calcit_truthy({code})", get_proc_prefix(ns)))
-  }
+  // Nullish coalescing maps only nil/Unit to false. Strict comparison preserves
+  // zero, empty strings and host values, including unchecked Bool annotations.
+  Ok(format!("(({code}) ?? false) !== false"))
 }
 
 fn gen_if_code(

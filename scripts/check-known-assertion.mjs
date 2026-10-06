@@ -81,8 +81,9 @@ try {
   assert.equal(truthinessModule.choose_bool(true), "yes");
   assert.equal(truthinessModule.choose_bool(false), "no");
   const truthinessCode = await readFile(join(truthinessOutput, "calcit.truthiness.mjs"), "utf8");
-  assert.match(truthinessCode, /if \(condition\)/, "proven Bool conditions should retain direct JS branches");
-  assert.match(truthinessCode, /_calcit_truthy\(condition\)/, "open conditions must use Calcit truthiness");
+  assert.match(truthinessCode, /if \(\(\(condition\) \?\? false\) !== false\)/,
+    "Bool and open conditions must share single-evaluation Calcit truthiness");
+  assert.doesNotMatch(truthinessCode, /_calcit_truthy/, "conditional lowering must not require a new runtime export");
   assert.deepEqual(await readFile(truthinessCore), truthinessOriginal);
 
   // The current scalar WASM ABI supports Bool and statically falsey

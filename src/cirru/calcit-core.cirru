@@ -7268,6 +7268,50 @@
                           result $ if (unsafe-coerce condition 'Bool) |yes |no
                         , result
                   choose-expression 0
+                let
+                    choose-local $ fn (condition)
+                      hint-fn $ {}
+                        :args $ [] 'Dynamic
+                        :return 'String
+                        :features $ #{} :js-ffi
+                      let
+                          flag $ unsafe-coerce condition 'Bool
+                        if flag |yes |no
+                    choose-nested $ fn (condition)
+                      hint-fn $ {}
+                        :args $ [] 'Dynamic
+                        :return 'String
+                        :features $ #{} :js-ffi
+                      if
+                        let
+                            flag $ unsafe-coerce condition 'Bool
+                          , flag
+                        , |yes |no
+                    choose-producer $ fn (condition)
+                      hint-fn $ {}
+                        :args $ [] 'Dynamic
+                        :return 'String
+                        :features $ #{} :js-ffi
+                      let
+                          as-bool $ fn (condition)
+                            hint-fn $ {}
+                              :args $ [] 'Dynamic
+                              :return 'Bool
+                              :features $ #{} :js-ffi
+                            unsafe-coerce condition 'Bool
+                        if (as-bool condition) |yes |no
+                  assert= |yes $ choose-local 0
+                  assert= |yes $ choose-local |
+                  assert= |no $ choose-local false
+                  assert= |no $ choose-local &unit
+                  assert= |yes $ choose-nested 0
+                  assert= |yes $ choose-nested |
+                  assert= |no $ choose-nested false
+                  assert= |no $ choose-nested &unit
+                  assert= |yes $ choose-producer 0
+                  assert= |yes $ choose-producer |
+                  assert= |no $ choose-producer false
+                  assert= |no $ choose-producer &unit
               :tags $ #{} :core :truthiness :unit
         'if-let $ %{} 'CodeEntry
           :doc "|Consume Option<T>, bind its payload in the some branch, and evaluate the explicit none branch without calling unwrap."
