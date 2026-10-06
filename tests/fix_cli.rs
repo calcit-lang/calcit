@@ -2225,6 +2225,7 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
     ("closed-spread-call", "Number", "Number", "sink & ([] x)", false),
     ("unknown-spread-call", "Dynamic", "Number", "sink & x", true),
     ("typed-rest-spread", "List 'Number", "Number", "rest-sink 1 & x", false),
+    ("prefixed-rest-spread", "List 'Number", "Number", "rest-sink 1 2 3 & x", false),
     ("wrong-rest-spread", "List 'String", "Number", "rest-sink 1 & x", true),
     ("open-rest-spread", "List 'Dynamic", "Number", "rest-sink 1 & x", true),
     ("unknown-rest-spread", "Dynamic", "Number", "rest-sink 1 & x", true),
@@ -3690,6 +3691,28 @@ fn spread_fix_preserves_rest_optional_and_unknown_macro_boundaries() {
 }
 
 #[test]
+fn diary_core_rest_and_cancel_boundaries_have_independent_proof() {
+  // CLI audit regression for Diary #69; runtime semantics remain in core :tests.
+  for (rule, definition) in [
+    ("callable-contract-proof-v1", "concat"),
+    ("callable-contract-proof-v1", "str"),
+    ("concrete-return-proof-v1", "ffi-task:cancel"),
+  ] {
+    let output = run_fix(
+      Path::new("src/cirru/calcit-core.cirru"),
+      &["--rule", rule, "--ns", "calcit.core", "--def", definition, "--format", "json"],
+    );
+    assert_success(&output, definition);
+    let report = parse_stdout(&output);
+    assert!(report["diagnostics"].as_array().unwrap().is_empty(), "{definition}: {report}");
+    assert!(
+      report["data"]["suggestions"].as_array().unwrap().is_empty(),
+      "{definition}: {report}"
+    );
+  }
+}
+
+#[test]
 fn typed_rest_spread_is_already_valid_and_remains_unmodified() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
@@ -3728,6 +3751,9 @@ fn typed_rest_spread_is_already_valid_and_remains_unmodified() {
   for (name, input, call) in [
     ("wrong-rest", "(:: 'List 'String)", "sink |numbers & xs"),
     ("wrong-fixed", "(:: 'List 'Number)", "sink 1 & xs"),
+    ("wrong-explicit-rest", "(:: 'List 'Number)", "sink |numbers |bad & xs"),
+    ("wrong-prefixed-rest", "(:: 'List 'String)", "sink |numbers 1 & xs"),
+    ("open-prefixed-rest", "(:: 'List 'Dynamic)", "sink |numbers 1 & xs"),
     ("open-rest", "'Dynamic", "sink |numbers & xs"),
     ("missing-fixed", "(:: 'List 'Number)", "sink & xs"),
   ] {

@@ -12104,15 +12104,19 @@ fn typed_rest_spread_contract(signature: &CalcitFnTypeAnnotation, args: &CalcitL
     .position(|argument| matches!(argument, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))?;
   // Unknown length must never satisfy a missing fixed parameter, consume a
   // later argument, or make the position of another spread ambiguous.
-  if spread_index != fixed_count || args.len() != fixed_count + 2 {
+  if spread_index < fixed_count || args.len() != spread_index + 2 {
     return None;
   }
   let mut contract = signature.clone();
   contract.arg_types.truncate(fixed_count);
+  // Explicit rest arguments obey the same element contract as the final list.
+  contract
+    .arg_types
+    .extend(std::iter::repeat_n(rest.clone(), spread_index - fixed_count));
   contract.arg_types.push(Arc::new(CalcitTypeAnnotation::List(rest)));
   contract.rest_type = None;
-  let mut projected = args.iter().take(fixed_count).cloned().collect::<Vec<_>>();
-  projected.push(args.get(fixed_count + 1)?.clone());
+  let mut projected = args.iter().take(spread_index).cloned().collect::<Vec<_>>();
+  projected.push(args.get(spread_index + 1)?.clone());
   Some((CalcitList::from(projected.as_slice()), contract))
 }
 

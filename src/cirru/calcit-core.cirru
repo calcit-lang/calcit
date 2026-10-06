@@ -5784,6 +5784,7 @@
           :doc "|Cancel a wrapped native async task with the default reason."
           :code $ quote $ defn ffi-task:cancel (self)
             &ffi-task-cancel $ :raw self
+            , &unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ [] 'FfiTask
@@ -10218,7 +10219,7 @@
         'str $ %{} 'CodeEntry (:doc "|converts values to string and concatenates them")
           :code $ quote $ defn str (x0 & xs)
             if (&list:empty? xs) (&str x0)
-              &str:concat x0 $ str & xs
+              &str:concat x0 $ str (&list:nth xs 0) & $ &list:rest xs
           :examples $ []
             quote $ assert= |hello $ str |hello
             quote $ assert= |abc $ str |a |b |c
