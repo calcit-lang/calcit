@@ -127,10 +127,6 @@ $ calcit eval 'println $ format-to-lisp $ macroexpand-all $ quote $ let ((a 1) (
 
 `macroexpand`, `macroexpand-1`, and `macroexpand-all` also print the expansion chain on stderr when nested macros are involved (for example `m1 -> m2 -> m3`). This is useful when a call site expands through helper macros before reaching final syntax.
 
-## 限制
-
-- 当前 WASM 标量条件仍按非零值判断；上述非 Bool 条件的完整真假值契约尚未对齐，跨目标代码暂优先使用明确的 Bool 条件。
-
 The syntax `macroexpand` only expand syntax tree once:
 
 ```
@@ -141,3 +137,7 @@ $ calcit eval 'println $ format-to-cirru $ macroexpand $ quote $ let ((a 1) (b 2
       b 2
     + a b
 ```
+
+## 限制
+
+- 当前 WASM 标量条件仍按非零值判断；上述非 Bool 条件的完整真假值契约尚未对齐，跨目标代码暂优先使用明确的 Bool 条件。
