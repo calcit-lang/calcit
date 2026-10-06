@@ -212,7 +212,7 @@ do
 
 | 当前入口 | 决策与目标签名原则 | 边界 |
 | --- | --- | --- |
-| `reset!/swap!`；旧 `add-watch/remove-watch` | **已提供** `add-watch!/remove-watch!` 作为 Ref watcher 的首选注册/移除入口；旧名暂留底层兼容 | 两组调用共享原实现与 `Ref<T>`、`Tag`、`Unit` 契约；重复/缺失 key 仍报错，callback 次数不变；本阶段不自动改写未知同名调用 |
+| `reset!/swap!`；旧 `add-watch/remove-watch` | **已提供** `add-watch!/remove-watch!` 作为 Ref watcher 的首选注册/移除入口；旧名暂留底层兼容 | Ref 写入返回写入值 `T`；watcher 注册/移除共享原 `Ref<T>`、`Tag`、`Unit` 契约。重复/缺失 key 仍报错，callback 次数不变；本阶段不自动改写未知同名调用 |
 | FsPath 旧 `.write-text`；js-ffi `write-text!` | core **已提供** `.write-text!`；模块 **保留**已有 `!` | core 仍 `(FsPath,String)->Result<Unit,String>`，旧方法暂留兼容且共用实现；`core-effect-method-v1` 仅在类型与来源已证明时改写 core 调用；js-ffi 原有 Unit/throw/async 契约不因命名一致而自动统一 |
 | FfiTask `.cancel/.cancel-with`，FfiResponse `.resolve/.reject` | **已提供** `.cancel!/.cancel-with!/.resolve!/.reject!`；旧名暂留兼容 | 新旧方法共用宿主实现，保持泛型、签名、exactly-once、释放与失败行为；`core-effect-method-v1` 可受控改写已证明调用，不能用返回 Bool 或命名代替生命周期证明 |
 | `.read-text/.read-dir/.walk-dir`、`get-args/get-env`；std `read-file!/read-dir!/walk-dir!` | **保留**core 查询名字；std 的首选 `read-file/read-dir/walk-dir` 已随模块 **0.2.36** 首次发布 | 当前正式源码组合为 [std 0.2.37](https://github.com/calcit-lang/calcit.std/releases/tag/0.2.37) 与 Calcit **0.28.0**，保持原参数、返回与失败模型，已验证 native 文本读取、目录枚举、递归读取与 FFI 生命周期。历史 [0.2.36](https://github.com/calcit-lang/calcit.std/releases/tag/0.2.36) 配套 **0.28.0-alpha.3**，其 tag 与预发布工具链要求不随新版本改写 |
