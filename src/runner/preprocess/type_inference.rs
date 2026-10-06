@@ -635,8 +635,15 @@ fn infer_try_return_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Ar
     };
   }
   let signature = resolve_type_value(handler, scope_types)?.resolve_to_nonoptional_fn()?;
+  // Match ordinary calls: only fixed functions fill omitted trailing Options.
+  // Variadic functions still require every fixed argument before their rest.
+  let trailing_options = if signature.rest_type.is_some() {
+    0
+  } else {
+    calcit::trailing_option_arg_count(&signature.arg_types, signature.arg_types.len())
+  };
   if signature.fn_kind != SchemaKind::Fn
-    || signature.arg_types.len() > 1
+    || signature.arg_types.len() - trailing_options > 1
     || signature.arg_types.is_empty() && signature.rest_type.is_none()
   {
     return None;

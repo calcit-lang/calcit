@@ -853,6 +853,26 @@
             %{} 'TestEntry (:name |caught-option)
               :code $ quote $ assert= (Option :none) (try-option true)
               :tags $ #{} :try-proof :unit
+        'try-optional-handler $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn try-optional-handler (fail?)
+            try
+              if fail? (raise |fixture-failure) |normal
+              fn (message extra)
+                hint-fn $ {}
+                  :args $ [] 'String $ :: 'Option 'Number
+                  :return 'String
+                assert= (Option :none) extra
+                , message
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'Bool
+          :tests $ []
+            %{} 'TestEntry (:name |normal-value)
+              :code $ quote $ assert= |normal (try-optional-handler false)
+              :tags $ #{} :try-proof :unit
+            %{} 'TestEntry (:name |omitted-trailing-option-is-none)
+              :code $ quote $ assert= |fixture-failure (try-optional-handler true)
+              :tags $ #{} :try-proof :unit
         'try-proc-handler $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn try-proc-handler (fail?)
             try
@@ -887,6 +907,36 @@
               :tags $ #{} :try-proof :unit
             %{} 'TestEntry (:name |handler-receives-one-string-in-list)
               :code $ quote $ assert= 1 (try-rest-handler true)
+              :tags $ #{} :try-proof :unit
+        'try-rest-ignored $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn try-rest-ignored (fail?)
+            try
+              if fail? (raise |fixture-failure) 7
+              fn (& messages) 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Bool
+          :tests $ []
+            %{} 'TestEntry (:name |normal)
+              :code $ quote $ assert= 7 (try-rest-ignored false)
+              :tags $ #{} :try-proof :unit
+            %{} 'TestEntry (:name |caught)
+              :code $ quote $ assert= 0 (try-rest-ignored true)
+              :tags $ #{} :try-proof :unit
+        'try-rest-prefix $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn try-rest-prefix (fail?)
+            try
+              if fail? (raise |fixture-failure) 7
+              fn (message & others) (.count message)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Bool
+          :tests $ []
+            %{} 'TestEntry (:name |normal)
+              :code $ quote $ assert= 7 (try-rest-prefix false)
+              :tags $ #{} :try-proof :unit
+            %{} 'TestEntry (:name |caught)
+              :code $ quote $ assert= 15 (try-rest-prefix true)
               :tags $ #{} :try-proof :unit
         'try-result $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn try-result (fail?)

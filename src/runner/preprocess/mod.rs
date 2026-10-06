@@ -10529,11 +10529,23 @@ pub fn preprocess_defn(
       // `defn` unnecessarily fall back to Dynamic. Anonymous callbacks still use EXPECTED_FN_TYPE.
       // The expected contract belongs to this function expression, not to
       // unrelated functions nested in its body or returned by a later macro.
-      let expected_fn_schema = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().take()).filter(|signature| {
+      let expected_fn_schema = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().take()).map(|signature| {
         // A fixed callback context describes individual inputs, not a rest
         // binding's collected List. Do not mislabel that List as a String (or
-        // another fixed input); a variadic callback needs its own rest contract.
-        signature.rest_type.is_some() || !zs.iter().any(|param| matches!(param, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+        // another fixed input). Preserve the proven fixed prefix and the
+        // independent result of handlers that never inspect their open rest.
+        if signature.rest_type.is_none()
+          && let Some(rest_index) = zs
+            .iter()
+            .position(|param| matches!(param, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+        {
+          let fixed_count = zs[..rest_index].iter().filter(|param| matches!(param, Calcit::Local(_))).count();
+          let mut context = signature.as_ref().clone();
+          context.arg_types.truncate(fixed_count);
+          Arc::new(context)
+        } else {
+          signature
+        }
       });
       let has_body_fn_hint = body_fn_hint.is_some();
       let mut effective_fn_schema: Option<Arc<CalcitFnTypeAnnotation>> = body_fn_hint.or_else(|| match def_schema.as_ref() {
