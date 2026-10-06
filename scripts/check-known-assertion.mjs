@@ -33,6 +33,134 @@ try {
   await copyFile("calcit/test-struct.cirru", snapshot);
   await copyFile("calcit/util.cirru", join(project, "util.cirru"));
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
+  // Join independent normal/handler results, preserving the runtime's String
+  // input and lazy effects. Replay the attached AST on both supported backends.
+  const tryOwners = ["try-bool", "try-string", "try-option", "try-result", "try-normal-never",
+    "try-handler-never", "try-lazy!", "try-effect-order", "try-imported-handler", "try-proc-handler", "try-hinted-handler", "try-factory-never", "try-rest-handler", "try-rest-ignored", "try-rest-prefix", "try-optional-handler"];
+  run("test", "--tag", "try-proof", "--require-match");
+  const tryDefinitions = tryOwners.map(name =>
+    JSON.parse(run("query", "def", `test-struct.main/${name}`, "--format", "json")).data);
+  const tryTests = tryDefinitions.flatMap(definition => definition.tests.filter(test => test.tags.includes("try-proof")));
+  assert.equal(tryTests.length, 30);
+  for (const name of tryOwners) {
+    const original = await readFile(snapshot);
+    run("fix", "--rule", "concrete-return-proof-v1", "--ns", "test-struct.main", "--def", name, "--format", "edn");
+    assert.deepEqual(await readFile(snapshot), original);
+  }
+  run("edit", "def", "test-struct.main/try-replay", "--input-format", "json-ast", "--code",
+    JSON.stringify(["defn", "try-replay", [], ...tryTests.map(test => test.code), "&unit"]));
+  run("edit", "schema", "test-struct.main/try-replay", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+  const tryEntry = ["--init-fn", "test-struct.main/try-replay", "--reload-fn", "test-struct.main/try-replay"];
+  run(...tryEntry);
+  const tryOutput = join(project, "try-js");
+  run(...tryEntry, "--emit-path", tryOutput, "js");
+  (await import(pathToFileURL(join(tryOutput, "test-struct.main.mjs")).href)).try_replay();
+
+  // Exercise the complete strict workflow without pulling unrelated util
+  // implementation proofs into this minimal language contract.
+  const trySnapshot = join(project, "try-workflow.cirru");
+  await copyFile("tests/fixtures/deep-recursion.cirru", trySnapshot);
+  const tryRun = (...args) => execFileSync(binary, [trySnapshot, ...args], options);
+  const tryOperations = [
+    ["edit", "rm-def", "app.main/f"],
+    ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "main!", [], ...tryTests.map(test => test.code), "&unit"])],
+    ["edit", "def", "app.main/reload!", "--overwrite", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "reload!", [], "&unit"])],
+  ];
+  for (const definition of tryDefinitions) {
+    const target = definition.id.replace("test-struct.main/", "app.main/");
+    const contract = ["::", "'Fn", ["{}", ...definition.schema.slice(1).filter(field => field[0] !== ":kind")]];
+    tryOperations.push(
+      ["edit", "def", target, "--input-format", "json-ast", "--code", JSON.stringify(definition.code)],
+      ["edit", "schema", target, "--input-format", "json-ast", "--code", JSON.stringify(contract)],
+    );
+    for (const test of definition.tests) {
+      tryOperations.push(["edit", "add-test", target, test.name, "--tags", test.tags.join(","),
+        "--input-format", "json-ast", "--code", JSON.stringify(test.code)]);
+    }
+  }
+  const tryRevision = JSON.parse(tryRun("query", "config", "--format", "json")).revision;
+  const tryTransaction = ["edit", "transaction", "--code", JSON.stringify(tryOperations),
+    "--expect-revision", tryRevision, "--format", "json"];
+  tryRun(...tryTransaction, "--dry-run");
+  tryRun(...tryTransaction);
+  const tryOriginal = await readFile(trySnapshot);
+  tryRun("fix", "--workflow", "strict", "--verify", "--format", "edn");
+  tryRun("--check-only");
+  tryRun("test", "--tag", "try-proof", "--require-match");
+  assert.deepEqual(await readFile(trySnapshot), tryOriginal);
+
+  // Open values and incompatible inputs/results must not obtain a proof from
+  // the enclosing concrete declaration. No new checker or migration is used.
+  for (const [label, argumentType, body, definite] of [
+    ["wrong-error-input", "'Bool", "try 7 $ fn (message) (hint-fn $ {} (:args ([] 'Number)) (:return 'Number)) 0", true],
+    // As with if, incompatible branch joins stay open in ordinary migration
+    // mode; the independent concrete-return gate must reject the result.
+    ["wrong-handler-result", "'Bool", "try 7 $ fn (message) |wrong", false],
+    ["contradictory-handler-hint", "'Bool", "try 7 $ fn (message) (hint-fn $ {} (:args ([] 'String)) (:return 'Number)) |wrong", true],
+    ["not-callable", "'Bool", "try 7 1", true],
+    ["too-few-handler-parameters", "'Bool", "try 7 $ fn () 0", false],
+    ["hint-cannot-invent-handler-parameters", "'Bool", "try 7 $ fn () (hint-fn $ {} (:args ([] 'String)) (:return 'Number)) 0", false],
+    ["fixed-context-cannot-prove-rest-inputs", "'Bool", "try 7 $ fn (& messages) $ .count $ .trim messages", false],
+    ["wrong-rest-input", "'Bool", "try 7 $ fn (& messages) (hint-fn $ {} (:args ([])) (:rest 'Number) (:return 'Number)) (.count messages)", true],
+    ["variadic-fixed-option-is-not-omittable", "'Bool", "try 7 $ fn (message extra & tail) (hint-fn $ {} (:args ([] 'String (:: 'Option 'Number))) (:rest 'String) (:return 'Number)) 0", false],
+    ["too-many-handler-parameters", "'Bool", "try 7 $ fn (message other) 0", false],
+    ["open-normal-value", "'Dynamic", "try raw $ fn (message) 0", false],
+    ["open-handler-value", "'Dynamic", "try 7 $ fn (message) raw", false],
+    ["open-callable", "'DynFn", "try 7 raw", false],
+  ]) {
+    const target = "test-struct.main/try-rejected";
+    run("edit", "def", target, "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defn try-rejected (raw) $ ${body}`);
+    run("edit", "schema", target, "--input-format", "cirru", "--code",
+      `quote $ :: 'Fn $ {} (:args ([] ${argumentType})) (:return 'Number)`);
+    const original = await readFile(snapshot);
+    const diagnostic = /E_FN_RETURN_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|E_DYNAMIC_METHOD_DISPATCH|W_FN_RETURN_TYPE_MISMATCH|W_LOCAL_FN_ARG_TYPE_MISMATCH|trying to call a non-function value|js-ffi/;
+    const audit = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "test-struct.main",
+      "--def", "try-rejected", "--format", "edn"], options);
+    if (audit.error) throw audit.error;
+    assert.equal(audit.status, 1, `${label}\n${audit.stdout}\n${audit.stderr}`);
+    assert.match(`${audit.stdout}\n${audit.stderr}`, diagnostic);
+    assert.deepEqual(await readFile(snapshot), original);
+    if (definite) {
+      for (const mode of [["--check-only"], ["js"]]) {
+        const output = join(project, `try-${label}-${mode[0] === "js" ? "js" : "native"}`);
+        const rejected = spawnSync(binary, [snapshot, "--init-fn", target, "--reload-fn", target,
+          "--emit-path", output, ...mode], options);
+        if (rejected.error) throw rejected.error;
+        assert.equal(rejected.status, 1, `${label}\n${rejected.stdout}\n${rejected.stderr}`);
+        assert.match(`${rejected.stdout}\n${rejected.stderr}`, diagnostic);
+        assert.deepEqual(await readFile(snapshot), original);
+        if (mode[0] === "js") await assertRejectedArtifacts(output, label, diagnostic, true);
+      }
+    }
+  }
+  // Host capability checking is a JS-codegen boundary, not a native return
+  // audit. Parameter context neither grants nor removes lexical permission.
+  for (const authorized of [false, true]) {
+    const target = "test-struct.main/try-rejected";
+    run("edit", "def", target, "--overwrite", "--input-format", "cirru", "--code",
+      "quote $ defn try-rejected () $ try (raise |fixture-failure) $ fn (message) (js-get message |length) 0");
+    run("edit", "schema", target, "--input-format", "cirru", "--code",
+      `quote $ :: 'Fn $ {} (:args ([])) (:return 'Number)${authorized ? " (:features $ #{} :js-ffi)" : ""}`);
+    const original = await readFile(snapshot);
+    const output = join(project, `try-ffi-${authorized ? "authorized" : "rejected"}`);
+    if (authorized) {
+      run("--init-fn", target, "--reload-fn", target, "--emit-path", output, "js");
+      assert.equal((await import(pathToFileURL(join(output, "test-struct.main.mjs")).href)).try_rejected(), 0);
+    } else {
+      const rejected = spawnSync(binary, [snapshot, "--init-fn", target, "--reload-fn", target,
+        "--emit-path", output, "js"], options);
+      if (rejected.error) throw rejected.error;
+      assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
+      assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_JS_FFI_FEATURE_REQUIRED/);
+      await assertRejectedArtifacts(output, "try-ffi-without-permission", /E_JS_FFI_FEATURE_REQUIRED/, true);
+    }
+    assert.deepEqual(await readFile(snapshot), original);
+  }
+  run("edit", "rm-def", "test-struct.main/try-rejected");
   // Concrete Optional field admission preserves evidence without authorizing
   // elimination, open payloads, or mutable Ref widening (Diary #61/#64).
   run("test", "--tag", "optional-proof", "--require-match");
