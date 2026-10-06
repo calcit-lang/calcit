@@ -829,19 +829,65 @@ try {
     assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_ASSERT_TYPE_UNPROVEN|E_ASSERT_TYPE_MISMATCH/);
     assert.deepEqual(await readFile(snapshot), before);
   }
-  // Empty producers still lack independent concrete element/key evidence.
-  for (const [literal, resultType] of [["[]", ":: 'List 'Number"], ["#{}", ":: 'Set 'Number"],
-    ["{}", ":: 'Map 'Tag 'Dynamic"]]) {
+  // Empty constructors prove only their own container family. Replay the
+  // attached contracts, including the real consumer's typed Set accumulator.
+  run("test", "--tag", "empty-container-proof", "--require-match");
+  const emptyOwners = ["empty-list-proof", "empty-set-proof", "empty-map-proof", "collect-unique-proof"];
+  const emptyTests = emptyOwners.flatMap(name =>
+    JSON.parse(run("query", "def", `test-struct.main/${name}`, "--format", "json")).data.tests
+      .filter(test => test.tags.includes("empty-container-proof")));
+  assert.equal(emptyTests.length, 4);
+  for (const name of emptyOwners) {
+    const before = await readFile(snapshot);
+    for (const rule of ["assert-type-proof-v1", "concrete-return-proof-v1", "callable-contract-proof-v1"]) {
+      run("fix", "--rule", rule, "--ns", "test-struct.main", "--def", name, "--format", "edn");
+      assert.deepEqual(await readFile(snapshot), before);
+    }
+  }
+  run("edit", "def", "test-struct.main/empty-replay", "--input-format", "json-ast", "--code",
+    JSON.stringify(["defn", "empty-replay", [], ...emptyTests.map(test => test.code), "&unit"]));
+  run("edit", "schema", "test-struct.main/empty-replay", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+  const emptyEntry = ["--init-fn", "test-struct.main/empty-replay", "--reload-fn", "test-struct.main/empty-replay"];
+  run(...emptyEntry);
+  const emptyOutput = join(project, "empty-js");
+  run(...emptyEntry, "--emit-path", emptyOutput, "js");
+  (await import(pathToFileURL(join(emptyOutput, "test-struct.main.mjs")).href)).empty_replay();
+  // A Dynamic input may happen to be empty at runtime, but its schema is not
+  // emptiness proof. Nonempty open members and shadowed aliases stay rejected.
+  for (const [body, inputType, resultType] of [
+    [", raw", ":: 'List 'Dynamic", ":: 'List 'Number"],
+    [", raw", ":: 'Set 'Dynamic", ":: 'Set 'Number"],
+    [", raw", ":: 'Map 'Tag 'Dynamic", ":: 'Map 'Tag 'String"],
+    ["[] raw", "'Dynamic", ":: 'List 'Number"],
+    ["#{} raw", "'Dynamic", ":: 'Set 'Number"],
+    ["&{} :value raw", "'Dynamic", ":: 'Map 'Tag 'String"],
+    ["let ((values (#{}))) (let ((values raw)) , values)", "'Dynamic", ":: 'Set 'String"],
+  ]) {
     run("edit", "def", "test-struct.main/collection-rejected", "--overwrite", "--input-format", "cirru", "--code",
-      `quote $ defn collection-rejected () $ ${literal}`);
+      `quote $ defn collection-rejected (raw) $ ${body}`);
     run("edit", "schema", "test-struct.main/collection-rejected", "--input-format", "cirru", "--code",
-      `quote $ :: 'Fn $ {} (:args ([])) (:return $ ${resultType})`);
+      `quote $ :: 'Fn $ {} (:args ([] ${inputType.startsWith("::") ? `(${inputType})` : inputType})) (:return $ ${resultType})`);
     const before = await readFile(snapshot);
     const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "test-struct.main",
       "--def", "collection-rejected", "--format", "edn"], options);
     if (rejected.error) throw rejected.error;
-    assert.equal(rejected.status, 1, `${literal}\n${rejected.stdout}\n${rejected.stderr}`);
+    assert.equal(rejected.status, 1, `${body}\n${rejected.stdout}\n${rejected.stderr}`);
     assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_FN_RETURN_UNPROVEN/);
+    assert.deepEqual(await readFile(snapshot), before);
+  }
+  for (const body of ["assert-type (#{}) $ :: 'List 'String", "assert-type ([]) $ :: 'Set 'String",
+    "assert-type (&{}) 'Number", "assert-type (#{} |wrong) $ :: 'Set 'Number"]) {
+    run("edit", "def", "test-struct.main/collection-rejected", "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defn collection-rejected () $ ${body}`);
+    run("edit", "schema", "test-struct.main/collection-rejected", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args ([])) (:return 'Dynamic)");
+    const before = await readFile(snapshot);
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "assert-type-proof-v1", "--ns", "test-struct.main",
+      "--def", "collection-rejected", "--format", "edn"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${body}\n${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_ASSERT_TYPE_MISMATCH/);
     assert.deepEqual(await readFile(snapshot), before);
   }
   // Adopting a Promise as the whole async return does not await a stored member.

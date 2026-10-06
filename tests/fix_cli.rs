@@ -2753,7 +2753,7 @@ fn assertion_proof_fix_reports_original_evidence_without_writing() {
 fn assertion_proof_fix_does_not_borrow_a_producers_declared_return() {
   for (producer_body, return_type, asserted_type, expected_path) in [
     (", x", "'Number", "Number", "code@3"),
-    ("&{}", "(:: 'Map 'Tag 'Dynamic)", "(:: Map Tag Dynamic)", "code"),
+    ("&{} :value x", "(:: 'Map 'Tag 'String)", "(:: Map Tag String)", "code"),
   ] {
     let directory = TestDirectory::create();
     let snapshot = directory.path().join("calcit.cirru");
