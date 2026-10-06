@@ -7313,6 +7313,59 @@
                   assert= |no $ choose-producer false
                   assert= |no $ choose-producer &unit
               :tags $ #{} :core :truthiness :unit
+            %{} 'TestEntry (:name |typed-number-conditions-are-truthy)
+              :code $ quote $ let
+                  choose-number $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'String
+                    if value |yes |no
+                  choose-alias $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'String
+                    let
+                        alias value
+                      if alias |yes |no
+                assert= |yes $ choose-number 0
+                assert= |yes $ choose-alias 0
+                assert= |yes $ choose-number -0
+                assert= |yes $ choose-alias -0
+                assert= |yes $ choose-number 7
+                assert= |yes $ choose-alias 7
+                assert= |yes $ choose-number -7
+                assert= |yes $ choose-alias -7
+                assert= |yes $ choose-number $ &/ 0 0
+                assert= |yes $ choose-alias $ &/ 0 0
+                assert= |yes $ choose-number $ &/ 1 0
+                assert= |yes $ choose-alias $ &/ 1 0
+                assert= |yes $ choose-number $ &/ -1 0
+                assert= |yes $ choose-alias $ &/ -1 0
+              :tags $ #{} :core :truthiness :unit
+            %{} 'TestEntry (:name |nullable-bool-and-text-conditions)
+              :code $ quote $ let
+                  choose-bool $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Optional 'Bool
+                      :return 'String
+                    if value |yes |no
+                  choose-text $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Optional 'String
+                      :return 'String
+                    if value |yes |no
+                assert= |no $ choose-bool nil
+                assert= |no $ choose-bool false
+                assert= |yes $ choose-bool true
+                assert= |no $ choose-text nil
+                assert= |yes $ choose-text |
+                assert= |yes $ choose-text |text
+              :tags $ #{} :core :truthiness :unit
+            %{} 'TestEntry (:name |function-and-definition-values-are-truthy)
+              :code $ quote $ do
+                assert= |yes $ if inc |yes |no
+                assert= |yes $ if MapEntry |yes |no
+              :tags $ #{} :core :truthiness :unit
         'if-let $ %{} 'CodeEntry
           :doc "|Consume Option<T>, bind its payload in the some branch, and evaluate the explicit none branch without calling unwrap."
           :code $ quote $ defmacro if-let (pair then ? else)

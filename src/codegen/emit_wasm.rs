@@ -39,7 +39,7 @@ use crate::calcit::{
   CalcitProc, CalcitStructDef, CalcitSyntax, CalcitTypeAnnotation, MethodKind,
 };
 use crate::program;
-use crate::runner::preprocess::{infer_static_type_from_expr, resolve_static_trait_callable};
+use crate::runner::preprocess::{expression_definitely_diverges, infer_static_type_from_expr, resolve_static_trait_callable};
 
 #[path = "emit_wasm/component.rs"]
 mod component;
@@ -912,7 +912,7 @@ fn emit_wasm_impl(
   for (_, name, _, _) in &fn_defs {
     *export_name_counts.entry(name.clone()).or_insert(0) += 1;
   }
-  let nil_sensitive_defs = collect_sensitive_defs(&fn_defs, &export_name_counts, direct_nil_predicate);
+  let nil_sensitive_defs = collect_sensitive_defs(&fn_defs, &export_name_counts, direct_scalar_type_test);
   let trait_sensitive_defs = collect_sensitive_defs(&fn_defs, &export_name_counts, expr_uses_trait_call);
   let mut fn_index: HashMap<String, u32> = HashMap::new();
   let mut fn_arity: HashMap<String, u32> = HashMap::new();
@@ -1012,7 +1012,8 @@ fn emit_wasm_impl(
           Some(crate::calcit::Calcit::Syntax(crate::calcit::CalcitSyntax::Defatom, _))
         )
       {
-        let global_idx = atom_initial_values.len() as u32;
+        // Global zero belongs to the heap pointer; atoms follow it.
+        let global_idx = 1 + atom_initial_values.len() as u32;
         atom_globals.insert(qualified, global_idx);
         // Determine initial value from 3rd node (index 2)
         let init_val = match xs.get(2) {
@@ -5313,6 +5314,9 @@ fn emit_inline_closure_call(ctx: &mut WasmGenCtx, closure: &InlineClosure, args:
 }
 
 fn infer_wasm_static_type(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
+  if expression_definitely_diverges(expr) {
+    return Some(crate::calcit::type_annotation::NEVER_TYPE.clone());
+  }
   match expr {
     Calcit::Local(local) => ctx
       .local_types
@@ -5371,12 +5375,61 @@ fn wasm_non_nil_value_is_nonzero(annotation: &CalcitTypeAnnotation) -> bool {
   )
 }
 
+/// A scalar condition is either statically decided or has an unambiguous
+/// nonzero representation. Numeric zero is never a false Calcit value.
+fn scalar_truthiness_constant(annotation: &CalcitTypeAnnotation) -> Result<Option<bool>, String> {
+  match annotation {
+    CalcitTypeAnnotation::Bool => Ok(None),
+    CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Unit | CalcitTypeAnnotation::Never => Ok(Some(false)),
+    CalcitTypeAnnotation::Optional(inner) => match scalar_truthiness_constant(inner)? {
+      Some(false) => Ok(Some(false)),
+      None => Ok(None),
+      Some(true) if wasm_non_nil_value_is_nonzero(inner) => Ok(None),
+      _ => Err(format!(
+        "E_WASM_NIL_TYPE_EVIDENCE: if cannot distinguish nil from a zero-valued Optional<{}> payload in the current scalar ABI",
+        inner.to_brief_string()
+      )),
+    },
+    CalcitTypeAnnotation::Number
+    | CalcitTypeAnnotation::Numeric(_)
+    | CalcitTypeAnnotation::String
+    | CalcitTypeAnnotation::Symbol
+    | CalcitTypeAnnotation::Tag
+    | CalcitTypeAnnotation::List(_)
+    | CalcitTypeAnnotation::Map(_, _)
+    | CalcitTypeAnnotation::Set(_)
+    | CalcitTypeAnnotation::Buffer
+    | CalcitTypeAnnotation::Ref(_)
+    | CalcitTypeAnnotation::StructValue(_)
+    | CalcitTypeAnnotation::EnumValue(_)
+    | CalcitTypeAnnotation::AnonymousEnum
+    | CalcitTypeAnnotation::Struct(_, _)
+    | CalcitTypeAnnotation::Enum(_, _)
+    | CalcitTypeAnnotation::StructDef(_)
+    | CalcitTypeAnnotation::EnumDef(_)
+    | CalcitTypeAnnotation::Fn(_)
+    | CalcitTypeAnnotation::DynFn
+    | CalcitTypeAnnotation::CirruQuote => Ok(Some(true)),
+    CalcitTypeAnnotation::TypeRef(_, _)
+      if annotation.resolve_to_struct().is_some()
+        || annotation.resolve_to_enum().is_some()
+        || annotation.resolve_to_nonoptional_fn().is_some() =>
+    {
+      Ok(Some(true))
+    }
+    _ => Err(format!(
+      "E_WASM_NIL_TYPE_EVIDENCE: if requires a proven value type to distinguish nil, false and Unit from numeric zero for `{}`",
+      annotation.to_brief_string()
+    )),
+  }
+}
+
 fn definition_requires_nil_specialization(definition: &StaticFnDef) -> bool {
   definition.nil_sensitive
     && definition
       .arg_types
       .iter()
-      .any(|annotation| nil_type_evidence_is_open(annotation.as_ref()))
+      .any(|annotation| nil_type_evidence_is_open(annotation.as_ref()) || scalar_truthiness_constant(annotation).is_err())
 }
 
 fn definition_requires_trait_specialization(definition: &StaticFnDef) -> bool {
@@ -5624,17 +5677,23 @@ fn fn_param_names(args: &CalcitFnArgs) -> Vec<String> {
   }
 }
 
-fn direct_nil_predicate(expr: &Calcit) -> bool {
+fn direct_scalar_type_test(expr: &Calcit) -> bool {
   match expr {
     Calcit::Proc(CalcitProc::NilQuestion) => true,
     Calcit::List(items) => {
       let direct = match items.first() {
         Some(Calcit::Proc(CalcitProc::NilQuestion)) => true,
+        // Reuse scalar specialization for open conditions instead of treating
+        // the erased f64 payload as a Boolean or adding a dynamic runtime tag.
+        Some(Calcit::Syntax(CalcitSyntax::If, _)) => items
+          .get(1)
+          .and_then(infer_static_type_from_expr)
+          .is_none_or(|annotation| scalar_truthiness_constant(&annotation).is_err()),
         Some(Calcit::Import(import)) => import.ns.as_ref() == crate::calcit::CORE_NS && import.def.as_ref() == "nil?",
         Some(Calcit::Symbol { sym, info, .. }) => info.at_ns.as_ref() == crate::calcit::CORE_NS && sym.as_ref() == "nil?",
         _ => false,
       };
-      direct || items.iter().any(direct_nil_predicate)
+      direct || items.iter().any(direct_scalar_type_test)
     }
     _ => false,
   }
@@ -6095,11 +6154,20 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         }
         emit_expr(ctx, &args_list[0])
       }
+      // Erasure and identical annotations preserve the existing scalar value.
+      // Reinterpretation cannot restore the identity erased by the f64 ABI.
       CalcitSyntax::UnsafeCoerce => {
-        if args_list.is_empty() {
-          return Err("unsafe-coerce expects at least 1 arg".into());
+        if args_list.len() != 2 {
+          return Err("unsafe-coerce expects a value and type annotation".into());
         }
-        emit_expr(ctx, &args_list[0])
+        let target = CalcitTypeAnnotation::parse_type_annotation_form(&args_list[1]);
+        if matches!(target.as_ref(), CalcitTypeAnnotation::Dynamic)
+          || infer_wasm_static_type(ctx, &args_list[0]).is_some_and(|actual| actual == target)
+        {
+          emit_expr(ctx, &args_list[0])
+        } else {
+          Err("E_WASM_UNSUPPORTED_JS_FFI: unsafe-coerce cannot preserve value identity in the current scalar WASM ABI".into())
+        }
       }
       CalcitSyntax::TryParseCirruEdnAs => edn_parse::emit_try_parse_cirru_edn_as(ctx, &args_list),
       CalcitSyntax::JsCast | CalcitSyntax::ParseCirruEdnAs | CalcitSyntax::DecodeMapAs | CalcitSyntax::TryDecodeMapAs => {
@@ -8653,10 +8721,19 @@ fn emit_if(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() < 2 || args.len() > 3 {
     return Err(format!("if expects 2-3 args, got {}", args.len()));
   }
-  // condition → i32
+  let annotation = infer_wasm_static_type(ctx, &args[0])
+    .ok_or_else(|| "E_WASM_NIL_TYPE_EVIDENCE: if requires a proven condition type in the current scalar ABI".to_owned())?;
+  let constant = scalar_truthiness_constant(&annotation)?;
+  // Always evaluate once, including effects and errors in a statically
+  // decided condition. Only Bool and supported nullable values use F64Ne.
   emit_expr(ctx, &args[0])?;
-  ctx.emit(f64_const(0.0));
-  ctx.emit(Instruction::F64Ne); // nonzero is truthy → i32
+  if let Some(truthy) = constant {
+    ctx.emit(Instruction::Drop);
+    ctx.emit(Instruction::I32Const(i32::from(truthy)));
+  } else {
+    ctx.emit(f64_const(0.0));
+    ctx.emit(Instruction::F64Ne);
+  }
 
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
   ctx.block_depth += 1;

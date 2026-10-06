@@ -33,6 +33,7 @@ use type_checking::{
   check_recur_arg_types, check_reset_arg_types, check_user_fn_arg_types, detect_return_type_hint_from_processed_body,
   specialize_collection_sort_expected_types,
 };
+pub(crate) use type_inference::expression_definitely_diverges;
 use type_inference::{
   extract_literal_list_items, find_struct_lookup_in_literal_path, fully_typed_literal_assoc_path, fully_typed_literal_lookup_path,
   infer_struct_field_type, infer_struct_value_annotation, infer_type_from_expr, is_pending_async_value, resolve_enum_value,
