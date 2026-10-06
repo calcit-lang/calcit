@@ -346,6 +346,59 @@
                 [] $ {} (:present 7) (:absent nil)
                 :nested stored
             :tags $ #{} :collection-proof
+        'collect-unique-proof $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn collect-unique-proof (names)
+            let
+                initial $ assert-type (#{}) (:: 'Set 'String)
+              fold names initial $ fn (days name)
+                .union days $ #{} name
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'String
+            :return $ :: 'Set 'String
+          :tests $ [] $ %{} 'TestEntry (:name |empty-container-contract)
+            :code $ quote $ do
+              assert= (#{})
+                collect-unique-proof $ []
+              assert= (#{} |a |b)
+                collect-unique-proof $ [] |a |b |a
+            :tags $ #{} :empty-container-proof
+        'empty-list-proof $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn empty-list-proof ()
+            assert-type ([]) (:: 'List 'String)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'List 'String
+          :tests $ [] $ %{} 'TestEntry (:name |empty-container-contract)
+            :code $ quote $ assert= ([]) (empty-list-proof)
+            :tags $ #{} :empty-container-proof
+        'empty-map-proof $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn empty-map-proof () (&{})
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Map 'Tag 'String
+          :tests $ [] $ %{} 'TestEntry (:name |empty-container-contract)
+            :code $ quote $ assert= ({}) (empty-map-proof)
+            :tags $ #{} :empty-container-proof
+        'empty-set-proof $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn empty-set-proof (flag)
+            assert-type
+              let
+                  initial $ #{}
+                  alias initial
+                if flag alias $ #{}
+              :: 'Set 'String
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Bool
+            :return $ :: 'Set 'String
+          :tests $ [] $ %{} 'TestEntry (:name |empty-container-contract)
+            :code $ quote $ do
+              assert= (#{}) (empty-set-proof true)
+              assert= (#{}) (empty-set-proof false)
+            :tags $ #{} :empty-container-proof
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (test-struct) (test-methods) (test-match) (test-polymorphism) (test-edn) (test-struct-with) (test-loose-struct-rewrite) (test-map-to-struct) (test-postfix) (do true)
           :examples $ []
