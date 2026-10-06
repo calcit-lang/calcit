@@ -919,6 +919,10 @@ fn reset_type_erases_contract(actual: &CalcitTypeAnnotation, expected: &CalcitTy
 /// inferred types, especially for empty collections and nested empty values.
 fn reset_value_erases_contract(value: &Calcit, expected: &CalcitTypeAnnotation, scope: &ScopeTypes) -> bool {
   use CalcitTypeAnnotation as T;
+  // A guaranteed exit supplies no payload and cannot erase a write contract.
+  if super::type_inference::expression_definitely_diverges(value) {
+    return false;
+  }
   if matches!(expected, T::Dynamic) {
     return false;
   }

@@ -9733,6 +9733,19 @@
             :args $ [] (:: 'Ref 'T) 'T
             :generics $ [] 'T
           :tags $ #{} :builtin :internal :state :syntax
+          :tests $ []
+            %{} 'TestEntry (:name |returns-assigned-scalar)
+              :code $ quote $ let
+                  source $ atom 1
+                assert= 2 $ reset! source 2
+                assert= 2 $ deref source
+              :tags $ #{} :core :reset-proof :types :unit
+            %{} 'TestEntry (:name |nested-assignment-returns-final-value)
+              :code $ quote $ let
+                  source $ atom 0
+                assert= 3 $ reset! source $ reset! source 3
+                assert= 3 $ deref source
+              :tags $ #{} :core :reset-proof :types :unit
         'rest $ %{} 'CodeEntry
           :doc "|Return the same collection type without its first item; empty collections remain empty and nil is rejected."
           :code $ quote $ defn rest (x)
@@ -10430,12 +10443,18 @@
               assert= 3 $ deref *state
           :schema $ :: 'Macro $ {}
             :capabilities $ #{}
-            :expansion $ :: 'Expr 'Unit
+            :expansion $ :: 'Expr 'Dynamic
             :required $ []
               :: 'Expr $ :: 'Ref 'Dynamic
               :: 'Expr 'Fn
             :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro :state
+          :tests $ [] $ %{} 'TestEntry (:name |expanded-result-is-the-assigned-value)
+            :code $ quote $ let
+                source $ atom 1
+              assert= 2 $ swap! source inc
+              assert= 2 $ deref source
+            :tags $ #{} :core :reset-proof :types :unit
         'symbol? $ %{} 'CodeEntry
           :doc "|Predicate that checks whether a value is a symbol literal (as opposed to strings, keywords, or other data)."
           :code $ quote &runtime-implementation

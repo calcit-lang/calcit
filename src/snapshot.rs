@@ -5443,7 +5443,7 @@ mod tests {
           Some(crate::calcit::MacroSyntaxType::Expr(ref value))
             if matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
         ));
-        let expected_unit = matches!(def_name, "swap!" | "&doseq");
+        let expected_unit = def_name == "&doseq";
         assert!(matches!(
           signature.expansion,
           crate::calcit::MacroExpansionType::Expr(ref output)

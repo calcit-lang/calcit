@@ -215,6 +215,111 @@
           :code $ quote $ defstruct Point2D (:x 'Number) (:y 'Number)
           :examples $ []
           :schema $ :: 'StructDef
+        'assign-alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn assign-alias (source value)
+            let
+                receiver source
+                assigned value
+              reset! receiver assigned
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] (:: 'Ref 'T) 'T
+            :generics $ [] 'T
+        'assign-global $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn assign-global (value) (reset! reset-proof-count value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |global-number-and-nested-return)
+            :code $ quote $ assert= &unit
+              do
+                assert= 1 $ assign-global 1
+                assert= 3 $ reset! reset-proof-count $ reset! reset-proof-count 3
+                assert= 3 $ deref reset-proof-count
+                assert= 0 $ assign-global 0
+            :tags $ #{} :reset-proof :reset-wasm :types :unit
+        'assign-number $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn assign-number (source value) (reset! source value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] (:: 'Ref 'Number) 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |assigned-value-retains-scalar-and-alias-types)
+              :code $ quote $ let
+                  source $ atom 1
+                assert= 2 $ assign-number source 2
+                assert= 2 $ deref source
+                assert= 3 $ assign-alias source 3
+                assert= 3 $ deref source
+                assert= false $ assign-alias (atom true) false
+                assert= &unit $ assign-alias (atom &unit) &unit
+                assert= nil $ assign-open nil
+              :tags $ #{} :reset-proof :types :unit
+            %{} 'TestEntry
+              :name |assigned-value-retains-nominal-and-container-types
+              :code $ quote $ let
+                  initial $ Option :some |before
+                  source $ atom $ Option :some |before
+                  values $ atom $ [] 1
+                  mapping $ atom $ {} (:a 1)
+                assert= (Option :some |after)
+                  assign-option source $ Option :some |after
+                assert= (Option :none)
+                  assign-option source $ Option :none
+                assert= ([] 2 3)
+                  assign-alias values $ [] 2 3
+                assert=
+                  {} $ :b 2
+                  assign-alias mapping $ {} $ :b 2
+              :tags $ #{} :reset-proof :types :unit
+            %{} 'TestEntry
+              :name |target-before-value-once-and-errors-do-not-write
+              :code $ quote $ let
+                  source $ atom 1
+                  order $ atom 0
+                  target $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return $ :: Ref Number
+                    assert= 0 $ deref order
+                    reset! order 1
+                    , source
+                  value $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return Number
+                    assert= 1 $ deref order
+                    reset! order 2
+                    , 7
+                assert= 7 $ reset! (target) (value)
+                assert= 2 $ deref order
+                assert= 7 $ deref source
+                assert= |value-failure $ try
+                  reset! source $ raise |value-failure
+                  fn (error) error
+                assert= 7 $ deref source
+                assert= |target-failure $ try
+                  reset! (raise |target-failure) (value)
+                  fn (error) error
+                assert= 2 $ deref order
+                assert= 7 $ deref source
+              :tags $ #{} :reset-proof :types :unit
+        'assign-open $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn assign-open (value)
+            let
+                source $ atom value
+              reset! source value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic
+        'assign-option $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn assign-option (source value) (reset! source value)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+              :: 'Ref $ :: 'Option 'String
+              :: 'Option 'String
+            :return $ :: 'Option 'String
         'check-point-type $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn check-point-type (p) (struct? p)
           :examples $ []
@@ -506,6 +611,10 @@
           :code $ quote $ defn reload! () (println |reloaded)
           :examples $ []
           :schema $ :: 'Dynamic
+        'reset-proof-count $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defatom reset-proof-count 0
+          :examples $ []
+          :schema $ :: 'Ref 'Number
         'set-optional-fields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn set-optional-fields (amount label)
             struct-with (OptionalFields :count nil :label nil) (:count amount) (:label label)

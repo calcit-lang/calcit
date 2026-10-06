@@ -391,6 +391,107 @@ try {
     assert.deepEqual(await readFile(envSnapshot), before);
   }
 
+  // Reset returns independent assigned-value evidence, not Unit or a borrowed
+  // receiver payload. Replay the stored source contracts on native and JS.
+  const resetOwners = ["assign-number", "assign-alias", "assign-option", "assign-open", "reset-proof-count", "assign-global"];
+  const resetDefinitions = resetOwners.map(name =>
+    JSON.parse(execFileSync(binary, ["calcit/test-struct.cirru", "query", "def", `test-struct.main/${name}`, "--format", "json"], options)).data);
+  const resetTests = resetDefinitions.flatMap(definition => definition.tests.filter(test => test.tags.includes("reset-proof")));
+  const resetCoreTests = ["reset!", "swap!"].flatMap(name =>
+    JSON.parse(truthinessRun("query", "def", `calcit.core/${name}`, "--format", "json")).data.tests
+      .filter(test => test.tags.includes("reset-proof")));
+  assert.equal(resetTests.length, 4);
+  assert.equal(resetCoreTests.length, 3);
+  const resetSnapshot = join(project, "reset-result.cirru");
+  await copyFile("tests/fixtures/deep-recursion.cirru", resetSnapshot);
+  const resetRun = (...args) => execFileSync(binary, [resetSnapshot, ...args], options);
+  const resetOperations = [["edit", "rm-def", "app.main/f"]];
+  for (const definition of resetDefinitions) {
+    const name = definition.id.split("/")[1];
+    const schema = name === "reset-proof-count" ? ["::", "'Ref", "'Number"]
+      : ["::", "'Fn", ["{}", ...definition.schema.slice(1).filter(field => field[0] !== ":kind")]];
+    resetOperations.push(
+      ["edit", "def", `app.main/${name}`, "--input-format", "json-ast", "--code", JSON.stringify(definition.code)],
+      ["edit", "schema", `app.main/${name}`, "--input-format", "json-ast", "--code", JSON.stringify(schema)],
+    );
+  }
+  resetOperations.push(
+    ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "main!", [], ...[...resetTests, ...resetCoreTests].map(test => test.code), "&unit"])],
+    ["edit", "def", "app.main/reload!", "--overwrite", "--input-format", "cirru", "--code", "quote $ defn reload! () &unit"],
+  );
+  const resetRevision = JSON.parse(resetRun("query", "config", "--format", "json")).revision;
+  const resetTransaction = ["edit", "transaction", "--code", JSON.stringify(resetOperations), "--expect-revision", resetRevision, "--format", "json"];
+  const resetBefore = await readFile(resetSnapshot);
+  resetRun(...resetTransaction, "--dry-run");
+  assert.deepEqual(await readFile(resetSnapshot), resetBefore);
+  resetRun(...resetTransaction);
+  const resetSource = await readFile(resetSnapshot);
+  resetRun("fix", "--workflow", "strict", "--verify", "--format", "edn");
+  resetRun();
+  const resetOutput = join(project, "reset-js");
+  resetRun("--emit-path", resetOutput, "js");
+  (await import(pathToFileURL(join(resetOutput, "app.main.mjs")).href)).main_$x_();
+  assert.deepEqual(await readFile(resetSnapshot), resetSource);
+
+  // The numeric global-atom contract is already supported on WASM; local
+  // atom allocation and generic Ref forwarding remain explicit boundaries.
+  const resetWasm = join(project, "reset-global.wasm.cirru");
+  await copyFile("tests/fixtures/deep-recursion.cirru", resetWasm);
+  const resetWasmRun = (...args) => execFileSync(binary, [resetWasm, ...args], options);
+  const resetWasmOperations = resetOperations.filter(operation =>
+    operation[0] === "edit" && ["app.main/f", "app.main/reset-proof-count", "app.main/assign-global"].includes(operation[2]));
+  const resetWasmTests = resetTests.filter(test => test.tags.includes("reset-wasm"));
+  assert.equal(resetWasmTests.length, 1);
+  resetWasmOperations.push(
+    ...["main!", "reload!"].map(name => ["edit", "def", `app.main/${name}`, "--overwrite", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", name, [], "&unit"])]),
+    ["edit", "def", "app.main/run-tests", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defwasm-export", "run-tests", [], ...resetWasmTests.map(test => test.code), "&unit"])],
+    ["edit", "schema", "app.main/run-tests", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)"],
+  );
+  const resetWasmRevision = JSON.parse(resetWasmRun("query", "config", "--format", "json")).revision;
+  const resetWasmTransaction = ["edit", "transaction", "--code", JSON.stringify(resetWasmOperations), "--expect-revision", resetWasmRevision, "--format", "json"];
+  resetWasmRun(...resetWasmTransaction, "--dry-run");
+  resetWasmRun(...resetWasmTransaction);
+  const resetWasmOutput = join(project, "reset-global-wasm");
+  resetWasmRun("--init-fn", "app.main/run-tests", "--reload-fn", "app.main/run-tests", "--emit-path", resetWasmOutput, "wasm");
+  const resetModule = new WebAssembly.Module(await readFile(join(resetWasmOutput, "program.wasm")));
+  const resetImports = {};
+  for (const { module, name, kind } of WebAssembly.Module.imports(resetModule)) {
+    assert.equal(kind, "function");
+    (resetImports[module] ??= {})[name] = () => { throw new Error(`unexpected reset host call: ${module}/${name}`); };
+  }
+  new WebAssembly.Instance(resetModule, resetImports).exports["run-tests"]();
+
+  for (const [name, types, returned, body, generics = [], features = []] of [
+    ["reset-is-not-unit", [["::", "'Ref", "'Number"], "'Number"], "'Unit", ["reset!", "source", "value"]],
+    ["reset-wrong-return", [["::", "'Ref", "'Bool"], "'Bool"], "'Number", ["reset!", "source", "value"]],
+    ["reset-open-return", [["::", "'Ref", "'Dynamic"], "'Dynamic"], "'String", ["reset!", "source", "value"]],
+    ["reset-open-alias", [["::", "'Ref", "'Dynamic"], "'Dynamic"], "'Number", ["let", [["alias", "value"]], ["reset!", "source", "alias"]]],
+    ["reset-unsafe-return", [["::", "'Ref", "'Number"], "'Dynamic"], "'Number", ["reset!", "source", ["unsafe-coerce", "value", "'Number"]], [], [":js-ffi"]],
+    ["reset-wrong-write", [["::", "'Ref", "'Number"], "'String"], "'String", ["reset!", "source", "value"]],
+    ["reset-unrelated-generic", [["::", "'Ref", "'T"], "'U"], "'U", ["reset!", "source", "value"], ["'T", "'U"]],
+    ["reset-borrowed-payload", [["::", "'Ref", "'Number"], "'Dynamic"], "'Number", ["reset!", "source", "value"]],
+  ]) {
+    const target = `app.main/${name}`;
+    resetRun("edit", "def", target, "--input-format", "json-ast", "--code", JSON.stringify(["defn", name, ["source", "value"], body]));
+    resetRun("edit", "schema", target, "--input-format", "json-ast", "--code", JSON.stringify(["::", "'Fn", ["{}",
+      [":args", ["[]", ...types]], [":return", returned], [":generics", ["[]", ...generics]], [":features", ["#{}", ...features]]]]));
+    const before = await readFile(resetSnapshot);
+    const rejected = spawnSync(binary, [resetSnapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", name, "--format", "json"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, target);
+    if (rejected.stdout.trim()) {
+      assert.ok(JSON.parse(rejected.stdout).diagnostics.some(d => d.code === "E_FN_RETURN_UNPROVEN" && d.definition === target), target);
+    } else {
+      assert.match(rejected.stderr, /W_FN_RETURN_TYPE_MISMATCH|W_RESET_ARG_TYPE_MISMATCH/, `${target}: ${rejected.stderr}`);
+      assert.ok(rejected.stderr.includes(name), target);
+    }
+    assert.deepEqual(await readFile(resetSnapshot), before);
+    resetRun("edit", "rm-def", target);
+  }
+
   // Join independent normal/handler results, preserving the runtime's String
   // input and lazy effects. Replay the attached AST on both supported backends.
   const tryOwners = ["try-bool", "try-string", "try-option", "try-result", "try-normal-never",

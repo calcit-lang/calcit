@@ -1772,6 +1772,21 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
           .and_then(|initial_value| infer_type_from_expr(initial_value, scope_types))
           .map(|initial_type| Arc::new(CalcitTypeAnnotation::Ref(initial_type))),
 
+        // reset! evaluates the target first and returns the assigned value,
+        // not Unit or the target's declared payload. Resolve the input through
+        // the normal evidence path so an unsafe cast cannot prove itself.
+        Calcit::Syntax(CalcitSyntax::Reset, _) if xs.len() == 3 => {
+          if expression_definitely_diverges(&xs[1]) || expression_definitely_diverges(&xs[2]) {
+            return Some(crate::calcit::type_annotation::NEVER_TYPE.clone());
+          }
+          if let Some(target_type) = resolve_type_value(&xs[1], scope_types)
+            && matches!(target_type.as_ref(), CalcitTypeAnnotation::Never)
+          {
+            return Some(target_type);
+          }
+          resolve_type_value(&xs[2], scope_types)
+        }
+
         // Assertion and coercion type expressions have no local generics, so names are concrete refs.
         // `assert-type` is erased for local bindings during preprocessing, but when it wraps an
         // arbitrary expression (notably on the right-hand side of `let`) the expression must keep

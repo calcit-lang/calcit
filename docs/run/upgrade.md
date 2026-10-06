@@ -123,6 +123,23 @@ assert= "| b" $ str-spaced | |b
 
 这项修复不改变合法构造的字段求值顺序，也不把静态检查变成外部数据校验。开放输入仍需在原有 decode/验证边界处理；如何把业务值转为闭合节点属于人工迁移，不提供自动默认值或改写。
 
+## Ref 写入的返回值
+
+`reset!` 返回写入的新值，`swap!` 返回其更新函数产生并写入的值；`!` 表示副作用，不表示返回 Unit。
+返回类型从赋值表达式推导，保留泛型与名义类型，不借 Ref 的 payload 声明把开放输入变成具体值。
+
+```cirru
+let
+    counter $ atom 1
+  assert= 2 $ reset! counter 2
+  assert= 3 $ swap! counter inc
+  assert= 3 $ deref counter
+```
+
+声明 `Fn() -> Unit` 的业务函数若末尾是 `reset!` 或 `swap!`，应在所有操作完成后显式返回 `&unit`，
+而不是更改写入语义或增加 unsafe。未知输入仍需在原边界收窄；错误 payload 写入继续被拒绝。
+此推导修复不改变 native/JS/WASM 既有运行值，也不扩展 WASM 的 Ref 支持范围。
+
 ## 取余的跨后端语义
 
 `&number:rem` 和 Number `.rem` 在 native、JS、core WASM 与 WASI Component 上使用同一契约：两个操作数都必须是安全整数（绝对值不超过 `9007199254740991`），除数不能为 0（包括 `-0`）；结果为截断取余，符号跟随被除数，且不返回 `-0`。
