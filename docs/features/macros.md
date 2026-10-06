@@ -32,6 +32,10 @@ assert= false $ and nil |unselected
 JS 条件统一生成一次求值的真假值表达式；`Bool` 和其他条件都遵守以上规则，不依赖新增 runtime helper。
 JS 的 `null`/`undefined` 分别承载 `nil`/`Unit`；真假值判断不是宿主对象的受检解码，不能替代 FFI 类型边界。
 
+WASM/WASI 根据已证明的条件类型生成相同语义：`Number`（包括 0、负零、NaN 和无穷大）、字符串、集合、名义值和函数值是真值；`nil`/`Unit` 是假值；`Bool` 保留运行时分支。
+内部推导出的 `Optional Bool` 与具有非零地址表示的可空值（如 `Optional String`）也保留运行时分支，空字符串仍是真值；公开 schema 仍使用名义 `Option` 表达缺席。
+已知调用参数通过现有静态调用特化补充类型证据；即使类型已经决定真假，条件中的副作用与错误仍会执行一次。
+
 ## Quick Recipes
 
 - **Define**: `defmacro my-macro (x) ...`
@@ -140,4 +144,6 @@ $ calcit eval 'println $ format-to-cirru $ macroexpand $ quote $ let ((a 1) (b 2
 
 ## 限制
 
-- 当前 WASM 标量条件仍按非零值判断；上述非 Bool 条件的完整真假值契约尚未对齐，跨目标代码暂优先使用明确的 Bool 条件。
+- 当前 WASM 标量 ABI 无法区分未证明的开放条件或可空数字中的 nil 与 0，这些路径报告 `E_WASM_NIL_TYPE_EVIDENCE`。
+- WASM 的 `unsafe-coerce` 支持保持相同类型、已证明的静态提升（如 UInt32 擦除到 Number）或擦除到 Dynamic，未证明的重新标注报告 `E_WASM_UNSUPPORTED_JS_FFI`。
+- 共同真假值语义不表示 WASM 已支持所有条件中的运算；尚未支持的操作仍按目标边界报错。

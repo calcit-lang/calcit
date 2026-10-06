@@ -34,12 +34,12 @@ try {
   const truthinessOriginal = await readFile(truthinessCore);
   const truthinessRun = (...args) => execFileSync(binary, [truthinessCore, ...args], options);
   const truthinessReport = JSON.parse(truthinessRun("test", "--tag", "truthiness", "--summary-only", "--require-match", "--format", "json"));
-  assert.equal(truthinessReport.selected, 12);
-  assert.equal(truthinessReport.passed, 12);
+  assert.equal(truthinessReport.selected, 15);
+  assert.equal(truthinessReport.passed, 15);
   const truthinessTests = ["if", "or", "and"].flatMap(name =>
     JSON.parse(truthinessRun("query", "def", `calcit.core/${name}`, "--format", "json")).data.tests
       .filter(test => test.tags.includes("truthiness")));
-  assert.equal(truthinessTests.length, 12);
+  assert.equal(truthinessTests.length, 15);
   const truthinessSnapshot = join(project, "truthiness.cirru");
   await copyFile(truthinessCore, truthinessSnapshot);
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
@@ -86,12 +86,34 @@ try {
   assert.doesNotMatch(truthinessCode, /_calcit_truthy/, "conditional lowering must not require a new runtime export");
   assert.deepEqual(await readFile(truthinessCore), truthinessOriginal);
 
-  // The current scalar WASM ABI supports Bool and statically falsey
-  // conditions here; wider truthiness parity is tracked separately.
+  // Replay every stored group whose operations have a supported WASM
+  // representation. Local closures specialize their concrete inputs.
+  // Atom allocation, try and JS FFI escapes remain separate target boundaries.
   const truthinessWasmTests = truthinessTests.filter(test => [
-    "only-nil-false-unit-select-else", "typed-bool-conditions-preserve-both-branches",
+    "only-nil-false-unit-select-else", "zero-empty-and-nominal-values-select-then",
+    "open-values-have-the-same-truthiness", "typed-bool-conditions-preserve-both-branches",
+    "nested-expression-and-tail-conditions", "typed-number-conditions-are-truthy",
+    "nullable-bool-and-text-conditions", "zero-and-empty-string-do-not-use-fallback",
+    "zero-empty-and-falsey-values-preserve-existing-contract", "function-and-definition-values-are-truthy",
   ].includes(test.name));
-  assert.equal(truthinessWasmTests.length, 2);
+  assert.equal(truthinessWasmTests.length, 10);
+  // Preserve the stored error expressions, but leave the native/JS try handler
+  // outside the WASM boundary: raise must propagate as a real runtime trap.
+  const truthinessErrorTest = truthinessTests.find(test => test.name === "condition-and-selected-branch-errors-propagate");
+  assert.ok(truthinessErrorTest);
+  assert.equal(truthinessErrorTest.code[0], "do");
+  assert.equal(truthinessErrorTest.code.length, 4);
+  const truthinessTraps = ["condition", "then", "else"].map((name, index) => {
+    const assertion = truthinessErrorTest.code[index + 1];
+    assert.equal(assertion[0], "assert=");
+    assert.equal(assertion[1], `|${name}-failure`);
+    assert.equal(assertion[2][0], "try");
+    const expression = assertion[2][1];
+    assert.equal(expression[0], "if");
+    assert.equal(expression.length, 4);
+    assert.deepEqual(expression[index + 1], ["raise", `|${name}-failure`]);
+    return { name: `trap-${name}`, expression };
+  });
   const truthinessWasmSnapshot = join(project, "truthiness-wasm.cirru");
   await copyFile(truthinessCore, truthinessWasmSnapshot);
   const truthinessWasmRun = (...args) => execFileSync(binary, [truthinessWasmSnapshot, ...args], options);
@@ -101,6 +123,12 @@ try {
       JSON.stringify(["defwasm-export", "run-tests", [], ...truthinessWasmTests.map(test => test.code), "&unit"])],
     ["edit", "schema", "calcit.truthiness-wasm/run-tests", "--input-format", "cirru", "--code",
       "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)"],
+    ...truthinessTraps.flatMap(({ name, expression }) => [
+      ["edit", "def", `calcit.truthiness-wasm/${name}`, "--input-format", "json-ast", "--code",
+        JSON.stringify(["defwasm-export", name, [], expression])],
+      ["edit", "schema", `calcit.truthiness-wasm/${name}`, "--input-format", "cirru", "--code",
+        "quote $ :: 'Fn $ {} (:args ([])) (:return 'String)"],
+    ]),
   ];
   const truthinessWasmRevision = JSON.parse(truthinessWasmRun("query", "config", "--format", "json")).revision;
   const truthinessWasmTransaction = ["edit", "transaction", "--code", JSON.stringify(truthinessWasmOperations),
@@ -117,7 +145,152 @@ try {
     (truthinessWasmImports[module] ??= {})[name] = () => { throw new Error(`unexpected truthiness host call: ${module}/${name}`); };
   }
   new WebAssembly.Instance(truthinessWasmModule, truthinessWasmImports).exports["run-tests"]();
+  for (const { name } of truthinessTraps) {
+    assert.throws(() => new WebAssembly.Instance(truthinessWasmModule, truthinessWasmImports).exports[name](),
+      WebAssembly.RuntimeError, `${name}: the original condition or selected branch error must trap`);
+  }
   assert.deepEqual(await readFile(truthinessCore), truthinessOriginal);
+
+  // Use a stored global-backed Calcit contract to verify single evaluation
+  // and the selected branch, rather than replacing the effects with JS code.
+  const effectsSnapshot = join(project, "truthiness-effects.cirru");
+  await copyFile(truthinessCore, effectsSnapshot);
+  const effectsRun = (...args) => execFileSync(binary, [effectsSnapshot, ...args], options);
+  execFileSync(binary, ["calcit/test-struct.cirru", "test", "test-struct.main/truthiness-number-once", "--require-match"], options);
+  const effectsDefinitions = ["truthiness-count", "truthiness-number-once"].map(name =>
+    JSON.parse(execFileSync(binary, ["calcit/test-struct.cirru", "query", "def", `test-struct.main/${name}`, "--format", "json"], options)).data);
+  const effectsTests = effectsDefinitions[1].tests.filter(test => test.tags.includes("truthiness"));
+  assert.equal(effectsTests.length, 1);
+  const effectsOperations = [
+    ["edit", "add-ns", "calcit.truthiness-effects"],
+    ...effectsDefinitions.flatMap(definition => {
+      const target = `calcit.truthiness-effects/${definition.id.split("/")[1]}`;
+      const schema = definition.schema && ["::", "'Fn", ["{}",
+        ...definition.schema.slice(1).filter(field => field[0] !== ":kind")]];
+      return [
+        ["edit", "def", target, "--input-format", "json-ast", "--code", JSON.stringify(definition.code)],
+        ...(schema ? [["edit", "schema", target, "--input-format", "json-ast", "--code",
+          JSON.stringify(schema)]] : []),
+      ];
+    }),
+    ["edit", "def", "calcit.truthiness-effects/run-tests", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defwasm-export", "run-tests", [], ...effectsTests.map(test => test.code), "&unit"])],
+    ["edit", "schema", "calcit.truthiness-effects/run-tests", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)"],
+  ];
+  const effectsRevision = JSON.parse(effectsRun("query", "config", "--format", "json")).revision;
+  const effectsTransaction = ["edit", "transaction", "--code", JSON.stringify(effectsOperations),
+    "--expect-revision", effectsRevision, "--format", "json"];
+  effectsRun(...effectsTransaction, "--dry-run");
+  effectsRun(...effectsTransaction);
+  const effectsEntry = ["--init-fn", "calcit.truthiness-effects/run-tests", "--reload-fn", "calcit.truthiness-effects/run-tests"];
+  effectsRun(...effectsEntry);
+  const effectsJs = join(project, "truthiness-effects-js");
+  effectsRun(...effectsEntry, "--emit-path", effectsJs, "js");
+  (await import(pathToFileURL(join(effectsJs, "calcit.truthiness-effects.mjs")).href)).run_tests();
+  const effectsWasm = join(project, "truthiness-effects-wasm");
+  effectsRun(...effectsEntry, "--emit-path", effectsWasm, "wasm");
+  const effectsModule = new WebAssembly.Module(await readFile(join(effectsWasm, "program.wasm")));
+  const effectsImports = {};
+  for (const { module, name, kind } of WebAssembly.Module.imports(effectsModule)) {
+    assert.equal(kind, "function");
+    (effectsImports[module] ??= {})[name] = () => { throw new Error(`unexpected conditional effect host call: ${module}/${name}`); };
+  }
+  new WebAssembly.Instance(effectsModule, effectsImports).exports["run-tests"]();
+
+  // Runtime ABI inputs must not pass only because a literal call was inlined.
+  // The attached core tests above remain the shared language contract.
+  const scalarSnapshot = join(project, "truthiness-scalars.cirru");
+  await copyFile("tests/fixtures/deep-recursion.cirru", scalarSnapshot);
+  const scalarRun = (...args) => execFileSync(binary, [scalarSnapshot, ...args], options);
+  const scalarEdit = operations => {
+    const original = execFileSync(binary, [scalarSnapshot, "query", "config", "--format", "json"], options);
+    const transaction = ["edit", "transaction", "--code", JSON.stringify(operations),
+      "--expect-revision", JSON.parse(original).revision, "--format", "json"];
+    scalarRun(...transaction, "--dry-run");
+    scalarRun(...transaction);
+  };
+  const scalarDefinition = (name, parameters, type, body, returnType = "'Number", features = []) => [
+    ["edit", "def", `app.main/${name}`, "--input-format", "json-ast", "--code",
+      JSON.stringify(["defwasm-export", name, parameters, body])],
+    ["edit", "schema", `app.main/${name}`, "--input-format", "json-ast", "--code",
+      JSON.stringify(["::", "'Fn", ["{}", [":args", ["[]", ...type]], [":return", returnType],
+        ...(features.length ? [[":features", ["#{}", ...features]]] : [])]])],
+  ];
+  scalarEdit([
+    ["edit", "rm-def", "app.main/f"],
+    ...["main!", "reload!"].map(name => ["edit", "def", `app.main/${name}`, "--overwrite",
+      "--input-format", "json-ast", "--code", JSON.stringify(["defn", name, [], "&unit"])]),
+    ...scalarDefinition("choose-number", ["value"], ["'Number"], ["if", "value", "1", "2"]),
+    ...scalarDefinition("erase-refinement", ["value"], ["'UInt32"], ["unsafe-coerce", "value", "'Number"], "'Number", [":js-ffi"]),
+    ...scalarDefinition("choose-alias", ["value"], ["'Number"], ["let", [["alias", "value"]], ["if", "alias", "1", "2"]]),
+    ...scalarDefinition("choose-bool", ["value"], ["'Bool"], ["if", "value", "1", "2"]),
+    // Nullable evidence is inferred inside the function; public schemas keep
+    // the current nominal-absence contract rather than exposing legacy Optional.
+    ...scalarDefinition("choose-nullable-bool", ["flag"], ["'Bool"],
+      ["let", [["value", ["if", "flag", "true", "nil"]]], ["if", "value", "1", "2"]]),
+    ...scalarDefinition("choose-nullable-text", ["flag"], ["'Bool"],
+      ["let", [["value", ["if", "flag", "|", "nil"]]], ["if", "value", "1", "2"]]),
+    ...scalarDefinition("empty-text", [], [], "|", "'String"),
+    ...scalarDefinition("a-first-function", [], [], "0"),
+    ...scalarDefinition("first-function", [], [], "a-first-function", ["::", "'Fn", ["{}", [":args", ["[]"]], [":return", "'Number"]]]),
+    ...scalarDefinition("choose-function", [], [], ["if", "a-first-function", "1", "2"]),
+  ]);
+  const scalarOutput = join(project, "truthiness-scalars-wasm");
+  scalarRun("--emit-path", scalarOutput, "wasm");
+  const scalarModule = new WebAssembly.Module(await readFile(join(scalarOutput, "program.wasm")));
+  const scalarImports = {};
+  for (const { module, name, kind } of WebAssembly.Module.imports(scalarModule)) {
+    assert.equal(kind, "function");
+    (scalarImports[module] ??= {})[name] = () => { throw new Error(`unexpected scalar host call: ${module}/${name}`); };
+  }
+  const scalarExports = new WebAssembly.Instance(scalarModule, scalarImports).exports;
+  for (const value of [0, -0, 7, -7, NaN, Infinity, -Infinity]) {
+    assert.equal(scalarExports["choose-number"](value), 1);
+    assert.equal(scalarExports["choose-alias"](value), 1);
+  }
+  for (const value of [0, 7, 4294967295]) assert.equal(scalarExports["erase-refinement"](value), value);
+  for (const name of ["choose-bool", "choose-nullable-bool"]) {
+    assert.equal(scalarExports[name](0), 2);
+    assert.equal(scalarExports[name](1), 1);
+  }
+  assert.equal(scalarExports["choose-nullable-text"](0), 2);
+  const emptyText = scalarExports["empty-text"]();
+  assert.notEqual(emptyText, 0, "an empty String must retain a nonzero heap identity");
+  assert.equal(scalarExports["choose-nullable-text"](1), 1);
+  assert.equal(scalarExports["first-function"](), 0, "exercise the zero-based function table slot");
+  assert.equal(scalarExports["choose-function"](), 1);
+
+  // Ambiguous open/nullable scalar inputs and unsafe reinterpretations fail
+  // closed on both core WASM and the explicit Preview 1 command boundary.
+  const scalarPositive = await readFile(scalarSnapshot);
+  for (const [label, parameters, types, body, diagnostic, features] of [
+    ["open", ["value"], ["'Dynamic"], ["if", "value", "1", "2"], /E_WASM_NIL_TYPE_EVIDENCE/, []],
+    ["nullable-number", ["flag"], ["'Bool"], ["let", [["value", ["if", "flag", "0", "nil"]]],
+      ["if", "value", "1", "2"]], /E_WASM_NIL_TYPE_EVIDENCE/, []],
+    ["nullable-function", ["flag"], ["'Bool"], ["let", [["value", ["if", "flag", "a-first-function", "nil"]]],
+      ["if", "value", "1", "2"]], /E_WASM_NIL_TYPE_EVIDENCE/, []],
+    ["unsafe-direct", [], [], ["if", ["unsafe-coerce", "0", "'Bool"], "1", "2"], /E_WASM_UNSUPPORTED_JS_FFI/, [":js-ffi"]],
+    ["unsafe-alias", [], [], ["let", [["flag", ["unsafe-coerce", "0", "'Bool"]]], ["if", "flag", "1", "2"]], /E_WASM_UNSUPPORTED_JS_FFI/, [":js-ffi"]],
+    ["unsafe-producer", [], [], ["let", [["as-bool", ["fn", [],
+      ["hint-fn", ["{}", [":args", ["[]"]], [":return", "'Bool"], [":features", ["#{}", ":js-ffi"]]]],
+      ["unsafe-coerce", "0", "'Bool"]]]], ["if", ["as-bool"], "1", "2"]], /E_WASM_UNSUPPORTED_JS_FFI/, [":js-ffi"]],
+    ["unsafe-nil", [], [], ["if", ["unsafe-coerce", "nil", "'Number"], "1", "2"], /E_WASM_UNSUPPORTED_JS_FFI/, [":js-ffi"]],
+    ["unsafe-unit", [], [], ["if", ["unsafe-coerce", "&unit", "'Number"], "1", "2"], /E_WASM_UNSUPPORTED_JS_FFI/, [":js-ffi"]],
+    ["unsafe-refinement", ["value"], ["'Number"], ["let", [["refined", ["unsafe-coerce", "value", "'UInt32"]]],
+      ["if", "refined", "1", "2"]], /E_WASM_UNSUPPORTED_JS_FFI/, [":js-ffi"]],
+  ]) {
+    scalarEdit(scalarDefinition(`reject-${label}`, parameters, types, body, "'Number", features));
+    for (const [target, extra] of [["wasm", []], ["wasi", ["--boundary", "native"]]]) {
+      const output = join(project, `truthiness-${label}-${target}`);
+      const result = spawnSync(binary, [target, scalarSnapshot, ...extra, "--emit-path", output], options);
+      assert.notEqual(result.status, 0, `${label}/${target} must reject ambiguous representation`);
+      assert.match(result.stderr, diagnostic);
+      await assertRejectedArtifacts(output, `${label}/${target}`, diagnostic);
+    }
+    scalarEdit([["edit", "rm-def", `app.main/reject-${label}`]]);
+  }
+  assert.deepEqual(await readFile(scalarSnapshot), scalarPositive);
 
   // Replay the stored language contracts; nullability introduction must not
   // authorize elimination, mutable widening, or unproved callback signatures.
