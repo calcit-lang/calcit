@@ -752,7 +752,7 @@ assert= 3 $ assert-type (+ 1 2) 'Number
 已知空 List、Set、Map 构造器可以满足同类容器的具体元素合同：没有成员需要转换。
 例如 `assert-type (#{}) (:: 'Set 'String)` 可作为字符串 Set 的初始值，随后通过普通 `.union` 或 `fold` 累积。
 返回空容器的函数也可声明同类具体返回类型，证明来自实际构造器而非返回声明。
-受检表达式内部的词法别名和 `if` 分支可沿用这项构造器证明；未知容器即使运行时为空，也不能据此把 `Set<Dynamic>` 变成 `Set<String>`，错误容器种类和非空开放成员仍会被拒绝。
+受检表达式内部的词法别名和 `if` 分支可沿用这项构造器证明。
 
 诊断中的集合类型保留已知泛型：例如 Option 回调返回 `List<Number>`，却断言为 `Option<List<String>>` 时，`expected` 显示 `'Option<list<:string>>`，`got` 显示 `'calcit.core/Option<list<:number>>`，不能把二者都缩成 `:list`。Map 的 key/value、Set/Ref 的成员以及 callback 签名也保留同样的嵌套证据。极深或极宽的类型仍以 `…` 截断展示，避免诊断占用过多资源；这是显示预算，不放宽类型检查，也不把未证明的 Dynamic 改写成具体类型。
 
@@ -1142,3 +1142,9 @@ Static type analysis:
 真实动态 prototype 和允许参数展开的运行时路径保留既有验证方式。
 
 不能静态解析的字段名不构成完整性证明，仍需要运行时校验。
+
+未知容器即使运行时为空，也不能据此把 `Set<Dynamic>` 变成 `Set<String>`。
+
+错误容器种类仍会被拒绝。
+
+非空开放成员仍会被拒绝。
