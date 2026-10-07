@@ -285,6 +285,8 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   当前预处理涉及的函数体还须独立证明其具体返回契约；仅靠返回声明的 producer 报告
   `E_FN_RETURN_UNPROVEN`，并定位其真实 source owner。Number identity、泛型 T identity 和明确的
   Dynamic 保存/传递可以保持原写法；未知 T 不能靠目标 Number 获得证明。
+  当参数类型正是返回泛型 `'T` 时，`list?`、`map?`、`string?` 等类别谓词守卫的分支把 `'T` 视为该类别，
+  分支出口按该类别证明；未被守卫的出口、作用于其他值的谓词和开放结果仍须证明原泛型契约。
   producer 实现与返回声明矛盾时，既有 `W_FN_RETURN_TYPE_MISMATCH` 同样使审计失败，不能借用该声明获得空建议。
   将报告中的 definition 与 path 传给 `calcit query type-at <definition> --path <path> --format edn`
   可读取同一源码节点；展开后无法保留尾表达式坐标时，path 为声明根节点 `code`。

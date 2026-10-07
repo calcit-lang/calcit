@@ -1266,11 +1266,22 @@ pub(super) fn expression_is_proven_for(
       if let Calcit::List(items) = expr {
         match items.first() {
           Some(Calcit::Syntax(CalcitSyntax::If, _)) if matches!(items.len(), 3 | 4) => {
-            return self.check(items.get(2).unwrap(), expected, scope, aliases, async_invocation, depth + 1)
+            // Each exit is proved under the same predicate narrowing that
+            // preprocessing applied to that branch.
+            let narrowing = super::extract_predicate_bindings(items.get(1).unwrap(), scope);
+            let mut true_scope = scope.clone();
+            if let Some((symbol, narrowed)) = narrowing.true_binding {
+              true_scope.insert(symbol, narrowed);
+            }
+            let mut false_scope = scope.clone();
+            if let Some((symbol, narrowed)) = narrowing.false_binding {
+              false_scope.insert(symbol, narrowed);
+            }
+            return self.check(items.get(2).unwrap(), expected, &true_scope, aliases, async_invocation, depth + 1)
               && self.check(
                 items.get(3).unwrap_or(&Calcit::Nil),
                 expected,
-                scope,
+                &false_scope,
                 aliases,
                 async_invocation,
                 depth + 1,
@@ -1368,6 +1379,82 @@ pub(super) fn expression_is_proven_for(
   ExpressionCheck { remaining: 16_384 }.check(expr, expected, scope, &HashMap::new(), async_invocation, 0)
 }
 
+/// A kind predicate on a value typed by the function's own generic return
+/// variable refines that variable inside the guarded branch: after `(list? x)`
+/// with `x: 'T`, the `'T` of that branch is a list. A branch is therefore
+/// proven by a value of the refined kind, while every unguarded exit still has
+/// to prove the original generic contract. The refinement keeps the same
+/// kind-level precision as ordinary predicate narrowing of `x` itself.
+fn refined_generic_return_is_proven(
+  expr: &Calcit,
+  declared: &CalcitTypeAnnotation,
+  scope: &ScopeTypes,
+  async_invocation: bool,
+  bindings: &mut HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
+  depth: usize,
+) -> bool {
+  let CalcitTypeAnnotation::TypeVar(variable) = declared else {
+    return false;
+  };
+  if depth > 64 {
+    return false;
+  }
+  if super::type_inference::expression_definitely_diverges(expr) {
+    return true;
+  }
+  if let Calcit::List(items) = expr {
+    match items.first() {
+      Some(Calcit::Syntax(CalcitSyntax::If, _)) if matches!(items.len(), 3 | 4) => {
+        let condition = items.get(1).unwrap();
+        let refinement = super::kind_predicate_refinement(condition, scope)
+          .filter(|(symbol, _)| matches!(scope.get(symbol).map(|current| current.as_ref()), Some(CalcitTypeAnnotation::TypeVar(name)) if name == variable));
+        let narrowing = super::extract_predicate_bindings(condition, scope);
+        let mut true_scope = scope.clone();
+        if let Some((symbol, narrowed)) = narrowing.true_binding {
+          true_scope.insert(symbol, narrowed);
+        }
+        let mut false_scope = scope.clone();
+        if let Some((symbol, narrowed)) = narrowing.false_binding {
+          false_scope.insert(symbol, narrowed);
+        }
+        let true_branch = items.get(2).unwrap();
+        let true_proven = match refinement {
+          Some((_, narrowed)) => expression_is_proven_for(true_branch, &narrowed, &true_scope, async_invocation),
+          None => refined_generic_return_is_proven(true_branch, declared, &true_scope, async_invocation, bindings, depth + 1),
+        };
+        return true_proven
+          && refined_generic_return_is_proven(
+            items.get(3).unwrap_or(&Calcit::Nil),
+            declared,
+            &false_scope,
+            async_invocation,
+            bindings,
+            depth + 1,
+          );
+      }
+      Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) if items.len() >= 3 => {
+        if let Some(Calcit::List(pair)) = items.get(1)
+          && let Some(Calcit::Local(local)) = pair.first()
+        {
+          // A binding only adds lexical evidence; the tail still owes the proof.
+          let mut body_scope = scope.clone();
+          body_scope.insert(local.sym.clone(), local.type_info.clone());
+          return refined_generic_return_is_proven(
+            items.get(items.len() - 1).unwrap(),
+            declared,
+            &body_scope,
+            async_invocation,
+            bindings,
+            depth + 1,
+          );
+        }
+      }
+      _ => {}
+    }
+  }
+  resolve_type_value(expr, scope).is_some_and(|actual| actual.prove_with_bindings(declared, bindings).is_proven())
+}
+
 /// Check function return type matches declared return_type.
 pub(crate) fn check_function_return_type(
   fn_body: &[Calcit],
@@ -1430,6 +1517,17 @@ pub(crate) fn check_function_return_type(
       scope_types,
     )
   };
+  // Kind predicates refine a generic return before the lossy branch join.
+  if refined_generic_return_is_proven(
+    last_expr,
+    declared_return_type,
+    scope_types,
+    async_invocation,
+    &mut HashMap::new(),
+    0,
+  ) {
+    return Ok(());
+  }
   let Some(actual_type) = actual_type else {
     return if audit { Err(unproven("unknown")) } else { Ok(()) };
   };

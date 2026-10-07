@@ -1342,6 +1342,30 @@ try {
     assert.deepEqual(await readFile(snapshot), original);
     run("edit", "rm-def", "calcit.assert-evidence/open-result");
   }
+  // A kind predicate on the value typed by the generic return variable refines
+  // that variable inside the guarded branch. Unguarded exits and predicates on other
+  // values still owe the original generic contract (#1529).
+  const genericReturnSchema = "quote $ :: 'Fn $ {} (:args $ [] 'T 'Bool) (:generics $ [] 'T) (:return 'T)";
+  for (const [name, code, accepted] of [
+    ["kind-refined", ["defn", "kind-refined", ["x", "flag"], ["if", ["list?", "x"], ["&list:rest", "x"], ["if", ["string?", "x"], ["&str:rest", "x"], ["raise", "|neither"]]]], true],
+    ["kind-refined-binding", ["defn", "kind-refined-binding", ["x", "flag"], ["&let", ["open-x", "x"], ["if", ["list?", "x"], ["&list:rest", "x"], ["raise", "|not-list"]]]], true],
+    ["kind-other-value", ["defn", "kind-other-value", ["x", "flag"], ["if", ["list?", "flag"], ["&list:rest", "x"], "|text"]], false],
+    ["kind-unguarded-join", ["defn", "kind-unguarded-join", ["x", "flag"], ["if", "flag", ["[]", "1"], "|text"]], false],
+  ]) {
+    run("edit", "def", `calcit.assert-evidence/${name}`, "--overwrite", "--input-format", "json-ast", "--code", JSON.stringify(code));
+    run("edit", "schema", `calcit.assert-evidence/${name}`, "--input-format", "cirru", "--code", genericReturnSchema);
+    const original = await readFile(snapshot);
+    const checked = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.assert-evidence", "--def", name, "--format", "edn"], options);
+    if (checked.error) throw checked.error;
+    if (accepted) {
+      assert.equal(checked.status, 0, `${name}\n${checked.stdout}\n${checked.stderr}`);
+    } else {
+      assert.equal(checked.status, 1, `${name}\n${checked.stdout}\n${checked.stderr}`);
+      assert.match(`${checked.stdout}\n${checked.stderr}`, /E_FN_RETURN_UNPROVEN/, name);
+    }
+    assert.deepEqual(await readFile(snapshot), original);
+    run("edit", "rm-def", `calcit.assert-evidence/${name}`);
+  }
   // Known initial/default values do not prove an externally supplied reducer.
   run("edit", "def", "calcit.assert-evidence/open-shortcut", "--input-format", "json-ast", "--code",
     JSON.stringify(["defn", "open-shortcut", ["callback"], ["foldl-shortcut", ["[]", "1"], "0", "0", "callback"]]));
