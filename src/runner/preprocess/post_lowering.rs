@@ -447,7 +447,7 @@ mod tests {
       after_type: Arc::new(CalcitTypeAnnotation::Optional(calcit::DYNAMIC_TYPE.clone())),
       location: None,
     };
-    let error = validate(&node, &[], &[evidence.clone()]).expect_err("precision loss must be reported");
+    let error = validate(&node, &[], std::slice::from_ref(&evidence)).expect_err("precision loss must be reported");
     assert!(error.msg.contains("(b) rewriting never lowers type precision"), "{}", error.msg);
     assert!(error.msg.contains("typed-access"), "{}", error.msg);
     assert!(error.msg.contains("origin source"), "{}", error.msg);

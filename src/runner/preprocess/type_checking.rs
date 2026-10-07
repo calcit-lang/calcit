@@ -1377,6 +1377,21 @@ pub(super) fn expression_is_proven_for(
 }
 
 /// Check function return type matches declared return_type.
+/// `Dynamic`, an erased kind (any enum, struct or fn), or a collection whose members
+/// are all `Dynamic` carries no
+/// concrete producer evidence; like a direct `Dynamic` result it stays on the
+/// lossy-open migration path instead of rigidly specializing a return variable.
+fn is_open_return_binding(binding: &CalcitTypeAnnotation) -> bool {
+  let open = |inner: &Arc<CalcitTypeAnnotation>| matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic);
+  match binding {
+    CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::AnonymousEnum | CalcitTypeAnnotation::DynFn => true,
+    CalcitTypeAnnotation::List(item) | CalcitTypeAnnotation::Set(item) | CalcitTypeAnnotation::Ref(item) => open(item),
+    CalcitTypeAnnotation::Map(key, value) => open(key) && open(value),
+    CalcitTypeAnnotation::Custom(kind) => CalcitTypeAnnotation::custom_keyword_matches(kind, "struct"),
+    _ => false,
+  }
+}
+
 pub(crate) fn check_function_return_type(
   fn_body: &[Calcit],
   declared_return_type: &Arc<CalcitTypeAnnotation>,
@@ -1458,11 +1473,7 @@ pub(crate) fn check_function_return_type(
   // an open callable hide a definite contradiction with the return contract.
   let mut bindings = HashMap::new();
   let proof = actual_type.prove_with_bindings(declared_return_type, &mut bindings);
-  let proof = if audit
-    && bindings
-      .values()
-      .any(|binding| !matches!(binding.as_ref(), CalcitTypeAnnotation::Dynamic))
-  {
+  let proof = if audit && bindings.values().any(|binding| !is_open_return_binding(binding.as_ref())) {
     // Recheck known substitutions without granting the return schema any
     // callee inference variables. Both concrete and lexical producer types
     // must not specialize a return variable. Direct Dynamic bindings retain
