@@ -551,3 +551,171 @@ fn typed_edn_decoder_rejects_unknown_alias_and_missing_definition() {
     assert!(report.contains(expected), "{report}");
   }
 }
+
+fn edit_def_at(snapshot: &Path, target: &str, code: &str) {
+  assert_success(
+    &run_calcit(snapshot, &["edit", "def", target, "--overwrite", "--code", code]),
+    "edit definition",
+  );
+}
+
+fn edit_schema_at(snapshot: &Path, target: &str, return_type: &str) {
+  let code = format!("quote $ :: 'Fn $ {{}} (:args $ []) (:return '{return_type})");
+  assert_success(
+    &run_calcit(snapshot, &["edit", "schema", target, "--code", code.as_str()]),
+    "edit schema",
+  );
+}
+
+/// Entry closure is clean; `unreferenced-bad` and `app.zeta/zeta-bad` are not referenced by any entry.
+/// `app.alpha/alpha-user` sorts before the namespace it depends on, and `reversed` flips the creation order.
+fn prepare_all_defs_project(reversed: bool, with_unreferenced_bad: bool) -> (TestDirectory, PathBuf) {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
+  edit_def_at(&snapshot, "app.main/main!", "quote $ defn main! () 1");
+  edit_def_at(&snapshot, "app.main/reload!", "quote $ defn reload! () nil");
+  edit_schema_at(&snapshot, "app.main/main!", "Number");
+  edit_schema_at(&snapshot, "app.main/reload!", "Nil");
+
+  let build_zeta = |snapshot: &Path| {
+    assert_success(&run_calcit(snapshot, &["edit", "add-ns", "app.zeta"]), "add zeta namespace");
+    edit_def_at(snapshot, "app.zeta/zeta-bad", "quote $ defn zeta-bad () $ inc |x");
+    edit_schema_at(snapshot, "app.zeta/zeta-bad", "Number");
+  };
+  let build_alpha = |snapshot: &Path| {
+    assert_success(&run_calcit(snapshot, &["edit", "add-ns", "app.alpha"]), "add alpha namespace");
+    assert_success(
+      &run_calcit(
+        snapshot,
+        &["edit", "add-import", "app.alpha", "--code", "quote $ app.zeta :refer $ zeta-bad"],
+      ),
+      "import zeta-bad",
+    );
+    edit_def_at(snapshot, "app.alpha/alpha-user", "quote $ defn alpha-user () $ zeta-bad");
+    edit_schema_at(snapshot, "app.alpha/alpha-user", "Number");
+  };
+  if reversed {
+    // Imports are resolved lazily, so the dependent namespace may exist before its provider.
+    assert_success(&run_calcit(&snapshot, &["edit", "add-ns", "app.alpha"]), "add alpha namespace");
+    assert_success(&run_calcit(&snapshot, &["edit", "add-ns", "app.zeta"]), "add zeta namespace");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "add-import", "app.alpha", "--code", "quote $ app.zeta :refer $ zeta-bad"],
+      ),
+      "import zeta-bad",
+    );
+    edit_def_at(&snapshot, "app.alpha/alpha-user", "quote $ defn alpha-user () $ zeta-bad");
+    edit_schema_at(&snapshot, "app.alpha/alpha-user", "Number");
+    edit_def_at(&snapshot, "app.zeta/zeta-bad", "quote $ defn zeta-bad () $ inc |x");
+    edit_schema_at(&snapshot, "app.zeta/zeta-bad", "Number");
+  } else {
+    build_zeta(&snapshot);
+    build_alpha(&snapshot);
+  }
+
+  if with_unreferenced_bad {
+    edit_def_at(&snapshot, "app.main/unreferenced-bad", "quote $ defn unreferenced-bad () $ inc |y");
+    edit_schema_at(&snapshot, "app.main/unreferenced-bad", "Number");
+  }
+  edit_def_at(&snapshot, "app.main/unreferenced-ok", "quote $ defn unreferenced-ok () 2");
+  edit_schema_at(&snapshot, "app.main/unreferenced-ok", "Number");
+  (directory, snapshot)
+}
+
+fn definition_statuses(report: &serde_json::Value) -> std::collections::BTreeMap<String, String> {
+  report["data"]["definitions"]
+    .as_array()
+    .expect("definitions should be an array")
+    .iter()
+    .filter(|item| !item["definition"].as_str().unwrap().contains("$meta"))
+    .map(|item| {
+      (
+        item["definition"].as_str().unwrap().to_owned(),
+        item["status"].as_str().unwrap().to_owned(),
+      )
+    })
+    .collect()
+}
+
+#[test]
+fn all_defs_reports_unreferenced_definitions_without_changing_default_checks() {
+  let (_directory, snapshot) = prepare_all_defs_project(false, true);
+
+  // Default entry-driven checks and execution never reach the unreferenced definitions.
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only"]),
+    "default check ignores unreferenced definitions",
+  );
+  let reachable = run_calcit(&snapshot, &["--check-only", "--keep-going", "--format", "json"]);
+  assert_success(&reachable, "keep-going check stays entry-reachable");
+  let reachable_report: serde_json::Value = serde_json::from_slice(&reachable.stdout).unwrap();
+  assert_eq!(reachable_report["data"]["scope"], "reachable");
+  assert!(!definition_statuses(&reachable_report).contains_key("app.main/unreferenced-bad"));
+  assert_success(&run_calcit(&snapshot, &[]), "default run is unaffected");
+
+  let all = run_calcit(&snapshot, &["--check-only", "--all-defs", "--format", "json"]);
+  assert!(!all.status.success(), "all-defs must reject unreferenced type errors");
+  let report: serde_json::Value = serde_json::from_slice(&all.stdout).expect("all-defs should emit one JSON envelope");
+  assert_eq!(report["data"]["scope"], "all-defs");
+  let statuses = definition_statuses(&report);
+  assert_eq!(statuses["app.main/unreferenced-bad"], "failed");
+  assert_eq!(statuses["app.main/unreferenced-ok"], "passed");
+  assert_eq!(statuses["app.zeta/zeta-bad"], "failed");
+  assert_eq!(statuses["app.alpha/alpha-user"], "blocked");
+  assert_eq!(statuses["app.main/main!"], "passed");
+  let bad = report["data"]["definitions"]
+    .as_array()
+    .unwrap()
+    .iter()
+    .find(|item| item["definition"] == "app.main/unreferenced-bad")
+    .unwrap();
+  assert_eq!(bad["diagnostics"][0]["code"], "W_FN_ARG_TYPE_MISMATCH");
+
+  // The human report shares the keep-going Markdown shape and names the scope.
+  let human = run_calcit(&snapshot, &["--check-only", "--all-defs"]);
+  assert!(!human.status.success());
+  let human_stdout = String::from_utf8_lossy(&human.stdout);
+  assert!(human_stdout.contains("- scope: all-defs"), "stdout:\n{human_stdout}");
+  assert!(human_stdout.contains("## `app.main/unreferenced-bad`"), "stdout:\n{human_stdout}");
+}
+
+#[test]
+fn all_defs_results_do_not_depend_on_definition_or_namespace_order() {
+  let (_forward_directory, forward) = prepare_all_defs_project(false, true);
+  let (_reversed_directory, reversed) = prepare_all_defs_project(true, true);
+  let args = ["--check-only", "--all-defs", "--format", "json"];
+  let first = run_calcit(&forward, &args);
+  let second = run_calcit(&reversed, &args);
+  assert!(!first.status.success() && !second.status.success());
+  assert_eq!(
+    String::from_utf8_lossy(&first.stdout),
+    String::from_utf8_lossy(&second.stdout),
+    "creation order of definitions and namespaces must not change the report"
+  );
+  assert_eq!(first.stdout, run_calcit(&forward, &args).stdout, "repeated runs must be identical");
+
+  // A definition's verdict is its own: removing an unrelated failing definition leaves every other row unchanged.
+  let (_clean_directory, without_bad) = prepare_all_defs_project(false, false);
+  let full: serde_json::Value = serde_json::from_slice(&first.stdout).unwrap();
+  let partial_output = run_calcit(&without_bad, &args);
+  let partial: serde_json::Value = serde_json::from_slice(&partial_output.stdout).unwrap();
+  let mut expected = definition_statuses(&full);
+  expected.remove("app.main/unreferenced-bad");
+  assert_eq!(definition_statuses(&partial), expected);
+}
+
+#[test]
+fn all_defs_requires_direct_check_only_and_rejects_incremental() {
+  let (_directory, snapshot) = prepare_all_defs_project(false, false);
+  for args in [
+    vec!["--all-defs"],
+    vec!["--check-only", "--all-defs", "--incremental"],
+    vec!["--all-defs", "--check-only", "js"],
+  ] {
+    let output = run_calcit(&snapshot, &args);
+    assert!(!output.status.success(), "{args:?} should be rejected");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("--all-defs"), "{args:?}");
+  }
+}

@@ -465,6 +465,16 @@ fn run_cli() -> Result<(), String> {
   if cli_args.keep_going && !cli_args.check_only {
     return Err("`--keep-going` requires `--check-only`.".to_owned());
   }
+  if cli_args.all_defs && (!cli_args.check_only || cli_args.subcommand.is_some()) {
+    return Err("`--all-defs` is only available with direct `--check-only`.".to_owned());
+  }
+  if cli_args.all_defs && cli_args.incremental {
+    return Err(
+      "`--check-only --all-defs` does not support `--incremental`; the all-definitions scope is always checked cold.".to_owned(),
+    );
+  }
+  // all-defs reports per definition, so it always uses the structured keep-going pass
+  let keep_going = cli_args.keep_going || cli_args.all_defs;
   if cli_args.incremental && (!cli_args.check_only || cli_args.subcommand.is_some()) {
     return Err("Top-level `--incremental` is only available with direct `--check-only`.".to_owned());
   }
@@ -473,7 +483,7 @@ fn run_cli() -> Result<(), String> {
       "`--check-only --incremental` does not support `--keep-going`; use the uncached structured diagnostic pass.".to_owned(),
     );
   }
-  if cli_args.format != "human" && !(cli_args.check_only && cli_args.keep_going) {
+  if cli_args.format != "human" && !(cli_args.check_only && keep_going) {
     return Err("Top-level `--format` is only available with `--check-only --keep-going`.".to_owned());
   }
 
@@ -496,7 +506,7 @@ fn run_cli() -> Result<(), String> {
     calcit::set_quiet_tool_output(true);
     cli_handlers::print_command_echo(&cli_args);
   }
-  if cli_args.check_only && cli_args.keep_going {
+  if cli_args.check_only && keep_going {
     cli_handlers::suppress_command_guidance();
     calcit::set_quiet_tool_output(true);
   }
@@ -899,8 +909,11 @@ fn run_cli() -> Result<(), String> {
   let use_configured_js_mode = should_emit_js(&cli_args.subcommand, configured_run_mode);
 
   let task = if check_only {
-    if cli_args.keep_going {
-      strict_check::run(&entries, &cli_args.format)
+    if cli_args.keep_going || cli_args.all_defs {
+      let all_defs_scope = cli_args
+        .all_defs
+        .then(|| strict_check::AllDefsScope::from_snapshot(&snapshot, &project_namespaces));
+      strict_check::run(&entries, &cli_args.format, all_defs_scope.as_ref())
     } else {
       run_check_only(&entries)
     }

@@ -19,6 +19,9 @@ pub struct ToplevelCalcit {
   /// continue check-only validation across independent definitions
   #[argh(switch)]
   pub keep_going: bool,
+  /// with --check-only, also check every definition in project namespaces (not only entry-reachable ones); implies --keep-going
+  #[argh(switch)]
+  pub all_defs: bool,
   /// check-only report format: human, edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
@@ -2968,5 +2971,14 @@ mod wasm_command_tests {
     assert!(command.check_only);
     assert!(command.incremental);
     assert!(!command.keep_going);
+  }
+
+  #[test]
+  fn parses_all_defs_check_only_option() {
+    let command = ToplevelCalcit::from_args(&["calcit"], &["app.cirru", "--check-only", "--all-defs", "--format", "edn"])
+      .expect("parse all-definitions strict check");
+    assert!(command.check_only);
+    assert!(command.all_defs);
+    assert_eq!(command.format, "edn");
   }
 }

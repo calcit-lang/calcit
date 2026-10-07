@@ -34,7 +34,7 @@ Calcit 的 CLI 按用户任务收敛入口，而不是按每条诊断或迁移�
 
 | 用户意图 | 统一入口 | 边界 |
 | --- | --- | --- |
-| 验证当前 entry 是否符合语言语义 | `calcit calcit.cirru --check-only` | 复用正常加载、严格预处理和目标检查，不写文件；迁移批量诊断使用同一入口的 `--keep-going` |
+| 验证当前 entry 是否符合语言语义 | `calcit calcit.cirru --check-only` | 复用正常加载、严格预处理和目标检查，不写文件；迁移批量诊断使用同一入口的 `--keep-going`；覆盖项目全部定义使用 `--all-defs`（范围对照见 [CLI 选项](./cli-options.md#检查范围与---all-defs)） |
 | 查询与分析只读事实 | `calcit query ...`、`calcit analyze ...` | query 返回源码与配置事实；analyze 组合已有编译器事实，不建立第二套类型系统 |
 | 源码迁移与项目级模板改写 | `calcit calcit.cirru fix ...` | 编译器规则只自动应用已证明候选；显式 pattern/template 是需审阅的受保护事务 |
 | 执行用户明确指定的结构编辑 | `calcit edit ...`、`calcit tree ...`、`calcit cursor ...` | 修改意图来自用户，不冒充编译器自动修复 |

@@ -146,6 +146,15 @@ calcit calcit.cirru --entry test
 
 `--check-only` 会预处理所选 entry 的 `:init-fn` 与 `:reload-fn`；任何一个指向不存在或无法预处理的定义都应让验收失败。这能发现“正常启动暂时没走到 reload，所以旧配置被漏过”的问题。
 
+入口可达范围之外的定义（尚未接线的新函数、给消费者调用的内部助手、热更新后才可达的定义）用 `--all-defs` 检查：
+
+```bash
+calcit calcit.cirru --check-only --all-defs
+```
+
+它覆盖项目命名空间的全部 definition，依赖库仍只检查被引用到的部分，每个 definition 独立判定，不受定义顺序影响。
+各命令的检查范围对照见 [CLI 选项](./cli-options.md#检查范围与---all-defs)。
+
 类库若同时承诺 native 与 JS，应为两条链路配置独立 entry 或测试脚本。生成 JS 后还需执行真实 Node/Vite 测试，不能把 codegen 成功当成运行正确。
 
 ## 5. 可达性和公开 API
@@ -172,7 +181,7 @@ calcit --entry browser calcit.cirru analyze check-public \
 data declaration 和 external trait 也会预处理。内置 core 的 `:builtin`
 运行时占位符没有 Calcit 函数体，会单独报告为 `intrinsic`，不算作源码预处理通过。
 空 scope、缺少 target、错误 runtime target 或任何诊断都会返回非零；不要用生成的引用函数或手写 export
-清单替代它。普通 `--check-only` 仍只验证 entry 可达路径。
+清单替代它。普通 `--check-only` 仍只验证 entry 可达路径；不需要 target 声明、只要覆盖本项目全部定义时，用 `--check-only --all-defs`。
 
 ## 6. 真实消费者回归
 
@@ -190,7 +199,7 @@ CLI 查询、编辑、类型分析或公共 API 改动后，使用全局安装�
 caps --ci
 calcit calcit.cirru edit format
 git diff --exit-code -- calcit.cirru
-calcit calcit.cirru --check-only
+calcit calcit.cirru --check-only --all-defs
 calcit --entry node calcit.cirru analyze check-public \
   --ns package.shared --ns package.node --summary-only --format json
 calcit calcit.cirru analyze check-types --summary-only --format json
@@ -204,7 +213,7 @@ calcit calcit.cirru docs check-md README.md --failures-only
 calcit calcit.cirru --entry test
 ```
 
-在这条基础链路后追加仓库自己的 JS build、Node/Vite test、FFI build 和真实消费者 smoke test。已有 baseline 的存量类库可暂时追加 `analyze quality --baseline ...`，但它只是 0.14.x 迁移 ratchet；新类库不要采用。`unsafeCoerce` 的数量从来不能证明 runtime contract 已执行。
+`--check-only --all-defs` 取代单独的 `--check-only`：它包含入口可达闭包，实测耗时只比 keep-going 检查多约两成（calcit-core 约 190ms，Respo main 约 356ms）。在这条基础链路后追加仓库自己的 JS build、Node/Vite test、FFI build 和真实消费者 smoke test。已有 baseline 的存量类库可暂时追加 `analyze quality --baseline ...`，但它只是 0.14.x 迁移 ratchet；新类库不要采用。`unsafeCoerce` 的数量从来不能证明 runtime contract 已执行。
 
 ## 8. 发布前记录
 

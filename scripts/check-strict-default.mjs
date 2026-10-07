@@ -47,6 +47,15 @@ function expectStatus(result, expected, label) {
 const scoped = run(["calcit/type-fail/unsafe-coerce-scoped-strict.cirru", "--check-only"]);
 expectStatus(scoped, 0, "default strict valid fixture");
 
+// All-definitions scope (#1556): Calcit's own project and calcit.core carry proofs for every definition,
+// including ones no entry references. Core builtin placeholders are excluded, like `analyze check-public`.
+expectStatus(run(["calcit/test.cirru", "--check-only", "--all-defs"]), 0, "all-defs check of the test project");
+expectStatus(
+  run(["src/cirru/calcit-core.cirru", "--init-fn", "calcit.core/map", "--reload-fn", "calcit.core/map", "--check-only", "--all-defs"]),
+  0,
+  "all-defs check of calcit.core",
+);
+
 const asyncWatcher = run(["eval", `fn (counter)
   hint-fn $ {}
     :args $ [] $ :: 'Ref 'Number
