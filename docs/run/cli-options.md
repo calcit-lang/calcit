@@ -219,9 +219,43 @@ keep-going 只在 definition 边界恢复：先按静态可达依赖顺序检查
 `cascaded`。它不在 expression 内猜测恢复点。human 输出是 Markdown-compatible 文档；结构化输出为单一
 envelope，Calcit 自动化优先使用 Cirru EDN，只有 JSON-only consumer 才显式选择 JSON。任一
 `failed`、`blocked` 或 `cascaded` 结果都保持非零退出码。`--format` 仅与
-`--check-only --keep-going` 组合使用，普通 `--check-only` 的 fail-fast 输出与行为不变。keep-going
+`--check-only --keep-going`（或 `--all-defs`）组合使用，普通 `--check-only` 的 fail-fast 输出与行为不变。keep-going
 只收集严格预处理诊断，不混入基于统计预算的 quality gate；批量问题修复后，可用普通
 `--check-only` 再做 fail-fast 检查。
+
+### 检查范围与 `--all-defs`
+
+不同命令检查的定义集合不同。默认 `--check-only` 只覆盖入口可达的定义，没有被入口引用的定义（热更新后接入的入口、
+新写但尚未接线的函数）要等到第一次变为可达时才报错，而且是在运行中。下表列出各命令的范围：
+
+| 命令 | 检查的定义 | 未被入口引用的定义 |
+| --- | --- | --- |
+| `calcit <snapshot>` / `js`（运行与 codegen） | 从 `:init-fn` 起按调用实际预处理；`--strict-types` 预检查所选入口 | 不检查 |
+| `--check-only` | `:init-fn` 与 `:reload-fn` 的静态可达闭包，遇到第一个阻断错误即停止 | 不检查 |
+| `--check-only --keep-going` | 同一可达闭包，按依赖顺序逐 definition 收集 | 不检查 |
+| `--check-only --all-defs` | 可达闭包，加上项目命名空间中的全部 definition；依赖库仍只检查被项目 definition 引用到的部分 | 检查 |
+| `calcit test` | 项目命名空间中带 `:tests` 的 definition，只预处理并执行被选中的测试 | 只覆盖有 `:tests` 的定义 |
+| `analyze check-public --ns <ns>` | 所选命名空间的全部 definition，需要 entry 声明 `:target`；`--deps` 才允许依赖命名空间 | 检查（仅所选命名空间） |
+| `wasm` / `wasi`（含 `--check-only`） | 入口可达闭包，并预处理 `:init-fn` 所在命名空间的全部 definition | 仅入口所在命名空间 |
+
+`--all-defs` 是 `--check-only` 的范围选项，不是新命令，也不改变运行时的激活语义：它只扩大检查范围，
+不执行任何 definition，也不让未引用的定义进入运行或代码生成。它与 `--keep-going` 使用同一套结构化报告
+（`--format` 可用，报告中的 `scope` 为 `all-defs`；默认范围为 `reachable`），因此隐含 keep-going，
+不能与 `--incremental` 或子命令组合。
+
+```bash
+calcit calcit.cirru --check-only --all-defs
+calcit calcit.cirru --check-only --all-defs --format edn
+```
+
+每个 definition 独立得出结论：根集合按命名空间与定义名排序，依赖图按强连通分量的依赖顺序检查，
+已确认失败的依赖让调用者标记为 `blocked`。因此结果与 Snapshot 中的定义顺序、命名空间加载顺序、其他无关 definition
+是否存在都无关；回归测试比较了不同创建顺序下的完整报告。core 内置 `&runtime-implementation` 占位符没有源码函数体，
+与 `analyze check-public` 一致，不参与检查。
+
+`--all-defs` 的开销接近一次 `--keep-going`。在 release 构建、5 次取稳定值的测量中，calcit-core
+（395 个源码定义）为 default 约 160ms、`--all-defs` 约 190ms；Respo main（0.16.114-alpha.8，386 个定义）的
+`--keep-going` 约 295ms、`--all-defs` 约 356ms。因此类库 CI 可以把它作为 `--check-only` 之外的常驻门禁。
 
 频繁的小步迁移可使用 `--check-only --incremental`。当活动 entry 的 init/reload dependency closure、严格策略与动态方法策略均未变化，
 该模式复用上一次成功结果，并以 `preprocessing-cached=true` 明确报告；闭包外定义变化不强制重跑。缓存不保存 compiled AST、warning

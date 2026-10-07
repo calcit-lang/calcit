@@ -77,8 +77,10 @@ JS 项目先安装锁定的 runtime 依赖，再运行与本地一致的严格�
   run: |
     calcit calcit.cirru edit format
     git diff --exit-code -- calcit.cirru
-    calcit calcit.cirru --check-only
+    calcit calcit.cirru --check-only --all-defs
 ```
+
+`--all-defs` 在入口可达闭包之外，再检查项目命名空间的全部定义，让尚未接线的函数也在提交时报错；依赖库仍只检查被引用到的部分。
 
 以上步骤只覆盖安装与静态层。生成 JavaScript 的项目还必须增加目标 runtime 命令，例如 Node 项目另行编译并执行 smoke/contract test：
 
