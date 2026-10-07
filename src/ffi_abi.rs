@@ -711,10 +711,49 @@ pub fn has_blocking_method(lib: &libloading::Library, lib_name: &str, method: &s
   Ok(true)
 }
 
+/// Encode a native text payload without formatting opaque runtime references.
+/// In-memory EDN may contain AnyRef, but the text formatter cannot encode it.
+pub fn encode_edn_payload(value: &Edn) -> Result<Vec<u8>, String> {
+  if let Some(path) = unserializable_edn_path(value) {
+    return Err(format!("AnyRef is not serializable at ${path}"));
+  }
+  cirru_edn::format(value, true).map(String::into_bytes)
+}
+
+// Construct a path only on rejection; accepted payloads retain their wire data.
+fn unserializable_edn_path(value: &Edn) -> Option<String> {
+  match value {
+    Edn::AnyRef(_) => Some(String::new()),
+    Edn::List(values) => values
+      .iter()
+      .enumerate()
+      .find_map(|(index, value)| unserializable_edn_path(value).map(|path| format!(".list[{index}]{path}"))),
+    Edn::Set(values) => values
+      .0
+      .iter()
+      .enumerate()
+      .find_map(|(index, value)| unserializable_edn_path(value).map(|path| format!(".set[{index}]{path}"))),
+    Edn::Map(values) => values.0.iter().enumerate().find_map(|(index, (key, value))| {
+      unserializable_edn_path(key)
+        .map(|path| format!(".map[{index}].key{path}"))
+        .or_else(|| unserializable_edn_path(value).map(|path| format!(".map[{index}].value{path}")))
+    }),
+    Edn::Struct(value) => value
+      .pairs
+      .iter()
+      .find_map(|(field, value)| unserializable_edn_path(value).map(|path| format!(".struct[:{field}]{path}"))),
+    Edn::Enum(value) => value
+      .extra
+      .iter()
+      .enumerate()
+      .find_map(|(index, value)| unserializable_edn_path(value).map(|path| format!(".enum[{index}]{path}"))),
+    Edn::Atom(value) => unserializable_edn_path(value).map(|path| format!(".atom{path}")),
+    Edn::Nil | Edn::Bool(_) | Edn::Number(_) | Edn::Symbol(_) | Edn::Tag(_) | Edn::Str(_) | Edn::Quote(_) | Edn::Buffer(_) => None,
+  }
+}
+
 pub fn encode_buffer_request(args: Vec<Edn>) -> Result<Vec<u8>, String> {
-  cirru_edn::format(&Edn::List(EdnListView(args)), true)
-    .map(String::into_bytes)
-    .map_err(|error| format!("failed to encode FFI buffer request: {error}"))
+  encode_edn_payload(&Edn::List(EdnListView(args))).map_err(|error| format!("failed to encode FFI buffer request: {error}"))
 }
 
 fn encode_resource_token(handle: u64, generation: u64) -> Edn {
@@ -1069,14 +1108,14 @@ mod tests {
     FfiAsyncHandleError, FfiAsyncHandleKind, FfiAsyncHandleRegistry, FfiAsyncHostV1, FfiAsyncLifecycle, FfiAsyncTaskDescriptor,
     FfiBlockingHostV1, FfiBuffer, FfiResourceAdapter, RESOURCE_PROTOCOL_VERSION, RESOURCE_TOKEN_BYTES, RESOURCE_TOKEN_STRUCT,
     async_method_symbol, async_status, blocking_method_symbol, buffer_method_symbol, decode_buffer_response, decode_resource_token,
-    encode_buffer_request, encode_resource_token, hydrate_resource_tokens, transform_resource_args,
+    encode_buffer_request, encode_edn_payload, encode_resource_token, hydrate_resource_tokens, transform_resource_args,
   };
   use std::sync::{
     Arc, Mutex,
     atomic::{AtomicUsize, Ordering},
   };
 
-  use cirru_edn::{Edn, EdnAnyRef, EdnListView, EdnStructView};
+  use cirru_edn::{Edn, EdnAnyRef, EdnListView, EdnSetView, EdnStructView};
 
   static RESOURCE_RELEASES: AtomicUsize = AtomicUsize::new(0);
   static RESOURCE_TEST_LOCK: Mutex<()> = Mutex::new(());
@@ -1182,6 +1221,64 @@ mod tests {
     let source = std::str::from_utf8(&encoded).expect("UTF-8 request");
     let decoded = cirru_edn::parse(source).expect("parse request");
     assert_eq!(decoded, Edn::List(cirru_edn::EdnListView(vec![Edn::Number(1.0), Edn::str("two")])));
+  }
+
+  #[test]
+  fn native_text_payload_rejects_opaque_values_at_every_recursive_boundary() {
+    let opaque = Edn::AnyRef(EdnAnyRef::new(7usize));
+    let mut record = EdnStructView::new("Payload");
+    record.insert("raw", opaque.clone());
+    let nested = Edn::List(EdnListView(vec![Edn::map_from_iter([(
+      Edn::tag("reason"),
+      Edn::typed_enum("Reason", "raw", vec![Edn::Atom(Box::new(record.clone().into()))]),
+    )])]));
+    for (value, path) in [
+      (opaque.clone(), "$"),
+      (Edn::List(EdnListView(vec![Edn::Nil, opaque.clone()])), "$.list[1]"),
+      (Edn::Set(EdnSetView(std::collections::HashSet::from([opaque.clone()]))), "$.set[0]"),
+      (Edn::map_from_iter([(opaque.clone(), Edn::Nil)]), "$.map[0].key"),
+      (Edn::map_from_iter([(Edn::tag("raw"), opaque.clone())]), "$.map[0].value"),
+      (record.into(), "$.struct[:raw]"),
+      (Edn::enum_value("raw", vec![opaque.clone()]), "$.enum[0]"),
+      (Edn::typed_enum("Reason", "raw", vec![opaque.clone()]), "$.enum[0]"),
+      (Edn::Atom(Box::new(opaque.clone())), "$.atom"),
+      (nested, "$.list[0].map[0].value.enum[0].atom.struct[:raw]"),
+    ] {
+      assert_eq!(
+        encode_edn_payload(&value).expect_err("opaque payload must be rejected"),
+        format!("AnyRef is not serializable at {path}")
+      );
+    }
+    assert_eq!(
+      encode_buffer_request(vec![opaque]).expect_err("opaque request argument must be rejected"),
+      "failed to encode FFI buffer request: AnyRef is not serializable at $.list[0]"
+    );
+  }
+
+  #[test]
+  fn native_text_payload_preserves_existing_wire_bytes_for_encodable_values() {
+    let mut record = EdnStructView::new("Payload");
+    record.insert("text", Edn::str("取消 ✓"));
+    for value in [
+      Edn::Nil,
+      Edn::Bool(true),
+      Edn::Number(1.25),
+      Edn::sym("AnyRef"),
+      Edn::tag("raw"),
+      Edn::str("AnyRef is not serializable"),
+      Edn::Buffer(vec![0, 255]),
+      Edn::Quote(cirru_parser::Cirru::Leaf("AnyRef".into())),
+      Edn::List(EdnListView(vec![Edn::Nil, Edn::str("取消 ✓")])),
+      Edn::Set(EdnSetView(std::collections::HashSet::from([Edn::Number(1.0), Edn::Number(2.0)]))),
+      Edn::map_from_iter([(Edn::tag("reason"), record.clone().into())]),
+      record.into(),
+      Edn::enum_value("cancelled", vec![Edn::str("取消 ✓")]),
+      Edn::typed_enum("Reason", "cancelled", vec![Edn::Number(1.0)]),
+      Edn::Atom(Box::new(Edn::Number(1.0))),
+    ] {
+      let expected = cirru_edn::format(&value, true).expect("existing wire formatting").into_bytes();
+      assert_eq!(encode_edn_payload(&value).expect("encodable payload"), expected);
+    }
   }
 
   #[test]

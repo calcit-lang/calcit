@@ -1039,8 +1039,7 @@ fn encode_async_value(value: &Calcit) -> Result<Vec<u8>, CalcitErr> {
     return Ok(b"&unit".to_vec());
   }
   let value = calcit_to_edn(value)?;
-  cirru_edn::format(&value, true)
-    .map(String::into_bytes)
+  calcit::ffi_abi::encode_edn_payload(&value)
     .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, format!("failed to encode async FFI value: {error}")))
 }
 
@@ -2381,6 +2380,28 @@ mod async_callback_tests {
   static RESPONSE_EVENTS: LazyLock<Mutex<Vec<RecordedResponse>>> = LazyLock::new(|| Mutex::new(vec![]));
 
   #[test]
+  fn opaque_async_payload_is_rejected_before_task_or_response_runtime_access() {
+    let raw = async_capability(FfiAsyncHandle::from_raw(7), FfiAsyncHandleKind::Stream);
+    let response = async_capability(FfiAsyncHandle::from_raw(8), FfiAsyncHandleKind::Response);
+    let stack = CallStackList::default();
+    for result in [
+      ffi_task_cancel(vec![raw.clone(), raw.clone()], &stack),
+      ffi_response_resolve(vec![response.clone(), raw.clone()], &stack),
+      ffi_response_reject(vec![response, raw], &stack),
+    ] {
+      assert_eq!(
+        result.expect_err("payload must fail before capability state lookup").msg,
+        "failed to encode async FFI value: AnyRef is not serializable at $"
+      );
+    }
+    assert_eq!(encode_async_value(&Calcit::Unit).expect("async Unit"), b"&unit");
+    assert_eq!(
+      encode_blocking_callback_value(&Calcit::Unit).expect("ignored blocking Unit"),
+      b"\ndo nil\n"
+    );
+  }
+
+  #[test]
   fn missing_c_safe_symbols_report_migration_without_rust_symbol_probes() {
     for (kind, protocol, expected) in [
       ("synchronous", "buffer protocol v1", "`read_calcit_ffi_v1`"),
@@ -2683,6 +2704,35 @@ mod async_callback_tests {
       Edn::Nil
     );
     assert_eq!(free_blocking_host_buffer(&blocking, output), Ok(()));
+  }
+
+  #[test]
+  fn blocking_opaque_callback_result_reports_error_and_releases_its_buffer() {
+    let runtime = test_runtime(4);
+    let opaque = Calcit::AnyRef(EdnAnyRef::new(7usize));
+    let (task, blocking) = blocking_test_task_with_callback(constant_callback_value(opaque));
+    let handle = runtime
+      .registry
+      .register_with_flags(FfiAsyncHandleKind::OneShot, ASYNC_TASK_FLAG_SERIAL_EVENTS, task)
+      .expect("register blocking task");
+    let payload = b"[]";
+    let mut output = FfiBuffer::empty();
+    assert_eq!(
+      unsafe { invoke_native_blocking(&runtime, handle.raw(), handle.raw(), payload.as_ptr(), payload.len(), &mut output) },
+      async_status::CALLBACK_ERROR
+    );
+    let output_bytes = unsafe { std::slice::from_raw_parts(output.ptr.cast_const(), output.len) };
+    let message = std::str::from_utf8(output_bytes).expect("error UTF-8");
+    assert_eq!(
+      message,
+      "failed to encode blocking callback result: failed to encode async FFI value: AnyRef is not serializable at $"
+    );
+    assert_eq!(blocking.failures.lock().expect("callback failures").as_slice(), [message]);
+    assert_eq!(free_blocking_host_buffer(&blocking, output), Ok(()));
+    assert!(blocking.buffers.lock().expect("host buffers").is_empty());
+    runtime.registry.finish(handle).expect("finish blocking task");
+    assert!(matches!(runtime.registry.release(handle), Ok(NativeAsyncResource::Task(_))));
+    assert_eq!(runtime.registry.pending_count(), Ok(0));
   }
 
   #[test]
