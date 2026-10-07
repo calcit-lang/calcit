@@ -45,6 +45,8 @@ struct CheckSummary {
 #[derive(Debug, Clone, Serialize)]
 struct CheckData {
   status: &'static str,
+  /// `reachable` (entry closure) or `all-defs` (entry closure plus all project definitions)
+  scope: &'static str,
   entries: Vec<String>,
   summary: CheckSummary,
   definitions: Vec<DefinitionResult>,
@@ -154,15 +156,70 @@ fn strongly_connected_components(graph: &DefinitionGraph) -> Vec<Vec<String>> {
   ordered.into_iter().map(|index| components[index].clone()).collect()
 }
 
-fn reachable_definitions(entries: &ProgramEntries) -> Result<(DefinitionGraph, Vec<Vec<String>>), String> {
+/// Extra roots for the all-definitions scope: every definition of the project namespaces.
+/// Dependencies and core are never roots; they are only checked when a root reaches them.
+pub struct AllDefsScope {
+  /// `(namespace, definition)` roots, sorted so the sequence never depends on Snapshot or HashSet order.
+  roots: Vec<(String, String)>,
+  /// Core builtin placeholders have no Calcit body to preprocess; they are excluded like `check-public` does.
+  intrinsics: HashSet<String>,
+}
+
+impl AllDefsScope {
+  pub fn from_snapshot(snapshot: &calcit::snapshot::Snapshot, project_namespaces: &HashSet<String>) -> Self {
+    let mut roots = Vec::new();
+    let mut intrinsics = HashSet::new();
+    for ns in project_namespaces {
+      let Some(file) = snapshot.files.get(ns) else {
+        continue;
+      };
+      for (def, entry) in &file.defs {
+        if crate::public_api_check::is_core_runtime_intrinsic(ns, def, entry) {
+          intrinsics.insert(format!("{ns}/{def}"));
+        } else {
+          roots.push((ns.clone(), def.clone()));
+        }
+      }
+    }
+    roots.sort();
+    AllDefsScope { roots, intrinsics }
+  }
+}
+
+/// Collect the definition graph from the entry roots, plus every definition of the
+/// project namespaces when the all-definitions scope is requested.
+fn reachable_definitions(
+  entries: &ProgramEntries,
+  all_defs: Option<&AllDefsScope>,
+) -> Result<(DefinitionGraph, Vec<Vec<String>>), String> {
   let mut graph = BTreeMap::new();
-  for (ns, definition) in [
-    (entries.init_ns.as_ref(), entries.init_def.as_ref()),
-    (entries.reload_ns.as_ref(), entries.reload_def.as_ref()),
-  ] {
-    let mut analyzer = CallTreeAnalyzer::new(CallTreeConfig::default());
+  let mut roots = vec![
+    (entries.init_ns.to_string(), entries.init_def.to_string()),
+    (entries.reload_ns.to_string(), entries.reload_def.to_string()),
+  ];
+  // When the project itself is calcit.core, its definitions must stay in the graph as edges.
+  let mut include_core = false;
+  if let Some(scope) = all_defs {
+    include_core = scope.roots.iter().any(|(ns, _)| ns.starts_with("calcit."));
+    roots.extend(scope.roots.iter().cloned());
+  }
+
+  // One analyzer is shared across roots: expanded nodes keep every outgoing edge in
+  // `graph`, so later roots only add what is new and the final graph is root-order independent.
+  let mut analyzer = CallTreeAnalyzer::new(CallTreeConfig {
+    include_core,
+    ..CallTreeConfig::default()
+  });
+  for (ns, definition) in &roots {
     let result = analyzer.analyze(ns, definition)?;
     collect_graph(&result.tree, &mut graph);
+  }
+
+  if let Some(scope) = all_defs {
+    graph.retain(|definition, _| !scope.intrinsics.contains(definition));
+    for dependencies in graph.values_mut() {
+      dependencies.retain(|dependency| !scope.intrinsics.contains(dependency));
+    }
   }
 
   let components = strongly_connected_components(&graph);
@@ -335,6 +392,7 @@ fn check_definitions(graph: &DefinitionGraph, components: &[Vec<String>]) -> Vec
 fn print_human(data: &CheckData) {
   println!("# Strict check\n");
   println!("- status: **{}**", data.status.to_uppercase());
+  println!("- scope: {}", data.scope);
   println!(
     "- entries: {}",
     data.entries.iter().map(|entry| format!("`{entry}`")).collect::<Vec<_>>().join(", ")
@@ -374,9 +432,9 @@ fn print_human(data: &CheckData) {
   }
 }
 
-pub fn run(entries: &ProgramEntries, raw_format: &str) -> Result<(), String> {
+pub fn run(entries: &ProgramEntries, raw_format: &str, all_defs: Option<&AllDefsScope>) -> Result<(), String> {
   let format = StructuredOutputFormat::parse(raw_format, "check-only")?;
-  let (graph, definitions) = reachable_definitions(entries)?;
+  let (graph, definitions) = reachable_definitions(entries, all_defs)?;
   let results = check_definitions(&graph, &definitions);
   let summary = CheckSummary {
     total: results.len(),
@@ -388,6 +446,7 @@ pub fn run(entries: &ProgramEntries, raw_format: &str) -> Result<(), String> {
   let passed = summary.failed == 0 && summary.blocked == 0 && summary.cascaded == 0;
   let data = CheckData {
     status: if passed { "passed" } else { "failed" },
+    scope: if all_defs.is_some() { "all-defs" } else { "reachable" },
     entries: vec![entries.init_fn.to_string(), entries.reload_fn.to_string()],
     summary,
     definitions: results,
