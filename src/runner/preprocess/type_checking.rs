@@ -1379,6 +1379,19 @@ pub(super) fn expression_is_proven_for(
   ExpressionCheck { remaining: 16_384 }.check(expr, expected, scope, &HashMap::new(), async_invocation, 0)
 }
 
+/// `set!` is the only operation that rebinds a lexical local (JS-FFI only). A
+/// predicate guard says nothing about the value after such a write, so a
+/// guarded branch that may write is left to the ordinary joined-type proof.
+fn may_rebind_local(expr: &Calcit) -> bool {
+  match expr {
+    Calcit::Symbol { sym, .. } => sym.as_ref() == "set!",
+    Calcit::Import(import) => import.def.as_ref() == "set!",
+    Calcit::List(items) => items.iter().any(may_rebind_local),
+    Calcit::Fn { info, .. } => info.body.iter().any(may_rebind_local),
+    _ => false,
+  }
+}
+
 /// A kind predicate on a value typed by the function's own generic return
 /// variable refines that variable inside the guarded branch: after `(list? x)`
 /// with `x: 'T`, the `'T` of that branch is a list. A branch is therefore
@@ -1418,6 +1431,9 @@ fn refined_generic_return_is_proven(
           false_scope.insert(symbol, narrowed);
         }
         let true_branch = items.get(2).unwrap();
+        if refinement.is_some() && may_rebind_local(true_branch) {
+          return false;
+        }
         let true_proven = match refinement {
           Some((_, narrowed)) => expression_is_proven_for(true_branch, &narrowed, &true_scope, async_invocation),
           None => refined_generic_return_is_proven(true_branch, declared, &true_scope, async_invocation, bindings, depth + 1),
