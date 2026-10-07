@@ -335,11 +335,11 @@
                 assert= true $ result:err? missing-file.read-text
                 assert= true $ result:err? missing-dir.read-dir
                 assert= true $ result:err? missing-dir.walk-dir
-                assert= true $ result:err? $ missing-file.write-text |content
+                assert= true $ result:err? $ missing-file.write-text! |content
                 assert-type missing-file.read-text $ :: 'Result 'String 'String
                 assert-type missing-dir.read-dir $ :: 'Result (:: 'List 'FsPath) 'String
                 assert-type missing-dir.walk-dir $ :: 'Result (:: 'List 'FsPath) 'String
-                assert-type (missing-file.write-text |content) (:: 'Result 'Unit 'String)
+                assert-type (missing-file.write-text! |content) (:: 'Result 'Unit 'String)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
@@ -451,9 +451,7 @@
             let
                 watched $ atom 0
                 notifications $ atom 0
-              assert= &unit $ add-watch! watched :change $ fn (current prev)
-                assert= 1 current
-                assert= 0 prev
+              assert= &unit $ add-watch! watched :change $ fn (current prev) (assert= 1 current) (assert= 0 prev)
                 reset! notifications $ inc @notifications
                 , &unit
               assert= 1 $ reset! watched 1

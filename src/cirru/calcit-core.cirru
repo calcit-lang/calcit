@@ -389,7 +389,7 @@
           :tags $ #{} :internal
         '&core-number-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-number-methods
-            &impl::new :&core-number-methods (:: :ceil ceil) (:: :empty &number:empty) (:: :floor floor) (:: :format &number:format) (:: :display-by &number:display-by) (:: :inc inc) (:: :pow pow) (:: :round round) (:: :round? integer?) (:: :integer? integer?) (:: :fract &number:fract) (:: :sqrt sqrt) (:: :negate negate) (:: :rem &number:rem) (:: :compare &compare)
+            &impl::new :&core-number-methods (:: :ceil ceil) (:: :empty &number:empty) (:: :floor floor) (:: :format &number:format) (:: :display-by &number:display-by) (:: :inc inc) (:: :pow pow) (:: :round round) (:: :integer? integer?) (:: :fract &number:fract) (:: :sqrt sqrt) (:: :negate negate) (:: :rem &number:rem) (:: :compare &compare)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -3028,15 +3028,7 @@
         'FfiResponseOps $ %{} 'CodeEntry
           :doc "|Internal method contract for native async response capabilities."
           :code $ quote $ deftrait FfiResponseOps
-            .resolve $ :: 'Fn $ {}
-              :generics $ [] 'T
-              :args $ [] 'FfiResponse 'T
-              :return 'Unit
             .resolve! $ :: 'Fn $ {}
-              :generics $ [] 'T
-              :args $ [] 'FfiResponse 'T
-              :return 'Unit
-            .reject $ :: 'Fn $ {}
               :generics $ [] 'T
               :args $ [] 'FfiResponse 'T
               :return 'Unit
@@ -3049,7 +3041,7 @@
           :tags $ #{} :internal :trait
         'FfiResponseOpsImpl $ %{} 'CodeEntry
           :doc "|Internal implementation of native async response methods."
-          :code $ quote $ defimpl FfiResponseOpsImpl FfiResponseOps (.resolve ffi-response:resolve) (.resolve! ffi-response:resolve) (.reject ffi-response:reject) (.reject! ffi-response:reject)
+          :code $ quote $ defimpl FfiResponseOpsImpl FfiResponseOps (.resolve! ffi-response:resolve) (.reject! ffi-response:reject)
           :examples $ []
           :schema $ :: 'Impl
           :tags $ #{} :internal :trait-impl
@@ -3102,9 +3094,6 @@
             .read-text $ :: 'Fn $ {}
               :args $ [] 'FsPath
               :return $ :: 'Result 'String 'String
-            .write-text $ :: 'Fn $ {}
-              :args $ [] 'FsPath 'String
-              :return $ :: 'Result 'Unit 'String
             .write-text! $ :: 'Fn $ {}
               :args $ [] 'FsPath 'String
               :return $ :: 'Result 'Unit 'String
@@ -3121,7 +3110,7 @@
           :schema $ :: 'Trait
           :tags $ #{} :internal :trait
         'FsPathOpsImpl $ %{} 'CodeEntry (:doc "|Internal FsPath method implementation.")
-          :code $ quote $ defimpl FsPathOpsImpl FsPathOps (.read-text fs-path:read-text) (.write-text fs-path:write-text) (.write-text! fs-path:write-text) (.read-dir fs-path:read-dir) (.walk-dir fs-path:walk-dir) (.to-string fs-path:to-string)
+          :code $ quote $ defimpl FsPathOpsImpl FsPathOps (.read-text fs-path:read-text) (.write-text! fs-path:write-text) (.read-dir fs-path:read-dir) (.walk-dir fs-path:walk-dir) (.to-string fs-path:to-string)
           :examples $ []
           :schema $ :: 'Impl
           :tags $ #{} :internal :trait-impl
@@ -6754,7 +6743,7 @@
                 assert= true $ result:ok? $ .walk-dir (fs:path |src)
                 assert= true $ result:err? $ .read-text (fs:path |/calcit-result-contract-does-not-exist/file)
                 assert= true $ result:err? $ .read-dir (fs:path |/calcit-result-contract-does-not-exist)
-                assert= true $ result:err? $ .write-text (fs:path |/calcit-result-contract-does-not-exist/file) |content
+                assert= true $ result:err? $ .write-text! (fs:path |/calcit-result-contract-does-not-exist/file) |content
                 assert-type
                   .read-text $ fs:path |/calcit-result-contract-does-not-exist/file
                   :: 'Result 'String 'String
@@ -6765,7 +6754,7 @@
                   .walk-dir $ fs:path |/calcit-result-contract-does-not-exist
                   :: 'Result (:: 'List 'FsPath) 'String
                 assert-type
-                  .write-text (fs:path |/calcit-result-contract-does-not-exist/file) |content
+                  .write-text! (fs:path |/calcit-result-contract-does-not-exist/file) |content
                   :: 'Result 'Unit 'String
             %{} 'TestEntry (:name |write-text-effect-contract)
               :code $ quote $ do
@@ -6932,7 +6921,7 @@
           :code $ quote $ defn get-env (name)
             optionally $ &get-env name
           :examples $ [] $ quote
-            assert= (%none) (get-env |__CALCIT_TEST_MISSING_ENV_83B125E9__)
+            assert= (Option :none) (get-env |__CALCIT_TEST_MISSING_ENV_83B125E9__)
           :schema $ :: 'Fn $ {}
             :args $ [] 'String
             :features $ #{} :env :io
@@ -7786,7 +7775,7 @@
                 index-of ([] :a :b :c) :missing
             :tags $ #{} :core :unit
         'integer? $ %{} 'CodeEntry
-          :doc "|判断 Number 是否有限且恰好没有小数部分；这是首选公开名字，返回 Bool 而不收窄为整数类型。旧 round?/.round? 保持同义兼容。"
+          :doc "|判断 Number 是否有限且恰好没有小数部分；这是首选公开名字，返回 Bool 而不收窄为整数类型。旧函数 round? 保持同义兼容；Number 方法 .round? 已在 0.29.0 删除，改用 .integer?。"
           :code $ quote $ defn integer? (x) (round? x)
           :examples $ [] $ quote (integer? 12)
           :schema $ :: 'Fn $ {} (:return 'Bool)
@@ -7971,8 +7960,8 @@
           :code $ quote $ defn js-nullish->option (x)
             if (js-nullish? x) (%none) (%some x)
           :examples $ []
-            quote $ assert= (%none) (js-nullish->option nil)
-            quote $ assert= (%none) (js-nullish->option &unit)
+            quote $ assert= (Option :none) (js-nullish->option nil)
+            quote $ assert= (Option :none) (js-nullish->option &unit)
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'JsNullish 'T
             :features $ #{} :js-ffi
@@ -8935,11 +8924,11 @@
             :code $ quote $ assert= 4 (negate -4)
             :tags $ #{} :core :unit
         'nil->option $ %{} 'CodeEntry
-          :doc "|Convert a possibly-nil value into nominal Option<T>: nil becomes %none, anything else %some. Preferred spelling of the legacy optionally; both share one implementation."
+          :doc "|Convert a possibly-nil value into nominal Option<T>: nil becomes `Option :none`, anything else `Option :some value`. Preferred spelling of the legacy optionally; both share one implementation."
           :code $ quote $ defn nil->option (s) (optionally s)
           :examples $ []
-            quote $ assert= (%some 1) (nil->option 1)
-            quote $ assert= (%none) (nil->option nil)
+            quote $ assert= (Option :some 1) (nil->option 1)
+            quote $ assert= (Option :none) (nil->option nil)
             quote $ assert= Option $ &enum:definition (nil->option 1)
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Optional 'T
@@ -9656,8 +9645,8 @@
                 parsed $ &parse-float source
               if (nil? parsed) (%err source) (%ok parsed)
           :examples $ []
-            quote $ assert= (%ok 1.5) (parse-float |1.5)
-            quote $ assert= (%err |oops) (parse-float |oops)
+            quote $ assert= (Result :ok 1.5) (parse-float |1.5)
+            quote $ assert= (Result :err |oops) (parse-float |oops)
           :schema $ :: 'Fn $ {}
             :args $ [] 'String
             :return $ :: 'Result 'Number 'String
@@ -10185,7 +10174,7 @@
               assert= 2 $ round 1.8
             :tags $ #{} :core :unit
         'round? $ %{} 'CodeEntry
-          :doc "|判断 Number 是否有限且恰好无小数部分。首选 integer? 和 Number .integer?；旧函数 round? 与方法 .round? 在兼容窗口保持同义。可用 calcit fix --rule core-integer-predicate-v1 显式预览来源受控的迁移，附带 tests/examples 需人工检查。NaN、正负 Infinity、非零小数返回 false，-0 返回 true。这不是安全整数范围或 Int32/UInt32 等 refinement 检查，也不执行舍入。"
+          :doc "|判断 Number 是否有限且恰好无小数部分。首选 integer? 和 Number .integer?；旧函数 round? 在兼容窗口保持同义，Number 方法 .round? 已在 0.29.0 删除。可用 calcit fix --rule core-integer-predicate-v1 显式预览来源受控的函数调用迁移，附带 tests/examples 需人工检查。NaN、正负 Infinity、非零小数返回 false，-0 返回 true。这不是安全整数范围或 Int32/UInt32 等 refinement 检查，也不执行舍入。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
@@ -10218,24 +10207,24 @@
               :tags $ #{} :core :numeric-predicate :unit
             %{} 'TestEntry (:name |integer-method-and-evaluation)
               :code $ quote $ do
-                assert= true $ .round? 0
-                assert= true $ .round? -0
-                assert= true $ .round? 1
-                assert= true $ .round? -1
-                assert= true $ .round? 9007199254740992
-                assert= true $ .round? 1e100
-                assert= false $ .round? 1.25
-                assert= false $ .round? -1.25
-                assert= false $ .round? 0.0000000000000001
-                assert= false $ .round? -0.0000000000000001
-                assert= false $ .round? $ / 1 1e300
-                assert= false $ .round? $ / -1 1e300
-                assert= false $ .round? $ / 0 0
-                assert= false $ .round? $ sqrt -1
-                assert= false $ .round? $ / 1 0
-                assert= false $ .round? $ / -1 0
+                assert= true $ .integer? 0
+                assert= true $ .integer? -0
+                assert= true $ .integer? 1
+                assert= true $ .integer? -1
+                assert= true $ .integer? 9007199254740992
+                assert= true $ .integer? 1e100
+                assert= false $ .integer? 1.25
+                assert= false $ .integer? -1.25
+                assert= false $ .integer? 0.0000000000000001
+                assert= false $ .integer? -0.0000000000000001
+                assert= false $ .integer? $ / 1 1e300
+                assert= false $ .integer? $ / -1 1e300
+                assert= false $ .integer? $ / 0 0
+                assert= false $ .integer? $ sqrt -1
+                assert= false $ .integer? $ / 1 0
+                assert= false $ .integer? $ / -1 0
                 assert= true $ round? $ do (println |integer-free-argument) 0
-                assert= false $ .round? $ do (println |integer-method-argument) 0.0000000000000001
+                assert= false $ .integer? $ do (println |integer-method-argument) 0.0000000000000001
               :tags $ #{} :core :numeric-predicate :unit
         'section-by $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn section-by (xs0 n)

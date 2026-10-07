@@ -594,11 +594,11 @@ let
 
 `fs:path` 把 UTF-8 字符串显式构造成 `FsPath`，不执行规范化或文件系统访问。
 `FsPath` 上的 `.read-text`、`.read-dir`、`.walk-dir` 与 `.write-text!` 返回
-`Result<...,String>`；旧 `.write-text` 暂留兼容且映射到同一实现，不会变成抛错操作。String 不提供文件效果方法。旧 `try-read-file` / `try-write-file`
+`Result<...,String>`；旧 `.write-text` 已在 0.29.0 删除（`E_RETIRED_METHOD`）。String 不提供文件效果方法。旧 `try-read-file` / `try-write-file`
 已退役，应改用 `fs:path` 后调用对应方法；`try-read-dir` 和底层 raising procedures
 暂留为兼容入口。
-迁移 FsPath 写入与 native FFI 任务取消/响应完成的旧方法时，可先用
-`calcit query type calcit.core/FsPath --format edn`（或查询 `FfiTask`、`FfiResponse`）确认
+迁移 native FFI 任务取消的旧方法时，可先用
+`calcit query type calcit.core/FfiTask --format edn` 确认
 `preferred` / `compatibility` 和类型签名，再显式预览
 `calcit calcit.cirru fix --rule core-effect-method-v1 --format edn`。只有来源与接收者均已证明的
 definition `:code` 调用默认进入预览；传 `--include-attached` 可用相同证明迁移附带测试与示例。未知宏或无法证明的区域仍需人工审阅。
@@ -620,7 +620,7 @@ Option 容器；Result 错误类型需要转换时显式使用 `.map-err`。
 
 List 单元素追加首选 `.append`，List 拼接用 `.concat`。迁移旧 `.add` 可显式运行 `calcit fix --rule core-list-add-v1 --format edn`：仅当具体 List 接收者与旧、新方法同指 `calcit.core/append` 且源码上下文稳定时提供可应用建议；Set/Map、开放类型与未知 macro 不得按字面改写。先预览，再携带原 revision 应用并重复预览；附带的 `:tests` / `:examples` 可传 `--include-attached` 纳入同一证明与原子事务。
 
-判断 Number 是否有限且恰好没有小数部分时，首选 `integer? value` 或 `value .integer?`；返回 Bool，不代表安全整数范围或整数类型 refinement。旧 `round?/.round?` 暂留同义兼容。可显式用 `core-integer-predicate-v1` 预览：reader 解析为内建 Proc 的单参数 `round?` 调用，以及静态 Number 接收者且同实现同契约的 `.round?` 方法可自动改写；quoted 数据、自定义同名方法、开放接收者与未知 macro 不按词形批量替换。附带的 `:tests` / `:examples` 可传 `--include-attached` 纳入相同证明。使用前可查询 `calcit.core/integer?` 的公开 schema 和 Number 方法契约。
+判断 Number 是否有限且恰好没有小数部分时，首选 `integer? value` 或 `value .integer?`；返回 Bool，不代表安全整数范围或整数类型 refinement。函数 `round?` 暂留同义兼容，Number `.round?` 已在 0.29.0 删除。可显式用 `core-integer-predicate-v1` 预览：reader 解析为内建 Proc 的单参数 `round?` 调用可自动改写；quoted 数据、自定义同名方法、开放接收者与未知 macro 不按词形批量替换。附带的 `:tests` / `:examples` 可传 `--include-attached` 纳入相同证明。使用前可查询 `calcit.core/integer?` 的公开 schema 和 Number 方法契约。
 
 索引、键和值查询先看接收者类型：List/String 用 `.contains-index? Number` 判断有效位置，Enum 也提供 `.contains-index? Number`，其中 0 是 tag、1 起是 payload；Map<K,V> 用 `.contains-key? K` 与 `.contains-value? V` 分别判断键和值，即使 K/V 同型也不能混用。List/Set 的元素成员和 String 子串仍用 `.includes?`。Enum 新方法要求非负有限整数，旧 `.contains?` 对范围内小数会返回 true，因此不能机械迁移。List/String 的旧 `.contains?` 已在 0.29.0 删除，写下它会得到 `E_RETIRED_METHOD` 并给出替代；需要自动迁移时先用 0.28.x 的 CLI 运行 `core-predicate-method-v1`。该规则现在只覆盖已证明的 Map/Set builtin 方法等价迁移；传 `--include-attached` 可覆盖附带区域；它仍不处理 Struct/Enum、`Contains` trait 或自定义同名方法，不要按词形替换。List 索引的小数、负数和非有限值返回 false，JS 与 WASM 也遵守该契约。
 

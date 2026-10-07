@@ -270,20 +270,20 @@ native 与 JS 对越界输入抛出可由 `try` 捕获的相同错误：零除�
 
 ## 整数谓词的跨目标语义修复
 
-`round?` 与 Number 的 `.round?` 现在统一判断“有限且恰好没有小数部分”。native、JS、core WASM 和 WASI Component 使用相同契约：NaN、正负 Infinity、任何非零小数均为 false；0、-0 与有限的整数值为 true。
+`round?`（以及 0.28 的 Number `.round?`，该方法已在 0.29.0 删除，见下文）现在统一判断“有限且恰好没有小数部分”。native、JS、core WASM 和 WASI Component 使用相同契约：NaN、正负 Infinity、任何非零小数均为 false；0、-0 与有限的整数值为 true。
 
-此前 native 使用 EPSILON 容差，把 `0.0000000000000001` 等近零非整数误判为 true；JS/WASM 则把 Infinity 误判为 true。这是行为修复，不是批量 rename。依赖旧容差的业务需要显式选择适合其精度的近似比较；不要通过自动 fix 猜测容差或加入舍入。新代码首选已提供的 `integer?/.integer?`；旧名暂留同义兼容，可用 `calcit fix --rule core-integer-predicate-v1` 显式迁移已证明的调用，详见 [fix 规则](fix.md)。
+此前 native 使用 EPSILON 容差，把 `0.0000000000000001` 等近零非整数误判为 true；JS/WASM 则把 Infinity 误判为 true。这是行为修复，不是批量 rename。依赖旧容差的业务需要显式选择适合其精度的近似比较；不要通过自动 fix 猜测容差或加入舍入。新代码首选已提供的 `integer?/.integer?`；函数 `round?` 暂留同义兼容，可用 `calcit fix --rule core-integer-predicate-v1` 显式迁移已证明的调用，详见 [fix 规则](fix.md)。
 
 该 Bool 谓词不等于“安全整数”或 `Int32/UInt32` 等数值 refinement 证明。例如 `9007199254740992` 仍是有限且无小数部分的 Number，所以结果为 true；需要特定边界时继续使用对应的 checked 转换。这次不改变索引转换、JSON 格式化的内部容差，也不改变 `round` 的舍入行为。
 
 ```cirru
 assert= false $ round? 0.0000000000000001
 
-assert= false $ .round? $ / 1 0
+assert= false $ .integer? $ / 1 0
 
-assert= false $ .round? $ / 0 0
+assert= false $ .integer? $ / 0 0
 
-assert= true $ .round? -0
+assert= true $ .integer? -0
 
 assert= true $ round? 9007199254740992
 ```
@@ -347,6 +347,18 @@ List/String 的旧 `.contains?` 已在 0.29.0 删除（见下文“兼容入口�
 三条迁移规则随旧方法一起退役：0.29.0 的 CLI 不再提供 `core-list-intersperse-v1`、`core-map-distinct-values-v1`，`core-predicate-method-v1` 只保留 Map/Set 部分，`core-api-0.28-v1` preset 由 15 条规则减为 13 条。升级顺序是先在原工具链（0.28.x）上预览并应用这些规则，审阅 revision、再次预览并运行项目测试，然后才升级依赖和 CLI；规则只处理接收者类型已证明的方法调用，函数形式的 `join` / `vals`（仍可用，改名由 `core-function-alias-v1` 负责）、Dynamic 接收者与一等函数引用需要人工审阅。来不及迁移的项目会在严格检查时看到 `E_RETIRED_METHOD`，按提示逐处改名即可。
 
 函数形式 `contains?` 不变：List 按下标、String 按下标、Map 按键、Set 按成员，调用方式与结果同 0.28。
+
+### 0.29.0 已删除：同实现的方法别名 `.round?`、`.write-text`、`.resolve`、`.reject`
+
+下面四个方法别名与首选方法指向同一实现、同一类型契约，0.28.0 起已有对应的首选写法与 guarded fix rule，已知活跃下游默认分支没有真实调用，因此在 0.29.0 删除。写下它们会得到 `E_RETIRED_METHOD`，信息里给出首选替代。函数 `round?` 不受影响，仍可调用。
+
+| 已删除 | 首选替代 | 迁移（使用 0.28.x 的 CLI） |
+|---|---|---|
+| Number `.round?` | `.integer?` | `calcit calcit.cirru fix --rule core-integer-predicate-v1 --format edn` |
+| FsPath `.write-text` | `.write-text!` | `calcit calcit.cirru fix --rule core-effect-method-v1 --format edn` |
+| FfiResponse `.resolve` / `.reject` | `.resolve!` / `.reject!` | 同上 |
+
+0.29.0 的 CLI 中，`core-integer-predicate-v1` 只改写 reader 解析为内建 Proc 的 `round?` 函数调用；`core-effect-method-v1` 只保留 FfiTask `.cancel` / `.cancel-with`。两条规则仍在 `core-api-0.28-v1` preset 中，preset 规则数不变。升级顺序同上：先在 0.28.x 上预览、应用并运行项目测试，再升级 CLI。
 
 ### 仍可用的兼容名
 

@@ -657,12 +657,6 @@ pub(crate) fn handle_fix_command(
       &selected_definitions,
       CorePredicateRename::Integer,
     )?);
-    suggestions.extend(plan_core_method_alias_fixes(
-      &source_snapshot,
-      snapshot_file,
-      &selected_definitions,
-      NUMBER_INTEGER_PREDICATE_ALIAS,
-    )?);
   }
   if selected_rules.contains(&CORE_IDENTITY_CONVERSION_RULE) {
     suggestions.extend(plan_core_identity_conversion_fixes(
@@ -1450,7 +1444,7 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
     CORE_INTEGER_PREDICATE_RULE => FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_INTEGER_PREDICATE_DIAGNOSTIC,
-      evidence_source: "reader-resolved-builtin-proc-and-proven-number-method",
+      evidence_source: "reader-resolved-builtin-proc",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -4947,7 +4941,6 @@ enum MethodReceiverKind {
   List,
   Map,
   Set,
-  Number,
   CoreStruct {
     definition: &'static str,
     trait_origin: &'static str,
@@ -4960,7 +4953,6 @@ impl MethodReceiverKind {
       Self::List => matches!(annotation, CalcitTypeAnnotation::List(_)),
       Self::Map => matches!(annotation, CalcitTypeAnnotation::Map(_, _)),
       Self::Set => matches!(annotation, CalcitTypeAnnotation::Set(_)),
-      Self::Number => matches!(annotation, CalcitTypeAnnotation::Number),
       Self::CoreStruct { definition, .. } => annotation.resolve_to_struct().is_some_and(|base| {
         base.definition_ref.as_deref() == Some(definition)
           || (base.definition_ref.is_none() && base.name.ref_str() == definition.rsplit('/').next().unwrap_or(definition))
@@ -4973,7 +4965,6 @@ impl MethodReceiverKind {
       Self::List => "List",
       Self::Map => "Map",
       Self::Set => "Set",
-      Self::Number => "Number",
       Self::CoreStruct { definition, .. } => definition,
     }
   }
@@ -4991,18 +4982,6 @@ struct MethodAliasRule {
   variadic: bool,
   message: &'static str,
 }
-
-const NUMBER_INTEGER_PREDICATE_ALIAS: MethodAliasRule = MethodAliasRule {
-  rule_id: CORE_INTEGER_PREDICATE_RULE,
-  diagnostic_code: CORE_INTEGER_PREDICATE_DIAGNOSTIC,
-  receiver: MethodReceiverKind::Number,
-  old_method: ".round?",
-  new_method: ".integer?",
-  implementation: "calcit.core/integer?",
-  call_size: 2,
-  variadic: false,
-  message: "Use `.integer?` for Number; both methods resolve to the same core implementation and return Bool.",
-};
 
 const MAP_CONTAINS_KEY_ALIAS: MethodAliasRule = MethodAliasRule {
   rule_id: CORE_PREDICATE_METHOD_RULE,
@@ -5129,20 +5108,6 @@ const CORE_EFFECT_METHOD_ALIASES: &[MethodAliasRule] = &[
     rule_id: CORE_EFFECT_METHOD_RULE,
     diagnostic_code: CORE_EFFECT_METHOD_DIAGNOSTIC,
     receiver: MethodReceiverKind::CoreStruct {
-      definition: "calcit.core/FsPath",
-      trait_origin: "calcit.core/FsPathOps",
-    },
-    old_method: ".write-text",
-    new_method: ".write-text!",
-    implementation: "calcit.core/fs-path:write-text",
-    call_size: 3,
-    variadic: false,
-    message: "Use `.write-text!` for a proven core FsPath write; both methods share the same Result-returning implementation.",
-  },
-  MethodAliasRule {
-    rule_id: CORE_EFFECT_METHOD_RULE,
-    diagnostic_code: CORE_EFFECT_METHOD_DIAGNOSTIC,
-    receiver: MethodReceiverKind::CoreStruct {
       definition: "calcit.core/FfiTask",
       trait_origin: "calcit.core/FfiTaskOps",
     },
@@ -5167,39 +5132,10 @@ const CORE_EFFECT_METHOD_ALIASES: &[MethodAliasRule] = &[
     variadic: false,
     message: "Use `.cancel-with!` for a proven core FfiTask cancellation; the reason is evaluated once.",
   },
-  MethodAliasRule {
-    rule_id: CORE_EFFECT_METHOD_RULE,
-    diagnostic_code: CORE_EFFECT_METHOD_DIAGNOSTIC,
-    receiver: MethodReceiverKind::CoreStruct {
-      definition: "calcit.core/FfiResponse",
-      trait_origin: "calcit.core/FfiResponseOps",
-    },
-    old_method: ".resolve",
-    new_method: ".resolve!",
-    implementation: "calcit.core/ffi-response:resolve",
-    call_size: 3,
-    variadic: false,
-    message: "Use `.resolve!` for a proven core FfiResponse completion; exactly-once handling is unchanged.",
-  },
-  MethodAliasRule {
-    rule_id: CORE_EFFECT_METHOD_RULE,
-    diagnostic_code: CORE_EFFECT_METHOD_DIAGNOSTIC,
-    receiver: MethodReceiverKind::CoreStruct {
-      definition: "calcit.core/FfiResponse",
-      trait_origin: "calcit.core/FfiResponseOps",
-    },
-    old_method: ".reject",
-    new_method: ".reject!",
-    implementation: "calcit.core/ffi-response:reject",
-    call_size: 3,
-    variadic: false,
-    message: "Use `.reject!` for a proven core FfiResponse completion; exactly-once handling is unchanged.",
-  },
 ];
 
 /// Query and fix share these proven alias contracts; this is not a second API registry.
 const QUERYABLE_METHOD_ALIASES: &[MethodAliasRule] = &[
-  NUMBER_INTEGER_PREDICATE_ALIAS,
   MAP_CONTAINS_KEY_ALIAS,
   MAP_CONTAINS_VALUE_ALIAS,
   SET_INCLUDES_ALIAS,

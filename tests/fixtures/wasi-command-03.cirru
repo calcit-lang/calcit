@@ -110,7 +110,7 @@
             :tags $ #{} :unit :wasi
         'write-workspace-file $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn write-workspace-file (path content)
-            .write-text (fs:path path) content
+            .write-text! (fs:path path) content
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'String 'String

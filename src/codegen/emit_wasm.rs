@@ -9405,7 +9405,7 @@ fn expr_uses_wasi_file(expr: &Calcit) -> bool {
       ns.as_ref() == "calcit.core" && matches!(def.as_ref(), "fs-path:read-text" | "fs-path:write-text")
     }
     Calcit::Method(name, MethodKind::Invoke(receiver)) => {
-      matches!(name.as_ref(), "read-text" | "write-text" | "write-text!")
+      matches!(name.as_ref(), "read-text" | "write-text!")
         && matches!(receiver.as_ref(), CalcitTypeAnnotation::TypeRef(type_name, _) if type_name.as_ref() == "calcit.core/FsPath")
     }
     _ => false,
@@ -9830,12 +9830,16 @@ mod tests {
   fn wasi_file_effects_require_stackful_command_without_enabling_directory_calls() {
     let fs_path = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("calcit.core/FsPath"), Arc::new(vec![])));
     let read = Calcit::Method(Arc::from("read-text"), MethodKind::Invoke(fs_path.clone()));
-    let write = Calcit::Method(Arc::from("write-text"), MethodKind::Invoke(fs_path.clone()));
+    let retired_write = Calcit::Method(Arc::from("write-text"), MethodKind::Invoke(fs_path.clone()));
     let write_effect = Calcit::Method(Arc::from("write-text!"), MethodKind::Invoke(fs_path.clone()));
     let directory = Calcit::Method(Arc::from("read-dir"), MethodKind::Invoke(fs_path));
     assert!(expr_uses_wasi_file(&Calcit::from(vec![read])));
-    assert!(expr_uses_wasi_file(&Calcit::from(vec![Calcit::from(vec![write])])));
+    assert!(expr_uses_wasi_file(&Calcit::from(vec![Calcit::from(vec![write_effect.clone()])])));
     assert!(expr_uses_wasi_file(&write_effect));
+    assert!(
+      !expr_uses_wasi_file(&retired_write),
+      "the retired `.write-text` alias no longer reaches the filesystem effect"
+    );
     assert!(expr_uses_wasi_file(&Calcit::Proc(CalcitProc::NativeFsReadText)));
     assert!(expr_uses_wasi_file(&Calcit::Proc(CalcitProc::NativeFsWriteText)));
     assert!(!expr_uses_wasi_file(&directory));
