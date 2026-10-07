@@ -1135,7 +1135,11 @@ try {
   run("test", "calcit.core/recur", "--require-match");
   const recurResponse = JSON.parse(run("query", "def", "calcit.core/recur", "--format", "json"));
   const recurTests = recurResponse.data.tests;
-  assert.deepEqual(recurTests.map(test => test.name), ["recurs-from-try-and-match-tail-positions"]);
+  assert.deepEqual(recurTests.map(test => test.name), [
+    "recurs-from-try-and-match-tail-positions",
+    "recurs-from-match-tail-position",
+  ]);
+  assert.deepEqual(recurTests[1].code, recurTests[0].code[2]);
   run("test", "calcit.core/&str-spaced", "--tag", "tail-return-proof", "--require-match");
   const restResponse = JSON.parse(run("query", "def", "calcit.core/&str-spaced", "--format", "json"));
   const restTests = restResponse.data.tests.filter(test => test.tags.includes("tail-return-proof"));
