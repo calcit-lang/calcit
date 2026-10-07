@@ -175,6 +175,34 @@
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Number 'Number
           :tags $ #{} :internal
+        '&assoc:enum $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn &assoc:enum (x k v)
+            if (enum? x)
+              if (number? k) (&enum:assoc x k v)
+                raise $ &str:concat "|assoc expected a Number index for enum, but received: " $ to-lispy-string k
+              raise $ &str:concat "|&assoc:enum expected an enum, but received: " $ to-lispy-string x
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T 'K 'V
+            :generics $ [] 'T 'K 'V
+        '&assoc:list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn &assoc:list (x k v)
+            if (list? x)
+              if (number? k) (&list:assoc x k v)
+                raise $ &str:concat "|assoc expected a Number index for list, but received: " $ to-lispy-string k
+              raise $ &str:concat "|&assoc:list expected a list, but received: " $ to-lispy-string x
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T 'K 'V
+            :generics $ [] 'T 'K 'V
+        '&assoc:map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn &assoc:map (x k v)
+            if (map? x) (&map:assoc x k v)
+              raise $ &str:concat "|&assoc:map expected a map, but received: " $ to-lispy-string x
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T 'K 'V
+            :generics $ [] 'T 'K 'V
         '&atom:deref $ %{} 'CodeEntry
           :doc "|internal function for dereferencing atoms\nSyntax: (&atom:deref atom)\nParams: atom (atom)\nReturns: any\nReturns current value of atom"
           :code $ quote &runtime-implementation
@@ -488,6 +516,32 @@
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
           :tags $ #{} :builtin :internal :io :log
+        '&dissoc:list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn &dissoc:list (x args)
+            if (list? x)
+              if
+                &= 1 $ &list:count args
+                &let
+                  k $ &list:nth args 0
+                  if (number? k) (&list:dissoc x k)
+                    raise $ &str:concat "|dissoc expected a Number index for list, but received: " $ to-lispy-string k
+                raise $ &str:concat "|dissoc expected exactly one index for list, but received: " $ to-lispy-string args
+              raise $ &str:concat "|&dissoc:list expected a list, but received: " $ to-lispy-string x
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T $ :: 'List 'K
+            :generics $ [] 'T 'K
+        '&dissoc:map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn &dissoc:map (x args)
+            if (map? x)
+              if (&list:empty? args) x $ &dissoc:map
+                &map:dissoc x $ &list:nth args 0
+                &list:rest args
+              raise $ &str:concat "|&dissoc:map expected a map, but received: " $ to-lispy-string x
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T $ :: 'List 'K
+            :generics $ [] 'T 'K
         '&doseq $ %{} 'CodeEntry
           :doc "|Internal side-effect traversal macro. Iterates over a binding pair, executes the body for each element, and returns Unit."
           :code $ quote $ defmacro &doseq (pair & body)
@@ -805,12 +859,19 @@
           :code $ quote $ defn &get-raw (base k)
             cond
                 list? base
-                &list:nth base k
+                if (number? k) (&list:nth base k)
+                  raise $ &str:concat "|&get-raw expected a Number index for list, but received: " $ to-lispy-string k
               (map? base) (&map:get base k)
-              (string? base) (&str:nth base k)
-              (enum? base) (&enum:nth base k)
-              (struct? base) (&struct:get base k)
-              true $ raise $ str-spaced |&get-raw |expected |a |collection |or |struct, |got: base
+              (string? base)
+                if (number? k) (&str:nth base k)
+                  raise $ &str:concat "|&get-raw expected a Number index for string, but received: " $ to-lispy-string k
+              (enum? base)
+                if (number? k) (&enum:nth base k)
+                  raise $ &str:concat "|&get-raw expected a Number index for enum, but received: " $ to-lispy-string k
+              (struct? base)
+                if (tag? k) (&struct:get base k)
+                  raise $ &str:concat "|&get-raw expected a Tag field for struct, but received: " $ to-lispy-string k
+              true $ raise $ &str:concat "|&get-raw expected a collection or struct, but received: " (to-lispy-string base)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic 'Dynamic
@@ -1091,6 +1152,9 @@
           :code $ quote $ defn &list:filter (xs f)
             reduce xs ([])
               defn %&list:filter (acc x)
+                hint-fn $ {}
+                  :args $ [] (:: 'List 'T) 'T
+                  :return $ :: 'List 'T
                 if (f x) (append acc x) acc
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -1695,7 +1759,6 @@
                 hint-fn $ {}
                   :args $ [] (:: 'Map 'K 'V) (:: 'List 'Dynamic)
                   :return $ :: 'Map 'K 'V
-                  :generics $ [] 'K 'V
                 if (f x)
                   &map:assoc acc (&list:nth x 0) (&list:nth x 1)
                   , acc
@@ -1795,22 +1858,25 @@
         '&map:map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &map:map (xs f)
             foldl xs ({})
-              defn &map:map (acc pair)
+              defn %&map:map (acc pair)
                 hint-fn $ {}
-                  :args $ [] (:: 'Map 'R 'S) ('P)
-                  :return $ :: 'Map 'R 'S
+                  :args $ [] (:: 'Map 'Dynamic 'Dynamic) (:: 'List 'Dynamic)
+                  :return $ :: 'Map 'Dynamic 'Dynamic
                 &let
                   result $ f pair
-                  assert "|expected pair returned when mapping hashmap" $ and (list? result)
-                    &= 2 $ &list:count result
-                  &map:assoc acc (&list:nth result 0) (&list:nth result 1)
+                  if (list? result)
+                    if
+                      &= 2 $ &list:count result
+                      &map:assoc acc (&list:nth result 0) (&list:nth result 1)
+                      raise $ &str:concat "|&map:map expected a pair from the callback, but received: " $ to-lispy-string result
+                    raise $ &str:concat "|&map:map expected a pair from the callback, but received: " $ to-lispy-string result
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'Map 'K 'V)
               :: 'Fn $ {} (:return 'Q)
-                :args $ [] 'P
-            :generics $ [] 'K 'V 'P 'Q 'R 'S
-            :return $ :: 'Map 'R 'S
+                :args $ [] $ :: 'List 'Dynamic
+            :generics $ [] 'K 'V 'Q
+            :return $ :: 'Map 'Dynamic 'Dynamic
           :tags $ #{} :internal
           :tests $ [] $ %{} 'TestEntry (:name |maps-map-pairs-directly)
             :code $ quote $ assert= (&{} :a 11 :b 12)
@@ -1825,16 +1891,16 @@
               foldl xs ([])
                 defn %&map:map-list (acc pair)
                   hint-fn $ {}
-                    :args $ [] (:: 'List 'U) ('P)
+                    :args $ [] (:: 'List 'U) (:: 'List 'Dynamic)
                     :return $ :: 'List 'U
                   append acc $ f pair
-              raise $ str-spaced "|&map:map-list expected a map, got:" xs
+              raise $ &str:concat "|&map:map-list expected a map, but received: " $ to-lispy-string xs
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'Map 'K 'V)
               :: 'Fn $ {} (:return 'U)
-                :args $ [] 'P
-            :generics $ [] 'K 'V 'P 'U
+                :args $ [] $ :: 'List 'Dynamic
+            :generics $ [] 'K 'V 'U
             :return $ :: 'List 'U
           :tags $ #{} :internal
           :tests $ [] $ %{} 'TestEntry (:name |maps-map-pairs-to-list)
@@ -2108,7 +2174,6 @@
                 hint-fn $ {}
                   :args $ [] (:: 'Set 'T) 'T
                   :return $ :: 'Set 'T
-                  :generics $ [] 'T
                 if (f x) (&include acc x) acc
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -3841,9 +3906,14 @@
         'assoc $ %{} 'CodeEntry
           :doc "|Associate a key or index in maps, lists, enums, and structs."
           :code $ quote $ defn assoc (x k v)
-            if (nil? x)
-              raise $ str-spaced "|assoc does not work on nil for:" k v
-              if (list? x) (&list:assoc x k v) (.assoc x k v)
+            &let
+              kind $ type-of x
+              if (&= kind :list) (&assoc:list x k v)
+                if (&= kind :map) (&assoc:map x k v)
+                  if (&= kind :enum) (&assoc:enum x k v)
+                    if (&= kind :struct)
+                      raise "|assoc cannot prove a Struct field write when the receiver type is unknown; annotate the receiver as its Struct type so the call is checked, or construct a new Struct value"
+                      raise $ &str:concat "|assoc expected a list, map or enum, but received: " $ to-lispy-string x
           :examples $ []
             quote $ assert= (&{} :a 1 :b 2)
               assoc (&{} :a 1) :b 2
@@ -4498,8 +4568,15 @@
         'contains? $ %{} 'CodeEntry
           :doc "|Check whether a collection contains a key or index. Nil is not a collection."
           :code $ quote $ defn contains? (x k)
-            if (list? x) (&list:contains? x k)
-              if (string? x) (&str:contains? x k) (.contains? x k)
+            if (list? x)
+              if (number? k) (&list:contains? x k)
+                raise $ &str:concat "|contains? expected a Number index for list, but received: " $ to-lispy-string k
+              if (string? x)
+                if (number? k) (&str:contains? x k)
+                  raise $ &str:concat "|contains? expected a Number index for string, but received: " $ to-lispy-string k
+                &let
+                  result $ .contains? x k
+                  if (bool? result) result $ raise $ &str:concat "|contains? expected a Bool result, but received: " (to-lispy-string result)
           :examples $ []
             quote $ assert= true $ contains? ([] :a :b) 1
             quote $ assert= true $ contains?
@@ -5421,8 +5498,9 @@
             :tags $ #{} :core :unit
         'dissoc $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn dissoc (x & args)
-            if (list? x) (&list:dissoc x & args)
-              if (map? x) (&map:dissoc x & args) (.dissoc x & args)
+            if (list? x) (&dissoc:list x args)
+              if (map? x) (&dissoc:map x args)
+                raise $ &str:concat "|dissoc expected a list or map, but received: " $ to-lispy-string x
           :examples $ []
           :schema $ :: 'Fn $ {} (:rest 'K) (:return 'T)
             :args $ [] 'T
@@ -5694,7 +5772,10 @@
         'empty? $ %{} 'CodeEntry
           :doc "|Check whether a collection or string is empty. Nil is rejected instead of being treated as empty."
           :code $ quote $ defn empty? (x)
-            if (list? x) (&list:empty? x) (.empty? x)
+            if (list? x) (&list:empty? x)
+              &let
+                result $ .empty? x
+                if (bool? result) result $ raise $ &str:concat "|empty? expected a Bool result, but received: " (to-lispy-string result)
           :examples $ []
             quote $ assert= true $ empty? ([])
             quote $ assert= false $ empty? ([] 1)
@@ -7742,7 +7823,10 @@
               :tags $ #{} :core :naming-contract :unit
         'includes? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn includes? (x k)
-            if (list? x) (&list:includes? x k) (.includes? x k)
+            if (list? x) (&list:includes? x k)
+              &let
+                result $ .includes? x k
+                if (bool? result) result $ raise $ &str:concat "|includes? expected a Bool result, but received: " (to-lispy-string result)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Dynamic 'Dynamic
@@ -8513,16 +8597,7 @@
           :tags $ #{} :builtin :internal :meta :syntax
         'map $ %{} 'CodeEntry
           :doc "|Collection mapping function. Applies a function to each element of a list, set, or map, returning a structure of the same shape."
-          :code $ quote $ defn map (xs f)
-            if (list? xs) (&list:map xs f)
-              if (set? xs)
-                foldl xs (#{})
-                  defn %map (acc x)
-                    hint-fn $ {}
-                      :args $ [] 'Set 'Dynamic
-                      :return 'Set
-                    include acc $ f x
-                .map xs f
+          :code $ quote $ defn map (xs f) (.map xs f)
           :examples $ []
             quote $ assert= ([] 2 3 4)
               map ([] 1 2 3) inc
@@ -10321,11 +10396,7 @@
         'slice $ %{} 'CodeEntry
           :doc "|Extract a slice from a collection from index n to m"
           :code $ quote $ defn slice (xs n ? m)
-            if (nil? m)
-              if (list? xs) (&list:slice xs n)
-                if (string? xs) (&str:slice xs n) (.slice xs n)
-              if (list? xs) (&list:slice xs n m)
-                if (string? xs) (&str:slice xs n m) (.slice xs n m)
+            if (nil? m) (.slice xs n) (.slice xs n m)
           :examples $ []
             quote $ assert= ([] 2 3)
               slice ([] 1 2 3 4) 1 3

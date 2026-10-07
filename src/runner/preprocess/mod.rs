@@ -9241,6 +9241,25 @@ struct PredicateNarrowing {
   false_binding: Option<(Arc<str>, Arc<CalcitTypeAnnotation>)>,
 }
 
+/// `&struct:matches? value Def` checks a value's runtime Struct origin. When `Def`
+/// is a non-generic top-level StructDef, the true branch holds that nominal type.
+fn struct_origin_binding(value: Option<&Calcit>, definition: Option<&Calcit>) -> Option<(Arc<str>, Arc<CalcitTypeAnnotation>)> {
+  let sym = match value? {
+    Calcit::Local(local) => local.sym.to_owned(),
+    Calcit::Symbol { sym, .. } => sym.to_owned(),
+    _ => return None,
+  };
+  let Calcit::Import(CalcitImport { ns, def, .. }) = definition? else {
+    return None;
+  };
+  let nominal = CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), Arc::new(vec![]));
+  let struct_def = nominal.resolve_to_struct()?;
+  if !struct_def.generics.is_empty() {
+    return None;
+  }
+  Some((sym, Arc::new(nominal)))
+}
+
 fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> PredicateNarrowing {
   let empty = PredicateNarrowing {
     true_binding: None,
@@ -9249,6 +9268,15 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
   let Calcit::List(items) = cond_form else {
     return empty;
   };
+  if items.len() == 3
+    && matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeStructMatches)))
+    && let Some(binding) = struct_origin_binding(items.get(1), items.get(2))
+  {
+    return PredicateNarrowing {
+      true_binding: Some(binding),
+      false_binding: None,
+    };
+  }
   if items.len() != 2 {
     return empty;
   }

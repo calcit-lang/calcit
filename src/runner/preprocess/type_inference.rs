@@ -728,6 +728,25 @@ pub(crate) fn infer_function_exit_type(
             .map(Exit::Value),
         }
       }
+      Calcit::Syntax(CalcitSyntax::Match, _) => {
+        // Each branch exits with its own value or transfers through recur.
+        // Value branches must share one proven type; recur branches add none.
+        let mut value: Option<Arc<CalcitTypeAnnotation>> = None;
+        for (pattern, body) in preprocessed_match_branches(items)? {
+          if expression_definitely_diverges(body) {
+            continue;
+          }
+          let mut branch_scope = scope.clone();
+          bind_pattern_scope(pattern, &mut branch_scope);
+          if let Exit::Value(branch_type) = infer(body, &branch_scope, parameters)? {
+            value = Some(match value {
+              None => branch_type,
+              Some(current) => merge_nominal_enum_branches([&current, &branch_type]).or_else(|| merge_if_branch_types(current, branch_type))?,
+            });
+          }
+        }
+        Some(value.map_or(Exit::Transfer, Exit::Value))
+      }
       _ => resolve_type_value(expr, scope).map(Exit::Value),
     }
   }
