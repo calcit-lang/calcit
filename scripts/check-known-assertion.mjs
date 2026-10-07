@@ -2436,6 +2436,31 @@ try {
     const generated = await import(pathToFileURL(join(output, `${replayNamespace}.mjs`)).href);
     generated.replay_count_tests();
   }
+  // Kind-specific association helpers tie the stored value to the collection
+  // element type, so a mismatched value cannot hide behind independent generics.
+  for (const [name, input, body, outputType, accepted] of [
+    ["assoc-list-wrong-value", "(:: 'List 'Number)", "&assoc:list xs 0 |wrong", "(:: 'List 'Number)", false],
+    ["assoc-map-wrong-value", "(:: 'Map 'Tag 'Number)", "&assoc:map xs :a |wrong", "(:: 'Map 'Tag 'Number)", false],
+    ["assoc-list-same-value", "(:: 'List 'Number)", "&assoc:list xs 0 3", "(:: 'List 'Number)", true],
+    ["assoc-map-same-value", "(:: 'Map 'Tag 'Number)", "&assoc:map xs :a 3", "(:: 'Map 'Tag 'Number)", true],
+    // Nominal `assoc` is lowered to a Struct update after direct-call checks;
+    // the strict field-value proof must still run before that lowering.
+    ["assoc-struct-wrong-field", "'fix-command.main/Point", "assoc xs :x |wrong", "'fix-command.main/Point", false],
+    ["assoc-struct-same-field", "'fix-command.main/Point", "assoc xs :x 3", "'fix-command.main/Point", true],
+  ]) {
+    await copyFile("tests/fixtures/count-contract.cirru", snapshot);
+    run("edit", "def", "fix-command.main/Point", "--input-format", "cirru", "--code",
+      "quote $ defstruct Point (:x 'Number)");
+    run("edit", "def", "fix-command.main/rejected-map", "--input-format", "cirru", "--code",
+      `quote $ defn rejected-map (xs) (${body})`);
+    run("edit", "schema", "fix-command.main/rejected-map", "--input-format", "cirru", "--code",
+      `quote $ :: 'Fn $ {} (:args $ [] ${input}) (:return ${outputType})`);
+    const result = spawnSync(binary, [snapshot, "fix", "--workflow", "strict", "--verify", "--format", "json"], options);
+    if (result.error) throw result.error;
+    const report = JSON.parse(result.stdout);
+    const flagged = report.diagnostics.some(diagnostic => diagnostic.definition === "fix-command.main/rejected-map");
+    assert.equal(flagged, !accepted, `${name}\n${result.stdout}`);
+  }
   // Original Map callback types stay constrained; a typed internal fold must
   // not specialize open payloads or accept contradictory input/output contracts.
   for (const [name, input, body, outputType, generics = ""] of [

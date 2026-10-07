@@ -186,23 +186,19 @@
             :args $ [] 'T 'K 'V
             :generics $ [] 'T 'K 'V
         '&assoc:list $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn &assoc:list (x k v)
-            if (list? x)
-              if (number? k) (&list:assoc x k v)
-                raise $ &str:concat "|assoc expected a Number index for list, but received: " $ to-lispy-string k
-              raise $ &str:concat "|&assoc:list expected a list, but received: " $ to-lispy-string x
+          :code $ quote $ defn &assoc:list (x k v) (&list:assoc x k v)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'T)
-            :args $ [] 'T 'K 'V
-            :generics $ [] 'T 'K 'V
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'A) 'Number 'A
+            :generics $ [] 'A
+            :return $ :: 'List 'A
         '&assoc:map $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn &assoc:map (x k v)
-            if (map? x) (&map:assoc x k v)
-              raise $ &str:concat "|&assoc:map expected a map, but received: " $ to-lispy-string x
+          :code $ quote $ defn &assoc:map (x k v) (&map:assoc x k v)
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'T)
-            :args $ [] 'T 'K 'V
-            :generics $ [] 'T 'K 'V
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Map 'K 'V) 'K 'V
+            :generics $ [] 'K 'V
+            :return $ :: 'Map 'K 'V
         '&assoc:struct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &assoc:struct (x k v)
             if (struct? x)
@@ -3975,10 +3971,11 @@
         'assoc $ %{} 'CodeEntry
           :doc "|Associate a key or index in maps, lists, enums, and structs."
           :code $ quote $ defn assoc (x k v)
-            &let
-              kind $ type-of x
-              if (&= kind :list) (&assoc:list x k v)
-                if (&= kind :map) (&assoc:map x k v)
+            if (list? x)
+              if (number? k) (&assoc:list x k v) (raise "|assoc expected a Number index for list")
+              if (map? x) (&assoc:map x k v)
+                &let
+                  kind $ type-of x
                   if (&= kind :enum) (&assoc:enum x k v)
                     if (&= kind :struct) (&assoc:struct x k v)
                       raise $ &str:concat "|assoc expected a list, map, enum or struct, but received: " $ to-lispy-string x

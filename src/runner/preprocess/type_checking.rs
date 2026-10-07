@@ -1238,9 +1238,26 @@ pub(super) fn expression_is_proven_for(
   if expected.contains_type_var() {
     return false;
   }
+  expression_check(expr, expected, scope, async_invocation, false)
+}
 
+/// Branch-wise proof of a return declared as a bare type variable: every exit
+/// is that same variable or an open result that stays on the lossy-open path,
+/// exactly as a single joined return type would be judged.
+fn open_type_var_return_is_proven(expr: &Calcit, expected: &CalcitTypeAnnotation, scope: &ScopeTypes, async_invocation: bool) -> bool {
+  matches!(expected, CalcitTypeAnnotation::TypeVar(_)) && expression_check(expr, expected, scope, async_invocation, true)
+}
+
+fn expression_check(
+  expr: &Calcit,
+  expected: &CalcitTypeAnnotation,
+  scope: &ScopeTypes,
+  async_invocation: bool,
+  open_type_var_return: bool,
+) -> bool {
   struct ExpressionCheck {
     remaining: usize,
+    open_type_var_return: bool,
   }
 
   impl ExpressionCheck {
@@ -1369,11 +1386,18 @@ pub(super) fn expression_is_proven_for(
       } else {
         actual
       };
+      if self.open_type_var_return && matches!(expected, CalcitTypeAnnotation::TypeVar(_)) {
+        return actual.as_ref() == expected || is_open_return_binding(actual.as_ref());
+      }
       actual.is_proven_for(expected)
     }
   }
 
-  ExpressionCheck { remaining: 16_384 }.check(expr, expected, scope, &HashMap::new(), async_invocation, 0)
+  ExpressionCheck {
+    remaining: 16_384,
+    open_type_var_return,
+  }
+  .check(expr, expected, scope, &HashMap::new(), async_invocation, 0)
 }
 
 /// Check function return type matches declared return_type.
@@ -1458,7 +1482,8 @@ pub(crate) fn check_function_return_type(
   let Some(actual_type) = actual_type else {
     // Branches may share no joined type while each one still proves the
     // declaration; reuse the same branch-wise proof as typed joins.
-    let proven = expression_is_proven_for(last_expr, declared_return_type, scope_types, async_invocation);
+    let proven = expression_is_proven_for(last_expr, declared_return_type, scope_types, async_invocation)
+      || open_type_var_return_is_proven(last_expr, declared_return_type, scope_types, async_invocation);
     return if audit && !proven { Err(unproven("unknown")) } else { Ok(()) };
   };
   // Async functions adopt a pending tail result; a synchronous function must
