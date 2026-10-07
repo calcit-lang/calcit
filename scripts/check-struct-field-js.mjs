@@ -108,6 +108,20 @@ try {
   accepts(numBox, "single", 0.25);
   rejects(numBox, "single", 0.1);
 
+  // calcit.core Struct and Enum references admit only values of that definition.
+  const core = await import(pathToFileURL(join(writeOutput, "calcit.core.mjs")).href);
+  const variant = (def, tag, ...payload) => procs._PCT__$o__$o_(def, procs.newTag(tag), ...payload);
+  const none = variant(core.Option, "none");
+  const nominalBox = makeBox(boxes.CoreNominalBox, { maybe: none, qualified: none, outcome: variant(core.Result, "ok", 1) });
+  accepts(nominalBox, "maybe", variant(core.Option, "some", 2));
+  rejects(nominalBox, "maybe", 2);
+  rejects(nominalBox, "maybe", null);
+  rejects(nominalBox, "maybe", variant(core.Result, "ok", 2));
+  accepts(nominalBox, "qualified", variant(core.Option, "some", 3));
+  rejects(nominalBox, "qualified", 3);
+  accepts(nominalBox, "outcome", variant(core.Result, "err", "failed"));
+  rejects(nominalBox, "outcome", "failed");
+
   const snapshot = join(output, "applied-struct-negative.cirru");
   const a = "model/ReelLike :base (data/DbA :value 1) :db (data/DbA :value 2) :records ([]) :merged? false";
   const b = "model/ReelLike :base (data/DbB :value |one) :db (data/DbB :value |two) :records ([]) :merged? false";

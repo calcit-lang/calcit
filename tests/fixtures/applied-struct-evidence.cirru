@@ -162,6 +162,13 @@
           :require (app.applied-data :as data) (app.applied-model :as model)
     'app.checked-write $ %{} 'FileEntry
       :defs $ {}
+        'CoreNominalBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct CoreNominalBox
+            :maybe $ :: 'Option 'Number
+            :qualified $ :: 'calcit.core/Option 'Number
+            :outcome $ :: 'Result 'Number 'String
+          :examples $ []
+          :schema $ :: 'StructDef
         'NilBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NilBox
             :opt $ :: 'Optional 'Number

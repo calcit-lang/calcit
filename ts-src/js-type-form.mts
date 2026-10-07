@@ -134,8 +134,17 @@ let valueMatchesTypeName = (value: CalcitValue, rawName: string): boolean => {
     case "tuple":
       return value instanceof CalcitEnumValue;
   }
-  // A nominal reference is checked against the value's own Struct or Enum
-  // name; other values are left to the static checker like unresolved forms.
+  // Core Struct and Enum definitions (bare names resolve to them through the
+  // implicit core import) are known here, so a reference to one admits only
+  // values of that definition, as the native matcher does.
+  if (CORE_NOMINAL_DEFS.has(name)) {
+    if (isStructValue(value)) return (value as any).name.value === name;
+    return value instanceof CalcitEnumValue && value.enumPrototype != null && value.enumPrototype.name() === name;
+  }
+  // Other names may be type variables, aliases or traits that cannot be
+  // resolved here. A qualified reference is checked against the value's own
+  // Struct or Enum name; other values are left to the static checker like
+  // unresolved forms.
   const shortName = name.includes("/") ? name.slice(name.lastIndexOf("/") + 1) : name;
   if (isStructValue(value)) return (value as any).name.value === shortName || !name.includes("/");
   if (value instanceof CalcitEnumValue && value.enumPrototype != null) {
@@ -143,6 +152,20 @@ let valueMatchesTypeName = (value: CalcitValue, rawName: string): boolean => {
   }
   return true;
 };
+
+/// Struct and Enum definitions of `calcit.core` usable as field types.
+const CORE_NOMINAL_DEFS = new Set([
+  "Option",
+  "Result",
+  "Data",
+  "ListDestruct",
+  "MapDestruct",
+  "SetDestruct",
+  "StringDestruct",
+  "MapEntry",
+  "RuntimeMapMeta",
+  "RuntimeMapResponse",
+]);
 
 // Duck-typed to avoid a module cycle with js-struct-value.
 let isStructValue = (value: CalcitValue): boolean =>
