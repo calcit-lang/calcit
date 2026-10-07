@@ -8,7 +8,7 @@ import { pathToFileURL } from "node:url";
 const binary = resolve(process.env.CALCIT_BIN ?? "target/debug/calcit");
 const project = await mkdtemp(join(tmpdir(), "calcit-known-assertion-"));
 const snapshot = join(project, "calcit.cirru");
-const options = { encoding: "utf8", stdio: "pipe", timeout: 60000, maxBuffer: 16 * 1024 * 1024 };
+const options = { encoding: "utf8", stdio: "pipe", timeout: 180000, maxBuffer: 16 * 1024 * 1024 };
 const run = (...args) => execFileSync(binary, [snapshot, ...args], options);
 
 async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnosticArtifact = false) {

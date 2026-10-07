@@ -4402,8 +4402,8 @@
               {} $ :profile $ {} (:name |calcit)
               [] :profile :missing
           :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'T $ :: 'List 'K
-            :generics $ [] 'T 'K
+            :args $ [] 'Dynamic $ :: 'List 'K
+            :generics $ [] 'K
           :tests $ [] $ %{} 'TestEntry (:name |traverses-maps-lists-tags-and-enums)
             :code $ quote $ do
               assert= true $ contains-in?
@@ -7018,9 +7018,9 @@
                     let
                         key $ f x0
                       recur
-                        if (contains? acc key)
-                          update acc key $ \ append % x0
-                          &map:assoc acc key $ [] x0
+                        &map:assoc acc key $ append
+                          option:unwrap-or (get acc key) ([])
+                          , x0
                         , xss
           :examples $ []
           :schema $ :: 'Fn $ {}

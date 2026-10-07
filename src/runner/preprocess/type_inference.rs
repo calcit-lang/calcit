@@ -29,8 +29,9 @@ use cirru_edn::EdnTag;
 
 use super::{
   ScopeTypes, checked_call_contract::resolve_checked_call_contract, find_method_entry_for_type, find_trait_field_type,
-  get_impls_from_type, lookup_source_backed_trait_def, resolve_local_type_refs_for_body, resolve_namespace_type_refs_for_body,
-  resolve_program_trait_refs_for_body, selected_trait_method, tag_annotation, trait_is_external_object, trait_list_from_type,
+  get_impls_from_type, lookup_source_backed_trait_def, reachable_dispatch_traits, resolve_local_type_refs_for_body,
+  resolve_namespace_type_refs_for_body, resolve_program_trait_refs_for_body, selected_trait_method, tag_annotation,
+  trait_is_external_object, trait_list_from_type,
 };
 
 // ---------------------------------------------------------------------------
@@ -2501,7 +2502,15 @@ fn lowered_trait_method_signature(xs: &CalcitList, scope_types: &ScopeTypes) -> 
   };
   let receiver_type = resolve_type_value(xs.get(3)?, scope_types)?;
   let matching_count = if let Some(traits) = trait_list_from_type(receiver_type.as_ref()) {
-    traits.iter().filter(|candidate| candidate.has_same_origin(&trait_def)).count()
+    // A listed bound counts as is, so duplicates stay ambiguous. A trait that is
+    // only required by a listed bound is also proven, as in surface method lookup.
+    let direct = traits.iter().filter(|candidate| candidate.has_same_origin(&trait_def)).count();
+    if direct > 0 {
+      direct
+    } else {
+      let reachable = reachable_dispatch_traits(&traits).ok()?;
+      reachable.iter().filter(|candidate| candidate.has_same_origin(&trait_def)).count()
+    }
   } else {
     get_impls_from_type(receiver_type.as_ref())?
       .iter()
@@ -2835,7 +2844,24 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   {
     return Some(record_type);
   }
-  proc.get_type_signature().map(|type_sig| type_sig.return_type.clone())
+  // Substitute the type variables that the argument evidence proves, so a
+  // generic result such as `Set<K>` keeps the key type of its receiver.
+  proc.get_type_signature().map(|type_sig| {
+    if !type_sig.return_type.contains_type_var() {
+      return type_sig.return_type.clone();
+    }
+    let mut bindings = HashMap::new();
+    for (argument, expected) in xs.iter().skip(1).zip(type_sig.arg_types.iter()) {
+      if let Some(actual) = resolve_type_value(argument, scope_types) {
+        actual.prove_with_bindings(expected, &mut bindings);
+      }
+    }
+    if bindings.is_empty() {
+      type_sig.return_type.clone()
+    } else {
+      type_sig.return_type.substitute_type_vars(&bindings)
+    }
+  })
 }
 
 fn infer_homogeneous_type<'a>(values: impl Iterator<Item = &'a Calcit>, scope_types: &ScopeTypes) -> Arc<CalcitTypeAnnotation> {

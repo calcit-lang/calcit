@@ -1119,6 +1119,43 @@ Static type analysis:
 - Only checks functions that are actually called
 - Cached between hot reloads (incremental)
 
+## 内部：改写后不变量校验
+
+预处理在一次遍历中完成符号解析、宏展开、类型推断、检查与改写（方法内联、`get` 到 `%some` / `%none`、自尾调用到 `recur`、trait 调用 lowering）。改写生成的节点如果被重新推断而丢失精度，或没有再经过检查，就会出现只在某一种构造上才暴露的问题。改写后校验在所有改写完成后重新检查每个定义的最终节点树，用同一套规则一次覆盖这一类问题。
+
+这是编译器内部的调试能力，不是面向用户的 analyzer：只在环境变量 `CALCIT_LINT_CORE=1` 时运行，默认构建不执行，也不新增命令或诊断类别。
+
+### 三条不变量
+
+1. 每个参与检查的节点都有类型，或有明确的 Unknown。
+2. 改写不会降低类型精度：改写后节点的类型必须仍能证明改写前的类型。
+3. 每个调用节点都经过参数与返回检查，包括改写后新生成的 `recur` 与内建调用。
+
+### 记录与校验
+
+- 改写点（方法内联、`get` / `nth` / `first` / `last` 的类型化 lowering、trait 约束方法的 `&trait-call` lowering）在改写时记录改写前的类型、源表达式、改写后表达式与源码位置，不引入新的 AST。
+- 定义预处理完成后，校验遍历最终节点树。仍在树中的被记录节点要求类型不低于改写前；每个 `Proc` 调用与 `recur` 重新执行参数检查，预处理阶段没有报告过的结果视为遗漏检查。
+- `calcit.core` 与普通项目使用同一规则，不设置库豁免；发现的问题通过补全证据或修正定义的类型合同解决。
+
+### 违规格式
+
+违规是带有来源链的编译器内部错误，一次列出该定义的全部违规：
+
+```text
+internal compiler error: post-lowering validation (CALCIT_LINT_CORE=1) found 1 violation(s) in app.main/find-node
+  invariant (b) rewriting never lowers type precision: `typed-access` lowering turned type `Option<Node>` into `Option<Dynamic>`
+    origin source (get nodes :a) @ code@3.2 : Option<Node>
+    origin lowering typed-access => (...) @ code@3.2 : Option<Dynamic>
+```
+
+出现这类错误说明编译器改写丢失了证据，应修复改写点，而不是修改用户源码。
+
+### 回归集
+
+- `src/runner/preprocess/post_lowering.rs` 的单元测试为每个已知问题构造改写后的错误节点树并断言校验报错：#1378（`Option` payload 被擦除）、#1428（`recur` 参数未检查）、#1494（内联 Proc 方法绕过参数检查）。
+- `tests/post_lowering_cli.rs` 在开启校验时检查 #1378、#1428、#1494 与 #1737（`Option :none` 绑定到局部变量后用于具体字段）的合法写法。
+- CI 在开启校验时运行 core 附带 `:tests`、`calcit.core` 的 `analyze check-public`、`calcit/test.cirru` 与类型推断测试。新发现的同类问题先把最小用例加入这组回归，再修复。
+
 ## See Also
 
 - [Polymorphism](polymorphism.md) - Object-oriented programming patterns
@@ -1148,3 +1185,5 @@ Static type analysis:
 错误容器种类仍会被拒绝。
 
 非空开放成员仍会被拒绝。
+
+改写后校验尚未执行第一条不变量（需要逐节点类型槽），第二条只覆盖已记录的改写点（方法内联、类型化访问、trait 调用），第三条覆盖内建 `Proc` 调用与 `recur`，用户函数调用与方法调用的最终节点尚未重新检查。
