@@ -97,6 +97,29 @@ loop
 
 普通 `defn` 在真正的尾位置直接调用自身时，编译器会在完成现有调用与返回类型检查后，复用 `recur` 的帧复用路径；例如 `list-match` 分支最后的 `(walk rest-items)` 可以遍历长列表而不增长 native 调用栈。此优化只适用于解析到当前顶层定义的直接调用，以及 `if`、`let`、`match` 的尾分支；被局部变量遮蔽的同名函数、间接调用、嵌套函数和非尾调用不改写。带可选或剩余参数等特殊参数形式的函数暂不自动改写。显式 `recur` 仍适合需要清楚表达循环意图的地方。
 
+## 可变 Ref 的空初值
+
+`Ref<T>` 的 payload 类型在构造时确定，之后的 `reset!` / `swap!` 只按该类型检查，不会反过来改写它。初值是无 payload 的变体（如 `Option :none`）时，需要在初始化表达式上给出 `Option<T>` 上下文：
+
+```cirru
+let
+    cell $ atom $ assert-type (Option :none) $ :: 'Option 'Number
+  reset! cell $ Option :some 7
+  assert= 7 $ option:unwrap-or (deref cell) 0
+  reset! cell $ Option :none
+  assert= 0 $ option:unwrap-or (deref cell) 0
+```
+
+同一个 Ref 经局部别名写入 `Option :some |wrong` 时，同样报告 `W_RESET_ARG_TYPE_MISMATCH`。省略上下文时，`atom (Option :none)` 的 payload 槽固定为 Never，下面的写入会被拒绝，诊断会给出上面的初始化写法：
+
+```cirru.no-check
+let
+    cell $ atom $ Option :none
+  reset! cell $ Option :some 7
+```
+
+这样 Ref 的类型只由构造位置决定，与后续写入的出现顺序无关，也不会把尚未推导的槽当作 Dynamic。`loop` 参数可以从 `recur` 输入推导空变体的 payload，但 Ref 不按写入推导。
+
 ## JavaScript 可空值的容器合同
 
 `JsNullish<T>` 表示 JavaScript 边界上可能缺席的值。已经证明为 `T` 的值和 `nil` 可以进入这个合同；同一关系递归适用于不可变 List、Map 与 Set，不需要逐层插入转换。例如一个保存 `Map<Tag,JsNullish<Number>>` 的 Struct 字段可以接收 `{} (:count 1)` 或 `{} (:count nil)`，具体回调同样可以存入可空回调表，其参数、返回值和 arity 仍按完整签名检查。
