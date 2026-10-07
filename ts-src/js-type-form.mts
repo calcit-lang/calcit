@@ -138,7 +138,7 @@ let valueMatchesTypeName = (value: CalcitValue, rawName: string): boolean => {
   // implicit core import) are known here, so a reference to one admits only
   // values of that definition, as the native matcher does.
   if (CORE_NOMINAL_DEFS.has(name)) {
-    if (isStructValue(value)) return (value as any).name.value === name;
+    if (isStructValue(value)) return (value as any).structRef.definitionRef === `calcit.core/${name}`;
     return value instanceof CalcitEnumValue && value.enumPrototype != null && value.enumPrototype.name() === name;
   }
   // Other names may be type variables, aliases or traits that cannot be

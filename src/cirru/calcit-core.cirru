@@ -805,18 +805,14 @@
           :code $ quote $ defn &get-raw (base k)
             cond
                 list? base
-                if (number? k) (&list:nth base k)
-                  raise "|&get-raw expected a Number index for list"
+                if (number? k) (&list:nth base k) (raise "|&get-raw expected a Number index for list")
               (map? base) (&map:get base k)
               (string? base)
-                if (number? k) (&str:nth base k)
-                  raise "|&get-raw expected a Number index for string"
+                if (number? k) (&str:nth base k) (raise "|&get-raw expected a Number index for string")
               (enum? base)
-                if (number? k) (&enum:nth base k)
-                  raise "|&get-raw expected a Number index for enum"
+                if (number? k) (&enum:nth base k) (raise "|&get-raw expected a Number index for enum")
               (struct? base)
-                if (tag? k) (&struct:get base k)
-                  raise "|&get-raw expected a Tag field for struct"
+                if (tag? k) (&struct:get base k) (raise "|&get-raw expected a Tag field for struct")
               true $ raise "|&get-raw expected a collection or struct"
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
@@ -1142,20 +1138,6 @@
                 [] ([] :a 2) ([] :b 12)
                 fn (k v) (> v 10)
             :tags $ #{} :core :unit
-        '&list:index-of-from $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn &list:index-of-from (xs item i)
-            if
-              &>= i $ &list:count xs
-              %none
-              if
-                &= item $ &list:nth xs i
-                %some i
-                recur xs item $ &+ i 1
-          :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'List 'T) 'T 'Number
-            :generics $ [] 'T
-            :return $ :: 'Option 'Number
         '&list:find-index-from $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:find-index-from (xs f i)
             if
@@ -1207,7 +1189,7 @@
               fn (idx x)
                 if (f x)
                   :: true $ %some idx
-                  :: false $ &- 1 idx
+                  :: false $ &- idx 1
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T)
@@ -1224,6 +1206,17 @@
               assert= (%none)
                 &list:find-last-index ([] 1 3)
                   fn (x) (> x 8)
+              assert= (%some 2)
+                &list:find-last-index ([] 1 3 5 7)
+                  fn (x) (&= x 5)
+              assert= (%some 0)
+                &list:find-last-index ([] 1 3 5)
+                  fn (x) (&= x 1)
+              assert= (%none)
+                &list:find-last-index ([])
+                  fn (x) (&= x 1)
+              assert= (%some 2)
+                &list:last-index-of ([] :a :b :target :other) :target
             :tags $ #{} :core :unit
         '&list:first $ %{} 'CodeEntry
           :doc "|internal function for getting first list element\nSyntax: (&list:first list)\nParams: list (list)\nReturns: any or nil\nReturns first element of list, nil if empty"
@@ -1287,6 +1280,20 @@
               assert= true $ &list:includes? ([] :a :b :c) :b
               assert= false $ &list:includes? ([] :a :b :c) :d
             :tags $ #{} :core :unit
+        '&list:index-of-from $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn &list:index-of-from (xs item i)
+            if
+              &>= i $ &list:count xs
+              %none
+              if
+                &= item $ &list:nth xs i
+                %some i
+                recur xs item $ &+ i 1
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'T 'Number
+            :generics $ [] 'T
+            :return $ :: 'Option 'Number
         '&list:last $ %{} 'CodeEntry (:doc |)
           :code $ quote $ &runtime-implementation
           :examples $ []
@@ -1440,8 +1447,7 @@
                 hint-fn $ {}
                   :args $ [] (:: 'List 'Number) 'Dynamic
                   :return $ :: 'List 'Number
-                if (number? x) (append acc x)
-                  raise "|expected a Number item"
+                if (number? x) (append acc x) (raise "|expected a Number item")
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List 'Dynamic

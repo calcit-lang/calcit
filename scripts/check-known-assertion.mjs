@@ -2478,8 +2478,16 @@ try {
     const result = spawnSync(binary, [snapshot, "fix", "--workflow", "strict", "--verify", "--format", "json"], options);
     if (result.error) throw result.error;
     const report = JSON.parse(result.stdout);
-    const flagged = report.diagnostics.some(diagnostic => diagnostic.definition === "fix-command.main/rejected-map");
-    assert.equal(flagged, !accepted, `${name}\n${result.stdout}`);
+    const diagnostics = report.diagnostics.filter(diagnostic => diagnostic.definition === "fix-command.main/rejected-map");
+    if (accepted) {
+      assert.equal(result.status, 0, `${name}\n${result.stdout}\n${result.stderr}`);
+      assert.deepEqual(diagnostics, [], name);
+    } else {
+      assert.equal(result.status, 1, `${name}\n${result.stdout}\n${result.stderr}`);
+      assert.ok(diagnostics.some(diagnostic => diagnostic.code === "E_CALL_ARGUMENT_MISMATCH"
+        && /argument 3: expected `:number`, got `:string`/.test(diagnostic.message)
+        && diagnostic.hint?.includes("Nominal field :x;")), `${name}\n${result.stdout}`);
+    }
   }
   // Original Map callback types stay constrained; a typed internal fold must
   // not specialize open payloads or accept contradictory input/output contracts.

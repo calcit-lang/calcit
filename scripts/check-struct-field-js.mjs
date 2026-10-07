@@ -110,6 +110,12 @@ try {
 
   // calcit.core Struct and Enum references admit only values of that definition.
   const core = await import(pathToFileURL(join(writeOutput, "calcit.core.mjs")).href);
+  const { CalcitStructDef } = await import(pathToFileURL(resolve("lib/js-struct-def.mjs")).href);
+  const { CalcitStructValue } = await import(pathToFileURL(resolve("lib/js-struct-value.mjs")).href);
+  const { valueMatchesTypeForm } = await import(pathToFileURL(resolve("lib/js-type-form.mjs")).href);
+  const { CalcitSymbol } = await import(pathToFileURL(resolve("lib/calcit-data.mjs")).href);
+  const foreignOptionDef = new CalcitStructDef(procs.newTag("Option"), [], [], [], "foreign.schema/Option");
+  const foreignOption = new CalcitStructValue(procs.newTag("Option"), [], [], foreignOptionDef);
   const variant = (def, tag, ...payload) => procs._PCT__$o__$o_(def, procs.newTag(tag), ...payload);
   const none = variant(core.Option, "none");
   const nominalBox = makeBox(boxes.CoreNominalBox, { maybe: none, qualified: none, outcome: variant(core.Result, "ok", 1) });
@@ -119,6 +125,15 @@ try {
   rejects(nominalBox, "maybe", variant(core.Result, "ok", 2));
   accepts(nominalBox, "qualified", variant(core.Option, "some", 3));
   rejects(nominalBox, "qualified", 3);
+  rejects(nominalBox, "maybe", foreignOption);
+  rejects(nominalBox, "qualified", foreignOption);
+  const mapEntry = makeBox(core.MapEntry, { key: procs.newTag("key"), value: 1 });
+  assert.equal(valueMatchesTypeForm(mapEntry, new CalcitSymbol("calcit.core/MapEntry")), true);
+  assert.equal(valueMatchesTypeForm(mapEntry, new CalcitSymbol("MapEntry")), true);
+  const foreignEntryDef = new CalcitStructDef(procs.newTag("MapEntry"), [], [], [], "foreign.schema/MapEntry");
+  const foreignEntry = new CalcitStructValue(procs.newTag("MapEntry"), [], [], foreignEntryDef);
+  assert.equal(valueMatchesTypeForm(foreignEntry, new CalcitSymbol("calcit.core/MapEntry")), false);
+  assert.equal(valueMatchesTypeForm(foreignEntry, new CalcitSymbol("MapEntry")), false);
   accepts(nominalBox, "outcome", variant(core.Result, "err", "failed"));
   rejects(nominalBox, "outcome", "failed");
 
