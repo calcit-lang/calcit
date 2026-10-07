@@ -278,6 +278,19 @@ core 中带 `:deprecated` 标记的 15 个兼容名在 0.29.0 仍可调用，行
 
 这些名字以及 `round?`、`foldl'` / `reduce` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零后，在下一个非 patch 版本删除，并在本文列出删除项。
 
+### 类型表示的历史变体盘点（#1554）
+
+`CalcitTypeAnnotation` 的 `Optional`、`Custom`、`DynFn`、`StructValue` / `EnumValue` 与 `StructDef` / `EnumDef` 在 0.30.0 仍然保留。它们不只是 Snapshot 的旧写法：当前源码、core 内置 proc 签名和活跃下游默认分支都还在构造它们，删除会让这些项目的 schema 失效，因此没有满足退场条件。
+
+| 变体 | 当前仍在使用的位置 | 结论 |
+|---|---|---|
+| `Optional` | 本仓库 `src` 中 105 处 `CalcitTypeAnnotation::Optional` 引用（含 `proc_name.rs` 中返回可空值的内置 proc 签名）；`calcit/test-struct.cirru`、`test-generics.cirru`、`test.cirru` 中 19 处 `'Optional` schema；下游 Respo/alerts.calcit、Memkits/genai.calcit、Erigeron/edn-renderer、TopixIM/diary 的默认分支 | 保留。公共 schema 已由 `E_LEGACY_OPTIONAL_SCHEMA` 在严格模式拒绝，core `&` 原语与 `nil->option` 桥是内部边界 |
+| `Custom` | `'Struct`、`'StructDef`、`'EnumDef`、`'Trait`、`'Impl` 作为 schema 标记，在 110 个下游仓库的 `*.cirru` 中出现（`'Trait` 440 处、`'StructDef` 434 处）；`Calcit::Impl` 的推断结果与 `from_calcit` 的兜底也使用它 | 保留。需要先为这些标记提供专用变体或明确诊断，再删除兜底 |
+| `DynFn` | 19 个下游仓库的 `calcit.cirru` 在 `:args` 等位置写裸 `'Fn`（87 行，含 Respo/respo.calcit、Respo/alerts.calcit、mvc-works/ws-edn.calcit、Termina/termina）；内置 proc 与 `E_FFI_IR_CALLBACK_TYPE` 诊断也依赖它 | 保留。是否表示为参数与返回均为 Dynamic 的 `Fn`，须先让证明与诊断对两者保持一致 |
+| `StructValue` / `EnumValue` 与 `StructDef` / `EnumDef` | 前者描述值的推断类型，后者描述 `defstruct` / `defenum` 产生的一等定义值，分支语义不同 | 保留，没有可合并的重复分支 |
+
+退场条件与 [兼容入口的退场节奏](#兼容入口的退场节奏) 相同：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码、CI/文档引用）对旧写法清零，依赖模块与未合并迁移核对完毕，才在下一个非 patch 版本删除，并在本文列出删除项与迁移命令。扫描范围为 calcit-lang、Respo、Cumulo、TopixIM、mvc-works、Quamolit、Cirru、Memkits、Phlox-GL、Quatrefoil-GL、Triadica、Erigeron、Termina、WebGPU-Art、worktools 等组织下带 `calcit.cirru` 的默认分支，只统计 `*.cirru` 源码。
+
 ## WASM 的 nil 类型证据
 
 WASM 后端现在依据静态类型证据 lowering `nil?`，从而让 `some? false`、`some? 0` 与 native、JavaScript 保持一致。当前 scalar ABI 中 nil、false 与数值 0 的位表示不能单靠运行时比较区分；因此具体类型的参数会直接得到确定的 nil 判断结果，同时原表达式仍严格求值一次，不会跳过副作用。
