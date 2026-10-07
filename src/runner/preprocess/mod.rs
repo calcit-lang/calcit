@@ -5977,7 +5977,17 @@ fn reject_unproven_struct_update(
     return Ok(());
   };
   let Some(receiver) = args.first() else { return Ok(()) };
+  // `&struct:with` checks every written value against the receiver's declared
+  // field type at runtime (native and JS). A write the checker cannot resolve
+  // statically is therefore a checked boundary rather than an unproven one.
+  let runtime_checked = matches!(head, Calcit::Proc(CalcitProc::NativeStructWith));
   for (index, field, _) in pairs {
+    if runtime_checked
+      && (!matches!(field, Calcit::Tag(_) | Calcit::Str(_))
+        || !resolve_type_value(receiver, scope_types).is_some_and(|ty| ty.resolve_to_struct().is_some()))
+    {
+      continue;
+    }
     let field_name = match field {
       Calcit::Tag(tag) => tag.ref_str(),
       Calcit::Str(name) => name.as_ref(),

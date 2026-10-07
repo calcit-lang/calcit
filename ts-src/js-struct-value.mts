@@ -15,6 +15,15 @@ import {
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 
 import { CalcitStructDef } from "./js-struct-def.mjs";
+import { valueMatchesTypeForm } from "./js-type-form.mjs";
+
+/// Field writes check the declared field type, like the native runtime.
+let assertFieldValue = (structRef: CalcitStructDef, idx: number, value: CalcitValue, operation: string): void => {
+  const fieldType = structRef?.fieldTypes?.[idx];
+  if (fieldType != null && !valueMatchesTypeForm(value, fieldType)) {
+    throw new Error(`${operation} field :${structRef.fields[idx].value} expects type ${toString(fieldType, true)}, but received ${toString(value, true)}`);
+  }
+};
 
 export class CalcitStructValue {
   name: CalcitTag;
@@ -60,6 +69,7 @@ export class CalcitStructValue {
     let k_id = castTag(k);
     for (let idx = 0; idx < this.fields.length; idx++) {
       if (this.fields[idx] === k_id) {
+        assertFieldValue(this.structRef, idx, v, "&struct:assoc");
         values[idx] = v;
       } else {
         values[idx] = this.values[idx];
@@ -75,6 +85,7 @@ export class CalcitStructValue {
   assocAt(index: CalcitValue, field: CalcitValue, value: CalcitValue): CalcitStructValue {
     const idx = checkedStructIndex(index, "&struct:assoc-at");
     this.assertFieldAt(idx, field, "&struct:assoc-at");
+    assertFieldValue(this.structRef, idx, value, "&struct:assoc-at");
     const values = this.values.slice();
     values[idx] = value;
     return new CalcitStructValue(this.name, this.fields, values, this.structRef);
@@ -87,6 +98,7 @@ export class CalcitStructValue {
     for (let base = 0; base < triples.length; base += 3) {
       const idx = checkedStructIndex(triples[base], "&struct:with-at");
       this.assertFieldAt(idx, triples[base + 1], "&struct:with-at");
+      assertFieldValue(this.structRef, idx, triples[base + 2], "&struct:with-at");
       values[idx] = triples[base + 2];
     }
     return new CalcitStructValue(this.name, this.fields, values, this.structRef);
@@ -257,6 +269,7 @@ export let _$n_struct_$o_with = (proto: CalcitValue, ...xs: Array<CalcitValue>):
       if (idx < 0) {
         throw new Error(`Cannot find field ${k} among ${proto.fields}`);
       }
+      assertFieldValue(proto.structRef, idx, v, "&struct:with");
       values[idx] = v;
     }
     return new CalcitStructValue(proto.name, proto.fields, values, proto.structRef);

@@ -203,6 +203,16 @@
           :schema $ :: 'Fn $ {} (:return 'T)
             :args $ [] 'T 'K 'V
             :generics $ [] 'T 'K 'V
+        '&assoc:struct $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn &assoc:struct (x k v)
+            if (struct? x)
+              if (tag? k) (&struct:with x k v)
+                raise $ &str:concat "|assoc expected a Tag field for struct, but received: " $ to-lispy-string k
+              raise $ &str:concat "|&assoc:struct expected a struct, but received: " $ to-lispy-string x
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T 'K 'V
+            :generics $ [] 'T 'K 'V
         '&atom:deref $ %{} 'CodeEntry
           :doc "|internal function for dereferencing atoms\nSyntax: (&atom:deref atom)\nParams: atom (atom)\nReturns: any\nReturns current value of atom"
           :code $ quote &runtime-implementation
@@ -3964,9 +3974,8 @@
               if (&= kind :list) (&assoc:list x k v)
                 if (&= kind :map) (&assoc:map x k v)
                   if (&= kind :enum) (&assoc:enum x k v)
-                    if (&= kind :struct)
-                      raise "|assoc cannot prove a Struct field write when the receiver type is unknown; annotate the receiver as its Struct type so the call is checked, or construct a new Struct value"
-                      raise $ &str:concat "|assoc expected a list, map or enum, but received: " $ to-lispy-string x
+                    if (&= kind :struct) (&assoc:struct x k v)
+                      raise $ &str:concat "|assoc expected a list, map, enum or struct, but received: " $ to-lispy-string x
           :examples $ []
             quote $ assert= (&{} :a 1 :b 2)
               assoc (&{} :a 1) :b 2
