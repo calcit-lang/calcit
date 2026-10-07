@@ -1203,13 +1203,29 @@
                 [] ([] :a 2) ([] :b 12)
                 fn (k v) (> v 10)
             :tags $ #{} :core :unit
+        '&list:find-index-from $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn &list:find-index-from (xs f i)
+            if
+              &>= i $ &list:count xs
+              %none
+              if
+                f $ &list:nth xs i
+                %some i
+                recur xs f $ &+ i 1
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T)
+              :: 'Fn $ {} (:return 'Bool)
+                :args $ [] 'T
+              , 'Number
+            :generics $ [] 'T
+            :return $ :: 'Option 'Number
         '&list:find-last $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:find-last (xs f)
-            foldr-shortcut xs (%none) (%none)
-              fn (_acc x)
-                if (f x)
-                  :: true $ %some x
-                  :: false $ %none
+            match (&list:find-last-index xs f)
+              (:some i)
+                %some $ &list:nth xs i
+              (:none) (%none)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T)
@@ -1231,13 +1247,7 @@
               :tags $ #{} :core :unit
         '&list:find-last-index $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:find-last-index (xs f)
-            foldr-shortcut xs
-              dec $ count xs
-              %none
-              fn (idx x)
-                if (f x)
-                  :: true $ %some idx
-                  :: false $ &- 1 idx
+            &list:find-last-index-from xs f $ &- (&list:count xs) 1
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T)
@@ -1255,6 +1265,21 @@
                 &list:find-last-index ([] 1 3)
                   fn (x) (> x 8)
             :tags $ #{} :core :unit
+        '&list:find-last-index-from $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn &list:find-last-index-from (xs f i)
+            if (&< i 0) (%none)
+              if
+                f $ &list:nth xs i
+                %some i
+                recur xs f $ &- i 1
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T)
+              :: 'Fn $ {} (:return 'Bool)
+                :args $ [] 'T
+              , 'Number
+            :generics $ [] 'T
+            :return $ :: 'Option 'Number
         '&list:first $ %{} 'CodeEntry
           :doc "|internal function for getting first list element\nSyntax: (&list:first list)\nParams: list (list)\nReturns: any or nil\nReturns first element of list, nil if empty"
           :code $ quote &runtime-implementation
@@ -1327,13 +1352,11 @@
           :tags $ #{} :builtin :internal
         '&list:last-index-of $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:last-index-of (xs item)
-            foldr-shortcut xs
-              dec $ count xs
-              %none
-              fn (idx x)
-                if (&= item x)
-                  :: true $ %some idx
-                  :: false $ &- 1 idx
+            &list:find-last-index xs $ defn %last-index-of (x)
+              hint-fn $ {}
+                :args $ [] 'T
+                :return 'Bool
+              &= item x
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T) 'T
@@ -1465,6 +1488,19 @@
             :code $ quote $ assert= :b
               &list:nth ([] :a :b :c) 1
             :tags $ #{} :core :unit
+        '&list:numbers $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn &list:numbers (xs)
+            foldl xs ([])
+              defn %&list:numbers (acc x)
+                hint-fn $ {}
+                  :args $ [] (:: 'List 'Number) 'Dynamic
+                  :return $ :: 'List 'Number
+                if (number? x) (append acc x)
+                  raise $ &str:concat "|expected a Number item, but received: " $ to-lispy-string x
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'Dynamic
+            :return $ :: 'List 'Number
         '&list:prepend $ %{} 'CodeEntry (:doc |)
           :code $ quote $ &runtime-implementation
           :examples $ []
@@ -6227,11 +6263,10 @@
             :tags $ #{} :core :unit
         'find $ %{} 'CodeEntry (:doc "|Find the first matching list item as Option<T>.")
           :code $ quote $ defn find (xs f)
-            foldl-shortcut xs 0 (%none)
-              defn %find (_acc x)
-                if (f x)
-                  :: true $ %some x
-                  :: false $ %none
+            match (&list:find-index-from xs f 0)
+              (:some i)
+                %some $ &list:nth xs i
+              (:none) (%none)
           :examples $ []
             quote $ assert= (%some 2)
               find ([] 1 2 3)
@@ -6252,12 +6287,7 @@
             :tags $ #{} :core :unit
         'find-index $ %{} 'CodeEntry
           :doc "|Find the first matching list index as Option<Number>."
-          :code $ quote $ defn find-index (xs f)
-            foldl-shortcut xs 0 (%none)
-              defn %find-index (index x)
-                if (f x)
-                  :: true $ %some index
-                  :: false $ &+ 1 index
+          :code $ quote $ defn find-index (xs f) (&list:find-index-from xs f 0)
           :examples $ []
             quote $ assert= (%some 1)
               find-index ([] 1 2 3)
@@ -7867,11 +7897,13 @@
         'index-of $ %{} 'CodeEntry
           :doc "|Find the first list item index as Option<Number>."
           :code $ quote $ defn index-of (xs item)
-            foldl-shortcut xs 0 (%none)
-              defn %index-of (index x)
-                if (&= item x)
-                  :: true $ %some index
-                  :: false $ &+ 1 index
+            &list:find-index-from xs
+              defn %index-of (x)
+                hint-fn $ {}
+                  :args $ [] 'T
+                  :return 'Bool
+                &= item x
+              , 0
           :examples $ []
             quote $ assert= (%some 1)
               index-of ([] |a |b) |b
@@ -8177,22 +8209,11 @@
               :tags $ #{} :core :types :unit
         'keys-non-nil $ %{} 'CodeEntry (:doc "|Get keys from a map that have non-nil values")
           :code $ quote $ defn keys-non-nil (x)
-            apply-args
-                #{}
-                to-pairs x
-              fn (acc pairs)
-                hint-fn $ {}
-                  :args $ [] (:: 'Set 'K) 'Set
-                  :return $ :: 'Set 'K
-                match (destruct-set pairs)
-                  (:none) acc
-                  (:some pair remaining)
-                    if
-                      nil? $ &list:last pair
-                      recur acc remaining
-                      recur
-                        include acc $ &list:nth pair 0
-                        , remaining
+            &map:keys $ &map:filter-kv x $ defn %keys-non-nil (_k v)
+              hint-fn $ {}
+                :args $ [] 'K 'V
+                :return 'Bool
+              not $ nil? v
           :examples $ []
             quote $ assert= (#{} :a :b)
               keys-non-nil $ {} (:a 1) (:b 2) (:c nil)
@@ -8708,12 +8729,9 @@
             foldl xs ([])
               defn %map-indexed (acc x)
                 hint-fn $ {}
-                  :generics $ [] 'U
-                  :args $ []
-                    :: 'acc $ :: 'List 'U
-                    :: 'x 'Dynamic
+                  :args $ [] (:: 'List 'U) 'T
                   :return $ :: 'List 'U
-                append acc $ f (count acc) x
+                append acc $ f (&list:count acc) x
           :examples $ []
             quote $ assert= ([] 10 21 32)
               map-indexed ([] 10 20 30)
@@ -8886,7 +8904,12 @@
                   ([] 1 2) .bind $ fn (x) ([] x x)
               :tags $ #{} :core :unit
         'max $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn max (xs) (.max xs)
+          :code $ quote $ defn max (xs)
+            if (list? xs)
+              &list:max $ &list:numbers xs
+              if (set? xs)
+                &list:max $ &list:numbers $ &set:to-list xs
+                raise $ &str:concat "|max expected a list or set, but received: " $ to-lispy-string xs
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'T
@@ -8992,7 +9015,12 @@
               merge-non-nil ({,} :a 1 :b 2 :c 3) ({,} :a nil :b 12) ({,} :c nil :d 14)
             :tags $ #{} :core :unit
         'min $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn min (xs) (.min xs)
+          :code $ quote $ defn min (xs)
+            if (list? xs)
+              &list:min $ &list:numbers xs
+              if (set? xs)
+                &list:min $ &list:numbers $ &set:to-list xs
+                raise $ &str:concat "|min expected a list or set, but received: " $ to-lispy-string xs
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'T

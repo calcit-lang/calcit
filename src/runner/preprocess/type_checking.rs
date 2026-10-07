@@ -1344,6 +1344,10 @@ pub(super) fn expression_is_proven_for(
               .skip(1)
               .all(|value| self.check(value, member, scope, aliases, false, depth + 1));
           }
+          // A fresh Ref has no other aliases yet, so its initial value decides it.
+          (Some(Calcit::Proc(CalcitProc::Atom)), CalcitTypeAnnotation::Ref(inner)) if items.len() == 2 => {
+            return self.check(items.get(1).unwrap(), inner, scope, aliases, false, depth + 1);
+          }
           (Some(Calcit::Proc(CalcitProc::NativeMap)), CalcitTypeAnnotation::Map(key, value)) if (items.len() - 1).is_multiple_of(2) => {
             return (1..items.len()).step_by(2).all(|index| {
               self.check(items.get(index).unwrap(), key, scope, aliases, false, depth + 1)

@@ -693,10 +693,13 @@ pub(crate) fn infer_function_exit_type(
           if !matches!(
             resolve_type_value(argument, scope)?.prove_with_bindings(expected, &mut bindings),
             crate::calcit::type_annotation::TypeProof::Proven
-          ) || !bindings.is_empty()
+          ) || !bindings
+            .iter()
+            .all(|(name, bound)| matches!(bound.as_ref(), CalcitTypeAnnotation::TypeVar(same) if same == name))
           {
             // Recur preserves the current instantiation. Unlike a new call,
-            // it cannot infer fresh substitutions for lexical type variables.
+            // it cannot infer fresh substitutions for lexical type variables;
+            // passing a parameter's own type variable through is the identity.
             return None;
           }
         }
@@ -1813,7 +1816,12 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
         // A trusted coercion changes the ordinary static contract, but it is
         // not independent evidence in a proof audit. Retain the input evidence
         // so locals and producer returns cannot lend the cast its own proof.
-        Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _) if super::REQUIRE_ASSERTION_PROOF.with(std::cell::Cell::get) => {
+        // Inside a lexical `:js-ffi` adapter the coercion is the documented host
+        // boundary for shapes `js-cast` cannot check; the strict workflow reports
+        // it as a retained FFI boundary instead of requiring a second proof.
+        Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _)
+          if super::REQUIRE_ASSERTION_PROOF.with(std::cell::Cell::get) && !super::js_ffi::current_function_has_js_ffi_feature() =>
+        {
           xs.get(1).and_then(|input| resolve_type_value(input, scope_types))
         }
         Calcit::Syntax(CalcitSyntax::AssertType | CalcitSyntax::UnsafeCoerce | CalcitSyntax::JsCast, _) => xs
