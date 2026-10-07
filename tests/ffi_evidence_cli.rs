@@ -131,6 +131,23 @@ fn strict_workflow_reuses_ffi_boundary_evidence() {
   assert_eq!(boundary["classification"], "browser");
   assert_eq!(boundary["provenance"][3], "no-runtime-trust-inference");
   assert!(boundary["unsafe_paths"].as_array().is_some_and(|items| !items.is_empty()));
+
+  // Only external-object traits are trusted host handle targets for `unsafe-coerce`.
+  let return_mismatch = |definition: &str| {
+    report["diagnostics"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .any(|item| item["code"] == "W_FN_RETURN_TYPE_MISMATCH" && item["definition"] == definition)
+  };
+  assert!(
+    return_mismatch("ffi-strict.main/as-label"),
+    "a host value coerced to an ordinary Calcit trait still needs proof"
+  );
+  assert!(
+    !return_mismatch("ffi-strict.main/as-node"),
+    "a coercion to an external-object trait stays a retained host boundary"
+  );
 }
 
 #[test]

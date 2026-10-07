@@ -676,18 +676,19 @@ fn infer_try_return_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Ar
 fn unsafe_coerce_targets_host_handle(form: Option<&Calcit>) -> bool {
   let Some(form) = form else { return false };
   let target = resolve_program_trait_refs_for_body(CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &[]));
+  // An ordinary Calcit trait describes Calcit values with impls, so a host
+  // value coerced to it still needs proof; only external-object traits qualify.
+  let host_object = |annotation: &CalcitTypeAnnotation| match annotation {
+    CalcitTypeAnnotation::JsObject => true,
+    CalcitTypeAnnotation::Trait(trait_def) => trait_is_external_object(trait_def),
+    CalcitTypeAnnotation::TraitSet(traits) => !traits.is_empty() && traits.iter().all(|trait_def| trait_is_external_object(trait_def)),
+    _ => false,
+  };
   match target.as_ref() {
     // A callable's parameter and result types cannot be checked at runtime either.
-    CalcitTypeAnnotation::JsObject
-    | CalcitTypeAnnotation::Trait(_)
-    | CalcitTypeAnnotation::TraitSet(_)
-    | CalcitTypeAnnotation::Fn(_)
-    | CalcitTypeAnnotation::DynFn => true,
-    CalcitTypeAnnotation::JsNullish(inner) => matches!(
-      inner.as_ref(),
-      CalcitTypeAnnotation::JsObject | CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_)
-    ),
-    _ => false,
+    CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn => true,
+    CalcitTypeAnnotation::JsNullish(inner) => host_object(inner),
+    other => host_object(other),
   }
 }
 
