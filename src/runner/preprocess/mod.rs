@@ -12032,6 +12032,26 @@ fn empty_container_context_preserves_the_container_family() {
 /// evidence only: narrowing into a generic relation, and narrowing an
 /// explicitly open value into a concrete parameter (#1767). Unknown evidence
 /// and inference fallbacks stay outside ordinary policy.
+/// A bare generic parameter that has no trait bound and occurs in no other
+/// argument, rest or return position relates nothing, so it accepts any value
+/// like `Dynamic` does; only a shared or bounded generic needs argument evidence.
+fn generic_param_accepts_any_value(signature: &CalcitFnTypeAnnotation, index: usize, expected: &CalcitTypeAnnotation) -> bool {
+  let CalcitTypeAnnotation::TypeVar(name) = expected else {
+    return false;
+  };
+  if !signature.generics.iter().any(|generic| generic == name) || signature.where_bounds.iter().any(|bound| &bound.name == name) {
+    return false;
+  }
+  let used_elsewhere = signature
+    .arg_types
+    .iter()
+    .enumerate()
+    .any(|(other, arg_type)| other != index && arg_type.contains_type_var_named(name))
+    || signature.rest_type.as_ref().is_some_and(|rest| rest.contains_type_var_named(name))
+    || signature.return_type.contains_type_var_named(name);
+  !used_elsewhere
+}
+
 fn find_unproven_generic_argument(
   signature: &CalcitFnTypeAnnotation,
   args: &CalcitList,
@@ -12092,6 +12112,9 @@ fn find_unproven_generic_argument(
   let mut call_proof = CallTypeProof::new(&signature.generics, &expected_types, &actual_types);
   let mut inspect = |index: usize, arg: &Calcit, expected: &Arc<CalcitTypeAnnotation>| {
     if matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic) {
+      return None;
+    }
+    if generic_param_accepts_any_value(signature, index, expected.as_ref()) {
       return None;
     }
     if empty_container_has_no_type_evidence(arg, expected.as_ref()) {
@@ -12863,6 +12886,37 @@ mod tests {
   };
   use crate::data::cirru::code_to_calcit;
   use cirru_parser::Cirru;
+
+  #[test]
+  fn single_use_unbounded_generic_param_accepts_any_value() {
+    let var: Arc<str> = Arc::from("T");
+    let type_var = Arc::new(CalcitTypeAnnotation::TypeVar(var.clone()));
+    let string = Arc::new(CalcitTypeAnnotation::String);
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let mut signature = CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![var.clone()]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![string, type_var.clone()],
+      return_type: number,
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    };
+    assert!(generic_param_accepts_any_value(&signature, 1, &type_var));
+
+    signature.return_type = type_var.clone();
+    assert!(
+      !generic_param_accepts_any_value(&signature, 1, &type_var),
+      "a generic flowing to the return still needs argument evidence"
+    );
+
+    signature.return_type = Arc::new(CalcitTypeAnnotation::Number);
+    signature.arg_types[0] = type_var.clone();
+    assert!(
+      !generic_param_accepts_any_value(&signature, 1, &type_var),
+      "a generic shared by two arguments relates them"
+    );
+  }
 
   #[test]
   fn rest_spread_proof_projection_preserves_operand_and_fixed_arity() {
