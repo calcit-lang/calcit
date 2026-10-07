@@ -70,6 +70,31 @@ try {
     env: { ...process.env, CALCIT_BIN: binary }, stdio: "pipe",
   });
 
+  // A field write the checker leaves to runtime goes through the generated JS
+  // matcher; each outcome follows the native `value_matches_type_annotation`.
+  const writeOutput = join(output, "checked-field-write");
+  execFileSync(binary, ["--emit-path", writeOutput, appliedFixture, "js"], { stdio: "pipe" });
+  const procs = await import(pathToFileURL(resolve("lib/calcit.procs.mjs")).href);
+  const boxes = await import(pathToFileURL(join(writeOutput, "app.checked-write.mjs")).href);
+  const makeBox = (def, fields) =>
+    procs._$n__PCT__$M_(def, ...Object.entries(fields).flatMap(([name, value]) => [procs.newTag(name), value]));
+  const writeField = (box, name, value) => procs._$n_struct_$o_with(box, procs.newTag(name), value);
+  const accepts = (box, name, value) => assert.doesNotThrow(() => writeField(box, name, value), `:${name} must accept ${procs.toString(value, true)}`);
+  const rejects = (box, name, value) => assert.throws(() => writeField(box, name, value), /expects type/, `:${name} must reject ${procs.toString(value, true)}`);
+
+  // Nil is `null` and Unit is `undefined`; only JsNullish admits both.
+  const nilBox = makeBox(boxes.NilBox, { opt: null, none: null, host: null });
+  accepts(nilBox, "opt", null);
+  accepts(nilBox, "opt", 1);
+  rejects(nilBox, "opt", undefined);
+  rejects(nilBox, "opt", "1");
+  accepts(nilBox, "none", null);
+  rejects(nilBox, "none", undefined);
+  accepts(nilBox, "host", null);
+  accepts(nilBox, "host", undefined);
+  accepts(nilBox, "host", 2);
+  rejects(nilBox, "host", "2");
+
   const snapshot = join(output, "applied-struct-negative.cirru");
   const a = "model/ReelLike :base (data/DbA :value 1) :db (data/DbA :value 2) :records ([]) :merged? false";
   const b = "model/ReelLike :base (data/DbB :value |one) :db (data/DbB :value |two) :records ([]) :merged? false";
@@ -141,7 +166,7 @@ try {
       assert.deepEqual(await readFile(snapshot), original);
     }
   }
-  console.log("Applied Struct evidence: all-defs entry checking, 4 native/JS attached tests, 1 shared WASM test, 10 native/JS strict rejections and 2 rigid generic return audits.");
+  console.log("Applied Struct evidence: all-defs entry checking, 4 native/JS attached tests, JS runtime field-write checks, 1 shared WASM test, 10 native/JS strict rejections and 2 rigid generic return audits.");
 } finally {
   await rm(output, { recursive: true, force: true });
 }

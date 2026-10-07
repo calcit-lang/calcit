@@ -160,6 +160,17 @@
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.applied-reader
           :require (app.applied-data :as data) (app.applied-model :as model)
+    'app.checked-write $ %{} 'FileEntry
+      :defs $ {} $ 'NilBox
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NilBox
+            :opt $ :: 'Optional 'Number
+            :none 'Nil
+            :host $ :: 'JsNullish 'Number
+          :examples $ []
+          :schema $ :: 'StructDef
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.checked-write
     'app.main $ %{} 'FileEntry
       :defs $ {}
         'main! $ %{} 'CodeEntry (:doc |)
