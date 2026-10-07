@@ -9850,11 +9850,25 @@
             :return $ :: 'Result 'String 'String
           :tags $ #{} :core :io
         'recur $ %{} 'CodeEntry
-          :doc "|internal function for tail recursion\nSyntax: (recur args...)\nParams: args (any, variable number)\nReturns: recur structure for tail call optimization\nEnables tail call optimization by marking recursive calls"
+          :doc "|internal function for tail recursion\nSyntax: (recur args...)\nParams: args (any, variable number)\nReturns: recur structure for tail call optimization\nEnables tail call optimization by marking recursive calls\nNotes: recur must be called directly in tail position of the enclosing function or loop body; tail position flows through if branches, the last form of let/do, match branch bodies and the try body. Other uses fail the check, and an escaping recur value is a runtime error."
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |recurs-from-try-and-match-tail-positions)
+            :code $ quote $ do
+              assert= 4 $ loop
+                  a 1
+                try
+                  if (> a 3) a $ recur $ inc a
+                  fn (e) 0
+              assert= 4 $ loop
+                  a 1
+                match (:: :some a)
+                  (:some x)
+                    if (> x 3) x $ recur $ inc x
+                  _ 0
+            :tags $ #{} :core :unit
         'reduce $ %{} 'CodeEntry
           :doc "|Collection reduction operation\nFunction: Reduces a collection using a specified function, accumulating elements onto an initial value\nParams: xs (collection), x0 (initial accumulator value), f (reduction function that takes accumulator and current element)\nReturns: any type - final accumulated result\nNotes: The reduction function f should accept two parameters (accumulator, current element) and return a new accumulator value"
           :code $ quote $ defn reduce (xs x0 f) (foldl xs x0 f)

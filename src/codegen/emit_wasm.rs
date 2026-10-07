@@ -5857,6 +5857,7 @@ fn compile_fn(
     ctx.arg_indices.push(i as u32);
   }
 
+  reject_non_tail_recur(body, &format!("{source_ns}/{export_name}"))?;
   // Check if body uses recur
   ctx.uses_recur = body.iter().any(check_uses_recur);
 
@@ -5876,6 +5877,19 @@ fn compile_fn(
     locals: ctx.extra_locals,
     instructions: ctx.instructions,
   })
+}
+
+/// `recur` lowers to a branch back to the loop start, which matches its semantics only in
+/// tail position; anywhere else it would silently restart the loop, so it is rejected with
+/// the same tail-position rule preprocessing uses.
+fn reject_non_tail_recur(body: &[Calcit], owner: &str) -> Result<(), String> {
+  match crate::runner::preprocess::non_tail_recur_forms(body).first() {
+    Some(form) => Err(format!(
+      "recur must be called directly in tail position of the function body in {owner}, got: {}",
+      form.lisp_str()
+    )),
+    None => Ok(()),
+  }
 }
 
 fn check_uses_recur(expr: &Calcit) -> bool {
@@ -5956,6 +5970,7 @@ fn emit_inline_iife(ctx: &mut WasmGenCtx, params: &[String], body: &[Calcit], in
   }
 
   // Emit body — with a loop wrapper if TCO recur is needed.
+  reject_non_tail_recur(body, "inline function")?;
   let uses_recur = body.iter().any(check_uses_recur);
   if uses_recur {
     let old_arg_indices = std::mem::replace(&mut ctx.arg_indices, param_locals);
@@ -9587,8 +9602,8 @@ mod tests {
     build_wasi_component_select_preopen_fn, build_wasm_module, component_abi_type, component_export_needs_post_return,
     component_flat_types, component_import_signature, component_memory_layout, component_task_return_signature, emit_call_expr,
     emit_proc_call, expr_uses_wasi_file, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
-    reject_reachable_wasi_command_dependencies, validate_component_export_symbols, validate_component_flat_parameters,
-    validate_component_import_symbols, wasi_component_file_imports, wasm_non_nil_value_is_nonzero,
+    reject_non_tail_recur, reject_reachable_wasi_command_dependencies, validate_component_export_symbols,
+    validate_component_flat_parameters, validate_component_import_symbols, wasi_component_file_imports, wasm_non_nil_value_is_nonzero,
   };
   use crate::calcit::{
     Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitProc, CalcitStructDef, CalcitStructValue, CalcitSymbolInfo,
@@ -9597,6 +9612,23 @@ mod tests {
   use cirru_edn::EdnTag;
   use wasm_encoder::{Instruction, ValType};
   use wasmtime::{Caller, Engine, Extern, Func, Instance, Module, Store};
+
+  /// WASM lowers `recur` to a branch, so a non-tail use would silently restart the loop.
+  #[test]
+  fn rejects_recur_outside_tail_position() {
+    let recur = || Calcit::from(vec![Calcit::Proc(CalcitProc::Recur), Calcit::Number(1.0)]);
+    let tail = [Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::If, Arc::from("tests.wasm")),
+      Calcit::Bool(true),
+      Calcit::Number(0.0),
+      recur(),
+    ])];
+    assert!(reject_non_tail_recur(&tail, "tests.wasm/f").is_ok());
+
+    let escaping = [Calcit::from(vec![Calcit::Proc(CalcitProc::List), recur()])];
+    let error = reject_non_tail_recur(&escaping, "tests.wasm/f").expect_err("non-tail recur");
+    assert!(error.contains("tail position"), "{error}");
+  }
 
   #[test]
   fn symbol_call_prefers_its_namespace_over_a_same_named_function() {

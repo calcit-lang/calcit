@@ -99,6 +99,21 @@ calcit calcit.cirru fix --workflow strict --verify --format edn
 
 不同来源 trait 的同名方法仍可通过 `&trait-call` 消歧。此变更不调整兼容模式中普通 `.method` 的历史查找顺序，也不增加新的运行时配置开关。
 
+## `recur` 的尾部位置
+
+`recur` 必须在函数体或 `loop` 体的尾部位置直接调用。尾部位置沿 `if` 分支、`let` / `do` 的最后一个表达式、`match` 分支体和 `try` 的主体传递；宏展开后产生的 `recur` 按展开结果同样检查，`calcit.core` 也不例外。
+
+```cirru
+loop ((a 1))
+  try
+    if (> a 3) a $ recur $ inc a
+    fn (e) 0
+```
+
+以下写法在检查阶段报错：把 `recur` 的结果放进集合或作为参数、放在非最后一个表达式中、用作 `if` 条件或 `let` 绑定值，以及把 `recur` 本身作为值绑定或传递（如 `let ((r recur)) ...`、`apply recur xs`）。此前 `try` / `match` 内部的这类写法会通过检查，运行时把 `Recur` 当作普通数据或直接丢弃。升级时把 `recur` 移到尾部，或改为普通递归调用；原写法的行为本身有误，没有自动 fix。
+
+native runtime 遇到逃逸的 `Recur` 值（出现在参数、绑定、条件、被丢弃的表达式或定义值中）会报错；JS 与 WASM codegen 对非尾部 `recur` 报错，不再生成会泄漏数据或静默重启循环的代码。
+
 ## `str-spaced` 的首参数与格式化边界
 
 `str-spaced` 的签名明确为 `(x0 & xs)`：至少传一个值，跳过 nil，以空格连接其余值的文本。单个 nil 或全 nil 仍返回空字符串，空字符串本身仍占据一个拼接位置。内部拼接函数只接收 String；异质值的转换保留在公开格式化边界，不再让 nullable 泛型进入拼接过程。

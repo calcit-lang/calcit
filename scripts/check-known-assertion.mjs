@@ -28,6 +28,26 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
+  // Reuse the source rejection fixture on every preprocessing entry. Codegen
+  // must not hide a non-tail recurrence behind an unsupported target feature.
+  const recurFixture = join(project, "non-tail-recur.cirru");
+  await copyFile("tests/fixtures/non-tail-recur.cirru", recurFixture);
+  const recurOriginal = await readFile(recurFixture);
+  for (const name of ["bad-in-list", "bad-in-str", "bad-before-tail", "bad-in-try",
+    "bad-in-match", "bad-alias", "bad-from-macro"]) {
+    for (const mode of [[], ["--check-only"], ["js"], ["wasm"], ["wasm", "--check-only"], ["wasi"], ["wasi", "--check-only"]]) {
+      const label = `${name} ${mode.join(" ") || "native"}`;
+      const output = join(project, `recur-${name}-${mode.join("-") || "native"}`);
+      const rejected = spawnSync(binary, [recurFixture, "--init-fn", `app.main/${name}`,
+        "--reload-fn", `app.main/${name}`, "--emit-path", output, ...mode], options);
+      if (rejected.error) throw rejected.error;
+      assert.equal(rejected.status, 1, `${label}\n${rejected.stdout}\n${rejected.stderr}`);
+      assert.match(`${rejected.stdout}\n${rejected.stderr}`, /tail position/, label);
+      await assertRejectedArtifacts(output, label, /tail position/, mode[0] === "js");
+      assert.deepEqual(await readFile(recurFixture), recurOriginal);
+    }
+  }
+
   // These are shared surface contracts, not JavaScript coercion rules. Replay
   // the exact attached ASTs before testing compiler rejection boundaries.
   const truthinessCore = "src/cirru/calcit-core.cirru";
@@ -1112,6 +1132,10 @@ try {
   const tailResponse = JSON.parse(run("query", "def", "calcit.core/foldl-compare", "--format", "json"));
   const tailTests = tailResponse.data.tests.filter(test => test.tags.includes("tail-return-proof"));
   assert.equal(tailTests.length, 3);
+  run("test", "calcit.core/recur", "--require-match");
+  const recurResponse = JSON.parse(run("query", "def", "calcit.core/recur", "--format", "json"));
+  const recurTests = recurResponse.data.tests;
+  assert.deepEqual(recurTests.map(test => test.name), ["recurs-from-try-and-match-tail-positions"]);
   run("test", "calcit.core/&str-spaced", "--tag", "tail-return-proof", "--require-match");
   const restResponse = JSON.parse(run("query", "def", "calcit.core/&str-spaced", "--format", "json"));
   const restTests = restResponse.data.tests.filter(test => test.tags.includes("tail-return-proof"));
@@ -1147,7 +1171,7 @@ try {
   const applyResponse = JSON.parse(run("query", "def", "calcit.core/&list:apply", "--format", "json"));
   const applyTests = applyResponse.data.tests.filter(test => test.name === "preserves-homogeneous-function-result-types");
   assert.equal(applyTests.length, 1);
-  setBody([...tailTests, ...restTests, ...genericTests, ...formattingTests, ...mappingTests, ...definitionTests, ...assertionTests, ...resultTests, ...exitTests, ...getTests, ...applyTests].map(test => test.code));
+  setBody([...tailTests, ...recurTests, ...restTests, ...genericTests, ...formattingTests, ...mappingTests, ...definitionTests, ...assertionTests, ...resultTests, ...exitTests, ...getTests, ...applyTests].map(test => test.code));
   run("edit", "schema", "calcit.assert-evidence/run-tests", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)");
   run("config", "set", "init-fn", "calcit.assert-evidence/run-tests");
