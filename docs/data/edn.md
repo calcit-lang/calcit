@@ -114,6 +114,8 @@ defn decode-people (raw)
 
 Its inferred return type is `Result<List<Person>,String>`, not `Result<Dynamic,String>`. Runtime parse and recursive shape failures become `:err` with the same structural context. An invalid `TypeExpr` remains a compile-time error because it is a program definition problem rather than recoverable input.
 
+`TypeExpr` 中的名义类型名按所在 namespace 的 import 解析，`parse-cirru-edn-as`、`try-parse-cirru-edn-as`、`decode-map-as` 与 `try-decode-map-as` 共用这一规则：`:as` 别名（`schema/External`）、`:refer` 导入的短名（`External`）和完整路径（`app.schema/External`）指向同一个声明，解码出的值也相同；不同 namespace 中同名的类型各自保持独立身份。别名未导入或目标定义缺失时，在编译期报 `cannot resolve named type`，不会退化为 Dynamic。
+
 ## Decoding runtime maps into Structs
 
 `decode-map-as` is the companion for data that has already crossed a host boundary and is now an evaluated Calcit value, such as a JSON object returned by a JavaScript FFI. It derives the target shape at compile time and returns the declared type, so it is the typed replacement for ad-hoc map readers and runtime schema libraries. Struct targets consume maps, while list, map, enum, ref, and scalar targets are decoded recursively as well.

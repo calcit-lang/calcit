@@ -1665,6 +1665,7 @@
                 decoded $ try-parse-cirru-edn-as "|%{} :Point (:x 1) (:y 2)" Point
                 expected $ Result :ok $ Point :x 1 :y 2
                 other $ try-parse-cirru-edn-as "|%{} :Point (:x 1) (:y 2)" test-wasm.nominal/Point
+                aliased $ try-parse-cirru-edn-as "|%{} :Point (:x 1) (:y 2)" nominal/Point
               if
                 and
                   match decoded
@@ -1677,6 +1678,7 @@
                       = value $ nominal/Point :x 1 :y 2
                     (:err _) false
                   not $ &= decoded other
+                  &= other aliased
                 , 1 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)

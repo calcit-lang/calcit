@@ -480,3 +480,74 @@ fn default_check_only_remains_fail_fast_and_format_requires_keep_going() {
     "strict preprocessing must not run a statistical quality gate"
   );
 }
+
+#[test]
+fn typed_edn_decoder_rejects_unknown_alias_and_missing_definition() {
+  // Imported type names are resolved through the namespace's imports; an unknown
+  // alias or a missing definition must stop preprocessing instead of widening to Dynamic.
+  // Positive alias / `:refer` / full-path cases live in `test-edn.main/test-imported-type-names`.
+  for (decoder, type_name, expected) in [
+    (
+      "parse-cirru-edn-as",
+      "schema/Missing",
+      "cannot resolve named type `test-edn.schema/Missing`",
+    ),
+    (
+      "try-parse-cirru-edn-as",
+      "schema/Missing",
+      "cannot resolve named type `test-edn.schema/Missing`",
+    ),
+    ("parse-cirru-edn-as", "nope/External", "cannot resolve named type `nope/External`"),
+    (
+      "try-parse-cirru-edn-as",
+      "nope/External",
+      "cannot resolve named type `nope/External`",
+    ),
+  ] {
+    let directory = TestDirectory::create();
+    let snapshot = directory.snapshot();
+    fs::copy("calcit/test-edn.cirru", &snapshot).expect("copy typed EDN fixture");
+    fs::copy("calcit/util.cirru", directory.0.join("util.cirru")).expect("copy util module");
+    let code = format!("quote $ defn probe-decoder () ({decoder} \"|%{{}} :External (:label |linked)\" {type_name})");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          "test-edn.main/probe-decoder",
+          "--input-format",
+          "cirru",
+          "--code",
+          &code,
+        ],
+      ),
+      "add decoder probe",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "add-test",
+          "test-edn.main/probe-decoder",
+          "probe",
+          "--input-format",
+          "cirru",
+          "--code",
+          "quote $ probe-decoder",
+        ],
+      ),
+      "attach decoder probe test",
+    );
+    let output = run_calcit(&snapshot, &["test", "test-edn.main/probe-decoder", "--require-match"]);
+    assert!(!output.status.success(), "{decoder} {type_name} was accepted");
+    let report = format!(
+      "{}{}",
+      String::from_utf8_lossy(&output.stdout),
+      String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(report.contains(&format!("{decoder} cannot derive a decoder")), "{report}");
+    assert!(report.contains(expected), "{report}");
+  }
+}

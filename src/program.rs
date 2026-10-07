@@ -1126,6 +1126,32 @@ pub fn lookup_ns_target_in_import(ns: &str, alias: &str) -> Option<Arc<str>> {
   }
 }
 
+/// Resolve a nominal type name written in `declaring_ns` to its `(namespace, definition)`
+/// through the namespace's import rules: `alias/Def` follows `:as` imports, a bare
+/// `Def` checks local definitions, then `:refer` imports, then `calcit.core`.
+/// Qualified names whose prefix is neither a known namespace nor an alias are kept
+/// as written so callers report them as unresolved; unresolved bare names return `None`.
+pub fn resolve_type_name_in_ns(declaring_ns: &str, name: &str) -> Option<(Arc<str>, Arc<str>)> {
+  let stripped = name.trim_start_matches('\'').trim_start_matches(':');
+  if let Some((prefix, def)) = stripped.rsplit_once('/') {
+    if has_def_code(prefix, def) {
+      Some((Arc::from(prefix), Arc::from(def)))
+    } else if let Some(target_ns) = lookup_ns_target_in_import(declaring_ns, prefix) {
+      Some((target_ns, Arc::from(def)))
+    } else {
+      Some((Arc::from(prefix), Arc::from(def)))
+    }
+  } else if has_def_code(declaring_ns, stripped) {
+    Some((Arc::from(declaring_ns), Arc::from(stripped)))
+  } else if let Some(target_ns) = lookup_def_target_in_import(declaring_ns, stripped) {
+    Some((target_ns, Arc::from(stripped)))
+  } else if has_def_code(crate::calcit::CORE_NS, stripped) {
+    Some((Arc::from(crate::calcit::CORE_NS), Arc::from(stripped)))
+  } else {
+    None
+  }
+}
+
 // imported via :default
 pub fn lookup_default_target_in_import(at_ns: &str, alias: &str) -> Option<Arc<str>> {
   let program = { PROGRAM_CODE_DATA.read().expect("read program code") };

@@ -1456,23 +1456,9 @@ fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope
 /// Source migrations also use this resolver before treating a short nominal name as core.
 pub fn resolve_namespace_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, declaring_ns: &str) -> Arc<CalcitTypeAnnotation> {
   map_type_references(annotation, &|name, resolved_args| {
-    let stripped = name.trim_start_matches('\'').trim_start_matches(':');
-    let qualified_name = if let Some((prefix, def)) = stripped.rsplit_once('/') {
-      if program::has_def_code(prefix, def) {
-        Arc::from(stripped)
-      } else if let Some(target_ns) = program::lookup_ns_target_in_import(declaring_ns, prefix) {
-        Arc::from(format!("{target_ns}/{def}"))
-      } else {
-        Arc::from(stripped)
-      }
-    } else if program::has_def_code(declaring_ns, stripped) {
-      Arc::from(format!("{declaring_ns}/{stripped}"))
-    } else if let Some(target_ns) = program::lookup_def_target_in_import(declaring_ns, stripped) {
-      Arc::from(format!("{target_ns}/{stripped}"))
-    } else if program::has_def_code(calcit::CORE_NS, stripped) {
-      Arc::from(format!("{}/{stripped}", calcit::CORE_NS))
-    } else {
-      name.clone()
+    let qualified_name = match program::resolve_type_name_in_ns(declaring_ns, name) {
+      Some((ns, def)) => Arc::from(format!("{ns}/{def}")),
+      None => name.clone(),
     };
     Arc::new(CalcitTypeAnnotation::TypeRef(qualified_name, resolved_args))
   })
@@ -11382,6 +11368,41 @@ pub fn preprocess_unsafe_coerce(
   ]))
 }
 
+/// Qualify namespace-aliased type names (`alias/Def`) inside a decoder type form
+/// through the namespace's `:as` imports. The data shape, the static result type
+/// and backend codegen all read this form, so an alias, a `:refer` name and a full
+/// path must reach the same nominal declaration. Unknown prefixes are kept so the
+/// decoder derivation reports them instead of widening to Dynamic.
+fn qualify_decoder_type_form(form: &Calcit, file_ns: &str) -> Calcit {
+  match form {
+    Calcit::Symbol { sym, info, location } => {
+      let quote_prefix = if sym.starts_with('\'') { "'" } else { "" };
+      let bare = sym.trim_start_matches('\'');
+      let Some((prefix, _)) = bare.rsplit_once('/') else {
+        return form.to_owned();
+      };
+      if program::lookup_ns_target_in_import(file_ns, prefix).is_none() {
+        return form.to_owned();
+      }
+      match program::resolve_type_name_in_ns(file_ns, bare) {
+        Some((ns, def)) => Calcit::Symbol {
+          sym: Arc::from(format!("{quote_prefix}{ns}/{def}")),
+          info: info.to_owned(),
+          location: location.to_owned(),
+        },
+        None => form.to_owned(),
+      }
+    }
+    Calcit::List(items) => Calcit::from(
+      items
+        .iter()
+        .map(|item| qualify_decoder_type_form(item, file_ns))
+        .collect::<Vec<_>>(),
+    ),
+    _ => form.to_owned(),
+  }
+}
+
 pub fn preprocess_parse_cirru_edn_as(
   head: &CalcitSyntax,
   head_ns: &str,
@@ -11415,14 +11436,15 @@ pub fn preprocess_parse_cirru_edn_as(
       text_form.get_location(),
     ));
   }
-  let type_form = args.get(1).expect("validated parse-cirru-edn-as type");
+  let source_type_form = args.get(1).expect("validated parse-cirru-edn-as type");
+  let type_form = &qualify_decoder_type_form(source_type_form, ctx.file_ns);
   let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
   let decoder = crate::calcit::data_shape::DataShapeGraph::build(target.as_ref(), ctx.file_ns).map_err(|error| {
     CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
       format!("{head} cannot derive a decoder: {error}"),
       ctx.call_stack,
-      type_form.get_location(),
+      source_type_form.get_location(),
     )
   })?;
 
@@ -11470,14 +11492,15 @@ pub fn preprocess_decode_map_as(
       value_form.get_location(),
     ));
   }
-  let type_form = args.get(1).expect("validated decode-map-as type");
+  let source_type_form = args.get(1).expect("validated decode-map-as type");
+  let type_form = &qualify_decoder_type_form(source_type_form, ctx.file_ns);
   let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
   let decoder = crate::calcit::data_shape::DataShapeGraph::build_open(target.as_ref(), ctx.file_ns).map_err(|error| {
     CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
       format!("{head} cannot derive a runtime map decoder: {error}"),
       ctx.call_stack,
-      type_form.get_location(),
+      source_type_form.get_location(),
     )
   })?;
   Ok(Calcit::from(vec![
