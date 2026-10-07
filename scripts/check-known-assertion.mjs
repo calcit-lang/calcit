@@ -2462,6 +2462,30 @@ try {
     const generated = await import(pathToFileURL(join(output, `${replayNamespace}.mjs`)).href);
     generated.replay_count_tests();
   }
+  // An open or concrete result cannot independently prove a bare generic
+  // return, whether it is the whole result or one unguarded branch; a branch
+  // guarded by a kind predicate on the generic argument still proves it.
+  for (const [name, body, accepted] of [
+    ["open-list-for-bare-t", "([])", false],
+    ["concrete-list-for-bare-t", "([] 1)", false],
+    ["open-branch-for-bare-t", "(if (= 1 1) ([] 1) xs)", false],
+    ["same-t-branches", "(if (= 1 1) xs xs)", true],
+    ["guarded-list-branch", "(if (list? xs) ([] 1) xs)", true],
+  ]) {
+    await copyFile("tests/fixtures/count-contract.cirru", snapshot);
+    run("edit", "def", "fix-command.main/bare-return", "--input-format", "cirru", "--code",
+      `quote $ defn bare-return (xs) ${body}`);
+    run("edit", "schema", "fix-command.main/bare-return", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T)");
+    run("edit", "def", "fix-command.main/bare-return-entry", "--input-format", "cirru", "--code",
+      "quote $ defn bare-return-entry () (bare-return 1) &unit");
+    run("edit", "schema", "fix-command.main/bare-return-entry", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+    run("config", "set", "init-fn", "fix-command.main/bare-return-entry");
+    const result = spawnSync(binary, [snapshot, "fix", "--workflow", "strict", "--verify", "--format", "json"], options);
+    if (result.error) throw result.error;
+    assert.equal(JSON.parse(result.stdout).data.workflow.status, accepted ? "passed" : "failed", `${name}\n${result.stdout}`);
+  }
   for (const [name, input, body, outputType, accepted] of [
     // Nominal `assoc` is lowered to a Struct update after direct-call checks;
     // the strict field-value proof must still run before that lowering.

@@ -1238,26 +1238,9 @@ pub(super) fn expression_is_proven_for(
   if expected.contains_type_var() {
     return false;
   }
-  expression_check(expr, expected, scope, async_invocation, false)
-}
 
-/// Branch-wise proof of a return declared as a bare type variable: every exit
-/// is that same variable or an open result that stays on the lossy-open path,
-/// exactly as a single joined return type would be judged.
-fn open_type_var_return_is_proven(expr: &Calcit, expected: &CalcitTypeAnnotation, scope: &ScopeTypes, async_invocation: bool) -> bool {
-  matches!(expected, CalcitTypeAnnotation::TypeVar(_)) && expression_check(expr, expected, scope, async_invocation, true)
-}
-
-fn expression_check(
-  expr: &Calcit,
-  expected: &CalcitTypeAnnotation,
-  scope: &ScopeTypes,
-  async_invocation: bool,
-  open_type_var_return: bool,
-) -> bool {
   struct ExpressionCheck {
     remaining: usize,
-    open_type_var_return: bool,
   }
 
   impl ExpressionCheck {
@@ -1397,18 +1380,11 @@ fn expression_check(
       } else {
         actual
       };
-      if self.open_type_var_return && matches!(expected, CalcitTypeAnnotation::TypeVar(_)) {
-        return actual.as_ref() == expected || is_open_return_binding(actual.as_ref());
-      }
       actual.is_proven_for(expected)
     }
   }
 
-  ExpressionCheck {
-    remaining: 16_384,
-    open_type_var_return,
-  }
-  .check(expr, expected, scope, &HashMap::new(), async_invocation, 0)
+  ExpressionCheck { remaining: 16_384 }.check(expr, expected, scope, &HashMap::new(), async_invocation, 0)
 }
 
 /// `set!` is the only operation that rebinds a lexical local (JS-FFI only). A
@@ -1435,7 +1411,6 @@ fn refined_generic_return_is_proven(
   declared: &CalcitTypeAnnotation,
   scope: &ScopeTypes,
   async_invocation: bool,
-  bindings: &mut HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
   depth: usize,
 ) -> bool {
   let CalcitTypeAnnotation::TypeVar(variable) = declared else {
@@ -1468,7 +1443,7 @@ fn refined_generic_return_is_proven(
         }
         let true_proven = match refinement {
           Some((_, narrowed)) => expression_is_proven_for(true_branch, &narrowed, &true_scope, async_invocation),
-          None => refined_generic_return_is_proven(true_branch, declared, &true_scope, async_invocation, bindings, depth + 1),
+          None => refined_generic_return_is_proven(true_branch, declared, &true_scope, async_invocation, depth + 1),
         };
         return true_proven
           && refined_generic_return_is_proven(
@@ -1476,7 +1451,6 @@ fn refined_generic_return_is_proven(
             declared,
             &false_scope,
             async_invocation,
-            bindings,
             depth + 1,
           );
       }
@@ -1492,7 +1466,6 @@ fn refined_generic_return_is_proven(
             declared,
             &body_scope,
             async_invocation,
-            bindings,
             depth + 1,
           );
         }
@@ -1500,25 +1473,20 @@ fn refined_generic_return_is_proven(
       _ => {}
     }
   }
-  resolve_type_value(expr, scope).is_some_and(|actual| actual.prove_with_bindings(declared, bindings).is_proven())
+  // An unguarded exit keeps the variable rigid, as the independent return
+  // proof does: a producer type must not bind the declared variable.
+  resolve_type_value(expr, scope).is_some_and(|actual| {
+    CallTypeProof::new(
+      &[],
+      std::slice::from_ref(&Arc::new(declared.to_owned())),
+      std::slice::from_ref(&actual),
+    )
+    .prove(&actual, declared)
+    .is_proven()
+  })
 }
 
 /// Check function return type matches declared return_type.
-/// `Dynamic`, an erased kind (any enum, struct or fn), or a collection whose members
-/// are all `Dynamic` carries no
-/// concrete producer evidence; like a direct `Dynamic` result it stays on the
-/// lossy-open migration path instead of rigidly specializing a return variable.
-fn is_open_return_binding(binding: &CalcitTypeAnnotation) -> bool {
-  let open = |inner: &Arc<CalcitTypeAnnotation>| matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic);
-  match binding {
-    CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::AnonymousEnum | CalcitTypeAnnotation::DynFn => true,
-    CalcitTypeAnnotation::List(item) | CalcitTypeAnnotation::Set(item) | CalcitTypeAnnotation::Ref(item) => open(item),
-    CalcitTypeAnnotation::Map(key, value) => open(key) && open(value),
-    CalcitTypeAnnotation::Custom(kind) => CalcitTypeAnnotation::custom_keyword_matches(kind, "struct"),
-    _ => false,
-  }
-}
-
 pub(crate) fn check_function_return_type(
   fn_body: &[Calcit],
   declared_return_type: &Arc<CalcitTypeAnnotation>,
@@ -1583,21 +1551,13 @@ pub(crate) fn check_function_return_type(
     )
   };
   // Kind predicates refine a generic return before the lossy branch join.
-  if refined_generic_return_is_proven(
-    last_expr,
-    declared_return_type,
-    scope_types,
-    async_invocation,
-    &mut HashMap::new(),
-    0,
-  ) {
+  if refined_generic_return_is_proven(last_expr, declared_return_type, scope_types, async_invocation, 0) {
     return Ok(());
   }
   let Some(actual_type) = actual_type else {
     // Branches may share no joined type while each one still proves the
     // declaration; reuse the same branch-wise proof as typed joins.
-    let proven = expression_is_proven_for(last_expr, declared_return_type, scope_types, async_invocation)
-      || open_type_var_return_is_proven(last_expr, declared_return_type, scope_types, async_invocation);
+    let proven = expression_is_proven_for(last_expr, declared_return_type, scope_types, async_invocation);
     return if audit && !proven { Err(unproven("unknown")) } else { Ok(()) };
   };
   // Async functions adopt a pending tail result; a synchronous function must
@@ -1612,7 +1572,11 @@ pub(crate) fn check_function_return_type(
   // an open callable hide a definite contradiction with the return contract.
   let mut bindings = HashMap::new();
   let proof = actual_type.prove_with_bindings(declared_return_type, &mut bindings);
-  let proof = if audit && bindings.values().any(|binding| !is_open_return_binding(binding.as_ref())) {
+  let proof = if audit
+    && bindings
+      .values()
+      .any(|binding| !matches!(binding.as_ref(), CalcitTypeAnnotation::Dynamic))
+  {
     // Recheck known substitutions without granting the return schema any
     // callee inference variables. Both concrete and lexical producer types
     // must not specialize a return variable. Direct Dynamic bindings retain
