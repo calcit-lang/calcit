@@ -19,7 +19,12 @@ export let valueMatchesTypeForm = (value: CalcitValue, form: CalcitValue): boole
     }
     if (head instanceof CalcitSymbol && head.value === "::") {
       const name = typeFormName(items[1]);
-      if (name === "Optional" || name === "JsNullish") {
+      // Nil is `null` here; `undefined` is Unit. Only the JS host boundary
+      // type also admits `undefined`.
+      if (name === "Optional") {
+        return value === null || valueMatchesTypeForm(value, items[2]);
+      }
+      if (name === "JsNullish") {
         return value == null || valueMatchesTypeForm(value, items[2]);
       }
       return name == null || valueMatchesTypeName(value, name);
@@ -78,7 +83,7 @@ let valueMatchesTypeName = (value: CalcitValue, rawName: string): boolean => {
       return value instanceof CalcitSymbol;
     case "Nil":
     case "nil":
-      return value == null;
+      return value === null;
     case "Unit":
     case "unit":
       return value === undefined;
