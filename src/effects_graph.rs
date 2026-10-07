@@ -656,7 +656,7 @@ fn record_state_operator(
   };
   let type_hint = if kind == "atom-def" {
     list
-      .and_then(|items| items.get(2))
+      .and_then(|items| ref_constructor_init_index(op_name).and_then(|idx| items.get(idx)))
       .and_then(|init| summarize_init_expr(init, current_ns))
       .map(|raw| finalize_schema_hint(&raw, current_ns))
       .or_else(|| lookup_atom_schema(current_ns, target))
@@ -681,8 +681,21 @@ fn extract_state_target(list: Option<&crate::calcit::CalcitList>, op_name: &str)
     "swap!" | "reset!" | "deref" | "add-watch" | "remove-watch" | "add-watch!" | "remove-watch!" | "set!" => {
       list.get(1).and_then(extract_symbol_name).unwrap_or_else(|| op_name.to_string())
     }
-    "defref" | "defatom" | "ref" | "atom" => list.get(1).and_then(extract_symbol_name).unwrap_or_else(|| "?".to_string()),
+    "defref" | "defatom" => list.get(1).and_then(extract_symbol_name).unwrap_or_else(|| "?".to_string()),
+    // A local `(ref init)` has no name of its own; index 1 is the initializer.
+    "ref" | "atom" => "?".to_string(),
     _ => op_name.to_string(),
+  }
+}
+
+/// Position of the initial value in a Ref constructor call:
+/// `(defref name init)` / `(defatom name init)` take it at index 2,
+/// local `(ref init)` / `(atom init)` at index 1.
+fn ref_constructor_init_index(op_name: &str) -> Option<usize> {
+  match op_name {
+    "defref" | "defatom" => Some(2),
+    "ref" | "atom" => Some(1),
+    _ => None,
   }
 }
 
@@ -1226,9 +1239,9 @@ fn extract_defatom_init_from_code(code: &Calcit, context_ns: &str) -> Option<Str
     Calcit::List(list) => {
       let head = list.first()?;
       let op = call_operator_name(head)?;
-      if matches!(op.as_str(), "defref" | "defatom" | "ref" | "atom") {
+      if let Some(idx) = ref_constructor_init_index(&op) {
         return list
-          .get(2)
+          .get(idx)
           .and_then(|init| summarize_init_expr(init, context_ns))
           .map(|raw| finalize_schema_hint(&raw, context_ns));
       }
@@ -2337,6 +2350,39 @@ mod tests {
   fn heuristic_detects_js_prefix() {
     let kinds = heuristic_effect_kinds("js/console.log");
     assert_eq!(kinds, vec!["interop/js".to_string()]);
+  }
+
+  fn parse_ref_call(head: &str, args: &[&str]) -> Calcit {
+    let mut items = vec![cirru_parser::Cirru::leaf(head)];
+    items.extend(args.iter().map(|a| cirru_parser::Cirru::leaf(*a)));
+    crate::data::cirru::code_to_calcit(&cirru_parser::Cirru::List(items), "app.main", "demo", vec![]).expect("parse ref call")
+  }
+
+  #[test]
+  fn ref_constructors_read_initializer_at_their_own_position() {
+    for (head, args, name) in [
+      ("ref", vec!["1"], "?"),
+      ("atom", vec!["1"], "?"),
+      ("defref", vec!["*counter", "1"], "*counter"),
+      ("defatom", vec!["*counter", "1"], "*counter"),
+    ] {
+      let code = parse_ref_call(head, &args);
+      let Calcit::List(list) = &code else {
+        panic!("expected list for {head}");
+      };
+      let target = extract_state_target(Some(list), head);
+      assert_eq!(target, name, "target for {head}");
+      let mut state = vec![];
+      record_state_operator(head, &target, Some(list), "app.main", &mut state);
+      assert_eq!(state.len(), 1);
+      assert_eq!(state[0].kind, "atom-def");
+      assert_eq!(state[0].type_hint.as_deref(), Some(":number  init=1"), "state hint for {head}");
+      assert_eq!(
+        extract_defatom_init_from_code(&code, "app.main").as_deref(),
+        Some(":number  init=1"),
+        "schema hint for {head}"
+      );
+    }
   }
 
   #[test]

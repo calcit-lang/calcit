@@ -4508,8 +4508,11 @@ fn plan_core_ref_constructor_fixes(
   Ok(suggestions)
 }
 
-/// The reader turns both `atom` and `ref` into the same built-in proc, so any
-/// evaluated `atom` leaf keeps its identity after the rename. `defatom` is
+/// The reader turns both `atom` and `ref` into the same built-in proc before any
+/// scope lookup, so any evaluated `atom` leaf keeps its identity after the
+/// rename, including inside a quasiquote template: the template already holds
+/// `(&proc ref)` and no local, definition or import can shadow either spelling
+/// at the expansion site. `defatom` is
 /// core syntax resolved by name, so it is renamed only as a call head that no
 /// namespace definition, import, local binding, macro template or unknown
 /// macro context can observe; other occurrences require review.
