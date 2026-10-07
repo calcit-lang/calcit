@@ -95,6 +95,19 @@ try {
   accepts(nilBox, "host", 2);
   rejects(nilBox, "host", "2");
 
+  // Numeric refinements check integrality and range in both spellings.
+  const numBox = makeBox(boxes.NumBox, { small: 1, tiny: 1, wide: 1, single: 0.5 });
+  accepts(numBox, "small", -128);
+  rejects(numBox, "small", 300);
+  rejects(numBox, "small", 1.5);
+  rejects(numBox, "small", "1");
+  accepts(numBox, "tiny", 127);
+  rejects(numBox, "tiny", 128);
+  accepts(numBox, "wide", 65535);
+  rejects(numBox, "wide", -1);
+  accepts(numBox, "single", 0.25);
+  rejects(numBox, "single", 0.1);
+
   const snapshot = join(output, "applied-struct-negative.cirru");
   const a = "model/ReelLike :base (data/DbA :value 1) :db (data/DbA :value 2) :records ([]) :merged? false";
   const b = "model/ReelLike :base (data/DbB :value |one) :db (data/DbB :value |two) :records ([]) :merged? false";

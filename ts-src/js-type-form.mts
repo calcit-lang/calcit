@@ -45,6 +45,10 @@ let typeFormName = (form: CalcitValue): string | null => {
   return null;
 };
 
+/// Numeric refinements check range and integrality like the native `CalcitNumericRefinement::accepts`.
+let isIntegerIn = (value: CalcitValue, min: number, max: number): boolean =>
+  typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
+
 let isList = (value: CalcitValue) => value instanceof CalcitList || value instanceof CalcitSliceList;
 let isMap = (value: CalcitValue) => value instanceof CalcitMap || value instanceof CalcitSliceMap;
 
@@ -58,17 +62,36 @@ let valueMatchesTypeName = (value: CalcitValue, rawName: string): boolean => {
       return true;
     case "Number":
     case "number":
-    case "Int8":
-    case "Int16":
-    case "Int32":
-    case "Int64":
-    case "UInt8":
-    case "UInt16":
-    case "UInt32":
-    case "UInt64":
-    case "Float32":
     case "Float64":
+    case "float64":
       return typeof value === "number";
+    case "Float32":
+    case "float32":
+      return typeof value === "number" && Math.fround(value) === value;
+    case "Int8":
+    case "int8":
+      return isIntegerIn(value, -128, 127);
+    case "UInt8":
+    case "uint8":
+      return isIntegerIn(value, 0, 255);
+    case "Int16":
+    case "int16":
+      return isIntegerIn(value, -32768, 32767);
+    case "UInt16":
+    case "uint16":
+      return isIntegerIn(value, 0, 65535);
+    case "Int32":
+    case "int32":
+      return isIntegerIn(value, -2147483648, 2147483647);
+    case "UInt32":
+    case "uint32":
+      return isIntegerIn(value, 0, 4294967295);
+    case "Int64":
+    case "int64":
+      return isIntegerIn(value, -Number.MAX_SAFE_INTEGER, Number.MAX_SAFE_INTEGER);
+    case "UInt64":
+    case "uint64":
+      return isIntegerIn(value, 0, Number.MAX_SAFE_INTEGER);
     case "String":
     case "string":
       return typeof value === "string";
