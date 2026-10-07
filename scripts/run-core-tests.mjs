@@ -20,6 +20,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { writeCirruCode } from "@cirru/writer.ts";
+import { hasNativeParity, markerProtocolError, parseBackendSelection, parseMarkers } from "./core-test-protocol.mjs";
 
 // `wasi` (a WASI 0.3 command run by $WASMTIME_CLI) is opt-in via --backend.
 const BACKENDS = ["native", "js", "wasm", "wasi"];
@@ -39,7 +40,7 @@ const parseArgs = (argv) => {
       return argv[++i];
     };
     switch (flag) {
-      case "--backend": options.backends = value().split(",").filter(Boolean); break;
+      case "--backend": options.backends = parseBackendSelection(value(), BACKENDS); break;
       case "--tag": options.tags.push(value()); break;
       case "--exclude-tag": options.excludeTags.push(value()); break;
       case "--name": options.names.push(value()); break;
@@ -53,6 +54,8 @@ const parseArgs = (argv) => {
   for (const backend of options.backends) {
     if (!BACKENDS.includes(backend)) throw new Error(`unknown backend: ${backend}`);
   }
+  // Removing an exclusion requires a successful native reference, even for a narrowed run.
+  if (options.reportUnexpectedPass && !options.backends.includes("native")) options.backends.unshift("native");
   if (options.backends.includes("wasi") && !process.env.WASMTIME_CLI) {
     throw new Error("--backend wasi needs WASMTIME_CLI pointing at a Wasmtime executable");
   }
@@ -190,7 +193,8 @@ const buildSnapshot = async (tests, { withMain, head = "defwasm-export", owner =
   let entry = `${home(tests[0])}/${tests[0].fn}`;
   if (withMain) {
     entry = `${REPLAY_NS}/main!`;
-    const body = tests.flatMap((test) => [["println", `|@@core-test:${test.index}`], [`${home(test)}/${test.fn}`]]);
+    const body = tests.flatMap((test) => [["println", `|@@core-test:${test.index}`],
+      [`${home(test)}/${test.fn}`], ["println", `|@@core-test-end:${test.index}`]]);
     replayDefs.push(["'main!", codeEntry(["defn", "main!", [], ...body, "&unit"])]);
   }
   if (replayDefs.length > 0) {
@@ -252,21 +256,6 @@ const record = (test, backend, status, detail = "", trace = []) => {
   results.get(test.id)[backend] = { status, detail, trace };
 };
 
-const parseMarkers = (stdout) => {
-  const traces = new Map();
-  let current;
-  for (const line of stdout.split(/\r?\n/)) {
-    const marker = /^@@core-test:(\d+)$/.exec(line);
-    if (marker) {
-      current = Number(marker[1]);
-      traces.set(current, []);
-    } else if (current !== undefined && line !== "") {
-      traces.get(current).push(line);
-    }
-  }
-  return { traces, last: current };
-};
-
 // Native and WASI commands run every test from one entry that prints a marker
 // before each test. A failing test stops the process, so the rest rerun after it.
 const runMarked = async (backend, tests, { head, compile, execute }) => {
@@ -287,7 +276,12 @@ const runMarked = async (backend, tests, { head, compile, execute }) => {
       continue;
     }
     const output = execute(built, compiled);
-    const { traces, last } = parseMarkers(output.stdout ?? "");
+    const { traces, last, events } = parseMarkers(output.stdout ?? "");
+    const protocolError = markerProtocolError(events, pending, output.status === 0);
+    if (protocolError) {
+      for (const test of pending) record(test, backend, "fail", protocolError, traces.get(test.index) ?? []);
+      return;
+    }
     if (output.status === 0) {
       for (const test of pending) record(test, backend, "pass", "", traces.get(test.index) ?? []);
       return;
@@ -462,8 +456,10 @@ try {
     for (const test of selected) {
       const reason = exclusionFor[backend](test);
       if (reason === undefined) included.push(test);
-      else if (options.reportUnexpectedPass) included.push(test);
-      else excluded[backend].push(test);
+      else {
+        excluded[backend].push(test);
+        if (options.reportUnexpectedPass) included.push(test);
+      }
     }
     const started = Date.now();
     if (included.length > 0) await runners[backend](included);
@@ -483,7 +479,9 @@ for (const test of selected) {
     if (!outcome) continue;
     const reason = exclusionFor[backend](test);
     if (reason !== undefined) {
-      if (outcome.status === "pass" && options.reportUnexpectedPass) unexpectedPasses.push(`${backend} ${test.id} (${reason})`);
+      if (options.reportUnexpectedPass && hasNativeParity(outcome, native, backend)) {
+        unexpectedPasses.push(`${backend} ${test.id} (${reason})`);
+      }
       continue;
     }
     if (outcome.status !== "pass") {
@@ -520,4 +518,4 @@ if (failures.length > 0) {
   }
   process.exit(1);
 }
-console.log("All selected definition tests passed on every requested backend.");
+console.log("All non-excluded definition tests passed on every requested backend.");

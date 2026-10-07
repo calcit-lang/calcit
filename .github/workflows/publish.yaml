@@ -68,6 +68,7 @@ jobs:
 
       - name: "verify shared Calcit backend contracts"
         run: |
+          node --test scripts/core-test-protocol.test.mjs
           node scripts/run-core-tests.mjs
           node scripts/run-core-tests.mjs --snapshot calcit/test-traits.cirru --target test-traits.main/test-qualified-contains-boundary --backend native,js
           node scripts/check-string-unicode.mjs

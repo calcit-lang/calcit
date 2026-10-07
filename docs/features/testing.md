@@ -150,6 +150,8 @@ WASMTIME_CLI=wasmtime node scripts/run-core-tests.mjs --backend wasi --target 'c
 
 只测试编码、ABI、memory layout、宿主注入或 unsupported 诊断的场景继续使用 `scripts/test-wasm*.mjs`、`scripts/check-*.mjs` 等专用脚本；新的跨后端回放需求给 `:tests` 加 tag 并用统一运行器选择，不再新增 `scripts/check-*.mjs`。
 
+运行器拒绝空的或重复的后端列表。native 与 WASI 的每个测试必须完整输出开始和结束标记；进程提前正常退出不会被计为通过。`--report-unexpected-pass` 自动补上 native 参照，只有测试成功且输出与 native 一致时才建议移除排除项。
+
 ### 限制
 
 - WASM 在独立的回放 namespace 中执行 core 测试，依赖 `calcit.core` 内部豁免的测试列为 `replay`。

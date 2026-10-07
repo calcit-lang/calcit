@@ -288,7 +288,7 @@ jobs:
         env:
           CALCIT_BIN: target/ci/calcit
         run: |
-          node --test scripts/core-api-contract.test.mjs
+          node --test scripts/core-api-contract.test.mjs scripts/core-test-protocol.test.mjs
           node scripts/core-api-contract.mjs
           node scripts/run-core-tests.mjs
           node scripts/run-core-tests.mjs --snapshot calcit/test-traits.cirru --target test-traits.main/test-qualified-contains-boundary --backend native,js
