@@ -68,10 +68,11 @@ fn callback_result_evidence(callback: &Calcit, scope_types: &ScopeTypes, preserv
   }
   let embedded_schema = || {
     let Calcit::List(items) = callback else { return None };
+    let lexical_generics = crate::calcit::type_annotation::lexical_type_variables_in_forms(items.iter().skip(2));
     items
       .iter()
       .skip(3)
-      .find_map(CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form)
+      .find_map(|form| CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form_in_scope(form, &lexical_generics))
   };
   let callback_type = embedded_schema().or_else(|| resolve_type_value(callback, scope_types))?;
   match callback_type.as_ref() {

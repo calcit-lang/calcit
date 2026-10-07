@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use super::checked_call_contract::resolve_checked_call_contract;
 use super::type_inference::{async_invocation_result, infer_struct_field_type, infer_unhinted_callback_signature};
-use crate::calcit::type_annotation::{CallTypeProof, TypeProof};
+use crate::calcit::type_annotation::{CallTypeProof, TypeBoundaryReason, TypeProof, free_type_variable_names};
 use crate::calcit::{
   self, Calcit, CalcitErr, CalcitErrKind, CalcitFn, CalcitGenericBound, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax,
   CalcitTypeAnnotation, LocatedWarning, NodeLocation,
@@ -1127,6 +1127,10 @@ pub(crate) fn check_user_fn_arg_types(
     return;
   }
   let expected_types = expected_types_with_rest(effective_fixed_types, effective_rest_type);
+  let expected_types = expected_types
+    .iter()
+    .map(|expected| super::resolve_namespace_type_refs_for_body(expected.clone(), &fn_info.def_ns))
+    .collect::<Vec<_>>();
 
   let fn_def_ns = fn_info.def_ns.clone();
   let fn_name = fn_info.name.clone();
@@ -1384,6 +1388,8 @@ pub(crate) fn check_function_return_type(
 ) -> Result<(), CalcitErr> {
   let file_ns = info.file_ns;
   let def_name = info.def_name;
+  let qualified_return = super::resolve_namespace_type_refs_for_body(declared_return_type.clone(), file_ns);
+  let declared_return_type = &qualified_return;
   if matches!(**declared_return_type, CalcitTypeAnnotation::Dynamic) {
     return Ok(());
   }
@@ -1448,10 +1454,33 @@ pub(crate) fn check_function_return_type(
     actual_type
   };
 
-  let mut bindings = HashMap::new();
   // Keep unproven boundaries on the existing migration path, but never let
   // an open callable hide a definite contradiction with the return contract.
+  let mut bindings = HashMap::new();
   let proof = actual_type.prove_with_bindings(declared_return_type, &mut bindings);
+  let proof = if audit
+    && bindings
+      .values()
+      .any(|binding| !matches!(binding.as_ref(), CalcitTypeAnnotation::Dynamic))
+  {
+    // Recheck known substitutions without granting the return schema any
+    // callee inference variables. Both concrete and lexical producer types
+    // must not specialize a return variable. Direct Dynamic bindings retain
+    // the existing migration policy for lossy open results.
+    let mut return_proof = CallTypeProof::new(&[], std::slice::from_ref(declared_return_type), std::slice::from_ref(&actual_type));
+    let proof = return_proof.prove(&actual_type, declared_return_type);
+    if matches!(proof, TypeProof::NeedsBoundary(TypeBoundaryReason::UnboundTypeVariable))
+      && !free_type_variable_names(std::slice::from_ref(declared_return_type)).is_empty()
+    {
+      let mut error = unproven(&diagnostic_type_string(&actual_type));
+      error.code = Some("E_ERASED_GENERIC_RELATION".to_owned());
+      error.hint = Some("An independent return proof keeps lexical type variables rigid; a return declaration cannot specialize them using another variable or a concrete producer type.".into());
+      return Err(error);
+    }
+    proof
+  } else {
+    proof
+  };
   let proof = if !matches!(proof, TypeProof::Proven)
     && expression_is_proven_for(last_expr, declared_return_type, scope_types, async_invocation)
   {
