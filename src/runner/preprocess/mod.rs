@@ -9350,6 +9350,16 @@ struct PredicateNarrowing {
   false_binding: Option<(Arc<str>, Arc<CalcitTypeAnnotation>)>,
 }
 
+/// The value kind a type predicate establishes for its target in the true
+/// branch. Nullability predicates are not kind refinements and return `None`.
+fn kind_predicate_refinement(cond_form: &Calcit, scope_types: &ScopeTypes) -> Option<(Arc<str>, Arc<CalcitTypeAnnotation>)> {
+  let (symbol, narrowed) = extract_predicate_bindings(cond_form, scope_types).true_binding?;
+  match narrowed.as_ref() {
+    CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::JsNullish(_) | CalcitTypeAnnotation::Optional(_) => None,
+    _ => Some((symbol, narrowed)),
+  }
+}
+
 fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> PredicateNarrowing {
   let empty = PredicateNarrowing {
     true_binding: None,

@@ -1794,31 +1794,43 @@
           :tags $ #{} :builtin :internal
         '&map:map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &map:map (xs f)
-            foldl xs ({})
-              defn &map:map (acc pair)
+            &map:fold-kv xs ({})
+              fn (acc key value)
                 hint-fn $ {}
-                  :args $ [] (:: 'Map 'R 'S) ('P)
-                  :return $ :: 'Map 'R 'S
+                  :args $ [] (:: 'Map 'Dynamic 'Dynamic) 'K 'V
+                  :return $ :: 'Map 'Dynamic 'Dynamic
                 &let
-                  result $ f pair
+                  result $ f $ [] key value
                   assert "|expected pair returned when mapping hashmap" $ and (list? result)
                     &= 2 $ &list:count result
                   &map:assoc acc (&list:nth result 0) (&list:nth result 1)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'Map 'K 'V)
-              :: 'Fn $ {} (:return 'Q)
-                :args $ [] 'P
-            :generics $ [] 'K 'V 'P 'Q 'R 'S
-            :return $ :: 'Map 'R 'S
+              :: 'Fn $ {}
+                :args $ [] $ :: 'List 'Dynamic
+                :return $ :: 'List 'Dynamic
+            :generics $ [] 'K 'V
+            :return $ :: 'Map 'Dynamic 'Dynamic
           :tags $ #{} :internal
-          :tests $ [] $ %{} 'TestEntry (:name |maps-map-pairs-directly)
-            :code $ quote $ assert= (&{} :a 11 :b 12)
-              &map:map (&{} :a 1 :b 2)
-                fn (pair)
-                  [] (&list:first pair)
-                    + 10 $ &list:last pair
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |maps-map-pairs-directly)
+              :code $ quote $ assert= (&{} :a 11 :b 12)
+                &map:map (&{} :a 1 :b 2)
+                  fn (pair)
+                    [] (&list:first pair)
+                      + 10 $ &list:last pair
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |maps-pair-callback-with-key-and-value)
+              :code $ quote $ assert= (&{} :b 1 :c 2)
+                &map:map (&{} :a 1 :b 2)
+                  fn (pair)
+                    []
+                      if
+                        &= :a $ &list:nth pair 0
+                        , :b :c
+                      &list:nth pair 1
+              :tags $ #{} :core :unit
         '&map:map-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &map:map-list (xs f)
             if (map? xs)
@@ -3841,9 +3853,19 @@
         'assoc $ %{} 'CodeEntry
           :doc "|Associate a key or index in maps, lists, enums, and structs."
           :code $ quote $ defn assoc (x k v)
-            if (nil? x)
-              raise $ str-spaced "|assoc does not work on nil for:" k v
-              if (list? x) (&list:assoc x k v) (.assoc x k v)
+            &let (open-x x)
+              if (nil? x)
+                raise $ str-spaced "|assoc does not work on nil for:" k v
+                if (list? x)
+                  if (number? k) (&list:assoc x k v) (raise "|assoc on a list expected a Number index")
+                  if (map? x) (&map:assoc x k v)
+                    if (struct? x)
+                      &let
+                        result $ .assoc open-x k v
+                        if (struct? result) result $ raise "|assoc on a struct expected a struct result"
+                      if (enum? x)
+                        if (number? k) (&enum:assoc x k v) (raise "|assoc on an enum expected a Number index")
+                        raise "|assoc expected a List, Map, Struct or Enum"
           :examples $ []
             quote $ assert= (&{} :a 1 :b 2)
               assoc (&{} :a 1) :b 2
@@ -3890,6 +3912,13 @@
                     .assoc drafts |a $ -> draft (assoc :text |new) (assoc :mono? true)
                   (:none) drafts
                 assert= (%none) (get drafts |missing)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-non-number-list-index)
+              :code $ quote $ let
+                  open-keys $ assert-type ([] :a) (:: 'List 'Dynamic)
+                assert= |rejected $ try
+                  assoc ([] 1 2) (&list:nth open-keys 0) 3
+                  fn (message) |rejected
               :tags $ #{} :core :unit
         'assoc-in $ %{} 'CodeEntry
           :doc "|associates a value at a nested path in a data structure, creates intermediate maps if needed"
@@ -4498,8 +4527,13 @@
         'contains? $ %{} 'CodeEntry
           :doc "|Check whether a collection contains a key or index. Nil is not a collection."
           :code $ quote $ defn contains? (x k)
-            if (list? x) (&list:contains? x k)
-              if (string? x) (&str:contains? x k) (.contains? x k)
+            if (list? x)
+              if (number? k) (&list:contains? x k) (raise "|contains? on a list expected a Number index")
+              if (string? x)
+                if (number? k) (&str:contains? x k) (raise "|contains? on a string expected a Number index")
+                &let
+                  result $ .contains? x k
+                  if (bool? result) result $ raise "|contains? expected a Bool from the receiver .contains? method"
           :examples $ []
             quote $ assert= true $ contains? ([] :a :b) 1
             quote $ assert= true $ contains?
@@ -4610,6 +4644,17 @@
                   {} $ :id 7
                   , .contains-value? 7
               :tags $ #{} :core :naming-contract :unit
+            %{} 'TestEntry (:name |rejects-non-number-list-index)
+              :code $ quote $ let
+                  open-keys $ assert-type ([] :a) (:: 'List 'Dynamic)
+                do
+                  assert= |rejected $ try
+                    contains? ([] 1 2) (&list:nth open-keys 0)
+                    fn (message) |rejected
+                  assert= |rejected $ try
+                    contains? |ab $ &list:nth open-keys 0
+                    fn (message) |rejected
+              :tags $ #{} :core :unit
         'cos $ %{} 'CodeEntry
           :doc "|internal function for cosine\nSyntax: (cos n)\nParams: n (number, radians)\nReturns: number\nReturns cosine of angle in radians"
           :code $ quote &runtime-implementation
@@ -5421,8 +5466,17 @@
             :tags $ #{} :core :unit
         'dissoc $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn dissoc (x & args)
-            if (list? x) (&list:dissoc x & args)
-              if (map? x) (&map:dissoc x & args) (.dissoc x & args)
+            if (list? x)
+              if
+                &= 1 $ &list:count args
+                &let
+                  k $ &list:nth args 0
+                  if (number? k) (&list:dissoc x k) (raise "|dissoc on a list expected a Number index")
+                raise "|dissoc on a list expected exactly one index"
+              if (map? x)
+                if (&list:empty? args) (raise "|dissoc on a map expected at least one key")
+                  &map:dissoc x (&list:nth args 0) & $ &list:rest args
+                raise "|dissoc expected a List or Map"
           :examples $ []
           :schema $ :: 'Fn $ {} (:rest 'K) (:return 'T)
             :args $ [] 'T
@@ -5519,6 +5573,19 @@
                         , 2
                   [] result @*order
               :tags $ #{} :core :spread-proof :unit
+            %{} 'TestEntry (:name |removes-list-index-by-kind-dispatch)
+              :code $ quote $ do
+                assert= ([] 1 3)
+                  dissoc ([] 1 2 3) 1
+                assert= |rejected $ try
+                  dissoc ([] 1 2 3) 0 1
+                  fn (message) |rejected
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-unsupported-receiver)
+              :code $ quote $ assert= |rejected
+                try (dissoc 1 :a)
+                  fn (message) |rejected
+              :tags $ #{} :core :unit
         'dissoc-in $ %{} 'CodeEntry
           :doc "|Remove a nested key or index. An empty path leaves the input unchanged."
           :code $ quote $ defn dissoc-in (data path)
@@ -5694,7 +5761,10 @@
         'empty? $ %{} 'CodeEntry
           :doc "|Check whether a collection or string is empty. Nil is rejected instead of being treated as empty."
           :code $ quote $ defn empty? (x)
-            if (list? x) (&list:empty? x) (.empty? x)
+            if (list? x) (&list:empty? x)
+              &let
+                result $ .empty? x
+                if (bool? result) result $ raise "|empty? expected a Bool from the receiver .empty? method"
           :examples $ []
             quote $ assert= true $ empty? ([])
             quote $ assert= false $ empty? ([] 1)
@@ -5715,6 +5785,11 @@
               :code $ quote $ do
                 assert= true $ empty? $ #{}
                 assert= false $ empty? $ #{} 1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |empty-list-and-map)
+              :code $ quote $ do
+                assert= true $ empty? $ []
+                assert= false $ empty? $ [] 1
               :tags $ #{} :core :unit
         'ends-with? $ %{} 'CodeEntry
           :doc "|internal function for checking string suffix\nSyntax: (ends-with? s suffix)\nParams: s (string), suffix (string)\nReturns: boolean\nReturns true if string ends with suffix"
@@ -7742,7 +7817,10 @@
               :tags $ #{} :core :naming-contract :unit
         'includes? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn includes? (x k)
-            if (list? x) (&list:includes? x k) (.includes? x k)
+            if (list? x) (&list:includes? x k)
+              &let
+                result $ .includes? x k
+                if (bool? result) result $ raise "|includes? expected a Bool from the receiver .includes? method"
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Dynamic 'Dynamic
@@ -7760,6 +7838,11 @@
               :code $ quote $ do
                 assert= true $ includes? (#{} 1 2 3) 2
                 assert= false $ includes? (#{} 1 2 3) 4
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |includes-list-and-set-members)
+              :code $ quote $ do
+                assert= true $ includes? ([] 1 2) 2
+                assert= false $ includes? ([] 1 2) 3
               :tags $ #{} :core :unit
         'index-of $ %{} 'CodeEntry
           :doc "|Find the first list item index as Option<Number>."
@@ -10027,7 +10110,8 @@
         'rest $ %{} 'CodeEntry
           :doc "|Return the same collection type without its first item; empty collections remain empty and nil is rejected."
           :code $ quote $ defn rest (x)
-            if (list? x) (&list:rest x) (.rest x)
+            if (list? x) (&list:rest x)
+              if (string? x) (&str:rest x) (raise "|rest expected a List or String")
           :examples $ []
             quote $ assert= ([] 2 3)
               rest $ [] 1 2 3
@@ -10047,6 +10131,11 @@
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |drops-first-string-character)
               :code $ quote $ assert= |bc (rest |abc)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-non-sequence)
+              :code $ quote $ assert= |rejected
+                try (rest 1)
+                  fn (message) |rejected
               :tags $ #{} :core :unit
         'result:and-then $ %{} 'CodeEntry
           :doc "|Chains a Result-producing function over :ok and preserves :err."
@@ -10321,11 +10410,7 @@
         'slice $ %{} 'CodeEntry
           :doc "|Extract a slice from a collection from index n to m"
           :code $ quote $ defn slice (xs n ? m)
-            if (nil? m)
-              if (list? xs) (&list:slice xs n)
-                if (string? xs) (&str:slice xs n) (.slice xs n)
-              if (list? xs) (&list:slice xs n m)
-                if (string? xs) (&str:slice xs n m) (.slice xs n m)
+            if (nil? m) (.slice xs n) (.slice xs n m)
           :examples $ []
             quote $ assert= ([] 2 3)
               slice ([] 1 2 3 4) 1 3
@@ -10352,6 +10437,14 @@
                   slice ([] 1 2 3) 1
                   :: 'List 'Number
                 assert-type (slice |abc 1) 'String
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |slices-through-sliceable-contract)
+              :code $ quote $ do
+                assert= ([] 2 3)
+                  slice ([] 1 2 3) 1
+                assert= ([] 2)
+                  slice ([] 1 2 3) 1 2
+                assert= |bc $ slice |abc 1
               :tags $ #{} :core :unit
         'some-in? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn some-in? (x path)

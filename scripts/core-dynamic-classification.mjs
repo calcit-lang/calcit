@@ -277,6 +277,22 @@ const reviewedPublicBoundaryPositions = new Map([
     "The internal Map pair callback receives heterogeneous key/value slots in a List; keep the open item explicit until tuple or named pair typing can preserve both independent parameters.",
   ],
   [
+    "&map:map|schema.args.1.args.0.item",
+    "The Map pair callback receives heterogeneous key/value slots in a List; the open item stays explicit until tuple or named pair typing can preserve both independent parameters.",
+  ],
+  [
+    "&map:map|schema.args.1.return.item",
+    "The callback returns a heterogeneous [key value] pair; a homogeneous List item cannot prove independent key and value types, so the pair slots stay open and are stored by &map:assoc.",
+  ],
+  [
+    "&map:map|schema.return.key",
+    "The mapped Map's key comes from callback pairs whose slot types are open; claiming a free generic key would certify a relation the pair contract cannot prove.",
+  ],
+  [
+    "&map:map|schema.return.value",
+    "The mapped Map's value comes from callback pairs whose slot types are open; claiming a free generic value would certify a relation the pair contract cannot prove.",
+  ],
+  [
     "&map:to-list|schema.return.item.item",
     "A Map entry is a heterogeneous key/value pair, which a homogeneous List item type cannot represent without erasing one parameter; callers must narrow each slot.",
   ],
