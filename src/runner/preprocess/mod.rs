@@ -157,6 +157,9 @@ pub struct SourceExpressionEvidence {
 
 thread_local! {
   static REQUIRE_ASSERTION_PROOF: Cell<bool> = const { Cell::new(false) };
+  /// Dependencies already re-proved within the current outer assertion audit.
+  /// Reset with the compiled-program checkpoint so no audit result outlives it.
+  static AUDIT_PROVEN_DEFS: RefCell<HashSet<(Arc<str>, Arc<str>)>> = RefCell::new(HashSet::new());
   static RESOLVED_SOURCE_USAGE_TRACE: RefCell<Option<Vec<ResolvedSourceUsage>>> = const { RefCell::new(None) };
   static SOURCE_EXPRESSION_TRACE: RefCell<Option<Vec<SourceExpressionEvidence>>> = const { RefCell::new(None) };
   #[cfg(test)]
@@ -173,8 +176,32 @@ pub fn with_assertion_proof<R>(f: impl FnOnce() -> R) -> R {
   // Audit inference deliberately ignores trusted coercion contracts. Its
   // temporary local annotations must not replace ordinary cached output,
   // including on errors or unwinding. Nested audits share the outer checkpoint.
-  let _compiled_checkpoint = (!REQUIRE_ASSERTION_PROOF.with(Cell::get)).then(program::checkpoint_compiled_program);
+  struct ClearAuditProven;
+  impl Drop for ClearAuditProven {
+    fn drop(&mut self) {
+      AUDIT_PROVEN_DEFS.with(|proven| proven.borrow_mut().clear());
+    }
+  }
+  let outer = !REQUIRE_ASSERTION_PROOF.with(Cell::get);
+  let _compiled_checkpoint = outer.then(program::checkpoint_compiled_program);
+  let _audit_proven = outer.then(|| {
+    AUDIT_PROVEN_DEFS.with(|proven| proven.borrow_mut().clear());
+    ClearAuditProven
+  });
   with_assertion_proof_policy(true, f)
+}
+
+/// A compiled dependency is reusable outside audits, or once this audit re-proved it.
+fn compiled_def_is_reusable(ns: &str, def: &str) -> bool {
+  program::lookup_compiled_def(ns, def).is_some()
+    && (!REQUIRE_ASSERTION_PROOF.with(Cell::get)
+      || AUDIT_PROVEN_DEFS.with(|proven| proven.borrow().contains(&(Arc::from(ns), Arc::from(def)))))
+}
+
+fn mark_audit_proven(ns: &str, def: &str) {
+  if REQUIRE_ASSERTION_PROOF.with(Cell::get) {
+    AUDIT_PROVEN_DEFS.with(|proven| proven.borrow_mut().insert((Arc::from(ns), Arc::from(def))));
+  }
 }
 
 fn with_assertion_proof_policy<R>(enabled: bool, f: impl FnOnce() -> R) -> R {
@@ -673,7 +700,7 @@ fn ensure_ns_def_preprocessed(
     validate_js_ffi_definition_target("embedded JS FFI reference", None, ns, def, call_stack)?;
   }
 
-  if program::lookup_compiled_def(ns, def).is_some() && !REQUIRE_ASSERTION_PROOF.with(Cell::get) {
+  if compiled_def_is_reusable(ns, def) {
     return Ok(());
   }
 
@@ -724,6 +751,7 @@ fn ensure_ns_def_preprocessed(
       let resolved_code = resolved_result?;
       check_top_level_value_schema(ns, def, &code, &resolved_code, &scope_types, &next_stack)?;
       store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
+      mark_audit_proven(ns, def);
 
       Ok(())
     }
@@ -1522,7 +1550,7 @@ pub fn compile_source_def_for_snapshot(
 ) -> Result<(), CalcitErr> {
   // A proof audit must revisit source even when ordinary inventory compilation
   // has already warmed this definition's trusted metadata.
-  if program::lookup_compiled_def(ns, def).is_some() && !REQUIRE_ASSERTION_PROOF.with(Cell::get) {
+  if compiled_def_is_reusable(ns, def) {
     return Ok(());
   }
 
@@ -1546,6 +1574,7 @@ pub fn compile_source_def_for_snapshot(
 
   check_top_level_value_schema(ns, def, &code, &resolved_code, &scope_types, call_stack)?;
   store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
+  mark_audit_proven(ns, def);
 
   Ok(())
 }

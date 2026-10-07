@@ -533,15 +533,22 @@
             :generics $ [] 'T 'K
         '&dissoc:map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &dissoc:map (x args)
-            if (map? x)
-              if (&list:empty? args) x $ &dissoc:map
-                &map:dissoc x $ &list:nth args 0
-                &list:rest args
+            if (map? x) (&dissoc:map-keys x args)
               raise $ &str:concat "|&dissoc:map expected a map, but received: " $ to-lispy-string x
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'T)
             :args $ [] 'T $ :: 'List 'K
             :generics $ [] 'T 'K
+        '&dissoc:map-keys $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn &dissoc:map-keys (x args)
+            if (&list:empty? args) x $ &dissoc:map-keys
+              &map:dissoc x $ &list:nth args 0
+              &list:rest args
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'Map 'K 'V) (:: 'List 'Dynamic)
+            :generics $ [] 'K 'V
+            :return $ :: 'Map 'K 'V
         '&doseq $ %{} 'CodeEntry
           :doc "|Internal side-effect traversal macro. Iterates over a binding pair, executes the body for each element, and returns Unit."
           :code $ quote $ defmacro &doseq (pair & body)
@@ -1171,12 +1178,18 @@
             :tags $ #{} :core :unit
         '&list:filter-pair $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:filter-pair (xs f)
-            if (list? xs)
-              &list:filter xs $ defn %filter-pair (pair)
-                assert "|expected a pair" $ and (list? pair)
-                  = 2 $ count pair
-                f (&list:nth pair 0) (&list:nth pair 1)
-              raise $ str-spaced "|expected list or map from `filter-pair`, got:" xs
+            &list:filter xs $ defn %filter-pair (pair)
+              hint-fn $ {}
+                :args $ [] 'P
+                :return 'Bool
+              if (list? pair)
+                if
+                  &= 2 $ &list:count pair
+                  &let
+                    kept $ f (&list:nth pair 0) (&list:nth pair 1)
+                    if (bool? kept) kept $ raise $ &str:concat "|filter-pair expected a Bool from the callback, got: " (to-lispy-string kept)
+                  raise $ &str:concat "|filter-pair expected a pair, got: " $ to-lispy-string pair
+                raise $ &str:concat "|filter-pair expected a pair, got: " $ to-lispy-string pair
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'P) 'Fn
@@ -1361,17 +1374,21 @@
               :tags $ #{} :generic-fold-proof :unit
         '&list:map-pair $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:map-pair (xs f)
-            if (list? xs)
-              map xs $ defn %map-pair (pair)
-                assert "|expected a pair" $ and (list? pair)
-                  = 2 $ count pair
-                f (&list:nth pair 0) (&list:nth pair 1)
-              raise $ str-spaced "|expected list or map from `map-pair`, got:" xs
+            &list:map xs $ defn %map-pair (pair)
+              hint-fn $ {}
+                :args $ [] 'P
+                :return 'Dynamic
+              if (list? pair)
+                if
+                  &= 2 $ &list:count pair
+                  f (&list:nth pair 0) (&list:nth pair 1)
+                  raise $ &str:concat "|map-pair expected a pair, got: " $ to-lispy-string pair
+                raise $ &str:concat "|map-pair expected a pair, got: " $ to-lispy-string pair
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'P) 'Fn
-            :generics $ [] 'P 'U
-            :return $ :: 'List 'U
+            :generics $ [] 'P
+            :return $ :: 'List 'Dynamic
           :tags $ #{} :internal
           :tests $ []
             %{} 'TestEntry (:name |maps-key-value-pairs)
@@ -5498,9 +5515,11 @@
             :tags $ #{} :core :unit
         'dissoc $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn dissoc (x & args)
-            if (list? x) (&dissoc:list x args)
-              if (map? x) (&dissoc:map x args)
-                raise $ &str:concat "|dissoc expected a list or map, but received: " $ to-lispy-string x
+            &let
+              kind $ type-of x
+              if (&= kind :list) (&dissoc:list x args)
+                if (&= kind :map) (&dissoc:map x args)
+                  raise $ &str:concat "|dissoc expected a list or map, but received: " $ to-lispy-string x
           :examples $ []
           :schema $ :: 'Fn $ {} (:rest 'K) (:return 'T)
             :args $ [] 'T
@@ -5709,8 +5728,8 @@
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ [] 'Dynamic $ :: 'Fn
               {} (:return 'R)
-                :args $ [] 'T
-            :generics $ [] 'T 'R
+                :args $ [] 'Dynamic
+            :generics $ [] 'R
           :tests $ [] $ %{} 'TestEntry (:name |returns-unit-after-callbacks)
             :code $ quote $ assert= &unit
               each ([] 1 2)

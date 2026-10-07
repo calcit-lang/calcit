@@ -1431,7 +1431,10 @@ pub(crate) fn check_function_return_type(
     )
   };
   let Some(actual_type) = actual_type else {
-    return if audit { Err(unproven("unknown")) } else { Ok(()) };
+    // Branches may share no joined type while each one still proves the
+    // declaration; reuse the same branch-wise proof as typed joins.
+    let proven = expression_is_proven_for(last_expr, declared_return_type, scope_types, async_invocation);
+    return if audit && !proven { Err(unproven("unknown")) } else { Ok(()) };
   };
   // Async functions adopt a pending tail result; a synchronous function must
   // retain the pending wrapper rather than claim its logical result as a value.
