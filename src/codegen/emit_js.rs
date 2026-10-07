@@ -2229,6 +2229,17 @@ fn gen_js_func(
     body = body.push_right(line.to_owned());
   }
 
+  // `recur` builds a CalcitRecur value that only the tail-recursion loop below consumes.
+  // Anywhere else it would leak as data or be dropped, so reject it with the tail-position
+  // rule shared with preprocessing.
+  if let Some(form) = crate::runner::preprocess::non_tail_recur_forms(raw_body).first() {
+    return Err(format!(
+      "recur must be called directly in tail position of the function body in {}/{name}, got: {}",
+      passed_defs.ns,
+      form.lisp_str()
+    ));
+  }
+
   if !body.is_empty() && uses_recur(&body[body.len() - 1]) {
     let return_var = js_gensym("return_mark");
     let body = list_to_js_code(

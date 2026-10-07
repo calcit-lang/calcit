@@ -119,14 +119,25 @@ fn recur_outside_tail_position_is_rejected_by_the_check() {
       .expect("run non-tail recur fixture")
   };
 
-  let ok = run("app.main/ok-loop");
-  assert!(
-    ok.status.success(),
-    "a recur in tail position must keep working: {}",
-    String::from_utf8_lossy(&ok.stderr)
-  );
+  for target in ["app.main/ok-loop", "app.main/ok-in-try", "app.main/ok-in-match"] {
+    let ok = run(target);
+    assert!(
+      ok.status.success(),
+      "{target}: a recur in tail position must keep working: {}{}",
+      String::from_utf8_lossy(&ok.stdout),
+      String::from_utf8_lossy(&ok.stderr)
+    );
+  }
 
-  for target in ["app.main/bad-in-list", "app.main/bad-in-str", "app.main/bad-before-tail"] {
+  for target in [
+    "app.main/bad-in-list",
+    "app.main/bad-in-str",
+    "app.main/bad-before-tail",
+    "app.main/bad-in-try",
+    "app.main/bad-in-match",
+    "app.main/bad-alias",
+    "app.main/bad-from-macro",
+  ] {
     let output = run(target);
     let report = format!(
       "{}{}",

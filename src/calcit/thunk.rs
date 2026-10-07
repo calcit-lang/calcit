@@ -34,7 +34,10 @@ impl CalcitThunk {
         program::mark_runtime_def_resolving(&info.ns, &info.def);
 
         // println!("from thunk: {}", sym);
-        let runtime_value = match evaluate_expr(code, scope, &info.ns, call_stack) {
+        // a definition value is data, a `Recur` produced outside any function must not be stored
+        let evaluated = evaluate_expr(code, scope, &info.ns, call_stack)
+          .and_then(|value| crate::runner::reject_escaping_recur(&value, call_stack).map(|()| value));
+        let runtime_value = match evaluated {
           Ok(value) => program::with_runtime_definition_ref(&info.ns, &info.def, value),
           Err(e) => {
             program::mark_runtime_def_errored(&info.ns, &info.def, Arc::from(e.to_string()));

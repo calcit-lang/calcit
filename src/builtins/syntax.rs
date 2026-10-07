@@ -686,6 +686,7 @@ pub fn syntax_if(
   let true_branch = &expr[1];
 
   let cond_value = runner::evaluate_expr(cond, scope, file_ns, call_stack)?;
+  runner::reject_escaping_recur(&cond_value, call_stack)?;
   match cond_value {
     Calcit::Nil | Calcit::Unit | Calcit::Bool(false) => match expr.get(2) {
       Some(false_branch) => runner::evaluate_expr(false_branch, scope, file_ns, call_stack),
@@ -722,11 +723,13 @@ pub fn syntax_let(
       match (&xs[0], &xs[1]) {
         (Calcit::Local(CalcitLocal { idx, .. }), ys) => {
           let value = runner::evaluate_expr(ys, scope, file_ns, call_stack)?;
+          runner::reject_escaping_recur(&value, call_stack)?;
           body_scope.insert_mut(*idx, value);
         }
         (Calcit::Symbol { sym: s, .. }, ys) => {
           eprintln!("[Warn] slow path of {s}, prefer local");
           let value = runner::evaluate_expr(ys, scope, file_ns, call_stack)?;
+          runner::reject_escaping_recur(&value, call_stack)?;
           let idx = CalcitLocal::track_sym(s);
           body_scope.insert_mut(idx, value);
         }
@@ -1401,6 +1404,7 @@ pub fn syntax_match(
   }
 
   let value = evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
+  runner::reject_escaping_recur(&value, call_stack)?;
 
   let (tag, extra) = match &value {
     Calcit::Enum(CalcitEnumValue { tag, extra, .. }) => match tag.as_ref() {

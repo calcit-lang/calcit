@@ -354,7 +354,8 @@ pub fn evaluate_expr(expr: &Calcit, scope: &CalcitScope, file_ns: &str, call_sta
         }
       }
     },
-    Recur(_) => unreachable!("recur not expected to be from symbol"),
+    // a Recur value embedded in code (e.g. interpolated by a macro) is data that escaped its function
+    Recur(_) => reject_escaping_recur(expr, call_stack).map(|()| expr.to_owned()),
     RawCode(_, code) => {
       macro_capability::check_host_ffi(code, call_stack)?;
       Err(CalcitErr::use_msg_stack_location(
@@ -1030,13 +1031,36 @@ fn render_marked_args(args: &[CalcitArgLabel]) -> String {
   format!("({})", parts.join(" "))
 }
 
+/// Runtime fallback for `recur` outside tail position (static check: `non_tail_recur_forms`).
+///
+/// A `Recur` value is only meaningful as the return value of a function or macro body,
+/// which restarts on it. Anywhere else (an argument, a binding, a condition, a discarded
+/// body form) it would silently turn into data or be dropped, so it is reported instead.
+#[inline]
+pub fn reject_escaping_recur(value: &Calcit, call_stack: &CallStackList) -> Result<(), CalcitErr> {
+  if let Calcit::Recur(args) = value {
+    Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Unexpected,
+      format!(
+        "recur must be called directly in tail position of the function body, its value `{value}` escaped as data or would be dropped"
+      ),
+      call_stack,
+      args.iter().find_map(Calcit::get_location),
+    ))
+  } else {
+    Ok(())
+  }
+}
+
 pub fn evaluate_lines(lines: &[Calcit], scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   let mut ret: Calcit = Calcit::Nil;
-  for line in lines {
-    {
-      let v = evaluate_expr(line, scope, file_ns, call_stack)?;
-      ret = v
+  for (idx, line) in lines.iter().enumerate() {
+    let v = evaluate_expr(line, scope, file_ns, call_stack)?;
+    if idx + 1 < lines.len() {
+      // only the last form is returned, earlier results are discarded
+      reject_escaping_recur(&v, call_stack)?;
     }
+    ret = v
   }
   Ok(ret)
 }
@@ -1067,11 +1091,13 @@ pub fn evaluate_args_from(
     }
     idx += 1;
 
-    if item.is_expr_evaluated() {
-      ret.push(item.to_owned());
+    let value = if item.is_expr_evaluated() {
+      item.to_owned()
     } else {
-      ret.push(evaluate_expr(item, scope, file_ns, call_stack)?);
-    }
+      evaluate_expr(item, scope, file_ns, call_stack)?
+    };
+    reject_escaping_recur(&value, call_stack)?;
+    ret.push(value);
     Ok(())
   })?;
   // println!("Evaluated args: {}", ret);
@@ -1131,6 +1157,7 @@ pub fn evaluate_spreaded_args_from(
               }
             }
           } else {
+            reject_escaping_recur(item, call_stack)?;
             ret.push(item.to_owned());
           }
         } else {
@@ -1154,6 +1181,7 @@ pub fn evaluate_spreaded_args_from(
               }
             }
           } else {
+            reject_escaping_recur(&v, call_stack)?;
             ret.push(v);
           }
         }
@@ -1472,5 +1500,43 @@ mod tests {
     .expect("long recur should complete");
 
     assert_eq!(result, Calcit::Number(100_042.0));
+  }
+
+  /// The static check rejects these shapes in source, so the runtime fallback is exercised
+  /// on hand-built code that bypasses it (as `eval` of generated code or hot reload could).
+  #[test]
+  fn escaping_recur_values_are_rejected_at_runtime() {
+    let recur = || Calcit::from(vec![Calcit::Proc(CalcitProc::Recur), Calcit::Number(1.0)]);
+    let syntax = |s: CalcitSyntax| Calcit::Syntax(s, Arc::from("tests.runner"));
+    let cases = [
+      // collected into data
+      Calcit::from(vec![Calcit::Proc(CalcitProc::List), recur()]),
+      // discarded as a non-final body form
+      Calcit::from(vec![
+        syntax(CalcitSyntax::CoreLet),
+        Calcit::from(vec![]),
+        recur(),
+        Calcit::Number(100.0),
+      ]),
+      // used as a condition
+      Calcit::from(vec![syntax(CalcitSyntax::If), recur(), Calcit::Number(1.0), Calcit::Number(2.0)]),
+      // a Recur value interpolated into code
+      Calcit::Recur(vec![Calcit::Number(1.0)]),
+    ];
+    for expr in cases {
+      let error = evaluate_expr(&expr, &CalcitScope::default(), "tests.runner", &CallStackList::default())
+        .expect_err("an escaping recur value must fail");
+      assert!(error.msg.contains("tail position"), "{}", error.msg);
+    }
+
+    // a recur in tail position still reaches the enclosing function as a Recur value
+    let tail = Calcit::from(vec![
+      syntax(CalcitSyntax::CoreLet),
+      Calcit::from(vec![]),
+      Calcit::Number(100.0),
+      recur(),
+    ]);
+    let value = evaluate_expr(&tail, &CalcitScope::default(), "tests.runner", &CallStackList::default()).expect("tail recur");
+    assert!(matches!(value, Calcit::Recur(_)), "{value}");
   }
 }
