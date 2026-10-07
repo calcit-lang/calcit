@@ -1,6 +1,7 @@
 mod checked_call_contract;
 mod explicit_open;
 mod js_ffi;
+mod post_lowering;
 mod proof_provenance;
 mod recur_tail;
 mod recursive_inputs;
@@ -703,6 +704,7 @@ fn ensure_ns_def_preprocessed(
       {
         EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = Some(fn_schema.clone()));
       }
+      let lowering_scope = post_lowering::Scope::enter();
       let compile = || {
         builtins::meta::with_compiling_def(ns, def, || {
           calcit::with_type_annotation_warning_context(context_label, || {
@@ -722,6 +724,10 @@ fn ensure_ns_def_preprocessed(
       };
       CURRENT_FN_FEATURES.with(|cell| *cell.borrow_mut() = saved_features);
       let resolved_code = resolved_result?;
+      let lowering_evidence = lowering_scope.finish();
+      if post_lowering::enabled() {
+        post_lowering::validate_definition(ns, def, &resolved_code, &check_warnings.borrow(), &lowering_evidence, &next_stack)?;
+      }
       check_top_level_value_schema(ns, def, &code, &resolved_code, &scope_types, &next_stack)?;
       store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
 
@@ -2185,6 +2191,23 @@ fn try_expand_typed_optional_access_call(
   }
 }
 
+/// Preprocess a generated lowering and record its pre-rewrite evidence for the
+/// post-lowering validation (#1553). The recorded node is the final one, not
+/// the raw expansion, so generated temporaries are already typed.
+fn preprocess_recorded_lowering(
+  origin: post_lowering::RewriteOrigin,
+  before: impl FnOnce() -> Calcit,
+  expanded: &Calcit,
+  scope_defs: &HashSet<Arc<str>>,
+  scope_types: &mut ScopeTypes,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  let lowered = preprocess_generated_specialization(expanded, scope_defs, scope_types, file_ns, call_stack)?;
+  post_lowering::record_rewrite(origin, before, &lowered, scope_types);
+  Ok(lowered)
+}
+
 fn try_expand_inlined_typed_optional_access(
   call: &Calcit,
   scope_types: &ScopeTypes,
@@ -3355,7 +3378,15 @@ fn preprocess_list_call(
             // `&scope:name` callable as its head instead of `invoke-method`.
             if let Some(optimized_call) = try_inline_method_call(&typed_method, &processed_args, scope_types, file_ns, call_stack)? {
               if let Some(expanded) = try_expand_inlined_typed_optional_access(&optimized_call, scope_types, file_ns, call_stack)? {
-                return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
+                return preprocess_recorded_lowering(
+                  post_lowering::RewriteOrigin::TypedAccess,
+                  || optimized_call.clone(),
+                  &expanded,
+                  scope_defs,
+                  scope_types,
+                  file_ns,
+                  call_stack,
+                );
               }
               return Ok(optimized_call);
             }
@@ -4382,7 +4413,15 @@ fn preprocess_list_call(
           && let Some(optimized_call) = try_inline_method_call(call_head, &processed_args, scope_types, file_ns, call_stack)?
         {
           if let Some(expanded) = try_expand_inlined_typed_optional_access(&optimized_call, scope_types, file_ns, call_stack)? {
-            return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
+            return preprocess_recorded_lowering(
+              post_lowering::RewriteOrigin::TypedAccess,
+              || optimized_call.clone(),
+              &expanded,
+              scope_defs,
+              scope_types,
+              file_ns,
+              call_stack,
+            );
           }
           return Ok(optimized_call);
         }
@@ -4732,7 +4771,19 @@ fn preprocess_known_function_call(
       if matches!(def.as_ref(), "get" | "nth" | "first" | "last")
         && let Some(expanded) = try_expand_typed_optional_access_call(ns, def, &current_args, scope_types, file_ns, call_stack)?
       {
-        return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
+        return preprocess_recorded_lowering(
+          post_lowering::RewriteOrigin::TypedAccess,
+          || {
+            let mut call = vec![head_form.clone()];
+            call.extend(current_args.iter().cloned());
+            Calcit::from(call)
+          },
+          &expanded,
+          scope_defs,
+          scope_types,
+          file_ns,
+          call_stack,
+        );
       }
       if let Some(specialized) = try_specialize_polymorphic_call(ns, def, &current_args, scope_types, file_ns) {
         return Ok(specialized);
@@ -7374,6 +7425,29 @@ fn qualify_trait_bound_method_call(
   file_ns: &str,
   def_name: &str,
 ) -> Option<Calcit> {
+  let lowered = qualify_trait_bound_method_call_inner(head, args, scope_types, file_ns, def_name);
+  if let Some(after) = &lowered {
+    post_lowering::record_rewrite(
+      post_lowering::RewriteOrigin::TraitCall,
+      || {
+        let mut call = vec![head.clone()];
+        call.extend(args.iter().cloned());
+        Calcit::from(call)
+      },
+      after,
+      scope_types,
+    );
+  }
+  lowered
+}
+
+fn qualify_trait_bound_method_call_inner(
+  head: &Calcit,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  def_name: &str,
+) -> Option<Calcit> {
   let Calcit::Method(method_name, calcit::MethodKind::Invoke(inferred_receiver_type)) = head else {
     return None;
   };
@@ -7468,7 +7542,18 @@ fn try_inline_method_call(
       if let Some(callable_head) =
         pick_callable_from_method_entry(method_entry, impl_value, type_ref, method_name.as_ref(), file_ns, call_stack)?
       {
-        return Ok(Some(build_inlined_call(callable_head, args, scope_types)));
+        let inlined = build_inlined_call(callable_head, args, scope_types);
+        post_lowering::record_rewrite(
+          post_lowering::RewriteOrigin::MethodInline,
+          || {
+            let mut call = vec![head.clone()];
+            call.extend(args.iter().cloned());
+            Calcit::from(call)
+          },
+          &inlined,
+          scope_types,
+        );
+        return Ok(Some(inlined));
       }
 
       Ok(None)

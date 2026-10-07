@@ -242,6 +242,18 @@ jobs:
       - name: "strictly check bundled core source definitions"
         run: cargo run --bin calcit -- calcit/test-wasi-command.cirru analyze check-public --ns calcit.core --ns calcit.test --ns calcit.internal --deps --summary-only
 
+      - name: "verify post-lowering invariants (CALCIT_LINT_CORE=1)"
+        # The validator re-checks the final tree of every definition and reports
+        # lowering regressions as internal compiler errors.
+        env:
+          CALCIT_LINT_CORE: "1"
+        run: |
+          cargo run --bin calcit -- src/cirru/calcit-core.cirru test --tag unit --require-match
+          cargo run --bin calcit -- calcit/test-wasi-command.cirru analyze check-public --ns calcit.core --ns calcit.test --ns calcit.internal --deps --summary-only
+          cargo run --bin calcit -- calcit/test.cirru
+          cargo run --bin calcit -- calcit/test-types-inference.cirru test --tag unit --require-match
+          cargo test --test post_lowering_cli
+
       - name: "verify bundled core Dynamic boundary documentation"
         run: cargo build --bin calcit && node scripts/core-dynamic-classification.mjs --check
 
