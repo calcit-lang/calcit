@@ -110,6 +110,7 @@ try {
 
   // calcit.core Struct and Enum references admit only values of that definition.
   const core = await import(pathToFileURL(join(writeOutput, "calcit.core.mjs")).href);
+  const foreignEnums = await import(pathToFileURL(join(writeOutput, "app.foreign-nominal.mjs")).href);
   const { CalcitStructDef } = await import(pathToFileURL(resolve("lib/js-struct-def.mjs")).href);
   const { CalcitStructValue } = await import(pathToFileURL(resolve("lib/js-struct-value.mjs")).href);
   const { valueMatchesTypeForm } = await import(pathToFileURL(resolve("lib/js-type-form.mjs")).href);
@@ -127,6 +128,22 @@ try {
   rejects(nominalBox, "qualified", 3);
   rejects(nominalBox, "maybe", foreignOption);
   rejects(nominalBox, "qualified", foreignOption);
+  // Replay generated definitions, not hand-built identities: same names in
+  // another namespace cannot satisfy a core Enum's nominal field contract.
+  assert.equal(core.Option.prototype.structRef.definitionRef, "calcit.core/Option");
+  assert.equal(core.Result.prototype.structRef.definitionRef, "calcit.core/Result");
+  assert.equal(foreignEnums.Option.prototype.structRef.definitionRef, "app.foreign-nominal/Option");
+  assert.equal(foreignEnums.Result.prototype.structRef.definitionRef, "app.foreign-nominal/Result");
+  rejects(nominalBox, "maybe", variant(foreignEnums.Option, "some", 2));
+  rejects(nominalBox, "qualified", variant(foreignEnums.Option, "some", 3));
+  rejects(nominalBox, "outcome", variant(foreignEnums.Result, "ok", 1));
+  const { bind_struct_definition } = await import(pathToFileURL(resolve("lib/js-struct-def.mjs")).href);
+  const coreOptionAlias = bind_struct_definition(core.Option, "app.foreign-nominal/OptionAlias");
+  assert.equal(coreOptionAlias, core.Option, "alias binding must preserve the original Enum identity");
+  accepts(nominalBox, "maybe", variant(coreOptionAlias, "some", 4));
+  assert.equal(core.Option.withImpls([]).prototype.structRef.definitionRef, "calcit.core/Option");
+  assert.equal(foreignEnums.Option.withImpls([]).prototype.structRef.definitionRef, "app.foreign-nominal/Option");
+  rejects(nominalBox, "qualified", variant(foreignEnums.Option.withImpls([]), "some", 5));
   const mapEntry = makeBox(core.MapEntry, { key: procs.newTag("key"), value: 1 });
   assert.equal(valueMatchesTypeForm(mapEntry, new CalcitSymbol("calcit.core/MapEntry")), true);
   assert.equal(valueMatchesTypeForm(mapEntry, new CalcitSymbol("MapEntry")), true);

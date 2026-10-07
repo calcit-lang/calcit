@@ -1,6 +1,8 @@
 import { CalcitTag, canonicalizeTagPairs, toString } from "./calcit-data.mjs";
 import { CalcitValue } from "./js-primes.mjs";
 import { CalcitImpl } from "./js-impl.mjs";
+import { CalcitEnumDef } from "./js-enum-def.mjs";
+import { CalcitStructValue } from "./js-struct-value.mjs";
 
 export class CalcitStructDef {
   name: CalcitTag;
@@ -44,10 +46,15 @@ export class CalcitStructDef {
   }
 }
 
-/** Match native definition binding without replacing an alias's existing identity. */
+/** Bind nominal definitions like native, preserving an alias's existing identity. */
 export function bind_struct_definition(value: CalcitValue, definitionRef: string): CalcitValue {
   if (value instanceof CalcitStructDef && value.definitionRef == null) {
     return new CalcitStructDef(value.name, value.fields, value.fieldTypes, value.impls, definitionRef);
+  }
+  if (value instanceof CalcitEnumDef && value.prototype.structRef.definitionRef == null) {
+    const prototype = value.prototype;
+    const structRef = bind_struct_definition(prototype.structRef, definitionRef) as CalcitStructDef;
+    return new CalcitEnumDef(new CalcitStructValue(prototype.name, prototype.fields, prototype.values, structRef));
   }
   return value;
 }

@@ -139,7 +139,7 @@ let valueMatchesTypeName = (value: CalcitValue, rawName: string): boolean => {
   // values of that definition, as the native matcher does.
   if (CORE_NOMINAL_DEFS.has(name)) {
     if (isStructValue(value)) return (value as any).structRef.definitionRef === `calcit.core/${name}`;
-    return value instanceof CalcitEnumValue && value.enumPrototype != null && value.enumPrototype.name() === name;
+    return value instanceof CalcitEnumValue && value.enumPrototype?.prototype.structRef.definitionRef === `calcit.core/${name}`;
   }
   // Other names may be type variables, aliases or traits that cannot be
   // resolved here. A qualified reference is checked against the value's own
