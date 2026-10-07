@@ -80,7 +80,7 @@ calcit calcit.cirru fix --workflow strict --format edn
 再按 `.github/workflows/` 与 `package.json` 运行项目原有的检查和构建命令，记录结果。
 
 **需要旧版迁移桥梁时，先迁移源码，再升级工具链。** 例如 0.28.x → 0.29.0，List `.join`、Map `.values`、
-List/String `.contains?` 的迁移规则在目标 CLI 中已退役或缩小范围，应先阅读本页“兼容入口的退场节奏”，用匹配项目的
+List/String `.contains?`，以及 Number `.round?`、FsPath `.write-text`、FfiResponse `.resolve` / `.reject` 的迁移规则在目标 CLI 中已退役或缩小范围，应先阅读本页“兼容入口的退场节奏”，用匹配项目的
 0.28.x CLI 预览、携带 revision 应用并运行原测试。已发布的 0.28.x CLI 没有 `--include-attached` 与 `--pattern`，
 桥梁只迁移 definition `:code`，预览的 `:manual-review-regions` 会列出 `|tests` 与 `|examples`；这两处的旧写法在第 9 步由目标
 CLI 的 `E_RETIRED_METHOD` 等诊断定位后逐处改写。若已安装目标 CLI，可通过原已发布 CLI 的绝对路径执行旧阶段，
@@ -164,6 +164,7 @@ named entry 不继承 default 配置，逐个检查与运行。把 `test --list`
 | `compact.cirru` → `calcit.cirru` | 早期双文件 Snapshot、direct quote/configs | 0.13.48 及更早确认基线；当前 `edit format` 的一次性读取 | 当前仍可用；见 [快照文件迁移说明](#快照文件迁移说明) |
 | `tag-match-to-match-v1`、`required-struct-field-v1` | 0.14.15 之前的 tag match 与可缺失 Struct 字段 | 已发布 0.14.15 | 已退役；见 [历史版本迁移记录](upgrade-history.md) |
 | `core-list-intersperse-v1`、`core-map-distinct-values-v1`、`core-predicate-method-v1` 的 List/String 部分 | List `.join`、Map `.values`、List/String `.contains?` | 已发布 0.28.x | 0.29.0 已退役；见 [兼容入口的退场节奏](#兼容入口的退场节奏) |
+| `core-integer-predicate-v1` 的 Number 方法部分、`core-effect-method-v1` 的 FsPath/FfiResponse 部分 | Number `.round?`、FsPath `.write-text`、FfiResponse `.resolve` / `.reject` | 已发布 0.28.x | 0.29.0 已退役；见 [兼容入口的退场节奏](#兼容入口的退场节奏) |
 | `core-api-0.28-v1` 与各兼容名的 fix rule | 0.28 起的核心 API 旧名 | 目标 CLI | 当前可用；按 [兼容入口的退场节奏](#兼容入口的退场节奏) 退场 |
 
 退场条件统一为：已知活跃下游默认分支的源码、附带测试/示例、宏生成代码和 CI/文档引用清零，且依赖模块与未合并迁移已核对后，
