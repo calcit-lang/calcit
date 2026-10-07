@@ -681,17 +681,13 @@ fn generic_bindings(generics: &[Arc<str>], args: &[Arc<CalcitTypeAnnotation>]) -
   generics.iter().cloned().zip(args.iter().cloned()).collect()
 }
 
+/// Qualify a type name through the namespace's imports, so `:as` aliases,
+/// `:refer` names and full paths reach the same nominal declaration.
 fn qualify_type_ref(name: &str, default_ns: &str) -> (Arc<str>, Arc<str>) {
-  let stripped = name.trim_start_matches('\'').trim_start_matches(':');
-  if let Some((ns, def)) = stripped.rsplit_once('/') {
-    (Arc::from(ns), Arc::from(def))
-  } else if program::has_def_code(default_ns, stripped) {
-    (Arc::from(default_ns), Arc::from(stripped))
-  } else if let Some(target_ns) = program::lookup_def_target_in_import(default_ns, stripped) {
-    (target_ns, Arc::from(stripped))
-  } else {
+  program::resolve_type_name_in_ns(default_ns, name).unwrap_or_else(|| {
+    let stripped = name.trim_start_matches('\'').trim_start_matches(':');
     (Arc::from(super::CORE_NS), Arc::from(stripped))
-  }
+  })
 }
 
 fn infer_nominal_path(default_ns: &str, name: &str) -> Option<(Arc<str>, Arc<str>)> {

@@ -47,6 +47,7 @@
             test-atom
             test-typed-edn
             test-imported-typed-edn
+            test-imported-type-names
             test-top-level-typed-edn
             test-runtime-map-decode
           :examples $ []
@@ -140,6 +141,34 @@
             assert= (:: :a 1) (parse-cirru-edn "|:: :a (; comment) 1")
           :examples $ []
           :schema $ :: 'Dynamic
+        'test-imported-type-names $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn test-imported-type-names ()
+            let
+                referred $ parse-cirru-edn-as "|%{} :External (:label |linked)" External
+                aliased $ parse-cirru-edn-as "|%{} :External (:label |linked)" schema/External
+                qualified $ parse-cirru-edn-as "|%{} :External (:label |linked)" test-edn.schema/External
+                foreign $ try-parse-cirru-edn-as "|%{} :Person (:handle |ada)" schema/Person
+              assert= (External :label |linked) referred
+              assert= referred aliased
+              assert= referred qualified
+              assert= (&struct:definition aliased) (&struct:definition qualified)
+              assert= true $ match foreign
+                (:ok value)
+                  = value $ schema/Person :handle |ada
+                (:err _) false
+              assert= true $ .ok? $ try-parse-cirru-edn-as "|%{} :Person (:age 23) (:name |Ada)" Person
+              assert= true $ .err? $ try-parse-cirru-edn-as "|%{} :Person (:age 23) (:name |Ada)" schema/Person
+              assert= true $ .err? $ try-parse-cirru-edn-as "|%{} :Person (:handle |ada)" Person
+              assert= referred $ decode-map-as
+                {} $ :label |linked
+                , schema/External
+              , &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |imported-type-names)
+            :code $ quote $ test-imported-type-names
+            :tags $ #{} :unit
         'test-imported-typed-edn $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-imported-typed-edn ()
             assert=
@@ -273,10 +302,15 @@
           :require
             util.core :refer $ inside-eval: log-title
             test-edn.schema :refer $ External
+            test-edn.schema :as schema
     'test-edn.schema $ %{} 'FileEntry
-      :defs $ {} $ 'External
-        %{} 'CodeEntry (:doc |)
+      :defs $ {}
+        'External $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct External (:label 'String)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'Person $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Person (:handle 'String)
           :examples $ []
           :schema $ :: 'StructDef
       :ns $ %{} 'NsEntry (:doc |)
