@@ -4015,12 +4015,14 @@ impl CalcitTypeAnnotation {
     values.pop().expect("substitution root result")
   }
 
-  /// Check whether this annotation contains any `TypeVar`.
-  pub fn contains_type_var(&self) -> bool {
+  /// Check whether any nested component (including `self`) satisfies `predicate`.
+  fn any_component(&self, predicate: impl Fn(&Self) -> bool) -> bool {
     let mut pending = vec![self];
     while let Some(annotation) = pending.pop() {
+      if predicate(annotation) {
+        return true;
+      }
       match annotation {
-        Self::TypeVar(_) => return true,
         Self::TypeRef(_, args) | Self::Struct(_, args) | Self::Enum(_, args) => {
           pending.extend(args.iter().map(Arc::as_ref));
         }
@@ -4047,40 +4049,24 @@ impl CalcitTypeAnnotation {
     false
   }
 
+  /// Check whether this annotation contains any `TypeVar`.
+  pub fn contains_type_var(&self) -> bool {
+    self.any_component(|annotation| matches!(annotation, Self::TypeVar(_)))
+  }
+
+  /// Check whether this annotation contains `Never`, e.g. the payload slot
+  /// inferred from a payload-free constructor such as `Option :none`.
+  pub(crate) fn contains_never(&self) -> bool {
+    self.any_component(|annotation| matches!(annotation, Self::Never))
+  }
+
   /// Check whether this annotation recursively contains one named `TypeVar`.
   ///
   /// Generic matching uses this as an occurs-check before recording a binding,
   /// so a value such as `Optional<T>` cannot bind `T` to a type containing
   /// itself and make later comparisons recurse forever.
   pub(crate) fn contains_type_var_named(&self, name: &str) -> bool {
-    let mut pending = vec![self];
-    while let Some(annotation) = pending.pop() {
-      match annotation {
-        Self::TypeVar(current) if current.as_ref() == name => return true,
-        Self::TypeRef(_, args) | Self::Struct(_, args) | Self::Enum(_, args) => {
-          pending.extend(args.iter().map(Arc::as_ref));
-        }
-        Self::List(inner)
-        | Self::Set(inner)
-        | Self::Ref(inner)
-        | Self::Optional(inner)
-        | Self::JsNullish(inner)
-        | Self::Variadic(inner) => pending.push(inner),
-        Self::Map(key, value) => {
-          pending.push(value);
-          pending.push(key);
-        }
-        Self::Fn(signature) => {
-          pending.extend(signature.arg_types.iter().map(Arc::as_ref));
-          pending.push(&signature.return_type);
-          if let Some(rest) = &signature.rest_type {
-            pending.push(rest);
-          }
-        }
-        _ => {}
-      }
-    }
-    false
+    self.any_component(|annotation| matches!(annotation, Self::TypeVar(current) if current.as_ref() == name))
   }
 
   /// Binding-aware occurs-check used before inserting a generic binding.

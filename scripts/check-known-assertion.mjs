@@ -421,7 +421,7 @@ try {
     JSON.parse(truthinessRun("query", "def", `calcit.core/${name}`, "--format", "json")).data.tests
       .filter(test => test.tags.includes("reset-proof")));
   assert.equal(resetTests.length, 4);
-  assert.equal(resetCoreTests.length, 3);
+  assert.equal(resetCoreTests.length, 4);
   const resetSnapshot = join(project, "reset-result.cirru");
   await copyFile("tests/fixtures/deep-recursion.cirru", resetSnapshot);
   const resetRun = (...args) => execFileSync(binary, [resetSnapshot, ...args], options);
@@ -2002,6 +2002,10 @@ try {
     ["open-loop-payload-use", "loop ((n 0) (tree (Option :none))) (if (&< n 1) (recur 1 (Option :some (make-open-number))) (RecursiveComponent :tree tree))"],
     ["mixed-loop-payloads", "(fn (flag) (loop ((n 0) (tree (Option :none))) (if (&< n 1) (recur 1 (if flag (Option :some 1) (Option :some |wrong))) (RecursiveComponent :tree tree)))) true"],
     ["wrong-loop-family", "loop ((n 0) (signal (RecursiveSignal :idle))) (if (&< n 1) (recur 1 (Option :some 1)) (RecursiveSignalHolder :signal signal))"],
+    // A Ref's payload is fixed at construction; an empty initializer needs explicit Option<T> context (#1737).
+    ["empty-ref-wrong-write", "let ((cell (atom (assert-type (Option :none) (:: 'Option 'Number))))) (reset! cell (Option :some |wrong))"],
+    ["empty-ref-alias-write", "let ((cell (atom (assert-type (Option :none) (:: 'Option 'Number)))) (alias cell)) (reset! alias (Option :some |wrong))"],
+    ["empty-ref-unannotated-write", "let ((cell (atom (Option :none)))) (reset! cell (Option :some 7))"],
     ["invariant-loop-ref", "let ((fixed (assert-type (atom (Option :some 7)) (:: 'Ref (:: 'Option 'Number))))) (loop ((n 0) (cell (atom (assert-type (Option :none) (:: 'Option 'Dynamic))))) (hint-fn ({} (:args ([] 'Number (:: 'Ref (:: 'Option 'Dynamic)))) (:return 'Number))) (if (&< n 1) (recur 1 fixed) 42))"],
     ["explicit-loop-contract", "loop ((n 0) (value (Option :none))) (hint-fn ({} (:args ([] 'Number (:: 'Option 'Number))) (:return 'Number))) (if (&< n 1) (recur 1 (Option :some |wrong)) (option:unwrap-or value 0))"],
     ["explicit-loop-unknown-update", "(fn (flag) (loop ((n 0) (value (Option :none))) (hint-fn ({} (:args ([] 'Number (:: 'Option 'Number))) (:return 'Number))) (if (&< n 1) (recur 1 (Option :some (if flag 7 |wrong))) (option:unwrap-or value 0)))) true"],
@@ -2072,6 +2076,12 @@ try {
         assert.match(diagnostics, /W_FN_ARG_TYPE_MISMATCH/);
         assert.match(diagnostics, /@calcit\.assert-evidence\/run-tests @[0-9]/,
           "resolved raw constructors must locate the source call");
+      }
+      if (name.startsWith("empty-ref-")) {
+        assert.match(diagnostics, /W_RESET_ARG_TYPE_MISMATCH/);
+        const fixHint = /give the initializer explicit type context, e\.g\. `atom \$ assert-type \(Option :none\) \$ :: 'Option 'Number`/;
+        if (name === "empty-ref-unannotated-write") assert.match(diagnostics, fixHint);
+        else assert.doesNotMatch(diagnostics, fixHint);
       }
       if (name === "contradictory-loop-assertion" || name === "contradictory-captured-loop-assertion") {
         assert.match(diagnostics, /E_ASSERT_TYPE_MISMATCH/);

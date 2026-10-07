@@ -982,6 +982,10 @@ pub(super) fn check_reset_arg_types(
     Some(CalcitTypeAnnotation::Ref(inner)) => inner.clone(),
     _ => calcit::DYNAMIC_TYPE.clone(),
   };
+  // A payload-free initializer (e.g. `atom (Option :none)`) fixes the slot to
+  // Never. References are invariant, so later writes never widen it; point the
+  // user at the initializer instead of the write.
+  let fixed_by_empty_initializer = payload.contains_never();
   let expected_types = [Arc::new(CalcitTypeAnnotation::Ref(payload.clone())), payload];
   let ctx = CheckContext {
     head_form,
@@ -995,7 +999,12 @@ pub(super) fn check_reset_arg_types(
     check_warnings,
   };
   let message = |index, expected: &str, actual: &str, expr: String| {
-    format!("[Warn] `reset!` arg {index} expects type `{expected}`, but got `{actual}`\n  Expression: ({expr})")
+    let hint = if index == 2 && fixed_by_empty_initializer {
+      "; the reference type was fixed by an empty initializer and later writes do not widen it; give the initializer explicit type context, e.g. `atom $ assert-type (Option :none) $ :: 'Option 'Number`"
+    } else {
+      ""
+    };
+    format!("[Warn] `reset!` arg {index} expects type `{expected}`, but got `{actual}`{hint}\n  Expression: ({expr})")
   };
   if let Some(value) = args.get(1) {
     let actual = resolve_type_value(value, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());

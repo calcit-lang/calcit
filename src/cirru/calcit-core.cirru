@@ -10004,6 +10004,16 @@
                 assert= 3 $ reset! source $ reset! source 3
                 assert= 3 $ deref source
               :tags $ #{} :core :reset-proof :types :unit
+            %{} 'TestEntry (:name |empty-initializer-needs-explicit-payload)
+              :code $ quote $ let
+                  cell $ atom $ assert-type (Option :none) (:: 'Option 'Number)
+                assert= (Option :some 7)
+                  reset! cell $ Option :some 7
+                assert= 8 $ &+ 1 $ option:unwrap-or (deref cell) 0
+                assert= (Option :none)
+                  reset! cell $ Option :none
+                assert= 0 $ option:unwrap-or (deref cell) 0
+              :tags $ #{} :core :reset-proof :types :unit
         'rest $ %{} 'CodeEntry
           :doc "|Return the same collection type without its first item; empty collections remain empty and nil is rejected."
           :code $ quote $ defn rest (x)
