@@ -242,7 +242,25 @@ List/String 的旧 `.contains?` 已在 0.29.0 删除（见下文“兼容入口�
 
 函数形式 `contains?` 不变：List 按下标、String 按下标、Map 按键、Set 按成员，调用方式与结果同 0.28。
 
-其余已有决策的兼容名（`turn-*`、`some?`、`round?`、`foldl'` / `reduce`、`%some` / `%none` / `%ok` / `%err` 等）按同一节奏处理。具体删除版本在发布前于本文更新，此处不预先承诺。
+### 仍可用的兼容名
+
+core 中带 `:deprecated` 标记的 15 个兼容名在 0.29.0 仍可调用，行为与 0.28 相同。新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余按首选写法逐处改写。
+
+| 兼容名 | 首选写法 | 迁移 |
+|---|---|---|
+| `%some` / `%none` / `%ok` / `%err` | `Option :some x` / `Option :none` / `Result :ok x` / `Result :err e` | `calcit calcit.cirru fix --rule core-nominal-constructor-v1 --format edn` |
+| `some?` | `non-nil?` | `calcit calcit.cirru fix --rule core-non-nil-predicate-v1 --format edn` |
+| `optionally` | `nil->option` | `calcit calcit.cirru fix --rule core-function-alias-v1 --format edn` |
+| `join-str` | `join-string` | 同上 |
+| `join` | `intersperse` | 同上 |
+| `vals` | `distinct-values` | 同上 |
+| `turn-string` | `to-string` | 参数已证明为标量时用 `core-identity-conversion-v1`，其余人工改写 |
+| `turn-str` | `to-string` | 人工改写 |
+| `add-watch` / `remove-watch` | `add-watch!` / `remove-watch!` | 人工改写 |
+| `case-default` | `match`，默认值写成末尾 `_` 分支 | 人工改写 |
+| `cpu-time` | `monotonic-time-ms` | 人工改写 |
+
+这些名字以及 `round?`、`foldl'` / `reduce` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零后，在下一个非 patch 版本删除，并在本文列出删除项。
 
 ## WASM 的 nil 类型证据
 
