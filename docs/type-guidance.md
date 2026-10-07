@@ -103,18 +103,18 @@ loop
 
 ```cirru
 let
-    cell $ atom $ assert-type (Option :none) $ :: 'Option 'Number
+    cell $ ref $ assert-type (Option :none) $ :: 'Option 'Number
   reset! cell $ Option :some 7
   assert= 7 $ option:unwrap-or (deref cell) 0
   reset! cell $ Option :none
   assert= 0 $ option:unwrap-or (deref cell) 0
 ```
 
-同一个 Ref 经局部别名写入 `Option :some |wrong` 时，同样报告 `W_RESET_ARG_TYPE_MISMATCH`。省略上下文时，`atom (Option :none)` 的 payload 槽固定为 Never，下面的写入会被拒绝，诊断会给出上面的初始化写法：
+同一个 Ref 经局部别名写入 `Option :some |wrong` 时，同样报告 `W_RESET_ARG_TYPE_MISMATCH`。省略上下文时，`ref (Option :none)` 的 payload 槽固定为 Never，下面的写入会被拒绝，诊断会给出上面的初始化写法：
 
 ```cirru.no-check
 let
-    cell $ atom $ Option :none
+    cell $ ref $ Option :none
   reset! cell $ Option :some 7
 ```
 

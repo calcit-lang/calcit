@@ -922,6 +922,7 @@ const DEFINITION_HEADS: &[&str] = &[
   "defenum",
   "deftrait",
   "defimpl",
+  "defref",
   "defatom",
   "defexternal",
   "defwasm-export",

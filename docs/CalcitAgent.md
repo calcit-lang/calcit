@@ -254,7 +254,7 @@ JSON 中 definition 和 match 都带 `source`、`origin`，并用 `node_kind: le
 - definition 与静态 usage 一起重命名时，使用 `calcit fix --rule rename-definition-v1 --ns <ns> --def <old> --to <new> --format edn`，不要组合 `query search` 与文本替换猜调用点。普通 code、`:tests`、examples、schema 与 imports 会进入同一原子事务；macro、quoted data、dependency source 或缺少 source coordinate 的 blocker 会使事务整体拒绝，此时不得绕过为 declaration-only 改名。
 - 把 `(def name value)` 及其静态读取一起改成零参数函数时，使用 `calcit fix --rule value-to-zero-arg-fn-v1 --ns <ns> --def <name> --format edn`。该操作把初始化时的一次求值改成每次调用求值，会影响副作用、环境读取、对象身份、分配成本和缓存，Agent 必须展示并审阅这项语义变化，不能把它当作等价 lint fix 或加入 preset。普通 code、`:tests`、examples 与目标 schema 会原子更新；macro、quoted data、dependency source、schema type reference、自引用或缺少 source coordinate 时保持 fail closed。
 
-完成结构升级后，可用 `calcit fix --preset core-api-0.28-v1 --include-attached --format edn` 一次预览 13 条已证明的核心 API 叶子改名，覆盖标量转换、谓词、集合方法和 core 效果方法，以及附带的 `:tests` / `:examples`。不传 `--include-attached` 时仍只扫描 `:code`，以 `source-coverage` 为准。附带区域复用普通源码的类型、实现来源和求值语义证明；同一区域混有需要 review 的表达式时不部分写入，也不改变测试预期。应用时重复相同 selectors 和 flag，再传 `--apply --expect-revision`；随后运行附带测试和示例检查。完整调用树的构造器、Option/Result helper 迁移仍单独运行对应规则；`surface-latest-v1/v2` 也支持附带区域。未支持的规则组合明确报错，不静默忽略。详见 `calcit docs read fix.md --full`。
+完成结构升级后，可用 `calcit fix --preset core-api-0.28-v1 --include-attached --format edn` 一次预览 13 条已证明的核心 API 叶子改名，覆盖标量转换、谓词、集合方法和 core 效果方法，以及附带的 `:tests` / `:examples`；`core-api-0.29-v1` 在这 13 条之外追加 Ref 构造改名 `core-ref-constructor-v1`。不传 `--include-attached` 时仍只扫描 `:code`，以 `source-coverage` 为准。附带区域复用普通源码的类型、实现来源和求值语义证明；同一区域混有需要 review 的表达式时不部分写入，也不改变测试预期。应用时重复相同 selectors 和 flag，再传 `--apply --expect-revision`；随后运行附带测试和示例检查。完整调用树的构造器、Option/Result helper 迁移仍单独运行对应规则；`surface-latest-v1/v2` 也支持附带区域。未支持的规则组合明确报错，不静默忽略。详见 `calcit docs read fix.md --full`。
 - 为单个 runtime value/function 补全缺失 schema 时，使用 `calcit fix --rule synthesize-schema-v1 --ns <ns> --def <name> --format edn`。它只复用正常 compiled inference 与普通项目源码中 resolver 确认、类型一致的全部调用点，填补已有 `Dynamic` 洞；`machine-applicable` 候选可按 revision 原子应用，带 `schema.args.<index>`、`schema.return...` 等 unresolved slot 的 `needs-review` 候选即使传 `--apply` 也不写回。tests/examples 的单个样本不能充当公共参数证明，不得为消除洞扩大成整个 `Dynamic`；macro、data/trait/impl contract 继续显式维护。
 
 schema 候选没有 unresolved slot 也可能需要 review；检查 `:origin-chain` 中的编译器诊断与实际实现证据，不能用返回声明、未证明断言或强转目标类型循环自证。此类候选保留可读报告，但 `--apply` 不写回。
@@ -371,6 +371,8 @@ calcit test '<namespace>/<definition>'
 `type-at --format edn` 的语义路径可能是 `code@3.2`，而 `tree --path` 需要 `@3.2`；不要把仍含 `code@` 的 follow-up 命令直接交给 `tree`。`check-public` 目前只支持 human/json，所以上述公开 API 审计显式使用 JSON。
 
 读取 `query type`、`type-at` 或 `context` 的方法契约时，先看 `status`：`proven` 表示接收者实例化后，调用参数与结果已有精确类型；`open` 表示仍含 `Dynamic`/`DynFn` 或缺少可证明的 schema，不能据此生成精确调用。例如普通 `Option<Dynamic>` 的 `.unwrap-or` 是开放契约，但已证明为空的 core `Option :none` 可以由具体 fallback 推断类型；不读取内部值的 `.some? -> Bool` 仍可证明。`ambiguous` 需要先消除 trait/impl 来源冲突，不要按展示顺序猜一个实现。对已证明同实现且有显式 fix 的别名，再看 `role`：`preferred` 是当前首选应用方法，`compatibility` 保留旧名查询并提供 `preferred-name`、`fix-rule`；没有角色不代表不可用，也不能仅凭 `proven` 猜测首选。
+
+创建 Ref 使用 `ref value`（局部）与 `defref *name value`（命名空间级，热重载保留状态），`type-of` 返回 `:ref`，谓词为 `ref?`。`atom` / `defatom` 是同一实现的兼容旧名，不要在新代码中生成；已有项目用 `calcit fix --rule core-ref-constructor-v1` 预览后迁移。读取器会把 `ref` 解析为内建构造，不要用 `ref` 作局部绑定或参数名。
 
 Ref watcher 的应用入口使用 `add-watch! ref :key callback` 与 `remove-watch! ref :key`；`!` 表示修改 watcher 注册状态，并不表示所有可能失败的操作都要加后缀。callback 接收新值和旧值，返回 `Unit`；重复注册或移除缺失 key 仍会报错。旧 `add-watch/remove-watch` 保留底层兼容，不建议 Agent 生成新的应用调用；未知同名用户函数不能仅凭拼写自动迁移。
 

@@ -65,6 +65,8 @@ const CORE_COLLECTION_COMBINE_RULE: &str = "core-collection-combine-v1";
 const CORE_COLLECTION_COMBINE_DIAGNOSTIC: &str = "FIX_CORE_COLLECTION_COMBINE";
 const CORE_EFFECT_METHOD_RULE: &str = "core-effect-method-v1";
 const CORE_EFFECT_METHOD_DIAGNOSTIC: &str = "FIX_CORE_EFFECT_METHOD";
+const CORE_REF_CONSTRUCTOR_RULE: &str = "core-ref-constructor-v1";
+const CORE_REF_CONSTRUCTOR_DIAGNOSTIC: &str = "FIX_CORE_REF_CONSTRUCTOR";
 const RENAME_DEFINITION_RULE: &str = "rename-definition-v1";
 const RENAME_DEFINITION_DIAGNOSTIC: &str = "REFACTOR_RENAME_DEFINITION";
 const VALUE_TO_ZERO_ARG_FN_RULE: &str = "value-to-zero-arg-fn-v1";
@@ -86,6 +88,7 @@ const OPTIONAL_PARAMETERS_DIAGNOSTIC: &str = "E_LEGACY_OPTIONAL_PARAM";
 const SURFACE_LATEST_V1_PRESET: &str = "surface-latest-v1";
 const SURFACE_LATEST_V2_PRESET: &str = "surface-latest-v2";
 const CORE_API_028_V1_PRESET: &str = "core-api-0.28-v1";
+const CORE_API_029_V1_PRESET: &str = "core-api-0.29-v1";
 const AVAILABLE_RULES: [&str; 5] = [
   REMOVED_DATA_API_RULE,
   NAMED_ENUM_CONSTRUCTOR_RULE,
@@ -121,6 +124,24 @@ const CORE_API_028_V1_RULES: [&str; 13] = [
   CORE_LIST_GET_RULE,
   CORE_COLLECTION_COMBINE_RULE,
   CORE_EFFECT_METHOD_RULE,
+];
+// The 0.29 preset keeps every published 0.28 rule and adds the Ref constructor
+// rename, so `core-api-0.28-v1` keeps its published meaning.
+const CORE_API_029_V1_RULES: [&str; 14] = [
+  CORE_NON_NIL_PREDICATE_RULE,
+  CORE_INTEGER_PREDICATE_RULE,
+  CORE_IDENTITY_CONVERSION_RULE,
+  CORE_PREDICATE_METHOD_RULE,
+  CORE_LIST_ADD_RULE,
+  CORE_SET_INCLUDE_RULE,
+  CORE_COLLECTION_LEN_RULE,
+  CORE_LIST_FOLD_RULE,
+  CORE_LIST_FLAT_MAP_RULE,
+  CORE_LIST_JOIN_STRING_RULE,
+  CORE_LIST_GET_RULE,
+  CORE_COLLECTION_COMBINE_RULE,
+  CORE_EFFECT_METHOD_RULE,
+  CORE_REF_CONSTRUCTOR_RULE,
 ];
 const TAG_MATCH_RULE: &str = "tag-match-to-match-v1";
 const REQUIRED_STRUCT_FIELD_RULE: &str = "required-struct-field-v1";
@@ -480,7 +501,8 @@ pub(crate) fn handle_fix_command(
   let optional_parameters = selected_rules.contains(&OPTIONAL_PARAMETERS_RULE);
   let core_predicate_rename = selected_rules.contains(&CORE_NON_NIL_PREDICATE_RULE)
     || selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE)
-    || selected_rules.contains(&CORE_FUNCTION_ALIAS_RULE);
+    || selected_rules.contains(&CORE_FUNCTION_ALIAS_RULE)
+    || selected_rules.contains(&CORE_REF_CONSTRUCTOR_RULE);
   let semantic_refactor = semantic_rename || value_to_zero_arg_fn;
   let migration_rule =
     semantic_refactor || schema_synthesis || optional_parameters || core_predicate_rename || options.workflow.is_some();
@@ -747,6 +769,13 @@ pub(crate) fn handle_fix_command(
       )?);
     }
   }
+  if selected_rules.contains(&CORE_REF_CONSTRUCTOR_RULE) {
+    suggestions.extend(plan_core_ref_constructor_fixes(
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+    )?);
+  }
   let mut constructor_kinds = Vec::new();
   if selected_rules.contains(&NAMED_ENUM_CONSTRUCTOR_RULE) {
     constructor_kinds.push(NominalKind::Enum);
@@ -975,7 +1004,7 @@ pub(crate) fn handle_fix_command(
         expanded_rules,
         source_coverage: (options.include_attached
           || options.workflow.is_some()
-          || options.preset.as_deref() == Some(CORE_API_028_V1_PRESET)
+          || matches!(options.preset.as_deref(), Some(CORE_API_028_V1_PRESET | CORE_API_029_V1_PRESET))
           || matches!(
             options.rule.as_deref(),
             Some(
@@ -1192,10 +1221,13 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     return Err(format!("`calcit fix --to` is only valid with `--rule {RENAME_DEFINITION_RULE}`."));
   }
   if let Some(preset) = options.preset.as_deref()
-    && !matches!(preset, SURFACE_LATEST_V1_PRESET | SURFACE_LATEST_V2_PRESET | CORE_API_028_V1_PRESET)
+    && !matches!(
+      preset,
+      SURFACE_LATEST_V1_PRESET | SURFACE_LATEST_V2_PRESET | CORE_API_028_V1_PRESET | CORE_API_029_V1_PRESET
+    )
   {
     return Err(format!(
-      "Unknown fix preset `{preset}`. Available presets: `{SURFACE_LATEST_V1_PRESET}`, `{SURFACE_LATEST_V2_PRESET}`, `{CORE_API_028_V1_PRESET}`."
+      "Unknown fix preset `{preset}`. Available presets: `{SURFACE_LATEST_V1_PRESET}`, `{SURFACE_LATEST_V2_PRESET}`, `{CORE_API_028_V1_PRESET}`, `{CORE_API_029_V1_PRESET}`."
     ));
   }
   if let Some(rule) = options.rule.as_deref()
@@ -1223,6 +1255,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CORE_LIST_GET_RULE
         | CORE_COLLECTION_COMBINE_RULE
         | CORE_EFFECT_METHOD_RULE
+        | CORE_REF_CONSTRUCTOR_RULE
         | RENAME_DEFINITION_RULE
         | VALUE_TO_ZERO_ARG_FN_RULE
         | SYNTHESIZE_SCHEMA_RULE
@@ -1239,7 +1272,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
   {
     return Err(
       format!(
-        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_SET_INCLUDE_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_SET_INCLUDE_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
       ) + &format!(
         " Review-only compiler rules: `{UNSAFE_COERCE_BOUNDARY_RULE}`, `{ASSERT_TYPE_PROOF_RULE}`, `{CONCRETE_RETURN_PROOF_RULE}`, `{CALLABLE_CONTRACT_PROOF_RULE}`, `{NOMINAL_WRITE_PROOF_RULE}`."
       ),
@@ -1299,6 +1332,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_LIST_GET_RULE
         | CORE_COLLECTION_COMBINE_RULE
         | CORE_EFFECT_METHOD_RULE
+        | CORE_REF_CONSTRUCTOR_RULE
     ) {
       return vec![match rule {
         RENAME_DEFINITION_RULE => RENAME_DEFINITION_RULE,
@@ -1327,6 +1361,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_LIST_GET_RULE => CORE_LIST_GET_RULE,
         CORE_COLLECTION_COMBINE_RULE => CORE_COLLECTION_COMBINE_RULE,
         CORE_EFFECT_METHOD_RULE => CORE_EFFECT_METHOD_RULE,
+        CORE_REF_CONSTRUCTOR_RULE => CORE_REF_CONSTRUCTOR_RULE,
         _ => OPTIONAL_PARAMETERS_RULE,
       }];
     }
@@ -1336,6 +1371,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
     Some(SURFACE_LATEST_V1_PRESET) => SURFACE_LATEST_V1_RULES.to_vec(),
     Some(SURFACE_LATEST_V2_PRESET) => SURFACE_LATEST_V2_RULES.to_vec(),
     Some(CORE_API_028_V1_PRESET) => CORE_API_028_V1_RULES.to_vec(),
+    Some(CORE_API_029_V1_PRESET) => CORE_API_029_V1_RULES.to_vec(),
     _ => AVAILABLE_RULES.to_vec(),
   }
 }
@@ -1522,6 +1558,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_EFFECT_METHOD_DIAGNOSTIC,
       evidence_source: "proven-core-nominal-receiver-and-identical-method-implementation",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    CORE_REF_CONSTRUCTOR_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: CORE_REF_CONSTRUCTOR_DIAGNOSTIC,
+      evidence_source: "reader-resolved-builtin-proc-and-unshadowed-core-syntax",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -4002,6 +4045,7 @@ fn supports_attached_migrations(rule: &str) -> bool {
       | CORE_IDENTITY_CONVERSION_RULE
       | CORE_LIST_ADD_RULE
       | CORE_COLLECTION_LEN_RULE
+      | CORE_REF_CONSTRUCTOR_RULE
       | NAMED_ENUM_CONSTRUCTOR_RULE
       | NAMED_STRUCT_CONSTRUCTOR_RULE
       | REDUNDANT_DO_RULE
@@ -4172,6 +4216,15 @@ fn plan_attached_fixes(
               Ok(planned) => candidates.extend(planned),
               Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
             }
+          }
+          if selected_rules.contains(&CORE_REF_CONSTRUCTOR_RULE) {
+            candidates.extend(plan_core_ref_constructor_source(
+              snapshot,
+              snapshot_file,
+              namespace,
+              &synthetic_def,
+              &wrapper,
+            ));
           }
           for alias in QUERYABLE_METHOD_ALIASES
             .iter()
@@ -4429,6 +4482,171 @@ fn plan_core_predicate_rename_source(
       });
   }
   Ok(suggestions)
+}
+
+/// Plan `atom` -> `ref` and `defatom` -> `defref` in definition code.
+fn plan_core_ref_constructor_fixes(
+  snapshot: &Snapshot,
+  snapshot_file: &str,
+  selected_definitions: &[(String, String)],
+) -> Result<Vec<FixSuggestion>, String> {
+  let mut suggestions = Vec::new();
+  for (namespace, definition) in selected_definitions {
+    let entry = snapshot
+      .files
+      .get(namespace)
+      .and_then(|file| file.defs.get(definition))
+      .ok_or_else(|| format!("Selected definition `{namespace}/{definition}` is missing from the source snapshot."))?;
+    suggestions.extend(plan_core_ref_constructor_source(
+      snapshot,
+      snapshot_file,
+      namespace,
+      definition,
+      &entry.code,
+    ));
+  }
+  Ok(suggestions)
+}
+
+/// The reader turns both `atom` and `ref` into the same built-in proc before any
+/// scope lookup, so any evaluated `atom` leaf keeps its identity after the
+/// rename, including inside a quasiquote template: the template already holds
+/// `(&proc ref)` and no local, definition or import can shadow either spelling
+/// at the expansion site. `defatom` is
+/// core syntax resolved by name, so it is renamed only as a call head that no
+/// namespace definition, import, local binding, macro template or unknown
+/// macro context can observe; other occurrences require review.
+fn plan_core_ref_constructor_source(
+  snapshot: &Snapshot,
+  snapshot_file: &str,
+  namespace: &str,
+  definition: &str,
+  source: &Cirru,
+) -> Vec<FixSuggestion> {
+  let mut occurrences = Vec::new();
+  collect_ref_constructor_leaves(source, &mut Vec::new(), false, &mut occurrences);
+  if occurrences.is_empty() {
+    return Vec::new();
+  }
+  let mut local_bindings = HashSet::new();
+  collect_potential_local_bindings(source, &mut local_bindings);
+  let shadowed = |name: &str| local_bindings.contains(name) || namespace_binds_name(snapshot, namespace, name);
+  occurrences
+    .into_iter()
+    .map(|(target_path, old_name, in_template)| {
+      let syntax = old_name == "defatom";
+      let new_name = if syntax { "defref" } else { "ref" };
+      let review = if !syntax {
+        None
+      } else if target_path.last() != Some(&0) {
+        Some("`defatom` is not a call head here; review whether this leaf is meant as core syntax.".to_owned())
+      } else if let Some(name) = ["defatom", "defref"].into_iter().find(|name| shadowed(name)) {
+        Some(format!(
+          "`{name}` is bound by a local, a namespace definition or an import in `{namespace}`; review which definition the call resolves to."
+        ))
+      } else if in_template {
+        Some("`defatom` is inside a quasiquote template and resolves at each expansion site; review the macro users.".to_owned())
+      } else if !ref_definition_context_is_stable(source, &target_path) {
+        Some("`defatom` is an argument of an unknown macro that may observe its spelling; review before renaming.".to_owned())
+      } else {
+        None
+      };
+      let original_node = Cirru::leaf(old_name);
+      let replacement_node = Cirru::leaf(new_name);
+      let machine_applicable = review.is_none();
+      FixSuggestion {
+        rule_id: CORE_REF_CONSTRUCTOR_RULE,
+        diagnostic_code: CORE_REF_CONSTRUCTOR_DIAGNOSTIC,
+        semantic_layer: "surface",
+        source_file: snapshot_file.to_owned(),
+        definition: format!("{namespace}/{definition}"),
+        path: format!("code{}", format_path(&target_path)),
+        fingerprint: node_fingerprint(&original_node),
+        origin_chain: vec![serde_json::json!({
+          "kind": if syntax { "unshadowed-core-syntax" } else { "reader-resolved-builtin-proc" },
+          "target": format!("calcit.core/{old_name}"),
+          "replacement": format!("calcit.core/{new_name}"),
+        })],
+        original: quoted_json(&original_node),
+        replacement: machine_applicable.then(|| quoted_json(&replacement_node)),
+        applicability: if machine_applicable {
+          "machine-applicable"
+        } else {
+          "requires-review"
+        },
+        message: review.unwrap_or_else(|| {
+          format!(
+            "Use the preferred Ref constructor `{new_name}`; `{old_name}` is the same built-in implementation, so evaluation and Ref identity are unchanged."
+          )
+        }),
+        target_path,
+        operation: machine_applicable.then(|| FixOperation::ReplaceLeaf {
+          original: old_name.to_owned(),
+          replacement: new_name.to_owned(),
+        }),
+      }
+    })
+    .collect()
+}
+
+/// Collect `atom` / `defatom` leaves outside quoted data and comments, marking
+/// leaves that sit in a quasiquote template outside any unquote.
+fn collect_ref_constructor_leaves(
+  node: &Cirru,
+  path: &mut Vec<usize>,
+  in_template: bool,
+  output: &mut Vec<(Vec<usize>, &'static str, bool)>,
+) {
+  match node {
+    Cirru::Leaf(leaf) => match leaf.as_ref() {
+      "atom" => output.push((path.clone(), "atom", in_template)),
+      "defatom" => output.push((path.clone(), "defatom", in_template)),
+      _ => {}
+    },
+    Cirru::List(items) => {
+      let in_template = match items.first().and_then(leaf_value) {
+        Some("quote" | "cirru-quote" | ";") => return,
+        Some("quasiquote") => true,
+        Some("~" | "~@") => false,
+        _ => in_template,
+      };
+      for (index, child) in items.iter().enumerate() {
+        path.push(index);
+        collect_ref_constructor_leaves(child, path, in_template, output);
+        path.pop();
+      }
+    }
+  }
+}
+
+/// Whether `name` is defined in, or imported into, the namespace. An unreadable
+/// ns form counts as bound so that the caller asks for review.
+fn namespace_binds_name(snapshot: &Snapshot, namespace: &str, name: &str) -> bool {
+  let Some(file) = snapshot.files.get(namespace) else {
+    return true;
+  };
+  file.defs.contains_key(name)
+    || program::extract_import_map(&file.ns.code, namespace).map_or(true, |imports| imports.contains_key(name))
+}
+
+/// Every enclosing form of the call must be a known binding/control form or a
+/// built-in proc call, so no user macro receives the syntax spelling.
+fn ref_definition_context_is_stable(code: &Cirru, head_path: &[usize]) -> bool {
+  let call_path = &head_path[..head_path.len().saturating_sub(1)];
+  (0..call_path.len()).all(|depth| {
+    let Ok(Cirru::List(items)) = navigate_to_path(code, &call_path[..depth]) else {
+      return false;
+    };
+    match items.first() {
+      Some(Cirru::Leaf(head)) => {
+        matches!(
+          head.as_ref(),
+          "defn" | "defwasm-export" | "fn" | "let" | "&let" | "do" | "if" | "when" | "when-not" | "cond"
+        ) || head.as_ref().parse::<CalcitProc>().is_ok()
+      }
+      _ => false,
+    }
+  })
 }
 
 fn collect_builtin_round_call_heads(node: &Cirru, path: &mut Vec<usize>, heads: &mut Vec<Vec<usize>>) {

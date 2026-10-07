@@ -3536,7 +3536,7 @@
           :tags $ #{} :builtin :deprecated :internal :state :watch
         'add-watch! $ %{} 'CodeEntry
           :doc "|给 Ref<T> 注册 watcher。Tag key 不可重复；callback 接收新值和旧值，返回 Unit。注册会修改 Ref 的 watcher 状态；旧 add-watch 保留兼容。"
-          :code $ quote $ defn add-watch! (ref key callback) (add-watch ref key callback)
+          :code $ quote $ defn add-watch! (target key callback) (add-watch target key callback)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ [] (:: 'Ref 'T) 'Tag $ :: 'Fn
@@ -4023,7 +4023,7 @@
                 assoc-in nil ([] :a :b :c) 10
             :tags $ #{} :core :unit
         'atom $ %{} 'CodeEntry
-          :doc "|internal function for creating atoms\nSyntax: (atom value)\nParams: value (any)\nReturns: atom\nCreates new atom with initial value"
+          :doc "|兼容旧名；首选 ref。读取为与 ref 相同的内建实现，创建局部 Ref<T>。可用 calcit fix --rule core-ref-constructor-v1 迁移，在后续非 patch 版本退场。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -5036,7 +5036,7 @@
             :required $ [] 'SyntaxSymbol $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         'defatom $ %{} 'CodeEntry
-          :doc "|internal syntax for defining referenced state\nSyntax: (defatom name initial-value)\nParams: name (symbol), initial-value (any)\nReturns: atom definition\nDefines a mutable reference with initial value"
+          :doc "|兼容旧名；首选 defref。解析为与 defref 相同的语法，定义命名空间级 Ref<T>。可用 calcit fix --rule core-ref-constructor-v1 迁移，在后续非 patch 版本退场。"
           :code $ quote &runtime-implementation
           :examples $ [] $ quote
             ; defatom *my-atom $ {} $ :a 1
@@ -5201,6 +5201,15 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic 'Dynamic 'Dynamic
           :tags $ #{} :builtin :internal :syntax
+        'defref $ %{} 'CodeEntry
+          :doc "|定义命名空间级 Ref<T>：(defref name initial-value)。首次求值时计算初始值，热重载时保留已有状态；读写与 ref 创建的局部 Ref 相同。defatom 是同一实现的兼容旧名。"
+          :code $ quote &runtime-implementation
+          :examples $ [] $ quote (; defref *counter 0)
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Symbol 'T
+            :generics $ [] 'T
+            :return $ :: 'Ref 'T
+          :tags $ #{} :builtin :state :syntax
         'defstruct $ %{} 'CodeEntry
           :doc "|Define a StructDef with fixed fields and field types."
           :code $ quote $ defmacro defstruct (name & pairs)
@@ -10053,6 +10062,40 @@
             :code $ quote $ assert= 14
               reduce ([] 3 4 5) 2 +
             :tags $ #{} :core :unit
+        'ref $ %{} 'CodeEntry
+          :doc "|创建局部 Ref<T>，初始值为 value；type-of 返回 :ref，ref? 为 true。用 deref 或 @ 读取，reset! / swap! 写入，add-watch! / remove-watch! 管理 watcher。atom 是同一实现的兼容旧名。"
+          :code $ quote &runtime-implementation
+          :examples $ [] $ quote
+            let
+                counter $ ref 0
+              swap! counter inc
+              assert= 1 @counter
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'T
+            :generics $ [] 'T
+            :return $ :: 'Ref 'T
+          :tags $ #{} :builtin :state
+          :tests $ [] $ %{} 'TestEntry (:name |creates-typed-local-ref)
+            :code $ quote $ let
+                counter $ ref 1
+                legacy $ atom 1
+                calls $ ref 0
+              assert= :ref $ type-of counter
+              assert= true $ ref? counter
+              assert= (type-of legacy) (type-of counter)
+              assert= 1 @counter
+              assert= 5 $ reset! counter 5
+              swap! counter &+ 2
+              assert= 7 $ deref counter
+              assert= 7 $ .deref counter
+              assert= &unit $ add-watch! counter :count $ fn (current previous) (swap! calls inc) &unit
+              reset! counter 8
+              assert= 1 @calls
+              assert= &unit $ remove-watch! counter :count
+              reset! counter 9
+              assert= 1 @calls
+              assert= false $ = counter legacy
+            :tags $ #{} :core :state :unit
         'ref? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn ref? (x)
             &= (type-of x) :ref
@@ -10071,7 +10114,7 @@
           :tags $ #{} :builtin :deprecated :internal :state :watch
         'remove-watch! $ %{} 'CodeEntry
           :doc "|按 Tag key 移除 Ref<T> 的 watcher，返回 Unit；key 不存在时报错。移除会修改 watcher 状态；旧 remove-watch 保留兼容。"
-          :code $ quote $ defn remove-watch! (ref key) (remove-watch ref key)
+          :code $ quote $ defn remove-watch! (target key) (remove-watch target key)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ [] (:: 'Ref 'T) 'Tag

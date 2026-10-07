@@ -51,9 +51,10 @@ pub enum CalcitSyntax {
   /// it has special behaviors of try catch
   #[strum(serialize = "try")]
   Try,
-  /// referenced state defined and attached undefined namespace
-  #[strum(serialize = "defatom")]
-  Defatom,
+  /// referenced state defined and attached to its namespace; `defatom` is the
+  /// compatibility spelling resolved into the same syntax until its retirement
+  #[strum(to_string = "defref", serialize = "defatom")]
+  Defref,
   /// `reset!` value to atom
   #[strum(serialize = "reset!")]
   Reset,
@@ -151,13 +152,13 @@ impl CalcitSyntax {
         param_types: vec![dyn_t.clone(), symbol_t.clone(), dyn_t.clone()],
         return_type: dyn_t.clone(),
       }),
-      Defatom => Some(SyntaxTypeSignature {
+      Defref => Some(SyntaxTypeSignature {
         param_names: vec!["name", "init"],
         param_types: vec![symbol_t.clone(), value_t.clone()],
         return_type: Arc::new(CalcitTypeAnnotation::Ref(value_t.clone())),
       }),
       Reset => Some(SyntaxTypeSignature {
-        param_names: vec!["atom", "value"],
+        param_names: vec!["ref", "value"],
         param_types: vec![Arc::new(CalcitTypeAnnotation::Ref(value_t.clone())), value_t.clone()],
         return_type: value_t.clone(),
       }),

@@ -28,6 +28,14 @@
         :code $ quote $ ns test-wasm.layout
     'test-wasm.main $ %{} 'FileEntry
       :defs $ {}
+        '*wasm-atom-counter $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defatom *wasm-atom-counter 20
+          :examples $ []
+          :schema $ :: 'Ref 'Number
+        '*wasm-ref-counter $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *wasm-ref-counter 10
+          :examples $ []
+          :schema $ :: 'Ref 'Number
         'MeasuredPoint $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def MeasuredPoint (impl-traits PointValue PointScoreImpl)
           :examples $ []
@@ -61,6 +69,25 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
+        'bump-atom-counter $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export bump-atom-counter (n)
+            reset! *wasm-atom-counter $ &+ @*wasm-atom-counter n
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+        'bump-ref-counter $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export bump-ref-counter (n)
+            reset! *wasm-ref-counter $ &+ @*wasm-ref-counter n
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |accumulates-namespaced-ref)
+            :code $ quote $ let
+                before $ deref *wasm-ref-counter
+              assert= (&+ before 2) (bump-ref-counter 2)
+              assert= (&+ before 2) (deref *wasm-ref-counter)
+              assert= (&+ before 5) (bump-ref-counter 3)
+            :tags $ #{} :unit :wasm
         'collatz-steps $ %{} 'CodeEntry (:doc "|Collatz conjecture step counter")
           :code $ quote $ defwasm-export collatz-steps (n)
             if (&< n 2) 0 $ if

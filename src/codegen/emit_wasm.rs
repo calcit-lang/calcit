@@ -490,7 +490,7 @@ fn emit_wasm_impl(
       matches!(
         &compiled.preprocessed_code,
         Calcit::List(xs)
-          if matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::Defatom, _)))
+          if matches!(xs.first(), Some(Calcit::Syntax(CalcitSyntax::Defref, _)))
       )
     })
     .count() as u32;
@@ -1009,7 +1009,7 @@ fn emit_wasm_impl(
       if let crate::calcit::Calcit::List(xs) = &compiled.preprocessed_code
         && matches!(
           xs.first(),
-          Some(crate::calcit::Calcit::Syntax(crate::calcit::CalcitSyntax::Defatom, _))
+          Some(crate::calcit::Calcit::Syntax(crate::calcit::CalcitSyntax::Defref, _))
         )
       {
         // Global zero belongs to the heap pointer; atoms follow it.

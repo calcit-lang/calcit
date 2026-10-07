@@ -20,8 +20,12 @@ export class CalcitRef {
 
 var atomCounter = 0;
 
-export let atom = (x: CalcitValue): CalcitValue => {
+/** Creates a local `Ref<T>`; generated code calls this for both `ref` and the compatibility spelling `atom`. */
+export let ref = (x: CalcitValue): CalcitValue => {
   atomCounter = atomCounter + 1;
   let v = new CalcitRef(x, `atom-${atomCounter}`);
   return v;
 };
+
+/** Compatibility export for JavaScript callers written before `ref`; it is the same function. */
+export let atom = ref;

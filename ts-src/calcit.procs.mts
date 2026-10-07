@@ -552,7 +552,7 @@ export let defatom = (path: string, x: CalcitValue): CalcitValue => {
   return v;
 };
 
-export { atom } from "./js-ref.mjs";
+export { atom, ref } from "./js-ref.mjs";
 
 export let peekDefatom = (path: string): CalcitRef => {
   return refsRegistry.get(path);

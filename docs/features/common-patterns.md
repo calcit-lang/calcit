@@ -20,7 +20,7 @@ This document provides practical examples and patterns for common programming ta
 - **Group**: `group-by xs f`
 - **Find**: `find xs f`, `index-of xs v`
 - **Check All/Any**: `every? xs f`, `any? xs f`
-- **State**: `defatom state 0`, `reset! state 1`, `swap! state inc`
+- **State**: `defref *state 0`, `reset! *state 1`, `swap! *state inc`
 
 ## Working with Collections
 
@@ -224,7 +224,7 @@ let
 
 ```cirru
 let
-    counter $ atom 0
+    counter $ ref 0
   println $ deref counter
   ; => 0
   reset! counter 10
@@ -241,7 +241,7 @@ with `&unit`. `remove-watch` requires the same Tag key used at registration.
 
 ```cirru.no-check
 let
-    todos $ atom $ []
+    todos $ ref $ []
     add-todo! $ fn (text)
       swap! todos $ fn (items)
         append items $ {} (:id $ generate-id!) (:text text) (:done false)

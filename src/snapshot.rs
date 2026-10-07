@@ -3246,6 +3246,7 @@ const TOP_LEVEL_DEF_HEADS: &[&str] = &[
   "defwasm-import",
   "defcomp",
   "defeffect",
+  "defref",
   "defatom",
   "defstruct",
   "defenum",

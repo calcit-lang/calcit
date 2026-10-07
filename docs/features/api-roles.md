@@ -212,6 +212,7 @@ do
 
 | 当前入口 | 决策与目标签名原则 | 边界 |
 | --- | --- | --- |
+| 构造 `atom` / `defatom` | **已提供** `ref` / `defref` 作为 `Ref<T>` 的首选构造名，与 `type-of` 的 `:ref`、谓词 `ref?` 一致；旧名读取为同一实现，暂留兼容 | native、JS 与 WASM 共享同一实现与 lowering（WASM 仅支持数值 `defref` 全局，局部 `ref` 与 `atom` 一样明确报告 unsupported）；`core-ref-constructor-v1` 改写已证明的拼写，在下一个非 patch 版本退场旧名 |
 | `reset!/swap!`；旧 `add-watch/remove-watch` | **已提供** `add-watch!/remove-watch!` 作为 Ref watcher 的首选注册/移除入口；旧名暂留底层兼容 | Ref 写入返回写入值 `T`；watcher 注册/移除共享原 `Ref<T>`、`Tag`、`Unit` 契约。重复/缺失 key 仍报错，callback 次数不变；本阶段不自动改写未知同名调用 |
 | FsPath `.write-text!`；js-ffi `write-text!` | core **已提供** `.write-text!`，旧 `.write-text` 已于 0.29.0 删除；模块 **保留**已有 `!` | core 仍 `(FsPath,String)->Result<Unit,String>`；0.28.x 的 `core-effect-method-v1` 可在类型与来源已证明时改写旧调用；js-ffi 原有 Unit/throw/async 契约不因命名一致而自动统一 |
 | FfiTask `.cancel/.cancel-with`；FfiResponse 旧 `.resolve/.reject` | **已提供** `.cancel!/.cancel-with!/.resolve!/.reject!`；FfiTask 旧名暂留兼容，FfiResponse 旧名已于 0.29.0 删除 | 新旧方法共用宿主实现，保持泛型、签名、exactly-once、释放与失败行为；`core-effect-method-v1` 可受控改写已证明调用，不能用返回 Bool 或命名代替生命周期证明 |

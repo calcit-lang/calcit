@@ -1817,7 +1817,7 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
         // A `defatom` expression evaluates to the reference that it defines.
         // Preserve the initializer type so imported atoms and receiver-first
         // `.deref` calls do not lose `Ref<T>` at the definition boundary.
-        Calcit::Syntax(CalcitSyntax::Defatom, _) => xs
+        Calcit::Syntax(CalcitSyntax::Defref, _) => xs
           .get(2)
           .and_then(|initial_value| infer_type_from_expr(initial_value, scope_types))
           .map(|initial_type| Arc::new(CalcitTypeAnnotation::Ref(initial_type))),
@@ -2720,7 +2720,7 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
       infer_homogeneous_type(args.iter().skip(1).step_by(2).copied(), scope_types),
     )));
   }
-  if matches!(proc, CalcitProc::Atom)
+  if matches!(proc, CalcitProc::Ref)
     && let Some(initial_value) = xs.get(1)
     && let Some(initial_type) = resolve_type_value(initial_value, scope_types)
   {
@@ -3151,7 +3151,7 @@ pub fn infer_compiled_definition_implementation_type(ns: &str, def: &str) -> Opt
       }
       Some(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature))))
     }
-    Some(Calcit::Syntax(CalcitSyntax::Defatom, _)) => items
+    Some(Calcit::Syntax(CalcitSyntax::Defref, _)) => items
       .get(2)
       .and_then(|initializer| resolve_type_value(initializer, &ScopeTypes::new()))
       .map(|inner| Arc::new(CalcitTypeAnnotation::Ref(inner))),
@@ -4649,7 +4649,7 @@ mod tests {
   #[test]
   fn heterogeneous_collection_and_atom_inference_keep_safe_boundaries() {
     let mixed = proc_call(CalcitProc::List, vec![Calcit::Number(1.0), Calcit::Str(Arc::from("x"))]);
-    let atom = proc_call(CalcitProc::Atom, vec![Calcit::Number(1.0)]);
+    let atom = proc_call(CalcitProc::Ref, vec![Calcit::Number(1.0)]);
 
     assert!(matches!(
       infer_static_type_from_expr(&mixed).as_deref(),
@@ -4664,7 +4664,7 @@ mod tests {
   #[test]
   fn defatom_expression_preserves_initializer_type() {
     let expression = Calcit::from(vec![
-      Calcit::Syntax(CalcitSyntax::Defatom, Arc::from(calcit::CORE_NS)),
+      Calcit::Syntax(CalcitSyntax::Defref, Arc::from(calcit::CORE_NS)),
       symbol("*counter"),
       Calcit::Number(0.0),
     ]);
