@@ -1450,10 +1450,16 @@ pub(crate) fn check_function_return_type(
   // Keep unproven boundaries on the existing migration path, but never let
   // an open callable hide a definite contradiction with the return contract.
   let mut bindings = HashMap::new();
-  let proof = if audit && !free_type_variable_names(std::slice::from_ref(&actual_type)).is_empty() {
-    // Known lexical producer variables must not be rebound by a return schema.
-    // Preserve the existing migration policy for lossy open/concrete results;
-    // this check rejects substitutions between independent lexical contracts.
+  let proof = actual_type.prove_with_bindings(declared_return_type, &mut bindings);
+  let proof = if audit
+    && bindings
+      .values()
+      .any(|binding| !free_type_variable_names(std::slice::from_ref(binding)).is_empty())
+  {
+    // Recheck substitutions involving free lexical variables without granting
+    // the return schema any callee inference variables. An unchanged generic
+    // beside an open payload is not itself a lexical-variable substitution.
+    // Open/concrete bindings retain the existing migration policy.
     let mut return_proof = CallTypeProof::new(&[], std::slice::from_ref(declared_return_type), std::slice::from_ref(&actual_type));
     let proof = return_proof.prove(&actual_type, declared_return_type);
     if matches!(proof, TypeProof::NeedsBoundary(TypeBoundaryReason::UnboundTypeVariable))
@@ -1466,7 +1472,7 @@ pub(crate) fn check_function_return_type(
     }
     proof
   } else {
-    actual_type.prove_with_bindings(declared_return_type, &mut bindings)
+    proof
   };
   let proof = if !matches!(proof, TypeProof::Proven)
     && expression_is_proven_for(last_expr, declared_return_type, scope_types, async_invocation)

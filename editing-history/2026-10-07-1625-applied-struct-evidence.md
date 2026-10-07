@@ -19,14 +19,16 @@
 该路径同样复用现有 lexical-generic hint 解析器，不修改原有 `map-entries` 附带测试或严格证明。
 
 回调证据恢复后，原 `rigid-result` 门禁进一步暴露函数返回证明错误地将独立 lexical `U` 绑定到 `K`。
-独立 producer 校验在实际结果保留自由 lexical 变量时复用已有 `CallTypeProof`，
+独立 producer 校验在证明产生涉及自由 lexical 变量的替换时复用已有 `CallTypeProof`，
 声明方不存在可推导的 callee 变量，不允许用返回声明重绑定其他变量。沿用 `E_ERASED_GENERIC_RELATION`，
 保留原诊断断言并补泛型 Struct 返回校验负例。普通检查原有泛型 wrapper compatibility 保留，
 不把此处证据修复偷换为未经评估的全局兼容规则更改。
 
 完整原测试拦住了对所有返回结果一律使用刚性关系的方案：`concat`、`&list:filter`、
 `&map:empty` 的现有集合推导会留下开放成员类型，该方案额外改变了迁移校验政策。
-最终只收紧实际仍有 lexical 泛型证据的关系；开放或具体结果沿用原策略，
+后续完整门禁又拦住仅判断实际结果含自由变量的方案：`Result<U, Dynamic>` 中不变的 `U`
+并不意味着将开放错误分支绑定到 `E` 时发生了 lexical 变量重绑定。
+最终只重查实际产生的、涉及自由 lexical 变量的替换；开放或具体绑定沿用原策略，
 不声称本 PR 完成所有泛型返回证明。原测试、断言、预算及集合实现均不修改。
 
 ## 验证与边界
