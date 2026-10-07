@@ -19,7 +19,7 @@ export let valueMatchesTypeForm = (value: CalcitValue, form: CalcitValue): boole
     }
     if (head instanceof CalcitSymbol && head.value === "::") {
       const name = typeFormName(items[1]);
-      if (name === "Option" || name === "Optional" || name === "JsNullish") {
+      if (name === "Optional" || name === "JsNullish") {
         return value == null || valueMatchesTypeForm(value, items[2]);
       }
       return name == null || valueMatchesTypeName(value, name);
