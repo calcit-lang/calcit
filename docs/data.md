@@ -60,6 +60,7 @@ Collection method availability is also expressed through built-in traits. `Count
 
 For serialization fidelity and unsupported runtime values, see:
 
+- [Number](data/number.md) - 数值运算的跨后端语义（取余 `rem`）
 - [String](data/string.md) - String syntax and Tags
 - [Persistent Data](data/persistent-data.md) - Implementation details
 - [EDN](data/edn.md) - Data notation format
