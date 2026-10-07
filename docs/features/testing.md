@@ -129,12 +129,34 @@ for behavior that actually crosses definitions or backends.
 
 ## Target Coverage
 
-Definition-attached tests run in the native `calcit test` runner. Keep a compact
-`test-*.cirru` fixture when behavior must be compiled and executed by another
-target. For example, `test-string.main/test-bitwise` is wrapped in `inside-js:`
-so the full `yarn try-js` flow continues to verify JavaScript bit operations,
-while its ordinary API assertions live beside the core definitions. WASM
-exports and FFI checks similarly remain in the dedicated WASM fixtures.
+`calcit test` 在 native 上运行 definition `:tests`。仓库用一个统一运行器把同一批 `:tests` 在 native、生成的 JS 与 WASM 上各执行一次：
+
+```bash
+# 默认：全部 core :tests，native / JS / WASM
+node scripts/run-core-tests.mjs
+
+# 按 tag、名称或定义缩小范围；零个测试被选中时失败
+node scripts/run-core-tests.mjs --tag unicode --backend native,js
+node scripts/run-core-tests.mjs --target 'calcit.core/round?' --name distinguishes-integers
+
+# 其它 Snapshot 的 :tests 也可重放；WASI 0.3 command 需显式选择并提供 Wasmtime
+node scripts/run-core-tests.mjs --snapshot calcit/test-traits.cirru --target test-traits.main/test-qualified-contains-boundary --backend native,js
+WASMTIME_CLI=wasmtime node scripts/run-core-tests.mjs --backend wasi --target 'calcit.core/round?'
+```
+
+运行器为每个测试生成一个零参数函数，写入临时 Snapshot，再分别执行：native 与 WASI 逐个打印标记后运行，JS 导入生成的模块逐个调用，WASM 在 Node 中实例化后逐个调用导出函数。native 是参照结果，JS 与 WASM 的 `println` 输出必须与 native 一致。失败报告列出测试 id、后端、期望与实际值，以及该测试在其它后端的状态。
+
+新增的 core `:tests` 自动进入三个后端，无需登记。某个后端暂时无法运行的测试写入 `scripts/core-tests-exclusions.cirru`，按后端列出测试 id 或 tag，并写明原因，原因以类别开头：`unsupported`（后端明确拒绝该构造）、`parity`（结果与 native 不同，另开 issue 修复）、`host`（需要回放宿主未提供的能力）、`replay`（因不在所属 namespace 回放而产生）。清单中引用不存在的测试会使运行失败；`--report-unexpected-pass` 会额外运行被排除的测试，列出已经通过、可以移出清单的条目。
+
+只测试编码、ABI、memory layout、宿主注入或 unsupported 诊断的场景继续使用 `scripts/test-wasm*.mjs`、`scripts/check-*.mjs` 等专用脚本；新的跨后端回放需求给 `:tests` 加 tag 并用统一运行器选择，不再新增 `scripts/check-*.mjs`。
+
+运行器拒绝空的或重复的后端列表。native 与 WASI 的每个测试必须完整输出开始和结束标记；进程提前正常退出不会被计为通过。`--report-unexpected-pass` 自动补上 native 参照，只有测试成功且输出与 native 一致时才建议移除排除项。
+
+### 限制
+
+- WASM 在独立的回放 namespace 中执行 core 测试，依赖 `calcit.core` 内部豁免的测试列为 `replay`。
+- WASM 宿主只提供 `io.log_*` 与 `math` 导入，其它宿主调用会使测试失败。
+- WASI backend 不在默认集合中，需要 `WASMTIME_CLI`。
 
 ## Choose the Test Surface (Calcit-first)
 

@@ -1095,6 +1095,37 @@ fn attached_do_rules_preserve_root_sequence_and_macro_data() {
 }
 
 #[test]
+fn predicate_method_fix_keeps_trait_bound_generic_receivers() {
+  // A receiver bounded by Contains may dispatch to a user trait method of the
+  // same name, so the migration must leave that call for review.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("calcit/test-traits.cirru", &snapshot).unwrap();
+  let preview = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "core-predicate-method-v1",
+      "--ns",
+      "test-traits.main",
+      "--def",
+      "contains-with-trait?",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&preview, "predicate migration preview on a trait-bound receiver");
+  let report: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+  let suggestions = report["data"]["suggestions"].as_array().unwrap();
+  assert!(
+    !suggestions
+      .iter()
+      .any(|suggestion| suggestion["applicability"] == "machine-applicable"),
+    "{report:#}"
+  );
+}
+
+#[test]
 fn attached_predicate_migration_preserves_opaque_contexts_and_function_identity() {
   for (rule, predicate) in [("core-non-nil-predicate-v1", "some?"), ("core-integer-predicate-v1", "round?")] {
     let directory = TestDirectory::create();
