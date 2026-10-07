@@ -243,8 +243,7 @@ JSON 中 definition 和 match 都带 `source`、`origin`，并用 `node_kind: le
 
 编辑选择规则：
 
-项目升级先运行 `calcit docs read upgrade.md '当前升级闭环'`，记录原工具链基线，先完成仍需旧 CLI 的迁移桥梁，再升级工具链并执行当前预览、受保护迁移和后端回归。
-该章节区分自动迁移、项目级需审阅事务和仅文档提示；按实际失败再查详细规则，不先加载全部历史资料。
+项目升级按下文 [项目升级入口](#项目升级入口) 读取唯一的升级顺序，不按版本猜 preset。
 
 - 新增/移动 definition，修改 namespace、import、schema、examples：`calcit edit`。
 - 一次局部节点修改：`calcit tree`，优先 `search-replace`，其次明确 path 的操作。
@@ -300,6 +299,29 @@ quote/quasiquote，并用 staged preprocess 验证 splice 后的 scope。此检�
 同一个 Snapshot 的写命令仍应串行执行，包括 `config`、`edit`、`tree`、cursor mutation 和 `fix --apply`。当前 CLI 从读取到提交持有排他锁，最多等待 5 秒，超时或 revision 变化时明确失败；进程中断后自动释放内核锁，下次写入会提示恢复。不要删除仍可能被活跃进程持有的 `.calcit/*.lock`。需要并行时使用独立 Snapshot/worktree，需要同一文件内的原子多步修改时使用 transaction 和 `--expect-revision`。外部编辑器或旧 CLI 不遵守此锁，不能据此宣称任意外部写入都不会冲突。
 
 升级 PR 中出现大段 `calcit.cirru` 文本变化时，先运行 `calcit calcit.cirru analyze program-diff <base-ref> --format edn`。优先读取 `:classification`、`:semantic-review-required`、`:categories` 和 `:changes`；只有 `canonical-format-only` 可以省去逐行确认格式差异，任何 config、schema/signature、runtime boundary 或 executable expression 分类仍需检查并运行对应验证。不要另找 JSON 专用入口；外部互操作确有需要时在同一命令上显式传 `--format json`。
+
+### 项目升级入口
+
+升级 Calcit 项目只按一份顺序执行：升级手册的“当前升级闭环”。本节随 CLI 内嵌，可用 `calcit docs agents 项目升级入口` 读取；
+完整步骤在 guidebook 中：
+
+```bash
+calcit --version
+git -C ~/.config/calcit/calcit describe --tags
+calcit docs read upgrade.md '当前升级闭环'
+```
+
+`docs read` 读取的是 `~/.config/calcit/docs` 指向的独立 checkout，安装新 CLI 不会更新它。先让该 checkout 位于与
+目标 `calcit --version` 相同的 release tag（例如 `git -C ~/.config/calcit/calcit checkout <version>`），再把其中的命令当作
+当前合同；版本不一致或没有 guidebook 时，阅读对应 release tag 下的 `docs/run/upgrade.md`，API 事实以 `query def/type` 为准。
+
+该顺序把每个动作归为三类，Agent 按类别决定能否自行执行：
+
+- **可证明自动迁移**：`fix --workflow strict` 与已发布 rule/preset 中标为 `machine-applicable` 的候选，按预览 revision 应用。
+- **项目级需审阅事务**：`requires-review` 候选、`--pattern` / `--replace` 模板、schema、FFI 信任与业务默认值；展示给用户审阅后才应用，类型检查通过不代表语义等价。
+- **仅文档提示**：行为变化、已退役桥梁和后端差异；按手册对应章节处理，没有唯一改法时保留待办。
+
+旧版本才有的迁移桥梁先用项目当前固定的已发布 CLI 完成，再升级依赖；不得改动或忽略 `deps.cirru :calcit-version` 来绕过版本门禁。
 
 ### Feature-level architecture scaffold
 
@@ -572,11 +594,11 @@ let
 
 `fs:path` 把 UTF-8 字符串显式构造成 `FsPath`，不执行规范化或文件系统访问。
 `FsPath` 上的 `.read-text`、`.read-dir`、`.walk-dir` 与 `.write-text!` 返回
-`Result<...,String>`；旧 `.write-text` 暂留兼容且映射到同一实现，不会变成抛错操作。String 不提供文件效果方法。旧 `try-read-file` / `try-write-file`
+`Result<...,String>`；旧 `.write-text` 已在 0.29.0 删除（`E_RETIRED_METHOD`）。String 不提供文件效果方法。旧 `try-read-file` / `try-write-file`
 已退役，应改用 `fs:path` 后调用对应方法；`try-read-dir` 和底层 raising procedures
 暂留为兼容入口。
-迁移 FsPath 写入与 native FFI 任务取消/响应完成的旧方法时，可先用
-`calcit query type calcit.core/FsPath --format edn`（或查询 `FfiTask`、`FfiResponse`）确认
+迁移 native FFI 任务取消的旧方法时，可先用
+`calcit query type calcit.core/FfiTask --format edn` 确认
 `preferred` / `compatibility` 和类型签名，再显式预览
 `calcit calcit.cirru fix --rule core-effect-method-v1 --format edn`。只有来源与接收者均已证明的
 definition `:code` 调用默认进入预览；传 `--include-attached` 可用相同证明迁移附带测试与示例。未知宏或无法证明的区域仍需人工审阅。
@@ -598,7 +620,7 @@ Option 容器；Result 错误类型需要转换时显式使用 `.map-err`。
 
 List 单元素追加首选 `.append`，List 拼接用 `.concat`。迁移旧 `.add` 可显式运行 `calcit fix --rule core-list-add-v1 --format edn`：仅当具体 List 接收者与旧、新方法同指 `calcit.core/append` 且源码上下文稳定时提供可应用建议；Set/Map、开放类型与未知 macro 不得按字面改写。先预览，再携带原 revision 应用并重复预览；附带的 `:tests` / `:examples` 可传 `--include-attached` 纳入同一证明与原子事务。
 
-判断 Number 是否有限且恰好没有小数部分时，首选 `integer? value` 或 `value .integer?`；返回 Bool，不代表安全整数范围或整数类型 refinement。旧 `round?/.round?` 暂留同义兼容。可显式用 `core-integer-predicate-v1` 预览：reader 解析为内建 Proc 的单参数 `round?` 调用，以及静态 Number 接收者且同实现同契约的 `.round?` 方法可自动改写；quoted 数据、自定义同名方法、开放接收者与未知 macro 不按词形批量替换。附带的 `:tests` / `:examples` 可传 `--include-attached` 纳入相同证明。使用前可查询 `calcit.core/integer?` 的公开 schema 和 Number 方法契约。
+判断 Number 是否有限且恰好没有小数部分时，首选 `integer? value` 或 `value .integer?`；返回 Bool，不代表安全整数范围或整数类型 refinement。函数 `round?` 暂留同义兼容，Number `.round?` 已在 0.29.0 删除。可显式用 `core-integer-predicate-v1` 预览：reader 解析为内建 Proc 的单参数 `round?` 调用可自动改写；quoted 数据、自定义同名方法、开放接收者与未知 macro 不按词形批量替换。附带的 `:tests` / `:examples` 可传 `--include-attached` 纳入相同证明。使用前可查询 `calcit.core/integer?` 的公开 schema 和 Number 方法契约。
 
 索引、键和值查询先看接收者类型：List/String 用 `.contains-index? Number` 判断有效位置，Enum 也提供 `.contains-index? Number`，其中 0 是 tag、1 起是 payload；Map<K,V> 用 `.contains-key? K` 与 `.contains-value? V` 分别判断键和值，即使 K/V 同型也不能混用。List/Set 的元素成员和 String 子串仍用 `.includes?`。Enum 新方法要求非负有限整数，旧 `.contains?` 对范围内小数会返回 true，因此不能机械迁移。List/String 的旧 `.contains?` 已在 0.29.0 删除，写下它会得到 `E_RETIRED_METHOD` 并给出替代；需要自动迁移时先用 0.28.x 的 CLI 运行 `core-predicate-method-v1`。该规则现在只覆盖已证明的 Map/Set builtin 方法等价迁移；传 `--include-attached` 可覆盖附带区域；它仍不处理 Struct/Enum、`Contains` trait 或自定义同名方法，不要按词形替换。List 索引的小数、负数和非有限值返回 false，JS 与 WASM 也遵守该契约。
 

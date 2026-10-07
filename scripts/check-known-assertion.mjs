@@ -1342,6 +1342,32 @@ try {
     assert.deepEqual(await readFile(snapshot), original);
     run("edit", "rm-def", "calcit.assert-evidence/open-result");
   }
+  // A kind predicate on the value typed by the generic return variable refines
+  // that variable inside the guarded branch. Unguarded exits and predicates on other
+  // values still owe the original generic contract (#1529).
+  const genericReturnSchema = "quote $ :: 'Fn $ {} (:args $ [] 'T 'Bool) (:generics $ [] 'T) (:return 'T)";
+  for (const [name, code, accepted, jsFfi] of [
+    ["kind-refined", ["defn", "kind-refined", ["x", "flag"], ["if", ["list?", "x"], ["&list:rest", "x"], ["if", ["string?", "x"], ["&str:rest", "x"], ["raise", "|neither"]]]], true],
+    ["kind-refined-binding", ["defn", "kind-refined-binding", ["x", "flag"], ["&let", ["open-x", "x"], ["if", ["list?", "x"], ["&list:rest", "x"], ["raise", "|not-list"]]]], true],
+    ["kind-other-value", ["defn", "kind-other-value", ["x", "flag"], ["if", ["list?", "flag"], ["&list:rest", "x"], "|text"]], false],
+    ["kind-rebound-local", ["defn", "kind-rebound-local", ["x", "flag"], ["if", ["list?", "x"], ["&let", ["unused", ["set!", "x", "|text"]], "x"], ["if", ["string?", "x"], ["&str:rest", "x"], ["raise", "|neither"]]]], false, true],
+    ["kind-unguarded-join", ["defn", "kind-unguarded-join", ["x", "flag"], ["if", "flag", ["[]", "1"], "|text"]], false],
+  ]) {
+    run("edit", "def", `calcit.assert-evidence/${name}`, "--overwrite", "--input-format", "json-ast", "--code", JSON.stringify(code));
+    run("edit", "schema", `calcit.assert-evidence/${name}`, "--input-format", "cirru", "--code", genericReturnSchema);
+    if (jsFfi) run("edit", "schema", `calcit.assert-evidence/${name}`, "--add-feature", "js-ffi");
+    const original = await readFile(snapshot);
+    const checked = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.assert-evidence", "--def", name, "--format", "edn"], options);
+    if (checked.error) throw checked.error;
+    if (accepted) {
+      assert.equal(checked.status, 0, `${name}\n${checked.stdout}\n${checked.stderr}`);
+    } else {
+      assert.equal(checked.status, 1, `${name}\n${checked.stdout}\n${checked.stderr}`);
+      assert.match(`${checked.stdout}\n${checked.stderr}`, /E_FN_RETURN_UNPROVEN/, name);
+    }
+    assert.deepEqual(await readFile(snapshot), original);
+    run("edit", "rm-def", `calcit.assert-evidence/${name}`);
+  }
   // Known initial/default values do not prove an externally supplied reducer.
   run("edit", "def", "calcit.assert-evidence/open-shortcut", "--input-format", "json-ast", "--code",
     JSON.stringify(["defn", "open-shortcut", ["callback"], ["foldl-shortcut", ["[]", "1"], "0", "0", "callback"]]));
@@ -2436,13 +2462,7 @@ try {
     const generated = await import(pathToFileURL(join(output, `${replayNamespace}.mjs`)).href);
     generated.replay_count_tests();
   }
-  // Kind-specific association helpers tie the stored value to the collection
-  // element type, so a mismatched value cannot hide behind independent generics.
   for (const [name, input, body, outputType, accepted] of [
-    ["assoc-list-wrong-value", "(:: 'List 'Number)", "&assoc:list xs 0 |wrong", "(:: 'List 'Number)", false],
-    ["assoc-map-wrong-value", "(:: 'Map 'Tag 'Number)", "&assoc:map xs :a |wrong", "(:: 'Map 'Tag 'Number)", false],
-    ["assoc-list-same-value", "(:: 'List 'Number)", "&assoc:list xs 0 3", "(:: 'List 'Number)", true],
-    ["assoc-map-same-value", "(:: 'Map 'Tag 'Number)", "&assoc:map xs :a 3", "(:: 'Map 'Tag 'Number)", true],
     // Nominal `assoc` is lowered to a Struct update after direct-call checks;
     // the strict field-value proof must still run before that lowering.
     ["assoc-struct-wrong-field", "'fix-command.main/Point", "assoc xs :x |wrong", "'fix-command.main/Point", false],

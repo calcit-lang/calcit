@@ -168,11 +168,11 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   可以自动迁移，未知 macro 只返回 `requires-review`。作为一等函数值使用时也要求 review，不能替换函数身份。本规则也包含在新的 `core-api-0.28-v1`；已发布的 surface preset 保持原定义。
 - `core-integer-predicate-v1` 把 Cirru reader 直接解析为内建 Proc 的单参数 `round?` 调用头改为
   `calcit.core/integer?`。新入口复用有限且恰好没有小数部分的既有语义；不会把 Bool 当作整数类型 refinement。仅改写可回溯的源码调用，保留实参原位与求值次数；含同名词法绑定的定义及 quoted 数据跳过，未知 macro 只给 `requires-review`。
-  同一规则还会把静态 Number 接收者的 `.round?` 改成 `.integer?`：旧、新方法现均指向 `calcit.core/integer?`，类型契约同为 `Number -> Bool`；自定义同名方法不改，开放接收者与未知宏不会自动改写。一等函数引用不自动修改。使用 `calcit calcit.cirru fix --rule core-integer-predicate-v1 --format edn` 预览，核对来源与 revision 后应用并重复预览；包含在 `core-api-0.28-v1`；旧 surface preset 不变。
+  Number `.round?` 已在 0.29.0 删除（`E_RETIRED_METHOD`）；0.28.x 的同名规则可把静态 Number 接收者的 `.round?` 改成 `.integer?`，需在升级 CLI 前运行。一等函数引用不自动修改。使用 `calcit calcit.cirru fix --rule core-integer-predicate-v1 --format edn` 预览，核对来源与 revision 后应用并重复预览；包含在 `core-api-0.28-v1`；旧 surface preset 不变。
 - `core-identity-conversion-v1` 把参数已证明为 String 的内建 `turn-tag` / `turn-symbol` 完整调用分别改为 `calcit.core/to-tag` / `calcit.core/to-symbol`；也把解析到 core 兼容函数、且参数已证明为内建 Nil、Bool、Number、String、Tag 或 Symbol 的 `turn-string` 改为 `calcit.core/to-string`。这些标量路径调用相同的底层转换，实参仍只求值一次；自定义 `ToString` 实现、Dynamic、已知不支持的集合、局部同名绑定、quoted 数据、未知 macro 与一等函数值都不自动改写。先用 `calcit calcit.cirru fix --rule core-identity-conversion-v1 --format edn` 预览，核对来源与 revision，再带 `--expect-revision` 应用并复查；包含在 `core-api-0.28-v1`；旧 surface preset 不变。WASM 仍不支持动态 Tag/Symbol intern，迁移不意味着获得 WASM 支持。
 - `core-predicate-method-v1` 按已证明的接收者类型迁移谓词方法：Map `.contains?` → `.contains-key?`、`.includes?` → `.contains-value?`，Set `.contains?` → `.includes?`。每一项都须证明旧、新方法解析到同一个 core 实现，参数与返回类型相同，且源码可稳定定位；不会把索引、键、值和成员混成一个命题。自定义同名方法不改，开放接收者不会自动改写，未知 macro 只给 `requires-review`，quoted data 跳过。先运行 `calcit calcit.cirru fix --rule core-predicate-method-v1 --format edn` 预览，再核对来源和 revision、带 `--expect-revision` 应用，最后重复预览并运行项目测试。不改写 Struct/Enum、trait-bound 或具名 trait-call；本规则可单独选择，也包含在 `core-api-0.28-v1`；旧 surface preset 不变。
 - `core-function-alias-v1` 把编译器已解析到 core 兼容函数的源码引用改为首选名：`optionally` → `nil->option`、`join-str` → `join-string`、`join` → `intersperse`、`vals` → `distinct-values`。每对新名都由旧名转发全部参数，因此只改名字，参数求值次数与结果不变；局部同名 binding、quoted data 与未知 macro 不自动改写，跨 macro 的引用只给 `requires-review`；作为一等值（非调用头）使用的引用也只给 `requires-review`，因为新名是独立函数，函数身份不同。这是独立的显式规则，**不**包含在已发布的 `core-api-0.28-v1`；用 `calcit calcit.cirru fix --rule core-function-alias-v1 --format edn` 预览，核对 revision 后带 `--expect-revision` 应用并重复预览。注意 `join` 实际返回插入分隔符的 List 而不是字符串，改名不改变这一行为；需要字符串时应改用 `join-string`，该判断需人工完成。
-- `core-effect-method-v1` 只迁移已证明的 core nominal 效果方法：`FsPath .write-text` → `.write-text!`，`FfiTask .cancel/.cancel-with` → `.cancel!/.cancel-with!`，`FfiResponse .resolve/.reject` → `.resolve!/.reject!`。前缀 `path .write-text` 和紧凑 `task.cancel-with` 写法都可处理；必须同时证明接收者、core trait 来源、旧新方法签名及同一 helper，才能保持参数求值次数、Result/Unit 与宿主生命周期语义。开放接收者与用户自定义同名方法不自动改写，未知 macro 只给 `requires-review`，quoted data 跳过。先用 `calcit calcit.cirru fix --rule core-effect-method-v1 --format edn` 预览，再带相同 selector 和 `--expect-revision` 应用，重复预览应为空。本规则包含在 `core-api-0.28-v1`，旧 surface preset 不变，也不提供新的宿主能力。
+- `core-effect-method-v1` 只迁移已证明的 core nominal 效果方法：`FfiTask .cancel/.cancel-with` → `.cancel!/.cancel-with!`。`FsPath .write-text` 与 `FfiResponse .resolve/.reject` 已在 0.29.0 删除，需在升级 CLI 前用 0.28.x 的同名规则迁移。前缀 `task .cancel` 和紧凑 `task.cancel-with` 写法都可处理；必须同时证明接收者、core trait 来源、旧新方法签名及同一 helper，才能保持参数求值次数、Result/Unit 与宿主生命周期语义。开放接收者与用户自定义同名方法不自动改写，未知 macro 只给 `requires-review`，quoted data 跳过。先用 `calcit calcit.cirru fix --rule core-effect-method-v1 --format edn` 预览，再带相同 selector 和 `--expect-revision` 应用，重复预览应为空。本规则包含在 `core-api-0.28-v1`，旧 surface preset 不变，也不提供新的宿主能力。
 - `core-list-add-v1` 仅把类型和方法契约均已证明的 List `.add` 改成 `.append`。它要求旧、新方法都指向
   `calcit.core/append`，形参和返回类型一致，且源码只经过已知保持调用的结构；Set/Map `.add` 不属于此规则，
   开放 List、未知 macro 和无法回溯的接收者只给 `requires-review`。显式运行
@@ -285,6 +285,8 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   当前预处理涉及的函数体还须独立证明其具体返回契约；仅靠返回声明的 producer 报告
   `E_FN_RETURN_UNPROVEN`，并定位其真实 source owner。Number identity、泛型 T identity 和明确的
   Dynamic 保存/传递可以保持原写法；未知 T 不能靠目标 Number 获得证明。
+  当参数类型正是返回泛型 `'T` 时，`list?`、`map?`、`string?` 等类别谓词守卫的分支把 `'T` 视为该类别，
+  分支出口按该类别证明；未被守卫的出口、作用于其他值的谓词和开放结果仍须证明原泛型契约；守卫分支若含 `set!` 重绑定局部，则放弃该收窄。
   producer 实现与返回声明矛盾时，既有 `W_FN_RETURN_TYPE_MISMATCH` 同样使审计失败，不能借用该声明获得空建议。
   将报告中的 definition 与 path 传给 `calcit query type-at <definition> --path <path> --format edn`
   可读取同一源码节点；展开后无法保留尾表达式坐标时，path 为声明根节点 `code`。

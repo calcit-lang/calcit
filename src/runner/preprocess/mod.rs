@@ -8048,6 +8048,28 @@ fn retired_method_migration(receiver: &CalcitTypeAnnotation, method_name: &str) 
     (T::String, "contains?") => Some(
       "`.contains?` checked a String scalar position, not a substring; use `.contains-index?` for a position or `.includes?` for a substring",
     ),
+    (T::Number, "round?") => {
+      Some("`.round?` was a same-implementation alias; use `.integer?` (the function `round?` is still available)")
+    }
+    _ => retired_core_struct_method_migration(receiver, method_name),
+  }
+}
+
+/// Same-implementation effect aliases removed from core nominal structs in 0.29.0.
+fn retired_core_struct_method_migration(receiver: &CalcitTypeAnnotation, method_name: &str) -> Option<&'static str> {
+  let is_core = |name: &str| {
+    let qualified = format!("calcit.core/{name}");
+    if let CalcitTypeAnnotation::TypeRef(type_name, _) = receiver {
+      return type_name.as_ref() == qualified;
+    }
+    receiver.resolve_to_struct().is_some_and(|base| {
+      base.definition_ref.as_deref() == Some(qualified.as_str()) || (base.definition_ref.is_none() && base.name.ref_str() == name)
+    })
+  };
+  match method_name {
+    "write-text" if is_core("FsPath") => Some("`.write-text` was a same-implementation alias; use `.write-text!`"),
+    "resolve" if is_core("FfiResponse") => Some("`.resolve` was a same-implementation alias; use `.resolve!`"),
+    "reject" if is_core("FfiResponse") => Some("`.reject` was a same-implementation alias; use `.reject!`"),
     _ => None,
   }
 }
@@ -9431,6 +9453,16 @@ fn struct_origin_binding(value: Option<&Calcit>, definition: Option<&Calcit>) ->
     return None;
   }
   Some((sym, Arc::new(nominal)))
+}
+
+/// The value kind a type predicate establishes for its target in the true
+/// branch. Nullability predicates are not kind refinements and return `None`.
+fn kind_predicate_refinement(cond_form: &Calcit, scope_types: &ScopeTypes) -> Option<(Arc<str>, Arc<CalcitTypeAnnotation>)> {
+  let (symbol, narrowed) = extract_predicate_bindings(cond_form, scope_types).true_binding?;
+  match narrowed.as_ref() {
+    CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::JsNullish(_) | CalcitTypeAnnotation::Optional(_) => None,
+    _ => Some((symbol, narrowed)),
+  }
 }
 
 fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> PredicateNarrowing {

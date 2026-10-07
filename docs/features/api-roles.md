@@ -100,7 +100,7 @@ String 的 `.len`（兼容 `.count`）、`.get/.nth/.slice` 与 `.find-index` �
 | Map `.contains?: (Map<K,V>, K) -> Bool`；`.includes?: (Map<K,V>, V) -> Bool` | **已提供** `.contains-key?`、`.contains-value?`，分别接收 K/V | 即使 K 与 V 同型，两种命题也不同；仅用显式 `core-predicate-method-v1` 迁移已证明的 core 方法 |
 | Struct `.contains?` 检查字段；Enum `.contains?` 检查 tag 与 payload 位置 | Struct **已提供** `.contains-field? Tag -> Bool` 与 `contains-field? Struct Tag -> Bool`；Enum **已提供** `.contains-index? Number -> Bool` | Struct 新接口仅以 Tag 字段名承诺跨目标一致；旧底层 `&struct:contains?` 在 native/JS 还接受 String/Symbol，但不据此扩大新接口类型。Enum 的 0 是 tag，1 起是 payload；新方法仅接受非负有限整数，旧 `.contains?` 会将范围内小数误判为存在，不可无条件自动迁移。自定义 `Contains` 仍需单独证明 |
 | String `.includes?: (String, String) -> Bool`；List/Set `.includes?: (C<T>, T) -> Bool` | **保留** `.includes?`；Set `.contains?` 的同义入口迁到 `.includes?` | String 是子串，其余为成员；Set 别名只在证明实际实现后迁移，不全局替换 Contains trait |
-| `round?/.round?: Number -> Bool`，有限且无小数部分 | **已提供** `integer?/.integer?` 为首选；旧名暂留兼容 | 新入口复用已验证语义：NaN/±Infinity false，-0 true，非零小数 false；近零/Infinity 的旧行为变化见 [升级说明](../run/upgrade.md#整数谓词的跨目标语义修复)。Bool 不等于 Int refinement 证明；显式 `core-integer-predicate-v1` 迁移 reader 解析出的内建 `round?` 调用，以及已证明同实现、同契约的 Number `.round?`；开放接收者和用户方法不自动改写 |
+| `round?: Number -> Bool`，有限且无小数部分（Number `.round?` 已于 0.29.0 删除） | **已提供** `integer?/.integer?` 为首选；函数 `round?` 暂留兼容 | 新入口复用已验证语义：NaN/±Infinity false，-0 true，非零小数 false；近零/Infinity 的旧行为变化见 [升级说明](../run/upgrade.md#整数谓词的跨目标语义修复)。Bool 不等于 Int refinement 证明；显式 `core-integer-predicate-v1` 迁移 reader 解析出的内建 `round?` 调用，0.28.x 的同名规则还改写已证明的 Number `.round?`；开放接收者和用户方法不自动改写 |
 | `every?` / `any?`，predicate 返回 Bool，短路；空集分别 true/false | **目标** `all?` / **保留** `any?`，参数顺序和短路不变 | 先补足已有支持的 receiver/callback 类型关系；不凭当前宽 schema 承诺所有容器，或凭改名新增方法 |
 | `nil?/empty?/blank?/starts-with?/ends-with?/even?/odd?` | **保留**现有签名和命题 | 空白不等于空串；其他已有明确类型谓词同样不为相似拼写强改 |
 
@@ -213,8 +213,8 @@ do
 | 当前入口 | 决策与目标签名原则 | 边界 |
 | --- | --- | --- |
 | `reset!/swap!`；旧 `add-watch/remove-watch` | **已提供** `add-watch!/remove-watch!` 作为 Ref watcher 的首选注册/移除入口；旧名暂留底层兼容 | Ref 写入返回写入值 `T`；watcher 注册/移除共享原 `Ref<T>`、`Tag`、`Unit` 契约。重复/缺失 key 仍报错，callback 次数不变；本阶段不自动改写未知同名调用 |
-| FsPath 旧 `.write-text`；js-ffi `write-text!` | core **已提供** `.write-text!`；模块 **保留**已有 `!` | core 仍 `(FsPath,String)->Result<Unit,String>`，旧方法暂留兼容且共用实现；`core-effect-method-v1` 仅在类型与来源已证明时改写 core 调用；js-ffi 原有 Unit/throw/async 契约不因命名一致而自动统一 |
-| FfiTask `.cancel/.cancel-with`，FfiResponse `.resolve/.reject` | **已提供** `.cancel!/.cancel-with!/.resolve!/.reject!`；旧名暂留兼容 | 新旧方法共用宿主实现，保持泛型、签名、exactly-once、释放与失败行为；`core-effect-method-v1` 可受控改写已证明调用，不能用返回 Bool 或命名代替生命周期证明 |
+| FsPath `.write-text!`；js-ffi `write-text!` | core **已提供** `.write-text!`，旧 `.write-text` 已于 0.29.0 删除；模块 **保留**已有 `!` | core 仍 `(FsPath,String)->Result<Unit,String>`；0.28.x 的 `core-effect-method-v1` 可在类型与来源已证明时改写旧调用；js-ffi 原有 Unit/throw/async 契约不因命名一致而自动统一 |
+| FfiTask `.cancel/.cancel-with`；FfiResponse 旧 `.resolve/.reject` | **已提供** `.cancel!/.cancel-with!/.resolve!/.reject!`；FfiTask 旧名暂留兼容，FfiResponse 旧名已于 0.29.0 删除 | 新旧方法共用宿主实现，保持泛型、签名、exactly-once、释放与失败行为；`core-effect-method-v1` 可受控改写已证明调用，不能用返回 Bool 或命名代替生命周期证明 |
 | `.read-text/.read-dir/.walk-dir`、`get-args/get-env`；std `read-file!/read-dir!/walk-dir!` | **保留**core 查询名字；std 的首选 `read-file/read-dir/walk-dir` 已随模块 **0.2.36** 首次发布 | 当前正式源码组合为 [std 0.2.37](https://github.com/calcit-lang/calcit.std/releases/tag/0.2.37) 与 Calcit **0.28.0**，保持原参数、返回与失败模型，已验证 native 文本读取、目录枚举、递归读取与 FFI 生命周期。历史 [0.2.36](https://github.com/calcit-lang/calcit.std/releases/tag/0.2.36) 配套 **0.28.0-alpha.3**，其 tag 与预发布工具链要求不随新版本改写 |
 | `cpu-time: () -> Number` 实际为单调毫秒；`unix-time-ms` | **已提供** `monotonic-time-ms: () -> Number`；旧 `cpu-time` 暂留，`unix-time-ms` 保留 | 新入口复用旧时钟实现，只在同一运行内比较经过时间；native、JS、WASI Preview 1 可用，WASI 0.3 command 时钟仍明确不支持。std `get-time!/get-timestamp` 先核对返回模型再定映射 |
 | 定时器注册/取消、`on-ctrl-c`；随机数、ID 生成 | **目标**注册/取消使用 `!`；随机/ID 的具体词汇 **暂缓** | 区分产生值与改变资源状态，核对 async、句柄和 callback；不按字符串后缀批量处理 |

@@ -1404,7 +1404,7 @@ fn method_alias_fix_reuses_receiver_proofs_in_attached_tests_and_examples() {
     ),
     (
       "core-integer-predicate-v1",
-      "quote $ do (assert= true $ round? 2) (assert= false $ round? 1.2) (assert= true $ .round? 2)",
+      "quote $ do (assert= true $ round? 2) (assert= false $ round? 1.2)",
     ),
     ("core-list-fold-v1", "quote $ assert= 6 $ .reduce ([] 1 2 3) 0 +"),
     (
@@ -1422,19 +1422,14 @@ fn method_alias_fix_reuses_receiver_proofs_in_attached_tests_and_examples() {
       "quote $ assert= ({} (:a 1) (:b 2)) $ .mappend ({} (:a 1)) ({} (:b 2))",
     ),
     ("core-predicate-method-v1", "quote $ assert= true $ .contains? ({} (:a 1)) :a"),
-    ("core-effect-method-v1", ""),
+    (
+      "core-effect-method-v1",
+      "quote $ assert= true $ fn? $ fn () (.cancel $ ffi:task nil)",
+    ),
   ] {
     let directory = TestDirectory::create();
     let snapshot = directory.path().join("calcit.cirru");
-    let code = if rule == "core-effect-method-v1" {
-      // The missing parent keeps this observable file-effect error inside the owned test directory.
-      format!(
-        "quote $ assert= true $ .err? $ .write-text (fs:path |{}) |payload",
-        directory.path().join("missing/out.txt").display()
-      )
-    } else {
-      code.to_owned()
-    };
+    let code = code.to_owned();
     fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
     if rule.starts_with("named-") {
       for (target, code) in [
@@ -4007,7 +4002,7 @@ fn core_effect_method_fix_handles_explicit_and_compact_calls() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ defn legacy-effects (path task response)\n  fn () $ path .write-text |payload\n  fn () task.cancel\n  fn () $ task.cancel-with :shutdown\n  fn () $ response.resolve :ok\n  fn () $ response.reject :error\n  , true",
+        "quote $ defn legacy-effects (path task response)\n  fn () $ path .write-text! |payload\n  fn () task.cancel\n  fn () $ task.cancel-with :shutdown\n  fn () $ response.resolve! :ok\n  fn () $ response.reject! :error\n  , true",
       ],
     ),
     "install effect calls",
@@ -4059,17 +4054,27 @@ fn core_effect_method_fix_handles_explicit_and_compact_calls() {
   assert_success(&preview, "effect method preview");
   let report = parse_stdout(&preview);
   let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
-  assert_eq!(suggestions.len(), 5, "{report}");
+  assert_eq!(suggestions.len(), 2, "{report}");
   assert!(
     suggestions.iter().all(|item| item["applicability"] == "machine-applicable"),
     "{report}"
   );
   assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
-  for (nominal, old, preferred) in [
-    ("calcit.core/FsPath", ".write-text", ".write-text!"),
-    ("calcit.core/FfiTask", ".cancel", ".cancel!"),
-    ("calcit.core/FfiResponse", ".resolve", ".resolve!"),
+  for (nominal, retired) in [
+    ("calcit.core/FsPath", ".write-text"),
+    ("calcit.core/FfiResponse", ".resolve"),
+    ("calcit.core/FfiResponse", ".reject"),
   ] {
+    let queried = run_calcit(&snapshot, &["query", "type", nominal, "--format", "json"]);
+    assert_success(&queried, "retired effect method discovery");
+    let context = parse_stdout(&queried);
+    let methods = context["data"]["methods"].as_array().expect("queried methods");
+    assert!(
+      methods.iter().all(|method| method["name"] != retired),
+      "{retired} was retired in 0.29.0: {context}"
+    );
+  }
+  for (nominal, old, preferred) in [("calcit.core/FfiTask", ".cancel", ".cancel!")] {
     let queried = run_calcit(&snapshot, &["query", "type", nominal, "--format", "json"]);
     assert_success(&queried, "effect method discovery");
     let context = parse_stdout(&queried);
@@ -4085,13 +4090,7 @@ fn core_effect_method_fix_handles_explicit_and_compact_calls() {
     .iter()
     .map(|item| item["replacement"]["value"].as_str().unwrap_or_default())
     .collect::<Vec<_>>();
-  for expected in [
-    ".write-text!",
-    "task.cancel!",
-    "task.cancel-with!",
-    "response.resolve!",
-    "response.reject!",
-  ] {
+  for expected in ["task.cancel!", "task.cancel-with!"] {
     assert!(replacements.contains(&expected), "missing {expected}: {report}");
   }
   let stale = run_fix(
@@ -10466,7 +10465,7 @@ fn core_integer_predicate_rule_migrates_proven_number_methods_and_guards_source(
         "--input-format",
         "cirru",
         "--code",
-        "quote $ defn legacy-integer ()\n  assert= true $ round? 0\n  assert= false $ round? 0.25\n  assert= true $ .round? -1\n  quote $ round? 8\n  round? 4",
+        "quote $ defn legacy-integer ()\n  assert= true $ round? 0\n  assert= false $ round? 0.25\n  assert= true $ .integer? -1\n  quote $ round? 8\n  round? 4",
       ],
     ),
     "install legacy integer calls",
@@ -10519,7 +10518,7 @@ fn core_integer_predicate_rule_migrates_proven_number_methods_and_guards_source(
   assert_success(&preview, "integer predicate preview");
   let report = parse_stdout(&preview);
   let suggestions = report["data"]["suggestions"].as_array().expect("suggestions should be an array");
-  assert_eq!(suggestions.len(), 4, "{report}");
+  assert_eq!(suggestions.len(), 3, "{report}");
   assert!(
     suggestions.iter().all(|suggestion| {
       suggestion["rule_id"] == "core-integer-predicate-v1" && suggestion["applicability"] == "machine-applicable"
@@ -10532,13 +10531,6 @@ fn core_integer_predicate_rule_migrates_proven_number_methods_and_guards_source(
       .filter(|suggestion| suggestion["origin_chain"][0]["kind"] == "reader-resolved-builtin-proc")
       .count(),
     3
-  );
-  assert_eq!(
-    suggestions
-      .iter()
-      .filter(|suggestion| suggestion["origin_chain"][0]["kind"] == "receiver-method-query")
-      .count(),
-    1
   );
 
   let stale = run_fix(
@@ -10581,7 +10573,7 @@ fn core_integer_predicate_rule_migrates_proven_number_methods_and_guards_source(
   assert!(updated.contains("calcit.core/integer?"));
   assert!(
     updated.contains("assert= true $ .integer? -1"),
-    "proven Number method should migrate"
+    "the preferred Number method stays unchanged"
   );
   assert!(updated.contains("quote $ round? 8"), "quoted data stays unchanged");
   assert_success(
@@ -10655,56 +10647,6 @@ fn core_integer_predicate_rule_migrates_proven_number_methods_and_guards_source(
   assert_eq!(macro_report["data"]["suggestions"].as_array().map(Vec::len), Some(1));
   assert_eq!(macro_report["data"]["suggestions"][0]["applicability"], "requires-review");
   assert_eq!(macro_report["data"]["suggestions"][0]["replacement"], serde_json::Value::Null);
-
-  for (name, code, schema) in [
-    (
-      "typed-integer-method",
-      "quote $ defn typed-integer-method (value)\n  value .round?",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Bool)",
-    ),
-    (
-      "macro-integer-method",
-      "quote $ defn macro-integer-method () $ pass-form $ .round? 4",
-      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)",
-    ),
-  ] {
-    let target = format!("fix-command.main/{name}");
-    assert_success(
-      &run_calcit(&snapshot, &["edit", "def", &target, "--input-format", "cirru", "--code", code]),
-      "install Number method source",
-    );
-    assert_success(
-      &run_calcit(&snapshot, &["edit", "schema", &target, "--input-format", "cirru", "--code", schema]),
-      "declare Number method source",
-    );
-    let preview = run_fix(
-      &snapshot,
-      &[
-        "--rule",
-        "core-integer-predicate-v1",
-        "--ns",
-        "fix-command.main",
-        "--def",
-        name,
-        "--format",
-        "json",
-      ],
-    );
-    assert_success(&preview, "Number method preview");
-    let report = parse_stdout(&preview);
-    assert_eq!(report["data"]["suggestions"].as_array().map(Vec::len), Some(1), "{report}");
-    let suggestion = &report["data"]["suggestions"][0];
-    assert_eq!(
-      suggestion["applicability"],
-      if name.starts_with("typed") {
-        "machine-applicable"
-      } else {
-        "requires-review"
-      }
-    );
-    assert_eq!(suggestion["origin_chain"][0]["kind"], "receiver-method-query");
-    assert_eq!(suggestion["origin_chain"][0]["receiver_type"], "number");
-  }
 }
 
 #[test]

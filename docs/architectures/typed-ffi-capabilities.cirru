@@ -89,12 +89,12 @@
       :schema $ :: 'Trait
       :code $ quote
         deftrait FfiResponseOps
-          .resolve $ :: 'Fn
+          .resolve! $ :: 'Fn
             {}
               :generics $ [] 'T
               :args $ [] 'FfiResponse 'T
               :return 'Unit
-          .reject $ :: 'Fn
+          .reject! $ :: 'Fn
             {}
               :generics $ [] 'T
               :args $ [] 'FfiResponse 'T
@@ -105,7 +105,7 @@
       :doc "|Internal implementation of native async response methods."
       :schema $ :: 'Impl
       :code $ quote
-        defimpl FfiResponseOpsImpl FfiResponseOps (.resolve ffi-response:resolve) (.reject ffi-response:reject)
+        defimpl FfiResponseOpsImpl FfiResponseOps (.resolve! ffi-response:resolve) (.reject! ffi-response:reject)
     'calcit.core/ffi:response $ {}
       :mode :ensure
       :kind :fn

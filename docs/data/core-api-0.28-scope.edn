@@ -34,6 +34,7 @@
     {} (:name 'calcit.core/fs:path) (:failure |String_构造_FsPath，不访问或规范化文件系统路径)
     {} (:name 'calcit.core/non-nil?) (:failure |仅判断_nil，不表示_Option_是否_some)
     {} (:name 'calcit.core/integer?) (:failure |只接受_Number，判断有限整数，不进行舍入)
+    {} (:name 'calcit.core/nil->option) (:failure |nil_转为_Option_none，其余值原样包装为_some，不展开已有_Option)
     {} (:name 'calcit.core/append) (:failure |返回新的同型_List，不修改原集合)
     {} (:name 'calcit.core/fold) (:failure |从左至右，空_List_返回初值，保持_accumulator_类型)
     {} (:name 'calcit.core/intersperse) (:failure |插入同类型分隔项，空_List_仍为空)

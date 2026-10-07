@@ -90,7 +90,7 @@
                             (:err _) (quit! 1)
                             (:ok updated)
                               let
-                                  output $ .write-text (fs:path |workspace/output.cirru) (format-cirru-edn updated)
+                                  output $ .write-text! (fs:path |workspace/output.cirru) (format-cirru-edn updated)
                                 match output
                                   (:ok _) (println |WASI-typed-EDN-file:-ok)
                                   (:err _) (quit! 1)
@@ -685,7 +685,7 @@
           :code $ quote $ defn filesystem-main! ()
             let
                 input $ .read-text $ fs:path |workspace/input.txt
-                output $ .write-text (fs:path |workspace/output.txt) "|WASI-written: 好"
+                output $ .write-text! (fs:path |workspace/output.txt) "|WASI-written: 好"
                 input-ok? $ match input
                   (:ok content) (= content "|WASI-file: 你好")
                   (:err _) false
