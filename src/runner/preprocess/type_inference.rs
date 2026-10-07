@@ -669,6 +669,26 @@ fn infer_try_return_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Ar
 /// Infer independent function exits without assigning a value type to tail recur.
 /// A transfer is valid only against the current lexical parameter contract.
 /// Ordinary expression inference intentionally continues to treat recur as unknown.
+/// Host handles are external-object traits, opaque JS objects and callables;
+/// their shape may be unverifiable, unlike Calcit data that a decoder can check.
+fn unsafe_coerce_targets_host_handle(form: Option<&Calcit>) -> bool {
+  let Some(form) = form else { return false };
+  let target = resolve_program_trait_refs_for_body(CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &[]));
+  match target.as_ref() {
+    // A callable's parameter and result types cannot be checked at runtime either.
+    CalcitTypeAnnotation::JsObject
+    | CalcitTypeAnnotation::Trait(_)
+    | CalcitTypeAnnotation::TraitSet(_)
+    | CalcitTypeAnnotation::Fn(_)
+    | CalcitTypeAnnotation::DynFn => true,
+    CalcitTypeAnnotation::JsNullish(inner) => matches!(
+      inner.as_ref(),
+      CalcitTypeAnnotation::JsObject | CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_)
+    ),
+    _ => false,
+  }
+}
+
 pub(crate) fn infer_function_exit_type(
   expr: &Calcit,
   scope_types: &ScopeTypes,
@@ -1816,11 +1836,13 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
         // A trusted coercion changes the ordinary static contract, but it is
         // not independent evidence in a proof audit. Retain the input evidence
         // so locals and producer returns cannot lend the cast its own proof.
-        // Inside a lexical `:js-ffi` adapter the coercion is the documented host
-        // boundary for shapes `js-cast` cannot check; the strict workflow reports
-        // it as a retained FFI boundary instead of requiring a second proof.
+        // Inside a lexical `:js-ffi` adapter a coercion to a host handle type is
+        // the documented boundary for shapes `js-cast` cannot check; the strict
+        // workflow reports it as a retained FFI boundary. Calcit data such as a
+        // String stays checkable and still needs its own decoder.
         Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _)
-          if super::REQUIRE_ASSERTION_PROOF.with(std::cell::Cell::get) && !super::js_ffi::current_function_has_js_ffi_feature() =>
+          if super::REQUIRE_ASSERTION_PROOF.with(std::cell::Cell::get)
+            && !(super::js_ffi::current_function_has_js_ffi_feature() && unsafe_coerce_targets_host_handle(xs.get(2))) =>
         {
           xs.get(1).and_then(|input| resolve_type_value(input, scope_types))
         }
