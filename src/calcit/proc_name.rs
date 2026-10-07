@@ -450,8 +450,10 @@ pub enum CalcitProc {
   #[strum(serialize = "&set:destruct")]
   NativeSetDestruct,
   // refs
-  #[strum(serialize = "atom")]
-  Atom,
+  /// `ref` constructs a local `Ref<T>`; `atom` is the compatibility spelling
+  /// read into the same proc until its next non-patch retirement.
+  #[strum(to_string = "ref", serialize = "atom")]
+  Ref,
   #[strum(serialize = "&atom:deref")]
   AtomDeref,
   #[strum(serialize = "add-watch")]
@@ -1358,7 +1360,7 @@ impl CalcitProc {
       }),
 
       // === Refs/Atoms ===
-      Atom => Some(ProcTypeSignature {
+      Ref => Some(ProcTypeSignature {
         return_type: ref_of(type_var("T")),
         arg_types: vec![type_var("T")],
       }),
@@ -1725,7 +1727,11 @@ mod tests {
       ));
     }
 
-    let atom = CalcitProc::Atom.get_type_signature().expect("atom signature");
+    // The compatibility spelling reads into the same proc as the preferred name.
+    assert_eq!(CalcitProc::from_str("atom"), Ok(CalcitProc::Ref));
+    assert_eq!(CalcitProc::from_str("ref"), Ok(CalcitProc::Ref));
+    assert_eq!(CalcitProc::Ref.as_ref(), "ref");
+    let atom = CalcitProc::Ref.get_type_signature().expect("ref signature");
     assert!(matches!(
       atom.return_type.as_ref(),
       CalcitTypeAnnotation::Ref(inner)

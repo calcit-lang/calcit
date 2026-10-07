@@ -73,7 +73,7 @@ fn proc_policy(proc: CalcitProc) -> Option<CapabilityPolicy> {
     | NativeBufListNew
     | NativeBufListPush
     | NativeBufListConcat
-    | Atom
+    | Ref
     | AtomDeref
     | AddWatch
     | RemoveWatch => MacroCapability::MutableState,
@@ -88,7 +88,7 @@ fn proc_policy(proc: CalcitProc) -> Option<CapabilityPolicy> {
 fn syntax_policy(syntax: &CalcitSyntax) -> Option<CapabilityPolicy> {
   match syntax {
     CalcitSyntax::Eval => Some(CapabilityPolicy::Requires(MacroCapability::DynamicEval)),
-    CalcitSyntax::Defatom | CalcitSyntax::Reset => Some(CapabilityPolicy::Requires(MacroCapability::MutableState)),
+    CalcitSyntax::Defref | CalcitSyntax::Reset => Some(CapabilityPolicy::Requires(MacroCapability::MutableState)),
     _ => None,
   }
 }

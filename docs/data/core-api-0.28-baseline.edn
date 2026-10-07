@@ -92,6 +92,14 @@
       :schema $ quote $ {} (:kind :fn) (:return 'Unit)
         :args $ [] (:: 'Ref 'T) 'Tag
         :generics $ [] 'T
+    {} (:declaration nil)
+      :failure "|创建新的局部_Ref，初始值即_payload，不与其他_Ref_共享状态"
+      :name 'calcit.core/ref
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'T
+        :generics $ [] 'T
+        :return $ :: 'Ref 'T
     {}
       :failure "|名义_enum，some_携带_T，none_无负载"
       :name 'calcit.core/Option

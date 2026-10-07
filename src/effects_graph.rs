@@ -411,7 +411,10 @@ impl EffectsGraphAnalyzer {
     if is_state_operator(&name) {
       let target = extract_state_target(list, &name);
       record_state_operator(&name, &target, list, current_ns, &mut out.state);
-      if matches!(name.as_str(), "defatom" | "atom" | "reset!" | "swap!" | "deref" | "set!") {
+      if matches!(
+        name.as_str(),
+        "defref" | "defatom" | "ref" | "atom" | "reset!" | "swap!" | "deref" | "set!"
+      ) {
         return;
       }
     }
@@ -621,7 +624,18 @@ fn resolve_def_call_from_expr(code: &Calcit, current_ns: &str) -> Option<(String
 fn is_state_operator(name: &str) -> bool {
   matches!(
     name,
-    "defatom" | "reset!" | "swap!" | "atom" | "deref" | "add-watch" | "remove-watch" | "add-watch!" | "remove-watch!" | "set!"
+    "defref"
+      | "defatom"
+      | "reset!"
+      | "swap!"
+      | "ref"
+      | "atom"
+      | "deref"
+      | "add-watch"
+      | "remove-watch"
+      | "add-watch!"
+      | "remove-watch!"
+      | "set!"
   )
 }
 
@@ -633,7 +647,7 @@ fn record_state_operator(
   state: &mut Vec<StateItem>,
 ) {
   let kind = match op_name {
-    "defatom" | "atom" => "atom-def",
+    "defref" | "defatom" | "ref" | "atom" => "atom-def",
     "reset!" | "swap!" => "atom-write",
     "add-watch" | "remove-watch" | "add-watch!" | "remove-watch!" => "watch",
     "deref" => "atom-read",
@@ -667,7 +681,7 @@ fn extract_state_target(list: Option<&crate::calcit::CalcitList>, op_name: &str)
     "swap!" | "reset!" | "deref" | "add-watch" | "remove-watch" | "add-watch!" | "remove-watch!" | "set!" => {
       list.get(1).and_then(extract_symbol_name).unwrap_or_else(|| op_name.to_string())
     }
-    "defatom" | "atom" => list.get(1).and_then(extract_symbol_name).unwrap_or_else(|| "?".to_string()),
+    "defref" | "defatom" | "ref" | "atom" => list.get(1).and_then(extract_symbol_name).unwrap_or_else(|| "?".to_string()),
     _ => op_name.to_string(),
   }
 }
@@ -1212,7 +1226,7 @@ fn extract_defatom_init_from_code(code: &Calcit, context_ns: &str) -> Option<Str
     Calcit::List(list) => {
       let head = list.first()?;
       let op = call_operator_name(head)?;
-      if matches!(op.as_str(), "defatom" | "atom") {
+      if matches!(op.as_str(), "defref" | "defatom" | "ref" | "atom") {
         return list
           .get(2)
           .and_then(|init| summarize_init_expr(init, context_ns))
@@ -1427,7 +1441,7 @@ pub fn analyze_effects_graph(
 fn is_meaningful_call_target(ns: &str, def: &str, include_core: bool) -> bool {
   if matches!(
     def,
-    "defn" | "defmacro" | "def" | "deftrait" | "defenum" | "defatom" | "reset!" | "swap!" | "deref" | "atom"
+    "defn" | "defmacro" | "def" | "deftrait" | "defenum" | "defref" | "defatom" | "reset!" | "swap!" | "deref" | "ref" | "atom"
   ) {
     return false;
   }

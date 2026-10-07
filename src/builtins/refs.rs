@@ -1,6 +1,8 @@
-//! two kinds of atoms
-//! - defined with `defatom`, which is global atom that retains after hot swapping
-//! - defined with `atom`, which is barely a piece of local mutable state
+//! two kinds of refs
+//! - defined with `defref`, a namespaced ref that retains its value after hot swapping
+//! - created with `ref`, a piece of local mutable state
+//!
+//! `defatom` and `atom` are compatibility spellings that read into the same syntax and proc.
 
 use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
@@ -52,7 +54,7 @@ fn modify_ref(locked_pair: Arc<Mutex<ValueAndListeners>>, v: Calcit, call_stack:
 }
 
 /// syntax to prevent expr re-evaluating
-pub fn defatom(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
+pub fn defref(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   match (expr.first(), expr.get(1)) {
     (Some(Calcit::Symbol { sym, info, .. }), Some(code)) => {
       let mut path: String = (*info.at_ns).to_owned();
@@ -61,7 +63,7 @@ pub fn defatom(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str, ca
 
       let path_info: Arc<str> = path.into();
 
-      // println!("defatom symbol {:?}", path_info);
+      // println!("defref symbol {:?}", path_info);
 
       let defined = {
         let dict = REFS_DICT.lock().expect("read refs");
@@ -88,7 +90,7 @@ pub fn defatom(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str, ca
 
       let path_info: Arc<str> = path.into();
 
-      // println!("defatom import {:?}", path_info);
+      // println!("defref import {:?}", path_info);
 
       let defined = {
         let dict = REFS_DICT.lock().expect("read refs");
@@ -109,13 +111,13 @@ pub fn defatom(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str, ca
     }
     (Some(a), Some(b)) => Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
-      format!("defatom expected a symbol and an expression, but received: {a} , {b}"),
+      format!("defref expected a symbol and an expression, but received: {a} , {b}"),
       call_stack,
       a.get_location().or_else(|| b.get_location()),
     )),
     _ => Err(CalcitErr::use_msg_stack(
       CalcitErrKind::Arity,
-      "defatom expected 2 nodes, but received none",
+      "defref expected 2 nodes, but received none",
       call_stack,
     )),
   }
@@ -124,22 +126,22 @@ pub fn defatom(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str, ca
 /// dead simple counter for ID generator, better use nanoid in business
 static ATOM_ID_GEN: AtomicUsize = AtomicUsize::new(0);
 
-/// proc
-pub fn atom(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+/// proc `ref`, also reached through the compatibility spelling `atom`
+pub fn new_ref(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(value) => Ok(quick_build_atom(value.to_owned())),
     _ => {
-      let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::Atom).unwrap_or_default();
+      let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::Ref).unwrap_or_default();
       crate::calcit::CalcitErr::err_str_with_hint(
         crate::calcit::CalcitErrKind::Arity,
-        "atom requires 1 argument (initial value), but received none".to_string(),
+        "ref requires 1 argument (initial value), but received none".to_string(),
         hint,
       )
     }
   }
 }
 
-/// this is a internal helper for `atom`, not exposed to Calcit
+/// this is a internal helper for `ref`, not exposed to Calcit
 pub fn quick_build_atom(v: Calcit) -> Calcit {
   let atom_idx = ATOM_ID_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
   let path: String = format!("atom-{atom_idx}");

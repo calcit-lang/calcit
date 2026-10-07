@@ -12551,3 +12551,135 @@ fn strict_workflow_surfaces_ffi_boundary_defexternal_skeletons() {
   assert_eq!(candidate["contract_status"], "review-required");
   assert_eq!(candidate["defexternal_skeleton"], "defexternal RawReadHost\n  :length 'Dynamic");
 }
+
+#[test]
+fn ref_constructor_fix_renames_proven_spellings_and_reviews_shadowed_syntax() {
+  // Rust checks the CLI transaction protocol; `calcit.core/ref` and `defref` own the Calcit tests.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  let define = |target: &str, code: &str| {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "def", target, "--overwrite", "--input-format", "cirru", "--code", code],
+      ),
+      "define ref fixture",
+    );
+  };
+  define("app.main/main!", "quote $ defn main! ()\n  , &unit");
+  define("app.main/*state", "quote $ defatom *state 0");
+  define(
+    "app.main/bump",
+    "quote $ defn bump (n)\n  let ((local (atom n)))\n    swap! local &+ 1\n    reset! *state $ deref local",
+  );
+  define("app.main/quoted", "quote $ defn quoted ()\n  quote $ atom 1");
+  define(
+    "app.main/template",
+    "quote $ defmacro template (name)\n  quasiquote $ defatom ~name $ atom 0",
+  );
+  assert_success(&run_calcit(&snapshot, &["edit", "add-ns", "app.shadow"]), "add shadow namespace");
+  define("app.shadow/defref", "quote $ defn defref (a b) , b");
+  define("app.shadow/*shadowed", "quote $ defatom *shadowed 0");
+  for (target, schema) in [
+    ("app.main/*state", "quote $ :: 'Ref 'Number"),
+    ("app.main/bump", "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)"),
+    ("app.main/quoted", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)"),
+    (
+      "app.shadow/defref",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic 'Number) (:return 'Number)",
+    ),
+    ("app.shadow/*shadowed", "quote $ :: 'Ref 'Number"),
+  ] {
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", target, "--input-format", "cirru", "--code", schema]),
+      "declare ref fixture schema",
+    );
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        "app.main/bump",
+        "keeps-ref-state",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ let ((cell (atom 1)))\n  assert= 3 $ bump 2\n  assert= 3 @*state\n  reset! cell 2\n  assert= 2 @cell",
+      ],
+    ),
+    "attach ref contract",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["test", "app.main/bump", "--require-match"]),
+    "legacy spelling semantics",
+  );
+
+  let before = fs::read(&snapshot).unwrap();
+  let base = ["fix", "--rule", "core-ref-constructor-v1", "--include-attached", "--format", "json"];
+  let preview = run_calcit(&snapshot, &base);
+  assert_success(&preview, "ref constructor preview");
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "preview must not write");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions");
+  let find = |definition: &str, path: &str| {
+    suggestions
+      .iter()
+      .find(|suggestion| suggestion["definition"] == definition && suggestion["path"] == path)
+      .unwrap_or_else(|| panic!("missing {definition} {path}: {report}"))
+  };
+  assert_eq!(find("app.main/*state", "code@0")["applicability"], "machine-applicable");
+  assert_eq!(find("app.main/bump", "code@3.1.0.1.0")["applicability"], "machine-applicable");
+  assert_eq!(
+    find("app.main/bump", "tests.keeps-ref-state")["applicability"],
+    "machine-applicable"
+  );
+  assert_eq!(find("app.main/template", "code@3.1.2.0")["applicability"], "machine-applicable");
+  let template = find("app.main/template", "code@3.1.0");
+  assert_eq!(template["applicability"], "requires-review");
+  assert!(template["replacement"].is_null());
+  let shadowed = find("app.shadow/*shadowed", "code@0");
+  assert_eq!(shadowed["applicability"], "requires-review");
+  assert!(shadowed["message"].as_str().unwrap().contains("`defref` is bound"));
+  assert!(
+    !suggestions.iter().any(|suggestion| suggestion["definition"] == "app.main/quoted"),
+    "quoted data stays unchanged: {report}"
+  );
+
+  let mut apply = base.to_vec();
+  apply.extend([
+    "--apply",
+    "--allow-no-vcs",
+    "--expect-revision",
+    report["revision"].as_str().unwrap(),
+  ]);
+  assert_success(&run_calcit(&snapshot, &apply), "apply ref constructor rename");
+  let migrated = fs::read_to_string(&snapshot).unwrap();
+  assert!(migrated.contains("defref *state 0"), "{migrated}");
+  assert!(migrated.contains("defatom *shadowed 0"), "{migrated}");
+  assert!(migrated.contains("quote $ atom 1"), "{migrated}");
+  assert_success(
+    &run_calcit(&snapshot, &["test", "app.main/bump", "--require-match"]),
+    "preferred spelling semantics",
+  );
+  let repeated = run_calcit(&snapshot, &base);
+  assert_success(&repeated, "repeated ref constructor preview");
+  let repeated = parse_stdout(&repeated);
+  let remaining = repeated["data"]["suggestions"].as_array().unwrap();
+  assert_eq!(remaining.len(), 2, "only reviewed syntax remains: {repeated}");
+  assert!(remaining.iter().all(|suggestion| suggestion["applicability"] == "requires-review"));
+
+  let preset = run_calcit(&snapshot, &["fix", "--preset", "core-api-0.29-v1", "--format", "json"]);
+  assert_success(&preset, "0.29 core API preset");
+  let rules = parse_stdout(&preset)["data"]["filters"]["expanded_rule_ids"].clone();
+  assert_eq!(rules.as_array().unwrap().len(), 14);
+  assert!(rules.as_array().unwrap().contains(&serde_json::json!("core-ref-constructor-v1")));
+  let published = run_calcit(&snapshot, &["fix", "--preset", "core-api-0.28-v1", "--format", "json"]);
+  assert_success(&published, "published 0.28 preset");
+  let rules = parse_stdout(&published)["data"]["filters"]["expanded_rule_ids"].clone();
+  assert!(!rules.as_array().unwrap().contains(&serde_json::json!("core-ref-constructor-v1")));
+}

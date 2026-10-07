@@ -2952,7 +2952,7 @@ pub fn analyze_code_entry(ns: &str, def_name: &str, entry: &snapshot::CodeEntry)
         });
         (DefKind::Data, Vec::new(), BTreeMap::new(), Vec::new(), data_type, level)
       }
-      Some(Cirru::Leaf(head)) if head.as_ref() == "defatom" => {
+      Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "defref" | "defatom") => {
         let explicit = explicit_data_schema(entry.schema.as_ref());
         let (data_type, level) = explicit.unwrap_or_else(|| ("ref<dynamic>".to_owned(), CoverageLevel::Partial));
         (DefKind::Data, Vec::new(), BTreeMap::new(), Vec::new(), Some(data_type), level)

@@ -573,7 +573,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     NativeSetIncludes => sets::includes_ques(args),
     NativeSetDestruct => sets::destruct(args),
     // refs
-    Atom => refs::atom(args),
+    Ref => refs::new_ref(args),
     AtomDeref => refs::atom_deref(args),
     AddWatch => refs::add_watch(args),
     RemoveWatch => refs::remove_watch(args),
@@ -641,8 +641,8 @@ pub fn handle_syntax(
     MacroexpandAll => syntax::macroexpand_all(nodes, scope, file_ns, call_stack),
     CallSpread => syntax::call_spread(nodes, scope, file_ns, call_stack),
     Try => syntax::call_try(nodes, scope, file_ns, call_stack),
-    // "define reference" although it uses a confusing name "atom"
-    Defatom => refs::defatom(nodes, scope, file_ns, call_stack),
+    // "define reference"; `defatom` reads into the same syntax for compatibility
+    Defref => refs::defref(nodes, scope, file_ns, call_stack),
     Reset => refs::reset_bang(nodes, scope, file_ns, call_stack),
     // different behaviors, in Rust interpreter it's nil, in js codegen it's nothing
     HintFn => meta::no_op(),

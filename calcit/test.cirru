@@ -23,6 +23,10 @@
             .get $ fn (self) 1
           :examples $ []
           :schema $ :: 'Impl
+        '*defref-demo $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defref *defref-demo 1
+          :examples $ []
+          :schema $ :: 'Ref 'Number
         '*ref-demo $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defatom *ref-demo 0
           :examples $ []
@@ -433,6 +437,15 @@
                 *l $ atom 1
               reset! *l 2
               assert= 2 @*l
+            let
+                *local $ ref 1
+              assert= 1 @*defref-demo
+              assert= 3 $ reset! *defref-demo 3
+              assert= 3 @*defref-demo
+              assert= :ref $ type-of *defref-demo
+              swap! *local &+ 1
+              assert= 2 @*local
+              assert= (type-of *local) (type-of *ref-demo)
             let
                 v $ %:: ValueBox :value 1
               assert-type v ValueBox

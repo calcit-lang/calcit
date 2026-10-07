@@ -87,7 +87,7 @@ calcit eval "echo |done"
 - **Anonymous Structs**: `%{} _ (:key1 val1) (:key2 val2)` - short-lived fixed-field values
 - **Structs**: `defstruct Point (:x 'Number) (:y 'Number)` and `%{} Point ...`
 - **Enums**: `defenum Result (:ok ..) (:err 'String)` and `%:: Result ...`
-- **Refs/Atoms**: `atom 0` - mutable references
+- **Refs**: `ref 0` - mutable references (`atom` is the compatibility name)
 - **Buffers**: `&buffer 0x01 0x02` - binary data
 
 ## Basic Syntax
@@ -329,7 +329,8 @@ let
 
 ### Ref/Atom Operations
 
-- `atom` - create atom
+- `ref` - create a local Ref (`atom` is the compatibility name)
+- `defref` - define a namespaced Ref that keeps its state across hot reload (`defatom` is the compatibility name)
 - `&atom:deref` or `deref` - read value
 - `reset!` - set value
 - `swap!` - update with function

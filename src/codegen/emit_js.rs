@@ -753,8 +753,8 @@ fn gen_call_code(
           Some(item) => quote_to_js(item, var_prefix, tags).map(|value| format!("{return_code}{value}")),
           None => Err(format!("quote expected a node, got nothing from {body}")),
         },
-        CalcitSyntax::Defatom => match (body.first(), body.get(1)) {
-          _ if body.len() > 2 => Err(format!("defatom expected name and value, got too many: {body}")),
+        CalcitSyntax::Defref => match (body.first(), body.get(1)) {
+          _ if body.len() > 2 => Err(format!("defref expected name and value, got too many: {body}")),
           (Some(Calcit::Symbol { sym, .. }), Some(v)) | (Some(Calcit::Import(CalcitImport { def: sym, .. })), Some(v)) => {
             let ref_path = wrap_js_str(&format!("{ns}/{sym}"));
             gen_stack::push_call_stack(ns, sym, StackKind::Codegen, xs.to_owned(), &[]);
@@ -765,7 +765,7 @@ fn gen_call_code(
               var_prefix, ref_path, var_prefix, ref_path
             ))
           }
-          (_, _) => Err(format!("defatom expected name and value, got: {body}")),
+          (_, _) => Err(format!("defref expected name and value, got: {body}")),
         },
 
         CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport => match (body.first(), body.get(1)) {

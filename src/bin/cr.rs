@@ -2837,7 +2837,7 @@ mod tests {
       CalcitTypeAnnotation::Ref(calcit::calcit::DYNAMIC_TYPE.clone()),
     );
     let typed_ref = code_entry(
-      list(vec![leaf("defatom"), leaf("*enabled?"), leaf("false")]),
+      list(vec![leaf("defref"), leaf("*enabled?"), leaf("false")]),
       CalcitTypeAnnotation::Ref(Arc::new(CalcitTypeAnnotation::Bool)),
     );
 

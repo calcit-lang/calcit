@@ -26,6 +26,7 @@
     {} (:name 'calcit.core/monotonic-time-ms) (:failure |单调毫秒时钟，不代表墙钟时间)
     {} (:name 'calcit.core/add-watch!) (:failure |重复_Tag_key_抛错，回调接收新旧值，成功返回_Unit)
     {} (:name 'calcit.core/remove-watch!) (:failure |不存在的_Tag_key_抛错，成功返回_Unit)
+    {} (:name 'calcit.core/ref) (:failure |创建新的局部_Ref，初始值即_payload，不与其他_Ref_共享状态)
     {} (:name 'calcit.core/Option) (:failure |名义_enum，some_携带_T，none_无负载)
     {} (:name 'calcit.core/Result) (:failure |名义_enum，ok_携带_T，err_携带_E)
     {} (:name 'calcit.core/FsPath) (:failure |名义路径对象，文件操作失败使用_Result)

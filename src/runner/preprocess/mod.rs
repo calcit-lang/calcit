@@ -3690,9 +3690,9 @@ fn preprocess_list_call(
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
           preprocess_hint_fn(name, name_ns, &args, &mut ctx)
         }
-        CalcitSyntax::Defatom => {
+        CalcitSyntax::Defref => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
-          Ok(preprocess_defatom(name, name_ns, &args, &mut ctx)?)
+          Ok(preprocess_defref(name, name_ns, &args, &mut ctx)?)
         }
         CalcitSyntax::CallSpread => {
           // Explicit core calls must use the same proof path as surface `&` calls.
@@ -11141,7 +11141,7 @@ pub fn preprocess_quote(
   Ok(Calcit::List(Arc::new(xs.into())))
 }
 
-pub fn preprocess_defatom(
+pub fn preprocess_defref(
   head: &CalcitSyntax,
   head_ns: &str,
   args: &CalcitList,

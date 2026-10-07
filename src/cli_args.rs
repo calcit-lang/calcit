@@ -156,7 +156,7 @@ pub struct FixCommand {
   /// restrict fixes to one stable rule ID
   #[argh(option)]
   pub rule: Option<String>,
-  /// select surface-latest-v1, surface-latest-v2, or core-api-0.28-v1 migration rules
+  /// select surface-latest-v1, surface-latest-v2, core-api-0.28-v1, or core-api-0.29-v1 migration rules
   #[argh(option)]
   pub preset: Option<String>,
   /// match one exact Cirru source pattern with ?name subtree variables (reviewed syntax only)

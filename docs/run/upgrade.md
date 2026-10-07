@@ -379,7 +379,18 @@ core 中带 `:deprecated` 标记的 15 个兼容名在 0.29.0 仍可调用，行
 | `case-default` | `match`，默认值写成末尾 `_` 分支 | 人工改写 |
 | `cpu-time` | `monotonic-time-ms` | 人工改写 |
 
-这些名字以及 `round?`、`foldl'` / `reduce` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零后，在下一个非 patch 版本删除，并在本文列出删除项。
+上表名字以及 `round?`、`foldl'` / `reduce` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零后，在下一个非 patch 版本删除，并在本文列出删除项。
+
+### Ref 构造名
+
+`Ref<T>` 的首选构造名是 `ref`（局部）与 `defref`（命名空间级），与 `type-of` 返回的 `:ref` 和谓词 `ref?` 一致。`atom` / `defatom` 在 0.29.0 仍可调用，读取为同一个实现，行为、类型与 native/JS/WASM 支持范围都不变。它们暂不带 `:deprecated` 标记：Respo、memof、js-ffi 等仍有 legacy `analyze quality` baseline 的项目大量使用旧名，加标记会直接改变其 `deprecatedCalls` 预算。
+
+```bash
+calcit calcit.cirru fix --rule core-ref-constructor-v1 --include-attached --format edn
+calcit calcit.cirru fix --preset core-api-0.29-v1 --include-attached --format edn
+```
+
+`core-api-0.29-v1` 包含 `core-api-0.28-v1` 的全部规则并追加本规则。0.29.0 起读取器把 `ref` 解析为内建构造（与 `atom` 相同），名为 `ref` 的局部绑定或函数参数会在预处理时报错，需要改用其他名字；calcit.core 的 `add-watch!` / `remove-watch!` 参数已相应改名。`atom` / `defatom` 按与上表相同的条件退场。
 
 ### 类型表示的历史变体盘点（#1554）
 
