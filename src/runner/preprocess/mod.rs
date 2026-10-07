@@ -4308,6 +4308,7 @@ fn preprocess_list_call(
           if let Some(specialized) =
             try_specialize_polymorphic_call(calcit::CORE_NS, proc.as_ref(), &processed_args, scope_types, file_ns)
           {
+            reject_unproven_specialized_struct_update(&specialized, scope_types, file_ns, call_stack)?;
             return Ok(specialized);
           }
         }
@@ -4815,6 +4816,7 @@ fn preprocess_known_function_call(
         );
       }
       if let Some(specialized) = try_specialize_polymorphic_call(ns, def, &current_args, scope_types, file_ns) {
+        reject_unproven_specialized_struct_update(&specialized, scope_types, file_ns, call_stack)?;
         return Ok(specialized);
       }
     }
@@ -6038,6 +6040,29 @@ fn struct_update_pairs<'a>(head: &Calcit, args: &'a CalcitList) -> Option<Vec<(u
 }
 
 /// Apply the shared directional proof to a concrete nominal field write.
+/// A polymorphic call such as nominal `assoc` is lowered to a Struct update
+/// procedure after the direct-call checks ran; prove its field value against
+/// the declared field type as if the procedure had been written directly. The
+/// runtime field check stays as the final safeguard.
+fn reject_unproven_specialized_struct_update(
+  specialized: &Calcit,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  let Calcit::List(items) = specialized else {
+    return Ok(());
+  };
+  let Some(head) = items.first() else { return Ok(()) };
+  if !matches!(
+    head,
+    Calcit::Proc(CalcitProc::NativeStructAssoc | CalcitProc::NativeStructAssocAt)
+  ) {
+    return Ok(());
+  }
+  reject_unproven_struct_update(head, &items.drop_left(), scope_types, file_ns, call_stack)
+}
+
 fn reject_unproven_struct_update(
   head: &Calcit,
   args: &CalcitList,
@@ -12144,19 +12169,37 @@ fn empty_container_context_preserves_the_container_family() {
 /// A bare generic parameter that has no trait bound and occurs in no other
 /// argument, rest or return position relates nothing, so it accepts any value
 /// like `Dynamic` does; only a shared or bounded generic needs argument evidence.
-fn generic_param_accepts_any_value(signature: &CalcitFnTypeAnnotation, index: usize, expected: &CalcitTypeAnnotation) -> bool {
+/// A variadic or rest slot that receives more than one argument relates those
+/// arguments to each other, so it is never single-use.
+fn generic_param_accepts_any_value(
+  signature: &CalcitFnTypeAnnotation,
+  index: usize,
+  arg_count: usize,
+  expected: &CalcitTypeAnnotation,
+) -> bool {
   let CalcitTypeAnnotation::TypeVar(name) = expected else {
     return false;
   };
   if !signature.generics.iter().any(|generic| generic == name) || signature.where_bounds.iter().any(|bound| &bound.name == name) {
     return false;
   }
+  let variadic_slot = signature
+    .arg_types
+    .last()
+    .filter(|last| matches!(last.as_ref(), CalcitTypeAnnotation::Variadic(_)))
+    .map(|_| signature.arg_types.len() - 1);
+  let spread_start = variadic_slot.unwrap_or(signature.arg_types.len());
+  let from_spread = index >= spread_start && (variadic_slot.is_some() || signature.rest_type.is_some());
+  if from_spread && arg_count > spread_start + 1 {
+    return false;
+  }
+  let slot = if from_spread { variadic_slot } else { Some(index) };
   let used_elsewhere = signature
     .arg_types
     .iter()
     .enumerate()
-    .any(|(other, arg_type)| other != index && arg_type.contains_type_var_named(name))
-    || signature.rest_type.as_ref().is_some_and(|rest| rest.contains_type_var_named(name))
+    .any(|(other, arg_type)| Some(other) != slot && arg_type.contains_type_var_named(name))
+    || (!from_spread && signature.rest_type.as_ref().is_some_and(|rest| rest.contains_type_var_named(name)))
     || signature.return_type.contains_type_var_named(name);
   !used_elsewhere
 }
@@ -12223,7 +12266,7 @@ fn find_unproven_generic_argument(
     if matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic) {
       return None;
     }
-    if generic_param_accepts_any_value(signature, index, expected.as_ref()) {
+    if generic_param_accepts_any_value(signature, index, args.len(), expected.as_ref()) {
       return None;
     }
     if empty_container_has_no_type_evidence(arg, expected.as_ref()) {
@@ -13015,20 +13058,41 @@ mod tests {
       rest_type: None,
       features: Arc::new(HashSet::new()),
     };
-    assert!(generic_param_accepts_any_value(&signature, 1, &type_var));
+    assert!(generic_param_accepts_any_value(&signature, 1, 2, &type_var));
 
     signature.return_type = type_var.clone();
     assert!(
-      !generic_param_accepts_any_value(&signature, 1, &type_var),
+      !generic_param_accepts_any_value(&signature, 1, 2, &type_var),
       "a generic flowing to the return still needs argument evidence"
     );
 
     signature.return_type = Arc::new(CalcitTypeAnnotation::Number);
     signature.arg_types[0] = type_var.clone();
     assert!(
-      !generic_param_accepts_any_value(&signature, 1, &type_var),
+      !generic_param_accepts_any_value(&signature, 1, 2, &type_var),
       "a generic shared by two arguments relates them"
     );
+
+    let variadic = CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![var.clone()]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::Variadic(type_var.clone()))],
+      return_type: Arc::new(CalcitTypeAnnotation::Bool),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    };
+    assert!(generic_param_accepts_any_value(&variadic, 0, 1, &type_var));
+    assert!(
+      !generic_param_accepts_any_value(&variadic, 0, 2, &type_var),
+      "an open first variadic argument must not skip proof before a later argument binds the generic"
+    );
+    let rest = CalcitFnTypeAnnotation {
+      arg_types: vec![],
+      rest_type: Some(type_var.clone()),
+      ..variadic
+    };
+    assert!(!generic_param_accepts_any_value(&rest, 0, 2, &type_var));
   }
 
   #[test]
