@@ -6054,10 +6054,7 @@ fn reject_unproven_specialized_struct_update(
     return Ok(());
   };
   let Some(head) = items.first() else { return Ok(()) };
-  if !matches!(
-    head,
-    Calcit::Proc(CalcitProc::NativeStructAssoc | CalcitProc::NativeStructAssocAt)
-  ) {
+  if !matches!(head, Calcit::Proc(CalcitProc::NativeStructAssoc | CalcitProc::NativeStructAssocAt)) {
     return Ok(());
   }
   reject_unproven_struct_update(head, &items.drop_left(), scope_types, file_ns, call_stack)
