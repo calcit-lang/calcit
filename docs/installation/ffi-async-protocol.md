@@ -269,6 +269,13 @@ nominal `FfiTask`。生命周期操作以方法为主：`.cancel!` 使用标准�
 两种方法都会校验并保留原生取消操作的实际 Unit 返回值；Unit 表示取消已接受。
 Closing 状态下再次取消仍返回 Unit，模块 cancel hook 保持单次调用。
 
+原生文本 payload 编码会递归检查不透明值，取消 reason、response resolve/reject、
+blocking callback 返回值以及原生调用参数共用这一边界。不可序列化的 AnyRef 会产生
+带数据路径的错误，例如 `AnyRef is not serializable at $.list[0].map[0].value`。
+取消 reason 的编码错误可以由普通 `try` 捕获；编码发生在 cancel hook 和 Closing
+状态变更之前，捕获后仍可用合法 reason 取消同一任务。可编码值沿用原 Cirru EDN
+文本与 UTF-8，异步 Unit 和 blocking 忽略结果的 nil 传输保持原协议。
+
 A Server that declares `REQUIRES_RESPONSE` opens one response capability for
 each request before enqueueing it:
 
@@ -475,3 +482,4 @@ and migration history.
 - 取消方法返回 Unit 时，任务终止事件仍需由宿主队列处理。
 - 无效 capability 和模块取消失败以异常传播给调用者。
 - 取消原因须可序列化为 Cirru EDN，不包含 raw task/response capability。
+- Map 和 Set 错误路径中的索引按当前值的遍历顺序定位，不是 Snapshot AST 路径或跨进程稳定序号。
