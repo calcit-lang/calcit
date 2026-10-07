@@ -70,6 +70,19 @@ let
 
 Use this pattern when the struct definition owns the type variable. Function-level constraints such as `:where` still stay on the function schema, not on `defstruct` itself.
 
+### 泛型参数的证据
+
+构造器从实际字段值推导泛型参数。同一参数出现在多个字段中时，它们共享同一次类型替换；
+例如 `Reel<Db>` 的 `base: Db` 与 `db: Db` 不能分别放入两个不同名义类型的数据库。
+不参与该参数的字段独立检查：`records: List<List<Dynamic>>` 不会把 `Db` 擦除成 Dynamic，
+不同泛型参数之间也不会因其中一个 payload 显式开放而失去其余参数的证据。
+
+应用后的类型证据经 `let`、构造器别名、嵌套字段、函数参数与返回值传递；
+函数 schema 中的本地名及 import alias 按声明 namespace 解析。
+普通字段方法沿用同一关系，不需要换成 native call 或添加转换断言。
+需要 `Reel<DbA>` 的参数必须得到对应的实际证据，裸 `Reel` 或 `Reel<Dynamic>`
+不能仅凭目标 schema 冒充它。开放值可以保存在明确开放的 payload 中，具体使用前仍需验证或收窄。
+
 ### Generic Structs with `where` Bounds
 
 `defstruct` may also take a `where` map right after the optional generics list. This lets the struct definition itself require that a type variable implements one or more traits.

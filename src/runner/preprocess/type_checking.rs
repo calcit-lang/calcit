@@ -1127,6 +1127,10 @@ pub(crate) fn check_user_fn_arg_types(
     return;
   }
   let expected_types = expected_types_with_rest(effective_fixed_types, effective_rest_type);
+  let expected_types = expected_types
+    .iter()
+    .map(|expected| super::resolve_namespace_type_refs_for_body(expected.clone(), &fn_info.def_ns))
+    .collect::<Vec<_>>();
 
   let fn_def_ns = fn_info.def_ns.clone();
   let fn_name = fn_info.name.clone();
@@ -1380,6 +1384,8 @@ pub(crate) fn check_function_return_type(
 ) -> Result<(), CalcitErr> {
   let file_ns = info.file_ns;
   let def_name = info.def_name;
+  let qualified_return = super::resolve_namespace_type_refs_for_body(declared_return_type.clone(), file_ns);
+  let declared_return_type = &qualified_return;
   if matches!(**declared_return_type, CalcitTypeAnnotation::Dynamic) {
     return Ok(());
   }
