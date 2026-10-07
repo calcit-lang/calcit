@@ -266,6 +266,11 @@ nominal `FfiTask`。生命周期操作以方法为主：`.cancel!` 使用标准�
 `.cancel-with! reason` 传入显式、可编码为 EDN 的原因。旧方法和底层 procedure 继续兼容，
 但不应泄漏到模块公开 API。
 
+两种方法都会校验并保留原生取消操作的实际 Unit 返回值；Unit 表示取消已接受，
+不表示任务的终止事件已经处理。Closing 状态下再次取消仍返回 Unit，不重复调用
+模块 cancel hook。无效 capability 和模块取消失败保持异常，不会被忽略结果后
+补 Unit 的写法掩盖。取消原因须可序列化为 Cirru EDN，不包含 raw task/response capability。
+
 A Server that declares `REQUIRES_RESPONSE` opens one response capability for
 each request before enqueueing it:
 

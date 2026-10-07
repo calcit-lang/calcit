@@ -5809,23 +5809,112 @@
             :generics $ [] 'T
           :tags $ #{} :ffi :internal
         'ffi-task:cancel $ %{} 'CodeEntry
-          :doc "|Cancel a wrapped native async task with the default reason."
+          :doc "|Cancel a wrapped native async task with the default reason. Validate and preserve the actual native Unit result; host errors propagate."
           :code $ quote $ defn ffi-task:cancel (self)
-            &ffi-task-cancel $ :raw self
-            , &unit
+            decode-map-as
+              &ffi-task-cancel $ :raw self
+              , 'Unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ [] 'FfiTask
           :tags $ #{} :ffi :internal
+          :tests $ []
+            %{} 'TestEntry (:name |checked-unit-preserves-actual-value)
+              :code $ quote $ assert= &unit (decode-map-as &unit 'Unit)
+              :tags $ #{} :cancel-proof :core :unit
+            %{} 'TestEntry (:name |checked-unit-rejects-nil)
+              :code $ quote $ assert= true
+                try
+                  do (decode-map-as nil 'Unit) false
+                  fn (message)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Bool
+                    .includes? message "|decode-map-as failed at $: expected &unit, got nil"
+              :tags $ #{} :cancel-proof :core :unit
+            %{} 'TestEntry (:name |checked-unit-rejects-number)
+              :code $ quote $ assert= true
+                try
+                  do (decode-map-as 1 'Unit) false
+                  fn (message)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Bool
+                    .includes? message "|decode-map-as failed at $: expected &unit, got number"
+              :tags $ #{} :cancel-proof :core :unit
+            %{} 'TestEntry (:name |checked-unit-rejects-string)
+              :code $ quote $ assert= true
+                try
+                  do (decode-map-as |wrong 'Unit) false
+                  fn (message)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Bool
+                    .includes? message "|decode-map-as failed at $: expected &unit"
+              :tags $ #{} :cancel-proof :core :unit
+            %{} 'TestEntry (:name |default-method-preserves-capability-error)
+              :code $ quote $ assert= true
+                try
+                  do
+                    .cancel! $ ffi:task nil
+                    , false
+                  fn (message)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Bool
+                    .includes? message |capability
+              :tags $ #{} :cancel-proof :core :unit
         'ffi-task:cancel-with $ %{} 'CodeEntry
-          :doc "|Cancel a wrapped native async task with an explicit EDN-compatible reason."
+          :doc "|Cancel a wrapped native async task with an explicit EDN-compatible reason. Evaluate the reason and native cancellation once, validate the actual Unit result, and preserve host errors."
           :code $ quote $ defn ffi-task:cancel-with (self reason)
-            &ffi-task-cancel (:raw self) reason
+            decode-map-as
+              &ffi-task-cancel (:raw self) reason
+              , 'Unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ [] 'FfiTask 'T
             :generics $ [] 'T
           :tags $ #{} :ffi :internal
+          :tests $ []
+            %{} 'TestEntry (:name |explicit-method-preserves-capability-error)
+              :code $ quote $ assert= true
+                try
+                  do
+                    .cancel-with! (ffi:task nil) :shutdown
+                    , false
+                  fn (message)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Bool
+                    .includes? message |capability
+              :tags $ #{} :cancel-proof :core :unit
+            %{} 'TestEntry (:name |reason-evaluates-once-before-host-error)
+              :code $ quote $ let
+                  attempts $ atom 0
+                assert= true $ try
+                  do
+                    .cancel-with! (ffi:task nil)
+                      let ()
+                        reset! attempts $ inc $ deref attempts
+                        , :shutdown
+                    , false
+                  fn (message)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Bool
+                    .includes? message |capability
+                assert= 1 $ deref attempts
+              :tags $ #{} :cancel-proof :core :unit
+            %{} 'TestEntry (:name |reason-error-propagates-before-host-call)
+              :code $ quote $ assert= |cancel-reason-failed
+                try
+                  .cancel-with! (ffi:task nil) (raise |cancel-reason-failed)
+                  fn (message)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'String
+                    , message
+              :tags $ #{} :cancel-proof :core :unit
         'ffi:response $ %{} 'CodeEntry
           :doc "|Wrap a raw native async response capability at a module adapter boundary. Examples with nil only check the method contract without invoking it; real resolution requires a host-issued capability."
           :code $ quote $ defn ffi:response (raw)
