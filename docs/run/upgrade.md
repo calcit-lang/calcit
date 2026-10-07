@@ -26,30 +26,70 @@ related:
 
 ## 当前升级闭环
 
-Agent 可直接运行 `calcit docs read upgrade.md '当前升级闭环'` 读取本节，再按失败位置查询后文；
-普通升级先使用这份流程，不需要先加载全部历史改名或审计报告。
-`docs read` 使用已安装的本地 guidebook checkout，升级时同步该文档来源；目录说明见 [文档索引](../docs-indexing.md)。
+本节是项目升级的唯一顺序。Agent 可直接运行 `calcit docs read upgrade.md '当前升级闭环'` 读取本节；
+CLI 内嵌的 `calcit docs agents 项目升级入口` 只说明如何找到本节和三类动作的边界。按实际失败位置再查后文章节，
+不需要先加载全部历史改名或审计报告，也不按版本猜 preset。
 
-| 阶段 | 操作 | 验收证据 |
-| --- | --- | --- |
-| 基线与版本 | 记录旧工具链的实际测试结果；核对 `deps.cirru :calcit-version`、CLI 与 `@calcit/procs` 的正式版本 | 可回滚提交、明确版本及项目 entry |
-| 旧版迁移桥梁 | 核对目标版本的删除项；仍需旧 CLI 的规则先在原工具链下预览、审阅并应用，再运行原测试 | 桥梁所需的已发布 CLI、迁移 diff、附带区域与后端验证 |
-| 依赖与表示 | 按已确认的版本更新依赖和 lockfile，安装后核对工具链；读取 mutation contract，再规范化 Snapshot | 工具链一致、规范化 diff 已审阅 |
-| 源码迁移 | 使用 strict workflow 预览；需要时另选支持附带区域的 preset/rule 或项目级模板 | revision、source coverage、待审位置及实际写入范围 |
-| 类型与行为 | 逐 entry 严格检查，运行原附带断言、示例及项目已有构建/运行命令 | 非零匹配的测试、真实 native/JS 或已支持 WASM/WASI 路径 |
-| 提交 | 审阅源码、宏生成引用、依赖模块及 CI/文档中的旧调用，再提交 PR | 最新 HEAD 的 CI/review；扫描失败或未覆盖不能当作清零 |
+### 0. 确认本流程与目标工具链同版本
 
-先只读核对当前版本与项目配置，并保存原工具链的测试基线：
+`docs read` 读取 `~/.config/calcit/docs` 指向的独立 checkout（目录约定见 [文档索引](../docs-indexing.md)），
+安装新 CLI 不会同步更新它：
 
 ```bash
 calcit --version
-caps --version
-calcit calcit.cirru query config --format edn
+git -C ~/.config/calcit/calcit describe --tags
+calcit docs agents --contract
 ```
 
-**需要旧版迁移桥梁时，先迁移源码，再升级工具链。** 例如 0.28.x → 0.29.0，List `.join`、Map `.values`、List/String `.contains?` 的迁移入口在目标 CLI 中已退役或缩小范围，应先阅读本页“兼容入口的退场节奏”，用匹配项目的 0.28.x CLI 预览、携带 revision 应用并运行原测试。附带测试/示例、宏生成引用和依赖源码需单独核对；这些位置不因普通代码扫描为空就视为完成。若已安装目标 CLI，可通过原已发布 CLI 的绝对路径执行旧阶段，不修改版本 pin 来绕过校验。
+guidebook 的 tag 应与目标 `calcit --version` 相同；不同时先 checkout 对应 release tag，或阅读该 tag 下的
+`docs/run/upgrade.md`。`docs agents --contract` 的 `Agent source` 行给出 CLI 内嵌指南的版本。API 名称和签名以已安装
+CLI 的 `query def` / `query type --format edn` 为准，旧 guidebook 不能作为新版本 API 的证据。
 
-没有此类旧桥梁需求，或旧阶段已验证完成后，再确认 Step A/B 中的目标版本与项目 `packageManager`。依赖更新与安装由调用方明确执行：`caps upgrade --all` 会修改依赖选择，不是只读预览，只在已确认所有依赖均按该策略升级时执行；保留特定版本的项目按已审阅版本更新声明，然后安装。
+### 步骤、类别与证据
+
+每个动作属于三类之一：**自动**（已证明等价，可按预览 revision 应用）、**需审阅**（项目级事务，审阅后才应用）、
+**提示**（文档说明的行为变化或后端差异，没有唯一改法）。没有类别的步骤是检查或显式决定。
+
+| # | 阶段 | 类别 | 使用的工具链 | 验收证据 |
+| --- | --- | --- | --- | --- |
+| 1 | 基线 | — | 项目当前固定的 CLI | 原 CI/脚本命令的实际结果与 `test --list`；已知失败单独记录 |
+| 2 | 旧版迁移桥梁 | 自动、需审阅 | 项目当前固定的已发布 CLI | 桥梁规则的迁移 diff、重复预览为空、原测试 |
+| 3 | 版本更新 | 显式决定 | `caps`、`yarn` | `deps.cirru`、`package.json`、lockfile 的 diff 单独提交 |
+| 4 | 安装与工具链核对 | — | 目标 CLI、`caps` | `caps verify --toolchain`、mutation contract、`query config` |
+| 5 | 表示规范化 | 自动 | 目标 CLI | `edit format` 的 diff 已审阅 |
+| 6 | 源码迁移 | 自动 | 目标 CLI | strict workflow / preset 的 revision、`source-coverage`、重复预览无可应用建议 |
+| 7 | 项目级事务 | 需审阅 | 目标 CLI | 审阅过的候选或模板、scope、暂存检查结果 |
+| 8 | 严格检查 | — | 目标 CLI | 每个 entry 的 `--check-only`、`fix --workflow strict --verify` |
+| 9 | 原附带断言 | — | 目标 CLI | 第 1 步的测试名仍在且 `--require-match` 通过；examples 与文档片段通过 |
+| 10 | 目标后端 | 提示 | 目标 CLI、项目构建器 | 按 entry `:mode` 实际运行 native、JS 或已支持的 WASM/WASI |
+| 11 | 提交 | 提示 | — | 宏生成引用、依赖模块、CI/文档中的旧调用已核对；最新 HEAD 的 CI/review |
+
+### 1–2. 基线与旧版迁移桥梁（原工具链）
+
+先用项目当前固定的 CLI 只读核对，并保存原测试清单：
+
+```bash
+git status --short
+calcit --version
+caps --version
+calcit calcit.cirru query config --format edn
+calcit calcit.cirru test --list
+calcit calcit.cirru fix --workflow strict --format edn
+```
+
+再按 `.github/workflows/` 与 `package.json` 运行项目原有的检查和构建命令，记录结果。
+
+**需要旧版迁移桥梁时，先迁移源码，再升级工具链。** 例如 0.28.x → 0.29.0，List `.join`、Map `.values`、
+List/String `.contains?` 的迁移规则在目标 CLI 中已退役或缩小范围，应先阅读本页“兼容入口的退场节奏”，用匹配项目的
+0.28.x CLI 预览、携带 revision 应用并运行原测试。已发布的 0.28.x CLI 没有 `--include-attached` 与 `--pattern`，
+桥梁只迁移 definition `:code`，预览的 `:manual-review-regions` 会列出 `|tests` 与 `|examples`；这两处的旧写法在第 9 步由目标
+CLI 的 `E_RETIRED_METHOD` 等诊断定位后逐处改写。若已安装目标 CLI，可通过原已发布 CLI 的绝对路径执行旧阶段，
+不修改版本 pin 来绕过校验。各桥梁的适用范围见下文 [历史迁移桥梁](#历史迁移桥梁)。
+
+### 3–4. 版本更新、安装与工具链核对
+
+依赖更新与安装由调用方明确执行：`caps upgrade --all` 会修改依赖选择与 `:calcit-version`，不是只读预览；只在已确认所有依赖均按该策略升级时执行。保留特定版本的项目按已审阅版本更新声明，然后安装。
+详细说明见下文 Step A–E。
 
 ```bash
 caps upgrade --all
@@ -59,34 +99,84 @@ caps verify --toolchain
 yarn install --immutable
 calcit docs agents --contract
 calcit calcit.cirru query config --format edn
+```
+
+lockfile 与依赖未变时只需要 immutable 安装；没有 `package.json` 的 native 项目会由 `caps verify --toolchain`
+报告跳过 `@calcit/procs` 核对。
+
+### 5–7. 规范化与源码迁移
+
+```bash
 calcit calcit.cirru edit format
 git diff
 calcit calcit.cirru fix --workflow strict --format edn
 ```
 
-lockfile 与依赖未变时，只需要 immutable 安装；Snapshot 已规范化时跳过 format。
-按预览中的实际 revision 重跑同一 strict workflow；不要向 strict 命令传入 selector 参数：
+Snapshot 已规范化时 format 不产生改动。按预览中的实际 revision 重跑同一 strict workflow；不要向 strict 命令传入 selector 参数：
 
 ```bash
 calcit calcit.cirru fix --workflow strict --apply --expect-revision '<已审阅 manifest 的 revision>' --format edn
-calcit calcit.cirru fix --workflow strict --verify --format edn
 ```
 
-迁移动作按以下三类处理，而不是按旧版本猜一个 preset：
+迁移动作按以下三类处理：
 
-- **可证明自动迁移**：strict workflow 只应用报告中可自动应用的候选，并沿用预览 revision。需显式选择规则或 preset（包括附带区域）时，使用独立的规则/preset 路径，例如 `calcit calcit.cirru fix --preset core-api-0.28-v1 --include-attached --format edn`，在该路径保留相同 selectors 和 revision；应用后运行原 `:tests` / `:examples`，以 `source-coverage` 判断范围。
-- **项目级需审阅事务**：旧 helper 或库调用形状使用 [项目级结构改写](fix.md#项目级结构改写)；`--pattern` / `--replace` 的所有候选都需审阅，应用前暂存严格检查不能证明业务语义等价。schema、decoder、FFI 信任和业务默认值由实际合同决定。
+- **可证明自动迁移**：strict workflow 只应用报告中 `:safe-fixes` 的候选，并沿用预览 revision。需要显式选择规则或 preset
+  （包括附带区域）时，使用独立的规则/preset 路径，例如 `calcit calcit.cirru fix --preset core-api-0.28-v1 --include-attached --format edn`，
+  在 apply 时保留相同 selectors 和 revision；以 `:source-coverage` 的 `:scanned-regions` 判断范围，重复预览应没有可应用建议。
+- **项目级需审阅事务**：workflow 的 `:review-required`（`:source-fixes`、`:type-findings`、`:ffi-boundaries`、
+  `:schema-candidates`、`:structural-candidates`）与顶层 diagnostics 给出位置；旧 helper 或调用形状使用
+  [项目级结构改写](fix.md#项目级结构改写)。`--pattern` / `--replace` 的所有候选都需审阅，暂存严格检查不能证明业务语义等价。
+  不传 `--ns` / `--def` 时暂存检查覆盖整个项目，其他定义尚未迁移的 warning 会让整批事务被拒绝；先处理这些 producer，
+  或把模板限定在已审阅的定义。schema、decoder、FFI 信任和业务默认值由实际合同决定。
 - **仅文档提示**：行为变化、旧桥梁的适用工具链和未支持的后端由本页对应章节说明；没有唯一等价改法时保留明确待办，不猜 replacement。
 
-当前规范化基于实际源码与类型证据，不维护版本 × rule/preset 矩阵。固定桥梁的消费者、适用写法与退场条件按
-[兼容入口的退场节奏](#兼容入口的退场节奏)核对；已退役桥梁使用其已发布 CLI，详见 [历史版本迁移记录](upgrade-history.md)。
+### 8–10. 严格检查、原附带断言与目标后端
+
+```bash
+calcit calcit.cirru --check-only --keep-going --format edn
+calcit calcit.cirru --entry '<entry-name>' --check-only
+calcit calcit.cirru fix --workflow strict --verify --format edn
+calcit calcit.cirru test --list
+calcit calcit.cirru test --require-match
+calcit calcit.cirru analyze check-examples --ns '<namespace>' --def '<definition>'
+calcit calcit.cirru docs check-md README.md --dep ./
+calcit calcit.cirru --entry '<entry-name>'
+```
+
+named entry 不继承 default 配置，逐个检查与运行。把 `test --list` 与第 1 步的清单比较，原测试名必须仍在；新增测试不能代替原断言。
+最后一条按 entry 的 `:mode` 执行 native 或生成目标产物：JS 项目继续运行生成代码的 Node/Vite 测试，WASM 用 `calcit wasm` /
+`calcit wasi` 的已支持路径，依赖 native 模块的项目先构建对应 dylib。类库还要运行公开 namespace 检查和真实消费者回归，
+见 [类库项目验收](library-quality.md)。
+
+### 结构化输出
+
+显式请求结构化数据时使用 `--format edn`：Cirru EDN 保留 tag、symbol 等原生值语义，strict workflow manifest、`fix`、
+`query`、`--check-only --keep-going` 与 `analyze weak-types` / `analyze verify` 都提供它。`--format json` 是同一 envelope
+的兼容表示，只用于 JSON-only 工具。`calcit test`、`analyze quality`、`analyze check-public`、`analyze check-types` 与
+`analyze deprecated` 目前只提供 human 和 JSON；在这些命令上使用 JSON，不为格式差异另建入口。
+
+### 历史迁移桥梁
+
+固定桥梁是临时改写，不是按版本维护的规则表。下表只列出已有桥梁；其余旧写法由当前诊断与当前 AST 规范化处理。
+
+| 桥梁 | 适用的旧写法 | 使用的 CLI | 状态与退场条件 |
+| --- | --- | --- | --- |
+| `compact.cirru` → `calcit.cirru` | 早期双文件 Snapshot、direct quote/configs | 0.13.48 及更早确认基线；当前 `edit format` 的一次性读取 | 当前仍可用；见 [快照文件迁移说明](#快照文件迁移说明) |
+| `tag-match-to-match-v1`、`required-struct-field-v1` | 0.14.15 之前的 tag match 与可缺失 Struct 字段 | 已发布 0.14.15 | 已退役；见 [历史版本迁移记录](upgrade-history.md) |
+| `core-list-intersperse-v1`、`core-map-distinct-values-v1`、`core-predicate-method-v1` 的 List/String 部分 | List `.join`、Map `.values`、List/String `.contains?` | 已发布 0.28.x | 0.29.0 已退役；见 [兼容入口的退场节奏](#兼容入口的退场节奏) |
+| `core-api-0.28-v1` 与各兼容名的 fix rule | 0.28 起的核心 API 旧名 | 目标 CLI | 当前可用；按 [兼容入口的退场节奏](#兼容入口的退场节奏) 退场 |
+
+退场条件统一为：已知活跃下游默认分支的源码、附带测试/示例、宏生成代码和 CI/文档引用清零，且依赖模块与未合并迁移已核对后，
+在下一个非 patch 版本删除，并在本页列出删除项与迁移命令；扫描失败、未覆盖或仅语法零命中不算清零。
 
 ### 限制
 
 - strict workflow 的当前规则组合不支持整体 `--include-attached`；附带区域须使用已支持的显式规则/preset 并另行验证。
+- 已发布的 0.28.x CLI 不支持 `--include-attached` 与 `--pattern`。
 - 预览因源码或依赖类型错误失败时先修复真实 producer；没有有效 manifest 和 revision 时不继续 apply。
 - `requires-review` 候选与严格类型错误分别处理：workflow 未通过时读取具体 gate，合法的变长 FFI 合同也可能需要人工审阅；不为清空报告改成固定参数、扩大 Dynamic 或删除门禁。
 - manifest 中未执行的 external gates 和零测试匹配都不是通过证据。
+- workflow 顶层 diagnostics 中位于 `calcit.core/*` 的证明错误来自 bundled core，不是项目可写源码；附最小复现报告到 Calcit 核心仓库，不在项目中绕过。
 - 版本不匹配时应安装项目固定 CLI 或显式升级合同，不绕过工具链 pin。
 - 已退役规则不能用目标 CLI 重新获得；先用对应旧版桥梁，或按具体诊断人工迁移，不反复更换 preset 猜测。
 - `--check-only`、生成成功或零语法命中不能代替目标后端运行及真实消费者回归。
@@ -616,7 +706,7 @@ ns app.main $ :require
 
 ### 快速命令清单
 
-使用页首 [当前升级闭环](#当前升级闭环) 的唯一命令清单；后文按实际失败阶段展开。
+使用页首 [当前升级闭环](#当前升级闭环) 的唯一命令清单；下文 Step A–E 展开其中第 3–4 步，Step F 展开第 8–10 步。
 项目自己的 test/build 命令从 `package.json` 和 CI 读取，Vite 或某种静态分析报告不是所有项目的默认升级门禁。
 
 旧项目遇到 `E_LEGACY_OPTIONAL_PARAM` 时，可先按单个定义检查原始 `?` 参数：
@@ -1254,22 +1344,13 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 
 ## 5）升级后最小验证矩阵
 
-建议至少覆盖以下项目：
+验收顺序与证据以页首 [当前升级闭环](#当前升级闭环) 第 4、8–11 步为准。下列检查补充该顺序中按项目情况才需要的部分：
 
-1. `calcit --version`
-2. `caps upgrade --all`（确认无遗漏项或已按预期处理）
-3. `caps tree`（确认根开发依赖存在，同时传递模块的开发依赖未进入图）
-4. `yarn install --immutable`
-5. `calcit calcit.cirru edit format` 后审阅 Snapshot diff
-6. `calcit calcit.cirru fix --workflow strict --format edn`；审阅、应用后使用 `--verify`。所需附带迁移另选支持 `--include-attached` 的显式规则/preset，检查 coverage 并重跑原断言；待审候选保留为实际待办，不把零建议当作完整验收
-7. default 与每个 named entry 的 `--check-only`
-8. 需要定位未能静态分派的方法时，对相关 entry 运行只读 `analyze dynamic-methods --format json`
-9. 所有声明支持的 entry 行为测试（默认 once；watch 另行验收）
-10. 非零 legacy baseline 项目继续运行 `analyze quality --baseline ...`；清零后删除该项（`check-types`、dynamic/nil `weak-types`、`deprecated` 仍只作为定位报告）
-11. `calcit test --require-match`、公开 namespace 的 `check-examples` 与 `docs check-md`
-12. JS 项目的 codegen 加 Node/Vite 行为测试，而不只是生成成功
-13. `package.json` 中与编译/构建相关的脚本
-14. 类库项目在 Respo 等真实消费者中的回归证据
+1. `caps tree`：确认根开发依赖存在，传递模块的开发依赖未进入图
+2. 需要定位未能静态分派的方法时，对相关 entry 运行只读 `analyze dynamic-methods --format json`
+3. 非零 legacy baseline 项目继续运行 `analyze quality --baseline ...`；清零后删除该项（`check-types`、dynamic/nil `weak-types`、`deprecated` 仍只作为定位报告）
+4. 声明支持 watch 的 entry 另行验收 `-w`；普通运行默认 once
+5. `package.json` 中与编译/构建相关的脚本
 
 ### 老项目失败时的定位顺序
 

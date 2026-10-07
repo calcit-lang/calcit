@@ -128,7 +128,11 @@ pub enum CalcitCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
-#[argh(subcommand, name = "fix")]
+#[argh(
+  subcommand,
+  name = "fix",
+  note = "Project upgrades follow one ordered sequence: run `calcit docs agents 项目升级入口` (embedded in this CLI), then `calcit docs read upgrade.md '当前升级闭环'` from a guidebook checked out at the same release tag."
+)]
 /// preview or apply compiler-guided migrations or reviewed structural source rewrites
 pub struct FixCommand {
   /// write applicable fixes atomically after validation
