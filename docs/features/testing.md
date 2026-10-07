@@ -148,6 +148,8 @@ WASMTIME_CLI=wasmtime node scripts/run-core-tests.mjs --backend wasi --target 'c
 
 新增的 core `:tests` 自动进入三个后端，无需登记。某个后端暂时无法运行的测试写入 `scripts/core-tests-exclusions.cirru`，按后端列出测试 id 或 tag，并写明原因，原因以类别开头：`unsupported`（后端明确拒绝该构造）、`parity`（结果与 native 不同，另开 issue 修复）、`host`（需要回放宿主未提供的能力）、`replay`（因不在所属 namespace 回放而产生）。清单中引用不存在的测试会使运行失败；`--report-unexpected-pass` 会额外运行被排除的测试，列出已经通过、可以移出清单的条目。
 
+新增测试需要核对它实际使用的后端能力。例如 `try`、`atom` 和开放值的 `data-view` 目前在 WASM/WASI 明确报告 unsupported；对应测试仍完整运行于 native/JS，排除项必须指向具体测试并记录实际诊断。一个测试同时覆盖已支持和未支持的构造时，保留原测试，并给已支持的断言单独附加 `:tests`，避免因整项排除而丢失这部分跨后端覆盖。不能用排除项掩盖本应支持的行为回归或改变原断言。
+
 只测试编码、ABI、memory layout、宿主注入或 unsupported 诊断的场景继续使用 `scripts/test-wasm*.mjs`、`scripts/check-*.mjs` 等专用脚本；新的跨后端回放需求给 `:tests` 加 tag 并用统一运行器选择，不再新增 `scripts/check-*.mjs`。
 
 运行器拒绝空的或重复的后端列表。native 与 WASI 的每个测试必须完整输出开始和结束标记；进程提前正常退出不会被计为通过。`--report-unexpected-pass` 自动补上 native 参照，只有测试成功且输出与 native 一致时才建议移除排除项。
