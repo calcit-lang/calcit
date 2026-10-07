@@ -152,7 +152,7 @@ const scenarios = [
     check(result) {
       const write = result.data.methods.find((method) => method.name === ".write-text!");
       assert.equal(write?.status, "proven");
-      assert.equal(write?.role, "preferred");
+      assert.equal(result.data.methods.find((method) => method.name === ".write-text"), undefined);
       assert.equal(write?.definition, "calcit.core/fs-path:write-text");
       assert.deepEqual(write?.parameter_types, ["string"]);
       assert.equal(write?.return_type, "type Result<unit, string>");

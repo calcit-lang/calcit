@@ -1129,6 +1129,32 @@ fn strict_type_fail_retired_methods_report_migration_guidance() {
 }
 
 #[test]
+fn strict_type_fail_retired_alias_methods_report_preferred_spelling() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    for (snippet, method, replacement) in [
+      ("let\n    x 1.5\n  .round? x", ".round?", ".integer?"),
+      (
+        ".write-text (fs:path |/calcit-retired-method-does-not-exist/file) |content",
+        ".write-text",
+        ".write-text!",
+      ),
+      ("let\n    r $ FfiResponse :raw nil\n  .resolve r 1", ".resolve", ".resolve!"),
+      ("let\n    r $ FfiResponse :raw nil\n  .reject r |failed", ".reject", ".reject!"),
+    ] {
+      let entries = load_snippet_entries(snippet);
+      let err = run_check_only(&entries).expect_err(&format!("retired {method} must fail strict check-only"));
+      assert!(err.contains("E_RETIRED_METHOD"), "{method} should report E_RETIRED_METHOD: {err}");
+      assert!(err.contains(&format!("method `{method}`")), "{method} should be named: {err}");
+      assert!(
+        err.contains(&format!("`{replacement}`")),
+        "{method} should suggest {replacement}: {err}"
+      );
+    }
+  });
+}
+
+#[test]
 fn strict_type_fail_unsafe_coerce_requires_lexical_ffi_scope() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();

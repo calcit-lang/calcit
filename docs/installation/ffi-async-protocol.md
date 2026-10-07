@@ -325,8 +325,8 @@ validates capability kind, owner, generation, lifecycle, and EDN encodability.
 `FfiTask` 与 `FfiResponse` 是两个独立的 nominal wrapper。payload 与 reason
 使用方法级泛型而不是 `Dynamic`；只有宿主边界上的不透明 raw 字段保持动态。
 宿主仍会校验 capability kind、owner、generation、lifecycle 以及 EDN 可编码性。
-业务代码优先使用 `.resolve!`、`.reject!`；旧 `.resolve`、`.reject` 暂留兼容，
-它们与新方法共用同一宿主调用，不改变 exactly-once 与释放规则。
+业务代码使用 `.resolve!`、`.reject!`；旧 `.resolve`、`.reject` 已在 0.29.0 删除，
+写下会得到 `E_RETIRED_METHOD`。exactly-once 与释放规则不变。
 
 AnyRef is deliberately a native non-serializable capability rather than a
 Calcit number: the full generation-bearing `u64` cannot safely round-trip

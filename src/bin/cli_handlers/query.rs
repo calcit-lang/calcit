@@ -1505,7 +1505,6 @@ mod type_query_tests {
         ".pow",
         ".rem",
         ".round",
-        ".round?",
         ".sqrt",
         ".debug",
         ".eq?",
@@ -1525,11 +1524,8 @@ mod type_query_tests {
     assert_eq!(integer.parameter_types, Some(vec![]));
     assert_eq!(integer.return_type.as_deref(), Some("bool"));
     assert_eq!(integer.definition.as_deref(), Some("calcit.core/integer?"));
-    let legacy = runner::preprocess::static_method_contract(&CalcitTypeAnnotation::Number, ".round?");
-    assert_eq!(legacy.status, "proven");
-    assert_eq!(legacy.definition, Some("calcit.core/integer?".to_owned()));
-    assert_eq!(legacy.arg_types, Some(vec![]));
-    assert_eq!(legacy.return_type.as_deref(), Some(&CalcitTypeAnnotation::Bool));
+    let retired = runner::preprocess::static_method_contract(&CalcitTypeAnnotation::Number, ".round?");
+    assert_ne!(retired.status, "proven", "the retired `.round?` alias is no longer a Number method");
   }
 
   #[test]
