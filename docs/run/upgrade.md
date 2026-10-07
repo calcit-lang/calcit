@@ -330,6 +330,49 @@ calcit calcit.cirru fix --rule core-non-nil-predicate-v1 --format edn
 
 正常源码无需改写；请移除应用中为旧偏移错误添加的编码补偿，并检查把搜索结果交给 JS `slice` 或协议 byte offset 的 FFI 边界。此类补偿含业务语义，不提供全局自动 fix；不能把返回值直接当作宿主编码单位。需要 UTF-8 长度时继续显式使用 `&str:utf8-byte-count`，不要用 `.len` 代替。调用形态、组合字符与跨目标范围见 [String 搜索契约](../data/string.md#子串搜索索引)。
 
+## 开放值进入具体参数
+
+严格模式下，显式开放的值进入具体参数前需要证明。显式开放的值指由 `hint-fn` 或 schema 声明为
+`Dynamic`、`List<Dynamic>`、`Map<K,Dynamic>` 等开放类型的函数参数，以及用 `&let`/`let` 从这些参数计算出的开放值，
+例如从 `List<Dynamic>` 参数中取出的元素；具体参数包括带 `Number`、`String`、`List<T>` 等合同的函数参数（含
+`+`、`inc` 等 core 函数）和闭合 Enum 的 payload，例如 `Data :number`。缺少证明时在调用点报告
+`E_CALL_ARGUMENT_UNPROVEN`，位置指向该实参，而不是被调函数内部的运算。下例中开放元素直接进入 Number 参数：
+
+```cirru.no-check
+let
+    number-only $ fn (value)
+      hint-fn $ {} (:args ([] 'Number)) (:return 'Number)
+      &+ value 1
+    from-open $ fn (items)
+      hint-fn $ {} (:args ([] (:: 'List 'Dynamic))) (:return 'Number)
+      number-only $ &list:nth items 0
+  from-open $ [] |wrong
+```
+
+迁移时在调用前给出证明：用 `number?` 等谓词收窄、`match (data-view v)` 分类，或用 `try-decode-map-as`
+解码；无法处理的分支由业务决定返回值或报错。
+
+```cirru
+let
+    number-only $ fn (value)
+      hint-fn $ {} (:args ([] 'Number)) (:return 'Number)
+      &+ value 1
+    from-open $ fn (items)
+      hint-fn $ {} (:args ([] (:: 'List 'Dynamic))) (:return 'Number)
+      &let
+        v $ &list:nth items 0
+        if (number? v) (number-only v) 0
+  assert= 3 $ from-open $ [] 2
+```
+
+开放值仍可直接保存、转交给 `Dynamic` 参数或经泛型函数传递；未标注且没有类型证据的局部变量不受这条规则影响。
+
+### 限制
+
+- 只检查调用点可见的类型证据，不在运行时插入入口检查。
+- 内建 proc（如 `&+`）的参数仍沿用原有检查。
+- 类型推导暂时无法表达而回退为 `Dynamic` 的值（Map 条目 pair、匿名 enum payload、未声明合同的回调参数等）不在本规则内。
+
 ## Map 条目参与排序与组件调用
 
 旧的 `&map:to-list` 生成异构的 `[key value]` 列表；即使输入是 `Map<K,V>`，

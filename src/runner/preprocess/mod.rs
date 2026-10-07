@@ -1,4 +1,5 @@
 mod checked_call_contract;
+mod explicit_open;
 mod js_ffi;
 mod proof_provenance;
 mod recur_tail;
@@ -4223,6 +4224,9 @@ fn preprocess_list_call(
               call_stack,
               call_location.clone(),
             ));
+          }
+          if matches!(proc, CalcitProc::NativeNamedEnumNew) {
+            reject_strict_unproven_enum_payload(&processed_args, scope_types, file_ns, call_stack, call_location.clone())?;
           }
           if REQUIRE_ASSERTION_PROOF.with(Cell::get)
             && let Some(contract) = proc.get_type_signature()
@@ -10633,6 +10637,14 @@ pub fn preprocess_defn(
       for parameter in &zs {
         proof_bindings.bind(parameter, None, &body_types);
       }
+      // Only a declared contract makes a parameter explicitly open; a
+      // contextual callback type may carry Dynamic as missing evidence.
+      let declared_contract = has_body_fn_hint || matches!(def_schema.as_ref(), CalcitTypeAnnotation::Fn(_));
+      let mut explicit_open_bindings = explicit_open::ExplicitOpenScope::new();
+      for parameter in &zs {
+        let open = declared_contract && matches!(parameter, Calcit::Local(local) if contains_dynamic_type(local.type_info.as_ref()));
+        explicit_open_bindings.bind(parameter, open);
+      }
 
       args.traverse_result::<CalcitErr>(&mut |a| {
         if to_skip > 0 {
@@ -10947,10 +10959,16 @@ pub fn preprocess_core_let(
   };
   xs.push(binding);
   let mut proof_binding = proof_provenance::BindingScope::new();
+  let mut explicit_open_binding = explicit_open::ExplicitOpenScope::new();
   if let Some(Calcit::List(pair)) = xs.get(1)
     && let (Some(local), Some(value)) = (pair.first(), pair.get(1))
   {
     proof_binding.bind(local, Some(value), &body_types);
+    // An alias stays explicitly open when its open type is computed from an
+    // explicitly open value, e.g. an element read from a `List<Dynamic>` input.
+    let open = matches!(local, Calcit::Local(binding) if body_types.get(&binding.sym).is_some_and(|annotation| contains_dynamic_type(annotation.as_ref())))
+      && explicit_open::reads_explicitly_open_local(value);
+    explicit_open_binding.bind(local, open);
   }
 
   let mut skipped_head = false;
@@ -11939,13 +11957,27 @@ fn empty_container_context_preserves_the_container_family() {
   assert!(!empty_container_has_no_type_evidence(&list, &callback));
 }
 
+/// Find the first argument whose actual type cannot independently prove its
+/// parameter contract. Outside the assertion audit this reports open Dynamic
+/// evidence only: narrowing into a generic relation, and narrowing an
+/// explicitly open value into a concrete parameter (#1767). Unknown evidence
+/// and inference fallbacks stay outside ordinary policy.
 fn find_unproven_generic_argument(
   signature: &CalcitFnTypeAnnotation,
   args: &CalcitList,
   scope_types: &ScopeTypes,
 ) -> Option<UnprovenGenericArgument> {
   let audit = REQUIRE_ASSERTION_PROOF.with(Cell::get);
-  if (signature.generics.is_empty() && !audit) || args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
+  if args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
+    return None;
+  }
+  // Concrete parameters only consult explicitly open evidence: an unannotated
+  // local is unknown, and inference fallbacks are not a source choice.
+  let explicitly_open = |arg: &Calcit| {
+    explicit_open::reads_explicitly_open_local(arg)
+      && resolve_type_value(arg, scope_types).is_some_and(|actual| contains_dynamic_type(actual.as_ref()))
+  };
+  if signature.generics.is_empty() && !audit && !args.iter().any(explicitly_open) {
     return None;
   }
 
@@ -11995,19 +12027,17 @@ fn find_unproven_generic_argument(
     if empty_container_has_no_type_evidence(arg, expected.as_ref()) {
       return None;
     }
-    let actual = resolve_type_value(arg, scope_types).or_else(|| match arg {
-      Calcit::Local(local) => Some(local.type_info.clone()),
-      _ => None,
-    });
     let generics = signature
       .generics
       .iter()
       .filter(|name| expected.contains_type_var_named(name))
       .cloned()
       .collect::<Vec<_>>();
-    if generics.is_empty() && !audit {
-      return None;
-    }
+    let concrete_open_check = generics.is_empty() && !audit;
+    let actual = resolve_type_value(arg, scope_types).or_else(|| match arg {
+      Calcit::Local(local) if !concrete_open_check => Some(local.type_info.clone()),
+      _ => None,
+    });
     let Some(actual) = actual else {
       return audit.then(|| UnprovenGenericArgument {
         index,
@@ -12017,13 +12047,16 @@ fn find_unproven_generic_argument(
         contradictory: false,
       });
     };
+    // A concrete parameter only needs a proof here when open Dynamic evidence
+    // reaches it; other incompatibilities stay with the ordinary checker.
+    if concrete_open_check && !explicitly_open(arg) {
+      return None;
+    }
     let proof = call_proof.prove(&actual, expected);
     ((matches!(proof, TypeProof::NeedsBoundary(_)) || audit && proof.is_mismatch())
       && (audit
-        || matches!(
-          proof,
-          TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic | TypeBoundaryReason::UnknownCallable)
-        )))
+        || matches!(proof, TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic))
+        || !generics.is_empty() && matches!(proof, TypeProof::NeedsBoundary(TypeBoundaryReason::UnknownCallable))))
     .then(|| UnprovenGenericArgument {
       index,
       expected: expected.clone(),
@@ -12106,6 +12139,86 @@ pub fn typed_rest_spread_call_is_proven(processed: &Calcit) -> bool {
   })
 }
 
+/// Locate a call argument in source. A processed nested call may lose its
+/// head location after lowering, so derive the list coordinate from a located
+/// operand. Derived coordinates must stay in the caller's definition: operands
+/// introduced by macro expansion carry the macro's own location.
+fn source_argument_location(argument: &Calcit, owner: Option<&NodeLocation>) -> Option<NodeLocation> {
+  if let Some(location) = argument.get_location() {
+    return Some(location);
+  }
+  let Calcit::List(items) = argument else {
+    return None;
+  };
+  let owner = owner?;
+  let same_definition = |location: &NodeLocation| location.ns == owner.ns && location.def == owner.def;
+  derive_list_call_expr_location(items).filter(same_definition).or_else(|| {
+    items.iter().find_map(|item| {
+      let location = source_argument_location(item, Some(owner)).filter(same_definition)?;
+      let mut coord = (*location.coord).clone();
+      coord.pop()?;
+      Some(NodeLocation::new(location.ns, location.def, Arc::from(coord)))
+    })
+  })
+}
+
+/// A variant payload is a concrete parameter of its constructor. Apply the
+/// shared call-argument proof so open Dynamic evidence cannot become a closed
+/// payload such as `Data :number` without decoding or narrowing first.
+fn reject_strict_unproven_enum_payload(
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  call_stack: &CallStackList,
+  call_location: Option<NodeLocation>,
+) -> Result<(), CalcitErr> {
+  let (Some(enum_arg), Some(Calcit::Tag(tag))) = (args.first(), args.get(1)) else {
+    return Ok(());
+  };
+  let Some(enum_def) = type_inference::resolve_enum_value(enum_arg, scope_types) else {
+    return Ok(());
+  };
+  let Some(variant) = enum_def.find_variant_by_name(tag.ref_str()) else {
+    return Ok(());
+  };
+  let payloads = CalcitList::from(args.iter().skip(2).cloned().collect::<Vec<_>>().as_slice());
+  if variant.payload_types().len() != payloads.len() {
+    return Ok(());
+  }
+  // Payload proof follows the ordinary policy for explicitly open values; the
+  // assertion audit keeps its own constructor contracts.
+  if REQUIRE_ASSERTION_PROOF.with(Cell::get)
+    || !payloads.iter().any(|payload| {
+      explicit_open::reads_explicitly_open_local(payload)
+        && resolve_type_value(payload, scope_types).is_some_and(|actual| contains_dynamic_type(actual.as_ref()))
+    })
+  {
+    return Ok(());
+  }
+  let CalcitTypeAnnotation::Fn(mut signature) =
+    CalcitTypeAnnotation::from_function_parts(variant.payload_types().to_vec(), calcit::DYNAMIC_TYPE.clone())
+  else {
+    unreachable!("function parts produce a function signature")
+  };
+  // Enum parameters are bound by the payloads, like a generic constructor.
+  Arc::make_mut(&mut signature).generics = Arc::new(enum_def.generics().to_vec());
+  // A display-only head for the lowered constructor. A rewritten constructor
+  // has no head coordinate; its located payload names the enclosing
+  // definition, so derived payload locations stay attributable to it.
+  let owner = call_location
+    .clone()
+    .or_else(|| payloads.iter().find_map(|payload| find_calcit_location_matching(payload, |_| true)));
+  let head = Calcit::Symbol {
+    sym: Arc::from(format!("{} :{}", enum_def.name(), tag.ref_str())),
+    info: Arc::new(CalcitSymbolInfo {
+      at_ns: owner.as_ref().map_or_else(|| Arc::from(file_ns), |location| location.ns.clone()),
+      at_def: owner.as_ref().map_or_else(|| Arc::from(""), |location| location.def.clone()),
+    }),
+    location: call_location.as_ref().map(|location| location.coord.clone()),
+  };
+  reject_strict_unproven_generic_relation(&head, &payloads, &signature, scope_types, file_ns, call_stack, call_location)
+}
+
 fn reject_strict_unproven_generic_relation(
   head: &Calcit,
   args: &CalcitList,
@@ -12137,7 +12250,7 @@ fn reject_strict_unproven_generic_relation(
             "E_CALL_ARGUMENT_UNPROVEN",
             call_stack,
             operand
-              .and_then(Calcit::get_location)
+              .and_then(|operand| source_argument_location(operand, head.get_location().or(call_location.clone()).as_ref()))
               .or_else(|| head.get_location())
               .or(call_location.clone()),
           ));
@@ -12198,14 +12311,23 @@ fn reject_strict_unproven_generic_relation(
       "E_CALL_ARGUMENT_MISMATCH",
       call_stack,
       argument
-        .and_then(Calcit::get_location)
+        .and_then(|argument| source_argument_location(argument, head.get_location().or(call_location.clone()).as_ref()))
         .or_else(|| head.get_location())
         .or(call_location.clone()),
     ));
   }
+  // Without a generic relation the open value meets a concrete parameter
+  // contract directly; report it with the shared call-argument proof code.
+  let concrete_open = !audit && generics.is_empty();
   let mut error = CalcitErr::use_msg_stack_location_with_code(
     CalcitErrKind::Type,
-    if audit {
+    if concrete_open {
+      format!(
+        "call to `{head}` passes open `{actual_name}` at argument {}, which has no proof for concrete parameter `{}`; decode, narrow, or check the value before this call instead of relying on the callee contract",
+        index + 1,
+        expected.to_brief_string(),
+      )
+    } else if audit {
       format!(
         "call to `{head}` has no independent argument proof at argument {}: expected `{}`, got `{actual_name}`; a callee return declaration cannot validate its input; decode or narrow before this call",
         index + 1,
@@ -12219,14 +12341,14 @@ fn reject_strict_unproven_generic_relation(
         expected.to_brief_string(),
       )
     },
-    if audit {
+    if audit || concrete_open {
       "E_CALL_ARGUMENT_UNPROVEN"
     } else {
       "E_ERASED_GENERIC_RELATION"
     },
     call_stack,
     argument
-      .and_then(Calcit::get_location)
+      .and_then(|argument| source_argument_location(argument, head.get_location().or(call_location.clone()).as_ref()))
       .or_else(|| head.get_location())
       .or(call_location),
   );

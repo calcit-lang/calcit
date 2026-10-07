@@ -1106,7 +1106,7 @@ try {
   assert.equal(returnTests.length, 3);
   run("test", "calcit.core/hint-fn", "--tag", "call-boundary", "--require-match");
   const callTests = returnResponse.data.tests.filter(test => test.tags.includes("call-boundary"));
-  assert.equal(callTests.length, 8);
+  assert.equal(callTests.length, 11);
   run("test", "calcit.core/hint-fn", "--tag", "generic-call-proof", "--require-match");
   const genericTests = returnResponse.data.tests.filter(test => test.tags.includes("generic-call-proof"));
   assert.equal(genericTests.length, 1);
@@ -1656,8 +1656,22 @@ try {
     "let ((consume (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) &unit)) (f (fn (x) x))) (consume (hint-fn f ({} (:args ([] 'Number)) (:return 'Number))))",
     "let ((consume (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) &unit)) (make-metadata (fn () (hint-fn ({} (:args ([])) (:return 'Nil)))))) (consume (make-metadata))",
   ];
+  // Open values need their own proof before a concrete parameter or payload (#1767).
+  const numberOnly = "(number-only (fn (value) (hint-fn ({} (:args ([] 'Number)) (:return 'Number))) (&+ value 1)))";
+  const openCalls = [
+    [`let (${numberOnly} (from-open (fn (items) (hint-fn ({} (:args ([] (:: 'List 'Dynamic))) (:return 'Number))) (number-only (&list:nth items 0))))) (from-open ([] |wrong))`,
+      "@3.1.1.1.3.1"],
+    [`let (${numberOnly} (from-open (fn (value) (hint-fn ({} (:args ([] 'Dynamic)) (:return 'Number))) (number-only value)))) (from-open |wrong)`,
+      "@3.1.1.1.3.1"],
+    ["let ((classify (fn (items) (hint-fn ({} (:args ([] (:: 'List 'Dynamic))) (:return 'Data))) (Data :number (&list:nth items 0))))) (classify ([] |wrong))",
+      "@3.1.0.1.3.2"],
+    [`let (${numberOnly} (from-open (fn (items) (hint-fn ({} (:args ([] (:: 'List 'Dynamic))) (:return 'Number))) (&let (v (&list:nth items 0)) (number-only v))))) (from-open ([] |wrong))`,
+      "@3.1.1.1.3.2.1"],
+  ];
+  const openCallLocations = new Map(openCalls);
   const rejected = [
     ...bad.map(expression => [expression, "E_ASSERT_TYPE_MISMATCH"]),
+    ...openCalls.map(([expression]) => [expression, "E_CALL_ARGUMENT_UNPROVEN"]),
     ...badReturns.map(expression => [expression, "W_FN_RETURN_TYPE_MISMATCH"]),
     ...badCalls.map(expression => [expression, "W_LOCAL_FN_ARG_TYPE_MISMATCH"]),
     ["config/consume-callback (hint-fn ({} (:args ([] 'Number)) (:return 'Number)) (fn (x) x))", "W_FN_ARG_TYPE_MISMATCH"],
@@ -1681,6 +1695,10 @@ try {
         assert.ok(diagnostics.includes("declares return type") && diagnostics.includes("body returns"), diagnostics);
       } else if (diagnostic === "E_NIL_FOR_UNIT") {
         assert.ok(diagnostics.includes("declares Unit but returns nil"), diagnostics);
+      } else if (diagnostic === "E_CALL_ARGUMENT_UNPROVEN") {
+        assert.ok(diagnostics.includes("has no proof for concrete parameter"), diagnostics);
+        // Point at the open argument, not at arithmetic inside the callee.
+        assert.ok(diagnostics.includes(`calcit.assert-evidence/run-tests ${openCallLocations.get(expression)}`), diagnostics);
       } else {
         assert.ok(diagnostics.includes("expects type") && diagnostics.includes("but got"), diagnostics);
       }
