@@ -1359,6 +1359,10 @@ pub(super) fn expression_is_proven_for(
               .skip(1)
               .all(|value| self.check(value, member, scope, aliases, false, depth + 1));
           }
+          // A fresh Ref has no other aliases yet, so its initial value decides it.
+          (Some(Calcit::Proc(CalcitProc::Atom)), CalcitTypeAnnotation::Ref(inner)) if items.len() == 2 => {
+            return self.check(items.get(1).unwrap(), inner, scope, aliases, false, depth + 1);
+          }
           (Some(Calcit::Proc(CalcitProc::NativeMap)), CalcitTypeAnnotation::Map(key, value)) if (items.len() - 1).is_multiple_of(2) => {
             return (1..items.len()).step_by(2).all(|index| {
               self.check(items.get(index).unwrap(), key, scope, aliases, false, depth + 1)
@@ -1407,7 +1411,6 @@ fn refined_generic_return_is_proven(
   declared: &CalcitTypeAnnotation,
   scope: &ScopeTypes,
   async_invocation: bool,
-  bindings: &mut HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>,
   depth: usize,
 ) -> bool {
   let CalcitTypeAnnotation::TypeVar(variable) = declared else {
@@ -1440,7 +1443,7 @@ fn refined_generic_return_is_proven(
         }
         let true_proven = match refinement {
           Some((_, narrowed)) => expression_is_proven_for(true_branch, &narrowed, &true_scope, async_invocation),
-          None => refined_generic_return_is_proven(true_branch, declared, &true_scope, async_invocation, bindings, depth + 1),
+          None => refined_generic_return_is_proven(true_branch, declared, &true_scope, async_invocation, depth + 1),
         };
         return true_proven
           && refined_generic_return_is_proven(
@@ -1448,7 +1451,6 @@ fn refined_generic_return_is_proven(
             declared,
             &false_scope,
             async_invocation,
-            bindings,
             depth + 1,
           );
       }
@@ -1464,7 +1466,6 @@ fn refined_generic_return_is_proven(
             declared,
             &body_scope,
             async_invocation,
-            bindings,
             depth + 1,
           );
         }
@@ -1472,7 +1473,17 @@ fn refined_generic_return_is_proven(
       _ => {}
     }
   }
-  resolve_type_value(expr, scope).is_some_and(|actual| actual.prove_with_bindings(declared, bindings).is_proven())
+  // An unguarded exit keeps the variable rigid, as the independent return
+  // proof does: a producer type must not bind the declared variable.
+  resolve_type_value(expr, scope).is_some_and(|actual| {
+    CallTypeProof::new(
+      &[],
+      std::slice::from_ref(&Arc::new(declared.to_owned())),
+      std::slice::from_ref(&actual),
+    )
+    .prove(&actual, declared)
+    .is_proven()
+  })
 }
 
 /// Check function return type matches declared return_type.
@@ -1540,18 +1551,14 @@ pub(crate) fn check_function_return_type(
     )
   };
   // Kind predicates refine a generic return before the lossy branch join.
-  if refined_generic_return_is_proven(
-    last_expr,
-    declared_return_type,
-    scope_types,
-    async_invocation,
-    &mut HashMap::new(),
-    0,
-  ) {
+  if refined_generic_return_is_proven(last_expr, declared_return_type, scope_types, async_invocation, 0) {
     return Ok(());
   }
   let Some(actual_type) = actual_type else {
-    return if audit { Err(unproven("unknown")) } else { Ok(()) };
+    // Branches may share no joined type while each one still proves the
+    // declaration; reuse the same branch-wise proof as typed joins.
+    let proven = expression_is_proven_for(last_expr, declared_return_type, scope_types, async_invocation);
+    return if audit && !proven { Err(unproven("unknown")) } else { Ok(()) };
   };
   // Async functions adopt a pending tail result; a synchronous function must
   // retain the pending wrapper rather than claim its logical result as a value.

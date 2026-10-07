@@ -160,6 +160,40 @@
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.applied-reader
           :require (app.applied-data :as data) (app.applied-model :as model)
+    'app.checked-write $ %{} 'FileEntry
+      :defs $ {}
+        'CoreNominalBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct CoreNominalBox
+            :maybe $ :: 'Option 'Number
+            :qualified $ :: 'calcit.core/Option 'Number
+            :outcome $ :: 'Result 'Number 'String
+          :examples $ []
+          :schema $ :: 'StructDef
+        'NilBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NilBox
+            :opt $ :: 'Optional 'Number
+            :none 'Nil
+            :host $ :: 'JsNullish 'Number
+          :examples $ []
+          :schema $ :: 'StructDef
+        'NumBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NumBox (:small 'Int8) (:tiny :int8) (:wide 'UInt16) (:single 'Float32)
+          :examples $ []
+          :schema $ :: 'StructDef
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.checked-write
+    'app.foreign-nominal $ %{} 'FileEntry
+      :defs $ {}
+        'Option $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Option (:none) (:some 'Number)
+          :examples $ []
+          :schema $ :: 'EnumDef
+        'Result $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Result (:ok 'Number) (:err 'String)
+          :examples $ []
+          :schema $ :: 'EnumDef
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.foreign-nominal
     'app.main $ %{} 'FileEntry
       :defs $ {}
         'main! $ %{} 'CodeEntry (:doc |)

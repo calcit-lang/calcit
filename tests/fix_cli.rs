@@ -4074,7 +4074,8 @@ fn core_effect_method_fix_handles_explicit_and_compact_calls() {
       "{retired} was retired in 0.29.0: {context}"
     );
   }
-  for (nominal, old, preferred) in [("calcit.core/FfiTask", ".cancel", ".cancel!")] {
+  {
+    let (nominal, old, preferred) = ("calcit.core/FfiTask", ".cancel", ".cancel!");
     let queried = run_calcit(&snapshot, &["query", "type", nominal, "--format", "json"]);
     assert_success(&queried, "effect method discovery");
     let context = parse_stdout(&queried);

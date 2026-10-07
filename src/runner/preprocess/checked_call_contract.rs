@@ -37,6 +37,19 @@ fn callback_return_type(callback: &Calcit, scope_types: &ScopeTypes) -> Option<A
   callback_result_evidence(callback, scope_types, false)
 }
 
+/// A mapper's output element: its concrete return, or Dynamic when the callback
+/// itself declares an open result. Only an unknown callback keeps the type variable.
+fn mapper_output_type(callback: &Calcit, scope_types: &ScopeTypes, type_var: &str) -> Arc<CalcitTypeAnnotation> {
+  callback_return_type(callback, scope_types)
+    .or_else(|| match resolve_type_value(callback, scope_types)?.as_ref() {
+      CalcitTypeAnnotation::Fn(signature) if matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Dynamic) => {
+        Some(signature.return_type.clone())
+      }
+      _ => None,
+    })
+    .unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from(type_var))))
+}
+
 fn callback_result_evidence(callback: &Calcit, scope_types: &ScopeTypes, preserve_open: bool) -> Option<Arc<CalcitTypeAnnotation>> {
   // A generated hint may include the caller's expected output. Join the
   // executable body evidence instead, including explicit Dynamic, so context
@@ -311,7 +324,7 @@ pub(crate) fn resolve_checked_call_contract(
       lowering: Some(CheckedCallLowering::CoreDef("&map:filter")),
     }),
     ("map", T::List(item_type)) | ("map", T::Set(item_type)) if !matches!(item_type.as_ref(), T::Syntax(_)) => {
-      let output_type = callback_return_type(args.get(1)?, scope_types).unwrap_or_else(|| Arc::new(T::TypeVar(Arc::from("MapOutput"))));
+      let output_type = mapper_output_type(args.get(1)?, scope_types, "MapOutput");
       let (return_type, target) = if matches!(receiver_type.as_ref(), T::List(_)) {
         (Arc::new(T::List(output_type.clone())), "&list:map")
       } else {
@@ -324,8 +337,7 @@ pub(crate) fn resolve_checked_call_contract(
       })
     }
     ("map-indexed", T::List(item_type)) if !matches!(item_type.as_ref(), T::Syntax(_)) => {
-      let output_type =
-        callback_return_type(args.get(1)?, scope_types).unwrap_or_else(|| Arc::new(T::TypeVar(Arc::from("MapIndexedOutput"))));
+      let output_type = mapper_output_type(args.get(1)?, scope_types, "MapIndexedOutput");
       Some(CheckedCallContract {
         expected_types: Some(vec![
           receiver_type.clone(),
@@ -344,8 +356,7 @@ pub(crate) fn resolve_checked_call_contract(
       })
     }
     ("map-list-kv", T::Map(key_type, value_type)) => {
-      let output_type =
-        callback_return_type(args.get(1)?, scope_types).unwrap_or_else(|| Arc::new(T::TypeVar(Arc::from("MapListOutput"))));
+      let output_type = mapper_output_type(args.get(1)?, scope_types, "MapListOutput");
       Some(CheckedCallContract {
         expected_types: Some(vec![
           receiver_type.clone(),

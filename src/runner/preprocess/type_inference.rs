@@ -671,6 +671,27 @@ fn infer_try_return_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Ar
 /// Infer independent function exits without assigning a value type to tail recur.
 /// A transfer is valid only against the current lexical parameter contract.
 /// Ordinary expression inference intentionally continues to treat recur as unknown.
+/// Host handles are external-object traits, opaque JS objects and callables;
+/// their shape may be unverifiable, unlike Calcit data that a decoder can check.
+fn unsafe_coerce_targets_host_handle(form: Option<&Calcit>) -> bool {
+  let Some(form) = form else { return false };
+  let target = resolve_program_trait_refs_for_body(CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &[]));
+  // An ordinary Calcit trait describes Calcit values with impls, so a host
+  // value coerced to it still needs proof; only external-object traits qualify.
+  let host_object = |annotation: &CalcitTypeAnnotation| match annotation {
+    CalcitTypeAnnotation::JsObject => true,
+    CalcitTypeAnnotation::Trait(trait_def) => trait_is_external_object(trait_def),
+    CalcitTypeAnnotation::TraitSet(traits) => !traits.is_empty() && traits.iter().all(|trait_def| trait_is_external_object(trait_def)),
+    _ => false,
+  };
+  match target.as_ref() {
+    // A callable's parameter and result types cannot be checked at runtime either.
+    CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn => true,
+    CalcitTypeAnnotation::JsNullish(inner) => host_object(inner),
+    other => host_object(other),
+  }
+}
+
 pub(crate) fn infer_function_exit_type(
   expr: &Calcit,
   scope_types: &ScopeTypes,
@@ -695,10 +716,13 @@ pub(crate) fn infer_function_exit_type(
           if !matches!(
             resolve_type_value(argument, scope)?.prove_with_bindings(expected, &mut bindings),
             crate::calcit::type_annotation::TypeProof::Proven
-          ) || !bindings.is_empty()
+          ) || !bindings
+            .iter()
+            .all(|(name, bound)| matches!(bound.as_ref(), CalcitTypeAnnotation::TypeVar(same) if same == name))
           {
             // Recur preserves the current instantiation. Unlike a new call,
-            // it cannot infer fresh substitutions for lexical type variables.
+            // it cannot infer fresh substitutions for lexical type variables;
+            // passing a parameter's own type variable through is the identity.
             return None;
           }
         }
@@ -729,6 +753,27 @@ pub(crate) fn infer_function_exit_type(
             .or_else(|| merge_if_branch_types(left_type, right_type))
             .map(Exit::Value),
         }
+      }
+      Calcit::Syntax(CalcitSyntax::Match, _) => {
+        // Each branch exits with its own value or transfers through recur.
+        // Value branches must share one proven type; recur branches add none.
+        let mut value: Option<Arc<CalcitTypeAnnotation>> = None;
+        for (pattern, body) in preprocessed_match_branches(items)? {
+          if expression_definitely_diverges(body) {
+            continue;
+          }
+          let mut branch_scope = scope.clone();
+          bind_pattern_scope(pattern, &mut branch_scope);
+          if let Exit::Value(branch_type) = infer(body, &branch_scope, parameters)? {
+            value = Some(match value {
+              None => branch_type,
+              Some(current) => {
+                merge_nominal_enum_branches([&current, &branch_type]).or_else(|| merge_if_branch_types(current, branch_type))?
+              }
+            });
+          }
+        }
+        Some(value.map_or(Exit::Transfer, Exit::Value))
       }
       _ => resolve_type_value(expr, scope).map(Exit::Value),
     }
@@ -1799,7 +1844,14 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
         // A trusted coercion changes the ordinary static contract, but it is
         // not independent evidence in a proof audit. Retain the input evidence
         // so locals and producer returns cannot lend the cast its own proof.
-        Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _) if super::REQUIRE_ASSERTION_PROOF.with(std::cell::Cell::get) => {
+        // Inside a lexical `:js-ffi` adapter a coercion to a host handle type is
+        // the documented boundary for shapes `js-cast` cannot check; the strict
+        // workflow reports it as a retained FFI boundary. Calcit data such as a
+        // String stays checkable and still needs its own decoder.
+        Calcit::Syntax(CalcitSyntax::UnsafeCoerce, _)
+          if super::REQUIRE_ASSERTION_PROOF.with(std::cell::Cell::get)
+            && !(super::js_ffi::current_function_has_js_ffi_feature() && unsafe_coerce_targets_host_handle(xs.get(2))) =>
+        {
           xs.get(1).and_then(|input| resolve_type_value(input, scope_types))
         }
         Calcit::Syntax(CalcitSyntax::AssertType | CalcitSyntax::UnsafeCoerce | CalcitSyntax::JsCast, _) => xs

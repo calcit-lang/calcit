@@ -158,6 +158,9 @@ pub struct SourceExpressionEvidence {
 
 thread_local! {
   static REQUIRE_ASSERTION_PROOF: Cell<bool> = const { Cell::new(false) };
+  /// Dependencies already re-proved within the current outer assertion audit.
+  /// Reset with the compiled-program checkpoint so no audit result outlives it.
+  static AUDIT_PROVEN_DEFS: RefCell<HashSet<(Arc<str>, Arc<str>)>> = RefCell::new(HashSet::new());
   static RESOLVED_SOURCE_USAGE_TRACE: RefCell<Option<Vec<ResolvedSourceUsage>>> = const { RefCell::new(None) };
   static SOURCE_EXPRESSION_TRACE: RefCell<Option<Vec<SourceExpressionEvidence>>> = const { RefCell::new(None) };
   #[cfg(test)]
@@ -174,8 +177,32 @@ pub fn with_assertion_proof<R>(f: impl FnOnce() -> R) -> R {
   // Audit inference deliberately ignores trusted coercion contracts. Its
   // temporary local annotations must not replace ordinary cached output,
   // including on errors or unwinding. Nested audits share the outer checkpoint.
-  let _compiled_checkpoint = (!REQUIRE_ASSERTION_PROOF.with(Cell::get)).then(program::checkpoint_compiled_program);
+  struct ClearAuditProven;
+  impl Drop for ClearAuditProven {
+    fn drop(&mut self) {
+      AUDIT_PROVEN_DEFS.with(|proven| proven.borrow_mut().clear());
+    }
+  }
+  let outer = !REQUIRE_ASSERTION_PROOF.with(Cell::get);
+  let _compiled_checkpoint = outer.then(program::checkpoint_compiled_program);
+  let _audit_proven = outer.then(|| {
+    AUDIT_PROVEN_DEFS.with(|proven| proven.borrow_mut().clear());
+    ClearAuditProven
+  });
   with_assertion_proof_policy(true, f)
+}
+
+/// A compiled dependency is reusable outside audits, or once this audit re-proved it.
+fn compiled_def_is_reusable(ns: &str, def: &str) -> bool {
+  program::lookup_compiled_def(ns, def).is_some()
+    && (!REQUIRE_ASSERTION_PROOF.with(Cell::get)
+      || AUDIT_PROVEN_DEFS.with(|proven| proven.borrow().contains(&(Arc::from(ns), Arc::from(def)))))
+}
+
+fn mark_audit_proven(ns: &str, def: &str) {
+  if REQUIRE_ASSERTION_PROOF.with(Cell::get) {
+    AUDIT_PROVEN_DEFS.with(|proven| proven.borrow_mut().insert((Arc::from(ns), Arc::from(def))));
+  }
 }
 
 fn with_assertion_proof_policy<R>(enabled: bool, f: impl FnOnce() -> R) -> R {
@@ -674,7 +701,7 @@ fn ensure_ns_def_preprocessed(
     validate_js_ffi_definition_target("embedded JS FFI reference", None, ns, def, call_stack)?;
   }
 
-  if program::lookup_compiled_def(ns, def).is_some() && !REQUIRE_ASSERTION_PROOF.with(Cell::get) {
+  if compiled_def_is_reusable(ns, def) {
     return Ok(());
   }
 
@@ -730,6 +757,7 @@ fn ensure_ns_def_preprocessed(
       }
       check_top_level_value_schema(ns, def, &code, &resolved_code, &scope_types, &next_stack)?;
       store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
+      mark_audit_proven(ns, def);
 
       Ok(())
     }
@@ -1528,7 +1556,7 @@ pub fn compile_source_def_for_snapshot(
 ) -> Result<(), CalcitErr> {
   // A proof audit must revisit source even when ordinary inventory compilation
   // has already warmed this definition's trusted metadata.
-  if program::lookup_compiled_def(ns, def).is_some() && !REQUIRE_ASSERTION_PROOF.with(Cell::get) {
+  if compiled_def_is_reusable(ns, def) {
     return Ok(());
   }
 
@@ -1552,6 +1580,7 @@ pub fn compile_source_def_for_snapshot(
 
   check_top_level_value_schema(ns, def, &code, &resolved_code, &scope_types, call_stack)?;
   store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
+  mark_audit_proven(ns, def);
 
   Ok(())
 }
@@ -4279,6 +4308,7 @@ fn preprocess_list_call(
           if let Some(specialized) =
             try_specialize_polymorphic_call(calcit::CORE_NS, proc.as_ref(), &processed_args, scope_types, file_ns)
           {
+            reject_unproven_specialized_struct_update(&specialized, scope_types, file_ns, call_stack)?;
             return Ok(specialized);
           }
         }
@@ -4786,6 +4816,7 @@ fn preprocess_known_function_call(
         );
       }
       if let Some(specialized) = try_specialize_polymorphic_call(ns, def, &current_args, scope_types, file_ns) {
+        reject_unproven_specialized_struct_update(&specialized, scope_types, file_ns, call_stack)?;
         return Ok(specialized);
       }
     }
@@ -6009,6 +6040,26 @@ fn struct_update_pairs<'a>(head: &Calcit, args: &'a CalcitList) -> Option<Vec<(u
 }
 
 /// Apply the shared directional proof to a concrete nominal field write.
+/// A polymorphic call such as nominal `assoc` is lowered to a Struct update
+/// procedure after the direct-call checks ran; prove its field value against
+/// the declared field type as if the procedure had been written directly. The
+/// runtime field check stays as the final safeguard.
+fn reject_unproven_specialized_struct_update(
+  specialized: &Calcit,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<(), CalcitErr> {
+  let Calcit::List(items) = specialized else {
+    return Ok(());
+  };
+  let Some(head) = items.first() else { return Ok(()) };
+  if !matches!(head, Calcit::Proc(CalcitProc::NativeStructAssoc | CalcitProc::NativeStructAssocAt)) {
+    return Ok(());
+  }
+  reject_unproven_struct_update(head, &items.drop_left(), scope_types, file_ns, call_stack)
+}
+
 fn reject_unproven_struct_update(
   head: &Calcit,
   args: &CalcitList,
@@ -6023,7 +6074,17 @@ fn reject_unproven_struct_update(
     return Ok(());
   };
   let Some(receiver) = args.first() else { return Ok(()) };
+  // `&struct:with` checks every written value against the receiver's declared
+  // field type at runtime (native and JS). A write the checker cannot resolve
+  // statically is therefore a checked boundary rather than an unproven one.
+  let runtime_checked = matches!(head, Calcit::Proc(CalcitProc::NativeStructWith));
   for (index, field, _) in pairs {
+    if runtime_checked
+      && (!matches!(field, Calcit::Tag(_) | Calcit::Str(_))
+        || !resolve_type_value(receiver, scope_types).is_some_and(|ty| ty.resolve_to_struct().is_some()))
+    {
+      continue;
+    }
     let field_name = match field {
       Calcit::Tag(tag) => tag.ref_str(),
       Calcit::Str(name) => name.as_ref(),
@@ -7422,6 +7483,9 @@ fn try_specialize_polymorphic_call(
     ("assoc", T::Map(_, _)) => NativeMapAssoc,
     ("assoc", T::EnumValue(_) | T::AnonymousEnum) => NativeEnumAssoc,
     ("assoc", T::StructValue(_)) => NativeStructAssoc,
+    // A nominal Struct reference is the same value family; lower it so the
+    // field write is checked here instead of reaching the generic assoc.
+    ("assoc", T::Struct(_, _) | T::TypeRef(_, _)) if receiver_type.resolve_to_struct().is_some() => NativeStructAssoc,
     // includes?
     ("includes?", T::List(_)) => NativeListIncludes,
     ("includes?", T::Map(_, _)) => NativeMapIncludes,
@@ -9372,6 +9436,25 @@ struct PredicateNarrowing {
   false_binding: Option<(Arc<str>, Arc<CalcitTypeAnnotation>)>,
 }
 
+/// `&struct:matches? value Def` checks a value's runtime Struct origin. When `Def`
+/// is a non-generic top-level StructDef, the true branch holds that nominal type.
+fn struct_origin_binding(value: Option<&Calcit>, definition: Option<&Calcit>) -> Option<(Arc<str>, Arc<CalcitTypeAnnotation>)> {
+  let sym = match value? {
+    Calcit::Local(local) => local.sym.to_owned(),
+    Calcit::Symbol { sym, .. } => sym.to_owned(),
+    _ => return None,
+  };
+  let Calcit::Import(CalcitImport { ns, def, .. }) = definition? else {
+    return None;
+  };
+  let nominal = CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), Arc::new(vec![]));
+  let struct_def = nominal.resolve_to_struct()?;
+  if !struct_def.generics.is_empty() {
+    return None;
+  }
+  Some((sym, Arc::new(nominal)))
+}
+
 /// The value kind a type predicate establishes for its target in the true
 /// branch. Nullability predicates are not kind refinements and return `None`.
 fn kind_predicate_refinement(cond_form: &Calcit, scope_types: &ScopeTypes) -> Option<(Arc<str>, Arc<CalcitTypeAnnotation>)> {
@@ -9390,6 +9473,15 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
   let Calcit::List(items) = cond_form else {
     return empty;
   };
+  if items.len() == 3
+    && matches!(items.first(), Some(Calcit::Proc(CalcitProc::NativeStructMatches)))
+    && let Some(binding) = struct_origin_binding(items.get(1), items.get(2))
+  {
+    return PredicateNarrowing {
+      true_binding: Some(binding),
+      false_binding: None,
+    };
+  }
   if items.len() != 2 {
     return empty;
   }
@@ -12103,6 +12195,44 @@ fn empty_container_context_preserves_the_container_family() {
 /// evidence only: narrowing into a generic relation, and narrowing an
 /// explicitly open value into a concrete parameter (#1767). Unknown evidence
 /// and inference fallbacks stay outside ordinary policy.
+/// A bare generic parameter that has no trait bound and occurs in no other
+/// argument, rest or return position relates nothing, so it accepts any value
+/// like `Dynamic` does; only a shared or bounded generic needs argument evidence.
+/// A variadic or rest slot that receives more than one argument relates those
+/// arguments to each other, so it is never single-use.
+fn generic_param_accepts_any_value(
+  signature: &CalcitFnTypeAnnotation,
+  index: usize,
+  arg_count: usize,
+  expected: &CalcitTypeAnnotation,
+) -> bool {
+  let CalcitTypeAnnotation::TypeVar(name) = expected else {
+    return false;
+  };
+  if !signature.generics.iter().any(|generic| generic == name) || signature.where_bounds.iter().any(|bound| &bound.name == name) {
+    return false;
+  }
+  let variadic_slot = signature
+    .arg_types
+    .last()
+    .filter(|last| matches!(last.as_ref(), CalcitTypeAnnotation::Variadic(_)))
+    .map(|_| signature.arg_types.len() - 1);
+  let spread_start = variadic_slot.unwrap_or(signature.arg_types.len());
+  let from_spread = index >= spread_start && (variadic_slot.is_some() || signature.rest_type.is_some());
+  if from_spread && arg_count > spread_start + 1 {
+    return false;
+  }
+  let slot = if from_spread { variadic_slot } else { Some(index) };
+  let used_elsewhere = signature
+    .arg_types
+    .iter()
+    .enumerate()
+    .any(|(other, arg_type)| Some(other) != slot && arg_type.contains_type_var_named(name))
+    || (!from_spread && signature.rest_type.as_ref().is_some_and(|rest| rest.contains_type_var_named(name)))
+    || signature.return_type.contains_type_var_named(name);
+  !used_elsewhere
+}
+
 fn find_unproven_generic_argument(
   signature: &CalcitFnTypeAnnotation,
   args: &CalcitList,
@@ -12163,6 +12293,9 @@ fn find_unproven_generic_argument(
   let mut call_proof = CallTypeProof::new(&signature.generics, &expected_types, &actual_types);
   let mut inspect = |index: usize, arg: &Calcit, expected: &Arc<CalcitTypeAnnotation>| {
     if matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic) {
+      return None;
+    }
+    if generic_param_accepts_any_value(signature, index, args.len(), expected.as_ref()) {
       return None;
     }
     if empty_container_has_no_type_evidence(arg, expected.as_ref()) {
@@ -12938,6 +13071,58 @@ mod tests {
   };
   use crate::data::cirru::code_to_calcit;
   use cirru_parser::Cirru;
+
+  #[test]
+  fn single_use_unbounded_generic_param_accepts_any_value() {
+    let var: Arc<str> = Arc::from("T");
+    let type_var = Arc::new(CalcitTypeAnnotation::TypeVar(var.clone()));
+    let string = Arc::new(CalcitTypeAnnotation::String);
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let mut signature = CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![var.clone()]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![string, type_var.clone()],
+      return_type: number,
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    };
+    assert!(generic_param_accepts_any_value(&signature, 1, 2, &type_var));
+
+    signature.return_type = type_var.clone();
+    assert!(
+      !generic_param_accepts_any_value(&signature, 1, 2, &type_var),
+      "a generic flowing to the return still needs argument evidence"
+    );
+
+    signature.return_type = Arc::new(CalcitTypeAnnotation::Number);
+    signature.arg_types[0] = type_var.clone();
+    assert!(
+      !generic_param_accepts_any_value(&signature, 1, 2, &type_var),
+      "a generic shared by two arguments relates them"
+    );
+
+    let variadic = CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![var.clone()]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::Variadic(type_var.clone()))],
+      return_type: Arc::new(CalcitTypeAnnotation::Bool),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    };
+    assert!(generic_param_accepts_any_value(&variadic, 0, 1, &type_var));
+    assert!(
+      !generic_param_accepts_any_value(&variadic, 0, 2, &type_var),
+      "an open first variadic argument must not skip proof before a later argument binds the generic"
+    );
+    let rest = CalcitFnTypeAnnotation {
+      arg_types: vec![],
+      rest_type: Some(type_var.clone()),
+      ..variadic
+    };
+    assert!(!generic_param_accepts_any_value(&rest, 0, 2, &type_var));
+  }
 
   #[test]
   fn rest_spread_proof_projection_preserves_operand_and_fixed_arity() {

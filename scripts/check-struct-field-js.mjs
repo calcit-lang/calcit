@@ -70,6 +70,90 @@ try {
     env: { ...process.env, CALCIT_BIN: binary }, stdio: "pipe",
   });
 
+  // A field write the checker leaves to runtime goes through the generated JS
+  // matcher; each outcome follows the native `value_matches_type_annotation`.
+  const writeOutput = join(output, "checked-field-write");
+  execFileSync(binary, ["--emit-path", writeOutput, appliedFixture, "js"], { stdio: "pipe" });
+  const procs = await import(pathToFileURL(resolve("lib/calcit.procs.mjs")).href);
+  const boxes = await import(pathToFileURL(join(writeOutput, "app.checked-write.mjs")).href);
+  const makeBox = (def, fields) =>
+    procs._$n__PCT__$M_(def, ...Object.entries(fields).flatMap(([name, value]) => [procs.newTag(name), value]));
+  const writeField = (box, name, value) => procs._$n_struct_$o_with(box, procs.newTag(name), value);
+  const accepts = (box, name, value) => assert.doesNotThrow(() => writeField(box, name, value), `:${name} must accept ${procs.toString(value, true)}`);
+  const rejects = (box, name, value) => assert.throws(() => writeField(box, name, value), /expects type/, `:${name} must reject ${procs.toString(value, true)}`);
+
+  // Nil is `null` and Unit is `undefined`; only JsNullish admits both.
+  const nilBox = makeBox(boxes.NilBox, { opt: null, none: null, host: null });
+  accepts(nilBox, "opt", null);
+  accepts(nilBox, "opt", 1);
+  rejects(nilBox, "opt", undefined);
+  rejects(nilBox, "opt", "1");
+  accepts(nilBox, "none", null);
+  rejects(nilBox, "none", undefined);
+  accepts(nilBox, "host", null);
+  accepts(nilBox, "host", undefined);
+  accepts(nilBox, "host", 2);
+  rejects(nilBox, "host", "2");
+
+  // Numeric refinements check integrality and range in both spellings.
+  const numBox = makeBox(boxes.NumBox, { small: 1, tiny: 1, wide: 1, single: 0.5 });
+  accepts(numBox, "small", -128);
+  rejects(numBox, "small", 300);
+  rejects(numBox, "small", 1.5);
+  rejects(numBox, "small", "1");
+  accepts(numBox, "tiny", 127);
+  rejects(numBox, "tiny", 128);
+  accepts(numBox, "wide", 65535);
+  rejects(numBox, "wide", -1);
+  accepts(numBox, "single", 0.25);
+  rejects(numBox, "single", 0.1);
+
+  // calcit.core Struct and Enum references admit only values of that definition.
+  const core = await import(pathToFileURL(join(writeOutput, "calcit.core.mjs")).href);
+  const foreignEnums = await import(pathToFileURL(join(writeOutput, "app.foreign-nominal.mjs")).href);
+  const { CalcitStructDef } = await import(pathToFileURL(resolve("lib/js-struct-def.mjs")).href);
+  const { CalcitStructValue } = await import(pathToFileURL(resolve("lib/js-struct-value.mjs")).href);
+  const { valueMatchesTypeForm } = await import(pathToFileURL(resolve("lib/js-type-form.mjs")).href);
+  const { CalcitSymbol } = await import(pathToFileURL(resolve("lib/calcit-data.mjs")).href);
+  const foreignOptionDef = new CalcitStructDef(procs.newTag("Option"), [], [], [], "foreign.schema/Option");
+  const foreignOption = new CalcitStructValue(procs.newTag("Option"), [], [], foreignOptionDef);
+  const variant = (def, tag, ...payload) => procs._PCT__$o__$o_(def, procs.newTag(tag), ...payload);
+  const none = variant(core.Option, "none");
+  const nominalBox = makeBox(boxes.CoreNominalBox, { maybe: none, qualified: none, outcome: variant(core.Result, "ok", 1) });
+  accepts(nominalBox, "maybe", variant(core.Option, "some", 2));
+  rejects(nominalBox, "maybe", 2);
+  rejects(nominalBox, "maybe", null);
+  rejects(nominalBox, "maybe", variant(core.Result, "ok", 2));
+  accepts(nominalBox, "qualified", variant(core.Option, "some", 3));
+  rejects(nominalBox, "qualified", 3);
+  rejects(nominalBox, "maybe", foreignOption);
+  rejects(nominalBox, "qualified", foreignOption);
+  // Replay generated definitions, not hand-built identities: same names in
+  // another namespace cannot satisfy a core Enum's nominal field contract.
+  assert.equal(core.Option.prototype.structRef.definitionRef, "calcit.core/Option");
+  assert.equal(core.Result.prototype.structRef.definitionRef, "calcit.core/Result");
+  assert.equal(foreignEnums.Option.prototype.structRef.definitionRef, "app.foreign-nominal/Option");
+  assert.equal(foreignEnums.Result.prototype.structRef.definitionRef, "app.foreign-nominal/Result");
+  rejects(nominalBox, "maybe", variant(foreignEnums.Option, "some", 2));
+  rejects(nominalBox, "qualified", variant(foreignEnums.Option, "some", 3));
+  rejects(nominalBox, "outcome", variant(foreignEnums.Result, "ok", 1));
+  const { bind_struct_definition } = await import(pathToFileURL(resolve("lib/js-struct-def.mjs")).href);
+  const coreOptionAlias = bind_struct_definition(core.Option, "app.foreign-nominal/OptionAlias");
+  assert.equal(coreOptionAlias, core.Option, "alias binding must preserve the original Enum identity");
+  accepts(nominalBox, "maybe", variant(coreOptionAlias, "some", 4));
+  assert.equal(core.Option.withImpls([]).prototype.structRef.definitionRef, "calcit.core/Option");
+  assert.equal(foreignEnums.Option.withImpls([]).prototype.structRef.definitionRef, "app.foreign-nominal/Option");
+  rejects(nominalBox, "qualified", variant(foreignEnums.Option.withImpls([]), "some", 5));
+  const mapEntry = makeBox(core.MapEntry, { key: procs.newTag("key"), value: 1 });
+  assert.equal(valueMatchesTypeForm(mapEntry, new CalcitSymbol("calcit.core/MapEntry")), true);
+  assert.equal(valueMatchesTypeForm(mapEntry, new CalcitSymbol("MapEntry")), true);
+  const foreignEntryDef = new CalcitStructDef(procs.newTag("MapEntry"), [], [], [], "foreign.schema/MapEntry");
+  const foreignEntry = new CalcitStructValue(procs.newTag("MapEntry"), [], [], foreignEntryDef);
+  assert.equal(valueMatchesTypeForm(foreignEntry, new CalcitSymbol("calcit.core/MapEntry")), false);
+  assert.equal(valueMatchesTypeForm(foreignEntry, new CalcitSymbol("MapEntry")), false);
+  accepts(nominalBox, "outcome", variant(core.Result, "err", "failed"));
+  rejects(nominalBox, "outcome", "failed");
+
   const snapshot = join(output, "applied-struct-negative.cirru");
   const a = "model/ReelLike :base (data/DbA :value 1) :db (data/DbA :value 2) :records ([]) :merged? false";
   const b = "model/ReelLike :base (data/DbB :value |one) :db (data/DbB :value |two) :records ([]) :merged? false";
@@ -141,7 +225,7 @@ try {
       assert.deepEqual(await readFile(snapshot), original);
     }
   }
-  console.log("Applied Struct evidence: all-defs entry checking, 4 native/JS attached tests, 1 shared WASM test, 10 native/JS strict rejections and 2 rigid generic return audits.");
+  console.log("Applied Struct evidence: all-defs entry checking, 4 native/JS attached tests, JS runtime field-write checks, 1 shared WASM test, 10 native/JS strict rejections and 2 rigid generic return audits.");
 } finally {
   await rm(output, { recursive: true, force: true });
 }

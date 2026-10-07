@@ -805,12 +805,15 @@
           :code $ quote $ defn &get-raw (base k)
             cond
                 list? base
-                &list:nth base k
+                if (number? k) (&list:nth base k) (raise "|&get-raw expected a Number index for list")
               (map? base) (&map:get base k)
-              (string? base) (&str:nth base k)
-              (enum? base) (&enum:nth base k)
-              (struct? base) (&struct:get base k)
-              true $ raise $ str-spaced |&get-raw |expected |a |collection |or |struct, |got: base
+              (string? base)
+                if (number? k) (&str:nth base k) (raise "|&get-raw expected a Number index for string")
+              (enum? base)
+                if (number? k) (&enum:nth base k) (raise "|&get-raw expected a Number index for enum")
+              (struct? base)
+                if (tag? k) (&struct:get base k) (raise "|&get-raw expected a Tag field for struct")
+              true $ raise "|&get-raw expected a collection or struct"
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic 'Dynamic
@@ -1091,6 +1094,9 @@
           :code $ quote $ defn &list:filter (xs f)
             reduce xs ([])
               defn %&list:filter (acc x)
+                hint-fn $ {}
+                  :args $ [] (:: 'List 'T) 'T
+                  :return $ :: 'List 'T
                 if (f x) (append acc x) acc
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -1107,12 +1113,18 @@
             :tags $ #{} :core :unit
         '&list:filter-pair $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:filter-pair (xs f)
-            if (list? xs)
-              &list:filter xs $ defn %filter-pair (pair)
-                assert "|expected a pair" $ and (list? pair)
-                  = 2 $ count pair
-                f (&list:nth pair 0) (&list:nth pair 1)
-              raise $ str-spaced "|expected list or map from `filter-pair`, got:" xs
+            &list:filter xs $ defn %filter-pair (pair)
+              hint-fn $ {}
+                :args $ [] 'P
+                :return 'Bool
+              if (list? pair)
+                if
+                  &= 2 $ &list:count pair
+                  &let
+                    kept $ f (&list:nth pair 0) (&list:nth pair 1)
+                    if (bool? kept) kept $ raise $ &str:concat "|filter-pair expected a Bool from the callback, got: " (to-lispy-string kept)
+                  raise $ &str:concat "|filter-pair expected a pair, got: " $ to-lispy-string pair
+                raise $ &str:concat "|filter-pair expected a pair, got: " $ to-lispy-string pair
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'P) 'Fn
@@ -1126,6 +1138,23 @@
                 [] ([] :a 2) ([] :b 12)
                 fn (k v) (> v 10)
             :tags $ #{} :core :unit
+        '&list:find-index-from $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn &list:find-index-from (xs f i)
+            if
+              &>= i $ &list:count xs
+              %none
+              if
+                f $ &list:nth xs i
+                %some i
+                recur xs f $ &+ i 1
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T)
+              :: 'Fn $ {} (:return 'Bool)
+                :args $ [] 'T
+              , 'Number
+            :generics $ [] 'T
+            :return $ :: 'Option 'Number
         '&list:find-last $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:find-last (xs f)
             foldr-shortcut xs (%none) (%none)
@@ -1160,7 +1189,7 @@
               fn (idx x)
                 if (f x)
                   :: true $ %some idx
-                  :: false $ &- 1 idx
+                  :: false $ &- idx 1
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T)
@@ -1177,6 +1206,17 @@
               assert= (%none)
                 &list:find-last-index ([] 1 3)
                   fn (x) (> x 8)
+              assert= (%some 2)
+                &list:find-last-index ([] 1 3 5 7)
+                  fn (x) (&= x 5)
+              assert= (%some 0)
+                &list:find-last-index ([] 1 3 5)
+                  fn (x) (&= x 1)
+              assert= (%none)
+                &list:find-last-index ([])
+                  fn (x) (&= x 1)
+              assert= (%some 2)
+                &list:last-index-of ([] :a :b :target :other) :target
             :tags $ #{} :core :unit
         '&list:first $ %{} 'CodeEntry
           :doc "|internal function for getting first list element\nSyntax: (&list:first list)\nParams: list (list)\nReturns: any or nil\nReturns first element of list, nil if empty"
@@ -1240,6 +1280,20 @@
               assert= true $ &list:includes? ([] :a :b :c) :b
               assert= false $ &list:includes? ([] :a :b :c) :d
             :tags $ #{} :core :unit
+        '&list:index-of-from $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn &list:index-of-from (xs item i)
+            if
+              &>= i $ &list:count xs
+              %none
+              if
+                &= item $ &list:nth xs i
+                %some i
+                recur xs item $ &+ i 1
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'T 'Number
+            :generics $ [] 'T
+            :return $ :: 'Option 'Number
         '&list:last $ %{} 'CodeEntry (:doc |)
           :code $ quote $ &runtime-implementation
           :examples $ []
@@ -1250,13 +1304,11 @@
           :tags $ #{} :builtin :internal
         '&list:last-index-of $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:last-index-of (xs item)
-            foldr-shortcut xs
-              dec $ count xs
-              %none
-              fn (idx x)
-                if (&= item x)
-                  :: true $ %some idx
-                  :: false $ &- 1 idx
+            &list:find-last-index xs $ defn %last-index-of (x)
+              hint-fn $ {}
+                :args $ [] 'T
+                :return 'Bool
+              &= item x
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T) 'T
@@ -1297,17 +1349,21 @@
               :tags $ #{} :generic-fold-proof :unit
         '&list:map-pair $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:map-pair (xs f)
-            if (list? xs)
-              map xs $ defn %map-pair (pair)
-                assert "|expected a pair" $ and (list? pair)
-                  = 2 $ count pair
-                f (&list:nth pair 0) (&list:nth pair 1)
-              raise $ str-spaced "|expected list or map from `map-pair`, got:" xs
+            &list:map xs $ defn %map-pair (pair)
+              hint-fn $ {}
+                :args $ [] 'P
+                :return 'Dynamic
+              if (list? pair)
+                if
+                  &= 2 $ &list:count pair
+                  f (&list:nth pair 0) (&list:nth pair 1)
+                  raise $ &str:concat "|map-pair expected a pair, got: " $ to-lispy-string pair
+                raise $ &str:concat "|map-pair expected a pair, got: " $ to-lispy-string pair
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'P) 'Fn
-            :generics $ [] 'P 'U
-            :return $ :: 'List 'U
+            :generics $ [] 'P
+            :return $ :: 'List 'Dynamic
           :tags $ #{} :internal
           :tests $ []
             %{} 'TestEntry (:name |maps-key-value-pairs)
@@ -1384,6 +1440,18 @@
             :code $ quote $ assert= :b
               &list:nth ([] :a :b :c) 1
             :tags $ #{} :core :unit
+        '&list:numbers $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn &list:numbers (xs)
+            foldl xs ([])
+              defn %&list:numbers (acc x)
+                hint-fn $ {}
+                  :args $ [] (:: 'List 'Number) 'Dynamic
+                  :return $ :: 'List 'Number
+                if (number? x) (append acc x) (raise "|expected a Number item")
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'Dynamic
+            :return $ :: 'List 'Number
         '&list:prepend $ %{} 'CodeEntry (:doc |)
           :code $ quote $ &runtime-implementation
           :examples $ []
@@ -1695,7 +1763,6 @@
                 hint-fn $ {}
                   :args $ [] (:: 'Map 'K 'V) (:: 'List 'Dynamic)
                   :return $ :: 'Map 'K 'V
-                  :generics $ [] 'K 'V
                 if (f x)
                   &map:assoc acc (&list:nth x 0) (&list:nth x 1)
                   , acc
@@ -1837,16 +1904,16 @@
               foldl xs ([])
                 defn %&map:map-list (acc pair)
                   hint-fn $ {}
-                    :args $ [] (:: 'List 'U) ('P)
+                    :args $ [] (:: 'List 'U) (:: 'List 'Dynamic)
                     :return $ :: 'List 'U
                   append acc $ f pair
-              raise $ str-spaced "|&map:map-list expected a map, got:" xs
+              raise $ &str:concat "|&map:map-list expected a map, but received: " $ to-lispy-string xs
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'Map 'K 'V)
               :: 'Fn $ {} (:return 'U)
-                :args $ [] 'P
-            :generics $ [] 'K 'V 'P 'U
+                :args $ [] $ :: 'List 'Dynamic
+            :generics $ [] 'K 'V 'U
             :return $ :: 'List 'U
           :tags $ #{} :internal
           :tests $ [] $ %{} 'TestEntry (:name |maps-map-pairs-to-list)
@@ -2120,7 +2187,6 @@
                 hint-fn $ {}
                   :args $ [] (:: 'Set 'T) 'T
                   :return $ :: 'Set 'T
-                  :generics $ [] 'T
                 if (f x) (&include acc x) acc
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -5687,8 +5753,8 @@
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ [] 'Dynamic $ :: 'Fn
               {} (:return 'R)
-                :args $ [] 'T
-            :generics $ [] 'T 'R
+                :args $ [] 'Dynamic
+            :generics $ [] 'R
           :tests $ [] $ %{} 'TestEntry (:name |returns-unit-after-callbacks)
             :code $ quote $ assert= &unit
               each ([] 1 2)
@@ -6191,11 +6257,10 @@
             :tags $ #{} :core :unit
         'find $ %{} 'CodeEntry (:doc "|Find the first matching list item as Option<T>.")
           :code $ quote $ defn find (xs f)
-            foldl-shortcut xs 0 (%none)
-              defn %find (_acc x)
-                if (f x)
-                  :: true $ %some x
-                  :: false $ %none
+            match (&list:find-index-from xs f 0)
+              (:some i)
+                %some $ &list:nth xs i
+              (:none) (%none)
           :examples $ []
             quote $ assert= (%some 2)
               find ([] 1 2 3)
@@ -6216,12 +6281,7 @@
             :tags $ #{} :core :unit
         'find-index $ %{} 'CodeEntry
           :doc "|Find the first matching list index as Option<Number>."
-          :code $ quote $ defn find-index (xs f)
-            foldl-shortcut xs 0 (%none)
-              defn %find-index (index x)
-                if (f x)
-                  :: true $ %some index
-                  :: false $ &+ 1 index
+          :code $ quote $ defn find-index (xs f) (&list:find-index-from xs f 0)
           :examples $ []
             quote $ assert= (%some 1)
               find-index ([] 1 2 3)
@@ -7835,12 +7895,7 @@
               :tags $ #{} :core :unit
         'index-of $ %{} 'CodeEntry
           :doc "|Find the first list item index as Option<Number>."
-          :code $ quote $ defn index-of (xs item)
-            foldl-shortcut xs 0 (%none)
-              defn %index-of (index x)
-                if (&= item x)
-                  :: true $ %some index
-                  :: false $ &+ 1 index
+          :code $ quote $ defn index-of (xs item) (&list:index-of-from xs item 0)
           :examples $ []
             quote $ assert= (%some 1)
               index-of ([] |a |b) |b
@@ -8146,22 +8201,11 @@
               :tags $ #{} :core :types :unit
         'keys-non-nil $ %{} 'CodeEntry (:doc "|Get keys from a map that have non-nil values")
           :code $ quote $ defn keys-non-nil (x)
-            apply-args
-                #{}
-                to-pairs x
-              fn (acc pairs)
-                hint-fn $ {}
-                  :args $ [] (:: 'Set 'K) 'Set
-                  :return $ :: 'Set 'K
-                match (destruct-set pairs)
-                  (:none) acc
-                  (:some pair remaining)
-                    if
-                      nil? $ &list:last pair
-                      recur acc remaining
-                      recur
-                        include acc $ &list:nth pair 0
-                        , remaining
+            &map:keys $ &map:filter-kv x $ defn %keys-non-nil (_k v)
+              hint-fn $ {}
+                :args $ [] 'K 'V
+                :return 'Bool
+              not $ nil? v
           :examples $ []
             quote $ assert= (#{} :a :b)
               keys-non-nil $ {} (:a 1) (:b 2) (:c nil)
@@ -8585,16 +8629,7 @@
           :tags $ #{} :builtin :internal :meta :syntax
         'map $ %{} 'CodeEntry
           :doc "|Collection mapping function. Applies a function to each element of a list, set, or map, returning a structure of the same shape."
-          :code $ quote $ defn map (xs f)
-            if (list? xs) (&list:map xs f)
-              if (set? xs)
-                foldl xs (#{})
-                  defn %map (acc x)
-                    hint-fn $ {}
-                      :args $ [] 'Set 'Dynamic
-                      :return 'Set
-                    include acc $ f x
-                .map xs f
+          :code $ quote $ defn map (xs f) (.map xs f)
           :examples $ []
             quote $ assert= ([] 2 3 4)
               map ([] 1 2 3) inc
@@ -8686,12 +8721,9 @@
             foldl xs ([])
               defn %map-indexed (acc x)
                 hint-fn $ {}
-                  :generics $ [] 'U
-                  :args $ []
-                    :: 'acc $ :: 'List 'U
-                    :: 'x 'Dynamic
+                  :args $ [] (:: 'List 'U) 'T
                   :return $ :: 'List 'U
-                append acc $ f (count acc) x
+                append acc $ f (&list:count acc) x
           :examples $ []
             quote $ assert= ([] 10 21 32)
               map-indexed ([] 10 20 30)
@@ -8864,7 +8896,12 @@
                   ([] 1 2) .bind $ fn (x) ([] x x)
               :tags $ #{} :core :unit
         'max $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn max (xs) (.max xs)
+          :code $ quote $ defn max (xs)
+            if (list? xs)
+              &list:max $ &list:numbers xs
+              if (set? xs)
+                &list:max $ &list:numbers $ &set:to-list xs
+                raise "|max expected a list or set"
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'T
@@ -8970,7 +9007,12 @@
               merge-non-nil ({,} :a 1 :b 2 :c 3) ({,} :a nil :b 12) ({,} :c nil :d 14)
             :tags $ #{} :core :unit
         'min $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn min (xs) (.min xs)
+          :code $ quote $ defn min (xs)
+            if (list? xs)
+              &list:min $ &list:numbers xs
+              if (set? xs)
+                &list:min $ &list:numbers $ &set:to-list xs
+                raise "|min expected a list or set"
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'T

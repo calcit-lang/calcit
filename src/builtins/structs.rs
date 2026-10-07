@@ -657,6 +657,7 @@ pub fn struct_assoc_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
             format!("&struct:assoc-at index {idx} expects field `:{expected_tag}`, but received `:{field_tag}`"),
           );
         }
+        check_struct_field_write(struct_ref, idx, &xs[3], "&struct:assoc-at")?;
         let mut new_values = (**values).to_owned();
         xs[3].clone_into(&mut new_values[idx]);
         Ok(Calcit::Struct(CalcitStructValue {
@@ -723,6 +724,7 @@ pub fn struct_with_at(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
                   format!("&struct:with-at index {idx} expects field `:{expected_tag}`, but received `:{field_tag}`"),
                 );
               }
+              check_struct_field_write(struct_ref, idx, &xs[base + 2], "&struct:with-at")?;
               xs[base + 2].clone_into(&mut new_values[idx]);
             } else {
               return CalcitErr::err_str(
@@ -1323,11 +1325,33 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+/// Writes check the declared field type, as construction and `&struct:with` do.
+fn check_struct_field_write(struct_ref: &CalcitStructDef, pos: usize, value: &Calcit, operation: &str) -> Result<(), CalcitErr> {
+  if let Some(expected_type) = struct_ref.field_types.get(pos)
+    && !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
+    && !value_matches_type_annotation(value, expected_type)
+  {
+    return CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!(
+        "{operation} field `{}` expects type `{}`, but received `{}` ({})",
+        struct_ref.fields.get(pos).map(|field| field.ref_str()).unwrap_or("?"),
+        expected_type.to_brief_string(),
+        brief_type_of_value(value),
+        value.lisp_str()
+      ),
+    )
+    .map(|_| ());
+  }
+  Ok(())
+}
+
 pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1), xs.get(2)) {
     (Some(Calcit::Struct(struct_value @ CalcitStructValue { struct_ref, values })), Some(a), Some(b)) => match a {
       Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match struct_value.index_of(s) {
         Some(pos) => {
+          check_struct_field_write(struct_ref, pos, b, "&struct:assoc")?;
           let mut new_values = (**values).to_owned();
           b.clone_into(&mut new_values[pos]);
           Ok(Calcit::Struct(CalcitStructValue {
@@ -1342,6 +1366,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       },
       Calcit::Tag(s) => match struct_value.index_of(s.ref_str()) {
         Some(pos) => {
+          check_struct_field_write(struct_ref, pos, b, "&struct:assoc")?;
           let mut new_values = (**values).to_owned();
           b.clone_into(&mut new_values[pos]);
           Ok(Calcit::Struct(CalcitStructValue {

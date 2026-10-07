@@ -4628,6 +4628,14 @@ impl CalcitTypeAnnotation {
         }
       },
       (_, Self::Dynamic) | (Self::Dynamic, _) => true,
+      // A generic already bound to a nullable type stands for that whole type,
+      // so it is compared before the nullable arms unwrap the expected side.
+      (Self::TypeVar(var), Self::Optional(_) | Self::JsNullish(_))
+        if bindings.get(var).is_some_and(|bound| !matches!(bound.as_ref(), Self::Nil)) =>
+      {
+        let bound = bindings.get(var).cloned().expect("bound type var");
+        bound.as_ref() == expected || bound.compatible_with_bindings(expected, bindings)
+      }
       (_, Self::Optional(expected_inner)) => match self {
         Self::Optional(actual_inner) => actual_inner.compatible_with_bindings(expected_inner, bindings),
         Self::JsNullish(_) => false,
@@ -8617,6 +8625,23 @@ mod tests {
 
     pop_type_slot_override(&slot_name);
     clear_type_slots();
+  }
+
+  #[test]
+  fn bound_type_var_matches_whole_nullable_type() {
+    let var: Arc<str> = Arc::from("T");
+    let optional_number = CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::Number));
+    let js_nullish_number = CalcitTypeAnnotation::JsNullish(Arc::new(CalcitTypeAnnotation::Number));
+    for nullable in [optional_number, js_nullish_number] {
+      let mut bindings = TypeBindings::new();
+      bindings.insert(var.clone(), Arc::new(nullable.clone()));
+      assert!(
+        CalcitTypeAnnotation::TypeVar(var.clone()).compatible_with_bindings(&nullable, &mut bindings),
+        "a generic bound to `{}` should accept the same type",
+        nullable.to_brief_string()
+      );
+      assert!(!CalcitTypeAnnotation::TypeVar(var.clone()).compatible_with_bindings(&CalcitTypeAnnotation::Number, &mut bindings));
+    }
   }
 
   #[test]
