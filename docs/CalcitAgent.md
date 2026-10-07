@@ -243,8 +243,7 @@ JSON 中 definition 和 match 都带 `source`、`origin`，并用 `node_kind: le
 
 编辑选择规则：
 
-项目升级先运行 `calcit docs read upgrade.md '当前升级闭环'`，记录原工具链基线，先完成仍需旧 CLI 的迁移桥梁，再升级工具链并执行当前预览、受保护迁移和后端回归。
-该章节区分自动迁移、项目级需审阅事务和仅文档提示；按实际失败再查详细规则，不先加载全部历史资料。
+项目升级按下文 [项目升级入口](#项目升级入口) 读取唯一的升级顺序，不按版本猜 preset。
 
 - 新增/移动 definition，修改 namespace、import、schema、examples：`calcit edit`。
 - 一次局部节点修改：`calcit tree`，优先 `search-replace`，其次明确 path 的操作。
@@ -300,6 +299,29 @@ quote/quasiquote，并用 staged preprocess 验证 splice 后的 scope。此检�
 同一个 Snapshot 的写命令仍应串行执行，包括 `config`、`edit`、`tree`、cursor mutation 和 `fix --apply`。当前 CLI 从读取到提交持有排他锁，最多等待 5 秒，超时或 revision 变化时明确失败；进程中断后自动释放内核锁，下次写入会提示恢复。不要删除仍可能被活跃进程持有的 `.calcit/*.lock`。需要并行时使用独立 Snapshot/worktree，需要同一文件内的原子多步修改时使用 transaction 和 `--expect-revision`。外部编辑器或旧 CLI 不遵守此锁，不能据此宣称任意外部写入都不会冲突。
 
 升级 PR 中出现大段 `calcit.cirru` 文本变化时，先运行 `calcit calcit.cirru analyze program-diff <base-ref> --format edn`。优先读取 `:classification`、`:semantic-review-required`、`:categories` 和 `:changes`；只有 `canonical-format-only` 可以省去逐行确认格式差异，任何 config、schema/signature、runtime boundary 或 executable expression 分类仍需检查并运行对应验证。不要另找 JSON 专用入口；外部互操作确有需要时在同一命令上显式传 `--format json`。
+
+### 项目升级入口
+
+升级 Calcit 项目只按一份顺序执行：升级手册的“当前升级闭环”。本节随 CLI 内嵌，可用 `calcit docs agents 项目升级入口` 读取；
+完整步骤在 guidebook 中：
+
+```bash
+calcit --version
+git -C ~/.config/calcit/calcit describe --tags
+calcit docs read upgrade.md '当前升级闭环'
+```
+
+`docs read` 读取的是 `~/.config/calcit/docs` 指向的独立 checkout，安装新 CLI 不会更新它。先让该 checkout 位于与
+目标 `calcit --version` 相同的 release tag（例如 `git -C ~/.config/calcit/calcit checkout <version>`），再把其中的命令当作
+当前合同；版本不一致或没有 guidebook 时，阅读对应 release tag 下的 `docs/run/upgrade.md`，API 事实以 `query def/type` 为准。
+
+该顺序把每个动作归为三类，Agent 按类别决定能否自行执行：
+
+- **可证明自动迁移**：`fix --workflow strict` 与已发布 rule/preset 中标为 `machine-applicable` 的候选，按预览 revision 应用。
+- **项目级需审阅事务**：`requires-review` 候选、`--pattern` / `--replace` 模板、schema、FFI 信任与业务默认值；展示给用户审阅后才应用，类型检查通过不代表语义等价。
+- **仅文档提示**：行为变化、已退役桥梁和后端差异；按手册对应章节处理，没有唯一改法时保留待办。
+
+旧版本才有的迁移桥梁先用项目当前固定的已发布 CLI 完成，再升级依赖；不得改动或忽略 `deps.cirru :calcit-version` 来绕过版本门禁。
 
 ### Feature-level architecture scaffold
 

@@ -13,6 +13,7 @@ related:
 # Calcit 历史版本迁移记录（0.13–0.15）
 
 这里保存历史版本当时的迁移步骤和能力边界，供旧项目定位；它不是当前版本的能力清单。
+各固定桥梁的适用写法、所用 CLI 与退场状态汇总在[当前升级手册的历史迁移桥梁](upgrade.md#历史迁移桥梁)。
 新项目和已升级项目请以[当前升级手册](upgrade.md)、
 [WASM Component 边界](../installation/wasm-component-boundary.md)与当前 CLI 帮助为准。
 
