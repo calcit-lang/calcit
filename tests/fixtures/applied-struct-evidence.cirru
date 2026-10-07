@@ -161,9 +161,14 @@
         :code $ quote $ ns app.applied-reader
           :require (app.applied-data :as data) (app.applied-model :as model)
     'app.main $ %{} 'FileEntry
-      :defs $ {} $ 'main!
-        %{} 'CodeEntry (:doc |)
+      :defs $ {}
+        'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () &unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []

@@ -60,6 +60,7 @@ try {
   // Replay the actual attached expressions, including normal method calls,
   // imported schema aliases, two Db types and unrelated open history payloads.
   const appliedFixture = "tests/fixtures/applied-struct-evidence.cirru";
+  execFileSync(binary, [appliedFixture, "--check-only", "--all-defs"], { stdio: "pipe" });
   execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", appliedFixture,
     "--tag", "applied-struct-evidence", "--backend", "native,js"], {
     env: { ...process.env, CALCIT_BIN: binary }, stdio: "pipe",
@@ -84,6 +85,7 @@ try {
     ["open-cannot-prove-applied", "read-a reel", "'Number", "(:: 'model/ReelLike 'Dynamic)", a],
     ["unbound-cannot-prove-applied", "read-a reel", "'Number", "(:: 'model/ReelLike 'Db)", a, "'Db"],
     ["borrowed-generic-return", "reel", "(:: 'model/ReelLike 'Other)", "(:: 'model/ReelLike 'Db)", a, "'Db 'Other"],
+    ["borrowed-generic-concrete-return", b, "(:: 'model/ReelLike 'Db)", "(:: 'model/ReelLike 'Db)", a, "'Db"],
   ];
   for (const [name, expression, returned = "'Unit", input, argument, generic] of failures) {
     await copyFile(appliedFixture, snapshot);
@@ -107,7 +109,7 @@ try {
     assert.match(preview.original_revision, /^md5:/);
     execFileSync(binary, [...mutation, "--expect-revision", preview.original_revision], { stdio: "pipe" });
     const original = await readFile(snapshot);
-    const modes = name === "borrowed-generic-return"
+    const modes = name.startsWith("borrowed-generic-")
       ? [["fix", "--workflow", "strict", "--verify", "--format", "json"]]
       : [["--check-only"], ["js"]];
     for (const mode of modes) {
@@ -130,7 +132,7 @@ try {
         ? /struct update field `:db` expects type/
         : name === "borrowed-return"
           ? /W_FN_RETURN_TYPE_MISMATCH/
-          : name === "borrowed-generic-return"
+          : name.startsWith("borrowed-generic-")
             ? /E_ERASED_GENERIC_RELATION/
             : name === "open-cannot-prove-applied"
               ? /E_DYNAMIC_NOMINAL_ARGUMENT/
@@ -139,7 +141,7 @@ try {
       assert.deepEqual(await readFile(snapshot), original);
     }
   }
-  console.log("Applied Struct evidence: 4 native/JS attached tests, 1 shared WASM test, 10 native/JS strict rejections and 1 rigid generic return audit.");
+  console.log("Applied Struct evidence: all-defs entry checking, 4 native/JS attached tests, 1 shared WASM test, 10 native/JS strict rejections and 2 rigid generic return audits.");
 } finally {
   await rm(output, { recursive: true, force: true });
 }

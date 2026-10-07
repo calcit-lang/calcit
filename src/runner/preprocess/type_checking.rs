@@ -1454,12 +1454,12 @@ pub(crate) fn check_function_return_type(
   let proof = if audit
     && bindings
       .values()
-      .any(|binding| !free_type_variable_names(std::slice::from_ref(binding)).is_empty())
+      .any(|binding| !matches!(binding.as_ref(), CalcitTypeAnnotation::Dynamic))
   {
-    // Recheck substitutions involving free lexical variables without granting
-    // the return schema any callee inference variables. An unchanged generic
-    // beside an open payload is not itself a lexical-variable substitution.
-    // Open/concrete bindings retain the existing migration policy.
+    // Recheck known substitutions without granting the return schema any
+    // callee inference variables. Both concrete and lexical producer types
+    // must not specialize a return variable. Direct Dynamic bindings retain
+    // the existing migration policy for lossy open results.
     let mut return_proof = CallTypeProof::new(&[], std::slice::from_ref(declared_return_type), std::slice::from_ref(&actual_type));
     let proof = return_proof.prove(&actual_type, declared_return_type);
     if matches!(proof, TypeProof::NeedsBoundary(TypeBoundaryReason::UnboundTypeVariable))
@@ -1467,7 +1467,7 @@ pub(crate) fn check_function_return_type(
     {
       let mut error = unproven(&diagnostic_type_string(&actual_type));
       error.code = Some("E_ERASED_GENERIC_RELATION".to_owned());
-      error.hint = Some("An independent return proof keeps known lexical type variables rigid; a return declaration cannot rebind them to an unrelated variable.".into());
+      error.hint = Some("An independent return proof keeps lexical type variables rigid; a return declaration cannot specialize them using another variable or a concrete producer type.".into());
       return Err(error);
     }
     proof
