@@ -1304,10 +1304,11 @@ export let _$n__ = (a: number, b: number): number => {
 export let _$n__SLSH_ = (a: number, b: number): number => {
   return a / b;
 };
-/** Truncated remainder over safe integers, matching native and WASM; the result is never `-0`. */
+/** Truncated remainder over safe integers, matching native and WASM; the result is never `-0`.
+ * Operands in the error use the native number text (`inf`, expanded exponents) so messages match native. */
 export let _$n_number_$o_rem = (a: number, b: number): number => {
   if (!Number.isSafeInteger(a) || !Number.isSafeInteger(b)) {
-    throw new Error(`&number:rem requires safe integers, but received: ${toString(a, false)} ${toString(b, false)}`);
+    throw new Error(`&number:rem requires safe integers, but received: ${format_calcit_number(a)} ${format_calcit_number(b)}`);
   }
   if (b === 0) {
     throw new Error("&number:rem divisor must not be zero");

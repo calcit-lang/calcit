@@ -19,6 +19,7 @@
 | 边界 | native / 生成 JS 的证据 | WASM / WASI 的证据与限制 |
 | --- | --- | --- |
 | `integer?/.integer?` | `check-numeric-predicate.mjs` 完整重放既有四个 Calcit `:tests`，检查有限整数和实参求值次数 | 同四份 AST 在 core WASM 执行；设置 `WASMTIME_CLI` 时也运行真实 WASI 0.3 Component |
+| `&number:rem/.rem` | 同脚本完整重放 `calculates-truncated-remainder` 与 `rejects-zero-and-non-safe-integers`，错误消息在 native 与生成 JS 逐字相同；`math.rs` 的 Rust 回归遍历零、i32 与安全整数边界、非有限值，确认 native 不 panic | 成功值测试在 core WASM 执行；错误测试依赖 `try`，WASM 改由 `scripts/test-wasm.mjs` 检查零除数、小数、2^53 与 NaN 的 trap，以及结果不为 `-0`。语义见 [Number](number.md#取余-rem) |
 | `number->int*/uint*/float*` | 同脚本完整重放十个 `checks-boundaries-and-type`；保留成功值、失败分支及 `Result<Refinement,String>` 断言 | 此脚本不宣称转换测试的 WASM/WASI 覆盖。Int8 测试包含当前 WASM 不支持的 throwing `parse-cirru-edn-as`；不删掉该断言，也不把谓词测试通过当作转换测试通过 |
 | 标量 `.to-string` | `check-typed-string-conversions.mjs` 重放普通方法断言，并验证 ToString 约束拒绝未证明的输入 | String、Number、Bool、Tag、Nil 的受支持 AST 和运行时 Number 文本在实际 core WASM 执行；Symbol 不计入该范围，开放泛型导出仍拒绝 |
 | String `.parse-float/.parse-json/.parse-cirru/.parse-cirru-edn/.parse-cirru-list` | `check-parse-boundary.mjs` 重放同一份 Result 方法及解析边界测试，包括错误文本与嵌套 payload 拒绝 | 不宣称通用 parser 的 WASM 支持；不能因为返回 Result 就假定可 lowering |

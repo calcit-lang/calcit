@@ -1975,6 +1975,9 @@
                 assert= -1 $ &number:rem -9007199254740991 10
                 assert= (&/ 1 0)
                   &/ 1 $ &number:rem -4 2
+                assert= 0 $ &number:rem 0 5
+                assert= (&/ 1 0)
+                  &/ 1 $ &number:rem -0 5
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |rejects-zero-and-non-safe-integers)
               :code $ quote $ do
@@ -1987,6 +1990,23 @@
                 assert= "|&number:rem requires safe integers, but received: 5 0.5" $ try (.rem 5 0.5)
                   fn (error) error
                 assert= "|&number:rem requires safe integers, but received: 9007199254740992 3" $ try (&number:rem 9007199254740992 3)
+                  fn (error) error
+                assert= "|&number:rem requires safe integers, but received: -9007199254740992 3" $ try (&number:rem -9007199254740992 3)
+                  fn (error) error
+                assert= "|&number:rem requires safe integers, but received: inf 2" $ try
+                  &number:rem (&/ 1 0) 2
+                  fn (error) error
+                assert= "|&number:rem requires safe integers, but received: 7 -inf" $ try
+                  .rem 7 $ &/ -1 0
+                  fn (error) error
+                assert= "|&number:rem requires safe integers, but received: 7 NaN" $ try
+                  &number:rem 7 $ &/ 0 0
+                  fn (error) error
+                assert= "|&number:rem requires safe integers, but received: 1000000000000000000000 3" $ try
+                  &number:rem (&* 1000000000000 1000000000) 3
+                  fn (error) error
+                assert= "|&number:rem requires safe integers, but received: 3 0.0000001" $ try
+                  &number:rem 3 $ &/ 1 10000000
                   fn (error) error
               :tags $ #{} :core :unit
         '&parse-float $ %{} 'CodeEntry

@@ -152,13 +152,14 @@ assert= "|&number:rem requires safe integers, but received: 5.5 2" $ try (&numbe
   fn (error) error
 ```
 
-native 与 JS 对越界输入抛出可由 `try` 捕获的错误：零除数为 `&number:rem divisor must not be zero`，小数、NaN、Infinity 或超出安全整数范围为 `&number:rem requires safe integers, but received: <a> <b>`。WASM 对同样的输入 trap。
+native 与 JS 对越界输入抛出可由 `try` 捕获的相同错误：零除数为 `&number:rem divisor must not be zero`，小数、NaN、Infinity 或超出安全整数范围为 `&number:rem requires safe integers, but received: <a> <b>`，操作数按 Calcit 数值文本输出（`inf`、`-inf`、`NaN`，大数与极小数展开为十进制）。WASM 对同样的输入 trap。完整规则见 [Number](../data/number.md#取余-rem)。
 
 升级时的行为变化：
 
 - JS/WASM 此前对小数做浮点取余（`rem 5.5 2` 为 `1.5`），零除数返回 NaN；现在两者都报错。依赖小数取余的代码需要改为显式的浮点计算，例如基于 `floor` 的 `&- a $ &* b $ floor (&/ a b)`，舍入方式由业务决定。
 - native 此前把超出 i32 的整数饱和截断后取余（`rem 4294967296 7` 得到 `1`），`-2147483648` 除以 `-1` 报溢出错误；现在按安全整数精确计算，分别得到 `4` 和 `0`。
 - native 此前按 EPSILON 容差把非常接近整数的小数当作整数；现在要求恰好没有小数部分。
+- 0.29 的早期预览版中，JS 错误消息用宿主文本输出操作数（`Infinity`、`1e+21`），与 native 的 `inf`、`1000000000000000000000` 不一致；现在两者相同。按消息文本匹配非有限值或大数的 `try` 处理需要改用 Calcit 文本。
 
 这些都是语义修复，不提供自动源码改写；需要错误恢复的业务自行处理 `try` 的错误，不自动补默认值。
 
