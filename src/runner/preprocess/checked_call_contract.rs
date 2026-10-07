@@ -336,8 +336,7 @@ pub(crate) fn resolve_checked_call_contract(
       })
     }
     ("map-indexed", T::List(item_type)) if !matches!(item_type.as_ref(), T::Syntax(_)) => {
-      let output_type =
-        mapper_output_type(args.get(1)?, scope_types, "MapIndexedOutput");
+      let output_type = mapper_output_type(args.get(1)?, scope_types, "MapIndexedOutput");
       Some(CheckedCallContract {
         expected_types: Some(vec![
           receiver_type.clone(),
@@ -356,8 +355,7 @@ pub(crate) fn resolve_checked_call_contract(
       })
     }
     ("map-list-kv", T::Map(key_type, value_type)) => {
-      let output_type =
-        mapper_output_type(args.get(1)?, scope_types, "MapListOutput");
+      let output_type = mapper_output_type(args.get(1)?, scope_types, "MapListOutput");
       Some(CheckedCallContract {
         expected_types: Some(vec![
           receiver_type.clone(),

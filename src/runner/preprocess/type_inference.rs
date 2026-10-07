@@ -764,7 +764,9 @@ pub(crate) fn infer_function_exit_type(
           if let Exit::Value(branch_type) = infer(body, &branch_scope, parameters)? {
             value = Some(match value {
               None => branch_type,
-              Some(current) => merge_nominal_enum_branches([&current, &branch_type]).or_else(|| merge_if_branch_types(current, branch_type))?,
+              Some(current) => {
+                merge_nominal_enum_branches([&current, &branch_type]).or_else(|| merge_if_branch_types(current, branch_type))?
+              }
             });
           }
         }

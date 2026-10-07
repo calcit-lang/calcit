@@ -877,18 +877,18 @@
             cond
                 list? base
                 if (number? k) (&list:nth base k)
-                  raise $ &str:concat "|&get-raw expected a Number index for list, but received: " $ to-lispy-string k
+                  raise "|&get-raw expected a Number index for list"
               (map? base) (&map:get base k)
               (string? base)
                 if (number? k) (&str:nth base k)
-                  raise $ &str:concat "|&get-raw expected a Number index for string, but received: " $ to-lispy-string k
+                  raise "|&get-raw expected a Number index for string"
               (enum? base)
                 if (number? k) (&enum:nth base k)
-                  raise $ &str:concat "|&get-raw expected a Number index for enum, but received: " $ to-lispy-string k
+                  raise "|&get-raw expected a Number index for enum"
               (struct? base)
                 if (tag? k) (&struct:get base k)
-                  raise $ &str:concat "|&get-raw expected a Tag field for struct, but received: " $ to-lispy-string k
-              true $ raise $ &str:concat "|&get-raw expected a collection or struct, but received: " (to-lispy-string base)
+                  raise "|&get-raw expected a Tag field for struct"
+              true $ raise "|&get-raw expected a collection or struct"
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic 'Dynamic
@@ -1213,6 +1213,20 @@
                 [] ([] :a 2) ([] :b 12)
                 fn (k v) (> v 10)
             :tags $ #{} :core :unit
+        '&list:index-of-from $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn &list:index-of-from (xs item i)
+            if
+              &>= i $ &list:count xs
+              %none
+              if
+                &= item $ &list:nth xs i
+                %some i
+                recur xs item $ &+ i 1
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'T 'Number
+            :generics $ [] 'T
+            :return $ :: 'Option 'Number
         '&list:find-index-from $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:find-index-from (xs f i)
             if
@@ -1232,10 +1246,11 @@
             :return $ :: 'Option 'Number
         '&list:find-last $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:find-last (xs f)
-            match (&list:find-last-index xs f)
-              (:some i)
-                %some $ &list:nth xs i
-              (:none) (%none)
+            foldr-shortcut xs (%none) (%none)
+              fn (_acc x)
+                if (f x)
+                  :: true $ %some x
+                  :: false $ %none
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T)
@@ -1257,7 +1272,13 @@
               :tags $ #{} :core :unit
         '&list:find-last-index $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:find-last-index (xs f)
-            &list:find-last-index-from xs f $ &- (&list:count xs) 1
+            foldr-shortcut xs
+              dec $ count xs
+              %none
+              fn (idx x)
+                if (f x)
+                  :: true $ %some idx
+                  :: false $ &- 1 idx
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T)
@@ -1275,21 +1296,6 @@
                 &list:find-last-index ([] 1 3)
                   fn (x) (> x 8)
             :tags $ #{} :core :unit
-        '&list:find-last-index-from $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn &list:find-last-index-from (xs f i)
-            if (&< i 0) (%none)
-              if
-                f $ &list:nth xs i
-                %some i
-                recur xs f $ &- i 1
-          :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'List 'T)
-              :: 'Fn $ {} (:return 'Bool)
-                :args $ [] 'T
-              , 'Number
-            :generics $ [] 'T
-            :return $ :: 'Option 'Number
         '&list:first $ %{} 'CodeEntry
           :doc "|internal function for getting first list element\nSyntax: (&list:first list)\nParams: list (list)\nReturns: any or nil\nReturns first element of list, nil if empty"
           :code $ quote &runtime-implementation
@@ -1506,7 +1512,7 @@
                   :args $ [] (:: 'List 'Number) 'Dynamic
                   :return $ :: 'List 'Number
                 if (number? x) (append acc x)
-                  raise $ &str:concat "|expected a Number item, but received: " $ to-lispy-string x
+                  raise "|expected a Number item"
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List 'Dynamic
@@ -4632,13 +4638,13 @@
           :code $ quote $ defn contains? (x k)
             if (list? x)
               if (number? k) (&list:contains? x k)
-                raise $ &str:concat "|contains? expected a Number index for list, but received: " $ to-lispy-string k
+                raise "|contains? expected a Number index for list"
               if (string? x)
                 if (number? k) (&str:contains? x k)
-                  raise $ &str:concat "|contains? expected a Number index for string, but received: " $ to-lispy-string k
+                  raise "|contains? expected a Number index for string"
                 &let
                   result $ .contains? x k
-                  if (bool? result) result $ raise $ &str:concat "|contains? expected a Bool result, but received: " (to-lispy-string result)
+                  if (bool? result) result $ raise "|contains? expected a Bool result"
           :examples $ []
             quote $ assert= true $ contains? ([] :a :b) 1
             quote $ assert= true $ contains?
@@ -7905,14 +7911,7 @@
               :tags $ #{} :core :unit
         'index-of $ %{} 'CodeEntry
           :doc "|Find the first list item index as Option<Number>."
-          :code $ quote $ defn index-of (xs item)
-            &list:find-index-from xs
-              defn %index-of (x)
-                hint-fn $ {}
-                  :args $ [] 'T
-                  :return 'Bool
-                &= item x
-              , 0
+          :code $ quote $ defn index-of (xs item) (&list:index-of-from xs item 0)
           :examples $ []
             quote $ assert= (%some 1)
               index-of ([] |a |b) |b
@@ -8918,7 +8917,7 @@
               &list:max $ &list:numbers xs
               if (set? xs)
                 &list:max $ &list:numbers $ &set:to-list xs
-                raise $ &str:concat "|max expected a list or set, but received: " $ to-lispy-string xs
+                raise "|max expected a list or set"
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'T
@@ -9029,7 +9028,7 @@
               &list:min $ &list:numbers xs
               if (set? xs)
                 &list:min $ &list:numbers $ &set:to-list xs
-                raise $ &str:concat "|min expected a list or set, but received: " $ to-lispy-string xs
+                raise "|min expected a list or set"
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'T
