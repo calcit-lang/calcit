@@ -19,7 +19,7 @@ use std::sync::Arc;
 
 use super::checked_call_contract::resolve_checked_call_contract;
 use super::type_inference::{async_invocation_result, infer_struct_field_type, infer_unhinted_callback_signature};
-use crate::calcit::type_annotation::{CallTypeProof, TypeProof};
+use crate::calcit::type_annotation::{CallTypeProof, TypeBoundaryReason, TypeProof, free_type_variable_names};
 use crate::calcit::{
   self, Calcit, CalcitErr, CalcitErrKind, CalcitFn, CalcitGenericBound, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax,
   CalcitTypeAnnotation, LocatedWarning, NodeLocation,
@@ -1447,10 +1447,26 @@ pub(crate) fn check_function_return_type(
     actual_type
   };
 
-  let mut bindings = HashMap::new();
   // Keep unproven boundaries on the existing migration path, but never let
   // an open callable hide a definite contradiction with the return contract.
-  let proof = actual_type.prove_with_bindings(declared_return_type, &mut bindings);
+  let mut bindings = HashMap::new();
+  let proof = if audit {
+    // An independent producer audit owns no callee inference variables:
+    // lexical return generics stay rigid rather than borrowing a declaration.
+    let mut return_proof = CallTypeProof::new(&[], std::slice::from_ref(declared_return_type), std::slice::from_ref(&actual_type));
+    let proof = return_proof.prove(&actual_type, declared_return_type);
+    if matches!(proof, TypeProof::NeedsBoundary(TypeBoundaryReason::UnboundTypeVariable))
+      && !free_type_variable_names(std::slice::from_ref(declared_return_type)).is_empty()
+    {
+      let mut error = unproven(&diagnostic_type_string(&actual_type));
+      error.code = Some("E_ERASED_GENERIC_RELATION".to_owned());
+      error.hint = Some("An independent return proof keeps lexical type variables rigid; an unrelated variable or concrete value cannot specialize them.".into());
+      return Err(error);
+    }
+    proof
+  } else {
+    actual_type.prove_with_bindings(declared_return_type, &mut bindings)
+  };
   let proof = if !matches!(proof, TypeProof::Proven)
     && expression_is_proven_for(last_expr, declared_return_type, scope_types, async_invocation)
   {

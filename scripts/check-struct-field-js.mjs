@@ -83,6 +83,7 @@ try {
     ["bare-cannot-prove-applied", "read-a reel", "'Number", "'model/ReelLike", a],
     ["open-cannot-prove-applied", "read-a reel", "'Number", "(:: 'model/ReelLike 'Dynamic)", a],
     ["unbound-cannot-prove-applied", "read-a reel", "'Number", "(:: 'model/ReelLike 'Db)", a, "'Db"],
+    ["borrowed-generic-return", "reel", "(:: 'model/ReelLike 'Other)", "(:: 'model/ReelLike 'Db)", a, "'Db 'Other"],
   ];
   for (const [name, expression, returned = "'Unit", input, argument, generic] of failures) {
     await copyFile(appliedFixture, snapshot);
@@ -106,13 +107,21 @@ try {
     assert.match(preview.original_revision, /^md5:/);
     execFileSync(binary, [...mutation, "--expect-revision", preview.original_revision], { stdio: "pipe" });
     const original = await readFile(snapshot);
-    for (const mode of [["--check-only"], ["js"]]) {
+    const modes = name === "borrowed-generic-return"
+      ? [["fix", "--workflow", "strict", "--verify", "--format", "json"]]
+      : [["--check-only"], ["js"]];
+    for (const mode of modes) {
       const destination = join(output, name);
       const result = spawnSync(binary, ["--emit-path", destination, snapshot, ...mode], { encoding: "utf8" });
       assert.ifError(result.error);
       assert.equal(result.signal, null);
       assert.equal(result.status, 1, `${name} ${mode}\n${result.stdout}\n${result.stderr}`);
       let diagnostics = `${result.stdout}\n${result.stderr}`;
+      if (mode[0] === "fix") {
+        const report = JSON.parse(result.stdout);
+        assert.ok(report.diagnostics.some(diagnostic => diagnostic.definition === "app.applied-reader/invalid!"
+          && diagnostic.code === "E_ERASED_GENERIC_RELATION"), diagnostics);
+      }
       if (mode[0] === "js" && result.stderr.includes("codegen blocked")) {
         assert.deepEqual(await readdir(destination), ["calcit.build-errors.mjs"]);
         diagnostics += await readFile(join(destination, "calcit.build-errors.mjs"), "utf8");
@@ -121,14 +130,16 @@ try {
         ? /struct update field `:db` expects type/
         : name === "borrowed-return"
           ? /W_FN_RETURN_TYPE_MISMATCH/
-          : name === "open-cannot-prove-applied"
-            ? /E_DYNAMIC_NOMINAL_ARGUMENT/
-            : /W_FN_ARG_TYPE_MISMATCH/;
+          : name === "borrowed-generic-return"
+            ? /E_ERASED_GENERIC_RELATION/
+            : name === "open-cannot-prove-applied"
+              ? /E_DYNAMIC_NOMINAL_ARGUMENT/
+              : /W_FN_ARG_TYPE_MISMATCH/;
       assert.match(diagnostics, expectedDiagnostic, `${name} ${mode}`);
       assert.deepEqual(await readFile(snapshot), original);
     }
   }
-  console.log("Applied Struct evidence: 4 native/JS attached tests, 1 shared WASM test, 10 native/JS strict rejections.");
+  console.log("Applied Struct evidence: 4 native/JS attached tests, 1 shared WASM test, 10 native/JS strict rejections and 1 rigid generic return audit.");
 } finally {
   await rm(output, { recursive: true, force: true });
 }

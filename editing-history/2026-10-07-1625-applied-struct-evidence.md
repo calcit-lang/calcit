@@ -18,6 +18,12 @@
 但 receiver-specialized 契约读取嵌入 hint 时把同一变量解析为未解析的 `TypeRef`。
 该路径同样复用现有 lexical-generic hint 解析器，不修改原有 `map-entries` 附带测试或严格证明。
 
+回调证据恢复后，原 `rigid-result` 门禁进一步暴露函数返回证明错误地将独立 lexical `U` 绑定到 `K`。
+独立 producer 校验的返回检查也复用已有 `CallTypeProof`，但声明方不存在可推导的 callee 变量；
+泛型保持刚性，不允许用返回声明特化其他变量。沿用 `E_ERASED_GENERIC_RELATION`，
+保留原诊断断言并补泛型 Struct 返回校验负例。普通检查原有泛型 wrapper compatibility 保留，
+不把此处证据修复偷换为未经评估的全局兼容规则更改。
+
 ## 验证与边界
 
 用户可观察语义写在新 fixture 的 definition `:tests` 中；现有 Struct 宿主检查串行构造负例临时副本，
