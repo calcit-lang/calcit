@@ -18,8 +18,8 @@
 
 | 边界 | native / 生成 JS 的证据 | WASM / WASI 的证据与限制 |
 | --- | --- | --- |
-| `integer?/.integer?` | `check-numeric-predicate.mjs` 完整重放既有四个 Calcit `:tests`，检查有限整数和实参求值次数 | 同四份 AST 在 core WASM 执行；设置 `WASMTIME_CLI` 时也运行真实 WASI 0.3 Component |
-| `number->int*/uint*/float*` | 同脚本完整重放十个 `checks-boundaries-and-type`；保留成功值、失败分支及 `Result<Refinement,String>` 断言 | 此脚本不宣称转换测试的 WASM/WASI 覆盖。Int8 测试包含当前 WASM 不支持的 throwing `parse-cirru-edn-as`；不删掉该断言，也不把谓词测试通过当作转换测试通过 |
+| `integer?/.integer?` | `run-core-tests.mjs` 重放既有四个 Calcit `:tests`，`println` 轨迹与 native 比较，检查有限整数和实参求值次数 | 同四份 AST 在 core WASM 执行；CI Component job 以 `--backend wasi` 运行真实 WASI 0.3 Component |
+| `number->int*/uint*/float*` | 统一运行器重放十个 `checks-boundaries-and-type`；保留成功值、失败分支及 `Result<Refinement,String>` 断言 | Int8 测试包含当前 WASM 不支持的 throwing `parse-cirru-edn-as`，在 `scripts/core-tests-exclusions.cirru` 中按原因排除；不删掉该断言，也不把谓词测试通过当作转换测试通过 |
 | 标量 `.to-string` | `check-typed-string-conversions.mjs` 重放普通方法断言，并验证 ToString 约束拒绝未证明的输入 | String、Number、Bool、Tag、Nil 的受支持 AST 和运行时 Number 文本在实际 core WASM 执行；Symbol 不计入该范围，开放泛型导出仍拒绝 |
 | String `.parse-float/.parse-json/.parse-cirru/.parse-cirru-edn/.parse-cirru-list` | `check-parse-boundary.mjs` 重放同一份 Result 方法及解析边界测试，包括错误文本与嵌套 payload 拒绝 | 不宣称通用 parser 的 WASM 支持；不能因为返回 Result 就假定可 lowering |
 | 闭合 `try-parse-cirru-edn-as` 与 `format-cirru-edn` | 闭合 decoder 由解析边界测试验证；不是开放 JSON/Cirru 值的隐式强转 | 递归容器和 nominal 数据的受支持 shape、容量限制和拒绝行为见 [WASM 验证说明](../../scripts/wasm-validation.md#cirru-edn-格式化边界)。Manifest 文件业务由现有脚本分别验证 Preview 1 与默认 Component，不能将整份历史 fixture 的能力移植为默认 Component 承诺 |
@@ -27,14 +27,14 @@
 
 上表引用的是仓库源码回归，不是新安装包或消费者兼容性证明。跨仓库升级仍要使用匹配的已发布精确版本，并执行真实项目回归。`js-nullish->option` 的 `:js-ffi` 和同一 payload 泛型保留在声明基线中；它仍是 JS 空值包装边界，不属于通用 WASM decoder。
 
-维护者可在已经构建本仓库 binary 和 JS runtime 后复跑现有数字检查，不新增用户命令：
+维护者可在已经构建本仓库 binary 和 JS runtime 后用统一运行器复跑这些定义的测试，不新增用户命令：
 
 ```bash
-node scripts/check-numeric-predicate.mjs
-WASMTIME_CLI=/absolute/path/to/wasmtime node scripts/check-numeric-predicate.mjs
+node scripts/run-core-tests.mjs --target 'calcit.core/integer?' --target 'calcit.core/round?'
+WASMTIME_CLI=/absolute/path/to/wasmtime node scripts/run-core-tests.mjs --backend native,wasi --target 'calcit.core/integer?'
 ```
 
-第二条使用维护者提供的真实 Wasmtime；CI 在 Component job 中传入固定宿主。未设置变量时脚本只执行 native、生成 JS 与 core WASM，日志明确区分十个转换测试和四个谓词测试的覆盖范围。该索引不取代后续完整 backend 矩阵，也不放行候选基线中尚未完成的移除版本与集中迁移验收。
+第二条使用维护者提供的真实 Wasmtime；CI 在 Component job 中传入固定宿主。每个后端的排除项及原因见 `scripts/core-tests-exclusions.cirru`。该索引不取代后续完整 backend 矩阵，也不放行候选基线中尚未完成的移除版本与集中迁移验收。
 
 ## 声明导出与历史比较
 

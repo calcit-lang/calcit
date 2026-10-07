@@ -95,9 +95,7 @@ jobs:
           WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
             node scripts/test-wasi-stdin.mjs
           WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
-            node scripts/check-numeric-predicate.mjs
-          WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
-            node scripts/check-predicate-method-names.mjs
+            node scripts/run-core-tests.mjs --backend native,wasi
           WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
             node scripts/check-nil-predicate.mjs
           WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
@@ -292,8 +290,9 @@ jobs:
         run: |
           node --test scripts/core-api-contract.test.mjs
           node scripts/core-api-contract.mjs
+          node scripts/run-core-tests.mjs
+          node scripts/run-core-tests.mjs --snapshot calcit/test-traits.cirru --target test-traits.main/test-qualified-contains-boundary --backend native,js
           node scripts/check-string-unicode.mjs
-          node scripts/check-numeric-predicate.mjs
           node scripts/check-nil-predicate.mjs
           node scripts/check-monotonic-clock-js.mjs
           node scripts/check-helper-inference.mjs
