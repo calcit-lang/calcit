@@ -82,6 +82,7 @@ fn invocation_return_type(
 }
 
 fn definition_value_schema(ns: &str, def: &str, schema: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  let schema = resolve_namespace_type_refs_for_body(schema, ns);
   if !definition_marks_async(ns, def) {
     return schema;
   }
@@ -1681,7 +1682,10 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
     Calcit::Ref(..) => Some(Arc::new(CalcitTypeAnnotation::Ref(calcit::DYNAMIC_TYPE.clone()))),
     Calcit::Buffer(_) => Some(Arc::new(CalcitTypeAnnotation::Buffer)),
     Calcit::CirruQuote(_) => Some(Arc::new(CalcitTypeAnnotation::CirruQuote)),
-    Calcit::Fn { info, .. } => Some(Arc::new(CalcitTypeAnnotation::from_calcit_fn(info))),
+    Calcit::Fn { info, .. } => Some(resolve_namespace_type_refs_for_body(
+      Arc::new(CalcitTypeAnnotation::from_calcit_fn(info)),
+      &info.def_ns,
+    )),
     Calcit::Proc(proc) => proc
       .get_type_signature()
       .map(|signature| {
@@ -3385,18 +3389,30 @@ fn infer_struct_applied_args<'a>(
     return vec![];
   }
 
-  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
   let prototype = CalcitTypeAnnotation::StructValue(Arc::new(struct_def.clone()));
-  for (index, value) in values.enumerate() {
-    let Some(expected_type) = resolve_struct_field_type_by_index(&prototype, index) else {
-      return struct_def.generics.iter().map(|_| calcit::DYNAMIC_TYPE.clone()).collect();
-    };
-    let actual_type = resolve_type_value(value, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
-    if !actual_type
-      .as_ref()
-      .prove_with_bindings(expected_type.as_ref(), &mut bindings)
-      .is_proven()
-    {
+  let fields = values
+    .enumerate()
+    .filter_map(|(index, value)| {
+      let expected = resolve_struct_field_type_by_index(&prototype, index)?;
+      // A field with no declared generic cannot contribute to its bindings.
+      // Its ordinary constructor check still validates the field independently.
+      struct_def
+        .generics
+        .iter()
+        .any(|name| expected.contains_type_var_named(name))
+        .then(|| {
+          (
+            expected,
+            resolve_type_value(value, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()),
+          )
+        })
+    })
+    .collect::<Vec<_>>();
+  let expected_types = fields.iter().map(|(expected, _)| expected.clone()).collect::<Vec<_>>();
+  let actual_types = fields.iter().map(|(_, actual)| actual.clone()).collect::<Vec<_>>();
+  let mut proof = crate::calcit::type_annotation::CallTypeProof::new(&struct_def.generics, &expected_types, &actual_types);
+  for (expected, actual) in fields {
+    if proof.prove(&actual, &expected).is_mismatch() {
       return struct_def.generics.iter().map(|_| calcit::DYNAMIC_TYPE.clone()).collect();
     }
   }
@@ -3404,7 +3420,7 @@ fn infer_struct_applied_args<'a>(
   struct_def
     .generics
     .iter()
-    .map(|name| bindings.get(name).cloned().unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()))
+    .map(|name| proof.result_or_open(&CalcitTypeAnnotation::TypeVar(name.clone())))
     .collect()
 }
 

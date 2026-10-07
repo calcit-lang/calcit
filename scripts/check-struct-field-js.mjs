@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtemp, rm, symlink } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, readdir, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -56,6 +56,92 @@ try {
   assert.equal(compiled.test_struct_container_hash(), 1, "hashing must recurse through containers of nominal values");
   assert.equal(compiled.test_struct_layout_identity(), 1, "same-named definitions must retain their own field layout");
   assert.equal(compiled.test_struct_edn_identity(), 1, "typed EDN decoding must restore the requested definition identity");
+
+  // Replay the actual attached expressions, including normal method calls,
+  // imported schema aliases, two Db types and unrelated open history payloads.
+  const appliedFixture = "tests/fixtures/applied-struct-evidence.cirru";
+  execFileSync(binary, [appliedFixture, "--check-only", "--all-defs"], { stdio: "pipe" });
+  execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", appliedFixture,
+    "--tag", "applied-struct-evidence", "--backend", "native,js"], {
+    env: { ...process.env, CALCIT_BIN: binary }, stdio: "pipe",
+  });
+  execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", appliedFixture,
+    "--tag", "applied-struct-closed", "--backend", "native,js,wasm"], {
+    env: { ...process.env, CALCIT_BIN: binary }, stdio: "pipe",
+  });
+
+  const snapshot = join(output, "applied-struct-negative.cirru");
+  const a = "model/ReelLike :base (data/DbA :value 1) :db (data/DbA :value 2) :records ([]) :merged? false";
+  const b = "model/ReelLike :base (data/DbB :value |one) :db (data/DbB :value |two) :records ([]) :merged? false";
+  const failures = [
+    ["mixed-db", "model/ReelLike :base (data/DbA :value 1) :db (data/DbB :value |two) :records ([]) :merged? false"],
+    ["wrong-updater", `model/step (${a}) append-b`],
+    ["wrong-concrete-argument", `read-a $ ${b}`],
+    ["wrong-local-alias", `let ((alias (${b}))) (read-a alias)`],
+    ["wrong-nested-field", `read-nested-a $ model/OuterLike :reel $ ${b}`],
+    ["wrong-method-update", `.assoc (${a}) :db $ data/DbB :value |wrong`],
+    ["borrowed-return", b, ":: 'model/ReelLike 'data/DbA"],
+    ["bare-cannot-prove-applied", "read-a reel", "'Number", "'model/ReelLike", a],
+    ["open-cannot-prove-applied", "read-a reel", "'Number", "(:: 'model/ReelLike 'Dynamic)", a],
+    ["unbound-cannot-prove-applied", "read-a reel", "'Number", "(:: 'model/ReelLike 'Db)", a, "'Db"],
+    ["borrowed-generic-return", "reel", "(:: 'model/ReelLike 'Other)", "(:: 'model/ReelLike 'Db)", a, "'Db 'Other"],
+    ["borrowed-generic-concrete-return", b, "(:: 'model/ReelLike 'Db)", "(:: 'model/ReelLike 'Db)", a, "'Db"],
+  ];
+  for (const [name, expression, returned = "'Unit", input, argument, generic] of failures) {
+    await copyFile(appliedFixture, snapshot);
+    const body = `quote $ defn invalid! (${input ? "reel" : ""})\n  ${expression}${returned === "'Unit" ? "\n  , &unit" : ""}`;
+    const operations = [
+      ["edit", "def", "app.applied-reader/invalid!", "--input-format", "cirru", "--code", body],
+      ["edit", "schema", "app.applied-reader/invalid!", "--input-format", "cirru", "--code",
+        `quote $ :: 'Fn $ {} (:args $ []${input ? ` ${input}` : ""}) (:return ${returned})${generic ? ` (:generics $ [] ${generic})` : ""}`],
+      ["edit", "def", "app.applied-reader/main!", "--input-format", "cirru", "--code",
+        `quote $ defn main! ()\n  invalid!${input ? ` $ ${argument}` : ""}\n  , &unit`],
+      ["edit", "schema", "app.applied-reader/main!", "--input-format", "cirru", "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+      ["config", "set", "init-fn", "app.applied-reader/main!"],
+      ["config", "set", "reload-fn", "app.applied-reader/main!"],
+    ];
+    // This Node host consumes JSON explicitly; source remains quoted Cirru.
+    const mutation = [snapshot, "edit", "transaction", "--code", JSON.stringify(operations), "--format", "json"];
+    const before = await readFile(snapshot);
+    const preview = JSON.parse(execFileSync(binary, [...mutation, "--dry-run"], { encoding: "utf8" }));
+    assert.deepEqual(await readFile(snapshot), before);
+    assert.match(preview.original_revision, /^md5:/);
+    execFileSync(binary, [...mutation, "--expect-revision", preview.original_revision], { stdio: "pipe" });
+    const original = await readFile(snapshot);
+    const modes = name.startsWith("borrowed-generic-")
+      ? [["fix", "--workflow", "strict", "--verify", "--format", "json"]]
+      : [["--check-only"], ["js"]];
+    for (const mode of modes) {
+      const destination = join(output, name);
+      const result = spawnSync(binary, ["--emit-path", destination, snapshot, ...mode], { encoding: "utf8" });
+      assert.ifError(result.error);
+      assert.equal(result.signal, null);
+      assert.equal(result.status, 1, `${name} ${mode}\n${result.stdout}\n${result.stderr}`);
+      let diagnostics = `${result.stdout}\n${result.stderr}`;
+      if (mode[0] === "fix") {
+        const report = JSON.parse(result.stdout);
+        assert.ok(report.diagnostics.some(diagnostic => diagnostic.definition === "app.applied-reader/invalid!"
+          && diagnostic.code === "E_ERASED_GENERIC_RELATION"), diagnostics);
+      }
+      if (mode[0] === "js" && result.stderr.includes("codegen blocked")) {
+        assert.deepEqual(await readdir(destination), ["calcit.build-errors.mjs"]);
+        diagnostics += await readFile(join(destination, "calcit.build-errors.mjs"), "utf8");
+      }
+      const expectedDiagnostic = name === "wrong-method-update"
+        ? /struct update field `:db` expects type/
+        : name === "borrowed-return"
+          ? /W_FN_RETURN_TYPE_MISMATCH/
+          : name.startsWith("borrowed-generic-")
+            ? /E_ERASED_GENERIC_RELATION/
+            : name === "open-cannot-prove-applied"
+              ? /E_DYNAMIC_NOMINAL_ARGUMENT/
+              : /W_FN_ARG_TYPE_MISMATCH/;
+      assert.match(diagnostics, expectedDiagnostic, `${name} ${mode}`);
+      assert.deepEqual(await readFile(snapshot), original);
+    }
+  }
+  console.log("Applied Struct evidence: all-defs entry checking, 4 native/JS attached tests, 1 shared WASM test, 10 native/JS strict rejections and 2 rigid generic return audits.");
 } finally {
   await rm(output, { recursive: true, force: true });
 }

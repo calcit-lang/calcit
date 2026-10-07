@@ -5906,6 +5906,18 @@ fn check_struct_construction_fields(
       );
     }
   }
+  let field_types = (0..value.struct_ref.fields.len())
+    .filter_map(|index| {
+      type_inference::resolve_struct_field_type_by_index(&CalcitTypeAnnotation::StructValue(value.struct_ref.clone()), index)
+    })
+    .collect::<Vec<_>>();
+  let actual_types = items
+    .as_chunks::<2>()
+    .0
+    .iter()
+    .filter_map(|pair| resolve_type_value(pair[1], scope_types))
+    .collect::<Vec<_>>();
+  let mut field_proof = CallTypeProof::new(&value.struct_ref.generics, &field_types, &actual_types);
   for pair in items.as_chunks::<2>().0 {
     let Some(field) = struct_constructor_field_name(pair[0]) else {
       continue;
@@ -5924,10 +5936,22 @@ fn check_struct_construction_fields(
     if empty_container_has_no_type_evidence(pair[1], &expected) {
       continue;
     }
-    if let Some(actual) = resolve_type_value(pair[1], scope_types)
-      && !type_inference::constructor_payload_is_proven(&actual, &expected)
-      && !type_checking::expression_is_proven_for(pair[1], &expected, scope_types, false)
-    {
+    let Some(actual) = resolve_type_value(pair[1], scope_types) else {
+      continue;
+    };
+    let generic_field = value.struct_ref.generics.iter().any(|name| expected.contains_type_var_named(name));
+    let proven = if generic_field {
+      field_proof.prove(&actual, &expected).is_proven()
+    } else {
+      type_inference::constructor_payload_is_proven(&actual, &expected)
+        || type_checking::expression_is_proven_for(pair[1], &expected, scope_types, false)
+    };
+    let expected = if generic_field {
+      field_proof.result_or_open(&expected)
+    } else {
+      expected
+    };
+    if !proven {
       gen_check_warning_code_at_with_types(
         format!(
           "[Warn] struct `{}` field `:{field}` expects type `{}`, but got `{}` at {file_ns}/{def_name}",
@@ -12652,13 +12676,17 @@ fn reject_strict_dynamic_nominal_argument(
 }
 
 fn effective_user_call_schema(info: &CalcitFn) -> Arc<CalcitFnTypeAnnotation> {
-  if let CalcitTypeAnnotation::Fn(signature) = program::lookup_def_schema(&info.def_ns, &info.name).as_ref() {
-    return signature.clone();
-  }
-  let CalcitTypeAnnotation::Fn(signature) = CalcitTypeAnnotation::from_calcit_fn(info) else {
+  let declared = program::lookup_def_schema(&info.def_ns, &info.name);
+  let schema = if matches!(declared.as_ref(), CalcitTypeAnnotation::Fn(_)) {
+    declared
+  } else {
+    Arc::new(CalcitTypeAnnotation::from_calcit_fn(info))
+  };
+  let qualified = resolve_namespace_type_refs_for_body(schema, &info.def_ns);
+  let CalcitTypeAnnotation::Fn(signature) = qualified.as_ref() else {
     unreachable!("CalcitTypeAnnotation::from_calcit_fn always returns Fn")
   };
-  signature
+  signature.clone()
 }
 
 fn call_stack_contains_macro(call_stack: &CallStackList) -> bool {

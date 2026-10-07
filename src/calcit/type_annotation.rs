@@ -892,6 +892,9 @@ fn bounded_plain_type_relation<'a>(
         push_pair(&mut worklist, actual_value, expected_value, depth);
       }
       (Type::TypeRef(actual_name, actual_args), Type::TypeRef(expected_name, expected_args)) => {
+        if matches!(mode, PlainRelationMode::Compatibility) && !expected_args.is_empty() && expected.resolve_to_struct().is_some() {
+          return Ok(None);
+        }
         match Type::type_ref_nominal_match(actual_name, expected_name) {
           Some(true) => {}
           Some(false) => return Ok(Some((Mismatch, stats))),
@@ -914,6 +917,9 @@ fn bounded_plain_type_relation<'a>(
         }
       }
       (Type::Struct(actual_def, actual_args), Type::Struct(expected_def, expected_args)) => {
+        if matches!(mode, PlainRelationMode::Compatibility) && !expected_args.is_empty() {
+          return Ok(None);
+        }
         let nominal_match = if Arc::ptr_eq(actual_def, expected_def) {
           Some(true)
         } else {
@@ -4531,22 +4537,10 @@ impl CalcitTypeAnnotation {
         (Self::TypeRef(actual_name, actual_args), Self::TypeRef(expected_name, expected_args))
           if actual_args.len() == expected_args.len()
             && !actual_args.is_empty()
+            && expected.resolve_to_struct().is_none()
             && Self::type_ref_nominal_match(actual_name, expected_name).unwrap_or_else(|| {
               Self::type_ref_name_matches(actual_name, expected_name) || Self::type_ref_name_matches(expected_name, actual_name)
             }) =>
-        {
-          worklist.extend(
-            actual_args
-              .iter()
-              .zip(expected_args.iter())
-              .rev()
-              .map(|(actual, expected)| (actual.as_ref(), expected.as_ref())),
-          );
-        }
-        (Self::Struct(actual_base, actual_args), Self::Struct(expected_base, expected_args))
-          if actual_args.len() == expected_args.len()
-            && !actual_args.is_empty()
-            && Self::struct_nominal_match(actual_base, expected_base).unwrap_or_else(|| actual_base.name == expected_base.name) =>
         {
           worklist.extend(
             actual_args
@@ -4577,6 +4571,15 @@ impl CalcitTypeAnnotation {
   }
 
   fn compatible_one_with_bindings(&self, expected: &CalcitTypeAnnotation, bindings: &mut TypeBindings) -> bool {
+    // Applied Struct arguments are a payload contract, not a nominal wildcard.
+    // Reuse proof so a bare instance or Dynamic argument cannot borrow concrete
+    // evidence from the destination declaration, including nested call types.
+    if matches!(self, Self::Struct(_, _) | Self::StructValue(_) | Self::TypeRef(_, _))
+      && matches!(expected, Self::Struct(_, args) | Self::TypeRef(_, args) if !args.is_empty())
+      && expected.resolve_to_struct().is_some()
+    {
+      return self.prove_with_bindings(expected, bindings).is_proven();
+    }
     match (self, expected) {
       (Self::Never, _) => true,
       (_, Self::Never) => false,
