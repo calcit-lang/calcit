@@ -161,12 +161,16 @@
         :code $ quote $ ns app.applied-reader
           :require (app.applied-data :as data) (app.applied-model :as model)
     'app.checked-write $ %{} 'FileEntry
-      :defs $ {} $ 'NilBox
-        %{} 'CodeEntry (:doc |)
+      :defs $ {}
+        'NilBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NilBox
             :opt $ :: 'Optional 'Number
             :none 'Nil
             :host $ :: 'JsNullish 'Number
+          :examples $ []
+          :schema $ :: 'StructDef
+        'NumBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NumBox (:small 'Int8) (:tiny :int8) (:wide 'UInt16) (:single 'Float32)
           :examples $ []
           :schema $ :: 'StructDef
       :ns $ %{} 'NsEntry (:doc |)
