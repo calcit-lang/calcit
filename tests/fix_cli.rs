@@ -3912,18 +3912,15 @@ fn parse_stdout(output: &Output) -> serde_json::Value {
 }
 
 fn assert_migration_fixture_contract_diagnostics(report: &serde_json::Value, migrated: bool) {
-  let expected = [
-    (
-      if migrated {
-        "E_CALL_ARGUMENT_UNPROVEN"
-      } else {
-        "W_FN_RETURN_TYPE_MISMATCH"
-      },
-      "fix-command.main/fixable",
-    ),
+  // The removed API receives a declared Enum, so its migration is proven;
+  // only the unrelated contradicted field contracts remain for review.
+  let mut expected = vec![
     ("E_CALL_ARGUMENT_MISMATCH", "fix-command.main/option-struct-field"),
     ("E_CALL_ARGUMENT_MISMATCH", "fix-command.main/union-struct-field"),
   ];
+  if !migrated {
+    expected.push(("W_FN_RETURN_TYPE_MISMATCH", "fix-command.main/fixable"));
+  }
   let diagnostics = report["diagnostics"].as_array().expect("workflow diagnostics should be an array");
   assert_eq!(diagnostics.len(), expected.len(), "{diagnostics:?}");
   for (code, definition) in expected {
@@ -3946,11 +3943,10 @@ fn assert_migration_fixture_contract_diagnostics(report: &serde_json::Value, mig
     assert_eq!(diagnostic["location"]["coord"], serde_json::json!([3]));
   }
   if migrated {
-    let diagnostic = diagnostics
-      .iter()
-      .find(|item| item["definition"] == "fix-command.main/fixable")
-      .unwrap();
-    assert!(diagnostic["message"].as_str().unwrap().contains("expected `:enum`, got `dynamic`"));
+    assert!(
+      diagnostics.iter().all(|item| item["definition"] != "fix-command.main/fixable"),
+      "{diagnostics:?}"
+    );
   }
 }
 
@@ -9158,7 +9154,7 @@ fn staged_fix_rejects_a_new_compiler_warning_without_writing() {
       "schema",
       "fix-command.main/fixable",
       "--code",
-      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return $ :: 'Option 'Tag)",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Enum) (:return $ :: 'Option 'Tag)",
     ],
   );
   assert!(

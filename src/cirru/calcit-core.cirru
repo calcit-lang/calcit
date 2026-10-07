@@ -7279,6 +7279,52 @@
                       recur 1 $ Option :some 7
                       &+ (echo-number 7) 1
               :tags $ #{} :parameter-recheck :unit
+            %{} 'TestEntry (:name |open-element-narrowed-before-concrete-call)
+              :code $ quote $ let
+                  number-only $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    &+ value 1
+                  from-open $ fn (items)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'List 'Dynamic
+                      :return 'Number
+                    &let
+                      v $ &list:nth items 0
+                      if (number? v) (number-only v) 0
+                assert= 3 $ from-open $ [] 2 |x
+                assert= 0 $ from-open $ [] |wrong
+              :tags $ #{} :call-boundary :open-element-proof
+            %{} 'TestEntry (:name |open-element-classified-before-payload)
+              :code $ quote $ let
+                  classify $ fn (items)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'List 'Dynamic
+                      :return 'Data
+                    &let
+                      v $ &list:nth items 0
+                      if (number? v) (Data :number v) (data-view v)
+                assert= (Data :number 2)
+                  classify $ [] 2
+                assert= (Data :string |x)
+                  classify $ [] |x
+              :tags $ #{} :call-boundary :open-element-proof
+            %{} 'TestEntry (:name |open-element-generic-propagation)
+              :code $ quote $ let
+                  same $ fn (value)
+                    hint-fn $ {}
+                      :generics $ [] 'T
+                      :args $ [] 'T
+                      :return 'T
+                    , value
+                  first-open $ fn (items)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'List 'Dynamic
+                      :return 'Dynamic
+                    same $ &list:nth items 0
+                assert= |wrong $ first-open $ [] |wrong
+              :tags $ #{} :call-boundary :open-element-proof
         'identical? $ %{} 'CodeEntry
           :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
           :code $ quote &runtime-implementation

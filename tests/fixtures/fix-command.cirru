@@ -49,7 +49,7 @@
           :code $ quote $ defn fixable (value) (tuple-enum value)
           :examples $ []
           :schema $ :: 'Fn $ {}
-            :args $ [] 'Dynamic
+            :args $ [] 'Enum
             :return $ :: 'calcit.core/Option 'EnumDef
           :tests $ [] $ %{} 'TestEntry (:name |returns-enum-definition)
             :code $ quote $ assert= (%some Option)

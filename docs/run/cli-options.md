@@ -334,6 +334,12 @@ whose structured contract does not claim the generic relationship. With
 失败仍使用 `E_ERASED_GENERIC_RELATION`，并报告 callee、参数位置、实际 callback、
 特化后的期望契约以及显式 decode/narrow 建议；这里不另设 callback 扫描器或 warning。
 
+当显式开放的值（由 `hint-fn` 或 schema 声明为 `Dynamic`、`List<Dynamic>` 等的参数，或用 `let` 从中取出的元素）
+进入不含泛型关系的具体参数时，例如
+`Fn(Number) -> Number` 的参数、`inc` 的参数或 `Data :number` 的 payload，严格模式报告
+`E_CALL_ARGUMENT_UNPROVEN`，并定位到该实参。先用谓词收窄、`data-view` 分类或 decode 证明值的类型，
+再调用具体函数；开放值仍可保存、转交给 `Dynamic` 参数或经泛型函数传递。
+
 If a typed operation directly introduced the open value, the error includes a
 single bounded origin and migration direction. The first supported trace is
 `Map<K,Dynamic> -> get -> Option<Dynamic> -> generic consumer`: human output
@@ -348,8 +354,7 @@ argument whose contract contains a closed Struct or Enum. Decode text with
 `parse-cirru-edn-as` / `try-parse-cirru-edn-as`, decode an evaluated host value
 with `decode-map-as` / `try-decode-map-as`, or validate and narrow it inside a
 small typed FFI adapter. The diagnostic identifies the argument and target
-contract. It does not reject unrelated `Dynamic` to primitive calls, and
-compatibility mode keeps the existing gradual migration behavior. A type slot
+contract. Compatibility mode keeps the existing gradual migration behavior. A type slot
 bound to a Struct/Enum contract is resolved before this check, so entry-level
 and scoped slot configuration cannot erase the nominal boundary. Cyclic slot
 bindings are treated conservatively as protected boundaries instead of being
