@@ -266,6 +266,9 @@ nominal `FfiTask`。生命周期操作以方法为主：`.cancel!` 使用标准�
 `.cancel-with! reason` 传入显式、可编码为 EDN 的原因。旧方法和底层 procedure 继续兼容，
 但不应泄漏到模块公开 API。
 
+两种方法都会校验并保留原生取消操作的实际 Unit 返回值；Unit 表示取消已接受。
+Closing 状态下再次取消仍返回 Unit，模块 cancel hook 保持单次调用。
+
 A Server that declares `REQUIRES_RESPONSE` opens one response capability for
 each request before enqueueing it:
 
@@ -466,3 +469,9 @@ primary modules (`calcit-fetch`, `calcit-http`, `calcit-wss`, and `calcit.std`)
 and the additional audited modules, including `calcit-paint`, no longer require
 Rust-layout entry points. See issues #474 and #482 for the acceptance matrix
 and migration history.
+
+## 限制
+
+- 取消方法返回 Unit 时，任务终止事件仍需由宿主队列处理。
+- 无效 capability 和模块取消失败以异常传播给调用者。
+- 取消原因须可序列化为 Cirru EDN，不包含 raw task/response capability。

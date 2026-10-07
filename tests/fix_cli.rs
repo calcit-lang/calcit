@@ -3693,13 +3693,18 @@ fn spread_fix_preserves_rest_optional_and_unknown_macro_boundaries() {
 #[test]
 fn diary_core_rest_and_cancel_boundaries_have_independent_proof() {
   // CLI audit regression for Diary #69; runtime semantics remain in core :tests.
+  let snapshot = Path::new("src/cirru/calcit-core.cirru");
+  let before = fs::read(snapshot).unwrap();
   for (rule, definition) in [
     ("callable-contract-proof-v1", "concat"),
     ("callable-contract-proof-v1", "str"),
     ("concrete-return-proof-v1", "ffi-task:cancel"),
+    ("callable-contract-proof-v1", "ffi-task:cancel"),
+    ("concrete-return-proof-v1", "ffi-task:cancel-with"),
+    ("callable-contract-proof-v1", "ffi-task:cancel-with"),
   ] {
     let output = run_fix(
-      Path::new("src/cirru/calcit-core.cirru"),
+      snapshot,
       &["--rule", rule, "--ns", "calcit.core", "--def", definition, "--format", "json"],
     );
     assert_success(&output, definition);
@@ -3710,6 +3715,7 @@ fn diary_core_rest_and_cancel_boundaries_have_independent_proof() {
       "{definition}: {report}"
     );
   }
+  assert_eq!(fs::read(snapshot).unwrap(), before, "proof queries must not edit core source");
 }
 
 #[test]
