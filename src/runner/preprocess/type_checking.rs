@@ -1450,9 +1450,10 @@ pub(crate) fn check_function_return_type(
   // Keep unproven boundaries on the existing migration path, but never let
   // an open callable hide a definite contradiction with the return contract.
   let mut bindings = HashMap::new();
-  let proof = if audit {
-    // An independent producer audit owns no callee inference variables:
-    // lexical return generics stay rigid rather than borrowing a declaration.
+  let proof = if audit && !free_type_variable_names(std::slice::from_ref(&actual_type)).is_empty() {
+    // Known lexical producer variables must not be rebound by a return schema.
+    // Preserve the existing migration policy for lossy open/concrete results;
+    // this check rejects substitutions between independent lexical contracts.
     let mut return_proof = CallTypeProof::new(&[], std::slice::from_ref(declared_return_type), std::slice::from_ref(&actual_type));
     let proof = return_proof.prove(&actual_type, declared_return_type);
     if matches!(proof, TypeProof::NeedsBoundary(TypeBoundaryReason::UnboundTypeVariable))
@@ -1460,7 +1461,7 @@ pub(crate) fn check_function_return_type(
     {
       let mut error = unproven(&diagnostic_type_string(&actual_type));
       error.code = Some("E_ERASED_GENERIC_RELATION".to_owned());
-      error.hint = Some("An independent return proof keeps lexical type variables rigid; an unrelated variable or concrete value cannot specialize them.".into());
+      error.hint = Some("An independent return proof keeps known lexical type variables rigid; a return declaration cannot rebind them to an unrelated variable.".into());
       return Err(error);
     }
     proof
