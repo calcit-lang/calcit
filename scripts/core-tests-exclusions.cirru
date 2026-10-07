@@ -364,6 +364,7 @@
       |calcit.core/read-file#preserves-file-read-alias "|parity: codegen fails: unknown function: calcit.core/read-file"
       |calcit.core/read-file#preserves-missing-file-failure "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/reduce#reduces-list-from-initial-value "|parity: wrong result: expected 14, got 2"
+      |calcit.core/ref#creates-typed-local-ref "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/remove-watch!#rejects-missing-key-without-repeating-effect "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/recur#recurs-from-try-and-match-tail-positions "|unsupported: E_WASI_COMMAND_DEPENDENCY: unsupported syntax in WASM: try; the match assertion is also replayed separately by recurs-from-match-tail-position"
       |calcit.core/rest#rejects-non-sequence "|unsupported: unsupported syntax in WASM: try"
