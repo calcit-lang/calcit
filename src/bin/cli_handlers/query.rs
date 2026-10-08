@@ -3601,6 +3601,7 @@ fn context_docs(definition: &str, diagnostics: &mut Vec<ContextDiagnostic>) -> C
   }
 }
 
+/// Static methods of the receiver type for `query context`, leaving out the generic Fn methods unless `include_core`.
 fn context_methods(annotation: &CalcitTypeAnnotation, budget: usize, include_core: bool) -> Option<ContextCollection<ContextMethod>> {
   let mut methods = runner::preprocess::static_method_contracts(annotation)?;
   if !include_core {
@@ -4792,6 +4793,7 @@ fn render_chunked_display(display: &ChunkedDisplay) -> String {
   out
 }
 
+/// Show one definition as Markdown (chunked only when large) or a structured envelope.
 fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryDefCommand) -> Result<(), String> {
   let format = parse_query_render_format(&opts.format)?;
   let structured = format != QueryRenderFormat::Human;

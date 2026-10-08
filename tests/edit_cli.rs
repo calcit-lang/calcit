@@ -1283,6 +1283,7 @@ fn overwriting_with_defexternal_drops_retained_ffi_metadata() {
   assert!(report["data"]["ffi"][":names"].is_null());
 }
 
+/// Default output of common agent commands stays compact; details need explicit flags.
 #[test]
 fn agent_commands_print_compact_default_output() {
   let directory = TestDirectory::create();

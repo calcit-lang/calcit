@@ -1650,6 +1650,7 @@ fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), Str
   Ok(())
 }
 
+/// Store a definition's documentation verbatim; warn when the text looks like a Cirru string literal.
 fn handle_doc(opts: &EditDocCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
