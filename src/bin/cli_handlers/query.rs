@@ -4792,6 +4792,8 @@ fn handle_def_cirru_view(input_path: &str, namespace: &str, definition: &str) ->
   Ok(())
 }
 
+/// Show one definition as Markdown (default), a structured envelope (`--format edn|json`),
+/// or writable source (`--format cirru`).
 fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryDefCommand) -> Result<(), String> {
   if opts.format == "cirru" {
     return handle_def_cirru_view(input_path, namespace, definition);

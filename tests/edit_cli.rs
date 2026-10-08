@@ -1264,6 +1264,7 @@ fn overwriting_with_defexternal_drops_retained_ffi_metadata() {
   assert!(report["data"]["ffi"][":names"].is_null());
 }
 
+/// `query def --format cirru` output is accepted by `edit def --overwrite` and leaves the Snapshot unchanged.
 #[test]
 fn query_def_cirru_view_writes_back_byte_identically() {
   let directory = TestDirectory::create();
