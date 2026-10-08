@@ -11,6 +11,10 @@ execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "tes
   "--tag", "checked-struct-write", "--backend", "native,js"], {
   env: { ...process.env, CALCIT_BIN: binary }, stdio: "inherit",
 });
+execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+  "--tag", "checked-struct-construction", "--backend", "native,js"], {
+  env: { ...process.env, CALCIT_BIN: binary }, stdio: "inherit",
+});
 const nativeTrace = execFileSync(binary, ["calcit/test-wasm.cirru", "test", "--tag", "struct-field-order", "--require-match"], { encoding: "utf8" });
 assert.deepEqual(nativeTrace.split(/\r?\n/).filter(line => line.startsWith("struct-order-")),
   ["struct-order-y", "struct-order-x", "struct-order-x", "struct-order-y"]);
@@ -89,6 +93,10 @@ try {
 
   // Nil is `null` and Unit is `undefined`; only JsNullish admits both.
   const nilBox = makeBox(boxes.NilBox, { opt: null, none: null, host: null });
+  // Host callers must obey the same prototype and Map input contract; Calcit
+  // source rejects these wrong outer kinds before reaching the JS runtime.
+  assert.throws(() => makeBox(nilBox, { opt: null, none: null, host: null }), /StructDef/);
+  assert.throws(() => procs._$n_struct_$o_from_map(boxes.NilBox, nilBox), /requires a Map/);
   accepts(nilBox, "opt", null);
   accepts(nilBox, "opt", 1);
   rejects(nilBox, "opt", undefined);

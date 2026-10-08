@@ -297,6 +297,8 @@ assert= true $ round? 9007199254740992
 
 JS 的 `&struct:assoc` 写入不存在的字段会抛错，与 native 一致；不再返回未修改的原值。非法值也会抛错，原 Struct 保持不变。调用方可以按现有异常边界处理失败，不应依赖 silent no-op，也不应将名义来源不同的同名 Struct 当成可互换值。
 
+构造与更新使用同一字段检查。静态类型已知时继续使用 `Person :name |Ada` 等直接构造器；动态 StructDef 使用 `%{} prototype (:name value)`，其可解析数据字段也会检查嵌套内容。低层 `&struct:from-map` 只接受 Map，必须提供每个字段且恰好一次：Tag/String 归一化后重复、缺少、多余或类型不匹配都会抛错。native 不再给遗漏字段填 nil，JS 不再忽略多余字段或接受 Struct 作为 Map；先显式生成完整 Map，不依赖这些跨后端差异。零字段 Struct 的定义与完整构造在 native/JS 一致接受。
+
 ### 限制
 
 - 此项加强不是任意动态写入的完整类型证明；未实例化的泛型、函数和 host 字段仍需要静态合同，不能据此绕过严格检查。
