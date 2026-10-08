@@ -7856,8 +7856,8 @@
             %{} 'TestEntry (:name |checks-open-map-values-and-set-members)
               :code $ quote $ assert= ([] true true false false)
                 map
-                  [] (&{} :a 1) (#{} 1) (&{} 1 :a) (#{} 2)
-                  fn (x) (includes? x 1)
+                  [] (&{} :a :x) (#{} :x) (&{} :x :a) (#{} :y)
+                  fn (x) (includes? x :x)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |matches-and-rejects-string-substrings)
               :code $ quote $ do
