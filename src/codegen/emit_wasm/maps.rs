@@ -449,7 +449,7 @@ pub(super) fn emit_map_merge(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   ctx.emit(Instruction::LocalTee(d_addr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalGet(bk));
-  ctx.emit(Instruction::F64Eq);
+  emit_f64_value_eq(ctx);
   ctx.begin_block_if();
   // Override value for existing key.
   ctx.emit(Instruction::LocalGet(d_addr));
@@ -574,7 +574,7 @@ pub(super) fn emit_map_diff_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   ctx.emit(Instruction::LocalTee(akv_addr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalGet(bk));
-  ctx.emit(Instruction::F64Eq);
+  emit_f64_value_eq(ctx);
   ctx.begin_block_if();
 
   // a key found in b — mark and break inner loop
@@ -680,7 +680,7 @@ pub(super) fn emit_map_diff_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalGet(ak));
-  ctx.emit(Instruction::F64Eq);
+  emit_f64_value_eq(ctx);
   ctx.begin_block_if();
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::LocalSet(found));
@@ -774,7 +774,7 @@ pub(super) fn emit_map_common_keys(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalGet(ak));
-  ctx.emit(Instruction::F64Eq);
+  emit_f64_value_eq(ctx);
   ctx.begin_block_if();
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::LocalSet(found));
@@ -896,7 +896,7 @@ pub(super) fn emit_map_diff_triple(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
   ctx.emit(Instruction::LocalTee(bkv_addr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalGet(ak));
-  ctx.emit(Instruction::F64Eq);
+  emit_f64_value_eq(ctx);
   ctx.begin_block_if();
   ctx.emit(Instruction::LocalGet(bkv_addr));
   ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
@@ -1024,7 +1024,7 @@ pub(super) fn emit_map_diff_triple(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalGet(bk));
-  ctx.emit(Instruction::F64Eq);
+  emit_f64_value_eq(ctx);
   ctx.begin_block_if();
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::LocalSet(found_in_a));
@@ -1293,7 +1293,7 @@ pub(super) fn emit_map_merge_non_nil(ctx: &mut WasmGenCtx, args: &[Calcit]) -> R
         ctx.emit(Instruction::LocalTee(dk_addr));
         ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
         ctx.emit(Instruction::LocalGet(bk));
-        ctx.emit(Instruction::F64Eq);
+        emit_f64_value_eq(ctx);
         ctx.begin_block_if();
         ctx.emit(Instruction::LocalGet(di));
         ctx.emit(Instruction::LocalSet(found_di));

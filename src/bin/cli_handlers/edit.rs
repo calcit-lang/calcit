@@ -571,7 +571,7 @@ fn parse_transaction_operations(raw: &str) -> Result<Vec<Vec<String>>, String> {
       ),
       "config" => matches!(
         subcommand,
-        "version" | "set" | "add-module" | "rm-module" | "set-type-slot" | "rm-type-slot"
+        "version" | "set" | "add-entry" | "add-module" | "rm-module" | "set-type-slot" | "rm-type-slot"
       ),
       _ => false,
     };
@@ -2046,6 +2046,12 @@ fn save_schema_preserving_snapshot(
   } else {
     entry.pairs.retain(|(key, _)| key.ref_str() != "schema");
   }
+
+  // Reject a schema the loader would refuse before the atomic save, so a failed
+  // write leaves the original bytes and revision untouched.
+  snapshot::load_snapshot_data(&data, snapshot_file).map_err(|e| {
+    format!("Schema validation failed: `{namespace}/{definition}` would make the snapshot unloadable, nothing was written: {e}")
+  })?;
 
   let formatted = cirru_edn::format(&data, true).map_err(|e| format!("Failed to format snapshot EDN: {e}"))?;
   let output = match shebang {
@@ -3935,6 +3941,10 @@ mod tests {
     let fixture = TestSnapshot::from_fixture();
     let source = r#"#! /usr/bin/env calcit
 {} (:package |demo) (:version |0.0.1)
+  :entries $ {}
+    :default $ {} (:description |) (:init-fn 'app.main/target) (:mode :native) (:reload-fn 'app.main/target)
+      :modules $ []
+      :type-slots $ {}
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}

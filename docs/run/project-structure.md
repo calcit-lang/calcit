@@ -93,6 +93,7 @@ calcit config set-type-slot :dispatch-op app.schema/Op
 calcit config set mode js
 calcit config set target browser
 calcit config set description "Browser client"
+calcit config add-entry test --mode native --init-fn app.test/main! --reload-fn app.test/reload!
 calcit config set --entry test target node
 calcit config set-type-slot --entry test :dispatch-op app.test-schema/TestOp
 calcit config rm-type-slot :dispatch-op

@@ -108,9 +108,10 @@ has an explicit user-facing presentation implementation.
 ## Creating Struct Values
 
 When the definition is in scope, the concise constructor form keeps field names at
-the call site:
+the call site. It works for top-level definitions and for a `defstruct` bound by
+`let`:
 
-```cirru.no-check
+```cirru
 let
     Point $ defstruct Point (:x 'Number) (:y 'Number)
     p $ Point :x 1 :y 2
@@ -121,7 +122,7 @@ Arguments must be tag/value pairs. Required fields must be present, while a fiel
 declared as `Option<T>` may be omitted; the constructor inserts the nominal
 `Option :none` 值；非 `Option` 字段绝不会被静默填成 `nil`。
 
-Use the `%{}` macro to instantiate a struct:
+低层 `%{}` 宏只用于动态 prototype；类型能静态解析时使用上面的直接构造器。它的写法如下：
 
 ```cirru
 let
