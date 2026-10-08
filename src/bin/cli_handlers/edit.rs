@@ -1650,6 +1650,7 @@ fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), Str
   Ok(())
 }
 
+/// Store a definition's documentation verbatim; warn when the text looks like a Cirru string literal.
 fn handle_doc(opts: &EditDocCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
@@ -1674,6 +1675,12 @@ fn handle_doc(opts: &EditDocCommand, snapshot_file: &str) -> Result<(), String> 
   code_entry.doc = opts.doc.clone();
 
   save_snapshot(&snapshot, snapshot_file)?;
+  if opts.doc.starts_with('|') {
+    eprintln!(
+      "{} Documentation is stored verbatim, so the leading `|` is kept as text; pass the plain text without the Cirru string prefix.",
+      "⚠".yellow()
+    );
+  }
 
   println!(
     "{} Updated documentation for '{}' in namespace '{}'",

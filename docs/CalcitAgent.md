@@ -251,7 +251,7 @@ Agent 修改的是 Snapshot 中的表层 quoted AST。macro 展开、名称解�
 | definition revision | definition 的内容版本，由 context/cursor 返回              | 判断语义证据或 cursor 是否过期                 |
 | Snapshot revision | 整个 Snapshot 的内容版本，由 transaction dry-run 返回        | 传给 `--expect-revision` 阻止覆盖并发修改       |
 
-`query def` 对大定义默认可能输出 chunked preview；先用 `query peek` 或默认 `query def` 看结构，确实需要完整定义时才用 `query def '<ns/def>' --raw`。不要把 `FOLDED:*` 或 chunk 标记当成源码。需要整段改写一个定义时，用 `query def '<ns/def>' --format cirru` 读出只含 `quote $ <定义>` 的源码，修改后原样交给 `edit def '<ns/def>' --overwrite --input-format cirru --file <文件>` 写回；未修改的视图写回后 Snapshot 字节不变。
+`query def` 对格式化后达到 2KB（`--chunk-trigger-bytes`）的大定义默认可能输出 chunked preview，较短定义整段显示；先用 `query peek` 或默认 `query def` 看结构，确实需要完整定义时才用 `query def '<ns/def>' --raw`。不要把 `FOLDED:*` 或 chunk 标记当成源码。需要整段改写一个定义时，用 `query def '<ns/def>' --format cirru` 读出只含 `quote $ <定义>` 的源码，修改后原样交给 `edit def '<ns/def>' --overwrite --input-format cirru --file <文件>` 写回；未修改的视图写回后 Snapshot 字节不变。
 
 path 使用从零开始的 child index：`@3.2` 表示先取 definition 根 list 的 child 3，再取其 child 2；空 path 表示 definition 根节点。结构 mutation 后旧 path 可能失效，优先重新查询或使用 cursor。必须直接使用旧数字 path 时，`tree replace/delete/insert-*` 推荐同时传 `--expect 'quote ...'`；实际节点或插入锚点不匹配时命令会在写入前失败。
 
