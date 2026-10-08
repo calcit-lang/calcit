@@ -5865,6 +5865,21 @@
             :args $ [] 'T
             :generics $ [] 'T
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-generic-input-open-after-branch-join)
+            :code $ quote $ let
+                classify $ fn (data)
+                  hint-fn $ {}
+                    :generics $ [] 'T
+                    :args $ [] 'T
+                    :return 'Tag
+                  let
+                      op $ if (enum? data) data data
+                    if (enum? op) :enum :other
+              assert= ([] :other :other :enum)
+                [] (classify 1)
+                  classify $ [] 1
+                  classify $ %some 1
+            :tags $ #{} :core :unit
         'eval $ %{} 'CodeEntry
           :doc "|internal syntax for evaluating code at runtime\nSyntax: (eval expr)\nParams: expr (quoted code)\nReturns: result of evaluation\nEvaluates quoted code in current environment"
           :code $ quote &runtime-implementation

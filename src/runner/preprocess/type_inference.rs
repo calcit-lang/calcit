@@ -177,8 +177,12 @@ fn compatible_if_join(
 ) -> Option<Arc<CalcitTypeAnnotation>> {
   let true_accepts_false = true_type.as_ref().is_compatible_with(false_type.as_ref());
   let false_accepts_true = false_type.as_ref().is_compatible_with(true_type.as_ref());
-  let true_weight = super::annotation_dynamic_weight(true_type.as_ref());
-  let false_weight = super::annotation_dynamic_weight(false_type.as_ref());
+  // A generic parameter stays open on a tie: a branch narrowed from it (for
+  // example by `enum?`) must not replace the parameter in the join (#1779).
+  let true_weight =
+    super::annotation_dynamic_weight(true_type.as_ref()) + usize::from(matches!(true_type.as_ref(), CalcitTypeAnnotation::TypeVar(_)));
+  let false_weight = super::annotation_dynamic_weight(false_type.as_ref())
+    + usize::from(matches!(false_type.as_ref(), CalcitTypeAnnotation::TypeVar(_)));
 
   // A candidate branch is a valid join only when the *other* branch is
   // acceptable where it is required. The option wrappers are asymmetric on
