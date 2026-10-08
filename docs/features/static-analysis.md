@@ -1134,7 +1134,7 @@ Static type analysis:
 ### 记录与校验
 
 - 改写点（方法内联、`get` / `nth` / `first` / `last` 的类型化 lowering、trait 约束方法的 `&trait-call` lowering）在改写时记录改写前的类型、源表达式、改写后表达式与源码位置，不引入新的 AST。
-- 定义预处理完成后，校验遍历最终节点树。仍在树中的被记录节点要求类型不低于改写前；每个 `Proc` 调用与 `recur` 重新执行参数检查，预处理阶段没有报告过的结果视为遗漏检查。
+- 定义预处理完成后，校验遍历最终节点树。仍在树中的被记录节点要求类型不低于改写前；每个 `Proc` 调用、已编译用户函数的调用与 `recur` 重新执行参数检查，预处理阶段没有报告过的结果视为遗漏检查。
 - `calcit.core` 与普通项目使用同一规则，不设置库豁免；发现的问题通过补全证据或修正定义的类型合同解决。
 
 ### 违规格式
@@ -1152,7 +1152,7 @@ internal compiler error: post-lowering validation (CALCIT_LINT_CORE=1) found 1 v
 
 ### 回归集
 
-- `src/runner/preprocess/post_lowering.rs` 的单元测试为每个已知问题构造改写后的错误节点树并断言校验报错：#1378（`Option` payload 被擦除）、#1428（`recur` 参数未检查）、#1494（内联 Proc 方法绕过参数检查）。
+- `src/runner/preprocess/post_lowering.rs` 的单元测试为每个已知问题构造改写后的错误节点树并断言校验报错：#1378（`Option` payload 被擦除）、#1428（`recur` 参数未检查）、#1494（内联 Proc 方法绕过参数检查），以及改写后的用户函数调用未经参数检查。
 - `tests/post_lowering_cli.rs` 在开启校验时检查 #1378、#1428、#1494 与 #1737（`Option :none` 绑定到局部变量后用于具体字段）的合法写法。
 - CI 在开启校验时运行 core 附带 `:tests`、`calcit.core` 的 `analyze check-public`、`calcit/test.cirru` 与类型推断测试。新发现的同类问题先把最小用例加入这组回归，再修复。
 
@@ -1186,4 +1186,4 @@ internal compiler error: post-lowering validation (CALCIT_LINT_CORE=1) found 1 v
 
 非空开放成员仍会被拒绝。
 
-改写后校验尚未执行第一条不变量（需要逐节点类型槽），第二条只覆盖已记录的改写点（方法内联、类型化访问、trait 调用），第三条覆盖内建 `Proc` 调用与 `recur`，用户函数调用与方法调用的最终节点尚未重新检查。
+改写后校验尚未执行第一条不变量（需要逐节点类型槽），第二条只覆盖已记录的改写点（方法内联、类型化访问、trait 调用），第三条覆盖内建 `Proc` 调用、已编译用户函数的调用（方法内联后的调用也在其中）与 `recur`，尚在编译中的自调用与局部函数调用不重新检查。

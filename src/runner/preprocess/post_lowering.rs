@@ -15,8 +15,9 @@
 //! - (b) a lowering that is recorded at a rewrite point (method inlining,
 //!   typed optional access, trait-bound method lowering) must produce a node
 //!   whose inferred type still proves the pre-rewrite type;
-//! - (c) every `Proc` call and every `recur` in the final tree passes the same
-//!   argument checks as the source form; a check that fires on the final tree
+//! - (c) every `Proc` call, every call to a compiled user function and every
+//!   `recur` in the final tree passes the same argument checks as the source
+//!   form; a check that fires on the final tree
 //!   but was never reported during preprocess means the lowered node skipped
 //!   a check.
 //!
@@ -225,6 +226,35 @@ pub(super) fn validate_definition(
         }
       }
       Some(Calcit::Syntax(CalcitSyntax::Defn, _)) => check_recur_in_function(ns, def, items, &known, &mut violations),
+      Some(head @ (Calcit::Import(_) | Calcit::Fn { .. })) => {
+        let Some(info) = resolved_user_fn(head, call_stack) else {
+          return;
+        };
+        let recheck = RefCell::new(vec![]);
+        let location = find_calcit_location_matching(node, |location| location.def.as_ref() != GENERATED_DEF);
+        let call_info = CallTypeCheckInfo {
+          file_ns: ns,
+          def_name: def,
+          call_location: location.clone(),
+        };
+        check_user_fn_arg_types(&info, head, &items.drop_left(), &ScopeTypes::new(), &call_info, &recheck);
+        for warning in recheck.borrow().iter().filter(|warning| !known(warning.message())) {
+          violations.push(Violation {
+            invariant: "(c) every call node is checked",
+            detail: format!(
+              "the final tree fails a function argument check that preprocess never reported: {}",
+              warning.message()
+            ),
+            location: location.clone(),
+            chain: vec![chain_item(
+              "call",
+              format!("{}/{}", info.def_ns, info.name),
+              location.as_ref(),
+              String::new(),
+            )],
+          });
+        }
+      }
       _ => {}
     }
   });
@@ -293,6 +323,21 @@ pub(super) fn validate_definition(
   let mut error = CalcitErr::use_msg_stack_location(CalcitErrKind::Unexpected, message, call_stack, location);
   *error.provenance = violations.into_iter().flat_map(|violation| violation.chain).collect();
   Err(error)
+}
+
+/// The user function a final-tree call head refers to. Only already compiled
+/// definitions are looked up: validation never compiles or evaluates code, and
+/// a definition still being compiled (a self call) has no checked contract yet.
+fn resolved_user_fn(head: &Calcit, call_stack: &CallStackList) -> Option<Arc<CalcitFn>> {
+  let value = match head {
+    Calcit::Fn { info, .. } => return Some(info.clone()),
+    Calcit::Import(CalcitImport { ns, def, .. }) => program::resolve_compiled_executable_def(ns, def, call_stack).ok().flatten(),
+    _ => None,
+  };
+  match value {
+    Some(Calcit::Fn { info, .. }) => Some(info),
+    _ => None,
+  }
 }
 
 /// Re-run the `recur` arity and argument checks against the lowered function.
@@ -433,6 +478,46 @@ mod tests {
     let error = validate(&call, &[], &[]).expect_err("the lowered call must be checked");
     assert!(error.msg.contains("(c) every call node is checked"), "{}", error.msg);
     assert!(error.msg.contains("&map:assoc"), "{}", error.msg);
+  }
+
+  fn expects_number_fn() -> Calcit {
+    Calcit::Fn {
+      id: Arc::from("tests.post-lowering/expects-number"),
+      info: Arc::new(CalcitFn {
+        name: Arc::from("expects-number"),
+        def_ns: Arc::from("tests.post-lowering"),
+        def_ref: None,
+        usage: crate::calcit::CalcitFnUsageMeta::default(),
+        scope: Arc::new(CalcitScope::default()),
+        args: Arc::new(CalcitFnArgs::Args(vec![0])),
+        call_shape: crate::calcit::CalcitFnCallShape::fixed(1),
+        body: vec![Calcit::Nil],
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![number()],
+        return_type: number(),
+        rest_type: None,
+      }),
+    }
+  }
+
+  /// A lowered call to a user function must pass the same argument checks as
+  /// the source call; rewrites that build user calls (method inlining, macro
+  /// expansion) would otherwise skip them.
+  #[test]
+  fn user_fn_call_that_skipped_argument_checks_is_reported() {
+    let call = Calcit::from(vec![expects_number_fn(), Calcit::new_str("oops")]);
+    let error = validate(&call, &[], &[]).expect_err("the lowered user call must be checked");
+    assert!(error.msg.contains("(c) every call node is checked"), "{}", error.msg);
+    assert!(error.msg.contains("function argument check"), "{}", error.msg);
+    assert!(
+      error.msg.contains("origin call tests.post-lowering/expects-number"),
+      "{}",
+      error.msg
+    );
+
+    let valid = Calcit::from(vec![expects_number_fn(), Calcit::Number(1.0)]);
+    validate(&valid, &[], &[]).expect("a matching argument is valid");
   }
 
   /// #1378: `%none` was re-inferred as `Option<Dynamic>` and erased the payload.
