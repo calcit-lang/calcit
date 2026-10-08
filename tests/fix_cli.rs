@@ -3852,6 +3852,104 @@ fn typed_rest_spread_is_already_valid_and_remains_unmodified() {
   }
 }
 
+#[test]
+fn registered_variadic_ffi_spread_is_already_valid_and_unproven_forms_remain_reviewable() {
+  // `&call-dylib-edn` is a registered native proc: arity 2.. with no element
+  // contract, so the fixed-arity call needs no item proof and neither does a
+  // List spread after both fixed arguments. Nothing is loaded at plan time.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/typed-rest-spread.cirru", &snapshot).expect("copy fixture");
+  let define = |name: &str, code: &str, schema: Option<&str>| {
+    let target = format!("fix-command.main/{name}");
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", &target, "--input-format", "cirru", "--code", code]),
+      "add registered spread definition",
+    );
+    if let Some(schema) = schema {
+      assert_success(
+        &run_calcit(&snapshot, &["edit", "schema", &target, "--input-format", "cirru", "--code", schema]),
+        "add registered spread schema",
+      );
+    }
+  };
+  let rest_strings = "quote $ :: 'Fn $ {} (:args $ []) (:rest 'String) (:return 'Dynamic)";
+  define("pass-through", "quote $ defmacro pass-through (raw)\n  quasiquote ~raw", None);
+  define("twice", "quote $ defmacro twice (raw)\n  quasiquote $ [] ~raw ~raw", None);
+  define(
+    "native-join",
+    "quote $ defn native-join (& xs)\n  &call-dylib-edn |lib |join & xs",
+    Some(rest_strings),
+  );
+  define(
+    "wrapped-native-join",
+    "quote $ defn wrapped-native-join (& xs)\n  pass-through $ &call-dylib-edn |lib |join & xs",
+    Some(rest_strings),
+  );
+  for name in ["native-join", "wrapped-native-join"] {
+    let before = fs::read(&snapshot).unwrap();
+    let result = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "spread-call-proof-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+        "--apply",
+        "--allow-no-vcs",
+      ],
+    );
+    assert_success(&result, "registered variadic spread is not a migration candidate");
+    let report = parse_stdout(&result);
+    assert!(report["data"]["suggestions"].as_array().unwrap().is_empty(), "{name}: {report}");
+    assert_eq!(fs::read(&snapshot).unwrap(), before, "{name}: keep the variable-length call");
+  }
+  for (name, code, schema) in [
+    (
+      "missing-fixed-native",
+      "quote $ defn missing-fixed-native (& xs)\n  &call-dylib-edn |lib & xs",
+      rest_strings,
+    ),
+    (
+      "open-operand-native",
+      "quote $ defn open-operand-native (x)\n  &call-dylib-edn |lib |join & x",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)",
+    ),
+    (
+      "duplicated-native",
+      "quote $ defn duplicated-native (& xs)\n  twice $ &call-dylib-edn |lib |join & xs",
+      "quote $ :: 'Fn $ {} (:args $ []) (:rest 'String) (:return $ :: 'List 'Dynamic)",
+    ),
+  ] {
+    define(name, code, Some(schema));
+    let before = fs::read(&snapshot).unwrap();
+    let result = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "spread-call-proof-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&result, "retain the unproven registered spread for review");
+    let report = parse_stdout(&result);
+    let suggestions = report["data"]["suggestions"].as_array().unwrap();
+    assert_eq!(suggestions.len(), 1, "{name}: {report}");
+    assert_eq!(suggestions[0]["applicability"], "requires-review", "{name}: {report}");
+    assert!(suggestions[0]["replacement"].is_null());
+    assert_eq!(fs::read(&snapshot).unwrap(), before);
+  }
+}
+
 struct TestDirectory(PathBuf);
 
 impl TestDirectory {
