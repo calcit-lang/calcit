@@ -5,34 +5,46 @@ import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet } from "./js-set.mjs";
 import { CalcitRef } from "./js-ref.mjs";
 import { CalcitEnumValue } from "./js-enum-value.mjs";
+import { CalcitCirruQuote } from "./js-cirru.mjs";
 
 /// Shallow runtime check of a value against a struct field type form, matching
 /// the native `value_matches_type_annotation`: container kinds are checked,
 /// members are not. Names that cannot be resolved here (aliases, traits, type
-/// variables) stay permissive, as unresolved forms are on the native side.
-export let valueMatchesTypeForm = (value: CalcitValue, form: CalcitValue): boolean => {
+/// variables) stay permissive only for the legacy, statically checked path.
+/// Dynamic writes require evidence: deep contracts use generated validators,
+/// while this fallback accepts only completely checkable scalar/open forms.
+export let valueMatchesTypeForm = (value: CalcitValue, form: CalcitValue, requireEvidence = false): boolean =>
+  matchTypeForm(value, form, requireEvidence) === true;
+
+// null means that the contract cannot be checked here, not a mismatched value.
+// Preserve that distinction through Optional/JsNullish instead of letting an
+// absent payload hide an unresolved contract.
+let matchTypeForm = (value: CalcitValue, form: CalcitValue, requireEvidence: boolean): boolean | null => {
   if (form instanceof CalcitSliceList || form instanceof CalcitList) {
     const items = (form as CalcitList | CalcitSliceList).toArray();
     const head = items[0];
     if (head instanceof CalcitSymbol && head.value === "quote") {
-      return valueMatchesTypeForm(value, items[1]);
+      return matchTypeForm(value, items[1], requireEvidence);
     }
     if (head instanceof CalcitSymbol && head.value === "::") {
       const name = typeFormName(items[1]);
       // Nil is `null` here; `undefined` is Unit. Only the JS host boundary
       // type also admits `undefined`.
       if (name === "Optional") {
-        return value === null || valueMatchesTypeForm(value, items[2]);
+        const inner = matchTypeForm(value, items[2], requireEvidence);
+        return inner == null ? null : value === null || inner;
       }
       if (name === "JsNullish") {
-        return value == null || valueMatchesTypeForm(value, items[2]);
+        const inner = matchTypeForm(value, items[2], requireEvidence);
+        return inner == null ? null : value == null || inner;
       }
-      return name == null || valueMatchesTypeName(value, name);
+      if (name === "Fn" && requireEvidence) return null;
+      return name == null ? (requireEvidence ? null : true) : valueMatchesTypeName(value, name, requireEvidence);
     }
-    return true;
+    return requireEvidence ? null : true;
   }
   const name = typeFormName(form);
-  return name == null || valueMatchesTypeName(value, name);
+  return name == null ? (requireEvidence ? null : true) : valueMatchesTypeName(value, name, requireEvidence);
 };
 
 let typeFormName = (form: CalcitValue): string | null => {
@@ -52,7 +64,7 @@ let isIntegerIn = (value: CalcitValue, min: number, max: number): boolean =>
 let isList = (value: CalcitValue) => value instanceof CalcitList || value instanceof CalcitSliceList;
 let isMap = (value: CalcitValue) => value instanceof CalcitMap || value instanceof CalcitSliceMap;
 
-let valueMatchesTypeName = (value: CalcitValue, rawName: string): boolean => {
+let valueMatchesTypeName = (value: CalcitValue, rawName: string, requireEvidence: boolean): boolean | null => {
   const name = rawName.startsWith("calcit.core/") ? rawName.slice("calcit.core/".length) : rawName;
   switch (name) {
     case "Dynamic":
@@ -110,30 +122,41 @@ let valueMatchesTypeName = (value: CalcitValue, rawName: string): boolean => {
     case "Unit":
     case "unit":
       return value === undefined;
+    case "Never":
+      return false;
+    case "Buffer":
+    case "buffer":
+      return value instanceof Uint8Array;
+    case "CirruQuote":
+    case "cirru-quote":
+      return value instanceof CalcitCirruQuote;
     case "List":
     case "list":
-      return isList(value);
+      return requireEvidence ? null : isList(value);
     case "Map":
     case "map":
-      return isMap(value);
+      return requireEvidence ? null : isMap(value);
     case "Set":
     case "set":
-      return value instanceof CalcitSet;
+      return requireEvidence ? null : value instanceof CalcitSet;
     case "Ref":
     case "ref":
-      return value instanceof CalcitRef;
+      return requireEvidence ? null : value instanceof CalcitRef;
     case "Fn":
     case "fn":
       return typeof value === "function";
     case "Struct":
     case "struct":
     case "record":
-      return isStructValue(value);
+      return requireEvidence ? null : isStructValue(value);
     case "Enum":
     case "enum":
     case "tuple":
-      return value instanceof CalcitEnumValue;
+      return requireEvidence ? null : value instanceof CalcitEnumValue;
   }
+  // Deep/nominal contracts must use the compiler's resolved validator. A
+  // short-name match or an erased generic cannot establish runtime evidence.
+  if (requireEvidence) return null;
   // Core Struct and Enum definitions (bare names resolve to them through the
   // implicit core import) are known here, so a reference to one admits only
   // values of that definition, as the native matcher does.

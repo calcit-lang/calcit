@@ -904,7 +904,7 @@ pub fn struct_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           match &xs[k_idx] {
             Calcit::Tag(s) => match struct_value.index_of(s.ref_str()) {
               Some(pos) => {
-                check_struct_field_write(struct_ref, pos, &xs[v_idx], "&struct:with")?;
+                check_dynamic_struct_field_write(struct_ref, pos, &xs[v_idx], "&struct:with")?;
                 xs[v_idx].clone_into(&mut values[pos]);
               }
               None => {
@@ -916,7 +916,7 @@ pub fn struct_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
             },
             Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match struct_value.index_of(s) {
               Some(pos) => {
-                check_struct_field_write(struct_ref, pos, &xs[v_idx], "&struct:with")?;
+                check_dynamic_struct_field_write(struct_ref, pos, &xs[v_idx], "&struct:with")?;
                 xs[v_idx].clone_into(&mut values[pos]);
               }
               None => {
@@ -1245,11 +1245,56 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 /// Struct construction and updates share the declared field's runtime validation.
 fn check_struct_field_write(struct_ref: &CalcitStructDef, pos: usize, value: &Calcit, operation: &str) -> Result<(), CalcitErr> {
+  validate_struct_field_write(struct_ref, pos, value, operation, false)
+}
+
+/// Unresolved writes cannot borrow the static evidence of indexed lowering.
+fn check_dynamic_struct_field_write(
+  struct_ref: &CalcitStructDef,
+  pos: usize,
+  value: &Calcit,
+  operation: &str,
+) -> Result<(), CalcitErr> {
+  validate_struct_field_write(struct_ref, pos, value, operation, true)
+}
+
+fn scalar_field_write_evidence(value: &Calcit, expected: &CalcitTypeAnnotation) -> Option<bool> {
+  use CalcitTypeAnnotation as T;
+  match expected {
+    T::Never
+    | T::Dynamic
+    | T::JsObject
+    | T::DynFn
+    | T::Nil
+    | T::Unit
+    | T::Bool
+    | T::Number
+    | T::Numeric(_)
+    | T::String
+    | T::Symbol
+    | T::Tag
+    | T::Buffer
+    | T::CirruQuote => Some(value_matches_type_annotation(value, expected)),
+    T::Optional(inner) | T::JsNullish(inner) => {
+      scalar_field_write_evidence(value, inner).map(|matches| matches!(value, Calcit::Nil) || matches)
+    }
+    _ => None,
+  }
+}
+
+fn validate_struct_field_write(
+  struct_ref: &CalcitStructDef,
+  pos: usize,
+  value: &Calcit,
+  operation: &str,
+  require_evidence: bool,
+) -> Result<(), CalcitErr> {
   // Reuse the decoder's data contract, without decoding/coercing the value.
-  // Unreified generic/callable contracts retain their existing runtime check;
-  // this fallback must not be advertised as independent static type evidence.
+  // Construction/indexed calls retain their legacy fallback; unresolved
+  // name-based writes require an actual proof and cannot use that fallback.
   if let Some(expected) = struct_ref.field_types.get(pos)
     && let Some(shape) = field_write_shape(struct_ref, pos)
+    && (!require_evidence || shape.proves_dynamic_write())
   {
     return shape.validate_value(value).map_err(|error| {
       CalcitErr::use_str(
@@ -1261,6 +1306,25 @@ fn check_struct_field_write(struct_ref: &CalcitStructDef, pos: usize, value: &Ca
         ),
       )
     });
+  }
+  if require_evidence {
+    let expected = struct_ref.field_types.get(pos);
+    return match expected.and_then(|expected| scalar_field_write_evidence(value, expected)) {
+      Some(true) => Ok(()),
+      result => Err(CalcitErr::use_str(
+        CalcitErrKind::Type,
+        format!(
+          "{operation} field :{} expects type {}: {}",
+          struct_ref.fields[pos],
+          expected.map_or_else(|| "unresolved".to_owned(), |expected| expected.to_brief_string()),
+          if result.is_none() {
+            "cannot validate this dynamic write; use a statically proved field update"
+          } else {
+            "assigned value does not satisfy the field contract"
+          },
+        ),
+      )),
+    };
   }
   if let Some(expected_type) = struct_ref.field_types.get(pos)
     && !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
@@ -1286,7 +1350,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     (Some(Calcit::Struct(struct_value @ CalcitStructValue { struct_ref, values })), Some(a), Some(b)) => match a {
       Calcit::Str(s) | Calcit::Symbol { sym: s, .. } => match struct_value.index_of(s) {
         Some(pos) => {
-          check_struct_field_write(struct_ref, pos, b, "&struct:assoc")?;
+          check_dynamic_struct_field_write(struct_ref, pos, b, "&struct:assoc")?;
           let mut new_values = (**values).to_owned();
           b.clone_into(&mut new_values[pos]);
           Ok(Calcit::Struct(CalcitStructValue {
@@ -1301,7 +1365,7 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       },
       Calcit::Tag(s) => match struct_value.index_of(s.ref_str()) {
         Some(pos) => {
-          check_struct_field_write(struct_ref, pos, b, "&struct:assoc")?;
+          check_dynamic_struct_field_write(struct_ref, pos, b, "&struct:assoc")?;
           let mut new_values = (**values).to_owned();
           b.clone_into(&mut new_values[pos]);
           Ok(Calcit::Struct(CalcitStructValue {

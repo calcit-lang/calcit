@@ -34,6 +34,36 @@ assert.match(mismatch.stderr, /W_METHOD_ARG_TYPE_MISMATCH/);
 
 const output = await mkdtemp(join(tmpdir(), "calcit-struct-field-js-"));
 try {
+  const writeFixture = "tests/fixtures/def-value-schema.cirru";
+  const writeSource = await readFile(writeFixture);
+  for (const name of ["checked-assoc", "checked-with", "write-generic", "write-function", "write-ref",
+    "write-generic-string", "write-function-string", "write-function-with",
+    "write-generic-core", "write-function-core", "write-function-core-string"]) {
+    const proof = JSON.parse(execFileSync(binary, [writeFixture, "fix", "--ns", "app.dynamic-write", "--def", name,
+      "--rule", "callable-contract-proof-v1", "--format", "json"], { encoding: "utf8", stdio: "pipe" }));
+    assert.deepEqual(proof.diagnostics, [], `${name}: static or checked runtime evidence must suffice`);
+  }
+  assert.deepEqual(await readFile(writeFixture), writeSource);
+  const writeNegative = join(output, "unproven-struct-writes.cirru");
+  await copyFile(writeFixture, writeNegative);
+  const writeOperations = ["assoc", ".assoc"].flatMap((call, index) => [
+    ["edit", "def", `app.dynamic-write/erased-static-${index}`, "--input-format", "cirru", "--code",
+      `quote $ defn erased-static-${index} (box value)\n  ${call} box :apply value`],
+    ["edit", "schema", `app.dynamic-write/erased-static-${index}`, "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args ([] 'app.dynamic-write/FunctionBox 'Dynamic)) (:return 'app.dynamic-write/FunctionBox)"],
+  ]);
+  const writeMutation = [writeNegative, "edit", "transaction", "--code", JSON.stringify(writeOperations), "--format", "json"];
+  const writePreview = JSON.parse(execFileSync(binary, [...writeMutation, "--dry-run"], { encoding: "utf8", stdio: "pipe" }));
+  execFileSync(binary, [...writeMutation, "--expect-revision", writePreview.scoped_revision], { stdio: "pipe" });
+  const negativeSource = await readFile(writeNegative);
+  for (const name of ["checked-assoc-at", "checked-with-at", "erased-static-0", "erased-static-1"]) {
+    const proof = spawnSync(binary, [writeNegative, "fix", "--ns", "app.dynamic-write", "--def", name,
+      "--rule", "callable-contract-proof-v1", "--format", "json"], { encoding: "utf8" });
+    assert.ifError(proof.error);
+    assert.equal(proof.status, 1, `${name}: indexed lowering must not hide missing source evidence\n${proof.stdout}\n${proof.stderr}`);
+    assert.ok(JSON.parse(proof.stdout).diagnostics.some(diagnostic => diagnostic.code === "E_CALL_ARGUMENT_UNPROVEN"), name);
+  }
+  assert.deepEqual(await readFile(writeNegative), negativeSource);
   await symlink(resolve("node_modules"), join(output, "node_modules"), "dir");
   execFileSync(binary, ["--emit-path", output, "calcit/test-wasm.cirru", "js"], { stdio: "pipe" });
   const compiled = await import(pathToFileURL(join(output, "test-wasm.main.mjs")).href);

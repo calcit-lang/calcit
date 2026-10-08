@@ -4102,7 +4102,7 @@ fn preprocess_list_call(
           for i in 0..pair_count {
             let k_idx = 1 + i * 2;
             let v_idx = k_idx + 1;
-            if let Some(Calcit::Tag(field_tag)) = processed_args.get(k_idx) {
+            if let Some(field_tag) = processed_args.get(k_idx).and_then(static_struct_field_tag) {
               if let Some(idx) = struct_def.index_of(field_tag.ref_str()) {
                 new_args.push(Calcit::Number(idx as f64));
                 new_args.push(Calcit::Tag(field_tag.to_owned()));
@@ -6109,10 +6109,10 @@ fn reject_unproven_struct_update(
     return Ok(());
   };
   let Some(receiver) = args.first() else { return Ok(()) };
-  // Historical exception: data-shaped fields now have deep runtime checks,
-  // but erased generics and callable/host contracts remain incomplete (#1868).
-  // Do not extend this exemption to other updates before those gaps are closed.
-  let runtime_checked = matches!(head, Calcit::Proc(CalcitProc::NativeStructWith));
+  // Unresolved name-based writes validate the actual field contract at runtime
+  // and fail closed when it cannot be proved. Indexed source calls still need
+  // static evidence; only lowering may carry an already proved field update.
+  let runtime_checked = matches!(head, Calcit::Proc(CalcitProc::NativeStructAssoc | CalcitProc::NativeStructWith));
   for (index, field, _) in pairs {
     if runtime_checked
       && (!matches!(field, Calcit::Tag(_) | Calcit::Str(_))
@@ -7531,6 +7531,10 @@ fn try_specialize_polymorphic_call(
     _ => return None,
   };
 
+  // Core `assoc` and trait `.assoc` must retain the same static field evidence.
+  if let Some(indexed_call) = lower_static_struct_assoc(&Calcit::Proc(proc), processed_args, scope_types) {
+    return Some(Calcit::from(indexed_call));
+  }
   // Build specialized call: (proc arg1 arg2 ...)
   let mut items: Vec<Calcit> = Vec::with_capacity(processed_args.len() + 1);
   items.push(Calcit::Proc(proc));
@@ -8031,15 +8035,22 @@ fn synthesize_nominal_impl_callable(
   })))
 }
 
-/// Share static field lowering between direct calls and resolved methods.
+/// Normalize only literal field names, preserving all argument evaluation.
+fn static_struct_field_tag(field: &Calcit) -> Option<EdnTag> {
+  match field {
+    Calcit::Tag(tag) => Some(tag.to_owned()),
+    Calcit::Str(name) => Some(EdnTag::from(name.as_ref())),
+    _ => None,
+  }
+}
+
+/// Share static field lowering between direct/core calls and resolved methods.
 fn lower_static_struct_assoc(head: &Calcit, args: &CalcitList, scope_types: &ScopeTypes) -> Option<Vec<Calcit>> {
   if !matches!(head, Calcit::Proc(CalcitProc::NativeStructAssoc)) || args.len() != 3 {
     return None;
   }
   let receiver = args.first()?;
-  let Calcit::Tag(field) = args.get(1)? else {
-    return None;
-  };
+  let field = static_struct_field_tag(args.get(1)?)?;
   let receiver_type = resolve_type_value(receiver, scope_types)?;
   let definition = receiver_type.resolve_to_struct()?;
   let index = definition.index_of(field.ref_str())?;

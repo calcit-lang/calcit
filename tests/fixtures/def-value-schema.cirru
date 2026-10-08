@@ -501,9 +501,21 @@
           :code $ quote $ defstruct Box (:value 'Number)
           :examples $ []
           :schema $ :: 'StructDef
+        'FunctionBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct FunctionBox
+            :apply $ :: 'Fn $ {}
+              :args $ [] 'Number
+              :return 'Number
+          :examples $ []
+          :schema $ :: 'StructDef
         'GenericBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct GenericBox ([] 'T)
             :items $ :: 'List 'T
+          :examples $ []
+          :schema $ :: 'StructDef
+        'HostScalarBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct HostScalarBox
+            :value $ :: 'JsNullish 'Number
           :examples $ []
           :schema $ :: 'StructDef
         'ListBox $ %{} 'CodeEntry (:doc |)
@@ -516,6 +528,10 @@
             :items $ :: 'Map 'Tag $ :: 'List (:: 'Optional 'Number)
           :examples $ []
           :schema $ :: 'StructDef
+        'NestedRefBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NestedRefBox (:item 'app.dynamic-write/RefBox)
+          :examples $ []
+          :schema $ :: 'StructDef
         'NominalBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct NominalBox (:user 'app.field-owner/User)
           :examples $ []
@@ -525,9 +541,23 @@
             :items $ :: 'List 'Dynamic
           :examples $ []
           :schema $ :: 'StructDef
+        'OpenCallableBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct OpenCallableBox (:apply 'Fn)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'OpenRefBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct OpenRefBox
+            :cell $ :: 'Ref 'Dynamic
+          :examples $ []
+          :schema $ :: 'StructDef
         'OptionBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct OptionBox
             :item $ :: 'Option 'Number
+          :examples $ []
+          :schema $ :: 'StructDef
+        'RefBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct RefBox
+            :cell $ :: 'Ref 'Number
           :examples $ []
           :schema $ :: 'StructDef
         'SetBox $ %{} 'CodeEntry (:doc |)
@@ -650,6 +680,57 @@
                 assert=
                   OpenBox :items $ [] 1 |two nil
                   checked-assoc base :items $ [] 1 |two nil
+              :tags $ #{} :checked-struct-write :unit
+            %{} 'TestEntry (:name |erased-generic-cannot-prove)
+              :code $ quote $ let
+                  base $ GenericBox :items $ [] 1
+                assert= nil $ checked-assoc base :items $ [] |wrong
+                assert= nil $ checked-assoc base :items $ [] 2
+                assert=
+                  GenericBox :items $ [] 1
+                  , base
+              :tags $ #{} :checked-struct-write :fail-closed-write :unit
+            %{} 'TestEntry (:name |callable-signature-cannot-prove)
+              :code $ quote $ let
+                  base $ FunctionBox :apply number-id
+                assert= nil $ checked-assoc base :apply string-id
+                assert= nil $ checked-assoc base :apply number-id
+                assert= (FunctionBox :apply number-id) base
+              :tags $ #{} :checked-struct-write :fail-closed-write :unit
+            %{} 'TestEntry (:name |mutable-payload-is-not-evidence)
+              :code $ quote $ let
+                  base $ RefBox :cell $ ref 1
+                  next $ ref 2
+                assert= nil $ checked-assoc base :cell next
+                assert= 1 $ deref $ :cell base
+              :tags $ #{} :checked-struct-write :fail-closed-write :unit
+            %{} 'TestEntry (:name |nested-mutable-payload-is-not-evidence)
+              :code $ quote $ let
+                  inner $ RefBox :cell $ ref 1
+                  base $ NestedRefBox :item inner
+                assert= nil $ checked-assoc base :item inner
+                assert= base $ NestedRefBox :item inner
+              :tags $ #{} :checked-struct-write :fail-closed-write :unit
+            %{} 'TestEntry (:name |nullish-scalar-boundary)
+              :code $ quote $ let
+                  base $ HostScalarBox :value nil
+                assert= nil $ checked-assoc base :value |wrong
+                assert= base $ checked-assoc base :value nil
+                assert= (HostScalarBox :value 2) (checked-assoc base :value 2)
+                assert= (HostScalarBox :value nil) base
+              :tags $ #{} :checked-struct-write :unit
+            %{} 'TestEntry (:name |explicit-open-ref)
+              :code $ quote $ let
+                  base $ OpenRefBox :cell $ ref (open-value 1)
+                  next $ ref $ open-value |next
+                assert= (OpenRefBox :cell next) (checked-assoc base :cell next)
+                assert= nil $ checked-assoc base :cell |not-ref
+              :tags $ #{} :checked-struct-write :unit
+            %{} 'TestEntry (:name |explicit-open-callable)
+              :code $ quote $ let
+                  base $ OpenCallableBox :apply number-id
+                assert= (OpenCallableBox :apply string-id) (checked-assoc base :apply string-id)
+                assert= nil $ checked-assoc base :apply |not-fn
               :tags $ #{} :checked-struct-write :unit
         'checked-assoc-at $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn checked-assoc-at (base key value)
@@ -875,6 +956,57 @@
                   OpenBox :items $ [] 1 |two nil
                   checked-with base :items $ [] 1 |two nil
               :tags $ #{} :checked-struct-write :unit
+            %{} 'TestEntry (:name |erased-generic-cannot-prove)
+              :code $ quote $ let
+                  base $ GenericBox :items $ [] 1
+                assert= nil $ checked-with base :items $ [] |wrong
+                assert= nil $ checked-with base :items $ [] 2
+                assert=
+                  GenericBox :items $ [] 1
+                  , base
+              :tags $ #{} :checked-struct-write :fail-closed-write :unit
+            %{} 'TestEntry (:name |callable-signature-cannot-prove)
+              :code $ quote $ let
+                  base $ FunctionBox :apply number-id
+                assert= nil $ checked-with base :apply string-id
+                assert= nil $ checked-with base :apply number-id
+                assert= (FunctionBox :apply number-id) base
+              :tags $ #{} :checked-struct-write :fail-closed-write :unit
+            %{} 'TestEntry (:name |mutable-payload-is-not-evidence)
+              :code $ quote $ let
+                  base $ RefBox :cell $ ref 1
+                  next $ ref 2
+                assert= nil $ checked-with base :cell next
+                assert= 1 $ deref $ :cell base
+              :tags $ #{} :checked-struct-write :fail-closed-write :unit
+            %{} 'TestEntry (:name |nested-mutable-payload-is-not-evidence)
+              :code $ quote $ let
+                  inner $ RefBox :cell $ ref 1
+                  base $ NestedRefBox :item inner
+                assert= nil $ checked-with base :item inner
+                assert= base $ NestedRefBox :item inner
+              :tags $ #{} :checked-struct-write :fail-closed-write :unit
+            %{} 'TestEntry (:name |nullish-scalar-boundary)
+              :code $ quote $ let
+                  base $ HostScalarBox :value nil
+                assert= nil $ checked-with base :value |wrong
+                assert= base $ checked-with base :value nil
+                assert= (HostScalarBox :value 2) (checked-with base :value 2)
+                assert= (HostScalarBox :value nil) base
+              :tags $ #{} :checked-struct-write :unit
+            %{} 'TestEntry (:name |explicit-open-ref)
+              :code $ quote $ let
+                  base $ OpenRefBox :cell $ ref (open-value 1)
+                  next $ ref $ open-value |next
+                assert= (OpenRefBox :cell next) (checked-with base :cell next)
+                assert= nil $ checked-with base :cell |not-ref
+              :tags $ #{} :checked-struct-write :unit
+            %{} 'TestEntry (:name |explicit-open-callable)
+              :code $ quote $ let
+                  base $ OpenCallableBox :apply number-id
+                assert= (OpenCallableBox :apply string-id) (checked-with base :apply string-id)
+                assert= nil $ checked-with base :apply |not-fn
+              :tags $ #{} :checked-struct-write :unit
         'checked-with-at $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn checked-with-at (base key value)
             if (struct? base)
@@ -987,6 +1119,149 @@
                   OpenBox :items $ [] 1 |two nil
                   checked-with-at base :items $ [] 1 |two nil
               :tags $ #{} :checked-struct-write :unit
+        'number-id $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn number-id (value) value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+        'open-value $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn open-value (value) value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic
+        'string-id $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn string-id (value) value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'String
+        'write-function $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn write-function (box f) (.assoc box :apply f)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.dynamic-write/FunctionBox)
+            :args $ [] 'app.dynamic-write/FunctionBox $ :: 'Fn
+              {} (:return 'Number)
+                :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |static-callable-evidence)
+            :code $ quote $ let
+                base $ FunctionBox :apply number-id
+                updated $ write-function base number-id
+              assert= 1 $
+                :apply updated
+                , 1
+            :tags $ #{} :checked-struct-write :static-write :unit
+        'write-function-core $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn write-function-core (box value) (assoc box :apply value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.dynamic-write/FunctionBox)
+            :args $ [] 'app.dynamic-write/FunctionBox $ :: 'Fn
+              {} (:return 'Number)
+                :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |core-assoc-preserves-static-evidence)
+            :code $ quote $ let
+                base $ FunctionBox :apply number-id
+                updated $ write-function-core base number-id
+              assert= 1 $
+                :apply updated
+                , 1
+            :tags $ #{} :checked-struct-write :static-write :unit
+        'write-function-core-string $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn write-function-core-string (box value) (assoc box |apply value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.dynamic-write/FunctionBox)
+            :args $ [] 'app.dynamic-write/FunctionBox $ :: 'Fn
+              {} (:return 'Number)
+                :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |core-assoc-preserves-static-evidence)
+            :code $ quote $ let
+                base $ FunctionBox :apply number-id
+                updated $ write-function-core-string base number-id
+              assert= 1 $
+                :apply updated
+                , 1
+            :tags $ #{} :checked-struct-write :static-write :unit
+        'write-function-string $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn write-function-string (box f) (&struct:assoc box |apply f)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.dynamic-write/FunctionBox)
+            :args $ [] 'app.dynamic-write/FunctionBox $ :: 'Fn
+              {} (:return 'Number)
+                :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |static-string-callable)
+            :code $ quote $ let
+                base $ FunctionBox :apply number-id
+                updated $ write-function-string base number-id
+              assert= 1 $
+                :apply updated
+                , 1
+            :tags $ #{} :checked-struct-write :static-write :unit
+        'write-function-with $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn write-function-with (box f) (&struct:with box |apply f)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.dynamic-write/FunctionBox)
+            :args $ [] 'app.dynamic-write/FunctionBox $ :: 'Fn
+              {} (:return 'Number)
+                :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |static-string-callable)
+            :code $ quote $ let
+                base $ FunctionBox :apply number-id
+                updated $ write-function-with base number-id
+              assert= 1 $
+                :apply updated
+                , 1
+            :tags $ #{} :checked-struct-write :static-write :unit
+        'write-generic $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn write-generic (box values) (.assoc box :items values)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'app.dynamic-write/GenericBox 'T) (:: 'List 'T)
+            :generics $ [] 'T
+            :return $ :: 'app.dynamic-write/GenericBox 'T
+          :tests $ [] $ %{} 'TestEntry (:name |static-method-evidence)
+            :code $ quote $ let
+                base $ GenericBox :items $ [] 1
+              assert=
+                GenericBox :items $ [] 2
+                write-generic base $ [] 2
+            :tags $ #{} :checked-struct-write :static-write :unit
+        'write-generic-core $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn write-generic-core (box value) (assoc box :items value)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'app.dynamic-write/GenericBox 'T) (:: 'List 'T)
+            :generics $ [] 'T
+            :return $ :: 'app.dynamic-write/GenericBox 'T
+          :tests $ [] $ %{} 'TestEntry (:name |core-assoc-preserves-static-evidence)
+            :code $ quote $ let
+                base $ GenericBox :items $ [] 1
+              assert=
+                GenericBox :items $ [] 2
+                write-generic-core base $ [] 2
+            :tags $ #{} :checked-struct-write :static-write :unit
+        'write-generic-string $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn write-generic-string (box values) (&struct:assoc box |items values)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'app.dynamic-write/GenericBox 'T) (:: 'List 'T)
+            :generics $ [] 'T
+            :return $ :: 'app.dynamic-write/GenericBox 'T
+          :tests $ [] $ %{} 'TestEntry (:name |static-string-generic)
+            :code $ quote $ let
+                base $ GenericBox :items $ [] 1
+              assert=
+                GenericBox :items $ [] 2
+                write-generic-string base $ [] 2
+            :tags $ #{} :checked-struct-write :static-write :unit
+        'write-ref $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn write-ref (box value) (.assoc box :cell value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.dynamic-write/RefBox)
+            :args $ [] 'app.dynamic-write/RefBox $ :: 'Ref 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |static-ref-evidence)
+            :code $ quote $ let
+                base $ RefBox :cell $ ref 1
+                next $ ref 2
+              assert= 2 $ deref $ :cell (write-ref base next)
+            :tags $ #{} :checked-struct-write :static-write :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.dynamic-write
     'app.empty-fields $ %{} 'FileEntry
