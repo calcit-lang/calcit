@@ -982,7 +982,7 @@ pub(super) fn check_reset_arg_types(
     Some(CalcitTypeAnnotation::Ref(inner)) => inner.clone(),
     _ => calcit::DYNAMIC_TYPE.clone(),
   };
-  // A payload-free initializer (e.g. `atom (Option :none)`) fixes the slot to
+  // A payload-free initializer (e.g. `ref (Option :none)`) fixes the slot to
   // Never. References are invariant, so later writes never widen it; point the
   // user at the initializer instead of the write.
   let fixed_by_empty_initializer = payload.contains_never();
@@ -1000,7 +1000,7 @@ pub(super) fn check_reset_arg_types(
   };
   let message = |index, expected: &str, actual: &str, expr: String| {
     let hint = if index == 2 && fixed_by_empty_initializer {
-      "; the reference type was fixed by an empty initializer and later writes do not widen it; give the initializer explicit type context, e.g. `atom $ assert-type (Option :none) $ :: 'Option 'Number`"
+      "; the reference type was fixed by an empty initializer and later writes do not widen it; give the initializer explicit type context, e.g. `ref $ assert-type (Option :none) $ :: 'Option 'Number`"
     } else {
       ""
     };

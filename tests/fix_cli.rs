@@ -12782,3 +12782,82 @@ fn ref_constructor_fix_renames_proven_spellings_and_reviews_shadowed_syntax() {
   let rules = parse_stdout(&published)["data"]["filters"]["expanded_rule_ids"].clone();
   assert!(!rules.as_array().unwrap().contains(&serde_json::json!("core-ref-constructor-v1")));
 }
+
+#[test]
+fn core_api_preset_labels_attached_regions_by_contributing_rule() {
+  // Rust checks the CLI planner's suggestion labels; the rewritten Calcit semantics are covered
+  // by the per-rule fixtures and core `:tests`.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/main!",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn main! ()\n  , &unit",
+      ],
+    ),
+    "define attached-label fixture",
+  );
+  for (name, code) in [
+    (
+      "ref-only",
+      "quote $ let ((failed (atom false)))\n  reset! failed true\n  assert= true @failed",
+    ),
+    ("len-only", "quote $ assert= 2 $ .count ([] 1 2)"),
+    ("non-nil-only", "quote $ assert= true $ some? 1"),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "add-test",
+          "app.main/main!",
+          name,
+          "--input-format",
+          "cirru",
+          "--code",
+          code,
+        ],
+      ),
+      "attach labelled test",
+    );
+  }
+
+  let preview = run_calcit(
+    &snapshot,
+    &["fix", "--preset", "core-api-0.29-v1", "--include-attached", "--format", "json"],
+  );
+  assert_success(&preview, "0.29 preset attached preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions");
+  for (path, rule_id, diagnostic_code) in [
+    ("tests.ref-only", "core-ref-constructor-v1", "FIX_CORE_REF_CONSTRUCTOR"),
+    ("tests.len-only", "core-collection-len-v1", "FIX_CORE_COLLECTION_LEN"),
+    ("tests.non-nil-only", "core-non-nil-predicate-v1", "FIX_CORE_NON_NIL_PREDICATE"),
+  ] {
+    let suggestion = suggestions
+      .iter()
+      .find(|suggestion| suggestion["definition"] == "app.main/main!" && suggestion["path"] == path)
+      .unwrap_or_else(|| panic!("missing {path}: {report}"));
+    assert_eq!(suggestion["rule_id"], rule_id, "{path}: {report}");
+    assert_eq!(suggestion["diagnostic_code"], diagnostic_code, "{path}: {report}");
+    assert_eq!(suggestion["applicability"], "machine-applicable", "{path}: {report}");
+    assert!(
+      suggestion["origin_chain"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|origin| origin["rule_id"] == rule_id),
+      "{path}: {report}"
+    );
+  }
+}

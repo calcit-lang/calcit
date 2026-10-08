@@ -225,7 +225,7 @@ assert= "| b" $ str-spaced | |b
 
 空 Enum 变体会保留未承载值的泛型信息。先将 `Option :none` 绑定到局部变量、再次取别名或作为 `if` 分支，再用于具体 Option 字段，同样合法；普通 Calcit import 的薄构造 wrapper 也适用。这项推导依据实际变体，不依赖 `Option` 名字。返回 schema 为 `Option<Dynamic>` 且实际变体可能承载开放值的函数，仍不能证明具体 payload 类型。
 
-可变 Ref 的 payload 合同需要覆盖后续写入，而不只是初始空值。用 `atom` 创建将来会保存具体值的 Ref 时，在初始化表达式中明确该合同，例如 `atom $ assert-type (Option :none) $ :: 'Option 'Number`。这里验证的是合法空变体到声明类型的关系，不是给已有 Ref 强转类型；后续 `reset!` 仍会拒绝不符合 Number 合同的 payload。未补充上下文的空值不会自动变成可写入任意类型的 Dynamic Ref。缺少该上下文时，`reset!` / `swap!` 处的 `W_RESET_ARG_TYPE_MISMATCH` 会附带上述初始化写法；Ref 的类型不按后续写入推导，修复位置是初始化表达式而不是写入点。
+可变 Ref 的 payload 合同需要覆盖后续写入，而不只是初始空值。用 `ref` 创建将来会保存具体值的 Ref 时，在初始化表达式中明确该合同，例如 `ref $ assert-type (Option :none) $ :: 'Option 'Number`。这里验证的是合法空变体到声明类型的关系，不是给已有 Ref 强转类型；后续 `reset!` 仍会拒绝不符合 Number 合同的 payload。未补充上下文的空值不会自动变成可写入任意类型的 Dynamic Ref。缺少该上下文时，`reset!` / `swap!` 处的 `W_RESET_ARG_TYPE_MISMATCH` 会附带上述初始化写法；Ref 的类型不按后续写入推导，修复位置是初始化表达式而不是写入点。
 
 这项修复不改变合法构造的字段求值顺序，也不把静态检查变成外部数据校验。开放输入仍需在原有 decode/验证边界处理；如何把业务值转为闭合节点属于人工迁移，不提供自动默认值或改写。
 
@@ -236,7 +236,7 @@ assert= "| b" $ str-spaced | |b
 
 ```cirru
 let
-    counter $ atom 1
+    counter $ ref 1
   assert= 2 $ reset! counter 2
   assert= 3 $ swap! counter inc
   assert= 3 $ deref counter
