@@ -1483,6 +1483,7 @@ fn config_name(subcommand: &ConfigSubcommand) -> &'static str {
     ConfigSubcommand::Version(_) => "version",
     ConfigSubcommand::Set(_) => "set",
     ConfigSubcommand::Unset(_) => "unset",
+    ConfigSubcommand::AddEntry(_) => "add-entry",
     ConfigSubcommand::AddModule(_) => "add-module",
     ConfigSubcommand::RmModule(_) => "rm-module",
     ConfigSubcommand::SetTypeSlot(_) => "set-type-slot",
@@ -1523,6 +1524,14 @@ fn push_config(tokens: &mut Vec<String>, cmd: &ConfigCommand) {
     ConfigSubcommand::Unset(opts) => {
       echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");
       echo_items!(tokens, pos "key" => &opts.key);
+    }
+    ConfigSubcommand::AddEntry(opts) => {
+      echo_items!(tokens, pos "name" => &opts.name);
+      echo_items!(tokens, opt "from" => opts.from.as_deref(); default "none");
+      echo_items!(tokens, opt "mode" => opts.mode.as_deref(); default "none");
+      echo_items!(tokens, opt "target" => opts.target.as_deref(); default "none");
+      echo_items!(tokens, opt "init-fn" => opts.init_fn.as_deref(); default "none");
+      echo_items!(tokens, opt "reload-fn" => opts.reload_fn.as_deref(); default "none");
     }
     ConfigSubcommand::AddModule(opts) => {
       echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");

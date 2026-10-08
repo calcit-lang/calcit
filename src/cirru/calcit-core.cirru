@@ -318,6 +318,16 @@
                 assert= 1 $ &compare |a :a
                 assert= 0 $ &compare :a :a
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |orders-nan-last)
+              :code $ quote $ let
+                  not-a-number $ sqrt -1
+                assert= 1 $ &compare not-a-number 1
+                assert= -1 $ &compare 1 not-a-number
+                assert= 1 $ &compare not-a-number $ &/ 1 0
+                assert= 0 $ &compare not-a-number not-a-number
+                assert= 0 $ &compare 0 -0
+                assert= -1 $ &compare (&/ -1 0) -1
+              :tags $ #{} :core :unit
         '&core-enum-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for enum values.")
           :code $ quote $ def &core-enum-impls
             [] &core-enum-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-enum-impl) (&impl::new Contains internal/&core-contains-enum-impl) (&impl::new ContainsIndex internal/&core-contains-index-enum-impl)
@@ -2584,7 +2594,7 @@
           :examples $ [] $ quote
             let
                 User $ defstruct User $ :name 'String
-                user $ %{} User $ :name |Alice
+                user $ User :name |Alice
               assert= User $ &struct:definition user
           :schema $ :: 'Fn $ {}
             :args $ [] 'Struct
@@ -2932,6 +2942,14 @@
                 assert= false $ =
                   :: :ready $ %some 1
                   :: :ready $ %some 2
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |treats-nan-as-equal-value)
+              :code $ quote $ let
+                  not-a-number $ sqrt -1
+                assert= true $ &= not-a-number not-a-number
+                assert= true $ &= 0 -0
+                assert= false $ &= not-a-number 0
+                assert= true $ &= ([] 1 not-a-number) ([] 1 not-a-number)
               :tags $ #{} :core :unit
         '> $ %{} 'CodeEntry
           :doc "|Greater-than comparison for one or more numbers\nReturns true only when the value strictly decreases across every argument."
@@ -3917,14 +3935,14 @@
             %{} 'TestEntry (:name |preserves-struct-through-option-match)
               :code $ quote $ let
                   Draft $ defstruct Draft (:text 'String) (:mono? 'Bool)
-                  original $ %{} Draft (:text |old) (:mono? false)
+                  original $ Draft :text |old :mono? false
                   drafts $ {} $ |a original
                   changed $ match (get drafts |a)
                     (:some draft)
                       assoc drafts |a $ -> draft (assoc :text |new) (assoc :mono? true)
                     (:none) drafts
                 assert=
-                  {} $ |a $ %{} Draft (:text |new) (:mono? true)
+                  {} $ |a $ Draft :text |new :mono? true
                   , changed
                 assert-type changed $ :: 'Map 'String 'Draft
                 assert= changed $ match (.get drafts |a)
@@ -4410,7 +4428,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |checks-tag-field-and-missing-field)
             :code $ quote $ let
                 Point $ defstruct Point (:x 'Number) (:y 'Number)
-                point $ %{} Point (:x 1) (:y 2)
+                point $ Point :x 1 :y 2
               assert-type (point .contains-field? :x) 'Bool
               assert= true $ point .contains-field? :x
               assert= true $ contains-field? point :y
@@ -4683,6 +4701,22 @@
                     contains? |ab $ &list:nth open-keys 0
                     fn (message) |rejected
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |finds-nan-keys)
+              :code $ quote $ let
+                  not-a-number $ sqrt -1
+                assert= true $ contains? (#{} not-a-number) not-a-number
+                assert= true $ contains? (#{} 0) -0
+                assert= (#{} not-a-number)
+                  include (#{} not-a-number) not-a-number
+                assert= true $ contains?
+                  {} $ not-a-number 1
+                  , not-a-number
+                assert=
+                  {} $ not-a-number 2
+                  assoc
+                    {} $ not-a-number 1
+                    , not-a-number 2
+              :tags $ #{} :core :unit
         'cos $ %{} 'CodeEntry
           :doc "|internal function for cosine\nSyntax: (cos n)\nParams: n (number, radians)\nReturns: number\nReturns cosine of angle in radians"
           :code $ quote &runtime-implementation
@@ -4948,7 +4982,7 @@
               assert= 200 $ :code response
               assert= (%some |ok) (:message response)
             quote $ assert=
-              %some $ %{} RuntimeMapMeta $ :kind :nested
+              %some $ RuntimeMapMeta :kind :nested
               :meta $ decode-map-as
                 {} (:code 202)
                   :meta $ {} $ :kind :nested
@@ -4993,7 +5027,7 @@
                     :body $ {} $ :kind :json
                   , RuntimeMapResponse
                 assert=
-                  %some $ %{} RuntimeMapMeta $ :kind :nested
+                  %some $ RuntimeMapMeta :kind :nested
                   :meta $ decode-map-as
                     {} (:code 202)
                       :meta $ {} $ :kind :nested
@@ -5282,6 +5316,22 @@
             :expansion $ :: 'Expr 'StructDef
             :required $ [] 'Syntax
           :tags $ #{} :macro
+          :tests $ []
+            %{} 'TestEntry (:name |local-definition-constructs-directly)
+              :code $ quote $ let
+                  Draft $ defstruct Draft (:text 'String) (:mono? 'Bool)
+                  draft $ Draft :text |old :mono? false
+                  Shape $ defenum Shape (:circle 'Number) (:dot)
+                  shape $ Shape :circle 2
+                assert= |old $ :text draft
+                assert= false $ :mono? draft
+                assert= Draft $ &struct:definition draft
+                assert= draft $ %{} Draft (:text |old) (:mono? false)
+                assert= 2 $ match shape
+                  (:circle r) r
+                  (:dot) 0
+                assert= (%:: Shape :dot) (Shape :dot)
+              :tags $ #{} :core :unit
         'deftrait $ %{} 'CodeEntry
           :doc "|定义 trait。普通方法使用 `.method` 键，例如 `(deftrait Shape (.draw (:: 'Fn $ {} (:args [...]) (:return 'Unit))))`；只有带 `:ffi {:kind :external-object}` 的宿主属性使用 `:field` 键。省略完整签名时，`:fn` 表示动态函数类型。`(requires Parent)` 子句声明父 trait（每个子句一个，可重复），具备本 trait 的值也须具备父 trait；旧写法 `('requires Parent)` 仍然接受。展开为 `&trait::new`。"
           :code $ quote $ defmacro deftrait (name & entries)
@@ -5377,13 +5427,13 @@
         'destruct-list $ %{} 'CodeEntry
           :doc "|Split a list into the nominal ListDestruct<T> enum."
           :code $ quote $ defn destruct-list (xs)
-            if (empty? xs) (%:: ListDestruct :none)
-              %:: ListDestruct :some (&list:nth xs 0) (&list:rest xs)
+            if (empty? xs) (ListDestruct :none)
+              ListDestruct :some (&list:nth xs 0) (&list:rest xs)
           :examples $ []
             quote $ assert=
-              %:: ListDestruct :some 1 $ [] 2
+              ListDestruct :some 1 $ [] 2
               destruct-list $ [] 1 2
-            quote $ assert= (%:: ListDestruct :none)
+            quote $ assert= (ListDestruct :none)
               destruct-list $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List 'T
@@ -5408,9 +5458,9 @@
           :code $ quote $ defn destruct-map (xs)
             &let
               pair $ &map:destruct xs
-              if (nil? pair) (%:: MapDestruct :none) (%:: MapDestruct :some & pair)
+              if (nil? pair) (MapDestruct :none) (MapDestruct :some (&list:nth pair 0) (&list:nth pair 1) (&list:nth pair 2))
           :examples $ []
-            quote $ assert= (%:: MapDestruct :none)
+            quote $ assert= (MapDestruct :none)
               destruct-map $ &{}
             quote $ assert= 1 $ match
               destruct-map $ &{} :a 1
@@ -5440,10 +5490,10 @@
           :code $ quote $ defn destruct-set (xs)
             &let
               pair $ &set:destruct xs
-              if (nil? pair) (%:: SetDestruct :none)
-                %:: SetDestruct :some (&list:nth pair 0) (&list:nth pair 1)
+              if (nil? pair) (SetDestruct :none)
+                SetDestruct :some (&list:nth pair 0) (&list:nth pair 1)
           :examples $ []
-            quote $ assert= (%:: SetDestruct :none)
+            quote $ assert= (SetDestruct :none)
               destruct-set $ #{}
             quote $ assert= 2 $ match
               destruct-set $ #{} 2
@@ -5471,11 +5521,11 @@
         'destruct-str $ %{} 'CodeEntry
           :doc "|Split a string into the nominal StringDestruct enum."
           :code $ quote $ defn destruct-str (s)
-            if (&= s |) (%:: StringDestruct :none)
-              %:: StringDestruct :some (&str:slice s 0 1) (&str:rest s)
+            if (&= s |) (StringDestruct :none)
+              StringDestruct :some (&str:slice s 0 1) (&str:rest s)
           :examples $ []
-            quote $ assert= (%:: StringDestruct :some |1 |23) (destruct-str |123)
-            quote $ assert= (%:: StringDestruct :none) (destruct-str |)
+            quote $ assert= (StringDestruct :some |1 |23) (destruct-str |123)
+            quote $ assert= (StringDestruct :none) (destruct-str |)
           :schema $ :: 'Fn $ {} (:return 'StringDestruct)
             :args $ [] 'String
           :tests $ [] $ %{} 'TestEntry (:name |splits-non-empty-and-empty)
@@ -6071,7 +6121,7 @@
         'ffi:response $ %{} 'CodeEntry
           :doc "|Wrap a raw native async response capability at a module adapter boundary. Examples with nil only check the method contract without invoking it; real resolution requires a host-issued capability."
           :code $ quote $ defn ffi:response (raw)
-            %{} FfiResponse $ :raw raw
+            FfiResponse :raw raw
           :examples $ []
             quote $ ffi:response nil
             quote $ let
@@ -6102,7 +6152,7 @@
         'ffi:task $ %{} 'CodeEntry
           :doc "|Wrap a raw native async task capability at a module adapter boundary. Examples with nil only check the method contract without invoking it; real cancellation requires a host-issued capability."
           :code $ quote $ defn ffi:task (raw)
-            %{} FfiTask $ :raw raw
+            FfiTask :raw raw
           :examples $ []
             quote $ ffi:task nil
             quote $ let
@@ -6185,12 +6235,12 @@
                     {} (:a 1) (:b 2) (:c 3)
                     fn (k v)
                       if (> v 1)
-                        %:: MapEntryDecision :keep k $ * v 10
-                        %:: MapEntryDecision :drop
+                        MapEntryDecision :keep k $ * v 10
+                        MapEntryDecision :drop
                 assert= ({})
                   filter-map-kv
                     {} $ :a 1
-                    fn (k v) (%:: MapEntryDecision :drop)
+                    fn (k v) (MapEntryDecision :drop)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |skips-empty-and-propagates-failure)
               :code $ quote $ do
@@ -6206,7 +6256,7 @@
               :code $ quote $ let
                   input $ {} $ |a 1
                   selected $ filter-map-kv input $ fn (id value)
-                    %:: MapEntryDecision :keep (to-tag id) (str value)
+                    MapEntryDecision :keep (to-tag id) (str value)
                 assert-type selected $ :: 'Map 'Tag 'String
                 assert= |1 $ &map:get selected :a
               :tags $ #{} :core :unit
@@ -6852,7 +6902,7 @@
         'fs:path $ %{} 'CodeEntry
           :doc "|Construct an FsPath from a UTF-8 path string without normalization or filesystem access."
           :code $ quote $ defn fs:path (value)
-            %{} FsPath $ :value value
+            FsPath :value value
           :examples $ []
             quote $ fs:path |assets/data.cirru
             quote $ .read-text $ fs:path |assets/data.cirru
@@ -8669,7 +8719,7 @@
           :doc "|将 Map<K,V> 转为 List<MapEntry<K,V>>，保留 key/value 类型；需要类型化排序时使用它，旧 &map:to-list 保持原语义。"
           :code $ quote $ defn map-entries (xs)
             map-list-kv xs $ fn (key value)
-              %{} MapEntry (:key key) (:value value)
+              MapEntry :key key :value value
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'K 'V
@@ -10576,10 +10626,26 @@
             :generics $ [] 'T
             :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |orders-list-with-default-comparator)
-            :code $ quote $ assert= ([] 1 2 3 4)
-              sort $ [] 4 3 2 1
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |orders-list-with-default-comparator)
+              :code $ quote $ assert= ([] 1 2 3 4)
+                sort $ [] 4 3 2 1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |sorts-nan-after-numbers)
+              :code $ quote $ let
+                  not-a-number $ sqrt -1
+                  positive-infinity $ &/ 1 0
+                assert= ([] -1 0 1 3 positive-infinity not-a-number not-a-number)
+                  sort $ [] 3 not-a-number 1 positive-infinity 0 not-a-number -1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |sorts-nan-last-with-compare)
+              :code $ quote $ let
+                  not-a-number $ sqrt -1
+                  positive-infinity $ &/ 1 0
+                assert= ([] -1 0 1 3 positive-infinity not-a-number not-a-number)
+                  sort ([] 3 not-a-number 1 positive-infinity 0 not-a-number -1)
+                    fn (a b) (&compare a b)
+              :tags $ #{} :core :unit
         'split $ %{} 'CodeEntry
           :doc "|internal function for splitting strings\nSyntax: (split s delimiter)\nParams: s (string), delimiter (string)\nReturns: list of strings\nSplits string by delimiter into list of substrings; empty pieces are dropped, so an empty string yields an empty list. An empty delimiter splits into characters."
           :code $ quote &runtime-implementation
@@ -10808,7 +10874,7 @@
           :examples $ [] $ quote
             let
                 User $ defstruct User $ :name 'String
-                user $ %{} User $ :name |Ada
+                user $ User :name |Ada
               assert= (%some User) (struct-definition user)
           :schema $ :: 'Fn $ {}
             :args $ [] 'Struct
@@ -10916,7 +10982,7 @@
             if (list? data) (map data tagging-edn)
               if (map? data)
                 filter-map-kv data $ defn %tagging (k v)
-                  %:: MapEntryDecision :keep
+                  MapEntryDecision :keep
                     if (string? k) (turn-tag k) k
                     tagging-edn v
                 , data

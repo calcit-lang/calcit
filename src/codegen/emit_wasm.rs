@@ -6836,7 +6836,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       ctx.emit(Instruction::LocalSet(a));
       emit_expr(ctx, &args[1])?;
       ctx.emit(Instruction::LocalSet(b));
-      // if a < b then -1 else (if a > b then 1 else 0)
+      // if a < b then -1 else (if a > b then 1 else isnan(a) - isnan(b))
       ctx.emit(Instruction::LocalGet(a));
       ctx.emit(Instruction::LocalGet(b));
       ctx.emit(Instruction::F64Lt);
@@ -6849,7 +6849,16 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
       ctx.emit(f64_const(1.0));
       ctx.emit(Instruction::Else);
-      ctx.emit(f64_const(0.0));
+      // neither below nor above: equal, or NaN involved; NaN sorts after every number
+      ctx.emit(Instruction::LocalGet(a));
+      ctx.emit(Instruction::LocalGet(a));
+      ctx.emit(Instruction::F64Ne);
+      ctx.emit(Instruction::F64ConvertI32U);
+      ctx.emit(Instruction::LocalGet(b));
+      ctx.emit(Instruction::LocalGet(b));
+      ctx.emit(Instruction::F64Ne);
+      ctx.emit(Instruction::F64ConvertI32U);
+      ctx.emit(Instruction::F64Sub);
       ctx.emit(Instruction::End);
       ctx.emit(Instruction::End);
       Ok(())
@@ -8382,10 +8391,10 @@ fn emit_equals_core_impl(ctx: &mut WasmGenCtx, a: u32, b: u32, structural_sets: 
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::LocalSet(result));
 
-  // --- Fast path: exact f64 equality ---
+  // --- Fast path: scalar value equality (NaN equals NaN) ---
   ctx.emit(Instruction::LocalGet(a));
   ctx.emit(Instruction::LocalGet(b));
-  ctx.emit(Instruction::F64Eq);
+  emit_f64_value_eq(ctx);
   ctx.begin_block_if();
   ctx.emit(f64_const(1.0));
   ctx.emit(Instruction::LocalSet(result));

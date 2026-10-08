@@ -3715,6 +3715,12 @@ pub(super) fn build_runtime_fns(
     instructions: map_flat_pairs_instructions,
   });
 
+  // value-eq: __rt_f64_value_eq(a: f64, b: f64) → i32
+  // Scalar value equality shared by every lookup: NaN equals NaN, `-0` equals `0`.
+  let f64_value_eq_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_f64_value_eq"), f64_value_eq_idx);
+  fns.push(build_rt_f64_value_eq());
+
   let map_find_key_name = String::from("__rt_map_find_key");
   fn_index.insert(map_find_key_name, base_index + fns.len() as u32);
   let map_find_key_instructions = vec![
@@ -3745,7 +3751,7 @@ pub(super) fn build_runtime_fns(
     Instruction::I32Add,
     Instruction::F64Load(mem_arg_f64(0)),
     Instruction::LocalGet(1),
-    Instruction::F64Eq,
+    Instruction::Call(f64_value_eq_idx),
     Instruction::If(wasm_encoder::BlockType::Empty),
     Instruction::LocalGet(3),
     Instruction::LocalSet(4),
@@ -3798,7 +3804,7 @@ pub(super) fn build_runtime_fns(
     Instruction::I32Add,
     Instruction::F64Load(mem_arg_f64(0)),
     Instruction::LocalGet(1),
-    Instruction::F64Eq,
+    Instruction::Call(f64_value_eq_idx),
     Instruction::If(wasm_encoder::BlockType::Empty),
     Instruction::LocalGet(3),
     Instruction::LocalSet(4),
@@ -3847,7 +3853,7 @@ pub(super) fn build_runtime_fns(
     Instruction::I32Add,
     Instruction::F64Load(mem_arg_f64(0)),
     Instruction::LocalGet(1),
-    Instruction::F64Eq,
+    Instruction::Call(f64_value_eq_idx),
     Instruction::If(wasm_encoder::BlockType::Empty),
     Instruction::LocalGet(3),
     Instruction::LocalSet(4),
@@ -4248,6 +4254,22 @@ fn rt_emit_copy_slots(builder: &mut RuntimeFnBuilder, copy_fn_idx: u32, dst_loca
   builder.emit(Instruction::Call(copy_fn_idx));
 }
 
+fn build_rt_f64_value_eq() -> CompiledFn {
+  let mut b = RuntimeFnBuilder::new(2);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::F64Eq);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::F64Ne);
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::F64Ne);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::I32Or);
+  b.finish(vec![ValType::F64, ValType::F64], vec![ValType::I32])
+}
+
 fn build_rt_hash_f64() -> CompiledFn {
   let mut b = RuntimeFnBuilder::new(1);
   // Equality identifies -0 with +0, so their hashes must also agree.
@@ -4256,6 +4278,14 @@ fn build_rt_hash_f64() -> CompiledFn {
   b.emit(Instruction::F64Eq);
   b.emit(Instruction::If(BlockType::Empty));
   b.emit(Instruction::I32Const(0));
+  b.emit(Instruction::Return);
+  b.emit(Instruction::End);
+  // Every NaN equals every other NaN, so all NaN payloads share one hash.
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::F64Ne);
+  b.emit(Instruction::If(BlockType::Empty));
+  b.emit(Instruction::I32Const(0x7ff8_0000u32 as i32));
   b.emit(Instruction::Return);
   b.emit(Instruction::End);
   b.emit(Instruction::LocalGet(0));
@@ -4852,6 +4882,7 @@ fn build_rt_map_root_contains_value() -> CompiledFn {
   let count = b.alloc_i32();
   let bi = b.alloc_i32();
   let found = b.alloc_i32();
+  let entry_value = b.alloc_f64();
 
   b.emit(Instruction::I32Const(0));
   b.emit(Instruction::LocalSet(found));
@@ -4905,8 +4936,18 @@ fn build_rt_map_root_contains_value() -> CompiledFn {
   b.emit(Instruction::I32Mul);
   b.emit(Instruction::I32Add);
   b.emit(Instruction::F64Load(mem_arg_f64(0)));
+  b.emit(Instruction::LocalTee(entry_value));
   b.emit(Instruction::LocalGet(1));
   b.emit(Instruction::F64Eq);
+  // NaN equals NaN as a value
+  b.emit(Instruction::LocalGet(entry_value));
+  b.emit(Instruction::LocalGet(entry_value));
+  b.emit(Instruction::F64Ne);
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::F64Ne);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::I32Or);
   b.emit(Instruction::If(wasm_encoder::BlockType::Empty));
   b.emit(Instruction::I32Const(1));
   b.emit(Instruction::LocalSet(found));
@@ -8808,10 +8849,18 @@ fn build_rt_value_equal(
   let elem_b = b.alloc_f64();
   let heap_min = (HEAP_BASE + 8) as f64;
 
-  // Fast path: exact f64 equality
+  // Fast path: scalar value equality (NaN equals NaN, `-0` equals `0`)
   b.emit(Instruction::LocalGet(0));
   b.emit(Instruction::LocalGet(1));
   b.emit(Instruction::F64Eq);
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::LocalGet(0));
+  b.emit(Instruction::F64Ne);
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::LocalGet(1));
+  b.emit(Instruction::F64Ne);
+  b.emit(Instruction::I32And);
+  b.emit(Instruction::I32Or);
   b.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::I32)));
   b.emit(Instruction::I32Const(1));
   b.emit(Instruction::Else);

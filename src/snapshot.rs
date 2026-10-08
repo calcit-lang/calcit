@@ -1937,6 +1937,12 @@ pub fn parse_schema_annotation_for_write(schema: &Cirru) -> Result<Arc<CalcitTyp
   if let Some(signature) = CalcitTypeAnnotation::parse_macro_signature_from_edn(&schema_edn) {
     return Ok(Arc::new(CalcitTypeAnnotation::Macro(Arc::new(signature))));
   }
+  if declares_strict_macro_contract(&schema_edn) {
+    return Err(
+      "invalid strict `Macro` contract: :required/:optional/:rest must list syntax contracts such as 'Syntax or 'Expr, :expansion must be a contract such as `:: 'Expr 'Dynamic`, and :capabilities must be a set of known capability tags"
+        .to_owned(),
+    );
+  }
   if let Some(signature) = CalcitTypeAnnotation::parse_fn_schema_from_edn(&schema_edn) {
     if matches!(signature.fn_kind, SchemaKind::Macro) {
       return Err(
@@ -1947,6 +1953,23 @@ pub fn parse_schema_annotation_for_write(schema: &Cirru) -> Result<Arc<CalcitTyp
     return Ok(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature))));
   }
   Ok(CalcitTypeAnnotation::parse_type_annotation_from_edn(&schema_edn))
+}
+
+/// A `Macro` wrapper (or `:kind :macro` map) that carries strict contract keys
+/// is a strict macro declaration; when it fails strict parsing it must not fall
+/// through to an ordinary type, because the loader would then reject the entry.
+fn declares_strict_macro_contract(schema: &Edn) -> bool {
+  let map = match schema {
+    Edn::Enum(view) if matches!(view.variant.as_ref(), "macro" | "Macro") => match view.extra.first() {
+      Some(Edn::Map(map)) => map,
+      _ => return true,
+    },
+    Edn::Map(map) if matches!(map.tag_get("kind"), Some(Edn::Tag(tag)) if tag.ref_str() == "macro") => map,
+    _ => return false,
+  };
+  ["required", "optional", "rest", "expansion", "capabilities"]
+    .iter()
+    .any(|key| map.tag_get(key).is_some())
 }
 
 impl From<&CodeEntry> for Edn {

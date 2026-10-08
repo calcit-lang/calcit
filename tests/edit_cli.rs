@@ -1233,6 +1233,81 @@ fn malformed_defmacro_is_rejected_without_changing_the_snapshot() {
 }
 
 #[test]
+fn unloadable_macro_schema_edits_are_rejected_without_changing_the_snapshot() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  create_macro(&snapshot, "echo-source", "quote $ defmacro echo-source (value) , value");
+  let original = fs::read(&snapshot).expect("snapshot should read");
+
+  let invalid_expansion = "quote $ :: 'Macro $ {} (:required $ [] 'Syntax) (:capabilities $ #{}) (:expansion 'Syntax)";
+  let rejected = [
+    vec![
+      "edit",
+      "schema",
+      "app.main/echo-source",
+      "--input-format",
+      "cirru",
+      "--code",
+      invalid_expansion,
+    ],
+    vec![
+      "edit",
+      "schema",
+      "app.main/echo-source",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Syntax) (:return 'Dynamic)",
+    ],
+    vec!["edit", "schema", "app.main/echo-source", "--clear"],
+  ];
+  for args in &rejected {
+    let output = run_calcit(&snapshot, args);
+    assert!(!output.status.success(), "unloadable schema edit must fail: {args:?}");
+    assert!(
+      String::from_utf8_lossy(&output.stderr).contains("Schema validation failed"),
+      "stderr:\n{}",
+      String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+      fs::read(&snapshot).expect("snapshot should read"),
+      original,
+      "failed edit changed the Snapshot: {args:?}"
+    );
+  }
+
+  let transaction_code = format!(
+    r#"[["edit","schema","app.main/echo-source","--input-format","cirru","--code",{}]]"#,
+    serde_json::to_string(invalid_expansion).expect("code should encode")
+  );
+  let transaction = run_calcit(&snapshot, &["edit", "transaction", "--code", &transaction_code]);
+  assert!(!transaction.status.success(), "transaction with an unloadable schema must fail");
+  assert_eq!(
+    fs::read(&snapshot).expect("snapshot should read"),
+    original,
+    "failed transaction changed the Snapshot"
+  );
+
+  query_definition(&snapshot, "app.main/echo-source");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "app.main/echo-source",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Macro $ {} (:required $ [] 'Syntax) (:capabilities $ #{}) (:expansion $ :: 'Expr 'Dynamic)",
+      ],
+    ),
+    "valid macro schema edit",
+  );
+  query_definition(&snapshot, "app.main/echo-source");
+}
+
+#[test]
 fn overwriting_with_defexternal_drops_retained_ffi_metadata() {
   let directory = TestDirectory::create();
   let snapshot = prepare_minimal_snapshot(&directory);
@@ -1405,5 +1480,114 @@ fn agent_commands_print_compact_default_output() {
   assert!(
     !ids(&compact, "static_methods", "name").iter().any(|name| name == ".apply"),
     "{compact}"
+  );
+}
+
+#[test]
+fn config_add_entry_creates_complete_named_entries_through_guarded_transactions() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  let original = fs::read(&snapshot).expect("snapshot should read");
+
+  // Invalid creations fail before writing.
+  for args in [
+    vec!["config", "add-entry", "default", "--from", "default"],
+    vec!["config", "add-entry", "demo", "--mode", "js"],
+    vec!["config", "add-entry", "demo", "--from", "missing"],
+    vec![
+      "config",
+      "add-entry",
+      "demo",
+      "--mode",
+      "js",
+      "--init-fn",
+      "app.main/missing",
+      "--reload-fn",
+      "app.main/reload!",
+    ],
+    vec![
+      "config",
+      "add-entry",
+      "demo",
+      "--mode",
+      "lua",
+      "--init-fn",
+      "app.main/main!",
+      "--reload-fn",
+      "app.main/reload!",
+    ],
+  ] {
+    let output = run_calcit(&snapshot, &args);
+    assert!(!output.status.success(), "invalid add-entry must fail: {args:?}");
+    assert_eq!(
+      fs::read(&snapshot).expect("snapshot should read"),
+      original,
+      "failed add-entry wrote: {args:?}"
+    );
+  }
+
+  let operations = r#"[["config","add-entry","demo","--mode","js","--target","browser","--init-fn","app.main/main!","--reload-fn","app.main/reload!","--description","Demo page"],["config","add-module","--entry","demo","calcit-test/"],["config","set","--entry","demo","feature-policy.js-ffi","warn"]]"#;
+  let dry_run = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", operations, "--dry-run", "--format", "json"],
+  );
+  assert_success(&dry_run, "dry-run entry creation");
+  let report: serde_json::Value = serde_json::from_slice(&dry_run.stdout).expect("transaction JSON");
+  assert_eq!(fs::read(&snapshot).expect("snapshot should read"), original, "dry run wrote");
+  let revision = report["original_revision"].as_str().expect("revision").to_owned();
+
+  let stale = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", operations, "--expect-revision", "md5:stale"],
+  );
+  assert!(!stale.status.success(), "stale revision must be rejected");
+  assert_eq!(
+    fs::read(&snapshot).expect("snapshot should read"),
+    original,
+    "stale transaction wrote"
+  );
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--code", operations, "--expect-revision", &revision],
+    ),
+    "apply entry creation",
+  );
+  let show = run_calcit(&snapshot, &["config", "show", "--entry", "demo", "--format", "json"]);
+  assert_success(&show, "show new entry");
+  let shown: serde_json::Value = serde_json::from_slice(&show.stdout).expect("config JSON");
+  let entry = &shown["data"]["entries"][0];
+  assert_eq!(entry["name"], "demo");
+  assert_eq!(entry["mode"], "js");
+  assert_eq!(entry["target"], "browser");
+  assert_eq!(entry["init_fn"], "app.main/main!");
+  assert_eq!(entry["reload_fn"], "app.main/reload!");
+  assert_eq!(entry["description"], "Demo page");
+  assert_eq!(entry["modules"], serde_json::json!(["calcit-test/"]));
+  assert_eq!(entry["feature_policy"]["js-ffi"], "warn");
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["config", "add-entry", "demo-copy", "--from", "demo", "--mode", "native"],
+    ),
+    "clone entry",
+  );
+  let copy = run_calcit(&snapshot, &["config", "show", "--entry", "demo-copy", "--format", "json"]);
+  assert_success(&copy, "show cloned entry");
+  let copied: serde_json::Value = serde_json::from_slice(&copy.stdout).expect("config JSON");
+  assert_eq!(copied["data"]["entries"][0]["mode"], "native");
+  assert_eq!(copied["data"]["entries"][0]["modules"], serde_json::json!(["calcit-test/"]));
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["config", "add-entry", "plain", "--from", "default", "--description", "Plain copy"],
+    ),
+    "clone default entry",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["--entry", "plain", "--check-only"]),
+    "cloned entry runs strict checks",
   );
 }

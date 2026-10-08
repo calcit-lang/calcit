@@ -558,7 +558,7 @@ pub(super) fn emit_set_union(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalGet(be));
-  ctx.emit(Instruction::F64Eq);
+  emit_f64_value_eq(ctx);
   ctx.begin_block_if();
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::LocalSet(found));
