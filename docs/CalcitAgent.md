@@ -227,7 +227,7 @@ Agent 修改的是 Snapshot 中的表层 quoted AST。macro 展开、名称解�
 | definition revision | definition 的内容版本，由 context/cursor 返回              | 判断语义证据或 cursor 是否过期                 |
 | Snapshot revision | 整个 Snapshot 的内容版本，由 transaction dry-run 返回        | 传给 `--expect-revision` 阻止覆盖并发修改       |
 
-`query def` 对格式化后达到 2KB（`--chunk-trigger-bytes`）的大定义默认可能输出 chunked preview，较短定义整段显示；先用 `query peek` 或默认 `query def` 看结构，确实需要完整定义时才用 `query def '<ns/def>' --raw`。不要把 `FOLDED:*` 或 chunk 标记当成源码。
+`query def` 对格式化后达到 2KB（`--chunk-trigger-bytes`）的大定义默认可能输出 chunked preview，较短定义整段显示；先用 `query peek` 或默认 `query def` 看结构，确实需要完整定义时才用 `query def '<ns/def>' --raw`。不要把 `FOLDED:*` 或 chunk 标记当成源码。需要整段改写一个定义时，用 `query def '<ns/def>' --format cirru` 读出只含 `quote $ <定义>` 的源码，修改后原样交给 `edit def '<ns/def>' --overwrite --input-format cirru --file <文件>` 写回；未修改的视图写回后 Snapshot 字节不变。
 
 path 使用从零开始的 child index：`@3.2` 表示先取 definition 根 list 的 child 3，再取其 child 2；空 path 表示 definition 根节点。结构 mutation 后旧 path 可能失效，优先重新查询或使用 cursor。必须直接使用旧数字 path 时，`tree replace/delete/insert-*` 推荐同时传 `--expect 'quote ...'`；实际节点或插入锚点不匹配时命令会在写入前失败。
 
@@ -251,6 +251,7 @@ JSON 中 definition 和 match 都带 `source`、`origin`，并用 `node_kind: le
 - 多个 mutation 必须一起成功：`calcit edit transaction`，先 `--dry-run`；主格式是 Cirru EDN，先运行 `calcit docs read edit-tree.md 'Atomic Transactions'` 查看最小 operation 文件和 revision 提交流程。
 - 编译器已经证明等价的迁移：升级项目优先运行 `calcit fix --preset surface-latest-v2 --format edn`，单项排查才使用 `--rule`；两者互斥。冻结的 `surface-latest-v1` 保持原有四条规则。核对 `:data :filters :expanded-rule-ids`、`:data :suggestions` 中每项的 `:source-file`、definition/path、fingerprint，只选择 `machine-applicable`。提交时必须原样重复 preview 的 `--ns`、`--def` 以及 `--rule` 或 `--preset` selectors，再加 `--apply --expect-revision <revision>`。非空建议要求 `:data :validation :status` 为 `passed`；空建议接受 `not-needed` 并跳过 apply。revision 只保护 Snapshot 新鲜度，不能代替 scope 审阅。`requires-review` 或 `:replacement nil` 需要人类决定，Agent 不得自行猜测。完整字段与 VCS guard 见 `calcit docs read fix.md --full`。
 - 整个项目进入严格语义时，先运行 `calcit calcit.cirru fix --workflow strict --format edn` 保存项目 manifest；只按其中 `:resume :revision` 执行同一 workflow 的 `--apply --expect-revision`，随后运行 `--verify`。读取 preflight、entries/type slots、安全建议、review-required 类型位置、FFI 边界与 verification results，不要为 schema、Dynamic 收窄、FFI trust 或业务默认值自行补决策，也不要猜测外部 build 命令。preflight 的 `external-gates` 只是调用方待办，`executed: false` 时不得当作已通过。
+- 局部绑定（参数、`let`/`loop` 绑定名）改名时，使用 `calcit fix --rule rename-local-v1 --ns <ns> --def <def> --at <绑定路径> --to <new> --format edn`，不要用 `tree search-replace` 逐个替换叶子；遮蔽、quote 和会引入绑定的 macro 由规则判断，无法证明时整体拒绝。
 - definition 与静态 usage 一起重命名时，使用 `calcit fix --rule rename-definition-v1 --ns <ns> --def <old> --to <new> --format edn`，不要组合 `query search` 与文本替换猜调用点。普通 code、`:tests`、examples、schema 与 imports 会进入同一原子事务；macro、quoted data、dependency source 或缺少 source coordinate 的 blocker 会使事务整体拒绝，此时不得绕过为 declaration-only 改名。
 - 把 `(def name value)` 及其静态读取一起改成零参数函数时，使用 `calcit fix --rule value-to-zero-arg-fn-v1 --ns <ns> --def <name> --format edn`。该操作把初始化时的一次求值改成每次调用求值，会影响副作用、环境读取、对象身份、分配成本和缓存，Agent 必须展示并审阅这项语义变化，不能把它当作等价 lint fix 或加入 preset。普通 code、`:tests`、examples 与目标 schema 会原子更新；macro、quoted data、dependency source、schema type reference、自引用或缺少 source coordinate 时保持 fail closed。
 

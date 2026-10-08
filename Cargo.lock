@@ -243,6 +243,7 @@ dependencies = [
  "colored",
  "ctrlc",
  "finger_vec",
+ "foldhash",
  "getrandom 0.3.3",
  "hex",
  "libloading",

@@ -4793,8 +4793,39 @@ fn render_chunked_display(display: &ChunkedDisplay) -> String {
   out
 }
 
-/// Show one definition as Markdown (chunked only when large) or a structured envelope.
+/// Print only `quote $ <definition>`, the exact input `edit def --overwrite
+/// --input-format cirru` accepts, so a read can be edited and written back.
+fn handle_def_cirru_view(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
+  let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
+  let file_data = snapshot
+    .files
+    .get(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+  let lookup = resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?;
+  let code_entry = file_data
+    .defs
+    .get(lookup.resolved.as_str())
+    .ok_or_else(|| format!("Definition '{namespace}/{definition}' has no source in this Snapshot"))?;
+  let quoted = Cirru::List(vec![Cirru::Leaf(Arc::from("quote")), code_entry.code.clone()]);
+  // Only print a view that parses back to the stored node, so writing it back is lossless.
+  let text = [true, false]
+    .into_iter()
+    .filter_map(|use_inline| cirru_parser::format(std::slice::from_ref(&quoted), cirru_parser::CirruWriterOptions { use_inline }).ok())
+    .find(|text| cirru_parser::parse(text).is_ok_and(|parsed| parsed == [quoted.clone()]))
+    .ok_or_else(|| format!("Cannot render `{namespace}/{definition}` as Cirru text that parses back to the same source"))?;
+  print!("{}", text.trim_start_matches('\n'));
+  if !text.ends_with('\n') {
+    println!();
+  }
+  Ok(())
+}
+
+/// Show one definition as Markdown (chunked only when large), a structured envelope
+/// (`--format edn|json`), or writable source (`--format cirru`).
 fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryDefCommand) -> Result<(), String> {
+  if opts.format == "cirru" {
+    return handle_def_cirru_view(input_path, namespace, definition);
+  }
   let format = parse_query_render_format(&opts.format)?;
   let structured = format != QueryRenderFormat::Human;
   let snapshot = load_snapshot_for_namespace(input_path, namespace)?;

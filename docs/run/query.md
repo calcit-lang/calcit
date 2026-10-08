@@ -121,6 +121,16 @@ The schema field remains a Cirru syntax tree, not raw persisted schema data.
 完整元数据。human 模式默认标明 FFI preview；`--raw` 同时输出完整代码与 FFI。
 本接口只查询声明，不改变 Interface IR v3、目标可用性检查或 async 调用语义。
 
+`--format cirru` 只输出 `quote $ <定义>` 形式的源码，不带 Markdown 标题、Schema 段或代码围栏，可以直接作为
+`edit def --overwrite --input-format cirru` 的输入。读出的视图未经修改写回时，Snapshot 字节保持不变；
+schema、doc、examples 与 tests 不在该视图中，写回代码时保持原值。`--raw` 是不分块的 Markdown 输出。
+
+```bash
+calcit query def app.main/main! --format cirru > .calcit/snippets/main.cirru
+# 修改 .calcit/snippets/main.cirru 后写回
+calcit edit def app.main/main! --overwrite --input-format cirru --file .calcit/snippets/main.cirru
+```
+
 Local metadata queries (`ns <name>`, `defs`, `def`, `peek`, `examples`, `schema`, `pkg`, and `config`) first read only the main Snapshot. Modules/core are loaded only when the requested namespace is not local. This keeps repeated Agent navigation fast and avoids unrelated dependency warnings; semantic queries such as `type`, `type-at`, and `context` still load the metadata needed for static resolution.
 
 ### Peek Signature (`peek`)
