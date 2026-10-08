@@ -21,6 +21,7 @@ mod markdown_read;
 mod program_diff;
 mod query;
 mod scaffold;
+mod snapshot_scope;
 mod stdout;
 mod structural_pattern;
 mod structured_output;

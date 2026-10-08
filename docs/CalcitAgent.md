@@ -46,7 +46,7 @@ CLI 不传格式参数时保持适合人类 review 的 Markdown-compatible 输�
 1. 当前仓库的 `AGENTS.md`、README 和用户要求优先；CLI 参数若变化，查 live `--help`，不要绕过结构化工具。
 2. `calcit.cirru` 是 Cirru EDN Snapshot，绝不能用文本 patch、正则脚本或 formatter 修改；只用 `calcit edit`、`calcit tree`、`calcit cursor` 和 `calcit config`。
 3. 写入前运行 `calcit -v`、检查 `deps.cirru :calcit-version` 并用 `calcit query config` 确认目标 Snapshot/entry；版本不匹配时改用固定 CLI 或显式升级，不能绕过门禁。
-4. 同一 Snapshot 的 mutation 必须串行；原子多步变更使用 transaction、dry-run 和 `--expect-revision`，并行工作使用独立 worktree/Snapshot。
+4. 同一 Snapshot 的写入由写锁串行执行；原子多步变更使用 transaction 与 dry-run，并把返回的 `scoped_revision` 传给 `--expect-revision`，只有改到同一定义才冲突；并行分支合并用 `calcit %A edit merge` 驱动。
 5. target、path 和替换内容必须来自 `query` / `tree show`；修改前展示真实 subtree，修改后重新 show/search，并运行项目规定的 check、test 和目标 codegen。
 6. 不得把 `CURSOR`、`FOLDED:*`、chunk 标题、path annotation 或 `preview_tree` 写回 Snapshot；机器读取 cursor 时只信 `tree` 字段。
 7. 发现语言/编译器/CLI 缺陷，向 Calcit 核心仓库提交最小复现；发现模块缺陷，先用解析后的模块路径和 Git remote 确认 owner，再提交到模块仓库。不能猜仓库，也不能只留在聊天或提交说明中。API 写法先查已安装版本的 `query type/def/context`；core 改名与改签名遵守 [稳定与集中迁移策略](features/api-roles.md#核心-api-稳定与集中迁移)，不把规划或内部路径当作公开承诺，不只更新 baseline 就删除兼容入口。

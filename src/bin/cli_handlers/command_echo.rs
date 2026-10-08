@@ -318,6 +318,7 @@ fn render_query_explanation(cmd: &QueryCommand) -> Option<String> {
 fn render_edit_explanation(cmd: &EditCommand) -> Option<String> {
   Some(match &cmd.subcommand {
     EditSubcommand::Format(_) => "rewrites snapshot file in canonical format".to_string(),
+    EditSubcommand::Merge(_) => "merges another Snapshot version into this one per definition".to_string(),
     EditSubcommand::Transaction(opts) => format!(
       "{} a staged edit transaction with revision checks",
       if opts.dry_run { "previews" } else { "applies" }
@@ -1003,6 +1004,10 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
 fn push_edit(tokens: &mut Vec<String>, cmd: &EditCommand) {
   match &cmd.subcommand {
     EditSubcommand::Format(_) => {}
+    EditSubcommand::Merge(opts) => {
+      echo_items!(tokens, opt "base" => Some(opts.base.as_str()); default "none");
+      echo_items!(tokens, opt "theirs" => Some(opts.theirs.as_str()); default "none");
+    }
     EditSubcommand::Transaction(opts) => {
       echo_items!(
         tokens,
@@ -1391,6 +1396,7 @@ fn analyze_name(subcommand: &AnalyzeSubcommand) -> &'static str {
 fn edit_name(subcommand: &EditSubcommand) -> &'static str {
   match subcommand {
     EditSubcommand::Format(_) => "format",
+    EditSubcommand::Merge(_) => "merge",
     EditSubcommand::Transaction(_) => "transaction",
     EditSubcommand::Scaffold(_) => "scaffold",
     EditSubcommand::Def(_) => "def",
