@@ -821,6 +821,7 @@ fn explicit_syntax_input_formats_preserve_ambiguous_node_shapes() {
     let output = run_calcit(
       &snapshot,
       &[
+        "--verbose",
         "edit",
         "add-example",
         "app.main/main!",
@@ -846,6 +847,23 @@ fn explicit_syntax_input_formats_preserve_ambiguous_node_shapes() {
 
   let definition = query_definition(&snapshot, "app.main/main!");
   assert_eq!(definition["data"]["examples"], serde_json::json!(["[]", [], ["inc", "1"], ["[]"]]));
+
+  // Without --verbose the decoded-input echo stays out of the default output.
+  let quiet = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "add-example",
+      "app.main/main!",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ inc 2",
+    ],
+  );
+  assert_success(&quiet, "add example without verbose output");
+  let stdout = String::from_utf8_lossy(&quiet.stdout);
+  assert!(!stdout.contains("Decoded syntax input"), "stdout:\n{stdout}");
 
   let invalid = run_calcit(
     &snapshot,
@@ -874,6 +892,7 @@ fn bulk_imports_use_explicit_syntax_transport_and_keep_legacy_auto_compatibility
   let explicit = run_calcit(
     &snapshot,
     &[
+      "--verbose",
       "edit",
       "imports",
       "app.main",
@@ -1262,4 +1281,128 @@ fn overwriting_with_defexternal_drops_retained_ffi_metadata() {
   assert_eq!(report["data"]["ffi"][":target"]["__edn_tag"], "browser");
   // The overwrite replaced the previous metadata, so the old `:names` override is gone.
   assert!(report["data"]["ffi"][":names"].is_null());
+}
+
+#[test]
+fn agent_commands_print_compact_default_output() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/test.cirru", &snapshot).unwrap();
+
+  // A one-leaf replacement reports operation, location and inline before/after only.
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/compact-sample",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn compact-sample () (println |old-text)",
+      ],
+    ),
+    "create compact sample",
+  );
+  let replaced = run_calcit(
+    &snapshot,
+    &[
+      "tree",
+      "search-replace",
+      "app.main/compact-sample",
+      "--pattern",
+      "|old-text",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote |new-text",
+    ],
+  );
+  assert_success(&replaced, "search-replace");
+  let stdout = String::from_utf8_lossy(&replaced.stdout);
+  assert!(stdout.contains("# Tree mutation `search-replace` at `@3.1`"), "stdout:\n{stdout}");
+  assert!(
+    stdout.contains("- before: `|old-text`") && stdout.contains("- after: `|new-text`"),
+    "stdout:\n{stdout}"
+  );
+  assert!(!stdout.contains("Decoded syntax input"), "stdout:\n{stdout}");
+
+  // Docs are stored verbatim, so a Cirru string prefix earns a warning.
+  let doc = run_calcit(&snapshot, &["edit", "doc", "app.main/compact-sample", "|Prints text"]);
+  assert_success(&doc, "edit doc");
+  assert!(String::from_utf8_lossy(&doc.stderr).contains("stored verbatim"));
+  let plain_doc = run_calcit(&snapshot, &["edit", "doc", "app.main/compact-sample", "Prints text"]);
+  assert!(!String::from_utf8_lossy(&plain_doc.stderr).contains("stored verbatim"));
+
+  // Short definitions are shown whole even above the node trigger.
+  let short = run_calcit(&snapshot, &["query", "def", "app.main/main!"]);
+  assert_success(&short, "query short definition");
+  let stdout = String::from_utf8_lossy(&short.stdout);
+  assert!(stdout.contains("## Cirru\n") && !stdout.contains("Chunked"), "stdout:\n{stdout}");
+  let forced = run_calcit(
+    &snapshot,
+    &[
+      "query",
+      "def",
+      "app.main/main!",
+      "--chunk-trigger-bytes",
+      "0",
+      "--chunk-trigger-nodes",
+      "10",
+      "--chunk-target-nodes",
+      "8",
+      "--chunk-max-nodes",
+      "12",
+    ],
+  );
+  assert!(String::from_utf8_lossy(&forced.stdout).contains("## Chunked Cirru"));
+
+  // Context leaves out core syntax/macros and generic Fn methods unless asked.
+  let context = |extra: &[&str]| -> serde_json::Value {
+    let mut args = vec![
+      "query",
+      "context",
+      "app.main/test-fn",
+      "--format",
+      "json",
+      "--dependency-limit",
+      "200",
+    ];
+    args.extend_from_slice(extra);
+    let output = run_calcit(&snapshot, &args);
+    assert_success(&output, "query context");
+    serde_json::from_slice(&output.stdout).unwrap()
+  };
+  let ids = |value: &serde_json::Value, key: &str, field: &str| -> Vec<String> {
+    value["data"][key]["items"]
+      .as_array()
+      .map(|items| {
+        items
+          .iter()
+          .map(|item| item[field].as_str().unwrap_or_default().to_owned())
+          .collect()
+      })
+      .unwrap_or_default()
+  };
+  let compact = context(&[]);
+  let full = context(&["--include-core"]);
+  for core in ["calcit.core/defn", "calcit.core/let", "calcit.core/fn"] {
+    let in_full = ids(&full, "dependencies", "id").iter().any(|id| id == core);
+    if in_full {
+      assert!(
+        !ids(&compact, "dependencies", "id").iter().any(|id| id == core),
+        "{core}: {compact}"
+      );
+    }
+  }
+  assert!(
+    ids(&full, "dependencies", "id").len() > ids(&compact, "dependencies", "id").len(),
+    "{full}"
+  );
+  assert!(ids(&full, "static_methods", "name").iter().any(|name| name == ".apply"), "{full}");
+  assert!(
+    !ids(&compact, "static_methods", "name").iter().any(|name| name == ".apply"),
+    "{compact}"
+  );
 }

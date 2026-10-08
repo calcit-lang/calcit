@@ -135,6 +135,7 @@ calcit tree replace app.main/render! --path @2.1 \
   `[]` 分别表示名为 `[]` 的 leaf 和空 syntax list。
 - `auto`：仅为旧脚本保留的内容识别路径；新文档和新自动化不应依赖它。
 
-显式格式的 mutation 会在写入前报告选中的格式、解码后的 `leaf` / `empty-list` / `expression` 节点类型、
-canonical JSON AST 与结构化摘要。格式或形状错误同时包含选中格式、预期节点类型和实际节点类型，Agent 不需要
+显式格式的 mutation 默认只输出操作名、改动位置与改动前后的节点；短节点各占一行，长节点保留 Before/After 代码块。
+加顶层 `--verbose`（如 `calcit --verbose calcit.cirru tree replace ...`）时，会在写入前额外报告选中的格式、解码后的
+`leaf` / `empty-list` / `expression` 节点类型、canonical Cirru 与 canonical JSON AST。格式或形状错误同时包含选中格式、预期节点类型和实际节点类型，Agent 不需要
 通过试写来判断输入如何被解释。`--expect` 仍是单独的 quoted Cirru guard，不受 replacement 的传输格式影响。

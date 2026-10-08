@@ -1975,6 +1975,7 @@ mod type_query_tests {
       usage_limit: 8,
       example_limit: 3,
       test_limit: 3,
+      include_core: false,
     }
   }
 
@@ -3499,6 +3500,24 @@ fn build_context_tests(tests: &[snapshot::TestEntry], limit: usize, budget: usiz
   Ok(ContextCollection::new(tests.len(), items))
 }
 
+/// Core macros and syntax such as `fn`, `let` and `if` appear in almost every
+/// definition, so the default context leaves them out.
+fn is_core_syntax_dependency(id: &str, source: &str) -> bool {
+  if source != "core" {
+    return false;
+  }
+  let Some(name) = id.strip_prefix(&format!("{}/", calcit::calcit::CORE_NS)) else {
+    return false;
+  };
+  calcit::calcit::CalcitSyntax::is_valid(name)
+    || program::lookup_def_code(calcit::calcit::CORE_NS, name).is_some_and(|code| {
+      matches!(&code, Calcit::List(items) if matches!(
+        items.first(),
+        Some(Calcit::Syntax(calcit::calcit::CalcitSyntax::Defmacro, _))
+      ) || matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defmacro"))
+    })
+}
+
 fn collect_direct_dependencies(
   snapshot: &snapshot::Snapshot,
   namespace: &str,
@@ -3582,8 +3601,12 @@ fn context_docs(definition: &str, diagnostics: &mut Vec<ContextDiagnostic>) -> C
   }
 }
 
-fn context_methods(annotation: &CalcitTypeAnnotation, budget: usize) -> Option<ContextCollection<ContextMethod>> {
-  let methods = runner::preprocess::static_method_contracts(annotation)?;
+fn context_methods(annotation: &CalcitTypeAnnotation, budget: usize, include_core: bool) -> Option<ContextCollection<ContextMethod>> {
+  let mut methods = runner::preprocess::static_method_contracts(annotation)?;
+  if !include_core {
+    // Every function shares the generic Fn methods; they say nothing about this definition.
+    methods.retain(|(descriptor, _)| !descriptor.origin.ends_with("/&core-fn-methods"));
+  }
   let total = methods.len();
   let limit = (budget / 240).clamp(4, 80);
   let mut items = methods
@@ -3768,6 +3791,10 @@ fn build_regular_context(
   } else {
     vec![]
   };
+  let dependencies = dependencies
+    .into_iter()
+    .filter(|(id, source)| opts.include_core || !is_core_syntax_dependency(id, source))
+    .collect::<Vec<_>>();
   let dependency_total = dependencies.len();
   let dependency_items = dependencies
     .into_iter()
@@ -3792,7 +3819,7 @@ fn build_regular_context(
   let docs = context_docs(&id, &mut diagnostics);
   let effective_schema = inferred_schema.as_deref().unwrap_or(entry.schema.as_ref());
   let static_methods = if metadata_ready.is_ok() {
-    context_methods(effective_schema, opts.budget / 3)
+    context_methods(effective_schema, opts.budget / 3, opts.include_core)
   } else {
     None
   };
@@ -3878,7 +3905,7 @@ fn build_special_builtin_context(
 
   let metadata_ready = prepare_program_for_type_query(snapshot).is_ok();
   let static_methods = if metadata_ready {
-    context_methods(meta.schema.as_ref(), opts.budget / 3)
+    context_methods(meta.schema.as_ref(), opts.budget / 3, opts.include_core)
   } else {
     None
   };
@@ -4948,13 +4975,19 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
       max_nodes: opts.chunk_max_nodes,
       max_branches: 64,
     };
-    if let Some(display) = maybe_chunk_node(&code_entry.code, &chunk_options)? {
+    let cirru_str =
+      cirru_parser::format(std::slice::from_ref(&code_entry.code), true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
+    // Chunking only pays off for long source; short definitions read better whole.
+    let chunked = if cirru_str.len() >= opts.chunk_trigger_bytes {
+      maybe_chunk_node(&code_entry.code, &chunk_options)?
+    } else {
+      None
+    };
+    if let Some(display) = chunked {
       let _ = writeln!(&mut out);
       out.push_str(&render_chunked_display(&display));
     } else {
       let _ = writeln!(&mut out, "\n## Cirru\n");
-      let cirru_str =
-        cirru_parser::format(std::slice::from_ref(&code_entry.code), true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
       out.push_str(&markdown_fenced_block("cirru", &cirru_str));
     }
   } else {

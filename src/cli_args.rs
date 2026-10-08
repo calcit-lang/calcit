@@ -823,6 +823,9 @@ pub struct QueryContextCommand {
   /// maximum number of definition-attached tests to include
   #[argh(option, default = "3")]
   pub test_limit: usize,
+  /// also list core macro/syntax dependencies and the generic Fn methods shared by every function
+  #[argh(switch)]
+  pub include_core: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -906,6 +909,9 @@ pub struct QueryDefCommand {
   /// only enable chunked display when total expression nodes reach this threshold
   #[argh(option, default = "88")]
   pub chunk_trigger_nodes: usize,
+  /// only enable chunked display when the formatted definition reaches this many bytes
+  #[argh(option, default = "2048")]
+  pub chunk_trigger_bytes: usize,
   /// force raw full-definition display without chunking
   #[argh(switch)]
   pub raw: bool,

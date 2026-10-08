@@ -34,7 +34,7 @@ pub(crate) use atomic_write::stage_atomic_file;
 pub use call_graph_diff::handle_call_graph_diff_command;
 pub use cirru::handle_cirru_command;
 pub use command_echo::{print_command_echo, should_echo_command};
-pub use common::warn_on_global_temp_snapshot_path;
+pub use common::{set_verbose_mutation_output, warn_on_global_temp_snapshot_path};
 pub use config::handle_config_command;
 pub use cursor::{handle_cursor_command, set_cursor_after_mode};
 pub use docs::handle_docs_command;

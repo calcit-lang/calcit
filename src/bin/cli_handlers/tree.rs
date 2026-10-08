@@ -340,13 +340,30 @@ fn format_child_preview(node: &Cirru) -> String {
   }
 }
 
-/// Show a side-by-side diff preview of the change
-fn show_diff_preview(old_node: &Cirru, new_node: &Cirru, operation: &str) -> String {
-  let mut output = String::new();
+/// Single-line Cirru text for a node, or `None` when it needs several lines.
+fn inline_cirru(node: &Cirru) -> Option<String> {
+  let text = match node {
+    Cirru::Leaf(leaf) => cirru_parser::generate_leaf(leaf),
+    Cirru::List(_) => cirru_parser::format_expr_one_liner(node).ok()?,
+  };
+  (!text.contains('\n') && text.len() <= 100).then_some(text)
+}
 
-  let _ = writeln!(&mut output, "# Tree mutation preview\n");
-  let _ = writeln!(&mut output, "- operation: `{operation}`");
-  let _ = writeln!(&mut output, "- changed: `true`\n");
+/// Show the change: operation, location, and before/after nodes. Short nodes stay
+/// on one line; larger nodes keep fenced Before/After sections.
+fn show_diff_preview(old_node: &Cirru, new_node: &Cirru, operation: &str, path: &[usize]) -> String {
+  let mut output = String::new();
+  let location = if path.is_empty() { "root".to_owned() } else { format_path(path) };
+  let _ = writeln!(
+    &mut output,
+    "# Tree mutation `{operation}` at `{location}`
+"
+  );
+  if let (Some(before), Some(after)) = (inline_cirru(old_node), inline_cirru(new_node)) {
+    let _ = writeln!(&mut output, "- before: `{before}`");
+    let _ = writeln!(&mut output, "- after: `{after}`");
+    return output;
+  }
   match markdown_cirru_section(2, "Before", old_node, 10) {
     Ok(section) => output.push_str(&section),
     Err(error) => output.push_str(&format!("## Before\n\n_Unable to render preview: {error}_\n")),
@@ -752,7 +769,7 @@ fn handle_rewrite(opts: &TreeStructuralCommand, snapshot_file: &str) -> Result<(
   let old_node = navigate_to_path(&code_entry.code, &path)?;
 
   // Show diff preview
-  println!("{}", show_diff_preview(&old_node, &processed_node, "rewrite"));
+  println!("{}", show_diff_preview(&old_node, &processed_node, "rewrite", &path));
   // Tips: root-edit guidance
   if let Some(t) = tip_root_edit(path.is_empty()) {
     let mut tips = Tips::new();
@@ -902,7 +919,7 @@ fn handle_search_replace(opts: &TreeSearchReplaceCommand, snapshot_file: &str) -
       let (path, old_value) = &matches[pick_index];
       let full_path = compose_path(path);
       let old_node = Cirru::Leaf(old_value.to_string().into());
-      println!("{}", show_diff_preview(&old_node, &replacement_node, "search-replace"));
+      println!("{}", show_diff_preview(&old_node, &replacement_node, "search-replace", &full_path));
 
       let new_code = apply_operation_at_path(&code_entry.code, &full_path, TreeOperation::Replace, Some(&replacement_node))?;
       code_entry.code = new_code;
@@ -969,7 +986,7 @@ fn handle_search_replace(opts: &TreeSearchReplaceCommand, snapshot_file: &str) -
   let old_node = Cirru::Leaf(old_value.to_string().into());
 
   // Show diff preview
-  println!("{}", show_diff_preview(&old_node, &replacement_node, "search-replace"));
+  println!("{}", show_diff_preview(&old_node, &replacement_node, "search-replace", &full_path));
 
   let new_code = apply_operation_at_path(&code_entry.code, &full_path, TreeOperation::Replace, Some(&replacement_node))?;
   code_entry.code = new_code;

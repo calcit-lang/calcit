@@ -1674,6 +1674,12 @@ fn handle_doc(opts: &EditDocCommand, snapshot_file: &str) -> Result<(), String> 
   code_entry.doc = opts.doc.clone();
 
   save_snapshot(&snapshot, snapshot_file)?;
+  if opts.doc.starts_with('|') {
+    eprintln!(
+      "{} Documentation is stored verbatim, so the leading `|` is kept as text; pass the plain text without the Cirru string prefix.",
+      "⚠".yellow()
+    );
+  }
 
   println!(
     "{} Updated documentation for '{}' in namespace '{}'",

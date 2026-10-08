@@ -301,6 +301,9 @@ calcit query context calcit.core/to-js-data --format edn
 
 The numeric paths are scoped to the returned revision. Re-query after a change before using a path for editing. `--budget` is an approximate character budget for variable-size content; explicit `--dependency-limit`, `--usage-limit`, and `--example-limit` bounds are also available.
 
+默认的依赖列表不包含 `fn`、`let`、`if` 等 core 宏与语法，函数定义的 static methods 也不列出所有函数共有的
+`.apply`、`.bind`、`.call` 等通用 Fn 方法；`total` 计数同样按过滤后的结果。需要完整列表时传 `--include-core`。
+
 选择 `--format edn` 时，stdout 只包含一个 Cirru EDN envelope；JSON-only consumer 可显式选择
 `--format json` 获取对应的 JSON envelope。命令说明与平台注册信息留在 stderr，不应和结构化结果混读。
 
