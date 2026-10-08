@@ -6007,6 +6007,47 @@
           :schema $ :: 'Fn $ {}
             :args $ [] 'Enum
             :return $ :: 'Option 'EnumDef
+          :tests $ []
+            %{} 'TestEntry (:name |distinct-definition-names)
+              :code $ quote $ let
+                  left $ defenum Left $ :item 'String
+                  right $ defenum Right $ :item 'String
+                  alias left
+                  equal-definition? $ fn (a b)
+                    hint-fn $ {}
+                      :args $ [] 'EnumDef 'EnumDef
+                      :return 'Bool
+                    = a b
+                assert= false $ equal-definition? left right
+                assert= true $ equal-definition? left alias
+                assert= -1 $ &compare left right
+                assert= 1 $ &compare right left
+              :tags $ #{} :enum-definition-equality :unit
+            %{} 'TestEntry (:name |definition-schema-equality)
+              :code $ quote $ let
+                  original $ defenum Entry $ :item 'String
+                  equivalent $ defenum Entry $ :item 'String
+                  different $ defenum Entry $ :item 'Number
+                  arity $ defenum Entry $ :item 'String 'String
+                assert= true $ = original equivalent
+                assert= false $ = original different
+                assert= false $ = original arity
+                assert= (&hash original) (&hash equivalent)
+                assert= 0 $ &compare original equivalent
+                assert= 1 $ &compare original different
+                assert= -1 $ &compare original arity
+              :tags $ #{} :enum-definition-equality :unit
+            %{} 'TestEntry (:name |definition-collection-keys)
+              :code $ quote $ let
+                  original $ defenum Entry $ :item 'String
+                  equivalent $ defenum Entry $ :item 'String
+                  different $ defenum Entry $ :item 'Number
+                  entries $ {} (original |text) (different |number)
+                assert= 2 $ count entries
+                assert= (Option :some |text) (get entries equivalent)
+                assert= (Option :some |number) (get entries different)
+                assert= 2 $ count $ #{} original equivalent different
+              :tags $ #{} :enum-definition-equality :unit
         'enum? $ %{} 'CodeEntry
           :doc "|Predicate that checks nominal and anonymous enum values. Passing an EnumDef reports a migration error."
           :code $ quote &runtime-implementation

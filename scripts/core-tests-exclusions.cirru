@@ -14,6 +14,7 @@
       |calcit.core/str#formats-numbers-like-turn-string "|parity: JS str prints Infinity, 0 for -0 and exponent forms (#1848)"
       |calcit.core/turn-string#formats-number-boundaries "|parity: JS codegen emits the overflowing literal 1e309 as the identifier `inf` (ReferenceError)"
   :wasm $ {}
+    :tags $ {} $ :enum-definition-equality "|unsupported: first-class EnumDef creation requires &enum-def:new, rejected by WASM codegen (#1863)"
     :tests $ {} (|calcit.core/&+#preserves-primitive-schema-in-local-binding "|unsupported: unsupported WASM expression: (&proc &+)")
       |calcit.core/&core-string-methods#excludes-file-effects "|unsupported: unsupported proc in WASM: &methods-of"
       |calcit.core/&doseq#applies-side-effects-per-item "|unsupported: unsupported proc in WASM: ref"
@@ -228,6 +229,7 @@
       |calcit.test/throws?#detects-raised-errors "|unsupported: unsupported syntax in WASM: try"
       |calcit.test/throws?#detects-success "|unsupported: unsupported syntax in WASM: try"
   :wasi $ {}
+    :tags $ {} $ :enum-definition-equality "|unsupported: first-class EnumDef creation requires &enum-def:new, rejected by the shared WASM codegen (#1863)"
     :tests $ {} (|calcit.core/&+#preserves-primitive-schema-in-local-binding "|unsupported: unsupported WASM expression: (&proc &+)")
       |calcit.core/&core-string-methods#excludes-file-effects "|unsupported: unsupported proc in WASM: &methods-of"
       |calcit.core/&doseq#applies-side-effects-per-item "|unsupported: unsupported proc in WASM: ref"

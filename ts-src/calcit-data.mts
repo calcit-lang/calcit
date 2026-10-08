@@ -875,7 +875,11 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
   }
   if (x instanceof CalcitEnumDef) {
     if (y instanceof CalcitEnumDef) {
-      return x.name === y.name;
+      // The prototype carries the nominal origin, variant tags and payload
+      // schemas. Comparing name methods compares one shared function object.
+      return _$n__$e_(x.prototype, y.prototype)
+        && x.impls.length === y.impls.length
+        && x.impls.every((impl, index) => _$n__$e_(impl, y.impls[index]));
     }
     return false;
   }

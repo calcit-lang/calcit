@@ -14,7 +14,6 @@ try {
   await symlink(resolve("node_modules"), join(fixtureRoot, "node_modules"), "dir");
 
   const runtimeA = await import(pathToFileURL(join(runtimeAPath, "calcit.procs.mjs")).href);
-  const runtimeB = await import(pathToFileURL(join(runtimeBPath, "calcit.procs.mjs")).href);
   const symbolFromString = runtimeA.turn_symbol("hello");
   assert.ok(symbolFromString instanceof runtimeA.CalcitSymbol, "turn-symbol must return a Symbol on JS");
   assert.equal(symbolFromString.value, "hello");
@@ -161,6 +160,45 @@ try {
   const todoRecord = new runtimeA.CalcitStructValue(todoName, [todoField], [""]);
   const todoStruct = new runtimeA.CalcitStructDef(todoName, [todoField], [todoType]);
   const todoEnum = new runtimeA.CalcitEnumDef(new runtimeA.CalcitStructValue(todoName, [todoField], [todoType]));
+  // Enum definitions are data, not their shared JavaScript name() method.
+  const makeEnumDefinition = (name, origin, payload = "String", impls = []) => {
+    const field = runtimeA.newTag("item");
+    const definition = new runtimeA.CalcitStructDef(runtimeA.newTag(name), [field], [null], impls, origin);
+    return new runtimeA.CalcitEnumDef(new runtimeA.CalcitStructValue(
+      definition.name, [field], [new runtimeA.CalcitSliceList([new runtimeA.CalcitSymbol(payload)])], definition,
+    ));
+  };
+  const operationDefinition = makeEnumDefinition("Operation", "app.left/Operation");
+  const equivalentDefinition = makeEnumDefinition("Operation", "app.left/Operation");
+  const otherDefinitions = [
+    makeEnumDefinition("ClientOperation", "app.left/ClientOperation"),
+    makeEnumDefinition("Operation", "app.right/Operation"),
+    makeEnumDefinition("Operation", "app.left/Operation", "Number"),
+    makeEnumDefinition("Operation", "app.left/Operation", "String", [
+      new runtimeA.CalcitImpl(runtimeA.newTag("Marker"), [], []),
+    ]),
+  ];
+  assert.equal(runtimeA._$n__$e_(operationDefinition, equivalentDefinition), true);
+  assert.equal(runtimeA.hashFunction(operationDefinition), runtimeA.hashFunction(equivalentDefinition));
+  assert.equal(runtimeA._$n_compare(operationDefinition, equivalentDefinition), 0);
+  for (const other of otherDefinitions) {
+    assert.equal(runtimeA._$n__$e_(operationDefinition, other), false, "Distinct enum definitions must not compare equal");
+    assert.notEqual(runtimeA._$n_compare(operationDefinition, other), 0, "Ordering must distinguish enum definitions");
+    assert.equal(Math.sign(runtimeA._$n_compare(operationDefinition, other)), -Math.sign(runtimeA._$n_compare(other, operationDefinition)));
+    for (const map of [
+      new runtimeA.CalcitSliceMap([operationDefinition, "original", other, "other"]),
+      new runtimeA.CalcitSliceMap([operationDefinition, "original", other, "other"]).turnMap(),
+    ]) {
+      assert.equal(map.get(operationDefinition), "original");
+      assert.equal(map.get(equivalentDefinition), "original");
+      assert.equal(map.get(other), "other");
+    }
+    const values = runtimeA._SHA__$M_(operationDefinition, equivalentDefinition, other);
+    assert.equal(runtimeA._$n_set_$o_count(values), 2);
+  }
+  // Loading another runtime replaces ternary-tree's process-wide comparator.
+  // Finish single-runtime collection checks before exercising reload identity.
+  const runtimeB = await import(pathToFileURL(join(runtimeBPath, "calcit.procs.mjs")).href);
   const todoEnumValue = new runtimeA.CalcitEnumValue(todoField, [""], todoEnum);
   const anonymousEnumValue = new runtimeA.CalcitEnumValue(todoField, [""]);
   assert.equal(runtimeA._$n_enum_def_$o_has_variant_$q_(todoEnum, todoField), true);

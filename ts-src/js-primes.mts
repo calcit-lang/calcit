@@ -179,6 +179,36 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
         if (tagOrder !== 0) return tagOrder;
         return compareSequences(left.extra, right.extra);
       }
+      case PseudoTypeIndex.enum_def: {
+        const left = a as CalcitEnumDef;
+        const right = b as CalcitEnumDef;
+        const leftRef = left.prototype.structRef.definitionRef;
+        const rightRef = right.prototype.structRef.definitionRef;
+        if (leftRef !== rightRef) {
+          if (leftRef == null) return -1;
+          if (rightRef == null) return 1;
+          return compareUnicodeStrings(leftRef, rightRef);
+        }
+        const nameOrder = compareUnicodeStrings(left.name(), right.name());
+        if (nameOrder !== 0) return nameOrder;
+        const variantCountOrder = rawCompare(left.prototype.fields.length, right.prototype.fields.length);
+        if (variantCountOrder !== 0) return variantCountOrder;
+        for (let index = 0; index < left.prototype.fields.length; index++) {
+          const tagOrder = _$n_compare(left.prototype.fields[index], right.prototype.fields[index]);
+          if (tagOrder !== 0) return tagOrder;
+          const leftPayload = left.prototype.values[index];
+          const rightPayload = right.prototype.values[index];
+          // Native orders variant payloads by arity before comparing types.
+          if ((leftPayload instanceof CalcitList || leftPayload instanceof CalcitSliceList)
+            && (rightPayload instanceof CalcitList || rightPayload instanceof CalcitSliceList)) {
+            const arityOrder = rawCompare(leftPayload.len(), rightPayload.len());
+            if (arityOrder !== 0) return arityOrder;
+          }
+          const payloadOrder = _$n_compare(leftPayload, rightPayload);
+          if (payloadOrder !== 0) return payloadOrder;
+        }
+        return rawCompare(left.impls.length, right.impls.length) || compareSequences(left.impls, right.impls);
+      }
       case PseudoTypeIndex.set: {
         // like native: smaller sets first, then the sorted elements
         const left = Array.from((a as CalcitSet).values());
