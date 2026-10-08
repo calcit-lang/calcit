@@ -1148,6 +1148,18 @@ mod type_query_tests {
   use crate::cli_handlers::test_support::TestProject;
 
   #[test]
+  fn untyped_signatures_keep_parameters_but_not_values() {
+    let signature = |source: &str| {
+      let code = cirru_parser::parse(source).expect("parse").remove(0);
+      definition_signature(&snapshot::CodeEntry::from_code(code))
+    };
+    assert_eq!(signature("defn helper (x y) (+ x y)"), "(untyped) defn helper $ x y");
+    assert_eq!(signature("defcomp comp-item (item) (div)"), "(untyped) defcomp comp-item $ item");
+    assert_eq!(signature("defatom *store ({} (:count 0))"), "(untyped) defatom *store");
+    assert_eq!(signature("def config ([] 1 2)"), "(untyped) def config");
+  }
+
+  #[test]
   fn runtime_call_arity_uses_core_proc_values_not_schema_or_spelling_guesses() {
     let snapshot = load_core_snapshot().expect("core snapshot");
     let core = &snapshot.files["calcit.core"];
@@ -4534,8 +4546,12 @@ fn definition_signature(entry: &snapshot::CodeEntry) -> String {
   let Cirru::List(items) = &entry.code else {
     return "(untyped)".to_owned();
   };
-  // Keep a parameter list when one follows the name; values stay out of the overview.
-  let keep = if matches!(items.get(2), Some(Cirru::List(_))) && !items.first().is_some_and(|head| head.eq_leaf("def")) {
+  // Keep the parameter list of function-like declarations; values such as a
+  // `defatom` initializer stay out of the overview.
+  let takes_params = items
+    .first()
+    .is_some_and(|head| ["defn", "defmacro", "defcomp", "defeffect"].iter().any(|name| head.eq_leaf(name)));
+  let keep = if takes_params && matches!(items.get(2), Some(Cirru::List(_))) {
     3
   } else {
     2
