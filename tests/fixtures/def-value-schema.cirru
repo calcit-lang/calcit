@@ -579,6 +579,130 @@
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.reader
           :require $ app.values :as values
+    'app.short-circuit $ %{} 'FileEntry
+      :defs $ {}
+        'common-or $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn common-or (k flag)
+            if
+              or
+                and (number? k) flag
+                and (number? k) (&>= k 0)
+              &+ k 1
+              , 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic 'Bool
+          :tests $ [] $ %{} 'TestEntry (:name |both-or-paths)
+            :code $ quote $ do
+              assert= 2 $ common-or 1 false
+              assert= -1 $ common-or -2 true
+              assert= 0 $ common-or |bad true
+            :tags $ #{} :short-circuit-proof :unit
+        'compound $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn compound (k)
+            if
+              and (number? k)
+                = k $ floor k
+                &>= k 0
+                &< k $ count $ [] 1 2
+              &list:assoc ([] 1 2) k 3
+              [] 1 2
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Dynamic
+            :return $ :: 'List 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |checked-index)
+              :code $ quote $ do
+                assert= ([] 1 3) (compound 1)
+                assert= ([] 1 2) (compound |bad)
+                assert= ([] 1 2) (compound -1)
+                assert= ([] 1 2) (compound 1.5)
+                assert= ([] 1 2) (compound 2)
+              :tags $ #{} :short-circuit-proof :unit
+            %{} 'TestEntry (:name |single-evaluation)
+              :code $ quote $ let
+                  calls $ atom 0
+                assert= false $ and false $ do
+                  reset! calls $ inc $ deref calls
+                  , true
+                assert= 0 $ deref calls
+                assert= 7 $ and true $ do
+                  reset! calls $ inc $ deref calls
+                  , 7
+                assert= 1 $ deref calls
+                assert= 7 $ or 7 $ do (reset! calls 99) false
+                assert= 1 $ deref calls
+              :tags $ #{} :short-circuit-proof :unit
+        'false-path $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn false-path (k)
+            if
+              if (number? k) false true
+              , 0 $ &+ k 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |false-branch-proof)
+            :code $ quote $ do
+              assert= 2 $ false-path 1
+              assert= 0 $ false-path |bad
+            :tags $ #{} :short-circuit-proof :unit
+        'lexical-guard $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn lexical-guard (k)
+            if
+              let
+                  valid $ number? k
+                if valid true false
+              &+ k 1
+              , 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |bound-predicate)
+            :code $ quote $ do
+              assert= 2 $ lexical-guard 1
+              assert= 0 $ lexical-guard |bad
+            :tags $ #{} :short-circuit-proof :unit
+        'nested $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nested (k)
+            if (number? k)
+              if
+                and
+                  = k $ floor k
+                  &>= k 0
+                  &< k $ count $ [] 1 2
+                &list:assoc ([] 1 2) k 3
+                [] 1 2
+              [] 1 2
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Dynamic
+            :return $ :: 'List 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |checked-index)
+            :code $ quote $ do
+              assert= ([] 1 3) (nested 1)
+              assert= ([] 1 2) (nested |bad)
+              assert= ([] 1 2) (nested -1)
+              assert= ([] 1 2) (nested 1.5)
+              assert= ([] 1 2) (nested 2)
+            :tags $ #{} :short-circuit-proof :unit
+        'two-values $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn two-values (x y)
+            if
+              and (number? x) (number? y) (&< x y)
+              &+ x y
+              , 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |both-operands)
+            :code $ quote $ do
+              assert= 5 $ two-values 2 3
+              assert= 0 $ two-values 2 |bad
+              assert= 0 $ two-values |bad 3
+            :tags $ #{} :short-circuit-proof :unit
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.short-circuit
     'app.values $ %{} 'FileEntry
       :defs $ {}
         'ClientProjection $ %{} 'CodeEntry (:doc |)

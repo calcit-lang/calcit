@@ -1,4 +1,5 @@
 mod checked_call_contract;
+mod condition_evidence;
 mod explicit_open;
 mod js_ffi;
 mod post_lowering;
@@ -9450,9 +9451,9 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
 
   warn_on_nominal_enum_truthiness(&cond_form, ctx.scope_types, ctx.file_ns, ctx.check_warnings);
 
-  let narrowing = extract_predicate_bindings(&cond_form, ctx.scope_types);
+  let narrowing = condition_evidence::infer(&cond_form, ctx.scope_types);
   let mut true_scope_types = ctx.scope_types.clone();
-  if let Some((sym, inferred)) = &narrowing.true_binding {
+  for (sym, inferred) in &narrowing.when_true {
     true_scope_types.insert(sym.clone(), inferred.clone());
   }
 
@@ -9467,7 +9468,7 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
 
   let false_form = if let Some(false_branch) = args.get(2) {
     let mut false_scope_types = ctx.scope_types.clone();
-    if let Some((sym, inferred)) = &narrowing.false_binding {
+    for (sym, inferred) in &narrowing.when_false {
       false_scope_types.insert(sym.clone(), inferred.clone());
     }
     Some(preprocess_expr(
