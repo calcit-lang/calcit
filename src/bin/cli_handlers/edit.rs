@@ -13,10 +13,10 @@
 use calcit::calcit::{CalcitTypeAnnotation, DYNAMIC_TYPE};
 use calcit::cli_args::{
   EditAddExampleCommand, EditAddImportCommand, EditAddNsCommand, EditAddTestCommand, EditCommand, EditCpCommand, EditDefCommand,
-  EditDocCommand, EditExamplesCommand, EditFfiCommand, EditFormatCommand, EditImportsCommand, EditIncCommand, EditMvDefCommand,
-  EditMvNodeCommand, EditNsDocCommand, EditRenameCommand, EditRmDefCommand, EditRmExampleCommand, EditRmImportCommand, EditRmNsCommand,
-  EditRmTestCommand, EditSchemaCommand, EditSplitDefCommand, EditSubcommand, EditTagsCommand, EditTransactionCommand,
-  SyntaxInputFormat,
+  EditDocCommand, EditExamplesCommand, EditFfiCommand, EditFormatCommand, EditImportsCommand, EditIncCommand, EditMergeCommand,
+  EditMvDefCommand, EditMvNodeCommand, EditNsDocCommand, EditRenameCommand, EditRmDefCommand, EditRmExampleCommand,
+  EditRmImportCommand, EditRmNsCommand, EditRmTestCommand, EditSchemaCommand, EditSplitDefCommand, EditSubcommand, EditTagsCommand,
+  EditTransactionCommand, SyntaxInputFormat,
 };
 use calcit::program::validate_import_rules;
 use calcit::program_diff::{CirruEditStrategy, analyze_cirru_edit_advice};
@@ -98,6 +98,7 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
   resolve_edit_cursor_references(&mut resolved, snapshot_file)?;
   let result = match &resolved.subcommand {
     EditSubcommand::Format(opts) => handle_format(opts, snapshot_file),
+    EditSubcommand::Merge(opts) => handle_merge(opts, snapshot_file),
     EditSubcommand::Transaction(opts) => handle_transaction(opts, snapshot_file),
     EditSubcommand::Scaffold(opts) => handle_scaffold_command(opts, snapshot_file),
     EditSubcommand::Def(opts) => handle_def(opts, snapshot_file),
@@ -134,6 +135,8 @@ fn edit_mutates_snapshot(cmd: &EditSubcommand) -> bool {
     EditSubcommand::Scaffold(opts) => !opts.dry_run,
     EditSubcommand::Tags(opts) => opts.tags.is_some(),
     EditSubcommand::Inc(_) => false,
+    // Git owns the merge driver's temporary files; no other writer can race on them.
+    EditSubcommand::Merge(_) => false,
     _ => true,
   }
 }
@@ -157,6 +160,7 @@ fn resolve_edit_cursor_references(cmd: &mut EditCommand, snapshot_file: &str) ->
     EditSubcommand::Rename(opts) => Some(&mut opts.source),
     EditSubcommand::SplitDef(opts) => Some(&mut opts.target),
     EditSubcommand::Format(_)
+    | EditSubcommand::Merge(_)
     | EditSubcommand::Transaction(_)
     | EditSubcommand::Scaffold(_)
     | EditSubcommand::AddNs(_)
@@ -267,6 +271,45 @@ fn maintain_cursor_after_edit(cmd: &EditCommand, snapshot_file: &str) -> Result<
     }
     _ => Ok(()),
   }
+}
+
+/// Merge `--theirs` into this Snapshot relative to `--base`, one definition at a time.
+/// The result is written in canonical format; conflicting units keep our version
+/// and make the command fail so Git reports the conflict.
+fn handle_merge(opts: &EditMergeCommand, snapshot_file: &str) -> Result<(), String> {
+  let base = load_snapshot(&opts.base)?;
+  let ours = load_snapshot(snapshot_file)?;
+  let theirs = load_snapshot(&opts.theirs)?;
+  let result = super::snapshot_scope::merge_snapshots(&base, &ours, &theirs)?;
+  let content = render_snapshot_content(&result.merged)?;
+  fs::write(snapshot_file, content.as_bytes()).map_err(|error| format!("Failed to write merged Snapshot {snapshot_file}: {error}"))?;
+  if result.conflicts.is_empty() {
+    println!("{} Merged Snapshot per definition into '{}'", "✓".green(), snapshot_file.cyan());
+    println!("Run `calcit --check-only` and the project tests before committing the merge.");
+    return Ok(());
+  }
+  println!("# Snapshot merge conflicts\n");
+  println!("Both sides changed these units differently; the file keeps our version of each:\n");
+  for unit in &result.conflicts {
+    println!("- `{unit}`");
+    if let Some(path) = unit.strip_prefix("def:")
+      && let Some((namespace, definition)) = path.split_once('/')
+    {
+      for (label, side) in [("base", &base), ("ours", &ours), ("theirs", &theirs)] {
+        match side.files.get(namespace).and_then(|file| file.defs.get(definition)) {
+          Some(entry) => println!(
+            "  - {label}: `{}`",
+            entry.code.format_one_liner().unwrap_or_else(|_| "(unprintable)".to_owned())
+          ),
+          None => println!("  - {label}: _(absent)_"),
+        }
+      }
+    }
+  }
+  Err(format!(
+    "{} Snapshot unit(s) conflict; resolve them with `calcit edit`, then run `calcit --check-only`",
+    result.conflicts.len()
+  ))
 }
 
 fn handle_format(_opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), String> {
@@ -438,6 +481,9 @@ struct TransactionReport {
   changed: bool,
   original_revision: String,
   new_revision: String,
+  /// Pre-edit fingerprints of only the units this transaction changes; pass it
+  /// to `--expect-revision` so edits to other definitions do not invalidate it.
+  scoped_revision: Option<String>,
   operations: Vec<TransactionOperationReport>,
 }
 
@@ -571,7 +617,7 @@ fn parse_transaction_operations(raw: &str) -> Result<Vec<Vec<String>>, String> {
       ),
       "config" => matches!(
         subcommand,
-        "version" | "set" | "add-module" | "rm-module" | "set-type-slot" | "rm-type-slot"
+        "version" | "set" | "add-entry" | "add-module" | "rm-module" | "set-type-slot" | "rm-type-slot"
       ),
       _ => false,
     };
@@ -631,13 +677,26 @@ where
   let original_content =
     fs::read_to_string(snapshot_file).map_err(|error| format!("Failed to read snapshot '{}': {error}", snapshot_file.display()))?;
   let original_revision = snapshot_content_revision(&original_content);
-  if let Some(expected) = expected_revision
-    && expected != original_revision
-  {
-    return Err(format!(
-      "Snapshot revision mismatch: expected '{expected}', current revision is '{original_revision}'. Re-run the query and rebuild the transaction."
-    ));
-  }
+  // Legacy snapshots that only `edit format` can read have no unit view.
+  let original_units = load_snapshot(&snapshot_file.to_string_lossy())
+    .ok()
+    .map(|snapshot| super::snapshot_scope::snapshot_units(&snapshot))
+    .transpose()?;
+  // A scoped revision guards only the units the previewed transaction touched.
+  let guarded_units = match expected_revision {
+    Some(expected) if super::snapshot_scope::is_scoped_revision(expected) => {
+      let units = original_units
+        .as_ref()
+        .ok_or("A scoped revision needs a Snapshot the current CLI can load; use the full revision instead.")?;
+      Some(super::snapshot_scope::check_scoped_revision(expected, units)?)
+    }
+    Some(expected) if expected != original_revision => {
+      return Err(format!(
+        "Snapshot revision mismatch: expected '{expected}', current revision is '{original_revision}'. Re-run the query and rebuild the transaction."
+      ));
+    }
+    _ => None,
+  };
 
   let staged = stage_atomic_file(snapshot_file, original_content.as_bytes(), "transaction snapshot")?;
   let mut operation_reports = Vec::with_capacity(operations.len());
@@ -661,6 +720,23 @@ where
 
   let new_revision = snapshot_content_revision(&staged_content);
   let changed = original_content != staged_content;
+  let touched = match &original_units {
+    Some(units) => Some((
+      units,
+      super::snapshot_scope::changed_units(units, &super::snapshot_scope::snapshot_units(&staged_snapshot)?),
+    )),
+    None => None,
+  };
+  if let (Some(guarded), Some((_, touched))) = (&guarded_units, &touched) {
+    let unguarded = touched.iter().filter(|unit| !guarded.contains(*unit)).cloned().collect::<Vec<_>>();
+    if !unguarded.is_empty() {
+      return Err(format!(
+        "Definition conflict: the transaction now also changes {}, which the scoped revision does not cover. Re-run the dry-run and review the new plan.",
+        unguarded.join(", ")
+      ));
+    }
+  }
+  let scoped_revision = touched.map(|(units, touched)| super::snapshot_scope::scoped_revision(units, &touched));
 
   let current_content =
     fs::read_to_string(snapshot_file).map_err(|error| format!("Failed to re-read snapshot '{}': {error}", snapshot_file.display()))?;
@@ -682,6 +758,7 @@ where
     changed,
     original_revision,
     new_revision,
+    scoped_revision,
     operations: operation_reports,
   })
 }
@@ -868,6 +945,9 @@ fn handle_transaction(opts: &EditTransactionCommand, snapshot_file: &str) -> Res
       println!("- mode: `{}`", if opts.dry_run { "preview" } else { "apply" });
       println!("- original revision: `{}`", report.original_revision);
       println!("- new revision: `{}`", report.new_revision);
+      if let Some(scoped) = &report.scoped_revision {
+        println!("- scoped revision: `{scoped}`");
+      }
       println!("- changed: `{}`", report.changed);
       println!("- operations: `{}`", report.operations.len());
       for operation in &report.operations {
@@ -933,7 +1013,7 @@ fn source_declares_macro(entry: &CodeEntry) -> bool {
   matches!(&entry.code, Cirru::List(items) if items.first().is_some_and(|head| head.eq_leaf("defmacro")))
 }
 
-fn definition_head_is_macro(snapshot_file: &str, snapshot: &Snapshot, namespace: &str, head: &str) -> Result<bool, String> {
+pub(crate) fn definition_head_is_macro(snapshot_file: &str, snapshot: &Snapshot, namespace: &str, head: &str) -> Result<bool, String> {
   let file = &snapshot.files[namespace];
   let imports = calcit::program::extract_import_map(&file.ns.code, namespace)?;
   let (source_ns, source_def) = if let Some((prefix, name)) = head.split_once('/') {
@@ -1650,6 +1730,7 @@ fn handle_mv_def(opts: &EditMvDefCommand, snapshot_file: &str) -> Result<(), Str
   Ok(())
 }
 
+/// Store a definition's documentation verbatim; warn when the text looks like a Cirru string literal.
 fn handle_doc(opts: &EditDocCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
@@ -1674,6 +1755,12 @@ fn handle_doc(opts: &EditDocCommand, snapshot_file: &str) -> Result<(), String> 
   code_entry.doc = opts.doc.clone();
 
   save_snapshot(&snapshot, snapshot_file)?;
+  if opts.doc.starts_with('|') {
+    eprintln!(
+      "{} Documentation is stored verbatim, so the leading `|` is kept as text; pass the plain text without the Cirru string prefix.",
+      "⚠".yellow()
+    );
+  }
 
   println!(
     "{} Updated documentation for '{}' in namespace '{}'",
@@ -2046,6 +2133,12 @@ fn save_schema_preserving_snapshot(
   } else {
     entry.pairs.retain(|(key, _)| key.ref_str() != "schema");
   }
+
+  // Reject a schema the loader would refuse before the atomic save, so a failed
+  // write leaves the original bytes and revision untouched.
+  snapshot::load_snapshot_data(&data, snapshot_file).map_err(|e| {
+    format!("Schema validation failed: `{namespace}/{definition}` would make the snapshot unloadable, nothing was written: {e}")
+  })?;
 
   let formatted = cirru_edn::format(&data, true).map_err(|e| format!("Failed to format snapshot EDN: {e}"))?;
   let output = match shebang {
@@ -3935,6 +4028,10 @@ mod tests {
     let fixture = TestSnapshot::from_fixture();
     let source = r#"#! /usr/bin/env calcit
 {} (:package |demo) (:version |0.0.1)
+  :entries $ {}
+    :default $ {} (:description |) (:init-fn 'app.main/target) (:mode :native) (:reload-fn 'app.main/target)
+      :modules $ []
+      :type-slots $ {}
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}

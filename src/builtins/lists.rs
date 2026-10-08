@@ -801,7 +801,10 @@ pub fn assoc(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           ys = ys.assoc(idx, xs[2].to_owned())?;
           Ok(Calcit::from(ys))
         } else {
-          Ok(Calcit::List(Arc::new(xs.into())))
+          CalcitErr::err_str(
+            CalcitErrKind::Unexpected,
+            format!("&list:assoc index {idx} out of bounds for list of length {}", zs.len()),
+          )
         }
       }
       Err(e) => CalcitErr::err_str(CalcitErrKind::Type, e),

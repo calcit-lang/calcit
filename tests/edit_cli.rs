@@ -821,6 +821,7 @@ fn explicit_syntax_input_formats_preserve_ambiguous_node_shapes() {
     let output = run_calcit(
       &snapshot,
       &[
+        "--verbose",
         "edit",
         "add-example",
         "app.main/main!",
@@ -846,6 +847,23 @@ fn explicit_syntax_input_formats_preserve_ambiguous_node_shapes() {
 
   let definition = query_definition(&snapshot, "app.main/main!");
   assert_eq!(definition["data"]["examples"], serde_json::json!(["[]", [], ["inc", "1"], ["[]"]]));
+
+  // Without --verbose the decoded-input echo stays out of the default output.
+  let quiet = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "add-example",
+      "app.main/main!",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ inc 2",
+    ],
+  );
+  assert_success(&quiet, "add example without verbose output");
+  let stdout = String::from_utf8_lossy(&quiet.stdout);
+  assert!(!stdout.contains("Decoded syntax input"), "stdout:\n{stdout}");
 
   let invalid = run_calcit(
     &snapshot,
@@ -874,6 +892,7 @@ fn bulk_imports_use_explicit_syntax_transport_and_keep_legacy_auto_compatibility
   let explicit = run_calcit(
     &snapshot,
     &[
+      "--verbose",
       "edit",
       "imports",
       "app.main",
@@ -1214,6 +1233,81 @@ fn malformed_defmacro_is_rejected_without_changing_the_snapshot() {
 }
 
 #[test]
+fn unloadable_macro_schema_edits_are_rejected_without_changing_the_snapshot() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  create_macro(&snapshot, "echo-source", "quote $ defmacro echo-source (value) , value");
+  let original = fs::read(&snapshot).expect("snapshot should read");
+
+  let invalid_expansion = "quote $ :: 'Macro $ {} (:required $ [] 'Syntax) (:capabilities $ #{}) (:expansion 'Syntax)";
+  let rejected = [
+    vec![
+      "edit",
+      "schema",
+      "app.main/echo-source",
+      "--input-format",
+      "cirru",
+      "--code",
+      invalid_expansion,
+    ],
+    vec![
+      "edit",
+      "schema",
+      "app.main/echo-source",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Syntax) (:return 'Dynamic)",
+    ],
+    vec!["edit", "schema", "app.main/echo-source", "--clear"],
+  ];
+  for args in &rejected {
+    let output = run_calcit(&snapshot, args);
+    assert!(!output.status.success(), "unloadable schema edit must fail: {args:?}");
+    assert!(
+      String::from_utf8_lossy(&output.stderr).contains("Schema validation failed"),
+      "stderr:\n{}",
+      String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+      fs::read(&snapshot).expect("snapshot should read"),
+      original,
+      "failed edit changed the Snapshot: {args:?}"
+    );
+  }
+
+  let transaction_code = format!(
+    r#"[["edit","schema","app.main/echo-source","--input-format","cirru","--code",{}]]"#,
+    serde_json::to_string(invalid_expansion).expect("code should encode")
+  );
+  let transaction = run_calcit(&snapshot, &["edit", "transaction", "--code", &transaction_code]);
+  assert!(!transaction.status.success(), "transaction with an unloadable schema must fail");
+  assert_eq!(
+    fs::read(&snapshot).expect("snapshot should read"),
+    original,
+    "failed transaction changed the Snapshot"
+  );
+
+  query_definition(&snapshot, "app.main/echo-source");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "app.main/echo-source",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Macro $ {} (:required $ [] 'Syntax) (:capabilities $ #{}) (:expansion $ :: 'Expr 'Dynamic)",
+      ],
+    ),
+    "valid macro schema edit",
+  );
+  query_definition(&snapshot, "app.main/echo-source");
+}
+
+#[test]
 fn overwriting_with_defexternal_drops_retained_ffi_metadata() {
   let directory = TestDirectory::create();
   let snapshot = prepare_minimal_snapshot(&directory);
@@ -1262,4 +1356,556 @@ fn overwriting_with_defexternal_drops_retained_ffi_metadata() {
   assert_eq!(report["data"]["ffi"][":target"]["__edn_tag"], "browser");
   // The overwrite replaced the previous metadata, so the old `:names` override is gone.
   assert!(report["data"]["ffi"][":names"].is_null());
+}
+
+/// Default output of common agent commands stays compact; details need explicit flags.
+#[test]
+fn agent_commands_print_compact_default_output() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/test.cirru", &snapshot).unwrap();
+
+  // A one-leaf replacement reports operation, location and inline before/after only.
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/compact-sample",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn compact-sample () (println |old-text)",
+      ],
+    ),
+    "create compact sample",
+  );
+  let replaced = run_calcit(
+    &snapshot,
+    &[
+      "tree",
+      "search-replace",
+      "app.main/compact-sample",
+      "--pattern",
+      "|old-text",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote |new-text",
+    ],
+  );
+  assert_success(&replaced, "search-replace");
+  let stdout = String::from_utf8_lossy(&replaced.stdout);
+  assert!(stdout.contains("# Tree mutation `search-replace` at `@3.1`"), "stdout:\n{stdout}");
+  assert!(
+    stdout.contains("- before: `|old-text`") && stdout.contains("- after: `|new-text`"),
+    "stdout:\n{stdout}"
+  );
+  assert!(!stdout.contains("Decoded syntax input"), "stdout:\n{stdout}");
+
+  // Docs are stored verbatim, so a Cirru string prefix earns a warning.
+  let doc = run_calcit(&snapshot, &["edit", "doc", "app.main/compact-sample", "|Prints text"]);
+  assert_success(&doc, "edit doc");
+  assert!(String::from_utf8_lossy(&doc.stderr).contains("stored verbatim"));
+  let plain_doc = run_calcit(&snapshot, &["edit", "doc", "app.main/compact-sample", "Prints text"]);
+  assert!(!String::from_utf8_lossy(&plain_doc.stderr).contains("stored verbatim"));
+
+  // Short definitions are shown whole even above the node trigger.
+  let short = run_calcit(&snapshot, &["query", "def", "app.main/main!"]);
+  assert_success(&short, "query short definition");
+  let stdout = String::from_utf8_lossy(&short.stdout);
+  assert!(stdout.contains("## Cirru\n") && !stdout.contains("Chunked"), "stdout:\n{stdout}");
+  let forced = run_calcit(
+    &snapshot,
+    &[
+      "query",
+      "def",
+      "app.main/main!",
+      "--chunk-trigger-bytes",
+      "0",
+      "--chunk-trigger-nodes",
+      "10",
+      "--chunk-target-nodes",
+      "8",
+      "--chunk-max-nodes",
+      "12",
+    ],
+  );
+  assert!(String::from_utf8_lossy(&forced.stdout).contains("## Chunked Cirru"));
+
+  // Context leaves out core syntax/macros and generic Fn methods unless asked.
+  let context = |extra: &[&str]| -> serde_json::Value {
+    let mut args = vec![
+      "query",
+      "context",
+      "app.main/test-fn",
+      "--format",
+      "json",
+      "--dependency-limit",
+      "200",
+    ];
+    args.extend_from_slice(extra);
+    let output = run_calcit(&snapshot, &args);
+    assert_success(&output, "query context");
+    serde_json::from_slice(&output.stdout).unwrap()
+  };
+  let ids = |value: &serde_json::Value, key: &str, field: &str| -> Vec<String> {
+    value["data"][key]["items"]
+      .as_array()
+      .map(|items| {
+        items
+          .iter()
+          .map(|item| item[field].as_str().unwrap_or_default().to_owned())
+          .collect()
+      })
+      .unwrap_or_default()
+  };
+  let compact = context(&[]);
+  let full = context(&["--include-core"]);
+  for core in ["calcit.core/defn", "calcit.core/let", "calcit.core/fn"] {
+    let in_full = ids(&full, "dependencies", "id").iter().any(|id| id == core);
+    if in_full {
+      assert!(
+        !ids(&compact, "dependencies", "id").iter().any(|id| id == core),
+        "{core}: {compact}"
+      );
+    }
+  }
+  assert!(
+    ids(&full, "dependencies", "id").len() > ids(&compact, "dependencies", "id").len(),
+    "{full}"
+  );
+  assert!(ids(&full, "static_methods", "name").iter().any(|name| name == ".apply"), "{full}");
+  assert!(
+    !ids(&compact, "static_methods", "name").iter().any(|name| name == ".apply"),
+    "{compact}"
+  );
+}
+
+/// `query def --format cirru` output is accepted by `edit def --overwrite` and leaves the Snapshot unchanged.
+#[test]
+fn query_def_cirru_view_writes_back_byte_identically() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/test.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/view-sample",
+        "--input-format",
+        "json-ast",
+        "--code",
+        r#"["defn","view-sample",["x"],[";","keep","this","note"],["println","|a b $ c","|",["str","|(x)","|"]],["let",[["y",["[]","1","2"]]],[",","y"]]]"#,
+      ],
+    ),
+    "create definition with comments and tricky leaves",
+  );
+  let original = fs::read(&snapshot).unwrap();
+  for target in ["app.main/view-sample", "app.main/main!", "app.main/test-fn"] {
+    let view = run_calcit(&snapshot, &["query", "def", target, "--format", "cirru"]);
+    assert_success(&view, &format!("cirru view of {target}"));
+    let text = String::from_utf8(view.stdout).unwrap();
+    assert!(text.starts_with("quote $ "), "{target} view must be a quoted definition:\n{text}");
+    let file = directory.0.join("view.cirru");
+    fs::write(&file, &text).unwrap();
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          target,
+          "--overwrite",
+          "--input-format",
+          "cirru",
+          "--file",
+          file.to_str().unwrap(),
+        ],
+      ),
+      &format!("write back {target}"),
+    );
+    assert_eq!(fs::read(&snapshot).unwrap(), original, "writing back {target} changed the Snapshot");
+  }
+  let missing = run_calcit(&snapshot, &["query", "def", "app.main/no-such-definition", "--format", "cirru"]);
+  assert!(!missing.status.success());
+  assert!(missing.stdout.is_empty(), "failed view must not print partial source");
+}
+
+#[test]
+fn config_add_entry_creates_complete_named_entries_through_guarded_transactions() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  let original = fs::read(&snapshot).expect("snapshot should read");
+
+  // Invalid creations fail before writing.
+  for args in [
+    vec!["config", "add-entry", "default", "--from", "default"],
+    vec!["config", "add-entry", "demo", "--mode", "js"],
+    vec!["config", "add-entry", "demo", "--from", "missing"],
+    vec![
+      "config",
+      "add-entry",
+      "demo",
+      "--mode",
+      "js",
+      "--init-fn",
+      "app.main/missing",
+      "--reload-fn",
+      "app.main/reload!",
+    ],
+    vec![
+      "config",
+      "add-entry",
+      "demo",
+      "--mode",
+      "lua",
+      "--init-fn",
+      "app.main/main!",
+      "--reload-fn",
+      "app.main/reload!",
+    ],
+  ] {
+    let output = run_calcit(&snapshot, &args);
+    assert!(!output.status.success(), "invalid add-entry must fail: {args:?}");
+    assert_eq!(
+      fs::read(&snapshot).expect("snapshot should read"),
+      original,
+      "failed add-entry wrote: {args:?}"
+    );
+  }
+
+  let operations = r#"[["config","add-entry","demo","--mode","js","--target","browser","--init-fn","app.main/main!","--reload-fn","app.main/reload!","--description","Demo page"],["config","add-module","--entry","demo","calcit-test/"],["config","set","--entry","demo","feature-policy.js-ffi","warn"]]"#;
+  let dry_run = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", operations, "--dry-run", "--format", "json"],
+  );
+  assert_success(&dry_run, "dry-run entry creation");
+  let report: serde_json::Value = serde_json::from_slice(&dry_run.stdout).expect("transaction JSON");
+  assert_eq!(fs::read(&snapshot).expect("snapshot should read"), original, "dry run wrote");
+  let revision = report["original_revision"].as_str().expect("revision").to_owned();
+
+  let stale = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", operations, "--expect-revision", "md5:stale"],
+  );
+  assert!(!stale.status.success(), "stale revision must be rejected");
+  assert_eq!(
+    fs::read(&snapshot).expect("snapshot should read"),
+    original,
+    "stale transaction wrote"
+  );
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--code", operations, "--expect-revision", &revision],
+    ),
+    "apply entry creation",
+  );
+  let show = run_calcit(&snapshot, &["config", "show", "--entry", "demo", "--format", "json"]);
+  assert_success(&show, "show new entry");
+  let shown: serde_json::Value = serde_json::from_slice(&show.stdout).expect("config JSON");
+  let entry = &shown["data"]["entries"][0];
+  assert_eq!(entry["name"], "demo");
+  assert_eq!(entry["mode"], "js");
+  assert_eq!(entry["target"], "browser");
+  assert_eq!(entry["init_fn"], "app.main/main!");
+  assert_eq!(entry["reload_fn"], "app.main/reload!");
+  assert_eq!(entry["description"], "Demo page");
+  assert_eq!(entry["modules"], serde_json::json!(["calcit-test/"]));
+  assert_eq!(entry["feature_policy"]["js-ffi"], "warn");
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["config", "add-entry", "demo-copy", "--from", "demo", "--mode", "native"],
+    ),
+    "clone entry",
+  );
+  let copy = run_calcit(&snapshot, &["config", "show", "--entry", "demo-copy", "--format", "json"]);
+  assert_success(&copy, "show cloned entry");
+  let copied: serde_json::Value = serde_json::from_slice(&copy.stdout).expect("config JSON");
+  assert_eq!(copied["data"]["entries"][0]["mode"], "native");
+  assert_eq!(copied["data"]["entries"][0]["modules"], serde_json::json!(["calcit-test/"]));
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["config", "add-entry", "plain", "--from", "default", "--description", "Plain copy"],
+    ),
+    "clone default entry",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["--entry", "plain", "--check-only"]),
+    "cloned entry runs strict checks",
+  );
+}
+
+fn transaction_scope(snapshot: &Path, operations: &str) -> String {
+  let dry_run = run_calcit(
+    snapshot,
+    &["edit", "transaction", "--dry-run", "--format", "json", "--code", operations],
+  );
+  assert_success(&dry_run, "transaction dry-run");
+  let report: serde_json::Value = serde_json::from_slice(&dry_run.stdout).expect("transaction JSON");
+  report["scoped_revision"].as_str().expect("scoped revision").to_owned()
+}
+
+/// Transactions on different definitions commit in either order with scoped revisions.
+#[test]
+fn scoped_revisions_let_transactions_on_different_definitions_commit_independently() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  let edit = |name: &str, value: &str| {
+    format!(r#"[["edit","def","app.main/{name}","--overwrite","--input-format","cirru","--code","quote $ defn {name} () {value}"]]"#)
+  };
+  for name in ["first", "second"] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("app.main/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ defn {name} () 0"),
+        ],
+      ),
+      "create definition",
+    );
+  }
+  let first = transaction_scope(&snapshot, &edit("first", "1"));
+  let second = transaction_scope(&snapshot, &edit("second", "2"));
+  assert_eq!(first.matches('@').count(), 1, "scope covers only the touched definition: {first}");
+  assert!(first.starts_with("scope:def:app.main/first@md5:"), "{first}");
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--expect-revision", &second, "--code", &edit("second", "2")],
+    ),
+    "commit second",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--expect-revision", &first, "--code", &edit("first", "1")],
+    ),
+    "commit first after an unrelated commit",
+  );
+
+  // The same definition changed since the preview: the later commit gets a conflict naming it.
+  let stale = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--expect-revision", &first, "--code", &edit("first", "3")],
+  );
+  assert!(!stale.status.success());
+  let stderr = String::from_utf8_lossy(&stale.stderr);
+  assert!(stderr.contains("Definition conflict: def:app.main/first"), "{stderr}");
+
+  // A scope cannot be widened by different operations.
+  let widened = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "transaction",
+      "--expect-revision",
+      &transaction_scope(&snapshot, &edit("first", "4")),
+      "--code",
+      &edit("second", "4"),
+    ],
+  );
+  assert!(!widened.status.success());
+  assert!(String::from_utf8_lossy(&widened.stderr).contains("def:app.main/second"));
+
+  // Whole-Snapshot revisions keep working.
+  let dry_run = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "transaction",
+      "--dry-run",
+      "--format",
+      "json",
+      "--code",
+      &edit("first", "5"),
+    ],
+  );
+  let report: serde_json::Value = serde_json::from_slice(&dry_run.stdout).unwrap();
+  let revision = report["original_revision"].as_str().unwrap();
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--expect-revision", revision, "--code", &edit("first", "5")],
+    ),
+    "full revision",
+  );
+}
+
+fn git(directory: &Path, args: &[&str]) -> Output {
+  Command::new("git")
+    .arg("-C")
+    .arg(directory)
+    .args(["-c", "user.name=calcit", "-c", "user.email=calcit@example.com"])
+    .args(args)
+    .output()
+    .expect("git should run")
+}
+
+/// The Git merge driver merges per definition and reports same-definition conflicts.
+#[test]
+fn merge_driver_merges_definitions_and_reports_same_definition_conflicts() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  assert_success(&run_calcit(&snapshot, &["edit", "format"]), "canonical base");
+  let canonical = fs::read(&snapshot).unwrap();
+
+  // Merging identical versions keeps the canonical bytes.
+  let copy = directory.0.join("copy.cirru");
+  fs::copy(&snapshot, &copy).unwrap();
+  let copy_arg = copy.to_str().unwrap();
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "merge", "--base", copy_arg, "--theirs", copy_arg]),
+    "no-op merge",
+  );
+  assert_eq!(fs::read(&snapshot).unwrap(), canonical, "no-op merge must keep the Snapshot bytes");
+
+  let root = &directory.0;
+  assert!(git(root, &["init", "-q", "-b", "main"]).status.success());
+  fs::write(root.join(".gitattributes"), "calcit.cirru merge=calcit\n").unwrap();
+  let driver = format!(
+    "{} --tips-level none %A edit merge --base %O --theirs %B",
+    env!("CARGO_BIN_EXE_calcit")
+  );
+  assert!(git(root, &["config", "merge.calcit.driver", &driver]).status.success());
+  assert!(git(root, &["add", "calcit.cirru", ".gitattributes"]).status.success());
+  assert!(git(root, &["commit", "-qm", "base"]).status.success());
+
+  let add = |name: &str, value: &str| {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("app.main/{name}"),
+          "--overwrite",
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ defn {name} () {value}"),
+        ],
+      ),
+      "edit definition",
+    );
+  };
+  // Both branches add a definition at the same text position, which plain Git reports as a conflict.
+  assert!(git(root, &["switch", "-qc", "other"]).status.success());
+  add("added-b", "2");
+  assert!(git(root, &["commit", "-qam", "other"]).status.success());
+  assert!(git(root, &["switch", "-q", "main"]).status.success());
+  add("added-a", "1");
+  assert!(git(root, &["commit", "-qam", "mine"]).status.success());
+  let merged = git(root, &["merge", "--no-edit", "other"]);
+  assert!(merged.status.success(), "{}", String::from_utf8_lossy(&merged.stderr));
+  for name in ["added-a", "added-b"] {
+    query_definition(&snapshot, &format!("app.main/{name}"));
+  }
+  assert_success(&run_calcit(&snapshot, &["edit", "format"]), "merged result is canonical");
+
+  // Both branches change the same definition: Git stops with a definition-level conflict.
+  assert!(git(root, &["switch", "-qc", "conflict"]).status.success());
+  add("added-a", "30");
+  assert!(git(root, &["commit", "-qam", "theirs"]).status.success());
+  assert!(git(root, &["switch", "-q", "main"]).status.success());
+  add("added-a", "10");
+  assert!(git(root, &["commit", "-qam", "ours"]).status.success());
+  let conflict = git(root, &["merge", "--no-edit", "conflict"]);
+  assert!(!conflict.status.success(), "same-definition edits must conflict");
+  let report = format!(
+    "{}{}",
+    String::from_utf8_lossy(&conflict.stdout),
+    String::from_utf8_lossy(&conflict.stderr)
+  );
+  assert!(report.contains("def:app.main/added-a"), "{report}");
+  let code = query_definition(&snapshot, "app.main/added-a")["data"]["code"].clone();
+  assert_eq!(code[3], "10", "the conflicted file keeps our version");
+}
+
+/// A namespace deletion conflicts with surviving definitions, but an unchanged namespace can be removed.
+#[test]
+fn merge_driver_reports_namespace_deletion_conflicts() {
+  for change in ["added", "changed", "unchanged"] {
+    let directory = TestDirectory::create();
+    let snapshot = prepare_minimal_snapshot(&directory);
+    assert_success(&run_calcit(&snapshot, &["edit", "add-ns", "app.extra"]), "add namespace");
+    let define = |target: &str, code: &str| {
+      assert_success(
+        &run_calcit(
+          &snapshot,
+          &["edit", "def", target, "--overwrite", "--input-format", "cirru", "--code", code],
+        ),
+        "edit definition",
+      );
+    };
+    define("app.extra/original", "quote $ defn original () 1");
+    let root = &directory.0;
+    assert!(git(root, &["init", "-q", "-b", "main"]).status.success());
+    fs::write(root.join(".gitattributes"), "calcit.cirru merge=calcit\n").unwrap();
+    let driver = format!(
+      "{} --tips-level none %A edit merge --base %O --theirs %B",
+      env!("CARGO_BIN_EXE_calcit")
+    );
+    assert!(git(root, &["config", "merge.calcit.driver", &driver]).status.success());
+    assert!(git(root, &["add", "calcit.cirru", ".gitattributes"]).status.success());
+    assert!(git(root, &["commit", "-qm", "base"]).status.success());
+    assert!(git(root, &["switch", "-qc", "delete-namespace"]).status.success());
+    assert_success(&run_calcit(&snapshot, &["edit", "rm-ns", "app.extra"]), "delete namespace");
+    assert!(git(root, &["commit", "-qam", "remove namespace"]).status.success());
+    assert!(git(root, &["switch", "-q", "main"]).status.success());
+    // Make both branches diverge even when this namespace is unchanged.
+    define("app.main/independent", "quote $ defn independent () 3");
+    match change {
+      "added" => define("app.extra/added", "quote $ defn added () 2"),
+      "changed" => define("app.extra/original", "quote $ defn original () 2"),
+      _ => {}
+    }
+    assert!(git(root, &["commit", "-qam", "ours"]).status.success());
+    let merged = git(root, &["merge", "--no-edit", "delete-namespace"]);
+    let report = format!(
+      "{}{}",
+      String::from_utf8_lossy(&merged.stdout),
+      String::from_utf8_lossy(&merged.stderr)
+    );
+    query_definition(&snapshot, "app.main/independent");
+    if change == "unchanged" {
+      assert!(merged.status.success(), "unchanged namespace must be removable: {report}");
+      assert!(!run_calcit(&snapshot, &["query", "ns", "app.extra"]).status.success());
+    } else {
+      assert!(
+        !merged.status.success(),
+        "namespace deletion must conflict with {change} definitions: {report}"
+      );
+      assert!(report.contains("ns:app.extra"), "namespace conflict must be reported: {report}");
+      let target = if change == "added" {
+        "app.extra/added"
+      } else {
+        "app.extra/original"
+      };
+      assert_eq!(query_definition(&snapshot, target)["data"]["code"][3], "2");
+      if change == "changed" {
+        assert!(
+          report.contains("def:app.extra/original"),
+          "definition conflict must remain visible: {report}"
+        );
+      }
+      let unmerged = git(root, &["diff", "--name-only", "--diff-filter=U"]);
+      assert_eq!(String::from_utf8_lossy(&unmerged.stdout).trim(), "calcit.cirru");
+    }
+  }
 }

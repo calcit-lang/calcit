@@ -64,6 +64,16 @@ calcit query ns
 calcit query ns calcit.core
 ```
 
+### 命名空间签名概览（`defs --signatures`）
+
+```bash
+calcit query defs app.main --signatures
+```
+
+每行列出定义名、签名与 doc 首行：有 schema 的显示单行 schema，没有 schema 的显示 `(untyped)` 与声明头（如
+`(untyped) defn helper $ x`），值本身不进入概览。不带 `--signatures` 时只用 `[schema]` 标记是否声明了 schema。
+了解一个模块时先看这个概览，再按需对单个定义使用 `schema`、`examples`、`context`。
+
 ### Read Code (`def`)
 
 ```bash
@@ -79,6 +89,17 @@ For source-backed definitions, `query def` prints the stored Cirru body. For spe
 `query type` 给出 `.method` 的类型契约，方法后面的 definition path 只是实现入口；`query def/context` 的 `:internal` 标签不能被误读为公开推荐。对已存在显式 fix 且旧、新方法在具体接收者上都证明为同一实现、同一参数和返回契约的别名，查询附带 `role: preferred` 或 `role: compatibility`；兼容名还有 `preferred-name` 与 `fix-rule`（Cirru EDN 拼写；JSON 字段使用下划线）。`proven` 只表示类型契约可用，**不等于首选名称**。开放、歧义或不同实现的方法不会凭拼写获得推荐角色；准确查询旧名仍可见原实现。区分 nominal 类型名、构造器和内部函数时，参见 [API 命名角色](../features/api-roles.md)。
 
 `query def/context` 对可直接证明为已注册 core Proc 的定义另给 `:runtime-arity`（JSON 为 `runtime_arity`）：`:min` 是最少传参个数，`:max` 是最多个数，`nil` 表示没有有限上限。例如 `read-dir` 为 `{:min 1, :max 2}`，省略第二个参数不意味着可以传 nil，也不意味着它的 Bool 值类型变为 Optional。human 输出显示 `Runtime Proc arity: 1..=2`。此证据复用编译器已有 Proc 元数据，不根据函数名、schema 宽度或 `:internal` 标签猜测；普通函数、未知别名和特殊 builtin 未证明时不提供该字段。字段缺失不是零参数、无上限或可调用的承诺。参数值类型、失败与 backend 支持仍需结合 schema、文档与测试查看，arity 不代替它们。
+
+同一类 core Proc 定义另给 `:failure`，说明参数已符合声明类型时调用如何失败：`:class` 为 `|total`（总能返回值）、`|result`（通过 nil、Option 或 Result 返回预期失败）或 `|raises`（抛出可由 `try` 捕获的错误，WASM 中 trap），`:condition` 写明返回失败或抛错的条件。类型不符的参数在所有 Proc 上都是类型错误，不重复列出。human 输出显示为 `Failure: ...` 一行：
+
+```bash
+calcit query def 'calcit.core/&list:nth'
+# - Failure: `raises` when an index is not a non-negative integer or is out of range
+calcit query def 'calcit.core/&map:get' --format edn
+# :failure $ {} (:class |result) (:condition "|nil for a missing key")
+```
+
+分类与 Proc 实现放在一起，新增 Proc 必须同时给出类别，否则无法编译。需要可恢复的失败时，优先选择 `result` 类入口或对应的 Option/Result 方法；`raises` 类调用只在条件已由前面的代码排除时使用。
 
 默认 Markdown 输出先列已证明的首选方法，再列尚未完成角色归类的方法，最后列附有首选名和 fix 规则的兼容方法。分组仅改变阅读顺序，不隐藏方法、不改变分派优先级或结构化输出；尚未归类不表示应优先使用。
 
@@ -120,6 +141,16 @@ The schema field remains a Cirru syntax tree, not raw persisted schema data.
 字符串类型，但不再截断。`--format json` 优先于 `--json`，不需要 `--raw` 就会返回
 完整元数据。human 模式默认标明 FFI preview；`--raw` 同时输出完整代码与 FFI。
 本接口只查询声明，不改变 Interface IR v3、目标可用性检查或 async 调用语义。
+
+`--format cirru` 只输出 `quote $ <定义>` 形式的源码，不带 Markdown 标题、Schema 段或代码围栏，可以直接作为
+`edit def --overwrite --input-format cirru` 的输入。读出的视图未经修改写回时，Snapshot 字节保持不变；
+schema、doc、examples 与 tests 不在该视图中，写回代码时保持原值。`--raw` 是不分块的 Markdown 输出。
+
+```bash
+calcit query def app.main/main! --format cirru > .calcit/snippets/main.cirru
+# 修改 .calcit/snippets/main.cirru 后写回
+calcit edit def app.main/main! --overwrite --input-format cirru --file .calcit/snippets/main.cirru
+```
 
 Local metadata queries (`ns <name>`, `defs`, `def`, `peek`, `examples`, `schema`, `pkg`, and `config`) first read only the main Snapshot. Modules/core are loaded only when the requested namespace is not local. This keeps repeated Agent navigation fast and avoids unrelated dependency warnings; semantic queries such as `type`, `type-at`, and `context` still load the metadata needed for static resolution.
 
@@ -300,6 +331,9 @@ calcit query context calcit.core/to-js-data --format edn
 - suggested next commands for selectively expanding truncated sections.
 
 The numeric paths are scoped to the returned revision. Re-query after a change before using a path for editing. `--budget` is an approximate character budget for variable-size content; explicit `--dependency-limit`, `--usage-limit`, and `--example-limit` bounds are also available.
+
+默认的依赖列表不包含 `fn`、`let`、`if` 等 core 宏与语法，函数定义的 static methods 也不列出所有函数共有的
+`.apply`、`.bind`、`.call` 等通用 Fn 方法；`total` 计数同样按过滤后的结果。需要完整列表时传 `--include-core`。
 
 选择 `--format edn` 时，stdout 只包含一个 Cirru EDN envelope；JSON-only consumer 可显式选择
 `--format json` 获取对应的 JSON envelope。命令说明与平台注册信息留在 stderr，不应和结构化结果混读。

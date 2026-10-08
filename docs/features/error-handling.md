@@ -150,6 +150,14 @@ let
 
 This pattern avoids exceptions entirely and keeps error handling explicit in the type system.
 
+## 选择 `raise`、`try` 与 `Result`
+
+- **可恢复的失败返回 `Result` 或 `Option`**：输入可能无效、资源可能缺失等调用方需要处理的情况，用 `Result :err` 或 `Option :none` 表达，调用方通过 `match`、`.unwrap-or` 等显式处理。`parse-float`、`&fs-read-text` 一类入口就是这样。
+- **`raise` 表示不可恢复的错误**：违反前置条件、程序缺陷等调用方无法合理处理的情况才 `raise`，作用类似 Rust 的 `panic!`。`case` 没有匹配分支、`non-nil!` 遇到 nil 也属于这一类。
+- **`try` 用在边界上**：在宿主或 FFI 边界、以及调用只会 `raise` 的旧接口时，用 `try` 把错误转换成 `Result`，不要在业务逻辑中用 `try` 代替分支判断。
+
+每个内建 Proc 的失败类别可以用 `calcit query def` 查看（`total`、`result` 或 `raises`，以及条件），见[查询命令](../run/query.md)。
+
 ## Assertions
 
 `assert` and `assert=` raise errors during preprocessing/testing:

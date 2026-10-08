@@ -483,6 +483,8 @@ struct DefinitionContextData {
   inferred_schema: Option<String>,
   #[serde(skip_serializing_if = "Option::is_none")]
   runtime_arity: Option<RuntimeCallArity>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  failure: Option<ProcFailureInfo>,
   features: Vec<String>,
   js_ffi: Option<JsFfiQueryInfo>,
   code: ContextCode,
@@ -503,6 +505,15 @@ struct RuntimeCallArity {
 /// Expose authoritative Proc omission metadata without inventing nullable value types
 /// or inferring a wrapper's callable contract from its name or declared schema.
 fn core_runtime_call_arity(namespace: &str, definition: &str, entry: &snapshot::CodeEntry) -> Option<RuntimeCallArity> {
+  let arity = core_runtime_proc(namespace, definition, entry)?.arity()?;
+  Some(RuntimeCallArity {
+    min: arity.min,
+    max: arity.max,
+  })
+}
+
+/// The builtin Proc a core definition runs, either directly or as a one-leaf alias.
+fn core_runtime_proc(namespace: &str, definition: &str, entry: &snapshot::CodeEntry) -> Option<CalcitProc> {
   if namespace != calcit::calcit::CORE_NS {
     return None;
   }
@@ -513,11 +524,30 @@ fn core_runtime_call_arity(namespace: &str, definition: &str, entry: &snapshot::
   } else {
     return None;
   };
-  let arity = proc_name.parse::<CalcitProc>().ok()?.arity()?;
-  Some(RuntimeCallArity {
-    min: arity.min,
-    max: arity.max,
+  proc_name.parse::<CalcitProc>().ok()
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ProcFailureInfo {
+  class: &'static str,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  condition: Option<&'static str>,
+}
+
+/// Failure class of the builtin Proc behind a core definition (#1558).
+fn core_proc_failure(namespace: &str, definition: &str, entry: &snapshot::CodeEntry) -> Option<ProcFailureInfo> {
+  let failure = core_runtime_proc(namespace, definition, entry)?.failure();
+  Some(ProcFailureInfo {
+    class: failure.class_name(),
+    condition: failure.condition(),
   })
+}
+
+fn render_proc_failure(failure: &ProcFailureInfo) -> String {
+  match failure.condition {
+    Some(condition) => format!("`{}` when {condition}", failure.class),
+    None => format!("`{}`", failure.class),
+  }
 }
 
 fn render_runtime_call_arity(arity: RuntimeCallArity) -> String {
@@ -1146,6 +1176,18 @@ fn parse_type_annotation_query(target: &str) -> Result<Arc<CalcitTypeAnnotation>
 mod type_query_tests {
   use super::*;
   use crate::cli_handlers::test_support::TestProject;
+
+  #[test]
+  fn untyped_signatures_keep_parameters_but_not_values() {
+    let signature = |source: &str| {
+      let code = cirru_parser::parse(source).expect("parse").remove(0);
+      definition_signature(&snapshot::CodeEntry::from_code(code))
+    };
+    assert_eq!(signature("defn helper (x y) (+ x y)"), "(untyped) defn helper $ x y");
+    assert_eq!(signature("defcomp comp-item (item) (div)"), "(untyped) defcomp comp-item $ item");
+    assert_eq!(signature("defatom *store ({} (:count 0))"), "(untyped) defatom *store");
+    assert_eq!(signature("def config ([] 1 2)"), "(untyped) def config");
+  }
 
   #[test]
   fn runtime_call_arity_uses_core_proc_values_not_schema_or_spelling_guesses() {
@@ -1975,6 +2017,7 @@ mod type_query_tests {
       usage_limit: 8,
       example_limit: 3,
       test_limit: 3,
+      include_core: false,
     }
   }
 
@@ -3499,6 +3542,24 @@ fn build_context_tests(tests: &[snapshot::TestEntry], limit: usize, budget: usiz
   Ok(ContextCollection::new(tests.len(), items))
 }
 
+/// Core macros and syntax such as `fn`, `let` and `if` appear in almost every
+/// definition, so the default context leaves them out.
+fn is_core_syntax_dependency(id: &str, source: &str) -> bool {
+  if source != "core" {
+    return false;
+  }
+  let Some(name) = id.strip_prefix(&format!("{}/", calcit::calcit::CORE_NS)) else {
+    return false;
+  };
+  calcit::calcit::CalcitSyntax::is_valid(name)
+    || program::lookup_def_code(calcit::calcit::CORE_NS, name).is_some_and(|code| {
+      matches!(&code, Calcit::List(items) if matches!(
+        items.first(),
+        Some(Calcit::Syntax(calcit::calcit::CalcitSyntax::Defmacro, _))
+      ) || matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defmacro"))
+    })
+}
+
 fn collect_direct_dependencies(
   snapshot: &snapshot::Snapshot,
   namespace: &str,
@@ -3582,8 +3643,13 @@ fn context_docs(definition: &str, diagnostics: &mut Vec<ContextDiagnostic>) -> C
   }
 }
 
-fn context_methods(annotation: &CalcitTypeAnnotation, budget: usize) -> Option<ContextCollection<ContextMethod>> {
-  let methods = runner::preprocess::static_method_contracts(annotation)?;
+/// Static methods of the receiver type for `query context`, leaving out the generic Fn methods unless `include_core`.
+fn context_methods(annotation: &CalcitTypeAnnotation, budget: usize, include_core: bool) -> Option<ContextCollection<ContextMethod>> {
+  let mut methods = runner::preprocess::static_method_contracts(annotation)?;
+  if !include_core {
+    // Every function shares the generic Fn methods; they say nothing about this definition.
+    methods.retain(|(descriptor, _)| !descriptor.origin.ends_with("/&core-fn-methods"));
+  }
   let total = methods.len();
   let limit = (budget / 240).clamp(4, 80);
   let mut items = methods
@@ -3768,6 +3834,10 @@ fn build_regular_context(
   } else {
     vec![]
   };
+  let dependencies = dependencies
+    .into_iter()
+    .filter(|(id, source)| opts.include_core || !is_core_syntax_dependency(id, source))
+    .collect::<Vec<_>>();
   let dependency_total = dependencies.len();
   let dependency_items = dependencies
     .into_iter()
@@ -3792,7 +3862,7 @@ fn build_regular_context(
   let docs = context_docs(&id, &mut diagnostics);
   let effective_schema = inferred_schema.as_deref().unwrap_or(entry.schema.as_ref());
   let static_methods = if metadata_ready.is_ok() {
-    context_methods(effective_schema, opts.budget / 3)
+    context_methods(effective_schema, opts.budget / 3, opts.include_core)
   } else {
     None
   };
@@ -3814,6 +3884,7 @@ fn build_regular_context(
     schema: context_schema(entry.schema.as_ref())?,
     inferred_schema: inferred_schema.as_ref().map(|schema| context_schema(schema)).transpose()?.flatten(),
     runtime_arity: core_runtime_call_arity(namespace, definition, entry),
+    failure: core_proc_failure(namespace, definition, entry),
     features: context_features(effective_schema),
     js_ffi: None,
     code,
@@ -3878,7 +3949,7 @@ fn build_special_builtin_context(
 
   let metadata_ready = prepare_program_for_type_query(snapshot).is_ok();
   let static_methods = if metadata_ready {
-    context_methods(meta.schema.as_ref(), opts.budget / 3)
+    context_methods(meta.schema.as_ref(), opts.budget / 3, opts.include_core)
   } else {
     None
   };
@@ -3894,6 +3965,7 @@ fn build_special_builtin_context(
     schema: Some(schema),
     inferred_schema: None,
     runtime_arity: None,
+    failure: None,
     features: tags,
     js_ffi: None,
     code: ContextCode {
@@ -3949,6 +4021,9 @@ fn render_context_human(envelope: &SemanticQueryEnvelope<DefinitionContextData>)
   let _ = writeln!(&mut out, "- Type coverage: `{}`", data.coverage);
   if let Some(arity) = data.runtime_arity {
     let _ = writeln!(&mut out, "- Runtime Proc arity: `{}`", render_runtime_call_arity(arity));
+  }
+  if let Some(failure) = &data.failure {
+    let _ = writeln!(&mut out, "- Failure: {}", render_proc_failure(failure));
   }
   if let Some(info) = &data.js_ffi {
     let _ = writeln!(&mut out, "- JavaScript FFI: `{}`", info.source_kind.unwrap_or("invalid"));
@@ -4523,6 +4598,32 @@ fn handle_host_procs(opts: &QueryHostProcsCommand) -> Result<(), String> {
   Ok(())
 }
 
+/// One-line signature for a namespace overview: the schema when declared,
+/// otherwise the declaration head such as `defn greet (name)`.
+fn definition_signature(entry: &snapshot::CodeEntry) -> String {
+  if let Ok(Some(schema)) = query_schema_cirru(entry.schema.as_ref(), true)
+    && let Ok(text) = format_query_schema_oneline(&schema)
+  {
+    return text;
+  }
+  let Cirru::List(items) = &entry.code else {
+    return "(untyped)".to_owned();
+  };
+  // Keep the parameter list of function-like declarations; values such as a
+  // `defatom` initializer stay out of the overview.
+  let takes_params = items
+    .first()
+    .is_some_and(|head| ["defn", "defmacro", "defcomp", "defeffect"].iter().any(|name| head.eq_leaf(name)));
+  let keep = if takes_params && matches!(items.get(2), Some(Cirru::List(_))) {
+    3
+  } else {
+    2
+  };
+  let head = Cirru::List(items.iter().take(keep).cloned().collect());
+  let text = head.format_one_liner().unwrap_or_else(|_| "(untyped)".to_owned());
+  format!("(untyped) {text}")
+}
+
 fn handle_defs(input_path: &str, opts: &QueryDefsCommand) -> Result<(), String> {
   let namespace = &opts.namespace;
   let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
@@ -4561,10 +4662,12 @@ fn handle_defs(input_path: &str, opts: &QueryDefsCommand) -> Result<(), String> 
     } else {
       format!(" [{}]", format_tags_display(&entry.tags))
     };
-    let schema_hint = if !matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
-      " [schema]"
+    let schema_hint = if opts.signatures {
+      format!("  {}", definition_signature(entry))
+    } else if !matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
+      " [schema]".to_owned()
     } else {
-      ""
+      String::new()
     };
     if !entry.doc.is_empty() {
       let doc_first_line = entry.doc.lines().next().unwrap_or("");
@@ -4765,7 +4868,39 @@ fn render_chunked_display(display: &ChunkedDisplay) -> String {
   out
 }
 
+/// Print only `quote $ <definition>`, the exact input `edit def --overwrite
+/// --input-format cirru` accepts, so a read can be edited and written back.
+fn handle_def_cirru_view(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
+  let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
+  let file_data = snapshot
+    .files
+    .get(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+  let lookup = resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?;
+  let code_entry = file_data
+    .defs
+    .get(lookup.resolved.as_str())
+    .ok_or_else(|| format!("Definition '{namespace}/{definition}' has no source in this Snapshot"))?;
+  let quoted = Cirru::List(vec![Cirru::Leaf(Arc::from("quote")), code_entry.code.clone()]);
+  // Only print a view that parses back to the stored node, so writing it back is lossless.
+  let text = [true, false]
+    .into_iter()
+    .filter_map(|use_inline| cirru_parser::format(std::slice::from_ref(&quoted), cirru_parser::CirruWriterOptions { use_inline }).ok())
+    .find(|text| cirru_parser::parse(text).is_ok_and(|parsed| parsed == [quoted.clone()]))
+    .ok_or_else(|| format!("Cannot render `{namespace}/{definition}` as Cirru text that parses back to the same source"))?;
+  print!("{}", text.trim_start_matches('\n'));
+  if !text.ends_with('\n') {
+    println!();
+  }
+  Ok(())
+}
+
+/// Show one definition as Markdown (chunked only when large), a structured envelope
+/// (`--format edn|json`), or writable source (`--format cirru`).
 fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryDefCommand) -> Result<(), String> {
+  if opts.format == "cirru" {
+    return handle_def_cirru_view(input_path, namespace, definition);
+  }
   let format = parse_query_render_format(&opts.format)?;
   let structured = format != QueryRenderFormat::Human;
   let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
@@ -4853,6 +4988,9 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
     if let Some(arity) = core_runtime_call_arity(namespace, &resolved_definition, code_entry) {
       data["runtime_arity"] = serde_json::to_value(arity).map_err(|error| format!("Failed to serialize runtime arity: {error}"))?;
     }
+    if let Some(failure) = core_proc_failure(namespace, &resolved_definition, code_entry) {
+      data["failure"] = serde_json::to_value(failure).map_err(|error| format!("Failed to serialize failure class: {error}"))?;
+    }
     data["ffi_edn"] = data["ffi"].take();
     data["ffi"] = serde_json::to_value(&code_entry.ffi).map_err(|e| format!("Failed to serialize FFI metadata: {e}"))?;
     data["js_ffi"] = serde_json::to_value(
@@ -4874,6 +5012,9 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
   let _ = writeln!(&mut out, "# Definition `{namespace}/{resolved_definition}`\n");
   if let Some(arity) = core_runtime_call_arity(namespace, &resolved_definition, code_entry) {
     let _ = writeln!(&mut out, "- Runtime Proc arity: `{}`", render_runtime_call_arity(arity));
+  }
+  if let Some(failure) = core_proc_failure(namespace, &resolved_definition, code_entry) {
+    let _ = writeln!(&mut out, "- Failure: {}", render_proc_failure(&failure));
   }
 
   if let Ok(code_data) = calcit::data::cirru::code_to_calcit(&code_entry.code, namespace, &resolved_definition, vec![])
@@ -4948,13 +5089,19 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
       max_nodes: opts.chunk_max_nodes,
       max_branches: 64,
     };
-    if let Some(display) = maybe_chunk_node(&code_entry.code, &chunk_options)? {
+    let cirru_str =
+      cirru_parser::format(std::slice::from_ref(&code_entry.code), true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
+    // Chunking only pays off for long source; short definitions read better whole.
+    let chunked = if cirru_str.len() >= opts.chunk_trigger_bytes {
+      maybe_chunk_node(&code_entry.code, &chunk_options)?
+    } else {
+      None
+    };
+    if let Some(display) = chunked {
       let _ = writeln!(&mut out);
       out.push_str(&render_chunked_display(&display));
     } else {
       let _ = writeln!(&mut out, "\n## Cirru\n");
-      let cirru_str =
-        cirru_parser::format(std::slice::from_ref(&code_entry.code), true.into()).unwrap_or_else(|_| "(failed to format)".to_string());
       out.push_str(&markdown_fenced_block("cirru", &cirru_str));
     }
   } else {

@@ -2028,7 +2028,33 @@ pub fn extract_code_into_edn(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       xs,
     );
   }
+  if let Some(kind) = find_value_outside_code(&xs[0]) {
+    return CalcitErr::err_str(
+      CalcitErrKind::Type,
+      format!("&extract-code-into-edn cannot represent a {kind} value as code"),
+    );
+  }
   Ok(edn_to_calcit(&dump_code(&xs[0]), &Calcit::Nil))
+}
+
+/// Runtime-only values that have no code representation, searched through data containers.
+fn find_value_outside_code(code: &Calcit) -> Option<&'static str> {
+  match code {
+    Calcit::Ref(..) => Some("ref"),
+    Calcit::Buffer(_) => Some("buffer"),
+    Calcit::BufList(_) => Some("buf-list"),
+    Calcit::Recur(_) => Some("recur"),
+    Calcit::Trait(_) => Some("trait"),
+    Calcit::Thunk(thunk) => find_value_outside_code(thunk.get_code()),
+    Calcit::List(xs) => xs.iter().find_map(find_value_outside_code),
+    Calcit::Set(xs) => xs.iter().find_map(find_value_outside_code),
+    Calcit::Map(xs) => xs
+      .iter()
+      .find_map(|(k, v)| find_value_outside_code(k).or_else(|| find_value_outside_code(v))),
+    Calcit::Enum(value) => value.extra.iter().find_map(find_value_outside_code),
+    Calcit::Struct(value) => value.values.iter().find_map(find_value_outside_code),
+    _ => None,
+  }
 }
 
 /// turns data back into code in generating js

@@ -110,14 +110,22 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |preserves-primitive-schema-in-local-binding)
-            :code $ quote $ let
-                f2 &+
-              assert-type f2 $ :: 'Fn $ {} (:return 'Number)
-                :args $ [] 'Number 'Number
-              assert= 3 $ f2 1 2
-              assert= 3 $ apply f2 $ [] 1 2
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-primitive-schema-in-local-binding)
+              :code $ quote $ let
+                  f2 &+
+                assert-type f2 $ :: 'Fn $ {} (:return 'Number)
+                  :args $ [] 'Number 'Number
+                assert= 3 $ f2 1 2
+                assert= 3 $ apply f2 $ [] 1 2
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |keeps-f64-precision-and-overflows-to-inf)
+              :code $ quote $ do
+                assert= 9007199254740992 $ &+ 9007199254740991 1
+                assert= true $ = 9007199254740992 $ &+ 9007199254740992 1
+                assert= |inf $ turn-string $ &* 1e308 10
+                assert= |-inf $ turn-string $ &* 1e308 -10
+              :tags $ #{} :core :unit
         '&- $ %{} 'CodeEntry
           :doc "|internal function for subtraction\nSyntax: (&- a b)\nParams: a (number), b (number)\nReturns: number\nSubtracts second number from first, supports integers and floats"
           :code $ quote &runtime-implementation
@@ -132,6 +140,13 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |divides-by-zero-to-nonfinite)
+            :code $ quote $ do
+              assert= |inf $ turn-string $ &/ 1 0
+              assert= |-inf $ turn-string $ &/ -1 0
+              assert= |NaN $ turn-string $ &/ 0 0
+              assert= |-0 $ turn-string $ &/ -1 (&/ 1 0)
+            :tags $ #{} :core :unit
         '&< $ %{} 'CodeEntry
           :doc "|internal function for less than comparison\nSyntax: (&< a b & values)\nParams: a (number), b (number), values (number, variadic)\nReturns: boolean\nReturns true if values are in ascending order"
           :code $ quote &runtime-implementation
@@ -139,6 +154,15 @@
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |compares-nan-as-unordered)
+            :code $ quote $ let
+                not-a-number $ &/ 0 0
+              assert= false $ &< not-a-number 1
+              assert= false $ &> not-a-number 1
+              assert= false $ &< 1 not-a-number
+              assert= false $ &< -0 0
+              assert= true $ &< 1e308 $ &/ 1 0
+            :tags $ #{} :core :unit
         '&<= $ %{} 'CodeEntry (:doc "|Less than or equal comparison for two values")
           :code $ quote $ defn &<= (a b)
             assert "|expects numbers for &<=" $ if (number? a) (number? b)
@@ -317,6 +341,16 @@
                 assert= -1 $ &compare :a |a
                 assert= 1 $ &compare |a :a
                 assert= 0 $ &compare :a :a
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |orders-nan-last)
+              :code $ quote $ let
+                  not-a-number $ sqrt -1
+                assert= 1 $ &compare not-a-number 1
+                assert= -1 $ &compare 1 not-a-number
+                assert= 1 $ &compare not-a-number $ &/ 1 0
+                assert= 0 $ &compare not-a-number not-a-number
+                assert= 0 $ &compare 0 -0
+                assert= -1 $ &compare (&/ -1 0) -1
               :tags $ #{} :core :unit
         '&core-enum-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for enum values.")
           :code $ quote $ def &core-enum-impls
@@ -641,6 +675,14 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :meta
+          :tests $ [] $ %{} 'TestEntry (:name |rejects-runtime-only-values)
+            :code $ quote $ assert= :failed
+              try
+                do
+                  &extract-code-into-edn $ &buffer 0 255
+                  , :returned
+                fn (_error) :failed
+            :tags $ #{} :core :unit
         '&fn:apply $ %{} 'CodeEntry (:doc "|internal helper for fn :apply method entry")
           :code $ quote $ defn &fn:apply (f g)
             fn (x)
@@ -974,10 +1016,19 @@
             :generics $ [] 'T
             :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |updates-list-item-by-index)
-            :code $ quote $ assert= ([] 1 3)
-              &list:assoc ([] 1 2) 1 3
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |updates-list-item-by-index)
+              :code $ quote $ assert= ([] 1 3)
+                &list:assoc ([] 1 2) 1 3
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-out-of-range-index)
+              :code $ quote $ assert= :failed
+                try
+                  do
+                    &list:assoc ([] 1 2) 5 9
+                    , :returned
+                  fn (_error) :failed
+              :tags $ #{} :core :unit
         '&list:assoc-after $ %{} 'CodeEntry
           :doc "|internal function for associating after element\nSyntax: (&list:assoc-after list target element)\nParams: list (list), target (any), element (any)\nReturns: list\nInserts element after first occurrence of target"
           :code $ quote &runtime-implementation
@@ -1436,10 +1487,21 @@
             :args $ [] (:: 'List 'T) 'Number
             :generics $ [] 'T
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |returns-nth-directly)
-            :code $ quote $ assert= :b
-              &list:nth ([] :a :b :c) 1
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |returns-nth-directly)
+              :code $ quote $ assert= :b
+                &list:nth ([] :a :b :c) 1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-non-integer-index)
+              :code $ quote $ let
+                  xs $ [] 1 2 3
+                assert= :failed $ try
+                  do (&list:nth xs 1.5) :returned
+                  fn (_error) :failed
+                assert= :failed $ try
+                  do (&list:nth xs -1) :returned
+                  fn (_error) :failed
+              :tags $ #{} :core :unit
         '&list:numbers $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:numbers (xs)
             foldl xs ([])
@@ -1502,10 +1564,19 @@
             :generics $ [] 'T
             :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |slices-list-with-exclusive-end)
-            :code $ quote $ assert= ([] :b :c :d)
-              &list:slice ([] :a :b :c :d) 1 4
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |slices-list-with-exclusive-end)
+              :code $ quote $ assert= ([] :b :c :d)
+                &list:slice ([] :a :b :c :d) 1 4
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-fractional-bounds)
+              :code $ quote $ assert= :failed
+                try
+                  do
+                    &list:slice ([] 1 2 3 4) 0.5 2
+                    , :returned
+                  fn (_error) :failed
+              :tags $ #{} :core :unit
         '&list:sort $ %{} 'CodeEntry (:doc |)
           :code $ quote $ &runtime-implementation
           :examples $ []
@@ -1985,9 +2056,17 @@
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |formats-decimal-places)
-            :code $ quote $ assert= |1.235 (&number:format 1.23456789 3)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |formats-decimal-places)
+              :code $ quote $ assert= |1.235 (&number:format 1.23456789 3)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-digits-past-100)
+              :code $ quote $ do
+                assert= :failed $ try
+                  do (&number:format 1 101) :returned
+                  fn (_error) :failed
+                assert= |1.0 $ &number:format 1 1
+              :tags $ #{} :core :unit
         '&number:fract $ %{} 'CodeEntry
           :doc "|internal function for number fractional part\nSyntax: (&number:fract n)\nParams: n (number)\nReturns: number\nReturns fractional part of number (n - floor(n))"
           :code $ quote &runtime-implementation
@@ -2412,11 +2491,22 @@
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String 'Number 'String
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |pads-from-left)
-            :code $ quote $ do
-              assert= |00000a $ &str:pad-left |a 6 |0
-              assert= |12312a $ &str:pad-left |a 6 |123
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |pads-from-left)
+              :code $ quote $ do
+                assert= |00000a $ &str:pad-left |a 6 |0
+                assert= |12312a $ &str:pad-left |a 6 |123
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |bounds-the-target-length)
+              :code $ quote $ do
+                assert= :failed $ try
+                  do
+                    &str:pad-left |a (&/ 1 0) |-
+                    , :returned
+                  fn (_error) :failed
+                assert= |a $ &str:pad-left |a (&/ 0 0) |-
+                assert= |a $ &str:pad-left |a -3 |-
+              :tags $ #{} :core :unit
         '&str:pad-right $ %{} 'CodeEntry
           :doc "|internal function for right padding string\nSyntax: (&str:pad-right s length pad-char)\nParams: s (string), length (number), pad-char (string)\nReturns: string\nPads string on right to specified length with pad character"
           :code $ quote &runtime-implementation
@@ -2584,7 +2674,7 @@
           :examples $ [] $ quote
             let
                 User $ defstruct User $ :name 'String
-                user $ %{} User $ :name |Alice
+                user $ User :name |Alice
               assert= User $ &struct:definition user
           :schema $ :: 'Fn $ {}
             :args $ [] 'Struct
@@ -2933,6 +3023,14 @@
                   :: :ready $ %some 1
                   :: :ready $ %some 2
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |treats-nan-as-equal-value)
+              :code $ quote $ let
+                  not-a-number $ sqrt -1
+                assert= true $ &= not-a-number not-a-number
+                assert= true $ &= 0 -0
+                assert= false $ &= not-a-number 0
+                assert= true $ &= ([] 1 not-a-number) ([] 1 not-a-number)
+              :tags $ #{} :core :unit
         '> $ %{} 'CodeEntry
           :doc "|Greater-than comparison for one or more numbers\nReturns true only when the value strictly decreases across every argument."
           :code $ quote $ defn > (x & ys)
@@ -2987,7 +3085,8 @@
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
-        'Contains $ %{} 'CodeEntry (:doc "|Struct 与 Enum 的旧存在性 trait（Struct 查字段、Enum 查位置）。Map 与 Set 已在 0.29.0 移出：Map 键用 .contains-key?，Map 值用 .contains-value?，Set 成员用 .includes?；前缀函数 contains? 仍接受 Map 与 Set。")
+        'Contains $ %{} 'CodeEntry
+          :doc "|Struct 与 Enum 的旧存在性 trait（Struct 查字段、Enum 查位置）。Map 与 Set 已在 0.29.0 移出：Map 键用 .contains-key?，Map 值用 .contains-value?，Set 成员用 .includes?；前缀函数 contains? 仍接受 Map 与 Set。"
           :code $ quote $ deftrait Contains
             .contains? $ :: :fn $ {}
               :args $ [] 'T 'K
@@ -3907,14 +4006,14 @@
             %{} 'TestEntry (:name |preserves-struct-through-option-match)
               :code $ quote $ let
                   Draft $ defstruct Draft (:text 'String) (:mono? 'Bool)
-                  original $ %{} Draft (:text |old) (:mono? false)
+                  original $ Draft :text |old :mono? false
                   drafts $ {} $ |a original
                   changed $ match (get drafts |a)
                     (:some draft)
                       assoc drafts |a $ -> draft (assoc :text |new) (assoc :mono? true)
                     (:none) drafts
                 assert=
-                  {} $ |a $ %{} Draft (:text |new) (:mono? true)
+                  {} $ |a $ Draft :text |new :mono? true
                   , changed
                 assert-type changed $ :: 'Map 'String 'Draft
                 assert= changed $ match (.get drafts |a)
@@ -4029,11 +4128,19 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |shifts-left)
-            :code $ quote $ do
-              assert= 4 $ bit-shl 2 1
-              assert= 16 $ bit-shl 4 2
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |shifts-left)
+              :code $ quote $ do
+                assert= 4 $ bit-shl 2 1
+                assert= 16 $ bit-shl 4 2
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |masks-shift-count-to-five-bits)
+              :code $ quote $ do
+                assert= -2147483648 $ bit-shl 1 31
+                assert= 1 $ bit-shl 1 32
+                assert= -2147483648 $ bit-shl 1 -1
+                assert= -4 $ bit-shr -8 1
+              :tags $ #{} :core :unit
         'bit-shr $ %{} 'CodeEntry
           :doc "|internal function for bit shift right\nSyntax: (bit-shr n shift)\nParams: n (integer), shift (integer)\nReturns: integer\nShifts bits of n right by shift positions"
           :code $ quote &runtime-implementation
@@ -4400,7 +4507,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |checks-tag-field-and-missing-field)
             :code $ quote $ let
                 Point $ defstruct Point (:x 'Number) (:y 'Number)
-                point $ %{} Point (:x 1) (:y 2)
+                point $ Point :x 1 :y 2
               assert-type (point .contains-field? :x) 'Bool
               assert= true $ point .contains-field? :x
               assert= true $ contains-field? point :y
@@ -4673,6 +4780,22 @@
                     contains? |ab $ &list:nth open-keys 0
                     fn (message) |rejected
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |finds-nan-keys)
+              :code $ quote $ let
+                  not-a-number $ sqrt -1
+                assert= true $ contains? (#{} not-a-number) not-a-number
+                assert= true $ contains? (#{} 0) -0
+                assert= (#{} not-a-number)
+                  include (#{} not-a-number) not-a-number
+                assert= true $ contains?
+                  {} $ not-a-number 1
+                  , not-a-number
+                assert=
+                  {} $ not-a-number 2
+                  assoc
+                    {} $ not-a-number 1
+                    , not-a-number 2
+              :tags $ #{} :core :unit
         'cos $ %{} 'CodeEntry
           :doc "|internal function for cosine\nSyntax: (cos n)\nParams: n (number, radians)\nReturns: number\nReturns cosine of angle in radians"
           :code $ quote &runtime-implementation
@@ -4937,7 +5060,7 @@
               assert= 200 $ :code response
               assert= (%some |ok) (:message response)
             quote $ assert=
-              %some $ %{} RuntimeMapMeta $ :kind :nested
+              %some $ RuntimeMapMeta :kind :nested
               :meta $ decode-map-as
                 {} (:code 202)
                   :meta $ {} $ :kind :nested
@@ -4982,7 +5105,7 @@
                     :body $ {} $ :kind :json
                   , RuntimeMapResponse
                 assert=
-                  %some $ %{} RuntimeMapMeta $ :kind :nested
+                  %some $ RuntimeMapMeta :kind :nested
                   :meta $ decode-map-as
                     {} (:code 202)
                       :meta $ {} $ :kind :nested
@@ -5271,6 +5394,21 @@
             :expansion $ :: 'Expr 'StructDef
             :required $ [] 'Syntax
           :tags $ #{} :macro
+          :tests $ [] $ %{} 'TestEntry (:name |local-definition-constructs-directly)
+            :code $ quote $ let
+                Draft $ defstruct Draft (:text 'String) (:mono? 'Bool)
+                draft $ Draft :text |old :mono? false
+                Shape $ defenum Shape (:circle 'Number) (:dot)
+                shape $ Shape :circle 2
+              assert= |old $ :text draft
+              assert= false $ :mono? draft
+              assert= Draft $ &struct:definition draft
+              assert= draft $ %{} Draft (:text |old) (:mono? false)
+              assert= 2 $ match shape
+                (:circle r) r
+                (:dot) 0
+              assert= (%:: Shape :dot) (Shape :dot)
+            :tags $ #{} :core :unit
         'deftrait $ %{} 'CodeEntry
           :doc "|定义 trait。普通方法使用 `.method` 键，例如 `(deftrait Shape (.draw (:: 'Fn $ {} (:args [...]) (:return 'Unit))))`；只有带 `:ffi {:kind :external-object}` 的宿主属性使用 `:field` 键。省略完整签名时，`:fn` 表示动态函数类型。`(requires Parent)` 子句声明父 trait（每个子句一个，可重复），具备本 trait 的值也须具备父 trait；旧写法 `('requires Parent)` 仍然接受。展开为 `&trait::new`。"
           :code $ quote $ defmacro deftrait (name & entries)
@@ -5366,13 +5504,13 @@
         'destruct-list $ %{} 'CodeEntry
           :doc "|Split a list into the nominal ListDestruct<T> enum."
           :code $ quote $ defn destruct-list (xs)
-            if (empty? xs) (%:: ListDestruct :none)
-              %:: ListDestruct :some (&list:nth xs 0) (&list:rest xs)
+            if (empty? xs) (ListDestruct :none)
+              ListDestruct :some (&list:nth xs 0) (&list:rest xs)
           :examples $ []
             quote $ assert=
-              %:: ListDestruct :some 1 $ [] 2
+              ListDestruct :some 1 $ [] 2
               destruct-list $ [] 1 2
-            quote $ assert= (%:: ListDestruct :none)
+            quote $ assert= (ListDestruct :none)
               destruct-list $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List 'T
@@ -5397,9 +5535,10 @@
           :code $ quote $ defn destruct-map (xs)
             &let
               pair $ &map:destruct xs
-              if (nil? pair) (%:: MapDestruct :none) (%:: MapDestruct :some & pair)
+              if (nil? pair) (MapDestruct :none)
+                MapDestruct :some (&list:nth pair 0) (&list:nth pair 1) (&list:nth pair 2)
           :examples $ []
-            quote $ assert= (%:: MapDestruct :none)
+            quote $ assert= (MapDestruct :none)
               destruct-map $ &{}
             quote $ assert= 1 $ match
               destruct-map $ &{} :a 1
@@ -5429,10 +5568,10 @@
           :code $ quote $ defn destruct-set (xs)
             &let
               pair $ &set:destruct xs
-              if (nil? pair) (%:: SetDestruct :none)
-                %:: SetDestruct :some (&list:nth pair 0) (&list:nth pair 1)
+              if (nil? pair) (SetDestruct :none)
+                SetDestruct :some (&list:nth pair 0) (&list:nth pair 1)
           :examples $ []
-            quote $ assert= (%:: SetDestruct :none)
+            quote $ assert= (SetDestruct :none)
               destruct-set $ #{}
             quote $ assert= 2 $ match
               destruct-set $ #{} 2
@@ -5460,11 +5599,11 @@
         'destruct-str $ %{} 'CodeEntry
           :doc "|Split a string into the nominal StringDestruct enum."
           :code $ quote $ defn destruct-str (s)
-            if (&= s |) (%:: StringDestruct :none)
-              %:: StringDestruct :some (&str:slice s 0 1) (&str:rest s)
+            if (&= s |) (StringDestruct :none)
+              StringDestruct :some (&str:slice s 0 1) (&str:rest s)
           :examples $ []
-            quote $ assert= (%:: StringDestruct :some |1 |23) (destruct-str |123)
-            quote $ assert= (%:: StringDestruct :none) (destruct-str |)
+            quote $ assert= (StringDestruct :some |1 |23) (destruct-str |123)
+            quote $ assert= (StringDestruct :none) (destruct-str |)
           :schema $ :: 'Fn $ {} (:return 'StringDestruct)
             :args $ [] 'String
           :tests $ [] $ %{} 'TestEntry (:name |splits-non-empty-and-empty)
@@ -6059,8 +6198,7 @@
               :tags $ #{} :cancel-proof :core :unit
         'ffi:response $ %{} 'CodeEntry
           :doc "|Wrap a raw native async response capability at a module adapter boundary. Examples with nil only check the method contract without invoking it; real resolution requires a host-issued capability."
-          :code $ quote $ defn ffi:response (raw)
-            %{} FfiResponse $ :raw raw
+          :code $ quote $ defn ffi:response (raw) (FfiResponse :raw raw)
           :examples $ []
             quote $ ffi:response nil
             quote $ let
@@ -6090,8 +6228,7 @@
               :tags $ #{} :unit
         'ffi:task $ %{} 'CodeEntry
           :doc "|Wrap a raw native async task capability at a module adapter boundary. Examples with nil only check the method contract without invoking it; real cancellation requires a host-issued capability."
-          :code $ quote $ defn ffi:task (raw)
-            %{} FfiTask $ :raw raw
+          :code $ quote $ defn ffi:task (raw) (FfiTask :raw raw)
           :examples $ []
             quote $ ffi:task nil
             quote $ let
@@ -6174,12 +6311,12 @@
                     {} (:a 1) (:b 2) (:c 3)
                     fn (k v)
                       if (> v 1)
-                        %:: MapEntryDecision :keep k $ * v 10
-                        %:: MapEntryDecision :drop
+                        MapEntryDecision :keep k $ * v 10
+                        MapEntryDecision :drop
                 assert= ({})
                   filter-map-kv
                     {} $ :a 1
-                    fn (k v) (%:: MapEntryDecision :drop)
+                    fn (k v) (MapEntryDecision :drop)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |skips-empty-and-propagates-failure)
               :code $ quote $ do
@@ -6195,7 +6332,7 @@
               :code $ quote $ let
                   input $ {} $ |a 1
                   selected $ filter-map-kv input $ fn (id value)
-                    %:: MapEntryDecision :keep (to-tag id) (str value)
+                    MapEntryDecision :keep (to-tag id) (str value)
                 assert-type selected $ :: 'Map 'Tag 'String
                 assert= |1 $ &map:get selected :a
               :tags $ #{} :core :unit
@@ -6840,8 +6977,7 @@
           :tags $ #{} :file :internal :io
         'fs:path $ %{} 'CodeEntry
           :doc "|Construct an FsPath from a UTF-8 path string without normalization or filesystem access."
-          :code $ quote $ defn fs:path (value)
-            %{} FsPath $ :value value
+          :code $ quote $ defn fs:path (value) (FsPath :value value)
           :examples $ []
             quote $ fs:path |assets/data.cirru
             quote $ .read-text $ fs:path |assets/data.cirru
@@ -8639,8 +8775,7 @@
         'map-entries $ %{} 'CodeEntry
           :doc "|将 Map<K,V> 转为 List<MapEntry<K,V>>，保留 key/value 类型；需要类型化排序时使用它，旧 &map:to-list 保持原语义。"
           :code $ quote $ defn map-entries (xs)
-            map-list-kv xs $ fn (key value)
-              %{} MapEntry (:key key) (:value value)
+            map-list-kv xs $ fn (key value) (MapEntry :key key :value value)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'K 'V
@@ -9902,6 +10037,12 @@
                   do (range 100000000000000000000 99999999999999000000 -1) false
                   fn (_error) true
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-zero-step)
+              :code $ quote $ assert= :failed
+                try
+                  do (range 0 3 0) :returned
+                  fn (_error) :failed
+              :tags $ #{} :core :unit
         'range-bothway $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn range-bothway (x ? y)
             if (nil? y)
@@ -10289,11 +10430,20 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |rounds-fractional-values-both-directions)
-            :code $ quote $ do
-              assert= 1 $ round 1.1
-              assert= 2 $ round 1.8
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |rounds-fractional-values-both-directions)
+              :code $ quote $ do
+                assert= 1 $ round 1.1
+                assert= 2 $ round 1.8
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rounds-ties-away-from-zero)
+              :code $ quote $ do
+                assert= 3 $ round 2.5
+                assert= -3 $ round -2.5
+                assert= 1 $ round 0.5
+                assert= -1 $ round -0.5
+                assert= |-0 $ turn-string $ round -0.4
+              :tags $ #{} :core :unit
         'round? $ %{} 'CodeEntry
           :doc "|判断 Number 是否有限且恰好无小数部分。首选 integer? 和 Number .integer?；旧函数 round? 在兼容窗口保持同义，Number 方法 .round? 已在 0.29.0 删除。可用 calcit fix --rule core-integer-predicate-v1 显式预览来源受控的函数调用迁移，附带 tests/examples 需人工检查。NaN、正负 Infinity、非零小数返回 false，-0 返回 true。这不是安全整数范围或 Int32/UInt32 等 refinement 检查，也不执行舍入。"
           :code $ quote &runtime-implementation
@@ -10485,10 +10635,26 @@
             :generics $ [] 'T
             :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |orders-list-with-default-comparator)
-            :code $ quote $ assert= ([] 1 2 3 4)
-              sort $ [] 4 3 2 1
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |orders-list-with-default-comparator)
+              :code $ quote $ assert= ([] 1 2 3 4)
+                sort $ [] 4 3 2 1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |sorts-nan-after-numbers)
+              :code $ quote $ let
+                  not-a-number $ sqrt -1
+                  positive-infinity $ &/ 1 0
+                assert= ([] -1 0 1 3 positive-infinity not-a-number not-a-number)
+                  sort $ [] 3 not-a-number 1 positive-infinity 0 not-a-number -1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |sorts-nan-last-with-compare)
+              :code $ quote $ let
+                  not-a-number $ sqrt -1
+                  positive-infinity $ &/ 1 0
+                assert= ([] -1 0 1 3 positive-infinity not-a-number not-a-number)
+                  sort ([] 3 not-a-number 1 positive-infinity 0 not-a-number -1)
+                    fn (a b) (&compare a b)
+              :tags $ #{} :core :unit
         'split $ %{} 'CodeEntry
           :doc "|internal function for splitting strings\nSyntax: (split s delimiter)\nParams: s (string), delimiter (string)\nReturns: list of strings\nSplits string by delimiter into list of substrings; empty pieces are dropped, so an empty string yields an empty list. An empty delimiter splits into characters."
           :code $ quote &runtime-implementation
@@ -10574,6 +10740,13 @@
               :code $ quote $ do
                 assert= |ac $ str |a nil |c
                 assert= "|(%:: _ :a |世界 \"|海 洋\")" $ str $ :: :a "|世界" "|海 洋"
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |formats-numbers-like-turn-string)
+              :code $ quote $ do
+                assert= |inf $ str $ &/ 1 0
+                assert= |-0 $ str $ &* -1 0
+                assert= |1000000000000000000000 $ str 1e21
+                assert= |0.0000001 $ str 1e-7
               :tags $ #{} :core :unit
         'str-find-index $ %{} 'CodeEntry
           :doc "|返回首次匹配的 Unicode 标量索引 Option<Number>，可直接用于 .get/.slice；不是 UTF-8 字节或 UTF-16 单元偏移，也不按 grapheme 分组。未找到返回 Option :none，空 pattern 返回 Option :some 0。"
@@ -10717,7 +10890,7 @@
           :examples $ [] $ quote
             let
                 User $ defstruct User $ :name 'String
-                user $ %{} User $ :name |Ada
+                user $ User :name |Ada
               assert= (%some User) (struct-definition user)
           :schema $ :: 'Fn $ {}
             :args $ [] 'Struct
@@ -10825,7 +10998,7 @@
             if (list? data) (map data tagging-edn)
               if (map? data)
                 filter-map-kv data $ defn %tagging (k v)
-                  %:: MapEntryDecision :keep
+                  MapEntryDecision :keep
                     if (string? k) (turn-tag k) k
                     tagging-edn v
                 , data

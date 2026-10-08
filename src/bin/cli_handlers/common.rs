@@ -232,9 +232,22 @@ pub fn print_decoded_syntax_input(input: &DecodedSyntaxInput) {
   }
 }
 
+static VERBOSE_MUTATION_OUTPUT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Enable the decoded-input echo for mutation commands (top-level `--verbose`).
+pub fn set_verbose_mutation_output(enabled: bool) {
+  VERBOSE_MUTATION_OUTPUT.store(enabled, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether mutation commands should echo their decoded syntax input.
+pub fn verbose_mutation_output() -> bool {
+  VERBOSE_MUTATION_OUTPUT.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Decode the syntax node of a mutation command; the decoded form is echoed only with `--verbose`.
 pub fn decode_mutation_syntax_input(raw: &str, requested_format: SyntaxInputFormat) -> Result<Cirru, String> {
   let decoded = decode_syntax_input(raw, requested_format)?;
-  if requested_format != SyntaxInputFormat::Auto {
+  if requested_format != SyntaxInputFormat::Auto && verbose_mutation_output() {
     print_decoded_syntax_input(&decoded);
   }
   Ok(decoded.node)

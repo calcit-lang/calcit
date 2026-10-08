@@ -4917,6 +4917,13 @@ fn try_rewrite_struct_enum_constructor_head_call(
     Calcit::EnumDef(_) => Some("defenum"),
     Calcit::Import(CalcitImport { ns, def, .. }) => data_definition_kind(ns, def),
     Calcit::Symbol { sym, info, .. } => data_definition_kind(&info.at_ns, sym),
+    // A local bound to `defstruct` / `defenum` carries the definition type
+    // itself; a local holding an instance carries the value type instead.
+    Calcit::Local(_) => match resolve_type_value(head_form, scope_types).as_deref() {
+      Some(CalcitTypeAnnotation::StructDef(_)) => Some("defstruct"),
+      Some(CalcitTypeAnnotation::EnumDef(_)) => Some("defenum"),
+      _ => None,
+    },
     _ => None,
   };
 
@@ -5021,8 +5028,10 @@ fn try_rewrite_struct_enum_constructor_head_call(
     // that annotation does not always retain its source path. Keep the
     // already-resolved Import from the call head so JS codegen receives a
     // runtime reference instead of an embedded compiler-only StructDef.
-    let constructor_path = constructor_definition_path(head_form).or(ns_def_path);
-    let struct_ref_node = build_struct_ref_node(&struct_def, constructor_path, file_ns, def_name);
+    let struct_ref_node = local_definition_ref(head_form).unwrap_or_else(|| {
+      let constructor_path = constructor_definition_path(head_form).or(ns_def_path);
+      build_struct_ref_node(&struct_def, constructor_path, file_ns, def_name)
+    });
     let mut struct_items: Vec<Calcit> = Vec::with_capacity(struct_def.fields.len() * 2 + 2);
     struct_items.push(Calcit::Proc(CalcitProc::NativeStruct));
     struct_items.push(struct_ref_node);
@@ -5110,8 +5119,10 @@ fn try_rewrite_struct_enum_constructor_head_call(
     // Direct `Op :variant` calls reach here with an Import head. Preserve its
     // namespace/definition path: lowering to an embedded enum prototype works
     // in the native evaluator but cannot be emitted as JavaScript.
-    let constructor_path = constructor_definition_path(head_form).or(ns_def_path);
-    let enum_ref_node = build_enum_ref_node(enum_def, constructor_path, file_ns, def_name);
+    let enum_ref_node = local_definition_ref(head_form).unwrap_or_else(|| {
+      let constructor_path = constructor_definition_path(head_form).or(ns_def_path);
+      build_enum_ref_node(enum_def, constructor_path, file_ns, def_name)
+    });
     let mut items: Vec<Calcit> = Vec::with_capacity(args.len() + 1);
     items.push(Calcit::Proc(CalcitProc::NativeNamedEnumNew));
     items.push(enum_ref_node);
@@ -5121,6 +5132,12 @@ fn try_rewrite_struct_enum_constructor_head_call(
   }
 
   Ok(None)
+}
+
+/// A local definition is referenced through the local itself, so every
+/// backend constructs from the runtime definition value the binding holds.
+fn local_definition_ref(head_form: &Calcit) -> Option<Calcit> {
+  matches!(head_form, Calcit::Local(_)).then(|| head_form.to_owned())
 }
 
 fn constructor_definition_path(head_form: &Calcit) -> Option<(Arc<str>, Arc<str>)> {
@@ -5719,6 +5736,10 @@ fn raw_struct_constructor_matches_known_layout(args: &CalcitList, scope_types: &
     {
       CalcitTypeAnnotation::TypeRef(Arc::from(format!("{}/{sym}", info.at_ns)), Arc::new(vec![])).resolve_to_struct()
     }
+    Calcit::Local(_) => match resolve_type_value(definition, scope_types).as_deref() {
+      Some(CalcitTypeAnnotation::StructDef(struct_def)) => Some(struct_def.as_ref().to_owned()),
+      _ => None,
+    },
     _ => None,
   };
   let Some(struct_def) = resolved_struct_def else {

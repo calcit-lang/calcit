@@ -273,6 +273,36 @@ calcit calcit.cirru edit transaction --file changes.cirru \
   --expect-revision md5:... --format edn
 ```
 
+#### 定义粒度的 revision
+
+dry-run 报告除整个 Snapshot 的 `original_revision` 外，还返回 `scoped_revision`，只记录本事务改动到的单元在修改前的
+fingerprint，形如 `scope:def:app.main/f@md5:...`。单元是每个定义、每个命名空间声明（imports）、每个 entry 和项目字段；
+新建的单元记为 `@absent`。把 `scoped_revision` 传给 `--expect-revision` 时，只要这些单元未变就可以提交，其他定义在此期间
+被修改不会让它失效；这些单元有任何变化，或重新执行后的事务还会改到范围外的单元，命令以 `Definition conflict` 报错并列出
+单元名，Snapshot 不变。传入整个 Snapshot 的 `md5:` revision 时行为与以前相同。
+
+```bash
+calcit calcit.cirru edit transaction --file a.cirru --dry-run --format edn   # 读取 :scoped-revision
+calcit calcit.cirru edit transaction --file a.cirru --expect-revision 'scope:def:app.main/f@md5:...'
+```
+
+同一 Snapshot 的写入仍由写锁串行执行；scoped revision 让多个 Agent 修改不同定义时依次提交而不必重新预览。
+
+#### Git 合并驱动
+
+`calcit <ours> edit merge --base <base> --theirs <theirs>` 按命名空间与定义做三方合并，把结果以规范格式写回 `<ours>`。
+只有一方修改的单元直接采用，双方改成相同内容的单元保留一份；双方改得不同的单元保留我方版本，命令列出这些单元
+（定义会显示 base/ours/theirs 的单行代码）并以非零状态退出，Git 因此把文件标为冲突。在仓库中启用：
+
+```bash
+echo 'calcit.cirru merge=calcit' >> .gitattributes
+git config merge.calcit.driver 'calcit %A edit merge --base %O --theirs %B'
+```
+
+对方删除命名空间、我方新增或修改其中定义时，会保留冲突定义并报告 `ns:<namespace>` 冲突；命名空间未被我方修改时可以正常删除。
+
+合并完成后运行 `calcit --check-only` 与项目测试，再提交合并结果。
+
 JSON argument lists remain accepted as a compatibility format for callers that already construct JSON, but JSON is not the recommended authoring format when operations contain Calcit code:
 
 ```json

@@ -493,6 +493,7 @@ fn run_cli() -> Result<(), String> {
   runner::preprocess::set_warn_dyn_method(cli_args.warn_dyn_method || strict_type_policy.diagnostics);
   runner::preprocess::set_strict_types(strict_type_policy.diagnostics);
   runner::preprocess::set_verbose_preprocess(cli_args.verbose);
+  cli_handlers::set_verbose_mutation_output(cli_args.verbose);
   let _macro_metrics_report = runner::macro_metrics::ReportOnDrop::new(cli_args.macro_metrics);
   #[cfg(not(target_arch = "wasm32"))]
   let _ffi_metrics_report = injection::FfiMetricsReportOnDrop::new(cli_args.ffi_metrics);

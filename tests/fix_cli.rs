@@ -440,6 +440,71 @@ fn deprecation_report_shares_core_metadata_and_excludes_local_and_quoted_calls()
 }
 
 #[test]
+fn deprecation_paths_address_snapshot_source_with_comments() {
+  // The reader drops comments, so reported paths must be mapped back to the Snapshot AST.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/legacy",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn legacy ()\n  ; leading note\n  turn-str 1\n  let ((x 1))\n    ; nested note\n    turn-str x\n    , x\n  optionally 1\n  quote $ turn-str 1",
+      ],
+    ),
+    "create commented legacy calls",
+  );
+  let output = run_calcit(&snapshot, &["analyze", "deprecated", "--ns", "app.main", "--format", "json"]);
+  assert_success(&output, "report deprecated calls");
+  let report = parse_stdout(&output);
+  let legacy = report["data"]["definitions"]
+    .as_array()
+    .unwrap()
+    .iter()
+    .find(|row| row["name"] == "legacy")
+    .unwrap_or_else(|| panic!("{report}"));
+  let mut found = legacy["uses"]
+    .as_array()
+    .unwrap()
+    .iter()
+    .map(|usage| {
+      (
+        usage["path"].as_str().unwrap().to_owned(),
+        usage["target"].as_str().unwrap().to_owned(),
+      )
+    })
+    .collect::<Vec<_>>();
+  found.sort();
+  assert_eq!(
+    found,
+    vec![
+      ("code@4".to_owned(), "calcit.core/turn-str".to_owned()),
+      ("code@5.3".to_owned(), "calcit.core/turn-str".to_owned()),
+      ("code@6".to_owned(), "calcit.core/optionally".to_owned()),
+    ],
+    "{report}"
+  );
+
+  let query = run_calcit(&snapshot, &["query", "def", "app.main/legacy", "--format", "json"]);
+  assert_success(&query, "query legacy source");
+  let code = parse_stdout(&query)["data"]["code"].clone();
+  for (path, target) in found {
+    let mut node = &code;
+    for index in path.trim_start_matches("code@").split('.') {
+      node = &node[index.parse::<usize>().unwrap()];
+    }
+    let name = target.rsplit('/').next().unwrap();
+    assert_eq!(node[0], name, "{path} should address the {target} call in {code}");
+  }
+}
+
+#[test]
 fn attached_surface_presets_compose_diagnostics_and_nested_constructors() {
   // Rust verifies the guarded transaction; the unchanged Calcit assertion verifies the migrated program.
   for selector in ["removed-data-api-v1", "surface-latest-v1", "surface-latest-v2"] {
@@ -11101,4 +11166,132 @@ fn core_api_preset_labels_attached_regions_by_contributing_rule() {
       "{path}: {report}"
     );
   }
+}
+
+#[test]
+fn rename_local_rewrites_one_binding_and_its_uses_only() {
+  // Rust covers the guarded transaction; the renamed program keeps its behavior under the strict check.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  for (target, code) in [
+    (
+      "app.main/locals",
+      "quote $ defn locals (a b)\n  let\n      x $ &+ a 1\n      y $ &* x 2\n    println x y\n    let\n        x 10\n      println x\n    &+ x b",
+    ),
+    (
+      "app.main/quoted-local",
+      "quote $ defn quoted-local (v)\n  println $ quote v\n  &+ v 1",
+    ),
+    (
+      "app.main/macro-local",
+      "quote $ defn macro-local (v)\n  when (&> v 0) (println v)\n  &+ v 1",
+    ),
+    ("app.main/binder-local", "quote $ defn binder-local (v)\n  ->% v (&+ % 1)"),
+  ] {
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", target, "--input-format", "cirru", "--code", code]),
+      "create local rename fixture",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "schema",
+          target,
+          "--input-format",
+          "cirru",
+          "--code",
+          if !target.ends_with("app.main/locals") {
+            "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)"
+          } else {
+            "quote $ :: 'Fn $ {} (:args $ [] 'Number 'Number) (:return 'Number)"
+          },
+        ],
+      ),
+      "type local rename fixture",
+    );
+  }
+  let rename = |definition: &str, at: &str, to: &str, extra: &[&str]| {
+    let mut args = vec![
+      "--rule",
+      "rename-local-v1",
+      "--ns",
+      "app.main",
+      "--def",
+      definition,
+      "--at",
+      at,
+      "--to",
+      to,
+      "--format",
+      "json",
+    ];
+    args.extend_from_slice(extra);
+    run_fix(&snapshot, &args)
+  };
+  let paths = |output: &Output| -> Vec<String> {
+    parse_stdout(output)["data"]["suggestions"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .map(|suggestion| suggestion["path"].as_str().unwrap().to_owned())
+      .collect()
+  };
+  let original = fs::read(&snapshot).unwrap();
+
+  // A let binding renames its later bindings and body, but not the inner shadowing `x`.
+  let preview = rename("locals", "3.1.0.0", "total", &[]);
+  assert_success(&preview, "preview let binding rename");
+  assert_eq!(paths(&preview), ["code@3.1.0.0", "code@3.1.1.1.1", "code@3.2.1", "code@3.4.1"]);
+  assert_eq!(fs::read(&snapshot).unwrap(), original, "preview must not write");
+
+  // A fn parameter renames uses inside nested lets.
+  let parameter = rename("locals", "2.0", "base", &[]);
+  assert_success(&parameter, "preview parameter rename");
+  assert_eq!(paths(&parameter), ["code@2.0", "code@3.1.0.1.1"]);
+
+  // The inner shadowing binding only covers its own body.
+  let inner = rename("locals", "3.3.1.0.0", "ten", &[]);
+  assert_success(&inner, "preview inner binding rename");
+  assert_eq!(paths(&inner), ["code@3.3.1.0.0", "code@3.3.2.1"]);
+
+  // Non-binding core macros such as `when` keep their arguments in the enclosing scope.
+  let through_macro = rename("macro-local", "2.0", "value", &[]);
+  assert_success(&through_macro, "preview rename through when");
+  assert_eq!(paths(&through_macro), ["code@2.0", "code@3.1.1", "code@3.2.1", "code@4.1"]);
+
+  // Conflicts, quoted occurrences and arguments of binding macros are rejected with locations.
+  for (definition, at, to, expected) in [
+    ("locals", "3.1.0.0", "y", "code@3.1.1.0"),
+    ("locals", "3.1.0.0", "b", "code@3.4.2"),
+    ("quoted-local", "2.0", "w", "code@3.1.1"),
+    ("binder-local", "2.0", "w", "code@3.1"),
+    ("locals", "3.2.1", "z", "not a `defn`/`fn` parameter"),
+  ] {
+    let output = rename(definition, at, to, &[]);
+    assert!(!output.status.success(), "{definition} {at} -> {to} must be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains(expected), "{definition} {at} -> {to}: {stderr}");
+    assert_eq!(fs::read(&snapshot).unwrap(), original, "rejected rename must not write");
+  }
+
+  let revision = parse_stdout(&preview)["revision"].as_str().unwrap().to_owned();
+  let applied = rename(
+    "locals",
+    "3.1.0.0",
+    "total",
+    &["--apply", "--expect-revision", &revision, "--allow-no-vcs"],
+  );
+  assert_success(&applied, "apply let binding rename");
+  let code = parse_stdout(&run_calcit(&snapshot, &["query", "def", "app.main/locals", "--format", "json"]))["data"]["code"].clone();
+  assert_eq!(code[3][1][0][0], "total");
+  assert_eq!(code[3][3][1][0][0], "x", "inner shadowing binding stays");
+  assert_eq!(code[3][3][2][1], "x");
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "strict check after local rename");
+
+  let repeated = rename("locals", "3.1.0.0", "total", &[]);
+  assert_success(&repeated, "second preview");
+  assert_eq!(parse_stdout(&repeated)["data"]["changed"], false);
 }

@@ -5,6 +5,8 @@ mod logics;
 mod maps;
 mod math;
 pub mod meta;
+#[cfg(test)]
+mod proc_panic_tests;
 mod refs;
 mod sets;
 mod strings;

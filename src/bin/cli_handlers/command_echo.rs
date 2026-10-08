@@ -318,6 +318,7 @@ fn render_query_explanation(cmd: &QueryCommand) -> Option<String> {
 fn render_edit_explanation(cmd: &EditCommand) -> Option<String> {
   Some(match &cmd.subcommand {
     EditSubcommand::Format(_) => "rewrites snapshot file in canonical format".to_string(),
+    EditSubcommand::Merge(_) => "merges another Snapshot version into this one per definition".to_string(),
     EditSubcommand::Transaction(opts) => format!(
       "{} a staged edit transaction with revision checks",
       if opts.dry_run { "previews" } else { "applies" }
@@ -1003,6 +1004,10 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
 fn push_edit(tokens: &mut Vec<String>, cmd: &EditCommand) {
   match &cmd.subcommand {
     EditSubcommand::Format(_) => {}
+    EditSubcommand::Merge(opts) => {
+      echo_items!(tokens, opt "base" => Some(opts.base.as_str()); default "none");
+      echo_items!(tokens, opt "theirs" => Some(opts.theirs.as_str()); default "none");
+    }
     EditSubcommand::Transaction(opts) => {
       echo_items!(
         tokens,
@@ -1391,6 +1396,7 @@ fn analyze_name(subcommand: &AnalyzeSubcommand) -> &'static str {
 fn edit_name(subcommand: &EditSubcommand) -> &'static str {
   match subcommand {
     EditSubcommand::Format(_) => "format",
+    EditSubcommand::Merge(_) => "merge",
     EditSubcommand::Transaction(_) => "transaction",
     EditSubcommand::Scaffold(_) => "scaffold",
     EditSubcommand::Def(_) => "def",
@@ -1483,6 +1489,7 @@ fn config_name(subcommand: &ConfigSubcommand) -> &'static str {
     ConfigSubcommand::Version(_) => "version",
     ConfigSubcommand::Set(_) => "set",
     ConfigSubcommand::Unset(_) => "unset",
+    ConfigSubcommand::AddEntry(_) => "add-entry",
     ConfigSubcommand::AddModule(_) => "add-module",
     ConfigSubcommand::RmModule(_) => "rm-module",
     ConfigSubcommand::SetTypeSlot(_) => "set-type-slot",
@@ -1523,6 +1530,14 @@ fn push_config(tokens: &mut Vec<String>, cmd: &ConfigCommand) {
     ConfigSubcommand::Unset(opts) => {
       echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");
       echo_items!(tokens, pos "key" => &opts.key);
+    }
+    ConfigSubcommand::AddEntry(opts) => {
+      echo_items!(tokens, pos "name" => &opts.name);
+      echo_items!(tokens, opt "from" => opts.from.as_deref(); default "none");
+      echo_items!(tokens, opt "mode" => opts.mode.as_deref(); default "none");
+      echo_items!(tokens, opt "target" => opts.target.as_deref(); default "none");
+      echo_items!(tokens, opt "init-fn" => opts.init_fn.as_deref(); default "none");
+      echo_items!(tokens, opt "reload-fn" => opts.reload_fn.as_deref(); default "none");
     }
     ConfigSubcommand::AddModule(opts) => {
       echo_items!(tokens, opt "entry" => opts.entry.as_deref(); default "none");

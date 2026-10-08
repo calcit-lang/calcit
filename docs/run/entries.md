@@ -83,6 +83,20 @@ calcit config type-slots --entry server
 calcit config type-slots --entry server --format edn
 ```
 
+新建 named entry 使用 `calcit config add-entry`，不要手改 Snapshot。不带 `--from` 时必须显式给出 `--mode`、`--init-fn` 与 `--reload-fn`，`--target` 和 `--description` 可选；modules、type slots 与 feature policy 从空开始，再用 `add-module`、`set-type-slot`、`config set` 补齐。`--from <entry>` 复制已有入口的全部字段，同时传入的选项覆盖对应字段。同名入口已存在、来源入口不存在、mode/target 非法，或 init/reload 指向项目命名空间中不存在的定义时，命令以非零状态退出且不写回。
+
+多步创建放进一个事务，可先 `--dry-run` 预览，再用 `--expect-revision` 提交：
+
+```bash
+calcit config add-entry demo --mode js --target browser \
+  --init-fn app.demo/main! --reload-fn app.demo/reload! --description "Todo demo"
+calcit config add-entry server-test --from server --description "Server tests"
+
+calcit edit transaction --dry-run --format json --code '[["config","add-entry","demo","--mode","js","--target","browser","--init-fn","app.demo/main!","--reload-fn","app.demo/reload!"],["config","add-module","--entry","demo","respo.calcit/"]]'
+calcit edit transaction --expect-revision <original_revision> --code '...'
+calcit calcit.cirru --entry demo
+```
+
 The type-slot environment is selected before preprocessing starts, so the binding applies to the whole reachable call graph. Entry functions do not need a `with-type-slot` wrapper.
 
 Top-level `:configs` is retired. If an old snapshot still contains it, run `calcit calcit.cirru edit format` with the current release, review the generated `entries.default`, and then run strict validation. Only the formatter's isolated one-way loader accepts the old shape and defaults a missing mode to `:native`; runtime loading and other commands reject it. Existing `entries.default` conflicts and unknown legacy config fields are errors rather than implicit overwrites.

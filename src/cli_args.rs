@@ -171,9 +171,12 @@ pub struct FixCommand {
   /// verify a selected project workflow without mutating the snapshot
   #[argh(switch)]
   pub verify: bool,
-  /// replacement definition name required by semantic rename rules
+  /// replacement name required by rename-definition-v1 and rename-local-v1
   #[argh(option, long = "to")]
   pub replacement_name: Option<String>,
+  /// path of the local binding name for rename-local-v1, such as 3.1.0.0
+  #[argh(option)]
+  pub at: Option<String>,
   /// require the snapshot content to match this revision before applying
   #[argh(option, long = "expect-revision")]
   pub expect_revision: Option<String>,
@@ -823,6 +826,9 @@ pub struct QueryContextCommand {
   /// maximum number of definition-attached tests to include
   #[argh(option, default = "3")]
   pub test_limit: usize,
+  /// also list core macro/syntax dependencies and the generic Fn methods shared by every function
+  #[argh(switch)]
+  pub include_core: bool,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -856,6 +862,9 @@ pub struct QueryDefsCommand {
   /// filter definitions that contain this tag (e.g. macro or :macro)
   #[argh(option)]
   pub tag: Option<String>,
+  /// show each definition's signature (schema, or its declaration head when untyped) instead of a [schema] marker
+  #[argh(switch)]
+  pub signatures: bool,
 }
 
 // read-ns merged into ns command
@@ -894,7 +903,7 @@ pub struct QueryDefCommand {
   /// append fenced legacy JSON to Markdown-compatible human output; prefer --format json for automation
   #[argh(switch)]
   pub json: bool,
-  /// output format: Markdown-compatible human (default), edn, or json
+  /// output format: Markdown-compatible human (default), edn, json, or cirru (only `quote $ <definition>`, accepted by `edit def --overwrite --input-format cirru`)
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
   /// preferred nodes per display fragment when large expressions are chunked
@@ -906,7 +915,10 @@ pub struct QueryDefCommand {
   /// only enable chunked display when total expression nodes reach this threshold
   #[argh(option, default = "88")]
   pub chunk_trigger_nodes: usize,
-  /// force raw full-definition display without chunking
+  /// only enable chunked display when the formatted definition reaches this many bytes
+  #[argh(option, default = "2048")]
+  pub chunk_trigger_bytes: usize,
+  /// non-chunked Markdown output; use --format cirru for source that can be written back
   #[argh(switch)]
   pub raw: bool,
 }
@@ -1557,6 +1569,8 @@ pub struct EditCommand {
 pub enum EditSubcommand {
   /// rewrite snapshot file in canonical format without semantic changes
   Format(EditFormatCommand),
+  /// three-way merge another Snapshot version into this one per definition (Git merge driver)
+  Merge(EditMergeCommand),
   /// apply multiple existing edit/tree/config commands against one staged snapshot
   Transaction(EditTransactionCommand),
   /// validate a definition-graph architecture plan and preview scaffold work
@@ -1613,6 +1627,19 @@ pub enum EditSubcommand {
 #[argh(subcommand, name = "format")]
 /// rewrite target snapshot file in canonical format
 pub struct EditFormatCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "merge")]
+/// three-way merge another Snapshot version into this one per namespace and definition; for Git use
+/// `merge.calcit.driver = calcit %A edit merge --base %O --theirs %B`
+pub struct EditMergeCommand {
+  /// common ancestor Snapshot file
+  #[argh(option)]
+  pub base: String,
+  /// the other side's Snapshot file to merge in
+  #[argh(option)]
+  pub theirs: String,
+}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "transaction")]
@@ -2761,6 +2788,8 @@ pub enum ConfigSubcommand {
   Set(ConfigSetCommand),
   /// unset an optional configuration key (target)
   Unset(ConfigUnsetCommand),
+  /// create a named entry with a complete configuration, or clone one with --from
+  AddEntry(ConfigAddEntryCommand),
   /// add a module path to an entry's modules
   AddModule(ConfigAddModuleCommand),
   /// remove a module path from an entry's modules
@@ -2841,6 +2870,33 @@ pub struct ConfigUnsetCommand {
   /// config key to unset: target
   #[argh(positional)]
   pub key: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "add-entry")]
+/// create a named entry; without --from, --mode, --init-fn and --reload-fn are required
+pub struct ConfigAddEntryCommand {
+  /// name of the new entry; must not exist yet
+  #[argh(positional)]
+  pub name: String,
+  /// copy every field (modules, type slots, feature policy included) from an existing entry
+  #[argh(option)]
+  pub from: Option<String>,
+  /// run mode: native or js
+  #[argh(option)]
+  pub mode: Option<String>,
+  /// host target: browser, node, native or wasm
+  #[argh(option)]
+  pub target: Option<String>,
+  /// init function as a full namespace/definition path
+  #[argh(option)]
+  pub init_fn: Option<String>,
+  /// reload function as a full namespace/definition path
+  #[argh(option)]
+  pub reload_fn: Option<String>,
+  /// human-readable purpose of the entry
+  #[argh(option)]
+  pub description: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

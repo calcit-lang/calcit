@@ -7,7 +7,9 @@ use std::sync::Arc;
 
 use calcit::calcit::{Calcit, CalcitSyntax};
 use calcit::cli_args::DeprecatedCommand;
+use calcit::data::cirru::{reader_path_to_source_path, source_path_to_reader_path};
 use calcit::{program, snapshot};
+use cirru_parser::Cirru;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeprecatedApiUse {
@@ -140,6 +142,13 @@ fn format_path(path: &[usize]) -> String {
   }
 }
 
+fn parse_path(path: &str) -> Option<Vec<usize>> {
+  if path == "code" {
+    return Some(vec![]);
+  }
+  path.strip_prefix("code@")?.split('.').map(|index| index.parse().ok()).collect()
+}
+
 fn source_node_at<'a>(mut node: &'a Calcit, path: &[usize]) -> Option<&'a Calcit> {
   for index in path {
     let Calcit::List(children) = node else { return None };
@@ -152,6 +161,7 @@ fn source_node_at<'a>(mut node: &'a Calcit, path: &[usize]) -> Option<&'a Calcit
 /// Failed source proofs keep the existing conservative static report.
 fn resolved_function_uses(
   node: &Calcit,
+  source: &Cirru,
   namespace: &str,
   definition: &str,
   targets: &HashMap<(String, String), DeprecatedTarget>,
@@ -173,10 +183,7 @@ fn resolved_function_uses(
   let mut uses = candidates
     .iter()
     .filter(|usage| {
-      let Some(path) = usage.path.strip_prefix("code@") else {
-        return false;
-      };
-      let Ok(path) = path.split('.').map(str::parse::<usize>).collect::<Result<Vec<_>, _>>() else {
+      let Some(path) = parse_path(&usage.path) else {
         return false;
       };
       matches!(source_node_at(node, &path), Some(Calcit::List(children)) if matches!(children.first(), Some(Calcit::Proc(_))))
@@ -188,7 +195,11 @@ fn resolved_function_uses(
     if location.ns.as_ref() != namespace || location.def.as_ref() != definition {
       continue;
     }
-    let mut path = location.coord.iter().map(|index| usize::from(*index)).collect::<Vec<_>>();
+    // Resolver locations are Snapshot source coordinates; candidates use reader paths.
+    let source_coord = location.coord.iter().map(|index| usize::from(*index)).collect::<Vec<_>>();
+    let Some(mut path) = source_path_to_reader_path(source, &source_coord) else {
+      continue;
+    };
     // A preferred method may legitimately lower to a legacy internal helper.
     // Only explicit function calls represent legacy source spelling here.
     if !matches!(source_node_at(node, &path), Some(Calcit::Symbol { .. } | Calcit::Import(_))) {
@@ -240,15 +251,31 @@ pub fn collect_deprecated_api_rows(
       continue;
     }
     for (definition, entry) in &file.defs {
+      let source_code = snapshot
+        .files
+        .get(namespace.as_ref())
+        .and_then(|file| file.defs.get(definition.as_ref()))
+        .map(|entry| &entry.code);
       let mut uses = vec![];
       collect_uses(&entry.code, namespace, &targets, &definitions, &mut vec![], &mut uses);
       // Do not compile unrelated call graphs merely to confirm an empty report.
       // Their macros may have compile-time effects that a metadata query must not trigger.
       if resolver_ready
         && !uses.is_empty()
-        && let Some(resolved) = resolved_function_uses(&entry.code, namespace, definition, &targets, &uses)
+        && let Some(resolved) =
+          source_code.and_then(|source| resolved_function_uses(&entry.code, source, namespace, definition, &targets, &uses))
       {
         uses = resolved;
+      }
+      // Report Snapshot source paths so `query def` / `tree` address the same node.
+      if let Some(source) = source_code {
+        for usage in &mut uses {
+          if let Some(reader_path) = parse_path(&usage.path)
+            && let Some(source_path) = reader_path_to_source_path(source, &reader_path)
+          {
+            usage.path = format_path(&source_path);
+          }
+        }
       }
       uses.sort_by(|left, right| {
         left

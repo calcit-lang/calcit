@@ -60,7 +60,7 @@ Prefer named structs and enums at module boundaries: their definitions carry sch
 
 For serialization fidelity and unsupported runtime values, see:
 
-- [Number](data/number.md) - 数值运算的跨后端语义（取余 `rem`）
+- [Number](data/number.md) - Number 规格：表示、非有限值、相等排序哈希、取整、整数参数定义域、转文本与解析
 - [String](data/string.md) - String syntax and Tags
 - [Persistent Data](data/persistent-data.md) - Implementation details
 - [EDN](data/edn.md) - Data notation format

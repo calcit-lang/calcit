@@ -53,6 +53,8 @@ const CORE_REF_CONSTRUCTOR_RULE: &str = "core-ref-constructor-v1";
 const CORE_REF_CONSTRUCTOR_DIAGNOSTIC: &str = "FIX_CORE_REF_CONSTRUCTOR";
 const RENAME_DEFINITION_RULE: &str = "rename-definition-v1";
 const RENAME_DEFINITION_DIAGNOSTIC: &str = "REFACTOR_RENAME_DEFINITION";
+const RENAME_LOCAL_RULE: &str = "rename-local-v1";
+const RENAME_LOCAL_DIAGNOSTIC: &str = "REFACTOR_RENAME_LOCAL";
 const VALUE_TO_ZERO_ARG_FN_RULE: &str = "value-to-zero-arg-fn-v1";
 const VALUE_TO_ZERO_ARG_FN_DIAGNOSTIC: &str = "REFACTOR_VALUE_TO_ZERO_ARG_FN";
 const SYNTHESIZE_SCHEMA_RULE: &str = "synthesize-schema-v1";
@@ -477,17 +479,18 @@ pub(crate) fn handle_fix_command(
   }
 
   let semantic_rename = selected_rules.contains(&RENAME_DEFINITION_RULE);
+  let local_rename = selected_rules.contains(&RENAME_LOCAL_RULE);
   let value_to_zero_arg_fn = selected_rules.contains(&VALUE_TO_ZERO_ARG_FN_RULE);
   let schema_synthesis = selected_rules.contains(&SYNTHESIZE_SCHEMA_RULE);
   let optional_parameters = selected_rules.contains(&OPTIONAL_PARAMETERS_RULE);
   let core_predicate_rename = selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE)
     || selected_rules.contains(&CORE_FUNCTION_ALIAS_RULE)
     || selected_rules.contains(&CORE_REF_CONSTRUCTOR_RULE);
-  let semantic_refactor = semantic_rename || value_to_zero_arg_fn;
+  let semantic_refactor = semantic_rename || value_to_zero_arg_fn || local_rename;
   let migration_rule =
     semantic_refactor || schema_synthesis || optional_parameters || core_predicate_rename || options.workflow.is_some();
   let validation_only = std::env::var("CALCIT_FIX_VALIDATE_ONLY").as_deref() == Ok("1");
-  let project_definitions = if semantic_refactor || schema_synthesis || optional_parameters {
+  let project_definitions = if (semantic_refactor && !local_rename) || schema_synthesis || optional_parameters {
     select_project_definitions(compiled_snapshot, project_namespaces)?
   } else {
     select_definitions(options, compiled_snapshot, project_namespaces)?
@@ -562,7 +565,7 @@ pub(crate) fn handle_fix_command(
       options.definition.as_deref().expect("semantic rename requires definition"),
       options.replacement_name.as_deref().expect("semantic rename requires replacement"),
     ))
-  } else if value_to_zero_arg_fn || schema_synthesis {
+  } else if value_to_zero_arg_fn || schema_synthesis || local_rename {
     Some(warning_identities(&warnings))
   } else {
     None
@@ -581,6 +584,36 @@ pub(crate) fn handle_fix_command(
       &source_snapshot,
       snapshot_file,
       &project_definitions,
+    )?);
+  } else if local_rename {
+    let namespace = options.ns.as_deref().expect("local rename requires namespace");
+    let definition = options.definition.as_deref().expect("local rename requires definition");
+    let at = super::common::parse_path(options.at.as_deref().expect("local rename requires --at"))?;
+    let file = source_snapshot
+      .files
+      .get(namespace)
+      .ok_or_else(|| format!("Local rename namespace `{namespace}` is not an editable project namespace."))?;
+    let imports = program::extract_import_map(&file.ns.code, namespace)?;
+    let mut is_macro = local_rename::macro_head_cache(|head: &str| {
+      if !super::edit::definition_head_is_macro(snapshot_file, &source_snapshot, namespace, head)? {
+        return Ok(local_rename::MacroHead::Plain);
+      }
+      // Unqualified heads that are neither local definitions nor imports resolve to core.
+      let core = !head.contains('/') && !file.defs.contains_key(head) && !imports.contains_key(head);
+      Ok(if core {
+        local_rename::MacroHead::Core
+      } else {
+        local_rename::MacroHead::Other
+      })
+    });
+    suggestions.extend(local_rename::plan_local_rename(
+      namespace,
+      definition,
+      &at,
+      options.replacement_name.as_deref().expect("local rename requires --to"),
+      &source_snapshot,
+      snapshot_file,
+      &mut is_macro,
     )?);
   } else if value_to_zero_arg_fn {
     suggestions.extend(plan_value_to_zero_arg_fn(
@@ -1033,6 +1066,10 @@ fn fix_scope_args(options: &FixCommand) -> Vec<String> {
     args.push("--to".to_owned());
     args.push(replacement.clone());
   }
+  if let Some(at) = &options.at {
+    args.push("--at".to_owned());
+    args.push(at.clone());
+  }
   args
 }
 
@@ -1095,6 +1132,17 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     return Err("`calcit fix --rule` conflicts with `--preset`; choose one explicit migration selection.".to_owned());
   }
   let semantic_rename = options.rule.as_deref() == Some(RENAME_DEFINITION_RULE);
+  let local_rename = options.rule.as_deref() == Some(RENAME_LOCAL_RULE);
+  if local_rename {
+    if options.ns.is_none() || options.definition.is_none() || options.at.is_none() || options.replacement_name.is_none() {
+      return Err(format!(
+        "Fix rule `{RENAME_LOCAL_RULE}` requires exact `--ns`, `--def`, `--at <binding path>`, and `--to` arguments."
+      ));
+    }
+    super::common::parse_path(options.at.as_deref().expect("checked --at"))?;
+  } else if options.at.is_some() {
+    return Err(format!("`calcit fix --at` is only valid with `--rule {RENAME_LOCAL_RULE}`."));
+  }
   let value_to_zero_arg_fn = options.rule.as_deref() == Some(VALUE_TO_ZERO_ARG_FN_RULE);
   let schema_synthesis = options.rule.as_deref() == Some(SYNTHESIZE_SCHEMA_RULE);
   let optional_parameters = options.rule.as_deref() == Some(OPTIONAL_PARAMETERS_RULE);
@@ -1126,8 +1174,10 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         options.rule.as_deref().expect("checked exact schema/refactor rule")
       ));
     }
-  } else if options.replacement_name.is_some() {
-    return Err(format!("`calcit fix --to` is only valid with `--rule {RENAME_DEFINITION_RULE}`."));
+  } else if options.replacement_name.is_some() && !local_rename {
+    return Err(format!(
+      "`calcit fix --to` is only valid with `--rule {RENAME_DEFINITION_RULE}` or `--rule {RENAME_LOCAL_RULE}`."
+    ));
   }
   if let Some(preset) = options.preset.as_deref()
     && !matches!(
@@ -1165,6 +1215,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CORE_EFFECT_METHOD_RULE
         | CORE_REF_CONSTRUCTOR_RULE
         | RENAME_DEFINITION_RULE
+        | RENAME_LOCAL_RULE
         | VALUE_TO_ZERO_ARG_FN_RULE
         | SYNTHESIZE_SCHEMA_RULE
         | SPREAD_CALL_PROOF_RULE
@@ -1180,7 +1231,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
   {
     return Err(
       format!(
-        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
       ) + &format!(
         " Review-only compiler rules: `{UNSAFE_COERCE_BOUNDARY_RULE}`, `{ASSERT_TYPE_PROOF_RULE}`, `{CONCRETE_RETURN_PROOF_RULE}`, `{CALLABLE_CONTRACT_PROOF_RULE}`, `{NOMINAL_WRITE_PROOF_RULE}`."
       ),
@@ -1214,6 +1265,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
     if matches!(
       rule,
       RENAME_DEFINITION_RULE
+        | RENAME_LOCAL_RULE
         | VALUE_TO_ZERO_ARG_FN_RULE
         | SYNTHESIZE_SCHEMA_RULE
         | SPREAD_CALL_PROOF_RULE
@@ -1236,6 +1288,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
     ) {
       return vec![match rule {
         RENAME_DEFINITION_RULE => RENAME_DEFINITION_RULE,
+        RENAME_LOCAL_RULE => RENAME_LOCAL_RULE,
         VALUE_TO_ZERO_ARG_FN_RULE => VALUE_TO_ZERO_ARG_FN_RULE,
         SYNTHESIZE_SCHEMA_RULE => SYNTHESIZE_SCHEMA_RULE,
         SPREAD_CALL_PROOF_RULE => SPREAD_CALL_PROOF_RULE,
@@ -1408,6 +1461,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: RENAME_DEFINITION_DIAGNOSTIC,
       evidence_source: "compiler-resolved-reference",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    RENAME_LOCAL_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: RENAME_LOCAL_DIAGNOSTIC,
+      evidence_source: "core-binding-scope-and-preprocessed-locals",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -1872,6 +1932,7 @@ fn plan_definition_rename(
 }
 
 mod compiler_review;
+mod local_rename;
 pub(crate) mod schema_synthesis;
 mod spread_call;
 mod structural_rewrite;

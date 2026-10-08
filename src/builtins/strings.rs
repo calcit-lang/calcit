@@ -125,10 +125,40 @@ pub fn split(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
+const MAX_FORMAT_DIGITS: usize = 100;
+
+/// Longest padded string, the V8 string length limit, so both backends fail at the same size.
+const MAX_PADDED_LEN: f64 = 536_870_888.0;
+
+/// Target length of `&str:pad-left` / `&str:pad-right`, floored; NaN and negative lengths
+/// mean no padding (as in JavaScript), lengths past the limit fail instead of exhausting memory.
+fn pad_target_len(proc_name: &str, n: f64) -> Result<usize, CalcitErr> {
+  if n > MAX_PADDED_LEN {
+    return Err(CalcitErr::use_str(
+      CalcitErrKind::Type,
+      format!(
+        "{proc_name} expected a finite length up to {MAX_PADDED_LEN}, but received: {}",
+        Calcit::Number(n)
+      ),
+    ));
+  }
+  if n.is_nan() || n <= 0.0 {
+    return Ok(0);
+  }
+  Ok(n.floor() as usize)
+}
+
 pub fn format_number(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(n)), Some(Calcit::Number(x))) => {
+      // Same digit range as JavaScript `toFixed`; larger precisions overflow the formatter.
       let size = f64_to_usize(*x)?;
+      if size > MAX_FORMAT_DIGITS {
+        return CalcitErr::err_str(
+          CalcitErrKind::Type,
+          format!("&number:format expected 0 to {MAX_FORMAT_DIGITS} digits, but received: {x}"),
+        );
+      }
       Ok(Calcit::Str(format!("{n:.size$}").into()))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(
@@ -436,7 +466,7 @@ pub fn pad_left(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() == 3 {
     match (&xs[0], &xs[1], &xs[2]) {
       (Calcit::Str(s), Calcit::Number(n), Calcit::Str(pattern)) => {
-        let size = n.floor() as usize;
+        let size = pad_target_len("&str:pad-left", *n)?;
         if pattern.is_empty() {
           return CalcitErr::err_str(CalcitErrKind::Arity, "&str:pad-left expected a non-empty pattern");
         }
@@ -467,7 +497,7 @@ pub fn pad_right(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() == 3 {
     match (&xs[0], &xs[1], &xs[2]) {
       (Calcit::Str(s), Calcit::Number(n), Calcit::Str(pattern)) => {
-        let size = n.floor() as usize;
+        let size = pad_target_len("&str:pad-right", *n)?;
         if pattern.is_empty() {
           return CalcitErr::err_str(CalcitErrKind::Arity, "&str:pad-right expected a non-empty pattern");
         }
