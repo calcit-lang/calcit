@@ -304,6 +304,26 @@ trait 的 where 约束现在使用能力证明，而不是把未绑定泛型静�
 
 `loop` 初始值和 `apply` 的无 spread 字面量实参保留各位置的类型，立即调用的固定参数函数可从输入推断参数。显式 `hint-fn` 优先，不能因为调用点传入 List 就把已声明的 Dynamic 参数悄悄改成 List 或 Countable；这种开放合同仍须在函数内部收窄。合法 typed loop 不需要为了通过检查改用低层计数或重复插入断言。
 
+## NaN 的相等、排序与哈希
+
+`=`、`&compare`、`sort`、Set 成员与 Map 键在 native、JS 与 WASM 上对数字使用同一组规则：`NaN` 等于 `NaN`，`0` 等于 `-0`；`&compare` 与默认比较的 `sort` 把 `NaN` 排在所有数字（包括 `inf`）之后；相等的数字哈希相同，`NaN` 可以作为 Set 元素或 Map 键找回。
+
+```cirru
+let
+    not-a-number $ sqrt -1
+  assert= true $ = not-a-number not-a-number
+  assert= 1 $ &compare not-a-number $ &/ 1 0
+  assert= true $ contains? (#{} not-a-number) not-a-number
+```
+
+升级时的行为变化：
+
+- 此前 `(= x x)` 对 `NaN` 为 `false`，有代码借此判断 `NaN`；现在结果为 `true`。需要判断 `NaN` 时改用 `&= 1 $ &compare x $ &/ 1 0`。
+- 此前含 `NaN` 的列表排序结果无序，`NaN` 放进 Set/Map 后查不到；现在 `NaN` 固定排在最后，查找能命中。
+- `<`、`>`、`<=`、`>=` 不变，仍按 IEEE 754 在 `NaN` 参与时返回 `false`。
+
+这是语义修复，不提供自动源码改写。完整规则见 [Number](../data/number.md#相等排序与哈希)。
+
 ## 宿主句柄不参与值比较与哈希
 
 已声明为 external-object trait 的值在 `=`、`not=`、`&=` 中比较，或作为 Set 成员、Map 键使用时，检查报告
