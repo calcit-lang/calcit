@@ -229,7 +229,12 @@ pub fn display_stack_with_docs(
       (Edn::tag("def"), format!("{}/{}", s.ns, s.def).into()),
       (
         Edn::tag("code"),
-        Edn::str(edn::format_edn_display(&Edn::Quote(cirru::calcit_to_cirru(&s.code)?))),
+        // Preprocessed code can hold values without a Cirru form (e.g. a hint-fn schema Map);
+        // fall back to the Lisp display so reporting never replaces the original failure.
+        Edn::str(match cirru::calcit_to_cirru(&s.code) {
+          Ok(code) => edn::format_edn_display(&Edn::Quote(code)),
+          Err(_) => s.code.lisp_str(),
+        }),
       ),
       (Edn::tag("args"), args.into()),
       (Edn::tag("kind"), Edn::tag(s.kind.to_string())),
