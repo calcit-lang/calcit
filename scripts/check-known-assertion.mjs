@@ -28,6 +28,66 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
+  // Keep #1865/#1553 language contracts in attached tests, replayed unchanged.
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "short-circuit-proof", "--backend", "native,js",
+  ], { ...options, stdio: "inherit" });
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--target", "app.short-circuit/false-path", "--target", "app.short-circuit/two-values",
+    "--target", "app.short-circuit/lexical-guard", "--backend", "native,wasm",
+  ], { ...options, stdio: "inherit" });
+  await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  const shortCircuitOriginal = await readFile(snapshot);
+  const shortCircuitProof = JSON.parse(run("fix", "--ns", "app.short-circuit",
+    "--rule", "callable-contract-proof-v1", "--format", "json"));
+  assert.deepEqual(shortCircuitProof.diagnostics, []);
+  assert.deepEqual(shortCircuitProof.data.suggestions, []);
+  assert.deepEqual(await readFile(snapshot), shortCircuitOriginal);
+  const guardedEdit = (operations) => {
+    const args = ["edit", "transaction", "--code", JSON.stringify(operations), "--format", "json"];
+    const preview = JSON.parse(run(...args, "--dry-run"));
+    run(...args, "--expect-revision", preview.scoped_revision);
+  };
+  guardedEdit([
+    ["edit", "def", "app.short-circuit/pretend", "--input-format", "cirru", "--code", "quote $ defn pretend (k) true"],
+    ["edit", "schema", "app.short-circuit/pretend", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args ([] 'Dynamic)) (:return 'Bool)"],
+    ["edit", "def", "app.short-circuit/lazy-flag", "--input-format", "cirru", "--code", "quote $ def lazy-flag $ pretend nil"],
+    ["edit", "schema", "app.short-circuit/lazy-flag", "--input-format", "cirru", "--code", "quote 'Bool"],
+  ]);
+  for (const [name, condition, otherwise = false, jsFfi = false] of [
+    ["one-or-arm", ["or", ["number?", "k"], "true"]],
+    ["false-and-arm", ["and", ["number?", "k"], ["&>=", "k", "0"]], true],
+    ["reversed-guard", ["and", ["&<", "k", "2"], ["number?", "k"]]],
+    ["shadowed-value", ["let", [["k", "1"]], ["number?", "k"]]],
+    ["shadowed-alias", ["let", [["valid", ["number?", "k"]]], ["let", [["k", "1"]], "valid"]]],
+    ["bool-is-not-proof", ["and", ["pretend", "k"], "true"]],
+    ["unknown-call-after-proof", ["and", ["number?", "k"], ["pretend", "k"]]],
+    ["lazy-initializer-after-proof", ["and", ["number?", "k"], "lazy-flag"]],
+    ["stale-alias-after-call", ["let", [["valid", ["number?", "k"]]], ["pretend", "k"], "valid"]],
+    ["rebound-after-proof", ["and", ["number?", "k"], ["&let", ["ignored", ["set!", "k", "|changed"]], "true"]], false, true],
+    ["rebound-proof-alias", ["let", [["valid", ["number?", "k"]]], ["set!", "k", "|changed"], "valid"], false, true],
+  ]) {
+    const consume = ["&+", "k", "1"];
+    guardedEdit([
+      ["edit", "def", "app.short-circuit/rejected", "--overwrite", "--input-format", "json-ast", "--code",
+        JSON.stringify(["defn", "rejected", ["k"], ["if", condition, otherwise ? "0" : consume, otherwise ? consume : "0"]])],
+      ["edit", "schema", "app.short-circuit/rejected", "--input-format", "cirru", "--code",
+        `quote $ :: 'Fn $ {} (:args ([] 'Dynamic)) (:return 'Number)${jsFfi ? " (:features $ #{} :js-ffi)" : ""}`],
+    ]);
+    const original = await readFile(snapshot);
+    const rejected = spawnSync(binary, [snapshot, "fix", "--ns", "app.short-circuit", "--def", "rejected",
+      "--rule", "callable-contract-proof-v1", "--format", "json"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
+    const report = JSON.parse(rejected.stdout);
+    assert.ok(report.diagnostics.some(diagnostic => diagnostic.code === "E_CALL_ARGUMENT_UNPROVEN"),
+      `${name}: missing independent argument proof diagnostic\n${rejected.stdout}`);
+    assert.deepEqual(await readFile(snapshot), original);
+  }
+
   // Reuse the source rejection fixture on every preprocessing entry. Codegen
   // must not hide a non-tail recurrence behind an unsupported target feature.
   const recurFixture = join(project, "non-tail-recur.cirru");
