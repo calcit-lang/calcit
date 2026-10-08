@@ -1693,6 +1693,28 @@ fn option_returning_api_type_mismatches_include_unwrap_and_match_help() {
 }
 
 #[test]
+fn required_struct_field_access_inside_local_fn_keeps_its_diagnostic() {
+  run_with_large_stack(|| {
+    // Expanding the `{}` receiver drops symbol locations; inside the `fn` macro body the
+    // access must still count as source code, with or without a return hint (#1748).
+    for hint in ["", "\n        hint-fn $ {} (:args ([])) (:return 'String)"] {
+      let entries = load_snippet_entries(&format!(
+        "let\n    read $ fn (){hint}\n        decode-map-as (:file ({{}} (:file |a))) 'String\n  read"
+      ));
+      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+      let _ = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      let warnings = warnings.borrow();
+      assert!(
+        warnings
+          .iter()
+          .any(|warning| warning.code() == Some("W_REQUIRED_STRUCT_FIELD_TYPE")),
+        "hint {hint:?} must keep the required field diagnostic, got: {warnings:?}"
+      );
+    }
+  });
+}
+
+#[test]
 fn required_struct_field_access_does_not_fall_back_to_option_lookup() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(
