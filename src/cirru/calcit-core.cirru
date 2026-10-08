@@ -4992,6 +4992,12 @@
                       :body $ {} $ :kind :json
                     , RuntimeMapResponse
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |decodes-inside-typed-first)
+              :code $ quote $ assert= |abc
+                option:unwrap-or
+                  first $ decode-map-as ([] |abc) (:: 'List 'String)
+                  , |
+              :tags $ #{} :core :unit
         'def $ %{} 'CodeEntry (:doc "|special macro to expose value to definition")
           :code $ quote $ defmacro def (_name x) x
           :examples $ []
@@ -11315,6 +11321,14 @@
                   assert= true $ message .includes? |[0][1]
                 (:ok _) (raise "|nested invalid Number must not be accepted")
               :tags $ #{} :parse-boundary :unit
+            %{} 'TestEntry (:name |parse-form-inside-typed-nth)
+              :code $ quote $ assert= |b
+                option:unwrap-or
+                  nth
+                    parse-cirru-edn-as "|[] |a |b" $ :: 'List 'String
+                    , 1
+                  , |
+              :tags $ #{} :core :unit
         'try-parse-cirru-list $ %{} 'CodeEntry
           :doc "|Parse a Cirru expression list as Result<List,String>; errors are returned instead of raised. Prefer the .parse-cirru-list String method in user code."
           :code $ quote $ defn try-parse-cirru-list (source)
