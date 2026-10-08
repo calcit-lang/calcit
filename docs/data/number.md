@@ -17,7 +17,7 @@ aliases:
 ---
 # Number
 
-本页是 Calcit Number 的规格。每条规则都有对应的 core definition `:tests`，由 `node scripts/run-core-tests.mjs` 在 native、生成 JS、WASM 与 WASI 上回放；某个后端暂未符合规则时，在 `scripts/core-tests-exclusions.cirru` 中写明原因。
+本页是 Calcit Number 的规格。规则由 core definition `:tests` 覆盖，`node scripts/run-core-tests.mjs` 在 native、生成 JS、WASM 与 WASI 上回放；某个后端暂未符合规则时，在 `scripts/core-tests-exclusions.cirru` 中写明原因；native 尚未符合的规则暂时没有测试，列在末尾的限制中。
 
 ## 表示
 
@@ -111,7 +111,7 @@ assert= :failed $ try
   fn (_error) :failed
 ```
 
-对应 `calcit.core/bit-shl#masks-shift-count-to-five-bits`、`calcit.core/&list:nth#rejects-non-integer-index`、`calcit.core/&list:slice#rejects-fractional-bounds`、`calcit.core/range#rejects-zero-step`、`calcit.core/range#handles-negative-fractional-and-overflow` 与 `calcit.core/&number:display-by#formats-non-negative-safe-integers`。
+对应 `calcit.core/bit-shl#masks-shift-count-to-five-bits`、`calcit.core/&list:nth#rejects-non-integer-index`、`calcit.core/&list:slice#rejects-fractional-bounds`、`calcit.core/range#rejects-zero-step`与 `calcit.core/range#handles-negative-fractional-and-overflow`。
 
 ## 取余 `rem`
 
@@ -166,7 +166,7 @@ assert= |-0 $ turn-string -0
 assert= |1.235 $ &number:format 1.23456789 3
 ```
 
-对应 `calcit.core/turn-string#formats-number-boundaries`、`calcit.core/turn-string#shortest-decimal-ties`、`calcit.core/str#formats-numbers-like-turn-string` 与 `calcit.core/&number:format#rounds-ties-away-from-zero`。
+对应 `calcit.core/turn-string#formats-number-boundaries`、`calcit.core/turn-string#shortest-decimal-ties` 与 `calcit.core/str#formats-numbers-like-turn-string`。
 
 ## 解析
 

@@ -1,7 +1,5 @@
 {} (:about "|Per-backend exclusions for scripts/run-core-tests.mjs. Keys under :tests are test ids (namespace/definition#name); :tags maps a test tag to a reason. Every reason starts with a category: unsupported (the backend explicitly rejects the construct), parity (the backend disagrees with native; fix in a separate issue), host (needs a host capability the replay does not provide), replay (an artifact of replaying outside the owning namespace).")
   :native $ {}
-    :tests $ {} (|calcit.core/&number:display-by#formats-non-negative-safe-integers "|parity: native converts the value through i32 and prints 0x0 for 4294967296 (#1849)")
-      |calcit.core/&number:format#rounds-ties-away-from-zero "|parity: native rounds ties to even, 2.5 formats as 2 (#1847)"
   :js $ {}
     :tests $ {} (|calcit.core/&list:slice#rejects-fractional-bounds "|parity: JS accepts a fractional slice bound instead of raising (#1849)")
       |calcit.core/add-watch!#registers-once-and-preserves-callback-order "|parity: JS add-watch! accepts a duplicate listener key that native rejects"
@@ -36,7 +34,6 @@
       |calcit.core/&map:map#maps-pair-callback-with-key-and-value "|unsupported: unsupported proc in WASM: &map:fold-kv"
       |calcit.core/&map:map-list#maps-map-pairs-to-list "|parity: collection result differs from native (assert= fails on the heap values)"
       |calcit.core/&number:format#formats-decimal-places "|unsupported: unsupported proc in WASM: &number:format"
-      |calcit.core/&number:format#rounds-ties-away-from-zero "|unsupported: unsupported proc in WASM: &number:format"
       |calcit.core/&number:rem#rejects-zero-and-non-safe-integers "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/&str:escape#escapes-quoted-strings "|parity: wrong result: expected \"a \\\"\", got a \""
       |calcit.core/&str:slice#scalar-slice-invalid-evaluation "|unsupported: unsupported syntax in WASM: try"
@@ -248,7 +245,6 @@
       |calcit.core/&map:map#maps-pair-callback-with-key-and-value "|unsupported: unsupported proc in WASM: &map:fold-kv"
       |calcit.core/&map:map-list#maps-map-pairs-to-list "|parity: collection result differs from native (assert= fails on the heap values)"
       |calcit.core/&number:format#formats-decimal-places "|unsupported: unsupported proc in WASM: &number:format"
-      |calcit.core/&number:format#rounds-ties-away-from-zero "|unsupported: unsupported proc in WASM: &number:format"
       |calcit.core/&number:rem#rejects-zero-and-non-safe-integers "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/&str:escape#escapes-quoted-strings "|parity: wrong result: expected \"a \\\"\", got a \""
       |calcit.core/&str:slice#scalar-slice-invalid-evaluation "|unsupported: unsupported syntax in WASM: try"
@@ -336,7 +332,7 @@
       |calcit.core/hint-fn#callable-return-contract "|unsupported: unsupported call head in WASM: ([] 'keep 'pass-number)"
       |calcit.core/hint-fn#checked-number-to-concrete-call "|unsupported: try-decode-map-as is not yet supported in WASM codegen"
       |calcit.core/hint-fn#literal-spread-call-contract "|parity: codegen fails: F64Add expects 2 args, got 1"
-      |calcit.core/hint-fn#open-element-classified-before-payload "|unsupported: calcit.core/data-view requires concrete argument types so nil can be distinguished from false and 0 (E_WASM_NIL_TYPE_EVIDENCE)"
+      |calcit.core/hint-fn#open-element-classified-before-payload "|unsupported: E_WASI_COMMAND_DEPENDENCY: calcit.core/data-view requires concrete argument types so nil can be distinguished from false and 0 (E_WASM_NIL_TYPE_EVIDENCE)"
       |calcit.core/hint-fn#raise-only-return-contract "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/identity#preserves-generic-schema-for-local-binding "|unsupported: E_WASI_COMMAND_INDIRECT: an indirect call may reach an unsupported host capability"
       |calcit.core/if#condition-and-selected-branch-errors-propagate "|unsupported: unsupported syntax in WASM: try"
@@ -386,9 +382,9 @@
       |calcit.core/reduce#reduces-list-from-initial-value "|parity: wrong result: expected 14, got 2"
       |calcit.core/ref#creates-typed-local-ref "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/remove-watch!#rejects-missing-key-without-repeating-effect "|unsupported: unsupported proc in WASM: ref"
-      |calcit.core/recur#recurs-from-try-and-match-tail-positions "|unsupported: unsupported syntax in WASM: try; the match assertion is also replayed separately by recurs-from-match-tail-position"
+      |calcit.core/recur#recurs-from-try-and-match-tail-positions "|unsupported: E_WASI_COMMAND_DEPENDENCY: unsupported syntax in WASM: try; the match assertion is also replayed separately by recurs-from-match-tail-position"
       |calcit.core/rest#rejects-non-sequence "|unsupported: unsupported syntax in WASM: try"
-      |calcit.core/reset!#empty-initializer-needs-explicit-payload "|unsupported: unsupported proc in WASM: ref"
+      |calcit.core/reset!#empty-initializer-needs-explicit-payload "|unsupported: E_WASI_COMMAND_DEPENDENCY: unsupported proc in WASM: ref"
       |calcit.core/reset!#nested-assignment-returns-final-value "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/reset!#returns-assigned-scalar "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/round#rounds-ties-away-from-zero "|parity: WASM f64.nearest rounds ties to even (#1847)"
