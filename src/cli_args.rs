@@ -171,9 +171,12 @@ pub struct FixCommand {
   /// verify a selected project workflow without mutating the snapshot
   #[argh(switch)]
   pub verify: bool,
-  /// replacement definition name required by semantic rename rules
+  /// replacement name required by rename-definition-v1 and rename-local-v1
   #[argh(option, long = "to")]
   pub replacement_name: Option<String>,
+  /// path of the local binding name for rename-local-v1, such as 3.1.0.0
+  #[argh(option)]
+  pub at: Option<String>,
   /// require the snapshot content to match this revision before applying
   #[argh(option, long = "expect-revision")]
   pub expect_revision: Option<String>,
@@ -856,6 +859,9 @@ pub struct QueryDefsCommand {
   /// filter definitions that contain this tag (e.g. macro or :macro)
   #[argh(option)]
   pub tag: Option<String>,
+  /// show each definition's signature (schema, or its declaration head when untyped) instead of a [schema] marker
+  #[argh(switch)]
+  pub signatures: bool,
 }
 
 // read-ns merged into ns command
@@ -894,7 +900,7 @@ pub struct QueryDefCommand {
   /// append fenced legacy JSON to Markdown-compatible human output; prefer --format json for automation
   #[argh(switch)]
   pub json: bool,
-  /// output format: Markdown-compatible human (default), edn, or json
+  /// output format: Markdown-compatible human (default), edn, json, or cirru (only `quote $ <definition>`, accepted by `edit def --overwrite --input-format cirru`)
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
   /// preferred nodes per display fragment when large expressions are chunked
@@ -906,7 +912,7 @@ pub struct QueryDefCommand {
   /// only enable chunked display when total expression nodes reach this threshold
   #[argh(option, default = "88")]
   pub chunk_trigger_nodes: usize,
-  /// force raw full-definition display without chunking
+  /// non-chunked Markdown output; use --format cirru for source that can be written back
   #[argh(switch)]
   pub raw: bool,
 }

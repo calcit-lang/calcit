@@ -119,7 +119,7 @@ fn compact_agent_contract_is_versioned_bounded_and_embedded_in_the_full_guide() 
 
   assert_eq!(AGENT_MUTATION_CONTRACT_VERSION, 1);
   assert_eq!(contract, repeated);
-  assert_eq!(contract.digest, "md5:c3191a6cbb12ce656c9246474b36193f");
+  assert_eq!(contract.digest, "md5:3c776d3f13c09921d2521f4b860a08a7");
   assert!(contract.content.lines().count() <= 40, "contract should stay cheap to reload");
   assert!(contract.content.len() <= 5_000, "contract should stay compact");
   assert!(EMBEDDED_AGENTS_DOC.contains(&contract.content));
@@ -131,6 +131,7 @@ fn compact_agent_contract_is_versioned_bounded_and_embedded_in_the_full_guide() 
     "写锁串行执行",
     "scoped_revision",
     "修改前展示真实 subtree",
+    "先用视图读程序",
     "模块仓库",
     "稳定与集中迁移策略",
     "query type/def/context",

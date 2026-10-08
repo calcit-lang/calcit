@@ -1414,7 +1414,64 @@ for (const rule of ["tag-match-to-match-v1", "required-struct-field-v1"]) {
   assert.match(retired.stderr, /before upgrading/);
 }
 
+// Reading tasks answered through query views instead of the raw Snapshot text (#1564).
+// Each view must contain the answer and read fewer bytes than the Snapshot it replaces.
+const viewTasks = [
+  {
+    task: "module overview: add-numbers signature",
+    snapshot: "calcit/test-types.cirru",
+    args: ["query", "defs", "test-types.main", "--signatures"],
+    answer: /add-numbers\s+:: 'Fn \$ \{\} \(:return 'Number\) \$ :args \$ \[\] 'Number 'Number/,
+  },
+  {
+    task: "one definition: describe-typed contract",
+    snapshot: "calcit/test-types.cirru",
+    args: ["query", "schema", "test-types.main/describe-typed"],
+    answer: /:return 'String\) \$ :args \$ \[\] 'String 'Number/,
+  },
+  {
+    task: "one definition: option:some? usage example",
+    snapshot: "src/cirru/calcit-core.cirru",
+    args: ["query", "examples", "calcit.core/option:some?"],
+    answer: /Option :some 1\n\s+, \.some\?/,
+  },
+  {
+    task: "impact before edit: add-numbers callers",
+    snapshot: "calcit/test-types.cirru",
+    args: ["query", "usages", "test-types.main/add-numbers"],
+    answer: /Usages: 3[\s\S]*test-types\.main\/chained-return-type[\s\S]*test-types\.main\/main![\s\S]*test-types\.main\/test-complex-threading/,
+  },
+  {
+    task: "type question: add-numbers body type",
+    snapshot: "calcit/test-types.cirru",
+    args: ["query", "type-at", "test-types.main/add-numbers", "--path", "code@3", "--format", "edn"],
+    answer: /:inferred-type \|'Number/,
+  },
+  {
+    task: "impact before edit: chained-return-type dependencies",
+    snapshot: "calcit/test-types.cirru",
+    args: ["query", "context", "test-types.main/chained-return-type", "--format", "edn"],
+    answer: /test-types\.main\/add-numbers/,
+  },
+];
+const viewRows = viewTasks.map(({ task, snapshot, args, answer }) => {
+  const child = spawnSync(binary, ["--tips-level", "none", snapshot, ...args], {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+  });
+  assert.ifError(child.error);
+  assert.equal(child.status, 0, `${task} failed:\n${child.stderr}`);
+  assert.match(child.stdout, answer, `${task} view lost its answer`);
+  const viewBytes = Buffer.byteLength(child.stdout);
+  const snapshotBytes = readFileSync(snapshot).length;
+  assert.ok(viewBytes < snapshotBytes, `${task} read ${viewBytes} bytes, not fewer than the ${snapshotBytes}-byte Snapshot`);
+  return { task, viewBytes, snapshotBytes, ratio: `${((viewBytes / snapshotBytes) * 100).toFixed(1)}%`, answered: true };
+});
+
 console.log(
   `Agent interface smoke passed: ${rows.length}/${scenarios.length}, plus retired migration, mutation contract, and definition protocol checks`,
 );
 console.table(rows);
+console.log(`View reading tasks answered: ${viewRows.length}/${viewTasks.length}`);
+console.table(viewRows);

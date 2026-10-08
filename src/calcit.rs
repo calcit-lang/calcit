@@ -419,9 +419,10 @@ pub fn format_to_lisp(x: &Calcit) -> String {
 
 /// Hash a value on its own so unordered containers can combine entry hashes without sorting.
 fn standalone_hash<T: Hash>(value: &T) -> u64 {
-  let mut hasher = std::collections::hash_map::DefaultHasher::new();
-  value.hash(&mut hasher);
-  hasher.finish()
+  use std::hash::BuildHasher;
+  // A fixed-seed foldhash: much cheaper to set up per entry than SipHash, still well mixed
+  // so `wrapping_add` over entries keeps distinct maps apart.
+  foldhash::quality::FixedState::with_seed(0).hash_one(value)
 }
 
 impl Hash for Calcit {
