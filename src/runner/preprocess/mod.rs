@@ -11664,12 +11664,49 @@ fn qualify_decoder_type_form(form: &Calcit, file_ns: &str) -> Calcit {
   }
 }
 
+/// Generated lowerings (for example typed `first` / `nth`) re-preprocess their
+/// already lowered receiver, so a decoder form may arrive with its derived
+/// decoder handle attached. Keep that handle instead of rejecting the arity (#1745).
+fn preprocess_lowered_decoder_form(
+  head: &CalcitSyntax,
+  head_ns: &str,
+  args: &CalcitList,
+  ctx: &mut PreprocessContext,
+) -> Result<Option<Calcit>, CalcitErr> {
+  if args.len() != 3 {
+    return Ok(None);
+  }
+  let (Some(value), Some(type_form), Some(handle)) = (args.first(), args.get(1), args.get(2)) else {
+    return Ok(None);
+  };
+  if crate::calcit::data_shape::DataShapeGraph::from_calcit_handle(handle).is_none() {
+    return Ok(None);
+  }
+  let value_form = preprocess_expr(
+    value,
+    ctx.scope_defs,
+    ctx.scope_types,
+    ctx.file_ns,
+    ctx.check_warnings,
+    ctx.call_stack,
+  )?;
+  Ok(Some(Calcit::from(vec![
+    Calcit::Syntax(head.to_owned(), Arc::from(head_ns)),
+    value_form,
+    type_form.to_owned(),
+    handle.to_owned(),
+  ])))
+}
+
 pub fn preprocess_parse_cirru_edn_as(
   head: &CalcitSyntax,
   head_ns: &str,
   args: &CalcitList,
   ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
+  if let Some(lowered) = preprocess_lowered_decoder_form(head, head_ns, args, ctx)? {
+    return Ok(lowered);
+  }
   if args.len() != 2 {
     return Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Arity,
@@ -11723,6 +11760,9 @@ pub fn preprocess_decode_map_as(
   args: &CalcitList,
   ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
+  if let Some(lowered) = preprocess_lowered_decoder_form(head, head_ns, args, ctx)? {
+    return Ok(lowered);
+  }
   if args.len() != 2 {
     return Err(CalcitErr::use_msg_stack_location(
       CalcitErrKind::Arity,
