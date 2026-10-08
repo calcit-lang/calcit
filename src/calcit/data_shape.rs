@@ -62,12 +62,18 @@ pub(crate) fn field_write_shape(definition: &CalcitStructDef, pos: usize) -> Opt
         ..Default::default()
       };
     }
-    cache.entries.get(&key).and_then(|(annotation, shape)| {
+    let hit = cache.entries.get(&key).and_then(|(annotation, shape)| {
       annotation
         .upgrade()
         .filter(|annotation| Arc::ptr_eq(annotation, target))
         .map(|_| shape.clone())
-    })
+    });
+    if hit.is_none()
+      && let Some((_, stale)) = cache.entries.remove(&key)
+    {
+      cache.nodes = cache.nodes.saturating_sub(stale.nodes.len());
+    }
+    hit
   });
   if cached.is_some() {
     return cached;
@@ -81,13 +87,23 @@ pub(crate) fn field_write_shape(definition: &CalcitStructDef, pos: usize) -> Opt
   let shape = Arc::new(DataShapeGraph::for_field_write(target, owner_ns)?);
   FIELD_WRITE_CACHE.with(|cache| {
     let mut cache = cache.borrow_mut();
-    if FIELD_WRITE_GENERATION.load(Ordering::Acquire) == generation
-      && cache.generation == generation
-      && cache.entries.len() < FIELD_WRITE_CACHE_ENTRIES
-      && cache.nodes.saturating_add(shape.nodes.len()) <= FIELD_WRITE_CACHE_NODES
-    {
-      cache.nodes += shape.nodes.len();
-      cache.entries.insert(key, (Arc::downgrade(target), shape.clone()));
+    if FIELD_WRITE_GENERATION.load(Ordering::Acquire) == generation && cache.generation == generation {
+      if cache.entries.len() >= FIELD_WRITE_CACHE_ENTRIES || cache.nodes.saturating_add(shape.nodes.len()) > FIELD_WRITE_CACHE_NODES {
+        let mut reclaimed_nodes = 0;
+        cache.entries.retain(|_, (annotation, old_shape)| {
+          if annotation.strong_count() > 0 {
+            true
+          } else {
+            reclaimed_nodes += old_shape.nodes.len();
+            false
+          }
+        });
+        cache.nodes = cache.nodes.saturating_sub(reclaimed_nodes);
+      }
+      if cache.entries.len() < FIELD_WRITE_CACHE_ENTRIES && cache.nodes.saturating_add(shape.nodes.len()) <= FIELD_WRITE_CACHE_NODES {
+        cache.nodes += shape.nodes.len();
+        cache.entries.insert(key, (Arc::downgrade(target), shape.clone()));
+      }
     }
   });
   Some(shape)
@@ -1013,6 +1029,36 @@ mod tests {
     });
     assert!(field_write_shape(uncached, 0).is_some(), "node budget does not disable validation");
     FIELD_WRITE_CACHE.with(|cache| assert!(cache.borrow().entries.is_empty()));
+    clear_local_field_write_shapes();
+  }
+
+  #[test]
+  fn field_write_cache_reclaims_expired_annotations_before_admission() {
+    let _guard = program::lock_program_test_state();
+    clear_local_field_write_shapes();
+    let definitions = (0..FIELD_WRITE_CACHE_ENTRIES)
+      .map(|_| {
+        let mut definition = CalcitStructDef::from_fields(EdnTag::new("Temporary"), vec![EdnTag::new("items")]);
+        definition.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number)))]);
+        assert!(field_write_shape(&definition, 0).is_some());
+        definition
+      })
+      .collect::<Vec<_>>();
+    let retained = definitions[0].clone();
+    let retained_shape = field_write_shape(&retained, 0).unwrap();
+    drop(definitions);
+    FIELD_WRITE_CACHE.with(|cache| assert_eq!(cache.borrow().entries.len(), FIELD_WRITE_CACHE_ENTRIES));
+
+    let mut fresh = retained.clone();
+    fresh.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::String)))]);
+    let shape = field_write_shape(&fresh, 0).unwrap();
+    assert!(Arc::ptr_eq(&shape, &field_write_shape(&fresh, 0).unwrap()));
+    assert!(Arc::ptr_eq(&retained_shape, &field_write_shape(&retained, 0).unwrap()));
+    FIELD_WRITE_CACHE.with(|cache| {
+      let cache = cache.borrow();
+      assert_eq!(cache.entries.len(), 2, "only live definitions should remain");
+      assert_eq!(cache.nodes, retained_shape.nodes.len() + shape.nodes.len());
+    });
     clear_local_field_write_shapes();
   }
 

@@ -12,6 +12,8 @@ Diary 受检 patch 迁移暴露动态 Struct 写入的证明缺口（#1868）。
 
 审查补充：native 校验图按 live annotation allocation 与声明来源复用，Weak 守卫避免地址重用误命中；缓存限制为每线程 256 项、16,384 个图节点。registry 修改与 reload 推进 generation，entry/scoped type-slot 变化清理本线程缓存。图构建在缓存借用之外完成，未解析成功的合同不缓存失败，避免提前冻结初始化中的类型。缓存复用、同名不同 schema、嵌套名义定义替换、reload、type-slot 与容量上限属于内部 invariant，使用 Rust 精确测试；用户写入语义继续使用原 Calcit `:tests`。
 
+容量不足时先清除 Weak annotation 已过期的条目并归还节点预算；活跃定义的图继续保留。增加临时定义被释放后的回归，验证新定义重新获得缓存、仍存活的定义复用旧图，且节点计数与剩余条目一致。
+
 ## 尚未完成
 
 无法建立 data shape 的字段仍沿用原运行时检查，不将其宣传为完整证明。任意 Dynamic receiver、未实例化泛型、函数/host 合同以及局部动态 prototype 仍需后续统一解决；尤其现有 `&struct:with` 的宽泛 runtime-checked 登记不能作为扩大其他入口的依据。#1868、Recollect #76 与 Diary 完整 strict 的发布验收仍保持开放。本步不是这些任务全部完成，也不包含发版。
