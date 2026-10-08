@@ -171,9 +171,12 @@ pub struct FixCommand {
   /// verify a selected project workflow without mutating the snapshot
   #[argh(switch)]
   pub verify: bool,
-  /// replacement definition name required by semantic rename rules
+  /// replacement name required by rename-definition-v1 and rename-local-v1
   #[argh(option, long = "to")]
   pub replacement_name: Option<String>,
+  /// path of the local binding name for rename-local-v1, such as 3.1.0.0
+  #[argh(option)]
+  pub at: Option<String>,
   /// require the snapshot content to match this revision before applying
   #[argh(option, long = "expect-revision")]
   pub expect_revision: Option<String>,
