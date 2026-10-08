@@ -286,14 +286,9 @@ pub fn new_impl(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn new_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  if xs.len() < 2 {
+  if xs.is_empty() {
     let hint = format_proc_examples_hint(&CalcitProc::NativeStructNew).unwrap_or_default();
-    return CalcitErr::err_nodes_with_hint(
-      CalcitErrKind::Arity,
-      "&struct-def:new expects a name and field definitions, but received none:",
-      xs,
-      hint,
-    );
+    return CalcitErr::err_nodes_with_hint(CalcitErrKind::Arity, "&struct-def:new expects a name, but received none:", xs, hint);
   }
 
   let name_id: EdnTag = match &xs[0] {
@@ -774,8 +769,7 @@ fn checked_struct_index(value: f64, operation: &str) -> Result<usize, CalcitErr>
 }
 
 pub fn call_struct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
-  let args_size = xs.len();
-  if args_size < 1 {
+  if xs.is_empty() {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&%{{}} expected a StructDef, but received:", xs);
   }
   match &xs[0] {

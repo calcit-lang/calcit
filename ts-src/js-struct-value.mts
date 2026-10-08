@@ -213,7 +213,8 @@ export let fieldsEqual = (xs: Array<CalcitTag>, ys: Array<CalcitTag>): boolean =
   return true;
 };
 
-export let _$n__PCT__$M_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): CalcitValue => {
+// Share complete construction without spreading map contents into call arguments.
+const constructStruct = (proto: CalcitValue, xs: Array<CalcitValue>): CalcitValue => {
   if (!(proto instanceof CalcitStructDef)) {
     throw new Error("Expected prototype to be a StructDef");
   }
@@ -243,6 +244,8 @@ export let _$n__PCT__$M_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): Calc
   }
   return new CalcitStructValue(proto.name, proto.fields, values, proto);
 };
+
+export let _$n__PCT__$M_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): CalcitValue => constructStruct(proto, xs);
 
 /// update record with new values
 export let _$n_struct_$o_with = (proto: CalcitValue, ...xs: Array<CalcitValue>): CalcitValue => {
@@ -298,7 +301,7 @@ export let _$n_struct_$o_from_map = (proto: CalcitValue, data: CalcitValue): Cal
     }
     fields.push(key, value);
   }
-  return _$n__PCT__$M_(proto, ...fields);
+  return constructStruct(proto, fields);
 };
 
 export let _$n_struct_$o_to_map = (x: CalcitValue): CalcitValue => {

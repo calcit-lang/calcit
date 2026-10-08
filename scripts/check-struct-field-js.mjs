@@ -11,6 +11,10 @@ execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "tes
   "--tag", "checked-struct-write", "--backend", "native,js"], {
   env: { ...process.env, CALCIT_BIN: binary }, stdio: "inherit",
 });
+execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+  "--tag", "checked-struct-construction", "--backend", "native,js"], {
+  env: { ...process.env, CALCIT_BIN: binary }, stdio: "inherit",
+});
 const nativeTrace = execFileSync(binary, ["calcit/test-wasm.cirru", "test", "--tag", "struct-field-order", "--require-match"], { encoding: "utf8" });
 assert.deepEqual(nativeTrace.split(/\r?\n/).filter(line => line.startsWith("struct-order-")),
   ["struct-order-y", "struct-order-x", "struct-order-x", "struct-order-y"]);
