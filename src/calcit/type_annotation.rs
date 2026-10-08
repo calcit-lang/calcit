@@ -110,6 +110,7 @@ pub fn configure_entry_type_slots(bindings: &HashMap<String, String>) -> Result<
   }
 
   ENTRY_TYPE_SLOTS.with(|slots| *slots.borrow_mut() = configured);
+  super::data_shape::clear_local_field_write_shapes();
   Ok(())
 }
 
@@ -130,6 +131,7 @@ pub fn resolve_type_slot(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
 
 /// Push a scoped type override for `with-type-slot`. Must be paired with `pop_type_slot_override`.
 pub fn push_type_slot_override(name: Arc<str>, ty: Arc<CalcitTypeAnnotation>) {
+  super::data_shape::clear_local_field_write_shapes();
   TYPE_SLOT_OVERRIDES.with(|overrides| {
     overrides.borrow_mut().entry(name).or_default().push(ty);
   });
@@ -137,6 +139,7 @@ pub fn push_type_slot_override(name: Arc<str>, ty: Arc<CalcitTypeAnnotation>) {
 
 /// Pop the innermost scoped override for `name`. Cleans up empty stacks.
 pub fn pop_type_slot_override(name: &str) {
+  super::data_shape::clear_local_field_write_shapes();
   TYPE_SLOT_OVERRIDES.with(|overrides| {
     let mut map = overrides.borrow_mut();
     if let Some(stack) = map.get_mut(name) {
@@ -151,6 +154,7 @@ pub fn pop_type_slot_override(name: &str) {
 /// Clear all type slots. Called at program startup/shutdown to avoid stale state across runs.
 #[allow(dead_code)]
 pub fn clear_type_slots() {
+  super::data_shape::clear_local_field_write_shapes();
   TYPE_SLOTS.with(|slots| slots.borrow_mut().clear());
   ENTRY_TYPE_SLOTS.with(|slots| slots.borrow_mut().clear());
   TYPE_SLOT_OVERRIDES.with(|overrides| overrides.borrow_mut().clear());

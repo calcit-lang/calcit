@@ -14,7 +14,7 @@ use std::sync::{Mutex, MutexGuard};
 
 use cirru_parser::Cirru;
 
-use crate::calcit::data_shape::DataShapeGraph;
+use crate::calcit::data_shape::{DataShapeGraph, invalidate_field_write_shapes};
 use crate::calcit::{
   self, Calcit, CalcitErr, CalcitScope, CalcitSyntax, CalcitThunk, CalcitThunkInfo, CalcitTypeAnnotation, DYNAMIC_TYPE,
 };
@@ -237,6 +237,7 @@ pub(crate) struct ProgramTestStateGuard {
 #[cfg(test)]
 impl Drop for ProgramTestStateGuard {
   fn drop(&mut self) {
+    invalidate_field_write_shapes();
     *PROGRAM_RUNTIME_DATA_STATE.write().unwrap_or_else(|error| error.into_inner()) = std::mem::take(&mut self.runtime_data);
     *PROGRAM_COMPILED_DATA_STATE.write().unwrap_or_else(|error| error.into_inner()) = std::mem::take(&mut self.compiled_data);
     *PROGRAM_CODE_DATA.write().unwrap_or_else(|error| error.into_inner()) = std::mem::take(&mut self.code_data);
@@ -300,6 +301,7 @@ fn write_runtime_cell(def_id: DefId, cell: RuntimeCell) {
   let mut runtime = PROGRAM_RUNTIME_DATA_STATE.write().expect("write runtime data");
   ensure_runtime_capacity(&mut runtime, def_id);
   runtime[def_id.0 as usize] = cell;
+  invalidate_field_write_shapes();
 }
 
 fn write_runtime_value(def_id: DefId, value: Calcit) {
@@ -316,6 +318,7 @@ pub fn write_runtime_lazy_value(ns: &str, def: &str, code: Arc<Calcit>, info: Ar
 }
 
 fn clear_runtime_value(def_id: DefId) {
+  invalidate_field_write_shapes();
   let mut runtime = PROGRAM_RUNTIME_DATA_STATE.write().expect("write runtime data");
   if let Some(slot) = runtime.get_mut(def_id.0 as usize) {
     *slot = RuntimeCell::Cold;
@@ -1325,6 +1328,7 @@ pub(crate) fn remove_internal_source_namespace(ns: &str) {
 }
 
 pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String> {
+  invalidate_field_write_shapes();
   let mut program_code = PROGRAM_CODE_DATA.write().expect("open program code");
   let coord0 = vec![];
 
@@ -1400,6 +1404,7 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
 
 /// clear runtime and compiled caches after reloading
 pub fn clear_runtime_caches_for_reload(init_ns: Arc<str>, reload_ns: Arc<str>, reload_libs: bool) -> Result<(), String> {
+  invalidate_field_write_shapes();
   if reload_libs {
     let mut runtime = PROGRAM_RUNTIME_DATA_STATE.write().expect("open runtime data");
     let mut compiled = PROGRAM_COMPILED_DATA_STATE.write().expect("open compiled program data");
@@ -1434,6 +1439,7 @@ pub fn clear_runtime_caches_for_reload(init_ns: Arc<str>, reload_ns: Arc<str>, r
 }
 
 pub fn clear_runtime_caches_for_changes(changes: &snapshot::ChangesDict, reload_libs: bool) -> Result<(), String> {
+  invalidate_field_write_shapes();
   if reload_libs {
     let mut runtime = PROGRAM_RUNTIME_DATA_STATE.write().expect("open runtime data");
     let mut compiled = PROGRAM_COMPILED_DATA_STATE.write().expect("open compiled program data");

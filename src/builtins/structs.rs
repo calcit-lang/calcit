@@ -6,7 +6,7 @@ use cirru_edn::EdnTag;
 
 use crate::builtins::meta::type_of;
 use crate::calcit::CORE_NS;
-use crate::calcit::data_shape::DataShapeGraph;
+use crate::calcit::data_shape::field_write_shape;
 use crate::calcit::type_annotation::{collect_runtime_type_bindings, dedup_generic_names, validate_runtime_generic_where_bounds};
 use crate::calcit::{
   Calcit, CalcitEnumDef, CalcitErr, CalcitErrKind, CalcitImpl, CalcitImport, CalcitList, CalcitProc, CalcitStructDef,
@@ -1301,24 +1301,19 @@ fn check_struct_field_write(struct_ref: &CalcitStructDef, pos: usize, value: &Ca
   // Reuse the decoder's data contract, without decoding/coercing the value.
   // Unreified generic/callable contracts retain their existing runtime check;
   // this fallback must not be advertised as independent static type evidence.
-  if let Some(expected) = struct_ref.field_types.get(pos) {
-    let owner_ns = struct_ref
-      .definition_ref
-      .as_deref()
-      .and_then(|path| path.rsplit_once('/'))
-      .map_or(CORE_NS, |(ns, _)| ns);
-    if let Some(shape) = DataShapeGraph::for_field_write(expected, owner_ns) {
-      return shape.validate_value(value).map_err(|error| {
-        CalcitErr::use_str(
-          CalcitErrKind::Type,
-          format!(
-            "{operation} field :{} expects type {}: {error}",
-            struct_ref.fields[pos],
-            expected.to_brief_string()
-          ),
-        )
-      });
-    }
+  if let Some(expected) = struct_ref.field_types.get(pos)
+    && let Some(shape) = field_write_shape(struct_ref, pos)
+  {
+    return shape.validate_value(value).map_err(|error| {
+      CalcitErr::use_str(
+        CalcitErrKind::Type,
+        format!(
+          "{operation} field :{} expects type {}: {error}",
+          struct_ref.fields[pos],
+          expected.to_brief_string()
+        ),
+      )
+    });
   }
   if let Some(expected_type) = struct_ref.field_types.get(pos)
     && !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)

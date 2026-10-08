@@ -10,9 +10,13 @@ Diary 受检 patch 迁移暴露动态 Struct 写入的证明缺口（#1868）。
 
 名义定义的别名必须保留原声明身份：静态查找支持 source 中尚未 lower 的完整限定引用；JS alias binding 不重绑 origin，impl 装饰保留字段 validator。泛型字段有具体实参时复用现有 substitution；没有重建或猜测 erased receiver 的泛型实参。
 
+审查补充：native 校验图按 live annotation allocation 与声明来源复用，Weak 守卫避免地址重用误命中；缓存限制为每线程 256 项、16,384 个图节点。registry 修改与 reload 推进 generation，entry/scoped type-slot 变化清理本线程缓存。图构建在缓存借用之外完成，未解析成功的合同不缓存失败，避免提前冻结初始化中的类型。缓存复用、同名不同 schema、嵌套名义定义替换、reload、type-slot 与容量上限属于内部 invariant，使用 Rust 精确测试；用户写入语义继续使用原 Calcit `:tests`。
+
 ## 尚未完成
 
 无法建立 data shape 的字段仍沿用原运行时检查，不将其宣传为完整证明。任意 Dynamic receiver、未实例化泛型、函数/host 合同以及局部动态 prototype 仍需后续统一解决；尤其现有 `&struct:with` 的宽泛 runtime-checked 登记不能作为扩大其他入口的依据。#1868、Recollect #76 与 Diary 完整 strict 的发布验收仍保持开放。本步不是这些任务全部完成，也不包含发版。
+
+构造路径原有的浅层检查也未在本步改动：`&%{}`、`&struct:from-map` 与 JS 构造实现需要连同缺字段、动态 prototype、泛型绑定及初始化顺序一并验证，不能只替换 native helper 就声称跨后端修复。此项在 #1868 中与 fail-closed 边界共同跟踪。
 
 ## 验证
 

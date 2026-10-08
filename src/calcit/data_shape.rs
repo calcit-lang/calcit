@@ -1,6 +1,8 @@
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Weak};
 
 use cirru_edn::EdnTag;
 use md5::{Digest, Md5};
@@ -11,6 +13,102 @@ use crate::program;
 
 const DATA_SHAPE_ABI_VERSION: u16 = 3;
 const MAX_SHAPE_VALUE_DEPTH: usize = 1024;
+
+const FIELD_WRITE_CACHE_ENTRIES: usize = 256;
+const FIELD_WRITE_CACHE_NODES: usize = 16_384;
+static FIELD_WRITE_GENERATION: AtomicUsize = AtomicUsize::new(0);
+
+type FieldWriteKey = (usize, Option<Arc<str>>);
+type FieldWriteEntry = (Weak<CalcitTypeAnnotation>, Arc<DataShapeGraph>);
+
+#[derive(Default)]
+struct FieldWriteCache {
+  generation: usize,
+  entries: HashMap<FieldWriteKey, FieldWriteEntry>,
+  nodes: usize,
+}
+
+thread_local! {
+  static FIELD_WRITE_CACHE: RefCell<FieldWriteCache> = RefCell::new(FieldWriteCache::default());
+}
+
+/// Invalidate every thread's derived shapes when the program registry changes.
+/// Runtime/compiler ownership already serializes registry changes; the atomic
+/// generation also prevents a previously populated worker cache from surviving reload.
+pub(crate) fn invalidate_field_write_shapes() {
+  FIELD_WRITE_GENERATION.fetch_add(1, Ordering::AcqRel);
+}
+
+/// Scoped type slots are thread-local and must not reuse another binding's graph.
+pub(crate) fn clear_local_field_write_shapes() {
+  FIELD_WRITE_CACHE.with(|cache| *cache.borrow_mut() = FieldWriteCache::default());
+}
+
+/// Cache successful shapes by the live annotation allocation and its source
+/// scope. A name alone cannot distinguish applied or locally rebuilt schemas.
+/// Failed builds are retried because unresolved definitions may become ready.
+pub(crate) fn field_write_shape(definition: &CalcitStructDef, pos: usize) -> Option<Arc<DataShapeGraph>> {
+  let target = definition.field_types.get(pos)?;
+  if !needs_deep_field_check(target) {
+    return None;
+  }
+  let generation = FIELD_WRITE_GENERATION.load(Ordering::Acquire);
+  let key = (Arc::as_ptr(target) as usize, definition.definition_ref.clone());
+  let cached = FIELD_WRITE_CACHE.with(|cache| {
+    let mut cache = cache.borrow_mut();
+    if cache.generation != generation {
+      *cache = FieldWriteCache {
+        generation,
+        ..Default::default()
+      };
+    }
+    cache.entries.get(&key).and_then(|(annotation, shape)| {
+      annotation
+        .upgrade()
+        .filter(|annotation| Arc::ptr_eq(annotation, target))
+        .map(|_| shape.clone())
+    })
+  });
+  if cached.is_some() {
+    return cached;
+  }
+  let owner_ns = definition
+    .definition_ref
+    .as_deref()
+    .and_then(|path| path.rsplit_once('/'))
+    .map_or(super::CORE_NS, |(ns, _)| ns);
+  // Resolution can evaluate definitions. Never retain a cache borrow across it.
+  let shape = Arc::new(DataShapeGraph::for_field_write(target, owner_ns)?);
+  FIELD_WRITE_CACHE.with(|cache| {
+    let mut cache = cache.borrow_mut();
+    if FIELD_WRITE_GENERATION.load(Ordering::Acquire) == generation
+      && cache.generation == generation
+      && cache.entries.len() < FIELD_WRITE_CACHE_ENTRIES
+      && cache.nodes.saturating_add(shape.nodes.len()) <= FIELD_WRITE_CACHE_NODES
+    {
+      cache.nodes += shape.nodes.len();
+      cache.entries.insert(key, (Arc::downgrade(target), shape.clone()));
+    }
+  });
+  Some(shape)
+}
+
+fn needs_deep_field_check(target: &CalcitTypeAnnotation) -> bool {
+  matches!(
+    target,
+    CalcitTypeAnnotation::List(_)
+      | CalcitTypeAnnotation::Map(_, _)
+      | CalcitTypeAnnotation::Set(_)
+      | CalcitTypeAnnotation::Optional(_)
+      | CalcitTypeAnnotation::Ref(_)
+      | CalcitTypeAnnotation::TypeRef(..)
+      | CalcitTypeAnnotation::Struct(..)
+      | CalcitTypeAnnotation::StructValue(_)
+      | CalcitTypeAnnotation::Enum(..)
+      | CalcitTypeAnnotation::EnumValue(_)
+      | CalcitTypeAnnotation::TypeSlot(_)
+  )
+}
 
 /// A closed, backend-neutral description of statically typed Calcit data.
 ///
@@ -128,20 +226,9 @@ impl DataShapeGraph {
   /// Add deep field checks where the legacy scalar matcher is insufficient.
   /// None retains that matcher, not a proof of an arbitrary dynamic write.
   pub(crate) fn for_field_write(target: &CalcitTypeAnnotation, default_ns: &str) -> Option<Self> {
-    match target {
-      CalcitTypeAnnotation::List(_)
-      | CalcitTypeAnnotation::Map(_, _)
-      | CalcitTypeAnnotation::Set(_)
-      | CalcitTypeAnnotation::Optional(_)
-      | CalcitTypeAnnotation::Ref(_)
-      | CalcitTypeAnnotation::TypeRef(..)
-      | CalcitTypeAnnotation::Struct(..)
-      | CalcitTypeAnnotation::StructValue(_)
-      | CalcitTypeAnnotation::Enum(..)
-      | CalcitTypeAnnotation::EnumValue(_)
-      | CalcitTypeAnnotation::TypeSlot(_) => Self::build_open(target, default_ns).ok(),
-      _ => None,
-    }
+    needs_deep_field_check(target)
+      .then(|| Self::build_open(target, default_ns).ok())
+      .flatten()
   }
 
   fn build_with_options(target: &CalcitTypeAnnotation, default_ns: &str, allow_dynamic: bool) -> Result<Self, DataShapeError> {
@@ -826,6 +913,108 @@ fn update_nominal_fingerprint(
 mod tests {
   use super::*;
   use crate::calcit::{CalcitEnumValue, CalcitGenericBound, CalcitImpl, CalcitList, CalcitStructValue, CalcitTrait};
+
+  #[test]
+  fn field_write_cache_reuses_live_annotations_and_invalidates_on_reload() {
+    let _guard = program::lock_program_test_state();
+    let mut definition = CalcitStructDef::from_fields(EdnTag::new("CacheBox"), vec![EdnTag::new("items")])
+      .with_definition_ref("tests.shape-cache", "CacheBox");
+    definition.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number)))]);
+    let first = field_write_shape(&definition, 0).expect("list shape");
+    let second = field_write_shape(&definition.clone(), 0).expect("cached list shape");
+    assert!(Arc::ptr_eq(&first, &second), "cloned definitions share immutable annotations");
+
+    let mut different = definition.clone();
+    different.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::String)))]);
+    let changed = field_write_shape(&different, 0).expect("different same-named schema");
+    assert_ne!(first.fingerprint(), changed.fingerprint());
+    program::clear_runtime_caches_for_changes(&crate::snapshot::ChangesDict::default(), false).unwrap();
+    let reloaded = field_write_shape(&definition, 0).expect("reloaded shape");
+    assert!(!Arc::ptr_eq(&first, &reloaded), "retained values cannot reuse a pre-reload graph");
+    assert_eq!(first.fingerprint(), reloaded.fingerprint());
+
+    let (ready_tx, ready_rx) = std::sync::mpsc::channel();
+    let (reload_tx, reload_rx) = std::sync::mpsc::channel();
+    std::thread::scope(|scope| {
+      scope.spawn(move || {
+        let before = field_write_shape(&definition, 0).unwrap();
+        ready_tx.send(()).unwrap();
+        reload_rx.recv().unwrap();
+        let after = field_write_shape(&definition, 0).unwrap();
+        assert!(!Arc::ptr_eq(&before, &after), "worker cache must also observe reload");
+      });
+      ready_rx.recv().unwrap();
+      program::clear_runtime_caches_for_changes(&crate::snapshot::ChangesDict::default(), false).unwrap();
+      reload_tx.send(()).unwrap();
+    });
+  }
+
+  #[test]
+  fn field_write_cache_retries_unresolved_types_and_tracks_replaced_nominals() {
+    let _guard = program::lock_program_test_state();
+    super::super::register_program_lookups(program::lookup_runtime_ready, program::lookup_def_code, program::lookup_def_schema);
+    let mut parent = CalcitStructDef::from_fields(EdnTag::new("CacheParent"), vec![EdnTag::new("item")]);
+    parent.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeRef(
+      Arc::from("tests.shape-cache/Child"),
+      Arc::new(vec![]),
+    ))]);
+    assert!(field_write_shape(&parent, 0).is_none());
+    let mut child = CalcitStructDef::from_fields(EdnTag::new("Child"), vec![EdnTag::new("value")]);
+    child.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]);
+    program::write_runtime_ready("tests.shape-cache", "Child", Calcit::StructDef(child.clone())).unwrap();
+    let number = field_write_shape(&parent, 0).expect("newly resolved nominal");
+    child.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::String)]);
+    program::write_runtime_ready("tests.shape-cache", "Child", Calcit::StructDef(child)).unwrap();
+    let string = field_write_shape(&parent, 0).expect("replaced nested nominal");
+    assert_ne!(number.fingerprint(), string.fingerprint());
+  }
+
+  #[test]
+  fn field_write_cache_tracks_scoped_type_slots_and_bounds_retention() {
+    let _guard = program::lock_program_test_state();
+    clear_local_field_write_shapes();
+    let name: Arc<str> = Arc::from("field-write-cache-slot");
+    let mut definition = CalcitStructDef::from_fields(EdnTag::new("SlotBox"), vec![EdnTag::new("item")]);
+    definition.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeSlot(name.clone()))]);
+    super::super::push_type_slot_override(name.clone(), Arc::new(CalcitTypeAnnotation::Number));
+    let number = field_write_shape(&definition, 0).expect("number slot");
+    super::super::push_type_slot_override(name.clone(), Arc::new(CalcitTypeAnnotation::String));
+    let string = field_write_shape(&definition, 0).expect("string slot");
+    super::super::pop_type_slot_override(&name);
+    let restored = field_write_shape(&definition, 0).expect("restored number slot");
+    super::super::pop_type_slot_override(&name);
+    assert_ne!(number.fingerprint(), string.fingerprint());
+    assert_eq!(number.fingerprint(), restored.fingerprint());
+    assert!(field_write_shape(&definition, 0).is_none());
+
+    let definitions = (0..FIELD_WRITE_CACHE_ENTRIES + 1)
+      .map(|_| {
+        let mut definition = definition.clone();
+        definition.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number)))]);
+        assert!(field_write_shape(&definition, 0).is_some());
+        definition
+      })
+      .collect::<Vec<_>>();
+    FIELD_WRITE_CACHE.with(|cache| {
+      let cache = cache.borrow();
+      assert_eq!(cache.entries.len(), FIELD_WRITE_CACHE_ENTRIES);
+      assert!(cache.nodes <= FIELD_WRITE_CACHE_NODES);
+    });
+    let uncached = definitions.last().unwrap();
+    assert!(!Arc::ptr_eq(
+      &field_write_shape(uncached, 0).unwrap(),
+      &field_write_shape(uncached, 0).unwrap()
+    ));
+    clear_local_field_write_shapes();
+    FIELD_WRITE_CACHE.with(|cache| {
+      let mut cache = cache.borrow_mut();
+      cache.generation = FIELD_WRITE_GENERATION.load(Ordering::Acquire);
+      cache.nodes = FIELD_WRITE_CACHE_NODES;
+    });
+    assert!(field_write_shape(uncached, 0).is_some(), "node budget does not disable validation");
+    FIELD_WRITE_CACHE.with(|cache| assert!(cache.borrow().entries.is_empty()));
+    clear_local_field_write_shapes();
+  }
 
   fn phantom_box() -> Arc<CalcitStructDef> {
     Arc::new(CalcitStructDef {
