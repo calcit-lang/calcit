@@ -1095,37 +1095,6 @@ fn attached_do_rules_preserve_root_sequence_and_macro_data() {
 }
 
 #[test]
-fn predicate_method_fix_keeps_trait_bound_generic_receivers() {
-  // A receiver bounded by Contains may dispatch to a user trait method of the
-  // same name, so the migration must leave that call for review.
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("calcit/test-traits.cirru", &snapshot).unwrap();
-  let preview = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-predicate-method-v1",
-      "--ns",
-      "test-traits.main",
-      "--def",
-      "contains-with-trait?",
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&preview, "predicate migration preview on a trait-bound receiver");
-  let report: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
-  let suggestions = report["data"]["suggestions"].as_array().unwrap();
-  assert!(
-    !suggestions
-      .iter()
-      .any(|suggestion| suggestion["applicability"] == "machine-applicable"),
-    "{report:#}"
-  );
-}
-
-#[test]
 fn attached_predicate_migration_preserves_opaque_contexts_and_function_identity() {
   for (rule, predicate) in [("core-non-nil-predicate-v1", "some?"), ("core-integer-predicate-v1", "round?")] {
     let directory = TestDirectory::create();
@@ -1406,7 +1375,6 @@ fn method_alias_fix_reuses_receiver_proofs_in_attached_tests_and_examples() {
       "core-integer-predicate-v1",
       "quote $ do (assert= true $ round? 2) (assert= false $ round? 1.2)",
     ),
-    ("core-predicate-method-v1", "quote $ assert= true $ .contains? ({} (:a 1)) :a"),
     (
       "core-effect-method-v1",
       "quote $ assert= true $ fn? $ fn () (.cancel $ ffi:task nil)",
@@ -8051,6 +8019,7 @@ fn retired_core_method_alias_rules_point_to_the_0_28_cli() {
   for rule in [
     "core-list-intersperse-v1",
     "core-map-distinct-values-v1",
+    "core-predicate-method-v1",
     "core-set-include-v1",
     "core-list-fold-v1",
     "core-list-flat-map-v1",
@@ -9565,253 +9534,6 @@ fn integer_predicate_fix_keeps_custom_round_method() {
 }
 
 #[test]
-fn predicate_method_fix_migrates_only_proven_builtin_receivers() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-  let target = "fix-command.main/legacy-predicates";
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "def",
-        target,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ defn legacy-predicates ()\n  assert= true $ ({} (|key |value)) .contains? |key\n  assert= true $ ({} (|key |value)) .includes? |value\n  assert= true $ (#{} 10 20) .contains? 10\n  quote $ ([] 10) .contains? 0\n  , &unit",
-      ],
-    ),
-    "install predicate method source",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        target,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)",
-      ],
-    ),
-    "declare predicate method source",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "add-test",
-        target,
-        "preserves-predicates",
-        "--tags",
-        "unit",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ assert= &unit $ legacy-predicates",
-      ],
-    ),
-    "attach predicate regression",
-  );
-  let selector = [
-    "--rule",
-    "core-predicate-method-v1",
-    "--ns",
-    "fix-command.main",
-    "--def",
-    "legacy-predicates",
-    "--format",
-    "json",
-  ];
-  let preview = run_fix(&snapshot, &selector);
-  assert_success(&preview, "predicate method preview");
-  let report = parse_stdout(&preview);
-  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
-  assert_eq!(suggestions.len(), 3, "{report}");
-  let unique_paths = suggestions
-    .iter()
-    .map(|item| item["path"].as_str().expect("source path"))
-    .collect::<std::collections::HashSet<_>>();
-  assert_eq!(
-    unique_paths.len(),
-    suggestions.len(),
-    "a source call must have one migration suggestion"
-  );
-  assert!(suggestions.iter().all(|item| item["applicability"] == "machine-applicable"));
-  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
-  let replacements = suggestions
-    .iter()
-    .map(|item| item["replacement"]["value"].as_str().unwrap_or_default())
-    .collect::<Vec<_>>();
-  assert!(replacements.contains(&".contains-key?"));
-  assert!(replacements.contains(&".contains-value?"));
-  assert!(replacements.contains(&".includes?"));
-  let stale = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-predicate-method-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "legacy-predicates",
-      "--apply",
-      "--allow-no-vcs",
-      "--expect-revision",
-      "md5:stale",
-      "--format",
-      "json",
-    ],
-  );
-  assert!(!stale.status.success(), "stale source must reject apply");
-  let applied = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-predicate-method-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "legacy-predicates",
-      "--apply",
-      "--allow-no-vcs",
-      "--expect-revision",
-      report["revision"].as_str().expect("preview revision"),
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&applied, "predicate method apply");
-  let updated = fs::read_to_string(&snapshot).expect("updated Snapshot should read");
-  assert!(updated.contains(".contains-key?"));
-  assert!(updated.contains(".contains-value?"));
-  assert!(updated.contains(".contains? 0"), "quoted data must remain unchanged: {updated}");
-  assert_success(
-    &run_calcit(&snapshot, &["test", target, "--require-match"]),
-    "predicate behavior after fix",
-  );
-  let repeated = run_fix(&snapshot, &selector);
-  assert_success(&repeated, "predicate method idempotence preview");
-  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
-}
-
-#[test]
-fn predicate_method_fix_preserves_custom_methods_and_reviews_unknown_macros() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-  for (name, code) in [
-    ("Box0", "quote $ defstruct Box0 (:value 'Number)"),
-    ("BoxContains", "quote $ deftrait BoxContains (.contains? :fn)"),
-    (
-      "BoxContainsImpl",
-      "quote $ defimpl BoxContainsImpl BoxContains\n  .contains? $ fn (box index) true",
-    ),
-    ("Box", "quote $ def Box $ impl-traits Box0 BoxContainsImpl"),
-    ("read-box", "quote $ defn read-box (box) box .contains? 0"),
-    ("read-open", "quote $ defn read-open (value) value .contains? 0"),
-    ("pass-form", "quote $ defmacro pass-form (body) body"),
-    (
-      "read-list-macro",
-      "quote $ defn read-list-macro () $ pass-form $ ({} (:a 1)) .contains? :a",
-    ),
-  ] {
-    assert_success(
-      &run_calcit(
-        &snapshot,
-        &[
-          "edit",
-          "def",
-          &format!("fix-command.main/{name}"),
-          "--input-format",
-          "cirru",
-          "--code",
-          code,
-        ],
-      ),
-      "install predicate negative boundary",
-    );
-  }
-  for (name, schema) in [
-    ("read-box", "quote $ :: 'Fn $ {} (:args $ [] 'fix-command.main/Box) (:return 'Bool)"),
-    ("read-open", "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Bool)"),
-    ("read-list-macro", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)"),
-  ] {
-    assert_success(
-      &run_calcit(
-        &snapshot,
-        &[
-          "edit",
-          "schema",
-          &format!("fix-command.main/{name}"),
-          "--input-format",
-          "cirru",
-          "--code",
-          schema,
-        ],
-      ),
-      "declare predicate negative boundary",
-    );
-  }
-  let custom = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-predicate-method-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "read-box",
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&custom, "custom predicate method preview");
-  assert_eq!(parse_stdout(&custom)["data"]["suggestions"], serde_json::json!([]));
-
-  let open = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-predicate-method-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "read-open",
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&open, "open predicate method preview");
-  let open_report = parse_stdout(&open);
-  assert_eq!(open_report["data"]["suggestions"], serde_json::json!([]), "{open_report}");
-
-  let macro_call = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-predicate-method-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "read-list-macro",
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&macro_call, "macro-wrapped predicate method preview");
-  let report = parse_stdout(&macro_call);
-  assert_eq!(report["data"]["suggestions"].as_array().map(Vec::len), Some(1), "{report}");
-  assert_eq!(report["data"]["suggestions"][0]["applicability"], "requires-review");
-  assert_eq!(report["data"]["suggestions"][0]["replacement"], serde_json::Value::Null);
-}
-
-#[test]
 fn strict_result_success_consumption_rejects_dynamic_payload() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
@@ -11205,7 +10927,7 @@ fn core_api_028_preset_composes_nested_leaf_renames_and_is_idempotent() {
     report["data"]["filters"]["source_coverage"]["manual_review_regions"],
     serde_json::json!(["tests", "examples"])
   );
-  assert_eq!(report["data"]["filters"]["expanded_rule_ids"].as_array().unwrap().len(), 7);
+  assert_eq!(report["data"]["filters"]["expanded_rule_ids"].as_array().unwrap().len(), 6);
   let suggestions = report["data"]["suggestions"].as_array().expect("suggestions");
   assert_eq!(suggestions.len(), 5, "nested aliases must all compose: {report}");
   assert!(
@@ -11528,7 +11250,7 @@ fn ref_constructor_fix_renames_proven_spellings_and_reviews_shadowed_syntax() {
   let preset = run_calcit(&snapshot, &["fix", "--preset", "core-api-0.29-v1", "--format", "json"]);
   assert_success(&preset, "0.29 core API preset");
   let rules = parse_stdout(&preset)["data"]["filters"]["expanded_rule_ids"].clone();
-  assert_eq!(rules.as_array().unwrap().len(), 8);
+  assert_eq!(rules.as_array().unwrap().len(), 7);
   assert!(rules.as_array().unwrap().contains(&serde_json::json!("core-ref-constructor-v1")));
   let published = run_calcit(&snapshot, &["fix", "--preset", "core-api-0.28-v1", "--format", "json"]);
   assert_success(&published, "published 0.28 preset");

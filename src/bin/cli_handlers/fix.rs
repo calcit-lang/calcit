@@ -45,8 +45,6 @@ const CORE_INTEGER_PREDICATE_RULE: &str = "core-integer-predicate-v1";
 const CORE_INTEGER_PREDICATE_DIAGNOSTIC: &str = "FIX_CORE_INTEGER_PREDICATE";
 const CORE_IDENTITY_CONVERSION_RULE: &str = "core-identity-conversion-v1";
 const CORE_IDENTITY_CONVERSION_DIAGNOSTIC: &str = "FIX_CORE_IDENTITY_CONVERSION";
-const CORE_PREDICATE_METHOD_RULE: &str = "core-predicate-method-v1";
-const CORE_PREDICATE_METHOD_DIAGNOSTIC: &str = "FIX_CORE_PREDICATE_METHOD";
 const CORE_LIST_ADD_RULE: &str = "core-list-add-v1";
 const CORE_LIST_ADD_DIAGNOSTIC: &str = "FIX_CORE_LIST_ADD";
 const CORE_COLLECTION_LEN_RULE: &str = "core-collection-len-v1";
@@ -98,31 +96,30 @@ const SURFACE_LATEST_V2_RULES: [&str; 5] = [
   SINGLE_EXPRESSION_DO_RULE,
 ];
 // These proven renames replace leaves only, so nested calls retain their source paths.
-const CORE_API_028_V1_RULES: [&str; 7] = [
+const CORE_API_028_V1_RULES: [&str; 6] = [
   CORE_NON_NIL_PREDICATE_RULE,
   CORE_INTEGER_PREDICATE_RULE,
   CORE_IDENTITY_CONVERSION_RULE,
-  CORE_PREDICATE_METHOD_RULE,
   CORE_LIST_ADD_RULE,
   CORE_COLLECTION_LEN_RULE,
   CORE_EFFECT_METHOD_RULE,
 ];
 // The 0.29 preset keeps every 0.28 rule this CLI still ships and adds the Ref
 // constructor rename, so `core-api-0.28-v1` keeps its published meaning.
-const CORE_API_029_V1_RULES: [&str; 8] = [
+const CORE_API_029_V1_RULES: [&str; 7] = [
   CORE_NON_NIL_PREDICATE_RULE,
   CORE_INTEGER_PREDICATE_RULE,
   CORE_IDENTITY_CONVERSION_RULE,
-  CORE_PREDICATE_METHOD_RULE,
   CORE_LIST_ADD_RULE,
   CORE_COLLECTION_LEN_RULE,
   CORE_EFFECT_METHOD_RULE,
   CORE_REF_CONSTRUCTOR_RULE,
 ];
 // Method-alias rules whose old methods were removed in 0.29.0; only 0.28.x CLIs ship them.
-const RETIRED_CORE_API_028_RULES: [&str; 8] = [
+const RETIRED_CORE_API_028_RULES: [&str; 9] = [
   "core-list-intersperse-v1",
   "core-map-distinct-values-v1",
+  "core-predicate-method-v1",
   "core-set-include-v1",
   "core-list-fold-v1",
   "core-list-flat-map-v1",
@@ -684,18 +681,6 @@ pub(crate) fn handle_fix_command(
       &selected_definitions,
     )?);
   }
-  if selected_rules.contains(&CORE_PREDICATE_METHOD_RULE) {
-    let mut predicate_suggestions = Vec::new();
-    for rule in [MAP_CONTAINS_KEY_ALIAS, MAP_CONTAINS_VALUE_ALIAS, SET_INCLUDES_ALIAS] {
-      predicate_suggestions.extend(plan_core_method_alias_fixes(
-        &source_snapshot,
-        snapshot_file,
-        &selected_definitions,
-        rule,
-      )?);
-    }
-    suggestions.extend(collapse_predicate_alias_suggestions(predicate_suggestions));
-  }
   if selected_rules.contains(&CORE_EFFECT_METHOD_RULE) {
     for rule in CORE_EFFECT_METHOD_ALIASES {
       suggestions.extend(plan_core_method_alias_fixes(
@@ -1189,7 +1174,6 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CORE_FUNCTION_ALIAS_RULE
         | CORE_INTEGER_PREDICATE_RULE
         | CORE_IDENTITY_CONVERSION_RULE
-        | CORE_PREDICATE_METHOD_RULE
         | CORE_LIST_ADD_RULE
         | CORE_COLLECTION_LEN_RULE
         | CORE_EFFECT_METHOD_RULE
@@ -1210,7 +1194,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
   {
     return Err(
       format!(
-        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
       ) + &format!(
         " Review-only compiler rules: `{UNSAFE_COERCE_BOUNDARY_RULE}`, `{ASSERT_TYPE_PROOF_RULE}`, `{CONCRETE_RETURN_PROOF_RULE}`, `{CALLABLE_CONTRACT_PROOF_RULE}`, `{NOMINAL_WRITE_PROOF_RULE}`."
       ),
@@ -1260,7 +1244,6 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_FUNCTION_ALIAS_RULE
         | CORE_INTEGER_PREDICATE_RULE
         | CORE_IDENTITY_CONVERSION_RULE
-        | CORE_PREDICATE_METHOD_RULE
         | CORE_LIST_ADD_RULE
         | CORE_COLLECTION_LEN_RULE
         | CORE_EFFECT_METHOD_RULE
@@ -1283,7 +1266,6 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_FUNCTION_ALIAS_RULE => CORE_FUNCTION_ALIAS_RULE,
         CORE_INTEGER_PREDICATE_RULE => CORE_INTEGER_PREDICATE_RULE,
         CORE_IDENTITY_CONVERSION_RULE => CORE_IDENTITY_CONVERSION_RULE,
-        CORE_PREDICATE_METHOD_RULE => CORE_PREDICATE_METHOD_RULE,
         CORE_LIST_ADD_RULE => CORE_LIST_ADD_RULE,
         CORE_COLLECTION_LEN_RULE => CORE_COLLECTION_LEN_RULE,
         CORE_EFFECT_METHOD_RULE => CORE_EFFECT_METHOD_RULE,
@@ -1414,13 +1396,6 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_IDENTITY_CONVERSION_DIAGNOSTIC,
       evidence_source: "reader-resolved-builtin-proc-and-proven-conversion-argument",
-      lifecycle: "semantic-refactor",
-      source_version_required: false,
-    },
-    CORE_PREDICATE_METHOD_RULE => FixRuleMetadata {
-      rule_id,
-      diagnostic_code: CORE_PREDICATE_METHOD_DIAGNOSTIC,
-      evidence_source: "proven-builtin-receiver-and-identical-method-implementation",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -3934,10 +3909,7 @@ fn supports_attached_migrations(rule: &str) -> bool {
       | NAMED_STRUCT_CONSTRUCTOR_RULE
       | REDUNDANT_DO_RULE
       | SINGLE_EXPRESSION_DO_RULE
-  ) || QUERYABLE_METHOD_ALIASES
-    .iter()
-    .chain(CORE_EFFECT_METHOD_ALIASES)
-    .any(|alias| alias.rule_id == rule)
+  ) || CORE_EFFECT_METHOD_ALIASES.iter().any(|alias| alias.rule_id == rule)
 }
 
 /// Apply existing source proofs to one metadata region without registering synthetic definitions.
@@ -4124,9 +4096,8 @@ fn plan_attached_fixes(
               &wrapper,
             ));
           }
-          for alias in QUERYABLE_METHOD_ALIASES
+          for alias in CORE_EFFECT_METHOD_ALIASES
             .iter()
-            .chain(CORE_EFFECT_METHOD_ALIASES)
             .filter(|alias| selected_rules.contains(&alias.rule_id))
           {
             match plan_core_method_alias_source(snapshot_file, namespace, &synthetic_def, &wrapper, None, *alias) {
@@ -5071,8 +5042,6 @@ fn plan_core_list_add_source(
 
 #[derive(Clone, Copy)]
 enum MethodReceiverKind {
-  Map,
-  Set,
   CoreStruct {
     definition: &'static str,
     trait_origin: &'static str,
@@ -5082,8 +5051,6 @@ enum MethodReceiverKind {
 impl MethodReceiverKind {
   fn matches(self, annotation: &CalcitTypeAnnotation) -> bool {
     match self {
-      Self::Map => matches!(annotation, CalcitTypeAnnotation::Map(_, _)),
-      Self::Set => matches!(annotation, CalcitTypeAnnotation::Set(_)),
       Self::CoreStruct { definition, .. } => annotation.resolve_to_struct().is_some_and(|base| {
         base.definition_ref.as_deref() == Some(definition)
           || (base.definition_ref.is_none() && base.name.ref_str() == definition.rsplit('/').next().unwrap_or(definition))
@@ -5093,8 +5060,6 @@ impl MethodReceiverKind {
 
   fn name(self) -> &'static str {
     match self {
-      Self::Map => "Map",
-      Self::Set => "Set",
       Self::CoreStruct { definition, .. } => definition,
     }
   }
@@ -5112,42 +5077,6 @@ struct MethodAliasRule {
   variadic: bool,
   message: &'static str,
 }
-
-const MAP_CONTAINS_KEY_ALIAS: MethodAliasRule = MethodAliasRule {
-  rule_id: CORE_PREDICATE_METHOD_RULE,
-  diagnostic_code: CORE_PREDICATE_METHOD_DIAGNOSTIC,
-  receiver: MethodReceiverKind::Map,
-  old_method: ".contains?",
-  new_method: ".contains-key?",
-  implementation: "calcit.core/&map:contains?",
-  call_size: 3,
-  variadic: false,
-  message: "Use `.contains-key?` for Map keys; this does not check values.",
-};
-
-const MAP_CONTAINS_VALUE_ALIAS: MethodAliasRule = MethodAliasRule {
-  rule_id: CORE_PREDICATE_METHOD_RULE,
-  diagnostic_code: CORE_PREDICATE_METHOD_DIAGNOSTIC,
-  receiver: MethodReceiverKind::Map,
-  old_method: ".includes?",
-  new_method: ".contains-value?",
-  implementation: "calcit.core/&map:includes?",
-  call_size: 3,
-  variadic: false,
-  message: "Use `.contains-value?` for Map values; this does not check keys.",
-};
-
-const SET_INCLUDES_ALIAS: MethodAliasRule = MethodAliasRule {
-  rule_id: CORE_PREDICATE_METHOD_RULE,
-  diagnostic_code: CORE_PREDICATE_METHOD_DIAGNOSTIC,
-  receiver: MethodReceiverKind::Set,
-  old_method: ".contains?",
-  new_method: ".includes?",
-  implementation: "calcit.core/&set:includes?",
-  call_size: 3,
-  variadic: false,
-  message: "Use `.includes?` for Set element membership; both methods have the same implementation.",
-};
 
 const CORE_EFFECT_METHOD_ALIASES: &[MethodAliasRule] = &[
   MethodAliasRule {
@@ -5179,9 +5108,6 @@ const CORE_EFFECT_METHOD_ALIASES: &[MethodAliasRule] = &[
     message: "Use `.cancel-with!` for a proven core FfiTask cancellation; the reason is evaluated once.",
   },
 ];
-
-/// Query and fix share these proven alias contracts; this is not a second API registry.
-const QUERYABLE_METHOD_ALIASES: &[MethodAliasRule] = &[MAP_CONTAINS_KEY_ALIAS, MAP_CONTAINS_VALUE_ALIAS, SET_INCLUDES_ALIAS];
 
 pub(super) struct ProvenMethodAlias {
   pub old_method: &'static str,
@@ -5217,7 +5143,6 @@ fn method_alias_contract_is_proven(receiver: &CalcitTypeAnnotation, rule: Method
         })
       })
     }
-    _ => true,
   }
 }
 
@@ -5244,9 +5169,9 @@ fn collection_len_alias_is_proven(receiver: &CalcitTypeAnnotation) -> bool {
 
 /// Expose only alias roles backed by the same proof used by existing fix rules.
 pub(super) fn proven_method_aliases(receiver: &CalcitTypeAnnotation) -> Vec<ProvenMethodAlias> {
-  let mut aliases = QUERYABLE_METHOD_ALIASES
+  // Query and fix share these proven alias contracts; this is not a second API registry.
+  let mut aliases = CORE_EFFECT_METHOD_ALIASES
     .iter()
-    .chain(CORE_EFFECT_METHOD_ALIASES.iter())
     .copied()
     .filter(|rule| method_alias_contract_is_proven(receiver, *rule))
     .map(|rule| ProvenMethodAlias {
@@ -5523,26 +5448,6 @@ fn plan_core_method_alias_source(
     });
   }
   Ok(suggestions)
-}
-
-fn collapse_predicate_alias_suggestions(candidates: Vec<FixSuggestion>) -> Vec<FixSuggestion> {
-  let mut unique = BTreeMap::<(String, Vec<usize>), FixSuggestion>::new();
-  for mut candidate in candidates {
-    let key = (candidate.definition.clone(), candidate.target_path.clone());
-    if candidate.operation.is_none() {
-      candidate.message =
-        "Cannot prove one safe predicate migration from the receiver, method origin, and source context; review this call manually."
-          .to_owned();
-    }
-    match unique.get_mut(&key) {
-      Some(existing) if existing.operation.is_none() && candidate.operation.is_some() => *existing = candidate,
-      None => {
-        unique.insert(key, candidate);
-      }
-      _ => {}
-    }
-  }
-  unique.into_values().collect()
 }
 
 /// A zero-argument method call has two source nodes in either method-first or receiver-first form.
@@ -6751,12 +6656,11 @@ fn print_human_report(report: &FixReport<'_>) {
 #[cfg(test)]
 mod tests {
   use super::{
-    FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collapse_predicate_alias_suggestions,
-    collect_builtin_round_call_heads, collect_potential_local_bindings, collect_redundant_do_paths, fix_rule_metadata,
-    fix_source_json_to_cirru, insert_fix_suggestion, legacy_constructor_replacement, migration_for_source_leaf,
-    optional_candidate_signature_is_closed, optional_candidate_type_is_closed, optional_parameter_candidate, prototype_is_shadowed,
-    resolve_fix_target, rewrite_loaded_schema_type_references, rewrite_named_constructor_tree, struct_fields_are_complete,
-    suggestion_operations,
+    FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collect_builtin_round_call_heads,
+    collect_potential_local_bindings, collect_redundant_do_paths, fix_rule_metadata, fix_source_json_to_cirru, insert_fix_suggestion,
+    legacy_constructor_replacement, migration_for_source_leaf, optional_candidate_signature_is_closed,
+    optional_candidate_type_is_closed, optional_parameter_candidate, prototype_is_shadowed, resolve_fix_target,
+    rewrite_loaded_schema_type_references, rewrite_named_constructor_tree, struct_fields_are_complete, suggestion_operations,
   };
   use calcit::calcit::{CalcitFnTypeAnnotation, CalcitGenericBound, CalcitTrait, CalcitTypeAnnotation, SchemaKind};
   use cirru_parser::Cirru;
@@ -6768,46 +6672,6 @@ mod tests {
 
   fn leaf(value: &str) -> Cirru {
     Cirru::leaf(value)
-  }
-
-  #[test]
-  fn predicate_alias_suggestions_keep_one_review_per_source_and_prefer_proof() {
-    let review = FixSuggestion {
-      rule_id: "core-predicate-method-v1",
-      diagnostic_code: "FIX_CORE_PREDICATE_METHOD",
-      semantic_layer: "surface",
-      source_file: "calcit.cirru".to_owned(),
-      definition: "app.main/check".to_owned(),
-      path: "code/2/1".to_owned(),
-      fingerprint: "source".to_owned(),
-      origin_chain: vec![],
-      original: serde_json::json!({"value": ".contains?"}),
-      replacement: None,
-      applicability: "requires-review",
-      message: "List candidate".to_owned(),
-      target_path: vec![2, 1],
-      operation: None,
-    };
-    let mut another_alias = review.clone();
-    another_alias.message = "Map candidate".to_owned();
-    let mut proven = review.clone();
-    proven.replacement = Some(serde_json::json!({"value": ".contains-key?"}));
-    proven.applicability = "machine-applicable";
-    proven.operation = Some(FixOperation::ReplaceLeaf {
-      original: ".contains?".to_owned(),
-      replacement: ".contains-key?".to_owned(),
-    });
-    let mut other_call = review.clone();
-    other_call.path = "code/3/1".to_owned();
-    other_call.target_path = vec![3, 1];
-
-    let collapsed = collapse_predicate_alias_suggestions(vec![review, another_alias, proven, other_call]);
-    assert_eq!(collapsed.len(), 2);
-    assert_eq!(collapsed[0].target_path, vec![2, 1]);
-    assert_eq!(collapsed[0].applicability, "machine-applicable");
-    assert_eq!(collapsed[1].target_path, vec![3, 1]);
-    assert_eq!(collapsed[1].applicability, "requires-review");
-    assert!(collapsed[1].message.contains("review this call manually"));
   }
 
   #[test]

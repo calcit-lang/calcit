@@ -400,13 +400,12 @@
               assert= 3 $ count-with-trait text
               assert= 2 $ count-with-trait enum_value
               assert= 1 $ count-with-trait struct_value
-              assert= true $ contains-with-trait? m :a
-              assert= true $ contains-with-trait? s 2
               assert= true $ contains-with-trait? enum_value 1
               assert= true $ contains-with-trait? struct_value :name
               assert-traits xs Countable
-              assert-traits m Countable Contains
-              assert-traits s Countable Contains
+              ; Map and Set left the Contains trait in 0.29.0; the prefix `contains?` still accepts them.
+              assert-traits m Countable
+              assert-traits s Countable
               assert-traits text Countable
               assert-traits enum_value Countable Contains
               assert-traits struct_value Countable Contains

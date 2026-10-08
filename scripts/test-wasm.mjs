@@ -483,7 +483,7 @@ check("test-set-count()", 3, e["test-set-count"]);
 check("test-set-empty()", 1, e["test-set-empty"]); // 1+0
 check("test-set-empty-method()", 0, e["test-set-empty-method"]);
 check("test-set-includes()", 1, e["test-set-includes"]); // 1+0
-check("test-set-contains-method()", 1, e["test-set-contains-method"]); // 1+0
+check("test-set-contains-fn()", 1, e["test-set-contains-fn"]); // 1+0
 check("test-set-includes-method()", 1, e["test-set-includes-method"]); // 1+0
 check("test-set-max-method()", 30, e["test-set-max-method"]);
 check("test-set-min-method()", 10, e["test-set-min-method"]);

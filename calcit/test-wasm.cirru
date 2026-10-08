@@ -1308,14 +1308,14 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
-        'test-set-contains-method $ %{} 'CodeEntry (:doc "|.contains? dispatches on set")
-          :code $ quote $ defwasm-export test-set-contains-method ()
+        'test-set-contains-fn $ %{} 'CodeEntry (:doc "|prefix contains? checks set members; the Set .contains? method was retired in 0.29.0")
+          :code $ quote $ defwasm-export test-set-contains-fn ()
             &+
               if
-                .contains? (#{} 10 20 30) 20
+                contains? (#{} 10 20 30) 20
                 , 1 0
               if
-                .contains? (#{} 10 20 30) 99
+                contains? (#{} 10 20 30) 99
                 , 10 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)

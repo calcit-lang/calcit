@@ -244,7 +244,7 @@ const scenarios = [
       for (const [preferred, definition] of [[".contains-key?", "calcit.core/&map:contains?"], [".contains-value?", "calcit.core/&map:includes?"]]) {
         assert.equal(result.data.methods.find((method) => method.name === preferred)?.definition, definition);
       }
-      for (const retired of [".mappend", ".add"]) {
+      for (const retired of [".mappend", ".add", ".contains?", ".includes?"]) {
         assert.ok(!result.data.methods.some((method) => method.name === retired), `${retired} was retired from Map`);
       }
     },
@@ -259,7 +259,7 @@ const scenarios = [
       for (const preferred of [".include", ".includes?"]) {
         assert.ok(result.data.methods.some((method) => method.name === preferred), `${preferred} stays on Set`);
       }
-      for (const retired of [".mappend", ".add"]) {
+      for (const retired of [".mappend", ".add", ".contains?"]) {
         assert.ok(!result.data.methods.some((method) => method.name === retired), `${retired} was retired from Set`);
       }
     },

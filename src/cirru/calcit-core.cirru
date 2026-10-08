@@ -370,13 +370,13 @@
           :tags $ #{} :internal
         '&core-map-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for map")
           :code $ quote $ def &core-map-impls
-            [] &core-map-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Len internal/&core-len-map-impl) (&impl::new Mappable internal/&core-mappable-map-impl) (&impl::new Countable internal/&core-countable-map-impl) (&impl::new Contains internal/&core-contains-map-impl)
+            [] &core-map-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Len internal/&core-len-map-impl) (&impl::new Mappable internal/&core-mappable-map-impl) (&impl::new Countable internal/&core-countable-map-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
         '&core-map-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-map-methods
-            &impl::new :&core-map-methods (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :contains-key? &map:contains?) (:: :contains-value? &map:includes?) (:: :count &map:count) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :filter-map-kv filter-map-kv) (:: :get get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys &map:keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :distinct-values distinct-values)
+            &impl::new :&core-map-methods (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains-key? &map:contains?) (:: :contains-value? &map:includes?) (:: :count &map:count) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :filter-map-kv filter-map-kv) (:: :get get) (:: :get-in get-in) (:: :keys &map:keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :distinct-values distinct-values)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -413,13 +413,13 @@
           :tags $ #{} :internal
         '&core-set-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for set")
           :code $ quote $ def &core-set-impls
-            [] &core-set-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Len internal/&core-len-set-impl) (&impl::new Mappable internal/&core-mappable-set-impl) (&impl::new Countable internal/&core-countable-set-impl) (&impl::new Contains internal/&core-contains-set-impl)
+            [] &core-set-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Len internal/&core-len-set-impl) (&impl::new Mappable internal/&core-mappable-set-impl) (&impl::new Countable internal/&core-countable-set-impl)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
         '&core-set-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-set-methods
-            &impl::new :&core-set-methods (:: :contains? &set:includes?) (:: :count &set:count) (:: :destruct destruct-set) (:: :difference difference) (:: :empty &set:empty) (:: :empty? &set:empty?) (:: :exclude exclude) (:: :filter &set:filter) (:: :include include) (:: :includes? &set:includes?) (:: :intersection intersection) (:: :map &set:map) (:: :max &set:max) (:: :min &set:min) (:: :to-list &set:to-list) (:: :to-set identity) (:: :union union)
+            &impl::new :&core-set-methods (:: :count &set:count) (:: :destruct destruct-set) (:: :difference difference) (:: :empty &set:empty) (:: :empty? &set:empty?) (:: :exclude exclude) (:: :filter &set:filter) (:: :include include) (:: :includes? &set:includes?) (:: :intersection intersection) (:: :map &set:map) (:: :max &set:max) (:: :min &set:min) (:: :to-list &set:to-list) (:: :to-set identity) (:: :union union)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -2987,7 +2987,7 @@
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
-        'Contains $ %{} 'CodeEntry (:doc "|Core trait: Contains")
+        'Contains $ %{} 'CodeEntry (:doc "|Struct 与 Enum 的旧存在性 trait（Struct 查字段、Enum 查位置）。Map 与 Set 已在 0.29.0 移出：Map 键用 .contains-key?，Map 值用 .contains-value?，Set 成员用 .includes?；前缀函数 contains? 仍接受 Map 与 Set。")
           :code $ quote $ deftrait Contains
             .contains? $ :: :fn $ {}
               :args $ [] 'T 'K
@@ -4551,9 +4551,11 @@
               if (number? k) (&list:contains? x k) (raise "|contains? on a list expected a Number index")
               if (string? x)
                 if (number? k) (&str:contains? x k) (raise "|contains? on a string expected a Number index")
-                &let
-                  result $ .contains? x k
-                  if (bool? result) result $ raise "|contains? expected a Bool from the receiver .contains? method"
+                if (map? x) (&map:contains? x k)
+                  if (set? x) (&set:includes? x k)
+                    &let
+                      result $ .contains? x k
+                      if (bool? result) result $ raise "|contains? expected a Bool from the receiver .contains? method"
           :examples $ []
             quote $ assert= true $ contains? ([] :a :b) 1
             quote $ assert= true $ contains?
@@ -4567,6 +4569,12 @@
             %{} 'TestEntry (:name |finds-map-key)
               :code $ quote $ assert= true
                 contains? (&{} :a 1 :b 2) :a
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |checks-open-map-keys-and-set-members)
+              :code $ quote $ assert= ([] true true false false)
+                map
+                  [] (&{} :a 1) (#{} :a) (&{} :b :a) (#{} :b)
+                  fn (x) (contains? x :a)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |checks-string-indices)
               :code $ quote $ do
@@ -7848,9 +7856,10 @@
         'includes? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn includes? (x k)
             if (list? x) (&list:includes? x k)
-              &let
-                result $ .includes? x k
-                if (bool? result) result $ raise "|includes? expected a Bool from the receiver .includes? method"
+              if (map? x) (&map:includes? x k)
+                &let
+                  result $ .includes? x k
+                  if (bool? result) result $ raise "|includes? expected a Bool from the receiver .includes? method"
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Dynamic 'Dynamic
@@ -7858,6 +7867,12 @@
             %{} 'TestEntry (:name |finds-map-value)
               :code $ quote $ assert= false
                 includes? (&{} :a 1 :b 2) 3
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |checks-open-map-values-and-set-members)
+              :code $ quote $ assert= ([] true true false false)
+                map
+                  [] (&{} :a :x) (#{} :x) (&{} :x :a) (#{} :y)
+                  fn (x) (includes? x :x)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |matches-and-rejects-string-substrings)
               :code $ quote $ do
@@ -12054,16 +12069,6 @@
           :code $ quote $ def &core-contains-index-enum-impl
             &impl::new :&core-contains-index-enum-impl $ :: :contains-index? contains-index?
           :examples $ []
-        '&core-contains-map-impl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def &core-contains-map-impl
-            &impl::new :&core-contains-map-impl $ :: :contains? &map:contains?
-          :examples $ []
-          :schema $ :: 'Dynamic
-        '&core-contains-set-impl $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def &core-contains-set-impl
-            &impl::new :&core-contains-set-impl $ :: :contains? &set:includes?
-          :examples $ []
-          :schema $ :: 'Dynamic
         '&core-contains-struct-impl $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-contains-struct-impl
             &impl::new :&core-contains-struct-impl $ :: :contains? &struct:contains?
