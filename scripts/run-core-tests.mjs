@@ -8,7 +8,7 @@
 // Usage:
 //   node scripts/run-core-tests.mjs [--backend native,js,wasm[,wasi]] [--tag t]...
 //     [--exclude-tag t]... [--name test-name] [--target ns|ns/def|test-id]...
-//     [--exclusions file] [--snapshot file] [--report-unexpected-pass]
+//     [--exclusions file] [--snapshot file] [--report-unexpected-pass] [--support-matrix file]
 //     [--results-json file]
 //
 // Native is the reference: the println trace of each test on the other
@@ -32,6 +32,7 @@ const parseArgs = (argv) => {
   const options = {
     backends: [...DEFAULT_BACKENDS], tags: [], excludeTags: [], names: [], targets: [],
     snapshot: "src/cirru/calcit-core.cirru", exclusions: "scripts/core-tests-exclusions.cirru",
+    supportMatrix: "docs/installation/wasm-support.md",
     reportUnexpectedPass: false, resultsJson: undefined,
   };
   for (let i = 0; i < argv.length; i++) {
@@ -48,6 +49,7 @@ const parseArgs = (argv) => {
       case "--target": options.targets.push(value()); break;
       case "--snapshot": options.snapshot = value(); break;
       case "--exclusions": options.exclusions = value(); break;
+      case "--support-matrix": options.supportMatrix = value(); break;
       case "--report-unexpected-pass": options.reportUnexpectedPass = true; break;
       case "--results-json": options.resultsJson = value(); break;
       default: throw new Error(`unknown argument: ${flag}`);
@@ -135,8 +137,25 @@ for (const backend of BACKENDS) {
     return tag === undefined ? undefined : `tag :${tag}: ${tagReasons.get(tag)}`;
   };
 }
+// The WASM support matrix documents every unsupported proc and diagnostic code
+// that an exclusion reason cites, so the two lists cannot drift apart.
+const matrixText = readFileSync(resolve(options.supportMatrix), "utf8");
+const matrixProcs = new Set((/```text wasm-unsupported-procs\n([\s\S]*?)```/.exec(matrixText)?.[1] ?? "")
+  .split("\n").map((line) => line.trim()).filter((line) => line !== ""));
+for (const backend of ["wasm", "wasi"]) {
+  const section = exclusionData[`:${backend}`] ?? {};
+  for (const reason of [...Object.values(section[":tags"] ?? {}), ...Object.values(section[":tests"] ?? {})]) {
+    if (typeof reason !== "string") continue;
+    for (const [, proc] of reason.matchAll(/unsupported proc in WASM: (\S+)/g)) {
+      if (!matrixProcs.has(proc)) exclusionProblems.push(`${backend}: \`${proc}\` is cited as unsupported but missing from ${options.supportMatrix}`);
+    }
+    for (const [code] of reason.matchAll(/E_WASM_[A-Z_]+/g)) {
+      if (!matrixText.includes(`\`${code}\``)) exclusionProblems.push(`${backend}: ${code} is cited but not documented in ${options.supportMatrix}`);
+    }
+  }
+}
 if (exclusionProblems.length > 0) {
-  console.error(`Invalid exclusion list ${options.exclusions}:\n  ${exclusionProblems.join("\n  ")}`);
+  console.error(`Invalid exclusion list ${options.exclusions}:\n  ${[...new Set(exclusionProblems)].join("\n  ")}`);
   process.exit(1);
 }
 
