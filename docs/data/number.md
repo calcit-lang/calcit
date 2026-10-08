@@ -1,6 +1,6 @@
 ---
 title: "Number"
-summary: "Number 的跨后端语义：取余 rem 的定义域、结果与错误"
+summary: "Number 的跨后端语义：相等、排序与哈希，以及取余 rem 的定义域、结果与错误"
 scope: "core"
 kind: "reference"
 category: "data"
@@ -9,10 +9,34 @@ aliases:
   - "remainder"
   - "rem"
   - "safe integer"
+  - "NaN"
+  - "total order"
 ---
 # Number
 
 Calcit 的 Number 在 native 中是 `f64`，在生成的 JavaScript 中是 `Number`，在 WASM 中是 `f64`。本页记录已经在三个后端统一、由同一组 core `:tests` 验证的数值运算语义。
+
+## 相等、排序与哈希
+
+`=`、`&compare`、`sort`、Set 成员与 Map 键在 native、生成 JS 与 WASM 中使用同一组数值规则，保证相等、排序与哈希互相一致：
+
+- **相等**：`NaN` 等于 `NaN`，`0` 等于 `-0`；其余数字按数值相等。
+- **排序**：`&compare` 与默认比较的 `sort` 使用全序：`-inf` 最小，`-0` 与 `0` 相等，`inf` 之后是 `NaN`，所有 `NaN` 彼此相等。
+- **哈希**：相等的数字哈希相同，所以 `NaN` 可以作为 Set 元素或 Map 键被找回，`0` 与 `-0` 是同一个键。
+
+```cirru
+let
+    not-a-number $ sqrt -1
+  assert= true $ = not-a-number not-a-number
+  assert= true $ = 0 -0
+  assert= 1 $ &compare not-a-number $ &/ 1 0
+  assert= ([] -1 0 3 not-a-number) $ sort $ [] 3 not-a-number 0 -1
+  assert= true $ contains? (#{} not-a-number) not-a-number
+```
+
+数值比较运算 `<`、`>`、`<=`、`>=` 仍按 IEEE 754 处理：任何一侧是 `NaN` 时结果都是 `false`。需要排序或稳定的大小关系时使用 `&compare`。
+
+这些规则对应 `calcit.core/&compare#orders-nan-last`、`calcit.core/=#treats-nan-as-equal-value`、`calcit.core/sort#sorts-nan-after-numbers`、`calcit.core/sort#sorts-nan-last-with-compare` 与 `calcit.core/contains?#finds-nan-keys`。
 
 ## 取余 `rem`
 
@@ -52,5 +76,5 @@ assert= "|&number:rem requires safe integers, but received: inf 2" $ try
 
 ## 限制
 
-- 本页只覆盖 `rem`；比较、相等、哈希、转文本、位运算、下标等数值语义仍以各 API 的定义与测试为准。
+- 本页只覆盖相等、排序、哈希与 `rem`；转文本、位运算、下标等数值语义仍以各 API 的定义与测试为准。
 - WASM 对定义域之外的输入只 trap，不提供错误消息。

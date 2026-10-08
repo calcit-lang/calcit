@@ -318,6 +318,16 @@
                 assert= 1 $ &compare |a :a
                 assert= 0 $ &compare :a :a
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |orders-nan-last)
+              :code $ quote $ let
+                  not-a-number $ sqrt -1
+                assert= 1 $ &compare not-a-number 1
+                assert= -1 $ &compare 1 not-a-number
+                assert= 1 $ &compare not-a-number $ &/ 1 0
+                assert= 0 $ &compare not-a-number not-a-number
+                assert= 0 $ &compare 0 -0
+                assert= -1 $ &compare (&/ -1 0) -1
+              :tags $ #{} :core :unit
         '&core-enum-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for enum values.")
           :code $ quote $ def &core-enum-impls
             [] &core-enum-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-enum-impl) (&impl::new Contains internal/&core-contains-enum-impl) (&impl::new ContainsIndex internal/&core-contains-index-enum-impl)
@@ -2933,6 +2943,14 @@
                   :: :ready $ %some 1
                   :: :ready $ %some 2
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |treats-nan-as-equal-value)
+              :code $ quote $ let
+                  not-a-number $ sqrt -1
+                assert= true $ &= not-a-number not-a-number
+                assert= true $ &= 0 -0
+                assert= false $ &= not-a-number 0
+                assert= true $ &= ([] 1 not-a-number) ([] 1 not-a-number)
+              :tags $ #{} :core :unit
         '> $ %{} 'CodeEntry
           :doc "|Greater-than comparison for one or more numbers\nReturns true only when the value strictly decreases across every argument."
           :code $ quote $ defn > (x & ys)
@@ -4674,6 +4692,22 @@
                   assert= |rejected $ try
                     contains? |ab $ &list:nth open-keys 0
                     fn (message) |rejected
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |finds-nan-keys)
+              :code $ quote $ let
+                  not-a-number $ sqrt -1
+                assert= true $ contains? (#{} not-a-number) not-a-number
+                assert= true $ contains? (#{} 0) -0
+                assert= (#{} not-a-number)
+                  include (#{} not-a-number) not-a-number
+                assert= true $ contains?
+                  {} $ not-a-number 1
+                  , not-a-number
+                assert=
+                  {} $ not-a-number 2
+                  assoc
+                    {} $ not-a-number 1
+                    , not-a-number 2
               :tags $ #{} :core :unit
         'cos $ %{} 'CodeEntry
           :doc "|internal function for cosine\nSyntax: (cos n)\nParams: n (number, radians)\nReturns: number\nReturns cosine of angle in radians"
@@ -10546,10 +10580,26 @@
             :generics $ [] 'T
             :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |orders-list-with-default-comparator)
-            :code $ quote $ assert= ([] 1 2 3 4)
-              sort $ [] 4 3 2 1
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |orders-list-with-default-comparator)
+              :code $ quote $ assert= ([] 1 2 3 4)
+                sort $ [] 4 3 2 1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |sorts-nan-after-numbers)
+              :code $ quote $ let
+                  not-a-number $ sqrt -1
+                  positive-infinity $ &/ 1 0
+                assert= ([] -1 0 1 3 positive-infinity not-a-number not-a-number)
+                  sort $ [] 3 not-a-number 1 positive-infinity 0 not-a-number -1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |sorts-nan-last-with-compare)
+              :code $ quote $ let
+                  not-a-number $ sqrt -1
+                  positive-infinity $ &/ 1 0
+                assert= ([] -1 0 1 3 positive-infinity not-a-number not-a-number)
+                  sort ([] 3 not-a-number 1 positive-infinity 0 not-a-number -1)
+                    fn (a b) (&compare a b)
+              :tags $ #{} :core :unit
         'split $ %{} 'CodeEntry
           :doc "|internal function for splitting strings\nSyntax: (split s delimiter)\nParams: s (string), delimiter (string)\nReturns: list of strings\nSplits string by delimiter into list of substrings; empty pieces are dropped, so an empty string yields an empty list. An empty delimiter splits into characters."
           :code $ quote &runtime-implementation

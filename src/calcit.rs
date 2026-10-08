@@ -617,6 +617,23 @@ impl Hash for Calcit {
   }
 }
 
+/// Value equality for numbers: `NaN` equals `NaN` and `0` equals `-0`,
+/// so `Eq`, `Ord` and `Hash` agree on every number.
+pub fn number_value_eq(a: f64, b: f64) -> bool {
+  a == b || (a.is_nan() && b.is_nan())
+}
+
+/// Total order for numbers: `-inf < ... < -0 == 0 < ... < inf < NaN`.
+/// Unlike `f64::total_cmp`, `-0` and `0` compare equal to match value equality.
+pub fn number_total_cmp(a: f64, b: f64) -> Ordering {
+  match (a.is_nan(), b.is_nan()) {
+    (true, true) => Ordering::Equal,
+    (true, false) => Ordering::Greater,
+    (false, true) => Ordering::Less,
+    (false, false) => a.partial_cmp(&b).unwrap_or(Ordering::Equal),
+  }
+}
+
 impl Ord for Calcit {
   fn cmp(&self, other: &Self) -> Ordering {
     use Calcit::*;
@@ -634,15 +651,7 @@ impl Ord for Calcit {
       (Bool(_), _) => Less,
       (_, Bool(_)) => Greater,
 
-      (Number(a), Number(b)) => {
-        if a < b {
-          Less
-        } else if a > b {
-          Greater
-        } else {
-          Equal
-        }
-      }
+      (Number(a), Number(b)) => number_total_cmp(*a, *b),
       (Number(_), _) => Less,
       (_, Number(_)) => Greater,
 
@@ -788,7 +797,7 @@ impl PartialEq for Calcit {
       (Nil, Nil) => true,
       (Unit, Unit) => true,
       (Bool(a), Bool(b)) => a == b,
-      (Number(a), Number(b)) => a == b,
+      (Number(a), Number(b)) => number_value_eq(*a, *b),
       (Symbol { sym: a, .. }, Symbol { sym: b, .. }) => a == b,
       (Local(CalcitLocal { sym: a, .. }), Local(CalcitLocal { sym: b, .. })) => a == b,
       (Registered(a), Registered(b)) => a == b,
