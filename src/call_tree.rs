@@ -417,7 +417,7 @@ impl CallTreeAnalyzer {
   }
 
   fn is_core_ns(&self, ns: &str) -> bool {
-    ns.starts_with("calcit.") || ns == "calcit.core"
+    crate::calcit::is_bundled_core_ns(ns)
   }
 
   fn count_def_types(&self, _program_code: &ProgramCodeData) -> (usize, usize) {
@@ -826,7 +826,7 @@ impl CallCountAnalyzer {
   }
 
   fn is_core_ns(&self, ns: &str) -> bool {
-    ns.starts_with("calcit.") || ns == "calcit.core"
+    crate::calcit::is_bundled_core_ns(ns)
   }
 
   fn get_source_type(&self, ns: &str) -> String {

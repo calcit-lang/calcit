@@ -682,6 +682,80 @@ fn all_defs_reports_unreferenced_definitions_without_changing_default_checks() {
 }
 
 #[test]
+fn all_defs_treats_calcit_prefixed_packages_as_project_code() {
+  // Packages such as calcit.std share the `calcit.` prefix but are not bundled core:
+  // their definitions are roots and edges, while calcit.core stays out of the graph.
+  let build = |with_bad: bool| {
+    let directory = TestDirectory::create();
+    let snapshot = directory.snapshot();
+    let fixture = fs::read_to_string("calcit/add.cirru").expect("minimal snapshot fixture should read");
+    fs::write(
+      &snapshot,
+      fixture
+        .replace(":package |app", ":package |calcit.demo")
+        .replace("app.main", "calcit.demo.main"),
+    )
+    .expect("prefixed package snapshot should write");
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "add-ns", "calcit.demo.util"]),
+      "add prefixed namespace",
+    );
+    edit_def_at(&snapshot, "calcit.demo.util/util-ok", "quote $ defn util-ok () 2");
+    edit_schema_at(&snapshot, "calcit.demo.util/util-ok", "Number");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "add-import",
+          "calcit.demo.main",
+          "--code",
+          "quote $ calcit.demo.util :refer $ util-ok",
+        ],
+      ),
+      "import util-ok",
+    );
+    edit_def_at(&snapshot, "calcit.demo.main/main!", "quote $ defn main! () $ util-ok");
+    edit_def_at(&snapshot, "calcit.demo.main/reload!", "quote $ defn reload! () nil");
+    edit_schema_at(&snapshot, "calcit.demo.main/main!", "Number");
+    edit_schema_at(&snapshot, "calcit.demo.main/reload!", "Nil");
+    if with_bad {
+      edit_def_at(&snapshot, "calcit.demo.util/util-bad", "quote $ defn util-bad () $ inc |x");
+      edit_schema_at(&snapshot, "calcit.demo.util/util-bad", "Number");
+      edit_def_at(&snapshot, "calcit.demo.util/util-user", "quote $ defn util-user () $ util-bad");
+      edit_schema_at(&snapshot, "calcit.demo.util/util-user", "Number");
+    }
+    (directory, snapshot)
+  };
+  let args = ["--check-only", "--all-defs", "--format", "json"];
+
+  let (_clean_directory, clean) = build(false);
+  let output = run_calcit(&clean, &args);
+  assert_success(&output, "a clean calcit.-prefixed package passes all-defs");
+  let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+  let statuses = definition_statuses(&report);
+  assert!(
+    statuses.keys().all(|definition| !definition.starts_with("calcit.core/")),
+    "{statuses:?}"
+  );
+  assert_eq!(statuses["calcit.demo.util/util-ok"], "passed");
+  assert_eq!(statuses["calcit.demo.main/main!"], "passed");
+
+  let (_bad_directory, bad) = build(true);
+  let output = run_calcit(&bad, &args);
+  assert!(!output.status.success(), "prefixed package errors must still fail");
+  let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+  let statuses = definition_statuses(&report);
+  assert!(
+    statuses.keys().all(|definition| !definition.starts_with("calcit.core/")),
+    "{statuses:?}"
+  );
+  assert_eq!(statuses["calcit.demo.util/util-bad"], "failed");
+  assert_eq!(statuses["calcit.demo.util/util-user"], "blocked");
+  assert_eq!(statuses["calcit.demo.util/util-ok"], "passed");
+}
+
+#[test]
 fn all_defs_results_do_not_depend_on_definition_or_namespace_order() {
   let (_forward_directory, forward) = prepare_all_defs_project(false, true);
   let (_reversed_directory, reversed) = prepare_all_defs_project(true, true);

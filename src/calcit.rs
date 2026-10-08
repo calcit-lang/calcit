@@ -844,6 +844,13 @@ pub const CORE_NS: &str = "calcit.core";
 pub const CALCIT_INTERNAL_NS: &str = "calcit.internal";
 pub const BUILTIN_IMPLS_ENTRY: &str = "&init-builtin-impls!";
 pub const GEN_NS: &str = "calcit.gen";
+
+/// Namespaces bundled with the compiler (core snapshot and generated code).
+/// Packages that merely share the `calcit.` prefix, such as `calcit.std`, are
+/// project or dependency code and must not be classified as core.
+pub fn is_bundled_core_ns(ns: &str) -> bool {
+  matches!(ns, CORE_NS | CALCIT_INTERNAL_NS | "calcit.test" | GEN_NS) || ns.starts_with("calcit.internal.")
+}
 pub const GENERATED_DEF: &str = "gen%";
 
 impl Calcit {

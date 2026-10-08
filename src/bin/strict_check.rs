@@ -200,7 +200,7 @@ fn reachable_definitions(
   // When the project itself is calcit.core, its definitions must stay in the graph as edges.
   let mut include_core = false;
   if let Some(scope) = all_defs {
-    include_core = scope.roots.iter().any(|(ns, _)| ns.starts_with("calcit."));
+    include_core = scope.roots.iter().any(|(ns, _)| calcit::calcit::is_bundled_core_ns(ns));
     roots.extend(scope.roots.iter().cloned());
   }
 
