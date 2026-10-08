@@ -6,6 +6,7 @@ import {
   castTag,
   toString,
   CalcitTag,
+  CalcitSymbol,
   getStringName,
   findInFields,
   compareTagNames,
@@ -213,45 +214,34 @@ export let fieldsEqual = (xs: Array<CalcitTag>, ys: Array<CalcitTag>): boolean =
 };
 
 export let _$n__PCT__$M_ = (proto: CalcitValue, ...xs: Array<CalcitValue>): CalcitValue => {
-  let recordProto: CalcitStructValue;
-  if (proto instanceof CalcitStructValue) {
-    recordProto = proto;
-  } else if (proto instanceof CalcitStructDef) {
-    recordProto = new CalcitStructValue(proto.name, proto.fields, new Array(proto.fields.length).fill(null), proto);
-  } else {
+  if (!(proto instanceof CalcitStructDef)) {
     throw new Error("Expected prototype to be a StructDef");
   }
-  {
-    if (xs.length % 2 !== 0) {
-      throw new Error("Expected even number of key/value");
-    }
-    if (xs.length !== recordProto.fields.length * 2) {
-      throw new Error("fields size does not match");
-    }
-
-    let values = new Array(recordProto.fields.length);
-
-    for (let i = 0; i < recordProto.fields.length; i++) {
-      let idx = -1;
-      let k = recordProto.fields[i];
-      for (let j = 0; j < recordProto.fields.length; j++) {
-        if (k === castTag(xs[j * 2])) {
-          idx = j;
-          break;
-        }
-      }
-
-      if (idx < 0) {
-        throw new Error("invalid field name for this struct");
-      }
-      if (values[i] != null) {
-        throw new Error("struct field already has value, probably duplicated key");
-      }
-      values[i] = xs[idx * 2 + 1];
-    }
-
-    return new CalcitStructValue(recordProto.name, recordProto.fields, values, recordProto.structRef);
+  if (xs.length % 2 !== 0) {
+    throw new Error("Expected even number of key/value");
   }
+  if (xs.length !== proto.fields.length * 2) {
+    throw new Error("fields size does not match");
+  }
+  const values = new Array<CalcitValue>(proto.fields.length);
+  const seen = new Set<number>();
+  for (let i = 0; i < xs.length; i += 2) {
+    const key = xs[i];
+    if (!(key instanceof CalcitTag) && !(key instanceof CalcitSymbol) && typeof key !== "string") {
+      throw new Error("&%{} requires field in string/tag/symbol");
+    }
+    const idx = findInFields(proto.fields, castTag(key));
+    if (idx < 0) {
+      throw new Error("invalid field name for this struct");
+    }
+    if (seen.has(idx)) {
+      throw new Error("struct field already has value, probably duplicated key");
+    }
+    seen.add(idx);
+    assertFieldValue(proto, idx, xs[i + 1], "&%{}");
+    values[idx] = xs[i + 1];
+  }
+  return new CalcitStructValue(proto.name, proto.fields, values, proto);
 };
 
 /// update record with new values
@@ -295,55 +285,20 @@ export let _$n_struct_$o_definition = (x: CalcitValue): CalcitValue => {
 };
 
 export let _$n_struct_$o_from_map = (proto: CalcitValue, data: CalcitValue): CalcitValue => {
-  let recordProto: CalcitStructValue;
-  if (proto instanceof CalcitStructDef) {
-    recordProto = new CalcitStructValue(proto.name, proto.fields, new Array(proto.fields.length).fill(null), proto);
-  } else {
+  if (!(proto instanceof CalcitStructDef)) {
     throw new Error("Expected prototype to be struct");
   }
-
-  if (data instanceof CalcitStructValue) {
-    if (fieldsEqual(recordProto.fields, data.fields)) {
-      return new CalcitStructValue(recordProto.name, recordProto.fields, data.values, recordProto.structRef);
-    } else {
-      let values: Array<CalcitValue> = [];
-      for (let i = 0; i < recordProto.fields.length; i++) {
-        let field = recordProto.fields[i];
-        let idx = findInFields(data.fields, field);
-        if (idx < 0) {
-          throw new Error(`Cannot find field ${field} among ${data.fields}`);
-        }
-        values.push(data.values[idx]);
-      }
-      return new CalcitStructValue(recordProto.name, recordProto.fields, values, recordProto.structRef);
-    }
-  } else if (data instanceof CalcitMap || data instanceof CalcitSliceMap) {
-    let pairs_buffer: Array<[CalcitTag, CalcitValue]> = [];
-    let pairs = data.pairs();
-    for (let i = 0; i < pairs.length; i++) {
-      let k = pairs[i][0];
-      let v = pairs[i][1];
-      pairs_buffer.push([castTag(k), v]);
-    }
-    // mutable sort
-    pairs_buffer.sort((pair1, pair2) => pair1[0].cmp(pair2[0]));
-
-    let values: Array<CalcitValue> = [];
-    outerLoop: for (let i = 0; i < recordProto.fields.length; i++) {
-      let field = recordProto.fields[i];
-      for (let idx = 0; idx < pairs_buffer.length; idx++) {
-        let pair = pairs_buffer[idx];
-        if (pair[0] === field) {
-          values.push(pair[1]);
-          continue outerLoop; // dirty code for performance
-        }
-      }
-      throw new Error(`Cannot find field ${field} among ${pairs_buffer}`);
-    }
-    return new CalcitStructValue(recordProto.name, recordProto.fields, values, recordProto.structRef);
-  } else {
-    throw new Error("Expected a struct value or data for making a struct");
+  if (!(data instanceof CalcitMap) && !(data instanceof CalcitSliceMap)) {
+    throw new Error("&struct:from-map requires a Map");
   }
+  const fields: CalcitValue[] = [];
+  for (const [key, value] of data.pairs()) {
+    if (!(key instanceof CalcitTag) && typeof key !== "string") {
+      throw new Error("&struct:from-map requires field in string/tag");
+    }
+    fields.push(key, value);
+  }
+  return _$n__PCT__$M_(proto, ...fields);
 };
 
 export let _$n_struct_$o_to_map = (x: CalcitValue): CalcitValue => {

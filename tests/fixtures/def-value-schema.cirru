@@ -239,6 +239,253 @@
             :tags $ #{} :open-match-payload
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.binding-proof
+    'app.dynamic-construction $ %{} 'FileEntry
+      :defs $ {}
+        'EmptyBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct EmptyBox
+          :examples $ []
+          :schema $ :: 'StructDef
+        'PairBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct PairBox (:a 'Dynamic) (:b 'Dynamic)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'checked-create $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn checked-create (prototype key value)
+            try
+              %{} prototype $ key value
+              fn (_error) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'StructDef 'Dynamic 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |scalar)
+              :code $ quote $ do
+                assert= (Box :value 1) (checked-create Box :value 1)
+                assert= nil $ checked-create Box :value |wrong
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |list)
+              :code $ quote $ do
+                assert=
+                  ListBox :items $ [] 1 2
+                  checked-create ListBox :items $ [] 1 2
+                assert= nil $ checked-create ListBox :items $ [] |wrong
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |map)
+              :code $ quote $ do
+                assert=
+                  MapBox :items $ {} $ :a ([] 1 nil)
+                  checked-create MapBox :items $ {} $ :a ([] 1 nil)
+                assert= nil $ checked-create MapBox :items $ {}
+                  :a $ [] |wrong
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |set)
+              :code $ quote $ do
+                assert=
+                  SetBox :items $ #{} 1 2
+                  checked-create SetBox :items $ #{} 1 2
+                assert= nil $ checked-create SetBox :items $ #{} |wrong
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |nominal)
+              :code $ quote $ do
+                assert=
+                  NominalBox :user $ app.field-owner/User :name |one
+                  checked-create NominalBox :user $ app.field-owner/User :name |one
+                assert= nil $ checked-create NominalBox :user $ app.field-consumer/User :name |other
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |alias)
+              :code $ quote $ do
+                assert=
+                  AliasBox :user $ app.field-owner/User :name |one
+                  checked-create AliasBox :user $ app.field-owner/User :name |one
+                assert= nil $ checked-create AliasBox :user $ app.field-consumer/User :name |other
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |applied)
+              :code $ quote $ do
+                assert=
+                  AppliedBox :item $ GenericBox :items $ [] 1
+                  checked-create AppliedBox :item $ GenericBox :items $ [] 1
+                assert= nil $ checked-create AppliedBox :item $ GenericBox :items ([] |wrong)
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |enum-payload)
+              :code $ quote $ do
+                assert=
+                  OptionBox :item $ Option :some 1
+                  checked-create OptionBox :item $ Option :some 1
+                assert= nil $ checked-create OptionBox :item $ Option :some |wrong
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |empty-and-open)
+              :code $ quote $ do
+                assert=
+                  ListBox :items $ []
+                  checked-create ListBox :items $ []
+                assert=
+                  OpenBox :items $ [] 1 |two nil
+                  checked-create OpenBox :items $ [] 1 |two nil
+                assert=
+                  GenericBox :items $ [] 1
+                  checked-create GenericBox :items $ [] 1
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |field-name-boundary)
+              :code $ quote $ do
+                assert=
+                  ListBox :items $ [] 1
+                  checked-create ListBox |items $ [] 1
+                assert= nil $ checked-create ListBox :missing $ [] 1
+                assert= nil $ checked-create ListBox 42 $ [] 1
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |symbol-field-name)
+              :code $ quote $ assert=
+                ListBox :items $ [] 1
+                checked-create ListBox 'items $ [] 1
+              :tags $ #{} :checked-struct-construction :unit
+        'checked-empty $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn checked-empty (prototype)
+            try (%{} prototype)
+              fn (_error) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'StructDef
+          :tests $ [] $ %{} 'TestEntry (:name |zero-field-and-missing)
+            :code $ quote $ do
+              assert=
+                checked-map EmptyBox $ {}
+                checked-empty EmptyBox
+              assert= true $ struct? $ checked-empty EmptyBox
+              assert= nil $ checked-empty PairBox
+              assert= nil $ checked-map EmptyBox $ {} (:extra nil)
+            :tags $ #{} :checked-struct-construction :unit
+        'checked-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn checked-map (prototype fields)
+            try (&struct:from-map prototype fields)
+              fn (_error) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'StructDef $ :: 'Map 'Dynamic 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |complete-and-immutable)
+              :code $ quote $ let
+                  fields $ {} (:b |two) (:a nil)
+                assert= (PairBox :a nil :b |two) (checked-map PairBox fields)
+                assert=
+                  {} (:b |two) (:a nil)
+                  , fields
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |missing-and-extra)
+              :code $ quote $ do
+                assert= nil $ checked-map PairBox $ {} (:a nil)
+                assert= nil $ checked-map PairBox $ {} (:a nil) (:b nil) (:extra nil)
+                assert= nil $ checked-map PairBox $ {} (:a nil) (:extra nil)
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |normalized-duplicate)
+              :code $ quote $ do
+                assert= nil $ checked-map PairBox $ {} (:a nil) (|a 2)
+                assert= nil $ checked-map PairBox $ {} (|a nil) (|b 2) (:a 3)
+              :tags $ #{} :checked-struct-construction :unit
+        'checked-map-field $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn checked-map-field (prototype key value)
+            try
+              &struct:from-map prototype $ {} $ key value
+              fn (_error) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'StructDef 'Dynamic 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |scalar)
+              :code $ quote $ do
+                assert= (Box :value 1) (checked-map-field Box :value 1)
+                assert= nil $ checked-map-field Box :value |wrong
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |list)
+              :code $ quote $ do
+                assert=
+                  ListBox :items $ [] 1 2
+                  checked-map-field ListBox :items $ [] 1 2
+                assert= nil $ checked-map-field ListBox :items $ [] |wrong
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |map)
+              :code $ quote $ do
+                assert=
+                  MapBox :items $ {} $ :a ([] 1 nil)
+                  checked-map-field MapBox :items $ {} $ :a ([] 1 nil)
+                assert= nil $ checked-map-field MapBox :items $ {}
+                  :a $ [] |wrong
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |set)
+              :code $ quote $ do
+                assert=
+                  SetBox :items $ #{} 1 2
+                  checked-map-field SetBox :items $ #{} 1 2
+                assert= nil $ checked-map-field SetBox :items $ #{} |wrong
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |nominal)
+              :code $ quote $ do
+                assert=
+                  NominalBox :user $ app.field-owner/User :name |one
+                  checked-map-field NominalBox :user $ app.field-owner/User :name |one
+                assert= nil $ checked-map-field NominalBox :user $ app.field-consumer/User :name |other
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |alias)
+              :code $ quote $ do
+                assert=
+                  AliasBox :user $ app.field-owner/User :name |one
+                  checked-map-field AliasBox :user $ app.field-owner/User :name |one
+                assert= nil $ checked-map-field AliasBox :user $ app.field-consumer/User :name |other
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |applied)
+              :code $ quote $ do
+                assert=
+                  AppliedBox :item $ GenericBox :items $ [] 1
+                  checked-map-field AppliedBox :item $ GenericBox :items $ [] 1
+                assert= nil $ checked-map-field AppliedBox :item $ GenericBox :items ([] |wrong)
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |enum-payload)
+              :code $ quote $ do
+                assert=
+                  OptionBox :item $ Option :some 1
+                  checked-map-field OptionBox :item $ Option :some 1
+                assert= nil $ checked-map-field OptionBox :item $ Option :some |wrong
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |empty-and-open)
+              :code $ quote $ do
+                assert=
+                  ListBox :items $ []
+                  checked-map-field ListBox :items $ []
+                assert=
+                  OpenBox :items $ [] 1 |two nil
+                  checked-map-field OpenBox :items $ [] 1 |two nil
+                assert=
+                  GenericBox :items $ [] 1
+                  checked-map-field GenericBox :items $ [] 1
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |field-name-boundary)
+              :code $ quote $ do
+                assert=
+                  ListBox :items $ [] 1
+                  checked-map-field ListBox |items $ [] 1
+                assert= nil $ checked-map-field ListBox :missing $ [] 1
+                assert= nil $ checked-map-field ListBox 42 $ [] 1
+              :tags $ #{} :checked-struct-construction :unit
+            %{} 'TestEntry (:name |symbol-map-key-rejected)
+              :code $ quote $ assert= nil
+                checked-map-field ListBox 'items $ [] 1
+              :tags $ #{} :checked-struct-construction :unit
+        'checked-pairs $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn checked-pairs (prototype k1 v1 k2 v2)
+            try
+              %{} prototype (k1 v1) (k2 v2)
+              fn (_error) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'StructDef 'Dynamic 'Dynamic 'Dynamic 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |complete-order-and-duplicate)
+            :code $ quote $ do
+              assert= (PairBox :a nil :b |two) (checked-pairs PairBox :b |two :a nil)
+              assert= nil $ checked-pairs PairBox :a nil |a 2
+              assert= nil $ checked-pairs PairBox :missing nil :b 2
+            :tags $ #{} :checked-struct-construction :unit
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.dynamic-construction
+          :require $ app.dynamic-write :refer $ Box ListBox MapBox SetBox NominalBox AliasBox AppliedBox GenericBox OptionBox OpenBox
     'app.dynamic-write $ %{} 'FileEntry
       :defs $ {}
         'AliasBox $ %{} 'CodeEntry (:doc |)
