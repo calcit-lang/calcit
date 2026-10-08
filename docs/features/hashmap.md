@@ -19,7 +19,7 @@ All map operations return new maps — the original is never mutated.
 ## Quick Recipes
 
 - **Create**: `{} (:a 1) (:b 2)`
-- **Access**: `m.get :a`, `m.contains? :a`
+- **Access**: `m.get :a`, `m.contains-key? :a`
 - **Modify**: `assoc m :c 3`, `dissoc m :a`, `update m :a inc`
 - **Transform**: `map-kv m f`, `filter-map-kv m f`, `merge m1 m2`
 - **Keys/Values**: `keys m`, `vals m`, `to-pairs m`

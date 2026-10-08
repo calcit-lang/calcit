@@ -237,7 +237,7 @@
               ; Call valid list methods
               let
                   first-item $ .first xs
-                  second-item $ .nth xs 1
+                  second-item $ .get xs 1
                   rest-items $ .rest xs
                   list-len $ .count xs
                 println |first: first-item

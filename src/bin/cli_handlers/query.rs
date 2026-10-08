@@ -1566,11 +1566,16 @@ mod type_query_tests {
     let snapshot = load_core_snapshot().expect("core snapshot should load");
     prepare_program_for_type_query_on_cli_stack(snapshot);
 
-    for (receiver, member) in [
-      (parse_type_annotation_query(":: 'List 'Number").expect("typed list"), "number"),
-      (parse_type_annotation_query("'String").expect("string"), "string"),
+    // List positional lookup is `.get`; the `.nth` alias was retired from List in 0.29.0.
+    for (receiver, member, index_method) in [
+      (
+        parse_type_annotation_query(":: 'List 'Number").expect("typed list"),
+        "number",
+        ".get",
+      ),
+      (parse_type_annotation_query("'String").expect("string"), "string", ".nth"),
     ] {
-      for method in [".first", ".last", ".nth"] {
+      for method in [".first", ".last", index_method] {
         let contract = runner::preprocess::static_method_contract(receiver.as_ref(), method);
         assert_eq!(contract.status, "proven", "{method}: {contract:?}");
         assert_eq!(
@@ -1578,8 +1583,8 @@ mod type_query_tests {
           format!("type calcit.core/Option<{member}>")
         );
         let args = contract.arg_types.expect("proven method parameters");
-        assert_eq!(args.len(), usize::from(method == ".nth"));
-        if method == ".nth" {
+        assert_eq!(args.len(), usize::from(method == index_method));
+        if method == index_method {
           assert_eq!(args[0].describe(), "number");
         }
       }
@@ -1598,12 +1603,6 @@ mod type_query_tests {
         ".contains?",
         ".contains-key?",
         "core-predicate-method-v1",
-      ),
-      (
-        parse_type_annotation_query(":: 'Set 'Tag").expect("set type"),
-        ".add",
-        ".include",
-        "core-set-include-v1",
       ),
       (
         parse_type_annotation_query(":: 'List 'Number").expect("list type"),
@@ -1669,15 +1668,16 @@ mod type_query_tests {
       .map(|(method, contract)| context_method(method, contract))
       .collect::<Vec<_>>();
     mark_proven_method_roles(map.as_ref(), &mut methods);
-    for unchanged in [".add", ".assoc", ".dissoc"] {
+    for unchanged in [".assoc", ".dissoc"] {
       let method = methods.iter().find(|method| method.name == unchanged).expect("map method");
       assert!(method.role.is_none(), "{unchanged} has no proven equivalent alias fix");
     }
-    assert_eq!(
-      methods.iter().find(|method| method.name == ".add").expect("legacy Map add").status,
-      "open",
-      "the legacy pair does not prove separate Map key and value types"
-    );
+    for retired in [".add", ".mappend"] {
+      assert!(
+        methods.iter().all(|method| method.name != retired),
+        "the Map `{retired}` alias was retired in 0.29.0"
+      );
+    }
     assert_eq!(
       methods
         .iter()

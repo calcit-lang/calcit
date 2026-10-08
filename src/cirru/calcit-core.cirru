@@ -364,7 +364,7 @@
           :tags $ #{} :internal
         '&core-list-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-list-methods
-            &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :bind mapcat) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains-index? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :flat-map mapcat) (:: :fold fold) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :intersperse intersperse) (:: :join-str join-str) (:: :join-string join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :nth get) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reduce fold) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
+            &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains-index? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :flat-map mapcat) (:: :fold fold) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :intersperse intersperse) (:: :join-string join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -376,7 +376,7 @@
           :tags $ #{} :internal
         '&core-map-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-map-methods
-            &impl::new :&core-map-methods (:: :add &map:add-entry) (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :contains-key? &map:contains?) (:: :contains-value? &map:includes?) (:: :count &map:count) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :filter-map-kv filter-map-kv) (:: :get get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys &map:keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :mappend merge) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :distinct-values distinct-values)
+            &impl::new :&core-map-methods (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains? &map:contains?) (:: :contains-key? &map:contains?) (:: :contains-value? &map:includes?) (:: :count &map:count) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :filter-map-kv filter-map-kv) (:: :get get) (:: :get-in get-in) (:: :includes? &map:includes?) (:: :keys &map:keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :distinct-values distinct-values)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -419,7 +419,7 @@
           :tags $ #{} :internal
         '&core-set-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-set-methods
-            &impl::new :&core-set-methods (:: :add include) (:: :contains? &set:includes?) (:: :count &set:count) (:: :destruct destruct-set) (:: :difference difference) (:: :empty &set:empty) (:: :empty? &set:empty?) (:: :exclude exclude) (:: :filter &set:filter) (:: :include include) (:: :includes? &set:includes?) (:: :intersection intersection) (:: :map &set:map) (:: :mappend union) (:: :max &set:max) (:: :min &set:min) (:: :to-list &set:to-list) (:: :to-set identity) (:: :union union)
+            &impl::new :&core-set-methods (:: :contains? &set:includes?) (:: :count &set:count) (:: :destruct destruct-set) (:: :difference difference) (:: :empty &set:empty) (:: :empty? &set:empty?) (:: :exclude exclude) (:: :filter &set:filter) (:: :include include) (:: :includes? &set:includes?) (:: :intersection intersection) (:: :map &set:map) (:: :max &set:max) (:: :min &set:min) (:: :to-list &set:to-list) (:: :to-set identity) (:: :union union)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -1551,41 +1551,6 @@
             :code $ quote $ assert= (#{} 1)
               &list:to-set $ [] 1 1 1 1
             :tags $ #{} :core :unit
-        '&map:add-entry $ %{} 'CodeEntry
-          :doc "|Map `.add` 的旧二元 List entry 实现。只能验证 entry 长度，无法在现有 List<T> 类型中分别证明 key 为 K、value 为 V；结果按 Map<Dynamic,Dynamic> 保留开放边界。新代码使用 `.assoc key value`。"
-          :code $ quote $ defn &map:add-entry (xs pair)
-            assert "|&map:add-entry expected value in a pair" $ and (list? pair)
-              &= 2 $ count pair
-            &map:assoc xs (&list:nth pair 0) (&list:nth pair 1)
-          :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'Map 'K 'V) (:: 'List 'Dynamic)
-            :generics $ [] 'K 'V
-            :return $ :: 'Map 'Dynamic 'Dynamic
-          :tags $ #{} :internal
-          :tests $ []
-            %{} 'TestEntry (:name |keeps-legacy-pair-shape-with-open-result)
-              :code $ quote $ let
-                  original $ &{} :a 1
-                  added $ original .add $ [] :b 2
-                  replaced $ original .add $ [] :a 3
-                assert-type added $ :: 'Map 'Dynamic 'Dynamic
-                assert= (&{} :a 1 :b 2) added
-                assert= (&{} :a 3) replaced
-                assert= (&{} :a 1) original
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |rejects-non-pair-list)
-              :code $ quote $ let
-                  original $ &{} :a 1
-                  short-error $ try
-                    original .add $ [] :b
-                    fn (error) error
-                  long-error $ try
-                    original .add $ [] :b 2 :c
-                    fn (error) error
-                assert= true $ &str:includes? short-error "|&map:add-entry expected value in a pair"
-                assert= true $ &str:includes? long-error "|&map:add-entry expected value in a pair"
-              :tags $ #{} :core :unit
         '&map:assoc $ %{} 'CodeEntry
           :doc "|internal function for map association\nSyntax: (&map:assoc map key value & key-values)\nParams: map (map), key (any), value (any), key-values (any, variadic)\nReturns: map\nReturns new map with key-value associations"
           :code $ quote &runtime-implementation
@@ -4624,21 +4589,21 @@
                   , .includes? 10
                 assert= true $
                   {} $ :key :value
-                  , .contains? :key
+                  , .contains-key? :key
                 assert= false $
                   {} $ :key :value
-                  , .includes? :key
+                  , .contains-value? :key
                 assert= false $
                   {} $ :key :value
-                  , .contains? :value
+                  , .contains-key? :value
                 assert= true $
                   {} $ :key :value
-                  , .includes? :value
+                  , .contains-value? :value
                 assert= true $ "|😀a" .contains-index? 1
                 assert= true $ "|😀a" .includes? |a
                 assert= true $
                   #{} 10 20
-                  , .contains? 10
+                  , .includes? 10
                 assert= true $
                   #{} 10 20
                   , .includes? 10
@@ -6529,18 +6494,6 @@
                 foldl (range 3) 0 $ fn (sum idx) (assert-type idx 'Number)
                   + sum $ option:unwrap $ nth ([] 0 1 2) idx
               :tags $ #{} :core :unit
-        'foldl' $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn foldl' (xs acc f)
-            list-match xs
-              () acc
-              (x0 xss)
-                recur xss (f acc x0) f
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'U)
-            :args $ [] (:: 'List 'T) 'U $ :: 'Fn
-              {} (:return 'U)
-                :args $ [] 'U 'T
-            :generics $ [] 'T 'U
         'foldl-compare $ %{} 'CodeEntry
           :doc "|Helper used by comparison operators to ensure a relation holds across an entire list, short-circuiting on the first failure."
           :code $ quote $ defn foldl-compare (xs acc f)
@@ -6962,11 +6915,11 @@
                 assert= (%some 2)
                   ([] 1 2 2) .get 1
                 assert= (%some 2)
-                  ([] 1 2 2) .nth 2
+                  ([] 1 2 2) .get 2
                 assert= (%none)
                   ([] 1 2) .get -1
                 assert= (%none)
-                  ([] 1 2) .nth 3
+                  ([] 1 2) .get 3
                 assert= (%none)
                   ([]) .get 0
               :tags $ #{} :core :unit
@@ -7861,8 +7814,6 @@
             %{} 'TestEntry (:name |keeps-persistent-set-add-and-include-equivalent)
               :code $ quote $ do
                 assert= (#{} 1 2)
-                  (#{} 1) .add 1 2
-                assert= (#{} 1 2)
                   (#{} 1) .include 1 2
                 assert= (#{} 1)
                   (#{} 1) .include 1
@@ -8097,10 +8048,6 @@
                 assert=
                   join-str ([] |a |b) |/
                   join-string ([] |a |b) |/
-                assert=
-                    [] |a |b
-                    , .join-str |/
-                  ([] |a |b) .join-string |/
               :tags $ #{} :core :unit
         'js-nullish->option $ %{} 'CodeEntry
           :doc "|Explicitly convert a JavaScript null/undefined boundary value into nominal Option<T>. This does not validate or coerce the opaque payload type."
@@ -8868,7 +8815,7 @@
             :generics $ [] 'T
           :tags $ #{} :builtin :internal
         'mapcat $ %{} 'CodeEntry
-          :doc "|对 List 的每个元素调用回调，并按原顺序把回调返回的 List 展平一层。公开方法优先使用 `.flat-map`；前缀 `mapcat` 与旧方法 `.bind` 暂保留兼容。"
+          :doc "|对 List 的每个元素调用回调，并按原顺序把回调返回的 List 展平一层。公开方法优先使用 `.flat-map`；前缀 `mapcat` 暂保留兼容，旧 List 方法 `.bind` 已在 0.29.0 删除。"
           :code $ quote $ defn mapcat (xs f)
             &list:concat & $ map xs f
           :examples $ []
@@ -8901,8 +8848,6 @@
                 assert= 3 @calls
                 assert= ([])
                   ([]) .flat-map $ fn (x) ([] x)
-                assert= ([] 1 1 2 2)
-                  ([] 1 2) .bind $ fn (x) ([] x x)
               :tags $ #{} :core :unit
         'max $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn max (xs)
@@ -8953,12 +8898,6 @@
                   {} (:a 3) (:b 2)
                   ({} (:a 1))
                     , .merge
-                      {} $ :b 2
-                      {} $ :a 3
-                assert=
-                  {} (:a 3) (:b 2)
-                  ({} (:a 1))
-                    , .mappend
                       {} $ :b 2
                       {} $ :a 3
                 assert= ({})
@@ -11566,8 +11505,6 @@
               :code $ quote $ do
                 assert= (#{} 1 2 3)
                   (#{} 1 2) .union (#{} 2 3) (#{} 1)
-                assert= (#{} 1 2 3)
-                  (#{} 1 2) .mappend (#{} 2 3) (#{} 1)
                 assert= (#{})
                   (#{}) .union $ #{}
               :tags $ #{} :core :unit

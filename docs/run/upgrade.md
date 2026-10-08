@@ -80,7 +80,7 @@ calcit calcit.cirru fix --workflow strict --format edn
 再按 `.github/workflows/` 与 `package.json` 运行项目原有的检查和构建命令，记录结果。
 
 **需要旧版迁移桥梁时，先迁移源码，再升级工具链。** 例如 0.28.x → 0.29.0，List `.join`、Map `.values`、
-List/String `.contains?`，以及 Number `.round?`、FsPath `.write-text`、FfiResponse `.resolve` / `.reject` 的迁移规则在目标 CLI 中已退役或缩小范围，应先阅读本页“兼容入口的退场节奏”，用匹配项目的
+List/String `.contains?`，Number `.round?`、FsPath `.write-text`、FfiResponse `.resolve` / `.reject`，以及 List `.reduce` / `.bind` / `.join-str` / `.nth`、Map/Set `.mappend`、Set `.add` 的迁移规则在目标 CLI 中已退役或缩小范围，应先阅读本页“兼容入口的退场节奏”，用匹配项目的
 0.28.x CLI 预览、携带 revision 应用并运行原测试。已发布的 0.28.x CLI 没有 `--include-attached` 与 `--pattern`，
 桥梁只迁移 definition `:code`，预览的 `:manual-review-regions` 会列出 `|tests` 与 `|examples`；这两处的旧写法在第 9 步由目标
 CLI 的 `E_RETIRED_METHOD` 等诊断定位后逐处改写。若已安装目标 CLI，可通过原已发布 CLI 的绝对路径执行旧阶段，
@@ -165,6 +165,7 @@ named entry 不继承 default 配置，逐个检查与运行。把 `test --list`
 | `tag-match-to-match-v1`、`required-struct-field-v1` | 0.14.15 之前的 tag match 与可缺失 Struct 字段 | 已发布 0.14.15 | 已退役；见 [历史版本迁移记录](upgrade-history.md) |
 | `core-list-intersperse-v1`、`core-map-distinct-values-v1`、`core-predicate-method-v1` 的 List/String 部分 | List `.join`、Map `.values`、List/String `.contains?` | 已发布 0.28.x | 0.29.0 已退役；见 [兼容入口的退场节奏](#兼容入口的退场节奏) |
 | `core-integer-predicate-v1` 的 Number 方法部分、`core-effect-method-v1` 的 FsPath/FfiResponse 部分 | Number `.round?`、FsPath `.write-text`、FfiResponse `.resolve` / `.reject` | 已发布 0.28.x | 0.29.0 已退役；见 [兼容入口的退场节奏](#兼容入口的退场节奏) |
+| `core-set-include-v1`、`core-list-fold-v1`、`core-list-flat-map-v1`、`core-list-join-string-v1`、`core-list-get-v1`、`core-collection-combine-v1` | List `.reduce` / `.bind` / `.join-str` / `.nth`、Map/Set `.mappend`、Set `.add` | 已发布 0.28.x | 0.29.0 已退役；见 [兼容入口的退场节奏](#兼容入口的退场节奏) |
 | `core-api-0.28-v1` 与各兼容名的 fix rule | 0.28 起的核心 API 旧名 | 目标 CLI | 当前可用；按 [兼容入口的退场节奏](#兼容入口的退场节奏) 退场 |
 
 退场条件统一为：已知活跃下游默认分支的源码、附带测试/示例、宏生成代码和 CI/文档引用清零，且依赖模块与未合并迁移已核对后，
@@ -361,6 +362,25 @@ List/String 的旧 `.contains?` 已在 0.29.0 删除（见下文“兼容入口�
 
 0.29.0 的 CLI 中，`core-integer-predicate-v1` 只改写 reader 解析为内建 Proc 的 `round?` 函数调用；`core-effect-method-v1` 只保留 FfiTask `.cancel` / `.cancel-with`。两条规则仍在 `core-api-0.28-v1` preset 中，preset 规则数不变。升级顺序同上：先在 0.28.x 上预览、应用并运行项目测试，再升级 CLI。
 
+### 0.29.0 已删除：List/Map/Set 方法别名与 `foldl'`
+
+下面的旧入口在 0.27.0 / 0.28.0 正式版中已有首选写法，方法别名也已有 guarded fix rule；已知活跃下游默认分支没有调用，因此在 0.29.0 删除。除 Map `.add` 外，旧方法与首选方法指向同一 core 实现。写下这些方法会得到 `E_RETIRED_METHOD`，信息里给出首选替代；`foldl'` 已从 core 删除，按未定义名字报错。
+
+| 已删除 | 首选替代 | 迁移（使用 0.28.x 的 CLI） |
+|---|---|---|
+| List `.reduce` | `.fold` | `calcit calcit.cirru fix --rule core-list-fold-v1 --format edn` |
+| List `.bind` | `.flat-map` | `calcit calcit.cirru fix --rule core-list-flat-map-v1 --format edn` |
+| List `.join-str` | `.join-string` | `calcit calcit.cirru fix --rule core-list-join-string-v1 --format edn` |
+| List `.nth` | `.get`，同样返回 `Option<T>` | `calcit calcit.cirru fix --rule core-list-get-v1 --format edn` |
+| Set `.add` | `.include` | `calcit calcit.cirru fix --rule core-set-include-v1 --format edn` |
+| Map `.mappend` / Set `.mappend` | `.merge` / `.union` | `calcit calcit.cirru fix --rule core-collection-combine-v1 --format edn` |
+| Map `.add [key value]` | `.assoc key value` | 人工改写：旧方法只检查 entry 长度，不证明键值类型，没有 fix rule |
+| 函数 `foldl'` | `fold`，参数顺序相同 | 人工改写 |
+
+上表的 6 条迁移规则随旧方法一起退役：0.29.0 的 CLI 不再提供 `core-set-include-v1`、`core-list-fold-v1`、`core-list-flat-map-v1`、`core-list-join-string-v1`、`core-list-get-v1`、`core-collection-combine-v1`，用 `--rule` 指定它们或更早退役的 `core-list-intersperse-v1`、`core-map-distinct-values-v1` 时，CLI 会提示改用 0.28.x 的 CLI。`core-api-0.28-v1` preset 由 13 条规则减为 7 条，`core-api-0.29-v1` 由 14 条减为 8 条。升级顺序同上：先在 0.28.x 上预览、应用并运行项目测试，再升级 CLI。
+
+Map/Set `.contains?` 与 Map `.includes?` 在 0.29.0 仍可用：Map 与 Set 还实现 `Contains` trait，删除需同时调整类型检查的内建 trait 元数据，留待后续版本。`core-predicate-method-v1` 继续保留在两个 preset 中，可提前迁移到 `.contains-key?` / `.contains-value?` / `.includes?`。List/String/Fn 的 `.mappend`、String/Enum 的 `.nth` 与 Fn 的 `.bind` 不受影响。
+
 ### 仍可用的兼容名
 
 core 中带 `:deprecated` 标记的 15 个兼容名在 0.29.0 仍可调用，行为与 0.28 相同。新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余按首选写法逐处改写。
@@ -379,7 +399,7 @@ core 中带 `:deprecated` 标记的 15 个兼容名在 0.29.0 仍可调用，行
 | `case-default` | `match`，默认值写成末尾 `_` 分支 | 人工改写 |
 | `cpu-time` | `monotonic-time-ms` | 人工改写 |
 
-上表名字以及 `round?`、`foldl'` / `reduce` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零后，在下一个非 patch 版本删除，并在本文列出删除项。
+上表名字、函数 `round?`、前缀 `reduce`，以及方法 List `.add`、List/Map/Set/String `.count` 与 FfiTask `.cancel` / `.cancel-with`、Map/Set `.contains?` 与 Map `.includes?` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零后，在下一个非 patch 版本删除，并在本文列出删除项。
 
 ### Ref 构造名
 

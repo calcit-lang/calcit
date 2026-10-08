@@ -179,13 +179,11 @@ const scenarios = [
       assert.equal(len?.status, "proven");
       assert.equal(len.return_type, "number");
       const fold = result.data.methods.find((method) => method.name === ".fold");
-      const reduce = result.data.methods.find((method) => method.name === ".reduce");
+      for (const retired of [".reduce", ".bind", ".join-str", ".nth"]) {
+        assert.ok(!result.data.methods.some((method) => method.name === retired), `${retired} was retired from List`);
+      }
       assert.equal(fold?.status, "proven");
       assert.equal(fold?.definition, "calcit.core/fold");
-      assert.deepEqual(fold?.parameter_types, reduce?.parameter_types);
-      assert.equal(fold?.return_type, reduce?.return_type);
-      assert.equal(reduce?.definition, fold?.definition);
-      assert.deepEqual(fold.call_types, reduce.call_types);
       assert.equal(fold.call_types.parameters[0], "'U");
       assert.deepEqual(fold.call_types.parameters[1].slice(0, 2), ["::", "'Fn"]);
       assert.equal(fold.call_types.returns, "'U");
@@ -196,37 +194,25 @@ const scenarios = [
       assert.deepEqual(intersperse?.parameter_types, ["number"]);
       assert.equal(intersperse?.return_type, "list<number>");
       const flatMap = result.data.methods.find((method) => method.name === ".flat-map");
-      const bind = result.data.methods.find((method) => method.name === ".bind");
       assert.equal(flatMap?.status, "proven");
       assert.equal(flatMap?.definition, "calcit.core/mapcat");
       assert.deepEqual(flatMap?.parameter_types, ["fn(number) -> list<'U>"]);
       assert.equal(flatMap?.return_type, "list<'U>");
-      assert.deepEqual(bind?.parameter_types, flatMap?.parameter_types);
-      assert.equal(bind?.definition, flatMap?.definition);
       const joinString = result.data.methods.find((method) => method.name === ".join-string");
-      const joinStr = result.data.methods.find((method) => method.name === ".join-str");
       assert.equal(joinString?.status, "proven");
       assert.equal(joinString?.definition, "calcit.core/join-str");
       assert.deepEqual(joinString?.parameter_types, ["string"]);
       assert.equal(joinString?.return_type, "string");
-      assert.deepEqual(joinStr?.parameter_types, joinString?.parameter_types);
-      assert.equal(joinStr?.definition, joinString?.definition);
       const get = result.data.methods.find((method) => method.name === ".get");
-      const nth = result.data.methods.find((method) => method.name === ".nth");
       assert.equal(get?.status, "proven");
       assert.equal(get?.definition, "calcit.core/get");
       assert.deepEqual(get?.parameter_types, ["number"]);
       assert.equal(get?.return_type, "type calcit.core/Option<number>");
-      assert.equal(nth?.status, "proven");
-      assert.equal(nth?.definition, get?.definition);
-      assert.deepEqual(nth?.parameter_types, get?.parameter_types);
-      assert.equal(nth?.return_type, get?.return_type);
       assert.deepEqual(get.call_types, {
         parameters: ["'Number"],
         rest: null,
         returns: ["::", "'calcit.core/Option", "'Number"],
       });
-      assert.deepEqual(nth.call_types, get.call_types);
       const each = result.data.methods.find((method) => method.name === ".each");
       assert.equal(each?.status, "open");
       assert.deepEqual(each.parameter_types, ["fn(number) -> dynamic"]);
@@ -249,29 +235,33 @@ const scenarios = [
     },
   },
   {
-    name: "map merge exposes the same contract as legacy mappend",
+    name: "map merge and key/value predicates are exposed without retired aliases",
     args: ["calcit/test.cirru", "query", "type", ":: 'Map 'Tag 'Number", "--format", "json"],
     check(result) {
       const merge = result.data.methods.find((method) => method.name === ".merge");
-      const legacy = result.data.methods.find((method) => method.name === ".mappend");
       assert.equal(merge?.status, "proven");
       assert.equal(merge?.definition, "calcit.core/merge");
-      assert.equal(legacy?.definition, merge?.definition);
-      assert.deepEqual(legacy?.parameter_types, merge?.parameter_types);
-      assert.equal(legacy?.return_type, merge?.return_type);
+      for (const [preferred, definition] of [[".contains-key?", "calcit.core/&map:contains?"], [".contains-value?", "calcit.core/&map:includes?"]]) {
+        assert.equal(result.data.methods.find((method) => method.name === preferred)?.definition, definition);
+      }
+      for (const retired of [".mappend", ".add"]) {
+        assert.ok(!result.data.methods.some((method) => method.name === retired), `${retired} was retired from Map`);
+      }
     },
   },
   {
-    name: "set union exposes the same contract as legacy mappend",
+    name: "set union and include replace the retired aliases",
     args: ["calcit/test.cirru", "query", "type", ":: 'Set 'Number", "--format", "json"],
     check(result) {
       const union = result.data.methods.find((method) => method.name === ".union");
-      const legacy = result.data.methods.find((method) => method.name === ".mappend");
       assert.equal(union?.status, "proven");
       assert.equal(union?.definition, "calcit.core/union");
-      assert.equal(legacy?.definition, union?.definition);
-      assert.deepEqual(legacy?.parameter_types, union?.parameter_types);
-      assert.equal(legacy?.return_type, union?.return_type);
+      for (const preferred of [".include", ".includes?"]) {
+        assert.ok(result.data.methods.some((method) => method.name === preferred), `${preferred} stays on Set`);
+      }
+      for (const retired of [".mappend", ".add"]) {
+        assert.ok(!result.data.methods.some((method) => method.name === retired), `${retired} was retired from Set`);
+      }
     },
   },
   {

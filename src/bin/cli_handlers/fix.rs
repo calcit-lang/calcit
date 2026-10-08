@@ -49,20 +49,8 @@ const CORE_PREDICATE_METHOD_RULE: &str = "core-predicate-method-v1";
 const CORE_PREDICATE_METHOD_DIAGNOSTIC: &str = "FIX_CORE_PREDICATE_METHOD";
 const CORE_LIST_ADD_RULE: &str = "core-list-add-v1";
 const CORE_LIST_ADD_DIAGNOSTIC: &str = "FIX_CORE_LIST_ADD";
-const CORE_SET_INCLUDE_RULE: &str = "core-set-include-v1";
-const CORE_SET_INCLUDE_DIAGNOSTIC: &str = "FIX_CORE_SET_INCLUDE";
 const CORE_COLLECTION_LEN_RULE: &str = "core-collection-len-v1";
 const CORE_COLLECTION_LEN_DIAGNOSTIC: &str = "FIX_CORE_COLLECTION_LEN";
-const CORE_LIST_FOLD_RULE: &str = "core-list-fold-v1";
-const CORE_LIST_FOLD_DIAGNOSTIC: &str = "FIX_CORE_LIST_FOLD";
-const CORE_LIST_FLAT_MAP_RULE: &str = "core-list-flat-map-v1";
-const CORE_LIST_FLAT_MAP_DIAGNOSTIC: &str = "FIX_CORE_LIST_FLAT_MAP";
-const CORE_LIST_JOIN_STRING_RULE: &str = "core-list-join-string-v1";
-const CORE_LIST_JOIN_STRING_DIAGNOSTIC: &str = "FIX_CORE_LIST_JOIN_STRING";
-const CORE_LIST_GET_RULE: &str = "core-list-get-v1";
-const CORE_LIST_GET_DIAGNOSTIC: &str = "FIX_CORE_LIST_GET";
-const CORE_COLLECTION_COMBINE_RULE: &str = "core-collection-combine-v1";
-const CORE_COLLECTION_COMBINE_DIAGNOSTIC: &str = "FIX_CORE_COLLECTION_COMBINE";
 const CORE_EFFECT_METHOD_RULE: &str = "core-effect-method-v1";
 const CORE_EFFECT_METHOD_DIAGNOSTIC: &str = "FIX_CORE_EFFECT_METHOD";
 const CORE_REF_CONSTRUCTOR_RULE: &str = "core-ref-constructor-v1";
@@ -110,38 +98,37 @@ const SURFACE_LATEST_V2_RULES: [&str; 5] = [
   SINGLE_EXPRESSION_DO_RULE,
 ];
 // These proven renames replace leaves only, so nested calls retain their source paths.
-const CORE_API_028_V1_RULES: [&str; 13] = [
+const CORE_API_028_V1_RULES: [&str; 7] = [
   CORE_NON_NIL_PREDICATE_RULE,
   CORE_INTEGER_PREDICATE_RULE,
   CORE_IDENTITY_CONVERSION_RULE,
   CORE_PREDICATE_METHOD_RULE,
   CORE_LIST_ADD_RULE,
-  CORE_SET_INCLUDE_RULE,
   CORE_COLLECTION_LEN_RULE,
-  CORE_LIST_FOLD_RULE,
-  CORE_LIST_FLAT_MAP_RULE,
-  CORE_LIST_JOIN_STRING_RULE,
-  CORE_LIST_GET_RULE,
-  CORE_COLLECTION_COMBINE_RULE,
   CORE_EFFECT_METHOD_RULE,
 ];
-// The 0.29 preset keeps every published 0.28 rule and adds the Ref constructor
-// rename, so `core-api-0.28-v1` keeps its published meaning.
-const CORE_API_029_V1_RULES: [&str; 14] = [
+// The 0.29 preset keeps every 0.28 rule this CLI still ships and adds the Ref
+// constructor rename, so `core-api-0.28-v1` keeps its published meaning.
+const CORE_API_029_V1_RULES: [&str; 8] = [
   CORE_NON_NIL_PREDICATE_RULE,
   CORE_INTEGER_PREDICATE_RULE,
   CORE_IDENTITY_CONVERSION_RULE,
   CORE_PREDICATE_METHOD_RULE,
   CORE_LIST_ADD_RULE,
-  CORE_SET_INCLUDE_RULE,
   CORE_COLLECTION_LEN_RULE,
-  CORE_LIST_FOLD_RULE,
-  CORE_LIST_FLAT_MAP_RULE,
-  CORE_LIST_JOIN_STRING_RULE,
-  CORE_LIST_GET_RULE,
-  CORE_COLLECTION_COMBINE_RULE,
   CORE_EFFECT_METHOD_RULE,
   CORE_REF_CONSTRUCTOR_RULE,
+];
+// Method-alias rules whose old methods were removed in 0.29.0; only 0.28.x CLIs ship them.
+const RETIRED_CORE_API_028_RULES: [&str; 8] = [
+  "core-list-intersperse-v1",
+  "core-map-distinct-values-v1",
+  "core-set-include-v1",
+  "core-list-fold-v1",
+  "core-list-flat-map-v1",
+  "core-list-join-string-v1",
+  "core-list-get-v1",
+  "core-collection-combine-v1",
 ];
 const TAG_MATCH_RULE: &str = "tag-match-to-match-v1";
 const REQUIRED_STRUCT_FIELD_RULE: &str = "required-struct-field-v1";
@@ -697,56 +684,6 @@ pub(crate) fn handle_fix_command(
       &selected_definitions,
     )?);
   }
-  if selected_rules.contains(&CORE_LIST_FOLD_RULE) {
-    suggestions.extend(plan_core_method_alias_fixes(
-      &source_snapshot,
-      snapshot_file,
-      &selected_definitions,
-      LIST_FOLD_ALIAS,
-    )?);
-  }
-  if selected_rules.contains(&CORE_LIST_FLAT_MAP_RULE) {
-    suggestions.extend(plan_core_method_alias_fixes(
-      &source_snapshot,
-      snapshot_file,
-      &selected_definitions,
-      LIST_FLAT_MAP_ALIAS,
-    )?);
-  }
-  if selected_rules.contains(&CORE_LIST_JOIN_STRING_RULE) {
-    suggestions.extend(plan_core_method_alias_fixes(
-      &source_snapshot,
-      snapshot_file,
-      &selected_definitions,
-      LIST_JOIN_STRING_ALIAS,
-    )?);
-  }
-  if selected_rules.contains(&CORE_LIST_GET_RULE) {
-    suggestions.extend(plan_core_method_alias_fixes(
-      &source_snapshot,
-      snapshot_file,
-      &selected_definitions,
-      LIST_GET_ALIAS,
-    )?);
-  }
-  if selected_rules.contains(&CORE_SET_INCLUDE_RULE) {
-    suggestions.extend(plan_core_method_alias_fixes(
-      &source_snapshot,
-      snapshot_file,
-      &selected_definitions,
-      SET_INCLUDE_ALIAS,
-    )?);
-  }
-  if selected_rules.contains(&CORE_COLLECTION_COMBINE_RULE) {
-    for rule in [MAP_MERGE_ALIAS, SET_UNION_ALIAS] {
-      suggestions.extend(plan_core_method_alias_fixes(
-        &source_snapshot,
-        snapshot_file,
-        &selected_definitions,
-        rule,
-      )?);
-    }
-  }
   if selected_rules.contains(&CORE_PREDICATE_METHOD_RULE) {
     let mut predicate_suggestions = Vec::new();
     for rule in [MAP_CONTAINS_KEY_ALIAS, MAP_CONTAINS_VALUE_ALIAS, SET_INCLUDES_ALIAS] {
@@ -1231,6 +1168,13 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     ));
   }
   if let Some(rule) = options.rule.as_deref()
+    && RETIRED_CORE_API_028_RULES.contains(&rule)
+  {
+    return Err(format!(
+      "Fix rule `{rule}` was retired in 0.29.0 together with the core method aliases it migrated. Run it with a 0.28.x Calcit CLI before upgrading; in this CLI, strict checks report `E_RETIRED_METHOD` with the preferred method for any remaining call."
+    ));
+  }
+  if let Some(rule) = options.rule.as_deref()
     && !matches!(
       rule,
       REMOVED_DATA_API_RULE
@@ -1247,13 +1191,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CORE_IDENTITY_CONVERSION_RULE
         | CORE_PREDICATE_METHOD_RULE
         | CORE_LIST_ADD_RULE
-        | CORE_SET_INCLUDE_RULE
         | CORE_COLLECTION_LEN_RULE
-        | CORE_LIST_FOLD_RULE
-        | CORE_LIST_FLAT_MAP_RULE
-        | CORE_LIST_JOIN_STRING_RULE
-        | CORE_LIST_GET_RULE
-        | CORE_COLLECTION_COMBINE_RULE
         | CORE_EFFECT_METHOD_RULE
         | CORE_REF_CONSTRUCTOR_RULE
         | RENAME_DEFINITION_RULE
@@ -1272,7 +1210,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
   {
     return Err(
       format!(
-        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_LIST_FLAT_MAP_RULE}`, `{CORE_LIST_JOIN_STRING_RULE}`, `{CORE_LIST_GET_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_SET_INCLUDE_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_LIST_FOLD_RULE}`, `{CORE_COLLECTION_COMBINE_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_PREDICATE_METHOD_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
       ) + &format!(
         " Review-only compiler rules: `{UNSAFE_COERCE_BOUNDARY_RULE}`, `{ASSERT_TYPE_PROOF_RULE}`, `{CONCRETE_RETURN_PROOF_RULE}`, `{CALLABLE_CONTRACT_PROOF_RULE}`, `{NOMINAL_WRITE_PROOF_RULE}`."
       ),
@@ -1324,13 +1262,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_IDENTITY_CONVERSION_RULE
         | CORE_PREDICATE_METHOD_RULE
         | CORE_LIST_ADD_RULE
-        | CORE_SET_INCLUDE_RULE
         | CORE_COLLECTION_LEN_RULE
-        | CORE_LIST_FOLD_RULE
-        | CORE_LIST_FLAT_MAP_RULE
-        | CORE_LIST_JOIN_STRING_RULE
-        | CORE_LIST_GET_RULE
-        | CORE_COLLECTION_COMBINE_RULE
         | CORE_EFFECT_METHOD_RULE
         | CORE_REF_CONSTRUCTOR_RULE
     ) {
@@ -1353,13 +1285,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_IDENTITY_CONVERSION_RULE => CORE_IDENTITY_CONVERSION_RULE,
         CORE_PREDICATE_METHOD_RULE => CORE_PREDICATE_METHOD_RULE,
         CORE_LIST_ADD_RULE => CORE_LIST_ADD_RULE,
-        CORE_SET_INCLUDE_RULE => CORE_SET_INCLUDE_RULE,
         CORE_COLLECTION_LEN_RULE => CORE_COLLECTION_LEN_RULE,
-        CORE_LIST_FOLD_RULE => CORE_LIST_FOLD_RULE,
-        CORE_LIST_FLAT_MAP_RULE => CORE_LIST_FLAT_MAP_RULE,
-        CORE_LIST_JOIN_STRING_RULE => CORE_LIST_JOIN_STRING_RULE,
-        CORE_LIST_GET_RULE => CORE_LIST_GET_RULE,
-        CORE_COLLECTION_COMBINE_RULE => CORE_COLLECTION_COMBINE_RULE,
         CORE_EFFECT_METHOD_RULE => CORE_EFFECT_METHOD_RULE,
         CORE_REF_CONSTRUCTOR_RULE => CORE_REF_CONSTRUCTOR_RULE,
         _ => OPTIONAL_PARAMETERS_RULE,
@@ -1505,52 +1431,10 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
-    CORE_SET_INCLUDE_RULE => FixRuleMetadata {
-      rule_id,
-      diagnostic_code: CORE_SET_INCLUDE_DIAGNOSTIC,
-      evidence_source: "proven-set-receiver-and-identical-method-implementation",
-      lifecycle: "semantic-refactor",
-      source_version_required: false,
-    },
     CORE_COLLECTION_LEN_RULE => FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_COLLECTION_LEN_DIAGNOSTIC,
       evidence_source: "proven-builtin-receiver-and-method-implementation",
-      lifecycle: "semantic-refactor",
-      source_version_required: false,
-    },
-    CORE_LIST_FOLD_RULE => FixRuleMetadata {
-      rule_id,
-      diagnostic_code: CORE_LIST_FOLD_DIAGNOSTIC,
-      evidence_source: "proven-list-receiver-and-method-implementation",
-      lifecycle: "semantic-refactor",
-      source_version_required: false,
-    },
-    CORE_LIST_FLAT_MAP_RULE => FixRuleMetadata {
-      rule_id,
-      diagnostic_code: CORE_LIST_FLAT_MAP_DIAGNOSTIC,
-      evidence_source: "proven-list-receiver-and-method-implementation",
-      lifecycle: "semantic-refactor",
-      source_version_required: false,
-    },
-    CORE_LIST_JOIN_STRING_RULE => FixRuleMetadata {
-      rule_id,
-      diagnostic_code: CORE_LIST_JOIN_STRING_DIAGNOSTIC,
-      evidence_source: "proven-list-receiver-and-method-implementation",
-      lifecycle: "semantic-refactor",
-      source_version_required: false,
-    },
-    CORE_LIST_GET_RULE => FixRuleMetadata {
-      rule_id,
-      diagnostic_code: CORE_LIST_GET_DIAGNOSTIC,
-      evidence_source: "proven-list-receiver-and-method-implementation",
-      lifecycle: "semantic-refactor",
-      source_version_required: false,
-    },
-    CORE_COLLECTION_COMBINE_RULE => FixRuleMetadata {
-      rule_id,
-      diagnostic_code: CORE_COLLECTION_COMBINE_DIAGNOSTIC,
-      evidence_source: "proven-map-or-set-receiver-and-method-implementation",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -5187,7 +5071,6 @@ fn plan_core_list_add_source(
 
 #[derive(Clone, Copy)]
 enum MethodReceiverKind {
-  List,
   Map,
   Set,
   CoreStruct {
@@ -5199,7 +5082,6 @@ enum MethodReceiverKind {
 impl MethodReceiverKind {
   fn matches(self, annotation: &CalcitTypeAnnotation) -> bool {
     match self {
-      Self::List => matches!(annotation, CalcitTypeAnnotation::List(_)),
       Self::Map => matches!(annotation, CalcitTypeAnnotation::Map(_, _)),
       Self::Set => matches!(annotation, CalcitTypeAnnotation::Set(_)),
       Self::CoreStruct { definition, .. } => annotation.resolve_to_struct().is_some_and(|base| {
@@ -5211,7 +5093,6 @@ impl MethodReceiverKind {
 
   fn name(self) -> &'static str {
     match self {
-      Self::List => "List",
       Self::Map => "Map",
       Self::Set => "Set",
       Self::CoreStruct { definition, .. } => definition,
@@ -5268,90 +5149,6 @@ const SET_INCLUDES_ALIAS: MethodAliasRule = MethodAliasRule {
   message: "Use `.includes?` for Set element membership; both methods have the same implementation.",
 };
 
-const SET_INCLUDE_ALIAS: MethodAliasRule = MethodAliasRule {
-  rule_id: CORE_SET_INCLUDE_RULE,
-  diagnostic_code: CORE_SET_INCLUDE_DIAGNOSTIC,
-  receiver: MethodReceiverKind::Set,
-  old_method: ".add",
-  new_method: ".include",
-  implementation: "calcit.core/include",
-  call_size: 3,
-  variadic: true,
-  message: "Use `.include` for persistent Set member addition; both methods resolve to the same core implementation.",
-};
-
-const LIST_FOLD_ALIAS: MethodAliasRule = MethodAliasRule {
-  rule_id: CORE_LIST_FOLD_RULE,
-  diagnostic_code: CORE_LIST_FOLD_DIAGNOSTIC,
-  receiver: MethodReceiverKind::List,
-  old_method: ".reduce",
-  new_method: ".fold",
-  implementation: "calcit.core/fold",
-  call_size: 4,
-  variadic: false,
-  message: "Use `.fold` for seeded left-to-right List accumulation; both methods resolve to the same core implementation.",
-};
-
-const LIST_FLAT_MAP_ALIAS: MethodAliasRule = MethodAliasRule {
-  rule_id: CORE_LIST_FLAT_MAP_RULE,
-  diagnostic_code: CORE_LIST_FLAT_MAP_DIAGNOSTIC,
-  receiver: MethodReceiverKind::List,
-  old_method: ".bind",
-  new_method: ".flat-map",
-  implementation: "calcit.core/mapcat",
-  call_size: 3,
-  variadic: false,
-  message: "Use `.flat-map` for List element-to-List mapping; both methods resolve to the same core implementation.",
-};
-
-const LIST_JOIN_STRING_ALIAS: MethodAliasRule = MethodAliasRule {
-  rule_id: CORE_LIST_JOIN_STRING_RULE,
-  diagnostic_code: CORE_LIST_JOIN_STRING_DIAGNOSTIC,
-  receiver: MethodReceiverKind::List,
-  old_method: ".join-str",
-  new_method: ".join-string",
-  implementation: "calcit.core/join-str",
-  call_size: 3,
-  variadic: false,
-  message: "Use .join-string for List rendering; both methods resolve to the same core implementation.",
-};
-
-const LIST_GET_ALIAS: MethodAliasRule = MethodAliasRule {
-  rule_id: CORE_LIST_GET_RULE,
-  diagnostic_code: CORE_LIST_GET_DIAGNOSTIC,
-  receiver: MethodReceiverKind::List,
-  old_method: ".nth",
-  new_method: ".get",
-  implementation: "calcit.core/get",
-  call_size: 3,
-  variadic: false,
-  message: "Use .get for List positional lookup; both methods resolve to the same core implementation and return Option<T>.",
-};
-
-const MAP_MERGE_ALIAS: MethodAliasRule = MethodAliasRule {
-  rule_id: CORE_COLLECTION_COMBINE_RULE,
-  diagnostic_code: CORE_COLLECTION_COMBINE_DIAGNOSTIC,
-  receiver: MethodReceiverKind::Map,
-  old_method: ".mappend",
-  new_method: ".merge",
-  implementation: "calcit.core/merge",
-  call_size: 3,
-  variadic: true,
-  message: "Use `.merge` for Map combination; both methods resolve to the same core implementation and later keys overwrite earlier keys.",
-};
-
-const SET_UNION_ALIAS: MethodAliasRule = MethodAliasRule {
-  rule_id: CORE_COLLECTION_COMBINE_RULE,
-  diagnostic_code: CORE_COLLECTION_COMBINE_DIAGNOSTIC,
-  receiver: MethodReceiverKind::Set,
-  old_method: ".mappend",
-  new_method: ".union",
-  implementation: "calcit.core/union",
-  call_size: 3,
-  variadic: true,
-  message: "Use `.union` for Set combination; both methods resolve to the same core implementation and deduplicate values.",
-};
-
 const CORE_EFFECT_METHOD_ALIASES: &[MethodAliasRule] = &[
   MethodAliasRule {
     rule_id: CORE_EFFECT_METHOD_RULE,
@@ -5384,18 +5181,7 @@ const CORE_EFFECT_METHOD_ALIASES: &[MethodAliasRule] = &[
 ];
 
 /// Query and fix share these proven alias contracts; this is not a second API registry.
-const QUERYABLE_METHOD_ALIASES: &[MethodAliasRule] = &[
-  MAP_CONTAINS_KEY_ALIAS,
-  MAP_CONTAINS_VALUE_ALIAS,
-  SET_INCLUDES_ALIAS,
-  SET_INCLUDE_ALIAS,
-  LIST_FOLD_ALIAS,
-  LIST_FLAT_MAP_ALIAS,
-  LIST_JOIN_STRING_ALIAS,
-  LIST_GET_ALIAS,
-  MAP_MERGE_ALIAS,
-  SET_UNION_ALIAS,
-];
+const QUERYABLE_METHOD_ALIASES: &[MethodAliasRule] = &[MAP_CONTAINS_KEY_ALIAS, MAP_CONTAINS_VALUE_ALIAS, SET_INCLUDES_ALIAS];
 
 pub(super) struct ProvenMethodAlias {
   pub old_method: &'static str,
@@ -5675,13 +5461,6 @@ fn plan_core_method_alias_source(
     let resolved = inferred
       .as_ref()
       .map(|annotation| runner::preprocess::resolve_namespace_type_refs_for_body(annotation.clone(), namespace));
-    if rule.rule_id == CORE_COLLECTION_COMBINE_RULE
-      && !resolved
-        .as_ref()
-        .is_some_and(|annotation| rule.receiver.matches(annotation.as_ref()))
-    {
-      continue;
-    }
     if resolved.as_ref().is_some_and(|annotation| {
       !rule.receiver.matches(annotation.as_ref())
         && !matches!(
@@ -5706,14 +5485,11 @@ fn plan_core_method_alias_source(
       None => rule.new_method.to_owned(),
     };
     let replacement_node = Cirru::leaf(replacement_leaf.as_str());
-    let mut method_evidence = serde_json::json!({
+    let method_evidence = serde_json::json!({
       "kind": "receiver-method-query",
       "receiver_type": inferred.as_ref().map(|annotation| annotation.describe()),
       "same_core_implementation": proven_same_impl,
     });
-    if rule.rule_id == CORE_LIST_FOLD_RULE {
-      method_evidence["same_core_fold_implementation"] = serde_json::json!(proven_same_impl);
-    }
     suggestions.push(FixSuggestion {
       rule_id: rule.rule_id,
       diagnostic_code: rule.diagnostic_code,

@@ -288,11 +288,6 @@
             ; The receiver type selects this method before the Add trait.
             assert= ([] 1 2)
               .add ([] 1) 2
-            ; Legacy Map .add takes one pair, not the Add trait contract.
-            assert=
-              {} (:a 1) (:b 2)
-              ({} (:a 1))
-                , .add $ [] :b 2
             assert= 3 $ add-with-trait 1 2
             assert= |ab $ add-with-trait |a |b
             let
