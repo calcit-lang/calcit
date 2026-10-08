@@ -177,6 +177,13 @@ fn compatible_if_join(
 ) -> Option<Arc<CalcitTypeAnnotation>> {
   let true_accepts_false = true_type.as_ref().is_compatible_with(false_type.as_ref());
   let false_accepts_true = false_type.as_ref().is_compatible_with(true_type.as_ref());
+  // A generic parameter joined with a different type has no single branch
+  // type: picking the concrete side would fold later predicates such as
+  // `enum?` (#1779), and picking the parameter would accept a concrete value
+  // where the parameter is required. Leave the join unresolved.
+  if matches!(true_type.as_ref(), CalcitTypeAnnotation::TypeVar(_)) != matches!(false_type.as_ref(), CalcitTypeAnnotation::TypeVar(_)) {
+    return None;
+  }
   let true_weight = super::annotation_dynamic_weight(true_type.as_ref());
   let false_weight = super::annotation_dynamic_weight(false_type.as_ref());
 
