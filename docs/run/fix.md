@@ -173,7 +173,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
 - `core-predicate-method-v1` 按已证明的接收者类型迁移谓词方法：Map `.contains?` → `.contains-key?`、`.includes?` → `.contains-value?`，Set `.contains?` → `.includes?`。每一项都须证明旧、新方法解析到同一个 core 实现，参数与返回类型相同，且源码可稳定定位；不会把索引、键、值和成员混成一个命题。自定义同名方法不改，开放接收者不会自动改写，未知 macro 只给 `requires-review`，quoted data 跳过。先运行 `calcit calcit.cirru fix --rule core-predicate-method-v1 --format edn` 预览，再核对来源和 revision、带 `--expect-revision` 应用，最后重复预览并运行项目测试。不改写 Struct/Enum、trait-bound 或具名 trait-call；本规则可单独选择，也包含在 `core-api-0.28-v1`；旧 surface preset 不变。
 - 0.29.0 起，`core-set-include-v1`、`core-list-fold-v1`、`core-list-flat-map-v1`、`core-list-join-string-v1`、
   `core-list-get-v1`、`core-collection-combine-v1` 随 List `.reduce` / `.bind` / `.join-str` / `.nth`、
-  Map/Set `.mappend`、Map/Set `.add` 一起退役。这些规则只在 0.28.x 的 CLI 中提供，需在升级 CLI
+  Map/Set `.mappend` 与 Set `.add` 一起退役；Map `.add` 没有迁移规则，需人工改写为 `.assoc key value`。这些规则只在 0.28.x 的 CLI 中提供，需在升级 CLI
   前运行；当前 CLI 用 `--rule` 选择它们时会报错并给出该提示，残留调用由严格检查的 `E_RETIRED_METHOD` 定位。删除项与迁移命令见
   [升级指南](upgrade.md#兼容入口的退场节奏)。
 - `core-function-alias-v1` 把编译器已解析到 core 兼容函数的源码引用改为首选名：`optionally` → `nil->option`、`join-str` → `join-string`、`join` → `intersperse`、`vals` → `distinct-values`。每对新名都由旧名转发全部参数，因此只改名字，参数求值次数与结果不变；局部同名 binding、quoted data 与未知 macro 不自动改写，跨 macro 的引用只给 `requires-review`；作为一等值（非调用头）使用的引用也只给 `requires-review`，因为新名是独立函数，函数身份不同。这是独立的显式规则，**不**包含在已发布的 `core-api-0.28-v1`；用 `calcit calcit.cirru fix --rule core-function-alias-v1 --format edn` 预览，核对 revision 后带 `--expect-revision` 应用并重复预览。注意 `join` 实际返回插入分隔符的 List 而不是字符串，改名不改变这一行为；需要字符串时应改用 `join-string`，该判断需人工完成。

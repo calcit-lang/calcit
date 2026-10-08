@@ -8015,6 +8015,7 @@ fn retired_core_method_alias_rules_point_to_the_0_28_cli() {
 
   for rule in [
     "core-list-intersperse-v1",
+    "core-map-distinct-values-v1",
     "core-set-include-v1",
     "core-list-fold-v1",
     "core-list-flat-map-v1",
