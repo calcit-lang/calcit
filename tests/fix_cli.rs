@@ -444,6 +444,71 @@ fn deprecation_report_shares_core_metadata_and_excludes_local_and_quoted_calls()
 }
 
 #[test]
+fn deprecation_paths_address_snapshot_source_with_comments() {
+  // The reader drops comments, so reported paths must be mapped back to the Snapshot AST.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/legacy",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn legacy ()\n  ; leading note\n  some? 1\n  let ((x 1))\n    ; nested note\n    some? x\n    , x\n  cpu-time\n  quote $ some? 1",
+      ],
+    ),
+    "create commented legacy calls",
+  );
+  let output = run_calcit(&snapshot, &["analyze", "deprecated", "--ns", "app.main", "--format", "json"]);
+  assert_success(&output, "report deprecated calls");
+  let report = parse_stdout(&output);
+  let legacy = report["data"]["definitions"]
+    .as_array()
+    .unwrap()
+    .iter()
+    .find(|row| row["name"] == "legacy")
+    .unwrap_or_else(|| panic!("{report}"));
+  let mut found = legacy["uses"]
+    .as_array()
+    .unwrap()
+    .iter()
+    .map(|usage| {
+      (
+        usage["path"].as_str().unwrap().to_owned(),
+        usage["target"].as_str().unwrap().to_owned(),
+      )
+    })
+    .collect::<Vec<_>>();
+  found.sort();
+  assert_eq!(
+    found,
+    vec![
+      ("code@4".to_owned(), "calcit.core/some?".to_owned()),
+      ("code@5.3".to_owned(), "calcit.core/some?".to_owned()),
+      ("code@6".to_owned(), "calcit.core/cpu-time".to_owned()),
+    ],
+    "{report}"
+  );
+
+  let query = run_calcit(&snapshot, &["query", "def", "app.main/legacy", "--format", "json"]);
+  assert_success(&query, "query legacy source");
+  let code = parse_stdout(&query)["data"]["code"].clone();
+  for (path, target) in found {
+    let mut node = &code;
+    for index in path.trim_start_matches("code@").split('.') {
+      node = &node[index.parse::<usize>().unwrap()];
+    }
+    let name = target.rsplit('/').next().unwrap();
+    assert_eq!(node[0], name, "{path} should address the {target} call in {code}");
+  }
+}
+
+#[test]
 fn attached_surface_presets_compose_diagnostics_and_nested_constructors() {
   // Rust verifies the guarded transaction; the unchanged Calcit assertion verifies the migrated program.
   for selector in ["removed-data-api-v1", "surface-latest-v1", "surface-latest-v2"] {
