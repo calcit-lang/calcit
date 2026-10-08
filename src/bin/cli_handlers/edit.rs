@@ -3941,6 +3941,10 @@ mod tests {
     let fixture = TestSnapshot::from_fixture();
     let source = r#"#! /usr/bin/env calcit
 {} (:package |demo) (:version |0.0.1)
+  :entries $ {}
+    :default $ {} (:description |) (:init-fn 'app.main/target) (:mode :native) (:reload-fn 'app.main/target)
+      :modules $ []
+      :type-slots $ {}
   :files $ {}
     |app.main $ %{} :FileEntry
       :defs $ {}
