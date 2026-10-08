@@ -54,6 +54,8 @@ try {
     ["edit", "def", "app.short-circuit/pretend", "--input-format", "cirru", "--code", "quote $ defn pretend (k) true"],
     ["edit", "schema", "app.short-circuit/pretend", "--input-format", "cirru", "--code",
       "quote $ :: 'Fn $ {} (:args ([] 'Dynamic)) (:return 'Bool)"],
+    ["edit", "def", "app.short-circuit/lazy-flag", "--input-format", "cirru", "--code", "quote $ def lazy-flag $ pretend nil"],
+    ["edit", "schema", "app.short-circuit/lazy-flag", "--input-format", "cirru", "--code", "quote 'Bool"],
   ]);
   for (const [name, condition, otherwise = false, jsFfi = false] of [
     ["one-or-arm", ["or", ["number?", "k"], "true"]],
@@ -63,6 +65,7 @@ try {
     ["shadowed-alias", ["let", [["valid", ["number?", "k"]]], ["let", [["k", "1"]], "valid"]]],
     ["bool-is-not-proof", ["and", ["pretend", "k"], "true"]],
     ["unknown-call-after-proof", ["and", ["number?", "k"], ["pretend", "k"]]],
+    ["lazy-initializer-after-proof", ["and", ["number?", "k"], "lazy-flag"]],
     ["stale-alias-after-call", ["let", [["valid", ["number?", "k"]]], ["pretend", "k"], "valid"]],
     ["rebound-after-proof", ["and", ["number?", "k"], ["&let", ["ignored", ["set!", "k", "|changed"]], "true"]], false, true],
     ["rebound-proof-alias", ["let", [["valid", ["number?", "k"]]], ["set!", "k", "|changed"], "valid"], false, true],

@@ -93,7 +93,12 @@ fn visit(expr: &Calcit, scope: &ScopeTypes, aliases: &HashMap<Arc<str>, Outcomes
   }
 
   let Calcit::List(items) = expr else {
-    return Outcomes::unknown(true);
+    // Reading a global may force an initializer. Raw host expressions and
+    // unresolved names also carry no proof that caller locals stay unchanged.
+    return Outcomes::unknown(!matches!(
+      expr,
+      Calcit::Import(_) | Calcit::Symbol { .. } | Calcit::Thunk(_) | Calcit::RawCode(_, _)
+    ));
   };
   match items.first() {
     Some(Calcit::Syntax(CalcitSyntax::If, _)) if matches!(items.len(), 3 | 4) => {
