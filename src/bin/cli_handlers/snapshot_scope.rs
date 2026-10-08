@@ -147,7 +147,11 @@ pub(crate) fn merge_snapshots(base: &Snapshot, ours: &Snapshot, theirs: &Snapsho
     match pick(base_units.get(&unit), our_units.get(&unit), their_units.get(&unit)) {
       Pick::Ours => {}
       Pick::Conflict => conflicts.push(unit),
-      Pick::Theirs => take_theirs(&mut merged, theirs, &unit)?,
+      Pick::Theirs => {
+        if !take_theirs(&mut merged, theirs, &unit)? {
+          conflicts.push(unit);
+        }
+      }
     }
   }
   // Units sort `def:` before `ns:`, so a namespace removed by them is dropped
@@ -155,7 +159,8 @@ pub(crate) fn merge_snapshots(base: &Snapshot, ours: &Snapshot, theirs: &Snapsho
   Ok(SnapshotMerge { merged, conflicts })
 }
 
-fn take_theirs(merged: &mut Snapshot, theirs: &Snapshot, unit: &str) -> Result<(), String> {
+/// Apply their unit, returning false when surviving definitions prevent namespace deletion.
+fn take_theirs(merged: &mut Snapshot, theirs: &Snapshot, unit: &str) -> Result<bool, String> {
   if unit == "project" {
     merged.package = theirs.package.clone();
     merged.about = theirs.about.clone();
@@ -183,9 +188,10 @@ fn take_theirs(merged: &mut Snapshot, theirs: &Snapshot, unit: &str) -> Result<(
           .ns = file.ns.clone();
       }
       None => {
-        if merged.files.get(namespace).is_some_and(|file| file.defs.is_empty()) {
-          merged.files.remove(namespace);
+        if merged.files.get(namespace).is_some_and(|file| !file.defs.is_empty()) {
+          return Ok(false);
         }
+        merged.files.remove(namespace);
       }
     }
   } else if let Some(path) = unit.strip_prefix("def:") {
@@ -212,5 +218,5 @@ fn take_theirs(merged: &mut Snapshot, theirs: &Snapshot, unit: &str) -> Result<(
   } else {
     return Err(format!("Unknown Snapshot unit `{unit}`"));
   }
-  Ok(())
+  Ok(true)
 }

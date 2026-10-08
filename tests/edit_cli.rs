@@ -1692,3 +1692,76 @@ fn merge_driver_merges_definitions_and_reports_same_definition_conflicts() {
   let code = query_definition(&snapshot, "app.main/added-a")["data"]["code"].clone();
   assert_eq!(code[3], "10", "the conflicted file keeps our version");
 }
+
+/// A namespace deletion conflicts with surviving definitions, but an unchanged namespace can be removed.
+#[test]
+fn merge_driver_reports_namespace_deletion_conflicts() {
+  for change in ["added", "changed", "unchanged"] {
+    let directory = TestDirectory::create();
+    let snapshot = prepare_minimal_snapshot(&directory);
+    assert_success(&run_calcit(&snapshot, &["edit", "add-ns", "app.extra"]), "add namespace");
+    let define = |target: &str, code: &str| {
+      assert_success(
+        &run_calcit(
+          &snapshot,
+          &["edit", "def", target, "--overwrite", "--input-format", "cirru", "--code", code],
+        ),
+        "edit definition",
+      );
+    };
+    define("app.extra/original", "quote $ defn original () 1");
+    let root = &directory.0;
+    assert!(git(root, &["init", "-q", "-b", "main"]).status.success());
+    fs::write(root.join(".gitattributes"), "calcit.cirru merge=calcit\n").unwrap();
+    let driver = format!(
+      "{} --tips-level none %A edit merge --base %O --theirs %B",
+      env!("CARGO_BIN_EXE_calcit")
+    );
+    assert!(git(root, &["config", "merge.calcit.driver", &driver]).status.success());
+    assert!(git(root, &["add", "calcit.cirru", ".gitattributes"]).status.success());
+    assert!(git(root, &["commit", "-qm", "base"]).status.success());
+    assert!(git(root, &["switch", "-qc", "delete-namespace"]).status.success());
+    assert_success(&run_calcit(&snapshot, &["edit", "rm-ns", "app.extra"]), "delete namespace");
+    assert!(git(root, &["commit", "-qam", "remove namespace"]).status.success());
+    assert!(git(root, &["switch", "-q", "main"]).status.success());
+    // Make both branches diverge even when this namespace is unchanged.
+    define("app.main/independent", "quote $ defn independent () 3");
+    match change {
+      "added" => define("app.extra/added", "quote $ defn added () 2"),
+      "changed" => define("app.extra/original", "quote $ defn original () 2"),
+      _ => {}
+    }
+    assert!(git(root, &["commit", "-qam", "ours"]).status.success());
+    let merged = git(root, &["merge", "--no-edit", "delete-namespace"]);
+    let report = format!(
+      "{}{}",
+      String::from_utf8_lossy(&merged.stdout),
+      String::from_utf8_lossy(&merged.stderr)
+    );
+    query_definition(&snapshot, "app.main/independent");
+    if change == "unchanged" {
+      assert!(merged.status.success(), "unchanged namespace must be removable: {report}");
+      assert!(!run_calcit(&snapshot, &["query", "ns", "app.extra"]).status.success());
+    } else {
+      assert!(
+        !merged.status.success(),
+        "namespace deletion must conflict with {change} definitions: {report}"
+      );
+      assert!(report.contains("ns:app.extra"), "namespace conflict must be reported: {report}");
+      let target = if change == "added" {
+        "app.extra/added"
+      } else {
+        "app.extra/original"
+      };
+      assert_eq!(query_definition(&snapshot, target)["data"]["code"][3], "2");
+      if change == "changed" {
+        assert!(
+          report.contains("def:app.extra/original"),
+          "definition conflict must remain visible: {report}"
+        );
+      }
+      let unmerged = git(root, &["diff", "--name-only", "--diff-filter=U"]);
+      assert_eq!(String::from_utf8_lossy(&unmerged.stdout).trim(), "calcit.cirru");
+    }
+  }
+}

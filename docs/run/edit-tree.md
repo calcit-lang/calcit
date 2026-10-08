@@ -299,6 +299,8 @@ echo 'calcit.cirru merge=calcit' >> .gitattributes
 git config merge.calcit.driver 'calcit %A edit merge --base %O --theirs %B'
 ```
 
+对方删除命名空间、我方新增或修改其中定义时，会保留冲突定义并报告 `ns:<namespace>` 冲突；命名空间未被我方修改时可以正常删除。
+
 合并完成后运行 `calcit --check-only` 与项目测试，再提交合并结果。
 
 JSON argument lists remain accepted as a compatibility format for callers that already construct JSON, but JSON is not the recommended authoring format when operations contain Calcit code:
