@@ -131,9 +131,10 @@ for behavior that actually crosses definitions or backends.
 
 ### 仓库 CI 与快速本地回归
 
-CI 的 Core/CLI 与文档检查使用同一套 `ci` 构建配置：开启优化，同时保留
-debug assertions 与整数溢出检查。脚本通过 `CALCIT_BIN` 选择当前 checkout
-构建的 CLI；未指定时保留各脚本原有的本地构建查找方式。
+CI 的 Core/CLI 与文档检查共用一次 `ci` 配置构建的 CLI：开启优化，同时保留
+debug assertions 与整数溢出检查。同一 workflow 内按提交 SHA 命名的 artifact
+供两个任务下载使用，不跨提交寻找旧二进制。脚本通过 `CALCIT_BIN` 选择 CLI；
+未指定时保留各脚本原有的本地构建查找方式。
 
 ```bash
 cargo build --locked --profile ci --bin calcit

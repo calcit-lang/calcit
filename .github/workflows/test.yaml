@@ -15,6 +15,27 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  cli_build:
+    name: Build shared CI CLI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+      - uses: Swatinem/rust-cache@v2
+      - name: Build optimized CLI
+        # Both consumers retain debug assertions and overflow checks.
+        run: cargo build --locked --profile ci --bin calcit
+      - uses: actions/upload-artifact@v4.6.2
+        with:
+          name: calcit-cli-${{ github.sha }}
+          path: target/ci/calcit
+          if-no-files-found: error
+          retention-days: 1
+
   wasi_preprocess:
     name: WASI preprocess regression
     runs-on: ubuntu-latest
@@ -230,6 +251,7 @@ jobs:
 
   core_checks:
     name: Core and CLI checks
+    needs: cli_build
     runs-on: ubuntu-latest
     env:
       CALCIT_BIN: target/ci/calcit
@@ -249,15 +271,12 @@ jobs:
           corepack prepare yarn@4.12.0 --activate
           yarn --version
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v4.3.0
         with:
-          toolchain: 1.98.1
-
-      - uses: Swatinem/rust-cache@v2
-
-      - name: "build optimized CLI"
-        # Keep debug assertions and overflow checks, and reuse one profile throughout this job.
-        run: cargo build --locked --profile ci --bin calcit
+          name: calcit-cli-${{ github.sha }}
+          path: target/ci
+      - name: Prepare shared CLI
+        run: chmod +x "$CALCIT_BIN"
 
       - name: "run definition-attached trait host test"
         run: |
@@ -321,6 +340,7 @@ jobs:
 
   docs_checks:
     name: Docs checks
+    needs: cli_build
     runs-on: ubuntu-latest
     env:
       CALCIT_BIN: target/ci/calcit
@@ -330,14 +350,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/download-artifact@v4.3.0
         with:
-          toolchain: 1.98.1
-
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Build optimized calcit binary
-        run: cargo build --locked --profile ci --bin calcit
+          name: calcit-cli-${{ github.sha }}
+          path: target/ci
+      - name: Prepare shared CLI
+        run: chmod +x "$CALCIT_BIN"
 
       - name: "check docs markdown"
         run: bash scripts/check-docs-md.sh
@@ -403,6 +421,7 @@ jobs:
     name: Test
     if: ${{ always() }}
     needs:
+      - cli_build
       - wasi_preprocess
       - wasi03_command_smoke
       - wasi_business_smoke
@@ -415,6 +434,7 @@ jobs:
     steps:
       - name: Verify all shards succeeded
         run: |
+          echo "cli_build=${{ needs.cli_build.result }}"
           echo "wasi_preprocess=${{ needs.wasi_preprocess.result }}"
           echo "wasi03_command_smoke=${{ needs.wasi03_command_smoke.result }}"
           echo "rust_tests=${{ needs.rust_tests.result }}"
@@ -423,6 +443,7 @@ jobs:
           echo "core_checks=${{ needs.core_checks.result }}"
           echo "docs_checks=${{ needs.docs_checks.result }}"
           echo "clippy=${{ needs.clippy.result }}"
+          test "${{ needs.cli_build.result }}" = "success"
           test "${{ needs.wasi_preprocess.result }}" = "success"
           test "${{ needs.wasi03_command_smoke.result }}" = "success"
           test "${{ needs.rust_tests.result }}" = "success"
