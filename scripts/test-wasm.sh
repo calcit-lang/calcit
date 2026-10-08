@@ -28,8 +28,8 @@ run_codegen() {
 }
 
 # Step 1: run the user-visible Calcit semantic contract before backend checks.
-if [[ -x ./target/debug/calcit ]]; then
-  ./target/debug/calcit "$ENTRY" test --tag wasm --require-match
+if [[ -n "$BIN" ]]; then
+  "$BIN" "$ENTRY" test --tag wasm --require-match
 else
   bash scripts/cargo-with-sdk.sh run --bin calcit -- "$ENTRY" test --tag wasm --require-match
 fi

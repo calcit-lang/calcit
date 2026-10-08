@@ -9,6 +9,11 @@ name: Test
 permissions:
   contents: read
 
+# Superseded PR commits need no second full run; main commits stay independent.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   wasi_preprocess:
     name: WASI preprocess regression
@@ -182,8 +187,7 @@ jobs:
           fi
           grep -F 'WASM and WASI code generation are disabled' target/no-wasm-command.out
 
-  # Rust unit/integration tests are the longest leg, so they keep a dedicated
-  # job that runs unchanged alongside the CLI, docs, and lint jobs below.
+  # Keep Rust unit/integration tests separate from CLI, docs, and lint checks.
   rust_tests:
     name: Rust tests
     runs-on: ubuntu-latest
@@ -199,12 +203,27 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Prepare JS runtime for Rust CLI integration tests
+        run: |
+          corepack enable
+          corepack prepare yarn@4.12.0 --activate
+          yarn install --immutable
+          yarn compile
+          yarn procs-link
+
       # The integration tests start the CLI many times and each start preprocesses the whole
       # core library; the `ci` profile runs that several times faster than plain debug while
       # keeping debug assertions and overflow checks.
       - run: cargo test --profile ci
         env:
           RUST_MIN_STACK: "16777216"
+          # Execute generated namespace-import code here instead of building
+          # Rust integration-test dependencies again in the Core/CLI job.
+          CALCIT_JS_NAMESPACE_IMPORT_RUNTIME: "1"
 
       - name: "check wasm32 library dependency boundary"
         run: cargo check --lib --target wasm32-unknown-unknown
@@ -212,6 +231,8 @@ jobs:
   core_checks:
     name: Core and CLI checks
     runs-on: ubuntu-latest
+    env:
+      CALCIT_BIN: target/ci/calcit
     steps:
       - uses: actions/checkout@v4
         with:
@@ -234,13 +255,13 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: "run definition-attached core tests"
-        run: |
-          cargo run --bin calcit -- src/cirru/calcit-core.cirru test --tag unit --require-match
-          cargo run --bin calcit -- calcit/test-traits.cirru test test-traits.main/trait-listener-host --require-match
+      - name: "build optimized CLI"
+        # Keep debug assertions and overflow checks, and reuse one profile throughout this job.
+        run: cargo build --locked --profile ci --bin calcit
 
-      - name: "strictly check bundled core source definitions"
-        run: cargo run --bin calcit -- calcit/test-wasi-command.cirru analyze check-public --ns calcit.core --ns calcit.test --ns calcit.internal --deps --summary-only
+      - name: "run definition-attached trait host test"
+        run: |
+          "$CALCIT_BIN" calcit/test-traits.cirru test test-traits.main/trait-listener-host --require-match
 
       - name: "verify post-lowering invariants (CALCIT_LINT_CORE=1)"
         # The validator re-checks the final tree of every definition and reports
@@ -248,14 +269,13 @@ jobs:
         env:
           CALCIT_LINT_CORE: "1"
         run: |
-          cargo run --bin calcit -- src/cirru/calcit-core.cirru test --tag unit --require-match
-          cargo run --bin calcit -- calcit/test-wasi-command.cirru analyze check-public --ns calcit.core --ns calcit.test --ns calcit.internal --deps --summary-only
-          cargo run --bin calcit -- calcit/test.cirru
-          cargo run --bin calcit -- calcit/test-types-inference.cirru test --tag unit --require-match
-          cargo test --test post_lowering_cli
+          "$CALCIT_BIN" src/cirru/calcit-core.cirru test --tag unit --require-match
+          "$CALCIT_BIN" calcit/test-wasi-command.cirru analyze check-public --ns calcit.core --ns calcit.test --ns calcit.internal --deps --summary-only
+          "$CALCIT_BIN" calcit/test.cirru
+          "$CALCIT_BIN" calcit/test-types-inference.cirru test --tag unit --require-match
 
       - name: "verify bundled core Dynamic boundary documentation"
-        run: cargo build --bin calcit && node scripts/core-dynamic-classification.mjs --check
+        run: node scripts/core-dynamic-classification.mjs --check
 
       - name: "verify strict diagnostics default and compatibility escape hatch"
         # The compatibility regression executes generated JS before try-js.
@@ -270,35 +290,22 @@ jobs:
       - name: "verify release manifest generator"
         run: node --test scripts/release-manifest.test.mjs
 
-      - run: cargo run --bin calcit -- calcit/test.cirru
-
       - name: "verify Dynamic-valued atom inference in Calcit"
-        run: cargo run --bin calcit -- calcit/test-types-inference.cirru test 'test-types-inference.main/*dynamic-ref' --require-match
-
-      - name: "verify type inference semantics in Calcit"
-        run: cargo run --bin calcit -- calcit/test-types-inference.cirru test --tag unit --require-match
+        run: |
+          "$CALCIT_BIN" calcit/test-types-inference.cirru test 'test-types-inference.main/*dynamic-ref' --require-match
 
       - name: "verify WASM exports and FFI"
-        run: >
-          cargo build --bin calcit
-          && CALCIT_BIN="./target/debug/calcit" bash scripts/test-wasm.sh
+        run: bash scripts/test-wasm.sh
 
       - name: "try js"
         run: >
-          cargo run --bin calcit -- calcit/test.cirru js
+          "$CALCIT_BIN" calcit/test.cirru js
           && cp -v scripts/main.mjs js-out/
           && node js-out/main.mjs
           && node scripts/check-struct-field-js.mjs
           && bash scripts/test-js-command.sh
 
-      - name: "build optimized CLI for the backend contract scripts"
-        # Every script starts the CLI many times and each start preprocesses the whole
-        # core library, which is an order of magnitude slower in the debug build.
-        run: cargo build --profile ci --bin calcit
-
       - name: "verify shared Calcit backend contracts"
-        env:
-          CALCIT_BIN: target/ci/calcit
         run: |
           node --test scripts/core-api-contract.test.mjs scripts/core-test-protocol.test.mjs
           node scripts/core-api-contract.mjs
@@ -312,12 +319,11 @@ jobs:
           node scripts/check-known-assertion.mjs
           node scripts/check-typed-source-alias.mjs
 
-      - name: "run generated namespace-import regression in Node"
-        run: CALCIT_JS_NAMESPACE_IMPORT_RUNTIME=1 cargo test --test js_namespace_import_cli
-
   docs_checks:
     name: Docs checks
     runs-on: ubuntu-latest
+    env:
+      CALCIT_BIN: target/ci/calcit
     steps:
       - uses: actions/checkout@v4
         with:
@@ -330,8 +336,8 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Build calcit debug binary
-        run: cargo build --bin calcit
+      - name: Build optimized calcit binary
+        run: cargo build --locked --profile ci --bin calcit
 
       - name: "check docs markdown"
         run: bash scripts/check-docs-md.sh

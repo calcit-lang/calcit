@@ -12,8 +12,10 @@ set -eo pipefail
 
 ENTRY="${1:-calcit/test.cirru}"
 
-# Prefer a pre-built debug binary; fall back to cargo run (slower but always works).
-if [ -x "./target/debug/calcit" ]; then
+# Honor the selected CI binary; preserve the local fallback when none is supplied.
+if [[ -n "${CALCIT_BIN:-}" ]]; then
+  CR_CMD=("$CALCIT_BIN")
+elif [ -x "./target/debug/calcit" ]; then
   CR_CMD=("./target/debug/calcit")
 elif [ -x "./target/release/calcit" ]; then
   CR_CMD=("./target/release/calcit")

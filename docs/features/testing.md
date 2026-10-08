@@ -129,6 +129,37 @@ for behavior that actually crosses definitions or backends.
 
 ## Target Coverage
 
+### 仓库 CI 与快速本地回归
+
+CI 的 Core/CLI 与文档检查使用同一套 `ci` 构建配置：开启优化，同时保留
+debug assertions 与整数溢出检查。脚本通过 `CALCIT_BIN` 选择当前 checkout
+构建的 CLI；未指定时保留各脚本原有的本地构建查找方式。
+
+```bash
+cargo build --locked --profile ci --bin calcit
+yarn compile
+yarn procs-link
+export CALCIT_BIN="$PWD/target/ci/calcit"
+node scripts/run-core-tests.mjs
+node scripts/check-strict-default.mjs
+node scripts/check-known-assertion.mjs
+bash scripts/test-wasm.sh
+bash scripts/check-docs-md.sh
+```
+
+这些命令用于对应范围的回归，不代替完整 CI。普通 core 语义由统一运行器覆盖；
+`CALCIT_LINT_CORE=1` 的直接执行另行保留，用于检查改写后的树。
+`post_lowering_cli` 和 namespace-import 集成测试在 Rust 测试任务中运行，后者
+同时实际执行生成的 JS，不再在 Core/CLI 任务中重复编译和执行 Rust 测试。
+断言检查脚本保留 fixture 专属回放、非法类型程序的逐后端诊断以及失败时不产出
+代码的检查，不再复制统一运行器已覆盖的 core 定义回放。
+
+PR 推送新提交时，CI 取消同一 PR 旧提交上尚未完成的 Test workflow；main
+的每次提交仍独立验证。减少执行成本时，应先移除重复构建与重复回放，保留
+原始 `:tests`、零匹配失败检查和独立的后端边界验证。
+
+### 统一后端回放
+
 `calcit test` 在 native 上运行 definition `:tests`。仓库用一个统一运行器把同一批 `:tests` 在 native、生成的 JS 与 WASM 上各执行一次：
 
 ```bash
