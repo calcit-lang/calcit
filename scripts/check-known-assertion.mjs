@@ -2489,20 +2489,12 @@ try {
     assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
     assert.deepEqual(await readFile(snapshot), original);
   }
-  // Replay rest-prefix contracts through the shared runner so new attached
-  // tests honor the same backend exclusions as the full core suite.
-  execFileSync(process.execPath, [
-    "scripts/run-core-tests.mjs", "--backend", "native,js",
-    "--target", "calcit.core/str", "--target", "calcit.core/concat",
-  ], { ...options, stdio: "inherit" });
-
-  // Replay attached callable and collection contracts, including nominal schema
-  // parameters and typed rest, without replacing the original expressions.
-  for (const [source, namespace, definitions, expectedCount, outputName, replayNamespace = namespace] of [
-    ["src/cirru/calcit-core.cirru", "calcit.core", ["count", "&map:destruct", "&map:diff-triple", "apply", "loop"], 11, "count-core-js"],
+  // Core callable/collection/rest contracts already run in run-core-tests.mjs.
+  // Keep fixture-only nominal and typed-rest contracts here, without replacing
+  // their original expressions or duplicating the bundled core replay.
+  for (const [source, namespace, definitions, expectedCount, outputName] of [
     ["tests/fixtures/count-contract.cirru", "fix-command.main", ["typed-rest-forward", "nominal-counts", "checked-open-count", "checked-string-count", "checked-core-alias-count", "local-bound-counts", "typed-loop-count"], 7, "count-contract-js"],
     ["tests/fixtures/typed-rest-spread.cirru", "fix-command.main", ["typed-rest-forward"], 2, "typed-rest-spread-js"],
-    ["src/cirru/calcit-core.cirru", "calcit.core", ["map-list-kv", "filter-map-kv", "&map:filter-kv", "map-entries"], 13, "typed-map-kv-js", "calcit.map-kv-replay"],
   ]) {
     await copyFile(source, snapshot);
     const original = await readFile(snapshot);
@@ -2515,17 +2507,16 @@ try {
     }
     assert.equal(expressions.length, expectedCount);
     assert.deepEqual(await readFile(snapshot), original);
-    if (replayNamespace !== namespace) run("edit", "add-ns", replayNamespace);
-    run("edit", "def", `${replayNamespace}/replay-count-tests`, "--input-format", "json-ast", "--code",
+    run("edit", "def", `${namespace}/replay-count-tests`, "--input-format", "json-ast", "--code",
       JSON.stringify(["defn", "replay-count-tests", [], ...expressions, "&unit"]));
-    run("edit", "schema", `${replayNamespace}/replay-count-tests`, "--input-format", "cirru", "--code",
+    run("edit", "schema", `${namespace}/replay-count-tests`, "--input-format", "cirru", "--code",
       "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
-    run("config", "set", "init-fn", `${replayNamespace}/replay-count-tests`);
-    run("config", "set", "reload-fn", `${replayNamespace}/replay-count-tests`);
+    run("config", "set", "init-fn", `${namespace}/replay-count-tests`);
+    run("config", "set", "reload-fn", `${namespace}/replay-count-tests`);
     run("--check-only");
     const output = join(project, outputName);
     run("--emit-path", output, "js");
-    const generated = await import(pathToFileURL(join(output, `${replayNamespace}.mjs`)).href);
+    const generated = await import(pathToFileURL(join(output, `${namespace}.mjs`)).href);
     generated.replay_count_tests();
   }
   // An open or concrete result cannot independently prove a bare generic

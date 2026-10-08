@@ -129,6 +129,39 @@ for behavior that actually crosses definitions or backends.
 
 ## Target Coverage
 
+### 仓库 CI 与快速本地回归
+
+CI 的 Core/CLI 与文档检查共用一次 `ci` 配置构建的 CLI：开启优化，同时保留
+debug assertions 与整数溢出检查。同一 workflow 内按提交 SHA 命名的 artifact
+供两个任务下载使用，不跨提交寻找旧二进制。脚本通过 `CALCIT_BIN` 选择 CLI；
+未指定时保留各脚本原有的本地构建查找方式。
+
+```bash
+cargo build --locked --profile ci --bin calcit
+yarn install --immutable
+yarn compile
+yarn procs-link
+export CALCIT_BIN="$PWD/target/ci/calcit"
+node scripts/run-core-tests.mjs
+node scripts/check-strict-default.mjs
+node scripts/check-known-assertion.mjs
+bash scripts/test-wasm.sh
+bash scripts/check-docs-md.sh
+```
+
+这些命令用于对应范围的回归。普通 core 语义由统一运行器覆盖；
+`CALCIT_LINT_CORE=1` 的直接执行另行保留，用于检查改写后的树。
+`post_lowering_cli` 和 namespace-import 集成测试在 Rust 测试任务中运行，后者
+同时实际执行生成的 JS。
+断言检查脚本保留 fixture 专属回放、非法类型程序的逐后端诊断以及失败时不产出
+代码的检查；core 定义回放统一由 `run-core-tests.mjs` 承担。
+
+PR 推送新提交时，CI 取消同一 PR 旧提交上尚未完成的 Test workflow；main
+的每次提交仍独立验证。减少执行成本时，应先移除重复构建与重复回放，保留
+原始 `:tests`、零匹配失败检查和独立的后端边界验证。
+
+### 统一后端回放
+
 `calcit test` 在 native 上运行 definition `:tests`。仓库用一个统一运行器把同一批 `:tests` 在 native、生成的 JS 与 WASM 上各执行一次：
 
 ```bash
@@ -172,6 +205,7 @@ node scripts/fuzz-primitives.mjs --seed 42 --cases 150
 
 ### 限制
 
+- 快速本地回归命令只验证对应范围，不代替完整 CI。
 - WASM 在独立的回放 namespace 中执行 core 测试，依赖 `calcit.core` 内部豁免的测试列为 `replay`。
 - WASM 宿主只提供 `io.log_*` 与 `math` 导入，其它宿主调用会使测试失败。
 - WASI backend 不在默认集合中，需要 `WASMTIME_CLI`。

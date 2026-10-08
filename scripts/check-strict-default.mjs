@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-const binary = process.env.CALCIT_STRICT_BIN ?? "./target/debug/calcit";
+const binary = process.env.CALCIT_STRICT_BIN ?? process.env.CALCIT_BIN ?? "./target/debug/calcit";
 
 // Ordinary project entrypoints must never silently opt back into compatibility mode.
 const entrypoints = ["package.json"];
