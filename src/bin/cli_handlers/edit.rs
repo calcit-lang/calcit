@@ -571,7 +571,7 @@ fn parse_transaction_operations(raw: &str) -> Result<Vec<Vec<String>>, String> {
       ),
       "config" => matches!(
         subcommand,
-        "version" | "set" | "add-module" | "rm-module" | "set-type-slot" | "rm-type-slot"
+        "version" | "set" | "add-entry" | "add-module" | "rm-module" | "set-type-slot" | "rm-type-slot"
       ),
       _ => false,
     };

@@ -2761,6 +2761,8 @@ pub enum ConfigSubcommand {
   Set(ConfigSetCommand),
   /// unset an optional configuration key (target)
   Unset(ConfigUnsetCommand),
+  /// create a named entry with a complete configuration, or clone one with --from
+  AddEntry(ConfigAddEntryCommand),
   /// add a module path to an entry's modules
   AddModule(ConfigAddModuleCommand),
   /// remove a module path from an entry's modules
@@ -2841,6 +2843,33 @@ pub struct ConfigUnsetCommand {
   /// config key to unset: target
   #[argh(positional)]
   pub key: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "add-entry")]
+/// create a named entry; without --from, --mode, --init-fn and --reload-fn are required
+pub struct ConfigAddEntryCommand {
+  /// name of the new entry; must not exist yet
+  #[argh(positional)]
+  pub name: String,
+  /// copy every field (modules, type slots, feature policy included) from an existing entry
+  #[argh(option)]
+  pub from: Option<String>,
+  /// run mode: native or js
+  #[argh(option)]
+  pub mode: Option<String>,
+  /// host target: browser, node, native or wasm
+  #[argh(option)]
+  pub target: Option<String>,
+  /// init function as a full namespace/definition path
+  #[argh(option)]
+  pub init_fn: Option<String>,
+  /// reload function as a full namespace/definition path
+  #[argh(option)]
+  pub reload_fn: Option<String>,
+  /// human-readable purpose of the entry
+  #[argh(option)]
+  pub description: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
