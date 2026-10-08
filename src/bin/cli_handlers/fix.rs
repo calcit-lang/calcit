@@ -4063,7 +4063,6 @@ fn plan_attached_fixes(
   selected_definitions: &[(String, String)],
   selected_rules: &[&'static str],
 ) -> Result<Vec<FixSuggestion>, String> {
-  let metadata = fix_rule_metadata(selected_rules[0]);
   let mut suggestions = Vec::new();
   for (namespace, definition) in selected_definitions {
     let entry = &snapshot.files[namespace].defs[definition];
@@ -4092,6 +4091,9 @@ fn plan_attached_fixes(
       let mut rewritten = sources;
       let mut origins = Vec::new();
       let mut blockers = Vec::new();
+      // Rules that rewrote or blocked this region; the merged suggestion is labelled from them,
+      // never from the preset's first rule.
+      let mut region_rules = Vec::<&'static str>::new();
       for (index, source) in rewritten.iter_mut().enumerate() {
         for rule in [REDUNDANT_DO_RULE, SINGLE_EXPRESSION_DO_RULE] {
           if !selected_rules.contains(&rule) {
@@ -4106,9 +4108,13 @@ fn plan_attached_fixes(
             Ok(Some(rewrite)) => {
               *source = rewrite.code;
               origins.extend(rewrite.origin_chain);
+              region_rules.push(rule);
             }
             Ok(None) => {}
-            Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
+            Err(error) => {
+              blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}"));
+              region_rules.push(rule);
+            }
           }
         }
         for alias in [
@@ -4142,15 +4148,23 @@ fn plan_attached_fixes(
           ) {
             Ok(Some(rewrite)) => {
               *source = rewrite.code;
-              origins.extend(rewrite.origin_chain);
+              origins.extend(rewrite.origin_chain.into_iter().map(|mut origin| {
+                origin["rule_id"] = rule_id.into();
+                origin
+              }));
+              region_rules.push(rule_id);
             }
             Ok(None) => {}
-            Err(error) => blockers.push(error),
+            Err(error) => {
+              blockers.push(error);
+              region_rules.push(rule_id);
+            }
           }
         }
         // Re-prove each rule against the source produced by preceding rules.
         // Subtree replacements may change coordinates or fingerprints of nested calls.
         for selected_rule in selected_rules {
+          let blockers_before = blockers.len();
           let selected_rules = std::slice::from_ref(selected_rule);
           let wrapper = Cirru::List(vec![Cirru::leaf("fn"), Cirru::List(vec![]), source.clone()]);
           let synthetic_def = format!("&calcit:fix-attached:{definition}:{region}:{index}");
@@ -4236,7 +4250,11 @@ fn plan_attached_fixes(
               Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
             }
           }
+          if blockers.len() > blockers_before {
+            region_rules.push(selected_rule);
+          }
           for candidate in candidates {
+            region_rules.push(candidate.rule_id);
             let Some(path) = candidate.target_path.strip_prefix(&[2]) else {
               blockers.push("Compiler suggestion points outside its attached source wrapper.".to_owned());
               continue;
@@ -4268,6 +4286,19 @@ fn plan_attached_fixes(
       if origins.is_empty() && blockers.is_empty() {
         continue;
       }
+      // One region-level operation may merge several rules; report the earliest one in the
+      // selected (preset) order, while each origin entry keeps its own `rule_id`.
+      let Some(rule_id) = selected_rules
+        .iter()
+        .copied()
+        .find(|rule| region_rules.contains(rule))
+        .or_else(|| region_rules.first().copied())
+      else {
+        return Err(format!(
+          "{namespace}/{definition} {region}: attached rewrite has no contributing rule among the selected rules."
+        ));
+      };
+      let metadata = fix_rule_metadata(rule_id);
       // Merge all alias replacements in a metadata region into one operation.
       // A blocked region is never partially rewritten or used as a test oracle.
       let safe = blockers.is_empty();

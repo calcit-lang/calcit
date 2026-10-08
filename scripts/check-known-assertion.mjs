@@ -2109,7 +2109,7 @@ try {
       }
       if (name.startsWith("empty-ref-")) {
         assert.match(diagnostics, /W_RESET_ARG_TYPE_MISMATCH/);
-        const fixHint = /give the initializer explicit type context, e\.g\. `atom \$ assert-type \(Option :none\) \$ :: 'Option 'Number`/;
+        const fixHint = /give the initializer explicit type context, e\.g\. `ref \$ assert-type \(Option :none\) \$ :: 'Option 'Number`/;
         if (name === "empty-ref-unannotated-write") assert.match(diagnostics, fixHint);
         else assert.doesNotMatch(diagnostics, fixHint);
       }
