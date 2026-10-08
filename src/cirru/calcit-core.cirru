@@ -4982,7 +4982,7 @@
               assert= 200 $ :code response
               assert= (%some |ok) (:message response)
             quote $ assert=
-              %some $ %{} RuntimeMapMeta $ :kind :nested
+              %some $ RuntimeMapMeta :kind :nested
               :meta $ decode-map-as
                 {} (:code 202)
                   :meta $ {} $ :kind :nested
@@ -5027,7 +5027,7 @@
                     :body $ {} $ :kind :json
                   , RuntimeMapResponse
                 assert=
-                  %some $ %{} RuntimeMapMeta $ :kind :nested
+                  %some $ RuntimeMapMeta :kind :nested
                   :meta $ decode-map-as
                     {} (:code 202)
                       :meta $ {} $ :kind :nested
@@ -5411,13 +5411,13 @@
         'destruct-list $ %{} 'CodeEntry
           :doc "|Split a list into the nominal ListDestruct<T> enum."
           :code $ quote $ defn destruct-list (xs)
-            if (empty? xs) (%:: ListDestruct :none)
-              %:: ListDestruct :some (&list:nth xs 0) (&list:rest xs)
+            if (empty? xs) (ListDestruct :none)
+              ListDestruct :some (&list:nth xs 0) (&list:rest xs)
           :examples $ []
             quote $ assert=
-              %:: ListDestruct :some 1 $ [] 2
+              ListDestruct :some 1 $ [] 2
               destruct-list $ [] 1 2
-            quote $ assert= (%:: ListDestruct :none)
+            quote $ assert= (ListDestruct :none)
               destruct-list $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List 'T
@@ -5442,9 +5442,9 @@
           :code $ quote $ defn destruct-map (xs)
             &let
               pair $ &map:destruct xs
-              if (nil? pair) (%:: MapDestruct :none) (%:: MapDestruct :some & pair)
+              if (nil? pair) (MapDestruct :none) (MapDestruct :some (&list:nth pair 0) (&list:nth pair 1) (&list:nth pair 2))
           :examples $ []
-            quote $ assert= (%:: MapDestruct :none)
+            quote $ assert= (MapDestruct :none)
               destruct-map $ &{}
             quote $ assert= 1 $ match
               destruct-map $ &{} :a 1
@@ -5474,10 +5474,10 @@
           :code $ quote $ defn destruct-set (xs)
             &let
               pair $ &set:destruct xs
-              if (nil? pair) (%:: SetDestruct :none)
-                %:: SetDestruct :some (&list:nth pair 0) (&list:nth pair 1)
+              if (nil? pair) (SetDestruct :none)
+                SetDestruct :some (&list:nth pair 0) (&list:nth pair 1)
           :examples $ []
-            quote $ assert= (%:: SetDestruct :none)
+            quote $ assert= (SetDestruct :none)
               destruct-set $ #{}
             quote $ assert= 2 $ match
               destruct-set $ #{} 2
@@ -5505,11 +5505,11 @@
         'destruct-str $ %{} 'CodeEntry
           :doc "|Split a string into the nominal StringDestruct enum."
           :code $ quote $ defn destruct-str (s)
-            if (&= s |) (%:: StringDestruct :none)
-              %:: StringDestruct :some (&str:slice s 0 1) (&str:rest s)
+            if (&= s |) (StringDestruct :none)
+              StringDestruct :some (&str:slice s 0 1) (&str:rest s)
           :examples $ []
-            quote $ assert= (%:: StringDestruct :some |1 |23) (destruct-str |123)
-            quote $ assert= (%:: StringDestruct :none) (destruct-str |)
+            quote $ assert= (StringDestruct :some |1 |23) (destruct-str |123)
+            quote $ assert= (StringDestruct :none) (destruct-str |)
           :schema $ :: 'Fn $ {} (:return 'StringDestruct)
             :args $ [] 'String
           :tests $ [] $ %{} 'TestEntry (:name |splits-non-empty-and-empty)
@@ -6105,7 +6105,7 @@
         'ffi:response $ %{} 'CodeEntry
           :doc "|Wrap a raw native async response capability at a module adapter boundary. Examples with nil only check the method contract without invoking it; real resolution requires a host-issued capability."
           :code $ quote $ defn ffi:response (raw)
-            %{} FfiResponse $ :raw raw
+            FfiResponse :raw raw
           :examples $ []
             quote $ ffi:response nil
             quote $ let
@@ -6136,7 +6136,7 @@
         'ffi:task $ %{} 'CodeEntry
           :doc "|Wrap a raw native async task capability at a module adapter boundary. Examples with nil only check the method contract without invoking it; real cancellation requires a host-issued capability."
           :code $ quote $ defn ffi:task (raw)
-            %{} FfiTask $ :raw raw
+            FfiTask :raw raw
           :examples $ []
             quote $ ffi:task nil
             quote $ let
@@ -6219,12 +6219,12 @@
                     {} (:a 1) (:b 2) (:c 3)
                     fn (k v)
                       if (> v 1)
-                        %:: MapEntryDecision :keep k $ * v 10
-                        %:: MapEntryDecision :drop
+                        MapEntryDecision :keep k $ * v 10
+                        MapEntryDecision :drop
                 assert= ({})
                   filter-map-kv
                     {} $ :a 1
-                    fn (k v) (%:: MapEntryDecision :drop)
+                    fn (k v) (MapEntryDecision :drop)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |skips-empty-and-propagates-failure)
               :code $ quote $ do
@@ -6240,7 +6240,7 @@
               :code $ quote $ let
                   input $ {} $ |a 1
                   selected $ filter-map-kv input $ fn (id value)
-                    %:: MapEntryDecision :keep (to-tag id) (str value)
+                    MapEntryDecision :keep (to-tag id) (str value)
                 assert-type selected $ :: 'Map 'Tag 'String
                 assert= |1 $ &map:get selected :a
               :tags $ #{} :core :unit
@@ -6886,7 +6886,7 @@
         'fs:path $ %{} 'CodeEntry
           :doc "|Construct an FsPath from a UTF-8 path string without normalization or filesystem access."
           :code $ quote $ defn fs:path (value)
-            %{} FsPath $ :value value
+            FsPath :value value
           :examples $ []
             quote $ fs:path |assets/data.cirru
             quote $ .read-text $ fs:path |assets/data.cirru
@@ -8703,7 +8703,7 @@
           :doc "|将 Map<K,V> 转为 List<MapEntry<K,V>>，保留 key/value 类型；需要类型化排序时使用它，旧 &map:to-list 保持原语义。"
           :code $ quote $ defn map-entries (xs)
             map-list-kv xs $ fn (key value)
-              %{} MapEntry (:key key) (:value value)
+              MapEntry :key key :value value
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'K 'V
@@ -10966,7 +10966,7 @@
             if (list? data) (map data tagging-edn)
               if (map? data)
                 filter-map-kv data $ defn %tagging (k v)
-                  %:: MapEntryDecision :keep
+                  MapEntryDecision :keep
                     if (string? k) (turn-tag k) k
                     tagging-edn v
                 , data
