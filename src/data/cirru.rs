@@ -176,6 +176,61 @@ pub fn code_to_calcit(xs: &Cirru, ns: &str, def: &str, coord: Vec<u16>) -> Resul
   }
 }
 
+/// Map each child produced by [`code_to_calcit`] for a source list back to the
+/// index of the source child it came from. Comments are dropped by the reader,
+/// and a head leaf such as `a.b` expands into two reader children, so reader
+/// indexes and Snapshot source indexes differ.
+pub fn reader_child_source_indexes(ys: &[Cirru]) -> Vec<usize> {
+  let mut indexes = Vec::with_capacity(ys.len());
+  for (idx, y) in ys.iter().enumerate() {
+    if let Cirru::List(zs) = y
+      && zs.len() > 1
+      && zs[0] == Cirru::leaf(";")
+    {
+      continue;
+    }
+    if idx == 0
+      && let Cirru::Leaf(s) = y
+      && split_leaf_to_method_call(s).is_some()
+    {
+      indexes.push(idx);
+    }
+    indexes.push(idx);
+  }
+  indexes
+}
+
+/// Convert a path into the reader form of `code` into the Snapshot source path.
+/// A path that descends into structure synthesized from one source leaf stops
+/// at that leaf.
+pub fn reader_path_to_source_path(code: &Cirru, path: &[usize]) -> Option<Vec<usize>> {
+  let mut node = code;
+  let mut source_path = Vec::with_capacity(path.len());
+  for reader_index in path {
+    let Cirru::List(ys) = node else {
+      return Some(source_path);
+    };
+    let source_index = *reader_child_source_indexes(ys).get(*reader_index)?;
+    source_path.push(source_index);
+    node = &ys[source_index];
+  }
+  Some(source_path)
+}
+
+/// Convert a Snapshot source path into the path of the first reader node that
+/// originates from it. Comments have no reader node and return `None`.
+pub fn source_path_to_reader_path(code: &Cirru, path: &[usize]) -> Option<Vec<usize>> {
+  let mut node = code;
+  let mut reader_path = Vec::with_capacity(path.len());
+  for source_index in path {
+    let Cirru::List(ys) = node else { return None };
+    let reader_index = reader_child_source_indexes(ys).iter().position(|index| index == source_index)?;
+    reader_path.push(reader_index);
+    node = &ys[*source_index];
+  }
+  Some(reader_path)
+}
+
 /// split `a.b` into `.b` and `a`, `a.-b` into `.-b` and `a`, `a.!b` into `.!b` and `a`, etc.
 /// some characters available for variables are okey here, for example `-`, `!`, `?`, `*``, etc.
 fn split_leaf_to_method_call(s: &str) -> Option<(String, Calcit)> {
@@ -406,5 +461,26 @@ mod tests {
     assert!(matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::AssertTraits, _))));
     assert!(matches!(items.get(1), Some(Calcit::Symbol { .. })));
     assert!(matches!(items.get(2), Some(Calcit::Symbol { .. })));
+  }
+
+  #[test]
+  fn reader_and_source_paths_skip_comments_and_head_method_sugar() {
+    let code = cirru_parser::parse("defn demo () (; note) (let ((x 1)) (; nested) (x.inc) (f x))")
+      .expect("parse")
+      .remove(0);
+    let reader = code_to_calcit(&code, "app.main", "demo", vec![]).expect("convert");
+    let Calcit::List(items) = &reader else { panic!("expected list") };
+    assert_eq!(items.len(), 4, "the comment has no reader node");
+
+    assert_eq!(reader_path_to_source_path(&code, &[3]), Some(vec![4]));
+    assert_eq!(reader_path_to_source_path(&code, &[3, 3]), Some(vec![4, 4]));
+    assert_eq!(reader_path_to_source_path(&code, &[3, 3, 1]), Some(vec![4, 4, 1]));
+    // `x.inc` at the head becomes two reader children that both point at the leaf.
+    assert_eq!(reader_path_to_source_path(&code, &[3, 2, 0]), Some(vec![4, 3, 0]));
+    assert_eq!(reader_path_to_source_path(&code, &[3, 2, 1]), Some(vec![4, 3, 0]));
+
+    assert_eq!(source_path_to_reader_path(&code, &[4]), Some(vec![3]));
+    assert_eq!(source_path_to_reader_path(&code, &[4, 4]), Some(vec![3, 3]));
+    assert_eq!(source_path_to_reader_path(&code, &[3]), None, "comments have no reader node");
   }
 }
