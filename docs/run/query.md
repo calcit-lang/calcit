@@ -64,6 +64,16 @@ calcit query ns
 calcit query ns calcit.core
 ```
 
+### 命名空间签名概览（`defs --signatures`）
+
+```bash
+calcit query defs app.main --signatures
+```
+
+每行列出定义名、签名与 doc 首行：有 schema 的显示单行 schema，没有 schema 的显示 `(untyped)` 与声明头（如
+`(untyped) defn helper (x)`），值本身不进入概览。不带 `--signatures` 时只用 `[schema]` 标记是否声明了 schema。
+了解一个模块时先看这个概览，再按需对单个定义使用 `schema`、`examples`、`context`。
+
 ### Read Code (`def`)
 
 ```bash

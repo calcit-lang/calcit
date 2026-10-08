@@ -47,7 +47,7 @@ CLI 不传格式参数时保持适合人类 review 的 Markdown-compatible 输�
 2. `calcit.cirru` 是 Cirru EDN Snapshot，绝不能用文本 patch、正则脚本或 formatter 修改；只用 `calcit edit`、`calcit tree`、`calcit cursor` 和 `calcit config`。
 3. 写入前运行 `calcit -v`、检查 `deps.cirru :calcit-version` 并用 `calcit query config` 确认目标 Snapshot/entry；版本不匹配时改用固定 CLI 或显式升级，不能绕过门禁。
 4. 同一 Snapshot 的 mutation 必须串行；原子多步变更使用 transaction、dry-run 和 `--expect-revision`，并行工作使用独立 worktree/Snapshot。
-5. target、path 和替换内容必须来自 `query` / `tree show`；修改前展示真实 subtree，修改后重新 show/search，并运行项目规定的 check、test 和目标 codegen。
+5. 先用视图读程序（`query defs <ns> --signatures`、`query context`/`schema`/`examples`、`query usages`、`query type-at`），视图不够再读 `query def`，不直接读 Snapshot 文本；target、path 和替换内容必须来自 `query` / `tree show`；修改前展示真实 subtree，修改后重新 show/search，并运行项目规定的 check、test 和目标 codegen。
 6. 不得把 `CURSOR`、`FOLDED:*`、chunk 标题、path annotation 或 `preview_tree` 写回 Snapshot；机器读取 cursor 时只信 `tree` 字段。
 7. 发现语言/编译器/CLI 缺陷，向 Calcit 核心仓库提交最小复现；发现模块缺陷，先用解析后的模块路径和 Git remote 确认 owner，再提交到模块仓库。不能猜仓库，也不能只留在聊天或提交说明中。API 写法先查已安装版本的 `query type/def/context`；core 改名与改签名遵守 [稳定与集中迁移策略](features/api-roles.md#核心-api-稳定与集中迁移)，不把规划或内部路径当作公开承诺，不只更新 baseline 就删除兼容入口。
 
@@ -78,6 +78,30 @@ calcit docs read library-quality.md --full
 ```
 
 `calcit docs agents --contract` 输出本节、contract version 和稳定 digest。digest 未变化时可在新仓库只重读本契约；首次使用、digest 变化或任务触及未覆盖能力时读取 `--full` 或上述相关 section。`--full` 始终是权威完整指南。
+
+## 通过视图阅读程序
+
+Snapshot 是结构化数据。理解程序时先选与任务对应的视图，只在视图答不了时才读完整源码；直接读取 `calcit.cirru` 文本会消耗大量上下文，也绕过了已有的语义信息。
+
+| 阅读任务 | 视图 |
+| --- | --- |
+| 了解一个模块 | `query ns <ns>` 看 imports；`query defs <ns> --signatures` 看每个定义的签名与 doc 首行 |
+| 理解一个定义 | `query schema`、`query examples`、`query tests`；需要依赖、用法与诊断时用 `query context --format edn` |
+| 修改前评估影响 | `query usages <ns/def>`；跨定义调用链用 `analyze call-graph` |
+| 排查类型问题 | `query type-at <ns/def> --path code@...` 与诊断里的 evidence；接收者方法用 `query type` |
+| 定位要改的节点 | `query search` / `query find` 给出路径，再 `tree show` 看真实 subtree |
+| 需要完整代码 | `query def`（大定义会分块）；要整段改写时用可写回的定义视图 |
+
+签名概览示例（`calcit/test-types.cirru`）：
+
+```text
+Definitions: 34
+  Person  'Struct - Struct definition for type checks
+  add-numbers  :: 'Fn $ {} (:return 'Number) $ :args $ [] 'Number 'Number
+  describe-typed  :: 'Fn $ {} (:return 'String) $ :args $ [] 'String 'Number - Combines typed label and number
+```
+
+没有 schema 的定义显示 `(untyped)` 与声明头（如 `(untyped) defn helper (x)`），值本身不进入概览。`scripts/check-agent-interface.mjs` 中的视图阅读任务记录每个视图的输出字节数，并要求答案出现在视图中、字节数少于对应 Snapshot。
 
 ## 0. 开始修改前
 

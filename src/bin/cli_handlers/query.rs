@@ -4523,6 +4523,28 @@ fn handle_host_procs(opts: &QueryHostProcsCommand) -> Result<(), String> {
   Ok(())
 }
 
+/// One-line signature for a namespace overview: the schema when declared,
+/// otherwise the declaration head such as `defn greet (name)`.
+fn definition_signature(entry: &snapshot::CodeEntry) -> String {
+  if let Ok(Some(schema)) = query_schema_cirru(entry.schema.as_ref(), true)
+    && let Ok(text) = format_query_schema_oneline(&schema)
+  {
+    return text;
+  }
+  let Cirru::List(items) = &entry.code else {
+    return "(untyped)".to_owned();
+  };
+  // Keep a parameter list when one follows the name; values stay out of the overview.
+  let keep = if matches!(items.get(2), Some(Cirru::List(_))) && !items.first().is_some_and(|head| head.eq_leaf("def")) {
+    3
+  } else {
+    2
+  };
+  let head = Cirru::List(items.iter().take(keep).cloned().collect());
+  let text = head.format_one_liner().unwrap_or_else(|_| "(untyped)".to_owned());
+  format!("(untyped) {text}")
+}
+
 fn handle_defs(input_path: &str, opts: &QueryDefsCommand) -> Result<(), String> {
   let namespace = &opts.namespace;
   let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
@@ -4561,10 +4583,12 @@ fn handle_defs(input_path: &str, opts: &QueryDefsCommand) -> Result<(), String> 
     } else {
       format!(" [{}]", format_tags_display(&entry.tags))
     };
-    let schema_hint = if !matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
-      " [schema]"
+    let schema_hint = if opts.signatures {
+      format!("  {}", definition_signature(entry))
+    } else if !matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
+      " [schema]".to_owned()
     } else {
-      ""
+      String::new()
     };
     if !entry.doc.is_empty() {
       let doc_first_line = entry.doc.lines().next().unwrap_or("");

@@ -856,6 +856,9 @@ pub struct QueryDefsCommand {
   /// filter definitions that contain this tag (e.g. macro or :macro)
   #[argh(option)]
   pub tag: Option<String>,
+  /// show each definition's signature (schema, or its declaration head when untyped) instead of a [schema] marker
+  #[argh(switch)]
+  pub signatures: bool,
 }
 
 // read-ns merged into ns command

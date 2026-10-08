@@ -119,7 +119,7 @@ fn compact_agent_contract_is_versioned_bounded_and_embedded_in_the_full_guide() 
 
   assert_eq!(AGENT_MUTATION_CONTRACT_VERSION, 1);
   assert_eq!(contract, repeated);
-  assert_eq!(contract.digest, "md5:313d1bd644564043cee246f15a9deddd");
+  assert_eq!(contract.digest, "md5:0e86f79367d94536fb243a7ddc85ab47");
   assert!(contract.content.lines().count() <= 40, "contract should stay cheap to reload");
   assert!(contract.content.len() <= 5_000, "contract should stay compact");
   assert!(EMBEDDED_AGENTS_DOC.contains(&contract.content));
@@ -130,6 +130,7 @@ fn compact_agent_contract_is_versioned_bounded_and_embedded_in_the_full_guide() 
     "deps.cirru :calcit-version",
     "mutation 必须串行",
     "修改前展示真实 subtree",
+    "先用视图读程序",
     "模块仓库",
     "稳定与集中迁移策略",
     "query type/def/context",
