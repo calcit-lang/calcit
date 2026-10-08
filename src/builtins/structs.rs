@@ -6,6 +6,7 @@ use cirru_edn::EdnTag;
 
 use crate::builtins::meta::type_of;
 use crate::calcit::CORE_NS;
+use crate::calcit::data_shape::field_write_shape;
 use crate::calcit::type_annotation::{collect_runtime_type_bindings, dedup_generic_names, validate_runtime_generic_where_bounds};
 use crate::calcit::{
   Calcit, CalcitEnumDef, CalcitErr, CalcitErrKind, CalcitImpl, CalcitImport, CalcitList, CalcitProc, CalcitStructDef,
@@ -937,22 +938,7 @@ pub fn struct_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           match &xs[k_idx] {
             Calcit::Tag(s) => match struct_value.index_of(s.ref_str()) {
               Some(pos) => {
-                // Validate field value type against struct field_types
-                if let Some(expected_type) = struct_ref.field_types.get(pos)
-                  && !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
-                  && !value_matches_type_annotation(&xs[v_idx], expected_type)
-                {
-                  return CalcitErr::err_str(
-                    CalcitErrKind::Type,
-                    format!(
-                      "&struct:with field `{}` expects type `{}`, but received `{}` ({})",
-                      s.ref_str(),
-                      expected_type.to_brief_string(),
-                      brief_type_of_value(&xs[v_idx]),
-                      xs[v_idx].lisp_str()
-                    ),
-                  );
-                }
+                check_struct_field_write(struct_ref, pos, &xs[v_idx], "&struct:with")?;
                 xs[v_idx].clone_into(&mut values[pos]);
               }
               None => {
@@ -964,22 +950,7 @@ pub fn struct_with(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
             },
             Calcit::Symbol { sym: s, .. } | Calcit::Str(s) => match struct_value.index_of(s) {
               Some(pos) => {
-                // Validate field value type against struct field_types
-                if let Some(expected_type) = struct_ref.field_types.get(pos)
-                  && !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
-                  && !value_matches_type_annotation(&xs[v_idx], expected_type)
-                {
-                  return CalcitErr::err_str(
-                    CalcitErrKind::Type,
-                    format!(
-                      "&struct:with field `{}` expects type `{}`, but received `{}` ({})",
-                      s,
-                      expected_type.to_brief_string(),
-                      brief_type_of_value(&xs[v_idx]),
-                      xs[v_idx].lisp_str()
-                    ),
-                  );
-                }
+                check_struct_field_write(struct_ref, pos, &xs[v_idx], "&struct:with")?;
                 xs[v_idx].clone_into(&mut values[pos]);
               }
               None => {
@@ -1325,8 +1296,25 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-/// Writes check the declared field type, as construction and `&struct:with` do.
+/// All Struct update paths share the declared field's runtime validation.
 fn check_struct_field_write(struct_ref: &CalcitStructDef, pos: usize, value: &Calcit, operation: &str) -> Result<(), CalcitErr> {
+  // Reuse the decoder's data contract, without decoding/coercing the value.
+  // Unreified generic/callable contracts retain their existing runtime check;
+  // this fallback must not be advertised as independent static type evidence.
+  if let Some(expected) = struct_ref.field_types.get(pos)
+    && let Some(shape) = field_write_shape(struct_ref, pos)
+  {
+    return shape.validate_value(value).map_err(|error| {
+      CalcitErr::use_str(
+        CalcitErrKind::Type,
+        format!(
+          "{operation} field :{} expects type {}: {error}",
+          struct_ref.fields[pos],
+          expected.to_brief_string()
+        ),
+      )
+    });
+  }
   if let Some(expected_type) = struct_ref.field_types.get(pos)
     && !matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic)
     && !value_matches_type_annotation(value, expected_type)

@@ -291,6 +291,18 @@ assert= true $ .integer? -0
 assert= true $ round? 9007199254740992
 ```
 
+## Struct 数据字段写入检查
+
+命名 Struct 的 `assoc` / `with` 写入会校验可解析的数据字段合同：List、Map、Set 的成员、Optional、Enum payload，以及嵌套 Struct 的字段与声明来源。字段声明带具体泛型实参时按该实参检查，例如 `Box<Number>` 的 List 字段不能写入 String 元素。声明中的显式 `Dynamic` 叶子仍可保存开放数据。
+
+JS 的 `&struct:assoc` 写入不存在的字段会抛错，与 native 一致；不再返回未修改的原值。非法值也会抛错，原 Struct 保持不变。调用方可以按现有异常边界处理失败，不应依赖 silent no-op，也不应将名义来源不同的同名 Struct 当成可互换值。
+
+### 限制
+
+- 此项加强不是任意动态写入的完整类型证明；未实例化的泛型、函数和 host 字段仍需要静态合同，不能据此绕过严格检查。
+- JS 深层合同由编译器为命名定义携带；动态生成的 prototype 不因此获得完整字段证明。
+- 此项修复不扩展 WASM/WASI 对动态 Struct 更新的支持范围。
+
 ## 短路条件保留类型证据
 
 `if` 的条件经过宏展开后，编译器从实际的分支与局部绑定推导类型证据。例如 `and` 同时检查值是 Number、整数且位于列表范围内，成功分支可直接使用这个索引：

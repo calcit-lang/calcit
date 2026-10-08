@@ -1388,6 +1388,36 @@ fn data_shape_graph_to_js(graph: &DataShapeGraph, current_ns: &str, file_imports
   ))
 }
 
+/// Capture resolved data contracts, including aliases and nominal origins.
+/// Closures defer nominal references until module initialization is complete.
+fn struct_field_validators_to_js(ns: &str, def: &str, imports: &RefCell<ImportsDict>) -> Result<String, String> {
+  let reference = CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), Arc::new(vec![]));
+  let Some(nominal) = reference.resolve_to_struct() else {
+    return Ok(String::new());
+  };
+  let owner_ns = nominal
+    .definition_ref
+    .as_deref()
+    .and_then(|path| path.rsplit_once('/'))
+    .map_or(ns, |(ns, _)| ns);
+  let mut validators = Vec::with_capacity(nominal.field_types.len());
+  for field in nominal.field_types.iter() {
+    validators.push(match DataShapeGraph::for_field_write(field, owner_ns) {
+      Some(graph) => format!(
+        "value => {}validate_data_shape(value, {})",
+        get_proc_prefix(ns),
+        data_shape_graph_to_js(&graph, ns, imports)?
+      ),
+      None => String::from("null"),
+    });
+  }
+  Ok(if validators.iter().all(|validator| validator == "null") {
+    String::new()
+  } else {
+    format!(", [{}]", validators.join(", "))
+  })
+}
+
 fn nominal_ref_to_js(
   path: Option<&(Arc<str>, Arc<str>)>,
   current_ns: &str,
@@ -2555,11 +2585,12 @@ pub fn emit_js(entry_ns: &str, emit_path: &str) -> Result<(), String> {
           gen_stack::push_call_stack(ns, &def, StackKind::Codegen, compiled_def.codegen_form.to_owned(), &[]);
           writeln!(
             vals_code,
-            "\nexport var {} = {}bind_struct_definition({}, {});",
+            "\nexport var {} = {}bind_struct_definition({}, {}{});",
             escape_var(&def),
             get_proc_prefix(ns),
             to_js_code(&compiled_def.codegen_form, ns, &def_names, &file_imports, &collected_tags, None)?,
-            wrap_js_str(&format!("{ns}/{def}"))
+            wrap_js_str(&format!("{ns}/{def}")),
+            struct_field_validators_to_js(ns, &def, &file_imports)?
           )
           .expect("write");
           gen_stack::pop_call_stack()

@@ -20,7 +20,8 @@ import { valueMatchesTypeForm } from "./js-type-form.mjs";
 /// Field writes check the declared field type, like the native runtime.
 let assertFieldValue = (structRef: CalcitStructDef, idx: number, value: CalcitValue, operation: string): void => {
   const fieldType = structRef?.fieldTypes?.[idx];
-  if (fieldType != null && !valueMatchesTypeForm(value, fieldType)) {
+  const validator = structRef?.fieldValidators?.[idx];
+  if (validator != null ? !validator(value) : fieldType != null && !valueMatchesTypeForm(value, fieldType)) {
     throw new Error(`${operation} field :${structRef.fields[idx].value} expects type ${toString(fieldType, true)}, but received ${toString(value, true)}`);
   }
 };
@@ -65,16 +66,14 @@ export class CalcitStructValue {
     }
   }
   assoc(k: CalcitValue, v: CalcitValue): CalcitStructValue {
-    let values: Array<CalcitValue> = new Array(this.fields.length);
-    let k_id = castTag(k);
-    for (let idx = 0; idx < this.fields.length; idx++) {
-      if (this.fields[idx] === k_id) {
-        assertFieldValue(this.structRef, idx, v, "&struct:assoc");
-        values[idx] = v;
-      } else {
-        values[idx] = this.values[idx];
-      }
+    const field = castTag(k);
+    const idx = findInFields(this.fields, field);
+    if (idx < 0) {
+      throw new Error(`&struct:assoc invalid field ${field.toString()} for struct '${this.name.value}'`);
     }
+    assertFieldValue(this.structRef, idx, v, "&struct:assoc");
+    const values = this.values.slice();
+    values[idx] = v;
     return new CalcitStructValue(this.name, this.fields, values, this.structRef);
   }
   nthAt(index: CalcitValue, field: CalcitValue): CalcitValue {
@@ -141,7 +140,7 @@ export class CalcitStructValue {
     } else {
       throw new Error("Expected an impl or array of impls");
     }
-    let nextStruct = new CalcitStructDef(this.name, this.fields, this.structRef.fieldTypes, this.structRef.impls.concat(nextImpls), this.structRef.definitionRef);
+    let nextStruct = new CalcitStructDef(this.name, this.fields, this.structRef.fieldTypes, this.structRef.impls.concat(nextImpls), this.structRef.definitionRef, this.structRef.fieldValidators);
     return new CalcitStructValue(this.name, this.fields, this.values, nextStruct);
   }
 }
