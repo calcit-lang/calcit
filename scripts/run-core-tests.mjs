@@ -9,6 +9,7 @@
 //   node scripts/run-core-tests.mjs [--backend native,js,wasm[,wasi]] [--tag t]...
 //     [--exclude-tag t]... [--name test-name] [--target ns|ns/def|test-id]...
 //     [--exclusions file] [--snapshot file] [--report-unexpected-pass]
+//     [--results-json file]
 //
 // Native is the reference: the println trace of each test on the other
 // backends must match its native trace. A run that selects zero tests fails.
@@ -31,7 +32,7 @@ const parseArgs = (argv) => {
   const options = {
     backends: [...DEFAULT_BACKENDS], tags: [], excludeTags: [], names: [], targets: [],
     snapshot: "src/cirru/calcit-core.cirru", exclusions: "scripts/core-tests-exclusions.cirru",
-    reportUnexpectedPass: false,
+    reportUnexpectedPass: false, resultsJson: undefined,
   };
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i];
@@ -48,6 +49,7 @@ const parseArgs = (argv) => {
       case "--snapshot": options.snapshot = value(); break;
       case "--exclusions": options.exclusions = value(); break;
       case "--report-unexpected-pass": options.reportUnexpectedPass = true; break;
+      case "--results-json": options.resultsJson = value(); break;
       default: throw new Error(`unknown argument: ${flag}`);
     }
   }
@@ -467,6 +469,11 @@ try {
   }
 } finally {
   await rm(fixture, { recursive: true, force: true });
+}
+
+// Per-test, per-backend status and trace for tools that judge results themselves.
+if (options.resultsJson) {
+  await writeFile(options.resultsJson, JSON.stringify(Object.fromEntries(results), null, 1));
 }
 
 const failures = [];
