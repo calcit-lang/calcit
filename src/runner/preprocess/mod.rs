@@ -4322,8 +4322,7 @@ fn preprocess_list_call(
           if let Some(specialized) =
             try_specialize_polymorphic_call(calcit::CORE_NS, proc.as_ref(), &processed_args, scope_types, file_ns)
           {
-            reject_unproven_specialized_struct_update(&specialized, scope_types, file_ns, call_stack)?;
-            return Ok(specialized);
+            return check_and_lower_specialized_struct_update(specialized, scope_types, file_ns, call_stack);
           }
         }
 
@@ -4830,8 +4829,7 @@ fn preprocess_known_function_call(
         );
       }
       if let Some(specialized) = try_specialize_polymorphic_call(ns, def, &current_args, scope_types, file_ns) {
-        reject_unproven_specialized_struct_update(&specialized, scope_types, file_ns, call_stack)?;
-        return Ok(specialized);
+        return check_and_lower_specialized_struct_update(specialized, scope_types, file_ns, call_stack);
       }
     }
     Ok(Calcit::from(CalcitList::from(ys)))
@@ -6078,21 +6076,24 @@ fn struct_update_pairs<'a>(head: &Calcit, args: &'a CalcitList) -> Option<Vec<(u
 /// A polymorphic call such as nominal `assoc` is lowered to a Struct update
 /// procedure after the direct-call checks ran; prove its field value against
 /// the declared field type as if the procedure had been written directly. The
-/// runtime field check stays as the final safeguard.
-fn reject_unproven_specialized_struct_update(
-  specialized: &Calcit,
+/// runtime field check stays as the final safeguard. Prove the original argument
+/// layout before inserting a field index, so diagnostics keep source positions.
+fn check_and_lower_specialized_struct_update(
+  specialized: Calcit,
   scope_types: &ScopeTypes,
   file_ns: &str,
   call_stack: &CallStackList,
-) -> Result<(), CalcitErr> {
-  let Calcit::List(items) = specialized else {
-    return Ok(());
+) -> Result<Calcit, CalcitErr> {
+  let Calcit::List(items) = &specialized else {
+    return Ok(specialized);
   };
-  let Some(head) = items.first() else { return Ok(()) };
+  let Some(head) = items.first() else { return Ok(specialized) };
   if !matches!(head, Calcit::Proc(CalcitProc::NativeStructAssoc | CalcitProc::NativeStructAssocAt)) {
-    return Ok(());
+    return Ok(specialized);
   }
-  reject_unproven_struct_update(head, &items.drop_left(), scope_types, file_ns, call_stack)
+  let args = items.drop_left();
+  reject_unproven_struct_update(head, &args, scope_types, file_ns, call_stack)?;
+  Ok(lower_static_struct_assoc(head, &args, scope_types).map_or(specialized, Calcit::from))
 }
 
 fn reject_unproven_struct_update(
@@ -7531,10 +7532,6 @@ fn try_specialize_polymorphic_call(
     _ => return None,
   };
 
-  // Core `assoc` and trait `.assoc` must retain the same static field evidence.
-  if let Some(indexed_call) = lower_static_struct_assoc(&Calcit::Proc(proc), processed_args, scope_types) {
-    return Some(Calcit::from(indexed_call));
-  }
   // Build specialized call: (proc arg1 arg2 ...)
   let mut items: Vec<Calcit> = Vec::with_capacity(processed_args.len() + 1);
   items.push(Calcit::Proc(proc));

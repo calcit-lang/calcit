@@ -2557,6 +2557,8 @@ try {
     // the strict field-value proof must still run before that lowering.
     ["assoc-struct-wrong-field", "'fix-command.main/Point", "assoc xs :x |wrong", "'fix-command.main/Point", false],
     ["assoc-struct-same-field", "'fix-command.main/Point", "assoc xs :x 3", "'fix-command.main/Point", true],
+    ["assoc-struct-string-wrong-field", "'fix-command.main/Point", "assoc xs |x |wrong", "'fix-command.main/Point", false],
+    ["assoc-struct-string-same-field", "'fix-command.main/Point", "assoc xs |x 3", "'fix-command.main/Point", true],
   ]) {
     await copyFile("tests/fixtures/count-contract.cirru", snapshot);
     run("edit", "def", "fix-command.main/Point", "--input-format", "cirru", "--code",
