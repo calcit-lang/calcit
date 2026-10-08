@@ -64,6 +64,7 @@ For detailed information about specific features:
 - [Traits](features/traits.md) - Capability-based method dispatch and explicit trait calls
 - [Static Analysis](features/static-analysis.md) - Type checking and compile-time validation
 - [Type Guidance](type-guidance.md) - Dynamic audits, Option/Result composition, nested lookup, and typed Enum construction
+- [Number](data/number.md) - Number 规格：NaN/inf/-0、取整、整数参数定义域、转文本与解析在各后端的规则
 
 ## Compilation Targets
 
@@ -74,6 +75,7 @@ For detailed information about specific features:
 Use this section as a keyword index for `calcit docs read`:
 
 - **Collections**: list, map, set, struct, enum
+- **Numbers**: number spec, NaN, rounding, bitwise, rem, parse-float
 - **Pattern Matching**: enum, match, anonymous enum, result, exhaustiveness
 - **Types**: static-analysis, assert-type, optional, variadic
 - **Methods**: trait, impl-traits, method dispatch, trait-call

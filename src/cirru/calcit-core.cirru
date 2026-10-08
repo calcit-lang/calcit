@@ -110,14 +110,22 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |preserves-primitive-schema-in-local-binding)
-            :code $ quote $ let
-                f2 &+
-              assert-type f2 $ :: 'Fn $ {} (:return 'Number)
-                :args $ [] 'Number 'Number
-              assert= 3 $ f2 1 2
-              assert= 3 $ apply f2 $ [] 1 2
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-primitive-schema-in-local-binding)
+              :code $ quote $ let
+                  f2 &+
+                assert-type f2 $ :: 'Fn $ {} (:return 'Number)
+                  :args $ [] 'Number 'Number
+                assert= 3 $ f2 1 2
+                assert= 3 $ apply f2 $ [] 1 2
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |keeps-f64-precision-and-overflows-to-inf)
+              :code $ quote $ do
+                assert= 9007199254740992 $ &+ 9007199254740991 1
+                assert= true $ = 9007199254740992 $ &+ 9007199254740992 1
+                assert= |inf $ turn-string $ &* 1e308 10
+                assert= |-inf $ turn-string $ &* 1e308 -10
+              :tags $ #{} :core :unit
         '&- $ %{} 'CodeEntry
           :doc "|internal function for subtraction\nSyntax: (&- a b)\nParams: a (number), b (number)\nReturns: number\nSubtracts second number from first, supports integers and floats"
           :code $ quote &runtime-implementation
@@ -132,6 +140,13 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |divides-by-zero-to-nonfinite)
+            :code $ quote $ do
+              assert= |inf $ turn-string $ &/ 1 0
+              assert= |-inf $ turn-string $ &/ -1 0
+              assert= |NaN $ turn-string $ &/ 0 0
+              assert= |-0 $ turn-string $ &/ -1 (&/ 1 0)
+            :tags $ #{} :core :unit
         '&< $ %{} 'CodeEntry
           :doc "|internal function for less than comparison\nSyntax: (&< a b & values)\nParams: a (number), b (number), values (number, variadic)\nReturns: boolean\nReturns true if values are in ascending order"
           :code $ quote &runtime-implementation
@@ -139,6 +154,15 @@
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |compares-nan-as-unordered)
+            :code $ quote $ let
+                not-a-number $ &/ 0 0
+              assert= false $ &< not-a-number 1
+              assert= false $ &> not-a-number 1
+              assert= false $ &< 1 not-a-number
+              assert= false $ &< -0 0
+              assert= true $ &< 1e308 $ &/ 1 0
+            :tags $ #{} :core :unit
         '&<= $ %{} 'CodeEntry (:doc "|Less than or equal comparison for two values")
           :code $ quote $ defn &<= (a b)
             assert "|expects numbers for &<=" $ if (number? a) (number? b)
@@ -1446,10 +1470,21 @@
             :args $ [] (:: 'List 'T) 'Number
             :generics $ [] 'T
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |returns-nth-directly)
-            :code $ quote $ assert= :b
-              &list:nth ([] :a :b :c) 1
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |returns-nth-directly)
+              :code $ quote $ assert= :b
+                &list:nth ([] :a :b :c) 1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-non-integer-index)
+              :code $ quote $ let
+                  xs $ [] 1 2 3
+                assert= :failed $ try
+                  do (&list:nth xs 1.5) :returned
+                  fn (_error) :failed
+                assert= :failed $ try
+                  do (&list:nth xs -1) :returned
+                  fn (_error) :failed
+              :tags $ #{} :core :unit
         '&list:numbers $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:numbers (xs)
             foldl xs ([])
@@ -1512,10 +1547,19 @@
             :generics $ [] 'T
             :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |slices-list-with-exclusive-end)
-            :code $ quote $ assert= ([] :b :c :d)
-              &list:slice ([] :a :b :c :d) 1 4
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |slices-list-with-exclusive-end)
+              :code $ quote $ assert= ([] :b :c :d)
+                &list:slice ([] :a :b :c :d) 1 4
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-fractional-bounds)
+              :code $ quote $ assert= :failed
+                try
+                  do
+                    &list:slice ([] 1 2 3 4) 0.5 2
+                    , :returned
+                  fn (_error) :failed
+              :tags $ #{} :core :unit
         '&list:sort $ %{} 'CodeEntry (:doc |)
           :code $ quote $ &runtime-implementation
           :examples $ []
@@ -1967,12 +2011,18 @@
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |renders-number-bases)
-            :code $ quote $ do
-              assert= |0b10001 $ &number:display-by 17 2
-              assert= |0o21 $ &number:display-by 17 8
-              assert= |0x11 $ &number:display-by 17 16
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |renders-number-bases)
+              :code $ quote $ do
+                assert= |0b10001 $ &number:display-by 17 2
+                assert= |0o21 $ &number:display-by 17 8
+                assert= |0x11 $ &number:display-by 17 16
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |formats-non-negative-safe-integers)
+              :code $ quote $ do
+                assert= |0x100000000 $ &number:display-by 4294967296 16
+                assert= |0b0 $ &number:display-by 0 2
+              :tags $ #{} :core :unit
         '&number:empty $ %{} 'CodeEntry (:doc "|internal helper for number :empty method entry")
           :code $ quote $ defn &number:empty (_x) 0
           :examples $ []
@@ -1995,9 +2045,16 @@
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |formats-decimal-places)
-            :code $ quote $ assert= |1.235 (&number:format 1.23456789 3)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |formats-decimal-places)
+              :code $ quote $ assert= |1.235 (&number:format 1.23456789 3)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rounds-ties-away-from-zero)
+              :code $ quote $ do
+                assert= |3 $ &number:format 2.5 0
+                assert= |-1 $ &number:format -0.5 0
+                assert= |1.00 $ &number:format 1.005 2
+              :tags $ #{} :core :unit
         '&number:fract $ %{} 'CodeEntry
           :doc "|internal function for number fractional part\nSyntax: (&number:fract n)\nParams: n (number)\nReturns: number\nReturns fractional part of number (n - floor(n))"
           :code $ quote &runtime-implementation
@@ -4057,11 +4114,19 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |shifts-left)
-            :code $ quote $ do
-              assert= 4 $ bit-shl 2 1
-              assert= 16 $ bit-shl 4 2
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |shifts-left)
+              :code $ quote $ do
+                assert= 4 $ bit-shl 2 1
+                assert= 16 $ bit-shl 4 2
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |masks-shift-count-to-five-bits)
+              :code $ quote $ do
+                assert= -2147483648 $ bit-shl 1 31
+                assert= 1 $ bit-shl 1 32
+                assert= -2147483648 $ bit-shl 1 -1
+                assert= -4 $ bit-shr -8 1
+              :tags $ #{} :core :unit
         'bit-shr $ %{} 'CodeEntry
           :doc "|internal function for bit shift right\nSyntax: (bit-shr n shift)\nParams: n (integer), shift (integer)\nReturns: integer\nShifts bits of n right by shift positions"
           :code $ quote &runtime-implementation
@@ -9980,6 +10045,12 @@
                   do (range 100000000000000000000 99999999999999000000 -1) false
                   fn (_error) true
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-zero-step)
+              :code $ quote $ assert= :failed
+                try
+                  do (range 0 3 0) :returned
+                  fn (_error) :failed
+              :tags $ #{} :core :unit
         'range-bothway $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn range-bothway (x ? y)
             if (nil? y)
@@ -10367,11 +10438,20 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |rounds-fractional-values-both-directions)
-            :code $ quote $ do
-              assert= 1 $ round 1.1
-              assert= 2 $ round 1.8
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |rounds-fractional-values-both-directions)
+              :code $ quote $ do
+                assert= 1 $ round 1.1
+                assert= 2 $ round 1.8
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rounds-ties-away-from-zero)
+              :code $ quote $ do
+                assert= 3 $ round 2.5
+                assert= -3 $ round -2.5
+                assert= 1 $ round 0.5
+                assert= -1 $ round -0.5
+                assert= |-0 $ turn-string $ round -0.4
+              :tags $ #{} :core :unit
         'round? $ %{} 'CodeEntry
           :doc "|判断 Number 是否有限且恰好无小数部分。首选 integer? 和 Number .integer?；旧函数 round? 在兼容窗口保持同义，Number 方法 .round? 已在 0.29.0 删除。可用 calcit fix --rule core-integer-predicate-v1 显式预览来源受控的函数调用迁移，附带 tests/examples 需人工检查。NaN、正负 Infinity、非零小数返回 false，-0 返回 true。这不是安全整数范围或 Int32/UInt32 等 refinement 检查，也不执行舍入。"
           :code $ quote &runtime-implementation
@@ -10731,6 +10811,13 @@
               :code $ quote $ do
                 assert= |ac $ str |a nil |c
                 assert= "|(%:: _ :a |世界 \"|海 洋\")" $ str $ :: :a "|世界" "|海 洋"
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |formats-numbers-like-turn-string)
+              :code $ quote $ do
+                assert= |inf $ str $ &/ 1 0
+                assert= |-0 $ str $ &* -1 0
+                assert= |1000000000000000000000 $ str 1e21
+                assert= |0.0000001 $ str 1e-7
               :tags $ #{} :core :unit
         'str-find-index $ %{} 'CodeEntry
           :doc "|返回首次匹配的 Unicode 标量索引 Option<Number>，可直接用于 .get/.slice；不是 UTF-8 字节或 UTF-16 单元偏移，也不按 grapheme 分组。未找到返回 Option :none，空 pattern 返回 Option :some 0。"
