@@ -21,7 +21,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { writeCirruCode } from "@cirru/writer.ts";
-import { hasNativeParity, markerProtocolError, parseBackendSelection, parseMarkers } from "./core-test-protocol.mjs";
+import { hasNativeParity, markerProtocolError, parseBackendSelection, parseMarkers, parseWasmDiagnosticTable } from "./core-test-protocol.mjs";
 
 // `wasi` (a WASI 0.3 command run by $WASMTIME_CLI) is opt-in via --backend.
 const BACKENDS = ["native", "js", "wasm", "wasi"];
@@ -140,6 +140,7 @@ for (const backend of BACKENDS) {
 // The WASM support matrix documents every unsupported proc and diagnostic code
 // that an exclusion reason cites, so the two lists cannot drift apart.
 const matrixText = readFileSync(resolve(options.supportMatrix), "utf8");
+const matrixCodes = parseWasmDiagnosticTable(matrixText);
 const matrixProcs = new Set((/```text wasm-unsupported-procs\n([\s\S]*?)```/.exec(matrixText)?.[1] ?? "")
   .split("\n").map((line) => line.trim()).filter((line) => line !== ""));
 for (const backend of ["wasm", "wasi"]) {
@@ -150,7 +151,7 @@ for (const backend of ["wasm", "wasi"]) {
       if (!matrixProcs.has(proc)) exclusionProblems.push(`${backend}: \`${proc}\` is cited as unsupported but missing from ${options.supportMatrix}`);
     }
     for (const [code] of reason.matchAll(/E_WASM_[A-Z_]+/g)) {
-      if (!matrixText.includes(`\`${code}\``)) exclusionProblems.push(`${backend}: ${code} is cited but not documented in ${options.supportMatrix}`);
+      if (!matrixCodes.has(code)) exclusionProblems.push(`${backend}: ${code} is cited but missing from the diagnostic table in ${options.supportMatrix}`);
     }
   }
 }

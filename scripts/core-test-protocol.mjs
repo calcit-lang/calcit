@@ -1,4 +1,32 @@
 // Internal protocol shared by the runner and its host-level regression tests.
+/** Read only diagnostic-table code cells; prose and other columns are not coverage. */
+export const parseWasmDiagnosticTable = (text) => {
+  const codes = new Set();
+  let inSection = false;
+  let inTable = false;
+  for (const raw of text.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line.startsWith("## ")) {
+      inSection = line === "## 诊断";
+      inTable = false;
+      continue;
+    }
+    if (!inSection) continue;
+    const cells = line.split("|").map(cell => cell.trim());
+    if (!inTable) {
+      inTable = cells.length === 5 && cells[0] === "" && cells[1] === "编号"
+        && cells[2] === "含义" && cells[3] === "处理方式" && cells[4] === "";
+      continue;
+    }
+    if (cells.length < 5 || cells[0] !== "" || cells.at(-1) !== "") {
+      inTable = false;
+      continue;
+    }
+    for (const [, code] of cells[1].matchAll(/`(E_WASM_[A-Z_]+)`/g)) codes.add(code);
+  }
+  return codes;
+};
+
 export const parseBackendSelection = (value, supported) => {
   const backends = value.split(",").filter(Boolean);
   if (backends.length === 0) throw new Error("--backend requires at least one backend");

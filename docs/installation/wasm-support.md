@@ -120,6 +120,8 @@ write-file
 
 新增 WASM 能力的 PR 同步更新本页：表层构造表、`wasm-unsupported-procs` 列表和诊断表，并移除 `scripts/core-tests-exclusions.cirru` 中对应的排除项。
 
+诊断覆盖检查只读取“诊断”章节表格的“编号”列；正文、其他表格或说明列中引用的编号不算已登记。同一格可以列出多个分别用反引号包裹的编号。
+
 ## 限制
 
 - 不带编号的 `unsupported ... in WASM` 诊断尚未统一格式，不一定包含源位置与缺失的证据种类。
