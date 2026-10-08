@@ -2047,6 +2047,12 @@ fn save_schema_preserving_snapshot(
     entry.pairs.retain(|(key, _)| key.ref_str() != "schema");
   }
 
+  // Reject a schema the loader would refuse before the atomic save, so a failed
+  // write leaves the original bytes and revision untouched.
+  snapshot::load_snapshot_data(&data, snapshot_file).map_err(|e| {
+    format!("Schema validation failed: `{namespace}/{definition}` would make the snapshot unloadable, nothing was written: {e}")
+  })?;
+
   let formatted = cirru_edn::format(&data, true).map_err(|e| format!("Failed to format snapshot EDN: {e}"))?;
   let output = match shebang {
     Some(line) => format!("{line}\n{formatted}"),

@@ -1214,6 +1214,81 @@ fn malformed_defmacro_is_rejected_without_changing_the_snapshot() {
 }
 
 #[test]
+fn unloadable_macro_schema_edits_are_rejected_without_changing_the_snapshot() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  create_macro(&snapshot, "echo-source", "quote $ defmacro echo-source (value) , value");
+  let original = fs::read(&snapshot).expect("snapshot should read");
+
+  let invalid_expansion = "quote $ :: 'Macro $ {} (:required $ [] 'Syntax) (:capabilities $ #{}) (:expansion 'Syntax)";
+  let rejected = [
+    vec![
+      "edit",
+      "schema",
+      "app.main/echo-source",
+      "--input-format",
+      "cirru",
+      "--code",
+      invalid_expansion,
+    ],
+    vec![
+      "edit",
+      "schema",
+      "app.main/echo-source",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Syntax) (:return 'Dynamic)",
+    ],
+    vec!["edit", "schema", "app.main/echo-source", "--clear"],
+  ];
+  for args in &rejected {
+    let output = run_calcit(&snapshot, args);
+    assert!(!output.status.success(), "unloadable schema edit must fail: {args:?}");
+    assert!(
+      String::from_utf8_lossy(&output.stderr).contains("Schema validation failed"),
+      "stderr:\n{}",
+      String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+      fs::read(&snapshot).expect("snapshot should read"),
+      original,
+      "failed edit changed the Snapshot: {args:?}"
+    );
+  }
+
+  let transaction_code = format!(
+    r#"[["edit","schema","app.main/echo-source","--input-format","cirru","--code",{}]]"#,
+    serde_json::to_string(invalid_expansion).expect("code should encode")
+  );
+  let transaction = run_calcit(&snapshot, &["edit", "transaction", "--code", &transaction_code]);
+  assert!(!transaction.status.success(), "transaction with an unloadable schema must fail");
+  assert_eq!(
+    fs::read(&snapshot).expect("snapshot should read"),
+    original,
+    "failed transaction changed the Snapshot"
+  );
+
+  query_definition(&snapshot, "app.main/echo-source");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "app.main/echo-source",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Macro $ {} (:required $ [] 'Syntax) (:capabilities $ #{}) (:expansion $ :: 'Expr 'Dynamic)",
+      ],
+    ),
+    "valid macro schema edit",
+  );
+  query_definition(&snapshot, "app.main/echo-source");
+}
+
+#[test]
 fn overwriting_with_defexternal_drops_retained_ffi_metadata() {
   let directory = TestDirectory::create();
   let snapshot = prepare_minimal_snapshot(&directory);
