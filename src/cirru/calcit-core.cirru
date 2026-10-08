@@ -10565,6 +10565,9 @@
             %{} 'TestEntry (:name |drops-empty-pieces-between-delimiters)
               :code $ quote $ assert= ([] |a |b) (split |,a,,b, |,)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |splits-astral-characters-on-empty-delimiter)
+              :code $ quote $ assert= ([] |a "|😀" |b) (split "|a😀b" |)
+              :tags $ #{} :core :unit
         'split-lines $ %{} 'CodeEntry
           :doc "|internal function for splitting lines\nSyntax: (split-lines s)\nParams: s (string)\nReturns: list of strings\nSplits string by newlines into list of lines"
           :code $ quote &runtime-implementation
