@@ -47,6 +47,7 @@ base64 = "0.22.1"
 hex = "0.4.3"
 md-5 = "0.11.0"
 rpds = "1.2.1"
+foldhash = "0.2.0"
 finger_vec = "0.1.0"
 # finger_vec = { path = "../finger-vec.rs" }
 colored = "3.1.1"
