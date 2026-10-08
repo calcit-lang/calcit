@@ -1533,7 +1533,12 @@ export let _$n_str_$o_replace = (x: string, y: string, z: string): string => {
 };
 
 export let split = (xs: string, x: string): CalcitSliceList => {
-  return new CalcitSliceList(xs.split(x));
+  // An empty delimiter splits by code point, matching native for astral characters.
+  if (x === "") {
+    return new CalcitSliceList(Array.from(xs));
+  }
+  // Drop empty pieces to match native and WASM: `split | |,` is an empty list.
+  return new CalcitSliceList(xs.split(x).filter((piece) => piece !== ""));
 };
 export let split_lines = (xs: string): CalcitSliceList => {
   return new CalcitSliceList(xs.split("\n"));
