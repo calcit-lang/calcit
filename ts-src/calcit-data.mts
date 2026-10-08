@@ -231,6 +231,7 @@ export var refsRegistry = new Map<string, CalcitRef>();
 let defaultHash_nil = valueHash("nil:");
 let defaultHash_unit = valueHash("unit:");
 let defaultHash_number = valueHash("number:");
+let defaultHash_nan = valueHash("number:NaN");
 let defaultHash_string = valueHash("string:");
 let defaultHash_tag = valueHash("tag:");
 let defaultHash_true = valueHash("bool:true");
@@ -262,7 +263,9 @@ export let hashFunction = (x: CalcitValue): Hash => {
   }
   if (x === undefined) return defaultHash_unit;
   if (typeof x === "number") {
-    return mergeValueHash(defaultHash_number, x);
+    // NaN equals NaN, so it needs a hash that equals itself; `0` and `-0` share one hash
+    if (Number.isNaN(x)) return defaultHash_nan;
+    return mergeValueHash(defaultHash_number, x === 0 ? 0 : x);
   }
   if (typeof x === "string") {
     return mergeValueHash(defaultHash_string, x);
@@ -691,8 +694,8 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
     return false;
   }
   if (tx === "number") {
-    // already checked above
-    return false;
+    // value equality: NaN equals NaN (`0 === -0` already held above)
+    return Number.isNaN(x) && Number.isNaN(y);
   }
   if (tx === "function") {
     // method values are closures created on the fly (see invoke_method_closure),

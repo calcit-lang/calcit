@@ -104,6 +104,13 @@ let rawCompare = (x: any, y: any): number => {
   }
 };
 
+/** total order over numbers: `-0` equals `0`, NaN equals NaN and sorts after every number */
+export let compareNumbers = (x: number, y: number): number => {
+  if (x < y) return -1;
+  if (x > y) return 1;
+  return (Number.isNaN(x) ? 1 : 0) - (Number.isNaN(y) ? 1 : 0);
+};
+
 /** lexicographic order over two sequences of values, a shorter prefix sorts first (same as Rust `Vec::cmp`) */
 let compareSequences = (xs: CalcitValue[], ys: CalcitValue[]): number => {
   let n = Math.min(xs.length, ys.length);
@@ -128,7 +135,7 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
       case PseudoTypeIndex.bool:
         return rawCompare(a, b);
       case PseudoTypeIndex.number:
-        return rawCompare(a, b);
+        return compareNumbers(a as number, b as number);
       case PseudoTypeIndex.tag:
         return rawCompare((a as CalcitTag).value, (b as CalcitTag).value);
       case PseudoTypeIndex.symbol:

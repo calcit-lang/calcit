@@ -267,6 +267,16 @@ pub(super) fn emit_copy_f64_loop(ctx: &mut WasmGenCtx, dst_base: u32, src_base: 
   ctx.emit(Instruction::Call(fn_idx));
 }
 
+/// Consume two f64 operands and push an i32 for scalar value equality:
+/// like `f64.eq`, except that NaN equals NaN.
+pub(super) fn emit_f64_value_eq(ctx: &mut WasmGenCtx) {
+  let fn_idx = *ctx
+    .runtime_fn_index
+    .get("__rt_f64_value_eq")
+    .unwrap_or_else(|| panic!("runtime helper missing: __rt_f64_value_eq"));
+  ctx.emit(Instruction::Call(fn_idx));
+}
+
 pub(super) fn emit_runtime_lookup_i32_f64_to_i32(ctx: &mut WasmGenCtx, helper: &str, ptr_local: u32, target_local: u32) -> u32 {
   let result = ctx.alloc_local_typed(ValType::I32);
   let fn_idx = *ctx
