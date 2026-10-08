@@ -8074,6 +8074,13 @@ fn retired_method_migration(receiver: &CalcitTypeAnnotation, method_name: &str) 
     ),
     (T::Set(_), "add") => Some("`.add` was a same-implementation alias; use `.include`"),
     (T::Set(_), "mappend") => Some("`.mappend` was a same-implementation alias; use `.union`"),
+    (T::Map(_, _), "contains?") => {
+      Some("`.contains?` checked a Map key; use `.contains-key?` (the function `contains?` still accepts a Map)")
+    }
+    (T::Map(_, _), "includes?") => Some("`.includes?` checked a Map value, not a key; use `.contains-value?`"),
+    (T::Set(_), "contains?") => {
+      Some("`.contains?` was a same-implementation alias; use `.includes?` (the function `contains?` still accepts a Set)")
+    }
     _ => retired_core_struct_method_migration(receiver, method_name),
   }
 }

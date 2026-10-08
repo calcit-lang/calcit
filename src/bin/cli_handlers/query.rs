@@ -1599,12 +1599,6 @@ mod type_query_tests {
 
     for (receiver, old_name, preferred_name, rule) in [
       (
-        parse_type_annotation_query(":: 'Map 'Tag 'Number").expect("map type"),
-        ".contains?",
-        ".contains-key?",
-        "core-predicate-method-v1",
-      ),
-      (
         parse_type_annotation_query(":: 'List 'Number").expect("list type"),
         ".add",
         ".append",
@@ -1672,12 +1666,18 @@ mod type_query_tests {
       let method = methods.iter().find(|method| method.name == unchanged).expect("map method");
       assert!(method.role.is_none(), "{unchanged} has no proven equivalent alias fix");
     }
-    for retired in [".add", ".mappend"] {
+    for retired in [".add", ".mappend", ".contains?", ".includes?"] {
       assert!(
         methods.iter().all(|method| method.name != retired),
         "the Map `{retired}` alias was retired in 0.29.0"
       );
     }
+    let set = parse_type_annotation_query(":: 'Set 'Tag").expect("set type");
+    let set_methods = runner::preprocess::static_method_contracts(set.as_ref()).expect("set method contracts");
+    assert!(
+      set_methods.iter().all(|(method, _)| method.name != ".contains?"),
+      "the Set `.contains?` alias was retired in 0.29.0"
+    );
     assert_eq!(
       methods
         .iter()

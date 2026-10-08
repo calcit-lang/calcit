@@ -229,7 +229,7 @@ Core types provide origin-carrying built-in trait implementations registered con
 | --- | --- | --- |
 | `Compare` | `.compare` | Number, String |
 | `Countable` | `.count` | List, Map, Set, String, Struct, Enum |
-| `Contains` | `.contains?` | Map, Set, Struct, Enum（List 与 String 请用 `.contains-index?`） |
+| `Contains` | `.contains?` | Struct, Enum（List 与 String 请用 `.contains-index?`；Map 用 `.contains-key?` / `.contains-value?`，Set 用 `.includes?`） |
 | `Mappable` | `.map` | List, Map, Set, Option, Result |
 | `Debug` | `.debug` | Number, String, Bool, Tag, Symbol, Nil, CirruQuote, List, Map, Set, Fn, Struct, Enum |
 | `Show` | `.show` | Explicit user implementations only |

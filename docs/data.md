@@ -56,7 +56,7 @@ Prefer named structs and enums at module boundaries: their definitions carry sch
 - **Rust runtime**: Uses [rpds](https://github.com/orium/rpds) for HashMap/HashSet and [ternary-tree](https://github.com/calcit-lang/ternary-tree.rs/) for vectors
 - **JavaScript runtime**: Uses [ternary-tree.ts](https://github.com/calcit-lang/ternary-tree.ts) for all collections
 
-Collection method availability is also expressed through built-in traits. `Countable` and `Contains` cover List, Map, Set, String, Struct, and Enum; `Compare` covers Number and String. See [Polymorphism](features/polymorphism.md) for the full matrix.
+集合方法的可用性也通过内建 trait 表达：`Countable` 覆盖 List、Map、Set、String、Struct 与 Enum；`Contains` 只覆盖 Struct 与 Enum（Map 与 Set 已在 0.29.0 移出）；`Compare` 覆盖 Number 与 String。 See [Polymorphism](features/polymorphism.md) for the full matrix.
 
 For serialization fidelity and unsupported runtime values, see:
 

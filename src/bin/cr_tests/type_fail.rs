@@ -1149,6 +1149,9 @@ fn strict_type_fail_retired_alias_methods_report_preferred_spelling() {
       (".add (&{} :a 1) ([] :b 2)", ".add", ".assoc"),
       (".add (#{} 1) 2", ".add", ".include"),
       (".mappend (#{} 1) (#{} 2)", ".mappend", ".union"),
+      (".contains? (&{} :a 1) :a", ".contains?", ".contains-key?"),
+      (".includes? (&{} :a 1) 1", ".includes?", ".contains-value?"),
+      (".contains? (#{} 1) 1", ".contains?", ".includes?"),
     ] {
       let entries = load_snippet_entries(snippet);
       let err = run_check_only(&entries).expect_err(&format!("retired {method} must fail strict check-only"));

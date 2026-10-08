@@ -80,7 +80,7 @@ calcit calcit.cirru fix --workflow strict --format edn
 再按 `.github/workflows/` 与 `package.json` 运行项目原有的检查和构建命令，记录结果。
 
 **需要旧版迁移桥梁时，先迁移源码，再升级工具链。** 例如 0.28.x → 0.29.0，List `.join`、Map `.values`、
-List/String `.contains?`，Number `.round?`、FsPath `.write-text`、FfiResponse `.resolve` / `.reject`，以及 List `.reduce` / `.bind` / `.join-str` / `.nth`、Map/Set `.mappend`、Set `.add` 的迁移规则在目标 CLI 中已退役或缩小范围，应先阅读本页“兼容入口的退场节奏”，用匹配项目的
+List/String `.contains?`，Number `.round?`、FsPath `.write-text`、FfiResponse `.resolve` / `.reject`，List `.reduce` / `.bind` / `.join-str` / `.nth`、Map/Set `.mappend`、Set `.add`，以及 Map/Set `.contains?`、Map `.includes?` 的迁移规则在目标 CLI 中已退役或缩小范围，应先阅读本页“兼容入口的退场节奏”，用匹配项目的
 0.28.x CLI 预览、携带 revision 应用并运行原测试。已发布的 0.28.x CLI 没有 `--include-attached` 与 `--pattern`，
 桥梁只迁移 definition `:code`，预览的 `:manual-review-regions` 会列出 `|tests` 与 `|examples`；这两处的旧写法在第 9 步由目标
 CLI 的 `E_RETIRED_METHOD` 等诊断定位后逐处改写。若已安装目标 CLI，可通过原已发布 CLI 的绝对路径执行旧阶段，
@@ -166,6 +166,7 @@ named entry 不继承 default 配置，逐个检查与运行。把 `test --list`
 | `core-list-intersperse-v1`、`core-map-distinct-values-v1`、`core-predicate-method-v1` 的 List/String 部分 | List `.join`、Map `.values`、List/String `.contains?` | 已发布 0.28.x | 0.29.0 已退役；见 [兼容入口的退场节奏](#兼容入口的退场节奏) |
 | `core-integer-predicate-v1` 的 Number 方法部分、`core-effect-method-v1` 的 FsPath/FfiResponse 部分 | Number `.round?`、FsPath `.write-text`、FfiResponse `.resolve` / `.reject` | 已发布 0.28.x | 0.29.0 已退役；见 [兼容入口的退场节奏](#兼容入口的退场节奏) |
 | `core-set-include-v1`、`core-list-fold-v1`、`core-list-flat-map-v1`、`core-list-join-string-v1`、`core-list-get-v1`、`core-collection-combine-v1` | List `.reduce` / `.bind` / `.join-str` / `.nth`、Map/Set `.mappend`、Set `.add` | 已发布 0.28.x | 0.29.0 已退役；见 [兼容入口的退场节奏](#兼容入口的退场节奏) |
+| `core-predicate-method-v1` 的 Map/Set 部分 | Map `.contains?` / `.includes?`、Set `.contains?` | 已发布 0.28.x | 0.29.0 已退役，整条规则不再提供；见 [兼容入口的退场节奏](#兼容入口的退场节奏) |
 | `core-api-0.28-v1` 与各兼容名的 fix rule | 0.28 起的核心 API 旧名 | 目标 CLI | 当前可用；按 [兼容入口的退场节奏](#兼容入口的退场节奏) 退场 |
 
 退场条件统一为：已知活跃下游默认分支的源码、附带测试/示例、宏生成代码和 CI/文档引用清零，且依赖模块与未合并迁移已核对后，
@@ -330,7 +331,7 @@ trait 的 where 约束现在使用能力证明，而不是把未绑定泛型静�
 
 `contains?` 的旧方法形式依接收者表示不同命题，不能全局替换：List/String 检查索引，Map 检查键，Set 检查成员；Map 的旧 `.includes?` 则检查值。新代码首选 List/String `.contains-index?`、Map `.contains-key?` / `.contains-value?`，Set 成员保留 `.includes?`。String `.includes?` 判断子串，List `.includes?` 判断元素，均不得与索引判断混用。
 
-List/String 的旧 `.contains?` 已在 0.29.0 删除（见下文“兼容入口的退场节奏”），下面描述 0.28.x 的迁移与 Map/Set 部分。已证明旧新方法同属 core 实现时，可显式预览 `calcit calcit.cirru fix --rule core-predicate-method-v1 --format edn`，审阅建议和 revision 后再应用。规则不迁移 Struct/Enum、`Contains` trait、自定义同名方法、开放接收者或 attached `:tests` / `:examples`；这些位置需要人工检查。原有方法仍保留原义，不会因新名字而改变失败行为。完整边界见 [API 命名角色](../features/api-roles.md#谓词与成员查询) 与 [fix 规则](fix.md)。
+List/String/Map/Set 的旧 `.contains?` 与 Map 的旧 `.includes?` 已在 0.29.0 删除（见下文“兼容入口的退场节奏”），写下它们会得到 `E_RETIRED_METHOD`。下面描述 0.28.x 上的迁移：已证明旧新方法同属 core 实现时，用 0.28.x 的 CLI 显式预览 `calcit calcit.cirru fix --rule core-predicate-method-v1 --format edn`，审阅建议和 revision 后再应用。规则不迁移 Struct/Enum、`Contains` trait、自定义同名方法、开放接收者或 attached `:tests` / `:examples`；这些位置需要人工检查。Struct/Enum 的 `.contains?` 在 0.29.0 仍可用。完整边界见 [API 命名角色](../features/api-roles.md#谓词与成员查询) 与 [fix 规则](fix.md)。
 
 ## 兼容入口的退场节奏
 
@@ -338,7 +339,7 @@ List/String 的旧 `.contains?` 已在 0.29.0 删除（见下文“兼容入口�
 
 ### 0.29.0 已删除：`.join`、Map `.values`、List/String `.contains?`
 
-下面三组旧方法在 0.28.0 按 Rust/Clojure 习惯书写时能通过类型检查，但结果与直觉不符，已在 0.29.0 删除。写下它们会得到 `E_RETIRED_METHOD`，信息里给出首选替代；List 与 String 同时不再实现 `Contains` trait，需要该 trait 的泛型约束请改用 Map、Set、Struct 或 Enum，或直接调用具名方法。
+下面三组旧方法在 0.28.0 按 Rust/Clojure 习惯书写时能通过类型检查，但结果与直觉不符，已在 0.29.0 删除。写下它们会得到 `E_RETIRED_METHOD`，信息里给出首选替代；List 与 String 同时不再实现 `Contains` trait；Map 与 Set 也随后移出（见下文），需要该 trait 的泛型约束只剩 Struct 与 Enum，其余接收者请直接调用具名方法。
 
 | 已删除 | 0.28 的行为 | 首选替代 | 迁移（使用 0.28.x 的 CLI） |
 |---|---|---|---|
@@ -346,9 +347,9 @@ List/String 的旧 `.contains?` 已在 0.29.0 删除（见下文“兼容入口�
 | Map `.values` | 值重复时只剩去重后的 Set 元素 | `.distinct-values` | `calcit calcit.cirru fix --rule core-map-distinct-values-v1 --format edn` |
 | List/String `.contains?` | 判断下标，不判断成员 | `.contains-index?`；成员判断用 `.includes?` | `calcit calcit.cirru fix --rule core-predicate-method-v1 --format edn` |
 
-三条迁移规则随旧方法一起退役：0.29.0 的 CLI 不再提供 `core-list-intersperse-v1`、`core-map-distinct-values-v1`，`core-predicate-method-v1` 只保留 Map/Set 部分，`core-api-0.28-v1` preset 由 15 条规则减为 13 条。升级顺序是先在原工具链（0.28.x）上预览并应用这些规则，审阅 revision、再次预览并运行项目测试，然后才升级依赖和 CLI；规则只处理接收者类型已证明的方法调用，函数形式的 `join` / `vals`（仍可用，改名由 `core-function-alias-v1` 负责）、Dynamic 接收者与一等函数引用需要人工审阅。来不及迁移的项目会在严格检查时看到 `E_RETIRED_METHOD`，按提示逐处改名即可。
+三条迁移规则随旧方法一起退役：0.29.0 的 CLI 不再提供 `core-list-intersperse-v1`、`core-map-distinct-values-v1`，`core-predicate-method-v1` 的 Map/Set 部分也已退役（见下文），`core-api-0.28-v1` preset 因此先由 15 条规则减为 13 条。升级顺序是先在原工具链（0.28.x）上预览并应用这些规则，审阅 revision、再次预览并运行项目测试，然后才升级依赖和 CLI；规则只处理接收者类型已证明的方法调用，函数形式的 `join` / `vals`（仍可用，改名由 `core-function-alias-v1` 负责）、Dynamic 接收者与一等函数引用需要人工审阅。来不及迁移的项目会在严格检查时看到 `E_RETIRED_METHOD`，按提示逐处改名即可。
 
-函数形式 `contains?` 不变：List 按下标、String 按下标、Map 按键、Set 按成员，调用方式与结果同 0.28。
+函数形式 `contains?` 不变：List 按下标、String 按下标、Map 按键、Set 按成员，调用方式与结果同 0.28。函数形式 `includes?` 也不变，Map 仍按值判断。
 
 ### 0.29.0 已删除：同实现的方法别名 `.round?`、`.write-text`、`.resolve`、`.reject`
 
@@ -377,9 +378,23 @@ List/String 的旧 `.contains?` 已在 0.29.0 删除（见下文“兼容入口�
 | Map `.add [key value]` | `.assoc key value` | 人工改写：旧方法只检查 entry 长度，不证明键值类型，没有 fix rule |
 | 函数 `foldl'` | `fold`，参数顺序相同 | 人工改写 |
 
-上表的 6 条迁移规则随旧方法一起退役：0.29.0 的 CLI 不再提供 `core-set-include-v1`、`core-list-fold-v1`、`core-list-flat-map-v1`、`core-list-join-string-v1`、`core-list-get-v1`、`core-collection-combine-v1`，用 `--rule` 指定它们或更早退役的 `core-list-intersperse-v1`、`core-map-distinct-values-v1` 时，CLI 会提示改用 0.28.x 的 CLI。`core-api-0.28-v1` preset 由 13 条规则减为 7 条，`core-api-0.29-v1` 由 14 条减为 8 条。升级顺序同上：先在 0.28.x 上预览、应用并运行项目测试，再升级 CLI。
+上表的 6 条迁移规则随旧方法一起退役：0.29.0 的 CLI 不再提供 `core-set-include-v1`、`core-list-fold-v1`、`core-list-flat-map-v1`、`core-list-join-string-v1`、`core-list-get-v1`、`core-collection-combine-v1`，用 `--rule` 指定它们或更早退役的 `core-list-intersperse-v1`、`core-map-distinct-values-v1` 时，CLI 会提示改用 0.28.x 的 CLI。升级顺序同上：先在 0.28.x 上预览、应用并运行项目测试，再升级 CLI。
 
-Map/Set `.contains?` 与 Map `.includes?` 在 0.29.0 仍可用：Map 与 Set 还实现 `Contains` trait，删除需同时调整类型检查的内建 trait 元数据，留待后续版本。`core-predicate-method-v1` 继续保留在两个 preset 中，可提前迁移到 `.contains-key?` / `.contains-value?` / `.includes?`。List/String/Fn 的 `.mappend`、String/Enum 的 `.nth` 与 Fn 的 `.bind` 不受影响。
+List/String/Fn 的 `.mappend`、String/Enum 的 `.nth` 与 Fn 的 `.bind` 不受影响。
+
+### 0.29.0 已删除：Map/Set `.contains?` 与 Map `.includes?`
+
+Map 的两个谓词方法名分别检查键和值，Set `.contains?` 与 `.includes?` 是同一实现；0.28.0 起已有具名的首选方法与 guarded fix rule，已知活跃下游默认分支没有调用，因此在 0.29.0 删除。写下它们会得到 `E_RETIRED_METHOD`，信息里给出首选替代。
+
+| 已删除 | 0.28 的行为 | 首选替代 | 迁移（使用 0.28.x 的 CLI） |
+|---|---|---|---|
+| Map `.contains?` | 判断键 | `.contains-key?` | `calcit calcit.cirru fix --rule core-predicate-method-v1 --format edn` |
+| Map `.includes?` | 判断值，不判断键 | `.contains-value?` | 同上 |
+| Set `.contains?` | 判断成员，与 `.includes?` 同一实现 | `.includes?` | 同上 |
+
+Map 与 Set 同时不再实现 `Contains` trait。schema `:where` 中 `'T 'Contains` 的泛型约束现在只接受 Struct 与 Enum；需要同时接受 Map 或 Set 的泛型代码请改为具体类型参数，或在调用处直接使用上表的具名方法。函数形式 `contains?` 与 `includes?` 不变，仍按 0.28 的语义接受 Map 与 Set，包括静态类型未知的接收者。
+
+`core-predicate-method-v1` 随之整条退役：0.29.0 的 CLI 用 `--rule` 指定它时会提示改用 0.28.x 的 CLI。连同上一节的 6 条规则，`core-api-0.28-v1` preset 由 13 条规则减为 6 条，`core-api-0.29-v1` 由 14 条减为 7 条。升级顺序同上：先在 0.28.x 上预览、应用并运行项目测试，再升级 CLI。Struct `.contains?` 与 Enum `.contains?` 在 0.29.0 仍可用，计划在 0.30.0 随 `Contains` trait 的去留一起处理；新代码改用 `.contains-field?` / `.contains-index?`。
 
 ### 仍可用的兼容名
 
@@ -399,7 +414,7 @@ core 中带 `:deprecated` 标记的 15 个兼容名在 0.29.0 仍可调用，行
 | `case-default` | `match`，默认值写成末尾 `_` 分支 | 人工改写 |
 | `cpu-time` | `monotonic-time-ms` | 人工改写 |
 
-上表名字、函数 `round?`、前缀 `reduce`，以及方法 List `.add`、List/Map/Set/String `.count` 与 FfiTask `.cancel` / `.cancel-with`、Map/Set `.contains?` 与 Map `.includes?` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零后，在下一个非 patch 版本删除，并在本文列出删除项。
+上表名字、函数 `round?`、前缀 `reduce`，以及方法 List `.add`、List/Map/Set/String `.count`、FfiTask `.cancel` / `.cancel-with` 与 Struct/Enum `.contains?` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零后，在下一个非 patch 版本删除，并在本文列出删除项。
 
 ### Ref 构造名
 
