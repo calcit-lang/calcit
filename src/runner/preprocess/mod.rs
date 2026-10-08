@@ -8286,6 +8286,23 @@ fn validate_method_call(
     ImplMethodResolution::Missing => {}
   }
 
+  // A named receiver type whose definition failed to load resolves from source
+  // without its attached impls; report the load failure, not a missing method (#1712).
+  if let CalcitTypeAnnotation::TypeRef(name, _) = type_value.as_ref()
+    && let Some((ns, def)) = name.trim_start_matches('\'').trim_start_matches(':').rsplit_once('/')
+    && let Err(error) = runner::evaluate_symbol_from_program(def, ns, None, &CallStackList::default())
+  {
+    return Err(CalcitErr::use_msg_stack_location(
+      error.kind,
+      format!(
+        "method `.{method_name}` cannot be resolved because receiver type `{ns}/{def}` failed to load: {}",
+        error.msg
+      ),
+      call_stack,
+      head.get_location(),
+    ));
+  }
+
   // Method not found, generate error
   let mut methods = vec![];
   for struct_def in impl_values.iter() {

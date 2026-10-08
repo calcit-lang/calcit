@@ -51,6 +51,21 @@ fn assert_success(output: &Output, context: &str) {
 }
 
 #[test]
+fn method_on_impl_traits_alias_reports_the_failed_trait_load() {
+  // #1712: a trait that fails to load leaves the `impl-traits` alias without impls;
+  // the method call must surface that failure instead of `unknown method`.
+  let output = run_calcit(Path::new("tests/fixtures/enum-impl-load-error.cirru"), &["--check-only"]);
+  assert!(!output.status.success(), "a trait that fails to load must fail checking");
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(stderr.contains("receiver type `app.core/%Atom` failed to load"), "stderr: {stderr}");
+  assert!(
+    stderr.contains("does not allow Dynamic inside method signatures"),
+    "stderr: {stderr}"
+  );
+  assert!(!stderr.contains("unknown method `.deref`"), "stderr: {stderr}");
+}
+
+#[test]
 fn immutable_value_schemas_reject_contradictions_before_codegen() {
   for (target, schema) in [
     ("app.values/initial-state", "quote $ :: 'Map 'Tag 'String"),
