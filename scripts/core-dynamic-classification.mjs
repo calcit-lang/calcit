@@ -255,18 +255,6 @@ const reviewedCompatibilityPositions = new Map([
     "内部 primitive 仅接受六类内建标量，当前类型语法无法以单一输入类型表达该集合。对外兼容函数 turn-string 要求 ToString 证据；应用代码不应直接调用此 Dynamic primitive。",
   ],
   [
-    "&map:add-entry|schema.args.1.item",
-    "Legacy Map.add accepts a heterogeneous two-item List; a homogeneous List item cannot prove independent key and value types. New callers must use assoc, while #1479 tracks retirement.",
-  ],
-  [
-    "&map:add-entry|schema.return.key",
-    "The legacy pair entry cannot prove its key matches the receiver Map<K,V>; returning Map<K,V> would falsely certify that relation. New callers must use assoc.",
-  ],
-  [
-    "&map:add-entry|schema.return.value",
-    "The legacy pair entry cannot prove its value matches the receiver Map<K,V>; the open result preserves an honest compatibility boundary pending #1479.",
-  ],
-  [
     "map-kv|schema.return",
     "Legacy map-kv accepts an untyped two-item List or a nil/enum drop sentinel, so its output key/value relation cannot be proven. Typed callers receive W_MAP_KV_UNPROVEN_CONTRACT and must migrate to filter-map-kv.",
   ],

@@ -761,7 +761,7 @@
                 xs $ [] 10 20 30
               &+
                 option:unwrap-or (xs .get 1) -1
-                option:unwrap-or (xs .nth 2) -1
+                option:unwrap-or (xs .get 2) -1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -942,14 +942,6 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
-        'test-map-add-legacy $ %{} 'CodeEntry (:doc "|旧 Map `.add` 二元 entry 保留 Map 形状，但不证明键值类型。")
-          :code $ quote $ defwasm-export test-map-add-legacy ()
-            &map:count $
-              &{} :a 1
-              , .add $ [] :b 2
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
         'test-map-assoc-new $ %{} 'CodeEntry (:doc "|assoc adds new key")
           :code $ quote $ defwasm-export test-map-assoc-new ()
             &let
@@ -993,14 +985,14 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-        'test-map-contains-method $ %{} 'CodeEntry (:doc "|.contains? dispatches on map")
+        'test-map-contains-method $ %{} 'CodeEntry (:doc "|.contains-key? dispatches on map")
           :code $ quote $ defwasm-export test-map-contains-method ()
             &+
               if
-                .contains? (&{} :a 1 :b 2) :a
+                .contains-key? (&{} :a 1 :b 2) :a
                 , 1 0
               if
-                .contains? (&{} :a 1 :b 2) :z
+                .contains-key? (&{} :a 1 :b 2) :z
                 , 10 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -1084,14 +1076,14 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-        'test-map-includes-method $ %{} 'CodeEntry (:doc "|.includes? dispatches on map")
+        'test-map-includes-method $ %{} 'CodeEntry (:doc "|.contains-value? dispatches on map")
           :code $ quote $ defwasm-export test-map-includes-method ()
             &+
               if
-                .includes? (&{} :a 10 :b 20) 20
+                .contains-value? (&{} :a 10 :b 20) 20
                 , 1 0
               if
-                .includes? (&{} :a 10 :b 20) 99
+                .contains-value? (&{} :a 10 :b 20) 99
                 , 10 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)

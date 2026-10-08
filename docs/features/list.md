@@ -40,7 +40,7 @@ All list operations return new lists — the original is never mutated.
 ## Quick Recipes
 
 - **Create**: `[] 1 2 3` or `range 5`
-- **Access**: `xs.nth 0`, `xs.first`, `xs.last`
+- **Access**: `xs.get 0`, `xs.first`, `xs.last`
 - **Modify**: `append xs 4`, `prepend xs 0`, `assoc xs 1 99`
 - **Transform**: `map xs f`, `filter xs f`, `reduce xs 0 f`
 - **Combine**: `concat xs ys`, `slice xs 1 3`
@@ -83,7 +83,7 @@ let
   ; => 4
 ```
 
-`List<T>` 的 `.get` 与 `.nth` 都返回 `Option<T>`：
+`List<T>` 的 `.get` 返回 `Option<T>`（旧 `.nth` 已在 0.29.0 删除）：
 
 ```cirru
 let
@@ -92,7 +92,7 @@ let
   ; => (Option :some :b)
 ```
 
-已知 `List<T>` 的访问优先使用接收者方法 `.get`、`.nth`、`.first` 和 `.last`，让元素类型随 receiver 进入推断；对应的前缀函数仍可使用，并不是 `.get` 的替代契约。索引不存在时返回 `Option :none`，不要把缺失当作 `nil`。
+已知 `List<T>` 的访问优先使用接收者方法 `.get`、`.first` 和 `.last`，让元素类型随 receiver 进入推断；对应的前缀函数仍可使用，并不是 `.get` 的替代契约。索引不存在时返回 `Option :none`，不要把缺失当作 `nil`。
 
 ### 索引范围与元素成员
 

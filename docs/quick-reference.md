@@ -241,7 +241,7 @@ let
 - `&map:get` - get value by key
 - `&map:assoc`, `&map:dissoc` - add/remove entries
 - `&map:merge` - merge maps
-- `m .contains? key` / `&map:contains?` 检查键；`m .includes? value` / `&map:includes?` 检查值。两者不能互换。
+- `m .contains-key? key` / `&map:contains?` 检查键；`m .contains-value? value` / `&map:includes?` 检查值。两者不能互换。
 - `keys`, `vals` - extract keys/values
 - `to-pairs`, `pairs-map` - convert to/from pairs
 - `map-list-kv` - collect `List<U>` with a typed `Fn(K,V)->U` callback

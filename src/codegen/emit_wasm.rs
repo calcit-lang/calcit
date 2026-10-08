@@ -6257,8 +6257,6 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
           // `str` / `str-spaced` — variadic string concat; core defs use (&syntax &) which is unsupported.
           "str" if !args_list.is_empty() => return emit_str_variadic(ctx, &args_list),
           "str-spaced" if !args_list.is_empty() => return emit_str_spaced(ctx, &args_list),
-          // `foldl'` is an inline variant of `foldl` with same arg order (xs acc f).
-          "foldl'" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
           // `filter-not` — keep elements where f(elem) is falsy.
           "filter-not" if args_list.len() == 2 => return emit_filter_not(ctx, &args_list),
           // Preserve the proven receiver type and source arity. Calling the
@@ -6361,7 +6359,6 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         "map-indexed" if args_list.len() == 2 => return emit_map_indexed(ctx, &args_list),
         "mapcat" if args_list.len() == 2 => return emit_mapcat(ctx, &args_list),
         "fold" | "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
-        "foldl'" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
         "update" if args_list.len() == 3 => return emit_update(ctx, &args_list),
         "map-kv" if args_list.len() == 2 => return emit_map_kv(ctx, &args_list),
         "filter-map-kv" if args_list.len() == 2 => return emit_filter_map_kv(ctx, &args_list),
@@ -6432,7 +6429,6 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
           "map-indexed" if args_list.len() == 2 => return emit_map_indexed(ctx, &args_list),
           "mapcat" if args_list.len() == 2 => return emit_mapcat(ctx, &args_list),
           "fold" | "reduce" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
-          "foldl'" if args_list.len() == 3 => return emit_foldl(ctx, &args_list),
           "update" if args_list.len() == 3 => return emit_update(ctx, &args_list),
           "map-kv" if args_list.len() == 2 => return emit_map_kv(ctx, &args_list),
           "filter-map-kv" if args_list.len() == 2 => return emit_filter_map_kv(ctx, &args_list),

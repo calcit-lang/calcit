@@ -1141,6 +1141,14 @@ fn strict_type_fail_retired_alias_methods_report_preferred_spelling() {
       ),
       ("let\n    r $ FfiResponse :raw nil\n  .resolve r 1", ".resolve", ".resolve!"),
       ("let\n    r $ FfiResponse :raw nil\n  .reject r |failed", ".reject", ".reject!"),
+      (".reduce ([] 1 2) 0 &+", ".reduce", ".fold"),
+      (".bind ([] 1 2) $ fn (x) ([] x)", ".bind", ".flat-map"),
+      (".join-str ([] |a |b) |-", ".join-str", ".join-string"),
+      (".nth ([] 1 2) 0", ".nth", ".get"),
+      (".mappend (&{} :a 1) (&{} :b 2)", ".mappend", ".merge"),
+      (".add (&{} :a 1) ([] :b 2)", ".add", ".assoc"),
+      (".add (#{} 1) 2", ".add", ".include"),
+      (".mappend (#{} 1) (#{} 2)", ".mappend", ".union"),
     ] {
       let entries = load_snippet_entries(snippet);
       let err = run_check_only(&entries).expect_err(&format!("retired {method} must fail strict check-only"));

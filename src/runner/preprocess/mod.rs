@@ -8051,6 +8051,16 @@ fn retired_method_migration(receiver: &CalcitTypeAnnotation, method_name: &str) 
     (T::Number, "round?") => {
       Some("`.round?` was a same-implementation alias; use `.integer?` (the function `round?` is still available)")
     }
+    (T::List(_), "reduce") => Some("`.reduce` was a same-implementation alias; use `.fold`"),
+    (T::List(_), "bind") => Some("`.bind` was a same-implementation alias; use `.flat-map`"),
+    (T::List(_), "join-str") => Some("`.join-str` was a same-implementation alias; use `.join-string`"),
+    (T::List(_), "nth") => Some("`.nth` was a same-implementation alias; use `.get`, which returns Option<T>"),
+    (T::Map(_, _), "mappend") => Some("`.mappend` was a same-implementation alias; use `.merge`"),
+    (T::Map(_, _), "add") => Some(
+      "`.add` took a two-item List entry and only checked its length; use `.assoc` with a separate key and value, which checks both types",
+    ),
+    (T::Set(_), "add") => Some("`.add` was a same-implementation alias; use `.include`"),
+    (T::Set(_), "mappend") => Some("`.mappend` was a same-implementation alias; use `.union`"),
     _ => retired_core_struct_method_migration(receiver, method_name),
   }
 }

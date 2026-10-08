@@ -1247,11 +1247,11 @@ fn attached_method_alias_fix_preserves_unproven_regions_and_quoted_data() {
     assert_success(&run_calcit(&snapshot, &args), "create attached boundary fixture");
   }
   for (name, code) in [
-    ("safe", "quote $ assert= |a-b $ .join-str ([] |a |b) |-"),
-    ("opaque-contract", "quote $ assert= |a-b $ opaque $ .join-str ([] |a |b) |-"),
+    ("safe", "quote $ assert= 2 $ .count ([] |a |b)"),
+    ("opaque-contract", "quote $ assert= 2 $ opaque $ .count ([] |a |b)"),
     (
       "quoted-data",
-      "quote $ assert= (quote $ .join-str ([] |a |b) |-) (quote $ .join-str ([] |a |b) |-)",
+      "quote $ assert= (quote $ .count ([] |a |b)) (quote $ .count ([] |a |b))",
     ),
   ] {
     assert_success(
@@ -1273,7 +1273,7 @@ fn attached_method_alias_fix_preserves_unproven_regions_and_quoted_data() {
       "attach boundary semantics",
     );
   }
-  for code in ["quote $ .join-str ([] |a |b) |-", "quote $ fn (xs) $ xs .join-str |-"] {
+  for code in ["quote $ .count ([] |a |b)", "quote $ fn (xs) $ xs .count"] {
     assert_success(
       &run_calcit(
         &snapshot,
@@ -1293,7 +1293,7 @@ fn attached_method_alias_fix_preserves_unproven_regions_and_quoted_data() {
     "--def",
     "main!",
     "--rule",
-    "core-list-join-string-v1",
+    "core-collection-len-v1",
     "--include-attached",
     "--format",
     "json",
@@ -1338,7 +1338,7 @@ fn method_alias_fix_reuses_receiver_proofs_in_attached_tests_and_examples() {
   for (rule, code) in [
     (
       "core-api-0.28-v1",
-      "quote $ do\n  assert= true $ some? 1\n  assert= true $ round? 2\n  assert= :a $ turn-tag |a\n  assert= 2 $ .count $ .add ([] 1) 2\n  assert= (Option :some 1) $ .nth ([] 1) 0\n  assert= |a-b $ let ((values $ [] |a |b)) (values .join-str |-)",
+      "quote $ do\n  assert= true $ some? 1\n  assert= true $ round? 2\n  assert= :a $ turn-tag |a\n  assert= 2 $ .count $ .add ([] 1) 2",
     ),
     (
       "core-identity-conversion-v1",
@@ -1346,7 +1346,7 @@ fn method_alias_fix_reuses_receiver_proofs_in_attached_tests_and_examples() {
     ),
     (
       "core-list-add-v1",
-      "quote $ do\n  assert= ([] 1 2) $ .add ([] 1) 2\n  assert= ([] 1 2) $ let ((values $ [] 1)) (values .add 2)\n  assert= (#{} 1 2) $ .add (#{} 1) 2",
+      "quote $ do\n  assert= ([] 1 2) $ .add ([] 1) 2\n  assert= ([] 1 2) $ let ((values $ [] 1)) (values .add 2)",
     ),
     (
       "core-collection-len-v1",
@@ -1405,21 +1405,6 @@ fn method_alias_fix_reuses_receiver_proofs_in_attached_tests_and_examples() {
     (
       "core-integer-predicate-v1",
       "quote $ do (assert= true $ round? 2) (assert= false $ round? 1.2)",
-    ),
-    ("core-list-fold-v1", "quote $ assert= 6 $ .reduce ([] 1 2 3) 0 +"),
-    (
-      "core-list-flat-map-v1",
-      "quote $ assert= ([] 1 1 2 2) $ .bind ([] 1 2) $ fn (x) ([] x x)",
-    ),
-    (
-      "core-list-join-string-v1",
-      "quote $ assert= |a-b $ let ((xs $ [] |a |b)) (xs .join-str |- )",
-    ),
-    ("core-list-get-v1", "quote $ assert= (Option :some 1) $ .nth ([] 1) 0"),
-    ("core-set-include-v1", "quote $ assert= (#{} 1 2) $ .add (#{} 1) 2"),
-    (
-      "core-collection-combine-v1",
-      "quote $ assert= ({} (:a 1) (:b 2)) $ .mappend ({} (:a 1)) ({} (:b 2))",
     ),
     ("core-predicate-method-v1", "quote $ assert= true $ .contains? ({} (:a 1)) :a"),
     (
@@ -4362,1036 +4347,6 @@ fn core_effect_method_fix_skips_quoted_calls_and_reviews_macro_context() {
 }
 
 #[test]
-fn list_fold_fix_preserves_seeded_method_semantics_and_revision_guard() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-  let target = "fix-command.main/fold-values";
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "def",
-        target,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ defn fold-values (xs)\n  xs .reduce |n $ fn (acc item) (str acc |: item)",
-      ],
-    ),
-    "install seeded reduce method",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        target,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return 'String)",
-      ],
-    ),
-    "declare a concrete list receiver",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "add-test",
-        target,
-        "preserves-order-and-empty-seed",
-        "--tags",
-        "unit",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ do\n  assert= |n:1:2:3 $ fold-values ([] 1 2 3)\n  assert= |n $ fold-values ([]) ",
-      ],
-    ),
-    "attach Calcit fold contract",
-  );
-  let selector = [
-    "--rule",
-    "core-list-fold-v1",
-    "--ns",
-    "fix-command.main",
-    "--def",
-    "fold-values",
-    "--format",
-    "json",
-  ];
-  let preview = run_fix(&snapshot, &selector);
-  assert_success(&preview, "fold preview");
-  let report = parse_stdout(&preview);
-  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
-  assert_eq!(suggestions.len(), 1, "{report}");
-  assert_eq!(suggestions[0]["applicability"], "machine-applicable", "{report}");
-  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
-  let stale = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-list-fold-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "fold-values",
-      "--apply",
-      "--allow-no-vcs",
-      "--expect-revision",
-      "stale-revision",
-      "--format",
-      "json",
-    ],
-  );
-  assert!(!stale.status.success(), "stale revision must reject apply");
-  let applied = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-list-fold-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "fold-values",
-      "--apply",
-      "--allow-no-vcs",
-      "--expect-revision",
-      report["revision"].as_str().expect("preview revision"),
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&applied, "fold apply");
-  assert_success(
-    &run_calcit(&snapshot, &["test", target, "--require-match"]),
-    "Calcit fold after migration",
-  );
-  let repeated = run_fix(&snapshot, &selector);
-  assert_success(&repeated, "idempotent fold preview");
-  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
-}
-
-#[test]
-fn list_fold_fix_preserves_quoted_and_macro_boundaries() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-  for (name, code) in [
-    ("quoted-fold", "quote $ defn quoted-fold ()\n  quote $ ([] 1 2) .reduce 0 +\n  , 0"),
-    ("pass-form", "quote $ defmacro pass-form (body) body"),
-    ("macro-fold", "quote $ defn macro-fold (xs) $ pass-form $ xs .reduce 0 +"),
-  ] {
-    assert_success(
-      &run_calcit(
-        &snapshot,
-        &[
-          "edit",
-          "def",
-          &format!("fix-command.main/{name}"),
-          "--input-format",
-          "cirru",
-          "--code",
-          code,
-        ],
-      ),
-      "install fold boundary source",
-    );
-  }
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        "fix-command.main/macro-fold",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return 'Number)",
-      ],
-    ),
-    "declare macro fold receiver",
-  );
-  for (name, expected) in [("quoted-fold", 0), ("macro-fold", 1)] {
-    let preview = run_fix(
-      &snapshot,
-      &[
-        "--rule",
-        "core-list-fold-v1",
-        "--ns",
-        "fix-command.main",
-        "--def",
-        name,
-        "--format",
-        "json",
-      ],
-    );
-    assert_success(&preview, "fold boundary preview");
-    let report = parse_stdout(&preview);
-    let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
-    assert_eq!(suggestions.len(), expected, "{name}: {report}");
-    if expected == 1 {
-      assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
-      assert!(suggestions[0]["replacement"].is_null(), "{report}");
-    }
-  }
-}
-
-#[test]
-fn list_flat_map_fix_preserves_typed_output_and_revision_guard() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-  let target = "fix-command.main/duplicate-as-strings";
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "def",
-        target,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ defn duplicate-as-strings (xs) (xs .bind $ fn (x) ([] (str x) (str x)))",
-      ],
-    ),
-    "install List bind method",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        target,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return $ :: 'List 'String)",
-      ],
-    ),
-    "declare List flat-map contract",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "add-test",
-        target,
-        "preserves-order-and-empty",
-        "--tags",
-        "unit",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ do\n  assert= ([] |1 |1 |2 |2) $ duplicate-as-strings $ [] 1 2\n  assert= ([]) $ duplicate-as-strings ([])",
-      ],
-    ),
-    "attach Calcit flat-map contract",
-  );
-  let selector = [
-    "--rule",
-    "core-list-flat-map-v1",
-    "--ns",
-    "fix-command.main",
-    "--def",
-    "duplicate-as-strings",
-    "--format",
-    "json",
-  ];
-  let preview = run_fix(&snapshot, &selector);
-  assert_success(&preview, "flat-map preview");
-  let report = parse_stdout(&preview);
-  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
-  assert_eq!(suggestions.len(), 1, "{report}");
-  assert_eq!(suggestions[0]["applicability"], "machine-applicable", "{report}");
-  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
-  let stale = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-list-flat-map-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "duplicate-as-strings",
-      "--apply",
-      "--allow-no-vcs",
-      "--expect-revision",
-      "stale-revision",
-      "--format",
-      "json",
-    ],
-  );
-  assert!(!stale.status.success(), "stale revision must reject apply");
-  let applied = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-list-flat-map-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "duplicate-as-strings",
-      "--apply",
-      "--allow-no-vcs",
-      "--expect-revision",
-      report["revision"].as_str().expect("preview revision"),
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&applied, "flat-map apply");
-  assert_success(
-    &run_calcit(&snapshot, &["test", target, "--require-match"]),
-    "Calcit flat-map after migration",
-  );
-  let repeated = run_fix(&snapshot, &selector);
-  assert_success(&repeated, "idempotent flat-map preview");
-  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
-}
-
-#[test]
-fn list_flat_map_fix_keeps_quoted_and_unknown_macro_calls_unmodified() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-  for (name, code) in [
-    (
-      "quoted-bind",
-      "quote $ defn quoted-bind ()\n  quote $ ([] 1 2) .bind $ fn (x) ([] x)\n  , 0",
-    ),
-    ("pass-form", "quote $ defmacro pass-form (body) body"),
-    ("macro-bind", "quote $ defn macro-bind (xs) $ pass-form $ xs .bind $ fn (x) ([] x)"),
-  ] {
-    assert_success(
-      &run_calcit(
-        &snapshot,
-        &[
-          "edit",
-          "def",
-          &format!("fix-command.main/{name}"),
-          "--input-format",
-          "cirru",
-          "--code",
-          code,
-        ],
-      ),
-      "install flat-map boundary source",
-    );
-  }
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        "fix-command.main/macro-bind",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return $ :: 'List 'Number)",
-      ],
-    ),
-    "declare macro List receiver",
-  );
-  for (name, expected) in [("quoted-bind", 0), ("macro-bind", 1)] {
-    let preview = run_fix(
-      &snapshot,
-      &[
-        "--rule",
-        "core-list-flat-map-v1",
-        "--ns",
-        "fix-command.main",
-        "--def",
-        name,
-        "--format",
-        "json",
-      ],
-    );
-    assert_success(&preview, "flat-map boundary preview");
-    let report = parse_stdout(&preview);
-    let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
-    assert_eq!(suggestions.len(), expected, "{name}: {report}");
-    if expected == 1 {
-      assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
-      assert!(suggestions[0]["replacement"].is_null(), "{report}");
-    }
-  }
-}
-
-#[test]
-fn list_join_string_fix_preserves_rendering_and_revision_guard() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-  let target = "fix-command.main/render-values";
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "def",
-        target,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ defn render-values (xs) (xs .join-str |,)",
-      ],
-    ),
-    "install List string join method",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        target,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return 'String)",
-      ],
-    ),
-    "declare List string join contract",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "add-test",
-        target,
-        "preserves-number-rendering-duplicates-and-empty",
-        "--tags",
-        "unit",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ do\n  assert= |1,1,2 $ render-values ([] 1 1 2)\n  assert= | $ render-values ([])\n  assert= |7 $ render-values ([] 7)",
-      ],
-    ),
-    "attach Calcit string join contract",
-  );
-  let selector = [
-    "--rule",
-    "core-list-join-string-v1",
-    "--ns",
-    "fix-command.main",
-    "--def",
-    "render-values",
-    "--format",
-    "json",
-  ];
-  let preview = run_fix(&snapshot, &selector);
-  assert_success(&preview, "join-string preview");
-  let report = parse_stdout(&preview);
-  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
-  assert_eq!(suggestions.len(), 1, "{report}");
-  assert_eq!(suggestions[0]["applicability"], "machine-applicable", "{report}");
-  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
-  let stale = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-list-join-string-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "render-values",
-      "--apply",
-      "--allow-no-vcs",
-      "--expect-revision",
-      "stale-revision",
-      "--format",
-      "json",
-    ],
-  );
-  assert!(!stale.status.success(), "stale revision must reject apply");
-  let applied = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-list-join-string-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "render-values",
-      "--apply",
-      "--allow-no-vcs",
-      "--expect-revision",
-      report["revision"].as_str().expect("preview revision"),
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&applied, "join-string apply");
-  assert_success(
-    &run_calcit(&snapshot, &["test", target, "--require-match"]),
-    "Calcit string join after migration",
-  );
-  let invalid_separator = run_calcit(&snapshot, &["eval", "join-string ([] 1 2) 3"]);
-  assert!(
-    !invalid_separator.status.success(),
-    "non-String separator must fail strict checking"
-  );
-  assert!(
-    String::from_utf8_lossy(&invalid_separator.stderr).contains("W_FN_ARG_TYPE_MISMATCH"),
-    "invalid separator should retain a type diagnostic"
-  );
-  let repeated = run_fix(&snapshot, &selector);
-  assert_success(&repeated, "idempotent join-string preview");
-  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
-}
-
-#[test]
-fn list_join_string_fix_preserves_quoted_and_macro_boundaries() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-  for (name, code) in [
-    (
-      "quoted-join-str",
-      "quote $ defn quoted-join-str ()\n  quote $ ([] 1 2) .join-str |,\n  , 0",
-    ),
-    ("pass-form", "quote $ defmacro pass-form (body) body"),
-    ("macro-join-str", "quote $ defn macro-join-str (xs) $ pass-form $ xs .join-str |,"),
-  ] {
-    assert_success(
-      &run_calcit(
-        &snapshot,
-        &[
-          "edit",
-          "def",
-          &format!("fix-command.main/{name}"),
-          "--input-format",
-          "cirru",
-          "--code",
-          code,
-        ],
-      ),
-      "install string join boundary source",
-    );
-  }
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        "fix-command.main/macro-join-str",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return 'String)",
-      ],
-    ),
-    "declare macro string join receiver",
-  );
-  for (name, expected) in [("quoted-join-str", 0), ("macro-join-str", 1)] {
-    let preview = run_fix(
-      &snapshot,
-      &[
-        "--rule",
-        "core-list-join-string-v1",
-        "--ns",
-        "fix-command.main",
-        "--def",
-        name,
-        "--format",
-        "json",
-      ],
-    );
-    assert_success(&preview, "string join boundary preview");
-    let report = parse_stdout(&preview);
-    let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
-    assert_eq!(suggestions.len(), expected, "{name}: {report}");
-    if expected == 1 {
-      assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
-      assert!(suggestions[0]["replacement"].is_null(), "{report}");
-    }
-  }
-}
-
-#[test]
-fn list_get_fix_preserves_option_lookup_and_revision_guard() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-  let target = "fix-command.main/read-list-index";
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "def",
-        target,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ defn read-list-index (xs index) (xs .nth index)",
-      ],
-    ),
-    "install List nth method",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        target,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] (:: 'List 'Number) 'Number) (:return $ :: 'Option 'Number)",
-      ],
-    ),
-    "declare List index lookup contract",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "add-test",
-        target,
-        "preserves-some-and-none",
-        "--tags",
-        "unit",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ do\n  assert= (%some 2) $ read-list-index ([] 1 2 2) 2\n  assert= (%none) $ read-list-index ([] 1 2) -1\n  assert= (%none) $ read-list-index ([]) 0",
-      ],
-    ),
-    "attach Calcit List lookup contract",
-  );
-  let selector = [
-    "--rule",
-    "core-list-get-v1",
-    "--ns",
-    "fix-command.main",
-    "--def",
-    "read-list-index",
-    "--format",
-    "json",
-  ];
-  let preview = run_fix(&snapshot, &selector);
-  assert_success(&preview, "List lookup preview");
-  let report = parse_stdout(&preview);
-  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
-  assert_eq!(suggestions.len(), 1, "{report}");
-  assert_eq!(suggestions[0]["applicability"], "machine-applicable", "{report}");
-  assert_eq!(
-    suggestions[0]["replacement"],
-    serde_json::json!({"$type": "quote", "value": ".get"}),
-    "{report}"
-  );
-  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
-  let stale = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-list-get-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "read-list-index",
-      "--apply",
-      "--allow-no-vcs",
-      "--expect-revision",
-      "stale-revision",
-      "--format",
-      "json",
-    ],
-  );
-  assert!(!stale.status.success(), "stale revision must reject apply");
-  let applied = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-list-get-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "read-list-index",
-      "--apply",
-      "--allow-no-vcs",
-      "--expect-revision",
-      report["revision"].as_str().expect("preview revision"),
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&applied, "List lookup apply");
-  assert_success(
-    &run_calcit(&snapshot, &["test", target, "--require-match"]),
-    "Calcit List lookup after migration",
-  );
-  let repeated = run_fix(&snapshot, &selector);
-  assert_success(&repeated, "idempotent List lookup preview");
-  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
-}
-
-#[test]
-fn list_get_fix_preserves_non_list_quoted_and_macro_boundaries() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-  for (name, code) in [
-    ("string-index", "quote $ defn string-index () $ |abc .nth 1"),
-    (
-      "quoted-list-index",
-      "quote $ defn quoted-list-index ()\n  quote $ ([] 1 2) .nth 1\n  , 0",
-    ),
-  ] {
-    assert_success(
-      &run_calcit(
-        &snapshot,
-        &[
-          "edit",
-          "def",
-          &format!("fix-command.main/{name}"),
-          "--input-format",
-          "cirru",
-          "--code",
-          code,
-        ],
-      ),
-      "install excluded List lookup source",
-    );
-    let preview = run_fix(
-      &snapshot,
-      &[
-        "--rule",
-        "core-list-get-v1",
-        "--ns",
-        "fix-command.main",
-        "--def",
-        name,
-        "--format",
-        "json",
-      ],
-    );
-    assert_success(&preview, "excluded List lookup preview");
-    assert_eq!(parse_stdout(&preview)["data"]["suggestions"], serde_json::json!([]));
-  }
-  for (name, code) in [
-    ("pass-form", "quote $ defmacro pass-form (body) body"),
-    (
-      "macro-list-index",
-      "quote $ defn macro-list-index (xs index) $ pass-form $ xs .nth index",
-    ),
-  ] {
-    assert_success(
-      &run_calcit(
-        &snapshot,
-        &[
-          "edit",
-          "def",
-          &format!("fix-command.main/{name}"),
-          "--input-format",
-          "cirru",
-          "--code",
-          code,
-        ],
-      ),
-      "install macro lookup boundary source",
-    );
-  }
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        "fix-command.main/macro-list-index",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] (:: 'List 'Number) 'Number) (:return $ :: 'Option 'Number)",
-      ],
-    ),
-    "declare macro lookup receiver",
-  );
-  let preview = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-list-get-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "macro-list-index",
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&preview, "macro lookup preview");
-  let report = parse_stdout(&preview);
-  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
-  assert_eq!(suggestions.len(), 1, "{report}");
-  assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
-  assert!(suggestions[0]["replacement"].is_null(), "{report}");
-}
-
-#[test]
-fn list_get_fix_keeps_user_defined_nth_method() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-  for (name, code) in [
-    ("IndexedBox0", "quote $ defstruct IndexedBox0 (:value 'Number)"),
-    ("IndexedBoxTrait", "quote $ deftrait IndexedBoxTrait (.nth :fn)"),
-    (
-      "IndexedBoxImpl",
-      "quote $ defimpl IndexedBoxImpl IndexedBoxTrait\n  .nth $ fn (box index)\n    %some $ &struct:get box :value",
-    ),
-    ("IndexedBox", "quote $ def IndexedBox $ impl-traits IndexedBox0 IndexedBoxImpl"),
-    ("read-box-index", "quote $ defn read-box-index (box index) (box .nth index)"),
-  ] {
-    assert_success(
-      &run_calcit(
-        &snapshot,
-        &[
-          "edit",
-          "def",
-          &format!("fix-command.main/{name}"),
-          "--input-format",
-          "cirru",
-          "--code",
-          code,
-        ],
-      ),
-      "install custom index trait boundary",
-    );
-  }
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        "fix-command.main/read-box-index",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'fix-command.main/IndexedBox 'Number) (:return $ :: 'Option 'Number)",
-      ],
-    ),
-    "declare custom index receiver",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "add-test",
-        "fix-command.main/read-box-index",
-        "retains-custom-nth-behavior",
-        "--tags",
-        "unit",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ assert= (%some 7) $ read-box-index (%{} IndexedBox (:value 7)) 0",
-      ],
-    ),
-    "attach custom index behavior test",
-  );
-  assert_success(
-    &run_calcit(&snapshot, &["test", "fix-command.main/read-box-index", "--require-match"]),
-    "custom index method behavior",
-  );
-  let preview = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-list-get-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "read-box-index",
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&preview, "custom index method preview");
-  assert_eq!(parse_stdout(&preview)["data"]["suggestions"], serde_json::json!([]));
-}
-
-#[test]
-fn collection_combine_fix_preserves_map_set_semantics_and_revision_guard() {
-  for (name, code, schema, test_code, replacement) in [
-    (
-      "combine-maps",
-      "quote $ defn combine-maps (xs ys zs) (xs .mappend ys zs)",
-      "quote $ :: 'Fn $ {} (:args $ [] (:: 'Map 'Tag 'Number) (:: 'Map 'Tag 'Number) (:: 'Map 'Tag 'Number)) (:return $ :: 'Map 'Tag 'Number)",
-      "quote $ do\n  assert= ({} (:a 3) (:b 2)) $ combine-maps ({} (:a 1)) ({} (:b 2)) ({} (:a 3))\n  assert= ({}) $ combine-maps ({}) ({}) ({})",
-      ".merge",
-    ),
-    (
-      "combine-sets",
-      "quote $ defn combine-sets (xs ys zs) (xs .mappend ys zs)",
-      "quote $ :: 'Fn $ {} (:args $ [] (:: 'Set 'Number) (:: 'Set 'Number) (:: 'Set 'Number)) (:return $ :: 'Set 'Number)",
-      "quote $ do\n  assert= (#{} 1 2 3) $ combine-sets (#{} 1 2) (#{} 2 3) (#{} 1)\n  assert= (#{}) $ combine-sets (#{}) (#{}) (#{})",
-      ".union",
-    ),
-  ] {
-    let directory = TestDirectory::create();
-    let snapshot = directory.path().join("calcit.cirru");
-    fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-    let target = format!("fix-command.main/{name}");
-    assert_success(
-      &run_calcit(&snapshot, &["edit", "def", &target, "--input-format", "cirru", "--code", code]),
-      "install collection combine method",
-    );
-    assert_success(
-      &run_calcit(&snapshot, &["edit", "schema", &target, "--input-format", "cirru", "--code", schema]),
-      "declare collection combine contract",
-    );
-    assert_success(
-      &run_calcit(
-        &snapshot,
-        &[
-          "edit",
-          "add-test",
-          &target,
-          "preserves-combination",
-          "--tags",
-          "unit",
-          "--input-format",
-          "cirru",
-          "--code",
-          test_code,
-        ],
-      ),
-      "attach Calcit combination contract",
-    );
-    let selector = [
-      "--rule",
-      "core-collection-combine-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      name,
-      "--format",
-      "json",
-    ];
-    let preview = run_fix(&snapshot, &selector);
-    assert_success(&preview, "collection combine preview");
-    let report = parse_stdout(&preview);
-    let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
-    assert_eq!(suggestions.len(), 1, "{report}");
-    assert_eq!(suggestions[0]["applicability"], "machine-applicable", "{report}");
-    assert_eq!(
-      suggestions[0]["replacement"],
-      serde_json::json!({"$type": "quote", "value": replacement}),
-      "{report}"
-    );
-    assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
-    let stale = run_fix(
-      &snapshot,
-      &[
-        "--rule",
-        "core-collection-combine-v1",
-        "--ns",
-        "fix-command.main",
-        "--def",
-        name,
-        "--apply",
-        "--allow-no-vcs",
-        "--expect-revision",
-        "stale-revision",
-        "--format",
-        "json",
-      ],
-    );
-    assert!(!stale.status.success(), "stale revision must reject apply");
-    let applied = run_fix(
-      &snapshot,
-      &[
-        "--rule",
-        "core-collection-combine-v1",
-        "--ns",
-        "fix-command.main",
-        "--def",
-        name,
-        "--apply",
-        "--allow-no-vcs",
-        "--expect-revision",
-        report["revision"].as_str().expect("preview revision"),
-        "--format",
-        "json",
-      ],
-    );
-    assert_success(&applied, "collection combine apply");
-    assert_success(
-      &run_calcit(&snapshot, &["test", &target, "--require-match"]),
-      "Calcit combination after migration",
-    );
-    let repeated = run_fix(&snapshot, &selector);
-    assert_success(&repeated, "idempotent collection combine preview");
-    assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
-  }
-}
-
-#[test]
-fn collection_combine_fix_skips_list_and_quoted_calls() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-  for (name, code) in [
-    ("list-combine", "quote $ defn list-combine () $ ([] 1) .mappend ([] 2)"),
-    (
-      "quoted-combine",
-      "quote $ defn quoted-combine ()\n  quote $ ({} (:a 1)) .mappend ({} (:b 2))\n  , 0",
-    ),
-  ] {
-    assert_success(
-      &run_calcit(
-        &snapshot,
-        &[
-          "edit",
-          "def",
-          &format!("fix-command.main/{name}"),
-          "--input-format",
-          "cirru",
-          "--code",
-          code,
-        ],
-      ),
-      "install excluded combination source",
-    );
-    let preview = run_fix(
-      &snapshot,
-      &[
-        "--rule",
-        "core-collection-combine-v1",
-        "--ns",
-        "fix-command.main",
-        "--def",
-        name,
-        "--format",
-        "json",
-      ],
-    );
-    assert_success(&preview, "excluded combination preview");
-    assert_eq!(parse_stdout(&preview)["data"]["suggestions"], serde_json::json!([]));
-  }
-}
-
-#[test]
 fn collection_len_fix_rewrites_only_proven_builtin_count_calls() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
@@ -5600,7 +4555,6 @@ fn reader_deref_receivers_preserve_types_and_collection_migration_guards() {
   for (name, initial, returns, rule, expected) in [
     ("reader-number", "3", "'Number", "core-list-add-v1", "4"),
     ("reader-list", "([] 1 2)", "(:: 'List 'Number)", "core-list-add-v1", "([] 1 2 3)"),
-    ("reader-set", "(#{} 1 2)", "(:: 'Set 'Number)", "core-set-include-v1", "(#{} 1 2 3)"),
   ] {
     let target = format!("fix-command.main/{name}");
     let source = format!(
@@ -5664,31 +4618,8 @@ fn reader_deref_receivers_preserve_types_and_collection_migration_guards() {
       let outer = parse_stdout(&outer_query);
       assert_eq!(outer["data"]["inferred_type"], "'Number", "{outer}");
       assert_ne!(outer["data"]["lowering"]["lowered_head"], "calcit.core/deref", "{outer}");
-      let set_preview = run_fix(
-        &snapshot,
-        &[
-          "--rule",
-          "core-set-include-v1",
-          "--ns",
-          "fix-command.main",
-          "--def",
-          name,
-          "--format",
-          "json",
-        ],
-      );
-      assert_success(&set_preview, "Number is not a Set migration");
-      assert!(
-        parse_stdout(&set_preview)["data"]["suggestions"]
-          .as_array()
-          .expect("suggestions")
-          .is_empty()
-      );
     } else {
-      assert!(
-        receiver_type.contains(if name == "reader-list" { "List" } else { "Set" }),
-        "{evidence}"
-      );
+      assert!(receiver_type.contains("List"), "{evidence}");
       assert_eq!(suggestions.len(), 1, "{report}");
       assert_eq!(suggestions[0]["applicability"], "machine-applicable", "{report}");
       let revision = report["revision"].as_str().expect("revision");
@@ -5904,7 +4835,6 @@ fn list_add_fix_keeps_other_collections_and_unknown_macro_for_review() {
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
   for (target, source) in [
-    ("set-add", "quote $ defn set-add ()\n  (#{} 1 2) .add 3"),
     ("quoted-add", "quote $ defn quoted-add ()\n  quote $ ([] 1 2) .add 3\n  [] 1 2"),
     ("pass-form", "quote $ defmacro pass-form (body) body"),
     ("macro-add", "quote $ defn macro-add () $ pass-form $ ([] 1 2) .add 3"),
@@ -5925,11 +4855,7 @@ fn list_add_fix_keeps_other_collections_and_unknown_macro_for_review() {
       "install collection or macro source",
     );
   }
-  for (definition, return_type) in [
-    ("set-add", ":: 'Set 'Number"),
-    ("quoted-add", ":: 'List 'Number"),
-    ("macro-add", ":: 'List 'Number"),
-  ] {
+  for (definition, return_type) in [("quoted-add", ":: 'List 'Number"), ("macro-add", ":: 'List 'Number")] {
     assert_success(
       &run_calcit(
         &snapshot,
@@ -5946,7 +4872,7 @@ fn list_add_fix_keeps_other_collections_and_unknown_macro_for_review() {
       "declare collection return type",
     );
   }
-  for (definition, expected) in [("set-add", 0), ("quoted-add", 0), ("macro-add", 1)] {
+  for (definition, expected) in [("quoted-add", 0), ("macro-add", 1)] {
     let preview = run_fix(
       &snapshot,
       &[
@@ -5969,239 +4895,6 @@ fn list_add_fix_keeps_other_collections_and_unknown_macro_for_review() {
       assert!(suggestions[0]["replacement"].is_null(), "{report}");
     }
   }
-}
-
-#[test]
-fn set_include_fix_migrates_only_proven_set_add_calls() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-  let target = "fix-command.main/set-add";
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "def",
-        target,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ defn set-add ()\n  (#{} 1 2) .add 2 3",
-      ],
-    ),
-    "install Set add method",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        target,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'Set 'Number)",
-      ],
-    ),
-    "declare Set return type",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "add-test",
-        target,
-        "preserves-set-members",
-        "--tags",
-        "unit",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ assert= (#{} 1 2 3) $ set-add",
-      ],
-    ),
-    "attach Set behavior test",
-  );
-  let selector = [
-    "--rule",
-    "core-set-include-v1",
-    "--ns",
-    "fix-command.main",
-    "--def",
-    "set-add",
-    "--format",
-    "json",
-  ];
-  let preview = run_fix(&snapshot, &selector);
-  assert_success(&preview, "Set include migration preview");
-  let report = parse_stdout(&preview);
-  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
-  assert_eq!(suggestions.len(), 1, "{report}");
-  assert_eq!(suggestions[0]["applicability"], "machine-applicable", "{report}");
-  assert_eq!(suggestions[0]["replacement"]["value"], ".include", "{report}");
-  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
-  let stale = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-set-include-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "set-add",
-      "--apply",
-      "--allow-no-vcs",
-      "--expect-revision",
-      "md5:stale",
-      "--format",
-      "json",
-    ],
-  );
-  assert!(!stale.status.success(), "stale source must reject apply");
-  let applied = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-set-include-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "set-add",
-      "--apply",
-      "--allow-no-vcs",
-      "--expect-revision",
-      report["revision"].as_str().expect("preview revision"),
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&applied, "Set include migration apply");
-  assert_success(
-    &run_calcit(&snapshot, &["test", target, "--require-match"]),
-    "Set behavior after migration",
-  );
-  let repeated = run_fix(&snapshot, &selector);
-  assert_success(&repeated, "Set include idempotence preview");
-  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
-
-  for (name, code) in [
-    ("map-add", "quote $ defn map-add () $ ({} (:a 1)) .add $ [] :b 2"),
-    ("quoted-set-add", "quote $ defn quoted-set-add () $ quote $ (#{} 1) .add 2"),
-    ("pass-form", "quote $ defmacro pass-form (body) body"),
-    ("macro-set-add", "quote $ defn macro-set-add () $ pass-form $ (#{} 1) .add 2"),
-  ] {
-    assert_success(
-      &run_calcit(
-        &snapshot,
-        &[
-          "edit",
-          "def",
-          &format!("fix-command.main/{name}"),
-          "--input-format",
-          "cirru",
-          "--code",
-          code,
-        ],
-      ),
-      "install Set include negative boundary",
-    );
-  }
-  for name in ["map-add", "quoted-set-add", "macro-set-add"] {
-    assert_success(
-      &run_calcit(
-        &snapshot,
-        &[
-          "edit",
-          "schema",
-          &format!("fix-command.main/{name}"),
-          "--input-format",
-          "cirru",
-          "--code",
-          "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)",
-        ],
-      ),
-      "declare Set include boundary schema",
-    );
-  }
-  for (name, expected) in [("map-add", 0), ("quoted-set-add", 0), ("macro-set-add", 1)] {
-    let preview = run_fix(
-      &snapshot,
-      &[
-        "--rule",
-        "core-set-include-v1",
-        "--ns",
-        "fix-command.main",
-        "--def",
-        name,
-        "--format",
-        "json",
-      ],
-    );
-    assert_success(&preview, "Set include boundary preview");
-    let report = parse_stdout(&preview);
-    let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
-    assert_eq!(suggestions.len(), expected, "{name}: {report}");
-    if name == "macro-set-add" {
-      assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
-      assert!(suggestions[0]["replacement"].is_null());
-    }
-  }
-  for (name, code) in [
-    ("AddBox0", "quote $ defstruct AddBox0 (:value 'Number)"),
-    ("AddBoxTrait", "quote $ deftrait AddBoxTrait (.add :fn)"),
-    ("AddBoxImpl", "quote $ defimpl AddBoxImpl AddBoxTrait\n  .add $ fn (box item) true"),
-    ("AddBox", "quote $ def AddBox $ impl-traits AddBox0 AddBoxImpl"),
-    ("read-add-box", "quote $ defn read-add-box (box) box .add 2"),
-  ] {
-    assert_success(
-      &run_calcit(
-        &snapshot,
-        &[
-          "edit",
-          "def",
-          &format!("fix-command.main/{name}"),
-          "--input-format",
-          "cirru",
-          "--code",
-          code,
-        ],
-      ),
-      "install custom add method boundary",
-    );
-  }
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        "fix-command.main/read-add-box",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ [] 'fix-command.main/AddBox) (:return 'Bool)",
-      ],
-    ),
-    "declare custom add receiver",
-  );
-  let custom = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-set-include-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "read-add-box",
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&custom, "custom add method preview");
-  assert_eq!(parse_stdout(&custom)["data"]["suggestions"], serde_json::json!([]));
 }
 
 #[test]
@@ -9311,6 +8004,31 @@ fn retired_surface_rules_point_to_the_published_migration_bridge() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("Calcit 0.14.15"), "stderr: {stderr}");
     assert!(stderr.contains("before upgrading"), "stderr: {stderr}");
+  }
+}
+
+#[test]
+fn retired_core_method_alias_rules_point_to_the_0_28_cli() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+
+  for rule in [
+    "core-list-intersperse-v1",
+    "core-map-distinct-values-v1",
+    "core-set-include-v1",
+    "core-list-fold-v1",
+    "core-list-flat-map-v1",
+    "core-list-join-string-v1",
+    "core-list-get-v1",
+    "core-collection-combine-v1",
+  ] {
+    let output = run_fix(&snapshot, &["--rule", rule, "--format", "json"]);
+    assert!(!output.status.success(), "{rule} must be rejected");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("retired in 0.29.0"), "{rule} stderr: {stderr}");
+    assert!(stderr.contains("0.28.x Calcit CLI"), "{rule} stderr: {stderr}");
+    assert!(stderr.contains("E_RETIRED_METHOD"), "{rule} stderr: {stderr}");
   }
 }
 
@@ -12452,7 +11170,7 @@ fn core_api_028_preset_composes_nested_leaf_renames_and_is_idempotent() {
     report["data"]["filters"]["source_coverage"]["manual_review_regions"],
     serde_json::json!(["tests", "examples"])
   );
-  assert_eq!(report["data"]["filters"]["expanded_rule_ids"].as_array().unwrap().len(), 13);
+  assert_eq!(report["data"]["filters"]["expanded_rule_ids"].as_array().unwrap().len(), 7);
   let suggestions = report["data"]["suggestions"].as_array().expect("suggestions");
   assert_eq!(suggestions.len(), 5, "nested aliases must all compose: {report}");
   assert!(
@@ -12775,7 +11493,7 @@ fn ref_constructor_fix_renames_proven_spellings_and_reviews_shadowed_syntax() {
   let preset = run_calcit(&snapshot, &["fix", "--preset", "core-api-0.29-v1", "--format", "json"]);
   assert_success(&preset, "0.29 core API preset");
   let rules = parse_stdout(&preset)["data"]["filters"]["expanded_rule_ids"].clone();
-  assert_eq!(rules.as_array().unwrap().len(), 14);
+  assert_eq!(rules.as_array().unwrap().len(), 8);
   assert!(rules.as_array().unwrap().contains(&serde_json::json!("core-ref-constructor-v1")));
   let published = run_calcit(&snapshot, &["fix", "--preset", "core-api-0.28-v1", "--format", "json"]);
   assert_success(&published, "published 0.28 preset");
