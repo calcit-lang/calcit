@@ -305,6 +305,8 @@ fn collect_type_variable_names(types: &[Arc<CalcitTypeAnnotation>], free_only: b
 }
 
 impl CallTypeProof {
+  /// Starts a proof for one call: each callee generic is renamed to a fresh
+  /// variable so caller variables with the same name stay distinct and rigid.
   pub(crate) fn new(generics: &[Arc<str>], expected: &[Arc<CalcitTypeAnnotation>], actual: &[Arc<CalcitTypeAnnotation>]) -> Self {
     let mut occupied = type_variable_names(actual);
     occupied.extend(type_variable_names(expected));
@@ -332,6 +334,9 @@ impl CallTypeProof {
     }
   }
 
+  /// Proves one argument against its expected contract, binding only fresh
+  /// callee variables; a binding that would specialize a caller variable needs
+  /// a boundary. Bindings are kept only when the argument is not a mismatch.
   pub(crate) fn prove(&mut self, actual: &CalcitTypeAnnotation, expected: &CalcitTypeAnnotation) -> TypeProof {
     // A direct, callee-owned generic can transport an explicitly open value.
     // Do not retain a concrete result inferred from an earlier peer argument.
@@ -341,7 +346,15 @@ impl CallTypeProof {
       && let Some(fresh) = self.renaming.get(name)
       && let CalcitTypeAnnotation::TypeVar(fresh_name) = fresh.as_ref()
     {
-      self.bindings.insert(fresh_name.clone(), DYNAMIC_TYPE.clone());
+      // Keep a relation to a caller variable recorded by an earlier argument;
+      // the open value transports through it without erasing that relation.
+      let captured_caller = self
+        .bindings
+        .get(fresh_name)
+        .is_some_and(|bound| matches!(bound.as_ref(), CalcitTypeAnnotation::TypeVar(name) if !self.fresh_names.contains(name)));
+      if !captured_caller {
+        self.bindings.insert(fresh_name.clone(), DYNAMIC_TYPE.clone());
+      }
       return TypeProof::Proven;
     }
     let expected = expected.substitute_type_vars(&self.renaming);
@@ -424,6 +437,7 @@ impl CallTypeProof {
       }
     }
     let proof = actual.prove_available_bindings(&expected, &mut staged);
+    self.orient_variable_bindings(&mut staged);
     // A later argument cannot specialize a lexical caller variable merely
     // because the callee's fresh variable was previously bound to it.
     if staged.keys().any(|name| !self.fresh_names.contains(name)) {
@@ -433,6 +447,30 @@ impl CallTypeProof {
       self.bindings = staged;
     }
     proof
+  }
+
+  /// A contravariant position (a callback parameter, possibly nested in an
+  /// invariant `Ref`) proves in the reverse direction and records a caller
+  /// variable as bound to a fresh callee variable. That only equates the two;
+  /// record it on the callee side so the caller variable stays rigid.
+  fn orient_variable_bindings(&self, staged: &mut TypeBindings) {
+    let reversed = staged
+      .iter()
+      .filter(|(name, _)| !self.fresh_names.contains(*name))
+      .filter_map(|(name, value)| match value.as_ref() {
+        CalcitTypeAnnotation::TypeVar(fresh) if self.fresh_names.contains(fresh) => Some((name.clone(), fresh.clone())),
+        _ => None,
+      })
+      .collect::<Vec<_>>();
+    for (caller, fresh) in reversed {
+      let caller_type = Arc::new(CalcitTypeAnnotation::TypeVar(caller.clone()));
+      match staged.get(&fresh) {
+        Some(existing) if existing.as_ref() != caller_type.as_ref() => continue,
+        _ => {}
+      }
+      staged.remove(&caller);
+      staged.insert(fresh, caller_type);
+    }
   }
 
   pub(crate) fn result(&self, expected: &CalcitTypeAnnotation) -> Option<Arc<CalcitTypeAnnotation>> {
@@ -8642,6 +8680,46 @@ mod tests {
       );
       assert!(!CalcitTypeAnnotation::TypeVar(var.clone()).compatible_with_bindings(&CalcitTypeAnnotation::Number, &mut bindings));
     }
+  }
+
+  /// A generic Struct built inside a generic function: the Struct's generic binds
+  /// to the function's own variable through a `Ref` callback field, and stays tied
+  /// to it through later concrete and open arguments.
+  #[test]
+  fn callee_generic_binds_to_caller_variable_inside_ref_callback() {
+    let callback = |input: CalcitTypeAnnotation| {
+      Arc::new(CalcitTypeAnnotation::Ref(Arc::new(CalcitTypeAnnotation::from_function_parts(
+        vec![Arc::new(input)],
+        Arc::new(CalcitTypeAnnotation::Unit),
+      ))))
+    };
+    let callee: Arc<str> = Arc::from("Op");
+    let caller = CalcitTypeAnnotation::TypeVar(Arc::from("P"));
+    let expected = callback(CalcitTypeAnnotation::TypeVar(callee.clone()));
+    let actual = callback(caller.clone());
+
+    let mut proof = CallTypeProof::new(
+      std::slice::from_ref(&callee),
+      std::slice::from_ref(&expected),
+      std::slice::from_ref(&actual),
+    );
+    assert!(
+      proof.prove(&actual, &expected).is_proven(),
+      "a struct generic must bind to the caller's variable"
+    );
+    assert_eq!(proof.result(&expected).as_deref(), Some(actual.as_ref()));
+
+    // The caller variable stays rigid: once Op is bound to P, a callback over a
+    // concrete type is not accepted for the same field type.
+    let concrete = callback(CalcitTypeAnnotation::Number);
+    assert!(!proof.prove(&concrete, &expected).is_proven());
+
+    // An open value transported through Op must not erase the relation to P,
+    // so a later concrete argument for Op is still rejected.
+    let op = CalcitTypeAnnotation::TypeVar(callee.clone());
+    assert!(proof.prove(&CalcitTypeAnnotation::Dynamic, &op).is_proven());
+    assert!(!proof.prove(&CalcitTypeAnnotation::Number, &op).is_proven());
+    assert_eq!(proof.result(&expected).as_deref(), Some(actual.as_ref()));
   }
 
   #[test]
