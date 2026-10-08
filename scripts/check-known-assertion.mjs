@@ -2429,13 +2429,19 @@ try {
     assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
     assert.deepEqual(await readFile(snapshot), original);
   }
+  // Replay rest-prefix contracts through the shared runner so new attached
+  // tests honor the same backend exclusions as the full core suite.
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--backend", "native,js",
+    "--target", "calcit.core/str", "--target", "calcit.core/concat",
+  ], { ...options, stdio: "inherit" });
+
   // Replay attached callable and collection contracts, including nominal schema
   // parameters and typed rest, without replacing the original expressions.
   for (const [source, namespace, definitions, expectedCount, outputName, replayNamespace = namespace] of [
     ["src/cirru/calcit-core.cirru", "calcit.core", ["count", "&map:destruct", "&map:diff-triple", "apply", "loop"], 11, "count-core-js"],
     ["tests/fixtures/count-contract.cirru", "fix-command.main", ["typed-rest-forward", "nominal-counts", "checked-open-count", "checked-string-count", "checked-core-alias-count", "local-bound-counts", "typed-loop-count"], 7, "count-contract-js"],
     ["tests/fixtures/typed-rest-spread.cirru", "fix-command.main", ["typed-rest-forward"], 2, "typed-rest-spread-js"],
-    ["src/cirru/calcit-core.cirru", "calcit.core", ["str", "concat"], 3, "core-rest-prefix-js"],
     ["src/cirru/calcit-core.cirru", "calcit.core", ["map-list-kv", "filter-map-kv", "&map:filter-kv", "map-entries"], 13, "typed-map-kv-js", "calcit.map-kv-replay"],
   ]) {
     await copyFile(source, snapshot);

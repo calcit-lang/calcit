@@ -1,7 +1,8 @@
 {} (:about "|Per-backend exclusions for scripts/run-core-tests.mjs. Keys under :tests are test ids (namespace/definition#name); :tags maps a test tag to a reason. Every reason starts with a category: unsupported (the backend explicitly rejects the construct), parity (the backend disagrees with native; fix in a separate issue), host (needs a host capability the replay does not provide), replay (an artifact of replaying outside the owning namespace).")
   :native $ {}
   :js $ {}
-    :tests $ {} (|calcit.core/add-watch!#registers-once-and-preserves-callback-order "|parity: JS add-watch! accepts a duplicate listener key that native rejects")
+    :tests $ {} (|calcit.core/&list:slice#rejects-fractional-bounds "|parity: JS accepts a fractional slice bound instead of raising (#1849)")
+      |calcit.core/add-watch!#registers-once-and-preserves-callback-order "|parity: JS add-watch! accepts a duplicate listener key that native rejects"
       |calcit.core/deftrait#requires-head-accepts-bare-and-quoted "|parity: JS codegen cannot emit the raw `macroexpand` syntax node used by this test"
       |calcit.core/ffi-task:cancel#checked-unit-rejects-nil "|parity: JS decode-map-as with 'Unit does not raise the native `expected &unit, got nil` failure"
       |calcit.core/ffi-task:cancel#checked-unit-rejects-number "|parity: JS decode-map-as with 'Unit does not raise the native `expected &unit, got number` failure"
@@ -9,6 +10,8 @@
       |calcit.core/ffi-task:cancel#default-method-preserves-capability-error "|parity: JS .cancel! on a nil ffi:task fails with `NOT available for calcit-js` instead of a capability error"
       |calcit.core/ffi-task:cancel-with#explicit-method-preserves-capability-error "|parity: JS .cancel-with! on a nil ffi:task fails with `NOT available for calcit-js` instead of a capability error"
       |calcit.core/ffi-task:cancel-with#reason-evaluates-once-before-host-error "|parity: JS .cancel-with! on a nil ffi:task fails with `NOT available for calcit-js` instead of a capability error"
+      |calcit.core/round#rounds-ties-away-from-zero "|parity: JS Math.round rounds -2.5 to -2 (#1847)"
+      |calcit.core/str#formats-numbers-like-turn-string "|parity: JS str prints Infinity, 0 for -0 and exponent forms (#1848)"
       |calcit.core/turn-string#formats-number-boundaries "|parity: JS codegen emits the overflowing literal 1e309 as the identifier `inf` (ReferenceError)"
   :wasm $ {}
     :tests $ {} (|calcit.core/&+#preserves-primitive-schema-in-local-binding "|unsupported: unsupported WASM expression: (&proc &+)")
@@ -24,6 +27,8 @@
       |calcit.core/&list:map#typed-empty-accumulator "|parity: collection result differs from native (assert= fails on the heap values)"
       |calcit.core/&list:map-pair#maps-key-value-pairs "|unsupported: E_WASM_CLOSURE_SPECIALIZATION: `calcit.core/&list:map-pair` argument 2 is a closure but its static parameter contract is not callable"
       |calcit.core/&list:map-pair#uses-strict-named-call "|unsupported: E_WASM_CLOSURE_SPECIALIZATION: `calcit.core/&list:map-pair` argument 2 is a closure but its static parameter contract is not callable"
+      |calcit.core/&list:nth#rejects-non-integer-index "|unsupported: unsupported syntax in WASM: try"
+      |calcit.core/&list:slice#rejects-fractional-bounds "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/&map:destruct#exposes-pairs-and-folds "|unsupported: traps in unsupported dependency `calcit.core/count`: E_WASM_TRAIT_TYPE_EVIDENCE: &trait-call requires a concrete receiver type"
       |calcit.core/&map:filter-kv#filters-map-keys-and-values "|unsupported: unsupported proc in WASM: &map:fold-kv"
       |calcit.core/&map:filter-kv#preserves-typed-fields-and-effects "|unsupported: unsupported proc in WASM: ref"
@@ -161,6 +166,7 @@
       |calcit.core/quote#nested-tail-and-expression-contexts "|unsupported: unsupported runtime quote value in WASM"
       |calcit.core/quote#preserves-non-evaluation-and-effects "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/range#handles-negative-fractional-and-overflow "|unsupported: unsupported syntax in WASM: try"
+      |calcit.core/range#rejects-zero-step "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/range-bothway#creates-symmetric-and-offset-ranges "|parity: collection result differs from native (assert= fails on the heap values)"
       |calcit.core/read-dir#preserves-missing-directory-failure "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/read-dir#preserves-one-and-two-argument-directory-reads "|parity: codegen fails: unknown function: calcit.core/read-dir"
@@ -174,6 +180,7 @@
       |calcit.core/reset!#empty-initializer-needs-explicit-payload "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/reset!#nested-assignment-returns-final-value "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/reset!#returns-assigned-scalar "|unsupported: unsupported proc in WASM: ref"
+      |calcit.core/round#rounds-ties-away-from-zero "|parity: WASM f64.nearest rounds ties to even (#1847)"
       |calcit.core/section-by#splits-list-into-fixed-sections "|unsupported: E_WASM_CALL_SPECIALIZATION: recursive specialization of `calcit.core/&section-by-loop` is not supported"
       |calcit.core/secure-random-bytes#rejects-invalid-length "|unsupported: reaches `calcit.core/secure-random-bytes`: E_WASM_CAPABILITY: secure-random-bytes is unavailable for the core WASM target"
       |calcit.core/secure-random-bytes#returns-buffer "|unsupported: reaches `calcit.core/secure-random-bytes`: E_WASM_CAPABILITY: secure-random-bytes is unavailable for the core WASM target"
@@ -234,6 +241,8 @@
       |calcit.core/&list:map#typed-empty-accumulator "|parity: collection result differs from native (assert= fails on the heap values)"
       |calcit.core/&list:map-pair#maps-key-value-pairs "|unsupported: E_WASM_CLOSURE_SPECIALIZATION: `calcit.core/&list:map-pair` argument 2 is a closure but its static parameter contract is not callable"
       |calcit.core/&list:map-pair#uses-strict-named-call "|unsupported: E_WASM_CLOSURE_SPECIALIZATION: `calcit.core/&list:map-pair` argument 2 is a closure but its static parameter contract is not callable"
+      |calcit.core/&list:nth#rejects-non-integer-index "|unsupported: unsupported syntax in WASM: try"
+      |calcit.core/&list:slice#rejects-fractional-bounds "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/&list:sort-by#sorts-by-function-key "|unsupported: E_WASI_COMMAND_INDIRECT: an indirect call may reach an unsupported host capability"
       |calcit.core/&map:destruct#exposes-pairs-and-folds "|parity: traps (unreachable) at runtime; native passes"
       |calcit.core/&map:filter-kv#filters-map-keys-and-values "|unsupported: unsupported proc in WASM: &map:fold-kv"
@@ -372,6 +381,7 @@
       |calcit.core/quote#nested-tail-and-expression-contexts "|unsupported: unsupported runtime quote value in WASM"
       |calcit.core/quote#preserves-non-evaluation-and-effects "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/range#handles-negative-fractional-and-overflow "|unsupported: unsupported syntax in WASM: try"
+      |calcit.core/range#rejects-zero-step "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/range-bothway#creates-symmetric-and-offset-ranges "|parity: collection result differs from native (assert= fails on the heap values)"
       |calcit.core/read-dir#preserves-missing-directory-failure "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/read-dir#preserves-one-and-two-argument-directory-reads "|parity: codegen fails: unknown function: calcit.core/read-dir"
@@ -385,6 +395,7 @@
       |calcit.core/reset!#empty-initializer-needs-explicit-payload "|unsupported: E_WASI_COMMAND_DEPENDENCY: unsupported proc in WASM: ref"
       |calcit.core/reset!#nested-assignment-returns-final-value "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/reset!#returns-assigned-scalar "|unsupported: unsupported proc in WASM: ref"
+      |calcit.core/round#rounds-ties-away-from-zero "|parity: WASM f64.nearest rounds ties to even (#1847)"
       |calcit.core/section-by#splits-list-into-fixed-sections "|unsupported: E_WASM_CALL_SPECIALIZATION: recursive specialization of `calcit.core/&section-by-loop` is not supported"
       |calcit.core/secure-random-bytes#rejects-invalid-length "|unsupported: reaches `calcit.core/secure-random-bytes`: E_WASI_COMMAND_CAPABILITY: `&secure-random-bytes` needs WASI 0.3 random lowering"
       |calcit.core/secure-random-bytes#returns-buffer "|unsupported: reaches `calcit.core/secure-random-bytes`: E_WASI_COMMAND_CAPABILITY: `&secure-random-bytes` needs WASI 0.3 random lowering"
