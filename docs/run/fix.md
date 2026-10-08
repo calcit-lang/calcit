@@ -195,6 +195,11 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   避免新名称被调用点的局部 binding 遮蔽；已有 `:as` 限定名会保留 alias。definition-attached tests 与 examples
   使用同一个 resolver trace，schema 则按 compiler-loaded nominal type reference 与 `:where` trait bound 改写；三者与普通 code、imports、声明在
   同一事务中提交。macro 生成引用、dependency source、quoted data 或缺少 source coordinate 的引用会拒绝整个事务。
+- `rename-local-v1` 是参数化语义重构规则。它要求 `--ns`、`--def`、`--at <binding path>` 与 `--to`，`--at` 指向
+  `defn`/`fn` 参数、`let`/`&let` 绑定名或 `loop` 绑定名。规则按 core 绑定形式计算作用域：`let` 按顺序绑定，`loop` 的初始值属于外层，
+  内层同名绑定遮蔽的区域不会改写；每个改写的使用处还必须在预处理结果中解析为局部引用。新名字已在作用域中出现，使用处出现在
+  quote/quasiquote、项目或依赖 macro 的参数，或会引入绑定的 core macro（如 `->%`、`if-let`、`let{}`）参数中时，整体拒绝并给出位置；
+  `when`、`->`、`cond` 等不引入绑定的 core macro 参数照常改写。只改写当前定义的 code，不改 tests/examples。
 - `value-to-zero-arg-fn-v1` 是参数化语义重构规则。它要求 `--ns` 与 `--def`，把精确的 `(def name value)` 改成
   `(defn name () value)`，把原 schema 包成零参数函数返回类型，并把 resolver 已证明的项目源码、attached tests 与 examples
   中的读取改成调用。它会改变求值时机：原值在 definition 初始化时求值一次，新函数则在每次调用时重新求值；因此只允许显式
@@ -382,6 +387,21 @@ Dynamic 收窄、FFI trust 或业务默认值。`--verify` 是只读模式：它
 
 `--workflow strict` 是项目级组合视图，因此与 `--ns`、`--def`、`--rule`、`--preset` 和 `--to` 互斥；
 `--verify` 与写入选项互斥。Cirru EDN 是 manifest 的首选格式，只有 JSON-only consumer 才显式选择 JSON。
+
+## 局部绑定改名
+
+`tree search-replace` 按文本匹配叶子，分不清绑定处、使用处和同名遮蔽。改局部名时先用 `query def` 或
+`query search` 找到绑定名的路径，再走 preview/apply：
+
+```bash
+calcit calcit.cirru fix --rule rename-local-v1 \
+  --ns app.comp --def comp-task --at 3.1.3.0 --to text --format edn
+calcit calcit.cirru fix --rule rename-local-v1 \
+  --ns app.comp --def comp-task --at 3.1.3.0 --to text \
+  --apply --expect-revision 'md5:<preview 返回的 revision>'
+```
+
+应用后再次预览为空。
 
 ## 原子重命名 definition 与静态引用
 

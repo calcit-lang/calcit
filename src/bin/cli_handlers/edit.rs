@@ -933,7 +933,7 @@ fn source_declares_macro(entry: &CodeEntry) -> bool {
   matches!(&entry.code, Cirru::List(items) if items.first().is_some_and(|head| head.eq_leaf("defmacro")))
 }
 
-fn definition_head_is_macro(snapshot_file: &str, snapshot: &Snapshot, namespace: &str, head: &str) -> Result<bool, String> {
+pub(crate) fn definition_head_is_macro(snapshot_file: &str, snapshot: &Snapshot, namespace: &str, head: &str) -> Result<bool, String> {
   let file = &snapshot.files[namespace];
   let imports = calcit::program::extract_import_map(&file.ns.code, namespace)?;
   let (source_ns, source_def) = if let Some((prefix, name)) = head.split_once('/') {
