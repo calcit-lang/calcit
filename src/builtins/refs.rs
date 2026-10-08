@@ -238,7 +238,7 @@ pub fn add_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       match pair.1.get(k) {
         Some(_) => CalcitErr::err_str(
           CalcitErrKind::Unexpected,
-          format!("add-watch failed: listener with key `{k}` already existed"),
+          format!("add-watch! failed: listener with key `{k}` already existed"),
         ),
         None => {
           pair.1.insert(k.to_owned(), f.to_owned());
@@ -248,7 +248,7 @@ pub fn add_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
     (Some(Calcit::Ref(..)), Some(Calcit::Tag(_)), Some(a)) => {
       let msg = format!(
-        "add-watch requires a function as 3rd argument, but received: {}",
+        "add-watch! requires a function as 3rd argument, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::AddWatch).unwrap_or_default();
@@ -256,7 +256,7 @@ pub fn add_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
     (Some(Calcit::Ref(..)), Some(a), Some(_)) => {
       let msg = format!(
-        "add-watch requires a tag as 2nd argument (watch key), but received: {}",
+        "add-watch! requires a tag as 2nd argument (watch key), but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::AddWatch).unwrap_or_default();
@@ -264,7 +264,7 @@ pub fn add_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
     (Some(a), _, _) => {
       let msg = format!(
-        "add-watch requires a ref (atom) as 1st argument, but received: {}",
+        "add-watch! requires a ref (atom) as 1st argument, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
       let hint = crate::calcit::format_proc_examples_hint(&crate::calcit::CalcitProc::AddWatch).unwrap_or_default();
@@ -272,7 +272,7 @@ pub fn add_watch(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
     (a, b, c) => {
       let msg = format!(
-        "add-watch requires 3 arguments (ref, tag-key, function), but received: {}",
+        "add-watch! requires 3 arguments (ref, tag-key, function), but received: {}",
         if a.is_none() {
           0
         } else if b.is_none() {

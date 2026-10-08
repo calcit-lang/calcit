@@ -535,6 +535,19 @@ pub fn removed_data_api_migration(name: &str) -> Option<RemovedDataApiMigration>
   Some(RemovedDataApiMigration { replacement, guidance })
 }
 
+/// Core functions removed in 0.29.0. An unresolved reference keeps the regular
+/// unknown-symbol warning and appends the preferred spelling.
+fn retired_core_function_migration(name: &str) -> Option<&'static str> {
+  match name {
+    "some?" => Some("use `non-nil?`; Option variants use `.some?`"),
+    "join-str" => Some("use `join-string`"),
+    "add-watch" => Some("use `add-watch!`"),
+    "cpu-time" => Some("use `monotonic-time-ms`"),
+    "foldl'" => Some("use `fold` with the same argument order"),
+    _ => None,
+  }
+}
+
 fn warn_on_removed_data_api_call(
   head: &Calcit,
   call_location: Option<NodeLocation>,
@@ -2531,11 +2544,11 @@ fn preprocess_expr_unguarded(
                       check_warnings,
                     );
                   } else {
-                    gen_check_warning_with_location(
-                      format!("[Warn] unknown `{def}` in {def_ns}/{at_def}, locals {{{}}}", names.join(" ")),
-                      node_location,
-                      check_warnings,
-                    );
+                    let mut message = format!("[Warn] unknown `{def}` in {def_ns}/{at_def}, locals {{{}}}", names.join(" "));
+                    if let Some(migration) = retired_core_function_migration(def) {
+                      message.push_str(&format!("; `{def}` was removed from calcit.core in 0.29.0, {migration}"));
+                    }
+                    gen_check_warning_with_location(message, node_location, check_warnings);
                   }
                   Ok(expr.to_owned())
                 }
@@ -7075,15 +7088,9 @@ fn warn_on_nominal_enum_legacy_absence_use(
   let Some(operation) = canonical_absence_operation_name(head) else {
     return;
   };
-  // `.some?` dispatches to the nominal Option receiver method, not a nullable
-  // value predicate; only the free predicate forms keep the warning.
-  if operation == "some?" && matches!(head, Calcit::Method(_, _)) {
-    return;
-  }
   if !matches!(
     operation,
     "nil?"
-      | "some?"
       | "non-nil?"
       | "list?"
       | "map?"
@@ -7157,10 +7164,10 @@ fn warn_on_nominal_enum_legacy_absence_use(
   }
 
   let guidance = match operation {
-    "nil?" | "some?" | "non-nil?" if enum_name == "Option" => {
+    "nil?" | "non-nil?" if enum_name == "Option" => {
       "use `option:none?`/`option:some?` (or the corresponding methods) instead of nullable-value predicates".to_owned()
     }
-    "nil?" | "some?" | "non-nil?" => "use native `match` to inspect the nominal enum variant".to_owned(),
+    "nil?" | "non-nil?" => "use native `match` to inspect the nominal enum variant".to_owned(),
     "=" | "&=" if enum_name == "Option" => {
       "compare Option values only with other Options, or unwrap/pattern-match before comparing a payload".to_owned()
     }
@@ -8081,7 +8088,20 @@ fn retired_method_migration(receiver: &CalcitTypeAnnotation, method_name: &str) 
     (T::Set(_), "contains?") => {
       Some("`.contains?` was a same-implementation alias; use `.includes?` (the function `contains?` still accepts a Set)")
     }
+    (T::String, "count") => Some(
+      "`.count` was a same-implementation alias; use `.len`, which also counts Unicode scalars (the function `count` still accepts a String)",
+    ),
     _ => retired_core_struct_method_migration(receiver, method_name),
+  }
+}
+
+/// Retired inherent methods that a core trait impl still provides for the same
+/// receiver. A direct call on a concrete receiver reports the migration, while
+/// trait-bound calls and the prefix function keep dispatching through the impl.
+fn retired_trait_reachable_method_migration(receiver: &CalcitTypeAnnotation, method_name: &str) -> Option<&'static str> {
+  match (receiver, method_name) {
+    (CalcitTypeAnnotation::String, "count") => retired_method_migration(receiver, method_name),
+    _ => None,
   }
 }
 
@@ -8223,6 +8243,21 @@ fn validate_method_call(
       format!(
         "unknown method `.show` for {type_desc}. Show is opt-in; attach an explicit `defimpl ... calcit.core/Show` implementation, or use `.debug` for the built-in diagnostic representation"
       ),
+      call_stack,
+      head.get_location(),
+    ));
+  }
+
+  // String keeps its core `Countable` impl so `count` and trait-bound calls still
+  // work, which would otherwise resolve the retired `.count` through that impl.
+  if let Some(migration) = retired_trait_reachable_method_migration(type_value.as_ref(), method_name) {
+    return Err(CalcitErr::use_msg_stack_location_with_code(
+      CalcitErrKind::Type,
+      format!(
+        "method `.{method_name}` for {} was retired: {migration}",
+        describe_type(type_value.as_ref())
+      ),
+      "E_RETIRED_METHOD",
       call_stack,
       head.get_location(),
     ));
@@ -9354,6 +9389,10 @@ pub fn static_method_descriptors(type_value: &CalcitTypeAnnotation) -> Option<Ve
         .map(|trait_def| trait_def.origin_label())
         .unwrap_or_else(|| format!("<originless>/{}", imp.name()));
       for field in imp.fields().iter() {
+        // A retired method that a core trait impl still carries is not offered as a method.
+        if retired_trait_reachable_method_migration(type_value, field.ref_str()).is_some() {
+          continue;
+        }
         let name = format!(".{}", field.ref_str());
         if seen.insert(name.clone()) {
           methods.push(StaticMethodDescriptor {
@@ -9592,7 +9631,7 @@ fn extract_predicate_bindings(cond_form: &Calcit, scope_types: &ScopeTypes) -> P
         false_binding,
       }
     }
-    "some?" | "non-nil?" => {
+    "non-nil?" => {
       let true_binding = scope_types.get(&sym).and_then(|current| {
         if let CalcitTypeAnnotation::Optional(inner) = current.as_ref() {
           Some((sym.clone(), inner.clone()))
@@ -14650,7 +14689,7 @@ mod tests {
       sym,
       Arc::new(CalcitTypeAnnotation::JsNullish(Arc::new(CalcitTypeAnnotation::String))),
     )]);
-    for name in ["string?", "list?", "nil?", "some?", "non-nil?", "js-nullish?", "js-present?"] {
+    for name in ["string?", "list?", "nil?", "non-nil?", "js-nullish?", "js-present?"] {
       let heads = [
         core_import(name, "tests.predicate-origin"),
         Calcit::Import(CalcitImport {
@@ -14696,7 +14735,7 @@ mod tests {
     let entry = source.get_mut(calcit::CORE_NS).unwrap().defs.get_mut("js-nullish?").unwrap();
     entry.code = Calcit::Bool(false);
     drop(source);
-    for name in ["js-present?", "js-nullish?", "some?", "non-nil?"] {
+    for name in ["js-present?", "js-nullish?", "non-nil?"] {
       let narrowed = extract_predicate_bindings(
         &Calcit::from(vec![core_import(name, "tests.predicate-origin"), target.clone()]),
         &scope_types,
@@ -14802,7 +14841,7 @@ mod tests {
     });
     let args = CalcitList::from(std::slice::from_ref(&option_value));
 
-    for operation in ["some?", "non-nil?", "get", "assoc", "dissoc", "merge", "&compare", "struct?"] {
+    for operation in ["non-nil?", "get", "assoc", "dissoc", "merge", "&compare", "struct?"] {
       let head = core_head(operation);
       let warnings = RefCell::new(vec![]);
       warn_on_nominal_enum_legacy_absence_use(&head, &args, &ScopeTypes::new(), "tests.option-migration", "demo", &warnings);
@@ -14833,7 +14872,7 @@ mod tests {
     );
     assert!(
       some_method_warnings.borrow().is_empty(),
-      "the nominal `.some?` method must not reuse the legacy nullable `some?` warning"
+      "the nominal `.some?` method must not reuse the nullable `non-nil?` warning"
     );
 
     let direct_get = Calcit::from(vec![core_head("get"), Calcit::Nil, Calcit::Number(0.0)]);
@@ -15148,7 +15187,7 @@ mod tests {
     let application_option_args = CalcitList::from(std::slice::from_ref(&application_option));
     let application_option_warnings = RefCell::new(vec![]);
     warn_on_nominal_enum_legacy_absence_use(
-      &core_head("some?"),
+      &core_head("non-nil?"),
       &application_option_args,
       &ScopeTypes::new(),
       "tests.option-migration",

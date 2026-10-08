@@ -80,7 +80,7 @@ calcit calcit.cirru fix --workflow strict --format edn
 再按 `.github/workflows/` 与 `package.json` 运行项目原有的检查和构建命令，记录结果。
 
 **需要旧版迁移桥梁时，先迁移源码，再升级工具链。** 例如 0.28.x → 0.29.0，List `.join`、Map `.values`、
-List/String `.contains?`，Number `.round?`、FsPath `.write-text`、FfiResponse `.resolve` / `.reject`，List `.reduce` / `.bind` / `.join-str` / `.nth`、Map/Set `.mappend`、Set `.add`，以及 Map/Set `.contains?`、Map `.includes?` 的迁移规则在目标 CLI 中已退役或缩小范围，应先阅读本页“兼容入口的退场节奏”，用匹配项目的
+List/String `.contains?`，Number `.round?`、FsPath `.write-text`、FfiResponse `.resolve` / `.reject`，List `.reduce` / `.bind` / `.join-str` / `.nth`、Map/Set `.mappend`、Set `.add`、Map/Set `.contains?`、Map `.includes?`，以及函数 `some?`、`join-str`、String `.count` 的迁移规则在目标 CLI 中已退役或缩小范围，应先阅读本页“兼容入口的退场节奏”，用匹配项目的
 0.28.x CLI 预览、携带 revision 应用并运行原测试。已发布的 0.28.x CLI 没有 `--include-attached` 与 `--pattern`，
 桥梁只迁移 definition `:code`，预览的 `:manual-review-regions` 会列出 `|tests` 与 `|examples`；这两处的旧写法在第 9 步由目标
 CLI 的 `E_RETIRED_METHOD` 等诊断定位后逐处改写。若已安装目标 CLI，可通过原已发布 CLI 的绝对路径执行旧阶段，
@@ -167,6 +167,7 @@ named entry 不继承 default 配置，逐个检查与运行。把 `test --list`
 | `core-integer-predicate-v1` 的 Number 方法部分、`core-effect-method-v1` 的 FsPath/FfiResponse 部分 | Number `.round?`、FsPath `.write-text`、FfiResponse `.resolve` / `.reject` | 已发布 0.28.x | 0.29.0 已退役；见 [兼容入口的退场节奏](#兼容入口的退场节奏) |
 | `core-set-include-v1`、`core-list-fold-v1`、`core-list-flat-map-v1`、`core-list-join-string-v1`、`core-list-get-v1`、`core-collection-combine-v1` | List `.reduce` / `.bind` / `.join-str` / `.nth`、Map/Set `.mappend`、Set `.add` | 已发布 0.28.x | 0.29.0 已退役；见 [兼容入口的退场节奏](#兼容入口的退场节奏) |
 | `core-predicate-method-v1` 的 Map/Set 部分 | Map `.contains?` / `.includes?`、Set `.contains?` | 已发布 0.28.x | 0.29.0 已退役，整条规则不再提供；见 [兼容入口的退场节奏](#兼容入口的退场节奏) |
+| `core-non-nil-predicate-v1`、`core-collection-len-v1` 的 String 部分 | 函数 `some?`、String `.count` | 已发布 0.28.x | 0.29.0 已退役；见 [兼容入口的退场节奏](#兼容入口的退场节奏) |
 | `core-api-0.28-v1` 与各兼容名的 fix rule | 0.28 起的核心 API 旧名 | 目标 CLI | 当前可用；按 [兼容入口的退场节奏](#兼容入口的退场节奏) 退场 |
 
 退场条件统一为：已知活跃下游默认分支的源码、附带测试/示例、宏生成代码和 CI/文档引用清零，且依赖模块与未合并迁移已核对后，
@@ -295,7 +296,7 @@ assert= true $ round? 9007199254740992
 
 本节的合同加强面向 0.29 非 patch 升级；已发布旧工具链仍以其实际 `query def/type` 为准，不把开发分支的行为当作旧版本保证。
 
-`count` 要求参数具备 `Countable` 能力，返回 `Number`。List、Map、Set 和 String 保持原有长度语义；Struct 计字段数，Enum 的计数包含 tag。String 按 Unicode 标量计数，不是 UTF-8 字节数或 JavaScript 的 UTF-16 长度。已知集合类型也可以使用其 `.len` 方法。
+`count` 要求参数具备 `Countable` 能力，返回 `Number`。List、Map、Set 和 String 保持原有长度语义；Struct 计字段数，Enum 的计数包含 tag。String 按 Unicode 标量计数，不是 UTF-8 字节数或 JavaScript 的 UTF-16 长度。已知集合类型也可以使用其 `.len` 方法；String 的 `.count` 方法已在 0.29.0 删除，函数 `count` 与 `Countable` 约束仍接受 String。
 
 泛型 helper 调用 `count` 时，需要在 Fn schema 的 `:where` 中声明 `T Countable`；名义 Struct/Enum 参数由编译器解析其声明并证明已有能力，无需改用低层计数原语。开放 `Dynamic` 在使用内容前须显式收窄，例如在 `list?`、`map?`、`set?` 或 `string?` 成功分支中计数。`nil` 不作为空集合，Number 和函数也不是可计数值。
 
@@ -396,25 +397,38 @@ Map 与 Set 同时不再实现 `Contains` trait。schema `:where` 中 `'T 'Conta
 
 `core-predicate-method-v1` 随之整条退役：0.29.0 的 CLI 用 `--rule` 指定它时会提示改用 0.28.x 的 CLI。连同上一节的 6 条规则，`core-api-0.28-v1` preset 由 13 条规则减为 6 条，`core-api-0.29-v1` 由 14 条减为 7 条。升级顺序同上：先在 0.28.x 上预览、应用并运行项目测试，再升级 CLI。Struct `.contains?` 与 Enum `.contains?` 在 0.29.0 仍可用，计划在 0.30.0 随 `Contains` trait 的去留一起处理；新代码改用 `.contains-field?` / `.contains-index?`。
 
+### 0.29.0 已删除：函数 `some?`、`join-str`、`add-watch`、`cpu-time` 与 String `.count`
+
+下面的旧入口在 0.26.0 至 0.28.0 正式版中已有首选写法；corokia、calcit-graphviz、calcit.std 合并迁移后，已知活跃下游默认分支的源码与附带测试不再调用，因此在 0.29.0 删除。首选入口现在直接拥有原实现，行为与 0.28 的旧名相同。
+
+| 已删除 | 首选替代 | 迁移 |
+|---|---|---|
+| 函数 `some?` | `non-nil?`；Option variant 用 `.some?` | 使用 0.28.x 的 CLI：`calcit calcit.cirru fix --rule core-non-nil-predicate-v1 --format edn`；也可人工改写 |
+| 函数 `join-str` | `join-string` | 人工改写；`core-function-alias-v1` 只在 0.29.0 预发布版中覆盖它 |
+| 函数 `add-watch` | `add-watch!` | 人工改写，参数顺序与返回值不变 |
+| 函数 `cpu-time` | `monotonic-time-ms` | 人工改写 |
+| String `.count` | `.len`，同样按 Unicode 标量计数 | 使用 0.28.x 的 CLI：`calcit calcit.cirru fix --rule core-collection-len-v1 --format edn`；紧凑写法 `text.count` 需人工改写 |
+
+残留的函数调用在检查时报告未知名字，告警末尾给出首选写法，例如 `` `some?` was removed from calcit.core in 0.29.0, use `non-nil?` ``；残留的 String `.count` 得到 `E_RETIRED_METHOD`。函数 `count`、`&trait-call Countable :count` 与 `where T: Countable` 的泛型调用仍接受 String；List、Map、Set、Struct 与 Enum 的 `.count` 不受影响。宏 `with-cpu-time` 保留原名，展开后改为调用 `monotonic-time-ms`。
+
+`core-non-nil-predicate-v1` 随 `some?` 整条退役：0.29.0 的 CLI 用 `--rule` 指定它时会提示改用 0.28.x 的 CLI。`core-api-0.28-v1` preset 由 6 条规则减为 5 条，`core-api-0.29-v1` 由 7 条减为 6 条。`core-function-alias-v1` 继续迁移 `optionally`、`join` 与 `vals`；`core-collection-len-v1` 继续迁移 List、Map、Set 的 `.count`。升级顺序同上：先在 0.28.x 上预览、应用并运行项目测试，再升级 CLI。
+
 ### 仍可用的兼容名
 
-core 中带 `:deprecated` 标记的 15 个兼容名在 0.29.0 仍可调用，行为与 0.28 相同。新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余按首选写法逐处改写。
+core 中带 `:deprecated` 标记的 11 个兼容名在 0.29.0 仍可调用，行为与 0.28 相同。新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余按首选写法逐处改写。
 
 | 兼容名 | 首选写法 | 迁移 |
 |---|---|---|
 | `%some` / `%none` / `%ok` / `%err` | `Option :some x` / `Option :none` / `Result :ok x` / `Result :err e` | `calcit calcit.cirru fix --rule core-nominal-constructor-v1 --format edn` |
-| `some?` | `non-nil?` | `calcit calcit.cirru fix --rule core-non-nil-predicate-v1 --format edn` |
 | `optionally` | `nil->option` | `calcit calcit.cirru fix --rule core-function-alias-v1 --format edn` |
-| `join-str` | `join-string` | 同上 |
 | `join` | `intersperse` | 同上 |
 | `vals` | `distinct-values` | 同上 |
 | `turn-string` | `to-string` | 参数已证明为标量时用 `core-identity-conversion-v1`，其余人工改写 |
 | `turn-str` | `to-string` | 人工改写 |
-| `add-watch` / `remove-watch` | `add-watch!` / `remove-watch!` | 人工改写 |
+| `remove-watch` | `remove-watch!` | 人工改写 |
 | `case-default` | `match`，默认值写成末尾 `_` 分支 | 人工改写 |
-| `cpu-time` | `monotonic-time-ms` | 人工改写 |
 
-上表名字、函数 `round?`、前缀 `reduce`，以及方法 List `.add`、List/Map/Set/String `.count`、FfiTask `.cancel` / `.cancel-with` 与 Struct/Enum `.contains?` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零后，在下一个非 patch 版本删除，并在本文列出删除项。
+上表名字、函数 `round?`、前缀 `reduce`，以及方法 List `.add`、List/Map/Set `.count`、FfiTask `.cancel` / `.cancel-with` 与 Struct/Enum `.contains?` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零后，在下一个非 patch 版本删除，并在本文列出删除项。
 
 ### Ref 构造名
 
@@ -442,27 +456,27 @@ calcit calcit.cirru fix --preset core-api-0.29-v1 --include-attached --format ed
 
 ## WASM 的 nil 类型证据
 
-WASM 后端现在依据静态类型证据 lowering `nil?`，从而让 `some? false`、`some? 0` 与 native、JavaScript 保持一致。当前 scalar ABI 中 nil、false 与数值 0 的位表示不能单靠运行时比较区分；因此具体类型的参数会直接得到确定的 nil 判断结果，同时原表达式仍严格求值一次，不会跳过副作用。
+WASM 后端现在依据静态类型证据 lowering `nil?`，从而让 `non-nil? false`、`non-nil? 0` 与 native、JavaScript 保持一致。当前 scalar ABI 中 nil、false 与数值 0 的位表示不能单靠运行时比较区分；因此具体类型的参数会直接得到确定的 nil 判断结果，同时原表达式仍严格求值一次，不会跳过副作用。
 
-泛型 helper 在直接调用点取得具体实参类型后会被单态化，跨 namespace 的普通 Calcit 引用同样有效；不需要改成 native call，也不需要为 helper 建立额外加载路径。名义 `Option` 自身不是 nil，所以 `some? $ Option :none` 仍为 true，不能替代 Option 的 `.some?`。
+泛型 helper 在直接调用点取得具体实参类型后会被单态化，跨 namespace 的普通 Calcit 引用同样有效；不需要改成 native call，也不需要为 helper 建立额外加载路径。名义 `Option` 自身不是 nil，所以 `non-nil? $ Option :none` 仍为 true，不能替代 Option 的 `.some?`。
 
 无法取得具体类型证据的开放 `Dynamic`、未绑定泛型，以及把 nil-sensitive 泛型 helper 作为一等函数或公开 WASM 导出的边界，会明确报出 `E_WASM_NIL_TYPE_EVIDENCE`。带 `&` 的 spread 调用没有固定实参形状，不能充当泛型特化点；如果目标 helper 依赖 nil 类型证据，同样会在编译期拒绝，而不是留下运行时 trap。应改为类型已具体化的普通直接调用，或增加一个签名闭合、无需猜测 payload 类型的 wrapper。
 
 旧 `Optional<T>` 只有在 payload 使用确定非零的引用/句柄表示时才可做运行时 nil 判断，例如 WASI `get-env` 的 `Optional<String>`；`Optional<Number>` 与 `Optional<Bool>` 仍会拒绝，因为 0/false 和 nil 在 scalar ABI 中相同。这类边界应先收紧 schema、迁到名义 `Option`，或在 Calcit 调用点完成具体化；编译器不会猜测零值，也不会为了兼容扩展动态追踪规则。此次修复不改变 scalar ABI，也没有提供掩盖开放类型的自动转换。
 
 ```cirru
-assert= true $ some? false
+assert= true $ non-nil? false
 
-assert= true $ some? 0
+assert= true $ non-nil? 0
 
-assert= false $ some? nil
+assert= false $ non-nil? nil
 
-assert= true $ some? $ Option :none
+assert= true $ non-nil? $ Option :none
 ```
 
 ## 非 nil 谓词改名
 
-新代码使用 `non-nil?` 表示“值不为 nil”。旧 `some?` 在兼容窗口内保留相同语义，但不再作为首选入口；它不会改成 Option variant 判断。`Option :none` 本身是一个非 nil 的名义值，因此 `non-nil? $ Option :none` 仍返回 true；要判断 Option variant，请使用 `.some?`、`.none?` 或原生 `match`。
+使用 `non-nil?` 表示“值不为 nil”。旧 `some?` 已在 0.29.0 删除，它从未表示 Option variant 判断。`Option :none` 本身是一个非 nil 的名义值，因此 `non-nil? $ Option :none` 仍返回 true；要判断 Option variant，请使用 `.some?`、`.none?` 或原生 `match`。
 
 ```cirru
 assert= true $ non-nil? false
@@ -476,13 +490,13 @@ assert= true $ non-nil? $ Option :none
 assert= false $ (Option :none) .some?
 ```
 
-自动迁移使用统一的 `calcit fix` 入口，不新增顶层命令：
+0.28.x 的 CLI 提供迁移规则，需在升级 CLI 前运行：
 
 ```bash
 calcit calcit.cirru fix --rule core-non-nil-predicate-v1 --format edn
 ```
 
-规则只改写编译器已解析到 `calcit.core/some?` 的源码引用，并使用明确限定的 `calcit.core/non-nil?` 防止同名局部变量或 import 改变解析结果。已知保持表达式求值的 core macro 可以安全通过；未知 macro 只给出 review 提示。规则不把 `some? option` 猜成 `option.some?`，不改写用户自定义同名函数，也不改变参数的求值次数。预览后应带原 revision 应用、重复预览确认幂等，再运行严格检查与项目测试。
+规则只改写编译器已解析到 `calcit.core/some?` 的源码引用，并使用明确限定的 `calcit.core/non-nil?` 防止同名局部变量或 import 改变解析结果；它不把 `some? option` 猜成 `option.some?`，不改写用户自定义同名函数。0.29.0 的 CLI 不再提供该规则，残留调用由未知名字告警定位。
 
 `non-nil?` 仍不能擦除宿主空值边界：`JsNullish<T>` 必须使用 `js-present?` / `js-nullish?`。对名义 Option 使用 `non-nil?` 也会保留提示，因为它通常表示把“容器存在”误当成“variant 为 some”。
 
@@ -1186,8 +1200,8 @@ calcit calcit.cirru fix --preset surface-latest-v2 --include-attached --format e
 calcit calcit.cirru fix --preset core-api-0.28-v1 --include-attached --format edn
 ```
 
-函数形式的 `optionally`、`some?`、`join`、`join-str`、`vals`、`turn-str`、`turn-string`、
-`cpu-time`、`add-watch`、`remove-watch` 均由其定义文档提供首选名，不需要另一份迁移名称表。
+函数形式的 `optionally`、`join`、`vals`、`turn-str`、`turn-string`、`remove-watch`
+均由其定义文档提供首选名，不需要另一份迁移名称表。
 普通函数成功预处理时，弃用报告用编译器解析目标排除局部同名参数并识别 namespace alias；
 quoted data 不计为调用，推荐方法复用旧内部 helper 也不计为旧函数调用。
 无法预处理的定义保留保守 source 报告，仍需修正原编译问题后重新检查。

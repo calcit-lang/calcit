@@ -59,8 +59,8 @@ ns app.main
     "|bottom-tip" :default hud!
 
 defn reload! () $ if (nil? build-errors)
-  do (remove-watch *reel :changes) (clear-cache!)
-    add-watch *reel :changes $ fn (reel prev) (render-app!)
+  do (remove-watch! *reel :changes) (clear-cache!)
+    add-watch! *reel :changes $ fn (reel prev) (render-app!)
     reset! *reel $ refresh-reel @*reel schema/store updater
     hud! "|ok~" "|Ok"
   hud! "|error" build-errors

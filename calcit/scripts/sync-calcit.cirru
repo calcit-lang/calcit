@@ -33,7 +33,7 @@
                 detail->data $ fn (node recur-fn)
                   let
                       text $ get node :text
-                    if (some? text) text $ let
+                    if (non-nil? text) text $ let
                         data $ get node :data
                       map
                         range $ count data
@@ -41,14 +41,14 @@
                           recur-fn (bisection-key.util/val-nth data idx) recur-fn
                 examples->detail $ fn (examples now)
                   map
-                    if (some? examples) examples $ []
+                    if (non-nil? examples) examples $ []
                     fn (example) (code->detail example now code->detail)
                 sync-entry $ fn (old incoming now)
                   let
                       next-code $ get incoming :code
                       next-doc $ get incoming :doc
                       next-examples $ examples->detail (get incoming :examples) now
-                    if (some? old)
+                    if (non-nil? old)
                       let
                           old-code $ get old :code
                           code-changed? $ not= (detail->data old-code detail->data) (&cirru-quote:to-list next-code)
@@ -63,7 +63,7 @@
                   let
                       next-code $ get incoming :code
                       next-doc $ get incoming :doc
-                    if (some? old)
+                    if (non-nil? old)
                       let
                           old-code $ get old :code
                           code-changed? $ not= (detail->data old-code detail->data) (&cirru-quote:to-list next-code)
@@ -73,15 +73,15 @@
                         :doc next-doc
                 sync-file $ fn (old incoming now)
                   let
-                      old-defs $ if (some? old) (get old :defs) ({})
+                      old-defs $ if (non-nil? old) (get old :defs) ({})
                       next-defs $ foldl (get incoming :defs) ({})
                         fn (acc pair)
                           let[] (name entry) pair $ assoc acc name $ sync-entry (get old-defs name) entry now
                       next-ns $ sync-ns
-                        if (some? old) (get old :ns) nil
+                        if (non-nil? old) (get old :ns) nil
                         get incoming :ns
                         , now
-                    if (some? old)
+                    if (non-nil? old)
                       assoc (assoc old :defs next-defs) :ns next-ns
                       %{} FileEntry (:defs next-defs) (:ns next-ns)
                 compact-path $ option:unwrap-or (get-env |SYNC_COMPACT) |compact.cirru

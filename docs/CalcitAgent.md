@@ -374,7 +374,7 @@ calcit test '<namespace>/<definition>'
 
 创建 Ref 使用 `ref value`（局部）与 `defref *name value`（命名空间级，热重载保留状态），`type-of` 返回 `:ref`，谓词为 `ref?`。`atom` / `defatom` 是同一实现的兼容旧名，不要在新代码中生成；已有项目用 `calcit fix --rule core-ref-constructor-v1` 预览后迁移。读取器会把 `ref` 解析为内建构造，不要用 `ref` 作局部绑定或参数名。
 
-Ref watcher 的应用入口使用 `add-watch! ref :key callback` 与 `remove-watch! ref :key`；`!` 表示修改 watcher 注册状态，并不表示所有可能失败的操作都要加后缀。callback 接收新值和旧值，返回 `Unit`；重复注册或移除缺失 key 仍会报错。旧 `add-watch/remove-watch` 保留底层兼容，不建议 Agent 生成新的应用调用；未知同名用户函数不能仅凭拼写自动迁移。
+Ref watcher 的应用入口使用 `add-watch! ref :key callback` 与 `remove-watch! ref :key`；`!` 表示修改 watcher 注册状态，并不表示所有可能失败的操作都要加后缀。callback 接收新值和旧值，返回 `Unit`；重复注册或移除缺失 key 仍会报错。旧 `add-watch` 已在 0.29.0 删除；旧 `remove-watch` 暂留兼容，不建议 Agent 生成新的应用调用；未知同名用户函数不能仅凭拼写自动迁移。
 
 最后运行当前仓库规定的测试和目标 codegen。只有项目目标是 JS 时，`calcit js` 才是对应的编译检查；它不是所有 Calcit 项目的通用完成证明。
 
@@ -618,7 +618,7 @@ Option 容器；Result 错误类型需要转换时显式使用 `.map-err`。
 
 旧 `option:some?` / `option:none?` 可用 `calcit fix --rule core-option-method-v1 --format edn` 预览迁移为 `.some?` / `.none?`；旧 `result:ok?` / `result:err?` / `result:unwrap-or` 用 `core-result-method-v1` 迁移为 `.ok?` / `.err?` / `.unwrap-or`。规则仅自动改写可证明的同一方法调用；core `%err` / `Result :err` 没有成功值，可用具体 fallback 推断成功类型并保留错误类型；成功值已有具体类型的 core `%ok` 也可凭方法契约迁移。普通 `Result<Dynamic,E>`、`:ok` 中的动态成功值和遮蔽类型不因 fallback 自动收窄，须审阅类型边界。先核对预览与 Snapshot revision，再应用、重复预览并运行测试。
 
-普通值的非 nil 判断使用 `non-nil?`；旧 `some?` 只作为同义兼容入口，不能与 Option `.some?` 混淆。可用 `calcit fix --rule core-non-nil-predicate-v1 --format edn` 预览等价改名；规则只接受编译器已解析的 core 引用，未知 macro 保留 review，不会把 Option 判断或用户同名函数按词形替换。`JsNullish<T>` 继续使用 `js-present?` / `js-nullish?`，不能借 `non-nil?` 擦除宿主边界。
+普通值的非 nil 判断使用 `non-nil?`，不要与 Option `.some?` 混淆。旧 `some?` 已在 0.29.0 删除，残留调用会得到带 `non-nil?` 提示的未知名字告警。`JsNullish<T>` 继续使用 `js-present?` / `js-nullish?`，不能借 `non-nil?` 擦除宿主边界。
 
 List 单元素追加首选 `.append`，List 拼接用 `.concat`。迁移旧 `.add` 可显式运行 `calcit fix --rule core-list-add-v1 --format edn`：仅当具体 List 接收者与旧、新方法同指 `calcit.core/append` 且源码上下文稳定时提供可应用建议；Set/Map、开放类型与未知 macro 不得按字面改写。先预览，再携带原 revision 应用并重复预览；附带的 `:tests` / `:examples` 可传 `--include-attached` 纳入同一证明与原子事务。
 
@@ -634,7 +634,7 @@ String 到名义标识使用 `to-tag: String -> Tag` 与 `to-symbol: String -> S
 
 对旧 `turn-string`，同一 fix 仅在内建 Nil、Bool、Number、String、Tag、Symbol 参数已证明时改为 `to-string`；这些内建 trait 方法调用相同的内部 `&turn-string`。旧入口本身现在也要求 `T: ToString`，因此 List/Map/Unit/开放 Dynamic 会在严格预处理时报错，而用户自定义实现仍可调用。自定义 `ToString`、开放 Dynamic、集合及无法稳定定位的源码不自动改写。`str`、`.show/.debug` 仍是不同显示职责，不应加入此迁移。
 
-测量经过时间使用 `monotonic-time-ms`，返回 Number 毫秒；只比较同一次运行中的两次读数，不把它当 Unix 时间戳或 CPU 使用量。旧 `cpu-time` 暂留兼容。`unix-time-ms` 是可能受宿主校时影响的 epoch 毫秒。新单调时钟名复用已有 native/JS/WASI Preview 1 实现；WASI 0.3 command 目前不支持时钟，应保留显式 capability 错误，不自行回退。
+测量经过时间使用 `monotonic-time-ms`，返回 Number 毫秒；只比较同一次运行中的两次读数，不把它当 Unix 时间戳或 CPU 使用量。旧 `cpu-time` 已在 0.29.0 删除。`unix-time-ms` 是可能受宿主校时影响的 epoch 毫秒。native/JS/WASI Preview 1 均实现该时钟；WASI 0.3 command 目前不支持时钟，应保留显式 capability 错误，不自行回退。
 
 List 带初始值的从左到右累加首选 `.fold initial reducer`，空 List 返回初值，累加器类型可不同于元素类型。List 的旧 `.reduce`、`.bind`、`.join-str`、`.nth` 与 Map/Set 的旧 `.mappend` 已在 0.29.0 删除，分别改用 `.fold`、`.flat-map`、`.join-string`、`.get` 与 `.merge` / `.union`；写下它们会得到 `E_RETIRED_METHOD`，需要自动迁移时先用 0.28.x 的 CLI 运行 `core-list-fold-v1` 等对应规则。前缀 `reduce` 仍可用，`foldl'` 已删除，改用 `fold`。
 

@@ -149,7 +149,7 @@ let
     options $ {} (:color |red) (:size |large)
     lines $ map-list-kv options $ fn (key value)
       str (turn-string key) |= value
-  join-str (sort lines) |\n
+  join-string (sort lines) |\n
 ```
 
 Map iteration order is not an ordering contract; sort the returned list when

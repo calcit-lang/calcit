@@ -255,9 +255,9 @@ try {
   const watchKey = runtimeA.newTag("runtime-unit-check");
   const watchCalls = [];
   assert.equal(
-    runtimeA.add_watch(effectRef, watchKey, (next, previous) => watchCalls.push([next, previous])),
+    runtimeA.add_watch_$x_(effectRef, watchKey, (next, previous) => watchCalls.push([next, previous])),
     undefined,
-    "add-watch must return &unit"
+    "add-watch! must return &unit"
   );
   assert.equal(runtimeA.reset_$x_(effectRef, 2), 2, "reset! must return the written value");
   assert.deepEqual(watchCalls, [[2, 1]], "reset! must still notify watchers");

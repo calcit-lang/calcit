@@ -1152,6 +1152,7 @@ fn strict_type_fail_retired_alias_methods_report_preferred_spelling() {
       (".contains? (&{} :a 1) :a", ".contains?", ".contains-key?"),
       (".includes? (&{} :a 1) 1", ".includes?", ".contains-value?"),
       (".contains? (#{} 1) 1", ".contains?", ".includes?"),
+      (".count |abc", ".count", ".len"),
     ] {
       let entries = load_snippet_entries(snippet);
       let err = run_check_only(&entries).expect_err(&format!("retired {method} must fail strict check-only"));
@@ -1160,6 +1161,31 @@ fn strict_type_fail_retired_alias_methods_report_preferred_spelling() {
       assert!(
         err.contains(&format!("`{replacement}`")),
         "{method} should suggest {replacement}: {err}"
+      );
+    }
+  });
+}
+
+#[test]
+fn retired_core_functions_report_preferred_spelling() {
+  run_with_large_stack(|| {
+    for (snippet, name, replacement) in [
+      ("some? 1", "some?", "non-nil?"),
+      ("join-str ([] 1 2) |-", "join-str", "join-string"),
+      ("add-watch (ref 0) :k $ fn (current previous) &unit", "add-watch", "add-watch!"),
+      ("cpu-time", "cpu-time", "monotonic-time-ms"),
+    ] {
+      let entries = load_snippet_entries(snippet);
+      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+      let _ = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      let warnings = warnings.borrow();
+      assert!(
+        warnings.iter().any(|warning| {
+          warning.message().contains(&format!("unknown `{name}`"))
+            && warning.message().contains("removed from calcit.core in 0.29.0")
+            && warning.message().contains(&format!("`{replacement}`"))
+        }),
+        "retired `{name}` should point to `{replacement}`: {warnings:?}"
       );
     }
   });
@@ -1484,7 +1510,7 @@ fn mixed_public_equality_reports_guided_type_mismatches() {
 fn option_migration_source_calls_fail_during_preprocessing() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(
-      "do\n  = |dev $ get-env |mode\n  let\n      x $ get-env |mode\n    some? x\n  let\n      x $ get-env |mode\n    non-nil? x\n  update-in ({} (:a ({}))) ([] :a) $ fn (x) do (assoc x :b 1)\n  let\n      op $ :: :session/connect\n      tag-name $ nth op 0\n    starts-with? tag-name :session/",
+      "do\n  = |dev $ get-env |mode\n  let\n      x $ get-env |mode\n    non-nil? x\n  update-in ({} (:a ({}))) ([] :a) $ fn (x) do (assoc x :b 1)\n  let\n      op $ :: :session/connect\n      tag-name $ nth op 0\n    starts-with? tag-name :session/",
     );
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
 
@@ -1492,7 +1518,7 @@ fn option_migration_source_calls_fail_during_preprocessing() {
       .expect("Option migration examples should preprocess with warnings, not reach runtime");
 
     let warnings = warnings.borrow();
-    for operation in ["=", "some?", "non-nil?", "assoc"] {
+    for operation in ["=", "non-nil?", "assoc"] {
       assert!(
         warnings.iter().any(|warning| {
           warning.code() == Some("W_NOMINAL_ENUM_LEGACY_USE")
@@ -2502,11 +2528,12 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
         && partial_variadic_binding_warnings[0].message().contains("got `map<tag, string>`"),
       "the original mismatching variadic generic container should remain actionable: {partial_variadic_binding_warnings:?}"
     );
+    // `add-watch!` is the watcher proc itself; `remove-watch!` still wraps the `remove-watch` proc.
     let watch_warnings = warnings
       .iter()
       .filter(|warning| {
         warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH")
-          && (warning.message().contains("Proc `add-watch`") || warning.message().contains("Proc `remove-watch`"))
+          && (warning.message().contains("Proc `add-watch!`") || warning.message().contains("Proc `remove-watch`"))
       })
       .collect::<Vec<_>>();
     assert_eq!(
@@ -2516,18 +2543,18 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     );
     assert!(
       watch_warnings.iter().any(|warning| {
-        warning.message().contains("Proc `add-watch` arg 2 expects type `:tag`") && warning.message().contains("got `:string`")
+        warning.message().contains("Proc `add-watch!` arg 2 expects type `:tag`") && warning.message().contains("got `:string`")
       }),
-      "add-watch should require a Tag key: {watch_warnings:?}"
+      "add-watch! should require a Tag key: {watch_warnings:?}"
     );
     assert!(
       watch_warnings.iter().any(|warning| {
         warning
           .message()
-          .contains("Proc `add-watch` arg 3 expects type `fn(:string, :string) -> :unit`")
+          .contains("Proc `add-watch!` arg 3 expects type `fn(:string, :string) -> :unit`")
           && warning.message().contains("got `fn(:number) -> :number`")
       }),
-      "add-watch should bind both callback inputs to the Ref payload and require Unit: {watch_warnings:?}"
+      "add-watch! should bind both callback inputs to the Ref payload and require Unit: {watch_warnings:?}"
     );
     assert!(
       watch_warnings.iter().any(|warning| {
@@ -2537,28 +2564,13 @@ fn type_fail_collection_member_contract_fixture_reports_warning_codes() {
     );
     let public_watch_warnings = warnings
       .iter()
-      .filter(|warning| {
-        warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
-          && (warning.message().contains("calcit.core/add-watch!") || warning.message().contains("calcit.core/remove-watch!"))
-      })
+      .filter(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH") && warning.message().contains("calcit.core/remove-watch!"))
       .collect::<Vec<_>>();
     assert_eq!(
       public_watch_warnings.len(),
-      3,
-      "public Ref watcher wrappers should preserve the key and callback type boundaries: {warnings:?}"
+      1,
+      "the public remove-watch! wrapper should preserve the key type boundary: {warnings:?}"
     );
-    assert!(public_watch_warnings.iter().any(|warning| {
-      warning
-        .message()
-        .contains("Function `calcit.core/add-watch!` arg 2 expects type `:tag`")
-        && warning.message().contains("got `:string`")
-    }));
-    assert!(public_watch_warnings.iter().any(|warning| {
-      warning
-        .message()
-        .contains("Function `calcit.core/add-watch!` arg 3 expects type `fn(:string, :string) -> :unit`")
-        && warning.message().contains("got `fn(:number) -> :number`")
-    }));
     assert!(public_watch_warnings.iter().any(|warning| {
       warning
         .message()

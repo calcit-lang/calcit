@@ -335,7 +335,7 @@ fn deprecation_and_quality_reports_keep_declared_macro_logs_off_stdout() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ defn legacy-with-macro () $ some? $ test-hygienic.lib/add-11 1 2",
+        "quote $ defn legacy-with-macro () $ turn-str $ test-hygienic.lib/add-11 1 2",
       ],
     ),
     "create legacy call with a declared logging macro",
@@ -368,11 +368,11 @@ fn deprecation_report_shares_core_metadata_and_excludes_local_and_quoted_calls()
     ("app.main/main!", "quote $ defn main! ()\n  , &unit", true),
     (
       "app.main/legacy",
-      "quote $ defn legacy ()\n  compat/optionally nil\n  some? 1\n  join ([] 1 2) 0\n  join-str ([] |a |b) |-\n  vals $ {} (:a 1)\n  turn-str 1\n  turn-string 1\n  cpu-time\n  let ((cell $ atom 0))\n    add-watch cell :key $ fn (new old) &unit\n    remove-watch cell :key",
+      "quote $ defn legacy ()\n  compat/optionally nil\n  join ([] 1 2) 0\n  vals $ {} (:a 1)\n  turn-str 1\n  turn-string 1\n  let ((cell $ atom 0))\n    add-watch! cell :key $ fn (new old) &unit\n    remove-watch cell :key",
       false,
     ),
-    ("app.main/local", "quote $ defn local (some?)\n  some? 1", false),
-    ("app.main/quoted", "quote $ defn quoted ()\n  quote $ some? 1", false),
+    ("app.main/local", "quote $ defn local (turn-str)\n  turn-str 1", false),
+    ("app.main/quoted", "quote $ defn quoted ()\n  quote $ turn-str 1", false),
     ("app.main/alias-only", "quote $ defn alias-only ()\n  compat/optionally nil", false),
     (
       "app.main/noisy",
@@ -413,18 +413,14 @@ fn deprecation_report_shares_core_metadata_and_excludes_local_and_quoted_calls()
   let rows = report["data"]["definitions"].as_array().unwrap();
   assert_eq!(rows.len(), 2, "{report}");
   let legacy = rows.iter().find(|row| row["name"] == "legacy").unwrap();
-  assert_eq!(report["data"]["summary"]["calls"], 11, "{report}");
+  assert_eq!(report["data"]["summary"]["calls"], 7, "{report}");
   assert!(!String::from_utf8_lossy(&output.stdout).contains("metadata-query-must-not-expand-unrelated-macro"));
   for (old, preferred) in [
     ("optionally", "nil->option"),
-    ("some?", "non-nil?"),
     ("join", "intersperse"),
-    ("join-str", "join-string"),
     ("vals", "distinct-values"),
     ("turn-str", "to-string"),
     ("turn-string", "to-string"),
-    ("cpu-time", "monotonic-time-ms"),
-    ("add-watch", "add-watch!"),
     ("remove-watch", "remove-watch!"),
   ] {
     let target = format!("calcit.core/{old}");
@@ -636,7 +632,7 @@ fn attached_conversion_and_collection_rules_preserve_opaque_and_quoted_source() 
       (
         "opaque",
         if rule == "core-api-0.28-v1" {
-          format!("quote $ do (assert= true $ some? 1) (assert= {expected} $ opaque $ {call})")
+          format!("quote $ do (assert= true $ round? 2) (assert= {expected} $ opaque $ {call})")
         } else {
           format!("quote $ assert= {expected} $ opaque $ {call}")
         },
@@ -1096,7 +1092,8 @@ fn attached_do_rules_preserve_root_sequence_and_macro_data() {
 
 #[test]
 fn attached_predicate_migration_preserves_opaque_contexts_and_function_identity() {
-  for (rule, predicate) in [("core-non-nil-predicate-v1", "some?"), ("core-integer-predicate-v1", "round?")] {
+  // `core-non-nil-predicate-v1` was retired with `some?` in 0.29.0.
+  for (rule, predicate) in [("core-integer-predicate-v1", "round?")] {
     let directory = TestDirectory::create();
     let snapshot = directory.path().join("calcit.cirru");
     fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
@@ -1110,14 +1107,11 @@ fn attached_predicate_migration_preserves_opaque_contexts_and_function_identity(
       }
       assert_success(&run_calcit(&snapshot, &args), "create predicate boundary fixture");
     }
-    let mut assertions = vec![
+    let assertions = [
       ("safe", format!("quote $ assert= true $ {predicate} 2")),
       ("opaque", format!("quote $ assert= true $ opaque $ {predicate} 2")),
       ("quoted-data", format!("quote $ assert= (quote {predicate}) (quote {predicate})")),
     ];
-    if predicate == "some?" {
-      assertions.push(("function-identity", "quote $ assert= some? some?".to_owned()));
-    }
     for (name, code) in &assertions {
       assert_success(
         &run_calcit(
@@ -1167,7 +1161,7 @@ fn attached_predicate_migration_preserves_opaque_contexts_and_function_identity(
     );
     assert_eq!(
       suggestions.iter().filter(|s| s["applicability"] == "requires-review").count(),
-      if predicate == "some?" { 3 } else { 1 },
+      1,
       "{report}"
     );
     let mut apply = args.to_vec();
@@ -1182,7 +1176,7 @@ fn attached_predicate_migration_preserves_opaque_contexts_and_function_identity(
     assert_success(&after, "capture retained predicate boundaries");
     let before: serde_json::Value = serde_json::from_slice(&before.stdout).unwrap();
     let after: serde_json::Value = serde_json::from_slice(&after.stdout).unwrap();
-    for name in ["opaque", "quoted-data", "function-identity"] {
+    for name in ["opaque", "quoted-data"] {
       let find = |value: &serde_json::Value| {
         value["data"]["tests"]
           .as_array()
@@ -1307,7 +1301,7 @@ fn method_alias_fix_reuses_receiver_proofs_in_attached_tests_and_examples() {
   for (rule, code) in [
     (
       "core-api-0.28-v1",
-      "quote $ do\n  assert= true $ some? 1\n  assert= true $ round? 2\n  assert= :a $ turn-tag |a\n  assert= 2 $ .count $ .add ([] 1) 2",
+      "quote $ do\n  assert= true $ round? 2\n  assert= :a $ turn-tag |a\n  assert= 2 $ .count $ .add ([] 1) 2",
     ),
     (
       "core-identity-conversion-v1",
@@ -1319,7 +1313,7 @@ fn method_alias_fix_reuses_receiver_proofs_in_attached_tests_and_examples() {
     ),
     (
       "core-collection-len-v1",
-      "quote $ do\n  assert= 2 $ .count ([] 1 2)\n  assert= 3 $ .count |a中😀\n  assert= 1 $ let ((values $ {} (:a 1))) (values .count)\n  assert= 2 $ .count (#{} 1 2)",
+      "quote $ do\n  assert= 2 $ .count ([] 1 2)\n  assert= 3 $ count |a中😀\n  assert= 1 $ let ((values $ {} (:a 1))) (values .count)\n  assert= 2 $ .count (#{} 1 2)",
     ),
     (
       "core-option-method-v1",
@@ -1366,10 +1360,6 @@ fn method_alias_fix_reuses_receiver_proofs_in_attached_tests_and_examples() {
     (
       "single-expression-do-v1",
       "quote $ assert= 2 $ let ((cell (atom 0)))\n  do $ reset! cell 1\n  assert= @cell 1\n  do $ reset! cell (+ @cell 1)\n  do $ deref cell",
-    ),
-    (
-      "core-non-nil-predicate-v1",
-      "quote $ do (assert= true $ some? 1) (assert= false $ some? nil)",
     ),
     (
       "core-integer-predicate-v1",
@@ -1499,13 +1489,13 @@ fn function_alias_fix_covers_attached_regions_without_rewriting_identity_or_shad
   for (name, code) in [
     (
       "legacy-calls",
-      "quote $ do\n  assert= |a-x-b $ join-str (join ([] |a |b) |x) |-\n  assert= (#{} 1 2) $ vals $ {} (:a 1) (:b 2)\n  assert= (Option :some 1) $ optionally 1\n  assert= |a-b $ calcit.core/join-str ([] |a |b) |-",
+      "quote $ do\n  assert= ([] |a |- |x |- |b) $ join (join ([] |a |b) |x) |-\n  assert= (#{} 1 2) $ vals $ {} (:a 1) (:b 2)\n  assert= (Option :some 1) $ optionally 1\n  assert= ([] |a |- |b) $ calcit.core/join ([] |a |b) |-",
     ),
-    ("function-identity", "quote $ assert= join-str join-str"),
-    ("quoted-name", "quote $ assert= (quote join-str) (quote join-str)"),
+    ("function-identity", "quote $ assert= vals vals"),
+    ("quoted-name", "quote $ assert= (quote vals) (quote vals)"),
     (
       "local-shadow",
-      "quote $ let ((join-str $ fn (xs sep) |local))\n  assert= |local $ join-str ([] |a |b) |-",
+      "quote $ let ((vals $ fn (m) |local))\n  assert= |local $ vals $ {} (:a 1)",
     ),
   ] {
     assert_success(
@@ -1537,7 +1527,7 @@ fn function_alias_fix_covers_attached_regions_without_rewriting_identity_or_shad
         "--input-format",
         "cirru",
         "--code",
-        "quote $ join-str (join ([] |a |b) |x) |-",
+        "quote $ join (join ([] |a |b) |x) |-",
       ],
     ),
     "attach upgrade example",
@@ -1548,7 +1538,7 @@ fn function_alias_fix_covers_attached_regions_without_rewriting_identity_or_shad
   );
   let shadow = run_calcit(&snapshot, &["test", "app.main/main!", "--name", "local-shadow", "--require-match"]);
   assert!(!shadow.status.success(), "shadowing remains an explicit compiler warning");
-  assert!(String::from_utf8_lossy(&shadow.stderr).contains("shadowed `calcit.core/join-str`"));
+  assert!(String::from_utf8_lossy(&shadow.stderr).contains("shadowed `calcit.core/vals`"));
   let before = fs::read(&snapshot).unwrap();
   let base = [
     "fix",
@@ -1829,7 +1819,7 @@ fn callable_contract_proof_preserves_open_storage_and_reviews_concrete_use() {
       "watch-context",
       "'Fn",
       "'Number",
-      "let ((watched (atom 1)) (observed (atom 0))) (add-watch watched :proof (fn (current previous) (reset! observed (&+ current previous)) &unit)) (reset! watched 2) (remove-watch watched :proof) (deref observed)",
+      "let ((watched (atom 1)) (observed (atom 0))) (add-watch! watched :proof (fn (current previous) (reset! observed (&+ current previous)) &unit)) (reset! watched 2) (remove-watch watched :proof) (deref observed)",
     ),
     (
       "owned-feature",
@@ -4330,10 +4320,10 @@ fn collection_len_fix_rewrites_only_proven_builtin_count_calls() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ defn count-builtins (xs m s text)\n  assert= 2 $ xs .count\n  assert= 1 $ m .count\n  assert= 2 $ s .count\n  text .count",
+        "quote $ defn count-builtins (xs m s text)\n  assert= 2 $ xs .count\n  assert= 1 $ m .count\n  assert= 2 $ s .count\n  count text",
       ],
     ),
-    "install four built-in count calls",
+    "install three built-in count calls and the String count function",
   );
   assert_success(
     &run_calcit(
@@ -4382,7 +4372,8 @@ fn collection_len_fix_rewrites_only_proven_builtin_count_calls() {
   assert_success(&preview, "collection length preview");
   let report = parse_stdout(&preview);
   let suggestions = report["data"]["suggestions"].as_array().expect("suggestions array");
-  assert_eq!(suggestions.len(), 4, "{report}");
+  // String `.count` was retired in 0.29.0; the `count` function is not a method alias.
+  assert_eq!(suggestions.len(), 3, "{report}");
   assert!(
     suggestions
       .iter()
@@ -8011,7 +8002,7 @@ fn retired_surface_rules_point_to_the_published_migration_bridge() {
 }
 
 #[test]
-fn retired_core_method_alias_rules_point_to_the_0_28_cli() {
+fn retired_core_alias_rules_point_to_the_0_28_cli() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
@@ -8026,6 +8017,7 @@ fn retired_core_method_alias_rules_point_to_the_0_28_cli() {
     "core-list-join-string-v1",
     "core-list-get-v1",
     "core-collection-combine-v1",
+    "core-non-nil-predicate-v1",
   ] {
     let output = run_fix(&snapshot, &["--rule", rule, "--format", "json"]);
     assert!(!output.status.success(), "{rule} must be rejected");
@@ -8889,7 +8881,7 @@ fn core_function_alias_rule_renames_resolved_legacy_functions_and_is_idempotent(
         "--input-format",
         "cirru",
         "--code",
-        "quote $ defn legacy-function-aliases ()\n  assert= (#{} 1 2) $ vals $ {} (:a 1) (:b 2)\n  assert= |a,b $ join-str ([] |a |b) |,\n  assert= ([] |a |, |b) $ join ([] |a |b) |,\n  assert= (%some 1) $ optionally 1\n  , true",
+        "quote $ defn legacy-function-aliases ()\n  assert= (#{} 1 2) $ vals $ {} (:a 1) (:b 2)\n  assert= ([] |a |, |b) $ join ([] |a |b) |,\n  assert= (%some 1) $ optionally 1\n  , true",
       ],
     ),
     "install legacy function alias calls",
@@ -8942,13 +8934,13 @@ fn core_function_alias_rule_renames_resolved_legacy_functions_and_is_idempotent(
   assert_success(&preview, "function alias preview");
   let report = parse_stdout(&preview);
   let suggestions = report["data"]["suggestions"].as_array().expect("suggestions should be an array");
-  assert_eq!(suggestions.len(), 4, "{report}");
+  assert_eq!(suggestions.len(), 3, "{report}");
   assert!(
     suggestions
       .iter()
       .all(|suggestion| { suggestion["rule_id"] == "core-function-alias-v1" && suggestion["applicability"] == "machine-applicable" })
   );
-  for legacy in ["vals", "join-str", "join", "optionally"] {
+  for legacy in ["vals", "join", "optionally"] {
     let expected = format!("calcit.core/{legacy}");
     assert!(
       suggestions
@@ -8978,12 +8970,7 @@ fn core_function_alias_rule_renames_resolved_legacy_functions_and_is_idempotent(
   );
   assert_success(&applied, "function alias apply");
   let updated = fs::read_to_string(&snapshot).expect("updated Snapshot should read");
-  for preferred in [
-    "calcit.core/distinct-values",
-    "calcit.core/join-string",
-    "calcit.core/intersperse",
-    "calcit.core/nil->option",
-  ] {
+  for preferred in ["calcit.core/distinct-values", "calcit.core/intersperse", "calcit.core/nil->option"] {
     assert!(updated.contains(preferred), "{preferred} missing after migration");
   }
   assert_success(
@@ -9047,227 +9034,6 @@ fn core_function_alias_rule_renames_resolved_legacy_functions_and_is_idempotent(
     .expect("suggestions should be an array");
   assert_eq!(review_suggestions.len(), 1, "{review_report}");
   assert_eq!(review_suggestions[0]["applicability"], "requires-review", "{review_report}");
-}
-
-#[test]
-fn core_non_nil_predicate_rule_uses_resolved_references_and_is_idempotent() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.path().join("calcit.cirru");
-  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
-  let target = "fix-command.main/legacy-non-nil";
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "def",
-        target,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ defn legacy-non-nil ()\n  assert= true $ some? false\n  assert= true $ some? 0\n  assert= false $ some? nil\n  some? 42",
-      ],
-    ),
-    "install legacy non-nil predicate calls",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        target,
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)",
-      ],
-    ),
-    "declare legacy non-nil source",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "add-test",
-        target,
-        "preserves-results",
-        "--tags",
-        "unit",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ assert= true $ legacy-non-nil",
-      ],
-    ),
-    "attach non-nil behavior test",
-  );
-
-  let args = [
-    "--rule",
-    "core-non-nil-predicate-v1",
-    "--ns",
-    "fix-command.main",
-    "--def",
-    "legacy-non-nil",
-    "--format",
-    "json",
-  ];
-  let preview = run_fix(&snapshot, &args);
-  assert_success(&preview, "non-nil predicate preview");
-  let report = parse_stdout(&preview);
-  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions should be an array");
-  assert_eq!(suggestions.len(), 4, "{report}");
-  assert!(suggestions.iter().all(|suggestion| {
-    suggestion["rule_id"] == "core-non-nil-predicate-v1"
-      && suggestion["applicability"] == "machine-applicable"
-      && suggestion["origin_chain"][0]["target"] == "calcit.core/some?"
-  }));
-  assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
-
-  let applied = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-non-nil-predicate-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "legacy-non-nil",
-      "--apply",
-      "--allow-no-vcs",
-      "--expect-revision",
-      report["revision"].as_str().expect("preview revision"),
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&applied, "non-nil predicate apply");
-  let updated = fs::read_to_string(&snapshot).expect("updated Snapshot should read");
-  assert!(updated.contains("calcit.core/non-nil?"));
-  assert_success(
-    &run_calcit(&snapshot, &["test", target, "--require-match"]),
-    "non-nil behavior after migration",
-  );
-
-  let repeated = run_fix(&snapshot, &args);
-  assert_success(&repeated, "non-nil predicate idempotence preview");
-  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
-
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "def",
-        "fix-command.main/shadowed-some",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ defn shadowed-some ()\n  let\n      some? $ fn (x) false\n    some? nil",
-      ],
-    ),
-    "install a locally shadowed predicate",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        "fix-command.main/shadowed-some",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)",
-      ],
-    ),
-    "declare the locally shadowed predicate",
-  );
-  let shadowed_preview = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-non-nil-predicate-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "shadowed-some",
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&shadowed_preview, "locally shadowed predicate preview");
-  assert_eq!(parse_stdout(&shadowed_preview)["data"]["suggestions"], serde_json::json!([]));
-
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "def",
-        "fix-command.main/pass-form",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ defmacro pass-form (body) body",
-      ],
-    ),
-    "install unknown source macro",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "def",
-        "fix-command.main/legacy-macro-nil",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ defn legacy-macro-nil () $ pass-form $ some? nil",
-      ],
-    ),
-    "install macro-wrapped legacy predicate",
-  );
-  assert_success(
-    &run_calcit(
-      &snapshot,
-      &[
-        "edit",
-        "schema",
-        "fix-command.main/legacy-macro-nil",
-        "--input-format",
-        "cirru",
-        "--code",
-        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Bool)",
-      ],
-    ),
-    "declare macro-wrapped legacy predicate",
-  );
-  let macro_preview = run_fix(
-    &snapshot,
-    &[
-      "--rule",
-      "core-non-nil-predicate-v1",
-      "--ns",
-      "fix-command.main",
-      "--def",
-      "legacy-macro-nil",
-      "--format",
-      "json",
-    ],
-  );
-  assert_success(&macro_preview, "macro-wrapped non-nil predicate preview");
-  let macro_report = parse_stdout(&macro_preview);
-  assert_eq!(macro_report["data"]["suggestions"].as_array().map(Vec::len), Some(1));
-  assert_eq!(macro_report["data"]["suggestions"][0]["applicability"], "requires-review");
-  assert_eq!(macro_report["data"]["suggestions"][0]["replacement"], serde_json::Value::Null);
-  assert_eq!(
-    macro_report["data"]["suggestions"][0]["origin_chain"][0]["macro_origin"][0],
-    "fix-command.main/pass-form"
-  );
 }
 
 #[test]
@@ -10927,7 +10693,7 @@ fn core_api_028_preset_composes_nested_leaf_renames_and_is_idempotent() {
     report["data"]["filters"]["source_coverage"]["manual_review_regions"],
     serde_json::json!(["tests", "examples"])
   );
-  assert_eq!(report["data"]["filters"]["expanded_rule_ids"].as_array().unwrap().len(), 6);
+  assert_eq!(report["data"]["filters"]["expanded_rule_ids"].as_array().unwrap().len(), 5);
   let suggestions = report["data"]["suggestions"].as_array().expect("suggestions");
   assert_eq!(suggestions.len(), 5, "nested aliases must all compose: {report}");
   assert!(
@@ -11250,7 +11016,7 @@ fn ref_constructor_fix_renames_proven_spellings_and_reviews_shadowed_syntax() {
   let preset = run_calcit(&snapshot, &["fix", "--preset", "core-api-0.29-v1", "--format", "json"]);
   assert_success(&preset, "0.29 core API preset");
   let rules = parse_stdout(&preset)["data"]["filters"]["expanded_rule_ids"].clone();
-  assert_eq!(rules.as_array().unwrap().len(), 7);
+  assert_eq!(rules.as_array().unwrap().len(), 6);
   assert!(rules.as_array().unwrap().contains(&serde_json::json!("core-ref-constructor-v1")));
   let published = run_calcit(&snapshot, &["fix", "--preset", "core-api-0.28-v1", "--format", "json"]);
   assert_success(&published, "published 0.28 preset");
@@ -11287,7 +11053,7 @@ fn core_api_preset_labels_attached_regions_by_contributing_rule() {
       "quote $ let ((failed (atom false)))\n  reset! failed true\n  assert= true @failed",
     ),
     ("len-only", "quote $ assert= 2 $ .count ([] 1 2)"),
-    ("non-nil-only", "quote $ assert= true $ some? 1"),
+    ("integer-only", "quote $ assert= true $ round? 2"),
   ] {
     assert_success(
       &run_calcit(
@@ -11317,7 +11083,7 @@ fn core_api_preset_labels_attached_regions_by_contributing_rule() {
   for (path, rule_id, diagnostic_code) in [
     ("tests.ref-only", "core-ref-constructor-v1", "FIX_CORE_REF_CONSTRUCTOR"),
     ("tests.len-only", "core-collection-len-v1", "FIX_CORE_COLLECTION_LEN"),
-    ("tests.non-nil-only", "core-non-nil-predicate-v1", "FIX_CORE_NON_NIL_PREDICATE"),
+    ("tests.integer-only", "core-integer-predicate-v1", "FIX_CORE_INTEGER_PREDICATE"),
   ] {
     let suggestion = suggestions
       .iter()

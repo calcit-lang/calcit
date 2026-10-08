@@ -364,7 +364,7 @@
           :tags $ #{} :internal
         '&core-list-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-list-methods
-            &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains-index? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :flat-map mapcat) (:: :fold fold) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :intersperse intersperse) (:: :join-string join-str) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
+            &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains-index? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :flat-map mapcat) (:: :fold fold) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :intersperse intersperse) (:: :join-string join-string) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -433,7 +433,7 @@
           :tags $ #{} :internal
         '&core-string-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-string-methods
-            &impl::new :&core-string-methods (:: :blank? blank?) (:: :count &str:count) (:: :utf8-byte-count &str:utf8-byte-count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get get) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains-index? &str:contains?) (:: :includes? &str:includes?) (:: :nth nth) (:: :first first) (:: :last last) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare) (:: :parse-cirru try-parse-cirru) (:: :parse-cirru-list try-parse-cirru-list) (:: :parse-cirru-edn try-parse-cirru-edn) (:: :parse-json try-parse-json)
+            &impl::new :&core-string-methods (:: :blank? blank?) (:: :utf8-byte-count &str:utf8-byte-count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get get) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains-index? &str:contains?) (:: :includes? &str:includes?) (:: :nth nth) (:: :first first) (:: :last last) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare) (:: :parse-cirru try-parse-cirru) (:: :parse-cirru-list try-parse-cirru-list) (:: :parse-cirru-edn try-parse-cirru-edn) (:: :parse-json try-parse-json)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -3489,8 +3489,8 @@
           :tests $ [] $ %{} 'TestEntry (:name |normalizes-negative-magnitude)
             :code $ quote $ assert= 4 (abs -4)
             :tags $ #{} :core :unit
-        'add-watch $ %{} 'CodeEntry
-          :doc "|兼容旧名；首选 add-watch!。给 Ref<T> 注册 Tag key 的 watcher；callback 接收新值和旧值并返回 Unit，注册本身返回 Unit。"
+        'add-watch! $ %{} 'CodeEntry
+          :doc "|给 Ref<T> 注册 watcher。Tag key 不可重复；callback 接收新值和旧值，返回 Unit。注册会修改 Ref 的 watcher 状态。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
@@ -3498,17 +3498,7 @@
               {} (:return 'Unit)
                 :args $ [] 'T 'T
             :generics $ [] 'T
-          :tags $ #{} :builtin :deprecated :internal :state :watch
-        'add-watch! $ %{} 'CodeEntry
-          :doc "|给 Ref<T> 注册 watcher。Tag key 不可重复；callback 接收新值和旧值，返回 Unit。注册会修改 Ref 的 watcher 状态；旧 add-watch 保留兼容。"
-          :code $ quote $ defn add-watch! (target key callback) (add-watch target key callback)
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Unit)
-            :args $ [] (:: 'Ref 'T) 'Tag $ :: 'Fn
-              {} (:return 'Unit)
-                :args $ [] 'T 'T
-            :generics $ [] 'T
-          :tags $ #{} :state :watch
+          :tags $ #{} :builtin :internal :state :watch
           :tests $ [] $ %{} 'TestEntry (:name |registers-once-and-preserves-callback-order)
             :code $ quote $ let
                 source $ atom 0
@@ -3516,7 +3506,7 @@
               assert= &unit $ add-watch! source :change $ fn (current previous) (assert= 1 current) (assert= 0 previous)
                 reset! calls $ inc @calls
                 , &unit
-              assert= "|add-watch failed: listener with key `change` already existed" $ try
+              assert= "|add-watch! failed: listener with key `change` already existed" $ try
                 add-watch! source :change $ fn (current previous) &unit
                 fn (error) error
               assert= 1 $ reset! source 1
@@ -4738,13 +4728,12 @@
                 assert= 2 $ count $ Option :some 42
                 assert= 2 $ count $ Result :ok 42
               :tags $ #{} :core :count-contract :unit
-        'cpu-time $ %{} 'CodeEntry
-          :doc "|兼容旧名；首选 monotonic-time-ms。返回单调时钟的毫秒读数，只比较同一进程内两次调用的差值，不依赖绝对起点。"
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
-          :tags $ #{} :builtin :deprecated :internal :io
+            %{} 'TestEntry (:name |string-keeps-countable-after-method-retirement)
+              :code $ quote $ do
+                assert= 3 $ count "|A😀𠮷"
+                assert= 3 $ .len "|A😀𠮷"
+                assert= 3 $ &trait-call Countable :count "|A😀𠮷"
+              :tags $ #{} :core :count-contract :unit
         'data-definition-form $ %{} 'CodeEntry
           :doc "|Normalize wrapped forms used by data-definition macros"
           :code $ quote $ defn data-definition-form (entry)
@@ -8030,11 +8019,11 @@
             :code $ quote $ assert= ([] 1 10 2 10 3 10 4)
               join ([] 1 2 3 4) 10
             :tags $ #{} :core :unit
-        'join-str $ %{} 'CodeEntry
-          :doc "|将 List 元素按既有显示规则逐项转为文本，并用 String 分隔符连接；旧名称保留兼容，首选 join-string 或 .join-string。"
-          :code $ quote $ defn join-str (xs0 sep)
+        'join-string $ %{} 'CodeEntry
+          :doc "|将 List 元素按既有显示规则逐项转为文本，并用 String 分隔符连接；空 List 返回空字符串。"
+          :code $ quote $ defn join-string (xs0 sep)
             apply-args (| xs0 true)
-              defn %join-str (acc xs beginning?)
+              defn %join-string (acc xs beginning?)
                 hint-fn $ {}
                   :args $ [] 'String (:: 'List 'T) 'Bool
                   :return 'String
@@ -8047,19 +8036,6 @@
                         , x0
                       , xss false
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] (:: 'List 'T) 'String
-            :generics $ [] 'T
-          :tags $ #{} :deprecated
-          :tests $ [] $ %{} 'TestEntry (:name |renders-items-and-empty-list)
-            :code $ quote $ do
-              assert= |1-2-3 $ join-str ([] 1 2 3) |-
-              assert= | $ join-str ([]) |-
-            :tags $ #{} :core :unit
-        'join-string $ %{} 'CodeEntry
-          :doc "|将 List 元素按既有显示规则逐项转为文本，并用 String 分隔符连接；空 List 返回空字符串。"
-          :code $ quote $ defn join-string (xs sep) (join-str xs sep)
-          :examples $ []
             quote $ assert= |1-2-3 $ join-string ([] 1 2 3) |-
             quote $ assert= |a,b $
               [] |a |b
@@ -8067,24 +8043,19 @@
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] (:: 'List 'T) 'String
             :generics $ [] 'T
-          :tests $ []
-            %{} 'TestEntry (:name |renders-numbers-duplicates-and-empty-list)
-              :code $ quote $ do
-                assert-type
-                  join-string ([] 1 2) |-
-                  , 'String
-                assert= |1,1,2 $ join-string ([] 1 1 2) |,
-                assert= |1,1,2 $
-                  [] 1 1 2
-                  , .join-string |,
-                assert= | $ join-string ([]) |,
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |preserves-legacy-rendering)
-              :code $ quote $ do
-                assert=
-                  join-str ([] |a |b) |/
-                  join-string ([] |a |b) |/
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry (:name |renders-numbers-duplicates-and-empty-list)
+            :code $ quote $ do
+              assert-type
+                join-string ([] 1 2) |-
+                , 'String
+              assert= |1-2-3 $ join-string ([] 1 2 3) |-
+              assert= |1,1,2 $ join-string ([] 1 1 2) |,
+              assert= |1,1,2 $
+                [] 1 1 2
+                , .join-string |,
+              assert= |a/b $ join-string ([] |a |b) |/
+              assert= | $ join-string ([]) |,
+            :tags $ #{} :core :unit
         'js-nullish->option $ %{} 'CodeEntry
           :doc "|Explicitly convert a JavaScript null/undefined boundary value into nominal Option<T>. This does not validate or coerce the opaque payload type."
           :code $ quote $ defn js-nullish->option (x)
@@ -9007,19 +8978,20 @@
               min $ [] 1 2 3 4
             :tags $ #{} :core :unit
         'monotonic-time-ms $ %{} 'CodeEntry
-          :doc "|返回单调时钟的毫秒读数；仅同一次运行中的读数差可用于计算经过时间。旧 cpu-time 保留兼容，名称中的 CPU 不表示 CPU 使用量。JS、native 与 WASI Preview 1 可用；WASI 0.3 command 尚不支持时钟。"
-          :code $ quote $ defn monotonic-time-ms () (cpu-time)
+          :doc "|返回单调时钟的毫秒读数；仅同一次运行中的读数差可用于计算经过时间。JS、native 与 WASI Preview 1 可用；WASI 0.3 command 尚不支持时钟。"
+          :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-          :tags $ #{} :io :time
+          :tags $ #{} :builtin :internal :io :time
           :tests $ [] $ %{} 'TestEntry (:name |keeps-monotonic-milliseconds)
             :code $ quote $ let
                 before $ monotonic-time-ms
-                legacy $ cpu-time
+                middle $ monotonic-time-ms
                 after $ monotonic-time-ms
-              assert= true $ &<= before legacy
-              assert= true $ &<= legacy after
+              assert= true $ number? before
+              assert= true $ &<= before middle
+              assert= true $ &<= middle after
             :tags $ #{} :core :time :unit
         'negate $ %{} 'CodeEntry (:doc "|Negate a number, returns its opposite")
           :code $ quote $ defn negate (x) (&- 0 x)
@@ -10502,69 +10474,6 @@
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Dynamic $ :: 'List 'K
             :generics $ [] 'K
-        'some? $ %{} 'CodeEntry
-          :doc "|兼容旧名：判断一个值是否不为 nil。新代码使用 non-nil?；Option variant 使用 .some?/.none?。false、0、空集合以及 Option :none 都会返回 true。旧名在兼容窗口内保留，语义不会改成 Option variant 判断。"
-          :code $ quote $ defn some? (x)
-            not $ nil? x
-          :examples $ []
-            quote $ assert= true $ some? 0
-            quote $ assert= false $ some? nil
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'T
-            :generics $ [] 'T
-          :tags $ #{} :deprecated
-          :tests $ []
-            %{} 'TestEntry (:name |non-nil-is-not-option-variant)
-              :code $ quote $ do
-                assert= false $ some? nil
-                assert= true $ some? false
-                assert= true $ some? 0
-                assert= true $ some? $ []
-                assert= true $ some? $ Option :none
-                assert= true $ some? $ Option :some nil
-                assert= false $
-                  Option :none
-                  , .some?
-                assert= true $
-                  Option :none
-                  , .none?
-                assert= true $
-                  Option :some nil
-                  , .some?
-              :tags $ #{} :core :naming-contract :unit
-            %{} 'TestEntry (:name |typed-callers-preserve-non-nil-semantics)
-              :code $ quote $ do
-                let
-                    typed-bool $ fn (x)
-                      hint-fn $ {}
-                        :args $ [] 'Bool
-                        :return 'Bool
-                      some? x
-                    typed-number $ fn (x)
-                      hint-fn $ {}
-                        :args $ [] 'Number
-                        :return 'Bool
-                      some? x
-                  assert= true $ typed-bool false
-                  assert= true $ typed-number 0
-                let
-                    generic $ fn (x)
-                      hint-fn $ {}
-                        :args $ [] 'T
-                        :generics $ [] 'T
-                        :return 'Bool
-                      some? x
-                    forward $ fn (x)
-                      hint-fn $ {}
-                        :args $ [] 'T
-                        :generics $ [] 'T
-                        :return 'Bool
-                      generic x
-                  assert= true $ forward false
-                  assert= true $ forward 0
-                  assert= false $ forward nil
-                  assert= true $ forward $ Option :none
-              :tags $ #{} :core :naming-contract :unit :wasm
         'sort $ %{} 'CodeEntry
           :doc "|internal function for sorting lists\nSyntax: (sort list) or (sort list comparator)\nParams: list (list), comparator (function, optional)\nReturns: list\nReturns sorted list using natural order or custom comparator"
           :code $ quote &runtime-implementation
@@ -11891,13 +11800,13 @@
                 started $ gensym |started
                 v $ gensym |v
               quasiquote $ let
-                  ~started $ cpu-time
+                  ~started $ monotonic-time-ms
                   ~v ~x
                 println |[cpu-time]
                   format-to-lisp $ quote ~x
                   , |=>
                     .format
-                      &- (cpu-time) ~started
+                      &- (monotonic-time-ms) ~started
                       , 3
                     , |ms
                 ~ v

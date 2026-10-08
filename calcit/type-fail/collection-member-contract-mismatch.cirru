@@ -60,7 +60,6 @@
             ([] |a |b) .apply $ [] inc
             &list:apply ([] |a |b) ([] inc)
             (&{} :a 1) .merge $ &{} :b :bad
-            add-watch (atom |x) |change inc
             remove-watch (atom 1) |change
             add-watch! (atom |x) |change $ fn (current previous) &unit
             add-watch! (atom |x) :change inc

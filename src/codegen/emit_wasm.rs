@@ -5824,7 +5824,7 @@ fn try_custom_def_impl(
     "interleave" => Some(build(|ctx| emit_interleave_from_locals(ctx, 0, 1), export_name, env)),
     "zipmap" => Some(build(|ctx| emit_zipmap_from_locals(ctx, 0, 1), export_name, env)),
     "join" | "intersperse" => Some(build(|ctx| emit_join_from_locals(ctx, 0, 1), export_name, env)),
-    "join-str" => Some(build(|ctx| emit_join_str_from_locals(ctx, 0, 1), export_name, env)),
+    "join-string" => Some(build(|ctx| emit_join_string_from_locals(ctx, 0, 1), export_name, env)),
     _ => None,
   }
 }
@@ -6282,7 +6282,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
           "interleave" if args_list.len() == 2 => return emit_interleave(ctx, &args_list),
           "zipmap" if args_list.len() == 2 => return emit_zipmap(ctx, &args_list),
           "join" | "intersperse" if args_list.len() == 2 => return emit_join(ctx, &args_list),
-          "join-str" if args_list.len() == 2 => return emit_join_str(ctx, &args_list),
+          "join-string" if args_list.len() == 2 => return emit_join_string(ctx, &args_list),
           // `let` — multi-binding form: (let ((name val)...) body...).
           // The preprocessor normally expands this to nested `&let` forms, but intercept here
           // as a fallback for cases where the macro expansion hasn't occurred.
@@ -7256,9 +7256,9 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       expect_arity(0, args, "unix-time-ms")?;
       emit_wasi_clock_ms(ctx, 0, "unix-time-ms")
     }
-    CalcitProc::CpuTime => {
-      expect_arity(0, args, "cpu-time")?;
-      emit_wasi_clock_ms(ctx, 1, "cpu-time")
+    CalcitProc::MonotonicTimeMs => {
+      expect_arity(0, args, "monotonic-time-ms")?;
+      emit_wasi_clock_ms(ctx, 1, "monotonic-time-ms")
     }
     CalcitProc::NativeWaitMs => emit_wasi_wait_ms(ctx, args),
     CalcitProc::NativeSecureRandomBytes => emit_wasi_secure_random_bytes(ctx, args),

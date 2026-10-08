@@ -437,7 +437,7 @@ fn handle_proc_internal(name: CalcitProc, args: &[Calcit], call_stack: &CallStac
     JsonStringify => json::stringify(args),
     JsonPretty => json::pretty(args),
     // time
-    CpuTime => effects::cpu_time(args),
+    MonotonicTimeMs => effects::monotonic_time_ms(args),
     // logics
     NativeEquals => logics::binary_equal(args),
     NativeLessThan => logics::binary_less(args),

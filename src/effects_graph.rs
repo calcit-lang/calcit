@@ -624,18 +624,7 @@ fn resolve_def_call_from_expr(code: &Calcit, current_ns: &str) -> Option<(String
 fn is_state_operator(name: &str) -> bool {
   matches!(
     name,
-    "defref"
-      | "defatom"
-      | "reset!"
-      | "swap!"
-      | "ref"
-      | "atom"
-      | "deref"
-      | "add-watch"
-      | "remove-watch"
-      | "add-watch!"
-      | "remove-watch!"
-      | "set!"
+    "defref" | "defatom" | "reset!" | "swap!" | "ref" | "atom" | "deref" | "remove-watch" | "add-watch!" | "remove-watch!" | "set!"
   )
 }
 
@@ -649,7 +638,7 @@ fn record_state_operator(
   let kind = match op_name {
     "defref" | "defatom" | "ref" | "atom" => "atom-def",
     "reset!" | "swap!" => "atom-write",
-    "add-watch" | "remove-watch" | "add-watch!" | "remove-watch!" => "watch",
+    "remove-watch" | "add-watch!" | "remove-watch!" => "watch",
     "deref" => "atom-read",
     "set!" => "local-write",
     _ => "state",
@@ -678,7 +667,7 @@ fn extract_state_target(list: Option<&crate::calcit::CalcitList>, op_name: &str)
     return op_name.to_string();
   };
   match op_name {
-    "swap!" | "reset!" | "deref" | "add-watch" | "remove-watch" | "add-watch!" | "remove-watch!" | "set!" => {
+    "swap!" | "reset!" | "deref" | "remove-watch" | "add-watch!" | "remove-watch!" | "set!" => {
       list.get(1).and_then(extract_symbol_name).unwrap_or_else(|| op_name.to_string())
     }
     "defref" | "defatom" => list.get(1).and_then(extract_symbol_name).unwrap_or_else(|| "?".to_string()),
@@ -748,12 +737,12 @@ fn classify_by_name(name: &str) -> Option<Vec<String>> {
     "get-env" => vec!["env"],
     "raise" => vec!["control/raise"],
     "quit!" => vec!["control/quit"],
-    "add-watch" | "remove-watch" | "add-watch!" | "remove-watch!" => vec!["state/watch"],
+    "remove-watch" | "add-watch!" | "remove-watch!" => vec!["state/watch"],
     "eval" => vec!["interop/eval"],
     "hint-fn" => vec!["async"],
     "println" | "eprintln" | "echo" => vec!["console"],
     "render!" => vec!["render"],
-    "generate-id!" | "cpu-time" | "monotonic-time-ms" | "unix-time-ms" | "wait-ms" | "&wait-ms" | "&get-os" | "async-sleep" => {
+    "generate-id!" | "monotonic-time-ms" | "unix-time-ms" | "wait-ms" | "&wait-ms" | "&get-os" | "async-sleep" => {
       vec!["io"]
     }
     "try" => vec!["control"],
@@ -2325,16 +2314,16 @@ mod tests {
   }
 
   #[test]
-  fn classify_both_watcher_spellings_as_state_effects() {
-    for name in ["add-watch", "remove-watch", "add-watch!", "remove-watch!"] {
+  fn classify_watcher_spellings_as_state_effects() {
+    for name in ["remove-watch", "add-watch!", "remove-watch!"] {
       assert!(is_state_operator(name));
       assert_eq!(classify_call(name, None), vec!["state/watch".to_string()]);
     }
   }
 
   #[test]
-  fn classify_clock_calls_by_both_legacy_and_preferred_names() {
-    for name in ["cpu-time", "monotonic-time-ms", "unix-time-ms"] {
+  fn classify_clock_calls_by_name() {
+    for name in ["monotonic-time-ms", "unix-time-ms"] {
       assert_eq!(classify_call(name, None), vec!["io".to_string()]);
     }
   }

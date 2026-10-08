@@ -72,7 +72,7 @@ no-op or fabricated success value.
 | Pure Calcit data/control and typed `Option`/`Result` composition | yes | yes | yes | supported subset | core definitions and methods |
 | JSON parse/stringify | yes | yes | yes | unavailable | String `.parse-json` / Result wrappers; core JSON procedures |
 | Current Unix time in milliseconds | yes | unavailable | unavailable | WASI Preview 1 realtime clock; Component 待实现；core WASM unavailable | `unix-time-ms` |
-| Monotonic milliseconds for elapsed-time measurement | yes | `process.uptime()` | `performance.now()` | WASI Preview 1 monotonic clock; Component 待实现；core WASM unavailable | `monotonic-time-ms`（旧 `cpu-time` 暂留兼容；只比较同一进程内两次调用的差值） |
+| Monotonic milliseconds for elapsed-time measurement | yes | `process.uptime()` | `performance.now()` | WASI Preview 1 monotonic clock; Component 待实现；core WASM unavailable | `monotonic-time-ms`（只比较同一进程内两次调用的差值） |
 | 同步等待 | 当前线程 sleep | host injection 或 `Atomics.wait` | 主线程通常不可用并返回错误 | WASI Preview 1 `poll_oneoff`；Component 待实现；core WASM unavailable | `wait-ms`，返回 `Result<Unit,String>` |
 | Construct and inspect a path value without I/O | yes | yes | yes | value-level support only | `fs:path`, `FsPath .to-string` |
 | `FsPath .read-text` / `.write-text!` | yes | host injection | browser `localStorage` adapter | WASI 0.3 Component 与 Preview 1 preopen；core WASM unavailable | `FsPath` Result-returning methods；旧 `.write-text` 暂留兼容 |
@@ -106,7 +106,7 @@ The matrix records what exists today, not an entitlement for every backend.
   递归 `.walk-dir` 仍保持 unavailable。
 - 时钟：`unix-time-ms` 返回 Unix epoch 以来的系统时间；`monotonic-time-ms` 用于测量
   经过时间，其绝对起点没有跨宿主语义。WASI command 通过 Preview 1
-  `clock_time_get` 实现这两个入口（旧 `cpu-time` 暂留兼容），并在宿主返回错误时直接失败，不伪造数值。
+  `clock_time_get` 实现这两个入口，并在宿主返回错误时直接失败，不伪造数值。
   更高层的日期、时区行为仍属于 `calcit.std`。
 - 同步等待：`wait-ms` 接收 `0..4294967295` 范围内的整数毫秒，返回
   `Result<Unit,String>`。零值立即成功且不触发宿主调用；小数、负数、溢出和宿主失败

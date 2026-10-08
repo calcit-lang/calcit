@@ -37,8 +37,6 @@ const CORE_OPTION_METHOD_RULE: &str = "core-option-method-v1";
 const CORE_OPTION_METHOD_DIAGNOSTIC: &str = "FIX_CORE_OPTION_METHOD";
 const CORE_RESULT_METHOD_RULE: &str = "core-result-method-v1";
 const CORE_RESULT_METHOD_DIAGNOSTIC: &str = "FIX_CORE_RESULT_METHOD";
-const CORE_NON_NIL_PREDICATE_RULE: &str = "core-non-nil-predicate-v1";
-const CORE_NON_NIL_PREDICATE_DIAGNOSTIC: &str = "FIX_CORE_NON_NIL_PREDICATE";
 const CORE_FUNCTION_ALIAS_RULE: &str = "core-function-alias-v1";
 const CORE_FUNCTION_ALIAS_DIAGNOSTIC: &str = "FIX_CORE_FUNCTION_ALIAS";
 const CORE_INTEGER_PREDICATE_RULE: &str = "core-integer-predicate-v1";
@@ -96,8 +94,7 @@ const SURFACE_LATEST_V2_RULES: [&str; 5] = [
   SINGLE_EXPRESSION_DO_RULE,
 ];
 // These proven renames replace leaves only, so nested calls retain their source paths.
-const CORE_API_028_V1_RULES: [&str; 6] = [
-  CORE_NON_NIL_PREDICATE_RULE,
+const CORE_API_028_V1_RULES: [&str; 5] = [
   CORE_INTEGER_PREDICATE_RULE,
   CORE_IDENTITY_CONVERSION_RULE,
   CORE_LIST_ADD_RULE,
@@ -106,8 +103,7 @@ const CORE_API_028_V1_RULES: [&str; 6] = [
 ];
 // The 0.29 preset keeps every 0.28 rule this CLI still ships and adds the Ref
 // constructor rename, so `core-api-0.28-v1` keeps its published meaning.
-const CORE_API_029_V1_RULES: [&str; 7] = [
-  CORE_NON_NIL_PREDICATE_RULE,
+const CORE_API_029_V1_RULES: [&str; 6] = [
   CORE_INTEGER_PREDICATE_RULE,
   CORE_IDENTITY_CONVERSION_RULE,
   CORE_LIST_ADD_RULE,
@@ -115,8 +111,8 @@ const CORE_API_029_V1_RULES: [&str; 7] = [
   CORE_EFFECT_METHOD_RULE,
   CORE_REF_CONSTRUCTOR_RULE,
 ];
-// Method-alias rules whose old methods were removed in 0.29.0; only 0.28.x CLIs ship them.
-const RETIRED_CORE_API_028_RULES: [&str; 9] = [
+// Alias rules whose old names were removed in 0.29.0; only 0.28.x CLIs ship them.
+const RETIRED_CORE_API_028_RULES: [&str; 10] = [
   "core-list-intersperse-v1",
   "core-map-distinct-values-v1",
   "core-predicate-method-v1",
@@ -126,6 +122,7 @@ const RETIRED_CORE_API_028_RULES: [&str; 9] = [
   "core-list-join-string-v1",
   "core-list-get-v1",
   "core-collection-combine-v1",
+  "core-non-nil-predicate-v1",
 ];
 const TAG_MATCH_RULE: &str = "tag-match-to-match-v1";
 const REQUIRED_STRUCT_FIELD_RULE: &str = "required-struct-field-v1";
@@ -483,8 +480,7 @@ pub(crate) fn handle_fix_command(
   let value_to_zero_arg_fn = selected_rules.contains(&VALUE_TO_ZERO_ARG_FN_RULE);
   let schema_synthesis = selected_rules.contains(&SYNTHESIZE_SCHEMA_RULE);
   let optional_parameters = selected_rules.contains(&OPTIONAL_PARAMETERS_RULE);
-  let core_predicate_rename = selected_rules.contains(&CORE_NON_NIL_PREDICATE_RULE)
-    || selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE)
+  let core_predicate_rename = selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE)
     || selected_rules.contains(&CORE_FUNCTION_ALIAS_RULE)
     || selected_rules.contains(&CORE_REF_CONSTRUCTOR_RULE);
   let semantic_refactor = semantic_rename || value_to_zero_arg_fn;
@@ -633,18 +629,9 @@ pub(crate) fn handle_fix_command(
       CoreNominalMethodKind::Result,
     )?);
   }
-  if selected_rules.contains(&CORE_NON_NIL_PREDICATE_RULE) {
-    suggestions.extend(plan_core_predicate_rename_fixes(
-      &source_snapshot,
-      snapshot_file,
-      &selected_definitions,
-      CorePredicateRename::NonNil,
-    )?);
-  }
   if selected_rules.contains(&CORE_FUNCTION_ALIAS_RULE) {
     for alias in [
       CorePredicateRename::Optionally,
-      CorePredicateRename::JoinString,
       CorePredicateRename::Join,
       CorePredicateRename::Vals,
     ] {
@@ -1156,7 +1143,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
     && RETIRED_CORE_API_028_RULES.contains(&rule)
   {
     return Err(format!(
-      "Fix rule `{rule}` was retired in 0.29.0 together with the core method aliases it migrated. Run it with a 0.28.x Calcit CLI before upgrading; in this CLI, strict checks report `E_RETIRED_METHOD` with the preferred method for any remaining call."
+      "Fix rule `{rule}` was retired in 0.29.0 together with the core aliases it migrated. Run it with a 0.28.x Calcit CLI before upgrading; in this CLI, strict checks report `E_RETIRED_METHOD` for a remaining method call and an unknown-name warning with the preferred spelling for a remaining function call."
     ));
   }
   if let Some(rule) = options.rule.as_deref()
@@ -1170,7 +1157,6 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CORE_NOMINAL_CONSTRUCTOR_RULE
         | CORE_OPTION_METHOD_RULE
         | CORE_RESULT_METHOD_RULE
-        | CORE_NON_NIL_PREDICATE_RULE
         | CORE_FUNCTION_ALIAS_RULE
         | CORE_INTEGER_PREDICATE_RULE
         | CORE_IDENTITY_CONVERSION_RULE
@@ -1194,7 +1180,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
   {
     return Err(
       format!(
-        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_NON_NIL_PREDICATE_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
       ) + &format!(
         " Review-only compiler rules: `{UNSAFE_COERCE_BOUNDARY_RULE}`, `{ASSERT_TYPE_PROOF_RULE}`, `{CONCRETE_RETURN_PROOF_RULE}`, `{CALLABLE_CONTRACT_PROOF_RULE}`, `{NOMINAL_WRITE_PROOF_RULE}`."
       ),
@@ -1240,7 +1226,6 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_NOMINAL_CONSTRUCTOR_RULE
         | CORE_OPTION_METHOD_RULE
         | CORE_RESULT_METHOD_RULE
-        | CORE_NON_NIL_PREDICATE_RULE
         | CORE_FUNCTION_ALIAS_RULE
         | CORE_INTEGER_PREDICATE_RULE
         | CORE_IDENTITY_CONVERSION_RULE
@@ -1262,7 +1247,6 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_NOMINAL_CONSTRUCTOR_RULE => CORE_NOMINAL_CONSTRUCTOR_RULE,
         CORE_OPTION_METHOD_RULE => CORE_OPTION_METHOD_RULE,
         CORE_RESULT_METHOD_RULE => CORE_RESULT_METHOD_RULE,
-        CORE_NON_NIL_PREDICATE_RULE => CORE_NON_NIL_PREDICATE_RULE,
         CORE_FUNCTION_ALIAS_RULE => CORE_FUNCTION_ALIAS_RULE,
         CORE_INTEGER_PREDICATE_RULE => CORE_INTEGER_PREDICATE_RULE,
         CORE_IDENTITY_CONVERSION_RULE => CORE_IDENTITY_CONVERSION_RULE,
@@ -1368,13 +1352,6 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_RESULT_METHOD_DIAGNOSTIC,
       evidence_source: "compiler-resolved-reference-and-proven-receiver-method",
-      lifecycle: "semantic-refactor",
-      source_version_required: false,
-    },
-    CORE_NON_NIL_PREDICATE_RULE => FixRuleMetadata {
-      rule_id,
-      diagnostic_code: CORE_NON_NIL_PREDICATE_DIAGNOSTIC,
-      evidence_source: "compiler-resolved-reference",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -3860,10 +3837,8 @@ fn plan_core_nominal_method_source(
 
 #[derive(Clone, Copy)]
 enum CorePredicateRename {
-  NonNil,
   Integer,
   Optionally,
-  JoinString,
   Join,
   Vals,
 }
@@ -3871,12 +3846,11 @@ enum CorePredicateRename {
 impl CorePredicateRename {
   /// Function aliases are distinct functions, so only direct calls are equivalent.
   fn requires_call_head(self) -> bool {
-    matches!(self, Self::NonNil | Self::Optionally | Self::JoinString | Self::Join | Self::Vals)
+    matches!(self, Self::Optionally | Self::Join | Self::Vals)
   }
 
   fn names(self) -> (&'static str, &'static str, &'static str, &'static str) {
     match self {
-      Self::NonNil => ("some?", "non-nil?", CORE_NON_NIL_PREDICATE_RULE, CORE_NON_NIL_PREDICATE_DIAGNOSTIC),
       Self::Integer => ("round?", "integer?", CORE_INTEGER_PREDICATE_RULE, CORE_INTEGER_PREDICATE_DIAGNOSTIC),
       Self::Optionally => (
         "optionally",
@@ -3884,7 +3858,6 @@ impl CorePredicateRename {
         CORE_FUNCTION_ALIAS_RULE,
         CORE_FUNCTION_ALIAS_DIAGNOSTIC,
       ),
-      Self::JoinString => ("join-str", "join-string", CORE_FUNCTION_ALIAS_RULE, CORE_FUNCTION_ALIAS_DIAGNOSTIC),
       Self::Join => ("join", "intersperse", CORE_FUNCTION_ALIAS_RULE, CORE_FUNCTION_ALIAS_DIAGNOSTIC),
       Self::Vals => ("vals", "distinct-values", CORE_FUNCTION_ALIAS_RULE, CORE_FUNCTION_ALIAS_DIAGNOSTIC),
     }
@@ -3896,7 +3869,6 @@ fn supports_attached_migrations(rule: &str) -> bool {
     rule,
     REMOVED_DATA_API_RULE
       | CORE_FUNCTION_ALIAS_RULE
-      | CORE_NON_NIL_PREDICATE_RULE
       | CORE_INTEGER_PREDICATE_RULE
       | CORE_NOMINAL_CONSTRUCTOR_RULE
       | CORE_OPTION_METHOD_RULE
@@ -3974,9 +3946,7 @@ fn plan_attached_fixes(
           }
         }
         for alias in [
-          CorePredicateRename::NonNil,
           CorePredicateRename::Optionally,
-          CorePredicateRename::JoinString,
           CorePredicateRename::Join,
           CorePredicateRename::Vals,
         ] {
@@ -5157,7 +5127,6 @@ fn collection_count_definition(receiver: &CalcitTypeAnnotation) -> Option<&'stat
     CalcitTypeAnnotation::List(_) => Some("calcit.core/&list:count"),
     CalcitTypeAnnotation::Map(_, _) => Some("calcit.core/&map:count"),
     CalcitTypeAnnotation::Set(_) => Some("calcit.core/&set:count"),
-    CalcitTypeAnnotation::String => Some("calcit.core/&str:count"),
     _ => None,
   }
 }
@@ -5608,10 +5577,10 @@ fn plan_core_collection_len_source(
         "requires-review"
       },
       message: if machine_applicable {
-        "Use `.len` for built-in collection or String length; both methods resolve to the same core implementation."
+        "Use `.len` for built-in List, Map or Set length; both methods resolve to the same core implementation."
           .to_owned()
       } else {
-        "Cannot prove a built-in collection/String receiver, matching method implementation, or stable source context; review `.count` manually."
+        "Cannot prove a built-in List, Map or Set receiver, matching method implementation, or stable source context; review `.count` manually."
           .to_owned()
       },
       target_path: method_path,

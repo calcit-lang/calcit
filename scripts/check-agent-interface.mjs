@@ -200,7 +200,7 @@ const scenarios = [
       assert.equal(flatMap?.return_type, "list<'U>");
       const joinString = result.data.methods.find((method) => method.name === ".join-string");
       assert.equal(joinString?.status, "proven");
-      assert.equal(joinString?.definition, "calcit.core/join-str");
+      assert.equal(joinString?.definition, "calcit.core/join-string");
       assert.deepEqual(joinString?.parameter_types, ["string"]);
       assert.equal(joinString?.return_type, "string");
       const get = result.data.methods.find((method) => method.name === ".get");
@@ -295,6 +295,8 @@ const scenarios = [
       const closed = result.data.methods.find(method => method.name === ".parse-float");
       assert.equal(closed?.status, "proven");
       assert.deepEqual(closed.call_types.returns, ["::", "'calcit.core/Result", "'Number", "'String"]);
+      assert.ok(result.data.methods.some(method => method.name === ".len"), "String keeps .len");
+      assert.ok(!result.data.methods.some(method => method.name === ".count"), ".count was retired from String");
     },
   },
   {

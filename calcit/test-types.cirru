@@ -284,7 +284,7 @@
               assert-type text 'String
               let
                   sliced $ .slice text 0 5
-                  len $ .count text
+                  len $ .len text
                   trimmed $ .trim text
                 println "|✓ String methods validated at preprocess"
             let
@@ -314,7 +314,7 @@
               ; Call valid string methods
               let
                   sliced $ .slice text 0 5
-                  text-len $ .count text
+                  text-len $ .len text
                   first-char $ .first text
                   starts $ .starts-with? text |hello
                   splitted $ .split text |-
@@ -373,7 +373,7 @@
                 typed-str |test-string
               assert-type typed-str 'String
               let
-                  str-len $ .count typed-str
+                  str-len $ .len typed-str
                   str-first $ .first typed-str
                 println "|Typed string access - count:" str-len
                 println "|Typed string access - first:" str-first

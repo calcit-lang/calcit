@@ -187,8 +187,8 @@ pub enum CalcitProc {
   #[strum(serialize = "&cirru-quote:to-list")]
   NativeCirruQuoteToList,
   // time
-  #[strum(serialize = "cpu-time")]
-  CpuTime,
+  #[strum(serialize = "monotonic-time-ms")]
+  MonotonicTimeMs,
   // logics
   #[strum(serialize = "&=")]
   NativeEquals,
@@ -456,7 +456,7 @@ pub enum CalcitProc {
   Ref,
   #[strum(serialize = "&atom:deref")]
   AtomDeref,
-  #[strum(serialize = "add-watch")]
+  #[strum(serialize = "add-watch!")]
   AddWatch,
   #[strum(serialize = "remove-watch")]
   RemoveWatch,
@@ -1468,7 +1468,7 @@ impl CalcitProc {
       }),
 
       // === Time ===
-      CpuTime => Some(ProcTypeSignature {
+      MonotonicTimeMs => Some(ProcTypeSignature {
         return_type: some_tag("number"),
         arg_types: vec![],
       }),

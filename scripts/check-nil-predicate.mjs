@@ -11,15 +11,12 @@ const run = (...args) => execFileSync(binary, args, {
 });
 const corePath = resolve("src/cirru/calcit-core.cirru");
 const core = JSON.parse(run("cirru", "parse-edn", "--file", corePath));
-const legacyTests = core[":files"]["'calcit.core"].defs["'some?"].tests;
-assert.deepEqual(legacyTests.map(test => test.name).sort(), [
-  "non-nil-is-not-option-variant", "typed-callers-preserve-non-nil-semantics",
-]);
+assert.equal(core[":files"]["'calcit.core"].defs["'some?"], undefined, "`some?` was removed in 0.29.0");
 const canonicalTests = core[":files"]["'calcit.core"].defs["'non-nil?"].tests;
 assert.deepEqual(canonicalTests.map(test => test.name).sort(), [
   "distinguishes-nil-from-values-and-option-variants", "typed-callers-preserve-non-nil-semantics",
 ]);
-const tests = [...legacyTests, ...canonicalTests];
+const tests = canonicalTests;
 
 const fixture = await mkdtemp(join(tmpdir(), "calcit-nil-predicate-"));
 try {
@@ -30,11 +27,11 @@ try {
   run(snapshot, "edit", "add-ns", "calcit.nil-predicate");
   run(snapshot, "edit", "add-ns", "calcit.nil-helper");
   run(snapshot, "edit", "def", "calcit.nil-helper/typed-bool", "--input-format", "cirru", "--code",
-    "quote $ defn typed-bool (x)\n  some? x");
+    "quote $ defn typed-bool (x)\n  non-nil? x");
   run(snapshot, "edit", "schema", "calcit.nil-helper/typed-bool", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ [] 'Bool) (:return 'Bool)");
   run(snapshot, "edit", "def", "calcit.nil-helper/generic", "--input-format", "cirru", "--code",
-    "quote $ defn generic (x)\n  some? x");
+    "quote $ defn generic (x)\n  non-nil? x");
   run(snapshot, "edit", "schema", "calcit.nil-helper/generic", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ [] 'T) (:generics $ [] 'T) (:return 'Bool)");
   run(snapshot, "edit", "def", "calcit.nil-helper/generic-forward", "--input-format", "cirru", "--code",

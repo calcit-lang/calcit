@@ -288,7 +288,7 @@ let
 ```cirru
 let
     words $ [] |hello |world |foo
-  println $ join-str words |,
+  println $ join-string words |,
   ; => hello,world,foo
 ```
 

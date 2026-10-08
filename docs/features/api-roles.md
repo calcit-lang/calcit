@@ -72,7 +72,7 @@ The public, human-facing form is distinct from macro-expanded core definitions a
 
 ### 索引单位：普通索引与显式 byte 单位
 
-String 的 `.len`（兼容 `.count`）、`.get/.nth/.slice` 与 `.find-index` 使用 Unicode 标量单位；查找返回 `Option<Number>`，不是 Rust `str::find` 的字节偏移。Calcit 借鉴语义清晰的命名，不照搬会破坏自身索引一致性的底层表示。`.includes?` 判断子串，`.contains-index?` 判断索引存在（List 与 String 的旧 `.contains?` 已在 0.29.0 删除），不因统一索引单位而互换。协议长度使用显式 `&str:utf8-byte-count`，不可混入普通索引。示例和边界见 [String](../data/string.md#子串搜索索引)；其他 API 族的重命名仍由 #1452 逐项决策，本修复不增加别名或 fix 规则。
+String 的 `.len`（旧 `.count` 方法已在 0.29.0 删除）、`.get/.nth/.slice` 与 `.find-index` 使用 Unicode 标量单位；查找返回 `Option<Number>`，不是 Rust `str::find` 的字节偏移。Calcit 借鉴语义清晰的命名，不照搬会破坏自身索引一致性的底层表示。`.includes?` 判断子串，`.contains-index?` 判断索引存在（List 与 String 的旧 `.contains?` 已在 0.29.0 删除），不因统一索引单位而互换。协议长度使用显式 `&str:utf8-byte-count`，不可混入普通索引。示例和边界见 [String](../data/string.md#子串搜索索引)；其他 API 族的重命名仍由 #1452 逐项决策，本修复不增加别名或 fix 规则。
 
 ## 逐族命名决策（0.27–0.28）
 
@@ -94,7 +94,7 @@ String 的 `.len`（兼容 `.count`）、`.get/.nth/.slice` 与 `.find-index` �
 
 | 当前入口与签名/行为 | 决策与目标签名 | 迁移边界 |
 | --- | --- | --- |
-| `some?: T -> Bool`，仅排除 nil；Option none 也为 true | **已提供** `non-nil?: T -> Bool`；`some?` 暂留兼容 | 等价改名，不自动改成 Option `.some?`；WASM 已以类型证据修复 false/0 误判，fix 仅改写 compiler-resolved core 引用 |
+| `some?: T -> Bool`，仅排除 nil；Option none 也为 true | **已提供** `non-nil?: T -> Bool`；`some?` 已在 0.29.0 删除 | 等价改名，不改成 Option `.some?`；WASM 已以类型证据修复 false/0 误判；迁移规则 `core-non-nil-predicate-v1` 仅 0.28.x 的 CLI 提供 |
 | Option `.some?/.none?: Option<T> -> Bool`；Result `.ok?/.err?: Result<T,E> -> Bool` | **保留**，判断名义 variant | 空值、false 和 nil payload 不改变 variant；既有 helper 退场条件仍适用 |
 | List/String `.contains?: (receiver, Number) -> Bool`，检查索引 | **已提供** `.contains-index?`，签名与原有错误行为不变；旧 `.contains?` 已在 0.29.0 删除 | List 的负数/小数/非有限索引返回 false；String 的负数/小数报错、越界返回 false。它不是元素或子串查询；旧调用报 `E_RETIRED_METHOD`，自动迁移需用 0.28.x 的 CLI 运行 `core-predicate-method-v1` |
 | Map `.contains?: (Map<K,V>, K) -> Bool`；`.includes?: (Map<K,V>, V) -> Bool` | **已提供** `.contains-key?`、`.contains-value?`，分别接收 K/V；旧 Map `.contains?` 与 `.includes?` 已在 0.29.0 删除 | 即使 K 与 V 同型，两种命题也不同；旧调用报 `E_RETIRED_METHOD`，自动迁移需用 0.28.x 的 CLI 运行 `core-predicate-method-v1` |
@@ -106,7 +106,7 @@ String 的 `.len`（兼容 `.count`）、`.get/.nth/.slice` 与 `.find-index` �
 
 `Contains` 不能直接别名成一个新 trait：它曾横跨索引、键、字段与成员。#1454 先为上述命题建立具体签名，逐一迁移 builtin 与已定位的自定义 impl；0.29.0 起 List、String、Map 与 Set 已不实现 `Contains`，只剩 Struct 与 Enum，其旧 bound 和具名 trait-call 在兼容窗口保持原契约。泛型接收者有唯一 `where T: Contains` 来源时，调用应绑定该 trait，而非仅按实例上同名方法查找；具体接收者同时实现多个同名 trait 时，仍需显式 `&trait-call` 消歧。0.28.x 的 `core-predicate-method-v1` 仅覆盖已证明的 builtin receiver 和同一实现，普通用户自定义同名方法及 trait-bound 泛型调用不自动改写；该规则已在 0.29.0 随旧方法退役。不得把泛型 `Contains<T,K>` 草率替换成更宽 Dynamic 或猜测性的 trait 联集。
 
-前置缺陷不能由改名掩盖：WASM 的 false/0 误判已经改为依据静态类型证据 lowering；具体参数及直接调用的泛型 helper 会单态化，无法证明类型的开放导出或一等函数边界则以 `E_WASM_NIL_TYPE_EVIDENCE` 拒绝。native、JS、core WASM 与 WASI Component 共享同一组 Calcit 定义测试；详细迁移边界见[升级说明](../run/upgrade.md#wasm-的-nil-类型证据)。在此基础上，`non-nil?` 已成为首选名字，旧 `some?` 保持同义兼容；`core-non-nil-predicate-v1` 只做已解析 core 引用的等价改名。`round?` 的近零/无穷差异已由共享测试修复，`integer?/.integer?` 复用该语义；函数及 Number 方法的显式迁移规则见 [fix 文档](../run/fix.md)。List/String 索引和 Map 键/值的新方法已提供，对应的旧 builtin 方法已在 0.29.0 删除；Struct/Enum 与 `Contains` trait 的迁移仍由 [#1482](https://github.com/calcit-lang/calcit/issues/1482) 跟踪。
+前置缺陷不能由改名掩盖：WASM 的 false/0 误判已经改为依据静态类型证据 lowering；具体参数及直接调用的泛型 helper 会单态化，无法证明类型的开放导出或一等函数边界则以 `E_WASM_NIL_TYPE_EVIDENCE` 拒绝。native、JS、core WASM 与 WASI Component 共享同一组 Calcit 定义测试；详细迁移边界见[升级说明](../run/upgrade.md#wasm-的-nil-类型证据)。在此基础上，`non-nil?` 已成为首选名字，旧 `some?` 已在 0.29.0 删除；残留调用报告未知名字并提示 `non-nil?`，迁移规则 `core-non-nil-predicate-v1` 仅 0.28.x 的 CLI 提供。`round?` 的近零/无穷差异已由共享测试修复，`integer?/.integer?` 复用该语义；函数及 Number 方法的显式迁移规则见 [fix 文档](../run/fix.md)。List/String 索引和 Map 键/值的新方法已提供，对应的旧 builtin 方法已在 0.29.0 删除；Struct/Enum 与 `Contains` trait 的迁移仍由 [#1482](https://github.com/calcit-lang/calcit/issues/1482) 跟踪。
 
 下面是**当前旧契约的反例**，说明为什么不能只凭词形替换；对应 definition `:tests` 会随等价迁移一起保留这些断言：
 
@@ -136,12 +136,12 @@ do
 
 | 当前入口与签名/行为 | 决策与目标签名 | 迁移边界 |
 | --- | --- | --- |
-| List/Map/Set/String `count/.count` 与 `Len/.len: C -> Number` 重叠 | **保留并首选** `.len`，收敛 Countable 的这些用途 | 参数单次求值；String 仍按标量。用户 Countable impl/bound 单独迁移；Struct 字段数与 Enum payload 数 **暂缓**，不把所有 count 当容器长度 |
+| List/Map/Set/String `count/.count` 与 `Len/.len: C -> Number` 重叠 | **保留并首选** `.len`，收敛 Countable 的这些用途；String `.count` 方法已在 0.29.0 删除 | 参数单次求值；String 仍按标量，函数 `count` 与 Countable 约束仍接受 String。用户 Countable impl/bound 单独迁移；Struct 字段数与 Enum payload 数 **暂缓**，不把所有 count 当容器长度 |
 | List `.add/.append: (List<T>, T) -> List<T>`；底层 Add trait 是两 List 组合 | **保留** `.append` 与 `.concat`，退场 List 单元素 `.add` 别名 | 先解决 originless `.add` 遮蔽；旧入口失效后也不能静默暴露另一种参数语义。名义 `Add` 调用/泛型界限保留单独验证 |
 | Map `.assoc: (Map<K,V>, K,V) -> Map<K,V>` / `.dissoc: (Map<K,V>, K, & K) -> Map<K,V>`；Set `include/exclude` 返回新 Set | **本阶段首选**现有持久集合入口；不新增 Map/Set `.insert/.remove`，见 [#1479](https://github.com/calcit-lang/calcit/issues/1479) | Rust 同名方法可能暗示原地修改与不同返回值。Set `.add` 与 Map `.add` 已在 0.29.0 删除：Set 改用 `.include`；Map `.add` 只验证二元 List entry 的形状，不能证明 key/value 为 K/V，需人工改成 `.assoc key value` |
 | `foldl/.foldl/foldl'/reduce/.reduce: (List<T>, U, (U,T)->U) -> U` | **已引入** seeded `.fold`；`foldl'` 与 List `.reduce` 已在 0.29.0 删除，前缀 `reduce` 与 `.foldl` 的退场留给 [#1458](https://github.com/calcit-lang/calcit/issues/1458) | 保持左到右、空 List 返回初值、异类型 accumulator、callback 次数；不把旧 reduce 换成无初值语义。新方法证明不弱于现有 `.reduce` |
-| `join/.join: (List<T>, T) -> List<T>` | **已引入** `intersperse/.intersperse`；`.join` 方法已在 0.29.0 删除，前缀 `join` 暂保留兼容 | 只插入同类型分隔项，保持空/单项/重复值/顺序；不改成 String 返回，也不与 `join-str` 混用 |
-| `join-str/.join-str: (List<T>, String) -> String`，逐项格式化 | **已引入** `join-string/.join-string`；List `.join-str` 已在 0.29.0 删除 | 保留 List<T>、原有显示规则和空 List 结果；前缀 `join-str` 暂留兼容，不与返回 List 的 `intersperse` 混淆 |
+| `join/.join: (List<T>, T) -> List<T>` | **已引入** `intersperse/.intersperse`；`.join` 方法已在 0.29.0 删除，前缀 `join` 暂保留兼容 | 只插入同类型分隔项，保持空/单项/重复值/顺序；不改成 String 返回，也不与 `join-string` 混用 |
+| `join-str/.join-str: (List<T>, String) -> String`，逐项格式化 | **已引入** `join-string/.join-string`；List `.join-str` 与前缀 `join-str` 已在 0.29.0 删除 | 保留 List<T>、原有显示规则和空 List 结果；不与返回 List 的 `intersperse` 混淆 |
 | `vals` / Map `.values: Map<K,V> -> Set<V>`，去重 | **已引入** `distinct-values/.distinct-values`；`.values` 方法已在 0.29.0 删除，前缀 `vals` 暂保留兼容 | 新旧都返回去重 Set，顺序不保证；保留重复值的视图是独立语义任务，本轮不复用旧名 |
 | List `mapcat/.bind: (List<T>, (T)->List<U>) -> List<U>` | **已引入** `.flat-map`；List `.bind` 已在 0.29.0 删除 | 保持顺序、展平一层、callback 次数与具体 U；Fn `.bind` 是不同组合，**暂缓** |
 
@@ -154,11 +154,11 @@ Map/Set 更新均返回新集合，不修改原接收者。Map `.assoc key value
 
 历史基线曾出现 `query type ":: 'List 'Number"` 的 `.reduce` 为 proven、`.append/.foldl` 为 open；目前这些方法已能从公开泛型 schema 获得 proven 契约。seeded `.fold` 也保持 `U, (U,T)->U -> U` 的 proven 方法契约；List 的旧 `.reduce` 已在 0.29.0 删除，自动迁移需用 0.28.x 的 CLI 运行 `core-list-fold-v1`。前缀 `reduce`、自定义 trait 和开放接收者不按名字批量改写，不能用 primitive 替换用户方法测试来绕过。
 
-长度迁移的小批次使用显式 `core-collection-len-v1`：只在 List/Map/Set/String 的 `.count` 与 `.len` 同指对应 core 实现、方法契约已证明时改写。Struct/Enum 的 `.count` 另有语义，用户自定义 trait 也不据名字猜测；这不是一次全局文本替换。见 [fix 规则](../run/fix.md)。
+长度迁移的小批次使用显式 `core-collection-len-v1`：只在 List/Map/Set 的 `.count` 与 `.len` 同指对应 core 实现、方法契约已证明时改写；String `.count` 已在 0.29.0 删除，其迁移需用 0.28.x 的 CLI 运行本规则。Struct/Enum 的 `.count` 另有语义，用户自定义 trait 也不据名字猜测；这不是一次全局文本替换。见 [fix 规则](../run/fix.md)。
 
-List 分隔元素的方法迁移曾使用 `core-list-intersperse-v1`（仅 0.28.x 的 CLI 提供），`.join` 方法已在 0.29.0 删除。前缀 `join` 与返回 String 的 `join-str` 不在规则范围，旧名暂保留以便分批迁移。
+List 分隔元素的方法迁移曾使用 `core-list-intersperse-v1`（仅 0.28.x 的 CLI 提供），`.join` 方法已在 0.29.0 删除。前缀 `join` 不在规则范围，旧名暂保留以便分批迁移；返回 String 的前缀 `join-str` 已在 0.29.0 删除。
 
-List 文本拼接使用 `join-string` / `.join-string`，逐项沿用 `join-str` 的显示转换并插入 String 分隔符，空 List 返回空字符串；这不是返回 List 的 `intersperse`。List 的旧 `.join-str` 方法已在 0.29.0 删除，自动迁移需用 0.28.x 的 CLI 运行 `core-list-join-string-v1`。前缀 `join-str` 需要独立审阅，不在此 fix 范围。
+List 文本拼接使用 `join-string` / `.join-string`，逐项按原有显示规则转为文本并插入 String 分隔符，空 List 返回空字符串；这不是返回 List 的 `intersperse`。0.29.0 起 `join-string` 直接拥有实现，旧 List `.join-str` 方法与前缀 `join-str` 均已删除；方法的自动迁移需用 0.28.x 的 CLI 运行 `core-list-join-string-v1`，前缀调用人工改写为 `join-string`。
 
 Map 去重值使用 `distinct-values` / `.distinct-values`，返回 `Set<V>`，不是保留重复值的 List。旧 `.values` 方法已在 0.29.0 删除，曾提供的 `core-map-distinct-values-v1` 仅 0.28.x 的 CLI 可用；前缀 `vals`、开放接收者与用户方法不按名字改写。
 
@@ -213,11 +213,11 @@ do
 | 当前入口 | 决策与目标签名原则 | 边界 |
 | --- | --- | --- |
 | 构造 `atom` / `defatom` | **已提供** `ref` / `defref` 作为 `Ref<T>` 的首选构造名，与 `type-of` 的 `:ref`、谓词 `ref?` 一致；旧名读取为同一实现，暂留兼容 | native、JS 与 WASM 共享同一实现与 lowering（WASM 仅支持数值 `defref` 全局，局部 `ref` 与 `atom` 一样明确报告 unsupported）；`core-ref-constructor-v1` 改写已证明的拼写，在下一个非 patch 版本退场旧名 |
-| `reset!/swap!`；旧 `add-watch/remove-watch` | **已提供** `add-watch!/remove-watch!` 作为 Ref watcher 的首选注册/移除入口；旧名暂留底层兼容 | Ref 写入返回写入值 `T`；watcher 注册/移除共享原 `Ref<T>`、`Tag`、`Unit` 契约。重复/缺失 key 仍报错，callback 次数不变；本阶段不自动改写未知同名调用 |
+| `reset!/swap!`；旧 `add-watch/remove-watch` | **已提供** `add-watch!/remove-watch!` 作为 Ref watcher 的首选注册/移除入口；`add-watch!` 自 0.29.0 起直接是内建实现，旧 `add-watch` 已删除，旧 `remove-watch` 暂留底层兼容 | Ref 写入返回写入值 `T`；watcher 注册/移除共享原 `Ref<T>`、`Tag`、`Unit` 契约。重复/缺失 key 仍报错，callback 次数不变；本阶段不自动改写未知同名调用 |
 | FsPath `.write-text!`；js-ffi `write-text!` | core **已提供** `.write-text!`，旧 `.write-text` 已于 0.29.0 删除；模块 **保留**已有 `!` | core 仍 `(FsPath,String)->Result<Unit,String>`；0.28.x 的 `core-effect-method-v1` 可在类型与来源已证明时改写旧调用；js-ffi 原有 Unit/throw/async 契约不因命名一致而自动统一 |
 | FfiTask `.cancel/.cancel-with`；FfiResponse 旧 `.resolve/.reject` | **已提供** `.cancel!/.cancel-with!/.resolve!/.reject!`；FfiTask 旧名暂留兼容，FfiResponse 旧名已于 0.29.0 删除 | 新旧方法共用宿主实现，保持泛型、签名、exactly-once、释放与失败行为；`core-effect-method-v1` 可受控改写已证明调用，不能用返回 Bool 或命名代替生命周期证明 |
 | `.read-text/.read-dir/.walk-dir`、`get-args/get-env`；std `read-file!/read-dir!/walk-dir!` | **保留**core 查询名字；std 的首选 `read-file/read-dir/walk-dir` 已随模块 **0.2.36** 首次发布 | 当前正式源码组合为 [std 0.2.37](https://github.com/calcit-lang/calcit.std/releases/tag/0.2.37) 与 Calcit **0.28.0**，保持原参数、返回与失败模型，已验证 native 文本读取、目录枚举、递归读取与 FFI 生命周期。历史 [0.2.36](https://github.com/calcit-lang/calcit.std/releases/tag/0.2.36) 配套 **0.28.0-alpha.3**，其 tag 与预发布工具链要求不随新版本改写 |
-| `cpu-time: () -> Number` 实际为单调毫秒；`unix-time-ms` | **已提供** `monotonic-time-ms: () -> Number`；旧 `cpu-time` 暂留，`unix-time-ms` 保留 | 新入口复用旧时钟实现，只在同一运行内比较经过时间；native、JS、WASI Preview 1 可用，WASI 0.3 command 时钟仍明确不支持。std `get-time!/get-timestamp` 先核对返回模型再定映射 |
+| `cpu-time: () -> Number` 实际为单调毫秒；`unix-time-ms` | **已提供** `monotonic-time-ms: () -> Number`；自 0.29.0 起直接是内建时钟，旧 `cpu-time` 已删除，`unix-time-ms` 保留 | 只在同一运行内比较经过时间；native、JS、WASI Preview 1 可用，WASI 0.3 command 时钟仍明确不支持。std `get-time!/get-timestamp` 先核对返回模型再定映射 |
 | 定时器注册/取消、`on-ctrl-c`；随机数、ID 生成 | **目标**注册/取消使用 `!`；随机/ID 的具体词汇 **暂缓** | 区分产生值与改变资源状态，核对 async、句柄和 callback；不按字符串后缀批量处理 |
 | `println/echo/eprintln/read-stdin-text/wait-ms` | **保留**这些有限、按名明确的效果例外 | 输出、消费 stdin 和等待仍有真实效果；不是“所有 read-/print- 都自动例外” |
 | `non-nil!` 是会失败的检查；旧 helper 中的 `!` | **暂缓**到 checked assertion/unwrap 命名明确 | 不改变失败模型，不将 `.unwrap` 自动插入业务代码 |

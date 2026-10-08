@@ -1196,7 +1196,7 @@
           :code $ quote $ defn try-rest-prefix (fail?)
             try
               if fail? (raise |fixture-failure) 7
-              fn (message & others) (.count message)
+              fn (message & others) (.len message)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Bool
