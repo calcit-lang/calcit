@@ -10,6 +10,7 @@ mod enum_value;
 mod fns;
 mod list;
 mod local;
+mod proc_failure;
 mod proc_name;
 mod struct_value;
 mod sum_type;
@@ -44,6 +45,7 @@ pub use fns::{CalcitArgLabel, CalcitFn, CalcitFnArgs, CalcitFnCallShape, CalcitF
 pub use fns::{ParamShape, ParamShapeToken, compare_param_shapes, validate_definition_schema_shape};
 pub use list::{CalcitCallKind, CalcitList, CalcitListView, CalcitNumberBinaryOp};
 pub use local::CalcitLocal;
+pub use proc_failure::ProcFailure;
 pub use proc_name::{CalcitProc, ProcArity, ProcTypeSignature};
 pub use struct_value::CalcitStructValue;
 pub use sum_type::{CalcitEnumDef, EnumVariant};

@@ -483,6 +483,8 @@ struct DefinitionContextData {
   inferred_schema: Option<String>,
   #[serde(skip_serializing_if = "Option::is_none")]
   runtime_arity: Option<RuntimeCallArity>,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  failure: Option<ProcFailureInfo>,
   features: Vec<String>,
   js_ffi: Option<JsFfiQueryInfo>,
   code: ContextCode,
@@ -503,6 +505,15 @@ struct RuntimeCallArity {
 /// Expose authoritative Proc omission metadata without inventing nullable value types
 /// or inferring a wrapper's callable contract from its name or declared schema.
 fn core_runtime_call_arity(namespace: &str, definition: &str, entry: &snapshot::CodeEntry) -> Option<RuntimeCallArity> {
+  let arity = core_runtime_proc(namespace, definition, entry)?.arity()?;
+  Some(RuntimeCallArity {
+    min: arity.min,
+    max: arity.max,
+  })
+}
+
+/// The builtin Proc a core definition runs, either directly or as a one-leaf alias.
+fn core_runtime_proc(namespace: &str, definition: &str, entry: &snapshot::CodeEntry) -> Option<CalcitProc> {
   if namespace != calcit::calcit::CORE_NS {
     return None;
   }
@@ -513,11 +524,30 @@ fn core_runtime_call_arity(namespace: &str, definition: &str, entry: &snapshot::
   } else {
     return None;
   };
-  let arity = proc_name.parse::<CalcitProc>().ok()?.arity()?;
-  Some(RuntimeCallArity {
-    min: arity.min,
-    max: arity.max,
+  proc_name.parse::<CalcitProc>().ok()
+}
+
+#[derive(Debug, Clone, Serialize)]
+struct ProcFailureInfo {
+  class: &'static str,
+  #[serde(skip_serializing_if = "Option::is_none")]
+  condition: Option<&'static str>,
+}
+
+/// Failure class of the builtin Proc behind a core definition (#1558).
+fn core_proc_failure(namespace: &str, definition: &str, entry: &snapshot::CodeEntry) -> Option<ProcFailureInfo> {
+  let failure = core_runtime_proc(namespace, definition, entry)?.failure();
+  Some(ProcFailureInfo {
+    class: failure.class_name(),
+    condition: failure.condition(),
   })
+}
+
+fn render_proc_failure(failure: &ProcFailureInfo) -> String {
+  match failure.condition {
+    Some(condition) => format!("`{}` when {condition}", failure.class),
+    None => format!("`{}`", failure.class),
+  }
 }
 
 fn render_runtime_call_arity(arity: RuntimeCallArity) -> String {
@@ -3854,6 +3884,7 @@ fn build_regular_context(
     schema: context_schema(entry.schema.as_ref())?,
     inferred_schema: inferred_schema.as_ref().map(|schema| context_schema(schema)).transpose()?.flatten(),
     runtime_arity: core_runtime_call_arity(namespace, definition, entry),
+    failure: core_proc_failure(namespace, definition, entry),
     features: context_features(effective_schema),
     js_ffi: None,
     code,
@@ -3934,6 +3965,7 @@ fn build_special_builtin_context(
     schema: Some(schema),
     inferred_schema: None,
     runtime_arity: None,
+    failure: None,
     features: tags,
     js_ffi: None,
     code: ContextCode {
@@ -3989,6 +4021,9 @@ fn render_context_human(envelope: &SemanticQueryEnvelope<DefinitionContextData>)
   let _ = writeln!(&mut out, "- Type coverage: `{}`", data.coverage);
   if let Some(arity) = data.runtime_arity {
     let _ = writeln!(&mut out, "- Runtime Proc arity: `{}`", render_runtime_call_arity(arity));
+  }
+  if let Some(failure) = &data.failure {
+    let _ = writeln!(&mut out, "- Failure: {}", render_proc_failure(failure));
   }
   if let Some(info) = &data.js_ffi {
     let _ = writeln!(&mut out, "- JavaScript FFI: `{}`", info.source_kind.unwrap_or("invalid"));
@@ -4953,6 +4988,9 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
     if let Some(arity) = core_runtime_call_arity(namespace, &resolved_definition, code_entry) {
       data["runtime_arity"] = serde_json::to_value(arity).map_err(|error| format!("Failed to serialize runtime arity: {error}"))?;
     }
+    if let Some(failure) = core_proc_failure(namespace, &resolved_definition, code_entry) {
+      data["failure"] = serde_json::to_value(failure).map_err(|error| format!("Failed to serialize failure class: {error}"))?;
+    }
     data["ffi_edn"] = data["ffi"].take();
     data["ffi"] = serde_json::to_value(&code_entry.ffi).map_err(|e| format!("Failed to serialize FFI metadata: {e}"))?;
     data["js_ffi"] = serde_json::to_value(
@@ -4974,6 +5012,9 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
   let _ = writeln!(&mut out, "# Definition `{namespace}/{resolved_definition}`\n");
   if let Some(arity) = core_runtime_call_arity(namespace, &resolved_definition, code_entry) {
     let _ = writeln!(&mut out, "- Runtime Proc arity: `{}`", render_runtime_call_arity(arity));
+  }
+  if let Some(failure) = core_proc_failure(namespace, &resolved_definition, code_entry) {
+    let _ = writeln!(&mut out, "- Failure: {}", render_proc_failure(&failure));
   }
 
   if let Ok(code_data) = calcit::data::cirru::code_to_calcit(&code_entry.code, namespace, &resolved_definition, vec![])
