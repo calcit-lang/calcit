@@ -80,6 +80,17 @@ For source-backed definitions, `query def` prints the stored Cirru body. For spe
 
 `query def/context` 对可直接证明为已注册 core Proc 的定义另给 `:runtime-arity`（JSON 为 `runtime_arity`）：`:min` 是最少传参个数，`:max` 是最多个数，`nil` 表示没有有限上限。例如 `read-dir` 为 `{:min 1, :max 2}`，省略第二个参数不意味着可以传 nil，也不意味着它的 Bool 值类型变为 Optional。human 输出显示 `Runtime Proc arity: 1..=2`。此证据复用编译器已有 Proc 元数据，不根据函数名、schema 宽度或 `:internal` 标签猜测；普通函数、未知别名和特殊 builtin 未证明时不提供该字段。字段缺失不是零参数、无上限或可调用的承诺。参数值类型、失败与 backend 支持仍需结合 schema、文档与测试查看，arity 不代替它们。
 
+同一类 core Proc 定义另给 `:failure`，说明参数已符合声明类型时调用如何失败：`:class` 为 `|total`（总能返回值）、`|result`（通过 nil、Option 或 Result 返回预期失败）或 `|raises`（抛出可由 `try` 捕获的错误，WASM 中 trap），`:condition` 写明返回失败或抛错的条件。类型不符的参数在所有 Proc 上都是类型错误，不重复列出。human 输出显示为 `Failure: ...` 一行：
+
+```bash
+calcit query def 'calcit.core/&list:nth'
+# - Failure: `raises` when an index is not a non-negative integer or is out of range
+calcit query def 'calcit.core/&map:get' --format edn
+# :failure $ {} (:class |result) (:condition "|nil for a missing key")
+```
+
+分类与 Proc 实现放在一起，新增 Proc 必须同时给出类别，否则无法编译。需要可恢复的失败时，优先选择 `result` 类入口或对应的 Option/Result 方法；`raises` 类调用只在条件已由前面的代码排除时使用。
+
 默认 Markdown 输出先列已证明的首选方法，再列尚未完成角色归类的方法，最后列附有首选名和 fix 规则的兼容方法。分组仅改变阅读顺序，不隐藏方法、不改变分派优先级或结构化输出；尚未归类不表示应优先使用。
 
 例如 `query type ":: 'List 'Number" --format edn` 会把单元素追加的 `.append`、长度查询的 `.len` 标为首选，旧 `.add/.count` 分别关联 `core-list-add-v1`、`core-collection-len-v1`。同一长度规则也覆盖契约已证明的 Map/Set/String；Map `.add` 是不同的 entry 操作，不会因此变成 `.append` 或 `.assoc` 的兼容别名。

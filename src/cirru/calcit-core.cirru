@@ -651,6 +651,14 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :meta
+          :tests $ [] $ %{} 'TestEntry (:name |rejects-runtime-only-values)
+            :code $ quote $ assert= :failed
+              try
+                do
+                  &extract-code-into-edn $ &buffer 0 255
+                  , :returned
+                fn (_error) :failed
+            :tags $ #{} :core :unit
         '&fn:apply $ %{} 'CodeEntry (:doc "|internal helper for fn :apply method entry")
           :code $ quote $ defn &fn:apply (f g)
             fn (x)
@@ -984,10 +992,19 @@
             :generics $ [] 'T
             :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |updates-list-item-by-index)
-            :code $ quote $ assert= ([] 1 3)
-              &list:assoc ([] 1 2) 1 3
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |updates-list-item-by-index)
+              :code $ quote $ assert= ([] 1 3)
+                &list:assoc ([] 1 2) 1 3
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-out-of-range-index)
+              :code $ quote $ assert= :failed
+                try
+                  do
+                    &list:assoc ([] 1 2) 5 9
+                    , :returned
+                  fn (_error) :failed
+              :tags $ #{} :core :unit
         '&list:assoc-after $ %{} 'CodeEntry
           :doc "|internal function for associating after element\nSyntax: (&list:assoc-after list target element)\nParams: list (list), target (any), element (any)\nReturns: list\nInserts element after first occurrence of target"
           :code $ quote &runtime-implementation
@@ -1995,9 +2012,17 @@
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |formats-decimal-places)
-            :code $ quote $ assert= |1.235 (&number:format 1.23456789 3)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |formats-decimal-places)
+              :code $ quote $ assert= |1.235 (&number:format 1.23456789 3)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-digits-past-100)
+              :code $ quote $ do
+                assert= :failed $ try
+                  do (&number:format 1 101) :returned
+                  fn (_error) :failed
+                assert= |1.0 $ &number:format 1 1
+              :tags $ #{} :core :unit
         '&number:fract $ %{} 'CodeEntry
           :doc "|internal function for number fractional part\nSyntax: (&number:fract n)\nParams: n (number)\nReturns: number\nReturns fractional part of number (n - floor(n))"
           :code $ quote &runtime-implementation
@@ -2422,11 +2447,22 @@
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String 'Number 'String
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |pads-from-left)
-            :code $ quote $ do
-              assert= |00000a $ &str:pad-left |a 6 |0
-              assert= |12312a $ &str:pad-left |a 6 |123
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |pads-from-left)
+              :code $ quote $ do
+                assert= |00000a $ &str:pad-left |a 6 |0
+                assert= |12312a $ &str:pad-left |a 6 |123
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |bounds-the-target-length)
+              :code $ quote $ do
+                assert= :failed $ try
+                  do
+                    &str:pad-left |a (&/ 1 0) |-
+                    , :returned
+                  fn (_error) :failed
+                assert= |a $ &str:pad-left |a (&/ 0 0) |-
+                assert= |a $ &str:pad-left |a -3 |-
+              :tags $ #{} :core :unit
         '&str:pad-right $ %{} 'CodeEntry
           :doc "|internal function for right padding string\nSyntax: (&str:pad-right s length pad-char)\nParams: s (string), length (number), pad-char (string)\nReturns: string\nPads string on right to specified length with pad character"
           :code $ quote &runtime-implementation
@@ -3005,7 +3041,8 @@
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
-        'Contains $ %{} 'CodeEntry (:doc "|Struct 与 Enum 的旧存在性 trait（Struct 查字段、Enum 查位置）。Map 与 Set 已在 0.29.0 移出：Map 键用 .contains-key?，Map 值用 .contains-value?，Set 成员用 .includes?；前缀函数 contains? 仍接受 Map 与 Set。")
+        'Contains $ %{} 'CodeEntry
+          :doc "|Struct 与 Enum 的旧存在性 trait（Struct 查字段、Enum 查位置）。Map 与 Set 已在 0.29.0 移出：Map 键用 .contains-key?，Map 值用 .contains-value?，Set 成员用 .includes?；前缀函数 contains? 仍接受 Map 与 Set。"
           :code $ quote $ deftrait Contains
             .contains? $ :: :fn $ {}
               :args $ [] 'T 'K
@@ -5316,22 +5353,21 @@
             :expansion $ :: 'Expr 'StructDef
             :required $ [] 'Syntax
           :tags $ #{} :macro
-          :tests $ []
-            %{} 'TestEntry (:name |local-definition-constructs-directly)
-              :code $ quote $ let
-                  Draft $ defstruct Draft (:text 'String) (:mono? 'Bool)
-                  draft $ Draft :text |old :mono? false
-                  Shape $ defenum Shape (:circle 'Number) (:dot)
-                  shape $ Shape :circle 2
-                assert= |old $ :text draft
-                assert= false $ :mono? draft
-                assert= Draft $ &struct:definition draft
-                assert= draft $ %{} Draft (:text |old) (:mono? false)
-                assert= 2 $ match shape
-                  (:circle r) r
-                  (:dot) 0
-                assert= (%:: Shape :dot) (Shape :dot)
-              :tags $ #{} :core :unit
+          :tests $ [] $ %{} 'TestEntry (:name |local-definition-constructs-directly)
+            :code $ quote $ let
+                Draft $ defstruct Draft (:text 'String) (:mono? 'Bool)
+                draft $ Draft :text |old :mono? false
+                Shape $ defenum Shape (:circle 'Number) (:dot)
+                shape $ Shape :circle 2
+              assert= |old $ :text draft
+              assert= false $ :mono? draft
+              assert= Draft $ &struct:definition draft
+              assert= draft $ %{} Draft (:text |old) (:mono? false)
+              assert= 2 $ match shape
+                (:circle r) r
+                (:dot) 0
+              assert= (%:: Shape :dot) (Shape :dot)
+            :tags $ #{} :core :unit
         'deftrait $ %{} 'CodeEntry
           :doc "|定义 trait。普通方法使用 `.method` 键，例如 `(deftrait Shape (.draw (:: 'Fn $ {} (:args [...]) (:return 'Unit))))`；只有带 `:ffi {:kind :external-object}` 的宿主属性使用 `:field` 键。省略完整签名时，`:fn` 表示动态函数类型。`(requires Parent)` 子句声明父 trait（每个子句一个，可重复），具备本 trait 的值也须具备父 trait；旧写法 `('requires Parent)` 仍然接受。展开为 `&trait::new`。"
           :code $ quote $ defmacro deftrait (name & entries)
@@ -5458,7 +5494,8 @@
           :code $ quote $ defn destruct-map (xs)
             &let
               pair $ &map:destruct xs
-              if (nil? pair) (MapDestruct :none) (MapDestruct :some (&list:nth pair 0) (&list:nth pair 1) (&list:nth pair 2))
+              if (nil? pair) (MapDestruct :none)
+                MapDestruct :some (&list:nth pair 0) (&list:nth pair 1) (&list:nth pair 2)
           :examples $ []
             quote $ assert= (MapDestruct :none)
               destruct-map $ &{}
@@ -6120,8 +6157,7 @@
               :tags $ #{} :cancel-proof :core :unit
         'ffi:response $ %{} 'CodeEntry
           :doc "|Wrap a raw native async response capability at a module adapter boundary. Examples with nil only check the method contract without invoking it; real resolution requires a host-issued capability."
-          :code $ quote $ defn ffi:response (raw)
-            FfiResponse :raw raw
+          :code $ quote $ defn ffi:response (raw) (FfiResponse :raw raw)
           :examples $ []
             quote $ ffi:response nil
             quote $ let
@@ -6151,8 +6187,7 @@
               :tags $ #{} :unit
         'ffi:task $ %{} 'CodeEntry
           :doc "|Wrap a raw native async task capability at a module adapter boundary. Examples with nil only check the method contract without invoking it; real cancellation requires a host-issued capability."
-          :code $ quote $ defn ffi:task (raw)
-            FfiTask :raw raw
+          :code $ quote $ defn ffi:task (raw) (FfiTask :raw raw)
           :examples $ []
             quote $ ffi:task nil
             quote $ let
@@ -6901,8 +6936,7 @@
           :tags $ #{} :file :internal :io
         'fs:path $ %{} 'CodeEntry
           :doc "|Construct an FsPath from a UTF-8 path string without normalization or filesystem access."
-          :code $ quote $ defn fs:path (value)
-            FsPath :value value
+          :code $ quote $ defn fs:path (value) (FsPath :value value)
           :examples $ []
             quote $ fs:path |assets/data.cirru
             quote $ .read-text $ fs:path |assets/data.cirru
@@ -8718,8 +8752,7 @@
         'map-entries $ %{} 'CodeEntry
           :doc "|将 Map<K,V> 转为 List<MapEntry<K,V>>，保留 key/value 类型；需要类型化排序时使用它，旧 &map:to-list 保持原语义。"
           :code $ quote $ defn map-entries (xs)
-            map-list-kv xs $ fn (key value)
-              MapEntry :key key :value value
+            map-list-kv xs $ fn (key value) (MapEntry :key key :value value)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'K 'V
