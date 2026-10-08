@@ -1263,3 +1263,54 @@ fn overwriting_with_defexternal_drops_retained_ffi_metadata() {
   // The overwrite replaced the previous metadata, so the old `:names` override is gone.
   assert!(report["data"]["ffi"][":names"].is_null());
 }
+
+#[test]
+fn query_def_cirru_view_writes_back_byte_identically() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/test.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/view-sample",
+        "--input-format",
+        "json-ast",
+        "--code",
+        r#"["defn","view-sample",["x"],[";","keep","this","note"],["println","|a b $ c","|",["str","|(x)","|"]],["let",[["y",["[]","1","2"]]],[",","y"]]]"#,
+      ],
+    ),
+    "create definition with comments and tricky leaves",
+  );
+  let original = fs::read(&snapshot).unwrap();
+  for target in ["app.main/view-sample", "app.main/main!", "app.main/test-fn"] {
+    let view = run_calcit(&snapshot, &["query", "def", target, "--format", "cirru"]);
+    assert_success(&view, &format!("cirru view of {target}"));
+    let text = String::from_utf8(view.stdout).unwrap();
+    assert!(text.starts_with("quote $ "), "{target} view must be a quoted definition:\n{text}");
+    let file = directory.0.join("view.cirru");
+    fs::write(&file, &text).unwrap();
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          target,
+          "--overwrite",
+          "--input-format",
+          "cirru",
+          "--file",
+          file.to_str().unwrap(),
+        ],
+      ),
+      &format!("write back {target}"),
+    );
+    assert_eq!(fs::read(&snapshot).unwrap(), original, "writing back {target} changed the Snapshot");
+  }
+  let missing = run_calcit(&snapshot, &["query", "def", "app.main/no-such-definition", "--format", "cirru"]);
+  assert!(!missing.status.success());
+  assert!(missing.stdout.is_empty(), "failed view must not print partial source");
+}
