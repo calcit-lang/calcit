@@ -586,6 +586,19 @@ fn find_calcit_location_matching(value: &Calcit, predicate: fn(&NodeLocation) ->
   }
 }
 
+/// Find a source coordinate of the current namespace inside an unexpanded
+/// receiver. Expanding a literal receiver such as `({} (:k v))` drops symbol
+/// locations, so a field access nested in a macro body (e.g. `fn`) would
+/// otherwise look generated and hide its diagnostic (#1748).
+fn source_location_in_namespace(value: &Calcit, file_ns: &str) -> Option<NodeLocation> {
+  match value {
+    Calcit::List(items) => items.iter().find_map(|item| source_location_in_namespace(item, file_ns)),
+    _ => value
+      .get_location()
+      .filter(|location| location.ns.as_ref() == file_ns && location.def.as_ref() != GENERATED_DEF),
+  }
+}
+
 fn warn_required_struct_field_type(
   field_name: &str,
   receiver: &Calcit,
@@ -3576,7 +3589,7 @@ fn preprocess_list_call(
                 RequiredStructFieldWarningContext {
                   file_ns,
                   def_name: def_name.as_ref(),
-                  location: head.get_location(),
+                  location: head.get_location().or_else(|| source_location_in_namespace(&args[0], file_ns)),
                   call_stack,
                 },
                 check_warnings,
@@ -3602,7 +3615,7 @@ fn preprocess_list_call(
             RequiredStructFieldWarningContext {
               file_ns,
               def_name: def_name.as_ref(),
-              location: head.get_location(),
+              location: head.get_location().or_else(|| source_location_in_namespace(&args[0], file_ns)),
               call_stack,
             },
             check_warnings,
