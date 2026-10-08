@@ -1326,11 +1326,18 @@
             :args $ [] (:: 'List 'T) 'T
             :generics $ [] 'T
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |checks-list-elements)
-            :code $ quote $ do
-              assert= true $ &list:includes? ([] :a :b :c) :b
-              assert= false $ &list:includes? ([] :a :b :c) :d
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |checks-list-elements)
+              :code $ quote $ do
+                assert= true $ &list:includes? ([] :a :b :c) :b
+                assert= false $ &list:includes? ([] :a :b :c) :d
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |finds-nan-elements)
+              :code $ quote $ let
+                  not-a-number $ sqrt -1
+                assert= true $ &list:includes? ([] 1 not-a-number) not-a-number
+                assert= false $ &list:includes? ([] 1 2) not-a-number
+              :tags $ #{} :core :unit
         '&list:index-of-from $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:index-of-from (xs item i)
             if

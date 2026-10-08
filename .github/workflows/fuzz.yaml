@@ -1,0 +1,55 @@
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: "Random seed (defaults to the run number)"
+        required: false
+      cases:
+        description: "Calls per primitive"
+        required: false
+        default: "150"
+
+name: Primitive fuzz
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    # Large differential run of core primitives on native, JS and WASM (#1561).
+    # Pull requests run a small fixed-seed sample inside the Test workflow.
+    name: Differential primitive fuzz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+
+      - name: Enable Corepack
+        run: |
+          corepack enable
+          corepack prepare yarn@4.12.0 --activate
+          yarn install --immutable
+          yarn compile
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build optimized CLI
+        run: cargo build --profile ci --bin calcit
+
+      - name: Run differential fuzz
+        env:
+          CALCIT_BIN: target/ci/calcit
+          FUZZ_SEED: ${{ inputs.seed || github.run_number }}
+          FUZZ_CASES: ${{ inputs.cases || '150' }}
+        run: node scripts/fuzz-primitives.mjs --seed "$FUZZ_SEED" --cases "$FUZZ_CASES"

@@ -154,11 +154,28 @@ WASMTIME_CLI=wasmtime node scripts/run-core-tests.mjs --backend wasi --target 'c
 
 运行器拒绝空的或重复的后端列表。native 与 WASI 的每个测试必须完整输出开始和结束标记；进程提前正常退出不会被计为通过。`--report-unexpected-pass` 自动补上 native 参照，只有测试成功且输出与 native 一致时才建议移除排除项。
 
+排除清单只作用于这个运行器。`calcit test` 在 native 上不读清单，所以新增的 core `:tests` 必须先在 native 通过；native 尚不符合的规则留在对应 issue 中，修复时再补测试。
+
+### 差分随机测试
+
+`scripts/fuzz-primitives.mjs` 用固定随机种子生成数值、字符串与列表原语的调用，输入覆盖 NaN、±inf、`-0`、i32 与安全整数边界、非 ASCII 文本、空值和越界下标，再交给上面的运行器在各后端执行。每个调用的结果以 `turn-string` 文本输出，与 native 比较：native 返回时其它后端必须返回相同文本，native 报错时其它后端必须报错或 trap。
+
+```bash
+# PR 中的小规模运行：每个原语 6 次调用
+node scripts/fuzz-primitives.mjs --seed 1 --cases 6
+
+# 大规模运行；失败信息包含种子、调用与各后端结果，用同样参数即可复现
+node scripts/fuzz-primitives.mjs --seed 42 --cases 150
+```
+
+已由 issue 跟踪的差异写在脚本的 `known` 表中，按原语与后端汇总输出，不使运行失败；修复后从表中删除。新发现的差异先固化为 core `:tests` 或开 issue，再决定是否加入 `known`。`Primitive fuzz` workflow 每周以运行编号为种子执行一次大规模运行，也可以手动触发并指定种子。
+
 ### 限制
 
 - WASM 在独立的回放 namespace 中执行 core 测试，依赖 `calcit.core` 内部豁免的测试列为 `replay`。
 - WASM 宿主只提供 `io.log_*` 与 `math` 导入，其它宿主调用会使测试失败。
 - WASI backend 不在默认集合中，需要 `WASMTIME_CLI`。
+- 差分随机测试只覆盖返回标量的原语，不覆盖 FFI 与宿主 IO。
 
 ## Choose the Test Surface (Calcit-first)
 

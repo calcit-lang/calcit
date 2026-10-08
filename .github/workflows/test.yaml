@@ -304,6 +304,7 @@ jobs:
           node scripts/core-api-contract.mjs
           node scripts/run-core-tests.mjs
           node scripts/run-core-tests.mjs --snapshot calcit/test-traits.cirru --target test-traits.main/test-qualified-contains-boundary --backend native,js
+          node scripts/fuzz-primitives.mjs --seed 1 --cases 6
           node scripts/check-string-unicode.mjs
           node scripts/check-nil-predicate.mjs
           node scripts/check-monotonic-clock-js.mjs
