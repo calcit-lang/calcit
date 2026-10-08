@@ -1148,6 +1148,18 @@ mod type_query_tests {
   use crate::cli_handlers::test_support::TestProject;
 
   #[test]
+  fn untyped_signatures_keep_parameters_but_not_values() {
+    let signature = |source: &str| {
+      let code = cirru_parser::parse(source).expect("parse").remove(0);
+      definition_signature(&snapshot::CodeEntry::from_code(code))
+    };
+    assert_eq!(signature("defn helper (x y) (+ x y)"), "(untyped) defn helper $ x y");
+    assert_eq!(signature("defcomp comp-item (item) (div)"), "(untyped) defcomp comp-item $ item");
+    assert_eq!(signature("defatom *store ({} (:count 0))"), "(untyped) defatom *store");
+    assert_eq!(signature("def config ([] 1 2)"), "(untyped) def config");
+  }
+
+  #[test]
   fn runtime_call_arity_uses_core_proc_values_not_schema_or_spelling_guesses() {
     let snapshot = load_core_snapshot().expect("core snapshot");
     let core = &snapshot.files["calcit.core"];
@@ -4523,6 +4535,32 @@ fn handle_host_procs(opts: &QueryHostProcsCommand) -> Result<(), String> {
   Ok(())
 }
 
+/// One-line signature for a namespace overview: the schema when declared,
+/// otherwise the declaration head such as `defn greet (name)`.
+fn definition_signature(entry: &snapshot::CodeEntry) -> String {
+  if let Ok(Some(schema)) = query_schema_cirru(entry.schema.as_ref(), true)
+    && let Ok(text) = format_query_schema_oneline(&schema)
+  {
+    return text;
+  }
+  let Cirru::List(items) = &entry.code else {
+    return "(untyped)".to_owned();
+  };
+  // Keep the parameter list of function-like declarations; values such as a
+  // `defatom` initializer stay out of the overview.
+  let takes_params = items
+    .first()
+    .is_some_and(|head| ["defn", "defmacro", "defcomp", "defeffect"].iter().any(|name| head.eq_leaf(name)));
+  let keep = if takes_params && matches!(items.get(2), Some(Cirru::List(_))) {
+    3
+  } else {
+    2
+  };
+  let head = Cirru::List(items.iter().take(keep).cloned().collect());
+  let text = head.format_one_liner().unwrap_or_else(|_| "(untyped)".to_owned());
+  format!("(untyped) {text}")
+}
+
 fn handle_defs(input_path: &str, opts: &QueryDefsCommand) -> Result<(), String> {
   let namespace = &opts.namespace;
   let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
@@ -4561,10 +4599,12 @@ fn handle_defs(input_path: &str, opts: &QueryDefsCommand) -> Result<(), String> 
     } else {
       format!(" [{}]", format_tags_display(&entry.tags))
     };
-    let schema_hint = if !matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
-      " [schema]"
+    let schema_hint = if opts.signatures {
+      format!("  {}", definition_signature(entry))
+    } else if !matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic) {
+      " [schema]".to_owned()
     } else {
-      ""
+      String::new()
     };
     if !entry.doc.is_empty() {
       let doc_first_line = entry.doc.lines().next().unwrap_or("");
