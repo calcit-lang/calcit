@@ -138,6 +138,7 @@ debug assertions 与整数溢出检查。同一 workflow 内按提交 SHA 命名
 
 ```bash
 cargo build --locked --profile ci --bin calcit
+yarn install --immutable
 yarn compile
 yarn procs-link
 export CALCIT_BIN="$PWD/target/ci/calcit"
@@ -148,12 +149,12 @@ bash scripts/test-wasm.sh
 bash scripts/check-docs-md.sh
 ```
 
-这些命令用于对应范围的回归，不代替完整 CI。普通 core 语义由统一运行器覆盖；
+这些命令用于对应范围的回归。普通 core 语义由统一运行器覆盖；
 `CALCIT_LINT_CORE=1` 的直接执行另行保留，用于检查改写后的树。
 `post_lowering_cli` 和 namespace-import 集成测试在 Rust 测试任务中运行，后者
-同时实际执行生成的 JS，不再在 Core/CLI 任务中重复编译和执行 Rust 测试。
+同时实际执行生成的 JS。
 断言检查脚本保留 fixture 专属回放、非法类型程序的逐后端诊断以及失败时不产出
-代码的检查，不再复制统一运行器已覆盖的 core 定义回放。
+代码的检查；core 定义回放统一由 `run-core-tests.mjs` 承担。
 
 PR 推送新提交时，CI 取消同一 PR 旧提交上尚未完成的 Test workflow；main
 的每次提交仍独立验证。减少执行成本时，应先移除重复构建与重复回放，保留
@@ -188,6 +189,7 @@ WASMTIME_CLI=wasmtime node scripts/run-core-tests.mjs --backend wasi --target 'c
 
 ### 限制
 
+- 快速本地回归命令只验证对应范围，不代替完整 CI。
 - WASM 在独立的回放 namespace 中执行 core 测试，依赖 `calcit.core` 内部豁免的测试列为 `replay`。
 - WASM 宿主只提供 `io.log_*` 与 `math` 导入，其它宿主调用会使测试失败。
 - WASI backend 不在默认集合中，需要 `WASMTIME_CLI`。
