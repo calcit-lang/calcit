@@ -1569,6 +1569,8 @@ pub struct EditCommand {
 pub enum EditSubcommand {
   /// rewrite snapshot file in canonical format without semantic changes
   Format(EditFormatCommand),
+  /// three-way merge another Snapshot version into this one per definition (Git merge driver)
+  Merge(EditMergeCommand),
   /// apply multiple existing edit/tree/config commands against one staged snapshot
   Transaction(EditTransactionCommand),
   /// validate a definition-graph architecture plan and preview scaffold work
@@ -1625,6 +1627,19 @@ pub enum EditSubcommand {
 #[argh(subcommand, name = "format")]
 /// rewrite target snapshot file in canonical format
 pub struct EditFormatCommand {}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "merge")]
+/// three-way merge another Snapshot version into this one per namespace and definition; for Git use
+/// `merge.calcit.driver = calcit %A edit merge --base %O --theirs %B`
+pub struct EditMergeCommand {
+  /// common ancestor Snapshot file
+  #[argh(option)]
+  pub base: String,
+  /// the other side's Snapshot file to merge in
+  #[argh(option)]
+  pub theirs: String,
+}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "transaction")]

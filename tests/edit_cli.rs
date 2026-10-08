@@ -1643,3 +1643,269 @@ fn config_add_entry_creates_complete_named_entries_through_guarded_transactions(
     "cloned entry runs strict checks",
   );
 }
+
+fn transaction_scope(snapshot: &Path, operations: &str) -> String {
+  let dry_run = run_calcit(
+    snapshot,
+    &["edit", "transaction", "--dry-run", "--format", "json", "--code", operations],
+  );
+  assert_success(&dry_run, "transaction dry-run");
+  let report: serde_json::Value = serde_json::from_slice(&dry_run.stdout).expect("transaction JSON");
+  report["scoped_revision"].as_str().expect("scoped revision").to_owned()
+}
+
+/// Transactions on different definitions commit in either order with scoped revisions.
+#[test]
+fn scoped_revisions_let_transactions_on_different_definitions_commit_independently() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  let edit = |name: &str, value: &str| {
+    format!(r#"[["edit","def","app.main/{name}","--overwrite","--input-format","cirru","--code","quote $ defn {name} () {value}"]]"#)
+  };
+  for name in ["first", "second"] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("app.main/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ defn {name} () 0"),
+        ],
+      ),
+      "create definition",
+    );
+  }
+  let first = transaction_scope(&snapshot, &edit("first", "1"));
+  let second = transaction_scope(&snapshot, &edit("second", "2"));
+  assert_eq!(first.matches('@').count(), 1, "scope covers only the touched definition: {first}");
+  assert!(first.starts_with("scope:def:app.main/first@md5:"), "{first}");
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--expect-revision", &second, "--code", &edit("second", "2")],
+    ),
+    "commit second",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--expect-revision", &first, "--code", &edit("first", "1")],
+    ),
+    "commit first after an unrelated commit",
+  );
+
+  // The same definition changed since the preview: the later commit gets a conflict naming it.
+  let stale = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--expect-revision", &first, "--code", &edit("first", "3")],
+  );
+  assert!(!stale.status.success());
+  let stderr = String::from_utf8_lossy(&stale.stderr);
+  assert!(stderr.contains("Definition conflict: def:app.main/first"), "{stderr}");
+
+  // A scope cannot be widened by different operations.
+  let widened = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "transaction",
+      "--expect-revision",
+      &transaction_scope(&snapshot, &edit("first", "4")),
+      "--code",
+      &edit("second", "4"),
+    ],
+  );
+  assert!(!widened.status.success());
+  assert!(String::from_utf8_lossy(&widened.stderr).contains("def:app.main/second"));
+
+  // Whole-Snapshot revisions keep working.
+  let dry_run = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "transaction",
+      "--dry-run",
+      "--format",
+      "json",
+      "--code",
+      &edit("first", "5"),
+    ],
+  );
+  let report: serde_json::Value = serde_json::from_slice(&dry_run.stdout).unwrap();
+  let revision = report["original_revision"].as_str().unwrap();
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--expect-revision", revision, "--code", &edit("first", "5")],
+    ),
+    "full revision",
+  );
+}
+
+fn git(directory: &Path, args: &[&str]) -> Output {
+  Command::new("git")
+    .arg("-C")
+    .arg(directory)
+    .args(["-c", "user.name=calcit", "-c", "user.email=calcit@example.com"])
+    .args(args)
+    .output()
+    .expect("git should run")
+}
+
+/// The Git merge driver merges per definition and reports same-definition conflicts.
+#[test]
+fn merge_driver_merges_definitions_and_reports_same_definition_conflicts() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  assert_success(&run_calcit(&snapshot, &["edit", "format"]), "canonical base");
+  let canonical = fs::read(&snapshot).unwrap();
+
+  // Merging identical versions keeps the canonical bytes.
+  let copy = directory.0.join("copy.cirru");
+  fs::copy(&snapshot, &copy).unwrap();
+  let copy_arg = copy.to_str().unwrap();
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "merge", "--base", copy_arg, "--theirs", copy_arg]),
+    "no-op merge",
+  );
+  assert_eq!(fs::read(&snapshot).unwrap(), canonical, "no-op merge must keep the Snapshot bytes");
+
+  let root = &directory.0;
+  assert!(git(root, &["init", "-q", "-b", "main"]).status.success());
+  fs::write(root.join(".gitattributes"), "calcit.cirru merge=calcit\n").unwrap();
+  let driver = format!(
+    "{} --tips-level none %A edit merge --base %O --theirs %B",
+    env!("CARGO_BIN_EXE_calcit")
+  );
+  assert!(git(root, &["config", "merge.calcit.driver", &driver]).status.success());
+  assert!(git(root, &["add", "calcit.cirru", ".gitattributes"]).status.success());
+  assert!(git(root, &["commit", "-qm", "base"]).status.success());
+
+  let add = |name: &str, value: &str| {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("app.main/{name}"),
+          "--overwrite",
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ defn {name} () {value}"),
+        ],
+      ),
+      "edit definition",
+    );
+  };
+  // Both branches add a definition at the same text position, which plain Git reports as a conflict.
+  assert!(git(root, &["switch", "-qc", "other"]).status.success());
+  add("added-b", "2");
+  assert!(git(root, &["commit", "-qam", "other"]).status.success());
+  assert!(git(root, &["switch", "-q", "main"]).status.success());
+  add("added-a", "1");
+  assert!(git(root, &["commit", "-qam", "mine"]).status.success());
+  let merged = git(root, &["merge", "--no-edit", "other"]);
+  assert!(merged.status.success(), "{}", String::from_utf8_lossy(&merged.stderr));
+  for name in ["added-a", "added-b"] {
+    query_definition(&snapshot, &format!("app.main/{name}"));
+  }
+  assert_success(&run_calcit(&snapshot, &["edit", "format"]), "merged result is canonical");
+
+  // Both branches change the same definition: Git stops with a definition-level conflict.
+  assert!(git(root, &["switch", "-qc", "conflict"]).status.success());
+  add("added-a", "30");
+  assert!(git(root, &["commit", "-qam", "theirs"]).status.success());
+  assert!(git(root, &["switch", "-q", "main"]).status.success());
+  add("added-a", "10");
+  assert!(git(root, &["commit", "-qam", "ours"]).status.success());
+  let conflict = git(root, &["merge", "--no-edit", "conflict"]);
+  assert!(!conflict.status.success(), "same-definition edits must conflict");
+  let report = format!(
+    "{}{}",
+    String::from_utf8_lossy(&conflict.stdout),
+    String::from_utf8_lossy(&conflict.stderr)
+  );
+  assert!(report.contains("def:app.main/added-a"), "{report}");
+  let code = query_definition(&snapshot, "app.main/added-a")["data"]["code"].clone();
+  assert_eq!(code[3], "10", "the conflicted file keeps our version");
+}
+
+/// A namespace deletion conflicts with surviving definitions, but an unchanged namespace can be removed.
+#[test]
+fn merge_driver_reports_namespace_deletion_conflicts() {
+  for change in ["added", "changed", "unchanged"] {
+    let directory = TestDirectory::create();
+    let snapshot = prepare_minimal_snapshot(&directory);
+    assert_success(&run_calcit(&snapshot, &["edit", "add-ns", "app.extra"]), "add namespace");
+    let define = |target: &str, code: &str| {
+      assert_success(
+        &run_calcit(
+          &snapshot,
+          &["edit", "def", target, "--overwrite", "--input-format", "cirru", "--code", code],
+        ),
+        "edit definition",
+      );
+    };
+    define("app.extra/original", "quote $ defn original () 1");
+    let root = &directory.0;
+    assert!(git(root, &["init", "-q", "-b", "main"]).status.success());
+    fs::write(root.join(".gitattributes"), "calcit.cirru merge=calcit\n").unwrap();
+    let driver = format!(
+      "{} --tips-level none %A edit merge --base %O --theirs %B",
+      env!("CARGO_BIN_EXE_calcit")
+    );
+    assert!(git(root, &["config", "merge.calcit.driver", &driver]).status.success());
+    assert!(git(root, &["add", "calcit.cirru", ".gitattributes"]).status.success());
+    assert!(git(root, &["commit", "-qm", "base"]).status.success());
+    assert!(git(root, &["switch", "-qc", "delete-namespace"]).status.success());
+    assert_success(&run_calcit(&snapshot, &["edit", "rm-ns", "app.extra"]), "delete namespace");
+    assert!(git(root, &["commit", "-qam", "remove namespace"]).status.success());
+    assert!(git(root, &["switch", "-q", "main"]).status.success());
+    // Make both branches diverge even when this namespace is unchanged.
+    define("app.main/independent", "quote $ defn independent () 3");
+    match change {
+      "added" => define("app.extra/added", "quote $ defn added () 2"),
+      "changed" => define("app.extra/original", "quote $ defn original () 2"),
+      _ => {}
+    }
+    assert!(git(root, &["commit", "-qam", "ours"]).status.success());
+    let merged = git(root, &["merge", "--no-edit", "delete-namespace"]);
+    let report = format!(
+      "{}{}",
+      String::from_utf8_lossy(&merged.stdout),
+      String::from_utf8_lossy(&merged.stderr)
+    );
+    query_definition(&snapshot, "app.main/independent");
+    if change == "unchanged" {
+      assert!(merged.status.success(), "unchanged namespace must be removable: {report}");
+      assert!(!run_calcit(&snapshot, &["query", "ns", "app.extra"]).status.success());
+    } else {
+      assert!(
+        !merged.status.success(),
+        "namespace deletion must conflict with {change} definitions: {report}"
+      );
+      assert!(report.contains("ns:app.extra"), "namespace conflict must be reported: {report}");
+      let target = if change == "added" {
+        "app.extra/added"
+      } else {
+        "app.extra/original"
+      };
+      assert_eq!(query_definition(&snapshot, target)["data"]["code"][3], "2");
+      if change == "changed" {
+        assert!(
+          report.contains("def:app.extra/original"),
+          "definition conflict must remain visible: {report}"
+        );
+      }
+      let unmerged = git(root, &["diff", "--name-only", "--diff-filter=U"]);
+      assert_eq!(String::from_utf8_lossy(&unmerged.stdout).trim(), "calcit.cirru");
+    }
+  }
+}
