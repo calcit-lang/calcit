@@ -200,6 +200,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   内层同名绑定遮蔽的区域不会改写；每个改写的使用处还必须在预处理结果中解析为局部引用。新名字已在作用域中出现，使用处出现在
   quote/quasiquote、项目或依赖 macro 的参数，或会引入绑定的 core macro（如 `->%`、`if-let`、`let{}`）参数中时，整体拒绝并给出位置；
   `when`、`->`、`cond` 等不引入绑定的 core macro 参数照常改写。只改写当前定义的 code，不改 tests/examples。
+  绑定本身写在 macro 调用里（如 Respo `defcomp` 的 body 中的 `let`）可以改名；`defcomp` 这类自定义定义 macro 的参数表不被识别为绑定。
 - `value-to-zero-arg-fn-v1` 是参数化语义重构规则。它要求 `--ns` 与 `--def`，把精确的 `(def name value)` 改成
   `(defn name () value)`，把原 schema 包成零参数函数返回类型，并把 resolver 已证明的项目源码、attached tests 与 examples
   中的读取改成调用。它会改变求值时机：原值在 definition 初始化时求值一次，新函数则在每次调用时重新求值；因此只允许显式

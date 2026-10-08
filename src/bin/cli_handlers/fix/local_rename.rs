@@ -131,7 +131,10 @@ impl ScopeWalk<'_> {
         self.reject_inside(node, path, active, "quoted source");
         Ok(())
       }
-      _ if !head.is_empty()
+      // Outside the binding's scope a macro call is only searched for the binding
+      // (for example `defcomp` wrapping a body); inside it, uses cannot be proven.
+      _ if active
+        && !head.is_empty()
         && match (self.is_macro)(head)? {
           MacroHead::Plain => false,
           MacroHead::Core => !NON_BINDING_CORE_MACROS.contains(&head),
