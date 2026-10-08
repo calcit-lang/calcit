@@ -238,6 +238,9 @@ envelope，Calcit 自动化优先使用 Cirru EDN，只有 JSON-only consumer �
 | `analyze check-public --ns <ns>` | 所选命名空间的全部 definition，需要 entry 声明 `:target`；`--deps` 才允许依赖命名空间 | 检查（仅所选命名空间） |
 | `wasm` / `wasi`（含 `--check-only`） | 入口可达闭包，并预处理 `:init-fn` 所在命名空间的全部 definition | 仅入口所在命名空间 |
 
+随编译器内置的 `calcit.core`、`calcit.internal`、`calcit.test` 不属于项目范围；`calcit.std` 等以 `calcit.` 开头的包按项目或依赖代码处理，
+它们的 definition 与调用边同样进入上述范围。
+
 `--all-defs` 是 `--check-only` 的范围选项，不是新命令，也不改变运行时的激活语义：它只扩大检查范围，
 不执行任何 definition，也不让未引用的定义进入运行或代码生成。它与 `--keep-going` 使用同一套结构化报告
 （`--format` 可用，报告中的 `scope` 为 `all-defs`；默认范围为 `reachable`），因此隐含 keep-going，
