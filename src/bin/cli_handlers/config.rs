@@ -3,8 +3,9 @@
 //! Consolidates project/entry display and safe mutations for modules, versions, and type slots.
 
 use calcit::cli_args::{
-  ConfigAddModuleCommand, ConfigCommand, ConfigModulesCommand, ConfigRmModuleCommand, ConfigRmTypeSlotCommand, ConfigSetCommand,
-  ConfigSetTypeSlotCommand, ConfigShowCommand, ConfigSubcommand, ConfigTypeSlotsCommand, ConfigUnsetCommand, ConfigVersionCommand,
+  ConfigAddEntryCommand, ConfigAddModuleCommand, ConfigCommand, ConfigModulesCommand, ConfigRmModuleCommand, ConfigRmTypeSlotCommand,
+  ConfigSetCommand, ConfigSetTypeSlotCommand, ConfigShowCommand, ConfigSubcommand, ConfigTypeSlotsCommand, ConfigUnsetCommand,
+  ConfigVersionCommand,
 };
 use calcit::snapshot;
 use calcit::util::string::strip_shebang;
@@ -293,6 +294,7 @@ pub fn handle_config_command(cmd: &ConfigCommand, snapshot_file: &str) -> Result
     ConfigSubcommand::Version(opts) => handle_version(opts, snapshot_file),
     ConfigSubcommand::Set(opts) => handle_set(opts, snapshot_file),
     ConfigSubcommand::Unset(opts) => handle_unset(opts, snapshot_file),
+    ConfigSubcommand::AddEntry(opts) => handle_add_entry(opts, snapshot_file),
     ConfigSubcommand::AddModule(opts) => handle_add_module(opts, snapshot_file),
     ConfigSubcommand::RmModule(opts) => handle_rm_module(opts, snapshot_file),
     ConfigSubcommand::SetTypeSlot(opts) => handle_set_type_slot(opts, snapshot_file),
@@ -548,25 +550,11 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
 
   let message = match opts.key.as_str() {
     "mode" => {
-      entry.mode = match opts.value.trim_start_matches(':') {
-        "native" => snapshot::SnapshotRunMode::Native,
-        "js" => snapshot::SnapshotRunMode::Js,
-        _ => return Err(format!("Unknown run mode '{}'. Valid modes: native, js", opts.value)),
-      };
+      entry.mode = parse_run_mode(&opts.value)?;
       format!("{} Set [{entry_label}] mode = '{}'", "✓".green(), entry.mode)
     }
     "target" => {
-      entry.target = Some(match opts.value.trim().trim_start_matches(':') {
-        "browser" => snapshot::SnapshotTarget::Browser,
-        "node" => snapshot::SnapshotTarget::Node,
-        "native" => snapshot::SnapshotTarget::Native,
-        "wasm" => snapshot::SnapshotTarget::Wasm,
-        value => {
-          return Err(format!(
-            "Unknown entry target '{value}'. Valid targets: browser, node, native, wasm"
-          ));
-        }
-      });
+      entry.target = Some(parse_entry_target(&opts.value)?);
       format!("{} Set [{entry_label}] target = '{}'", "✓".green(), format_target(entry.target))
     }
     "init-fn" | "init_fn" => {
@@ -610,6 +598,118 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
 
   save_snapshot(&snapshot, snapshot_file)?;
   println!("{message}");
+  Ok(())
+}
+
+fn parse_run_mode(value: &str) -> Result<snapshot::SnapshotRunMode, String> {
+  match value.trim().trim_start_matches(':') {
+    "native" => Ok(snapshot::SnapshotRunMode::Native),
+    "js" => Ok(snapshot::SnapshotRunMode::Js),
+    _ => Err(format!("Unknown run mode '{value}'. Valid modes: native, js")),
+  }
+}
+
+fn parse_entry_target(value: &str) -> Result<snapshot::SnapshotTarget, String> {
+  match value.trim().trim_start_matches(':') {
+    "browser" => Ok(snapshot::SnapshotTarget::Browser),
+    "node" => Ok(snapshot::SnapshotTarget::Node),
+    "native" => Ok(snapshot::SnapshotTarget::Native),
+    "wasm" => Ok(snapshot::SnapshotTarget::Wasm),
+    value => Err(format!(
+      "Unknown entry target '{value}'. Valid targets: browser, node, native, wasm"
+    )),
+  }
+}
+
+/// Entry functions must be `namespace/definition` paths; definitions in the
+/// project's own namespaces must already exist so the entry is runnable.
+fn validate_entry_fn(snapshot: &snapshot::Snapshot, key: &str, value: &str) -> Result<String, String> {
+  let value = value.trim().trim_start_matches('\'');
+  let Some((namespace, definition)) = value.split_once('/') else {
+    return Err(format!("{key} must be a full namespace/definition path, got '{value}'"));
+  };
+  if namespace.is_empty() || definition.is_empty() {
+    return Err(format!("{key} must be a full namespace/definition path, got '{value}'"));
+  }
+  if let Some(file) = snapshot.files.get(namespace)
+    && !file.defs.contains_key(definition)
+  {
+    return Err(format!(
+      "{key} '{value}' does not exist: namespace '{namespace}' has no definition '{definition}'"
+    ));
+  }
+  Ok(value.to_owned())
+}
+
+fn handle_add_entry(opts: &ConfigAddEntryCommand, snapshot_file: &str) -> Result<(), String> {
+  let mut snapshot = load_snapshot(snapshot_file)?;
+  let name = opts.name.trim();
+  if name.is_empty() {
+    return Err("Entry name cannot be empty".to_owned());
+  }
+  if snapshot.entries.contains_key(name) {
+    return Err(format!(
+      "Entry '{name}' already exists; update it with `calcit config set --entry {name} <key> <value>`"
+    ));
+  }
+
+  let mut entry = match &opts.from {
+    Some(source) => snapshot
+      .entries
+      .get(source)
+      .cloned()
+      .ok_or_else(|| missing_entry_error(&snapshot, source))?,
+    None => {
+      // A named entry is a complete configuration, so its runtime fields must be explicit.
+      let missing = [
+        ("--mode", &opts.mode),
+        ("--init-fn", &opts.init_fn),
+        ("--reload-fn", &opts.reload_fn),
+      ]
+      .iter()
+      .filter(|(_, value)| value.is_none())
+      .map(|(flag, _)| *flag)
+      .collect::<Vec<_>>();
+      if !missing.is_empty() {
+        return Err(format!(
+          "Entry '{name}' needs {} (or --from <entry> to copy an existing entry); named entries do not inherit the default entry",
+          missing.join(", ")
+        ));
+      }
+      snapshot::SnapshotEntry {
+        mode: snapshot::SnapshotRunMode::Native,
+        init_fn: String::new(),
+        reload_fn: String::new(),
+        description: String::new(),
+        modules: vec![],
+        type_slots: HashMap::new(),
+        feature_policy: HashMap::new(),
+        target: None,
+      }
+    }
+  };
+  if let Some(mode) = &opts.mode {
+    entry.mode = parse_run_mode(mode)?;
+  }
+  if let Some(target) = &opts.target {
+    entry.target = Some(parse_entry_target(target)?);
+  }
+  if let Some(init_fn) = &opts.init_fn {
+    entry.init_fn = validate_entry_fn(&snapshot, "init-fn", init_fn)?;
+  }
+  if let Some(reload_fn) = &opts.reload_fn {
+    entry.reload_fn = validate_entry_fn(&snapshot, "reload-fn", reload_fn)?;
+  }
+  if let Some(description) = &opts.description {
+    entry.description = description.clone();
+  }
+
+  snapshot.entries.insert(name.to_owned(), entry);
+  save_snapshot(&snapshot, snapshot_file)?;
+  match &opts.from {
+    Some(source) => println!("{} Added entry [{}] copied from [{source}]", "✓".green(), name.cyan()),
+    None => println!("{} Added entry [{}]", "✓".green(), name.cyan()),
+  }
   Ok(())
 }
 
