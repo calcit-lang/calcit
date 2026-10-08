@@ -399,7 +399,8 @@ export let hashFunction = (x: CalcitValue): Hash => {
     let base = defaultHash_impl;
     base = mergeValueHash(base, hashFunction(x.name));
     if (x.origin != null) {
-      base = mergeValueHash(base, hashFunction(x.origin));
+      // Impl equality compares origin names, not trait object identities.
+      base = mergeValueHash(base, hashFunction(x.origin.name.value));
     }
     for (let idx = 0; idx < x.fields.length; idx++) {
       base = mergeValueHash(base, hashFunction(x.fields[idx]));
