@@ -5352,6 +5352,41 @@ fn optional_parameter_rule_keeps_multiple_trailing_candidates_review_only() {
 }
 
 #[test]
+fn strict_workflow_accepts_map_contains_and_rejects_a_tag_list_index() {
+  // #1717: the Map branch of core `contains?` must not inherit the List index
+  // requirement, while a Tag index on a known List stays rejected.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/wasi-command-03-exit.cirru", &snapshot).unwrap();
+  let set_main = |body: &str| {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          "app.main/main!",
+          "--overwrite",
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ defn main! () {body} (, &unit)"),
+        ],
+      ),
+      body,
+    );
+  };
+  set_main("(assert= true $ contains? ({} (:known 1)) :known)");
+  let verified = run_fix(&snapshot, &["--workflow", "strict", "--verify", "--format", "json"]);
+  assert_success(&verified, "Map contains? passes the strict workflow");
+  assert!(parse_stdout(&verified)["diagnostics"].as_array().unwrap().is_empty());
+
+  set_main("(println $ contains? ([] 1 2) :x)");
+  let rejected = run_fix(&snapshot, &["--workflow", "strict", "--verify", "--format", "json"]);
+  assert!(!rejected.status.success(), "a Tag index on a List must stay rejected");
+}
+
+#[test]
 fn strict_workflow_checks_proofs_and_resumes_without_fabricating_repairs() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
