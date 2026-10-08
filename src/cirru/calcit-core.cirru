@@ -2584,7 +2584,7 @@
           :examples $ [] $ quote
             let
                 User $ defstruct User $ :name 'String
-                user $ %{} User $ :name |Alice
+                user $ User :name |Alice
               assert= User $ &struct:definition user
           :schema $ :: 'Fn $ {}
             :args $ [] 'Struct
@@ -3917,14 +3917,14 @@
             %{} 'TestEntry (:name |preserves-struct-through-option-match)
               :code $ quote $ let
                   Draft $ defstruct Draft (:text 'String) (:mono? 'Bool)
-                  original $ %{} Draft (:text |old) (:mono? false)
+                  original $ Draft :text |old :mono? false
                   drafts $ {} $ |a original
                   changed $ match (get drafts |a)
                     (:some draft)
                       assoc drafts |a $ -> draft (assoc :text |new) (assoc :mono? true)
                     (:none) drafts
                 assert=
-                  {} $ |a $ %{} Draft (:text |new) (:mono? true)
+                  {} $ |a $ Draft :text |new :mono? true
                   , changed
                 assert-type changed $ :: 'Map 'String 'Draft
                 assert= changed $ match (.get drafts |a)
@@ -4410,7 +4410,7 @@
           :tests $ [] $ %{} 'TestEntry (:name |checks-tag-field-and-missing-field)
             :code $ quote $ let
                 Point $ defstruct Point (:x 'Number) (:y 'Number)
-                point $ %{} Point (:x 1) (:y 2)
+                point $ Point :x 1 :y 2
               assert-type (point .contains-field? :x) 'Bool
               assert= true $ point .contains-field? :x
               assert= true $ contains-field? point :y
@@ -5282,6 +5282,22 @@
             :expansion $ :: 'Expr 'StructDef
             :required $ [] 'Syntax
           :tags $ #{} :macro
+          :tests $ []
+            %{} 'TestEntry (:name |local-definition-constructs-directly)
+              :code $ quote $ let
+                  Draft $ defstruct Draft (:text 'String) (:mono? 'Bool)
+                  draft $ Draft :text |old :mono? false
+                  Shape $ defenum Shape (:circle 'Number) (:dot)
+                  shape $ Shape :circle 2
+                assert= |old $ :text draft
+                assert= false $ :mono? draft
+                assert= Draft $ &struct:definition draft
+                assert= draft $ %{} Draft (:text |old) (:mono? false)
+                assert= 2 $ match shape
+                  (:circle r) r
+                  (:dot) 0
+                assert= (%:: Shape :dot) (Shape :dot)
+              :tags $ #{} :core :unit
         'deftrait $ %{} 'CodeEntry
           :doc "|定义 trait。普通方法使用 `.method` 键，例如 `(deftrait Shape (.draw (:: 'Fn $ {} (:args [...]) (:return 'Unit))))`；只有带 `:ffi {:kind :external-object}` 的宿主属性使用 `:field` 键。省略完整签名时，`:fn` 表示动态函数类型。`(requires Parent)` 子句声明父 trait（每个子句一个，可重复），具备本 trait 的值也须具备父 trait；旧写法 `('requires Parent)` 仍然接受。展开为 `&trait::new`。"
           :code $ quote $ defmacro deftrait (name & entries)
@@ -10808,7 +10824,7 @@
           :examples $ [] $ quote
             let
                 User $ defstruct User $ :name 'String
-                user $ %{} User $ :name |Ada
+                user $ User :name |Ada
               assert= (%some User) (struct-definition user)
           :schema $ :: 'Fn $ {}
             :args $ [] 'Struct
