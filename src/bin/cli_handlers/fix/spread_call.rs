@@ -117,6 +117,21 @@ pub(super) fn plan_spread_call_fixes(
       &CallStackList::default(),
     )
     .map_err(|failure| failure.msg)?;
+    let source_head_is_macro = |path: &[usize]| {
+      let mut head_path = path.to_vec();
+      head_path.push(0);
+      usages.iter().any(|usage| {
+        usage.location.as_ref().is_some_and(|location| {
+          location.ns.as_ref() == namespace
+            && location.def.as_ref() == definition
+            && location.coord.iter().map(|index| usize::from(*index)).eq(head_path.iter().copied())
+            && matches!(
+              program::lookup_compiled_def(&usage.target_ns, &usage.target_def).map(|compiled| compiled.kind),
+              Some(program::CompiledDefKind::Macro)
+            )
+        })
+      })
+    };
     let stable_calls = calls
       .iter()
       .filter(|path| {
@@ -126,20 +141,7 @@ pub(super) fn plan_spread_call_fixes(
         if runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, path).is_none() {
           return false;
         }
-        let mut head_path = path.to_vec();
-        head_path.push(0);
-        let source_head_is_macro = usages.iter().any(|usage| {
-          usage.location.as_ref().is_some_and(|location| {
-            location.ns.as_ref() == namespace
-              && location.def.as_ref() == definition
-              && location.coord.iter().map(|index| usize::from(*index)).eq(head_path.iter().copied())
-              && matches!(
-                program::lookup_compiled_def(&usage.target_ns, &usage.target_def).map(|compiled| compiled.kind),
-                Some(program::CompiledDefKind::Macro)
-              )
-          })
-        });
-        !source_head_is_macro
+        !source_head_is_macro(path)
           && method_source_context_is_stable(&entry.code, path, namespace, definition, &usages)
           && !usages.iter().any(|usage| {
             usage.location.as_ref().is_some_and(|location| {
@@ -175,12 +177,15 @@ pub(super) fn plan_spread_call_fixes(
       .cloned()
       .collect::<HashSet<_>>();
     for path in calls {
-      if stable_calls.contains(&path)
+      if !source_head_is_macro(&path)
         && runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &path)
           .is_some_and(|evidence| runner::preprocess::typed_rest_spread_call_is_proven(&evidence.processed))
       {
         // A proven variadic call is already canonical. Preserve it rather
         // than suggesting a fixed-arity rewrite or another review obligation.
+        // Rewrite stability is not required here: nothing is written, and the
+        // unique processed expression is the call that actually evaluates,
+        // including when it is an argument of an enclosing macro.
         continue;
       }
       let machine_applicable = proven.contains(&path);

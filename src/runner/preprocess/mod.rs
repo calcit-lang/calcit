@@ -12378,6 +12378,32 @@ fn typed_rest_spread_contract(signature: &CalcitFnTypeAnnotation, args: &CalcitL
   Some((CalcitList::from(projected.as_slice()), contract))
 }
 
+/// A registered host proc (such as `&call-dylib-edn`) declares arity in its
+/// descriptor but no element contract: the equivalent fixed-arity call is
+/// accepted without item proof, so its spread form must not be stricter.
+/// Arity is proven only when the explicit leading arguments already satisfy
+/// the minimum and the proc has no maximum; the single trailing spread
+/// operand must be statically a List. Unknown or open operands, missing fixed
+/// arguments and bounded procs stay reviewable.
+fn registered_rest_spread_call_is_proven(name: &str, arguments: &[Calcit]) -> bool {
+  let Some(descriptor) = builtins::registered_proc_descriptor(name) else {
+    return false;
+  };
+  let Some(spread_index) = arguments
+    .iter()
+    .position(|argument| matches!(argument, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+  else {
+    return false;
+  };
+  if descriptor.arity_max.is_some() || spread_index < descriptor.arity_min || arguments.len() != spread_index + 2 {
+    return false;
+  }
+  arguments[spread_index + 1..].iter().all(|operand| {
+    type_inference::infer_static_type_from_expr(operand)
+      .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::List(_)))
+  })
+}
+
 /// Recognize an already-valid rest spread without authorizing a source rewrite.
 /// Reuse the audit's projection and ordinary type proof; unknown callees,
 /// optional fixed parameters and unproved trait obligations remain reviewable.
@@ -12385,6 +12411,9 @@ pub fn typed_rest_spread_call_is_proven(processed: &Calcit) -> bool {
   let Calcit::List(call) = processed else { return false };
   if !matches!(call.first(), Some(Calcit::Syntax(CalcitSyntax::CallSpread, _))) {
     return false;
+  }
+  if let Some(Calcit::Registered(name)) = call.get(1) {
+    return registered_rest_spread_call_is_proven(name, &call.iter().skip(2).cloned().collect::<Vec<_>>());
   }
   let Some(signature) = call
     .get(1)

@@ -175,7 +175,7 @@ named entry 不继承 default 配置，逐个检查与运行。把 `test --list`
 - strict workflow 的当前规则组合不支持整体 `--include-attached`；附带区域须使用已支持的显式规则/preset 并另行验证。
 - 已发布的 0.28.x CLI 不支持 `--include-attached` 与 `--pattern`。
 - 预览因源码或依赖类型错误失败时先修复真实 producer；没有有效 manifest 和 revision 时不继续 apply。
-- `requires-review` 候选与严格类型错误分别处理：workflow 未通过时读取具体 gate，合法的变长 FFI 合同也可能需要人工审阅；不为清空报告改成固定参数、扩大 Dynamic 或删除门禁。
+- `requires-review` 候选与严格类型错误分别处理：workflow 未通过时读取具体 gate；已证明的变长调用（包括注册宿主 proc 的 List spread）不再列为待审，固定参数不足、开放实参或展开后不唯一的 spread 仍需人工审阅；不为清空报告改成固定参数、扩大 Dynamic 或删除门禁。
 - manifest 中未执行的 external gates 和零测试匹配都不是通过证据。
 - workflow 顶层 diagnostics 中位于 `calcit.core/*` 的证明错误来自 bundled core，不是项目可写源码；附最小复现报告到 Calcit 核心仓库，不在项目中绕过。
 - 版本不匹配时应安装项目固定 CLI 或显式升级合同，不绕过工具链 pin。

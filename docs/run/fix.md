@@ -236,6 +236,8 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   `--apply --expect-revision <revision>`，写回仍经过 staged preprocess 和原子事务。该规则不进入默认 preset。
   已证明的固定参数加末尾 rest 调用保持原样：固定参数类型、spread 的 List 元素与 rest 合同一致时，
   变长调用本来就合法，不产生修复或待审建议，也不把它展开成固定 arity。
+  注册的宿主 proc（如 `&call-dylib-edn`）只有描述符里的 arity，没有元素类型合同：spread 前的显式实参已满足最小 arity、
+  proc 没有最大 arity 且 spread 实参静态为 List 时，同样视为合法变长调用；调用作为 macro 实参时按唯一的展开后表达式判断。
   其他候选的处理边界见末尾“限制”。
 - `unsafe-coerce-boundary-v1` 把现有 `E_UNSCOPED_UNSAFE_COERCE` 转为可导航的待审建议，运行
   `calcit fix --rule unsafe-coerce-boundary-v1 --ns app.main --def run --format edn` 查看编译器位置、源码指纹、
