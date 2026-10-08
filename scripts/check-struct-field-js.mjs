@@ -93,6 +93,10 @@ try {
 
   // Nil is `null` and Unit is `undefined`; only JsNullish admits both.
   const nilBox = makeBox(boxes.NilBox, { opt: null, none: null, host: null });
+  // Host callers must obey the same prototype and Map input contract; Calcit
+  // source rejects these wrong outer kinds before reaching the JS runtime.
+  assert.throws(() => makeBox(nilBox, { opt: null, none: null, host: null }), /StructDef/);
+  assert.throws(() => procs._$n_struct_$o_from_map(boxes.NilBox, nilBox), /requires a Map/);
   accepts(nilBox, "opt", null);
   accepts(nilBox, "opt", 1);
   rejects(nilBox, "opt", undefined);
