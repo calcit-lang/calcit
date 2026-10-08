@@ -10545,7 +10545,7 @@
               sort $ [] 4 3 2 1
             :tags $ #{} :core :unit
         'split $ %{} 'CodeEntry
-          :doc "|internal function for splitting strings\nSyntax: (split s delimiter)\nParams: s (string), delimiter (string)\nReturns: list of strings\nSplits string by delimiter into list of substrings"
+          :doc "|internal function for splitting strings\nSyntax: (split s delimiter)\nParams: s (string), delimiter (string)\nReturns: list of strings\nSplits string by delimiter into list of substrings; empty pieces are dropped, so an empty string yields an empty list. An empty delimiter splits into characters."
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -10558,6 +10558,12 @@
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |splits-unicode-characters-on-empty-delimiter)
               :code $ quote $ assert= ([] |a "|中" |b "|文" |c) (split "|a中b文c" |)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |returns-empty-list-for-empty-input)
+              :code $ quote $ assert= ([]) (split | |,)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |drops-empty-pieces-between-delimiters)
+              :code $ quote $ assert= ([] |a |b) (split |,a,,b, |,)
               :tags $ #{} :core :unit
         'split-lines $ %{} 'CodeEntry
           :doc "|internal function for splitting lines\nSyntax: (split-lines s)\nParams: s (string)\nReturns: list of strings\nSplits string by newlines into list of lines"
