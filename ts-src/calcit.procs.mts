@@ -890,7 +890,7 @@ export let _$n_struct_$o_impl_traits = function (xs: CalcitValue, ...traits: Cal
   if (!(xs instanceof CalcitStructValue)) throw new Error("&struct:impl-traits expected a struct value");
   const impls = traits.map((trait) => coerce_impl(trait, "&struct:impl-traits"));
   checkRequiredTraitImpls(xs.structRef.impls.concat(impls), "&struct:impl-traits");
-  const nextStruct = new CalcitStructDef(xs.name, xs.fields, xs.structRef.fieldTypes, xs.structRef.impls.concat(impls), xs.structRef.definitionRef);
+  const nextStruct = new CalcitStructDef(xs.name, xs.fields, xs.structRef.fieldTypes, xs.structRef.impls.concat(impls), xs.structRef.definitionRef, xs.structRef.fieldValidators);
   return new CalcitStructValue(xs.name, xs.fields, xs.values, nextStruct);
 };
 
@@ -900,7 +900,7 @@ export let _$n_struct_def_$o_impl_traits = function (xs: CalcitValue, ...traits:
   const addedImpls = traits.map((trait) => coerce_impl(trait, "&struct-def:impl-traits"));
   const baseImpls = xs.impls ?? [];
   checkRequiredTraitImpls(baseImpls.concat(addedImpls), "&struct-def:impl-traits");
-  return new CalcitStructDef(xs.name, xs.fields, xs.fieldTypes, baseImpls.concat(addedImpls), xs.definitionRef);
+  return new CalcitStructDef(xs.name, xs.fields, xs.fieldTypes, baseImpls.concat(addedImpls), xs.definitionRef, xs.fieldValidators);
 };
 
 export let _$n_enum_def_$o_impl_traits = function (xs: CalcitValue, ...traits: CalcitValue[]) {
@@ -2127,6 +2127,62 @@ type DataShapeGraph = {
   fingerprint: string;
   nodes: DataShapeNode[];
 };
+
+/** Validate existing data without the decoder's map conversion or Option lifting. */
+export function validate_data_shape(input: CalcitValue, graph: DataShapeGraph): boolean {
+  if (graph.version !== 3) throw new Error(`validate-data-shape expected ABI version 3, got ${graph.version}`);
+  const sameNominal = (actual: CalcitStructDef, expected: CalcitStructDef): boolean =>
+    actual === expected || (actual != null && expected != null && expected.definitionRef != null &&
+      actual.definitionRef === expected.definitionRef && actual.name.value === expected.name.value &&
+      actual.fields.length === expected.fields.length && actual.fields.every((field, idx) =>
+        field.value === expected.fields[idx].value && _$n__$e_(actual.fieldTypes[idx], expected.fieldTypes[idx])));
+  const check = (value: CalcitValue, nodeId: number, depth: number): boolean => {
+    if (depth > 1024) return false;
+    const node = graph.nodes[nodeId];
+    if (node == null) return false;
+    switch (node.kind) {
+      case "dynamic": return true;
+      case "nil": return value === null;
+      case "unit": return value === undefined;
+      case "bool": return typeof value === "boolean";
+      case "number": return typeof value === "number";
+      case "numeric": return typeof value === "number" && _$n_number_$o_fits_$q_(value, newTag(node.target));
+      case "string": return typeof value === "string";
+      case "symbol": return value instanceof CalcitSymbol;
+      case "tag": return value instanceof CalcitTag;
+      case "buffer": return value instanceof Uint8Array;
+      case "cirru-quote": return value instanceof CalcitCirruQuote;
+      case "optional": return value === null || check(value, node.inner, depth + 1);
+      case "list": {
+        if (!(value instanceof CalcitList || value instanceof CalcitSliceList)) return false;
+        for (const item of value.items()) if (!check(item, node.inner, depth + 1)) return false;
+        return true;
+      }
+      case "set": return value instanceof CalcitSet && value.values().every(item => check(item, node.inner, depth + 1));
+      case "map": return (value instanceof CalcitMap || value instanceof CalcitSliceMap) && value.pairs().every(([key, item]) =>
+        check(key, node.key, depth + 1) && check(item, node.value, depth + 1));
+      case "ref": return value instanceof CalcitRef && check(value.value, node.inner, depth + 1);
+      case "struct": return value instanceof CalcitStructValue && sameNominal(value.structRef, node.nominal) &&
+        value.values.length === node.fields.length && node.fields.every(([name, child], idx) =>
+          value.fields[idx]?.value === name && check(value.values[idx], child, depth + 1));
+      case "map-option":
+      case "enum": {
+        if (!(value instanceof CalcitEnumValue) || value.enumPrototype == null ||
+          !sameNominal(value.enumPrototype.prototype.structRef, node.nominal.prototype.structRef) ||
+          !_$n__$e_(value.enumPrototype.prototype, node.nominal.prototype) || !(value.tag instanceof CalcitTag)) return false;
+        if (node.kind === "map-option") {
+          return value.tag.value === "none" ? value.extra.length === 0 : value.tag.value === "some" &&
+            value.extra.length === 1 && check(value.extra[0], node.inner, depth + 1);
+        }
+        const tag = value.tag.value;
+        const variant = node.variants.find(candidate => candidate.tag === tag);
+        return variant != null && value.extra.length === variant.payload.length &&
+          variant.payload.every((child, idx) => check(value.extra[idx], child, depth + 1));
+      }
+    }
+  };
+  return check(input, graph.root, 0);
+}
 
 const typed_edn_kind = (value: any): string => {
   if (value === null) return "nil";

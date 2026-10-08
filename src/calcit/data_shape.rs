@@ -125,6 +125,25 @@ impl DataShapeGraph {
     Self::build_with_options(target, default_ns, true)
   }
 
+  /// Add deep field checks where the legacy scalar matcher is insufficient.
+  /// None retains that matcher, not a proof of an arbitrary dynamic write.
+  pub(crate) fn for_field_write(target: &CalcitTypeAnnotation, default_ns: &str) -> Option<Self> {
+    match target {
+      CalcitTypeAnnotation::List(_)
+      | CalcitTypeAnnotation::Map(_, _)
+      | CalcitTypeAnnotation::Set(_)
+      | CalcitTypeAnnotation::Optional(_)
+      | CalcitTypeAnnotation::Ref(_)
+      | CalcitTypeAnnotation::TypeRef(..)
+      | CalcitTypeAnnotation::Struct(..)
+      | CalcitTypeAnnotation::StructValue(_)
+      | CalcitTypeAnnotation::Enum(..)
+      | CalcitTypeAnnotation::EnumValue(_)
+      | CalcitTypeAnnotation::TypeSlot(_) => Self::build_open(target, default_ns).ok(),
+      _ => None,
+    }
+  }
+
   fn build_with_options(target: &CalcitTypeAnnotation, default_ns: &str, allow_dynamic: bool) -> Result<Self, DataShapeError> {
     let mut builder = GraphBuilder {
       nodes: vec![],

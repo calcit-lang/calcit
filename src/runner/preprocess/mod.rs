@@ -6109,9 +6109,9 @@ fn reject_unproven_struct_update(
     return Ok(());
   };
   let Some(receiver) = args.first() else { return Ok(()) };
-  // `&struct:with` checks every written value against the receiver's declared
-  // field type at runtime (native and JS). A write the checker cannot resolve
-  // statically is therefore a checked boundary rather than an unproven one.
+  // Historical exception: data-shaped fields now have deep runtime checks,
+  // but erased generics and callable/host contracts remain incomplete (#1868).
+  // Do not extend this exemption to other updates before those gaps are closed.
   let runtime_checked = matches!(head, Calcit::Proc(CalcitProc::NativeStructWith));
   for (index, field, _) in pairs {
     if runtime_checked
