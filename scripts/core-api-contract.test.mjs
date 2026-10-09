@@ -38,6 +38,21 @@ test("native EDN preserves symbols, tags and raw schema quotes", () => {
     "quoted syntax leaves are strings; only EDN symbols outside quotes become symbol objects");
 });
 
+test("display and source-formatting declarations retain distinct names and callable shapes", () => {
+  for (const name of ["format-to-lisp", "to-lispy-string"]) {
+    const formatter = definition(baseline, name);
+    assert.deepEqual(formatter["runtime-arity"], { min: 1, max: 1 });
+    assert.deepEqual(formatter.schema.quote.find(pair => pair[0] === ":args")[1], ["[]", "'T"]);
+    assert.deepEqual(formatter.schema.quote.find(pair => pair[0] === ":generics")[1], ["[]", "'T"]);
+    assert.equal(formatter.schema.quote.find(pair => pair[0] === ":return")[1], "'String");
+    assert.equal(formatter.failure, undefined, "failure semantics stay in source docs/tests, not a copied registry");
+  }
+  const display = definition(baseline, "str");
+  assert.deepEqual(display["runtime-arity"], { min: 1, max: null });
+  assert.equal(display.schema.quote.find(pair => pair[0] === ":rest")[1], "'Dynamic");
+  assert.equal(display.schema.quote.find(pair => pair[0] === ":return")[1], "'String");
+});
+
 test("parsing declarations preserve open payloads without promoting open method evidence", () => {
   for (const [name, payload] of [
     ["try-parse-json", "'Dynamic"],
@@ -89,6 +104,9 @@ for (const [name, mutate] of [
   ["specialized lookup result", data => data["method-contracts"].find(row => row.receiver === ":: 'List 'Number" && row.name === ".get").returns.quote = "'String"],
   ["scalar conversion result", data => data["method-contracts"].find(row => row.receiver === "'String" && row.name === ".to-string").returns.quote = "'Dynamic"],
   ["display trait method", data => definition(data, "Debug").declaration.quote[2][0] = ".to-string"],
+  ["Lisp formatter return type", data => definition(data, "format-to-lisp").schema.quote.find(pair => pair[0] === ":return")[1] = "'Dynamic"],
+  ["diagnostic formatter deletion", data => data.definitions = data.definitions.filter(row => row.name.symbol !== "calcit.core/to-lispy-string")],
+  ["display rest argument", data => definition(data, "str").schema.quote.find(pair => pair[0] === ":rest")[1] = "'Number"],
   ["specialized callback relation", data => data["method-contracts"].find(row => row.name === ".fold").returns.quote = "'Number"],
 ]) {
   test(`rejects an unannounced ${name} change even when the baseline is regenerated`, () => {
