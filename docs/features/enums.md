@@ -293,7 +293,7 @@ defn preview (x)
 
 ### 与 `type-of` 的关系
 
-`type-of` 返回无类型的 tag，分支里的值不会被收窄，各后端返回的 tag 集合也不完全一致。需要按运行时类型分派时使用 `match (data-view x)`；二选一的判断使用 `string?` 等谓词。`type-of` 保留为低层原语，供 core 内部和调试输出使用。
+`type-of` 返回 `Tag`，但不会让分支里的值收窄；各后端返回的 tag 集合也不完全一致。需要按运行时类型分派时使用 `match (data-view x)`；二选一的判断使用 `string?` 等谓词。`type-of` 保留为低层原语，供 core 内部和调试输出使用。
 
 ## Common Patterns
 
