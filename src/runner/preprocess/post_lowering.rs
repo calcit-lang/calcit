@@ -19,7 +19,8 @@
 //!   `recur` in the final tree passes the same argument checks as the source
 //!   form; a check that fires on the final tree
 //!   but was never reported during preprocess means the lowered node skipped
-//!   a check.
+//!   a check. When a recorded rewrite produced the call node, the violation
+//!   also names that rewrite, so the origin chain points at the lowering.
 //!
 //! Invariant (a), "every checked node has a type or an explicit Unknown", is
 //! documented but not enforced yet: it needs per-node type slots.
@@ -156,6 +157,32 @@ fn chain_item(kind: &str, operation: String, location: Option<&NodeLocation>, ty
   }
 }
 
+/// The source form and the lowered form of one recorded rewrite.
+fn rewrite_chain(item: &RewriteEvidence) -> [CalcitErrProvenance; 2] {
+  [
+    chain_item(
+      "source",
+      item.before_form.to_string(),
+      item.location.as_ref(),
+      item.before_type.to_brief_string(),
+    ),
+    chain_item(
+      "lowering",
+      format!("{} => {}", item.origin.label(), item.after_form),
+      item.location.as_ref(),
+      item.after_type.to_brief_string(),
+    ),
+  ]
+}
+
+/// Origin chain of a call node: the call itself, then every recorded rewrite
+/// that produced it.
+fn call_chain(operation: String, location: Option<&NodeLocation>, rewrites: &[&RewriteEvidence]) -> Vec<CalcitErrProvenance> {
+  let mut chain = vec![chain_item("call", operation, location, String::new())];
+  chain.extend(rewrites.iter().flat_map(|item| rewrite_chain(item)));
+  chain
+}
+
 /// Visit every list node of a lowered tree, skipping quoted data.
 fn visit_lists(expr: &Calcit, visit: &mut impl FnMut(&Calcit, &CalcitList)) {
   let Calcit::List(items) = expr else {
@@ -206,7 +233,8 @@ pub(super) fn validate_definition(
   let mut live: Vec<&RewriteEvidence> = vec![];
 
   visit_lists(resolved, &mut |node, items| {
-    live.extend(evidence.iter().filter(|item| item.after_form == *node));
+    let produced_by = evidence.iter().filter(|item| item.after_form == *node).collect::<Vec<_>>();
+    live.extend(produced_by.iter().copied());
     match items.first() {
       Some(Calcit::Proc(CalcitProc::Recur)) => {}
       Some(Calcit::Proc(proc)) => {
@@ -221,7 +249,7 @@ pub(super) fn validate_definition(
               warning.message()
             ),
             location: location.clone(),
-            chain: vec![chain_item("call", proc.as_ref().to_owned(), location.as_ref(), String::new())],
+            chain: call_chain(proc.as_ref().to_owned(), location.as_ref(), &produced_by),
           });
         }
       }
@@ -246,12 +274,7 @@ pub(super) fn validate_definition(
               warning.message()
             ),
             location: location.clone(),
-            chain: vec![chain_item(
-              "call",
-              format!("{}/{}", info.def_ns, info.name),
-              location.as_ref(),
-              String::new(),
-            )],
+            chain: call_chain(format!("{}/{}", info.def_ns, info.name), location.as_ref(), &produced_by),
           });
         }
       }
@@ -279,20 +302,7 @@ pub(super) fn validate_definition(
         item.after_type.to_brief_string()
       ),
       location: item.location.clone(),
-      chain: vec![
-        chain_item(
-          "source",
-          item.before_form.to_string(),
-          item.location.as_ref(),
-          item.before_type.to_brief_string(),
-        ),
-        chain_item(
-          "lowering",
-          format!("{} => {}", item.origin.label(), item.after_form),
-          item.location.as_ref(),
-          item.after_type.to_brief_string(),
-        ),
-      ],
+      chain: rewrite_chain(item).to_vec(),
     });
   }
 
@@ -518,6 +528,39 @@ mod tests {
 
     let valid = Calcit::from(vec![expects_number_fn(), Calcit::Number(1.0)]);
     validate(&valid, &[], &[]).expect("a matching argument is valid");
+  }
+
+  /// A call produced by a recorded method inlining names that rewrite in its
+  /// origin chain, so the violation points at the lowering, not only the call.
+  #[test]
+  fn skipped_check_on_an_inlined_call_names_the_rewrite() {
+    let map = Arc::new(CalcitTypeAnnotation::Map(
+      Arc::new(CalcitTypeAnnotation::Tag),
+      Arc::new(CalcitTypeAnnotation::Number),
+    ));
+    let call = Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeMapAssoc),
+      local("m", map.clone()),
+      Calcit::Tag(cirru_edn::EdnTag::from("b")),
+      Calcit::new_str("oops"),
+    ]);
+    let evidence = RewriteEvidence {
+      origin: RewriteOrigin::MethodInline,
+      before_form: Calcit::from(vec![Calcit::new_str(".assoc"), Calcit::new_str("m")]),
+      before_type: map.clone(),
+      after_form: call.clone(),
+      after_type: map,
+      location: None,
+    };
+    let error = validate(&call, &[], &[evidence]).expect_err("the lowered call must be checked");
+    assert!(error.msg.contains("(c) every call node is checked"), "{}", error.msg);
+    assert!(error.msg.contains("origin call &map:assoc"), "{}", error.msg);
+    assert!(error.msg.contains("origin lowering method-inline"), "{}", error.msg);
+    assert!(
+      error.provenance.iter().any(|link| link.kind == "lowering"),
+      "{:?}",
+      error.provenance
+    );
   }
 
   /// #1378: `%none` was re-inferred as `Option<Dynamic>` and erased the payload.
