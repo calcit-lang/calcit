@@ -265,10 +265,8 @@ use the corresponding `option:*` or `result:*` function explicitly. This keeps
 the escape hatch visible and prevents a runtime Option/Result value from being
 evaluated as an operator.
 
-For longer sequential Option pipelines, the experimental `option:let` macro
-reuses the ordinary `let` binding shape and lowers entirely to nested
-`.and-then` calls. Result pipelines use explicit receiver-first `.and-then`
-calls so error-type transitions remain visible. New ordinary Option/Result
+Sequential Option and Result pipelines use nested receiver-first `.and-then`
+calls, so each step and every error-type transition stays visible. New ordinary Option/Result
 operations should be registered in the corresponding method bag and documented
 in receiver-first form.
 
