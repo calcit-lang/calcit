@@ -405,7 +405,7 @@ Ref watcher 的应用入口使用 `add-watch! ref :key callback` 与 `remove-wat
 
 ### 废弃 API 清理
 
-迁移 API 时，先运行 `calcit analyze deprecated --ns-prefix <package>` 查看调用路径和替换说明；清零前保留兼容 API 及其 `:deprecated` tag。CI 或迁移 gate 使用 `calcit analyze deprecated --ns-prefix <package> --summary-only --format json`，仅当目标范围 `calls` 为 `0` 时再删除旧 API。
+迁移 API 时，先运行 `calcit analyze deprecated --ns-prefix <package>` 查看调用路径和替换说明；结构化报告优先使用 `--summary-only --format edn`，对接 JSON-only 工具时显式选择 `--format json`。目标范围 `calls` 为 `0` 只说明该次分析没有发现旧调用，不是删除旧 API 的充分证据。退场前还须核对活跃下游的源码、附带测试/示例、宏生成代码、CI/文档、锁定的已发布依赖与未合并迁移，并通过类型、失败行为、求值顺序及目标后端的实际回放；首选入口须已发布，core 方法实现也须与待删入口解耦。未达到这些条件时保留兼容入口及其 `:deprecated` tag，说明具体阻塞。
 
 对于唯一 leaf 的小改动，可以不用 cursor：
 
