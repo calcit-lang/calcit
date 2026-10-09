@@ -97,3 +97,7 @@ The JavaScript runtime dependency remains in `package.json`/its lockfile. Keep i
 Calcit release declared by the project, and execute generated JS in CI; a successful codegen alone does
 not verify host imports or runtime proc compatibility. For typed host bindings, read
 [JavaScript Interop](../features/js-interop.md).
+
+## 主仓库的文档验证与部署
+
+Calcit 主仓库的 `Docs checks` 先运行原 Markdown 验证，只有 main 的 push 且 `docs/` 有变更时，才使用 runner 自带的 rsync/SSH 部署文档。部署沿用现有密钥与目录，不依赖 Docker action 预构建；缺失密钥或传输失败仍使任务失败。SSH 采用首次连接信任并拒绝已知主机公钥变化，这不等同于固定服务器公钥。

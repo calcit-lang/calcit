@@ -393,6 +393,12 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - uses: actions/setup-node@v6.5.0
+        with:
+          node-version: 24
+      - name: Verify documentation deployment lifecycle
+        run: node --test scripts/docs-deploy.test.mjs
+
       - uses: actions/download-artifact@v4.3.0
         with:
           name: calcit-cli-${{ github.sha }}
@@ -426,19 +432,15 @@ jobs:
           fi
 
       - name: Deploy CalcitAgent.md to server
-        if: steps.docs_changes.outputs.changed == 'true'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.docs_changes.outputs.changed == 'true'
         id: deploy
-        uses: Pendect/action-rsyncer@v2.0.0
+        shell: bash
         env:
           DEPLOY_KEY: ${{secrets.rsync_private_key}}
-        with:
-          flags: "-avzr --progress"
-          options: ""
-          ssh_options: ""
-          src: "docs/*"
-          dest: "rsync-user@tiye.me:/web-assets/repo/${{ github.repository }}/docs"
+        run: bash scripts/deploy-docs.sh
 
       - name: Display status from deploy
+        if: steps.deploy.outcome == 'success'
         run: echo "${{ steps.deploy.outputs.status }}"
 
   clippy:
