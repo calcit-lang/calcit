@@ -1159,14 +1159,16 @@ fallback 必须与 payload 类型兼容；需要区分缺失分支时改用 `if-
 
 上述 method 迁移要求查询接收者能静态推断为 `Option<T>`。如果 legacy Map、配置或 FFI
 边界仍把查询结果擦除为 `Dynamic`，检查器会报告 `W_DYNAMIC_NOMINAL_METHOD_RECEIVER`，而不是
-允许代码在运行时把 Option 值误当作 operator。优先为边界补 schema 或先 narrow；确实需要保留
-Dynamic 时，使用明确的函数形式，例如 `option:unwrap-or (get config :port) 6000`。这类函数形式
-只作为未类型化边界逃生口，类型化业务代码仍使用接收者 method。
+允许代码在运行时把 Option 值误当作 operator。先在真实边界 decode 或 narrow，并声明能由实现
+证明的 schema；业务层得到 `Option<T>` 后使用接收者 method。`option:unwrap-or` 等函数形式不是
+未类型化边界的逃生口：把裸 Dynamic 传入它们同样受到严格名义参数检查，不能靠具体 fallback
+证明输入已经是 Option。已证明的 `Option<Dynamic>` 可以合法保留开放 payload；读取结果后，
+仍须在具体使用处提供相应证据，不能把 fallback 当作 payload 验证。
 
 开启 strict mode 后，同一问题会升级为 `E_DYNAMIC_METHOD_DISPATCH`（prefix）或
 `E_DYNAMIC_POSTFIX_METHOD`（postfix），不再继续生成运行时动态派发。这里的迁移是确定性的：补出
-`Option<T>` / `Result<T, E>` receiver schema，或者把开放边界收拢到显式 `option:*` / `result:*`
-adapter；不要用 `unsafe-coerce` 批量压制。
+`Option<T>` / `Result<T, E>` receiver schema，或用受检 adapter 先转换外部值，再返回名义结果；
+仅改成 `option:*` / `result:*` 调用不会建立输入证据，不要用 `unsafe-coerce` 批量压制。
 
 其他无法静态 specialization 的项目 method 也会在 strict mode 使用相同的 prefix/postfix error。
 诊断会区分缺失 schema、Dynamic value/callable、legacy Optional、未绑定 generic/type-slot，以及显式
