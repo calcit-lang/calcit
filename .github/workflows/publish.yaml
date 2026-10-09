@@ -1,12 +1,7 @@
 on:
   release:
     types: [created]
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Existing annotated release tag to resume (without v)
-        required: true
-        type: string
+  workflow_dispatch: {}
 
 name: Publish to crate
 
@@ -20,7 +15,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  RELEASE_TAG: ${{ inputs.tag || github.event.release.tag_name }}
+  RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
 
 jobs:
   publish:
@@ -28,24 +23,16 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      # Recovery uses the reviewed publisher from main, never changes the tag.
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-      - name: Preserve publisher and validate recovery source
+      # The workflow, OIDC identity and checkout must all use the same tag.
+      - name: Validate workflow source
         env:
-          EVENT_NAME: ${{ github.event_name }}
           SOURCE_REF: ${{ github.ref }}
         run: |
-          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
-            test "$SOURCE_REF" = refs/heads/main
-          fi
           [[ "$RELEASE_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
-          cp scripts/publish-registry.mjs "$RUNNER_TEMP/publish-registry.mjs"
+          test "$SOURCE_REF" = "refs/tags/$RELEASE_TAG"
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-          ref: refs/tags/${{ inputs.tag || github.event.release.tag_name }}
           fetch-depth: 0
 
       - uses: actions/setup-node@v6
@@ -69,8 +56,7 @@ jobs:
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
-          PUBLISHER_SHA: ${{ github.sha }}
-        run: node "$RUNNER_TEMP/publish-registry.mjs" prepare "$RELEASE_TAG"
+        run: node scripts/publish-registry.mjs prepare "$RELEASE_TAG"
 
       - name: Set sparse registry protocol
         run: echo "CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse" >> $GITHUB_ENV
@@ -164,7 +150,7 @@ jobs:
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           RELEASE_SHA: ${{ steps.release.outputs.sha }}
-        run: node "$RUNNER_TEMP/publish-registry.mjs" crate "$RELEASE_TAG"
+        run: node scripts/publish-registry.mjs crate "$RELEASE_TAG"
 
       - name: "generate procs.mjs"
         run: yarn && yarn tsc
@@ -172,4 +158,4 @@ jobs:
       - name: Publish or verify exact npm runtime
         env:
           RELEASE_SHA: ${{ steps.release.outputs.sha }}
-        run: node "$RUNNER_TEMP/publish-registry.mjs" npm "$RELEASE_TAG"
+        run: node scripts/publish-registry.mjs npm "$RELEASE_TAG"

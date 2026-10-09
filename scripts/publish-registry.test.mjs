@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { existingCrate, existingNpm, releaseSourceEnvironment, validateMainCI, validateRelease, verifyPublishedSource, versionLessThan } from "./publish-registry.mjs";
+import { existingCrate, existingNpm, validateWorkflowSource, validateRelease, verifyPublishedSource, versionLessThan } from "./publish-registry.mjs";
 
 const tag = "0.29.0-alpha.21";
 const sha = "a".repeat(40);
@@ -55,19 +55,16 @@ test("an existing registry version may be skipped only with matching clean sourc
   assert.throws(() => verifyPublishedSource({ gitHead: "b".repeat(40) }, sha, "npm"));
 });
 
-test("a newer recovery publisher also needs its own exact-main CI", () => {
-  validateMainCI(sha, runs);
-  assert.throws(() => validateMainCI("b".repeat(40), runs));
-});
-
-test("npm provenance records tag source while preserving the actual main workflow identity", () => {
-  const workflow = "calcit-lang/calcit/.github/workflows/publish.yaml@refs/heads/main";
-  const environment = { GITHUB_SHA: "b".repeat(40), GITHUB_REF: "refs/heads/main",
-    GITHUB_WORKFLOW_REF: workflow, GITHUB_WORKFLOW_SHA: "b".repeat(40),
-    GITHUB_RUN_ID: "123", ACTIONS_ID_TOKEN_REQUEST_URL: "https://example.invalid/oidc" };
-  const actual = releaseSourceEnvironment(environment, tag, sha);
-  assert.deepEqual(actual, { ...environment, GITHUB_SHA: sha, GITHUB_REF: `refs/tags/${tag}` });
-  assert.equal(environment.GITHUB_REF, "refs/heads/main");
+test("publication rejects workflow source claims that differ from the release tag", () => {
+  const workflow = `calcit-lang/calcit/.github/workflows/publish.yaml@refs/tags/${tag}`;
+  const environment = Object.freeze({ GITHUB_SHA: sha, GITHUB_REF: `refs/tags/${tag}`,
+    GITHUB_WORKFLOW_REF: workflow, GITHUB_WORKFLOW_SHA: sha,
+    GITHUB_RUN_ID: "123", ACTIONS_ID_TOKEN_REQUEST_URL: "https://example.invalid/oidc" });
+  validateWorkflowSource(environment, tag, sha);
+  for (const field of [
+    { GITHUB_REF: "refs/heads/main" }, { GITHUB_REF: "refs/tags/0.28.1" },
+    { GITHUB_SHA: "b".repeat(40) }, { GITHUB_REF: undefined }, { GITHUB_SHA: undefined },
+  ]) assert.throws(() => validateWorkflowSource({ ...environment, ...field }, tag, sha));
 });
 
 test("registry lookup distinguishes missing versions from failed lookups", async (t) => {
