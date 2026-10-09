@@ -420,13 +420,8 @@ let
 
 ```cirru
 let
-    result $ foldl-shortcut
-      range 1000
-      , nil nil
-      fn (acc x)
-        if (> x 100)
-          :: true x
-          :: false nil
+    result $ fold-while (range 1000) 0 $ fn (acc x)
+      if (> x 100) (ControlFlow :break x) (ControlFlow :continue acc)
   println result
 ```
 

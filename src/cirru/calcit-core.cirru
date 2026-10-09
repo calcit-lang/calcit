@@ -3118,6 +3118,15 @@
               :return 'Bool
           :examples $ []
           :schema $ :: 'Trait
+        'ControlFlow $ %{} 'CodeEntry
+          :doc "|Step result returned by fold-while reducers: :continue carries the next accumulator, :break stops the fold and returns its value."
+          :code $ quote $ def ControlFlow
+            impl-traits
+              defenum ControlFlow ([] 'A) (:continue 'A) (:break 'A)
+              , internal/&core-debug-impl internal/&core-eq-impl
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :data
         'Countable $ %{} 'CodeEntry (:doc "|Core trait: Countable")
           :code $ quote $ deftrait Countable
             .count $ :: :fn $ {} (:return :number)
@@ -6757,6 +6766,60 @@
               :code $ quote $ assert= |n:1:2:3
                 ([] 1 2 3) .fold |n $ fn (acc item) (str acc |: item)
               :tags $ #{} :core :unit
+        'fold-while $ %{} 'CodeEntry
+          :doc "|Left fold that can stop early. The reducer receives the accumulator and element and returns ControlFlow: :continue passes the next accumulator on, :break returns its value at once. Without a break the final accumulator is returned; an empty list returns the initial value."
+          :code $ quote $ defn fold-while (xs initial reducer)
+            loop
+                items xs
+                acc initial
+              if (&list:empty? items) acc $ match
+                reducer acc $ &list:nth items 0
+                (:continue next) (recur (&list:rest items) next)
+                (:break value) value
+          :examples $ [] $ quote
+            assert= 3 $ fold-while ([] 1 2 3 4) 0 $ fn (acc x)
+              if (&>= acc 3) (ControlFlow :break acc)
+                ControlFlow :continue $ + acc x
+          :schema $ :: 'Fn $ {} (:return 'U)
+            :args $ [] (:: 'List 'T) 'U $ :: 'Fn
+              {}
+                :return $ :: 'ControlFlow 'U
+                :args $ [] 'U 'T
+            :generics $ [] 'T 'U
+          :tests $ []
+            %{} 'TestEntry (:name |break-returns-its-value)
+              :code $ quote $ assert= 3
+                fold-while ([] 1 2 3 4) 0 $ fn (acc x)
+                  let
+                      next $ + acc x
+                    if (&= x 2) (ControlFlow :break next) (ControlFlow :continue next)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |exhaustion-returns-accumulator)
+              :code $ quote $ assert= 6
+                fold-while ([] 1 2 3) 0 $ fn (acc x)
+                  ControlFlow :continue $ + acc x
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |empty-list-returns-initial)
+              :code $ quote $ assert= |seed
+                fold-while ([]) |seed $ fn (acc x)
+                  ControlFlow :break |never
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |stops-calling-reducer-after-break)
+              :code $ quote $ let
+                  *seen $ atom $ []
+                  result $ fold-while ([] 1 2 3) 0 $ fn (acc x)
+                    swap! *seen append x
+                    if (&= x 2) (ControlFlow :break acc) (ControlFlow :continue x)
+                assert= 1 result
+                assert= ([] 1 2) (deref *seen)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |keeps-accumulator-type)
+              :code $ quote $ let
+                  result $ fold-while ([] |1 |2) |n $ fn (acc x)
+                    ControlFlow :continue $ &str:concat acc x
+                assert-type result 'String
+                assert= |n12 result
+              :tags $ #{} :core :unit
         'foldl $ %{} 'CodeEntry
           :doc "|internal function for left fold\nSyntax: (foldl list initial reducer)\nParams: list (list), initial (any), reducer (function)\nReturns: any\nFolds list from left with reducer function and initial value"
           :code $ quote &runtime-implementation
@@ -6819,7 +6882,7 @@
                 assert= 0 $ step 4
               :tags $ #{} :tail-return-proof :unit
         'foldl-shortcut $ %{} 'CodeEntry
-          :doc "|Internal left fold with early termination. Syntax: (foldl-shortcut list initial default reducer). The reducer receives accumulator and element, then returns an anonymous enum `:: Bool accumulator`; true returns its accumulator immediately, false continues, and exhaustion returns default."
+          :doc "|Deprecated: use fold-while with ControlFlow, which returns the accumulator when no step breaks. Internal left fold with early termination. Syntax: (foldl-shortcut list initial default reducer). The reducer receives accumulator and element, then returns an anonymous enum `:: Bool accumulator`; true returns its accumulator immediately, false continues, and exhaustion returns default."
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'U)
@@ -6827,7 +6890,7 @@
               {} (:return 'Enum)
                 :args $ [] 'U 'T
             :generics $ [] 'T 'U
-          :tags $ #{} :builtin :internal
+          :tags $ #{} :builtin :deprecated :internal
           :tests $ []
             %{} 'TestEntry (:name |returns-shortcut-accumulator)
               :code $ quote $ assert= 3
