@@ -307,7 +307,7 @@ jobs:
           node scripts/check-strict-default.mjs
 
       - name: "verify release manifest generator"
-        run: node --test scripts/release-manifest.test.mjs
+        run: node --test scripts/release-manifest.test.mjs scripts/publish-registry.test.mjs
 
       - name: "verify Dynamic-valued atom inference in Calcit"
         run: |

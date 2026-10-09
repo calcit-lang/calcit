@@ -153,6 +153,7 @@ calcit docs agents --contract
 3. **等待 main 验证**：release PR 合并或版本提交推送后拉取最新 `main`，把当前 commit 记录为 `VERIFIED_SHA`，确认目标 tag 尚不存在，并按该 SHA 查询每个 required workflow。所有 required runs 都必须为 `completed/success`；失败、缺失或仍在运行时不得打 tag。
 4. **从 main 打 tag 并发布**：只在上述验证成功后，在已同步的 `main` 上创建并推送不带 `v` 前缀的 annotated tag。推送前必须确认 tag peel 后的 commit 恰好等于 `VERIFIED_SHA`，随后创建 GitHub release；这一步不需要发布分支。它会触发 `publish.yaml` 自动发布到 crates.io 和 npm，之后继续轮询并确认发布 workflow 成功。
 5. **最终确认发布成功**：轮询 GitHub Actions 直到 publish workflow 成功，并在 crates.io / npm 上确认新版本可见（版本号一致）。
+   部分上传后失败时，先修复具体故障，再按 [发布恢复](docs/installation/release-recovery.md) 从同一 workflow 恢复原 tag；不要移动 tag 或用重跑代替诊断。
 6. **发布 milestone 成果长文**：从当前 milestone 起，每个 milestone 收尾时，除完成发版外，还必须在本仓库 GitHub Discussions 发布一篇中文长篇成果文章，再标记阶段交付完成。不能用 Release notes、commit/issue 清单或聊天摘要代替。
 
 ```bash
