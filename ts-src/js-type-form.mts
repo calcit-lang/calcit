@@ -17,8 +17,8 @@ export let valueMatchesTypeForm = (value: CalcitValue, form: CalcitValue, requir
   matchTypeForm(value, form, requireEvidence) === true;
 
 // null means that the contract cannot be checked here, not a mismatched value.
-// Preserve that distinction through Optional/JsNullish instead of letting an
-// absent payload hide an unresolved contract.
+// Nullable absence proves its own branch; present payloads still require
+// evidence for the inner contract.
 let matchTypeForm = (value: CalcitValue, form: CalcitValue, requireEvidence: boolean): boolean | null => {
   if (form instanceof CalcitSliceList || form instanceof CalcitList) {
     const items = (form as CalcitList | CalcitSliceList).toArray();
@@ -31,12 +31,10 @@ let matchTypeForm = (value: CalcitValue, form: CalcitValue, requireEvidence: boo
       // Nil is `null` here; `undefined` is Unit. Only the JS host boundary
       // type also admits `undefined`.
       if (name === "Optional") {
-        const inner = matchTypeForm(value, items[2], requireEvidence);
-        return inner == null ? null : value === null || inner;
+        return value === null ? true : matchTypeForm(value, items[2], requireEvidence);
       }
       if (name === "JsNullish") {
-        const inner = matchTypeForm(value, items[2], requireEvidence);
-        return inner == null ? null : value == null || inner;
+        return value == null ? true : matchTypeForm(value, items[2], requireEvidence);
       }
       if (name === "Fn" && requireEvidence) return null;
       return name == null ? (requireEvidence ? null : true) : valueMatchesTypeName(value, name, requireEvidence);

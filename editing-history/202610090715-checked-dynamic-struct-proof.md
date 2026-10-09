@@ -4,7 +4,7 @@
 
 #1868 的真实阻塞是 Recollect 的动态 patch 写入无法通过 Diary 原 strict workflow。此前仅 `with` 具有历史例外，浅层 kind 检查会把错误的 List 成员、擦除的泛型和不同函数签名放行。前两段修复统一可解析数据合同及构造；本段让动态名称写入只在拥有运行时证据时成功，不另增公开 API 或检查命令。
 
-继续复用 data shape 与字段校验缓存。图中的具体 Ref payload 只代表当前内容，不能证明后续修改，因此动态写入拒绝该合同；明确声明的 Ref<Dynamic> 不承诺 payload 类型。裸 Fn 与 Dynamic/JsObject 是显式开放边界，不能混同带签名 Fn 或未绑定 TypeVar。JS 的现有 type-form matcher 保留“不可验证”与“不匹配”的区别，不能以 Optional/JsNullish 包装掩盖不可验证的内部合同。
+继续复用 data shape 与字段校验缓存。图中的具体 Ref payload 只代表当前内容，不能证明后续修改，因此动态写入拒绝该合同；明确声明的 Ref<Dynamic> 不承诺 payload 类型。裸 Fn 与 Dynamic/JsObject 是显式开放边界，不能混同带签名 Fn 或未绑定 TypeVar。JS 的现有 type-form matcher 保留“不可验证”与“不匹配”的区别；Optional/JsNullish 的非空 payload 仍需内部合同证据，合法空值独立满足缺席分支。
 
 静态方法调用、普通 assoc 与已知 String key 共用已有 indexed lowering，继续保留泛型和函数/Ref 合同。真实 Diary 回放发现 core assoc 的单态化遗漏最后一步 lowering，导致合法 Respo RenderNode 更新走动态检查；在编译器修复，而不是修改业务为 native call。raw indexed source 不免除原严格证明，已知 Fn 字段接收 Dynamic 的负例仍失败。
 
@@ -21,3 +21,7 @@
 ## 严格诊断保留源码参数顺序
 
 后续完整 CI 发现普通 assoc 的字段证明在插入内部 index 后执行，导致源码第三个参数被报成内部第四个参数。把专门化后的字段证明和 indexed lowering 收拢为同一步，先按原参数列表证明，再插入 index；保留普通 assoc 的静态执行路径，而不是退回动态写入。原 argument 3 断言保持不变，并在原脚本增加 String 字段名的成功/失败对照。专门回放和完整 Struct 门禁通过；不使用同时接受 3/4 的宽松断言掩盖诊断变化。
+
+## Review：可空字段的空分支
+
+回归先确认 native 与 JS 都把 Optional<Ref<Number>>、Optional<Fn>、JsNullish<Fn> 的合法 nil 写入拒绝。空分支没有内部 payload，不应要求未发生的可变内容或函数签名证明。原 scalar matcher 先判断空值；生成的 data-shape validator 只对根 Optional 的 null 放行到既有校验，非空值仍拒绝。Native 采用同一规则，不扩大整个图的可证明范围，也不将非空的嵌套 Ref 合同放行。新增六组 definition :tests 同时检查 assoc/with 的空值成功、非空缺证失败和原值不变；JS host 断言另区分 Optional 的 null 与 JsNullish 的 null/undefined。

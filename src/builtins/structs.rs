@@ -1276,7 +1276,11 @@ fn scalar_field_write_evidence(value: &Calcit, expected: &CalcitTypeAnnotation) 
     | T::Buffer
     | T::CirruQuote => Some(value_matches_type_annotation(value, expected)),
     T::Optional(inner) | T::JsNullish(inner) => {
-      scalar_field_write_evidence(value, inner).map(|matches| matches!(value, Calcit::Nil) || matches)
+      if matches!(value, Calcit::Nil) {
+        Some(true)
+      } else {
+        scalar_field_write_evidence(value, inner)
+      }
     }
     _ => None,
   }
@@ -1294,7 +1298,7 @@ fn validate_struct_field_write(
   // name-based writes require an actual proof and cannot use that fallback.
   if let Some(expected) = struct_ref.field_types.get(pos)
     && let Some(shape) = field_write_shape(struct_ref, pos)
-    && (!require_evidence || shape.proves_dynamic_write())
+    && (!require_evidence || shape.proves_dynamic_write() || (matches!(value, Calcit::Nil) && shape.has_optional_root()))
   {
     return shape.validate_value(value).map_err(|error| {
       CalcitErr::use_str(

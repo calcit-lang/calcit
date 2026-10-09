@@ -301,6 +301,8 @@ JS 的 `&struct:assoc` 写入不存在的字段会抛错，与 native 一致；�
 
 动态 `&struct:assoc` / `&struct:with` 只有在运行时能够验证字段合同时才完成更新，因此可作为严格检查认可的受检边界。未实例化的泛型、带参数/返回合同的函数、以及包含具体 payload 类型的可变 Ref，无法仅凭当前值建立证明时会抛错。显式开放的 `Dynamic`、裸 `Fn`、`JsObject` 和 `Ref<Dynamic>` 保留各自声明的开放语义，不等于为其他字段放宽类型。
 
+可空字段的缺席分支独立成立：`Optional<T>` 可以写入 `nil`，`JsNullish<T>` 还允许 JS 宿主的 `undefined`。例如 `Optional<Ref<Number>>` 可以清空为 `nil`；非空 Ref 或带签名函数仍须证明内部合同，不能借可空声明放行。
+
 类型已知的更新仍使用普通 `assoc` / `.assoc`，让编译器保留泛型、函数字段及 Ref 的静态证据并完成 indexed lowering；已知 String 字段名也按同一路径处理。不要为通过检查改写成 `&struct:assoc-at` / `&struct:with-at`，手写 indexed 调用仍必须证明原字段合同。
 
 ### 限制

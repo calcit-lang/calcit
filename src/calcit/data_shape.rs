@@ -256,6 +256,11 @@ impl DataShapeGraph {
     })
   }
 
+  /// An absent optional has no payload whose mutable contract needs proving.
+  pub(crate) fn has_optional_root(&self) -> bool {
+    matches!(self.nodes[self.root], DataShapeNode::Optional(_))
+  }
+
   fn build_with_options(target: &CalcitTypeAnnotation, default_ns: &str, allow_dynamic: bool) -> Result<Self, DataShapeError> {
     let mut builder = GraphBuilder {
       nodes: vec![],

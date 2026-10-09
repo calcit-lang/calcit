@@ -536,6 +536,27 @@
           :code $ quote $ defstruct NominalBox (:user 'app.field-owner/User)
           :examples $ []
           :schema $ :: 'StructDef
+        'NullableFunctionBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NullableFunctionBox
+            :value $ :: 'Optional $ :: 'Fn
+              {}
+                :args $ [] 'Number
+                :return 'Number
+          :examples $ []
+          :schema $ :: 'StructDef
+        'NullableRefBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NullableRefBox
+            :value $ :: 'Optional $ :: 'Ref 'Number
+          :examples $ []
+          :schema $ :: 'StructDef
+        'NullishFunctionBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NullishFunctionBox
+            :value $ :: 'JsNullish $ :: 'Fn
+              {}
+                :args $ [] 'Number
+                :return 'Number
+          :examples $ []
+          :schema $ :: 'StructDef
         'OpenBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct OpenBox
             :items $ :: 'List 'Dynamic
@@ -732,6 +753,33 @@
                 assert= (OpenCallableBox :apply string-id) (checked-assoc base :apply string-id)
                 assert= nil $ checked-assoc base :apply |not-fn
               :tags $ #{} :checked-struct-write :unit
+            %{} 'TestEntry (:name |nullable-absence-NullableRefBox)
+              :code $ quote $ let
+                  payload $ ref 1
+                  base $ NullableRefBox :value payload
+                assert= (NullableRefBox :value nil) (checked-assoc base :value nil)
+                assert= nil $ checked-assoc base :value payload
+                assert= nil $ checked-assoc base :value |wrong
+                assert= base $ NullableRefBox :value payload
+              :tags $ #{} :checked-struct-write :nullable-write :unit
+            %{} 'TestEntry (:name |nullable-absence-NullableFunctionBox)
+              :code $ quote $ let
+                  payload number-id
+                  base $ NullableFunctionBox :value payload
+                assert= (NullableFunctionBox :value nil) (checked-assoc base :value nil)
+                assert= nil $ checked-assoc base :value payload
+                assert= nil $ checked-assoc base :value |wrong
+                assert= base $ NullableFunctionBox :value payload
+              :tags $ #{} :checked-struct-write :nullable-write :unit
+            %{} 'TestEntry (:name |nullable-absence-NullishFunctionBox)
+              :code $ quote $ let
+                  payload number-id
+                  base $ NullishFunctionBox :value payload
+                assert= (NullishFunctionBox :value nil) (checked-assoc base :value nil)
+                assert= nil $ checked-assoc base :value payload
+                assert= nil $ checked-assoc base :value |wrong
+                assert= base $ NullishFunctionBox :value payload
+              :tags $ #{} :checked-struct-write :nullable-write :unit
         'checked-assoc-at $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn checked-assoc-at (base key value)
             if (struct? base)
@@ -1007,6 +1055,33 @@
                 assert= (OpenCallableBox :apply string-id) (checked-with base :apply string-id)
                 assert= nil $ checked-with base :apply |not-fn
               :tags $ #{} :checked-struct-write :unit
+            %{} 'TestEntry (:name |nullable-absence-NullableRefBox)
+              :code $ quote $ let
+                  payload $ ref 1
+                  base $ NullableRefBox :value payload
+                assert= (NullableRefBox :value nil) (checked-with base :value nil)
+                assert= nil $ checked-with base :value payload
+                assert= nil $ checked-with base :value |wrong
+                assert= base $ NullableRefBox :value payload
+              :tags $ #{} :checked-struct-write :nullable-write :unit
+            %{} 'TestEntry (:name |nullable-absence-NullableFunctionBox)
+              :code $ quote $ let
+                  payload number-id
+                  base $ NullableFunctionBox :value payload
+                assert= (NullableFunctionBox :value nil) (checked-with base :value nil)
+                assert= nil $ checked-with base :value payload
+                assert= nil $ checked-with base :value |wrong
+                assert= base $ NullableFunctionBox :value payload
+              :tags $ #{} :checked-struct-write :nullable-write :unit
+            %{} 'TestEntry (:name |nullable-absence-NullishFunctionBox)
+              :code $ quote $ let
+                  payload number-id
+                  base $ NullishFunctionBox :value payload
+                assert= (NullishFunctionBox :value nil) (checked-with base :value nil)
+                assert= nil $ checked-with base :value payload
+                assert= nil $ checked-with base :value |wrong
+                assert= base $ NullishFunctionBox :value payload
+              :tags $ #{} :checked-struct-write :nullable-write :unit
         'checked-with-at $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn checked-with-at (base key value)
             if (struct? base)

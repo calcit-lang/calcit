@@ -158,6 +158,25 @@ try {
   const { CalcitStructValue } = await import(pathToFileURL(resolve("lib/js-struct-value.mjs")).href);
   const { valueMatchesTypeForm } = await import(pathToFileURL(resolve("lib/js-type-form.mjs")).href);
   const { CalcitSymbol } = await import(pathToFileURL(resolve("lib/calcit-data.mjs")).href);
+  const { CalcitSliceList } = await import(pathToFileURL(resolve("lib/js-list.mjs")).href);
+  // Host undefined differs from Calcit nil even when the inner contract is
+  // unavailable. Present functions must not borrow evidence from nullability.
+  const typeForm = (name, inner) => new CalcitSliceList([new CalcitSymbol("::"), new CalcitSymbol(name), inner]);
+  const callableForm = typeForm("Fn", new CalcitSliceList([]));
+  for (const wrapper of ["Optional", "JsNullish"]) {
+    const form = typeForm(wrapper, callableForm);
+    const definition = new CalcitStructDef(procs.newTag(wrapper), [procs.newTag("value")], [form]);
+    const value = makeBox(definition, { value: null });
+    for (const update of [procs._$n_struct_$o_assoc, procs._$n_struct_$o_with]) {
+      assert.equal(update(value, procs.newTag("value"), null).values[0], null);
+      if (wrapper === "JsNullish") {
+        assert.equal(update(value, procs.newTag("value"), undefined).values[0], undefined);
+      } else {
+        assert.throws(() => update(value, procs.newTag("value"), undefined), /expects type/);
+      }
+      assert.throws(() => update(value, procs.newTag("value"), x => x), /expects type/);
+    }
+  }
   // Internal JS metadata must follow canonical field order and survive impl
   // decoration. The language-level write assertions above cover semantics.
   const validators = [value => typeof value === "string", value => typeof value === "number"];
