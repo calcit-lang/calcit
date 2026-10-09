@@ -259,8 +259,8 @@ loaded .and-then $ fn (value) (validate value)
 
 备用来源使用 `.or-else`。`.unwrap-or` 只用于确实需要默认值的终点，`.map` 用于同步转换，`.and-then` 用于下一个仍可能失败的操作。保留 `Option` 本身能让类型系统持续检查缺失路径；不要为了集合判断而把它解成 `nil`。
 
-多个连续的 Option 步骤可以实验性使用 `option:let`。Result 流程直接使用接收者
-`.and-then`，让错误类型的转换保持可见：
+多个连续的 Option 或 Result 步骤嵌套使用接收者 `.and-then`，让错误类型的转换
+保持可见：
 
 ```cirru.no-check
 let
@@ -291,7 +291,7 @@ Native 异步 FFI capability 也遵循相同边界原则。模块适配层用 `f
 reason/payload 使用方法级泛型，因此不会为了宿主编码而抹掉调用侧类型。底层
 `&ffi-task-cancel`、`&ffi-response-*` 只作为适配与兼容入口。
 
-`option:let` 的 body 必须继续返回 `Option`。普通组合函数仍以接收者方法
+普通组合函数以接收者方法
 作为公开形式，`option:*` / `result:*` 直接函数调用主要保留给 core lowering。
 
 ## get-in / assoc-in / update-in

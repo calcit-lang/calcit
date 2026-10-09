@@ -607,8 +607,8 @@ parsed .and-then
   fn (value) $ validate value
 ```
 
-连续的 Option 步骤可以实验性使用 `option:let`。Result 流程直接使用接收者
-`.and-then`，让错误类型转换保持可见：
+连续的 Option 或 Result 步骤嵌套使用接收者 `.and-then`，Result 的错误类型转换
+保持可见：
 
 ```cirru.no-check
 let
@@ -636,8 +636,7 @@ definition `:code` 调用默认进入预览；传 `--include-attached` 可用相
 `Result<Unit,String>`。零值不触发 host；小数、负数、溢出或缺少阻塞能力都进入错误
 分支。不要把它改写为 `timeout-call`：后者是独立的 JavaScript callback API。
 
-`option:let` 使用普通 `let` 的 binding pair 结构。每个右侧和最终 body 都必须保持
-Option 容器；Result 错误类型需要转换时显式使用 `.map-err`。
+Result 错误类型需要转换时显式使用 `.map-err`。
 
 需要尝试备用来源时使用 `.or-else`；它只在 `none`/`err` 分支调用 fallback。`.unwrap` 只适合已经由原生 `match`、`.some?` 或明确不变量证明为 `some` 的位置；默认值用 `.unwrap-or`，继续转换用 `.map` / `.and-then`。接收者已静态推断为 `Option`/`Result` 时，避免使用 `option:*` / `result:*` 的函数形式，以便接收者类型和类型流保持可见；未类型化 legacy 数据或 core 边界才保留直接 helper。
 
