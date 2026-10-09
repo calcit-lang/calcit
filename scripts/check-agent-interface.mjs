@@ -67,6 +67,31 @@ const scenarios = [
       assert.equal(result.data.examples.items[0]?.cirru, "assert= true $\n  Result :ok 1\n  , .ok?");
     },
   },
+  ...[
+    ["option:and-then", "Option", ".and-then", 1],
+    ["option:fold", "Option", ".fold", 2],
+    ["option:or-else", "Option", ".or-else", 1],
+    ["option:unwrap", "Option", ".unwrap", 1],
+    ["option:unwrap-or", "Option", ".unwrap-or", 1],
+    ["result:and-then", "Result", ".and-then", 1],
+    ["result:map-err", "Result", ".map-err", 1],
+    ["result:or-else", "Result", ".or-else", 1],
+    ["result:unwrap-or", "Result", ".unwrap-or", 1],
+  ].map(([helper, constructor, method, count]) => ({
+    name: `${helper} examples use nominal constructors and receiver methods`,
+    args: ["src/cirru/calcit-core.cirru", "query", "context", `calcit.core/${helper}`, "--format", "json"],
+    check(result) {
+      assert.equal(result.data.id, `calcit.core/${helper}`);
+      assert.equal(result.data.examples.total, count);
+      assert.equal(result.data.examples.items.length, count);
+      for (const example of result.data.examples.items) {
+        assert.ok(example.cirru.includes(`${constructor} :`));
+        assert.ok(example.cirru.includes(method));
+        assert.doesNotMatch(example.cirru, /%(?:some|none|ok|err)\b/);
+        assert.ok(!example.cirru.includes(helper), "the implementation helper is not the recommended call form");
+      }
+    },
+  })),
   {
     name: "module-owned JS FFI definition provenance",
     args: ["calcit/js-ffi-consumer.cirru", "query", "def", "app.main/base-name", "--format", "json"],

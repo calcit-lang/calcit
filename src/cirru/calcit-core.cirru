@@ -5145,7 +5145,9 @@
                 gensym |v
                 , '_log_tmp
               quasiquote $ &let (~v ~x)
-                println $ str-spaced (format-to-lisp $ quote ~x) |=> ~v
+                println $ str-spaced
+                  format-to-lisp $ quote ~x
+                  , |=> ~v
                 ~ v
           :examples $ [] $ quote
             assert= 3 $ dbg $ + 1 2
@@ -5159,8 +5161,11 @@
             %{} 'TestEntry (:name |returns-the-value)
               :code $ quote $ do
                 assert= 3 $ dbg $ + 1 2
-                assert= 57 $ dbg $ + 1 $ dbg (* 7 8)
-                assert= 2 $ let ((n 2)) (dbg n)
+                assert= 57 $ dbg $ + 1
+                  dbg $ * 7 8
+                assert= 2 $ let
+                    n 2
+                  dbg n
                 assert= |a $ dbg |a
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |evaluates-once)
@@ -6674,7 +6679,8 @@
                   first $ [] 1 2
                 assert= (%some |a) (first |abc)
               :tags $ #{} :core :types :unit
-        'flipped $ %{} 'CodeEntry (:doc "|Deprecated: write the call with its arguments in order; (flipped f a b) expands to (f b a).")
+        'flipped $ %{} 'CodeEntry
+          :doc "|Deprecated: write the call with its arguments in order; (flipped f a b) expands to (f b a)."
           :code $ quote $ defmacro flipped (f & args)
             quasiquote $ ~f $ ~@ (reverse args)
           :examples $ []
@@ -6807,7 +6813,8 @@
                 acc initial
               if (&list:empty? items) acc $ match
                 reducer acc $ &list:nth items 0
-                (:continue next) (recur (&list:rest items) next)
+                (:continue next)
+                  recur (&list:rest items) next
                 (:break value) value
           :examples $ [] $ quote
             assert= 3 $ fold-while ([] 1 2 3 4) 0 $ fn (acc x)
@@ -6816,8 +6823,8 @@
           :schema $ :: 'Fn $ {} (:return 'U)
             :args $ [] (:: 'List 'T) 'U $ :: 'Fn
               {}
-                :return $ :: 'ControlFlow 'U
                 :args $ [] 'U 'T
+                :return $ :: 'ControlFlow 'U
             :generics $ [] 'T 'U
           :tests $ []
             %{} 'TestEntry (:name |break-returns-its-value)
@@ -6834,14 +6841,12 @@
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |empty-list-returns-initial)
               :code $ quote $ assert= |seed
-                fold-while ([]) |seed $ fn (acc x)
-                  ControlFlow :break |never
+                fold-while ([]) |seed $ fn (acc x) (ControlFlow :break |never)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |stops-calling-reducer-after-break)
               :code $ quote $ let
                   *seen $ atom $ []
-                  result $ fold-while ([] 1 2 3) 0 $ fn (acc x)
-                    swap! *seen append x
+                  result $ fold-while ([] 1 2 3) 0 $ fn (acc x) (swap! *seen append x)
                     if (&= x 2) (ControlFlow :break acc) (ControlFlow :continue x)
                 assert= 1 result
                 assert= ([] 1 2) (deref *seen)
@@ -9735,10 +9740,9 @@
               (:none)
                 %:: (&enum:definition opt) :none
           :examples $ [] $ quote
-            assert= (%some 4)
-              option:and-then (%some 2)
-                fn (x)
-                  %some $ * x 2
+            assert= (Option :some 4)
+              (Option :some 2) .and-then $ fn (x)
+                Option :some $ * x 2
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'Option 'T)
               :: 'Fn $ {}
@@ -9754,12 +9758,16 @@
               (:some value) (on-some value)
               (:none) (on-none)
           :examples $ []
-            quote $ assert= 4 $ option:fold (%some 3)
-              fn () 0
-              fn (value) (+ value 1)
-            quote $ assert= 0 $ option:fold (%none)
-              fn () 0
-              fn (value) (+ value 1)
+            quote $ assert= 4 $
+              Option :some 3
+              , .fold
+                fn () 0
+                fn (value) (+ value 1)
+            quote $ assert= 0 $
+              Option :none
+              , .fold
+                fn () 0
+                fn (value) (+ value 1)
           :schema $ :: 'Fn $ {} (:return 'U)
             :args $ [] (:: 'Option 'T)
               :: 'Fn $ {} (:return 'U)
@@ -9880,9 +9888,8 @@
               (:some _) opt
               (:none) (fallback)
           :examples $ [] $ quote
-            assert= (%some 2)
-              option:or-else (%none)
-                fn () $ %some 2
+            assert= (Option :some 2)
+              (Option :none) .or-else $ fn () $ Option :some 2
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'Option 'T)
               :: 'Fn $ {}
@@ -9913,7 +9920,7 @@
               (:none) (raise |option:unwrap-received-none)
           :examples $ [] $ quote
             assert= 3 $
-              %some 3
+              Option :some 3
               , .unwrap
           :schema $ :: 'Fn $ {} (:return 'T)
             :args $ [] $ :: 'Option 'T
@@ -9927,7 +9934,7 @@
               (:none) fallback
           :examples $ [] $ quote
             assert= 0 $
-              %none
+              Option :none
               , .unwrap-or 0
           :schema $ :: 'Fn $ {} (:return 'T)
             :args $ [] (:: 'Option 'T) 'T
@@ -10533,10 +10540,9 @@
               (:err err)
                 %:: (&enum:definition res) :err err
           :examples $ [] $ quote
-            assert= (%ok 4)
-              result:and-then (%ok 2)
-                fn (x)
-                  %ok $ * x 2
+            assert= (Result :ok 4)
+              (Result :ok 2) .and-then $ fn (x)
+                Result :ok $ * x 2
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'Result 'T 'E)
               :: 'Fn $ {}
@@ -10583,9 +10589,8 @@
               (:err err)
                 %:: (&enum:definition res) :err $ f err
           :examples $ [] $ quote
-            assert= (%err |failed!)
-              result:map-err (%err |failed)
-                fn (e) (str e |!)
+            assert= (Result :err |failed!)
+              (Result :err |failed) .map-err $ fn (e) (str e |!)
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'Result 'T 'E)
               :: 'Fn $ {} (:return 'F)
@@ -10613,9 +10618,8 @@
               (:ok _) res
               (:err _) (fallback)
           :examples $ [] $ quote
-            assert= (%ok 2)
-              result:or-else (%err |missing)
-                fn () $ %ok 2
+            assert= (Result :ok 2)
+              (Result :err |missing) .or-else $ fn () $ Result :ok 2
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'Result 'T 'E)
               :: 'Fn $ {}
@@ -10632,7 +10636,7 @@
               (:err _) fallback
           :examples $ [] $ quote
             assert= 0 $
-              %err |failed
+              Result :err |failed
               , .unwrap-or 0
           :schema $ :: 'Fn $ {} (:return 'T)
             :args $ [] (:: 'Result 'T 'E) 'T
@@ -12033,7 +12037,8 @@
             :code $ quote $ assert= (#{} 1 2)
               vals $ &{} :a 1 :b 2 :c 2
             :tags $ #{} :core :unit
-        'w-js-log $ %{} 'CodeEntry (:doc "|Deprecated: use dbg, or an explicit js/console.log when the host object view is needed.")
+        'w-js-log $ %{} 'CodeEntry
+          :doc "|Deprecated: use dbg, or an explicit js/console.log when the host object view is needed."
           :code $ quote $ defmacro w-js-log (x)
             if (list? x)
               &let
@@ -12058,7 +12063,8 @@
             :generics $ [] 'T
             :required $ [] $ :: 'Expr 'T
           :tags $ #{} :deprecated :macro
-        'w-log $ %{} 'CodeEntry (:doc "|Deprecated: use dbg, which prints the same text and returns the value.")
+        'w-log $ %{} 'CodeEntry
+          :doc "|Deprecated: use dbg, which prints the same text and returns the value."
           :code $ quote $ defmacro w-log (x)
             quasiquote $ dbg ~x
           :examples $ []
@@ -12224,7 +12230,8 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic
           :tags $ #{} :builtin :internal :meta :state :syntax
-        'wo-js-log $ %{} 'CodeEntry (:doc "|Deprecated: remove the wrapper; wo-js-log returns its argument unchanged.")
+        'wo-js-log $ %{} 'CodeEntry
+          :doc "|Deprecated: remove the wrapper; wo-js-log returns its argument unchanged."
           :code $ quote $ defmacro wo-js-log (x) x
           :examples $ []
           :schema $ :: 'Macro $ {}
@@ -12233,7 +12240,8 @@
             :generics $ [] 'T
             :required $ [] $ :: 'Expr 'T
           :tags $ #{} :deprecated :macro
-        'wo-log $ %{} 'CodeEntry (:doc "|Deprecated: remove the wrapper; wo-log returns its argument unchanged.")
+        'wo-log $ %{} 'CodeEntry
+          :doc "|Deprecated: remove the wrapper; wo-log returns its argument unchanged."
           :code $ quote $ defmacro wo-log (x) x
           :examples $ []
           :schema $ :: 'Macro $ {}
