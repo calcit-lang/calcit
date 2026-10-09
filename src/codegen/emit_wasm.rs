@@ -7497,16 +7497,17 @@ fn emit_type_of(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   ctx.emit(Instruction::I32And);
   ctx.emit(Instruction::LocalSet(is_valid_ptr));
 
+  // Short-circuit: only convert and load memory when range is valid. The
+  // unsigned truncation traps on negative, NaN and out-of-range numbers, so it
+  // must stay inside the guarded branch.
+  ctx.emit(Instruction::LocalGet(is_valid_ptr));
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
   // raw_base = trunc(v) - 8
   ctx.emit(Instruction::LocalGet(v_local));
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Sub);
   ctx.emit(Instruction::LocalSet(raw_base));
-
-  // Short-circuit: only load memory when range is valid.
-  ctx.emit(Instruction::LocalGet(is_valid_ptr));
-  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
   // Check magic at raw_base+0 == HEAP_MAGIC.
   ctx.emit(Instruction::LocalGet(raw_base));
   ctx.emit(Instruction::I32Load(mem_arg_i32(0)));

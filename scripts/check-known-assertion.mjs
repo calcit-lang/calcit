@@ -36,7 +36,9 @@ try {
   execFileSync(process.execPath, [
     "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
     "--target", "app.short-circuit/false-path", "--target", "app.short-circuit/two-values",
-    "--target", "app.short-circuit/lexical-guard", "--backend", "native,wasm",
+    "--target", "app.short-circuit/lexical-guard", "--target", "app.short-circuit/common-or",
+    "--target", "app.short-circuit/compound#checked-index", "--target", "app.short-circuit/nested",
+    "--backend", "native,wasm",
   ], { ...options, stdio: "inherit" });
   await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
   const shortCircuitOriginal = await readFile(snapshot);
