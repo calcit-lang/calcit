@@ -129,6 +129,39 @@ for behavior that actually crosses definitions or backends.
 
 ## Target Coverage
 
+### 仓库 CI 与快速本地回归
+
+CI 的 Core/CLI 与文档检查共用一次 `ci` 配置构建的 CLI：开启优化，同时保留
+debug assertions 与整数溢出检查。同一 workflow 内按提交 SHA 命名的 artifact
+供两个任务下载使用，不跨提交寻找旧二进制。脚本通过 `CALCIT_BIN` 选择 CLI；
+未指定时保留各脚本原有的本地构建查找方式。
+
+```bash
+cargo build --locked --profile ci --bin calcit
+yarn install --immutable
+yarn compile
+yarn procs-link
+export CALCIT_BIN="$PWD/target/ci/calcit"
+node scripts/run-core-tests.mjs
+node scripts/check-strict-default.mjs
+node scripts/check-known-assertion.mjs
+bash scripts/test-wasm.sh
+bash scripts/check-docs-md.sh
+```
+
+这些命令用于对应范围的回归。普通 core 语义由统一运行器覆盖；
+`CALCIT_LINT_CORE=1` 的直接执行另行保留，用于检查改写后的树。
+`post_lowering_cli` 和 namespace-import 集成测试在 Rust 测试任务中运行，后者
+同时实际执行生成的 JS。
+断言检查脚本保留 fixture 专属回放、非法类型程序的逐后端诊断以及失败时不产出
+代码的检查；core 定义回放统一由 `run-core-tests.mjs` 承担。
+
+PR 推送新提交时，CI 取消同一 PR 旧提交上尚未完成的 Test workflow；main
+的每次提交仍独立验证。减少执行成本时，应先移除重复构建与重复回放，保留
+原始 `:tests`、零匹配失败检查和独立的后端边界验证。
+
+### 统一后端回放
+
 `calcit test` 在 native 上运行 definition `:tests`。仓库用一个统一运行器把同一批 `:tests` 在 native、生成的 JS 与 WASM 上各执行一次：
 
 ```bash
@@ -154,11 +187,29 @@ WASMTIME_CLI=wasmtime node scripts/run-core-tests.mjs --backend wasi --target 'c
 
 运行器拒绝空的或重复的后端列表。native 与 WASI 的每个测试必须完整输出开始和结束标记；进程提前正常退出不会被计为通过。`--report-unexpected-pass` 自动补上 native 参照，只有测试成功且输出与 native 一致时才建议移除排除项。
 
+排除清单只作用于这个运行器。`calcit test` 在 native 上不读清单，所以新增的 core `:tests` 必须先在 native 通过；native 尚不符合的规则留在对应 issue 中，修复时再补测试。
+
+### 差分随机测试
+
+`scripts/fuzz-primitives.mjs` 用固定随机种子生成数值、字符串与列表原语的调用，输入覆盖 NaN、±inf、`-0`、i32 与安全整数边界、非 ASCII 文本、空值和越界下标，再交给上面的运行器在各后端执行。每个调用的结果以 `turn-string` 文本输出，与 native 比较：native 返回时其它后端必须返回相同文本，native 报错时其它后端必须报错或 trap。
+
+```bash
+# PR 中的小规模运行：每个原语 6 次调用
+node scripts/fuzz-primitives.mjs --seed 1 --cases 6
+
+# 大规模运行；失败信息包含种子、调用与各后端结果，用同样参数即可复现
+node scripts/fuzz-primitives.mjs --seed 42 --cases 150
+```
+
+已由 issue 跟踪的差异写在脚本的 `known` 表中，按原语与后端汇总输出，不使运行失败；修复后从表中删除。新发现的差异先固化为 core `:tests` 或开 issue，再决定是否加入 `known`。`Primitive fuzz` workflow 每周以运行编号为种子执行一次大规模运行，也可以手动触发并指定种子。
+
 ### 限制
 
+- 快速本地回归命令只验证对应范围，不代替完整 CI。
 - WASM 在独立的回放 namespace 中执行 core 测试，依赖 `calcit.core` 内部豁免的测试列为 `replay`。
 - WASM 宿主只提供 `io.log_*` 与 `math` 导入，其它宿主调用会使测试失败。
 - WASI backend 不在默认集合中，需要 `WASMTIME_CLI`。
+- 差分随机测试只覆盖返回标量的原语，不覆盖 FFI 与宿主 IO。
 
 ## Choose the Test Surface (Calcit-first)
 

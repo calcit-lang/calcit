@@ -6,6 +6,15 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const binary = resolve(process.env.CALCIT_BIN ?? "target/debug/calcit");
+// Keep the written-value contracts in Calcit and replay the same expressions.
+execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+  "--tag", "checked-struct-write", "--backend", "native,js"], {
+  env: { ...process.env, CALCIT_BIN: binary }, stdio: "inherit",
+});
+execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+  "--tag", "checked-struct-construction", "--backend", "native,js"], {
+  env: { ...process.env, CALCIT_BIN: binary }, stdio: "inherit",
+});
 const nativeTrace = execFileSync(binary, ["calcit/test-wasm.cirru", "test", "--tag", "struct-field-order", "--require-match"], { encoding: "utf8" });
 assert.deepEqual(nativeTrace.split(/\r?\n/).filter(line => line.startsWith("struct-order-")),
   ["struct-order-y", "struct-order-x", "struct-order-x", "struct-order-y"]);
@@ -84,6 +93,10 @@ try {
 
   // Nil is `null` and Unit is `undefined`; only JsNullish admits both.
   const nilBox = makeBox(boxes.NilBox, { opt: null, none: null, host: null });
+  // Host callers must obey the same prototype and Map input contract; Calcit
+  // source rejects these wrong outer kinds before reaching the JS runtime.
+  assert.throws(() => makeBox(nilBox, { opt: null, none: null, host: null }), /StructDef/);
+  assert.throws(() => procs._$n_struct_$o_from_map(boxes.NilBox, nilBox), /requires a Map/);
   accepts(nilBox, "opt", null);
   accepts(nilBox, "opt", 1);
   rejects(nilBox, "opt", undefined);
@@ -115,6 +128,18 @@ try {
   const { CalcitStructValue } = await import(pathToFileURL(resolve("lib/js-struct-value.mjs")).href);
   const { valueMatchesTypeForm } = await import(pathToFileURL(resolve("lib/js-type-form.mjs")).href);
   const { CalcitSymbol } = await import(pathToFileURL(resolve("lib/calcit-data.mjs")).href);
+  // Internal JS metadata must follow canonical field order and survive impl
+  // decoration. The language-level write assertions above cover semantics.
+  const validators = [value => typeof value === "string", value => typeof value === "number"];
+  const ordered = new CalcitStructDef(procs.newTag("Ordered"), [procs.newTag("z"), procs.newTag("a")],
+    [new CalcitSymbol("String"), new CalcitSymbol("Number")], [], "test/Ordered", validators);
+  for (const definition of [ordered, ordered.withImpls([])]) {
+    const value = makeBox(definition, { a: 1, z: "z" });
+    accepts(value, "a", 2);
+    rejects(value, "a", "wrong");
+    accepts(value.withImpls([]), "z", "next");
+    rejects(value.withImpls([]), "z", 3);
+  }
   const foreignOptionDef = new CalcitStructDef(procs.newTag("Option"), [], [], [], "foreign.schema/Option");
   const foreignOption = new CalcitStructValue(procs.newTag("Option"), [], [], foreignOptionDef);
   const variant = (def, tag, ...payload) => procs._PCT__$o__$o_(def, procs.newTag(tag), ...payload);

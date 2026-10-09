@@ -4,6 +4,8 @@ import { CalcitImpl } from "./js-impl.mjs";
 import { CalcitEnumDef } from "./js-enum-def.mjs";
 import { CalcitStructValue } from "./js-struct-value.mjs";
 
+export type FieldValidator = ((value: CalcitValue) => boolean) | null;
+
 export class CalcitStructDef {
   name: CalcitTag;
   fields: CalcitTag[];
@@ -11,8 +13,10 @@ export class CalcitStructDef {
   impls: CalcitImpl[];
   cachedHash: number;
   readonly definitionRef: string | null;
+  readonly fieldValidators: FieldValidator[] | null;
 
-  constructor(name: CalcitTag, fields: CalcitTag[], fieldTypes: CalcitValue[], impls: CalcitImpl[] = [], definitionRef: string | null = null) {
+  constructor(name: CalcitTag, fields: CalcitTag[], fieldTypes: CalcitValue[], impls: CalcitImpl[] = [], definitionRef: string | null = null,
+    fieldValidators: FieldValidator[] | null = null) {
     const [canonicalFields, canonicalTypes] = canonicalizeTagPairs(fields, fieldTypes, "CalcitStructDef");
     this.name = name;
     this.fields = canonicalFields;
@@ -20,13 +24,14 @@ export class CalcitStructDef {
     this.impls = impls ?? [];
     this.cachedHash = null;
     this.definitionRef = definitionRef;
+    this.fieldValidators = fieldValidators == null ? null : canonicalizeTagPairs(fields, fieldValidators, "CalcitStructDef validators")[1];
   }
 
   withImpls(impls: CalcitImpl | CalcitImpl[]): CalcitStructDef {
     if (impls instanceof CalcitImpl) {
-      return new CalcitStructDef(this.name, this.fields, this.fieldTypes, [impls], this.definitionRef);
+      return new CalcitStructDef(this.name, this.fields, this.fieldTypes, [impls], this.definitionRef, this.fieldValidators);
     } else if (Array.isArray(impls)) {
-      return new CalcitStructDef(this.name, this.fields, this.fieldTypes, impls, this.definitionRef);
+      return new CalcitStructDef(this.name, this.fields, this.fieldTypes, impls, this.definitionRef, this.fieldValidators);
     }
     throw new Error("Expected an impl as implementation");
   }
@@ -47,9 +52,9 @@ export class CalcitStructDef {
 }
 
 /** Bind nominal definitions like native, preserving an alias's existing identity. */
-export function bind_struct_definition(value: CalcitValue, definitionRef: string): CalcitValue {
+export function bind_struct_definition(value: CalcitValue, definitionRef: string, fieldValidators: FieldValidator[] | null = null): CalcitValue {
   if (value instanceof CalcitStructDef && value.definitionRef == null) {
-    return new CalcitStructDef(value.name, value.fields, value.fieldTypes, value.impls, definitionRef);
+    return new CalcitStructDef(value.name, value.fields, value.fieldTypes, value.impls, definitionRef, fieldValidators);
   }
   if (value instanceof CalcitEnumDef && value.prototype.structRef.definitionRef == null) {
     const prototype = value.prototype;

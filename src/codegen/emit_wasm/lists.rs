@@ -723,7 +723,7 @@ pub(super) fn emit_list_to_set(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   ctx.loop_exit_if_ge(j, write_idx);
   emit_list_load_elem(ctx, dst, j);
   ctx.emit(Instruction::LocalGet(elem));
-  ctx.emit(Instruction::F64Eq);
+  emit_f64_value_eq(ctx);
   ctx.begin_block_if();
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::LocalSet(found));
@@ -931,7 +931,7 @@ pub(super) fn emit_list_includes(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
   ctx.emit(Instruction::LocalGet(target));
-  ctx.emit(Instruction::F64Eq);
+  emit_f64_value_eq(ctx);
 
   ctx.begin_block_if();
   ctx.emit(f64_const(1.0));
@@ -1405,7 +1405,7 @@ pub(super) fn emit_list_distinct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   // existing = dst[(1 + j) * 8]
   emit_list_load_elem(ctx, dst, j);
   ctx.emit(Instruction::LocalGet(elem));
-  ctx.emit(Instruction::F64Eq);
+  emit_f64_value_eq(ctx);
   ctx.begin_block_if();
   ctx.emit(Instruction::I32Const(1));
   ctx.emit(Instruction::LocalSet(found));

@@ -14,7 +14,6 @@ try {
   await symlink(resolve("node_modules"), join(fixtureRoot, "node_modules"), "dir");
 
   const runtimeA = await import(pathToFileURL(join(runtimeAPath, "calcit.procs.mjs")).href);
-  const runtimeB = await import(pathToFileURL(join(runtimeBPath, "calcit.procs.mjs")).href);
   const symbolFromString = runtimeA.turn_symbol("hello");
   assert.ok(symbolFromString instanceof runtimeA.CalcitSymbol, "turn-symbol must return a Symbol on JS");
   assert.equal(symbolFromString.value, "hello");
@@ -161,6 +160,104 @@ try {
   const todoRecord = new runtimeA.CalcitStructValue(todoName, [todoField], [""]);
   const todoStruct = new runtimeA.CalcitStructDef(todoName, [todoField], [todoType]);
   const todoEnum = new runtimeA.CalcitEnumDef(new runtimeA.CalcitStructValue(todoName, [todoField], [todoType]));
+  // Enum definitions are data, not their shared JavaScript name() method.
+  const makeEnumDefinition = (name, origin, payload = "String", impls = []) => {
+    const field = runtimeA.newTag("item");
+    const definition = new runtimeA.CalcitStructDef(runtimeA.newTag(name), [field], [null], impls, origin);
+    return new runtimeA.CalcitEnumDef(new runtimeA.CalcitStructValue(
+      definition.name, [field], [new runtimeA.CalcitSliceList([new runtimeA.CalcitSymbol(payload)])], definition,
+    ));
+  };
+  const operationDefinition = makeEnumDefinition("Operation", "app.left/Operation");
+  const equivalentDefinition = makeEnumDefinition("Operation", "app.left/Operation");
+  const otherDefinitions = [
+    makeEnumDefinition("ClientOperation", "app.left/ClientOperation"),
+    makeEnumDefinition("Operation", "app.right/Operation"),
+    makeEnumDefinition("Operation", "app.left/Operation", "Number"),
+    makeEnumDefinition("Operation", "app.left/Operation", "String", [
+      new runtimeA.CalcitImpl(runtimeA.newTag("Marker"), [], []),
+    ]),
+  ];
+  assert.equal(runtimeA._$n__$e_(operationDefinition, equivalentDefinition), true);
+  assert.equal(runtimeA.hashFunction(operationDefinition), runtimeA.hashFunction(equivalentDefinition));
+  assert.equal(runtimeA._$n_compare(operationDefinition, equivalentDefinition), 0);
+  for (const other of otherDefinitions) {
+    assert.equal(runtimeA._$n__$e_(operationDefinition, other), false, "Distinct enum definitions must not compare equal");
+    assert.notEqual(runtimeA._$n_compare(operationDefinition, other), 0, "Ordering must distinguish enum definitions");
+    assert.equal(Math.sign(runtimeA._$n_compare(operationDefinition, other)), -Math.sign(runtimeA._$n_compare(other, operationDefinition)));
+    for (const map of [
+      new runtimeA.CalcitSliceMap([operationDefinition, "original", other, "other"]),
+      new runtimeA.CalcitSliceMap([operationDefinition, "original", other, "other"]).turnMap(),
+    ]) {
+      assert.equal(map.get(operationDefinition), "original");
+      assert.equal(map.get(equivalentDefinition), "original");
+      assert.equal(map.get(other), "other");
+    }
+    const values = runtimeA._SHA__$M_(operationDefinition, equivalentDefinition, other);
+    assert.equal(runtimeA._$n_set_$o_count(values), 2);
+  }
+  // Host-created trait objects can share the existing impl equality key.
+  const sharedMethod = Object.freeze(() => "same");
+  const sharedImplName = runtimeA.newTag("OperationShow");
+  const implWithOrigin = (origin, method = sharedMethod) => new runtimeA.CalcitImpl(
+    sharedImplName, [traitMethod], [method], origin,
+  );
+  const sharedOriginImpl = implWithOrigin(leftOrigin);
+  const equalOriginImpl = implWithOrigin(rightOrigin);
+  const withImpl = (impl) => makeEnumDefinition("Operation", "app.left/Operation", "String", [impl]);
+  const implDefinition = withImpl(sharedOriginImpl);
+  const equalImplDefinition = withImpl(equalOriginImpl);
+  assert.equal(runtimeA._$n__$e_(sharedOriginImpl, equalOriginImpl), true);
+  assert.equal(runtimeA.hashFunction(sharedOriginImpl), runtimeA.hashFunction(equalOriginImpl), "Equal impl origins must hash by their equality key");
+  assert.equal(runtimeA._$n__$e_(implDefinition, equalImplDefinition), true);
+  assert.equal(runtimeA.hashFunction(implDefinition), runtimeA.hashFunction(equalImplDefinition));
+  assert.equal(runtimeA._$n_compare(implDefinition, equalImplDefinition), 0);
+  for (const map of [
+    new runtimeA.CalcitSliceMap([implDefinition, "found"]),
+    new runtimeA.CalcitSliceMap([implDefinition, "found"]).turnMap(),
+  ]) {
+    assert.equal(map.get(equalImplDefinition), "found", "An equal EnumDef with a fresh trait origin must remain a usable key");
+  }
+  const differentImpls = [
+    implWithOrigin(leftOrigin, Object.freeze(() => "same")),
+    implWithOrigin(leftOrigin, Object.freeze(() => "different")),
+    implWithOrigin(null),
+    implWithOrigin(new runtimeA.CalcitTrait(runtimeA.newTag("OtherShow"), [traitMethod], [null])),
+    new runtimeA.CalcitImpl(runtimeA.newTag("OtherImpl"), [traitMethod], [sharedMethod], leftOrigin),
+    new runtimeA.CalcitImpl(sharedImplName, [runtimeA.newTag("other")], [sharedMethod], leftOrigin),
+  ];
+  for (const impl of differentImpls) {
+    const other = withImpl(impl);
+    assert.equal(runtimeA._$n__$e_(implDefinition, other), false);
+    const order = runtimeA._$n_compare(implDefinition, other);
+    assert.notEqual(order, 0, "Equal-length impl tables must order by their actual contents, not rendered functions");
+    assert.equal(Math.sign(order), -Math.sign(runtimeA._$n_compare(other, implDefinition)));
+    assert.equal(runtimeA._$n_compare(implDefinition, other), order, "Function ordering must remain stable across comparisons");
+    for (const map of [
+      new runtimeA.CalcitSliceMap([implDefinition, "original", other, "other"]),
+      new runtimeA.CalcitSliceMap([implDefinition, "original", other, "other"]).turnMap(),
+    ]) {
+      assert.equal(map.get(equalImplDefinition), "original");
+      assert.equal(map.get(other), "other");
+    }
+    assert.equal(runtimeA._$n_set_$o_count(runtimeA._SHA__$M_(implDefinition, equalImplDefinition, other)), 2);
+  }
+  const methodClosureA = runtimeA.invoke_method_closure("render");
+  const methodClosureB = runtimeA.invoke_method_closure("render");
+  assert.equal(runtimeA._$n__$e_(methodClosureA, methodClosureB), true);
+  assert.equal(runtimeA._$n_compare(withImpl(implWithOrigin(leftOrigin, methodClosureA)), withImpl(implWithOrigin(leftOrigin, methodClosureB))), 0,
+    "Method closures retain their existing name-based equality contract");
+  const orderedFunctions = [sharedMethod, differentImpls[0].values[0], methodClosureA, runtimeA.invoke_method_closure("other")]
+    .sort(runtimeA._$n_compare);
+  for (let left = 0; left < orderedFunctions.length; left++) {
+    for (let right = left + 1; right < orderedFunctions.length; right++) {
+      assert.ok(runtimeA._$n_compare(orderedFunctions[left], orderedFunctions[right]) < 0, "Function ordering must be transitive");
+      assert.ok(runtimeA._$n_compare(orderedFunctions[right], orderedFunctions[left]) > 0);
+    }
+  }
+  // Loading another runtime replaces ternary-tree's process-wide comparator.
+  // Finish single-runtime collection checks before exercising reload identity.
+  const runtimeB = await import(pathToFileURL(join(runtimeBPath, "calcit.procs.mjs")).href);
   const todoEnumValue = new runtimeA.CalcitEnumValue(todoField, [""], todoEnum);
   const anonymousEnumValue = new runtimeA.CalcitEnumValue(todoField, [""]);
   assert.equal(runtimeA._$n_enum_def_$o_has_variant_$q_(todoEnum, todoField), true);

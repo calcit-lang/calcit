@@ -123,6 +123,19 @@ let compareSequences = (xs: CalcitValue[], ys: CalcitValue[]): number => {
 
 let listToArray = (x: CalcitList | CalcitSliceList): CalcitValue[] => Array.from(x.items());
 
+// Plain functions compare by identity. IDs are process-local, never serialized,
+// and kept weakly so ordering does not retain closures or mutate frozen hosts.
+const functionOrderIds = new WeakMap<CalcitFn, number>();
+let nextFunctionOrderId = 0;
+const functionOrderId = (fn: CalcitFn): number => {
+  let id = functionOrderIds.get(fn);
+  if (id === undefined) {
+    id = ++nextFunctionOrderId;
+    functionOrderIds.set(fn, id);
+  }
+  return id;
+};
+
 export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
   if (a === b) return 0;
   let ta = typeAsInt(a);
@@ -144,6 +157,30 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
         return rawCompare(a, b);
       case PseudoTypeIndex.ref:
         return rawCompare((a as CalcitRef).path, (b as CalcitRef).path);
+      case PseudoTypeIndex.fn: {
+        const left = a as CalcitFn & { __calcitMethodName?: string };
+        const right = b as CalcitFn & { __calcitMethodName?: string };
+        // Method closures use name equality, unlike ordinary function values.
+        if (left.__calcitMethodName != null || right.__calcitMethodName != null) {
+          if (left.__calcitMethodName == null) return -1;
+          if (right.__calcitMethodName == null) return 1;
+          return compareUnicodeStrings(left.__calcitMethodName, right.__calcitMethodName);
+        }
+        return rawCompare(functionOrderId(left), functionOrderId(right));
+      }
+      case PseudoTypeIndex.impl: {
+        const left = a as CalcitImpl;
+        const right = b as CalcitImpl;
+        const nameOrder = compareUnicodeStrings(left.name.value, right.name.value);
+        if (nameOrder !== 0) return nameOrder;
+        if (left.origin == null && right.origin != null) return -1;
+        if (left.origin != null && right.origin == null) return 1;
+        if (left.origin != null && right.origin != null) {
+          const originOrder = compareUnicodeStrings(left.origin.name.value, right.origin.name.value);
+          if (originOrder !== 0) return originOrder;
+        }
+        return compareSequences(left.fields, right.fields) || compareSequences(left.values, right.values);
+      }
       case PseudoTypeIndex.struct_value: {
         const left = a as CalcitStructValue;
         const right = b as CalcitStructValue;
@@ -178,6 +215,36 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
         const tagOrder = _$n_compare(left.tag, right.tag);
         if (tagOrder !== 0) return tagOrder;
         return compareSequences(left.extra, right.extra);
+      }
+      case PseudoTypeIndex.enum_def: {
+        const left = a as CalcitEnumDef;
+        const right = b as CalcitEnumDef;
+        const leftRef = left.prototype.structRef.definitionRef;
+        const rightRef = right.prototype.structRef.definitionRef;
+        if (leftRef !== rightRef) {
+          if (leftRef == null) return -1;
+          if (rightRef == null) return 1;
+          return compareUnicodeStrings(leftRef, rightRef);
+        }
+        const nameOrder = compareUnicodeStrings(left.name(), right.name());
+        if (nameOrder !== 0) return nameOrder;
+        const variantCountOrder = rawCompare(left.prototype.fields.length, right.prototype.fields.length);
+        if (variantCountOrder !== 0) return variantCountOrder;
+        for (let index = 0; index < left.prototype.fields.length; index++) {
+          const tagOrder = _$n_compare(left.prototype.fields[index], right.prototype.fields[index]);
+          if (tagOrder !== 0) return tagOrder;
+          const leftPayload = left.prototype.values[index];
+          const rightPayload = right.prototype.values[index];
+          // Native orders variant payloads by arity before comparing types.
+          if ((leftPayload instanceof CalcitList || leftPayload instanceof CalcitSliceList)
+            && (rightPayload instanceof CalcitList || rightPayload instanceof CalcitSliceList)) {
+            const arityOrder = rawCompare(leftPayload.len(), rightPayload.len());
+            if (arityOrder !== 0) return arityOrder;
+          }
+          const payloadOrder = _$n_compare(leftPayload, rightPayload);
+          if (payloadOrder !== 0) return payloadOrder;
+        }
+        return rawCompare(left.impls.length, right.impls.length) || compareSequences(left.impls, right.impls);
       }
       case PseudoTypeIndex.set: {
         // like native: smaller sets first, then the sorted elements
