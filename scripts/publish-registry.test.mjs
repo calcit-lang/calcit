@@ -88,7 +88,7 @@ test("published npm identity and crate integrity fail closed", async (t) => {
   await assert.rejects(existingNpm(tag, sha));
   globalThis.fetch.mock.mockImplementation(async () => new Response(JSON.stringify({ vers: tag, yanked: true })));
   await assert.rejects(existingCrate(tag, sha), /yanked/);
-  globalThis.fetch.mock.mockImplementation(async url => new Response(String(url).includes("index.crates.io")
+  globalThis.fetch.mock.mockImplementation(async url => new Response(String(url) === "https://index.crates.io/ca/lc/calcit"
     ? JSON.stringify({ vers: tag, yanked: false, cksum: "invalid" }) : "invalid archive"));
   await assert.rejects(existingCrate(tag, sha), /checksum mismatch/);
 });
