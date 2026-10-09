@@ -489,7 +489,7 @@ core 中带 `:deprecated` 标记的 11 个兼容名在 0.29.0 仍可调用，行
 | `turn-string` | `to-string` | 参数已证明为标量时用 `core-identity-conversion-v1`，其余人工改写 |
 | `turn-str` | `to-string` | 人工改写 |
 | `remove-watch` | `remove-watch!` | 人工改写 |
-| `case-default` | `match`，默认值写成末尾 `_` 分支 | 人工改写 |
+| `case-default` | `match`，默认值写成末尾 `_` 分支 | `case-default-to-match-v1`（字面量模式） |
 
 上表名字、函数 `round?`、前缀 `reduce`，以及方法 List `.add`、List/Map/Set `.count`、FfiTask `.cancel` / `.cancel-with` 与 Struct/Enum `.contains?` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零后，在下一个非 patch 版本删除，并在本文列出删除项。
 
@@ -1288,7 +1288,15 @@ match kind
   _ style-default
 ```
 
-模式是表达式或变量时 `match` 不适用，改用 `cond`。`case` 暂未标记弃用，字面量模式下同样展开为 `match`。入口本身仍保留，随后续非 patch 版本再评估删除。
+字面量模式的调用可以批量迁移：
+
+```bash
+calcit calcit.cirru fix --rule case-default-to-match-v1 --include-attached --format edn
+calcit calcit.cirru fix --rule case-default-to-match-v1 --include-attached --format edn \
+  --apply --expect-revision <revision>
+```
+
+规则只自动改写与宏展开完全一致的调用，其余给出 `requires-review`。模式是表达式或变量时 `match` 不适用，改用 `cond`。`case` 暂未标记弃用，字面量模式下同样展开为 `match`。入口本身仍保留，随后续非 patch 版本再评估删除。
 
 旧的 macro `Fn` / whole-`Dynamic` schema 不再作为运行时兼容格式：Snapshot loader 会在解析阶段以 definition 的完整 path 拒绝它。
 若旧 Snapshot 已经包含结构化 `CodeEntry` 和这类 schema，应使用最终兼容版本 Calcit 0.13.51 先将模块改成严格

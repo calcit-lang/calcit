@@ -1014,12 +1014,30 @@ fn source_declares_macro(entry: &CodeEntry) -> bool {
 }
 
 pub(crate) fn definition_head_is_macro(snapshot_file: &str, snapshot: &Snapshot, namespace: &str, head: &str) -> Result<bool, String> {
+  definition_head_macro_code(snapshot_file, snapshot, namespace, head).map(|found| found.is_some())
+}
+
+/// Resolve a call head like `definition_head_is_macro`, returning the `defmacro` source and its
+/// defining namespace file when it is one.
+pub(crate) fn definition_head_macro_code(
+  snapshot_file: &str,
+  snapshot: &Snapshot,
+  namespace: &str,
+  head: &str,
+) -> Result<Option<(Cirru, FileInSnapShot)>, String> {
+  let macro_code = |file: &FileInSnapShot, name: &str| {
+    file
+      .defs
+      .get(name)
+      .filter(|entry| source_declares_macro(entry))
+      .map(|entry| (entry.code.clone(), file.clone()))
+  };
   let file = &snapshot.files[namespace];
   let imports = calcit::program::extract_import_map(&file.ns.code, namespace)?;
   let (source_ns, source_def) = if let Some((prefix, name)) = head.split_once('/') {
     let source_ns = match imports.get(prefix).map(|rule| rule.as_ref()) {
       Some(calcit::program::ImportRule::NsAs(target)) => target.as_ref(),
-      Some(_) => return Ok(false),
+      Some(_) => return Ok(None),
       None => prefix,
     };
     (source_ns, name)
@@ -1028,17 +1046,17 @@ pub(crate) fn definition_head_is_macro(snapshot_file: &str, snapshot: &Snapshot,
   } else if let Some(rule) = imports.get(head) {
     match rule.as_ref() {
       calcit::program::ImportRule::NsReferDef(target, name) => (target.as_ref(), name.as_ref()),
-      _ => return Ok(false),
+      _ => return Ok(None),
     }
   } else {
     (calcit::calcit::CORE_NS, head)
   };
   if let Some(file) = snapshot.files.get(source_ns) {
-    return Ok(file.defs.get(source_def).is_some_and(source_declares_macro));
+    return Ok(macro_code(file, source_def));
   }
   if source_ns == calcit::calcit::CORE_NS {
     let core = calcit::load_core_snapshot()?;
-    return Ok(core.files[source_ns].defs.get(source_def).is_some_and(source_declares_macro));
+    return Ok(macro_code(&core.files[source_ns], source_def));
   }
   // Read source only, across all configured entries; do not expand macros or
   // activate unrelated definitions while validating a mutation.
@@ -1054,7 +1072,7 @@ pub(crate) fn definition_head_is_macro(snapshot_file: &str, snapshot: &Snapshot,
     match super::load_module_with_sources_silent(module, base_dir, &module_folder) {
       Ok(loaded) => {
         if let Some(file) = loaded.snapshot.files.get(source_ns) {
-          return Ok(file.defs.get(source_def).is_some_and(source_declares_macro));
+          return Ok(macro_code(file, source_def));
         }
       }
       Err(error) => load_errors.push(format!("{module}: {error}")),
@@ -1066,7 +1084,7 @@ pub(crate) fn definition_head_is_macro(snapshot_file: &str, snapshot: &Snapshot,
       load_errors.join("\n")
     ));
   }
-  Ok(false)
+  Ok(None)
 }
 
 fn validate_definition_shape(

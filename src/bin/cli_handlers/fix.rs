@@ -71,6 +71,8 @@ const CALLABLE_CONTRACT_PROOF_RULE: &str = "callable-contract-proof-v1";
 const NOMINAL_WRITE_PROOF_RULE: &str = "nominal-write-proof-v1";
 const OPTIONAL_PARAMETERS_RULE: &str = "optional-parameters-v1";
 const OPTIONAL_PARAMETERS_DIAGNOSTIC: &str = "E_LEGACY_OPTIONAL_PARAM";
+const CASE_DEFAULT_MATCH_RULE: &str = "case-default-to-match-v1";
+const CASE_DEFAULT_MATCH_DIAGNOSTIC: &str = "FIX_CASE_DEFAULT_MATCH";
 const SURFACE_LATEST_V1_PRESET: &str = "surface-latest-v1";
 const SURFACE_LATEST_V2_PRESET: &str = "surface-latest-v2";
 const CORE_API_028_V1_PRESET: &str = "core-api-0.28-v1";
@@ -485,7 +487,8 @@ pub(crate) fn handle_fix_command(
   let optional_parameters = selected_rules.contains(&OPTIONAL_PARAMETERS_RULE);
   let core_predicate_rename = selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE)
     || selected_rules.contains(&CORE_FUNCTION_ALIAS_RULE)
-    || selected_rules.contains(&CORE_REF_CONSTRUCTOR_RULE);
+    || selected_rules.contains(&CORE_REF_CONSTRUCTOR_RULE)
+    || selected_rules.contains(&CASE_DEFAULT_MATCH_RULE);
   let semantic_refactor = semantic_rename || value_to_zero_arg_fn || local_rename;
   let migration_rule =
     semantic_refactor || schema_synthesis || optional_parameters || core_predicate_rename || options.workflow.is_some();
@@ -713,6 +716,13 @@ pub(crate) fn handle_fix_command(
   }
   if selected_rules.contains(&CORE_REF_CONSTRUCTOR_RULE) {
     suggestions.extend(plan_core_ref_constructor_fixes(
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+    )?);
+  }
+  if selected_rules.contains(&CASE_DEFAULT_MATCH_RULE) {
+    suggestions.extend(case_default::plan_case_default_fixes(
       &source_snapshot,
       snapshot_file,
       &selected_definitions,
@@ -1225,13 +1235,14 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CALLABLE_CONTRACT_PROOF_RULE
         | NOMINAL_WRITE_PROOF_RULE
         | OPTIONAL_PARAMETERS_RULE
+        | CASE_DEFAULT_MATCH_RULE
         | TAG_MATCH_RULE
         | REQUIRED_STRUCT_FIELD_RULE
     )
   {
     return Err(
       format!(
-        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`, `{CASE_DEFAULT_MATCH_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
       ) + &format!(
         " Review-only compiler rules: `{UNSAFE_COERCE_BOUNDARY_RULE}`, `{ASSERT_TYPE_PROOF_RULE}`, `{CONCRETE_RETURN_PROOF_RULE}`, `{CALLABLE_CONTRACT_PROOF_RULE}`, `{NOMINAL_WRITE_PROOF_RULE}`."
       ),
@@ -1285,6 +1296,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_COLLECTION_LEN_RULE
         | CORE_EFFECT_METHOD_RULE
         | CORE_REF_CONSTRUCTOR_RULE
+        | CASE_DEFAULT_MATCH_RULE
     ) {
       return vec![match rule {
         RENAME_DEFINITION_RULE => RENAME_DEFINITION_RULE,
@@ -1307,6 +1319,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_COLLECTION_LEN_RULE => CORE_COLLECTION_LEN_RULE,
         CORE_EFFECT_METHOD_RULE => CORE_EFFECT_METHOD_RULE,
         CORE_REF_CONSTRUCTOR_RULE => CORE_REF_CONSTRUCTOR_RULE,
+        CASE_DEFAULT_MATCH_RULE => CASE_DEFAULT_MATCH_RULE,
         _ => OPTIONAL_PARAMETERS_RULE,
       }];
     }
@@ -1454,6 +1467,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_REF_CONSTRUCTOR_DIAGNOSTIC,
       evidence_source: "reader-resolved-builtin-proc-and-unshadowed-core-syntax",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    CASE_DEFAULT_MATCH_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: CASE_DEFAULT_MATCH_DIAGNOSTIC,
+      evidence_source: "literal-patterns-and-core-macro-expansion",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -1931,6 +1951,7 @@ fn plan_definition_rename(
   Ok(suggestions)
 }
 
+mod case_default;
 mod compiler_review;
 mod local_rename;
 pub(crate) mod schema_synthesis;
@@ -3938,6 +3959,7 @@ fn supports_attached_migrations(rule: &str) -> bool {
       | CORE_LIST_ADD_RULE
       | CORE_COLLECTION_LEN_RULE
       | CORE_REF_CONSTRUCTOR_RULE
+      | CASE_DEFAULT_MATCH_RULE
       | NAMED_ENUM_CONSTRUCTOR_RULE
       | NAMED_STRUCT_CONSTRUCTOR_RULE
       | REDUNDANT_DO_RULE
@@ -4126,6 +4148,12 @@ fn plan_attached_fixes(
               &synthetic_def,
               &wrapper,
             ));
+          }
+          if selected_rules.contains(&CASE_DEFAULT_MATCH_RULE) {
+            match case_default::plan_case_default_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper) {
+              Ok(planned) => candidates.extend(planned),
+              Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
+            }
           }
           for alias in CORE_EFFECT_METHOD_ALIASES
             .iter()
