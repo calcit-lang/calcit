@@ -6406,6 +6406,12 @@ fn check_struct_method_args(
   let Calcit::Method(method_name, calcit::MethodKind::Invoke(_) | calcit::MethodKind::ExternalInvoke(_)) = head else {
     return;
   };
+  // Method heads carry no coordinate; locate the call by its first source operand.
+  let call_location = head.get_location().or_else(|| {
+    args
+      .iter()
+      .find_map(|arg| find_calcit_location_matching(arg, |location| location.def.as_ref() != GENERATED_DEF))
+  });
 
   // Need receiver to get method info
   let Some(receiver) = args.first() else {
@@ -6550,13 +6556,14 @@ fn check_struct_method_args(
       {
         let expected_str = expected_type.substitute_type_vars(&bindings).to_brief_string();
         let actual_str = actual_type.as_ref().to_brief_string();
-        gen_check_warning_code(
+        gen_check_warning_code_at(
           format!(
             "[Warn] Method `.{method_name}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name} (implementation {implementation_name})",
             idx + 2,
           ),
           "W_METHOD_ARG_TYPE_MISMATCH",
           file_ns,
+          call_location.clone(),
           check_warnings,
         );
       }
@@ -6642,13 +6649,14 @@ fn check_struct_method_args(
         {
           let expected_str = expected_rest_type.describe();
           let actual_str = actual_type.as_ref().describe();
-          gen_check_warning_code(
+          gen_check_warning_code_at(
             format!(
               "[Warn] Method `.{method_name}` variadic arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
               idx + rest_idx + 2
             ),
             "W_METHOD_ARG_TYPE_MISMATCH",
             file_ns,
+            call_location.clone(),
             check_warnings,
           );
         }
@@ -6666,13 +6674,14 @@ fn check_struct_method_args(
         } else {
           ""
         };
-        gen_check_warning_code(
+        gen_check_warning_code_at(
           format!(
             "[Warn] Method `.{method_name}` arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}{migration}",
             idx + 2 // +2 because idx is 0-based and we skip receiver (arg 1)
           ),
           "W_METHOD_ARG_TYPE_MISMATCH",
           file_ns,
+          call_location.clone(),
           check_warnings,
         );
       }

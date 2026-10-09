@@ -21,6 +21,10 @@
 //!   but was never reported during preprocess means the lowered node skipped
 //!   a check. When a recorded rewrite produced the call node, the violation
 //!   also names that rewrite, so the origin chain points at the lowering.
+//!   Such a call was checked in its source shape (for example as a method
+//!   call), whose warning text differs from the lowered call's; a warning
+//!   preprocess reported at the same call location therefore counts as the
+//!   check having run.
 //!
 //! Invariant (a), "every checked node has a type or an explicit Unknown", is
 //! documented but not enforced yet: it needs per-node type slots.
@@ -229,6 +233,11 @@ pub(super) fn validate_definition(
       .get_or_init(|| reported_messages(reported, ns, def))
       .contains(&normalized_message(message, ns, def))
   };
+  // A rewritten call was checked in its source shape, so its warning text can
+  // differ from the lowered call's; the shared call location identifies it.
+  let reported_at = |location: Option<&NodeLocation>, rewritten: bool| {
+    rewritten && location.is_some_and(|location| reported.iter().any(|warning| warning.location() == location))
+  };
   let mut violations: Vec<Violation> = vec![];
   let mut live: Vec<&RewriteEvidence> = vec![];
 
@@ -241,7 +250,12 @@ pub(super) fn validate_definition(
         let recheck = RefCell::new(vec![]);
         let location = find_calcit_location_matching(node, |location| location.def.as_ref() != GENERATED_DEF);
         check_proc_arg_types(proc, &items.drop_left(), &ScopeTypes::new(), ns, def, location.clone(), &recheck);
-        for warning in recheck.borrow().iter().filter(|warning| !known(warning.message())) {
+        let already_checked = reported_at(location.as_ref(), !produced_by.is_empty());
+        for warning in recheck
+          .borrow()
+          .iter()
+          .filter(|warning| !already_checked && !known(warning.message()))
+        {
           violations.push(Violation {
             invariant: "(c) every call node is checked",
             detail: format!(
@@ -266,7 +280,12 @@ pub(super) fn validate_definition(
           call_location: location.clone(),
         };
         check_user_fn_arg_types(&info, head, &items.drop_left(), &ScopeTypes::new(), &call_info, &recheck);
-        for warning in recheck.borrow().iter().filter(|warning| !known(warning.message())) {
+        let already_checked = reported_at(location.as_ref(), !produced_by.is_empty());
+        for warning in recheck
+          .borrow()
+          .iter()
+          .filter(|warning| !already_checked && !known(warning.message()))
+        {
           violations.push(Violation {
             invariant: "(c) every call node is checked",
             detail: format!(
@@ -561,6 +580,39 @@ mod tests {
       "{:?}",
       error.provenance
     );
+  }
+
+  /// A rewritten call was checked in its source shape: preprocess reported a
+  /// method warning at the call location, with different text than the
+  /// lowered call's check. That is not a skipped check.
+  #[test]
+  fn rewritten_call_reported_at_its_location_is_not_a_violation() {
+    let at = NodeLocation::new(Arc::from("tests.post-lowering"), Arc::from("main"), Arc::new(vec![3, 2, 0]));
+    let map = Arc::new(CalcitTypeAnnotation::Map(
+      Arc::new(CalcitTypeAnnotation::Tag),
+      Arc::new(CalcitTypeAnnotation::Number),
+    ));
+    let Calcit::Local(mut receiver) = local("m", map.clone()) else {
+      unreachable!()
+    };
+    receiver.location = Some(at.coord.clone());
+    let call = Calcit::from(vec![
+      Calcit::Proc(CalcitProc::NativeMapAssoc),
+      Calcit::Local(receiver),
+      Calcit::Tag(cirru_edn::EdnTag::from("b")),
+      Calcit::new_str("oops"),
+    ]);
+    let evidence = RewriteEvidence {
+      origin: RewriteOrigin::MethodInline,
+      before_form: Calcit::Nil,
+      before_type: map.clone(),
+      after_form: call.clone(),
+      after_type: map,
+      location: None,
+    };
+    let source_warning = LocatedWarning::new("[Warn] Method `.assoc` arg 3 expects type `number`".to_owned(), at);
+    validate(&call, &[source_warning], std::slice::from_ref(&evidence)).expect("the source-shaped check ran at this call");
+    validate(&call, &[], &[evidence]).expect_err("without a reported warning the skipped check is still a violation");
   }
 
   /// #1378: `%none` was re-inferred as `Option<Dynamic>` and erased the payload.
