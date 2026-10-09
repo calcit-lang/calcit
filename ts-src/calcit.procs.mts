@@ -1001,7 +1001,7 @@ export let reset_$x_ = (a: CalcitRef, v: CalcitValue): CalcitValue => {
   return v;
 };
 
-export let add_watch = (a: CalcitRef, k: CalcitTag, f: CalcitFn): void => {
+export let add_watch_$x_ = (a: CalcitRef, k: CalcitTag, f: CalcitFn): void => {
   if (!(a instanceof CalcitRef)) {
     throw new Error("Expected ref for add-watch!");
   }
@@ -1787,8 +1787,8 @@ export let printable = (...args: CalcitValue[]): string => {
   return args.map((x) => toString(x, false)).join(" ");
 };
 
-// time from app start
-export let cpu_time = (): number => {
+// monotonic milliseconds since app start
+export let monotonic_time_ms = (): number => {
   if (inNodeJs) {
     // uptime returns in seconds
     return process.uptime() * 1000;

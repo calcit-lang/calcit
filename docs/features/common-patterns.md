@@ -180,7 +180,7 @@ let
 ```cirru
 let
     result1 $ str |Hello | |World
-    result2 $ join-str ([] :a :b :c) |,
+    result2 $ join-string ([] :a :b :c) |,
     result3 $ str-spaced :error |in :module
   println result1
   ; => |HelloWorld

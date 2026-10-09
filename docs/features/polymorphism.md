@@ -292,9 +292,9 @@ Option result. An incompatible fallback is rejected whenever the payload type
 is known; an existing Dynamic boundary remains Dynamic. Keep the original
 Option and use `if-let` or exhaustive `match` when absence is a distinct branch.
 
-Raw JavaScript property reads and native calls are different: they return `JsNullish<JsObject>`. Narrow them with `js-present?`/`js-nullish?`; `nil?`, `some?`, `non-nil?`, and generic `optionally` do not erase this host boundary. Use `js-nullish->option` only as an explicit conversion after accepting or validating the opaque payload contract.
+Raw JavaScript property reads and native calls are different: they return `JsNullish<JsObject>`. Narrow them with `js-present?`/`js-nullish?`; `nil?`, `non-nil?`, and generic `optionally` do not erase this host boundary. Use `js-nullish->option` only as an explicit conversion after accepting or validating the opaque payload contract.
 
-泛型 payload 无法推断时，Calcit 会保留 nominal wrapper，只把未知 payload 标为 `Dynamic`；例如对动态 list 调用 `find` 的结果仍是 `Option<Dynamic>`，而不是裸 `Dynamic`。这会让迁移错误保持可见。若对该 Option 使用 nullable predicate（`some?`/`non-nil?`/`nil?`）、位置式 enum 访问或裸比较，会报告 `W_NOMINAL_ENUM_LEGACY_USE`；请改用 Option 方法或原生 `match`。
+泛型 payload 无法推断时，Calcit 会保留 nominal wrapper，只把未知 payload 标为 `Dynamic`；例如对动态 list 调用 `find` 的结果仍是 `Option<Dynamic>`，而不是裸 `Dynamic`。这会让迁移错误保持可见。若对该 Option 使用 nullable predicate（`non-nil?`/`nil?`）、位置式 enum 访问或裸比较，会报告 `W_NOMINAL_ENUM_LEGACY_USE`；请改用 Option 方法或原生 `match`。
 
 The same operations are available as methods on enum values:
 

@@ -111,7 +111,7 @@
             :tags $ #{} :applied-struct-evidence
         'read-b $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-b (reel)
-            .count $ :value $ :db reel
+            .len $ :value $ :db reel
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] $ :: 'model/ReelLike 'data/DbB

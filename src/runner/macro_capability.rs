@@ -66,7 +66,7 @@ fn proc_policy(proc: CalcitProc) -> Option<CapabilityPolicy> {
     GetEnv | GetArgs => MacroCapability::EnvRead,
     ReadFile | ReadDir => MacroCapability::FsRead,
     NativeGetOs | NativeGetCalcitBackend | NativeGetCalcitRunningMode => MacroCapability::PlatformRead,
-    UnixTimeMs | CpuTime => MacroCapability::ClockRead,
+    UnixTimeMs | MonotonicTimeMs => MacroCapability::ClockRead,
     GenerateId
     | NativeResetGenSymIndex
     | RegisterCalcitBuiltinImpls

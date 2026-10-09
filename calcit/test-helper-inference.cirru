@@ -17,7 +17,7 @@
         'helper-lengths $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn helper-lengths ()
             .map (helper-texts)
-              fn (x) (.count x)
+              fn (x) (.len x)
           :examples $ []
         'helper-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn helper-list () ([] 1 2 3)

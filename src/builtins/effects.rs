@@ -54,14 +54,14 @@ pub fn init_effects_states() {
   let _eff = STARTED_INSTANT.read().expect("read instant");
 }
 
-pub fn cpu_time(_xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn monotonic_time_ms(_xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let now = Instant::now();
   let started = STARTED_INSTANT.read().expect("read instant").to_owned();
 
   let time = match now.checked_duration_since(started) {
     Some(n) => (n.as_micros() as f64) / 1000.0,
     None => {
-      eprintln!("[Warn] got none CPU time from: {started:?} -> {now:?}");
+      eprintln!("[Warn] got no monotonic time from: {started:?} -> {now:?}");
       0.0
     }
   };

@@ -1293,8 +1293,8 @@ pub(super) fn build_str_pad_right_fn(str_tag_id: i32) -> CompiledFn {
   }
 }
 
-/// Core body for `join-str xs sep` — local 0 = xs (f64), local 1 = sep (f64 str).
-pub(super) fn emit_join_str_from_locals(ctx: &mut WasmGenCtx, xs_f64: u32, sep_f64: u32) -> Result<(), String> {
+/// Core body for `join-string xs sep` — local 0 = xs (f64), local 1 = sep (f64 str).
+pub(super) fn emit_join_string_from_locals(ctx: &mut WasmGenCtx, xs_f64: u32, sep_f64: u32) -> Result<(), String> {
   let xs_ptr = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(xs_f64));
   ctx.emit(Instruction::I32TruncF64U);
@@ -1374,16 +1374,16 @@ pub(super) fn emit_join_str_from_locals(ctx: &mut WasmGenCtx, xs_f64: u32, sep_f
   Ok(())
 }
 
-/// `join-str xs sep` — call-site intercept.
-pub(super) fn emit_join_str(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(2, args, "join-str")?;
+/// `join-string xs sep` — call-site intercept.
+pub(super) fn emit_join_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(2, args, "join-string")?;
   let xs = ctx.alloc_local();
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::LocalSet(xs));
   let sep = ctx.alloc_local();
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::LocalSet(sep));
-  emit_join_str_from_locals(ctx, xs, sep)
+  emit_join_string_from_locals(ctx, xs, sep)
 }
 
 /// `trim` — strips whitespace (1 arg) or a specific character (2 args) from both ends.

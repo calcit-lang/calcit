@@ -58,7 +58,7 @@ their schema. The feature identifies the boundary but does not suppress
 nullable dereference or strong-type mismatch diagnostics.
 
 Use `js-nullish?` and `js-present?` to narrow a JavaScript boundary. Applying
-`nil?`/`some?`/`non-nil?` fails strict project source with
+`nil?`/`non-nil?` fails strict project source with
 `E_JS_FFI_NULLABLE_PREDICATE`; compatibility mode reports
 `W_JS_FFI_NULLABLE_PREDICATE`. Convert explicitly with
 `js-nullish->option` only after accepting the opaque payload contract; generic
@@ -710,9 +710,9 @@ Common diagnostics:
 | `E_UNSCOPED_UNSAFE_COERCE` | Strict preprocessing finds `unsafe-coerce` outside the current function's lexical FFI scope. | Move it into a small structured `Fn` adapter declaring `:js-ffi`; validate/convert there and return typed data. |
 | `E_JS_FFI_TARGET_MISMATCH` | The selected entry targets another host. | Correct the entry `:target` or use the matching adapter. |
 | `W_JS_FFI_NULLABLE_DEREF` | A nullable host value is dereferenced directly. | Use optional access or narrow with `js-present?`. |
-| `W_JS_FFI_NULLABLE_PREDICATE` | Compatibility source applies `nil?`/`some?`/`non-nil?` to a host-nullish value. | Use `js-nullish?`/`js-present?` so host semantics remain visible. |
+| `W_JS_FFI_NULLABLE_PREDICATE` | Compatibility source applies `nil?`/`non-nil?` to a host-nullish value. | Use `js-nullish?`/`js-present?` so host semantics remain visible. |
 | `E_JS_FFI_NULLABLE_DEREF` | Strict project source dereferences `JsNullish<JsObject>` directly. | Use optional access or narrow with a dedicated JS predicate. |
-| `E_JS_FFI_NULLABLE_PREDICATE` | Strict project source applies `nil?`/`some?`/`non-nil?` to `JsNullish<T>`. | Use `js-nullish?`/`js-present?`, then convert explicitly if needed. |
+| `E_JS_FFI_NULLABLE_PREDICATE` | Strict project source applies `nil?`/`non-nil?` to `JsNullish<T>`. | Use `js-nullish?`/`js-present?`, then convert explicitly if needed. |
 | `E_JS_FFI_FIELD_READONLY` | A typed external field is written without permission. | Add the field to `:ffi :writable` only if the host API permits it. |
 
 ## 模块内 JS 实现（0.22 预览）

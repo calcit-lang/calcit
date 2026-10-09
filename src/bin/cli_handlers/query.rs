@@ -1664,12 +1664,6 @@ mod type_query_tests {
         ".len",
         "core-collection-len-v1",
       ),
-      (
-        parse_type_annotation_query("'String").expect("string type"),
-        ".count",
-        ".len",
-        "core-collection-len-v1",
-      ),
     ] {
       let mut methods = runner::preprocess::static_method_contracts(receiver.as_ref())
         .expect("method contracts")
@@ -1696,6 +1690,12 @@ mod type_query_tests {
       assert_eq!(preferred.role, Some("preferred"));
       assert!(preferred.preferred_name.is_none());
     }
+
+    // String `.count` was retired in 0.29.0; the Countable impl that still carries it is not listed.
+    let string = parse_type_annotation_query("'String").expect("string type");
+    let string_methods = runner::preprocess::static_method_contracts(string.as_ref()).expect("string method contracts");
+    assert!(string_methods.iter().any(|(method, _)| method.name == ".len"));
+    assert!(!string_methods.iter().any(|(method, _)| method.name == ".count"));
 
     let map = parse_type_annotation_query(":: 'Map 'Tag 'Number").expect("map type");
     let mut methods = runner::preprocess::static_method_contracts(map.as_ref())

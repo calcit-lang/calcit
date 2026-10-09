@@ -102,7 +102,7 @@ impl CalcitProc {
       Raise | Todo => Raises("always"),
       Quit => Raises("the exit code is not an integer in 0..255; otherwise the process exits"),
       GetEnv => Result("nil when the variable is unset and no default is given"),
-      GetArgs | CpuTime => Total,
+      GetArgs | MonotonicTimeMs => Total,
       UnixTimeMs => Raises("the system clock is before the Unix epoch"),
       NativeWaitMs | NativeSecureRandomBytes | NativeFsReadText | NativeReadStdinText | NativeFsReadDir | NativeFsWriteText => {
         Result(HOST_RESULT)

@@ -92,7 +92,7 @@
                   fn (key value)
                     str (turn-string key) |= value
               assert-type lines $ :: 'List 'String
-              assert= |color=red,size=large $ join-str (sort lines) |,
+              assert= |color=red,size=large $ join-string (sort lines) |,
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []

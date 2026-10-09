@@ -477,22 +477,22 @@ mod tests {
 
   #[test]
   fn distinguishes_reader_resolved_builtin_calls_from_quoted_data() {
-    let expression = cirru_parser::parse("defn demo () (cpu-time) (quote (cpu-time))")
+    let expression = cirru_parser::parse("defn demo () (remove-watch *r :k) (quote (remove-watch *r :k))")
       .expect("parse expression")
       .into_iter()
       .next()
       .expect("one expression");
     let code = code_to_calcit(&expression, "app.main", "demo", vec![]).expect("convert expression");
     let targets = HashMap::from([(
-      (calcit::calcit::CORE_NS.to_owned(), "cpu-time".to_owned()),
+      (calcit::calcit::CORE_NS.to_owned(), "remove-watch".to_owned()),
       DeprecatedTarget {
-        doc: "Prefer monotonic-time-ms.".to_owned(),
+        doc: "Prefer remove-watch!.".to_owned(),
       },
     )]);
     let mut uses = vec![];
     collect_uses(&code, "app.main", &targets, &HashSet::new(), &mut vec![], &mut uses);
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].path, "code@3");
-    assert_eq!(uses[0].target_name, "cpu-time");
+    assert_eq!(uses[0].target_name, "remove-watch");
   }
 }

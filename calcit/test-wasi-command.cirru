@@ -50,8 +50,8 @@
           :code $ quote $ defn clocks-valid? ()
             let
                 wall $ unix-time-ms
-                before $ cpu-time
-                after $ cpu-time
+                before $ monotonic-time-ms
+                after $ monotonic-time-ms
               and (number? wall) (> wall 0) (number? before) (number? after) (>= after before)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)

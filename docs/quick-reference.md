@@ -334,12 +334,12 @@ let
 - `&atom:deref` or `deref` - read value
 - `reset!` - set value
 - `swap!` - update with function
-- `add-watch!`, `remove-watch!`：注册和移除 Ref watcher，会修改 watcher 状态；旧 `add-watch/remove-watch` 暂留兼容
+- `add-watch!`, `remove-watch!`：注册和移除 Ref watcher，会修改 watcher 状态；旧 `remove-watch` 暂留兼容，旧 `add-watch` 已在 0.29.0 删除
 - `ref?` - predicate
 
 ### Type Predicates
 
-- `nil?`, `non-nil?` - nil checks；`some?` 是暂留的旧非 nil 名称，Option variant 使用 `.some?/.none?`
+- `nil?`, `non-nil?` - nil checks；Option variant 使用 `.some?/.none?`（旧 `some?` 已在 0.29.0 删除）
 - `number?`, `string?`, `tag?`, `symbol?`
 - `list?`, `map?`, `set?`, `struct?`, `enum?`
 - `struct-def?`, `enum-def?`, `ref?`
@@ -397,7 +397,7 @@ Struct，`get` 可按运行时字段名返回 `Option<Dynamic>`。
 - `identical?` - reference equality
 - `recur` - tail recursion
 - `generate-id!` - unique ID generation
-- `monotonic-time-ms` - 单调时钟毫秒读数，用于测量经过时间；旧 `cpu-time` 暂留兼容
+- `monotonic-time-ms` - 单调时钟毫秒读数，用于测量经过时间
 - `wait-ms`：同步等待整数毫秒，返回 `Result<Unit,String>`；与异步 `timeout-call` 无关
 - `&get-os`, `&get-calcit-backend` - environment info
 

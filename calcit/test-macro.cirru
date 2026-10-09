@@ -307,13 +307,13 @@
               assert=
                 macroexpand $ quote $ with-cpu-time (+ 1 2)
                 quote $ let
-                    started__1 $ cpu-time
+                    started__1 $ monotonic-time-ms
                     v__2 $ + 1 2
                   println |[cpu-time]
                     format-to-lisp $ quote $ + 1 2
                     , |=>
                       .format
-                        &- (cpu-time) started__1
+                        &- (monotonic-time-ms) started__1
                         , 3
                       , |ms
                   , v__2
