@@ -4,7 +4,7 @@ import { CalcitImpl } from "./js-impl.mjs";
 import { CalcitEnumDef } from "./js-enum-def.mjs";
 import { CalcitStructValue } from "./js-struct-value.mjs";
 
-export type FieldValidator = ((value: CalcitValue) => boolean) | null;
+export type FieldValidator = ((value: CalcitValue, requireEvidence?: boolean) => boolean) | null;
 
 export class CalcitStructDef {
   name: CalcitTag;

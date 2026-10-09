@@ -19,10 +19,11 @@ import { CalcitStructDef } from "./js-struct-def.mjs";
 import { valueMatchesTypeForm } from "./js-type-form.mjs";
 
 /// Field writes check the declared field type, like the native runtime.
-let assertFieldValue = (structRef: CalcitStructDef, idx: number, value: CalcitValue, operation: string): void => {
+let assertFieldValue = (structRef: CalcitStructDef, idx: number, value: CalcitValue, operation: string, requireEvidence = false): void => {
   const fieldType = structRef?.fieldTypes?.[idx];
   const validator = structRef?.fieldValidators?.[idx];
-  if (validator != null ? !validator(value) : fieldType != null && !valueMatchesTypeForm(value, fieldType)) {
+  if (validator != null ? !validator(value, requireEvidence)
+    : fieldType != null && !valueMatchesTypeForm(value, fieldType, requireEvidence)) {
     throw new Error(`${operation} field :${structRef.fields[idx].value} expects type ${toString(fieldType, true)}, but received ${toString(value, true)}`);
   }
 };
@@ -72,7 +73,7 @@ export class CalcitStructValue {
     if (idx < 0) {
       throw new Error(`&struct:assoc invalid field ${field.toString()} for struct '${this.name.value}'`);
     }
-    assertFieldValue(this.structRef, idx, v, "&struct:assoc");
+    assertFieldValue(this.structRef, idx, v, "&struct:assoc", true);
     const values = this.values.slice();
     values[idx] = v;
     return new CalcitStructValue(this.name, this.fields, values, this.structRef);
@@ -261,7 +262,7 @@ export let _$n_struct_$o_with = (proto: CalcitValue, ...xs: Array<CalcitValue>):
       if (idx < 0) {
         throw new Error(`Cannot find field ${k} among ${proto.fields}`);
       }
-      assertFieldValue(proto.structRef, idx, v, "&struct:with");
+      assertFieldValue(proto.structRef, idx, v, "&struct:with", true);
       values[idx] = v;
     }
     return new CalcitStructValue(proto.name, proto.fields, values, proto.structRef);

@@ -1404,7 +1404,14 @@ fn struct_field_validators_to_js(ns: &str, def: &str, imports: &RefCell<ImportsD
   for field in nominal.field_types.iter() {
     validators.push(match DataShapeGraph::for_field_write(field, owner_ns) {
       Some(graph) => format!(
-        "value => {}validate_data_shape(value, {})",
+        "(value, requireEvidence) => {}{}validate_data_shape(value, {})",
+        if graph.proves_dynamic_write() {
+          ""
+        } else if graph.has_optional_root() {
+          "(!requireEvidence || value === null) && "
+        } else {
+          "!requireEvidence && "
+        },
         get_proc_prefix(ns),
         data_shape_graph_to_js(&graph, ns, imports)?
       ),

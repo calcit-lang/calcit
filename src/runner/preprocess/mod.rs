@@ -4118,7 +4118,7 @@ fn preprocess_list_call(
           for i in 0..pair_count {
             let k_idx = 1 + i * 2;
             let v_idx = k_idx + 1;
-            if let Some(Calcit::Tag(field_tag)) = processed_args.get(k_idx) {
+            if let Some(field_tag) = processed_args.get(k_idx).and_then(static_struct_field_tag) {
               if let Some(idx) = struct_def.index_of(field_tag.ref_str()) {
                 new_args.push(Calcit::Number(idx as f64));
                 new_args.push(Calcit::Tag(field_tag.to_owned()));
@@ -4338,8 +4338,7 @@ fn preprocess_list_call(
           if let Some(specialized) =
             try_specialize_polymorphic_call(calcit::CORE_NS, proc.as_ref(), &processed_args, scope_types, file_ns)
           {
-            reject_unproven_specialized_struct_update(&specialized, scope_types, file_ns, call_stack)?;
-            return Ok(specialized);
+            return check_and_lower_specialized_struct_update(specialized, scope_types, file_ns, call_stack);
           }
         }
 
@@ -4846,8 +4845,7 @@ fn preprocess_known_function_call(
         );
       }
       if let Some(specialized) = try_specialize_polymorphic_call(ns, def, &current_args, scope_types, file_ns) {
-        reject_unproven_specialized_struct_update(&specialized, scope_types, file_ns, call_stack)?;
-        return Ok(specialized);
+        return check_and_lower_specialized_struct_update(specialized, scope_types, file_ns, call_stack);
       }
     }
     Ok(Calcit::from(CalcitList::from(ys)))
@@ -6094,21 +6092,24 @@ fn struct_update_pairs<'a>(head: &Calcit, args: &'a CalcitList) -> Option<Vec<(u
 /// A polymorphic call such as nominal `assoc` is lowered to a Struct update
 /// procedure after the direct-call checks ran; prove its field value against
 /// the declared field type as if the procedure had been written directly. The
-/// runtime field check stays as the final safeguard.
-fn reject_unproven_specialized_struct_update(
-  specialized: &Calcit,
+/// runtime field check stays as the final safeguard. Prove the original argument
+/// layout before inserting a field index, so diagnostics keep source positions.
+fn check_and_lower_specialized_struct_update(
+  specialized: Calcit,
   scope_types: &ScopeTypes,
   file_ns: &str,
   call_stack: &CallStackList,
-) -> Result<(), CalcitErr> {
-  let Calcit::List(items) = specialized else {
-    return Ok(());
+) -> Result<Calcit, CalcitErr> {
+  let Calcit::List(items) = &specialized else {
+    return Ok(specialized);
   };
-  let Some(head) = items.first() else { return Ok(()) };
+  let Some(head) = items.first() else { return Ok(specialized) };
   if !matches!(head, Calcit::Proc(CalcitProc::NativeStructAssoc | CalcitProc::NativeStructAssocAt)) {
-    return Ok(());
+    return Ok(specialized);
   }
-  reject_unproven_struct_update(head, &items.drop_left(), scope_types, file_ns, call_stack)
+  let args = items.drop_left();
+  reject_unproven_struct_update(head, &args, scope_types, file_ns, call_stack)?;
+  Ok(lower_static_struct_assoc(head, &args, scope_types).map_or(specialized, Calcit::from))
 }
 
 fn reject_unproven_struct_update(
@@ -6125,10 +6126,10 @@ fn reject_unproven_struct_update(
     return Ok(());
   };
   let Some(receiver) = args.first() else { return Ok(()) };
-  // Historical exception: data-shaped fields now have deep runtime checks,
-  // but erased generics and callable/host contracts remain incomplete (#1868).
-  // Do not extend this exemption to other updates before those gaps are closed.
-  let runtime_checked = matches!(head, Calcit::Proc(CalcitProc::NativeStructWith));
+  // Unresolved name-based writes validate the actual field contract at runtime
+  // and fail closed when it cannot be proved. Indexed source calls still need
+  // static evidence; only lowering may carry an already proved field update.
+  let runtime_checked = matches!(head, Calcit::Proc(CalcitProc::NativeStructAssoc | CalcitProc::NativeStructWith));
   for (index, field, _) in pairs {
     if runtime_checked
       && (!matches!(field, Calcit::Tag(_) | Calcit::Str(_))
@@ -8041,15 +8042,22 @@ fn synthesize_nominal_impl_callable(
   })))
 }
 
-/// Share static field lowering between direct calls and resolved methods.
+/// Normalize only literal field names, preserving all argument evaluation.
+fn static_struct_field_tag(field: &Calcit) -> Option<EdnTag> {
+  match field {
+    Calcit::Tag(tag) => Some(tag.to_owned()),
+    Calcit::Str(name) => Some(EdnTag::from(name.as_ref())),
+    _ => None,
+  }
+}
+
+/// Share static field lowering between direct/core calls and resolved methods.
 fn lower_static_struct_assoc(head: &Calcit, args: &CalcitList, scope_types: &ScopeTypes) -> Option<Vec<Calcit>> {
   if !matches!(head, Calcit::Proc(CalcitProc::NativeStructAssoc)) || args.len() != 3 {
     return None;
   }
   let receiver = args.first()?;
-  let Calcit::Tag(field) = args.get(1)? else {
-    return None;
-  };
+  let field = static_struct_field_tag(args.get(1)?)?;
   let receiver_type = resolve_type_value(receiver, scope_types)?;
   let definition = receiver_type.resolve_to_struct()?;
   let index = definition.index_of(field.ref_str())?;

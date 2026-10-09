@@ -247,6 +247,20 @@ impl DataShapeGraph {
       .flatten()
   }
 
+  /// A snapshot of mutable contents cannot prove the contract of future writes.
+  /// An explicitly open Ref<Dynamic> makes no claim about those contents.
+  pub(crate) fn proves_dynamic_write(&self) -> bool {
+    self.nodes.iter().all(|node| match node {
+      DataShapeNode::Ref(inner) => matches!(self.nodes.get(*inner), Some(DataShapeNode::Dynamic)),
+      _ => true,
+    })
+  }
+
+  /// An absent optional has no payload whose mutable contract needs proving.
+  pub(crate) fn has_optional_root(&self) -> bool {
+    matches!(self.nodes[self.root], DataShapeNode::Optional(_))
+  }
+
   fn build_with_options(target: &CalcitTypeAnnotation, default_ns: &str, allow_dynamic: bool) -> Result<Self, DataShapeError> {
     let mut builder = GraphBuilder {
       nodes: vec![],

@@ -470,14 +470,9 @@ fn emit_wasm_impl(
   let num_imports = host_imports.len() as u32;
 
   // Collect tags early — needed to embed the string type tag in the __str_new helper.
-  let tag_index = collect_all_tags_from(
-    &fn_defs,
-    if boundary == WasmBoundary::Component {
-      Some(&program_data)
-    } else {
-      None
-    },
-  );
+  // Layout collection includes registered definitions on every boundary, even
+  // when their functions are not emitted. Their tags must use the same scope.
+  let tag_index = collect_all_tags_from(&fn_defs, Some(&program_data));
   if write_output {
     eprintln!("[wasm] tag index: {tag_index:?}");
   }
@@ -9073,13 +9068,19 @@ fn collect_all_tags_from(
     }
   }
   if let Some(program_data) = program_data {
-    for file in program_data.values() {
-      for compiled in file.defs.values() {
+    for (ns, file) in program_data {
+      for (name, compiled) in &file.defs {
+        if let Some(value @ Calcit::StructDef(_)) = program::lookup_runtime_ready(ns, name) {
+          collect_tags_from_expr(&value, &mut tags);
+        }
         for code in compiled
           .source_code
           .iter()
           .chain([&compiled.preprocessed_code, &compiled.codegen_form])
         {
+          // Match collect_struct_layouts, including references nested in
+          // compiled definitions outside the selected function bodies.
+          collect_tags_from_expr(code, &mut tags);
           let struct_def = match code {
             Calcit::StructDef(struct_def) => Some(struct_def.clone()),
             _ => try_parse_defrecord_form(code).or_else(|| match crate::calcit::type_annotation::resolve_type_def_from_code(code) {
