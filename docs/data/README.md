@@ -2,9 +2,11 @@
 
 `core-api-0.28-scope.edn` 是已审阅的转换、解析、副作用、谓词与集合首选入口的范围与失败语义；`core-api-0.28-baseline.edn` 用现有 `query def/type` 导出对应的声明证据。两者都是原生 **Cirru EDN**，不是 Snapshot，也不参与运行时派发。
 
-本批是 **0.28.0 candidate 的部分基线**，不是整个 core 已冻结的声明。现已纳入公开数学函数、`fs:path` 首选构造、ToString/Len/Add/Eq 约束及已审阅的集合/谓词方法，不因 internal tag 漏掉应用入口。其余公开边界/trait、兼容名移除版本、实际 backend 支持矩阵与集中迁移例外仍未完成。#1568 的策略基础已关闭，剩余验收由 [#1458](https://github.com/calcit-lang/calcit/issues/1458) 与 milestone 收尾跟进；issue 状态不改变部分基线的覆盖范围。失败描述是人工审阅的语义记录，不是脚本自动证明；行为仍以已有 Calcit `:tests`、严格负例和 host/backend 回归为准。
+本批是 **0.29.0 candidate 的部分基线**，延续原有文件名，不是整个 core 已冻结的声明。现已纳入公开数学函数、`fs:path` 首选构造、ToString/Len/Add/Eq 约束及已审阅的集合/谓词方法，不因 internal tag 漏掉应用入口。其余公开边界/trait、兼容名移除版本、实际 backend 支持矩阵与集中迁移例外仍未完成。#1568 的策略基础已关闭，剩余验收由 [#1458](https://github.com/calcit-lang/calcit/issues/1458) 与 milestone 收尾跟进；issue 状态不改变部分基线的覆盖范围。已有失败描述是历史人工审阅的记录，不是脚本自动证明；新增声明不再复制失败文字，失败语义由定义自身的 doc、schema 和原 Calcit `:tests`、严格负例及 host/backend 回归共同说明。
 
 标量转换另外记录 String、Number、Bool、Tag、Symbol、Nil 的首选 `.to-string` 实际调用契约，返回值均须保持 String，不能因内部实现声明较宽而丢失派发后的证据。Debug/Show 的公开 trait 声明也纳入范围，避免将调试显示、面向人的显示和值转换误合并；不因此承诺所有类型都实现这三种能力。方法实现路径仍仅是 provenance，编译器可以重构内部 helper 而不改用户调用契约。
+
+显示与源码格式化另记录 `str`、`format-to-lisp`、`to-lispy-string` 的公开名称、原声明 schema 和 arity，由同一 query 导出。`str` 的 rest 参数仍可接收开放值；另两者保留 `T -> String`，不因为签名相同而视为等价或自动互换，区别由原附带测试验证。`format-cirru-edn` 的可选 Bool 目前只在 proc 类型合同和 runtime arity 中完整体现，core 声明未列出该参数；typed decoder 的宽 builtin 声明也不等于实例化后的 `Result<T,String>`。这些缺口不能通过把宽声明写进基线伪装为完整合同，也不因此改变它们已有的严格检查或后端支持。
 
 `to-string` 的 `wasm-scalar-method-contract` 附带测试使用普通 `.to-string`，同一断言 AST 在 native、生成 JS 和实际 WASM 执行，覆盖 String、Number、Bool、Tag、Nil 的文本结果及 String 返回类型。WASM fixture 另外从宿主传入运行时 Number，核对普通方法返回的 UTF-8 文本，包括小数、正负零、非有限值和 f64 边界；不改成 native call 或内部 primitive 来绕过方法 lowering。Symbol 仍只计入已经验证的 native/JS 范围，不能因其他标量通过而宣称 WASM 支持 Symbol。
 

@@ -105,9 +105,9 @@ loop
 let
     cell $ ref $ assert-type (Option :none) $ :: 'Option 'Number
   reset! cell $ Option :some 7
-  assert= 7 $ option:unwrap-or (deref cell) 0
+  assert= 7 $ .unwrap-or (deref cell) 0
   reset! cell $ Option :none
-  assert= 0 $ option:unwrap-or (deref cell) 0
+  assert= 0 $ .unwrap-or (deref cell) 0
 ```
 
 同一个 Ref 经局部别名写入 `Option :some |wrong` 时，同样报告 `W_RESET_ARG_TYPE_MISMATCH`。省略上下文时，`ref (Option :none)` 的 payload 槽固定为 Never，下面的写入会被拒绝，诊断会给出上面的初始化写法：
@@ -203,7 +203,7 @@ calcit edit schema app.schema/Items --code "quote \$ :: 'List 'Number"
 ```cirru
 let
     port-result $ number->uint16 8080
-  result:ok? port-result
+  port-result .ok?
 ```
 
 当前 source-level refinement 与受检转换在 native、JavaScript 后端一致。Component contract 与 Canonical ABI
@@ -227,13 +227,13 @@ calcit calcit.cirru --entry test
 
 对于省略 schema、且编译器已经能够证明完整契约的封闭 helper，`check-types`、`weak-types` 和 `quality` 使用同一份推断结果；增量分析也遵循这一规则。删除这类冗余标注不应增加迁移债务。分析不会把推断结果写回源码，也不会替换显式 `Dynamic`；推断失败的定义仍按原有缺失契约报告。
 
-已有 CI 的 `analyze quality` 与 baseline 在 0.14.x 保留为有界兼容面，便于存量项目逐步把债务清零：
+已有 CI 的 `analyze quality` 与 baseline 仍作为存量项目的有界迁移兼容面，帮助逐步清理尚未证明的类型边界；它们不能替代严格预处理和实际目标测试：
 
 ```bash
 calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
 ```
 
-兼容期不要为新项目生成 baseline，也不要增加 metric、intent 或统计协议。每次迁移应降低已有预算，并同时保证默认严格检查通过；清零后从 CI 删除 baseline 命令和文件。0.15 将不再把 coverage/Dynamic 数量当作独立的类型正确性策略，具体删除范围以届时 release migration note 为准。
+不要为新项目生成 baseline，也不要增加 metric、intent 或统计协议。迁移不提高已有预算，并同时保证默认严格检查通过；债务清零后从项目 CI 删除 baseline 命令和文件。代码能否进入具体类型由同一套类型证明决定，不以 coverage 或 Dynamic 数量充当正确性证明，也不预告未经交付的删除版本。
 
 baseline 是已提交的 Cirru EDN 机器生成工件。为使 GitHub 语言统计忽略其行数，同时保留文本 diff，
 可在项目根目录的 `.gitattributes` 加入生成物标记：
@@ -274,8 +274,9 @@ let
 先用 `fs:path` 把 UTF-8 String 提升为 nominal `FsPath`，再调用 `.read-text`、
 `.read-dir`、`.walk-dir` 或 `.write-text!`，这些方法返回 `Result<...,String>`。
 String 本身不携带文件系统语义；旧 `try-read-file` / `try-write-file` 已退役，
-先通过 `fs:path` 构造路径再调用 `.read-text` / `.write-text!`。旧 `.write-text` 暂留兼容；`try-read-dir`
-与底层 raising procedures 暂留为兼容入口。
+先通过 `fs:path` 构造路径再调用 `.read-text` / `.write-text!`。旧 `.write-text` 已在 0.29.0 退役，
+调用会报告 `E_RETIRED_METHOD`；`try-read-dir` 与底层 raising procedures 暂留为兼容入口。
+各入口的迁移窗口和保留原因见[升级指南](run/upgrade.md)，首选命名与失败合同见[API 角色](features/api-roles.md)。
 这些文件效果支持 native 与生成的 JavaScript。WASI 0.3 Component command 目前支持基于
 preopen 的 `.read-text` / `.write-text!`（UTF-8，最多 4 MiB）。写入采用 create + truncate，
 失败可能留下截断或部分内容，不是原子替换；超限在打开前拒绝。`.read-dir` 和 `.walk-dir`

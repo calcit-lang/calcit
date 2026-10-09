@@ -1,10 +1,13 @@
 {}
-  :version |0.28.0-candidate
+  :version |0.29.0-candidate
   :scope |reviewed-conversion-and-effect-boundaries
   :definitions $ []
     {} (:name 'calcit.core/to-string) (:failure |需要_ToString_约束，不任意字符串化动态值)
     {} (:name 'calcit.core/to-symbol) (:failure |仅接受_String，返回_Symbol)
     {} (:name 'calcit.core/to-tag) (:failure |仅接受_String，返回_Tag)
+    {} (:name 'calcit.core/str)
+    {} (:name 'calcit.core/format-to-lisp)
+    {} (:name 'calcit.core/to-lispy-string)
     {} (:name 'calcit.core/parse-float) (:failure |失败返回_Result_err，保留输入字符串)
     {} (:name 'calcit.core/try-parse-json) (:failure |文本语法失败返回_String_err，成功_payload_保持合法开放数据)
     {} (:name 'calcit.core/try-parse-cirru) (:failure |文本语法失败返回_String_err，成功返回_CirruQuote)
