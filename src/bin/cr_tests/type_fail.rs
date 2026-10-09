@@ -1167,6 +1167,29 @@ fn strict_type_fail_retired_alias_methods_report_preferred_spelling() {
 }
 
 #[test]
+fn retired_string_count_rejects_prefix_and_postfix_in_both_modes() {
+  run_with_large_stack(|| {
+    let _restore = StrictTypesReset {
+      previous: runner::preprocess::is_strict_types_enabled(),
+    };
+    for strict in [false, true] {
+      runner::preprocess::set_strict_types(strict);
+      for snippet in [
+        ".count |abc",
+        "|abc .count",
+        "let\n    text |abc\n  text .count",
+        "(&str:concat |a |bc) .count",
+      ] {
+        let entries = load_snippet_entries(snippet);
+        let err = run_check_only(&entries).expect_err(&format!("String .count must remain retired (strict={strict}): {snippet}"));
+        assert!(err.contains("E_RETIRED_METHOD"), "missing retirement diagnostic: {err}");
+        assert!(err.contains("`.len`"), "missing replacement spelling: {err}");
+      }
+    }
+  });
+}
+
+#[test]
 fn retired_core_functions_report_preferred_spelling() {
   run_with_large_stack(|| {
     for (snippet, name, replacement) in [

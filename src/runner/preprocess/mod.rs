@@ -3416,7 +3416,10 @@ fn preprocess_list_call(
                 call_stack,
               )?;
             }
-            if strict_types_enabled() || is_display_contract {
+            if strict_types_enabled()
+              || is_display_contract
+              || retired_trait_reachable_method_migration(type_info.as_ref(), method_name.as_ref()).is_some()
+            {
               validate_method_call(&typed_method, &processed_args, scope_types, file_ns, call_stack)?;
             }
             check_struct_method_args(&typed_method, &processed_args, scope_types, file_ns, &def_name, check_warnings);
