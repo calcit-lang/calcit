@@ -5492,11 +5492,15 @@ fn resolve_static_specialization_types(
       Some(actual)
     })
     .collect::<Option<Vec<_>>>()?;
-  let all_declared_types_resolved = definition
-    .arg_types
-    .iter()
-    .map(|expected| expected.substitute_type_vars(&bindings))
-    .all(|resolved| !nil_type_evidence_is_open(resolved.as_ref()) && !resolved.contains_type_var());
+  let all_declared_types_resolved = definition.arg_types.iter().zip(actual_types.iter()).all(|(expected, actual)| {
+    // A proven nil has no Optional payload to resolve; retain its actual
+    // Nil evidence rather than inventing a binding for the phantom type.
+    if matches!(actual.as_ref(), CalcitTypeAnnotation::Nil) && matches!(expected.as_ref(), CalcitTypeAnnotation::Optional(_)) {
+      return true;
+    }
+    let resolved = expected.substitute_type_vars(&bindings);
+    !nil_type_evidence_is_open(resolved.as_ref()) && !resolved.contains_type_var()
+  });
   all_declared_types_resolved.then_some(actual_types)
 }
 
