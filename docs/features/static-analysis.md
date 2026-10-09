@@ -1135,6 +1135,7 @@ Static type analysis:
 
 - 改写点（方法内联、`get` / `nth` / `first` / `last` 的类型化 lowering、trait 约束方法的 `&trait-call` lowering）在改写时记录改写前的类型、源表达式、改写后表达式与源码位置，不引入新的 AST。
 - 定义预处理完成后，校验遍历最终节点树。仍在树中的被记录节点要求类型不低于改写前；每个 `Proc` 调用、已编译用户函数的调用与 `recur` 重新执行参数检查，预处理阶段没有报告过的结果视为遗漏检查。
+- 调用节点由某个被记录的改写生成时（例如方法内联后的 `Proc` 调用），第三条的违规在来源链中同时列出改写前的源表达式与改写方式，直接指向丢失检查的改写点。
 - `calcit.core` 与普通项目使用同一规则，不设置库豁免；发现的问题通过补全证据或修正定义的类型合同解决。
 
 ### 违规格式
@@ -1146,6 +1147,15 @@ internal compiler error: post-lowering validation (CALCIT_LINT_CORE=1) found 1 v
   invariant (b) rewriting never lowers type precision: `typed-access` lowering turned type `Option<Node>` into `Option<Dynamic>`
     origin source (get nodes :a) @ code@3.2 : Option<Node>
     origin lowering typed-access => (...) @ code@3.2 : Option<Dynamic>
+```
+
+方法内联后跳过参数检查的调用会同时列出调用与改写来源：
+
+```text
+  invariant (c) every call node is checked: the final tree fails a Proc argument check that preprocess never reported: [Warn] Proc `&map:assoc` arg 3 expects type `:number`, but got `:string` in call at app.main/main!
+    origin call &map:assoc @ code@3.2.0
+    origin source ([] .assoc 'm :b |oops) @ code@3.2.0 : dynamic
+    origin lowering method-inline => ([] (&proc &map:assoc) 'm :b |oops) @ code@3.2.0 : map<:tag,:number>
 ```
 
 出现这类错误说明编译器改写丢失了证据，应修复改写点，而不是修改用户源码。
