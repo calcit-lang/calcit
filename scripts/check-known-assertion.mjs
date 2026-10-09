@@ -1108,7 +1108,8 @@ try {
   assert.deepEqual(dataView.diagnostics, []);
   const dataViewTests = dataView.data.tests.filter(test => test.tags.includes("data-view"));
   assert.deepEqual(dataViewTests.map(test => test.name).sort(), [
-    "classifies-symbol-struct-ref", "classifies-values", "exhaustive-view", "preserves-shallow-payloads",
+    "classifies-symbol-struct-ref", "classifies-values", "exhaustive-view", "lowered-match-agrees-with-enum-path",
+    "preserves-shallow-payloads",
   ]);
   run("edit", "add-ns", "calcit.data-view-replay");
   run("edit", "def", "calcit.data-view-replay/run!", "--input-format", "json-ast", "--code",

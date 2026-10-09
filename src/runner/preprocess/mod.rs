@@ -9941,6 +9941,216 @@ fn try_lower_literal_match(args: &CalcitList, ctx: &mut PreprocessContext) -> Re
   Ok(Some(processed))
 }
 
+/// Variants of core `Data` that `data-view` classifies with a type predicate, in declaration order.
+/// `:other` is the complement of all of them and has no predicate.
+const DATA_VIEW_PREDICATES: [(&str, &str, usize); 13] = [
+  ("nil", "nil?", 0),
+  ("bool", "bool?", 1),
+  ("number", "number?", 1),
+  ("string", "string?", 1),
+  ("tag", "tag?", 1),
+  ("symbol", "symbol?", 1),
+  ("list", "list?", 1),
+  ("map", "map?", 1),
+  ("set", "set?", 1),
+  ("fn", "fn?", 1),
+  ("enum", "enum?", 1),
+  ("struct", "struct?", 1),
+  ("ref", "ref?", 1),
+];
+
+/// Payload type of a `Data` variant, mirroring the `defenum Data` declaration in core. Binding the
+/// lowered alias with this type keeps the evidence identical to the enum path: collection elements
+/// stay Dynamic even when the matched expression has a more precise static type.
+fn data_view_payload_type(tag: &str) -> Arc<CalcitTypeAnnotation> {
+  let open = || crate::calcit::DYNAMIC_TYPE.clone();
+  Arc::new(match tag {
+    "bool" => CalcitTypeAnnotation::Bool,
+    "number" => CalcitTypeAnnotation::Number,
+    "string" => CalcitTypeAnnotation::String,
+    "tag" => CalcitTypeAnnotation::Tag,
+    "symbol" => CalcitTypeAnnotation::Symbol,
+    "list" => CalcitTypeAnnotation::List(open()),
+    "map" => CalcitTypeAnnotation::Map(open(), open()),
+    "set" => CalcitTypeAnnotation::Set(open()),
+    _ => return open(),
+  })
+}
+
+/// Head of the predicate that classifies one `Data` variant: a builtin proc where core has one.
+fn data_view_predicate(name: &str, file_ns: &str) -> Calcit {
+  match name {
+    "nil?" => Calcit::Proc(CalcitProc::NilQuestion),
+    "bool?" => Calcit::Proc(CalcitProc::BoolQuestion),
+    "number?" => Calcit::Proc(CalcitProc::NumberQuestion),
+    "string?" => Calcit::Proc(CalcitProc::StringQuestion),
+    "tag?" => Calcit::Proc(CalcitProc::TagQuestion),
+    "symbol?" => Calcit::Proc(CalcitProc::SymbolQuestion),
+    "list?" => Calcit::Proc(CalcitProc::ListQuestion),
+    "map?" => Calcit::Proc(CalcitProc::MapQuestion),
+    "set?" => Calcit::Proc(CalcitProc::SetQuestion),
+    "fn?" => Calcit::Proc(CalcitProc::FnQuestion),
+    "enum?" => Calcit::Proc(CalcitProc::EnumQuestion),
+    "struct?" => Calcit::Proc(CalcitProc::StructQuestion),
+    _ => core_import(name, file_ns),
+  }
+}
+
+/// Lower `match (data-view x)` into a chain of type predicates on `x`, so no `Data` value is built
+/// and only the predicates for variants that have a branch run. Each payload binding aliases the
+/// matched value, which the predicate narrows inside its branch.
+/// Returns `None` for any shape the enum path should report on or handle itself: a shadowed
+/// `data-view`, malformed or duplicated branches, unknown variants, wrong arity, or an `:other`
+/// branch that is not preceded by a branch for every other variant (its complement would need
+/// explicit tests, and the enum path already reports the missing variants).
+fn try_lower_data_view_match(args: &CalcitList, ctx: &mut PreprocessContext) -> Result<Option<Calcit>, CalcitErr> {
+  let Some(Calcit::List(call)) = args.first() else {
+    return Ok(None);
+  };
+  if call.len() != 2 || !matches!(&call[0], Calcit::Symbol { sym, .. } if sym.as_ref() == "data-view") {
+    return Ok(None);
+  }
+  let head = preprocess_expr(
+    &call[0],
+    ctx.scope_defs,
+    ctx.scope_types,
+    ctx.file_ns,
+    ctx.check_warnings,
+    ctx.call_stack,
+  )?;
+  if !matches!(&head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == calcit::CORE_NS && &**def == "data-view") {
+    return Ok(None);
+  }
+
+  // (variant tag, typed payload binding, body); the binding is None for `_` or a zero-payload variant.
+  let mut arms: Vec<(&str, Option<Calcit>, &Calcit)> = vec![];
+  let mut wildcard: Option<&Calcit> = None;
+  for (idx, branch) in args.iter().enumerate().skip(1) {
+    let Calcit::List(pair) = branch else {
+      return Ok(None);
+    };
+    if pair.len() != 2 || wildcard.is_some() {
+      return Ok(None);
+    }
+    match &pair[0] {
+      Calcit::Symbol { sym, .. } if sym.as_ref() == "_" => {
+        if idx + 1 != args.len() {
+          return Ok(None);
+        }
+        wildcard = Some(&pair[1]);
+      }
+      Calcit::List(pattern) => {
+        let Some(Calcit::Tag(tag)) = pattern.first() else {
+          return Ok(None);
+        };
+        let tag = tag.ref_str();
+        let arity = if tag == "other" {
+          1
+        } else if let Some((_, _, arity)) = DATA_VIEW_PREDICATES.iter().find(|(name, _, _)| *name == tag) {
+          *arity
+        } else {
+          return Ok(None);
+        };
+        if pattern.len() != arity + 1 || arms.iter().any(|(seen, _, _)| *seen == tag) {
+          return Ok(None);
+        }
+        let binding = match pattern.get(1) {
+          Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "_" => None,
+          Some(Calcit::Symbol { sym, info, location }) => Some(Calcit::Local(CalcitLocal {
+            idx: CalcitLocal::track_sym(sym),
+            sym: sym.to_owned(),
+            info: Arc::new(CalcitSymbolInfo {
+              at_ns: info.at_ns.to_owned(),
+              at_def: info.at_def.to_owned(),
+            }),
+            location: location.to_owned(),
+            type_info: data_view_payload_type(tag),
+          })),
+          Some(_) => return Ok(None),
+          None => None,
+        };
+        arms.push((tag, binding, &pair[1]));
+      }
+      _ => return Ok(None),
+    }
+  }
+  let has_other = arms.iter().any(|(tag, _, _)| *tag == "other");
+  let names_every_variant = DATA_VIEW_PREDICATES
+    .iter()
+    .all(|(name, _, _)| arms.iter().any(|(tag, _, _)| tag == name));
+  if arms.is_empty() || (has_other && (wildcard.is_some() || !names_every_variant)) {
+    return Ok(None);
+  }
+
+  let file_ns = ctx.file_ns;
+  let value_sym = generated_path_symbol("match_v", file_ns, ctx.call_stack)?;
+  let bind_payload = |binding: &Option<Calcit>, body: &Calcit| match binding {
+    Some(local) => generated_let(local.to_owned(), value_sym.to_owned(), body.to_owned(), file_ns),
+    None => body.to_owned(),
+  };
+
+  let other_arm = arms.iter().find(|(tag, _, _)| *tag == "other");
+  let mut chain = match (other_arm, wildcard) {
+    (Some((_, binding, body)), _) => bind_payload(binding, body),
+    (None, Some(body)) => body.to_owned(),
+    (None, None) => {
+      // Alphabetical, like the enum path's exhaustiveness report.
+      let missing: BTreeSet<&str> = DATA_VIEW_PREDICATES
+        .iter()
+        .map(|(name, _, _)| *name)
+        .chain(["other"])
+        .filter(|name| !arms.iter().any(|(tag, _, _)| tag == name))
+        .collect();
+      let missing: Vec<String> = missing.into_iter().map(|name| format!(":{name}")).collect();
+      gen_check_warning(
+        format!(
+          "[Warn] match on `Data` is not exhaustive. Missing variant(s): [{}], at {}/{}",
+          missing.join(", "),
+          file_ns,
+          ctx.call_stack.0.first().map(|f| f.def.as_ref()).unwrap_or("?")
+        ),
+        file_ns,
+        ctx.check_warnings,
+      );
+      generated_call(vec![
+        Calcit::Proc(CalcitProc::Raise),
+        Calcit::Str(Arc::from("match: no matching branch for Data value")),
+      ])
+    }
+  };
+  for (tag, predicate, _) in DATA_VIEW_PREDICATES.iter().rev() {
+    let Some((_, binding, body)) = arms.iter().find(|(arm_tag, _, _)| arm_tag == tag) else {
+      continue;
+    };
+    let mut test = generated_call(vec![data_view_predicate(predicate, file_ns), value_sym.to_owned()]);
+    if matches!(*tag, "enum" | "struct") {
+      // `data-view` screens definitions into `:other` first, and `enum?` rejects an EnumDef.
+      test = generated_if(
+        generated_core_call("enum-def?", vec![value_sym.to_owned()], file_ns),
+        Calcit::Bool(false),
+        generated_if(
+          generated_core_call("struct-def?", vec![value_sym.to_owned()], file_ns),
+          Calcit::Bool(false),
+          test,
+          file_ns,
+        ),
+        file_ns,
+      );
+    }
+    chain = generated_if(test, bind_payload(binding, body), chain, file_ns);
+  }
+
+  let lowered = generated_let(value_sym, call[1].to_owned(), chain, file_ns);
+  Ok(Some(preprocess_expr(
+    &lowered,
+    ctx.scope_defs,
+    ctx.scope_types,
+    file_ns,
+    ctx.check_warnings,
+    ctx.call_stack,
+  )?))
+}
+
 /// Preprocess `match` syntax and perform exhaustiveness checking.
 /// Input form (pair-based): `(match <value> (<pattern1> <body1>) (<pattern2> <body2>) ...)`
 ///
@@ -9980,6 +10190,10 @@ fn process_match(
   }
 
   if let Some(lowered) = try_lower_literal_match(args, ctx)? {
+    return Ok(lowered);
+  }
+
+  if let Some(lowered) = try_lower_data_view_match(args, ctx)? {
     return Ok(lowered);
   }
 

@@ -5047,6 +5047,60 @@
                 assert= :number $ classify 42
                 assert= :other $ classify Data
               :tags $ #{} :core :data-view :unit
+            %{} 'TestEntry (:name |lowered-match-agrees-with-enum-path)
+              :code $ quote $ let
+                  lowered $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic
+                      :return 'Dynamic
+                    match (data-view x)
+                      (:nil) (:: :nil)
+                      (:bool v) (:: :bool v)
+                      (:number v) (:: :number v)
+                      (:string v) (:: :string v)
+                      (:tag v) (:: :tag v)
+                      (:symbol v) (:: :symbol v)
+                      (:list v) (:: :list v)
+                      (:map v) (:: :map v)
+                      (:set v) (:: :set v)
+                      (:fn v) (:: :fn v)
+                      (:enum v) (:: :enum v)
+                      (:struct v) (:: :struct v)
+                      (:ref v) (:: :ref v)
+                      (:other v) (:: :other v)
+                  viewed $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic
+                      :return 'Dynamic
+                    let
+                        view $ data-view x
+                      match view
+                        (:nil) (:: :nil)
+                        (:bool v) (:: :bool v)
+                        (:number v) (:: :number v)
+                        (:string v) (:: :string v)
+                        (:tag v) (:: :tag v)
+                        (:symbol v) (:: :symbol v)
+                        (:list v) (:: :list v)
+                        (:map v) (:: :map v)
+                        (:set v) (:: :set v)
+                        (:fn v) (:: :fn v)
+                        (:enum v) (:: :enum v)
+                        (:struct v) (:: :struct v)
+                        (:ref v) (:: :ref v)
+                        (:other v) (:: :other v)
+                  shared $ fn (x) x
+                  samples $ [] nil true false 0 1.5 |text :tag 'sym ([] 1 2)
+                    {} $ :a 1
+                    #{} 1
+                    , shared (Option :some 1) (Option :none) (MapEntry :key :a :value 1) Data MapEntry $ &buffer 1
+                assert= 18 $ count samples
+                &list:foldl samples nil $ fn (acc x)
+                  assert= (viewed x) (lowered x)
+                  , acc
+                assert= (:: :fn shared) (lowered shared)
+                assert= (:: :other Data) (lowered Data)
+              :tags $ #{} :core :data-view :unit
         'dec $ %{} 'CodeEntry (:doc "|Decrements a number by 1")
           :code $ quote $ defn dec (x) (&- x 1)
           :examples $ []
