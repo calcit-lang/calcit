@@ -9381,6 +9381,23 @@
             :args $ [] $ :: 'Optional 'T
             :generics $ [] 'T
             :return $ :: 'Option 'T
+          :tests $ []
+            %{} 'TestEntry (:name |distinguishes-nil-from-falsey-payloads)
+              :code $ quote $ do
+                assert= (Option :none) (nil->option nil)
+                assert= (Option :some false) (nil->option false)
+                assert= (Option :some 0) (nil->option 0)
+                assert= (Option :some |) (nil->option |)
+                assert= (Option :some |value) (nil->option |value)
+                assert-type (nil->option 1) (:: 'Option 'Number)
+              :tags $ #{} :core :types :unit
+            %{} 'TestEntry (:name |preserves-nested-option-payload)
+              :code $ quote $ let
+                  original $ Option :none
+                  wrapped $ nil->option original
+                assert= (Option :some original) wrapped
+                assert= original $ wrapped .unwrap
+              :tags $ #{} :core :types :unit
         'nil? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is nil")
           :code $ quote &runtime-implementation
           :examples $ []
