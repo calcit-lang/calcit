@@ -478,7 +478,7 @@ Map 与 Set 同时不再实现 `Contains` trait。schema `:where` 中 `'T 'Conta
 
 ### 仍可用的兼容名
 
-core 中带 `:deprecated` 标记的 11 个兼容名在 0.29.0 仍可调用，行为与 0.28 相同。新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余按首选写法逐处改写。
+core 中带 `:deprecated` 标记的 12 个兼容名在 0.29.0 仍可调用，行为与 0.28 相同。新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余按首选写法逐处改写。
 
 | 兼容名 | 首选写法 | 迁移 |
 |---|---|---|
@@ -486,6 +486,7 @@ core 中带 `:deprecated` 标记的 11 个兼容名在 0.29.0 仍可调用，行
 | `optionally` | `nil->option` | `calcit calcit.cirru fix --rule core-function-alias-v1 --format edn` |
 | `join` | `intersperse` | 同上 |
 | `vals` | `distinct-values` | 同上 |
+| `section-by` | `chunks`（按固定长度切段，语义与 Rust `chunks(n)` 一致） | 同上 |
 | `turn-string` | `to-string` | 参数已证明为标量时用 `core-identity-conversion-v1`，其余人工改写 |
 | `turn-str` | `to-string` | 人工改写 |
 | `remove-watch` | `remove-watch!` | 人工改写 |

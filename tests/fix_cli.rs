@@ -8946,7 +8946,7 @@ fn core_function_alias_rule_renames_resolved_legacy_functions_and_is_idempotent(
         "--input-format",
         "cirru",
         "--code",
-        "quote $ defn legacy-function-aliases ()\n  assert= (#{} 1 2) $ vals $ {} (:a 1) (:b 2)\n  assert= ([] |a |, |b) $ join ([] |a |b) |,\n  assert= (%some 1) $ optionally 1\n  , true",
+        "quote $ defn legacy-function-aliases ()\n  assert= (#{} 1 2) $ vals $ {} (:a 1) (:b 2)\n  assert= ([] |a |, |b) $ join ([] |a |b) |,\n  assert= (%some 1) $ optionally 1\n  assert= ([] ([] 1 2) ([] 3)) $ section-by ([] 1 2 3) 2\n  , true",
       ],
     ),
     "install legacy function alias calls",
@@ -8999,13 +8999,13 @@ fn core_function_alias_rule_renames_resolved_legacy_functions_and_is_idempotent(
   assert_success(&preview, "function alias preview");
   let report = parse_stdout(&preview);
   let suggestions = report["data"]["suggestions"].as_array().expect("suggestions should be an array");
-  assert_eq!(suggestions.len(), 3, "{report}");
+  assert_eq!(suggestions.len(), 4, "{report}");
   assert!(
     suggestions
       .iter()
       .all(|suggestion| { suggestion["rule_id"] == "core-function-alias-v1" && suggestion["applicability"] == "machine-applicable" })
   );
-  for legacy in ["vals", "join", "optionally"] {
+  for legacy in ["vals", "join", "optionally", "section-by"] {
     let expected = format!("calcit.core/{legacy}");
     assert!(
       suggestions
@@ -9035,7 +9035,12 @@ fn core_function_alias_rule_renames_resolved_legacy_functions_and_is_idempotent(
   );
   assert_success(&applied, "function alias apply");
   let updated = fs::read_to_string(&snapshot).expect("updated Snapshot should read");
-  for preferred in ["calcit.core/distinct-values", "calcit.core/intersperse", "calcit.core/nil->option"] {
+  for preferred in [
+    "calcit.core/distinct-values",
+    "calcit.core/intersperse",
+    "calcit.core/nil->option",
+    "calcit.core/chunks",
+  ] {
     assert!(updated.contains(preferred), "{preferred} missing after migration");
   }
   assert_success(
