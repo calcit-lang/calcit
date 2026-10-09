@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { existingCrate, existingNpm, validateWorkflowSource, validateRelease, verifyPublishedSource, versionLessThan } from "./publish-registry.mjs";
+import { existingCrate, existingNpm, validateWorkflowSource, validateRelease, verifyPublishedSource, versionLessThan, waitForPublished } from "./publish-registry.mjs";
 
 const tag = "0.29.0-alpha.21";
 const sha = "a".repeat(40);
@@ -139,4 +139,62 @@ test("published npm identity and crate integrity fail closed", async (t) => {
   globalThis.fetch.mock.mockImplementation(async url => new Response(String(url) === "https://index.crates.io/ca/lc/calcit"
     ? JSON.stringify({ vers: tag, yanked: false, cksum: "invalid" }) : "invalid archive"));
   await assert.rejects(existingCrate(tag, sha), /checksum mismatch/);
+});
+
+test("accepted uploads return immediately when verified without sleeping", async () => {
+  for (const registry of ["npm", "crate"]) {
+    let calls = 0;
+    await waitForPublished(registry, tag, sha, async (version, source) => {
+      assert.equal(version, tag);
+      assert.equal(source, sha);
+      calls++;
+      return true;
+    }, { now: () => 0, sleep: async () => assert.fail("Visible uploads must not sleep") });
+    assert.equal(calls, 1);
+  }
+});
+
+test("npm scanning can exceed one minute before the exact identity becomes visible", async (t) => {
+  let time = 0;
+  let calls = 0;
+  t.mock.method(globalThis, "fetch", async () => {
+    calls++;
+    return time < 90000 ? new Response("Processing", { status: 404 })
+      : new Response(JSON.stringify({ name: "@calcit/procs", version: tag, gitHead: sha }));
+  });
+  await waitForPublished("npm", tag, sha, existingNpm, {
+    now: () => time,
+    sleep: async delay => { assert.equal(delay, 10000); time += delay; },
+  });
+  assert.equal(time, 90000);
+  assert.equal(calls, 10);
+});
+
+test("visibility waiting is bounded and counts lookup time without real sleeps", async () => {
+  for (const [registry, limit, interval] of [["npm", 1200000, 10000], ["crate", 60000, 5000]]) {
+    let time = 0;
+    let calls = 0;
+    const waits = [];
+    await assert.rejects(waitForPublished(registry, tag, sha, async () => {
+      calls++;
+      time += 3000;
+      return false;
+    }, {
+      now: () => time,
+      sleep: async delay => { assert.ok(delay > 0 && delay <= interval); waits.push(delay); time += delay; },
+    }), /inspect registry processing or manual review before same-tag recovery/);
+    assert.equal(time, limit);
+    assert.equal(waits.length, calls);
+    assert.ok(waits.at(-1) < interval, "The last wait must not exceed the remaining window");
+  }
+});
+
+test("network and source identity errors stop waiting immediately", async (t) => {
+  t.mock.method(globalThis, "fetch", async () => new Response("Unavailable", { status: 503 }));
+  const clock = { now: () => 0, sleep: async () => assert.fail("Errors must not be retried") };
+  await assert.rejects(waitForPublished("npm", tag, sha, existingNpm, clock), /HTTP 503/);
+  globalThis.fetch.mock.mockImplementation(async () => new Response(JSON.stringify({ name: "@calcit/procs", version: tag, gitHead: "b".repeat(40) })));
+  await assert.rejects(waitForPublished("npm", tag, sha, existingNpm, clock), /different or unknown commit/);
+  globalThis.fetch.mock.mockImplementation(async () => new Response(JSON.stringify({ vers: tag, yanked: true })));
+  await assert.rejects(waitForPublished("crate", tag, sha, existingCrate, clock), /yanked/);
 });
