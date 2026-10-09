@@ -10,7 +10,7 @@ gh workflow run publish.yaml --repo calcit-lang/calcit --ref <已有版本>
 workflow、构建源码与发布脚本均来自同一 annotated tag。流程要求：
 
 - Release 已存在且非草稿，预发布标记与版本一致；Cargo/npm 版本和 tag 完全一致。
-- tag 对应提交的 Test、GitHub 默认 CodeQL「Push on main」都成功。
+- tag 对应的精确提交在 main 上触发的 Test、GitHub 默认 CodeQL「Push on main」都成功；tag 或 PR 上的检查不替代这些记录。
 - 原始 `GITHUB_REF` 必须为该 tag，`GITHUB_SHA` 必须等于实际 checkout；main 或其他 ref 在预检阶段拒绝。
 - 原测试、文档验证、标准与无 WASM 资产构建继续执行；没有只发布 npm 的跳过门禁入口。
 - registry 已存在的版本必须属于同一 Git SHA。crate 还须通过 registry checksum 校验，且其 VCS metadata 不得标记 dirty；无法证明时停止，不覆盖。

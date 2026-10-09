@@ -24,16 +24,16 @@ jobs:
 
     steps:
       # The workflow, OIDC identity and checkout must all use the same tag.
-      - uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-          fetch-depth: 0
       - name: Validate workflow source
         env:
           SOURCE_REF: ${{ github.ref }}
         run: |
           [[ "$RELEASE_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
           test "$SOURCE_REF" = "refs/tags/$RELEASE_TAG"
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
 
       - uses: actions/setup-node@v6
         with:
