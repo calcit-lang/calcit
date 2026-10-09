@@ -133,6 +133,17 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String
+        'join-items-str $ %{} 'CodeEntry (:doc "|appends each generic element to a String with str inside a loop")
+          :code $ quote $ defn join-items-str (xs)
+            loop
+                items xs
+                acc |n
+              if (&list:empty? items) acc $ recur (&list:rest items)
+                str acc $ &list:nth items 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export main! ()
             println $ fibo 10
@@ -1518,6 +1529,15 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-str-generic-loop $ %{} 'CodeEntry (:doc "|str converts a generic loop element on every iteration")
+          :code $ quote $ defwasm-export test-str-generic-loop ()
+            &str:compare (join-items-str $ [] 5 6 7) |n567
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |converts-each-iteration)
+            :code $ quote $ assert= 0 (test-str-generic-loop)
+            :tags $ #{} :unit :wasm
         'test-str-contains-false $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-contains-false () (&str:contains? |hello 10)
           :examples $ []

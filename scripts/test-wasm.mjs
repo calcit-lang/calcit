@@ -580,6 +580,7 @@ check("test-str-utf8-byte-count()", 5, e["test-str-utf8-byte-count"]);
 check("test-str-empty-true()", 1, e["test-str-empty-true"]); // count("") == 0
 check("test-str-empty-false()", 0, e["test-str-empty-false"]); // count("hi") == 0 is false
 check("test-str-concat()", 6, e["test-str-concat"]);
+check("test-str-generic-loop()", 0, e["test-str-generic-loop"]);
 check("test-str-nth()", 1, e["test-str-nth"]); // &str:nth returns the one-character string "e"
 checkStr("test-str-first()", "h", e["test-str-first"]); // &str:first returns "h" as a one-character string
 check("test-str-rest()", 4, e["test-str-rest"]);

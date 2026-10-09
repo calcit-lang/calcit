@@ -492,6 +492,10 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
       let result = ctx.alloc_local();
       emit_expr(ctx, &args[0])?;
       ctx.emit(Instruction::LocalSet(tag));
+      // Inside a loop the local keeps the previous iteration's string; reset it
+      // so an unmatched tag reaches `unreachable` instead of reusing that value.
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::LocalSet(result));
       let mut tags: Vec<_> = ctx.tag_index.iter().map(|(name, id)| (name.clone(), *id)).collect();
       tags.sort_by_key(|(_, id)| *id);
       for (name, id) in tags {
@@ -542,6 +546,11 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::LocalSet(v));
+  // `result` doubles as the "not yet converted" flag. Locals are only zeroed on
+  // function entry, so inside a loop it must be reset on every evaluation or the
+  // previous iteration's string is returned again.
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::LocalSet(result));
 
   // --- Check if v is already a heap string ---
   // Use f64 comparison first (avoids unsafe truncation for small/negative values)
