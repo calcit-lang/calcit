@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { existingCrate, existingNpm, validateWorkflowSource, validateRelease, verifyPublishedSource, versionLessThan } from "./publish-registry.mjs";
 
@@ -10,6 +14,53 @@ const runs = ["Test", "Push on main"].map((name, index) => ({
   path: index === 0 ? ".github/workflows/test.yaml" : "dynamic/github-code-scanning/codeql",
   head_branch: "main", status: "completed", conclusion: "success",
 }));
+
+test("publication checkout explicitly selects the event ref and preserves annotated tags", (t) => {
+  const workflow = readFileSync(new URL("../.github/workflows/publish.yaml", import.meta.url), "utf8");
+  const checkout = /- uses: actions\/checkout@v4\n\s+with:([\s\S]*?)(?=\n      -)/.exec(workflow)?.[1];
+  assert.ok(checkout, "Expected the publication checkout configuration");
+  assert.match(checkout, /^\s+ref: \$\{\{ github\.ref \}\}\s*$/m);
+  assert.match(checkout, /^\s+fetch-depth: 0\s*$/m);
+  assert.match(checkout, /^\s+persist-credentials: false\s*$/m);
+
+  // Reproduce the fetch commands recorded in failed Publish run 37898278970.
+  // checkout's implicit event SHA replaces the tag object; explicit ref avoids that fetch.
+  const root = mkdtempSync(join(tmpdir(), "calcit-publish-tag-"));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const git = (cwd, ...args) => execFileSync("git", ["-C", cwd, ...args], {
+    encoding: "utf8", stdio: ["ignore", "pipe", "pipe"],
+  }).trim();
+  const origin = join(root, "origin");
+  mkdirSync(origin);
+  git(origin, "init", "--initial-branch=main");
+  git(origin, "-c", "user.name=Release Test", "-c", "user.email=release@example.invalid",
+    "-c", "commit.gpgsign=false", "commit", "--allow-empty", "-m", "release fixture");
+  const releaseSha = git(origin, "rev-parse", "HEAD");
+  git(origin, "-c", "user.name=Release Test", "-c", "user.email=release@example.invalid",
+    "-c", "tag.gpgsign=false", "tag", "-a", tag, "-m", "annotated release fixture");
+  const ref = `refs/tags/${tag}`;
+  const tagObject = git(origin, "rev-parse", ref);
+  assert.notEqual(tagObject, releaseSha);
+  for (const mode of ["implicit-sha", "explicit-ref"]) {
+    const checkoutRoot = join(root, mode);
+    mkdirSync(checkoutRoot);
+    git(checkoutRoot, "init");
+    git(checkoutRoot, "remote", "add", "origin", origin);
+    git(checkoutRoot, "fetch", "--no-recurse-submodules", "origin",
+      "+refs/heads/*:refs/remotes/origin/*", "+refs/tags/*:refs/tags/*");
+    assert.equal(git(checkoutRoot, "rev-parse", ref), tagObject);
+    if (mode === "implicit-sha") {
+      git(checkoutRoot, "fetch", "--no-tags", "origin", `+${releaseSha}:${ref}`);
+      assert.equal(git(checkoutRoot, "cat-file", "-t", ref), "commit");
+    } else {
+      assert.equal(git(checkoutRoot, "cat-file", "-t", ref), "tag");
+    }
+    git(checkoutRoot, "checkout", "--detach", ref);
+    assert.equal(git(checkoutRoot, "rev-parse", "HEAD"), releaseSha);
+    validateWorkflowSource({ GITHUB_REF: ref, GITHUB_SHA: releaseSha }, tag, releaseSha);
+  }
+  assert.equal(git(origin, "rev-parse", ref), tagObject, "The remote release tag must remain unchanged");
+});
 
 test("recovery cannot roll npm channels back, including numeric alpha ordering", () => {
   for (const [older, newer] of [
