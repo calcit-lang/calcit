@@ -11095,6 +11095,181 @@ fn ref_constructor_fix_renames_proven_spellings_and_reviews_shadowed_syntax() {
 }
 
 #[test]
+fn case_default_fix_rewrites_literal_patterns_and_reviews_opaque_calls() {
+  // Rust checks the CLI transaction protocol; `calcit.core/case-default` owns the Calcit tests
+  // proving that literal patterns expand to the same `match`.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  let define = |target: &str, code: &str, schema: &str| {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "def", target, "--overwrite", "--input-format", "cirru", "--code", code],
+      ),
+      "define case-default fixture",
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", target, "--input-format", "cirru", "--code", schema]),
+      "declare case-default fixture schema",
+    );
+  };
+  let one_arg = "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)";
+  define(
+    "app.main/main!",
+    "quote $ defn main! ()\n  , &unit",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)",
+  );
+  define(
+    "app.main/forward",
+    "quote $ defmacro forward (& body)\n  assert |non-empty $ &> (count body) 0\n  quasiquote $ do ~@body",
+    "quote $ :: 'Macro $ {} (:rest 'Syntax) (:capabilities $ #{}) (:expansion $ :: 'Expr 'Dynamic)",
+  );
+  define(
+    "app.main/peek",
+    "quote $ defmacro peek (form)\n  quasiquote $ quote ~form",
+    "quote $ :: 'Macro $ {} (:required $ [] 'Syntax) (:capabilities $ #{}) (:expansion $ :: 'Expr 'Dynamic)",
+  );
+  define(
+    "app.main/pick",
+    "quote $ defn pick (x)\n  case-default x |none (:a |A) (|s |S) (1 |one) (true |T)",
+    one_arg,
+  );
+  define(
+    "app.main/nested",
+    "quote $ defn nested (x y)\n  case-default x (case-default y |d (:b |B)) (:a |A)",
+    "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic 'Dynamic) (:return 'Dynamic)",
+  );
+  define(
+    "app.main/expr",
+    "quote $ defn expr (x limit)\n  case-default x |none (limit |L)",
+    "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic 'Dynamic) (:return 'Dynamic)",
+  );
+  define(
+    "app.main/threaded",
+    "quote $ defn threaded (x)\n  -> x $ case-default |d (:a |A)",
+    one_arg,
+  );
+  define(
+    "app.main/wrapped",
+    "quote $ defn wrapped (x)\n  forward $ case-default x |d (:a |A)",
+    one_arg,
+  );
+  define(
+    "app.main/peeked",
+    "quote $ defn peeked (x)\n  peek $ case-default x |d (:a |A)",
+    one_arg,
+  );
+  define(
+    "app.main/quoted",
+    "quote $ defn quoted ()\n  quote $ case-default x |d (:a |A)",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        "app.main/pick",
+        "picks-literals",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ do\n  assert= |A $ pick :a\n  assert= |S $ pick |s\n  assert= |one $ pick 1\n  assert= |T $ pick true\n  assert= |none $ pick 2\n  assert= |B $ nested :z :b\n  assert= |A $ wrapped :a\n  assert= |B $ case-default :b |d (:b |B)",
+      ],
+    ),
+    "attach case-default contract",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["test", "app.main/pick", "--require-match"]),
+    "legacy case-default semantics",
+  );
+
+  let before = fs::read(&snapshot).unwrap();
+  let base = [
+    "fix",
+    "--rule",
+    "case-default-to-match-v1",
+    "--include-attached",
+    "--format",
+    "json",
+  ];
+  let preview = run_calcit(&snapshot, &base);
+  assert_success(&preview, "case-default preview");
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "preview must not write");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions");
+  let find = |definition: &str, path: &str| {
+    suggestions
+      .iter()
+      .find(|suggestion| suggestion["definition"] == definition && suggestion["path"] == path)
+      .unwrap_or_else(|| panic!("missing {definition} {path}: {report}"))
+  };
+  for (definition, path) in [
+    ("app.main/pick", "code@3"),
+    ("app.main/nested", "code@3"),
+    ("app.main/wrapped", "code@3.1"),
+    ("app.main/pick", "tests.picks-literals"),
+  ] {
+    let suggestion = find(definition, path);
+    assert_eq!(suggestion["applicability"], "machine-applicable", "{definition} {path}: {report}");
+    assert_eq!(suggestion["rule_id"], "case-default-to-match-v1");
+  }
+  assert!(
+    !suggestions
+      .iter()
+      .any(|suggestion| suggestion["definition"] == "app.main/nested" && suggestion["path"] != "code@3"),
+    "a nested proven call folds into the outer replacement: {report}"
+  );
+  for (definition, path, reason) in [
+    ("app.main/expr", "code@3", "`limit` is not a literal"),
+    ("app.main/threaded", "code@3.2", "macro `->`"),
+    ("app.main/peeked", "code@3.1", "macro `peek`"),
+  ] {
+    let suggestion = find(definition, path);
+    assert_eq!(suggestion["applicability"], "requires-review", "{definition}: {report}");
+    assert!(suggestion["replacement"].is_null());
+    assert!(suggestion["message"].as_str().unwrap().contains(reason), "{definition}: {report}");
+  }
+  assert!(
+    !suggestions.iter().any(|suggestion| suggestion["definition"] == "app.main/quoted"),
+    "quoted data stays unchanged: {report}"
+  );
+
+  let mut apply = base.to_vec();
+  apply.extend([
+    "--apply",
+    "--allow-no-vcs",
+    "--expect-revision",
+    report["revision"].as_str().unwrap(),
+  ]);
+  assert_success(&run_calcit(&snapshot, &apply), "apply case-default migration");
+  let migrated = fs::read_to_string(&snapshot).unwrap();
+  assert!(
+    migrated.contains("match x (:a |A) (|s |S) (1 |one) (true |T) (_ |none)"),
+    "{migrated}"
+  );
+  assert!(migrated.contains("_ $ match y (:b |B) (_ |d)"), "{migrated}");
+  assert!(migrated.contains("forward $ match x (:a |A) (_ |d)"), "{migrated}");
+  assert!(migrated.contains("assert= |B $ match :b (:b |B) (_ |d)"), "{migrated}");
+  assert!(migrated.contains("case-default x |none $ limit |L"), "{migrated}");
+  assert!(migrated.contains("quote $ case-default x |d $ :a |A"), "{migrated}");
+  assert_success(
+    &run_calcit(&snapshot, &["test", "app.main/pick", "--require-match"]),
+    "match semantics after migration",
+  );
+  let repeated = run_calcit(&snapshot, &base);
+  assert_success(&repeated, "repeated case-default preview");
+  let repeated = parse_stdout(&repeated);
+  let remaining = repeated["data"]["suggestions"].as_array().unwrap();
+  assert_eq!(remaining.len(), 3, "only reviewed calls remain: {repeated}");
+  assert!(remaining.iter().all(|suggestion| suggestion["applicability"] == "requires-review"));
+}
+
+#[test]
 fn core_api_preset_labels_attached_regions_by_contributing_rule() {
   // Rust checks the CLI planner's suggestion labels; the rewritten Calcit semantics are covered
   // by the per-rule fixtures and core `:tests`.
