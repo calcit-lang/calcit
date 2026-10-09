@@ -11400,6 +11400,140 @@ fn case_default_fix_rewrites_literal_patterns_and_reviews_opaque_calls() {
 }
 
 #[test]
+fn core_macro_alias_fix_writes_macro_expansions_and_reviews_opaque_calls() {
+  // Rust checks the CLI transaction protocol; `calcit.core/dbg` owns the Calcit tests for the
+  // replacement macro, and the attached test below proves the rewritten calls keep their values.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  let define = |target: &str, code: &str, schema: &str| {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "def", target, "--overwrite", "--input-format", "cirru", "--code", code],
+      ),
+      "define core macro fixture",
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", target, "--input-format", "cirru", "--code", schema]),
+      "declare core macro fixture schema",
+    );
+  };
+  let no_arg = "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)";
+  define(
+    "app.main/main!",
+    "quote $ defn main! ()\n  , &unit",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)",
+  );
+  define(
+    "app.main/peek",
+    "quote $ defmacro peek (form)\n  quasiquote $ quote ~form",
+    "quote $ :: 'Macro $ {} (:required $ [] 'Syntax) (:capabilities $ #{}) (:expansion $ :: 'Expr 'Dynamic)",
+  );
+  define("app.main/logged", "quote $ defn logged ()\n  w-log $ + 1 2", no_arg);
+  define("app.main/silent", "quote $ defn silent ()\n  wo-log $ + 2 3", no_arg);
+  define("app.main/flip", "quote $ defn flip ()\n  flipped [] 1 2 $ + 3 4", no_arg);
+  define("app.main/nested", "quote $ defn nested ()\n  wo-js-log $ w-log $ * 2 3", no_arg);
+  define("app.main/js-logged", "quote $ defn js-logged ()\n  w-js-log 6", no_arg);
+  define("app.main/threaded", "quote $ defn threaded ()\n  ->> 1 $ flipped &- 10", no_arg);
+  define("app.main/peeked", "quote $ defn peeked ()\n  peek $ wo-log 1", no_arg);
+  define("app.main/quoted", "quote $ defn quoted ()\n  quote $ wo-log 1", no_arg);
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        "app.main/logged",
+        "keeps-values",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ do\n  assert= 3 $ logged\n  assert= 5 $ silent\n  assert= ([] 7 2 1) $ flip\n  assert= 6 $ nested\n  assert= 4 $ wo-log 4",
+      ],
+    ),
+    "attach core macro contract",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["test", "app.main/logged", "--require-match"]),
+    "legacy macro semantics",
+  );
+
+  let before = fs::read(&snapshot).unwrap();
+  let base = ["fix", "--rule", "core-macro-alias-v1", "--include-attached", "--format", "json"];
+  let preview = run_calcit(&snapshot, &base);
+  assert_success(&preview, "core macro preview");
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "preview must not write");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions");
+  let find = |definition: &str, path: &str| {
+    suggestions
+      .iter()
+      .find(|suggestion| suggestion["definition"] == definition && suggestion["path"] == path)
+      .unwrap_or_else(|| panic!("missing {definition} {path}: {report}"))
+  };
+  for (definition, path) in [
+    ("app.main/logged", "code@3"),
+    ("app.main/silent", "code@3"),
+    ("app.main/flip", "code@3"),
+    ("app.main/nested", "code@3"),
+    ("app.main/logged", "tests.keeps-values"),
+  ] {
+    let suggestion = find(definition, path);
+    assert_eq!(suggestion["applicability"], "machine-applicable", "{definition} {path}: {report}");
+    assert_eq!(suggestion["rule_id"], "core-macro-alias-v1");
+  }
+  assert!(
+    !suggestions
+      .iter()
+      .any(|suggestion| suggestion["definition"] == "app.main/nested" && suggestion["path"] != "code@3"),
+    "a nested proven call folds into the outer replacement: {report}"
+  );
+  for (definition, path, reason) in [
+    ("app.main/js-logged", "code@3", "js/console.log"),
+    ("app.main/threaded", "code@3.2", "macro `->>`"),
+    ("app.main/peeked", "code@3.1", "macro `peek`"),
+  ] {
+    let suggestion = find(definition, path);
+    assert_eq!(suggestion["applicability"], "requires-review", "{definition}: {report}");
+    assert!(suggestion["replacement"].is_null());
+    assert!(suggestion["message"].as_str().unwrap().contains(reason), "{definition}: {report}");
+  }
+  assert!(
+    !suggestions.iter().any(|suggestion| suggestion["definition"] == "app.main/quoted"),
+    "quoted data stays unchanged: {report}"
+  );
+
+  let mut apply = base.to_vec();
+  apply.extend([
+    "--apply",
+    "--allow-no-vcs",
+    "--expect-revision",
+    report["revision"].as_str().unwrap(),
+  ]);
+  assert_success(&run_calcit(&snapshot, &apply), "apply core macro migration");
+  let migrated = fs::read_to_string(&snapshot).unwrap();
+  assert!(migrated.contains("defn logged ()\n            dbg $ + 1 2"), "{migrated}");
+  assert!(migrated.contains("defn silent () (+ 2 3)"), "{migrated}");
+  assert!(migrated.contains("defn flip ()\n            [] (+ 3 4) 2 1"), "{migrated}");
+  assert!(migrated.contains("defn nested ()\n            dbg $ * 2 3"), "{migrated}");
+  assert!(migrated.contains("assert= 4 4"), "{migrated}");
+  assert!(migrated.contains("quote $ wo-log 1"), "{migrated}");
+  assert_success(
+    &run_calcit(&snapshot, &["test", "app.main/logged", "--require-match"]),
+    "values after migration",
+  );
+  let repeated = run_calcit(&snapshot, &base);
+  assert_success(&repeated, "repeated core macro preview");
+  let repeated = parse_stdout(&repeated);
+  let remaining = repeated["data"]["suggestions"].as_array().unwrap();
+  assert_eq!(remaining.len(), 3, "only reviewed calls remain: {repeated}");
+  assert!(remaining.iter().all(|suggestion| suggestion["applicability"] == "requires-review"));
+}
+
+#[test]
 fn core_api_preset_labels_attached_regions_by_contributing_rule() {
   // Rust checks the CLI planner's suggestion labels; the rewritten Calcit semantics are covered
   // by the per-rule fixtures and core `:tests`.

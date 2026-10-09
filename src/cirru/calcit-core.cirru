@@ -5136,6 +5136,45 @@
                 assert= (:: :fn shared) (lowered shared)
                 assert= (:: :other Data) (lowered Data)
               :tags $ #{} :core :data-view :unit
+        'dbg $ %{} 'CodeEntry
+          :doc "|Print the source form and value of an expression, then return the value. Debugging helper; the expression is evaluated once."
+          :code $ quote $ defmacro dbg (x)
+            &let
+              v $ if
+                = :eval $ &get-calcit-running-mode
+                gensym |v
+                , '_log_tmp
+              if (list? x)
+                quasiquote $ &let (~v ~x)
+                  println
+                    format-to-lisp $ quote ~x
+                    , |=> ~v
+                  ~ v
+                quasiquote $ &let ()
+                  println
+                    format-to-lisp $ quote ~x
+                    , |=> ~x
+                  ~ x
+          :examples $ [] $ quote
+            assert= 3 $ dbg $ + 1 2
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{} :platform-read
+            :expansion $ :: 'Expr 'T
+            :generics $ [] 'T
+            :required $ [] $ :: 'Expr 'T
+          :tags $ #{} :macro
+          :tests $ []
+            %{} 'TestEntry (:name |returns-the-value)
+              :code $ quote $ do
+                assert= 3 $ dbg $ + 1 2
+                assert= 57 $ dbg $ + 1 $ dbg (* 7 8)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |evaluates-once)
+              :code $ quote $ let
+                  *count $ atom 0
+                assert= 1 $ dbg $ swap! *count inc
+                assert= 1 $ deref *count
+              :tags $ #{} :core :unit
         'dec $ %{} 'CodeEntry (:doc "|Decrements a number by 1")
           :code $ quote $ defn dec (x) (&- x 1)
           :examples $ []
@@ -6641,7 +6680,7 @@
                   first $ [] 1 2
                 assert= (%some |a) (first |abc)
               :tags $ #{} :core :types :unit
-        'flipped $ %{} 'CodeEntry (:doc |)
+        'flipped $ %{} 'CodeEntry (:doc "|Deprecated: write the call with its arguments in order; (flipped f a b) expands to (f b a).")
           :code $ quote $ defmacro flipped (f & args)
             quasiquote $ ~f $ ~@ (reverse args)
           :examples $ []
@@ -6650,7 +6689,7 @@
             :expansion $ :: 'Expr 'Dynamic
             :required $ [] $ :: 'Expr 'Dynamic
             :rest $ :: 'Expr 'Dynamic
-          :tags $ #{} :macro
+          :tags $ #{} :deprecated :macro
         'floor $ %{} 'CodeEntry
           :doc "|internal function for floor operation\nSyntax: (floor n)\nParams: n (number)\nReturns: number\nReturns largest integer less than or equal to n"
           :code $ quote &runtime-implementation
@@ -11998,7 +12037,7 @@
             :code $ quote $ assert= (#{} 1 2)
               vals $ &{} :a 1 :b 2 :c 2
             :tags $ #{} :core :unit
-        'w-js-log $ %{} 'CodeEntry (:doc |)
+        'w-js-log $ %{} 'CodeEntry (:doc "|Deprecated: use dbg, or an explicit js/console.log when the host object view is needed.")
           :code $ quote $ defmacro w-js-log (x)
             if (list? x)
               &let
@@ -12022,32 +12061,17 @@
             :expansion $ :: 'Expr 'T
             :generics $ [] 'T
             :required $ [] $ :: 'Expr 'T
-          :tags $ #{} :macro
-        'w-log $ %{} 'CodeEntry (:doc |)
+          :tags $ #{} :deprecated :macro
+        'w-log $ %{} 'CodeEntry (:doc "|Deprecated: use dbg, which prints the same text and returns the value.")
           :code $ quote $ defmacro w-log (x)
-            &let
-              v $ if
-                = :eval $ &get-calcit-running-mode
-                gensym |v
-                , '_log_tmp
-              if (list? x)
-                quasiquote $ &let (~v ~x)
-                  println
-                    format-to-lisp $ quote ~x
-                    , |=> ~v
-                  ~ v
-                quasiquote $ &let ()
-                  println
-                    format-to-lisp $ quote ~x
-                    , |=> ~x
-                  ~ x
+            quasiquote $ dbg ~x
           :examples $ []
           :schema $ :: 'Macro $ {}
             :capabilities $ #{} :platform-read
             :expansion $ :: 'Expr 'T
             :generics $ [] 'T
             :required $ [] $ :: 'Expr 'T
-          :tags $ #{} :macro
+          :tags $ #{} :deprecated :macro
         'wait-ms $ %{} 'CodeEntry
           :doc "|同步等待整数毫秒并返回 Result<Unit,String>；允许 0..4294967295，不做隐式舍入。"
           :code $ quote $ defn wait-ms (milliseconds)
@@ -12204,7 +12228,7 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic
           :tags $ #{} :builtin :internal :meta :state :syntax
-        'wo-js-log $ %{} 'CodeEntry (:doc |)
+        'wo-js-log $ %{} 'CodeEntry (:doc "|Deprecated: remove the wrapper; wo-js-log returns its argument unchanged.")
           :code $ quote $ defmacro wo-js-log (x) x
           :examples $ []
           :schema $ :: 'Macro $ {}
@@ -12212,8 +12236,8 @@
             :expansion $ :: 'Expr 'T
             :generics $ [] 'T
             :required $ [] $ :: 'Expr 'T
-          :tags $ #{} :macro
-        'wo-log $ %{} 'CodeEntry (:doc |)
+          :tags $ #{} :deprecated :macro
+        'wo-log $ %{} 'CodeEntry (:doc "|Deprecated: remove the wrapper; wo-log returns its argument unchanged.")
           :code $ quote $ defmacro wo-log (x) x
           :examples $ []
           :schema $ :: 'Macro $ {}
@@ -12221,7 +12245,7 @@
             :expansion $ :: 'Expr 'T
             :generics $ [] 'T
             :required $ [] $ :: 'Expr 'T
-          :tags $ #{} :macro
+          :tags $ #{} :deprecated :macro
         'write-file $ %{} 'CodeEntry
           :doc "|internal function for writing files\nSyntax: (write-file filepath content)\nParams: filepath (string), content (string)\nReturns: &unit or error\nWrites string content to file"
           :code $ quote &runtime-implementation

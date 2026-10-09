@@ -10,7 +10,7 @@ use calcit::snapshot::FileInSnapShot;
 use super::*;
 
 /// Resolved enclosing macro heads, keyed by spelling within one definition.
-type MacroHeadCache = BTreeMap<String, Result<Option<(Cirru, FileInSnapShot)>, String>>;
+pub(super) type MacroHeadCache = BTreeMap<String, Result<Option<(Cirru, FileInSnapShot)>, String>>;
 
 /// Core macros that evaluate nested argument forms in place and never inspect
 /// or reorder them. Threading macros such as `->` insert arguments into the
@@ -31,6 +31,8 @@ const ARGUMENT_PRESERVING_CORE_MACROS: &[&str] = &[
   "if-not",
   "let",
   "let[]",
+  "let-destruct",
+  "let-sugar",
   "loop",
   "when",
   "when-let",
@@ -91,7 +93,18 @@ pub(super) fn plan_case_default_source(
       Some(format!(
         "`{name}` is bound by a local, a namespace definition or an import in `{namespace}`; review which definition the call resolves to."
       ))
-    } else if let Some(reason) = unstable_macro_context(snapshot, snapshot_file, namespace, source, path, &mut macro_heads) {
+    } else if let Some(reason) = unstable_macro_context(
+      snapshot,
+      snapshot_file,
+      namespace,
+      source,
+      path,
+      ContextSubject {
+        name: "case-default",
+        transparent: &[],
+      },
+      &mut macro_heads,
+    ) {
       Some(reason)
     } else {
       non_literal_pattern(&node, namespace, definition)
@@ -206,12 +219,21 @@ fn non_literal_pattern(node: &Cirru, namespace: &str, definition: &str) -> Optio
 /// Every enclosing call must be a function, syntax, a core macro that keeps its
 /// argument forms unchanged, or a macro whose source only forwards the argument
 /// holding this call, so no macro observes the spelling.
-fn unstable_macro_context(
+/// The call being moved, and the extra macros that pass its form through
+/// unchanged on top of `ARGUMENT_PRESERVING_CORE_MACROS`.
+#[derive(Clone, Copy)]
+pub(super) struct ContextSubject<'a> {
+  pub(super) name: &'a str,
+  pub(super) transparent: &'a [&'a str],
+}
+
+pub(super) fn unstable_macro_context(
   snapshot: &Snapshot,
   snapshot_file: &str,
   namespace: &str,
   source: &Cirru,
   call_path: &[usize],
+  subject: ContextSubject<'_>,
   cache: &mut MacroHeadCache,
 ) -> Option<String> {
   for depth in 0..call_path.len() {
@@ -221,7 +243,9 @@ fn unstable_macro_context(
     let Some(Cirru::Leaf(head)) = items.first() else {
       continue;
     };
-    if ARGUMENT_PRESERVING_CORE_MACROS.contains(&head.as_ref()) && !namespace_binds_name(snapshot, namespace, head) {
+    if (ARGUMENT_PRESERVING_CORE_MACROS.contains(&head.as_ref()) || subject.transparent.contains(&head.as_ref()))
+      && !namespace_binds_name(snapshot, namespace, head)
+    {
       continue;
     }
     let macro_code = cache
@@ -232,7 +256,8 @@ fn unstable_macro_context(
       Ok(Some((code, file))) => {
         if !macro_forwards_argument(code, file, call_path[depth] - 1) {
           return Some(format!(
-            "`case-default` is an argument of the macro `{head}`, which may observe its spelling; review before rewriting."
+            "`{}` is an argument of the macro `{head}`, which may observe its spelling; review before rewriting.",
+            subject.name
           ));
         }
       }
