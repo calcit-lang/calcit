@@ -55,10 +55,10 @@ export function versionLessThan(left, right) {
   return false;
 }
 
-export function releaseSourceEnvironment(environment, tag, sha) {
-  // npm uses these two fields for the resolved source, not the publisher.
-  // Keep the actual workflow ref/SHA, run identity and OIDC configuration.
-  return { ...environment, GITHUB_REF: `refs/tags/${tag}`, GITHUB_SHA: sha };
+export function validateWorkflowSource(environment, tag, sha) {
+  // Registry provenance validation binds these claims to the OIDC certificate.
+  assert.equal(environment.GITHUB_REF, `refs/tags/${tag}`, "Run publication from the release tag, not main or another ref");
+  assert.equal(environment.GITHUB_SHA, sha, "Workflow source SHA must equal the release checkout");
 }
 
 const run = (command, args, options = {}) => execFileSync(command, args, { encoding: "utf8", ...options });
@@ -100,6 +100,7 @@ async function main() {
   const sha = run("git", ["rev-parse", "HEAD"]).trim();
   assert.equal(run("git", ["cat-file", "-t", `refs/tags/${tag}`]).trim(), "tag", "Release tag must be annotated");
   assert.equal(run("git", ["rev-parse", `refs/tags/${tag}^{}`]).trim(), sha, "Checkout must equal the tag commit");
+  validateWorkflowSource(process.env, tag, sha);
   const pkg = JSON.parse(await readFile("package.json", "utf8"));
   const cargo = json("cargo", ["metadata", "--locked", "--no-deps", "--format-version", "1"])
     .packages.find(item => item.name === "calcit");
@@ -113,12 +114,6 @@ async function main() {
     const release = json("gh", ["release", "view", tag, "--repo", repo, "--json", "tagName,isDraft,isPrerelease"]);
     const pages = json("gh", ["api", "--paginate", "--slurp", `repos/${repo}/actions/runs?head_sha=${sha}&per_page=100`]);
     validateRelease(tag, sha, release, [cargo.version, pkg.version], pages.flatMap(page => page.workflow_runs));
-    const publisherSha = process.env.PUBLISHER_SHA;
-    assert.match(publisherSha ?? "", /^[0-9a-f]{40}$/);
-    if (publisherSha !== sha) {
-      const publisherRuns = json("gh", ["api", "--paginate", "--slurp", `repos/${repo}/actions/runs?head_sha=${publisherSha}&per_page=100`]);
-      validateMainCI(publisherSha, publisherRuns.flatMap(page => page.workflow_runs));
-    }
     assert.equal(run("git", ["status", "--porcelain"]).trim(), "", "Release checkout must start clean");
     await appendFile(process.env.GITHUB_OUTPUT, `sha=${sha}\nprerelease=${release.isPrerelease}\n`);
     console.log(`Verified immutable release ${tag} at ${sha}`);
@@ -139,7 +134,7 @@ async function main() {
     const distTags = json("npm", ["view", "@calcit/procs", "dist-tags", "--json"]);
     assert.ok(!distTags[channel] || !versionLessThan(tag, distTags[channel]), `Refusing to roll ${channel} back from ${distTags[channel]} to ${tag}`);
     run("npm", ["publish", "--provenance", "--access", "public", "--tag", channel], {
-      stdio: "inherit", env: releaseSourceEnvironment(process.env, tag, sha),
+      stdio: "inherit",
     });
   }
   // Successful upload may precede registry visibility; failures remain resumable.
