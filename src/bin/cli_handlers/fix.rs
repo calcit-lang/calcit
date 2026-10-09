@@ -667,6 +667,7 @@ pub(crate) fn handle_fix_command(
       CorePredicateRename::Optionally,
       CorePredicateRename::Join,
       CorePredicateRename::Vals,
+      CorePredicateRename::SectionBy,
     ] {
       suggestions.extend(plan_core_predicate_rename_fixes(
         &source_snapshot,
@@ -3902,12 +3903,13 @@ enum CorePredicateRename {
   Optionally,
   Join,
   Vals,
+  SectionBy,
 }
 
 impl CorePredicateRename {
   /// Function aliases are distinct functions, so only direct calls are equivalent.
   fn requires_call_head(self) -> bool {
-    matches!(self, Self::Optionally | Self::Join | Self::Vals)
+    matches!(self, Self::Optionally | Self::Join | Self::Vals | Self::SectionBy)
   }
 
   fn names(self) -> (&'static str, &'static str, &'static str, &'static str) {
@@ -3921,6 +3923,7 @@ impl CorePredicateRename {
       ),
       Self::Join => ("join", "intersperse", CORE_FUNCTION_ALIAS_RULE, CORE_FUNCTION_ALIAS_DIAGNOSTIC),
       Self::Vals => ("vals", "distinct-values", CORE_FUNCTION_ALIAS_RULE, CORE_FUNCTION_ALIAS_DIAGNOSTIC),
+      Self::SectionBy => ("section-by", "chunks", CORE_FUNCTION_ALIAS_RULE, CORE_FUNCTION_ALIAS_DIAGNOSTIC),
     }
   }
 }
@@ -4010,6 +4013,7 @@ fn plan_attached_fixes(
           CorePredicateRename::Optionally,
           CorePredicateRename::Join,
           CorePredicateRename::Vals,
+          CorePredicateRename::SectionBy,
         ] {
           let (old, new, rule_id, _) = alias.names();
           if !selected_rules.contains(&rule_id) || !cirru_contains_target_reference(source, namespace, "calcit.core", old) {

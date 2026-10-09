@@ -4375,6 +4375,32 @@
                   do (char-from-code 1.5) false
                   fn (e) true
               :tags $ #{} :core :unit
+        'chunks $ %{} 'CodeEntry
+          :doc "|将 List 按固定长度 n 切成连续的子 List，最后一段可以更短；n 必须是不小于 1 的数字，否则抛出错误。"
+          :code $ quote $ defn chunks (xs0 n)
+            if (>= n 1)
+              &section-by-loop xs0 ([]) n
+              raise $ str-spaced "|expected positive number, got:" n
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'Number
+            :generics $ [] 'T
+            :return $ :: 'List $ :: 'List 'T
+          :tests $ []
+            %{} 'TestEntry (:name |splits-list-into-fixed-sections)
+              :code $ quote $ assert=
+                [] ([] 0 1 2) ([] 3 4 5) ([] 6 7 8) ([] 9)
+                chunks (range 10) 3
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |keeps-short-lists-whole)
+              :code $ quote $ assert=
+                [] $ [] 1 2
+                chunks ([] 1 2) 5
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |empty-list-has-no-sections)
+              :code $ quote $ assert= ([])
+                chunks ([]) 3
+              :tags $ #{} :core :unit
         'cirru-quote? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn cirru-quote? (x)
             &= (type-of x) :cirru-quote
@@ -10599,19 +10625,17 @@
                 assert= true $ round? $ do (println |integer-free-argument) 0
                 assert= false $ .integer? $ do (println |integer-method-argument) 0.0000000000000001
               :tags $ #{} :core :numeric-predicate :unit
-        'section-by $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn section-by (xs0 n)
-            if (>= n 1)
-              &section-by-loop xs0 ([]) n
-              raise $ str-spaced "|expected positive number, got:" n
+        'section-by $ %{} 'CodeEntry (:doc "|兼容旧名；首选 chunks，将 List 按固定长度 n 切成连续的子 List。")
+          :code $ quote $ defn section-by (xs0 n) (chunks xs0 n)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T) 'Number
             :generics $ [] 'T
             :return $ :: 'List $ :: 'List 'T
-          :tests $ [] $ %{} 'TestEntry (:name |splits-list-into-fixed-sections)
+          :tags $ #{} :deprecated
+          :tests $ [] $ %{} 'TestEntry (:name |forwards-to-chunks)
             :code $ quote $ assert=
-              [] ([] 0 1 2) ([] 3 4 5) ([] 6 7 8) ([] 9)
+              chunks (range 10) 3
               section-by (range 10) 3
             :tags $ #{} :core :unit
         'secure-random-bytes $ %{} 'CodeEntry
@@ -12169,7 +12193,7 @@
               xs $ &list:filter body $ defn &{,} (x)
                 hint-fn $ {} $ :return 'Bool
                 not= x ',
-              quasiquote $ pairs-map $ section-by ([] ~@xs) 2
+              quasiquote $ pairs-map $ chunks ([] ~@xs) 2
           :examples $ []
           :schema $ :: 'Macro $ {} (:rest 'Syntax)
             :capabilities $ #{}

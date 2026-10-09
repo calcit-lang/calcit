@@ -78,7 +78,7 @@
           :code $ quote $ fn () (log-title "|Testing {,}")
             inside-eval: $ assert=
               macroexpand $ quote $ {,} :a 1 :b 2 :c 3
-              quote $ pairs-map $ section-by ([] :a 1 :b 2 :c 3) 2
+              quote $ pairs-map $ chunks ([] :a 1 :b 2 :c 3) 2
             assert= ({,} :a 1 :b 2 :c 3)
               {} (:a 1) (:b 2) (:c 3)
           :examples $ []
