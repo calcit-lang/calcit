@@ -32,6 +32,8 @@ jobs:
           test "$SOURCE_REF" = "refs/tags/$RELEASE_TAG"
       - uses: actions/checkout@v4
         with:
+          # Preserve the annotated tag object instead of fetching its commit into the tag ref.
+          ref: ${{ github.ref }}
           persist-credentials: false
           fetch-depth: 0
 
