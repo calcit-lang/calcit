@@ -34,7 +34,7 @@ aliases:
 | 作为参数传递的闭包 | supported-with-type-evidence | 调用点可静态特化，参数契约可调用（`E_WASM_CLOSURE_SPECIALIZATION`、`E_WASM_CALL_SPECIALIZATION`） | `calcit.core/&list:filter-pair#filters-key-value-pairs` 排除项 |
 | 嵌套 `fn` / `defn` 闭包值、特化闭包中的 `recur` | unsupported | | `calcit.core/&list:apply#preserves-homogeneous-function-result-types` 排除项 |
 | `try` | unsupported | 失败只能 trap | `calcit.core/&number:rem#rejects-zero-and-non-safe-integers` 排除项 |
-| `atom` / Ref、`add-watch` | unsupported | 运行时状态与观察者 | `calcit.core/reset!#returns-assigned-scalar` 排除项 |
+| 局部 `ref`（兼容名 `atom`）、`add-watch!` / `remove-watch!` | unsupported | 局部 Ref 与观察者；已有数值 `defref` 全局不在此排除范围 | `calcit.core/reset!#returns-assigned-scalar` 排除项 |
 | 运行时 quote 值、`macroexpand`、`format-to-lisp` 非静态表达式 | unsupported | 宏在编译前展开，不受影响 | `calcit.core/deftrait#requires-head-accepts-bare-and-quoted`、`calcit.core/data-view#classifies-symbol-struct-ref` 排除项 |
 | `turn-tag` / `to-tag` 运行时转换 | unsupported | 需要运行时 tag interning（`E_WASM_TAG_CONVERSION`） | `calcit.core/filter-map-kv#preserves-captured-generic-relations` 排除项 |
 | `format-cirru-edn`、`try-parse-cirru-edn-as` | supported-with-type-evidence | 需要闭合静态类型与数据形状（`E_WASM_EDN_*`），见 [WASM 编译与验证](../../scripts/wasm-validation.md#cirru-edn-格式化边界) | `scripts/check-parse-boundary.mjs` |
