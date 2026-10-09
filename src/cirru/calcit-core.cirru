@@ -5146,14 +5146,10 @@
                 , '_log_tmp
               if (list? x)
                 quasiquote $ &let (~v ~x)
-                  println
-                    format-to-lisp $ quote ~x
-                    , |=> ~v
+                  println $ str-spaced (format-to-lisp $ quote ~x) |=> ~v
                   ~ v
                 quasiquote $ &let ()
-                  println
-                    format-to-lisp $ quote ~x
-                    , |=> ~x
+                  println $ str-spaced (format-to-lisp $ quote ~x) |=> ~x
                   ~ x
           :examples $ [] $ quote
             assert= 3 $ dbg $ + 1 2
