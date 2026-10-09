@@ -934,8 +934,8 @@ caps upgrade --all
 如果依赖清单本来已经是最新、但 `package.json` 中的 `@calcit/procs` 仍旧，`caps upgrade --all`
 可能没有产生更新动作。此时应显式执行 `yarn up @calcit/procs@<calcit-version>`，审阅
 `package.json` / `yarn.lock`，然后在 `yarn install` 后运行 `caps verify --toolchain`。这个命令会
-要求 `deps.cirru :calcit-version`、运行中的 `caps`、`package.json` 的 `@calcit/procs` 声明
-以及 Yarn 解析出的实际包版本全部精确一致；适合直接作为 CI 门禁。
+要求 `deps.cirru :calcit-version`、PATH 中 `calcit` 报告的版本、`package.json` 的 `@calcit/procs` 声明
+以及 Yarn 解析出的实际包版本全部精确一致；caps 自身独立发布的版本号不参与这一相等检查，适合直接作为 CI 门禁。
 
 如果你只想批量把旧版本提升到最新标签，也可以继续用：
 
@@ -1193,7 +1193,8 @@ value 的 validate/convert 后只返回 typed Calcit data；即使已正确标�
 或 `&atom:deref`；这些 `&scope:name` 名称是编译器、core 实现和生成代码之间的内部 ABI，诊断和
 迁移建议不应要求业务代码手写完整内部名称。本阶段已让内建 Map/Ref 接收者生成直接内部调用；
 自定义 nominal 类型会先按其 impl 表静态选中实现，而匿名函数实现到直接符号调用的代码生成仍会分阶段收紧。
-接收者保留为 `Dynamic` 时会留下动态分派，应通过补 schema、类型收窄或显式边界继续迁移。
+默认严格模式拒绝未能静态专门化的 Dynamic 接收者方法调用，并报告 `E_DYNAMIC_METHOD_DISPATCH` 或
+`E_DYNAMIC_POSTFIX_METHOD`；应通过补 schema、类型收窄或显式边界继续迁移。只有兼容模式可能保留历史动态分派。
 
 这次收紧后，常见迁移如下：
 
