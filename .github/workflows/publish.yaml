@@ -30,6 +30,8 @@ jobs:
     steps:
       # Recovery uses the reviewed publisher from main, never changes the tag.
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Preserve publisher and validate recovery source
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -42,6 +44,7 @@ jobs:
           cp scripts/publish-registry.mjs "$RUNNER_TEMP/publish-registry.mjs"
       - uses: actions/checkout@v4
         with:
+          persist-credentials: false
           ref: refs/tags/${{ inputs.tag || github.event.release.tag_name }}
           fetch-depth: 0
 
