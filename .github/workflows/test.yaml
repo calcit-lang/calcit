@@ -339,6 +339,48 @@ jobs:
           node scripts/check-known-assertion.mjs
           node scripts/check-typed-source-alias.mjs
 
+  lint_core_check_all:
+    name: Full check-all with post-lowering validation
+    # Runs the complete local gate with the post-lowering validator on, so every
+    # check-all fixture also proves that lowering kept its type evidence (#1553).
+    needs: cli_build
+    runs-on: ubuntu-latest
+    env:
+      CALCIT_BIN: target/ci/calcit
+      CALCIT_LINT_CORE: "1"
+      RUST_MIN_STACK: "16777216"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.98.1
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v6.5.0
+        with:
+          node-version: 24
+
+      - uses: actions/download-artifact@v4.3.0
+        with:
+          name: calcit-cli-${{ github.sha }}
+          path: target/ci
+      - name: Prepare shared CLI and JS runtime
+        run: |
+          chmod +x "$CALCIT_BIN"
+          corepack enable
+          corepack prepare yarn@4.12.0 --activate
+          yarn install --immutable
+          mkdir -p node_modules/@calcit
+          ln -s ../../ node_modules/@calcit/procs
+
+      - name: "yarn check-all (CALCIT_LINT_CORE=1)"
+        run: yarn check-all
+
   docs_checks:
     name: Docs checks
     needs: cli_build
@@ -429,6 +471,7 @@ jobs:
       - ubuntu_2204_no_wasm
       - rust_tests
       - core_checks
+      - lint_core_check_all
       - docs_checks
       - clippy
     runs-on: ubuntu-latest
@@ -442,6 +485,7 @@ jobs:
           echo "wasi_business_smoke=${{ needs.wasi_business_smoke.result }}"
           echo "ubuntu_2204_no_wasm=${{ needs.ubuntu_2204_no_wasm.result }}"
           echo "core_checks=${{ needs.core_checks.result }}"
+          echo "lint_core_check_all=${{ needs.lint_core_check_all.result }}"
           echo "docs_checks=${{ needs.docs_checks.result }}"
           echo "clippy=${{ needs.clippy.result }}"
           test "${{ needs.cli_build.result }}" = "success"
@@ -451,5 +495,6 @@ jobs:
           test "${{ needs.wasi_business_smoke.result }}" = "success"
           test "${{ needs.ubuntu_2204_no_wasm.result }}" = "success"
           test "${{ needs.core_checks.result }}" = "success"
+          test "${{ needs.lint_core_check_all.result }}" = "success"
           test "${{ needs.docs_checks.result }}" = "success"
           test "${{ needs.clippy.result }}" = "success"

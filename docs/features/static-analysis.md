@@ -1135,6 +1135,7 @@ Static type analysis:
 
 - 改写点（方法内联、`get` / `nth` / `first` / `last` 的类型化 lowering、trait 约束方法的 `&trait-call` lowering）在改写时记录改写前的类型、源表达式、改写后表达式与源码位置，不引入新的 AST。
 - 定义预处理完成后，校验遍历最终节点树。仍在树中的被记录节点要求类型不低于改写前；每个 `Proc` 调用、已编译用户函数的调用与 `recur` 重新执行参数检查，预处理阶段没有报告过的结果视为遗漏检查。
+- 改写生成的调用在改写前已按源码形状检查（例如作为方法调用），告警文字与改写后调用的检查不同；预处理已在同一调用位置报告过告警时，视为该调用经过了检查。
 - 调用节点由某个被记录的改写生成时（例如方法内联后的 `Proc` 调用），第三条的违规在来源链中同时列出改写前的源表达式与改写方式，直接指向丢失检查的改写点。
 - `calcit.core` 与普通项目使用同一规则，不设置库豁免；发现的问题通过补全证据或修正定义的类型合同解决。
 
@@ -1164,7 +1165,7 @@ internal compiler error: post-lowering validation (CALCIT_LINT_CORE=1) found 1 v
 
 - `src/runner/preprocess/post_lowering.rs` 的单元测试为每个已知问题构造改写后的错误节点树并断言校验报错：#1378（`Option` payload 被擦除）、#1428（`recur` 参数未检查）、#1494（内联 Proc 方法绕过参数检查），以及改写后的用户函数调用未经参数检查。
 - `tests/post_lowering_cli.rs` 在开启校验时检查 #1378、#1428、#1494 与 #1737（`Option :none` 绑定到局部变量后用于具体字段）的合法写法。
-- CI 在开启校验时运行 core 附带 `:tests`、`calcit.core` 的 `analyze check-public`、`calcit/test.cirru` 与类型推断测试。新发现的同类问题先把最小用例加入这组回归，再修复。
+- CI 在开启校验时运行 core 附带 `:tests`、`calcit.core` 的 `analyze check-public`、`calcit/test.cirru` 与类型推断测试，并由独立 job 以 `CALCIT_LINT_CORE=1` 运行完整的 `yarn check-all`。新发现的同类问题先把最小用例加入这组回归，再修复。
 
 ## See Also
 
