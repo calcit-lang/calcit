@@ -392,7 +392,8 @@ Struct，`get` 可按运行时字段名返回 `Option<Dynamic>`。
 
 ### Meta Operations
 
-- `type-of` - get type tag
+- `data-view`：把 Dynamic 值转成封闭的 `Data` enum，用 `match (data-view x)` 按运行时类型分派，分支 payload 带类型，见 [Enums](features/enums.md)
+- `type-of`：低层原语，返回运行时类型 tag；返回的 tag 集合在各后端不完全一致，业务代码的类型分派用 `data-view` 或 `string?` 等谓词
 - `to-string`：实现 `ToString` 的值转文本；`to-symbol` / `to-tag`：String 转标识。旧 `turn-*` 暂留兼容，受控迁移见 [升级指南](run/upgrade.md)
 - `identical?` - reference equality
 - `recur` - tail recursion

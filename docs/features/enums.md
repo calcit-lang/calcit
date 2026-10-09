@@ -291,6 +291,10 @@ defn preview (x)
 
 `:other` 保留不属于前面类别的值，包括 Buffer、类型定义和后端内部或宿主值。二选一的判断仍然使用 `string?` 等谓词。`data-view` 是普通 core 函数，通过现有谓词构造 Data。`match (data-view x)` 直接写在 `match` 里时，预处理会把它降级成只测试有分支的变体的谓词链，不构造 Data 值；分支绑定的类型与 Data 的 payload 声明一致。把 `data-view` 的结果存进变量再 `match` 时，仍然构造 Data 值。
 
+### 与 `type-of` 的关系
+
+`type-of` 返回 `Tag`，但不会让分支里的值收窄；各后端返回的 tag 集合也不完全一致。需要按运行时类型分派时使用 `match (data-view x)`；二选一的判断使用 `string?` 等谓词。`type-of` 保留为低层原语，供 core 内部和调试输出使用。
+
 ## Common Patterns
 
 ### Result / Either type
