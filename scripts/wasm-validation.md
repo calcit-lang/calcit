@@ -26,10 +26,10 @@ WASM 相关能力分属四个不同层级，排查或文档引用时不要把它
    其类型矩阵、async lifecycle 与 HTTP 边界以
    [WASM Component 边界](../docs/installation/wasm-component-boundary.md) 为准，不在本文件重复。
 
-下表主要描述第 2 层的内部表示和部分已验证操作，不保证某个类型的所有方法或动态输入均可编译；
-WASI 宿主能力必须另外满足所选 command 边界，Component 类型闭包也必须单独验证。
+哪些构造能编译、需要什么类型证据、每个 `E_WASM_*` 诊断的含义，以 [WASM 支持矩阵](../docs/installation/wasm-support.md) 为准。
+下表只描述第 2 层已支持操作的内部表示；WASI 宿主能力必须另外满足所选 command 边界，Component 类型闭包也必须单独验证。
 
-## 支持的子集
+## 已支持操作的内部表示
 
 | 特性                                   | 支持 | 说明                     |
 | -------------------------------------- | ---- | ------------------------ |
@@ -66,14 +66,9 @@ WASI 宿主能力必须另外满足所选 command 边界，Component 类型闭�
 | `__str_new` (FFI)                      | ✅   | JS → WASM 字符串传递     |
 | `defwasm-import` / `defwasm-export`    | ✅   | 显式声明 host ABI，支持 Number / String |
 
-**需要明确检查的目标边界：**
+尚未支持的构造与对应诊断列在 [WASM 支持矩阵](../docs/installation/wasm-support.md)。
 
-- `&str:replace` / `str` 类型转换 / `&str:escape`
-- 需要运行时选择实现的动态 method dispatch；已证明的普通方法不在此列
-- Atom / Ref 的运行时状态与观察者能力
-- 未经静态 lowering 的可变参数 (`&`) 和可选参数 (`?`)；公开 Component ABI 不接受这些 arity
-
-上述缺口不能通过放宽 Dynamic、复制一套“动态 API”或自动插入 unsafe 来隐藏。普通依赖中
+这些缺口不能通过放宽 Dynamic、复制一套“动态 API”或自动插入 unsafe 来隐藏。普通依赖中
 未受支持的实现可能保留 trapping slot；显式导出与 command 入口则要求更强的编译期验证。
 生成产物存在不是可用性证明，应实际调用相应入口并验证结果。
 

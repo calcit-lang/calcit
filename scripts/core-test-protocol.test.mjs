@@ -1,8 +1,19 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { hasNativeParity, markerProtocolError, parseBackendSelection, parseMarkers } from "./core-test-protocol.mjs";
+import { hasNativeParity, markerProtocolError, parseBackendSelection, parseMarkers, parseWasmDiagnosticTable } from "./core-test-protocol.mjs";
+
+test("WASM diagnostic coverage comes from code cells, not prose or other tables", () => {
+  const fixture = readFileSync(new URL("../tests/fixtures/wasm-support-matrix-parser.md", import.meta.url), "utf8");
+  for (const text of [fixture, fixture.replaceAll("\n", "\r\n")]) {
+    assert.deepEqual([...parseWasmDiagnosticTable(text)].sort(), ["E_WASM_FIRST", "E_WASM_SECOND", "E_WASM_THIRD"]);
+  }
+  const missingRow = fixture.split("\n").filter(line => !line.startsWith("| `E_WASM_FIRST`")).join("\n");
+  assert.ok(missingRow.includes("`E_WASM_FIRST`"));
+  assert.equal(parseWasmDiagnosticTable(missingRow).has("E_WASM_FIRST"), false);
+});
 
 const supported = ["native", "js", "wasm", "wasi"];
 const tests = [{ index: 0 }, { index: 1 }];
