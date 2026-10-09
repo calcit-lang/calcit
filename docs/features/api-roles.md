@@ -228,7 +228,7 @@ do
 
 1. 0.27.0：已合并的 Unicode 索引修复 → #1454 明确 nil/Option 与成员命题、修整数边界 → #1455 长度/List add 遮蔽 → seeded fold/intersperse → 去重 values 与其他组合。后续每批以对应 issue/PR 决定实际发布范围，不把整张表一次替换。
 2. 0.28.0：#1456 转换/解析证据 → #1457 core/js-ffi/std 效果 adapter → #1458 已落地入口的 Agent 推荐、版本化 preset 和兼容清理；暂缓项不阻塞前一批，也不被视为默许改名。
-3. 等价 fix 复用已有源码来源与 revision/fingerprint 防护；先 preview，再带 `--expect-revision` 应用，再次 preview 应为空。code、`:tests`、`:examples` 分别记录覆盖或人工处置；未知 macro、遮蔽、函数值、开放 receiver、自定义 trait 不猜。旧 preset 内容不变，新规则组合进后续版本的 preset，不新增顶层入口。
+3. 等价 fix 复用已有源码来源与 revision/fingerprint 防护；先 preview，再带 `--expect-revision` 应用，再次 preview 应为空。code、`:tests`、`:examples` 分别记录覆盖或人工处置；未知 macro、遮蔽、函数值、开放 receiver、自定义 trait 不猜。固定改写与 preset 是临时迁移桥梁：完整消费者验收后可在非 patch 版本退场，并从当前 preset 移除对应规则；需要历史桥梁的项目先按升级指南使用已发布的旧 CLI。后续项目级修改优先由 Agent 根据当前合同生成受保护事务，不继续扩展版本 × 规则矩阵或新增顶层入口。
 4. 每批保留 Calcit `:tests` 的用户方法调用，覆盖正常、空值、重复项、类型错误、失败与副作用顺序；Rust/脚本只验证 CLI、host/内存等边界。当前已支持的 native/JS/WASM/WASI 路径都验证，unsupported 明确列出，不能为测试绕过 lowering 改成 native call。
 5. Respo 优先回归事件键、HTML/属性/样式输出与集合转换；js-ffi 回归 effect/JS 边界；std 核对时间/随机/文件模型。用实际 commit、entry、发布依赖记录证据，不写“所有消费者已迁移”。参考已核对的 Respo `respo.render.html/element->string` 中 `some?/turn-string/join-str`，旧 nil 判断不能自动换成 Option 判断。
 6. 删除旧入口前同时满足：首选入口具有不弱于旧入口的类型证据；严格检查与相关 backend/真实消费者通过；fix 或人工迁移说明可用；至少一个正式版本的迁移窗口；core method 与待删应用入口解耦。到达版本号不自动授权删除；保留原因写到 issue，不让兼容名永久成为平行推荐。
