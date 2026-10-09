@@ -478,7 +478,7 @@ Map 与 Set 同时不再实现 `Contains` trait。schema `:where` 中 `'T 'Conta
 
 ### 仍可用的兼容名
 
-core 中带 `:deprecated` 标记的 16 个兼容名在 0.29.0 仍可调用，行为与 0.28 相同。新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余按首选写法逐处改写。
+core 中带 `:deprecated` 标记的 21 个兼容名在 0.29.0 仍可调用，行为与 0.28 相同。新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余按首选写法逐处改写。
 
 | 兼容名 | 首选写法 | 迁移 |
 |---|---|---|
@@ -495,6 +495,10 @@ core 中带 `:deprecated` 标记的 16 个兼容名在 0.29.0 仍可调用，行
 | `let{}` | `let` 逐个绑定 `&map:get m :key`；struct 值用 `.-field` | 人工改写（生态中 2 处） |
 | `let-destruct` | symbol 模式写 `let`，`([] ...)` 模式写 `let[]` | 人工改写（生态中未见调用） |
 | `option:let` | 嵌套 `.and-then`：`option:let ((a x) (b (f a))) body` 写成 `x .and-then $ fn (a) $ (f a) .and-then $ fn (b) body` | 人工改写（生态中 1 处） |
+| 宏 `w-log` | `dbg`，打印同样的源码与值并返回值 | `calcit calcit.cirru fix --rule core-macro-alias-v1 --format edn` |
+| 宏 `wo-log` / `wo-js-log` | 去掉外层，直接写参数 | 同上 |
+| 宏 `flipped` | 按实际顺序写参数：`flipped f a b` 写成 `f b a` | 同上；位于 `->` 等线程宏中时需要人工改写 |
+| 宏 `w-js-log` | `dbg`；需要在浏览器控制台查看宿主对象时显式写 `js/console.log` | 同上，只给 `requires-review` |
 
 上表名字、函数 `round?`、前缀 `reduce`，以及方法 List `.add`、List/Map/Set `.count`、FfiTask `.cancel` / `.cancel-with` 与 Struct/Enum `.contains?` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零后，在下一个非 patch 版本删除，并在本文列出删除项。
 

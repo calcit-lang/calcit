@@ -283,10 +283,10 @@
         'test-w-log $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing w-log") (&reset-gensym-index!)
             inside-eval: $ assert=
-              macroexpand $ quote $ w-log (+ 1 2)
+              macroexpand $ quote $ dbg (+ 1 2)
               quote $ &let
                 v__1 $ + 1 2
-                println
+                println $ str-spaced
                   format-to-lisp $ quote $ + 1 2
                   , |=> v__1
                 , v__1
