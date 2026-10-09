@@ -8682,7 +8682,8 @@
             :expansion $ :: 'Expr 'Dynamic
             :required $ [] 'SyntaxList
           :tags $ #{} :macro
-        'let-destruct $ %{} 'CodeEntry (:doc |)
+        'let-destruct $ %{} 'CodeEntry
+          :doc "|Deprecated: dispatches a symbol, `([] ...)` or `({} ...)` pattern to `&let`, `let[]` or `let{}`. Write `let` or `let[]` directly; scheduled for removal in a later non-patch release."
           :code $ quote $ defmacro let-destruct (pattern v & body)
             if (symbol? pattern)
               quasiquote $ &let (~pattern ~v) ~@body
@@ -8705,7 +8706,7 @@
             :expansion $ :: 'Expr 'Dynamic
             :required $ [] 'Syntax $ :: 'Expr 'Dynamic
             :rest $ :: 'Expr 'Dynamic
-          :tags $ #{} :macro
+          :tags $ #{} :deprecated :macro
         'let-sugar $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro let-sugar (pairs & body)
             if
@@ -8784,7 +8785,8 @@
                 do (assert= 9 head)
                   assert= ([] 8 7) tail
             :tags $ #{} :core :unit
-        'let{} $ %{} 'CodeEntry (:doc |)
+        'let{} $ %{} 'CodeEntry
+          :doc "|Deprecated: bind map fields by tag key. Prefer explicit bindings such as `let ((a (&map:get m :a))) ...`, or `.-field` for struct values; scheduled for removal in a later non-patch release."
           :code $ quote $ defmacro let{} (items base & body)
             if
               not $ and (list? items) (every? items symbol?)
@@ -8803,7 +8805,7 @@
             :expansion $ :: 'Expr 'Dynamic
             :required $ [] 'SyntaxList $ :: 'Expr 'Dynamic
             :rest $ :: 'Expr 'Dynamic
-          :tags $ #{} :macro
+          :tags $ #{} :deprecated :macro
         'list-match $ %{} 'CodeEntry
           :doc "|Two-branch list destructuring macro. Provides separate clauses for the empty list and a head/tail pattern, useful for simple recursion or guards."
           :code $ quote $ defmacro list-match (& values)

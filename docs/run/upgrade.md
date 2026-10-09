@@ -478,7 +478,7 @@ Map 与 Set 同时不再实现 `Contains` trait。schema `:where` 中 `'T 'Conta
 
 ### 仍可用的兼容名
 
-core 中带 `:deprecated` 标记的 19 个兼容名在 0.29.0 仍可调用，行为与 0.28 相同。新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余按首选写法逐处改写。
+core 中带 `:deprecated` 标记的 21 个兼容名在 0.29.0 仍可调用，行为与 0.28 相同。新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余按首选写法逐处改写。
 
 | 兼容名 | 首选写法 | 迁移 |
 |---|---|---|
@@ -492,6 +492,8 @@ core 中带 `:deprecated` 标记的 19 个兼容名在 0.29.0 仍可调用，行
 | `remove-watch` | `remove-watch!` | 人工改写 |
 | `case-default` | `match`，默认值写成末尾 `_` 分支 | `case-default-to-match-v1`（字面量模式） |
 | `foldl-shortcut` | `fold-while`，reducer 返回 `ControlFlow :continue acc` 或 `ControlFlow :break value`，从未 break 时返回累积值 | 人工改写：`(:: false acc)` 改为 `ControlFlow :continue acc`，`(:: true v)` 改为 `ControlFlow :break v`；旧写法在从未 break 时返回第三个参数 `default`，需要时在调用处判断后显式给出 |
+| `let{}` | `let` 逐个绑定 `&map:get m :key`；struct 值用 `.-field` | 人工改写（生态中 2 处） |
+| `let-destruct` | symbol 模式写 `let`，`([] ...)` 模式写 `let[]` | 人工改写（生态中未见调用） |
 | `option:let` | 嵌套 `.and-then`：`option:let ((a x) (b (f a))) body` 写成 `x .and-then $ fn (a) $ (f a) .and-then $ fn (b) body` | 人工改写（生态中 1 处） |
 | 宏 `w-log` | `dbg`，打印同样的源码与值并返回值 | `calcit calcit.cirru fix --rule core-macro-alias-v1 --format edn` |
 | 宏 `wo-log` / `wo-js-log` | 去掉外层，直接写参数 | 同上 |
