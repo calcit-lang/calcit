@@ -9781,7 +9781,7 @@
                   fn (value) value
             :tags $ #{} :core :unit
         'option:let $ %{} 'CodeEntry
-          :doc "|Sequentially bind Option payloads through the .and-then method; stops at the first none and requires the body to return Option."
+          :doc "|Deprecated: binds Option payloads in sequence through `.and-then`, stopping at the first none; the body must return Option. Write the nested `.and-then` calls directly; scheduled for removal in a later non-patch release."
           :code $ quote $ defmacro option:let (pairs & body)
             if
               not $ and (list? pairs) (every? pairs list?)
@@ -9815,7 +9815,7 @@
             :capabilities $ #{}
             :expansion $ :: 'Expr $ :: 'Option 'Dynamic
             :required $ [] 'SyntaxList
-          :tags $ #{} :experimental :macro
+          :tags $ #{} :deprecated :macro
           :tests $ []
             %{} 'TestEntry (:name |short-circuits-none)
               :code $ quote $ assert= (%none)
