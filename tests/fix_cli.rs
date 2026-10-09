@@ -1070,6 +1070,136 @@ fn attached_constructor_fix_preserves_identity_shadowing_and_opaque_macros() {
 }
 
 #[test]
+fn named_constructor_fix_migrates_qualified_quasiquote_templates() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  assert_success(&run_calcit(&snapshot, &["query", "config"]), "inspect template constructor fixture");
+  for (target, code, overwrite) in [
+    (
+      "app.main/main!",
+      "quote $ defn main! ()\n  assert= |Ada $ :name $ make-person |Ada\n  assert= |Bo $ :name $ make-local |Bo\n  assert= (Choice :none) (make-choice)\n  assert= |Cy $ :name $ make-dynamic Person |Cy\n  , &unit",
+      true,
+    ),
+    ("app.main/Person", "quote $ defstruct Person (:name 'String) (:age 'Number)", false),
+    (
+      "app.main/Choice",
+      "quote $ defenum Choice (:none) (:person 'app.main/Person)",
+      false,
+    ),
+    (
+      "app.main/make-person",
+      "quote $ defmacro make-person (name)\n  quasiquote $ %{} app.main/Person (:name ~name)\n    :age $ ~ $ &+ 1 2",
+      false,
+    ),
+    (
+      "app.main/make-choice",
+      "quote $ defmacro make-choice ()\n  quasiquote $ %:: app.main/Choice :none",
+      false,
+    ),
+    (
+      "app.main/make-local",
+      "quote $ defmacro make-local (name)\n  quasiquote $ %{} Person (:name ~name) (:age 1)",
+      false,
+    ),
+    (
+      "app.main/make-dynamic",
+      "quote $ defmacro make-dynamic (proto name)\n  quasiquote $ %{} ~proto (:name ~name) (:age 1)",
+      false,
+    ),
+    (
+      "app.main/quoted-template",
+      "quote $ defmacro quoted-template ()\n  quote $ %{} app.main/Person (:name |Di) (:age 1)",
+      false,
+    ),
+  ] {
+    let mut args = vec!["edit", "def", target, "--input-format", "cirru", "--code", code];
+    if overwrite {
+      args.push("--overwrite");
+    }
+    assert_success(&run_calcit(&snapshot, &args), "create template constructor fixture");
+  }
+  assert_success(&run_calcit(&snapshot, &[]), "original template constructors");
+  let preview = |rule: &str| {
+    let output = run_calcit(&snapshot, &["fix", "--ns", "app.main", "--rule", rule, "--format", "json"]);
+    assert_success(&output, rule);
+    parse_stdout(&output)
+  };
+  let suggestions_of = |report: &serde_json::Value, definition: &str| {
+    report["data"]["suggestions"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .filter(|suggestion| suggestion["definition"] == format!("app.main/{definition}"))
+      .cloned()
+      .collect::<Vec<_>>()
+  };
+  let apply = |rule: &str, report: &serde_json::Value| {
+    let revision = report["revision"].as_str().unwrap();
+    let args = [
+      "fix",
+      "--ns",
+      "app.main",
+      "--rule",
+      rule,
+      "--apply",
+      "--allow-no-vcs",
+      "--expect-revision",
+      revision,
+    ];
+    assert_success(&run_calcit(&snapshot, &args), rule);
+  };
+
+  let report = preview("named-struct-constructor-v1");
+  let person = suggestions_of(&report, "make-person");
+  assert_eq!(person.len(), 1, "{report}");
+  assert_eq!(person[0]["applicability"], "machine-applicable", "{report}");
+  assert_eq!(person[0]["path"], "code@3.1", "{report}");
+  let local = suggestions_of(&report, "make-local");
+  assert_eq!(local.len(), 1, "{report}");
+  assert_eq!(local[0]["applicability"], "requires-review");
+  assert!(local[0]["message"].as_str().unwrap().contains("expansion site"), "{report}");
+  assert!(suggestions_of(&report, "make-dynamic").is_empty(), "{report}");
+  assert!(suggestions_of(&report, "quoted-template").is_empty(), "{report}");
+  apply("named-struct-constructor-v1", &report);
+
+  let report = preview("named-enum-constructor-v1");
+  let choice = suggestions_of(&report, "make-choice");
+  assert_eq!(choice.len(), 1, "{report}");
+  assert_eq!(choice[0]["applicability"], "machine-applicable", "{report}");
+  apply("named-enum-constructor-v1", &report);
+
+  let query = |definition: &str| {
+    let output = run_calcit(&snapshot, &["query", "def", &format!("app.main/{definition}"), "--format", "json"]);
+    assert_success(&output, definition);
+    parse_stdout(&output)["data"]["code"].to_string()
+  };
+  assert!(
+    query("make-person").contains(r#"["quasiquote",["app.main/Person",":name","~name",":age""#),
+    "{}",
+    query("make-person")
+  );
+  assert!(
+    query("make-choice").contains(r#"["quasiquote",["app.main/Choice",":none"]]"#),
+    "{}",
+    query("make-choice")
+  );
+  assert!(query("make-local").contains(r#"["%{}","Person""#), "{}", query("make-local"));
+  assert!(query("make-dynamic").contains(r#"["%{}","~proto""#), "{}", query("make-dynamic"));
+  assert!(
+    query("quoted-template").contains(r#"["%{}","app.main/Person""#),
+    "{}",
+    query("quoted-template")
+  );
+  assert_success(&run_calcit(&snapshot, &[]), "migrated template constructors");
+
+  let report = preview("named-struct-constructor-v1");
+  let remaining = report["data"]["suggestions"].as_array().unwrap();
+  assert_eq!(remaining.len(), 1, "{report}");
+  assert_eq!(remaining[0]["definition"], "app.main/make-local");
+}
+
+#[test]
 fn attached_do_rules_preserve_root_sequence_and_macro_data() {
   for rule in ["redundant-do-v1", "single-expression-do-v1"] {
     let directory = TestDirectory::create();

@@ -5950,6 +5950,12 @@ fn plan_named_constructor_fixes(
 }
 
 /// Share nominal resolution and field completeness with source-origin checks for attached constructors.
+///
+/// Constructors in executable code are proven by the compiler usage trace. A quasiquote template is
+/// not compiled until each expansion, so a template constructor is proven statically instead: its
+/// namespace-qualified prototype resolves through the macro namespace, the same way the expanded
+/// symbol resolves at every expansion site. An unqualified template prototype can be captured by a
+/// local at an expansion site, so it is reported for review.
 fn plan_named_constructor_source(
   snapshot: &Snapshot,
   snapshot_file: &str,
@@ -5961,80 +5967,108 @@ fn plan_named_constructor_source(
   let (namespace, definition) = owner;
   let (compose_redundant_do, compose_single_expression_do) = compose_do;
   let mut suggestions = Vec::new();
-  if list_head(source) == Some("defmacro") {
-    return Ok(suggestions);
-  }
   let mut shadowed = HashSet::new();
   collect_potential_local_bindings(source, &mut shadowed);
+  let scope = ConstructorScope {
+    snapshot,
+    namespace,
+    shadowed: &shadowed,
+    kinds,
+    macro_body: list_head(source) == Some("defmacro"),
+  };
   let mut paths = Vec::new();
-  collect_named_constructor_paths(source, &mut Vec::new(), &mut paths, snapshot, namespace, &shadowed, kinds);
+  collect_named_constructor_paths(source, &mut Vec::new(), 0, &mut paths, &scope);
   paths.sort();
   if paths.is_empty() {
     return Ok(suggestions);
   }
-  let parsed = code_to_calcit(source, namespace, definition, vec![]).map_err(|error| error.to_string())?;
-  let usages =
+  let usages = if paths.iter().any(|(_, depth)| *depth == 0) {
+    let parsed = code_to_calcit(source, namespace, definition, vec![]).map_err(|error| error.to_string())?;
     runner::preprocess::trace_source_usages(&parsed, namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
-      .map_err(|error| error.msg)?;
+      .map_err(|error| error.msg)?
+  } else {
+    Vec::new()
+  };
   let all_paths = paths;
-  let paths = all_paths
+  let targets = all_paths
     .iter()
-    .filter(|path| !all_paths.iter().any(|other| other.len() < path.len() && path.starts_with(other)))
+    .filter(|(path, _)| {
+      !all_paths
+        .iter()
+        .any(|(other, _)| other.len() < path.len() && path.starts_with(other))
+    })
     .cloned()
     .collect::<Vec<_>>();
-  for target_path in paths {
+  for (target_path, target_depth) in targets {
     let original_node = navigate_to_path(source, &target_path)?;
     let Cirru::List(items) = &original_node else {
       continue;
     };
-    let Some(kind) = legacy_constructor_kind(items, snapshot, namespace, &shadowed, kinds) else {
+    let Some(kind) = scope.legacy_kind(items) else {
       continue;
     };
-    let proven = all_paths.iter().filter(|path| path.starts_with(&target_path)).all(|path| {
-      let Ok(Cirru::List(parts)) = navigate_to_path(source, path) else {
-        return false;
-      };
-      let Some(kind) = legacy_constructor_kind(&parts, snapshot, namespace, &shadowed, kinds) else {
-        return false;
-      };
-      let Some(prototype) = parts.get(1).and_then(leaf_value) else {
-        return false;
-      };
-      let Some((target_ns, target_def)) = resolve_project_nominal_target(snapshot, namespace, prototype, kind) else {
-        return false;
-      };
-      let mut prototype_path = path.clone();
-      prototype_path.push(1);
-      let matching = usages
-        .iter()
-        .filter(|usage| {
-          usage.location.as_ref().is_some_and(|location| {
-            location.ns.as_ref() == namespace
-              && location.def.as_ref() == definition
-              && location
-                .coord
-                .iter()
-                .map(|index| usize::from(*index))
-                .eq(prototype_path.iter().copied())
+    let nested = all_paths
+      .iter()
+      .filter(|(path, _)| path.starts_with(&target_path))
+      .collect::<Vec<_>>();
+    let unqualified_template = nested.iter().any(|(path, depth)| {
+      *depth == 1
+        && navigate_to_path(source, path)
+          .ok()
+          .and_then(|node| match node {
+            Cirru::List(parts) => parts.get(1).and_then(leaf_value).map(|prototype| !prototype.contains('/')),
+            Cirru::Leaf(_) => None,
           })
-        })
-        .collect::<Vec<_>>();
-      !matching.is_empty()
-        && matching.iter().all(|usage| {
-          usage.target_ns.as_ref() == target_ns
-            && usage.target_def.as_ref() == target_def
-            && usage
-              .macro_origin
-              .iter()
-              .all(|origin| preserves_nominal_method_call_through_macro(origin))
-        })
+          .unwrap_or(true)
     });
+    let proven = !unqualified_template
+      && nested.iter().all(|(path, depth)| {
+        let Ok(Cirru::List(parts)) = navigate_to_path(source, path) else {
+          return false;
+        };
+        let Some(kind) = scope.legacy_kind(&parts) else {
+          return false;
+        };
+        if *depth == 1 {
+          // Resolution and field completeness were checked against the macro namespace.
+          return true;
+        }
+        let Some(prototype) = parts.get(1).and_then(leaf_value) else {
+          return false;
+        };
+        let Some((target_ns, target_def)) = resolve_project_nominal_target(snapshot, namespace, prototype, kind) else {
+          return false;
+        };
+        let mut prototype_path = path.clone();
+        prototype_path.push(1);
+        let matching = usages
+          .iter()
+          .filter(|usage| {
+            usage.location.as_ref().is_some_and(|location| {
+              location.ns.as_ref() == namespace
+                && location.def.as_ref() == definition
+                && location
+                  .coord
+                  .iter()
+                  .map(|index| usize::from(*index))
+                  .eq(prototype_path.iter().copied())
+            })
+          })
+          .collect::<Vec<_>>();
+        !matching.is_empty()
+          && matching.iter().all(|usage| {
+            usage.target_ns.as_ref() == target_ns
+              && usage.target_def.as_ref() == target_def
+              && usage
+                .macro_origin
+                .iter()
+                .all(|origin| preserves_nominal_method_call_through_macro(origin))
+          })
+      });
     let replacement_node = rewrite_named_constructor_tree(
       &original_node,
-      snapshot,
-      namespace,
-      &shadowed,
-      kinds,
+      target_depth,
+      &scope,
       compose_redundant_do,
       compose_single_expression_do,
     );
@@ -6045,6 +6079,11 @@ fn plan_named_constructor_source(
       .format_one_liner()
       .map_err(|error| format!("Failed to format constructor replacement at {namespace}/{definition}: {error}"))?;
     let prototype = items.get(1).and_then(leaf_value).unwrap_or("<unknown>");
+    let origin_kind = if target_depth == 1 {
+      "macro-namespace-resolved-template-constructor"
+    } else {
+      "compiler-resolved-nominal-constructor"
+    };
     suggestions.push(FixSuggestion {
       rule_id: kind.rule_id(),
       diagnostic_code: kind.diagnostic_code(),
@@ -6053,7 +6092,7 @@ fn plan_named_constructor_source(
       definition: format!("{namespace}/{definition}"),
       path: format!("code{}", format_path(&target_path)),
       fingerprint: node_fingerprint(&original_node),
-      origin_chain: vec![serde_json::json!({"kind": "compiler-resolved-nominal-constructor", "proven": proven})],
+      origin_chain: vec![serde_json::json!({"kind": origin_kind, "proven": proven})],
       original: quoted_json(&original_node),
       replacement: proven.then(|| quoted_json(&replacement_node)),
       applicability: if proven { "machine-applicable" } else { "requires-review" },
@@ -6063,6 +6102,8 @@ fn plan_named_constructor_source(
           kind.legacy_head(),
           kind.display_name()
         )
+      } else if unqualified_template {
+        "An unqualified prototype in a quasiquote template resolves at each expansion site, where a local may capture it; qualify the prototype with its namespace or review the macro users.".to_owned()
       } else {
         "Cannot prove the constructor prototype and executable macro origin; retain this source region for review.".to_owned()
       },
@@ -6076,29 +6117,60 @@ fn plan_named_constructor_source(
   Ok(suggestions)
 }
 
-/// Collect legacy constructor calls while preserving quoted data and rejecting unresolved or shadowed prototypes.
+/// Resolution context shared by legacy nominal constructor collection and rewriting.
+struct ConstructorScope<'a> {
+  snapshot: &'a Snapshot,
+  namespace: &'a str,
+  shadowed: &'a HashSet<String>,
+  kinds: &'a [NominalKind],
+  /// A `defmacro` body runs at expansion time; only its quasiquote templates are migrated.
+  macro_body: bool,
+}
+
+impl ConstructorScope<'_> {
+  fn legacy_kind(&self, items: &[Cirru]) -> Option<NominalKind> {
+    legacy_constructor_kind(items, self.snapshot, self.namespace, self.shadowed, self.kinds)
+  }
+
+  /// Depth 0 is executable code and depth 1 is a quasiquote template outside any unquote.
+  fn migrates_at(&self, depth: usize) -> bool {
+    depth == 1 || (depth == 0 && !self.macro_body)
+  }
+
+  /// Quasiquote depth of a list's children. `None` marks quoted data, nested templates and nested
+  /// macros, which stay unchanged.
+  fn child_depth(&self, items: &[Cirru], depth: usize, is_root: bool) -> Option<usize> {
+    match items.first().and_then(leaf_value) {
+      Some("quote" | "cirru-quote" | ";") => None,
+      Some("defmacro") if !(is_root && self.macro_body) => None,
+      Some("quasiquote") => (depth == 0).then_some(1),
+      Some("~" | "~@") => depth.checked_sub(1),
+      _ => Some(depth),
+    }
+  }
+}
+
+/// Collect legacy constructor calls in executable code and quasiquote templates while preserving
+/// quoted data and rejecting unresolved or shadowed prototypes.
 fn collect_named_constructor_paths(
   node: &Cirru,
   path: &mut Vec<usize>,
-  output: &mut Vec<Vec<usize>>,
-  snapshot: &Snapshot,
-  namespace: &str,
-  shadowed: &HashSet<String>,
-  kinds: &[NominalKind],
+  depth: usize,
+  output: &mut Vec<(Vec<usize>, usize)>,
+  scope: &ConstructorScope,
 ) {
   let Cirru::List(items) = node else {
     return;
   };
-  let head = items.first().and_then(leaf_value);
-  if matches!(head, Some("quote" | "quasiquote" | "defmacro")) {
+  let Some(child_depth) = scope.child_depth(items, depth, path.is_empty()) else {
     return;
-  }
-  if legacy_constructor_kind(items, snapshot, namespace, shadowed, kinds).is_some() {
-    output.push(path.clone());
+  };
+  if scope.migrates_at(depth) && scope.legacy_kind(items).is_some() {
+    output.push((path.clone(), depth));
   }
   for (index, child) in items.iter().enumerate() {
     path.push(index);
-    collect_named_constructor_paths(child, path, output, snapshot, namespace, shadowed, kinds);
+    collect_named_constructor_paths(child, path, child_depth, output, scope);
     path.pop();
   }
 }
@@ -6125,40 +6197,33 @@ fn legacy_constructor_kind(
 }
 
 /// Recursively compose selected constructor and redundant-body rewrites inside one guarded replacement.
+/// `depth` is the quasiquote depth of `node`; template code keeps its `do` structure.
 fn rewrite_named_constructor_tree(
   node: &Cirru,
-  snapshot: &Snapshot,
-  namespace: &str,
-  shadowed: &HashSet<String>,
-  kinds: &[NominalKind],
+  depth: usize,
+  scope: &ConstructorScope,
   compose_redundant_do: bool,
   compose_single_expression_do: bool,
 ) -> Cirru {
   let Cirru::List(items) = node else {
     return node.clone();
   };
-  if matches!(items.first().and_then(leaf_value), Some("quote" | "quasiquote" | "defmacro")) {
+  let Some(child_depth) = scope.child_depth(items, depth, false) else {
     return node.clone();
-  }
+  };
   let rewritten_items = items
     .iter()
-    .map(|item| {
-      rewrite_named_constructor_tree(
-        item,
-        snapshot,
-        namespace,
-        shadowed,
-        kinds,
-        compose_redundant_do,
-        compose_single_expression_do,
-      )
-    })
+    .map(|item| rewrite_named_constructor_tree(item, child_depth, scope, compose_redundant_do, compose_single_expression_do))
     .collect::<Vec<_>>();
-  let rewritten_node = if let Some(kind) = legacy_constructor_kind(items, snapshot, namespace, shadowed, kinds) {
-    legacy_constructor_replacement(&rewritten_items, kind).unwrap_or(Cirru::List(rewritten_items))
-  } else {
-    Cirru::List(rewritten_items)
+  let rewritten_node = match scope.legacy_kind(items) {
+    Some(kind) if scope.migrates_at(depth) => {
+      legacy_constructor_replacement(&rewritten_items, kind).unwrap_or(Cirru::List(rewritten_items))
+    }
+    _ => Cirru::List(rewritten_items),
   };
+  if depth != 0 {
+    return rewritten_node;
+  }
   let rewritten_node = if compose_redundant_do {
     splice_redundant_do_children(rewritten_node)
   } else {
@@ -6686,7 +6751,7 @@ fn print_human_report(report: &FixReport<'_>) {
 #[cfg(test)]
 mod tests {
   use super::{
-    FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collect_builtin_round_call_heads,
+    ConstructorScope, FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collect_builtin_round_call_heads,
     collect_potential_local_bindings, collect_redundant_do_paths, fix_rule_metadata, fix_source_json_to_cirru, insert_fix_suggestion,
     legacy_constructor_replacement, migration_for_source_leaf, optional_candidate_signature_is_closed,
     optional_candidate_type_is_closed, optional_parameter_candidate, prototype_is_shadowed, resolve_fix_target,
@@ -7020,8 +7085,16 @@ mod tests {
     let shadowed = std::collections::HashSet::new();
     let kinds = [NominalKind::Enum];
 
-    let normalized_legacy = rewrite_named_constructor_tree(&legacy, &snapshot, "fix-command.main", &shadowed, &kinds, false, false);
-    let normalized_current = rewrite_named_constructor_tree(&current, &snapshot, "fix-command.main", &shadowed, &kinds, false, false);
+    let scope = ConstructorScope {
+      snapshot: &snapshot,
+      namespace: "fix-command.main",
+      shadowed: &shadowed,
+      kinds: &kinds,
+      macro_body: false,
+    };
+
+    let normalized_legacy = rewrite_named_constructor_tree(&legacy, 0, &scope, false, false);
+    let normalized_current = rewrite_named_constructor_tree(&current, 0, &scope, false, false);
 
     assert_eq!(normalized_legacy, current);
     assert_eq!(normalized_current, current);

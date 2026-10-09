@@ -127,6 +127,11 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   `Result :ok value`。
 - `named-struct-constructor-v1` 把能静态解析到项目 `defstruct` 的 `%{} Person (:name name)` 改为
   `Person :name name`，并保持字段表达式的原始求值顺序。
+- 两条 named constructor 规则也改写 `quasiquote` 模板中（`~` / `~@` 之外）的构造：模板在每次展开时才编译，
+  因此不依赖编译器 trace，而是按宏所在 namespace 静态解析原型并检查字段完整性。带 namespace 前缀的原型
+  （如 `schema/Effect`）在展开处仍按宏所在 namespace 解析，属于 `machine-applicable`；无前缀原型在展开处
+  可能被局部绑定捕获，给出 `requires-review`。原型本身是 `~proto` 或字段由 `~@` 拼接时不给建议；
+  `defmacro` 中模板外的展开期代码与 `quote` 数据保持不变。
 - `core-nominal-constructor-v1` 是 0.25.0 的 Option/Result 构造器迁移试点：把编译器已解析到
   `calcit.core/%some/%none/%ok/%err`、且实参数量匹配的调用改为 `Option :some/:none` 或
   `Result :ok/:err`。嵌套构造在一次 guarded subtree replacement 内完成，每个 payload 仍按原位置
