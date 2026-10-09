@@ -92,13 +92,13 @@ calcit calcit.cirru analyze weak-types \
 
 `check-types` 与 `weak-types` 是定位报告；它们不重复判断 Dynamic 能否进入 typed code，也不提供比例、shape/family 排名。新类库以默认严格预处理的 warning/error 为类型门禁，不创建 quality baseline。
 
-已经提交 quality baseline 的存量类库可在 0.14.x 继续执行原命令，作为清债期间的兼容 ratchet：
+已经提交 quality baseline 的存量类库可在迁移期间继续执行原命令，作为有界清债的兼容 ratchet，并且必须同时通过默认严格检查：
 
 ```bash
 calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
 ```
 
-后续只应降低已有 baseline；清零后删除命令和文件。不要为新项目生成 baseline，不要用 ignore warning 或批量 `:dynamic` 让数字看起来通过。0.15 将不再把 coverage/Dynamic 数量作为独立类型正确性策略；迁移后的 CI 直接依赖严格检查、公开 API 检查、目标后端测试与真实消费者回归。
+已有预算不得增加，债务清零后删除命令和文件。不要为新项目生成 baseline，不要用 ignore warning 或批量 `:dynamic` 让数字看起来通过；coverage/Dynamic 数量不是独立的类型正确性证明。CI 以默认严格检查、公开 API 检查、目标后端测试与真实消费者回归为准，不按历史版本期限自动移除 baseline。
 
 将 baseline 保持在 Git 中，并声明为文本形式的生成文件，使 GitHub 语言统计忽略其行数。在项目根目录的 `.gitattributes` 添加：
 
@@ -213,7 +213,7 @@ calcit calcit.cirru docs check-md README.md --failures-only
 calcit calcit.cirru --entry test
 ```
 
-`--check-only --all-defs` 取代单独的 `--check-only`：它包含入口可达闭包，实测耗时只比 keep-going 检查多约两成（calcit-core 约 190ms，Respo main 约 356ms）。在这条基础链路后追加仓库自己的 JS build、Node/Vite test、FFI build 和真实消费者 smoke test。已有 baseline 的存量类库可暂时追加 `analyze quality --baseline ...`，但它只是 0.14.x 迁移 ratchet；新类库不要采用。`unsafeCoerce` 的数量从来不能证明 runtime contract 已执行。
+`--check-only --all-defs` 取代单独的 `--check-only`：它包含入口可达闭包，实测耗时只比 keep-going 检查多约两成（calcit-core 约 190ms，Respo main 约 356ms）。在这条基础链路后追加仓库自己的 JS build、Node/Vite test、FFI build 和真实消费者 smoke test。已有 baseline 的存量类库可暂时追加 `analyze quality --baseline ...`，但不得增加已有预算，也不替代默认严格检查；债务清零后删除，新类库不要采用。`unsafeCoerce` 的数量从来不能证明 runtime contract 已执行。
 
 ## 8. 发布前记录
 
