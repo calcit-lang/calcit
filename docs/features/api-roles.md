@@ -143,6 +143,7 @@ do
 | `join/.join: (List<T>, T) -> List<T>` | **已引入** `intersperse/.intersperse`；`.join` 方法已在 0.29.0 删除，前缀 `join` 暂保留兼容 | 只插入同类型分隔项，保持空/单项/重复值/顺序；不改成 String 返回，也不与 `join-string` 混用 |
 | `join-str/.join-str: (List<T>, String) -> String`，逐项格式化 | **已引入** `join-string/.join-string`；List `.join-str` 与前缀 `join-str` 已在 0.29.0 删除 | 保留 List<T>、原有显示规则和空 List 结果；不与返回 List 的 `intersperse` 混淆 |
 | `vals` / Map `.values: Map<K,V> -> Set<V>`，去重 | **已引入** `distinct-values/.distinct-values`；`.values` 方法已在 0.29.0 删除，前缀 `vals` 暂保留兼容 | 新旧都返回去重 Set，顺序不保证；保留重复值的视图是独立语义任务，本轮不复用旧名 |
+| `foldl-shortcut xs init default f`，reducer 返回 `:: Bool acc` | **已引入** `fold-while xs init f` 与 `ControlFlow`：reducer 返回 `ControlFlow :continue acc` 或 `ControlFlow :break value`，从未 break 时返回累积值；旧入口用 Bool 元组表示停止，并在从未停止时返回额外的 `default` | 前缀 `foldl-shortcut` 标为 `:deprecated` 保留；语义不同，没有自动 fix，按 `upgrade.md` 的对照人工改写 |
 | `section-by xs n: (List<T>, Number) -> List<List<T>>`，按固定长度切段 | **已引入** `chunks`，语义与 Rust `chunks(n)` 一致：最后一段可以更短，`n` 小于 1 时报错；`-by` 后缀在 `group-by`、`sort-by` 中接收函数，这里接收数字，故改名 | 前缀 `section-by` 暂保留兼容并转发到 `chunks`，由 `core-function-alias-v1` 迁移直接调用；一等函数引用只给 `requires-review` |
 | List `mapcat/.bind: (List<T>, (T)->List<U>) -> List<U>` | **已引入** `.flat-map`；List `.bind` 已在 0.29.0 删除 | 保持顺序、展平一层、callback 次数与具体 U；Fn `.bind` 是不同组合，**暂缓** |
 

@@ -229,7 +229,7 @@ let
 - `reverse` - reverse list
 - `sort`, `sort-by` - sorting
 - `map`, `filter`, `reduce` - functional operations
-- `foldl`, `foldl-shortcut`, `foldr-shortcut` - folding
+- `foldl`, `fold-while` (early exit with `ControlFlow`), `foldr-shortcut` - folding
 - `range` - generate number range
 - `take`, `drop` - slice operations
 - `distinct` - remove duplicates

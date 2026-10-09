@@ -76,6 +76,7 @@ const runtimeMetadata = new Set([
   "&core-struct-methods",
   "&impl::new",
   "&trait::new",
+  "ControlFlow",
   "MapEntryDecision",
   "Option",
   "Result",
