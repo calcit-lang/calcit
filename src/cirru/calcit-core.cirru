@@ -5144,13 +5144,9 @@
                 = :eval $ &get-calcit-running-mode
                 gensym |v
                 , '_log_tmp
-              if (list? x)
-                quasiquote $ &let (~v ~x)
-                  println $ str-spaced (format-to-lisp $ quote ~x) |=> ~v
-                  ~ v
-                quasiquote $ &let ()
-                  println $ str-spaced (format-to-lisp $ quote ~x) |=> ~x
-                  ~ x
+              quasiquote $ &let (~v ~x)
+                println $ str-spaced (format-to-lisp $ quote ~x) |=> ~v
+                ~ v
           :examples $ [] $ quote
             assert= 3 $ dbg $ + 1 2
           :schema $ :: 'Macro $ {}
@@ -5164,6 +5160,8 @@
               :code $ quote $ do
                 assert= 3 $ dbg $ + 1 2
                 assert= 57 $ dbg $ + 1 $ dbg (* 7 8)
+                assert= 2 $ let ((n 2)) (dbg n)
+                assert= |a $ dbg |a
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |evaluates-once)
               :code $ quote $ let
