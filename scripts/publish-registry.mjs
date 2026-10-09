@@ -93,6 +93,23 @@ export async function existingNpm(version, sha) {
   return true;
 }
 
+export async function waitForPublished(registry, version, sha, exists, {
+  now = () => performance.now(),
+  sleep = delay => new Promise(resolve => setTimeout(resolve, delay)),
+} = {}) {
+  const timeoutMs = registry === "npm" ? 20 * 60 * 1000 : 60 * 1000;
+  const intervalMs = registry === "npm" ? 10000 : 5000;
+  const deadline = now() + timeoutMs;
+  // Only absence is retryable. Identity, integrity and network errors propagate.
+  do {
+    if (await exists(version, sha)) return;
+    const remaining = deadline - now();
+    if (remaining <= 0) break;
+    await sleep(Math.min(intervalMs, remaining));
+  } while (now() < deadline);
+  throw new Error(`${registry} upload succeeded but ${version} is not visible; inspect registry processing or manual review before same-tag recovery`);
+}
+
 async function main() {
   const [mode, tag] = process.argv.slice(2);
   assert.ok(["prepare", "crate", "npm"].includes(mode), "Expected prepare, crate or npm and a release tag");
@@ -137,12 +154,8 @@ async function main() {
       stdio: "inherit",
     });
   }
-  // Successful upload may precede registry visibility; failures remain resumable.
-  for (let attempt = 0; attempt < 12; attempt++) {
-    if (await exists(tag, sha)) return;
-    await new Promise(resolve => setTimeout(resolve, 5000));
-  }
-  throw new Error(`${mode} upload succeeded but ${tag} is not visible; inspect the registry before resuming`);
+  // Wait for the accepted upload without publishing it a second time.
+  await waitForPublished(mode, tag, sha, exists);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
