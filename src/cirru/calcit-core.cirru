@@ -10186,9 +10186,22 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |raises-to-power)
-            :code $ quote $ assert= 81 (pow 3 4)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |raises-to-power)
+              :code $ quote $ assert= 81 (pow 3 4)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |follows-ieee-for-unit-base)
+              :code $ quote $ do
+                assert= 1 $ pow 1 (&/ 1 0)
+                assert= 1 $ pow 1 (&/ -1 0)
+                assert= 1 $ pow -1 (&/ 1 0)
+                assert= 1 $ pow -1 (&/ -1 0)
+                assert= 1 $ pow 1 (&/ 0 0)
+                assert= |NaN $ turn-string $ pow -1 (&/ 0 0)
+                assert= |inf $ turn-string $ pow 2 (&/ 1 0)
+                assert= 0 $ pow 0.5 (&/ 1 0)
+                assert= 0.25 $ pow -0.5 2
+              :tags $ #{} :core :unit
         'prepend $ %{} 'CodeEntry
           :doc "|internal function for prepending to list\nSyntax: (prepend list element)\nParams: list (list), element (any)\nReturns: list\nReturns new list with element added at beginning"
           :code $ quote &runtime-implementation
