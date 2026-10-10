@@ -2,11 +2,12 @@
 
 use crate::builtins;
 use crate::calcit::CalcitTypeAnnotation;
-use crate::calcit::{Calcit, CalcitFnArgs, CalcitLocal, CalcitProc, CalcitStructDef, CalcitSyntax};
+use crate::calcit::{Calcit, CalcitFnArgs, CalcitLocal, CalcitProc, CalcitStructDef, CalcitSyntax, MethodKind};
 use crate::program::{
   ImportRule, PROGRAM_CODE_DATA, lookup_codegen_type_hint, lookup_def_code, lookup_def_schema, lookup_ns_target_in_import,
 };
 use cirru_edn::{Edn, EdnListView, EdnMapView, EdnTag};
+use cirru_parser::Cirru;
 use colored::Colorize;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
@@ -109,24 +110,191 @@ pub struct EffectsGraphStats {
   pub subgraph_count: usize,
 }
 
+/// Effect kind reported when a call target carries no effect declaration that the analyzer can read.
+pub const UNKNOWN_EFFECT_KIND: &str = "unknown";
+
+/// Effect tags for builtin procs that have no `calcit.core` Snapshot entry.
+///
+/// Every such proc must be listed (an empty list declares it effect-free), which the
+/// `hidden_core_procs_declare_effect_tags` test enforces, so a new hidden proc cannot be
+/// silently treated as pure.
+const HIDDEN_CORE_PROC_TAGS: &[(CalcitProc, &[&str])] = &[
+  (CalcitProc::NativeMethodsOf, &[]),
+  (CalcitProc::NativeInspectMethods, &["log", "io"]),
+  (CalcitProc::NativeTraitCall, &[]),
+  (CalcitProc::NativeInspectType, &[]),
+  (CalcitProc::NativeAssertTraits, &["control"]),
+  (CalcitProc::Todo, &["control"]),
+  (CalcitProc::RegisterCalcitBuiltinImpls, &["effect"]),
+  (CalcitProc::ReadFile, &["file", "io"]),
+  (CalcitProc::ReadDir, &["file", "io"]),
+  (CalcitProc::NativeListQ, &[]),
+  (CalcitProc::NativeLooseStruct, &[]),
+  (CalcitProc::NativeStructNth, &[]),
+  (CalcitProc::NativeStructFieldTag, &[]),
+  (CalcitProc::NativeStructAssocAt, &[]),
+  (CalcitProc::NativeStructWithAt, &[]),
+];
+
+/// Effect tags for core syntax forms that have no `calcit.core` Snapshot entry; checked by the
+/// same test as [`HIDDEN_CORE_PROC_TAGS`].
+const HIDDEN_CORE_SYNTAX_TAGS: &[(CalcitSyntax, &[&str])] = &[
+  (CalcitSyntax::DefWasmExport, &[]),
+  (CalcitSyntax::DefWasmImport, &[]),
+  (CalcitSyntax::JsCast, &[]),
+  (CalcitSyntax::ParseCirruEdnAs, &[]),
+  (CalcitSyntax::AssertTraits, &["control"]),
+  (CalcitSyntax::Match, &[]),
+];
+
+/// Effect declarations readable by the analyzer: `calcit.core` definition tags, hidden proc
+/// tags and the methods implemented by core impl tables.
 struct TagIndex {
   core: HashMap<String, HashSet<EdnTag>>,
+  /// Method name (without the leading `.`) to the union of effect kinds of every core
+  /// implementation; `unknown` when an implementation is not a tagged core definition.
+  core_methods: HashMap<String, Vec<String>>,
 }
 
 impl TagIndex {
   fn load() -> Result<Self, String> {
     let snapshot = crate::load_core_snapshot()?;
     let mut core = HashMap::new();
+    let mut method_impls: Vec<(String, Option<String>)> = vec![];
     if let Some(file) = snapshot.files.get("calcit.core") {
       for (def, entry) in &file.defs {
         core.insert(def.clone(), entry.tags.clone());
+        collect_core_method_impls(&entry.code, &mut method_impls);
       }
     }
-    Ok(TagIndex { core })
+    let hidden = HIDDEN_CORE_PROC_TAGS
+      .iter()
+      .map(|(proc, tags)| (proc.to_string(), *tags))
+      .chain(HIDDEN_CORE_SYNTAX_TAGS.iter().map(|(syntax, tags)| (syntax.to_string(), *tags)));
+    for (name, tags) in hidden {
+      core
+        .entry(name)
+        .or_insert_with(|| tags.iter().map(|tag| EdnTag::new(*tag)).collect());
+    }
+
+    let mut core_methods: HashMap<String, Vec<String>> = HashMap::new();
+    for (method, implementation) in method_impls {
+      let kinds = match implementation.as_deref().and_then(|name| core.get(name)) {
+        Some(tags) => tags_to_effect_kinds(tags),
+        None => vec![UNKNOWN_EFFECT_KIND.to_string()],
+      };
+      let entry = core_methods.entry(method).or_default();
+      entry.extend(kinds);
+      entry.sort();
+      entry.dedup();
+    }
+    Ok(TagIndex { core, core_methods })
   }
 
   fn tags_for(&self, name: &str) -> Option<&HashSet<EdnTag>> {
     self.core.get(name)
+  }
+}
+
+/// Collect `(method, implementation)` pairs from core impl tables:
+/// `defimpl Name Trait (.method impl) ...` and `&impl::new Name (:: :method impl) ...`.
+/// The implementation is `None` when it is not a plain definition name.
+fn collect_core_method_impls(code: &Cirru, out: &mut Vec<(String, Option<String>)>) {
+  let Cirru::List(items) = code else {
+    return;
+  };
+  let leaf = |node: &Cirru| match node {
+    Cirru::Leaf(text) => Some(text.to_string()),
+    Cirru::List(_) => None,
+  };
+  match items.first().and_then(leaf).as_deref() {
+    Some("defimpl") => {
+      for pair in items.iter().skip(3) {
+        if let Cirru::List(pair) = pair
+          && let [key, value] = pair.as_slice()
+          && let Some(method) = leaf(key).as_deref().and_then(|text| text.strip_prefix('.')).map(str::to_owned)
+        {
+          out.push((method, leaf(value)));
+        }
+      }
+    }
+    Some("&impl::new") => {
+      for pair in items.iter().skip(2) {
+        if let Cirru::List(pair) = pair
+          && let [head, key, value] = pair.as_slice()
+          && leaf(head).as_deref() == Some("::")
+          && let Some(method) = leaf(key).as_deref().and_then(|text| text.strip_prefix(':')).map(str::to_owned)
+        {
+          out.push((method, leaf(value)));
+        }
+      }
+    }
+    _ => {}
+  }
+  for item in items {
+    collect_core_method_impls(item, out);
+  }
+}
+
+/// Method names implemented outside `calcit.core` (project and module `defimpl` / `&impl::new`).
+/// A call to one of these methods may dispatch to code whose effects are not declared at the
+/// call site, so it is reported as `unknown`.
+fn collect_program_method_names() -> HashSet<String> {
+  let mut names = HashSet::new();
+  let Ok(program_code) = PROGRAM_CODE_DATA.read() else {
+    return names;
+  };
+  for (ns, file) in program_code.iter() {
+    if ns.as_ref() == "calcit.core" {
+      continue;
+    }
+    for entry in file.defs.values() {
+      collect_program_methods_in(&entry.code, &mut names);
+    }
+  }
+  names
+}
+
+fn collect_program_methods_in(code: &Calcit, names: &mut HashSet<String>) {
+  match code {
+    Calcit::List(list) => {
+      let head = list.first().and_then(extract_symbol_name);
+      match head.as_deref() {
+        Some("defimpl") => {
+          for pair in list.iter().skip(3) {
+            if let Calcit::List(pair) = pair
+              && let Some(Calcit::Method(name, _)) = pair.first()
+            {
+              names.insert(name.to_string());
+            }
+          }
+        }
+        Some("&impl::new") => {
+          for pair in list.iter().skip(2) {
+            if let Calcit::List(pair) = pair
+              && let Some(Calcit::Tag(tag)) = pair.get(1)
+            {
+              names.insert(tag.ref_str().to_string());
+            }
+          }
+        }
+        _ => {}
+      }
+      for item in list.iter() {
+        collect_program_methods_in(item, names);
+      }
+    }
+    Calcit::Fn { info, .. } => {
+      for expr in info.body.iter() {
+        collect_program_methods_in(expr, names);
+      }
+    }
+    Calcit::Macro { info, .. } => {
+      for expr in info.body.iter() {
+        collect_program_methods_in(expr, names);
+      }
+    }
+    _ => {}
   }
 }
 
@@ -139,6 +307,7 @@ struct DefAnalysis {
 pub struct EffectsGraphAnalyzer {
   config: EffectsGraphConfig,
   tag_index: TagIndex,
+  program_methods: HashSet<String>,
   visited: HashSet<String>,
   expanded: HashMap<String, bool>,
   reachable: HashSet<String>,
@@ -152,6 +321,7 @@ impl EffectsGraphAnalyzer {
     Ok(EffectsGraphAnalyzer {
       config,
       tag_index: TagIndex::load()?,
+      program_methods: collect_program_method_names(),
       visited: HashSet::new(),
       expanded: HashMap::new(),
       reachable: HashSet::new(),
@@ -404,13 +574,15 @@ impl EffectsGraphAnalyzer {
   }
 
   fn inspect_call_head(&self, head: &Calcit, list: Option<&crate::calcit::CalcitList>, current_ns: &str, out: &mut DefAnalysis) {
-    let Some((name, ns_hint)) = call_operator(head, current_ns) else {
+    let Some(call) = resolve_call_head(head, current_ns) else {
       return;
     };
 
-    if is_state_operator(&name) {
-      let target = extract_state_target(list, &name);
-      record_state_operator(&name, &target, list, current_ns, &mut out.state);
+    if let CallHead::Core(name) = &call
+      && is_state_operator(name)
+    {
+      let target = extract_state_target(list, name);
+      record_state_operator(name, &target, list, current_ns, &mut out.state);
       if matches!(
         name.as_str(),
         "defref" | "defatom" | "ref" | "atom" | "reset!" | "swap!" | "deref" | "set!"
@@ -419,17 +591,16 @@ impl EffectsGraphAnalyzer {
       }
     }
 
-    let tags = ns_hint
-      .as_deref()
-      .filter(|ns| *ns == "calcit.core")
-      .and_then(|_| self.tag_index.tags_for(&name))
-      .or_else(|| self.tag_index.tags_for(&name));
-
-    for kind in classify_call(&name, tags) {
-      let key = format!("{kind}::{name}");
+    let (mut kinds, target) = self.classify_call_head(&call);
+    // `hint-fn` carries type hints in general; only a schema with `:async` declares async.
+    if matches!(&call, CallHead::Core(name) if name == "hint-fn") && !list.is_some_and(mentions_async_tag) {
+      kinds.clear();
+    }
+    for kind in kinds {
+      let key = format!("{kind}::{target}");
       out.effects.entry(key).and_modify(|item| item.count += 1).or_insert(EffectItem {
         kind,
-        target: name.clone(),
+        target: target.clone(),
         count: 1,
       });
     }
@@ -441,6 +612,46 @@ impl EffectsGraphAnalyzer {
       let target = format!("{call_ns}/{call_def}");
       if !out.transform.calls.contains(&target) {
         out.transform.calls.push(target);
+      }
+    }
+  }
+
+  /// Effect kinds of one call site, derived only from declarations:
+  /// core definition tags, registered proc descriptor tags and core impl tables.
+  /// Calls into project/module definitions add nothing here; their effects are reported on
+  /// the callee node of the call graph.
+  fn classify_call_head(&self, call: &CallHead) -> (Vec<String>, String) {
+    match call {
+      CallHead::Core(name) => (classify_call(name, self.tag_index.tags_for(name)), name.clone()),
+      CallHead::Registered(name) => (classify_call(name, None), name.clone()),
+      CallHead::Def(..) => (vec![], String::new()),
+      CallHead::MissingDef(ns, def) => (vec![UNKNOWN_EFFECT_KIND.to_string()], format!("{ns}/{def}")),
+      CallHead::JsGlobal(name) => (vec!["interop/js".to_string()], name.clone()),
+      CallHead::Method(name, kind) => (self.classify_method(name, kind), format!(".{name}")),
+    }
+  }
+
+  fn classify_method(&self, name: &str, kind: &MethodKind) -> Vec<String> {
+    match kind {
+      // Field and tag reads do not dispatch to code.
+      MethodKind::Access
+      | MethodKind::AccessOptional
+      | MethodKind::TagAccess
+      | MethodKind::ExternalAccess(_)
+      | MethodKind::ExternalGet(_) => {
+        vec![]
+      }
+      MethodKind::InvokeNative | MethodKind::InvokeNativeOptional | MethodKind::ExternalSet(_) | MethodKind::ExternalInvoke(_) => {
+        vec!["interop/js".to_string()]
+      }
+      MethodKind::Invoke(_) => {
+        if self.program_methods.contains(name) {
+          return vec![UNKNOWN_EFFECT_KIND.to_string()];
+        }
+        match self.tag_index.core_methods.get(name) {
+          Some(kinds) => kinds.clone(),
+          None => vec![UNKNOWN_EFFECT_KIND.to_string()],
+        }
       }
     }
   }
@@ -492,71 +703,126 @@ fn extract_fn_params(
   }
 }
 
-fn call_operator(head: &Calcit, current_ns: &str) -> Option<(String, Option<String>)> {
+/// A call head resolved without guessing from its spelling.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum CallHead {
+  /// `calcit.core` definition, builtin proc or syntax.
+  Core(String),
+  /// Proc registered by the host (platform APIs, dylib bindings).
+  Registered(String),
+  /// Project or module definition with loaded code; analyzed as its own call-graph node.
+  Def(String, String),
+  /// Qualified reference whose definition is not loaded.
+  MissingDef(String, String),
+  /// JavaScript global accessed through the `js/` namespace or a JS default import.
+  JsGlobal(String),
+  /// Method dispatch `.name`.
+  Method(String, MethodKind),
+}
+
+fn mentions_async_tag(list: &crate::calcit::CalcitList) -> bool {
+  list.iter().any(|item| match item {
+    Calcit::Tag(tag) => tag.ref_str() == "async",
+    Calcit::List(inner) => mentions_async_tag(inner),
+    _ => false,
+  })
+}
+
+fn def_call_head(ns: &str, def: &str) -> CallHead {
+  if ns == "calcit.core" {
+    return CallHead::Core(def.to_string());
+  }
+  // JS module imports keep their string namespace, e.g. `(|os :as os)`.
+  if let Some(module) = ns.strip_prefix('|').or_else(|| ns.strip_prefix('"')) {
+    return CallHead::JsGlobal(format!("{module}/{def}"));
+  }
+  let loaded = PROGRAM_CODE_DATA
+    .read()
+    .ok()
+    .is_some_and(|program_code| program_code.get(ns).is_some_and(|file| file.defs.contains_key(def)));
+  if loaded {
+    CallHead::Def(ns.to_string(), def.to_string())
+  } else {
+    CallHead::MissingDef(ns.to_string(), def.to_string())
+  }
+}
+
+/// Resolve a call head to what it refers to. Bare symbols that resolve to nothing are local
+/// bindings or parameters (calls through function values), which are not classified.
+fn resolve_call_head(head: &Calcit, current_ns: &str) -> Option<CallHead> {
   match head {
-    Calcit::Proc(proc) => Some((proc.to_string(), Some("calcit.core".into()))),
-    Calcit::Syntax(syntax, _) => Some((syntax.to_string(), Some("calcit.core".into()))),
-    Calcit::Registered(name) => Some((name.to_string(), None)),
-    Calcit::Import(import) => Some((import.def.to_string(), Some(import.ns.to_string()))),
-    Calcit::Symbol { sym, info, .. } => {
-      if builtins::is_proc_name(sym) {
-        return Some((sym.to_string(), None));
-      }
-      let program_code = PROGRAM_CODE_DATA.read().ok()?;
-      if let Some(file) = program_code.get(current_ns) {
-        if file.defs.contains_key(sym.as_ref()) {
-          return Some((sym.to_string(), Some(current_ns.into())));
-        }
-        if let Some(rule) = file.import_map.get(sym.as_ref()) {
-          match &**rule {
-            ImportRule::NsReferDef(ns, def) => return Some((def.to_string(), Some(ns.to_string()))),
-            ImportRule::NsDefault(ns) => return Some(("default".into(), Some(ns.to_string()))),
-            ImportRule::NsAs(_) => {}
-          }
-        }
-      }
-      if current_ns != "calcit.core"
-        && let Some(core) = program_code.get("calcit.core")
-        && core.defs.contains_key(sym.as_ref())
-      {
-        return Some((sym.to_string(), Some("calcit.core".into())));
-      }
-      Some((sym.to_string(), Some(info.at_ns.to_string())))
-    }
+    Calcit::Proc(proc) => Some(CallHead::Core(proc.to_string())),
+    Calcit::Syntax(syntax, _) => Some(CallHead::Core(syntax.to_string())),
+    Calcit::Registered(name) => Some(CallHead::Registered(name.to_string())),
+    Calcit::Import(import) => Some(def_call_head(&import.ns, &import.def)),
+    Calcit::Method(name, kind) => Some(CallHead::Method(name.to_string(), kind.clone())),
+    Calcit::Fn { info, .. } => info
+      .def_ref
+      .as_ref()
+      .map(|def_ref| def_call_head(&def_ref.def_ns, &def_ref.def_name)),
+    Calcit::Symbol { sym, .. } => resolve_symbol_head(sym, current_ns),
     _ => None,
   }
 }
 
-fn resolve_def_call(head: &Calcit, current_ns: &str) -> Option<(String, String)> {
-  match head {
-    Calcit::Import(import) => Some((import.ns.to_string(), import.def.to_string())),
-    Calcit::Symbol { sym, info, .. } => {
-      let program_code = PROGRAM_CODE_DATA.read().ok()?;
-      if let Some(file) = program_code.get(current_ns) {
-        if file.defs.contains_key(sym.as_ref()) {
-          return Some((current_ns.to_string(), sym.to_string()));
-        }
-        if let Some(rule) = file.import_map.get(sym.as_ref()) {
-          match &**rule {
-            ImportRule::NsReferDef(ns, def) => return Some((ns.to_string(), def.to_string())),
-            ImportRule::NsDefault(ns) => return Some((ns.to_string(), "default".into())),
-            ImportRule::NsAs(_) => {}
-          }
-        }
-      }
-      if current_ns != "calcit.core"
-        && let Some(core) = program_code.get("calcit.core")
-        && core.defs.contains_key(sym.as_ref())
-      {
-        return Some(("calcit.core".into(), sym.to_string()));
-      }
-      let _ = info;
-      None
+fn resolve_symbol_head(sym: &str, current_ns: &str) -> Option<CallHead> {
+  let program_code = PROGRAM_CODE_DATA.read().ok()?;
+  if let Some(file) = program_code.get(current_ns) {
+    if file.defs.contains_key(sym) {
+      drop(program_code);
+      return Some(def_call_head(current_ns, sym));
     }
-    Calcit::Fn { info, .. } => info
-      .def_ref
-      .as_ref()
-      .map(|def_ref| (def_ref.def_ns.to_string(), def_ref.def_name.to_string())),
+    if let Some(rule) = file.import_map.get(sym) {
+      let rule = rule.clone();
+      drop(program_code);
+      return match &*rule {
+        ImportRule::NsReferDef(ns, def) => Some(def_call_head(ns, def)),
+        ImportRule::NsDefault(ns) => Some(CallHead::JsGlobal(format!("{}/default", ns.trim_start_matches(['|', '"'])))),
+        ImportRule::NsAs(_) => None,
+      };
+    }
+  }
+  if program_code.get("calcit.core").is_some_and(|core| core.defs.contains_key(sym)) {
+    return Some(CallHead::Core(sym.to_string()));
+  }
+  if sym.parse::<CalcitProc>().is_ok() {
+    return Some(CallHead::Core(sym.to_string()));
+  }
+  if builtins::is_registered_proc(sym) {
+    return Some(CallHead::Registered(sym.to_string()));
+  }
+  if sym.starts_with("js/") {
+    return Some(CallHead::JsGlobal(sym.to_string()));
+  }
+  let (alias, def) = sym.split_once('/')?;
+  if alias.is_empty() || def.is_empty() {
+    return None;
+  }
+  let target_ns = match program_code.get(current_ns).and_then(|file| file.import_map.get(alias)) {
+    Some(rule) => match &**rule {
+      ImportRule::NsAs(ns) => ns.to_string(),
+      ImportRule::NsDefault(ns) => return Some(CallHead::JsGlobal(format!("{}/{def}", ns.trim_start_matches(['|', '"'])))),
+      ImportRule::NsReferDef(..) => return None,
+    },
+    None => alias.to_string(),
+  };
+  drop(program_code);
+  Some(def_call_head(&target_ns, def))
+}
+
+fn resolve_def_call(head: &Calcit, current_ns: &str) -> Option<(String, String)> {
+  if !matches!(head, Calcit::Import(_) | Calcit::Symbol { .. } | Calcit::Fn { .. }) {
+    return None;
+  }
+  match resolve_call_head(head, current_ns)? {
+    CallHead::Def(ns, def) | CallHead::MissingDef(ns, def) => Some((ns, def)),
+    CallHead::Core(name) => {
+      let program_code = PROGRAM_CODE_DATA.read().ok()?;
+      let is_core_def = program_code
+        .get("calcit.core")
+        .is_some_and(|core| core.defs.contains_key(name.as_str()));
+      is_core_def.then(|| ("calcit.core".to_string(), name))
+    }
     _ => None,
   }
 }
@@ -711,50 +977,22 @@ fn record_control_head(head: &Calcit, control: &mut Vec<String>) {
   }
 }
 
+/// Effect kinds for a core or host-registered call target, taken only from declared tags.
+///
+/// Registered host procs use their descriptor tags; a descriptor that declares no tags at all is
+/// reported as `unknown`. Core definitions use their Snapshot `:tags` (or the hidden proc table);
+/// a core definition without effect tags is effect-free by contract.
 pub fn classify_call(name: &str, tags: Option<&HashSet<EdnTag>>) -> Vec<String> {
-  if let Some(kinds) = classify_by_name(name) {
-    return kinds;
+  if let Some(tag_set) = tags {
+    return tags_to_effect_kinds(tag_set);
   }
-
   if let Some(descriptor) = builtins::registered_proc_descriptor(name) {
+    if descriptor.tags.is_empty() {
+      return vec![UNKNOWN_EFFECT_KIND.to_string()];
+    }
     return tags_to_effect_kinds(&descriptor.tags);
   }
-
-  if let Some(tag_set) = tags {
-    let kinds = tags_to_effect_kinds(tag_set);
-    if !kinds.is_empty() {
-      return kinds;
-    }
-  }
-
-  heuristic_effect_kinds(name)
-}
-
-fn classify_by_name(name: &str) -> Option<Vec<String>> {
-  let kinds = match name {
-    "read-file" | "&read-file" => vec!["io/read"],
-    "write-file" => vec!["io/write"],
-    "get-env" => vec!["env"],
-    "raise" => vec!["control/raise"],
-    "quit!" => vec!["control/quit"],
-    "remove-watch" | "add-watch!" | "remove-watch!" => vec!["state/watch"],
-    "eval" => vec!["interop/eval"],
-    "hint-fn" => vec!["async"],
-    "println" | "eprintln" | "echo" => vec!["console"],
-    "render!" => vec!["render"],
-    "generate-id!" | "monotonic-time-ms" | "unix-time-ms" | "wait-ms" | "&wait-ms" | "&get-os" | "async-sleep" => {
-      vec!["io"]
-    }
-    "try" => vec!["control"],
-    "&doseq" => vec!["effect/sequential"],
-    // Respo convention: common project-level functions
-    "render-app!" | "mount-app!" | "rerender-app!" | "clear-cache!" => vec!["render"],
-    "send-to-component!" | "dispatch!" => vec!["lifecycle"],
-    "save-store!" => vec!["storage"],
-    "realize-ssr!" => vec!["render"],
-    _ => return None,
-  };
-  Some(kinds.into_iter().map(str::to_string).collect())
+  vec![UNKNOWN_EFFECT_KIND.to_string()]
 }
 
 fn tags_to_effect_kinds(tags: &HashSet<EdnTag>) -> Vec<String> {
@@ -789,20 +1027,6 @@ fn tags_to_effect_kinds(tags: &HashSet<EdnTag>) -> Vec<String> {
   kinds.sort();
   kinds.dedup();
   kinds
-}
-
-fn heuristic_effect_kinds(name: &str) -> Vec<String> {
-  if name.starts_with("js/") {
-    return vec!["interop/js".into()];
-  }
-  // Common project-level effect conventions
-  if name.contains("load") || name.contains("init") || name.contains("setup") {
-    return vec!["io".into()];
-  }
-  if name.ends_with('!') && !matches!(name, "main!" | "reload!" | "quit!" | "reset!" | "swap!") {
-    return vec!["effect".into()];
-  }
-  vec![]
 }
 
 fn format_type_hint(schema: &std::sync::Arc<CalcitTypeAnnotation>) -> Option<String> {
@@ -2306,39 +2530,153 @@ mod tests {
   use super::*;
   use crate::builtins::proc_tags;
 
-  #[test]
-  fn classify_read_file_by_name() {
-    let kinds = classify_call("read-file", None);
-    assert_eq!(classify_call("&read-file", None), kinds);
-    assert_eq!(kinds, vec!["io/read".to_string()]);
+  fn core_kinds(index: &TagIndex, name: &str) -> Vec<String> {
+    classify_call(name, index.tags_for(name))
+  }
+
+  fn strings(items: &[&str]) -> Vec<String> {
+    items.iter().map(|item| item.to_string()).collect()
   }
 
   #[test]
-  fn classify_watcher_spellings_as_state_effects() {
+  fn core_effects_come_from_declared_tags() {
+    let index = TagIndex::load().expect("load core tags");
+    assert_eq!(core_kinds(&index, "read-file"), strings(&["io/file"]));
+    // `&read-file` has no Snapshot entry; its tags come from the hidden proc table.
+    assert_eq!(core_kinds(&index, "&read-file"), strings(&["io/file"]));
     for name in ["remove-watch", "add-watch!", "remove-watch!"] {
       assert!(is_state_operator(name));
-      assert_eq!(classify_call(name, None), vec!["state/watch".to_string()]);
+      assert_eq!(core_kinds(&index, name), strings(&["state/watch"]), "{name}");
+    }
+    for name in ["monotonic-time-ms", "unix-time-ms", "wait-ms", "read-stdin-text", "generate-id!"] {
+      assert_eq!(core_kinds(&index, name), strings(&["io"]), "{name}");
+    }
+    assert_eq!(core_kinds(&index, "get-env"), strings(&["env"]));
+    assert_eq!(core_kinds(&index, "quit!"), strings(&["control"]));
+    assert_eq!(core_kinds(&index, "non-nil!"), strings(&["control"]));
+    assert_eq!(core_kinds(&index, "try-read-dir"), strings(&["io/file"]));
+    assert_eq!(core_kinds(&index, "&init-builtin-impls!"), strings(&["effect"]));
+    assert_eq!(core_kinds(&index, "&reset-gensym-index!"), strings(&["effect"]));
+  }
+
+  #[test]
+  fn unmarked_lifecycle_methods_are_effects_through_core_impl_tags() {
+    let index = TagIndex::load().expect("load core tags");
+    // Legacy `.cancel` / `.cancel-with` lack `!` but share the tagged implementation.
+    for method in ["cancel", "cancel!", "cancel-with", "cancel-with!", "resolve!", "reject!"] {
+      assert_eq!(index.core_methods.get(method), Some(&strings(&["effect"])), "{method}");
+    }
+    for method in ["write-text!", "read-text", "read-dir", "walk-dir"] {
+      assert_eq!(index.core_methods.get(method), Some(&strings(&["io/file"])), "{method}");
+    }
+    for method in ["map", "get", "unwrap", "to-string"] {
+      assert_eq!(index.core_methods.get(method), Some(&vec![]), "{method}");
     }
   }
 
   #[test]
-  fn classify_clock_calls_by_name() {
-    for name in ["monotonic-time-ms", "unix-time-ms"] {
-      assert_eq!(classify_call(name, None), vec!["io".to_string()]);
+  fn name_spelling_no_longer_decides_effects() {
+    let index = TagIndex::load().expect("load core tags");
+    // These names contain `init` / `load`, which used to be reported as `io`.
+    for name in ["data-definition-form", "enum-definition", "&struct:definition", "&enum:definition"] {
+      assert!(core_kinds(&index, name).is_empty(), "{name}");
+    }
+    // An undeclared target is `unknown`, whatever its spelling.
+    for name in ["load-config", "setup-app!", "render!"] {
+      assert_eq!(classify_call(name, None), strings(&[UNKNOWN_EFFECT_KIND]), "{name}");
     }
   }
 
   #[test]
-  fn classify_console_from_log_tags() {
-    let tags = proc_tags(["log", "io"]);
-    let kinds = tags_to_effect_kinds(&tags);
-    assert!(kinds.contains(&"console".to_string()));
+  fn registered_procs_use_descriptor_tags_or_report_unknown() {
+    fn noop(_xs: Vec<Calcit>, _call_stack: &crate::call_stack::CallStackList) -> Result<Calcit, crate::calcit::CalcitErr> {
+      Ok(Calcit::Nil)
+    }
+    let tagged = "effects-graph-test-tagged-proc";
+    let untagged = "effects-graph-test-untagged-proc";
+    builtins::register_import_proc_with_descriptor(
+      tagged,
+      noop,
+      builtins::RegisteredProcDescriptor {
+        tags: proc_tags(["log", "io"]),
+        ..Default::default()
+      },
+    );
+    builtins::register_import_proc_with_descriptor(untagged, noop, builtins::RegisteredProcDescriptor::default());
+    assert_eq!(classify_call(tagged, None), strings(&["console"]));
+    assert_eq!(classify_call(untagged, None), strings(&[UNKNOWN_EFFECT_KIND]));
   }
 
   #[test]
-  fn heuristic_detects_js_prefix() {
-    let kinds = heuristic_effect_kinds("js/console.log");
-    assert_eq!(kinds, vec!["interop/js".to_string()]);
+  fn hidden_core_procs_declare_effect_tags() {
+    use strum::IntoEnumIterator;
+    let snapshot = crate::load_core_snapshot().expect("load core");
+    let core = snapshot.files.get("calcit.core").expect("calcit.core");
+    let hidden_procs: HashSet<String> = HIDDEN_CORE_PROC_TAGS.iter().map(|(proc, _)| proc.to_string()).collect();
+    for proc in CalcitProc::iter() {
+      let name = proc.to_string();
+      assert_eq!(
+        core.defs.contains_key(&name),
+        !hidden_procs.contains(&name),
+        "proc `{name}` needs exactly one effect declaration: a calcit.core entry or HIDDEN_CORE_PROC_TAGS"
+      );
+    }
+    let hidden_syntax: HashSet<String> = HIDDEN_CORE_SYNTAX_TAGS.iter().map(|(syntax, _)| syntax.to_string()).collect();
+    for syntax in CalcitSyntax::iter() {
+      let name = syntax.to_string();
+      assert_eq!(
+        core.defs.contains_key(&name),
+        !hidden_syntax.contains(&name),
+        "syntax `{name}` needs exactly one effect declaration: a calcit.core entry or HIDDEN_CORE_SYNTAX_TAGS"
+      );
+    }
+  }
+
+  fn collect_node_effects(node: &EffectsGraphNode, out: &mut HashMap<String, Vec<(String, String)>>) {
+    if !node.circular && !node.seen {
+      out
+        .entry(node.def.clone())
+        .or_insert_with(|| node.effects.iter().map(|e| (e.kind.clone(), e.target.clone())).collect());
+    }
+    for child in &node.children {
+      collect_node_effects(child, out);
+    }
+  }
+
+  #[test]
+  fn fixture_reports_declared_effects_and_unknown_targets() {
+    let _guard = crate::program::lock_program_test_state();
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("calcit/test-effects-graph.cirru");
+    let content = std::fs::read_to_string(&path).expect("read effects-graph fixture");
+    let data = cirru_edn::parse(&content).expect("parse fixture");
+    let mut snapshot = crate::snapshot::load_snapshot_data(&data, path.to_string_lossy().as_ref()).expect("load fixture");
+    let core = crate::load_core_snapshot().expect("load core");
+    for (k, v) in core.files {
+      snapshot.files.insert(k, v);
+    }
+    {
+      let mut program = crate::program::PROGRAM_CODE_DATA.write().expect("program data");
+      *program = crate::program::extract_program_data(&snapshot).expect("extract program");
+    }
+
+    let result =
+      analyze_effects_graph("test-effects-graph.main", "main!", false, 0, None, EffectsGraphDetail::Summary).expect("analyze fixture");
+    let mut effects = HashMap::new();
+    collect_node_effects(&result.tree, &mut effects);
+    let pair = |kind: &str, target: &str| vec![(kind.to_string(), target.to_string())];
+
+    assert_eq!(effects["io-helper"], pair("io/file", "read-file"));
+    // Neither a `load-` prefix nor a trailing `!` makes a pure definition effectful.
+    assert_eq!(effects["load-config"], vec![]);
+    assert_eq!(effects["setup!"], vec![]);
+    // Unmarked writes are found through core tags.
+    assert_eq!(effects["watch-helper"], pair("state/watch", "remove-watch"));
+    assert_eq!(effects["cancel-helper"], pair("effect", ".cancel"));
+    assert_eq!(effects["write-helper"], pair("io/file", ".write-text!"));
+    // Calls through function values stay unclassified; host and missing targets are explicit.
+    assert_eq!(effects["call-through"], vec![]);
+    assert_eq!(effects["js-helper"], pair("interop/js", "js/console.log"));
+    assert_eq!(effects["missing-helper"], pair(UNKNOWN_EFFECT_KIND, "missing.ns/thing"));
   }
 
   fn parse_ref_call(head: &str, args: &[&str]) -> Calcit {

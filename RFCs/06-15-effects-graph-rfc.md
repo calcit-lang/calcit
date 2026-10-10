@@ -119,23 +119,30 @@ Transform 不等于删除逻辑，而是**降采样**：
 
 **定义**：改变外部世界、控制流、可观测性，或引入**非局部**语义的运算；**不把**已在 State 端口建模的纯数据传递算作 effect。
 
-分类（`effect.kind`，第一版内置表）：
+分类（`effect.kind`）只来自已有声明，不按定义名的拼写猜测（[#1567](https://github.com/calcit-lang/calcit/issues/1567)）：
 
-| kind | 示例 | 类型标记 |
-|------|------|----------|
-| `console` | `println`, `eprintln`（若可静态识别） | `:effect/console` |
-| `io/read` | `read-file` | builtin schema |
-| `io/write` | `write-file` | builtin schema |
-| `env` | `get-env` | builtin schema |
-| `control/raise` | `raise` | builtin schema |
-| `control/quit` | `quit!` | builtin schema |
-| `async` | `hint-fn $ {} (:async true)` 作用域 | `:effect/async` |
-| `state/watch` | `add-watch` / `remove-watch` | `:effect/watch` |
-| `render` | `render!`, `clear-cache!` | 模块规则 + schema |
-| `interop/js` | `js/...`, `&js-object`, `js-await` | `:effect/js` |
-| `interop/host` | `register_import_proc` 注入 proc | descriptor 元数据 |
-| `platform` | `register-calcit-platform-api` 能力 | platform API RFC |
-| `unknown` | 无法分类的 `:dynamic` 调用 | 需补全 schema |
+| kind | 示例 | 来源 |
+|------|------|------|
+| `console` | `println`、`eprintln`、`echo`、`dbg`、`&inspect-methods` | `:log` tag（宿主注入 proc 的 descriptor tags） |
+| `io/file` | `read-file`、`write-file`、`try-read-dir`、`.read-text`、`.write-text!` | `:file` tag |
+| `io` | `monotonic-time-ms`、`unix-time-ms`、`wait-ms`、`read-stdin-text`、`generate-id!` | 只有 `:io` tag |
+| `env` | `get-env`、`get-args` | `:env` tag |
+| `control` | `raise`、`quit!`、`try`、`todo!`、`non-nil!`、`assert=`、`assert-traits` | `:control` tag |
+| `async` | `hint-fn $ {} (:async true)` | `hint-fn` 的 `:async` tag，且 schema 中出现 `:async` |
+| `state/watch` | `add-watch!`、`remove-watch!`、旧 `remove-watch` | `:watch` tag |
+| `effect` | `.cancel!`、`.cancel-with!`、`.resolve!`、`.reject!`、旧 `.cancel`、`&doseq` | `:effect` tag |
+| `interop/host` | `eval`、`&call-dylib-edn`、`async-sleep` | `:interop` tag |
+| `interop/js` | `js/console.log`、`.!method`、`(|os :as os)` 导入的 `os/arch` | `js/` 命名空间、`.!` 调用与 JS 模块导入的语法 |
+| `unknown` | 未加载的 `missing.ns/thing`、未声明 tags 的宿主 proc、项目自定义的方法 | 没有可读取的效果声明 |
+
+**效果来源**按以下顺序确定，不再有按名字的兜底规则：
+
+1. `calcit.core` 定义的 Snapshot `:tags`。没有 Snapshot entry 的少数 builtin proc / syntax 在 `src/effects_graph.rs` 的表中逐个声明，测试保证每个 proc/syntax 恰好有一处声明。core 定义没有效果 tag 即表示无效果。
+2. 宿主注册 proc 的 `RegisteredProcDescriptor.tags`；descriptor 完全没有 tags 时报告 `unknown`。
+3. 方法调用 `.name` 查 core 的 `defimpl` / `&impl::new` 表，取实现定义的 tags。项目或模块也实现了同名方法，或 core 没有该方法时，报告 `unknown`，因为分派目标取决于运行时接收者。
+4. 调用项目或模块定义时，调用点本身不记录效果；被调用定义作为调用图子节点，按同样规则列出自己的效果。
+
+`unknown` 表示“分析器找不到声明”，不是“有副作用”，也不是“纯”。它出现在三类位置：限定名指向未加载的命名空间或定义、宿主 proc 未声明 tags、方法分派无法限定在 core 实现。补全方式是加载对应模块、为宿主 proc 声明 tags，或在 core 定义上补 tag；不要通过改名来消除 `unknown`。
 
 Effect 边：从 Transform 节点指向 effect 节点；effect 节点可带 `target`（文件路径、DOM、atom 名等）若可静态推导。
 
@@ -143,7 +150,7 @@ Effect 边：从 Transform 节点指向 effect 节点；effect 节点可带 `tar
 
 - `assoc state :content x` → **state** 更新（field inout）
 - `reset! *counter 1` → **state**（atom persist）+ 可选标 `effect/state-mutate`（若需区分“突变事件”）
-- `render! (comp-container ...)` → **effect**（UI 输出），其参数中的 state 仍归 State 分析
+- `render! (comp-container ...)` → 调用模块定义 `respo.core/render!`：调用点不重复记录效果，`render!` 子节点按其声明与调用链列出效果；参数中的 state 仍归 State 分析
 
 第一版建议：**突变写入归 State，对外可观测归 Effect**，避免双重计数。
 
@@ -212,20 +219,21 @@ defn render-once (ui) $
 | `:meta` | 程序自省 / 编译期元数据 | `&get-def-doc`, `&get-def-schema`, `macroexpand*`, `assert-type`, `deftype-slot`, `with-type-slot`, `&data-to-code`, `&extract-code-into-edn` |
 | `:async` | 异步标记（经 `hint-fn`） | `hint-fn` |
 | `:watch` | atom 监听回调 | `add-watch`, `remove-watch`（与 `:state` 叠加） |
-| `:effect` | 显式副作用组合子 | `&doseq` |
+| `:effect` | 显式状态写入、生命周期、注册与取消（与 [API 角色](../docs/features/api-roles.md#效果宿主与内部实现)中 `!` 的含义一致），以及显式副作用组合子 | `ffi-task:cancel`、`ffi-task:cancel-with`、`ffi-response:resolve`、`ffi-response:reject`、`&init-builtin-impls!`、`&reset-gensym-index!`、`&doseq` |
 
 映射示例（tag → effects-graph kind）：
 
-- `read-file` (`:io` `:file`) → `[:io/read]`
-- `write-file` (`:io` `:file`) → `[:io/write]`
-- `raise` (`:control`) → `[:control/raise]`
-- `get-env` (`:io` `:env`) → `[:env]`
-- `reset!` / `swap!` (`:state`) → `[:state/write]`
-- `add-watch` (`:state` `:watch`) → `[:state/watch]`
-- `eval` (`:interop`) → `[:interop/eval]`
-- `hint-fn` (`:async`) → 分析子函数 `:effects` 行
-- `&doseq` (`:effect`) → body 内 effect 边展开
-- `println` (`:log` `:io`) → `[:console]`
+- `read-file` / `write-file` (`:io` `:file`) → `io/file`
+- `raise` / `quit!` (`:control`) → `control`
+- `get-env` (`:io` `:env`) → `env`
+- `reset!` / `swap!` (`:state`) → State 端口的 atom 写入，不重复计入 effect
+- `add-watch!` / `remove-watch` (`:state` `:watch`) → `state/watch`
+- `eval` (`:interop`) → `interop/host`
+- `hint-fn` (`:async`) → `async`，仅当 hint schema 中出现 `:async`
+- `ffi-task:cancel` (`:effect`) → `effect`，`.cancel` 与 `.cancel!` 共享这一实现
+- `println` (`:log` `:io`) → `console`
+
+只有 `:io` 而没有更具体 tag 时归为 `io`。`:state`、`:meta`、`:data`、`:ffi` 不单独产生 effect kind。
 
 宿主注入 proc 通过 `RegisteredProcDescriptor.tags`（`HashSet<EdnTag>`，与 core `:tags` 同名）声明；可用 `calcit query host-procs [--tag :log]` 查看。
 
@@ -245,7 +253,7 @@ calcit analyze effects-graph [options]
 |------|------|------|
 | `--root ns/def` | 入口定义 | `:init-fn` |
 | `--format tree\|json\|mermaid` | 输出格式 | `tree` |
-| `--max-depth N` | 子图展开深度 | 无限制 |
+| `--max-depth N` | 子图展开深度（0 为不限） | 2 |
 | `--include-core` | 包含 `calcit.core` 节点 | false |
 | `--ns-prefix PREFIX` | 只保留匹配 ns 子树 | 无 |
 | `--detail summary\|full\|minimal` | Transform 压缩级别 | `summary` |
@@ -256,31 +264,55 @@ calcit analyze effects-graph [options]
 
 ## 输出格式（tree）
 
-默认 `--max-depth 1`：先展示入口 **Program Overview**（独立 STE 三棵树），子图以索引列出并标注 `[collapsed]`，按需 `--root ns/def` 或增大 `--max-depth` 展开。
+默认 `--max-depth 2`。超过深度的子节点标注 `[depth limit ↑]` 并给出一行摘要，按需 `--root ns/def` 或增大 `--max-depth` 展开；`--max-depth 0` 表示不限深度。`--format json` 时 stdout 只有一个 JSON 文档，起始提示行写到 stderr。
 
-`--max-depth 0`（无限制）时额外输出 **§2 Subgraph Trees**，每个子函数各一棵独立 STE 树。
+以下为 `calcit calcit/test-effects-graph.cirru analyze effects-graph --color false` 的节选：
 
 ```text
-# Effects Graph
-Entry: app.main/main!
+# Effects Graph: `main/main!`
 
-## app.main/main!  [program]
-├── state
-│   ├── import  util.core/log-title
-│   └── ...
-├── transform (summary)
-│   └── sequential: 24 test modules, 3 branches
-└── effects
-    └── console  println (×N)
+Package: `test-effects-graph.*`
+Max depth: 2  (2 nodes truncated; rerun with larger --max-depth to expand)
 
-    └── app.comp.container/comp-container  [transform]
-        ├── state.in   states (:map)
-        ├── state.out  states (:map)
-        ├── transform  comp-message-box → comp-sessions-modal
-        └── effects
-            ├── render   respo.core/render!
-            └── interop  respo.controller.client/send-to-component!
+└── main/main!  [program]
+    ├── Transform  (entry with io and state effects)
+    │   ├── → main/state-helper
+    │   ├── → main/io-helper
+    │   ├── → main/setup!
+    │   └── ...
+    └── Effects
+        └── console        println
+    │
+    ├── main/setup!  [transform]
+    │   ├── Transform  (calls: 1)
+    │   │   └── → main/load-config
+    │   └── Effects
+    │       └── (none — pure transform)
+    ├── main/watch-helper  [program]
+    │   ├── State
+    │   │   └── watch    *store  schema: :number  init=0
+    │   └── Effects
+    │       └── state/watch    remove-watch
+    ├── main/cancel-helper  [transform]
+    │   └── Effects
+    │       └── effect         .cancel
+    ├── main/write-helper  [program]
+    │   └── Effects
+    │       └── io/file        .write-text!
+    ├── main/call-through  [transform]
+    │   └── Effects
+    │       └── (none — pure transform)
+    ├── main/js-helper  [program]
+    │   └── Effects
+    │       └── interop/js     js/console.log
+    └── main/missing-helper  [program]
+        ├── Transform  (calls: 1)
+        │   └── → missing.ns/thing
+        └── Effects
+            └── unknown        missing.ns/thing
 ```
+
+`setup!` 和 `load-config` 不再因为名字含 `!` 或 `load` 被标为效果；`remove-watch` 和旧 `.cancel` 没有 `!`，仍由 core tags 识别。`call-through` 通过参数 `f` 调用函数值，分析器不知道 `f` 的来源，因此不分类。
 
 #### json
 
@@ -348,7 +380,7 @@ effects_graph/
 | 参数/返回类型 | `CodeEntry.:schema` | `hint-fn` | 推断 `weak-types` |
 | 文档摘要 | `&get-def-doc` / `entry.doc` | — | — |
 | 调用目标 | `call_tree` 同款 `extract_calls` | — | — |
-| Effect 种类 | builtin proc 表 | `:effects` schema | 启发式（`js/` 前缀） |
+| Effect 种类 | core `:tags` 与 hidden proc 表 | 宿主 proc descriptor tags | 调用图子节点；均无声明时为 `unknown` |
 | State 槽 | schema + `assoc`/`get` 模式 | atom 表 | — |
 
 ### 6.3 Transform 压缩算法（summary 模式）
@@ -403,7 +435,7 @@ effects_graph/
 **交付**：
 
 - [ ] `CodeEntry.:schema` 支持 `:effects` 列表（解析 + `check-types` 统计）
-- [ ] Respo 规则包：`render!`、`d!`、`send-to-component!` 静态识别
+- [ ] Respo 等模块的效果识别：通过模块定义或宿主 proc 的显式声明，而不是按 `render!`、`d!`、`send-to-component!` 等名字建规则包
 - [ ] `--infer-missing` 建议输出
 - [ ] `mermaid` 格式
 - [ ] 文档：`docs/features/effects-graph.md`
@@ -464,6 +496,13 @@ app.comp.container/comp-container
 - 不做跨进程 / 网络 effect 的自动发现（除非显式 builtin）
 - 不保证 whole-program 数据流**完备**（Halting 与动态调用不可判定）
 - 不把 `effects-graph` 当作安全沙箱策略
+- 不把效果加入函数类型；`effects-graph` 只读报告，不阻断编译或检查
+
+### 限制
+
+- 未解析到定义的裸符号视为局部绑定或函数值调用，不分类；只在 JS 后端提供的全局函数在 native 分析中也属于这一类。
+- 项目或模块实现了与 core 同名的方法时，所有该名字的方法调用都报告 `unknown`。
+- 项目与模块定义自身的 `:tags` 尚未读入，调用它们时只依靠调用图子节点。
 
 ---
 
@@ -494,6 +533,6 @@ app.comp.container/comp-container
 
 - [ ] `cargo run --bin calcit -- calcit/test.cirru analyze effects-graph` 成功退出
 - [ ] 输出包含 entry 的 state / transform / effect 三节
-- [ ] `read-file` 调用归类为 `io/read`，不落在 transform 摘要正文中
+- [ ] `read-file` 调用归类为 `io/file`，不落在 transform 摘要正文中
 - [ ] `--format json` 可被 `jq` 解析，节点含 `fqn`、`kind`
 - [ ] 文档与本 RFC 同步进入 `RFCs/README.md`
