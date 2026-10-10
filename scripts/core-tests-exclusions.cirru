@@ -5,6 +5,10 @@
   :wasm $ {}
     :tags $ {} $ :enum-definition-equality "|unsupported: first-class EnumDef creation requires &enum-def:new, rejected by WASM codegen (#1863)"
     :tests $ {} (|calcit.core/&+#preserves-primitive-schema-in-local-binding "|unsupported: unsupported WASM expression: (&proc &+)")
+      |calcit.core/&get-in#handles-empty-path-and-nil-base "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nullable internal traversal needs concrete argument types"
+      |calcit.core/get-in#handles-empty-path-and-nil-base "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nullable scalar traversal needs concrete argument types"
+      |calcit.core/contains-symbol?#finds-nested-symbol-and-handles-empty-list "|unsupported: unsupported runtime quote value in WASM"
+      |calcit.core/list-match#evaluates-subject-once-and-only-selected-body "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/&core-string-methods#excludes-file-effects "|unsupported: unsupported proc in WASM: &methods-of"
       |calcit.core/&doseq#applies-side-effects-per-item "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/&doseq#types-range-index-in-body "|unsupported: unsupported proc in WASM: ref"
@@ -122,7 +126,6 @@
       |calcit.core/get-env#missing-env-keeps-nominal-string-option "|host: needs the io.get_env import; the replay host only provides io.log_* and math (env ABI is covered by scripts/test-wasm.mjs)"
       |calcit.core/get-env#present-env-preserves-text-and-absence "|host: needs the io.get_env import; the replay host only provides io.log_* and math (env ABI is covered by scripts/test-wasm.mjs)"
       |calcit.core/get-in#reads-nested-open-map-payload "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: `calcit.core/get-in` requires concrete argument types so nil can be distinguished from false and 0"
-      |calcit.core/group-by#groups-list-by-derived-key "|parity: codegen fails: inline closure expects 2 argument(s), got 1"
       |calcit.core/hint-fn#async-tail-return-contract "|unsupported: E_WASM_CLOSURE_SPECIALIZATION: closure `forward` escapes a statically specialized call"
       |calcit.core/hint-fn#callable-return-contract "|unsupported: unsupported call head in WASM: ([] 'keep 'pass-number)"
       |calcit.core/hint-fn#checked-number-to-concrete-call "|unsupported: try-decode-map-as is not yet supported in WASM codegen"
@@ -133,7 +136,6 @@
       |calcit.core/if#condition-evaluates-once-and-only-one-branch-runs "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/if#direct-unsafe-bool-keeps-runtime-truthiness "|unsupported: E_WASM_UNSUPPORTED_JS_FFI: unsafe-coerce cannot preserve value identity in the current scalar WASM ABI"
       |calcit.core/includes?#checks-open-map-values-and-set-members "|unsupported: E_WASM_TRAIT_TYPE_EVIDENCE: a List mixing Map and Set receivers has no concrete element type for the open includes? dispatch"
-      |calcit.core/join-string#renders-numbers-duplicates-and-empty-list "|parity: wrong result: expected 1-2-3, got 1-1-1"
       |calcit.core/keys-non-nil#omits-nil-map-values "|unsupported: E_WASM_CALL_SPECIALIZATION: recursive specialization of `calcit.core/&section-by-loop` is not supported"
       |calcit.core/last#rejects-invalid-string-indices "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/loop#preserves-standalone-loop-effects "|unsupported: unsupported proc in WASM: ref"
@@ -232,6 +234,10 @@
   :wasi $ {}
     :tags $ {} $ :enum-definition-equality "|unsupported: first-class EnumDef creation requires &enum-def:new, rejected by the shared WASM codegen (#1863)"
     :tests $ {} (|calcit.core/&+#preserves-primitive-schema-in-local-binding "|unsupported: unsupported WASM expression: (&proc &+)")
+      |calcit.core/&get-in#handles-empty-path-and-nil-base "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nullable internal traversal needs concrete argument types"
+      |calcit.core/get-in#handles-empty-path-and-nil-base "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nullable scalar traversal needs concrete argument types"
+      |calcit.core/contains-symbol?#finds-nested-symbol-and-handles-empty-list "|unsupported: unsupported runtime quote value in WASM"
+      |calcit.core/list-match#evaluates-subject-once-and-only-selected-body "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/&core-string-methods#excludes-file-effects "|unsupported: unsupported proc in WASM: &methods-of"
       |calcit.core/&doseq#applies-side-effects-per-item "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/&doseq#types-range-index-in-body "|unsupported: unsupported proc in WASM: ref"
@@ -348,7 +354,6 @@
       |calcit.core/get#typed-nested-get-inside-when "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/get-char-code#rejects-multiple-characters "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/get-in#reads-nested-open-map-payload "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: `calcit.core/get-in` requires concrete argument types so nil can be distinguished from false and 0"
-      |calcit.core/group-by#groups-list-by-derived-key "|parity: codegen fails: inline closure expects 2 argument(s), got 1"
       |calcit.core/hint-fn#async-tail-return-contract "|unsupported: E_WASM_CLOSURE_SPECIALIZATION: closure `forward` escapes a statically specialized call"
       |calcit.core/hint-fn#callable-return-contract "|unsupported: unsupported call head in WASM: ([] 'keep 'pass-number)"
       |calcit.core/hint-fn#checked-number-to-concrete-call "|unsupported: try-decode-map-as is not yet supported in WASM codegen"
@@ -360,7 +365,6 @@
       |calcit.core/if#condition-evaluates-once-and-only-one-branch-runs "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/if#direct-unsafe-bool-keeps-runtime-truthiness "|unsupported: E_WASM_UNSUPPORTED_JS_FFI: unsafe-coerce cannot preserve value identity in the current scalar WASM ABI"
       |calcit.core/includes?#checks-open-map-values-and-set-members "|unsupported: E_WASM_TRAIT_TYPE_EVIDENCE: a List mixing Map and Set receivers has no concrete element type for the open includes? dispatch"
-      |calcit.core/join-string#renders-numbers-duplicates-and-empty-list "|parity: wrong result: expected 1-2-3, got 1-1-1"
       |calcit.core/keys-non-nil#omits-nil-map-values "|unsupported: E_WASM_CALL_SPECIALIZATION: recursive specialization of `calcit.core/&section-by-loop` is not supported"
       |calcit.core/last#rejects-invalid-string-indices "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/loop#preserves-standalone-loop-effects "|unsupported: unsupported proc in WASM: ref"
