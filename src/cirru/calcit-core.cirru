@@ -2550,15 +2550,15 @@
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |counts-unicode-scalars)
               :code $ quote $ do
-                assert= |abc中文 $ &str:pad-left |中文 5 |abc
-                assert= |😀😀a $ &str:pad-left |a 3 |😀
-                assert= |中😀中a $ &str:pad-left |a 4 |中😀
-                assert= |😀 $ &str:pad-left |😀 1 |-
-                assert= 4 $ count $ &str:pad-left |😀 4.9 |é
+                assert= "|abc中文" $ &str:pad-left "|中文" 5 |abc
+                assert= "|😀😀a" $ &str:pad-left |a 3 "|😀"
+                assert= "|中😀中a" $ &str:pad-left |a 4 "|中😀"
+                assert= "|😀" $ &str:pad-left "|😀" 1 |-
+                assert= 4 $ count $ &str:pad-left "|😀" 4.9 "|é"
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |pads-nothing-for-empty-pattern-or-length)
               :code $ quote $ do
-                assert= |中文 $ &str:pad-left |中文 8 |
+                assert= "|中文" $ &str:pad-left "|中文" 8 |
                 assert= |a $ &str:pad-left |a (&/ 0 0) |-
                 assert= |a $ &str:pad-left |a -3 |-
                 assert= | $ &str:pad-left | 0 |-
@@ -2578,15 +2578,15 @@
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |counts-unicode-scalars)
               :code $ quote $ do
-                assert= |中文abc $ &str:pad-right |中文 5 |abc
-                assert= |a😀😀 $ &str:pad-right |a 3 |😀
-                assert= |a中😀中 $ &str:pad-right |a 4 |中😀
-                assert= |😀 $ &str:pad-right |😀 1 |-
-                assert= 4 $ count $ &str:pad-right |😀 4.9 |é
+                assert= "|中文abc" $ &str:pad-right "|中文" 5 |abc
+                assert= "|a😀😀" $ &str:pad-right |a 3 "|😀"
+                assert= "|a中😀中" $ &str:pad-right |a 4 "|中😀"
+                assert= "|😀" $ &str:pad-right "|😀" 1 |-
+                assert= 4 $ count $ &str:pad-right "|😀" 4.9 "|é"
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |pads-nothing-for-empty-pattern-or-length)
               :code $ quote $ do
-                assert= |中文 $ &str:pad-right |中文 8 |
+                assert= "|中文" $ &str:pad-right "|中文" 8 |
                 assert= |a $ &str:pad-right |a (&/ 0 0) |-
                 assert= |a $ &str:pad-right |a -3 |-
                 assert= | $ &str:pad-right | 0 |-
@@ -3408,7 +3408,7 @@
               , internal/&core-debug-impl internal/&core-eq-impl OptionMappableImpl OptionOpsImpl
           :examples $ []
           :schema $ :: 'Dynamic
-          :tags $ #{} :data :internal
+          :tags $ #{} :data
           :tests $ []
             %{} 'TestEntry (:name |matches-payloads-and-rejects-arity-mismatch)
               :code $ quote $ do
@@ -3503,7 +3503,7 @@
               , internal/&core-debug-impl internal/&core-eq-impl ResultMappableImpl ResultOpsImpl
           :examples $ []
           :schema $ :: 'Dynamic
-          :tags $ #{} :data :internal
+          :tags $ #{} :data
           :tests $ []
             %{} 'TestEntry (:name |direct-construction-preserves-value-and-failure)
               :code $ quote $ do
@@ -4212,7 +4212,9 @@
                   do (bit-or 1 -2147483649) :returned
                   fn (_error) :failed
                 assert= :failed $ try
-                  do (bit-xor (&/ 0 0) 1) :returned
+                  do
+                    bit-xor (&/ 0 0) 1
+                    , :returned
                   fn (_error) :failed
                 assert= :failed $ try
                   do (bit-not 2147483648) :returned
@@ -4221,7 +4223,9 @@
                   do (bit-shl 1 1.5) :returned
                   fn (_error) :failed
                 assert= :failed $ try
-                  do (bit-shr (&/ 1 0) 1) :returned
+                  do
+                    bit-shr (&/ 1 0) 1
+                    , :returned
                   fn (_error) :failed
               :tags $ #{} :core :unit
         'bit-not $ %{} 'CodeEntry
@@ -4451,12 +4455,12 @@
               assert= |fallback $ case-default (&+ 2 3) |fallback (1 |one) (2 |two)
             :tags $ #{} :core :unit
         'ceil $ %{} 'CodeEntry
-          :doc "|internal function for ceiling operation\nSyntax: (ceil n)\nParams: n (number)\nReturns: number\nReturns smallest integer greater than or equal to n"
+          :doc "|公开的向上舍入函数。ceil n 接收 Number，返回不小于 n 的最小整数值，返回类型仍为 Number；不执行整数 refinement 转换。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
-          :tags $ #{} :builtin :internal
+          :tags $ #{} :builtin
           :tests $ []
             %{} 'TestEntry (:name |rounds-up)
               :code $ quote $ assert= 2 (ceil 1.1)
@@ -4948,12 +4952,12 @@
                     , not-a-number 2
               :tags $ #{} :core :unit
         'cos $ %{} 'CodeEntry
-          :doc "|internal function for cosine\nSyntax: (cos n)\nParams: n (number, radians)\nReturns: number\nReturns cosine of angle in radians"
+          :doc "|公开的余弦函数。cos n 接收以弧度表示的 Number，返回 Number；保留原有非有限数语义。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
-          :tags $ #{} :builtin :internal
+          :tags $ #{} :builtin
           :tests $ []
             %{} 'TestEntry (:name |evaluates-zero-and-half-turn)
               :code $ quote $ do
@@ -6800,12 +6804,12 @@
             :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :deprecated :macro
         'floor $ %{} 'CodeEntry
-          :doc "|internal function for floor operation\nSyntax: (floor n)\nParams: n (number)\nReturns: number\nReturns largest integer less than or equal to n"
+          :doc "|公开的向下舍入函数。floor n 接收 Number，返回不大于 n 的最大整数值，返回类型仍为 Number；不执行整数 refinement 转换。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
-          :tags $ #{} :builtin :internal
+          :tags $ #{} :builtin
           :tests $ []
             %{} 'TestEntry (:name |rounds-down)
               :code $ quote $ assert= 1 (floor 1.8)
@@ -8650,7 +8654,8 @@
               :code $ quote $ assert= (#{} :a :b)
                 keys $ &{} :a 1 :b 2
               :tags $ #{} :core :types :unit
-        'keys-non-nil $ %{} 'CodeEntry (:doc "|Return the keys whose values are not nil, treating nil as absent. Prefer Option values in new code; this helper serves nil-based data until the nil migration.")
+        'keys-non-nil $ %{} 'CodeEntry
+          :doc "|Return the keys whose values are not nil, treating nil as absent. Prefer Option values in new code; this helper serves nil-based data until the nil migration."
           :code $ quote $ defn keys-non-nil (x)
             &map:keys $ &map:filter-kv x $ defn %keys-non-nil (_k v)
               hint-fn $ {}
@@ -9439,7 +9444,8 @@
                 count $ merge-dynamic ({})
                   {} $ :a 1
               :tags $ #{} :core :unit
-        'merge-non-nil $ %{} 'CodeEntry (:doc "|Merge maps left-to-right like merge, but a nil value in a later map keeps the earlier value instead of overwriting it, so nil means absent. Prefer Option values in new code; this helper serves nil-based data until the nil migration.")
+        'merge-non-nil $ %{} 'CodeEntry
+          :doc "|Merge maps left-to-right like merge, but a nil value in a later map keeps the earlier value instead of overwriting it, so nil means absent. Prefer Option values in new code; this helper serves nil-based data until the nil migration."
           :code $ quote $ defn merge-non-nil (x0 & xs) (reduce xs x0 &merge-non-nil)
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -10285,26 +10291,26 @@
                 assert-type (|1.5 .parse-float) (:: 'Result 'Number 'String)
               :tags $ #{} :core :parse-method-contract :unit
         'pow $ %{} 'CodeEntry
-          :doc "|internal function for power operation\nSyntax: (pow base exponent)\nParams: base (number), exponent (number)\nReturns: number\nRaises base to the power of exponent"
+          :doc "|公开的指数函数。pow base exponent 接收两个 Number，返回 base 的 exponent 次幂；保留原有非有限数语义。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
-          :tags $ #{} :builtin :internal
+          :tags $ #{} :builtin
           :tests $ []
             %{} 'TestEntry (:name |raises-to-power)
               :code $ quote $ assert= 81 (pow 3 4)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |follows-ieee-for-unit-base)
               :code $ quote $ do
-                assert= 1 $ pow 1 (&/ 1 0)
-                assert= 1 $ pow 1 (&/ -1 0)
-                assert= 1 $ pow -1 (&/ 1 0)
-                assert= 1 $ pow -1 (&/ -1 0)
-                assert= 1 $ pow 1 (&/ 0 0)
+                assert= 1 $ pow 1 $ &/ 1 0
+                assert= 1 $ pow 1 $ &/ -1 0
+                assert= 1 $ pow -1 $ &/ 1 0
+                assert= 1 $ pow -1 $ &/ -1 0
+                assert= 1 $ pow 1 $ &/ 0 0
                 assert= |NaN $ turn-string $ pow -1 (&/ 0 0)
                 assert= |inf $ turn-string $ pow 2 (&/ 1 0)
-                assert= 0 $ pow 0.5 (&/ 1 0)
+                assert= 0 $ pow 0.5 $ &/ 1 0
                 assert= 0.25 $ pow -0.5 2
               :tags $ #{} :core :unit
         'prepend $ %{} 'CodeEntry
@@ -10452,7 +10458,8 @@
                   do (range 0 3 0) :returned
                   fn (_error) :failed
               :tags $ #{} :core :unit
-        'range-bothway $ %{} 'CodeEntry (:doc "|Deprecated: write the range explicitly, e.g. (range (inc (negate n)) n) for (range-bothway n).")
+        'range-bothway $ %{} 'CodeEntry
+          :doc "|Deprecated: write the range explicitly, e.g. (range (inc (negate n)) n) for (range-bothway n)."
           :code $ quote $ defn range-bothway (x ? y)
             if (nil? y)
               range
@@ -10831,12 +10838,12 @@
             :generics $ [] 'T
             :return $ :: 'List 'T
         'round $ %{} 'CodeEntry
-          :doc "|internal function for rounding numbers\nSyntax: (round n)\nParams: n (number)\nReturns: number\nRounds number to nearest integer"
+          :doc "|公开的舍入函数。round n 接收并返回 Number，沿用既有的最近整数及中点舍入规则；不执行整数 refinement 转换。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
-          :tags $ #{} :builtin :internal
+          :tags $ #{} :builtin
           :tests $ []
             %{} 'TestEntry (:name |rounds-fractional-values-both-directions)
               :code $ quote $ do
@@ -10972,12 +10979,12 @@
             :generics $ [] 'T
           :tags $ #{} :builtin :internal
         'sin $ %{} 'CodeEntry
-          :doc "|internal function for sine\nSyntax: (sin n)\nParams: n (number, radians)\nReturns: number\nReturns sine of angle in radians"
+          :doc "|公开的正弦函数。sin n 接收以弧度表示的 Number，返回 Number；保留原有非有限数语义。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
-          :tags $ #{} :builtin :internal
+          :tags $ #{} :builtin
           :tests $ [] $ %{} 'TestEntry (:name |evaluates-zero-and-quarter-turn)
             :code $ quote $ do
               assert= 0 $ sin 0
@@ -11022,7 +11029,8 @@
                   slice ([] 1 2 3) 1 2
                 assert= |bc $ slice |abc 1
               :tags $ #{} :core :unit
-        'some-in? $ %{} 'CodeEntry (:doc "|Deprecated: use (option:some? (get-in x path)); contains-in? checks that the path exists instead.")
+        'some-in? $ %{} 'CodeEntry
+          :doc "|Deprecated: use (option:some? (get-in x path)); contains-in? checks that the path exists instead."
           :code $ quote $ defn some-in? (x path)
             option:some? $ get-in x path
           :examples $ []
@@ -11097,12 +11105,12 @@
             :code $ quote $ assert= ([] |a |b |c) (split-lines "|a\nb\nc")
             :tags $ #{} :core :unit
         'sqrt $ %{} 'CodeEntry
-          :doc "|internal function for square root\nSyntax: (sqrt n)\nParams: n (number)\nReturns: number\nReturns square root of n"
+          :doc "|公开的平方根函数。sqrt n 接收 Number 并返回 Number；保留负数及非有限数的原有语义，不返回 Result 或整数 refinement。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
-          :tags $ #{} :builtin :internal
+          :tags $ #{} :builtin
           :tests $ [] $ %{} 'TestEntry (:name |finds-square-root)
             :code $ quote $ assert= 9 (sqrt 81)
             :tags $ #{} :core :unit
