@@ -11,7 +11,6 @@
       |calcit.core/ffi-task:cancel-with#reason-evaluates-once-before-host-error "|parity: JS .cancel-with! on a nil ffi:task fails with `NOT available for calcit-js` instead of a capability error"
       |calcit.core/round#rounds-ties-away-from-zero "|parity: JS Math.round rounds -2.5 to -2 (#1847)"
       |calcit.core/str#formats-numbers-like-turn-string "|parity: JS str prints Infinity, 0 for -0 and exponent forms (#1848)"
-      |calcit.core/turn-string#formats-number-boundaries "|parity: JS codegen emits the overflowing literal 1e309 as the identifier `inf` (ReferenceError)"
   :wasm $ {}
     :tags $ {} $ :enum-definition-equality "|unsupported: first-class EnumDef creation requires &enum-def:new, rejected by WASM codegen (#1863)"
     :tests $ {} (|calcit.core/&+#preserves-primitive-schema-in-local-binding "|unsupported: unsupported WASM expression: (&proc &+)")
