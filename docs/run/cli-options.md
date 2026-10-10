@@ -67,14 +67,14 @@ resolver call-site 证据，并列出重复匿名 Map shape 与 `match` tag disp
 源码路径，全部是 `review-required`；不会自动创建 Struct/Enum，也不会决定业务默认值或错误语义。
 
 在频繁 edit/check/analyze 循环中，可为直接入口检查使用 `calcit calcit.cirru --check-only --incremental`，或为
-`analyze check-types`、`analyze weak-types`、`analyze dynamic-methods` 增加各自的 `--incremental`。这些参数不新增命令，
+`analyze weak-types --only coverage`、`analyze weak-types`、`analyze weak-types --only dynamic-method` 增加各自的 `--incremental`。这些参数不新增命令，
 在项目 `.calcit/analysis-input-cache-v2.cirru` 分别复用由内容 digest 校验的主 Snapshot 与 direct module 单元，并在
 `.calcit/analysis-cache-v1.cirru` 保存按 definition revision 分离的本地结果；缓存默认使用 Cirru EDN，JSON 仅保留为显式
 互操作输出。报告会分别返回 `cache.input.entry` 与 main/module hit/miss、definition hit/miss，以及 `cache.dependency_index` 的编译器解析依赖索引摘要。
 顶层 `--entry` 会先选择对应配置，再校验和加载该 entry 的 modules；切换 entry 或严格模式默认 feature policy 时，definition cache
 会按 context revision 冷启动，不会沿用另一 entry 的分析结果。
 依赖索引按 definition 与 namespace revision 复用，变化时报告 changed/affected 数量；affected 包含反向传递调用者。
-`dynamic-methods --incremental` 会进一步校验 init/reload 的完整 dependency closure：闭包不变时复用动态方法诊断并明确报告
+`weak-types --only dynamic-method --incremental` 会进一步校验 init/reload 的完整 dependency closure：闭包不变时复用动态方法诊断并明确报告
 `preprocessing_cached=true`，闭包索引不完整时保守执行完整入口预处理。它不缓存 compiled AST，也不替代严格类型检查。
 `--check-only --incremental` 只复用相同 closure、strict policy 与 dynamic-method policy 下已经成功的入口预处理；它只保存成功标记，
 warning/error 不缓存。reachable definition/schema、namespace import、entry type-slot、policy、编译器或 core input 变化都会冷启动；闭包证据
@@ -198,7 +198,7 @@ dynamic callable instead.
 
 默认严格诊断进一步要求 `unsafe-coerce` 位于当前函数声明了 `:features $ #{} :js-ffi` 的结构化 `Fn` schema 内，
 不受代码生成模式或兼容 feature policy 影响。否则预处理报 `E_UNSCOPED_UNSAFE_COERCE`；命名空间名称不能代替能力声明。
-只有显式运行 `analyze quality` 时，经过作用域检查的转换才会计入逐 definition 的 `unsafeCoerce` 质量 baseline；
+只有显式运行已弃用的 `analyze quality` 时，经过作用域检查的转换才会计入逐 definition 的 `unsafeCoerce` 质量 baseline；
 严格诊断本身不运行数量预算。
 
 ### 默认严格诊断、入口预检查与兼容模式
@@ -241,7 +241,7 @@ envelope，Calcit 自动化优先使用 Cirru EDN，只有 JSON-only consumer �
 | `--check-only --keep-going` | 同一可达闭包，按依赖顺序逐 definition 收集 | 不检查 |
 | `--check-only --all-defs` | 可达闭包，加上项目命名空间中的全部 definition；依赖库仍只检查被项目 definition 引用到的部分 | 检查 |
 | `calcit test` | 项目命名空间中带 `:tests` 的 definition，只预处理并执行被选中的测试 | 只覆盖有 `:tests` 的定义 |
-| `analyze check-public --ns <ns>` | 所选命名空间的全部 definition，需要 entry 声明 `:target`；`--deps` 才允许依赖命名空间 | 检查（仅所选命名空间） |
+| `--check-only --ns <ns>` | 所选命名空间的全部 definition，需要 entry 声明 `:target`；`--deps` 才允许依赖命名空间 | 检查（仅所选命名空间） |
 | `wasm` / `wasi`（含 `--check-only`） | 入口可达闭包，并预处理 `:init-fn` 所在命名空间的全部 definition | 仅入口所在命名空间 |
 
 随编译器内置的 `calcit.core`、`calcit.internal`、`calcit.test` 不属于项目范围；`calcit.std` 等以 `calcit.` 开头的包按项目或依赖代码处理，
@@ -260,7 +260,7 @@ calcit calcit.cirru --check-only --all-defs --format edn
 每个 definition 独立得出结论：根集合按命名空间与定义名排序，依赖图按强连通分量的依赖顺序检查，
 已确认失败的依赖让调用者标记为 `blocked`。因此结果与 Snapshot 中的定义顺序、命名空间加载顺序、其他无关 definition
 是否存在都无关；回归测试比较了不同创建顺序下的完整报告。core 内置 `&runtime-implementation` 占位符没有源码函数体，
-与 `analyze check-public` 一致，不参与检查。
+与 `--check-only --ns` 一致，不参与检查。
 
 `--all-defs` 的开销接近一次 `--keep-going`。在 release 构建、5 次取稳定值的测量中，calcit-core
 （395 个源码定义）为 default 约 160ms、`--all-defs` 约 190ms；Respo main（0.16.114-alpha.8，386 个定义）的
@@ -414,9 +414,9 @@ the concrete receiver layout remain valid.
 For a focused, machine-readable inventory that excludes unrelated type and FFI warnings, use the dedicated analysis command:
 
 ```bash
-calcit analyze dynamic-methods
-calcit analyze dynamic-methods --summary-only --format json
-calcit analyze dynamic-methods --deps
+calcit analyze weak-types --only dynamic-method
+calcit analyze weak-types --only dynamic-method --summary-only --format json
+calcit analyze weak-types --only dynamic-method --deps
 ```
 
 默认只查看项目命名空间；`--deps` 包含可达依赖。此命令始终是只读定位报告，不能用命中数量判断类型正确性；CI 应运行默认严格 `--check-only`。
@@ -424,11 +424,11 @@ calcit analyze dynamic-methods --deps
 要在当前 entry target 下检查显式选择的公开 namespace 中全部定义，使用：
 
 ```bash
-calcit --entry node calcit.cirru analyze check-public \
+calcit --entry node calcit.cirru --check-only \
   --ns package.shared --ns package.node --format json
 ```
 
-`check-public` 要求至少一个精确 `--ns`，且 entry 必须声明 target。未声明 `:ffi :target` 的定义为共享定义；目标不匹配会在预处理前失败。默认只接受项目 namespace，显式 `--deps` 才允许已加载的依赖与 core namespace。零匹配和不完整检查都会失败。JSON schema version 1 返回已检查的定义 ID、逐定义状态、诊断、完整性、耗时及 scope revision；`--summary-only` 只省略详细结果。内置 core 的 `:builtin` 运行时占位符报告为 `intrinsic`，它们没有 Calcit 函数体，其他源码定义仍严格预处理。
+`--check-only --ns` 要求 entry 声明 target，可与 `--deps`、`--summary-only`、`--format human|edn|json` 组合，不能与 `--keep-going`、`--all-defs` 或 `--incremental` 同用。未声明 `:ffi :target` 的定义为共享定义；目标不匹配会在预处理前失败。默认只接受项目 namespace，显式 `--deps` 才允许已加载的依赖与 core namespace。零匹配和不完整检查都会失败。结构化输出（`analyze.check-public` schema version 1）返回已检查的定义 ID、逐定义状态、诊断、完整性、耗时及 scope revision；`--summary-only` 只省略详细结果。内置 core 的 `:builtin` 运行时占位符报告为 `intrinsic`，它们没有 Calcit 函数体，其他源码定义仍严格预处理。
 
 ### Macro Expansion Metrics (--macro-metrics)
 

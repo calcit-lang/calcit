@@ -215,7 +215,7 @@ Use a type variable for identity-like relationships, add `:where` when that vari
 Agents can check how much information survives without running the program:
 
 ```bash
-calcit analyze check-types --summary-only
+calcit analyze weak-types --only coverage --summary-only
 calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --summary-only
 ```
 

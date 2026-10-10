@@ -97,15 +97,20 @@ fn run_check_types(
         print!("{}", type_coverage::format_check_types(options, snapshot)?);
       }
     }
-    "json" => {
-      if let Some((rows, stats)) = cached.as_ref() {
+    format @ ("json" | "edn") => {
+      let report = if let Some((rows, stats)) = cached.as_ref() {
         let report = type_coverage::format_check_types_json_with_rows(options, snapshot, rows)?;
-        println!("{}", add_cache_metadata(report, stats)?);
+        add_cache_metadata(report, stats)?
       } else {
-        println!("{}", type_coverage::format_check_types_json(options, snapshot)?);
-      }
+        type_coverage::format_check_types_json(options, snapshot)?
+      };
+      print_structured_report(&report, format)?;
     }
-    other => return Err(format!("Unknown check-types output format `{other}`. Expected `human` or `json`.")),
+    other => {
+      return Err(format!(
+        "Unknown check-types output format `{other}`. Expected `human`, `edn`, or `json`."
+      ));
+    }
   }
   Ok(())
 }
@@ -187,12 +192,28 @@ fn run_weak_types(
   Ok(())
 }
 
+/// Prints a JSON analyzer envelope as-is, or as the equivalent Cirru EDN document.
+fn print_structured_report(report: &str, format: &str) -> Result<(), String> {
+  if format == "edn" {
+    let value =
+      serde_json::from_str(report).map_err(|error| format!("Failed to parse analysis envelope for Cirru EDN output: {error}"))?;
+    println!("{}", cli_handlers::format_json_value_as_edn(&value)?);
+  } else {
+    println!("{report}");
+  }
+  Ok(())
+}
+
 fn run_deprecated(options: &DeprecatedCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
   let _output_guard = ProgramOutputGuard::new(true, false);
   match options.format.as_str() {
     "human" | "text" => print!("{}", deprecated_api::format_deprecated_api_report(options, snapshot)?),
-    "json" => println!("{}", deprecated_api::format_deprecated_api_json(options, snapshot)?),
-    other => return Err(format!("Unknown deprecated output format `{other}`. Expected `human` or `json`.")),
+    format @ ("json" | "edn") => print_structured_report(&deprecated_api::format_deprecated_api_json(options, snapshot)?, format)?,
+    other => {
+      return Err(format!(
+        "Unknown deprecated output format `{other}`. Expected `human`, `edn`, or `json`."
+      ));
+    }
   }
   Ok(())
 }
@@ -263,9 +284,9 @@ fn run_dynamic_methods(
   snapshot_file: &str,
   input_cache: Option<analysis_cache::InputCacheStats>,
 ) -> Result<(), String> {
-  if !matches!(options.format.as_str(), "human" | "text" | "json") {
+  if !matches!(options.format.as_str(), "human" | "text" | "edn" | "json") {
     return Err(format!(
-      "Unknown dynamic-methods output format `{}`. Expected `human`, `text`, or `json`.",
+      "Unknown dynamic-methods output format `{}`. Expected `human`, `edn`, or `json`.",
       options.format
     ));
   }
@@ -324,7 +345,7 @@ fn run_dynamic_methods(
         }
       }
     }
-    "json" => {
+    format @ ("json" | "edn") => {
       let rows = if options.summary_only {
         Vec::new()
       } else {
@@ -350,7 +371,11 @@ fn run_dynamic_methods(
       if let Some((_, stats)) = &cached {
         report["data"]["cache"] = stats.as_json();
       }
-      println!("{report}");
+      if format == "edn" {
+        println!("{}", cli_handlers::format_json_value_as_edn(&report)?);
+      } else {
+        println!("{report}");
+      }
     }
     _ => unreachable!("dynamic-methods output format was validated before analysis"),
   }
@@ -433,6 +458,24 @@ fn resolve_public_wasm_options(
   }
 }
 
+/// Shared by `--check-only --ns` and the deprecated `analyze check-public` alias.
+fn run_public_check(
+  options: &cli_args::CheckPublicCommand,
+  entries: &ProgramEntries,
+  snapshot: &snapshot::Snapshot,
+  project_namespaces: &HashSet<String>,
+  strict_types: bool,
+) -> Result<(), String> {
+  let emit_preflight_output = options.format == "human" || options.format == "text";
+  let strict_preflight = || run_check_only_with_output(entries, emit_preflight_output);
+  public_api_check::run(
+    options,
+    snapshot,
+    project_namespaces,
+    strict_types.then_some(&strict_preflight as &dyn Fn() -> Result<(), String>),
+  )
+}
+
 fn run_cli() -> Result<(), String> {
   // deep non-tail recursion should surface as a Calcit error, not a native stack overflow abort
   calcit::runner::arm_stack_guard(CLI_STACK_SIZE);
@@ -450,6 +493,10 @@ fn run_cli() -> Result<(), String> {
   if cli_args.version {
     println!("{}", cli_args::CALCIT_VERSION);
     return Ok(());
+  }
+
+  if let Some(hint) = cli_handlers::deprecated_command_hint(&cli_args) {
+    eprintln!("{hint}");
   }
 
   if let Some(level) = cli_args.tips_level.as_deref() {
@@ -483,8 +530,22 @@ fn run_cli() -> Result<(), String> {
       "`--check-only --incremental` does not support `--keep-going`; use the uncached structured diagnostic pass.".to_owned(),
     );
   }
-  if cli_args.format != "human" && !(cli_args.check_only && keep_going) {
-    return Err("Top-level `--format` is only available with `--check-only --keep-going`.".to_owned());
+  // `--check-only --ns` checks every definition of the selected public namespaces.
+  let public_check_scope = !cli_args.ns.is_empty();
+  if public_check_scope && (!cli_args.check_only || cli_args.subcommand.is_some()) {
+    return Err("Top-level `--ns` is only available with direct `--check-only`.".to_owned());
+  }
+  if (cli_args.deps || cli_args.summary_only) && !public_check_scope {
+    return Err("Top-level `--deps` and `--summary-only` require `--check-only --ns <ns>`.".to_owned());
+  }
+  if public_check_scope && (keep_going || cli_args.incremental) {
+    return Err(
+      "`--check-only --ns` checks the selected namespaces cold and reports every definition; drop `--keep-going`, `--all-defs`, and `--incremental`."
+        .to_owned(),
+    );
+  }
+  if cli_args.format != "human" && !(cli_args.check_only && (keep_going || public_check_scope)) {
+    return Err("Top-level `--format` is only available with `--check-only --keep-going` or `--check-only --ns`.".to_owned());
   }
 
   // Query/analyze commands may run preprocessing before the normal program-loading path.
@@ -507,10 +568,12 @@ fn run_cli() -> Result<(), String> {
     calcit::set_quiet_tool_output(true);
     cli_handlers::print_command_echo(&cli_args);
   }
-  if cli_args.check_only && keep_going {
+  if cli_args.check_only && (keep_going || public_check_scope) {
     cli_handlers::suppress_command_guidance();
     calcit::set_quiet_tool_output(true);
   }
+  // The echo above shows what the user typed; dispatch then uses the analyzer that owns the view.
+  let cli_args = cli_handlers::normalize_weak_types_view(cli_args)?;
 
   builtins::effects::init_effects_states();
 
@@ -909,7 +972,15 @@ fn run_cli() -> Result<(), String> {
 
   let use_configured_js_mode = should_emit_js(&cli_args.subcommand, configured_run_mode);
 
-  let task = if check_only {
+  let task = if check_only && public_check_scope {
+    let options = cli_args::CheckPublicCommand {
+      ns: cli_args.ns.clone(),
+      format: cli_args.format.clone(),
+      deps: cli_args.deps,
+      summary_only: cli_args.summary_only,
+    };
+    run_public_check(&options, &entries, &snapshot, &project_namespaces, cli_args.strict_types)
+  } else if check_only {
     if cli_args.keep_going || cli_args.all_defs {
       let all_defs_scope = cli_args
         .all_defs
@@ -958,16 +1029,7 @@ fn run_cli() -> Result<(), String> {
         &snapshot,
       ),
       AnalyzeSubcommand::CheckPublic(options) => {
-        let emit_preflight_output = options.format != "json";
-        let strict_preflight = || run_check_only_with_output(&entries, emit_preflight_output);
-        public_api_check::run(
-          options,
-          &snapshot,
-          &project_namespaces,
-          cli_args
-            .strict_types
-            .then_some(&strict_preflight as &dyn Fn() -> Result<(), String>),
-        )
+        run_public_check(options, &entries, &snapshot, &project_namespaces, cli_args.strict_types)
       }
       AnalyzeSubcommand::CheckTypes(check_types_options) => run_check_types(check_types_options, &snapshot, &cli_args.input, None),
       AnalyzeSubcommand::WeakTypes(weak_type_options) => run_weak_types(
@@ -3162,6 +3224,7 @@ mod tests {
       ns: Some("js-ffi.raw.ids".to_owned()),
       ns_prefix: None,
       only: Some("unsafe-coerce".to_owned()),
+      coverage_level: None,
       intent: None,
       format: "json".to_owned(),
       deps: false,
@@ -3362,6 +3425,7 @@ mod tests {
       ns: Some("app.main".to_owned()),
       ns_prefix: None,
       only: None,
+      coverage_level: None,
       intent: Some("unresolved".to_owned()),
       format: "json".to_owned(),
       deps: false,

@@ -4767,6 +4767,7 @@ fn handle_config(input_path: &str, opts: &QueryConfigCommand) -> Result<(), Stri
   let snapshot = load_main_snapshot(input_path)?;
 
   println!("# Project configuration\n");
+  println!("Package: `{}`\n", snapshot.package);
   let deps_path = deps_path_for_snapshot(input_path);
   println!("Version: managed in `deps.cirru` (use `caps version get {deps_path}`).\n");
   println!("## Snapshot entries\n");

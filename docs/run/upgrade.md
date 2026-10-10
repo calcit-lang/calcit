@@ -151,9 +151,9 @@ named entry 不继承 default 配置，逐个检查与运行。把 `test --list`
 ### 结构化输出
 
 显式请求结构化数据时使用 `--format edn`：Cirru EDN 保留 tag、symbol 等原生值语义，strict workflow manifest、`fix`、
-`query`、`--check-only --keep-going` 与 `analyze weak-types` / `analyze verify` 都提供它。`--format json` 是同一 envelope
-的兼容表示，只用于 JSON-only 工具。`calcit test`、`analyze quality`、`analyze check-public`、`analyze check-types` 与
-`analyze deprecated` 目前只提供 human 和 JSON；在这些命令上使用 JSON，不为格式差异另建入口。
+`query`、`--check-only --keep-going`、`--check-only --ns` 与 `analyze weak-types`（含 `--only coverage|dynamic-method|deprecated-call`
+视图）/ `analyze verify` 都提供它。`--format json` 是同一 envelope 的兼容表示，只用于 JSON-only 工具。`calcit test`
+与已弃用的 `analyze quality` 目前只提供 human 和 JSON；在这些命令上使用 JSON，不为格式差异另建入口。
 
 ### 历史迁移桥梁
 
@@ -552,6 +552,34 @@ Map 与 Set 同时不再实现 `Contains` trait。schema `:where` 中 `'T 'Conta
 
 `core-non-nil-predicate-v1` 随 `some?` 整条退役：0.29.0 的 CLI 用 `--rule` 指定它时会提示改用 0.28.x 的 CLI。`core-api-0.28-v1` preset 由 6 条规则减为 5 条，`core-api-0.29-v1` 由 7 条减为 6 条。`core-function-alias-v1` 继续迁移 `optionally`、`join` 与 `vals`；`core-collection-len-v1` 继续迁移 List、Map、Set 的 `.count`。升级顺序同上：先在 0.28.x 上预览、应用并运行项目测试，再升级 CLI。
 
+### 0.29.0 弃用、0.30.0 删除：合并后的 CLI 入口（#1566）
+
+下面的子命令在 0.29.0 仍可运行，stdout 与退出码不变，只在 stderr 多输出一行 `[Deprecated] ...` 迁移提示；计划在 0.30.0 删除。新入口复用同一实现，结构化输出保留原有 `command` 名与字段，因此读取 `analyze.check-types`、`analyze.check-public` 等 envelope 的脚本只需改命令行。
+
+| 已弃用 | 替代 | 说明 |
+| --- | --- | --- |
+| `analyze check-types [--only <levels>]` | `analyze weak-types --only coverage [--coverage-level <levels>]` | 其余选项不变 |
+| `analyze dynamic-methods` | `analyze weak-types --only dynamic-method` | 不接受 `--ns`/`--ns-prefix`，与原命令一致 |
+| `analyze deprecated` | `analyze weak-types --only deprecated-call` | 不接受 `--incremental`，与原命令一致 |
+| `analyze check-public --ns <ns> [--deps] [--summary-only] [--format …]` | `calcit <snapshot> --check-only --ns <ns> [--deps] [--summary-only] [--format edn\|json]` | 计数与报告相同，另外支持 EDN |
+| `analyze quality [--baseline …]` | `--check-only` 判断正确性，`analyze weak-types [--only coverage\|deprecated-call]` 定位债务 | 0.30.0 删除后不再读取 baseline；清零后从 CI 删除该命令与 baseline 文件 |
+| `query pkg` | `query config` | human 输出首行给出 `Package`；结构化输出见 `config show --format edn` 的 `:package` |
+| `query modules` | `config modules` | 默认 entry 的模块列表相同，标题改为 `Modules in entry 'default':` |
+| `tree batch-delete <target> --paths …` | `edit transaction`，每个路径一条 `tree delete`，按下标从大到小排列 | 删除顺序与原命令相同；事务整体成功或整体不写入 |
+| `config version` / `config set version` | `caps version get/set/bump` | 早已只输出迁移提示并失败，0.30.0 删除 |
+
+迁移命令示例：
+
+```bash
+calcit calcit.cirru analyze weak-types --only coverage --summary-only --format edn
+calcit calcit.cirru analyze weak-types --only deprecated-call --ns-prefix app. --format edn
+calcit --entry node calcit.cirru --check-only --ns app.lib --deps --summary-only --format edn
+calcit calcit.cirru config modules
+calcit calcit.cirru edit transaction --dry-run --format edn --code '[["tree","delete","app.main/f","--path","@3.2"],["tree","delete","app.main/f","--path","@3.1"]]'
+```
+
+升级时同步修改 CI workflow、`package.json` 脚本与 Agent 指南；在 0.29.x 上看到 stderr 的 `[Deprecated]` 行即说明还有旧入口未迁移。
+
 ### 仍可用的兼容名
 
 core 中带 `:deprecated` 标记的 28 个兼容名在 0.29.0 仍可调用，行为与 0.28 相同。新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余按首选写法逐处改写。
@@ -777,7 +805,7 @@ sort entries $ fn (a b)
 
 这是局部、显式的类型补充，不需要新增
 编译器特殊规则。`map-entries` 不会自动修改旧调用；升级时应在实际消费者项目中运行
-`analyze check-public`、对应测试及 JS 构建，确认业务排序和渲染结果。
+`--check-only --ns`、对应测试及 JS 构建，确认业务排序和渲染结果。
 
 ## 0.19 兼容清理与 CLI 入口收敛
 
@@ -889,7 +917,7 @@ Snapshot 文件迁移、依赖升级和类型修复建议分别提交，任何�
 - 注意 git fetch 检查最新历史, 避免基于老版本操作导致变更冲突
 - 依赖边界：运行/编译期需要的模块放在 `:dependencies`；只供当前项目测试、examples、文档检查和维护脚本使用的模块放在 `:dev-dependencies`
 - 结构化编辑优先使用 `calcit edit` / `calcit tree`；若直接改过 `calcit.cirru`，提交前执行一次 `calcit calcit.cirru edit format`
-- 静态质量基线：`check-types`、`weak-types`、公开 namespace examples 与 Markdown 示例
+- 静态质量基线：`weak-types`（含 `coverage` 视图）、公开 namespace examples 与 Markdown 示例
 
 ### 快照文件迁移说明
 
@@ -1382,13 +1410,13 @@ calcit calcit.cirru config set-type-slot --entry test :dispatch-op app.test-sche
 `:any` 只保留为 `:dynamic` 的兼容拼写；新 schema 不应继续引入。`edit format` 会输出 `W_LEGACY_ANY` / `W_DYNAMIC_TYPE_DEBT`，但不会猜测并自动改写类型关系。执行：
 
 ```bash
-calcit calcit.cirru analyze check-types --summary-only
-calcit calcit.cirru analyze check-types --deps --summary-only --format json
+calcit calcit.cirru analyze weak-types --only coverage --summary-only
+calcit calcit.cirru analyze weak-types --only coverage --deps --summary-only --format json
 calcit calcit.cirru analyze weak-types \
   --only schema-dynamic,unresolved-type-slot,code-dynamic,code-nil \
   --intent unresolved,declared-unit,declared-optional \
   --summary-only
-calcit calcit.cirru analyze deprecated --summary-only
+calcit calcit.cirru analyze weak-types --only deprecated-call --summary-only
 ```
 
 兼容函数的 `:deprecated` 标签与定义文档也可由 `query context` 查询：
@@ -1441,9 +1469,9 @@ calcit calcit.cirru fix --rule case-default-to-match-v1 --include-attached --for
 两条路径都必须审阅并收窄生成的 contract，并使用 `--deps` 检查实际解析的模块版本，不能用依赖仓库尚未发布的 main 代替。
 
 有命中时去掉 `--summary-only` 查看 definition、Snapshot path、detail、suggestion 和 deprecated
-目标文档。`check-types` 会把缺失或部分 schema（包括没有元素类型的 List/Map/Ref）列出来；
+目标文档。`--only coverage` 会把缺失或部分 schema（包括没有元素类型的 List/Map/Ref）列出来；
 `weak-types` 同时区分 unresolved dynamic、unbound type slot、明确 JS FFI 边界、Unit nil 和旧 Optional 兼容债务；
-`deprecated` 按调用位置指出已废弃 API。输入/输出共享类型时用 `:generics`，只约束能力时用 trait
+`deprecated-call` 视图按调用位置指出已废弃 API。输入/输出共享类型时用 `:generics`，只约束能力时用 trait
 `:where`，collection/ref 保留类型参数，有限异构值使用 enum。真正的 JS FFI 边界应显式标记
 `:features $ #{} :js-ffi`，并在进入 typed code 前 validate/convert。无返回值使用 `Unit`；业务缺失
 使用 `Option`，需要错误信息时使用 `Result`，不要让旧 `Optional<T>` 或裸 `nil` 无限保留。
@@ -1474,8 +1502,8 @@ strict mode 报告 `E_DYNAMIC_NOMINAL_ARGUMENT`，并指出参数位置和目标
 需要定位未能静态分派的调用时，可对每个 entry 运行只读动态方法报告：
 
 ```bash
-calcit calcit.cirru analyze dynamic-methods --summary-only --format json
-calcit calcit.cirru --entry test analyze dynamic-methods --format json
+calcit calcit.cirru analyze weak-types --only dynamic-method --summary-only --format json
+calcit calcit.cirru --entry test analyze weak-types --only dynamic-method --format json
 ```
 
 该报告只统计无法静态专门化的方法调用，不混入普通类型或 JS FFI warning；默认不统计依赖，
@@ -1485,10 +1513,10 @@ CI 应运行默认严格 `--check-only`，由编译器诊断决定类型正确�
 ### 3.6 存量项目的类型收紧策略
 
 先让默认严格 `--check-only`、definition `:tests`、目标后端行为测试通过；
-`check-types`、`weak-types`、`deprecated` 是定位报告，不按命中数充当类型正确性门禁。
+`weak-types` 及其 `coverage`、`deprecated-call` 视图是定位报告，不按命中数充当类型正确性门禁。
 确实动态的 JS FFI 边界应显式声明和收窄，不要通过忽略 warning 伪造通过。
 
-已有非零 `analyze quality` baseline 的旧项目可暂时在 CI 比较并逐步清零；新项目不再创建 baseline，
+已有非零 `analyze quality` baseline 的旧项目可在该命令于 0.30.0 删除前暂时在 CI 比较并逐步清零；新项目不再创建 baseline，
 清零后从 CI 移除该命令。旧格式、按 definition 的预算及 0.14.x 迁移命令见
 [历史版本迁移记录](upgrade-history.md#014x-质量-baseline-迁移)。
 
@@ -1516,7 +1544,7 @@ core/runtime 边界使用，后续会作为独立的 internal runtime-polymorphi
 
 ### 3.7 format 的边界
 
-`calcit edit format` 负责可解析性、canonical serialization 和已知旧结构迁移；它不是完整的语义 linter。告警写到 stderr 且不会阻止格式化。CI 需要在 format 后检查 `git diff`，并单独读取 `check-types --format json` 与 `weak-types --format edn`；前者目前仅支持 JSON 结构化输出，后者在 Calcit 工作流中优先使用 Cirru EDN。存量项目自己的质量阈值不得代替默认严格类型诊断。
+`calcit edit format` 负责可解析性、canonical serialization 和已知旧结构迁移；它不是完整的语义 linter。告警写到 stderr 且不会阻止格式化。CI 需要在 format 后检查 `git diff`，并单独读取 `weak-types --only coverage --format edn` 与 `weak-types --format edn`；对接 JSON-only 工具时再选 `--format json`。存量项目自己的质量阈值不得代替默认严格类型诊断。
 
 ### 3.8 Trait impl 从 tag method bag 迁移为 nominal impl
 
@@ -1608,7 +1636,7 @@ WASM 现在通过 `calcit wasm` 与 `calcit wasi` 提供公开 preview 命令，
 
 说明：若项目依赖 `packageManager: "yarn@4.12.0"`，优先先执行 Corepack 激活，再让 CI 触发 Yarn。不要让 `setup-node` 的 Yarn cache 或其他 Yarn 调用早于 `corepack enable` / `corepack prepare`，否则可能误用 runner 上的全局 Yarn 1。 `caps --ci` 参数保证在 CI 加载模块时使用 HTTPS 协议，避免 CI 环境下的 SSH key 问题。
 
-注意：`check-types`、`weak-types`、`deprecated` 仍是展示报告，不按命中数量失败。只有仍有非零
+注意：`weak-types` 及其 `coverage`、`deprecated-call` 视图仍是展示报告，不按命中数量失败。只有仍有非零
 legacy baseline 的项目才在 CI 保留 `analyze quality --baseline ...`；baseline 清零后删除该命令，
 不再把数量策略当作独立类型正确性判定。`--write-baseline` 仅允许在已存在的文件上降低预算，不能作为新项目初始化步骤。
 `test --require-match` 会避免 tag 或 scope 写错后零测试仍退出成功。项目没有 named `test` entry 或
@@ -1628,8 +1656,8 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 验收顺序与证据以页首 [当前升级闭环](#当前升级闭环) 第 4、8–11 步为准。下列检查补充该顺序中按项目情况才需要的部分：
 
 1. `caps tree`：确认根开发依赖存在，传递模块的开发依赖未进入图
-2. 需要定位未能静态分派的方法时，对相关 entry 运行只读 `analyze dynamic-methods --format json`
-3. 非零 legacy baseline 项目继续运行 `analyze quality --baseline ...`；清零后删除该项（`check-types`、dynamic/nil `weak-types`、`deprecated` 仍只作为定位报告）
+2. 需要定位未能静态分派的方法时，对相关 entry 运行只读 `analyze weak-types --only dynamic-method --format json`
+3. 非零 legacy baseline 项目继续运行 `analyze quality --baseline ...`；清零后删除该项（`coverage`、dynamic/nil `weak-types`、`deprecated-call` 仍只作为定位报告）
 4. 声明支持 watch 的 entry 另行验收 `-w`；普通运行默认 once
 5. `package.json` 中与编译/构建相关的脚本
 
@@ -1641,8 +1669,8 @@ definition-attached unit tests 时，应删除对应示例行并替换成项目�
 | Snapshot 规范化 | `calcit edit format` + `git diff` | 旧 configs/schema 拼写和规范化建议 | format 告警不阻断，diff 需人工审阅 |
 | 问题写法 | `calcit fix --preset surface-latest-v2 --format edn` | 多表达式 body 与单表达式位置的冗余 `do`、旧数据 API、具名 `%::` / `%{}` 构造与可应用 replacement | preview 不写入；Cirru EDN 展开 rule IDs；apply 前后均需 staged validation |
 | entry 预处理 | `calcit --entry ... --check-only` | 配置、缺失定义、参数/返回值、数据与 trait 类型错误 | 错误或 warning 均阻断 |
-| 动态分派 | `calcit analyze dynamic-methods --format json` | 动态 receiver 与无法专门化的方法；默认排除依赖和无关 FFI warning | 只读定位；`--deps` 可审计依赖，正确性由 entry 预处理判断 |
-| 静态债务 | `analyze weak-types --format edn`；`check-types/deprecated --format json` | 覆盖率、dynamic、nil/Optional、废弃调用 | 仅后两者暂未提供 EDN；报告本身不按命中数阻断，非零 legacy baseline 项目才继续比较 |
+| 动态分派 | `calcit analyze weak-types --only dynamic-method --format json` | 动态 receiver 与无法专门化的方法；默认排除依赖和无关 FFI warning | 只读定位；`--deps` 可审计依赖，正确性由 entry 预处理判断 |
+| 静态债务 | `analyze weak-types [--only coverage\|deprecated-call] --format edn` | 覆盖率、dynamic、nil/Optional、废弃调用 | 报告本身不按命中数阻断，非零 legacy baseline 项目才继续比较 |
 | 示例与测试 | `check-examples`、`docs check-md`、`calcit test --require-match` | API 示例、文档片段、definition-attached tests | 失败或未匹配测试时阻断 |
 | 行为与后端 | entry、Node/Vite、项目测试 | native/JS/FFI 的真实行为差异 | 由进程退出码阻断 |
 
