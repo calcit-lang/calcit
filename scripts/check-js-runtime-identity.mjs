@@ -362,11 +362,37 @@ try {
     /^Error: add-watch! failed: listener with key `runtime-unit-check` already existed$/,
     "duplicate registration must reject before replacing the original callback"
   );
+  // Host-created tags can share a value without sharing the interned object.
+  const equivalentWatchKey = new runtimeA.CalcitTag(watchKey.value);
+  assert.notEqual(equivalentWatchKey, watchKey);
+  assert.throws(
+    () => runtimeA.add_watch_$x_(effectRef, equivalentWatchKey, () => {}),
+    /^Error: add-watch! failed: listener with key `runtime-unit-check` already existed$/,
+    "same-value host tags must reject before inserting a second callback"
+  );
+  assert.equal(effectRef.listeners.size, 1, "rejection must leave exactly the original listener");
   assert.equal(effectRef.listeners.get(watchKey), watchCallback, "rejection must preserve callback identity");
   assert.deepEqual(watchCalls, [], "registration and rejection must not invoke the callback");
   assert.equal(runtimeA.reset_$x_(effectRef, 2), 2, "reset! must return the written value");
   assert.deepEqual(watchCalls, [[2, 1]], "reset! must still notify watchers");
-  assert.equal(runtimeA.remove_watch(effectRef, watchKey), undefined, "remove-watch must return &unit");
+  assert.throws(
+    () => runtimeA.remove_watch(effectRef, new runtimeA.CalcitTag("missing-watch-key")),
+    /^Error: remove-watch failed: listener with key `missing-watch-key` not found$/,
+    "a missing key must fail without removing the original listener"
+  );
+  assert.equal(effectRef.listeners.get(watchKey), watchCallback);
+  assert.equal(runtimeA.remove_watch(effectRef, equivalentWatchKey), undefined, "same-value removal must return &unit");
+  assert.equal(effectRef.listeners.size, 0, "same-value removal must remove the original listener");
+  assert.throws(
+    () => runtimeA.remove_watch(effectRef, watchKey),
+    /^Error: remove-watch failed: listener with key `runtime-unit-check` not found$/
+  );
+  runtimeA.reset_$x_(effectRef, 3);
+  assert.deepEqual(watchCalls, [[2, 1]], "a removed watcher must not run again");
+  assert.equal(runtimeA.add_watch_$x_(effectRef, equivalentWatchKey, watchCallback), undefined);
+  runtimeA.reset_$x_(effectRef, 4);
+  assert.deepEqual(watchCalls, [[2, 1], [4, 3]], "explicit removal must allow same-value re-registration");
+  assert.equal(runtimeA.remove_watch(effectRef, watchKey), undefined, "interned tags must remove host-created keys");
   const validatedEnum = new runtimeA.CalcitEnumDef(
     new runtimeA.CalcitStructValue(todoName, [todoField], [new runtimeA.CalcitSliceList([todoType])])
   );
