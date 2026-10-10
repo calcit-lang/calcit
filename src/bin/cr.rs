@@ -1038,6 +1038,11 @@ fn run_cli() -> Result<(), String> {
   #[cfg(not(target_arch = "wasm32"))]
   {
     let async_result = injection::exit_when_async_cleared(eval_once);
+    if task_result.is_err()
+      && let Err(error) = &async_result
+    {
+      eprintln!("[Error] async shutdown failed: {error}");
+    }
     task_result.and(async_result)
   }
   #[cfg(target_arch = "wasm32")]
