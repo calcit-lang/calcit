@@ -7589,7 +7589,6 @@ fn emit_nil_predicate(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Strin
   Ok(())
 }
 
-/// Emit a call to a host-imported function by name.
 /// `pow` through the host import, except the IEEE 754 cases hosts like JS `Math.pow`
 /// get wrong: `pow 1 y` is 1 for any y, and `pow -1 ±inf` is 1.
 fn emit_pow(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
@@ -7623,6 +7622,7 @@ fn emit_pow(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   Ok(())
 }
 
+/// Emit a call to a host-imported function by name.
 fn emit_host_call(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<(), String> {
   let import = core_host_import(name).ok_or_else(|| format!("unknown host import: {name}"))?;
   let expected_arity = import.params.len();
