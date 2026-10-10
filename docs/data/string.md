@@ -59,6 +59,19 @@ assert= |中文 $ |A😀中文 .slice ((|A😀中文 .find-index |中文) .unwra
 
 这修复了旧 native/WASM 返回 UTF-8 字节偏移、旧 JS 返回 UTF-16 单元偏移的不一致；不改变 `.includes?` 的子串存在判断或显式 `&str:utf8-byte-count`。普通 Calcit 搜索不提供 byte-offset 模式；需要协议偏移的调用者应在明确的编码边界自行计算，不再依赖旧缺陷。JS FFI 的孤立 surrogate 仍按既有宿主行为处理，不替换为 `�`，也不扩大跨 backend 的合法文本保证范围。
 
+## 填充
+
+`&str:pad-left` / `&str:pad-right`（及 String 的 `.pad-left` / `.pad-right` 方法）的目标长度按 Unicode 标量计数，与 `count` 一致：原字符串已有不少于目标长度的标量时原样返回，否则循环取 pattern 的完整标量补足差额，不会拆开 emoji 或多字节字符。目标长度向下取整；NaN、0 与负数不填充，空 pattern 也原样返回；超过 `536870888` 的长度（含 Infinity）在 native/JS 报错，WASM trap。
+
+```cirru
+assert= |abc中文 $ &str:pad-left |中文 5 |abc
+assert= |a😀😀 $ &str:pad-right |a 3 |😀
+assert= |中文 $ &str:pad-left |中文 8 |
+assert= |a $ &str:pad-right |a -3 |-
+```
+
+这修复了旧 native 按 UTF-8 字节、JS 按 UTF-16 单元、WASM 按字节截断（可能输出不完整 UTF-8）计长度的不一致，以及旧 native 对空 pattern 报错、WASM 对 NaN 与负长度 trap 的差异。填充不做字素簇或显示宽度计算；需要按终端列宽对齐时由调用者自行处理。
+
 ## Tag
 
 Calcit also provides the Tag type, written with a leading `:` such as `:demo`. Tags are interned immutable identifiers with consistent Calcit semantics across the Rust interpreter and JavaScript output. They are commonly used for struct fields, enum variants, map keys, and protocol labels; ordinary user-facing text should remain a String.

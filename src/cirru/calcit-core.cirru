@@ -2492,7 +2492,7 @@
               assert= "|文" $ &str:nth "|中文" 1
             :tags $ #{} :core :unit
         '&str:pad-left $ %{} 'CodeEntry
-          :doc "|internal function for left padding string\nSyntax: (&str:pad-left s length pad-char)\nParams: s (string), length (number), pad-char (string)\nReturns: string\nPads string on left to specified length with pad character"
+          :doc "|internal function for left padding string\nSyntax: (&str:pad-left s length pad-char)\nParams: s (string), length (number), pad-char (string)\nReturns: string\nPads string on left to the given length in Unicode scalars (like count) by repeating the pad string; NaN, negative lengths and an empty pad string return s unchanged"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
@@ -2514,18 +2514,57 @@
                 assert= |a $ &str:pad-left |a (&/ 0 0) |-
                 assert= |a $ &str:pad-left |a -3 |-
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |counts-unicode-scalars)
+              :code $ quote $ do
+                assert= |abc中文 $ &str:pad-left |中文 5 |abc
+                assert= |😀😀a $ &str:pad-left |a 3 |😀
+                assert= |中😀中a $ &str:pad-left |a 4 |中😀
+                assert= |😀 $ &str:pad-left |😀 1 |-
+                assert= 4 $ count $ &str:pad-left |😀 4.9 |é
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |pads-nothing-for-empty-pattern-or-length)
+              :code $ quote $ do
+                assert= |中文 $ &str:pad-left |中文 8 |
+                assert= |a $ &str:pad-left |a (&/ 0 0) |-
+                assert= |a $ &str:pad-left |a -3 |-
+                assert= | $ &str:pad-left | 0 |-
+              :tags $ #{} :core :unit
         '&str:pad-right $ %{} 'CodeEntry
-          :doc "|internal function for right padding string\nSyntax: (&str:pad-right s length pad-char)\nParams: s (string), length (number), pad-char (string)\nReturns: string\nPads string on right to specified length with pad character"
+          :doc "|internal function for right padding string\nSyntax: (&str:pad-right s length pad-char)\nParams: s (string), length (number), pad-char (string)\nReturns: string\nPads string on right to the given length in Unicode scalars (like count) by repeating the pad string; NaN, negative lengths and an empty pad string return s unchanged"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String 'Number 'String
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |pads-from-right)
-            :code $ quote $ do
-              assert= |a00000 $ &str:pad-right |a 6 |0
-              assert= |a12312 $ &str:pad-right |a 6 |123
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |pads-from-right)
+              :code $ quote $ do
+                assert= |a00000 $ &str:pad-right |a 6 |0
+                assert= |a12312 $ &str:pad-right |a 6 |123
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |counts-unicode-scalars)
+              :code $ quote $ do
+                assert= |中文abc $ &str:pad-right |中文 5 |abc
+                assert= |a😀😀 $ &str:pad-right |a 3 |😀
+                assert= |a中😀中 $ &str:pad-right |a 4 |中😀
+                assert= |😀 $ &str:pad-right |😀 1 |-
+                assert= 4 $ count $ &str:pad-right |😀 4.9 |é
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |pads-nothing-for-empty-pattern-or-length)
+              :code $ quote $ do
+                assert= |中文 $ &str:pad-right |中文 8 |
+                assert= |a $ &str:pad-right |a (&/ 0 0) |-
+                assert= |a $ &str:pad-right |a -3 |-
+                assert= | $ &str:pad-right | 0 |-
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |bounds-the-target-length)
+              :code $ quote $ do
+                assert= :failed $ try
+                  do
+                    &str:pad-right |a (&/ 1 0) |-
+                    , :returned
+                  fn (_error) :failed
+              :tags $ #{} :core :unit
         '&str:replace $ %{} 'CodeEntry
           :doc "|internal function for string replacement\nSyntax: (&str:replace s pattern replacement)\nParams: s (string), pattern (string), replacement (string)\nReturns: string\nReplaces all occurrences of pattern with replacement"
           :code $ quote &runtime-implementation

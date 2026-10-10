@@ -589,6 +589,12 @@ calcit calcit.cirru fix --rule core-non-nil-predicate-v1 --format edn
 
 正常源码无需改写；请移除应用中为旧偏移错误添加的编码补偿，并检查把搜索结果交给 JS `slice` 或协议 byte offset 的 FFI 边界。此类补偿含业务语义，不提供全局自动 fix；不能把返回值直接当作宿主编码单位。需要 UTF-8 长度时继续显式使用 `&str:utf8-byte-count`，不要用 `.len` 代替。调用形态、组合字符与跨目标范围见 [String 搜索契约](../data/string.md#子串搜索索引)。
 
+## 字符串填充长度单位修复
+
+`&str:pad-left` / `&str:pad-right` 现在按 Unicode 标量计长度，与 `count` 一致。此前 native 按 UTF-8 字节比较原串长度，JS 按 UTF-16 单元，WASM 按字节截断 pattern；例如 `&str:pad-left |中文 5 |abc` 在 native 返回 `中文`、JS 返回 `abc中文`，修复后统一为 `abc中文`。空 pattern 现在原样返回（此前 native 报错），NaN 与负长度不填充（此前 WASM trap）。ASCII 输入的结果不变。
+
+正常源码无需改写；为旧字节或 UTF-16 长度添加的补偿应删除。填充不计算显示宽度，需要按列宽对齐时请自行处理。规则见 [String 填充](../data/string.md#填充)。
+
 ## 开放值进入具体参数
 
 严格模式下，显式开放的值进入具体参数前需要证明。显式开放的值指由 `hint-fn` 或 schema 声明为
