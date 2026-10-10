@@ -9179,7 +9179,7 @@ fn core_function_alias_rule_renames_resolved_legacy_functions_and_is_idempotent(
         "--input-format",
         "cirru",
         "--code",
-        "quote $ defn legacy-function-aliases ()\n  assert= (#{} 1 2) $ vals $ {} (:a 1) (:b 2)\n  assert= ([] |a |, |b) $ join ([] |a |b) |,\n  assert= (%some 1) $ optionally 1\n  assert= ([] ([] 1 2) ([] 3)) $ section-by ([] 1 2 3) 2\n  , true",
+        "quote $ defn legacy-function-aliases ()\n  assert= (#{} 1 2) $ vals $ {} (:a 1) (:b 2)\n  assert= ([] |a |, |b) $ join ([] |a |b) |,\n  assert= (%some 1) $ optionally 1\n  assert= ([] ([] 1 2) ([] 3)) $ section-by ([] 1 2 3) 2\n  assert= 2 $ count $ merge-dynamic (assert-type ({} (:a 1)) (:: 'Map 'Tag 'Dynamic)) (assert-type ({} (:b |x)) (:: 'Map 'Tag 'Dynamic))\n  assert= 3 $ count $ concat-dynamic (assert-type ([] 1 2) (:: 'List 'Dynamic)) (assert-type ([] |x) (:: 'List 'Dynamic))\n  , true",
       ],
     ),
     "install legacy function alias calls",
@@ -9232,13 +9232,13 @@ fn core_function_alias_rule_renames_resolved_legacy_functions_and_is_idempotent(
   assert_success(&preview, "function alias preview");
   let report = parse_stdout(&preview);
   let suggestions = report["data"]["suggestions"].as_array().expect("suggestions should be an array");
-  assert_eq!(suggestions.len(), 4, "{report}");
+  assert_eq!(suggestions.len(), 6, "{report}");
   assert!(
     suggestions
       .iter()
       .all(|suggestion| { suggestion["rule_id"] == "core-function-alias-v1" && suggestion["applicability"] == "machine-applicable" })
   );
-  for legacy in ["vals", "join", "optionally", "section-by"] {
+  for legacy in ["vals", "join", "optionally", "section-by", "merge-dynamic", "concat-dynamic"] {
     let expected = format!("calcit.core/{legacy}");
     assert!(
       suggestions
@@ -9273,6 +9273,8 @@ fn core_function_alias_rule_renames_resolved_legacy_functions_and_is_idempotent(
     "calcit.core/intersperse",
     "calcit.core/nil->option",
     "calcit.core/chunks",
+    "calcit.core/merge",
+    "calcit.core/concat",
   ] {
     assert!(updated.contains(preferred), "{preferred} missing after migration");
   }

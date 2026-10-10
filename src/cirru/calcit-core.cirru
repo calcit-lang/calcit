@@ -3659,6 +3659,12 @@
             :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
           :tests $ []
+            %{} 'TestEntry (:name |bool-operands-infer-bool)
+              :code $ quote $ let
+                  both $ and (&> 2 1) (&< 1 2) (&= 1 1)
+                assert-type both 'Bool
+                assert= true both
+              :tags $ #{} :core :types :unit
             %{} 'TestEntry (:name |chains-truthy-and-falls-to-false)
               :code $ quote $ do
                 assert= 1 $ and 1
@@ -4435,11 +4441,8 @@
               concat ([] 1 2) ([] 4 5) ([] 7 8)
             :tags $ #{} :core :unit
         'concat-dynamic $ %{} 'CodeEntry
-          :doc "|Concatenates open List<Dynamic> values without claiming a homogeneous member relation; keeps an explicit open-container boundary."
-          :code $ quote $ defn concat-dynamic (& args)
-            list-match args
-              () $ []
-              (a0 as) (&list:concat a0 & as)
+          :doc "|Deprecated: use concat, which accepts List<Dynamic> values the same way. Concatenates open List<Dynamic> values without claiming a homogeneous member relation; keeps an explicit open-container boundary."
+          :code $ quote $ defn concat-dynamic (& args) (concat & args)
           :examples $ [] $ quote
             assert= 3 $ count $ concat-dynamic
               assert-type ([] 1 2) (:: 'List 'Dynamic)
@@ -4448,6 +4451,7 @@
             :args $ []
             :rest $ :: 'List 'Dynamic
             :return $ :: 'List 'Dynamic
+          :tags $ #{} :deprecated
           :tests $ [] $ %{} 'TestEntry (:name |joins-open-lists)
             :code $ quote $ assert= 3
               count $ concat-dynamic
@@ -6011,7 +6015,7 @@
                 fn (x) x
             :tags $ #{} :core :unit
         'either $ %{} 'CodeEntry
-          :doc "|Returns the first non-nil value among its arguments\nBehaves like a nil-coalescing macro: only nil triggers evaluation of subsequent branches, so false is preserved as a value."
+          :doc "|Returns the first non-nil value among its arguments\nBehaves like a nil-coalescing macro: only nil triggers evaluation of subsequent branches, so false is preserved as a value. For Option values use .unwrap-or or match; either serves nil-based data until the nil migration."
           :code $ quote $ defmacro either (& xs)
             if (&list:empty? xs) (raise "|either expects at least 1 expression")
             &let
@@ -8541,7 +8545,7 @@
               :code $ quote $ assert= (#{} :a :b)
                 keys $ &{} :a 1 :b 2
               :tags $ #{} :core :types :unit
-        'keys-non-nil $ %{} 'CodeEntry (:doc "|Get keys from a map that have non-nil values")
+        'keys-non-nil $ %{} 'CodeEntry (:doc "|Return the keys whose values are not nil, treating nil as absent. Prefer Option values in new code; this helper serves nil-based data until the nil migration.")
           :code $ quote $ defn keys-non-nil (x)
             &map:keys $ &map:filter-kv x $ defn %keys-non-nil (_k v)
               hint-fn $ {}
@@ -9292,8 +9296,8 @@
                   ({}) .merge $ {}
               :tags $ #{} :core :unit
         'merge-dynamic $ %{} 'CodeEntry
-          :doc "|Combines open Map<K,Dynamic> values left-to-right with later maps overwriting earlier keys, without claiming a homogeneous value relation."
-          :code $ quote $ defn merge-dynamic (x0 & xs) (reduce xs x0 &merge)
+          :doc "|Deprecated: use merge, which accepts Map<K,Dynamic> values the same way. Combines maps left-to-right with later maps overwriting earlier keys."
+          :code $ quote $ defn merge-dynamic (x0 & xs) (merge x0 & xs)
           :examples $ [] $ quote
             assert= 2 $ count $ merge-dynamic
               assert-type
@@ -9307,6 +9311,7 @@
             :generics $ [] 'K
             :rest $ :: 'Map 'K 'Dynamic
             :return $ :: 'Map 'K 'Dynamic
+          :tags $ #{} :deprecated
           :tests $ []
             %{} 'TestEntry (:name |combines-open-maps)
               :code $ quote $ assert= 2
@@ -9329,7 +9334,7 @@
                 count $ merge-dynamic ({})
                   {} $ :a 1
               :tags $ #{} :core :unit
-        'merge-non-nil $ %{} 'CodeEntry (:doc |)
+        'merge-non-nil $ %{} 'CodeEntry (:doc "|Merge maps left-to-right like merge, but a nil value in a later map keeps the earlier value instead of overwriting it, so nil means absent. Prefer Option values in new code; this helper serves nil-based data until the nil migration.")
           :code $ quote $ defn merge-non-nil (x0 & xs) (reduce xs x0 &merge-non-nil)
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -10019,6 +10024,15 @@
             :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
           :tests $ []
+            %{} 'TestEntry (:name |bool-operands-infer-bool)
+              :code $ quote $ let
+                  either-side $ or (&> 1 2) (&< 1 2)
+                  fallback $ or nil 2
+                assert-type either-side 'Bool
+                assert= true either-side
+                assert-type fallback 'Number
+                assert= 2 fallback
+              :tags $ #{} :core :types :unit
             %{} 'TestEntry (:name |skips-unit-and-returns-next-truthy-value)
               :code $ quote $ assert= |next (or &unit |next)
               :tags $ #{} :core :unit
@@ -10308,7 +10322,7 @@
                   do (range 0 3 0) :returned
                   fn (_error) :failed
               :tags $ #{} :core :unit
-        'range-bothway $ %{} 'CodeEntry (:doc |)
+        'range-bothway $ %{} 'CodeEntry (:doc "|Deprecated: write the range explicitly, e.g. (range (inc (negate n)) n) for (range-bothway n).")
           :code $ quote $ defn range-bothway (x ? y)
             if (nil? y)
               range
@@ -10321,6 +10335,7 @@
           :schema $ :: 'Fn $ {}
             :args $ [] 'Number 'Number
             :return $ :: 'List 'Number
+          :tags $ #{} :deprecated
           :tests $ [] $ %{} 'TestEntry (:name |creates-symmetric-and-offset-ranges)
             :code $ quote $ do
               assert= ([] -2 -1 0 1 2) (range-bothway 3)
@@ -10877,13 +10892,14 @@
                   slice ([] 1 2 3) 1 2
                 assert= |bc $ slice |abc 1
               :tags $ #{} :core :unit
-        'some-in? $ %{} 'CodeEntry (:doc |)
+        'some-in? $ %{} 'CodeEntry (:doc "|Deprecated: use (option:some? (get-in x path)); contains-in? checks that the path exists instead.")
           :code $ quote $ defn some-in? (x path)
             option:some? $ get-in x path
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Dynamic $ :: 'List 'K
             :generics $ [] 'K
+          :tags $ #{} :deprecated
         'sort $ %{} 'CodeEntry
           :doc "|internal function for sorting lists\nSyntax: (sort list) or (sort list comparator)\nParams: list (list), comparator (function, optional)\nReturns: list\nReturns sorted list using natural order or custom comparator"
           :code $ quote &runtime-implementation

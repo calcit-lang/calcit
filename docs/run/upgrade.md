@@ -478,7 +478,7 @@ Map 与 Set 同时不再实现 `Contains` trait。schema `:where` 中 `'T 'Conta
 
 ### 仍可用的兼容名
 
-core 中带 `:deprecated` 标记的 22 个兼容名在 0.29.0 仍可调用，行为与 0.28 相同。新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余按首选写法逐处改写。
+core 中带 `:deprecated` 标记的 26 个兼容名在 0.29.0 仍可调用，行为与 0.28 相同。新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余按首选写法逐处改写。
 
 | 兼容名 | 首选写法 | 迁移 |
 |---|---|---|
@@ -487,11 +487,15 @@ core 中带 `:deprecated` 标记的 22 个兼容名在 0.29.0 仍可调用，行
 | `join` | `intersperse` | 同上 |
 | `vals` | `distinct-values` | 同上 |
 | `section-by` | `chunks`（按固定长度切段，语义与 Rust `chunks(n)` 一致） | 同上 |
+| `merge-dynamic` | `merge`，泛型值类型绑定为 `Dynamic` | 同上 |
+| `concat-dynamic` | `concat`，泛型元素类型绑定为 `Dynamic` | 同上 |
 | `turn-string` | `to-string` | 参数已证明为标量时用 `core-identity-conversion-v1`，其余人工改写 |
 | `turn-str` | `to-string` | 人工改写 |
 | `remove-watch` | `remove-watch!` | 人工改写 |
 | `case-default` | `match`，默认值写成末尾 `_` 分支 | `case-default-to-match-v1`（字面量模式） |
 | `foldl-shortcut` | `fold-while`，reducer 返回 `ControlFlow :continue acc` 或 `ControlFlow :break value`，从未 break 时返回累积值 | 人工改写：`(:: false acc)` 改为 `ControlFlow :continue acc`，`(:: true v)` 改为 `ControlFlow :break v`；旧写法在从未 break 时返回第三个参数 `default`，需要时在调用处判断后显式给出 |
+| `some-in?` | `option:some? $ get-in x path`；只需判断路径是否存在时用 `contains-in?`（两者对值为 `nil` 的路径结果不同） | 人工改写 |
+| `range-bothway` | 显式写 `range`：`range-bothway n` 写成 `range (inc (negate n)) n`，`range-bothway a b` 写成 `range (inc (- (+ a a) b)) b` | 人工改写 |
 | `let{}` | `let` 逐个绑定 `&map:get m :key`；struct 值用 `.-field` | 人工改写（生态中 2 处） |
 | `let-destruct` | symbol 模式写 `let`，`([] ...)` 模式写 `let[]` | 人工改写（生态中未见调用） |
 | `option:let` | 嵌套 `.and-then`：`option:let ((a x) (b (f a))) body` 写成 `x .and-then $ fn (a) $ (f a) .and-then $ fn (b) body` | 人工改写（生态中 1 处） |
@@ -1341,8 +1345,9 @@ Snapshot 加载的 legacy runtime `Fn` / whole-`Dynamic` macro 会更早在 load
 `E_ERASED_GENERIC_RELATION`。例如 `Fn<T>(T) -> T`、同类型比较或参数化容器转换都依赖调用点保留
 `T` 的关系；把未知值直接传入会让返回值或其他参数无法再被静态关联。应先 narrow/validate 成具体
 类型，再调用泛型 API。确实开放的操作应收拢到一个小型 adapter，并让 adapter 的结构化契约明确
-不承诺该泛型关系；core 已提供公开的开放容器入口：`Map<K,Dynamic>` 用 `merge-dynamic`，
-`List<Dynamic>` 用 `concat-dynamic`，不要再在业务代码里直接使用 `&merge` / `&list:concat`。
+不承诺该泛型关系；开放容器直接用通用入口：`Map<K,Dynamic>` 用 `merge`，`List<Dynamic>` 用 `concat`，
+泛型参数绑定为 `Dynamic` 即可，不要再在业务代码里直接使用 `&merge` / `&list:concat`。旧的
+`merge-dynamic` / `concat-dynamic` 已弃用，由 `core-function-alias-v1` 迁移。
 非 strict 模式保持原有兼容行为，便于渐进迁移。
 
 当开放 `Dynamic`（或同形容器中的 `Dynamic` 成员）进入包含 Struct / Enum 的封闭参数契约时，
