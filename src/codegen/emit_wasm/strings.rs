@@ -660,15 +660,35 @@ pub(super) fn emit_format_to_lisp(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
 }
 
 /// `&list:distinct xs` — return new list with duplicate elements removed (O(n²)).
+/// Longest padded string, matching the native and JS limit (the V8 string length limit).
+const MAX_PADDED_LEN: f64 = 536_870_888.0;
+
+/// Target scalar count of a pad call as an i32 local: traps past `MAX_PADDED_LEN` (native and
+/// JS raise), floors positive lengths, and turns NaN and negative lengths into 0 (no padding).
+fn emit_str_pad_target(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<u32, String> {
+  let value = ctx.alloc_local();
+  emit_expr(ctx, expr)?;
+  ctx.emit(Instruction::LocalTee(value));
+  ctx.emit(f64_const(MAX_PADDED_LEN));
+  ctx.emit(Instruction::F64Gt);
+  ctx.emit(Instruction::If(BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  let size = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::I32TruncSatF64U);
+  ctx.emit(Instruction::LocalSet(size));
+  Ok(size)
+}
+
 /// `&str:pad-left str target-size pattern` — pads str on the left.
 pub(super) fn emit_str_pad_left(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(3, args, "&str:pad-left")?;
   let ptr_s = emit_ptr_to_i32(ctx, &args[0])?;
+  let size = emit_str_pad_target(ctx, &args[1])?;
   let ptr_p = emit_ptr_to_i32(ctx, &args[2])?;
   ctx.emit(Instruction::LocalGet(ptr_s));
-  // target_size as i32
-  emit_expr(ctx, &args[1])?;
-  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalGet(size));
   ctx.emit(Instruction::LocalGet(ptr_p));
   ctx.call_rt("__rt_str_pad_left");
   Ok(())
@@ -678,11 +698,10 @@ pub(super) fn emit_str_pad_left(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
 pub(super) fn emit_str_pad_right(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(3, args, "&str:pad-right")?;
   let ptr_s = emit_ptr_to_i32(ctx, &args[0])?;
+  let size = emit_str_pad_target(ctx, &args[1])?;
   let ptr_p = emit_ptr_to_i32(ctx, &args[2])?;
   ctx.emit(Instruction::LocalGet(ptr_s));
-  // target_size as i32
-  emit_expr(ctx, &args[1])?;
-  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalGet(size));
   ctx.emit(Instruction::LocalGet(ptr_p));
   ctx.call_rt("__rt_str_pad_right");
   Ok(())
@@ -977,327 +996,214 @@ fn build_tagged_bytes_new_fn(type_tag_id: i32, export_name: Option<&str>, cabi_r
 }
 
 /// Build `__rt_str_pad_left(str_ptr: i32, target_size: i32, pattern_ptr: i32) → f64`.
-/// Pads `str` on the left with repeating `pattern` bytes until `target_size` total bytes.
-/// If `str` is already >= `target_size`, returns the original pointer unchanged.
+/// Pads `str` on the left with the repeating `pattern` until it holds `target_size` Unicode scalars.
 pub(super) fn build_str_pad_left_fn(str_tag_id: i32) -> CompiledFn {
-  // params: 0=str_ptr(i32), 1=target_size(i32), 2=pattern_ptr(i32)
-  // locals: 3=str_len, 4=pad_size, 5=pat_len, 6=padded, 7=payload,
-  //         8=new_ptr, 9=dst_base, 10=i, 11=j, 12=byte_val  (all i32)
-  let instructions = vec![
-    // str_len = i32(f64.load str_ptr+0)
-    Instruction::LocalGet(0),
-    Instruction::F64Load(mem_arg_f64(0)),
-    Instruction::I32TruncF64U,
-    Instruction::LocalSet(3),
-    // Block $outer (result f64) — for early return
-    Instruction::Block(wasm_encoder::BlockType::Result(ValType::F64)),
-    // if str_len >= target_size: return f64(str_ptr)
-    Instruction::LocalGet(3),
-    Instruction::LocalGet(1),
-    Instruction::I32GeU,
-    Instruction::If(wasm_encoder::BlockType::Empty),
-    Instruction::LocalGet(0),
-    Instruction::F64ConvertI32U,
-    Instruction::Br(1), // 0=If, 1=$outer
-    Instruction::End,
-    // pad_size = target_size - str_len
-    Instruction::LocalGet(1),
-    Instruction::LocalGet(3),
-    Instruction::I32Sub,
-    Instruction::LocalSet(4),
-    // pat_len = i32(f64.load pattern_ptr+0)
-    Instruction::LocalGet(2),
-    Instruction::F64Load(mem_arg_f64(0)),
-    Instruction::I32TruncF64U,
-    Instruction::LocalSet(5),
-    // if pat_len == 0: return original (guard)
-    Instruction::LocalGet(5),
-    Instruction::I32Eqz,
-    Instruction::If(wasm_encoder::BlockType::Empty),
-    Instruction::LocalGet(0),
-    Instruction::F64ConvertI32U,
-    Instruction::Br(1),
-    Instruction::End,
-    // padded = (target_size + 7) & -8
-    Instruction::LocalGet(1),
-    Instruction::I32Const(7),
-    Instruction::I32Add,
-    Instruction::I32Const(-8i32),
-    Instruction::I32And,
-    Instruction::LocalSet(6),
-    // payload = 8 + padded
-    Instruction::I32Const(8),
-    Instruction::LocalGet(6),
-    Instruction::I32Add,
-    Instruction::LocalSet(7),
-    // Write HEAP_MAGIC at heap_ptr
-    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
-    Instruction::I32Const(HEAP_MAGIC),
-    Instruction::I32Store(mem_arg_i32(0)),
-    // Write str_tag_id at heap_ptr+4
-    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
-    Instruction::I32Const(str_tag_id),
-    Instruction::I32Store(mem_arg_i32(4)),
-    // new_ptr = heap_ptr + 8; advance heap by 8 + payload
-    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
-    Instruction::I32Const(8),
-    Instruction::I32Add,
-    Instruction::LocalSet(8), // new_ptr
-    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
-    Instruction::I32Const(8),
-    Instruction::LocalGet(7),
-    Instruction::I32Add,
-    Instruction::I32Add,
-    Instruction::GlobalSet(HEAP_PTR_GLOBAL),
-    // Write byte_len (target_size as f64) at new_ptr+0
-    Instruction::LocalGet(8),
-    Instruction::LocalGet(1),
-    Instruction::F64ConvertI32U,
-    Instruction::F64Store(mem_arg_f64(0)),
-    // dst_base = new_ptr + 8
-    Instruction::LocalGet(8),
-    Instruction::I32Const(8),
-    Instruction::I32Add,
-    Instruction::LocalSet(9),
-    // i = 0, j = 0
-    Instruction::I32Const(0),
-    Instruction::LocalSet(10),
-    Instruction::I32Const(0),
-    Instruction::LocalSet(11),
-    // Fill pad_size bytes with pattern (cycling)
-    Instruction::Block(wasm_encoder::BlockType::Empty), // $pad_break
-    Instruction::Loop(wasm_encoder::BlockType::Empty),  // $pad_loop
-    // if i >= pad_size: break
-    Instruction::LocalGet(10),
-    Instruction::LocalGet(4),
-    Instruction::I32GeU,
-    Instruction::BrIf(1),
-    // if j >= pat_len: j = 0
-    Instruction::LocalGet(11),
-    Instruction::LocalGet(5),
-    Instruction::I32GeU,
-    Instruction::If(wasm_encoder::BlockType::Empty),
-    Instruction::I32Const(0),
-    Instruction::LocalSet(11),
-    Instruction::End,
-    // byte_val = (pattern_ptr+8)[j]
-    Instruction::LocalGet(2),
-    Instruction::I32Const(8),
-    Instruction::I32Add,
-    Instruction::LocalGet(11),
-    Instruction::I32Add,
-    Instruction::I32Load8U(mem_arg_byte(0)),
-    Instruction::LocalSet(12),
-    // dst_base[i] = byte_val
-    Instruction::LocalGet(9),
-    Instruction::LocalGet(10),
-    Instruction::I32Add,
-    Instruction::LocalGet(12),
-    Instruction::I32Store8(mem_arg_byte(0)),
-    // i++, j++
-    Instruction::LocalGet(10),
-    Instruction::I32Const(1),
-    Instruction::I32Add,
-    Instruction::LocalSet(10),
-    Instruction::LocalGet(11),
-    Instruction::I32Const(1),
-    Instruction::I32Add,
-    Instruction::LocalSet(11),
-    Instruction::Br(0), // continue $pad_loop
-    Instruction::End,   // $pad_loop
-    Instruction::End,   // $pad_break
-    // Copy original string bytes after the pad region
-    // memory.copy(dst = dst_base + pad_size, src = str_ptr+8, n = str_len)
-    Instruction::LocalGet(9),
-    Instruction::LocalGet(4),
-    Instruction::I32Add, // dst = dst_base + pad_size
-    Instruction::LocalGet(0),
-    Instruction::I32Const(8),
-    Instruction::I32Add,      // src = str_ptr + 8
-    Instruction::LocalGet(3), // str_len
-    Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
-    // return f64(new_ptr)
-    Instruction::LocalGet(8),
-    Instruction::F64ConvertI32U,
-    Instruction::End, // end $outer
-  ];
-  CompiledFn {
-    export_name: None,
-    params: vec![ValType::I32, ValType::I32, ValType::I32],
-    results: vec![ValType::F64],
-    locals: vec![
-      ValType::I32, // str_len (3)
-      ValType::I32, // pad_size (4)
-      ValType::I32, // pat_len (5)
-      ValType::I32, // padded (6)
-      ValType::I32, // payload (7)
-      ValType::I32, // new_ptr (8)
-      ValType::I32, // dst_base (9)
-      ValType::I32, // i (10)
-      ValType::I32, // j (11)
-      ValType::I32, // byte_val (12)
-    ],
-    instructions,
-  }
+  build_str_pad_fn(str_tag_id, true)
 }
 
 /// Build `__rt_str_pad_right(str_ptr: i32, target_size: i32, pattern_ptr: i32) → f64`.
-/// Pads `str` on the right with repeating `pattern` bytes until `target_size` total bytes.
+/// Pads `str` on the right with the repeating `pattern` until it holds `target_size` Unicode scalars.
 pub(super) fn build_str_pad_right_fn(str_tag_id: i32) -> CompiledFn {
-  // params: 0=str_ptr(i32), 1=target_size(i32), 2=pattern_ptr(i32)
-  // Same locals layout as pad_left.
-  let instructions = vec![
+  build_str_pad_fn(str_tag_id, false)
+}
+
+/// Shared body of the pad runtimes. Lengths count Unicode scalars like `&str:count`: a byte
+/// starts a scalar unless it is a UTF-8 continuation byte (`10xxxxxx`), so whole scalars of the
+/// pattern are copied and the result stays valid UTF-8. Returns `str` unchanged when it already
+/// holds `target_size` scalars or the pattern is empty. The padding is written straight past the
+/// heap pointer, then the header records the final byte length and the heap pointer advances.
+fn build_str_pad_fn(str_tag_id: i32, left: bool) -> CompiledFn {
+  // params: 0=str_ptr, 1=target_size (scalars), 2=pattern_ptr
+  // locals: 3=str_len (bytes), 4=str_chars, 5=pat_len (bytes), 6=new_ptr, 7=pad_dst,
+  //         8=i (pad bytes written), 9=j (pattern byte index), 10=k (pad scalars), 11=byte,
+  //         12=total_len (all i32)
+  let is_lead_byte = |local: u32| {
+    [
+      Instruction::LocalGet(local),
+      Instruction::I32Const(0xC0),
+      Instruction::I32And,
+      Instruction::I32Const(0x80),
+      Instruction::I32Ne,
+    ]
+  };
+  let mut instructions = vec![
     // str_len = i32(f64.load str_ptr+0)
     Instruction::LocalGet(0),
     Instruction::F64Load(mem_arg_f64(0)),
     Instruction::I32TruncF64U,
     Instruction::LocalSet(3),
-    // Block $outer (result f64)
-    Instruction::Block(wasm_encoder::BlockType::Result(ValType::F64)),
-    // if str_len >= target_size: return f64(str_ptr)
+    // str_chars = number of lead bytes in str
+    Instruction::Block(BlockType::Empty),
+    Instruction::Loop(BlockType::Empty),
+    Instruction::LocalGet(9),
     Instruction::LocalGet(3),
+    Instruction::I32GeU,
+    Instruction::BrIf(1),
+    Instruction::LocalGet(0),
+    Instruction::I32Const(8),
+    Instruction::I32Add,
+    Instruction::LocalGet(9),
+    Instruction::I32Add,
+    Instruction::I32Load8U(mem_arg_byte(0)),
+    Instruction::LocalSet(11),
+  ];
+  instructions.extend(is_lead_byte(11));
+  instructions.extend([
+    Instruction::LocalGet(4),
+    Instruction::I32Add,
+    Instruction::LocalSet(4),
+    Instruction::LocalGet(9),
+    Instruction::I32Const(1),
+    Instruction::I32Add,
+    Instruction::LocalSet(9),
+    Instruction::Br(0),
+    Instruction::End,
+    Instruction::End,
+    // Block $outer (result f64) — for early return
+    Instruction::Block(BlockType::Result(ValType::F64)),
+    // if str_chars >= target_size: return f64(str_ptr)
+    Instruction::LocalGet(4),
     Instruction::LocalGet(1),
     Instruction::I32GeU,
-    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::If(BlockType::Empty),
     Instruction::LocalGet(0),
     Instruction::F64ConvertI32U,
     Instruction::Br(1),
     Instruction::End,
-    // pad_size = target_size - str_len
-    Instruction::LocalGet(1),
-    Instruction::LocalGet(3),
-    Instruction::I32Sub,
-    Instruction::LocalSet(4),
-    // pat_len = i32(f64.load pattern_ptr+0)
+    // pat_len = i32(f64.load pattern_ptr+0); an empty pattern returns str unchanged
     Instruction::LocalGet(2),
     Instruction::F64Load(mem_arg_f64(0)),
     Instruction::I32TruncF64U,
-    Instruction::LocalSet(5),
-    // if pat_len == 0: return original (guard)
-    Instruction::LocalGet(5),
+    Instruction::LocalTee(5),
     Instruction::I32Eqz,
-    Instruction::If(wasm_encoder::BlockType::Empty),
+    Instruction::If(BlockType::Empty),
     Instruction::LocalGet(0),
     Instruction::F64ConvertI32U,
     Instruction::Br(1),
     Instruction::End,
-    // padded = (target_size + 7) & -8
+    // target_size -= str_chars: the number of pad scalars still missing
     Instruction::LocalGet(1),
+    Instruction::LocalGet(4),
+    Instruction::I32Sub,
+    Instruction::LocalSet(1),
+    // new_ptr = heap_ptr + 8; padding starts at new_ptr + 8 (+ str_len on the right)
+    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
+    Instruction::I32Const(8),
+    Instruction::I32Add,
+    Instruction::LocalTee(6),
+    Instruction::I32Const(8),
+    Instruction::I32Add,
+  ]);
+  if !left {
+    instructions.extend([Instruction::LocalGet(3), Instruction::I32Add]);
+  }
+  instructions.extend([
+    Instruction::LocalSet(7),
+    // j = 0 (reused from the counting loop)
+    Instruction::I32Const(0),
+    Instruction::LocalSet(9),
+    // Copy pattern bytes cyclically, stopping at the lead byte of one scalar too many
+    Instruction::Block(BlockType::Empty), // $pad_break
+    Instruction::Loop(BlockType::Empty),  // $pad_loop
+    // if j >= pat_len: j = 0
+    Instruction::LocalGet(9),
+    Instruction::LocalGet(5),
+    Instruction::I32GeU,
+    Instruction::If(BlockType::Empty),
+    Instruction::I32Const(0),
+    Instruction::LocalSet(9),
+    Instruction::End,
+    // byte = (pattern_ptr+8)[j]
+    Instruction::LocalGet(2),
+    Instruction::I32Const(8),
+    Instruction::I32Add,
+    Instruction::LocalGet(9),
+    Instruction::I32Add,
+    Instruction::I32Load8U(mem_arg_byte(0)),
+    Instruction::LocalSet(11),
+  ]);
+  instructions.extend(is_lead_byte(11));
+  instructions.extend([
+    Instruction::If(BlockType::Empty),
+    // if k == missing scalars: break; else k++
+    Instruction::LocalGet(10),
+    Instruction::LocalGet(1),
+    Instruction::I32Eq,
+    Instruction::BrIf(2), // 0=If, 1=$pad_loop, 2=$pad_break
+    Instruction::LocalGet(10),
+    Instruction::I32Const(1),
+    Instruction::I32Add,
+    Instruction::LocalSet(10),
+    Instruction::End,
+    // pad_dst[i] = byte
+    Instruction::LocalGet(7),
+    Instruction::LocalGet(8),
+    Instruction::I32Add,
+    Instruction::LocalGet(11),
+    Instruction::I32Store8(mem_arg_byte(0)),
+    // i++, j++
+    Instruction::LocalGet(8),
+    Instruction::I32Const(1),
+    Instruction::I32Add,
+    Instruction::LocalSet(8),
+    Instruction::LocalGet(9),
+    Instruction::I32Const(1),
+    Instruction::I32Add,
+    Instruction::LocalSet(9),
+    Instruction::Br(0),
+    Instruction::End, // $pad_loop
+    Instruction::End, // $pad_break
+    // memory.copy(dst = new_ptr + 8 (+ i on the left), src = str_ptr + 8, n = str_len)
+    Instruction::LocalGet(6),
+    Instruction::I32Const(8),
+    Instruction::I32Add,
+  ]);
+  if left {
+    instructions.extend([Instruction::LocalGet(8), Instruction::I32Add]);
+  }
+  instructions.extend([
+    Instruction::LocalGet(0),
+    Instruction::I32Const(8),
+    Instruction::I32Add,
+    Instruction::LocalGet(3),
+    Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
+    // total_len = str_len + i, stored as the byte length at new_ptr+0
+    Instruction::LocalGet(3),
+    Instruction::LocalGet(8),
+    Instruction::I32Add,
+    Instruction::LocalSet(12),
+    Instruction::LocalGet(6),
+    Instruction::LocalGet(12),
+    Instruction::F64ConvertI32U,
+    Instruction::F64Store(mem_arg_f64(0)),
+    // Header: HEAP_MAGIC and str_tag_id at heap_ptr
+    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
+    Instruction::I32Const(HEAP_MAGIC),
+    Instruction::I32Store(mem_arg_i32(0)),
+    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
+    Instruction::I32Const(str_tag_id),
+    Instruction::I32Store(mem_arg_i32(4)),
+    // heap_ptr += 16 + ((total_len + 7) & -8)
+    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
+    Instruction::I32Const(16),
+    Instruction::I32Add,
+    Instruction::LocalGet(12),
     Instruction::I32Const(7),
     Instruction::I32Add,
     Instruction::I32Const(-8i32),
     Instruction::I32And,
-    Instruction::LocalSet(6),
-    // payload = 8 + padded
-    Instruction::I32Const(8),
-    Instruction::LocalGet(6),
-    Instruction::I32Add,
-    Instruction::LocalSet(7),
-    // Write HEAP_MAGIC at heap_ptr
-    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
-    Instruction::I32Const(HEAP_MAGIC),
-    Instruction::I32Store(mem_arg_i32(0)),
-    // Write str_tag_id at heap_ptr+4
-    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
-    Instruction::I32Const(str_tag_id),
-    Instruction::I32Store(mem_arg_i32(4)),
-    // new_ptr = heap_ptr + 8; advance heap
-    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
-    Instruction::I32Const(8),
-    Instruction::I32Add,
-    Instruction::LocalSet(8), // new_ptr
-    Instruction::GlobalGet(HEAP_PTR_GLOBAL),
-    Instruction::I32Const(8),
-    Instruction::LocalGet(7),
-    Instruction::I32Add,
     Instruction::I32Add,
     Instruction::GlobalSet(HEAP_PTR_GLOBAL),
-    // Write byte_len (target_size as f64) at new_ptr+0
-    Instruction::LocalGet(8),
-    Instruction::LocalGet(1),
-    Instruction::F64ConvertI32U,
-    Instruction::F64Store(mem_arg_f64(0)),
-    // dst_base = new_ptr + 8
-    Instruction::LocalGet(8),
-    Instruction::I32Const(8),
-    Instruction::I32Add,
-    Instruction::LocalSet(9),
-    // Copy original string to the start of dst_base
-    Instruction::LocalGet(9), // dst = dst_base
-    Instruction::LocalGet(0),
-    Instruction::I32Const(8),
-    Instruction::I32Add,      // src = str_ptr + 8
-    Instruction::LocalGet(3), // n = str_len
-    Instruction::MemoryCopy { dst_mem: 0, src_mem: 0 },
-    // i = 0, j = 0
-    Instruction::I32Const(0),
-    Instruction::LocalSet(10),
-    Instruction::I32Const(0),
-    Instruction::LocalSet(11),
-    // Fill pad_size bytes with pattern after the original
-    Instruction::Block(wasm_encoder::BlockType::Empty),
-    Instruction::Loop(wasm_encoder::BlockType::Empty),
-    Instruction::LocalGet(10),
-    Instruction::LocalGet(4),
-    Instruction::I32GeU,
-    Instruction::BrIf(1),
-    // if j >= pat_len: j = 0
-    Instruction::LocalGet(11),
-    Instruction::LocalGet(5),
-    Instruction::I32GeU,
-    Instruction::If(wasm_encoder::BlockType::Empty),
-    Instruction::I32Const(0),
-    Instruction::LocalSet(11),
-    Instruction::End,
-    // byte_val = (pattern_ptr+8)[j]
-    Instruction::LocalGet(2),
-    Instruction::I32Const(8),
-    Instruction::I32Add,
-    Instruction::LocalGet(11),
-    Instruction::I32Add,
-    Instruction::I32Load8U(mem_arg_byte(0)),
-    Instruction::LocalSet(12),
-    // dst_base[str_len + i] = byte_val
-    Instruction::LocalGet(9),
-    Instruction::LocalGet(3), // str_len
-    Instruction::I32Add,
-    Instruction::LocalGet(10), // i
-    Instruction::I32Add,
-    Instruction::LocalGet(12),
-    Instruction::I32Store8(mem_arg_byte(0)),
-    // i++, j++
-    Instruction::LocalGet(10),
-    Instruction::I32Const(1),
-    Instruction::I32Add,
-    Instruction::LocalSet(10),
-    Instruction::LocalGet(11),
-    Instruction::I32Const(1),
-    Instruction::I32Add,
-    Instruction::LocalSet(11),
-    Instruction::Br(0),
-    Instruction::End,
-    Instruction::End,
     // return f64(new_ptr)
-    Instruction::LocalGet(8),
+    Instruction::LocalGet(6),
     Instruction::F64ConvertI32U,
     Instruction::End, // end $outer
-  ];
+  ]);
   CompiledFn {
     export_name: None,
     params: vec![ValType::I32, ValType::I32, ValType::I32],
     results: vec![ValType::F64],
-    locals: vec![
-      ValType::I32, // str_len (3)
-      ValType::I32, // pad_size (4)
-      ValType::I32, // pat_len (5)
-      ValType::I32, // padded (6)
-      ValType::I32, // payload (7)
-      ValType::I32, // new_ptr (8)
-      ValType::I32, // dst_base (9)
-      ValType::I32, // i (10)
-      ValType::I32, // j (11)
-      ValType::I32, // byte_val (12)
-    ],
+    locals: vec![ValType::I32; 10],
     instructions,
   }
 }

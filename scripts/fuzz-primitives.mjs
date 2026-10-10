@@ -84,6 +84,7 @@ const primitives = [
   ["starts-with?", [strings, strings], "bool"],
   ["ends-with?", [strings, strings], "bool"],
   ["&str:pad-left", [strings, indices, strings], "string"],
+  ["&str:pad-right", [strings, indices, strings], "string"],
   ["&str:compare", [strings, strings], "number"],
   ["trim", [strings], "string"],
   ["get-char-code", [strings], "number"],
@@ -114,7 +115,6 @@ const known = [
   ]),
   ["&list:slice", "js", "#1849"], ["&list:slice", "wasm", "#1849"],
   ["pow", "js", "#1858"], ["pow", "wasm", "#1858"],
-  ["&str:pad-left", "js", "#1859"], ["&str:pad-left", "wasm", "#1859"],
 ];
 const knownIssue = (name, backend) => known.find(([n, b]) => n === name && b === backend)?.[2];
 

@@ -3146,12 +3146,40 @@ export let _$n_list_$o_distinct = (xs: CalcitList): CalcitSliceList => {
   return new CalcitSliceList(result);
 };
 
+// Longest padded string, the V8 string length limit, so every backend fails at the same size.
+const MAX_PADDED_LEN = 536870888;
+
+// Padding for `&str:pad-left` / `&str:pad-right`, measured in Unicode scalars like `&str:count`
+// (not UTF-16 units, so astral characters are never split). NaN and negative lengths pad nothing,
+// and so does an empty pattern.
+const strPadding = (procName: string, s: string, size: number, pattern: string): string => {
+  if (size > MAX_PADDED_LEN) {
+    throw new Error(`${procName} expected a finite length up to ${MAX_PADDED_LEN}, but received: ${format_calcit_number(size)}`);
+  }
+  if (!(size > 0) || pattern === "") return "";
+  let missing = Math.floor(size);
+  for (const _scalar of s) {
+    missing -= 1;
+    if (missing <= 0) return "";
+  }
+  let patternCount = 0;
+  for (const _scalar of pattern) patternCount += 1;
+  let padding = pattern.repeat(Math.floor(missing / patternCount));
+  let rest = missing % patternCount;
+  for (const scalar of pattern) {
+    if (rest <= 0) break;
+    padding += scalar;
+    rest -= 1;
+  }
+  return padding;
+};
+
 export let _$n_str_$o_pad_left = (s: string, size: number, pattern: string): string => {
-  return s.padStart(size, pattern);
+  return strPadding("&str:pad-left", s, size, pattern) + s;
 };
 
 export let _$n_str_$o_pad_right = (s: string, size: number, pattern: string): string => {
-  return s.padEnd(size, pattern);
+  return s + strPadding("&str:pad-right", s, size, pattern);
 };
 
 export let _$n_get_os = (): CalcitTag => {

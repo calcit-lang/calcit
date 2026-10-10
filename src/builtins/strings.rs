@@ -130,8 +130,9 @@ const MAX_FORMAT_DIGITS: usize = 100;
 /// Longest padded string, the V8 string length limit, so both backends fail at the same size.
 const MAX_PADDED_LEN: f64 = 536_870_888.0;
 
-/// Target length of `&str:pad-left` / `&str:pad-right`, floored; NaN and negative lengths
-/// mean no padding (as in JavaScript), lengths past the limit fail instead of exhausting memory.
+/// Target length of `&str:pad-left` / `&str:pad-right` in Unicode scalars (like `&str:count`),
+/// floored; NaN and negative lengths mean no padding, lengths past the limit fail instead of
+/// exhausting memory.
 fn pad_target_len(proc_name: &str, n: f64) -> Result<usize, CalcitErr> {
   if n > MAX_PADDED_LEN {
     return Err(CalcitErr::use_str(
@@ -467,17 +468,13 @@ pub fn pad_left(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     match (&xs[0], &xs[1], &xs[2]) {
       (Calcit::Str(s), Calcit::Number(n), Calcit::Str(pattern)) => {
         let size = pad_target_len("&str:pad-left", *n)?;
-        if pattern.is_empty() {
-          return CalcitErr::err_str(CalcitErrKind::Arity, "&str:pad-left expected a non-empty pattern");
-        }
-        if s.len() >= size {
+        let len = s.chars().count();
+        if pattern.is_empty() || len >= size {
           return Ok(xs[0].to_owned());
         }
 
-        let pad_size = size - s.len();
-        let mut buffer = String::with_capacity(size);
-        // Directly iterate over pattern characters
-        for c in pattern.chars().cycle().take(pad_size) {
+        let mut buffer = String::with_capacity(s.len() + size - len);
+        for c in pattern.chars().cycle().take(size - len) {
           buffer.push(c);
         }
         buffer.push_str(s);
@@ -498,17 +495,14 @@ pub fn pad_right(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     match (&xs[0], &xs[1], &xs[2]) {
       (Calcit::Str(s), Calcit::Number(n), Calcit::Str(pattern)) => {
         let size = pad_target_len("&str:pad-right", *n)?;
-        if pattern.is_empty() {
-          return CalcitErr::err_str(CalcitErrKind::Arity, "&str:pad-right expected a non-empty pattern");
-        }
-        if s.len() >= size {
+        let len = s.chars().count();
+        if pattern.is_empty() || len >= size {
           return Ok(xs[0].to_owned());
         }
 
-        let mut buffer = String::with_capacity(size);
+        let mut buffer = String::with_capacity(s.len() + size - len);
         buffer.push_str(s);
-        // Directly iterate over pattern characters
-        for c in pattern.chars().cycle().take(size - s.len()) {
+        for c in pattern.chars().cycle().take(size - len) {
           buffer.push(c);
         }
         Ok(Calcit::Str(buffer.into()))
