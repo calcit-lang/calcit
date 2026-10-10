@@ -136,7 +136,7 @@ fn past_lowering_regressions_pass_post_lowering_validation() {
 
   assert_success(&run_calcit(&snapshot, &["--check-only"]), "entry check with validator");
   assert_success(
-    &run_calcit(&snapshot, &["analyze", "check-public", "--ns", "app.main"]),
+    &run_calcit(&snapshot, &["--check-only", "--ns", "app.main"]),
     "every definition passes the validator",
   );
 }

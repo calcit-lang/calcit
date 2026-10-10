@@ -22,6 +22,15 @@ pub struct ToplevelCalcit {
   /// with --check-only, also check every definition in project namespaces (not only entry-reachable ones); implies --keep-going
   #[argh(switch)]
   pub all_defs: bool,
+  /// with --check-only, check every definition in this public namespace for the active entry target; repeat for shared and target-specific namespaces
+  #[argh(option)]
+  pub ns: Vec<String>,
+  /// with --check-only --ns, admit selected namespaces loaded from dependencies or calcit.core
+  #[argh(switch)]
+  pub deps: bool,
+  /// with --check-only --ns, emit aggregate counts without per-definition rows
+  #[argh(switch, long = "summary-only")]
+  pub summary_only: bool,
   /// check-only report format: human, edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
@@ -107,7 +116,7 @@ pub enum CalcitCommand {
   Test(TestCommand),
   /// preview or apply compiler-guided source migrations
   Fix(FixCommand),
-  /// analyze code structure and helpers (call-graph, call-graph-diff, count-calls, def-diff, check-examples)
+  /// analyze code structure, type-debt views, and helpers (call-graph, program-diff, weak-types, check-examples, verify)
   Analyze(AnalyzeCommand),
   /// query project information (namespaces, definitions, configs)
   Query(QueryCommand),
@@ -332,7 +341,7 @@ pub struct EmitIrCommand {
   pub watch: bool,
 }
 
-/// run program
+/// evaluate snippet
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "eval")]
 pub struct EvalCommand {
@@ -353,7 +362,7 @@ pub struct EvalCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "analyze")]
-/// analyze code structure and helpers (call-graph, check-public, check-types, verify, weak-types, dynamic-methods, deprecated, quality, js-escape)
+/// analyze code structure, type-debt views, and helpers (call-graph, program-diff, weak-types, check-examples, verify, effects-graph, js-escape)
 pub struct AnalyzeCommand {
   #[argh(subcommand)]
   pub subcommand: AnalyzeSubcommand,
@@ -372,17 +381,17 @@ pub enum AnalyzeSubcommand {
   ProgramDiff(ProgramDiffCommand),
   /// check examples in namespace
   CheckExamples(CheckExamplesCommand),
-  /// check every definition in selected public namespaces for the active entry target
+  /// [Deprecated] use `calcit --check-only --ns <ns> [--deps]`
   CheckPublic(CheckPublicCommand),
-  /// check type-information coverage in namespace definitions
+  /// [Deprecated] use `analyze weak-types --only coverage`
   CheckTypes(CheckTypesCommand),
-  /// locate weakly-typed hotspots such as :dynamic schema usage and nil literals
+  /// locate weakly-typed hotspots, type coverage, dynamic method dispatch, or deprecated calls (select with --only)
   WeakTypes(WeakTypesCommand),
-  /// locate unresolved dynamic method dispatch in reachable definitions
+  /// [Deprecated] use `analyze weak-types --only dynamic-method`
   DynamicMethods(DynamicMethodsCommand),
-  /// locate calls to definitions marked with the :deprecated tag
+  /// [Deprecated] use `analyze weak-types --only deprecated-call`
   Deprecated(DeprecatedCommand),
-  /// enforce type coverage, weak-type, and deprecated API quality budgets
+  /// [Deprecated] legacy quality budgets; use `--check-only` plus `analyze weak-types`
   Quality(QualityCommand),
   /// run a declarative project verification profile
   Verify(VerifyCommand),
@@ -406,14 +415,14 @@ pub struct VerifyCommand {
   pub format: String,
 }
 
-/// check every definition in selected public namespaces for the active entry target
+/// [Deprecated] use `calcit --check-only --ns <ns> [--deps] [--summary-only] [--format edn|json]`
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "check-public")]
 pub struct CheckPublicCommand {
   /// exact public namespace to check; repeat for shared and target-specific namespaces
   #[argh(option)]
   pub ns: Vec<String>,
-  /// output format: human (default) or json
+  /// output format: human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
   /// allow selected namespaces loaded from dependencies or calcit.core
@@ -442,7 +451,7 @@ pub struct JsUnescapeCommand {
   pub symbol: String,
 }
 
-/// check type-information coverage in namespace definitions
+/// [Deprecated] use `analyze weak-types --only coverage [--coverage-level none,partial,full]`
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "check-types")]
 pub struct CheckTypesCommand {
@@ -455,7 +464,7 @@ pub struct CheckTypesCommand {
   /// coverage levels to include, comma-separated: none,partial,full
   #[argh(option)]
   pub only: Option<String>,
-  /// output format: human (default) or json
+  /// output format: human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
   /// include dependency/core namespaces
@@ -469,7 +478,7 @@ pub struct CheckTypesCommand {
   pub incremental: bool,
 }
 
-/// locate weakly-typed hotspots in schema and code
+/// locate weakly-typed hotspots, type coverage, dynamic method dispatch, or deprecated calls
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "weak-types")]
 pub struct WeakTypesCommand {
@@ -479,9 +488,12 @@ pub struct WeakTypesCommand {
   /// namespace prefix scope filter
   #[argh(option)]
   pub ns_prefix: Option<String>,
-  /// match kinds to include, comma-separated: schema-dynamic,unresolved-type-slot,code-dynamic,code-nil,unsafe-coerce
+  /// match kinds to include, comma-separated: schema-dynamic,unresolved-type-slot,code-dynamic,code-nil,unsafe-coerce; or exactly one view: coverage, dynamic-method, deprecated-call
   #[argh(option)]
   pub only: Option<String>,
+  /// with --only coverage, coverage levels to include, comma-separated: none,partial,full
+  #[argh(option, long = "coverage-level")]
+  pub coverage_level: Option<String>,
   /// intent classes to include, comma-separated: unresolved,intentional-js-ffi,intentional-macro-syntax,intentional-type-slot-dynamic,explicit-unsafe,declared-unit,declared-optional
   #[argh(option)]
   pub intent: Option<String>,
@@ -505,11 +517,11 @@ pub struct WeakTypesCommand {
   pub incremental: bool,
 }
 
-/// locate unresolved dynamic method dispatch in reachable definitions
+/// [Deprecated] use `analyze weak-types --only dynamic-method`
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "dynamic-methods")]
 pub struct DynamicMethodsCommand {
-  /// output format: human (default) or json
+  /// output format: human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
   /// include dependency namespaces
@@ -523,7 +535,7 @@ pub struct DynamicMethodsCommand {
   pub incremental: bool,
 }
 
-/// locate calls to definitions marked with the :deprecated tag
+/// [Deprecated] use `analyze weak-types --only deprecated-call`
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "deprecated")]
 pub struct DeprecatedCommand {
@@ -533,7 +545,7 @@ pub struct DeprecatedCommand {
   /// namespace prefix scope filter
   #[argh(option)]
   pub ns_prefix: Option<String>,
-  /// output format: human (default) or json
+  /// output format: human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
   /// include dependency/core namespaces
@@ -544,7 +556,7 @@ pub struct DeprecatedCommand {
   pub summary_only: bool,
 }
 
-/// compare existing legacy quality budgets or reduce a reviewed baseline
+/// [Deprecated] compare legacy quality budgets; use `--check-only` for correctness and `analyze weak-types` to locate debt
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "quality")]
 pub struct QualityCommand {
@@ -715,13 +727,13 @@ pub enum QuerySubcommand {
   Ns(QueryNsCommand),
   /// list definitions in a namespace
   Defs(QueryDefsCommand),
-  /// get package name
+  /// [Deprecated] use `query config`
   Pkg(QueryPkgCommand),
   /// read project configs
   Config(QueryConfigCommand),
   /// read .calcit/error.cirru file
   Error(QueryErrorCommand),
-  /// list modules in the project
+  /// [Deprecated] use `config modules`
   Modules(QueryModulesCommand),
   /// read a definition's full code
   Def(QueryDefCommand),
@@ -874,7 +886,7 @@ pub struct QueryDefsCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "pkg")]
-/// get package name
+/// [Deprecated] use `query config`, which prints the package name
 pub struct QueryPkgCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -893,7 +905,7 @@ pub struct QueryErrorCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "modules")]
-/// list modules in the project
+/// [Deprecated] use `config modules`
 pub struct QueryModulesCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -1737,7 +1749,7 @@ pub struct EditRmDefCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "doc")]
-/// documentation tools for guidebook, installed module docs, and local markdown docs
+/// update definition documentation
 pub struct EditDocCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
@@ -2231,7 +2243,7 @@ pub struct TreeSearchReplaceCommand {
   pub selector: Option<String>,
 }
 
-/// delete multiple paths at once (deletes from highest index to lowest)
+/// [Deprecated] use `edit transaction` with one `tree delete` per path, highest index first
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "batch-delete")]
 pub struct TreeBatchDeleteCommand {

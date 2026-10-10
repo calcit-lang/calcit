@@ -2524,7 +2524,7 @@ fn parse_verification(data: &Edn, entries: &HashMap<String, SnapshotEntry>) -> R
         }
         "dynamic-methods" => {
           return Err(format!(
-            "{owner}.checks: `dynamic-methods` was removed; replace it with `strict` and behavior tests; use analyze dynamic-methods for a read-only migration report"
+            "{owner}.checks: `dynamic-methods` was removed; replace it with `strict` and behavior tests; use `analyze weak-types --only dynamic-method` for a read-only migration report"
           ));
         }
         _ => return Err(format!("{owner}.checks: unknown check `{check_name}`; expected strict")),

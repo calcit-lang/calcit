@@ -129,7 +129,7 @@ Calcit 版本，或先显式执行 `caps deps.cirru upgrade --all` 升级项目�
 先收集最小复现、实际结果、预期结果、`calcit -v`、平台和相关命令。类库问题先从解析后的模块路径确认归属，再创建 Issue：
 
 ```bash
-calcit query modules
+calcit config modules
 # 从输出中复制该模块的实际目录；不要猜仓库名。
 git -C '<module-directory>' remote get-url origin
 # 将 origin 规范化为 OWNER/REPO 后，确认目标确实是对应 GitHub 仓库。
@@ -167,7 +167,7 @@ WASM/Component 类型闭包、异步 adapter 和 ABI 细节见 [WASM Component �
 calcit -v
 calcit query config
 calcit query ns
-calcit query modules
+calcit config modules
 # Dependency intent audit (when deps.cirru uses dev-dependencies):
 caps tree
 # Choose a module from the tree, then explain its root/transitive path:
@@ -179,7 +179,7 @@ calcit query defs '<namespace>'
 - `query config`：确认 init/reload、版本和项目配置。
 - `query ns`：先发现 namespace，不要猜 `<ns>`。
 - `query defs <ns>`：从真实定义名中选择 target。
-- `query modules`：确认依赖边界；不要修改已安装依赖目录来代替当前项目修改。
+- `config modules`：确认依赖边界；不要修改已安装依赖目录来代替当前项目修改。
 - `caps tree` / `caps why`：审计 `deps.cirru` 的已解析下载图和传递来源；它们不分析
   Calcit 源码，因此不能单独证明模块是否被某个 entry、测试或 Markdown 示例实际使用。
 
@@ -405,12 +405,12 @@ calcit cursor show
 calcit cursor apply replace --input-format cirru --code 'quote <replacement-leaf>'
 calcit tree show @cursor --path @cursor
 calcit query type-at @cursor --path @cursor --format edn
-calcit --entry '<target-entry>' calcit.cirru analyze check-public --ns '<public-namespace>' --format json
+calcit --entry '<target-entry>' calcit.cirru --check-only --ns '<public-namespace>' --format edn
 calcit analyze check-examples --ns '<namespace>' --def '<definition>'
 calcit test '<namespace>/<definition>'
 ```
 
-`type-at --format edn` 的语义路径可能是 `code@3.2`，而 `tree --path` 需要 `@3.2`；不要把仍含 `code@` 的 follow-up 命令直接交给 `tree`。`check-public` 目前只支持 human/json，所以上述公开 API 审计显式使用 JSON。
+`type-at --format edn` 的语义路径可能是 `code@3.2`，而 `tree --path` 需要 `@3.2`；不要把仍含 `code@` 的 follow-up 命令直接交给 `tree`。公开 API 审计 `--check-only --ns` 与其他结构化输出一样优先使用 EDN，对接 JSON-only 工具时再选 `--format json`。
 
 读取 `query type`、`type-at` 或 `context` 的方法契约时，先看 `status`：`proven` 表示接收者实例化后，调用参数与结果已有精确类型；`open` 表示仍含 `Dynamic`/`DynFn` 或缺少可证明的 schema，不能据此生成精确调用。例如普通 `Option<Dynamic>` 的 `.unwrap-or` 是开放契约，但已证明为空的 core `Option :none` 可以由具体 fallback 推断类型；不读取内部值的 `.some? -> Bool` 仍可证明。`ambiguous` 需要先消除 trait/impl 来源冲突，不要按展示顺序猜一个实现。对已证明同实现且有显式 fix 的别名，再看 `role`：`preferred` 是当前首选应用方法，`compatibility` 保留旧名查询并提供 `preferred-name`、`fix-rule`；没有角色不代表不可用，也不能仅凭 `proven` 猜测首选。
 
@@ -422,7 +422,7 @@ Ref watcher 的应用入口使用 `add-watch! ref :key callback` 与 `remove-wat
 
 ### 废弃 API 清理
 
-迁移 API 时，先运行 `calcit analyze deprecated --ns-prefix <package>` 查看调用路径和替换说明；结构化报告优先使用 `--summary-only --format edn`，对接 JSON-only 工具时显式选择 `--format json`。目标范围 `calls` 为 `0` 只说明该次分析没有发现旧调用，不是删除旧 API 的充分证据。退场前还须核对活跃下游的源码、附带测试/示例、宏生成代码、CI/文档、锁定的已发布依赖与未合并迁移，并通过类型、失败行为、求值顺序及目标后端的实际回放；首选入口须已发布，core 方法实现也须与待删入口解耦。未达到这些条件时保留兼容入口及其 `:deprecated` tag，说明具体阻塞。
+迁移 API 时，先运行 `calcit analyze weak-types --only deprecated-call --ns-prefix <package>` 查看调用路径和替换说明；结构化报告优先使用 `--summary-only --format edn`，对接 JSON-only 工具时显式选择 `--format json`。目标范围 `calls` 为 `0` 只说明该次分析没有发现旧调用，不是删除旧 API 的充分证据。退场前还须核对活跃下游的源码、附带测试/示例、宏生成代码、CI/文档、锁定的已发布依赖与未合并迁移，并通过类型、失败行为、求值顺序及目标后端的实际回放；首选入口须已发布，core 方法实现也须与待删入口解耦。未达到这些条件时保留兼容入口及其 `:deprecated` tag，说明具体阻塞。
 
 对于唯一 leaf 的小改动，可以不用 cursor：
 
@@ -497,41 +497,7 @@ CLI 去掉外层 `quote`，确认 `[]` marker 后，把数组内部每个表达�
 
 ## 4. Cursor 连续编辑
 
-最常用的 cursor 循环只有四步：搜索选中、展示、修改、再展示。
-
-```bash
-calcit query search render-item --filter 'app.main/render!' --exact
-calcit query search render-item --filter 'app.main/render!' --exact --set-cursor 0
-calcit cursor show
-calcit cursor apply wrap --input-format cirru --code 'quote $ when visible? self'
-calcit cursor show
-```
-
-常用补充：
-
-- `cursor parent`、`cursor child [index]` / `child --last`：进入父子层级。
-- `cursor next/prev --count N`：跨多个 sibling；跨 list 边界使用 `forward/backward --count N`。
-- `cursor duplicate --at before|after`：复制选中表达式并选中新副本，不覆盖 clipboard。
-- `cursor cut` 后选中 parent；`cursor paste` 后选中新节点，`--at` 支持 `before|after|prepend-child|append-child|replace`。
-- `query search ... --source project --start-path @cursor --set-cursor N`：只在当前 subtree 中继续搜索。
-- `query next/prev`：重新计算上次通过 `--set-cursor` 保存的搜索并跳到相邻结果，不保存完整结果列表；Snapshot 已变化时先重跑原查询显式选中。
-- `cursor anchor` → 移动 → `cursor region`：确认同一 parent 下的连续 sibling 范围；结束后 `clear-anchor`。
-- `cursor mark <name>` / `goto <name>`：保存和恢复最多 16 个高频位置；短期绕行仍优先使用 `push/pop`。
-- `query context @cursor`、`tree show @cursor --path @cursor`：后续命令不再重复 target/path。
-- `cursor back` 只回退 cursor 位置，**不会撤销源码修改**。
-
-cursor 密集操作可把顶层选项写在命令前，如 `calcit --cursor-after focus cursor forward --count 4`，让每次移动立即展示上下文。需要机器确认真实选中节点时，使用 `calcit cursor show --format json --view node`。
-
-`.calcit/` 是项目本地状态目录，应整体加入 `.gitignore`。其中 `cursor.cirru` 保存 active cursor、单一 anchor、最多 16 个 marks、last query、有限 history/stack 与 clipboard，硬上限 64 KiB；`error.cirru` 保存最近一次持久化 runtime/watcher stack，多行输入临时片段可放 `snippets/`。进入复制项目或已有 worktree 时先 `cursor show`；若选择与当前任务无关，执行 `cursor clear`。目前只有一个 active cursor，不负责多个进程的并发写入；并行 Agent 使用独立 worktree/Snapshot。
-
-非法 cursor navigation 会保持 Snapshot 和 cursor 不变，失败后用 `cursor show` 确认。`unwrap` 会把所选 list 的所有 children splice 到 parent；对含额外语法的 wrapper，它不是 `wrap` 的撤销操作。
-
-Paredit 的 slurp/barf、history/stack、结构化 clipboard、stale relocation 等细节按需查询：
-
-```bash
-calcit docs read edit-tree.md 'Persistent Tree Cursor'
-calcit cursor --help
-```
+cursor 面向人和编辑器的连续导航与 Paredit 式修改，Agent 常规修改使用第 3 节的 query → tree 路径；需要时阅读 `calcit docs read edit-tree.md 'Persistent Tree Cursor'`。
 
 ## 5. Cirru / Calcit 语法生存指南
 
@@ -766,7 +732,7 @@ calcit cirru show-guide
 按从便宜到昂贵的顺序形成闭环：
 
 1. 结构：`cursor show` 或 `tree show`，确认实际 subtree。
-2. 语义：`query type-at ... --format edn`，运行 `analyze check-types --summary-only`；类库发布还要针对每个 entry target 运行 `analyze check-public --ns <shared> --ns <target-specific> --format json`，以 `checked_definition_ids` 与 `complete: true` 证明未引用的公开函数、data/trait definitions 也已预处理。`check-public` 暂只提供 JSON 结构化输出，不要把本节的 EDN 默认扩展到该命令。不要注入临时引用函数或维护手写 export 清单。发布审计加 `--deps --format json`，以 Snapshot loader 成功解析作为 strict macro schema 的门槛。已结构化 `CodeEntry` 中的旧 runtime `Fn` / `Dynamic` macro schema 必须用最终兼容版本 0.13.51 迁移为显式 Macro contract。更早的 direct-quote macro 则使用当前 `edit format`，它只按参数形状生成 `Syntax` / `Expr<Dynamic>` / 空 capabilities 的保守 contract；必须人工审阅和收窄，不能把该桥接结果当成推断出的业务语义。看到 `W_TYPE_COVERAGE_GAPS` 后可执行 `analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved`，按 path/detail 定位迁移项。类型正确性只由默认严格预处理的 warning/error 决定。已有项目在 0.14.x 可继续用 `analyze quality --baseline ...` 作为清债 ratchet；新项目不生成 baseline，存量项目清零后也应删除它。
+2. 语义：`query type-at ... --format edn`，运行 `analyze weak-types --only coverage --summary-only`；类库发布还要针对每个 entry target 运行 `--check-only --ns <shared> --ns <target-specific> --format edn`，以 `checked-definition-ids` 与 `complete: true` 证明未引用的公开函数、data/trait definitions 也已预处理。不要注入临时引用函数或维护手写 export 清单。发布审计加 `--deps`，以 Snapshot loader 成功解析作为 strict macro schema 的门槛。已结构化 `CodeEntry` 中的旧 runtime `Fn` / `Dynamic` macro schema 必须用最终兼容版本 0.13.51 迁移为显式 Macro contract。更早的 direct-quote macro 则使用当前 `edit format`，它只按参数形状生成 `Syntax` / `Expr<Dynamic>` / 空 capabilities 的保守 contract；必须人工审阅和收窄，不能把该桥接结果当成推断出的业务语义。看到 `W_TYPE_COVERAGE_GAPS` 后可执行 `analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved`，按 path/detail 定位迁移项。类型正确性只由默认严格预处理的 warning/error 决定。`analyze quality` 已弃用，下一个非 patch 版本删除；仍依赖 baseline 的存量项目改用 `--check-only` 加 `analyze weak-types` 视图，清零后删除 baseline。
 3. definition：`analyze check-examples --ns <ns> --def <def>`；存在 definition-attached tests 时运行 `calcit test <ns>/<def>`。
 4. 项目：运行 `calcit test` 及仓库规定的 entry 和测试；默认 `calcit test` 只发现当前输入 snapshot 定义的命名空间，不触发 `calcit-core.cirru` 或外部模块中的测试。变更范围明确时可先用 `calcit test --affected <ns>/<def>` 做静态依赖筛选，但提交前仍按仓库要求执行全量门禁。CI/Agent 按 tag 或 affected 筛选时加 `--require-match`，避免空选择误报成功；大套件可加 `--summary-only --format json` 保持 stdout 紧凑可解析。只有项目目标是 JavaScript 时才运行对应的 `calcit js` codegen。
 
@@ -802,7 +768,7 @@ resolver call-site 证据，并补充重复 Map shape、`match` tag dispatch 的
 Option/Result、默认值或 FFI trust。`--summary-only` 仅用于看候选数量，真正修改前必须读取完整候选并显式选择 fix。
 
 需要连续执行小步迁移时，可用 `calcit calcit.cirru --check-only --incremental` 复用已成功且 closure 未变化的严格预处理，
-也可在 `analyze check-types`、`analyze weak-types` 或 `analyze dynamic-methods` 增加 `--incremental`。只信报告中
+也可在 `analyze weak-types`（含 `--only coverage`、`--only dynamic-method` 视图）增加 `--incremental`。只信报告中
 `:data :cache` 的 hit/miss 与失效原因；缓存以 Cirru EDN 保存于项目 `.calcit/`。input cache 头损坏或版本不一致时会从源码重载主
 Snapshot 和 modules；definition cache 缺失、不可读，或因 schema、编译器版本、context revision 变化而失效时，才会让
 definition-local inventory 冷启动。`cache.input` 单独说明活动 `entry`、主 Snapshot
@@ -810,7 +776,7 @@ definition-local inventory 冷启动。`cache.input` 单独说明活动 `entry`�
 解析路径变化时只重载该模块，其他模块继续复用；definition-local inventory 则继续逐项失效。
 使用顶层 `--entry` 时，缓存必须先选择对应 entry 再加载 modules；不要把另一 entry 的 module 命中视为有效证据。
 `cache.dependency-index`（JSON 中为 `dependency_index`）提供 compiler-resolved graph 的 hit/miss、edge、changed 与反向 affected 数量，
-供 Agent 判断修改波及范围。`dynamic-methods` 只有在 init/reload dependency closure 完整且 revision 未变时才报告
+供 Agent 判断修改波及范围。`--only dynamic-method` 只有在 init/reload dependency closure 完整且 revision 未变时才报告
 `preprocessing_cached=true`；闭包外修改允许继续复用，缺失或未解析的闭包证据会保守回退。这里复用的是诊断结果而非 compiled AST，
 不能替代无缓存检查。`--check-only --incremental` 也只缓存成功标记，不缓存 compiled AST、warning 或 error；reachable definition/schema、
 namespace import、entry type-slot、policy、编译器或 core input 变化会冷启动。闭包证据缺失或含 unresolved dependency，以及 module load
