@@ -6404,7 +6404,11 @@
                   hint-fn $ {}
                     :args $ [] 'String
                     :return 'Bool
-                  .includes? message |capability
+                  and (.includes? message |capability)
+                    if
+                      = :js $ &get-calcit-backend
+                      .includes? message |&ffi-response-reject
+                      , true
             :tags $ #{} :core :unit
         'ffi-response:resolve $ %{} 'CodeEntry
           :doc "|Resolve a wrapped native async response exactly once."
@@ -6425,7 +6429,11 @@
                   hint-fn $ {}
                     :args $ [] 'String
                     :return 'Bool
-                  .includes? message |capability
+                  and (.includes? message |capability)
+                    if
+                      = :js $ &get-calcit-backend
+                      .includes? message |&ffi-response-resolve
+                      , true
             :tags $ #{} :core :unit
         'ffi-task:cancel $ %{} 'CodeEntry
           :doc "|Cancel a wrapped native async task with the default reason. Validate and preserve the actual native Unit result; host errors propagate."
