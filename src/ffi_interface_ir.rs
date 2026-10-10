@@ -1801,6 +1801,7 @@ mod tests {
       tags: HashSet::new(),
       code: Cirru::List(vec![]),
       schema: Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
         arg_types: args,
@@ -2823,6 +2824,7 @@ mod tests {
   #[test]
   fn classifies_typed_and_untyped_callbacks_with_stable_paths() {
     let callback = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::String)],
@@ -2870,6 +2872,7 @@ mod tests {
   #[test]
   fn preserves_macro_kind_when_classifying_nested_function_annotations() {
     let macro_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![DYNAMIC_TYPE.clone()],

@@ -1574,6 +1574,7 @@ impl MacroSignature {
       );
     }
     if let Some(where_bounds) = (CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: self.generics.clone(),
       where_bounds: self.where_bounds.clone(),
       arg_types: vec![],
@@ -2738,6 +2739,7 @@ impl CalcitTypeAnnotation {
     let features = Arc::new(features);
 
     Some(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(local_generics),
       where_bounds: Arc::new(where_bounds),
       arg_types,
@@ -3044,6 +3046,7 @@ impl CalcitTypeAnnotation {
     }
     let features = Arc::new(features);
     Some(CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(generics),
       where_bounds: Arc::new(where_bounds),
       arg_types,
@@ -3185,6 +3188,7 @@ impl CalcitTypeAnnotation {
       }
 
       let signature = CalcitFnTypeAnnotation {
+        runtime_arity: None,
         generics: Arc::new(generics),
         where_bounds: Arc::new(vec![]),
         arg_types: final_arg_types,
@@ -4049,6 +4053,7 @@ impl CalcitTypeAnnotation {
           let return_type = children.remove(0);
           let rest_type = has_rest.then(|| children.remove(0));
           values.push(Arc::new(Self::Fn(Arc::new(CalcitFnTypeAnnotation {
+            runtime_arity: signature.runtime_arity,
             generics: signature.generics.clone(),
             where_bounds: signature.where_bounds.clone(),
             arg_types: args,
@@ -5373,7 +5378,7 @@ impl CalcitTypeAnnotation {
       Calcit::Import(import) => Self::from_import(import).unwrap_or(Self::Dynamic),
       Calcit::Proc(proc) => {
         if let Some(signature) = proc.get_type_signature() {
-          Self::from_proc_parts(signature.arg_types.clone(), signature.return_type.clone())
+          Self::from_proc_parts(signature.arg_types.clone(), signature.return_type.clone(), proc.arity())
         } else {
           Self::Dynamic
         }
@@ -5408,6 +5413,7 @@ impl CalcitTypeAnnotation {
       fixed_arg_types.pop();
     }
     Self::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: fixed_arg_types,
@@ -5420,7 +5426,11 @@ impl CalcitTypeAnnotation {
 
   /// Proc signatures implicitly quantify their type variables; ordinary
   /// function parts may instead refer to rigid variables captured from a caller.
-  pub(crate) fn from_proc_parts(arg_types: Vec<Arc<CalcitTypeAnnotation>>, return_type: Arc<CalcitTypeAnnotation>) -> Self {
+  pub(crate) fn from_proc_parts(
+    arg_types: Vec<Arc<CalcitTypeAnnotation>>,
+    return_type: Arc<CalcitTypeAnnotation>,
+    runtime_arity: Option<super::ProcArity>,
+  ) -> Self {
     let mut types = arg_types.clone();
     types.push(return_type.clone());
     let mut generics = type_variable_names(&types).into_iter().collect::<Vec<_>>();
@@ -5430,6 +5440,7 @@ impl CalcitTypeAnnotation {
     };
     let mut signature = signature.as_ref().clone();
     signature.generics = Arc::new(generics);
+    signature.runtime_arity = runtime_arity;
     Self::Fn(Arc::new(signature))
   }
 
@@ -5443,7 +5454,13 @@ impl CalcitTypeAnnotation {
     if trailing_rest.is_some() {
       fixed_arg_types.pop();
     }
+    let shape = info.call_shape;
+    let required = shape.param_len() - if shape.has_rest() { 0 } else { shape.trailing_optionals() };
     Self::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: Some(super::ProcArity {
+        min: required,
+        max: (!shape.has_rest()).then_some(shape.param_len()),
+      }),
       generics: info.generics.clone(),
       where_bounds: info.where_bounds.clone(),
       arg_types: fixed_arg_types,
@@ -6540,6 +6557,7 @@ mod tests {
     );
 
     let signature = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![annotation.clone(); 1_024],
@@ -6565,6 +6583,7 @@ mod tests {
     let width = TYPE_RELATION_NODE_LIMIT + 1;
     let signature = |arg_types| {
       CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
         arg_types,
@@ -6962,6 +6981,7 @@ mod tests {
     let other = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("app.ffi/Other"), Arc::new(vec![])));
     let callback = |arg: Arc<CalcitTypeAnnotation>| {
       CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
         arg_types: vec![arg.clone()],
@@ -8067,6 +8087,7 @@ mod tests {
   #[test]
   fn fn_annotation_serializes_to_hashmap_payload() {
     let annotation = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))],
@@ -8165,6 +8186,7 @@ mod tests {
   #[test]
   fn nested_macro_fn_annotation_keeps_kind() {
     let annotation = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![],
@@ -8309,6 +8331,7 @@ mod tests {
   #[test]
   fn wrapped_top_level_fn_schema_emits_where_bounds_in_edn_shape() {
     let schema = CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![CalcitGenericBound {
         name: Arc::from("T"),
@@ -8341,6 +8364,7 @@ mod tests {
   #[test]
   fn wrapped_top_level_fn_schema_emits_multi_trait_where_bounds() {
     let schema = CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![CalcitGenericBound {
         name: Arc::from("T"),
@@ -8415,6 +8439,7 @@ mod tests {
   #[test]
   fn wrapped_top_level_fn_schema_omits_default_kind_but_keeps_rest() {
     let schema = CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::Number)],
@@ -8999,6 +9024,7 @@ mod tests {
       number.clone(),
     );
     let expected = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![Arc::from("U"), Arc::from("T")]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![
@@ -9021,6 +9047,7 @@ mod tests {
     let actual = CalcitTypeAnnotation::from_function_parts(vec![number.clone()], number.clone());
     let binary_expected = CalcitTypeAnnotation::from_function_parts(vec![number.clone(), number.clone()], number.clone());
     let variadic_expected = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![number.clone()],
@@ -9044,6 +9071,38 @@ mod tests {
     let expected = CalcitTypeAnnotation::from_function_parts(vec![number.clone()], Arc::new(CalcitTypeAnnotation::Optional(number)));
 
     assert!(actual.is_compatible_with(&expected));
+  }
+
+  #[test]
+  fn proc_call_range_survives_projection_without_changing_parameter_types() {
+    let proc = crate::calcit::CalcitProc::Trim;
+    let signature = proc.get_type_signature().unwrap();
+    let actual = CalcitTypeAnnotation::from_proc_parts(signature.arg_types.clone(), signature.return_type.clone(), proc.arity());
+    let actual = actual.substitute_type_vars(&HashMap::new());
+    let callable = actual.resolve_to_nonoptional_fn().unwrap();
+    assert_eq!(callable.call_arity(), super::super::ProcArity { min: 1, max: Some(2) });
+    assert_eq!(callable.arg_types, vec![Arc::new(CalcitTypeAnnotation::String); 2]);
+    let string = Arc::new(CalcitTypeAnnotation::String);
+    for (arguments, accepted) in [
+      (vec![string.clone()], true),
+      (vec![string.clone(), string.clone()], true),
+      (vec![], false),
+      (vec![string.clone(); 3], false),
+      (vec![Arc::new(CalcitTypeAnnotation::Number)], false),
+      (vec![string.clone(), Arc::new(CalcitTypeAnnotation::Number)], false),
+      (
+        vec![string.clone(), Arc::new(CalcitTypeAnnotation::Variadic(string.clone()))],
+        false,
+      ),
+    ] {
+      let expected = CalcitTypeAnnotation::from_function_parts(arguments, string.clone());
+      assert_eq!(actual.is_compatible_with(&expected), accepted, "compatibility for {expected}");
+      assert_eq!(
+        actual.prove_with_bindings(&expected, &mut HashMap::new()).is_proven(),
+        accepted,
+        "proof for {expected}"
+      );
+    }
   }
 
   #[test]
@@ -9319,6 +9378,7 @@ impl Ord for CalcitTypeAnnotation {
         .cmp(&b.generics)
         .then_with(|| a.arg_types.cmp(&b.arg_types))
         .then_with(|| a.return_type.cmp(&b.return_type))
+        .then_with(|| a.runtime_arity.cmp(&b.runtime_arity))
         .then_with(|| a.is_async_invocation().cmp(&b.is_async_invocation())),
       (Self::Macro(a), Self::Macro(b)) => a.cmp(b),
       (Self::Syntax(a), Self::Syntax(b)) => a.cmp(b),
@@ -9366,6 +9426,9 @@ pub struct CalcitFnTypeAnnotation {
   pub rest_type: Option<Arc<CalcitTypeAnnotation>>,
   /// Feature flags declared in schema, e.g. `:features $ #{} :js-ffi`.
   pub features: Arc<HashSet<EdnTag>>,
+  /// Known execution arity, distinct from nullable parameter value types.
+  /// Schema-only signatures derive their range from fixed/rest/Option slots.
+  pub runtime_arity: Option<super::ProcArity>,
 }
 
 impl PartialOrd for CalcitFnTypeAnnotation {
@@ -9384,6 +9447,7 @@ impl Ord for CalcitFnTypeAnnotation {
       .then_with(|| self.return_type.cmp(&other.return_type))
       .then_with(|| self.fn_kind.cmp(&other.fn_kind))
       .then_with(|| self.rest_type.cmp(&other.rest_type))
+      .then_with(|| self.runtime_arity.cmp(&other.runtime_arity))
       .then_with(|| self.is_async_invocation().cmp(&other.is_async_invocation()))
   }
 }
@@ -9396,11 +9460,38 @@ impl Hash for CalcitFnTypeAnnotation {
     self.return_type.hash(state);
     self.fn_kind.hash(state);
     self.rest_type.hash(state);
+    self.runtime_arity.hash(state);
     self.is_async_invocation().hash(state);
   }
 }
 
 impl CalcitFnTypeAnnotation {
+  pub(crate) fn call_arity(&self) -> super::ProcArity {
+    self.runtime_arity.unwrap_or_else(|| {
+      let optional = if self.rest_type.is_none() {
+        super::trailing_option_arg_count(&self.arg_types, self.arg_types.len())
+      } else {
+        0
+      };
+      super::ProcArity {
+        min: self.arg_types.len() - optional,
+        max: self.rest_type.is_none().then_some(self.arg_types.len()),
+      }
+    })
+  }
+
+  /// Every invocation promised by the expected callback must be accepted.
+  fn accepts_call_range(&self, expected: &Self) -> bool {
+    let actual = self.call_arity();
+    let expected = expected.call_arity();
+    actual.min <= expected.min
+      && match (actual.max, expected.max) {
+        (None, _) => true,
+        (Some(actual), Some(expected)) => actual >= expected,
+        (Some(_), None) => false,
+      }
+  }
+
   pub(crate) fn is_async_invocation(&self) -> bool {
     self.features.iter().any(|feature| feature.ref_str() == ASYNC_INVOCATION_FEATURE)
   }
@@ -9684,9 +9775,7 @@ impl CalcitFnTypeAnnotation {
     if self.is_async_invocation() != other.is_async_invocation() {
       return false;
     }
-    // `self` is the actual callable and `other` is the expected callback shape. An actual
-    // callable cannot require more fixed arguments than the expected contract guarantees.
-    if self.arg_types.len() > other.arg_types.len() {
+    if !self.accepts_call_range(other) {
       return false;
     }
 
@@ -9695,7 +9784,10 @@ impl CalcitFnTypeAnnotation {
 
     let mut staged_bindings = bindings.clone();
 
-    for (idx, expected) in other.arg_types.iter().enumerate() {
+    for idx in 0..self.arg_types.len().max(other.arg_types.len()) {
+      let Some(expected) = other.arg_types.get(idx).or(other.rest_type.as_ref()) else {
+        continue;
+      };
       let actual = self.arg_types.get(idx).or(self.rest_type.as_ref());
       let Some(actual) = actual else {
         return false;
@@ -9733,13 +9825,16 @@ impl CalcitFnTypeAnnotation {
     if self.is_async_invocation() != other.is_async_invocation() {
       return TypeProof::Mismatch;
     }
-    if self.arg_types.len() > other.arg_types.len() {
+    if !self.accepts_call_range(other) {
       return TypeProof::Mismatch;
     }
 
     let mut staged = bindings.clone();
     let mut result = TypeProof::Proven;
-    for (idx, expected) in other.arg_types.iter().enumerate() {
+    for idx in 0..self.arg_types.len().max(other.arg_types.len()) {
+      let Some(expected) = other.arg_types.get(idx).or(other.rest_type.as_ref()) else {
+        continue;
+      };
       let Some(actual) = self.arg_types.get(idx).or(self.rest_type.as_ref()) else {
         return TypeProof::Mismatch;
       };
@@ -9950,6 +10045,7 @@ pub fn infer_runtime_value_type(value: &Calcit) -> Arc<CalcitTypeAnnotation> {
         Arc::new(CalcitTypeAnnotation::from_proc_parts(
           signature.arg_types.clone(),
           signature.return_type.clone(),
+          proc.arity(),
         ))
       })
       .unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::DynFn)),

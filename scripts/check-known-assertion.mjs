@@ -28,6 +28,11 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
+  // Preserve optional callable contracts as Calcit tests, including aliases.
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "optional-callable", "--backend", "native,js",
+  ], { ...options, stdio: "inherit" });
   // Keep #1865/#1553 language contracts in attached tests, replayed unchanged.
   execFileSync(process.execPath, [
     "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
@@ -41,6 +46,18 @@ try {
     "--backend", "native,wasm",
   ], { ...options, stdio: "inherit" });
   await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  const optionalCallableOriginal = await readFile(snapshot);
+  for (const snippet of [
+    "map-indexed ([] |one |two) trim",
+    "map ([] 1 2) $ fn (value extra) (hint-fn $ {} (:args ([] Number Bool)) (:return Number)) value",
+    "map ([] 1 2) $ fn (value extra & tail) (hint-fn $ {} (:args ([] Number (:: Option Number))) (:rest Number) (:return Number)) value",
+  ]) {
+    const rejected = spawnSync(binary, [snapshot, "eval", snippet], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${snippet}\n${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_FN_ARG_TYPE_MISMATCH/);
+    assert.deepEqual(await readFile(snapshot), optionalCallableOriginal);
+  }
   const shortCircuitOriginal = await readFile(snapshot);
   const shortCircuitProof = JSON.parse(run("fix", "--ns", "app.short-circuit",
     "--rule", "callable-contract-proof-v1", "--format", "json"));

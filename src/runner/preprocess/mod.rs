@@ -1403,6 +1403,7 @@ where
       resolve_trait_bound,
     ))),
     CalcitTypeAnnotation::Fn(signature) => Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: signature.runtime_arity,
       generics: signature.generics.clone(),
       where_bounds: map_bounds(&signature.where_bounds),
       arg_types: signature
@@ -2754,6 +2755,7 @@ fn preprocess_immediate_call_context(
       }
       let signature = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         arg_types: input_types,
+        runtime_arity: None,
         return_type: calcit::DYNAMIC_TYPE.clone(),
         rest_type: None,
         generics: Arc::new(vec![]),
@@ -4321,7 +4323,7 @@ fn preprocess_list_call(
           if REQUIRE_ASSERTION_PROOF.with(Cell::get)
             && let Some(contract) = proc.get_type_signature()
             && let CalcitTypeAnnotation::Fn(signature) =
-              CalcitTypeAnnotation::from_proc_parts(contract.arg_types.clone(), contract.return_type.clone())
+              CalcitTypeAnnotation::from_proc_parts(contract.arg_types.clone(), contract.return_type.clone(), proc.arity())
           {
             reject_strict_unproven_generic_relation(
               &Calcit::Proc(*proc),
@@ -6702,6 +6704,7 @@ fn expected_method_argument_types(type_value: &CalcitTypeAnnotation, method_name
       Calcit::Import(import) => program::lookup_def_schema(&import.ns, &import.def),
       Calcit::Fn { info, .. } if info.def_ref.is_some() => program::lookup_def_schema(&info.def_ns, &info.name),
       Calcit::Fn { info, .. } => Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        runtime_arity: None,
         generics: info.generics.clone(),
         where_bounds: info.where_bounds.clone(),
         arg_types: info.arg_types.clone(),
@@ -8214,6 +8217,7 @@ fn validate_method_call(
       arg_types.insert(0, type_value.clone());
       let signature = CalcitFnTypeAnnotation {
         arg_types,
+        runtime_arity: None,
         return_type: contract.return_type.unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()),
         rest_type: contract.rest_type,
         generics: Arc::new(contract.generics.into_iter().map(Arc::from).collect()),
@@ -9319,6 +9323,7 @@ fn static_method_contract_with_impls(
               Arc::new(CalcitTypeAnnotation::from_proc_parts(
                 signature.arg_types.clone(),
                 signature.return_type.clone(),
+                proc.arity(),
               ))
             })
           },
@@ -13490,6 +13495,7 @@ mod tests {
     let string = Arc::new(CalcitTypeAnnotation::String);
     let number = Arc::new(CalcitTypeAnnotation::Number);
     let mut signature = CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![var.clone()]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![string, type_var.clone()],
@@ -13514,6 +13520,7 @@ mod tests {
     );
 
     let variadic = CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![var.clone()]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::Variadic(type_var.clone()))],
@@ -13539,6 +13546,7 @@ mod tests {
   fn rest_spread_proof_projection_preserves_operand_and_fixed_arity() {
     let number = Arc::new(CalcitTypeAnnotation::Number);
     let mut signature = CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![number.clone()],
@@ -14132,6 +14140,7 @@ mod tests {
     // Source cannot construct executable metadata. Test the provenance bit
     // directly, independently of strict mode and program-owned definitions.
     let signature = CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![],
@@ -20809,6 +20818,7 @@ mod tests {
       }),
       location: None,
       type_info: Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        runtime_arity: None,
         generics: Arc::new(vec![Arc::from("T")]),
         where_bounds: Arc::new(vec![crate::calcit::CalcitGenericBound {
           name: Arc::from("T"),
@@ -21478,6 +21488,7 @@ mod tests {
       arg_types.push(Arc::new(CalcitTypeAnnotation::Number));
     }
     Arc::new(CalcitTypeAnnotation::Fn(Arc::new(crate::calcit::CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types,
@@ -21587,6 +21598,7 @@ mod tests {
   #[test]
   fn warns_on_legacy_optional_in_public_function_schemas() {
     let schema = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::Number)],
@@ -21626,6 +21638,7 @@ mod tests {
   fn strict_types_reject_legacy_optional_public_schemas_but_keep_internal_bridges() {
     let _state = lock_preprocess_test_state();
     let schema = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::Number)],
@@ -21661,6 +21674,7 @@ mod tests {
   fn strict_types_reject_bare_container_schemas_with_precise_paths() {
     let _state = lock_preprocess_test_state();
     let schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::Map(
@@ -21704,6 +21718,7 @@ mod tests {
     assert_eq!(find_bare_container_schema(&parsed_explicit, "schema"), None);
 
     let schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![parsed_explicit],
@@ -21723,6 +21738,7 @@ mod tests {
     let _state = lock_preprocess_test_state();
     let _slots = TypeSlotsGuard::cleared();
     let schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::Map(
@@ -21839,6 +21855,7 @@ mod tests {
     assert_eq!(macro_with_nested_fn_hint.code.as_deref(), Some("E_WHOLE_DYNAMIC_PUBLIC_SCHEMA"));
 
     let structured_open_schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::Dynamic)],
@@ -21919,6 +21936,7 @@ mod tests {
     rest_type: Option<Arc<CalcitTypeAnnotation>>,
   ) -> CalcitFnTypeAnnotation {
     CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),
       arg_types,
@@ -22325,6 +22343,7 @@ mod tests {
       }),
     ] as &[Calcit]);
     let schema = CalcitTypeAnnotation::Fn(Arc::new(crate::calcit::CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![crate::calcit::DYNAMIC_TYPE.clone()],
@@ -22364,6 +22383,7 @@ mod tests {
       }),
     ] as &[Calcit]);
     let schema = CalcitTypeAnnotation::Fn(Arc::new(crate::calcit::CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![crate::calcit::DYNAMIC_TYPE.clone()],
@@ -22423,6 +22443,7 @@ mod tests {
   #[test]
   fn preprocess_rejects_pending_async_value_as_call_argument() {
     let signature = CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![],
@@ -22462,6 +22483,7 @@ mod tests {
   #[test]
   fn preprocess_rejects_pending_async_value_as_call_receiver() {
     let signature = CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![],

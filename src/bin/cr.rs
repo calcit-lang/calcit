@@ -2279,6 +2279,7 @@ fn js_examples_runner_source(target_ns: &str, check_fn_name: &str) -> String {
 
 fn generated_zero_arg_fn_schema(return_type: Arc<CalcitTypeAnnotation>, features: HashSet<EdnTag>) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+    runtime_arity: None,
     generics: Arc::new(vec![]),
     where_bounds: Arc::new(vec![]),
     arg_types: vec![],
@@ -2581,6 +2582,7 @@ mod tests {
       None
     };
     CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types,
@@ -2614,6 +2616,7 @@ mod tests {
       ))
     }));
     CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types,
@@ -2639,6 +2642,7 @@ mod tests {
   #[test]
   fn type_coverage_uses_schema_for_fn_value_payloads() {
     let schema = CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::Number)],
@@ -3016,6 +3020,7 @@ mod tests {
     let entry = code_entry(
       list(vec![leaf("defn"), leaf("dispatch!"), list(vec![leaf("op")]), leaf("op")]),
       CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
         arg_types: vec![Arc::new(CalcitTypeAnnotation::TypeSlot(slot.clone()))],
@@ -3093,6 +3098,7 @@ mod tests {
         list(vec![leaf("unsafe-coerce"), leaf("js/nanoid"), leaf("'String")]),
       ]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
         arg_types: vec![],
@@ -3253,6 +3259,7 @@ mod tests {
         leaf("nil"),
       ]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
         arg_types: vec![calcit::calcit::DYNAMIC_TYPE.clone()],
@@ -3300,6 +3307,7 @@ mod tests {
       tags: HashSet::new(),
       code: list(vec![leaf("defn"), leaf("demo"), list(vec![leaf("value")]), leaf("nil")]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
         arg_types: vec![calcit::calcit::DYNAMIC_TYPE.clone()],
@@ -3449,6 +3457,7 @@ mod tests {
         list(vec![leaf("if"), leaf("flag"), leaf("nil"), leaf("nil")]),
       ]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
         arg_types: vec![Arc::new(CalcitTypeAnnotation::Number)],
@@ -3484,6 +3493,7 @@ mod tests {
         list(vec![leaf("do"), leaf("nil"), leaf("nil")]),
       ]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
         arg_types: vec![],
@@ -3616,6 +3626,7 @@ mod tests {
         list(vec![leaf("if"), leaf("found?"), leaf("1"), leaf("nil")]),
       ]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
         arg_types: vec![],
@@ -3646,6 +3657,7 @@ mod tests {
       tags: std::collections::HashSet::new(),
       code: list(vec![leaf("defn"), leaf("nested"), list(vec![]), leaf("x")]),
       schema: CalcitTypeAnnotation::Fn(Arc::new(calcit::calcit::CalcitFnTypeAnnotation {
+        runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
         arg_types: vec![Arc::new(CalcitTypeAnnotation::List(calcit::calcit::DYNAMIC_TYPE.clone()))],
@@ -3656,6 +3668,7 @@ mod tests {
         fn_kind: SchemaKind::Fn,
         rest_type: Some(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(
           calcit::calcit::CalcitFnTypeAnnotation {
+            runtime_arity: None,
             generics: Arc::new(vec![]),
             where_bounds: Arc::new(vec![]),
             arg_types: vec![calcit::calcit::DYNAMIC_TYPE.clone()],

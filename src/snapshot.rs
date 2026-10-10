@@ -3293,6 +3293,7 @@ fn extract_def_name(items: &[Cirru]) -> Option<&str> {
 fn snippet_runtime_entry(code: Cirru) -> CodeEntry {
   let mut entry = CodeEntry::from_code(code);
   entry.schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+    runtime_arity: None,
     generics: Arc::new(vec![]),
     where_bounds: Arc::new(vec![]),
     arg_types: vec![],
@@ -3971,6 +3972,7 @@ mod tests {
   #[test]
   fn code_entry_json_round_trip_preserves_nested_function_schema() {
     let fn_schema = Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![CalcitGenericBound {
         name: Arc::from("T"),
@@ -4962,6 +4964,7 @@ mod tests {
     for schema in [
       DYNAMIC_TYPE.clone(),
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
         arg_types: vec![],
@@ -5008,6 +5011,7 @@ mod tests {
       tags: HashSet::new(),
       code: vec!["defn", "wrapped", "()", "nil"].into(),
       schema: std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
+        runtime_arity: None,
         generics: std::sync::Arc::new(vec![]),
         where_bounds: std::sync::Arc::new(vec![]),
         arg_types: vec![],

@@ -1744,6 +1744,7 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
         Arc::new(CalcitTypeAnnotation::from_proc_parts(
           signature.arg_types.clone(),
           signature.return_type.clone(),
+          proc.arity(),
         ))
       })
       .or_else(|| Some(tag_annotation("fn"))),
@@ -2144,6 +2145,7 @@ fn infer_preprocessed_function_type(xs: &CalcitList) -> Arc<CalcitTypeAnnotation
 
   mark_async_callable(
     Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: fn_annotation.runtime_arity,
       generics: fn_annotation.generics.clone(),
       where_bounds: fn_annotation.where_bounds.clone(),
       arg_types,
@@ -2190,6 +2192,7 @@ pub(crate) fn infer_unhinted_callback_signature(xs: &CalcitList, scope_types: &S
   let return_type = infer_type_from_expr(xs.get(xs.len() - 1)?, scope_types)
     .filter(|annotation| !matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn))?;
   Some(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+    runtime_arity: None,
     generics: Arc::new(vec![]),
     where_bounds: Arc::new(vec![]),
     arg_types,
@@ -3049,6 +3052,7 @@ fn infer_definition_value_type_inner(ns: &str, def: &str) -> Option<Arc<CalcitTy
       Arc::new(CalcitTypeAnnotation::from_proc_parts(
         signature.arg_types.clone(),
         signature.return_type.clone(),
+        proc.arity(),
       ))
     }),
     value => infer_type_from_expr(&value, &ScopeTypes::new()),
@@ -3145,6 +3149,7 @@ pub fn infer_compiled_definition_implementation_type(ns: &str, def: &str) -> Opt
       bind_pattern_scope(items.get(2)?, &mut parameter_scope);
       let return_type = returned.and_then(|body| resolve_type_value(body, &parameter_scope))?;
       let mut signature = CalcitFnTypeAnnotation {
+        runtime_arity: None,
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
         arg_types,
@@ -3677,6 +3682,7 @@ mod tests {
   fn lowered_trait_contract_requires_unique_nominal_origin_and_proven_arguments() {
     let generic = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
     let signature = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![generic, Arc::new(CalcitTypeAnnotation::String)],
@@ -3723,6 +3729,7 @@ mod tests {
   #[test]
   fn async_callable_alias_requires_await_for_its_logical_value() {
     let signature = CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![],
@@ -4423,6 +4430,7 @@ mod tests {
   #[test]
   fn apply_preserves_an_async_callable_pending_result() {
     let signature = CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::String)],
@@ -4446,6 +4454,7 @@ mod tests {
     let callable = local(
       "identity",
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        runtime_arity: None,
         generics: Arc::new(vec![Arc::from("T")]),
         where_bounds: Arc::new(vec![]),
         arg_types: vec![type_var.clone()],
@@ -4520,6 +4529,7 @@ mod tests {
     let callable = local(
       "collect",
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        runtime_arity: None,
         generics: Arc::new(vec![Arc::from("T")]),
         where_bounds: Arc::new(vec![]),
         arg_types: vec![],
