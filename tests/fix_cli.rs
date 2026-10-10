@@ -11463,6 +11463,144 @@ fn ref_constructor_fix_renames_proven_spellings_and_reviews_shadowed_syntax() {
 }
 
 #[test]
+fn apply_args_fix_rewrites_literal_callees_to_loop_and_reviews_the_rest() {
+  // Rust checks the CLI transaction protocol; the attached test below replays the same
+  // calls before and after the rewrite.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  let define = |target: &str, code: &str, schema: &str| {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "def", target, "--overwrite", "--input-format", "cirru", "--code", code],
+      ),
+      "define apply-args fixture",
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", target, "--input-format", "cirru", "--code", schema]),
+      "declare apply-args fixture schema",
+    );
+  };
+  let number_fn = "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)";
+  define(
+    "app.main/main!",
+    "quote $ defn main! ()\n  , &unit",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)",
+  );
+  define(
+    "app.main/factorial",
+    "quote $ defn factorial (n)\n  apply-args ([] 1 n)\n    fn (acc k)\n      if (&<= k 1) acc $ recur (&* acc k) (&- k 1)",
+    number_fn,
+  );
+  define(
+    "app.main/sum-to",
+    "quote $ defn sum-to (n)\n  apply-args (0 n)\n    defn %sum (acc k)\n      hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Number)\n      if (&<= k 0) acc $ recur (&+ acc k) (&- k 1)",
+    number_fn,
+  );
+  define(
+    "app.main/spread",
+    "quote $ defn spread (xs)\n  apply-args (& xs) (fn (a b) (&+ a b))",
+    "quote $ :: 'Fn $ {} (:args $ [] (:: 'List 'Number)) (:return 'Number)",
+  );
+  define("app.main/plus", "quote $ defn plus (n)\n  apply-args ([] 1 n) &+", number_fn);
+  define(
+    "app.main/quoted",
+    "quote $ defn quoted ()\n  quote $ apply-args (1) (fn (x) x)",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        "app.main/factorial",
+        "loops",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ do\n  assert= 24 $ factorial 4\n  assert= 10 $ sum-to 4\n  assert= 4 $ plus 3\n  assert= 3 $ apply-args (1 2) (fn (a b) (&+ a b))",
+      ],
+    ),
+    "attach apply-args contract",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["test", "app.main/factorial", "--require-match"]),
+    "legacy apply-args semantics",
+  );
+
+  let before = fs::read(&snapshot).unwrap();
+  let base = ["fix", "--rule", "apply-args-to-loop-v1", "--include-attached", "--format", "json"];
+  let preview = run_calcit(&snapshot, &base);
+  assert_success(&preview, "apply-args preview");
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "preview must not write");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions");
+  let find = |definition: &str, path: &str| {
+    suggestions
+      .iter()
+      .find(|suggestion| suggestion["definition"] == definition && suggestion["path"] == path)
+      .unwrap_or_else(|| panic!("missing {definition} {path}: {report}"))
+  };
+  for (definition, path) in [
+    ("app.main/factorial", "code@3"),
+    ("app.main/sum-to", "code@3"),
+    ("app.main/factorial", "tests.loops"),
+  ] {
+    let suggestion = find(definition, path);
+    assert_eq!(suggestion["applicability"], "machine-applicable", "{definition} {path}: {report}");
+    assert_eq!(suggestion["rule_id"], "apply-args-to-loop-v1");
+  }
+  let spread = find("app.main/spread", "code@3");
+  assert_eq!(spread["applicability"], "requires-review", "{report}");
+  assert!(spread["message"].as_str().unwrap().contains("spreads a value"), "{report}");
+  let plus = find("app.main/plus", "code@3");
+  assert_eq!(plus["applicability"], "requires-review", "{report}");
+  assert!(plus["replacement"].is_null());
+  assert!(
+    plus["message"].as_str().unwrap().contains("not a literal `fn` or `defn`"),
+    "{report}"
+  );
+  assert!(
+    !suggestions.iter().any(|suggestion| suggestion["definition"] == "app.main/quoted"),
+    "quoted data stays unchanged: {report}"
+  );
+
+  let mut apply = base.to_vec();
+  apply.extend([
+    "--apply",
+    "--allow-no-vcs",
+    "--expect-revision",
+    report["revision"].as_str().unwrap(),
+  ]);
+  assert_success(&run_calcit(&snapshot, &apply), "apply apply-args migration");
+  let migrated = fs::read_to_string(&snapshot).unwrap();
+  assert!(migrated.contains("acc 1"), "{migrated}");
+  assert!(migrated.contains("k n"), "{migrated}");
+  assert!(
+    migrated.contains("hint-fn $ {}"),
+    "the type hint stays in the loop body: {migrated}"
+  );
+  assert!(migrated.contains("assert= 3 $ loop"), "{migrated}");
+  assert!(migrated.contains("apply-args ([] 1 n) &+"), "{migrated}");
+  assert_success(
+    &run_calcit(&snapshot, &["test", "app.main/factorial", "--require-match"]),
+    "loop semantics after migration",
+  );
+  let repeated = run_calcit(&snapshot, &base);
+  assert_success(&repeated, "repeated apply-args preview");
+  let repeated = parse_stdout(&repeated);
+  let remaining = repeated["data"]["suggestions"].as_array().unwrap();
+  assert!(
+    remaining.iter().all(|suggestion| suggestion["applicability"] == "requires-review"),
+    "only reviewed calls remain: {repeated}"
+  );
+}
+
+#[test]
 fn list_match_fix_rewrites_proven_lists_and_reviews_dynamic_subjects() {
   // Rust checks the CLI transaction protocol; the attached test below replays the same
   // calls before and after the rewrite.

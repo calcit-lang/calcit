@@ -323,19 +323,22 @@ let
 ```cirru
 ; Factorial with loop/recur
 defn factorial (n)
-  apply-args (1 n)
-    fn (acc n)
-      if (&<= n 1) acc
-        recur
-          * acc n
-          &- n 1
+  loop
+      acc 1
+      n n
+    if (&<= n 1) acc
+      recur
+        * acc n
+        &- n 1
 
 ; Fibonacci with loop/recur
 defn fibonacci (n)
-  apply-args (0 1 n)
-    fn (a b n)
-      if (&<= n 0) a
-        recur b (&+ a b) (&- n 1)
+  loop
+      a 0
+      b 1
+      n n
+    if (&<= n 0) a
+      recur b (&+ a b) (&- n 1)
 ```
 
 ### `match` with literal patterns (Multi-branch dispatch)

@@ -3897,7 +3897,7 @@
                 assert= 3 $ deref state
               :tags $ #{} :core :count-contract :unit
         'apply-args $ %{} 'CodeEntry
-          :doc "|macro that applies a function to arguments, handles empty argument list specially"
+          :doc "|Deprecated: calls a function with the listed arguments (a leading `[]` is dropped), usually a literal `fn` that loops with `recur`. Write `loop ((param value) ...) body` instead; `calcit fix --rule apply-args-to-loop-v1` rewrites calls with a literal `fn` or `defn`. Scheduled for removal in a later non-patch release."
           :code $ quote $ defmacro apply-args (args f)
             if
               not $ list? args
@@ -3913,7 +3913,7 @@
             :capabilities $ #{}
             :expansion $ :: 'Expr 'Dynamic
             :required $ [] 'SyntaxList $ :: 'Expr 'Fn
-          :tags $ #{} :macro
+          :tags $ #{} :deprecated :macro
         'assert $ %{} 'CodeEntry
           :doc "|Assert that an expression is truthy, raise with a message when false, and return Unit on success."
           :code $ quote $ defmacro assert (message xs)
@@ -4785,12 +4785,12 @@
         'contains-symbol? $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn contains-symbol? (xs y)
             if (list? xs)
-              apply-args (xs)
-                defn %contains-symbol? (body)
-                  list-match body
-                    () false
-                    (b0 bs)
-                      if (contains-symbol? b0 y) true $ recur bs
+              loop
+                  body xs
+                list-match body
+                  () false
+                  (b0 bs)
+                    if (contains-symbol? b0 y) true $ recur bs
               &= xs y
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
@@ -7323,18 +7323,17 @@
         'frequencies $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn frequencies (xs0)
             assert "|expects a list for frequencies" $ list? xs0
-            apply-args
-                {}
-                , xs0
-              fn (acc xs)
-                list-match xs
-                  () acc
-                  (x0 xss)
-                    recur
-                      if (contains? acc x0)
-                        update acc x0 $ fn (n) (&+ n 1)
-                        &map:assoc acc x0 1
-                      , xss
+            loop
+                acc $ {}
+                xs xs0
+              list-match xs
+                () acc
+                (x0 xss)
+                  recur
+                    if (contains? acc x0)
+                      update acc x0 $ fn (n) (&+ n 1)
+                      &map:assoc acc x0 1
+                    , xss
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List 'T
@@ -7657,25 +7656,24 @@
         'group-by $ %{} 'CodeEntry
           :doc "|Group elements by the result of applying function f to each element"
           :code $ quote $ defn group-by (xs0 f)
-            apply-args
-                {}
-                , xs0
-              defn %group-by (acc xs)
-                hint-fn $ {}
-                  :args $ []
-                    :: 'Map 'K $ :: 'List 'T
-                    :: 'List 'T
-                  :return $ :: 'Map 'K $ :: 'List 'T
-                list-match xs
-                  () acc
-                  (x0 xss)
-                    let
-                        key $ f x0
-                      recur
-                        &map:assoc acc key $ append
-                          option:unwrap-or (get acc key) ([])
-                          , x0
-                        , xss
+            loop
+                acc $ {}
+                xs xs0
+              hint-fn $ {}
+                :args $ []
+                  :: 'Map 'K $ :: 'List 'T
+                  :: 'List 'T
+                :return $ :: 'Map 'K $ :: 'List 'T
+              list-match xs
+                () acc
+                (x0 xss)
+                  let
+                      key $ f x0
+                    recur
+                      &map:assoc acc key $ append
+                        option:unwrap-or (get acc key) ([])
+                        , x0
+                      , xss
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T)
@@ -8471,22 +8469,22 @@
         'interleave $ %{} 'CodeEntry
           :doc "|Interleave two homogeneous lists, truncating to the shorter input. Both inputs and the result share one element type; explicitly use List<Dynamic> only at a reviewed heterogeneous boundary."
           :code $ quote $ defn interleave (xs0 ys0)
-            apply-args
-                []
-                , xs0 ys0
-              defn %interleave (acc xs ys)
-                hint-fn $ {}
-                  :args $ [] (:: 'List 'T) (:: 'List 'T) (:: 'List 'T)
-                  :generics $ [] 'T
-                  :return $ :: 'List 'T
-                if
-                  if (&list:empty? xs) true $ &list:empty? ys
-                  , acc $ recur
-                    -> acc
-                      append $ &list:first xs
-                      append $ &list:first ys
-                    rest xs
-                    rest ys
+            loop
+                acc $ []
+                xs xs0
+                ys ys0
+              hint-fn $ {}
+                :args $ [] (:: 'List 'T) (:: 'List 'T) (:: 'List 'T)
+                :generics $ [] 'T
+                :return $ :: 'List 'T
+              if
+                if (&list:empty? xs) true $ &list:empty? ys
+                , acc $ recur
+                  -> acc
+                    append $ &list:first xs
+                    append $ &list:first ys
+                  rest xs
+                  rest ys
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T) (:: 'List 'T)
@@ -8544,21 +8542,21 @@
         'join $ %{} 'CodeEntry
           :doc "|兼容旧名；首选 intersperse 或 .intersperse，在 List<T> 的相邻元素之间插入同类型分隔项，仍返回 List<T>，不是文本拼接。"
           :code $ quote $ defn join (xs0 sep)
-            apply-args
-                []
-                , xs0 true
-              defn %join (acc xs beginning?)
-                hint-fn $ {}
-                  :args $ [] (:: 'List 'T) (:: 'List 'T) 'Bool
-                  :return $ :: 'List 'T
-                list-match xs
-                  () acc
-                  (x0 xss)
-                    recur
-                      append
-                        if beginning? acc $ append acc sep
-                        , x0
-                      , xss false
+            loop
+                acc $ []
+                xs xs0
+                beginning? true
+              hint-fn $ {}
+                :args $ [] (:: 'List 'T) (:: 'List 'T) 'Bool
+                :return $ :: 'List 'T
+              list-match xs
+                () acc
+                (x0 xss)
+                  recur
+                    append
+                      if beginning? acc $ append acc sep
+                      , x0
+                    , xss false
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T) 'T
@@ -8572,19 +8570,21 @@
         'join-string $ %{} 'CodeEntry
           :doc "|将 List 元素按既有显示规则逐项转为文本，并用 String 分隔符连接；空 List 返回空字符串。"
           :code $ quote $ defn join-string (xs0 sep)
-            apply-args (| xs0 true)
-              defn %join-string (acc xs beginning?)
-                hint-fn $ {}
-                  :args $ [] 'String (:: 'List 'T) 'Bool
-                  :return 'String
-                list-match xs
-                  () acc
-                  (x0 xss)
-                    recur
-                      &str:concat
-                        if beginning? acc $ &str:concat acc sep
-                        , x0
-                      , xss false
+            loop
+                acc |
+                xs xs0
+                beginning? true
+              hint-fn $ {}
+                :args $ [] 'String (:: 'List 'T) 'Bool
+                :return 'String
+              list-match xs
+                () acc
+                (x0 xss)
+                  recur
+                    &str:concat
+                      if beginning? acc $ &str:concat acc sep
+                      , x0
+                    , xss false
           :examples $ []
             quote $ assert= |1-2-3 $ join-string ([] 1 2 3) |-
             quote $ assert= |a,b $
@@ -8936,26 +8936,27 @@
             let
                 variable? $ symbol? data
                 v $ if variable? data $ gensym |v
-                defs $ apply-args
-                  [] ([]) vars 0
-                  defn let[]% (acc xs idx)
-                    if (&list:empty? xs) acc $ &let ()
-                      if
-                        not $ or
-                          symbol? $ &list:first xs
-                          is-spreading-mark? $ &list:first xs
-                        raise $ &str:concat "|Expected symbol for vars: " $ &list:first xs
-                      if
+                defs $ loop
+                    acc $ []
+                    xs vars
+                    idx 0
+                  if (&list:empty? xs) acc $ &let ()
+                    if
+                      not $ or
+                        symbol? $ &list:first xs
                         is-spreading-mark? $ &list:first xs
-                        &let ()
-                          assert "|expected list spreading" $ &= 2 $ &list:count xs
-                          append acc $ [] (&list:nth xs 1)
-                            quasiquote $ &list:slice ~v ~idx
-                        recur
-                          append acc $ [] (&list:first xs)
-                            quasiquote $ &list:nth ~v ~idx
-                          rest xs
-                          inc idx
+                      raise $ &str:concat "|Expected symbol for vars: " $ &list:first xs
+                    if
+                      is-spreading-mark? $ &list:first xs
+                      &let ()
+                        assert "|expected list spreading" $ &= 2 $ &list:count xs
+                        append acc $ [] (&list:nth xs 1)
+                          quasiquote $ &list:slice ~v ~idx
+                      recur
+                        append acc $ [] (&list:first xs)
+                          quasiquote $ &list:nth ~v ~idx
+                        rest xs
+                        inc idx
               if variable?
                 quasiquote $ let (~ defs) (~@ body)
                 quasiquote $ &let (~v ~data)
@@ -10693,17 +10694,16 @@
             :tags $ #{} :core :state :unit
         'repeat $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn repeat (x n0)
-            apply-args
-                []
-                , n0
-              defn %repeat (acc n)
-                hint-fn $ {}
-                  :generics $ [] 'T
-                  :args $ []
-                    :: 'acc $ :: 'List 'T
-                    :: 'n 'Number
-                  :return $ :: 'List 'T
-                if (&<= n 0) acc $ recur (append acc x) (&- n 1)
+            loop
+                acc $ []
+                n n0
+              hint-fn $ {}
+                :generics $ [] 'T
+                :args $ []
+                  :: 'acc $ :: 'List 'T
+                  :: 'n 'Number
+                :return $ :: 'List 'T
+              if (&<= n 0) acc $ recur (append acc x) (&- n 1)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'T 'Number
@@ -12509,16 +12509,16 @@
           :tags $ #{} :builtin :file :internal :io
         'zipmap $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn zipmap (xs0 ys0)
-            apply-args
-                {}
-                , xs0 ys0
-              fn (acc xs ys)
-                if
-                  if (&list:empty? xs) true $ &list:empty? ys
-                  , acc $ recur
-                    &map:assoc acc (&list:first xs) (&list:first ys)
-                    rest xs
-                    rest ys
+            loop
+                acc $ {}
+                xs xs0
+                ys ys0
+              if
+                if (&list:empty? xs) true $ &list:empty? ys
+                , acc $ recur
+                  &map:assoc acc (&list:first xs) (&list:first ys)
+                  rest xs
+                  rest ys
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'K) (:: 'List 'V)
