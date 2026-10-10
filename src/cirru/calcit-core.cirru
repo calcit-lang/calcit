@@ -27,7 +27,7 @@
             :args $ [] 'Dynamic 'Tag
           :tags $ #{} :builtin :internal
         '%err $ %{} 'CodeEntry
-          :doc "|已弃用的 Result<T,E> :err 构造 helper；推荐直接写 Result :err error。可用 calcit fix --rule core-nominal-constructor-v1 迁移可证明的调用。最早在 0.26.0、且真实消费者完成迁移后移除。"
+          :doc "|Deprecated Result<T,E> :err constructor helper. Prefer Result :err error; core-nominal-constructor-v1 handles proven source calls. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
           :code $ quote $ defn %err (message) (%:: Result :err message)
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -36,7 +36,7 @@
             :return $ :: 'Result 'T 'E
           :tags $ #{} :constructor :deprecated
         '%none $ %{} 'CodeEntry
-          :doc "|已弃用的 Option<T> :none 构造 helper；推荐直接写 Option :none。可用 calcit fix --rule core-nominal-constructor-v1 迁移可证明的调用。最早在 0.26.0、且真实消费者完成迁移后移除。"
+          :doc "|Deprecated Option<T> :none constructor helper. Prefer Option :none; core-nominal-constructor-v1 handles proven source calls. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
           :code $ quote $ defn %none () (%:: Option :none)
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -45,7 +45,7 @@
             :return $ :: 'Option 'T
           :tags $ #{} :constructor :deprecated
         '%ok $ %{} 'CodeEntry
-          :doc "|已弃用的 Result<T,E> :ok 构造 helper；推荐直接写 Result :ok value。可用 calcit fix --rule core-nominal-constructor-v1 迁移可证明的调用。最早在 0.26.0、且真实消费者完成迁移后移除。"
+          :doc "|Deprecated Result<T,E> :ok constructor helper. Prefer Result :ok value; core-nominal-constructor-v1 handles proven source calls. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
           :code $ quote $ defn %ok (value) (%:: Result :ok value)
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -54,7 +54,7 @@
             :return $ :: 'Result 'T 'E
           :tags $ #{} :constructor :deprecated
         '%some $ %{} 'CodeEntry
-          :doc "|已弃用的 Option<T> :some 构造 helper；推荐直接写 Option :some value。可用 calcit fix --rule core-nominal-constructor-v1 迁移可证明的调用。最早在 0.26.0、且真实消费者完成迁移后移除。"
+          :doc "|Deprecated Option<T> :some constructor helper. Prefer Option :some value; core-nominal-constructor-v1 handles proven source calls. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
           :code $ quote $ defn %some (value) (%:: Option :some value)
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -4213,7 +4213,7 @@
               assert= 9 $ assoc-in (&{}) ([]) 9
             :tags $ #{} :core :unit
         'atom $ %{} 'CodeEntry
-          :doc "|兼容旧名；首选 ref。读取为与 ref 相同的内建实现，创建局部 Ref<T>。可用 calcit fix --rule core-ref-constructor-v1 迁移，在后续非 patch 版本退场。"
+          :doc "|Compatibility spelling of the same builtin implementation as ref, creating a local Ref<T>. Prefer ref; core-ref-constructor-v1 migrates proven source forms. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -5448,7 +5448,7 @@
             :required $ [] 'SyntaxSymbol $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         'defatom $ %{} 'CodeEntry
-          :doc "|兼容旧名；首选 defref。解析为与 defref 相同的语法，定义命名空间级 Ref<T>。可用 calcit fix --rule core-ref-constructor-v1 迁移，在后续非 patch 版本退场。"
+          :doc "|Compatibility spelling of the same namespace Ref<T> syntax as defref. Prefer defref; core-ref-constructor-v1 preserves source resolution and initialization/reload behavior. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
           :code $ quote &runtime-implementation
           :examples $ [] $ quote
             ; defatom *my-atom $ {} $ :a 1
@@ -10637,7 +10637,7 @@
                   fn (_error) :failed
               :tags $ #{} :core :unit
         'range-bothway $ %{} 'CodeEntry
-          :doc "|Deprecated: write the range explicitly, e.g. (range (inc (negate n)) n) for (range-bothway n)."
+          :doc "|Deprecated symmetric/offset range. With y omitted or nil, bind x once and use (range (inc (negate x)) x). Otherwise bind x/y once in their original order and use (range (inc (- (+ x x) y)) y). The end is exclusive; do not duplicate effectful arguments. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
           :code $ quote $ defn range-bothway (x ? y)
             if (nil? y)
               range
@@ -10788,7 +10788,7 @@
             :generics $ [] 'T
           :tags $ #{} :builtin :internal :state
         'remove-watch $ %{} 'CodeEntry
-          :doc "|兼容旧名；首选 remove-watch!。移除 Ref<T> 的 Tag key watcher，返回 Unit；key 不存在时仍报错。"
+          :doc "|Compatibility watcher removal on Ref<T> with a Tag key, returning Unit and raising for a missing key. Prefer remove-watch!; use a reviewed guarded source transaction, not an unproven name replacement. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
@@ -11263,7 +11263,7 @@
                 assert= |bc $ slice |abc 1
               :tags $ #{} :core :unit
         'some-in? $ %{} 'CodeEntry
-          :doc "|Deprecated: use (option:some? (get-in x path)); contains-in? checks that the path exists instead."
+          :doc "|Deprecated final-value presence check: prefer (.some? (get-in x path)), with a proven core Option receiver. A nil leaf is absent; contains-in? instead checks path existence and is not equivalent. Review and migrate with guarded source edits. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
           :code $ quote $ defn some-in? (x path)
             option:some? $ get-in x path
           :examples $ []
