@@ -3162,8 +3162,14 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
   let needs_source_trace = reader_expanded || source_method_call || changed_call_head;
   let traced = if compile_error.is_none() && (needs_source_trace || (located_target.is_none() && matches!(target_node, Cirru::List(_))))
   {
-    runner::preprocess::trace_definition_source_expressions(namespace, &definition, &RefCell::new(vec![]), &CallStackList::default())
-      .unwrap_or_default()
+    runner::preprocess::trace_snapshot_source_expressions(
+      &entry.code,
+      namespace,
+      &definition,
+      &RefCell::new(vec![]),
+      &CallStackList::default(),
+    )
+    .unwrap_or_default()
   } else {
     vec![]
   };

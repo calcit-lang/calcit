@@ -129,6 +129,10 @@ try {
       assert.equal(response.data.tree[0], name);
       assert.equal(response.data.confidence, "exact");
       assert.equal(response.data.dynamic_intent, null);
+      assert.notEqual(response.data.lowering.kind, "preprocess-unavailable",
+        `${name} must retain actual processed source-call evidence, not just a source type fallback`);
+      assert.equal(response.data.evidence[0].detail,
+        "inferred from preprocessed code and lexical type metadata");
       const method = response.data.static_methods.find(method => method.name === ".or-else");
       assert.equal(method?.status, "proven", `${name} requires proven Result dispatch`);
       assert.deepEqual(method.call_types.returns, ["::", "'Result", payload, "'String"]);
