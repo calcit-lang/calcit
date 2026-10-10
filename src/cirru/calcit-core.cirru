@@ -825,10 +825,8 @@
             if
               not $ list? path
               raise $ str-spaced "|expects path in a list, got:" path
-            if (nil? base) base $ match (destruct-list path)
-              (:none) base
-              (:some y0 ys)
-                recur (get base y0) ys
+            if (nil? base) base $ &list-match-internal path (base) (y0 ys)
+              (recur (get base y0) ys)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Dynamic $ :: 'List 'K
@@ -4127,16 +4125,8 @@
         'assoc-in $ %{} 'CodeEntry
           :doc "|associates a value at a nested path in a data structure, creates intermediate maps if needed"
           :code $ quote $ defn assoc-in (data path v)
-            match (destruct-list path)
-              (:none) v
-              (:some p0 ps)
-                if (struct? data)
-                  raise "|assoc-in does not traverse Struct fields; use assoc with a direct field key"
-                  &let
-                    d $ either data $ &{}
-                    assoc d p0 $ assoc-in
-                      if (contains? d p0) (&get-raw d p0) (&{})
-                      , ps v
+            &list-match-internal path (v) (p0 ps)
+              (if (struct? data) (raise "|assoc-in does not traverse Struct fields; use assoc with a direct field key") (&let (d (either data (&{}))) (assoc d p0 (assoc-in (if (contains? d p0) (&get-raw d p0) (&{})) ps v))))
           :examples $ []
             quote $ assert=
               &{} :a $ &{} :b 1
@@ -4534,9 +4524,10 @@
             :generics $ [] 'T
         'concat $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn concat (& args)
-            match (destruct-list args)
-              (:none) ([])
-              (:some a0 as) (&list:concat a0 & as)
+            &list-match-internal args
+              ([])
+              a0 as
+              (&list:concat a0 & as)
           :examples $ [] $ quote
             assert= ([] 1 2 3 4 5)
               concat ([] 1 2) ([] 3 4) ([] 5)
@@ -4673,28 +4664,8 @@
         'contains-in? $ %{} 'CodeEntry
           :doc "||Check whether every hop in a nested path exists across maps, enums, or lists. Struct fields are intentionally excluded; use direct field access instead."
           :code $ quote $ defn contains-in? (xs path)
-            match (destruct-list path)
-              (:none) true
-              (:some p0 ps)
-                cond
-                    list? xs
-                    if
-                      and (number? p0) (&list:contains? xs p0)
-                      recur (&list:nth xs p0) ps
-                      , false
-                  (map? xs)
-                    if (&map:contains? xs p0)
-                      recur (&map:get xs p0) ps
-                      , false
-                  (struct? xs)
-                    raise "|contains-in? does not traverse Struct fields; end the path before the Struct and use (:field value)"
-                  (enum? xs)
-                    if
-                      and (&>= p0 0)
-                        &< p0 $ &enum:count xs
-                      recur (&enum:nth xs p0) ps
-                      , false
-                  true false
+            &list-match-internal path (true) (p0 ps)
+              (cond ((list? xs) (if (and (number? p0) (&list:contains? xs p0)) (recur (&list:nth xs p0) ps) false)) ((map? xs) (if (&map:contains? xs p0) (recur (&map:get xs p0) ps) false)) ((struct? xs) (raise "|contains-in? does not traverse Struct fields; end the path before the Struct and use (:field value)")) ((enum? xs) (if (and (&>= p0 0) (&< p0 (&enum:count xs))) (recur (&enum:nth xs p0) ps) false)) (true false))
           :examples $ []
             quote $ assert= true $ contains-in?
               {} $ :profile $ {} (:name |calcit)
@@ -4787,10 +4758,8 @@
             if (list? xs)
               loop
                   body xs
-                match (destruct-list body)
-                  (:none) false
-                  (:some b0 bs)
-                    if (contains-symbol? b0 y) true $ recur bs
+                &list-match-internal body (false) (b0 bs)
+                  (if (contains-symbol? b0 y) true (recur bs))
               &= xs y
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
@@ -6033,15 +6002,8 @@
         'dissoc-in $ %{} 'CodeEntry
           :doc "|Remove a nested key or index. An empty path leaves the input unchanged."
           :code $ quote $ defn dissoc-in (data path)
-            match (destruct-list path)
-              (:none) data
-              (:some p0 ps)
-                if (struct? data)
-                  raise "|dissoc-in cannot remove declared Struct fields; use an optional field or convert the Struct to a map before removing keys"
-                  if
-                    &= 1 $ &list:count path
-                    dissoc data p0
-                    assoc data p0 $ dissoc-in (&get-raw data p0) ps
+            &list-match-internal path (data) (p0 ps)
+              (if (struct? data) (raise "|dissoc-in cannot remove declared Struct fields; use an optional field or convert the Struct to a map before removing keys") (if (&= 1 (&list:count path)) (dissoc data p0) (assoc data p0 (dissoc-in (&get-raw data p0) ps))))
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'D)
             :args $ [] 'D $ :: 'List 'K
@@ -7326,14 +7288,8 @@
             loop
                 acc $ {}
                 xs xs0
-              match (destruct-list xs)
-                (:none) acc
-                (:some x0 xss)
-                  recur
-                    if (contains? acc x0)
-                      update acc x0 $ fn (n) (&+ n 1)
-                      &map:assoc acc x0 1
-                    , xss
+              &list-match-internal xs (acc) (x0 xss)
+                (recur (if (contains? acc x0) (update acc x0 (fn (n) (&+ n 1))) (&map:assoc acc x0 1)) xss)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List 'T
@@ -7611,14 +7567,10 @@
           :doc "|Get a nested value as Option<Dynamic>; none represents a missing path or nil encountered during traversal."
           :code $ quote $ defn get-in (base path)
             if (nil? base) (%none)
-              match (destruct-list path)
-                (:none) (%some base)
-                (:some y0 ys)
-                  if (struct? base)
-                    raise "|get-in does not traverse Struct fields; use (:field value) so the checker can enforce the declared type"
-                    match (get base y0)
-                      (:some value) (recur value ys)
-                      (:none) (%none)
+              &list-match-internal path
+                (%some base)
+                y0 ys
+                (if (struct? base) (raise "|get-in does not traverse Struct fields; use (:field value) so the checker can enforce the declared type") (match (get base y0) ((:some value) (recur value ys)) ((:none) (%none))))
           :examples $ []
             quote $ assert= (%some 1)
               get-in
@@ -7664,16 +7616,8 @@
                   :: 'Map 'K $ :: 'List 'T
                   :: 'List 'T
                 :return $ :: 'Map 'K $ :: 'List 'T
-              match (destruct-list xs)
-                (:none) acc
-                (:some x0 xss)
-                  let
-                      key $ f x0
-                    recur
-                      &map:assoc acc key $ append
-                        option:unwrap-or (get acc key) ([])
-                        , x0
-                      , xss
+              &list-match-internal xs (acc) (x0 xss)
+                (let ((key (f x0))) (recur (&map:assoc acc key (append (option:unwrap-or (get acc key) ([])) x0)) xss))
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T)
@@ -8549,14 +8493,8 @@
               hint-fn $ {}
                 :args $ [] (:: 'List 'T) (:: 'List 'T) 'Bool
                 :return $ :: 'List 'T
-              match (destruct-list xs)
-                (:none) acc
-                (:some x0 xss)
-                  recur
-                    append
-                      if beginning? acc $ append acc sep
-                      , x0
-                    , xss false
+              &list-match-internal xs (acc) (x0 xss)
+                (recur (append (if beginning? acc (append acc sep)) x0) xss false)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T) 'T
@@ -8577,14 +8515,8 @@
               hint-fn $ {}
                 :args $ [] 'String (:: 'List 'T) 'Bool
                 :return 'String
-              match (destruct-list xs)
-                (:none) acc
-                (:some x0 xss)
-                  recur
-                    &str:concat
-                      if beginning? acc $ &str:concat acc sep
-                      , x0
-                    , xss false
+              &list-match-internal xs (acc) (x0 xss)
+                (recur (&str:concat (if beginning? acc (&str:concat acc sep)) x0) xss false)
           :examples $ []
             quote $ assert= |1-2-3 $ join-string ([] 1 2 3) |-
             quote $ assert= |a,b $
@@ -9008,9 +8940,9 @@
             &let
               xs $ &list:nth values 0
               &let
-                pattern1 $ assert-type (&list:nth values 1) 'List
+                pattern1 $ &list:nth values 1
                 &let
-                  pattern2 $ assert-type (&list:nth values 2) 'List
+                  pattern2 $ &list:nth values 2
                   if
                     not $ and (list? pattern1) (list? pattern2)
                       &> (count pattern1) 1
@@ -9019,28 +8951,32 @@
                       &> (count pattern2) 1
                     raise $ str-spaced "|list-match expects 2 branches: (() body...) and ((head tail) body...), got:" pattern1 pattern2
                   &let
-                    v# $ gensym |v
-                    quasiquote $ &let (~v# ~xs)
-                      if
-                        not $ list? ~v#
-                        raise "|expected a list in list-match"
-                      ~ $ if
-                        and
-                          empty? $ &list:nth pattern1 0
-                          &= 2 $ &list:count $ assert-type (&list:nth pattern2 0) 'List
-                        quasiquote $ &list-match-internal ~v#
-                          ~ $ &list:slice pattern1 1
-                          ~ $ &list:nth pattern2 0
-                          ~ $ &list:slice pattern2 1
-                        if
-                          and
-                            empty? $ &list:nth pattern2 0
-                            &= 2 $ &list:count $ assert-type (&list:nth pattern1 0) 'List
-                          quasiquote $ &list-match-internal ~v#
-                            ~ $ &list:slice pattern2 1
-                            ~ $ &list:nth pattern1 0
-                            ~ $ &list:slice pattern1 1
-                          raise $ str-spaced "|list-match expects one empty branch and one destructuring branch, got:" pattern1 pattern2
+                    pattern1 $ assert-type pattern1 'List
+                    &let
+                      pattern2 $ assert-type pattern2 'List
+                      &let
+                        v# $ gensym |v
+                        quasiquote $ &let (~v# ~xs)
+                          if
+                            not $ list? ~v#
+                            raise "|expected a list in list-match"
+                          ~ $ if
+                            and
+                              empty? $ &list:nth pattern1 0
+                              &= 2 $ &list:count $ assert-type (&list:nth pattern2 0) 'List
+                            quasiquote $ &list-match-internal ~v#
+                              ~ $ &list:slice pattern1 1
+                              ~ $ &list:nth pattern2 0
+                              ~ $ &list:slice pattern2 1
+                            if
+                              and
+                                empty? $ &list:nth pattern2 0
+                                &= 2 $ &list:count $ assert-type (&list:nth pattern1 0) 'List
+                              quasiquote $ &list-match-internal ~v#
+                                ~ $ &list:slice pattern2 1
+                                ~ $ &list:nth pattern1 0
+                                ~ $ &list:slice pattern1 1
+                              raise $ str-spaced "|list-match expects one empty branch and one destructuring branch, got:" pattern1 pattern2
           :examples $ []
             quote $ assert= :something $ list-match ([] 1)
               () :empty
@@ -12199,20 +12135,10 @@
         'update-in $ %{} 'CodeEntry
           :doc "|Walk a nested path and update its leaf. The updater receives Option<T>: some for an existing leaf and none for a missing leaf. Missing intermediate containers are created as maps."
           :code $ quote $ defn update-in (data path f)
-            match (destruct-list path)
-              (:none)
-                f $ %some data
-              (:some p0 ps)
-                if (struct? data)
-                  raise "|update-in does not traverse Struct fields; use update with a direct field key"
-                  let
-                      current $ if (nil? data) (%none) (get data p0)
-                    assoc
-                      either data $ {}
-                      , p0 $ if (empty? ps) (f current)
-                        update-in
-                          option:unwrap-or current $ {}
-                          , ps f
+            &list-match-internal path
+              (f (%some data))
+              p0 ps
+              (if (struct? data) (raise "|update-in does not traverse Struct fields; use update with a direct field key") (let ((current (if (nil? data) (%none) (get data p0)))) (assoc (either data ({})) p0 (if (empty? ps) (f current) (update-in (option:unwrap-or current ({})) ps f)))))
           :examples $ []
             quote $ assert=
               {} $ :a $ {} (:b 2)
