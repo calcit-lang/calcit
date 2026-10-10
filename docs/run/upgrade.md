@@ -291,6 +291,19 @@ assert= |1.00 $ &number:format 1.005 2
 
 这是语义修复，不提供自动源码改写；依赖取偶舍入的代码需要自行处理。
 
+## range 的长度上限
+
+`range`（`&list:range`）在 native、JS、core WASM 与 WASI Component 上最多生成 16777216（2^24）个元素。超出时在分配前失败：native 与 JS 抛出可由 `try` 捕获的 `&list:range result is too large: more than 16777216 elements`，WASM trap。
+
+此前上限是 `u32::MAX`：native `range 1.5 4294967296` 会尝试分配约 43 亿个元素，进程因内存耗尽被系统杀死，`try` 无法捕获；JS 也只在接近 2^32 时才报错。依赖超过 2^24 个元素的 eager range 的代码需要改为分段生成或惰性迭代。这是语义修复，不提供自动源码改写。
+
+```cirru
+assert= 16777216 $ count $ range 16777216
+assert= :failed $ try
+  do (range 0 16777217) :returned
+  fn (_error) :failed
+```
+
 ## 整数谓词的跨目标语义修复
 
 `round?`（以及 0.28 的 Number `.round?`，该方法已在 0.29.0 删除，见下文）现在统一判断“有限且恰好没有小数部分”。native、JS、core WASM 和 WASI Component 使用相同契约：NaN、正负 Infinity、任何非零小数均为 false；0、-0 与有限的整数值为 true。

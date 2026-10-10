@@ -97,7 +97,7 @@ assert= false $ integer? $ &/ 1 0
 需要整数的参数都有明确的定义域。超出定义域时，native 与生成 JS 抛出可由 `try` 捕获的错误；WASM 没有可恢复的 `try`，对同样的输入 trap。
 
 - **下标与长度**：`&list:nth`、`&list:slice`、`&str:nth` 等的下标是非负安全整数；越界同样报错。
-- **`range`**：起点、终点与步长可以是小数；步长不为 0，且方向与区间一致，否则报错。
+- **`range`**：起点、终点与步长可以是小数；步长不为 0，且方向与区间一致，否则报错。结果最多 16777216（2^24）个元素，超出时在分配前报错（WASM trap），不会耗尽内存。
 - **位运算**：`bit-and`、`bit-or`、`bit-xor`、`bit-not`、`bit-shl`、`bit-shr` 的操作数是 i32 范围内的整数，结果是有符号 i32；位移步数只取低 5 位，所以 `bit-shl 1 32` 等于 `1`。
 - **`&number:display-by`**：值是非负安全整数，基数为 2、8 或 16，输出带 `0b`、`0o`、`0x` 前缀的精确数字。
 - **`&number:rem`**：见下一节。
@@ -111,7 +111,7 @@ assert= :failed $ try
   fn (_error) :failed
 ```
 
-对应 `calcit.core/bit-shl#masks-shift-count-to-five-bits`、`calcit.core/&list:nth#rejects-non-integer-index`、`calcit.core/&list:slice#rejects-fractional-bounds`、`calcit.core/range#rejects-zero-step`与 `calcit.core/range#handles-negative-fractional-and-overflow`。
+对应 `calcit.core/bit-shl#masks-shift-count-to-five-bits`、`calcit.core/&list:nth#rejects-non-integer-index`、`calcit.core/&list:slice#rejects-fractional-bounds`、`calcit.core/range#rejects-zero-step`、`calcit.core/range#rejects-oversized-length` 与 `calcit.core/range#handles-negative-fractional-and-overflow`。
 
 ## 取余 `rem`
 
