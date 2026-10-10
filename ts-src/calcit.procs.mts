@@ -1030,7 +1030,9 @@ export let remove_watch = (a: CalcitRef, k: CalcitTag): void => {
   throw new Error(`remove-watch failed: listener with key \`${k.value}\` not found`);
 };
 
-const MAX_RANGE_LENGTH = 0xffff_ffff;
+// Same eager range limit as native `MAX_RANGE_LEN` and WASM, 2^24 elements (#1852).
+const MAX_RANGE_LENGTH = 2 ** 24;
+const rangeTooLarge = () => new Error(`&list:range result is too large: more than ${MAX_RANGE_LENGTH} elements`);
 
 export let range = (n: number, m?: number, step: number = 1): CalcitSliceList => {
   const base = m == null ? 0 : n;
@@ -1051,12 +1053,13 @@ export let range = (n: number, m?: number, step: number = 1): CalcitSliceList =>
     ? Math.ceil(Math.abs(base) / Math.abs(step) + Math.abs(bound) / Math.abs(step))
     : Math.ceil((bound - base) / step);
   if (!Number.isFinite(estimatedLength) || estimatedLength > MAX_RANGE_LENGTH) {
-    throw new Error("&list:range result is too large");
+    throw rangeTooLarge();
   }
 
   const result: Array<CalcitValue> = [];
   if (step > 0) {
     for (let value = base; value < bound; ) {
+      if (result.length >= MAX_RANGE_LENGTH) throw rangeTooLarge();
       result.push(value);
       const next = value + step;
       if (next === value) {
@@ -1066,6 +1069,7 @@ export let range = (n: number, m?: number, step: number = 1): CalcitSliceList =>
     }
   } else {
     for (let value = base; value > bound; ) {
+      if (result.length >= MAX_RANGE_LENGTH) throw rangeTooLarge();
       result.push(value);
       const next = value + step;
       if (next === value) {

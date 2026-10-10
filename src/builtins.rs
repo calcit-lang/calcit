@@ -21,6 +21,7 @@ use crate::call_stack::{CallStackList, using_stack};
 use cirru_edn::EdnTag;
 
 use finger_vec::FingerVec;
+pub(crate) use lists::MAX_RANGE_LEN;
 pub(crate) use math::rem_numbers;
 pub(crate) use refs::{ValueAndListeners, quick_build_atom};
 

@@ -10379,6 +10379,18 @@
                   do (range 100000000000000000000 99999999999999000000 -1) false
                   fn (_error) true
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-oversized-length)
+              :code $ quote $ do
+                assert= :failed $ try
+                  do (range 1.5 4294967296) :returned
+                  fn (_error) :failed
+                assert= :failed $ try
+                  do (range 0 16777217) :returned
+                  fn (_error) :failed
+                assert= :failed $ try
+                  do (range 16777216 -1 -1) :returned
+                  fn (_error) :failed
+              :tags $ #{} :core :unit
             %{} 'TestEntry (:name |rejects-zero-step)
               :code $ quote $ assert= :failed
                 try

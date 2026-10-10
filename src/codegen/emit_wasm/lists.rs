@@ -1239,6 +1239,17 @@ pub(super) fn emit_buf_list_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   Ok(())
 }
 
+/// Trap when a range length (f64 local) exceeds the eager range limit shared with
+/// native and JS, so an oversized range fails before allocating (#1852).
+fn emit_trap_if_range_too_long(ctx: &mut WasmGenCtx, len_f: u32) {
+  ctx.emit(Instruction::LocalGet(len_f));
+  ctx.emit(f64_const(crate::builtins::MAX_RANGE_LEN as f64));
+  ctx.emit(Instruction::F64Gt);
+  ctx.begin_block_if();
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+}
+
 /// `range n` or `range a b` — create a list of numbers [0..n) or [a..b).
 pub(super) fn emit_range(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.is_empty() || args.len() > 3 {
@@ -1266,6 +1277,7 @@ pub(super) fn emit_range(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
     ctx.emit(Instruction::F64Div);
     ctx.emit(Instruction::F64Ceil);
     ctx.emit(Instruction::LocalSet(raw_count_f));
+    emit_trap_if_range_too_long(ctx, raw_count_f);
 
     // clamp: if raw_count_f <= 0, count = 0
     let count = ctx.alloc_local_typed(ValType::I32);
@@ -1324,6 +1336,16 @@ pub(super) fn emit_range(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
     emit_expr(ctx, &args[1])?;
     ctx.emit(Instruction::LocalSet(end));
   }
+
+  // Check the length in f64 first: the i32 subtraction below can wrap.
+  let raw_count_f = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(end));
+  ctx.emit(Instruction::F64Trunc);
+  ctx.emit(Instruction::LocalGet(start));
+  ctx.emit(Instruction::F64Trunc);
+  ctx.emit(Instruction::F64Sub);
+  ctx.emit(Instruction::LocalSet(raw_count_f));
+  emit_trap_if_range_too_long(ctx, raw_count_f);
 
   // count = max(0, trunc(end) - trunc(start))
   let count = ctx.alloc_local_typed(ValType::I32);

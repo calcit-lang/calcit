@@ -27,13 +27,6 @@ fn skipped(proc: CalcitProc) -> bool {
   )
 }
 
-/// Procs whose numeric arguments size an allocation. Huge sizes exhaust memory
-/// instead of failing (#1852), so these only receive numbers below 2^31 here.
-fn sizes_allocation(proc: CalcitProc) -> bool {
-  use CalcitProc::*;
-  matches!(proc, Range | NativeListRange)
-}
-
 /// Deterministic xorshift generator so a failure reproduces from its seed.
 struct Rng(u64);
 
@@ -113,12 +106,7 @@ fn builtin_procs_do_not_panic_on_arbitrary_input() {
     let mut rng = Rng(seed);
     for round in 0..500 {
       let arg_count = (rng.next() % 5) as usize;
-      let args: Vec<Calcit> = (0..arg_count)
-        .map(|_| match rng.pick(&pool) {
-          Calcit::Number(n) if sizes_allocation(proc) && n.abs() >= 2147483648.0 => Calcit::Number(2.0),
-          value => value.to_owned(),
-        })
-        .collect();
+      let args: Vec<Calcit> = (0..arg_count).map(|_| rng.pick(&pool).to_owned()).collect();
       let rendered = || args.iter().map(|a| format!("{a}")).collect::<Vec<_>>().join(" ");
       if trace {
         eprintln!("{proc} {round} {}", rendered());

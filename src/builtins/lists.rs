@@ -11,8 +11,10 @@ use crate::builtins;
 use crate::call_stack::CallStackList;
 use crate::runner;
 
-// Keep eager ranges portable to JavaScript, whose array length is a 32-bit value.
-const MAX_RANGE_LEN: usize = u32::MAX as usize;
+// Eager ranges are bounded so an oversized request fails before allocating instead
+// of exhausting memory (#1852). JS (`MAX_RANGE_LENGTH`) and WASM (which imports this
+// constant) use the same limit, 2^24 elements.
+pub(crate) const MAX_RANGE_LEN: usize = 1 << 24;
 
 pub fn new_list(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::List(Arc::new(xs.into())))
@@ -224,6 +226,13 @@ pub fn concat(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   Ok(Calcit::List(Arc::new(CalcitList::Vector(ys))))
 }
 
+fn range_too_large() -> Result<Calcit, CalcitErr> {
+  CalcitErr::err_str(
+    CalcitErrKind::Unexpected,
+    format!("&list:range result is too large: more than {MAX_RANGE_LEN} elements"),
+  )
+}
+
 pub fn range(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.is_empty() || xs.len() > 3 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&list:range expected 1 to 3 arguments, but received:", xs);
@@ -273,16 +282,19 @@ pub fn range(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     ((bound - base) / step).ceil()
   };
   if !estimated_len.is_finite() || estimated_len > MAX_RANGE_LEN as f64 {
-    return CalcitErr::err_str(CalcitErrKind::Unexpected, "&list:range result is too large");
+    return range_too_large();
   }
 
   let mut ys = Vec::new();
   if ys.try_reserve_exact(estimated_len as usize).is_err() {
-    return CalcitErr::err_str(CalcitErrKind::Unexpected, "&list:range result is too large");
+    return range_too_large();
   }
   let mut i = base;
   if step > 0.0 {
     while i < bound {
+      if ys.len() >= MAX_RANGE_LEN {
+        return range_too_large();
+      }
       ys.push(Calcit::Number(i));
       let next = i + step;
       if next == i {
@@ -292,6 +304,9 @@ pub fn range(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
   } else {
     while i > bound {
+      if ys.len() >= MAX_RANGE_LEN {
+        return range_too_large();
+      }
       ys.push(Calcit::Number(i));
       let next = i + step;
       if next == i {
@@ -1024,6 +1039,17 @@ mod tests {
     let oversized = range(&[Calcit::Number(0.0), Calcit::Number(MAX_RANGE_LEN as f64 + 1.0), Calcit::Number(1.0)])
       .expect_err("range should reject results larger than the shared backend limit");
     assert!(oversized.to_string().contains("result is too large"));
+
+    // A fractional base just under u32::MAX elements used to pass the bound and exhaust memory (#1852).
+    let fractional = range(&[Calcit::Number(1.5), Calcit::Number(4294967296.0)])
+      .expect_err("range should reject a huge fractional range before allocating");
+    assert!(fractional.to_string().contains("result is too large"));
+
+    let at_limit = range(&[Calcit::Number(MAX_RANGE_LEN as f64)]).expect("range at the limit should succeed");
+    match at_limit {
+      Calcit::List(xs) => assert_eq!(xs.len(), MAX_RANGE_LEN),
+      other => panic!("expected a list, got {other}"),
+    }
 
     let stalled = range(&[Calcit::Number(1e20), Calcit::Number(1e20 - 1e6), Calcit::Number(-1.0)])
       .expect_err("range should reject steps that cannot advance at the current magnitude");
