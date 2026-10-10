@@ -229,16 +229,16 @@ do
 | `&trait::new/&impl::new` 对比 `&enum-def:new/&struct-def:new`，`is-spreading-mark?/data-definition-*` | **内部**；先修角色元数据，后有界统一内部拼写 | 不给应用新增 alias；同步注册、macro、typing、lowering 与错误映射，不能为前缀整齐重做编译器 |
 | `tuple?/tuple-enum` 迁移报错桩；Option/Result method helper | **内部兼容**，分别退场 | 报错桩与仍被方法引用的实现不是一类；`:internal` 也不能隐藏 Option、数学函数等实际公开能力 |
 
-### 实施与验收顺序
+### 迁移与验证
 
-1. 0.27.0：已合并的 Unicode 索引修复 → #1454 明确 nil/Option 与成员命题、修整数边界 → #1455 长度/List add 遮蔽 → seeded fold/intersperse → 去重 values 与其他组合。后续每批以对应 issue/PR 决定实际发布范围，不把整张表一次替换。
-2. 0.28.0：#1456 转换/解析证据 → #1457 core/js-ffi/std 效果 adapter → #1458 已落地入口的 Agent 推荐、版本化 preset 和兼容清理；暂缓项不阻塞前一批，也不被视为默许改名。
-3. 等价 fix 复用已有源码来源与 revision/fingerprint 防护；先 preview，再带 `--expect-revision` 应用，再次 preview 应为空。code、`:tests`、`:examples` 分别记录覆盖或人工处置；未知 macro、遮蔽、函数值、开放 receiver、自定义 trait 不猜。固定改写与 preset 是临时迁移桥梁：完整消费者验收后可在非 patch 版本退场，并从当前 preset 移除对应规则；需要历史桥梁的项目先按升级指南使用已发布的旧 CLI。后续项目级修改优先由 Agent 根据当前合同生成受保护事务，不继续扩展版本 × 规则矩阵或新增顶层入口。
-4. 每批保留 Calcit `:tests` 的用户方法调用，覆盖正常、空值、重复项、类型错误、失败与副作用顺序；Rust/脚本只验证 CLI、host/内存等边界。当前已支持的 native/JS/WASM/WASI 路径都验证，unsupported 明确列出，不能为测试绕过 lowering 改成 native call。
-5. Respo 优先回归事件键、HTML/属性/样式输出与集合转换；js-ffi 回归 effect/JS 边界；std 核对时间/随机/文件模型。用实际 commit、entry、发布依赖记录证据，不写“所有消费者已迁移”。参考已核对的 Respo `respo.render.html/element->string` 中 `some?/turn-string/join-str`，旧 nil 判断不能自动换成 Option 判断。
-6. 删除旧入口前同时满足：首选入口具有不弱于旧入口的类型证据；严格检查与相关 backend/真实消费者通过；fix 或人工迁移说明可用；至少一个正式版本的迁移窗口；core method 与待删应用入口解耦。到达版本号不自动授权删除；保留原因写到 issue，不让兼容名永久成为平行推荐。
+先选择同一精确发布版本的 CLI 与 `@calcit/procs`，再核对模块自己的版本要求。0.28.x 已提供的迁移桥梁不一定仍在 0.29.0 中：遇到已退役的入口或规则，按[升级指南](../run/upgrade.md#兼容入口的退场节奏)先用已发布的旧 CLI 迁移源码，再升级工具链。上表中的暂缓项不是已提供的推荐入口。
 
-本表来自 core metadata/method tables、`src/calcit/proc_name.rs`、native/JS builtin 实现、实时 `query type` 与 Respo/js-ffi/std 用法核对。它不是新的运行时 source of truth；实际 API 仍由 schema、解析到的定义和测试决定。每阶段完成后独立发版并发布中文成果 Discussion，不把本规划当作所有功能已交付。
+1. 等价 fix 复用已有源码来源与 revision/fingerprint 防护；先 preview，再带 `--expect-revision` 应用，再次 preview 应无可自动应用的旧调用。code、`:tests`、`:examples` 分别记录覆盖或人工处置；未知 macro、遮蔽、函数值、开放 receiver、自定义 trait 不猜。固定改写与 preset 是临时迁移桥梁：完整消费者验收后可在非 patch 版本退场，并从当前 preset 移除对应规则。后续项目级修改优先由 Agent 根据当前合同生成受保护事务，不继续扩展版本 × 规则矩阵或新增顶层入口。
+2. 保留 Calcit `:tests` 的用户方法调用，覆盖正常、空值、重复项、类型错误、失败与副作用顺序；Rust/脚本只验证 CLI、host/内存等边界。实际使用的 native/JS/WASM/WASI 路径分别验证，unsupported 明确列出，不能为测试绕过 lowering 改成 native call。
+3. Respo 回归事件键、HTML/属性/样式输出与集合转换；js-ffi 回归 effect/JS 边界；std 核对时间/随机/文件模型。文本转换用 `to-string`、文本拼接用 `join-string`；判断 nil 用 `non-nil?`，判断 Option variant 用 `.some?/.none?`。旧 nil 判断不能自动换成 Option 判断。保留输出转义、子节点顺序与 callback 次数，不凭名称替换业务语义。
+4. 删除旧入口前同时满足：首选入口具有不弱于旧入口的类型证据；严格检查与相关 backend/真实消费者通过；fix 或人工迁移说明可用；至少一个正式版本的迁移窗口；core method 与待删应用入口解耦。到达版本号不自动授权删除；保留原因写到 issue，不让兼容名永久成为平行推荐。
+
+本表来自 core metadata/method tables、`src/calcit/proc_name.rs`、native/JS builtin 实现、实时 `query type` 与 Respo/js-ffi/std 用法核对。它不是新的运行时 source of truth；实际 API 仍由 schema、解析到的定义和测试决定。消费者验证结果与版本收尾进度记录在关联 issues/PR，不用旧项目片段或规划表代替当前源码证据。
 
 ## 可运行的角色示例
 
