@@ -6009,7 +6009,7 @@
                 fn (x) x
             :tags $ #{} :core :unit
         'either $ %{} 'CodeEntry
-          :doc "|Returns the first non-nil value among its arguments\nBehaves like a nil-coalescing macro: only nil triggers evaluation of subsequent branches, so false is preserved as a value."
+          :doc "|Returns the first non-nil value among its arguments\nBehaves like a nil-coalescing macro: only nil triggers evaluation of subsequent branches, so false is preserved as a value. For Option values use .unwrap-or or match; either serves nil-based data until the nil migration."
           :code $ quote $ defmacro either (& xs)
             if (&list:empty? xs) (raise "|either expects at least 1 expression")
             &let
@@ -8539,7 +8539,7 @@
               :code $ quote $ assert= (#{} :a :b)
                 keys $ &{} :a 1 :b 2
               :tags $ #{} :core :types :unit
-        'keys-non-nil $ %{} 'CodeEntry (:doc "|Get keys from a map that have non-nil values")
+        'keys-non-nil $ %{} 'CodeEntry (:doc "|Return the keys whose values are not nil, treating nil as absent. Prefer Option values in new code; this helper serves nil-based data until the nil migration.")
           :code $ quote $ defn keys-non-nil (x)
             &map:keys $ &map:filter-kv x $ defn %keys-non-nil (_k v)
               hint-fn $ {}
@@ -9327,7 +9327,7 @@
                 count $ merge-dynamic ({})
                   {} $ :a 1
               :tags $ #{} :core :unit
-        'merge-non-nil $ %{} 'CodeEntry (:doc |)
+        'merge-non-nil $ %{} 'CodeEntry (:doc "|Merge maps left-to-right like merge, but a nil value in a later map keeps the earlier value instead of overwriting it, so nil means absent. Prefer Option values in new code; this helper serves nil-based data until the nil migration.")
           :code $ quote $ defn merge-non-nil (x0 & xs) (reduce xs x0 &merge-non-nil)
           :examples $ []
           :schema $ :: 'Fn $ {}
