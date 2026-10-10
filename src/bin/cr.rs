@@ -2407,7 +2407,7 @@ fn run_effects_graph(entries: &ProgramEntries, options: &EffectsGraphCommand) ->
     (entries.init_ns.to_string(), entries.init_def.to_string())
   };
 
-  println!(
+  eprintln!(
     "{}",
     format!(
       "Analyzing effects graph from: {}",

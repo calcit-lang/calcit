@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use strum_macros::{AsRefStr, EnumString};
+use strum_macros::{AsRefStr, EnumIter, EnumString};
 
 use crate::calcit::CalcitTypeAnnotation;
 
@@ -12,7 +12,7 @@ pub struct SyntaxTypeSignature {
 }
 
 /// core syntax inside Calcit
-#[derive(Debug, Clone, PartialEq, EnumString, strum_macros::Display, AsRefStr, PartialOrd, Eq, Ord)]
+#[derive(Debug, Clone, PartialEq, EnumString, EnumIter, strum_macros::Display, AsRefStr, PartialOrd, Eq, Ord)]
 pub enum CalcitSyntax {
   #[strum(serialize = "defn")]
   Defn,
