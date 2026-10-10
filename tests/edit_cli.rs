@@ -1798,6 +1798,44 @@ fn edit_ns_rejects_removal_without_flag_stale_revisions_and_malformed_data() {
       replace_once(&changed, "ns test-def-meta.main", "ns test-def-meta.other"),
       "Namespace name mismatch",
     ),
+    // The loader ignores unknown fields and collapses duplicate keys; edit ns must not lose data that way.
+    (
+      "misspelled :tests",
+      replace_once(
+        &text,
+        ":code $ quote $ defn reload! () (:: 'Unit)\n",
+        ":code $ quote $ defn reload! () (:: 'Unit)\n      :test $ []\n",
+      ),
+      "Unknown key `:test` in definition 'test-def-meta.main/reload!'",
+    ),
+    (
+      "misspelled :doc",
+      replace_once(&text, "(:doc \"|Reload handler\")", "(:dco \"|Reload handler\")"),
+      "Unknown key `:dco` in definition 'test-def-meta.main/reload!'",
+    ),
+    (
+      "duplicate CodeEntry key",
+      replace_once(
+        &text,
+        ":code $ quote $ defn reload! () (:: 'Unit)\n",
+        ":code $ quote $ defn reload! () (:: 'Unit)\n      :doc |again\n",
+      ),
+      "Duplicate key `:doc` in definition 'test-def-meta.main/reload!'",
+    ),
+    (
+      "duplicate definition",
+      replace_once(
+        &text,
+        "  :defs $ {}\n",
+        "  :defs $ {}\n    'reload! $ %{} 'CodeEntry (:doc |)\n      :code $ quote $ defn reload! () nil\n",
+      ),
+      "Definition 'test-def-meta.main/reload!' appears more than once",
+    ),
+    (
+      "unknown FileEntry key",
+      replace_once(&text, "  :defs $ {}\n", "  :def $ {}\n"),
+      "Unknown key `:def` in the FileEntry",
+    ),
   ] {
     fs::write(&view, &data).unwrap();
     let rejected = edit_ns_json(&snapshot, namespace, &view, &[]);

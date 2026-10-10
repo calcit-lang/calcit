@@ -36,6 +36,83 @@ pub(crate) fn render_ns_view(file: &FileInSnapShot) -> Result<String, String> {
   })
 }
 
+const FILE_ENTRY_KEYS: &[&str] = &["defs", "ns"];
+const NS_ENTRY_KEYS: &[&str] = &["code", "doc"];
+const CODE_ENTRY_KEYS: &[&str] = &["code", "doc", "examples", "ffi", "schema", "tags", "tests"];
+
+fn truncate_message(text: &str, limit: usize) -> String {
+  match text.char_indices().nth(limit) {
+    Some((index, _)) => format!("{}… ({} more bytes)", &text[..index], text.len() - index),
+    None => text.to_owned(),
+  }
+}
+
+/// Key text of a record or map entry, without its `:`, `'` or `|` prefix.
+fn entry_key(node: &Cirru) -> Option<&str> {
+  match node {
+    Cirru::Leaf(text) => Some(text.strip_prefix([':', '\'', '|']).unwrap_or(text)),
+    Cirru::List(_) => None,
+  }
+}
+
+/// `(key value)` pairs of a `%{} 'Name ...` record or `{} ...` map node; `None` for other shapes,
+/// which the Snapshot loader reports itself.
+fn entry_pairs(node: &Cirru) -> Option<Vec<(&str, &Cirru)>> {
+  let Cirru::List(items) = node else { return None };
+  let pairs = match items.first() {
+    Some(head) if head.eq_leaf("%{}") => items.get(2..)?,
+    Some(head) if head.eq_leaf("{}") => &items[1..],
+    _ => return None,
+  };
+  pairs
+    .iter()
+    .map(|pair| match pair {
+      Cirru::List(kv) if kv.len() == 2 => entry_key(&kv[0]).map(|key| (key, &kv[1])),
+      _ => None,
+    })
+    .collect()
+}
+
+/// Reject duplicate and unknown keys before the loader collapses duplicates or ignores unknown fields,
+/// which would silently drop data such as tests renamed to `:test`.
+fn checked_fields<'a>(node: &'a Cirru, allowed: &[&str], owner: &str) -> Result<Vec<(&'a str, &'a Cirru)>, String> {
+  let Some(pairs) = entry_pairs(node) else { return Ok(vec![]) };
+  let mut seen = BTreeSet::new();
+  for (key, _) in &pairs {
+    if !allowed.contains(key) {
+      return Err(format!(
+        "Unknown key `:{key}` in {owner}; expected one of {}",
+        allowed.iter().map(|key| format!(":{key}")).collect::<Vec<_>>().join(", ")
+      ));
+    }
+    if !seen.insert(*key) {
+      return Err(format!("Duplicate key `:{key}` in {owner}"));
+    }
+  }
+  Ok(pairs)
+}
+
+fn check_record_keys(raw: &str, namespace: &str) -> Result<(), String> {
+  // Unparsable input is reported by the EDN parser.
+  let Ok(nodes) = cirru_parser::parse(raw) else { return Ok(()) };
+  let [file] = nodes.as_slice() else { return Ok(()) };
+  for (key, value) in checked_fields(file, FILE_ENTRY_KEYS, &format!("the FileEntry of '{namespace}'"))? {
+    if key == "ns" {
+      checked_fields(value, NS_ENTRY_KEYS, &format!("the NsEntry of '{namespace}'"))?;
+      continue;
+    }
+    let Some(definitions) = entry_pairs(value) else { continue };
+    let mut seen = BTreeSet::new();
+    for (name, entry) in definitions {
+      if !seen.insert(name) {
+        return Err(format!("Definition '{namespace}/{name}' appears more than once in :defs"));
+      }
+      checked_fields(entry, CODE_ENTRY_KEYS, &format!("definition '{namespace}/{name}'"))?;
+    }
+  }
+  Ok(())
+}
+
 /// Load the Snapshot with one namespace's `:files` entry replaced by `file_data`,
 /// so the incoming data passes through the same loader as the Snapshot file.
 fn load_with_file_entry(snapshot_file: &str, namespace: &str, file_data: Edn) -> Result<Snapshot, String> {
@@ -281,7 +358,13 @@ pub(crate) fn handle_edit_ns(opts: &EditNsCommand, snapshot_file: &str) -> Resul
   let namespace = opts.namespace.as_str();
   let raw = read_code_input(&opts.file, &opts.code)?
     .ok_or("Namespace data required: use --file, --code, or pipe the `query ns <ns> --format cirru` output via stdin")?;
-  let file_data = cirru_edn::parse(&raw).map_err(|error| format!("Failed to parse namespace data as Cirru EDN: {error}"))?;
+  check_record_keys(&raw, namespace)?;
+  let file_data = cirru_edn::parse(&raw).map_err(|error| {
+    format!(
+      "Failed to parse namespace data as Cirru EDN: {}",
+      truncate_message(&error.to_string(), 400)
+    )
+  })?;
   let current = load_snapshot(snapshot_file)?;
   check_ns_editable(&current, namespace)?;
   if !current.files.contains_key(namespace) {

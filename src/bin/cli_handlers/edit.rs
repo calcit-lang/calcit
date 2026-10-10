@@ -1093,7 +1093,7 @@ pub(crate) fn definition_head_macro_code(
 
 /// Replace a definition's code and apply the metadata rules that follow from it.
 /// `derived_macro_schema` comes from `snapshot::conservative_macro_schema` on the new code.
-pub(crate) fn replace_definition_code(entry: &mut CodeEntry, code: Cirru, derived_macro_schema: Option<Arc<CalcitTypeAnnotation>>) {
+fn replace_definition_code(entry: &mut CodeEntry, code: Cirru, derived_macro_schema: Option<Arc<CalcitTypeAnnotation>>) {
   entry.code = code;
   // The shorthand fully determines external-object metadata, and the loader
   // regenerates it. Carrying a retained `:ffi` would write an invalid

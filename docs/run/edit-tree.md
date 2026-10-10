@@ -347,6 +347,7 @@ stdin）。数据先替换 Snapshot 中该命名空间的 `:files` 条目，再�
 - 数据中缺少的定义只有传 `--allow-remove` 才会删除；否则命令列出这些定义并失败，Snapshot 不变。
 - 重命名定义用 `edit rename`。在数据里改 key 等于删除旧定义再添加新定义。
 - 改动或新增的 `:code` 与 `edit def` 一样经过定义形状检查；同一份数据中新增的宏可以作为其他定义的定义头。需要自定义定义头时传 `--allow-unknown-head`。`defmacro` 需要在数据中写出 `Macro` schema，loader 不接受缺少 schema 的宏。
+- FileEntry、NsEntry 与 CodeEntry 中的未知键（例如把 `:tests` 误写成 `:test`）、重复键，以及 `:defs` 中重复的定义名都会被拒绝，错误信息给出键名和定义。
 - 数据无法解析、不符合 loader 规则或未通过形状检查时，命令在写入前失败，Snapshot 不变。
 - `--dry-run` 只比较和校验，不写文件；dry-run 返回的 `scoped_revision` 只覆盖本次改动的定义，传给 `--expect-revision` 后提交。revision 不匹配时拒绝写入。
 - 未修改的数据写回后 Snapshot 字节不变；只改一个定义的 `:code` 时，结果与对该定义执行 `edit def --overwrite` 相同。

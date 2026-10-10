@@ -64,7 +64,7 @@ calcit query ns
 calcit query ns calcit.core
 
 # The namespace's FileEntry data as stored in the Snapshot (the input of `edit ns`)
-calcit query ns app.main --format cirru
+calcit query ns app.demo --format cirru
 ```
 
 `query ns <ns> --format cirru` 输出该命名空间在 Snapshot `:files` 中保存的 `%{} 'FileEntry` 数据，使用与 Snapshot
@@ -84,8 +84,19 @@ calcit query ns app.main --format cirru
 ```
 
 数据包含 `:ns` 与 `:defs` 中每个 `CodeEntry` 的全部字段（`:doc`、`:code`、`:examples`、`:schema`、`:tests` 等），
-没有额外语法。Snapshot 已是规范格式时，输出与文件中该命名空间的片段逐字节相同（仅缩进不同）。修改后用
+没有额外语法。Snapshot 已是规范格式时，去掉文件中该片段固定的缩进和 `'<ns> $ ` 键前缀后，输出与之逐字节相同。
+`edit ns` 拒绝 FileEntry、NsEntry 与 CodeEntry 中的未知键和重复键，以及 `:defs` 中重复的定义名。修改后用
 `calcit edit ns <ns> --file <data>` 写回，流程见 `edit-tree.md` 的“命名空间数据写回”。
+
+### 命名空间签名概览（`defs --signatures`）
+
+```bash
+calcit query defs app.main --signatures
+```
+
+每行列出定义名、签名与 doc 首行：有 schema 的显示单行 schema，没有 schema 的显示 `(untyped)` 与声明头（如
+`(untyped) defn helper $ x`），值本身不进入概览。不带 `--signatures` 时只用 `[schema]` 标记是否声明了 schema。
+了解一个模块时先看这个概览，再按需对单个定义使用 `schema`、`examples`、`context`。
 
 ### Read Code (`def`)
 
