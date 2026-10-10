@@ -24,10 +24,18 @@ try {
   // private EDN must leave error reporting to the caller, not log its payload.
   const runtime = await import(new URL("../lib/calcit.procs.mjs", import.meta.url));
   // Host calls bypass Calcit argument proofs; do not coerce a layout flag.
-  for (const flag of [null, 0, "false"]) {
+  for (const flag of [undefined, null, 0, "false"]) {
     assert.throws(() => runtime.format_cirru_edn(42, flag), /boolean inline option/);
     assert.throws(() => runtime.format_cirru(new runtime.CalcitSliceList([]), flag), /boolean inline option/);
   }
+  const tree = new runtime.CalcitSliceList([
+    new runtime.CalcitSliceList(["a", new runtime.CalcitSliceList(["b", "c"]), new runtime.CalcitSliceList(["d", "e"])]),
+  ]);
+  assert.equal(runtime.format_cirru(tree), "\na (b c)\n  d e\n");
+  assert.equal(runtime.format_cirru(tree, false), runtime.format_cirru(tree));
+  assert.equal(runtime.format_cirru(tree, true), "\na (b c) (d e)\n");
+  assert.equal(runtime.format_cirru_edn(tree), runtime.format_cirru_edn(tree, true));
+  assert.notEqual(runtime.format_cirru_edn(tree, false), runtime.format_cirru_edn(tree, true));
   const originalError = console.error;
   const errors = [];
   console.error = (...args) => errors.push(args);

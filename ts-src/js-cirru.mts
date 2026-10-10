@@ -166,7 +166,8 @@ export class CalcitCirruQuote {
   }
 }
 
-export let format_cirru = (data: CalcitCirruQuote | CalcitList, useInline: boolean = false): string => {
+export let format_cirru = function (data: CalcitCirruQuote | CalcitList, useInline?: boolean): string {
+  if (arguments.length < 2) useInline = false;
   if (typeof useInline !== "boolean") {
     throw new Error("format-cirru requires a boolean inline option");
   }
@@ -571,7 +572,8 @@ export let extract_cirru_edn_for_typed = (x: CirruEdnFormat, options: CalcitValu
   return extract_cirru_edn_inner(x, options, true) as CalcitValue | TypedEdnSetView;
 };
 
-export let format_cirru_edn = (data: CalcitValue, useInline: boolean = true): string => {
+export let format_cirru_edn = function (data: CalcitValue, useInline?: boolean): string {
+  if (arguments.length < 2) useInline = true;
   if (typeof useInline !== "boolean") {
     throw new Error("format-cirru-edn requires a boolean inline option");
   }
