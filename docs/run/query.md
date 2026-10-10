@@ -63,44 +63,29 @@ calcit query ns
 # Show definitions in a specific namespace
 calcit query ns calcit.core
 
-# Whole namespace as writable Cirru source (the input of `edit ns`)
+# The namespace's FileEntry data as stored in the Snapshot (the input of `edit ns`)
 calcit query ns app.main --format cirru
 ```
 
-`query ns <ns> --format cirru` 一次输出整个命名空间的可写回视图：
+`query ns <ns> --format cirru` 输出该命名空间在 Snapshot `:files` 中保存的 `%{} 'FileEntry` 数据，使用与 Snapshot
+文件相同的序列化和格式：
 
 ```cirru.no-check
-ns app.demo
-  :require
-    app.lib :refer $ helper
-
-defn greet (name)
-  str "|Hi " name
-
-:meta greet
-  :doc "|Greets a person"
-  :schema $ :: 'Fn $ {} (:args $ [] 'String) (:return 'String)
-
-def default-name |Ada
+%{} 'FileEntry
+  :defs $ {}
+    'greet $ %{} 'CodeEntry (:doc "|Greets a person")
+      :code $ quote $ defn greet (name) (str "|Hi " name)
+      :examples $ []
+      :schema $ :: 'Fn $ {} (:return 'String)
+        :args $ [] 'String
+  :ns $ %{} 'NsEntry (:doc |)
+    :code $ quote $ ns app.demo
+      :require $ app.lib :refer $ helper
 ```
 
-- 第一个表达式是完整的 `ns` 形式（imports）。
-- 之后每个表达式是一个定义的代码，与 `query def --format cirru` 去掉 `quote $` 后一致，按名称排序。
-- 定义有 doc 或 schema 时，紧跟一个 `:meta <name>` 块，其中只出现非空的 `:doc` 与非 Dynamic 的 `:schema`。
-- 代码本身不以定义名作为第二个叶子时（例如顶层 `fn`、runtime 实现的占位符），写成 `:def <name> <code>`。
-- tests、examples、tags 与 FFI 元数据不进入视图。
-
-修改后用 `calcit edit ns <ns> --file <view>` 写回，流程见 `edit-tree.md` 的“命名空间视图写回”。
-
-### 命名空间签名概览（`defs --signatures`）
-
-```bash
-calcit query defs app.main --signatures
-```
-
-每行列出定义名、签名与 doc 首行：有 schema 的显示单行 schema，没有 schema 的显示 `(untyped)` 与声明头（如
-`(untyped) defn helper $ x`），值本身不进入概览。不带 `--signatures` 时只用 `[schema]` 标记是否声明了 schema。
-了解一个模块时先看这个概览，再按需对单个定义使用 `schema`、`examples`、`context`。
+数据包含 `:ns` 与 `:defs` 中每个 `CodeEntry` 的全部字段（`:doc`、`:code`、`:examples`、`:schema`、`:tests` 等），
+没有额外语法。Snapshot 已是规范格式时，输出与文件中该命名空间的片段逐字节相同（仅缩进不同）。修改后用
+`calcit edit ns <ns> --file <data>` 写回，流程见 `edit-tree.md` 的“命名空间数据写回”。
 
 ### Read Code (`def`)
 

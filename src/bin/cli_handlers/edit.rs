@@ -1799,7 +1799,7 @@ fn parse_schema_input(raw: &str, input_format: SyntaxInputFormat) -> Result<Cirr
   })
 }
 
-pub(crate) fn strip_name_field_from_schema(schema: Cirru) -> Cirru {
+fn strip_name_field_from_schema(schema: Cirru) -> Cirru {
   match schema {
     Cirru::List(items) => {
       if items.is_empty() {
@@ -1983,7 +1983,7 @@ fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), St
   Ok(())
 }
 
-fn find_edn_map_value_mut<'a>(map: &'a mut EdnMapView, expected: &str) -> Option<&'a mut Edn> {
+pub(crate) fn find_edn_map_value_mut<'a>(map: &'a mut EdnMapView, expected: &str) -> Option<&'a mut Edn> {
   map
     .0
     .iter_mut()

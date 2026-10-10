@@ -281,8 +281,8 @@ fn render_query_explanation(cmd: &QueryCommand) -> Option<String> {
       desc
     }
     QuerySubcommand::Ns(opts) if opts.format == "cirru" => match &opts.namespace {
-      Some(ns) => format!("prints namespace `{ns}` as writable Cirru source for `edit ns`"),
-      None => "prints a namespace as writable Cirru source (needs a namespace)".to_string(),
+      Some(ns) => format!("prints the stored data of namespace `{ns}` for `edit ns`"),
+      None => "prints the stored data of a namespace (needs a namespace)".to_string(),
     },
     QuerySubcommand::Ns(opts) => {
       let mut desc = "lists all namespaces".to_string();
@@ -390,7 +390,7 @@ fn render_edit_explanation(cmd: &EditCommand) -> Option<String> {
     }
     EditSubcommand::RmNs(opts) => format!("deletes namespace `{}`", opts.namespace),
     EditSubcommand::Ns(opts) => format!(
-      "{} namespace `{}` from a Cirru view, per definition",
+      "{} namespace `{}` from its FileEntry data, per definition",
       if opts.dry_run { "previews writing" } else { "writes" },
       opts.namespace
     ),

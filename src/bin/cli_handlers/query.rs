@@ -653,7 +653,7 @@ fn lookup_special_builtin_query_meta(namespace: &str, definition: &str) -> Resul
   Ok(meta)
 }
 
-pub(crate) fn query_schema_cirru(annotation: &CalcitTypeAnnotation, wrapped: bool) -> Result<Option<Cirru>, String> {
+fn query_schema_cirru(annotation: &CalcitTypeAnnotation, wrapped: bool) -> Result<Option<Cirru>, String> {
   let schema_edn = match annotation {
     CalcitTypeAnnotation::Dynamic => return Ok(None),
     CalcitTypeAnnotation::Fn(fn_annot) if wrapped => fn_annot.to_wrapped_schema_edn(),
@@ -4575,14 +4575,14 @@ fn handle_ns(input_path: &str, namespace: Option<&str>, include_deps: bool) -> R
   Ok(())
 }
 
-/// Print the whole namespace as writable Cirru source, the input `edit ns` accepts.
+/// Print the namespace's `FileEntry` data as stored in the Snapshot, the input `edit ns` accepts.
 fn handle_ns_cirru_view(input_path: &str, namespace: &str) -> Result<(), String> {
   let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
   let file_data = snapshot
     .files
     .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
-  print!("{}", super::ns_view::render_ns_view(namespace, file_data)?);
+  print!("{}", super::ns_view::render_ns_view(file_data)?);
   Ok(())
 }
 

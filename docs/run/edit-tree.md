@@ -337,23 +337,23 @@ calcit calcit.cirru test app.main/main! --require-match
 
 `tree`、`cursor apply` 与 `fix` 的 human preview 都使用同一组 Markdown 边界：operation、path、revision、changed 等控制信息位于 fence 外，Before/After 源码位于 `cirru` fence 内。guard 失败也以 Expected/Actual 两个 fence 输出到 stderr。不要把 heading、列表项或截断提示复制回 Snapshot。
 
-### 命名空间视图写回（`edit ns`）
+### 命名空间数据写回（`edit ns`）
 
-`calcit edit ns <ns> --file <view>` 接收 `query ns <ns> --format cirru` 输出的视图（也可用 `--code` 或 stdin），按定义名与
-Snapshot 比较：
+`calcit edit ns <ns> --file <data>` 接收 `query ns <ns> --format cirru` 输出的 `%{} 'FileEntry` 数据（也可用 `--code` 或
+stdin）。数据先替换 Snapshot 中该命名空间的 `:files` 条目，再由读取 Snapshot 文件的同一个 loader 校验，然后按定义名比较：
 
-- 代码或 `:meta` 有变化的定义被覆盖，新定义被添加，其余定义保持原样；结果按定义报告 `added` / `changed` / `unchanged` / `removed`，`changed` 同时列出变化的 `code`、`doc`、`schema`。
-- 视图中缺少的定义只有传 `--allow-remove` 才会删除；否则命令列出这些定义并失败，Snapshot 不变。
-- 视图中没有 `:meta` 块或块内没有某个字段时，保留原 doc/schema：删掉 `:doc` 一行会保留原 doc，写 `:doc |` 才清空 doc；同样，删掉 `:schema` 一行保留原 schema，写 `:schema nil` 才清除。
-- 重命名定义用 `edit rename`。在视图里改名等于删除旧定义再添加新定义，旧名字的 tests 与 examples 会随旧定义一起删除。
-- tests、examples、tags 与 FFI 元数据保持原值；`ns` 形式变化时更新 imports。
-- 新增或改动的代码与 `edit def` 一样经过定义形状检查；需要自定义定义头时传 `--allow-unknown-head`。
+- 数据中的每个字段都生效：`:code`、`:doc`、`:schema`、`:examples`、`:tests`、`:tags` 与 `:ffi` 写成什么就保存什么，`:ns` 条目变化时更新 imports 与命名空间 doc。
+- 只有内容变化的定义被覆盖，新定义被添加；结果按定义报告 `added` / `changed` / `unchanged` / `removed`，`changed` 同时列出变化的字段。
+- 数据中缺少的定义只有传 `--allow-remove` 才会删除；否则命令列出这些定义并失败，Snapshot 不变。
+- 重命名定义用 `edit rename`。在数据里改 key 等于删除旧定义再添加新定义。
+- 改动或新增的 `:code` 与 `edit def` 一样经过定义形状检查；同一份数据中新增的宏可以作为其他定义的定义头。需要自定义定义头时传 `--allow-unknown-head`。`defmacro` 需要在数据中写出 `Macro` schema，loader 不接受缺少 schema 的宏。
+- 数据无法解析、不符合 loader 规则或未通过形状检查时，命令在写入前失败，Snapshot 不变。
 - `--dry-run` 只比较和校验，不写文件；dry-run 返回的 `scoped_revision` 只覆盖本次改动的定义，传给 `--expect-revision` 后提交。revision 不匹配时拒绝写入。
-- 未修改的视图写回后 Snapshot 字节不变；只改一个定义时，结果与对该定义执行 `edit def --overwrite` 相同。
+- 未修改的数据写回后 Snapshot 字节不变；只改一个定义的 `:code` 时，结果与对该定义执行 `edit def --overwrite` 相同。
 
 ```bash
 calcit query ns app.main --format cirru > .calcit/snippets/app.main.cirru
-# 修改 .calcit/snippets/app.main.cirru 中的若干定义
+# 修改 .calcit/snippets/app.main.cirru 中的若干 CodeEntry
 calcit edit ns app.main --file .calcit/snippets/app.main.cirru --dry-run --format edn   # 读取 :scoped-revision
 calcit edit ns app.main --file .calcit/snippets/app.main.cirru --expect-revision 'scope:def:app.main/f@md5:...'
 calcit --check-only

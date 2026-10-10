@@ -850,7 +850,7 @@ pub struct QueryNsCommand {
   /// include dependency and core namespaces
   #[argh(switch)]
   pub deps: bool,
-  /// output format: Markdown-compatible human (default), or cirru (the whole namespace as writable source, accepted by `edit ns`)
+  /// output format: Markdown-compatible human (default), or cirru (the namespace's `%{} 'FileEntry` data as stored in the Snapshot, accepted by `edit ns`)
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
 }
@@ -1606,7 +1606,7 @@ pub enum EditSubcommand {
   AddNs(EditAddNsCommand),
   /// delete a namespace
   RmNs(EditRmNsCommand),
-  /// write back a `query ns --format cirru` view, updating only changed definitions
+  /// write back a namespace's `FileEntry` data from `query ns --format cirru`, updating only changed definitions
   Ns(EditNsCommand),
   /// update namespace imports (replace all)
   Imports(EditImportsCommand),
@@ -1922,16 +1922,16 @@ pub struct EditRmNsCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "ns")]
-/// write back a `query ns <ns> --format cirru` view: compare per definition, overwrite only changed code or :meta, add new
-/// definitions, and keep tests/examples (input via --file, --code, or pipe via stdin)
+/// write back the `%{} 'FileEntry` data from `query ns <ns> --format cirru`: validate it with the Snapshot loader, compare per
+/// definition, and write only added or changed definitions (input via --file, --code, or pipe via stdin)
 pub struct EditNsCommand {
-  /// namespace the view describes; must match the view's `ns` form
+  /// namespace whose `:files` entry the data replaces
   #[argh(positional)]
   pub namespace: String,
-  /// read the namespace view from file
+  /// read the namespace data from file
   #[argh(option)]
   pub file: Option<String>,
-  /// namespace view as inline text
+  /// namespace data as inline text
   #[argh(option, long = "code")]
   pub code: Option<String>,
   /// require the snapshot content (or a scoped revision from a dry-run) to match before writing
@@ -1940,7 +1940,7 @@ pub struct EditNsCommand {
   /// compare and validate without replacing the snapshot
   #[argh(switch, long = "dry-run")]
   pub dry_run: bool,
-  /// delete definitions that are missing from the view
+  /// delete definitions that are missing from the data
   #[argh(switch, long = "allow-remove")]
   pub allow_remove: bool,
   /// allow unrecognized definition heads in changed or added definitions; shape and name checks still apply

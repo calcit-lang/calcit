@@ -1537,7 +1537,7 @@ fn query_def_cirru_view_writes_back_byte_identically() {
 
 fn query_ns_view(snapshot: &Path, namespace: &str) -> String {
   let output = run_calcit(snapshot, &["query", "ns", namespace, "--format", "cirru"]);
-  assert_success(&output, &format!("cirru view of namespace {namespace}"));
+  assert_success(&output, &format!("FileEntry data of namespace {namespace}"));
   String::from_utf8(output.stdout).unwrap()
 }
 
@@ -1561,27 +1561,48 @@ fn definition_statuses(report: &serde_json::Value) -> std::collections::BTreeMap
     .collect()
 }
 
-/// Replace the whole top-level block that starts with `head` (up to the next blank line) in a namespace view.
-fn replace_view_block(view: &str, head: &str, replacement: &str) -> String {
-  let start = view
-    .find(&format!("\n\n{head}"))
-    .unwrap_or_else(|| panic!("view has no `{head}` block:\n{view}"))
-    + 2;
-  let end = view[start..].find("\n\n").map(|offset| start + offset).unwrap_or(view.len());
-  format!("{}{replacement}{}", &view[..start], &view[end..])
+fn definition_fields(report: &serde_json::Value, name: &str) -> serde_json::Value {
+  report["definitions"]
+    .as_array()
+    .unwrap()
+    .iter()
+    .find(|item| item["name"] == name)
+    .unwrap_or_else(|| panic!("no report entry for {name}: {report}"))["fields"]
+    .clone()
 }
 
-/// `query ns --format cirru` output written back with `edit ns` leaves each Snapshot byte-identical.
+fn replace_once(text: &str, from: &str, to: &str) -> String {
+  assert_eq!(text.matches(from).count(), 1, "expected exactly one `{from}` in:\n{text}");
+  text.replacen(from, to, 1)
+}
+
+/// Drop one `'name $ %{} 'CodeEntry ...` entry from the `:defs` map of a FileEntry view.
+fn remove_definition_entry(view: &str, name: &str) -> String {
+  let lines = view.lines().collect::<Vec<_>>();
+  let start = lines
+    .iter()
+    .position(|line| line.starts_with(&format!("    '{name} $ ")))
+    .unwrap_or_else(|| panic!("no entry for {name}"));
+  let end = lines[start + 1..]
+    .iter()
+    .position(|line| !line.starts_with("     "))
+    .map(|offset| start + 1 + offset)
+    .unwrap_or(lines.len());
+  let mut kept = lines[..start].to_vec();
+  kept.extend_from_slice(&lines[end..]);
+  format!("{}\n", kept.join("\n"))
+}
+
+/// `query ns --format cirru` prints the stored FileEntry data; writing it back leaves each Snapshot byte-identical.
 #[test]
-fn query_ns_cirru_view_writes_back_byte_identically() {
+fn query_ns_file_entry_data_writes_back_byte_identically() {
   for (source, namespace) in [
     ("calcit/test.cirru", "app.main"),
     ("calcit/test-def-meta.cirru", "test-def-meta.main"),
     ("calcit/test-types.cirru", "test-types.main"),
     ("calcit/test-struct.cirru", "test-struct.main"),
-    // Its stored `ns` form names `test-algebra`; an unchanged form is accepted.
+    // Its stored `ns` form names `test-algebra`; unchanged data is accepted.
     ("calcit/test-algebra.cirru", "test-algebra.main"),
-    // Runtime-implemented definitions have no name leaf and use `:def <name> <code>`.
     ("src/cirru/calcit-core.cirru", "calcit.core"),
   ] {
     let directory = TestDirectory::create();
@@ -1589,7 +1610,10 @@ fn query_ns_cirru_view_writes_back_byte_identically() {
     fs::copy(source, &snapshot).unwrap();
     let original = fs::read(&snapshot).unwrap();
     let text = query_ns_view(&snapshot, namespace);
-    assert!(text.starts_with("ns "), "{namespace} view must start with its ns form:\n{text}");
+    assert!(
+      text.starts_with("%{} 'FileEntry\n"),
+      "{namespace} data must be a FileEntry:\n{text}"
+    );
     let view = directory.0.join("view.cirru");
     fs::write(&view, &text).unwrap();
     let output = edit_ns_json(&snapshot, namespace, &view, &[]);
@@ -1606,10 +1630,16 @@ fn query_ns_cirru_view_writes_back_byte_identically() {
       "writing back {namespace} changed the Snapshot"
     );
   }
+
+  // For a canonically formatted Snapshot the data is exactly the namespace's slice of the file.
+  let file = fs::read_to_string("calcit/test-def-meta.cirru").unwrap();
+  let text = query_ns_view(Path::new("calcit/test-def-meta.cirru"), "test-def-meta.main");
+  let indented = text.lines().map(|line| format!("    {line}\n")).collect::<String>();
+  assert!(file.contains(&indented), "data is not a slice of the Snapshot:\n{text}");
 }
 
 #[test]
-fn edit_ns_updates_only_changed_definitions_and_keeps_tests() {
+fn edit_ns_writes_only_changed_definitions() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
   fs::copy("calcit/test-def-meta.cirru", &snapshot).unwrap();
@@ -1632,10 +1662,14 @@ fn edit_ns_updates_only_changed_definitions_and_keeps_tests() {
   let before = fs::read(&snapshot).unwrap();
   let namespace = "test-def-meta.main";
   let text = query_ns_view(&snapshot, namespace);
-  assert!(!text.contains("assert= 1 1"), "tests stay out of the view:\n{text}");
+  assert!(text.contains("assert= 1 1"), "tests are part of the data:\n{text}");
 
   // One changed definition: the result equals `edit def --overwrite` of just that definition.
-  let edited = replace_view_block(&text, "defn reload!", "defn reload! () (println |reloaded) (:: 'Unit)");
+  let edited = replace_once(
+    &text,
+    ":code $ quote $ defn reload! () (:: 'Unit)",
+    ":code $ quote $ defn reload! () (println |reloaded) (:: 'Unit)",
+  );
   let view = directory.0.join("view.cirru");
   fs::write(&view, &edited).unwrap();
   let preview = edit_ns_json(&snapshot, namespace, &view, &["--dry-run"]);
@@ -1644,6 +1678,7 @@ fn edit_ns_updates_only_changed_definitions_and_keeps_tests() {
   assert_eq!(report["changed"], true);
   let statuses = definition_statuses(&report);
   assert_eq!(statuses["reload!"], "changed");
+  assert_eq!(definition_fields(&report, "reload!"), serde_json::json!(["code"]));
   assert_eq!(statuses.values().filter(|status| *status != "unchanged").count(), 1, "{report}");
   assert_eq!(fs::read(&snapshot).unwrap(), before, "dry-run must not write");
 
@@ -1675,67 +1710,35 @@ fn edit_ns_updates_only_changed_definitions_and_keeps_tests() {
   let reload = query_definition(&snapshot, "test-def-meta.main/reload!");
   assert_eq!(reload["data"]["tests"].as_array().map(Vec::len), Some(1), "{reload}");
 
-  // Metadata: a missing :meta block keeps doc/schema, `:schema nil` clears, new definitions are added.
+  // Every field in the data is authoritative: a doc edit and a new definition.
   let text = query_ns_view(&snapshot, namespace);
-  let edited = replace_view_block(&text, ":meta MetaSample", ":meta MetaSample $ :schema nil");
-  let edited = replace_view_block(&edited, ":meta main!", "");
-  let edited = format!("{edited}\ndefn added-fn (x) x\n\n:meta added-fn $ :doc \"|Added by a view\"\n");
+  let edited = replace_once(
+    &text,
+    "(:doc \"|Sample definition for def metadata lookup tests\")",
+    "(:doc \"|Updated through namespace data\")",
+  );
+  let edited = replace_once(
+    &edited,
+    "  :defs $ {}\n",
+    "  :defs $ {}\n    'added-fn $ %{} 'CodeEntry (:doc \"|Added through namespace data\")\n      :code $ quote $ defn added-fn (x) x\n      :examples $ []\n",
+  );
   fs::write(&view, &edited).unwrap();
   let output = edit_ns_json(&snapshot, namespace, &view, &[]);
-  assert_success(&output, "apply metadata changes");
+  assert_success(&output, "apply doc change and new definition");
   let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
   let statuses = definition_statuses(&report);
   assert_eq!(statuses["MetaSample"], "changed");
-  assert_eq!(statuses["main!"], "unchanged");
+  assert_eq!(definition_fields(&report, "MetaSample"), serde_json::json!(["doc"]));
   assert_eq!(statuses["added-fn"], "added");
-  let fields = report["definitions"]
-    .as_array()
-    .unwrap()
-    .iter()
-    .find(|item| item["name"] == "MetaSample")
-    .unwrap()["fields"]
-    .clone();
-  assert_eq!(fields, serde_json::json!(["schema"]));
+  assert_eq!(statuses["main!"], "unchanged");
   let sample = query_definition(&snapshot, "test-def-meta.main/MetaSample");
-  assert!(sample["data"]["schema"].is_null(), "{sample}");
-  assert_eq!(sample["data"]["doc"], "Sample definition for def metadata lookup tests");
-  let main = query_definition(&snapshot, "test-def-meta.main/main!");
-  assert_eq!(main["data"]["doc"], "Run def metadata lookup tests");
+  assert_eq!(sample["data"]["doc"], "Updated through namespace data");
   let added = query_definition(&snapshot, "test-def-meta.main/added-fn");
-  assert_eq!(added["data"]["doc"], "Added by a view");
-}
-
-/// A macro added in the same view is a valid definition head for the other definitions in it.
-#[test]
-fn edit_ns_accepts_definition_heads_from_macros_in_the_same_view() {
-  let directory = TestDirectory::create();
-  let snapshot = directory.snapshot();
-  fs::copy("calcit/test-def-meta.cirru", &snapshot).unwrap();
-  let namespace = "test-def-meta.things";
-  assert_success(&run_calcit(&snapshot, &["edit", "add-ns", namespace]), "create empty namespace");
-  let view = directory.0.join("view.cirru");
-  fs::write(
-    &view,
-    "ns test-def-meta.things\n\ndefmacro defthing (name value) (quasiquote (def ~name ~value))\n\ndefthing my-thing 1\n",
-  )
-  .unwrap();
-  let output = edit_ns_json(&snapshot, namespace, &view, &[]);
-  assert_success(&output, "write a view whose definition uses a macro from the same view");
-  let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
-  let statuses = definition_statuses(&report);
-  assert_eq!(statuses["defthing"], "added");
-  assert_eq!(statuses["my-thing"], "added");
-
-  // The same-view lookup does not hide a name mismatch in an explicitly named definition.
-  let text = query_ns_view(&snapshot, namespace);
-  fs::write(&view, format!("{text}\n:def other-thing $ defthing wrong-name 2\n")).unwrap();
-  let mismatch = edit_ns_json(&snapshot, namespace, &view, &[]);
-  assert!(!mismatch.status.success());
-  assert!(String::from_utf8_lossy(&mismatch.stderr).contains("name mismatch"));
+  assert_eq!(added["data"]["doc"], "Added through namespace data");
 }
 
 #[test]
-fn edit_ns_rejects_removal_without_flag_and_stale_revisions() {
+fn edit_ns_rejects_removal_without_flag_stale_revisions_and_malformed_data() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
   fs::copy("calcit/test-def-meta.cirru", &snapshot).unwrap();
@@ -1744,8 +1747,7 @@ fn edit_ns_rejects_removal_without_flag_and_stale_revisions() {
   let text = query_ns_view(&snapshot, namespace);
   let view = directory.0.join("view.cirru");
 
-  let without = replace_view_block(&text, "defn test-missing-doc", "");
-  let without = replace_view_block(&without, ":meta test-missing-doc", "");
+  let without = remove_definition_entry(&text, "test-missing-doc");
   fs::write(&view, &without).unwrap();
   for extra in [&[][..], &["--dry-run"][..]] {
     let rejected = edit_ns_json(&snapshot, namespace, &view, extra);
@@ -1761,8 +1763,12 @@ fn edit_ns_rejects_removal_without_flag_and_stale_revisions() {
     &view,
     &["--expect-revision", "md5:00000000000000000000000000000000"],
   );
-  assert!(!stale.status.success(), "an unchanged view still checks the revision");
-  let changed = replace_view_block(&text, "defn reload!", "defn reload! () (println |stale) (:: 'Unit)");
+  assert!(!stale.status.success(), "unchanged data still checks the revision");
+  let changed = replace_once(
+    &text,
+    ":code $ quote $ defn reload! () (:: 'Unit)",
+    ":code $ quote $ defn reload! () (println |stale) (:: 'Unit)",
+  );
   fs::write(&view, &changed).unwrap();
   let stale = edit_ns_json(
     &snapshot,
@@ -1774,9 +1780,32 @@ fn edit_ns_rejects_removal_without_flag_and_stale_revisions() {
   assert!(String::from_utf8_lossy(&stale.stderr).contains("revision mismatch"));
   assert_eq!(fs::read(&snapshot).unwrap(), before);
 
-  let renamed = text.replacen("ns test-def-meta.main", "ns test-def-meta.other", 1);
-  fs::write(&view, &renamed).unwrap();
-  assert!(!edit_ns_json(&snapshot, namespace, &view, &[]).status.success());
+  // Malformed data is rejected before anything is written.
+  for (label, data, expected) in [
+    ("unparsable EDN", "%{} 'FileEntry (:defs".to_owned(), "Failed to parse"),
+    (
+      "missing :code",
+      replace_once(&changed, ":code $ quote $ defn reload! () (println |stale) (:: 'Unit)\n", ""),
+      "reload!",
+    ),
+    (
+      "definition shape",
+      replace_once(&changed, "defn reload! () (println |stale)", "defn other-name () (println |stale)"),
+      "name mismatch",
+    ),
+    (
+      "renamed ns form",
+      replace_once(&changed, "ns test-def-meta.main", "ns test-def-meta.other"),
+      "Namespace name mismatch",
+    ),
+  ] {
+    fs::write(&view, &data).unwrap();
+    let rejected = edit_ns_json(&snapshot, namespace, &view, &[]);
+    assert!(!rejected.status.success(), "{label} must be rejected");
+    let stderr = String::from_utf8_lossy(&rejected.stderr);
+    assert!(stderr.contains(expected), "{label}: expected `{expected}` in\n{stderr}");
+    assert_eq!(fs::read(&snapshot).unwrap(), before, "{label} wrote to the Snapshot");
+  }
 
   fs::write(&view, &without).unwrap();
   let output = edit_ns_json(&snapshot, namespace, &view, &["--allow-remove"]);
@@ -1788,6 +1817,40 @@ fn edit_ns_rejects_removal_without_flag_and_stale_revisions() {
     &["query", "def", "test-def-meta.main/test-missing-doc", "--format", "cirru"],
   );
   assert!(!removed.status.success());
+}
+
+/// A macro added in the same data is a valid definition head for the other definitions in it.
+#[test]
+fn edit_ns_accepts_definition_heads_from_macros_in_the_same_data() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/test-def-meta.cirru", &snapshot).unwrap();
+  let namespace = "test-def-meta.things";
+  assert_success(&run_calcit(&snapshot, &["edit", "add-ns", namespace]), "create empty namespace");
+  let entries = "    'defthing $ %{} 'CodeEntry (:doc |)\n      :code $ quote $ defmacro defthing (name value) (quasiquote (def ~name ~value))\n      :examples $ []\n      :schema $ :: 'Macro $ {} (:capabilities $ #{}) (:expansion $ :: 'Expr 'Dynamic) (:required $ [] 'Syntax 'Syntax)\n    'my-thing $ %{} 'CodeEntry (:doc |)\n      :code $ quote $ defthing my-thing 1\n      :examples $ []\n";
+  let data = |extra: &str| {
+    format!(
+      "%{{}} 'FileEntry\n  :defs $ {{}}\n{entries}{extra}  :ns $ %{{}} 'NsEntry (:doc |)\n    :code $ quote $ ns test-def-meta.things\n"
+    )
+  };
+  let view = directory.0.join("view.cirru");
+  fs::write(&view, data("")).unwrap();
+  let output = edit_ns_json(&snapshot, namespace, &view, &[]);
+  assert_success(&output, "write data whose definition uses a macro from the same data");
+  let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+  let statuses = definition_statuses(&report);
+  assert_eq!(statuses["defthing"], "added");
+  assert_eq!(statuses["my-thing"], "added");
+
+  // The same-data lookup does not hide a name mismatch.
+  fs::write(
+    &view,
+    data("    'other-thing $ %{} 'CodeEntry (:doc |)\n      :code $ quote $ defthing wrong-name 2\n      :examples $ []\n"),
+  )
+  .unwrap();
+  let mismatch = edit_ns_json(&snapshot, namespace, &view, &[]);
+  assert!(!mismatch.status.success());
+  assert!(String::from_utf8_lossy(&mismatch.stderr).contains("name mismatch"));
 }
 
 #[test]

@@ -91,7 +91,7 @@ Snapshot 是结构化数据。理解程序时先选与任务对应的视图，�
 | 排查类型问题 | `query type-at <ns/def> --path code@...` 与诊断里的 evidence；接收者方法用 `query type` |
 | 定位要改的节点 | `query search` / `query find` 给出路径，再 `tree show` 看真实 subtree |
 | 需要完整代码 | `query def`（大定义会分块）；要整段改写时用可写回的定义视图 |
-| 改写一个命名空间里的多个定义 | `query ns <ns> --format cirru` 读出整段可写回视图，改完用 `edit ns` 写回 |
+| 改写一个命名空间里的多个定义 | `query ns <ns> --format cirru` 读出该命名空间的 FileEntry 数据，改完用 `edit ns` 写回 |
 
 签名概览示例（`calcit/test-types.cirru`）：
 
@@ -254,17 +254,17 @@ Agent 修改的是 Snapshot 中的表层 quoted AST。macro 展开、名称解�
 
 `query def` 对格式化后达到 2KB（`--chunk-trigger-bytes`）的大定义默认可能输出 chunked preview，较短定义整段显示；先用 `query peek` 或默认 `query def` 看结构，确实需要完整定义时才用 `query def '<ns/def>' --raw`。不要把 `FOLDED:*` 或 chunk 标记当成源码。需要整段改写一个定义时，用 `query def '<ns/def>' --format cirru` 读出只含 `quote $ <定义>` 的源码，修改后原样交给 `edit def '<ns/def>' --overwrite --input-format cirru --file <文件>` 写回；未修改的视图写回后 Snapshot 字节不变。
 
-一次修改同一命名空间中的多个定义时，读整个命名空间的视图，改完先 dry-run 再提交：
+一次修改同一命名空间中的多个定义时，读出该命名空间在 Snapshot 中的 `%{} 'FileEntry` 数据，改完先 dry-run 再提交：
 
 ```bash
-calcit query ns '<namespace>' --format cirru > .calcit/snippets/view.cirru
-# 修改视图中的定义代码或 `:meta` 块；不要删除未打算删除的定义
-calcit edit ns '<namespace>' --file .calcit/snippets/view.cirru --dry-run --format edn
-calcit edit ns '<namespace>' --file .calcit/snippets/view.cirru --expect-revision '<scoped-revision>'
+calcit query ns '<namespace>' --format cirru > .calcit/snippets/ns-data.cirru
+# 修改需要变化的 CodeEntry；不要删除未打算删除的定义
+calcit edit ns '<namespace>' --file .calcit/snippets/ns-data.cirru --dry-run --format edn
+calcit edit ns '<namespace>' --file .calcit/snippets/ns-data.cirru --expect-revision '<scoped-revision>'
 calcit --check-only
 ```
 
-dry-run 按定义报告 added/changed/unchanged/removed；确认只有预期定义变化后，把返回的 `:scoped-revision` 传给 `--expect-revision`。视图中缺少的定义需要 `--allow-remove` 才会删除；tests/examples 不在视图中，写回时保持原值。
+数据中的字段（包括 `:tests`、`:examples`、`:schema`）都会按写入内容保存。dry-run 按定义报告 added/changed/unchanged/removed 和变化的字段；确认只有预期定义变化后，把返回的 `:scoped-revision` 传给 `--expect-revision`。数据中缺少的定义需要 `--allow-remove` 才会删除，重命名用 `edit rename`。
 
 path 使用从零开始的 child index：`@3.2` 表示先取 definition 根 list 的 child 3，再取其 child 2；空 path 表示 definition 根节点。结构 mutation 后旧 path 可能失效，优先重新查询或使用 cursor。必须直接使用旧数字 path 时，`tree replace/delete/insert-*` 推荐同时传 `--expect 'quote ...'`；实际节点或插入锚点不匹配时命令会在写入前失败。
 
