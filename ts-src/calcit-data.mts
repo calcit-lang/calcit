@@ -475,6 +475,41 @@ let hashCirru = (base: number, x: CirruWriterNode) => {
 // Dirty code to change ternary-tree behavior
 overwriteHashGenerator(hashFunction);
 
+// Calcit number text, shared by `turn-string`, `str` and printing (see docs/data/number.md).
+export let format_calcit_number = (x: number): string => {
+  // Match native f64 Display, which expands finite exponents into decimal notation.
+  if (Object.is(x, -0)) {
+    return "-0";
+  }
+  if (x === Infinity) {
+    return "inf";
+  }
+  if (x === -Infinity) {
+    return "-inf";
+  }
+
+  const text = x.toString();
+  const exponentIndex = text.indexOf("e");
+  if (exponentIndex < 0) {
+    return text;
+  }
+
+  const mantissa = text.slice(0, exponentIndex);
+  const exponent = Number(text.slice(exponentIndex + 1));
+  const sign = mantissa.startsWith("-") ? "-" : "";
+  const unsigned = sign ? mantissa.slice(1) : mantissa;
+  const decimalPoint = unsigned.indexOf(".");
+  const decimalIndex = (decimalPoint < 0 ? unsigned.length : decimalPoint) + exponent;
+  const digits = unsigned.replace(".", "");
+  if (decimalIndex <= 0) {
+    return `${sign}0.${"0".repeat(-decimalIndex)}${digits}`;
+  }
+  if (decimalIndex >= digits.length) {
+    return `${sign}${digits}${"0".repeat(decimalIndex - digits.length)}`;
+  }
+  return `${sign}${digits.slice(0, decimalIndex)}.${digits.slice(decimalIndex)}`;
+};
+
 export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: boolean = false): string => {
   if (x === null) {
     return "nil";
@@ -493,7 +528,7 @@ export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: b
     }
   }
   if (typeof x === "number") {
-    return x.toString();
+    return format_calcit_number(x);
   }
   if (typeof x === "boolean") {
     return x.toString();

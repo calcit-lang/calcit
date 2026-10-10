@@ -391,6 +391,10 @@ let
 
 这也修正了 native 与 JS 在极少数 `f64` 最短表示末位上的分歧：统一采用 JS/Ryū 的选择。Number 二进制值和解析规则不变，但依赖数字文本逐字节相等的缓存键、快照或外部协议应在升级时重新比对。需要明确显示 Calcit 值或序列化结构数据时，分别使用 Debug/Show 或 Cirru EDN，不要把 `to-string` 当作通用序列化。
 
+## JS 的 `str` 与 `println` 数字文本
+
+生成 JS 中，`str`、`println` 以及嵌在 List/Map 等结构里打印的数字，现在与 `turn-string` 和 native/WASM 使用同一套数字文本：`inf`、`-inf`、`NaN`、`-0`，十进制展开不用指数（`1e21` 输出 `1000000000000000000000`，`1e-7` 输出 `0.0000001`）。此前 JS 会输出 `Infinity`、`-Infinity`、把 `-0` 写成 `0`，并输出 `1e+21`、`1e-7`。依赖 JS 侧旧文本做字符串比较、缓存键或日志解析的代码，升级时需要重新比对。这是语义修复，不提供自动源码改写；规则见 [Number](../data/number.md)。
+
 ## 索引、键、值与成员谓词
 
 `contains?` 的旧方法形式依接收者表示不同命题，不能全局替换：List/String 检查索引，Map 检查键，Set 检查成员；Map 的旧 `.includes?` 则检查值。新代码首选 List/String `.contains-index?`、Map `.contains-key?` / `.contains-value?`，Set 成员保留 `.includes?`。String `.includes?` 判断子串，List `.includes?` 判断元素，均不得与索引判断混用。
