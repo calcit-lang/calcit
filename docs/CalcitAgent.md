@@ -672,7 +672,7 @@ List 元素间插入同类型分隔值首选 `.intersperse separator`，结果�
 
 Map 的去重值集合首选 `.distinct-values` / `distinct-values`，返回 `Set<V>`；旧前缀 `vals` 的返回值也是去重 Set，不应误认成保留重复值的 List；旧 `.values` 方法已在 0.29.0 删除，写下它会得到 `E_RETIRED_METHOD`，需要自动迁移时先用 0.28.x 的 CLI 运行 `core-map-distinct-values-v1`。前缀 `vals` 使用 `core-function-alias-v1` 单独迁移；附带区域可传 `--include-attached` 纳入证明，开放接收者和用户方法仍需人工核对。
 
-0.26.0 不删除旧 `option:*` / `result:*` 方法 helper：它们仍是 core method 的实现目标，不应在新应用代码中直接调用。其应用兼容入口最早于 0.27.0、且真实消费者在匹配的发布版依赖上迁移并通过严格检查、运行测试、Agent 文档和受影响 backend 验证，以及 core method 实现解耦后，才可考虑删除。完整条件见 [API 角色与命名](features/api-roles.md#旧方法-helper-的退场条件)；不能仅凭 fix 预览为空就推断可以删除。
+0.29.0 中旧 `option:*` / `result:*` 方法 helper 仍作为 core method 的内部兼容实现保留，不应在新应用代码中直接调用。剩余集中迁移与应用兼容入口的计划退场窗口为 **0.30.0**；版本号不是删除授权。真实消费者仍须在匹配的发布版依赖上完成迁移、严格检查和运行测试，逐项处置 `requires-review`，核对 Agent 文档与受影响 backend，并使 core method 实现与待删入口解耦。完整条件见 [API 角色与命名](features/api-roles.md#旧方法-helper-的退场条件)；条件未满足就保留兼容入口，不能仅凭 fix 预览为空删除，也不恢复已在 0.29.0 删除的入口。
 
 以下正反例可以直接由 `docs check-md` 执行。Unicode 字符数量不同于 UTF-8 字节数；`List.get` 的越界结果是 `Option :none`；列表的 `.contains-index?` 查询索引，`.includes?` 才查询元素；解析失败保留为 `Result` 的错误分支：
 
