@@ -300,9 +300,10 @@ fn collect_program_methods_in(code: &Calcit, names: &mut HashSet<String>) {
 }
 
 struct DefAnalysis {
-  /// Parameter names of every `defn` / `defmacro` / `fn` form in the definition. Calling one of
-  /// them calls a function value supplied by the caller, whose effects are `unknown`.
-  params: HashSet<String>,
+  /// Lexical scopes entered while walking. Each `defn` / `defmacro` / `fn` pushes its parameters
+  /// (`true`); each binding form pushes the names it binds (`false`), shadowing outer parameters.
+  /// Calling a parameter calls a function value supplied by the caller, whose effects are `unknown`.
+  scopes: Vec<HashMap<String, bool>>,
   state: Vec<StateItem>,
   effects: HashMap<String, EffectItem>,
   transform: TransformInfo,
@@ -432,7 +433,7 @@ impl EffectsGraphAnalyzer {
 
     let mut children = vec![];
     let mut analysis = DefAnalysis {
-      params: HashSet::new(),
+      scopes: vec![],
       state: vec![],
       effects: HashMap::new(),
       transform: TransformInfo::default(),
@@ -531,16 +532,15 @@ impl EffectsGraphAnalyzer {
 
   fn walk_expr(&self, code: &Calcit, current_ns: &str, out: &mut DefAnalysis, depth: usize) {
     if let Calcit::List(list) = code {
-      // A parameter list is not a call; remember its names instead of inspecting it.
+      // A parameter list is not a call; its names form a new scope for the body.
       let args_index = list.first().and_then(fn_form_args_index);
+      let binding = list.first().and_then(binding_form_kind);
+      let mut pushed_scope = false;
       if let Some(Calcit::List(args)) = args_index.and_then(|index| list.get(index)) {
-        for arg in args.iter() {
-          if let Calcit::Symbol { sym, .. } = arg
-            && !matches!(sym.as_ref(), "&" | "?")
-          {
-            out.params.insert(sym.to_string());
-          }
-        }
+        let mut scope = HashMap::new();
+        collect_bound_names(&Calcit::List(args.clone()), true, &mut scope);
+        out.scopes.push(scope);
+        pushed_scope = true;
       }
       // `(receiver .method args)` is a method call on `receiver`, not a call of `receiver`.
       let call_head = match (list.first(), list.get(1)) {
@@ -554,12 +554,42 @@ impl EffectsGraphAnalyzer {
         }
       }
       // Binding pairs such as `(x value)` in `let` / `loop` / `&let` are not calls either;
-      // only their values are walked.
-      let bindings_index = list.first().and_then(binding_form_kind).map(|_| 1);
+      // only their values are walked, and the bound names shadow outer parameters in the body.
+      let bindings_index = binding.as_ref().map(|_| 1);
       // Clauses such as `(pattern body)` in `case` / `match` / `cond` are not calls; walk their parts.
       let clauses_from = list.first().and_then(clause_form_start);
       for (index, item) in list.iter().enumerate() {
         if Some(index) == args_index {
+          continue;
+        }
+        if Some(index) == bindings_index
+          && let Some(kind) = &binding
+        {
+          let mut scope = HashMap::new();
+          match kind {
+            // `let[] (a b) value` / `let{} (a b) value`: names only, the value comes next.
+            BindingForm::Destructure => {
+              collect_bound_names(item, false, &mut scope);
+            }
+            BindingForm::Single | BindingForm::Many => {
+              let pairs: Vec<&Calcit> = match (kind, item) {
+                (BindingForm::Many, Calcit::List(bindings)) => bindings.iter().collect(),
+                _ => vec![item],
+              };
+              for pair in pairs {
+                if let Calcit::List(pair) = pair {
+                  for value in pair.iter().skip(1) {
+                    self.walk_expr(value, current_ns, out, depth + 1);
+                  }
+                  if let Some(name) = pair.first() {
+                    collect_bound_names(name, false, &mut scope);
+                  }
+                }
+              }
+            }
+          }
+          out.scopes.push(scope);
+          pushed_scope = true;
           continue;
         }
         if clauses_from.is_some_and(|start| index >= start)
@@ -570,23 +600,10 @@ impl EffectsGraphAnalyzer {
           }
           continue;
         }
-        if Some(index) == bindings_index
-          && let (Some(kind), Calcit::List(bindings)) = (list.first().and_then(binding_form_kind), item)
-        {
-          let pairs: Vec<&Calcit> = match kind {
-            BindingForm::Single => vec![item],
-            BindingForm::Many => bindings.iter().collect(),
-          };
-          for pair in pairs {
-            if let Calcit::List(pair) = pair {
-              for value in pair.iter().skip(1) {
-                self.walk_expr(value, current_ns, out, depth + 1);
-              }
-            }
-          }
-          continue;
-        }
         self.walk_expr(item, current_ns, out, depth + 1);
+      }
+      if pushed_scope {
+        out.scopes.pop();
       }
       return;
     }
@@ -627,7 +644,7 @@ impl EffectsGraphAnalyzer {
 
   fn inspect_call_head(&self, head: &Calcit, list: Option<&crate::calcit::CalcitList>, current_ns: &str, out: &mut DefAnalysis) {
     if let Calcit::Symbol { sym, .. } = head
-      && out.params.contains(sym.as_ref())
+      && out.is_param(sym)
     {
       let key = format!("{UNKNOWN_EFFECT_KIND}::{sym}");
       out.effects.entry(key).and_modify(|item| item.count += 1).or_insert(EffectItem {
@@ -655,8 +672,9 @@ impl EffectsGraphAnalyzer {
     }
 
     let (mut kinds, target) = self.classify_call_head(&call);
-    // `hint-fn` carries type hints in general; only a schema with `(:async true)` declares async.
-    if matches!(&call, CallHead::Core(name) if name == "hint-fn") && !list.is_some_and(declares_async_true) {
+    // `hint-fn` carries type hints in general; only the enclosing function's own schema with
+    // `:async true` declares async, the same contract the JavaScript lowering checks.
+    if matches!(&call, CallHead::Core(name) if name == "hint-fn") && !list.is_some_and(hint_marks_async) {
       kinds.clear();
     }
     for kind in kinds {
@@ -783,24 +801,34 @@ enum CallHead {
   Method(String, MethodKind),
 }
 
-/// True when a `hint-fn` schema contains the entry `(:async true)`.
-fn declares_async_true(list: &crate::calcit::CalcitList) -> bool {
-  let is_async_true = matches!(
-    (list.first(), list.get(1)),
-    (Some(Calcit::Tag(tag)), Some(value)) if tag.ref_str() == "async" && value_is_true(value)
-  );
-  is_async_true
-    || list.iter().any(|item| match item {
-      Calcit::List(inner) => declares_async_true(inner),
-      _ => false,
-    })
+impl DefAnalysis {
+  /// Whether `name` resolves to a parameter in the innermost scope that binds it.
+  fn is_param(&self, name: &str) -> bool {
+    self.scopes.iter().rev().find_map(|scope| scope.get(name).copied()).unwrap_or(false)
+  }
 }
 
-fn value_is_true(value: &Calcit) -> bool {
-  match value {
-    Calcit::Bool(b) => *b,
-    Calcit::Symbol { sym, .. } => sym.as_ref() == "true",
-    _ => false,
+/// True when a one-argument `hint-fn` schema marks the enclosing function async.
+/// Nested function types (such as an async callback parameter) do not count.
+fn hint_marks_async(list: &crate::calcit::CalcitList) -> bool {
+  CalcitTypeAnnotation::hint_form_marks_async(&Calcit::List(std::sync::Arc::new(list.clone())))
+}
+
+/// Collect symbols bound by a parameter list, a binding name or a destructuring pattern.
+fn collect_bound_names(form: &Calcit, is_param: bool, scope: &mut HashMap<String, bool>) {
+  match form {
+    Calcit::Symbol { sym, .. } if !matches!(sym.as_ref(), "&" | "?" | "[]" | "{}" | ",") => {
+      scope.insert(sym.to_string(), is_param);
+    }
+    Calcit::Local(local) => {
+      scope.insert(local.sym.to_string(), is_param);
+    }
+    Calcit::List(items) => {
+      for item in items.iter() {
+        collect_bound_names(item, is_param, scope);
+      }
+    }
+    _ => {}
   }
 }
 
@@ -813,15 +841,20 @@ fn clause_form_start(head: &Calcit) -> Option<usize> {
     _ => return None,
   };
   match name.as_str() {
-    "case" | "case-default" | "match" | "tag-match" | "list-match" | "key-match" | "field-match" => Some(2),
+    "case" | "match" | "tag-match" | "list-match" | "struct-match" => Some(2),
+    // `case-default value default clauses...`: the default is an ordinary expression.
+    "case-default" => Some(3),
     "cond" => Some(1),
     _ => None,
   }
 }
 
 enum BindingForm {
-  /// `&let (name value) ...`, `if-let (name value) ...`, `when-let (name value) ...`
+  /// `&let (name value) ...`, `if-let (name value) ...`, `when-let (name value) ...`,
+  /// `&doseq (name xs) ...`, `doseq (name xs) ...`
   Single,
+  /// `let[] (a b) value ...`, `let{} (a b) value ...`
+  Destructure,
   /// `let ((name value) ...) ...`, `loop ((name value) ...) ...`
   Many,
 }
@@ -833,7 +866,8 @@ fn binding_form_kind(head: &Calcit) -> Option<BindingForm> {
     _ => return None,
   };
   match name.as_str() {
-    "&let" | "if-let" | "when-let" => Some(BindingForm::Single),
+    "&let" | "if-let" | "when-let" | "&doseq" | "doseq" => Some(BindingForm::Single),
+    "let[]" | "let{}" => Some(BindingForm::Destructure),
     "let" | "loop" => Some(BindingForm::Many),
     _ => None,
   }
@@ -2825,6 +2859,29 @@ mod tests {
     assert_eq!(effects["async-hint-helper"], pair("async", "hint-fn"));
     // Parameter lists, binding pairs and `case` clauses that start with a parameter are not calls.
     assert_eq!(effects["binding-helper"], vec![]);
+    // An async callback type in `:args` does not make the enclosing function async.
+    assert_eq!(effects["nested-async-hint-helper"], vec![]);
+    // A parameter of an inner `fn` is scoped to that `fn`; the outer call still reaches the definition.
+    assert_eq!(effects["scope-helper"], pair(UNKNOWN_EFFECT_KIND, "io-helper"));
+    let scope_node = find_node(&result.tree, "scope-helper").expect("scope-helper node");
+    assert_eq!(scope_node.effects[0].count, 1);
+    assert!(
+      scope_node
+        .transform
+        .calls
+        .contains(&"test-effects-graph.main/io-helper".to_string())
+    );
+    // `let`, `let[]` and `&doseq` bindings shadow parameters; only `&doseq`'s own tag remains.
+    assert_eq!(effects["shadow-helper"], pair("effect", "&doseq"));
+    // The default of `case-default` is an expression, not a clause.
+    assert_eq!(effects["case-default-helper"], pair(UNKNOWN_EFFECT_KIND, "d"));
+  }
+
+  fn find_node<'a>(node: &'a EffectsGraphNode, def: &str) -> Option<&'a EffectsGraphNode> {
+    if node.def == def && !node.seen {
+      return Some(node);
+    }
+    node.children.iter().find_map(|child| find_node(child, def))
   }
 
   fn parse_ref_call(head: &str, args: &[&str]) -> Calcit {

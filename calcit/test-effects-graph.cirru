@@ -30,6 +30,10 @@
         'cancel-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn cancel-helper (task) (.cancel task)
           :examples $ []
+        'case-default-helper $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn case-default-helper (x d)
+            case-default x (d) (1 |one)
+          :examples $ []
         'collection-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn collection-helper (xs) (.empty? xs) (.contains? xs 1)
           :examples $ []
@@ -51,6 +55,10 @@
             async-hint-helper 1
             native-method-helper nil
             binding-helper 1
+            nested-async-hint-helper inc
+            scope-helper $ [] 1
+            shadow-helper inc inc inc $ [] 1
+            case-default-helper 1 inc
           :examples $ []
           :schema $ :: 'Dynamic
         'missing-helper $ %{} 'CodeEntry (:doc |)
@@ -59,12 +67,36 @@
         'native-method-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn native-method-helper (el) (.!focus el)
           :examples $ []
+        'nested-async-hint-helper $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nested-async-hint-helper (callback)
+            hint-fn $ {}
+              :args $ [] $ :: 'Fn
+                {}
+                  :args $ [] 'Number
+                  :return 'Unit
+                  :async true
+              :return 'Unit
+            , &unit
+          :examples $ []
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (:: 'Unit)
           :examples $ []
           :schema $ :: 'Dynamic
+        'scope-helper $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn scope-helper (xs)
+            map xs $ fn (io-helper) (io-helper 1)
+            io-helper |README.md
+          :examples $ []
         'setup! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn setup! () (load-config)
+          :examples $ []
+        'shadow-helper $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn shadow-helper (f g h xs)
+            let
+                f inc
+              f 1
+            let[] (g) xs $ g 1
+            &doseq (h xs) (h 1)
           :examples $ []
         'state-helper $ %{} 'CodeEntry (:doc "|defines and mutates an atom")
           :code $ quote $ defn state-helper () (defatom *counter 0) (reset! *counter 1) (swap! *counter inc)

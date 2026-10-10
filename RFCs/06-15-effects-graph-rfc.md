@@ -128,7 +128,7 @@ Transform 不等于删除逻辑，而是**降采样**：
 | `io` | `monotonic-time-ms`、`unix-time-ms`、`wait-ms`、`read-stdin-text`、`generate-id!`、宿主注入的 `async-sleep` | 只有 `:io` tag |
 | `env` | `get-env`、`get-args` | `:env` tag |
 | `control` | `raise`、`quit!`、`try`、`todo!`、`non-nil!`、`assert=`、`assert-traits` | `:control` tag |
-| `async` | `hint-fn $ {} (:async true)` | `hint-fn` 的 `:async` tag，且 schema 中出现 `(:async true)`；`(:async false)` 与普通类型提示不算 |
+| `async` | `hint-fn $ {} (:async true)` | `hint-fn` 的 `:async` tag，且所在函数自身的单参数 hint schema 写有 `:async true`（与 JS lowering 同一判断）；`(:async false)`、普通类型提示、`:args` 中异步回调的函数类型以及带目标的双参数 `hint-fn` 都不算 |
 | `state/watch` | `add-watch!`、`remove-watch!`、旧 `remove-watch` | `:watch` tag |
 | `effect` | `.cancel!`、`.cancel-with!`、`.resolve!`、`.reject!`、旧 `.cancel`、`&doseq` | `:effect` tag |
 | `interop/host` | `eval`、`&call-dylib-edn` | `:interop` tag |
@@ -140,7 +140,7 @@ Transform 不等于删除逻辑，而是**降采样**：
 1. `calcit.core` 定义的 Snapshot `:tags`。没有 Snapshot entry 的少数 builtin proc / syntax 在 `src/effects_graph.rs` 的表中逐个声明，测试保证每个 proc/syntax 恰好有一处声明。core 定义没有效果 tag 即表示无效果。
 2. 宿主注册 proc 的 `RegisteredProcDescriptor.tags`；descriptor 完全没有 tags 时报告 `unknown`。
 3. 方法调用 `.name`（包括 `(receiver .name args)` 写法）查 core 的 `defimpl` / `&impl::new` 表，取实现定义的 tags；表中内联的实现（如 `&core-enum-methods` 里的 `defn &enum:empty?-impl`）沿用所在 core 定义的 tags。项目或模块也实现了同名方法，或 core 没有该方法时，报告 `unknown`，因为分派目标取决于运行时接收者。
-4. 调用所在 `defn` / `defmacro` / `fn` 的参数，例如 `defn call-through (f) (f 1)`，调用的是调用方传入的函数值，报告 `unknown`。参数列表本身、`let` / `loop` / `&let` / `if-let` / `when-let` 的绑定对，以及 `case` / `match` / `cond` 的分支不当作调用。
+4. 调用所在 `defn` / `defmacro` / `fn` 的参数，例如 `defn call-through (f) (f 1)`，调用的是调用方传入的函数值，报告 `unknown`。参数只在所在函数内有效；`let` / `loop` / `&let` / `if-let` / `when-let` / `&doseq` / `doseq` / `let[]` / `let{}` 绑定的同名局部会遮蔽参数。参数列表本身、上述绑定对与解构名，以及 `case` / `case-default` / `match` / `tag-match` / `list-match` / `struct-match` / `cond` 的分支不当作调用；`case-default` 的默认值按普通表达式分析。
 5. 调用项目或模块定义时，调用点本身不记录效果；被调用定义作为调用图子节点，按同样规则列出自己的效果。
 
 `unknown` 表示“分析器找不到声明”，不是“有副作用”，也不是“纯”。它出现在四类位置：限定名指向未加载的命名空间或定义、宿主 proc 未声明 tags、方法分派无法限定在 core 实现、调用函数参数。补全方式是加载对应模块、为宿主 proc 声明 tags，或在 core 定义上补 tag；不要通过改名来消除 `unknown`。
@@ -230,7 +230,7 @@ defn render-once (ui) $
 - `reset!` / `swap!` (`:state`) → State 端口的 atom 写入，不重复计入 effect
 - `add-watch!` / `remove-watch` (`:state` `:watch`) → `state/watch`
 - `eval` (`:interop`) → `interop/host`
-- `hint-fn` (`:async`) → `async`，仅当 hint schema 中出现 `(:async true)`
+- `hint-fn` (`:async`) → `async`，仅当所在函数自身的单参数 hint schema 写有 `:async true`；`:args` 中嵌套的异步回调类型不算
 - `ffi-task:cancel` (`:effect`) → `effect`，`.cancel` 与 `.cancel!` 共享这一实现
 - `println` (`:log` `:io`) → `console`
 
@@ -325,14 +325,32 @@ Max depth: 2  (2 nodes truncated; rerun with larger --max-depth to expand)
     │   │   └── (no calls)
     │   └── Effects
     │       └── (none — pure transform)
-    └── main/native-method-helper  [program]
+    ├── main/native-method-helper  [program]
+    │   ├── Transform
+    │   │   └── (no calls)
+    │   └── Effects
+    │       └── interop/js     .!focus
+    ├── main/nested-async-hint-helper  [transform]
+    │   ├── Transform
+    │   │   └── (no calls)
+    │   └── Effects
+    │       └── (none — pure transform)
+    ├── main/scope-helper  [program]
+    │   ├── Transform  (control: map; calls: 1)
+    │   │   ├── control: map
+    │   │   └── → main/io-helper
+    │   └── Effects
+    │       └── unknown        io-helper
+    │   │
+    │   └── main/io-helper  [no analysis]
+    └── main/case-default-helper  [program]
         ├── Transform
         │   └── (no calls)
         └── Effects
-            └── interop/js     .!focus
+            └── unknown        d
 ```
 
-`setup!` 和 `load-config` 不再因为名字含 `!` 或 `load` 被标为效果；`remove-watch` 和旧 `.cancel` 没有 `!`，仍由 core tags 识别。`call-through` 调用参数 `f`，分析器不知道调用方传入什么函数，因此报告 `unknown`。`collection-helper` 对列表调用 `.empty?` / `.contains?`，项目没有同名 `defimpl`，因此按 core 声明视为无效果。`sync-hint-helper` 的 `hint-fn $ {} (:async false)` 不算异步。
+`setup!` 和 `load-config` 不再因为名字含 `!` 或 `load` 被标为效果；`remove-watch` 和旧 `.cancel` 没有 `!`，仍由 core tags 识别。`call-through` 调用参数 `f`，分析器不知道调用方传入什么函数，因此报告 `unknown`。`collection-helper` 对列表调用 `.empty?` / `.contains?`，项目没有同名 `defimpl`，因此按 core 声明视为无效果。`sync-hint-helper` 的 `hint-fn $ {} (:async false)` 不算异步；`nested-async-hint-helper` 只在 `:args` 里声明异步回调类型，自身也不算异步。`scope-helper` 中内层 `fn (io-helper)` 的参数只在该 `fn` 内报告 `unknown`，外层 `io-helper |README.md` 仍调用同名定义。`case-default-helper` 的默认值 `(d)` 调用参数，报告 `unknown d`。
 
 #### json
 
@@ -522,6 +540,7 @@ app.comp.container/comp-container
 
 - 未解析到定义、又不是函数参数的裸符号（例如 `let` 绑定的函数值、只在 JS 后端提供的全局函数）不分类。
 - 项目或模块实现了与 core 同名的方法时，所有该名字的方法调用都报告 `unknown`。
+- 参数传给高阶函数（如 `map xs f`）或经 `let` 改名后再调用时不报告 `unknown`；`quote` 中的形式可能被当作调用报告。
 - 项目与模块定义自身的 `:tags` 尚未读入，调用它们时只依靠调用图子节点。
 
 ---
