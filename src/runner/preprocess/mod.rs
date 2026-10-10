@@ -4219,6 +4219,28 @@ fn preprocess_list_call(
           }
         }
 
+        // Record the field-index lowering of `&struct:get` / `assoc` / `with` (#1553).
+        if !matches!(
+          head_form,
+          Calcit::Proc(CalcitProc::NativeStructNth | CalcitProc::NativeStructAssocAt | CalcitProc::NativeStructWithAt)
+        ) && matches!(
+          ys.first(),
+          Some(Calcit::Proc(
+            CalcitProc::NativeStructNth | CalcitProc::NativeStructAssocAt | CalcitProc::NativeStructWithAt
+          ))
+        ) {
+          post_lowering::record_rewrite(
+            post_lowering::RewriteOrigin::StructFieldIndex,
+            || {
+              let mut call = vec![head_form.clone()];
+              call.extend(processed_args.iter().cloned());
+              Calcit::from(call)
+            },
+            &Calcit::from(CalcitList::List(ys.clone())),
+            scope_types,
+          );
+        }
+
         // Infer type for Method(Invoke) and update the head if type info is available
         if let Calcit::Method(method_name, calcit::MethodKind::Invoke(_)) = &head_form
           && let Some(receiver) = processed_args.first()
