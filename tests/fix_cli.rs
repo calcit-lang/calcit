@@ -11385,6 +11385,146 @@ fn ref_constructor_fix_renames_proven_spellings_and_reviews_shadowed_syntax() {
 }
 
 #[test]
+fn list_match_fix_rewrites_proven_lists_and_reviews_dynamic_subjects() {
+  // Rust checks the CLI transaction protocol; the attached test below replays the same
+  // calls before and after the rewrite.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  let define = |target: &str, code: &str, schema: &str| {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "def", target, "--overwrite", "--input-format", "cirru", "--code", code],
+      ),
+      "define list-match fixture",
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", target, "--input-format", "cirru", "--code", schema]),
+      "declare list-match fixture schema",
+    );
+  };
+  let list_fn = "quote $ :: 'Fn $ {} (:args $ [] (:: 'List 'Number)) (:return 'Number)";
+  define(
+    "app.main/main!",
+    "quote $ defn main! ()\n  , &unit",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)",
+  );
+  define(
+    "app.main/total",
+    "quote $ defn total (xs)\n  list-match xs\n    () 0\n    (h t) (&+ h $ total t)",
+    list_fn,
+  );
+  define(
+    "app.main/swapped",
+    "quote $ defn swapped (xs)\n  list-match xs\n    (h t)\n      println h\n      &+ h $ swapped t\n    () 0",
+    list_fn,
+  );
+  define(
+    "app.main/same?",
+    "quote $ defn same? (xs ys)\n  list-match xs\n    () $ empty? ys\n    (x0 xss)\n      list-match ys\n        () false\n        (y0 yss)\n          if (&= x0 y0) (recur xss yss) false",
+    "quote $ :: 'Fn $ {} (:args $ [] (:: 'List 'Number) (:: 'List 'Number)) (:return 'Bool)",
+  );
+  define(
+    "app.main/open",
+    "quote $ defn open (xs)\n  list-match xs\n    () 0\n    (h t) 1",
+    "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Number)",
+  );
+  define(
+    "app.main/quoted",
+    "quote $ defn quoted ()\n  quote $ list-match xs (() 0) ((h t) 1)",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        "app.main/total",
+        "walks-lists",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ do\n  assert= 6 $ total ([] 1 2 3)\n  assert= 0 $ total ([])\n  assert= 3 $ swapped ([] 1 2)\n  assert= true $ same? ([] 1 2) ([] 1 2)\n  assert= false $ same? ([] 1) ([] 1 2)\n  assert= 1 $ open ([] 4)\n  assert= 2 $ list-match ([] 2 3) (() 0) ((h t) h)",
+      ],
+    ),
+    "attach list-match contract",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["test", "app.main/total", "--require-match"]),
+    "legacy list-match semantics",
+  );
+
+  let before = fs::read(&snapshot).unwrap();
+  let base = ["fix", "--rule", "list-match-to-match-v1", "--include-attached", "--format", "json"];
+  let preview = run_calcit(&snapshot, &base);
+  assert_success(&preview, "list-match preview");
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "preview must not write");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions");
+  let find = |definition: &str, path: &str| {
+    suggestions
+      .iter()
+      .find(|suggestion| suggestion["definition"] == definition && suggestion["path"] == path)
+      .unwrap_or_else(|| panic!("missing {definition} {path}: {report}"))
+  };
+  for (definition, path) in [
+    ("app.main/total", "code@3"),
+    ("app.main/swapped", "code@3"),
+    ("app.main/same?", "code@3"),
+    ("app.main/total", "tests.walks-lists"),
+  ] {
+    let suggestion = find(definition, path);
+    assert_eq!(suggestion["applicability"], "machine-applicable", "{definition} {path}: {report}");
+    assert_eq!(suggestion["rule_id"], "list-match-to-match-v1");
+  }
+  assert!(
+    !suggestions
+      .iter()
+      .any(|suggestion| suggestion["definition"] == "app.main/same?" && suggestion["path"] != "code@3"),
+    "a nested proven call folds into the outer replacement: {report}"
+  );
+  let open = find("app.main/open", "code@3");
+  assert_eq!(open["applicability"], "requires-review", "{report}");
+  assert!(open["replacement"].is_null());
+  assert!(open["message"].as_str().unwrap().contains("not proven to be a `List`"), "{report}");
+  assert!(
+    !suggestions.iter().any(|suggestion| suggestion["definition"] == "app.main/quoted"),
+    "quoted data stays unchanged: {report}"
+  );
+
+  let mut apply = base.to_vec();
+  apply.extend([
+    "--apply",
+    "--allow-no-vcs",
+    "--expect-revision",
+    report["revision"].as_str().unwrap(),
+  ]);
+  assert_success(&run_calcit(&snapshot, &apply), "apply list-match migration");
+  let migrated = fs::read_to_string(&snapshot).unwrap();
+  assert!(migrated.contains("match (destruct-list xs)"), "{migrated}");
+  assert!(migrated.contains("match (destruct-list ys)"), "{migrated}");
+  assert!(migrated.contains("(:some h t)"), "{migrated}");
+  assert!(migrated.contains("println h"), "{migrated}");
+  assert!(migrated.contains("list-match xs"), "the Dynamic subject stays: {migrated}");
+  assert_success(
+    &run_calcit(&snapshot, &["test", "app.main/total", "--require-match"]),
+    "match semantics after migration",
+  );
+  let repeated = run_calcit(&snapshot, &base);
+  assert_success(&repeated, "repeated list-match preview");
+  let repeated = parse_stdout(&repeated);
+  let remaining = repeated["data"]["suggestions"].as_array().unwrap();
+  assert!(
+    remaining.iter().all(|suggestion| suggestion["applicability"] == "requires-review"),
+    "only reviewed calls remain: {repeated}"
+  );
+}
+
+#[test]
 fn let_sugar_fix_rewrites_symbol_and_list_patterns_and_reviews_map_patterns() {
   // Rust checks the CLI transaction protocol; `calcit.core/let-sugar` expands through
   // `let-destruct`, and the attached test below replays the rewritten bindings.

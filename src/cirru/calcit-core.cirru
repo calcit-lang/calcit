@@ -8936,7 +8936,7 @@
             :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :deprecated :macro
         'list-match $ %{} 'CodeEntry
-          :doc "|Two-branch list destructuring macro. Provides separate clauses for the empty list and a head/tail pattern, useful for simple recursion or guards."
+          :doc "|Deprecated: two-branch list destructuring with an empty branch and a `(head tail)` branch. Write `match (destruct-list xs) ((:none) ...) ((:some head tail) ...)`; `calcit fix --rule list-match-to-match-v1` rewrites calls whose subject is a proven List. Scheduled for removal in a later non-patch release."
           :code $ quote $ defmacro list-match (& values)
             if
               not $ &= 3 $ &list:count values
@@ -8988,7 +8988,7 @@
             :capabilities $ #{}
             :expansion $ :: 'Expr 'Dynamic
             :required $ []
-          :tags $ #{} :macro
+          :tags $ #{} :deprecated :macro
           :tests $ [] $ %{} 'TestEntry (:name |branches-empty-and-head-tail)
             :code $ quote $ do
               assert= :empty $ list-match ([])
