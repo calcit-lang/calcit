@@ -248,6 +248,13 @@
         :args $ [] 'T
         :generics $ [] 'T
         :return $ :: 'Ref 'T
+    {} (:declaration nil)
+      :name 'calcit.core/defref
+      :runtime-arity nil
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Symbol 'T
+        :generics $ [] 'T
+        :return $ :: 'Ref 'T
     {}
       :failure "|名义_enum，some_携带_T，none_无负载"
       :name 'calcit.core/Option
