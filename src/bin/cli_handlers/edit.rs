@@ -1091,6 +1091,24 @@ pub(crate) fn definition_head_macro_code(
   Ok(None)
 }
 
+/// Replace a definition's code and apply the metadata rules that follow from it.
+/// `derived_macro_schema` comes from `snapshot::conservative_macro_schema` on the new code.
+pub(crate) fn replace_definition_code(entry: &mut CodeEntry, code: Cirru, derived_macro_schema: Option<Arc<CalcitTypeAnnotation>>) {
+  entry.code = code;
+  // The shorthand fully determines external-object metadata, and the loader
+  // regenerates it. Carrying a retained `:ffi` would write an invalid
+  // `defexternal` + explicit `:ffi` pair that the next load rejects.
+  if snapshot::code_declares_defexternal(&entry.code) {
+    entry.ffi = None;
+  }
+  // A macro gets a conservative schema unless it already declares a Macro contract.
+  if let Some(schema) = derived_macro_schema
+    && !matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Macro(_))
+  {
+    entry.schema = schema;
+  }
+}
+
 pub(crate) fn validate_definition_shape(
   snapshot_file: &str,
   snapshot: &Snapshot,
@@ -1229,27 +1247,8 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
 
   // Create or overwrite definition.
   // For overwrite, preserve existing metadata (doc/examples/schema) and only replace code.
-  let code_entry = if let Some(mut updated_entry) = previous_entry {
-    updated_entry.code = syntax_tree;
-    // The shorthand fully determines external-object metadata, and the loader
-    // regenerates it. Carrying a retained `:ffi` would write an invalid
-    // `defexternal` + explicit `:ffi` pair that the next load rejects.
-    if snapshot::code_declares_defexternal(&updated_entry.code) {
-      updated_entry.ffi = None;
-    }
-    if let Some(schema) = derived_macro_schema
-      && !matches!(updated_entry.schema.as_ref(), calcit::calcit::CalcitTypeAnnotation::Macro(_))
-    {
-      updated_entry.schema = schema;
-    }
-    updated_entry
-  } else {
-    let mut entry = CodeEntry::from_code(syntax_tree);
-    if let Some(schema) = derived_macro_schema {
-      entry.schema = schema;
-    }
-    entry
-  };
+  let mut code_entry = previous_entry.unwrap_or_else(|| CodeEntry::from_code(syntax_tree.clone()));
+  replace_definition_code(&mut code_entry, syntax_tree, derived_macro_schema);
   snapshot
     .files
     .get_mut(namespace)

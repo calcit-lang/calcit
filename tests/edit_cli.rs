@@ -1705,6 +1705,35 @@ fn edit_ns_updates_only_changed_definitions_and_keeps_tests() {
   assert_eq!(added["data"]["doc"], "Added by a view");
 }
 
+/// A macro added in the same view is a valid definition head for the other definitions in it.
+#[test]
+fn edit_ns_accepts_definition_heads_from_macros_in_the_same_view() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/test-def-meta.cirru", &snapshot).unwrap();
+  let namespace = "test-def-meta.things";
+  assert_success(&run_calcit(&snapshot, &["edit", "add-ns", namespace]), "create empty namespace");
+  let view = directory.0.join("view.cirru");
+  fs::write(
+    &view,
+    "ns test-def-meta.things\n\ndefmacro defthing (name value) (quasiquote (def ~name ~value))\n\ndefthing my-thing 1\n",
+  )
+  .unwrap();
+  let output = edit_ns_json(&snapshot, namespace, &view, &[]);
+  assert_success(&output, "write a view whose definition uses a macro from the same view");
+  let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+  let statuses = definition_statuses(&report);
+  assert_eq!(statuses["defthing"], "added");
+  assert_eq!(statuses["my-thing"], "added");
+
+  // The same-view lookup does not hide a name mismatch in an explicitly named definition.
+  let text = query_ns_view(&snapshot, namespace);
+  fs::write(&view, format!("{text}\n:def other-thing $ defthing wrong-name 2\n")).unwrap();
+  let mismatch = edit_ns_json(&snapshot, namespace, &view, &[]);
+  assert!(!mismatch.status.success());
+  assert!(String::from_utf8_lossy(&mismatch.stderr).contains("name mismatch"));
+}
+
 #[test]
 fn edit_ns_rejects_removal_without_flag_and_stale_revisions() {
   let directory = TestDirectory::create();

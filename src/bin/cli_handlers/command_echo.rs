@@ -280,6 +280,10 @@ fn render_query_explanation(cmd: &QueryCommand) -> Option<String> {
       }
       desc
     }
+    QuerySubcommand::Ns(opts) if opts.format == "cirru" => match &opts.namespace {
+      Some(ns) => format!("prints namespace `{ns}` as writable Cirru source for `edit ns`"),
+      None => "prints a namespace as writable Cirru source (needs a namespace)".to_string(),
+    },
     QuerySubcommand::Ns(opts) => {
       let mut desc = "lists all namespaces".to_string();
       if let Some(ns) = &opts.namespace {

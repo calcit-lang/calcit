@@ -344,7 +344,8 @@ Snapshot 比较：
 
 - 代码或 `:meta` 有变化的定义被覆盖，新定义被添加，其余定义保持原样；结果按定义报告 `added` / `changed` / `unchanged` / `removed`，`changed` 同时列出变化的 `code`、`doc`、`schema`。
 - 视图中缺少的定义只有传 `--allow-remove` 才会删除；否则命令列出这些定义并失败，Snapshot 不变。
-- 视图中没有 `:meta` 块或块内没有某个字段时，保留原 doc/schema；`:schema nil` 清除 schema，`:doc |` 清空 doc。
+- 视图中没有 `:meta` 块或块内没有某个字段时，保留原 doc/schema：删掉 `:doc` 一行会保留原 doc，写 `:doc |` 才清空 doc；同样，删掉 `:schema` 一行保留原 schema，写 `:schema nil` 才清除。
+- 重命名定义用 `edit rename`。在视图里改名等于删除旧定义再添加新定义，旧名字的 tests 与 examples 会随旧定义一起删除。
 - tests、examples、tags 与 FFI 元数据保持原值；`ns` 形式变化时更新 imports。
 - 新增或改动的代码与 `edit def` 一样经过定义形状检查；需要自定义定义头时传 `--allow-unknown-head`。
 - `--dry-run` 只比较和校验，不写文件；dry-run 返回的 `scoped_revision` 只覆盖本次改动的定义，传给 `--expect-revision` 后提交。revision 不匹配时拒绝写入。

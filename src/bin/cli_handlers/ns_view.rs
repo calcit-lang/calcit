@@ -12,7 +12,7 @@
 //!
 //! :meta greet
 //!   :doc "|Greets a person"
-//!   :schema $ :: :fn $ {} (:args $ [] :string) (:return :string)
+//!   :schema $ :: 'Fn $ {} (:args $ [] 'String) (:return 'String)
 //! ```
 //!
 //! The first expression is the full `ns` form. Each following expression is one
@@ -36,8 +36,9 @@ use std::sync::Arc;
 
 use super::common::read_code_input;
 use super::edit::{
-  TransactionOperationReport, check_ns_editable, extract_require_rules, load_snapshot, run_staged_transaction_with_options,
-  save_snapshot, snapshot_content_revision, strip_name_field_from_schema, validate_definition_shape,
+  TransactionOperationReport, check_ns_editable, extract_require_rules, load_snapshot, replace_definition_code,
+  run_staged_transaction_with_options, save_snapshot, snapshot_content_revision, strip_name_field_from_schema,
+  validate_definition_shape,
 };
 use super::query::query_schema_cirru;
 use super::structured_output::{StructuredOutputFormat, format_json_value_as_edn};
@@ -345,12 +346,6 @@ fn plan_ns_view(
       eprintln!("{} in namespace '{namespace}': {warning}", "Warning:".yellow());
     }
   }
-  // Resolve definition heads against the imports the view declares.
-  let mut validation_snapshot = snapshot.clone();
-  if let Some(code) = &ns_code {
-    validation_snapshot.files.get_mut(namespace).expect("namespace exists").ns.code = code.clone();
-  }
-
   let in_view = view.defs.iter().map(|(name, _)| name.as_str()).collect::<HashSet<_>>();
   let mut removals = file
     .defs
@@ -365,6 +360,22 @@ fn plan_ns_view(
       removals.len(),
       removals.join(", ")
     ));
+  }
+
+  // Resolve definition heads against the namespace as the view describes it:
+  // its imports, plus macros the view itself adds or changes.
+  let mut validation_snapshot = snapshot.clone();
+  let validation_file = validation_snapshot.files.get_mut(namespace).expect("namespace exists");
+  validation_file.ns.code = view.ns_code.clone();
+  for name in &removals {
+    validation_file.defs.remove(name);
+  }
+  for (name, code) in &view.defs {
+    let entry = validation_file
+      .defs
+      .entry(name.clone())
+      .or_insert_with(|| CodeEntry::from_code(code.clone()));
+    entry.code = code.clone();
   }
 
   let mut updates = BTreeMap::new();
@@ -383,18 +394,21 @@ fn plan_ns_view(
     if code_changed {
       snapshot::validate_defexternal_shorthand(code, &owner)?;
       let derived_macro_schema = snapshot::conservative_macro_schema(code, &format!("definition '{owner}'"))?;
-      validate_definition_shape(snapshot_file, &validation_snapshot, namespace, name, code, allow_unknown_head)?;
-      entry.code = code.clone();
-      // Same rules as `edit def --overwrite`: shorthand regenerates external
-      // metadata, and a macro gets a conservative schema unless it has one.
-      if snapshot::code_declares_defexternal(code) {
-        entry.ffi = None;
+      // Check this definition against its stored code (or its absence), so the
+      // name-mismatch exception for unchanged historical code does not apply.
+      let validation_defs = &mut validation_snapshot.files.get_mut(namespace).expect("namespace exists").defs;
+      let staged = match previous {
+        Some(entry) => validation_defs.insert(name.clone(), entry.clone()),
+        None => validation_defs.remove(name),
+      };
+      let checked = validate_definition_shape(snapshot_file, &validation_snapshot, namespace, name, code, allow_unknown_head);
+      let validation_defs = &mut validation_snapshot.files.get_mut(namespace).expect("namespace exists").defs;
+      if let Some(staged) = staged {
+        validation_defs.insert(name.clone(), staged);
       }
-      if let Some(schema) = derived_macro_schema
-        && !matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Macro(_))
-      {
-        entry.schema = schema;
-      }
+      checked?;
+      // Same metadata rules as `edit def --overwrite`.
+      replace_definition_code(&mut entry, code.clone(), derived_macro_schema);
       fields.push("code");
     }
     if let Some(doc) = &meta.doc
@@ -556,22 +570,17 @@ fn print_report(report: &NsViewReport, format: StructuredOutputFormat) -> Result
       }
       println!("- changed: `{}`", report.changed);
       println!("- ns form: `{}`", if report.ns_changed { "changed" } else { "unchanged" });
-      let mut unchanged = vec![];
-      let mut lines = vec![];
+      let mut unchanged = 0;
+      println!("\n## Definitions\n");
       for change in &report.definitions {
         match change.status {
-          DefinitionStatus::Unchanged => unchanged.push(format!("`{}`", change.name)),
-          DefinitionStatus::Changed => lines.push(format!("- changed `{}` ({})", change.name, change.fields.join(", "))),
-          status => lines.push(format!("- {} `{}`", status.label(), change.name)),
+          DefinitionStatus::Unchanged => unchanged += 1,
+          DefinitionStatus::Changed => println!("- changed `{}` ({})", change.name, change.fields.join(", ")),
+          status => println!("- {} `{}`", status.label(), change.name),
         }
       }
-      println!("\n## Definitions\n");
-      for line in &lines {
-        println!("{line}");
-      }
-      if !unchanged.is_empty() {
-        println!("- unchanged ({}): {}", unchanged.len(), unchanged.join(", "));
-      }
+      // Structured output lists every definition; human output only counts unchanged ones.
+      println!("- unchanged: {unchanged}");
       if report.dry_run && report.changed {
         let revision = report.scoped_revision.as_deref().unwrap_or(&report.original_revision);
         println!("\nApply with `--expect-revision '{revision}'` and without `--dry-run`.");
