@@ -1,6 +1,6 @@
 ---
 title: "CLI Code Editing (edit & tree)"
-summary: "如何使用 calcit tree show/replace/search-replace/delete/batch-delete/insert/wrap/rewrite 查看和修改 AST 节点"
+summary: "如何使用 calcit tree show/replace/search-replace/delete/insert/wrap/rewrite 查看和修改 AST 节点"
 scope: "core"
 kind: "reference"
 category: "run"
@@ -67,6 +67,39 @@ calcit edit def app.util/double --input-format cirru --code 'quote $ defn double
 清除声明不等于通过类型检查，也不启用新的推断能力；当前严格模式仍要求无法证明的函数边界提供结构化 `Fn` 契约。编辑后继续运行 `calcit --check-only`。函数体推断由 [#1307](https://github.com/calcit-lang/calcit/issues/1307) 跟进，不应通过自动补写 `Dynamic` 绕过。
 
 ### Persistent Tree Cursor
+
+#### 常用循环
+
+最常用的 cursor 循环只有四步：搜索选中、展示、修改、再展示。
+
+```bash
+calcit query search render-item --filter 'app.main/render!' --exact
+calcit query search render-item --filter 'app.main/render!' --exact --set-cursor 0
+calcit cursor show
+calcit cursor apply wrap --input-format cirru --code 'quote $ when visible? self'
+calcit cursor show
+```
+
+常用补充：
+
+- `cursor parent`、`cursor child [index]` / `child --last`：进入父子层级。
+- `cursor next/prev --count N`：跨多个 sibling；跨 list 边界使用 `forward/backward --count N`。
+- `cursor duplicate --at before|after`：复制选中表达式并选中新副本，不覆盖 clipboard。
+- `cursor cut` 后选中 parent；`cursor paste` 后选中新节点，`--at` 支持 `before|after|prepend-child|append-child|replace`。
+- `query search ... --source project --start-path @cursor --set-cursor N`：只在当前 subtree 中继续搜索。
+- `query next/prev`：重新计算上次通过 `--set-cursor` 保存的搜索并跳到相邻结果，不保存完整结果列表；Snapshot 已变化时先重跑原查询显式选中。
+- `cursor anchor` → 移动 → `cursor region`：确认同一 parent 下的连续 sibling 范围；结束后 `clear-anchor`。
+- `cursor mark <name>` / `goto <name>`：保存和恢复最多 16 个高频位置；短期绕行仍优先使用 `push/pop`。
+- `query context @cursor`、`tree show @cursor --path @cursor`：后续命令不再重复 target/path。
+- `cursor back` 只回退 cursor 位置，**不会撤销源码修改**。
+
+cursor 密集操作可把顶层选项写在命令前，如 `calcit --cursor-after focus cursor forward --count 4`，让每次移动立即展示上下文。需要机器确认真实选中节点时，使用 `calcit cursor show --format json --view node`。
+
+`.calcit/` 是项目本地状态目录，应整体加入 `.gitignore`。其中 `cursor.cirru` 保存 active cursor、单一 anchor、最多 16 个 marks、last query、有限 history/stack 与 clipboard，硬上限 64 KiB；`error.cirru` 保存最近一次持久化 runtime/watcher stack，多行输入临时片段可放 `snippets/`。进入复制项目或已有 worktree 时先 `cursor show`；若选择与当前任务无关，执行 `cursor clear`。目前只有一个 active cursor，不负责多个进程的并发写入；并行 Agent 使用独立 worktree/Snapshot。
+
+非法 cursor navigation 会保持 Snapshot 和 cursor 不变，失败后用 `cursor show` 确认。`unwrap` 会把所选 list 的所有 children splice 到 parent；对含额外语法的 wrapper，它不是 `wrap` 的撤销操作。
+
+#### 命令参考
 
 For a sequence of edits in one complex expression, `calcit cursor` stores the active tree selection in `.calcit/cursor.cirru` next to the snapshot. `.calcit/` is the shared project-local state directory for the cursor, recent error stack, snippets, and other bounded local artifacts; it does not become part of the source snapshot:
 

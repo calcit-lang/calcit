@@ -100,9 +100,9 @@ pub fn run(
   project_namespaces: &HashSet<String>,
   strict_preflight: Option<&dyn Fn() -> Result<(), String>>,
 ) -> Result<(), String> {
-  if !matches!(options.format.as_str(), "human" | "text" | "json") {
+  if !matches!(options.format.as_str(), "human" | "text" | "edn" | "json") {
     return Err(format!(
-      "Unknown check-public output format `{}`. Expected `human` or `json`.",
+      "Unknown public check output format `{}`. Expected `human`, `edn`, or `json`.",
       options.format
     ));
   }
@@ -324,9 +324,8 @@ pub fn run(
   let duration_ms = started.elapsed().as_secs_f64() * 1000.0;
 
   match options.format.as_str() {
-    "json" => println!(
-      "{}",
-      json!({
+    format @ ("json" | "edn") => {
+      let envelope = json!({
         "schema_version": 1,
         "command": "analyze.check-public",
         "revision": revision,
@@ -352,8 +351,13 @@ pub fn run(
           "definitions": if options.summary_only { Vec::new() } else { results.iter().map(result_json).collect::<Vec<_>>() },
         },
         "diagnostics": diagnostics,
-      })
-    ),
+      });
+      if format == "edn" {
+        println!("{}", crate::cli_handlers::format_json_value_as_edn(&envelope)?);
+      } else {
+        println!("{envelope}");
+      }
+    }
     "human" | "text" => {
       println!("Public definition check");
       println!("- entry: {}", snapshot.active_entry_name());

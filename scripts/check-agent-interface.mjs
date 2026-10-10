@@ -758,10 +758,12 @@ const scenarios = [
     args: [
       "calcit/test.cirru",
       "analyze",
-      "check-types",
+      "weak-types",
+      "--only",
+      "coverage",
       "--ns",
       "app.main",
-      "--only",
+      "--coverage-level",
       "none",
       "--format",
       "json",
@@ -771,7 +773,7 @@ const scenarios = [
         throw new Error("type coverage result is incomplete");
       }
       if (!result.data.definitions.every((definition) => definition.coverage === "none")) {
-        throw new Error("check-types --only filter was not preserved");
+        throw new Error("weak-types --only coverage --coverage-level filter was not preserved");
       }
       if (typeof result.data.summary.polymorphism?.generic_definitions !== "number") {
         throw new Error("check-types lost polymorphism evidence counts");
@@ -842,7 +844,9 @@ const scenarios = [
     args: [
       "calcit/test.cirru",
       "analyze",
-      "check-types",
+      "weak-types",
+      "--only",
+      "coverage",
       "--ns",
       "test-struct.main",
       "--summary-only",
@@ -862,8 +866,7 @@ const scenarios = [
     name: "strict bundled core public source check",
     args: [
       "calcit/test-wasi-command.cirru",
-      "analyze",
-      "check-public",
+      "--check-only",
       "--ns",
       "calcit.core",
       "--ns",
@@ -901,8 +904,7 @@ const scenarios = [
     name: "target-aware public check failure",
     args: [
       "calcit/type-fail/js-nullish-dereference-strict.cirru",
-      "analyze",
-      "check-public",
+      "--check-only",
       "--ns",
       "type-fail-js-nullish-dereference-strict.main",
       "--format",
@@ -926,8 +928,7 @@ const scenarios = [
     strictTypes: true,
     args: [
       "calcit/type-fail/js-nullish-dereference-strict.cirru",
-      "analyze",
-      "check-public",
+      "--check-only",
       "--ns",
       "type-fail-js-nullish-dereference-strict.main",
       "--format",

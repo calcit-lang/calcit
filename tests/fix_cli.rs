@@ -407,7 +407,19 @@ fn deprecation_report_shares_core_metadata_and_excludes_local_and_quoted_calls()
     ),
     "import legacy API through a namespace alias",
   );
-  let output = run_calcit(&snapshot, &["analyze", "deprecated", "--ns", "app.main", "--format", "json"]);
+  let output = run_calcit(
+    &snapshot,
+    &[
+      "analyze",
+      "weak-types",
+      "--only",
+      "deprecated-call",
+      "--ns",
+      "app.main",
+      "--format",
+      "json",
+    ],
+  );
   assert_success(&output, "report legacy core calls");
   let report = parse_stdout(&output);
   let rows = report["data"]["definitions"].as_array().unwrap();
@@ -460,7 +472,19 @@ fn deprecation_paths_address_snapshot_source_with_comments() {
     ),
     "create commented legacy calls",
   );
-  let output = run_calcit(&snapshot, &["analyze", "deprecated", "--ns", "app.main", "--format", "json"]);
+  let output = run_calcit(
+    &snapshot,
+    &[
+      "analyze",
+      "weak-types",
+      "--only",
+      "deprecated-call",
+      "--ns",
+      "app.main",
+      "--format",
+      "json",
+    ],
+  );
   assert_success(&output, "report deprecated calls");
   let report = parse_stdout(&output);
   let legacy = report["data"]["definitions"]

@@ -328,7 +328,7 @@ fn obsolete_dynamic_method_profile_gate_has_a_read_only_migration_hint() {
   let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("failure should remain one JSON envelope");
   assert_eq!(value["diagnostics"][0]["code"], "E_VERIFY_CONFIG");
   assert!(value["diagnostics"][0]["message"].as_str().is_some_and(|message| {
-    message.contains("replace it with `strict` and behavior tests") && message.contains("use analyze dynamic-methods")
+    message.contains("replace it with `strict` and behavior tests") && message.contains("analyze weak-types --only dynamic-method")
   }));
 }
 
