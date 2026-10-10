@@ -16,6 +16,7 @@ import {
   newTag,
   refsRegistry,
   toString,
+  format_calcit_number,
   getStringName,
   compareTagNames,
   _$n__$e_,
@@ -1819,40 +1820,6 @@ export let quit_$x_ = (code: number): void => {
   } else {
     throw new Error(`quit!(${code})`);
   }
-};
-
-let format_calcit_number = (x: number): string => {
-  // Match native f64 Display, which expands finite exponents into decimal notation.
-  if (Object.is(x, -0)) {
-    return "-0";
-  }
-  if (x === Infinity) {
-    return "inf";
-  }
-  if (x === -Infinity) {
-    return "-inf";
-  }
-
-  const text = x.toString();
-  const exponentIndex = text.indexOf("e");
-  if (exponentIndex < 0) {
-    return text;
-  }
-
-  const mantissa = text.slice(0, exponentIndex);
-  const exponent = Number(text.slice(exponentIndex + 1));
-  const sign = mantissa.startsWith("-") ? "-" : "";
-  const unsigned = sign ? mantissa.slice(1) : mantissa;
-  const decimalPoint = unsigned.indexOf(".");
-  const decimalIndex = (decimalPoint < 0 ? unsigned.length : decimalPoint) + exponent;
-  const digits = unsigned.replace(".", "");
-  if (decimalIndex <= 0) {
-    return `${sign}0.${"0".repeat(-decimalIndex)}${digits}`;
-  }
-  if (decimalIndex >= digits.length) {
-    return `${sign}${digits}${"0".repeat(decimalIndex - digits.length)}`;
-  }
-  return `${sign}${digits.slice(0, decimalIndex)}.${digits.slice(decimalIndex)}`;
 };
 
 export let turn_string = (x: CalcitValue): string => {

@@ -186,7 +186,6 @@ assert= (%err |1e) (parse-float |1e)
 
 - 生成 JS 中 `round` 恰好一半时向正无穷取整，WASM 取偶数。
 - native 的 `&number:format` 恰好一半时取偶数，WASM 不支持 `&number:format`。
-- 生成 JS 中 `str` 与 `println` 输出 JS 原生数字文本（如 `Infinity`、`1e+21`，`-0` 写作 `0`）。
 - 生成 JS 接受小数的 `&list:slice` 边界；位运算的越界与小数操作数在 native 饱和或报错、在 JS 回绕或截断、在 WASM trap 或截断。
 - native 的 `&number:display-by` 经过 i32 转换，超出 i32 的值与负数不能正确输出；生成 JS 接受负数与小数。
 - WASM 不支持 `parse-float`；对定义域之外的输入只 trap，不提供错误消息。
