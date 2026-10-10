@@ -407,6 +407,42 @@ fn recur_arguments_follow_the_lexical_function_contract() {
   assert_eq!(recur_diagnostics[0]["location"]["def"], "typed-recur");
   assert_eq!(recur_diagnostics[0]["location"]["coord"], serde_json::json!([3, 3, 1, 1]));
   assert_eq!(recur_diagnostics[1]["location"]["coord"], serde_json::json!([3, 3, 2]));
+
+  // A direct self-call in tail position is lowered to `recur` (#1553); the
+  // lowered call follows the same contract as a written `recur`.
+  edit_definition(
+    &snapshot,
+    "typed-recur",
+    "quote $ defn typed-recur (label index) $ if (>= index 2) index $ typed-recur label (inc index)",
+    true,
+  );
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "correct self-call argument order");
+  edit_definition(
+    &snapshot,
+    "typed-recur",
+    "quote $ defn typed-recur (label index) $ if (>= index 2) index $ typed-recur (inc index) label",
+    true,
+  );
+  let self_call = run_calcit(&snapshot, &["--check-only", "--keep-going", "--format", "json"]);
+  assert!(!self_call.status.success(), "wrong self-call argument order must fail checking");
+  let report: serde_json::Value = serde_json::from_slice(&self_call.stdout).expect("check should return JSON");
+  let mismatches = report["data"]["definitions"]
+    .as_array()
+    .expect("definitions should be an array")
+    .iter()
+    .find(|definition| definition["definition"] == "app.main/typed-recur")
+    .expect("typed recur definition should be present")["diagnostics"]
+    .as_array()
+    .expect("diagnostics should be an array")
+    .iter()
+    .filter(|diagnostic| diagnostic["code"] == "W_RECUR_ARG_TYPE_MISMATCH")
+    .map(|diagnostic| diagnostic["path"].clone())
+    .collect::<Vec<_>>();
+  assert_eq!(
+    mismatches,
+    vec![serde_json::json!([3, 3, 1, 1]), serde_json::json!([3, 3, 2])],
+    "report: {report}"
+  );
 }
 
 #[test]
