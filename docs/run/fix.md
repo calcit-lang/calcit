@@ -124,7 +124,9 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
 - `single-expression-do-v1` 解包恰好只有一个 payload 的 `(do expr)`。这时 `do` 在分支、调用参数和 binding value
   中也没有组合多个步骤，不会补充求值、失败或类型语义；`defmacro`、`quote`/`quasiquote` 仍作为宏/数据边界保留。
 - `named-enum-constructor-v1` 把能静态解析到项目 `defenum` 的 `%:: Result :ok value` 改为
-  `Result :ok value`。
+  `Result :ok value`。`calcit.core` 的 enum（如 `Option`、`Result`、`MapEntryDecision`）在所在 namespace
+  没有同名定义或 import、也没有同名局部绑定时同样改写，例如 `%:: Option :some x` 改为 `Option :some x`；
+  编译器 trace 必须确认原型解析到 `calcit.core` 的同名定义。
 - `named-struct-constructor-v1` 把能静态解析到项目 `defstruct` 的 `%{} Person (:name name)` 改为
   `Person :name name`，并保持字段表达式的原始求值顺序。
 - 两条 named constructor 规则也改写 `quasiquote` 模板中（`~` / `~@` 之外）的构造：模板在每次展开时才编译，

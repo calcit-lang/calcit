@@ -1200,6 +1200,109 @@ fn named_constructor_fix_migrates_qualified_quasiquote_templates() {
 }
 
 #[test]
+fn named_enum_constructor_fix_migrates_unshadowed_core_enums() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  assert_success(&run_calcit(&snapshot, &["query", "config"]), "inspect core enum fixture");
+  for (target, code, overwrite) in [
+    (
+      "app.main/main!",
+      "quote $ defn main! ()\n  assert= (Option :some 1) (wrap 1)\n  assert= 3 $ count-down 3\n  , &unit",
+      true,
+    ),
+    ("app.main/wrap", "quote $ defn wrap (x) (%:: Option :some x)", false),
+    (
+      "app.main/count-down",
+      "quote $ defn count-down (n)\n  loop\n      i n\n      found $ %:: Option :none\n    if (&= i 0)\n      &list:count $ [] (%:: MapEntryDecision :drop) found 1\n      recur (&- i 1) (%:: Option :some i)",
+      false,
+    ),
+  ] {
+    let mut args = vec!["edit", "def", target, "--input-format", "cirru", "--code", code];
+    if overwrite {
+      args.push("--overwrite");
+    }
+    assert_success(&run_calcit(&snapshot, &args), "create core enum fixture");
+  }
+  for (target, schema) in [
+    (
+      "app.main/wrap",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return $ :: 'Option 'Number)",
+    ),
+    ("app.main/count-down", "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)"),
+  ] {
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", target, "--input-format", "cirru", "--code", schema]),
+      "declare core enum fixture schema",
+    );
+  }
+  assert_success(&run_calcit(&snapshot, &[]), "original core enum constructors");
+  // A namespace definition named like a core enum shadows it, so its `%::` stays.
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "add-ns", "app.shadow"]),
+    "create shadowing namespace",
+  );
+  for (target, code) in [
+    ("app.shadow/Option", "quote $ def Option 1"),
+    ("app.shadow/shadowed", "quote $ defn shadowed () (%:: Option :none)"),
+  ] {
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", target, "--input-format", "cirru", "--code", code]),
+      "create shadowing definition",
+    );
+  }
+  let shadow_preview = run_calcit(
+    &snapshot,
+    &[
+      "fix",
+      "--ns",
+      "app.shadow",
+      "--rule",
+      "named-enum-constructor-v1",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&shadow_preview, "shadowed core enum preview");
+  let shadow_report = parse_stdout(&shadow_preview);
+  assert_eq!(shadow_report["data"]["suggestions"], serde_json::json!([]), "{shadow_report}");
+  let args = ["fix", "--ns", "app.main", "--rule", "named-enum-constructor-v1", "--format", "json"];
+  let preview = run_calcit(&snapshot, &args);
+  assert_success(&preview, "core enum preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().unwrap();
+  let applicable = |definition: &str| {
+    suggestions
+      .iter()
+      .filter(|suggestion| {
+        suggestion["definition"] == format!("app.main/{definition}") && suggestion["applicability"] == "machine-applicable"
+      })
+      .count()
+  };
+  assert_eq!(applicable("wrap"), 1, "{report}");
+  assert_eq!(applicable("count-down"), 3, "{report}");
+
+  let mut apply = args.to_vec();
+  apply.extend([
+    "--apply",
+    "--allow-no-vcs",
+    "--expect-revision",
+    report["revision"].as_str().unwrap(),
+  ]);
+  assert_success(&run_calcit(&snapshot, &apply), "apply core enum constructors");
+  let query = |definition: &str| {
+    let output = run_calcit(&snapshot, &["query", "def", &format!("app.main/{definition}"), "--format", "json"]);
+    assert_success(&output, definition);
+    parse_stdout(&output)["data"]["code"].to_string()
+  };
+  assert!(query("wrap").contains(r#"["Option",":some","x"]"#), "{}", query("wrap"));
+  let count_down = query("count-down");
+  assert!(!count_down.contains("%::"), "{count_down}");
+  assert!(count_down.contains(r#"["MapEntryDecision",":drop"]"#), "{count_down}");
+  assert_success(&run_calcit(&snapshot, &[]), "migrated core enum constructors");
+}
+
+#[test]
 fn attached_do_rules_preserve_root_sequence_and_macro_data() {
   for rule in ["redundant-do-v1", "single-expression-do-v1"] {
     let directory = TestDirectory::create();
