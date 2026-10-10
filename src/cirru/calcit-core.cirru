@@ -5269,7 +5269,7 @@
             :expansion $ :: 'Expr 'T
             :generics $ [] 'T
             :required $ [] $ :: 'Expr 'T
-          :tags $ #{} :log
+          :tags $ #{} :log :macro
           :tests $ []
             %{} 'TestEntry (:name |returns-the-value)
               :code $ quote $ do

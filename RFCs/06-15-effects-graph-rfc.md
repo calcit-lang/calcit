@@ -125,24 +125,25 @@ Transform 不等于删除逻辑，而是**降采样**：
 |------|------|------|
 | `console` | `println`、`eprintln`、`echo`、`dbg`、`&inspect-methods` | `:log` tag（宿主注入 proc 的 descriptor tags） |
 | `io/file` | `read-file`、`write-file`、`try-read-dir`、`.read-text`、`.write-text!` | `:file` tag |
-| `io` | `monotonic-time-ms`、`unix-time-ms`、`wait-ms`、`read-stdin-text`、`generate-id!` | 只有 `:io` tag |
+| `io` | `monotonic-time-ms`、`unix-time-ms`、`wait-ms`、`read-stdin-text`、`generate-id!`、宿主注入的 `async-sleep` | 只有 `:io` tag |
 | `env` | `get-env`、`get-args` | `:env` tag |
 | `control` | `raise`、`quit!`、`try`、`todo!`、`non-nil!`、`assert=`、`assert-traits` | `:control` tag |
-| `async` | `hint-fn $ {} (:async true)` | `hint-fn` 的 `:async` tag，且 schema 中出现 `:async` |
+| `async` | `hint-fn $ {} (:async true)` | `hint-fn` 的 `:async` tag，且 schema 中出现 `(:async true)`；`(:async false)` 与普通类型提示不算 |
 | `state/watch` | `add-watch!`、`remove-watch!`、旧 `remove-watch` | `:watch` tag |
 | `effect` | `.cancel!`、`.cancel-with!`、`.resolve!`、`.reject!`、旧 `.cancel`、`&doseq` | `:effect` tag |
-| `interop/host` | `eval`、`&call-dylib-edn`、`async-sleep` | `:interop` tag |
-| `interop/js` | `js/console.log`、`.!method`、`(|os :as os)` 导入的 `os/arch` | `js/` 命名空间、`.!` 调用与 JS 模块导入的语法 |
-| `unknown` | 未加载的 `missing.ns/thing`、未声明 tags 的宿主 proc、项目自定义的方法 | 没有可读取的效果声明 |
+| `interop/host` | `eval`、`&call-dylib-edn` | `:interop` tag |
+| `interop/js` | `js/console.log`、`.!focus`（输出保留 `.!` 前缀）、`(|os :as os)` 导入的 `os/arch` | `js/` 命名空间、`.!` 调用与 JS 模块导入的语法 |
+| `unknown` | 未加载的 `missing.ns/thing`、未声明 tags 的宿主 proc、项目自定义的方法、调用函数参数 `(f 1)` | 没有可读取的效果声明 |
 
 **效果来源**按以下顺序确定，不再有按名字的兜底规则：
 
 1. `calcit.core` 定义的 Snapshot `:tags`。没有 Snapshot entry 的少数 builtin proc / syntax 在 `src/effects_graph.rs` 的表中逐个声明，测试保证每个 proc/syntax 恰好有一处声明。core 定义没有效果 tag 即表示无效果。
 2. 宿主注册 proc 的 `RegisteredProcDescriptor.tags`；descriptor 完全没有 tags 时报告 `unknown`。
-3. 方法调用 `.name` 查 core 的 `defimpl` / `&impl::new` 表，取实现定义的 tags。项目或模块也实现了同名方法，或 core 没有该方法时，报告 `unknown`，因为分派目标取决于运行时接收者。
-4. 调用项目或模块定义时，调用点本身不记录效果；被调用定义作为调用图子节点，按同样规则列出自己的效果。
+3. 方法调用 `.name`（包括 `(receiver .name args)` 写法）查 core 的 `defimpl` / `&impl::new` 表，取实现定义的 tags；表中内联的实现（如 `&core-enum-methods` 里的 `defn &enum:empty?-impl`）沿用所在 core 定义的 tags。项目或模块也实现了同名方法，或 core 没有该方法时，报告 `unknown`，因为分派目标取决于运行时接收者。
+4. 调用所在 `defn` / `defmacro` / `fn` 的参数，例如 `defn call-through (f) (f 1)`，调用的是调用方传入的函数值，报告 `unknown`。参数列表本身、`let` / `loop` / `&let` / `if-let` / `when-let` 的绑定对，以及 `case` / `match` / `cond` 的分支不当作调用。
+5. 调用项目或模块定义时，调用点本身不记录效果；被调用定义作为调用图子节点，按同样规则列出自己的效果。
 
-`unknown` 表示“分析器找不到声明”，不是“有副作用”，也不是“纯”。它出现在三类位置：限定名指向未加载的命名空间或定义、宿主 proc 未声明 tags、方法分派无法限定在 core 实现。补全方式是加载对应模块、为宿主 proc 声明 tags，或在 core 定义上补 tag；不要通过改名来消除 `unknown`。
+`unknown` 表示“分析器找不到声明”，不是“有副作用”，也不是“纯”。它出现在四类位置：限定名指向未加载的命名空间或定义、宿主 proc 未声明 tags、方法分派无法限定在 core 实现、调用函数参数。补全方式是加载对应模块、为宿主 proc 声明 tags，或在 core 定义上补 tag；不要通过改名来消除 `unknown`。
 
 Effect 边：从 Transform 节点指向 effect 节点；effect 节点可带 `target`（文件路径、DOM、atom 名等）若可静态推导。
 
@@ -229,7 +230,7 @@ defn render-once (ui) $
 - `reset!` / `swap!` (`:state`) → State 端口的 atom 写入，不重复计入 effect
 - `add-watch!` / `remove-watch` (`:state` `:watch`) → `state/watch`
 - `eval` (`:interop`) → `interop/host`
-- `hint-fn` (`:async`) → `async`，仅当 hint schema 中出现 `:async`
+- `hint-fn` (`:async`) → `async`，仅当 hint schema 中出现 `(:async true)`
 - `ffi-task:cancel` (`:effect`) → `effect`，`.cancel` 与 `.cancel!` 共享这一实现
 - `println` (`:log` `:io`) → `console`
 
@@ -266,7 +267,7 @@ calcit analyze effects-graph [options]
 
 默认 `--max-depth 2`。超过深度的子节点标注 `[depth limit ↑]` 并给出一行摘要，按需 `--root ns/def` 或增大 `--max-depth` 展开；`--max-depth 0` 表示不限深度。`--format json` 时 stdout 只有一个 JSON 文档，起始提示行写到 stderr。
 
-以下为 `calcit calcit/test-effects-graph.cirru analyze effects-graph --color false` 的节选：
+以下为 `calcit calcit/test-effects-graph.cirru analyze effects-graph --color false` 的节选（省略号处删去了其他子节点；没有效果的节点标 `[transform]`，有效果的标 `[program]`）：
 
 ```text
 # Effects Graph: `main/main!`
@@ -288,31 +289,50 @@ Max depth: 2  (2 nodes truncated; rerun with larger --max-depth to expand)
     │   │   └── → main/load-config
     │   └── Effects
     │       └── (none — pure transform)
+    │   │
+    │   └── main/load-config  [depth limit ↑]
     ├── main/watch-helper  [program]
     │   ├── State
     │   │   └── watch    *store  schema: :number  init=0
+    │   ├── Transform
+    │   │   └── (no calls)
     │   └── Effects
     │       └── state/watch    remove-watch
-    ├── main/cancel-helper  [transform]
+    ├── main/cancel-helper  [program]
+    │   ├── Transform
+    │   │   └── (no calls)
     │   └── Effects
     │       └── effect         .cancel
-    ├── main/write-helper  [program]
+    ├── main/call-through  [program]
+    │   ├── Transform
+    │   │   └── (no calls)
     │   └── Effects
-    │       └── io/file        .write-text!
-    ├── main/call-through  [transform]
+    │       └── unknown        f
+    ├── main/missing-helper  [program]
+    │   ├── Transform  (calls: 1)
+    │   │   └── → missing.ns/thing
+    │   └── Effects
+    │       └── unknown        missing.ns/thing
+    │   │
+    │   └── missing.ns/thing  [depth limit ↑]
+    ├── main/collection-helper  [transform]
+    │   ├── Transform
+    │   │   └── (no calls)
     │   └── Effects
     │       └── (none — pure transform)
-    ├── main/js-helper  [program]
+    ├── main/sync-hint-helper  [transform]
+    │   ├── Transform
+    │   │   └── (no calls)
     │   └── Effects
-    │       └── interop/js     js/console.log
-    └── main/missing-helper  [program]
-        ├── Transform  (calls: 1)
-        │   └── → missing.ns/thing
+    │       └── (none — pure transform)
+    └── main/native-method-helper  [program]
+        ├── Transform
+        │   └── (no calls)
         └── Effects
-            └── unknown        missing.ns/thing
+            └── interop/js     .!focus
 ```
 
-`setup!` 和 `load-config` 不再因为名字含 `!` 或 `load` 被标为效果；`remove-watch` 和旧 `.cancel` 没有 `!`，仍由 core tags 识别。`call-through` 通过参数 `f` 调用函数值，分析器不知道 `f` 的来源，因此不分类。
+`setup!` 和 `load-config` 不再因为名字含 `!` 或 `load` 被标为效果；`remove-watch` 和旧 `.cancel` 没有 `!`，仍由 core tags 识别。`call-through` 调用参数 `f`，分析器不知道调用方传入什么函数，因此报告 `unknown`。`collection-helper` 对列表调用 `.empty?` / `.contains?`，项目没有同名 `defimpl`，因此按 core 声明视为无效果。`sync-hint-helper` 的 `hint-fn $ {} (:async false)` 不算异步。
 
 #### json
 
@@ -500,7 +520,7 @@ app.comp.container/comp-container
 
 ### 限制
 
-- 未解析到定义的裸符号视为局部绑定或函数值调用，不分类；只在 JS 后端提供的全局函数在 native 分析中也属于这一类。
+- 未解析到定义、又不是函数参数的裸符号（例如 `let` 绑定的函数值、只在 JS 后端提供的全局函数）不分类。
 - 项目或模块实现了与 core 同名的方法时，所有该名字的方法调用都报告 `unknown`。
 - 项目与模块定义自身的 `:tags` 尚未读入，调用它们时只依靠调用图子节点。
 

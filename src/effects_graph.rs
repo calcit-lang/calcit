@@ -152,7 +152,7 @@ const HIDDEN_CORE_SYNTAX_TAGS: &[(CalcitSyntax, &[&str])] = &[
 struct TagIndex {
   core: HashMap<String, HashSet<EdnTag>>,
   /// Method name (without the leading `.`) to the union of effect kinds of every core
-  /// implementation; `unknown` when an implementation is not a tagged core definition.
+  /// implementation; `unknown` when an implementation names a definition outside core.
   core_methods: HashMap<String, Vec<String>>,
 }
 
@@ -164,7 +164,7 @@ impl TagIndex {
     if let Some(file) = snapshot.files.get("calcit.core") {
       for (def, entry) in &file.defs {
         core.insert(def.clone(), entry.tags.clone());
-        collect_core_method_impls(&entry.code, &mut method_impls);
+        collect_core_method_impls(&entry.code, def, &mut method_impls);
       }
     }
     let hidden = HIDDEN_CORE_PROC_TAGS
@@ -198,8 +198,9 @@ impl TagIndex {
 
 /// Collect `(method, implementation)` pairs from core impl tables:
 /// `defimpl Name Trait (.method impl) ...` and `&impl::new Name (:: :method impl) ...`.
-/// The implementation is `None` when it is not a plain definition name.
-fn collect_core_method_impls(code: &Cirru, out: &mut Vec<(String, Option<String>)>) {
+/// An inline implementation (e.g. `(:: :empty? $ defn &enum:empty?-impl ...)`) belongs to the
+/// enclosing core definition `owner` and inherits its tags.
+fn collect_core_method_impls(code: &Cirru, owner: &str, out: &mut Vec<(String, Option<String>)>) {
   let Cirru::List(items) = code else {
     return;
   };
@@ -214,7 +215,7 @@ fn collect_core_method_impls(code: &Cirru, out: &mut Vec<(String, Option<String>
           && let [key, value] = pair.as_slice()
           && let Some(method) = leaf(key).as_deref().and_then(|text| text.strip_prefix('.')).map(str::to_owned)
         {
-          out.push((method, leaf(value)));
+          out.push((method, leaf(value).or_else(|| Some(owner.to_string()))));
         }
       }
     }
@@ -225,14 +226,14 @@ fn collect_core_method_impls(code: &Cirru, out: &mut Vec<(String, Option<String>
           && leaf(head).as_deref() == Some("::")
           && let Some(method) = leaf(key).as_deref().and_then(|text| text.strip_prefix(':')).map(str::to_owned)
         {
-          out.push((method, leaf(value)));
+          out.push((method, leaf(value).or_else(|| Some(owner.to_string()))));
         }
       }
     }
     _ => {}
   }
   for item in items {
-    collect_core_method_impls(item, out);
+    collect_core_method_impls(item, owner, out);
   }
 }
 
@@ -299,6 +300,9 @@ fn collect_program_methods_in(code: &Calcit, names: &mut HashSet<String>) {
 }
 
 struct DefAnalysis {
+  /// Parameter names of every `defn` / `defmacro` / `fn` form in the definition. Calling one of
+  /// them calls a function value supplied by the caller, whose effects are `unknown`.
+  params: HashSet<String>,
   state: Vec<StateItem>,
   effects: HashMap<String, EffectItem>,
   transform: TransformInfo,
@@ -428,6 +432,7 @@ impl EffectsGraphAnalyzer {
 
     let mut children = vec![];
     let mut analysis = DefAnalysis {
+      params: HashSet::new(),
       state: vec![],
       effects: HashMap::new(),
       transform: TransformInfo::default(),
@@ -526,16 +531,63 @@ impl EffectsGraphAnalyzer {
 
   fn walk_expr(&self, code: &Calcit, current_ns: &str, out: &mut DefAnalysis, depth: usize) {
     if let Calcit::List(list) = code {
-      if let Some(head) = list.first() {
+      // A parameter list is not a call; remember its names instead of inspecting it.
+      let args_index = list.first().and_then(fn_form_args_index);
+      if let Some(Calcit::List(args)) = args_index.and_then(|index| list.get(index)) {
+        for arg in args.iter() {
+          if let Calcit::Symbol { sym, .. } = arg
+            && !matches!(sym.as_ref(), "&" | "?")
+          {
+            out.params.insert(sym.to_string());
+          }
+        }
+      }
+      // `(receiver .method args)` is a method call on `receiver`, not a call of `receiver`.
+      let call_head = match (list.first(), list.get(1)) {
+        (Some(first), Some(method @ Calcit::Method(..))) if !matches!(first, Calcit::Method(..)) => Some(method),
+        (first, _) => first,
+      };
+      if let Some(head) = call_head {
         self.inspect_call_head(head, Some(list), current_ns, out);
         if depth < 3 {
           record_control_head(head, &mut out.transform.control);
         }
       }
-      let _ = list.traverse_result::<String>(&mut |item| {
+      // Binding pairs such as `(x value)` in `let` / `loop` / `&let` are not calls either;
+      // only their values are walked.
+      let bindings_index = list.first().and_then(binding_form_kind).map(|_| 1);
+      // Clauses such as `(pattern body)` in `case` / `match` / `cond` are not calls; walk their parts.
+      let clauses_from = list.first().and_then(clause_form_start);
+      for (index, item) in list.iter().enumerate() {
+        if Some(index) == args_index {
+          continue;
+        }
+        if clauses_from.is_some_and(|start| index >= start)
+          && let Calcit::List(clause) = item
+        {
+          for part in clause.iter() {
+            self.walk_expr(part, current_ns, out, depth + 1);
+          }
+          continue;
+        }
+        if Some(index) == bindings_index
+          && let (Some(kind), Calcit::List(bindings)) = (list.first().and_then(binding_form_kind), item)
+        {
+          let pairs: Vec<&Calcit> = match kind {
+            BindingForm::Single => vec![item],
+            BindingForm::Many => bindings.iter().collect(),
+          };
+          for pair in pairs {
+            if let Calcit::List(pair) = pair {
+              for value in pair.iter().skip(1) {
+                self.walk_expr(value, current_ns, out, depth + 1);
+              }
+            }
+          }
+          continue;
+        }
         self.walk_expr(item, current_ns, out, depth + 1);
-        Ok(())
-      });
+      }
       return;
     }
 
@@ -574,6 +626,17 @@ impl EffectsGraphAnalyzer {
   }
 
   fn inspect_call_head(&self, head: &Calcit, list: Option<&crate::calcit::CalcitList>, current_ns: &str, out: &mut DefAnalysis) {
+    if let Calcit::Symbol { sym, .. } = head
+      && out.params.contains(sym.as_ref())
+    {
+      let key = format!("{UNKNOWN_EFFECT_KIND}::{sym}");
+      out.effects.entry(key).and_modify(|item| item.count += 1).or_insert(EffectItem {
+        kind: UNKNOWN_EFFECT_KIND.to_string(),
+        target: sym.to_string(),
+        count: 1,
+      });
+      return;
+    }
     let Some(call) = resolve_call_head(head, current_ns) else {
       return;
     };
@@ -592,8 +655,8 @@ impl EffectsGraphAnalyzer {
     }
 
     let (mut kinds, target) = self.classify_call_head(&call);
-    // `hint-fn` carries type hints in general; only a schema with `:async` declares async.
-    if matches!(&call, CallHead::Core(name) if name == "hint-fn") && !list.is_some_and(mentions_async_tag) {
+    // `hint-fn` carries type hints in general; only a schema with `(:async true)` declares async.
+    if matches!(&call, CallHead::Core(name) if name == "hint-fn") && !list.is_some_and(declares_async_true) {
       kinds.clear();
     }
     for kind in kinds {
@@ -627,7 +690,7 @@ impl EffectsGraphAnalyzer {
       CallHead::Def(..) => (vec![], String::new()),
       CallHead::MissingDef(ns, def) => (vec![UNKNOWN_EFFECT_KIND.to_string()], format!("{ns}/{def}")),
       CallHead::JsGlobal(name) => (vec!["interop/js".to_string()], name.clone()),
-      CallHead::Method(name, kind) => (self.classify_method(name, kind), format!(".{name}")),
+      CallHead::Method(name, kind) => (self.classify_method(name, kind), method_call_label(name, kind)),
     }
   }
 
@@ -720,12 +783,88 @@ enum CallHead {
   Method(String, MethodKind),
 }
 
-fn mentions_async_tag(list: &crate::calcit::CalcitList) -> bool {
-  list.iter().any(|item| match item {
-    Calcit::Tag(tag) => tag.ref_str() == "async",
-    Calcit::List(inner) => mentions_async_tag(inner),
+/// True when a `hint-fn` schema contains the entry `(:async true)`.
+fn declares_async_true(list: &crate::calcit::CalcitList) -> bool {
+  let is_async_true = matches!(
+    (list.first(), list.get(1)),
+    (Some(Calcit::Tag(tag)), Some(value)) if tag.ref_str() == "async" && value_is_true(value)
+  );
+  is_async_true
+    || list.iter().any(|item| match item {
+      Calcit::List(inner) => declares_async_true(inner),
+      _ => false,
+    })
+}
+
+fn value_is_true(value: &Calcit) -> bool {
+  match value {
+    Calcit::Bool(b) => *b,
+    Calcit::Symbol { sym, .. } => sym.as_ref() == "true",
     _ => false,
-  })
+  }
+}
+
+/// Index of the first clause in `case value clauses...`, `match value clauses...` and
+/// `cond clauses...` forms.
+fn clause_form_start(head: &Calcit) -> Option<usize> {
+  let name = match head {
+    Calcit::Symbol { sym, .. } => sym.to_string(),
+    Calcit::Syntax(syntax, _) => syntax.to_string(),
+    _ => return None,
+  };
+  match name.as_str() {
+    "case" | "case-default" | "match" | "tag-match" | "list-match" | "key-match" | "field-match" => Some(2),
+    "cond" => Some(1),
+    _ => None,
+  }
+}
+
+enum BindingForm {
+  /// `&let (name value) ...`, `if-let (name value) ...`, `when-let (name value) ...`
+  Single,
+  /// `let ((name value) ...) ...`, `loop ((name value) ...) ...`
+  Many,
+}
+
+fn binding_form_kind(head: &Calcit) -> Option<BindingForm> {
+  let name = match head {
+    Calcit::Symbol { sym, .. } => sym.to_string(),
+    Calcit::Syntax(syntax, _) => syntax.to_string(),
+    _ => return None,
+  };
+  match name.as_str() {
+    "&let" | "if-let" | "when-let" => Some(BindingForm::Single),
+    "let" | "loop" => Some(BindingForm::Many),
+    _ => None,
+  }
+}
+
+/// Index of the parameter list in `defn name (args) ...`, `defmacro name (args) ...` and
+/// `fn (args) ...` forms.
+fn fn_form_args_index(head: &Calcit) -> Option<usize> {
+  let name = match head {
+    Calcit::Symbol { sym, .. } => sym.to_string(),
+    Calcit::Syntax(syntax, _) => syntax.to_string(),
+    _ => return None,
+  };
+  match name.as_str() {
+    "defn" | "defmacro" => Some(2),
+    "fn" => Some(1),
+    _ => None,
+  }
+}
+
+/// Display a method call with the same prefix the source uses (`.name`, `.!name`, `.?!name`).
+fn method_call_label(name: &str, kind: &MethodKind) -> String {
+  let prefix = match kind {
+    MethodKind::InvokeNative => ".!",
+    MethodKind::InvokeNativeOptional => ".?!",
+    MethodKind::Access => ".-",
+    MethodKind::AccessOptional => ".?-",
+    MethodKind::TagAccess => ".:",
+    _ => ".",
+  };
+  format!("{prefix}{name}")
 }
 
 fn def_call_head(ns: &str, def: &str) -> CallHead {
@@ -2569,7 +2708,8 @@ mod tests {
     for method in ["write-text!", "read-text", "read-dir", "walk-dir"] {
       assert_eq!(index.core_methods.get(method), Some(&strings(&["io/file"])), "{method}");
     }
-    for method in ["map", "get", "unwrap", "to-string"] {
+    // `empty?` / `contains?` include inline enum/struct impls; they inherit the owner's tags.
+    for method in ["map", "get", "unwrap", "to-string", "empty?", "contains?"] {
       assert_eq!(index.core_methods.get(method), Some(&vec![]), "{method}");
     }
   }
@@ -2673,10 +2813,18 @@ mod tests {
     assert_eq!(effects["watch-helper"], pair("state/watch", "remove-watch"));
     assert_eq!(effects["cancel-helper"], pair("effect", ".cancel"));
     assert_eq!(effects["write-helper"], pair("io/file", ".write-text!"));
-    // Calls through function values stay unclassified; host and missing targets are explicit.
-    assert_eq!(effects["call-through"], vec![]);
+    // Calling a parameter calls a function value supplied by the caller.
+    assert_eq!(effects["call-through"], pair(UNKNOWN_EFFECT_KIND, "f"));
     assert_eq!(effects["js-helper"], pair("interop/js", "js/console.log"));
+    assert_eq!(effects["native-method-helper"], pair("interop/js", ".!focus"));
     assert_eq!(effects["missing-helper"], pair(UNKNOWN_EFFECT_KIND, "missing.ns/thing"));
+    // Core collection methods stay declared when the project has no same-name defimpl.
+    assert_eq!(effects["collection-helper"], vec![]);
+    // Only `(:async true)` in a `hint-fn` schema declares async.
+    assert_eq!(effects["sync-hint-helper"], vec![]);
+    assert_eq!(effects["async-hint-helper"], pair("async", "hint-fn"));
+    // Parameter lists, binding pairs and `case` clauses that start with a parameter are not calls.
+    assert_eq!(effects["binding-helper"], vec![]);
   }
 
   fn parse_ref_call(head: &str, args: &[&str]) -> Calcit {

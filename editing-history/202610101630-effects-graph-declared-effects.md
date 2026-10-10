@@ -4,9 +4,9 @@
 
 ## 决策
 
-效果只来自四处声明：core 定义的 Snapshot `:tags`（没有 Snapshot entry 的 builtin proc/syntax 在 `src/effects_graph.rs` 逐个列出，测试保证每个 proc/syntax 恰好有一处声明）、宿主 proc 的 descriptor tags、core `defimpl` / `&impl::new` 方法表指向的实现定义 tags，以及调用图子节点。找不到声明时输出 `unknown`：未加载的限定名、未声明 tags 的宿主 proc、项目或模块也实现了的同名方法。裸符号无法解析时按局部绑定/函数值处理，不分类。
+效果只来自四处声明：core 定义的 Snapshot `:tags`（没有 Snapshot entry 的 builtin proc/syntax 在 `src/effects_graph.rs` 逐个列出，测试保证每个 proc/syntax 恰好有一处声明）、宿主 proc 的 descriptor tags、core `defimpl` / `&impl::new` 方法表指向的实现定义 tags，以及调用图子节点。方法表中内联的实现（`&core-enum-methods` / `&core-struct-methods` 的 `defn ...-impl`）沿用所在 core 定义的 tags。找不到声明时输出 `unknown`：未加载的限定名、未声明 tags 的宿主 proc、项目或模块也实现了的同名方法，以及调用所在 `defn` / `defmacro` / `fn` 的参数（调用方传入的函数值）。为避免把非调用当作调用，参数列表、`let` / `loop` / `&let` / `if-let` / `when-let` 绑定对和 `case` / `match` / `cond` 分支不检查头部，`(receiver .method args)` 按方法调用处理。其余无法解析的裸符号（如 `let` 绑定的函数值）不分类。
 
-按 `docs/features/api-roles.md` 的 `!` 含义（显式写入、生命周期、注册与取消）补 core tags：`ffi-task:cancel`、`ffi-task:cancel-with`、`ffi-response:resolve`、`ffi-response:reject`、`&init-builtin-impls!`、`&reset-gensym-index!` 加 `:effect`；`non-nil!` 加 `:control`；`try-read-dir` 加 `:file :io`；`dbg` 加 `:log`。`hint-fn` 只有在 hint schema 出现 `:async` 时才记为 `async`，普通类型提示不再算作异步。
+按 `docs/features/api-roles.md` 的 `!` 含义（显式写入、生命周期、注册与取消）补 core tags：`ffi-task:cancel`、`ffi-task:cancel-with`、`ffi-response:resolve`、`ffi-response:reject`、`&init-builtin-impls!`、`&reset-gensym-index!` 加 `:effect`；`non-nil!` 加 `:control`；`try-read-dir` 加 `:file :io`；`dbg` 加 `:log`（保留 `:macro`）。`hint-fn` 只有在 hint schema 出现 `(:async true)` 时才记为 `async`，`(:async false)` 与普通类型提示不算异步。`.!name` / `.?!name` 在输出中保留原前缀。
 
 同时让 `alias/def` 通过 `:as` 导入解析为调用图子节点，JS 字符串模块导入归为 `interop/js`，`--format json` 的起始提示改写到 stderr，使 stdout 只有一个 JSON 文档。
 
