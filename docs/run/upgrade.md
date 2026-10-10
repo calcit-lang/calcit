@@ -323,6 +323,25 @@ assert= :failed $ try
 
 这些都是语义修复，不提供自动源码改写。
 
+## WASM range 的方向与小数边界
+
+core WASM 与 WASI Component 中的 `range`（`&list:range`）现在与 native、JS 使用同一规则：参数必须有限；起点不等于终点时步长不为 0 且指向终点；元素由起点逐次加步长得到。不满足时 WASM trap。
+
+升级时的行为变化：
+
+- 方向与步长不一致时（`range 3 0`、`range -1`、`range 0 5 -1`），WASM 此前返回空列表，现在 trap。步长为 0 此前视区间方向返回空列表或因长度超限 trap，现在同样按步长错误 trap；`range 3 3 0` 仍是空列表。
+- 一个或两个参数的形式此前按截断为整数的边界计算长度：`range 2.5` 为 `[] 0 1`，`range 1.5 3.7` 为 `[] 1.5 2.5`；现在分别为 `[] 0 1 2` 与 `[] 1.5 2.5 3.5`。
+- 三个参数的形式此前按 `start + i * step` 计算元素，长度为 `ceil((end - start) / step)`：`range 0 1 0.1` 有 10 个元素；现在与 native、JS 一样有 11 个元素，最后一个是 `0.9999999999999999`。
+- NaN 或无穷参数此前在部分形式中返回空列表（如 `range 0 1 NaN`），现在一律 trap。
+
+这是语义修复，不提供自动源码改写；依赖旧截断结果的 WASM 代码需要先显式取整，例如 `range (floor a) (floor b)`。
+
+```cirru
+assert= ([] 0 1 2) $ range 2.5
+assert= ([] 1.5 2.5 3.5) $ range 1.5 3.7
+assert= 11 $ count $ range 0 1 0.1
+```
+
 ## 整数谓词的跨目标语义修复
 
 `round?`（以及 0.28 的 Number `.round?`，该方法已在 0.29.0 删除，见下文）现在统一判断“有限且恰好没有小数部分”。native、JS、core WASM 和 WASI Component 使用相同契约：NaN、正负 Infinity、任何非零小数均为 false；0、-0 与有限的整数值为 true。

@@ -507,6 +507,24 @@
     {} (:name |.to-string) (:receiver |'Nil) (:rest nil)
       :parameters $ []
       :returns $ quote 'String
+    {} (:name |.debug) (:receiver |'String) (:rest nil)
+      :parameters $ []
+      :returns $ quote 'String
+    {} (:name |.debug) (:receiver |'Number) (:rest nil)
+      :parameters $ []
+      :returns $ quote 'String
+    {} (:name |.debug) (:receiver |'Bool) (:rest nil)
+      :parameters $ []
+      :returns $ quote 'String
+    {} (:name |.debug) (:receiver |'Tag) (:rest nil)
+      :parameters $ []
+      :returns $ quote 'String
+    {} (:name |.debug) (:receiver |'Symbol) (:rest nil)
+      :parameters $ []
+      :returns $ quote 'String
+    {} (:name |.debug) (:receiver |'Nil) (:rest nil)
+      :parameters $ []
+      :returns $ quote 'String
     {} (:name |.unwrap)
       :receiver "|:: 'calcit.core/Option 'Number"
       :rest nil
@@ -773,6 +791,60 @@
       :runtime-arity $ {} (:max 1) (:min 1)
       :schema $ quote $ {} (:kind :fn) (:return 'String)
         :args $ [] 'Dynamic
+    {} (:name |.debug)
+      :provenance 'calcit.core/&str
+      :receiver |'String
+      :features $ []
+      :runtime-arity $ {} (:max nil) (:min 0)
+      :schema $ quote $ :: :fn
+        {} (:return :string)
+          :generics $ [] 'T
+          :args $ [] 'T
+    {} (:name |.debug)
+      :provenance 'calcit.core/&str
+      :receiver |'Number
+      :features $ []
+      :runtime-arity $ {} (:max nil) (:min 0)
+      :schema $ quote $ :: :fn
+        {} (:return :string)
+          :generics $ [] 'T
+          :args $ [] 'T
+    {} (:name |.debug)
+      :provenance 'calcit.core/&str
+      :receiver |'Bool
+      :features $ []
+      :runtime-arity $ {} (:max nil) (:min 0)
+      :schema $ quote $ :: :fn
+        {} (:return :string)
+          :generics $ [] 'T
+          :args $ [] 'T
+    {} (:name |.debug)
+      :provenance 'calcit.core/&str
+      :receiver |'Tag
+      :features $ []
+      :runtime-arity $ {} (:max nil) (:min 0)
+      :schema $ quote $ :: :fn
+        {} (:return :string)
+          :generics $ [] 'T
+          :args $ [] 'T
+    {} (:name |.debug)
+      :provenance 'calcit.core/&str
+      :receiver |'Symbol
+      :features $ []
+      :runtime-arity $ {} (:max nil) (:min 0)
+      :schema $ quote $ :: :fn
+        {} (:return :string)
+          :generics $ [] 'T
+          :args $ [] 'T
+    {} (:name |.debug)
+      :provenance 'calcit.core/&str
+      :receiver |'Nil
+      :features $ []
+      :runtime-arity $ {} (:max nil) (:min 0)
+      :schema $ quote $ :: :fn
+        {} (:return :string)
+          :generics $ [] 'T
+          :args $ [] 'T
     {} (:failure "|none_抛错") (:name |.unwrap)
       :provenance 'calcit.core/option:unwrap
       :receiver "|:: 'calcit.core/Option 'Number"

@@ -552,6 +552,28 @@ check(
 check("test-range()", 5, e["test-range"]); // [0,1,2,3,4]
 check("test-range-sum()", 4, e["test-range-sum"]); // 0+4
 check("test-range-two-args()", 3, e["test-range-two-args"]); // [2,3,4]
+// Same values and length as native/JS: repeated addition, fractional bounds kept (#1849).
+check("range(0,1,0.1) count", 11, e["test-range-count"], 0, 1, 0.1);
+check("range(0,1,0.1) last", 0.9999999999999999, e["test-range-last"], 0, 1, 0.1);
+check("range(5,0,-2) count", 3, e["test-range-count"], 5, 0, -2);
+check("range(1,2,0.25) last", 1.75, e["test-range-last"], 1, 2, 0.25);
+check("range(3,3,0) empty", 0, e["test-range-count"], 3, 3, 0);
+check("range(3,3) empty", 0, e["test-range-count-from"], 3, 3);
+check("range(1.5,3.7) count", 3, e["test-range-count-from"], 1.5, 3.7);
+check("range(1.5,3.7) first", 1.5, e["test-range-first-from"], 1.5, 3.7);
+check("range(2.5) count", 3, e["test-range-count-to"], 2.5);
+check("range(-3,3,2) count", 3, e["test-range-count"], -3, 3, 2);
+checkTrap("range(3,0) direction", () => e["test-range-count-from"](3, 0));
+checkTrap("range(-1) direction", () => e["test-range-count-to"](-1));
+checkTrap("range(0,5,-1) direction", () => e["test-range-count"](0, 5, -1));
+checkTrap("range(5,0,1) direction", () => e["test-range-count"](5, 0, 1));
+checkTrap("range(0,5,0) zero step", () => e["test-range-count"](0, 5, 0));
+checkTrap("range(NaN)", () => e["test-range-count-to"](NaN));
+checkTrap("range(0,Infinity)", () => e["test-range-count-from"](0, Infinity));
+checkTrap("range(0,1,NaN)", () => e["test-range-count"](0, 1, NaN));
+checkTrap("range(0,16777217) too long", () => e["test-range-count-from"](0, 16777217));
+checkTrap("range(-1e308,1e308,1e-300) too long", () => e["test-range-count"](-1e308, 1e308, 1e-300));
+checkTrap("range(1e20,1e20-1e6,-1) stalled", () => e["test-range-count"](1e20, 1e20 - 1e6, -1));
 
 // --- Rest args tests ---
 check("test-rest-count()", 3, e["test-rest-count"]);

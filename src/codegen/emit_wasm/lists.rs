@@ -1276,81 +1276,55 @@ fn emit_trap_if_range_too_long(ctx: &mut WasmGenCtx, len_f: u32) {
   ctx.emit(Instruction::End);
 }
 
-/// `range n` or `range a b` — create a list of numbers [0..n) or [a..b).
+/// Trap when the i32 condition on top of the stack is non-zero.
+fn emit_trap_if(ctx: &mut WasmGenCtx) {
+  ctx.begin_block_if();
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+}
+
+/// Trap unless the f64 local is finite (NaN and both infinities fail `|x| < inf`).
+fn emit_trap_unless_finite(ctx: &mut WasmGenCtx, x: u32) {
+  ctx.emit(Instruction::LocalGet(x));
+  ctx.emit(Instruction::F64Abs);
+  ctx.emit(f64_const(f64::INFINITY));
+  ctx.emit(Instruction::F64Lt);
+  ctx.emit(Instruction::I32Eqz);
+  emit_trap_if(ctx);
+}
+
+/// Push the i32 "keep iterating" condition of a range loop: `cur < end` for a
+/// positive step and `cur > end` for a negative one.
+fn emit_range_continue(ctx: &mut WasmGenCtx, cur: u32, end: u32, step: u32) {
+  ctx.emit(Instruction::LocalGet(cur));
+  ctx.emit(Instruction::LocalGet(end));
+  ctx.emit(Instruction::F64Lt);
+  ctx.emit(Instruction::LocalGet(cur));
+  ctx.emit(Instruction::LocalGet(end));
+  ctx.emit(Instruction::F64Gt);
+  ctx.emit(Instruction::LocalGet(step));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Gt);
+  ctx.emit(Instruction::Select);
+}
+
+/// `range n`, `range a b` or `range a b step` — eager list of numbers from `a`
+/// (default 0) towards `b` by `step` (default 1).
+///
+/// Follows native `builtins::lists::range` and JS `range` exactly, trapping where
+/// they raise: every argument must be finite; an empty interval returns `[]`;
+/// otherwise the step must be non-zero and point from base to bound; the estimated
+/// and actual lengths are bounded by `MAX_RANGE_LEN`; and a step too small to change
+/// the current value traps. Elements are produced by repeated addition, like the
+/// other backends, so fractional bounds and steps give the same values and length.
 pub(super) fn emit_range(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.is_empty() || args.len() > 3 {
     return Err("range expects 1, 2, or 3 args".into());
   }
 
-  // 3-arg form: range start end step
-  if args.len() == 3 {
-    let start = ctx.alloc_local();
-    let end = ctx.alloc_local();
-    let step = ctx.alloc_local();
-    emit_expr(ctx, &args[0])?;
-    ctx.emit(Instruction::LocalSet(start));
-    emit_expr(ctx, &args[1])?;
-    ctx.emit(Instruction::LocalSet(end));
-    emit_expr(ctx, &args[2])?;
-    ctx.emit(Instruction::LocalSet(step));
-
-    // count = max(0, ceil((end - start) / step))
-    let raw_count_f = ctx.alloc_local();
-    ctx.emit(Instruction::LocalGet(end));
-    ctx.emit(Instruction::LocalGet(start));
-    ctx.emit(Instruction::F64Sub);
-    ctx.emit(Instruction::LocalGet(step));
-    ctx.emit(Instruction::F64Div);
-    ctx.emit(Instruction::F64Ceil);
-    ctx.emit(Instruction::LocalSet(raw_count_f));
-    emit_trap_if_range_too_long(ctx, raw_count_f);
-
-    // clamp: if raw_count_f <= 0, count = 0
-    let count = ctx.alloc_local_typed(ValType::I32);
-    ctx.emit(Instruction::LocalGet(raw_count_f));
-    ctx.emit(f64_const(0.0));
-    ctx.emit(Instruction::F64Gt);
-    ctx.begin_block_if();
-    ctx.emit(Instruction::LocalGet(raw_count_f));
-    ctx.emit(Instruction::I32TruncF64S);
-    ctx.emit(Instruction::LocalSet(count));
-    ctx.emit(Instruction::End);
-
-    let dst = emit_alloc_list(ctx, count);
-
-    let i = ctx.alloc_i32(0);
-
-    ctx.begin_block();
-    ctx.begin_loop();
-    ctx.loop_exit_if_ge(i, count);
-    // elem = start + i * step
-    ctx.emit(Instruction::LocalGet(dst));
-    ctx.emit(Instruction::I32Const(8));
-    ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalGet(i));
-    ctx.emit(Instruction::I32Const(8));
-    ctx.emit(Instruction::I32Mul);
-    ctx.emit(Instruction::I32Add);
-    // value = start + i * step
-    ctx.emit(Instruction::LocalGet(start));
-    ctx.emit(Instruction::LocalGet(i));
-    ctx.emit(Instruction::F64ConvertI32U);
-    ctx.emit(Instruction::LocalGet(step));
-    ctx.emit(Instruction::F64Mul);
-    ctx.emit(Instruction::F64Add);
-    ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-    ctx.i32_inc(i);
-    ctx.emit(Instruction::Br(0));
-    ctx.emit(Instruction::End);
-    ctx.emit(Instruction::End);
-
-    ctx.ptr_to_f64(dst);
-    return Ok(());
-  }
-
   let start = ctx.alloc_local();
   let end = ctx.alloc_local();
-
+  let step = ctx.alloc_local();
   if args.len() == 1 {
     ctx.emit(f64_const(0.0));
     ctx.emit(Instruction::LocalSet(start));
@@ -1362,40 +1336,116 @@ pub(super) fn emit_range(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
     emit_expr(ctx, &args[1])?;
     ctx.emit(Instruction::LocalSet(end));
   }
+  if args.len() == 3 {
+    emit_expr(ctx, &args[2])?;
+  } else {
+    ctx.emit(f64_const(1.0));
+  }
+  ctx.emit(Instruction::LocalSet(step));
 
-  // Check the length in f64 first: the i32 subtraction below can wrap.
-  let raw_count_f = ctx.alloc_local();
-  ctx.emit(Instruction::LocalGet(end));
-  ctx.emit(Instruction::F64Trunc);
+  for x in [start, end, step] {
+    emit_trap_unless_finite(ctx, x);
+  }
+
+  // Direction check, skipped for an empty interval (`range 3 3 0` is `[]`):
+  // trap when start != end and (step == 0 or step points away from end).
   ctx.emit(Instruction::LocalGet(start));
-  ctx.emit(Instruction::F64Trunc);
+  ctx.emit(Instruction::LocalGet(end));
+  ctx.emit(Instruction::F64Ne);
+  ctx.emit(Instruction::LocalGet(step));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::LocalGet(end));
+  ctx.emit(Instruction::LocalGet(start));
+  ctx.emit(Instruction::F64Gt);
+  ctx.emit(Instruction::LocalGet(step));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Lt);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::I32Or);
+  ctx.emit(Instruction::LocalGet(end));
+  ctx.emit(Instruction::LocalGet(start));
+  ctx.emit(Instruction::F64Lt);
+  ctx.emit(Instruction::LocalGet(step));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Gt);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::I32Or);
+  ctx.emit(Instruction::I32And);
+  emit_trap_if(ctx);
+
+  // Estimated length, checked before any iteration. A direct `end - start` can
+  // overflow for finite endpoints with opposite signs, so those halves are
+  // normalized separately (same formula as native and JS). For an empty interval
+  // the estimate is 0 or NaN, and NaN fails the `>` check, so it never traps.
+  let est = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(start));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Lt);
+  ctx.emit(Instruction::LocalGet(end));
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Lt);
+  ctx.emit(Instruction::I32Ne);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  ctx.emit(Instruction::LocalGet(start));
+  ctx.emit(Instruction::F64Abs);
+  ctx.emit(Instruction::LocalGet(step));
+  ctx.emit(Instruction::F64Abs);
+  ctx.emit(Instruction::F64Div);
+  ctx.emit(Instruction::LocalGet(end));
+  ctx.emit(Instruction::F64Abs);
+  ctx.emit(Instruction::LocalGet(step));
+  ctx.emit(Instruction::F64Abs);
+  ctx.emit(Instruction::F64Div);
+  ctx.emit(Instruction::F64Add);
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(end));
+  ctx.emit(Instruction::LocalGet(start));
   ctx.emit(Instruction::F64Sub);
-  ctx.emit(Instruction::LocalSet(raw_count_f));
-  emit_trap_if_range_too_long(ctx, raw_count_f);
+  ctx.emit(Instruction::LocalGet(step));
+  ctx.emit(Instruction::F64Div);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::F64Ceil);
+  ctx.emit(Instruction::LocalSet(est));
+  emit_trap_if_range_too_long(ctx, est);
 
-  // count = max(0, trunc(end) - trunc(start))
-  let count = ctx.alloc_local_typed(ValType::I32);
-  let raw_count = ctx.alloc_local_typed(ValType::I32);
-  ctx.emit(Instruction::LocalGet(end));
-  ctx.emit(Instruction::I32TruncF64S);
+  // Pass 1: count elements with the same repeated addition as the fill below,
+  // trapping on the length limit or on a step that no longer advances.
+  let cur = ctx.alloc_local();
+  let next = ctx.alloc_local();
+  let count = ctx.alloc_i32(0);
   ctx.emit(Instruction::LocalGet(start));
-  ctx.emit(Instruction::I32TruncF64S);
-  ctx.emit(Instruction::I32Sub);
-  ctx.emit(Instruction::LocalSet(raw_count));
-  // clamp to 0 if negative: select(val_true, val_false, cond)
-  ctx.emit(Instruction::LocalGet(raw_count)); // val if true (raw > 0)
-  ctx.emit(Instruction::I32Const(0)); // val if false
-  ctx.emit(Instruction::LocalGet(raw_count));
-  ctx.emit(Instruction::I32Const(0));
-  ctx.emit(Instruction::I32GtS); // cond: raw_count > 0
-  ctx.emit(Instruction::Select);
-  ctx.emit(Instruction::LocalSet(count));
+  ctx.emit(Instruction::LocalSet(cur));
+  ctx.begin_block();
+  ctx.begin_loop();
+  emit_range_continue(ctx, cur, end, step);
+  ctx.emit(Instruction::I32Eqz);
+  ctx.br_if_exit();
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32Const(crate::builtins::MAX_RANGE_LEN as i32));
+  ctx.emit(Instruction::I32GeU);
+  emit_trap_if(ctx);
+  ctx.i32_inc(count);
+  ctx.emit(Instruction::LocalGet(cur));
+  ctx.emit(Instruction::LocalGet(step));
+  ctx.emit(Instruction::F64Add);
+  ctx.emit(Instruction::LocalSet(next));
+  ctx.emit(Instruction::LocalGet(next));
+  ctx.emit(Instruction::LocalGet(cur));
+  ctx.emit(Instruction::F64Eq);
+  emit_trap_if(ctx);
+  ctx.emit(Instruction::LocalGet(next));
+  ctx.emit(Instruction::LocalSet(cur));
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
 
   let dst = emit_alloc_list(ctx, count);
 
-  // Fill: dst[8 + i*8] = start + i
+  // Pass 2: fill dst[8 + i*8] with start, start + step, ...
   let i = ctx.alloc_i32(0);
-
+  ctx.emit(Instruction::LocalGet(start));
+  ctx.emit(Instruction::LocalSet(cur));
   ctx.begin_block();
   ctx.begin_loop();
   ctx.loop_exit_if_ge(i, count);
@@ -1406,10 +1456,12 @@ pub(super) fn emit_range(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Mul);
   ctx.emit(Instruction::I32Add);
-  ctx.emit(Instruction::LocalGet(start));
-  ctx.ptr_to_f64(i);
-  ctx.emit(Instruction::F64Add);
+  ctx.emit(Instruction::LocalGet(cur));
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalGet(cur));
+  ctx.emit(Instruction::LocalGet(step));
+  ctx.emit(Instruction::F64Add);
+  ctx.emit(Instruction::LocalSet(cur));
   ctx.i32_inc(i);
   ctx.emit(Instruction::Br(0));
   ctx.emit(Instruction::End);
