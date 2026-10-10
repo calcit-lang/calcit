@@ -753,7 +753,7 @@ pub fn parse_weak_type_kinds(raw: &str) -> Result<BTreeSet<WeakTypeKind>, String
       "unsafe-coerce" => WeakTypeKind::UnsafeCoerce,
       other => {
         return Err(format!(
-          "Unknown weak-type filter `{other}`. Expected comma-separated values from: schema-dynamic, unresolved-type-slot, code-dynamic, code-nil, unsafe-coerce"
+          "Unknown weak-type filter `{other}`. Expected comma-separated values from: schema-dynamic, unresolved-type-slot, code-dynamic, code-nil, unsafe-coerce; or exactly one view: coverage, dynamic-method, deprecated-call"
         ));
       }
     };

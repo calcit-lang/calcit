@@ -64,7 +64,7 @@ v1 当前只支持一个 check：
 | --- | --- | --- |
 | `:strict` | 与 `--check-only` 相同的 init/reload 严格预处理 | 没有 warning 或 error |
 
-`:dynamic-methods` 与 `:quality` 两个数量门槛已从 profile 移除；旧配置需删去这些项，改由 `:strict` 和行为测试判断正确性。`analyze dynamic-methods` 仍可单独作为只读定位报告；已有非零迁移 baseline 的项目暂时可显式运行 `analyze quality --baseline ...`，但不要将它加入新 profile。不同 entry 的 module 顶层加载结果会按 module path 在本次命令内缓存。Entry 的 target 来自其 `:target`；未声明 target 时使用 `:mode` 作为结果中的目标标签。
+`:dynamic-methods` 与 `:quality` 两个数量门槛已从 profile 移除；旧配置需删去这些项，改由 `:strict` 和行为测试判断正确性。`analyze weak-types --only dynamic-method` 仍可单独作为只读定位报告；`analyze quality` 已弃用，下一个非 patch 版本删除，不要将它加入新 profile。不同 entry 的 module 顶层加载结果会按 module path 在本次命令内缓存。Entry 的 target 来自其 `:target`；未声明 target 时使用 `:mode` 作为结果中的目标标签。
 
 Profile 不把 `test`、JS/WASM/WASI codegen、Markdown 文档执行或外部消费者回归伪装成静态检查。它们可能运行用户代码、写生成目录或需要外部 host，继续作为发布流水线中的显式步骤；需要机器可读提醒时，把稳定名称写进 `:external-gates`。后续若能复用只读 compiler phase，可扩展新的 schema 版本，不向 v1 静默加入语义。
 

@@ -1,4 +1,4 @@
-//! Deprecated API usage analysis for `calcit analyze deprecated`.
+//! Deprecated API usage analysis for `calcit analyze weak-types --only deprecated-call`.
 
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};

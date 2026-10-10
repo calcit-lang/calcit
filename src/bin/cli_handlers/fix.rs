@@ -366,6 +366,7 @@ fn strict_workflow_type_findings(snapshot: &Snapshot) -> Result<StrictWorkflowTy
     ns_prefix: None,
     deps: false,
     only: None,
+    coverage_level: None,
     intent: None,
     summary_only: false,
     format: "json".to_owned(),

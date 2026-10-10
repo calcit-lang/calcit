@@ -51,20 +51,32 @@ fn assert_success(output: &Output, context: &str) {
   );
 }
 
+/// `check-types` names the coverage view of `analyze weak-types` (#1566).
+fn analyzer_args(analyzer: &str) -> Vec<&str> {
+  match analyzer {
+    "check-types" => vec!["analyze", "weak-types", "--only", "coverage"],
+    other => vec!["analyze", other],
+  }
+}
+
 fn report(snapshot: &Path, analyzer: &str) -> serde_json::Value {
-  let output = run_calcit(snapshot, &["analyze", analyzer, "--incremental", "--format", "json"]);
+  let mut args = analyzer_args(analyzer);
+  args.extend(["--incremental", "--format", "json"]);
+  let output = run_calcit(snapshot, &args);
   assert_success(&output, analyzer);
   serde_json::from_slice(&output.stdout).expect("analysis stdout should contain one JSON envelope")
 }
 
 fn full_report(snapshot: &Path, analyzer: &str) -> serde_json::Value {
-  let output = run_calcit(snapshot, &["analyze", analyzer, "--format", "json"]);
+  let mut args = analyzer_args(analyzer);
+  args.extend(["--format", "json"]);
+  let output = run_calcit(snapshot, &args);
   assert_success(&output, analyzer);
   serde_json::from_slice(&output.stdout).expect("analysis stdout should contain one JSON envelope")
 }
 
 fn dynamic_report(snapshot: &Path, incremental: bool) -> serde_json::Value {
-  let mut args = vec!["--compat-types", "analyze", "dynamic-methods"];
+  let mut args = vec!["--compat-types", "analyze", "weak-types", "--only", "dynamic-method"];
   if incremental {
     args.push("--incremental");
   }
@@ -89,7 +101,10 @@ fn dynamic_methods_reports_findings_without_a_count_policy() {
   assert!(report["data"]["filters"].get("max").is_none());
   assert_eq!(report["diagnostics"], serde_json::json!([]));
 
-  let obsolete_budget = run_calcit(&snapshot, &["--compat-types", "analyze", "dynamic-methods", "--max", "0"]);
+  let obsolete_budget = run_calcit(
+    &snapshot,
+    &["--compat-types", "analyze", "weak-types", "--only", "dynamic-method", "--max", "0"],
+  );
   assert!(
     !obsolete_budget.status.success(),
     "the obsolete count budget must not remain a CLI policy"
@@ -101,7 +116,9 @@ fn incremental_check(snapshot: &Path) -> Output {
 }
 
 fn report_with_entry(snapshot: &Path, analyzer: &str, entry: &str, incremental: bool) -> serde_json::Value {
-  let mut args = vec!["--entry", entry, "analyze", analyzer, "--deps"];
+  let mut args = vec!["--entry", entry];
+  args.extend(analyzer_args(analyzer));
+  args.push("--deps");
   if incremental {
     args.push("--incremental");
   }

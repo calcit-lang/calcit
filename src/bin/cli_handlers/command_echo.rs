@@ -613,7 +613,13 @@ fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
       desc
     }
     AnalyzeSubcommand::WeakTypes(opts) => {
-      let mut desc = "lists dynamic and nil migration evidence without changing strict type-checking semantics".to_string();
+      let mut desc = match opts.only.as_deref().map(str::trim) {
+        Some("coverage") => "checks type coverage and reports gaps that can erase polymorphic relationships",
+        Some("dynamic-method") => "locates unresolved dynamic method dispatch in reachable definitions",
+        Some("deprecated-call") => "locates calls to APIs marked deprecated",
+        _ => "lists dynamic and nil migration evidence without changing strict type-checking semantics",
+      }
+      .to_string();
       if let Some(ns) = &opts.ns {
         desc.push_str(&format!(" in namespace `{ns}`"));
       }
@@ -960,6 +966,7 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
       opt "ns" => opts.ns.as_deref(); default "none",
       opt "ns-prefix" => opts.ns_prefix.as_deref(); default "none",
       opt "only" => opts.only.as_deref(); default "all",
+      opt "coverage-level" => opts.coverage_level.as_deref(); default "all",
       opt "intent" => opts.intent.as_deref(); default "all",
       value "format" => &opts.format; default "human",
       switch "deps" => opts.deps,

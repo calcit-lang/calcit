@@ -355,7 +355,7 @@ fn recur_arguments_follow_the_lexical_function_contract() {
 
   assert_success(&run_calcit(&snapshot, &["--check-only"]), "correct recur argument order");
   assert_success(
-    &run_calcit(&snapshot, &["analyze", "check-public", "--ns", "app.main", "--format", "json"]),
+    &run_calcit(&snapshot, &["--check-only", "--ns", "app.main", "--format", "json"]),
     "correct public contract",
   );
 
@@ -394,7 +394,7 @@ fn recur_arguments_follow_the_lexical_function_contract() {
       .contains("app.main/typed-recur")
   );
 
-  let public = run_calcit(&snapshot, &["analyze", "check-public", "--ns", "app.main", "--format", "json"]);
+  let public = run_calcit(&snapshot, &["--check-only", "--ns", "app.main", "--format", "json"]);
   assert!(!public.status.success(), "public analysis must reject wrong recur arguments");
   let report: serde_json::Value = serde_json::from_slice(&public.stdout).expect("public check should return JSON");
   let recur_diagnostics = report["diagnostics"]

@@ -13,10 +13,8 @@ aliases:
   - "type baseline"
 entry_for:
   - "assert-type"
-  - "calcit analyze check-types"
-  - "calcit analyze check-public"
   - "calcit analyze weak-types"
-  - "calcit analyze deprecated"
+  - "calcit --check-only --ns"
   - "calcit analyze quality"
 id: core/features/static-analysis
 related:
@@ -56,25 +54,25 @@ Use the CLI reports when you need to understand type quality without running the
 
 ```bash
 # Coverage by definition; unknown code is reported as none, never as full
-calcit analyze check-types --ns app.main
+calcit analyze weak-types --only coverage --ns app.main
 
 # Preprocess every definition in shared and Node-specific public namespaces
-calcit --entry node calcit.cirru analyze check-public \
+calcit --entry node calcit.cirru --check-only \
   --ns package.shared --ns package.node --format json
 
 # All weak type locations
 calcit analyze weak-types --ns app.main
 
 # Deprecated API calls, including the source definition and exact code path
-calcit analyze deprecated --ns app.main
+calcit analyze weak-types --only deprecated-call --ns app.main
 
 # Reachable unresolved method dispatch, without unrelated warning categories
-calcit analyze dynamic-methods
+calcit analyze weak-types --only dynamic-method
 
 # 查看只读的迁移概览
-calcit analyze dynamic-methods --summary-only --format json
+calcit analyze weak-types --only dynamic-method --summary-only --format json
 
-# Existing 0.14.x projects may keep enforcing an already reviewed baseline
+# [Deprecated] legacy budget; removed in the next non-patch release
 calcit analyze quality --baseline config/calcit-quality.cirru
 
 # Focus only on unresolved type debt
@@ -96,19 +94,19 @@ calcit analyze weak-types --ns app.main --ffi-evidence --format edn
 calcit analyze weak-types --ns app.main --schema-evidence --format edn
 
 # Machine-readable definition rows and Snapshot paths
-calcit analyze check-types --ns app.main --format json
+calcit analyze weak-types --only coverage --ns app.main --format json
 # Include installed modules when inventorying legacy macro contracts
-calcit analyze check-types --deps --format json
+calcit analyze weak-types --only coverage --deps --format json
 calcit analyze weak-types --ns app.main --intent unresolved --format edn
-calcit analyze deprecated --ns app.main --format json
-calcit analyze dynamic-methods --format json
+calcit analyze weak-types --only deprecated-call --ns app.main --format json
+calcit analyze weak-types --only dynamic-method --format json
 
 # Keep aggregate counts but omit definition rows (especially useful for agents)
-calcit analyze check-types --ns app.main --summary-only --format json
+calcit analyze weak-types --only coverage --ns app.main --summary-only --format json
 calcit analyze weak-types --ns app.main --intent unresolved --summary-only --format edn
 
 # 迁移循环中按 definition revision 复用本地分析结果
-calcit analyze check-types --incremental --format json
+calcit analyze weak-types --only coverage --incremental --format json
 calcit analyze weak-types --incremental --intent unresolved --format edn
 
 # 复用已成功验证且 dependency closure 未变化的 entry 严格预处理
@@ -124,11 +122,11 @@ calcit analyze check-examples --ns app.main --def 'detect-nodejs?' --js
 calcit query type-at app.main/calculate-total --path code@3.2 --format edn
 ```
 
-当前 `check-types`、`deprecated` 与 `dynamic-methods` 的结构化输出仅支持 JSON；支持 EDN 的 `weak-types` 和 `query type-at` 在 Calcit 自有工作流中优先使用 Cirru EDN，对接 JSON-only 工具时再显式选择 JSON。
+`analyze weak-types` 的 `--only` 接受一组 match kind（`schema-dynamic`、`unresolved-type-slot`、`code-dynamic`、`code-nil`、`unsafe-coerce`），或单独一个视图：`coverage`（逐 definition 类型覆盖，可加 `--coverage-level none,partial,full`）、`dynamic-method`（未解析的动态方法分派）、`deprecated-call`（对 `:deprecated` 定义的调用）。视图与 match kind 不能混用；`dynamic-method` 不接受 `--ns`/`--ns-prefix`，`deprecated-call` 不接受 `--incremental`，三个视图都不接受 `--intent` 和 evidence 选项。各视图保留原有报告的 `command` 名（`analyze.check-types`、`analyze.dynamic-methods`、`analyze.deprecated`）与字段。`weak-types`、各视图和 `query type-at` 都支持 human、EDN 与 JSON；Calcit 自有工作流优先使用 Cirru EDN，对接 JSON-only 工具时再显式选择 JSON。
 
-`check-types` 会把裸 `:ref`、`:list`、`:map` 等嵌套 Dynamic slot 记为 partial coverage，并在 `schema_issues` 中返回 `[W_SCHEMA_DYNAMIC]`；未绑定的 `*type-slot` 同样记为 partial 并返回 `[W_UNRESOLVED_TYPE_SLOT]`。严格预处理才负责类型正确性：可达项目函数缺少结构化 root schema 或嵌入式 `Fn` hint 时返回 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`；通过程序直接注入且没有结构化 root schema 的 macro 也会被拒绝。Snapshot loader 会更早拒绝旧 runtime `Fn` 或 whole-`Dynamic` macro schema。发布审计使用 `--deps` 检查实际解析的 module artifact。`weak-types --format edn` 只提供迁移定位所需的 kind、definition、path、detail、intent、evidence 与 suggestion；unresolved Dynamic、未绑定 slot、nil/Optional 债务分别产生 `W_DYNAMIC_TYPE_DEBT`、`W_UNRESOLVED_TYPE_SLOT`、`W_NIL_TYPE_DEBT`。声明 `:js-ffi` feature 的 definition 仍标记为明确边界，但 analyzer 不据此改变编译语义。
+`--only coverage` 会把裸 `:ref`、`:list`、`:map` 等嵌套 Dynamic slot 记为 partial coverage，并在 `schema_issues` 中返回 `[W_SCHEMA_DYNAMIC]`；未绑定的 `*type-slot` 同样记为 partial 并返回 `[W_UNRESOLVED_TYPE_SLOT]`。严格预处理才负责类型正确性：可达项目函数缺少结构化 root schema 或嵌入式 `Fn` hint 时返回 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`；通过程序直接注入且没有结构化 root schema 的 macro 也会被拒绝。Snapshot loader 会更早拒绝旧 runtime `Fn` 或 whole-`Dynamic` macro schema。发布审计使用 `--deps` 检查实际解析的 module artifact。`weak-types --format edn` 只提供迁移定位所需的 kind、definition、path、detail、intent、evidence 与 suggestion；unresolved Dynamic、未绑定 slot、nil/Optional 债务分别产生 `W_DYNAMIC_TYPE_DEBT`、`W_UNRESOLVED_TYPE_SLOT`、`W_NIL_TYPE_DEBT`。声明 `:js-ffi` feature 的 definition 仍标记为明确边界，但 analyzer 不据此改变编译语义。
 
-`check-types` 与 `weak-types` 可显式增加 `--incremental`。`.calcit/analysis-input-cache-v2.cirru` 将主 Snapshot 与每个 direct
+`weak-types` 及其 `coverage` 视图可显式增加 `--incremental`。`.calcit/analysis-input-cache-v2.cirru` 将主 Snapshot 与每个 direct
 module 保存为独立单元，以完整传递源文件的内容 digest、module 请求解析路径和内置 core revision 校验静态分析输入。主项目或
 单个模块变化时只重载失效单元，其他模块跳过 Cirru 文件的重复解析与 Snapshot 转换；
 `.calcit/analysis-cache-v1.cirru` 再保存按 definition revision 索引的只读结果。两份缓存默认都是 Cirru EDN；JSON 只用于显式
@@ -141,10 +139,10 @@ module 保存为独立单元，以完整传递源文件的内容 digest、module
 结果。顶层 `--entry` 会在校验与加载 module 前完成选择，严格模式补入的默认 feature policy 也参与 context revision；切换 entry
 不会错误复用另一 entry 的 module 或 definition 结果。entry policy、编译器版本或 definition cache schema 变化会让 definition-local inventory 明确冷启动。input cache 头损坏或
 版本不一致时会从源码重载主 Snapshot 和 modules；单个输入单元失效时只重载该单元，有效 definition 结果仍可命中。任何缓存写入
-失败都不会改变本次 `check-types`/`weak-types` 分析结果，只会报告到 stderr 并跳过对应缓存更新；需要完整 entry
-preprocessing 的 `dynamic-methods --incremental` 会拒绝模块加载失败的不完整 Snapshot，不会返回旧的 warm 诊断。
+失败都不会改变本次 `weak-types`（含 `coverage` 视图）分析结果，只会报告到 stderr 并跳过对应缓存更新；需要完整 entry
+preprocessing 的 `--only dynamic-method --incremental` 会拒绝模块加载失败的不完整 Snapshot，不会返回旧的 warm 诊断。
 
-`dynamic-methods` 也可显式增加 `--incremental`。它会为活动 entry 的 init/reload roots 计算 compiler-resolved dependency closure；
+`--only dynamic-method` 视图也可显式增加 `--incremental`。它会为活动 entry 的 init/reload roots 计算 compiler-resolved dependency closure；
 只有闭包内 definition、namespace/schema 依赖、entry policy 与编译器版本均未变化时，才复用上次动态方法诊断并报告
 `scope=entry-dependency-closure`、`preprocessing_cached=true`。闭包外的 definition 变化不会强制重跑入口预处理；闭包索引缺失或
 未解析时则报告 `bypassed` 并执行完整入口预处理。缓存的是可复核诊断，不是 compiled AST，也不参与类型正确性判断。
@@ -155,12 +153,12 @@ warning 或 error。闭包外 definition 变化允许 warm hit；reachable defin
 编译器版本或 core 输入变化会冷启动。模块加载失败、闭包证据缺失或未解析时保守执行正常检查。失败结果不会覆盖上一次成功标记，
 因此修复前的下一次调用仍会重新验证。`--keep-going` 继续承担完整结构化诊断收集，不与该成功缓存组合。
 
-`check-types` 与普通 `weak-types` 的增量边界仍是静态分析输入加载与无需预处理的 definition-local inventory，
+`coverage` 视图与普通 `weak-types` 的增量边界仍是静态分析输入加载与无需预处理的 definition-local inventory，
 其 `preprocessing_cached` 仍为 `false`。
 依赖索引复用 compiler resolver（包括 macro 展开后的引用）并补充闭合 schema 中的限定类型/trait 引用；namespace import 变化会使
 该 namespace 的索引条目失效。它会计算反向传递 affected 集合，但现阶段不据此复用 compiled definition，避免在失效正确性尚未由
 严格检查验证前让缓存成为类型正确性依据。
-`weak-types --schema-evidence` 的编译器/call-site 证据仍按正常路径重新计算，`deprecated` 与 `quality` 也不宣称命中此缓存；
+`weak-types --schema-evidence` 的编译器/call-site 证据仍按正常路径重新计算，`deprecated-call` 视图与 `quality` 也不宣称命中此缓存；
 同时请求 `--schema-evidence --incremental` 时，`cache.input.status` 明确为 `bypassed`。模块加载
 失败时输入缓存不会持久化，避免后来出现的模块被旧缓存漏掉。后续阶段会先用该索引验证 schema/import/type-slot 的失效范围，
 再扩大需要编译器/call-site 数据的 analyzer 复用，不能把本地 cache 当作类型正确性证明。CI 与最终验收继续保留
@@ -168,13 +166,13 @@ warning 或 error。闭包外 definition 变化允许 warm hit；reachable defin
 
 ### 按 target 检查公开定义
 
-`analyze check-public` 枚举每个精确 `--ns` scope 的顶层定义，在不运行 entry 或 host effect 的情况下严格预处理源码。Calcit 没有独立的 private-export 标记，因此所选 namespace 中的函数、值、macro、struct、enum、trait 和 implementation 都会被检查；可重复传入 `--ns`，组合共享与某个运行目标专属的 namespace。
+`--check-only --ns` 枚举每个精确 `--ns` scope 的顶层定义，在不运行 entry 或 host effect 的情况下严格预处理源码。Calcit 没有独立的 private-export 标记，因此所选 namespace 中的函数、值、macro、struct、enum、trait 和 implementation 都会被检查；可重复传入 `--ns`，组合共享与某个运行目标专属的 namespace。
 
 内置 `calcit.core` 中带 `:builtin` 标签、且代码恰好为 `&runtime-implementation` 占位符的定义没有可预处理的 Calcit 函数体。这些定义在 Snapshot 加载时校验 schema，报告为 `intrinsic`，不伪装成已通过源码预处理；其实现与声明的一致性仍由 builtin 和后端测试负责。若占位符缺少标签、位于项目 namespace，或包含额外代码，仍走普通预处理并显示诊断。core 的其他源码定义继续严格预处理。仓库 CI 使用带 `:target :wasm` 的测试 entry，检查 `calcit.core`、`calcit.test` 和 `calcit.internal`；这不代表其他 target 的后端语义已由该检查证明。
 
 所选 entry 必须声明 `:target :browser`、`:node`、`:native` 或 `:wasm`。没有 `:ffi :target` 的定义视为共享；目标不匹配会在预处理前报告 `E_JS_FFI_TARGET_MISMATCH`。缺失、空、属于依赖但未授权或格式错误的 scope 均失败；只有显式检查已加载依赖 namespace 时才传 `--deps`。普通 `--check-only` 仍保持 entry 可达性语义。
 
-JSON 输出使用 `analyze.check-public` schema version 1，保留 `checked_definition_ids`、完整性与通过状态、诊断、target、耗时和确定性的 scope revision。`definitions_passed` 包含已通过的源码定义与内建占位符；`definitions_source_passed` 和 `definitions_intrinsic` 分开呈现两者。`--summary-only` 只省略逐定义结果，不省略已检查的 ID；CI 可以核实真实覆盖范围。任何源码预处理 warning 或 error 都返回非零。
+`--check-only --ns` 支持 human、EDN 与 JSON；结构化输出保留 `analyze.check-public` 命令名与 schema version 1，保留 `checked_definition_ids`、完整性与通过状态、诊断、target、耗时和确定性的 scope revision。`definitions_passed` 包含已通过的源码定义与内建占位符；`definitions_source_passed` 和 `definitions_intrinsic` 分开呈现两者。`--summary-only` 只省略逐定义结果，不省略已检查的 ID；CI 可以核实真实覆盖范围。任何源码预处理 warning 或 error 都返回非零。
 
 Strict call preprocessing also reports `E_ERASED_GENERIC_RELATION` when an
 argument still contains `Dynamic` at a position tied to another occurrence of
@@ -197,7 +195,7 @@ empty when no reliable origin is available.
 For a strict-only release check, load every resolved dependency with `--deps`; loader acceptance proves that no legacy macro schema remains:
 
 ```bash
-calcit calcit.cirru analyze check-types --deps --summary-only --format json
+calcit calcit.cirru analyze weak-types --only coverage --deps --summary-only --format json
 ```
 
 An explicit function schema feature such as `:features $ #{} :js-ffi` classifies dynamic schema/code occurrences as `intentional-js-ffi`. A strict `MacroSignature` classifies `Dynamic` nested specifically inside `Expr<...>` inputs or expansion as `intentional-macro-syntax`: the phase-aware syntax contract remains checked, while the semantic value is deliberately open. Whole-Dynamic macro schemas, `Dynamic` expansions, and `Definition<Dynamic>` remain unresolved. A selected entry binding of `:type-slots` to `:dynamic` stays visible as `intentional-type-slot-dynamic`. These intent classes do not hide locations or remove schema-Dynamic coverage inventory; they separate reviewed boundary choices from unresolved type debt. The FFI feature does not classify `nil`, because an FFI capability does not imply that every nullable branch is intentional.
@@ -210,9 +208,9 @@ For one definition, `calcit query context '<ns/def>' --format json` embeds the s
 
 For one expression, `calcit query type-at '<ns/def>' --path code@... --format json` preprocesses only static program metadata and returns inferred type, expected type, typed bindings, confidence, method candidates, preprocess lowering evidence, and diagnostics. Its v2 `data.lowering` object distinguishes type-selected primitives from ordinary static call resolution and remaining dynamic dispatch. It does not run the application entry. Paths use the same stable Snapshot coordinates returned by structural query commands.
 
-`check-types`、默认 `weak-types`、`deprecated` 和 `quality` 只读取静态 Snapshot：它们加载配置模块与 core metadata，但不预处理或执行 application entry。显式 `weak-types --schema-evidence` 会以兼容诊断模式预处理项目 definition，以复用编译器推断；它仍不执行 entry 或 host effect。`dynamic-methods` 同样会预处理所选 entry 的 reachable definitions，因为 receiver inference 与 method specialization 属于预处理结果。使用 `--format json` 时，stdout 只包含一个带版本的 JSON envelope，其中包括稳定 scope revision、filters、summary 与 finding/definition rows；启动及命令说明留在 stderr。
+默认 `weak-types`、`coverage` 与 `deprecated-call` 视图和 `quality` 只读取静态 Snapshot：它们加载配置模块与 core metadata，但不预处理或执行 application entry。显式 `weak-types --schema-evidence` 会以兼容诊断模式预处理项目 definition，以复用编译器推断；它仍不执行 entry 或 host effect。`dynamic-method` 视图同样会预处理所选 entry 的 reachable definitions，因为 receiver inference 与 method specialization 属于预处理结果。使用 `--format json` 时，stdout 只包含一个带版本的 JSON envelope，其中包括稳定 scope revision、filters、summary 与 finding/definition rows；启动及命令说明留在 stderr。
 
-`analyze dynamic-methods` 只展示 `P_DYNAMIC_METHOD_DISPATCH` 和 `P_DYNAMIC_POSTFIX_METHOD`，普通类型 warning 与 JS FFI 诊断不混入报告。默认范围为项目命名空间，`--deps` 包含可达依赖，`--summary-only` 省略逐项结果。报告不按命中数失败；需要阻断的不安全调用由默认严格预处理诊断负责。通过普通推断、trait 约束或已审阅的 `unsafe-coerce` 边界得到具体 receiver 时，不属于未解析分派。
+`analyze weak-types --only dynamic-method` 只展示 `P_DYNAMIC_METHOD_DISPATCH` 和 `P_DYNAMIC_POSTFIX_METHOD`，普通类型 warning 与 JS FFI 诊断不混入报告。默认范围为项目命名空间，`--deps` 包含可达依赖，`--summary-only` 省略逐项结果。报告不按命中数失败；需要阻断的不安全调用由默认严格预处理诊断负责。通过普通推断、trait 约束或已审阅的 `unsafe-coerce` 边界得到具体 receiver 时，不属于未解析分派。
 
 Under the default strict diagnostics, every unspecialized project method is rejected with
 `E_DYNAMIC_METHOD_DISPATCH` or `E_DYNAMIC_POSTFIX_METHOD`. Diagnostics classify
@@ -240,18 +238,18 @@ are preserved. Missing, duplicate, or unknown constructor fields do not qualify.
 | 入口 | 当前职责 | 后续收敛方向 |
 | --- | --- | --- |
 | 默认预处理、`--check-only` | 由同一套类型关系产生 warning/error，决定类型正确性 | 保留为唯一正确性门槛 |
-| `check-types`、`weak-types` | 只读定位缺失 schema、开放边界和迁移候选 | 保留确有用户场景的源码定位；不按命中数量阻断编译 |
-| `dynamic-methods` | 只读查看未能静态分派的方法 | 默认严格诊断负责阻断未证明分派；不再提供数量上限 |
-| `quality`、baseline | 旧项目显式选择的迁移预算 | 不再隐含在 `--strict-types`；待存量依赖迁走后删除 |
-| `check-public`、`check-examples` | 检查入口可达性无法覆盖的公开定义和示例 | 保留实际验证，不建立第二套类型关系 |
+| `weak-types`（含 `coverage` 视图） | 只读定位缺失 schema、开放边界和迁移候选 | 保留确有用户场景的源码定位；不按命中数量阻断编译 |
+| `weak-types --only dynamic-method` | 只读查看未能静态分派的方法 | 默认严格诊断负责阻断未证明分派；不再提供数量上限 |
+| `quality`、baseline | 旧项目显式选择的迁移预算 | 已弃用，下一个非 patch 版本删除 |
+| `--check-only --ns`、`check-examples` | 检查入口可达性无法覆盖的公开定义和示例 | 保留实际验证，不建立第二套类型关系 |
 
-`analyze quality` 继续读取已有 v1/v2 baseline，兼容仍依赖它的存量项目。它把 `check-types`、`weak-types` 与 `deprecated` 的迁移数量按 definition 比较，但不拥有类型正确性语义。新项目不要创建 baseline；存量项目只降低已有预算，清零后删除 baseline 与命令。`--write-baseline` 只接受已存在的文件，且拒绝任何 definition 的预算增加；旧版扁平 baseline 则按原有汇总指标比较。升级 v1/扁平文件到 v2 时，原先未记录的 `unsafeCoerce` 预算也从零开始，须先消除新增债务。
+`analyze quality` 已弃用，运行时会在 stderr 输出迁移提示，下一个非 patch 版本删除；在此之前它继续读取已有 v1/v2 baseline。它把 `coverage`、`weak-types` 与 `deprecated-call` 的迁移数量按 definition 比较，但不拥有类型正确性语义。新项目不要创建 baseline；存量项目只降低已有预算，清零后删除 baseline 与命令。`--write-baseline` 只接受已存在的文件，且拒绝任何 definition 的预算增加；旧版扁平 baseline 则按原有汇总指标比较。升级 v1/扁平文件到 v2 时，原先未记录的 `unsafeCoerce` 预算也从零开始，须先消除新增债务。
 
 内置 Cirru core 曾使用 `config/calcit-core-quality.cirru` 记录逐 definition 的迁移数量。该文件暂留作历史参考，但 `yarn check-all`、PR 和发布流程不再运行数量门槛，也不应为了通过检查而刷新它。core 的类型正确性由编译器诊断与测试判断；仍需补齐 core 公开定义的严格可达性检查，而不是重新设定 Dynamic 数量阈值。显式 `analyze quality --baseline` 仅服务尚未迁走的旧项目。
 
 [`docs/core-dynamic-classification.md`](../core-dynamic-classification.md) 保留逐位置的人工审阅记录：每个 schema-Dynamic 路径标明所属子系统、`migrate` 或 `retain-reviewed` 决策及原因。`yarn check-core-dynamic-classification` 仅检查文档与当前源码是否同步；有意修改契约并审阅后，再运行 `yarn generate-core-dynamic-classification` 更新清单。它不替代编译器的 warning/error，也不以位置数量决定正确性。调用方可见的输出槽位要与 receiver 槽位分开审阅：具有静态类型和字面量路径的 `get-in` 可恢复 `Option<T>`，具有静态类型的 List/Map/Set `filter` 调用会降级到保持形状的 core 定义；Dynamic receiver、动态路径、Struct 遍历以及不支持的集合能力不能沿用这一较窄结论。历史迁移记录见 [calcit#701](https://github.com/calcit-lang/calcit/issues/701)，optional indexed access 的 bound-slot 正确性另见 [calcit#694](https://github.com/calcit-lang/calcit/issues/694)。
 
-`analyze deprecated` scans calls to definitions tagged `:deprecated`. It reports every calling definition and a stable `code@...` path, and includes the target definition's documentation so migrations can be automated without maintaining a second hard-coded legacy API list. Use `--summary-only --format json` for migration gates that only need aggregate counts.
+`analyze weak-types --only deprecated-call` scans calls to definitions tagged `:deprecated`. It reports every calling definition and a stable `code@...` path, and includes the target definition's documentation so migrations can be automated without maintaining a second hard-coded legacy API list. Use `--summary-only --format json` for migration gates that only need aggregate counts.
 
 `tag-match` 已从 Calcit 0.14.16 的表层语言移除，统一由原生 `match` 承担具名与匿名 enum 的模式匹配。旧项目应先用 Calcit 0.14.15 执行 `calcit fix --rule tag-match-to-match-v1`。原生 `match` 会把分支结构保留给穷尽性、payload arity、类型与 backend 优化 pass。
 
@@ -289,7 +287,7 @@ schema 候选即使没有剩余洞，仍需独立实现证明。返回声明、�
 
 `code-dynamic` 只定位活动代码中的类型位置：`quote` 与 `quasiquote` 中作为数据保存的 `:dynamic` 不计入结果，`~` / `~@` 展开后重新进入活动代码的表达式仍会定位。此报告不判断类型关系；需要确认能否通过检查时仍以默认严格诊断为准。
 
-`analyze quality` 的 v1/v2 baseline 读取暂留给仍依赖它的存量 CI。新项目不再生成 baseline；存量项目只降低已有预算，清零后删除 baseline 与命令。当前默认检查已不再把 coverage/Dynamic 数量当作独立的类型正确性策略。
+`analyze quality` 已弃用，其 v1/v2 baseline 读取只保留到下一个非 patch 版本。新项目不再生成 baseline；存量项目只降低已有预算，清零后删除 baseline 与命令。当前默认检查已不再把 coverage/Dynamic 数量当作独立的类型正确性策略。
 
 只需要 kind/intent 汇总时使用 `--summary-only`；human 输出在汇总后停止，JSON 保留 `data.summary` 与 scope revision，并返回空的 `data.definitions`。`defstruct`、`defenum`、`deftrait`、`defimpl` 使用明确的 definition-kind schema：`StructDef`、`EnumDef`、`Trait`、`Impl`。旧 Snapshot 的 Dynamic root 会在加载时规范化；字段、Enum payload 和方法仍正常进入迁移扫描，但 declaration root 本身不产生 `schema-dynamic` finding。
 
@@ -1165,7 +1163,7 @@ internal compiler error: post-lowering validation (CALCIT_LINT_CORE=1) found 1 v
 
 - `src/runner/preprocess/post_lowering.rs` 的单元测试为每个已知问题构造改写后的错误节点树并断言校验报错：#1378（`Option` payload 被擦除）、#1428（`recur` 参数未检查）、#1494（内联 Proc 方法绕过参数检查），以及改写后的用户函数调用未经参数检查。
 - `tests/post_lowering_cli.rs` 在开启校验时检查 #1378、#1428、#1494 与 #1737（`Option :none` 绑定到局部变量后用于具体字段）的合法写法。
-- CI 在开启校验时运行 core 附带 `:tests`、`calcit.core` 的 `analyze check-public`、`calcit/test.cirru` 与类型推断测试，并由独立 job 以 `CALCIT_LINT_CORE=1` 运行完整的 `yarn check-all`。新发现的同类问题先把最小用例加入这组回归，再修复。
+- CI 在开启校验时运行 core 附带 `:tests`、`calcit.core` 的 `--check-only --ns`、`calcit/test.cirru` 与类型推断测试，并由独立 job 以 `CALCIT_LINT_CORE=1` 运行完整的 `yarn check-all`。新发现的同类问题先把最小用例加入这组回归，再修复。
 
 ## See Also
 
