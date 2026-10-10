@@ -14,6 +14,12 @@
 
 显式箭头转换的候选声明覆盖 `number->int*/uint*/float*` 与 `js-nullish->option`。前者保留 `Number -> Result<Refinement,String>`，成功值仍是原 Number，精确表示和范围验证不是自动舍入；后者保留 `JsNullish<T> -> Option<T>` 的同一 T 与 `:js-ffi` feature，仅包装空值边界，不能充当 payload decoder。两者职责不同，不因同用箭头拼写而合并错误模型或新增 `to-/as-/into-` 别名。此处记录既有 schema，不新增 backend 支持，也不冻结未经证明的动态类型。
 
+## 效果声明边界
+
+同一份 query 导出还记录 `reset!`、`get-args/get-env`、`unix-time-ms`、`wait-ms`、`read-stdin-text` 与 `quit!` 的既有声明。`reset!` 保持 `Ref<T>, T -> T`，环境读取保持 `List<String>` / `Option<String>` 及原 `:env/:io` feature，等待与 stdin 分别保持 `Result<Unit,String>` / `Result<String,String>`。时钟返回 Number 的声明不表示它是单调时钟；`quit!` 的 Unit 声明也不表示调用会正常返回。单位、输入范围、消费 stdin 与进程终止行为仍以各自定义和宿主测试为准，不在基线再复制一套失败描述。
+
+`reset!` 是 syntax，query 未提供 runtime arity 时导出 nil，不凭 Fn schema 伪造普通函数 arity。`swap!` 的现有声明是接受语法节点的 Macro，不是运行时的泛型函数合同，因此不将其开放的展开 schema 当作精确调用签名冻结；原 `reset-proof` 附带测试及严格类型回归继续验证展开后的返回值和 Ref payload 约束。`println/echo/eprintln` 当前没有可由 `query def` 导出的 core definition，同样不补造声明；输出行为由原 command fixture 与共享测试的输出轨迹验证。声明清单不会代替这些语法与宿主边界的验收。
+
 ## 已验证的后端范围
 
 以下是当前候选中几个关键边界的**测试证据索引**，不是所有 core API 的支持矩阵。声明 schema、查询的 `proven`、成功生成产物、实际执行成功是不同层次：`proven` 只证明当前接收者上的静态调用契约，不自动承诺某个 backend 或宿主支持。未列出的入口仍须查看对应实现与测试，不能从同族名字推断支持。
@@ -27,6 +33,10 @@
 | String `.parse-float/.parse-json/.parse-cirru/.parse-cirru-edn/.parse-cirru-list` | `check-parse-boundary.mjs` 重放同一份 Result 方法及解析边界测试，包括错误文本与嵌套 payload 拒绝 | 不宣称通用 parser 的 WASM 支持；不能因为返回 Result 就假定可 lowering |
 | 闭合 `try-parse-cirru-edn-as` 与 `format-cirru-edn` | 闭合 decoder 由解析边界测试验证；不是开放 JSON/Cirru 值的隐式强转 | 递归容器和 nominal 数据的受支持 shape、容量限制和拒绝行为见 [WASM 验证说明](../../scripts/wasm-validation.md#cirru-edn-格式化边界)。Manifest 文件业务由现有脚本分别验证 Preview 1 与默认 Component，不能将整份历史 fixture 的能力移植为默认 Component 承诺 |
 | `FsPath .read-text/.write-text!` | `test-wasi-manifest-business.sh` 使用同一份 Manifest 输入、输出和 Result 分支在 native 与 Node JS 执行 | 同脚本验证显式 Preview 1；`test-wasi-manifest-component.sh` 单独验证默认 WASI 0.3 Component。`.read-dir/.walk-dir` 不因文件读写通过就获得默认 Component 支持 |
+| `reset!/swap!` | 原 `reset-proof` 附带测试回放赋值返回值；`check-known-assertion.mjs` 检查 Ref payload、别名与宏展开的正反类型证据 | 当前共享测试的 Ref 场景仍在 WASM/WASI 排除表中，不据 native/JS 通过宣称支持 |
+| `get-args/get-env` | 原附带测试与 `test-js-command.sh` 覆盖参数、缺失环境值及 Unicode 文本；严格回归检查 `Option<String>` | 原附带测试在真实 WASI 0.3 Component 执行；core WASM 无进程环境能力 |
+| `unix-time-ms/wait-ms` | 原 command fixture、等待附带测试与宿主检查覆盖毫秒、合法/非法持续时间；Unix 时钟不保证单调 | `test-wasi-clock-host.mjs` / `test-wasi-wait-host.mjs` 核对 Preview 1 时钟编号、纳秒换算及宿主失败；默认 Component 的时钟/等待仍 unsupported |
+| `read-stdin-text/quit!` 与输出例外 | `test-wasi-stdin.mjs` 在 native/Node 验证 UTF-8、EOF、大小限制、读失败、stdout 和退出码；`test-js-command.sh` 另验证非法退出码 | 同一 stdin 脚本在真实 WASI 0.3 Component 重放业务与输入边界；stdin 在 Preview 1 明确拒绝，不静默改选目标 |
 
 上表引用的是仓库源码回归，不是新安装包或消费者兼容性证明。跨仓库升级仍要使用匹配的已发布精确版本，并执行真实项目回归。`js-nullish->option` 的 `:js-ffi` 和同一 payload 泛型保留在声明基线中；它仍是 JS 空值包装边界，不属于通用 WASM decoder。
 

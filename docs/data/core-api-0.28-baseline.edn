@@ -183,6 +183,48 @@
       :schema $ quote $ {} (:kind :fn) (:return 'Number)
         :args $ []
     {} (:declaration nil)
+      :name 'calcit.core/unix-time-ms
+      :runtime-arity $ {} (:max 0) (:min 0)
+      :schema $ quote $ {} (:kind :fn) (:return 'Number)
+        :args $ []
+    {} (:declaration nil)
+      :name 'calcit.core/wait-ms
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Number
+        :return $ :: 'Result 'Unit 'String
+    {} (:declaration nil)
+      :name 'calcit.core/get-args
+      :runtime-arity $ {} (:max 0) (:min 0)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ []
+        :features $ #{} :env :io
+        :return $ :: 'List 'String
+    {} (:declaration nil)
+      :name 'calcit.core/get-env
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'String
+        :features $ #{} :env :io
+        :return $ :: 'Option 'String
+    {} (:declaration nil)
+      :name 'calcit.core/read-stdin-text
+      :runtime-arity $ {} (:max 0) (:min 0)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ []
+        :return $ :: 'Result 'String 'String
+    {} (:declaration nil)
+      :name 'calcit.core/quit!
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'Unit)
+        :args $ [] 'Number
+    {} (:declaration nil)
+      :name 'calcit.core/reset!
+      :runtime-arity nil
+      :schema $ quote $ {} (:kind :fn) (:return 'T)
+        :args $ [] (:: 'Ref 'T) 'T
+        :generics $ [] 'T
+    {} (:declaration nil)
       :failure "|重复_Tag_key_抛错，回调接收新旧值，成功返回_Unit"
       :name 'calcit.core/add-watch!
       :runtime-arity $ {} (:max 3) (:min 3)
