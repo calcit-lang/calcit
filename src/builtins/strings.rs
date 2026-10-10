@@ -160,7 +160,7 @@ pub fn format_number(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           format!("&number:format expected 0 to {MAX_FORMAT_DIGITS} digits, but received: {x}"),
         );
       }
-      Ok(Calcit::Str(format!("{n:.size$}").into()))
+      Ok(Calcit::Str(format_fixed_half_away(*n, size).into()))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(
       CalcitErrKind::Type,
@@ -168,6 +168,54 @@ pub fn format_number(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     ),
     (_, _) => CalcitErr::err_str(CalcitErrKind::Arity, "&number:format expected 2 arguments, but received none"),
   }
+}
+
+/// Formats `n` with `size` decimals, rounding the exact f64 value half away from zero.
+/// Rust's `{:.N}` rounds exact ties to even. A finite f64 `m * 2^-e` (odd `m`) has exactly
+/// `e` fractional decimal digits and the last one is `5`, so a tie at `size` decimals happens
+/// only when `e == size + 1`. Then the exact text with `size + 1` decimals ends in that `5`;
+/// drop it and add one unit in the last kept place.
+fn format_fixed_half_away(n: f64, size: usize) -> String {
+  if !(n.is_finite() && n != 0.0 && fractional_decimal_digits(n) == size + 1) {
+    return format!("{n:.size$}");
+  }
+  let mut digits = format!("{:.*}", size + 1, n.abs()).into_bytes();
+  digits.pop();
+  if size == 0 {
+    digits.pop();
+  }
+  let mut i = digits.len();
+  loop {
+    if i == 0 {
+      digits.insert(0, b'1');
+      break;
+    }
+    i -= 1;
+    match digits[i] {
+      b'.' => continue,
+      b'9' => digits[i] = b'0',
+      d => {
+        digits[i] = d + 1;
+        break;
+      }
+    }
+  }
+  let body = String::from_utf8(digits).expect("ASCII digits");
+  if n < 0.0 { format!("-{body}") } else { body }
+}
+
+/// Number of fractional decimal digits in the exact value of a finite, non-zero f64.
+fn fractional_decimal_digits(n: f64) -> usize {
+  let bits = n.to_bits();
+  let biased = ((bits >> 52) & 0x7ff) as i64;
+  let fraction = bits & ((1u64 << 52) - 1);
+  let (mantissa, exponent) = if biased == 0 {
+    (fraction, -1074)
+  } else {
+    (fraction | (1u64 << 52), biased - 1075)
+  };
+  let exponent = exponent + i64::from(mantissa.trailing_zeros());
+  if exponent < 0 { exponent.unsigned_abs() as usize } else { 0 }
 }
 
 /// displays in binary, octal, or hexadecimal
@@ -514,5 +562,28 @@ pub fn pad_right(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     }
   } else {
     CalcitErr::err_nodes(CalcitErrKind::Arity, "&str:pad-right expected 3 arguments, but received:", xs)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::format_fixed_half_away;
+
+  #[test]
+  fn formats_exact_ties_away_from_zero() {
+    assert_eq!(format_fixed_half_away(2.5, 0), "3");
+    assert_eq!(format_fixed_half_away(-2.5, 0), "-3");
+    assert_eq!(format_fixed_half_away(-0.5, 0), "-1");
+    assert_eq!(format_fixed_half_away(9.5, 0), "10");
+    assert_eq!(format_fixed_half_away(0.125, 2), "0.13");
+    assert_eq!(format_fixed_half_away(0.995, 2), "0.99");
+    assert_eq!(format_fixed_half_away(1.005, 2), "1.00");
+    // Ties whose next f64 is further away than one unit of the last kept place.
+    assert_eq!(format_fixed_half_away(2f64.powi(49) + 0.125, 2), "562949953421312.13");
+    assert_eq!(format_fixed_half_away(2f64.powi(50) + 0.25, 1), "1125899906842624.3");
+    assert_eq!(
+      format_fixed_half_away(0.1, 54),
+      "0.100000000000000005551115123125782702118158340454101563"
+    );
   }
 }

@@ -109,7 +109,6 @@ const render = (kind, call) => {
 
 // Differences tracked by an issue: [primitive, backend, issue].
 const known = [
-  ["round", "js", "#1847"], ["round", "wasm", "#1847"],
   ...["bit-and", "bit-or", "bit-xor", "bit-shl", "bit-shr", "bit-not"].flatMap((name) => [
     [name, "js", "#1849"], [name, "wasm", "#1849"],
   ]),

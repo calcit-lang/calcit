@@ -2074,6 +2074,17 @@
                   fn (_error) :failed
                 assert= |1.0 $ &number:format 1 1
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rounds-ties-away-from-zero)
+              :code $ quote $ do
+                assert= |3 $ &number:format 2.5 0
+                assert= |-3 $ &number:format -2.5 0
+                assert= |1 $ &number:format 0.5 0
+                assert= |-1 $ &number:format -0.5 0
+                assert= |0.13 $ &number:format 0.125 2
+                assert= |-0.13 $ &number:format -0.125 2
+                assert= |1.00 $ &number:format 1.005 2
+                assert= |2.67 $ &number:format 2.675 2
+              :tags $ #{} :core :unit
         '&number:fract $ %{} 'CodeEntry
           :doc "|internal function for number fractional part\nSyntax: (&number:fract n)\nParams: n (number)\nReturns: number\nReturns fractional part of number (n - floor(n))"
           :code $ quote &runtime-implementation
