@@ -6877,7 +6877,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     // Math (unary)
     CalcitProc::Floor => emit_unary(ctx, Instruction::F64Floor, args),
     CalcitProc::Ceil => emit_unary(ctx, Instruction::F64Ceil, args),
-    CalcitProc::Round => emit_unary(ctx, Instruction::F64Nearest, args),
+    CalcitProc::Round => emit_round_half_away(ctx, args),
     CalcitProc::Sqrt => emit_unary(ctx, Instruction::F64Sqrt, args),
 
     // round?: a finite Number with no fractional part, not a safe-integer bound.
@@ -7445,6 +7445,30 @@ fn emit_number_refinement_test(ctx: &mut WasmGenCtx, value: u32, refinement: Cal
       ctx.emit(Instruction::I32And);
     }
   }
+}
+
+/// Emit `round`: nearest integer with ties away from zero (`f64.nearest` rounds
+/// ties to even). Computes `trunc(x) + copysign(|x - trunc(x)| >= 0.5, x)`; the
+/// fractional part is exact, `-0.4` keeps `-0`, and NaN/Infinity pass through.
+fn emit_round_half_away(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(1, args, "round")?;
+  emit_expr(ctx, &args[0])?;
+  let x = ctx.alloc_local();
+  let t = ctx.alloc_local();
+  ctx.emit(Instruction::LocalTee(x));
+  ctx.emit(Instruction::F64Trunc);
+  ctx.emit(Instruction::LocalTee(t));
+  ctx.emit(Instruction::LocalGet(x));
+  ctx.emit(Instruction::LocalGet(t));
+  ctx.emit(Instruction::F64Sub);
+  ctx.emit(Instruction::F64Abs);
+  ctx.emit(f64_const(0.5));
+  ctx.emit(Instruction::F64Ge);
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalGet(x));
+  ctx.emit(Instruction::F64Copysign);
+  ctx.emit(Instruction::F64Add);
+  Ok(())
 }
 
 fn emit_unary(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]) -> Result<(), String> {

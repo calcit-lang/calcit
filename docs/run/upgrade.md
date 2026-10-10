@@ -272,6 +272,25 @@ native 与 JS 对越界输入抛出可由 `try` 捕获的相同错误：零除�
 
 这些都是语义修复，不提供自动源码改写；需要错误恢复的业务自行处理 `try` 的错误，不自动补默认值。
 
+## 舍入恰好一半时远离 0
+
+`round` 在 native、JS、core WASM 与 WASI Component 上统一按“恰好一半时远离 0”取整；`&number:format` 在 native 与 JS 上按输入 f64 的精确值同样舍入。完整规则见 [Number](../data/number.md#取整与整数判断)。
+
+```cirru
+assert= -3 $ round -2.5
+assert= 2 $ round 1.5
+assert= |3 $ &number:format 2.5 0
+assert= |1.00 $ &number:format 1.005 2
+```
+
+升级时的行为变化：
+
+- 生成 JS 中 `round` 此前用 `Math.round`，负数的一半向正无穷取整（`round -2.5` 为 `-2`，`round -0.5` 为 `-0`）；现在分别为 `-3` 与 `-1`。
+- WASM 中 `round` 此前取偶数（`round 2.5` 为 `2`，`round -2.5` 为 `-2`）；现在分别为 `3` 与 `-3`。
+- native 的 `&number:format` 此前在恰好一半时取偶数（`&number:format 2.5 0` 为 `2`，`&number:format 0.125 2` 为 `0.12`）；现在分别为 `3` 与 `0.13`。不是恰好一半的值（如 `1.005`）结果不变。
+
+这是语义修复，不提供自动源码改写；依赖取偶舍入的代码需要自行处理。
+
 ## 整数谓词的跨目标语义修复
 
 `round?`（以及 0.28 的 Number `.round?`，该方法已在 0.29.0 删除，见下文）现在统一判断“有限且恰好没有小数部分”。native、JS、core WASM 和 WASI Component 使用相同契约：NaN、正负 Infinity、任何非零小数均为 false；0、-0 与有限的整数值为 true。

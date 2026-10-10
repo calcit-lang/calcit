@@ -159,7 +159,7 @@ pub fn format_number(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
           format!("&number:format expected 0 to {MAX_FORMAT_DIGITS} digits, but received: {x}"),
         );
       }
-      Ok(Calcit::Str(format!("{n:.size$}").into()))
+      Ok(Calcit::Str(format_fixed_half_away(*n, size).into()))
     }
     (Some(a), Some(b)) => CalcitErr::err_str(
       CalcitErrKind::Type,
@@ -167,6 +167,34 @@ pub fn format_number(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     ),
     (_, _) => CalcitErr::err_str(CalcitErrKind::Arity, "&number:format expected 2 arguments, but received none"),
   }
+}
+
+/// Formats `n` with `size` decimals, rounding the exact f64 value half away from zero.
+/// Rust's `{:.N}` rounds exact ties to even. A finite f64 `m * 2^-e` (odd `m`) has exactly
+/// `e` fractional decimal digits and the last one is `5`, so a tie at `size` decimals happens
+/// only when `e == size + 1`. Then the next f64 away from zero is formatted instead: it lies
+/// past the tie by at most `2^-e`, well before the next rounding boundary.
+fn format_fixed_half_away(n: f64, size: usize) -> String {
+  if n.is_finite() && n != 0.0 && fractional_decimal_digits(n) == size + 1 {
+    let away = f64::from_bits(n.to_bits() + 1);
+    format!("{away:.size$}")
+  } else {
+    format!("{n:.size$}")
+  }
+}
+
+/// Number of fractional decimal digits in the exact value of a finite, non-zero f64.
+fn fractional_decimal_digits(n: f64) -> usize {
+  let bits = n.to_bits();
+  let biased = ((bits >> 52) & 0x7ff) as i64;
+  let fraction = bits & ((1u64 << 52) - 1);
+  let (mantissa, exponent) = if biased == 0 {
+    (fraction, -1074)
+  } else {
+    (fraction | (1u64 << 52), biased - 1075)
+  };
+  let exponent = exponent + i64::from(mantissa.trailing_zeros());
+  if exponent < 0 { exponent.unsigned_abs() as usize } else { 0 }
 }
 
 /// displays in binary, octal, or hexadecimal

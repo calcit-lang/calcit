@@ -1477,7 +1477,9 @@ export let ceil = (n: number) => {
   return Math.ceil(n);
 };
 export let round = (n: number) => {
-  return Math.round(n);
+  // Ties round away from zero; `Math.round` alone rounds them toward +Infinity.
+  // Negating keeps `-0` for inputs such as -0.4.
+  return n < 0 ? -Math.round(-n) : Math.round(n);
 };
 export let _$n_number_$o_fract = (n: number) => {
   return n - Math.floor(n);
