@@ -5365,6 +5365,32 @@
                   first $ decode-map-as ([] |abc) (:: 'List 'String)
                   , |
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-operation-and-nested-error-path)
+              :code $ quote $ do
+                assert= "|decode-map-as failed at $: expected nil, got number" $ try
+                  do (decode-map-as 1 'Nil) |unexpected-success
+                  fn (message)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'String
+                    , message
+                assert= "|decode-map-as failed at $: expected number, got string" $ try
+                  do (decode-map-as |wrong 'Number) |unexpected-success
+                  fn (message)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'String
+                    , message
+                assert= "|decode-map-as failed at $[1]: expected number, got string" $ try
+                  do
+                    decode-map-as ([] 1 |wrong) (:: 'List 'Number)
+                    , |unexpected-success
+                  fn (message)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'String
+                    , message
+              :tags $ #{} :core :unit
         'def $ %{} 'CodeEntry (:doc "|special macro to expose value to definition")
           :code $ quote $ defmacro def (_name x) x
           :examples $ []
@@ -6368,6 +6394,22 @@
             :args $ [] 'FfiResponse 'T
             :generics $ [] 'T
           :tags $ #{} :ffi :internal
+          :tests $ [] $ %{} 'TestEntry (:name |method-preserves-capability-error)
+            :code $ quote $ assert= true
+              try
+                do
+                  .reject! (ffi:response nil) |value
+                  , false
+                fn (message)
+                  hint-fn $ {}
+                    :args $ [] 'String
+                    :return 'Bool
+                  and (.includes? message |capability)
+                    if
+                      = :js $ &get-calcit-backend
+                      .includes? message |&ffi-response-reject
+                      , true
+            :tags $ #{} :core :unit
         'ffi-response:resolve $ %{} 'CodeEntry
           :doc "|Resolve a wrapped native async response exactly once."
           :code $ quote $ defn ffi-response:resolve (self value)
@@ -6377,6 +6419,22 @@
             :args $ [] 'FfiResponse 'T
             :generics $ [] 'T
           :tags $ #{} :ffi :internal
+          :tests $ [] $ %{} 'TestEntry (:name |method-preserves-capability-error)
+            :code $ quote $ assert= true
+              try
+                do
+                  .resolve! (ffi:response nil) |value
+                  , false
+                fn (message)
+                  hint-fn $ {}
+                    :args $ [] 'String
+                    :return 'Bool
+                  and (.includes? message |capability)
+                    if
+                      = :js $ &get-calcit-backend
+                      .includes? message |&ffi-response-resolve
+                      , true
+            :tags $ #{} :core :unit
         'ffi-task:cancel $ %{} 'CodeEntry
           :doc "|Cancel a wrapped native async task with the default reason. Validate and preserve the actual native Unit result; host errors propagate."
           :code $ quote $ defn ffi-task:cancel (self)

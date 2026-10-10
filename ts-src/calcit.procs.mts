@@ -2204,65 +2204,65 @@ const enum_prototype_name = (value: CalcitEnumDef | CalcitStructValue): string =
   return value instanceof CalcitEnumDef ? value.name() : value.name.value;
 };
 
-const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any, path: string, depth: number): any => {
-  if (depth > 1024) typed_edn_error(path, "decode nesting exceeds 1024");
+const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any, path: string, depth: number, fail = typed_edn_error): any => {
+  if (depth > 1024) fail(path, "decode nesting exceeds 1024");
   const node = graph.nodes[nodeId];
-  if (node == null) typed_edn_error(path, `invalid data shape node #${nodeId}`);
+  if (node == null) fail(path, `invalid data shape node #${nodeId}`);
 
   switch (node.kind) {
     case "nil":
       if (input === null) return null;
-      return typed_edn_error(path, `expected Nil, got ${typed_edn_kind(input)}`);
+      return fail(path, `expected nil, got ${typed_edn_kind(input)}`);
     case "unit":
       if (input === undefined) return input;
-      return typed_edn_error(path, `expected Unit, got ${typed_edn_kind(input)}`);
+      return fail(path, `expected &unit, got ${typed_edn_kind(input)}`);
     case "bool":
       if (typeof input === "boolean") return input;
-      return typed_edn_error(path, `expected bool, got ${typed_edn_kind(input)}`);
+      return fail(path, `expected bool, got ${typed_edn_kind(input)}`);
     case "number":
       if (typeof input === "number") return input;
-      return typed_edn_error(path, `expected number, got ${typed_edn_kind(input)}`);
+      return fail(path, `expected number, got ${typed_edn_kind(input)}`);
     case "numeric":
-      if (typeof input !== "number") return typed_edn_error(path, `expected ${node.target}, got ${typed_edn_kind(input)}`);
+      if (typeof input !== "number") return fail(path, `expected ${node.target}, got ${typed_edn_kind(input)}`);
       if (_$n_number_$o_fits_$q_(input, newTag(node.target))) return input;
-      return typed_edn_error(path, `number ${input} does not fit ${node.target}`);
+      return fail(path, `number ${input} does not fit ${node.target}`);
     case "string":
       if (typeof input === "string") return input;
-      return typed_edn_error(path, `expected string, got ${typed_edn_kind(input)}`);
+      return fail(path, `expected string, got ${typed_edn_kind(input)}`);
     case "symbol":
       if (input instanceof CalcitSymbol) return input;
-      return typed_edn_error(path, `expected symbol, got ${typed_edn_kind(input)}`);
+      return fail(path, `expected symbol, got ${typed_edn_kind(input)}`);
     case "tag":
       if (input instanceof CalcitTag) return input;
-      return typed_edn_error(path, `expected tag, got ${typed_edn_kind(input)}`);
+      return fail(path, `expected tag, got ${typed_edn_kind(input)}`);
     case "buffer":
       if (input instanceof Uint8Array) return input;
-      return typed_edn_error(path, `expected buffer, got ${typed_edn_kind(input)}`);
+      return fail(path, `expected buffer, got ${typed_edn_kind(input)}`);
     case "cirru-quote":
       if (input instanceof CalcitCirruQuote) return input;
-      return typed_edn_error(path, `expected cirru-quote, got ${typed_edn_kind(input)}`);
+      return fail(path, `expected cirru-quote, got ${typed_edn_kind(input)}`);
     case "optional":
-      return input === null ? null : decode_typed_edn_node(graph, node.inner, input, path, depth + 1);
+      return input === null ? null : decode_typed_edn_node(graph, node.inner, input, path, depth + 1, fail);
     case "list": {
       if (!(input instanceof CalcitList || input instanceof CalcitSliceList)) {
-        return typed_edn_error(path, `expected list, got ${typed_edn_kind(input)}`);
+        return fail(path, `expected list, got ${typed_edn_kind(input)}`);
       }
       const values = Array.from(input.items()).map((value, idx) =>
-        decode_typed_edn_node(graph, node.inner, value, `${path}[${idx}]`, depth + 1)
+        decode_typed_edn_node(graph, node.inner, value, `${path}[${idx}]`, depth + 1, fail)
       );
       return new CalcitSliceList(values);
     }
     case "set": {
       if (!(input instanceof CalcitSet || input instanceof TypedEdnSetView)) {
-        return typed_edn_error(path, `expected set, got ${typed_edn_kind(input)}`);
+        return fail(path, `expected set, got ${typed_edn_kind(input)}`);
       }
       const values: any[] = [];
       const inputValues = input instanceof TypedEdnSetView ? input.items : input.values();
       inputValues.forEach((value) => {
         const itemPath = `${path}.item`;
-        const decoded = decode_typed_edn_node(graph, node.inner, value, itemPath, depth + 1);
+        const decoded = decode_typed_edn_node(graph, node.inner, value, itemPath, depth + 1, fail);
         if (values.some((existing) => _$n__$e_(existing, decoded))) {
-          typed_edn_error(itemPath, "duplicate decoded set value");
+          fail(itemPath, "duplicate decoded set value");
         }
         values.push(decoded);
       });
@@ -2270,38 +2270,38 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
     }
     case "map": {
       if (!(input instanceof CalcitMap || input instanceof CalcitSliceMap)) {
-        return typed_edn_error(path, `expected map, got ${typed_edn_kind(input)}`);
+        return fail(path, `expected map, got ${typed_edn_kind(input)}`);
       }
       const entries: any[] = [];
       input.pairs().forEach(([key, value]) => {
         const keyPath = `${path}.key`;
-        const decodedKey = decode_typed_edn_node(graph, node.key, key, keyPath, depth + 1);
+        const decodedKey = decode_typed_edn_node(graph, node.key, key, keyPath, depth + 1, fail);
         for (let idx = 0; idx < entries.length; idx += 2) {
           if (_$n__$e_(entries[idx], decodedKey)) {
-            typed_edn_error(keyPath, "duplicate decoded map key");
+            fail(keyPath, "duplicate decoded map key");
           }
         }
-        const decodedValue = decode_typed_edn_node(graph, node.value, value, `${path}.value`, depth + 1);
+        const decodedValue = decode_typed_edn_node(graph, node.value, value, `${path}.value`, depth + 1, fail);
         entries.push(decodedKey, decodedValue);
       });
       return new CalcitSliceMap(entries);
     }
     case "ref":
-      if (!(input instanceof CalcitRef)) return typed_edn_error(path, `expected atom, got ${typed_edn_kind(input)}`);
-      return atom(decode_typed_edn_node(graph, node.inner, input.value, `${path}.value`, depth + 1));
+      if (!(input instanceof CalcitRef)) return fail(path, `expected atom, got ${typed_edn_kind(input)}`);
+      return atom(decode_typed_edn_node(graph, node.inner, input.value, `${path}.value`, depth + 1, fail));
     case "struct": {
       if (!(input instanceof CalcitStructValue)) {
-        return typed_edn_error(path, `expected struct :${node.nominal.name.value}, got ${typed_edn_kind(input)}`);
+        return fail(path, `expected struct :${node.nominal.name.value}, got ${typed_edn_kind(input)}`);
       }
       if (input.name.value !== node.nominal.name.value) {
-        return typed_edn_error(path, `expected struct :${node.nominal.name.value}, got struct :${input.name.value}`);
+        return fail(path, `expected struct :${node.nominal.name.value}, got struct :${input.name.value}`);
       }
       const expectedNames = node.fields.map(([name]) => name);
       const actualNames = input.fields.map((field) => field.value);
       const missing = expectedNames.filter((name) => !actualNames.includes(name)).sort();
       const unknown = actualNames.filter((name) => !expectedNames.includes(name)).sort();
       if (missing.length > 0 || unknown.length > 0 || expectedNames.length !== actualNames.length) {
-        return typed_edn_error(
+        return fail(
           path,
           `struct :${node.nominal.name.value} fields mismatch; missing [${missing.join(", ")}], unknown [${unknown.join(", ")}]`
         );
@@ -2309,16 +2309,16 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
       const decodedFields = new Map<string, CalcitValue>();
       node.fields.forEach(([name, fieldNode]) => {
         const idx = actualNames.indexOf(name);
-        decodedFields.set(name, decode_typed_edn_node(graph, fieldNode, input.values[idx], `${path}.${name}`, depth + 1));
+        decodedFields.set(name, decode_typed_edn_node(graph, fieldNode, input.values[idx], `${path}.${name}`, depth + 1, fail));
       });
       // Re-align by name so values produced by older runtimes or external data
       // still adopt the current nominal declaration's canonical field layout.
       if (decodedFields.size !== node.nominal.fields.length) {
-        return typed_edn_error(path, `struct :${node.nominal.name.value} decoder fields do not match its nominal declaration`);
+        return fail(path, `struct :${node.nominal.name.value} decoder fields do not match its nominal declaration`);
       }
       const values = node.nominal.fields.map((field) => {
         if (!decodedFields.has(field.value)) {
-          return typed_edn_error(path, `struct :${node.nominal.name.value} is missing declared field :${field.value}`);
+          return fail(path, `struct :${node.nominal.name.value} is missing declared field :${field.value}`);
         }
         return decodedFields.get(field.value)!;
       });
@@ -2326,33 +2326,33 @@ const decode_typed_edn_node = (graph: DataShapeGraph, nodeId: number, input: any
     }
     case "enum": {
       if (!(input instanceof CalcitEnumValue) || input.enumPrototype == null) {
-        return typed_edn_error(path, `expected enum :${node.nominal.name()}, got ${typed_edn_kind(input)}`);
+        return fail(path, `expected enum :${node.nominal.name()}, got ${typed_edn_kind(input)}`);
       }
       const actualEnumName = enum_prototype_name(input.enumPrototype);
       if (actualEnumName !== node.nominal.name()) {
-        return typed_edn_error(path, `expected enum :${node.nominal.name()}, got enum :${actualEnumName}`);
+        return fail(path, `expected enum :${node.nominal.name()}, got enum :${actualEnumName}`);
       }
       if (!(input.tag instanceof CalcitTag)) {
-        return typed_edn_error(path, `enum :${node.nominal.name()} variant must be a tag`);
+        return fail(path, `enum :${node.nominal.name()} variant must be a tag`);
       }
       const inputTag = input.tag;
       const variant = node.variants.find((candidate) => candidate.tag === inputTag.value);
       if (variant == null) {
-        return typed_edn_error(path, `enum :${node.nominal.name()} has no variant :${inputTag.value}`);
+        return fail(path, `enum :${node.nominal.name()} has no variant :${inputTag.value}`);
       }
       if (variant.payload.length !== input.extra.length) {
-        return typed_edn_error(
+        return fail(
           path,
           `enum :${node.nominal.name()} variant :${variant.tag} expects ${variant.payload.length} payload(s), got ${input.extra.length}`
         );
       }
       const values = variant.payload.map((payloadNode, idx) =>
-        decode_typed_edn_node(graph, payloadNode, input.extra[idx], `${path}.payload[${idx}]`, depth + 1)
+        decode_typed_edn_node(graph, payloadNode, input.extra[idx], `${path}.payload[${idx}]`, depth + 1, fail)
       );
       return new CalcitEnumValue(newTag(variant.tag), values, node.nominal);
     }
     default:
-      return typed_edn_error(path, `invalid data shape node kind: ${(node as any).kind}`);
+      return fail(path, `invalid data shape node kind: ${(node as any).kind}`);
   }
 };
 
@@ -2497,7 +2497,7 @@ const decode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
       return new CalcitEnumValue(newTag(variant.tag), values, node.nominal);
     }
     default:
-      return decode_typed_edn_node(graph, nodeId, input, path, depth);
+      return decode_typed_edn_node(graph, nodeId, input, path, depth, map_decode_error);
   }
 };
 
@@ -3262,9 +3262,13 @@ export let macroexpand_all = unavailableProc;
 export let _$n_get_calcit_running_mode = unavailableProc;
 export let _$n_get_def_doc = unavailableProc;
 export let _$n_get_def_schema = unavailableProc;
-export let _$n_ffi_response_resolve = unavailableProc;
-export let _$n_ffi_response_reject = unavailableProc;
-export let _$n_ffi_task_cancel = unavailableProc;
+// A missing native lifecycle capability must not look like a successful Unit.
+const unavailableNativeFfi = (operation: string): never => {
+  throw new Error(`${operation}: native FFI capability is not available for calcit-js`);
+};
+export let _$n_ffi_response_resolve = (..._args: CalcitValue[]): never => unavailableNativeFfi("&ffi-response-resolve");
+export let _$n_ffi_response_reject = (..._args: CalcitValue[]): never => unavailableNativeFfi("&ffi-response-reject");
+export let _$n_ffi_task_cancel = (..._args: CalcitValue[]): never => unavailableNativeFfi("&ffi-task-cancel");
 
 // already handled in code emitter
 export let raise = unavailableProc;
