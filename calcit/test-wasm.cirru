@@ -133,7 +133,8 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String
-        'join-items-str $ %{} 'CodeEntry (:doc "|appends each generic element to a String with str inside a loop")
+        'join-items-str $ %{} 'CodeEntry
+          :doc "|appends each generic element to a String with str inside a loop"
           :code $ quote $ defn join-items-str (xs)
             loop
                 items xs
@@ -1276,6 +1277,57 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-range-count $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-range-count (a b step)
+            &list:count $ range a b step
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |accumulates-fractional-step)
+            :code $ quote $ &let
+              _ $ assert= 11 $ test-range-count 0 1 0.1
+              &let
+                _ $ assert= 3 $ test-range-count 5 0 -2
+                assert= 0 $ test-range-count 3 3 0
+            :tags $ #{} :core :wasm
+        'test-range-count-from $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-range-count-from (a b)
+            &list:count $ range a b
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-fractional-bounds)
+            :code $ quote $ assert= 2 (test-range-count-from 1.5 3.2)
+            :tags $ #{} :core :wasm
+        'test-range-count-to $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-range-count-to (n)
+            &list:count $ range n
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-fractional-bound)
+            :code $ quote $ assert= 3 (test-range-count-to 2.5)
+            :tags $ #{} :core :wasm
+        'test-range-first-from $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-range-first-from (a b)
+            &list:nth (range a b) 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-fractional-base)
+            :code $ quote $ assert= 1.5 (test-range-first-from 1.5 3.2)
+            :tags $ #{} :core :wasm
+        'test-range-last $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export test-range-last (a b step)
+            &let
+              xs $ range a b step
+              &list:nth xs $ &- (&list:count xs) 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |ends-at-accumulated-value)
+            :code $ quote $ assert= 0.9999999999999999 (test-range-last 0 1 0.1)
+            :tags $ #{} :core :wasm
         'test-range-sum $ %{} 'CodeEntry (:doc "|range 5 first+last: 0+4=4")
           :code $ quote $ defwasm-export test-range-sum ()
             &let
@@ -1331,7 +1383,8 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
-        'test-set-contains-fn $ %{} 'CodeEntry (:doc "|prefix contains? checks set members; the Set .contains? method was retired in 0.29.0")
+        'test-set-contains-fn $ %{} 'CodeEntry
+          :doc "|prefix contains? checks set members; the Set .contains? method was retired in 0.29.0"
           :code $ quote $ defwasm-export test-set-contains-fn ()
             &+
               if
@@ -1541,15 +1594,6 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-        'test-str-generic-loop $ %{} 'CodeEntry (:doc "|str converts a generic loop element on every iteration")
-          :code $ quote $ defwasm-export test-str-generic-loop ()
-            &str:compare (join-items-str $ [] 5 6 7) |n567
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
-          :tests $ [] $ %{} 'TestEntry (:name |converts-each-iteration)
-            :code $ quote $ assert= 0 (test-str-generic-loop)
-            :tags $ #{} :unit :wasm
         'test-str-contains-false $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-contains-false () (&str:contains? |hello 10)
           :examples $ []
@@ -1607,6 +1651,18 @@
           :tests $ [] $ %{} 'TestEntry (:name |checked-first-character)
             :code $ quote $ assert= |h (test-str-first)
             :tags $ #{} :core :wasm
+        'test-str-generic-loop $ %{} 'CodeEntry
+          :doc "|str converts a generic loop element on every iteration"
+          :code $ quote $ defwasm-export test-str-generic-loop ()
+            &str:compare
+              join-items-str $ [] 5 6 7
+              , |n567
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |converts-each-iteration)
+            :code $ quote $ assert= 0 (test-str-generic-loop)
+            :tags $ #{} :unit :wasm
         'test-str-includes-false $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-str-includes-false () (|hello .includes? |xyz)
           :examples $ []
