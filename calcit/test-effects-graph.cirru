@@ -27,4 +27,4 @@
           :examples $ []
           :schema $ :: 'Dynamic
       :ns $ %{} 'NsEntry (:doc |)
-        :code $ quote $ ns test-effects-graph.main ()
+        :code $ quote $ ns test-effects-graph.main
