@@ -61,6 +61,15 @@ pub fn f64_to_i32(f: f64) -> Result<i32, String> {
   }
 }
 
+/// Bitwise operand domain: an integer within i32, so no value is saturated or wrapped.
+pub fn f64_to_bit_operand(f: f64) -> Result<i32, String> {
+  if f.trunc() == f && f >= i32::MIN as f64 && f <= i32::MAX as f64 {
+    Ok(f as i32)
+  } else {
+    Err(format!("expected an integer within i32, but got: {}", format_calcit_number(f)))
+  }
+}
+
 #[cfg(test)]
 mod number_text_tests {
   use super::format_calcit_number;

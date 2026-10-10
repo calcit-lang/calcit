@@ -7067,8 +7067,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::BitXor => emit_bitwise_binary(ctx, Instruction::I32Xor, args),
     CalcitProc::BitNot => {
       expect_arity(1, args, "bit-not")?;
-      emit_expr(ctx, &args[0])?;
-      ctx.emit(Instruction::I32TruncF64S);
+      emit_i32_operand(ctx, &args[0])?;
       ctx.emit(Instruction::I32Const(-1)); // all bits set
       ctx.emit(Instruction::I32Xor);
       ctx.emit(Instruction::F64ConvertI32S);
@@ -8784,12 +8783,31 @@ fn emit_bitwise_binary(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: 
   if args.len() != 2 {
     return Err(format!("{instr:?} expects 2 args, got {}", args.len()));
   }
-  emit_expr(ctx, &args[0])?;
-  ctx.emit(Instruction::I32TruncF64S);
-  emit_expr(ctx, &args[1])?;
-  ctx.emit(Instruction::I32TruncF64S);
+  emit_i32_operand(ctx, &args[0])?;
+  emit_i32_operand(ctx, &args[1])?;
   ctx.emit(instr);
   ctx.emit(Instruction::F64ConvertI32S);
+  Ok(())
+}
+
+/// Bitwise operands are integers within i32 (docs/data/number.md): a fractional or NaN
+/// operand traps here, and `i32.trunc_f64_s` traps on infinities and values outside i32.
+fn emit_i32_operand(ctx: &mut WasmGenCtx, arg: &Calcit) -> Result<(), String> {
+  let value = ctx.alloc_local();
+  emit_expr(ctx, arg)?;
+  ctx.emit(Instruction::LocalSet(value));
+  let mut checks = vec![
+    Instruction::LocalGet(value),
+    Instruction::F64Trunc,
+    Instruction::LocalGet(value),
+    Instruction::F64Ne,
+  ];
+  component_trap_if(&mut checks);
+  for instruction in checks {
+    ctx.emit(instruction);
+  }
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::I32TruncF64S);
   Ok(())
 }
 

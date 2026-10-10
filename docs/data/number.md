@@ -111,7 +111,7 @@ assert= :failed $ try
   fn (_error) :failed
 ```
 
-对应 `calcit.core/bit-shl#masks-shift-count-to-five-bits`、`calcit.core/&list:nth#rejects-non-integer-index`、`calcit.core/&list:slice#rejects-fractional-bounds`、`calcit.core/range#rejects-zero-step`、`calcit.core/range#rejects-oversized-length` 与 `calcit.core/range#handles-negative-fractional-and-overflow`。
+对应 `calcit.core/bit-shl#masks-shift-count-to-five-bits`、`calcit.core/bit-and#rejects-non-i32-operands`、`calcit.core/&number:display-by#formats-non-negative-safe-integers`、`calcit.core/&list:nth#rejects-non-integer-index`、`calcit.core/&list:slice#rejects-fractional-bounds`、`calcit.core/range#rejects-zero-step`、`calcit.core/range#rejects-oversized-length` 与 `calcit.core/range#handles-negative-fractional-and-overflow`。
 
 ## 取余 `rem`
 
@@ -185,6 +185,4 @@ assert= (%err |1e) (parse-float |1e)
 ## 限制
 
 - WASM 不支持 `&number:format`。
-- 生成 JS 接受小数的 `&list:slice` 边界；位运算的越界与小数操作数在 native 饱和或报错、在 JS 回绕或截断、在 WASM trap 或截断。
-- native 的 `&number:display-by` 经过 i32 转换，超出 i32 的值与负数不能正确输出；生成 JS 接受负数与小数。
 - WASM 不支持 `parse-float`；对定义域之外的输入只 trap，不提供错误消息。

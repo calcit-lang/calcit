@@ -372,6 +372,15 @@ check("test-bit-xor(0xFF,0x0F)", 0xf0, e["test-bit-xor"], 0xff, 0x0f);
 check("test-bit-not(0)", -1, e["test-bit-not"], 0);
 check("test-bit-shl(1,8)", 256, e["test-bit-shl"], 1, 8);
 check("test-bit-shr(256,4)", 16, e["test-bit-shr"], 256, 4);
+// Bitwise operands are integers within i32; anything else traps (#1849).
+check("test-bit-and(-2147483648,2147483647)", 0, e["test-bit-and"], -2147483648, 2147483647);
+checkTrap("test-bit-and(5.5,3)", () => e["test-bit-and"](5.5, 3));
+checkTrap("test-bit-and(4294967296,1)", () => e["test-bit-and"](4294967296, 1));
+checkTrap("test-bit-or(1,NaN)", () => e["test-bit-or"](1, NaN));
+checkTrap("test-bit-xor(2147483648,0)", () => e["test-bit-xor"](2147483648, 0));
+checkTrap("test-bit-not(-2147483649)", () => e["test-bit-not"](-2147483649));
+checkTrap("test-bit-shl(1,1.5)", () => e["test-bit-shl"](1, 1.5));
+checkTrap("test-bit-shr(Infinity,1)", () => e["test-bit-shr"](Infinity, 1));
 
 // --- Match tests ---
 check("test-match-tag(3,7)", 10, e["test-match-tag"], 3, 7);
@@ -438,6 +447,14 @@ check("test-enum-assoc()", 29, e["test-enum-assoc"]);
 check("test-list-butlast()", 2, e["test-list-butlast"]);
 check("test-list-butlast-empty()", 0, e["test-list-butlast-empty"]);
 check("test-list-slice()", 23, e["test-list-slice"]); // count=3 + first=20
+// Slice bounds are integers with 0 <= start <= end <= count; anything else traps (#1849).
+check("test-list-slice-count(1,3)", 2, e["test-list-slice-count"], 1, 3);
+check("test-list-slice-count(3,3)", 0, e["test-list-slice-count"], 3, 3);
+checkTrap("test-list-slice-count(0.5,2)", () => e["test-list-slice-count"](0.5, 2));
+checkTrap("test-list-slice-count(-1,2)", () => e["test-list-slice-count"](-1, 2));
+checkTrap("test-list-slice-count(2,1)", () => e["test-list-slice-count"](2, 1));
+checkTrap("test-list-slice-count(0,4)", () => e["test-list-slice-count"](0, 4));
+checkTrap("test-list-slice-count(NaN,1)", () => e["test-list-slice-count"](NaN, 1));
 check("test-list-reverse()", 40, e["test-list-reverse"]); // first=30 + nth(2)=10
 check("test-list-sort-ascending()", 14, e["test-list-sort-ascending"]); // first=1, last=4
 check("test-list-sort-descending()", 41, e["test-list-sort-descending"]); // first=4, last=1
@@ -606,6 +623,13 @@ check("test-str-pad-left()", 5, e["test-str-pad-left"]); // pad-left "hi" 5 "-" 
 check("test-str-pad-right()", 5, e["test-str-pad-right"]); // pad-right "hi" 5 "-" = "hi---"
 check("test-display-by-bin()", 7, e["test-display-by-bin"]); // 17 in binary = "0b10001" (len 7)
 check("test-display-by-hex()", 4, e["test-display-by-hex"]); // 17 in hex = "0x11" (len 4)
+// display-by takes a non-negative safe integer in base 2, 8 or 16; anything else traps (#1849).
+check("test-display-by-count(4294967296,16)", 11, e["test-display-by-count"], 4294967296, 16); // "0x100000000"
+check("test-display-by-count(9007199254740991,2)", 55, e["test-display-by-count"], 9007199254740991, 2);
+checkTrap("test-display-by-count(-255,2)", () => e["test-display-by-count"](-255, 2));
+checkTrap("test-display-by-count(1.5,16)", () => e["test-display-by-count"](1.5, 16));
+checkTrap("test-display-by-count(9007199254740992,16)", () => e["test-display-by-count"](9007199254740992, 16));
+checkTrap("test-display-by-count(17,10)", () => e["test-display-by-count"](17, 10));
 
 // --- __str_new FFI test (JS → WASM string passing) ---
 // Protocol: read heap top, write bytes at top+16 (zero-copy), call __str_new(top+16, len)

@@ -2029,18 +2029,41 @@
             :args $ [] 'Number 'Number
           :tags $ #{} :internal
         '&number:display-by $ %{} 'CodeEntry
-          :doc "|internal function for number display by base\nSyntax: (&number:display-by n base)\nParams: n (number), base (integer)\nReturns: string\nDisplays number in specified base (2-36)"
+          :doc "|internal function for number display by base\nSyntax: (&number:display-by n base)\nParams: n (non-negative safe integer), base (2, 8 or 16)\nReturns: string\nDisplays n exactly with a 0b, 0o or 0x prefix; other inputs raise an error"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |renders-number-bases)
-            :code $ quote $ do
-              assert= |0b10001 $ &number:display-by 17 2
-              assert= |0o21 $ &number:display-by 17 8
-              assert= |0x11 $ &number:display-by 17 16
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |renders-number-bases)
+              :code $ quote $ do
+                assert= |0b10001 $ &number:display-by 17 2
+                assert= |0o21 $ &number:display-by 17 8
+                assert= |0x11 $ &number:display-by 17 16
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |formats-non-negative-safe-integers)
+              :code $ quote $ do
+                assert= |0b0 $ &number:display-by 0 2
+                assert= |0x100000000 $ &number:display-by 4294967296 16
+                assert= |0o40000000000 $ &number:display-by 4294967296 8
+                assert= |0x1fffffffffffff $ &number:display-by 9007199254740991 16
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-out-of-domain-values)
+              :code $ quote $ do
+                assert= :failed $ try
+                  do (&number:display-by -255 2) :returned
+                  fn (_error) :failed
+                assert= :failed $ try
+                  do (&number:display-by 1.5 16) :returned
+                  fn (_error) :failed
+                assert= :failed $ try
+                  do (&number:display-by 9007199254740992 16) :returned
+                  fn (_error) :failed
+                assert= :failed $ try
+                  do (&number:display-by 17 10) :returned
+                  fn (_error) :failed
+              :tags $ #{} :core :unit
         '&number:empty $ %{} 'CodeEntry (:doc "|internal helper for number :empty method entry")
           :code $ quote $ defn &number:empty (_x) 0
           :examples $ []
@@ -4164,11 +4187,43 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |combines-bits)
-            :code $ quote $ do
-              assert= 7 $ bit-and 15 7
-              assert= 0 $ bit-and 16 7
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |combines-bits)
+              :code $ quote $ do
+                assert= 7 $ bit-and 15 7
+                assert= 0 $ bit-and 16 7
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |accepts-i32-boundaries)
+              :code $ quote $ do
+                assert= 0 $ bit-and -2147483648 2147483647
+                assert= -1 $ bit-or -2147483648 2147483647
+                assert= -2147483648 $ bit-not 2147483647
+                assert= 0 $ bit-and -0 1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-non-i32-operands)
+              :code $ quote $ do
+                assert= :failed $ try
+                  do (bit-and 4294967296 1) :returned
+                  fn (_error) :failed
+                assert= :failed $ try
+                  do (bit-and 5.5 3) :returned
+                  fn (_error) :failed
+                assert= :failed $ try
+                  do (bit-or 1 -2147483649) :returned
+                  fn (_error) :failed
+                assert= :failed $ try
+                  do (bit-xor (&/ 0 0) 1) :returned
+                  fn (_error) :failed
+                assert= :failed $ try
+                  do (bit-not 2147483648) :returned
+                  fn (_error) :failed
+                assert= :failed $ try
+                  do (bit-shl 1 1.5) :returned
+                  fn (_error) :failed
+                assert= :failed $ try
+                  do (bit-shr (&/ 1 0) 1) :returned
+                  fn (_error) :failed
+              :tags $ #{} :core :unit
         'bit-not $ %{} 'CodeEntry
           :doc "|internal function for bitwise NOT\nSyntax: (bit-not n)\nParams: n (integer)\nReturns: integer\nPerforms bitwise NOT operation (complement) on integer"
           :code $ quote &runtime-implementation

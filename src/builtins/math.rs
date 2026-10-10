@@ -2,7 +2,7 @@ use crate::builtins::meta::type_of;
 use crate::calcit::type_annotation::CalcitNumericRefinement;
 use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitProc, format_proc_examples_hint};
 
-use crate::util::number::{f64_to_i32, format_calcit_number};
+use crate::util::number::{f64_to_bit_operand, format_calcit_number};
 
 pub fn binary_add(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
@@ -141,7 +141,7 @@ pub fn rem(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 }
 
 /// Largest integer that every backend represents exactly as an f64 (JS `Number.MAX_SAFE_INTEGER`).
-const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
+pub(crate) const MAX_SAFE_INTEGER: f64 = 9_007_199_254_740_991.0;
 
 fn safe_integer(value: f64) -> Option<i64> {
   (value.fract() == 0.0 && value.abs() <= MAX_SAFE_INTEGER).then_some(value as i64)
@@ -249,17 +249,10 @@ pub fn sqrt(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn bit_shr(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
-    (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
+    (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_bit_operand(*n), f64_to_bit_operand(*m)) {
       // only the low five bits of the step count, same as JS `>>` and WASM `i32.shr_s`
       (Ok(value), Ok(step)) => Ok(Calcit::Number(value.wrapping_shr(step as u32) as f64)),
-      (Err(e), _) => CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("&math:bit-shr expected an integer for initial value, but received: {e}"),
-      ),
-      (_, Err(e)) => CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("&math:bit-shr expected an integer for step, but received: {e}"),
-      ),
+      (Err(e), _) | (_, Err(e)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-shr operand {e}")),
     },
     (Some(a), Some(b)) => CalcitErr::err_str(
       CalcitErrKind::Type,
@@ -274,17 +267,10 @@ pub fn bit_shr(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn bit_shl(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
-    (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
+    (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_bit_operand(*n), f64_to_bit_operand(*m)) {
       // only the low five bits of the step count, same as JS `<<` and WASM `i32.shl`
       (Ok(value), Ok(step)) => Ok(Calcit::Number(value.wrapping_shl(step as u32) as f64)),
-      (Err(e), _) => CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("&math:bit-shl expected an integer for initial value, but received: {e}"),
-      ),
-      (_, Err(e)) => CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("&math:bit-shl expected an integer for step, but received: {e}"),
-      ),
+      (Err(e), _) | (_, Err(e)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-shl operand {e}")),
     },
     (Some(a), Some(b)) => CalcitErr::err_str(
       CalcitErrKind::Type,
@@ -299,16 +285,9 @@ pub fn bit_shl(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn bit_and(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
-    (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
+    (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_bit_operand(*n), f64_to_bit_operand(*m)) {
       (Ok(value), Ok(step)) => Ok(Calcit::Number((value & step) as f64)),
-      (Err(e), _) => CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("&math:bit-and expected an integer for initial value, but received: {e}"),
-      ),
-      (_, Err(e)) => CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("&math:bit-and expected an integer for step, but received: {e}"),
-      ),
+      (Err(e), _) | (_, Err(e)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-and operand {e}")),
     },
     (Some(a), Some(b)) => CalcitErr::err_str(
       CalcitErrKind::Type,
@@ -323,16 +302,9 @@ pub fn bit_and(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn bit_or(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
-    (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
+    (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_bit_operand(*n), f64_to_bit_operand(*m)) {
       (Ok(value), Ok(step)) => Ok(Calcit::Number((value | step) as f64)),
-      (Err(e), _) => CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("&math:bit-or expected an integer for initial value, but received: {e}"),
-      ),
-      (_, Err(e)) => CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("&math:bit-or expected an integer for step, but received: {e}"),
-      ),
+      (Err(e), _) | (_, Err(e)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-or operand {e}")),
     },
     (Some(a), Some(b)) => CalcitErr::err_str(
       CalcitErrKind::Type,
@@ -347,16 +319,9 @@ pub fn bit_or(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn bit_xor(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
-    (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_i32(*n), f64_to_i32(*m)) {
+    (Some(Calcit::Number(n)), Some(Calcit::Number(m))) => match (f64_to_bit_operand(*n), f64_to_bit_operand(*m)) {
       (Ok(value), Ok(step)) => Ok(Calcit::Number((value ^ step) as f64)),
-      (Err(e), _) => CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("&math:bit-xor expected an integer for initial value, but received: {e}"),
-      ),
-      (_, Err(e)) => CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("&math:bit-xor expected an integer for step, but received: {e}"),
-      ),
+      (Err(e), _) | (_, Err(e)) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-xor operand {e}")),
     },
     (Some(a), Some(b)) => CalcitErr::err_str(
       CalcitErrKind::Type,
@@ -371,12 +336,9 @@ pub fn bit_xor(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn bit_not(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
-    Some(Calcit::Number(n)) => match f64_to_i32(*n) {
+    Some(Calcit::Number(n)) => match f64_to_bit_operand(*n) {
       Ok(value) => Ok(Calcit::Number(!value as f64)),
-      Err(e) => CalcitErr::err_str(
-        CalcitErrKind::Type,
-        format!("&math:bit-not expected an integer for initial value, but received: {e}"),
-      ),
+      Err(e) => CalcitErr::err_str(CalcitErrKind::Type, format!("&math:bit-not operand {e}")),
     },
     Some(a) => {
       let msg = format!(
@@ -434,8 +396,21 @@ mod remainder_safety_tests {
 
 #[cfg(test)]
 mod shift_safety_tests {
-  use super::{bit_shl, bit_shr};
+  use super::{bit_and, bit_not, bit_shl, bit_shr};
   use crate::calcit::Calcit;
+
+  #[test]
+  fn bitwise_operands_outside_i32_are_rejected() {
+    let call2 = |f: fn(&[Calcit]) -> Result<Calcit, crate::calcit::CalcitErr>, a: f64, b: f64| {
+      f(&[Calcit::Number(a), Calcit::Number(b)])
+    };
+    assert_eq!(call2(bit_and, i32::MIN as f64, i32::MAX as f64), Ok(Calcit::Number(0.0)));
+    for bad in [4_294_967_296.0, 2_147_483_648.0, -2_147_483_649.0, 5.5, f64::NAN, f64::INFINITY] {
+      assert!(call2(bit_and, bad, 1.0).is_err(), "bit-and must reject {bad}");
+      assert!(call2(bit_shl, 1.0, bad).is_err(), "bit-shl must reject step {bad}");
+      assert!(bit_not(&[Calcit::Number(bad)]).is_err(), "bit-not must reject {bad}");
+    }
+  }
 
   fn shift(f: fn(&[Calcit]) -> Result<Calcit, crate::calcit::CalcitErr>, value: f64, step: f64) -> f64 {
     match f(&[Calcit::Number(value), Calcit::Number(step)]) {

@@ -1,8 +1,7 @@
 {} (:about "|Per-backend exclusions for scripts/run-core-tests.mjs. Keys under :tests are test ids (namespace/definition#name); :tags maps a test tag to a reason. Every reason starts with a category: unsupported (the backend explicitly rejects the construct), parity (the backend disagrees with native; fix in a separate issue), host (needs a host capability the replay does not provide), replay (an artifact of replaying outside the owning namespace).")
   :native $ {}
   :js $ {}
-    :tests $ {} (|calcit.core/&list:slice#rejects-fractional-bounds "|parity: JS accepts a fractional slice bound instead of raising (#1849)")
-      |calcit.core/deftrait#requires-head-accepts-bare-and-quoted "|parity: JS codegen cannot emit the raw `macroexpand` syntax node used by this test"
+    :tests $ {} (|calcit.core/deftrait#requires-head-accepts-bare-and-quoted "|parity: JS codegen cannot emit the raw `macroexpand` syntax node used by this test")
       |calcit.core/ffi-task:cancel#checked-unit-rejects-nil "|parity: JS decode-map-as with 'Unit does not raise the native `expected &unit, got nil` failure"
       |calcit.core/ffi-task:cancel#checked-unit-rejects-number "|parity: JS decode-map-as with 'Unit does not raise the native `expected &unit, got number` failure"
       |calcit.core/ffi-task:cancel#checked-unit-rejects-string "|parity: JS decode-map-as with 'Unit does not raise the native `expected &unit` failure"
@@ -32,6 +31,7 @@
       |calcit.core/&map:map#maps-map-pairs-directly "|parity: collection result differs from native (assert= fails on the heap values)"
       |calcit.core/&map:map#maps-pair-callback-with-key-and-value "|unsupported: unsupported proc in WASM: &map:fold-kv"
       |calcit.core/&map:map-list#maps-map-pairs-to-list "|parity: collection result differs from native (assert= fails on the heap values)"
+      |calcit.core/&number:display-by#rejects-out-of-domain-values "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/&number:format#formats-decimal-places "|unsupported: unsupported proc in WASM: &number:format"
       |calcit.core/&number:format#rejects-digits-past-100 "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/&number:format#rounds-ties-away-from-zero "|unsupported: unsupported proc in WASM: &number:format"
@@ -52,6 +52,7 @@
       |calcit.core/assoc#preserves-struct-through-option-match "|unsupported: unsupported proc in WASM: &struct-def:new"
       |calcit.core/assoc#rejects-non-number-list-index "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/assoc-in#assocs-nested-maps-lists-and-nil-base "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nil? cannot distinguish nil from false or 0 for open type `dynamic`"
+      |calcit.core/bit-and#rejects-non-i32-operands "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/case#literal-match-evaluates-once "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/case-default#literal-patterns-use-match "|parity: wrong result: expected b, got n"
       |calcit.core/char-from-code#rejects-invalid-scalars "|unsupported: unsupported syntax in WASM: try"
@@ -255,6 +256,7 @@
       |calcit.core/&map:map#maps-map-pairs-directly "|parity: collection result differs from native (assert= fails on the heap values)"
       |calcit.core/&map:map#maps-pair-callback-with-key-and-value "|unsupported: unsupported proc in WASM: &map:fold-kv"
       |calcit.core/&map:map-list#maps-map-pairs-to-list "|parity: collection result differs from native (assert= fails on the heap values)"
+      |calcit.core/&number:display-by#rejects-out-of-domain-values "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/&number:format#formats-decimal-places "|unsupported: unsupported proc in WASM: &number:format"
       |calcit.core/&number:format#rejects-digits-past-100 "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/&number:format#rounds-ties-away-from-zero "|unsupported: unsupported proc in WASM: &number:format"
@@ -274,6 +276,7 @@
       |calcit.core/assoc#preserves-struct-through-option-match "|unsupported: unsupported proc in WASM: &struct-def:new"
       |calcit.core/assoc#rejects-non-number-list-index "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/assoc-in#assocs-nested-maps-lists-and-nil-base "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nil? cannot distinguish nil from false or 0 for open type `dynamic`"
+      |calcit.core/bit-and#rejects-non-i32-operands "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/case#literal-match-evaluates-once "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/case-default#literal-patterns-use-match "|parity: wrong result: expected b, got n"
       |calcit.core/char-from-code#rejects-invalid-scalars "|unsupported: unsupported syntax in WASM: try"

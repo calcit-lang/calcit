@@ -128,9 +128,9 @@ impl CalcitProc {
       | NativeNumberFract => Total,
       NativeNumberRem => Raises("an operand is not a safe integer, or the divisor is zero"),
       NativeNumberFormat => Raises("the digit count is not an integer in 0..100"),
-      NativeNumberDisplayBy => Raises("the value is not a non-negative integer, or the base is not 2, 8 or 16"),
+      NativeNumberDisplayBy => Raises("the value is not a non-negative safe integer, or the base is not 2, 8 or 16"),
       NativeNumberFits => Raises("the target is not a numeric refinement tag"),
-      BitShl | BitShr | BitAnd | BitOr | BitXor | BitNot => Raises("an operand is not an integer"),
+      BitShl | BitShr | BitAnd | BitOr | BitXor | BitNot => Raises("an operand is not an integer within i32"),
 
       // strings
       NativeStrConcat

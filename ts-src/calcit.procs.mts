@@ -1266,10 +1266,13 @@ export let _$n_list_$o_slice = (xs: CalcitList, from: number, to: number): Calci
   let size = xs.len();
   if (to == null) {
     to = size;
-  } else if (to <= from) {
+  }
+  // Bounds are integers with 0 <= from <= to <= size, as in native (docs/data/number.md).
+  if (!Number.isInteger(from) || !Number.isInteger(to) || from < 0 || from > to || to > size) {
+    throw new Error(`&list:slice expected integer bounds within 0..${size}, but received: ${from} ${to}`);
+  }
+  if (from === to) {
     return new CalcitSliceList([]);
-  } else if (to > size) {
-    to = size;
   }
   return xs.slice(from, to);
 };
@@ -1642,6 +1645,10 @@ export let _$n_number_$o_format = (x: number, n: number): string => {
 };
 
 export let _$n_number_$o_display_by = (x: number, n: number): string => {
+  // a non-negative safe integer, printed exactly (docs/data/number.md)
+  if (typeof x !== "number" || !Number.isSafeInteger(x) || x < 0) {
+    throw new Error(`&number:display-by expected a non-negative safe integer, but received: ${x}`);
+  }
   switch (n) {
     case 2:
       return `0b${x.toString(2)}`;
@@ -3110,23 +3117,30 @@ export let _$n_map_$o_diff_triple = (a: CalcitValue, b: CalcitValue): CalcitSlic
   }
 };
 
+// Bitwise operands are integers within i32 (docs/data/number.md); JS would otherwise wrap or truncate them.
+let bit_operand = (name: string, x: number): number => {
+  if (typeof x !== "number" || !Number.isInteger(x) || x < -2147483648 || x > 2147483647) {
+    throw new Error(`&math:${name} operand expected an integer within i32, but got: ${x}`);
+  }
+  return x;
+};
 export let bit_shr = (base: number, step: number): number => {
-  return base >> step;
+  return bit_operand("bit-shr", base) >> bit_operand("bit-shr", step);
 };
 export let bit_shl = (base: number, step: number): number => {
-  return base << step;
+  return bit_operand("bit-shl", base) << bit_operand("bit-shl", step);
 };
 export let bit_and = (a: number, b: number): number => {
-  return a & b;
+  return bit_operand("bit-and", a) & bit_operand("bit-and", b);
 };
 export let bit_or = (a: number, b: number): number => {
-  return a | b;
+  return bit_operand("bit-or", a) | bit_operand("bit-or", b);
 };
 export let bit_xor = (a: number, b: number): number => {
-  return a ^ b;
+  return bit_operand("bit-xor", a) ^ bit_operand("bit-xor", b);
 };
 export let bit_not = (a: number): number => {
-  return ~a;
+  return ~bit_operand("bit-not", a);
 };
 
 export let _$n_list_$o_to_set = (xs: CalcitList): CalcitSet => {
