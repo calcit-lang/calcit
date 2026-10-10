@@ -54,7 +54,7 @@ try {
   assert.equal(lengthsContext.data.inferred_schema, lengthsType.data.inferred_type);
   // Legacy analysis must consume the same proof, including its incremental path.
   for (const flags of [[], ["--incremental"], ["--incremental"]]) {
-    const coverage = JSON.parse(run(snapshot, "analyze", "check-types", "--ns", "app.main", "--format", "json", ...flags));
+    const coverage = JSON.parse(run(snapshot, "analyze", "weak-types", "--only", "coverage", "--ns", "app.main", "--format", "json", ...flags));
     assert.ok(coverage.data.definitions.length > 0);
     assert.ok(coverage.data.definitions.every(def => def.coverage === "full"));
     const weak = JSON.parse(run(snapshot, "analyze", "weak-types", "--ns", "app.main", "--format", "json", ...flags));
@@ -96,7 +96,7 @@ try {
     assert.match(result.stderr, /E_WHOLE_DYNAMIC_PUBLIC_SCHEMA|W_PROC_ARG_TYPE_MISMATCH|expects type|warnings during preprocessing/);
     {
       const original = await readFile(bad, "utf8");
-      const coverage = JSON.parse(run(bad, "analyze", "check-types", "--ns", "app.main", "--format", "json"));
+      const coverage = JSON.parse(run(bad, "analyze", "weak-types", "--only", "coverage", "--ns", "app.main", "--format", "json"));
       assert.equal(coverage.data.definitions.find(def => def.id === "app.main/bad").coverage, "none", label);
       if (label === "invalid helper dependency") {
         assert.equal(coverage.data.definitions.find(def => def.id === "app.main/cycle-peer").coverage, "none",

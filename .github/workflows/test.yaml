@@ -289,7 +289,7 @@ jobs:
           CALCIT_LINT_CORE: "1"
         run: |
           "$CALCIT_BIN" src/cirru/calcit-core.cirru test --tag unit --require-match
-          "$CALCIT_BIN" calcit/test-wasi-command.cirru analyze check-public --ns calcit.core --ns calcit.test --ns calcit.internal --deps --summary-only
+          "$CALCIT_BIN" calcit/test-wasi-command.cirru --check-only --ns calcit.core --ns calcit.test --ns calcit.internal --deps --summary-only
           "$CALCIT_BIN" calcit/test.cirru
           "$CALCIT_BIN" calcit/test-types-inference.cirru test --tag unit --require-match
 

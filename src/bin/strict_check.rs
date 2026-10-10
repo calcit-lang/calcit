@@ -161,7 +161,7 @@ fn strongly_connected_components(graph: &DefinitionGraph) -> Vec<Vec<String>> {
 pub struct AllDefsScope {
   /// `(namespace, definition)` roots, sorted so the sequence never depends on Snapshot or HashSet order.
   roots: Vec<(String, String)>,
-  /// Core builtin placeholders have no Calcit body to preprocess; they are excluded like `check-public` does.
+  /// Core builtin placeholders have no Calcit body to preprocess; they are excluded like `--check-only --ns` does.
   intrinsics: HashSet<String>,
 }
 

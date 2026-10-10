@@ -89,7 +89,7 @@ loop
 
 正反分支顺序、局部别名、闭包捕获及 `if` / `match` 合并保留同一类型关系，不需要把方法调用换成内部 proc。宏输入与展开结果仍按当前推导类型检查；每个逻辑宏调用只求值一次。显式 `Dynamic` payload 不会因此变成 Number，矛盾或递归嵌套的泛型方程仍拒绝。此推导不改变可变 Ref 的约束，也不扩展 backend 对局部递归形状的支持。
 
-有固定参数的递归函数应声明 `Fn` schema。`recur` 的每个实参会按所在函数的参数位置和类型检查；即使参数个数相同，只要错序造成对应位置的类型不兼容，严格检查与 `analyze check-public` 也会报告到调用位置。相同或兼容类型的参数互换无法仅凭类型判定语义顺序，仍需测试验证。嵌套函数的 `recur` 遵守嵌套函数自己的参数契约。不要为了让错误的递归调用通过而把参数放宽为 `Dynamic`；应修正实参顺序或在确实需要开放输入的边界显式转换。
+有固定参数的递归函数应声明 `Fn` schema。`recur` 的每个实参会按所在函数的参数位置和类型检查；即使参数个数相同，只要错序造成对应位置的类型不兼容，严格检查与 `--check-only --ns` 也会报告到调用位置。相同或兼容类型的参数互换无法仅凭类型判定语义顺序，仍需测试验证。嵌套函数的 `recur` 遵守嵌套函数自己的参数契约。不要为了让错误的递归调用通过而把参数放宽为 `Dynamic`；应修正实参顺序或在确实需要开放输入的边界显式转换。
 
 返回类型来自函数真正退出时的值。尾位置、词法函数归属、参数个数和实参类型都通过检查后，`recur` 只表示转移到下一轮，不要求它产生一个普通返回值。例如一个分支返回 `0`、另一个分支尾部 `recur` 的函数，可以由独立的数值退出证明返回 `Number`；`foldl-compare` 的 `true` / `false` 退出同理证明 `Bool`。`if`、`let`、`do` 的尾分支沿用这一推断，不需要为循环增加 `Dynamic` 或转换。
 
@@ -146,7 +146,7 @@ Dynamic 表示用户明确选择的开放 Calcit 值，不等于编译器尚未�
 普通执行、编译和严格检查只报告可执行的 warning/error，不计算 Dynamic 比例。迁移存量代码时再显式查询具体位置：
 
 ```bash
-calcit analyze check-types --summary-only
+calcit analyze weak-types --only coverage --summary-only
 calcit analyze weak-types --only schema-dynamic,unresolved-type-slot,code-dynamic --intent unresolved --format edn
 ```
 
@@ -223,11 +223,11 @@ calcit calcit.cirru --check-only
 calcit calcit.cirru --entry test
 ```
 
-`analyze check-types` 与 `analyze weak-types` 只帮助定位迁移清单，不决定程序是否类型正确，也不输出 Dynamic 比例、shape/family 排名或另一套关系判断。需要清理时使用 kind、intent、definition、path 和 detail 回到源码；值能否进入 typed code 只由严格预处理诊断决定。
+`analyze weak-types --only coverage` 与 `analyze weak-types` 只帮助定位迁移清单，不决定程序是否类型正确，也不输出 Dynamic 比例、shape/family 排名或另一套关系判断。需要清理时使用 kind、intent、definition、path 和 detail 回到源码；值能否进入 typed code 只由严格预处理诊断决定。
 
-对于省略 schema、且编译器已经能够证明完整契约的封闭 helper，`check-types`、`weak-types` 和 `quality` 使用同一份推断结果；增量分析也遵循这一规则。删除这类冗余标注不应增加迁移债务。分析不会把推断结果写回源码，也不会替换显式 `Dynamic`；推断失败的定义仍按原有缺失契约报告。
+对于省略 schema、且编译器已经能够证明完整契约的封闭 helper，`weak-types`（含 `coverage` 视图）和 `quality` 使用同一份推断结果；增量分析也遵循这一规则。删除这类冗余标注不应增加迁移债务。分析不会把推断结果写回源码，也不会替换显式 `Dynamic`；推断失败的定义仍按原有缺失契约报告。
 
-已有 CI 的 `analyze quality` 与 baseline 仍作为存量项目的有界迁移兼容面，帮助逐步清理尚未证明的类型边界；它们不能替代严格预处理和实际目标测试：
+已弃用的 `analyze quality` 与 baseline 在下一个非 patch 版本删除之前，仍作为存量项目的有界迁移兼容面，帮助逐步清理尚未证明的类型边界；它们不能替代严格预处理和实际目标测试：
 
 ```bash
 calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru

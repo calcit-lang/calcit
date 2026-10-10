@@ -73,7 +73,7 @@ CI 中运行 `edit format` 后必须检查 diff，否则“命令成功”只说
 先看覆盖摘要，再定位未解决的动态类型：
 
 ```bash
-calcit calcit.cirru analyze check-types --summary-only
+calcit calcit.cirru analyze weak-types --only coverage --summary-only
 calcit calcit.cirru analyze weak-types \
   --only schema-dynamic,unresolved-type-slot,code-dynamic \
   --intent unresolved \
@@ -90,9 +90,9 @@ calcit calcit.cirru analyze weak-types \
 - 有限的异构值：使用 enum，而不是用 `:dynamic` 绕过检查。
 - JS FFI、global state 或 macro 边界确实无法静态确定：保持边界窄，并显式声明 `:features $ #{} :js-ffi`；进入 typed code 前 validate/convert。
 
-`check-types` 与 `weak-types` 是定位报告；它们不重复判断 Dynamic 能否进入 typed code，也不提供比例、shape/family 排名。新类库以默认严格预处理的 warning/error 为类型门禁，不创建 quality baseline。
+`weak-types` 及其 `coverage` 视图是定位报告；它们不重复判断 Dynamic 能否进入 typed code，也不提供比例、shape/family 排名。新类库以默认严格预处理的 warning/error 为类型门禁，不创建 quality baseline。
 
-已经提交 quality baseline 的存量类库可在迁移期间继续执行原命令，作为有界清债的兼容 ratchet，并且必须同时通过默认严格检查：
+已经提交 quality baseline 的存量类库可在下一个非 patch 版本删除 `analyze quality` 之前继续执行原命令（会在 stderr 输出弃用提示），并且必须同时通过默认严格检查：
 
 ```bash
 calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
@@ -171,9 +171,9 @@ calcit calcit.cirru analyze call-graph --show-unused --ns-prefix package
 和对应 target namespace，且 entry 必须配置同名 `:target`：
 
 ```bash
-calcit --entry node calcit.cirru analyze check-public \
+calcit --entry node calcit.cirru --check-only \
   --ns package.shared --ns package.node --format json
-calcit --entry browser calcit.cirru analyze check-public \
+calcit --entry browser calcit.cirru --check-only \
   --ns package.shared --ns package.browser --format json
 ```
 
@@ -200,9 +200,9 @@ caps --ci
 calcit calcit.cirru edit format
 git diff --exit-code -- calcit.cirru
 calcit calcit.cirru --check-only --all-defs
-calcit --entry node calcit.cirru analyze check-public \
+calcit --entry node calcit.cirru --check-only \
   --ns package.shared --ns package.node --summary-only --format json
-calcit calcit.cirru analyze check-types --summary-only --format json
+calcit calcit.cirru analyze weak-types --only coverage --summary-only --format json
 calcit calcit.cirru analyze weak-types \
   --only schema-dynamic,unresolved-type-slot,code-dynamic \
   --intent unresolved \
@@ -213,7 +213,7 @@ calcit calcit.cirru docs check-md README.md --failures-only
 calcit calcit.cirru --entry test
 ```
 
-`--check-only --all-defs` 取代单独的 `--check-only`：它包含入口可达闭包，实测耗时只比 keep-going 检查多约两成（calcit-core 约 190ms，Respo main 约 356ms）。在这条基础链路后追加仓库自己的 JS build、Node/Vite test、FFI build 和真实消费者 smoke test。已有 baseline 的存量类库可暂时追加 `analyze quality --baseline ...`，但不得增加已有预算，也不替代默认严格检查；债务清零后删除，新类库不要采用。`unsafeCoerce` 的数量从来不能证明 runtime contract 已执行。
+`--check-only --all-defs` 取代单独的 `--check-only`：它包含入口可达闭包，实测耗时只比 keep-going 检查多约两成（calcit-core 约 190ms，Respo main 约 356ms）。在这条基础链路后追加仓库自己的 JS build、Node/Vite test、FFI build 和真实消费者 smoke test。`analyze quality --baseline ...` 已弃用，下一个非 patch 版本删除；存量类库在此之前改用 `--check-only` 与 `analyze weak-types` 视图。`unsafeCoerce` 的数量从来不能证明 runtime contract 已执行。
 
 ## 8. 发布前记录
 

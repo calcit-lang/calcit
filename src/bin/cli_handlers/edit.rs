@@ -631,6 +631,9 @@ fn parse_transaction_operations(raw: &str) -> Result<Vec<Vec<String>>, String> {
         index + 1
       ));
     }
+    if let Some(hint) = super::deprecations::deprecated_transaction_operation_hint(index, group, subcommand) {
+      eprintln!("{hint}");
+    }
     if group == "config" && subcommand == "version" && operation.len() < 3 {
       return Err(format!(
         "Transaction operation {} uses read-only `config version`; provide a version or patch/minor/major value to mutate the staged snapshot.",
