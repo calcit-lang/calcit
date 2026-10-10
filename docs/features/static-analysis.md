@@ -242,6 +242,7 @@ are preserved. Missing, duplicate, or unknown constructor fields do not qualify.
 | `weak-types --only dynamic-method` | 只读查看未能静态分派的方法 | 默认严格诊断负责阻断未证明分派；不再提供数量上限 |
 | `quality`、baseline | 旧项目显式选择的迁移预算 | 已弃用，下一个非 patch 版本删除 |
 | `--check-only --ns`、`check-examples` | 检查入口可达性无法覆盖的公开定义和示例 | 保留实际验证，不建立第二套类型关系 |
+| `effects-graph` | 只读列出 State / Transform / Effect；效果只来自 core `:tags`、宿主 proc descriptor tags、core 方法实现表与调用图，找不到声明时报告 `unknown` | 不进入函数类型，不阻断编译；规则见仓库 `RFCs/06-15-effects-graph-rfc.md` 第 3.3 节 |
 
 `analyze quality` 已弃用，运行时会在 stderr 输出迁移提示，下一个非 patch 版本删除；在此之前它继续读取已有 v1/v2 baseline。它把 `coverage`、`weak-types` 与 `deprecated-call` 的迁移数量按 definition 比较，但不拥有类型正确性语义。新项目不要创建 baseline；存量项目只降低已有预算，清零后删除 baseline 与命令。`--write-baseline` 只接受已存在的文件，且拒绝任何 definition 的预算增加；旧版扁平 baseline 则按原有汇总指标比较。升级 v1/扁平文件到 v2 时，原先未记录的 `unsafeCoerce` 预算也从零开始，须先消除新增债务。
 

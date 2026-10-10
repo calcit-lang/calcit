@@ -948,7 +948,7 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
-          :tags $ #{} :internal
+          :tags $ #{} :effect :internal
         '&let $ %{} 'CodeEntry
           :doc "|internal syntax for local binding (binds only 1 local)\nSyntax: (&let [binding value] body)\nParams: binding (symbol), value (any), body (expression)\nReturns: result of body with binding in scope\nCreates a local binding for a single variable"
           :code $ quote &runtime-implementation
@@ -2194,7 +2194,7 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
-          :tags $ #{} :builtin :internal
+          :tags $ #{} :builtin :effect :internal
         '&section-by-loop $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &section-by-loop (xs acc n)
             if
@@ -5269,7 +5269,7 @@
             :expansion $ :: 'Expr 'T
             :generics $ [] 'T
             :required $ [] $ :: 'Expr 'T
-          :tags $ #{} :macro
+          :tags $ #{} :log :macro
           :tests $ []
             %{} 'TestEntry (:name |returns-the-value)
               :code $ quote $ do
@@ -6393,7 +6393,7 @@
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ [] 'FfiResponse 'T
             :generics $ [] 'T
-          :tags $ #{} :ffi :internal
+          :tags $ #{} :effect :ffi :internal
           :tests $ [] $ %{} 'TestEntry (:name |method-preserves-capability-error)
             :code $ quote $ assert= true
               try
@@ -6418,7 +6418,7 @@
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ [] 'FfiResponse 'T
             :generics $ [] 'T
-          :tags $ #{} :ffi :internal
+          :tags $ #{} :effect :ffi :internal
           :tests $ [] $ %{} 'TestEntry (:name |method-preserves-capability-error)
             :code $ quote $ assert= true
               try
@@ -6444,7 +6444,7 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ [] 'FfiTask
-          :tags $ #{} :ffi :internal
+          :tags $ #{} :effect :ffi :internal
           :tests $ []
             %{} 'TestEntry (:name |checked-unit-preserves-actual-value)
               :code $ quote $ assert= &unit (decode-map-as &unit 'Unit)
@@ -6501,7 +6501,7 @@
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ [] 'FfiTask 'T
             :generics $ [] 'T
-          :tags $ #{} :ffi :internal
+          :tags $ #{} :effect :ffi :internal
           :tests $ []
             %{} 'TestEntry (:name |explicit-method-preserves-capability-error)
               :code $ quote $ assert= true
@@ -9604,6 +9604,7 @@
           :schema $ :: 'Fn $ {} (:return 'T)
             :args $ [] 'T
             :generics $ [] 'T
+          :tags $ #{} :control
         'non-nil? $ %{} 'CodeEntry
           :doc "|判断一个值是否不为 nil。false、0、空集合以及 Option :none 都会返回 true；Option variant 请使用 .some?/.none?。WASM 会依据静态类型证据 lowering，泛型直接调用会在调用点单态化；无法证明具体类型的开放导出或一等函数边界会明确报错。"
           :code $ quote $ defn non-nil? (x)
@@ -12002,6 +12003,7 @@
           :schema $ :: 'Fn $ {}
             :args $ [] 'String $ :: 'Option 'Bool
             :return $ :: 'Result (:: 'List 'String) 'String
+          :tags $ #{} :file :io
         'tuple-enum $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn tuple-enum (_value)
             raise "|`tuple-enum` was removed; use `enum-definition`, which returns Option<EnumDef>"
