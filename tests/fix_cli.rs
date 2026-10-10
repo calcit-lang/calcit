@@ -11498,6 +11498,11 @@ fn apply_args_fix_rewrites_literal_callees_to_loop_and_reviews_the_rest() {
     "quote $ defn sum-to (n)\n  apply-args (0 n)\n    defn %sum (acc k)\n      hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Number)\n      if (&<= k 0) acc $ recur (&+ acc k) (&- k 1)",
     number_fn,
   );
+  define(
+    "app.main/spread",
+    "quote $ defn spread (xs)\n  apply-args (& xs) (fn (a b) (&+ a b))",
+    "quote $ :: 'Fn $ {} (:args $ [] (:: 'List 'Number)) (:return 'Number)",
+  );
   define("app.main/plus", "quote $ defn plus (n)\n  apply-args ([] 1 n) &+", number_fn);
   define(
     "app.main/quoted",
@@ -11549,6 +11554,9 @@ fn apply_args_fix_rewrites_literal_callees_to_loop_and_reviews_the_rest() {
     assert_eq!(suggestion["applicability"], "machine-applicable", "{definition} {path}: {report}");
     assert_eq!(suggestion["rule_id"], "apply-args-to-loop-v1");
   }
+  let spread = find("app.main/spread", "code@3");
+  assert_eq!(spread["applicability"], "requires-review", "{report}");
+  assert!(spread["message"].as_str().unwrap().contains("spreads a value"), "{report}");
   let plus = find("app.main/plus", "code@3");
   assert_eq!(plus["applicability"], "requires-review", "{report}");
   assert!(plus["replacement"].is_null());

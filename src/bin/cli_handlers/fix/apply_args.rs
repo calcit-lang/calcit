@@ -171,6 +171,9 @@ fn literal_call(node: &Cirru) -> Result<LiteralCall<'_>, String> {
     Some("[]") => &arguments[1..],
     _ => &arguments[..],
   };
+  if arguments.iter().any(|argument| matches!(leaf_value(argument), Some("&" | "~@"))) {
+    return Err("The argument list spreads a value with `&`; review the call.".to_owned());
+  }
   let (name, params, body) = match callee {
     Cirru::List(parts) if list_head(callee) == Some("fn") && parts.len() > 2 => (None, &parts[1], &parts[2..]),
     Cirru::List(parts) if list_head(callee) == Some("defn") && parts.len() > 3 => (leaf_value(&parts[1]), &parts[2], &parts[3..]),
