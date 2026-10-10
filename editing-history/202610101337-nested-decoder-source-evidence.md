@@ -11,8 +11,11 @@
 复用已有唯一 source-expression trace：查询普通调用时，如果坐标命中的
 展开节点与原调用 head 不同，就从 trace 取得真正的调用证据。不能把
 存在同一坐标当成调用身份的证明，也不凭名称重建 decoder 结果类型。
-追踪用于源码的符号/导入/方法及 reader 已解析的 primitive/syntax head；Tag 字段
-调用继续使用现有展开证据。原 Agent `sum-point` 字段查询曾揭示扩大到
+额外追踪用于普通符号/导入及 reader 已解析的 primitive/syntax head；
+前后缀方法继续走原查询关联路径，不把方法 lowering 的不同 head 当成
+普通调用子节点误匹配。原 WASI callback 查询的 Result/Manifest 断言
+揭示需要保留这一区分；修复不改断言。Tag 字段调用也继续使用现有展开
+证据。原 Agent `sum-point` 字段查询曾揭示扩大到
 所有 head 会丢失 Number 证据，修复因此保留该边界及原断言，不改预期。
 这不修改语言类型规则、运行时 decoder、源码 AST 或公开查询 envelope。
 
