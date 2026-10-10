@@ -5,7 +5,7 @@ use std::sync::Arc;
 use rpds::HashTrieSet;
 
 use crate::calcit::{Calcit, CalcitEnumValue, CalcitErr, CalcitErrKind, CalcitList};
-use crate::util::number::f64_to_usize;
+use crate::util::number::{f64_to_index, f64_to_usize};
 
 use crate::builtins;
 use crate::call_stack::CallStackList;
@@ -92,9 +92,9 @@ pub fn slice(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match (&xs[0], &xs[1]) {
     (Calcit::List(ys), Calcit::Number(from)) => {
-      let from_idx = f64_to_usize(*from)?;
+      let from_idx = f64_to_index(*from)?;
       let to_idx = match xs.get(2) {
-        Some(Calcit::Number(to)) => f64_to_usize(*to)?,
+        Some(Calcit::Number(to)) => f64_to_index(*to)?,
         Some(a) => {
           return CalcitErr::err_str(
             CalcitErrKind::Type,
