@@ -209,20 +209,27 @@ pub(super) fn emit_list_slice(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src);
 
+  // Bounds are integers with 0 <= start <= end <= count, as in native; anything else traps.
   let start = ctx.alloc_local_typed(ValType::I32);
-  emit_expr(ctx, &args[1])?;
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(start));
+  emit_slice_bound(ctx, &args[1], start)?;
 
   let end = ctx.alloc_local_typed(ValType::I32);
   if args.len() == 3 {
-    emit_expr(ctx, &args[2])?;
-    ctx.emit(Instruction::I32TruncF64U);
-    ctx.emit(Instruction::LocalSet(end));
+    emit_slice_bound(ctx, &args[2], end)?;
   } else {
     ctx.emit(Instruction::LocalGet(count));
     ctx.emit(Instruction::LocalSet(end));
   }
+  ctx.emit(Instruction::LocalGet(start));
+  ctx.emit(Instruction::LocalGet(end));
+  ctx.emit(Instruction::I32GtU);
+  ctx.emit(Instruction::LocalGet(end));
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32GtU);
+  ctx.emit(Instruction::I32Or);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
 
   let new_count = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(end));
@@ -247,6 +254,25 @@ pub(super) fn emit_list_slice(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   emit_copy_f64_loop(ctx, dst_base, src_base, new_count);
 
   ctx.ptr_to_f64(dst);
+  Ok(())
+}
+
+/// Evaluate a slice bound into `target`: a fractional or NaN bound traps here, and
+/// `i32.trunc_f64_u` traps on negative, infinite or too-large bounds.
+fn emit_slice_bound(ctx: &mut WasmGenCtx, arg: &Calcit, target: u32) -> Result<(), String> {
+  let value = ctx.alloc_local();
+  emit_expr(ctx, arg)?;
+  ctx.emit(Instruction::LocalSet(value));
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::F64Trunc);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::F64Ne);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(target));
   Ok(())
 }
 

@@ -6369,9 +6369,8 @@ fn build_rt_f64_to_str(string_tag: i32, ryu_format_idx: u32) -> CompiledFn {
 
 /// `__rt_display_by(value: f64, radix: f64) -> f64`
 ///
-/// Converts `value` (integer f64) to a string in the given radix.
-/// Prefixes: radix 2 → "0b", radix 8 → "0o", radix 16 → "0x", else no prefix.
-/// Negative values get a "-" prefix.
+/// Converts `value` (a non-negative safe integer) to a string in radix 2, 8 or 16,
+/// prefixed with "0b", "0o" or "0x". Other values or radixes trap.
 #[allow(clippy::vec_init_then_push)]
 fn build_rt_display_by(string_tag: i32) -> CompiledFn {
   // params: 0=value(f64), 1=radix(f64)
@@ -6381,6 +6380,32 @@ fn build_rt_display_by(string_tag: i32) -> CompiledFn {
   //   10=str_ptr(i32), 11=content(i32), 12=digit_pos(i32), 13=digit(i32),
   //   14=raw_base(i32), 15=ch(i32), 16=payload(i32)
   let mut b: Vec<Instruction> = Vec::new();
+
+  // Domain (docs/data/number.md): value is a non-negative safe integer and radix is 2, 8 or 16;
+  // anything else traps where native and JS raise an error.
+  b.push(Instruction::LocalGet(0));
+  b.push(Instruction::F64Trunc);
+  b.push(Instruction::LocalGet(0));
+  b.push(Instruction::F64Ne); // fractional or NaN
+  b.push(Instruction::LocalGet(0));
+  b.push(Instruction::F64Const(Ieee64::from(0.0f64)));
+  b.push(Instruction::F64Lt);
+  b.push(Instruction::I32Or);
+  b.push(Instruction::LocalGet(0));
+  b.push(Instruction::F64Const(Ieee64::from(9_007_199_254_740_991.0f64)));
+  b.push(Instruction::F64Gt);
+  b.push(Instruction::I32Or);
+  for radix in [2.0f64, 8.0, 16.0] {
+    b.push(Instruction::LocalGet(1));
+    b.push(Instruction::F64Const(Ieee64::from(radix)));
+    b.push(Instruction::F64Ne);
+  }
+  b.push(Instruction::I32And);
+  b.push(Instruction::I32And);
+  b.push(Instruction::I32Or);
+  b.push(Instruction::If(wasm_encoder::BlockType::Empty));
+  b.push(Instruction::Unreachable);
+  b.push(Instruction::End);
 
   // radix_i64 = i64.trunc_f64_s(radix)
   b.push(Instruction::LocalGet(1)); // radix f64

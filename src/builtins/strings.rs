@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+use crate::builtins::math::MAX_SAFE_INTEGER;
 use crate::builtins::meta::type_of;
 use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitList, CalcitProc, format_proc_examples_hint};
 use crate::util::number::{f64_to_usize, format_calcit_number};
@@ -222,15 +223,27 @@ fn fractional_decimal_digits(n: f64) -> usize {
 pub fn display_number_by(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Number(n)), Some(Calcit::Number(x))) => {
-      let value = f64_to_usize(*n)? as i32;
-      let size = f64_to_usize(*x)?;
-      match size {
-        2 => Ok(Calcit::Str(format!("{value:#b}").into())),
-        8 => Ok(Calcit::Str(format!("{value:#o}").into())),
-        16 => Ok(Calcit::Str(format!("{value:#x}").into())),
+      // a non-negative safe integer, printed exactly (docs/data/number.md)
+      if !(n.trunc() == *n && *n >= 0.0 && *n <= MAX_SAFE_INTEGER) {
+        return CalcitErr::err_str(
+          CalcitErrKind::Type,
+          format!(
+            "&number:display-by expected a non-negative safe integer, but received: {}",
+            format_calcit_number(*n)
+          ),
+        );
+      }
+      let value = *n as u64;
+      match *x {
+        2.0 => Ok(Calcit::Str(format!("{value:#b}").into())),
+        8.0 => Ok(Calcit::Str(format!("{value:#o}").into())),
+        16.0 => Ok(Calcit::Str(format!("{value:#x}").into())),
         _ => CalcitErr::err_str(
           CalcitErrKind::Type,
-          format!("&number:display-by only supports base 2, 8, or 16, but received: {size}"),
+          format!(
+            "&number:display-by only supports base 2, 8, or 16, but received: {}",
+            format_calcit_number(*x)
+          ),
         ),
       }
     }

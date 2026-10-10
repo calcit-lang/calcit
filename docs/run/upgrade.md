@@ -304,6 +304,25 @@ assert= :failed $ try
   fn (_error) :failed
 ```
 
+## 下标、位运算与 display-by 的整数定义域
+
+`&list:slice`、`bit-and`、`bit-or`、`bit-xor`、`bit-not`、`bit-shl`、`bit-shr` 与 `&number:display-by` 在 native、JS 与 core WASM 上使用 [Number](../data/number.md#整数参数的定义域) 中的整数定义域：超出时 native 与 JS 抛出可由 `try` 捕获的错误，WASM trap。
+
+```cirru
+assert= |0x100000000 $ &number:display-by 4294967296 16
+assert= :failed $ try
+  do (bit-and 4294967296 1) :returned
+  fn (_error) :failed
+```
+
+升级时的行为变化：
+
+- `&list:slice`：JS 此前把小数边界按截断处理，并把超过长度或倒置的区间截成空列表或剩余部分；WASM 同样截断小数，且只在负数或 NaN 时 trap，不检查上界；native 此前按 EPSILON 容差接受接近整数的小数。现在三者一致，要求 `0 <= start <= end <= count` 的整数，否则报错或 trap。
+- 位运算：操作数必须是 i32 范围内的整数。native 此前把超出 i32 的值饱和（`bit-and 4294967296 1` 为 `1`），并按 EPSILON 容差接受接近整数的小数；JS 此前按 ToInt32 回绕或截断（同一调用为 `0`，`bit-and 5.5 3` 为 `1`）；WASM 此前截断小数。现在三者都报错或 trap。需要 32 位以上掩码的代码应先自行拆分或改用整数算术。
+- `&number:display-by`：值必须是非负安全整数，基数为 2、8 或 16。native 此前经过 i32 转换（`&number:display-by 4294967296 16` 为 `0x0`），现在精确输出 `0x100000000`；JS 此前接受负数与小数（`0b-11111111`），现在报错。
+
+这些都是语义修复，不提供自动源码改写。
+
 ## 整数谓词的跨目标语义修复
 
 `round?`（以及 0.28 的 Number `.round?`，该方法已在 0.29.0 删除，见下文）现在统一判断“有限且恰好没有小数部分”。native、JS、core WASM 和 WASI Component 使用相同契约：NaN、正负 Infinity、任何非零小数均为 false；0、-0 与有限的整数值为 true。

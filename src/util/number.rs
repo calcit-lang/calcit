@@ -53,11 +53,21 @@ pub fn f64_to_usize(f: f64) -> Result<usize, String> {
   }
 }
 
-pub fn f64_to_i32(f: f64) -> Result<i32, String> {
-  if is_float_integer(f) {
+/// Strict index domain: a non-negative integer with no EPSILON tolerance.
+pub fn f64_to_index(f: f64) -> Result<usize, String> {
+  if f.trunc() == f && f >= 0.0 && f <= usize::MAX as f64 {
+    Ok(f as usize)
+  } else {
+    Err(format!("expected a non-negative integer index, but got: {}", format_calcit_number(f)))
+  }
+}
+
+/// Bitwise operand domain: an integer within i32, so no value is saturated or wrapped.
+pub fn f64_to_bit_operand(f: f64) -> Result<i32, String> {
+  if f.trunc() == f && f >= i32::MIN as f64 && f <= i32::MAX as f64 {
     Ok(f as i32)
   } else {
-    Err(format!("cannot extract int from float: {f}"))
+    Err(format!("expected an integer within i32, but got: {}", format_calcit_number(f)))
   }
 }
 
@@ -74,5 +84,21 @@ mod number_text_tests {
     assert_eq!(format_calcit_number(f64::INFINITY), "inf");
     assert_eq!(format_calcit_number(f64::NEG_INFINITY), "-inf");
     assert_eq!(format_calcit_number(f64::from_bits(1)), format!("0.{}5", "0".repeat(323)));
+  }
+}
+
+#[cfg(test)]
+mod index_domain_tests {
+  use super::f64_to_index;
+
+  #[test]
+  fn index_rejects_near_integers() {
+    assert_eq!(f64_to_index(3.0), Ok(3));
+    assert_eq!(f64_to_index(-0.0), Ok(0));
+    assert!(f64_to_index(1.000_000_000_000_000_2).is_err());
+    assert!(f64_to_index(1e-16).is_err());
+    assert!(f64_to_index(-1.0).is_err());
+    assert!(f64_to_index(f64::NAN).is_err());
+    assert!(f64_to_index(f64::INFINITY).is_err());
   }
 }

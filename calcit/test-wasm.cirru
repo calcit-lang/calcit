@@ -402,6 +402,12 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-display-by-count $ %{} 'CodeEntry (:doc "|length of &number:display-by n base")
+          :code $ quote $ defwasm-export test-display-by-count (n base)
+            &str:count $ &number:display-by n base
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number
         'test-display-by-hex $ %{} 'CodeEntry (:doc "|17 in hex = 0x11, length 4")
           :code $ quote $ defwasm-export test-display-by-hex ()
             &str:count $ &number:display-by 17 16
@@ -866,6 +872,12 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-list-slice-count $ %{} 'CodeEntry (:doc "|count of &list:slice over a 3-item list")
+          :code $ quote $ defwasm-export test-list-slice-count (start end)
+            &list:count $ &list:slice ([] 10 20 30) start end
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number
         'test-list-sort-ascending $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-list-sort-ascending ()
             &let
