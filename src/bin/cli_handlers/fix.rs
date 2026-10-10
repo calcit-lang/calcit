@@ -77,6 +77,8 @@ const CORE_MACRO_ALIAS_RULE: &str = "core-macro-alias-v1";
 const CORE_MACRO_ALIAS_DIAGNOSTIC: &str = "FIX_CORE_MACRO_ALIAS";
 const LET_SUGAR_LET_RULE: &str = "let-sugar-to-let-v1";
 const LET_SUGAR_LET_DIAGNOSTIC: &str = "FIX_LET_SUGAR_LET";
+const APPLY_ARGS_LOOP_RULE: &str = "apply-args-to-loop-v1";
+const APPLY_ARGS_LOOP_DIAGNOSTIC: &str = "FIX_APPLY_ARGS_LOOP";
 const SURFACE_LATEST_V1_PRESET: &str = "surface-latest-v1";
 const SURFACE_LATEST_V2_PRESET: &str = "surface-latest-v2";
 const CORE_API_028_V1_PRESET: &str = "core-api-0.28-v1";
@@ -522,7 +524,8 @@ pub(crate) fn handle_fix_command(
     || selected_rules.contains(&CORE_REF_CONSTRUCTOR_RULE)
     || selected_rules.contains(&CASE_DEFAULT_MATCH_RULE)
     || selected_rules.contains(&CORE_MACRO_ALIAS_RULE)
-    || selected_rules.contains(&LET_SUGAR_LET_RULE);
+    || selected_rules.contains(&LET_SUGAR_LET_RULE)
+    || selected_rules.contains(&APPLY_ARGS_LOOP_RULE);
   let semantic_refactor = semantic_rename || value_to_zero_arg_fn || local_rename;
   let migration_rule =
     semantic_refactor || schema_synthesis || optional_parameters || core_predicate_rename || options.workflow.is_some();
@@ -760,6 +763,13 @@ pub(crate) fn handle_fix_command(
   }
   if selected_rules.contains(&CASE_DEFAULT_MATCH_RULE) {
     suggestions.extend(case_default::plan_case_default_fixes(
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+    )?);
+  }
+  if selected_rules.contains(&APPLY_ARGS_LOOP_RULE) {
+    suggestions.extend(apply_args::plan_apply_args_fixes(
       &source_snapshot,
       snapshot_file,
       &selected_definitions,
@@ -1289,13 +1299,14 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CASE_DEFAULT_MATCH_RULE
         | CORE_MACRO_ALIAS_RULE
         | LET_SUGAR_LET_RULE
+        | APPLY_ARGS_LOOP_RULE
         | TAG_MATCH_RULE
         | REQUIRED_STRUCT_FIELD_RULE
     )
   {
     return Err(
       format!(
-        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`, `{CASE_DEFAULT_MATCH_RULE}`, `{CORE_MACRO_ALIAS_RULE}`, `{LET_SUGAR_LET_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`, `{CASE_DEFAULT_MATCH_RULE}`, `{CORE_MACRO_ALIAS_RULE}`, `{LET_SUGAR_LET_RULE}`, `{APPLY_ARGS_LOOP_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
       ) + &format!(
         " Review-only compiler rules: `{UNSAFE_COERCE_BOUNDARY_RULE}`, `{ASSERT_TYPE_PROOF_RULE}`, `{CONCRETE_RETURN_PROOF_RULE}`, `{CALLABLE_CONTRACT_PROOF_RULE}`, `{NOMINAL_WRITE_PROOF_RULE}`."
       ),
@@ -1352,6 +1363,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CASE_DEFAULT_MATCH_RULE
         | CORE_MACRO_ALIAS_RULE
         | LET_SUGAR_LET_RULE
+        | APPLY_ARGS_LOOP_RULE
     ) {
       return vec![match rule {
         RENAME_DEFINITION_RULE => RENAME_DEFINITION_RULE,
@@ -1377,6 +1389,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CASE_DEFAULT_MATCH_RULE => CASE_DEFAULT_MATCH_RULE,
         CORE_MACRO_ALIAS_RULE => CORE_MACRO_ALIAS_RULE,
         LET_SUGAR_LET_RULE => LET_SUGAR_LET_RULE,
+        APPLY_ARGS_LOOP_RULE => APPLY_ARGS_LOOP_RULE,
         _ => OPTIONAL_PARAMETERS_RULE,
       }];
     }
@@ -1544,6 +1557,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
     LET_SUGAR_LET_RULE => FixRuleMetadata {
       rule_id,
       diagnostic_code: LET_SUGAR_LET_DIAGNOSTIC,
+      evidence_source: "unshadowed-core-macro-expansion",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    APPLY_ARGS_LOOP_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: APPLY_ARGS_LOOP_DIAGNOSTIC,
       evidence_source: "unshadowed-core-macro-expansion",
       lifecycle: "semantic-refactor",
       source_version_required: false,
@@ -2022,6 +2042,7 @@ fn plan_definition_rename(
   Ok(suggestions)
 }
 
+mod apply_args;
 mod case_default;
 mod compiler_review;
 mod core_macro;
@@ -4054,6 +4075,7 @@ fn supports_attached_migrations(rule: &str) -> bool {
       | CASE_DEFAULT_MATCH_RULE
       | CORE_MACRO_ALIAS_RULE
       | LET_SUGAR_LET_RULE
+      | APPLY_ARGS_LOOP_RULE
       | NAMED_ENUM_CONSTRUCTOR_RULE
       | NAMED_STRUCT_CONSTRUCTOR_RULE
       | REDUNDANT_DO_RULE
@@ -4249,6 +4271,12 @@ fn plan_attached_fixes(
           }
           if selected_rules.contains(&CASE_DEFAULT_MATCH_RULE) {
             match case_default::plan_case_default_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper) {
+              Ok(planned) => candidates.extend(planned),
+              Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
+            }
+          }
+          if selected_rules.contains(&APPLY_ARGS_LOOP_RULE) {
+            match apply_args::plan_apply_args_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper) {
               Ok(planned) => candidates.extend(planned),
               Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
             }
