@@ -1200,6 +1200,109 @@ fn named_constructor_fix_migrates_qualified_quasiquote_templates() {
 }
 
 #[test]
+fn named_enum_constructor_fix_migrates_unshadowed_core_enums() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  assert_success(&run_calcit(&snapshot, &["query", "config"]), "inspect core enum fixture");
+  for (target, code, overwrite) in [
+    (
+      "app.main/main!",
+      "quote $ defn main! ()\n  assert= (Option :some 1) (wrap 1)\n  assert= 3 $ count-down 3\n  , &unit",
+      true,
+    ),
+    ("app.main/wrap", "quote $ defn wrap (x) (%:: Option :some x)", false),
+    (
+      "app.main/count-down",
+      "quote $ defn count-down (n)\n  loop\n      i n\n      found $ %:: Option :none\n    if (&= i 0)\n      &list:count $ [] (%:: MapEntryDecision :drop) found 1\n      recur (&- i 1) (%:: Option :some i)",
+      false,
+    ),
+  ] {
+    let mut args = vec!["edit", "def", target, "--input-format", "cirru", "--code", code];
+    if overwrite {
+      args.push("--overwrite");
+    }
+    assert_success(&run_calcit(&snapshot, &args), "create core enum fixture");
+  }
+  for (target, schema) in [
+    (
+      "app.main/wrap",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return $ :: 'Option 'Number)",
+    ),
+    ("app.main/count-down", "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)"),
+  ] {
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", target, "--input-format", "cirru", "--code", schema]),
+      "declare core enum fixture schema",
+    );
+  }
+  assert_success(&run_calcit(&snapshot, &[]), "original core enum constructors");
+  // A namespace definition named like a core enum shadows it, so its `%::` stays.
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "add-ns", "app.shadow"]),
+    "create shadowing namespace",
+  );
+  for (target, code) in [
+    ("app.shadow/Option", "quote $ def Option 1"),
+    ("app.shadow/shadowed", "quote $ defn shadowed () (%:: Option :none)"),
+  ] {
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", target, "--input-format", "cirru", "--code", code]),
+      "create shadowing definition",
+    );
+  }
+  let shadow_preview = run_calcit(
+    &snapshot,
+    &[
+      "fix",
+      "--ns",
+      "app.shadow",
+      "--rule",
+      "named-enum-constructor-v1",
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&shadow_preview, "shadowed core enum preview");
+  let shadow_report = parse_stdout(&shadow_preview);
+  assert_eq!(shadow_report["data"]["suggestions"], serde_json::json!([]), "{shadow_report}");
+  let args = ["fix", "--ns", "app.main", "--rule", "named-enum-constructor-v1", "--format", "json"];
+  let preview = run_calcit(&snapshot, &args);
+  assert_success(&preview, "core enum preview");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().unwrap();
+  let applicable = |definition: &str| {
+    suggestions
+      .iter()
+      .filter(|suggestion| {
+        suggestion["definition"] == format!("app.main/{definition}") && suggestion["applicability"] == "machine-applicable"
+      })
+      .count()
+  };
+  assert_eq!(applicable("wrap"), 1, "{report}");
+  assert_eq!(applicable("count-down"), 3, "{report}");
+
+  let mut apply = args.to_vec();
+  apply.extend([
+    "--apply",
+    "--allow-no-vcs",
+    "--expect-revision",
+    report["revision"].as_str().unwrap(),
+  ]);
+  assert_success(&run_calcit(&snapshot, &apply), "apply core enum constructors");
+  let query = |definition: &str| {
+    let output = run_calcit(&snapshot, &["query", "def", &format!("app.main/{definition}"), "--format", "json"]);
+    assert_success(&output, definition);
+    parse_stdout(&output)["data"]["code"].to_string()
+  };
+  assert!(query("wrap").contains(r#"["Option",":some","x"]"#), "{}", query("wrap"));
+  let count_down = query("count-down");
+  assert!(!count_down.contains("%::"), "{count_down}");
+  assert!(count_down.contains(r#"["MapEntryDecision",":drop"]"#), "{count_down}");
+  assert_success(&run_calcit(&snapshot, &[]), "migrated core enum constructors");
+}
+
+#[test]
 fn attached_do_rules_preserve_root_sequence_and_macro_data() {
   for rule in ["redundant-do-v1", "single-expression-do-v1"] {
     let directory = TestDirectory::create();
@@ -11227,6 +11330,152 @@ fn ref_constructor_fix_renames_proven_spellings_and_reviews_shadowed_syntax() {
 }
 
 #[test]
+fn let_sugar_fix_rewrites_symbol_and_list_patterns_and_reviews_map_patterns() {
+  // Rust checks the CLI transaction protocol; `calcit.core/let-sugar` expands through
+  // `let-destruct`, and the attached test below replays the rewritten bindings.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  let define = |target: &str, code: &str, schema: &str| {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "def", target, "--overwrite", "--input-format", "cirru", "--code", code],
+      ),
+      "define let-sugar fixture",
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", target, "--input-format", "cirru", "--code", schema]),
+      "declare let-sugar fixture schema",
+    );
+  };
+  let number_fn = "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)";
+  define(
+    "app.main/main!",
+    "quote $ defn main! ()\n  , &unit",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)",
+  );
+  define(
+    "app.main/mixed",
+    "quote $ defn mixed (p)\n  let-sugar\n      a $ &+ p 1\n      b $ &+ a 1\n      ([] x y) ([] a b)\n      c $ &+ x y\n    println c\n    &+ c 0",
+    number_fn,
+  );
+  define(
+    "app.main/nested",
+    "quote $ defn nested (p)\n  let-sugar ((a p)) $ let-sugar ((([] x) ([] a))) x",
+    number_fn,
+  );
+  define(
+    "app.main/mapped",
+    "quote $ defn mapped (m)\n  let-sugar ((({} a) m)) a",
+    "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)",
+  );
+  define(
+    "app.main/peek",
+    "quote $ defmacro peek (form)\n  quasiquote $ quote ~form",
+    "quote $ :: 'Macro $ {} (:required $ [] 'Syntax) (:capabilities $ #{}) (:expansion $ :: 'Expr 'Dynamic)",
+  );
+  define(
+    "app.main/peeked",
+    "quote $ defn peeked ()\n  peek $ let-sugar ((a 1)) a",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)",
+  );
+  define(
+    "app.main/quoted",
+    "quote $ defn quoted ()\n  quote $ let-sugar ((a 1)) a",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        "app.main/mixed",
+        "binds-in-order",
+        "--tags",
+        "unit",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ do\n  assert= 5 $ mixed 1\n  assert= 5 $ nested 5\n  assert= 3 $ let-sugar ((([] u v) ([] 1 2))) (&+ u v)",
+      ],
+    ),
+    "attach let-sugar contract",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["test", "app.main/mixed", "--require-match"]),
+    "legacy let-sugar semantics",
+  );
+
+  let before = fs::read(&snapshot).unwrap();
+  let base = ["fix", "--rule", "let-sugar-to-let-v1", "--include-attached", "--format", "json"];
+  let preview = run_calcit(&snapshot, &base);
+  assert_success(&preview, "let-sugar preview");
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "preview must not write");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().expect("suggestions");
+  let find = |definition: &str, path: &str| {
+    suggestions
+      .iter()
+      .find(|suggestion| suggestion["definition"] == definition && suggestion["path"] == path)
+      .unwrap_or_else(|| panic!("missing {definition} {path}: {report}"))
+  };
+  for (definition, path) in [
+    ("app.main/mixed", "code@3"),
+    ("app.main/nested", "code@3"),
+    ("app.main/mixed", "tests.binds-in-order"),
+  ] {
+    let suggestion = find(definition, path);
+    assert_eq!(suggestion["applicability"], "machine-applicable", "{definition} {path}: {report}");
+    assert_eq!(suggestion["rule_id"], "let-sugar-to-let-v1");
+  }
+  assert!(
+    !suggestions
+      .iter()
+      .any(|suggestion| suggestion["definition"] == "app.main/nested" && suggestion["path"] != "code@3"),
+    "a nested proven call folds into the outer replacement: {report}"
+  );
+  for (definition, path, reason) in [
+    ("app.main/mapped", "code@3", "deprecated `let{}`"),
+    ("app.main/peeked", "code@3.1", "macro `peek`"),
+  ] {
+    let suggestion = find(definition, path);
+    assert_eq!(suggestion["applicability"], "requires-review", "{definition}: {report}");
+    assert!(suggestion["replacement"].is_null());
+    assert!(suggestion["message"].as_str().unwrap().contains(reason), "{definition}: {report}");
+  }
+  assert!(
+    !suggestions.iter().any(|suggestion| suggestion["definition"] == "app.main/quoted"),
+    "quoted data stays unchanged: {report}"
+  );
+
+  let mut apply = base.to_vec();
+  apply.extend([
+    "--apply",
+    "--allow-no-vcs",
+    "--expect-revision",
+    report["revision"].as_str().unwrap(),
+  ]);
+  assert_success(&run_calcit(&snapshot, &apply), "apply let-sugar migration");
+  let migrated = fs::read_to_string(&snapshot).unwrap();
+  assert!(migrated.contains("let[] (x y) ([] a b)"), "{migrated}");
+  assert!(migrated.contains("let[] (x) ([] a) x"), "{migrated}");
+  assert!(migrated.contains("assert= 3 $ let[] (u v) ([] 1 2) (&+ u v)"), "{migrated}");
+  assert!(migrated.contains("quote $ let-sugar"), "{migrated}");
+  assert_success(
+    &run_calcit(&snapshot, &["test", "app.main/mixed", "--require-match"]),
+    "let semantics after migration",
+  );
+  let repeated = run_calcit(&snapshot, &base);
+  assert_success(&repeated, "repeated let-sugar preview");
+  let repeated = parse_stdout(&repeated);
+  let remaining = repeated["data"]["suggestions"].as_array().unwrap();
+  assert_eq!(remaining.len(), 2, "only reviewed calls remain: {repeated}");
+  assert!(remaining.iter().all(|suggestion| suggestion["applicability"] == "requires-review"));
+}
+
+#[test]
 fn case_default_fix_rewrites_literal_patterns_and_reviews_opaque_calls() {
   // Rust checks the CLI transaction protocol; `calcit.core/case-default` owns the Calcit tests
   // proving that literal patterns expand to the same `match`.
@@ -11358,7 +11607,7 @@ fn case_default_fix_rewrites_literal_patterns_and_reviews_opaque_calls() {
   );
   for (definition, path, reason) in [
     ("app.main/expr", "code@3", "`limit` is not a literal"),
-    ("app.main/threaded", "code@3.2", "macro `->`"),
+    ("app.main/peeked", "code@3.1", "macro `peek`"),
     ("app.main/peeked", "code@3.1", "macro `peek`"),
   ] {
     let suggestion = find(definition, path);

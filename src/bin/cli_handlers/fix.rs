@@ -75,6 +75,8 @@ const CASE_DEFAULT_MATCH_RULE: &str = "case-default-to-match-v1";
 const CASE_DEFAULT_MATCH_DIAGNOSTIC: &str = "FIX_CASE_DEFAULT_MATCH";
 const CORE_MACRO_ALIAS_RULE: &str = "core-macro-alias-v1";
 const CORE_MACRO_ALIAS_DIAGNOSTIC: &str = "FIX_CORE_MACRO_ALIAS";
+const LET_SUGAR_LET_RULE: &str = "let-sugar-to-let-v1";
+const LET_SUGAR_LET_DIAGNOSTIC: &str = "FIX_LET_SUGAR_LET";
 const SURFACE_LATEST_V1_PRESET: &str = "surface-latest-v1";
 const SURFACE_LATEST_V2_PRESET: &str = "surface-latest-v2";
 const CORE_API_028_V1_PRESET: &str = "core-api-0.28-v1";
@@ -519,7 +521,8 @@ pub(crate) fn handle_fix_command(
     || selected_rules.contains(&CORE_FUNCTION_ALIAS_RULE)
     || selected_rules.contains(&CORE_REF_CONSTRUCTOR_RULE)
     || selected_rules.contains(&CASE_DEFAULT_MATCH_RULE)
-    || selected_rules.contains(&CORE_MACRO_ALIAS_RULE);
+    || selected_rules.contains(&CORE_MACRO_ALIAS_RULE)
+    || selected_rules.contains(&LET_SUGAR_LET_RULE);
   let semantic_refactor = semantic_rename || value_to_zero_arg_fn || local_rename;
   let migration_rule =
     semantic_refactor || schema_synthesis || optional_parameters || core_predicate_rename || options.workflow.is_some();
@@ -757,6 +760,13 @@ pub(crate) fn handle_fix_command(
   }
   if selected_rules.contains(&CASE_DEFAULT_MATCH_RULE) {
     suggestions.extend(case_default::plan_case_default_fixes(
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+    )?);
+  }
+  if selected_rules.contains(&LET_SUGAR_LET_RULE) {
+    suggestions.extend(let_sugar::plan_let_sugar_fixes(
       &source_snapshot,
       snapshot_file,
       &selected_definitions,
@@ -1278,13 +1288,14 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | OPTIONAL_PARAMETERS_RULE
         | CASE_DEFAULT_MATCH_RULE
         | CORE_MACRO_ALIAS_RULE
+        | LET_SUGAR_LET_RULE
         | TAG_MATCH_RULE
         | REQUIRED_STRUCT_FIELD_RULE
     )
   {
     return Err(
       format!(
-        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`, `{CASE_DEFAULT_MATCH_RULE}`, `{CORE_MACRO_ALIAS_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`, `{CASE_DEFAULT_MATCH_RULE}`, `{CORE_MACRO_ALIAS_RULE}`, `{LET_SUGAR_LET_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
       ) + &format!(
         " Review-only compiler rules: `{UNSAFE_COERCE_BOUNDARY_RULE}`, `{ASSERT_TYPE_PROOF_RULE}`, `{CONCRETE_RETURN_PROOF_RULE}`, `{CALLABLE_CONTRACT_PROOF_RULE}`, `{NOMINAL_WRITE_PROOF_RULE}`."
       ),
@@ -1340,6 +1351,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_REF_CONSTRUCTOR_RULE
         | CASE_DEFAULT_MATCH_RULE
         | CORE_MACRO_ALIAS_RULE
+        | LET_SUGAR_LET_RULE
     ) {
       return vec![match rule {
         RENAME_DEFINITION_RULE => RENAME_DEFINITION_RULE,
@@ -1364,6 +1376,7 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_REF_CONSTRUCTOR_RULE => CORE_REF_CONSTRUCTOR_RULE,
         CASE_DEFAULT_MATCH_RULE => CASE_DEFAULT_MATCH_RULE,
         CORE_MACRO_ALIAS_RULE => CORE_MACRO_ALIAS_RULE,
+        LET_SUGAR_LET_RULE => LET_SUGAR_LET_RULE,
         _ => OPTIONAL_PARAMETERS_RULE,
       }];
     }
@@ -1524,6 +1537,13 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
     CORE_MACRO_ALIAS_RULE => FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_MACRO_ALIAS_DIAGNOSTIC,
+      evidence_source: "unshadowed-core-macro-expansion",
+      lifecycle: "semantic-refactor",
+      source_version_required: false,
+    },
+    LET_SUGAR_LET_RULE => FixRuleMetadata {
+      rule_id,
+      diagnostic_code: LET_SUGAR_LET_DIAGNOSTIC,
       evidence_source: "unshadowed-core-macro-expansion",
       lifecycle: "semantic-refactor",
       source_version_required: false,
@@ -2005,6 +2025,7 @@ fn plan_definition_rename(
 mod case_default;
 mod compiler_review;
 mod core_macro;
+mod let_sugar;
 mod local_rename;
 pub(crate) mod schema_synthesis;
 mod spread_call;
@@ -3619,10 +3640,11 @@ fn core_nominal_method(name: &str, kind: CoreNominalMethodKind) -> Option<CoreNo
 fn preserves_nominal_method_call_through_macro(origin: &str) -> bool {
   // These core forms retain one executable evaluation of the nested call.
   // assert= also quotes its source for diagnostics, but never evaluates that copy.
+  // loop splices its body into one generated defn and its initial values into one list.
   preserves_constructor_argument_through_macro(origin)
     || matches!(
       origin,
-      "calcit.core/def" | "calcit.core/do" | "calcit.core/fn" | "calcit.core/assert="
+      "calcit.core/def" | "calcit.core/do" | "calcit.core/fn" | "calcit.core/assert=" | "calcit.core/loop"
     )
 }
 
@@ -4023,6 +4045,7 @@ fn supports_attached_migrations(rule: &str) -> bool {
       | CORE_REF_CONSTRUCTOR_RULE
       | CASE_DEFAULT_MATCH_RULE
       | CORE_MACRO_ALIAS_RULE
+      | LET_SUGAR_LET_RULE
       | NAMED_ENUM_CONSTRUCTOR_RULE
       | NAMED_STRUCT_CONSTRUCTOR_RULE
       | REDUNDANT_DO_RULE
@@ -4218,6 +4241,12 @@ fn plan_attached_fixes(
           }
           if selected_rules.contains(&CASE_DEFAULT_MATCH_RULE) {
             match case_default::plan_case_default_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper) {
+              Ok(planned) => candidates.extend(planned),
+              Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
+            }
+          }
+          if selected_rules.contains(&LET_SUGAR_LET_RULE) {
+            match let_sugar::plan_let_sugar_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper) {
               Ok(planned) => candidates.extend(planned),
               Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
             }
@@ -6137,7 +6166,7 @@ fn plan_named_constructor_source(
         let Some(prototype) = parts.get(1).and_then(leaf_value) else {
           return false;
         };
-        let Some((target_ns, target_def)) = resolve_project_nominal_target(snapshot, namespace, prototype, kind) else {
+        let Some((target_ns, target_def)) = resolve_nominal_target(snapshot, namespace, prototype, kind) else {
           return false;
         };
         let mut prototype_path = path.clone();
@@ -6286,7 +6315,7 @@ fn legacy_constructor_kind(
   let head = items.first().and_then(leaf_value)?;
   let prototype = items.get(1).and_then(leaf_value)?;
   kinds.iter().copied().find(|kind| {
-    let target = resolve_project_nominal_target(snapshot, namespace, prototype, *kind);
+    let target = resolve_nominal_target(snapshot, namespace, prototype, *kind);
     head == kind.legacy_head()
       && !prototype.starts_with('_')
       && !prototype_is_shadowed(prototype, shadowed)
@@ -6476,10 +6505,11 @@ fn prototype_is_shadowed(prototype: &str, shadowed: &HashSet<String>) -> bool {
   }
 }
 
-/// Resolve a nominal prototype to its exact editable project definition.
-fn resolve_project_nominal_target(snapshot: &Snapshot, at_ns: &str, prototype: &str, kind: NominalKind) -> Option<(String, String)> {
+/// Resolve a nominal prototype to its exact editable project definition, or to a `calcit.core`
+/// enum that no local definition or import shadows.
+fn resolve_nominal_target(snapshot: &Snapshot, at_ns: &str, prototype: &str, kind: NominalKind) -> Option<(String, String)> {
   let target = if let Some((prefix, definition)) = prototype.rsplit_once('/') {
-    let namespace = if snapshot.files.contains_key(prefix) {
+    let namespace = if snapshot.files.contains_key(prefix) || prefix == CORE_NS {
       prefix.to_owned()
     } else {
       let namespace =
@@ -6489,10 +6519,52 @@ fn resolve_project_nominal_target(snapshot: &Snapshot, at_ns: &str, prototype: &
     (namespace, definition.to_owned())
   } else if nominal_definition_matches(snapshot, at_ns, prototype, kind) {
     return Some((at_ns.to_owned(), prototype.to_owned()));
+  } else if let Some(target) = imported_definition_target(at_ns, prototype) {
+    target
+  } else if core_nominal_type_is_unshadowed(snapshot, at_ns, prototype, &HashSet::new()) {
+    (CORE_NS.to_owned(), prototype.to_owned())
   } else {
-    imported_definition_target(at_ns, prototype)?
+    return None;
   };
+  if target.0 == CORE_NS && !snapshot.files.contains_key(CORE_NS) {
+    return (kind == NominalKind::Enum && core_enum_names().contains(&target.1)).then_some(target);
+  }
   nominal_definition_matches(snapshot, &target.0, &target.1, kind).then_some(target)
+}
+
+const CORE_NS: &str = "calcit.core";
+
+/// Enums that `calcit.core` declares with `defenum`, read once from the embedded core snapshot.
+/// Core wraps most of them as `def Name (impl-traits (defenum Name ...) ...)`.
+fn core_enum_names() -> &'static HashSet<String> {
+  static NAMES: std::sync::OnceLock<HashSet<String>> = std::sync::OnceLock::new();
+  NAMES.get_or_init(|| {
+    calcit::load_core_snapshot()
+      .ok()
+      .and_then(|core| {
+        core.files.get(CORE_NS).map(|file| {
+          file
+            .defs
+            .iter()
+            .filter(|(name, entry)| declares_enum(&entry.code, name))
+            .map(|(name, _)| name.to_owned())
+            .collect()
+        })
+      })
+      .unwrap_or_default()
+  })
+}
+
+/// Whether a definition body evaluates `defenum <name>`, looking through wrapping forms but not quoted data.
+fn declares_enum(code: &Cirru, name: &str) -> bool {
+  let Cirru::List(items) = code else {
+    return false;
+  };
+  match items.first().and_then(leaf_value) {
+    Some("quote" | "quasiquote" | "defmacro" | "defn" | "fn") => false,
+    Some("defenum") => items.get(1).and_then(leaf_value) == Some(name),
+    _ => items.iter().any(|item| declares_enum(item, name)),
+  }
 }
 
 /// Resolve a referred local import name without losing a renamed target definition.

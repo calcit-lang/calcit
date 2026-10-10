@@ -157,13 +157,21 @@ pub struct SourceExpressionEvidence {
   pub inferred_type: Option<Arc<CalcitTypeAnnotation>>,
 }
 
+#[derive(Default)]
+struct SourceExpressionTrace {
+  expressions: Vec<SourceExpressionEvidence>,
+  // Identity belongs to the reader tree kept alive for the whole trace, not
+  // to a lowered child that happens to carry the same symbol coordinates.
+  reader_locations: HashMap<usize, NodeLocation>,
+}
+
 thread_local! {
   static REQUIRE_ASSERTION_PROOF: Cell<bool> = const { Cell::new(false) };
   /// Dependencies already re-proved within the current outer assertion audit.
   /// Reset with the compiled-program checkpoint so no audit result outlives it.
   static AUDIT_PROVEN_DEFS: RefCell<HashSet<(Arc<str>, Arc<str>)>> = RefCell::new(HashSet::new());
   static RESOLVED_SOURCE_USAGE_TRACE: RefCell<Option<Vec<ResolvedSourceUsage>>> = const { RefCell::new(None) };
-  static SOURCE_EXPRESSION_TRACE: RefCell<Option<Vec<SourceExpressionEvidence>>> = const { RefCell::new(None) };
+  static SOURCE_EXPRESSION_TRACE: RefCell<Option<SourceExpressionTrace>> = const { RefCell::new(None) };
   #[cfg(test)]
   static TEST_WARN_DYN_METHOD: Cell<bool> = const { Cell::new(false) };
   #[cfg(test)]
@@ -246,7 +254,65 @@ pub fn trace_source_expressions(
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<(Calcit, Vec<SourceExpressionEvidence>), CalcitErr> {
-  let previous = SOURCE_EXPRESSION_TRACE.with(|trace| trace.replace(Some(Vec::new())));
+  trace_source_expressions_with_locations(code, ns, def, check_warnings, call_stack, HashMap::new())
+}
+
+/// Trace a Snapshot definition with exact reader identities, including heads
+/// such as Proc/Syntax that intentionally have no symbol location of their own.
+pub fn trace_snapshot_source_expressions(
+  source: &cirru_parser::Cirru,
+  ns: &str,
+  def: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<Vec<SourceExpressionEvidence>, CalcitErr> {
+  let code = crate::data::cirru::code_to_calcit(source, ns, def, vec![])
+    .map_err(|message| CalcitErr::use_msg_stack_location(CalcitErrKind::Syntax, message, call_stack, None))?;
+  fn collect(
+    code: &Calcit,
+    source: &cirru_parser::Cirru,
+    ns: &str,
+    def: &str,
+    path: &mut Vec<usize>,
+    locations: &mut HashMap<usize, NodeLocation>,
+  ) {
+    if let Calcit::List(items) = code {
+      if matches!(items.first(), Some(Calcit::Proc(_) | Calcit::Syntax(..)))
+        && let Some(coord) = crate::data::cirru::reader_path_to_source_path(source, path)
+          .and_then(|coord| coord.into_iter().map(u16::try_from).collect::<Result<Vec<_>, _>>().ok())
+      {
+        locations.insert(
+          Arc::as_ptr(items) as usize,
+          NodeLocation::new(ns.into(), def.into(), Arc::new(coord)),
+        );
+      }
+      for (index, item) in items.iter().enumerate() {
+        path.push(index);
+        collect(item, source, ns, def, path, locations);
+        path.pop();
+      }
+    }
+  }
+  let mut locations = HashMap::new();
+  collect(&code, source, ns, def, &mut vec![], &mut locations);
+  // `code` retains every indexed Arc until preprocessing and collection finish.
+  trace_source_expressions_with_locations(&code, ns, def, check_warnings, call_stack, locations).map(|(_, expressions)| expressions)
+}
+
+fn trace_source_expressions_with_locations(
+  code: &Calcit,
+  ns: &str,
+  def: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+  reader_locations: HashMap<usize, NodeLocation>,
+) -> Result<(Calcit, Vec<SourceExpressionEvidence>), CalcitErr> {
+  let previous = SOURCE_EXPRESSION_TRACE.with(|trace| {
+    trace.replace(Some(SourceExpressionTrace {
+      expressions: vec![],
+      reader_locations,
+    }))
+  });
   debug_assert!(previous.is_none(), "source expression traces must not be nested");
   let mut scope_types = ScopeTypes::new();
   let result = builtins::meta::with_compiling_def(ns, def, || {
@@ -260,7 +326,7 @@ pub fn trace_source_expressions(
       }
     })
   });
-  let expressions = SOURCE_EXPRESSION_TRACE.with(|trace| trace.replace(previous).unwrap_or_default());
+  let expressions = SOURCE_EXPRESSION_TRACE.with(|trace| trace.replace(previous).unwrap_or_default().expressions);
   result.map(|processed| (processed, expressions))
 }
 
@@ -2574,15 +2640,20 @@ fn preprocess_expr_unguarded(
           check_warnings,
           call_stack,
         )?);
-        if SOURCE_EXPRESSION_TRACE.with(|trace| trace.borrow().is_some())
-          && let Some(head) = xs.first()
-          && matches!(head, Calcit::Symbol { .. } | Calcit::Import { .. } | Calcit::Method(..))
-          && let Some(location) = derive_list_call_expr_location(xs)
-        {
+        let source_location = SOURCE_EXPRESSION_TRACE.with(|trace| {
+          let trace = trace.borrow();
+          let trace = trace.as_ref()?;
+          trace.reader_locations.get(&(Arc::as_ptr(xs) as usize)).cloned().or_else(|| {
+            matches!(xs.first(), Some(Calcit::Symbol { .. } | Calcit::Import { .. } | Calcit::Method(..)))
+              .then(|| derive_list_call_expr_location(xs))
+              .flatten()
+          })
+        });
+        if let Some(location) = source_location {
           let inferred_type = resolve_type_value(&processed, scope_types);
           SOURCE_EXPRESSION_TRACE.with(|trace| {
-            if let Some(items) = trace.borrow_mut().as_mut() {
-              items.push(SourceExpressionEvidence {
+            if let Some(trace) = trace.borrow_mut().as_mut() {
+              trace.expressions.push(SourceExpressionEvidence {
                 location,
                 processed: processed.clone(),
                 inferred_type,
@@ -10692,19 +10763,23 @@ fn reject_strict_bare_enum_constructor_comparison(
 
 /// Rewrite a proven direct self-call only where its result is returned by the
 /// current function. Resolved imports exclude local shadowing and indirect calls.
-fn lower_direct_self_tail_call(expr: &Calcit, ns: &str, def: &str) -> Option<Calcit> {
+/// Every `recur` call it creates is pushed to `lowered_calls`, since those
+/// calls never went through the source-level `recur` checks.
+fn lower_direct_self_tail_call(expr: &Calcit, ns: &str, def: &str, lowered_calls: &mut Vec<Calcit>) -> Option<Calcit> {
   let Calcit::List(items) = expr else { return None };
   match items.first() {
     Some(Calcit::Import(import)) if import.ns.as_ref() == ns && import.def.as_ref() == def => {
       let mut call = items.to_vec();
       call[0] = Calcit::Proc(CalcitProc::Recur);
-      Some(Calcit::from(call))
+      let call = Calcit::from(call);
+      lowered_calls.push(call.clone());
+      Some(call)
     }
     Some(Calcit::Syntax(CalcitSyntax::If, _)) => {
       let mut changed = false;
       let mut forms = items.to_vec();
       for branch in forms.iter_mut().skip(2) {
-        if let Some(lowered) = lower_direct_self_tail_call(branch, ns, def) {
+        if let Some(lowered) = lower_direct_self_tail_call(branch, ns, def, lowered_calls) {
           *branch = lowered;
           changed = true;
         }
@@ -10714,7 +10789,7 @@ fn lower_direct_self_tail_call(expr: &Calcit, ns: &str, def: &str) -> Option<Cal
     Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) if items.len() > 2 => {
       let mut forms = items.to_vec();
       let last = forms.last_mut().expect("CoreLet has a body");
-      let lowered = lower_direct_self_tail_call(last, ns, def)?;
+      let lowered = lower_direct_self_tail_call(last, ns, def, lowered_calls)?;
       *last = lowered;
       Some(Calcit::from(forms))
     }
@@ -10726,7 +10801,7 @@ fn lower_direct_self_tail_call(expr: &Calcit, ns: &str, def: &str) -> Option<Cal
         if let Some(Calcit::List(table)) = forms.get_mut(3) {
           let mut branches = table.to_vec();
           for branch in &mut branches {
-            if let Some(lowered) = lower_self_tail_match_branch(branch, ns, def) {
+            if let Some(lowered) = lower_self_tail_match_branch(branch, ns, def, lowered_calls) {
               *branch = lowered;
               changed = true;
             }
@@ -10737,7 +10812,7 @@ fn lower_direct_self_tail_call(expr: &Calcit, ns: &str, def: &str) -> Option<Cal
         }
       } else {
         for branch in forms.iter_mut().skip(branch_start) {
-          if let Some(lowered) = lower_self_tail_match_branch(branch, ns, def) {
+          if let Some(lowered) = lower_self_tail_match_branch(branch, ns, def, lowered_calls) {
             *branch = lowered;
             changed = true;
           }
@@ -10749,10 +10824,10 @@ fn lower_direct_self_tail_call(expr: &Calcit, ns: &str, def: &str) -> Option<Cal
   }
 }
 
-fn lower_self_tail_match_branch(branch: &Calcit, ns: &str, def: &str) -> Option<Calcit> {
+fn lower_self_tail_match_branch(branch: &Calcit, ns: &str, def: &str, lowered_calls: &mut Vec<Calcit>) -> Option<Calcit> {
   let Calcit::List(pair) = branch else { return None };
   let body = pair.get(1)?;
-  let lowered = lower_direct_self_tail_call(body, ns, def)?;
+  let lowered = lower_direct_self_tail_call(body, ns, def, lowered_calls)?;
   let mut forms = pair.to_vec();
   forms[1] = lowered;
   Some(Calcit::from(forms))
@@ -11422,8 +11497,24 @@ pub fn preprocess_defn(
       let mut forms = xs.to_vec();
       if source_top_level_definition && matches!(head, CalcitSyntax::Defn) && !has_marked_args && args.len() > 2 {
         let body_index = forms.len() - 1 - usize::from(generated_fn_schema.is_some());
-        if let Some(lowered) = lower_direct_self_tail_call(&forms[body_index], ctx.file_ns, def_name) {
+        let mut lowered_calls = vec![];
+        if let Some(lowered) = lower_direct_self_tail_call(&forms[body_index], ctx.file_ns, def_name, &mut lowered_calls) {
           forms[body_index] = lowered;
+          // The self-calls were still compiling when their arguments were seen,
+          // so check the lowered `recur` calls against the parameter types now.
+          if ctx.file_ns != calcit::CORE_NS {
+            for call in &lowered_calls {
+              check_recur_args_in_expr(
+                call,
+                param_symbols.len(),
+                &recur_param_types,
+                &body_types,
+                ctx.file_ns,
+                def_name.as_ref(),
+                ctx.check_warnings,
+              );
+            }
+          }
         }
       }
       Ok(Calcit::from(forms))
@@ -13498,6 +13589,37 @@ mod tests {
   use cirru_parser::Cirru;
 
   #[test]
+  fn snapshot_source_trace_retains_unlocated_reader_heads_and_comment_indexes() {
+    let _state = lock_preprocess_test_state();
+    let ns = "tests.source-trace";
+    let def = "original";
+    let warnings = RefCell::new(vec![]);
+    // These calls contain no located symbols from which to guess a call path.
+    let source = Cirru::List(vec![
+      Cirru::leaf("&+"),
+      Cirru::List(vec![Cirru::leaf(";"), Cirru::leaf("reader drops this comment")]),
+      Cirru::leaf("1"),
+      Cirru::List(vec![Cirru::leaf("&+"), Cirru::leaf("2"), Cirru::leaf("3")]),
+    ]);
+    let evidence = trace_snapshot_source_expressions(&source, ns, def, &warnings, &CallStackList::default())
+      .expect("trace reader-resolved primitive calls");
+    for path in [vec![], vec![3]] {
+      let call = unique_source_expression_at_path(&evidence, ns, def, &path).expect("unique original source call");
+      assert!(matches!(call.inferred_type.as_deref(), Some(CalcitTypeAnnotation::Number)));
+    }
+    assert!(unique_source_expression_at_path(&evidence, ns, def, &[2]).is_none());
+    let syntax = Cirru::List(vec![Cirru::leaf("assert-type"), Cirru::leaf("1"), Cirru::leaf(":number")]);
+    let evidence =
+      trace_snapshot_source_expressions(&syntax, ns, def, &warnings, &CallStackList::default()).expect("trace reader-resolved syntax");
+    let call = unique_source_expression_at_path(&evidence, ns, def, &[]).expect("syntax has its own source identity");
+    assert!(matches!(call.inferred_type.as_deref(), Some(CalcitTypeAnnotation::Number)));
+    let duplicate = vec![call.clone(), call.clone()];
+    assert!(unique_source_expression_at_path(&duplicate, ns, def, &[]).is_none());
+    assert!(warnings.borrow().is_empty());
+    assert!(SOURCE_EXPRESSION_TRACE.with(|trace| trace.borrow().is_none()));
+  }
+
+  #[test]
   fn single_use_unbounded_generic_param_accepts_any_value() {
     let var: Arc<str> = Arc::from("T");
     let type_var = Arc::new(CalcitTypeAnnotation::TypeVar(var.clone()));
@@ -13646,14 +13768,14 @@ mod tests {
       def_id: None,
     });
     let self_call = Calcit::from(vec![self_import, Calcit::Number(1.0)]);
-    let lowered = lower_direct_self_tail_call(&self_call, ns, def).expect("direct self-call in tail position");
+    let lowered = lower_direct_self_tail_call(&self_call, ns, def, &mut vec![]).expect("direct self-call in tail position");
     let Calcit::List(lowered_items) = lowered else {
       panic!("expected a call")
     };
     assert!(matches!(lowered_items.first(), Some(Calcit::Proc(CalcitProc::Recur))));
 
     let non_tail = Calcit::from(vec![core_import("&+", ns), Calcit::Number(1.0), self_call.clone()]);
-    assert!(lower_direct_self_tail_call(&non_tail, ns, def).is_none());
+    assert!(lower_direct_self_tail_call(&non_tail, ns, def, &mut vec![]).is_none());
     let shadowed = Calcit::Local(CalcitLocal {
       idx: CalcitLocal::track_sym(&Arc::from(def)),
       sym: Arc::from(def),
@@ -13664,7 +13786,7 @@ mod tests {
       location: None,
       type_info: calcit::DYNAMIC_TYPE.clone(),
     });
-    assert!(lower_direct_self_tail_call(&Calcit::from(vec![shadowed, Calcit::Number(1.0)]), ns, def).is_none());
+    assert!(lower_direct_self_tail_call(&Calcit::from(vec![shadowed, Calcit::Number(1.0)]), ns, def, &mut vec![]).is_none());
 
     let if_form = Calcit::from(vec![
       Calcit::Syntax(CalcitSyntax::If, Arc::from(calcit::CORE_NS)),
@@ -13672,7 +13794,7 @@ mod tests {
       self_call.clone(),
       Calcit::Number(0.0),
     ]);
-    let lowered_if = lower_direct_self_tail_call(&if_form, ns, def).expect("tail branch should lower");
+    let lowered_if = lower_direct_self_tail_call(&if_form, ns, def, &mut vec![]).expect("tail branch should lower");
     let Calcit::List(if_items) = lowered_if else {
       panic!("expected if")
     };
@@ -13686,7 +13808,7 @@ mod tests {
       Calcit::Number(2.0),
       self_call,
     ]);
-    let lowered_let = lower_direct_self_tail_call(&core_let, ns, def).expect("final let body should lower");
+    let lowered_let = lower_direct_self_tail_call(&core_let, ns, def, &mut vec![]).expect("final let body should lower");
     let Calcit::List(let_items) = lowered_let else {
       panic!("expected let")
     };

@@ -8730,7 +8730,8 @@
             :required $ [] 'Syntax $ :: 'Expr 'Dynamic
             :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :deprecated :macro
-        'let-sugar $ %{} 'CodeEntry (:doc |)
+        'let-sugar $ %{} 'CodeEntry
+          :doc "|Deprecated: binds each `(pattern value)` pair in order, a symbol through `&let` and a `([] ...)` pattern through `let[]`. Write `let` and `let[]` directly; `calcit fix --rule let-sugar-to-let-v1` rewrites proven calls. Scheduled for removal in a later non-patch release."
           :code $ quote $ defmacro let-sugar (pairs & body)
             if
               not $ and (list? pairs) (every? pairs list?)
@@ -8755,7 +8756,7 @@
             :expansion $ :: 'Expr 'Dynamic
             :required $ [] 'SyntaxList
             :rest $ :: 'Expr 'Dynamic
-          :tags $ #{} :macro
+          :tags $ #{} :deprecated :macro
         'let[] $ %{} 'CodeEntry
           :doc "|Destructures a sequential value inside `let`, assigning each position to declared names and supporting `&` rest bindings."
           :code $ quote $ defmacro let[] (vars data & body)

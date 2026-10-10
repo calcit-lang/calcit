@@ -2,7 +2,6 @@
   :native $ {}
   :js $ {}
     :tests $ {} (|calcit.core/&list:slice#rejects-fractional-bounds "|parity: JS accepts a fractional slice bound instead of raising (#1849)")
-      |calcit.core/add-watch!#registers-once-and-preserves-callback-order "|parity: JS add-watch! accepts a duplicate listener key that native rejects"
       |calcit.core/deftrait#requires-head-accepts-bare-and-quoted "|parity: JS codegen cannot emit the raw `macroexpand` syntax node used by this test"
       |calcit.core/ffi-task:cancel#checked-unit-rejects-nil "|parity: JS decode-map-as with 'Unit does not raise the native `expected &unit, got nil` failure"
       |calcit.core/ffi-task:cancel#checked-unit-rejects-number "|parity: JS decode-map-as with 'Unit does not raise the native `expected &unit, got number` failure"
