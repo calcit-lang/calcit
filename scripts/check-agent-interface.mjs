@@ -1273,6 +1273,22 @@ const directOptionQuery = spawnSync(binary, ["src/cirru/calcit-core.cirru", "que
 assert.equal(directOptionQuery.status, 0, directOptionQuery.stderr);
 assert.match(JSON.parse(directOptionQuery.stdout).data.doc, /Option :some value/);
 
+// Public data constructors and numeric functions must not look like implementation helpers.
+for (const definition of ["Option", "Result", "cos", "sin", "sqrt", "floor", "ceil", "round", "pow"]) {
+  const queried = spawnSync(binary, ["src/cirru/calcit-core.cirru", "query", "context", `calcit.core/${definition}`, "--format", "json"], {
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+    env: { ...process.env, NO_COLOR: "1" },
+  });
+  assert.ifError(queried.error);
+  assert.equal(queried.status, 0, `${definition}: ${queried.stderr}`);
+  const data = JSON.parse(queried.stdout).data;
+  assert.equal(data.id, `calcit.core/${definition}`);
+  assert.ok(!data.tags.includes("internal"), `${definition} must remain discoverable as a public API`);
+  assert.doesNotMatch(data.doc, /internal function/i);
+  assert.equal(data.kind, ["Option", "Result"].includes(definition) ? "data" : "proc");
+}
+
 const remoteLibsHelp = spawnSync(binary, ["docs", "remote-libs", "--help"], { encoding: "utf8" });
 assert.ifError(remoteLibsHelp.error);
 assert.equal(remoteLibsHelp.status, 0, remoteLibsHelp.stderr);

@@ -354,8 +354,8 @@ let
 - `case-default` - 已弃用，改用 `match` 加末尾 `_` 分支
 - `&case` - internal case macro，仅处理表达式模式
 - `match` - 对具名和匿名 enum 使用首选的原生模式匹配；也支持 tag/字符串/数字等字面量模式
-- `struct-match` - struct pattern matching
-- `list-match` - list destructuring match
+- `struct-match` - 按 StructDef 分支并绑定 struct 值
+- `list-match` - 已弃用，改用 `match (destruct-list xs)` 的 `(:none)` / `(:some head tail)` 分支
 - `if-let` - bind an `Option<T>` payload with explicit some/none branches
 - `when-let` - 仅在 `Option :some` 分支运行 body，返回 `Option<R>`
 

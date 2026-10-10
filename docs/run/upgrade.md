@@ -535,7 +535,7 @@ Map 与 Set 同时不再实现 `Contains` trait。schema `:where` 中 `'T 'Conta
 
 ### 仍可用的兼容名
 
-core 中带 `:deprecated` 标记的 27 个兼容名在 0.29.0 仍可调用，行为与 0.28 相同。新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余按首选写法逐处改写。
+core 中带 `:deprecated` 标记的 28 个兼容名在 0.29.0 仍可调用，行为与 0.28 相同。新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余按首选写法逐处改写。
 
 | 兼容名 | 首选写法 | 迁移 |
 |---|---|---|
@@ -557,6 +557,7 @@ core 中带 `:deprecated` 标记的 27 个兼容名在 0.29.0 仍可调用，行
 | `let-destruct` | symbol 模式写 `let`，`([] ...)` 模式写 `let[]` | 人工改写（生态中未见调用） |
 | `option:let` | 嵌套 `.and-then`：`option:let ((a x) (b (f a))) body` 写成 `x .and-then $ fn (a) $ (f a) .and-then $ fn (b) body` | 人工改写（生态中 1 处） |
 | `let-sugar` | symbol 绑定写 `let`，`([] ...)` 模式写 `let[]` | `let-sugar-to-let-v1`（`({} ...)` 模式人工改写） |
+| `list-match` | `match (destruct-list xs)`，分支写 `(:none)` 与 `(:some head tail)` | `list-match-to-match-v1`（`xs` 已证明为 List 时；其余先 decode 或收窄） |
 | `apply-args` | `loop ((param value) ...) body`，body 中用 `recur` 进入下一轮 | `apply-args-to-loop-v1`（callee 是字面量 `fn` / `defn` 时） |
 | 宏 `w-log` | `dbg`，打印同样的源码与值并返回值 | `calcit calcit.cirru fix --rule core-macro-alias-v1 --format edn` |
 | 宏 `wo-log` / `wo-js-log` | 去掉外层，直接写参数 | 同上 |
@@ -564,6 +565,37 @@ core 中带 `:deprecated` 标记的 27 个兼容名在 0.29.0 仍可调用，行
 | 宏 `w-js-log` | `dbg`；需要在浏览器控制台查看宿主对象时显式写 `js/console.log` | 同上，只给 `requires-review` |
 
 上表名字、函数 `round?`、前缀 `reduce`，以及方法 List `.add`、List/Map/Set `.count`、FfiTask `.cancel` / `.cancel-with` 与 Struct/Enum `.contains?` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零后，在下一个非 patch 版本删除，并在本文列出删除项。
+
+### std 定时器与信号订阅命名
+
+[calcit.std 0.2.40](https://github.com/calcit-lang/calcit.std/releases/tag/0.2.40) 配套 Calcit **0.29.0-alpha.27**，是使用 alpha 编译器的模块预发布版。新代码用带 `!` 的名称表达注册宿主工作：
+
+| 兼容名 | 首选写法 |
+| --- | --- |
+| `calcit.std.time/set-timeout` | `calcit.std.time/set-timeout!` |
+| `calcit.std.time/set-interval` | `calcit.std.time/set-interval!` |
+| `calcit.std.process/on-ctrl-c` | `calcit.std.process/on-ctrl-c!` |
+
+旧名仍是同一函数的引用，现带弃用提示；callback、参数顺序、返回的 `FfiTask`、取消与退出行为不变。升级模块前先核对工具链，固定精确版本并通过 Caps 正常安装，在目标机器构建 native dylib。更新项目中的 import、调用和附带 `:tests` / `:examples`，随后运行项目原有的异步与退出回归；严格零弃用门禁下，仍引用旧名的代码需要一并迁移。
+
+可通过已有查询查看已安装模块的签名、文档和例子，不必增加工具入口：
+
+```bash
+calcit .calcit/modules/calcit.std/calcit.cirru query context 'calcit.std.time/set-timeout!' --format edn
+calcit .calcit/modules/calcit.std/calcit.cirru query examples 'calcit.std.process/on-ctrl-c!'
+```
+
+模块自身的附带测试和 smoke 使用相对于模块根目录的夹具；验证正常安装的模块时，在该目录执行：
+
+```bash
+(
+  cd .calcit/modules/calcit.std
+  calcit calcit.cirru test --tag lifecycle --require-match
+  bash scripts/check-c-safe-async.sh
+)
+```
+
+这是已审阅的 Calcit-facing 名称迁移，不修改 native symbol 或业务回调。自动语义改名遇到宏来源而返回 `requires-review` 时，先人工核对来源与契约，再通过现有 `edit` / `tree` 的 dry-run 和 revision 守卫事务修改；不要绕过门禁或批量替换同名用户函数。旧名的删除仍须满足本节的消费者与迁移窗口条件，不随这次模块升级删除；JS/WASM/WASI 的支持范围也不因此扩大。
 
 ### Ref watcher 重复注册
 

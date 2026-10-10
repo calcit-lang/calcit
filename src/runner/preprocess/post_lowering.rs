@@ -13,7 +13,8 @@
 //!
 //! Invariants enforced today:
 //! - (b) a lowering that is recorded at a rewrite point (method inlining,
-//!   typed optional access, trait-bound method lowering) must produce a node
+//!   typed optional access, trait-bound method lowering, struct field-index
+//!   lowering) must produce a node
 //!   whose inferred type still proves the pre-rewrite type;
 //! - (c) every `Proc` call, every call to a compiled user function and every
 //!   `recur` in the final tree passes the same argument checks as the source
@@ -41,6 +42,9 @@ pub(super) enum RewriteOrigin {
   TypedAccess,
   /// A trait-bounded method call lowered to `&trait-call`.
   TraitCall,
+  /// `&struct:get` / `&struct:assoc` / `&struct:with` on a known struct
+  /// lowered to the field-index procedures.
+  StructFieldIndex,
 }
 
 impl RewriteOrigin {
@@ -49,6 +53,7 @@ impl RewriteOrigin {
       Self::MethodInline => "method-inline",
       Self::TypedAccess => "typed-access",
       Self::TraitCall => "trait-call",
+      Self::StructFieldIndex => "struct-field-index",
     }
   }
 }
@@ -636,6 +641,21 @@ mod tests {
     // A rewrite that no longer appears in the final tree is not live evidence.
     let unrelated = Calcit::Number(1.0);
     validate(&unrelated, &[], &[evidence]).expect("only nodes that reach the final tree are validated");
+  }
+
+  #[test]
+  fn struct_field_index_lowering_is_named_in_the_violation() {
+    let node = Calcit::from(vec![Calcit::Proc(CalcitProc::NativeStructNth), Calcit::Number(0.0)]);
+    let evidence = RewriteEvidence {
+      origin: RewriteOrigin::StructFieldIndex,
+      before_form: Calcit::Nil,
+      before_type: number(),
+      after_form: node.clone(),
+      after_type: calcit::DYNAMIC_TYPE.clone(),
+      location: None,
+    };
+    let error = validate(&node, &[], &[evidence]).expect_err("precision loss must be reported");
+    assert!(error.msg.contains("`struct-field-index` lowering"), "{}", error.msg);
   }
 
   #[test]
