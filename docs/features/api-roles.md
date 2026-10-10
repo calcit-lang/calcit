@@ -353,6 +353,8 @@ Result 的 `result:ok?` / `result:err?` / `result:unwrap-or` 沿用单独的 `co
 
 剩余集中迁移与这些**应用可直接调用**的兼容入口以 **0.30.0** 为计划退场窗口，且须同时满足：真实消费者在发布版 Calcit 与匹配的运行时依赖上完成严格类型和运行测试；对消费者 Snapshot 重复运行对应 fix 无可自动改写的旧调用，剩余 `requires-review` 已逐一处置；Agent 查询、升级文档与示例只推荐方法；至少经历一个已发布版本的迁移窗口；JS/native 及实际受影响的 WASM/WASI 路径验证通过；core method 实现已与将删除的入口解耦，并有 Calcit `:tests` 证明行为不变。计划版本本身不证明这些条件已满足；任一条件未满足就继续保留兼容入口，记录原因和下一次检查的版本，不通过扩大 Dynamic 或机械替换绕过。此约束不适用于无自然接收者的模块函数，也不承诺把所有 `result:*` / `option:*` 内部实现一并移除。
 
+精确查询 `%some/%none/%ok/%err`、`atom/defatom`、`remove-watch` 等旧入口时，定义文档也标明这一计划窗口与条件，而不是把历史最早移除版本当作现已允许删除。`some-in?` 的人工迁移使用公开的 `.some? $ get-in x path`：叶子是 nil 时返回 false，与 `contains-in?` 的路径存在判断不同。`range-bothway` 的人工展开先按原顺序绑定实参一次，再构造显式 `range`；不要把带副作用的实参复制到范围两端。
+
 ## 限制
 
 - std 0.2.37 发布的是源码模块，不代表预编译 dylib 已发布。
