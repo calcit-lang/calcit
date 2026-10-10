@@ -613,7 +613,7 @@ core 在 0.29.0 仍保留下表兼容入口，新代码使用右侧的首选写�
 | 宏 `flipped` | 按实际顺序写参数：`flipped f a b` 写成 `f b a` | 同上；位于 `->` 等线程宏中时需要人工改写 |
 | 宏 `w-js-log` | `dbg`；需要在浏览器控制台查看宿主对象时显式写 `js/console.log` | 同上，只给 `requires-review` |
 
-上表名字、函数 `round?`、前缀 `reduce`，以及方法 List `.add`、List/Map/Set `.count`、FfiTask `.cancel` / `.cancel-with` 与 Struct/Enum `.contains?` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零后，在下一个非 patch 版本删除，并在本文列出删除项。
+上表名字、函数 `round?`、前缀 `reduce`，以及方法 List `.add`、List/Map/Set `.count`、FfiTask `.cancel` / `.cancel-with` 与 Struct/Enum `.contains?` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零只是必要条件；还须同时满足消费者验证、已发布迁移窗口、类型/失败/求值与相关后端语义验证，以及 core 实现解耦条件，之后才可在下一个非 patch 版本删除，并在本文列出删除项。依赖模块和未合并迁移也须核对；到达 0.30.0 不自动授权删除。
 
 ### std 定时器与信号订阅命名
 
