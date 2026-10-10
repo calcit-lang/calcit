@@ -5647,12 +5647,16 @@ mod tests {
             signature.required_inputs.as_slice(),
             [
               crate::calcit::MacroSyntaxType::Expr(inner),
-              crate::calcit::MacroSyntaxType::SyntaxList,
-              crate::calcit::MacroSyntaxType::SyntaxList,
+              crate::calcit::MacroSyntaxType::Expr(empty_branch),
               crate::calcit::MacroSyntaxType::SyntaxList
             ] if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
+              && matches!(empty_branch.as_ref(), CalcitTypeAnnotation::Dynamic)
           ));
-          assert!(signature.rest_input.is_none());
+          assert!(matches!(
+            signature.rest_input,
+            Some(crate::calcit::MacroSyntaxType::Expr(ref body))
+              if matches!(body.as_ref(), CalcitTypeAnnotation::Dynamic)
+          ));
         }
         "&case" => {
           assert!(matches!(
