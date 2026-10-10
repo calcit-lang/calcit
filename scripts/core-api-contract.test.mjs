@@ -47,6 +47,47 @@ test("native EDN preserves symbols, tags and raw schema quotes", () => {
     "quoted syntax leaves are strings; only EDN symbols outside quotes become symbol objects");
 });
 
+test("typed accessors retain receiver-specific Option payloads without freezing Enum access", () => {
+  for (const [receiver, payload, names] of [
+    ["'String", "'String", [".first", ".last", ".nth"]],
+    [":: 'List 'Number", "'Number", [".first", ".last"]],
+  ]) {
+    for (const name of names) {
+      const row = baseline["method-contracts"].find(row => row.receiver === receiver && row.name === name);
+      assert.ok(row, `${receiver} ${name} must retain typed lookup evidence`);
+      assert.deepEqual(row.parameters, name === ".nth" ? [{ quote: "'Number" }] : []);
+      assert.equal(row.rest, null);
+      assert.deepEqual(row.returns.quote, ["::", "'calcit.core/Option", payload]);
+    }
+  }
+  assert.ok(!baseline["method-contracts"].some(row => row.receiver.includes("Enum") && [".first", ".last", ".nth"].includes(row.name)),
+    "heterogeneous Enum access must not acquire a fabricated homogeneous payload");
+});
+
+test("Option and Result callback methods preserve declared input/output relations", () => {
+  for (const [receiver, names] of [
+    [":: 'calcit.core/Option 'Number", [".and-then", ".fold", ".or-else"]],
+    [":: 'calcit.core/Result 'Number 'String", [".and-then", ".map", ".map-err", ".or-else"]],
+  ]) {
+    for (const name of names) {
+      const row = baseline["method-contracts"].find(row => row.receiver === receiver && row.name === name);
+      assert.ok(row, `${receiver} ${name} must retain callback evidence`);
+      assert.equal(row.parameters.length, name === ".fold" ? 2 : 1);
+      for (const parameter of row.parameters) {
+        assert.deepEqual(parameter.quote.slice(0, 2), ["::", "'Fn"]);
+        assert.ok(parameter.quote[2].some(pair => pair[0] === ":return"));
+      }
+      assert.equal(row.rest, null);
+    }
+  }
+  const row = baseline["method-contracts"].find(row => row.receiver === ":: 'calcit.core/Result 'Number 'String" && row.name === ".map");
+  const output = row.parameters[0].quote[2].find(pair => pair[0] === ":return")[1];
+  assert.deepEqual(row.parameters[0].quote[2].find(pair => pair[0] === ":args")[1], ["[]", "'Number"]);
+  assert.deepEqual(row.returns.quote, ["::", "'calcit.core/Result", output, "'String"]);
+  assert.ok(!baseline["method-contracts"].some(row => row.receiver === ":: 'calcit.core/Option 'Number" && row.name === ".map"),
+    "an open Option map query must not be silently promoted to proven dispatch");
+});
+
 test("display and source-formatting declarations retain distinct names and callable shapes", () => {
   for (const name of ["format-to-lisp", "to-lispy-string"]) {
     const formatter = definition(baseline, name);
@@ -122,6 +163,9 @@ for (const [name, mutate] of [
   ["method schema", data => data.methods[0].schema.quote[2][1] = "'Dynamic"],
   ["backend feature", data => data.methods[0].features.push("js-ffi")],
   ["specialized lookup result", data => data["method-contracts"].find(row => row.receiver === ":: 'List 'Number" && row.name === ".get").returns.quote = "'String"],
+  ["typed first payload", data => data["method-contracts"].find(row => row.receiver === ":: 'List 'Number" && row.name === ".first").returns.quote = "'Dynamic"],
+  ["Result map error relation", data => data["method-contracts"].find(row => row.receiver === ":: 'calcit.core/Result 'Number 'String" && row.name === ".map").returns.quote[3] = "'Dynamic"],
+  ["Option callback input relation", data => data["method-contracts"].find(row => row.receiver === ":: 'calcit.core/Option 'Number" && row.name === ".and-then").parameters[0].quote[2].find(pair => pair[0] === ":args")[1][1] = "'Dynamic"],
   ["scalar conversion result", data => data["method-contracts"].find(row => row.receiver === "'String" && row.name === ".to-string").returns.quote = "'Dynamic"],
   ["diagnostic method result", data => data["method-contracts"].find(row => row.receiver === "'String" && row.name === ".debug").returns.quote = "'Dynamic"],
   ["diagnostic method parameters", data => data["method-contracts"].find(row => row.receiver === "'String" && row.name === ".debug").parameters.push({ quote: "'Number" })],

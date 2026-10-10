@@ -9958,6 +9958,18 @@
             :generics $ [] 'T 'U
             :return $ :: 'Option 'U
           :tags $ #{} :internal
+          :tests $ [] $ %{} 'TestEntry (:name |typed-method-selects-only-matching-branch)
+            :code $ quote $ let
+                present $ Option :some 3
+                absent $ assert-type (Option :none) (:: 'Option 'Number)
+                chained $ present .and-then $ fn (value)
+                  Option :some $ str value
+              assert-type chained $ :: 'Option 'String
+              assert= (Option :some |3) chained
+              assert= (Option :none)
+                absent .and-then $ fn (value) (raise |unselected-option-and-then)
+                  Option :some $ str value
+            :tags $ #{} :core :unit
         'option:fold $ %{} 'CodeEntry
           :doc "|Eliminate an Option by evaluating on-none for none or on-some with the payload."
           :code $ quote $ defn option:fold (opt on-none on-some)
@@ -9983,18 +9995,30 @@
                 :args $ [] 'T
             :generics $ [] 'T 'U
           :tags $ #{} :internal
-          :tests $ [] $ %{} 'TestEntry (:name |folds-open-option-payload)
-            :code $ quote $ let
-                present $ assert-type (%some 1) (:: 'Option 'Dynamic)
-                absent $ assert-type (%none) (:: 'Option 'Dynamic)
-              do
-                assert= 1 $ option:fold present
-                  fn () 0
-                  fn (value) value
-                assert= 0 $ option:fold absent
-                  fn () 0
-                  fn (value) value
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |folds-open-option-payload)
+              :code $ quote $ let
+                  present $ assert-type (%some 1) (:: 'Option 'Dynamic)
+                  absent $ assert-type (%none) (:: 'Option 'Dynamic)
+                do
+                  assert= 1 $ option:fold present
+                    fn () 0
+                    fn (value) value
+                  assert= 0 $ option:fold absent
+                    fn () 0
+                    fn (value) value
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |typed-method-selects-only-matching-branch)
+              :code $ quote $ let
+                  present $ Option :some 3
+                  absent $ assert-type (Option :none) (:: 'Option 'Number)
+                assert= |3 $ present .fold
+                  fn () (raise |unselected-option-fold-none) |missing
+                  fn (value) (str value)
+                assert= |missing $ absent .fold
+                  fn () |missing
+                  fn (value) (raise |unselected-option-fold-some) (str value)
+              :tags $ #{} :core :unit
         'option:let $ %{} 'CodeEntry
           :doc "|Deprecated: binds Option payloads in sequence through `.and-then`, stopping at the first none; the body must return Option. Write the nested `.and-then` calls directly; scheduled for removal in a later non-patch release."
           :code $ quote $ defmacro option:let (pairs & body)
@@ -10105,6 +10129,14 @@
             :generics $ [] 'T
             :return $ :: 'Option 'T
           :tags $ #{} :internal
+          :tests $ [] $ %{} 'TestEntry (:name |typed-method-selects-only-matching-branch)
+            :code $ quote $ let
+                present $ Option :some 3
+                absent $ assert-type (Option :none) (:: 'Option 'Number)
+              assert= present $ present .or-else $ fn () (raise |unselected-option-or-else) (Option :some 9)
+              assert= (Option :some 9)
+                absent .or-else $ fn () $ Option :some 9
+            :tags $ #{} :core :unit
         'option:some? $ %{} 'CodeEntry
           :doc "|判断 Option 是否为 :some；公开代码优先使用 .some?，本辅助函数属于内部兼容入口。"
           :code $ quote $ defn option:some? (opt)
@@ -10793,6 +10825,22 @@
             :generics $ [] 'T 'U 'E
             :return $ :: 'Result 'U 'E
           :tags $ #{} :internal
+          :tests $ [] $ %{} 'TestEntry (:name |typed-method-selects-only-matching-branch)
+            :code $ quote $ let
+                ok $ assert-type (Result :ok 3) (:: 'Result 'Number 'String)
+                err $ assert-type (Result :err |failed) (:: 'Result 'Number 'String)
+                chained $ ok .and-then $ fn (value)
+                  assert-type
+                    Result :ok $ str value
+                    :: 'Result 'String 'String
+              assert-type chained $ :: 'Result 'String 'String
+              assert= (Result :ok |3) chained
+              assert= (Result :err |failed)
+                err .and-then $ fn (value) (raise |unselected-result-and-then)
+                  assert-type
+                    Result :ok $ str value
+                    :: 'Result 'String 'String
+            :tags $ #{} :core :unit
         'result:err? $ %{} 'CodeEntry
           :doc "|判断 Result 是否为 :err；公开代码优先使用 .err?，本辅助函数属于内部兼容入口。"
           :code $ quote $ defn result:err? (res)
@@ -10822,6 +10870,16 @@
             :generics $ [] 'T 'U 'E
             :return $ :: 'Result 'U 'E
           :tags $ #{} :internal
+          :tests $ [] $ %{} 'TestEntry (:name |typed-method-selects-only-matching-branch)
+            :code $ quote $ let
+                ok $ assert-type (Result :ok 3) (:: 'Result 'Number 'String)
+                err $ assert-type (Result :err |failed) (:: 'Result 'Number 'String)
+                mapped $ ok .map $ fn (value) (str value)
+              assert-type mapped $ :: 'Result 'String 'String
+              assert= (Result :ok |3) mapped
+              assert= (Result :err |failed)
+                err .map $ fn (value) (raise |unselected-result-map) (str value)
+            :tags $ #{} :core :unit
         'result:map-err $ %{} 'CodeEntry
           :doc "|Maps the error payload of a Result while preserving :ok."
           :code $ quote $ defn result:map-err (res f)
@@ -10840,6 +10898,27 @@
             :generics $ [] 'T 'E 'F
             :return $ :: 'Result 'T 'F
           :tags $ #{} :internal
+          :tests $ []
+            %{} 'TestEntry (:name |typed-method-selects-only-matching-branch)
+              :code $ quote $ let
+                  ok $ assert-type (Result :ok 3) (:: 'Result 'Number 'String)
+                  err $ assert-type (Result :err |failed) (:: 'Result 'Number 'String)
+                  mapped $ err .map-err $ fn (message) (to-tag message)
+                assert-type mapped $ :: 'Result 'Number 'Tag
+                assert= (Result :err :failed) mapped
+                assert= (Result :ok 3)
+                  ok .map-err $ fn (message) (raise |unselected-result-map-err) (to-tag message)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |maps-error-to-inferred-number)
+              :code $ quote $ let
+                  ok $ assert-type (Result :ok 3) (:: 'Result 'Number 'String)
+                  err $ assert-type (Result :err |failed) (:: 'Result 'Number 'String)
+                  mapped $ err .map-err $ fn (message) (.len message)
+                assert-type mapped $ :: 'Result 'Number 'Number
+                assert= (Result :err 6) mapped
+                assert= (Result :ok 3)
+                  ok .map-err $ fn (message) (raise |unselected-result-map-err-length) (.len message)
+              :tags $ #{} :core :unit
         'result:ok? $ %{} 'CodeEntry (:doc "|判断 Result 是否为 :ok；公开代码优先使用 .ok?，本辅助函数属于内部兼容入口。")
           :code $ quote $ defn result:ok? (res)
             match res
@@ -10870,6 +10949,15 @@
             :generics $ [] 'T 'E
             :return $ :: 'Result 'T 'E
           :tags $ #{} :internal
+          :tests $ [] $ %{} 'TestEntry (:name |typed-method-selects-only-matching-branch)
+            :code $ quote $ let
+                ok $ assert-type (Result :ok 3) (:: 'Result 'Number 'String)
+                err $ assert-type (Result :err |failed) (:: 'Result 'Number 'String)
+              assert= ok $ ok .or-else $ fn () (raise |unselected-result-or-else)
+                assert-type (Result :ok 9) (:: 'Result 'Number 'String)
+              assert= (Result :ok 9)
+                err .or-else $ fn () $ assert-type (Result :ok 9) (:: 'Result 'Number 'String)
+            :tags $ #{} :core :unit
         'result:unwrap-or $ %{} 'CodeEntry
           :doc "|Returns the :ok payload, or the fallback for :err."
           :code $ quote $ defn result:unwrap-or (res fallback)
