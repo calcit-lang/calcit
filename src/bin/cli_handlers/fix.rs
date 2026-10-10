@@ -3617,10 +3617,11 @@ fn core_nominal_method(name: &str, kind: CoreNominalMethodKind) -> Option<CoreNo
 fn preserves_nominal_method_call_through_macro(origin: &str) -> bool {
   // These core forms retain one executable evaluation of the nested call.
   // assert= also quotes its source for diagnostics, but never evaluates that copy.
+  // loop splices its body into one generated defn and its initial values into one list.
   preserves_constructor_argument_through_macro(origin)
     || matches!(
       origin,
-      "calcit.core/def" | "calcit.core/do" | "calcit.core/fn" | "calcit.core/assert="
+      "calcit.core/def" | "calcit.core/do" | "calcit.core/fn" | "calcit.core/assert=" | "calcit.core/loop"
     )
 }
 
@@ -6125,7 +6126,7 @@ fn plan_named_constructor_source(
         let Some(prototype) = parts.get(1).and_then(leaf_value) else {
           return false;
         };
-        let Some((target_ns, target_def)) = resolve_project_nominal_target(snapshot, namespace, prototype, kind) else {
+        let Some((target_ns, target_def)) = resolve_nominal_target(snapshot, namespace, prototype, kind) else {
           return false;
         };
         let mut prototype_path = path.clone();
@@ -6274,7 +6275,7 @@ fn legacy_constructor_kind(
   let head = items.first().and_then(leaf_value)?;
   let prototype = items.get(1).and_then(leaf_value)?;
   kinds.iter().copied().find(|kind| {
-    let target = resolve_project_nominal_target(snapshot, namespace, prototype, *kind);
+    let target = resolve_nominal_target(snapshot, namespace, prototype, *kind);
     head == kind.legacy_head()
       && !prototype.starts_with('_')
       && !prototype_is_shadowed(prototype, shadowed)
@@ -6464,10 +6465,11 @@ fn prototype_is_shadowed(prototype: &str, shadowed: &HashSet<String>) -> bool {
   }
 }
 
-/// Resolve a nominal prototype to its exact editable project definition.
-fn resolve_project_nominal_target(snapshot: &Snapshot, at_ns: &str, prototype: &str, kind: NominalKind) -> Option<(String, String)> {
+/// Resolve a nominal prototype to its exact editable project definition, or to a `calcit.core`
+/// enum that no local definition or import shadows.
+fn resolve_nominal_target(snapshot: &Snapshot, at_ns: &str, prototype: &str, kind: NominalKind) -> Option<(String, String)> {
   let target = if let Some((prefix, definition)) = prototype.rsplit_once('/') {
-    let namespace = if snapshot.files.contains_key(prefix) {
+    let namespace = if snapshot.files.contains_key(prefix) || prefix == CORE_NS {
       prefix.to_owned()
     } else {
       let namespace =
@@ -6477,10 +6479,52 @@ fn resolve_project_nominal_target(snapshot: &Snapshot, at_ns: &str, prototype: &
     (namespace, definition.to_owned())
   } else if nominal_definition_matches(snapshot, at_ns, prototype, kind) {
     return Some((at_ns.to_owned(), prototype.to_owned()));
+  } else if let Some(target) = imported_definition_target(at_ns, prototype) {
+    target
+  } else if core_nominal_type_is_unshadowed(snapshot, at_ns, prototype, &HashSet::new()) {
+    (CORE_NS.to_owned(), prototype.to_owned())
   } else {
-    imported_definition_target(at_ns, prototype)?
+    return None;
   };
+  if target.0 == CORE_NS && !snapshot.files.contains_key(CORE_NS) {
+    return (kind == NominalKind::Enum && core_enum_names().contains(&target.1)).then_some(target);
+  }
   nominal_definition_matches(snapshot, &target.0, &target.1, kind).then_some(target)
+}
+
+const CORE_NS: &str = "calcit.core";
+
+/// Enums that `calcit.core` declares with `defenum`, read once from the embedded core snapshot.
+/// Core wraps most of them as `def Name (impl-traits (defenum Name ...) ...)`.
+fn core_enum_names() -> &'static HashSet<String> {
+  static NAMES: std::sync::OnceLock<HashSet<String>> = std::sync::OnceLock::new();
+  NAMES.get_or_init(|| {
+    calcit::load_core_snapshot()
+      .ok()
+      .and_then(|core| {
+        core.files.get(CORE_NS).map(|file| {
+          file
+            .defs
+            .iter()
+            .filter(|(name, entry)| declares_enum(&entry.code, name))
+            .map(|(name, _)| name.to_owned())
+            .collect()
+        })
+      })
+      .unwrap_or_default()
+  })
+}
+
+/// Whether a definition body evaluates `defenum <name>`, looking through wrapping forms but not quoted data.
+fn declares_enum(code: &Cirru, name: &str) -> bool {
+  let Cirru::List(items) = code else {
+    return false;
+  };
+  match items.first().and_then(leaf_value) {
+    Some("quote" | "quasiquote" | "defmacro" | "defn" | "fn") => false,
+    Some("defenum") => items.get(1).and_then(leaf_value) == Some(name),
+    _ => items.iter().any(|item| declares_enum(item, name)),
+  }
 }
 
 /// Resolve a referred local import name without losing a renamed target definition.
