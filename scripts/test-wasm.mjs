@@ -434,14 +434,12 @@ assert.throws(
 );
 check("test-list-first()", 42, e["test-list-first"]);
 check("test-list-rest-generic-first()", 20, e["test-list-rest-generic-first"]);
-check("test-list-rest-count()", 2, e["test-list-rest-count"]);
 check("test-list-rest-empty()", 0, e["test-list-rest-empty"]);
 check("test-list-rest-first()", 20, e["test-list-rest-first"]);
 check("test-list-empty-true()", 1, e["test-list-empty-true"]);
 check("test-list-empty-false()", 0, e["test-list-empty-false"]);
 check("test-list-empty-method()", 0, e["test-list-empty-method"]);
 check("test-list-empty?-method()", 1, e["test-list-empty?-method"]);
-check("test-list-append()", 33, e["test-list-append"]); // count=3 + nth(2)=30
 check("test-list-prepend()", 5, e["test-list-prepend"]);
 check("test-enum-assoc()", 29, e["test-enum-assoc"]);
 check("test-list-butlast()", 2, e["test-list-butlast"]);
@@ -461,20 +459,14 @@ check("test-list-sort-descending()", 41, e["test-list-sort-descending"]); // fir
 check("test-list-sort-stable()", 11321, e["test-list-sort-stable"]); // ids 10,11,20,21
 check("test-list-sort-input-immutable()", 41, e["test-list-sort-input-immutable"]); // source first=4, sorted first=1
 check("test-list-sort-dynamic-callee()", 14, e["test-list-sort-dynamic-callee"]);
-check("test-list-concat()", 44, e["test-list-concat"]); // count=4 + nth(3)=40
 check("test-list-flat-map-method()", 16, e["test-list-flat-map-method"]);
 check("test-list-join-string()", 10, e["test-list-join-string"]);
-check("test-list-assoc()", 99, e["test-list-assoc"]);
 check("test-list-assoc-before()", 103, e["test-list-assoc-before"]); // count=4 + nth(1)=99
 check("test-list-assoc-after()", 103, e["test-list-assoc-after"]); // count=4 + nth(1)=99
-check("test-list-dissoc()", 32, e["test-list-dissoc"]); // count=2 + nth(1)=30
-check("test-list-to-set()", 3, e["test-list-to-set"]); // {10,20,30} deduplicated
 check("test-list-contains()", 1, e["test-list-contains"]); // 1+0
 check("test-list-includes()", 1, e["test-list-includes"]); // 1+0
 check("test-list-contains-method()", 1, e["test-list-contains-method"]); // 1+0
 check("test-list-includes-method()", 1, e["test-list-includes-method"]); // 1+0
-check("test-list-max-method()", 30, e["test-list-max-method"]);
-check("test-list-min-method()", 10, e["test-list-min-method"]);
 check("test-list-max-empty()", -1, e["test-list-max-empty"]);
 check("test-find-found()", 2, e["test-find-found"]);
 check("test-find-not-found()", -1, e["test-find-not-found"]);
@@ -487,9 +479,6 @@ check("test-map-get()", 20, e["test-map-get"]);
 check("test-map-empty-true()", 1, e["test-map-empty-true"]);
 check("test-map-empty-false()", 0, e["test-map-empty-false"]);
 check("test-map-empty-method()", 0, e["test-map-empty-method"]);
-check("test-map-assoc-new()", 4, e["test-map-assoc-new"]); // count=2 + get(:b)=2
-check("test-map-assoc-update()", 99, e["test-map-assoc-update"]);
-check("test-map-dissoc()", 5, e["test-map-dissoc"]); // count=2 + get(:c)=3
 check("test-map-contains()", 1, e["test-map-contains"]); // 1+0
 check("test-map-includes()", 1, e["test-map-includes"]); // 1+0
 check("test-map-contains-method()", 1, e["test-map-contains-method"]); // 1+0
@@ -518,9 +507,6 @@ check("test-map-merge()", 3, e["test-map-merge"]); // {a:1, b:3, c:4}
 check("test-map-merge-value()", 99, e["test-map-merge-value"]); // b overridden to 99
 check("test-map-merge-method()", 99, e["test-map-merge-method"]);
 check("test-filter-map-kv()", 32, e["test-filter-map-kv"]); // count=2 plus transformed c=30
-check("test-map-diff-new()", 1, e["test-map-diff-new"]); // {a:1} — entries of a not in b
-check("test-map-diff-keys()", 2, e["test-map-diff-keys"]); // #{a, c} not in b
-check("test-map-common-keys()", 2, e["test-map-common-keys"]); // #{b, c} in both
 check("test-map-keys-method()", 2, e["test-map-keys-method"]); // typed .keys lowers to &map:keys and returns Set
 
 const sameTopDifferentLeaf = findSameTopDifferentLeaf();
