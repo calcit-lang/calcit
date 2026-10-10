@@ -3659,6 +3659,12 @@
             :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
           :tests $ []
+            %{} 'TestEntry (:name |bool-operands-infer-bool)
+              :code $ quote $ let
+                  both $ and (&> 2 1) (&< 1 2) (&= 1 1)
+                assert-type both 'Bool
+                assert= true both
+              :tags $ #{} :core :types :unit
             %{} 'TestEntry (:name |chains-truthy-and-falls-to-false)
               :code $ quote $ do
                 assert= 1 $ and 1
@@ -10017,6 +10023,15 @@
             :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
           :tests $ []
+            %{} 'TestEntry (:name |bool-operands-infer-bool)
+              :code $ quote $ let
+                  either-side $ or (&> 1 2) (&< 1 2)
+                  fallback $ or nil 2
+                assert-type either-side 'Bool
+                assert= true either-side
+                assert-type fallback 'Number
+                assert= 2 fallback
+              :tags $ #{} :core :types :unit
             %{} 'TestEntry (:name |skips-unit-and-returns-next-truthy-value)
               :code $ quote $ assert= |next (or &unit |next)
               :tags $ #{} :core :unit
