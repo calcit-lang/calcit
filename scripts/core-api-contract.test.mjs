@@ -24,6 +24,15 @@ test("scalar conversion evidence preserves precise results and distinct display 
     assert.equal(trait[1], name);
     assert.equal(trait[2][0], method);
   }
+  for (const receiver of ["'String", "'Number", "'Bool", "'Tag", "'Symbol", "'Nil"]) {
+    const diagnostic = baseline["method-contracts"].find(row => row.receiver === receiver && row.name === ".debug");
+    assert.ok(diagnostic, `${receiver} must retain its diagnostic method evidence`);
+    assert.deepEqual(diagnostic.parameters, []);
+    assert.equal(diagnostic.rest, null);
+    assert.equal(diagnostic.returns.quote, "'String");
+  }
+  assert.ok(!baseline["method-contracts"].some(row => row.name === ".show"),
+    "a Show trait declaration must not fabricate a builtin implementation");
 });
 
 test("native EDN preserves symbols, tags and raw schema quotes", () => {
@@ -114,6 +123,9 @@ for (const [name, mutate] of [
   ["backend feature", data => data.methods[0].features.push("js-ffi")],
   ["specialized lookup result", data => data["method-contracts"].find(row => row.receiver === ":: 'List 'Number" && row.name === ".get").returns.quote = "'String"],
   ["scalar conversion result", data => data["method-contracts"].find(row => row.receiver === "'String" && row.name === ".to-string").returns.quote = "'Dynamic"],
+  ["diagnostic method result", data => data["method-contracts"].find(row => row.receiver === "'String" && row.name === ".debug").returns.quote = "'Dynamic"],
+  ["diagnostic method parameters", data => data["method-contracts"].find(row => row.receiver === "'String" && row.name === ".debug").parameters.push({ quote: "'Number" })],
+  ["diagnostic method rest", data => data["method-contracts"].find(row => row.receiver === "'String" && row.name === ".debug").rest = { quote: "'Dynamic" }],
   ["display trait method", data => definition(data, "Debug").declaration.quote[2][0] = ".to-string"],
   ["Lisp formatter return type", data => definition(data, "format-to-lisp").schema.quote.find(pair => pair[0] === ":return")[1] = "'Dynamic"],
   ["diagnostic formatter deletion", data => data.definitions = data.definitions.filter(row => row.name.symbol !== "calcit.core/to-lispy-string")],
@@ -132,10 +144,11 @@ for (const [name, mutate] of [
   });
 }
 
-test("additions and internal implementation-path changes preserve the public contract", () => {
+test("additions and internal implementation-path/arity changes preserve the public contract", () => {
   const changed = structuredClone(baseline);
   changed.definitions.push({ name: { symbol: "calcit.core/new-api" } });
   changed.methods[0].provenance = { symbol: "calcit.core/new-private-implementation" };
+  changed.methods[0]["runtime-arity"] = { min: 0, max: null };
   assertPreserved(baseline, changed);
 });
 
@@ -165,6 +178,34 @@ test("unproven dispatch or missing call syntax cannot be promoted into the basel
   assert.throws(() => collect(scope, kind => kind === "type"
     ? { methods: [{ name: ".example", status: "proven", definition: "calcit.core/example" }] }
     : { code: ["defn", "example", ["x"], [",", "x"]], schema: "'Number" }), /requires resolved call type syntax/);
+});
+
+test("a proven primitive method retains its queried public trait declaration", () => {
+  const scope = { version: "test", scope: "test", definitions: [], methods: [{ receiver: "'String", name: ".debug" }] };
+  const schema = ["::", ":fn", ["{}", [":return", ":string"], [":args", ["[]", "'T"]], [":generics", ["[]", "'T"]]]];
+  const current = collect(scope, (kind, target) => kind === "type"
+    ? { methods: [{ name: ".debug", status: "proven", origin: "calcit.core/Debug", definition: "calcit.core/&str",
+      features: [], call_types: { parameters: [], rest: null, returns: "'String" } }] }
+    : target === "calcit.core/Debug"
+      ? { code: ["deftrait", "Debug", [".debug", schema]], schema: ["::", "Trait"] }
+      : { code: "&runtime-implementation", schema: null, runtime_arity: { min: 1, max: 1 } });
+  assert.deepEqual(current.methods[0].schema, { quote: schema });
+  assert.deepEqual(current.methods[0]["runtime-arity"], { min: 1, max: 1 });
+  assert.deepEqual(current.methods[0].provenance, { symbol: "calcit.core/&str" });
+  assert.deepEqual(current["method-contracts"][0].returns, { quote: "'String" });
+});
+
+test("a missing primitive schema requires a matching trait method, not an arbitrary origin", () => {
+  const scope = { definitions: [], methods: [{ receiver: "'String", name: ".debug" }] };
+  for (const code of [["defn", "not-a-trait", ["x"], [",", "x"]],
+    ["deftrait", "Debug", [".other", ["::", ":fn", ["{}", [":return", ":string"]]]]]]) {
+    assert.throws(() => collect(scope, (kind, target) => kind === "type"
+      ? { methods: [{ name: ".debug", status: "proven", origin: "calcit.core/Debug", definition: "calcit.core/&str" }] }
+      : target === "calcit.core/Debug"
+        ? { code, schema: null }
+        : { code: "&runtime-implementation", schema: null, runtime_arity: { min: 1, max: 1 } }),
+    /requires declared generic\/receiver evidence/);
+  }
 });
 
 test("Git history rejects a baseline-only waiver in both PR and push workflows", async () => {

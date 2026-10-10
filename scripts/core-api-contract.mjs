@@ -80,10 +80,16 @@ export function collect(scope, query) {
     assert.notEqual(method.role, "compatibility", `${item.name} is not the preferred spelling`);
     assert.ok(method.definition, `${item.name} requires schema provenance`);
     const evidence = definition(method.definition);
-    assert.ok(evidence.schema, `${item.name} requires declared generic/receiver evidence`);
+    // A primitive may omit a source schema while its public trait declares one.
+    const trait = !evidence.schema && method.origin ? definition(method.origin).declaration?.quote : null;
+    const declaredMethod = trait?.[0] === "deftrait"
+      ? trait.slice(2).find(row => Array.isArray(row) && row[0] === item.name)
+      : null;
+    const schema = evidence.schema ?? (declaredMethod?.[1] ? { quote: declaredMethod[1] } : null);
+    assert.ok(schema, `${item.name} requires declared generic/receiver evidence`);
     return {
       ...item,
-      schema: evidence.schema,
+      schema,
       "runtime-arity": evidence["runtime-arity"],
       features: method.features,
       provenance: { symbol: method.definition },
@@ -110,8 +116,10 @@ export function collect(scope, query) {
 }
 
 // Implementation paths and display strings are not public signatures.
-function contract(row) {
+function contract(row, family) {
   const { provenance, ...publicContract } = row;
+  // Method call arity lives in method-contracts; an implementation may be variadic.
+  if (family === "methods") delete publicContract["runtime-arity"];
   // EDN map entry order is not part of a type signature; argument lists are.
   const normalize = node => {
     if (!Array.isArray(node)) return node;
@@ -133,7 +141,7 @@ export function assertPreserved(previous, current) {
         ? row.name.symbol === old.name.symbol
         : row.receiver === old.receiver && row.name === old.name);
       assert.ok(row, `removed frozen ${family}: ${JSON.stringify(old.name)}`);
-      assert.deepEqual(contract(row), contract(old), `changed frozen ${family}: ${JSON.stringify(old.name)}`);
+      assert.deepEqual(contract(row, family), contract(old, family), `changed frozen ${family}: ${JSON.stringify(old.name)}`);
     }
   }
 }

@@ -6,6 +6,8 @@
 
 标量转换另外记录 String、Number、Bool、Tag、Symbol、Nil 的首选 `.to-string` 实际调用契约，返回值均须保持 String，不能因内部实现声明较宽而丢失派发后的证据。Debug/Show 的公开 trait 声明也纳入范围，避免将调试显示、面向人的显示和值转换误合并；不因此承诺所有类型都实现这三种能力。方法实现路径仍仅是 provenance，编译器可以重构内部 helper 而不改用户调用契约。
 
+同样六类标量的 `.debug` 现在也记录实际 receiver 上的已证明契约：不接受额外参数、返回 String，由原 `Debug` trait 派发。它与 `.to-string` 是两个调用入口，返回类型相同不表示文本表示相同；基线分别保存，诊断返回值退化为 Dynamic 会被原历史比较拒绝。Show 仍记录公开 trait 声明，当前六类标量查询没有 `.show` 实现，不生成不存在的 builtin 方法行。语言行为继续由原 `calcit/test-traits.cirru` 的 Debug/Show 回归和 core 附带显示测试验证，不为契约导出再复制一份显示实现或失败文字。
+
 显示与源码格式化另记录 `str`、`format-to-lisp`、`to-lispy-string` 的公开名称、原声明 schema 和 arity，由同一 query 导出。`str` 的 rest 参数仍可接收开放值；另两者保留 `T -> String`，不因为签名相同而视为等价或自动互换，区别由原附带测试验证。`format-cirru` 接收由字符串与嵌套 List 组成的程序树，`format-cirru-edn` 接收泛型数据 `T`；两者返回 String，声明第二个 Bool 参数，runtime arity 均为 1–2。省略布局参数时，普通 Cirru formatter 默认 false，EDN formatter 默认 true；可省略不等于 nullable 或 rest。现有 query 和同一基线导出 schema/arity，原附带测试验证普通调用、局部别名与一元回调；错误 flag 通过已有类型关系或宿主边界拒绝。普通 Cirru formatter 在 native/JS 支持，WASM/WASI 仍明确 unsupported。typed decoder 的宽 builtin 声明仍不等于实例化后的 `Result<T,String>`，不能把宽声明写进基线伪装为完整合同。这不扩大 EDN 格式化或 decoder 的后端支持范围。
 
 `to-string` 的 `wasm-scalar-method-contract` 附带测试使用普通 `.to-string`，同一断言 AST 在 native、生成 JS 和实际 WASM 执行，覆盖 String、Number、Bool、Tag、Nil 的文本结果及 String 返回类型。WASM fixture 另外从宿主传入运行时 Number，核对普通方法返回的 UTF-8 文本，包括小数、正负零、非有限值和 f64 边界；不改成 native call 或内部 primitive 来绕过方法 lowering。Symbol 仍只计入已经验证的 native/JS 范围，不能因其他标量通过而宣称 WASM 支持 Symbol。
@@ -63,9 +65,9 @@ node scripts/core-api-contract.mjs
 
 导出只写 stdout，先审阅再更新基线；不是自动接受签名变化的命令。Node 子进程显式选择 JSON 仅作为工具桥接，持久化产物保留 symbol、tag 和 `quote` 包裹的原始 schema。泛型与 `where`、receiver 参数、返回类型、名义类型声明和 optional/rest arity 都不以展示字符串代替。`read-dir` 的 Bool schema 不代表 recursive 参数必填，以已有运行时 arity 为准。
 
-方法先在明确 receiver 上查询，必须 `proven` 且不能是已识别的兼容入口，再追溯原始声明 schema。Number 实例用于派发检查，不把它误写为方法的唯一可用类型；泛型关系仍保存在 schema。尚为 `open/ambiguous` 的方法不会自动加入。`FfiTask/FfiResponse` 的 raw Dynamic 是现有宿主边界，不意味着业务层可以绕过类型约束。
+方法先在明确 receiver 上查询，必须 `proven` 且不能是已识别的兼容入口，再追溯原始声明 schema。底层 primitive 没有独立源码 schema 时，只能从同次查询的 trait 来源读取同名方法声明；普通函数来源、缺少对应方法或没有声明仍拒绝导出，不补造类型。Number 实例用于派发检查，不把它误写为方法的唯一可用类型；泛型关系仍保存在 schema。尚为 `open/ambiguous` 的方法不会自动加入。`FfiTask/FfiResponse` 的 raw Dynamic 是现有宿主边界，不意味着业务层可以绕过类型约束。
 
-`method-contracts` 另外保存当前接收者上的 `call-types` 原生 quote：例如 List/Map 的 `.get` 实现声明允许开放值，但编译器已经证明具体调用返回 `Option<Number>`。即使实现的宽 schema 没变，具体调用结果或 callback 类型关系变差也不能绕过检查。这些参数不含隐式接收者；`methods` 中的 `runtime-arity` 则是实现函数的 arity，包含接收者，两者不能混用。共享接收者查询只执行一次，不重复运行同一分析。
+`method-contracts` 另外保存当前接收者上的 `call-types` 原生 quote：例如 List/Map 的 `.get` 实现声明允许开放值，但编译器已经证明具体调用返回 `Option<Number>`。即使实现的宽 schema 没变，具体调用结果或 callback 类型关系变差也不能绕过检查。这些参数不含隐式接收者；`methods` 中的 `runtime-arity` 则是实现函数的 arity，可能允许额外参数，两者不能混用。比如 `.debug` 的公开调用没有额外参数，底层 `&str` 却是可变参数 primitive。方法冻结检查用 `method-contracts` 的参数/rest/返回值和声明 schema 保护公开契约，不冻结内部实现的 arity；普通函数声明的 runtime arity 仍受检查。共享接收者查询只执行一次，不重复运行同一分析。
 
 Option `.map` 目前查询仍为 open，解析开放 JSON/Cirru EDN 等边界仍需要单独审阅，不能靠本清单或目标类型把它们包装成 proven。候选只记录真实证据，不把推导漏洞固化为永久动态契约。0.29 的断言/调用证明工作仍由 #1538 拥有。
 
