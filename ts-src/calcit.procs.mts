@@ -1466,6 +1466,10 @@ export let cos = (n: number) => {
   return Math.cos(n);
 };
 export let pow = (n: number, m: number) => {
+  // IEEE 754 pow, which Math.pow breaks: pow(1, y) is 1 for any y, pow(-1, ±Infinity) is 1.
+  if (n === 1 || (n === -1 && (m === Infinity || m === -Infinity))) {
+    return 1;
+  }
   return Math.pow(n, m);
 };
 export let ceil = (n: number) => {

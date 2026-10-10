@@ -6912,7 +6912,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeNumberFits => emit_number_fits(ctx, args),
     CalcitProc::Sin => emit_host_call(ctx, "sin", args),
     CalcitProc::Cos => emit_host_call(ctx, "cos", args),
-    CalcitProc::Pow => emit_host_call(ctx, "pow", args),
+    CalcitProc::Pow => emit_pow(ctx, args),
 
     // type-of: reads the heap type header or returns :number for non-pointers.
     CalcitProc::TypeOf => emit_type_of(ctx, args),
@@ -7590,6 +7590,39 @@ fn emit_nil_predicate(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Strin
 }
 
 /// Emit a call to a host-imported function by name.
+/// `pow` through the host import, except the IEEE 754 cases hosts like JS `Math.pow`
+/// get wrong: `pow 1 y` is 1 for any y, and `pow -1 ±inf` is 1.
+fn emit_pow(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(2, args, "pow")?;
+  let x = ctx.alloc_local();
+  let y = ctx.alloc_local();
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(Instruction::LocalSet(x));
+  emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::LocalSet(y));
+  ctx.emit(Instruction::LocalGet(x));
+  ctx.emit(f64_const(1.0));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::LocalGet(x));
+  ctx.emit(Instruction::F64Abs);
+  ctx.emit(f64_const(1.0));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::LocalGet(y));
+  ctx.emit(Instruction::F64Abs);
+  ctx.emit(f64_const(f64::INFINITY));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::I32Or);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  ctx.emit(f64_const(1.0));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(x));
+  ctx.emit(Instruction::LocalGet(y));
+  ctx.emit(Instruction::Call(resolve_host_import(ctx, "math", "pow")?));
+  ctx.emit(Instruction::End);
+  Ok(())
+}
+
 fn emit_host_call(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<(), String> {
   let import = core_host_import(name).ok_or_else(|| format!("unknown host import: {name}"))?;
   let expected_arity = import.params.len();
