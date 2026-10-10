@@ -826,7 +826,13 @@
               not $ list? path
               raise $ str-spaced "|expects path in a list, got:" path
             if (nil? base) base $ &list-match-internal path base (y0 ys)
-              recur (&get-raw base y0) ys
+              if (list? base)
+                if
+                  and (number? y0) (&>= y0 0)
+                    &< y0 $ &list:count base
+                  recur (&get-raw base y0) ys
+                  , nil
+                recur (&get-raw base y0) ys
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Dynamic $ :: 'List 'K
@@ -848,6 +854,18 @@
               assert= 4 $ &get-in
                 &{} :a $ [] 3 4
                 [] :a 1
+              assert= nil $ &get-in ([]) ([] 0)
+              assert= nil $ &get-in ([] 3 4) ([] 2)
+              assert= nil $ &get-in ([] 3 4) ([] -1)
+              assert= nil $ &get-in ([] 3 4) ([] :missing)
+              assert= nil $ &get-in
+                &{} :a $ [] 3 4
+                [] :a 9
+              assert= nil $ &get-in
+                &{} :a $ [] 3 4
+                [] :a 9 :child
+              assert= false $ &get-in ([] false 0) ([] 0)
+              assert= 0 $ &get-in ([] false 0) ([] 1)
             :tags $ #{} :core :unit
         '&get-os $ %{} 'CodeEntry
           :doc "|internal function for getting OS information\nSyntax: (&get-os)\nParams: none\nReturns: keyword indicating OS\nReturns current operating system like :linux, :macos, :windows"
