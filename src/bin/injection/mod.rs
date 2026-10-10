@@ -1704,8 +1704,12 @@ fn force_cleanup_native_async(runtime: &NativeAsyncRuntime, release_tracked_task
 fn shutdown_native_async_runtime(runtime: &NativeAsyncRuntime, grace: Duration, release_tracked_tasks: bool) -> Result<usize, String> {
   let requested = begin_native_async_shutdown(runtime)?;
   let deadline = Instant::now() + grace;
+  let mut failure = None;
   while runtime.registry.pending_count().map_err(|error| error.to_string())? > 0 && Instant::now() < deadline {
-    drain_async_events_from(runtime, 256)?;
+    let report = drain_async_events_from(runtime, 256)?;
+    if failure.is_none() {
+      failure = async_drain_failure(&report);
+    }
     if runtime.registry.pending_count().map_err(|error| error.to_string())? == 0 {
       break;
     }
@@ -1714,14 +1718,41 @@ fn shutdown_native_async_runtime(runtime: &NativeAsyncRuntime, grace: Duration, 
       runtime.queue.wait_for_event(remaining).map_err(|error| error.to_string())?;
     }
   }
-  drain_async_events_from(runtime, 256)?;
+  let report = drain_async_events_from(runtime, 256)?;
+  if failure.is_none() {
+    failure = async_drain_failure(&report);
+  }
   runtime.queue.close().map_err(|error| error.to_string())?;
   let forced = force_cleanup_native_async(runtime, release_tracked_tasks)?;
   trace_ffi_event("async-shutdown-complete", format!("requested={requested} forced={forced}"));
-  Ok(forced)
+  match failure {
+    Some(error) => Err(error),
+    None => Ok(forced),
+  }
 }
 
-pub fn exit_when_async_cleared() -> Result<(), String> {
+fn async_drain_failure(report: &FfiAsyncDrainReport) -> Option<String> {
+  if let Some(failure) = report.callback_failures.first() {
+    return Some(format!(
+      "async FFI task {} sequence {}: {}",
+      failure.descriptor.task_handle, failure.descriptor.sequence, failure.message
+    ));
+  }
+  if let Some(failure) = report.lifecycle_failures.first() {
+    return Some(format!(
+      "async FFI lifecycle task {} sequence {}: {}",
+      failure.descriptor.task_handle, failure.descriptor.sequence, failure.error
+    ));
+  }
+  report.queue_failures.first().map(|failure| {
+    format!(
+      "async FFI queue task {} sequence {}: {}",
+      failure.descriptor.task_handle, failure.descriptor.sequence, failure.error
+    )
+  })
+}
+
+pub fn exit_when_async_cleared(fail_on_error: bool) -> Result<(), String> {
   let runtime = native_async_runtime()?;
   let mut shutdown_complete = false;
   loop {
@@ -1732,7 +1763,16 @@ pub fn exit_when_async_cleared() -> Result<(), String> {
       shutdown_native_async_runtime(runtime, ASYNC_SHUTDOWN_GRACE, true)?;
       shutdown_complete = true;
     }
-    drain_async_events(256)?;
+    let report = drain_async_events(256)?;
+    if fail_on_error && let Some(error) = async_drain_failure(&report) {
+      // The drain has released finished tasks. Cancel remaining resources
+      // through the existing bounded shutdown before propagating the failure.
+      track::request_shutdown();
+      if let Err(cleanup_error) = shutdown_native_async_runtime(runtime, ASYNC_SHUTDOWN_GRACE, true) {
+        return Err(format!("{error}; async shutdown failed: {cleanup_error}"));
+      }
+      return Err(error);
+    }
     if track::count_pending_tasks() == 0 && runtime.queue.is_empty().map_err(|error| error.to_string())? {
       return Ok(());
     }

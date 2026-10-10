@@ -1036,10 +1036,15 @@ fn run_cli() -> Result<(), String> {
     std::thread::spawn(move || watch_files(entries, args, assets_watch, js_ffi_watch_files, configured_run_mode));
   }
   #[cfg(not(target_arch = "wasm32"))]
-  injection::exit_when_async_cleared()?;
+  {
+    let async_result = injection::exit_when_async_cleared(eval_once);
+    task_result.and(async_result)
+  }
   #[cfg(target_arch = "wasm32")]
-  runner::track::exit_when_cleared();
-  task_result
+  {
+    runner::track::exit_when_cleared();
+    task_result
+  }
 }
 
 #[derive(Debug, Clone)]

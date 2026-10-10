@@ -143,6 +143,12 @@ calcit --watch
 calcit -w calcit.cirru
 ```
 
+native 单次运行和 `calcit eval` 会等待异步 FFI 任务收尾。未处理的 Calcit
+callback 错误、原生 `Fail` 终态，以及队列或生命周期错误会使进程非零退出；
+返回错误前先通过已有两秒 grace period 取消并清理其余原生任务。业务 callback
+内已由 `try` 处理的错误不使进程失败。watch 运行期间仍打印异步错误并等待后续更新，
+不因这一退出码修复新增命令或改变 JS/WASM 的运行方式。
+
 ### Error Stack Trace (--disable-stack)
 
 Disables detailed stack traces in error messages, useful for cleaner output:
