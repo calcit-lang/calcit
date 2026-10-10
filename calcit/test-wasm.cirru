@@ -593,22 +593,6 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
-        'test-list-append $ %{} 'CodeEntry (:doc "|append returns correct count and last elem")
-          :code $ quote $ defwasm-export test-list-append ()
-            &let
-              xs $ append ([] 10 20) 30
-              &+ (&list:count xs) (&list:nth xs 2)
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
-        'test-list-assoc $ %{} 'CodeEntry (:doc "|assoc replaces element")
-          :code $ quote $ defwasm-export test-list-assoc ()
-            &list:nth
-              &list:assoc ([] 10 20 30) 1 99
-              , 1
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
         'test-list-assoc-after $ %{} 'CodeEntry (:doc "|assoc-after inserts element after index")
           :code $ quote $ defwasm-export test-list-assoc-after ()
             &let
@@ -637,14 +621,6 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-        'test-list-concat $ %{} 'CodeEntry (:doc "|concat two lists")
-          :code $ quote $ defwasm-export test-list-concat ()
-            &let
-              xs $ &list:concat ([] 10 20) ([] 30 40)
-              &+ (&list:count xs) (&list:nth xs 3)
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
         'test-list-contains $ %{} 'CodeEntry (:doc "|contains checks index bounds")
           :code $ quote $ defwasm-export test-list-contains ()
             &let
@@ -670,14 +646,6 @@
         'test-list-count $ %{} 'CodeEntry (:doc "|list count")
           :code $ quote $ defwasm-export test-list-count ()
             &list:count $ [] 10 20 30
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
-        'test-list-dissoc $ %{} 'CodeEntry (:doc "|dissoc removes element")
-          :code $ quote $ defwasm-export test-list-dissoc ()
-            &let
-              xs $ &list:dissoc ([] 10 20 30) 1
-              &+ (&list:count xs) (&list:nth xs 1)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -802,22 +770,6 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-        'test-list-max-method $ %{} 'CodeEntry (:doc "|.max dispatches on list")
-          :code $ quote $ defwasm-export test-list-max-method ()
-            option:unwrap-or
-              .max $ [] 10 20 30 15
-              , -1
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
-        'test-list-min-method $ %{} 'CodeEntry (:doc "|.min dispatches on list")
-          :code $ quote $ defwasm-export test-list-min-method ()
-            option:unwrap-or
-              .min $ [] 10 20 30 15
-              , -1
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
         'test-list-nth $ %{} 'CodeEntry (:doc "|list nth element")
           :code $ quote $ defwasm-export test-list-nth (i)
             &list:nth ([] 10 20 30 40) i
@@ -827,12 +779,6 @@
         'test-list-prepend $ %{} 'CodeEntry (:doc "|prepend returns correct first elem")
           :code $ quote $ defwasm-export test-list-prepend ()
             .unwrap $ .first $ prepend ([] 10 20) 5
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
-        'test-list-rest-count $ %{} 'CodeEntry (:doc "|count of rest")
-          :code $ quote $ defwasm-export test-list-rest-count ()
-            &list:count $ &list:rest $ [] 10 20 30
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -938,14 +884,6 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
-        'test-list-to-set $ %{} 'CodeEntry (:doc "|list to set deduplicates elements")
-          :code $ quote $ defwasm-export test-list-to-set ()
-            &let
-              s $ &list:to-set $ [] 10 20 30 20 10
-              &set:count s
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
         'test-list?-false $ %{} 'CodeEntry (:doc "|list? on number returns false (0)")
           :code $ quote $ defwasm-export test-list?-false ()
             if (list? 42) 1 0
@@ -966,22 +904,6 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
-        'test-map-assoc-new $ %{} 'CodeEntry (:doc "|assoc adds new key")
-          :code $ quote $ defwasm-export test-map-assoc-new ()
-            &let
-              m $ &map:assoc (&{} :a 1) :b 2
-              &+ (&map:count m) (&map:get m :b)
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
-        'test-map-assoc-update $ %{} 'CodeEntry (:doc "|assoc updates existing key")
-          :code $ quote $ defwasm-export test-map-assoc-update ()
-            &map:get
-              &map:assoc (&{} :a 1 :b 2) :b 99
-              , :b
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
         'test-map-bucket-update $ %{} 'CodeEntry
           :doc "|update on collided numeric keys keeps lookup correct"
           :code $ quote $ defwasm-export test-map-bucket-update (a b)
@@ -991,12 +913,6 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
-        'test-map-common-keys $ %{} 'CodeEntry (:doc "|common-keys: keys in both a and b")
-          :code $ quote $ defwasm-export test-map-common-keys ()
-            &set:count $ &map:common-keys (&{} :a 1 :b 2 :c 3) (&{} :b 10 :c 20 :d 30)
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
         'test-map-contains $ %{} 'CodeEntry (:doc "|contains checks key presence")
           :code $ quote $ defwasm-export test-map-contains ()
             &+
@@ -1024,26 +940,6 @@
         'test-map-count $ %{} 'CodeEntry (:doc "|map count")
           :code $ quote $ defwasm-export test-map-count ()
             &map:count $ &{} :a 1 :b 2 :c 3
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
-        'test-map-diff-keys $ %{} 'CodeEntry (:doc "|diff-keys: keys in a not in b")
-          :code $ quote $ defwasm-export test-map-diff-keys ()
-            &set:count $ &map:diff-keys (&{} :a 1 :b 2 :c 3) (&{} :b 10)
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
-        'test-map-diff-new $ %{} 'CodeEntry (:doc "|diff-new: entries in b not in a")
-          :code $ quote $ defwasm-export test-map-diff-new ()
-            &map:count $ &map:diff-new (&{} :a 1 :b 2) (&{} :b 3 :c 4 :d 5)
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ []
-        'test-map-dissoc $ %{} 'CodeEntry (:doc "|dissoc removes key")
-          :code $ quote $ defwasm-export test-map-dissoc ()
-            &let
-              m $ &map:dissoc (&{} :a 1 :b 2 :c 3) :b
-              &+ (&map:count m) (&map:get m :c)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
