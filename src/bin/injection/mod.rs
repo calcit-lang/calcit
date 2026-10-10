@@ -1701,7 +1701,12 @@ fn force_cleanup_native_async(runtime: &NativeAsyncRuntime, release_tracked_task
   Ok(forced)
 }
 
-fn shutdown_native_async_runtime(runtime: &NativeAsyncRuntime, grace: Duration, release_tracked_tasks: bool) -> Result<usize, String> {
+fn shutdown_native_async_runtime(
+  runtime: &NativeAsyncRuntime,
+  grace: Duration,
+  release_tracked_tasks: bool,
+  fail_on_error: bool,
+) -> Result<usize, String> {
   let requested = begin_native_async_shutdown(runtime)?;
   let deadline = Instant::now() + grace;
   let mut failure = None;
@@ -1726,8 +1731,8 @@ fn shutdown_native_async_runtime(runtime: &NativeAsyncRuntime, grace: Duration, 
   let forced = force_cleanup_native_async(runtime, release_tracked_tasks)?;
   trace_ffi_event("async-shutdown-complete", format!("requested={requested} forced={forced}"));
   match failure {
-    Some(error) => Err(error),
-    None => Ok(forced),
+    Some(error) if fail_on_error => Err(error),
+    _ => Ok(forced),
   }
 }
 
@@ -1760,7 +1765,7 @@ pub fn exit_when_async_cleared(fail_on_error: bool) -> Result<(), String> {
       if let Err(error) = run_pending_ctrl_c_callback() {
         eprintln!("[Error] {error}");
       }
-      shutdown_native_async_runtime(runtime, ASYNC_SHUTDOWN_GRACE, true)?;
+      shutdown_native_async_runtime(runtime, ASYNC_SHUTDOWN_GRACE, true, fail_on_error)?;
       shutdown_complete = true;
     }
     let report = drain_async_events(256)?;
@@ -1768,7 +1773,7 @@ pub fn exit_when_async_cleared(fail_on_error: bool) -> Result<(), String> {
       // The drain has released finished tasks. Cancel remaining resources
       // through the existing bounded shutdown before propagating the failure.
       track::request_shutdown();
-      if let Err(cleanup_error) = shutdown_native_async_runtime(runtime, ASYNC_SHUTDOWN_GRACE, true) {
+      if let Err(cleanup_error) = shutdown_native_async_runtime(runtime, ASYNC_SHUTDOWN_GRACE, true, true) {
         return Err(format!("{error}; async shutdown failed: {cleanup_error}"));
       }
       return Err(error);
@@ -3122,7 +3127,7 @@ mod async_callback_tests {
     let response = register_test_response(&runtime, owner, RESPONSE_CONTEXT, Instant::now() + Duration::from_secs(1));
 
     assert_eq!(
-      shutdown_native_async_runtime(&runtime, Duration::ZERO, false).expect("shutdown runtime"),
+      shutdown_native_async_runtime(&runtime, Duration::ZERO, false, true).expect("shutdown runtime"),
       1
     );
     assert_eq!(shutdown_cancels.load(Ordering::Relaxed), 1);
@@ -3183,7 +3188,7 @@ mod async_callback_tests {
       .expect("register cooperative stream");
 
     assert_eq!(
-      shutdown_native_async_runtime(&runtime, Duration::from_millis(50), false).expect("shutdown runtime"),
+      shutdown_native_async_runtime(&runtime, Duration::from_millis(50), false, true).expect("shutdown runtime"),
       0
     );
     assert_eq!(
@@ -3193,6 +3198,51 @@ mod async_callback_tests {
     assert_eq!(runtime.registry.pending_count(), Ok(0));
     assert!(runtime.queue.is_empty().expect("empty shutdown queue"));
     assert_eq!(runtime.queue.task_metrics(owner), Ok(None));
+  }
+
+  #[test]
+  fn runtime_shutdown_drain_failure_respects_execution_mode_after_cleanup() {
+    for fail_on_error in [false, true] {
+      let runtime = test_runtime(4);
+      let handle = runtime
+        .registry
+        .register_with_flags(FfiAsyncHandleKind::Stream, ASYNC_TASK_FLAG_SERIAL_EVENTS, test_task())
+        .expect("register shutdown task");
+      let payload = b"{} (:code :shutdown-mode-failure)";
+      // SAFETY: the registered task and payload remain live during enqueue.
+      assert_eq!(
+        unsafe {
+          enqueue_native_async_event(
+            &runtime,
+            handle.raw(),
+            handle.raw(),
+            FfiAsyncEventKind::Fail as u32,
+            FfiAsyncHandle::INVALID.raw(),
+            payload.as_ptr(),
+            payload.len(),
+          )
+        },
+        async_status::OK
+      );
+
+      let result = shutdown_native_async_runtime(&runtime, Duration::ZERO, false, fail_on_error);
+      if fail_on_error {
+        assert!(
+          result
+            .expect_err("once mode reports drain failure")
+            .contains("shutdown-mode-failure")
+        );
+      } else {
+        assert_eq!(result, Ok(0), "watch mode retains successful cleanup");
+      }
+      assert_eq!(runtime.registry.pending_count(), Ok(0));
+      assert_eq!(
+        runtime.registry.state(handle),
+        Err(calcit::ffi_abi::FfiAsyncHandleError::StaleHandle)
+      );
+      assert!(runtime.queue.is_empty().expect("empty shutdown queue"));
+      assert!(!runtime.queue.wait_for_event(Duration::ZERO).expect("closed shutdown queue"));
+    }
   }
 
   #[test]
@@ -3214,7 +3264,7 @@ mod async_callback_tests {
     runtime.registry.begin_close(owner).expect("begin explicit close");
 
     assert_eq!(
-      shutdown_native_async_runtime(&runtime, Duration::ZERO, false).expect("shutdown runtime"),
+      shutdown_native_async_runtime(&runtime, Duration::ZERO, false, true).expect("shutdown runtime"),
       1
     );
     assert_eq!(shutdown_cancels.load(Ordering::Relaxed), 0);
