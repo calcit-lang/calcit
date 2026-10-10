@@ -7057,7 +7057,7 @@
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'T
+            :args $ [] 'T 'Bool
             :generics $ [] 'T
           :tags $ #{} :builtin :internal
           :tests $ []
