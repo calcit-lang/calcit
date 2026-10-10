@@ -2072,6 +2072,35 @@ mod type_query_tests {
   }
 
   #[test]
+  fn namespace_source_uses_bundled_core_identity() {
+    for package in ["calcit.std", "calcit-test", "app"] {
+      let mut snapshot = snapshot::Snapshot {
+        package: package.to_owned(),
+        ..Default::default()
+      };
+      let namespace = format!("{package}.main");
+      snapshot.files.insert(namespace.clone(), snapshot::gen_meta_ns(&namespace, "test"));
+      assert_eq!(namespace_source(&snapshot, package), "project");
+      assert_eq!(namespace_source(&snapshot, &format!("{package}.main")), "project");
+      assert_eq!(namespace_source(&snapshot, &format!("{package}-other.main")), "dependency");
+      for namespace in [
+        "calcit.core",
+        "calcit.internal",
+        "calcit.internal.helpers",
+        "calcit.test",
+        "calcit.gen",
+      ] {
+        assert_eq!(namespace_source(&snapshot, namespace), "core");
+      }
+      if package != "calcit.std" {
+        assert_eq!(namespace_source(&snapshot, "calcit.std.time"), "dependency");
+      }
+      let owner = js_ffi_owner("calcit/test.cirru", &snapshot, &namespace).expect("project JS FFI owner");
+      assert_eq!(owner.module, package);
+    }
+  }
+
+  #[test]
   fn regular_context_carries_snapshot_revision_and_tree_location() {
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let snapshot = load_core_snapshot().expect("core snapshot should load");
@@ -3348,7 +3377,7 @@ fn count_cirru_nodes(node: &Cirru) -> usize {
 }
 
 fn namespace_source(snapshot: &snapshot::Snapshot, namespace: &str) -> String {
-  if namespace == calcit::calcit::CORE_NS || namespace.starts_with("calcit.") || namespace.starts_with("calcit-test.") {
+  if calcit::calcit::is_bundled_core_ns(namespace) {
     "core".to_owned()
   } else if namespace == snapshot.package || namespace.starts_with(&format!("{}.", snapshot.package)) {
     "project".to_owned()
