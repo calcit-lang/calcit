@@ -43,6 +43,26 @@ try {
 
   await copyFile("src/cirru/calcit-core.cirru", snapshot);
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
+  // The optional layout flag is Bool even when the formatter is a local value.
+  const original = await readFile(snapshot);
+  for (const flag of ["nil", "0", "|false"]) {
+    for (const [snippet, diagnostic] of [
+      [`format-cirru-edn 42 ${flag}`, /W_PROC_ARG_TYPE_MISMATCH/],
+      [`let ((format-text format-cirru-edn)) (format-text 42 ${flag})`, /W_LOCAL_FN_ARG_TYPE_MISMATCH/],
+    ]) {
+      for (const lint of ["0", "1"]) {
+        const rejected = spawnSync(binary, [snapshot, "eval", snippet], {
+          ...options, env: { ...process.env, CALCIT_LINT_CORE: lint },
+        });
+        if (rejected.error) throw rejected.error;
+        const message = `${rejected.stdout}\n${rejected.stderr}`;
+        assert.equal(rejected.status, 1, message);
+        assert.match(message, diagnostic);
+        assert.doesNotMatch(message, /internal compiler error/);
+        assert.deepEqual(await readFile(snapshot), original);
+      }
+    }
+  }
   run("test", "--tag", "parse-boundary", "--require-match");
 
   // Reuse the source tests verbatim in generated JS, not host-side decoder assertions.

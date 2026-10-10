@@ -8,6 +8,7 @@
     {} (:name 'calcit.core/str)
     {} (:name 'calcit.core/format-to-lisp)
     {} (:name 'calcit.core/to-lispy-string)
+    {} (:name 'calcit.core/format-cirru-edn)
     {} (:name 'calcit.core/parse-float) (:failure |失败返回_Result_err，保留输入字符串)
     {} (:name 'calcit.core/try-parse-json) (:failure |文本语法失败返回_String_err，成功_payload_保持合法开放数据)
     {} (:name 'calcit.core/try-parse-cirru) (:failure |文本语法失败返回_String_err，成功返回_CirruQuote)

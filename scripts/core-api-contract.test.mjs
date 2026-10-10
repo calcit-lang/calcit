@@ -51,6 +51,12 @@ test("display and source-formatting declarations retain distinct names and calla
   assert.deepEqual(display["runtime-arity"], { min: 1, max: null });
   assert.equal(display.schema.quote.find(pair => pair[0] === ":rest")[1], "'Dynamic");
   assert.equal(display.schema.quote.find(pair => pair[0] === ":return")[1], "'String");
+  const edn = definition(baseline, "format-cirru-edn");
+  assert.deepEqual(edn["runtime-arity"], { min: 1, max: 2 });
+  assert.deepEqual(edn.schema.quote.find(pair => pair[0] === ":args")[1], ["[]", "'T", "'Bool"]);
+  assert.deepEqual(edn.schema.quote.find(pair => pair[0] === ":generics")[1], ["[]", "'T"]);
+  assert.equal(edn.schema.quote.find(pair => pair[0] === ":return")[1], "'String");
+  assert.equal(edn.failure, undefined, "failure semantics stay in the source formatter contract");
 });
 
 test("parsing declarations preserve open payloads without promoting open method evidence", () => {
@@ -107,6 +113,8 @@ for (const [name, mutate] of [
   ["Lisp formatter return type", data => definition(data, "format-to-lisp").schema.quote.find(pair => pair[0] === ":return")[1] = "'Dynamic"],
   ["diagnostic formatter deletion", data => data.definitions = data.definitions.filter(row => row.name.symbol !== "calcit.core/to-lispy-string")],
   ["display rest argument", data => definition(data, "str").schema.quote.find(pair => pair[0] === ":rest")[1] = "'Number"],
+  ["EDN layout flag type", data => definition(data, "format-cirru-edn").schema.quote.find(pair => pair[0] === ":args")[1][2] = "'Dynamic"],
+  ["EDN layout optionality", data => definition(data, "format-cirru-edn")["runtime-arity"].min = 2],
   ["specialized callback relation", data => data["method-contracts"].find(row => row.name === ".fold").returns.quote = "'Number"],
 ]) {
   test(`rejects an unannounced ${name} change even when the baseline is regenerated`, () => {

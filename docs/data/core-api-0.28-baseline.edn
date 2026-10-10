@@ -40,6 +40,12 @@
         :args $ [] 'T
         :generics $ [] 'T
     {} (:declaration nil)
+      :name 'calcit.core/format-cirru-edn
+      :runtime-arity $ {} (:max 2) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'String)
+        :args $ [] 'T 'Bool
+        :generics $ [] 'T
+    {} (:declaration nil)
       :failure "|失败返回_Result_err，保留输入字符串"
       :name 'calcit.core/parse-float
       :runtime-arity $ {} (:max 1) (:min 1)
