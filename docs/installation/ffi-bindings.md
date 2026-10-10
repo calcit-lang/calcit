@@ -141,6 +141,11 @@ errors; an advertised incompatible version is a protocol mismatch. See
 [Asynchronous FFI task protocol](ffi-async-protocol.md) for the exact C
 signatures, ownership, lifecycle, status, queue, and future WASM rules.
 
+native once/eval 不仅检查入口函数的返回值：异步 callback 的未处理错误和
+`Fail` 终态会传播为非零退出码，队列/生命周期错误也按失败处理。宿主先完成
+有界取消与清理，再返回原错误；清理阶段的额外失败仍保留诊断。
+callback 内已用 `try` 处理的错误继续按成功执行，不能仅凭 stderr 是否有文本判断退出结果。
+
 Callback-v1 calls that install a cancel hook return an opaque native task
 capability rather than nil or a floating-point handle. Non-cancellable calls
 continue to return explicit `&unit`. Long-running tasks can be stopped
