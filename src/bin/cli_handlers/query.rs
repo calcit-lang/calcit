@@ -3148,9 +3148,18 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), Str
   )?;
   let reader_expanded = matches!(target_node, Cirru::Leaf(_)) && matches!(source_target, Calcit::List(_));
   let source_method_call = matches!(&source_target, Calcit::List(items) if matches!(items.first(), Some(Calcit::Method(..))));
-  let needs_source_trace = reader_expanded || source_method_call;
   let located_target = processed_root
     .and_then(|root| find_preprocessed_node_at_path(root, namespace, &definition, &target_path, matches!(target_node, Cirru::List(_))));
+  // Lowering can leave a child carrying the original call's coordinates.
+  // A different call head is not proof that this child is the source call.
+  let changed_call_head = matches!(
+    type_at_call_head(&source_target),
+    Some(Calcit::Symbol { .. } | Calcit::Import(_) | Calcit::Method(..) | Calcit::Proc(_) | Calcit::Syntax(..))
+  ) && matches!(target_node, Cirru::List(_))
+    && located_target.is_some_and(|target| {
+      type_at_call_head(&source_target).and_then(type_at_head_label) != type_at_call_head(target).and_then(type_at_head_label)
+    });
+  let needs_source_trace = reader_expanded || source_method_call || changed_call_head;
   let traced = if compile_error.is_none() && (needs_source_trace || (located_target.is_none() && matches!(target_node, Cirru::List(_))))
   {
     runner::preprocess::trace_definition_source_expressions(namespace, &definition, &RefCell::new(vec![]), &CallStackList::default())

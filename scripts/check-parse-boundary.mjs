@@ -111,6 +111,31 @@ try {
     ["config", "set", "reload-fn", "calcit.parse-boundary/main!"],
   ]);
   run("--check-only");
+  // Check instantiated decoder evidence on the original Calcit test calls,
+  // not the intentionally broad builtin declaration or display strings.
+  const beforeQuery = await readFile(snapshot);
+  const payload = ["::", "'List", ["::", "'List", "'Number"]];
+  for (const name of ["try-parse-cirru-edn-as", "try-decode-map-as"]) {
+    const search = JSON.parse(run("query", "search", name,
+      "--filter", "calcit.parse-boundary/main!", "--exact", "--format", "json"));
+    assert.deepEqual(search.diagnostics, []);
+    const matches = search.data.definitions.flatMap(def => def.matches);
+    assert.equal(matches.length, 2, `${name} must retain the original success and rejection calls`);
+    for (const match of matches) {
+      assert.match(match.path, /\.0$/, "the matched decoder must be the call head");
+      const response = JSON.parse(run("query", "type-at", "calcit.parse-boundary/main!",
+        "--path", match.path.slice(0, -2), "--format", "json"));
+      assert.deepEqual(response.diagnostics, []);
+      assert.equal(response.data.tree[0], name);
+      assert.equal(response.data.confidence, "exact");
+      assert.equal(response.data.dynamic_intent, null);
+      const method = response.data.static_methods.find(method => method.name === ".or-else");
+      assert.equal(method?.status, "proven", `${name} requires proven Result dispatch`);
+      assert.deepEqual(method.call_types.returns, ["::", "'Result", payload, "'String"]);
+      assert.equal(method.call_types.rest, null);
+    }
+  }
+  assert.deepEqual(await readFile(snapshot), beforeQuery, "query must not mutate decoder tests");
   run();
   const output = join(project, "js-out");
   run("--emit-path", output, "js");
