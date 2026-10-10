@@ -4679,6 +4679,7 @@ fn preprocess_known_function_call(
     )?;
   }
   reject_pending_async_arguments(&head_form, &processed_call_args, scope_types, call_stack)?;
+  let mut call_has_type_warnings = false;
   if !has_spread {
     let mut current_args = processed_call_args;
     let checked_contract = resolve_checked_call_contract(&info.def_ns, &info.name, &current_args, scope_types);
@@ -4815,7 +4816,9 @@ fn preprocess_known_function_call(
       call_stack,
       call_location.clone(),
     )?;
+    let warnings_before_call_check = check_warnings.borrow().len();
     check_user_fn_arg_types(info.as_ref(), &head_form, &current_args, scope_types, call_info, check_warnings);
+    call_has_type_warnings = check_warnings.borrow().len() > warnings_before_call_check;
   }
   if has_spread {
     ys = ys.prepend(Calcit::Syntax(CalcitSyntax::CallSpread, info.def_ns.to_owned()));
@@ -4847,7 +4850,13 @@ fn preprocess_known_function_call(
         );
       }
       if let Some(specialized) = try_specialize_polymorphic_call(ns, def, &current_args, scope_types, file_ns) {
-        return check_and_lower_specialized_struct_update(specialized, scope_types, file_ns, call_stack);
+        let specialized = check_and_lower_specialized_struct_update(specialized, scope_types, file_ns, call_stack)?;
+        if call_has_type_warnings {
+          // Keep a rejected call's checked source head, while still running
+          // mandatory nominal-write proof before skipping optimization.
+          return Ok(Calcit::from(CalcitList::from(ys)));
+        }
+        return Ok(specialized);
       }
     }
     Ok(Calcit::from(CalcitList::from(ys)))

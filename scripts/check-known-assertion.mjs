@@ -52,11 +52,16 @@ try {
     "map ([] 1 2) $ fn (value extra) (hint-fn $ {} (:args ([] Number Bool)) (:return Number)) value",
     "map ([] 1 2) $ fn (value extra & tail) (hint-fn $ {} (:args ([] Number (:: Option Number))) (:rest Number) (:return Number)) value",
   ]) {
-    const rejected = spawnSync(binary, [snapshot, "eval", snippet], options);
-    if (rejected.error) throw rejected.error;
-    assert.equal(rejected.status, 1, `${snippet}\n${rejected.stdout}\n${rejected.stderr}`);
-    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_FN_ARG_TYPE_MISMATCH/);
-    assert.deepEqual(await readFile(snapshot), optionalCallableOriginal);
+    for (const lint of ["0", "1"]) {
+      const rejected = spawnSync(binary, [snapshot, "eval", snippet], {
+        ...options, env: { ...process.env, CALCIT_LINT_CORE: lint },
+      });
+      if (rejected.error) throw rejected.error;
+      assert.equal(rejected.status, 1, `${snippet}\n${rejected.stdout}\n${rejected.stderr}`);
+      assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_FN_ARG_TYPE_MISMATCH/);
+      assert.doesNotMatch(`${rejected.stdout}\n${rejected.stderr}`, /internal compiler error/);
+      assert.deepEqual(await readFile(snapshot), optionalCallableOriginal);
+    }
   }
   const shortCircuitOriginal = await readFile(snapshot);
   const shortCircuitProof = JSON.parse(run("fix", "--ns", "app.short-circuit",

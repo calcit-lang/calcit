@@ -9,3 +9,5 @@
 用户语义由 definition `:tests` 验证：trim 的共享用例在 native、JS、WASM 和 WASI 上回放；formatter、局部 builtin 别名及末尾 Option 回调在原有 fixture 中用同一运行器回放 native/JS，并接入现有严格断言检查。Rust 只检查内部 Proc 投影、泛型替换和调用范围证明的边界。现有断言、排除规则与严格负例均保留。
 
 WASM 高阶 formatter 当前把元素类型丢成 Dynamic，局部 Proc 值也尚未 lowering；这两个失败独立于前端 callable 契约修复。不为它们增加排除项、改写成手动 native call 或放宽类型，本次不宣称它们已支持。后续应补足类型证据和静态 callable lowering，而不是修改表层规则。
+
+CI 的 post-lowering 模式还捕获了既有负例诊断缺陷：错误 callback 已在公开 `map` 调用上报告，但调用头仍改写成 `&list:map`，导致最终树校验把不同文字的原诊断当作漏检。已判错的普通函数调用保留完成类型检查的 source 形态，不再做后续优化；名义字段写入的前置证明仍运行，未放宽最终树校验。三个负例同时在 validator 开关两种模式中要求原有诊断，且不接受 internal compiler error。既有 Struct assoc 的正确和错误 Tag/String key 用例在两种模式都保持原断言与字段定位。
