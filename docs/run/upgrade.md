@@ -584,7 +584,7 @@ calcit calcit.cirru edit transaction --dry-run --format edn --code '[["tree","de
 
 ### 仍可用的兼容名
 
-core 中带 `:deprecated` 标记的 28 个兼容名在 0.29.0 仍可调用，行为与 0.28 相同。新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余按首选写法逐处改写。
+core 在 0.29.0 仍保留下表兼容入口，新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余逐处人工审阅。剩余入口的计划退场窗口是 0.30.0，但到达版本号不自动授权删除，仍须满足消费者、发布窗口、语义与实现解耦条件。
 
 | 兼容名 | 首选写法 | 迁移 |
 |---|---|---|
@@ -598,11 +598,14 @@ core 中带 `:deprecated` 标记的 28 个兼容名在 0.29.0 仍可调用，行
 | `turn-string` | `to-string` | 参数已证明为标量时用 `core-identity-conversion-v1`，其余人工改写 |
 | `turn-str` | `to-string` | 人工改写 |
 | `remove-watch` | `remove-watch!` | 人工改写 |
+| List `.add` | `.append`，返回新的同型 List，不修改原集合 | `calcit calcit.cirru fix --rule core-list-add-v1 --format edn`；仅改写已证明的 List、相同 core 实现和签名，不处理 Set/Map 或用户同名方法 |
+| List/Map/Set `.count` | `.len`，保留原集合长度语义 | `calcit calcit.cirru fix --rule core-collection-len-v1 --format edn`；未知接收者、自定义 Countable 与泛型 bound 需人工审阅；String 旧方法已删除，见上文 |
+| FfiTask `.cancel` / `.cancel-with reason` | `.cancel!` / `.cancel-with! reason`，保留原 Unit、参数求值与宿主取消合同 | `calcit calcit.cirru fix --rule core-effect-method-v1 --format edn`；仅改写已证明的 core nominal/trait 来源、同签名同实现调用；开放 host、用户方法和未知 macro 不自动改写，不新增 JS/WASM/WASI 宿主能力 |
 | `case-default` | `match`，默认值写成末尾 `_` 分支 | `case-default-to-match-v1`（字面量模式） |
 | `foldl-shortcut` | `fold-while`，reducer 返回 `ControlFlow :continue acc` 或 `ControlFlow :break value`，从未 break 时返回累积值 | 人工改写：`(:: false acc)` 改为 `ControlFlow :continue acc`，`(:: true v)` 改为 `ControlFlow :break v`；旧写法在从未 break 时返回第三个参数 `default`，需要时在调用处判断后显式给出 |
-| `some-in?` | `option:some? $ get-in x path`；只需判断路径是否存在时用 `contains-in?`（两者对值为 `nil` 的路径结果不同） | 人工改写 |
-| `range-bothway` | 显式写 `range`：`range-bothway n` 写成 `range (inc (negate n)) n`，`range-bothway a b` 写成 `range (inc (- (+ a a) b)) b` | 人工改写 |
-| `let{}` | `let` 逐个绑定 `&map:get m :key`；struct 值用 `.-field` | 人工改写（生态中 2 处） |
+| `some-in?` | 公开方法 `.some? $ get-in x path`；`contains-in?` 判断路径存在，两者对 nil 叶子的结果不同 | 人工改写 |
+| `range-bothway` | 按原顺序各绑定实参一次到 `x/y`：省略 `y` 时用 `range (inc (negate x)) x`，Number `y` 时用 `range (inc (- (+ x x) y)) y`；末端不包含 | 人工改写，不能复制带副作用的表达式；历史运行时 nil 分支与省略相同，但当前严格 Number schema 拒绝显式 nil 实参 |
+| `let{}` | 显式 `let` 与 `get`，审阅原 nil/缺失行为后处理 Option；已知 Struct 字段用 `(:field value)`，不是 JS 属性访问 `.-field` | 人工改写；原 Map 求值一次，不自动插入 unwrap 或业务默认值 |
 | `let-destruct` | symbol 模式写 `let`，`([] ...)` 模式写 `let[]` | 人工改写（生态中未见调用） |
 | `option:let` | 嵌套 `.and-then`：`option:let ((a x) (b (f a))) body` 写成 `x .and-then $ fn (a) $ (f a) .and-then $ fn (b) body` | 人工改写（生态中 1 处） |
 | `let-sugar` | symbol 绑定写 `let`，`([] ...)` 模式写 `let[]` | `let-sugar-to-let-v1`（`({} ...)` 模式人工改写） |
@@ -613,7 +616,7 @@ core 中带 `:deprecated` 标记的 28 个兼容名在 0.29.0 仍可调用，行
 | 宏 `flipped` | 按实际顺序写参数：`flipped f a b` 写成 `f b a` | 同上；位于 `->` 等线程宏中时需要人工改写 |
 | 宏 `w-js-log` | `dbg`；需要在浏览器控制台查看宿主对象时显式写 `js/console.log` | 同上，只给 `requires-review` |
 
-上表名字、函数 `round?`、前缀 `reduce`，以及方法 List `.add`、List/Map/Set `.count`、FfiTask `.cancel` / `.cancel-with` 与 Struct/Enum `.contains?` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零后，在下一个非 patch 版本删除，并在本文列出删除项。
+上表名字、函数 `round?`、前缀 `reduce`，以及方法 List `.add`、List/Map/Set `.count`、FfiTask `.cancel` / `.cancel-with` 与 Struct/Enum `.contains?` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零只是必要条件；还须同时满足消费者验证、已发布迁移窗口、类型/失败/求值与相关后端语义验证，以及 core 实现解耦条件，之后才可在下一个非 patch 版本删除，并在本文列出删除项。依赖模块和未合并迁移也须核对；到达 0.30.0 不自动授权删除。
 
 ### std 定时器与信号订阅命名
 

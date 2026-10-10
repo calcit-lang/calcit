@@ -603,6 +603,15 @@
     {} (:name |.get) (:receiver |'String) (:rest nil)
       :parameters $ [] $ quote 'Number
       :returns $ quote $ :: 'calcit.core/Option 'String
+    {} (:name |.first) (:receiver |'String) (:rest nil)
+      :parameters $ []
+      :returns $ quote $ :: 'calcit.core/Option 'String
+    {} (:name |.last) (:receiver |'String) (:rest nil)
+      :parameters $ []
+      :returns $ quote $ :: 'calcit.core/Option 'String
+    {} (:name |.nth) (:receiver |'String) (:rest nil)
+      :parameters $ [] $ quote 'Number
+      :returns $ quote $ :: 'calcit.core/Option 'String
     {} (:name |.strip-prefix) (:receiver |'String) (:rest nil)
       :parameters $ [] $ quote 'String
       :returns $ quote 'String
@@ -629,6 +638,16 @@
       :receiver "|:: 'List 'Number"
       :rest nil
       :parameters $ [] $ quote 'Number
+      :returns $ quote $ :: 'calcit.core/Option 'Number
+    {} (:name |.first)
+      :receiver "|:: 'List 'Number"
+      :rest nil
+      :parameters $ []
+      :returns $ quote $ :: 'calcit.core/Option 'Number
+    {} (:name |.last)
+      :receiver "|:: 'List 'Number"
+      :rest nil
+      :parameters $ []
       :returns $ quote $ :: 'calcit.core/Option 'Number
     {} (:name |.fold)
       :receiver "|:: 'List 'Number"
@@ -726,6 +745,33 @@
       :rest nil
       :parameters $ []
       :returns $ quote 'Bool
+    {} (:name |.and-then)
+      :receiver "|:: 'calcit.core/Option 'Number"
+      :rest nil
+      :parameters $ [] $ quote
+        :: 'Fn $ {}
+          :args $ [] 'Number
+          :return $ :: 'Option 'U
+      :returns $ quote $ :: 'Option 'U
+    {} (:name |.fold)
+      :receiver "|:: 'calcit.core/Option 'Number"
+      :rest nil
+      :parameters $ []
+        quote $ :: 'Fn $ {}
+          :return 'OptionFoldOutput
+          :args $ []
+        quote $ :: 'Fn $ {}
+          :return 'OptionFoldOutput
+          :args $ [] 'Number
+      :returns $ quote 'OptionFoldOutput
+    {} (:name |.or-else)
+      :receiver "|:: 'calcit.core/Option 'Number"
+      :rest nil
+      :parameters $ [] $ quote
+        :: 'Fn $ {}
+          :args $ []
+          :return $ :: 'Option 'Number
+      :returns $ quote $ :: 'Option 'Number
     {} (:name |.ok?)
       :receiver "|:: 'calcit.core/Result 'Number 'String"
       :rest nil
@@ -736,6 +782,36 @@
       :rest nil
       :parameters $ []
       :returns $ quote 'Bool
+    {} (:name |.and-then)
+      :receiver "|:: 'calcit.core/Result 'Number 'String"
+      :rest nil
+      :parameters $ [] $ quote
+        :: 'Fn $ {}
+          :args $ [] 'Number
+          :return $ :: 'Result 'U 'String
+      :returns $ quote $ :: 'Result 'U 'String
+    {} (:name |.map)
+      :receiver "|:: 'calcit.core/Result 'Number 'String"
+      :rest nil
+      :parameters $ [] $ quote
+        :: 'Fn $ {} (:return 'ResultMapOutput)
+          :args $ [] 'Number
+      :returns $ quote $ :: 'calcit.core/Result 'ResultMapOutput 'String
+    {} (:name |.map-err)
+      :receiver "|:: 'calcit.core/Result 'Number 'String"
+      :rest nil
+      :parameters $ [] $ quote
+        :: 'Fn $ {} (:return 'F)
+          :args $ [] 'String
+      :returns $ quote $ :: 'Result 'Number 'F
+    {} (:name |.or-else)
+      :receiver "|:: 'calcit.core/Result 'Number 'String"
+      :rest nil
+      :parameters $ [] $ quote
+        :: 'Fn $ {}
+          :args $ []
+          :return $ :: 'Result 'Number 'String
+      :returns $ quote $ :: 'Result 'Number 'String
   :methods $ []
     {}
       :failure "|返回原_String，不添加_debug_引号或转义"
@@ -999,6 +1075,28 @@
       :schema $ quote $ {} (:kind :fn)
         :args $ [] 'Dynamic 'Dynamic
         :return $ :: 'Option 'Dynamic
+    {} (:name |.first)
+      :provenance 'calcit.core/first
+      :receiver |'String
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Dynamic
+        :return $ :: 'Option 'Dynamic
+    {} (:name |.last)
+      :provenance 'calcit.core/last
+      :receiver |'String
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Dynamic
+        :return $ :: 'Option 'Dynamic
+    {} (:name |.nth) (:provenance 'calcit.core/nth) (:receiver |'String)
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Dynamic 'Number
+        :return $ :: 'Option 'Dynamic
     {} (:failure "|未匹配保留原_String") (:name |.strip-prefix)
       :provenance 'calcit.core/strip-prefix
       :receiver |'String
@@ -1063,6 +1161,22 @@
       :runtime-arity $ {} (:max 2) (:min 2)
       :schema $ quote $ {} (:kind :fn)
         :args $ [] 'Dynamic 'Dynamic
+        :return $ :: 'Option 'Dynamic
+    {} (:name |.first)
+      :provenance 'calcit.core/first
+      :receiver "|:: 'List 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Dynamic
+        :return $ :: 'Option 'Dynamic
+    {} (:name |.last)
+      :provenance 'calcit.core/last
+      :receiver "|:: 'List 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Dynamic
         :return $ :: 'Option 'Dynamic
     {}
       :failure "|保留_accumulator_泛型和左至右的回调顺序"
@@ -1259,6 +1373,42 @@
       :schema $ quote $ {} (:kind :fn) (:return 'Bool)
         :args $ [] $ :: 'Option 'T
         :generics $ [] 'T
+    {} (:name |.and-then)
+      :provenance 'calcit.core/option:and-then
+      :receiver "|:: 'calcit.core/Option 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] (:: 'Option 'T)
+          :: 'Fn $ {}
+            :args $ [] 'T
+            :return $ :: 'Option 'U
+        :generics $ [] 'T 'U
+        :return $ :: 'Option 'U
+    {} (:name |.fold)
+      :provenance 'calcit.core/option:fold
+      :receiver "|:: 'calcit.core/Option 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 3) (:min 3)
+      :schema $ quote $ {} (:kind :fn) (:return 'U)
+        :args $ [] (:: 'Option 'T)
+          :: 'Fn $ {} (:return 'U)
+            :args $ []
+          :: 'Fn $ {} (:return 'U)
+            :args $ [] 'T
+        :generics $ [] 'T 'U
+    {} (:name |.or-else)
+      :provenance 'calcit.core/option:or-else
+      :receiver "|:: 'calcit.core/Option 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] (:: 'Option 'T)
+          :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Option 'T
+        :generics $ [] 'T
+        :return $ :: 'Option 'T
     {}
       :failure "|只检查_variant，不验证未知_payload"
       :name |.ok?
@@ -1269,6 +1419,53 @@
       :schema $ quote $ {} (:kind :fn) (:return 'Bool)
         :args $ [] $ :: 'Result 'T 'E
         :generics $ [] 'T 'E
+    {} (:name |.and-then)
+      :provenance 'calcit.core/result:and-then
+      :receiver "|:: 'calcit.core/Result 'Number 'String"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] (:: 'Result 'T 'E)
+          :: 'Fn $ {}
+            :args $ [] 'T
+            :return $ :: 'Result 'U 'E
+        :generics $ [] 'T 'U 'E
+        :return $ :: 'Result 'U 'E
+    {} (:name |.map)
+      :provenance 'calcit.core/result:map
+      :receiver "|:: 'calcit.core/Result 'Number 'String"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] (:: 'Result 'T 'E)
+          :: 'Fn $ {} (:return 'U)
+            :args $ [] 'T
+        :generics $ [] 'T 'U 'E
+        :return $ :: 'Result 'U 'E
+    {} (:name |.map-err)
+      :provenance 'calcit.core/result:map-err
+      :receiver "|:: 'calcit.core/Result 'Number 'String"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] (:: 'Result 'T 'E)
+          :: 'Fn $ {} (:return 'F)
+            :args $ [] 'E
+        :generics $ [] 'T 'E 'F
+        :return $ :: 'Result 'T 'F
+    {} (:name |.or-else)
+      :provenance 'calcit.core/result:or-else
+      :receiver "|:: 'calcit.core/Result 'Number 'String"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] (:: 'Result 'T 'E)
+          :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Result 'T 'E
+        :generics $ [] 'T 'E
+        :return $ :: 'Result 'T 'E
+
     {}
       :failure "|只检查_variant，不验证未知_payload"
       :name |.err?

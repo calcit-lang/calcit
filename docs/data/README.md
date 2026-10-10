@@ -71,6 +71,12 @@ node scripts/core-api-contract.mjs
 
 Option `.map` 目前查询仍为 open，解析开放 JSON/Cirru EDN 等边界仍需要单独审阅，不能靠本清单或目标类型把它们包装成 proven。候选只记录真实证据，不把推导漏洞固化为永久动态契约。0.29 的断言/调用证明工作仍由 #1538 拥有。
 
+已知 String 的 `.first/.last/.nth` 和 List 的 `.first/.last` 与原 `.get` 一样记录当前 receiver 的 Option payload：String 保持 `Option<String>`，`List<Number>` 保持 `Option<Number>`。无参数首尾查询与 Number 索引查询分别保存，不把异质 Enum 的开放访问加入同型集合承诺。此处没有新增方法或改变索引单位；语义由原 `first/last/nth` 的 Calcit 附带测试及 Unicode/严格访问回归验证。
+
+Option 的 `.and-then/.fold/.or-else` 与 Result 的 `.and-then/.map/.map-err/.or-else` 也纳入已有导出器。查询中的回调参数、输出泛型与原 schema 一起保留；例如 `Result<Number,String> .map` 的回调接收 Number，其输出决定成功类型，错误类型仍为 String。泛型输出不是已选择的业务类型；只有在调用处提供回调后才实例化，不用 Dynamic 替代尚未选择的泛型。原 Option/Result 附带测试拥有分支选择、短路、callback 与失败语义，基线仅保护查询和声明关系。Option `.map` 仍不在 proven 清单内，Result `.map` 的证明不能转移到另一个名义类型。
+
+这些组合方法的附带测试使用直接 Option/Result 构造和普通方法调用，验证选中分支与不同的输出类型；未选回调若执行会抛错。`map-err` 的 String 错误转 Number 用例可在受支持 WASM/WASI 上回放，String 转 Tag 用例保留在 native/JS，并因既有 runtime tag interning 限制在 WASM/WASI 明确排除；这不是 `.map-err` 整个方法不支持，也不把 Tag 转换写成已实现。
+
 解析家族的 `try-parse-json`、`try-parse-cirru`、`try-parse-cirru-edn` 与 `try-parse-cirru-list` 函数声明也纳入候选：输入为 String，失败为 String，成功值分别为开放数据、CirruQuote、开放数据与开放 List。记录声明不等于证明开放 payload，JSON/Cirru EDN/List 的方法契约仍不进入要求 `proven` 的方法冻结范围。需要业务类型时使用现有闭合 decoder，而不是插入 unsafe 或假定目标类型。
 
 `scripts/check-parse-boundary.mjs` 在 native 与生成 JS 执行同一份 definition `result-method-contract` AST，覆盖普通 String `.parse-float/.parse-json/.parse-cirru/.parse-cirru-edn/.parse-cirru-list` 的成功、失败和 Result 类型断言，并继续执行闭合 decoder 的嵌套成功/拒绝用例。此批不宣称这些通用文本 parser 的 WASM 支持；已有闭合 Cirru EDN WASM decoder 的支持与限制见 [WASM 验证说明](../../scripts/wasm-validation.md)。
