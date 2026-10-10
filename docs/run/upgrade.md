@@ -502,6 +502,10 @@ core 中带 `:deprecated` 标记的 21 个兼容名在 0.29.0 仍可调用，行
 
 上表名字、函数 `round?`、前缀 `reduce`，以及方法 List `.add`、List/Map/Set `.count`、FfiTask `.cancel` / `.cancel-with` 与 Struct/Enum `.contains?` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零后，在下一个非 patch 版本删除，并在本文列出删除项。
 
+### Ref watcher 重复注册
+
+`add-watch!` 的 Tag key 在同一个 Ref 上不可重复。JS runtime 现在与 native 一样拒绝重复注册，保留原 watcher，不再静默替换回调。确需替换已注册的回调时，先用 `remove-watch!` 移除该 key，再用 `add-watch!` 注册新回调；这两步仍是显式效果，不提供自动改写。首次注册和移除仍返回 Unit，callback 的新值、旧值参数顺序不变。此修复不扩展 WASM/WASI 的局部 Ref 支持。
+
 ### Ref 构造名
 
 `Ref<T>` 的首选构造名是 `ref`（局部）与 `defref`（命名空间级），与 `type-of` 返回的 `:ref` 和谓词 `ref?` 一致。`atom` / `defatom` 在 0.29.0 仍可调用，读取为同一个实现，行为、类型与 native/JS/WASM 支持范围都不变。它们暂不带 `:deprecated` 标记：Respo、memof、js-ffi 等仍有 legacy `analyze quality` baseline 的项目大量使用旧名，加标记会直接改变其 `deprecatedCalls` 预算。

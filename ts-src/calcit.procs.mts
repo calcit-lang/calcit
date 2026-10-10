@@ -1011,6 +1011,9 @@ export let add_watch_$x_ = (a: CalcitRef, k: CalcitTag, f: CalcitFn): void => {
   if (!(typeof f === "function")) {
     throw new Error("Expected watcher function");
   }
+  if (a.listeners.has(k)) {
+    throw new Error(`add-watch! failed: listener with key \`${k.value}\` already existed`);
+  }
   a.listeners.set(k, f);
 };
 

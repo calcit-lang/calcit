@@ -351,11 +351,19 @@ try {
   const effectRef = runtimeA.atom(1);
   const watchKey = runtimeA.newTag("runtime-unit-check");
   const watchCalls = [];
+  const watchCallback = (next, previous) => watchCalls.push([next, previous]);
   assert.equal(
-    runtimeA.add_watch_$x_(effectRef, watchKey, (next, previous) => watchCalls.push([next, previous])),
+    runtimeA.add_watch_$x_(effectRef, watchKey, watchCallback),
     undefined,
     "add-watch! must return &unit"
   );
+  assert.throws(
+    () => runtimeA.add_watch_$x_(effectRef, watchKey, () => {}),
+    /^Error: add-watch! failed: listener with key `runtime-unit-check` already existed$/,
+    "duplicate registration must reject before replacing the original callback"
+  );
+  assert.equal(effectRef.listeners.get(watchKey), watchCallback, "rejection must preserve callback identity");
+  assert.deepEqual(watchCalls, [], "registration and rejection must not invoke the callback");
   assert.equal(runtimeA.reset_$x_(effectRef, 2), 2, "reset! must return the written value");
   assert.deepEqual(watchCalls, [[2, 1]], "reset! must still notify watchers");
   assert.equal(runtimeA.remove_watch(effectRef, watchKey), undefined, "remove-watch must return &unit");
