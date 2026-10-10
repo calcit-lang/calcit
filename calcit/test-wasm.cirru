@@ -1297,7 +1297,7 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
           :tests $ [] $ %{} 'TestEntry (:name |keeps-fractional-bounds)
-            :code $ quote $ assert= 2 (test-range-count-from 1.5 3.2)
+            :code $ quote $ assert= 3 (test-range-count-from 1.5 3.7)
             :tags $ #{} :core :wasm
         'test-range-count-to $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-range-count-to (n)
@@ -1315,7 +1315,7 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
           :tests $ [] $ %{} 'TestEntry (:name |keeps-fractional-base)
-            :code $ quote $ assert= 1.5 (test-range-first-from 1.5 3.2)
+            :code $ quote $ assert= 1.5 (test-range-first-from 1.5 3.7)
             :tags $ #{} :core :wasm
         'test-range-last $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defwasm-export test-range-last (a b step)

@@ -330,7 +330,7 @@ core WASM 与 WASI Component 中的 `range`（`&list:range`）现在与 native�
 升级时的行为变化：
 
 - 方向与步长不一致时（`range 3 0`、`range -1`、`range 0 5 -1`），WASM 此前返回空列表，现在 trap。步长为 0 此前视区间方向返回空列表或因长度超限 trap，现在同样按步长错误 trap；`range 3 3 0` 仍是空列表。
-- 一个或两个参数的形式此前把边界截断为整数：`range 2.5` 为 `[] 0 1`，`range 1.5 3.2` 为 `[] 1 2`；现在分别为 `[] 0 1 2` 与 `[] 1.5 2.5`。
+- 一个或两个参数的形式此前按截断为整数的边界计算长度：`range 2.5` 为 `[] 0 1`，`range 1.5 3.7` 为 `[] 1.5 2.5`；现在分别为 `[] 0 1 2` 与 `[] 1.5 2.5 3.5`。
 - 三个参数的形式此前按 `start + i * step` 计算元素，长度为 `ceil((end - start) / step)`：`range 0 1 0.1` 有 10 个元素；现在与 native、JS 一样有 11 个元素，最后一个是 `0.9999999999999999`。
 - NaN 或无穷参数此前在部分形式中返回空列表（如 `range 0 1 NaN`），现在一律 trap。
 
@@ -338,7 +338,7 @@ core WASM 与 WASI Component 中的 `range`（`&list:range`）现在与 native�
 
 ```cirru
 assert= ([] 0 1 2) $ range 2.5
-assert= ([] 1.5 2.5) $ range 1.5 3.2
+assert= ([] 1.5 2.5 3.5) $ range 1.5 3.7
 assert= 11 $ count $ range 0 1 0.1
 ```
 
