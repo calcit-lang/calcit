@@ -157,13 +157,21 @@ pub struct SourceExpressionEvidence {
   pub inferred_type: Option<Arc<CalcitTypeAnnotation>>,
 }
 
+#[derive(Default)]
+struct SourceExpressionTrace {
+  expressions: Vec<SourceExpressionEvidence>,
+  // Identity belongs to the reader tree kept alive for the whole trace, not
+  // to a lowered child that happens to carry the same symbol coordinates.
+  reader_locations: HashMap<usize, NodeLocation>,
+}
+
 thread_local! {
   static REQUIRE_ASSERTION_PROOF: Cell<bool> = const { Cell::new(false) };
   /// Dependencies already re-proved within the current outer assertion audit.
   /// Reset with the compiled-program checkpoint so no audit result outlives it.
   static AUDIT_PROVEN_DEFS: RefCell<HashSet<(Arc<str>, Arc<str>)>> = RefCell::new(HashSet::new());
   static RESOLVED_SOURCE_USAGE_TRACE: RefCell<Option<Vec<ResolvedSourceUsage>>> = const { RefCell::new(None) };
-  static SOURCE_EXPRESSION_TRACE: RefCell<Option<Vec<SourceExpressionEvidence>>> = const { RefCell::new(None) };
+  static SOURCE_EXPRESSION_TRACE: RefCell<Option<SourceExpressionTrace>> = const { RefCell::new(None) };
   #[cfg(test)]
   static TEST_WARN_DYN_METHOD: Cell<bool> = const { Cell::new(false) };
   #[cfg(test)]
@@ -246,7 +254,65 @@ pub fn trace_source_expressions(
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<(Calcit, Vec<SourceExpressionEvidence>), CalcitErr> {
-  let previous = SOURCE_EXPRESSION_TRACE.with(|trace| trace.replace(Some(Vec::new())));
+  trace_source_expressions_with_locations(code, ns, def, check_warnings, call_stack, HashMap::new())
+}
+
+/// Trace a Snapshot definition with exact reader identities, including heads
+/// such as Proc/Syntax that intentionally have no symbol location of their own.
+pub fn trace_snapshot_source_expressions(
+  source: &cirru_parser::Cirru,
+  ns: &str,
+  def: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<Vec<SourceExpressionEvidence>, CalcitErr> {
+  let code = crate::data::cirru::code_to_calcit(source, ns, def, vec![])
+    .map_err(|message| CalcitErr::use_msg_stack_location(CalcitErrKind::Syntax, message, call_stack, None))?;
+  fn collect(
+    code: &Calcit,
+    source: &cirru_parser::Cirru,
+    ns: &str,
+    def: &str,
+    path: &mut Vec<usize>,
+    locations: &mut HashMap<usize, NodeLocation>,
+  ) {
+    if let Calcit::List(items) = code {
+      if matches!(items.first(), Some(Calcit::Proc(_) | Calcit::Syntax(..)))
+        && let Some(coord) = crate::data::cirru::reader_path_to_source_path(source, path)
+          .and_then(|coord| coord.into_iter().map(u16::try_from).collect::<Result<Vec<_>, _>>().ok())
+      {
+        locations.insert(
+          Arc::as_ptr(items) as usize,
+          NodeLocation::new(ns.into(), def.into(), Arc::new(coord)),
+        );
+      }
+      for (index, item) in items.iter().enumerate() {
+        path.push(index);
+        collect(item, source, ns, def, path, locations);
+        path.pop();
+      }
+    }
+  }
+  let mut locations = HashMap::new();
+  collect(&code, source, ns, def, &mut vec![], &mut locations);
+  // `code` retains every indexed Arc until preprocessing and collection finish.
+  trace_source_expressions_with_locations(&code, ns, def, check_warnings, call_stack, locations).map(|(_, expressions)| expressions)
+}
+
+fn trace_source_expressions_with_locations(
+  code: &Calcit,
+  ns: &str,
+  def: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+  reader_locations: HashMap<usize, NodeLocation>,
+) -> Result<(Calcit, Vec<SourceExpressionEvidence>), CalcitErr> {
+  let previous = SOURCE_EXPRESSION_TRACE.with(|trace| {
+    trace.replace(Some(SourceExpressionTrace {
+      expressions: vec![],
+      reader_locations,
+    }))
+  });
   debug_assert!(previous.is_none(), "source expression traces must not be nested");
   let mut scope_types = ScopeTypes::new();
   let result = builtins::meta::with_compiling_def(ns, def, || {
@@ -260,7 +326,7 @@ pub fn trace_source_expressions(
       }
     })
   });
-  let expressions = SOURCE_EXPRESSION_TRACE.with(|trace| trace.replace(previous).unwrap_or_default());
+  let expressions = SOURCE_EXPRESSION_TRACE.with(|trace| trace.replace(previous).unwrap_or_default().expressions);
   result.map(|processed| (processed, expressions))
 }
 
@@ -2574,15 +2640,20 @@ fn preprocess_expr_unguarded(
           check_warnings,
           call_stack,
         )?);
-        if SOURCE_EXPRESSION_TRACE.with(|trace| trace.borrow().is_some())
-          && let Some(head) = xs.first()
-          && matches!(head, Calcit::Symbol { .. } | Calcit::Import { .. } | Calcit::Method(..))
-          && let Some(location) = derive_list_call_expr_location(xs)
-        {
+        let source_location = SOURCE_EXPRESSION_TRACE.with(|trace| {
+          let trace = trace.borrow();
+          let trace = trace.as_ref()?;
+          trace.reader_locations.get(&(Arc::as_ptr(xs) as usize)).cloned().or_else(|| {
+            matches!(xs.first(), Some(Calcit::Symbol { .. } | Calcit::Import { .. } | Calcit::Method(..)))
+              .then(|| derive_list_call_expr_location(xs))
+              .flatten()
+          })
+        });
+        if let Some(location) = source_location {
           let inferred_type = resolve_type_value(&processed, scope_types);
           SOURCE_EXPRESSION_TRACE.with(|trace| {
-            if let Some(items) = trace.borrow_mut().as_mut() {
-              items.push(SourceExpressionEvidence {
+            if let Some(trace) = trace.borrow_mut().as_mut() {
+              trace.expressions.push(SourceExpressionEvidence {
                 location,
                 processed: processed.clone(),
                 inferred_type,
@@ -13496,6 +13567,37 @@ mod tests {
   };
   use crate::data::cirru::code_to_calcit;
   use cirru_parser::Cirru;
+
+  #[test]
+  fn snapshot_source_trace_retains_unlocated_reader_heads_and_comment_indexes() {
+    let _state = lock_preprocess_test_state();
+    let ns = "tests.source-trace";
+    let def = "original";
+    let warnings = RefCell::new(vec![]);
+    // These calls contain no located symbols from which to guess a call path.
+    let source = Cirru::List(vec![
+      Cirru::leaf("&+"),
+      Cirru::List(vec![Cirru::leaf(";"), Cirru::leaf("reader drops this comment")]),
+      Cirru::leaf("1"),
+      Cirru::List(vec![Cirru::leaf("&+"), Cirru::leaf("2"), Cirru::leaf("3")]),
+    ]);
+    let evidence = trace_snapshot_source_expressions(&source, ns, def, &warnings, &CallStackList::default())
+      .expect("trace reader-resolved primitive calls");
+    for path in [vec![], vec![3]] {
+      let call = unique_source_expression_at_path(&evidence, ns, def, &path).expect("unique original source call");
+      assert!(matches!(call.inferred_type.as_deref(), Some(CalcitTypeAnnotation::Number)));
+    }
+    assert!(unique_source_expression_at_path(&evidence, ns, def, &[2]).is_none());
+    let syntax = Cirru::List(vec![Cirru::leaf("assert-type"), Cirru::leaf("1"), Cirru::leaf(":number")]);
+    let evidence =
+      trace_snapshot_source_expressions(&syntax, ns, def, &warnings, &CallStackList::default()).expect("trace reader-resolved syntax");
+    let call = unique_source_expression_at_path(&evidence, ns, def, &[]).expect("syntax has its own source identity");
+    assert!(matches!(call.inferred_type.as_deref(), Some(CalcitTypeAnnotation::Number)));
+    let duplicate = vec![call.clone(), call.clone()];
+    assert!(unique_source_expression_at_path(&duplicate, ns, def, &[]).is_none());
+    assert!(warnings.borrow().is_empty());
+    assert!(SOURCE_EXPRESSION_TRACE.with(|trace| trace.borrow().is_none()));
+  }
 
   #[test]
   fn single_use_unbounded_generic_param_accepts_any_value() {

@@ -63,6 +63,8 @@ Option `.map` 目前查询仍为 open，解析开放 JSON/Cirru EDN 等边界仍
 
 `scripts/check-parse-boundary.mjs` 在 native 与生成 JS 执行同一份 definition `result-method-contract` AST，覆盖普通 String `.parse-float/.parse-json/.parse-cirru/.parse-cirru-edn/.parse-cirru-list` 的成功、失败和 Result 类型断言，并继续执行闭合 decoder 的嵌套成功/拒绝用例。此批不宣称这些通用文本 parser 的 WASM 支持；已有闭合 Cirru EDN WASM decoder 的支持与限制见 [WASM 验证说明](../../scripts/wasm-validation.md)。
 
+同一回归还用 `query search` 定位原闭合 decoder 测试中的调用，再通过 `query type-at` 检查实例化证据：`try-parse-cirru-edn-as` 与 `try-decode-map-as` 的嵌套成功、拒绝调用均保留精确类型及已证明的 Result 方法，结构化 `call-types` 返回 `Result<List<List<Number>>,String>`。检查不依赖展示字符串，也不把 builtin 的宽声明冻结为业务返回类型；查询前后 Snapshot 不变。运行时 payload 和失败路径仍由原 Calcit 断言验证，不因静态查询通过就扩大后端支持范围。
+
 CI 检查当前源码与基线，并对 PR 的 merge-base 基线重新比较；push 比较父提交。只改范围或重生成基线不能放行既有名字、schema、失败记录或 receiver 的变化。合法新增允许；函数体、局部参数名和方法内部实现路径不冻结。当前不提供 breaking-change 豁免，#1568 规划的集中迁移例外仍由 #1458 跟进，须实现同一 PR 的映射与语义验证，不能手动跳过检查。
 
 这里的测试放在 Node，是为了验证导出格式、Git 基线防绕过和契约比较这些维护工具边界，不重复添加 Rust 语言语义测试，也不新增动态类型统计 analyzer。失败描述的变化可由历史比较发现，但实现是否违反失败语义仍须由共享语义测试证明；不能把“文字没有变化”当作行为已经验证。
