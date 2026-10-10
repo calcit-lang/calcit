@@ -9919,7 +9919,7 @@ fn core_option_method_rule_requires_review_without_proven_receiver() {
 }
 
 #[test]
-fn core_option_method_rule_uses_direct_get_env_type_evidence() {
+fn core_option_method_rule_uses_source_receiver_type_evidence() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
@@ -9986,6 +9986,84 @@ fn core_option_method_rule_uses_direct_get_env_type_evidence() {
   let updated = fs::read_to_string(&snapshot).expect("updated fixture should read");
   assert!(updated.contains("get-env |CALCIT_TEST_ENV"), "snapshot: {updated}");
   assert!(updated.contains(".unwrap-or |missing"), "snapshot: {updated}");
+
+  // Typed nth lowering gives an inner List node the original call coordinates.
+  let target = "fix-command.main/nth-or";
+  for args in [
+    vec![
+      "edit",
+      "def",
+      target,
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn nth-or (tails calls) $ option:unwrap-or (nth (do (swap! calls inc) tails) 0) 9",
+    ],
+    vec![
+      "edit",
+      "schema",
+      target,
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] (:: 'List 'Number) (:: 'Ref 'Number)) (:return 'Number)",
+    ],
+    vec![
+      "edit",
+      "add-test",
+      target,
+      "preserves-value-fallback-and-evaluation",
+      "--tags",
+      "unit",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ let\n    calls $ ref 0\n  assert= 2 $ nth-or ([] 2) calls\n  assert= 1 $ deref calls\n  assert= 9 $ nth-or ([]) calls\n  assert= 2 $ deref calls",
+    ],
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), "install lowered receiver contract");
+  }
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "original receiver semantics",
+  );
+  let queried = run_calcit(&snapshot, &["query", "type-at", target, "--path", "3.1", "--format", "json"]);
+  assert_success(&queried, "query original nth result");
+  let evidence = parse_stdout(&queried);
+  assert_eq!(evidence["data"]["confidence"], "exact", "{evidence}");
+  assert_eq!(evidence["data"]["inferred_type"], ":: 'calcit.core/Option 'Number", "{evidence}");
+  let selector = [
+    "--rule",
+    "core-option-method-v1",
+    "--ns",
+    "fix-command.main",
+    "--def",
+    "nth-or",
+    "--format",
+    "json",
+  ];
+  let before = fs::read(&snapshot).expect("source bytes");
+  let preview = run_fix(&snapshot, &selector);
+  assert_success(&preview, "preview lowered receiver migration");
+  let report = parse_stdout(&preview);
+  assert_eq!(fs::read(&snapshot).expect("source bytes"), before);
+  assert_eq!(report["data"]["suggestions"].as_array().unwrap().len(), 1, "{report}");
+  assert_eq!(report["data"]["suggestions"][0]["applicability"], "machine-applicable", "{report}");
+  let mut apply = selector.to_vec();
+  apply.extend([
+    "--apply",
+    "--allow-no-vcs",
+    "--expect-revision",
+    report["revision"].as_str().unwrap(),
+  ]);
+  assert_success(&run_fix(&snapshot, &apply), "apply proven source receiver migration");
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "migrated receiver semantics",
+  );
+  let repeated = run_fix(&snapshot, &selector);
+  assert_success(&repeated, "repeat lowered receiver migration");
+  assert_eq!(parse_stdout(&repeated)["data"]["suggestions"], serde_json::json!([]));
 }
 
 #[test]
