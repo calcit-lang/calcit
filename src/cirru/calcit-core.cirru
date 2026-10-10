@@ -820,19 +820,35 @@
             :return $ :: 'Optional 'String
           :tags $ #{} :builtin :env :internal :io
         '&get-in $ %{} 'CodeEntry
-          :doc "|Internal nullable traversal primitive used by the public Option-returning get-in API."
+          :doc "|Internal nullable traversal primitive. Public get-in is the separate Option-returning API."
           :code $ quote $ defn &get-in (base path)
             if
               not $ list? path
               raise $ str-spaced "|expects path in a list, got:" path
-            if (nil? base) base $ &list-match-internal path (base) (y0 ys)
-              (recur (get base y0) ys)
+            if (nil? base) base $ &list-match-internal path base (y0 ys)
+              recur (&get-raw base y0) ys
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Dynamic $ :: 'List 'K
             :generics $ [] 'K
             :return $ :: 'Optional 'Dynamic
           :tags $ #{} :internal
+          :tests $ [] $ %{} 'TestEntry (:name |handles-empty-path-and-nil-base)
+            :code $ quote $ do
+              assert= 9 $ &get-in 9 $ []
+              assert= nil $ &get-in nil $ []
+              assert= 2 $ &get-in
+                &{} :a $ &{} :b 2
+                [] :a :b
+              assert= false $ &get-in (&{} :a false) ([] :a)
+              assert= nil $ &get-in (&{} :a nil) ([] :a)
+              assert= nil $ &get-in
+                &{} :a $ &{}
+                [] :a :missing
+              assert= 4 $ &get-in
+                &{} :a $ [] 3 4
+                [] :a 1
+            :tags $ #{} :core :unit
         '&get-os $ %{} 'CodeEntry
           :doc "|internal function for getting OS information\nSyntax: (&get-os)\nParams: none\nReturns: keyword indicating OS\nReturns current operating system like :linux, :macos, :windows"
           :code $ quote &runtime-implementation
@@ -957,23 +973,33 @@
             quote $ assert= |done $ &let (label |done) label
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal :syntax
-        '&list-match-internal $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defmacro &list-match-internal (v branch1 pair branch2)
-            quasiquote $ if (&list:empty? ~v)
-              &let () ~@branch1
+        '&list-match-internal $ %{} 'CodeEntry
+          :doc "|Internal list walk: pass an already bound List, one empty-branch expression, a (head tail) pair, and the nonempty body expressions."
+          :code $ quote $ defmacro &list-match-internal (v branch1 pair & branch2)
+            quasiquote $ if (&list:empty? ~v) ~branch1 $ &let
+                ~ $ &list:first pair
+                &list:nth ~v 0
               &let
-                  ~ $ &list:first pair
-                  &list:nth ~v 0
-                &let
-                    ~ $ &list:nth pair 1
-                    &list:slice ~v 1
-                  &let () ~@branch2
+                  ~ $ &list:nth pair 1
+                  &list:slice ~v 1
+                &let () ~@branch2
           :examples $ []
           :schema $ :: 'Macro $ {}
             :capabilities $ #{}
             :expansion $ :: 'Expr 'Dynamic
-            :required $ [] (:: 'Expr 'Dynamic) 'SyntaxList 'SyntaxList 'SyntaxList
+            :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic) 'SyntaxList
+            :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :internal :macro
+          :tests $ [] $ %{} 'TestEntry
+            :name |uses-natural-branches-and-preserves-expression-order
+            :code $ quote $ let
+                empty-list $ []
+                full-list $ [] 5 6
+              assert= 7 $ &list-match-internal empty-list (&+ 3 4) (head tail) (raise |unselected)
+              assert= 11 $ &list-match-internal full-list (raise |unselected) (head tail)
+                assert= ([] 6) tail
+                &+ head $ &list:nth tail 0
+            :tags $ #{} :core :unit
         '&list:append $ %{} 'CodeEntry (:doc |)
           :code $ quote $ &runtime-implementation
           :examples $ []
@@ -4125,8 +4151,14 @@
         'assoc-in $ %{} 'CodeEntry
           :doc "|associates a value at a nested path in a data structure, creates intermediate maps if needed"
           :code $ quote $ defn assoc-in (data path v)
-            &list-match-internal path (v) (p0 ps)
-              (if (struct? data) (raise "|assoc-in does not traverse Struct fields; use assoc with a direct field key") (&let (d (either data (&{}))) (assoc d p0 (assoc-in (if (contains? d p0) (&get-raw d p0) (&{})) ps v))))
+            &list-match-internal path v (p0 ps)
+              if (struct? data)
+                raise "|assoc-in does not traverse Struct fields; use assoc with a direct field key"
+                &let
+                  d $ either data $ &{}
+                  assoc d p0 $ assoc-in
+                    if (contains? d p0) (&get-raw d p0) (&{})
+                    , ps v
           :examples $ []
             quote $ assert=
               &{} :a $ &{} :b 1
@@ -4160,6 +4192,7 @@
               assert=
                 &{} :a $ &{} :b $ &{} :c 10
                 assoc-in nil ([] :a :b :c) 10
+              assert= 9 $ assoc-in (&{}) ([]) 9
             :tags $ #{} :core :unit
         'atom $ %{} 'CodeEntry
           :doc "|兼容旧名；首选 ref。读取为与 ref 相同的内建实现，创建局部 Ref<T>。可用 calcit fix --rule core-ref-constructor-v1 迁移，在后续非 patch 版本退场。"
@@ -4524,10 +4557,7 @@
             :generics $ [] 'T
         'concat $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn concat (& args)
-            &list-match-internal args
-              ([])
-              a0 as
-              (&list:concat a0 & as)
+            &list-match-internal args ([]) (a0 as) (&list:concat a0 & as)
           :examples $ [] $ quote
             assert= ([] 1 2 3 4 5)
               concat ([] 1 2) ([] 3 4) ([] 5)
@@ -4537,8 +4567,10 @@
             :rest $ :: 'List 'T
             :return $ :: 'List 'T
           :tests $ [] $ %{} 'TestEntry (:name |joins-many-lists)
-            :code $ quote $ assert= ([] 1 2 4 5 7 8)
-              concat ([] 1 2) ([] 4 5) ([] 7 8)
+            :code $ quote $ do
+              assert= ([] 1 2 4 5 7 8)
+                concat ([] 1 2) ([] 4 5) ([] 7 8)
+              assert= ([]) (concat)
             :tags $ #{} :core :unit
         'concat-dynamic $ %{} 'CodeEntry
           :doc "|Deprecated: use concat, which accepts List<Dynamic> values the same way. Concatenates open List<Dynamic> values without claiming a homogeneous member relation; keeps an explicit open-container boundary."
@@ -4664,8 +4696,26 @@
         'contains-in? $ %{} 'CodeEntry
           :doc "||Check whether every hop in a nested path exists across maps, enums, or lists. Struct fields are intentionally excluded; use direct field access instead."
           :code $ quote $ defn contains-in? (xs path)
-            &list-match-internal path (true) (p0 ps)
-              (cond ((list? xs) (if (and (number? p0) (&list:contains? xs p0)) (recur (&list:nth xs p0) ps) false)) ((map? xs) (if (&map:contains? xs p0) (recur (&map:get xs p0) ps) false)) ((struct? xs) (raise "|contains-in? does not traverse Struct fields; end the path before the Struct and use (:field value)")) ((enum? xs) (if (and (&>= p0 0) (&< p0 (&enum:count xs))) (recur (&enum:nth xs p0) ps) false)) (true false))
+            &list-match-internal path true (p0 ps)
+              cond
+                  list? xs
+                  if
+                    and (number? p0) (&list:contains? xs p0)
+                    recur (&list:nth xs p0) ps
+                    , false
+                (map? xs)
+                  if (&map:contains? xs p0)
+                    recur (&map:get xs p0) ps
+                    , false
+                (struct? xs)
+                  raise "|contains-in? does not traverse Struct fields; end the path before the Struct and use (:field value)"
+                (enum? xs)
+                  if
+                    and (&>= p0 0)
+                      &< p0 $ &enum:count xs
+                    recur (&enum:nth xs p0) ps
+                    , false
+                true false
           :examples $ []
             quote $ assert= true $ contains-in?
               {} $ :profile $ {} (:name |calcit)
@@ -4702,6 +4752,7 @@
               assert= true $ contains-in?
                 :: :a :b $ [] 1 2 3
                 [] 2 2
+              assert= true $ contains-in? (&{}) ([])
             :tags $ #{} :core :unit
         'contains-index? $ %{} 'CodeEntry
           :doc "|检查 Enum 的有效位置（tag 为 0，payload 自 1 起）：仅非负、有限整数且小于 count 时返回 true；负数、小数、非有限或越界返回 false。旧 .contains? 的小数行为不同，不能无条件迁移。"
@@ -4758,13 +4809,23 @@
             if (list? xs)
               loop
                   body xs
-                &list-match-internal body (false) (b0 bs)
-                  (if (contains-symbol? b0 y) true (recur bs))
+                &list-match-internal body false (b0 bs)
+                  if (contains-symbol? b0 y) true $ recur bs
               &= xs y
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'T 'Symbol
             :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |finds-nested-symbol-and-handles-empty-list)
+            :code $ quote $ do
+              assert= false $ contains-symbol? ([]) (quote a)
+              assert= true $ contains-symbol?
+                quote $ b $ a c
+                quote a
+              assert= false $ contains-symbol?
+                quote $ b $ c d
+                quote a
+            :tags $ #{} :core :unit
         'contains? $ %{} 'CodeEntry
           :doc "|Check whether a collection contains a key or index. Nil is not a collection."
           :code $ quote $ defn contains? (x k)
@@ -6002,8 +6063,13 @@
         'dissoc-in $ %{} 'CodeEntry
           :doc "|Remove a nested key or index. An empty path leaves the input unchanged."
           :code $ quote $ defn dissoc-in (data path)
-            &list-match-internal path (data) (p0 ps)
-              (if (struct? data) (raise "|dissoc-in cannot remove declared Struct fields; use an optional field or convert the Struct to a map before removing keys") (if (&= 1 (&list:count path)) (dissoc data p0) (assoc data p0 (dissoc-in (&get-raw data p0) ps))))
+            &list-match-internal path data (p0 ps)
+              if (struct? data)
+                raise "|dissoc-in cannot remove declared Struct fields; use an optional field or convert the Struct to a map before removing keys"
+                if
+                  &= 1 $ &list:count path
+                  dissoc data p0
+                  assoc data p0 $ dissoc-in (&get-raw data p0) ps
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'D)
             :args $ [] 'D $ :: 'List 'K
@@ -6020,6 +6086,8 @@
                 dissoc-in
                   &{} :a $ [] 1 2 3
                   [] :a 1
+              assert= (&{} :a 1)
+                dissoc-in (&{} :a 1) ([])
             :tags $ #{} :core :unit
         'distinct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn distinct (x) (&list:distinct x)
@@ -7288,16 +7356,23 @@
             loop
                 acc $ {}
                 xs xs0
-              &list-match-internal xs (acc) (x0 xss)
-                (recur (if (contains? acc x0) (update acc x0 (fn (n) (&+ n 1))) (&map:assoc acc x0 1)) xss)
+              &list-match-internal xs acc (x0 xss)
+                recur
+                  if (contains? acc x0)
+                    update acc x0 $ fn (n) (&+ n 1)
+                    &map:assoc acc x0 1
+                  , xss
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List 'T
             :generics $ [] 'T
             :return $ :: 'Map 'T 'Number
           :tests $ [] $ %{} 'TestEntry (:name |counts-repeated-list-members)
-            :code $ quote $ assert= (&{} 1 1 2 2 3 3)
-              frequencies $ [] 1 2 2 3 3 3
+            :code $ quote $ do
+              assert= (&{} 1 1 2 2 3 3)
+                frequencies $ [] 1 2 2 3 3 3
+              assert= (&{})
+                frequencies $ []
             :tags $ #{} :core :unit
         'fs-path:read-dir $ %{} 'CodeEntry
           :doc "|枚举 FsPath 的即时子项，并以确定顺序返回 Result<List<FsPath>,String>。"
@@ -7567,10 +7642,12 @@
           :doc "|Get a nested value as Option<Dynamic>; none represents a missing path or nil encountered during traversal."
           :code $ quote $ defn get-in (base path)
             if (nil? base) (%none)
-              &list-match-internal path
-                (%some base)
-                y0 ys
-                (if (struct? base) (raise "|get-in does not traverse Struct fields; use (:field value) so the checker can enforce the declared type") (match (get base y0) ((:some value) (recur value ys)) ((:none) (%none))))
+              &list-match-internal path (%some base) (y0 ys)
+                if (struct? base)
+                  raise "|get-in does not traverse Struct fields; use (:field value) so the checker can enforce the declared type"
+                  match (get base y0)
+                    (:some value) (recur value ys)
+                    (:none) (%none)
           :examples $ []
             quote $ assert= (%some 1)
               get-in
@@ -7605,6 +7682,13 @@
                 assert= (%some 2)
                   get-in m $ [] :a :b
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |handles-empty-path-and-nil-base)
+              :code $ quote $ do
+                assert= (Option :some 9)
+                  get-in 9 $ []
+                assert= (Option :none)
+                  get-in nil $ []
+              :tags $ #{} :core :unit
         'group-by $ %{} 'CodeEntry
           :doc "|Group elements by the result of applying function f to each element"
           :code $ quote $ defn group-by (xs0 f)
@@ -7616,8 +7700,14 @@
                   :: 'Map 'K $ :: 'List 'T
                   :: 'List 'T
                 :return $ :: 'Map 'K $ :: 'List 'T
-              &list-match-internal xs (acc) (x0 xss)
-                (let ((key (f x0))) (recur (&map:assoc acc key (append (option:unwrap-or (get acc key) ([])) x0)) xss))
+              &list-match-internal xs acc (x0 xss)
+                let
+                    key $ f x0
+                  recur
+                    &map:assoc acc key $ append
+                      option:unwrap-or (get acc key) ([])
+                      , x0
+                    , xss
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T)
@@ -7626,10 +7716,14 @@
             :generics $ [] 'T 'K
             :return $ :: 'Map 'K $ :: 'List 'T
           :tests $ [] $ %{} 'TestEntry (:name |groups-list-by-derived-key)
-            :code $ quote $ assert=
-              &{} 0 ([] 0 3 6 9) 1 ([] 1 4 7) 2 $ [] 2 5 8
-              group-by (range 10)
-                fn (x) (.rem x 3)
+            :code $ quote $ do
+              assert=
+                &{} 0 ([] 0 3 6 9) 1 ([] 1 4 7) 2 $ [] 2 5 8
+                group-by (range 10)
+                  fn (x) (.rem x 3)
+              assert= (&{})
+                group-by ([])
+                  fn (x) :number x
             :tags $ #{} :core :unit
         'hint-fn $ %{} 'CodeEntry
           :doc "|函数类型元数据：在函数体中使用 (hint-fn schema)，或使用 (hint-fn f schema) 为已有局部函数补充类型。schema 支持 :args、:return、:generics、:where 和 :async。\n表达式本身返回 Nil，不创建、包装或返回函数；需要传递回调时直接传递 f，或将 hint-fn 写在 fn 的函数体中。"
@@ -8493,8 +8587,12 @@
               hint-fn $ {}
                 :args $ [] (:: 'List 'T) (:: 'List 'T) 'Bool
                 :return $ :: 'List 'T
-              &list-match-internal xs (acc) (x0 xss)
-                (recur (append (if beginning? acc (append acc sep)) x0) xss false)
+              &list-match-internal xs acc (x0 xss)
+                recur
+                  append
+                    if beginning? acc $ append acc sep
+                    , x0
+                  , xss false
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T) 'T
@@ -8502,8 +8600,11 @@
             :return $ :: 'List 'T
           :tags $ #{} :deprecated
           :tests $ [] $ %{} 'TestEntry (:name |inserts-separators-between-list-items)
-            :code $ quote $ assert= ([] 1 10 2 10 3 10 4)
-              join ([] 1 2 3 4) 10
+            :code $ quote $ do
+              assert= ([] 1 10 2 10 3 10 4)
+                join ([] 1 2 3 4) 10
+              assert= ([])
+                join ([]) 0
             :tags $ #{} :core :unit
         'join-string $ %{} 'CodeEntry
           :doc "|将 List 元素按既有显示规则逐项转为文本，并用 String 分隔符连接；空 List 返回空字符串。"
@@ -8515,8 +8616,12 @@
               hint-fn $ {}
                 :args $ [] 'String (:: 'List 'T) 'Bool
                 :return 'String
-              &list-match-internal xs (acc) (x0 xss)
-                (recur (&str:concat (if beginning? acc (&str:concat acc sep)) x0) xss false)
+              &list-match-internal xs acc (x0 xss)
+                recur
+                  &str:concat
+                    if beginning? acc $ &str:concat acc sep
+                    , x0
+                  , xss false
           :examples $ []
             quote $ assert= |1-2-3 $ join-string ([] 1 2 3) |-
             quote $ assert= |a,b $
@@ -8965,17 +9070,17 @@
                               empty? $ &list:nth pattern1 0
                               &= 2 $ &list:count $ assert-type (&list:nth pattern2 0) 'List
                             quasiquote $ &list-match-internal ~v#
-                              ~ $ &list:slice pattern1 1
+                              &let () $ ~@ $ &list:slice pattern1 1
                               ~ $ &list:nth pattern2 0
-                              ~ $ &list:slice pattern2 1
+                              ~@ $ &list:slice pattern2 1
                             if
                               and
                                 empty? $ &list:nth pattern2 0
                                 &= 2 $ &list:count $ assert-type (&list:nth pattern1 0) 'List
                               quasiquote $ &list-match-internal ~v#
-                                ~ $ &list:slice pattern2 1
+                                &let () $ ~@ $ &list:slice pattern2 1
                                 ~ $ &list:nth pattern1 0
-                                ~ $ &list:slice pattern1 1
+                                ~@ $ &list:slice pattern1 1
                               raise $ str-spaced "|list-match expects one empty branch and one destructuring branch, got:" pattern1 pattern2
           :examples $ []
             quote $ assert= :something $ list-match ([] 1)
@@ -8989,23 +9094,51 @@
             :expansion $ :: 'Expr 'Dynamic
             :required $ []
           :tags $ #{} :deprecated :macro
-          :tests $ [] $ %{} 'TestEntry (:name |branches-empty-and-head-tail)
-            :code $ quote $ do
-              assert= :empty $ list-match ([])
-                () :empty
-                (a b) :something
-              assert= :something $ list-match ([] 1)
-                () :empty
-                (a b) :something
-              assert= :something0 $ list-match ([] 1)
-                (a b) :something0
-                () :empty
-              assert=
-                [] 1 $ [] 2 3
-                list-match ([] 1 2 3)
-                  () nil
-                  (l0 ls) ([] l0 ls)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |branches-empty-and-head-tail)
+              :code $ quote $ do
+                assert= :empty $ list-match ([])
+                  () :empty
+                  (a b) :something
+                assert= :something $ list-match ([] 1)
+                  () :empty
+                  (a b) :something
+                assert= :something0 $ list-match ([] 1)
+                  (a b) :something0
+                  () :empty
+                assert=
+                  [] 1 $ [] 2 3
+                  list-match ([] 1 2 3)
+                    () nil
+                    (l0 ls) ([] l0 ls)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |evaluates-subject-once-and-only-selected-body)
+              :code $ quote $ let
+                  counter $ ref 0
+                  value $ list-match
+                    do
+                      reset! counter $ &+ (deref counter) 1
+                      [] 5
+                    ()
+                      reset! counter $ &+ (deref counter) 100
+                      , -1
+                    (head tail)
+                      reset! counter $ &+ (deref counter) 10
+                      &+ head 1
+                assert= 6 value
+                assert= 11 $ deref counter
+                assert= 9 $ list-match
+                  do
+                    reset! counter $ &+ (deref counter) 1
+                    []
+                  (head tail)
+                    reset! counter $ &+ (deref counter) 100
+                    , -1
+                  ()
+                    reset! counter $ &+ (deref counter) 10
+                    , 9
+                assert= 22 $ deref counter
+              :tags $ #{} :core :unit
         'list? $ %{} 'CodeEntry
           :doc "|checks if value is a list\nSyntax: (list? x)\nParams: x (any)\nReturns: true if x is a list, false otherwise\nType predicate for list data structure"
           :code $ quote &runtime-implementation
@@ -12136,9 +12269,18 @@
           :doc "|Walk a nested path and update its leaf. The updater receives Option<T>: some for an existing leaf and none for a missing leaf. Missing intermediate containers are created as maps."
           :code $ quote $ defn update-in (data path f)
             &list-match-internal path
-              (f (%some data))
+              f $ %some data
               p0 ps
-              (if (struct? data) (raise "|update-in does not traverse Struct fields; use update with a direct field key") (let ((current (if (nil? data) (%none) (get data p0)))) (assoc (either data ({})) p0 (if (empty? ps) (f current) (update-in (option:unwrap-or current ({})) ps f)))))
+              if (struct? data)
+                raise "|update-in does not traverse Struct fields; use update with a direct field key"
+                let
+                    current $ if (nil? data) (%none) (get data p0)
+                  assoc
+                    either data $ {}
+                    , p0 $ if (empty? ps) (f current)
+                      update-in
+                        option:unwrap-or current $ {}
+                        , ps f
           :examples $ []
             quote $ assert=
               {} $ :a $ {} (:b 2)
@@ -12166,13 +12308,17 @@
             :generics $ [] 'K 'T
           :tests $ []
             %{} 'TestEntry (:name |updates-existing-nested-leaf)
-              :code $ quote $ assert=
-                &{} :a $ &{} :b 3
-                update-in
-                  &{} :a $ &{} :b 1
-                  [] :a :b
-                  fn (value)
-                    + (option:unwrap value) 2
+              :code $ quote $ do
+                assert=
+                  &{} :a $ &{} :b 3
+                  update-in
+                    &{} :a $ &{} :b 1
+                    [] :a :b
+                    fn (value)
+                      + (option:unwrap value) 2
+                assert= 10 $ update-in 9 ([])
+                  fn (current)
+                    &+ (current .unwrap) 1
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |updates-collection-and-missing-paths)
               :code $ quote $ do
