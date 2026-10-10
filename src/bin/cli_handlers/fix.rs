@@ -2528,6 +2528,7 @@ fn plan_value_to_zero_arg_fn(
   }
 
   let rewritten_schema = std::sync::Arc::new(CalcitTypeAnnotation::Fn(std::sync::Arc::new(CalcitFnTypeAnnotation {
+    runtime_arity: None,
     generics: std::sync::Arc::new(vec![]),
     where_bounds: std::sync::Arc::new(vec![]),
     arg_types: vec![],
@@ -6900,6 +6901,7 @@ mod tests {
     assert!(optional_candidate_type_is_closed(&CalcitTypeAnnotation::List(closed_map)));
 
     let mut signature = CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![]),
       where_bounds: Arc::new(vec![]),
       arg_types: vec![Arc::new(CalcitTypeAnnotation::Number)],
@@ -7301,6 +7303,7 @@ mod tests {
   fn schema_reference_rewrite_changes_resolved_trait_bounds() {
     let direct_trait = Arc::new(CalcitTrait::new_reference("app.schema/Show"));
     let schema = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
       generics: Arc::new(vec![Arc::from("T")]),
       where_bounds: Arc::new(vec![CalcitGenericBound {
         name: Arc::from("T"),

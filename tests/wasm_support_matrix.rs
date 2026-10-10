@@ -46,7 +46,7 @@ fn diagnostic_table_codes(matrix: &str) -> BTreeSet<String> {
       in_table = cells == ["", "编号", "含义", "处理方式", ""];
       continue;
     }
-    if cells.len() < 5 || cells[0] != "" || cells.last() != Some(&"") {
+    if cells.len() < 5 || !cells[0].is_empty() || cells.last() != Some(&"") {
       in_table = false;
       continue;
     }

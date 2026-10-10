@@ -11477,6 +11477,12 @@
             %{} 'TestEntry (:name |trims-leading-space-from-string)
               :code $ quote $ assert= "|ab cd" (trim "| ab cd")
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |optional-builtin-unary-callback)
+              :code $ quote $ do
+                assert= ([] |first |second)
+                  map ([] "| first " "| second ") trim
+                assert= |first $ trim |__first__ |_
+              :tags $ #{} :core :optional-callable :unit
         'try $ %{} 'CodeEntry
           :doc "|Evaluate body and return its value on success. On failure, evaluate handler-fn and call it with the error message String. Syntax: (try body handler-fn). The handler is a one-argument function, not a (catch ...) form."
           :code $ quote &runtime-implementation

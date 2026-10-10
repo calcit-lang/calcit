@@ -1664,9 +1664,35 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
-          :tests $ [] $ %{} 'TestEntry (:name |retains-typed-top-level-values)
-            :code $ quote $ verify-values
-            :tags $ #{} :def-value-contract :unit
+          :tests $ []
+            %{} 'TestEntry (:name |retains-typed-top-level-values)
+              :code $ quote $ verify-values
+              :tags $ #{} :def-value-contract :unit
+            %{} 'TestEntry (:name |optional-builtin-unary-callback)
+              :code $ quote $ assert= ([] "|do 1" "|do 2")
+                map
+                  map ([] 1 2) format-cirru-edn
+                  , trim
+              :tags $ #{} :optional-callable :unit
+            %{} 'TestEntry (:name |optional-builtin-callback-alias)
+              :code $ quote $ let
+                  trim-text trim
+                  formatted format-cirru-edn
+                assert= ([] |first |second)
+                  map ([] "| first " "| second ") trim-text
+                assert= "|do 42" $ trim-text $ formatted 42 false
+              :tags $ #{} :optional-callable :unit
+            %{} 'TestEntry (:name |nominal-option-callback-omission)
+              :code $ quote $ let
+                  with-extra $ fn (value extra)
+                    hint-fn $ {}
+                      :args $ [] 'Number $ :: 'Option 'Number
+                      :return 'Number
+                    + value $ extra .unwrap-or 10
+                assert= ([] 11 12)
+                  map ([] 1 2) with-extra
+                assert= 4 $ with-extra 1 $ Option :some 3
+              :tags $ #{} :optional-callable :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main
           :require (app.reader :as reader) (app.values :as values)
