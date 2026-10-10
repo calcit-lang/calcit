@@ -109,30 +109,67 @@ fn type_debt_aliases_match_weak_types_views() {
   );
 }
 
+/// Converts a Cirru EDN envelope to JSON with the key spelling of the JSON envelope (`-` as `_`).
+fn edn_to_json(value: &cirru_edn::Edn) -> serde_json::Value {
+  use cirru_edn::Edn;
+  match value {
+    Edn::Nil => serde_json::Value::Null,
+    Edn::Bool(value) => serde_json::Value::Bool(*value),
+    Edn::Number(value) => serde_json::json!(*value),
+    Edn::Str(value) => serde_json::Value::String(value.to_string()),
+    Edn::Tag(value) => serde_json::Value::String(value.ref_str().to_owned()),
+    Edn::List(values) => serde_json::Value::Array(values.0.iter().map(edn_to_json).collect()),
+    Edn::Map(fields) => serde_json::Value::Object(
+      fields
+        .0
+        .iter()
+        .map(|(key, value)| {
+          let Edn::Tag(key) = key else {
+            panic!("EDN envelope keys should be tags: {key:?}");
+          };
+          (key.ref_str().replace('-', "_"), edn_to_json(value))
+        })
+        .collect(),
+    ),
+    other => panic!("unexpected EDN value in an analysis envelope: {other:?}"),
+  }
+}
+
+/// Numbers become f64 (EDN has one number type) and timing fields are dropped.
+fn normalize_report(value: &serde_json::Value) -> serde_json::Value {
+  match value {
+    serde_json::Value::Object(fields) => serde_json::Value::Object(
+      fields
+        .iter()
+        .filter(|(key, _)| key.as_str() != "duration_ms")
+        .map(|(key, value)| (key.clone(), normalize_report(value)))
+        .collect(),
+    ),
+    serde_json::Value::Array(values) => serde_json::Value::Array(values.iter().map(normalize_report).collect()),
+    serde_json::Value::Number(number) => serde_json::json!(number.as_f64().expect("finite number")),
+    other => other.clone(),
+  }
+}
+
 #[test]
 fn weak_types_views_offer_edn_equivalent_to_json() {
   for (snapshot, view) in [
     ("calcit/test.cirru", "coverage"),
     ("calcit/test.cirru", "deprecated-call"),
+    ("calcit/test.cirru", "dynamic-method"),
     ("calcit/test-wasm.cirru", "dynamic-method"),
   ] {
-    let args = |format| vec!["analyze", "weak-types", "--only", view, "--summary-only", "--format", format];
+    let args = |format| vec!["analyze", "weak-types", "--only", view, "--format", format];
     let json = run_calcit(Path::new(snapshot), &args("json"));
     let edn = run_calcit(Path::new(snapshot), &args("edn"));
     assert!(edn.status.success(), "{view}: {}", String::from_utf8_lossy(&edn.stderr));
-    let json: serde_json::Value = serde_json::from_slice(&json.stdout).expect("one JSON document");
-    let cirru_edn::Edn::Map(root) = cirru_edn::parse(&String::from_utf8_lossy(&edn.stdout)).expect("one Cirru EDN document") else {
-      panic!("{view}: EDN envelope should be a map");
-    };
+    // Each stdout must be exactly one document; program output during preprocessing stays off stdout.
+    let json: serde_json::Value = serde_json::from_slice(&json.stdout).expect("stdout should be exactly one JSON document");
+    let edn = cirru_edn::parse(&String::from_utf8_lossy(&edn.stdout)).expect("stdout should be exactly one Cirru EDN document");
     assert_eq!(
-      root.get(&cirru_edn::Edn::tag("command")),
-      Some(&cirru_edn::Edn::str(json["command"].as_str().expect("command name"))),
-      "{view}"
-    );
-    assert_eq!(
-      root.get(&cirru_edn::Edn::tag("revision")),
-      Some(&cirru_edn::Edn::str(json["revision"].as_str().expect("revision"))),
-      "{view}"
+      normalize_report(&edn_to_json(&edn)),
+      normalize_report(&json),
+      "{snapshot} --only {view}: EDN and JSON envelopes differ"
     );
   }
 }
@@ -292,4 +329,29 @@ fn batch_delete_alias_matches_edit_transaction() {
   let read = |project: &TempProject| fs::read_to_string(project.snapshot()).expect("snapshot should read");
   assert_eq!(read(&legacy), read(&transaction));
   assert!(read(&legacy).contains("[] 2 4"), "{}", read(&legacy));
+}
+
+#[test]
+fn batch_delete_transaction_operation_prints_the_hint() {
+  let project = TempProject::create("transaction-batch");
+  let output = run_calcit(
+    &project.snapshot(),
+    &[
+      "edit",
+      "transaction",
+      "--code",
+      r#"[["tree","batch-delete","app.main/items","--paths","@2.1","--paths","@2.3"]]"#,
+    ],
+  );
+  assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  let hints = stderr
+    .lines()
+    .filter(|line| line.starts_with("[Deprecated] transaction operation 1 uses `tree batch-delete`"))
+    .collect::<Vec<_>>();
+  assert_eq!(hints.len(), 1, "{stderr}");
+  assert!(hints[0].contains("tree delete"), "{}", hints[0]);
+  assert!(!String::from_utf8_lossy(&output.stdout).contains("[Deprecated]"));
+  let content = fs::read_to_string(project.snapshot()).expect("snapshot should read");
+  assert!(content.contains("[] 2 4"), "{content}");
 }

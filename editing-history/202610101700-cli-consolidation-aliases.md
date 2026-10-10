@@ -6,9 +6,11 @@
 
 - `analyze weak-types --only` 在 match kind 之外接受单个视图 `coverage`、`dynamic-method`、`deprecated-call`。参数解析后把视图改写为原有 analyzer 的选项结构再分发，新入口与旧命令共用同一实现，输出逐字节相同（除耗时）。`check-types` 自己的 `--only none,partial,full` 改名为 `--coverage-level`，避免与 `weak-types --only` 冲突。视图与 match kind 混用、或传入视图无法执行的选项（如 `dynamic-method --ns`）直接报错，不静默忽略。
 - `analyze check-public` 改为正确性入口的范围：顶层 `--check-only --ns <ns> [--deps] [--summary-only] [--format]`。仍调用 `public_api_check::run`，并沿用 analyze 路径的安静输出设置，保证 `--entry` 等情况下 stdout 与旧命令一致。`--ns` 不能与 `--keep-going`、`--all-defs`、`--incremental` 或子命令同用；`--deps`、`--summary-only` 要求 `--ns`。
-- 结构化 envelope 的 `command` 仍为 `analyze.check-types`、`analyze.check-public` 等旧名。改名会打断现有 JSON 消费者，等旧入口删除时与 #1566 的输出统一一起处理。
+- 结构化 envelope 的 `command` 保持 `analyze.check-types`、`analyze.check-public` 等名称，删除旧入口后也不变：新入口的消费者从第一天就读取这些名称，随旧入口一起改名会让他们没有弃用窗口。任何改名都应作为单独的、带弃用周期的分阶段变更。
 - 合并时为 check-types、dynamic-methods、deprecated 与 check-public 补上 EDN，均由同一 JSON envelope 机械转换，不增加字段。
-- `analyze quality`、`query pkg`、`query modules`、`tree batch-delete` 只加弃用提示，行为不变。`query config` 的 human 输出增加 `Package` 行以覆盖 `query pkg`；`config modules` 是模块列表的规范入口。事务内的 `batch-delete` 操作名不变，是否保留留给 #1566 的开放问题 6。
+- `analyze quality`、`query pkg`、`query modules`、`tree batch-delete` 只加弃用提示，行为不变；`edit transaction` 中的 `tree batch-delete` 操作同样在 stderr 输出提示。`query config` 的 human 输出增加 `Package` 行以覆盖 `query pkg`；`config modules` 是模块列表的规范入口。事务内的 `batch-delete` 操作仍可执行，随子命令一起列入删除清单。
+- `analyze weak-types --only dynamic-method`（及旧 `dynamic-methods`）在预处理期间用 `ProgramOutputGuard` 把 macro 输出改到 stderr，保证 stdout 只有一个文档。
+- 缺少 `--ns` 时的错误形式：没有 `--ns` 时 `--format json` 是顶层参数错误，不再输出旧 `check-public` 的 JSON 错误 envelope，已写入 upgrade.md。
 - 弃用提示集中在 `cli_handlers/deprecations.rs`：每个旧入口一行 `[Deprecated] ...` 写到 stderr，argh 帮助中的描述也以 `[Deprecated]` 开头。
 
 ## 兼容边界

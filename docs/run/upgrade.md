@@ -554,7 +554,7 @@ Map 与 Set 同时不再实现 `Contains` trait。schema `:where` 中 `'T 'Conta
 
 ### 0.29.0 弃用、0.30.0 删除：合并后的 CLI 入口（#1566）
 
-下面的子命令在 0.29.0 仍可运行，stdout 与退出码不变，只在 stderr 多输出一行 `[Deprecated] ...` 迁移提示；计划在 0.30.0 删除。新入口复用同一实现，结构化输出保留原有 `command` 名与字段，因此读取 `analyze.check-types`、`analyze.check-public` 等 envelope 的脚本只需改命令行。
+下面的子命令在 0.29.0 仍可运行，stdout 与退出码不变，只在 stderr 多输出一行 `[Deprecated] ...` 迁移提示；计划在 0.30.0 删除。新入口复用同一实现，结构化输出保留原有 `command` 名与字段，因此读取 `analyze.check-types`、`analyze.check-public` 等 envelope 的脚本只需改命令行；这些 envelope 名在删除旧入口后保持不变。
 
 | 已弃用 | 替代 | 说明 |
 | --- | --- | --- |
@@ -565,7 +565,7 @@ Map 与 Set 同时不再实现 `Contains` trait。schema `:where` 中 `'T 'Conta
 | `analyze quality [--baseline …]` | `--check-only` 判断正确性，`analyze weak-types [--only coverage\|deprecated-call]` 定位债务 | 0.30.0 删除后不再读取 baseline；清零后从 CI 删除该命令与 baseline 文件 |
 | `query pkg` | `query config` | human 输出首行给出 `Package`；结构化输出见 `config show --format edn` 的 `:package` |
 | `query modules` | `config modules` | 默认 entry 的模块列表相同，标题改为 `Modules in entry 'default':` |
-| `tree batch-delete <target> --paths …` | `edit transaction`，每个路径一条 `tree delete`，按下标从大到小排列 | 删除顺序与原命令相同；事务整体成功或整体不写入 |
+| `tree batch-delete <target> --paths …`，以及 `edit transaction` 中的 `["tree","batch-delete",…]` 操作 | `edit transaction`，每个路径一条 `tree delete`，按下标从大到小排列 | 删除顺序与原命令相同；事务整体成功或整体不写入。事务中使用旧操作时同样在 stderr 输出提示 |
 | `config version` / `config set version` | `caps version get/set/bump` | 早已只输出迁移提示并失败，0.30.0 删除 |
 
 迁移命令示例：
@@ -577,6 +577,8 @@ calcit --entry node calcit.cirru --check-only --ns app.lib --deps --summary-only
 calcit calcit.cirru config modules
 calcit calcit.cirru edit transaction --dry-run --format edn --code '[["tree","delete","app.main/f","--path","@3.2"],["tree","delete","app.main/f","--path","@3.1"]]'
 ```
+
+`--check-only --format json` 必须带 `--ns`：缺少 `--ns` 时它是普通的顶层参数错误，只输出 stderr 文本；旧的 `analyze check-public --format json` 不带 `--ns` 时会在 stdout 输出 JSON 错误 envelope。依赖该 envelope 的脚本应先确认至少传了一个 `--ns`。
 
 升级时同步修改 CI workflow、`package.json` 脚本与 Agent 指南；在 0.29.x 上看到 stderr 的 `[Deprecated]` 行即说明还有旧入口未迁移。
 

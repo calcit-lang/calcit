@@ -284,6 +284,8 @@ fn run_dynamic_methods(
   snapshot_file: &str,
   input_cache: Option<analysis_cache::InputCacheStats>,
 ) -> Result<(), String> {
+  // Macros may print while reachable definitions are preprocessed; keep stdout for the report.
+  let _output_guard = ProgramOutputGuard::new(true, false);
   if !matches!(options.format.as_str(), "human" | "text" | "edn" | "json") {
     return Err(format!(
       "Unknown dynamic-methods output format `{}`. Expected `human`, `edn`, or `json`.",

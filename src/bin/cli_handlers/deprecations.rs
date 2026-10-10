@@ -54,6 +54,17 @@ pub fn deprecated_command_hint(cli_args: &ToplevelCalcit) -> Option<String> {
   ))
 }
 
+/// Returns the one-line migration hint for a deprecated operation staged by `edit transaction`.
+pub fn deprecated_transaction_operation_hint(index: usize, group: &str, subcommand: &str) -> Option<String> {
+  match (group, subcommand) {
+    ("tree", "batch-delete") => Some(format!(
+      "[Deprecated] transaction operation {} uses `tree batch-delete`, which will be removed in the next non-patch release; use one `tree delete` operation per path, highest index first. See docs/run/upgrade.md.",
+      index + 1
+    )),
+    _ => None,
+  }
+}
+
 fn view_kind(only: Option<&str>) -> Result<Option<&'static str>, String> {
   let Some(raw) = only else {
     return Ok(None);
