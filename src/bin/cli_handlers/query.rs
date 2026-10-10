@@ -1017,7 +1017,12 @@ fn handle_query_command_inner(cmd: &QueryCommand, input_path: &str) -> Result<()
   let mut resolved = cmd.clone();
   resolve_query_cursor_references(&mut resolved, input_path)?;
   match &resolved.subcommand {
-    QuerySubcommand::Ns(opts) => handle_ns(input_path, opts.namespace.as_deref(), opts.deps),
+    QuerySubcommand::Ns(opts) => match (opts.format.as_str(), opts.namespace.as_deref()) {
+      ("human", _) => handle_ns(input_path, opts.namespace.as_deref(), opts.deps),
+      ("cirru", Some(namespace)) => handle_ns_cirru_view(input_path, namespace),
+      ("cirru", None) => Err("`query ns --format cirru` needs a namespace: `query ns <namespace> --format cirru`".to_owned()),
+      (other, _) => Err(format!("Unsupported query ns format '{other}'. Expected human or cirru.")),
+    },
     QuerySubcommand::Defs(opts) => handle_defs(input_path, opts),
     QuerySubcommand::Pkg(_) => handle_pkg(input_path),
     QuerySubcommand::Config(opts) => handle_config(input_path, opts),
@@ -4567,6 +4572,17 @@ fn handle_ns(input_path: &str, namespace: Option<&str>, include_deps: bool) -> R
     println!("  {}", ns.cyan());
   }
 
+  Ok(())
+}
+
+/// Print the namespace's `FileEntry` data as stored in the Snapshot, the input `edit ns` accepts.
+fn handle_ns_cirru_view(input_path: &str, namespace: &str) -> Result<(), String> {
+  let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
+  let file_data = snapshot
+    .files
+    .get(namespace)
+    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+  print!("{}", super::ns_view::render_ns_view(file_data)?);
   Ok(())
 }
 

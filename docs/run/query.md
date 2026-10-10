@@ -62,7 +62,31 @@ calcit query ns
 
 # Show definitions in a specific namespace
 calcit query ns calcit.core
+
+# The namespace's FileEntry data as stored in the Snapshot (the input of `edit ns`)
+calcit query ns app.demo --format cirru
 ```
+
+`query ns <ns> --format cirru` 输出该命名空间在 Snapshot `:files` 中保存的 `%{} 'FileEntry` 数据，使用与 Snapshot
+文件相同的序列化和格式：
+
+```cirru.no-check
+%{} 'FileEntry
+  :defs $ {}
+    'greet $ %{} 'CodeEntry (:doc "|Greets a person")
+      :code $ quote $ defn greet (name) (str "|Hi " name)
+      :examples $ []
+      :schema $ :: 'Fn $ {} (:return 'String)
+        :args $ [] 'String
+  :ns $ %{} 'NsEntry (:doc |)
+    :code $ quote $ ns app.demo
+      :require $ app.lib :refer $ helper
+```
+
+数据包含 `:ns` 与 `:defs` 中每个 `CodeEntry` 的全部字段（`:doc`、`:code`、`:examples`、`:schema`、`:tests` 等），
+没有额外语法。Snapshot 已是规范格式时，去掉文件中该片段固定的缩进和 `'<ns> $ ` 键前缀后，输出与之逐字节相同。
+`edit ns` 拒绝 FileEntry、NsEntry 与 CodeEntry 中的未知键和重复键，以及 `:defs` 中重复的定义名。修改后用
+`calcit edit ns <ns> --file <data>` 写回，流程见 `edit-tree.md` 的“命名空间数据写回”。
 
 ### 命名空间签名概览（`defs --signatures`）
 

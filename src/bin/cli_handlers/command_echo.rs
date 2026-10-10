@@ -280,6 +280,10 @@ fn render_query_explanation(cmd: &QueryCommand) -> Option<String> {
       }
       desc
     }
+    QuerySubcommand::Ns(opts) if opts.format == "cirru" => match &opts.namespace {
+      Some(ns) => format!("prints the stored data of namespace `{ns}` for `edit ns`"),
+      None => "prints the stored data of a namespace (needs a namespace)".to_string(),
+    },
     QuerySubcommand::Ns(opts) => {
       let mut desc = "lists all namespaces".to_string();
       if let Some(ns) = &opts.namespace {
@@ -385,6 +389,11 @@ fn render_edit_explanation(cmd: &EditCommand) -> Option<String> {
       )
     }
     EditSubcommand::RmNs(opts) => format!("deletes namespace `{}`", opts.namespace),
+    EditSubcommand::Ns(opts) => format!(
+      "{} namespace `{}` from its FileEntry data, per definition",
+      if opts.dry_run { "previews writing" } else { "writes" },
+      opts.namespace
+    ),
     EditSubcommand::Imports(opts) => {
       let desc = format!("replaces all imports in namespace `{}`", opts.namespace);
       format!(
@@ -697,7 +706,7 @@ fn push_query(tokens: &mut Vec<String>, cmd: &QueryCommand) {
       value "test-limit" => opts.test_limit; default "3"
     ),
     QuerySubcommand::Ns(opts) => {
-      echo_items!(tokens, opt "namespace" => opts.namespace.as_deref(); default "all", switch "deps" => opts.deps)
+      echo_items!(tokens, opt "namespace" => opts.namespace.as_deref(); default "all", switch "deps" => opts.deps, value "format" => &opts.format; default "human")
     }
     QuerySubcommand::Defs(opts) => {
       echo_items!(tokens, pos "namespace" => &opts.namespace, opt "tag" => opts.tag.as_deref(); default "none")
@@ -1056,6 +1065,18 @@ fn push_edit(tokens: &mut Vec<String>, cmd: &EditCommand) {
       echo_items!(tokens, pos "namespace" => &opts.namespace, code_input opts, value "input-format" => &opts.input_format; default "auto")
     }
     EditSubcommand::RmNs(opts) => echo_items!(tokens, pos "namespace" => &opts.namespace),
+    EditSubcommand::Ns(opts) => {
+      echo_items!(
+        tokens,
+        pos "namespace" => &opts.namespace,
+        code_input opts,
+        opt "expect-revision" => opts.expect_revision.as_deref(); default "none",
+        switch "dry-run" => opts.dry_run,
+        switch "allow-remove" => opts.allow_remove,
+        switch "allow-unknown-head" => opts.allow_unknown_head,
+        value "format" => &opts.format; default "human"
+      )
+    }
     EditSubcommand::Imports(opts) => {
       echo_items!(tokens, pos "namespace" => &opts.namespace, code_input opts, value "input-format" => &opts.input_format; default "auto")
     }
@@ -1413,6 +1434,7 @@ fn edit_name(subcommand: &EditSubcommand) -> &'static str {
     EditSubcommand::Tags(_) => "tags",
     EditSubcommand::AddNs(_) => "add-ns",
     EditSubcommand::RmNs(_) => "rm-ns",
+    EditSubcommand::Ns(_) => "ns",
     EditSubcommand::Imports(_) => "imports",
     EditSubcommand::AddImport(_) => "add-import",
     EditSubcommand::RmImport(_) => "rm-import",

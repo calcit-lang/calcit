@@ -3776,6 +3776,13 @@ pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
   Ok(content)
 }
 
+/// Render one namespace's `FileEntry` value with the same serializer and Cirru
+/// formatting `render_snapshot_content` uses for each `:files` entry.
+pub fn render_file_entry_content(file: &FileInSnapShot) -> Result<String, String> {
+  let normalized = normalize_pipe_prefixed_leaf(Edn::from(file).cirru());
+  cirru_parser::format(std::slice::from_ref(&normalized), true.into()).map_err(|e| format!("Failed to format FileEntry as Cirru: {e}"))
+}
+
 fn normalize_pipe_prefixed_leaf(node: Cirru) -> Cirru {
   match node {
     Cirru::Leaf(token) => {

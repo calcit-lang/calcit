@@ -337,6 +337,29 @@ calcit calcit.cirru test app.main/main! --require-match
 
 `tree`、`cursor apply` 与 `fix` 的 human preview 都使用同一组 Markdown 边界：operation、path、revision、changed 等控制信息位于 fence 外，Before/After 源码位于 `cirru` fence 内。guard 失败也以 Expected/Actual 两个 fence 输出到 stderr。不要把 heading、列表项或截断提示复制回 Snapshot。
 
+### 命名空间数据写回（`edit ns`）
+
+`calcit edit ns <ns> --file <data>` 接收 `query ns <ns> --format cirru` 输出的 `%{} 'FileEntry` 数据（也可用 `--code` 或
+stdin）。数据先替换 Snapshot 中该命名空间的 `:files` 条目，再由读取 Snapshot 文件的同一个 loader 校验，然后按定义名比较：
+
+- 数据中的每个字段都生效：`:code`、`:doc`、`:schema`、`:examples`、`:tests`、`:tags` 与 `:ffi` 写成什么就保存什么，`:ns` 条目变化时更新 imports 与命名空间 doc。
+- 只有内容变化的定义被覆盖，新定义被添加；结果按定义报告 `added` / `changed` / `unchanged` / `removed`，`changed` 同时列出变化的字段。
+- 数据中缺少的定义只有传 `--allow-remove` 才会删除；否则命令列出这些定义并失败，Snapshot 不变。
+- 重命名定义用 `edit rename`。在数据里改 key 等于删除旧定义再添加新定义。
+- 改动或新增的 `:code` 与 `edit def` 一样经过定义形状检查；同一份数据中新增的宏可以作为其他定义的定义头。需要自定义定义头时传 `--allow-unknown-head`。`defmacro` 需要在数据中写出 `Macro` schema，loader 不接受缺少 schema 的宏。
+- FileEntry、NsEntry 与 CodeEntry 中的未知键（例如把 `:tests` 误写成 `:test`）、重复键，以及 `:defs` 中重复的定义名都会被拒绝，错误信息给出键名和定义。
+- 数据无法解析、不符合 loader 规则或未通过形状检查时，命令在写入前失败，Snapshot 不变。
+- `--dry-run` 只比较和校验，不写文件；dry-run 返回的 `scoped_revision` 只覆盖本次改动的定义，传给 `--expect-revision` 后提交。revision 不匹配时拒绝写入。
+- 未修改的数据写回后 Snapshot 字节不变；只改一个定义的 `:code` 时，结果与对该定义执行 `edit def --overwrite` 相同。
+
+```bash
+calcit query ns app.main --format cirru > .calcit/snippets/app.main.cirru
+# 修改 .calcit/snippets/app.main.cirru 中的若干 CodeEntry
+calcit edit ns app.main --file .calcit/snippets/app.main.cirru --dry-run --format edn   # 读取 :scoped-revision
+calcit edit ns app.main --file .calcit/snippets/app.main.cirru --expect-revision 'scope:def:app.main/f@md5:...'
+calcit --check-only
+```
+
 ### Managing Namespaces
 
 ```bash
