@@ -62,7 +62,35 @@ calcit query ns
 
 # Show definitions in a specific namespace
 calcit query ns calcit.core
+
+# Whole namespace as writable Cirru source (the input of `edit ns`)
+calcit query ns app.main --format cirru
 ```
+
+`query ns <ns> --format cirru` 一次输出整个命名空间的可写回视图：
+
+```cirru.no-check
+ns app.demo
+  :require
+    app.lib :refer $ helper
+
+defn greet (name)
+  str "|Hi " name
+
+:meta greet
+  :doc "|Greets a person"
+  :schema $ :: 'Fn $ {} (:args $ [] 'String) (:return 'String)
+
+def default-name |Ada
+```
+
+- 第一个表达式是完整的 `ns` 形式（imports）。
+- 之后每个表达式是一个定义的代码，与 `query def --format cirru` 去掉 `quote $` 后一致，按名称排序。
+- 定义有 doc 或 schema 时，紧跟一个 `:meta <name>` 块，其中只出现非空的 `:doc` 与非 Dynamic 的 `:schema`。
+- 代码本身不以定义名作为第二个叶子时（例如顶层 `fn`、runtime 实现的占位符），写成 `:def <name> <code>`。
+- tests、examples、tags 与 FFI 元数据不进入视图。
+
+修改后用 `calcit edit ns <ns> --file <view>` 写回，流程见 `edit-tree.md` 的“命名空间视图写回”。
 
 ### 命名空间签名概览（`defs --signatures`）
 

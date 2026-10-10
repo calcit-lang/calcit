@@ -850,6 +850,9 @@ pub struct QueryNsCommand {
   /// include dependency and core namespaces
   #[argh(switch)]
   pub deps: bool,
+  /// output format: Markdown-compatible human (default), or cirru (the whole namespace as writable source, accepted by `edit ns`)
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -1603,6 +1606,8 @@ pub enum EditSubcommand {
   AddNs(EditAddNsCommand),
   /// delete a namespace
   RmNs(EditRmNsCommand),
+  /// write back a `query ns --format cirru` view, updating only changed definitions
+  Ns(EditNsCommand),
   /// update namespace imports (replace all)
   Imports(EditImportsCommand),
   /// add a single import rule to namespace
@@ -1913,6 +1918,37 @@ pub struct EditRmNsCommand {
   /// namespace to delete
   #[argh(positional)]
   pub namespace: String,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "ns")]
+/// write back a `query ns <ns> --format cirru` view: compare per definition, overwrite only changed code or :meta, add new
+/// definitions, and keep tests/examples (input via --file, --code, or pipe via stdin)
+pub struct EditNsCommand {
+  /// namespace the view describes; must match the view's `ns` form
+  #[argh(positional)]
+  pub namespace: String,
+  /// read the namespace view from file
+  #[argh(option)]
+  pub file: Option<String>,
+  /// namespace view as inline text
+  #[argh(option, long = "code")]
+  pub code: Option<String>,
+  /// require the snapshot content (or a scoped revision from a dry-run) to match before writing
+  #[argh(option, long = "expect-revision")]
+  pub expect_revision: Option<String>,
+  /// compare and validate without replacing the snapshot
+  #[argh(switch, long = "dry-run")]
+  pub dry_run: bool,
+  /// delete definitions that are missing from the view
+  #[argh(switch, long = "allow-remove")]
+  pub allow_remove: bool,
+  /// allow unrecognized definition heads in changed or added definitions; shape and name checks still apply
+  #[argh(switch, long = "allow-unknown-head")]
+  pub allow_unknown_head: bool,
+  /// output format: human (default), edn (primary structured data), or json (interoperability)
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

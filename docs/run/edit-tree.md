@@ -337,6 +337,27 @@ calcit calcit.cirru test app.main/main! --require-match
 
 `tree`、`cursor apply` 与 `fix` 的 human preview 都使用同一组 Markdown 边界：operation、path、revision、changed 等控制信息位于 fence 外，Before/After 源码位于 `cirru` fence 内。guard 失败也以 Expected/Actual 两个 fence 输出到 stderr。不要把 heading、列表项或截断提示复制回 Snapshot。
 
+### 命名空间视图写回（`edit ns`）
+
+`calcit edit ns <ns> --file <view>` 接收 `query ns <ns> --format cirru` 输出的视图（也可用 `--code` 或 stdin），按定义名与
+Snapshot 比较：
+
+- 代码或 `:meta` 有变化的定义被覆盖，新定义被添加，其余定义保持原样；结果按定义报告 `added` / `changed` / `unchanged` / `removed`，`changed` 同时列出变化的 `code`、`doc`、`schema`。
+- 视图中缺少的定义只有传 `--allow-remove` 才会删除；否则命令列出这些定义并失败，Snapshot 不变。
+- 视图中没有 `:meta` 块或块内没有某个字段时，保留原 doc/schema；`:schema nil` 清除 schema，`:doc |` 清空 doc。
+- tests、examples、tags 与 FFI 元数据保持原值；`ns` 形式变化时更新 imports。
+- 新增或改动的代码与 `edit def` 一样经过定义形状检查；需要自定义定义头时传 `--allow-unknown-head`。
+- `--dry-run` 只比较和校验，不写文件；dry-run 返回的 `scoped_revision` 只覆盖本次改动的定义，传给 `--expect-revision` 后提交。revision 不匹配时拒绝写入。
+- 未修改的视图写回后 Snapshot 字节不变；只改一个定义时，结果与对该定义执行 `edit def --overwrite` 相同。
+
+```bash
+calcit query ns app.main --format cirru > .calcit/snippets/app.main.cirru
+# 修改 .calcit/snippets/app.main.cirru 中的若干定义
+calcit edit ns app.main --file .calcit/snippets/app.main.cirru --dry-run --format edn   # 读取 :scoped-revision
+calcit edit ns app.main --file .calcit/snippets/app.main.cirru --expect-revision 'scope:def:app.main/f@md5:...'
+calcit --check-only
+```
+
 ### Managing Namespaces
 
 ```bash

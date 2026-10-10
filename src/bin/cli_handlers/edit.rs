@@ -119,6 +119,7 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
     EditSubcommand::Tags(opts) => handle_tags(opts, snapshot_file),
     EditSubcommand::AddNs(opts) => handle_add_ns(opts, snapshot_file),
     EditSubcommand::RmNs(opts) => handle_rm_ns(opts, snapshot_file),
+    EditSubcommand::Ns(opts) => super::ns_view::handle_edit_ns(opts, snapshot_file),
     EditSubcommand::Imports(opts) => handle_imports(opts, snapshot_file),
     EditSubcommand::AddImport(opts) => handle_add_import(opts, snapshot_file),
     EditSubcommand::RmImport(opts) => handle_rm_import(opts, snapshot_file),
@@ -133,6 +134,7 @@ fn edit_mutates_snapshot(cmd: &EditSubcommand) -> bool {
   match cmd {
     EditSubcommand::Transaction(opts) => !opts.dry_run,
     EditSubcommand::Scaffold(opts) => !opts.dry_run,
+    EditSubcommand::Ns(opts) => !opts.dry_run,
     EditSubcommand::Tags(opts) => opts.tags.is_some(),
     EditSubcommand::Inc(_) => false,
     // Git owns the merge driver's temporary files; no other writer can race on them.
@@ -165,6 +167,7 @@ fn resolve_edit_cursor_references(cmd: &mut EditCommand, snapshot_file: &str) ->
     | EditSubcommand::Scaffold(_)
     | EditSubcommand::AddNs(_)
     | EditSubcommand::RmNs(_)
+    | EditSubcommand::Ns(_)
     | EditSubcommand::Imports(_)
     | EditSubcommand::AddImport(_)
     | EditSubcommand::RmImport(_)
@@ -269,6 +272,7 @@ fn maintain_cursor_after_edit(cmd: &EditCommand, snapshot_file: &str) -> Result<
     EditSubcommand::Scaffold(opts) if !opts.dry_run => {
       maintain_cursor_after_any_mutation(snapshot_file, "validated after scaffold apply")
     }
+    EditSubcommand::Ns(opts) if !opts.dry_run => maintain_cursor_after_any_mutation(snapshot_file, "validated after edit ns"),
     _ => Ok(()),
   }
 }
@@ -466,24 +470,24 @@ fn edn_key_matches(value: &Edn, expected: &str) -> bool {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-struct TransactionOperationReport {
-  index: usize,
-  args: Vec<String>,
-  stdout: String,
-  stderr: String,
+pub(crate) struct TransactionOperationReport {
+  pub(crate) index: usize,
+  pub(crate) args: Vec<String>,
+  pub(crate) stdout: String,
+  pub(crate) stderr: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-struct TransactionReport {
+pub(crate) struct TransactionReport {
   schema_version: u8,
   command: &'static str,
   dry_run: bool,
-  changed: bool,
-  original_revision: String,
-  new_revision: String,
+  pub(crate) changed: bool,
+  pub(crate) original_revision: String,
+  pub(crate) new_revision: String,
   /// Pre-edit fingerprints of only the units this transaction changes; pass it
   /// to `--expect-revision` so edits to other definitions do not invalidate it.
-  scoped_revision: Option<String>,
+  pub(crate) scoped_revision: Option<String>,
   operations: Vec<TransactionOperationReport>,
 }
 
@@ -663,7 +667,7 @@ where
   run_staged_transaction_with_options(snapshot_file, operations, expected_revision, dry_run, true, run_operation)
 }
 
-fn run_staged_transaction_with_options<F>(
+pub(crate) fn run_staged_transaction_with_options<F>(
   snapshot_file: &Path,
   operations: &[Vec<String>],
   expected_revision: Option<&str>,
@@ -1087,7 +1091,7 @@ pub(crate) fn definition_head_macro_code(
   Ok(None)
 }
 
-fn validate_definition_shape(
+pub(crate) fn validate_definition_shape(
   snapshot_file: &str,
   snapshot: &Snapshot,
   namespace: &str,
@@ -1796,7 +1800,7 @@ fn parse_schema_input(raw: &str, input_format: SyntaxInputFormat) -> Result<Cirr
   })
 }
 
-fn strip_name_field_from_schema(schema: Cirru) -> Cirru {
+pub(crate) fn strip_name_field_from_schema(schema: Cirru) -> Cirru {
   match schema {
     Cirru::List(items) => {
       if items.is_empty() {
@@ -2992,7 +2996,7 @@ fn get_require_source_ns(rule: &Cirru) -> Option<String> {
 
 /// Extract existing require rules from ns code
 /// Handles structure: ["ns", "namespace", [":require", rule1, rule2, ...]]
-fn extract_require_rules(ns_code: &Cirru) -> Vec<Cirru> {
+pub(crate) fn extract_require_rules(ns_code: &Cirru) -> Vec<Cirru> {
   let mut rules = vec![];
   if let Cirru::List(items) = ns_code {
     for item in items.iter().skip(2) {

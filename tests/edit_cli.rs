@@ -1535,6 +1535,232 @@ fn query_def_cirru_view_writes_back_byte_identically() {
   assert!(missing.stdout.is_empty(), "failed view must not print partial source");
 }
 
+fn query_ns_view(snapshot: &Path, namespace: &str) -> String {
+  let output = run_calcit(snapshot, &["query", "ns", namespace, "--format", "cirru"]);
+  assert_success(&output, &format!("cirru view of namespace {namespace}"));
+  String::from_utf8(output.stdout).unwrap()
+}
+
+fn edit_ns_json(snapshot: &Path, namespace: &str, view: &Path, extra: &[&str]) -> Output {
+  let mut args = vec!["edit", "ns", namespace, "--file", view.to_str().unwrap(), "--format", "json"];
+  args.extend_from_slice(extra);
+  run_calcit(snapshot, &args)
+}
+
+fn definition_statuses(report: &serde_json::Value) -> std::collections::BTreeMap<String, String> {
+  report["definitions"]
+    .as_array()
+    .unwrap()
+    .iter()
+    .map(|item| {
+      (
+        item["name"].as_str().unwrap().to_owned(),
+        item["status"].as_str().unwrap().to_owned(),
+      )
+    })
+    .collect()
+}
+
+/// Replace the whole top-level block that starts with `head` (up to the next blank line) in a namespace view.
+fn replace_view_block(view: &str, head: &str, replacement: &str) -> String {
+  let start = view
+    .find(&format!("\n\n{head}"))
+    .unwrap_or_else(|| panic!("view has no `{head}` block:\n{view}"))
+    + 2;
+  let end = view[start..].find("\n\n").map(|offset| start + offset).unwrap_or(view.len());
+  format!("{}{replacement}{}", &view[..start], &view[end..])
+}
+
+/// `query ns --format cirru` output written back with `edit ns` leaves each Snapshot byte-identical.
+#[test]
+fn query_ns_cirru_view_writes_back_byte_identically() {
+  for (source, namespace) in [
+    ("calcit/test.cirru", "app.main"),
+    ("calcit/test-def-meta.cirru", "test-def-meta.main"),
+    ("calcit/test-types.cirru", "test-types.main"),
+    ("calcit/test-struct.cirru", "test-struct.main"),
+    // Its stored `ns` form names `test-algebra`; an unchanged form is accepted.
+    ("calcit/test-algebra.cirru", "test-algebra.main"),
+    // Runtime-implemented definitions have no name leaf and use `:def <name> <code>`.
+    ("src/cirru/calcit-core.cirru", "calcit.core"),
+  ] {
+    let directory = TestDirectory::create();
+    let snapshot = directory.snapshot();
+    fs::copy(source, &snapshot).unwrap();
+    let original = fs::read(&snapshot).unwrap();
+    let text = query_ns_view(&snapshot, namespace);
+    assert!(text.starts_with("ns "), "{namespace} view must start with its ns form:\n{text}");
+    let view = directory.0.join("view.cirru");
+    fs::write(&view, &text).unwrap();
+    let output = edit_ns_json(&snapshot, namespace, &view, &[]);
+    assert_success(&output, &format!("write back {namespace}"));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["changed"], false, "{namespace}: {report}");
+    assert!(
+      definition_statuses(&report).values().all(|status| status == "unchanged"),
+      "{namespace}: {report}"
+    );
+    assert_eq!(
+      fs::read(&snapshot).unwrap(),
+      original,
+      "writing back {namespace} changed the Snapshot"
+    );
+  }
+}
+
+#[test]
+fn edit_ns_updates_only_changed_definitions_and_keeps_tests() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/test-def-meta.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        "test-def-meta.main/reload!",
+        "smoke",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ assert= 1 1",
+      ],
+    ),
+    "attach a definition test",
+  );
+  let before = fs::read(&snapshot).unwrap();
+  let namespace = "test-def-meta.main";
+  let text = query_ns_view(&snapshot, namespace);
+  assert!(!text.contains("assert= 1 1"), "tests stay out of the view:\n{text}");
+
+  // One changed definition: the result equals `edit def --overwrite` of just that definition.
+  let edited = replace_view_block(&text, "defn reload!", "defn reload! () (println |reloaded) (:: 'Unit)");
+  let view = directory.0.join("view.cirru");
+  fs::write(&view, &edited).unwrap();
+  let preview = edit_ns_json(&snapshot, namespace, &view, &["--dry-run"]);
+  assert_success(&preview, "preview one changed definition");
+  let report: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+  assert_eq!(report["changed"], true);
+  let statuses = definition_statuses(&report);
+  assert_eq!(statuses["reload!"], "changed");
+  assert_eq!(statuses.values().filter(|status| *status != "unchanged").count(), 1, "{report}");
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "dry-run must not write");
+
+  let reference = directory.0.join("reference.cirru");
+  fs::copy(&snapshot, &reference).unwrap();
+  assert_success(
+    &run_calcit(
+      &reference,
+      &[
+        "edit",
+        "def",
+        "test-def-meta.main/reload!",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn reload! () (println |reloaded) (:: 'Unit)",
+      ],
+    ),
+    "reference single-definition edit",
+  );
+  let scoped = report["scoped_revision"].as_str().unwrap().to_owned();
+  assert!(scoped.starts_with("scope:def:test-def-meta.main/reload!@"), "{scoped}");
+  assert_success(
+    &edit_ns_json(&snapshot, namespace, &view, &["--expect-revision", &scoped]),
+    "apply one changed definition",
+  );
+  assert_eq!(fs::read(&snapshot).unwrap(), fs::read(&reference).unwrap());
+  let reload = query_definition(&snapshot, "test-def-meta.main/reload!");
+  assert_eq!(reload["data"]["tests"].as_array().map(Vec::len), Some(1), "{reload}");
+
+  // Metadata: a missing :meta block keeps doc/schema, `:schema nil` clears, new definitions are added.
+  let text = query_ns_view(&snapshot, namespace);
+  let edited = replace_view_block(&text, ":meta MetaSample", ":meta MetaSample $ :schema nil");
+  let edited = replace_view_block(&edited, ":meta main!", "");
+  let edited = format!("{edited}\ndefn added-fn (x) x\n\n:meta added-fn $ :doc \"|Added by a view\"\n");
+  fs::write(&view, &edited).unwrap();
+  let output = edit_ns_json(&snapshot, namespace, &view, &[]);
+  assert_success(&output, "apply metadata changes");
+  let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+  let statuses = definition_statuses(&report);
+  assert_eq!(statuses["MetaSample"], "changed");
+  assert_eq!(statuses["main!"], "unchanged");
+  assert_eq!(statuses["added-fn"], "added");
+  let fields = report["definitions"]
+    .as_array()
+    .unwrap()
+    .iter()
+    .find(|item| item["name"] == "MetaSample")
+    .unwrap()["fields"]
+    .clone();
+  assert_eq!(fields, serde_json::json!(["schema"]));
+  let sample = query_definition(&snapshot, "test-def-meta.main/MetaSample");
+  assert!(sample["data"]["schema"].is_null(), "{sample}");
+  assert_eq!(sample["data"]["doc"], "Sample definition for def metadata lookup tests");
+  let main = query_definition(&snapshot, "test-def-meta.main/main!");
+  assert_eq!(main["data"]["doc"], "Run def metadata lookup tests");
+  let added = query_definition(&snapshot, "test-def-meta.main/added-fn");
+  assert_eq!(added["data"]["doc"], "Added by a view");
+}
+
+#[test]
+fn edit_ns_rejects_removal_without_flag_and_stale_revisions() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/test-def-meta.cirru", &snapshot).unwrap();
+  let namespace = "test-def-meta.main";
+  let before = fs::read(&snapshot).unwrap();
+  let text = query_ns_view(&snapshot, namespace);
+  let view = directory.0.join("view.cirru");
+
+  let without = replace_view_block(&text, "defn test-missing-doc", "");
+  let without = replace_view_block(&without, ":meta test-missing-doc", "");
+  fs::write(&view, &without).unwrap();
+  for extra in [&[][..], &["--dry-run"][..]] {
+    let rejected = edit_ns_json(&snapshot, namespace, &view, extra);
+    assert!(!rejected.status.success(), "removal without --allow-remove must fail");
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains("--allow-remove"));
+    assert_eq!(fs::read(&snapshot).unwrap(), before);
+  }
+
+  fs::write(&view, &text).unwrap();
+  let stale = edit_ns_json(
+    &snapshot,
+    namespace,
+    &view,
+    &["--expect-revision", "md5:00000000000000000000000000000000"],
+  );
+  assert!(!stale.status.success(), "an unchanged view still checks the revision");
+  let changed = replace_view_block(&text, "defn reload!", "defn reload! () (println |stale) (:: 'Unit)");
+  fs::write(&view, &changed).unwrap();
+  let stale = edit_ns_json(
+    &snapshot,
+    namespace,
+    &view,
+    &["--expect-revision", "md5:00000000000000000000000000000000"],
+  );
+  assert!(!stale.status.success(), "a stale revision must reject the write");
+  assert!(String::from_utf8_lossy(&stale.stderr).contains("revision mismatch"));
+  assert_eq!(fs::read(&snapshot).unwrap(), before);
+
+  let renamed = text.replacen("ns test-def-meta.main", "ns test-def-meta.other", 1);
+  fs::write(&view, &renamed).unwrap();
+  assert!(!edit_ns_json(&snapshot, namespace, &view, &[]).status.success());
+
+  fs::write(&view, &without).unwrap();
+  let output = edit_ns_json(&snapshot, namespace, &view, &["--allow-remove"]);
+  assert_success(&output, "remove with --allow-remove");
+  let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+  assert_eq!(definition_statuses(&report)["test-missing-doc"], "removed");
+  let removed = run_calcit(
+    &snapshot,
+    &["query", "def", "test-def-meta.main/test-missing-doc", "--format", "cirru"],
+  );
+  assert!(!removed.status.success());
+}
+
 #[test]
 fn config_add_entry_creates_complete_named_entries_through_guarded_transactions() {
   let directory = TestDirectory::create();

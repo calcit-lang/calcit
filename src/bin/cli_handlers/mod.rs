@@ -18,6 +18,7 @@ mod ffi;
 pub(crate) mod fix;
 mod libs;
 mod markdown_read;
+mod ns_view;
 mod program_diff;
 mod query;
 mod scaffold;
