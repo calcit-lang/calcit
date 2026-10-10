@@ -401,9 +401,8 @@ mod shift_safety_tests {
 
   #[test]
   fn bitwise_operands_outside_i32_are_rejected() {
-    let call2 = |f: fn(&[Calcit]) -> Result<Calcit, crate::calcit::CalcitErr>, a: f64, b: f64| {
-      f(&[Calcit::Number(a), Calcit::Number(b)])
-    };
+    let call2 =
+      |f: fn(&[Calcit]) -> Result<Calcit, crate::calcit::CalcitErr>, a: f64, b: f64| f(&[Calcit::Number(a), Calcit::Number(b)]);
     assert_eq!(call2(bit_and, i32::MIN as f64, i32::MAX as f64), Ok(Calcit::Number(0.0)));
     for bad in [4_294_967_296.0, 2_147_483_648.0, -2_147_483_649.0, 5.5, f64::NAN, f64::INFINITY] {
       assert!(call2(bit_and, bad, 1.0).is_err(), "bit-and must reject {bad}");
