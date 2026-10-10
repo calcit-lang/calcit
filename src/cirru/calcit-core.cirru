@@ -7038,11 +7038,11 @@
                   :: false $ + acc x
               :tags $ #{} :core :unit
         'format-cirru $ %{} 'CodeEntry
-          :doc "|internal function for formatting Cirru\nSyntax: (format-cirru data)\nParams: data (list)\nReturns: string\nFormats nested list structure into Cirru syntax text"
+          :doc "|将由字符串与嵌套 List 组成的 Cirru 程序树格式化为文本。语法：format-cirru data [inline?]，返回 String；可选 Bool 默认 false，true 使用 inline 布局。省略与 false 保持相同输出，和 format-cirru-edn 的默认 true 不同。无效树或非 Bool 参数被拒绝；native 与 JS 支持，WASM/WASI 明确 unsupported。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'List
+            :args $ [] 'List 'Bool
           :tags $ #{} :builtin :internal
           :tests $ [] $ %{} 'TestEntry (:name |formats-nested-lines)
             :code $ quote $ do
@@ -7051,6 +7051,20 @@
               assert-type
                 format-cirru $ [] $ [] |a |b
                 , 'String
+              let
+                  tree $ [] $ [] |a ([] |b |c) ([] |d |e)
+                  inline "|\na (b c) (d e)\n"
+                  expanded "|\na (b c)\n  d e\n"
+                  formatter format-cirru
+                assert= expanded $ format-cirru tree
+                assert= expanded $ format-cirru tree false
+                assert= inline $ format-cirru tree true
+                assert= expanded $ formatter tree
+                assert= expanded $ formatter tree false
+                assert= inline $ formatter tree true
+                assert= ([] expanded)
+                  map ([] tree) formatter
+                assert-type (formatter tree true) 'String
             :tags $ #{} :core :unit
         'format-cirru-edn $ %{} 'CodeEntry
           :doc "|Serialize supported Calcit data into Cirru EDN text. Syntax: format-cirru-edn data [inline?]. The optional Bool defaults to true; native and JS honor false for expanded container layout. Scalar roots use do regardless of layout. WASM rejects unsupported container modes explicitly."

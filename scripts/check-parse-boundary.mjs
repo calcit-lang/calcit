@@ -26,6 +26,7 @@ try {
   // Host calls bypass Calcit argument proofs; do not coerce a layout flag.
   for (const flag of [null, 0, "false"]) {
     assert.throws(() => runtime.format_cirru_edn(42, flag), /boolean inline option/);
+    assert.throws(() => runtime.format_cirru(new runtime.CalcitSliceList([]), flag), /boolean inline option/);
   }
   const originalError = console.error;
   const errors = [];
@@ -45,21 +46,23 @@ try {
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
   // The optional layout flag is Bool even when the formatter is a local value.
   const original = await readFile(snapshot);
-  for (const flag of ["nil", "0", "|false"]) {
-    for (const [snippet, diagnostic] of [
-      [`format-cirru-edn 42 ${flag}`, /W_PROC_ARG_TYPE_MISMATCH/],
-      [`let ((format-text format-cirru-edn)) (format-text 42 ${flag})`, /W_LOCAL_FN_ARG_TYPE_MISMATCH/],
-    ]) {
-      for (const lint of ["0", "1"]) {
-        const rejected = spawnSync(binary, [snapshot, "eval", snippet], {
-          ...options, env: { ...process.env, CALCIT_LINT_CORE: lint },
-        });
-        if (rejected.error) throw rejected.error;
-        const message = `${rejected.stdout}\n${rejected.stderr}`;
-        assert.equal(rejected.status, 1, message);
-        assert.match(message, diagnostic);
-        assert.doesNotMatch(message, /internal compiler error/);
-        assert.deepEqual(await readFile(snapshot), original);
+  for (const [formatter, input] of [["format-cirru-edn", "42"], ["format-cirru", "([] ([] |a))"]]) {
+    for (const flag of ["nil", "0", "|false"]) {
+      for (const [snippet, diagnostic] of [
+        [`${formatter} ${input} ${flag}`, /W_PROC_ARG_TYPE_MISMATCH/],
+        [`let ((format-text ${formatter})) (format-text ${input} ${flag})`, /W_LOCAL_FN_ARG_TYPE_MISMATCH/],
+      ]) {
+        for (const lint of ["0", "1"]) {
+          const rejected = spawnSync(binary, [snapshot, "eval", snippet], {
+            ...options, env: { ...process.env, CALCIT_LINT_CORE: lint },
+          });
+          if (rejected.error) throw rejected.error;
+          const message = `${rejected.stdout}\n${rejected.stderr}`;
+          assert.equal(rejected.status, 1, message);
+          assert.match(message, diagnostic);
+          assert.doesNotMatch(message, /internal compiler error/);
+          assert.deepEqual(await readFile(snapshot), original);
+        }
       }
     }
   }

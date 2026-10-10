@@ -117,7 +117,8 @@ impl CalcitProc {
       ParseCirru | ParseCirruList => Raises("the text is not valid Cirru"),
       ParseCirruEdn => Raises("the text is not valid Cirru EDN"),
       JsonParse => Raises("the text is not valid JSON"),
-      FormatCirru | FormatCirruOneLiner => Raises("the data is not a Cirru tree of strings and lists"),
+      FormatCirru => Raises("the data is not a Cirru tree of strings and lists, or the inline option is not Bool"),
+      FormatCirruOneLiner => Raises("the data is not a Cirru tree of strings and lists"),
       FormatCirruEdn => Raises("the value has no Cirru EDN form"),
       JsonStringify | JsonPretty => Raises("the value has no JSON form, including non-finite numbers"),
 

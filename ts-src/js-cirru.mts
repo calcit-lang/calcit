@@ -166,7 +166,10 @@ export class CalcitCirruQuote {
   }
 }
 
-export let format_cirru = (data: CalcitCirruQuote | CalcitList, useInline: boolean): string => {
+export let format_cirru = (data: CalcitCirruQuote | CalcitList, useInline: boolean = false): string => {
+  if (typeof useInline !== "boolean") {
+    throw new Error("format-cirru requires a boolean inline option");
+  }
   if (data instanceof CalcitCirruQuote) {
     return writeCirruCode(data.value, { useInline });
   }

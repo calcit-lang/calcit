@@ -40,6 +40,11 @@
         :args $ [] 'T
         :generics $ [] 'T
     {} (:declaration nil)
+      :name 'calcit.core/format-cirru
+      :runtime-arity $ {} (:max 2) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'String)
+        :args $ [] 'List 'Bool
+    {} (:declaration nil)
       :name 'calcit.core/format-cirru-edn
       :runtime-arity $ {} (:max 2) (:min 1)
       :schema $ quote $ {} (:kind :fn) (:return 'String)
