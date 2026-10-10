@@ -375,12 +375,25 @@ fn should_skip_core_def_codegen(def: &str, compiled_def: &program::CompiledDef) 
   compiled_def.source_code.as_ref().is_some_and(is_runtime_placeholder_quote)
 }
 
+/// Rust prints non-finite floats as `inf`/`-inf`/`NaN`, which are not JS literals.
+fn number_to_js(n: f64) -> String {
+  if n.is_nan() {
+    String::from("NaN")
+  } else if n == f64::INFINITY {
+    String::from("Infinity")
+  } else if n == f64::NEG_INFINITY {
+    String::from("(-Infinity)")
+  } else {
+    n.to_string()
+  }
+}
+
 fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -> Result<String, String> {
   match xs {
     Calcit::Symbol { sym, .. } => Ok(format!("new {var_prefix}CalcitSymbol({})", escape_cirru_str(sym))),
     Calcit::Str(s) => Ok(escape_cirru_str(s)),
     Calcit::Bool(b) => Ok(b.to_string()),
-    Calcit::Number(n) => Ok(n.to_string()),
+    Calcit::Number(n) => Ok(number_to_js(*n)),
     Calcit::Nil => Ok(String::from("null")),
     Calcit::Unit => Ok(String::from("void 0")),
     // mainly for methods, which are recognized during reading
@@ -681,7 +694,7 @@ fn to_js_code(
       Calcit::Syntax(s, ..) => Err(raw_syntax_codegen_error(s)),
       Calcit::Str(s) => Ok(escape_cirru_str(s)),
       Calcit::Bool(b) => Ok(b.to_string()),
-      Calcit::Number(n) => Ok(n.to_string()),
+      Calcit::Number(n) => Ok(number_to_js(*n)),
       Calcit::Nil => Ok(String::from("null")),
       Calcit::Unit => Ok(String::from("void 0")),
       Calcit::Tag(s) => {
@@ -3677,5 +3690,14 @@ mod tests {
       to_js_code(&with, "tests.emit-js", &local_defs, &file_imports, &tags, None).expect("indexed batch update should compile"),
       "person.withAt(0, _t_.name, \"Ada\", 1, _t_.score, 9)"
     );
+  }
+
+  #[test]
+  fn emits_non_finite_numbers_as_js_literals() {
+    assert_eq!(number_to_js(f64::INFINITY), "Infinity");
+    assert_eq!(number_to_js(f64::NEG_INFINITY), "(-Infinity)");
+    assert_eq!(number_to_js(f64::NAN), "NaN");
+    assert_eq!(number_to_js(-0.0), "-0");
+    assert_eq!(number_to_js(1.5), "1.5");
   }
 }
