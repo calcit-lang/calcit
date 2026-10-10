@@ -384,6 +384,7 @@
       |calcit.core/parse-float#reports-invalid-number-source "|unsupported: reaches `calcit.core/parse-float`: E_WASM_NIL_TYPE_EVIDENCE: nil? cannot distinguish nil from a zero-valued Optional<:number> payload in the current …"
       |calcit.core/parse-float#result-method-contract "|unsupported: reaches `calcit.core/parse-float`: E_WASM_NIL_TYPE_EVIDENCE: nil? cannot distinguish nil from a zero-valued Optional<:number> payload in the current …"
       |calcit.core/parse-float#wraps-number-or-source-error "|unsupported: reaches `calcit.core/parse-float`: E_WASM_NIL_TYPE_EVIDENCE: nil? cannot distinguish nil from a zero-valued Optional<:number> payload in the current …"
+      |calcit.core/pow#follows-ieee-for-unit-base "|unsupported: E_WASM_CAPABILITY: host capability `math/pow` is unavailable for this WASM target"
       |calcit.core/pow#raises-to-power "|unsupported: E_WASM_CAPABILITY: host capability `math/pow` is unavailable for this WASM target"
       |calcit.core/quote#function-tail-values "|unsupported: unsupported runtime quote value in WASM"
       |calcit.core/quote#nested-tail-and-expression-contexts "|unsupported: unsupported runtime quote value in WASM"
