@@ -49,6 +49,25 @@ try {
   assert.equal(typeof runtimeA._$n_ffi_response_resolve, "function", "generated async FFI response imports must link on JS");
   assert.equal(typeof runtimeA._$n_ffi_response_reject, "function", "generated async FFI rejection imports must link on JS");
   assert.equal(typeof runtimeA._$n_ffi_task_cancel, "function", "generated async FFI task imports must link on JS");
+  // JS cannot supply a native capability. These linked exports must fail,
+  // not log a warning and accidentally return a successful Unit.
+  const originalWarn = console.warn;
+  const lifecycleWarnings = [];
+  console.warn = (...args) => lifecycleWarnings.push(args);
+  try {
+    for (const [name, operation] of [
+      ["_$n_ffi_task_cancel", "&ffi-task-cancel"],
+      ["_$n_ffi_response_resolve", "&ffi-response-resolve"],
+      ["_$n_ffi_response_reject", "&ffi-response-reject"],
+    ]) {
+      assert.throws(() => runtimeA[name](null, "value"), {
+        message: `${operation}: native FFI capability is not available for calcit-js`,
+      });
+    }
+    assert.deepEqual(lifecycleWarnings, [], "capability failures must leave reporting to the caller");
+  } finally {
+    console.warn = originalWarn;
+  }
   assert.equal(runtimeA.get_env("CALCIT_MISSING_ENV_FOR_RUNTIME_TEST", "fallback"), "fallback");
   assert.equal(
     runtimeA._$n_str_$o_replace("a&a&", "&", "&amp;"),
@@ -344,7 +363,7 @@ try {
   assert.equal(runtimeA.parse_cirru_edn_as("do nil", nilShape), null, "typed EDN decoding must preserve the Nil node");
   assert.throws(
     () => runtimeA.parse_cirru_edn_as("do |value", nilShape),
-    /expected Nil, got string/,
+    /parse-cirru-edn-as failed at \$: expected nil, got string/,
     "typed EDN decoding must reject non-Nil input for the Nil node"
   );
 

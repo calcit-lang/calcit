@@ -2,12 +2,6 @@
   :native $ {}
   :js $ {}
     :tests $ {} (|calcit.core/deftrait#requires-head-accepts-bare-and-quoted "|parity: JS codegen cannot emit the raw `macroexpand` syntax node used by this test")
-      |calcit.core/ffi-task:cancel#checked-unit-rejects-nil "|parity: JS decode-map-as with 'Unit does not raise the native `expected &unit, got nil` failure"
-      |calcit.core/ffi-task:cancel#checked-unit-rejects-number "|parity: JS decode-map-as with 'Unit does not raise the native `expected &unit, got number` failure"
-      |calcit.core/ffi-task:cancel#checked-unit-rejects-string "|parity: JS decode-map-as with 'Unit does not raise the native `expected &unit` failure"
-      |calcit.core/ffi-task:cancel#default-method-preserves-capability-error "|parity: JS .cancel! on a nil ffi:task fails with `NOT available for calcit-js` instead of a capability error"
-      |calcit.core/ffi-task:cancel-with#explicit-method-preserves-capability-error "|parity: JS .cancel-with! on a nil ffi:task fails with `NOT available for calcit-js` instead of a capability error"
-      |calcit.core/ffi-task:cancel-with#reason-evaluates-once-before-host-error "|parity: JS .cancel-with! on a nil ffi:task fails with `NOT available for calcit-js` instead of a capability error"
   :wasm $ {}
     :tags $ {} $ :enum-definition-equality "|unsupported: first-class EnumDef creation requires &enum-def:new, rejected by WASM codegen (#1863)"
     :tests $ {} (|calcit.core/&+#preserves-primitive-schema-in-local-binding "|unsupported: unsupported WASM expression: (&proc &+)")
@@ -68,6 +62,9 @@
       |calcit.core/data-view#preserves-shallow-payloads "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: `calcit.core/data-view` requires concrete argument types so nil can be distinguished from false and 0"
       |calcit.core/dbg#evaluates-once "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/decode-map-as#decodes-inside-typed-first "|unsupported: decode-map-as is not yet supported in WASM codegen"
+      |calcit.core/decode-map-as#preserves-operation-and-nested-error-path "|unsupported: unsupported syntax in WASM: try"
+      |calcit.core/ffi-response:resolve#method-preserves-capability-error "|unsupported: unsupported syntax in WASM: try"
+      |calcit.core/ffi-response:reject#method-preserves-capability-error "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/decode-map-as#decodes-struct-and-option "|unsupported: decode-map-as is not yet supported in WASM codegen"
       |calcit.core/decode-map-as#nested-struct-option "|unsupported: decode-map-as is not yet supported in WASM codegen"
       |calcit.core/decode-map-as#preserves-dynamic-and-prewrapped-option "|unsupported: decode-map-as is not yet supported in WASM codegen"
@@ -294,6 +291,9 @@
       |calcit.core/data-view#preserves-shallow-payloads "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: `calcit.core/data-view` requires concrete argument types so nil can be distinguished from false and 0"
       |calcit.core/dbg#evaluates-once "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/decode-map-as#decodes-inside-typed-first "|unsupported: decode-map-as is not yet supported in WASM codegen"
+      |calcit.core/decode-map-as#preserves-operation-and-nested-error-path "|unsupported: unsupported syntax in WASM: try"
+      |calcit.core/ffi-response:resolve#method-preserves-capability-error "|unsupported: unsupported syntax in WASM: try"
+      |calcit.core/ffi-response:reject#method-preserves-capability-error "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/decode-map-as#decodes-struct-and-option "|unsupported: decode-map-as is not yet supported in WASM codegen"
       |calcit.core/decode-map-as#nested-struct-option "|unsupported: decode-map-as is not yet supported in WASM codegen"
       |calcit.core/decode-map-as#preserves-dynamic-and-prewrapped-option "|unsupported: decode-map-as is not yet supported in WASM codegen"
