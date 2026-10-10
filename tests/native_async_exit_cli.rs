@@ -52,7 +52,23 @@ fn native_async_failure_reaches_exit_status_after_cleanup() {
   let failing = start("emit", "fn () (assert= |expected |wrong) &unit");
   let response_case = |method: &str| {
     format!(
-      "let\n    task-ref $ ref $ assert-type (Option :none) $ :: 'Option 'FfiTask\n    task $ ffi:task $ &call-dylib-edn-fn {library_literal} |server\n      fn (raw-response)\n        let\n            response $ ffi:response raw-response\n          assert-type (response.{method}! :payload) 'Unit\n          assert= true $ try\n            do\n              response.{method}! :late\n              , false\n            fn (message)\n              assert-type message 'String\n              , true\n        .cancel! $ .unwrap $ deref task-ref\n        , &unit\n  reset! task-ref $ Option :some task"
+      r#"let
+    task-ref $ ref $ assert-type (Option :none) $ :: 'Option 'FfiTask
+    task $ ffi:task $ &call-dylib-edn-fn {library_literal} |server
+      fn (raw-response)
+        let
+            response $ ffi:response raw-response
+          assert-type (response.{method}! :payload) 'Unit
+          assert= true $ try
+            do
+              response.{method}! :late
+              , false
+            fn (message)
+              assert-type message 'String
+              , true
+        .cancel! $ .unwrap $ deref task-ref
+        , &unit
+  reset! task-ref $ Option :some task"#
     )
   };
 
@@ -100,7 +116,10 @@ fn native_async_failure_reaches_exit_status_after_cleanup() {
     (
       "method-cancel-is-once",
       format!(
-        "let\n    task $ ffi:task $ {idle}\n  assert-type (task.cancel!) 'Unit\n  assert-type (task.cancel-with! :already-closing) 'Unit"
+        r#"let
+    task $ ffi:task $ {idle}
+  assert-type (task.cancel!) 'Unit
+  assert-type (task.cancel-with! :already-closing) 'Unit"#
       ),
       true,
       None,
