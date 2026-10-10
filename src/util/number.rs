@@ -58,7 +58,10 @@ pub fn f64_to_index(f: f64) -> Result<usize, String> {
   if f.trunc() == f && f >= 0.0 && f <= usize::MAX as f64 {
     Ok(f as usize)
   } else {
-    Err(format!("expected a non-negative integer index, but got: {}", format_calcit_number(f)))
+    Err(format!(
+      "expected a non-negative integer index, but got: {}",
+      format_calcit_number(f)
+    ))
   }
 }
 

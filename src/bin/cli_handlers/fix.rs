@@ -3810,19 +3810,24 @@ fn plan_core_nominal_method_source(
       let source_receiver = code_to_calcit(receiver, namespace, definition, vec![]).map_err(|error| error.to_string())?;
       // Reader shorthand is a call, not the located leaf inside that expansion.
       let direct_source_shape = !matches!(receiver, Cirru::Leaf(_)) || !matches!(source_receiver, Calcit::List(_));
-      let inferred = compiled
-        .as_ref()
-        .filter(|_| direct_source_shape)
-        .and_then(|compiled| {
-          super::query::find_preprocessed_node_at_path(
-            &compiled.preprocessed_code,
-            namespace,
-            definition,
-            &receiver_path,
-            matches!(receiver, Cirru::List(_)),
-          )
+      // Lowered children can inherit the source call's coordinates but not its result type.
+      let inferred = runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &receiver_path)
+        .and_then(|item| item.inferred_type.clone())
+        .or_else(|| {
+          compiled
+            .as_ref()
+            .filter(|_| direct_source_shape)
+            .and_then(|compiled| {
+              super::query::find_preprocessed_node_at_path(
+                &compiled.preprocessed_code,
+                namespace,
+                definition,
+                &receiver_path,
+                matches!(receiver, Cirru::List(_)),
+              )
+            })
+            .and_then(runner::preprocess::infer_static_type_from_expr)
         })
-        .and_then(runner::preprocess::infer_static_type_from_expr)
         .or_else(|| {
           if !direct_source_shape {
             return None;
@@ -3835,10 +3840,6 @@ fn plan_core_nominal_method_source(
             matches!(receiver, Cirru::List(_)),
           )
           .and_then(runner::preprocess::infer_static_type_from_expr)
-        })
-        .or_else(|| {
-          runner::preprocess::unique_source_expression_at_path(&expressions, namespace, definition, &receiver_path)
-            .and_then(|item| item.inferred_type.clone())
         });
       let proven = !short_constructor_is_shadowed
         && (inferred.as_ref().is_some_and(|receiver_type| {
