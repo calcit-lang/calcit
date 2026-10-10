@@ -131,6 +131,19 @@ test("parsing declarations preserve open payloads without promoting open method 
   }
 });
 
+test("namespace Ref construction retains syntax evidence without fabricated function arity", () => {
+  const constructor = definition(baseline, "defref");
+  assert.ok(constructor, "the preferred namespace constructor must not be omitted");
+  const schema = constructor.schema.quote;
+  assert.equal(schema.find(pair => pair[0] === ":kind")[1], ":fn");
+  assert.deepEqual(schema.find(pair => pair[0] === ":args")[1], ["[]", "'Symbol", "'T"]);
+  assert.deepEqual(schema.find(pair => pair[0] === ":generics")[1], ["[]", "'T"]);
+  assert.deepEqual(schema.find(pair => pair[0] === ":return")[1], ["::", "'Ref", "'T"]);
+  assert.equal(constructor["runtime-arity"], null, "syntax is not an ordinary runtime function");
+  assert.equal(constructor.declaration, null);
+  assert.equal(constructor.failure, undefined, "behavior remains in source docs and existing tests");
+});
+
 test("explicit conversion boundaries preserve refinements, generic payloads and JS feature", () => {
   for (const [suffix, type] of [["int8", "Int8"], ["int16", "Int16"], ["int32", "Int32"], ["int64", "Int64"],
     ["uint8", "UInt8"], ["uint16", "UInt16"], ["uint32", "UInt32"], ["uint64", "UInt64"],
@@ -159,6 +172,9 @@ for (const [name, mutate] of [
   ["numeric refinement result", data => definition(data, "number->int8").schema.quote.find(pair => pair[0] === ":return")[1][2] = "'Number"],
   ["nullish payload relation", data => definition(data, "js-nullish->option").schema.quote.find(pair => pair[0] === ":return")[1][2] = "'Dynamic"],
   ["JS boundary feature", data => definition(data, "js-nullish->option").schema.quote = definition(data, "js-nullish->option").schema.quote.filter(pair => pair[0] !== ":features")],
+  ["namespace Ref constructor deletion", data => data.definitions = data.definitions.filter(row => row.name.symbol !== "calcit.core/defref")],
+  ["namespace Ref constructor payload relation", data => definition(data, "defref").schema.quote.find(pair => pair[0] === ":return")[1][2] = "'Dynamic"],
+  ["namespace Ref constructor name input", data => definition(data, "defref").schema.quote.find(pair => pair[0] === ":args")[1][1] = "'String"],
   ["receiver", data => data.methods[0].receiver = "'Dynamic"],
   ["method schema", data => data.methods[0].schema.quote[2][1] = "'Dynamic"],
   ["backend feature", data => data.methods[0].features.push("js-ffi")],

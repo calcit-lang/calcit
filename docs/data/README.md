@@ -18,6 +18,8 @@
 
 ## 效果声明边界
 
+命名空间级构造 `defref` 与局部构造 `ref` 分别纳入现有 query 导出；`defref` 的声明保留 `Symbol, T -> Ref<T>` 和同一泛型 T。它是 syntax，`runtime-arity` 为 nil，不把首参数当成运行时 String，也不从 schema 推测普通函数 arity。首次求值和热重载保留状态的约定见定义文档；构造后的 Ref 读写与兼容 `defatom` 共用实现的行为由原构造回归验证。WASM 只验证数值全局 `defref`；局部 `ref` 不因此获得支持。
+
 同一份 query 导出还记录 `reset!`、`get-args/get-env`、`unix-time-ms`、`wait-ms`、`read-stdin-text` 与 `quit!` 的既有声明。`reset!` 保持 `Ref<T>, T -> T`，环境读取保持 `List<String>` / `Option<String>` 及原 `:env/:io` feature，等待与 stdin 分别保持 `Result<Unit,String>` / `Result<String,String>`。时钟返回 Number 的声明不表示它是单调时钟；`quit!` 的 Unit 声明也不表示调用会正常返回。单位、输入范围、消费 stdin 与进程终止行为仍以各自定义和宿主测试为准，不在基线再复制一套失败描述。
 
 `reset!` 是 syntax，query 未提供 runtime arity 时导出 nil，不凭 Fn schema 伪造普通函数 arity。`swap!` 的现有声明是接受语法节点的 Macro，不是运行时的泛型函数合同，因此不将其开放的展开 schema 当作精确调用签名冻结；原 `reset-proof` 附带测试及严格类型回归继续验证展开后的返回值和 Ref payload 约束。`println/echo/eprintln` 当前没有可由 `query def` 导出的 core definition，同样不补造声明；输出行为由原 command fixture 与共享测试的输出轨迹验证。声明清单不会代替这些语法与宿主边界的验收。
