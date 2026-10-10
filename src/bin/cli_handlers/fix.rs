@@ -3637,6 +3637,13 @@ fn core_nominal_method(name: &str, kind: CoreNominalMethodKind) -> Option<CoreNo
   }
 }
 
+fn contains_core_nominal_method_candidate(node: &Cirru, kind: CoreNominalMethodKind) -> bool {
+  match node {
+    Cirru::Leaf(name) => core_nominal_method(name.as_ref(), kind).is_some(),
+    Cirru::List(items) => items.iter().any(|item| contains_core_nominal_method_candidate(item, kind)),
+  }
+}
+
 fn preserves_nominal_method_call_through_macro(origin: &str) -> bool {
   // These core forms retain one executable evaluation of the nested call.
   // assert= also quotes its source for diagnostics, but never evaluates that copy.
@@ -3709,7 +3716,7 @@ fn plan_core_nominal_method_source(
   kind: CoreNominalMethodKind,
 ) -> Result<Vec<FixSuggestion>, String> {
   let mut suggestions = Vec::new();
-  if list_head(source) == Some("defmacro") {
+  if list_head(source) == Some("defmacro") || !contains_core_nominal_method_candidate(source, kind) {
     return Ok(suggestions);
   }
   let mut local_bindings = HashSet::new();

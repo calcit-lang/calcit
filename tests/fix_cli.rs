@@ -8327,7 +8327,7 @@ fn retired_core_alias_rules_point_to_the_0_28_cli() {
 }
 
 #[test]
-fn core_nominal_constructor_preview_skips_unrelated_type_slot_declarations() {
+fn core_nominal_previews_skip_unrelated_type_slot_declarations() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
@@ -8365,6 +8365,61 @@ fn core_nominal_constructor_preview_skips_unrelated_type_slot_declarations() {
   );
   assert_success(&api_preview, "whole-namespace API preview with unrelated type slot");
   assert_eq!(parse_stdout(&api_preview)["data"]["suggestions"], serde_json::json!([]));
+  let before = fs::read(&snapshot).expect("snapshot should read");
+  for rule in ["core-option-method-v1", "core-result-method-v1"] {
+    for attached in [false, true] {
+      let mut arguments = vec!["--rule", rule, "--format", "json"];
+      if attached {
+        arguments.push("--include-attached");
+      }
+      let preview = run_fix(&snapshot, &arguments);
+      assert_success(&preview, "project-wide nominal method preview with unrelated type slot");
+      let report = parse_stdout(&preview);
+      assert_eq!(report["diagnostics"], serde_json::json!([]));
+      assert_eq!(report["data"]["suggestions"], serde_json::json!([]));
+      assert_eq!(fs::read(&snapshot).expect("snapshot should read"), before);
+    }
+  }
+  for (rule, definition, code) in [
+    (
+      "core-option-method-v1",
+      "fix-command.main/option-candidate",
+      "quote $ defn option-candidate () $ calcit.core/option:some? $ Option :some 1",
+    ),
+    (
+      "core-result-method-v1",
+      "fix-command.main/result-candidate",
+      "quote $ defn result-candidate () $ calcit.core/result:ok? $ Result :ok 1",
+    ),
+  ] {
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", definition, "--code", code]),
+      "install real candidate",
+    );
+    let before = fs::read(&snapshot).expect("snapshot should read");
+    let preview = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        rule,
+        "--ns",
+        "fix-command.main",
+        "--def",
+        definition.rsplit_once('/').expect("qualified definition").1,
+        "--include-attached",
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&preview, "qualified candidate preview with unrelated type slot");
+    let report = parse_stdout(&preview);
+    let suggestions = report["data"]["suggestions"].as_array().expect("suggestions should be an array");
+    assert_eq!(suggestions.len(), 1, "report: {report}");
+    assert_eq!(suggestions[0]["definition"], definition);
+    assert_eq!(suggestions[0]["applicability"], "machine-applicable");
+    assert_eq!(report["data"]["validation"]["status"], "passed");
+    assert_eq!(fs::read(&snapshot).expect("snapshot should read"), before);
+  }
 }
 
 #[test]
