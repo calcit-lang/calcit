@@ -584,7 +584,7 @@ calcit calcit.cirru edit transaction --dry-run --format edn --code '[["tree","de
 
 ### 仍可用的兼容名
 
-core 中带 `:deprecated` 标记的 28 个兼容名在 0.29.0 仍可调用，行为与 0.28 相同。新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余按首选写法逐处改写。
+core 在 0.29.0 仍保留下表兼容入口，新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余逐处人工审阅。剩余入口的计划退场窗口是 0.30.0，但到达版本号不自动授权删除，仍须满足消费者、发布窗口、语义与实现解耦条件。
 
 | 兼容名 | 首选写法 | 迁移 |
 |---|---|---|
@@ -600,9 +600,9 @@ core 中带 `:deprecated` 标记的 28 个兼容名在 0.29.0 仍可调用，行
 | `remove-watch` | `remove-watch!` | 人工改写 |
 | `case-default` | `match`，默认值写成末尾 `_` 分支 | `case-default-to-match-v1`（字面量模式） |
 | `foldl-shortcut` | `fold-while`，reducer 返回 `ControlFlow :continue acc` 或 `ControlFlow :break value`，从未 break 时返回累积值 | 人工改写：`(:: false acc)` 改为 `ControlFlow :continue acc`，`(:: true v)` 改为 `ControlFlow :break v`；旧写法在从未 break 时返回第三个参数 `default`，需要时在调用处判断后显式给出 |
-| `some-in?` | `option:some? $ get-in x path`；只需判断路径是否存在时用 `contains-in?`（两者对值为 `nil` 的路径结果不同） | 人工改写 |
-| `range-bothway` | 显式写 `range`：`range-bothway n` 写成 `range (inc (negate n)) n`，`range-bothway a b` 写成 `range (inc (- (+ a a) b)) b` | 人工改写 |
-| `let{}` | `let` 逐个绑定 `&map:get m :key`；struct 值用 `.-field` | 人工改写（生态中 2 处） |
+| `some-in?` | 公开方法 `.some? $ get-in x path`；`contains-in?` 判断路径存在，两者对 nil 叶子的结果不同 | 人工改写 |
+| `range-bothway` | 按原顺序各绑定实参一次到 `x/y`：省略 `y` 时用 `range (inc (negate x)) x`，Number `y` 时用 `range (inc (- (+ x x) y)) y`；末端不包含 | 人工改写，不能复制带副作用的表达式；历史运行时 nil 分支与省略相同，但当前严格 Number schema 拒绝显式 nil 实参 |
+| `let{}` | 显式 `let` 与 `get`，审阅原 nil/缺失行为后处理 Option；已知 Struct 字段用 `(:field value)`，不是 JS 属性访问 `.-field` | 人工改写；原 Map 求值一次，不自动插入 unwrap 或业务默认值 |
 | `let-destruct` | symbol 模式写 `let`，`([] ...)` 模式写 `let[]` | 人工改写（生态中未见调用） |
 | `option:let` | 嵌套 `.and-then`：`option:let ((a x) (b (f a))) body` 写成 `x .and-then $ fn (a) $ (f a) .and-then $ fn (b) body` | 人工改写（生态中 1 处） |
 | `let-sugar` | symbol 绑定写 `let`，`([] ...)` 模式写 `let[]` | `let-sugar-to-let-v1`（`({} ...)` 模式人工改写） |

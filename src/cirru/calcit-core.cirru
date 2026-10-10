@@ -9034,7 +9034,7 @@
                   assert= ([] 8 7) tail
             :tags $ #{} :core :unit
         'let{} $ %{} 'CodeEntry
-          :doc "|Deprecated: bind map fields by tag key. Prefer explicit bindings such as `let ((a (&map:get m :a))) ...`, or `.-field` for struct values; scheduled for removal in a later non-patch release."
+          :doc "|Deprecated Map-by-Tag bindings; the source Map is evaluated once. Prefer explicit let bindings and get, reviewing the original missing/nil behavior before handling Option; do not automatically insert unwrap or business defaults. Known Struct fields use (:field value); .-field is JS property access, not Struct-field migration. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
           :code $ quote $ defmacro let{} (items base & body)
             if
               not $ and (list? items) (every? items symbol?)
@@ -10637,7 +10637,7 @@
                   fn (_error) :failed
               :tags $ #{} :core :unit
         'range-bothway $ %{} 'CodeEntry
-          :doc "|Deprecated symmetric/offset range. With y omitted or nil, bind x once and use (range (inc (negate x)) x). Otherwise bind x/y once in their original order and use (range (inc (- (+ x x) y)) y). The end is exclusive; do not duplicate effectful arguments. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
+          :doc "|Deprecated symmetric/offset range. With y omitted, bind x once and use (range (inc (negate x)) x). With a proven Number y, bind x/y once in their original order and use (range (inc (- (+ x x) y)) y). The historical runtime nil branch matches omission, but the current Number schema rejects an explicit nil argument in strict calls. The end is exclusive; do not duplicate effectful arguments or relax types during migration. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
           :code $ quote $ defn range-bothway (x ? y)
             if (nil? y)
               range
