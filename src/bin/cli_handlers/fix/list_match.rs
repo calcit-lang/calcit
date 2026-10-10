@@ -50,7 +50,10 @@ pub(super) fn plan_list_match_source(
   }
   let mut local_bindings = HashSet::new();
   collect_potential_local_bindings(source, &mut local_bindings);
-  let shadowed = |name: &str| local_bindings.contains(name) || namespace_binds_name(snapshot, namespace, name);
+  // Inside `calcit.core` the namespace definitions are the core forms themselves.
+  let shadowed = |name: &str| {
+    local_bindings.contains(name) || (namespace != calcit::calcit::CORE_NS && namespace_binds_name(snapshot, namespace, name))
+  };
   let mut macro_heads = MacroHeadCache::new();
   let mut evidence = None;
   let mut reviews = BTreeMap::new();
