@@ -24,9 +24,18 @@ try {
   // private EDN must leave error reporting to the caller, not log its payload.
   const runtime = await import(new URL("../lib/calcit.procs.mjs", import.meta.url));
   // Host calls bypass Calcit argument proofs; do not coerce a layout flag.
-  for (const flag of [null, 0, "false"]) {
+  for (const flag of [undefined, null, 0, "false"]) {
     assert.throws(() => runtime.format_cirru_edn(42, flag), /boolean inline option/);
+    assert.throws(() => runtime.format_cirru(new runtime.CalcitSliceList([]), flag), /boolean inline option/);
   }
+  const tree = new runtime.CalcitSliceList([
+    new runtime.CalcitSliceList(["a", new runtime.CalcitSliceList(["b", "c"]), new runtime.CalcitSliceList(["d", "e"])]),
+  ]);
+  assert.equal(runtime.format_cirru(tree), "\na (b c)\n  d e\n");
+  assert.equal(runtime.format_cirru(tree, false), runtime.format_cirru(tree));
+  assert.equal(runtime.format_cirru(tree, true), "\na (b c) (d e)\n");
+  assert.equal(runtime.format_cirru_edn(tree), runtime.format_cirru_edn(tree, true));
+  assert.notEqual(runtime.format_cirru_edn(tree, false), runtime.format_cirru_edn(tree, true));
   const originalError = console.error;
   const errors = [];
   console.error = (...args) => errors.push(args);
@@ -45,21 +54,23 @@ try {
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
   // The optional layout flag is Bool even when the formatter is a local value.
   const original = await readFile(snapshot);
-  for (const flag of ["nil", "0", "|false"]) {
-    for (const [snippet, diagnostic] of [
-      [`format-cirru-edn 42 ${flag}`, /W_PROC_ARG_TYPE_MISMATCH/],
-      [`let ((format-text format-cirru-edn)) (format-text 42 ${flag})`, /W_LOCAL_FN_ARG_TYPE_MISMATCH/],
-    ]) {
-      for (const lint of ["0", "1"]) {
-        const rejected = spawnSync(binary, [snapshot, "eval", snippet], {
-          ...options, env: { ...process.env, CALCIT_LINT_CORE: lint },
-        });
-        if (rejected.error) throw rejected.error;
-        const message = `${rejected.stdout}\n${rejected.stderr}`;
-        assert.equal(rejected.status, 1, message);
-        assert.match(message, diagnostic);
-        assert.doesNotMatch(message, /internal compiler error/);
-        assert.deepEqual(await readFile(snapshot), original);
+  for (const [formatter, input] of [["format-cirru-edn", "42"], ["format-cirru", "([] ([] |a))"]]) {
+    for (const flag of ["nil", "0", "|false"]) {
+      for (const [snippet, diagnostic] of [
+        [`${formatter} ${input} ${flag}`, /W_PROC_ARG_TYPE_MISMATCH/],
+        [`let ((format-text ${formatter})) (format-text ${input} ${flag})`, /W_LOCAL_FN_ARG_TYPE_MISMATCH/],
+      ]) {
+        for (const lint of ["0", "1"]) {
+          const rejected = spawnSync(binary, [snapshot, "eval", snippet], {
+            ...options, env: { ...process.env, CALCIT_LINT_CORE: lint },
+          });
+          if (rejected.error) throw rejected.error;
+          const message = `${rejected.stdout}\n${rejected.stderr}`;
+          assert.equal(rejected.status, 1, message);
+          assert.match(message, diagnostic);
+          assert.doesNotMatch(message, /internal compiler error/);
+          assert.deepEqual(await readFile(snapshot), original);
+        }
       }
     }
   }

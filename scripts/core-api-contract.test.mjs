@@ -57,6 +57,11 @@ test("display and source-formatting declarations retain distinct names and calla
   assert.deepEqual(edn.schema.quote.find(pair => pair[0] === ":generics")[1], ["[]", "'T"]);
   assert.equal(edn.schema.quote.find(pair => pair[0] === ":return")[1], "'String");
   assert.equal(edn.failure, undefined, "failure semantics stay in the source formatter contract");
+  const cirru = definition(baseline, "format-cirru");
+  assert.deepEqual(cirru["runtime-arity"], { min: 1, max: 2 });
+  assert.deepEqual(cirru.schema.quote.find(pair => pair[0] === ":args")[1], ["[]", "'List", "'Bool"]);
+  assert.equal(cirru.schema.quote.find(pair => pair[0] === ":return")[1], "'String");
+  assert.equal(cirru.failure, undefined, "failure semantics stay in the source formatter contract");
 });
 
 test("parsing declarations preserve open payloads without promoting open method evidence", () => {
@@ -115,6 +120,8 @@ for (const [name, mutate] of [
   ["display rest argument", data => definition(data, "str").schema.quote.find(pair => pair[0] === ":rest")[1] = "'Number"],
   ["EDN layout flag type", data => definition(data, "format-cirru-edn").schema.quote.find(pair => pair[0] === ":args")[1][2] = "'Dynamic"],
   ["EDN layout optionality", data => definition(data, "format-cirru-edn")["runtime-arity"].min = 2],
+  ["Cirru layout flag type", data => definition(data, "format-cirru").schema.quote.find(pair => pair[0] === ":args")[1][2] = "'Dynamic"],
+  ["Cirru layout optionality", data => definition(data, "format-cirru")["runtime-arity"].min = 2],
   ["specialized callback relation", data => data["method-contracts"].find(row => row.name === ".fold").returns.quote = "'Number"],
 ]) {
   test(`rejects an unannounced ${name} change even when the baseline is regenerated`, () => {

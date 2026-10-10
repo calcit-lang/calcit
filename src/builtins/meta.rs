@@ -280,11 +280,16 @@ pub fn parse_cirru(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 }
 
 pub fn format_cirru(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+  let use_inline = match xs.get(1) {
+    None => false,
+    Some(Calcit::Bool(value)) => *value,
+    Some(_) => return CalcitErr::err_str(CalcitErrKind::Type, "format-cirru requires a boolean inline option"),
+  };
   match xs.first() {
     Some(a) => match cirru::calcit_data_to_cirru(a) {
       Ok(v) => {
         if let Cirru::List(ys) = v {
-          Ok(Calcit::Str(cirru_parser::format(&ys, false.into())?.into()))
+          Ok(Calcit::Str(cirru_parser::format(&ys, use_inline.into())?.into()))
         } else {
           CalcitErr::err_str(
             CalcitErrKind::Type,
@@ -2449,8 +2454,12 @@ mod tests {
   }
 
   #[test]
-  fn cirru_edn_formatter_rejects_non_boolean_flags_at_runtime() {
+  fn cirru_formatters_reject_non_boolean_flags_at_runtime() {
     for invalid in [Calcit::Nil, Calcit::Number(0.0), Calcit::new_str("false")] {
+      let error =
+        format_cirru(&[Calcit::List(CalcitList::default().into()), invalid.clone()]).expect_err("host flags require Bool values");
+      assert_eq!(error.kind, CalcitErrKind::Type);
+      assert!(error.msg.contains("boolean inline option"));
       let error = format_cirru_edn(&[Calcit::Number(42.0), invalid]).expect_err("host flags require Bool values");
       assert_eq!(error.kind, CalcitErrKind::Type);
       assert!(error.msg.contains("boolean inline option"));
