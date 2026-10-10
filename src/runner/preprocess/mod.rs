@@ -4220,15 +4220,18 @@ fn preprocess_list_call(
         }
 
         // Record the field-index lowering of `&struct:get` / `assoc` / `with` (#1553).
-        if !matches!(
-          head_form,
-          Calcit::Proc(CalcitProc::NativeStructNth | CalcitProc::NativeStructAssocAt | CalcitProc::NativeStructWithAt)
-        ) && matches!(
-          ys.first(),
-          Some(Calcit::Proc(
-            CalcitProc::NativeStructNth | CalcitProc::NativeStructAssocAt | CalcitProc::NativeStructWithAt
-          ))
-        ) {
+        if post_lowering::enabled()
+          && !matches!(
+            head_form,
+            Calcit::Proc(CalcitProc::NativeStructNth | CalcitProc::NativeStructAssocAt | CalcitProc::NativeStructWithAt)
+          )
+          && matches!(
+            ys.first(),
+            Some(Calcit::Proc(
+              CalcitProc::NativeStructNth | CalcitProc::NativeStructAssocAt | CalcitProc::NativeStructWithAt
+            ))
+          )
+        {
           post_lowering::record_rewrite(
             post_lowering::RewriteOrigin::StructFieldIndex,
             || {
