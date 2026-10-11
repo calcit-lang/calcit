@@ -1008,6 +1008,8 @@ Entries do not inherit `entries.default.type-slots`. Bind every slot needed by e
 3. When a type annotation encounters `*name`, the configured concrete type is resolved and normal type matching proceeds.
 4. Different entries can bind the same slot to different types because each invocation compiles one selected entry configuration.
 
+同一个已绑定 slot 可以同时出现在 callback 的声明与传入函数的参数中；检查器比较两端绑定后的具体类型，并继续检查函数参数方差和返回值。重复引用同名 slot 不会被当作循环绑定；真正的循环、未绑定 slot，以及从 `Dynamic` 到具体类型的证据缺失仍按各自的检查规则处理。
+
 ### Constraints
 
 - Configuration values must be `:dynamic` or a full `namespace/definition` path that exists after modules are loaded.

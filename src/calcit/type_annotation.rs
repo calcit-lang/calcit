@@ -4978,6 +4978,15 @@ impl CalcitTypeAnnotation {
         }
         false
       }
+      // Expand a shared binding on both sides before entering the recursion
+      // guard, so an acyclic slot is not mistaken for its own recursive alias.
+      (Self::TypeSlot(actual), Self::TypeSlot(expected)) if actual == expected => match resolve_type_slot(actual) {
+        Some(resolved) => with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, actual, || {
+          resolved.compatible_with_bindings(resolved.as_ref(), bindings)
+        })
+        .unwrap_or(false),
+        None => true,
+      },
       // TypeSlot: resolve the bound type from the global registry and delegate
       (Self::TypeSlot(name), other) | (other, Self::TypeSlot(name)) => {
         if let Some(resolved) = resolve_type_slot(name) {
@@ -5292,6 +5301,13 @@ impl CalcitTypeAnnotation {
       {
         Proven
       }
+      (Self::TypeSlot(actual), Self::TypeSlot(expected)) if actual == expected => match resolve_type_slot(actual) {
+        Some(resolved) => with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, actual, || {
+          resolved.prove_with_staged_bindings(resolved.as_ref(), bindings)
+        })
+        .unwrap_or(NeedsBoundary(Boundary::RecursiveTypeSlot)),
+        None => NeedsBoundary(Boundary::UnresolvedTypeSlot),
+      },
       (Self::TypeSlot(name), other) => match resolve_type_slot(name) {
         Some(resolved) => with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, name, || {
           resolved.prove_with_staged_bindings(other, bindings)
@@ -8732,6 +8748,40 @@ mod tests {
       TypeProof::NeedsBoundary(TypeBoundaryReason::UnresolvedTypeSlot)
     );
     assert!(bindings.is_empty());
+  }
+
+  #[test]
+  fn same_bound_slot_relation_preserves_resolved_evidence() {
+    let name: Arc<str> = Arc::from("tests/SameCallbackSlot");
+    let slot = CalcitTypeAnnotation::TypeSlot(name.clone());
+    push_type_slot_override(name.clone(), Arc::new(CalcitTypeAnnotation::Number));
+    assert!(slot.is_compatible_with(&slot));
+    assert_eq!(slot.prove_with_bindings(&slot, &mut TypeBindings::new()), TypeProof::Proven);
+    let callback = CalcitTypeAnnotation::from_function_parts(vec![Arc::new(slot.clone())], Arc::new(CalcitTypeAnnotation::Unit));
+    assert!(callback.is_compatible_with(&callback));
+    assert_eq!(callback.prove_with_bindings(&callback, &mut TypeBindings::new()), TypeProof::Proven);
+    assert!(!slot.is_proven_for(&CalcitTypeAnnotation::String));
+    pop_type_slot_override(&name);
+
+    push_type_slot_override(name.clone(), crate::calcit::DYNAMIC_TYPE.clone());
+    assert_eq!(slot.prove_with_bindings(&slot, &mut TypeBindings::new()), TypeProof::Proven);
+    assert_eq!(
+      slot.prove_with_bindings(&CalcitTypeAnnotation::Number, &mut TypeBindings::new()),
+      TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic)
+    );
+    pop_type_slot_override(&name);
+    assert_eq!(
+      slot.prove_with_bindings(&slot, &mut TypeBindings::new()),
+      TypeProof::NeedsBoundary(TypeBoundaryReason::UnresolvedTypeSlot)
+    );
+
+    push_type_slot_override(name.clone(), Arc::new(slot.clone()));
+    assert!(!slot.is_compatible_with(&slot));
+    assert_eq!(
+      slot.prove_with_bindings(&slot, &mut TypeBindings::new()),
+      TypeProof::NeedsBoundary(TypeBoundaryReason::RecursiveTypeSlot)
+    );
+    pop_type_slot_override(&name);
   }
 
   #[test]
