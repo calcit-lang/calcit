@@ -3835,7 +3835,7 @@
         'any? $ %{} 'CodeEntry
           :doc "|checks if any element in collection satisfies the predicate function, returns true on first match, short-circuits evaluation"
           :code $ quote $ defn any? (xs f)
-            foldl-shortcut xs false false $ defn %any? (acc x)
+            &list:foldl-shortcut xs false false $ defn %any? (acc x)
               if (f x) (:: true true) (:: false acc)
           :examples $ []
             quote $ assert= true $ any? ([] 1 2 3 4) even?
@@ -3847,11 +3847,34 @@
               fn (x) (> x 10)
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Dynamic 'Fn
-          :tests $ [] $ %{} 'TestEntry (:name |shortlists-list-members)
-            :code $ quote $ assert= true
-              any? ([] 1 2 3 4)
-                fn (x) (> x 3)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |shortlists-list-members)
+              :code $ quote $ assert= true
+                any? ([] 1 2 3 4)
+                  fn (x) (> x 3)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |short-circuits-list-set-and-map)
+              :code $ quote $ let
+                  calls $ ref 0
+                  predicate $ fn (item)
+                    reset! calls $ inc $ deref calls
+                    , true
+                assert= true $ any? ([] 1 2 3) predicate
+                assert= 1 $ deref calls
+                reset! calls 0
+                assert= true $ any? (#{} 1 2 3) predicate
+                assert= 1 $ deref calls
+                reset! calls 0
+                assert= true $ any?
+                  {} (:a 1) (:b 2) (:c 3)
+                  , predicate
+                assert= 1 $ deref calls
+                reset! calls 0
+                assert= false $ any? ([]) predicate
+                assert= false $ any? (#{}) predicate
+                assert= false $ any? ({}) predicate
+                assert= 0 $ deref calls
+              :tags $ #{} :unit
         'append $ %{} 'CodeEntry
           :doc "|internal function for appending to list\nSyntax: (append list element)\nParams: list (list), element (any)\nReturns: list\nReturns new list with element added at end"
           :code $ quote &runtime-implementation
@@ -6483,7 +6506,7 @@
         'every? $ %{} 'CodeEntry
           :doc "|Checks whether every element of a collection satisfies a predicate, short-circuiting on the first failure."
           :code $ quote $ defn every? (xs f)
-            foldl-shortcut xs true true $ defn %every? (acc x)
+            &list:foldl-shortcut xs true true $ defn %every? (acc x)
               if (f x) (:: false acc) (:: true false)
           :examples $ []
             quote $ assert= true $ every? ([] 2 4 6)
@@ -6504,6 +6527,28 @@
                 every? ([] 1 2 3 4)
                   fn (x) (> x 0)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |short-circuits-list-set-and-map)
+              :code $ quote $ let
+                  calls $ ref 0
+                  predicate $ fn (item)
+                    reset! calls $ inc $ deref calls
+                    , false
+                assert= false $ every? ([] 1 2 3) predicate
+                assert= 1 $ deref calls
+                reset! calls 0
+                assert= false $ every? (#{} 1 2 3) predicate
+                assert= 1 $ deref calls
+                reset! calls 0
+                assert= false $ every?
+                  {} (:a 1) (:b 2) (:c 3)
+                  , predicate
+                assert= 1 $ deref calls
+                reset! calls 0
+                assert= true $ every? ([]) predicate
+                assert= true $ every? (#{}) predicate
+                assert= true $ every? ({}) predicate
+                assert= 0 $ deref calls
+              :tags $ #{} :unit
         'exclude $ %{} 'CodeEntry
           :doc "|Removes values from a collection by repeatedly calling `&exclude` for each provided item."
           :code $ quote $ defn exclude (base & xs)
