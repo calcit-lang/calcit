@@ -1194,25 +1194,9 @@ fn handle_def(opts: &EditDefCommand, snapshot_file: &str) -> Result<(), String> 
     .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
 
-  let exact_exists = file_data.defs.contains_key(definition);
-  let lookup = if exact_exists {
-    None
-  } else {
-    match resolve_definition_lookup(
-      namespace,
-      definition,
-      file_data.defs.keys().map(|name| name.as_str()),
-      opts.overwrite,
-    ) {
-      Ok(lookup) => Some(lookup),
-      Err(err) if err == format!("Definition '{definition}' not found in namespace '{namespace}'") => None,
-      Err(err) => return Err(err),
-    }
-  };
-  if let Some(warning) = lookup.as_ref().and_then(|it| it.warning.as_deref()) {
-    print_cli_warning_block(warning);
-  }
-  let resolved_definition = lookup.as_ref().map(|it| it.resolved.as_str()).unwrap_or(definition);
+  // Creation addresses the exact requested name; nearby shell-sensitive names may coexist.
+  // Keep typo resolution for lookups and update-only commands, never redirect a write here.
+  let resolved_definition = definition;
 
   let exists = file_data.defs.contains_key(resolved_definition);
   let previous_entry = if exists {

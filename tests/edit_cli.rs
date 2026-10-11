@@ -434,6 +434,206 @@ fn prepare_minimal_snapshot(directory: &TestDirectory) -> PathBuf {
 }
 
 #[test]
+fn edit_def_creates_exact_names_beside_shell_sensitive_variants() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  for (name, suffix, overwrite) in [("example", "!", false), ("ready", "?", false), ("convert", "->", true)] {
+    let variant = format!("app.main/{name}{suffix}");
+    let variant_code = format!("quote $ defn {name}{suffix} () 1");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "def", &variant, "--input-format", "cirru", "--code", &variant_code],
+      ),
+      "create shell-sensitive variant",
+    );
+    let variant_before = query_definition(&snapshot, &variant)["data"].clone();
+    let target = format!("app.main/{name}");
+    let alias_code = format!("quote $ def {name} {variant}");
+    let mut args = vec!["edit", "def", &target, "--input-format", "cirru", "--code", &alias_code];
+    if overwrite {
+      args.push("--overwrite");
+    }
+    assert_success(&run_calcit(&snapshot, &args), "create exact intentional name");
+    let alias = query_definition(&snapshot, &target)["data"].clone();
+    assert_ne!(alias["code"], variant_before["code"]);
+    assert_eq!(query_definition(&snapshot, &variant)["data"], variant_before);
+
+    let before_refusal = fs::read(&snapshot).unwrap();
+    let replacement = format!("quote $ defn {name} () 2");
+    let refused = run_calcit(
+      &snapshot,
+      &["edit", "def", &target, "--input-format", "cirru", "--code", &replacement],
+    );
+    assert!(!refused.status.success());
+    assert!(String::from_utf8_lossy(&refused.stderr).contains("already exists"));
+    assert_eq!(fs::read(&snapshot).unwrap(), before_refusal);
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &target,
+          "--overwrite",
+          "--input-format",
+          "cirru",
+          "--code",
+          &replacement,
+        ],
+      ),
+      "overwrite only the exact name",
+    );
+    assert_eq!(query_definition(&snapshot, &variant)["data"], variant_before);
+    assert_ne!(query_definition(&snapshot, &target)["data"]["code"], alias["code"]);
+  }
+}
+
+#[test]
+fn intentional_creation_keeps_missing_lookup_hints_and_write_guards() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/example!",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn example! () 1",
+      ],
+    ),
+    "create effect-style name",
+  );
+  let original = fs::read(&snapshot).unwrap();
+  let query = run_calcit(&snapshot, &["query", "def", "app.main/example", "--format", "json"]);
+  assert_success(&query, "read-only lookup keeps its correction");
+  let queried: serde_json::Value = serde_json::from_slice(&query.stdout).expect("single JSON document");
+  assert_eq!(queried["data"], query_definition(&snapshot, "app.main/example!")["data"]);
+  assert!(String::from_utf8_lossy(&query.stderr).contains("Auto-correcting"));
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+
+  let update = run_calcit(&snapshot, &["edit", "doc", "app.main/example", "|must not change example!"]);
+  assert!(!update.status.success());
+  assert!(String::from_utf8_lossy(&update.stderr).contains("likely intended definition"));
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+  let mismatch = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "def",
+      "app.main/example",
+      "--overwrite",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn example! () 2",
+    ],
+  );
+  assert!(!mismatch.status.success());
+  assert!(String::from_utf8_lossy(&mismatch.stderr).contains("Definition name mismatch"));
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+}
+
+#[test]
+fn guarded_transaction_renames_then_recreates_the_old_name() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  assert_success(
+    &run_calcit(&snapshot, &["config", "set", "target", "native"]),
+    "set migration target",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/example",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn example () 1",
+      ],
+    ),
+    "create original definition",
+  );
+  let schema = "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "schema", "app.main/example", "--input-format", "cirru", "--code", schema],
+    ),
+    "declare original contract",
+  );
+  let original_schema = query_definition(&snapshot, "app.main/example")["data"]["schema"].clone();
+  let operations = serde_json::json!([
+    ["edit", "rename", "app.main/example", "example!"],
+    [
+      "edit",
+      "def",
+      "app.main/example",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ def example app.main/example!"
+    ],
+    ["edit", "schema", "app.main/example", "--input-format", "cirru", "--code", schema]
+  ]);
+  let encoded = operations.to_string();
+  let original = fs::read(&snapshot).unwrap();
+  let revision = transaction_scope(&snapshot, &encoded);
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+
+  let mut invalid = operations.clone();
+  invalid.as_array_mut().unwrap().push(serde_json::json!([
+    "edit",
+    "def",
+    "app.main/broken",
+    "--input-format",
+    "cirru",
+    "--code",
+    "quote $ defn mismatched () 2"
+  ]));
+  let failed = run_calcit(&snapshot, &["edit", "transaction", "--code", &invalid.to_string()]);
+  assert!(!failed.status.success());
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "doc", "app.main/example", "|concurrent change"]),
+    "change the guarded source",
+  );
+  let concurrent = fs::read(&snapshot).unwrap();
+  let stale = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", &encoded, "--expect-revision", &revision],
+  );
+  assert!(!stale.status.success());
+  assert_eq!(fs::read(&snapshot).unwrap(), concurrent);
+  let refreshed = transaction_scope(&snapshot, &encoded);
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--code", &encoded, "--expect-revision", &refreshed],
+    ),
+    "apply intentional rename and alias creation",
+  );
+  let renamed = query_definition(&snapshot, "app.main/example!")["data"].clone();
+  let alias = query_definition(&snapshot, "app.main/example")["data"].clone();
+  assert_eq!(renamed["schema"], original_schema);
+  assert_eq!(alias["schema"], original_schema);
+  assert_ne!(renamed["code"], alias["code"]);
+  assert!(renamed["doc"].to_string().contains("concurrent change"));
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only", "--ns", "app.main"]),
+    "strict check migrated namespace",
+  );
+}
+
+#[test]
 fn edit_def_rejects_invalid_named_shapes_without_writing() {
   let directory = TestDirectory::create();
   let snapshot = prepare_minimal_snapshot(&directory);
