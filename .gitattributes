@@ -3,5 +3,6 @@ calcit.cirru -diff linguist-generated
 yarn.lock -diff linguist-generated
 Cargo.lock -diff linguist-generated
 config/*-quality.cirru text linguist-generated=true
+docs/core-dynamic-classification.md linguist-generated=true
 lib -diff linguist-generated
 editing-history/* -diff linguist-generated

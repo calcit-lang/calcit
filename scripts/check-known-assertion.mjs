@@ -28,6 +28,48 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "pairs-map-proof", "--backend", "native,js",
+  ], { ...options, stdio: "inherit" });
+  await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  const pairsMapOriginal = await readFile(snapshot);
+  for (const name of ["generic-pairs-map", "closed-homogeneous-pairs"]) {
+    for (const rule of ["concrete-return-proof-v1", "callable-contract-proof-v1"]) {
+      const proof = JSON.parse(run("fix", "--rule", rule,
+        "--ns", "app.callback-origin", "--def", name, "--format", "json"));
+      assert.deepEqual(proof.diagnostics, []);
+    }
+  }
+  for (const name of ["closed-heterogeneous-pairs", "closed-wrong-member-pairs"]) {
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "callable-contract-proof-v1",
+      "--ns", "app.callback-origin", "--def", name, "--format", "json"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_CALL_ARGUMENT_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|W_FN_ARG_TYPE_MISMATCH|E_ERASED_GENERIC_RELATION/);
+  }
+  assert.deepEqual(await readFile(snapshot), pairsMapOriginal);
+  // #1961: preprocessing proves the same nested literal spreads as lowering,
+  // while a runtime list still cannot establish a fixed-arity call.
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "nested-literal-spread", "--backend", "native,js",
+  ], { ...options, stdio: "inherit" });
+  await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  const nestedSpreadOriginal = await readFile(snapshot);
+  for (const rule of ["concrete-return-proof-v1", "callable-contract-proof-v1"]) {
+    const proof = JSON.parse(run("fix", "--rule", rule,
+      "--ns", "app.callback-origin", "--def", "nested-literal-spread", "--format", "json"));
+    assert.deepEqual(proof.diagnostics, []);
+  }
+  for (const name of ["nested-open-spread", "nested-wrong-member"]) {
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "callable-contract-proof-v1",
+      "--ns", "app.callback-origin", "--def", name, "--format", "json"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_CALL_ARGUMENT_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|W_FN_ARG_TYPE_MISMATCH/);
+  }
+  assert.deepEqual(await readFile(snapshot), nestedSpreadOriginal);
   // Empty constructors prove a generic collection family without binding its
   // members; nonempty and open inputs cannot manufacture the same evidence.
   execFileSync(process.execPath, [

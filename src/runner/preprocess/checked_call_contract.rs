@@ -109,7 +109,7 @@ pub(crate) fn checked_call_contract_arity(fn_ns: &str, fn_def: &str) -> Option<u
     return None;
   }
   match fn_def {
-    "first" | "last" => Some(1),
+    "first" | "last" | "pairs-map" => Some(1),
     "nth" => Some(2),
     "any?" | "each" | "every?" | "get" | "filter" | "map" | "map-indexed" | "map-list-kv" | "result:map" => Some(2),
     "option:fold" | "update" => Some(3),
@@ -177,6 +177,20 @@ pub(crate) fn resolve_checked_call_contract(
     });
   }
   match (fn_def, receiver_type.as_ref()) {
+    ("pairs-map", T::List(pair)) => {
+      let T::List(member) = pair.as_ref() else { return None };
+      if matches!(member.as_ref(), T::Syntax(_)) {
+        return None;
+      }
+      // The implementation checks every pair's length before reading it.
+      // Homogeneous list members prove both positions; heterogeneous lists
+      // retain Dynamic instead of inventing independent key/value variables.
+      Some(CheckedCallContract {
+        expected_types: Some(vec![receiver_type.clone()]),
+        return_type: Arc::new(T::Map(member.clone(), member.clone())),
+        lowering: None,
+      })
+    }
     ("first" | "last" | "nth", value) => {
       let member_type = match value {
         T::List(item_type) => item_type.clone(),

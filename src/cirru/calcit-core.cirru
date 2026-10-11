@@ -10401,21 +10401,74 @@
             reduce xs ({})
               defn %pairs-map (acc pair)
                 hint-fn $ {}
-                  :args $ [] 'Map 'List
-                  :return 'Map
+                  :args $ [] (:: 'Map 'Dynamic 'Dynamic) 'P
+                  :return $ :: 'Map 'Dynamic 'Dynamic
                 assert "|expects pair for pairs-map" $ if (list? pair)
                   &= 2 $ &list:count pair
                   , false
-                &map:assoc acc (&list:first pair) (&list:last pair)
+                if (list? pair)
+                  &map:assoc acc (&list:first pair) (&list:last pair)
+                  , acc
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List 'P
-            :generics $ [] 'P 'K 'V
-            :return $ :: 'Map 'K 'V
-          :tests $ [] $ %{} 'TestEntry (:name |converts-list-pairs)
-            :code $ quote $ assert= (&{} :a 1 :b 2)
-              pairs-map $ [] ([] :a 1) ([] :b 2)
-            :tags $ #{} :core :unit
+            :generics $ [] 'P
+            :return $ :: 'Map 'Dynamic 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |converts-list-pairs)
+              :code $ quote $ assert= (&{} :a 1 :b 2)
+                pairs-map $ [] ([] :a 1) ([] :b 2)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-homogeneous-members)
+              :code $ quote $ let
+                  xs $ [] ([] 1 2) ([] 3 4)
+                  answer $ pairs-map xs
+                assert-type answer $ :: 'Map 'Number 'Number
+                assert=
+                  {} (1 2) (3 4)
+                  , answer
+                assert=
+                  {} (1 2) (3 4)
+                  .pairs-map xs
+              :tags $ #{} :core :pairs-map-proof :unit
+            %{} 'TestEntry (:name |preserves-empty-duplicate-and-nil-pairs)
+              :code $ quote $ do
+                assert= ({})
+                  pairs-map $ []
+                assert=
+                  {} (:a 2) (nil nil)
+                  pairs-map $ [] ([] :a 1) ([] :a 2) ([] nil nil)
+              :tags $ #{} :core :pairs-map-proof :unit
+            %{} 'TestEntry (:name |retains-malformed-pair-failure)
+              :code $ quote $ do
+                assert= true $ try
+                  do
+                    pairs-map $ [] 1
+                    , false
+                  fn (error)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Bool
+                    .includes? error "|expects pair for pairs-map"
+                assert= true $ try
+                  do
+                    pairs-map $ [] $ [] :a
+                    , false
+                  fn (error)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Bool
+                    .includes? error "|expects pair for pairs-map"
+                assert= true $ try
+                  do
+                    pairs-map $ [] $ [] :a 1 2
+                    , false
+                  fn (error)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Bool
+                    .includes? error "|expects pair for pairs-map"
+              :tags $ #{} :core :pairs-map-proof :unit
         'parse-cirru $ %{} 'CodeEntry
           :doc "|internal function for parsing Cirru\nSyntax: (parse-cirru text)\nParams: text (string)\nReturns: list\nParses Cirru syntax text into nested list structure"
           :code $ quote &runtime-implementation

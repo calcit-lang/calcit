@@ -266,6 +266,27 @@
               assert= 2 $ :n $ choose true
               assert= 3 $ :n $ choose false
             :tags $ #{} :nominal-callback-origin
+        'closed-heterogeneous-pairs $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn closed-heterogeneous-pairs ()
+            number-map-count $ pairs-map $ [] ([] :a 1)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+        'closed-homogeneous-pairs $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn closed-homogeneous-pairs ()
+            number-map-count $ pairs-map $ [] ([] 1 2) ([] 3 4)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |feeds-concrete-map-consumer)
+            :code $ quote $ assert= 2 (closed-homogeneous-pairs)
+            :tags $ #{} :pairs-map-proof
+        'closed-wrong-member-pairs $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn closed-wrong-member-pairs ()
+            number-map-count $ pairs-map $ [] ([] |key |value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
         'empty-generic-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn empty-generic-list (anchor)
             assert-type ([]) (:: 'List 'T)
@@ -323,6 +344,18 @@
               assert= ([])
                 fold-generic-list $ []
             :tags $ #{} :empty-generic-family
+        'generic-pairs-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn generic-pairs-map (xs) (pairs-map xs)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List (:: 'List 'T)
+            :generics $ [] 'T
+            :return $ :: 'Map 'T 'T
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-caller-member-variable)
+            :code $ quote $ assert=
+              {} (1 2) (3 4)
+              generic-pairs-map $ [] ([] 1 2) ([] 3 4)
+            :tags $ #{} :pairs-map-proof
         'mixed-origin $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn mixed-origin ()
             option:fold (Option :some true)
@@ -330,6 +363,35 @@
               fn (present?) (right/Item :n 2)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'app.callback-left/Item)
+            :args $ []
+        'nested-literal-spread $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nested-literal-spread ()
+            &+ & $ [] 2 & $ [] 3
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-order-through-nested-literal-spreads)
+            :code $ quote $ let
+                sink $ fn (a b c)
+                  hint-fn $ {}
+                    :args $ [] 'Number 'Number 'Number
+                    :return $ :: 'List 'Number
+                  [] a b c
+              assert= ([] 1 2 3)
+                sink & ([] 1) & $ [] 2 & $ [] 3
+              assert= 5 $ nested-literal-spread
+            :tags $ #{} :nested-literal-spread
+        'nested-open-spread $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nested-open-spread (xs)
+            &+ & $ [] 2 & xs
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'List 'Number
+        'nested-wrong-member $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nested-wrong-member ()
+            &+ & $ [] 2 & $ [] |wrong
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
         'nonempty-generic-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nonempty-generic-list (anchor)
@@ -339,6 +401,11 @@
             :args $ [] $ :: 'List 'T
             :generics $ [] 'T
             :return $ :: 'List 'T
+        'number-map-count $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn number-map-count (xs) (count xs)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'Map 'Number 'Number
         'open-generic-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn open-generic-list (anchor values)
             assert-type values $ :: 'List 'Number

@@ -236,6 +236,9 @@ const buildSnapshot = async (tests, { withMain, head = "defwasm-export", owner =
     text = text.replace(filesHeader, `${filesHeader}${indent(writeCirruCode([fileEntry]), 4)}\n`);
   }
   await writeFile(snapshot, text);
+  // A page Snapshot may default to JS emission. Replay always starts in
+  // native mode; other backends select their explicit codegen command.
+  run(snapshot, "config", "set", "mode", "native");
   return { snapshot, entry: ["--init-fn", entry, "--reload-fn", entry] };
 };
 

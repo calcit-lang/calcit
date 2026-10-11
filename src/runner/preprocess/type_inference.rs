@@ -1619,11 +1619,21 @@ fn infer_js_ffi_call_return_type(name: &str, call_expr: &CalcitList, scope_types
 }
 
 pub(super) fn extract_literal_list_items(form: &Calcit) -> Option<Vec<&Calcit>> {
+  literal_list_members(form, false)
+}
+
+fn literal_list_members(form: &Calcit, allow_spread_wrapper: bool) -> Option<Vec<&Calcit>> {
   let Calcit::List(items) = form else {
     return None;
   };
 
-  let head = items.first()?;
+  let mut members = items.iter();
+  let head = members.next()?;
+  let head = if allow_spread_wrapper && matches!(head, Calcit::Syntax(CalcitSyntax::CallSpread, _)) {
+    members.next()?
+  } else {
+    head
+  };
   let is_list_literal = matches!(head, Calcit::Proc(CalcitProc::List))
     || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "[]")
     || matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if &**ns == calcit::CORE_NS && &**def == "[]");
@@ -1632,24 +1642,24 @@ pub(super) fn extract_literal_list_items(form: &Calcit) -> Option<Vec<&Calcit>> 
     return None;
   }
 
-  Some(items.iter().skip(1).collect())
+  Some(members.collect())
 }
 
 /// Expand only source-owned literal spreads without evaluating any expression.
 pub(super) fn expand_literal_call_arguments(args: &CalcitList) -> Result<CalcitList, Option<&Calcit>> {
   let mut expanded = Vec::new();
-  let mut arguments = args.iter();
-  while let Some(argument) = arguments.next() {
+  let mut arguments = args.iter().collect::<Vec<_>>();
+  arguments.reverse();
+  while let Some(argument) = arguments.pop() {
     if !matches!(argument, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
       expanded.push(argument.clone());
       continue;
     }
-    let operand = arguments.next();
-    let items = operand.and_then(extract_literal_list_items).ok_or(operand)?;
-    if items.iter().any(|item| matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
-      return Err(operand);
-    }
-    expanded.extend(items.into_iter().cloned());
+    let operand = arguments.pop();
+    let items = operand.and_then(|form| literal_list_members(form, true)).ok_or(operand)?;
+    // Nested constructor spreads retain their source-owned members. Inspect
+    // them iteratively in evaluation order, without evaluating runtime lists.
+    arguments.extend(items.into_iter().rev());
   }
   Ok(CalcitList::from(expanded.as_slice()))
 }
