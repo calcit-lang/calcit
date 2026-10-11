@@ -21,6 +21,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { writeCirruCode } from "@cirru/writer.ts";
+import { parse as parseCirru } from "@cirru/parser.ts";
 import { hasNativeParity, markerProtocolError, parseBackendSelection, parseMarkers, parseWasmDiagnosticTable } from "./core-test-protocol.mjs";
 
 // `wasi` (a WASI 0.3 command run by $WASMTIME_CLI) is opt-in via --backend.
@@ -167,16 +168,11 @@ const fixture = await mkdtemp(join(tmpdir(), "calcit-core-tests-"));
 await symlink(resolve("node_modules"), join(fixture, "node_modules"), "dir");
 let snapshotCounter = 0;
 
-const coreText = await readFile(corePath, "utf8");
-const filesHeader = "\n  :files $ {}\n";
-const defsHeader = (ns) => `\n    '${ns} $ %{} 'FileEntry\n      :defs $ {}\n`;
-for (const ns of new Set(selected.map((test) => test.ns))) {
-  if (!coreText.includes(defsHeader(ns))) throw new Error(`${options.snapshot}: unexpected Snapshot layout for ${ns}`);
-}
+const coreTree = parseCirru(await readFile(corePath, "utf8"));
+const field = (node, key) => node.find((item) => Array.isArray(item) && item[0] === key)?.[1];
 const unitSchema = ["::", "'Fn", ["{}", [":args", ["[]"]], [":return", "'Unit"]]];
 const codeEntry = (code) => ["%{}", "'CodeEntry", [":doc", "|"], [":code", ["quote", code]], [":examples", ["[]"]],
   [":schema", unitSchema]];
-const indent = (text, spaces) => text.trimEnd().split("\n").map((line) => `${" ".repeat(spaces)}${line}`).join("\n");
 
 // Tests placed outside their owning namespace keep its require rules and refer
 // its own definitions (calcit.core is visible everywhere already).
@@ -204,11 +200,13 @@ const buildSnapshot = async (tests, { withMain, head = "defwasm-export", owner =
   const snapshot = join(fixture, `replay-${snapshotCounter++}.cirru`);
   const home = (test) => owner ? test.ns : REPLAY_NS;
   const testDef = (test) => [`'${test.fn}`, codeEntry([head, test.fn, [], test.code, "&unit"])];
-  let text = coreText;
+  const tree = structuredClone(coreTree);
+  const files = field(tree[0], ":files");
   if (owner) {
     for (const ns of new Set(tests.map((test) => test.ns))) {
       const defs = tests.filter((test) => test.ns === ns).map(testDef);
-      text = text.replace(defsHeader(ns), `${defsHeader(ns)}${indent(writeCirruCode(defs), 8)}\n`);
+      const file = field(files, `'${ns}`);
+      field(file, ":defs").push(...defs);
     }
   }
   const replayDefs = owner ? [] : tests.map(testDef);
@@ -223,9 +221,9 @@ const buildSnapshot = async (tests, { withMain, head = "defwasm-export", owner =
     const nsCode = owner ? ["ns", REPLAY_NS] : ["ns", REPLAY_NS, [":require", ...replayRequires(tests)]];
     const fileEntry = [`'${REPLAY_NS}`, ["%{}", "'FileEntry", [":defs", ["{}", ...replayDefs]],
       [":ns", ["%{}", "'NsEntry", [":doc", "|"], [":code", ["quote", nsCode]]]]]];
-    text = text.replace(filesHeader, `${filesHeader}${indent(writeCirruCode([fileEntry]), 4)}\n`);
+    files.push(fileEntry);
   }
-  await writeFile(snapshot, text);
+  await writeFile(snapshot, writeCirruCode(tree));
   return { snapshot, entry: ["--init-fn", entry, "--reload-fn", entry] };
 };
 

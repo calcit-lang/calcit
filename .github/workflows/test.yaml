@@ -331,6 +331,7 @@ jobs:
           node scripts/run-core-tests.mjs
           node scripts/run-core-tests.mjs --snapshot calcit/test-traits.cirru --target test-traits.main/test-qualified-contains-boundary --backend native,js
           node scripts/run-core-tests.mjs --snapshot calcit/test-traits.cirru --target test-traits.main/ResultBox --backend native,js,wasm
+          node scripts/run-core-tests.mjs --snapshot calcit/test-types-inference.cirru --target test-types-inference.main/same-type-second --backend native,js,wasm
           node scripts/fuzz-primitives.mjs --seed 1 --cases 6
           node scripts/check-string-unicode.mjs
           node scripts/check-nil-predicate.mjs
