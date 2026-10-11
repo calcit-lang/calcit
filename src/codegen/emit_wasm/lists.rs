@@ -403,7 +403,6 @@ pub(super) fn emit_list_sort(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   Ok(())
 }
 
-/// `&list:concat a b` — concatenate two lists.
 /// Flatten one level starting from a pre-evaluated f64 list local.
 /// Used by emit_mapcat and &list:flatten intercepts.
 pub(super) fn emit_list_flatten_f64_local(ctx: &mut WasmGenCtx, outer_f64: u32) -> Result<(), String> {
@@ -465,73 +464,60 @@ pub(super) fn emit_list_flatten_f64_local(ctx: &mut WasmGenCtx, outer_f64: u32) 
   Ok(())
 }
 
-/// Flatten one level: given a list-of-lists (as Calcit expr), emit concat of all inner lists.
-fn emit_list_flatten_one_level(ctx: &mut WasmGenCtx, xs_arg: &Calcit) -> Result<(), String> {
-  let outer_f64 = ctx.alloc_local();
-  emit_expr(ctx, xs_arg)?;
-  ctx.emit(Instruction::LocalSet(outer_f64));
-  emit_list_flatten_f64_local(ctx, outer_f64)
-}
-
+/// `&list:concat a b ...` / `concat a b ...` with statically known arguments.
+/// Zero arguments yield an empty list and a single argument yields that list,
+/// matching native semantics; spread calls go through `emit_list_concat_spread`.
 pub(super) fn emit_list_concat(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  if args.is_empty() {
-    // 0 args → empty list (for spread of empty list: &list:concat & [])
+  let Some((first, rest)) = args.split_first() else {
     return emit_list_new(ctx, &[]);
+  };
+  let mut acc = emit_ptr_to_i32(ctx, first)?;
+  if rest.is_empty() {
+    ctx.ptr_to_f64(acc);
+    return Ok(());
   }
-  if args.len() == 1 {
-    // 1 arg = list-of-lists to flatten one level (for spread: &list:concat & xs)
-    return emit_list_flatten_one_level(ctx, &args[0]);
-  }
-  if args.len() == 2 {
-    // Direct 2-arg fast path
-    return emit_list_concat_two(ctx, &args[0], &args[1]);
-  }
-  // Variadic: fold pairs left
-  emit_list_concat_two(ctx, &args[0], &args[1])?;
-  for extra in &args[2..] {
-    // Result of previous concat is on stack as f64; convert to i32 ptr, concat with extra
-    let prev_f64 = ctx.alloc_local();
-    ctx.emit(Instruction::LocalSet(prev_f64));
-    let prev = Calcit::Number(0.0); // dummy — we'll push the f64 local directly
-    let _ = prev; // unused
-    // Push prev f64 local as first arg, emit extra as second
-    let src_a_local = prev_f64; // f64 local holding ptr as f64
-    let src_a = ctx.alloc_local_typed(ValType::I32);
-    ctx.emit(Instruction::LocalGet(src_a_local));
-    ctx.emit(Instruction::I32TruncF64U);
-    ctx.emit(Instruction::LocalSet(src_a));
-    let count_a = emit_load_count_i32(ctx, src_a);
+  for extra in rest {
     let src_b = emit_ptr_to_i32(ctx, extra)?;
-    let count_b = emit_load_count_i32(ctx, src_b);
-    let new_count = ctx.alloc_local_typed(ValType::I32);
-    ctx.emit(Instruction::LocalGet(count_a));
-    ctx.emit(Instruction::LocalGet(count_b));
-    ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalSet(new_count));
-    let dst = emit_alloc_list(ctx, new_count);
-    let dst_base_a = emit_addr_offset(ctx, dst, 8);
-    let src_base_a = emit_addr_offset(ctx, src_a, 8);
-    emit_copy_f64_loop(ctx, dst_base_a, src_base_a, count_a);
-    let dst_base_b = ctx.alloc_local_typed(ValType::I32);
-    ctx.emit(Instruction::LocalGet(dst));
-    ctx.emit(Instruction::I32Const(8));
-    ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalGet(count_a));
-    ctx.emit(Instruction::I32Const(8));
-    ctx.emit(Instruction::I32Mul);
-    ctx.emit(Instruction::I32Add);
-    ctx.emit(Instruction::LocalSet(dst_base_b));
-    let src_base_b = emit_addr_offset(ctx, src_b, 8);
-    emit_copy_f64_loop(ctx, dst_base_b, src_base_b, count_b);
-    ctx.ptr_to_f64(dst);
+    acc = emit_list_concat_two_i32(ctx, acc, src_b);
   }
+  ctx.ptr_to_f64(acc);
   Ok(())
 }
 
-fn emit_list_concat_two(ctx: &mut WasmGenCtx, a: &Calcit, b: &Calcit) -> Result<(), String> {
-  let src_a = emit_ptr_to_i32(ctx, a)?;
+/// `&list:concat a ... & xs` — explicit list arguments followed by a runtime list
+/// of lists. Explicit arguments are evaluated first; `xs` contributes each of its
+/// items as one more argument, so an empty `xs` adds nothing.
+pub(super) fn emit_list_concat_spread(ctx: &mut WasmGenCtx, explicit: &[Calcit], spread: &Calcit) -> Result<(), String> {
+  let prefix = if explicit.is_empty() {
+    None
+  } else {
+    emit_list_concat(ctx, explicit)?;
+    let prefix_f64 = ctx.alloc_local();
+    ctx.emit(Instruction::LocalSet(prefix_f64));
+    Some(prefix_f64)
+  };
+  let outer_f64 = ctx.alloc_local();
+  emit_expr(ctx, spread)?;
+  ctx.emit(Instruction::LocalSet(outer_f64));
+  emit_list_flatten_f64_local(ctx, outer_f64)?;
+  let Some(prefix_f64) = prefix else {
+    return Ok(());
+  };
+  let src_b = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(src_b));
+  let src_a = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(prefix_f64));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(src_a));
+  let dst = emit_list_concat_two_i32(ctx, src_a, src_b);
+  ctx.ptr_to_f64(dst);
+  Ok(())
+}
+
+/// Concatenate two lists held in i32 pointer locals; returns the i32 local of the new list.
+fn emit_list_concat_two_i32(ctx: &mut WasmGenCtx, src_a: u32, src_b: u32) -> u32 {
   let count_a = emit_load_count_i32(ctx, src_a);
-  let src_b = emit_ptr_to_i32(ctx, b)?;
   let count_b = emit_load_count_i32(ctx, src_b);
 
   let new_count = ctx.alloc_local_typed(ValType::I32);
@@ -542,12 +528,12 @@ fn emit_list_concat_two(ctx: &mut WasmGenCtx, a: &Calcit, b: &Calcit) -> Result<
 
   let dst = emit_alloc_list(ctx, new_count);
 
-  // Copy a: dst[8..] ← src_a[8..]
+  // Copy a: dst[8..] <- src_a[8..]
   let dst_base_a = emit_addr_offset(ctx, dst, 8);
   let src_base_a = emit_addr_offset(ctx, src_a, 8);
   emit_copy_f64_loop(ctx, dst_base_a, src_base_a, count_a);
 
-  // Copy b: dst[8 + count_a*8 ..] ← src_b[8..]
+  // Copy b: dst[8 + count_a*8 ..] <- src_b[8..]
   let dst_base_b = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::LocalGet(dst));
   ctx.emit(Instruction::I32Const(8));
@@ -560,8 +546,7 @@ fn emit_list_concat_two(ctx: &mut WasmGenCtx, a: &Calcit, b: &Calcit) -> Result<
   let src_base_b = emit_addr_offset(ctx, src_b, 8);
   emit_copy_f64_loop(ctx, dst_base_b, src_base_b, count_b);
 
-  ctx.ptr_to_f64(dst);
-  Ok(())
+  dst
 }
 
 /// `&list:assoc list idx value` — new list with element replaced at index.
