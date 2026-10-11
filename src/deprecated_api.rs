@@ -134,6 +134,81 @@ fn collect_uses(
   }
 }
 
+/// Deprecated method spellings that need receiver types to be told apart from other `.count` / `.add`.
+const DEPRECATED_METHOD_NAMES: &[&str] = &["add", "count", "cancel", "cancel-with"];
+
+fn calls_candidate_deprecated_method(node: &Calcit) -> bool {
+  let Calcit::List(items) = node else { return false };
+  if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::Quote, _))) {
+    return false;
+  }
+  let head_is_candidate = match items.first() {
+    Some(Calcit::Method(name, _)) => DEPRECATED_METHOD_NAMES.contains(&name.as_ref()),
+    Some(Calcit::Symbol { sym, .. }) => sym.strip_prefix('.').is_some_and(|name| DEPRECATED_METHOD_NAMES.contains(&name)),
+    _ => false,
+  };
+  head_is_candidate || items.iter().any(calls_candidate_deprecated_method)
+}
+
+/// Advisories name the method in backticks right after the `[Deprecated] method ` prefix.
+fn advisory_method_name(message: &str) -> Option<&str> {
+  let rest = message.strip_prefix("[Deprecated] method `.")?;
+  rest.split_once('`').map(|(name, _)| name)
+}
+
+/// Deprecated methods only exist once the receiver type is known, so they are read from the
+/// compiler's advisory channel rather than matched by name.
+fn deprecated_method_uses(node: &Calcit, source: &Cirru, namespace: &str, definition: &str) -> Option<Vec<DeprecatedApiUse>> {
+  let Calcit::List(items) = node else { return None };
+  if !matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defn") {
+    return None;
+  }
+  let _ = calcit::runner::preprocess::take_advisories();
+  let warnings = RefCell::new(vec![]);
+  let traced = calcit::runner::preprocess::trace_source_usages(
+    node,
+    namespace,
+    definition,
+    &warnings,
+    &calcit::call_stack::CallStackList::default(),
+  );
+  let advisories = calcit::runner::preprocess::take_advisories();
+  traced.ok()?;
+  let mut uses = vec![];
+  for advisory in advisories {
+    let location = advisory.location();
+    if advisory.code() != Some("A_DEPRECATED_METHOD") || location.ns.as_ref() != namespace || location.def.as_ref() != definition {
+      continue;
+    }
+    let Some(method) = advisory_method_name(advisory.message()) else {
+      continue;
+    };
+    let source_coord = location.coord.iter().map(|index| usize::from(*index)).collect::<Vec<_>>();
+    let Some(mut path) = source_path_to_reader_path(source, &source_coord) else {
+      continue;
+    };
+    // The location is the receiver operand; the call is the nearest enclosing list headed by the method.
+    while !matches!(
+      source_node_at(node, &path),
+      Some(Calcit::List(children)) if matches!(children.first(), Some(Calcit::Method(name, _)) if name.as_ref() == method)
+    ) {
+      if path.pop().is_none() {
+        break;
+      }
+    }
+    if source_node_at(node, &path).is_none() || path.is_empty() {
+      continue;
+    }
+    uses.push(DeprecatedApiUse {
+      path: format_path(&path),
+      target_namespace: calcit::calcit::CORE_NS.to_owned(),
+      target_name: format!(".{method}"),
+      target_doc: advisory.message().trim_start_matches("[Deprecated] method ").to_owned(),
+    });
+  }
+  Some(uses)
+}
+
 fn format_path(path: &[usize]) -> String {
   if path.is_empty() {
     "code".to_owned()
@@ -234,7 +309,11 @@ pub fn collect_deprecated_api_rows(
   }
   let _guard = ResolutionGuard(calcit::runner::preprocess::is_strict_types_enabled());
   calcit::runner::preprocess::set_strict_types(false);
-  let resolver_ready = !targets.is_empty() && crate::cli_handlers::prepare_program_for_type_query(snapshot).is_ok();
+  // Prepared on first need so an unaffected project never compiles its call graph.
+  let mut resolver_state: Option<bool> = None;
+  let mut resolver_ready = |needed: bool| -> bool {
+    needed && *resolver_state.get_or_insert_with(|| crate::cli_handlers::prepare_program_for_type_query(snapshot).is_ok())
+  };
   let definitions = program_data
     .iter()
     .flat_map(|(namespace, file)| {
@@ -260,12 +339,16 @@ pub fn collect_deprecated_api_rows(
       collect_uses(&entry.code, namespace, &targets, &definitions, &mut vec![], &mut uses);
       // Do not compile unrelated call graphs merely to confirm an empty report.
       // Their macros may have compile-time effects that a metadata query must not trigger.
-      if resolver_ready
-        && !uses.is_empty()
+      if resolver_ready(!targets.is_empty() && !uses.is_empty())
         && let Some(resolved) =
           source_code.and_then(|source| resolved_function_uses(&entry.code, source, namespace, definition, &targets, &uses))
       {
         uses = resolved;
+      }
+      if resolver_ready(calls_candidate_deprecated_method(&entry.code))
+        && let Some(mut methods) = source_code.and_then(|source| deprecated_method_uses(&entry.code, source, namespace, definition))
+      {
+        uses.append(&mut methods);
       }
       // Report Snapshot source paths so `query def` / `tree` address the same node.
       if let Some(source) = source_code {
