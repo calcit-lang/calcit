@@ -6183,7 +6183,9 @@
         'each $ %{} 'CodeEntry
           :doc "|Iterate over a collection, apply a function for side effects, and return Unit."
           :code $ quote $ defn each (xs f)
-            foldl xs &unit $ defn %each (_acc x) (f x) &unit
+            do
+              foldl xs &unit $ defn %each (_acc x) (f x) &unit
+              , &unit
           :examples $ [] $ quote
             assert= &unit $ each ([] 1 2 3)
               fn (x) (&+ x 1)
@@ -6192,11 +6194,17 @@
               {} (:return 'R)
                 :args $ [] 'Dynamic
             :generics $ [] 'R
-          :tests $ [] $ %{} 'TestEntry (:name |returns-unit-after-callbacks)
-            :code $ quote $ assert= &unit
-              each ([] 1 2)
-                fn (x) x
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |returns-unit-after-callbacks)
+              :code $ quote $ assert= &unit
+                each ([] 1 2)
+                  fn (x) x
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |empty-does-not-call-callback)
+              :code $ quote $ assert= &unit
+                each ([])
+                  fn (x) (raise |empty-each-called-callback)
+              :tags $ #{} :core :unit
         'either $ %{} 'CodeEntry
           :doc "|Returns the first non-nil value among its arguments\nBehaves like a nil-coalescing macro: only nil triggers evaluation of subsequent branches, so false is preserved as a value. For Option values use .unwrap-or or match; either serves nil-based data until the nil migration."
           :code $ quote $ defmacro either (& xs)
