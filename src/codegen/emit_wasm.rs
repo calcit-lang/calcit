@@ -6609,8 +6609,16 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
       ctx.emit(Instruction::Unreachable);
       Ok(())
     }
-    // Dynamic spread call via a local holding a function value — emit unreachable.
-    Calcit::Local(_) => {
+    // Dynamic spread call via a local holding a function value. When every
+    // spread is a `([] ...)` literal the call has a fixed arity, so it lowers as
+    // an ordinary call; a runtime spread still emits unreachable.
+    Calcit::Local(local) => {
+      let mut plain = vec![head.clone()];
+      let mut runtime_spreads = vec![];
+      expand_literal_spread_args(&local.sym, call_args, &mut plain, &mut runtime_spreads)?;
+      if runtime_spreads.is_empty() {
+        return emit_call_expr(ctx, &crate::calcit::CalcitList::from(&plain[..]));
+      }
       ctx.emit(Instruction::Unreachable);
       Ok(())
     }
@@ -6618,50 +6626,66 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
   }
 }
 
-/// For proc callees in spread calls: `(proc a ... & xs)`.
+/// For proc callees in spread calls such as `(proc a & xs b & ys)`.
 ///
-/// The spread list keeps its runtime length, so it is never dropped: a list
-/// literal is inlined as ordinary arguments, `&list:concat` lowers the spread
-/// list itself, and any other runtime spread is rejected with an explicit error.
+/// A spread list is never dropped. Every `([] ...)` literal after `&` is
+/// inlined as ordinary arguments, matching native argument expansion, so any
+/// number of literal spreads may appear at any position. A runtime spread has
+/// no static length: `&list:concat a ... & xs` lowers it directly, and every
+/// other proc is rejected because WASM proc calls need a fixed arity.
 fn emit_call_spread_args_as_regular(ctx: &mut WasmGenCtx, proc: &CalcitProc, call_args: &[Calcit]) -> Result<(), String> {
-  let Some(pos) = call_args
-    .iter()
-    .position(|a| matches!(a, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
-  else {
-    return emit_proc_call(ctx, proc, call_args);
-  };
-  let explicit = &call_args[..pos];
-  let spread = match &call_args[pos + 1..] {
-    [spread] => spread,
-    _ => {
-      return Err(format!(
-        "E_WASM_SPREAD_CALL: `{proc}` expects exactly one list after `&` in a spread call"
-      ));
+  let mut plain: Vec<Calcit> = Vec::with_capacity(call_args.len());
+  let mut runtime_spreads: Vec<(usize, Calcit)> = vec![];
+  expand_literal_spread_args(proc.as_ref(), call_args, &mut plain, &mut runtime_spreads)?;
+  match runtime_spreads.as_slice() {
+    [] => emit_proc_call(ctx, proc, &plain),
+    [(pos, spread)] if matches!(proc, CalcitProc::NativeListConcat) && *pos == plain.len() => {
+      emit_list_concat_spread(ctx, &plain, spread)
     }
-  };
-  if let Some(items) = static_list_literal_items(spread) {
-    let mut real_args = explicit.to_vec();
-    real_args.extend(items);
-    return emit_proc_call(ctx, proc, &real_args);
-  }
-  match proc {
-    CalcitProc::NativeListConcat => emit_list_concat_spread(ctx, explicit, spread),
     _ => Err(format!(
-      "E_WASM_SPREAD_CALL: spreading a runtime list into `{proc}` is not supported in WASM; pass the arguments explicitly"
+      "E_WASM_CALL_SPECIALIZATION: WASM cannot spread a runtime list into proc `{proc}`; pass arguments explicitly or use a literal list"
     )),
   }
 }
 
-/// Items of a `([] a b ...)` list literal whose length is known at compile time.
-fn static_list_literal_items(expr: &Calcit) -> Option<Vec<Calcit>> {
+/// Splits spread-call arguments into ordinary arguments and runtime spreads.
+///
+/// Items of `([] ...)` literals after `&` are spliced in place (recursively, so
+/// a literal that itself contains `&` keeps its inner spreads). Each runtime
+/// spread is recorded with its index in `plain` at that point.
+fn expand_literal_spread_args(
+  callee: &str,
+  args: &[Calcit],
+  plain: &mut Vec<Calcit>,
+  runtime_spreads: &mut Vec<(usize, Calcit)>,
+) -> Result<(), String> {
+  let mut iter = args.iter();
+  while let Some(arg) = iter.next() {
+    if !matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
+      plain.push(arg.clone());
+      continue;
+    }
+    let spread = match iter.next() {
+      Some(Calcit::Syntax(CalcitSyntax::ArgSpread, _)) | None => {
+        return Err(format!("spread call to `{callee}` expects a list after `&`"));
+      }
+      Some(spread) => spread,
+    };
+    match list_literal_items(spread) {
+      Some(items) => expand_literal_spread_args(callee, &items, plain, runtime_spreads)?,
+      None => runtime_spreads.push((plain.len(), spread.clone())),
+    }
+  }
+  Ok(())
+}
+
+/// Items of a `([] a b ...)` list literal, which may still contain `&` markers.
+fn list_literal_items(expr: &Calcit) -> Option<Vec<Calcit>> {
   let Calcit::List(xs) = expr else {
     return None;
   };
-  let items = xs.to_vec();
-  match items.split_first() {
-    Some((Calcit::Proc(CalcitProc::List), rest)) if !rest.iter().any(|a| matches!(a, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) => {
-      Some(rest.to_vec())
-    }
+  match xs.to_vec().split_first() {
+    Some((Calcit::Proc(CalcitProc::List), rest)) => Some(rest.to_vec()),
     _ => None,
   }
 }
@@ -9751,9 +9775,10 @@ mod tests {
     build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn,
     build_wasi_component_select_preopen_fn, build_wasm_module, component_abi_type, component_export_needs_post_return,
     component_flat_types, component_import_signature, component_memory_layout, component_task_return_signature, emit_call_expr,
-    emit_proc_call, expr_uses_wasi_file, host_imports_for_target, index_host_imports, must_reject_extraction_failure,
-    reject_non_tail_recur, reject_reachable_wasi_command_dependencies, validate_component_export_symbols,
-    validate_component_flat_parameters, validate_component_import_symbols, wasi_component_file_imports, wasm_non_nil_value_is_nonzero,
+    emit_call_spread_args_as_regular, emit_proc_call, expr_uses_wasi_file, host_imports_for_target, index_host_imports,
+    must_reject_extraction_failure, reject_non_tail_recur, reject_reachable_wasi_command_dependencies,
+    validate_component_export_symbols, validate_component_flat_parameters, validate_component_import_symbols,
+    wasi_component_file_imports, wasm_non_nil_value_is_nonzero,
   };
   use crate::calcit::{
     Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitProc, CalcitStructDef, CalcitStructValue, CalcitSymbolInfo,
@@ -9858,6 +9883,97 @@ mod tests {
     ctx.instructions.clear();
     emit_call_expr(&mut ctx, &items).expect("legacy bare symbol fallback");
     assert!(matches!(ctx.instructions.last(), Some(Instruction::Call(5))));
+  }
+
+  /// A runtime spread has no static length, so WASM must reject it for a
+  /// fixed-arity proc instead of dropping the list. Native accepts the same
+  /// call, which is why this stays a codegen test rather than a core `:tests` entry.
+  #[test]
+  fn proc_spread_inlines_literals_and_rejects_runtime_lists() {
+    let env = WasmCompileEnv {
+      function_value_dependencies: Default::default(),
+      fn_index: HashMap::new(),
+      fn_arity: HashMap::new(),
+      fn_has_rest: HashMap::new(),
+      runtime_fn_index: HashMap::new(),
+      tag_index: HashMap::new(),
+      struct_layouts: Default::default(),
+      string_pool: HashMap::new(),
+      atom_globals: HashMap::new(),
+      value_imports: HashMap::new(),
+      static_fn_defs: HashMap::new(),
+      fn_table_index: HashMap::new(),
+      host_imports: HashMap::new(),
+      target: WasmTarget::Core,
+      boundary: WasmBoundary::Native,
+    };
+    let mut ctx = WasmGenCtx::new(0, env);
+    let spread = || Calcit::Syntax(CalcitSyntax::ArgSpread, Arc::from("tests.wasm"));
+    let literal = |items: &[f64]| {
+      let mut xs = vec![Calcit::Proc(CalcitProc::List)];
+      xs.extend(items.iter().map(|n| Calcit::Number(*n)));
+      Calcit::from(xs)
+    };
+    let adds = |ctx: &WasmGenCtx| {
+      ctx
+        .instructions
+        .iter()
+        .filter(|instruction| matches!(instruction, Instruction::F64Add))
+        .count()
+    };
+
+    // `&+ 1 & ([] 3)` inlines the literal as the second argument.
+    emit_call_spread_args_as_regular(&mut ctx, &CalcitProc::NativeAdd, &[Calcit::Number(1.0), spread(), literal(&[3.0])])
+      .expect("literal spread after an explicit argument");
+    assert_eq!(adds(&ctx), 1);
+
+    // `&+ & ([] 1) & ([] 3)` accepts several literal spreads.
+    ctx.instructions.clear();
+    emit_call_spread_args_as_regular(
+      &mut ctx,
+      &CalcitProc::NativeAdd,
+      &[spread(), literal(&[1.0]), spread(), literal(&[3.0])],
+    )
+    .expect("two literal spreads");
+    assert_eq!(adds(&ctx), 1);
+
+    // `&+ & ([]) 1 3` keeps arguments after a spread.
+    ctx.instructions.clear();
+    emit_call_spread_args_as_regular(
+      &mut ctx,
+      &CalcitProc::NativeAdd,
+      &[spread(), literal(&[]), Calcit::Number(1.0), Calcit::Number(3.0)],
+    )
+    .expect("arguments after an empty literal spread");
+    assert_eq!(adds(&ctx), 1);
+
+    // `&+ 1 & xs` with a runtime list has no fixed arity.
+    let runtime = Calcit::Symbol {
+      sym: Arc::from("xs"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.wasm"),
+        at_def: Arc::from("caller"),
+      }),
+      location: None,
+    };
+    for proc in [CalcitProc::NativeAdd, CalcitProc::NativeListConcat] {
+      // `&list:concat` lowers a trailing runtime spread, but not one followed by more arguments.
+      let args = if proc == CalcitProc::NativeListConcat {
+        vec![spread(), runtime.clone(), literal(&[1.0])]
+      } else {
+        vec![Calcit::Number(1.0), spread(), runtime.clone()]
+      };
+      let error = emit_call_spread_args_as_regular(&mut ctx, &proc, &args).expect_err("runtime spread into a fixed-arity proc");
+      assert!(error.starts_with("E_WASM_CALL_SPECIALIZATION:"), "{error}");
+      assert!(
+        error.contains(&format!("cannot spread a runtime list into proc `{proc}`")),
+        "{error}"
+      );
+    }
+
+    let error = emit_call_spread_args_as_regular(&mut ctx, &CalcitProc::NativeAdd, &[Calcit::Number(1.0), spread()])
+      .expect_err("missing spread list");
+    assert!(error.contains("expects a list after `&`"), "{error}");
   }
 
   fn declaration(head: CalcitSyntax) -> Calcit {

@@ -8036,6 +8036,9 @@
                     , n
                 assert= 3 $ sink & $ [] 3
                 assert= 4 $ &+ 1 & $ [] 3
+                assert= 3 $ &+ & ([] 1) 2
+                assert= 5 $ &+ & ([] 2) & $ [] 3
+                assert= 6 $ sink & ([]) 6
               :tags $ #{} :call-boundary :concrete-call-proof
             %{} 'TestEntry (:name |nested-generic-call-scope)
               :code $ quote $ let
