@@ -1701,6 +1701,12 @@ fn gen_match_code(
   }
 
   if let (Some(Calcit::EnumDef(_)), Some(Calcit::List(table))) = (body.get(1), body.get(2)) {
+    let args = body.to_vec();
+    if let Some(shape) = crate::codegen::destruct_list_match_shape(&args)
+      && js_destruct_list_binders_are_distinct(&shape)
+    {
+      return gen_destruct_list_match_code(&shape, local_defs, ns, file_imports, tags, base_return_label);
+    }
     return gen_indexed_match_code(&body[0], table, local_defs, ns, file_imports, tags, base_return_label);
   }
 
@@ -1766,8 +1772,12 @@ fn gen_match_code(
 
         // Generate binding code
         let mut scoped_defs = local_defs.to_owned();
+        let binders = pat_xs.to_vec();
         for (i, binding) in pat_xs.iter().skip(1).enumerate() {
           if matches!(binding, Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } if sym.as_ref() == "_") {
+            continue;
+          }
+          if binder_rebound_later(&binders[1..], i)? {
             continue;
           }
           let bind_name = match binding {
@@ -1809,6 +1819,90 @@ fn gen_match_code(
   } else {
     Ok(make_fn_wrapper(&chunk, has_await))
   }
+}
+
+/// The fused lowering binds with `let` while still reading the subject, so a
+/// binder whose JS name equals the subject's (or the other binder's) would hit
+/// the temporal dead zone. Compare escaped names, since distinct Calcit names
+/// such as `a-b` and `a_b` can escape to the same identifier.
+fn js_destruct_list_binders_are_distinct(shape: &crate::codegen::DestructListMatch<'_>) -> bool {
+  let Calcit::Local(CalcitLocal { sym: subject, .. }) = shape.subject else {
+    return false;
+  };
+  let subject = escape_var(subject);
+  let head = shape.head.map(|h| escape_var(h));
+  let tail = shape.tail.map(|t| escape_var(t));
+  head.as_ref() != Some(&subject) && tail.as_ref() != Some(&subject) && (head.is_none() || head != tail)
+}
+
+/// Lowers `match (destruct-list xs) ((:none) a) ((:some h t) b)` to the body of
+/// `destruct-list` fused with the match: the same `&list:empty?`, `&list:nth`
+/// and `&list:rest` calls, without allocating the `ListDestruct` value.
+fn gen_destruct_list_match_code(
+  shape: &crate::codegen::DestructListMatch<'_>,
+  local_defs: &HashSet<Arc<str>>,
+  ns: &str,
+  file_imports: &RefCell<ImportsDict>,
+  tags: &RefCell<HashSet<EdnTag>>,
+  base_return_label: Option<&str>,
+) -> Result<String, String> {
+  let has_await = detect_await_node(shape.none_body) || detect_await_node(shape.some_body);
+  let return_label = base_return_label.unwrap_or("return ");
+  let proc_prefix = get_proc_prefix(ns);
+  let subject = to_js_code(shape.subject, ns, local_defs, file_imports, tags, None)?;
+
+  let none_code = to_js_code(shape.none_body, ns, local_defs, file_imports, tags, Some(return_label))?;
+  let mut chunk = String::new();
+  write!(
+    chunk,
+    "\nif ({proc_prefix}_$n_list_$o_empty_$q_({subject})) {{ {none_code} }} else {{"
+  )
+  .expect("write");
+
+  let mut scoped_defs = local_defs.to_owned();
+  if let Some(head) = shape.head {
+    scoped_defs.insert(head.to_owned());
+    write!(chunk, "\nlet {} = {proc_prefix}_$n_list_$o_nth({subject}, 0);", escape_var(head)).expect("write");
+  }
+  if let Some(tail) = shape.tail {
+    scoped_defs.insert(tail.to_owned());
+    write!(chunk, "\nlet {} = {proc_prefix}_$n_list_$o_rest({subject});", escape_var(tail)).expect("write");
+  }
+  let some_code = to_js_code(shape.some_body, ns, &scoped_defs, file_imports, tags, Some(return_label))?;
+  write!(chunk, "\n{some_code} }}").expect("write");
+
+  if base_return_label.is_some() {
+    Ok(chunk)
+  } else {
+    Ok(make_fn_wrapper(&chunk, has_await))
+  }
+}
+
+/// Whether a later binder of the same match pattern takes the same JS name.
+/// The later binding wins, as in native; emitting both would redeclare a `let`.
+/// Reports whether the binder at `idx` is bound again by a later binder with the
+/// same source name, so the earlier JS `let` can be skipped. Distinct source names
+/// that escape to the same JS identifier (e.g. `a-b` and `a_b`) are rejected.
+fn binder_rebound_later(binders: &[Calcit], idx: usize) -> Result<bool, String> {
+  let name = |binder: &Calcit| match binder {
+    Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } if sym.as_ref() != "_" => Some(sym.to_owned()),
+    _ => None,
+  };
+  let Some(current) = binders.get(idx).and_then(name) else {
+    return Ok(false);
+  };
+  let current_js = escape_var(&current);
+  let mut rebound = false;
+  for later in binders[idx + 1..].iter().filter_map(name) {
+    if later == current {
+      rebound = true;
+    } else if escape_var(&later) == current_js {
+      return Err(format!(
+        "match binders `{current}` and `{later}` both compile to JavaScript identifier `{current_js}`; rename one of them"
+      ));
+    }
+  }
+  Ok(rebound)
 }
 
 fn gen_indexed_match_code(
@@ -1858,8 +1952,12 @@ fn gen_indexed_match_code(
     writeln!(chunk, "if ({proc_prefix}_$n_enum_$o_count({val_var}) === {arity}) {{").expect("write");
 
     let mut scoped_defs = local_defs.to_owned();
+    let binders = pattern.to_vec();
     for (idx, binding) in pattern.iter().skip(1).enumerate() {
       if matches!(binding, Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } if sym.as_ref() == "_") {
+        continue;
+      }
+      if binder_rebound_later(&binders[1..], idx)? {
         continue;
       }
       let bind_name = match binding {
@@ -2971,6 +3069,16 @@ mod tests {
       }),
       location: None,
     }
+  }
+
+  #[test]
+  fn match_binders_skip_same_name_and_reject_escaped_collisions() {
+    let same = [symbol("x"), symbol("x")];
+    assert_eq!(binder_rebound_later(&same, 0), Ok(true));
+    assert_eq!(binder_rebound_later(&same, 1), Ok(false));
+    let distinct = [symbol("a-b"), symbol("a_b")];
+    let err = binder_rebound_later(&distinct, 0).expect_err("escaped collision should be rejected");
+    assert!(err.contains("`a-b`") && err.contains("`a_b`"), "{err}");
   }
 
   #[test]

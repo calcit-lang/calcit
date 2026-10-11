@@ -4229,14 +4229,14 @@
               assert= 9 $ assoc-in (&{}) ([]) 9
             :tags $ #{} :core :unit
         'atom $ %{} 'CodeEntry
-          :doc "|Compatibility spelling of the same builtin implementation as ref, creating a local Ref<T>. Prefer ref; core-ref-constructor-v1 migrates proven source forms. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
+          :doc "|Deprecated: Compatibility spelling of the same builtin implementation as ref, creating a local Ref<T>. Prefer ref; core-ref-constructor-v1 migrates proven source forms. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'T
             :generics $ [] 'T
             :return $ :: 'Ref 'T
-          :tags $ #{} :builtin :internal :state
+          :tags $ #{} :builtin :deprecated :internal :state
         'bit-and $ %{} 'CodeEntry
           :doc "|internal function for bitwise AND\nSyntax: (bit-and a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise AND operation on two integers"
           :code $ quote &runtime-implementation
@@ -5475,7 +5475,7 @@
             :required $ [] 'SyntaxSymbol $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         'defatom $ %{} 'CodeEntry
-          :doc "|Compatibility spelling of the same namespace Ref<T> syntax as defref. Prefer defref; core-ref-constructor-v1 preserves source resolution and initialization/reload behavior. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
+          :doc "|Deprecated: Compatibility spelling of the same namespace Ref<T> syntax as defref. Prefer defref; core-ref-constructor-v1 preserves source resolution and initialization/reload behavior. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
           :code $ quote &runtime-implementation
           :examples $ [] $ quote
             ; defatom *my-atom $ {} $ :a 1
@@ -5483,7 +5483,7 @@
             :args $ [] 'Symbol 'T
             :generics $ [] 'T
             :return $ :: 'Ref 'T
-          :tags $ #{} :builtin :internal :state :syntax
+          :tags $ #{} :builtin :deprecated :internal :state :syntax
         'defenum $ %{} 'CodeEntry
           :doc "|Define an EnumDef with a closed set of variants."
           :code $ quote $ defmacro defenum (name & variants)
@@ -5864,20 +5864,86 @@
             :args $ [] $ :: 'List 'T
             :generics $ [] 'T
             :return $ :: 'ListDestruct 'T
-          :tests $ [] $ %{} 'TestEntry (:name |splits-head-and-tail)
-            :code $ quote $ do
-              assert=
-                :: :parts 1 $ [] 2 3
-                match
-                  destruct-list $ [] 1 2 3
-                  (:none) (:: :empty)
-                  (:some item tail) (:: :parts item tail)
-              assert= (:: :empty)
-                match
-                  destruct-list $ []
-                  (:none) (:: :empty)
-                  (:some item tail) (:: :parts item tail)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |splits-head-and-tail)
+              :code $ quote $ do
+                assert=
+                  :: :parts 1 $ [] 2 3
+                  match
+                    destruct-list $ [] 1 2 3
+                    (:none) (:: :empty)
+                    (:some item tail) (:: :parts item tail)
+                assert= (:: :empty)
+                  match
+                    destruct-list $ []
+                    (:none) (:: :empty)
+                    (:some item tail) (:: :parts item tail)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |matches-bound-list-subject)
+              :code $ quote $ let
+                  head-or $ fn (fallback xs)
+                    hint-fn $ {}
+                      :args $ [] 'Number $ :: 'List 'Number
+                      :return 'Number
+                    &+ 0 $ match (destruct-list xs)
+                      (:some h _) h
+                      (:none) fallback
+                  tail-size $ fn (xs)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'List 'Number
+                      :return 'Number
+                    match (destruct-list xs)
+                      (:some _ t) (&list:count t)
+                      (:none) -1
+                  head-and-count $ fn (xs)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'List 'Number
+                      :return $ :: 'List 'Number
+                    match (destruct-list xs)
+                      (:none) ([])
+                      (:some h t)
+                        [] h $ &list:count t
+                assert= 7 $ head-or 7 $ []
+                assert= 3 $ head-or 7 $ [] 3
+                assert= 1 $ head-or 7 $ [] 1 2
+                assert= -1 $ tail-size $ []
+                assert= 0 $ tail-size $ [] 9
+                assert= 2 $ tail-size $ [] 9 8 7
+                assert= ([])
+                  head-and-count $ []
+                assert= ([] 4 0)
+                  head-and-count $ [] 4
+                assert= ([] 4 2)
+                  head-and-count $ [] 4 5 6
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |matches-bound-list-subject-in-recur)
+              :code $ quote $ let
+                  sum-from $ fn (acc xs)
+                    hint-fn $ {}
+                      :args $ [] 'Number $ :: 'List 'Number
+                      :return 'Number
+                    match (destruct-list xs)
+                      (:none) acc
+                      (:some h t)
+                        recur (&+ acc h) t
+                assert= 0 $ sum-from 0 $ []
+                assert= 5 $ sum-from 0 $ [] 5
+                assert= 10 $ sum-from 0 $ [] 1 2 3 4
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |matches-bound-list-subject-as-statement)
+              :code $ quote $ let
+                  report $ fn (xs)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'List 'Number
+                      :return 'Number
+                    match (destruct-list xs)
+                      (:none) (println |empty)
+                      (:some h _) (println h)
+                    &list:count xs
+                assert= 0 $ report $ []
+                assert= 1 $ report $ [] 7
+                assert= 2 $ report $ [] 8 9
+              :tags $ #{} :core :unit
         'destruct-map $ %{} 'CodeEntry
           :doc "|Split a map into the nominal MapDestruct<K,V> enum."
           :code $ quote $ defn destruct-map (xs)
@@ -7992,7 +8058,16 @@
                     , n
                 assert= 3 $ sink & $ [] 3
                 assert= 4 $ &+ 1 & $ [] 3
+                assert= 3 $ &+ & ([] 1) 2
+                assert= 5 $ &+ & ([] 2) & $ [] 3
+                assert= 6 $ sink & ([]) 6
               :tags $ #{} :call-boundary :concrete-call-proof
+            %{} 'TestEntry (:name |literal-spread-into-rest-local)
+              :code $ quote $ let
+                  collect $ fn (a & xs) (&list:count xs)
+                assert= 1 $ collect & $ [] 0 9
+                assert= 2 $ collect 0 & $ [] 8 9
+              :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |nested-generic-call-scope)
               :code $ quote $ let
                   identity-list $ fn (xs)
@@ -11181,12 +11256,12 @@
                 assert= |-0 $ turn-string $ round -0.4
               :tags $ #{} :core :unit
         'round? $ %{} 'CodeEntry
-          :doc "|判断 Number 是否有限且恰好无小数部分。首选 integer? 和 Number .integer?；旧函数 round? 在兼容窗口保持同义，Number 方法 .round? 已在 0.29.0 删除。可用 calcit fix --rule core-integer-predicate-v1 显式预览来源受控的函数调用迁移，附带 tests/examples 需人工检查。NaN、正负 Infinity、非零小数返回 false，-0 返回 true。这不是安全整数范围或 Int32/UInt32 等 refinement 检查，也不执行舍入。"
+          :doc "|已弃用:判断 Number 是否有限且恰好无小数部分。首选 integer? 和 Number .integer?；旧函数 round? 在兼容窗口保持同义，Number 方法 .round? 已在 0.29.0 删除。可用 calcit fix --rule core-integer-predicate-v1 显式预览来源受控的函数调用迁移，附带 tests/examples 需人工检查。NaN、正负 Infinity、非零小数返回 false，-0 返回 true。这不是安全整数范围或 Int32/UInt32 等 refinement 检查，也不执行舍入。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Number
-          :tags $ #{} :builtin :internal
+          :tags $ #{} :builtin :deprecated :internal
           :tests $ []
             %{} 'TestEntry (:name |distinguishes-integers)
               :code $ quote $ do

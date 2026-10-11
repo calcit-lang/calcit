@@ -175,6 +175,27 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'sum-destruct-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn sum-destruct-list (acc xs)
+            match (destruct-list xs)
+              (:none) acc
+              (:some h t)
+                recur (&+ acc h) t
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number $ :: 'List 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |fused-match-with-recur)
+            :code $ quote $ do
+              assert= 0 $ sum-destruct-list 0 $ []
+              assert= 4 $ sum-destruct-list 0 $ [] 4
+              assert= 6 $ sum-destruct-list 0 $ [] 1 2 3
+            :tags $ #{} :wasm
+        'sum-destruct-range $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defwasm-export sum-destruct-range (n)
+            sum-destruct-list 0 $ range n
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
         'sum-range $ %{} 'CodeEntry (:doc "|Sum 1..n via helper")
           :code $ quote $ defwasm-export sum-range (n) (sum-range-step 0 1 n)
           :examples $ []
