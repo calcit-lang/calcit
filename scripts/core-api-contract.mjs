@@ -116,13 +116,18 @@ export function collect(scope, query) {
 }
 
 // Implementation paths and display strings are not public signatures.
-function contract(row, family) {
+function contract(row, family, nominalNames = new Map(), variables = new Set()) {
   const { provenance, ...publicContract } = row;
   // Method call arity lives in method-contracts; an implementation may be variadic.
   if (family === "methods") delete publicContract["runtime-arity"];
   // EDN map entry order is not part of a type signature; argument lists are.
   const normalize = node => {
-    if (!Array.isArray(node)) return node;
+    if (!Array.isArray(node)) {
+      if (typeof node === "string" && node.startsWith("'") && !variables.has(node.slice(1))) {
+        return nominalNames.get(node.slice(1)) ?? node;
+      }
+      return node;
+    }
     const children = node.map(normalize);
     if (children[0] === "{}") return ["{}", ...children.slice(1).sort((a, b) => JSON.stringify(a[0]).localeCompare(JSON.stringify(b[0])))];
     return children;
@@ -135,13 +140,34 @@ function contract(row, family) {
 }
 
 export function assertPreserved(previous, current) {
+  // Only declarations already frozen in core can prove an implicit-core
+  // spelling equivalent. Never infer aliases from newly added declarations.
+  const nominalNames = new Map((previous.definitions ?? []).flatMap(row => {
+    const source = row.declaration?.quote;
+    return ["defstruct", "defenum"].includes(source?.[0]) && row.name.symbol === `calcit.core/${source[1]}`
+      ? [[source[1], `'${row.name.symbol}`]] : [];
+  }));
+  const sourceMethod = (data, row) => data.methods?.find(method => method.receiver === row.receiver && method.name === row.name);
+  const genericNames = node => {
+    if (!Array.isArray(node)) return [];
+    if (node[0] === ":generics" && node[1]?.[0] === "[]") return node[1].slice(1).map(name => name.replace(/^'/, ""));
+    return node.flatMap(genericNames);
+  };
   for (const family of ["definitions", "methods", "method-contracts"]) {
     for (const old of previous[family] ?? []) {
       const row = (current[family] ?? []).find(row => family === "definitions"
         ? row.name.symbol === old.name.symbol
         : row.receiver === old.receiver && row.name === old.name);
       assert.ok(row, `removed frozen ${family}: ${JSON.stringify(old.name)}`);
-      assert.deepEqual(contract(row, family), contract(old, family), `changed frozen ${family}: ${JSON.stringify(old.name)}`);
+      const before = family === "method-contracts" ? sourceMethod(previous, old) : null;
+      const after = family === "method-contracts" ? sourceMethod(current, row) : null;
+      // Call syntax is generated in its implementation's source namespace.
+      // User origins, source schemas, declarations and lexical type variables
+      // retain exact comparison; this does not waive a changed nominal type.
+      const names = before?.provenance?.symbol.startsWith("calcit.core/") && after?.provenance?.symbol.startsWith("calcit.core/")
+        ? nominalNames : new Map();
+      const variables = new Set(genericNames(before?.schema?.quote));
+      assert.deepEqual(contract(row, family, names, variables), contract(old, family, names, variables), `changed frozen ${family}: ${JSON.stringify(old.name)}`);
     }
   }
 }
