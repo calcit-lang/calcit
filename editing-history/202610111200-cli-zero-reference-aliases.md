@@ -6,6 +6,7 @@
 
 - `analyze count-calls` 与 `analyze call-graph-diff` 改为 `analyze call-graph` 的 `--counts`（配 `--sort`）与 `--diff <ref>`。仍在参数解析后改写成原 analyzer 的选项结构，新旧入口共用实现，stdout 与退出码相同。两个选项互斥；`--counts` 拒绝 `--max-depth`、`--show-unused`，`--diff` 拒绝非 `text` 的 `--format`、`--show-unused`，`--sort` 要求 `--counts`。选 `--counts` 开关而不是盘点中的 `--format counts`：计数视图自己有 text/json 两种格式，放进 `--format` 会冲突。
 - 计数相同的定义原来按 HashMap 顺序输出，同一命令两次运行顺序也可能不同；现在按名字作次序，使新旧入口能逐字节比较。
+- 评审修正：`--sort` 只接受 `count` / `name`，并同样作用于 JSON 输出（原来 JSON 忽略它，未知值静默按 count 处理）。`call-graph` 与计数视图在 `--format json` 时把 `Analyzing call tree from:` / `Counting calls from:` 状态行写到 stderr，stdout 只有一个文档；text 格式保持原样，因为 `call-graph` 的 text 输出已有使用者。`--start` 不小于文件行数时返回错误，不再因切片越界 panic。
 - `docs read-lines` 改为 `docs read --start/--lines`，沿用原选项名与默认值（0、80），迁移只需改子命令名；与标题关键词、`--full`、`--with-lines`、`--no-subheadings` 混用时报错。
 - `cirru show-guide` 指向 `docs read cirru-syntax.md`，两者读同一文件；旧命令保持原样输出原文。
 - `analyze js-escape`、`js-unescape` 没有替代，提示写明删除后不再提供。

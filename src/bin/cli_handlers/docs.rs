@@ -1230,7 +1230,13 @@ fn handle_read_lines(filename: &str, start: usize, lines_to_read: usize, module_
 
   let all_lines: Vec<&str> = doc.content.lines().collect();
   let total_lines = all_lines.len();
-  let end = (start + lines_to_read).min(total_lines);
+  if start >= total_lines && start > 0 {
+    return Err(format!(
+      "`--start {start}` is past the end of `{}` ({total_lines} lines); use a start below {total_lines}.",
+      doc.path
+    ));
+  }
+  let end = start.saturating_add(lines_to_read).min(total_lines);
 
   println!("{} ({})", doc.display_title().cyan().bold(), doc.path.dimmed());
   println!("{}", "=".repeat(60).dimmed());

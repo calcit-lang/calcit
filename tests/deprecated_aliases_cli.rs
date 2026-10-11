@@ -424,8 +424,8 @@ fn js_escape_aliases_keep_output_and_name_no_replacement() {
 struct GuidebookHome(PathBuf);
 
 impl GuidebookHome {
-  fn create() -> Self {
-    let home = std::env::temp_dir().join(format!("calcit-deprecated-aliases-{}-home", std::process::id()));
+  fn create(name: &str) -> Self {
+    let home = std::env::temp_dir().join(format!("calcit-deprecated-aliases-{}-home-{name}", std::process::id()));
     let _ = fs::remove_dir_all(&home);
     fs::create_dir_all(home.join(".config/calcit")).expect("temporary HOME should create");
     let docs = fs::canonicalize("docs").expect("repository docs directory");
@@ -454,7 +454,7 @@ impl Drop for GuidebookHome {
 
 #[test]
 fn guidebook_aliases_match_docs_read() {
-  let home = GuidebookHome::create();
+  let home = GuidebookHome::create("aliases");
   for (old, new) in [
     (
       &["docs", "read-lines", "cirru-syntax.md", "--start", "4", "--lines", "6"][..],
@@ -581,4 +581,92 @@ fn ns_doc_alias_matches_edit_ns() {
   assert!(hint_lines(&output).is_empty());
   assert_eq!(read(&legacy), read(&replacement));
   assert!(read(&legacy).contains("Demo namespace."), "{}", read(&legacy));
+}
+
+#[test]
+fn call_graph_json_stdout_is_one_document_and_honors_sort() {
+  let snapshot = Path::new("calcit/test.cirru");
+  for args in [
+    &["analyze", "call-graph", "--format", "json"][..],
+    &["analyze", "call-graph", "--counts", "--format", "json"][..],
+    &["analyze", "count-calls", "--format", "json"][..],
+  ] {
+    let output = run_calcit(snapshot, args);
+    assert!(output.status.success(), "{args:?}: {}", String::from_utf8_lossy(&output.stderr));
+    serde_json::from_slice::<serde_json::Value>(&output.stdout).expect("stdout should be exactly one JSON document");
+    assert!(
+      String::from_utf8_lossy(&output.stderr).contains(" from: app.main/main!"),
+      "{args:?} should keep the status line on stderr"
+    );
+  }
+
+  let names = |args: &[&str]| {
+    let output = run_calcit(snapshot, args);
+    assert!(output.status.success(), "{args:?}: {}", String::from_utf8_lossy(&output.stderr));
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("one JSON document");
+    report["counts"]
+      .as_array()
+      .expect("counts array")
+      .iter()
+      .map(|entry| {
+        (
+          entry["count"].as_u64().expect("count"),
+          entry["fqn"].as_str().expect("fqn").to_owned(),
+        )
+      })
+      .collect::<Vec<_>>()
+  };
+  let by_name = names(&["analyze", "call-graph", "--counts", "--sort", "name", "--format", "json"]);
+  assert!(by_name.windows(2).all(|pair| pair[0].1 <= pair[1].1), "{by_name:?}");
+  let by_count = names(&["analyze", "call-graph", "--counts", "--format", "json"]);
+  assert!(
+    by_count
+      .windows(2)
+      .all(|pair| pair[0].0 > pair[1].0 || (pair[0].0 == pair[1].0 && pair[0].1 <= pair[1].1)),
+    "{by_count:?}"
+  );
+  assert_eq!(by_count.len(), by_name.len());
+
+  // An unknown sort key fails the same way in both forms, before any report.
+  for args in [
+    &["analyze", "call-graph", "--counts", "--sort", "size"][..],
+    &["analyze", "count-calls", "--sort", "size"][..],
+    &["analyze", "count-calls", "--sort", "size", "--format", "json"][..],
+  ] {
+    let output = run_calcit(snapshot, args);
+    assert_eq!(output.status.code(), Some(1), "{args:?} should be rejected");
+    assert!(output.stdout.is_empty(), "{args:?} should not report on stdout");
+    assert!(
+      String::from_utf8_lossy(&output.stderr).contains("expected `count` or `name`"),
+      "{}",
+      String::from_utf8_lossy(&output.stderr)
+    );
+  }
+}
+
+#[test]
+fn docs_read_line_range_past_the_end_is_an_error() {
+  let home = GuidebookHome::create("past-end");
+  for args in [
+    &["docs", "read", "cirru-syntax.md", "--start", "99999"][..],
+    &["docs", "read-lines", "cirru-syntax.md", "--start", "99999"][..],
+  ] {
+    let output = home.run(args);
+    assert_eq!(
+      output.status.code(),
+      Some(1),
+      "{args:?}: {}",
+      String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(output.stdout.is_empty(), "{args:?} should not report on stdout");
+    assert!(
+      String::from_utf8_lossy(&output.stderr).contains("past the end"),
+      "{}",
+      String::from_utf8_lossy(&output.stderr)
+    );
+  }
+  // A range that runs past the end is clipped rather than rejected.
+  let clipped = home.run(&["docs", "read", "cirru-syntax.md", "--start", "1", "--lines", "99999"]);
+  assert!(clipped.status.success(), "{}", String::from_utf8_lossy(&clipped.stderr));
+  assert!(String::from_utf8_lossy(&clipped.stdout).contains("End of document."));
 }

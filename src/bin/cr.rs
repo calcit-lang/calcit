@@ -2376,7 +2376,13 @@ fn run_call_graph(entries: &ProgramEntries, options: &CallGraphCommand, _snapsho
     (entries.init_ns.to_string(), entries.init_def.to_string())
   };
 
-  println!("{}", format!("Analyzing call tree from: {entry_ns}/{entry_def}").cyan());
+  // JSON stdout must be exactly one document, so the status line goes to stderr there.
+  let header = format!("Analyzing call tree from: {entry_ns}/{entry_def}").cyan();
+  if options.format == "json" {
+    eprintln!("{header}");
+  } else {
+    println!("{header}");
+  }
 
   // Analyze call tree
   let result = calcit::call_tree::analyze_call_graph(
@@ -2442,6 +2448,7 @@ fn run_effects_graph(entries: &ProgramEntries, options: &EffectsGraphCommand) ->
 }
 
 fn run_count_calls(entries: &ProgramEntries, options: &CountCallsCommand) -> Result<(), String> {
+  let sort = calcit::call_tree::CallCountSort::parse(&options.sort)?;
   // Determine entry point: use --root if provided, otherwise use init_fn from config
   let (entry_ns, entry_def) = if let Some(ref def_path) = options.root {
     util::string::extract_ns_def(def_path)?
@@ -2449,17 +2456,23 @@ fn run_count_calls(entries: &ProgramEntries, options: &CountCallsCommand) -> Res
     (entries.init_ns.to_string(), entries.init_def.to_string())
   };
 
-  println!("{}", format!("Counting calls from: {entry_ns}/{entry_def}").cyan());
+  // JSON stdout must be exactly one document, so the status line goes to stderr there.
+  let header = format!("Counting calls from: {entry_ns}/{entry_def}").cyan();
+  if options.format == "json" {
+    eprintln!("{header}");
+  } else {
+    println!("{header}");
+  }
 
   // Count calls
   let result = calcit::call_tree::count_calls(&entry_ns, &entry_def, options.include_core, options.ns_prefix.clone())?;
 
   // Output result
   if options.format == "json" {
-    let json = calcit::call_tree::format_count_as_json(&result)?;
+    let json = calcit::call_tree::format_count_as_json(&result, sort)?;
     println!("{json}");
   } else {
-    println!("{}", calcit::call_tree::format_count_for_display(&result, &options.sort));
+    println!("{}", calcit::call_tree::format_count_for_display(&result, sort));
   }
 
   Ok(())

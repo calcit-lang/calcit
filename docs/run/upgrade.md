@@ -588,10 +588,10 @@ calcit calcit.cirru edit transaction --dry-run --format edn --code '[["tree","de
 
 | 已弃用 | 替代 | 说明 |
 | --- | --- | --- |
-| `analyze count-calls [--sort count\|name] [--format text\|json]` | `analyze call-graph --counts [--sort count\|name] [--format text\|json]` | 其余选项不变；`--counts` 不接受 `--max-depth`、`--show-unused`。计数相同的定义按名字排序 |
+| `analyze count-calls [--sort count\|name] [--format text\|json]` | `analyze call-graph --counts [--sort count\|name] [--format text\|json]` | 其余选项不变；`--counts` 不接受 `--max-depth`、`--show-unused`。计数相同的定义按名字排序；`--sort` 只接受 `count` 或 `name`，其他值报错，并同样作用于 `--format json`；JSON 格式下 `Counting calls from:` 状态行改写到 stderr，stdout 只有一个 JSON 文档 |
 | `analyze call-graph-diff <ref>` | `analyze call-graph --diff <ref>` | 只输出文本；不接受 `--format json`、`--show-unused`；`--counts` 与 `--diff` 不能同时使用 |
 | `analyze js-escape <symbol>`、`analyze js-unescape <name>` | 无 | 删除后不再提供命令行转换；JS 代码生成的转义规则不变 |
-| `docs read-lines <file> [--start <n>] [--lines <n>]` | `docs read <file> [--start <n>] [--lines <n>]` | 给出 `--start` 或 `--lines` 时按行读取，默认值仍为 0 与 80；不能与标题关键词、`--full`、`--with-lines`、`--no-subheadings` 混用 |
+| `docs read-lines <file> [--start <n>] [--lines <n>]` | `docs read <file> [--start <n>] [--lines <n>]` | 给出 `--start` 或 `--lines` 时按行读取，默认值仍为 0 与 80；不能与标题关键词、`--full`、`--with-lines`、`--no-subheadings` 混用；`--start` 不小于文件行数时报错（原来会 panic），范围超出结尾时截断 |
 | `cirru show-guide` | `docs read cirru-syntax.md` | 读取同一份 `~/.config/calcit/docs/cirru-syntax.md`；`docs read` 带标题渲染，也可按标题关键词或行范围读取 |
 | `edit rm-example <ns/def> <index>`，以及 `edit transaction` 中的 `["edit","rm-example",…]` 操作 | `edit examples <ns/def>` 写入剩余示例，或 `edit ns` 写回修改后的 `:examples` | 先用 `query examples` 读取现有示例；事务中改用 `["edit","examples",…]` 操作。事务中使用旧操作时同样在 stderr 输出提示 |
 | `edit ns-doc <ns> <doc>`，以及 `edit transaction` 中的 `["edit","ns-doc",…]` 操作 | `edit ns <ns>` 写回修改了 `:ns` 条目 `:doc` 的 `query ns <ns> --format cirru` 数据 | `edit ns` 自带 `--dry-run` 与 `--expect-revision`，但不能放进 `edit transaction`；原事务中的 `ns-doc` 操作需拆成单独的 `edit ns` 步骤 |
