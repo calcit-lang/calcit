@@ -10,6 +10,15 @@
   :files $ {} $ 'js-match-destruct-list.main
     %{} 'FileEntry
       :defs $ {}
+        'escaped-shadow $ %{} 'CodeEntry
+          :doc "|Generic path: the binder a_b escapes to the subject's JS name."
+          :code $ quote $ defn escaped-shadow (a-b)
+            match (destruct-list a-b)
+              (:none) 0
+              (:some a_b _) a_b
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'List 'Number
         'first-or $ %{} 'CodeEntry (:doc "|Fused: (:some) first with a `_` tail binder.")
           :code $ quote $ defn first-or (xs)
             match (destruct-list xs)
@@ -33,6 +42,8 @@
             println $ rest-size $ [] 1 2
             println $ head-plus-one $ [] 4
             println $ shadowed-subject $ [] 5
+            println $ escaped-shadow $ [] 5
+            println $ same-binders $ [] 1 2
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
@@ -41,6 +52,15 @@
             match (destruct-list xs)
               (:none) -1
               (:some _ t) (&list:count t)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'List 'Number
+        'same-binders $ %{} 'CodeEntry
+          :doc "|Generic path: head and tail binders share a name."
+          :code $ quote $ defn same-binders (xs)
+            match (destruct-list xs)
+              (:none) 0
+              (:some h h) (&list:count h)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] $ :: 'List 'Number

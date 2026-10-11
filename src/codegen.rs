@@ -106,7 +106,8 @@ pub(crate) fn destruct_list_match_shape(args: &[Calcit]) -> Option<DestructListM
   let (some_binders, some_body) = branch(some_idx, 3)?;
   let (head, tail) = (some_binders[0], some_binders[1]);
   // Binders that shadow the subject or each other need the generic path, which
-  // reads every payload from the enum before binding.
+  // reads every payload from the enum before binding. Backends that rename
+  // locals must repeat this check on their own names (see the JS emitter).
   if head.is_some_and(|h| h == subject_sym) || tail.is_some_and(|t| t == subject_sym) || (head.is_some() && head == tail) {
     return None;
   }

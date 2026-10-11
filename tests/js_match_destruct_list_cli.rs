@@ -101,4 +101,15 @@ fn match_on_destruct_list_of_local_skips_intermediate_enum() {
   // A binder that shadows the subject keeps the generic enum path.
   let shadowed = exported_function(&module, "shadowed_subject");
   assert!(shadowed.contains("destruct_list(xs)"), "{shadowed}");
+
+  // `a_b` and the subject `a-b` escape to the same JS name, which the fused
+  // `let a_b = nth(a_b, 0)` would read in its temporal dead zone.
+  let escaped = exported_function(&module, "escaped_shadow");
+  assert!(escaped.contains("destruct_list(a_b)"), "{escaped}");
+
+  // Head and tail binders sharing a name also keep the generic path, which
+  // binds only the later one (the value native sees) instead of redeclaring it.
+  let same = exported_function(&module, "same_binders");
+  assert!(same.contains("destruct_list(xs)"), "{same}");
+  assert_eq!(same.matches("let h = ").count(), 1, "{same}");
 }

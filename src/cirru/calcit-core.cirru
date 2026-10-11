@@ -5916,6 +5916,20 @@
                 assert= 5 $ sum-from 0 $ [] 5
                 assert= 10 $ sum-from 0 $ [] 1 2 3 4
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |matches-bound-list-subject-as-statement)
+              :code $ quote $ let
+                  report $ fn (xs)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'List 'Number
+                      :return 'Number
+                    match (destruct-list xs)
+                      (:none) (println |empty)
+                      (:some h _) (println h)
+                    &list:count xs
+                assert= 0 $ report $ []
+                assert= 1 $ report $ [] 7
+                assert= 2 $ report $ [] 8 9
+              :tags $ #{} :core :unit
         'destruct-map $ %{} 'CodeEntry
           :doc "|Split a map into the nominal MapDestruct<K,V> enum."
           :code $ quote $ defn destruct-map (xs)

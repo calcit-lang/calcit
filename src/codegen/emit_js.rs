@@ -1702,7 +1702,9 @@ fn gen_match_code(
 
   if let (Some(Calcit::EnumDef(_)), Some(Calcit::List(table))) = (body.get(1), body.get(2)) {
     let args = body.to_vec();
-    if let Some(shape) = crate::codegen::destruct_list_match_shape(&args) {
+    if let Some(shape) = crate::codegen::destruct_list_match_shape(&args)
+      && js_destruct_list_binders_are_distinct(&shape)
+    {
       return gen_destruct_list_match_code(&shape, local_defs, ns, file_imports, tags, base_return_label);
     }
     return gen_indexed_match_code(&body[0], table, local_defs, ns, file_imports, tags, base_return_label);
@@ -1774,6 +1776,9 @@ fn gen_match_code(
           if matches!(binding, Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } if sym.as_ref() == "_") {
             continue;
           }
+          if binder_rebound_later(&pat_xs.to_vec()[1..], i) {
+            continue;
+          }
           let bind_name = match binding {
             Calcit::Local(CalcitLocal { sym, .. }) => escape_var(sym),
             Calcit::Symbol { sym, .. } => escape_var(sym),
@@ -1813,6 +1818,20 @@ fn gen_match_code(
   } else {
     Ok(make_fn_wrapper(&chunk, has_await))
   }
+}
+
+/// The fused lowering binds with `let` while still reading the subject, so a
+/// binder whose JS name equals the subject's (or the other binder's) would hit
+/// the temporal dead zone. Compare escaped names, since distinct Calcit names
+/// such as `a-b` and `a_b` can escape to the same identifier.
+fn js_destruct_list_binders_are_distinct(shape: &crate::codegen::DestructListMatch<'_>) -> bool {
+  let Calcit::Local(CalcitLocal { sym: subject, .. }) = shape.subject else {
+    return false;
+  };
+  let subject = escape_var(subject);
+  let head = shape.head.map(|h| escape_var(h));
+  let tail = shape.tail.map(|t| escape_var(t));
+  head.as_ref() != Some(&subject) && tail.as_ref() != Some(&subject) && (head.is_none() || head != tail)
 }
 
 /// Lowers `match (destruct-list xs) ((:none) a) ((:some h t) b)` to the body of
@@ -1856,6 +1875,19 @@ fn gen_destruct_list_match_code(
   } else {
     Ok(make_fn_wrapper(&chunk, has_await))
   }
+}
+
+/// Whether a later binder of the same match pattern takes the same JS name.
+/// The later binding wins, as in native; emitting both would redeclare a `let`.
+fn binder_rebound_later(binders: &[Calcit], idx: usize) -> bool {
+  let name = |binder: &Calcit| match binder {
+    Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } if sym.as_ref() != "_" => Some(escape_var(sym)),
+    _ => None,
+  };
+  let Some(current) = binders.get(idx).and_then(name) else {
+    return false;
+  };
+  binders[idx + 1..].iter().any(|later| name(later).as_ref() == Some(&current))
 }
 
 fn gen_indexed_match_code(
@@ -1907,6 +1939,9 @@ fn gen_indexed_match_code(
     let mut scoped_defs = local_defs.to_owned();
     for (idx, binding) in pattern.iter().skip(1).enumerate() {
       if matches!(binding, Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } if sym.as_ref() == "_") {
+        continue;
+      }
+      if binder_rebound_later(&pattern.to_vec()[1..], idx) {
         continue;
       }
       let bind_name = match binding {
