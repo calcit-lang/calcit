@@ -222,6 +222,47 @@ test("schema map entry ordering is not a breaking signature change", () => {
   assertPreserved(baseline, changed);
 });
 
+test("resolved core call syntax retains the same frozen nominal identity", () => {
+  const changed = structuredClone(baseline);
+  const row = changed["method-contracts"].find(row => row.receiver === "calcit.core/FsPath" && row.name === ".read-dir");
+  assert.equal(row.returns.quote[2][2], "'FsPath");
+  row.returns.quote[2][2] = "'calcit.core/FsPath";
+  assertPreserved(baseline, changed);
+  assertPreserved(changed, baseline);
+  for (const replacement of ["'other/FsPath", "'Dynamic", "'calcit.core/OtherPath"]) {
+    row.returns.quote[2][2] = replacement;
+    assert.throws(() => assertPreserved(baseline, changed), /changed frozen method-contracts/);
+  }
+});
+
+test("nominal spelling equivalence cannot erase lexical generics or user origins", () => {
+  for (const boundary of ["generic", "user-origin", "unfrozen-declaration"]) {
+    const previous = structuredClone(baseline);
+    const method = previous.methods.find(row => row.receiver === "calcit.core/FsPath" && row.name === ".read-dir");
+    if (boundary === "generic") {
+      // Comparison must keep a lexical name distinct even if a core type
+      // with that same short name exists in the frozen declaration set.
+      method.schema.quote.push([":generics", ["[]", "'FsPath"]]);
+    } else if (boundary === "user-origin") {
+      method.provenance.symbol = "app.path/read-dir";
+    } else {
+      previous.definitions = previous.definitions.filter(row => row.name.symbol !== "calcit.core/FsPath");
+    }
+    const changed = structuredClone(previous);
+    if (boundary === "unfrozen-declaration") changed.definitions.push(definition(baseline, "FsPath"));
+    const row = changed["method-contracts"].find(row => row.receiver === "calcit.core/FsPath" && row.name === ".read-dir");
+    row.returns.quote[2][2] = "'calcit.core/FsPath";
+    assert.throws(() => assertPreserved(previous, changed), /changed frozen method-contracts/, boundary);
+  }
+});
+
+test("nominal declaration changes remain rejected despite equivalent call spellings", () => {
+  const changed = structuredClone(baseline);
+  definition(changed, "FsPath").declaration.quote[1] = "OtherPath";
+  changed["method-contracts"].find(row => row.receiver === "calcit.core/FsPath" && row.name === ".read-dir").returns.quote[2][2] = "'calcit.core/FsPath";
+  assert.throws(() => assertPreserved(baseline, changed), /changed frozen definitions/);
+});
+
 test("function implementation bodies and argument variable names are not frozen", () => {
   const scope = { version: "test", scope: "test", definitions: [{ name: { symbol: "calcit.core/example" } }], methods: [] };
   const schema = ["{}", [":kind", ":fn"], [":args", ["[]", "'Number"]], [":return", "'Number"]];
