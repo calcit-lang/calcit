@@ -266,6 +266,63 @@
               assert= 2 $ :n $ choose true
               assert= 3 $ :n $ choose false
             :tags $ #{} :nominal-callback-origin
+        'empty-generic-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn empty-generic-list (anchor)
+            assert-type ([]) (:: 'List 'T)
+            , &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-empty-family)
+            :code $ quote $ assert= &unit
+              empty-generic-list $ [] 1
+            :tags $ #{} :empty-generic-family
+        'empty-generic-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn empty-generic-map (anchor)
+            assert-type ({}) (:: 'Map 'K 'V)
+            , &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] $ :: 'Map 'K 'V
+            :generics $ [] 'K 'V
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-empty-family)
+            :code $ quote $ assert= &unit
+              empty-generic-map $ {} $ 1 2
+            :tags $ #{} :empty-generic-family
+        'empty-generic-set $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn empty-generic-set (anchor)
+            assert-type (#{}) (:: 'Set 'T)
+            , &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] $ :: 'Set 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-empty-family)
+            :code $ quote $ assert= &unit
+              empty-generic-set $ #{}
+            :tags $ #{} :empty-generic-family
+        'fold-generic-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn fold-generic-list (xs)
+            foldl xs
+              assert-type ([]) (:: 'List 'T)
+              fn (acc item)
+                hint-fn $ {}
+                  :args $ [] (:: 'List 'T) 'T
+                  :return $ :: 'List 'T
+                append acc item
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-callback-and-accumulator-generic)
+            :code $ quote $ do
+              assert= ([] 1 2)
+                fold-generic-list $ [] 1 2
+              assert= ([])
+                fold-generic-list $ []
+            :tags $ #{} :empty-generic-family
         'mixed-origin $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn mixed-origin ()
             option:fold (Option :some true)
@@ -274,6 +331,21 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'app.callback-left/Item)
             :args $ []
+        'nonempty-generic-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nonempty-generic-list (anchor)
+            assert-type ([] 1) (:: 'List 'T)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+        'open-generic-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn open-generic-list (anchor values)
+            assert-type values $ :: 'List 'Number
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'Number) (:: 'List 'Dynamic)
+            :return $ :: 'List 'Number
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.callback-origin
           :require (app.callback-left :as left) (app.callback-right :as right)

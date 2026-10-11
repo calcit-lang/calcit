@@ -1235,7 +1235,13 @@ pub(super) fn expression_is_proven_for(
   scope: &ScopeTypes,
   async_invocation: bool,
 ) -> bool {
-  if expected.contains_type_var() {
+  // Empty constructors prove their collection family without binding any
+  // member variables. Nonempty values still need independent generic evidence.
+  let empty_family = matches!(
+    expected,
+    CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Map(_, _) | CalcitTypeAnnotation::Set(_)
+  ) && super::empty_container_has_no_type_evidence(expr, expected);
+  if expected.contains_type_var() && !empty_family {
     return false;
   }
 
@@ -2090,6 +2096,36 @@ mod tests {
     ]);
 
     assert!(specialize_core_expected_types(&fn_info, &args, &ScopeTypes::new(), &fn_info.arg_types).is_none());
+  }
+
+  #[test]
+  fn empty_constructor_proof_keeps_generic_members_rigid() {
+    let t = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let scope = ScopeTypes::new();
+    let families = [
+      (CalcitProc::List, CalcitTypeAnnotation::List(t.clone())),
+      (CalcitProc::Set, CalcitTypeAnnotation::Set(t.clone())),
+      (CalcitProc::NativeMap, CalcitTypeAnnotation::Map(t.clone(), t.clone())),
+    ];
+    for (proc, expected) in &families {
+      let empty = Calcit::from(vec![Calcit::Proc(*proc)]);
+      assert!(expression_is_proven_for(&empty, expected, &scope, false));
+      for (other, _) in &families {
+        if other != proc {
+          let wrong_family = Calcit::from(vec![Calcit::Proc(*other)]);
+          assert!(!expression_is_proven_for(&wrong_family, expected, &scope, false));
+        }
+      }
+      let open = make_local("open", Arc::new(expected.clone()));
+      assert!(!expression_is_proven_for(&open, expected, &scope, false));
+    }
+    let list_t = CalcitTypeAnnotation::List(t.clone());
+    let nonempty = Calcit::from(vec![Calcit::Proc(CalcitProc::List), Calcit::Number(1.0)]);
+    assert!(!expression_is_proven_for(&nonempty, &list_t, &scope, false));
+    let empty = Calcit::from(vec![Calcit::Proc(CalcitProc::List)]);
+    assert!(!expression_is_proven_for(&empty, &t, &scope, false));
+    let dynamic = make_local("open", Arc::new(CalcitTypeAnnotation::List(crate::calcit::DYNAMIC_TYPE.clone())));
+    assert!(!expression_is_proven_for(&dynamic, &list_t, &scope, false));
   }
 
   #[test]

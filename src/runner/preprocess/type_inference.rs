@@ -1864,7 +1864,11 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
         }
         Calcit::Syntax(CalcitSyntax::AssertType | CalcitSyntax::UnsafeCoerce | CalcitSyntax::JsCast, _) => xs
           .get(2)
-          .map(|form| CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &[]))
+          .map(|form| {
+            let lexical_generics =
+              crate::calcit::type_annotation::free_type_variable_names(&scope_types.values().cloned().collect::<Vec<_>>());
+            CalcitTypeAnnotation::parse_type_annotation_form_with_generics(form, &lexical_generics)
+          })
           .map(resolve_program_trait_refs_for_body),
 
         Calcit::Syntax(CalcitSyntax::ParseCirruEdnAs | CalcitSyntax::DecodeMapAs, _) => xs

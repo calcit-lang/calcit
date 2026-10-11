@@ -11940,7 +11940,11 @@ fn preprocess_assert_type_with_obligation(
   };
 
   let asserted_target = target_form;
-  let asserted_type = local_nominal_type.unwrap_or_else(|| CalcitTypeAnnotation::parse_type_annotation_form(&asserted_type_form));
+  let asserted_type = local_nominal_type.unwrap_or_else(|| {
+    let lexical_generics =
+      crate::calcit::type_annotation::free_type_variable_names(&ctx.scope_types.values().cloned().collect::<Vec<_>>());
+    CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&asserted_type_form, &lexical_generics)
+  });
   let current_type = resolve_type_value(&asserted_target, ctx.scope_types).or_else(|| match &asserted_target {
     Calcit::Local(local) => Some(local.type_info.clone()),
     _ => None,
@@ -11957,9 +11961,17 @@ fn preprocess_assert_type_with_obligation(
   // Contradictory evidence is invalid for every expression, not just a local.
   // Open boundaries still require their separate migration policy; this check
   // neither manufactures proof nor changes their existing behavior.
-  let mut assertion_proof = current_type
-    .as_ref()
-    .map(|actual| actual.prove_with_bindings(asserted_type.as_ref(), &mut HashMap::new()));
+  let mut assertion_proof = current_type.as_ref().map(|actual| {
+    let mut bindings = HashMap::new();
+    let proof = actual.prove_with_bindings(asserted_type.as_ref(), &mut bindings);
+    // An assertion checks a lexical contract; unlike a call, it cannot
+    // instantiate the surrounding function's generic variables.
+    if proof.is_proven() && !bindings.is_empty() {
+      TypeProof::NeedsBoundary(crate::calcit::type_annotation::TypeBoundaryReason::UnboundTypeVariable)
+    } else {
+      proof
+    }
+  });
   if !assertion_proof.is_some_and(TypeProof::is_proven)
     && type_checking::expression_is_proven_for(&asserted_target, &asserted_type, ctx.scope_types, false)
   {

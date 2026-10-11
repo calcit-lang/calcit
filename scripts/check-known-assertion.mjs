@@ -28,6 +28,27 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
+  // Empty constructors prove a generic collection family without binding its
+  // members; nonempty and open inputs cannot manufacture the same evidence.
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "empty-generic-family", "--backend", "native,js",
+  ], { ...options, stdio: "inherit" });
+  await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  const emptyFamilyOriginal = await readFile(snapshot);
+  for (const name of ["empty-generic-list", "empty-generic-map", "empty-generic-set", "fold-generic-list"]) {
+    const proof = JSON.parse(run("fix", "--rule", "assert-type-proof-v1",
+      "--ns", "app.callback-origin", "--def", name, "--format", "json"));
+    assert.deepEqual(proof.diagnostics, []);
+  }
+  for (const name of ["nonempty-generic-list", "open-generic-list"]) {
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "assert-type-proof-v1",
+      "--ns", "app.callback-origin", "--def", name, "--format", "json"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_ASSERT_TYPE_UNPROVEN/);
+  }
+  assert.deepEqual(await readFile(snapshot), emptyFamilyOriginal);
   // #1553: generated callback hints retain the nominal source owner across
   // option lowering; same-named Structs from another namespace stay distinct.
   execFileSync(process.execPath, [
