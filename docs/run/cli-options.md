@@ -282,6 +282,8 @@ calcit --strict-types js
 ```
 
 所选 entry 未设置 `:feature-policy :js-ffi` 时，默认严格诊断在内存中采用 `:error`，不改写 Snapshot。
+
+`--check-only` 另会在 stderr 以 `Notes:` 列出建议级诊断（代码前缀 `A_`），例如 `A_DEPRECATED_METHOD`：接收者类型已证明的项目源码调用仍可用但已弃用的方法（List `.add`、List/Map/Set `.count`、FfiTask `.cancel/.cancel-with`），并给出首选写法。建议级诊断不是 warning，不会使检查、运行或代码生成失败，也不计入退出码；依赖项和 core 内部的调用不报告。
 旧 entry 可显式设置 `calcit config set feature-policy.js-ffi warn`（或 `allow`）分阶段迁移，并用
 `calcit config show` 核对策略。默认严格诊断也包含定位到源码的未类型化 JS FFI 检查。
 开放数据边界可以保留经过审阅的 `Dynamic`；是否能进入具体类型操作由编译器 warning/error 决定，
