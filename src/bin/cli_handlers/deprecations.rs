@@ -87,6 +87,26 @@ fn format_hint(subject: &str, new: &str) -> String {
   }
 }
 
+/// Returns the one-line migration hint for the retired type-policy flags.
+///
+/// Strict diagnostics are the default, so `--strict-types` only restates the
+/// default (it still pre-checks the entry) and `--compat-types` is a temporary
+/// escape hatch; both flags stay accepted until the next non-patch release.
+pub fn deprecated_type_policy_flag_hint(strict_types: bool, compat_types: bool) -> Option<String> {
+  match (strict_types, compat_types) {
+    (true, false) => Some(format_hint(
+      "`--strict-types`",
+      "the default strict diagnostics (pair them with `--check-only` to pre-check the entry)",
+    )),
+    (false, true) => Some(
+      "[Deprecated] `--compat-types` will be removed in the next non-patch release and has no replacement; fix the reported type diagnostics instead. See docs/run/upgrade.md."
+        .to_owned(),
+    ),
+    (true, true) => Some(format_hint("`--strict-types` and `--compat-types`", NO_REPLACEMENT)),
+    (false, false) => None,
+  }
+}
+
 /// Returns the one-line migration hint for a deprecated operation staged by `edit transaction`.
 pub fn deprecated_transaction_operation_hint(index: usize, group: &str, subcommand: &str) -> Option<String> {
   match (group, subcommand) {
@@ -311,6 +331,15 @@ pub fn normalize_weak_types_view(cli_args: ToplevelCalcit) -> Result<ToplevelCal
 
 #[cfg(test)]
 mod tests {
+  #[test]
+  fn type_policy_flags_report_deprecation_only_when_used() {
+    use super::deprecated_type_policy_flag_hint as hint;
+    assert!(hint(false, false).is_none());
+    assert!(hint(true, false).unwrap().contains("`--strict-types`"));
+    assert!(hint(false, true).unwrap().contains("`--compat-types`"));
+    assert!(hint(true, true).unwrap().contains("`--strict-types` and `--compat-types`"));
+  }
+
   use super::*;
   use argh::FromArgs;
 

@@ -272,6 +272,8 @@ calcit calcit.cirru --check-only --all-defs --format edn
 变化会冷启动。闭包证据缺失或含 unresolved dependency，以及 module load 失败时会执行普通检查或明确 bypass，均不会复用或更新旧的成功标记。
 `--keep-going` 仍用于收集完整结构化诊断，两者不可组合；CI 与发布门禁继续运行不带 `--incremental` 的冷检查。
 
+> **弃用**：`--strict-types` 与 `--compat-types` 现在会在 stderr 打印一行弃用提示，行为保持不变；`--strict-types` 只是重复默认的严格诊断，`--compat-types` 没有替代，应改为修复报告的类型诊断。两个选项计划在 0.31 删除，补丁版本不会删除它们。
+
 `--strict-types` 可显式确认严格策略，并在执行或代码生成前预检查所选入口；它不声明项目没有 Dynamic 或其他统计债务：
 
 ```bash

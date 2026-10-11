@@ -501,6 +501,10 @@ fn run_cli() -> Result<(), String> {
     eprintln!("{hint}");
   }
 
+  if let Some(hint) = cli_handlers::deprecated_type_policy_flag_hint(cli_args.strict_types, cli_args.compat_types) {
+    eprintln!("{hint}");
+  }
+
   if let Some(level) = cli_args.tips_level.as_deref() {
     cli_handlers::set_tips_level(level)?;
   }
