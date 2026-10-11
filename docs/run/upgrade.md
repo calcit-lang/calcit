@@ -655,7 +655,7 @@ calcit .calcit/modules/calcit.std/calcit.cirru query examples 'calcit.std.proces
 
 ### Ref 构造名
 
-`Ref<T>` 的首选构造名是 `ref`（局部）与 `defref`（命名空间级），与 `type-of` 返回的 `:ref` 和谓词 `ref?` 一致。`atom` / `defatom` 在 0.29.0 仍可调用，读取为同一个实现，行为、类型与 native/JS/WASM 支持范围都不变。它们暂不带 `:deprecated` 标记：Respo、memof、js-ffi 等仍有 legacy `analyze quality` baseline 的项目大量使用旧名，加标记会直接改变其 `deprecatedCalls` 预算。
+`Ref<T>` 的首选构造名是 `ref`（局部）与 `defref`（命名空间级），与 `type-of` 返回的 `:ref` 和谓词 `ref?` 一致。`atom` / `defatom` 在 0.29.0 仍可调用，读取为同一个实现，行为、类型与 native/JS/WASM 支持范围都不变。自本次变更起它们带 `:deprecated` 标记，`calcit analyze deprecated` 会列出调用点，使用 `deprecatedCalls` 预算的项目升级前请先运行 `calcit fix --rule core-ref-constructor-v1`；已知活跃下游（Respo、Recollect 等）默认分支已无调用。
 
 ```bash
 calcit calcit.cirru fix --rule core-ref-constructor-v1 --include-attached --format edn

@@ -4225,14 +4225,14 @@
               assert= 9 $ assoc-in (&{}) ([]) 9
             :tags $ #{} :core :unit
         'atom $ %{} 'CodeEntry
-          :doc "|Compatibility spelling of the same builtin implementation as ref, creating a local Ref<T>. Prefer ref; core-ref-constructor-v1 migrates proven source forms. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
+          :doc "|Deprecated: Compatibility spelling of the same builtin implementation as ref, creating a local Ref<T>. Prefer ref; core-ref-constructor-v1 migrates proven source forms. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'T
             :generics $ [] 'T
             :return $ :: 'Ref 'T
-          :tags $ #{} :builtin :internal :state
+          :tags $ #{} :builtin :deprecated :internal :state
         'bit-and $ %{} 'CodeEntry
           :doc "|internal function for bitwise AND\nSyntax: (bit-and a b)\nParams: a (integer), b (integer)\nReturns: integer\nPerforms bitwise AND operation on two integers"
           :code $ quote &runtime-implementation
@@ -5461,7 +5461,7 @@
             :required $ [] 'SyntaxSymbol $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
         'defatom $ %{} 'CodeEntry
-          :doc "|Compatibility spelling of the same namespace Ref<T> syntax as defref. Prefer defref; core-ref-constructor-v1 preserves source resolution and initialization/reload behavior. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
+          :doc "|Deprecated: Compatibility spelling of the same namespace Ref<T> syntax as defref. Prefer defref; core-ref-constructor-v1 preserves source resolution and initialization/reload behavior. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
           :code $ quote &runtime-implementation
           :examples $ [] $ quote
             ; defatom *my-atom $ {} $ :a 1
@@ -5469,7 +5469,7 @@
             :args $ [] 'Symbol 'T
             :generics $ [] 'T
             :return $ :: 'Ref 'T
-          :tags $ #{} :builtin :internal :state :syntax
+          :tags $ #{} :builtin :deprecated :internal :state :syntax
         'defenum $ %{} 'CodeEntry
           :doc "|Define an EnumDef with a closed set of variants."
           :code $ quote $ defmacro defenum (name & variants)
@@ -11106,12 +11106,12 @@
                 assert= |-0 $ turn-string $ round -0.4
               :tags $ #{} :core :unit
         'round? $ %{} 'CodeEntry
-          :doc "|判断 Number 是否有限且恰好无小数部分。首选 integer? 和 Number .integer?；旧函数 round? 在兼容窗口保持同义，Number 方法 .round? 已在 0.29.0 删除。可用 calcit fix --rule core-integer-predicate-v1 显式预览来源受控的函数调用迁移，附带 tests/examples 需人工检查。NaN、正负 Infinity、非零小数返回 false，-0 返回 true。这不是安全整数范围或 Int32/UInt32 等 refinement 检查，也不执行舍入。"
+          :doc "|已弃用:判断 Number 是否有限且恰好无小数部分。首选 integer? 和 Number .integer?；旧函数 round? 在兼容窗口保持同义，Number 方法 .round? 已在 0.29.0 删除。可用 calcit fix --rule core-integer-predicate-v1 显式预览来源受控的函数调用迁移，附带 tests/examples 需人工检查。NaN、正负 Infinity、非零小数返回 false，-0 返回 true。这不是安全整数范围或 Int32/UInt32 等 refinement 检查，也不执行舍入。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Number
-          :tags $ #{} :builtin :internal
+          :tags $ #{} :builtin :deprecated :internal
           :tests $ []
             %{} 'TestEntry (:name |distinguishes-integers)
               :code $ quote $ do
