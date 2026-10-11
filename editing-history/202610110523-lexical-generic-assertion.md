@@ -16,8 +16,9 @@
 所有 fixture Snapshot 均经官方 CLI transaction dry-run、scoped revision 守卫写入。
 
 最终源码的 core native 610/610、JS 609/609（1 项既有 exclusion）通过；API 基线不变。
-四项新 fixture 在 native/JS 各 4/4 通过。完整 Rust 与 known-assertion 最终回放已启动，
-结果需要其终态确认；完整 yarn check-all 尚未执行，不能宣称完整集成门禁通过。
+四项新 fixture 在 native/JS 各 4/4 通过。最终完整 Rust 1666 passed、1 ignored，
+fmt 与 Clippy 通过。known-assertion 最终回放仍需其终态确认；完整 yarn check-all
+尚未执行，不能宣称完整集成门禁通过。
 
 Calcium 两个既有 Unit callback 显式返回 Unit，正式 alpha.29 client 44/44、重新生成
 JS 的原子 patch 和真实双客户端 Kanban 回归通过，独立热/冷存储 1060/752 字节，
