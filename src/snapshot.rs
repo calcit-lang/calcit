@@ -2346,6 +2346,25 @@ fn parse_entries_with_context(data: &Edn, require_mode: bool) -> Result<HashMap<
     let entry_name: String = from_edn(entry_key.to_owned())
       .map_err(|e| format!("entries: failed to parse entry name: {e}; got {}", format_edn_preview(entry_key)))?;
     let owner = format!("entries.{entry_name}");
+    if !require_mode {
+      let entry_map = entry_value
+        .view_map()
+        .map_err(|e| format!("{owner}: expected a map: {e}; got {}", format_edn_preview(entry_value)))?;
+      validate_format_config_keys(
+        &entry_map,
+        &owner,
+        &[
+          "mode",
+          "init-fn",
+          "reload-fn",
+          "description",
+          "modules",
+          "type-slots",
+          "feature-policy",
+          "target",
+        ],
+      )?;
+    }
     let entry = parse_snapshot_entry_with_context(entry_value.to_owned(), &owner, require_mode)?;
     entries.insert(entry_name, entry);
   }
@@ -2697,27 +2716,30 @@ fn load_snapshot_data_for_format_inner(data: &Edn, path: &str) -> Result<(Snapsh
   ))
 }
 
-fn parse_legacy_configs_for_format(data: &Edn) -> Result<(SnapshotEntry, Option<String>), String> {
-  let configs = data
-    .view_map()
-    .map_err(|e| format!("legacy configs: expected a map: {e}; got {}", format_edn_preview(data)))?;
-  for key in configs.0.keys() {
+fn validate_format_config_keys(data: &EdnMapView, owner: &str, allowed: &[&str]) -> Result<(), String> {
+  for key in data.0.keys() {
     let name = match key {
       Edn::Tag(tag) => tag.ref_str(),
       Edn::Str(text) | Edn::Symbol(text) => text.trim_start_matches(':'),
       _ => {
         return Err(format!(
-          "legacy configs: field name must be a tag, string, or symbol; got {}",
+          "{owner}: field name must be a tag, string, or symbol; got {}",
           format_edn_preview(key)
         ));
       }
     };
-    if !matches!(name, "init-fn" | "reload-fn" | "modules" | "version" | "mode") {
-      return Err(format!(
-        "legacy configs: unknown field `:{name}`; migrate it explicitly before formatting"
-      ));
+    if !allowed.contains(&name) {
+      return Err(format!("{owner}: unknown field `:{name}`; migrate it explicitly before formatting"));
     }
   }
+  Ok(())
+}
+
+fn parse_legacy_configs_for_format(data: &Edn) -> Result<(SnapshotEntry, Option<String>), String> {
+  let configs = data
+    .view_map()
+    .map_err(|e| format!("legacy configs: expected a map: {e}; got {}", format_edn_preview(data)))?;
+  validate_format_config_keys(&configs, "legacy configs", &["init-fn", "reload-fn", "modules", "version", "mode"])?;
   let entry = parse_snapshot_entry_with_context(data.to_owned(), "legacy configs", false)?;
   let version = match configs.get(&Edn::tag("version")).or_else(|| configs.get(&Edn::str("version"))) {
     Some(Edn::Nil) => None,
@@ -6188,6 +6210,20 @@ mod tests {
     assert_eq!(snapshot.entries["server"].modules, vec!["server-lib/"]);
     assert_eq!(snapshot.entries["node"].mode, SnapshotRunMode::Js);
     assert_eq!(snapshot.entries["node"].target, Some(SnapshotTarget::Node));
+
+    let mut misspelled = legacy.clone();
+    let Edn::Map(root) = &mut misspelled else {
+      panic!("legacy root map")
+    };
+    let mut misspelled_server = server.clone();
+    let Edn::Map(fields) = &mut misspelled_server else {
+      panic!("entry map")
+    };
+    fields.insert_key("targte", Edn::tag("native"));
+    root.insert_key("entries", Edn::map_from_iter([(Edn::str("server"), misspelled_server)]));
+    let error =
+      load_snapshot_data_for_format(&misspelled, "calcit.cirru").expect_err("unknown legacy entry fields must not be discarded");
+    assert!(error.contains("entries.server: unknown field `:targte`"), "error: {error}");
 
     let rendered = render_snapshot_content(&snapshot).expect("migrated snapshot should render");
     let mut canonical = cirru_edn::parse(&rendered).expect("canonical output should parse");
