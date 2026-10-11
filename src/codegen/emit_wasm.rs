@@ -9009,6 +9009,10 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
     return Err("match requires a value and branches".into());
   }
 
+  if let Some(shape) = crate::codegen::destruct_list_match_shape(args) {
+    return emit_destruct_list_match(ctx, &shape);
+  }
+
   // Evaluate the value expression (an enum) and store its f64 pointer
   emit_expr(ctx, &args[0])?;
   let ptr_f64 = ctx.alloc_local();
@@ -9132,6 +9136,34 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
     ctx.emit(Instruction::End);
   }
 
+  Ok(())
+}
+
+/// Lowers `match (destruct-list xs) ((:none) a) ((:some h t) b)` with the same
+/// list primitives `destruct-list` uses, without allocating the enum.
+fn emit_destruct_list_match(ctx: &mut WasmGenCtx, shape: &crate::codegen::DestructListMatch<'_>) -> Result<(), String> {
+  emit_ds_empty(ctx, std::slice::from_ref(shape.subject))?;
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Ne);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  ctx.block_depth += 1;
+  emit_expr(ctx, shape.none_body)?;
+  ctx.emit(Instruction::Else);
+  if let Some(head) = shape.head {
+    emit_list_nth(ctx, &[shape.subject.to_owned(), Calcit::Number(0.0)])?;
+    let idx = ctx.declare_local(head);
+    ctx.local_types.remove(head.as_ref());
+    ctx.emit(Instruction::LocalSet(idx));
+  }
+  if let Some(tail) = shape.tail {
+    emit_list_rest(ctx, std::slice::from_ref(shape.subject))?;
+    let idx = ctx.declare_local(tail);
+    ctx.local_types.remove(tail.as_ref());
+    ctx.emit(Instruction::LocalSet(idx));
+  }
+  emit_expr(ctx, shape.some_body)?;
+  ctx.block_depth -= 1;
+  ctx.emit(Instruction::End);
   Ok(())
 }
 
