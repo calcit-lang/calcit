@@ -19,12 +19,15 @@ pub(super) fn resolve_callee_fn_idx(ctx: &WasmGenCtx, callee: &Calcit) -> Result
         .ok_or_else(|| format!("unknown fn in foldl callee: {qualified}"))?;
       // Callee must have arity 2 (acc, elem). If the def_ref points to a function with
       // different arity (e.g. the outer containing function), reject it — calling with 2
-      // args would produce an invalid WASM module.
-      if let Some(arity) = ctx
-        .fn_arity
-        .get(&qualified)
-        .or_else(|| ctx.fn_arity.get(def_ref.def_name.as_ref()))
-        .copied()
+      // args would produce an invalid WASM module. A `&` rest callee is exempt:
+      // `emit_static_callee_call` packs or traps by its fixed arity (#1964).
+      let has_rest = ctx.fn_has_rest.contains_key(&qualified) || ctx.fn_has_rest.contains_key(def_ref.def_name.as_ref());
+      if !has_rest
+        && let Some(arity) = ctx
+          .fn_arity
+          .get(&qualified)
+          .or_else(|| ctx.fn_arity.get(def_ref.def_name.as_ref()))
+          .copied()
         && arity != 2
       {
         return Err(format!(

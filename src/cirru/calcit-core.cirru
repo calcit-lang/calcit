@@ -8067,6 +8067,9 @@
               :code $ quote $ do
                 assert= 6 $ foldl ([] 1 2 3) 0 +
                 assert= ([] 1 2) $ map ([] 1 2) +
+                assert= ([] 1 2) $ foldl ([] 1 2) ([]) conj
+                assert= ([] 1 2) $ foldl ([] ([] 1) ([] 2)) ([]) concat
+                assert= ([] |a |b) $ map ([] |a |b) str
                 assert= ([] 1 1) $ map ([] 1 2) $ fn (& xs) (&list:count xs)
                 assert= 2 $ foldl ([] 3 4) 0 $ fn (acc & xs) (&+ acc $ &list:count xs)
               :tags $ #{} :call-boundary
