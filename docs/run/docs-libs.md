@@ -6,13 +6,12 @@ category: "run"
 aliases:
   - "docs"
   - "libs"
-  - "read-lines"
+  - "line range"
   - "scan-md"
   - "docs read"
 entry_for:
   - "calcit docs search"
   - "calcit docs read"
-  - "calcit docs read-lines"
   - "calcit docs remote-libs scan-md"
 ---
 
@@ -74,19 +73,19 @@ calcit docs read run.md "Quick start"
 calcit docs read run.md "Quick start" --no-subheadings
 ```
 
-### Precision Reading (`read-lines`)
+### Precision Reading (`--start` / `--lines`)
 
-Use `read-lines` for large files where you need a specific range:
+Use `docs read` with `--start` and `--lines` for large files where you need a specific range. `--start` skips that many lines (default 0) and `--lines` sets the range length (default 80):
 
 ```bash
 # Read 50 lines starting from line 100 of common-patterns.md
-calcit docs read-lines common-patterns.md --start 100 --lines 50
+calcit docs read common-patterns.md --start 100 --lines 50
 
 # Resolve by alias/title first, then read a specific range
-calcit docs read-lines search-replace --start 48 --lines 8
+calcit docs read search-replace --start 48 --lines 8
 
 # Read a module document by title/alias with the same resolver
-calcit docs read-lines Respo-Agent --module respo.calcit --start 1 --lines 8
+calcit docs read Respo-Agent --module respo.calcit --start 1 --lines 8
 
 # Discover headings first, then narrow
 calcit docs sections query.md

@@ -15,7 +15,6 @@ aliases:
 entry_for:
   - "calcit cirru parse"
   - "calcit cirru format"
-  - "calcit cirru show-guide"
 ---
 
 ## Cirru Syntax Essentials

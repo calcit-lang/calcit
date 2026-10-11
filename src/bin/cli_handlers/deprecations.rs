@@ -5,8 +5,9 @@
 //! next non-patch release removes it (see `docs/run/upgrade.md`).
 
 use calcit::cli_args::{
-  AnalyzeCommand, AnalyzeSubcommand, CalcitCommand, CheckTypesCommand, DeprecatedCommand, DynamicMethodsCommand, QuerySubcommand,
-  ToplevelCalcit, TreeSubcommand, WeakTypesCommand,
+  AnalyzeCommand, AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CallGraphDiffCommand, CheckTypesCommand, CirruSubcommand,
+  CountCallsCommand, DeprecatedCommand, DocsCommand, DocsReadLinesCommand, DocsSubcommand, DynamicMethodsCommand, EditSubcommand,
+  QuerySubcommand, ToplevelCalcit, TreeSubcommand, WeakTypesCommand,
 };
 
 /// View kinds accepted by `analyze weak-types --only` in place of the retired
@@ -14,6 +15,9 @@ use calcit::cli_args::{
 const VIEW_COVERAGE: &str = "coverage";
 const VIEW_DYNAMIC_METHOD: &str = "dynamic-method";
 const VIEW_DEPRECATED_CALL: &str = "deprecated-call";
+
+/// Old entries without a replacement name this instead of a command.
+const NO_REPLACEMENT: &str = "";
 
 /// Returns the one-line migration hint for a deprecated command, if any.
 pub fn deprecated_command_hint(cli_args: &ToplevelCalcit) -> Option<String> {
@@ -33,6 +37,13 @@ pub fn deprecated_command_hint(cli_args: &ToplevelCalcit) -> Option<String> {
         "analyze quality",
         "`calcit --check-only` for correctness and `calcit analyze weak-types [--only coverage|deprecated-call]` to locate debt",
       ),
+      AnalyzeSubcommand::CountCalls(_) => (
+        "analyze count-calls",
+        "`calcit analyze call-graph --counts` (with `--sort count|name` and `--format text|json`)",
+      ),
+      AnalyzeSubcommand::CallGraphDiff(_) => ("analyze call-graph-diff", "`calcit analyze call-graph --diff <ref>`"),
+      AnalyzeSubcommand::JsEscape(_) => ("analyze js-escape", NO_REPLACEMENT),
+      AnalyzeSubcommand::JsUnescape(_) => ("analyze js-unescape", NO_REPLACEMENT),
       _ => return None,
     },
     CalcitCommand::Query(cmd) => match &cmd.subcommand {
@@ -47,11 +58,33 @@ pub fn deprecated_command_hint(cli_args: &ToplevelCalcit) -> Option<String> {
       ),
       _ => return None,
     },
+    CalcitCommand::Edit(cmd) => match &cmd.subcommand {
+      EditSubcommand::RmExample(_) => ("edit rm-example", REPLACE_RM_EXAMPLE),
+      EditSubcommand::NsDoc(_) => ("edit ns-doc", REPLACE_NS_DOC),
+      _ => return None,
+    },
+    CalcitCommand::Docs(cmd) => match &cmd.subcommand {
+      DocsSubcommand::ReadLines(_) => ("docs read-lines", "`calcit docs read <file> --start <n> --lines <n>`"),
+      _ => return None,
+    },
+    CalcitCommand::Cirru(cmd) => match &cmd.subcommand {
+      CirruSubcommand::ShowGuide(_) => ("cirru show-guide", "`calcit docs read cirru-syntax.md`"),
+      _ => return None,
+    },
     _ => return None,
   };
-  Some(format!(
-    "[Deprecated] `calcit {old}` will be removed in the next non-patch release; use {new}. See docs/run/upgrade.md."
-  ))
+  Some(format_hint(&format!("`calcit {old}`"), new))
+}
+
+const REPLACE_RM_EXAMPLE: &str = "`calcit edit examples <ns/def>` with the remaining examples (from `query examples`), or `calcit edit ns` with the changed `:examples`";
+const REPLACE_NS_DOC: &str = "`calcit edit ns <ns>` with the changed `:doc` of the `:ns` entry (from `query ns <ns> --format cirru`)";
+
+fn format_hint(subject: &str, new: &str) -> String {
+  if new == NO_REPLACEMENT {
+    format!("[Deprecated] {subject} will be removed in the next non-patch release and has no replacement. See docs/run/upgrade.md.")
+  } else {
+    format!("[Deprecated] {subject} will be removed in the next non-patch release; use {new}. See docs/run/upgrade.md.")
+  }
 }
 
 /// Returns the one-line migration hint for a deprecated operation staged by `edit transaction`.
@@ -61,8 +94,120 @@ pub fn deprecated_transaction_operation_hint(index: usize, group: &str, subcomma
       "[Deprecated] transaction operation {} uses `tree batch-delete`, which will be removed in the next non-patch release; use one `tree delete` operation per path, highest index first. See docs/run/upgrade.md.",
       index + 1
     )),
+    ("edit", "rm-example") => Some(format!(
+      "[Deprecated] transaction operation {} uses `edit rm-example`, which will be removed in the next non-patch release; use an `edit examples` operation with the remaining examples. See docs/run/upgrade.md.",
+      index + 1
+    )),
+    ("edit", "ns-doc") => Some(format!(
+      "[Deprecated] transaction operation {} uses `edit ns-doc`, which will be removed in the next non-patch release; run `calcit edit ns <ns>` with the changed `:ns` doc as its own guarded step. See docs/run/upgrade.md.",
+      index + 1
+    )),
     _ => None,
   }
+}
+
+/// Rewrites every consolidated entry to the handler that owns it, so a
+/// replacement and its deprecated alias share one implementation.
+pub fn normalize_consolidated_views(cli_args: ToplevelCalcit) -> Result<ToplevelCalcit, String> {
+  let cli_args = normalize_weak_types_view(cli_args)?;
+  let cli_args = normalize_call_graph_view(cli_args)?;
+  normalize_docs_read_lines(cli_args)
+}
+
+/// Rewrites `analyze call-graph --counts` and `--diff <ref>` to the
+/// count-calls and call-graph-diff analyzers.
+fn normalize_call_graph_view(cli_args: ToplevelCalcit) -> Result<ToplevelCalcit, String> {
+  let Some(CalcitCommand::Analyze(AnalyzeCommand {
+    subcommand: AnalyzeSubcommand::CallGraph(options),
+  })) = &cli_args.subcommand
+  else {
+    return Ok(cli_args);
+  };
+  let options: &CallGraphCommand = options;
+  let subcommand = match (options.counts, &options.diff) {
+    (true, Some(_)) => return Err("`analyze call-graph` accepts `--counts` or `--diff <ref>`, not both.".to_owned()),
+    (false, None) => {
+      if options.sort.is_some() {
+        return Err("`--sort` requires `analyze call-graph --counts`.".to_owned());
+      }
+      return Ok(cli_args);
+    }
+    (true, None) => {
+      reject_flags(
+        "analyze call-graph --counts",
+        &[("--max-depth", options.max_depth != 0), ("--show-unused", options.show_unused)],
+      )?;
+      AnalyzeSubcommand::CountCalls(CountCallsCommand {
+        root: options.root.clone(),
+        ns_prefix: options.ns_prefix.clone(),
+        include_core: options.include_core,
+        format: options.format.clone(),
+        sort: options.sort.clone().unwrap_or_else(|| "count".to_owned()),
+      })
+    }
+    (false, Some(git_ref)) => {
+      reject_flags(
+        "analyze call-graph --diff",
+        &[
+          ("--show-unused", options.show_unused),
+          ("--format", options.format != "text"),
+          ("--sort", options.sort.is_some()),
+        ],
+      )?;
+      AnalyzeSubcommand::CallGraphDiff(CallGraphDiffCommand {
+        git_ref: git_ref.clone(),
+        root: options.root.clone(),
+        ns_prefix: options.ns_prefix.clone(),
+        include_core: options.include_core,
+        max_depth: options.max_depth,
+      })
+    }
+  };
+  Ok(ToplevelCalcit {
+    subcommand: Some(CalcitCommand::Analyze(AnalyzeCommand { subcommand })),
+    ..cli_args
+  })
+}
+
+/// Rewrites `docs read <file> --start <n> --lines <n>` to the line-range reader.
+fn normalize_docs_read_lines(cli_args: ToplevelCalcit) -> Result<ToplevelCalcit, String> {
+  let Some(CalcitCommand::Docs(DocsCommand {
+    subcommand: DocsSubcommand::Read(options),
+  })) = &cli_args.subcommand
+  else {
+    return Ok(cli_args);
+  };
+  if options.start.is_none() && options.lines.is_none() {
+    return Ok(cli_args);
+  }
+  reject_flags(
+    "docs read --start/--lines",
+    &[
+      ("<headings>", !options.headings.is_empty()),
+      ("--no-subheadings", options.no_subheadings),
+      ("--full", options.full),
+      ("--with-lines", options.with_lines),
+    ],
+  )?;
+  let subcommand = DocsSubcommand::ReadLines(DocsReadLinesCommand {
+    filename: options.filename.clone(),
+    start: options.start.unwrap_or(0),
+    lines: options.lines.unwrap_or(80),
+    module: options.module.clone(),
+  });
+  Ok(ToplevelCalcit {
+    subcommand: Some(CalcitCommand::Docs(DocsCommand { subcommand })),
+    ..cli_args
+  })
+}
+
+fn reject_flags(form: &str, rejected: &[(&str, bool)]) -> Result<(), String> {
+  for (flag, present) in rejected {
+    if *present {
+      return Err(format!("`{form}` does not support `{flag}`."));
+    }
+  }
+  Ok(())
 }
 
 fn view_kind(only: Option<&str>) -> Result<Option<&'static str>, String> {
@@ -83,12 +228,7 @@ fn view_kind(only: Option<&str>) -> Result<Option<&'static str>, String> {
 }
 
 fn reject_options(view: &str, rejected: &[(&str, bool)]) -> Result<(), String> {
-  for (flag, present) in rejected {
-    if *present {
-      return Err(format!("`analyze weak-types --only {view}` does not support `{flag}`."));
-    }
-  }
-  Ok(())
+  reject_flags(&format!("analyze weak-types --only {view}"), rejected)
 }
 
 /// Rewrites `analyze weak-types --only <view>` to the analyzer that owns that
@@ -264,6 +404,14 @@ mod tests {
       (&["query", "pkg"][..], "query config"),
       (&["query", "modules"][..], "config modules"),
       (&["tree", "batch-delete", "app.main/f", "--paths", "0"][..], "edit transaction"),
+      (&["analyze", "count-calls"][..], "call-graph --counts"),
+      (&["analyze", "call-graph-diff", "HEAD"][..], "call-graph --diff"),
+      (&["analyze", "js-escape", "a?"][..], "has no replacement"),
+      (&["analyze", "js-unescape", "a_$q_"][..], "has no replacement"),
+      (&["edit", "rm-example", "app.main/f", "0"][..], "edit examples"),
+      (&["edit", "ns-doc", "app.main", "doc"][..], "edit ns <ns>"),
+      (&["docs", "read-lines", "a.md"][..], "docs read <file> --start"),
+      (&["cirru", "show-guide"][..], "docs read cirru-syntax.md"),
     ] {
       let hint = deprecated_command_hint(&parse(args)).expect("deprecated alias should have a hint");
       assert!(hint.starts_with("[Deprecated]") && hint.contains(replacement), "{hint}");
@@ -271,5 +419,135 @@ mod tests {
     }
     assert_eq!(deprecated_command_hint(&parse(&["analyze", "weak-types"])), None);
     assert_eq!(deprecated_command_hint(&parse(&["config", "modules"])), None);
+    assert_eq!(deprecated_command_hint(&parse(&["analyze", "call-graph", "--counts"])), None);
+    assert_eq!(deprecated_command_hint(&parse(&["docs", "read", "a.md", "--lines", "3"])), None);
+    assert_eq!(deprecated_command_hint(&parse(&["edit", "ns", "app.main"])), None);
+  }
+
+  #[test]
+  fn call_graph_options_share_the_legacy_analyzers() {
+    let normalize = |args: &[&str]| normalize_consolidated_views(parse(args)).expect("call-graph option");
+    assert_eq!(
+      analyze(&normalize(&[
+        "analyze",
+        "call-graph",
+        "--counts",
+        "--sort",
+        "name",
+        "--format",
+        "json",
+        "--root",
+        "app.main/main!",
+        "--include-core",
+      ])),
+      analyze(&parse(&[
+        "analyze",
+        "count-calls",
+        "--sort",
+        "name",
+        "--format",
+        "json",
+        "--root",
+        "app.main/main!",
+        "--include-core",
+      ]))
+    );
+    assert_eq!(
+      analyze(&normalize(&["analyze", "call-graph", "--counts"])),
+      analyze(&parse(&["analyze", "count-calls"]))
+    );
+    assert_eq!(
+      analyze(&normalize(&[
+        "analyze",
+        "call-graph",
+        "--diff",
+        "HEAD~1",
+        "--max-depth",
+        "3",
+        "--ns-prefix",
+        "app."
+      ])),
+      analyze(&parse(&[
+        "analyze",
+        "call-graph-diff",
+        "HEAD~1",
+        "--max-depth",
+        "3",
+        "--ns-prefix",
+        "app."
+      ]))
+    );
+    let plain = parse(&["analyze", "call-graph", "--show-unused"]);
+    assert_eq!(normalize_consolidated_views(plain.clone()).expect("plain call-graph"), plain);
+    for args in [
+      &["analyze", "call-graph", "--counts", "--diff", "HEAD"][..],
+      &["analyze", "call-graph", "--sort", "name"][..],
+      &["analyze", "call-graph", "--counts", "--max-depth", "2"][..],
+      &["analyze", "call-graph", "--counts", "--show-unused"][..],
+      &["analyze", "call-graph", "--diff", "HEAD", "--format", "json"][..],
+      &["analyze", "call-graph", "--diff", "HEAD", "--show-unused"][..],
+    ] {
+      assert!(normalize_consolidated_views(parse(args)).is_err(), "{args:?} should be rejected");
+    }
+  }
+
+  #[test]
+  fn docs_read_line_range_shares_the_legacy_reader() {
+    let docs = |cli_args: &ToplevelCalcit| match &cli_args.subcommand {
+      Some(CalcitCommand::Docs(cmd)) => cmd.subcommand.clone(),
+      other => panic!("expected docs command, got {other:?}"),
+    };
+    for (new, old) in [
+      (
+        &["docs", "read", "a.md", "--start", "4", "--lines", "9", "--module", "respo.calcit"][..],
+        &[
+          "docs",
+          "read-lines",
+          "a.md",
+          "--start",
+          "4",
+          "--lines",
+          "9",
+          "--module",
+          "respo.calcit",
+        ][..],
+      ),
+      (
+        &["docs", "read", "a.md", "--start", "4"][..],
+        &["docs", "read-lines", "a.md", "--start", "4"][..],
+      ),
+      (
+        &["docs", "read", "a.md", "--lines", "9"][..],
+        &["docs", "read-lines", "a.md", "--lines", "9"][..],
+      ),
+    ] {
+      let normalized = normalize_consolidated_views(parse(new)).expect("line range");
+      assert_eq!(docs(&normalized), docs(&parse(old)));
+    }
+    let sections = parse(&["docs", "read", "a.md", "Intro"]);
+    assert_eq!(normalize_consolidated_views(sections.clone()).expect("sections"), sections);
+    for args in [
+      &["docs", "read", "a.md", "Intro", "--lines", "3"][..],
+      &["docs", "read", "a.md", "--full", "--start", "3"][..],
+      &["docs", "read", "a.md", "--with-lines", "--lines", "3"][..],
+    ] {
+      assert!(normalize_consolidated_views(parse(args)).is_err(), "{args:?} should be rejected");
+    }
+  }
+
+  #[test]
+  fn deprecated_transaction_operations_name_their_replacement() {
+    for (group, subcommand, replacement) in [
+      ("tree", "batch-delete", "tree delete"),
+      ("edit", "rm-example", "edit examples"),
+      ("edit", "ns-doc", "edit ns <ns>"),
+    ] {
+      let hint = deprecated_transaction_operation_hint(1, group, subcommand).expect("deprecated operation should have a hint");
+      assert!(
+        hint.starts_with("[Deprecated] transaction operation 2") && hint.contains(replacement),
+        "{hint}"
+      );
+    }
+    assert_eq!(deprecated_transaction_operation_hint(0, "edit", "examples"), None);
   }
 }

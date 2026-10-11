@@ -1230,7 +1230,13 @@ fn handle_read_lines(filename: &str, start: usize, lines_to_read: usize, module_
 
   let all_lines: Vec<&str> = doc.content.lines().collect();
   let total_lines = all_lines.len();
-  let end = (start + lines_to_read).min(total_lines);
+  if start >= total_lines && start > 0 {
+    return Err(format!(
+      "`--start {start}` is past the end of `{}` ({total_lines} lines); use a start below {total_lines}.",
+      doc.path
+    ));
+  }
+  let end = start.saturating_add(lines_to_read).min(total_lines);
 
   println!("{} ({})", doc.display_title().cyan().bold(), doc.path.dimmed());
   println!("{}", "=".repeat(60).dimmed());
@@ -1259,7 +1265,7 @@ fn handle_read_lines(filename: &str, start: usize, lines_to_read: usize, module_
   if command_guidance_enabled() {
     println!(
       "{}",
-      "Tip: Use --start <start> --lines <lines> to read a specific range (e.g., 'calcit docs read-lines file.md --start 20 --lines 30')"
+      "Tip: Use --start <start> --lines <lines> to read a specific range (e.g., 'calcit docs read file.md --start 20 --lines 30')"
         .dimmed()
     );
   }
@@ -1302,7 +1308,7 @@ fn handle_list(module_filter: Option<&str>) -> Result<(), String> {
     println!("{}", "    'calcit docs read <filename>' to read the full document".dimmed());
     println!(
       "{}",
-      "    'calcit docs read-lines <filename> --start <start> --lines <lines>' for line-based reading".dimmed()
+      "    'calcit docs read <filename> --start <start> --lines <lines>' for line-based reading".dimmed()
     );
     println!("{}", "    'calcit docs search <keyword>' to search content".dimmed());
   }
