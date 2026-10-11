@@ -972,6 +972,9 @@ Calcit 0.13.48 是接受 `compact.cirru` 文件名的最后一个兼容版本；
 如果新版 `calcit` 连旧的完整 `calcit.cirru` 都无法反序列化，先确认旁边的 `compact.cirru` 能在旧工具链运行，
 并从 Git 状态/历史确认它是最后的有效精简源码。当前 `edit format` 有一个与 runtime loader 隔离的一次性迁移入口，
 可读取早期 compact Snapshot 的 direct quoted namespace/definition 以及顶层 `:configs`，再写成 canonical Snapshot；
+同时包含旧 `:configs` 的历史 named entry 若省略 `:mode`，按旧版 native 默认值恢复；已声明的 mode/target 保留。
+恢复后用 `config show` 审阅所有入口，按实际应用选择 native 或 JS 及对应 target，再执行各入口的检查与构建。
+现代 Snapshot 的入口仍须显式声明 mode，单有 direct quote 不会放宽这一要求。
 普通运行、检查和其他编辑命令仍严格拒绝这些旧结构。按以下可恢复步骤重建：
 
 ```bash
