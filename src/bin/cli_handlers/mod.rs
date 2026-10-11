@@ -40,7 +40,7 @@ pub use command_echo::{print_command_echo, should_echo_command};
 pub use common::{set_verbose_mutation_output, warn_on_global_temp_snapshot_path};
 pub use config::handle_config_command;
 pub use cursor::{handle_cursor_command, set_cursor_after_mode};
-pub use deprecations::{deprecated_command_hint, normalize_weak_types_view};
+pub use deprecations::{deprecated_command_hint, normalize_consolidated_views};
 pub use docs::handle_docs_command;
 pub use edit::handle_edit_command;
 pub use ffi::handle_ffi_command;

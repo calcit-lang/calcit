@@ -150,7 +150,7 @@ echo 'range 10' | calcit eval --stdin
 - Python 语言 ← 使用 → Python 语法
 - Calcit 语言 ← 使用 → Cirru 语法
 
-生成 Calcit 代码前，建议先运行 `calcit cirru show-guide` 了解 Cirru 语法规则。
+生成 Calcit 代码前，建议先运行 `calcit docs read cirru-syntax.md` 了解 Cirru 语法规则。
 
 ---
 
@@ -161,7 +161,7 @@ echo 'range 10' | calcit eval --stdin
 - `主要运行命令` → [run/cli-options.md](./cli-options.md)
 - `查询子命令` → [run/query.md](./query.md)
 - `文档子命令` → [run/docs-libs.md](./docs-libs.md)
-- `Cirru 语法工具` → `calcit cirru show-guide`
+- `Cirru 语法工具` → `calcit docs read cirru-syntax.md`
 - `精细代码树操作` → [run/edit-tree.md](./edit-tree.md)
 - `代码编辑` → [run/edit-tree.md](./edit-tree.md)
 
@@ -244,7 +244,7 @@ echo 'range 10' | calcit eval --stdin
 遇到疑问时使用：
 
 - `calcit docs search keyword` — 在 `docs/` 与 `~/.config/calcit/docs` 中 grep markdown
-- `# see: calcit cirru show-guide` — 读取 Cirru 语法指南
+- `calcit docs read cirru-syntax.md` — 读取 Cirru 语法指南
 - `calcit docs read path.md` — 读取任意文档文件
 - `calcit docs agents --contract` — 每个仓库边界重读的版本化 mutation contract
 - `calcit docs agents [<heading> ...] [--full]` — 权威完整 Agent 指南与按 heading 查询
@@ -841,7 +841,7 @@ calcit docs check-md docs/run/agent-advanced.md --snapshot calcit/test.cirru
 
 ```bash
 # 无必填项的空 map
-# see: calcit cirru show-guide
+# see: calcit docs read cirru-syntax.md
 ```
 
 ```bash

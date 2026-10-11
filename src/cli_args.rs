@@ -116,7 +116,7 @@ pub enum CalcitCommand {
   Test(TestCommand),
   /// preview or apply compiler-guided source migrations
   Fix(FixCommand),
-  /// analyze code structure, type-debt views, and helpers (call-graph, program-diff, weak-types, check-examples, verify)
+  /// analyze code structure, type-debt views, and helpers (call-graph, program-diff, weak-types, check-examples, verify, effects-graph)
   Analyze(AnalyzeCommand),
   /// query project information (namespaces, definitions, configs)
   Query(QueryCommand),
@@ -362,7 +362,7 @@ pub struct EvalCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "analyze")]
-/// analyze code structure, type-debt views, and helpers (call-graph, program-diff, weak-types, check-examples, verify, effects-graph, js-escape)
+/// analyze code structure, type-debt views, and helpers (call-graph, program-diff, weak-types, check-examples, verify, effects-graph)
 pub struct AnalyzeCommand {
   #[argh(subcommand)]
   pub subcommand: AnalyzeSubcommand,
@@ -371,11 +371,11 @@ pub struct AnalyzeCommand {
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand)]
 pub enum AnalyzeSubcommand {
-  /// analyze call graph structure from entry point
+  /// analyze call graph structure from entry point; `--counts` counts calls, `--diff <ref>` compares against a Git ref
   CallGraph(CallGraphCommand),
-  /// compare call graph structure against a Git ref and annotate code changes
+  /// [Deprecated] use `analyze call-graph --diff <ref>`
   CallGraphDiff(CallGraphDiffCommand),
-  /// count call occurrences from entry point
+  /// [Deprecated] use `analyze call-graph --counts`
   CountCalls(CountCallsCommand),
   /// compare current snapshot (or one definition) against a Git ref with structured tree diff
   ProgramDiff(ProgramDiffCommand),
@@ -397,9 +397,9 @@ pub enum AnalyzeSubcommand {
   Verify(VerifyCommand),
   /// decompose entry into State / Transform / Effect graph
   EffectsGraph(EffectsGraphCommand),
-  /// escape a Calcit symbol into JavaScript-safe identifier form
+  /// [Deprecated] no replacement; removed in the next non-patch release
   JsEscape(JsEscapeCommand),
-  /// decode escaped JavaScript identifier back to Calcit symbol (best-effort)
+  /// [Deprecated] no replacement; removed in the next non-patch release
   JsUnescape(JsUnescapeCommand),
 }
 
@@ -433,7 +433,7 @@ pub struct CheckPublicCommand {
   pub summary_only: bool,
 }
 
-/// escape a Calcit symbol into JavaScript-safe identifier form
+/// [Deprecated] escape a Calcit symbol into JavaScript-safe identifier form; no replacement
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "js-escape")]
 pub struct JsEscapeCommand {
@@ -442,7 +442,7 @@ pub struct JsEscapeCommand {
   pub symbol: String,
 }
 
-/// decode escaped JavaScript identifier back to Calcit symbol (best-effort)
+/// [Deprecated] decode escaped JavaScript identifier back to Calcit symbol (best-effort); no replacement
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "js-unescape")]
 pub struct JsUnescapeCommand {
@@ -595,7 +595,7 @@ pub struct CheckExamplesCommand {
   pub js: bool,
 }
 
-/// analyze call tree structure from entry point
+/// analyze call tree structure from entry point; `--counts` counts call occurrences, `--diff <ref>` compares against a Git ref
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "call-graph")]
 pub struct CallGraphCommand {
@@ -614,9 +614,18 @@ pub struct CallGraphCommand {
   /// show definitions unreachable from the selected entry (may include external entry points)
   #[argh(switch)]
   pub show_unused: bool,
-  /// output format: "text" (default, LLM-friendly) or "json"
+  /// output format: "text" (default, LLM-friendly) or "json"; `--diff` supports text only
   #[argh(option, default = "String::from(\"text\")")]
   pub format: String,
+  /// count call occurrences per definition instead of printing the tree
+  #[argh(switch)]
+  pub counts: bool,
+  /// with --counts, sort by "count" (default, descending) or "name"
+  #[argh(option)]
+  pub sort: Option<String>,
+  /// compare the call graph against a Git ref (e.g. HEAD~1, main, or a commit SHA) and annotate code changes
+  #[argh(option)]
+  pub diff: Option<String>,
 }
 
 /// decompose program into State / Transform / Effect graph from entry point
@@ -646,7 +655,7 @@ pub struct EffectsGraphCommand {
   pub color: bool,
 }
 
-/// compare call graph structure against a Git ref and annotate code changes
+/// [Deprecated] use `analyze call-graph --diff <ref>`
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "call-graph-diff")]
 pub struct CallGraphDiffCommand {
@@ -667,7 +676,7 @@ pub struct CallGraphDiffCommand {
   pub max_depth: usize,
 }
 
-/// count call occurrences from entry point
+/// [Deprecated] use `analyze call-graph --counts`
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "count-calls")]
 pub struct CountCallsCommand {
@@ -1139,7 +1148,7 @@ pub enum DocsSubcommand {
   Read(DocsReadCommand),
   /// read the embedded Agents guide or compact mutation contract
   Agents(DocsAgentsCommand),
-  /// read a specific line range from calcit guidebook or installed module docs
+  /// [Deprecated] use `docs read <file> --start <n> --lines <n>`
   ReadLines(DocsReadLinesCommand),
   /// check ```cirru code blocks in a markdown file via eval
   CheckMd(DocsCheckMdCommand),
@@ -1327,6 +1336,12 @@ pub struct DocsReadCommand {
   /// read docs from a specific installed module (e.g. respo.calcit)
   #[argh(option)]
   pub module: Option<String>,
+  /// read a line range that skips this many lines (default 0 when --lines is given)
+  #[argh(option)]
+  pub start: Option<usize>,
+  /// number of lines in a line range (default 80 when --start is given)
+  #[argh(option)]
+  pub lines: Option<usize>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -1355,7 +1370,7 @@ pub struct DocsAgentsCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "read-lines")]
-/// read a specific line range from calcit guidebook by default, or from one installed module with --module
+/// [Deprecated] use `docs read <file> --start <n> --lines <n>`
 pub struct DocsReadLinesCommand {
   /// filename to read (e.g., "syntax.md")
   #[argh(positional)]
@@ -1428,7 +1443,7 @@ pub enum CirruSubcommand {
   Format(CirruFormatCommand),
   /// parse Cirru EDN to JSON
   ParseEdn(CirruParseEdnCommand),
-  /// show Cirru syntax guide for LLM code generation
+  /// [Deprecated] use `docs read cirru-syntax.md`
   ShowGuide(CirruShowGuideCommand),
 }
 
@@ -1470,7 +1485,7 @@ pub struct CirruParseEdnCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "show-guide")]
-/// show Cirru syntax guide for LLM code generation
+/// [Deprecated] use `docs read cirru-syntax.md`
 pub struct CirruShowGuideCommand {}
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1606,7 +1621,7 @@ pub enum EditSubcommand {
   Examples(EditExamplesCommand),
   /// add a single example to definition
   AddExample(EditAddExampleCommand),
-  /// remove an example from definition by index
+  /// [Deprecated] use `edit examples` with the remaining examples, or `edit ns`
   RmExample(EditRmExampleCommand),
   /// add a named test to a definition
   AddTest(EditAddTestCommand),
@@ -1626,7 +1641,7 @@ pub enum EditSubcommand {
   AddImport(EditAddImportCommand),
   /// remove an import rule from namespace
   RmImport(EditRmImportCommand),
-  /// update namespace documentation
+  /// [Deprecated] use `edit ns` with the changed `:ns` doc
   NsDoc(EditNsDocCommand),
   /// describe incremental code changes and clear .calcit/error.cirru
   Inc(EditIncCommand),
@@ -1842,7 +1857,7 @@ pub struct EditAddExampleCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "rm-example")]
-/// remove an example from definition by index
+/// [Deprecated] use `edit examples` with the remaining examples, or `edit ns`
 pub struct EditRmExampleCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
@@ -2016,7 +2031,7 @@ pub struct EditRmImportCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "ns-doc")]
-/// update namespace documentation
+/// [Deprecated] use `edit ns` with the changed `:ns` doc
 pub struct EditNsDocCommand {
   /// namespace to update
   #[argh(positional)]

@@ -763,8 +763,8 @@ impl CallCountAnalyzer {
       })
       .collect();
 
-    // Sort by count descending by default
-    counts.sort_by_key(|b| std::cmp::Reverse(b.count));
+    // Sort by count descending by default; equal counts keep a stable name order instead of hash order
+    counts.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.fqn.cmp(&b.fqn)));
 
     let total_calls: usize = counts.iter().map(|e| e.count).sum();
 
@@ -844,8 +844,36 @@ pub fn count_calls(entry_ns: &str, entry_def: &str, include_core: bool, ns_prefi
   analyzer.analyze(entry_ns, entry_def)
 }
 
+/// Row order of a call count report.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallCountSort {
+  /// Count descending, ties by name.
+  Count,
+  /// Definition name ascending.
+  Name,
+}
+
+impl CallCountSort {
+  pub fn parse(raw: &str) -> Result<Self, String> {
+    match raw {
+      "count" => Ok(Self::Count),
+      "name" => Ok(Self::Name),
+      other => Err(format!("Unknown call count sort `{other}`; expected `count` or `name`.")),
+    }
+  }
+}
+
+fn sorted_counts(result: &CallCountResult, sort: CallCountSort) -> Vec<CallCountEntry> {
+  let mut counts = result.counts.clone();
+  match sort {
+    CallCountSort::Name => counts.sort_by(|a, b| a.fqn.cmp(&b.fqn)),
+    CallCountSort::Count => counts.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.fqn.cmp(&b.fqn))),
+  }
+  counts
+}
+
 /// Format call count result for display
-pub fn format_count_for_display(result: &CallCountResult, sort: &str) -> String {
+pub fn format_count_for_display(result: &CallCountResult, sort: CallCountSort) -> String {
   let mut output = String::new();
 
   output.push_str("# Call Count Analysis\n\n");
@@ -857,11 +885,7 @@ pub fn format_count_for_display(result: &CallCountResult, sort: &str) -> String 
   output.push_str("| Count | Definition                               | Doc | Examples |\n");
   output.push_str("|------:|:-----------------------------------------|:---:|:--------:|\n");
 
-  let mut counts = result.counts.clone();
-  match sort {
-    "name" => counts.sort_by(|a, b| a.fqn.cmp(&b.fqn)),
-    _ => counts.sort_by_key(|a| std::cmp::Reverse(a.count)),
-  }
+  let counts = sorted_counts(result, sort);
 
   for entry in &counts {
     let doc_mark = if entry.has_doc { "✓" } else { " " };
@@ -884,8 +908,12 @@ pub fn format_count_for_display(result: &CallCountResult, sort: &str) -> String 
 }
 
 /// Format call count result as JSON
-pub fn format_count_as_json(result: &CallCountResult) -> Result<String, String> {
-  serde_json::to_string_pretty(result).map_err(|e| format!("Failed to serialize to JSON: {e}"))
+pub fn format_count_as_json(result: &CallCountResult, sort: CallCountSort) -> Result<String, String> {
+  let sorted = CallCountResult {
+    counts: sorted_counts(result, sort),
+    ..result.clone()
+  };
+  serde_json::to_string_pretty(&sorted).map_err(|e| format!("Failed to serialize to JSON: {e}"))
 }
 
 #[cfg(test)]
