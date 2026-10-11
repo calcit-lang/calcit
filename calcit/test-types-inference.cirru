@@ -23,6 +23,19 @@
           :code $ quote $ defstruct Address (:city 'String)
           :examples $ []
           :schema $ :: 'StructDef
+        'CallbackEnvelope $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct CallbackEnvelope ([] 'T)
+            :holder $ :: 'test-types-inference.main/CallbackHolder 'T
+          :examples $ []
+          :schema $ :: 'StructDef
+        'CallbackHolder $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct CallbackHolder ([] 'T)
+            :callback $ :: 'Fn $ {} (:return 'Number)
+              :args $ [] $ :: 'Fn
+                {} (:return 'Number)
+                  :args $ [] 'T
+          :examples $ []
+          :schema $ :: 'StructDef
         'Job $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Job (:title 'String) (:status Status)
           :examples $ []
@@ -46,6 +59,46 @@
           :code $ quote $ defenum Status (:ok 'Number) (:err 'String)
           :examples $ []
           :schema $ :: 'EnumDef
+        'call-callback-envelope $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn call-callback-envelope (dispatch! envelope)
+            call-callback-holder dispatch! $ :holder envelope
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+              :: 'Fn $ {} (:return 'Number)
+                :args $ [] 'T
+              :: 'test-types-inference.main/CallbackEnvelope 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |nested-nominal-callback-keeps-number-input)
+            :code $ quote $ assert= 8
+              call-callback-envelope
+                fn (n)
+                  hint-fn $ {}
+                    :args $ [] 'Number
+                    :return 'Number
+                  &+ n 1
+                CallbackEnvelope :holder $ CallbackHolder :callback $ fn (dispatch!) (dispatch! 7)
+            :tags $ #{} :nominal-callback-context :unit
+        'call-callback-holder $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn call-callback-holder (dispatch! holder)
+            (:callback holder) dispatch!
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+              :: 'Fn $ {} (:return 'Number)
+                :args $ [] 'T
+              :: 'test-types-inference.main/CallbackHolder 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |inline-nominal-callback-keeps-number-input)
+            :code $ quote $ assert= 8
+              call-callback-holder
+                fn (n)
+                  hint-fn $ {}
+                    :args $ [] 'Number
+                    :return 'Number
+                  &+ n 1
+                CallbackHolder :callback $ fn (dispatch!) (dispatch! 7)
+            :tags $ #{} :nominal-callback-context :unit
         'consume-number-callback-map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn consume-number-callback-map (callbacks)
             match (get callbacks :click)

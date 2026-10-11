@@ -42,7 +42,7 @@ pub(crate) use type_inference::expression_definitely_diverges;
 use type_inference::{
   extract_literal_list_items, find_struct_lookup_in_literal_path, fully_typed_literal_assoc_path, fully_typed_literal_lookup_path,
   infer_struct_field_type, infer_struct_value_annotation, infer_type_from_expr, is_pending_async_value, resolve_enum_value,
-  resolve_program_value_for_preprocess, resolve_struct_value, resolve_type_value,
+  resolve_program_value_for_preprocess, resolve_struct_field_type_by_index, resolve_struct_value, resolve_type_value,
 };
 pub use type_inference::{
   fixed_call_arguments_are_proven, infer_compiled_definition_implementation_type, infer_static_type_from_expr,
@@ -157,8 +157,19 @@ fn preprocess_argument_with_context(
       .map(callback_parameter_context);
     previous
   });
+  let previous_struct = EXPECTED_STRUCT_TYPE.with(|cell| {
+    let mut slot = cell.borrow_mut();
+    let previous = slot.take();
+    *slot = expected.and_then(|annotation| {
+      annotation
+        .resolve_to_struct_with_ref()
+        .map(|(definition, _)| (definition, annotation.clone()))
+    });
+    previous
+  });
   let result = preprocess_expr(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack);
   EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous);
+  EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = previous_struct);
   result
 }
 
@@ -486,7 +497,7 @@ thread_local! {
   /// When set, the hashmap literal preprocessor uses this struct definition to look up
   /// field types and inject EXPECTED_FN_TYPE for Fn-typed fields.
   /// This enables type propagation through struct literals (e.g., `:on-click $ fn (e d!) ...` in DomProps).
-  static EXPECTED_STRUCT_TYPE: RefCell<Option<CalcitStructDef>> = const { RefCell::new(None) };
+  static EXPECTED_STRUCT_TYPE: RefCell<Option<(CalcitStructDef, Arc<CalcitTypeAnnotation>)>> = const { RefCell::new(None) };
   /// Lexical capability permissions of the current function being preprocessed.
   /// Invocation metadata such as async stays on the owning callable.
   static CURRENT_FN_FEATURES: RefCell<Option<Arc<HashSet<EdnTag>>>> = const { RefCell::new(None) };
@@ -3950,15 +3961,16 @@ fn preprocess_list_call(
         let mut ys = CalcitList::new_inner_from(std::slice::from_ref(&head_form));
         let mut has_spread = false;
 
-        // When the head is NativeMap and we have an expected struct type (from the calling context),
-        // use struct field types to inject EXPECTED_FN_TYPE for Fn-typed fields.
-        let struct_hint = if matches!(&head_form, Calcit::Proc(CalcitProc::NativeMap)) {
-          EXPECTED_STRUCT_TYPE.with(|cell| cell.borrow().clone())
+        // Consume the immediate nominal context before entering field expressions.
+        let struct_hint = if matches!(&head_form, Calcit::Proc(CalcitProc::NativeMap | CalcitProc::NativeStruct)) {
+          EXPECTED_STRUCT_TYPE.with(|cell| cell.borrow_mut().take())
         } else {
           None
         };
 
-        if let Some(ref struct_def) = struct_hint {
+        if matches!(&head_form, Calcit::Proc(CalcitProc::NativeMap))
+          && let Some((ref struct_def, ref annotation)) = struct_hint
+        {
           // Struct-aware hashmap preprocessing: iterate key-value pairs
           let items: Vec<&Calcit> = args.iter().collect();
           for (i, item) in items.iter().enumerate() {
@@ -3968,25 +3980,24 @@ fn preprocess_list_call(
               continue;
             }
 
-            // For value positions (odd indices), look up the preceding key's field type.
-            // Set EXPECTED_FN_TYPE for Fn-typed fields so that inline fn literals get param type injection.
-            if i % 2 == 1
+            let expected = if !has_spread
+              && i % 2 == 1
               && let Some(Calcit::Tag(key_tag)) = items.get(i - 1)
               && let Some(field_idx) = struct_def.fields.iter().position(|f| f == key_tag)
-              && let Some(field_type) = struct_def.field_types.get(field_idx)
-              && let Some(fn_annot) = field_type.resolve_to_fn()
             {
-              EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().replace(callback_parameter_context(fn_annot)));
-            }
-
-            let result = preprocess_expr(item, scope_defs, scope_types, file_ns, check_warnings, call_stack);
-
-            // Clear fn type hint after processing a value
-            if i % 2 == 1 {
-              EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = None);
-            }
-
-            let form = result?;
+              resolve_struct_field_type_by_index(annotation, field_idx)
+            } else {
+              None
+            };
+            let form = preprocess_argument_with_context(
+              item,
+              expected.as_ref(),
+              scope_defs,
+              scope_types,
+              file_ns,
+              check_warnings,
+              call_stack,
+            )?;
 
             ys = ys.push(form);
           }
@@ -4009,7 +4020,12 @@ fn preprocess_list_call(
             {
               resolve_struct_value(prototype, scope_types).and_then(|value| {
                 let index = value.struct_ref.fields.iter().position(|candidate| candidate == field)?;
-                value.struct_ref.field_types.get(index).map(|expected| match expected.as_ref() {
+                let expected = struct_hint
+                  .as_ref()
+                  .filter(|(definition, _)| value.struct_ref.same_nominal_definition(definition))
+                  .and_then(|(_, annotation)| resolve_struct_field_type_by_index(annotation, index))
+                  .or_else(|| value.struct_ref.field_types.get(index).cloned())?;
+                Some(match expected.as_ref() {
                   CalcitTypeAnnotation::JsNullish(inner) => inner.clone(),
                   _ => expected.clone(),
                 })
@@ -4738,11 +4754,11 @@ fn preprocess_known_function_call(
 
     // Set expected struct type hint if this arg position has a struct-typed param
     // This enables field-type-aware preprocessing of hashmap literals (e.g., DomProps)
-    let expected_struct = if arg_idx < active_expected_types.len() {
-      active_expected_types[arg_idx].resolve_to_struct_with_ref().map(|(s, _)| s)
-    } else {
-      None
-    };
+    let expected_struct = expected_type.as_ref().and_then(|annotation| {
+      annotation
+        .resolve_to_struct_with_ref()
+        .map(|(definition, _)| (definition, annotation.clone()))
+    });
 
     if let Some(fn_annot) = expected_fn {
       EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().replace(callback_parameter_context(fn_annot)));
@@ -4780,11 +4796,27 @@ fn preprocess_known_function_call(
       && !contains_dynamic_type(actual.as_ref())
     {
       let mut candidate = preprocessing_type_bindings.clone();
-      if actual
+      let direct_proof = actual
         .as_ref()
         .prove_with_bindings(binding_expected.as_ref(), &mut candidate)
-        .is_proven()
-      {
+        .is_proven();
+      // Infer the callee's variables from a concrete monomorphic callable,
+      // then prove its specialized contract with the normal variance rules.
+      // Compatibility alone must never grant input or return evidence.
+      let inferred_callable_proof = !direct_proof
+        && !actual.contains_type_var()
+        && matches!(actual.as_ref(), CalcitTypeAnnotation::Fn(signature) if signature.generics.is_empty())
+        && binding_expected
+          .resolve_to_fn()
+          .is_some_and(|signature| signature.generics.is_empty())
+        && actual.compatible_with_bindings(binding_expected.as_ref(), &mut candidate)
+        && candidate
+          .keys()
+          .all(|name| preprocessing_type_bindings.contains_key(name) || info.generics.contains(name))
+        && actual
+          .prove_with_bindings(binding_expected.substitute_type_vars(&candidate).as_ref(), &mut candidate.clone())
+          .is_proven();
+      if direct_proof || inferred_callable_proof {
         preprocessing_type_bindings = candidate;
       }
     }
