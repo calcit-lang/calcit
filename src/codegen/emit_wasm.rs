@@ -6633,11 +6633,12 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
       Ok(())
     }
     // Dynamic spread call via a local holding a function value. It lowers as an
-    // ordinary call only when every spread is a `([] ...)` literal and the
-    // callee provably has a fixed arity equal to the expanded argument count:
-    // an inline lambda without `&` / `?`, or a static Fn type without rest or
-    // optional slots. Ordinary local calls ignore `&` / `?` parameters, so
-    // anything else still emits unreachable.
+    // ordinary call only when every spread is a `([] ...)` literal and the local
+    // is an inline lambda declared without `&` / `?` whose parameter count equals
+    // the expanded argument count. A function-table-backed local traps: its
+    // declared Fn type does not prove a fixed arity (a rest-parameter function
+    // satisfies a fixed Fn type), and ordinary local calls do not pack rest
+    // arguments (#1964).
     Calcit::Local(local) => {
       let mut plain = vec![head.clone()];
       let mut runtime_spreads = vec![];
@@ -6647,7 +6648,7 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
         .lambda_locals
         .get(local.sym.as_ref())
         .is_some_and(|closure| closure.fixed_arity && closure.params.len() == arg_count);
-      if runtime_spreads.is_empty() && (fixed_inline_lambda || local_fixed_arity(local) == Some(arg_count)) {
+      if runtime_spreads.is_empty() && fixed_inline_lambda {
         return emit_call_expr(ctx, &crate::calcit::CalcitList::from(&plain[..]));
       }
       ctx.emit(Instruction::Unreachable);
@@ -6730,23 +6731,6 @@ fn list_literal_items(expr: &Calcit) -> Option<Vec<Calcit>> {
     ] => Some(rest.to_vec()),
     _ => None,
   }
-}
-
-/// Parameter count of a local function value whose static type proves a fixed
-/// arity: no rest parameter, no optional slot, and a matching runtime arity.
-fn local_fixed_arity(local: &CalcitLocal) -> Option<usize> {
-  let CalcitTypeAnnotation::Fn(signature) = local.type_info.as_ref() else {
-    return None;
-  };
-  let count = signature.arg_types.len();
-  let has_optional = signature
-    .arg_types
-    .iter()
-    .any(|arg| matches!(arg.as_ref(), CalcitTypeAnnotation::Optional(_)));
-  let arity_matches = signature
-    .runtime_arity
-    .is_none_or(|arity| arity.min == count && arity.max == Some(count));
-  (signature.rest_type.is_none() && !has_optional && arity_matches).then_some(count)
 }
 
 fn emit_call_spread_args(ctx: &mut WasmGenCtx, call_args: &[Calcit], target_arity: u32, rest_fixed: Option<u32>) -> Result<(), String> {
@@ -9829,15 +9813,15 @@ mod tests {
   use super::{
     CompiledFn, ComponentAbiInvocation, ComponentAbiType, ComponentAsyncCanonicalImports, ComponentEnumType, ComponentEnumVariant,
     ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HEAP_BASE,
-    HostImport, ModuleFunctionLayout, StaticFnDef, WasiComponentReadImports, WasmBoundary, WasmCompileEnv, WasmGenCtx, WasmTarget,
-    build_cabi_free_fn, build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter, build_string_pool,
-    build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn,
+    HostImport, InlineClosure, ModuleFunctionLayout, StaticFnDef, WasiComponentReadImports, WasmBoundary, WasmCompileEnv, WasmGenCtx,
+    WasmTarget, build_cabi_free_fn, build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter,
+    build_string_pool, build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn,
     build_wasi_component_select_preopen_fn, build_wasm_module, component_abi_type, component_export_needs_post_return,
     component_flat_types, component_import_signature, component_memory_layout, component_task_return_signature, emit_call_expr,
     emit_call_spread, emit_call_spread_args_as_regular, emit_proc_call, expr_uses_wasi_file, host_imports_for_target,
-    index_host_imports, local_fixed_arity, must_reject_extraction_failure, reject_non_tail_recur,
-    reject_reachable_wasi_command_dependencies, validate_component_export_symbols, validate_component_flat_parameters,
-    validate_component_import_symbols, wasi_component_file_imports, wasm_non_nil_value_is_nonzero,
+    index_host_imports, must_reject_extraction_failure, reject_non_tail_recur, reject_reachable_wasi_command_dependencies,
+    validate_component_export_symbols, validate_component_flat_parameters, validate_component_import_symbols,
+    wasi_component_file_imports, wasm_non_nil_value_is_nonzero,
   };
   use crate::calcit::{
     Calcit, CalcitEnumDef, CalcitFnTypeAnnotation, CalcitList, CalcitLocal, CalcitNumericRefinement, CalcitProc, CalcitStructDef,
@@ -10050,7 +10034,9 @@ mod tests {
   }
 
   /// Ordinary local calls ignore `&` and `?` parameters, so a literal spread
-  /// into a local function lowers to a plain call only for a proven fixed arity.
+  /// into a local function lowers to a plain call only for an inline lambda
+  /// declared without them. A declared Fn type is not proof: a rest-parameter
+  /// function is accepted where a fixed Fn type is declared.
   #[test]
   fn local_spread_call_requires_fixed_arity() {
     let fn_type = |arg_types: Vec<Arc<CalcitTypeAnnotation>>, rest: bool| {
@@ -10075,16 +10061,8 @@ mod tests {
       location: None,
       type_info,
     };
-    let number = || Arc::new(CalcitTypeAnnotation::Dynamic);
-    let fixed = local(fn_type(vec![number(), number()], false));
-    assert_eq!(local_fixed_arity(&fixed), Some(2));
-
-    let rest = local(fn_type(vec![number()], true));
-    let optional = local(fn_type(vec![number(), Arc::new(CalcitTypeAnnotation::Optional(number()))], false));
-    let dynamic = local(Arc::new(CalcitTypeAnnotation::Dynamic));
-    for callee in [&rest, &optional, &dynamic] {
-      assert_eq!(local_fixed_arity(callee), None);
-    }
+    let dynamic_type = || Arc::new(CalcitTypeAnnotation::Dynamic);
+    let fixed_type = || fn_type(vec![dynamic_type(), dynamic_type()], false);
 
     let env = WasmCompileEnv {
       function_value_dependencies: Default::default(),
@@ -10105,17 +10083,45 @@ mod tests {
     };
     let mut ctx = WasmGenCtx::new(0, env);
     let literal = Calcit::from(vec![Calcit::Proc(CalcitProc::List), Calcit::Number(1.0), Calcit::Number(2.0)]);
-    // `f & ([] 1 2)` with a rest, optional or untyped `f` must not become `(f 1 2)`.
-    for callee in [rest, optional, dynamic] {
+    let assert_traps = |ctx: &mut WasmGenCtx, callee: CalcitLocal| {
       ctx.instructions.clear();
       let call = [
         Calcit::Local(callee),
         Calcit::Syntax(CalcitSyntax::ArgSpread, Arc::from("tests.wasm")),
         literal.clone(),
       ];
-      emit_call_spread(&mut ctx, &call).expect("spread call to a non-fixed local");
+      emit_call_spread(ctx, &call).expect("spread call to a local without proven fixed arity");
       assert!(matches!(ctx.instructions.as_slice(), [Instruction::Unreachable]));
+    };
+
+    // Function-table-backed locals trap whatever their declared type says,
+    // including a fixed two-argument Fn type.
+    for type_info in [
+      fixed_type(),
+      fn_type(vec![dynamic_type()], true),
+      fn_type(
+        vec![dynamic_type(), Arc::new(CalcitTypeAnnotation::Optional(dynamic_type()))],
+        false,
+      ),
+      dynamic_type(),
+    ] {
+      assert_traps(&mut ctx, local(type_info));
     }
+
+    // An inline lambda declared as `fn (a & xs)` traps even when the local's
+    // declared type is a fixed two-argument Fn.
+    ctx.lambda_locals.insert(
+      "f".to_string(),
+      Arc::new(InlineClosure {
+        params: vec!["a".to_string(), "xs".to_string()],
+        fixed_arity: false,
+        body: vec![Calcit::Number(0.0)],
+        captured_locals: HashMap::new(),
+        captured_local_types: HashMap::new(),
+        captured_closures: HashMap::new(),
+      }),
+    );
+    assert_traps(&mut ctx, local(fixed_type()));
   }
 
   fn declaration(head: CalcitSyntax) -> Calcit {

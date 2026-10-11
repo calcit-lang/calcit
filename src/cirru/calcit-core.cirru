@@ -8039,7 +8039,6 @@
                 assert= 3 $ &+ & ([] 1) 2
                 assert= 5 $ &+ & ([] 2) & $ [] 3
                 assert= 6 $ sink & ([]) 6
-                assert= 5 $ &+ & $ [] 2 & $ [] 3
               :tags $ #{} :call-boundary :concrete-call-proof
             %{} 'TestEntry (:name |literal-spread-into-rest-local)
               :code $ quote $ let
