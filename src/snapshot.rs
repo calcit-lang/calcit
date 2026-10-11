@@ -2654,14 +2654,17 @@ fn load_snapshot_data_for_format_inner(data: &Edn, path: &str) -> Result<(Snapsh
   let meta_ns = format!("{pkg}.$meta");
   files.insert(meta_ns.to_owned(), gen_meta_ns(&meta_ns, path));
 
+  let legacy_configs = data.get(&Edn::tag("configs")).or_else(|| data.get(&Edn::str("configs")));
   let entries_value = data.get_or_nil("entries");
   let mut entries = if matches!(entries_value, Edn::Nil) {
     HashMap::new()
   } else {
-    parse_entries_with_context(&entries_value, true)?
+    // Historical named entries shared the legacy configs' native default.
+    // Only the isolated format loader restores it; modern entries stay strict.
+    parse_entries_with_context(&entries_value, legacy_configs.is_none())?
   };
   let mut legacy_version = None;
-  if let Some(configs) = data.get(&Edn::tag("configs")).or_else(|| data.get(&Edn::str("configs"))) {
+  if let Some(configs) = legacy_configs {
     if entries.contains_key(DEFAULT_ENTRY_NAME) {
       return Err("legacy `:configs` conflicts with existing `:entries.default`; remove the ambiguity before formatting".to_owned());
     }
@@ -6154,6 +6157,76 @@ mod tests {
     assert!(rendered.contains(":entries"), "rendered: {rendered}");
     let canonical = cirru_edn::parse(&rendered).expect("canonical output should parse");
     load_snapshot_data(&canonical, "calcit.cirru").expect("canonical output should pass the strict loader");
+  }
+
+  #[test]
+  fn format_loader_migrates_legacy_named_entries_without_weakening_modern_entries() {
+    let mut legacy = legacy_direct_quote_snapshot([]);
+    let Edn::Map(root) = &mut legacy else {
+      panic!("legacy fixture root map")
+    };
+    let server = Edn::map_from_iter([
+      (Edn::tag("init-fn"), Edn::str("mini.server/main!")),
+      (Edn::tag("reload-fn"), Edn::str("mini.server/reload!")),
+      (Edn::tag("modules"), Edn::List(EdnListView(vec![Edn::str("server-lib/")]))),
+    ]);
+    let mut node = server.clone();
+    let Edn::Map(node_map) = &mut node else { panic!("entry map") };
+    node_map.insert_key("mode", Edn::tag("js"));
+    node_map.insert_key("target", Edn::tag("node"));
+    root.insert_key(
+      "entries",
+      Edn::map_from_iter([(Edn::str("server"), server.clone()), (Edn::str("node"), node)]),
+    );
+
+    assert!(load_snapshot_data(&legacy, "calcit.cirru").is_err());
+    let (snapshot, migration) = load_snapshot_data_for_format(&legacy, "calcit.cirru").expect("legacy named entries should migrate");
+    assert!(migration.legacy_configs);
+    assert_eq!(snapshot.entries["server"].mode, SnapshotRunMode::Native);
+    assert_eq!(snapshot.entries["server"].init_fn, "mini.server/main!");
+    assert_eq!(snapshot.entries["server"].reload_fn, "mini.server/reload!");
+    assert_eq!(snapshot.entries["server"].modules, vec!["server-lib/"]);
+    assert_eq!(snapshot.entries["node"].mode, SnapshotRunMode::Js);
+    assert_eq!(snapshot.entries["node"].target, Some(SnapshotTarget::Node));
+
+    let rendered = render_snapshot_content(&snapshot).expect("migrated snapshot should render");
+    let mut canonical = cirru_edn::parse(&rendered).expect("canonical output should parse");
+    load_snapshot_data(&canonical, "calcit.cirru").expect("canonical entries must load strictly");
+    let Edn::Map(root) = &mut canonical else {
+      panic!("canonical root map")
+    };
+    let Edn::Map(entries) = root.0.get_mut(&Edn::tag("entries")).expect("entries") else {
+      panic!("entries map")
+    };
+    entries.insert(Edn::str("server"), server);
+    let error = load_snapshot_data_for_format(&canonical, "calcit.cirru").expect_err("modern named entries still require mode");
+    assert!(error.contains("entries.server: missing `:mode`"), "error: {error}");
+
+    let Edn::Map(root) = &mut legacy else { panic!("legacy root map") };
+    let Edn::Map(entries) = root.0.get_mut(&Edn::tag("entries")).expect("entries") else {
+      panic!("entries map")
+    };
+    let Edn::Map(server) = entries.0.get_mut(&Edn::str("server")).expect("server") else {
+      panic!("entry map")
+    };
+    server.insert_key("mode", Edn::tag("invalid"));
+    let error = load_snapshot_data_for_format(&legacy, "calcit.cirru").expect_err("explicit invalid modes must not be guessed");
+    assert!(error.contains("entries.server.mode"), "error: {error}");
+
+    let Edn::Map(root) = &mut legacy else { panic!("legacy root map") };
+    root.insert_key(
+      "entries",
+      Edn::map_from_iter([(
+        Edn::str(DEFAULT_ENTRY_NAME),
+        Edn::map_from_iter([
+          (Edn::tag("mode"), Edn::tag("native")),
+          (Edn::tag("init-fn"), Edn::str("mini/main!")),
+          (Edn::tag("reload-fn"), Edn::str("mini/reload!")),
+        ]),
+      )]),
+    );
+    let error = load_snapshot_data_for_format(&legacy, "calcit.cirru").expect_err("ambiguous defaults must still fail");
+    assert!(error.contains("conflicts with existing `:entries.default`"), "error: {error}");
   }
 
   #[test]
