@@ -1175,6 +1175,41 @@ try {
     }
   }
   await copyFile("src/cirru/calcit-core.cirru", snapshot);
+  // Open update implementation contracts must preserve precise receiver checks.
+  run("edit", "add-ns", "calcit.update-proof");
+  for (const [label, body] of [
+    ["map-return", "update ({} (:n 1)) :n (fn (x) |wrong)"],
+    ["list-return", "update ([] 1 2) 0 (fn (x) |wrong)"],
+    ["list-index", "update ([] 1 2) |wrong inc"],
+    ["struct-return", "let ((Point (defstruct Point (:n 'Number))) (p (Point :n 1))) (update p :n $ fn (x) |wrong)"],
+  ]) {
+    run("edit", "def", "calcit.update-proof/rejected", "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defn rejected () (${body}) &unit`);
+    run("edit", "schema", "calcit.update-proof/rejected", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+    const before = await readFile(snapshot);
+    for (const mode of [["--check-only"], ["js"]]) {
+      const output = join(project, `update-${label}-${mode[0] === "js" ? "js" : "native"}`);
+      const result = spawnSync(binary, [snapshot, "--init-fn", "calcit.update-proof/rejected",
+        "--reload-fn", "calcit.update-proof/rejected", "--emit-path", output, ...mode], options);
+      if (result.error) throw result.error;
+      assert.equal(result.status, 1, `${label}: ${result.stdout}\n${result.stderr}`);
+      assert.match(`${result.stdout}\n${result.stderr}`, /W_FN_ARG_TYPE_MISMATCH/);
+      assert.deepEqual(await readFile(snapshot), before);
+      if (mode[0] === "js") await assertRejectedArtifacts(output, label, /W_FN_ARG_TYPE_MISMATCH/, true);
+    }
+  }
+  run("edit", "def", "calcit.update-proof/rejected", "--overwrite", "--input-format", "cirru", "--code",
+    'quote $ defn rejected () (update (parse-cirru-edn "|{} (:n |wrong)") :n inc) &unit');
+  const updateBefore = await readFile(snapshot);
+  const updateRejected = spawnSync(binary, [snapshot, "fix", "--rule", "callable-contract-proof-v1", "--ns", "calcit.update-proof",
+    "--def", "rejected", "--format", "json"], options);
+  if (updateRejected.error) throw updateRejected.error;
+  assert.equal(updateRejected.status, 1, `${updateRejected.stdout}\n${updateRejected.stderr}`);
+  const updateAudit = JSON.parse(updateRejected.stdout);
+  assert.ok(updateAudit.diagnostics.some(item => item.code === "E_CALL_ARGUMENT_UNPROVEN" && item.message.includes("argument 3")));
+  assert.deepEqual(await readFile(snapshot), updateBefore);
+  await copyFile("src/cirru/calcit-core.cirru", snapshot);
   const coreOriginal = await readFile(snapshot);
   run("fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.core", "--def", "every?", "--format", "edn");
   run("fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.core", "--def", "foldl-compare", "--format", "edn");

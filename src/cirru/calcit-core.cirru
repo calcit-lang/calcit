@@ -12337,21 +12337,27 @@
               unselect-keys (&{} :a 1 :b 2 :c 3) ([] :a :b)
             :tags $ #{} :core :unit
         'update $ %{} 'CodeEntry
-          :doc "|Applies a function to the value at a given key or index, returning a collection with the updated slot."
+          :doc "|Applies a function to an existing collection slot. Map/List and known Struct-field calls retain receiver-specific callback types; an open receiver requires a callback accepting Dynamic. List/Enum indices are checked as Number, and an existing Struct field key as Tag. Missing Map/List/Struct slots leave the collection unchanged."
           :code $ quote $ defn update (x k f)
             if (map? x)
               if (contains? x k)
                 assoc x k $ f $ &map:get x k
                 , x
               if (list? x)
-                if (&list:contains? x k)
-                  assoc x k $ f $ &list:nth x k
-                  , x
+                let
+                    index $ decode-map-as k 'Number
+                  if (&list:contains? x index)
+                    assoc x index $ f $ &list:nth x index
+                    , x
                 if (enum? x)
-                  assoc x k $ f $ &enum:nth x k
+                  let
+                      index $ decode-map-as k 'Number
+                    assoc x index $ f $ &enum:nth x index
                   if (struct? x)
                     if (contains? x k)
-                      assoc x k $ f $ &struct:get x k
+                      let
+                          field $ decode-map-as k 'Tag
+                        assoc x field $ f $ &struct:get x field
                       , x
                     raise $ &str:concat "|Cannot update key on item: " $ to-lispy-string x
           :examples $ []
@@ -12369,18 +12375,54 @@
                 , :missing inc
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic 'Dynamic $ :: 'Fn
-              {} (:return 'T)
-                :args $ [] 'T
-            :generics $ [] 'T
-          :tests $ [] $ %{} 'TestEntry (:name |updates-existing-map-and-list-slots)
-            :code $ quote $ do
-              assert= (&{} :a 11)
-                update (&{} :a 1) :a $ fn (x) (+ x 10)
-              assert= ([] 0 11 2)
-                update ([] 0 1 2) 1 $ fn (x) (+ x 10)
-              assert= ([] 0 1 2)
-                update ([] 0 1 2) 4 $ fn (x) (+ x 10)
-            :tags $ #{} :core :unit
+              {} (:return 'Dynamic)
+                :args $ [] 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |updates-existing-map-and-list-slots)
+              :code $ quote $ do
+                assert= (&{} :a 11)
+                  update (&{} :a 1) :a $ fn (x) (+ x 10)
+                assert= ([] 0 11 2)
+                  update ([] 0 1 2) 1 $ fn (x) (+ x 10)
+                assert= ([] 0 1 2)
+                  update ([] 0 1 2) 4 $ fn (x) (+ x 10)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-struct-and-enum-slots)
+              :code $ quote $ let
+                  Point $ defstruct Point $ :n 'Number
+                  p $ Point :n 1
+                  changed $ update p :n inc
+                assert= 2 $ :n changed
+                assert= 1 $ :n p
+                assert= p $ update p :missing $ fn (x) (raise |unexpected-callback)
+                assert= (:: :entry 2)
+                  update (:: :entry 1) 1 $ fn (value)
+                    inc $ decode-map-as value 'Number
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |skips-missing-map-key-and-propagates-errors)
+              :code $ quote $ do
+                assert=
+                  {} $ :n 1
+                  update
+                    {} $ :n 1
+                    , :missing $ fn (x) (raise |unexpected-callback)
+                assert= |rejected $ try
+                  update
+                    {} $ :n 1
+                    , :n $ fn (x) (raise |callback-error)
+                  fn (message) |rejected
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-open-non-number-indices)
+              :code $ quote $ do
+                assert= |rejected $ try
+                  update (parse-cirru-edn "|[] 1") (parse-cirru-edn |:bad)
+                    fn (x) x
+                  fn (message) |rejected
+                assert= |rejected $ try
+                  update (parse-cirru-edn "|:: :entry 1") (parse-cirru-edn |:bad)
+                    fn (x) x
+                  fn (message) |rejected
+              :tags $ #{} :core :unit
         'update-in $ %{} 'CodeEntry
           :doc "|Walk a nested path and update its leaf. The updater receives Option<T>: some for an existing leaf and none for a missing leaf. Missing intermediate containers are created as maps."
           :code $ quote $ defn update-in (data path f)
