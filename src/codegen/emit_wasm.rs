@@ -4895,6 +4895,9 @@ fn wasm_import_arity(args: &CalcitFnArgs) -> Result<u32, String> {
 #[derive(Clone)]
 struct InlineClosure {
   params: Vec<String>,
+  /// The source lambda has no `&` rest or `?` optional parameter, so `params`
+  /// is its exact arity.
+  fixed_arity: bool,
   body: Vec<Calcit>,
   captured_locals: HashMap<String, u32>,
   captured_local_types: HashMap<String, Arc<CalcitTypeAnnotation>>,
@@ -5199,11 +5202,31 @@ fn capture_inline_closure(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<InlineC
   let (params, body) = try_extract_inline_lambda(expr)?;
   Some(Arc::new(InlineClosure {
     params,
+    fixed_arity: inline_lambda_has_fixed_arity(expr),
     body,
     captured_locals: ctx.locals.clone(),
     captured_local_types: ctx.local_types.clone(),
     captured_closures: ctx.lambda_locals.clone(),
   }))
+}
+
+/// Whether a lambda accepted by `try_extract_inline_lambda` declares only plain
+/// parameters; that extractor drops `&` / `?` markers from `params`.
+fn inline_lambda_has_fixed_arity(expr: &Calcit) -> bool {
+  match expr {
+    Calcit::Fn { info, .. } => match info.args.as_ref() {
+      CalcitFnArgs::Args(_) => true,
+      CalcitFnArgs::MarkedArgs(labels) => labels.iter().all(|label| matches!(label, CalcitArgLabel::Idx(_))),
+    },
+    Calcit::List(items) => match items.get(2) {
+      Some(Calcit::List(args)) => args.iter().all(|arg| match arg {
+        Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } => !matches!(sym.as_ref(), "&" | "?"),
+        _ => false,
+      }),
+      _ => false,
+    },
+    _ => false,
+  }
 }
 
 fn resolve_inline_closure(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<InlineClosure>> {
@@ -6609,14 +6632,22 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
       ctx.emit(Instruction::Unreachable);
       Ok(())
     }
-    // Dynamic spread call via a local holding a function value. When every
-    // spread is a `([] ...)` literal the call has a fixed arity, so it lowers as
-    // an ordinary call; a runtime spread still emits unreachable.
+    // Dynamic spread call via a local holding a function value. It lowers as an
+    // ordinary call only when every spread is a `([] ...)` literal and the
+    // callee provably has a fixed arity equal to the expanded argument count:
+    // an inline lambda without `&` / `?`, or a static Fn type without rest or
+    // optional slots. Ordinary local calls ignore `&` / `?` parameters, so
+    // anything else still emits unreachable.
     Calcit::Local(local) => {
       let mut plain = vec![head.clone()];
       let mut runtime_spreads = vec![];
       expand_literal_spread_args(&local.sym, call_args, &mut plain, &mut runtime_spreads)?;
-      if runtime_spreads.is_empty() {
+      let arg_count = plain.len() - 1;
+      let fixed_inline_lambda = ctx
+        .lambda_locals
+        .get(local.sym.as_ref())
+        .is_some_and(|closure| closure.fixed_arity && closure.params.len() == arg_count);
+      if runtime_spreads.is_empty() && (fixed_inline_lambda || local_fixed_arity(local) == Some(arg_count)) {
         return emit_call_expr(ctx, &crate::calcit::CalcitList::from(&plain[..]));
       }
       ctx.emit(Instruction::Unreachable);
@@ -6667,7 +6698,9 @@ fn expand_literal_spread_args(
     }
     let spread = match iter.next() {
       Some(Calcit::Syntax(CalcitSyntax::ArgSpread, _)) | None => {
-        return Err(format!("spread call to `{callee}` expects a list after `&`"));
+        return Err(format!(
+          "E_WASM_CALL_SPECIALIZATION: spread call to `{callee}` expects a list after `&`"
+        ));
       }
       Some(spread) => spread,
     };
@@ -6680,14 +6713,40 @@ fn expand_literal_spread_args(
 }
 
 /// Items of a `([] a b ...)` list literal, which may still contain `&` markers.
+///
+/// Preprocessing rewrites a literal with its own spread, `([] a & ys)`, into
+/// `(&call-spread [] a & ys)`, so both forms are recognized.
 fn list_literal_items(expr: &Calcit) -> Option<Vec<Calcit>> {
   let Calcit::List(xs) = expr else {
     return None;
   };
-  match xs.to_vec().split_first() {
-    Some((Calcit::Proc(CalcitProc::List), rest)) => Some(rest.to_vec()),
+  let items = xs.to_vec();
+  match items.as_slice() {
+    [Calcit::Proc(CalcitProc::List), rest @ ..] => Some(rest.to_vec()),
+    [
+      Calcit::Syntax(CalcitSyntax::CallSpread, _),
+      Calcit::Proc(CalcitProc::List),
+      rest @ ..,
+    ] => Some(rest.to_vec()),
     _ => None,
   }
+}
+
+/// Parameter count of a local function value whose static type proves a fixed
+/// arity: no rest parameter, no optional slot, and a matching runtime arity.
+fn local_fixed_arity(local: &CalcitLocal) -> Option<usize> {
+  let CalcitTypeAnnotation::Fn(signature) = local.type_info.as_ref() else {
+    return None;
+  };
+  let count = signature.arg_types.len();
+  let has_optional = signature
+    .arg_types
+    .iter()
+    .any(|arg| matches!(arg.as_ref(), CalcitTypeAnnotation::Optional(_)));
+  let arity_matches = signature
+    .runtime_arity
+    .is_none_or(|arity| arity.min == count && arity.max == Some(count));
+  (signature.rest_type.is_none() && !has_optional && arity_matches).then_some(count)
 }
 
 fn emit_call_spread_args(ctx: &mut WasmGenCtx, call_args: &[Calcit], target_arity: u32, rest_fixed: Option<u32>) -> Result<(), String> {
@@ -9775,14 +9834,14 @@ mod tests {
     build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn,
     build_wasi_component_select_preopen_fn, build_wasm_module, component_abi_type, component_export_needs_post_return,
     component_flat_types, component_import_signature, component_memory_layout, component_task_return_signature, emit_call_expr,
-    emit_call_spread_args_as_regular, emit_proc_call, expr_uses_wasi_file, host_imports_for_target, index_host_imports,
-    must_reject_extraction_failure, reject_non_tail_recur, reject_reachable_wasi_command_dependencies,
-    validate_component_export_symbols, validate_component_flat_parameters, validate_component_import_symbols,
-    wasi_component_file_imports, wasm_non_nil_value_is_nonzero,
+    emit_call_spread, emit_call_spread_args_as_regular, emit_proc_call, expr_uses_wasi_file, host_imports_for_target,
+    index_host_imports, local_fixed_arity, must_reject_extraction_failure, reject_non_tail_recur,
+    reject_reachable_wasi_command_dependencies, validate_component_export_symbols, validate_component_flat_parameters,
+    validate_component_import_symbols, wasi_component_file_imports, wasm_non_nil_value_is_nonzero,
   };
   use crate::calcit::{
-    Calcit, CalcitEnumDef, CalcitList, CalcitNumericRefinement, CalcitProc, CalcitStructDef, CalcitStructValue, CalcitSymbolInfo,
-    CalcitSyntax, CalcitTypeAnnotation, MethodKind,
+    Calcit, CalcitEnumDef, CalcitFnTypeAnnotation, CalcitList, CalcitLocal, CalcitNumericRefinement, CalcitProc, CalcitStructDef,
+    CalcitStructValue, CalcitSymbolInfo, CalcitSyntax, CalcitTypeAnnotation, MethodKind, SchemaKind,
   };
   use cirru_edn::EdnTag;
   use wasm_encoder::{Instruction, ValType};
@@ -9973,7 +10032,90 @@ mod tests {
 
     let error = emit_call_spread_args_as_regular(&mut ctx, &CalcitProc::NativeAdd, &[Calcit::Number(1.0), spread()])
       .expect_err("missing spread list");
+    assert!(error.starts_with("E_WASM_CALL_SPECIALIZATION:"), "{error}");
     assert!(error.contains("expects a list after `&`"), "{error}");
+
+    // `&+ & ([] 2 & ([] 3))`: preprocessing turns the inner literal into
+    // `(&call-spread [] 2 & ([] 3))`, which is still a literal spread.
+    ctx.instructions.clear();
+    let nested = Calcit::from(vec![
+      Calcit::Syntax(CalcitSyntax::CallSpread, Arc::from("tests.wasm")),
+      Calcit::Proc(CalcitProc::List),
+      Calcit::Number(2.0),
+      spread(),
+      literal(&[3.0]),
+    ]);
+    emit_call_spread_args_as_regular(&mut ctx, &CalcitProc::NativeAdd, &[spread(), nested]).expect("nested literal spread");
+    assert_eq!(adds(&ctx), 1);
+  }
+
+  /// Ordinary local calls ignore `&` and `?` parameters, so a literal spread
+  /// into a local function lowers to a plain call only for a proven fixed arity.
+  #[test]
+  fn local_spread_call_requires_fixed_arity() {
+    let fn_type = |arg_types: Vec<Arc<CalcitTypeAnnotation>>, rest: bool| {
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types,
+        return_type: Arc::new(CalcitTypeAnnotation::Dynamic),
+        fn_kind: SchemaKind::Fn,
+        rest_type: rest.then(|| Arc::new(CalcitTypeAnnotation::Dynamic)),
+        features: Arc::new(Default::default()),
+        runtime_arity: None,
+      })))
+    };
+    let local = |type_info: Arc<CalcitTypeAnnotation>| CalcitLocal {
+      idx: CalcitLocal::track_sym(&Arc::from("f")),
+      sym: Arc::from("f"),
+      info: Arc::new(CalcitSymbolInfo {
+        at_ns: Arc::from("tests.wasm"),
+        at_def: Arc::from("caller"),
+      }),
+      location: None,
+      type_info,
+    };
+    let number = || Arc::new(CalcitTypeAnnotation::Dynamic);
+    let fixed = local(fn_type(vec![number(), number()], false));
+    assert_eq!(local_fixed_arity(&fixed), Some(2));
+
+    let rest = local(fn_type(vec![number()], true));
+    let optional = local(fn_type(vec![number(), Arc::new(CalcitTypeAnnotation::Optional(number()))], false));
+    let dynamic = local(Arc::new(CalcitTypeAnnotation::Dynamic));
+    for callee in [&rest, &optional, &dynamic] {
+      assert_eq!(local_fixed_arity(callee), None);
+    }
+
+    let env = WasmCompileEnv {
+      function_value_dependencies: Default::default(),
+      fn_index: HashMap::new(),
+      fn_arity: HashMap::new(),
+      fn_has_rest: HashMap::new(),
+      runtime_fn_index: HashMap::new(),
+      tag_index: HashMap::new(),
+      struct_layouts: Default::default(),
+      string_pool: HashMap::new(),
+      atom_globals: HashMap::new(),
+      value_imports: HashMap::new(),
+      static_fn_defs: HashMap::new(),
+      fn_table_index: HashMap::new(),
+      host_imports: HashMap::new(),
+      target: WasmTarget::Core,
+      boundary: WasmBoundary::Native,
+    };
+    let mut ctx = WasmGenCtx::new(0, env);
+    let literal = Calcit::from(vec![Calcit::Proc(CalcitProc::List), Calcit::Number(1.0), Calcit::Number(2.0)]);
+    // `f & ([] 1 2)` with a rest, optional or untyped `f` must not become `(f 1 2)`.
+    for callee in [rest, optional, dynamic] {
+      ctx.instructions.clear();
+      let call = [
+        Calcit::Local(callee),
+        Calcit::Syntax(CalcitSyntax::ArgSpread, Arc::from("tests.wasm")),
+        literal.clone(),
+      ];
+      emit_call_spread(&mut ctx, &call).expect("spread call to a non-fixed local");
+      assert!(matches!(ctx.instructions.as_slice(), [Instruction::Unreachable]));
+    }
   }
 
   fn declaration(head: CalcitSyntax) -> Calcit {

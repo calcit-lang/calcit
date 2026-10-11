@@ -8039,7 +8039,14 @@
                 assert= 3 $ &+ & ([] 1) 2
                 assert= 5 $ &+ & ([] 2) & $ [] 3
                 assert= 6 $ sink & ([]) 6
+                assert= 5 $ &+ & $ [] 2 & $ [] 3
               :tags $ #{} :call-boundary :concrete-call-proof
+            %{} 'TestEntry (:name |literal-spread-into-rest-local)
+              :code $ quote $ let
+                  collect $ fn (a & xs) (&list:count xs)
+                assert= 1 $ collect & $ [] 0 9
+                assert= 2 $ collect 0 & $ [] 8 9
+              :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |nested-generic-call-scope)
               :code $ quote $ let
                   identity-list $ fn (xs)
