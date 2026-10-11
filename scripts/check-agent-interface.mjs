@@ -144,6 +144,33 @@ const scenarios = [
       }
     },
   },
+  ...["Number", "Dynamic"].map(payload => ({
+    name: `Option ${payload} map retains implementation callback evidence`,
+    args: ["src/cirru/calcit-core.cirru", "query", "type", `:: 'Option '${payload}`, "--format", "json"],
+    check(result) {
+      const method = result.data.methods.find(method => method.name === ".map");
+      assert.equal(method.status, payload === "Number" ? "proven" : "open");
+      assert.deepEqual(method.generics, ["U"]);
+      assert.equal(method.definition, "calcit.core/option:map");
+      assert.equal(method.return_type, "type calcit.core/Option<'U>");
+      if (payload === "Number") {
+        assert.deepEqual(method.call_types.returns, ["::", "'calcit.core/Option", "'U"]);
+        assert.equal(method.call_types.parameters[0][1], "'Fn");
+      } else {
+        assert.equal(method.call_types, undefined);
+      }
+    },
+  })),
+  {
+    name: "checked Result map declares its unbound output variable",
+    args: ["src/cirru/calcit-core.cirru", "query", "type", ":: 'Result 'Number 'String", "--format", "json"],
+    check(result) {
+      const method = result.data.methods.find(method => method.name === ".map");
+      assert.equal(method.status, "proven");
+      assert.deepEqual(method.generics, ["ResultMapOutput"]);
+      assert.deepEqual(method.call_types.returns, ["::", "'calcit.core/Result", "'ResultMapOutput", "'String"]);
+    },
+  },
   {
     name: "ordinary trait query includes required methods with their source origin",
     args: ["calcit/test-traits.cirru", "query", "type", "test-traits.main/Greeting", "--format", "json"],

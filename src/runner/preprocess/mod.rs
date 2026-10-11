@@ -9391,17 +9391,64 @@ fn checked_core_method_contract(receiver: &CalcitTypeAnnotation, namespace: &str
     .iter()
     .any(|annotation| annotation_dynamic_weight(annotation.as_ref()) > 0)
     || annotation_dynamic_weight(contract.return_type.as_ref()) > 0;
+  let mut types = expected_types.clone();
+  types.push(contract.return_type.clone());
+  let generics = crate::calcit::type_annotation::free_type_variable_names(&types)
+    .iter()
+    .map(ToString::to_string)
+    .collect();
   Some(StaticMethodContract {
     status: if has_open_types { "open" } else { "proven" },
     arg_types: Some(expected_types.into_iter().skip(1).collect()),
     rest_type: None,
     return_type: Some(contract.return_type),
-    generics: vec![],
+    generics,
     bounds: vec![],
     features: vec![],
     definition: Some(format!("{namespace}/{definition}")),
     detail: has_open_types.then(|| "specialized contract retains Dynamic or DynFn; inspect the call boundary".to_owned()),
   })
+}
+
+/// A concrete implementation can refine an open capability declaration, but
+/// only after preserving its receiver obligations and feature requirements.
+/// Precise trait contracts and primitive specialization keep their precedence.
+fn refined_impl_method_schema(
+  receiver: &CalcitTypeAnnotation,
+  trait_schema: Option<Arc<CalcitTypeAnnotation>>,
+  entry_schema: Option<Arc<CalcitTypeAnnotation>>,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  let (Some(declared), Some(entry)) = (&trait_schema, &entry_schema) else {
+    return trait_schema.or(entry_schema);
+  };
+  let Some(implementation) = entry.as_function() else {
+    return trait_schema;
+  };
+  if annotation_dynamic_weight(entry) >= annotation_dynamic_weight(declared) || !entry.is_compatible_with(declared) {
+    return trait_schema;
+  }
+  let mut signature = implementation.clone();
+  if let Some(capability) = declared.as_function() {
+    let Some(expected_receiver) = capability.arg_types.first().or(capability.rest_type.as_ref()) else {
+      return trait_schema;
+    };
+    let mut bindings = HashMap::new();
+    if !receiver.prove_with_bindings(expected_receiver, &mut bindings).is_proven()
+      || capability.where_bounds.iter().any(|bound| {
+        !bindings
+          .get(&bound.name)
+          .is_some_and(|actual| actual.is_proven_for(&bound.as_type_annotation()))
+      })
+    {
+      // The scopes of trait and implementation variables are independent.
+      // Never drop an unresolved trait obligation or bind it by spelling.
+      return trait_schema;
+    }
+    let mut features = signature.features.as_ref().clone();
+    features.extend(capability.features.iter().cloned());
+    signature.features = Arc::new(features);
+  }
+  Some(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature))))
 }
 
 /// Reuse dispatch selection, source schema, and receiver binding from normal
@@ -9517,7 +9564,7 @@ fn static_method_contract_with_impls(
       }
       _ => (None, None),
     };
-    let Some(schema) = trait_schema.or(entry_schema) else {
+    let Some(schema) = refined_impl_method_schema(receiver, trait_schema, entry_schema) else {
       return StaticMethodContract::open("selected method has no callable schema");
     };
     (schema, definition)
@@ -9539,6 +9586,16 @@ fn static_method_contract_with_impls(
       ),
       definition,
     );
+  }
+  for bound in signature.where_bounds.iter() {
+    if let Some(actual) = bindings.get(&bound.name)
+      && !actual.is_proven_for(&bound.as_type_annotation())
+    {
+      return StaticMethodContract::open_with_definition(
+        format!("receiver cannot prove bound {}", bound.to_brief_string()),
+        definition,
+      );
+    }
   }
   let mut features = signature.features.iter().map(|feature| feature.to_string()).collect::<Vec<_>>();
   features.sort();
@@ -16278,6 +16335,56 @@ mod tests {
     assert_eq!(proven.status, "proven");
     assert_eq!(proven.arg_types.unwrap()[0].describe(), "number");
     assert_eq!(proven.return_type.unwrap().describe(), "number");
+  }
+
+  #[test]
+  fn method_schema_refinement_preserves_capability_obligations() {
+    let receiver = CalcitTypeAnnotation::Number;
+    let callback = Arc::new(CalcitTypeAnnotation::from_function_parts(
+      vec![Arc::new(CalcitTypeAnnotation::Number)],
+      Arc::new(CalcitTypeAnnotation::String),
+    ));
+    let implementation = Arc::new(CalcitTypeAnnotation::from_function_parts(
+      vec![Arc::new(receiver.clone()), callback],
+      Arc::new(CalcitTypeAnnotation::Number),
+    ));
+    let mut capability = CalcitTypeAnnotation::from_function_parts(
+      vec![Arc::new(receiver.clone()), Arc::new(CalcitTypeAnnotation::DynFn)],
+      Arc::new(CalcitTypeAnnotation::Number),
+    )
+    .as_function()
+    .unwrap()
+    .clone();
+    capability.features = Arc::new(HashSet::from([EdnTag::new("io")]));
+    let refined = refined_impl_method_schema(
+      &receiver,
+      Some(Arc::new(CalcitTypeAnnotation::Fn(Arc::new(capability.clone())))),
+      Some(implementation.clone()),
+    )
+    .unwrap();
+    let signature = refined.as_function().unwrap();
+    assert_eq!(signature.arg_types[1].describe(), "fn(number) -> string");
+    assert!(signature.features.contains(&EdnTag::new("io")));
+
+    capability.where_bounds = Arc::new(vec![crate::calcit::CalcitGenericBound {
+      name: Arc::from("Unbound"),
+      traits: Arc::new(vec![source_trait("app.contracts", "Required", "render")]),
+    }]);
+    let unresolved = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(capability)));
+    assert_eq!(
+      refined_impl_method_schema(&receiver, Some(unresolved.clone()), Some(implementation.clone())),
+      Some(unresolved),
+      "independent implementation variables cannot erase a trait obligation"
+    );
+    let precise = Arc::new(CalcitTypeAnnotation::from_function_parts(
+      vec![Arc::new(receiver.clone()), Arc::new(CalcitTypeAnnotation::String)],
+      Arc::new(CalcitTypeAnnotation::Number),
+    ));
+    assert_eq!(
+      refined_impl_method_schema(&receiver, Some(precise.clone()), Some(implementation)),
+      Some(precise),
+      "an implementation cannot replace a closed trait contract"
+    );
   }
 
   fn source_trait(ns: &str, name: &str, method: &str) -> Arc<CalcitTrait> {

@@ -1927,14 +1927,26 @@ mod type_query_tests {
     assert_eq!(some.return_type.unwrap().describe(), "bool");
 
     let option_map = runner::preprocess::static_method_contract(option.as_ref(), ".map");
-    assert_eq!(option_map.status, "open", "DynFn schema must not imply a precise callback contract");
-    assert!(
-      option_map.arg_types.is_some(),
-      "declared callback schema is discoverable, not proven"
+    assert_eq!(
+      option_map.status, "proven",
+      "the selected implementation supplies its generic callback relation"
     );
-    assert!(option_map.return_type.is_some());
+    assert_eq!(option_map.arg_types.as_ref().unwrap()[0].describe(), "fn(number) -> 'U");
+    assert_eq!(option_map.return_type.as_ref().unwrap().describe(), "type calcit.core/Option<'U>");
+    assert_eq!(option_map.generics, vec!["U"]);
+    let nodes = method_call_types(&option_map).expect("generic output should retain callable syntax evidence");
+    assert_eq!(nodes.returns, serde_json::json!(["::", "'calcit.core/Option", "'U"]));
+    let open_map = runner::preprocess::static_method_contract(open_option.as_ref(), ".map");
+    assert_eq!(open_map.status, "open", "an open receiver payload still needs call-site proof");
+    assert!(method_call_types(&open_map).is_none());
 
     let result = parse_type_annotation_query(":: 'Result 'Number 'String").expect("typed Result should parse");
+    let result_map = runner::preprocess::static_method_contract(result.as_ref(), ".map");
+    assert_eq!(
+      result_map.generics,
+      vec!["ResultMapOutput"],
+      "specialized output variables must be discoverable"
+    );
     let map_err = runner::preprocess::static_method_contract(result.as_ref(), ".map-err");
     assert_eq!(map_err.status, "proven");
     let rendered = render_context_method(&context_method(

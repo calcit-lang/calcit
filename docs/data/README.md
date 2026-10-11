@@ -2,9 +2,25 @@
 
 `core-api-0.28-scope.edn` 是已审阅的转换、解析、副作用、谓词与集合首选入口的范围与失败语义；`core-api-0.28-baseline.edn` 用现有 `query def/type` 导出对应的声明证据。两者都是原生 **Cirru EDN**，不是 Snapshot，也不参与运行时派发。
 
-本批是 **0.29.0 candidate 的部分基线**，延续原有文件名，不是整个 core 已冻结的声明。现已纳入公开数学函数、`fs:path` 首选构造、ToString/Len/Add/Eq 约束及已审阅的集合/谓词方法，不因 internal tag 漏掉应用入口。其余公开边界/trait、兼容名移除版本、实际 backend 支持矩阵与集中迁移例外仍未完成。#1568 的策略基础已关闭，剩余验收由 [#1458](https://github.com/calcit-lang/calcit/issues/1458) 与 milestone 收尾跟进；issue 状态不改变部分基线的覆盖范围。已有失败描述是历史人工审阅的记录，不是脚本自动证明；新增声明不再复制失败文字，失败语义由定义自身的 doc、schema 和原 Calcit `:tests`、严格负例及 host/backend 回归共同说明。
+本批是 **0.30.0 candidate 的部分基线**，延续原有文件名，不是整个 core 已冻结的声明。现已纳入公开数学函数、`fs:path` 首选构造、ToString/Len/Add/Eq 约束及已审阅的集合/谓词方法，不因 internal tag 漏掉应用入口。其余公开边界/trait、兼容名移除版本、实际 backend 支持矩阵与集中迁移例外仍未完成。#1568 的策略基础已关闭，剩余验收由 [#1458](https://github.com/calcit-lang/calcit/issues/1458) 与 milestone 收尾跟进；issue 状态不改变部分基线的覆盖范围。已有失败描述是历史人工审阅的记录，不是脚本自动证明；新增声明不再复制失败文字，失败语义由定义自身的 doc、schema 和原 Calcit `:tests`、严格负例及 host/backend 回归共同说明。
 
 标量转换另外记录 String、Number、Bool、Tag、Symbol、Nil 的首选 `.to-string` 实际调用契约，返回值均须保持 String，不能因内部实现声明较宽而丢失派发后的证据。Debug/Show 的公开 trait 声明也纳入范围，避免将调试显示、面向人的显示和值转换误合并；不因此承诺所有类型都实现这三种能力。方法实现路径仍仅是 provenance，编译器可以重构内部 helper 而不改用户调用契约。
+
+## 0.30.0 家族范围与排除边界
+
+本轮审阅对象是 #1456/#1457/#1458 已确定角色的五个家族，而不是把所有 core 定义或所有接收者冻结为运行时 API。下表区分已导出的声明、必须在调用处实例化的证明和明确不纳入的内部入口。范围表是证据导航，不参与编译、派发或例外判断；源码 schema/doc 和原测试仍是依据。[#1953](https://github.com/calcit-lang/calcit/issues/1953) 的消费者、完整语义与合并验收完成前，不能仅凭清单宣称该任务已完成。
+
+| 家族 | 纳入现有声明/调用基线 | 不纳入的合同及原因 |
+| --- | --- | --- |
+| 转换 | `to-string/to-symbol/to-tag`、`nil->option/js-nullish->option`、十个 Number refinement 转换、`to-pairs`；原标量 `.to-string`、公开约束及已证明集合方法保持 | `turn-*` 和 `&*` 是兼容或实现来源，不成为新应用承诺。`to-pairs` 返回异质槽位的 `Set<List<Dynamic>>`，不是同型键值对；不能据此冻结读取槽位的具体类型。任意 Dynamic、未实现 ToString 的值及未证明的集合转换不被加成 proven |
+| 解析 | `parse-float`、四个 `try-parse-*` 声明；已闭合的 String `.parse-float/.parse-cirru` 调用合同 | JSON/EDN/List parser 的合法开放 payload 保持开放，不加入 proven 方法清单。`try-parse-cirru-edn-as/try-decode-map-as` 必须从 TypeExpr 与实际调用查询得到 `Result<T,String>`，宽 builtin 声明不是完整合同；原 `query type-at` 及成功/失败测试验证实例化。throwing parser/decode 兼容实现不当作等价的 Result rename |
+| 格式化与显示 | `str/str-spaced`、`format-to-lisp/to-lispy-string`、`format-cirru/format-cirru-edn`；原 Debug/Show 声明及已有 `.debug` 实现 | `format-to-cirru/format-cirru-one-liner`、Number formatting 与 ternary-tree formatter 是当前内部实现入口。ToString、Debug、Show、源码显示与数据序列化职责不同；未实现的 `.show` 不制造 builtin 行，JS 数据互操作不替代默认 Cirru EDN |
+| 名义构造 | 原 Option/Result/FsPath/FfiTask/FfiResponse 声明、`fs:path`，新增 `ControlFlow` 声明及 `defenum/defstruct/deftrait/struct-with` 的 Macro 合同 | 声明 macro 接受 Syntax/Expr，不能把 source 参数列表当作普通 runtime arity；直接构造的 payload/字段由实际 TypeExpr 与通用检查证明。`%*`、`&*::new`、`impl-traits` 的开放实现签名和生成 helper 的来源不是任意闭合值的证明 |
+| 效果与状态 | 原 Ref 构造/写入/watch、文件/环境/时钟/stdin/退出与 FFI 方法；新增 `deref/.deref`、`secure-random-bytes` 声明，以及 `dbg/swap!` 的 Macro 合同 | Macro `swap!` 的 Expr<Dynamic> 声明不能替代展开后 Ref<T> 写入/返回校验；`dbg` 保留泛型 T 和 platform-read capability，不把它变为任意纯函数。`println/echo/eprintln` 无可导出的 core definition，保留宿主测试。随机数/ID 的尚未决定命名、旧兼容入口和模块 native ABI 不借此冻结或删除 |
+
+宏基线只保存查询出的 Macro schema，`runtime-arity` 为 nil；required/rest/expansion/generics/capabilities 仍保存在原生 quote 中。`ControlFlow<A>` 的 continue/break 都携带 A，它是 fold-while 的名义协议，不是旧 bool shortcut 的自动替代。名义值的直接构造、错误字段/variant、泛型实例和宏展开仍由原严格类型与附带语义测试验收。
+
+新增条目的回放复用原测试：`str-spaced` 两项拼接断言、`to-pairs` 两项异质转换断言、`defstruct/deftrait` 的声明断言、`dbg` 的返回值/单次求值、`swap!` 的赋值返回值、`deref` 的 payload 和 `secure-random-bytes` 的合法/非法长度。声明/泛型行为另由原 `calcit/test-types-inference.cirru`、`calcit/test-traits.cirru` 和严格负例覆盖，不为每个基线行再复制语言测试。Ref、平台能力与 parser 的 WASM/WASI 排除保持原原因；加入声明不会扩展 backend 能力。消费者版本及复验结果写在关联 PR/issue，不以这个表替代发布版回归。
 
 同样六类标量的 `.debug` 现在也记录实际 receiver 上的已证明契约：不接受额外参数、返回 String，由原 `Debug` trait 派发。它与 `.to-string` 是两个调用入口，返回类型相同不表示文本表示相同；基线分别保存，诊断返回值退化为 Dynamic 会被原历史比较拒绝。Show 仍记录公开 trait 声明，当前六类标量查询没有 `.show` 实现，不生成不存在的 builtin 方法行。语言行为继续由原 `calcit/test-traits.cirru` 的 Debug/Show 回归和 core 附带显示测试验证，不为契约导出再复制一份显示实现或失败文字。
 
@@ -73,11 +89,11 @@ node scripts/core-api-contract.mjs
 
 `method-contracts` 另外保存当前接收者上的 `call-types` 原生 quote：例如 List/Map 的 `.get` 实现声明允许开放值，但编译器已经证明具体调用返回 `Option<Number>`。即使实现的宽 schema 没变，具体调用结果或 callback 类型关系变差也不能绕过检查。这些参数不含隐式接收者；`methods` 中的 `runtime-arity` 则是实现函数的 arity，可能允许额外参数，两者不能混用。比如 `.debug` 的公开调用没有额外参数，底层 `&str` 却是可变参数 primitive。方法冻结检查用 `method-contracts` 的参数/rest/返回值和声明 schema 保护公开契约，不冻结内部实现的 arity；普通函数声明的 runtime arity 仍受检查。共享接收者查询只执行一次，不重复运行同一分析。
 
-Option `.map` 目前查询仍为 open，解析开放 JSON/Cirru EDN 等边界仍需要单独审阅，不能靠本清单或目标类型把它们包装成 proven。候选只记录真实证据，不把推导漏洞固化为永久动态契约。0.29 的断言/调用证明工作仍由 #1538 拥有。
+Option `.map` 现在从已选中的实现 schema 保留 `T → U`：`Option<Number>` 上的回调为 `Fn<Number,U>`，返回 `Option<U>`，查询列出尚未实例化的泛型 U。具体输出类型仍由调用处的回调决定；`Option<Dynamic>` 的方法保持 open，不提供 `call-types`。宽 trait 声明只有在实现签名更精确、符合已有 trait 兼容关系、且接收者与 trait 约束可证明时才被细化，feature 要求合并保留；闭合 trait 合同、歧义与未证明约束不由实现覆盖。解析开放 JSON/Cirru EDN 等边界仍需要单独审阅，不能靠本清单或目标类型包装成 proven。
 
 已知 String 的 `.first/.last/.nth` 和 List 的 `.first/.last` 与原 `.get` 一样记录当前 receiver 的 Option payload：String 保持 `Option<String>`，`List<Number>` 保持 `Option<Number>`。无参数首尾查询与 Number 索引查询分别保存，不把异质 Enum 的开放访问加入同型集合承诺。此处没有新增方法或改变索引单位；语义由原 `first/last/nth` 的 Calcit 附带测试及 Unicode/严格访问回归验证。
 
-Option 的 `.and-then/.fold/.or-else` 与 Result 的 `.and-then/.map/.map-err/.or-else` 也纳入已有导出器。查询中的回调参数、输出泛型与原 schema 一起保留；例如 `Result<Number,String> .map` 的回调接收 Number，其输出决定成功类型，错误类型仍为 String。泛型输出不是已选择的业务类型；只有在调用处提供回调后才实例化，不用 Dynamic 替代尚未选择的泛型。原 Option/Result 附带测试拥有分支选择、短路、callback 与失败语义，基线仅保护查询和声明关系。Option `.map` 仍不在 proven 清单内，Result `.map` 的证明不能转移到另一个名义类型。
+Option 的 `.map/.and-then/.fold/.or-else` 与 Result 的 `.and-then/.map/.map-err/.or-else` 纳入已有导出器。查询中的回调参数、输出泛型与原 schema 一起保留；例如 `Result<Number,String> .map` 的回调接收 Number，其输出决定成功类型，错误类型仍为 String。泛型输出不是已选择的业务类型；只有在调用处提供回调后才实例化，不用 Dynamic 替代尚未选择的泛型。编译器已特化的方法也列出其未绑定输出变量，不改变现有调用类型节点。原 Option/Result 附带测试拥有分支选择、短路、callback 与失败语义，基线仅保护查询和声明关系；一个名义类型的证明不会转移到另一个类型。
 
 这些组合方法的附带测试使用直接 Option/Result 构造和普通方法调用，验证选中分支与不同的输出类型；未选回调若执行会抛错。`map-err` 的 String 错误转 Number 用例可在受支持 WASM/WASI 上回放，String 转 Tag 用例保留在 native/JS，并因既有 runtime tag interning 限制在 WASM/WASI 明确排除；这不是 `.map-err` 整个方法不支持，也不把 Tag 转换写成已实现。
 

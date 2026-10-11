@@ -89,6 +89,7 @@ fn push_use(
 fn collect_uses(
   node: &Calcit,
   current_namespace: &str,
+  imports: &HashMap<Arc<str>, Arc<program::ImportRule>>,
   targets: &HashMap<(String, String), DeprecatedTarget>,
   definitions: &HashSet<(String, String)>,
   path: &mut Vec<usize>,
@@ -112,12 +113,18 @@ fn collect_uses(
       Calcit::Import(import) => push_use(uses, targets, import.ns.as_ref(), import.def.as_ref(), path),
       Calcit::Symbol { sym, .. } => {
         if let Some((namespace, definition)) = sym.rsplit_once('/') {
-          let resolved_namespace = program::lookup_ns_target_in_import(current_namespace, namespace);
-          push_use(uses, targets, resolved_namespace.as_deref().unwrap_or(namespace), definition, path);
+          // Candidate discovery must not depend on whether a previous definition prepared the resolver.
+          let resolved_namespace = match imports.get(namespace).map(AsRef::as_ref) {
+            Some(program::ImportRule::NsAs(target)) => target.as_ref(),
+            _ => namespace,
+          };
+          push_use(uses, targets, resolved_namespace, definition, path);
         } else {
           push_use(uses, targets, current_namespace, sym.as_ref(), path);
-          if let Some(imported_namespace) = program::lookup_def_target_in_import(current_namespace, sym.as_ref()) {
-            push_use(uses, targets, imported_namespace.as_ref(), sym.as_ref(), path);
+          if let Some(program::ImportRule::NsReferDef(imported_namespace, imported_definition)) =
+            imports.get(sym.as_ref()).map(AsRef::as_ref)
+          {
+            push_use(uses, targets, imported_namespace.as_ref(), imported_definition.as_ref(), path);
           } else if !definitions.contains(&(current_namespace.to_owned(), sym.to_string())) {
             push_use(uses, targets, calcit::calcit::CORE_NS, sym.as_ref(), path);
           }
@@ -129,7 +136,7 @@ fn collect_uses(
 
   for (index, item) in items.iter().enumerate() {
     path.push(index);
-    collect_uses(item, current_namespace, targets, definitions, path, uses);
+    collect_uses(item, current_namespace, imports, targets, definitions, path, uses);
     path.pop();
   }
 }
@@ -336,7 +343,15 @@ pub fn collect_deprecated_api_rows(
         .and_then(|file| file.defs.get(definition.as_ref()))
         .map(|entry| &entry.code);
       let mut uses = vec![];
-      collect_uses(&entry.code, namespace, &targets, &definitions, &mut vec![], &mut uses);
+      collect_uses(
+        &entry.code,
+        namespace,
+        &file.import_map,
+        &targets,
+        &definitions,
+        &mut vec![],
+        &mut uses,
+      );
       // Do not compile unrelated call graphs merely to confirm an empty report.
       // Their macros may have compile-time effects that a metadata query must not trigger.
       if resolver_ready(!targets.is_empty() && !uses.is_empty())
@@ -506,7 +521,15 @@ mod tests {
     )]);
     let mut uses = vec![];
 
-    collect_uses(&code, "app.main", &targets, &HashSet::new(), &mut vec![], &mut uses);
+    collect_uses(
+      &code,
+      "app.main",
+      &HashMap::new(),
+      &targets,
+      &HashSet::new(),
+      &mut vec![],
+      &mut uses,
+    );
 
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].path, "code@3");
@@ -531,7 +554,7 @@ mod tests {
     let definitions = HashSet::from([("app.main".to_owned(), "record?".to_owned())]);
     let mut uses = vec![];
 
-    collect_uses(&code, "app.main", &targets, &definitions, &mut vec![], &mut uses);
+    collect_uses(&code, "app.main", &HashMap::new(), &targets, &definitions, &mut vec![], &mut uses);
 
     assert!(uses.is_empty());
   }
@@ -552,7 +575,15 @@ mod tests {
     )]);
     let mut uses = vec![];
 
-    collect_uses(&code, "app.main", &targets, &HashSet::new(), &mut vec![], &mut uses);
+    collect_uses(
+      &code,
+      "app.main",
+      &HashMap::new(),
+      &targets,
+      &HashSet::new(),
+      &mut vec![],
+      &mut uses,
+    );
 
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].target_name, "record?");
@@ -573,9 +604,58 @@ mod tests {
       },
     )]);
     let mut uses = vec![];
-    collect_uses(&code, "app.main", &targets, &HashSet::new(), &mut vec![], &mut uses);
+    collect_uses(
+      &code,
+      "app.main",
+      &HashMap::new(),
+      &targets,
+      &HashSet::new(),
+      &mut vec![],
+      &mut uses,
+    );
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].path, "code@3");
     assert_eq!(uses[0].target_name, "remove-watch");
+  }
+
+  #[test]
+  fn finds_imported_candidates_without_preparing_global_program_data() {
+    let expression = cirru_parser::parse("defn demo () (compat/old-api nil) (old-referred nil)")
+      .expect("parse expression")
+      .into_iter()
+      .next()
+      .expect("one expression");
+    let code = code_to_calcit(&expression, "isolated.imports", "demo", vec![]).expect("convert expression");
+    let imports = HashMap::from([
+      (Arc::from("compat"), Arc::new(program::ImportRule::NsAs(Arc::from("legacy.api")))),
+      (
+        Arc::from("old-referred"),
+        Arc::new(program::ImportRule::NsReferDef(Arc::from("legacy.api"), Arc::from("old-api"))),
+      ),
+    ]);
+    let targets = HashMap::from([(
+      ("legacy.api".to_owned(), "old-api".to_owned()),
+      DeprecatedTarget { doc: String::new() },
+    )]);
+    let mut uses = vec![];
+
+    collect_uses(
+      &code,
+      "isolated.imports",
+      &imports,
+      &targets,
+      &HashSet::new(),
+      &mut vec![],
+      &mut uses,
+    );
+
+    assert_eq!(uses.len(), 2);
+    assert_eq!(uses[0].path, "code@3");
+    assert_eq!(uses[1].path, "code@4");
+    assert!(
+      uses
+        .iter()
+        .all(|usage| usage.target_namespace == "legacy.api" && usage.target_name == "old-api")
+    );
   }
 }

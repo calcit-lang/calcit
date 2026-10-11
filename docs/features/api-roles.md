@@ -193,6 +193,8 @@ do
 
 实施任务：[#1456](https://github.com/calcit-lang/calcit/issues/1456)。`!` 不表示“可能抛错”，`try-` 不表示异步，转换词不能充当类型断言。
 
+0.30.0 的声明、实例化调用与不纳入范围统一见[五个 API 家族的合同边界](../data/README.md#0300-家族范围与排除边界)。查询宏时读取 Macro 的 required/rest/expansion/capabilities，不把源码参数列表当作 runtime arity；查询 typed decoder 时读取实际调用处的闭合 Result 类型，不把宽 builtin 签名当作 payload 已验证。当前冻结验收由 [#1953](https://github.com/calcit-lang/calcit/issues/1953) 跟进，旧名条件退场仍独立由 #1916 承接。
+
 | 当前契约 | 决策 | 类型/失败与迁移限制 |
 | --- | --- | --- |
 | `Option/Result/Struct` 名义构造；旧 `%some/%none/%ok/%err` | **保留**直接名义构造，旧 helper 属 **内部兼容** | 完整保留 payload/字段类型与错误；沿用现有 fix 与退场门禁 |
@@ -336,6 +338,8 @@ calcit analyze check-examples --ns calcit.core --def fold
 `query type` 的 `proven` 表示当前类型能证明该方法的调用契约；`open` 或 `ambiguous` 不是类型安全的肯定结论。对已由显式 fix 证明为同一实现/签名的别名，查询另给 `preferred` 或 `compatibility` 角色，兼容项可追溯首选名和 fix 规则。human 输出按已证明的首选入口、尚未分类的方法、兼容入口分组；未标角色的方法不应被推断为过期，`open` 的方法也不因角色标为首选就变成已证明。方法旁边的 definition path 用于追踪实现。再用 `query def/context` 读取 `:constructor` 或 `:internal` 标签、schema 与示例；需要机器处理时优先用 `--format edn`。项目代码的类型证据可用 `query type-at` 或 `query context` 查看。
 
 `open` 不一定表示整个方法签名未知。接收者已成功绑定到现有 schema 时，查询保留已声明的参数与返回类型，例如 `calcit query type "'String" --format edn` 中 `.parse-json` 和 `.parse-cirru-edn` 的零参数与 `Result<Dynamic, String>` 返回结构；成功 payload 仍是开放数据，需要在具体使用前解码或收窄，错误分支则已有 String 类型。开放 callback 或集合元素同样按声明展示，不推测为具体类型。缺失 schema、接收者绑定失败或分派歧义时仍不提供签名。结构化 `call-types` 只为 `proven` 方法提供；自动 fix 和核心契约冻结仍必须检查证明状态，不能仅凭签名字段存在就放行。
+
+具体接收者的实现可以提供比开放 trait 声明更精确的泛型关系。例如 `calcit query type ":: 'Option 'Number" --format edn` 的 `.map` 保留 `Fn<Number,U> → Option<U>`，并列出泛型 U；U 不是 Dynamic，也不是已经选择的业务类型。实现细化须保留 trait 的可证明接收者约束与 feature；闭合 trait 签名不会被覆盖。`Option<Dynamic>` 仍为 open，Agent 应先查询实际调用的 `type-at/context`，不能凭方法名强制把未知 payload 收窄。
 
 结构升级后，使用 `calcit fix --preset core-api-0.28-v1 --format edn` 统一预览已证明的核心 API 叶子改名，再按 revision 应用。`:code` 自动扫描，attached `:tests` / `:examples` 人工核对；重复预览的自动建议应为空，剩余 `requires-review` 不等于已迁移。Option/Result helper 和完整构造调用仍分步迁移，顺序与范围见 [0.28 核心 API 命名迁移](../run/fix.md#028-核心-api-命名迁移)。
 
