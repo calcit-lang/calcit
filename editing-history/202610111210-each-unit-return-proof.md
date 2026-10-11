@@ -35,5 +35,17 @@ alpha.30 与正式 alpha.29 存在其他变化，不能把所有报告差异归�
 
 首次 clippy 指定 no-default-features 时，Rust 报两个 unused import 和一个 dead-code；
 未修改这些 Rust 路径，默认 feature 检查成功不能代表无默认 feature 配置也零告警。
-完整 `cargo test --locked --profile ci` 仍在构建测试依赖，结果待记录；以上测试不替代
-该命令及仓库全量 check-all。
+完整 `cargo test --locked --profile ci` 已退出 0，全部 Rust 测试套件通过；仓库全量
+check-all 尚未运行。该结果对应 each 修改，不包含后续仅在隔离副本中的 update 探针。
+
+## 后续 update 探针
+
+既有 checked-call-contract 已为 Map/List 从接收者提取 value/key 类型；Struct field
+specialization 也已存在。开放 update 实现中的 Fn<T> 缺少独立 payload 证据。在忽略
+副本 `.calcit/update-proof-probe.cirru` 中，将 fallback callback 合同改为
+Fn(Dynamic)->Dynamic，List/Enum 的索引使用 Number 解码，实际命中的 Struct key 使用
+Tag 解码，callable-contract-proof-v1 诊断清零，既有 update 测试 native/JS 通过。
+
+这不是正式源码改动，也未证明全部精确调用合同与失败语义不变。下一步必须验证
+错误 callback 的静态拒绝、Struct 与 Enum 路径、不存在的 key、错误索引及回调异常，
+再决定是否应用到源码；不把探针通过当作完整迁移验收。
