@@ -1033,7 +1033,18 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   // compiled metadata so generic collection/ref shapes survive call sites.
   // Resolve the declaration before substituting caller argument types. Resolving
   // the result afterward would reinterpret a caller-owned generic payload in ns.
-  let declared_schema = resolve_namespace_type_refs_for_body(program::lookup_def_schema(ns, def), ns);
+  // Compiler-generated nominal method callables have no Snapshot definition.
+  // Their checked trait schema lives in the compiled payload; looking only in
+  // source metadata would discard that contract after method lowering.
+  let source_schema = program::lookup_def_schema(ns, def);
+  let callable_schema = if !program::has_def_code(ns, def) {
+    program::lookup_compiled_def(ns, def)
+      .map(|compiled| compiled.schema)
+      .unwrap_or(source_schema)
+  } else {
+    source_schema
+  };
+  let declared_schema = resolve_namespace_type_refs_for_body(callable_schema, ns);
   let open_return = matches!(declared_schema.as_ref(), CalcitTypeAnnotation::Fn(info) if matches!(info.return_type.as_ref(), CalcitTypeAnnotation::Dynamic));
   if super::REQUIRE_ASSERTION_PROOF.with(std::cell::Cell::get)
     && (crate::snapshot::schema_annotation_is_missing(&declared_schema) || open_return)

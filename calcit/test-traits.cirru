@@ -154,6 +154,42 @@
           :code $ quote $ defstruct Person0 (:name 'String)
           :examples $ []
           :schema $ :: 'Struct
+        'ResultBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def ResultBox (impl-traits ResultBoxBase ResultBoxImpl)
+          :examples $ []
+          :schema $ :: 'StructDef
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-nested-method-result)
+              :code $ quote $ let
+                  box $ ResultBox :value 7
+                assert= 7 $ .unwrap $ .find box |x
+              :tags $ #{} :trait :unit
+            %{} 'TestEntry (:name |preserves-local-method-result)
+              :code $ quote $ let
+                  box $ ResultBox :value 7
+                  found $ .find box |x
+                assert= 7 $ found .unwrap
+              :tags $ #{} :trait :unit
+        'ResultBoxBase $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct ResultBoxBase (:value 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'ResultBoxImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl ResultBoxImpl ResultBoxOps
+            .find $ fn (self text)
+              hint-fn $ {}
+                :args $ [] 'test-traits.main/ResultBox 'String
+                :return $ :: 'Option 'Number
+              Option :some $ :value self
+          :examples $ []
+          :schema $ :: 'Impl
+        'ResultBoxOps $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait ResultBoxOps
+            .find $ :: 'Fn $ {}
+              :args $ [] 'test-traits.main/ResultBox 'String
+              :return $ :: 'Option 'Number
+          :examples $ []
+          :schema $ :: 'Trait
         'add-with-trait $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn add-with-trait (a b) (a .add b)
           :examples $ []
@@ -403,7 +439,7 @@
               assert= true $ contains-with-trait? enum_value 1
               assert= true $ contains-with-trait? struct_value :name
               assert-traits xs Countable
-              ; Map and Set left the Contains trait in 0.29.0; the prefix `contains?` still accepts them.
+              ; Map and Set left the Contains trait in 0.29.0; the prefix "`contains?`" still accepts them.
               assert-traits m Countable
               assert-traits s Countable
               assert-traits text Countable
