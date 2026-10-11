@@ -46,3 +46,25 @@ ACK 和 metrics 调用点。应用将间接 swap!/update 写成显式状态回�
 全部报告和生成产物留在忽略目录。完整 Rust 回归已退出 0：25 个 suite、1664 passed、
 1 ignored；扩展的 known-assertion 脚本也已通过，包括新增的精确回调错误及开放
 callback 拒绝。分支未推送，正式下游工具链没有升级。
+
+## 2026-10-11：同步稳定版 0.29.0 后的回归
+
+候选已合入稳定版 main 的 WASM spread 修复，并重新构建版本 0.29.0 CLI 与 JS runtime。
+core Snapshot 通过官方三路 merge driver 合并；普通 exclusions Cirru EDN map 起初被
+临时过宽 attributes 误交给 Snapshot driver，随后保留 incoming map 与本分支三项
+update 排除，解决冲突。未修改永久 merge 配置。
+
+完整 definition runner 通过 native 609/609、JS 608/608（既有 JS 排除 1 项）；
+unit tag 通过 581 项。each/update 与新 concat spread 选择回放通过 native/JS
+各 8 项，WASM 4 项，update 的 4 项仍有明确排除；不能计为 WASM update 通过。
+
+Calcium 在正式 alpha.29 上检查 dirty-rev/acked-rev 的 Number 输入，并通过显式
+states 回调保留 ACK update 接收者证据。新增非法 acked-rev 的定义测试确认解码
+拒绝且客户端状态未变，server 72/72 和隔离真实双客户端 Kanban 回归通过。
+同一最终 Snapshot 在正式 alpha.29 仍有 6 项 strict 诊断，在使用未发布 core 修复、
+显式版本为稳定 0.29.0 的隔离探针中剩 4 项：Reel apply-partition-deltas 与
+core pairs-map/conj/if-let。正式依赖与 milestone 验收仍未完成。
+
+同步后的 fmt 与默认 clippy（warnings 视为错误）通过。完整 known-assertion
+回归退出 0，包括本分支新增 update 精确回调反例、开放输入审计，以及原有
+native/JS/WASM/WASI 拒绝与正例。全部生成报告留在忽略目录，未新增 JSON 入库。
