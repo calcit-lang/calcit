@@ -56,9 +56,10 @@ use type_rewriting::{
 use std::cell::Cell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(not(test))]
-use std::sync::{LazyLock, RwLock};
+use std::sync::RwLock;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{LazyLock, Mutex};
 use std::{cell::RefCell, vec};
 
 use cirru_edn::EdnTag;
@@ -140,6 +141,11 @@ static STRICT_TYPES: AtomicBool = AtomicBool::new(false);
 static VERBOSE_PREPROCESS: AtomicBool = AtomicBool::new(false);
 #[cfg(not(test))]
 static PROJECT_NAMESPACES: LazyLock<RwLock<HashSet<Arc<str>>>> = LazyLock::new(|| RwLock::new(HashSet::new()));
+
+/// Advisory diagnostics (deprecations) collected during preprocessing. They are
+/// reported by `--check-only` but never count as warnings, so a call that still
+/// works cannot turn a downstream check red.
+static ADVISORIES: LazyLock<Mutex<Vec<LocatedWarning>>> = LazyLock::new(|| Mutex::new(vec![]));
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedSourceUsage {
@@ -427,6 +433,19 @@ pub fn set_project_namespaces(namespaces: &HashSet<String>) {
     target.clear();
     target.extend(namespaces.iter().map(|ns| Arc::from(ns.as_str())));
   });
+}
+
+/// Records a non-failing diagnostic; the same call site reached twice is kept once.
+pub fn push_advisory(advisory: LocatedWarning) {
+  let mut list = ADVISORIES.lock().expect("lock advisories");
+  if !list.contains(&advisory) {
+    list.push(advisory);
+  }
+}
+
+/// Takes the advisories collected so far, oldest first.
+pub fn take_advisories() -> Vec<LocatedWarning> {
+  std::mem::take(&mut *ADVISORIES.lock().expect("lock advisories"))
 }
 
 fn should_emit_project_source_lint(file_ns: &str) -> bool {
@@ -3496,6 +3515,7 @@ fn preprocess_list_call(
               validate_method_call(&typed_method, &processed_args, scope_types, file_ns, call_stack)?;
             }
             check_struct_method_args(&typed_method, &processed_args, scope_types, file_ns, &def_name, check_warnings);
+            note_deprecated_method_call(&typed_method, &processed_args, scope_types, file_ns);
             require_js_ffi_feature_for_operation(&typed_method, file_ns, def_name.as_ref(), check_warnings, call_stack)?;
 
             if let Some(qualified_call) =
@@ -4108,6 +4128,7 @@ fn preprocess_list_call(
         }
         reject_pending_async_arguments(&head_form, &processed_args, scope_types, call_stack)?;
         validate_method_call(&head_form, &processed_args, scope_types, file_ns, call_stack)?;
+        note_deprecated_method_call(&head_form, &processed_args, scope_types, file_ns);
         check_struct_field_access(&head_form, &processed_args, scope_types, file_ns, call_stack, check_warnings);
         check_struct_construction_fields(
           &head_form,
@@ -6501,6 +6522,65 @@ pub(crate) fn check_enum_construction(
 }
 /// Check struct method call arguments (count and types)
 /// Validates that method calls have correct number and types of arguments
+/// Methods that still dispatch but have a preferred spelling. Unlike the retired
+/// table above, these keep working; a project-source call only gets an advisory.
+fn deprecated_method_migration(receiver: &CalcitTypeAnnotation, method_name: &str) -> Option<&'static str> {
+  use CalcitTypeAnnotation as T;
+  match (receiver, method_name) {
+    (T::List(_), "add") => Some("`.add` is a single-item alias of `.append`; use `.append` (or `.concat` to join two Lists)"),
+    (T::List(_) | T::Map(_, _) | T::Set(_), "count") => Some("`.count` overlaps `.len`; use `.len`"),
+    _ => deprecated_core_struct_method_migration(receiver, method_name),
+  }
+}
+
+/// Same-implementation FfiTask aliases that keep working during the compatibility window.
+fn deprecated_core_struct_method_migration(receiver: &CalcitTypeAnnotation, method_name: &str) -> Option<&'static str> {
+  let is_ffi_task = match receiver {
+    CalcitTypeAnnotation::TypeRef(type_name, _) => type_name.as_ref() == "calcit.core/FfiTask",
+    _ => receiver.resolve_to_struct().is_some_and(|base| {
+      base.definition_ref.as_deref() == Some("calcit.core/FfiTask")
+        || (base.definition_ref.is_none() && base.name.ref_str() == "FfiTask")
+    }),
+  };
+  match method_name {
+    "cancel" if is_ffi_task => Some("`.cancel` is a same-implementation alias; use `.cancel!`"),
+    "cancel-with" if is_ffi_task => Some("`.cancel-with` is a same-implementation alias; use `.cancel-with!`"),
+    _ => None,
+  }
+}
+
+/// Records an advisory for a project-source call of a deprecated method on a proven receiver type.
+fn note_deprecated_method_call(head: &Calcit, args: &CalcitList, scope_types: &ScopeTypes, file_ns: &str) {
+  let Calcit::Method(method_name, calcit::MethodKind::Invoke(inferred_receiver_type)) = head else {
+    return;
+  };
+  if !should_emit_project_source_lint(file_ns) {
+    return;
+  }
+  // The head only carries the inferred type; the receiver expression may prove a more precise one.
+  let receiver_type = args
+    .first()
+    .and_then(|receiver| resolve_type_value(receiver, scope_types))
+    .unwrap_or_else(|| inferred_receiver_type.clone());
+  let Some(migration) = deprecated_method_migration(receiver_type.as_ref(), method_name.as_ref()) else {
+    return;
+  };
+  let location = head
+    .get_location()
+    .or_else(|| {
+      args
+        .iter()
+        .find_map(|arg| find_calcit_location_matching(arg, |location| location.def.as_ref() != GENERATED_DEF))
+    })
+    .unwrap_or_else(|| NodeLocation::new(Arc::from(file_ns), Arc::from(GENERATED_DEF), Arc::from(vec![])));
+  push_advisory(LocatedWarning::new_with_detail(
+    format!("[Deprecated] method {migration}"),
+    location,
+    Some("A_DEPRECATED_METHOD".to_owned()),
+    None,
+  ));
+}
+
 fn check_struct_method_args(
   head: &Calcit,
   args: &CalcitList,

@@ -1945,6 +1945,17 @@ fn run_check_only_with_output(entries: &ProgramEntries, emit_output: bool) -> Re
     return Err(format!("Found {} warnings during preprocessing", warnings.len()));
   }
 
+  // Advisories never fail the check; they only point at calls that still work.
+  let advisories = runner::preprocess::take_advisories();
+  if emit_output && !advisories.is_empty() {
+    eprintln!(
+      "\n{} ({} deprecated usages, the check still passes)",
+      "Notes:".yellow(),
+      advisories.len()
+    );
+    LocatedWarning::print_list(&advisories);
+  }
+
   let duration = Instant::now().duration_since(started_time);
   if emit_output {
     println!(
