@@ -193,6 +193,8 @@ do
 
 实施任务：[#1456](https://github.com/calcit-lang/calcit/issues/1456)。`!` 不表示“可能抛错”，`try-` 不表示异步，转换词不能充当类型断言。
 
+0.30.0 的声明、实例化调用与不纳入范围统一见[五个 API 家族的合同边界](../data/README.md#0300-家族范围与排除边界)。查询宏时读取 Macro 的 required/rest/expansion/capabilities，不把源码参数列表当作 runtime arity；查询 typed decoder 时读取实际调用处的闭合 Result 类型，不把宽 builtin 签名当作 payload 已验证。当前冻结验收由 [#1953](https://github.com/calcit-lang/calcit/issues/1953) 跟进，旧名条件退场仍独立由 #1916 承接。
+
 | 当前契约 | 决策 | 类型/失败与迁移限制 |
 | --- | --- | --- |
 | `Option/Result/Struct` 名义构造；旧 `%some/%none/%ok/%err` | **保留**直接名义构造，旧 helper 属 **内部兼容** | 完整保留 payload/字段类型与错误；沿用现有 fix 与退场门禁 |

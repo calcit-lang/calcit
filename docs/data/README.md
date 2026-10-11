@@ -6,6 +6,22 @@
 
 标量转换另外记录 String、Number、Bool、Tag、Symbol、Nil 的首选 `.to-string` 实际调用契约，返回值均须保持 String，不能因内部实现声明较宽而丢失派发后的证据。Debug/Show 的公开 trait 声明也纳入范围，避免将调试显示、面向人的显示和值转换误合并；不因此承诺所有类型都实现这三种能力。方法实现路径仍仅是 provenance，编译器可以重构内部 helper 而不改用户调用契约。
 
+## 0.30.0 家族范围与排除边界
+
+本轮审阅对象是 #1456/#1457/#1458 已确定角色的五个家族，而不是把所有 core 定义或所有接收者冻结为运行时 API。下表区分已导出的声明、必须在调用处实例化的证明和明确不纳入的内部入口。范围表是证据导航，不参与编译、派发或例外判断；源码 schema/doc 和原测试仍是依据。[#1953](https://github.com/calcit-lang/calcit/issues/1953) 的消费者、完整语义与合并验收完成前，不能仅凭清单宣称该任务已完成。
+
+| 家族 | 纳入现有声明/调用基线 | 不纳入的合同及原因 |
+| --- | --- | --- |
+| 转换 | `to-string/to-symbol/to-tag`、`nil->option/js-nullish->option`、十个 Number refinement 转换、`to-pairs`；原标量 `.to-string`、公开约束及已证明集合方法保持 | `turn-*` 和 `&*` 是兼容或实现来源，不成为新应用承诺。`to-pairs` 返回异质槽位的 `Set<List<Dynamic>>`，不是同型键值对；不能据此冻结读取槽位的具体类型。任意 Dynamic、未实现 ToString 的值及未证明的集合转换不被加成 proven |
+| 解析 | `parse-float`、四个 `try-parse-*` 声明；已闭合的 String `.parse-float/.parse-cirru` 调用合同 | JSON/EDN/List parser 的合法开放 payload 保持开放，不加入 proven 方法清单。`try-parse-cirru-edn-as/try-decode-map-as` 必须从 TypeExpr 与实际调用查询得到 `Result<T,String>`，宽 builtin 声明不是完整合同；原 `query type-at` 及成功/失败测试验证实例化。throwing parser/decode 兼容实现不当作等价的 Result rename |
+| 格式化与显示 | `str/str-spaced`、`format-to-lisp/to-lispy-string`、`format-cirru/format-cirru-edn`；原 Debug/Show 声明及已有 `.debug` 实现 | `format-to-cirru/format-cirru-one-liner`、Number formatting 与 ternary-tree formatter 是当前内部实现入口。ToString、Debug、Show、源码显示与数据序列化职责不同；未实现的 `.show` 不制造 builtin 行，JS 数据互操作不替代默认 Cirru EDN |
+| 名义构造 | 原 Option/Result/FsPath/FfiTask/FfiResponse 声明、`fs:path`，新增 `ControlFlow` 声明及 `defenum/defstruct/deftrait/struct-with` 的 Macro 合同 | 声明 macro 接受 Syntax/Expr，不能把 source 参数列表当作普通 runtime arity；直接构造的 payload/字段由实际 TypeExpr 与通用检查证明。`%*`、`&*::new`、`impl-traits` 的开放实现签名和生成 helper 的来源不是任意闭合值的证明 |
+| 效果与状态 | 原 Ref 构造/写入/watch、文件/环境/时钟/stdin/退出与 FFI 方法；新增 `deref/.deref`、`secure-random-bytes` 声明，以及 `dbg/swap!` 的 Macro 合同 | Macro `swap!` 的 Expr<Dynamic> 声明不能替代展开后 Ref<T> 写入/返回校验；`dbg` 保留泛型 T 和 platform-read capability，不把它变为任意纯函数。`println/echo/eprintln` 无可导出的 core definition，保留宿主测试。随机数/ID 的尚未决定命名、旧兼容入口和模块 native ABI 不借此冻结或删除 |
+
+宏基线只保存查询出的 Macro schema，`runtime-arity` 为 nil；required/rest/expansion/generics/capabilities 仍保存在原生 quote 中。`ControlFlow<A>` 的 continue/break 都携带 A，它是 fold-while 的名义协议，不是旧 bool shortcut 的自动替代。名义值的直接构造、错误字段/variant、泛型实例和宏展开仍由原严格类型与附带语义测试验收。
+
+新增条目的回放复用原测试：`str-spaced` 两项拼接断言、`to-pairs` 两项异质转换断言、`defstruct/deftrait` 的声明断言、`dbg` 的返回值/单次求值、`swap!` 的赋值返回值、`deref` 的 payload 和 `secure-random-bytes` 的合法/非法长度。声明/泛型行为另由原 `calcit/test-types-inference.cirru`、`calcit/test-traits.cirru` 和严格负例覆盖，不为每个基线行再复制语言测试。Ref、平台能力与 parser 的 WASM/WASI 排除保持原原因；加入声明不会扩展 backend 能力。消费者版本及复验结果写在关联 PR/issue，不以这个表替代发布版回归。
+
 同样六类标量的 `.debug` 现在也记录实际 receiver 上的已证明契约：不接受额外参数、返回 String，由原 `Debug` trait 派发。它与 `.to-string` 是两个调用入口，返回类型相同不表示文本表示相同；基线分别保存，诊断返回值退化为 Dynamic 会被原历史比较拒绝。Show 仍记录公开 trait 声明，当前六类标量查询没有 `.show` 实现，不生成不存在的 builtin 方法行。语言行为继续由原 `calcit/test-traits.cirru` 的 Debug/Show 回归和 core 附带显示测试验证，不为契约导出再复制一份显示实现或失败文字。
 
 显示与源码格式化另记录 `str`、`format-to-lisp`、`to-lispy-string` 的公开名称、原声明 schema 和 arity，由同一 query 导出。`str` 的 rest 参数仍可接收开放值；另两者保留 `T -> String`，不因为签名相同而视为等价或自动互换，区别由原附带测试验证。`format-cirru` 接收由字符串与嵌套 List 组成的程序树，`format-cirru-edn` 接收泛型数据 `T`；两者返回 String，声明第二个 Bool 参数，runtime arity 均为 1–2。省略布局参数时，普通 Cirru formatter 默认 false，EDN formatter 默认 true；可省略不等于 nullable 或 rest。现有 query 和同一基线导出 schema/arity，原附带测试验证普通调用、局部别名与一元回调；错误 flag 通过已有类型关系或宿主边界拒绝。普通 Cirru formatter 在 native/JS 支持，WASM/WASI 仍明确 unsupported。typed decoder 的宽 builtin 声明仍不等于实例化后的 `Result<T,String>`，不能把宽声明写进基线伪装为完整合同。这不扩大 EDN 格式化或 decoder 的后端支持范围。

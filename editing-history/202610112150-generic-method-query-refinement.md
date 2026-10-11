@@ -9,3 +9,5 @@
 语义放在 option:map 的 Calcit :tests，普通方法调用验证不同输出类型和未选分支不执行，在 native/JS/WASM 回放同一 AST。查询序列化和内部 schema 选择边界由原 Rust/Agent 协议测试覆盖；原严格负例继续拒绝错误 Option/Result 输出关系。Snapshot 通过 CLI 写入，随原 formatter 规范化的其他行只改变布局，不改变 syntax AST。
 
 首轮 CI 暴露了原弃用扫描的非确定性：候选扫描读取全局 import 缓存，但解析器仅在发现候选后初始化。若仅含 `:as` 引用的定义先被遍历，候选为空并被漏报；其他定义先触发解析器则没有漏报。改为直接读取当前 Snapshot 提取的 import_map，保留后续惰性解析和局部绑定消歧，避免为无关宏触发编译期副作用。确定性单元回归不初始化全局程序，直接核对 alias 与 refer 候选；原包含 alias-only、局部遮蔽、quoted source 和无关宏的 CLI 集成测试保持两项定义、七处调用的要求不变。
+
+同一任务继续补五个 API 家族的纳入/排除边界，新增十一项实际 query 声明与 Ref.deref 调用证据，原基线行逐字保留。宏导出不再从 defmacro 参数列表虚构普通函数的 runtime arity；Macro 的语法输入、展开类型、泛型与 capability 保留在原 schema 中。typed decoder 的宽 builtin 声明仍不当作实例化闭合 Result，to-pairs 的异质槽位也不变成同型键值对。原语义回放和真实发布版消费者回归仍是独立门禁，不凭这批新增清单关闭完整家族任务或允许旧名删除。

@@ -47,6 +47,50 @@ test("native EDN preserves symbols, tags and raw schema quotes", () => {
     "quoted syntax leaves are strings; only EDN symbols outside quotes become symbol objects");
 });
 
+test("public declaration and effect macros preserve phase contracts rather than runtime arity", () => {
+  for (const name of ["defenum", "defstruct", "deftrait", "struct-with", "dbg", "swap!"]) {
+    const row = definition(baseline, name);
+    assert.deepEqual(row.schema.quote.slice(0, 2), ["::", "'Macro"]);
+    assert.equal(row["runtime-arity"], null, `${name} accepts syntax, not ordinary runtime arguments`);
+    assert.equal(row.declaration, null, "the macro implementation is not a nominal declaration");
+  }
+  assert.deepEqual(definition(baseline, "ControlFlow").declaration.quote,
+    ["defenum", "ControlFlow", ["[]", "'A"], [":continue", "'A"], [":break", "'A"]]);
+  const dbg = definition(baseline, "dbg").schema.quote[2];
+  assert.deepEqual(dbg.find(pair => pair[0] === ":generics")[1], ["[]", "'T"]);
+  assert.deepEqual(dbg.find(pair => pair[0] === ":capabilities")[1], ["#{}", ":platform-read"]);
+});
+
+test("macro export does not infer runtime arity from source parameters", () => {
+  const current = collect({ version: "test", scope: "phase-boundary", definitions: [{ name: { symbol: "app.syntax/construct" } }], methods: [] }, () => ({
+    code: ["defmacro", "construct", ["name", "&", "fields"], ["quote", "nil"]],
+    schema: ["::", "'Macro", ["{}", [":required", ["[]", "'Syntax"]], [":rest", "'SyntaxList"]]],
+  }));
+  assert.equal(current.definitions[0]["runtime-arity"], null);
+  assert.deepEqual(current.definitions[0].schema.quote.slice(0, 2), ["::", "'Macro"]);
+});
+
+test("heterogeneous conversion and display declarations retain their legitimate open inputs", () => {
+  const pairs = definition(baseline, "to-pairs").schema.quote;
+  assert.deepEqual(pairs.find(pair => pair[0] === ":args")[1], ["[]", ["::", "'Map", "'K", "'V"]]);
+  assert.deepEqual(pairs.find(pair => pair[0] === ":generics")[1], ["[]", "'K", "'V"]);
+  assert.deepEqual(pairs.find(pair => pair[0] === ":return")[1], ["::", "'Set", ["::", "'List", "'Dynamic"]]);
+  const spaced = definition(baseline, "str-spaced");
+  assert.deepEqual(spaced["runtime-arity"], { min: 1, max: null });
+  assert.equal(spaced.schema.quote.find(pair => pair[0] === ":return")[1], "'String");
+});
+
+test("Ref read and random-byte declarations keep payload and failure types", () => {
+  const read = definition(baseline, "deref").schema.quote;
+  assert.deepEqual(read.find(pair => pair[0] === ":args")[1], ["[]", ["::", "'Ref", "'T"]]);
+  assert.equal(read.find(pair => pair[0] === ":return")[1], "'T");
+  const method = baseline["method-contracts"].find(row => row.receiver === ":: 'Ref 'Number" && row.name === ".deref");
+  assert.deepEqual(method.parameters, []);
+  assert.equal(method.returns.quote, "'Number");
+  const random = definition(baseline, "secure-random-bytes").schema.quote;
+  assert.deepEqual(random.find(pair => pair[0] === ":return")[1], ["::", "'Result", "'Buffer", "'String"]);
+});
+
 test("typed accessors retain receiver-specific Option payloads without freezing Enum access", () => {
   for (const [receiver, payload, names] of [
     ["'String", "'String", [".first", ".last", ".nth"]],
