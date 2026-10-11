@@ -160,6 +160,18 @@ pub fn clear_type_slots() {
   TYPE_SLOT_OVERRIDES.with(|overrides| overrides.borrow_mut().clear());
 }
 
+/// Rebuild declarations during a source audit, then restore the ordinary registry.
+/// Entry bindings and lexical overrides remain active throughout the audit.
+pub(crate) fn checkpoint_type_slot_declarations() -> impl Drop {
+  struct RestoreDeclarations(HashMap<Arc<str>, Option<Arc<CalcitTypeAnnotation>>>);
+  impl Drop for RestoreDeclarations {
+    fn drop(&mut self) {
+      TYPE_SLOTS.with(|slots| *slots.borrow_mut() = std::mem::take(&mut self.0));
+    }
+  }
+  RestoreDeclarations(TYPE_SLOTS.with(|slots| std::mem::take(&mut *slots.borrow_mut())))
+}
+
 fn truncate_type_form_preview(raw: &str) -> String {
   const LIMIT: usize = 160;
   if raw.chars().count() > LIMIT {

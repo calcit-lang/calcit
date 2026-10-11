@@ -194,6 +194,7 @@ pub fn with_assertion_proof<R>(f: impl FnOnce() -> R) -> R {
   }
   let outer = !REQUIRE_ASSERTION_PROOF.with(Cell::get);
   let _compiled_checkpoint = outer.then(program::checkpoint_compiled_program);
+  let _slot_checkpoint = outer.then(calcit::checkpoint_type_slot_declarations);
   let _audit_proven = outer.then(|| {
     AUDIT_PROVEN_DEFS.with(|proven| proven.borrow_mut().clear());
     ClearAuditProven
@@ -16568,6 +16569,72 @@ mod tests {
       assert_eq!(program::clone_existing_compiled_program(), ordinary, "audit outcome {outcome}");
       assert!(!REQUIRE_ASSERTION_PROOF.with(Cell::get));
     }
+  }
+
+  #[test]
+  fn assertion_audit_isolates_slot_declarations_and_preserves_bindings() {
+    let _guard = lock_preprocess_test_state();
+    calcit::clear_type_slots();
+    let ns = "tests.audit-slots";
+    let entry = |def| program::ProgramDefEntry {
+      code: code_to_calcit(
+        &Cirru::List(vec![Cirru::leaf("deftype-slot"), Cirru::leaf(":dispatch-op")]),
+        ns,
+        def,
+        vec![],
+      )
+      .unwrap(),
+      schema: calcit::DYNAMIC_TYPE.clone(),
+      doc: Arc::from(""),
+      examples: vec![],
+      ffi: None,
+    };
+    program::install_internal_source_namespace(
+      Arc::from(ns),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(Arc::from("slot"), entry("slot")), (Arc::from("duplicate"), entry("duplicate"))]),
+      },
+    )
+    .unwrap();
+    calcit::configure_entry_type_slots(&HashMap::from([("dispatch-op".to_owned(), "app.schema/Op".to_owned())])).unwrap();
+    let binding = calcit::resolve_type_slot("dispatch-op").unwrap();
+    calcit::push_type_slot_override(Arc::from("dispatch-op"), Arc::new(CalcitTypeAnnotation::String));
+    let warnings = RefCell::new(vec![]);
+    let stack = CallStackList::default();
+    ensure_ns_def_compiled(ns, "slot", &warnings, &stack).expect("ordinary declaration");
+    for outcome in 0..3 {
+      let temporary: Arc<str> = Arc::from(format!("audit-only-{outcome}"));
+      let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        with_assertion_proof(|| {
+          ensure_ns_def_compiled(ns, "slot", &warnings, &stack).expect("replay ordinary declaration");
+          with_assertion_proof(|| ensure_ns_def_compiled(ns, "slot", &warnings, &stack)).expect("nested audit shares declarations");
+          assert_eq!(
+            calcit::resolve_type_slot("dispatch-op").unwrap().as_ref(),
+            &CalcitTypeAnnotation::String
+          );
+          let duplicate = ensure_ns_def_compiled(ns, "duplicate", &warnings, &stack).expect_err("distinct duplicate must fail");
+          assert!(duplicate.headline().contains("type slot already declared: dispatch-op"));
+          calcit::register_type_slot(temporary.clone()).unwrap();
+          match outcome {
+            0 => Ok(()),
+            1 => Err("audit error"),
+            _ => panic!("slot audit cleanup probe"),
+          }
+        })
+      }));
+      assert_eq!(result.is_err(), outcome == 2);
+      assert!(
+        calcit::register_type_slot(Arc::from("dispatch-op")).is_err(),
+        "restore original declaration"
+      );
+      calcit::register_type_slot(temporary.clone()).expect("audit declaration must not leak");
+      // A fresh outer checkpoint must discard this ordinary declaration too.
+      with_assertion_proof(|| calcit::register_type_slot(temporary.clone())).unwrap();
+    }
+    calcit::pop_type_slot_override("dispatch-op");
+    assert_eq!(calcit::resolve_type_slot("dispatch-op").unwrap(), binding);
+    calcit::clear_type_slots();
   }
 
   #[test]

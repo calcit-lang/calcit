@@ -6154,6 +6154,73 @@ fn whole_project_fix_previews_node_only_definitions_without_weakening_entry_chec
 }
 
 #[test]
+fn strict_workflow_replays_type_slot_declarations_without_hiding_duplicates() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  for name in ["main!", "reload!"] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("app.main/{name}"),
+          "--overwrite",
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ defn {name} () &unit"),
+        ],
+      ),
+      "declare independently proven entry return",
+    );
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/slot",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ deftype-slot :dispatch-op",
+      ],
+    ),
+    "install slot declaration",
+  );
+  let before = fs::read(&snapshot).unwrap();
+  let verified = run_fix(&snapshot, &["--workflow", "strict", "--verify", "--format", "json"]);
+  assert_success(&verified, "complete workflow must replay one declaration");
+  assert_eq!(parse_stdout(&verified)["diagnostics"], serde_json::json!([]));
+  assert_eq!(fs::read(&snapshot).unwrap(), before);
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/duplicate",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ deftype-slot :dispatch-op",
+      ],
+    ),
+    "install distinct conflicting declaration",
+  );
+  let rejected = run_fix(&snapshot, &["--workflow", "strict", "--verify", "--format", "json"]);
+  assert!(!rejected.status.success());
+  assert!(parse_stdout(&rejected)["diagnostics"].as_array().unwrap().iter().any(|diagnostic| {
+    diagnostic["message"]
+      .as_str()
+      .is_some_and(|message| message.contains("type slot already declared: dispatch-op"))
+  }));
+}
+
+#[test]
 fn strict_workflow_applies_safe_fixes_without_claiming_unproven_contracts() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
