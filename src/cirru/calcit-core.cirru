@@ -8046,6 +8046,28 @@
                 assert= 1 $ collect & $ [] 0 9
                 assert= 2 $ collect 0 & $ [] 8 9
               :tags $ #{} :call-boundary
+            %{} 'TestEntry (:name |plain-call-into-rest-local)
+              :code $ quote $ let
+                  collect $ fn (a & xs) (&list:count xs)
+                  pick $ fn (a ? b) (if (nil? b) a b)
+                assert= 1 $ collect 0 9
+                assert= 0 $ collect 0
+                assert= 3 $ collect 0 7 8 9
+                assert= 1 $ pick 1
+                assert= 2 $ pick 1 2
+              :tags $ #{} :call-boundary
+            %{} 'TestEntry (:name |rest-callee-in-hof)
+              :code $ quote $ do
+                assert= 6 $ foldl ([] 1 2 3) 0 +
+                assert= ([] 1 2) $ map ([] 1 2) +
+                assert= ([] 1 1) $ map ([] 1 2) $ fn (& xs) (&list:count xs)
+                assert= 2 $ foldl ([] 3 4) 0 $ fn (acc & xs) (&+ acc $ &list:count xs)
+              :tags $ #{} :call-boundary
+            %{} 'TestEntry (:name |plain-call-rest-fn-value)
+              :code $ quote $ let
+                  f +
+                assert= 3 $ f 1 2
+              :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |nested-generic-call-scope)
               :code $ quote $ let
                   identity-list $ fn (xs)

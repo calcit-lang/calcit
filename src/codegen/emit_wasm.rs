@@ -902,6 +902,17 @@ fn emit_wasm_impl(
   runtime_fn_index.insert("__rt_str_pad_right".to_string(), str_pad_right_idx);
   compiled_fns.push(build_str_pad_right_fn(str_tag_id));
 
+  // Funcref table entry for `&` rest-parameter functions; its `() -> ()` type
+  // matches no canonical indirect call type (see `ModuleFunctionLayout`).
+  let rest_slot_trap_idx = num_imports + compiled_fns.len() as u32;
+  compiled_fns.push(CompiledFn {
+    export_name: None,
+    params: vec![],
+    results: vec![],
+    locals: vec![],
+    instructions: vec![Instruction::Unreachable],
+  });
+
   let runtime_fn_count = compiled_fns.len() as u32;
   let mut export_name_counts: HashMap<String, usize> = HashMap::new();
   for (_, name, _, _) in &fn_defs {
@@ -1301,6 +1312,15 @@ fn emit_wasm_impl(
       runtime_fn_count,
       table_fn_count: fn_defs.len() as u32,
       component_free_head: component_free_head_global.is_some(),
+      rest_slot_trap: Some((
+        rest_slot_trap_idx,
+        fn_defs
+          .iter()
+          .enumerate()
+          .filter(|(_, (_, _, args, _))| compute_fn_arity(args).1.is_some())
+          .map(|(slot, _)| slot as u32)
+          .collect(),
+      )),
     },
   )?;
 
@@ -4894,14 +4914,40 @@ fn wasm_import_arity(args: &CalcitFnArgs) -> Result<u32, String> {
 
 #[derive(Clone)]
 struct InlineClosure {
+  /// Parameter names in declaration order, without `?` / `&` markers.
   params: Vec<String>,
-  /// The source lambda has no `&` rest or `?` optional parameter, so `params`
-  /// is its exact arity.
-  fixed_arity: bool,
+  /// Leading parameters that need an argument. The parameters after them,
+  /// except a trailing rest parameter, are `?` optional.
+  required: usize,
+  /// The last parameter is a `&` rest parameter.
+  rest: bool,
   body: Vec<Calcit>,
   captured_locals: HashMap<String, u32>,
   captured_local_types: HashMap<String, Arc<CalcitTypeAnnotation>>,
   captured_closures: HashMap<String, Arc<InlineClosure>>,
+}
+
+impl InlineClosure {
+  /// Parameters bound one-to-one to arguments: required and `?` optional ones.
+  fn positional(&self) -> usize {
+    self.params.len() - usize::from(self.rest)
+  }
+
+  /// Whether a call with `count` arguments binds without an arity error.
+  fn accepts(&self, count: usize) -> bool {
+    count >= self.required && (self.rest || count <= self.positional())
+  }
+
+  fn describe_arity(&self) -> String {
+    let positional = self.positional();
+    if self.rest {
+      format!("at least {}", self.required)
+    } else if self.required == positional {
+      positional.to_string()
+    } else {
+      format!("{} to {positional}", self.required)
+    }
+  }
 }
 
 #[derive(Clone)]
@@ -5200,9 +5246,11 @@ impl WasmGenCtx {
 
 fn capture_inline_closure(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<InlineClosure>> {
   let (params, body) = try_extract_inline_lambda(expr)?;
+  let (required, rest) = inline_lambda_shape(expr)?;
   Some(Arc::new(InlineClosure {
     params,
-    fixed_arity: inline_lambda_has_fixed_arity(expr),
+    required,
+    rest,
     body,
     captured_locals: ctx.locals.clone(),
     captured_local_types: ctx.local_types.clone(),
@@ -5210,22 +5258,112 @@ fn capture_inline_closure(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<InlineC
   }))
 }
 
-/// Whether a lambda accepted by `try_extract_inline_lambda` declares only plain
-/// parameters; that extractor drops `&` / `?` markers from `params`.
-fn inline_lambda_has_fixed_arity(expr: &Calcit) -> bool {
-  match expr {
+/// The `(required, rest)` parameter shape of a lambda accepted by
+/// `try_extract_inline_lambda`, which drops the `?` / `&` markers from its
+/// parameter names. Native binding makes every parameter after `?` optional
+/// and binds the single parameter after `&` to the remaining arguments.
+/// Returns `None` for a marker layout native binding rejects.
+fn inline_lambda_shape(expr: &Calcit) -> Option<(usize, bool)> {
+  let labels: Vec<CalcitArgLabel> = match expr {
     Calcit::Fn { info, .. } => match info.args.as_ref() {
-      CalcitFnArgs::Args(_) => true,
-      CalcitFnArgs::MarkedArgs(labels) => labels.iter().all(|label| matches!(label, CalcitArgLabel::Idx(_))),
+      CalcitFnArgs::Args(idxs) => return Some((idxs.len(), false)),
+      CalcitFnArgs::MarkedArgs(labels) => labels.clone(),
     },
     Calcit::List(items) => match items.get(2) {
-      Some(Calcit::List(args)) => args.iter().all(|arg| match arg {
-        Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } => !matches!(sym.as_ref(), "&" | "?"),
-        _ => false,
-      }),
-      _ => false,
+      Some(Calcit::List(args)) => args
+        .iter()
+        .map(|arg| match arg {
+          Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } => Some(match sym.as_ref() {
+            "&" => CalcitArgLabel::RestMark,
+            "?" => CalcitArgLabel::OptionalMark,
+            _ => CalcitArgLabel::Idx(0),
+          }),
+          Calcit::Syntax(CalcitSyntax::ArgSpread, _) => Some(CalcitArgLabel::RestMark),
+          Calcit::Syntax(CalcitSyntax::ArgOptional, _) => Some(CalcitArgLabel::OptionalMark),
+          _ => None,
+        })
+        .collect::<Option<Vec<_>>>()?,
+      _ => return None,
     },
-    _ => false,
+    _ => return None,
+  };
+  let (mut required, mut optional, mut rest, mut rest_params) = (0, false, false, 0);
+  for label in labels {
+    match label {
+      CalcitArgLabel::Idx(_) if rest => rest_params += 1,
+      CalcitArgLabel::Idx(_) if !optional => required += 1,
+      CalcitArgLabel::Idx(_) => {}
+      CalcitArgLabel::OptionalMark if !rest => optional = true,
+      CalcitArgLabel::RestMark if !rest => rest = true,
+      _ => return None,
+    }
+  }
+  (!rest || rest_params == 1).then_some((required, rest))
+}
+
+type InlineBinding = (InlineArgument, Option<Arc<CalcitTypeAnnotation>>);
+
+/// Binds call arguments to an inline closure's parameters like native binding:
+/// a missing `?` parameter is nil and a `&` parameter receives the trailing
+/// arguments as a list. Returns one binding per parameter.
+fn bind_inline_closure_args(
+  ctx: &mut WasmGenCtx,
+  closure: &InlineClosure,
+  mut args: Vec<InlineBinding>,
+) -> Result<Vec<InlineBinding>, String> {
+  if !closure.accepts(args.len()) {
+    return Err(format!(
+      "inline closure expects {} argument(s), got {}",
+      closure.describe_arity(),
+      args.len()
+    ));
+  }
+  let positional = closure.positional();
+  let trailing = if args.len() > positional {
+    args.split_off(positional)
+  } else {
+    vec![]
+  };
+  while args.len() < positional {
+    let nil = ctx.alloc_local();
+    ctx.emit(f64_const(0.0));
+    ctx.emit(Instruction::LocalSet(nil));
+    args.push((InlineArgument::Value(nil), Some(Arc::new(CalcitTypeAnnotation::Nil))));
+  }
+  if closure.rest {
+    let items = trailing
+      .into_iter()
+      .map(|(arg, _)| match arg {
+        InlineArgument::Value(local) => Ok(local),
+        InlineArgument::Closure(_) => Err(format!(
+          "E_WASM_CLOSURE_SPECIALIZATION: a closure argument cannot be packed into rest parameter `{}`",
+          closure.params[positional]
+        )),
+      })
+      .collect::<Result<Vec<_>, String>>()?;
+    let list = emit_list_from_locals(ctx, &items);
+    args.push((InlineArgument::Value(list), None));
+  }
+  Ok(args)
+}
+
+/// Installs bound arguments as the closure's parameters in the current scope.
+fn install_inline_closure_bindings(ctx: &mut WasmGenCtx, closure: &InlineClosure, bindings: Vec<InlineBinding>) {
+  for (param, (binding, annotation)) in closure.params.iter().zip(bindings) {
+    match binding {
+      InlineArgument::Value(local) => {
+        ctx.locals.insert(param.clone(), local);
+        if let Some(annotation) = annotation {
+          ctx.local_types.insert(param.clone(), annotation);
+        } else {
+          ctx.local_types.remove(param);
+        }
+      }
+      InlineArgument::Closure(value) => {
+        ctx.local_types.remove(param);
+        ctx.lambda_locals.insert(param.clone(), value);
+      }
+    }
   }
 }
 
@@ -5255,36 +5393,19 @@ fn inline_closure_tail(expr: &Calcit) -> (Vec<&Calcit>, &Calcit) {
 }
 
 fn emit_inline_closure_body(ctx: &mut WasmGenCtx, closure: &InlineClosure, param_locals: &[u32]) -> Result<(), String> {
-  if closure.params.len() != param_locals.len() {
-    return Err(format!(
-      "inline closure expects {} argument(s), got {}",
-      closure.params.len(),
-      param_locals.len()
-    ));
-  }
   if closure.body.iter().any(check_uses_recur) {
     return Err("recur in a statically specialized closure is not yet supported in WASM codegen".into());
   }
-
-  let caller_locals = std::mem::replace(&mut ctx.locals, closure.captured_locals.clone());
-  let caller_local_types = std::mem::replace(&mut ctx.local_types, closure.captured_local_types.clone());
-  let caller_closures = std::mem::replace(&mut ctx.lambda_locals, closure.captured_closures.clone());
-  for (param, local) in closure.params.iter().zip(param_locals) {
-    ctx.locals.insert(param.clone(), *local);
-    ctx.local_types.remove(param);
-  }
-  let result = emit_body(ctx, &closure.body);
-  ctx.locals = caller_locals;
-  ctx.local_types = caller_local_types;
-  ctx.lambda_locals = caller_closures;
-  result
+  let args = param_locals.iter().map(|local| (InlineArgument::Value(*local), None)).collect();
+  let bindings = bind_inline_closure_args(ctx, closure, args)?;
+  emit_inline_closure_with_bindings(ctx, closure, bindings)
 }
 
 fn emit_inline_closure_call(ctx: &mut WasmGenCtx, closure: &InlineClosure, args: &[Calcit]) -> Result<(), String> {
-  if closure.params.len() != args.len() {
+  if !closure.accepts(args.len()) {
     return Err(format!(
       "inline closure expects {} argument(s), got {}",
-      closure.params.len(),
+      closure.describe_arity(),
       args.len()
     ));
   }
@@ -5292,38 +5413,31 @@ fn emit_inline_closure_call(ctx: &mut WasmGenCtx, closure: &InlineClosure, args:
     return Err("recur in a statically specialized closure is not yet supported in WASM codegen".into());
   }
 
-  let argument_types = args.iter().map(|arg| infer_wasm_static_type(ctx, arg)).collect::<Vec<_>>();
-  let mut bindings = Vec::with_capacity(args.len());
+  let mut bound = Vec::with_capacity(args.len());
   for arg in args {
     if let Some(arg_closure) = resolve_inline_closure(ctx, arg) {
-      bindings.push(InlineArgument::Closure(arg_closure));
+      bound.push((InlineArgument::Closure(arg_closure), None));
     } else {
+      let annotation = infer_wasm_static_type(ctx, arg);
       emit_expr(ctx, arg)?;
       let idx = ctx.alloc_local();
       ctx.emit(Instruction::LocalSet(idx));
-      bindings.push(InlineArgument::Value(idx));
+      bound.push((InlineArgument::Value(idx), annotation));
     }
   }
+  let bindings = bind_inline_closure_args(ctx, closure, bound)?;
+  emit_inline_closure_with_bindings(ctx, closure, bindings)
+}
 
+fn emit_inline_closure_with_bindings(
+  ctx: &mut WasmGenCtx,
+  closure: &InlineClosure,
+  bindings: Vec<InlineBinding>,
+) -> Result<(), String> {
   let caller_locals = std::mem::replace(&mut ctx.locals, closure.captured_locals.clone());
   let caller_local_types = std::mem::replace(&mut ctx.local_types, closure.captured_local_types.clone());
   let caller_closures = std::mem::replace(&mut ctx.lambda_locals, closure.captured_closures.clone());
-  for (index, (param, binding)) in closure.params.iter().zip(bindings).enumerate() {
-    match binding {
-      InlineArgument::Value(local) => {
-        ctx.locals.insert(param.clone(), local);
-        if let Some(Some(annotation)) = argument_types.get(index) {
-          ctx.local_types.insert(param.clone(), annotation.clone());
-        } else {
-          ctx.local_types.remove(param);
-        }
-      }
-      InlineArgument::Closure(value) => {
-        ctx.local_types.remove(param);
-        ctx.lambda_locals.insert(param.clone(), value);
-      }
-    }
-  }
+  install_inline_closure_bindings(ctx, closure, bindings);
   let result = emit_body(ctx, &closure.body);
   ctx.locals = caller_locals;
   ctx.local_types = caller_local_types;
@@ -5562,11 +5676,11 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
             index + 1
           )
         })?;
-        if closure.params.len() != *expected_arity {
+        if !closure.accepts(*expected_arity) {
           return Err(format!(
-            "E_WASM_CLOSURE_SPECIALIZATION: `{qualified}` callback argument {} expects {expected_arity} parameter(s), got {}",
+            "E_WASM_CLOSURE_SPECIALIZATION: `{qualified}` callback argument {} is called with {expected_arity} argument(s), but the closure expects {}",
             index + 1,
-            closure.params.len()
+            closure.describe_arity()
           ));
         }
       }
@@ -6634,21 +6748,21 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
     }
     // Dynamic spread call via a local holding a function value. It lowers as an
     // ordinary call only when every spread is a `([] ...)` literal and the local
-    // is an inline lambda declared without `&` / `?` whose parameter count equals
-    // the expanded argument count. A function-table-backed local traps: its
-    // declared Fn type does not prove a fixed arity (a rest-parameter function
-    // satisfies a fixed Fn type), and ordinary local calls do not pack rest
-    // arguments (#1964).
+    // is an inline lambda accepting the expanded argument count; the ordinary
+    // call binds `?` / `&` parameters like native. A function-table-backed local
+    // traps: its declared Fn type does not prove a fixed arity (a rest-parameter
+    // function satisfies a fixed Fn type), and a runtime spread has no static
+    // length (#1964).
     Calcit::Local(local) => {
       let mut plain = vec![head.clone()];
       let mut runtime_spreads = vec![];
       expand_literal_spread_args(&local.sym, call_args, &mut plain, &mut runtime_spreads)?;
       let arg_count = plain.len() - 1;
-      let fixed_inline_lambda = ctx
+      let accepting_inline_lambda = ctx
         .lambda_locals
         .get(local.sym.as_ref())
-        .is_some_and(|closure| closure.fixed_arity && closure.params.len() == arg_count);
-      if runtime_spreads.is_empty() && fixed_inline_lambda {
+        .is_some_and(|closure| closure.accepts(arg_count));
+      if runtime_spreads.is_empty() && accepting_inline_lambda {
         return emit_call_expr(ctx, &crate::calcit::CalcitList::from(&plain[..]));
       }
       ctx.emit(Instruction::Unreachable);
@@ -10033,12 +10147,13 @@ mod tests {
     assert_eq!(adds(&ctx), 1);
   }
 
-  /// Ordinary local calls ignore `&` and `?` parameters, so a literal spread
-  /// into a local function lowers to a plain call only for an inline lambda
-  /// declared without them. A declared Fn type is not proof: a rest-parameter
-  /// function is accepted where a fixed Fn type is declared.
+  /// A literal spread into a local function lowers to a plain call only for an
+  /// inline lambda accepting the expanded argument count; the plain call binds
+  /// `?` / `&` parameters like native (#1964). A function-table-backed local
+  /// traps: a declared Fn type is not proof, since a rest-parameter function is
+  /// accepted where a fixed Fn type is declared.
   #[test]
-  fn local_spread_call_requires_fixed_arity() {
+  fn local_spread_call_requires_inline_lambda() {
     let fn_type = |arg_types: Vec<Arc<CalcitTypeAnnotation>>, rest: bool| {
       Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
         generics: Arc::new(vec![]),
@@ -10070,7 +10185,7 @@ mod tests {
       fn_arity: HashMap::new(),
       fn_has_rest: HashMap::new(),
       runtime_fn_index: HashMap::new(),
-      tag_index: HashMap::new(),
+      tag_index: HashMap::from([("list".to_string(), 1)]),
       struct_layouts: Default::default(),
       string_pool: HashMap::new(),
       atom_globals: HashMap::new(),
@@ -10082,15 +10197,23 @@ mod tests {
       boundary: WasmBoundary::Native,
     };
     let mut ctx = WasmGenCtx::new(0, env);
-    let literal = Calcit::from(vec![Calcit::Proc(CalcitProc::List), Calcit::Number(1.0), Calcit::Number(2.0)]);
-    let assert_traps = |ctx: &mut WasmGenCtx, callee: CalcitLocal| {
+    let list_literal = |items: &[f64]| {
+      let mut nodes = vec![Calcit::Proc(CalcitProc::List)];
+      nodes.extend(items.iter().map(|item| Calcit::Number(*item)));
+      Calcit::from(nodes)
+    };
+    let literal = list_literal(&[1.0, 2.0]);
+    let spread_call = |ctx: &mut WasmGenCtx, callee: CalcitLocal, spread: &Calcit| {
       ctx.instructions.clear();
       let call = [
         Calcit::Local(callee),
         Calcit::Syntax(CalcitSyntax::ArgSpread, Arc::from("tests.wasm")),
-        literal.clone(),
+        spread.clone(),
       ];
-      emit_call_spread(ctx, &call).expect("spread call to a local without proven fixed arity");
+      emit_call_spread(ctx, &call).expect("spread call to a local");
+    };
+    let assert_traps = |ctx: &mut WasmGenCtx, callee: CalcitLocal| {
+      spread_call(ctx, callee, &literal);
       assert!(matches!(ctx.instructions.as_slice(), [Instruction::Unreachable]));
     };
 
@@ -10108,20 +10231,96 @@ mod tests {
       assert_traps(&mut ctx, local(type_info));
     }
 
-    // An inline lambda declared as `fn (a & xs)` traps even when the local's
-    // declared type is a fixed two-argument Fn.
+    // An inline lambda declared as `fn (a & xs)` lowers to an inline call that
+    // packs the two trailing arguments into a rest list.
     ctx.lambda_locals.insert(
       "f".to_string(),
       Arc::new(InlineClosure {
         params: vec!["a".to_string(), "xs".to_string()],
-        fixed_arity: false,
+        required: 1,
+        rest: true,
         body: vec![Calcit::Number(0.0)],
         captured_locals: HashMap::new(),
         captured_local_types: HashMap::new(),
         captured_closures: HashMap::new(),
       }),
     );
-    assert_traps(&mut ctx, local(fixed_type()));
+    spread_call(&mut ctx, local(fixed_type()), &list_literal(&[5.0, 6.0, 7.0]));
+    assert!(
+      ctx
+        .instructions
+        .iter()
+        .any(|instruction| matches!(instruction, Instruction::F64Const(count) if f64::from(*count) == 2.0)),
+      "rest list stores its item count"
+    );
+    assert!(!matches!(ctx.instructions.as_slice(), [Instruction::Unreachable]));
+    // Without the required argument the spread call still traps.
+    spread_call(&mut ctx, local(fixed_type()), &list_literal(&[]));
+    assert!(matches!(ctx.instructions.as_slice(), [Instruction::Unreachable]));
+  }
+
+  /// The funcref table entry of a `&` rest-parameter function points at a
+  /// `() -> ()` trap function, so an indirect call typed `(f64, f64) -> f64`
+  /// traps instead of passing its second argument as the rest list (#1964).
+  #[test]
+  fn rest_function_table_slot_rejects_fixed_arity_indirect_call() {
+    let function = |params: usize, results: usize, export_name: Option<&str>, instructions: Vec<Instruction<'static>>| CompiledFn {
+      export_name: export_name.map(str::to_owned),
+      params: vec![ValType::F64; params],
+      results: vec![ValType::F64; results],
+      locals: vec![],
+      instructions,
+    };
+    // Runtime helper 0 is the trap; table slot 0 is `(a & xs)` returning `a`;
+    // the exported caller is outside the table.
+    let fns = [
+      function(0, 0, None, vec![Instruction::Unreachable]),
+      function(2, 1, None, vec![Instruction::LocalGet(0)]),
+      function(
+        0,
+        1,
+        Some("call"),
+        vec![
+          super::f64_const(1.0),
+          super::f64_const(2.0),
+          Instruction::I32Const(0),
+          Instruction::CallIndirect {
+            type_index: 2,
+            table_index: 0,
+          },
+        ],
+      ),
+    ];
+    let run = |rest_slot_trap: Option<(u32, Vec<u32>)>| {
+      let bytes = build_wasm_module(
+        &fns,
+        &[],
+        16384,
+        &[],
+        &[],
+        1,
+        ModuleFunctionLayout {
+          runtime_fn_count: 1,
+          table_fn_count: 1,
+          component_free_head: false,
+          rest_slot_trap,
+        },
+      )
+      .expect("valid module");
+      let engine = Engine::default();
+      let module = Module::new(&engine, &bytes).expect("valid module");
+      let mut store = Store::new(&engine, ());
+      let instance = Instance::new(&mut store, &module, &[]).expect("instantiate");
+      let call = instance.get_typed_func::<(), f64>(&mut store, "call").expect("call export");
+      call.call(&mut store, ())
+    };
+    assert_eq!(run(None).expect("unguarded slot is called"), 1.0);
+    let error = run(Some((0, vec![0]))).expect_err("guarded rest slot traps");
+    assert_eq!(
+      error.downcast_ref::<wasmtime::Trap>(),
+      Some(&wasmtime::Trap::BadSignature),
+      "{error:?}"
+    );
   }
 
   fn declaration(head: CalcitSyntax) -> Calcit {
@@ -10296,6 +10495,7 @@ mod tests {
         runtime_fn_count: 0,
         table_fn_count: 0,
         component_free_head: false,
+        rest_slot_trap: None,
       },
     )
     .expect("valid core module");
@@ -10317,6 +10517,7 @@ mod tests {
         runtime_fn_count: 0,
         table_fn_count: 0,
         component_free_head: false,
+        rest_slot_trap: None,
       },
     )
     .expect("valid route helper module");
@@ -10396,6 +10597,7 @@ mod tests {
         runtime_fn_count: 0,
         table_fn_count: 0,
         component_free_head: false,
+        rest_slot_trap: None,
       },
     )
     .expect("valid preopen selector module");
@@ -10548,6 +10750,7 @@ mod tests {
           runtime_fn_count: 4,
           table_fn_count: 0,
           component_free_head: true,
+          rest_slot_trap: None,
         },
       )
       .expect("valid core command");
@@ -10661,6 +10864,7 @@ mod tests {
           runtime_fn_count: 5,
           table_fn_count: 0,
           component_free_head: true,
+          rest_slot_trap: None,
         },
       )
       .expect("valid async open-at core command");
@@ -10833,6 +11037,7 @@ mod tests {
         runtime_fn_count: 5,
         table_fn_count: 0,
         component_free_head: true,
+        rest_slot_trap: None,
       },
     )
     .expect("valid file stream core command");
@@ -11012,6 +11217,7 @@ mod tests {
           runtime_fn_count: 6,
           table_fn_count: 0,
           component_free_head: true,
+          rest_slot_trap: None,
         },
       )
       .expect("valid bounded file reader core command");
@@ -11150,6 +11356,7 @@ mod tests {
           runtime_fn_count: 3,
           table_fn_count: 0,
           component_free_head: true,
+          rest_slot_trap: None,
         },
       )
       .expect("valid bounded stdin core command");
