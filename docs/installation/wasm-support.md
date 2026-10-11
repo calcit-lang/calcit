@@ -102,8 +102,7 @@ write-file
 | `E_WASM_TRAIT_TYPE_EVIDENCE` | trait 调用的接收者没有具体类型 | 给接收者写出具体类型 |
 | `E_WASM_TRAIT_RESOLUTION` | 已知接收者类型下找不到 trait 实现 | 检查 `impl-traits` 是否覆盖该类型 |
 | `E_WASM_TRAIT_CALL` | `&trait-call` 参数不是 trait、方法 tag 与接收者 | 修正调用形式 |
-| `E_WASM_CALL_SPECIALIZATION` | 调用点特化需要固定、已知的 arity，或出现递归特化 | 避免可变参数调用或递归高阶调用 |
-| `E_WASM_SPREAD_CALL` | 把运行时 List 以 `& xs` 展开传给 `&list:concat` 以外的 proc；`([] ...)` 字面量会按普通参数展开 | 逐个写出参数，或改用接受 List 的函数 |
+| `E_WASM_CALL_SPECIALIZATION` | 调用点特化需要固定、已知的 arity，或出现递归特化；也包括把运行时 List 以 `& xs` 展开传给 proc：仅当它是传给 `&list:concat` 的最后一个参数时支持，其他 proc 或非末尾位置都会报此错误（`([] ...)` 字面量会按普通参数展开） | 避免可变参数调用或递归高阶调用；逐个写出参数，或使用 `([] ...)` 字面量 |
 | `E_WASM_CLOSURE_SPECIALIZATION` | 闭包参数的静态契约不可调用，或闭包逃逸出特化调用 | 直接传入具名函数或固定签名的 `fn` |
 | `E_WASM_TAG_CONVERSION` | `turn-tag` / `to-tag` 需要运行时 tag interning | 使用字面量 tag |
 | `E_WASM_STRUCT_IDENTITY` | Struct 定义未在编译产物中登记 | 通过具名 `defstruct` 构造 |
