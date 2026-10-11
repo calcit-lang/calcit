@@ -32,9 +32,16 @@ WASM/WASI 排除；原有 update collection parity 排除保持。不能将排�
 ## 下游后续
 
 新 core 的 Timegrass 隔离 alpha.30 源码探针消除 update/each 的 core 诊断后，暴露
-ACK 和 metrics 调用点。探针尝试将间接 swap!/update 写成显式状态回调，再从真实
-Ref<SyncMetrics> 声明回调参数，并在 dirty-rev 比较前解码 Number。仍需核对完整
-strict 和真实同步测试结果；未通过前不把这些应用探针当成正式验收。
+ACK 和 metrics 调用点。应用将间接 swap!/update 写成显式状态回调，在 dirty-rev
+比较前解码 Number；metrics 使用真实 Ref<SyncMetrics> 的具名参数及已知字段
+读写。后续暴露的 WSS event callback 在副作用完成后显式返回 Unit，避免将断线
+分支的 Set 返回值作为 Unit 合同。
+
+最终隔离探针仅余 Alerts 两项诊断、1 项源码审查和 165 项类型发现。应用候选与
+探针 Snapshot 经 cmp 确认为相同源码；manifest/运行 CLI 的版本不同，仍不能称为
+正式工具链升级。应用在正式 alpha.29 通过 server 92/92、JS 生成及真实双客户端
+任务收敛、ACK、错误 revision resnapshot、隐私和独立登出。服务 SIGINT 退出 0，
+写入独立 512-byte 存储，不触及原项目存储。完整下游 strict 仍未通过。
 
 全部报告和生成产物留在忽略目录。完整 Rust 回归已退出 0：25 个 suite、1664 passed、
 1 ignored；扩展的 known-assertion 脚本也已通过，包括新增的精确回调错误及开放
