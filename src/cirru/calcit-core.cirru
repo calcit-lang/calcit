@@ -4676,8 +4676,7 @@
         'conj $ %{} 'CodeEntry
           :doc "|Appends values to the end of a list, returning a new list\nSupports adding multiple values by chaining additional arguments."
           :code $ quote $ defn conj (xs y0 & ys)
-            if (empty? ys) (append xs y0)
-              recur (append xs y0) & ys
+            foldl ys (append xs y0) append
           :examples $ []
             quote $ assert= ([] 1 2 3)
               conj ([] 1 2) 3
@@ -4696,6 +4695,16 @@
               :code $ quote $ let
                   xs $ assert-type ([] 1 |x) (:: 'List 'Dynamic)
                 assert= ([] 1 |x :ready) (conj xs :ready)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-order-and-source-with-rest-spread)
+              :code $ quote $ let
+                  original $ [] 1 2
+                  extra $ [] 4 5
+                assert= ([] 7)
+                  conj ([]) 7
+                assert= ([] 1 2 3) (conj original 3)
+                assert= ([] 1 2 3 4 5) (conj original 3 & extra)
+                assert= ([] 1 2) original
               :tags $ #{} :core :unit
         'consume-readable-byte-stream $ %{} 'CodeEntry
           :doc "|在 Component async export 中有界消费只读字节流。max-total-bytes 与 max-chunk-bytes 必须是正整数字面量；on-chunk 必须是顶层同步 (Buffer) -> Bool，返回 false 表示成功提前停止。该调用必须是导出函数唯一的主体表达式。"

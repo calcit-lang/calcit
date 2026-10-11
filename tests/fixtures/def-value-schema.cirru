@@ -239,6 +239,52 @@
             :tags $ #{} :open-match-payload
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.binding-proof
+    'app.callback-left $ %{} 'FileEntry
+      :defs $ {} $ 'Item
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Item (:n 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.callback-left
+    'app.callback-origin $ %{} 'FileEntry
+      :defs $ {}
+        'choose $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn choose (flag)
+            let
+                original $ left/Item :n 1
+              if-let
+                present? $ if flag (Option :some true) (Option :none)
+                struct-with original $ :n 2
+                struct-with original $ :n 3
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.callback-left/Item)
+            :args $ [] 'Bool
+          :tests $ [] $ %{} 'TestEntry
+            :name |preserves-nominal-origin-through-option-callbacks
+            :code $ quote $ do
+              assert= 2 $ :n $ choose true
+              assert= 3 $ :n $ choose false
+            :tags $ #{} :nominal-callback-origin
+        'mixed-origin $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn mixed-origin ()
+            option:fold (Option :some true)
+              fn () $ left/Item :n 1
+              fn (present?) (right/Item :n 2)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.callback-left/Item)
+            :args $ []
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.callback-origin
+          :require (app.callback-left :as left) (app.callback-right :as right)
+    'app.callback-right $ %{} 'FileEntry
+      :defs $ {} $ 'Item
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Item (:n 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.callback-right
     'app.dynamic-construction $ %{} 'FileEntry
       :defs $ {}
         'EmptyBox $ %{} 'CodeEntry (:doc |)

@@ -28,6 +28,28 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
+  // #1553: generated callback hints retain the nominal source owner across
+  // option lowering; same-named Structs from another namespace stay distinct.
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "nominal-callback-origin", "--backend", "native,js",
+  ], { ...options, stdio: "inherit" });
+  await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  const nominalOriginal = await readFile(snapshot);
+  const nominalProof = JSON.parse(run("fix", "--rule", "callable-contract-proof-v1",
+    "--ns", "app.callback-origin", "--def", "choose", "--format", "json"));
+  assert.deepEqual(nominalProof.diagnostics, []);
+  assert.deepEqual(await readFile(snapshot), nominalOriginal);
+  for (const mode of [["--check-only"], ["js"]]) {
+    const output = join(project, `nominal-origin-rejected-${mode.join("-")}`);
+    const rejected = spawnSync(binary, [snapshot, "--init-fn", "app.callback-origin/mixed-origin",
+      "--emit-path", output, ...mode], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_FN_ARG_TYPE_MISMATCH|W_FN_RETURN_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN/);
+    assert.deepEqual(await readFile(snapshot), nominalOriginal);
+    await assertRejectedArtifacts(output, "nominal callback origin", /W_FN_ARG_TYPE_MISMATCH|W_FN_RETURN_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN/);
+  }
   // Preserve optional callable contracts as Calcit tests, including aliases.
   execFileSync(process.execPath, [
     "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",

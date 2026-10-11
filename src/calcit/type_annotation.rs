@@ -5608,6 +5608,52 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  /// Preserve source-backed nominal identity in generated callable metadata.
+  /// A hint is parsed again after lowering, possibly in another lexical scope.
+  fn for_source_schema(annotation: &Arc<Self>) -> Arc<Self> {
+    let mapped = Self::for_source_schema;
+    let arguments = |values: &Arc<Vec<Arc<Self>>>| Arc::new(values.iter().map(mapped).collect::<Vec<_>>());
+    let rewritten = match annotation.as_ref() {
+      Self::Struct(definition, args) => match &definition.definition_ref {
+        Some(owner) => Self::TypeRef(owner.clone(), arguments(args)),
+        None => Self::Struct(definition.clone(), arguments(args)),
+      },
+      Self::StructValue(definition) => definition.definition_ref.as_ref().map_or_else(
+        || annotation.as_ref().clone(),
+        |owner| Self::TypeRef(owner.clone(), Arc::new(vec![])),
+      ),
+      Self::Enum(definition, args) => match definition.definition_ref() {
+        Some(owner) => Self::TypeRef(owner.clone(), arguments(args)),
+        None => Self::Enum(definition.clone(), arguments(args)),
+      },
+      Self::EnumValue(definition) => definition.definition_ref().map_or_else(
+        || annotation.as_ref().clone(),
+        |owner| Self::TypeRef(owner.clone(), Arc::new(vec![])),
+      ),
+      Self::TypeRef(name, args) => Self::TypeRef(name.clone(), arguments(args)),
+      Self::List(inner) => Self::List(mapped(inner)),
+      Self::Map(key, value) => Self::Map(mapped(key), mapped(value)),
+      Self::Set(inner) => Self::Set(mapped(inner)),
+      Self::Ref(inner) => Self::Ref(mapped(inner)),
+      Self::Optional(inner) => Self::Optional(mapped(inner)),
+      Self::JsNullish(inner) => Self::JsNullish(mapped(inner)),
+      Self::Variadic(inner) => Self::Variadic(mapped(inner)),
+      Self::Fn(signature) => {
+        let mut signature = signature.as_ref().clone();
+        signature.arg_types = signature.arg_types.iter().map(mapped).collect();
+        signature.return_type = mapped(&signature.return_type);
+        signature.rest_type = signature.rest_type.as_ref().map(mapped);
+        Self::Fn(Arc::new(signature))
+      }
+      Self::Syntax(form) => match form.as_ref() {
+        MacroSyntaxType::Expr(inner) => Self::Syntax(Arc::new(MacroSyntaxType::Expr(mapped(inner)))),
+        _ => return annotation.clone(),
+      },
+      _ => return annotation.clone(),
+    };
+    Arc::new(rewritten)
+  }
+
   /// Convert this type annotation to its [`Edn`] representation for schema serialization.
   /// This is the inverse of `parse_fn_schema_from_edn` + `edn_type_to_calcit` + `parse_type_annotation_form`.
   pub fn to_type_edn(&self) -> Edn {
@@ -8864,6 +8910,60 @@ mod tests {
   }
 
   #[test]
+  fn nominal_schema_serialization_preserves_source_owner() {
+    let generated_return = |annotation| {
+      let CalcitTypeAnnotation::Fn(signature) = CalcitTypeAnnotation::from_function_parts(vec![], Arc::new(annotation)) else {
+        unreachable!()
+      };
+      let hint = Calcit::from(vec![
+        Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(CORE_NS)),
+        signature.to_schema_calcit(),
+      ]);
+      let parsed = CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form(&hint).expect("generated hint");
+      let CalcitTypeAnnotation::Fn(parsed) = parsed.as_ref() else {
+        panic!("function hint")
+      };
+      parsed.return_type.to_type_edn()
+    };
+    let definition = Arc::new(CalcitStructDef {
+      definition_ref: Some(Arc::from("app.models/Item")),
+      name: EdnTag::new("Item"),
+      fields: Arc::new(vec![EdnTag::new("value")]),
+      field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    });
+    for annotation in [
+      CalcitTypeAnnotation::StructValue(definition.clone()),
+      CalcitTypeAnnotation::Struct(definition.clone(), Arc::new(vec![])),
+    ] {
+      assert_eq!(generated_return(annotation), Edn::Symbol(Arc::from("app.models/Item")));
+    }
+    let mut generic = definition.as_ref().clone();
+    generic.generics = Arc::new(vec![Arc::from("T")]);
+    generic.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))]);
+    let applied = CalcitTypeAnnotation::Struct(Arc::new(generic), Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]));
+    assert_eq!(
+      generated_return(applied),
+      Edn::enum_value("app.models/Item", vec![Edn::Symbol(Arc::from("Number"))])
+    );
+    let mut local = definition.as_ref().clone();
+    local.definition_ref = None;
+    assert_eq!(
+      generated_return(CalcitTypeAnnotation::StructValue(Arc::new(local))),
+      Edn::Symbol(Arc::from("Item"))
+    );
+    let enumeration = Arc::new(generic_result_enum().as_ref().clone().with_definition_ref("app.models", "Result"));
+    for annotation in [
+      CalcitTypeAnnotation::EnumValue(enumeration.clone()),
+      CalcitTypeAnnotation::Enum(enumeration, Arc::new(vec![])),
+    ] {
+      assert_eq!(generated_return(annotation), Edn::Symbol(Arc::from("app.models/Result")));
+    }
+  }
+
+  #[test]
   fn nominal_proof_preserves_applied_arguments_and_rejects_bare_wildcards() {
     let box_def = Arc::new(CalcitStructDef {
       definition_ref: Some(Arc::from("app.models/Box")),
@@ -9591,7 +9691,11 @@ impl CalcitFnTypeAnnotation {
   /// Convert this fn-type annotation to a [`Calcit`] map value suitable for hint-fn injection.
   /// The result is compatible with `extract_schema_value` and `extract_arg_types_from_hint_form`.
   pub fn to_schema_calcit(&self) -> Calcit {
-    CalcitTypeAnnotation::edn_type_to_calcit(&self.to_schema_edn())
+    let mut source = self.clone();
+    source.arg_types = source.arg_types.iter().map(CalcitTypeAnnotation::for_source_schema).collect();
+    source.return_type = CalcitTypeAnnotation::for_source_schema(&source.return_type);
+    source.rest_type = source.rest_type.as_ref().map(CalcitTypeAnnotation::for_source_schema);
+    CalcitTypeAnnotation::edn_type_to_calcit(&source.to_schema_edn())
   }
 
   /// Serialize this fn-type annotation to the schema [`Edn`] map format

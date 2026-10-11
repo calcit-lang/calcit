@@ -179,6 +179,11 @@ WASMTIME_CLI=wasmtime node scripts/run-core-tests.mjs --backend wasi --target 'c
 
 运行器为每个测试生成一个零参数函数，写入临时 Snapshot，再分别执行：native 与 WASI 逐个打印标记后运行，JS 导入生成的模块逐个调用，WASM 在 Node 中实例化后逐个调用导出函数。native 是参照结果，JS 与 WASM 的 `println` 输出必须与 native 一致。失败报告列出测试 id、后端、期望与实际值，以及该测试在其它后端的状态。
 
+回放外部项目 Snapshot 时，运行器保留源目录已安装的 `.calcit/modules` 图，并复制
+该目录的 `deps.cirru`，让临时 Snapshot 使用相同的模块与 CLI 版本约束。
+从该项目目录运行并指定固定 `CALCIT_BIN`，生成 JS 使用该目录的 Node 依赖；
+运行器不安装依赖或写入模块缓存。
+
 新增的 core `:tests` 自动进入三个后端，无需登记。某个后端暂时无法运行的测试写入 `scripts/core-tests-exclusions.cirru`，按后端列出测试 id 或 tag，并写明原因，原因以类别开头：`unsupported`（后端明确拒绝该构造）、`parity`（结果与 native 不同，另开 issue 修复）、`host`（需要回放宿主未提供的能力）、`replay`（因不在所属 namespace 回放而产生）。清单中引用不存在的测试会使运行失败；`--report-unexpected-pass` 会额外运行被排除的测试，列出已经通过、可以移出清单的条目。
 
 新增测试需要核对它实际使用的后端能力。例如 `try`、`atom` 和开放值的 `data-view` 目前在 WASM/WASI 明确报告 unsupported；对应测试仍完整运行于 native/JS，排除项必须指向具体测试并记录实际诊断。一个测试同时覆盖已支持和未支持的构造时，保留原测试，并给已支持的断言单独附加 `:tests`，避免因整项排除而丢失这部分跨后端覆盖。不能用排除项掩盖本应支持的行为回归或改变原断言。

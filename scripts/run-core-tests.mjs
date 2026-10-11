@@ -15,10 +15,10 @@
 // backends must match its native trace. A run that selects zero tests fails.
 
 import { execFileSync, spawnSync } from "node:child_process";
-import { readdirSync, readFileSync } from "node:fs";
-import { mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { writeCirruCode } from "@cirru/writer.ts";
 import { hasNativeParity, markerProtocolError, parseBackendSelection, parseMarkers, parseWasmDiagnosticTable } from "./core-test-protocol.mjs";
@@ -165,6 +165,16 @@ if (exclusionProblems.length > 0) {
 const fixture = await mkdtemp(join(tmpdir(), "calcit-core-tests-"));
 // Generated JS resolves @calcit/procs from the fixture directory upwards.
 await symlink(resolve("node_modules"), join(fixture, "node_modules"), "dir");
+// Downstream Snapshots retain their installed module graph and pinned CLI
+// manifest when replayed from a temporary directory. Keep caches read-only.
+const sourceDirectory = dirname(corePath);
+const sourceModules = join(sourceDirectory, ".calcit", "modules");
+if (existsSync(sourceModules)) {
+  await mkdir(join(fixture, ".calcit"));
+  await symlink(sourceModules, join(fixture, ".calcit", "modules"), "dir");
+}
+const sourceManifest = join(sourceDirectory, "deps.cirru");
+if (existsSync(sourceManifest)) await copyFile(sourceManifest, join(fixture, "deps.cirru"));
 let snapshotCounter = 0;
 
 const coreText = await readFile(corePath, "utf8");
