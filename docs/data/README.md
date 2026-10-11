@@ -69,6 +69,8 @@ node scripts/core-api-contract.mjs
 
 方法先在明确 receiver 上查询，必须 `proven` 且不能是已识别的兼容入口，再追溯原始声明 schema。底层 primitive 没有独立源码 schema 时，只能从同次查询的 trait 来源读取同名方法声明；普通函数来源、缺少对应方法或没有声明仍拒绝导出，不补造类型。Number 实例用于派发检查，不把它误写为方法的唯一可用类型；泛型关系仍保存在 schema。尚为 `open/ambiguous` 的方法不会自动加入。`FfiTask/FfiResponse` 的 raw Dynamic 是现有宿主边界，不意味着业务层可以绕过类型约束。
 
+具名 struct 的暂存序列化保留命名空间及泛型参数；合法 `app.models/Record` 不会缩短为已退役的内建 `Record`。历史方法调用合同中，只有历史基线已冻结的 core 名义声明、且前后方法来源均为 core 时，短名与对应的 `calcit.core/` 限定名才按同一身份比较（例如嵌套 `FsPath`）。词法泛型、其他命名空间、源 schema 和声明仍严格比较，新添加的声明不能放行旧合同；不需要重新生成基线，也不增加 breaking-change 豁免。
+
 `method-contracts` 另外保存当前接收者上的 `call-types` 原生 quote：例如 List/Map 的 `.get` 实现声明允许开放值，但编译器已经证明具体调用返回 `Option<Number>`。即使实现的宽 schema 没变，具体调用结果或 callback 类型关系变差也不能绕过检查。这些参数不含隐式接收者；`methods` 中的 `runtime-arity` 则是实现函数的 arity，可能允许额外参数，两者不能混用。比如 `.debug` 的公开调用没有额外参数，底层 `&str` 却是可变参数 primitive。方法冻结检查用 `method-contracts` 的参数/rest/返回值和声明 schema 保护公开契约，不冻结内部实现的 arity；普通函数声明的 runtime arity 仍受检查。共享接收者查询只执行一次，不重复运行同一分析。
 
 Option `.map` 目前查询仍为 open，解析开放 JSON/Cirru EDN 等边界仍需要单独审阅，不能靠本清单或目标类型把它们包装成 proven。候选只记录真实证据，不把推导漏洞固化为永久动态契约。0.29 的断言/调用证明工作仍由 #1538 拥有。
