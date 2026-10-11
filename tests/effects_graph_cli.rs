@@ -19,6 +19,8 @@ fn effects_graph_reports_console_state_and_io_effects() {
 
   assert_eq!(graph["entry"], "test-effects-graph.main/main!");
   assert_eq!(graph["tree"]["effects"][0]["kind"], "console");
+  assert_eq!(graph["tree"]["effects"][0]["target"], "println");
+  assert_eq!(graph["tree"]["effects"][0]["count"], 1);
   let children = graph["tree"]["children"].as_array().expect("entry should have children");
   let child = |def: &str| {
     children
@@ -27,7 +29,22 @@ fn effects_graph_reports_console_state_and_io_effects() {
       .unwrap_or_else(|| panic!("missing child {def}"))
   };
   assert_eq!(child("state-helper")["state"][0]["kind"], "atom-def");
-  assert_eq!(child("io-helper")["effects"][0]["kind"], "io/read");
-  assert_eq!(graph["stats"]["reachable_count"], 3);
-  assert_eq!(graph["stats"]["state_items"], 3);
+  assert_eq!(child("state-helper")["state"][0]["name"], "*counter");
+  let state = child("state-helper")["state"]
+    .as_array()
+    .expect("state-helper should report its Ref operations");
+  assert_eq!(state.len(), 3);
+  for write in &state[1..] {
+    assert_eq!(write["kind"], "atom-write");
+    assert_eq!(write["name"], "*counter");
+  }
+  assert_eq!(child("io-helper")["effects"][0]["kind"], "io/file");
+  assert_eq!(child("io-helper")["effects"][0]["target"], "read-file");
+  assert_eq!(child("io-helper")["effects"][0]["count"], 1);
+  assert_eq!(child("watch-helper")["state"][0]["kind"], "watch");
+  assert_eq!(child("watch-helper")["state"][0]["name"], "*store");
+  assert_eq!(child("watch-helper")["effects"][0]["kind"], "state/watch");
+  assert_eq!(child("watch-helper")["effects"][0]["target"], "remove-watch");
+  assert_eq!(graph["stats"]["reachable_count"], 21);
+  assert_eq!(graph["stats"]["state_items"], 4);
 }
