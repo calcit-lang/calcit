@@ -5850,20 +5850,72 @@
             :args $ [] $ :: 'List 'T
             :generics $ [] 'T
             :return $ :: 'ListDestruct 'T
-          :tests $ [] $ %{} 'TestEntry (:name |splits-head-and-tail)
-            :code $ quote $ do
-              assert=
-                :: :parts 1 $ [] 2 3
-                match
-                  destruct-list $ [] 1 2 3
-                  (:none) (:: :empty)
-                  (:some item tail) (:: :parts item tail)
-              assert= (:: :empty)
-                match
-                  destruct-list $ []
-                  (:none) (:: :empty)
-                  (:some item tail) (:: :parts item tail)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |splits-head-and-tail)
+              :code $ quote $ do
+                assert=
+                  :: :parts 1 $ [] 2 3
+                  match
+                    destruct-list $ [] 1 2 3
+                    (:none) (:: :empty)
+                    (:some item tail) (:: :parts item tail)
+                assert= (:: :empty)
+                  match
+                    destruct-list $ []
+                    (:none) (:: :empty)
+                    (:some item tail) (:: :parts item tail)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |matches-bound-list-subject)
+              :code $ quote $ let
+                  head-or $ fn (fallback xs)
+                    hint-fn $ {}
+                      :args $ [] 'Number $ :: 'List 'Number
+                      :return 'Number
+                    &+ 0 $ match (destruct-list xs)
+                      (:some h _) h
+                      (:none) fallback
+                  tail-size $ fn (xs)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'List 'Number
+                      :return 'Number
+                    match (destruct-list xs)
+                      (:some _ t) (&list:count t)
+                      (:none) -1
+                  head-and-count $ fn (xs)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'List 'Number
+                      :return $ :: 'List 'Number
+                    match (destruct-list xs)
+                      (:none) ([])
+                      (:some h t)
+                        [] h $ &list:count t
+                assert= 7 $ head-or 7 $ []
+                assert= 3 $ head-or 7 $ [] 3
+                assert= 1 $ head-or 7 $ [] 1 2
+                assert= -1 $ tail-size $ []
+                assert= 0 $ tail-size $ [] 9
+                assert= 2 $ tail-size $ [] 9 8 7
+                assert= ([])
+                  head-and-count $ []
+                assert= ([] 4 0)
+                  head-and-count $ [] 4
+                assert= ([] 4 2)
+                  head-and-count $ [] 4 5 6
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |matches-bound-list-subject-in-recur)
+              :code $ quote $ let
+                  sum-from $ fn (acc xs)
+                    hint-fn $ {}
+                      :args $ [] 'Number $ :: 'List 'Number
+                      :return 'Number
+                    match (destruct-list xs)
+                      (:none) acc
+                      (:some h t)
+                        recur (&+ acc h) t
+                assert= 0 $ sum-from 0 $ []
+                assert= 5 $ sum-from 0 $ [] 5
+                assert= 10 $ sum-from 0 $ [] 1 2 3 4
+              :tags $ #{} :core :unit
         'destruct-map $ %{} 'CodeEntry
           :doc "|Split a map into the nominal MapDestruct<K,V> enum."
           :code $ quote $ defn destruct-map (xs)

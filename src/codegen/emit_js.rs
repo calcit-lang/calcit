@@ -1701,6 +1701,10 @@ fn gen_match_code(
   }
 
   if let (Some(Calcit::EnumDef(_)), Some(Calcit::List(table))) = (body.get(1), body.get(2)) {
+    let args = body.to_vec();
+    if let Some(shape) = crate::codegen::destruct_list_match_shape(&args) {
+      return gen_destruct_list_match_code(&shape, local_defs, ns, file_imports, tags, base_return_label);
+    }
     return gen_indexed_match_code(&body[0], table, local_defs, ns, file_imports, tags, base_return_label);
   }
 
@@ -1803,6 +1807,49 @@ fn gen_match_code(
     )
     .expect("write");
   }
+
+  if base_return_label.is_some() {
+    Ok(chunk)
+  } else {
+    Ok(make_fn_wrapper(&chunk, has_await))
+  }
+}
+
+/// Lowers `match (destruct-list xs) ((:none) a) ((:some h t) b)` to the body of
+/// `destruct-list` fused with the match: the same `&list:empty?`, `&list:nth`
+/// and `&list:rest` calls, without allocating the `ListDestruct` value.
+fn gen_destruct_list_match_code(
+  shape: &crate::codegen::DestructListMatch<'_>,
+  local_defs: &HashSet<Arc<str>>,
+  ns: &str,
+  file_imports: &RefCell<ImportsDict>,
+  tags: &RefCell<HashSet<EdnTag>>,
+  base_return_label: Option<&str>,
+) -> Result<String, String> {
+  let has_await = detect_await_node(shape.none_body) || detect_await_node(shape.some_body);
+  let return_label = base_return_label.unwrap_or("return ");
+  let proc_prefix = get_proc_prefix(ns);
+  let subject = to_js_code(shape.subject, ns, local_defs, file_imports, tags, None)?;
+
+  let none_code = to_js_code(shape.none_body, ns, local_defs, file_imports, tags, Some(return_label))?;
+  let mut chunk = String::new();
+  write!(
+    chunk,
+    "\nif ({proc_prefix}_$n_list_$o_empty_$q_({subject})) {{ {none_code} }} else {{"
+  )
+  .expect("write");
+
+  let mut scoped_defs = local_defs.to_owned();
+  if let Some(head) = shape.head {
+    scoped_defs.insert(head.to_owned());
+    write!(chunk, "\nlet {} = {proc_prefix}_$n_list_$o_nth({subject}, 0);", escape_var(head)).expect("write");
+  }
+  if let Some(tail) = shape.tail {
+    scoped_defs.insert(tail.to_owned());
+    write!(chunk, "\nlet {} = {proc_prefix}_$n_list_$o_rest({subject});", escape_var(tail)).expect("write");
+  }
+  let some_code = to_js_code(shape.some_body, ns, &scoped_defs, file_imports, tags, Some(return_label))?;
+  write!(chunk, "\n{some_code} }}").expect("write");
 
   if base_return_label.is_some() {
     Ok(chunk)
