@@ -1772,11 +1772,12 @@ fn gen_match_code(
 
         // Generate binding code
         let mut scoped_defs = local_defs.to_owned();
+        let binders = pat_xs.to_vec();
         for (i, binding) in pat_xs.iter().skip(1).enumerate() {
           if matches!(binding, Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } if sym.as_ref() == "_") {
             continue;
           }
-          if binder_rebound_later(&pat_xs.to_vec()[1..], i) {
+          if binder_rebound_later(&binders[1..], i) {
             continue;
           }
           let bind_name = match binding {
@@ -1937,11 +1938,12 @@ fn gen_indexed_match_code(
     writeln!(chunk, "if ({proc_prefix}_$n_enum_$o_count({val_var}) === {arity}) {{").expect("write");
 
     let mut scoped_defs = local_defs.to_owned();
+    let binders = pattern.to_vec();
     for (idx, binding) in pattern.iter().skip(1).enumerate() {
       if matches!(binding, Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } if sym.as_ref() == "_") {
         continue;
       }
-      if binder_rebound_later(&pattern.to_vec()[1..], idx) {
+      if binder_rebound_later(&binders[1..], idx) {
         continue;
       }
       let bind_name = match binding {
