@@ -27,6 +27,12 @@ pub(super) struct ModuleFunctionLayout {
   pub(super) runtime_fn_count: u32,
   pub(super) table_fn_count: u32,
   pub(super) component_free_head: bool,
+  /// `(trap function index, table slots)`: the funcref table entries of `&`
+  /// rest-parameter functions point at a `() -> ()` function that traps.
+  /// Indirect calls use the canonical `(f64 x N) -> f64` types and never pack
+  /// rest arguments, so such a call traps on the signature check instead of
+  /// reading an argument as the rest list (#1964).
+  pub(super) rest_slot_trap: Option<(u32, Vec<u32>)>,
 }
 
 #[derive(Clone, Copy)]
@@ -3590,7 +3596,10 @@ pub(super) fn build_wasm_module(
   // table slot i → function index (num_imports + runtime_fn_count + i).
   if layout.table_fn_count > 0 {
     let fn_indices: Vec<u32> = (0..layout.table_fn_count)
-      .map(|i| num_imports + layout.runtime_fn_count + i)
+      .map(|i| match &layout.rest_slot_trap {
+        Some((trap_fn, slots)) if slots.contains(&i) => *trap_fn,
+        _ => num_imports + layout.runtime_fn_count + i,
+      })
       .collect();
     let mut elements = ElementSection::new();
     elements.active(Some(0), &ConstExpr::i32_const(0), Elements::Functions(fn_indices.as_slice().into()));
