@@ -6618,20 +6618,52 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
   }
 }
 
-/// For proc callees in spread calls: collect args (handling `& spread-list`) and emit proc.
+/// For proc callees in spread calls: `(proc a ... & xs)`.
+///
+/// The spread list keeps its runtime length, so it is never dropped: a list
+/// literal is inlined as ordinary arguments, `&list:concat` lowers the spread
+/// list itself, and any other runtime spread is rejected with an explicit error.
 fn emit_call_spread_args_as_regular(ctx: &mut WasmGenCtx, proc: &CalcitProc, call_args: &[Calcit]) -> Result<(), String> {
-  // Gather concrete args, expanding `& spread-list` if present
-  let mut real_args: Vec<Calcit> = vec![];
-  let mut i = 0;
-  while i < call_args.len() {
-    if matches!(call_args[i], Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
-      i += 1; // skip the & marker, next is the spread list
-    } else {
-      real_args.push(call_args[i].clone());
+  let Some(pos) = call_args
+    .iter()
+    .position(|a| matches!(a, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+  else {
+    return emit_proc_call(ctx, proc, call_args);
+  };
+  let explicit = &call_args[..pos];
+  let spread = match &call_args[pos + 1..] {
+    [spread] => spread,
+    _ => {
+      return Err(format!(
+        "E_WASM_SPREAD_CALL: `{proc}` expects exactly one list after `&` in a spread call"
+      ));
     }
-    i += 1;
+  };
+  if let Some(items) = static_list_literal_items(spread) {
+    let mut real_args = explicit.to_vec();
+    real_args.extend(items);
+    return emit_proc_call(ctx, proc, &real_args);
   }
-  emit_proc_call(ctx, proc, &real_args)
+  match proc {
+    CalcitProc::NativeListConcat => emit_list_concat_spread(ctx, explicit, spread),
+    _ => Err(format!(
+      "E_WASM_SPREAD_CALL: spreading a runtime list into `{proc}` is not supported in WASM; pass the arguments explicitly"
+    )),
+  }
+}
+
+/// Items of a `([] a b ...)` list literal whose length is known at compile time.
+fn static_list_literal_items(expr: &Calcit) -> Option<Vec<Calcit>> {
+  let Calcit::List(xs) = expr else {
+    return None;
+  };
+  let items = xs.to_vec();
+  match items.split_first() {
+    Some((Calcit::Proc(CalcitProc::List), rest)) if !rest.iter().any(|a| matches!(a, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) => {
+      Some(rest.to_vec())
+    }
+    _ => None,
+  }
 }
 
 fn emit_call_spread_args(ctx: &mut WasmGenCtx, call_args: &[Calcit], target_arity: u32, rest_fixed: Option<u32>) -> Result<(), String> {
