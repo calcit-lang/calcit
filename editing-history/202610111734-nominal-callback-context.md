@@ -87,3 +87,24 @@ IR/WASM 与基准亦通过，没有新增排除项。
 泛型组合正例检查/native 通过，Number 反例调用处拒绝；slot 正例仍失败。
 生产 strict 副本重新验证，两项 E_CALL_ARGUMENT_UNPROVEN 保持，safe
 fixes 为零。编辑器正式 alpha.29、checker 未发布 0.29.0，仍非发布 receipt。
+
+## 同步 main 与精确合并源码验证
+
+类型修复提交 084fa313 已完成上述全部门禁。读取 main 时最初为
+a979b865（#1965 CLI 参数弃用提示），同步时 #1973 已合并为
+3b19e411e9d4030d12fa7dab8c5d7d775c42531d。实际无冲突合并提交为
+1db797d01eb9d64633e3351651f57ec47381d3b2，同时包含 Snapshot 旧
+named-entry 格式恢复，因此重新执行完整门禁，而不把父提交结果当作
+合并源码结果。b0729c62 候选 ref 与 CI 二进制不变。
+
+合并后的 fmt、all-target clippy、CI 构建、Rust 26 suites/1686 passed/
+0 failed/1 ignored 通过；两项 nominal definition tests native/JS
+各 2/2、零排除。Respo 65 场景再次退出 0，行为与 084fa313 相同；
+生产 strict 副本仍两项 callable 诊断、safe fixes 零。完整 check-all
+终态为 0：Agent 64/64、API 48/48、classification 296、core native
+617/617、JS 616/616、WASM 385/385，以及 IR/WASM/基准全部通过。
+既有 JS 1 项、WASM 232 项排除保持，没有新增排除项。
+新 main 3b19e411 的远端 Test 与 Push on main 均已 completed/success：
+https://github.com/calcit-lang/calcit/actions/runs/38132107796
+https://github.com/calcit-lang/calcit/actions/runs/38132107246
+这些结果按精确 main 提交记录，不沿用旧 main。
