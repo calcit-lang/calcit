@@ -6611,7 +6611,19 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         other => return Err(format!("IIFE defn: params list expected, got: {other:?}")),
       };
       let body: Vec<Calcit> = iife_items.iter().skip(3).cloned().collect();
-      emit_inline_iife(ctx, &params, &body, &args_list)
+      if matches!(inline_lambda_shape(head), Some((required, false)) if required == params.len()) {
+        return emit_inline_iife(ctx, &params, &body, &args_list);
+      }
+      // `&` / `?` parameters bind like native through the inline closure path.
+      // `recur` would have to rebind them the same way, which the loop lowering
+      // does not do, so such a call traps when it runs (#1964).
+      match capture_inline_closure(ctx, head) {
+        Some(closure) if !body.iter().any(check_uses_recur) => emit_inline_closure_call(ctx, &closure, &args_list),
+        _ => {
+          ctx.emit(Instruction::Unreachable);
+          Ok(())
+        }
+      }
     }
     // Dynamic call via a local variable holding a function table index (f64).
     // Implements Rust-style `dyn Fn` dispatch via WASM call_indirect.

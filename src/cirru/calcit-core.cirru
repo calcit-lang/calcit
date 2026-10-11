@@ -8056,6 +8056,13 @@
                 assert= 1 $ pick 1
                 assert= 2 $ pick 1 2
               :tags $ #{} :call-boundary
+            %{} 'TestEntry (:name |iife-with-rest-param)
+              :code $ quote $ do
+                assert= 2 $ (fn (a & xs) (&list:count xs)) 1 2 3
+                assert= 0 $ (fn (a & xs) (&list:count xs)) 1
+                assert= 2 $ apply-args (1 2 3) (fn (a & xs) (&list:count xs))
+                assert= 5 $ (fn (a ? b) (if (nil? b) a b)) 5
+              :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |rest-callee-in-hof)
               :code $ quote $ do
                 assert= 6 $ foldl ([] 1 2 3) 0 +

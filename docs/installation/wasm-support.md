@@ -32,8 +32,8 @@ aliases:
 | List / Map / Set / Struct / Enum 值与 core 方法 | supported | 线性内存 + bump allocator；`#{}` 字面量不去重 | core `:tests` |
 | 已证明的普通方法调用、trait 方法 | supported-with-type-evidence | 接收者需要具体类型（`E_WASM_TRAIT_TYPE_EVIDENCE`、`E_WASM_TRAIT_RESOLUTION`） | `calcit.core/&map:destruct#exposes-pairs-and-folds` 排除项 |
 | 作为参数传递的闭包 | supported-with-type-evidence | 调用点可静态特化，参数契约可调用（`E_WASM_CLOSURE_SPECIALIZATION`、`E_WASM_CALL_SPECIALIZATION`） | `calcit.core/&list:filter-pair#filters-key-value-pairs` 排除项 |
-| 局部 `fn` 的 `&` rest / `?` optional 参数，`&` 函数作为高阶回调 | supported | 调用局部 lambda 时按 native 绑定：缺省的 `?` 参数为 nil，`&` 参数收到剩余实参组成的 List；`foldl xs 0 +` 这类静态回调同样打包 | `calcit.core/hint-fn#plain-call-into-rest-local`、`calcit.core/hint-fn#rest-callee-in-hof` |
-| 通过函数值（函数表）调用 `&` rest 函数，如 `let ((f +)) (f 1 2)` | unsupported | 间接调用不打包变参，函数表中的入口签名不匹配，调用时 trap | `calcit.core/hint-fn#plain-call-rest-fn-value` 排除项 |
+| 局部 `fn` 与立即调用的 `fn`（含 `apply-args`）的 `&` rest / `?` optional 参数，`&` 函数作为高阶回调 | supported | 按 native 绑定：缺省的 `?` 参数为 nil，`&` 参数收到剩余实参组成的 List；`foldl xs 0 +` 这类静态回调同样打包。立即调用的 `fn` 若带这类参数且函数体使用 `recur`，运行到该调用时 trap | `calcit.core/hint-fn#plain-call-into-rest-local`、`calcit.core/hint-fn#iife-with-rest-param`、`calcit.core/hint-fn#rest-callee-in-hof` |
+| 通过函数值（函数表）调用 `&` rest 函数 | unsupported | 间接调用不打包变参，函数表中的入口签名不匹配，调用时 trap（node 报 `null function or function signature mismatch`，wasmtime 报 `BadSignature`）。包括 `let ((f +)) (f 1 2)`，也包括经声明为定长 Fn 的参数传入 `defn first-of (a & _xs) a` 再以 2 个实参调用：后者以前碰巧得到正确值，现在同样 trap | `calcit.core/hint-fn#plain-call-rest-fn-value` 排除项 |
 | 嵌套 `fn` / `defn` 闭包值、特化闭包中的 `recur` | unsupported | | `calcit.core/&list:apply#preserves-homogeneous-function-result-types` 排除项 |
 | `try` | unsupported | 失败只能 trap | `calcit.core/&number:rem#rejects-zero-and-non-safe-integers` 排除项 |
 | 局部 `ref`（兼容名 `atom`）、`add-watch!` / `remove-watch!` | unsupported | 局部 Ref 与观察者；已有数值 `defref` 全局不在此排除范围 | `calcit.core/reset!#returns-assigned-scalar` 排除项 |
