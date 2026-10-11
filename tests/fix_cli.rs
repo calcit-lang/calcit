@@ -6154,6 +6154,70 @@ fn whole_project_fix_previews_node_only_definitions_without_weakening_entry_chec
 }
 
 #[test]
+fn strict_workflow_preserves_inline_map_callback_contracts() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  for (name, code) in [
+    (
+      "consume",
+      "quote $ defn consume (events)\n  match (get events :click)\n    (:none) 0\n    (:some callback) (callback 7)",
+    ),
+    (
+      "main!",
+      "quote $ defn main! ()\n  assert= 8 $ consume $ &{} :click $ fn (n) (&+ n 1)\n  , &unit",
+    ),
+    ("reload!", "quote $ defn reload! () &unit"),
+  ] {
+    let target = format!("app.main/{name}");
+    let mut args = vec!["edit", "def", &target, "--input-format", "cirru", "--code", code];
+    if name != "consume" {
+      args.push("--overwrite");
+    }
+    assert_success(&run_calcit(&snapshot, &args), "install map callback fixture");
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "app.main/consume",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:return 'Number)\n  :args $ [] $ :: 'Map 'Tag $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)",
+      ],
+    ),
+    "declare map callback contract",
+  );
+  let before = fs::read(&snapshot).unwrap();
+  let positive = run_fix(&snapshot, &["--workflow", "strict", "--verify", "--format", "json"]);
+  assert_success(&positive, "inline callback must independently satisfy the map contract");
+  assert_eq!(fs::read(&snapshot).unwrap(), before);
+  assert_success(&run_calcit(&snapshot, &[]), "execute callback through the typed map");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/main!",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn main! ()\n  consume $ &{} :click $ fn (n) |wrong-return\n  , &unit",
+      ],
+    ),
+    "install wrong callback return",
+  );
+  let rejected = run_fix(&snapshot, &["--workflow", "strict", "--verify", "--format", "json"]);
+  assert!(!rejected.status.success(), "context must not manufacture a Number return proof");
+  assert!(!parse_stdout(&rejected)["diagnostics"].as_array().unwrap().is_empty());
+}
+
+#[test]
 fn strict_workflow_replays_type_slot_declarations_without_hiding_duplicates() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

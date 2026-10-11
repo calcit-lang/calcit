@@ -87,6 +87,35 @@ fn preprocess_argument_with_context(
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
+  if let Some(CalcitTypeAnnotation::Map(key, value)) = expected.map(AsRef::as_ref)
+    && let Calcit::List(items) = expr
+    && items.len() % 2 == 1
+    && let Some(head) = items.first()
+    && (matches!(head, Calcit::Proc(CalcitProc::NativeMap))
+      || matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "&{}")
+      || matches!(head, Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "&{}"))
+    && !items.iter().skip(1).any(|item| {
+      matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) || matches!(item, Calcit::Symbol { sym, .. } if sym.as_ref() == "&")
+    })
+  {
+    let processed_head = preprocess_expr(head, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+    if matches!(processed_head, Calcit::Proc(CalcitProc::NativeMap)) {
+      let mut processed = vec![processed_head];
+      for (index, item) in items.iter().skip(1).enumerate() {
+        processed.push(preprocess_argument_with_context(
+          item,
+          Some(if index % 2 == 0 { key } else { value }),
+          scope_defs,
+          scope_types,
+          file_ns,
+          check_warnings,
+          call_stack,
+        )?);
+      }
+      reject_pending_async_arguments(&processed[0], &CalcitList::from(&processed[1..]), scope_types, call_stack)?;
+      return Ok(Calcit::from(processed));
+    }
+  }
   let member = match expected.map(AsRef::as_ref) {
     Some(CalcitTypeAnnotation::List(member)) => Some((CalcitProc::List, member)),
     Some(CalcitTypeAnnotation::Set(member)) => Some((CalcitProc::Set, member)),

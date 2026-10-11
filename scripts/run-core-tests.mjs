@@ -20,13 +20,13 @@ import { copyFile, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { parse as parseCirru } from "@cirru/parser.ts";
 import { writeCirruCode } from "@cirru/writer.ts";
 import { hasNativeParity, markerProtocolError, parseBackendSelection, parseMarkers, parseWasmDiagnosticTable } from "./core-test-protocol.mjs";
 
 // `wasi` (a WASI 0.3 command run by $WASMTIME_CLI) is opt-in via --backend.
 const BACKENDS = ["native", "js", "wasm", "wasi"];
 const DEFAULT_BACKENDS = ["native", "js", "wasm"];
-const REPLAY_NS = "calcit.core-test-replay";
 
 const parseArgs = (argv) => {
   const options = {
@@ -79,6 +79,8 @@ const stripNs = (name) => name.replace(/^'/, "");
 // --- selection -------------------------------------------------------------
 
 const source = JSON.parse(run("cirru", "parse-edn", "--file", corePath));
+if (typeof source[":package"] !== "string" || source[":package"].length === 0) throw new Error("Snapshot package is required for replay ownership");
+const REPLAY_NS = `${source[":package"]}.core-test-replay`;
 const allTests = [];
 for (const [nsKey, file] of Object.entries(source[":files"])) {
   const ns = stripNs(nsKey);
@@ -177,16 +179,12 @@ const sourceManifest = join(sourceDirectory, "deps.cirru");
 if (existsSync(sourceManifest)) await copyFile(sourceManifest, join(fixture, "deps.cirru"));
 let snapshotCounter = 0;
 
-const coreText = await readFile(corePath, "utf8");
-const filesHeader = "\n  :files $ {}\n";
-const defsHeader = (ns) => `\n    '${ns} $ %{} 'FileEntry\n      :defs $ {}\n`;
-for (const ns of new Set(selected.map((test) => test.ns))) {
-  if (!coreText.includes(defsHeader(ns))) throw new Error(`${options.snapshot}: unexpected Snapshot layout for ${ns}`);
-}
 const unitSchema = ["::", "'Fn", ["{}", [":args", ["[]"]], [":return", "'Unit"]]];
-const codeEntry = (code) => ["%{}", "'CodeEntry", [":doc", "|"], [":code", ["quote", code]], [":examples", ["[]"]],
-  [":schema", unitSchema]];
-const indent = (text, spaces) => text.trimEnd().split("\n").map((line) => `${" ".repeat(spaces)}${line}`).join("\n");
+const namespaceForms = new Map();
+const sourceNamespace = (ns) => {
+  if (!namespaceForms.has(ns)) namespaceForms.set(ns, parseCirru(run(corePath, "query", "ns", ns, "--format", "cirru"))[0]);
+  return structuredClone(namespaceForms.get(ns));
+};
 
 // Tests placed outside their owning namespace keep its require rules and refer
 // its own definitions (calcit.core is visible everywhere already).
@@ -206,39 +204,51 @@ const replayRequires = (tests) => {
 
 // Like `calcit test`, each test becomes a definition of its owning namespace,
 // so names and namespace-level permissions resolve exactly as in the source.
-// One zero-argument function per test keeps every failure attributable. The
-// Snapshot text is written in one step; per-definition `edit` commands would
-// reload the whole core once per test. With `owner: false` the tests live in a
-// separate replay namespace instead (see the WASM runner).
+// One zero-argument function per test keeps every failure attributable.
+// Guarded namespace writes add replay definitions in batches without depending
+// on a serialized namespace layout. With owner: false, tests live in the replay
+// namespace instead (see the WASM runner).
 const buildSnapshot = async (tests, { withMain, head = "defwasm-export", owner = true }) => {
   const snapshot = join(fixture, `replay-${snapshotCounter++}.cirru`);
+  await copyFile(corePath, snapshot);
   const home = (test) => owner ? test.ns : REPLAY_NS;
-  const testDef = (test) => [`'${test.fn}`, codeEntry([head, test.fn, [], test.code, "&unit"])];
-  let text = coreText;
-  if (owner) {
-    for (const ns of new Set(tests.map((test) => test.ns))) {
-      const defs = tests.filter((test) => test.ns === ns).map(testDef);
-      text = text.replace(defsHeader(ns), `${defsHeader(ns)}${indent(writeCirruCode(defs), 8)}\n`);
-    }
+  const operations = [];
+  const namespaces = new Map();
+  const addDefinition = (ns, name, code) => {
+    if (!namespaces.has(ns)) namespaces.set(ns, sourceNamespace(ns));
+    const defs = namespaces.get(ns).find((field) => Array.isArray(field) && field[0] === ":defs")?.[1];
+    if (!Array.isArray(defs) || defs[0] !== "{}") throw new Error(`Namespace ${ns} has no definition map`);
+    defs.push([`'${name}`, ["%{}", "'CodeEntry", [":doc", "|"], [":code", ["quote", code]],
+      [":examples", ["[]"]], [":schema", unitSchema]]]);
+  };
+  if (!owner || withMain) {
+    const nsCode = owner ? ["ns", REPLAY_NS] : ["ns", REPLAY_NS, [":require", ...replayRequires(tests)]];
+    operations.push(["edit", "add-ns", REPLAY_NS, "--input-format", "json-ast", "--code", JSON.stringify(nsCode)]);
+    namespaces.set(REPLAY_NS, ["%{}", "'FileEntry", [":defs", ["{}"]],
+      [":ns", ["%{}", "'NsEntry", [":doc", "|"], [":code", ["quote", nsCode]]]]]);
   }
-  const replayDefs = owner ? [] : tests.map(testDef);
+  for (const test of tests) addDefinition(home(test), test.fn, [head, test.fn, [], test.code, "&unit"]);
   let entry = `${home(tests[0])}/${tests[0].fn}`;
   if (withMain) {
     entry = `${REPLAY_NS}/main!`;
     const body = tests.flatMap((test) => [["println", `|@@core-test:${test.index}`],
       [`${home(test)}/${test.fn}`], ["println", `|@@core-test-end:${test.index}`]]);
-    replayDefs.push(["'main!", codeEntry(["defn", "main!", [], ...body, "&unit"])]);
+    addDefinition(REPLAY_NS, "main!", ["defn", "main!", [], ...body, "&unit"]);
   }
-  if (replayDefs.length > 0) {
-    const nsCode = owner ? ["ns", REPLAY_NS] : ["ns", REPLAY_NS, [":require", ...replayRequires(tests)]];
-    const fileEntry = [`'${REPLAY_NS}`, ["%{}", "'FileEntry", [":defs", ["{}", ...replayDefs]],
-      [":ns", ["%{}", "'NsEntry", [":doc", "|"], [":code", ["quote", nsCode]]]]]];
-    text = text.replace(filesHeader, `${filesHeader}${indent(writeCirruCode([fileEntry]), 4)}\n`);
+  operations.push(["config", "set", "mode", "native"]);
+  const transaction = `${snapshot}.transaction.json`;
+  await writeFile(transaction, JSON.stringify(operations));
+  const preview = JSON.parse(run(snapshot, "edit", "transaction", "--file", transaction, "--dry-run", "--format", "json"));
+  run(snapshot, "edit", "transaction", "--file", transaction, "--expect-revision", preview.scoped_revision, "--format", "json");
+  let namespaceIndex = 0;
+  // `edit ns` owns its atomic write and is not a transaction child command.
+  for (const [ns, form] of namespaces) {
+    const namespaceFile = `${snapshot}.namespace-${namespaceIndex++}.cirru`;
+    await writeFile(namespaceFile, writeCirruCode([form]));
+    const args = [snapshot, "edit", "ns", ns, "--file", namespaceFile, "--format", "json"];
+    const preview = JSON.parse(run(...args, "--dry-run"));
+    run(...args, "--expect-revision", preview.scoped_revision ?? preview.original_revision);
   }
-  await writeFile(snapshot, text);
-  // A page Snapshot may default to JS emission. Replay always starts in
-  // native mode; other backends select their explicit codegen command.
-  run(snapshot, "config", "set", "mode", "native");
   return { snapshot, entry: ["--init-fn", entry, "--reload-fn", entry] };
 };
 

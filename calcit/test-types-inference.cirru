@@ -46,6 +46,20 @@
           :code $ quote $ defenum Status (:ok 'Number) (:err 'String)
           :examples $ []
           :schema $ :: 'EnumDef
+        'consume-number-callback-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn consume-number-callback-map (callbacks)
+            match (get callbacks :click)
+              (:none) 0
+              (:some callback) (callback 7)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'Map 'Tag
+              :: 'Fn $ {} (:return 'Number)
+                :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |inline-map-callback-preserves-number-input)
+            :code $ quote $ assert= 8
+              consume-number-callback-map $ &{} :click $ fn (n) (&+ n 1)
+            :tags $ #{} :map-callback-context :unit
         'dynamic-last-compat $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn dynamic-last-compat (value) (.last value)
           :examples $ []
