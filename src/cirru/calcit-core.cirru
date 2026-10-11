@@ -1120,12 +1120,16 @@
               :code $ quote $ let
                   xs $ [] ([] 3) ([] 4 5)
                   none $ &list:rest $ [] ([] 9)
-                assert= ([] 1 2 3 4 5) $ &list:concat ([] 1 2) & xs
-                assert= ([] 3 4 5) $ &list:concat & xs
-                assert= ([] 1 2) $ &list:concat ([] 1 2) & none
-                assert= ([]) $ &list:concat & none
-                assert= ([] 1) $ &list:concat ([] 1)
-                assert= ([] 1 2 3) $ &list:concat ([] 1) & $ [] ([] 2) ([] 3)
+                assert= ([] 1 2 3 4 5)
+                  &list:concat ([] 1 2) & xs
+                assert= ([] 3 4 5) (&list:concat & xs)
+                assert= ([] 1 2)
+                  &list:concat ([] 1 2) & none
+                assert= ([]) (&list:concat & none)
+                assert= ([] 1)
+                  &list:concat $ [] 1
+                assert= ([] 1 2 3)
+                  &list:concat ([] 1) & $ [] ([] 2) ([] 3)
               :tags $ #{} :core :unit
         '&list:contains? $ %{} 'CodeEntry
           :doc "|内部原语：按索引检查 List 是否包含该位置。参数为 List<T> 和 Number 索引，返回 Bool；只有范围内的整数索引有效。应用代码首选 .contains-index?；检查元素是否存在请用 .includes?。"
@@ -4601,7 +4605,8 @@
               assert= ([] 1 2 4 5 7 8)
                 concat ([] 1 2) ([] 4 5) ([] 7 8)
               assert= ([]) (concat)
-              assert= ([] 1) $ concat ([] 1)
+              assert= ([] 1)
+                concat $ [] 1
             :tags $ #{} :core :unit
         'concat-dynamic $ %{} 'CodeEntry
           :doc "|Deprecated: use concat, which accepts List<Dynamic> values the same way. Concatenates open List<Dynamic> values without claiming a homogeneous member relation; keeps an explicit open-container boundary."
@@ -8049,7 +8054,8 @@
             %{} 'TestEntry (:name |plain-call-into-rest-local)
               :code $ quote $ let
                   collect $ fn (a & xs) (&list:count xs)
-                  pick $ fn (a ? b) (if (nil? b) a b)
+                  pick $ fn (a ? b)
+                    if (nil? b) a b
                 assert= 1 $ collect 0 9
                 assert= 0 $ collect 0
                 assert= 3 $ collect 0 7 8 9
@@ -8058,20 +8064,38 @@
               :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |iife-with-rest-param)
               :code $ quote $ do
-                assert= 2 $ (fn (a & xs) (&list:count xs)) 1 2 3
-                assert= 0 $ (fn (a & xs) (&list:count xs)) 1
-                assert= 2 $ apply-args (1 2 3) (fn (a & xs) (&list:count xs))
-                assert= 5 $ (fn (a ? b) (if (nil? b) a b)) 5
+                assert= 2 $
+                  fn (a & xs) (&list:count xs)
+                  , 1 2 3
+                assert= 0 $
+                  fn (a & xs) (&list:count xs)
+                  , 1
+                assert= 2 $ apply-args (1 2 3)
+                  fn (a & xs) (&list:count xs)
+                assert= 5 $
+                  fn (a ? b)
+                    if (nil? b) a b
+                  , 5
               :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |rest-callee-in-hof)
               :code $ quote $ do
                 assert= 6 $ foldl ([] 1 2 3) 0 +
-                assert= ([] 1 2) $ map ([] 1 2) +
-                assert= ([] 1 2) $ foldl ([] 1 2) ([]) conj
-                assert= ([] 1 2) $ foldl ([] ([] 1) ([] 2)) ([]) concat
-                assert= ([] |a |b) $ map ([] |a |b) str
-                assert= ([] 1 1) $ map ([] 1 2) $ fn (& xs) (&list:count xs)
-                assert= 2 $ foldl ([] 3 4) 0 $ fn (acc & xs) (&+ acc $ &list:count xs)
+                assert= ([] 1 2)
+                  map ([] 1 2) +
+                assert= ([] 1 2)
+                  foldl ([] 1 2) ([]) conj
+                assert= ([] 1 2)
+                  foldl
+                    [] ([] 1) ([] 2)
+                    []
+                    , concat
+                assert= ([] |a |b)
+                  map ([] |a |b) str
+                assert= ([] 1 1)
+                  map ([] 1 2)
+                    fn (& xs) (&list:count xs)
+                assert= 2 $ foldl ([] 3 4) 0 $ fn (acc & xs)
+                  &+ acc $ &list:count xs
               :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |plain-call-rest-fn-value)
               :code $ quote $ let
@@ -10292,20 +10316,38 @@
             :generics $ [] 'T 'U
             :return $ :: 'Option 'U
           :tags $ #{} :internal
-          :tests $ [] $ %{} 'TestEntry (:name |preserves-open-payload-callback)
-            :code $ quote $ let
-                consume $ fn (value)
-                  hint-fn $ {}
-                    :args $ [] $ :: (quote Option) (quote Dynamic)
-                    :return $ :: (quote Option) (quote Dynamic)
-                  value .map $ fn (item)
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-open-payload-callback)
+              :code $ quote $ let
+                  consume $ fn (value)
                     hint-fn $ {}
-                      :args $ [] $ quote Dynamic
-                      :return $ quote Dynamic
-                    , item
-              assert= (%some :ready)
-                consume $ %some :ready
-            :tags $ #{} :core :unit
+                      :args $ [] $ :: (quote Option) (quote Dynamic)
+                      :return $ :: (quote Option) (quote Dynamic)
+                    value .map $ fn (item)
+                      hint-fn $ {}
+                        :args $ [] $ quote Dynamic
+                        :return $ quote Dynamic
+                      , item
+                assert= (%some :ready)
+                  consume $ %some :ready
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |typed-method-selects-only-matching-branch)
+              :code $ quote $ let
+                  mapped $
+                    Option :some 3
+                    , .map $ fn (value) (str value)
+                  absent $
+                    Option :none
+                    , .map $ fn (value)
+                      hint-fn $ {}
+                        :args $ [] 'Number
+                        :return 'String
+                      raise |unselected-map-callback
+                assert-type mapped $ :: 'Option 'String
+                assert-type absent $ :: 'Option 'String
+                assert= (Option :some |3) mapped
+                assert= (Option :none) absent
+              :tags $ #{} :core :unit
         'option:none? $ %{} 'CodeEntry
           :doc "|判断 Option 是否为 :none；公开代码优先使用 .none?，本辅助函数属于内部兼容入口。"
           :code $ quote $ defn option:none? (opt)

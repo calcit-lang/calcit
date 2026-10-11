@@ -66,7 +66,7 @@ test("typed accessors retain receiver-specific Option payloads without freezing 
 
 test("Option and Result callback methods preserve declared input/output relations", () => {
   for (const [receiver, names] of [
-    [":: 'calcit.core/Option 'Number", [".and-then", ".fold", ".or-else"]],
+    [":: 'calcit.core/Option 'Number", [".map", ".and-then", ".fold", ".or-else"]],
     [":: 'calcit.core/Result 'Number 'String", [".and-then", ".map", ".map-err", ".or-else"]],
   ]) {
     for (const name of names) {
@@ -84,8 +84,12 @@ test("Option and Result callback methods preserve declared input/output relation
   const output = row.parameters[0].quote[2].find(pair => pair[0] === ":return")[1];
   assert.deepEqual(row.parameters[0].quote[2].find(pair => pair[0] === ":args")[1], ["[]", "'Number"]);
   assert.deepEqual(row.returns.quote, ["::", "'calcit.core/Result", output, "'String"]);
-  assert.ok(!baseline["method-contracts"].some(row => row.receiver === ":: 'calcit.core/Option 'Number" && row.name === ".map"),
-    "an open Option map query must not be silently promoted to proven dispatch");
+  const optionMap = baseline["method-contracts"].find(row => row.receiver === ":: 'calcit.core/Option 'Number" && row.name === ".map");
+  assert.deepEqual(optionMap.parameters[0].quote[2].find(pair => pair[0] === ":args")[1], ["[]", "'Number"]);
+  assert.deepEqual(optionMap.returns.quote, ["::", "'calcit.core/Option", "'U"]);
+  assert.equal(optionMap.parameters[0].quote[2].find(pair => pair[0] === ":return")[1], "'U");
+  assert.ok(!baseline["method-contracts"].some(row => row.receiver.includes("'Dynamic") && row.name === ".map"),
+    "open payloads must not acquire a frozen precise call contract");
 });
 
 test("display and source-formatting declarations retain distinct names and callable shapes", () => {

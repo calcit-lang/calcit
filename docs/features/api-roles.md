@@ -337,6 +337,8 @@ calcit analyze check-examples --ns calcit.core --def fold
 
 `open` 不一定表示整个方法签名未知。接收者已成功绑定到现有 schema 时，查询保留已声明的参数与返回类型，例如 `calcit query type "'String" --format edn` 中 `.parse-json` 和 `.parse-cirru-edn` 的零参数与 `Result<Dynamic, String>` 返回结构；成功 payload 仍是开放数据，需要在具体使用前解码或收窄，错误分支则已有 String 类型。开放 callback 或集合元素同样按声明展示，不推测为具体类型。缺失 schema、接收者绑定失败或分派歧义时仍不提供签名。结构化 `call-types` 只为 `proven` 方法提供；自动 fix 和核心契约冻结仍必须检查证明状态，不能仅凭签名字段存在就放行。
 
+具体接收者的实现可以提供比开放 trait 声明更精确的泛型关系。例如 `calcit query type ":: 'Option 'Number" --format edn` 的 `.map` 保留 `Fn<Number,U> → Option<U>`，并列出泛型 U；U 不是 Dynamic，也不是已经选择的业务类型。实现细化须保留 trait 的可证明接收者约束与 feature；闭合 trait 签名不会被覆盖。`Option<Dynamic>` 仍为 open，Agent 应先查询实际调用的 `type-at/context`，不能凭方法名强制把未知 payload 收窄。
+
 结构升级后，使用 `calcit fix --preset core-api-0.28-v1 --format edn` 统一预览已证明的核心 API 叶子改名，再按 revision 应用。`:code` 自动扫描，attached `:tests` / `:examples` 人工核对；重复预览的自动建议应为空，剩余 `requires-review` 不等于已迁移。Option/Result helper 和完整构造调用仍分步迁移，顺序与范围见 [0.28 核心 API 命名迁移](../run/fix.md#028-核心-api-命名迁移)。
 
 真实项目中，Quamolit 的 `quamolit.gpu-scalar-program/first-slot` 以 `get slots 0` 得到 `Option<BoundScalar>`，再调用 `.unwrap`；Timegrass 的 `app.server/main!` 对 `parse-float raw` 的 `Result<Number,String>` 调用 `.unwrap-or 11009`。这两条路径均可在各自 Snapshot 上用 `query context` 找到，再用 `query type ":: 'Option ..."` 或 `query type ":: 'Result ..."` 检查方法契约。它们说明推荐入口应由返回类型决定，而不是由内部函数名字决定；不要求改变这些项目的源码。
