@@ -19,12 +19,15 @@ pub(super) fn resolve_callee_fn_idx(ctx: &WasmGenCtx, callee: &Calcit) -> Result
         .ok_or_else(|| format!("unknown fn in foldl callee: {qualified}"))?;
       // Callee must have arity 2 (acc, elem). If the def_ref points to a function with
       // different arity (e.g. the outer containing function), reject it — calling with 2
-      // args would produce an invalid WASM module.
-      if let Some(arity) = ctx
-        .fn_arity
-        .get(&qualified)
-        .or_else(|| ctx.fn_arity.get(def_ref.def_name.as_ref()))
-        .copied()
+      // args would produce an invalid WASM module. A `&` rest callee is exempt:
+      // `emit_static_callee_call` packs or traps by its fixed arity (#1964).
+      let has_rest = ctx.fn_has_rest.contains_key(&qualified) || ctx.fn_has_rest.contains_key(def_ref.def_name.as_ref());
+      if !has_rest
+        && let Some(arity) = ctx
+          .fn_arity
+          .get(&qualified)
+          .or_else(|| ctx.fn_arity.get(def_ref.def_name.as_ref()))
+          .copied()
         && arity != 2
       {
         return Err(format!(
@@ -49,6 +52,40 @@ pub(super) fn resolve_callee_fn_idx(ctx: &WasmGenCtx, callee: &Calcit) -> Result
       .ok_or_else(|| format!("unknown symbol in foldl callee: {sym}")),
     _ => Err(format!("foldl callee must be a static fn/import/symbol in WASM, got: {callee}")),
   }
+}
+
+/// The fixed parameter count of a static HOF callee declared with a `&` rest
+/// parameter, looked up the same way as `resolve_callee_fn_idx`.
+fn resolve_callee_rest_fixed(ctx: &WasmGenCtx, callee: &Calcit) -> Option<u32> {
+  let (qualified, short) = match callee {
+    Calcit::Fn { info, .. } => {
+      let def_ref = info.def_ref.as_ref()?;
+      (format!("{}/{}", def_ref.def_ns, def_ref.def_name), def_ref.def_name.to_string())
+    }
+    Calcit::Import(import) => (format!("{}/{}", import.ns, import.def), import.def.to_string()),
+    Calcit::Symbol { sym, .. } => (sym.to_string(), sym.to_string()),
+    _ => return None,
+  };
+  ctx.fn_has_rest.get(&qualified).or_else(|| ctx.fn_has_rest.get(&short)).copied()
+}
+
+/// Calls a static HOF callee with argument locals. For a `&` rest callee the
+/// arguments after its fixed parameters are packed into the rest list, and a
+/// call without every fixed argument traps like the native arity error (#1964).
+fn emit_static_callee_call(ctx: &mut WasmGenCtx, fn_idx: u32, rest_fixed: Option<u32>, args: &[u32]) {
+  let fixed = match rest_fixed {
+    None => args.len(),
+    Some(fixed) if fixed as usize <= args.len() => fixed as usize,
+    Some(_) => {
+      ctx.emit(Instruction::Unreachable);
+      return;
+    }
+  };
+  let rest = rest_fixed.map(|_| emit_list_from_locals(ctx, &args[fixed..]));
+  for arg in args[..fixed].iter().chain(rest.as_ref()) {
+    ctx.emit(Instruction::LocalGet(*arg));
+  }
+  ctx.emit(Instruction::Call(fn_idx));
 }
 
 /// Try to extract (param_names, body_exprs) from an inline lambda form.
@@ -88,8 +125,9 @@ pub(super) fn try_extract_inline_lambda(callee: &Calcit) -> Option<(Vec<String>,
       let params: Vec<String> = args
         .iter()
         .filter_map(|a| match a {
-          Calcit::Local(CalcitLocal { sym, .. }) => Some(sym.as_ref().to_owned()),
-          Calcit::Symbol { sym, .. } => Some(sym.as_ref().to_owned()),
+          Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } if !matches!(sym.as_ref(), "&" | "?") => {
+            Some(sym.as_ref().to_owned())
+          }
           _ => None,
         })
         .collect();
@@ -163,7 +201,8 @@ pub(super) fn emit_foldl(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
 
 /// Helper enum for foldl call strategy.
 pub(super) enum FoldlCallKind {
-  Static(u32),
+  /// A static function index and, for a `&` rest callee, its fixed arity.
+  Static(u32, Option<u32>),
   Inline(Arc<InlineClosure>),
   /// A native builtin proc (e.g. `&+`, `&merge`).
   Proc(CalcitProc),
@@ -226,7 +265,7 @@ pub(super) fn resolve_callee_kind(ctx: &WasmGenCtx, callee: &Calcit, _acc: u32, 
     return Ok(FoldlCallKind::Inline(closure));
   }
   if let Ok(fn_idx) = resolve_callee_fn_idx(ctx, callee) {
-    return Ok(FoldlCallKind::Static(fn_idx));
+    return Ok(FoldlCallKind::Static(fn_idx, resolve_callee_rest_fixed(ctx, callee)));
   }
   if let Calcit::Proc(proc) = callee {
     return Ok(FoldlCallKind::Proc(*proc));
@@ -247,10 +286,8 @@ pub(super) fn resolve_callee_kind(ctx: &WasmGenCtx, callee: &Calcit, _acc: u32, 
 /// `acc = call_kind(acc, elem)`. Leaves the result on the stack (caller must LocalSet acc).
 pub(super) fn emit_foldl_step(ctx: &mut WasmGenCtx, fn_call_kind: &FoldlCallKind, acc: u32, elem: u32) -> Result<(), String> {
   match fn_call_kind {
-    FoldlCallKind::Static(fn_idx) => {
-      ctx.emit(Instruction::LocalGet(acc));
-      ctx.emit(Instruction::LocalGet(elem));
-      ctx.emit(Instruction::Call(*fn_idx));
+    FoldlCallKind::Static(fn_idx, rest_fixed) => {
+      emit_static_callee_call(ctx, *fn_idx, *rest_fixed, &[acc, elem]);
       Ok(())
     }
     FoldlCallKind::Inline(closure) => emit_inline_closure_body(ctx, closure, &[acc, elem]),
@@ -482,9 +519,8 @@ fn emit_unary_step(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, arg: u32) -> Resu
   use crate::calcit::{CalcitLocal, CalcitSymbolInfo, DYNAMIC_TYPE};
   use std::sync::Arc;
   match kind {
-    FoldlCallKind::Static(fn_idx) => {
-      ctx.emit(Instruction::LocalGet(arg));
-      ctx.emit(Instruction::Call(*fn_idx));
+    FoldlCallKind::Static(fn_idx, rest_fixed) => {
+      emit_static_callee_call(ctx, *fn_idx, *rest_fixed, &[arg]);
       Ok(())
     }
     FoldlCallKind::Inline(closure) => emit_inline_closure_body(ctx, closure, &[arg]),
@@ -531,15 +567,16 @@ fn emit_unary_step(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, arg: u32) -> Resu
 /// Emit a call to the HOF callee with two arguments (elem, index) for map-indexed.
 fn emit_binary_step_ei(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, elem: u32, idx: u32) -> Result<(), String> {
   match kind {
-    FoldlCallKind::Static(fn_idx) => {
-      ctx.emit(Instruction::LocalGet(elem));
+    FoldlCallKind::Static(fn_idx, rest_fixed) => {
+      let idx_f64 = ctx.alloc_local();
       ctx.ptr_to_f64(idx);
-      ctx.emit(Instruction::Call(*fn_idx));
+      ctx.emit(Instruction::LocalSet(idx_f64));
+      emit_static_callee_call(ctx, *fn_idx, *rest_fixed, &[elem, idx_f64]);
       Ok(())
     }
     FoldlCallKind::Inline(closure) => {
-      if closure.params.len() < 2 {
-        return Err("map-indexed inline lambda needs at least 2 params".into());
+      if !closure.accepts(2) {
+        return Err("map-indexed inline lambda must accept 2 arguments".into());
       }
       let idx_f64 = ctx.alloc_local();
       ctx.ptr_to_f64(idx);
@@ -568,7 +605,7 @@ fn resolve_unary_callee(ctx: &WasmGenCtx, callee: &Calcit) -> Result<FoldlCallKi
     return Ok(FoldlCallKind::Inline(closure));
   }
   if let Ok(fn_idx) = resolve_callee_fn_idx(ctx, callee) {
-    return Ok(FoldlCallKind::Static(fn_idx));
+    return Ok(FoldlCallKind::Static(fn_idx, resolve_callee_rest_fixed(ctx, callee)));
   }
   if let Calcit::Proc(proc) = callee {
     return Ok(FoldlCallKind::Proc(*proc));
@@ -900,8 +937,8 @@ fn emit_map_kv_impl(ctx: &mut WasmGenCtx, args: &[Calcit], uses_decision: bool) 
 
   // Resolve binary callee: f(k, v) → [k', v']
   let kind = if let Some(closure) = resolve_inline_closure(ctx, &args[1]) {
-    if closure.params.len() < 2 {
-      return Err(format!("{op_name}: inline lambda needs at least 2 params"));
+    if !closure.accepts(2) {
+      return Err(format!("{op_name}: inline lambda must accept 2 arguments"));
     }
     FoldlCallKind::Inline(closure)
   } else {

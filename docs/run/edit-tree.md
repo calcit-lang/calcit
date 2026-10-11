@@ -52,6 +52,8 @@ This command also rewrites older namespace records into canonical shapes. Namesp
 calcit edit def app.util/double --input-format cirru --code 'quote $ defn double (x) (* x 2)'
 ```
 
+`edit def` 按完整目标名新增定义，允许 `example` 与 `example!`、`ready` 与 `ready?` 同时存在。名称包含 shell 特殊字符时仍应给参数加引号。`--overwrite` 只允许替换目标名完全一致的定义，不会把写入重定向到相近名字；没有该选项时，已有定义保持不变。查询和只修改已有定义的命令仍保留缺失名称的拼写提示。
+
 新增或改写表达式时，名称不一致、单独的 leaf 或无法识别的头部会非零退出，不修改 Snapshot；已有 AST 完全不变的原样覆盖可保留历史的 key/name 差异。事务中的任一非法定义使整个事务不写入。确需使用尚不能识别的自定义具名形式时，可显式加 `--allow-unknown-head`，但仍须满足 list 根节点及名称一致性检查。
 
 `deftype-slot` 独立声明一个 tag/string slot 名，不把 slot 名当作 definition key。

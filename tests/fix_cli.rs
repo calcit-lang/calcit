@@ -8662,6 +8662,202 @@ fn retired_core_alias_rules_point_to_the_0_28_cli() {
 }
 
 #[test]
+fn ref_migration_preserves_resolved_nominal_struct_schemas() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  assert_success(&run_calcit(&snapshot, &["query", "config"]), "inspect nominal schema fixture");
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "add-ns", "app.other"]),
+    "add distinct nominal namespace",
+  );
+  for (target, code, schema) in [
+    (
+      "app.main/Record",
+      "quote $ defstruct Record ([] 'Op) (:op 'Op) (:id 'String) (:time 'Number)",
+      "quote 'StructDef",
+    ),
+    ("app.other/Record", "quote $ defstruct Record (:op 'Number)", "quote 'StructDef"),
+    (
+      "app.main/new-record",
+      "quote $ defn new-record (op id time) $ Record :op op :id id :time time",
+      "quote $ :: 'Fn $ {} (:generics $ [] 'Op) (:args $ [] 'Op 'String 'Number) (:return $ :: 'app.main/Record 'Op)",
+    ),
+    (
+      "app.other/new-record",
+      "quote $ defn new-record (op) $ Record :op op",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'app.other/Record)",
+    ),
+    (
+      "app.main/records",
+      "quote $ defn records () $ [] $ new-record 1 |id 2",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'List $ :: 'app.main/Record 'Number)",
+    ),
+    (
+      "app.main/from-maker",
+      "quote $ defn from-maker (f) $ f",
+      "quote $ :: 'Fn $ {} (:args $ [] $ :: 'Fn $ {} (:args $ []) (:return $ :: 'app.main/Record 'Number)) (:return $ :: 'app.main/Record 'Number)",
+    ),
+  ] {
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", target, "--input-format", "cirru", "--code", code]),
+      "create typed nominal source",
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", target, "--input-format", "cirru", "--code", schema]),
+      "declare qualified nominal schema",
+    );
+  }
+  let assertions = "quote $ do\n  assert= (Record :op 1 :id |id :time 2) $ deref $ atom $ new-record 1 |id 2\n  assert= ([] $ new-record 1 |id 2) $ records\n  assert= (new-record 1 |id 2) $ from-maker $ fn () $ new-record 1 |id 2\n  assert= (app.other/Record :op 3) $ app.other/new-record 3";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/main!",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn main! () &unit",
+      ],
+    ),
+    "install inert entry",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "add-test",
+        "app.main/main!",
+        "nominal-record-migration",
+        "--tags",
+        "unit,upgrade",
+        "--input-format",
+        "cirru",
+        "--code",
+        assertions,
+      ],
+    ),
+    "attach user-visible nominal semantics",
+  );
+  let check = ["--check-only", "--all-defs"];
+  assert_success(&run_calcit(&snapshot, &check), "strict nominal source before migration");
+  let tests = ["test", "app.main/main!", "--require-match"];
+  assert_success(&run_calcit(&snapshot, &tests), "attached nominal semantics before migration");
+  let before = fs::read(&snapshot).unwrap();
+  let queried_schemas = [
+    "app.main/new-record",
+    "app.other/new-record",
+    "app.main/records",
+    "app.main/from-maker",
+  ]
+  .map(|target| parse_stdout(&run_calcit(&snapshot, &["query", "def", target, "--format", "json"]))["data"]["schema"].clone());
+  for (selector, value) in [("--rule", "core-ref-constructor-v1"), ("--preset", "core-api-0.29-v1")] {
+    let preview = run_fix(&snapshot, &[selector, value, "--include-attached", "--format", "edn"]);
+    assert_success(&preview, "preview with resolved nominal schemas");
+    cirru_edn::parse(&String::from_utf8_lossy(&preview.stdout)).expect("preview is one native EDN document");
+    assert_eq!(fs::read(&snapshot).unwrap(), before, "preview is read-only");
+  }
+  let args = ["--rule", "core-ref-constructor-v1", "--include-attached", "--format", "json"];
+  let preview = run_fix(&snapshot, &args);
+  assert_success(&preview, "query guarded ref migration");
+  let report = parse_stdout(&preview);
+  assert_eq!(report["data"]["suggestions"].as_array().unwrap().len(), 1);
+  let stale = run_fix(
+    &snapshot,
+    &[args.as_slice(), &["--apply", "--allow-no-vcs", "--expect-revision", "md5:stale"]].concat(),
+  );
+  assert!(!stale.status.success());
+  assert!(String::from_utf8_lossy(&stale.stderr).contains("revision mismatch"));
+  assert_eq!(fs::read(&snapshot).unwrap(), before);
+  let applied = run_fix(
+    &snapshot,
+    &[
+      args.as_slice(),
+      &[
+        "--apply",
+        "--allow-no-vcs",
+        "--expect-revision",
+        report["revision"].as_str().unwrap(),
+      ],
+    ]
+    .concat(),
+  );
+  assert_success(&applied, "apply nominal-preserving ref migration");
+  assert_success(
+    &run_calcit(&snapshot, &check),
+    "strict nominal source after reloading migrated Snapshot",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &tests),
+    "original attached nominal semantics after migration",
+  );
+  for (target, expected) in [
+    "app.main/new-record",
+    "app.other/new-record",
+    "app.main/records",
+    "app.main/from-maker",
+  ]
+  .iter()
+  .zip(queried_schemas)
+  {
+    let queried = run_calcit(&snapshot, &["query", "def", target, "--format", "json"]);
+    assert_success(&queried, "query reloaded qualified schema");
+    assert_eq!(
+      parse_stdout(&queried)["data"]["schema"],
+      expected,
+      "schema of {target} must retain its identity"
+    );
+  }
+  let repeated = run_fix(&snapshot, &args);
+  assert_success(&repeated, "idempotent nominal ref migration");
+  assert!(parse_stdout(&repeated)["data"]["suggestions"].as_array().unwrap().is_empty());
+  let migrated = fs::read(&snapshot).unwrap();
+  for legacy in ["Record", "Tuple"] {
+    let invalid = run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "app.main/new-record",
+        "--input-format",
+        "cirru",
+        "--code",
+        &format!("quote $ :: 'Fn $ {{}} (:args $ []) (:return '{legacy})"),
+      ],
+    );
+    assert!(!invalid.status.success(), "legacy broad {legacy} must remain rejected");
+    assert!(String::from_utf8_lossy(&invalid.stderr).contains("Legacy type name"));
+    assert_eq!(fs::read(&snapshot).unwrap(), migrated);
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/wrong-namespace",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn wrong-namespace () $ from-maker $ fn () $ app.other/new-record 3",
+      ],
+    ),
+    "install strict nominal negative",
+  );
+  let wrong = run_calcit(&snapshot, &[check.as_slice(), &["--format", "json"]].concat());
+  assert!(!wrong.status.success(), "same-short-name nominal values must remain distinct");
+  let diagnostics = String::from_utf8_lossy(&wrong.stdout);
+  assert!(
+    diagnostics.contains("app.other/Record") && diagnostics.contains("app.main/Record"),
+    "{diagnostics}"
+  );
+}
+
+#[test]
 fn core_nominal_previews_skip_unrelated_type_slot_declarations() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

@@ -5588,8 +5588,11 @@ impl CalcitTypeAnnotation {
         } else {
           let mut items = Vec::with_capacity(args.len() + 2);
           items.push(Self::make_symbol("::"));
-          let base_name = struct_def.name.ref_str().trim_start_matches(':');
-          items.push(Self::make_symbol(base_name));
+          if let Some(definition_ref) = &struct_def.definition_ref {
+            items.push(Self::quote_symbol(definition_ref));
+          } else {
+            items.push(Self::make_symbol(struct_def.name.ref_str().trim_start_matches(':')));
+          }
           for arg in args.iter() {
             items.push(arg.to_calcit());
           }
@@ -5746,12 +5749,16 @@ impl CalcitTypeAnnotation {
       Self::Variadic(inner) => Edn::enum_value("Variadic", vec![inner.to_type_edn()]),
       Self::Fn(fn_annot) => Edn::enum_value("Fn", vec![fn_annot.to_inline_type_schema_edn()]),
       Self::Struct(s, args) => {
+        // A resolved declaration must retain the same identity as its TypeRef.
+        let name = s
+          .definition_ref
+          .as_deref()
+          .unwrap_or_else(|| s.name.ref_str().trim_start_matches(':'));
         if args.is_empty() {
-          Edn::Symbol(Arc::from(s.name.ref_str()))
+          Edn::Symbol(Arc::from(name))
         } else {
           let mut items = vec![Edn::Symbol(Arc::from("::"))];
-          let base_name = s.name.ref_str().trim_start_matches(':');
-          items.push(Edn::Symbol(Arc::from(base_name)));
+          items.push(Edn::Symbol(Arc::from(name)));
           for arg in args.iter() {
             items.push(arg.to_type_edn());
           }
@@ -5788,7 +5795,9 @@ impl CalcitTypeAnnotation {
       // Unapplied nominal values and traits use their names as symbols.
       Self::StructDef(_) => Edn::Symbol(Arc::from("StructDef")),
       Self::EnumDef(_) => Edn::Symbol(Arc::from("EnumDef")),
-      Self::StructValue(struct_def) => Edn::Symbol(Arc::from(struct_def.name.ref_str())),
+      Self::StructValue(struct_def) => Edn::Symbol(Arc::from(
+        struct_def.definition_ref.as_deref().unwrap_or_else(|| struct_def.name.ref_str()),
+      )),
       Self::EnumValue(enum_def) => Edn::Symbol(Arc::from(enum_def.name().ref_str())),
       Self::Trait(trait_def) => Edn::Symbol(Arc::from(trait_def.name.ref_str())),
       Self::TypeSlot(name) => Edn::Symbol(Arc::from(format!("*{name}"))),
@@ -9049,6 +9058,63 @@ mod tests {
     assert_eq!(
       bare.prove_with_bindings(&number, &mut TypeBindings::new()),
       TypeProof::NeedsBoundary(TypeBoundaryReason::ErasedTypeArguments)
+    );
+  }
+
+  #[test]
+  fn resolved_struct_schema_serialization_preserves_nominal_identity() {
+    let parameter = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("Op")));
+    for namespace in ["app.models", "admin.models"] {
+      let definition = Arc::new(CalcitStructDef {
+        definition_ref: Some(Arc::from(format!("{namespace}/Record"))),
+        name: EdnTag::new("Record"),
+        fields: Arc::new(vec![EdnTag::new("op")]),
+        field_types: Arc::new(vec![parameter.clone()]),
+        generics: Arc::new(vec![Arc::from("Op")]),
+        where_bounds: Arc::new(vec![]),
+        impls: vec![],
+      });
+      let reference: Arc<str> = Arc::from(format!("{namespace}/Record"));
+      let generic = CalcitTypeAnnotation::Struct(definition.clone(), Arc::new(vec![parameter.clone()]));
+      assert_eq!(
+        generic.to_type_edn(),
+        Edn::List(cirru_edn::EdnListView(vec![
+          Edn::Symbol(Arc::from("::")),
+          Edn::Symbol(reference.clone()),
+          Edn::Symbol(Arc::from("Op")),
+        ]))
+      );
+      let payload = Arc::new(CalcitTypeAnnotation::Number);
+      let applied = CalcitTypeAnnotation::Struct(definition.clone(), Arc::new(vec![payload.clone()]));
+      let expected = CalcitTypeAnnotation::TypeRef(reference.clone(), Arc::new(vec![payload.clone()]));
+      let restored_edn = CalcitTypeAnnotation::parse_type_annotation_from_edn(&applied.to_type_edn());
+      assert_eq!(restored_edn.as_ref(), &expected);
+      let restored = CalcitTypeAnnotation::parse_type_annotation_form(&applied.to_calcit());
+      assert!(matches!(restored.as_ref(), CalcitTypeAnnotation::TypeRef(name, args)
+        if name == &reference && matches!(args.as_slice(), [arg] if arg.as_ref() == payload.as_ref())));
+
+      for bare in [
+        CalcitTypeAnnotation::Struct(definition.clone(), Arc::new(vec![])),
+        CalcitTypeAnnotation::StructValue(definition),
+      ] {
+        assert_eq!(bare.to_type_edn(), Edn::Symbol(reference.clone()));
+      }
+      let resolved_callback = CalcitTypeAnnotation::from_function_parts(
+        vec![Arc::new(CalcitTypeAnnotation::List(Arc::new(applied.clone())))],
+        Arc::new(applied),
+      );
+      let reference_callback = CalcitTypeAnnotation::from_function_parts(
+        vec![Arc::new(CalcitTypeAnnotation::List(Arc::new(expected.clone())))],
+        Arc::new(expected),
+      );
+      let restored_callback = CalcitTypeAnnotation::parse_type_annotation_from_edn(&resolved_callback.to_type_edn());
+      assert_eq!(restored_callback.as_ref(), &reference_callback);
+    }
+    let local = CalcitStructDef::from_fields(EdnTag::new("Draft"), vec![EdnTag::new("text")]);
+    assert_eq!(
+      CalcitTypeAnnotation::StructValue(Arc::new(local)).to_type_edn(),
+      Edn::Symbol(Arc::from("Draft")),
+      "local declarations without source identity retain their existing spelling"
     );
   }
 

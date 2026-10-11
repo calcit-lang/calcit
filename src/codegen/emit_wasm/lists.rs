@@ -25,6 +25,25 @@ pub(super) fn emit_list_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
   Ok(())
 }
 
+/// Builds a list from already-evaluated f64 locals and returns the f64 local
+/// holding the list pointer.
+pub(super) fn emit_list_from_locals(ctx: &mut WasmGenCtx, items: &[u32]) -> u32 {
+  let ptr = ctx.alloc_local_typed(ValType::I32);
+  emit_bump_alloc(ctx, ((1 + items.len()) * 8) as i32, ptr, "list");
+  ctx.emit(Instruction::LocalGet(ptr));
+  ctx.emit(f64_const(items.len() as f64));
+  ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
+  for (i, item) in items.iter().enumerate() {
+    ctx.emit(Instruction::LocalGet(ptr));
+    ctx.emit(Instruction::LocalGet(*item));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(((1 + i) * 8) as u64)));
+  }
+  let list = ctx.alloc_local();
+  ctx.ptr_to_f64(ptr);
+  ctx.emit(Instruction::LocalSet(list));
+  list
+}
+
 /// `&list:nth list idx` — element at dynamic index.
 pub(super) fn emit_list_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "&list:nth expects 2 args")?;
