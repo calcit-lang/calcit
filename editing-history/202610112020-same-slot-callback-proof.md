@@ -28,4 +28,10 @@ Respo #195 的同-slot callback 正例被拒绝，诊断中的期望和实际都
 
 ## 尚待完成
 
-本轮源码门禁通过；与新合并 main 的同步仍需在独立分支完成并重新验证。Respo 完整 strict、原始 map 的 callback 上下文、旧 dispatch 调用兼容、路线反馈与正式下游依赖回归仍需独立验收。
+首轮修复与门禁保存为 416c2e5b8dff11a07a7e28305b433ee09b9ea36d，随后无冲突同步精确 main f7cf6d99b0252c898339b4151c49bd2bf833842a，源码提交为 819202a36f8b2743e589f9809c3c27f2f0498baa。main Test 与 Push 均通过；同步范围还包含 WASM rest、废弃方法窗口与受保护定义创建改动，因此重新执行了源码门禁。
+
+同步后 fmt/all-target Clippy 通过，Rust 26 suites、1693 passed、0 failed、1 ignored；完整 CALCIT_LINT_CORE=1 check-all 退出 0。Agent 64/64，core native/JS/WASM 621/620/392，排除 1/229；相对首轮数量变化来自上游 rest 测试和支持范围更新。本轮同-slot test 在完整门禁中仍 native/JS 各 1/1、零排除，classification 296，IR/WASM 与基准通过。重新回放 Respo 65 场景，接受/native 结果与首轮完全一致。
+
+同步后 checker 对 Respo 55242f7 的隔离完整 strict 核对仍退出 1：handle-ssr! 的 Op callback 与 render-with! 裸 Fn 各有一项 E_CALL_ARGUMENT_UNPROVEN，safe fixes 为零。Snapshot SHA256 59b538239a73297adfff0221ac8eb80c1ca2d36b00779ce5a0957b1b2d6f1316 保持不变。
+
+Respo 完整 strict、原始 map 的 callback 上下文、旧 dispatch 调用兼容、路线反馈与正式下游依赖回归仍需独立验收。本地源码修复完成不代表整个 milestone 完成；现有待授权候选和冻结报告均未被替换。
