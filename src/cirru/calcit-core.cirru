@@ -1111,10 +1111,22 @@
             :rest $ :: 'List 'T
             :return $ :: 'List 'T
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |concatenates-many-lists)
-            :code $ quote $ assert= ([] 1 2 4 5 7 8)
-              &list:concat ([] 1 2) ([] 4 5) ([] 7 8)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |concatenates-many-lists)
+              :code $ quote $ assert= ([] 1 2 4 5 7 8)
+                &list:concat ([] 1 2) ([] 4 5) ([] 7 8)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |spreads-runtime-list-of-lists)
+              :code $ quote $ let
+                  xs $ [] ([] 3) ([] 4 5)
+                  none $ &list:rest $ [] ([] 9)
+                assert= ([] 1 2 3 4 5) $ &list:concat ([] 1 2) & xs
+                assert= ([] 3 4 5) $ &list:concat & xs
+                assert= ([] 1 2) $ &list:concat ([] 1 2) & none
+                assert= ([]) $ &list:concat & none
+                assert= ([] 1) $ &list:concat ([] 1)
+                assert= ([] 1 2 3) $ &list:concat ([] 1) & $ [] ([] 2) ([] 3)
+              :tags $ #{} :core :unit
         '&list:contains? $ %{} 'CodeEntry
           :doc "|内部原语：按索引检查 List 是否包含该位置。参数为 List<T> 和 Number 索引，返回 Bool；只有范围内的整数索引有效。应用代码首选 .contains-index?；检查元素是否存在请用 .includes?。"
           :code $ quote &runtime-implementation
@@ -4589,6 +4601,7 @@
               assert= ([] 1 2 4 5 7 8)
                 concat ([] 1 2) ([] 4 5) ([] 7 8)
               assert= ([]) (concat)
+              assert= ([] 1) $ concat ([] 1)
             :tags $ #{} :core :unit
         'concat-dynamic $ %{} 'CodeEntry
           :doc "|Deprecated: use concat, which accepts List<Dynamic> values the same way. Concatenates open List<Dynamic> values without claiming a homogeneous member relation; keeps an explicit open-container boundary."
