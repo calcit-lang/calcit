@@ -582,6 +582,34 @@ calcit calcit.cirru edit transaction --dry-run --format edn --code '[["tree","de
 
 升级时同步修改 CI workflow、`package.json` 脚本与 Agent 指南；在 0.29.x 上看到 stderr 的 `[Deprecated]` 行即说明还有旧入口未迁移。
 
+### 0.30.0 弃用、0.31.0 删除：零引用的 CLI 入口（#1566）
+
+下面的子命令在仓库 CI、脚本与已盘点的生态仓库中都没有调用。它们在 0.30.0 仍可运行，stdout 与退出码不变，只在 stderr 多输出一行 `[Deprecated] ...` 迁移提示；计划在 0.31.0 删除。合并为选项的入口与旧命令共用同一实现，输出逐字节相同。
+
+| 已弃用 | 替代 | 说明 |
+| --- | --- | --- |
+| `analyze count-calls [--sort count\|name] [--format text\|json]` | `analyze call-graph --counts [--sort count\|name] [--format text\|json]` | 其余选项不变；`--counts` 不接受 `--max-depth`、`--show-unused`。计数相同的定义按名字排序 |
+| `analyze call-graph-diff <ref>` | `analyze call-graph --diff <ref>` | 只输出文本；不接受 `--format json`、`--show-unused`；`--counts` 与 `--diff` 不能同时使用 |
+| `analyze js-escape <symbol>`、`analyze js-unescape <name>` | 无 | 删除后不再提供命令行转换；JS 代码生成的转义规则不变 |
+| `docs read-lines <file> [--start <n>] [--lines <n>]` | `docs read <file> [--start <n>] [--lines <n>]` | 给出 `--start` 或 `--lines` 时按行读取，默认值仍为 0 与 80；不能与标题关键词、`--full`、`--with-lines`、`--no-subheadings` 混用 |
+| `cirru show-guide` | `docs read cirru-syntax.md` | 读取同一份 `~/.config/calcit/docs/cirru-syntax.md`；`docs read` 带标题渲染，也可按标题关键词或行范围读取 |
+| `edit rm-example <ns/def> <index>`，以及 `edit transaction` 中的 `["edit","rm-example",…]` 操作 | `edit examples <ns/def>` 写入剩余示例，或 `edit ns` 写回修改后的 `:examples` | 先用 `query examples` 读取现有示例；事务中改用 `["edit","examples",…]` 操作。事务中使用旧操作时同样在 stderr 输出提示 |
+| `edit ns-doc <ns> <doc>`，以及 `edit transaction` 中的 `["edit","ns-doc",…]` 操作 | `edit ns <ns>` 写回修改了 `:ns` 条目 `:doc` 的 `query ns <ns> --format cirru` 数据 | `edit ns` 自带 `--dry-run` 与 `--expect-revision`，但不能放进 `edit transaction`；原事务中的 `ns-doc` 操作需拆成单独的 `edit ns` 步骤 |
+
+迁移命令示例：
+
+```bash
+calcit calcit.cirru analyze call-graph --counts --sort name
+calcit calcit.cirru analyze call-graph --diff HEAD~1 --ns-prefix app.
+calcit calcit.cirru docs read common-patterns.md --start 100 --lines 50
+calcit calcit.cirru docs read cirru-syntax.md
+calcit calcit.cirru query examples app.main/f
+calcit calcit.cirru edit examples app.main/f --code 'quote $ f 1'
+calcit calcit.cirru query ns app.main --format cirru > .calcit/snippets/app.main.cirru
+# 修改 `:ns $ %{} 'NsEntry (:doc |...)` 后写回
+calcit calcit.cirru edit ns app.main --file .calcit/snippets/app.main.cirru --dry-run
+```
+
 ### 仍可用的兼容名
 
 core 在 0.29.0 仍保留下表兼容入口，新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余逐处人工审阅。剩余入口的计划退场窗口是 0.30.0，但到达版本号不自动授权删除，仍须满足消费者、发布窗口、语义与实现解耦条件。

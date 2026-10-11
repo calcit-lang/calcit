@@ -11,7 +11,6 @@ aliases:
 entry_for:
   - "calcit docs search"
   - "calcit docs read"
-  - "calcit docs read-lines"
 id: core/docs/validation
 parent: core/docs
 related:
@@ -22,7 +21,7 @@ requires:
 
 # Documentation Retrieval Validation
 
-This page contains executable validation cases for `calcit docs search`, `calcit docs read`, and `calcit docs read-lines`.
+This page contains executable validation cases for `calcit docs search` and `calcit docs read` (including `--start` / `--lines` line ranges).
 
 Use it when changing:
 
@@ -160,11 +159,11 @@ calcit docs read "reload fn"
 calcit docs read "indentation based syntax"
 ```
 
-## Read-Lines Checks
+## Line-Range Checks
 
 ```bash
-calcit docs read-lines search-replace --start 48 --lines 8
-calcit docs read-lines Respo-Agent --module respo.calcit --start 1 --lines 8
+calcit docs read search-replace --start 48 --lines 8
+calcit docs read Respo-Agent --module respo.calcit --start 1 --lines 8
 ```
 
 ## Update Rule

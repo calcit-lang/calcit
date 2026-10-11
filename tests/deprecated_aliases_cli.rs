@@ -355,3 +355,230 @@ fn batch_delete_transaction_operation_prints_the_hint() {
   let content = fs::read_to_string(project.snapshot()).expect("snapshot should read");
   assert!(content.contains("[] 2 4"), "{content}");
 }
+
+#[test]
+fn call_graph_aliases_match_call_graph_options() {
+  let snapshot = Path::new("calcit/test.cirru");
+  assert_alias_matches(
+    snapshot,
+    &["analyze", "count-calls"],
+    &["analyze", "call-graph", "--counts"],
+    "call-graph --counts",
+  );
+  assert_alias_matches(
+    snapshot,
+    &["analyze", "count-calls", "--sort", "name", "--ns-prefix", "app.", "--include-core"],
+    &[
+      "analyze",
+      "call-graph",
+      "--counts",
+      "--sort",
+      "name",
+      "--ns-prefix",
+      "app.",
+      "--include-core",
+    ],
+    "call-graph --counts",
+  );
+  assert_alias_matches(
+    snapshot,
+    &["analyze", "count-calls", "--format", "json"],
+    &["analyze", "call-graph", "--counts", "--format", "json"],
+    "call-graph --counts",
+  );
+  assert_alias_matches(
+    snapshot,
+    &["analyze", "call-graph-diff", "HEAD", "--ns-prefix", "app.", "--max-depth", "2"],
+    &["analyze", "call-graph", "--diff", "HEAD", "--ns-prefix", "app.", "--max-depth", "2"],
+    "call-graph --diff",
+  );
+
+  for args in [
+    &["analyze", "call-graph", "--counts", "--diff", "HEAD"][..],
+    &["analyze", "call-graph", "--sort", "name"][..],
+    &["analyze", "call-graph", "--diff", "HEAD", "--format", "json"][..],
+  ] {
+    let output = run_calcit(snapshot, args);
+    assert!(!output.status.success(), "{args:?} should be rejected");
+    assert!(output.stdout.is_empty(), "{args:?} should not report on stdout");
+  }
+}
+
+#[test]
+fn js_escape_aliases_keep_output_and_name_no_replacement() {
+  let snapshot = Path::new("calcit/test.cirru");
+  for (args, expected) in [
+    (&["analyze", "js-escape", "a?"][..], "a_$q_"),
+    (&["analyze", "js-unescape", "a_$q_"][..], "a?"),
+  ] {
+    let output = run_calcit(snapshot, args);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(String::from_utf8_lossy(&output.stdout).trim(), expected);
+    let hints = hint_lines(&output);
+    assert_eq!(hints.len(), 1, "{hints:?}");
+    assert!(hints[0].contains("has no replacement"), "{}", hints[0]);
+  }
+}
+
+/// A HOME whose `.config/calcit/docs` points at this repository's docs, so the guidebook commands can run.
+struct GuidebookHome(PathBuf);
+
+impl GuidebookHome {
+  fn create() -> Self {
+    let home = std::env::temp_dir().join(format!("calcit-deprecated-aliases-{}-home", std::process::id()));
+    let _ = fs::remove_dir_all(&home);
+    fs::create_dir_all(home.join(".config/calcit")).expect("temporary HOME should create");
+    let docs = fs::canonicalize("docs").expect("repository docs directory");
+    std::os::unix::fs::symlink(docs, home.join(".config/calcit/docs")).expect("link guidebook docs");
+    Self(home)
+  }
+
+  fn run(&self, args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_calcit"))
+      .env("NO_COLOR", "1")
+      .env("HOME", &self.0)
+      .arg("--tips-level")
+      .arg("none")
+      .arg("calcit/test.cirru")
+      .args(args)
+      .output()
+      .expect("calcit command should run")
+  }
+}
+
+impl Drop for GuidebookHome {
+  fn drop(&mut self) {
+    let _ = fs::remove_dir_all(&self.0);
+  }
+}
+
+#[test]
+fn guidebook_aliases_match_docs_read() {
+  let home = GuidebookHome::create();
+  for (old, new) in [
+    (
+      &["docs", "read-lines", "cirru-syntax.md", "--start", "4", "--lines", "6"][..],
+      &["docs", "read", "cirru-syntax.md", "--start", "4", "--lines", "6"][..],
+    ),
+    (
+      &["docs", "read-lines", "cirru-syntax.md"][..],
+      &["docs", "read", "cirru-syntax.md", "--lines", "80"][..],
+    ),
+    (
+      &["docs", "read-lines", "no-such-doc.md", "--lines", "3"][..],
+      &["docs", "read", "no-such-doc.md", "--lines", "3"][..],
+    ),
+  ] {
+    let old_output = home.run(old);
+    let new_output = home.run(new);
+    assert_eq!(old_output.status.code(), new_output.status.code(), "{old:?} vs {new:?}");
+    assert_eq!(old_output.stdout, new_output.stdout, "{old:?} vs {new:?}");
+    let hints = hint_lines(&old_output);
+    assert_eq!(hints.len(), 1, "{hints:?}");
+    assert!(hints[0].contains("docs read <file> --start"), "{}", hints[0]);
+    assert!(hint_lines(&new_output).is_empty());
+  }
+  let ranged = home.run(&["docs", "read", "cirru-syntax.md", "--start", "4", "--lines", "6"]);
+  assert!(String::from_utf8_lossy(&ranged.stdout).contains("Lines 5-10 of"));
+  let rejected = home.run(&["docs", "read", "cirru-syntax.md", "Mistakes", "--lines", "6"]);
+  assert!(!rejected.status.success() && rejected.stdout.is_empty());
+
+  // `cirru show-guide` keeps printing the raw guide; `docs read` renders the same file.
+  let guide = fs::read_to_string("docs/cirru-syntax.md").expect("guide source");
+  let show_guide = home.run(&["cirru", "show-guide"]);
+  assert!(show_guide.status.success(), "{}", String::from_utf8_lossy(&show_guide.stderr));
+  assert_eq!(String::from_utf8_lossy(&show_guide.stdout), format!("{guide}\n"));
+  let hints = hint_lines(&show_guide);
+  assert_eq!(hints.len(), 1, "{hints:?}");
+  assert!(hints[0].contains("`calcit docs read cirru-syntax.md`"), "{}", hints[0]);
+  let read = home.run(&["docs", "read", "cirru-syntax.md"]);
+  assert!(read.status.success(), "{}", String::from_utf8_lossy(&read.stderr));
+  let read_stdout = String::from_utf8_lossy(&read.stdout);
+  let heading = guide
+    .lines()
+    .find(|line| line.starts_with("## "))
+    .expect("guide should have a section heading");
+  assert!(read_stdout.contains(heading.trim_start_matches("## ")), "{read_stdout}");
+}
+
+fn edit_ok(project: &TempProject, args: &[&str]) -> Output {
+  let output = run_calcit(&project.snapshot(), args);
+  assert!(output.status.success(), "{args:?}: {}", String::from_utf8_lossy(&output.stderr));
+  output
+}
+
+fn project_with_examples(name: &str) -> TempProject {
+  let project = TempProject::create(name);
+  edit_ok(
+    &project,
+    &[
+      "edit",
+      "examples",
+      "app.main/items",
+      "--code",
+      "quote $ count items\nquote $ first items\nquote $ last items",
+    ],
+  );
+  project
+}
+
+#[test]
+fn rm_example_alias_matches_edit_examples() {
+  let read = |project: &TempProject| fs::read_to_string(project.snapshot()).expect("snapshot should read");
+
+  let legacy = project_with_examples("rm-example");
+  let output = edit_ok(&legacy, &["edit", "rm-example", "app.main/items", "1"]);
+  let hints = hint_lines(&output);
+  assert_eq!(hints.len(), 1, "{hints:?}");
+  assert!(hints[0].contains("`calcit edit examples <ns/def>`"), "{}", hints[0]);
+
+  let replacement = project_with_examples("examples");
+  let output = edit_ok(
+    &replacement,
+    &[
+      "edit",
+      "examples",
+      "app.main/items",
+      "--code",
+      "quote $ count items\nquote $ last items",
+    ],
+  );
+  assert!(hint_lines(&output).is_empty());
+  assert_eq!(read(&legacy), read(&replacement));
+  assert!(!read(&legacy).contains("first items"), "{}", read(&legacy));
+
+  // The staged form prints its own hint and still removes the example.
+  let staged = project_with_examples("rm-example-transaction");
+  let output = edit_ok(
+    &staged,
+    &["edit", "transaction", "--code", r#"[["edit","rm-example","app.main/items","1"]]"#],
+  );
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  let hints = stderr
+    .lines()
+    .filter(|line| line.starts_with("[Deprecated] transaction operation 1 uses `edit rm-example`"))
+    .collect::<Vec<_>>();
+  assert_eq!(hints.len(), 1, "{stderr}");
+  assert_eq!(read(&staged), read(&replacement));
+}
+
+#[test]
+fn ns_doc_alias_matches_edit_ns() {
+  let read = |project: &TempProject| fs::read_to_string(project.snapshot()).expect("snapshot should read");
+
+  let legacy = TempProject::create("ns-doc");
+  let output = edit_ok(&legacy, &["edit", "ns-doc", "app.main", "Demo namespace."]);
+  let hints = hint_lines(&output);
+  assert_eq!(hints.len(), 1, "{hints:?}");
+  assert!(hints[0].contains("`calcit edit ns <ns>`"), "{}", hints[0]);
+
+  let replacement = TempProject::create("edit-ns");
+  let view = edit_ok(&replacement, &["query", "ns", "app.main", "--format", "cirru"]);
+  let view = String::from_utf8_lossy(&view.stdout).into_owned();
+  assert!(view.contains("'NsEntry (:doc |)"), "{view}");
+  let changed = view.replace("'NsEntry (:doc |)", "'NsEntry (:doc \"|Demo namespace.\")");
+  let output = edit_ok(&replacement, &["edit", "ns", "app.main", "--code", &changed]);
+  assert!(hint_lines(&output).is_empty());
+  assert_eq!(read(&legacy), read(&replacement));
+  assert!(read(&legacy).contains("Demo namespace."), "{}", read(&legacy));
+}

@@ -1259,7 +1259,7 @@ fn handle_read_lines(filename: &str, start: usize, lines_to_read: usize, module_
   if command_guidance_enabled() {
     println!(
       "{}",
-      "Tip: Use --start <start> --lines <lines> to read a specific range (e.g., 'calcit docs read-lines file.md --start 20 --lines 30')"
+      "Tip: Use --start <start> --lines <lines> to read a specific range (e.g., 'calcit docs read file.md --start 20 --lines 30')"
         .dimmed()
     );
   }
@@ -1302,7 +1302,7 @@ fn handle_list(module_filter: Option<&str>) -> Result<(), String> {
     println!("{}", "    'calcit docs read <filename>' to read the full document".dimmed());
     println!(
       "{}",
-      "    'calcit docs read-lines <filename> --start <start> --lines <lines>' for line-based reading".dimmed()
+      "    'calcit docs read <filename> --start <start> --lines <lines>' for line-based reading".dimmed()
     );
     println!("{}", "    'calcit docs search <keyword>' to search content".dimmed());
   }

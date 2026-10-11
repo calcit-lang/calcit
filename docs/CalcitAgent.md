@@ -722,7 +722,7 @@ END
 calcit cirru parse -e --validate 'a $ b c'
 calcit cirru parse --validate 'fn (x)
   , x'
-calcit cirru show-guide
+calcit docs read cirru-syntax.md
 ```
 
 `-e` 适合单行 expression 文本；多行 block 即使只表示一个 AST expression，也省略 `-e`。检查 JSON 形状是否符合预期后，再用 `calcit eval`、`calcit --check-only` 或项目测试验证 Calcit 语义。Shell 中 `$`、反引号、`|`、`>` 有特殊含义；短输入用单引号，多行 mutation 用 heredoc。
@@ -808,14 +808,14 @@ calcit tree replace --help
 calcit docs search 'cursor'
 calcit docs sections edit-tree.md
 calcit docs read edit-tree.md 'Persistent Tree Cursor'
-calcit docs read-lines agent-advanced.md --start 1 --lines 80
+calcit docs read agent-advanced.md --start 1 --lines 80
 ```
 
 常见主题路由：
 
 | 主题                         | 查询入口                                                        |
 | ---------------------------- | --------------------------------------------------------------- |
-| Cirru 语法、AST 与常见误写   | `calcit cirru show-guide`；`calcit docs read cirru-syntax.md 'Common Mistakes'` |
+| Cirru 语法、AST 与常见误写   | `calcit docs read cirru-syntax.md`；`calcit docs read cirru-syntax.md 'Common Mistakes'` |
 | Cirru EDN 数据层             | `calcit cirru parse-edn --help`；`calcit docs read edn.md --full`       |
 | 历史影响与迁移说明          | `calcit docs read from-clojure.md --full`                              |
 | tree/cursor/transaction      | `calcit docs read edit-tree.md --full`                              |

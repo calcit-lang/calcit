@@ -575,7 +575,7 @@ fn run_cli() -> Result<(), String> {
     calcit::set_quiet_tool_output(true);
   }
   // The echo above shows what the user typed; dispatch then uses the analyzer that owns the view.
-  let cli_args = cli_handlers::normalize_weak_types_view(cli_args)?;
+  let cli_args = cli_handlers::normalize_consolidated_views(cli_args)?;
 
   builtins::effects::init_effects_states();
 

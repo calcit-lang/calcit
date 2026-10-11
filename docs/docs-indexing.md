@@ -11,7 +11,6 @@ aliases:
 entry_for:
   - "calcit docs search"
   - "calcit docs read"
-  - "calcit docs read-lines"
 id: core/docs/indexing
 parent: core/docs
 related:
@@ -206,7 +205,7 @@ Search scoring: exact match 200, contains match 130.
 
 `calcit docs read` uses the same document resolver style as `search`.
 
-`calcit docs read-lines` uses the same resolver too.
+`calcit docs read <file> --start <n> --lines <n>` reads a line range with the same resolver.
 
 It can resolve a page by:
 
@@ -227,8 +226,8 @@ calcit docs sections search-replace
 calcit docs read search-replace
 calcit docs read "CLI Code Editing"
 calcit docs read Respo-Agent --module respo.calcit
-calcit docs read-lines search-replace --start 48 --lines 8
-calcit docs read-lines Respo-Agent --module respo.calcit --start 1 --lines 8
+calcit docs read search-replace --start 48 --lines 8
+calcit docs read Respo-Agent --module respo.calcit --start 1 --lines 8
 ```
 
 ## Recommended Authoring Style
@@ -250,7 +249,7 @@ Use [docs/docs-validation.md](docs/docs-validation.md) for:
 
 - search ranking checks
 - alias and `entry_for` checks
-- `read` / `read-lines` resolver checks
+- `read` resolver checks, including `--start` / `--lines` line ranges
 - module-scope regression checks
 
 When changing retrieval logic or frontmatter conventions:

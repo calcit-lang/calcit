@@ -66,7 +66,7 @@ calcit eval "echo |done"
 - `calcit docs read <file>` - read a full calcit doc
 - `calcit docs read <file> <keyword...>` - fuzzy jump by heading keywords
 - `calcit docs read <file> --module <name>` - read a full module doc
-- `calcit docs read-lines <file> --start <start> --lines <lines>` - precise line-range reading
+- `calcit docs read <file> --start <start> --lines <lines>` - precise line-range reading
 - `calcit docs search <keyword>` - global keyword search
 - `calcit docs search <keyword> --module <name>` - search installed module docs directly
 - `calcit docs remote-libs search <keyword>` - search remote library registry

@@ -575,7 +575,11 @@ fn render_docs_explanation(cmd: &DocsCommand) -> Option<String> {
 fn render_analyze_explanation(cmd: &AnalyzeCommand) -> Option<String> {
   Some(match &cmd.subcommand {
     AnalyzeSubcommand::CallGraph(opts) => {
-      let mut desc = "analyzes function call graph".to_string();
+      let mut desc = match (&opts.diff, opts.counts) {
+        (Some(git_ref), _) => format!("compares call graph changes since `{git_ref}`"),
+        (None, true) => "counts function call frequencies".to_string(),
+        (None, false) => "analyzes function call graph".to_string(),
+      };
       if let Some(root) = &opts.root {
         desc.push_str(&format!(" from root `{root}`"));
       }
@@ -817,7 +821,9 @@ fn push_docs(tokens: &mut Vec<String>, cmd: &DocsCommand) {
       switch "no-subheadings" => opts.no_subheadings,
       switch "full" => opts.full,
       switch "with-lines" => opts.with_lines,
-      opt "module" => opts.module.as_deref(); default "none"
+      opt "module" => opts.module.as_deref(); default "none",
+      opt_owned "start" => opts.start.map(|start| start.to_string()); default "none",
+      opt_owned "lines" => opts.lines.map(|lines| lines.to_string()); default "none"
     ),
     DocsSubcommand::Agents(opts) => echo_items!(
       tokens,
@@ -915,7 +921,10 @@ fn push_analyze(tokens: &mut Vec<String>, cmd: &AnalyzeCommand) {
       switch "include-core" => opts.include_core,
       value "max-depth" => opts.max_depth; default "0",
       switch "show-unused" => opts.show_unused,
-      value "format" => &opts.format; default "text"
+      value "format" => &opts.format; default "text",
+      switch "counts" => opts.counts,
+      opt "sort" => opts.sort.as_deref(); default "count",
+      opt "diff" => opts.diff.as_deref(); default "none"
     ),
     AnalyzeSubcommand::CallGraphDiff(opts) => echo_items!(
       tokens,

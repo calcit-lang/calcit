@@ -763,8 +763,8 @@ impl CallCountAnalyzer {
       })
       .collect();
 
-    // Sort by count descending by default
-    counts.sort_by_key(|b| std::cmp::Reverse(b.count));
+    // Sort by count descending by default; equal counts keep a stable name order instead of hash order
+    counts.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.fqn.cmp(&b.fqn)));
 
     let total_calls: usize = counts.iter().map(|e| e.count).sum();
 
