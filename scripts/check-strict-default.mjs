@@ -204,6 +204,17 @@ if (!openConcat.stdout.split("\n").some((line) => line.trim().endsWith(": 3"))) 
   throw new Error(`strict open-container concat returned an unexpected value:\n${openConcat.stdout}`);
 }
 
+for (const [label, args] of [
+  ["generic live Option payload mismatch", "(Option :some 1) (Option :some |x)"],
+  ["generic Ref bottom payload invariance", "(atom (Option :none)) (atom (Option :some |x))"],
+]) {
+  const result = run(["eval", `let ((check (fn (left right) (hint-fn ({} (:generics ([] 'T)) (:args ([] 'T 'T)) (:return 'Unit))) &unit))) (check ${args})`]);
+  expectStatus(result, 1, label);
+  if (!result.stderr.includes("W_LOCAL_FN_ARG_TYPE_MISMATCH")) {
+    throw new Error(`${label} lost its type diagnostic:\n${result.stderr}`);
+  }
+}
+
 const validMapMethod = run(["eval", "let ((m ({} (:a 1)))) (m .assoc :b 2)"]);
 expectStatus(validMapMethod, 0, "typed Map .assoc accepts a matching value");
 
