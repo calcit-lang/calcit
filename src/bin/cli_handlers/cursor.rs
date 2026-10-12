@@ -97,6 +97,9 @@ pub fn set_cursor_after_mode(mode: &str) -> Result<(), String> {
 }
 
 pub fn handle_cursor_command(cmd: &CursorCommand, snapshot_file: &str) -> Result<(), String> {
+  let cmd = &CursorCommand {
+    subcommand: super::deprecations::normalize_cursor_subcommand(&cmd.subcommand)?,
+  };
   let mutates_snapshot = matches!(
     &cmd.subcommand,
     CursorSubcommand::Cut(_)
@@ -117,6 +120,7 @@ pub fn handle_cursor_command(cmd: &CursorCommand, snapshot_file: &str) -> Result
     guard_snapshot_mutation_toolchain(snapshot_file)?;
   }
   match &cmd.subcommand {
+    CursorSubcommand::Move(_) => unreachable!("normalized before dispatch"),
     CursorSubcommand::Set(opts) => {
       if opts.path == "@cursor" {
         return Err("`cursor set --path` requires a concrete path, not `@cursor`.".to_string());
@@ -352,7 +356,7 @@ fn apply_at_cursor(snapshot_file: &str, opts: &CursorApplyCommand) -> Result<(),
     }),
     other => {
       return Err(format!(
-        "Unsupported cursor operation '{other}'. Use delete, swap-next, swap-prev, unwrap, splice, raise, replace, wrap, insert-before, insert-after, insert-child, or append-child."
+        "Unsupported cursor operation '{other}'. Use delete, swap-next, swap-prev, unwrap, splice, raise, replace, wrap, insert-before, insert-after, insert-child, append-child, slurp-next, slurp-prev, barf-last, barf-first, or duplicate."
       ));
     }
   };
@@ -2683,6 +2687,7 @@ mod tests {
         code: None,
         input_format: crate::cli_args::SyntaxInputFormat::Auto,
         depth: 2,
+        at: None,
       },
     )
     .expect("cursor-native swap should succeed");
@@ -2839,6 +2844,7 @@ mod tests {
         code: Some("quote ignored".to_string()),
         input_format: crate::cli_args::SyntaxInputFormat::Auto,
         depth: 2,
+        at: None,
       },
     )
     .expect_err("code should be rejected for a code-free operation");

@@ -527,22 +527,41 @@ fn render_cursor_explanation(cmd: &CursorCommand) -> Option<String> {
         format!("moves the virtual tree cursor to child {}", opts.index.unwrap_or(0))
       }
     }
+    CursorSubcommand::Move(opts) => format!("moves the virtual tree cursor ({})", opts.direction),
     CursorSubcommand::Next(opts) => format!("moves the virtual tree cursor forward {} sibling(s)", opts.count),
     CursorSubcommand::Prev(opts) => format!("moves the virtual tree cursor backward {} sibling(s)", opts.count),
     CursorSubcommand::Back(opts) => format!("rewinds {} recorded virtual cursor location(s)", opts.count),
     CursorSubcommand::Push(_) => "pushes the current cursor location onto its stack".to_string(),
     CursorSubcommand::Pop(_) => "restores the most recently pushed cursor location".to_string(),
-    CursorSubcommand::Anchor(_) => "sets the region anchor to the current cursor location".to_string(),
+    CursorSubcommand::Anchor(opts) => match opts.action.as_deref().unwrap_or("set") {
+      "clear" => "clears the cursor region anchor".to_string(),
+      "show" => "displays the sibling region between the anchor and cursor".to_string(),
+      _ => "sets the region anchor to the current cursor location".to_string(),
+    },
     CursorSubcommand::ClearAnchor(_) => "clears the cursor region anchor".to_string(),
     CursorSubcommand::Region(_) => "displays the sibling region between the anchor and cursor".to_string(),
     CursorSubcommand::Mark(opts) => format!("saves the current cursor location as mark `{}`", opts.name),
     CursorSubcommand::Goto(opts) => format!("moves the cursor to mark `{}`", opts.name),
-    CursorSubcommand::Marks(_) => "lists saved cursor marks".to_string(),
+    CursorSubcommand::Marks(opts) => match (opts.args.first().map_or("list", String::as_str), opts.args.get(1)) {
+      ("set", Some(name)) => format!("saves the current cursor location as mark `{name}`"),
+      ("go", Some(name)) => format!("moves the cursor to mark `{name}`"),
+      ("drop", Some(name)) => format!("removes cursor mark `{name}`"),
+      _ => "lists saved cursor marks".to_string(),
+    },
     CursorSubcommand::RmMark(opts) => format!("removes cursor mark `{}`", opts.name),
     CursorSubcommand::Copy(_) => "copies the selected expression into the cursor clipboard".to_string(),
     CursorSubcommand::Cut(_) => "cuts the selected expression into the cursor clipboard".to_string(),
     CursorSubcommand::Paste(opts) => format!("pastes the cursor clipboard {} the selected expression", opts.at),
-    CursorSubcommand::Clipboard(_) => "displays the cursor clipboard".to_string(),
+    CursorSubcommand::Clipboard(opts) => match opts.action.as_deref().unwrap_or("show") {
+      "copy" => "copies the selected expression into the cursor clipboard".to_string(),
+      "cut" => "cuts the selected expression into the cursor clipboard".to_string(),
+      "paste" => format!(
+        "pastes the cursor clipboard {} the selected expression",
+        opts.at.as_deref().unwrap_or("after")
+      ),
+      "clear" => "clears the cursor clipboard".to_string(),
+      _ => "displays the cursor clipboard".to_string(),
+    },
     CursorSubcommand::ClearClipboard(_) => "clears the cursor clipboard".to_string(),
     CursorSubcommand::Apply(opts) => format!("applies `{}` to the active cursor", opts.operation),
     CursorSubcommand::SlurpNext(_) => "moves the next sibling into the selected list".to_string(),
@@ -1228,7 +1247,6 @@ fn push_cursor(tokens: &mut Vec<String>, cmd: &CursorCommand) {
     | CursorSubcommand::Parent(_)
     | CursorSubcommand::Push(_)
     | CursorSubcommand::Pop(_)
-    | CursorSubcommand::Anchor(_)
     | CursorSubcommand::ClearAnchor(_)
     | CursorSubcommand::Copy(_)
     | CursorSubcommand::Cut(_)
@@ -1237,11 +1255,32 @@ fn push_cursor(tokens: &mut Vec<String>, cmd: &CursorCommand) {
     | CursorSubcommand::SlurpPrev(_)
     | CursorSubcommand::BarfLast(_)
     | CursorSubcommand::BarfFirst(_) => {}
+    CursorSubcommand::Anchor(opts) => {
+      if let Some(action) = &opts.action {
+        push_positional(tokens, "action", action);
+      }
+      if let Some(format) = &opts.format {
+        push_value(tokens, "format", format, Some("human"));
+      }
+    }
     CursorSubcommand::Region(opts) => {
       echo_items!(tokens, value "format" => &opts.format; default "human")
     }
     CursorSubcommand::Marks(opts) => {
+      for arg in &opts.args {
+        push_positional(tokens, "arg", arg);
+      }
       echo_items!(tokens, value "format" => &opts.format; default "human")
+    }
+    CursorSubcommand::Move(opts) => {
+      push_positional(tokens, "direction", &opts.direction);
+      if let Some(index) = opts.index {
+        push_positional(tokens, "index", &index.to_string());
+      }
+      push_switch(tokens, "last", opts.last);
+      if let Some(count) = opts.count {
+        push_value(tokens, "count", &count.to_string(), Some("1"));
+      }
     }
     CursorSubcommand::Mark(opts) => {
       echo_items!(tokens, pos "name" => &opts.name)
@@ -1264,9 +1303,20 @@ fn push_cursor(tokens: &mut Vec<String>, cmd: &CursorCommand) {
     CursorSubcommand::Prev(opts) => echo_items!(tokens, value "count" => opts.count; default "1"),
     CursorSubcommand::Back(opts) => echo_items!(tokens, value "count" => opts.count; default "1"),
     CursorSubcommand::Paste(opts) => echo_items!(tokens, value "at" => &opts.at; default "after"),
-    CursorSubcommand::Clipboard(opts) => echo_items!(tokens, value "format" => &opts.format; default "human"),
+    CursorSubcommand::Clipboard(opts) => {
+      if let Some(action) = &opts.action {
+        push_positional(tokens, "action", action);
+      }
+      if let Some(at) = &opts.at {
+        push_value(tokens, "at", at, Some("after"));
+      }
+      echo_items!(tokens, value "format" => &opts.format; default "human")
+    }
     CursorSubcommand::Apply(opts) => {
-      echo_items!(tokens, pos "operation" => &opts.operation, code_input opts, value "input-format" => &opts.input_format; default "auto", value "depth" => opts.depth; default "2")
+      echo_items!(tokens, pos "operation" => &opts.operation, code_input opts, value "input-format" => &opts.input_format; default "auto", value "depth" => opts.depth; default "2");
+      if let Some(at) = &opts.at {
+        push_value(tokens, "at", at, Some("after"));
+      }
     }
     CursorSubcommand::Duplicate(opts) => echo_items!(tokens, value "at" => &opts.at; default "after"),
     CursorSubcommand::Forward(opts) => echo_items!(tokens, value "count" => opts.count; default "1"),
@@ -1514,6 +1564,7 @@ fn cursor_name(subcommand: &CursorSubcommand) -> &'static str {
     CursorSubcommand::Clear(_) => "clear",
     CursorSubcommand::Parent(_) => "parent",
     CursorSubcommand::Child(_) => "child",
+    CursorSubcommand::Move(_) => "move",
     CursorSubcommand::Next(_) => "next",
     CursorSubcommand::Prev(_) => "prev",
     CursorSubcommand::Back(_) => "back",

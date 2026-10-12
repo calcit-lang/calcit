@@ -444,9 +444,9 @@ calcit query search '|New title' --filter 'app.main/comp-page' --exact
 
 ```bash
 calcit query search '<leaf-in-expression>' --filter '<namespace/definition>' --exact --set-cursor 0
-calcit cursor parent
+calcit cursor move parent
 calcit cursor apply insert-after --input-format cirru --code 'quote $ <new-expression>'
-calcit --cursor-after focus cursor next
+calcit --cursor-after focus cursor move next
 ```
 
 新增 definition 与 import 的最短路径：

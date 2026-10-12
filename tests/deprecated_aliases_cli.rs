@@ -1011,3 +1011,255 @@ fn tree_insert_and_swap_resolve_cursor_and_maintain_it() {
   edit_ok(&project, &["tree", "swap", "@cursor", "--with", "prev", "--path", "@cursor"]);
   assert!(snapshot_text(&project).contains("[] 8 1 2 3 4 7"), "{}", snapshot_text(&project));
 }
+
+/// One cursor step: the legacy spelling, the merged spelling, and the replacement the hint names.
+type CursorStep<'a> = (&'a [&'a str], &'a [&'a str], &'a str);
+
+fn cursor_project(name: &str) -> TempProject {
+  let project = TempProject::create(name);
+  edit_ok(
+    &project,
+    &["edit", "def", "app.main/nested", "--code", "quote $ def nested $ [] 1 ([] 2 3) 4"],
+  );
+  project
+}
+
+fn cursor_json(project: &TempProject) -> String {
+  // The state file path names the temporary project, which differs between the two replays.
+  String::from_utf8_lossy(&edit_ok(project, &["cursor", "show", "--format", "json"]).stdout)
+    .replace(&project.0.display().to_string(), "<project>")
+}
+
+/// Replays the legacy and merged spellings on two fresh projects and requires equal snapshots
+/// and cursor state after every step, one hint per legacy step, and none for the merged one.
+fn assert_cursor_steps_match(name: &str, setup: &[&str], steps: &[CursorStep]) {
+  let legacy = cursor_project(&format!("{name}-legacy"));
+  let merged = cursor_project(&format!("{name}-merged"));
+  edit_ok(&legacy, setup);
+  edit_ok(&merged, setup);
+  for (old, new, replacement) in steps {
+    let old_output = edit_ok(&legacy, old);
+    let new_output = edit_ok(&merged, new);
+    let hints = hint_lines(&old_output);
+    if replacement.is_empty() {
+      assert!(hints.is_empty(), "{old:?} is not deprecated: {hints:?}");
+    } else {
+      assert_eq!(hints.len(), 1, "{old:?} should print exactly one hint: {hints:?}");
+      assert!(
+        hints[0].contains(replacement),
+        "{old:?} hint should name `{replacement}`: {}",
+        hints[0]
+      );
+    }
+    assert!(hint_lines(&new_output).is_empty(), "{new:?} must not print a hint");
+    assert!(
+      !String::from_utf8_lossy(&old_output.stdout).contains("[Deprecated]"),
+      "{old:?} must keep the hint off stdout"
+    );
+    assert_eq!(snapshot_text(&legacy), snapshot_text(&merged), "{old:?} vs {new:?}");
+    assert_eq!(cursor_json(&legacy), cursor_json(&merged), "{old:?} vs {new:?}");
+  }
+}
+
+#[test]
+fn cursor_move_matches_the_legacy_navigation_leaves() {
+  assert_cursor_steps_match(
+    "move",
+    &["cursor", "set", "app.main/items", "--path", "@2"],
+    &[
+      (&["cursor", "child", "1"], &["cursor", "move", "child", "1"], "cursor move child"),
+      (
+        &["cursor", "next", "--count", "2"],
+        &["cursor", "move", "next", "--count", "2"],
+        "cursor move next",
+      ),
+      (&["cursor", "prev"], &["cursor", "move", "prev"], "cursor move prev"),
+      (&["cursor", "parent"], &["cursor", "move", "parent"], "cursor move parent"),
+      (
+        &["cursor", "child", "--last"],
+        &["cursor", "move", "child", "--last"],
+        "cursor move child",
+      ),
+      (&["cursor", "parent"], &["cursor", "move", "parent"], "cursor move parent"),
+      (&["cursor", "child"], &["cursor", "move", "child"], "cursor move child"),
+      (
+        &["cursor", "forward", "--count", "2"],
+        &["cursor", "move", "forward", "--count", "2"],
+        "cursor move forward",
+      ),
+      (&["cursor", "backward"], &["cursor", "move", "backward"], "cursor move backward"),
+      (&["cursor", "back"], &["cursor", "move", "back"], "cursor move back"),
+    ],
+  );
+}
+
+#[test]
+fn cursor_anchor_matches_clear_anchor_and_region() {
+  assert_cursor_steps_match(
+    "anchor",
+    &["cursor", "set", "app.main/items", "--path", "@2.1"],
+    &[
+      (&["cursor", "anchor"], &["cursor", "anchor", "set"], ""),
+      (
+        &["cursor", "next", "--count", "2"],
+        &["cursor", "move", "next", "--count", "2"],
+        "cursor move next",
+      ),
+      (&["cursor", "region"], &["cursor", "anchor", "show"], "cursor anchor show"),
+      (
+        &["cursor", "region", "--format", "json"],
+        &["cursor", "anchor", "show", "--format", "json"],
+        "cursor anchor show",
+      ),
+      (&["cursor", "clear-anchor"], &["cursor", "anchor", "clear"], "cursor anchor clear"),
+    ],
+  );
+}
+
+#[test]
+fn cursor_marks_match_mark_goto_and_rm_mark() {
+  assert_cursor_steps_match(
+    "marks",
+    &["cursor", "set", "app.main/items", "--path", "@2.1"],
+    &[
+      (
+        &["cursor", "mark", "first"],
+        &["cursor", "marks", "set", "first"],
+        "cursor marks set",
+      ),
+      (
+        &["cursor", "next", "--count", "2"],
+        &["cursor", "move", "next", "--count", "2"],
+        "cursor move next",
+      ),
+      (
+        &["cursor", "mark", "later"],
+        &["cursor", "marks", "set", "later"],
+        "cursor marks set",
+      ),
+      (&["cursor", "goto", "first"], &["cursor", "marks", "go", "first"], "cursor marks go"),
+      (&["cursor", "marks"], &["cursor", "marks", "list"], ""),
+      (
+        &["cursor", "rm-mark", "later"],
+        &["cursor", "marks", "drop", "later"],
+        "cursor marks drop",
+      ),
+    ],
+  );
+}
+
+#[test]
+fn cursor_clipboard_matches_copy_cut_paste_and_clear() {
+  assert_cursor_steps_match(
+    "clipboard",
+    &["cursor", "set", "app.main/items", "--path", "@2.1"],
+    &[
+      (&["cursor", "copy"], &["cursor", "clipboard", "copy"], "cursor clipboard copy"),
+      (
+        &["cursor", "next", "--count", "2"],
+        &["cursor", "move", "next", "--count", "2"],
+        "cursor move next",
+      ),
+      (&["cursor", "paste"], &["cursor", "clipboard", "paste"], "cursor clipboard paste"),
+      (
+        &["cursor", "paste", "--at", "before"],
+        &["cursor", "clipboard", "paste", "--at", "before"],
+        "cursor clipboard paste",
+      ),
+      (&["cursor", "cut"], &["cursor", "clipboard", "cut"], "cursor clipboard cut"),
+      (&["cursor", "clipboard"], &["cursor", "clipboard", "show"], ""),
+      (
+        &["cursor", "clear-clipboard"],
+        &["cursor", "clipboard", "clear"],
+        "cursor clipboard clear",
+      ),
+    ],
+  );
+}
+
+#[test]
+fn cursor_apply_matches_slurp_barf_and_duplicate_leaves() {
+  assert_cursor_steps_match(
+    "apply",
+    &["cursor", "set", "app.main/nested", "--path", "@2.2"],
+    &[
+      (
+        &["cursor", "slurp-next"],
+        &["cursor", "apply", "slurp-next"],
+        "cursor apply slurp-next",
+      ),
+      (
+        &["cursor", "barf-last"],
+        &["cursor", "apply", "barf-last"],
+        "cursor apply barf-last",
+      ),
+      (
+        &["cursor", "barf-first"],
+        &["cursor", "apply", "barf-first"],
+        "cursor apply barf-first",
+      ),
+      (
+        &["cursor", "slurp-prev"],
+        &["cursor", "apply", "slurp-prev"],
+        "cursor apply slurp-prev",
+      ),
+      (
+        &["cursor", "duplicate"],
+        &["cursor", "apply", "duplicate"],
+        "cursor apply duplicate",
+      ),
+      (
+        &["cursor", "duplicate", "--at", "before"],
+        &["cursor", "apply", "duplicate", "--at", "before"],
+        "cursor apply duplicate",
+      ),
+      (&["cursor", "apply", "delete"], &["cursor", "apply", "delete"], ""),
+    ],
+  );
+}
+
+#[test]
+fn cursor_merged_forms_reject_invalid_values_without_writing() {
+  let project = cursor_project("cursor-invalid");
+  edit_ok(&project, &["cursor", "set", "app.main/nested", "--path", "@2.2"]);
+  edit_ok(&project, &["cursor", "copy"]);
+  let snapshot_before = snapshot_text(&project);
+  let cursor_before = cursor_json(&project);
+  let cases: [(&[&str], &str); 17] = [
+    (&["cursor", "move", "sideways"], "Unsupported `cursor move sideways`"),
+    (&["cursor", "move", "parent", "--count", "2"], "does not accept --count"),
+    (&["cursor", "move", "next", "--last"], "does not accept an index"),
+    (&["cursor", "move", "next", "3"], "does not accept an index"),
+    (&["cursor", "anchor", "drop"], "Unsupported `cursor anchor drop`"),
+    (&["cursor", "anchor", "clear", "--format", "json"], "do not accept --format"),
+    (&["cursor", "marks", "teleport"], "Unsupported `cursor marks teleport`"),
+    (&["cursor", "marks", "set"], "requires a mark name"),
+    (&["cursor", "marks", "list", "extra"], "does not accept a mark name"),
+    (&["cursor", "clipboard", "yank"], "Unsupported `cursor clipboard yank`"),
+    (&["cursor", "clipboard", "copy", "--at", "before"], "does not accept --at"),
+    (&["cursor", "clipboard", "paste", "--at", "around"], "around"),
+    (
+      &["cursor", "apply", "duplicate", "--at", "around"],
+      "Unsupported duplicate position",
+    ),
+    (
+      &["cursor", "apply", "slurp-next", "--code", "quote 1"],
+      "does not accept --file, --code",
+    ),
+    (&["cursor", "apply", "barf-last", "--at", "before"], "does not accept --at"),
+    (&["cursor", "apply", "delete", "--at", "before"], "does not accept --at"),
+    (&["cursor", "apply", "tidy"], "Unsupported cursor operation"),
+  ];
+  for (args, expected) in cases {
+    let output = run_calcit(&project.snapshot(), args);
+    assert!(!output.status.success(), "{args:?} should fail");
+    assert!(
+      String::from_utf8_lossy(&output.stderr).contains(expected),
+      "{args:?}: {}",
+      String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(hint_lines(&output).is_empty(), "{args:?} must not print a deprecation hint");
+    assert_eq!(snapshot_text(&project), snapshot_before, "{args:?} must not write the snapshot");
+    assert_eq!(cursor_json(&project), cursor_before, "{args:?} must not move the cursor");
+  }
+}

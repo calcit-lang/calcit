@@ -6,9 +6,14 @@
 
 use calcit::cli_args::{
   AnalyzeCommand, AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CallGraphDiffCommand, CheckTypesCommand, CirruSubcommand,
-  CountCallsCommand, DeprecatedCommand, DocsCommand, DocsReadLinesCommand, DocsSubcommand, DynamicMethodsCommand, EditSubcommand,
-  QuerySubcommand, ToplevelCalcit, TreeAppendChildCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand,
-  TreeSubcommand, TreeSwapNextCommand, TreeSwapPrevCommand, WeakTypesCommand,
+  CountCallsCommand, CursorAnchorCommand, CursorBackCommand, CursorBackwardCommand, CursorBarfFirstCommand, CursorBarfLastCommand,
+  CursorChildCommand, CursorClearAnchorCommand, CursorClearClipboardCommand, CursorClipboardCommand, CursorCopyCommand,
+  CursorCutCommand, CursorDuplicateCommand, CursorForwardCommand, CursorGotoCommand, CursorMarkCommand, CursorMarksCommand,
+  CursorNextCommand, CursorParentCommand, CursorPasteCommand, CursorPrevCommand, CursorRegionCommand, CursorRmMarkCommand,
+  CursorSlurpNextCommand, CursorSlurpPrevCommand, CursorSubcommand, DeprecatedCommand, DocsCommand, DocsReadLinesCommand,
+  DocsSubcommand, DynamicMethodsCommand, EditSubcommand, QuerySubcommand, ToplevelCalcit, TreeAppendChildCommand,
+  TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand, TreeSubcommand, TreeSwapNextCommand, TreeSwapPrevCommand,
+  WeakTypesCommand,
 };
 
 /// View kinds accepted by `analyze weak-types --only` in place of the retired
@@ -64,6 +69,30 @@ pub fn deprecated_command_hint(cli_args: &ToplevelCalcit) -> Option<String> {
       TreeSubcommand::AppendChild(_) => ("tree append-child", "`calcit tree insert --at append-child`"),
       TreeSubcommand::SwapNext(_) => ("tree swap-next", "`calcit tree swap --with next`"),
       TreeSubcommand::SwapPrev(_) => ("tree swap-prev", "`calcit tree swap --with prev`"),
+      _ => return None,
+    },
+    CalcitCommand::Cursor(cmd) => match &cmd.subcommand {
+      CursorSubcommand::Parent(_) => ("cursor parent", "`calcit cursor move parent`"),
+      CursorSubcommand::Child(_) => ("cursor child", "`calcit cursor move child [index] [--last]`"),
+      CursorSubcommand::Next(_) => ("cursor next", "`calcit cursor move next [--count n]`"),
+      CursorSubcommand::Prev(_) => ("cursor prev", "`calcit cursor move prev [--count n]`"),
+      CursorSubcommand::Back(_) => ("cursor back", "`calcit cursor move back [--count n]`"),
+      CursorSubcommand::Forward(_) => ("cursor forward", "`calcit cursor move forward [--count n]`"),
+      CursorSubcommand::Backward(_) => ("cursor backward", "`calcit cursor move backward [--count n]`"),
+      CursorSubcommand::ClearAnchor(_) => ("cursor clear-anchor", "`calcit cursor anchor clear`"),
+      CursorSubcommand::Region(_) => ("cursor region", "`calcit cursor anchor show`"),
+      CursorSubcommand::Mark(_) => ("cursor mark", "`calcit cursor marks set <name>`"),
+      CursorSubcommand::Goto(_) => ("cursor goto", "`calcit cursor marks go <name>`"),
+      CursorSubcommand::RmMark(_) => ("cursor rm-mark", "`calcit cursor marks drop <name>`"),
+      CursorSubcommand::Copy(_) => ("cursor copy", "`calcit cursor clipboard copy`"),
+      CursorSubcommand::Cut(_) => ("cursor cut", "`calcit cursor clipboard cut`"),
+      CursorSubcommand::Paste(_) => ("cursor paste", "`calcit cursor clipboard paste [--at <position>]`"),
+      CursorSubcommand::ClearClipboard(_) => ("cursor clear-clipboard", "`calcit cursor clipboard clear`"),
+      CursorSubcommand::SlurpNext(_) => ("cursor slurp-next", "`calcit cursor apply slurp-next`"),
+      CursorSubcommand::SlurpPrev(_) => ("cursor slurp-prev", "`calcit cursor apply slurp-prev`"),
+      CursorSubcommand::BarfLast(_) => ("cursor barf-last", "`calcit cursor apply barf-last`"),
+      CursorSubcommand::BarfFirst(_) => ("cursor barf-first", "`calcit cursor apply barf-first`"),
+      CursorSubcommand::Duplicate(_) => ("cursor duplicate", "`calcit cursor apply duplicate [--at before|after]`"),
       _ => return None,
     },
     CalcitCommand::Edit(cmd) => match &cmd.subcommand {
@@ -212,6 +241,129 @@ pub fn normalize_tree_subcommand(subcommand: &TreeSubcommand) -> Result<TreeSubc
         "next" => TreeSubcommand::SwapNext(TreeSwapNextCommand { target, path, depth }),
         "prev" => TreeSubcommand::SwapPrev(TreeSwapPrevCommand { target, path, depth }),
         other => return Err(format!("Unsupported `tree swap --with {other}`. Use: next, prev.")),
+      })
+    }
+    other => Ok(other.clone()),
+  }
+}
+
+/// Rewrites the merged `cursor move`, `anchor`, `marks`, `clipboard` and `apply` forms to
+/// the leaf handlers they replace, so both spellings share one implementation.
+/// Every invalid value is rejected here, before any file is touched.
+pub fn normalize_cursor_subcommand(subcommand: &CursorSubcommand) -> Result<CursorSubcommand, String> {
+  match subcommand {
+    CursorSubcommand::Move(o) => {
+      let direction = o.direction.as_str();
+      if !matches!(direction, "parent" | "child" | "next" | "prev" | "forward" | "backward" | "back") {
+        return Err(format!(
+          "Unsupported `cursor move {direction}`. Use: parent, child, next, prev, forward, backward, back."
+        ));
+      }
+      if direction != "child" && (o.index.is_some() || o.last) {
+        return Err(format!(
+          "`cursor move {direction}` does not accept an index or --last; they belong to `child`."
+        ));
+      }
+      if matches!(direction, "parent" | "child") && o.count.is_some() {
+        return Err(format!("`cursor move {direction}` does not accept --count."));
+      }
+      let count = o.count.unwrap_or(1);
+      Ok(match direction {
+        "parent" => CursorSubcommand::Parent(CursorParentCommand {}),
+        "child" => CursorSubcommand::Child(CursorChildCommand {
+          index: o.index,
+          last: o.last,
+        }),
+        "next" => CursorSubcommand::Next(CursorNextCommand { count }),
+        "prev" => CursorSubcommand::Prev(CursorPrevCommand { count }),
+        "forward" => CursorSubcommand::Forward(CursorForwardCommand { count }),
+        "backward" => CursorSubcommand::Backward(CursorBackwardCommand { count }),
+        _ => CursorSubcommand::Back(CursorBackCommand { count }),
+      })
+    }
+    CursorSubcommand::Anchor(o) => match o.action.as_deref().unwrap_or("set") {
+      "set" if o.format.is_none() => Ok(CursorSubcommand::Anchor(CursorAnchorCommand {
+        action: None,
+        format: None,
+      })),
+      "clear" if o.format.is_none() => Ok(CursorSubcommand::ClearAnchor(CursorClearAnchorCommand {})),
+      "show" => Ok(CursorSubcommand::Region(CursorRegionCommand {
+        format: o.format.clone().unwrap_or_else(|| "human".to_owned()),
+      })),
+      "set" | "clear" => Err("`cursor anchor set` and `cursor anchor clear` do not accept --format; it belongs to `show`.".to_owned()),
+      other => Err(format!("Unsupported `cursor anchor {other}`. Use: set, clear, show.")),
+    },
+    CursorSubcommand::Marks(o) => {
+      if o.args.len() > 2 {
+        return Err(format!(
+          "`cursor marks` takes an action and at most one mark name, got {} arguments.",
+          o.args.len()
+        ));
+      }
+      let action = o.args.first().map_or("list", String::as_str);
+      match (action, o.args.get(1)) {
+        ("list", None) => Ok(CursorSubcommand::Marks(CursorMarksCommand {
+          args: Vec::new(),
+          format: o.format.clone(),
+        })),
+        ("list", Some(_)) => Err("`cursor marks list` does not accept a mark name.".to_owned()),
+        ("set" | "go" | "drop", None) => Err(format!("`cursor marks {action}` requires a mark name.")),
+        ("set", Some(name)) => Ok(CursorSubcommand::Mark(CursorMarkCommand { name: name.clone() })),
+        ("go", Some(name)) => Ok(CursorSubcommand::Goto(CursorGotoCommand { name: name.clone() })),
+        ("drop", Some(name)) => Ok(CursorSubcommand::RmMark(CursorRmMarkCommand { name: name.clone() })),
+        (other, _) => Err(format!("Unsupported `cursor marks {other}`. Use: list, set, go, drop.")),
+      }
+    }
+    CursorSubcommand::Clipboard(o) => {
+      let action = o.action.as_deref().unwrap_or("show");
+      if o.at.is_some() && action != "paste" {
+        return Err(format!("`cursor clipboard {action}` does not accept --at; it belongs to `paste`."));
+      }
+      match action {
+        "show" => Ok(CursorSubcommand::Clipboard(CursorClipboardCommand {
+          action: None,
+          at: None,
+          format: o.format.clone(),
+        })),
+        "copy" => Ok(CursorSubcommand::Copy(CursorCopyCommand {})),
+        "cut" => Ok(CursorSubcommand::Cut(CursorCutCommand {})),
+        "clear" => Ok(CursorSubcommand::ClearClipboard(CursorClearClipboardCommand {})),
+        "paste" => Ok(CursorSubcommand::Paste(CursorPasteCommand {
+          at: o.at.clone().unwrap_or_else(|| "after".to_owned()),
+        })),
+        other => Err(format!(
+          "Unsupported `cursor clipboard {other}`. Use: show, copy, cut, paste, clear."
+        )),
+      }
+    }
+    CursorSubcommand::Apply(o) => {
+      let operation = o.operation.as_str();
+      if !matches!(operation, "slurp-next" | "slurp-prev" | "barf-last" | "barf-first" | "duplicate") {
+        if o.at.is_some() {
+          return Err(format!(
+            "Cursor operation '{operation}' does not accept --at; it belongs to `duplicate`."
+          ));
+        }
+        return Ok(subcommand.clone());
+      }
+      if o.file.is_some() || o.code.is_some() || o.input_format != calcit::cli_args::SyntaxInputFormat::Auto {
+        return Err(format!(
+          "Cursor operation '{operation}' does not accept --file, --code, or --input-format."
+        ));
+      }
+      if o.at.is_some() && operation != "duplicate" {
+        return Err(format!(
+          "Cursor operation '{operation}' does not accept --at; it belongs to `duplicate`."
+        ));
+      }
+      Ok(match operation {
+        "slurp-next" => CursorSubcommand::SlurpNext(CursorSlurpNextCommand {}),
+        "slurp-prev" => CursorSubcommand::SlurpPrev(CursorSlurpPrevCommand {}),
+        "barf-last" => CursorSubcommand::BarfLast(CursorBarfLastCommand {}),
+        "barf-first" => CursorSubcommand::BarfFirst(CursorBarfFirstCommand {}),
+        _ => CursorSubcommand::Duplicate(CursorDuplicateCommand {
+          at: o.at.clone().unwrap_or_else(|| "after".to_owned()),
+        }),
       })
     }
     other => Ok(other.clone()),

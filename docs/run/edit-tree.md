@@ -84,14 +84,14 @@ calcit cursor show
 
 常用补充：
 
-- `cursor parent`、`cursor child [index]` / `child --last`：进入父子层级。
-- `cursor next/prev --count N`：跨多个 sibling；跨 list 边界使用 `forward/backward --count N`。
-- `cursor duplicate --at before|after`：复制选中表达式并选中新副本，不覆盖 clipboard。
-- `cursor cut` 后选中 parent；`cursor paste` 后选中新节点，`--at` 支持 `before|after|prepend-child|append-child|replace`。
+- `cursor move parent`、`cursor move child [index]` / `move child --last`：进入父子层级。
+- `cursor move next|prev --count N`：跨多个 sibling；跨 list 边界使用 `move forward|backward --count N`。
+- `cursor apply duplicate --at before|after`：复制选中表达式并选中新副本，不覆盖 clipboard。
+- `cursor clipboard cut` 后选中 parent；`cursor clipboard paste` 后选中新节点，`--at` 支持 `before|after|prepend-child|append-child|replace`。
 - `query search ... --source project --start-path @cursor --set-cursor N`：只在当前 subtree 中继续搜索。
 - `query next/prev`：重新计算上次通过 `--set-cursor` 保存的搜索并跳到相邻结果，不保存完整结果列表；Snapshot 已变化时先重跑原查询显式选中。
-- `cursor anchor` → 移动 → `cursor region`：确认同一 parent 下的连续 sibling 范围；结束后 `clear-anchor`。
-- `cursor mark <name>` / `goto <name>`：保存和恢复最多 16 个高频位置；短期绕行仍优先使用 `push/pop`。
+- `cursor anchor` → 移动 → `cursor anchor show`：确认同一 parent 下的连续 sibling 范围；结束后 `cursor anchor clear`。
+- `cursor marks set <name>` / `marks go <name>`：保存和恢复最多 16 个高频位置；短期绕行仍优先使用 `push/pop`。
 - `query context @cursor`、`tree show @cursor --path @cursor`：后续命令不再重复 target/path。
 - `cursor back` 只回退 cursor 位置，**不会撤销源码修改**。
 
@@ -108,24 +108,26 @@ For a sequence of edits in one complex expression, `calcit cursor` stores the ac
 ```bash
 calcit calcit.cirru cursor set app.main/render! --path @3.2.1
 calcit calcit.cirru cursor show
-calcit calcit.cirru cursor parent
-calcit calcit.cirru cursor child             # first child
-calcit calcit.cirru cursor child 2
-calcit calcit.cirru cursor child --last      # last child
-calcit calcit.cirru cursor next --count 3
-calcit calcit.cirru cursor prev --count 2
-calcit calcit.cirru cursor forward --count 8
-calcit calcit.cirru cursor backward --count 5
-calcit calcit.cirru cursor back --count 4
+calcit calcit.cirru cursor move parent
+calcit calcit.cirru cursor move child             # first child
+calcit calcit.cirru cursor move child 2
+calcit calcit.cirru cursor move child --last      # last child
+calcit calcit.cirru cursor move next --count 3
+calcit calcit.cirru cursor move prev --count 2
+calcit calcit.cirru cursor move forward --count 8
+calcit calcit.cirru cursor move backward --count 5
+calcit calcit.cirru cursor move back --count 4
 calcit calcit.cirru cursor push
 calcit calcit.cirru cursor pop
 calcit calcit.cirru cursor anchor
-calcit calcit.cirru cursor region
-calcit calcit.cirru cursor clear-anchor
-calcit calcit.cirru cursor mark render-start
-calcit calcit.cirru cursor goto render-start
-calcit calcit.cirru cursor marks
-calcit calcit.cirru cursor rm-mark render-start
+calcit calcit.cirru cursor anchor show
+calcit calcit.cirru cursor anchor clear
+calcit calcit.cirru cursor marks set render-start
+calcit calcit.cirru cursor marks go render-start
+calcit calcit.cirru cursor marks list
+calcit calcit.cirru cursor marks drop render-start
+calcit calcit.cirru cursor clipboard copy
+calcit calcit.cirru cursor clipboard paste --at after
 ```
 
 Definition-oriented `query`, `tree`, and `edit` commands accept `@cursor` as their target. Path-based commands also accept it as the path, so the current definition and selection do not need to be repeated:
@@ -175,32 +177,32 @@ calcit calcit.cirru cursor push       # remember a location before a detour
 calcit calcit.cirru cursor pop        # restore that explicit location
 ```
 
-`cursor child` defaults to child 0, while `cursor child --last` resolves the final child from the current tree. `next` and `prev` move only among siblings. `forward` and `backward` walk the whole definition in depth-first structural order, entering and leaving nested lists without requiring a separate `parent` or `child` command. All four accept `--count N`; `back` accepts the same option for history. A multi-step move is recorded as one history transition. Invalid zero counts and out-of-range moves leave the cursor unchanged. With top-level `--cursor-after focus`, selection and navigation commands immediately print the focused structural context.
+`cursor move child` defaults to child 0, while `cursor move child --last` resolves the final child from the current tree. `move next` and `move prev` move only among siblings. `move forward` and `move backward` walk the whole definition in depth-first structural order, entering and leaving nested lists without requiring a separate `parent` or `child` move. All four accept `--count N`; `move back` accepts the same option for history. A multi-step move is recorded as one history transition. Invalid zero counts and out-of-range moves leave the cursor unchanged. With top-level `--cursor-after focus`, selection and navigation commands immediately print the focused structural context.
 
-`cursor back` rewinds only navigation state; it is not source undo. Parallel agents should use separate worktrees or Snapshots because the sidecar has one active cursor and does not coordinate concurrent source writes.
+`cursor move back` rewinds only navigation state; it is not source undo. Parallel agents should use separate worktrees or Snapshots because the sidecar has one active cursor and does not coordinate concurrent source writes.
 
-For a temporary contiguous sibling range, set one anchor and move the active cursor to the other endpoint. `cursor region` reparses both saved positions, requires the same definition and parent, normalizes either direction, and displays the selected trees without changing their real paths. The first version deliberately does not make single-expression `copy` or `cut` operate on the region implicitly:
+For a temporary contiguous sibling range, set one anchor and move the active cursor to the other endpoint. `cursor anchor show` reparses both saved positions, requires the same definition and parent, normalizes either direction, and displays the selected trees without changing their real paths. The first version deliberately does not make single-expression `copy` or `cut` operate on the region implicitly:
 
 ```bash
 calcit calcit.cirru cursor anchor
-calcit calcit.cirru cursor next --count 3
-calcit calcit.cirru cursor region --format json
-calcit calcit.cirru cursor clear-anchor
+calcit calcit.cirru cursor move next --count 3
+calcit calcit.cirru cursor anchor show --format json
+calcit calcit.cirru cursor anchor clear
 ```
 
-Named marks are bounded location bookmarks, not additional active cursors. At most 16 are stored, and each contains only target/path/revision/fingerprint. Use them for repeated cross-definition movement; use `push/pop` for a short detour.
+Named marks are bounded location bookmarks, not additional active cursors. At most 16 are stored, and each contains only target/path/revision/fingerprint. `cursor marks` takes an action: `list` (default), `set <name>`, `go <name>` or `drop <name>`. Use marks for repeated cross-definition movement; use `push/pop` for a short detour.
 
-The first Paredit-style moves operate directly on the active selection:
+The first Paredit-style moves are `cursor apply` operations that act directly on the active selection:
 
 ```bash
-calcit calcit.cirru cursor slurp-next  # selected list absorbs its next sibling
-calcit calcit.cirru cursor slurp-prev  # selected list absorbs its previous sibling
-calcit calcit.cirru cursor barf-last   # selected list ejects its last child
-calcit calcit.cirru cursor barf-first  # selected list ejects its first child
-calcit calcit.cirru cursor duplicate --at after
+calcit calcit.cirru cursor apply slurp-next  # selected list absorbs its next sibling
+calcit calcit.cirru cursor apply slurp-prev  # selected list absorbs its previous sibling
+calcit calcit.cirru cursor apply barf-last   # selected list ejects its last child
+calcit calcit.cirru cursor apply barf-first  # selected list ejects its first child
+calcit calcit.cirru cursor apply duplicate --at after
 ```
 
-The four slurp/barf commands keep the cursor attached to the selected list and cover both structural directions. `duplicate` selects the new copy without replacing the cursor clipboard. Composite changes stage the Snapshot and cursor sidecar before committing, and reject roots, leaves, empty lists, missing siblings, and unsupported positions before changing the Snapshot.
+The four slurp/barf operations keep the cursor attached to the selected list and cover both structural directions. `duplicate` selects the new copy without replacing the cursor clipboard. Composite changes stage the Snapshot and cursor sidecar before committing, and reject roots, leaves, empty lists, missing siblings, and unsupported positions before changing the Snapshot.
 
 Search results expose a zero-based global cursor index as `[#N]` in human output and `cursor_index` in JSON. Use `--set-cursor N` to select a result in the same invocation:
 
@@ -220,14 +222,14 @@ calcit calcit.cirru query prev
 Its clipboard stores a quoted Cirru tree directly in `.calcit/cursor.cirru`, so code never round-trips through JSON or escaped text:
 
 ```bash
-calcit calcit.cirru cursor copy
-calcit calcit.cirru cursor cut
-calcit calcit.cirru cursor clipboard --format json
-calcit calcit.cirru cursor paste --at before
-calcit calcit.cirru cursor clear-clipboard
+calcit calcit.cirru cursor clipboard copy
+calcit calcit.cirru cursor clipboard cut
+calcit calcit.cirru cursor clipboard show --format json
+calcit calcit.cirru cursor clipboard paste --at before
+calcit calcit.cirru cursor clipboard clear
 ```
 
-`cut` moves the selection to its parent; `paste` selects the inserted expression and keeps the clipboard available for repeated paste. Both commands stage Snapshot and sidecar output before committing: cut persists the recoverable clipboard first, while paste reports explicitly if the Snapshot succeeded but cursor state did not, so callers must not retry that partial-success case blindly. Cursor schema v4 keeps full Cirru only in the clipboard, not in history, stack, anchor, marks, or last-query. History, stack, and marks are bounded, and the whole file has a 64 KiB hard limit. Add `.calcit/` to the project `.gitignore`; `cursor set` prints a warning when it cannot find a matching rule. Existing `.calcit-cursor.cirru` is moved to the new path on first read, without dual writes.
+`cursor clipboard` takes an action: `show` (default), `copy`, `cut`, `paste [--at <position>]` or `clear`. `cut` moves the selection to its parent; `paste` selects the inserted expression and keeps the clipboard available for repeated paste. Both commands stage Snapshot and sidecar output before committing: cut persists the recoverable clipboard first, while paste reports explicitly if the Snapshot succeeded but cursor state did not, so callers must not retry that partial-success case blindly. Cursor schema v4 keeps full Cirru only in the clipboard, not in history, stack, anchor, marks, or last-query. History, stack, and marks are bounded, and the whole file has a 64 KiB hard limit. Add `.calcit/` to the project `.gitignore`; `cursor set` prints a warning when it cannot find a matching rule. Existing `.calcit-cursor.cirru` is moved to the new path on first read, without dual writes.
 
 Use `calcit calcit.cirru cursor clear` to remove the local selection and clipboard together. Transaction child operations deliberately do not mutate the real cursor file; after a committed transaction, the parent command revalidates or uniquely relocates the cursor against the final snapshot and warns if manual recovery is required.
 

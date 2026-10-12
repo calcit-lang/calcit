@@ -686,6 +686,39 @@ calcit calcit.cirru tree swap app.main/main! --with prev --path '@1.1'
 calcit calcit.cirru edit transaction --dry-run --format edn --code '[["tree","insert","app.main/f","--at","append-child","--path","@3","--code","quote x"]]'
 ```
 
+### 0.29.2 弃用、下一个非 patch 版本删除：`cursor` 的移动、锚点、书签、剪贴板与 Paredit 叶子（#1566）
+
+`cursor` 组的 21 个叶子并入已有入口：导航并入新增的 `cursor move`，锚点、书签、剪贴板各用一个带动作的入口，slurp / barf / duplicate 并入 `cursor apply`。旧叶子在 0.29.2 仍可运行，stdout 与退出码不变，只在 stderr 多输出一行 `[Deprecated] ...` 提示；新旧写法共用同一实现，改写的 Snapshot 与 cursor 状态逐字节相同。
+
+| 已弃用 | 替代 | 说明 |
+| --- | --- | --- |
+| `cursor parent` | `cursor move parent` | |
+| `cursor child [index] [--last]` | `cursor move child [index] [--last]` | `index` 与 `--last` 只属于 `child` |
+| `cursor next` / `prev` `[--count n]` | `cursor move next` / `prev` `[--count n]` | |
+| `cursor forward` / `backward` `[--count n]` | `cursor move forward` / `backward` `[--count n]` | 深度优先结构顺序 |
+| `cursor back [--count n]` | `cursor move back [--count n]` | 只回退 cursor 历史，不撤销源码 |
+| `cursor clear-anchor` | `cursor anchor clear` | `cursor anchor`（等价于 `anchor set`）保持可用 |
+| `cursor region [--format f]` | `cursor anchor show [--format f]` | |
+| `cursor mark <name>` | `cursor marks set <name>` | `cursor marks`（等价于 `marks list`）保持可用 |
+| `cursor goto <name>` | `cursor marks go <name>` | |
+| `cursor rm-mark <name>` | `cursor marks drop <name>` | |
+| `cursor copy` / `cut` | `cursor clipboard copy` / `cut` | `cursor clipboard`（等价于 `clipboard show`）保持可用 |
+| `cursor paste [--at p]` | `cursor clipboard paste [--at p]` | `--at` 默认 `after` |
+| `cursor clear-clipboard` | `cursor clipboard clear` | |
+| `cursor slurp-next` / `slurp-prev` / `barf-last` / `barf-first` | `cursor apply slurp-next` / `slurp-prev` / `barf-last` / `barf-first` | 不接受 `--code`、`--file`、`--input-format`、`--at` |
+| `cursor duplicate [--at p]` | `cursor apply duplicate [--at p]` | `--at` 只接受 `before`、`after`，默认 `after` |
+
+`move` 的方向只接受 `parent`、`child`、`next`、`prev`、`forward`、`backward`、`back`；`anchor` 只接受 `set`、`clear`、`show`；`marks` 只接受 `list`、`set`、`go`、`drop`（后三者必须带名字，`list` 不带名字）；`clipboard` 只接受 `show`、`copy`、`cut`、`paste`、`clear`，`--at` 只属于 `paste`。方向、动作或选项组合不合法时在写入 Snapshot 和 cursor 之前报错。`cursor set`、`show`、`clear`、`push`、`pop` 本版本不变。
+
+迁移命令示例：
+
+```bash
+calcit calcit.cirru cursor move next --count 2
+calcit calcit.cirru cursor marks set render-start
+calcit calcit.cirru cursor clipboard paste --at before
+calcit calcit.cirru cursor apply slurp-next
+```
+
 ### 0.29.2 起新增：统一的 `--format human|edn|json`（#1566）
 
 所有带结构化输出的叶子命令都接受同一组值：`human`（默认）、`edn`（Cirru EDN，推荐）与 `json`（仅用于对接 JSON-only 工具）。本次只新增入口，旧写法全部保留：
