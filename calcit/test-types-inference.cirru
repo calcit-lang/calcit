@@ -696,9 +696,14 @@
             :args $ [] 'test-types-inference.shadow/Result
         'same-shadow-fields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn same-shadow-fields (fields)
-            and
-              = (:option fields) (:other-option fields)
-              = (:result fields) (:other-result fields)
+            let
+                expected-option $ :other-option fields
+                expected-result $ :other-result fields
+              assert-type expected-option $ :: 'Option 'Number
+              assert-type expected-result 'Result
+              and
+                = expected-option $ :option fields
+                = expected-result $ :result fields
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'test-types-inference.shadow/ShadowFields
