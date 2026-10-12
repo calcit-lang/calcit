@@ -7167,14 +7167,28 @@ fn canonical_absence_operation_name(head: &Calcit) -> Option<&str> {
 }
 
 fn nominal_enum_type_name(annotation: &CalcitTypeAnnotation) -> Option<String> {
-  if let CalcitTypeAnnotation::TypeRef(name, _) = annotation {
-    match name.as_ref() {
-      "calcit.core/Option" => return Some("Option".to_owned()),
-      "calcit.core/Result" => return Some("Result".to_owned()),
-      _ => {}
+  // Local hints may retain an unqualified TypeRef, while field access carries
+  // the qualified reference. Resolve their nominal identity, not their name.
+  let CalcitTypeAnnotation::TypeRef(name, _) = annotation else {
+    return None;
+  };
+  match name.as_ref() {
+    "calcit.core/Option" => Some("Option".to_owned()),
+    "calcit.core/Result" => Some("Result".to_owned()),
+    "Option" | "Result" => {
+      let (_, Some((ns, name))) = annotation.resolve_to_enum_with_ref()? else {
+        return None;
+      };
+      if ns.as_ref() != calcit::CORE_NS {
+        return None;
+      }
+      match name.as_ref() {
+        "Option" | "Result" => Some(name.to_string()),
+        _ => None,
+      }
     }
+    _ => None,
   }
-  None
 }
 
 fn nominal_enum_expression_name(value: &Calcit, scope_types: &ScopeTypes) -> Option<String> {
