@@ -61,6 +61,7 @@ fn runtime_value_provenance_resolves_only_source_backed_definitions() {
         (
           Arc::from("z-owner"),
           ProgramDefEntry {
+            tags: Default::default(),
             code: Calcit::Nil,
             schema: DYNAMIC_TYPE.clone(),
             doc: Arc::from(""),
@@ -71,6 +72,7 @@ fn runtime_value_provenance_resolves_only_source_backed_definitions() {
         (
           Arc::from("a-owner"),
           ProgramDefEntry {
+            tags: Default::default(),
             code: Calcit::Nil,
             schema: DYNAMIC_TYPE.clone(),
             doc: Arc::from(""),
@@ -137,6 +139,7 @@ fn nominal_impl_wrapper_type_ref_matches_its_concrete_enum_value() {
       defs: HashMap::from([(
         Arc::from("alert-actions-plugin"),
         ProgramDefEntry {
+          tags: Default::default(),
           code: wrapper_code,
           schema: DYNAMIC_TYPE.clone(),
           doc: Arc::from(""),
@@ -164,6 +167,7 @@ fn recursive_type_alias_relation_is_finite_and_incompatible() {
   calcit::register_program_lookups(lookup_runtime_ready, lookup_def_code, lookup_def_schema);
 
   let alias = |target: &str| ProgramDefEntry {
+    tags: Default::default(),
     code: Calcit::Nil,
     schema: Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(target), Arc::new(vec![]))),
     doc: Arc::from(""),
@@ -716,6 +720,7 @@ fn snapshot_rebuilds_changed_source_backed_def_after_reload_changes() {
       defs: HashMap::from([(
         Arc::from("demo"),
         ProgramDefEntry {
+          tags: Default::default(),
           code: old_code.clone(),
           schema: DYNAMIC_TYPE.clone(),
           doc: Arc::from(""),
@@ -793,6 +798,7 @@ fn removed_source_def_changes_still_invalidate_transitive_dependents() {
         defs: HashMap::from([(
           Arc::from("shared"),
           ProgramDefEntry {
+            tags: Default::default(),
             code: shared_code,
             schema: DYNAMIC_TYPE.clone(),
             doc: Arc::from(""),
@@ -809,6 +815,7 @@ fn removed_source_def_changes_still_invalidate_transitive_dependents() {
         defs: HashMap::from([(
           Arc::from("use-shared"),
           ProgramDefEntry {
+            tags: Default::default(),
             code: consumer_code,
             schema: DYNAMIC_TYPE.clone(),
             doc: Arc::from(""),
@@ -825,6 +832,7 @@ fn removed_source_def_changes_still_invalidate_transitive_dependents() {
         defs: HashMap::from([(
           Arc::from("keep"),
           ProgramDefEntry {
+            tags: Default::default(),
             code: helper_code,
             schema: DYNAMIC_TYPE.clone(),
             doc: Arc::from(""),
@@ -919,6 +927,7 @@ fn snapshot_prefers_source_backed_compiled_def_even_with_warnings() {
       defs: HashMap::from([(
         Arc::from("warny"),
         ProgramDefEntry {
+          tags: Default::default(),
           code: warn_code.clone(),
           schema: DYNAMIC_TYPE.clone(),
           doc: Arc::from(""),
@@ -969,6 +978,7 @@ fn snapshot_skips_empty_namespace_when_source_backed_rebuild_fails() {
       defs: HashMap::from([(
         Arc::from("broken"),
         ProgramDefEntry {
+          tags: Default::default(),
           code: failing_code,
           schema: DYNAMIC_TYPE.clone(),
           doc: Arc::from(""),
@@ -1254,6 +1264,7 @@ fn run_program_compiles_then_executes_with_runtime_backfill() {
       defs: HashMap::from([(
         Arc::from("main"),
         ProgramDefEntry {
+          tags: Default::default(),
           code: fn_code,
           schema: DYNAMIC_TYPE.clone(),
           doc: Arc::from(""),
@@ -1365,4 +1376,49 @@ fn compiled_executable_code_only_exposes_executable_kinds() {
   }
 
   assert_eq!(lookup_compiled_executable_code("app.compiled", "callable"), None);
+}
+
+#[test]
+fn hot_reload_keeps_tags_of_changed_def_and_leaves_new_def_untagged() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  let old_code = code_to_calcit(&Cirru::Leaf(Arc::from("1")), "app.tags", "demo", vec![]).expect("build initial code");
+  let tags: HashSet<cirru_edn::EdnTag> = HashSet::from([cirru_edn::EdnTag::new("effect")]);
+
+  PROGRAM_CODE_DATA.write().expect("seed program code").insert(
+    Arc::from("app.tags"),
+    ProgramFileData {
+      import_map: HashMap::new(),
+      defs: HashMap::from([(
+        Arc::from("demo"),
+        ProgramDefEntry {
+          tags: tags.clone(),
+          code: old_code,
+          schema: DYNAMIC_TYPE.clone(),
+          doc: Arc::from(""),
+          examples: vec![],
+          ffi: None,
+        },
+      )]),
+    },
+  );
+
+  let mut changes = snapshot::ChangesDict::default();
+  changes.changed.insert(
+    Arc::from("app.tags"),
+    snapshot::FileChangeInfo {
+      ns: None,
+      added_defs: HashMap::from([(String::from("fresh"), Cirru::Leaf(Arc::from("3")))]),
+      removed_defs: HashSet::new(),
+      changed_defs: HashMap::from([(String::from("demo"), Cirru::Leaf(Arc::from("2")))]),
+    },
+  );
+  apply_code_changes(&changes).expect("apply source changes");
+
+  let program = PROGRAM_CODE_DATA.read().expect("read program code");
+  let file = program.get("app.tags").expect("file stays loaded");
+  assert_eq!(file.defs["demo"].tags, tags);
+  assert_eq!(file.defs["demo"].code, Calcit::Number(2.0));
+  assert!(file.defs["fresh"].tags.is_empty());
 }

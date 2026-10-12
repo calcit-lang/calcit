@@ -141,7 +141,7 @@ Transform 不等于删除逻辑，而是**降采样**：
 2. 宿主注册 proc 的 `RegisteredProcDescriptor.tags`；descriptor 完全没有 tags 时报告 `unknown`。
 3. 方法调用 `.name`（包括 `(receiver .name args)` 写法）查 core 的 `defimpl` / `&impl::new` 表，取实现定义的 tags；表中内联的实现（如 `&core-enum-methods` 里的 `defn &enum:empty?-impl`）沿用所在 core 定义的 tags。项目或模块也实现了同名方法，或 core 没有该方法时，报告 `unknown`，因为分派目标取决于运行时接收者。
 4. 调用所在 `defn` / `defmacro` / `fn` 的参数，例如 `defn call-through (f) (f 1)`，调用的是调用方传入的函数值，报告 `unknown`。参数只在所在函数内有效；`let` / `loop` / `&let` / `if-let` / `when-let` / `&doseq` / `doseq` / `let[]` / `let{}` 绑定的同名局部会遮蔽参数。参数列表本身、上述绑定对与解构名，以及 `case` / `case-default` / `match` / `tag-match` / `list-match` / `struct-match` / `cond` 的分支不当作调用；`case-default` 的默认值按普通表达式分析。
-5. 调用项目或模块定义时，调用点本身不记录效果；被调用定义作为调用图子节点，按同样规则列出自己的效果。
+5. 调用项目或模块定义时，若被调用定义自身的 `:tags` 带效果 tag（与 core 同一套映射，如 `:effect`、`:log`、`:file`），调用点按声明记录，目标写完整的 `ns/def`；没有效果 tag 时调用点不记录，被调用定义作为调用图子节点，按同样的规则分析自己的函数体。`:tags` 里的非效果 tag（如 `:deprecated`）被忽略。
 
 `unknown` 表示“分析器找不到声明”，不是“有副作用”，也不是“纯”。它出现在四类位置：限定名指向未加载的命名空间或定义、宿主 proc 未声明 tags、方法分派无法限定在 core 实现、调用函数参数。补全方式是加载对应模块、为宿主 proc 声明 tags，或在 core 定义上补 tag；不要通过改名来消除 `unknown`。
 
@@ -418,7 +418,7 @@ effects_graph/
 | 参数/返回类型 | `CodeEntry.:schema` | `hint-fn` | 推断 `weak-types` |
 | 文档摘要 | `&get-def-doc` / `entry.doc` | — | — |
 | 调用目标 | `call_tree` 同款 `extract_calls` | — | — |
-| Effect 种类 | core `:tags` 与 hidden proc 表 | 宿主 proc descriptor tags | 调用图子节点；均无声明时为 `unknown` |
+| Effect 种类 | core `:tags` 与 hidden proc 表 | 宿主 proc descriptor tags、项目/模块定义 `:tags` | 调用图子节点；均无声明时为 `unknown` |
 | State 槽 | schema + `assoc`/`get` 模式 | atom 表 | — |
 
 ### 6.3 Transform 压缩算法（summary 模式）
@@ -541,7 +541,7 @@ app.comp.container/comp-container
 - 未解析到定义、又不是函数参数的裸符号（例如 `let` 绑定的函数值、只在 JS 后端提供的全局函数）不分类。
 - 项目或模块实现了与 core 同名的方法时，所有该名字的方法调用都报告 `unknown`。
 - 参数传给高阶函数（如 `map xs f`）或经 `let` 改名后再调用时不报告 `unknown`；`quote` 中的形式可能被当作调用报告。
-- 项目与模块定义自身的 `:tags` 尚未读入，调用它们时只依靠调用图子节点。
+- calcit.std 与 js-ffi 等模块的定义需要在各自仓库补上效果 `:tags`，补齐前调用它们只依靠调用图子节点；`:tags` 只标注定义整体，函数体内的效果仍由分析器逐点推断；只改 `:tags` 的编辑需完整重新加载后生效。
 
 ---
 

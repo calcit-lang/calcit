@@ -3009,6 +3009,7 @@ mod tests {
         defs: HashMap::from([(
           Arc::from(def),
           program::ProgramDefEntry {
+            tags: Default::default(),
             code: Calcit::Nil,
             schema: calcit::DYNAMIC_TYPE.clone(),
             doc: Arc::from(""),
@@ -3280,6 +3281,7 @@ mod tests {
         defs: HashMap::from([(
           Arc::from("Math"),
           program::ProgramDefEntry {
+            tags: Default::default(),
             code: Calcit::Nil,
             schema: calcit::DYNAMIC_TYPE.clone(),
             doc: Arc::from(""),

@@ -182,6 +182,8 @@ pub struct ProgramDefEntry {
   pub doc: Arc<str>,
   pub examples: Vec<Cirru>,
   pub ffi: Option<cirru_edn::Edn>,
+  /// Declared `:tags` of the definition; `effects-graph` reads effect declarations from them.
+  pub tags: HashSet<cirru_edn::EdnTag>,
 }
 
 /// information extracted from snapshot
@@ -960,6 +962,7 @@ fn extract_file_data(file: &snapshot::FileInSnapShot, ns: Arc<str>) -> Result<Pr
     defs.insert(
       def.to_owned().into(),
       ProgramDefEntry {
+        tags: entry.tags.clone(),
         code,
         schema,
         doc,
@@ -1357,6 +1360,7 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
       remove_compiled_def(ns, def);
       let calcit_code = code_to_calcit(code, ns, def, coord0.to_owned())?;
       let entry = ProgramDefEntry {
+        tags: Default::default(),
         code: calcit_code,
         schema: DYNAMIC_TYPE.clone(),
         doc: Arc::from(""), // No doc info in changes, use empty string
@@ -1377,18 +1381,20 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
       clear_runtime_value(def_id);
       remove_compiled_def(ns, def);
       let calcit_code = code_to_calcit(code, ns, def, coord0.to_owned())?;
-      let (schema, doc, examples, ffi) = match file.defs.get(def.as_str()) {
+      let (schema, doc, examples, ffi, tags) = match file.defs.get(def.as_str()) {
         Some(existing) => (
           existing.schema.clone(),
           existing.doc.clone(),
           existing.examples.clone(),
           existing.ffi.clone(),
+          existing.tags.clone(),
         ),
-        None => (DYNAMIC_TYPE.clone(), Arc::from(""), Vec::new(), None),
+        None => (DYNAMIC_TYPE.clone(), Arc::from(""), Vec::new(), None, HashSet::new()),
       };
       file.defs.insert(
         def.to_owned().into(),
         ProgramDefEntry {
+          tags,
           code: calcit_code,
           schema,
           doc,
