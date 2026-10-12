@@ -2165,12 +2165,18 @@ fn infer_preprocessed_function_type(xs: &CalcitList) -> Arc<CalcitTypeAnnotation
     let CalcitTypeAnnotation::Fn(signature) = inferred.as_ref() else {
       return Arc::new(CalcitTypeAnnotation::DynFn);
     };
-    if signature.rest_type.is_some()
-      || signature
-        .arg_types
-        .iter()
-        .any(|parameter| super::contains_dynamic_type(parameter.as_ref()))
-    {
+    // An unused open input imposes no capability requirement on the caller.
+    // Do not discard a known result merely because such a parameter is open.
+    // Used open inputs still need contextual or declared evidence.
+    let reads_open_parameter = xs.get(2).is_some_and(|params| {
+      let Calcit::List(params) = params else { return true };
+      params.iter().any(|parameter| {
+        let Calcit::Local(parameter) = parameter else { return true };
+        super::contains_dynamic_type(&parameter.type_info)
+          && xs.iter().skip(3).any(|body| expression_reads_parameter(body, &parameter.sym))
+      })
+    });
+    if signature.rest_type.is_some() || reads_open_parameter {
       return Arc::new(CalcitTypeAnnotation::DynFn);
     }
     return mark_async_callable(inferred, is_async);
@@ -2213,6 +2219,21 @@ fn infer_preprocessed_function_type(xs: &CalcitList) -> Arc<CalcitTypeAnnotation
     }))),
     is_async,
   )
+}
+
+/// Conservatively include captures and shadowed names, but not quoted data or metadata.
+fn expression_reads_parameter(expr: &Calcit, name: &str) -> bool {
+  match expr {
+    Calcit::Local(local) => local.sym.as_ref() == name,
+    Calcit::Fn { .. } => true,
+    Calcit::List(items) => {
+      if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::Quote | CalcitSyntax::HintFn, _))) {
+        return false;
+      }
+      items.iter().any(|item| expression_reads_parameter(item, name))
+    }
+    _ => false,
+  }
 }
 
 /// Recover a concrete signature from an already preprocessed anonymous

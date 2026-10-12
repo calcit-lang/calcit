@@ -96,9 +96,18 @@ try {
       assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_ERASED_GENERIC_RELATION/);
     }
     assert.deepEqual(await readFile(snapshot), before);
+    run("edit", "def", "app.sort-selector/opaque-selector", "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defn opaque-selector (rows) (let ((selector $ fn (row) (+ 1 row))) (${call}))`);
+    run("edit", "schema", "app.sort-selector/opaque-selector", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] (:: 'List 'Dynamic)) (:return $ :: 'List 'Dynamic)");
+    const localCallback = spawnSync(binary, [snapshot, "--init-fn", "app.sort-selector/opaque-selector",
+      "--reload-fn", "app.sort-selector/opaque-selector", "--check-only"], options);
+    if (localCallback.error) throw localCallback.error;
+    assert.equal(localCallback.status, 1, `${call}: a used unproven local input must not acquire a safe signature\n${localCallback.stdout}\n${localCallback.stderr}`);
+    assert.match(`${localCallback.stdout}\n${localCallback.stderr}`, /E_ERASED_GENERIC_RELATION/);
   }
   await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
-  for (const name of ["direct", "threaded", "method", "prefix-method", "named-selector", "alias", "alias-chain", "restored-alias", "mutable-tag-alias", "copied-alias-survives-write", "checked-open-selector"]) {
+  for (const name of ["direct", "threaded", "method", "prefix-method", "named-selector", "alias", "alias-chain", "restored-alias", "mutable-tag-alias", "copied-alias-survives-write", "checked-open-selector", "constant-selector"]) {
     const proof = JSON.parse(run("fix", "--rule", "callable-contract-proof-v1",
       "--ns", "app.sort-selector", "--def", name, "--format", "json"));
     assert.deepEqual(proof.diagnostics, [], `${name}: selector input evidence`);

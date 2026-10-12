@@ -68,14 +68,22 @@ use strum::ParseError;
 
 pub(crate) type ScopeTypes = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
 
+/// Keep proven member inputs distinct from incomplete inference (e.g. pair slots).
+struct ExpectedFunctionContext {
+  signature: Arc<CalcitFnTypeAnnotation>,
+  member_inputs: bool,
+}
+
 /// A callee supplies contextual types, never lexical permissions or async syntax.
-fn callback_parameter_context(signature: Arc<CalcitFnTypeAnnotation>) -> Arc<CalcitFnTypeAnnotation> {
-  if signature.features.is_empty() {
-    return signature;
-  }
-  let mut context = signature.as_ref().clone();
-  context.features = Arc::new(HashSet::new());
-  Arc::new(context)
+fn callback_parameter_context(signature: Arc<CalcitFnTypeAnnotation>, member_inputs: bool) -> ExpectedFunctionContext {
+  let signature = if signature.features.is_empty() {
+    signature
+  } else {
+    let mut context = signature.as_ref().clone();
+    context.features = Arc::new(HashSet::new());
+    Arc::new(context)
+  };
+  ExpectedFunctionContext { signature, member_inputs }
 }
 
 /// Resolve only a source function constructor, before its body needs context.
@@ -107,13 +115,15 @@ fn resolve_callback_constructor(
 /// Carry collection member contexts into literal callbacks before evidence erasure.
 fn preprocess_argument_with_context(
   expr: &Calcit,
-  expected: Option<&Arc<CalcitTypeAnnotation>>,
+  context: Option<(&Arc<CalcitTypeAnnotation>, bool)>,
   scope_defs: &HashSet<Arc<str>>,
   scope_types: &mut ScopeTypes,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
+  let expected = context.map(|(annotation, _)| annotation);
+  let member_inputs = context.is_some_and(|(_, member_inputs)| member_inputs);
   if let Some(CalcitTypeAnnotation::Map(key, value)) = expected.map(AsRef::as_ref)
     && let Calcit::List(items) = expr
     && items.len() % 2 == 1
@@ -131,7 +141,7 @@ fn preprocess_argument_with_context(
       for (index, item) in items.iter().skip(1).enumerate() {
         processed.push(preprocess_argument_with_context(
           item,
-          Some(if index % 2 == 0 { key } else { value }),
+          Some((if index % 2 == 0 { key } else { value }, member_inputs)),
           scope_defs,
           scope_types,
           file_ns,
@@ -164,7 +174,7 @@ fn preprocess_argument_with_context(
       for item in items.iter().skip(1) {
         processed.push(preprocess_argument_with_context(
           item,
-          Some(member),
+          Some((member, member_inputs)),
           scope_defs,
           scope_types,
           file_ns,
@@ -181,7 +191,7 @@ fn preprocess_argument_with_context(
     let previous = slot.take();
     *slot = expected
       .and_then(|annotation| annotation.resolve_to_fn())
-      .map(callback_parameter_context);
+      .map(|signature| callback_parameter_context(signature, member_inputs));
     previous
   });
   let previous_struct = EXPECTED_STRUCT_TYPE.with(|cell| {
@@ -538,7 +548,7 @@ thread_local! {
   /// When set, `preprocess_defn` for anonymous `fn` will use this as the expected
   /// function type to inject arg types into the fn body's scope_types.
   /// This enables type checking for callback parameters (e.g., `d!` in `:on-click $ fn (e d!) ...`).
-  static EXPECTED_FN_TYPE: RefCell<Option<Arc<CalcitFnTypeAnnotation>>> = const { RefCell::new(None) };
+  static EXPECTED_FN_TYPE: RefCell<Option<ExpectedFunctionContext>> = const { RefCell::new(None) };
   /// When set, the hashmap literal preprocessor uses this struct definition to look up
   /// field types and inject EXPECTED_FN_TYPE for Fn-typed fields.
   /// This enables type propagation through struct literals (e.g., `:on-click $ fn (e d!) ...` in DomProps).
@@ -908,7 +918,12 @@ fn ensure_ns_def_preprocessed(
       if matches!(&code, Calcit::List(forms) if matches!(forms.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "fn"))
         && let CalcitTypeAnnotation::Fn(fn_schema) = program::lookup_def_schema(ns, def).as_ref()
       {
-        EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = Some(fn_schema.clone()));
+        EXPECTED_FN_TYPE.with(|cell| {
+          *cell.borrow_mut() = Some(ExpectedFunctionContext {
+            signature: fn_schema.clone(),
+            member_inputs: false,
+          })
+        });
       }
       let lowering_scope = post_lowering::Scope::enter();
       let compile = || {
@@ -2962,8 +2977,15 @@ fn preprocess_immediate_call_context(
         fn_kind: SchemaKind::Fn,
         features: Arc::new(HashSet::new()),
       })));
-      let processed_head =
-        preprocess_argument_with_context(head, Some(&signature), scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
+      let processed_head = preprocess_argument_with_context(
+        head,
+        Some((&signature, false)),
+        scope_defs,
+        scope_types,
+        file_ns,
+        check_warnings,
+        call_stack,
+      )?;
       immediate_call = Some((processed_head, CalcitList::from(processed_args.as_slice())));
     }
   }
@@ -3597,38 +3619,32 @@ fn preprocess_list_call(
             let expected_method_args = method_context.as_ref().map(|context| context.argument_types.as_slice());
             let mut processed_args = CalcitList::new_inner_from(&[head_form]);
             for (arg_idx, arg) in args.iter().skip(1).enumerate() {
-              let expected_fn = expected_method_args
-                .and_then(|types| types.get(arg_idx))
-                .and_then(|expected| expected.resolve_to_fn());
-              let previous_fn = EXPECTED_FN_TYPE.with(|cell| {
-                let mut slot = cell.borrow_mut();
-                let previous = slot.take();
-                *slot = expected_fn.map(callback_parameter_context);
-                previous
-              });
               let processed = preprocess_argument_with_context(
                 arg,
-                expected_method_args.and_then(|types| types.get(arg_idx)),
+                expected_method_args.and_then(|types| types.get(arg_idx)).map(|annotation| {
+                  (
+                    annotation,
+                    method_context.as_ref().is_some_and(|context| context.receiver_specialized),
+                  )
+                }),
                 scope_defs,
                 scope_types,
                 file_ns,
                 check_warnings,
                 call_stack,
               );
-              EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous_fn);
               processed_args = processed_args.push(processed?);
             }
             let processed_args = CalcitList::from(processed_args);
             reject_pending_async_arguments(&typed_method, &processed_args, scope_types, call_stack)?;
-            if method_context.as_ref().is_some_and(|context| context.receiver_specialized)
-              && let Some(expected_method_args) = expected_method_args
+            if let Some(expected_method_args) = expected_method_args
               && let Ok(method_args) = processed_args.skip(1)
             {
               reject_strict_unproven_specialized_contract(
                 &typed_method,
                 &method_args,
                 expected_method_args,
-                1,
+                method_context.as_ref().is_some_and(|context| context.receiver_specialized),
                 scope_types,
                 file_ns,
                 call_stack,
@@ -3908,7 +3924,7 @@ fn preprocess_list_call(
           ));
           let handler = preprocess_argument_with_context(
             &args[1],
-            Some(&expected),
+            Some((&expected, false)),
             scope_defs,
             scope_types,
             file_ns,
@@ -4097,7 +4113,7 @@ fn preprocess_list_call(
             };
             let form = preprocess_argument_with_context(
               item,
-              expected.as_ref(),
+              expected.as_ref().map(|annotation| (annotation, false)),
               scope_defs,
               scope_types,
               file_ns,
@@ -4118,6 +4134,7 @@ fn preprocess_list_call(
             }
             // Prefix methods share the receiver-specialized callback contract
             // used by postfix methods. Process the receiver before deriving it.
+            let mut member_inputs = false;
             let expected_type = if !has_spread
               && matches!(&head_form, Calcit::Proc(CalcitProc::NativeStruct))
               && ys.len() >= 3
@@ -4156,7 +4173,10 @@ fn preprocess_list_call(
                 &CalcitList::from(contextual_args.as_slice()),
                 scope_types,
               )
-              .and_then(|context| context.argument_types.get(ys.len() - 2).cloned())
+              .and_then(|context| {
+                member_inputs = context.receiver_specialized;
+                context.argument_types.get(ys.len() - 2).cloned()
+              })
             } else if !has_spread
               && ys.len() == 2
               && let Calcit::Proc(proc @ (CalcitProc::Sort | CalcitProc::NativeListSort)) = &head_form
@@ -4165,8 +4185,10 @@ fn preprocess_list_call(
             {
               // Use the same list member contract as the later proc argument check.
               let candidate_args = CalcitList::from(&[receiver.to_owned(), a.to_owned()]);
-              specialize_collection_sort_expected_types(&candidate_args, scope_types, &signature.arg_types)
-                .and_then(|types| types.get(1).cloned())
+              specialize_collection_sort_expected_types(&candidate_args, scope_types, &signature.arg_types).and_then(|types| {
+                member_inputs = true;
+                types.get(1).cloned()
+              })
             } else if !has_spread
               && let Calcit::Proc(
                 proc @ (CalcitProc::Foldl
@@ -4191,8 +4213,12 @@ fn preprocess_list_call(
               }
               candidate_args.push(a.to_owned());
               let candidate_args = CalcitList::from(candidate_args.as_slice());
-              type_checking::specialize_collection_fold_expected_types(&candidate_args, scope_types, &signature.arg_types)
-                .and_then(|types| types.last().cloned())
+              type_checking::specialize_collection_fold_expected_types(&candidate_args, scope_types, &signature.arg_types).and_then(
+                |types| {
+                  member_inputs = true;
+                  types.last().cloned()
+                },
+              )
             } else if !has_spread {
               // A local/indirect callable has the same input contract as a named
               // function. Supply it before checking an inline callback body;
@@ -4207,7 +4233,6 @@ fn preprocess_list_call(
             } else {
               None
             };
-            let expected_fn = expected_type.as_ref().and_then(|expected| expected.resolve_to_fn());
             let has_callback_contract = callable_contract.is_some()
               || matches!(&head_form, Calcit::Method(_, calcit::MethodKind::Invoke(_)))
               || matches!(
@@ -4224,18 +4249,10 @@ fn preprocess_list_call(
                     | CalcitProc::NativeListFoldlShortcut
                 )
               );
-            let previous_fn = has_callback_contract.then(|| {
-              EXPECTED_FN_TYPE.with(|cell| {
-                let mut slot = cell.borrow_mut();
-                let previous = slot.take();
-                *slot = expected_fn.map(callback_parameter_context);
-                previous
-              })
-            });
             let result = if has_callback_contract {
               preprocess_argument_with_context(
                 a,
-                expected_type.as_ref(),
+                expected_type.as_ref().map(|annotation| (annotation, member_inputs)),
                 scope_defs,
                 scope_types,
                 file_ns,
@@ -4245,9 +4262,6 @@ fn preprocess_list_call(
             } else {
               preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)
             };
-            if let Some(previous_fn) = previous_fn {
-              EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous_fn);
-            }
             let form = result?;
             // Specialize callback context using proven preceding inputs.
             // Nested Dynamic preserves known container shape, not concrete members.
@@ -4433,7 +4447,7 @@ fn preprocess_list_call(
               &head_form,
               &method_args,
               &context.argument_types,
-              1,
+              context.receiver_specialized,
               scope_types,
               file_ns,
               call_stack,
@@ -4973,7 +4987,6 @@ fn preprocess_known_function_call(
         expected.clone()
       }
     });
-    let expected_fn = expected_type.as_ref().and_then(|expected_type| expected_type.resolve_to_fn());
 
     // Set expected struct type hint if this arg position has a struct-typed param
     // This enables field-type-aware preprocessing of hashmap literals (e.g., DomProps)
@@ -4983,16 +4996,15 @@ fn preprocess_known_function_call(
         .map(|(definition, _)| (definition, annotation.clone()))
     });
 
-    if let Some(fn_annot) = expected_fn {
-      EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().replace(callback_parameter_context(fn_annot)));
-    }
     if let Some(struct_def) = expected_struct {
       EXPECTED_STRUCT_TYPE.with(|cell| cell.borrow_mut().replace(struct_def));
     }
 
     let result = preprocess_argument_with_context(
       a,
-      expected_type.as_ref(),
+      expected_type
+        .as_ref()
+        .map(|annotation| (annotation, refreshed_core_types.is_some())),
       scope_defs,
       scope_types,
       file_ns,
@@ -5195,7 +5207,7 @@ fn preprocess_known_function_call(
         .filter(|types| types.iter().any(|annotation| annotation.resolve_to_nonoptional_fn().is_some()));
     if let Some(expected_types) = checked_expected_types.or(core_expected_types.as_deref()) {
       explicit_open::note_callee_use(&head_form);
-      reject_strict_unproven_specialized_contract(&head_form, &current_args, expected_types, 0, scope_types, file_ns, call_stack)?;
+      reject_strict_unproven_specialized_contract(&head_form, &current_args, expected_types, true, scope_types, file_ns, call_stack)?;
     }
     reject_strict_unproven_generic_relation(
       &head_form,
@@ -11645,7 +11657,10 @@ pub fn preprocess_defn(
       // `defn` unnecessarily fall back to Dynamic. Anonymous callbacks still use EXPECTED_FN_TYPE.
       // The expected contract belongs to this function expression, not to
       // unrelated functions nested in its body or returned by a later macro.
-      let expected_fn_schema = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().take()).map(|signature| {
+      let expected_context = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().take());
+      let has_contextual_contract = expected_context.as_ref().is_some_and(|context| context.member_inputs);
+      let expected_fn_schema = expected_context.map(|context| {
+        let signature = context.signature;
         // A fixed callback context describes individual inputs, not a rest
         // binding's collected List. Do not mislabel that List as a String (or
         // another fixed input). Preserve the proven fixed prefix and the
@@ -11663,7 +11678,6 @@ pub fn preprocess_defn(
           signature
         }
       });
-      let has_contextual_contract = expected_fn_schema.is_some();
       let has_body_fn_hint = body_fn_hint.is_some();
       // Source-written inline defn and macro-expanded fn consume the same
       // parameter context. Neither owns the callee's temporary output variable.
@@ -11826,9 +11840,9 @@ pub fn preprocess_defn(
       for parameter in &zs {
         proof_bindings.bind(parameter, None, &body_types);
       }
-      // A contextual input is supplied by the caller, not inferred from this
-      // body's demands. Its open payload must obey the same boundary as an
-      // explicit parameter contract, even without a source-written hint.
+      // Proven collection members are independent input evidence. Inferred
+      // placeholders (e.g. heterogeneous pair slots or loop inputs) are not
+      // declarations of Dynamic and must not acquire an explicit-open mark.
       let declared_contract = has_body_fn_hint || has_contextual_contract || matches!(def_schema.as_ref(), CalcitTypeAnnotation::Fn(_));
       let mut explicit_open_bindings = explicit_open::ExplicitOpenScope::new();
       for parameter in &zs {
@@ -13138,6 +13152,7 @@ fn find_unproven_specialized_argument(
   expected_types: &[Arc<CalcitTypeAnnotation>],
   args: &CalcitList,
   scope_types: &ScopeTypes,
+  requires_callable: bool,
 ) -> Option<UnprovenSpecializedArgument> {
   let mut bindings = HashMap::new();
   for (index, (arg, expected)) in args.iter().zip(expected_types).enumerate() {
@@ -13148,10 +13163,9 @@ fn find_unproven_specialized_argument(
       continue;
     };
     let proof = actual.prove_available_bindings(expected, &mut bindings);
-    if matches!(
-      proof,
-      TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic | TypeBoundaryReason::UnknownCallable)
-    ) {
+    if matches!(proof, TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic))
+      || requires_callable && matches!(proof, TypeProof::NeedsBoundary(TypeBoundaryReason::UnknownCallable))
+    {
       return Some(UnprovenSpecializedArgument {
         index,
         expected: expected.clone(),
@@ -13167,7 +13181,7 @@ fn reject_strict_unproven_specialized_contract(
   head: &Calcit,
   args: &CalcitList,
   expected_types: &[Arc<CalcitTypeAnnotation>],
-  argument_offset: usize,
+  requires_callable: bool,
   scope_types: &ScopeTypes,
   file_ns: &str,
   call_stack: &CallStackList,
@@ -13176,15 +13190,16 @@ fn reject_strict_unproven_specialized_contract(
     return Ok(());
   }
   let Some(UnprovenSpecializedArgument { index, expected, actual }) =
-    find_unproven_specialized_argument(expected_types, args, scope_types)
+    find_unproven_specialized_argument(expected_types, args, scope_types, requires_callable)
   else {
     return Ok(());
   };
   let argument = args.get(index);
+  let argument_offset = usize::from(matches!(head, Calcit::Method(..)));
   Err(CalcitErr::use_msg_stack_location_with_code(
     CalcitErrKind::Type,
     format!(
-      "call to `{head}` passes `{}` at argument {}, which cannot prove receiver-specialized contract `{}`; decode or narrow open payloads before using concrete capabilities, and provide a complete callback contract for an unknown callable",
+      "call to `{head}` passes `{}` at argument {}, which cannot prove receiver-specialized contract `{}`; decode or narrow the payload before using concrete capabilities, and provide a complete callback contract for an unknown callable",
       actual.to_brief_string(),
       index + argument_offset + 1,
       expected.to_brief_string(),

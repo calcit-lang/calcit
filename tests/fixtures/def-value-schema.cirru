@@ -2920,6 +2920,19 @@
             :code $ quote $ assert= ([] 1 2)
               checked-open-selector $ [] 2 1
             :tags $ #{} :sort-selector-context :unit
+        'constant-selector $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn constant-selector (rows)
+            let
+                selector $ fn (row) 0
+              &list:sort-by rows selector
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'Dynamic
+            :return $ :: 'List 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |unused-open-input-is-safe)
+            :code $ quote $ assert= (#{} |two 1 :three)
+              .to-set $ constant-selector $ [] |two 1 :three
+            :tags $ #{} :sort-selector-context :unit
         'copied-alias-survives-write $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn copied-alias-survives-write (rows)
             let

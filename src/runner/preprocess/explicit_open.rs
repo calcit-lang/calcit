@@ -2,7 +2,7 @@
 //!
 //! `Dynamic` is also the fallback for evidence inference cannot express yet
 //! (heterogeneous Map entries, anonymous enum payloads, contextual callback
-//! inputs). A declared parameter contract, a caller-supplied callback input,
+//! inputs). A declared parameter contract, a proven collection-member input,
 //! or a `&let` alias computed from such a parameter is treated as an explicitly
 //! open value that must be proved before it reaches a concrete parameter.
 //! The same lexical record retains the initial write contract independently
