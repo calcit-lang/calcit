@@ -11,9 +11,12 @@ pub mod def_diff;
 pub mod detailed_snapshot;
 pub mod effects_graph;
 #[cfg(not(target_arch = "wasm32"))]
+#[path = "wasm/ffi_abi.rs"]
 pub mod ffi_abi;
 #[cfg(not(target_arch = "wasm32"))]
+#[path = "wasm/ffi_async.rs"]
 pub mod ffi_async;
+#[path = "wasm/ffi_interface_ir.rs"]
 pub mod ffi_interface_ir;
 pub mod js_ffi_source;
 pub mod program;
@@ -23,6 +26,7 @@ pub mod runner;
 pub mod snapshot;
 pub mod util;
 #[cfg(feature = "wasm")]
+#[path = "wasm/wasm_cli.rs"]
 pub mod wasm_cli;
 
 use calcit::{CalcitErrKind, LocatedWarning};

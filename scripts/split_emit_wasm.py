@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import os, re
-src = "src/codegen/emit_wasm.rs"
-subdir = "src/codegen/emit_wasm"
+src = "src/wasm/emit_wasm.rs"
+subdir = "src/wasm/emit_wasm"
 with open(src) as f:
     lines = f.readlines()
 def extract(ranges):

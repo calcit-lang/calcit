@@ -9,5 +9,5 @@ cargo rustc \
   -C link-arg=--global-base=8192 \
   -C link-arg=-zstack-size=2048
 cp wasm-runtime/number-format/target/wasm32-unknown-unknown/release/calcit_wasm_number_format.wasm \
-  src/codegen/emit_wasm/number-format.wasm
-chmod -x src/codegen/emit_wasm/number-format.wasm
+  src/wasm/emit_wasm/number-format.wasm
+chmod -x src/wasm/emit_wasm/number-format.wasm

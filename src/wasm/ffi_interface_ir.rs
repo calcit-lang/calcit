@@ -11,10 +11,10 @@ use cirru_parser::Cirru;
 
 pub const FFI_INTERFACE_IR_VERSION: u32 = 3;
 pub const FFI_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/ffi-interface-ir-v3.schema.json";
-pub const FFI_INTERFACE_IR_SCHEMA: &str = include_str!("../schemas/ffi-interface-ir-v3.schema.json");
+pub const FFI_INTERFACE_IR_SCHEMA: &str = include_str!("../../schemas/ffi-interface-ir-v3.schema.json");
 pub const COMPONENT_INTERFACE_IR_VERSION: u32 = 4;
 pub const COMPONENT_INTERFACE_IR_SCHEMA_ID: &str = "https://calcit-lang.org/schemas/component-interface-ir-v4.schema.json";
-pub const COMPONENT_INTERFACE_IR_SCHEMA: &str = include_str!("../schemas/component-interface-ir-v4.schema.json");
+pub const COMPONENT_INTERFACE_IR_SCHEMA: &str = include_str!("../../schemas/component-interface-ir-v4.schema.json");
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub struct FfiInterfaceDocument {

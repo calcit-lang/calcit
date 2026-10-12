@@ -7,6 +7,7 @@ use crate::calcit::{self, Calcit, CalcitImport, CalcitLocal};
 
 pub mod emit_js;
 #[cfg(feature = "wasm")]
+#[path = "wasm/emit_wasm.rs"]
 pub mod emit_wasm;
 pub mod gen_ir;
 

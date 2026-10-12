@@ -229,10 +229,10 @@ defn fibo (n)
 
 ## 实现位置
 
-- `src/codegen/emit_wasm.rs` — WASM 二进制代码生成（via wasm-encoder）
+- `src/wasm/emit_wasm.rs` — WASM 二进制代码生成（via wasm-encoder）
 - `src/codegen.rs` — 模块注册
 - `src/cli_args.rs` — `EmitWasmCommand` CLI 定义
-- `src/wasm_cli.rs` — 两个公开命令与内部回归 harness 共用的加载和编译流程
+- `src/wasm/wasm_cli.rs` — 两个公开命令与内部回归 harness 共用的加载和编译流程
 - `src/bin/wasi_preprocess_harness.rs` — 仅在 `internal-wasi-preprocess-harness` feature 下构建的内部回归 harness
 - `calcit/test-wasm.cirru` — 测试用例
 - `scripts/test-wasm.sh` — WASM 验证脚本（生成 + Node.js 验证，集成在 `yarn check-all` 中）
