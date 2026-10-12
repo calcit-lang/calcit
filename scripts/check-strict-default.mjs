@@ -207,6 +207,12 @@ if (!openConcat.stdout.split("\n").some((line) => line.trim().endsWith(": 3"))) 
 for (const [label, args] of [
   ["generic live Option payload mismatch", "(Option :some 1) (Option :some |x)"],
   ["generic Ref bottom payload invariance", "(atom (Option :none)) (atom (Option :some |x))"],
+  ["generic Number does not widen to nullable", "1 nil"],
+  ["generic nil does not widen to Number", "nil 1"],
+  ["generic String does not widen to nullable", "|text nil"],
+  ["generic nil does not widen to String", "nil |text"],
+  ["generic Option does not widen to nullable", "(Option :some 1) nil"],
+  ["generic nil does not widen to Option", "nil (Option :some 1)"],
 ]) {
   const result = run(["eval", `let ((check (fn (left right) (hint-fn ({} (:generics ([] 'T)) (:args ([] 'T 'T)) (:return 'Unit))) &unit))) (check ${args})`]);
   expectStatus(result, 1, label);
