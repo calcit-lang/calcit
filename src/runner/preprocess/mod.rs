@@ -7383,8 +7383,17 @@ fn warn_on_nominal_enum_legacy_absence_use(
     return;
   }
 
+  // Collection writes consume the receiver structurally, but store keys,
+  // values and callback arguments intact. Their ordinary contracts check
+  // those arguments; storing an Option/Result is not nullable receiver use.
+  let structural_arg_count = if matches!(operation, "assoc" | "assoc-in" | "update" | "update-in") {
+    1
+  } else {
+    args.len()
+  };
   let nominal_args = args
     .iter()
+    .take(structural_arg_count)
     .filter_map(|value| {
       let enum_name = nominal_enum_expression_name(value, scope_types)?;
       Some((value, enum_name))
@@ -15415,7 +15424,18 @@ mod tests {
     });
     let args = CalcitList::from(std::slice::from_ref(&option_value));
 
-    for operation in ["non-nil?", "get", "assoc", "dissoc", "merge", "&compare", "struct?"] {
+    for operation in [
+      "non-nil?",
+      "get",
+      "assoc",
+      "assoc-in",
+      "update",
+      "update-in",
+      "dissoc",
+      "merge",
+      "&compare",
+      "struct?",
+    ] {
       let head = core_head(operation);
       let warnings = RefCell::new(vec![]);
       warn_on_nominal_enum_legacy_absence_use(&head, &args, &ScopeTypes::new(), "tests.option-migration", "demo", &warnings);
