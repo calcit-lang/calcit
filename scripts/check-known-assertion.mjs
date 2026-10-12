@@ -28,6 +28,32 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
+  // #2008 / #1553: enum construction must preserve caller generics after
+  // lowering, without treating a same-named constructor binder as that caller.
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "enum-generic-payload", "--backend", "native,js,wasm",
+  ], { ...options, stdio: "inherit" });
+  await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  const enumGenericOriginal = await readFile(snapshot);
+  for (const name of ["wrap-generic-map", "wrap-renamed-map", "wrap-generic-value", "wrap-generic-error", "wrap-generic-pair"]) {
+    for (const rule of ["assert-type-proof-v1", "concrete-return-proof-v1", "callable-contract-proof-v1"]) {
+      const proof = JSON.parse(run("fix", "--rule", rule,
+        "--ns", "app.callback-origin", "--def", name, "--format", "json"));
+      assert.deepEqual(proof.diagnostics, [], `${name}: ${rule}`);
+    }
+  }
+  for (const name of ["enum-claim-open", "enum-claim-wrong", "enum-specialize-caller", "enum-inconsistent-pair", "enum-open-peer"]) {
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "assert-type-proof-v1",
+      "--ns", "app.callback-origin", "--def", name, "--format", "json"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
+    const report = JSON.parse(rejected.stdout);
+    assert.ok(report.diagnostics.some(diagnostic =>
+      /E_ASSERT_TYPE_UNPROVEN|E_ASSERT_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|W_FN_ARG_TYPE_MISMATCH/.test(diagnostic.code)),
+    `${name}: ${rejected.stdout}`);
+  }
+  assert.deepEqual(await readFile(snapshot), enumGenericOriginal);
   execFileSync(process.execPath, [
     "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
     "--tag", "pairs-map-proof", "--backend", "native,js",
