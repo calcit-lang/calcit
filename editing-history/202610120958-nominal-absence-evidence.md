@@ -7,3 +7,5 @@ Timegrass 升级到正式 0.29.0 时，原持久化测试比较预期空 Option 
 用户语义回归放在 `same-nominal-absence-fields` 的 definition `:tests`，覆盖 Number/String Option、Result 的相同和不同 payload/variant，并接入既有 native/JS/WASM 运行器。原 Option 与 nil/payload 的 legacy 检查及相等类型负例继续执行。没有新诊断、fixed fix rule、unsafe 或 Dynamic 放宽。
 
 Timegrass 本地正式图作为真实消费者复验；语言源码修复不等于它已完成正式新版工具链升级或发布。其客户端状态树仍有独立的开放边界问题，须分别完成原严格与业务门禁。
+
+review 后补强的短名遮蔽测试在开启 `CALCIT_LINT_CORE=1` 的 WASM 回放中暴露了第二处上下文缺口：普通 preprocess 在当前定义的类型命名空间中执行，但随后校验已退出该上下文，可能借用发起编译的调用者命名空间，把项目 Option 误解析成 core Option。改写后校验现在重用与 preprocess 一致的定义上下文，不豁免调用、不改变兼容关系、不删除回归。原 15 项测试在开启校验的 native/JS/WASM/WASI 回放均通过。

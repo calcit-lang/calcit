@@ -865,7 +865,11 @@ fn ensure_ns_def_preprocessed(
       let resolved_code = resolved_result?;
       let lowering_evidence = lowering_scope.finish();
       if post_lowering::enabled() {
-        post_lowering::validate_definition(ns, def, &resolved_code, &check_warnings.borrow(), &lowering_evidence, &next_stack)?;
+        // Rechecking must resolve short nominal references in the same namespace
+        // as preprocessing, not in the caller that triggered this compilation.
+        calcit::with_type_annotation_warning_context(format!("{ns}/{def}"), || {
+          post_lowering::validate_definition(ns, def, &resolved_code, &check_warnings.borrow(), &lowering_evidence, &next_stack)
+        })?;
       }
       check_top_level_value_schema(ns, def, &code, &resolved_code, &scope_types, &next_stack)?;
       store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
