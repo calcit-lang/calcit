@@ -109,12 +109,12 @@ Export local raw bindings declared by non-empty `:ffi` lowering metadata:
 
 ```bash
 calcit calcit.cirru ffi export
-calcit calcit.cirru ffi export --json --ns app.ffi
+calcit calcit.cirru ffi export --format json --ns app.ffi
 calcit calcit.cirru ffi export --boundary component
 calcit calcit.cirru ffi export --boundary component --format json
 ```
 
-默认 `native` boundary 保持现有 human inventory 和 `--json` 兼容性。
+默认 `native` boundary 保持现有 human inventory；遗留的 `--json` 仍可用，但已弃用并在 stderr 提示改用 `--format json`。
 `--boundary component` 只选择 typed `defwasm-import` / `defwasm-export`，
 记录 direction 和 binding identity，并默认输出 Cirru EDN。使用
 `--format human|edn|json` 显式选择表达。

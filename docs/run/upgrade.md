@@ -662,6 +662,29 @@ calcit calcit.cirru query ns app.main --format cirru > .calcit/snippets/app.main
 calcit calcit.cirru edit ns app.main --file .calcit/snippets/app.main.cirru --dry-run
 ```
 
+### 0.29.2 起新增：统一的 `--format human|edn|json`（#1566）
+
+所有带结构化输出的叶子命令都接受同一组值：`human`（默认）、`edn`（Cirru EDN，推荐）与 `json`（仅用于对接 JSON-only 工具）。本次只新增入口，旧写法全部保留：
+
+| 命令 | 新增或统一 | 仍然可用 |
+| --- | --- | --- |
+| `analyze call-graph`、`analyze count-calls` | `--format human\|edn\|json` | `--format text` 等价于 `human` |
+| `analyze effects-graph` | `--format human\|edn\|json` | `--format tree` 等价于 `human` |
+| `test`、`analyze quality`、`cursor show/region/marks/clipboard` | 增加 `--format edn` | `human`、`json` 不变 |
+| `query ns`、`query schema`、`tree show` | 增加 `--format edn\|json`（`query ns` 另保留 `cirru`） | 默认 human 输出不变 |
+
+遗留的 `--json` 开关（`query schema`、`query def`、`tree show`、`ffi export`）行为不变，但每次使用会在 stderr 多输出一行 `[Deprecated] ...` 提示；请改用 `--format json`（或推荐的 `--format edn`）。`--json` 与显式的矛盾 `--format` 同时出现会报错：`query schema`、`query def`、`tree show` 不接受 `--json` 搭配 `edn`/`cirru`，`ffi export` 只接受 `--json` 搭配 `json`。`query search-expr --json` 与 `cirru format` 的 JSON 参数描述的是输入编码而非输出格式，不在此列。
+
+`analyze call-graph`、`count-calls`、`effects-graph` 对无法识别的 `--format` 值此前静默按文本输出；本版本保持该行为并在 stderr 输出 `[Warn]`，下一个非 patch 版本起改为报错 `Expected human, edn, or json`。`text` 与 `tree` 在这三个命令上都等价于 `human`。根命令的 `--format` 仍只属于 `--check-only` 报告；给子命令传格式时，把 `--format` 写在子命令之后。
+
+迁移示例：
+
+```bash
+calcit calcit.cirru analyze call-graph --format edn
+calcit calcit.cirru query schema app.main/main! --format edn
+calcit calcit.cirru tree show app.main/main! --path @3 --format edn
+```
+
 ### 仍可用的兼容名
 
 core 在 0.29.0 仍保留下表兼容入口，新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余逐处人工审阅。剩余入口的计划退场窗口是 0.30.0，但到达版本号不自动授权删除，仍须满足消费者、发布窗口、语义与实现解耦条件。

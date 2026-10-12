@@ -216,7 +216,7 @@ pub enum FfiSubcommand {
 #[argh(subcommand, name = "export")]
 /// export versioned Interface IR from local definitions with typed schemas and FFI lowering metadata
 pub struct FfiExportCommand {
-  /// output one machine-readable JSON document instead of the human inventory
+  /// [Deprecated] use `--format json`; output one machine-readable JSON document instead of the human inventory
   #[argh(switch)]
   pub json: bool,
   /// select native raw bindings or the directional component surface
@@ -261,7 +261,7 @@ pub struct TestCommand {
   /// omit individual test rows; useful for large CI and agent runs
   #[argh(switch)]
   pub summary_only: bool,
-  /// output format: human (default) or json
+  /// output format: human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
 }
@@ -575,7 +575,7 @@ pub struct QualityCommand {
   /// lower an existing baseline only; new projects use strict checks instead
   #[argh(option, long = "write-baseline")]
   pub write_baseline: Option<String>,
-  /// output format: human (default) or json
+  /// output format: human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
 }
@@ -614,7 +614,7 @@ pub struct CallGraphCommand {
   /// show definitions unreachable from the selected entry (may include external entry points)
   #[argh(switch)]
   pub show_unused: bool,
-  /// output format: "text" (default, LLM-friendly) or "json"; `--diff` supports text only
+  /// output format: human (default, LLM-friendly; legacy alias text), edn, or json; `--diff` supports human only
   #[argh(option, default = "String::from(\"text\")")]
   pub format: String,
   /// count call occurrences per definition instead of printing the tree
@@ -644,7 +644,7 @@ pub struct EffectsGraphCommand {
   /// maximum depth to traverse (0 = unlimited, 2 = default)
   #[argh(option, default = "2")]
   pub max_depth: usize,
-  /// output format: "tree" (default) or "json"
+  /// output format: human (default, State / Transform / Effect tree; legacy alias tree), edn, or json
   #[argh(option, default = "String::from(\"tree\")")]
   pub format: String,
   /// transform compression level: summary, full, or minimal
@@ -689,7 +689,7 @@ pub struct CountCallsCommand {
   /// include core/library calls in the count
   #[argh(switch)]
   pub include_core: bool,
-  /// output format: "text" (default) or "json"
+  /// output format: human (default; legacy alias text), edn, or json
   #[argh(option, default = "String::from(\"text\")")]
   pub format: String,
   /// sort by: "count" (default, descending) or "name"
@@ -787,9 +787,12 @@ pub struct QuerySchemaCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// emit one JSON envelope instead of Markdown-compatible human output
+  /// [Deprecated] use `--format json`; emit one JSON envelope instead of Markdown-compatible human output
   #[argh(switch)]
   pub json: bool,
+  /// output format: Markdown-compatible human (default), edn, or json
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -871,7 +874,7 @@ pub struct QueryNsCommand {
   /// include dependency and core namespaces
   #[argh(switch)]
   pub deps: bool,
-  /// output format: Markdown-compatible human (default), or cirru (the namespace's `%{} 'FileEntry` data as stored in the Snapshot, accepted by `edit ns`)
+  /// output format: Markdown-compatible human (default), edn, json, or cirru (the namespace's `%{} 'FileEntry` data as stored in the Snapshot, accepted by `edit ns`)
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
 }
@@ -924,7 +927,7 @@ pub struct QueryDefCommand {
   /// target in format "namespace/definition"
   #[argh(positional)]
   pub target: String,
-  /// append fenced legacy JSON to Markdown-compatible human output; prefer --format json for automation
+  /// [Deprecated] use `--format json`; appends fenced legacy JSON to Markdown-compatible human output
   #[argh(switch)]
   pub json: bool,
   /// output format: Markdown-compatible human (default), edn, json, or cirru (only `quote $ <definition>`, accepted by `edit def --overwrite --input-format cirru`)
@@ -2111,9 +2114,12 @@ pub struct TreeShowCommand {
   /// max depth for result preview (0 = unlimited, default 2)
   #[argh(option, default = "2")]
   pub depth: usize,
-  /// append a fenced JSON AST to Markdown-compatible human output
+  /// [Deprecated] use `--format json`; appends a fenced JSON AST to Markdown-compatible human output
   #[argh(switch)]
   pub json: bool,
+  /// output format: Markdown-compatible human (default), edn, or json (the selected node as a JSON AST document)
+  #[argh(option, default = "String::from(\"human\")")]
+  pub format: String,
   /// preferred nodes per display fragment when large expressions are chunked
   #[argh(option, default = "56")]
   pub chunk_target_nodes: usize,
@@ -2600,7 +2606,7 @@ pub struct CursorSetCommand {
 #[argh(subcommand, name = "show")]
 /// validate and display the current virtual cursor
 pub struct CursorShowCommand {
-  /// output format: human (default) or json
+  /// output format: human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
   /// preview view: focus (default), node, or full
@@ -2681,7 +2687,7 @@ pub struct CursorClearAnchorCommand {}
 #[argh(subcommand, name = "region")]
 /// display the contiguous sibling region between the anchor and cursor
 pub struct CursorRegionCommand {
-  /// output format: human (default) or json
+  /// output format: human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
 }
@@ -2708,7 +2714,7 @@ pub struct CursorGotoCommand {
 #[argh(subcommand, name = "marks")]
 /// list the bounded named cursor marks
 pub struct CursorMarksCommand {
-  /// output format: human (default) or json
+  /// output format: human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
 }
@@ -2745,7 +2751,7 @@ pub struct CursorPasteCommand {
 #[argh(subcommand, name = "clipboard")]
 /// display the cursor clipboard
 pub struct CursorClipboardCommand {
-  /// output format: human (default) or json
+  /// output format: human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
 }
