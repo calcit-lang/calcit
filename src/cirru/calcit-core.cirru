@@ -9579,6 +9579,14 @@
                   fn (idx x)
                     [] idx $ &str x
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |passes-index-before-value)
+              :code $ quote $ do
+                assert= ([] 0 1)
+                  map-indexed ([] 5 6) $ fn (idx x) idx
+                assert= ([] 50 61)
+                  map-indexed ([] 5 6) $ fn (idx x)
+                    &+ idx $ &* 10 x
+              :tags $ #{} :core :unit
             %{} 'TestEntry (:name |preserves-open-payload-with-index)
               :code $ quote $ let
                   xs $ assert-type ([] 1 :ready) (:: 'List 'Dynamic)

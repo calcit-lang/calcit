@@ -377,12 +377,12 @@
           :code $ quote $ defwasm-export test-closure-map-indexed ()
             let
                 values $ map-indexed ([] 4 5)
-                  fn (x idx)
+                  fn (idx x)
                     hint-fn $ {}
                       :args $ [] 'Number 'Number
                       :return 'Number
-                    + x idx
-              if (&list:includes? values 6) 1 0
+                    + x $ * 10 idx
+              if (&list:includes? values 15) 1 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
