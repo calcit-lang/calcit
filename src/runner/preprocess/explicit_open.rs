@@ -2,9 +2,9 @@
 //!
 //! `Dynamic` is also the fallback for evidence inference cannot express yet
 //! (heterogeneous Map entries, anonymous enum payloads, contextual callback
-//! inputs). Only a declared parameter contract, or a `&let` alias computed
-//! from such a parameter, is treated as an explicitly open value that must be
-//! proved before it reaches a concrete parameter.
+//! inputs). A declared parameter contract, a proven collection-member input,
+//! or a `&let` alias computed from such a parameter is treated as an explicitly
+//! open value that must be proved before it reaches a concrete parameter.
 //! The same lexical record retains the initial write contract independently
 //! of predicate refinements on references to the binding.
 use super::*;
@@ -15,6 +15,8 @@ type BindingKey = (Arc<str>, Arc<str>, Arc<str>);
 struct LocalContract {
   explicitly_open: bool,
   annotation: Arc<CalcitTypeAnnotation>,
+  static_callee: Option<Calcit>,
+  callee_used: bool,
 }
 
 thread_local! {
@@ -43,6 +45,8 @@ impl ExplicitOpenScope {
     let contract = LocalContract {
       explicitly_open,
       annotation: local.type_info.clone(),
+      static_callee: None,
+      callee_used: false,
     };
     let previous = EXPLICIT_OPEN_LOCALS.with(|marks| marks.borrow_mut().insert(key.clone(), contract));
     self.0.push((key, previous));
@@ -53,6 +57,55 @@ impl ExplicitOpenScope {
 /// Reuse the binding record so shadowing and unwinding restore both together.
 pub(super) fn binding_contract(local: &CalcitLocal) -> Option<Arc<CalcitTypeAnnotation>> {
   EXPLICIT_OPEN_LOCALS.with(|marks| marks.borrow().get(&binding_key(local)).map(|contract| contract.annotation.clone()))
+}
+
+/// Preserve an independently resolved function value, not a matching schema.
+/// Reuse the lexical binding record so parameters and shadowing clear identity.
+pub(super) fn retain_static_callee(local: &Calcit, value: Option<Calcit>) {
+  let Calcit::Local(local) = local else { return };
+  EXPLICIT_OPEN_LOCALS.with(|marks| {
+    if let Some(contract) = marks.borrow_mut().get_mut(&binding_key(local)) {
+      contract.static_callee = value.filter(|value| matches!(value, Calcit::Fn { .. }));
+    }
+  });
+}
+
+/// Return identity only while both the binding and its reference retain the
+/// original contract; an explicit replacement contract must stand on its own.
+pub(super) fn static_callee(local: &CalcitLocal, types: &ScopeTypes) -> Option<Calcit> {
+  EXPLICIT_OPEN_LOCALS.with(|marks| {
+    marks
+      .borrow()
+      .get(&binding_key(local))
+      .filter(|contract| {
+        contract.annotation == local.type_info && types.get(&local.sym).is_none_or(|annotation| *annotation == contract.annotation)
+      })
+      .and_then(|contract| contract.static_callee.clone())
+  })
+}
+
+/// An implementation-specific contextual proof requires a stable callee.
+pub(super) fn note_callee_use(head: &Calcit) {
+  let Calcit::Local(local) = head else { return };
+  EXPLICIT_OPEN_LOCALS.with(|marks| {
+    if let Some(contract) = marks.borrow_mut().get_mut(&binding_key(local)) {
+      contract.callee_used = true;
+    }
+  });
+}
+
+/// Writes revoke identity. A previously borrowed identity cannot remain valid
+/// in captured callbacks or subsequent loop iterations merely because the
+/// replacement has the same open function signature.
+pub(super) fn invalidate_static_callee(local: &CalcitLocal) -> bool {
+  EXPLICIT_OPEN_LOCALS.with(|marks| {
+    let mut marks = marks.borrow_mut();
+    let Some(contract) = marks.get_mut(&binding_key(local)) else {
+      return false;
+    };
+    contract.static_callee = None;
+    contract.callee_used
+  })
 }
 
 impl Drop for ExplicitOpenScope {

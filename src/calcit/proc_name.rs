@@ -1210,7 +1210,7 @@ impl CalcitProc {
         arg_types: vec![some_tag("enum")],
       }),
       NativeEnumImpls => Some(ProcTypeSignature {
-        return_type: some_tag("list"),
+        return_type: list_of(some_tag("impl")),
         arg_types: vec![some_tag("enum")],
       }),
       NativeEnumParams => Some(ProcTypeSignature {
@@ -1351,7 +1351,7 @@ impl CalcitProc {
         arg_types: vec![some_tag("struct")],
       }),
       NativeStructImpls => Some(ProcTypeSignature {
-        return_type: some_tag("list"),
+        return_type: list_of(some_tag("impl")),
         arg_types: vec![some_tag("struct")],
       }),
       NativeStructExtendAs => Some(ProcTypeSignature {

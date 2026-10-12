@@ -2866,6 +2866,255 @@
             :tags $ #{} :short-circuit-proof :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.short-circuit
+    'app.sort-selector $ %{} 'FileEntry
+      :defs $ {}
+        'alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn alias (rows)
+            let
+                order &list:sort-by
+              order rows $ fn (row) (&map:get row :n)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
+            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
+            :code $ quote $ assert=
+              []
+                {} $ :n 1
+                {} $ :n 2
+              alias $ []
+                {} $ :n 2
+                {} $ :n 1
+            :tags $ #{} :sort-selector-context :unit
+        'alias-chain $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn alias-chain (rows)
+            let
+                order &list:sort-by
+                copy-order order
+              copy-order rows $ fn (row) (&map:get row :n)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
+            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
+            :code $ quote $ assert=
+              []
+                {} $ :n 1
+                {} $ :n 2
+              alias-chain $ []
+                {} $ :n 2
+                {} $ :n 1
+            :tags $ #{} :sort-selector-context :unit
+        'checked-open-selector $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn checked-open-selector (rows)
+            &list:sort-by rows $ fn (row)
+              hint-fn $ {}
+                :args $ [] 'Dynamic
+                :return 'Number
+              decode-map-as row 'Number
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'Dynamic
+            :return $ :: 'List 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |decodes-sort-key)
+            :code $ quote $ assert= ([] 1 2)
+              checked-open-selector $ [] 2 1
+            :tags $ #{} :sort-selector-context :unit
+        'constant-selector $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn constant-selector (rows)
+            let
+                selector $ fn (row) 0
+              &list:sort-by rows selector
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'Dynamic
+            :return $ :: 'List 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |unused-open-input-is-safe)
+            :code $ quote $ assert= (#{} |two 1 :three)
+              .to-set $ constant-selector $ [] |two 1 :three
+            :tags $ #{} :sort-selector-context :unit
+        'copied-alias-survives-write $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn copied-alias-survives-write (rows)
+            let
+                order &list:sort-by
+                copy-order order
+              set! order &list:sort-by
+              copy-order rows $ fn (row) (&map:get row :n)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
+            :features $ #{} :js-ffi
+            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
+            :code $ quote $ assert=
+              []
+                {} $ :n 1
+                {} $ :n 2
+              copied-alias-survives-write $ []
+                {} $ :n 2
+                {} $ :n 1
+            :tags $ #{} :sort-selector-assignment :unit
+        'direct $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn direct (rows)
+            &list:sort-by rows $ fn (row) (&map:get row :n)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
+            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |orders-typed-rows)
+              :code $ quote $ assert=
+                []
+                  {} $ :n 1
+                  {} $ :n 2
+                direct $ []
+                  {} $ :n 2
+                  {} $ :n 1
+              :tags $ #{} :sort-selector-context :unit
+            %{} 'TestEntry (:name |retains-tag-selector)
+              :code $ quote $ assert=
+                []
+                  {} $ :n 1
+                  {} $ :n 2
+                &list:sort-by
+                  []
+                    {} $ :n 2
+                    {} $ :n 1
+                  , :n
+              :tags $ #{} :sort-selector-context :unit
+        'ignore-selector $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn ignore-selector (rows selector) rows
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'Dynamic
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+        'method $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn method (rows)
+            rows .sort-by $ fn (row) (&map:get row :n)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
+            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |orders-typed-rows)
+              :code $ quote $ assert=
+                []
+                  {} $ :n 1
+                  {} $ :n 2
+                method $ []
+                  {} $ :n 2
+                  {} $ :n 1
+              :tags $ #{} :sort-selector-context :unit
+            %{} 'TestEntry (:name |retains-tag-selector)
+              :code $ quote $ let
+                  rows $ []
+                    {} $ :n 2
+                    {} $ :n 1
+                  key :n
+                assert=
+                  []
+                    {} $ :n 1
+                    {} $ :n 2
+                  rows .sort-by key
+                assert=
+                  []
+                    {} $ :n 1
+                    {} $ :n 2
+                  .sort-by rows key
+              :tags $ #{} :sort-selector-context :unit
+        'mutable-tag-alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn mutable-tag-alias (rows)
+            let
+                order &list:sort-by
+              order rows :n
+              set! order &list:sort-by
+              order rows :n
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
+            :features $ #{} :js-ffi
+            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
+            :code $ quote $ assert=
+              []
+                {} $ :n 1
+                {} $ :n 2
+              mutable-tag-alias $ []
+                {} $ :n 2
+                {} $ :n 1
+            :tags $ #{} :sort-selector-assignment :unit
+        'named-selector $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn named-selector (rows)
+            &list:sort-by rows $ defn select-key (row) (&map:get row :n)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
+            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
+            :code $ quote $ assert=
+              []
+                {} $ :n 1
+                {} $ :n 2
+              named-selector $ []
+                {} $ :n 2
+                {} $ :n 1
+            :tags $ #{} :sort-selector-context :unit
+        'prefix-method $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn prefix-method (rows)
+            .sort-by rows $ fn (row) (&map:get row :n)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
+            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
+            :code $ quote $ assert=
+              []
+                {} $ :n 1
+                {} $ :n 2
+              prefix-method $ []
+                {} $ :n 2
+                {} $ :n 1
+            :tags $ #{} :sort-selector-context :unit
+        'restored-alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn restored-alias (rows)
+            let
+                order &list:sort-by
+              let
+                  order :inner
+                assert= :inner order
+              order rows $ fn (row) (&map:get row :n)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
+            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
+            :code $ quote $ assert=
+              []
+                {} $ :n 1
+                {} $ :n 2
+              restored-alias $ []
+                {} $ :n 2
+                {} $ :n 1
+            :tags $ #{} :sort-selector-context :unit
+        'threaded $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn threaded (rows)
+            -> rows $ &list:sort-by $ fn (row) (&map:get row :n)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
+            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
+            :code $ quote $ assert=
+              []
+                {} $ :n 1
+                {} $ :n 2
+              threaded $ []
+                {} $ :n 2
+                {} $ :n 1
+            :tags $ #{} :sort-selector-context :unit
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.sort-selector
     'app.string-option $ %{} 'FileEntry
       :defs $ {}
         'first-text $ %{} 'CodeEntry (:doc |)

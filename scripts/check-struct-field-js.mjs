@@ -61,6 +61,7 @@ try {
       "--rule", "callable-contract-proof-v1", "--format", "json"], { encoding: "utf8" });
     assert.ifError(proof.error);
     assert.equal(proof.status, 1, `${name}: indexed lowering must not hide missing source evidence\n${proof.stdout}\n${proof.stderr}`);
+    assert.notEqual(proof.stdout.trim(), "", `${name}: rejection must include its structured diagnostic\n${proof.stderr}`);
     assert.ok(JSON.parse(proof.stdout).diagnostics.some(diagnostic => diagnostic.code === "E_CALL_ARGUMENT_UNPROVEN"), name);
   }
   assert.deepEqual(await readFile(writeNegative), negativeSource);
