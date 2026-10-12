@@ -262,6 +262,14 @@ const reviewedCompatibilityPositions = new Map([
 ]);
 const reviewedPublicBoundaryPositions = new Map([
   [
+    "&list:map-pair|schema.args.1.args.0",
+    "The pair callback receives heterogeneous key/value slots from a homogeneous List; its key stays open while the callback result is preserved by generic R.",
+  ],
+  [
+    "&list:map-pair|schema.args.1.args.1",
+    "The pair callback receives heterogeneous key/value slots from a homogeneous List; its value stays open while the callback result is preserved by generic R.",
+  ],
+  [
     "&map:filter|schema.args.1.args.0.item",
     "The internal Map pair callback receives heterogeneous key/value slots in a List; keep the open item explicit until tuple or named pair typing can preserve both independent parameters.",
   ],
