@@ -181,7 +181,9 @@ fn compatible_if_join(
   // type: picking the concrete side would fold later predicates such as
   // `enum?` (#1779), and picking the parameter would accept a concrete value
   // where the parameter is required. Leave the join unresolved.
-  if matches!(true_type.as_ref(), CalcitTypeAnnotation::TypeVar(_)) != matches!(false_type.as_ref(), CalcitTypeAnnotation::TypeVar(_)) {
+  if (matches!(true_type.as_ref(), CalcitTypeAnnotation::TypeVar(_)) || matches!(false_type.as_ref(), CalcitTypeAnnotation::TypeVar(_)))
+    && true_type != false_type
+  {
     return None;
   }
   let true_weight = super::annotation_dynamic_weight(true_type.as_ref());
@@ -226,6 +228,26 @@ fn merge_if_branch_types(
   // slots cannot outrank it merely by accumulating a larger heuristic score.
   if matches!(true_type.as_ref(), CalcitTypeAnnotation::Dynamic) || matches!(false_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
     return Some(calcit::DYNAMIC_TYPE.clone());
+  }
+  // A shared immutable container shape survives a heterogeneous branch join;
+  // only the incompatible member slot becomes open, never a concrete peer.
+  let join_member = |left: &Arc<CalcitTypeAnnotation>, right: &Arc<CalcitTypeAnnotation>| {
+    merge_if_branch_types(left.clone(), right.clone()).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone())
+  };
+  match (true_type.as_ref(), false_type.as_ref()) {
+    (CalcitTypeAnnotation::List(left), CalcitTypeAnnotation::List(right)) => {
+      return Some(Arc::new(CalcitTypeAnnotation::List(join_member(left, right))));
+    }
+    (CalcitTypeAnnotation::Set(left), CalcitTypeAnnotation::Set(right)) => {
+      return Some(Arc::new(CalcitTypeAnnotation::Set(join_member(left, right))));
+    }
+    (CalcitTypeAnnotation::Map(left_key, left_value), CalcitTypeAnnotation::Map(right_key, right_value)) => {
+      return Some(Arc::new(CalcitTypeAnnotation::Map(
+        join_member(left_key, right_key),
+        join_member(left_value, right_value),
+      )));
+    }
+    _ => {}
   }
   if let Some(joined) = compatible_if_join(&true_type, &false_type) {
     return Some(joined);
@@ -484,10 +506,17 @@ pub(crate) fn join_return_types(
   merge_nominal_enum_branches([&left, &right]).or_else(|| merge_if_branch_types(left, right))
 }
 
-/// Whether an enum retains direct absence evidence that payload inference may refine.
-pub(super) fn has_payload_free_enum_slot(annotation: &CalcitTypeAnnotation) -> bool {
-  matches!(annotation, CalcitTypeAnnotation::Enum(_, args) | CalcitTypeAnnotation::TypeRef(_, args)
-    if args.iter().any(|arg| matches!(arg.as_ref(), CalcitTypeAnnotation::Never)) && annotation.resolve_to_enum().is_some())
+/// Whether immutable members retain absence evidence that inference may refine.
+/// Mutable Ref payloads and callable contracts must keep their declared types.
+pub(super) fn has_inferred_empty_slot(annotation: &CalcitTypeAnnotation) -> bool {
+  use CalcitTypeAnnotation as T;
+  let empty = |value: &Arc<T>| matches!(value.as_ref(), T::Never) || has_inferred_empty_slot(value);
+  match annotation {
+    T::List(member) | T::Set(member) => empty(member),
+    T::Map(key, value) => empty(key) || empty(value),
+    T::Enum(_, args) | T::TypeRef(_, args) if annotation.resolve_to_enum().is_some() => args.iter().any(empty),
+    _ => false,
+  }
 }
 
 /// Collect lexical tail-transfer evidence without completing unresolved inputs.
@@ -982,7 +1011,10 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   if ns == calcit::CORE_NS {
     let args = call_expr.drop_left();
     if let Some(contract) = resolve_checked_call_contract(ns, def, &args, scope_types)
-      && !contract.return_type.contains_type_var()
+      // Update's checked contract returns the receiver itself, so its type
+      // variables are caller-owned. Do not infer this from type equality:
+      // an unresolved mapper output can accidentally share a caller's name.
+      && (!contract.return_type.contains_type_var() || def == "update")
     {
       return Some(contract.return_type);
     }
@@ -1985,7 +2017,7 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
         Calcit::Fn { info, .. } => {
           if info.def_ns.as_ref() == calcit::CORE_NS
             && let Some(contract) = resolve_checked_call_contract(&info.def_ns, &info.name, &xs.drop_left(), scope_types)
-            && !contract.return_type.contains_type_var()
+            && (!contract.return_type.contains_type_var() || info.name.as_ref() == "update")
           {
             return Some(contract.return_type);
           }
@@ -2672,6 +2704,9 @@ fn infer_typed_method_result<'a>(
 ///
 /// Extracted from the large `Calcit::Proc` arm of `infer_type_from_expr` for clarity.
 fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  if let Some(updated) = infer_collection_growth(proc, xs, scope_types) {
+    return Some(updated);
+  }
   if matches!(proc, CalcitProc::GetEnv)
     && matches!(xs.len(), 2 | 3)
     && let Some(name_type) = xs.get(1).and_then(|name| resolve_type_value(name, scope_types))
@@ -2803,15 +2838,9 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
       | CalcitProc::NativeListSlice
       | CalcitProc::NativeListReverse
       | CalcitProc::NativeListDistinct
-      | CalcitProc::NativeListConcat
-      | CalcitProc::Append
-      | CalcitProc::Prepend
       | CalcitProc::Butlast
       | CalcitProc::Sort
       | CalcitProc::NativeListSort
-      | CalcitProc::NativeListAssoc
-      | CalcitProc::NativeListAssocBefore
-      | CalcitProc::NativeListAssocAfter
       | CalcitProc::NativeListDissoc
   ) && let Some(first_arg) = xs.get(1)
     && let Some(type_value) = resolve_type_value(first_arg, scope_types)
@@ -2834,14 +2863,8 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   {
     return Some(val_type.clone());
   }
-  if matches!(
-    proc,
-    CalcitProc::NativeMapAssoc
-      | CalcitProc::NativeMapDissoc
-      | CalcitProc::NativeMerge
-      | CalcitProc::NativeMergeNonNil
-      | CalcitProc::NativeMapDiffNew
-  ) && let Some(first_arg) = xs.get(1)
+  if matches!(proc, CalcitProc::NativeMapDissoc | CalcitProc::NativeMapDiffNew)
+    && let Some(first_arg) = xs.get(1)
     && let Some(type_value) = resolve_type_value(first_arg, scope_types)
     && let CalcitTypeAnnotation::Map(_, _) = type_value.as_ref()
   {
@@ -2863,11 +2886,7 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   }
   if matches!(
     proc,
-    CalcitProc::NativeInclude
-      | CalcitProc::NativeExclude
-      | CalcitProc::NativeDifference
-      | CalcitProc::NativeUnion
-      | CalcitProc::NativeSetIntersection
+    CalcitProc::NativeExclude | CalcitProc::NativeDifference | CalcitProc::NativeSetIntersection
   ) && let Some(first_arg) = xs.get(1)
     && let Some(type_value) = resolve_type_value(first_arg, scope_types)
     && let CalcitTypeAnnotation::Set(_) = type_value.as_ref()
@@ -2955,6 +2974,99 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   })
 }
 
+/// Immutable insertions combine old and new member evidence. In particular,
+/// preserving an empty receiver's Never would falsely prove arbitrary payloads.
+fn infer_collection_growth(proc: &CalcitProc, xs: &CalcitList, scope: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  use CalcitProc as P;
+  use CalcitTypeAnnotation as T;
+  if !matches!(
+    proc,
+    P::NativeMapAssoc
+      | P::Append
+      | P::Prepend
+      | P::NativeListAppend
+      | P::NativeListPrepend
+      | P::NativeListAssoc
+      | P::NativeListAssocBefore
+      | P::NativeListAssocAfter
+      | P::NativeListConcat
+      | P::NativeMerge
+      | P::NativeMergeNonNil
+      | P::NativeInclude
+      | P::NativeUnion
+  ) {
+    return None;
+  }
+  let receiver = resolve_type_value(xs.get(1)?, scope)?;
+  let join = |left: Arc<T>, right: Arc<T>| join_return_types(left, right).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
+  let actual = |value: &Calcit| resolve_type_value(value, scope).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
+  match (proc, receiver.as_ref()) {
+    (P::NativeMapAssoc, T::Map(key, value)) => {
+      let (mut key, mut value) = (key.clone(), value.clone());
+      for (index, member) in xs.iter().skip(2).enumerate() {
+        if index % 2 == 0 {
+          key = join(key, actual(member));
+        } else {
+          value = join(value, actual(member));
+        }
+      }
+      Some(Arc::new(T::Map(key, value)))
+    }
+    (P::NativeMerge | P::NativeMergeNonNil, T::Map(key, value)) => {
+      let (mut key, mut value) = (key.clone(), value.clone());
+      for other in xs.iter().skip(2) {
+        let other = actual(other);
+        let T::Map(other_key, other_value) = other.as_ref() else {
+          return None;
+        };
+        key = join(key, other_key.clone());
+        value = join(value, other_value.clone());
+      }
+      Some(Arc::new(T::Map(key, value)))
+    }
+    (
+      P::Append
+      | P::Prepend
+      | P::NativeListAppend
+      | P::NativeListPrepend
+      | P::NativeListAssoc
+      | P::NativeListAssocBefore
+      | P::NativeListAssocAfter
+      | P::NativeListConcat,
+      T::List(member),
+    ) => {
+      let mut member = member.clone();
+      let start = if matches!(proc, P::NativeListAssoc | P::NativeListAssocBefore | P::NativeListAssocAfter) {
+        3
+      } else {
+        2
+      };
+      for item in xs.iter().skip(start) {
+        let mut inserted = actual(item);
+        if matches!(proc, P::NativeListConcat) {
+          let T::List(inner) = inserted.as_ref() else { return None };
+          inserted = inner.clone();
+        }
+        member = join(member, inserted);
+      }
+      Some(Arc::new(T::List(member)))
+    }
+    (P::NativeInclude | P::NativeUnion, T::Set(member)) => {
+      let mut member = member.clone();
+      for item in xs.iter().skip(2) {
+        let mut inserted = actual(item);
+        if matches!(proc, P::NativeUnion) {
+          let T::Set(inner) = inserted.as_ref() else { return None };
+          inserted = inner.clone();
+        }
+        member = join(member, inserted);
+      }
+      Some(Arc::new(T::Set(member)))
+    }
+    _ => None,
+  }
+}
+
 fn infer_homogeneous_type<'a>(values: impl Iterator<Item = &'a Calcit>, scope_types: &ScopeTypes) -> Arc<CalcitTypeAnnotation> {
   let mut inferred: Option<Arc<CalcitTypeAnnotation>> = None;
   for value in values {
@@ -2983,7 +3095,9 @@ fn infer_homogeneous_type<'a>(values: impl Iterator<Item = &'a Calcit>, scope_ty
       None => inferred = Some(next),
     }
   }
-  inferred.unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone())
+  // No members supply no inhabitant, not an explicitly open value. Carry the
+  // bottom member type through aliases and wrappers using ordinary relations.
+  inferred.unwrap_or_else(|| crate::calcit::type_annotation::NEVER_TYPE.clone())
 }
 
 thread_local! {
@@ -4635,7 +4749,7 @@ mod tests {
     let first_empty = proc_call(CalcitProc::NativeListFirst, vec![empty_list]);
     assert!(matches!(
       infer_static_type_from_expr(&first_empty).as_deref(),
-      Some(CalcitTypeAnnotation::Optional(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
+      Some(CalcitTypeAnnotation::Optional(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Never)
     ));
   }
 
@@ -4851,6 +4965,22 @@ mod tests {
     assert_eq!(
       infer_return_type_from_compiled_callable(calcit::CORE_NS, "update", &update_call, &ScopeTypes::new()),
       Some(map_type)
+    );
+
+    // A provisional mapper output is not the same binder as a caller with
+    // the same spelling; equality of the resulting shapes is insufficient.
+    let caller_list = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from(
+      "MapOutput",
+    )))));
+    let unknown_map = CalcitList::from(&[
+      symbol("map"),
+      local("items", caller_list.clone()),
+      local("unknown-mapper", Arc::new(CalcitTypeAnnotation::DynFn)),
+    ] as &[Calcit]);
+    assert_ne!(
+      infer_return_type_from_compiled_callable(calcit::CORE_NS, "map", &unknown_map, &ScopeTypes::new()),
+      Some(caller_list),
+      "unknown mapper output cannot borrow a same-named caller variable"
     );
   }
 

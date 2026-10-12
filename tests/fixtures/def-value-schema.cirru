@@ -1859,6 +1859,459 @@
             :tags $ #{} :checked-struct-write :static-write :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.dynamic-write
+    'app.empty-evidence $ %{} 'FileEntry
+      :defs $ {}
+        'accumulate $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn accumulate (limit)
+            loop
+                items $ {}
+                n limit
+              if (= n 0) items $ recur (.assoc items n n) (- n 1)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number
+            :return $ :: 'Map 'Number 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |empty-loop-gains-members)
+            :code $ quote $ do
+              assert= ({}) (accumulate 0)
+              assert=
+                {} (1 1) (2 2)
+                accumulate 2
+            :tags $ #{} :empty-collection-evidence
+        'accumulate-receiver-first $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn accumulate-receiver-first (limit)
+            loop
+                items $ {}
+                n limit
+              if (= n 0) items $ recur (items .assoc n n) (- n 1)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number
+            :return $ :: 'Map 'Number 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |receiver-first-empty-loop-gains-members)
+            :code $ quote $ do
+              assert= ({}) (accumulate-receiver-first 0)
+              assert=
+                {} (1 1) (2 2)
+                accumulate-receiver-first 2
+            :tags $ #{} :empty-collection-evidence
+        'aliased-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn aliased-assignment (value)
+            let
+                item value
+              if (number? item)
+                do
+                  assert= true $ number? $ &+ item 1
+                  set! item |changed
+              , item
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic
+            :features $ #{} :js-ffi
+          :tests $ [] $ %{} 'TestEntry (:name |local-alias-write-contract)
+            :code $ quote $ do
+              assert= |changed $ aliased-assignment 1
+              assert= |original $ aliased-assignment |original
+            :tags $ #{} :empty-collection-assignment
+        'dead-branch-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn dead-branch-assignment (value)
+            if (number? value)
+              do
+                if true &unit $ set! value |changed
+                &+ value 1
+              , 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+            :features $ #{} :js-ffi
+          :tests $ [] $ %{} 'TestEntry (:name |dead-write-keeps-live-evidence)
+            :code $ quote $ assert= 2 (dead-branch-assignment 1)
+            :tags $ #{} :empty-collection-assignment
+        'empty-lookup $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn empty-lookup ()
+            let
+                items $ {}
+              get items :missing
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Option 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |empty-map-accepts-lookup-key)
+            :code $ quote $ assert= (Option :none) (empty-lookup)
+            :tags $ #{} :empty-collection-evidence
+        'fold-counts $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn fold-counts (words)
+            let
+                init $ {}
+              foldl words init $ fn (acc w)
+                let
+                    n $ -> (get acc w) (.unwrap-or 0)
+                  assoc acc w $ inc n
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'Tag
+            :return $ :: 'Map 'Tag 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |infers-empty-named-assoc-reducer)
+            :code $ quote $ do
+              assert=
+                {} (:a 3) (:b 2) (:c 1)
+                fold-counts $ [] :a :b :a :c :a :b
+              assert= ({})
+                fold-counts $ []
+            :tags $ #{} :empty-collection-evidence
+        'grow-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn grow-list ()
+            let
+                items $ []
+              &list:append items 1
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'List 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |empty-list-gains-member)
+            :code $ quote $ assert= ([] 1) (grow-list)
+            :tags $ #{} :empty-collection-evidence
+        'grow-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn grow-map ()
+            let
+                items $ {}
+              .assoc items |a 1
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Map 'String 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |immutable-map-growth)
+            :code $ quote $ assert=
+              {} $ |a 1
+              grow-map
+            :tags $ #{} :empty-collection-evidence
+        'grow-set $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn grow-set ()
+            let
+                items $ #{}
+              .include items 1
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Set 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |empty-set-gains-member)
+            :code $ quote $ assert= (#{} 1) (grow-set)
+            :tags $ #{} :empty-collection-evidence
+        'incompatible-generics $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn incompatible-generics (xs ys flag)
+            let
+                result $ if flag xs ys
+              assert-type result $ :: 'List 'T
+              , result
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) (:: 'List 'U) 'Bool
+            :generics $ [] 'T 'U
+            :return $ :: 'List 'T
+        'list-alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn list-alias ()
+            let
+                items $ []
+              assert-type items $ :: 'List 'Number
+              , items
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'List 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |empty-list-alias)
+            :code $ quote $ assert= ([]) (list-alias)
+            :tags $ #{} :empty-collection-evidence
+        'map-alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn map-alias ()
+            let
+                items $ {}
+              assert-type items $ :: 'Map 'String 'Number
+              , items
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Map 'String 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |empty-map-alias)
+            :code $ quote $ assert= ({}) (map-alias)
+            :tags $ #{} :empty-collection-evidence
+        'match-peer-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn match-peer-assignment (value choice)
+            if (number? value)
+              match choice
+                (:some item)
+                  do (set! value |changed) value
+                _ $ &+ value 1
+              , value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic $ :: 'Option 'Number
+            :features $ #{} :js-ffi
+          :tests $ [] $ %{} 'TestEntry (:name |match-branches-use-independent-evidence)
+            :code $ quote $ do
+              assert= |changed $ match-peer-assignment 1 $ Option :some 2
+              assert= 2 $ match-peer-assignment 1 $ Option :none
+            :tags $ #{} :empty-collection-assignment
+        'narrowed-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn narrowed-assignment (value)
+            if (number? value) (set! value |changed)
+            , value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic
+            :features $ #{} :js-ffi
+          :tests $ [] $ %{} 'TestEntry (:name |dynamic-binding-keeps-write-contract)
+            :code $ quote $ do
+              assert= |changed $ narrowed-assignment 1
+              assert= |original $ narrowed-assignment |original
+            :tags $ #{} :empty-collection-assignment
+        'nested-empty $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nested-empty ()
+            let
+                rows $ [] $ {}
+              assert-type rows $ :: 'List $ :: 'Map 'String 'Number
+              , rows
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'List $ :: 'Map 'String 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |nested-empty-map)
+            :code $ quote $ assert=
+              [] $ {}
+              nested-empty
+            :tags $ #{} :empty-collection-evidence
+        'open-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn open-map (items)
+            assert-type items $ :: 'Map 'String 'Number
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'Dynamic 'Dynamic
+            :return $ :: 'Map 'String 'Number
+        'rebound-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn rebound-map ()
+            let
+                items $ {}
+              set! items $ {} $ |a |wrong
+              assert-type items $ :: 'Map 'String 'Number
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :features $ #{} :js-ffi
+            :return $ :: 'Map 'String 'Number
+        'ref-invariant $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn ref-invariant ()
+            let
+                cell $ ref $ assert-type ({}) (:: 'Map 'String 'Number)
+              assert-type cell $ :: 'Ref $ :: 'Map 'String 'Dynamic
+          :examples $ []
+        'result-seed $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn result-seed ()
+            let
+                seed $ Result :ok $ {}
+              assert-type seed $ :: 'Result (:: 'Map 'String 'Number) 'String
+              , seed
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Result (:: 'Map 'String 'Number) 'String
+          :tests $ [] $ %{} 'TestEntry (:name |empty-result-payload)
+            :code $ quote $ assert=
+              Result :ok $ {}
+              result-seed
+            :tags $ #{} :empty-collection-evidence
+        'set-alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn set-alias ()
+            let
+                items $ #{}
+              assert-type items $ :: 'Set 'Number
+              , items
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Set 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |empty-set-alias)
+            :code $ quote $ assert= (#{}) (set-alias)
+            :tags $ #{} :empty-collection-evidence
+        'shadow-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn shadow-map (raw)
+            let
+                items $ {}
+              let
+                  items raw
+                assert-type items $ :: 'Map 'String 'Number
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'Dynamic 'Dynamic
+            :return $ :: 'Map 'String 'Number
+        'shadowed-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn shadowed-assignment (value)
+            if (number? value)
+              do
+                let
+                    value 1
+                  set! value 2
+                  assert= 2 value
+                assert= 2 $ &+ value 1
+                set! value |changed
+            , value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic
+            :features $ #{} :js-ffi
+          :tests $ [] $ %{} 'TestEntry (:name |shadowing-restores-outer-contract)
+            :code $ quote $ assert= |changed (shadowed-assignment 1)
+            :tags $ #{} :empty-collection-assignment
+        'shadowed-match-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn shadowed-match-assignment (value choice)
+            if (number? value)
+              do
+                match choice
+                  (:some value) (set! value 2)
+                  (:none) &unit
+                &+ value 1
+              , 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic $ :: 'Option 'Number
+            :features $ #{} :js-ffi
+          :tests $ [] $ %{} 'TestEntry (:name |payload-binding-does-not-write-outer-local)
+            :code $ quote $ do
+              assert= 2 $ shadowed-match-assignment 1 $ Option :some 8
+              assert= 2 $ shadowed-match-assignment 1 $ Option :none
+            :tags $ #{} :empty-collection-assignment
+        'stale-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn stale-assignment (value)
+            if (number? value)
+              do (set! value |changed) (&+ value 1)
+              , 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+            :features $ #{} :js-ffi
+        'stale-branch-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn stale-branch-assignment (value flag)
+            if (number? value)
+              do
+                if flag $ set! value |changed
+                &+ value 1
+              , 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic 'Bool
+            :features $ #{} :js-ffi
+        'stale-let-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn stale-let-assignment (value)
+            if (number? value)
+              do
+                let
+                    ignored 0
+                  set! value |changed
+                &+ value 1
+              , 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+            :features $ #{} :js-ffi
+        'stale-match-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn stale-match-assignment (value choice)
+            if (number? value)
+              do
+                match choice
+                  (:some item) (set! value |changed)
+                  (:none) &unit
+                &+ value 1
+              , 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic $ :: 'Option 'Number
+            :features $ #{} :js-ffi
+        'typed-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn typed-assignment ()
+            let
+                items $ assert-type ({}) (:: 'Map 'String 'Number)
+              set! items $ {} $ |a 1
+              , items
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :features $ #{} :js-ffi
+            :return $ :: 'Map 'String 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |assignment-preserves-explicit-contract)
+            :code $ quote $ assert=
+              {} $ |a 1
+              typed-assignment
+            :tags $ #{} :empty-collection-assignment
+        'typed-ref $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn typed-ref ()
+            let
+                slot $ ref $ assert-type ({}) (:: 'Map 'String 'Number)
+              reset! slot $ {} $ |a 1
+              deref slot
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Map 'String 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |explicit-ref-initializer-contract)
+            :code $ quote $ assert=
+              {} $ |a 1
+              typed-ref
+            :tags $ #{} :empty-collection-ref
+        'wrong-grown-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-grown-list ()
+            let
+                items $ []
+              assert-type (.append items |wrong) (:: 'List 'Number)
+          :examples $ []
+        'wrong-grown-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-grown-map ()
+            let
+                items $ {}
+              assert-type (&map:assoc items |a |wrong) (:: 'Map 'String 'Number)
+          :examples $ []
+        'wrong-grown-set $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-grown-set ()
+            let
+                items $ #{}
+              assert-type (.include items |wrong) (:: 'Set 'Number)
+          :examples $ []
+        'wrong-map-member $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-map-member ()
+            let
+                items $ {} $ |a |wrong
+              assert-type items $ :: 'Map 'String 'Number
+          :examples $ []
+        'wrong-match-payload-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-match-payload-assignment (value choice)
+            match choice
+              (:some value) (set! value |wrong)
+              (:none) &unit
+            , value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic $ :: 'Option 'Number
+            :features $ #{} :js-ffi
+        'wrong-ref-alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-ref-alias ()
+            let
+                cell $ ref $ assert-type ({}) (:: 'Map 'String 'Number)
+                alias cell
+              reset! alias $ {} $ |a |wrong
+          :examples $ []
+        'wrong-ref-write $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-ref-write ()
+            let
+                cell $ ref $ {}
+              reset! cell $ {} $ |a 1
+          :examples $ []
+        'wrong-typed-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-typed-assignment (value)
+            if (number? value) (set! value |wrong)
+            , value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+            :features $ #{} :js-ffi
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.empty-evidence
     'app.empty-fields $ %{} 'FileEntry
       :defs $ {}
         'Fields $ %{} 'CodeEntry (:doc |)

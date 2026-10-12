@@ -2021,6 +2021,19 @@ fn try_expand_typed_literal_path_call(
       let Some(path) = fully_typed_literal_assoc_path(base_type.as_ref(), path_arg) else {
         return Ok(None);
       };
+      let mut leaf_type = base_type.clone();
+      for _ in &path {
+        let CalcitTypeAnnotation::Map(_, member) = leaf_type.as_ref() else {
+          return Ok(None);
+        };
+        leaf_type = member.clone();
+      }
+      // Map-only expansion uses homogeneous assoc primitives. A replacement
+      // that changes the leaf family must retain the public path operation,
+      // rather than generating an unchecked call with a different contract.
+      if !resolve_type_value(&args[2], scope_types).is_some_and(|actual| actual.is_proven_for(&leaf_type)) {
+        return Ok(None);
+      }
       let base_binding = generated_path_symbol("typed_path_base", file_ns, call_stack)?;
       let value_binding = generated_path_symbol("typed_path_replacement", file_ns, call_stack)?;
       let mut path_bindings = Vec::with_capacity(path.len());
@@ -4355,6 +4368,32 @@ fn preprocess_list_call(
           // Recompute processed_args from ys after optimization rewrites (e.g. struct:get→nth, assoc→assoc-at)
           let processed_args = CalcitList::from(ys.drop_left());
           require_js_ffi_feature_for_operation(call_head, file_ns, def_name.as_ref(), check_warnings, call_stack)?;
+          // JS local assignment must preserve the binding contract. Otherwise
+          // later uses can borrow obsolete literal or predicate evidence.
+          if strict_types_enabled()
+            && (matches!(call_head, Calcit::Symbol { sym, .. } if sym.as_ref() == "set!")
+              || matches!(call_head, Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "set!"))
+            && let (Some(Calcit::Local(local)), Some(value)) = (processed_args.first(), processed_args.get(1))
+          {
+            let expected = explicit_open::binding_contract(local).unwrap_or_else(|| local.type_info.clone());
+            let actual = resolve_type_value(value, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
+            if !actual.is_proven_for(&expected) {
+              return Err(CalcitErr::use_msg_stack_location_with_code(
+                CalcitErrKind::Type,
+                format!(
+                  "set! value cannot prove the local `{}` contract: expected `{}`, got `{}`; declare the binding's intended type at initialization",
+                  local.sym,
+                  expected.to_brief_string(),
+                  actual.to_brief_string()
+                ),
+                "E_CALL_ARGUMENT_UNPROVEN",
+                call_stack,
+                value.get_location().or_else(|| call_location.clone()),
+              ));
+            }
+            // A successful write invalidates read refinements of this local.
+            scope_types.insert(local.sym.clone(), expected);
+          }
           reject_or_warn_on_nullable_js_ffi_dereference(
             call_head,
             &processed_args,
@@ -9848,6 +9887,23 @@ pub fn preprocess_each_items(
   Ok(Calcit::List(Arc::new(xs.into())))
 }
 
+/// Carry invalidated read evidence out of nested evaluation scopes, without
+/// exporting branch refinements or a shadowing let binding to its parent.
+fn propagate_scope_widening(parent: &mut ScopeTypes, after: &ScopeTypes, refinements: &ScopeTypes, shadowed: Option<&str>) {
+  for (name, current) in parent.iter_mut() {
+    if shadowed == Some(name.as_ref()) {
+      continue;
+    }
+    let before = refinements.get(name).unwrap_or(current);
+    if let Some(after) = after.get(name)
+      && after != before
+      && !after.is_proven_for(before)
+    {
+      *current = type_inference::join_return_types(current.clone(), after.clone()).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
+    }
+  }
+}
+
 fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mut PreprocessContext) -> Result<Calcit, CalcitErr> {
   if args.len() < 2 {
     return preprocess_each_items(head, head_ns, args, ctx);
@@ -9891,17 +9947,24 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
     for (sym, inferred) in &narrowing.when_false {
       false_scope_types.insert(sym.clone(), inferred.clone());
     }
-    Some(preprocess_expr(
+    let form = preprocess_expr(
       false_branch,
       ctx.scope_defs,
       &mut false_scope_types,
       ctx.file_ns,
       ctx.check_warnings,
       ctx.call_stack,
-    )?)
+    )?;
+    if !matches!(cond_form, Calcit::Bool(true)) {
+      propagate_scope_widening(ctx.scope_types, &false_scope_types, &narrowing.when_false, None);
+    }
+    Some(form)
   } else {
     None
   };
+  if !matches!(cond_form, Calcit::Bool(false) | Calcit::Nil) {
+    propagate_scope_widening(ctx.scope_types, &true_scope_types, &narrowing.when_true, None);
+  }
 
   // P7: constant folding — eliminate dead branch when condition is a literal
   match &cond_form {
@@ -10579,6 +10642,7 @@ fn process_match(
   // and payload typing. Applied generic arguments are kept so a matched payload
   // can be specialized instead of falling back to Dynamic.
   let inferred_match_type = infer_type_from_expr(&value_form, ctx.scope_types);
+  let explicitly_open_match = explicit_open::reads_explicitly_open_local(&value_form);
   let enum_match = inferred_match_type.and_then(|t| match t.as_ref() {
     CalcitTypeAnnotation::EnumValue(enum_ref) => Some((enum_ref.as_ref().to_owned(), Arc::new(vec![]))),
     CalcitTypeAnnotation::Enum(enum_ref, args) => Some((enum_ref.as_ref().to_owned(), args.clone())),
@@ -10614,6 +10678,9 @@ fn process_match(
   // Collect matched tags for exhaustiveness checking
   let mut matched_tags: Vec<Arc<str>> = vec![];
   let mut has_wildcard = false;
+  // Each arm starts from the same incoming evidence. Effects from one arm
+  // must reach the continuation, but must not change a mutually exclusive arm.
+  let mut joined_scope_types = ctx.scope_types.clone();
 
   // Iterate branch pairs: each arg after value is (pattern body)
   for branch_idx in 1..args.len() {
@@ -10636,10 +10703,12 @@ fn process_match(
       // Wildcard: `_`
       Calcit::Symbol { sym, .. } if sym.as_ref() == "_" => {
         has_wildcard = true;
+        let mut body_types = ctx.scope_types.clone();
         let processed_body = phase.process(
           body,
-          PreprocessContext::new(ctx.scope_defs, ctx.scope_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack),
+          PreprocessContext::new(ctx.scope_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack),
         )?;
+        propagate_scope_widening(&mut joined_scope_types, &body_types, &ScopeTypes::new(), None);
         xs.push(Calcit::from(CalcitList::from(&[pattern.to_owned(), processed_body])));
       }
       // Tag pattern: (:tag binding1 binding2 ...)
@@ -10737,10 +10806,23 @@ fn process_match(
           }
         }
 
+        let mut payload_contracts = explicit_open::ExplicitOpenScope::new();
+        for binding in processed_pattern.iter().skip(1) {
+          let open =
+            explicitly_open_match && matches!(binding, Calcit::Local(local) if contains_dynamic_type(local.type_info.as_ref()));
+          payload_contracts.bind(binding, open);
+        }
         let processed_body = phase.process(
           body,
           PreprocessContext::new(&body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack),
         )?;
+        // Payload names are branch-local, even when they shadow outer names.
+        for binding in processed_pattern.iter().skip(1) {
+          if let Calcit::Local(local) = binding {
+            body_types.remove(&local.sym);
+          }
+        }
+        propagate_scope_widening(&mut joined_scope_types, &body_types, &ScopeTypes::new(), None);
         xs.push(Calcit::from(CalcitList::from(&[
           Calcit::from(CalcitList::from(processed_pattern.as_slice())),
           processed_body,
@@ -10757,6 +10839,7 @@ fn process_match(
     }
   }
 
+  *ctx.scope_types = joined_scope_types;
   if let MacroSourcePhase::Prepare(constraints) = &mut phase {
     let branch_types = type_inference::match_branch_types(&CalcitList::from(xs.as_slice()), ctx.scope_types);
     constraints.join_branches(branch_types, ctx)?;
@@ -11131,7 +11214,7 @@ fn body_for_parameter_recheck(form: &Calcit) -> Calcit {
     && items
       .get(1)
       .and_then(|target| resolve_type_value(target, &ScopeTypes::new()))
-      .is_some_and(|annotation| type_inference::has_payload_free_enum_slot(&annotation))
+      .is_some_and(|annotation| type_inference::has_inferred_empty_slot(&annotation))
   {
     // Retain the original absence evidence only as an assertion obligation.
     // The assertion handler refreshes its input from the new lexical scope.
@@ -11537,7 +11620,7 @@ pub fn preprocess_defn(
           && !has_body_fn_hint
           && recur_param_types
             .iter()
-            .any(|parameter| type_inference::has_payload_free_enum_slot(parameter)),
+            .any(|parameter| type_inference::has_inferred_empty_slot(parameter)),
       );
 
       if !source_top_level_definition
@@ -11545,7 +11628,7 @@ pub fn preprocess_defn(
         && !has_body_fn_hint
         && recur_param_types
           .iter()
-          .any(|parameter| type_inference::has_payload_free_enum_slot(parameter))
+          .any(|parameter| type_inference::has_inferred_empty_slot(parameter))
       {
         let parameters = recursive_inputs::solve(
           args,
@@ -11870,6 +11953,8 @@ pub fn preprocess_core_let(
       }
       body_defs.insert(sym.to_owned());
       let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
+      // The initializer executes before the new binding shadows its name.
+      propagate_scope_widening(ctx.scope_types, &body_types, &ScopeTypes::new(), None);
 
       let inferred_type = existing_type
         .unwrap_or_else(|| infer_type_from_expr(&form, &body_types).unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone()));
@@ -11937,6 +12022,14 @@ pub fn preprocess_core_let(
     xs.push(form);
     Ok(())
   })?;
+  let shadowed = match xs.get(1) {
+    Some(Calcit::List(pair)) => match pair.first() {
+      Some(Calcit::Local(local)) => Some(local.sym.as_ref()),
+      _ => None,
+    },
+    _ => None,
+  };
+  propagate_scope_widening(ctx.scope_types, &body_types, &ScopeTypes::new(), shadowed);
   Ok(Calcit::List(Arc::from(CalcitList::Vector(xs))))
 }
 
@@ -12120,8 +12213,8 @@ fn preprocess_assert_type_with_obligation(
   let target_raw = args.get(0).unwrap();
   let type_form = args.get(1).unwrap();
 
-  let expanded_absence = resolve_type_value(target_raw, &ScopeTypes::new())
-    .is_some_and(|annotation| type_inference::has_payload_free_enum_slot(&annotation));
+  let expanded_absence =
+    resolve_type_value(target_raw, &ScopeTypes::new()).is_some_and(|annotation| type_inference::has_inferred_empty_slot(&annotation));
   let absence_obligation = retained.as_ref().is_some_and(|assertion| assertion.required) || expanded_absence;
   // Only expanded core carries stale inline evidence. Original source must
   // keep its identity so macros inside the assertion still evaluate once.
@@ -12202,7 +12295,7 @@ fn preprocess_assert_type_with_obligation(
   });
   if current_type
     .as_ref()
-    .is_some_and(|annotation| type_inference::has_payload_free_enum_slot(annotation))
+    .is_some_and(|annotation| type_inference::has_inferred_empty_slot(annotation))
     && let Some(retained) = &retained
   {
     // A proof made on an empty input remains an obligation after refinement.
@@ -12271,7 +12364,7 @@ fn preprocess_assert_type_with_obligation(
   }
   if let Calcit::Local(local) = &asserted_target {
     let current_type = current_type.expect("local assertion has inline type evidence");
-    let retain_assertion = type_inference::has_payload_free_enum_slot(&current_type);
+    let retain_assertion = type_inference::has_inferred_empty_slot(&current_type);
     let type_entry = if current_type.as_ref().is_compatible_with(asserted_type.as_ref())
       && annotation_dynamic_weight(current_type.as_ref()) < annotation_dynamic_weight(asserted_type.as_ref())
     {
@@ -15075,7 +15168,7 @@ mod tests {
     let assoc_args = CalcitList::from(&[
       typed_base.to_owned(),
       literal_path.to_owned(),
-      Calcit::Str(Arc::from("typed-path-value-input")),
+      generic_relation_test_local("typed-path-value-input", Arc::new(CalcitTypeAnnotation::Number)),
     ] as &[Calcit]);
     let expanded_assoc = try_expand_typed_literal_path_call(
       &core_import("assoc-in", "tests.typed-path"),
@@ -15102,6 +15195,19 @@ mod tests {
       assoc_code.find(":score").expect("second path expression")
         < assoc_code.find("typed-path-value-input").expect("replacement expression"),
       "path expressions are evaluated before the replacement"
+    );
+    let changing_leaf_args =
+      CalcitList::from(&[typed_base.to_owned(), literal_path.to_owned(), Calcit::Str(Arc::from("new-family"))] as &[Calcit]);
+    assert!(
+      try_expand_typed_literal_path_call(
+        &core_import("assoc-in", "tests.typed-path"),
+        &changing_leaf_args,
+        &ScopeTypes::new(),
+        "tests.typed-path",
+        &stack,
+      )
+      .expect("changing a leaf family preserves the public path call")
+      .is_none()
     );
 
     let updater = Calcit::Local(CalcitLocal {
