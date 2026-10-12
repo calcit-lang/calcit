@@ -2568,7 +2568,10 @@ pub(crate) fn apply_operation_at_path(
         Ok(node.clone())
       }
       TreeOperation::Delete => Err("Cannot delete root node".to_string()),
-      _ => Err(format!("Operation '{}' not supported at root level", operation.as_str())),
+      _ => Err(format!(
+        "`{}` is not supported at the definition root; use a non-empty --path",
+        operation.command_form()
+      )),
     };
   }
 
@@ -2604,16 +2607,16 @@ fn apply_operation_recursive(
             new_items[idx] = newn.clone();
           }
           TreeOperation::InsertBefore => {
-            let newn = new_node.ok_or("Code input required for insert-before operation")?;
+            let newn = new_node.ok_or_else(|| format!("Code input required for `{}`", TreeOperation::InsertBefore.command_form()))?;
             new_items.insert(idx, newn.clone());
           }
           TreeOperation::InsertAfter => {
-            let newn = new_node.ok_or("Code input required for insert-after operation")?;
+            let newn = new_node.ok_or_else(|| format!("Code input required for `{}`", TreeOperation::InsertAfter.command_form()))?;
             new_items.insert(idx + 1, newn.clone());
           }
           TreeOperation::InsertChild => {
             // Insert as first child of the node at idx
-            let newn = new_node.ok_or("Code input required for insert-child operation")?;
+            let newn = new_node.ok_or_else(|| format!("Code input required for `{}`", TreeOperation::InsertChild.command_form()))?;
             match &new_items[idx] {
               Cirru::List(children) => {
                 let mut new_children = vec![newn.clone()];
@@ -2627,7 +2630,7 @@ fn apply_operation_recursive(
           }
           TreeOperation::AppendChild => {
             // Insert as last child of the node at idx
-            let newn = new_node.ok_or("Code input required for append-child operation")?;
+            let newn = new_node.ok_or_else(|| format!("Code input required for `{}`", TreeOperation::AppendChild.command_form()))?;
             match &new_items[idx] {
               Cirru::List(children) => {
                 let mut new_children = children.clone();

@@ -742,7 +742,10 @@ mod tests {
     for (group, subcommand, replacement) in [
       ("tree", "batch-delete", "tree delete"),
       ("tree", "insert-before", "tree insert --at before"),
+      ("tree", "insert-after", "tree insert --at after"),
+      ("tree", "insert-child", "tree insert --at prepend-child"),
       ("tree", "append-child", "tree insert --at append-child"),
+      ("tree", "swap-next", "tree swap --with next"),
       ("tree", "swap-prev", "tree swap --with prev"),
       ("edit", "rm-example", "edit examples"),
       ("edit", "ns-doc", "edit ns <ns>"),

@@ -236,7 +236,7 @@ defn render-once (ui) $
 
 只有 `:io` 而没有更具体 tag 时归为 `io`。`:state`、`:meta`、`:data`、`:ffi` 不单独产生 effect kind。
 
-宿主注入 proc 通过 `RegisteredProcDescriptor.tags`（`HashSet<EdnTag>`，与 core `:tags` 同名）声明；可用 `calcit query host-procs [--tag :log]` 查看。
+宿主注入 proc 通过 `RegisteredProcDescriptor.tags`（`HashSet<EdnTag>`，与 core `:tags` 同名）声明；可用 `calcit query host-procs [--tag :log]` 查看（该命令自 0.29.2 起弃用且无替代，计划在下一个非 patch 版本删除，见 `docs/run/upgrade.md`）。
 
 ---
 

@@ -24,6 +24,20 @@ impl TreeOperation {
     }
   }
 
+  /// The command spelling users type for this operation, for error messages.
+  pub(crate) fn command_form(self) -> &'static str {
+    match self {
+      TreeOperation::Delete => "tree delete",
+      TreeOperation::Replace => "tree replace",
+      TreeOperation::InsertBefore => "tree insert --at before",
+      TreeOperation::InsertAfter => "tree insert --at after",
+      TreeOperation::InsertChild => "tree insert --at prepend-child",
+      TreeOperation::AppendChild => "tree insert --at append-child",
+      TreeOperation::SwapNextSibling => "tree swap --with next",
+      TreeOperation::SwapPrevSibling => "tree swap --with prev",
+    }
+  }
+
   pub(crate) fn from_insert_position(position: &str) -> Option<Self> {
     match position {
       "before" => Some(TreeOperation::InsertBefore),

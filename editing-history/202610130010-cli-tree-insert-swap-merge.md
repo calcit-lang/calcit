@@ -4,7 +4,7 @@
 
 `tree` 组有四个签名几乎相同的插入叶子（insert-before、insert-after、insert-child、append-child）和两个只差方向的交换叶子
 （swap-next、swap-prev）；`cursor apply` 已用操作名统一表达同一组动作。Agent 需要记住六个叶子名，
-帮助文本和事务操作名也随之重复。`query host-procs` 在仓库、脚本与已盘点生态中零引用。
+帮助文本和事务操作名也随之重复。`query host-procs` 除 effects-graph RFC 的一行说明（已更新）外，在仓库代码、文档、脚本与已盘点生态中无引用。
 
 ## 收敛方案
 

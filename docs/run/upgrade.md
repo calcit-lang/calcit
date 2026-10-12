@@ -674,7 +674,7 @@ calcit calcit.cirru edit ns app.main --file .calcit/snippets/app.main.cirru --dr
 | `tree append-child <target> --path <p> …` | `tree insert <target> --at append-child --path <p> …` | `--path` 指向父列表，节点成为最后一个子节点 |
 | `tree swap-next <target> --path <p>` | `tree swap <target> --with next --path <p>` | 与下一个兄弟交换 |
 | `tree swap-prev <target> --path <p>` | `tree swap <target> --with prev --path <p>` | 与上一个兄弟交换 |
-| `query host-procs [--tag <tag>]` | 无 | 仓库、脚本与已盘点的生态仓库均无引用；删除后不再提供宿主注册 proc 的命令行清单 |
+| `query host-procs [--tag <tag>]` | 无 | 除 effects-graph RFC 中的一行说明（已更新）外，仓库代码、文档、脚本与已盘点的生态仓库均无引用；删除后不再提供宿主注册 proc 的命令行清单 |
 
 `--at` 只接受 `before`、`after`、`prepend-child`、`append-child`，`--with` 只接受 `next`、`prev`，其他值在写入前报错。`cursor apply` 的操作名（`insert-before`、`swap-next` 等）不属于已弃用叶子，保持不变。
 

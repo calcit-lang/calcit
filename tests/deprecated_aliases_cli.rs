@@ -762,6 +762,10 @@ fn tree_insert_and_swap_match_the_legacy_leaves() {
     assert_eq!(hints.len(), 1, "{old:?}: {hints:?}");
     assert!(hints[0].contains(replacement), "{}", hints[0]);
     assert!(hint_lines(&new_output).is_empty(), "{new:?} must not print a hint");
+    assert!(
+      !String::from_utf8_lossy(&old_output.stdout).contains("[Deprecated]"),
+      "{old:?} must keep the hint off stdout"
+    );
     assert_ne!(read(&legacy), before, "{old:?} should change the snapshot");
     assert_eq!(read(&legacy), read(&merged), "{old:?} vs {new:?}");
   }
@@ -833,4 +837,177 @@ fn host_procs_is_deprecated_without_replacement() {
   let hints = hint_lines(&output);
   assert_eq!(hints.len(), 1, "{hints:?}");
   assert!(hints[0].contains("has no replacement"), "{}", hints[0]);
+  assert!(!output.stdout.is_empty() && !String::from_utf8_lossy(&output.stdout).contains("[Deprecated]"));
+}
+
+fn snapshot_text(project: &TempProject) -> String {
+  fs::read_to_string(project.snapshot()).expect("snapshot should read")
+}
+
+#[test]
+fn tree_insert_and_swap_guard_expectations_and_root_paths() {
+  let project = TempProject::create("guards");
+  let before = snapshot_text(&project);
+  for args in [
+    &[
+      "tree",
+      "insert",
+      "app.main/items",
+      "--at",
+      "after",
+      "--path",
+      "@2.1",
+      "--expect",
+      "quote 7",
+      "--code",
+      "quote 9",
+    ][..],
+    &[
+      "tree",
+      "insert-after",
+      "app.main/items",
+      "--path",
+      "@2.1",
+      "--expect",
+      "quote 7",
+      "--code",
+      "quote 9",
+    ][..],
+  ] {
+    let output = run_calcit(&project.snapshot(), args);
+    assert!(!output.status.success(), "{args:?} should be rejected");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("guard failed"), "{args:?}");
+    assert_eq!(before, snapshot_text(&project), "{args:?} must not write");
+  }
+  // The matching guard lets the same insert through.
+  edit_ok(
+    &project,
+    &[
+      "tree",
+      "insert",
+      "app.main/items",
+      "--at",
+      "after",
+      "--path",
+      "@2.1",
+      "--expect",
+      "quote 1",
+      "--code",
+      "quote 9",
+    ],
+  );
+  assert!(snapshot_text(&project).contains("[] 1 9 2 3 4"));
+
+  let project = TempProject::create("root");
+  let before = snapshot_text(&project);
+  for (args, command) in [
+    (
+      &[
+        "tree",
+        "insert",
+        "app.main/items",
+        "--at",
+        "before",
+        "--path",
+        "",
+        "--code",
+        "quote 9",
+      ][..],
+      "tree insert --at before",
+    ),
+    (
+      &[
+        "tree",
+        "insert",
+        "app.main/items",
+        "--at",
+        "append-child",
+        "--path",
+        "",
+        "--code",
+        "quote 9",
+      ][..],
+      "tree insert --at append-child",
+    ),
+    (
+      &["tree", "swap", "app.main/items", "--with", "next", "--path", ""][..],
+      "tree swap --with next",
+    ),
+  ] {
+    let output = run_calcit(&project.snapshot(), args);
+    assert!(!output.status.success(), "{args:?} should fail at the root");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    for legacy in ["insert-before", "insert-after", "insert-child", "swap-next", "swap-prev"] {
+      assert!(!stderr.contains(legacy), "{args:?} leaks legacy name `{legacy}`: {stderr}");
+    }
+    assert!(stderr.contains(command) || stderr.contains("path"), "{args:?}: {stderr}");
+    assert_eq!(before, snapshot_text(&project), "{args:?} must not write");
+  }
+}
+
+#[test]
+fn tree_insert_reads_code_from_file() {
+  let project = TempProject::create("file-input");
+  let snippet = project.0.join("snippet.cirru");
+  fs::write(&snippet, "quote 9\n").expect("snippet should write");
+  edit_ok(
+    &project,
+    &[
+      "tree",
+      "insert",
+      "app.main/items",
+      "--at",
+      "after",
+      "--path",
+      "@2.1",
+      "--input-format",
+      "cirru",
+      "--file",
+      snippet.to_str().expect("utf8 path"),
+    ],
+  );
+  assert!(snapshot_text(&project).contains("[] 1 9 2 3 4"), "{}", snapshot_text(&project));
+}
+
+#[test]
+fn tree_insert_and_swap_resolve_cursor_and_maintain_it() {
+  let project = TempProject::create("cursor");
+  edit_ok(&project, &["cursor", "set", "app.main/items", "--path", "@2.3"]);
+  let cursor_path = |project: &TempProject| {
+    let output = edit_ok(project, &["cursor", "show", "--format", "json"]);
+    String::from_utf8_lossy(&output.stdout).to_string()
+  };
+  assert!(cursor_path(&project).contains("@2.3"), "{}", cursor_path(&project));
+
+  // Inserting before the selected node shifts the saved coordinate.
+  edit_ok(
+    &project,
+    &[
+      "tree",
+      "insert",
+      "app.main/items",
+      "--at",
+      "before",
+      "--path",
+      "@2.1",
+      "--code",
+      "quote 8",
+    ],
+  );
+  assert!(cursor_path(&project).contains("@2.4"), "{}", cursor_path(&project));
+
+  // Swaps follow the selected subtree.
+  edit_ok(&project, &["tree", "swap", "app.main/items", "--with", "next", "--path", "@2.4"]);
+  assert!(cursor_path(&project).contains("@2.5"), "{}", cursor_path(&project));
+
+  // `@cursor` works as both target and path for the merged commands.
+  edit_ok(
+    &project,
+    &[
+      "tree", "insert", "@cursor", "--at", "after", "--path", "@cursor", "--code", "quote 7",
+    ],
+  );
+  assert!(snapshot_text(&project).contains("[] 8 1 2 4 3 7"), "{}", snapshot_text(&project));
+  edit_ok(&project, &["tree", "swap", "@cursor", "--with", "prev", "--path", "@cursor"]);
+  assert!(snapshot_text(&project).contains("[] 8 1 2 3 4 7"), "{}", snapshot_text(&project));
 }
