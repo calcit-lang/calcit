@@ -891,11 +891,33 @@ pub(super) fn emit_update_has_slot(ctx: &mut WasmGenCtx, receiver_local: u32, ke
   ctx.emit(f64_const(enum_tag));
   ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-  ctx.emit(f64_const(1.0));
+  emit_enum_slot_checked_from_local(ctx, receiver_local, key_local);
   ctx.emit(Instruction::Else);
   ctx.emit(Instruction::Unreachable);
   ctx.emit(Instruction::End);
   ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+}
+
+/// Push 1.0 when `index_local` names an existing Enum slot (the tag at 0 or a
+/// payload), and trap otherwise, matching the native `&enum:nth` range error.
+/// Layout: [payload_count:f64][tag:f64][payload0:f64]..., so valid indices are
+/// `0..=payload_count`.
+fn emit_enum_slot_checked_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_local: u32) {
+  let ptr_local = emit_ptr_local_from_receiver(ctx, receiver_local);
+  let payload_count = super::emit_load_count_i32(ctx, ptr_local);
+  let slot_count = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(payload_count));
+  ctx.emit(Instruction::I32Const(1));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::LocalSet(slot_count));
+  emit_list_index_in_bounds_from_locals(ctx, slot_count, index_local);
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::Else);
+  ctx.emit(f64_const(1.0));
   ctx.emit(Instruction::End);
 }
 

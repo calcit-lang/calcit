@@ -436,6 +436,10 @@ assert.throws(
   WebAssembly.RuntimeError,
   "out-of-bounds &list:nth must trap instead of loading unchecked memory",
 );
+check("test-enum-update-nth(1)", 11, e["test-enum-update-nth"], 1);
+check("test-enum-update-nth(2)", 12, e["test-enum-update-nth"], 2);
+checkTrap("test-enum-update-nth(3)", () => e["test-enum-update-nth"](3));
+checkTrap("test-enum-update-nth(7)", () => e["test-enum-update-nth"](7));
 check("test-list-first()", 42, e["test-list-first"]);
 check("test-list-rest-generic-first()", 20, e["test-list-rest-generic-first"]);
 check("test-list-rest-empty()", 0, e["test-list-rest-empty"]);
