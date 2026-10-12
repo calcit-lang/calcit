@@ -8206,6 +8206,21 @@
                     if (nil? b) a b
                   , 5
               :tags $ #{} :call-boundary
+            %{} 'TestEntry (:name |iife-rest-param-recur)
+              :code $ quote $ do
+                assert= 2 $
+                  fn (n & xs)
+                    if (&> n 0)
+                      recur (&- n 1) n n
+                      &list:count xs
+                  , 2
+                assert= 1 $
+                  fn (n ? acc)
+                    if (&> n 0)
+                      recur (&- n 1) n
+                      , acc
+                  , 3
+              :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |rest-callee-in-hof)
               :code $ quote $ do
                 assert= 6 $ foldl ([] 1 2 3) 0 +
@@ -8229,7 +8244,13 @@
             %{} 'TestEntry (:name |plain-call-rest-fn-value)
               :code $ quote $ let
                   f +
+                  g inc
                 assert= 3 $ f 1 2
+                assert= 6 $ f 1 2 3
+                assert= 4 $ f 4
+                assert= 2 $ g 1
+                assert= ([] 1 2)
+                  map ([] 1 2) f
               :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |nested-generic-call-scope)
               :code $ quote $ let

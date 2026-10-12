@@ -298,10 +298,7 @@ pub(super) fn emit_foldl_step(ctx: &mut WasmGenCtx, fn_call_kind: &FoldlCallKind
       ctx.emit(Instruction::LocalGet(elem));
       ctx.emit(Instruction::LocalGet(*fn_local_idx));
       ctx.emit(Instruction::I32TruncF64S);
-      ctx.emit(Instruction::CallIndirect {
-        type_index: 2,
-        table_index: 0,
-      });
+      ctx.emit(call_indirect(2));
       Ok(())
     }
   }
@@ -555,10 +552,7 @@ fn emit_unary_step(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, arg: u32) -> Resu
       ctx.emit(Instruction::LocalGet(arg));
       ctx.emit(Instruction::LocalGet(*fn_local_idx));
       ctx.emit(Instruction::I32TruncF64S);
-      ctx.emit(Instruction::CallIndirect {
-        type_index: 1,
-        table_index: 0,
-      });
+      ctx.emit(call_indirect(1));
       Ok(())
     }
   }
@@ -591,10 +585,7 @@ fn emit_binary_step_ie(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, idx: u32, ele
       ctx.emit(Instruction::LocalGet(elem));
       ctx.emit(Instruction::LocalGet(*fn_local_idx));
       ctx.emit(Instruction::I32TruncF64S);
-      ctx.emit(Instruction::CallIndirect {
-        type_index: 2,
-        table_index: 0,
-      });
+      ctx.emit(call_indirect(2));
       Ok(())
     }
   }

@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::BTreeSet;
 use std::sync::LazyLock;
 use wasm_encoder::{BlockType, Ieee64};
 
@@ -27,12 +28,22 @@ pub(super) struct ModuleFunctionLayout {
   pub(super) runtime_fn_count: u32,
   pub(super) table_fn_count: u32,
   pub(super) component_free_head: bool,
-  /// `(trap function index, table slots)`: the funcref table entries of `&`
-  /// rest-parameter functions point at a `() -> ()` function that traps.
-  /// Indirect calls use the canonical `(f64 x N) -> f64` types and never pack
-  /// rest arguments, so such a call traps on the signature check instead of
-  /// reading an argument as the rest list (#1964).
-  pub(super) rest_slot_trap: Option<(u32, Vec<u32>)>,
+  /// `(call arity, table slot) -> adapter function index`. A function value
+  /// is its table slot; a call with N arguments uses funcref table N (see
+  /// `call_indirect`). In table N the slot of a `&` rest-parameter function
+  /// points at an adapter typed `(f64 x N) -> f64` that packs the trailing
+  /// arguments into the rest list (#1972); every other slot points at the
+  /// function itself, so a call with the wrong arity fails the signature check.
+  pub(super) rest_adapters: HashMap<(u32, u32), u32>,
+}
+
+/// `call_indirect` for a function value called with `arity` arguments: the
+/// canonical type `(f64 x arity) -> f64` and the funcref table for that arity.
+pub(super) fn call_indirect(arity: u32) -> Instruction<'static> {
+  Instruction::CallIndirect {
+    type_index: arity,
+    table_index: arity,
+  }
 }
 
 #[derive(Clone, Copy)]
@@ -3508,16 +3519,32 @@ pub(super) fn build_wasm_module(
   }
   module.section(&functions);
 
-  // Table section: one funcref table holding all user calcit functions.
-  // Table slot i → calcit fn at fn_defs[i] (function index: num_imports + runtime_fn_count + i).
+  // Table section: funcref table N serves function-value calls with N
+  // arguments. Table slot i → calcit fn at fn_defs[i] (function index:
+  // num_imports + runtime_fn_count + i), or its rest adapter for that arity.
+  // Table 0 is always filled; other tables are filled only when a call uses
+  // them and are empty otherwise.
+  let used_tables: BTreeSet<u32> = fns
+    .iter()
+    .flat_map(|f| f.instructions.iter())
+    .filter_map(|instruction| match instruction {
+      Instruction::CallIndirect { table_index, .. } => Some(*table_index),
+      _ => None,
+    })
+    .chain([0])
+    .collect();
+  let table_count = used_tables.last().map_or(1, |last| last + 1);
   let mut tables = TableSection::new();
-  tables.table(TableType {
-    element_type: RefType::FUNCREF,
-    minimum: layout.table_fn_count as u64,
-    maximum: Some(layout.table_fn_count as u64),
-    table64: false,
-    shared: false,
-  });
+  for table in 0..table_count {
+    let size = if used_tables.contains(&table) { layout.table_fn_count } else { 0 } as u64;
+    tables.table(TableType {
+      element_type: RefType::FUNCREF,
+      minimum: size,
+      maximum: Some(size),
+      table64: false,
+      shared: false,
+    });
+  }
   module.section(&tables);
 
   // Memory section: 100 pages (6.4MB) for linear memory (structs, enums)
@@ -3595,14 +3622,23 @@ pub(super) fn build_wasm_module(
   // Element section: populate the funcref table with user calcit function indices.
   // table slot i → function index (num_imports + runtime_fn_count + i).
   if layout.table_fn_count > 0 {
-    let fn_indices: Vec<u32> = (0..layout.table_fn_count)
-      .map(|i| match &layout.rest_slot_trap {
-        Some((trap_fn, slots)) if slots.contains(&i) => *trap_fn,
-        _ => num_imports + layout.runtime_fn_count + i,
-      })
-      .collect();
     let mut elements = ElementSection::new();
-    elements.active(Some(0), &ConstExpr::i32_const(0), Elements::Functions(fn_indices.as_slice().into()));
+    for &table in &used_tables {
+      let fn_indices: Vec<u32> = (0..layout.table_fn_count)
+        .map(|i| {
+          layout
+            .rest_adapters
+            .get(&(table, i))
+            .copied()
+            .unwrap_or(num_imports + layout.runtime_fn_count + i)
+        })
+        .collect();
+      elements.active(
+        Some(table),
+        &ConstExpr::i32_const(0),
+        Elements::Functions(fn_indices.as_slice().into()),
+      );
+    }
     module.section(&elements);
   }
 
