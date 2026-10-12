@@ -564,14 +564,15 @@ fn emit_unary_step(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, arg: u32) -> Resu
   }
 }
 
-/// Emit a call to the HOF callee with two arguments (elem, index) for map-indexed.
-fn emit_binary_step_ei(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, elem: u32, idx: u32) -> Result<(), String> {
+/// Emit a call to the HOF callee with two arguments (index, elem) for map-indexed,
+/// matching the native `(f idx elem)` callback order.
+fn emit_binary_step_ie(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, idx: u32, elem: u32) -> Result<(), String> {
   match kind {
     FoldlCallKind::Static(fn_idx, rest_fixed) => {
       let idx_f64 = ctx.alloc_local();
       ctx.ptr_to_f64(idx);
       ctx.emit(Instruction::LocalSet(idx_f64));
-      emit_static_callee_call(ctx, *fn_idx, *rest_fixed, &[elem, idx_f64]);
+      emit_static_callee_call(ctx, *fn_idx, *rest_fixed, &[idx_f64, elem]);
       Ok(())
     }
     FoldlCallKind::Inline(closure) => {
@@ -581,13 +582,13 @@ fn emit_binary_step_ei(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, elem: u32, id
       let idx_f64 = ctx.alloc_local();
       ctx.ptr_to_f64(idx);
       ctx.emit(Instruction::LocalSet(idx_f64));
-      emit_inline_closure_body(ctx, closure, &[elem, idx_f64])
+      emit_inline_closure_body(ctx, closure, &[idx_f64, elem])
     }
     FoldlCallKind::Proc(_) => Err("map-indexed proc callee not supported".into()),
-    // Dynamic dispatch: (elem_f64, idx_as_f64) → f64. Canonical type 2.
+    // Dynamic dispatch: (idx_as_f64, elem_f64) → f64. Canonical type 2.
     FoldlCallKind::Dynamic(fn_local_idx) => {
-      ctx.emit(Instruction::LocalGet(elem));
       ctx.ptr_to_f64(idx);
+      ctx.emit(Instruction::LocalGet(elem));
       ctx.emit(Instruction::LocalGet(*fn_local_idx));
       ctx.emit(Instruction::I32TruncF64S);
       ctx.emit(Instruction::CallIndirect {
@@ -665,7 +666,7 @@ pub(super) fn emit_map(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Stri
   Ok(())
 }
 
-/// `map-indexed xs f` — apply f(elem, idx) to every element, returning new list.
+/// `map-indexed xs f` — apply f(idx, elem) to every element, returning new list.
 pub(super) fn emit_map_indexed(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(2, args, "map-indexed")?;
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
@@ -673,7 +674,7 @@ pub(super) fn emit_map_indexed(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   let dst_ptr = emit_alloc_list(ctx, count);
   let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("map-indexed: {e}"))?;
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
-  // write f(elem, i) into dst[i]
+  // write f(i, elem) into dst[i]
   ctx.emit(Instruction::LocalGet(dst_ptr));
   ctx.emit(Instruction::LocalGet(i));
   ctx.emit(Instruction::I32Const(1));
@@ -681,7 +682,7 @@ pub(super) fn emit_map_indexed(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Mul);
   ctx.emit(Instruction::I32Add);
-  emit_binary_step_ei(ctx, &kind, elem, i)?;
+  emit_binary_step_ie(ctx, &kind, i, elem)?;
   ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
   emit_list_iter_end(ctx, i);
   ctx.ptr_to_f64(dst_ptr);
