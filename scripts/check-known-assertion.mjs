@@ -32,7 +32,7 @@ try {
   // lowering, without treating a same-named constructor binder as that caller.
   execFileSync(process.execPath, [
     "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
-    "--tag", "enum-generic-payload", "--backend", "native,js",
+    "--tag", "enum-generic-payload", "--backend", "native,js,wasm",
   ], { ...options, stdio: "inherit" });
   await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
   const enumGenericOriginal = await readFile(snapshot);

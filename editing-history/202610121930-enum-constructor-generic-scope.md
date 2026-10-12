@@ -24,7 +24,7 @@ Enum 载荷原先直接使用定义中的泛型名做绑定。若调用方也使
 ## 验证方式
 
 在现有 `def-value-schema.cirru` 中增加 definition `:tests`，覆盖同名与异名泛型、
-直接载荷、Map 嵌套、Result 错误槽及重复载荷；通过统一运行器回放 native/JS。
+直接载荷、Map 嵌套、Result 错误槽及重复载荷；通过统一运行器回放 native/JS/WASM。
 现有 `check-known-assertion.mjs` 检查断言、返回和调用证明，以及开放/错误载荷、
 调用方特化和重复泛型不一致的拒绝行为，并确认检查不改写 Snapshot。
 另外复验 Timegrass 的原定义和完整严格工作流；单项通过不代表其完整迁移完成。
