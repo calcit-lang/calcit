@@ -170,6 +170,24 @@ pub(crate) struct CallTypeCheckInfo<'a> {
   pub call_location: Option<NodeLocation>,
 }
 
+/// Contracts for functions that invoke a callback, not functions that merely
+/// accept a callable as stored data (for example a Struct field in `assoc`).
+pub(super) fn specialize_core_callback_expected_types(
+  fn_info: &CalcitFn,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  expected_types: &[Arc<CalcitTypeAnnotation>],
+) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+  if fn_info.def_ns.as_ref() != calcit::CORE_NS {
+    return None;
+  }
+  match fn_info.name.as_ref() {
+    "fold" | "foldl" | "reduce" => specialize_collection_fold_expected_types(args, scope_types, expected_types),
+    "&list:sort-by" => specialize_list_sort_by_expected_types(args, scope_types, expected_types),
+    _ => None,
+  }
+}
+
 pub(super) fn specialize_core_expected_types(
   fn_info: &CalcitFn,
   args: &CalcitList,
@@ -182,9 +200,12 @@ pub(super) fn specialize_core_expected_types(
   if let Some(contract) = resolve_checked_call_contract(&fn_info.def_ns, &fn_info.name, args, scope_types) {
     return contract.expected_types;
   }
+  if let Some(expected) = specialize_core_callback_expected_types(fn_info, args, scope_types, expected_types) {
+    return Some(expected);
+  }
   let required_arity = match fn_info.name.as_ref() {
-    "&list:apply" | "&list:sort-by" | "contains?" | "includes?" => 2,
-    "assoc" | "fold" | "foldl" | "reduce" | "update" => 3,
+    "&list:apply" | "contains?" | "includes?" => 2,
+    "assoc" | "update" => 3,
     _ => return None,
   };
   if expected_types.len() < required_arity || args.len() < required_arity {
@@ -209,8 +230,6 @@ pub(super) fn specialize_core_expected_types(
       };
       Some(specialized)
     }
-    "fold" | "foldl" | "reduce" => specialize_collection_fold_expected_types(args, scope_types, expected_types),
-    "&list:sort-by" => specialize_list_sort_by_expected_types(args, scope_types, expected_types),
     "includes?" => {
       let mut specialized = expected_types.to_vec();
       specialized[1] = match receiver_type.as_ref() {

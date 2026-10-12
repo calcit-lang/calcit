@@ -4948,7 +4948,7 @@ fn preprocess_known_function_call(
     let refreshed_core_types = if can_refresh_core_types {
       staged_args
         .as_ref()
-        .and_then(|staged| type_checking::specialize_core_expected_types(info.as_ref(), staged, scope_types, &info.arg_types))
+        .and_then(|staged| type_checking::specialize_core_callback_expected_types(info.as_ref(), staged, scope_types, &info.arg_types))
     } else {
       None
     };
@@ -5190,8 +5190,9 @@ fn preprocess_known_function_call(
     // Callback specialization must not narrow the receiver's open members.
     // Other core specializations can describe operations with intentional
     // runtime rejection; their input policy is not changed by callback context.
-    let core_expected_types = type_checking::specialize_core_expected_types(&info, &current_args, scope_types, &info.arg_types)
-      .filter(|types| types.iter().any(|annotation| annotation.resolve_to_nonoptional_fn().is_some()));
+    let core_expected_types =
+      type_checking::specialize_core_callback_expected_types(&info, &current_args, scope_types, &info.arg_types)
+        .filter(|types| types.iter().any(|annotation| annotation.resolve_to_nonoptional_fn().is_some()));
     if let Some(expected_types) = checked_expected_types.or(core_expected_types.as_deref()) {
       explicit_open::note_callee_use(&head_form);
       reject_strict_unproven_specialized_contract(&head_form, &current_args, expected_types, 0, scope_types, file_ns, call_stack)?;
@@ -7171,7 +7172,7 @@ fn expected_method_argument_types(
       value => Some(value.clone()),
     };
     if let Some(Calcit::Fn { info, .. }) = method_value {
-      specialized_types = type_checking::specialize_core_expected_types(&info, args, scope_types, &info.arg_types);
+      specialized_types = type_checking::specialize_core_callback_expected_types(&info, args, scope_types, &info.arg_types);
     }
     match method_entry {
       Calcit::Import(import) => program::lookup_def_schema(&import.ns, &import.def),

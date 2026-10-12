@@ -19,3 +19,9 @@ Timegrass 的排序回调在严格调用证明中丢失 List 成员类型。完�
 一旦严格调用证明使用了这个实现来源，后续 `set!` 保守拒绝，保护捕获该变量的闭包与循环中的后续调用；这不是完整的可变函数流分析。普通不依赖实现关系的调用，以及写入原变量前复制出的独立别名，保留原行为。使用已有 `E_CALL_ARGUMENT_UNPROVEN` 诊断，限制同时写入 List 用户文档。
 
 隔离 Snapshot 的新增回放：10/10 native、10/10 JS，另 2/2 JS 赋值边界通过；6 个别名遮蔽、无关实现和前后重绑定负例均在预期边界拒绝。旧基线完整 proof 与 cargo test 尚未完成时，上游又合并 String Option 与 CLI format 修复，因此主动停止旧轮次，不算全量通过；同步上游后的最终组合须重新完整验证。
+
+## 区分回调与被保存的函数值
+
+同步 main 后完整 Rust 测试通过，CI 的 Struct 写入回归随后发现 `assoc` 更新 Fn 类型字段会被新校验提前拒绝：仅用“专门化参数中包含 Fn”识别回调不成立，存储函数值并不等于调用该函数。这里将已有 fold / sort selector 关系集中为私有的 callback specialization helper，并由原通用 specialization 复用；早期上下文、方法和最终回调校验只接入这个语义边界。Struct 写入仍由原字段合同证明处理，保留原结构化 `E_CALL_ARGUMENT_UNPROVEN`，不改成其他诊断或放宽门禁。既有 `check-struct-field-js.mjs` 用例不删、不改期望，只补空 stdout 的明确报错，避免 JSON parse 错误掩盖根因。
+
+此修复后的完整 Struct 回归与排序正负例定向 runner 均通过，Clippy 通过；完整 Rust / check-all 重新回放，不沿用旧 HEAD 的成功结果。
