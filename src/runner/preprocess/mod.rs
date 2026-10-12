@@ -12992,6 +12992,15 @@ fn find_unproven_generic_argument(
       return None;
     }
     let proof = call_proof.prove(&actual, expected);
+    // A merged type may lose empty-container evidence. Reuse the independent
+    // exit proof for non-generic contracts without reusing pre-mutation aliases.
+    if matches!(proof, TypeProof::NeedsBoundary(_))
+      && !expected.contains_type_var()
+      && !type_checking::may_rebind_local(arg)
+      && type_checking::expression_is_proven_for(arg, expected, scope_types, false)
+    {
+      return None;
+    }
     ((matches!(proof, TypeProof::NeedsBoundary(_)) || audit && proof.is_mismatch())
       && (audit
         || matches!(proof, TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic))

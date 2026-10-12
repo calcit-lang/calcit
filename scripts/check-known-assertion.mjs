@@ -28,6 +28,11 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
+  // Conditional exits retain their collection evidence independently of the condition.
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "branch-call-proof", "--backend", "native,js",
+  ], { ...options, stdio: "inherit" });
   // Preserve optional callable contracts as Calcit tests, including aliases.
   execFileSync(process.execPath, [
     "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
@@ -46,6 +51,26 @@ try {
     "--backend", "native,wasm",
   ], { ...options, stdio: "inherit" });
   await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  for (const name of ["style-count", "rest-count"]) {
+    run("fix", "--ns", "app.branch-call", "--def", name,
+      "--rule", "callable-contract-proof-v1", "--format", "edn");
+  }
+  for (const name of ["open-style", "wrong-style", "rebound-style"]) {
+    const original = await readFile(snapshot);
+    const output = join(project, `branch-call-${name}`);
+    for (const command of [
+      ["--check-only", "--init-fn", `app.branch-call/${name}`, "--reload-fn", `app.branch-call/${name}`],
+      ["--init-fn", `app.branch-call/${name}`, "--reload-fn", `app.branch-call/${name}`, "--emit-path", output, "js"],
+      ["fix", "--ns", "app.branch-call", "--def", name, "--rule", "callable-contract-proof-v1", "--format", "json"],
+    ]) {
+      const rejected = spawnSync(binary, [snapshot, ...command], options);
+      if (rejected.error) throw rejected.error;
+      assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
+      assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_CALL_ARGUMENT_(UNPROVEN|MISMATCH)|W_FN_ARG_TYPE_MISMATCH/);
+      assert.deepEqual(await readFile(snapshot), original);
+    }
+    await assertRejectedArtifacts(output, name, /E_CALL_ARGUMENT_(UNPROVEN|MISMATCH)|W_FN_ARG_TYPE_MISMATCH/, true);
+  }
   const optionalCallableOriginal = await readFile(snapshot);
   for (const snippet of [
     "map-indexed ([] |one |two) trim",
