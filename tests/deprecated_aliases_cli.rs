@@ -1225,7 +1225,7 @@ fn cursor_merged_forms_reject_invalid_values_without_writing() {
   edit_ok(&project, &["cursor", "copy"]);
   let snapshot_before = snapshot_text(&project);
   let cursor_before = cursor_json(&project);
-  let cases: [(&[&str], &str); 17] = [
+  let cases: [(&[&str], &str); 24] = [
     (&["cursor", "move", "sideways"], "Unsupported `cursor move sideways`"),
     (&["cursor", "move", "parent", "--count", "2"], "does not accept --count"),
     (&["cursor", "move", "next", "--last"], "does not accept an index"),
@@ -1249,6 +1249,13 @@ fn cursor_merged_forms_reject_invalid_values_without_writing() {
     (&["cursor", "apply", "barf-last", "--at", "before"], "does not accept --at"),
     (&["cursor", "apply", "delete", "--at", "before"], "does not accept --at"),
     (&["cursor", "apply", "tidy"], "Unsupported cursor operation"),
+    (&["cursor", "marks", "set", "a", "b"], "at most one mark name"),
+    (&["cursor", "marks", "set", "a", "b", "c"], "at most one mark name"),
+    (&["cursor", "marks", "drop"], "requires a mark name"),
+    (&["cursor", "move", "prev", "2"], "does not accept an index"),
+    (&["cursor", "marks", "set", "a", "--format", "json"], "does not accept --format"),
+    (&["cursor", "marks", "go", "a", "--format", "json"], "does not accept --format"),
+    (&["cursor", "clipboard", "paste", "--format", "json"], "does not accept --format"),
   ];
   for (args, expected) in cases {
     let output = run_calcit(&project.snapshot(), args);
@@ -1261,5 +1268,57 @@ fn cursor_merged_forms_reject_invalid_values_without_writing() {
     assert!(hint_lines(&output).is_empty(), "{args:?} must not print a deprecation hint");
     assert_eq!(snapshot_text(&project), snapshot_before, "{args:?} must not write the snapshot");
     assert_eq!(cursor_json(&project), cursor_before, "{args:?} must not move the cursor");
+  }
+}
+
+#[test]
+fn cursor_clipboard_actions_reject_format_but_bare_forms_keep_it() {
+  let project = cursor_project("cursor-format");
+  edit_ok(&project, &["cursor", "set", "app.main/items", "--path", "@2.1"]);
+  for action in ["copy", "cut", "clear"] {
+    let output = run_calcit(&project.snapshot(), &["cursor", "clipboard", action, "--format", "edn"]);
+    assert!(!output.status.success(), "clipboard {action} --format should fail");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("does not accept --format"));
+  }
+  edit_ok(&project, &["cursor", "clipboard", "copy"]);
+  edit_ok(&project, &["cursor", "marks", "set", "here"]);
+  for args in [
+    &["cursor", "marks", "--format", "json"][..],
+    &["cursor", "marks", "list", "--format", "json"][..],
+    &["cursor", "clipboard", "--format", "json"][..],
+    &["cursor", "clipboard", "show", "--format", "json"][..],
+  ] {
+    let output = edit_ok(&project, args);
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+      stdout.trim_start().starts_with('{'),
+      "{args:?} should print one JSON document: {stdout}"
+    );
+    assert!(hint_lines(&output).is_empty(), "{args:?} must not print a hint");
+  }
+}
+
+#[test]
+fn cursor_after_focus_works_with_the_merged_forms() {
+  let project = cursor_project("cursor-focus");
+  edit_ok(&project, &["cursor", "set", "app.main/nested", "--path", "@2.2"]);
+  for args in [
+    &["cursor", "move", "next"][..],
+    &["cursor", "marks", "set", "m"][..],
+    &["cursor", "move", "prev"][..],
+    &["cursor", "marks", "go", "m"][..],
+    &["cursor", "apply", "duplicate"][..],
+    &["cursor", "clipboard", "copy"][..],
+    &["cursor", "clipboard", "paste", "--at", "before"][..],
+  ] {
+    let output = Command::new(env!("CARGO_BIN_EXE_calcit"))
+      .env("NO_COLOR", "1")
+      .args(["--tips-level", "none", "--cursor-after", "focus"])
+      .arg(project.snapshot())
+      .args(args)
+      .output()
+      .expect("calcit command should run");
+    assert!(output.status.success(), "{args:?}: {}", String::from_utf8_lossy(&output.stderr));
+    assert!(hint_lines(&output).is_empty(), "{args:?} must not print a hint");
   }
 }

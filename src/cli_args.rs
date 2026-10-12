@@ -2794,8 +2794,8 @@ pub struct CursorMarksCommand {
   #[argh(positional)]
   pub args: Vec<String>,
   /// output format for `list`: human (default), edn, or json
-  #[argh(option, default = "String::from(\"human\")")]
-  pub format: String,
+  #[argh(option)]
+  pub format: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
@@ -2837,8 +2837,8 @@ pub struct CursorClipboardCommand {
   #[argh(option)]
   pub at: Option<String>,
   /// output format for `show`: human (default), edn, or json
-  #[argh(option, default = "String::from(\"human\")")]
-  pub format: String,
+  #[argh(option)]
+  pub format: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]

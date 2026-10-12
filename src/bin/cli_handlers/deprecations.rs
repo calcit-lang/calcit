@@ -301,6 +301,9 @@ pub fn normalize_cursor_subcommand(subcommand: &CursorSubcommand) -> Result<Curs
         ));
       }
       let action = o.args.first().map_or("list", String::as_str);
+      if o.format.is_some() && action != "list" {
+        return Err(format!("`cursor marks {action}` does not accept --format; it belongs to `list`."));
+      }
       match (action, o.args.get(1)) {
         ("list", None) => Ok(CursorSubcommand::Marks(CursorMarksCommand {
           args: Vec::new(),
@@ -316,6 +319,11 @@ pub fn normalize_cursor_subcommand(subcommand: &CursorSubcommand) -> Result<Curs
     }
     CursorSubcommand::Clipboard(o) => {
       let action = o.action.as_deref().unwrap_or("show");
+      if o.format.is_some() && action != "show" {
+        return Err(format!(
+          "`cursor clipboard {action}` does not accept --format; it belongs to `show`."
+        ));
+      }
       if o.at.is_some() && action != "paste" {
         return Err(format!("`cursor clipboard {action}` does not accept --at; it belongs to `paste`."));
       }

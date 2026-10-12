@@ -534,9 +534,10 @@ fn render_cursor_explanation(cmd: &CursorCommand) -> Option<String> {
     CursorSubcommand::Push(_) => "pushes the current cursor location onto its stack".to_string(),
     CursorSubcommand::Pop(_) => "restores the most recently pushed cursor location".to_string(),
     CursorSubcommand::Anchor(opts) => match opts.action.as_deref().unwrap_or("set") {
+      "set" => "sets the region anchor to the current cursor location".to_string(),
       "clear" => "clears the cursor region anchor".to_string(),
       "show" => "displays the sibling region between the anchor and cursor".to_string(),
-      _ => "sets the region anchor to the current cursor location".to_string(),
+      other => format!("manages the cursor region anchor (`{other}`)"),
     },
     CursorSubcommand::ClearAnchor(_) => "clears the cursor region anchor".to_string(),
     CursorSubcommand::Region(_) => "displays the sibling region between the anchor and cursor".to_string(),
@@ -546,7 +547,8 @@ fn render_cursor_explanation(cmd: &CursorCommand) -> Option<String> {
       ("set", Some(name)) => format!("saves the current cursor location as mark `{name}`"),
       ("go", Some(name)) => format!("moves the cursor to mark `{name}`"),
       ("drop", Some(name)) => format!("removes cursor mark `{name}`"),
-      _ => "lists saved cursor marks".to_string(),
+      ("list", _) => "lists saved cursor marks".to_string(),
+      (other, _) => format!("manages cursor marks (`{other}`)"),
     },
     CursorSubcommand::RmMark(opts) => format!("removes cursor mark `{}`", opts.name),
     CursorSubcommand::Copy(_) => "copies the selected expression into the cursor clipboard".to_string(),
@@ -560,7 +562,8 @@ fn render_cursor_explanation(cmd: &CursorCommand) -> Option<String> {
         opts.at.as_deref().unwrap_or("after")
       ),
       "clear" => "clears the cursor clipboard".to_string(),
-      _ => "displays the cursor clipboard".to_string(),
+      "show" => "displays the cursor clipboard".to_string(),
+      other => format!("manages the cursor clipboard (`{other}`)"),
     },
     CursorSubcommand::ClearClipboard(_) => "clears the cursor clipboard".to_string(),
     CursorSubcommand::Apply(opts) => format!("applies `{}` to the active cursor", opts.operation),
@@ -1270,7 +1273,9 @@ fn push_cursor(tokens: &mut Vec<String>, cmd: &CursorCommand) {
       for arg in &opts.args {
         push_positional(tokens, "arg", arg);
       }
-      echo_items!(tokens, value "format" => &opts.format; default "human")
+      if let Some(format) = &opts.format {
+        push_value(tokens, "format", format, Some("human"));
+      }
     }
     CursorSubcommand::Move(opts) => {
       push_positional(tokens, "direction", &opts.direction);
@@ -1310,7 +1315,9 @@ fn push_cursor(tokens: &mut Vec<String>, cmd: &CursorCommand) {
       if let Some(at) = &opts.at {
         push_value(tokens, "at", at, Some("after"));
       }
-      echo_items!(tokens, value "format" => &opts.format; default "human")
+      if let Some(format) = &opts.format {
+        push_value(tokens, "format", format, Some("human"));
+      }
     }
     CursorSubcommand::Apply(opts) => {
       echo_items!(tokens, pos "operation" => &opts.operation, code_input opts, value "input-format" => &opts.input_format; default "auto", value "depth" => opts.depth; default "2");
