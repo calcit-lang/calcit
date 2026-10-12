@@ -1533,7 +1533,7 @@
             %{} 'TestEntry (:name |preserves-order-input-and-errors)
               :code $ quote $ let
                   input $ [] ([] :a 1) ([] :b 2)
-                  calls $ atom $ []
+                  calls $ ref $ assert-type ([]) (:: 'List 'Dynamic)
                   result $ &list:map-pair input $ fn (k v)
                     swap! calls $ fn (items) (append items k)
                     [] k v
@@ -7271,7 +7271,7 @@
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |stops-calling-reducer-after-break)
               :code $ quote $ let
-                  *seen $ atom $ []
+                  *seen $ ref $ assert-type ([]) (:: 'List 'Number)
                   result $ fold-while ([] 1 2 3) 0 $ fn (acc x) (swap! *seen append x)
                     if (&= x 2) (ControlFlow :break acc) (ControlFlow :continue x)
                 assert= 1 result
@@ -8249,7 +8249,11 @@
             %{} 'TestEntry (:name |plain-call-many-args-fn-value)
               :code $ quote $ let
                   f +
-                  g $ fn (a b c d e f2 g2 h i) $ &+ a $ &+ b $ &+ c $ &+ d $ &+ e $ &+ f2 $ &+ g2 $ &+ h i
+                  g $ fn
+                    a b c d e f2 g2 h i
+                    &+ a $ &+ b $ &+ c
+                      &+ d $ &+ e $ &+ f2
+                        &+ g2 $ &+ h i
                 assert= 36 $ f 1 2 3 4 5 6 7 8
                 assert= 55 $ f 1 2 3 4 5 6 7 8 9 10
                 assert= 45 $ g 1 2 3 4 5 6 7 8 9

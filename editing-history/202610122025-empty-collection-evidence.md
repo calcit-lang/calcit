@@ -32,6 +32,7 @@ Ref 仍是不变的：无类型上下文的空初始化不允许后续写入使�
 - Ref 回放 native/JS；不把当前 WASM 不支持 Ref 当作通过。
 - `set!` 合法赋值回放 JS，越界赋值在编译阶段拒绝。
 - 已有内部 Rust 测试只更新 Never 的内部表示预期，并继续验证调用方泛型及 Ref 不变性。
+- 原 helper 负例使用空 List 冒充开放容器，改为包含 Dynamic parser 结果的非空 List，另加空 helper 正例。core 的两个 Ref 记录器显式声明初始化合同：fold-while 为 List<Number>；旧 map-pair 开放二元 List 边界的记录器为 List<Dynamic>，不从示例值倒推公共 callback 的类型。原运行顺序、失败和结果断言不变。
 - 全定义严格检查、Rust 单元测试、clippy、TS 编译、Agent 接口与完整 proof 回归分别验证；最终结果及命令保留在 PR。
 
 Timegrass 的原空初始化断言不增加 unsafe、decoder 或层叠断言。更准确的插入推导还暴露了 `users .to-list` 使字符串 key 变成 Dynamic 的旧写法；迁移改用已有 `map-entries`，读取 `MapEntry` 的 `:key` / `:value`，保留解码顺序和首次错误路径。
