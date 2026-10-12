@@ -243,6 +243,21 @@ assert= "| b" $ str-spaced | |b
 
 这项修复不改变合法构造的字段求值顺序，也不把静态检查变成外部数据校验。开放输入仍需在原有 decode/验证边界处理；如何把业务值转为闭合节点属于人工迁移，不提供自动默认值或改写。
 
+## 空集合与可写绑定
+
+空 List、Set、Map 在局部别名及 Enum 包装中保留“没有成员”的类型信息，不再因此变成 Dynamic 容器。不可变的插入、合并和递归累加器根据实际加入的成员推导类型；非空错误成员和外部开放容器不能借用空集合的证明。
+
+```cirru
+let
+    seed $ Result :ok $ {}
+  assert-type seed $ :: 'Result (:: 'Map 'String 'Number) 'String
+  assert= (Result :ok $ {}) seed
+```
+
+可写绑定需要在初始化处声明未来值的合同。例如 `ref $ assert-type ({}) $ :: 'Map 'String 'Number` 可接收后续同类型 Map；裸 `ref ({})` 不会因写入而变宽。严格模式下，`:js-ffi` 内的 `set!` 也要求新值满足局部变量的类型合同，失败报告 `E_CALL_ARGUMENT_UNPROVEN`；为可重新赋值的空 Map 使用同样的初始化类型上下文。不要在写入或后续读取处追加断言掩盖错误。
+
+迁移 Map 遍历时，若后续逻辑分别依赖 key/value 类型，优先使用 `map-entries` 返回的 `MapEntry<K,V>`，通过 `:key`、`:value` 读取；原二元 List 投影不会保留两个位置各自的类型。此类业务改写需审阅，不新增固定 fix 规则。
+
 ## Ref 写入的返回值
 
 `reset!` 返回写入的新值，`swap!` 返回其更新函数产生并写入的值；`!` 表示副作用，不表示返回 Unit。

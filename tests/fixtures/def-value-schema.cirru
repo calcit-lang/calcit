@@ -1859,6 +1859,277 @@
             :tags $ #{} :checked-struct-write :static-write :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.dynamic-write
+    'app.empty-evidence $ %{} 'FileEntry
+      :defs $ {}
+        'accumulate $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn accumulate (limit)
+            loop
+                items $ {}
+                n limit
+              if (= n 0) items $ recur (.assoc items n n) (- n 1)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number
+            :return $ :: 'Map 'Number 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |empty-loop-gains-members)
+            :code $ quote $ do
+              assert= ({}) (accumulate 0)
+              assert=
+                {} (1 1) (2 2)
+                accumulate 2
+            :tags $ #{} :empty-collection-evidence
+        'accumulate-receiver-first $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn accumulate-receiver-first (limit)
+            loop
+                items $ {}
+                n limit
+              if (= n 0) items $ recur (items .assoc n n) (- n 1)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number
+            :return $ :: 'Map 'Number 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |receiver-first-empty-loop-gains-members)
+            :code $ quote $ do
+              assert= ({}) (accumulate-receiver-first 0)
+              assert=
+                {} (1 1) (2 2)
+                accumulate-receiver-first 2
+            :tags $ #{} :empty-collection-evidence
+        'empty-lookup $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn empty-lookup ()
+            let
+                items $ {}
+              get items :missing
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Option 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |empty-map-accepts-lookup-key)
+            :code $ quote $ assert= (Option :none) (empty-lookup)
+            :tags $ #{} :empty-collection-evidence
+        'grow-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn grow-list ()
+            let
+                items $ []
+              &list:append items 1
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'List 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |empty-list-gains-member)
+            :code $ quote $ assert= ([] 1) (grow-list)
+            :tags $ #{} :empty-collection-evidence
+        'grow-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn grow-map ()
+            let
+                items $ {}
+              .assoc items |a 1
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Map 'String 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |immutable-map-growth)
+            :code $ quote $ assert=
+              {} $ |a 1
+              grow-map
+            :tags $ #{} :empty-collection-evidence
+        'grow-set $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn grow-set ()
+            let
+                items $ #{}
+              .include items 1
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Set 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |empty-set-gains-member)
+            :code $ quote $ assert= (#{} 1) (grow-set)
+            :tags $ #{} :empty-collection-evidence
+        'incompatible-generics $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn incompatible-generics (xs ys flag)
+            let
+                result $ if flag xs ys
+              assert-type result $ :: 'List 'T
+              , result
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) (:: 'List 'U) 'Bool
+            :generics $ [] 'T 'U
+            :return $ :: 'List 'T
+        'list-alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn list-alias ()
+            let
+                items $ []
+              assert-type items $ :: 'List 'Number
+              , items
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'List 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |empty-list-alias)
+            :code $ quote $ assert= ([]) (list-alias)
+            :tags $ #{} :empty-collection-evidence
+        'map-alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn map-alias ()
+            let
+                items $ {}
+              assert-type items $ :: 'Map 'String 'Number
+              , items
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Map 'String 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |empty-map-alias)
+            :code $ quote $ assert= ({}) (map-alias)
+            :tags $ #{} :empty-collection-evidence
+        'nested-empty $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nested-empty ()
+            let
+                rows $ [] $ {}
+              assert-type rows $ :: 'List $ :: 'Map 'String 'Number
+              , rows
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'List $ :: 'Map 'String 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |nested-empty-map)
+            :code $ quote $ assert=
+              [] $ {}
+              nested-empty
+            :tags $ #{} :empty-collection-evidence
+        'open-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn open-map (items)
+            assert-type items $ :: 'Map 'String 'Number
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'Dynamic 'Dynamic
+            :return $ :: 'Map 'String 'Number
+        'rebound-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn rebound-map ()
+            let
+                items $ {}
+              set! items $ {} $ |a |wrong
+              assert-type items $ :: 'Map 'String 'Number
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :features $ #{} :js-ffi
+            :return $ :: 'Map 'String 'Number
+        'ref-invariant $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn ref-invariant ()
+            let
+                cell $ ref $ assert-type ({}) (:: 'Map 'String 'Number)
+              assert-type cell $ :: 'Ref $ :: 'Map 'String 'Dynamic
+          :examples $ []
+        'result-seed $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn result-seed ()
+            let
+                seed $ Result :ok $ {}
+              assert-type seed $ :: 'Result (:: 'Map 'String 'Number) 'String
+              , seed
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Result (:: 'Map 'String 'Number) 'String
+          :tests $ [] $ %{} 'TestEntry (:name |empty-result-payload)
+            :code $ quote $ assert=
+              Result :ok $ {}
+              result-seed
+            :tags $ #{} :empty-collection-evidence
+        'set-alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn set-alias ()
+            let
+                items $ #{}
+              assert-type items $ :: 'Set 'Number
+              , items
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Set 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |empty-set-alias)
+            :code $ quote $ assert= (#{}) (set-alias)
+            :tags $ #{} :empty-collection-evidence
+        'shadow-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn shadow-map (raw)
+            let
+                items $ {}
+              let
+                  items raw
+                assert-type items $ :: 'Map 'String 'Number
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'Dynamic 'Dynamic
+            :return $ :: 'Map 'String 'Number
+        'typed-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn typed-assignment ()
+            let
+                items $ assert-type ({}) (:: 'Map 'String 'Number)
+              set! items $ {} $ |a 1
+              , items
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :features $ #{} :js-ffi
+            :return $ :: 'Map 'String 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |assignment-preserves-explicit-contract)
+            :code $ quote $ assert=
+              {} $ |a 1
+              typed-assignment
+            :tags $ #{} :empty-collection-assignment
+        'typed-ref $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn typed-ref ()
+            let
+                slot $ ref $ assert-type ({}) (:: 'Map 'String 'Number)
+              reset! slot $ {} $ |a 1
+              deref slot
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Map 'String 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |explicit-ref-initializer-contract)
+            :code $ quote $ assert=
+              {} $ |a 1
+              typed-ref
+            :tags $ #{} :empty-collection-ref
+        'wrong-grown-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-grown-list ()
+            let
+                items $ []
+              assert-type (.append items |wrong) (:: 'List 'Number)
+          :examples $ []
+        'wrong-grown-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-grown-map ()
+            let
+                items $ {}
+              assert-type (&map:assoc items |a |wrong) (:: 'Map 'String 'Number)
+          :examples $ []
+        'wrong-grown-set $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-grown-set ()
+            let
+                items $ #{}
+              assert-type (.include items |wrong) (:: 'Set 'Number)
+          :examples $ []
+        'wrong-map-member $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-map-member ()
+            let
+                items $ {} $ |a |wrong
+              assert-type items $ :: 'Map 'String 'Number
+          :examples $ []
+        'wrong-ref-alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-ref-alias ()
+            let
+                cell $ ref $ assert-type ({}) (:: 'Map 'String 'Number)
+                alias cell
+              reset! alias $ {} $ |a |wrong
+          :examples $ []
+        'wrong-ref-write $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-ref-write ()
+            let
+                cell $ ref $ {}
+              reset! cell $ {} $ |a 1
+          :examples $ []
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.empty-evidence
     'app.empty-fields $ %{} 'FileEntry
       :defs $ {}
         'Fields $ %{} 'CodeEntry (:doc |)

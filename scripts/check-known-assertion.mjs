@@ -28,6 +28,44 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
+  // #2010: empty members remain bottom through aliases and immutable wrappers,
+  // but insertions, rebinding, open inputs and mutable references cannot borrow it.
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "empty-collection-evidence", "--backend", "native,js,wasm",
+  ], { ...options, stdio: "inherit" });
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "empty-collection-ref", "--backend", "native,js",
+  ], { ...options, stdio: "inherit" });
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "empty-collection-assignment", "--backend", "js",
+  ], { ...options, stdio: "inherit" });
+  await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  const emptyEvidenceOriginal = await readFile(snapshot);
+  for (const name of ["map-alias", "list-alias", "set-alias", "result-seed", "nested-empty", "grow-map", "grow-list", "grow-set", "empty-lookup", "accumulate", "accumulate-receiver-first", "typed-ref"]) {
+    for (const rule of ["assert-type-proof-v1", "concrete-return-proof-v1", "callable-contract-proof-v1"]) {
+      const proof = JSON.parse(run("fix", "--rule", rule,
+        "--ns", "app.empty-evidence", "--def", name, "--format", "json"));
+      assert.deepEqual(proof.diagnostics, [], `${name}: ${rule}`);
+    }
+  }
+  for (const name of ["wrong-grown-map", "wrong-grown-list", "wrong-grown-set", "wrong-map-member", "open-map", "shadow-map", "rebound-map", "ref-invariant", "incompatible-generics"]) {
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "assert-type-proof-v1",
+      "--ns", "app.empty-evidence", "--def", name, "--format", "edn"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`,
+      name === "rebound-map" ? /E_CALL_ARGUMENT_UNPROVEN/ : /E_ASSERT_TYPE_UNPROVEN|E_ASSERT_TYPE_MISMATCH/);
+  }
+  for (const name of ["wrong-ref-write", "wrong-ref-alias"]) {
+    const rejected = spawnSync(binary, [snapshot, "--init-fn", `app.empty-evidence/${name}`, "--check-only"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_RESET_ARG_TYPE_MISMATCH/);
+  }
+  assert.deepEqual(await readFile(snapshot), emptyEvidenceOriginal);
   // #2008 / #1553: enum construction must preserve caller generics after
   // lowering, without treating a same-named constructor binder as that caller.
   execFileSync(process.execPath, [

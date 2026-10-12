@@ -99,7 +99,7 @@ fn prepare(expr: &Calcit, mut ctx: PreprocessContext, constraints: &mut Constrai
       if needs_independent_input
         || evidence
           .as_ref()
-          .is_some_and(|annotation| type_inference::has_payload_free_enum_slot(annotation))
+          .is_some_and(|annotation| type_inference::has_inferred_empty_slot(annotation))
       {
         obligation.retain_required();
       }
@@ -125,6 +125,55 @@ fn prepare(expr: &Calcit, mut ctx: PreprocessContext, constraints: &mut Constrai
         )?);
       }
       let args = CalcitList::from(arguments.as_slice());
+      // Normalize receiver-first syntax before collecting the same call
+      // constraints as prefix syntax; this does not emit an implementation.
+      let (head, args) = if matches!(args.first(), Some(Calcit::Method(_, calcit::MethodKind::Invoke(_)))) {
+        (args[0].clone(), args.drop_left().push_left(head))
+      } else {
+        (head, args)
+      };
+      let signature = match &head {
+        Calcit::Method(name, calcit::MethodKind::Invoke(_)) => args
+          .first()
+          .and_then(|receiver| resolve_type_value(receiver, ctx.scope_types))
+          .and_then(|receiver| {
+            if let Some(traits) = trait_list_from_type(&receiver) {
+              selected_trait_method(&traits, name).map(|candidate| candidate.method_type)
+            } else {
+              let impls = get_impls_from_type(&receiver)?;
+              resolve_type_value(find_method_entry_for_type(&receiver, &impls, name)?, ctx.scope_types)
+            }
+          }),
+        _ => resolve_type_value(&head, ctx.scope_types),
+      }
+      .and_then(|annotation| annotation.resolve_to_nonoptional_fn());
+      if let Some(signature) = signature {
+        let actual = args.iter().map(|arg| resolve_type_value(arg, ctx.scope_types)).collect::<Vec<_>>();
+        if actual.iter().flatten().any(|annotation| has_pending_variable(annotation)) {
+          let mut proof = crate::calcit::type_annotation::CallTypeProof::new(
+            &signature.generics,
+            &signature.arg_types,
+            &actual.iter().flatten().cloned().collect::<Vec<_>>(),
+          );
+          for (index, annotation) in actual.into_iter().enumerate() {
+            let Some(annotation) = annotation else { continue };
+            let Some(expected) = signature.arg_types.get(index).or(signature.rest_type.as_ref()) else {
+              break;
+            };
+            let expected = if let CalcitTypeAnnotation::Variadic(inner) = expected.as_ref() {
+              inner
+            } else {
+              expected
+            };
+            // Repeated callee slots connect independently supplied arguments;
+            // only compiler-owned pending inputs may be solved by that relation.
+            if let Some(instantiated) = proof.result(expected) {
+              constraints.join_branches(vec![Some(annotation.clone()), Some(instantiated)], &ctx)?;
+            }
+            proof.prove(&annotation, expected);
+          }
+        }
+      }
       // Preparation only projects constructor types. Ordinary source checking
       // reports skipped rewrites once, after recursive inputs have converged.
       let prepare_warnings = RefCell::new(Vec::new());
@@ -138,13 +187,6 @@ fn prepare(expr: &Calcit, mut ctx: PreprocessContext, constraints: &mut Constrai
         ctx.call_stack,
       )? {
         return Ok(constructor);
-      }
-      // Receiver-first source and prefix core describe the same method type.
-      // This projection does not select or emit an implementation target.
-      if matches!(args.first(), Some(Calcit::Method(_, calcit::MethodKind::Invoke(_)))) {
-        let mut projected = vec![args[0].clone(), head];
-        projected.extend(args.iter().skip(1).cloned());
-        return Ok(Calcit::from(projected));
       }
       Ok(Calcit::from(args.push_left(head)))
     }
@@ -400,6 +442,36 @@ impl Constraints {
   }
 }
 
+/// Replace only covariant, inferred empty slots. Ref and function contracts are
+/// intentionally opaque: their inputs cannot widen after initialization.
+fn empty_slot_template(
+  annotation: &Arc<CalcitTypeAnnotation>,
+  prefix: &str,
+  roots: &mut HashSet<Arc<str>>,
+) -> Arc<CalcitTypeAnnotation> {
+  use CalcitTypeAnnotation as T;
+  let rewritten = match annotation.as_ref() {
+    T::Never => {
+      let name = Arc::<str>::from(format!("{prefix}/{}", roots.len()));
+      roots.insert(name.clone());
+      T::TypeVar(name)
+    }
+    T::List(member) => T::List(empty_slot_template(member, prefix, roots)),
+    T::Set(member) => T::Set(empty_slot_template(member, prefix, roots)),
+    T::Map(key, value) => T::Map(empty_slot_template(key, prefix, roots), empty_slot_template(value, prefix, roots)),
+    T::Enum(definition, arguments) => T::Enum(
+      definition.clone(),
+      Arc::new(arguments.iter().map(|arg| empty_slot_template(arg, prefix, roots)).collect()),
+    ),
+    T::TypeRef(name, arguments) if annotation.resolve_to_enum().is_some() => T::TypeRef(
+      name.clone(),
+      Arc::new(arguments.iter().map(|arg| empty_slot_template(arg, prefix, roots)).collect()),
+    ),
+    _ => return annotation.clone(),
+  };
+  Arc::new(rewritten)
+}
+
 /// Solve symbolic payload slots rather than treating provisional locals as Dynamic.
 /// The ordinary proof relation extracts nominal substitutions; occurs-checks keep
 /// direct and indirect recursive payload equations finite.
@@ -414,31 +486,8 @@ pub(super) fn solve(
     .iter()
     .enumerate()
     .map(|(index, annotation)| {
-      let replace = |arguments: &Arc<Vec<Arc<CalcitTypeAnnotation>>>, roots: &mut HashSet<Arc<str>>| {
-        Arc::new(
-          arguments
-            .iter()
-            .enumerate()
-            .map(|(slot, argument)| {
-              if !matches!(argument.as_ref(), CalcitTypeAnnotation::Never) {
-                return argument.clone();
-              }
-              let name = Arc::<str>::from(format!("{PENDING_PREFIX}slot/{}/{index}/{slot}", std::ptr::from_ref(args) as usize));
-              roots.insert(name.clone());
-              Arc::new(CalcitTypeAnnotation::TypeVar(name))
-            })
-            .collect::<Vec<_>>(),
-        )
-      };
-      match annotation.as_ref() {
-        CalcitTypeAnnotation::Enum(definition, arguments) => {
-          Arc::new(CalcitTypeAnnotation::Enum(definition.clone(), replace(arguments, &mut roots)))
-        }
-        CalcitTypeAnnotation::TypeRef(name, arguments) if annotation.resolve_to_enum().is_some() => {
-          Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), replace(arguments, &mut roots)))
-        }
-        _ => annotation.clone(),
-      }
+      let prefix = format!("{PENDING_PREFIX}slot/{}/{index}", std::ptr::from_ref(args) as usize);
+      empty_slot_template(annotation, &prefix, &mut roots)
     })
     .collect::<Vec<_>>();
   let mut constraints = Constraints::default();
@@ -456,7 +505,7 @@ pub(super) fn solve(
     source_replay::Scope::rewind_function();
     for transfer in type_inference::lexical_recur_inputs(&prepared, &types, initial.len()) {
       for (index, actual) in transfer.iter().enumerate() {
-        if !type_inference::has_payload_free_enum_slot(&initial[index]) {
+        if !type_inference::has_inferred_empty_slot(&initial[index]) {
           continue;
         }
         let Some(actual) = actual else { continue };

@@ -5739,7 +5739,7 @@
             assert "|defstruct expects name as tag/symbol" $ or (tag? name) (symbol? name)
             assert "|defstruct expects pairs in list" $ and (list? pairs) (every? pairs list?)
             &let
-              first-pair $ if (empty? pairs) ([]) (&list:first pairs)
+              first-pair $ if (empty? pairs) ([]) (&list:nth pairs 0)
               &let
                 pairs $ if
                   and
@@ -5749,7 +5749,7 @@
                   &list:rest first-pair
                   , pairs
                 &let
-                  first-pair $ if (empty? pairs) ([]) (&list:first pairs)
+                  first-pair $ if (empty? pairs) ([]) (&list:nth pairs 0)
                   &let
                     generics $ if
                       and (list? first-pair)

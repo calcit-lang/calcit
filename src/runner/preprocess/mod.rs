@@ -4355,6 +4355,30 @@ fn preprocess_list_call(
           // Recompute processed_args from ys after optimization rewrites (e.g. struct:get→nth, assoc→assoc-at)
           let processed_args = CalcitList::from(ys.drop_left());
           require_js_ffi_feature_for_operation(call_head, file_ns, def_name.as_ref(), check_warnings, call_stack)?;
+          // JS local assignment must preserve the binding contract. Otherwise
+          // later uses can borrow obsolete literal or predicate evidence.
+          if strict_types_enabled()
+            && (matches!(call_head, Calcit::Symbol { sym, .. } if sym.as_ref() == "set!")
+              || matches!(call_head, Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "set!"))
+            && let (Some(Calcit::Local(local)), Some(value)) = (processed_args.first(), processed_args.get(1))
+          {
+            let expected = resolve_type_value(&processed_args[0], scope_types).unwrap_or_else(|| local.type_info.clone());
+            let actual = resolve_type_value(value, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
+            if !actual.is_proven_for(&expected) {
+              return Err(CalcitErr::use_msg_stack_location_with_code(
+                CalcitErrKind::Type,
+                format!(
+                  "set! value cannot prove the local `{}` contract: expected `{}`, got `{}`; declare the binding's intended type at initialization",
+                  local.sym,
+                  expected.to_brief_string(),
+                  actual.to_brief_string()
+                ),
+                "E_CALL_ARGUMENT_UNPROVEN",
+                call_stack,
+                value.get_location().or_else(|| call_location.clone()),
+              ));
+            }
+          }
           reject_or_warn_on_nullable_js_ffi_dereference(
             call_head,
             &processed_args,
@@ -11131,7 +11155,7 @@ fn body_for_parameter_recheck(form: &Calcit) -> Calcit {
     && items
       .get(1)
       .and_then(|target| resolve_type_value(target, &ScopeTypes::new()))
-      .is_some_and(|annotation| type_inference::has_payload_free_enum_slot(&annotation))
+      .is_some_and(|annotation| type_inference::has_inferred_empty_slot(&annotation))
   {
     // Retain the original absence evidence only as an assertion obligation.
     // The assertion handler refreshes its input from the new lexical scope.
@@ -11537,7 +11561,7 @@ pub fn preprocess_defn(
           && !has_body_fn_hint
           && recur_param_types
             .iter()
-            .any(|parameter| type_inference::has_payload_free_enum_slot(parameter)),
+            .any(|parameter| type_inference::has_inferred_empty_slot(parameter)),
       );
 
       if !source_top_level_definition
@@ -11545,7 +11569,7 @@ pub fn preprocess_defn(
         && !has_body_fn_hint
         && recur_param_types
           .iter()
-          .any(|parameter| type_inference::has_payload_free_enum_slot(parameter))
+          .any(|parameter| type_inference::has_inferred_empty_slot(parameter))
       {
         let parameters = recursive_inputs::solve(
           args,
@@ -12120,8 +12144,8 @@ fn preprocess_assert_type_with_obligation(
   let target_raw = args.get(0).unwrap();
   let type_form = args.get(1).unwrap();
 
-  let expanded_absence = resolve_type_value(target_raw, &ScopeTypes::new())
-    .is_some_and(|annotation| type_inference::has_payload_free_enum_slot(&annotation));
+  let expanded_absence =
+    resolve_type_value(target_raw, &ScopeTypes::new()).is_some_and(|annotation| type_inference::has_inferred_empty_slot(&annotation));
   let absence_obligation = retained.as_ref().is_some_and(|assertion| assertion.required) || expanded_absence;
   // Only expanded core carries stale inline evidence. Original source must
   // keep its identity so macros inside the assertion still evaluate once.
@@ -12202,7 +12226,7 @@ fn preprocess_assert_type_with_obligation(
   });
   if current_type
     .as_ref()
-    .is_some_and(|annotation| type_inference::has_payload_free_enum_slot(annotation))
+    .is_some_and(|annotation| type_inference::has_inferred_empty_slot(annotation))
     && let Some(retained) = &retained
   {
     // A proof made on an empty input remains an obligation after refinement.
@@ -12271,7 +12295,7 @@ fn preprocess_assert_type_with_obligation(
   }
   if let Calcit::Local(local) = &asserted_target {
     let current_type = current_type.expect("local assertion has inline type evidence");
-    let retain_assertion = type_inference::has_payload_free_enum_slot(&current_type);
+    let retain_assertion = type_inference::has_inferred_empty_slot(&current_type);
     let type_entry = if current_type.as_ref().is_compatible_with(asserted_type.as_ref())
       && annotation_dynamic_weight(current_type.as_ref()) < annotation_dynamic_weight(asserted_type.as_ref())
     {

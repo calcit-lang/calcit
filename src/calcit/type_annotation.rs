@@ -354,6 +354,24 @@ impl CallTypeProof {
   /// callee variables; a binding that would specialize a caller variable needs
   /// a boundary. Bindings are kept only when the argument is not a mismatch.
   pub(crate) fn prove(&mut self, actual: &CalcitTypeAnnotation, expected: &CalcitTypeAnnotation) -> TypeProof {
+    if let CalcitTypeAnnotation::TypeVar(name) = expected
+      && let Some(fresh) = self.renaming.get(name)
+      && let CalcitTypeAnnotation::TypeVar(fresh_name) = fresh.as_ref()
+    {
+      // A payload-free argument can transport bottom through a generic call.
+      // It supplies no constraint on later peers and never binds caller slots.
+      if matches!(actual, CalcitTypeAnnotation::Never) {
+        self.bindings.entry(fresh_name.clone()).or_insert_with(|| NEVER_TYPE.clone());
+        return TypeProof::Proven;
+      }
+      if self
+        .bindings
+        .get(fresh_name)
+        .is_some_and(|bound| matches!(bound.as_ref(), CalcitTypeAnnotation::Never))
+      {
+        self.bindings.remove(fresh_name);
+      }
+    }
     // A direct, callee-owned generic can transport an explicitly open value.
     // Do not retain a concrete result inferred from an earlier peer argument.
     // Captured caller variables and nested concrete contracts are not transport.
@@ -7464,9 +7482,18 @@ mod tests {
     let number = Arc::new(CalcitTypeAnnotation::Number);
     let mut proof = CallTypeProof::new(&[Arc::from("T")], std::slice::from_ref(&variable), &[]);
     assert!(proof.prove(&CalcitTypeAnnotation::Never, &variable).is_proven());
-    assert_eq!(proof.result(&variable), None, "absence must not bind a live payload variable");
+    assert_eq!(
+      proof.result(&variable),
+      Some(NEVER_TYPE.clone()),
+      "absence is retained until live argument evidence arrives"
+    );
     assert!(proof.prove(&number, &variable).is_proven());
     assert_eq!(proof.result(&variable), Some(number.clone()));
+    let mut caller = CallTypeProof::new(&[Arc::from("T")], std::slice::from_ref(&variable), std::slice::from_ref(&variable));
+    assert!(caller.prove(&CalcitTypeAnnotation::Never, &variable).is_proven());
+    assert!(caller.prove(&variable, &variable).is_proven());
+    assert_eq!(caller.result(&variable), Some(variable.clone()));
+    assert!(!caller.prove(&number, &variable).is_proven());
     assert!(CalcitTypeAnnotation::Never.is_proven_for(&number));
     assert!(!number.is_proven_for(&CalcitTypeAnnotation::Never));
     assert!(!DYNAMIC_TYPE.is_proven_for(&number));
