@@ -258,8 +258,17 @@ fn specialize_list_sort_by_expected_types(
   if matches!(item_type.as_ref(), CalcitTypeAnnotation::Syntax(_)) {
     return None;
   }
-  let selector_type = resolve_type_value(args.get(1)?, scope_types)?;
-  if !matches!(selector_type.as_ref(), CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn) {
+  let selector = args.get(1)?;
+  // Source constructors supply callable kind before body checking; they do not
+  // prove parameter/return types. Only resolved heads qualify here.
+  let source_function = matches!(selector, Calcit::List(items) if matches!(items.first(),
+    Some(Calcit::Syntax(CalcitSyntax::Defn, _)))
+    || matches!(items.first(), Some(Calcit::Import(import))
+      if import.ns.as_ref() == crate::calcit::CORE_NS && import.def.as_ref() == "fn"));
+  if !source_function
+    && !resolve_type_value(selector, scope_types)
+      .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn))
+  {
     return None;
   }
   let mut specialized = expected_types.to_vec();

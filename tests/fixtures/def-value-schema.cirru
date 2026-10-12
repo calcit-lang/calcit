@@ -2921,12 +2921,62 @@
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
             :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |orders-typed-rows)
+              :code $ quote $ assert=
+                []
+                  {} $ :n 1
+                  {} $ :n 2
+                method $ []
+                  {} $ :n 2
+                  {} $ :n 1
+              :tags $ #{} :sort-selector-context :unit
+            %{} 'TestEntry (:name |retains-tag-selector)
+              :code $ quote $ let
+                  rows $ []
+                    {} $ :n 2
+                    {} $ :n 1
+                  key :n
+                assert=
+                  []
+                    {} $ :n 1
+                    {} $ :n 2
+                  rows .sort-by key
+                assert=
+                  []
+                    {} $ :n 1
+                    {} $ :n 2
+                  .sort-by rows key
+              :tags $ #{} :sort-selector-context :unit
+        'named-selector $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn named-selector (rows)
+            &list:sort-by rows $ defn select-key (row) (&map:get row :n)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
+            :return $ :: 'List $ :: 'Map 'Tag 'Number
           :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
             :code $ quote $ assert=
               []
                 {} $ :n 1
                 {} $ :n 2
-              method $ []
+              named-selector $ []
+                {} $ :n 2
+                {} $ :n 1
+            :tags $ #{} :sort-selector-context :unit
+        'prefix-method $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn prefix-method (rows)
+            .sort-by rows $ fn (row) (&map:get row :n)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
+            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
+            :code $ quote $ assert=
+              []
+                {} $ :n 1
+                {} $ :n 2
+              prefix-method $ []
                 {} $ :n 2
                 {} $ :n 1
             :tags $ #{} :sort-selector-context :unit

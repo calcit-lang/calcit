@@ -35,7 +35,33 @@ try {
   ], { ...options, stdio: "inherit" });
   await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
   const sortSelectorOriginal = await readFile(snapshot);
-  for (const name of ["direct", "threaded", "method", "alias"]) {
+  for (const [name, input, selector, generics = ""] of [
+    ["open-row", "(:: 'List 'Dynamic)", "fn (row) (&map:get row :n)"],
+    ["open-number", "(:: 'List (:: 'Map 'Tag 'Dynamic))", "fn (row) (+ 1 (&map:get row :n))"],
+    ["narrowed-selector", "(:: 'List (:: 'Map 'Tag 'Dynamic))",
+      "fn (row) (hint-fn $ {} (:args $ [] (:: 'Map 'Tag 'Number)) (:return 'Number)) (&map:get row :n)"],
+    ["rigid-member", "(:: 'List (:: 'Map 'Tag 'T))", "fn (row) (+ 1 (&map:get row :n))", "(:generics $ [] 'T)"],
+  ]) {
+    for (const style of ["direct", "postfix", "prefix"]) {
+      await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+      const call = { direct: "&list:sort-by rows", postfix: "rows .sort-by", prefix: ".sort-by rows" }[style];
+      run("edit", "def", "app.sort-selector/rejected", "--input-format", "cirru", "--code",
+        `quote $ defn rejected (rows) (${call} $ ${selector})`);
+      run("edit", "schema", "app.sort-selector/rejected", "--input-format", "cirru", "--code",
+        `quote $ :: 'Fn $ {} (:args $ [] ${input}) (:return ${input}) ${generics}`);
+      const before = await readFile(snapshot);
+      const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "callable-contract-proof-v1",
+        "--ns", "app.sort-selector", "--def", "rejected", "--format", "json"], options);
+      if (rejected.error) throw rejected.error;
+      assert.equal(rejected.status, 1, `${name} style=${style}\n${rejected.stdout}\n${rejected.stderr}`);
+      assert.match(`${rejected.stdout}\n${rejected.stderr}`,
+        /E_CALL_ARGUMENT_(?:UNPROVEN|MISMATCH)|E_ERASED_GENERIC_RELATION|W_FN_ARG_TYPE_MISMATCH/,
+        `${name} style=${style}: missing selector contract diagnostic`);
+      assert.deepEqual(await readFile(snapshot), before);
+    }
+  }
+  await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  for (const name of ["direct", "threaded", "method", "prefix-method", "named-selector", "alias"]) {
     const proof = JSON.parse(run("fix", "--rule", "callable-contract-proof-v1",
       "--ns", "app.sort-selector", "--def", name, "--format", "json"));
     assert.deepEqual(proof.diagnostics, [], `${name}: selector input evidence`);
