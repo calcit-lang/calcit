@@ -1348,14 +1348,16 @@ assert.match(dependencyEval.stdout, /took .*: 0/);
 for (const [args, input, message] of [
   [["eval"], "", /No snippet provided/],
   [["eval", "--stdin"], "", /No snippet read from stdin/],
-  [["eval", "--stdin", "range 3"], "range 3", /Choose either a positional snippet/],
+  // Conflicting arguments are rejected before stdin is read; do not race that exit with a pipe write.
+  [["eval", "--stdin", "range 3"], "", /Choose either a positional snippet/],
 ]) {
   const invalidEval = spawnSync(binary, args, { encoding: "utf8", input });
   assert.ifError(invalidEval.error);
   assert.equal(invalidEval.status, 1);
   assert.match(invalidEval.stderr, message);
 }
-const retiredExec = spawnSync(binary, ["exec", "--dep", "test.cirru"], { encoding: "utf8", input: "range 3" });
+// Argument rejection does not consume stdin. Supplying bytes can produce EPIPE before the assertions run.
+const retiredExec = spawnSync(binary, ["exec", "--dep", "test.cirru"], { encoding: "utf8" });
 assert.ifError(retiredExec.error);
 assert.equal(retiredExec.status, 1);
 assert.match(retiredExec.stderr, /Unrecognized argument: --dep/);
