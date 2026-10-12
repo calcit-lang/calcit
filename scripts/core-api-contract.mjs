@@ -46,7 +46,8 @@ function declaration(code) {
 }
 
 function sourceArity(code) {
-  if (!Array.isArray(code) || !["defn", "defmacro"].includes(code[0])) return null;
+  // Macro parameters describe syntax input, not ordinary runtime arguments.
+  if (!Array.isArray(code) || code[0] !== "defn") return null;
   const args = code[2];
   assert.ok(Array.isArray(args), "source callable must declare arguments");
   let min = 0, max = 0, optional = false;

@@ -4125,6 +4125,13 @@ impl CalcitTypeAnnotation {
     self.any_component(|annotation| matches!(annotation, Self::Never))
   }
 
+  /// Refine payload-free inference only to a proven closed supertype. The
+  /// ordinary relation still controls variance, nominal identity and Ref
+  /// invariance; caller-owned variables cannot be inferred in reverse.
+  fn can_refine_bottom_binding(&self, actual: &Self) -> bool {
+    self.contains_never() && !self.contains_type_var() && !actual.contains_type_var() && self.is_proven_for(actual)
+  }
+
   /// Check whether this annotation recursively contains one named `TypeVar`.
   ///
   /// Generic matching uses this as an occurs-check before recording a binding,
@@ -4661,6 +4668,10 @@ impl CalcitTypeAnnotation {
       }
       (actual, Self::TypeVar(var)) => match bindings.get(var) {
         Some(bound) if bound.as_ref() == actual => true,
+        Some(bound) if bound.can_refine_bottom_binding(actual) => {
+          bindings.insert(var.to_owned(), Arc::new(actual.to_owned()));
+          true
+        }
         Some(bound) if matches!(bound.as_ref(), Self::Nil) => {
           let merged = if matches!(actual, Self::Optional(_)) {
             actual.to_owned()
@@ -5061,6 +5072,10 @@ impl CalcitTypeAnnotation {
         bound.prove_with_staged_bindings(expected, bindings)
       }
       (actual, Self::TypeVar(var)) => match bindings.get(var).cloned() {
+        Some(bound) if bound.can_refine_bottom_binding(actual) => {
+          bindings.insert(var.clone(), Arc::new(actual.clone()));
+          Proven
+        }
         Some(bound) => actual.prove_with_staged_bindings(bound.as_ref(), bindings),
         None if actual.contains_type_var_named_with_bindings(var, bindings) => NeedsBoundary(Boundary::RecursiveTypeVariable),
         None => {
@@ -7485,6 +7500,10 @@ mod tests {
     let live_ref = CalcitTypeAnnotation::Ref(number);
     assert!(!empty_ref.is_proven_for(&live_ref));
     assert!(!live_ref.is_proven_for(&empty_ref));
+    let mut ref_proof = CallTypeProof::new(&[Arc::from("T")], std::slice::from_ref(&variable), &[]);
+    assert!(ref_proof.prove(&empty_ref, &variable).is_proven());
+    assert!(!ref_proof.prove(&live_ref, &variable).is_proven());
+    assert_eq!(ref_proof.result(&variable), Some(Arc::new(empty_ref)));
     assert_eq!(
       CalcitTypeAnnotation::parse_type_annotation_from_edn(&CalcitTypeAnnotation::Never.to_type_edn()).as_ref(),
       &CalcitTypeAnnotation::Never,

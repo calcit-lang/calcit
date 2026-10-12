@@ -136,8 +136,8 @@ do
 
 | 当前入口与签名/行为 | 决策与目标签名 | 迁移边界 |
 | --- | --- | --- |
-| List/Map/Set/String `count/.count` 与 `Len/.len: C -> Number` 重叠 | **保留并首选** `.len`，收敛 Countable 的这些用途；String `.count` 方法已在 0.29.0 删除 | 参数单次求值；String 仍按标量，函数 `count` 与 Countable 约束仍接受 String。用户 Countable impl/bound 单独迁移；Struct 字段数与 Enum payload 数 **暂缓**，不把所有 count 当容器长度；**退场窗口（计划）**：0.30.0 起视为弃用，0.31 删除；方法调用目前没有不令检查失败的弃用诊断，需先有建议级诊断，在此之前以本表和 `calcit fix` 规则迁移，补丁版本不删除。 |
-| List `.add/.append: (List<T>, T) -> List<T>`；底层 Add trait 是两 List 组合 | **保留** `.append` 与 `.concat`，退场 List 单元素 `.add` 别名 | 先解决 originless `.add` 遮蔽；旧入口失效后也不能静默暴露另一种参数语义。名义 `Add` 调用/泛型界限保留单独验证；**退场窗口（计划）**：0.30.0 起视为弃用，0.31 删除；方法调用目前没有不令检查失败的弃用诊断，需先有建议级诊断，在此之前以本表和 `calcit fix` 规则迁移，补丁版本不删除。 |
+| List/Map/Set/String `count/.count` 与 `Len/.len: C -> Number` 重叠 | **保留并首选** `.len`，收敛 Countable 的这些用途；String `.count` 方法已在 0.29.0 删除 | 参数单次求值；String 仍按标量，函数 `count` 与 Countable 约束仍接受 String。用户 Countable impl/bound 单独迁移；Struct 字段数与 Enum payload 数 **暂缓**，不把所有 count 当容器长度；**退场窗口（计划）**：0.30.0 起视为弃用，0.31 删除；`--check-only` 已用建议级诊断 `A_DEPRECATED_METHOD` 报告接收者类型已证明的项目源码调用（不令检查失败），并可用本表和 `calcit fix` 规则迁移；补丁版本不删除。 |
+| List `.add/.append: (List<T>, T) -> List<T>`；底层 Add trait 是两 List 组合 | **保留** `.append` 与 `.concat`，退场 List 单元素 `.add` 别名 | 先解决 originless `.add` 遮蔽；旧入口失效后也不能静默暴露另一种参数语义。名义 `Add` 调用/泛型界限保留单独验证；**退场窗口（计划）**：0.30.0 起视为弃用，0.31 删除；`--check-only` 已用建议级诊断 `A_DEPRECATED_METHOD` 报告接收者类型已证明的项目源码调用（不令检查失败），并可用本表和 `calcit fix` 规则迁移；补丁版本不删除。 |
 | Map `.assoc: (Map<K,V>, K,V) -> Map<K,V>` / `.dissoc: (Map<K,V>, K, & K) -> Map<K,V>`；Set `include/exclude` 返回新 Set | **本阶段首选**现有持久集合入口；不新增 Map/Set `.insert/.remove`，见 [#1479](https://github.com/calcit-lang/calcit/issues/1479) | Rust 同名方法可能暗示原地修改与不同返回值。Set `.add` 与 Map `.add` 已在 0.29.0 删除：Set 改用 `.include`；Map `.add` 只验证二元 List entry 的形状，不能证明 key/value 为 K/V，需人工改成 `.assoc key value` |
 | `foldl/.foldl/foldl'/reduce/.reduce: (List<T>, U, (U,T)->U) -> U` | **已引入** seeded `.fold`；`foldl'` 与 List `.reduce` 已在 0.29.0 删除，前缀 `reduce` 与 `.foldl` 的退场留给 [#1458](https://github.com/calcit-lang/calcit/issues/1458) | 保持左到右、空 List 返回初值、异类型 accumulator、callback 次数；不把旧 reduce 换成无初值语义。新方法证明不弱于现有 `.reduce` |
 | `join/.join: (List<T>, T) -> List<T>` | **已引入** `intersperse/.intersperse`；`.join` 方法已在 0.29.0 删除，前缀 `join` 暂保留兼容 | 只插入同类型分隔项，保持空/单项/重复值/顺序；不改成 String 返回，也不与 `join-string` 混用 |
@@ -193,6 +193,8 @@ do
 
 实施任务：[#1456](https://github.com/calcit-lang/calcit/issues/1456)。`!` 不表示“可能抛错”，`try-` 不表示异步，转换词不能充当类型断言。
 
+0.30.0 的声明、实例化调用与不纳入范围统一见[五个 API 家族的合同边界](../data/README.md#0300-家族范围与排除边界)。查询宏时读取 Macro 的 required/rest/expansion/capabilities，不把源码参数列表当作 runtime arity；查询 typed decoder 时读取实际调用处的闭合 Result 类型，不把宽 builtin 签名当作 payload 已验证。当前冻结验收由 [#1953](https://github.com/calcit-lang/calcit/issues/1953) 跟进，旧名条件退场仍独立由 #1916 承接。
+
 | 当前契约 | 决策 | 类型/失败与迁移限制 |
 | --- | --- | --- |
 | `Option/Result/Struct` 名义构造；旧 `%some/%none/%ok/%err` | **保留**直接名义构造，旧 helper 属 **内部兼容** | 完整保留 payload/字段类型与错误；沿用现有 fix 与退场门禁 |
@@ -219,7 +221,7 @@ do
 | 构造 `atom` / `defatom` | **已提供** `ref` / `defref` 作为 `Ref<T>` 的首选构造名，与 `type-of` 的 `:ref`、谓词 `ref?` 一致；旧名读取为同一实现，暂留兼容 | native、JS 与 WASM 共享同一实现与 lowering（WASM 仅支持数值 `defref` 全局，局部 `ref` 与 `atom` 一样明确报告 unsupported）；`core-ref-constructor-v1` 改写已证明的拼写，在下一个非 patch 版本退场旧名 |
 | `reset!/swap!`；旧 `add-watch/remove-watch` | **已提供** `add-watch!/remove-watch!` 作为 Ref watcher 的首选注册/移除入口；`add-watch!` 自 0.29.0 起直接是内建实现，旧 `add-watch` 已删除，旧 `remove-watch` 暂留底层兼容 | Ref 写入返回写入值 `T`；watcher 注册/移除共享原 `Ref<T>`、`Tag`、`Unit` 契约。重复/缺失 key 仍报错，callback 次数不变；本阶段不自动改写未知同名调用 |
 | FsPath `.write-text!`；js-ffi `write-text!` | core **已提供** `.write-text!`，旧 `.write-text` 已于 0.29.0 删除；模块 **保留**已有 `!` | core 仍 `(FsPath,String)->Result<Unit,String>`；0.28.x 的 `core-effect-method-v1` 可在类型与来源已证明时改写旧调用；js-ffi 原有 Unit/throw/async 契约不因命名一致而自动统一 |
-| FfiTask `.cancel/.cancel-with`；FfiResponse 旧 `.resolve/.reject` | **已提供** `.cancel!/.cancel-with!/.resolve!/.reject!`；FfiTask 旧名暂留兼容，FfiResponse 旧名已于 0.29.0 删除 | 新旧方法共用宿主实现，保持泛型、签名、exactly-once、释放与失败行为；`core-effect-method-v1` 可受控改写已证明调用，不能用返回 Bool 或命名代替生命周期证明。native FFI 生命周期能力仅在 native 提供；JS 调用明确抛出包含操作名的 capability 错误，不把缺失能力当作 Unit 成功；**退场窗口（计划）**：0.30.0 起视为弃用，0.31 删除；方法调用目前没有不令检查失败的弃用诊断，需先有建议级诊断，在此之前以本表和 `calcit fix` 规则迁移，补丁版本不删除。 |
+| FfiTask `.cancel/.cancel-with`；FfiResponse 旧 `.resolve/.reject` | **已提供** `.cancel!/.cancel-with!/.resolve!/.reject!`；FfiTask 旧名暂留兼容，FfiResponse 旧名已于 0.29.0 删除 | 新旧方法共用宿主实现，保持泛型、签名、exactly-once、释放与失败行为；`core-effect-method-v1` 可受控改写已证明调用，不能用返回 Bool 或命名代替生命周期证明。native FFI 生命周期能力仅在 native 提供；JS 调用明确抛出包含操作名的 capability 错误，不把缺失能力当作 Unit 成功；**退场窗口（计划）**：0.30.0 起视为弃用，0.31 删除；`--check-only` 已用建议级诊断 `A_DEPRECATED_METHOD` 报告接收者类型已证明的项目源码调用（不令检查失败），并可用本表和 `calcit fix` 规则迁移；补丁版本不删除。 |
 | `.read-text/.read-dir/.walk-dir`、`get-args/get-env`；std `read-file!/read-dir!/walk-dir!` | **保留**core 查询名字；std 的首选 `read-file/read-dir/walk-dir` 已随模块 **0.2.36** 首次发布 | 已核验的历史稳定组合为 [std 0.2.37](https://github.com/calcit-lang/calcit.std/releases/tag/0.2.37) 与 Calcit **0.28.0**，保持原参数、返回与失败模型，已验证 native 文本读取、目录枚举、递归读取与 FFI 生命周期。历史 [0.2.36](https://github.com/calcit-lang/calcit.std/releases/tag/0.2.36) 配套 **0.28.0-alpha.3**，其 tag 与预发布工具链要求不随新版本改写 |
 | `cpu-time: () -> Number` 实际为单调毫秒；`unix-time-ms` | **已提供** `monotonic-time-ms: () -> Number`；自 0.29.0 起直接是内建时钟，旧 `cpu-time` 已删除，`unix-time-ms` 保留 | 只在同一运行内比较经过时间；native、JS、WASI Preview 1 可用，WASI 0.3 command 时钟仍明确不支持。std `get-time!/get-timestamp` 先核对返回模型再定映射 |
 | std `set-timeout/set-interval/on-ctrl-c` | **已提供** `set-timeout!`、`set-interval!`、`on-ctrl-c!`，随 [std 0.2.40](https://github.com/calcit-lang/calcit.std/releases/tag/0.2.40) 预发布，配套 Calcit **0.29.0-alpha.27**；旧名保留为带弃用标记的同一函数引用 | 参数、callback 类型和次数、返回的 `FfiTask`、取消与退出行为不变；仅改 Calcit-facing 名称，不改 native symbol。这是 native 模块能力，不新增 JS/WASM/WASI 支持；迁移见[升级指南](../run/upgrade.md#std-定时器与信号订阅命名) |
@@ -336,6 +338,8 @@ calcit analyze check-examples --ns calcit.core --def fold
 `query type` 的 `proven` 表示当前类型能证明该方法的调用契约；`open` 或 `ambiguous` 不是类型安全的肯定结论。对已由显式 fix 证明为同一实现/签名的别名，查询另给 `preferred` 或 `compatibility` 角色，兼容项可追溯首选名和 fix 规则。human 输出按已证明的首选入口、尚未分类的方法、兼容入口分组；未标角色的方法不应被推断为过期，`open` 的方法也不因角色标为首选就变成已证明。方法旁边的 definition path 用于追踪实现。再用 `query def/context` 读取 `:constructor` 或 `:internal` 标签、schema 与示例；需要机器处理时优先用 `--format edn`。项目代码的类型证据可用 `query type-at` 或 `query context` 查看。
 
 `open` 不一定表示整个方法签名未知。接收者已成功绑定到现有 schema 时，查询保留已声明的参数与返回类型，例如 `calcit query type "'String" --format edn` 中 `.parse-json` 和 `.parse-cirru-edn` 的零参数与 `Result<Dynamic, String>` 返回结构；成功 payload 仍是开放数据，需要在具体使用前解码或收窄，错误分支则已有 String 类型。开放 callback 或集合元素同样按声明展示，不推测为具体类型。缺失 schema、接收者绑定失败或分派歧义时仍不提供签名。结构化 `call-types` 只为 `proven` 方法提供；自动 fix 和核心契约冻结仍必须检查证明状态，不能仅凭签名字段存在就放行。
+
+具体接收者的实现可以提供比开放 trait 声明更精确的泛型关系。例如 `calcit query type ":: 'Option 'Number" --format edn` 的 `.map` 保留 `Fn<Number,U> → Option<U>`，并列出泛型 U；U 不是 Dynamic，也不是已经选择的业务类型。实现细化须保留 trait 的可证明接收者约束与 feature；闭合 trait 签名不会被覆盖。`Option<Dynamic>` 仍为 open，Agent 应先查询实际调用的 `type-at/context`，不能凭方法名强制把未知 payload 收窄。
 
 结构升级后，使用 `calcit fix --preset core-api-0.28-v1 --format edn` 统一预览已证明的核心 API 叶子改名，再按 revision 应用。`:code` 自动扫描，attached `:tests` / `:examples` 人工核对；重复预览的自动建议应为空，剩余 `requires-review` 不等于已迁移。Option/Result helper 和完整构造调用仍分步迁移，顺序与范围见 [0.28 核心 API 命名迁移](../run/fix.md#028-核心-api-命名迁移)。
 

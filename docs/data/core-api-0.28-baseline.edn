@@ -1,8 +1,87 @@
 
 {}
   :scope |reviewed-conversion-and-effect-boundaries
-  :version |0.29.0-candidate
+  :version |0.30.0-candidate
   :definitions $ []
+    {} (:declaration nil)
+      :name 'calcit.core/str-spaced
+      :runtime-arity $ {} (:max nil) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:rest 'Dynamic) (:return 'String)
+        :args $ [] 'Dynamic
+    {} (:declaration nil)
+      :name 'calcit.core/to-pairs
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] $ :: 'Map 'K 'V
+        :generics $ [] 'K 'V
+        :return $ :: 'Set $ :: 'List 'Dynamic
+    {}
+      :name 'calcit.core/ControlFlow
+      :runtime-arity nil
+      :schema nil
+      :declaration $ quote $ defenum ControlFlow ([] 'A) (:continue 'A) (:break 'A)
+    {} (:declaration nil)
+      :name 'calcit.core/defenum
+      :runtime-arity nil
+      :schema $ quote $ :: 'Macro
+        {} (:rest 'SyntaxList)
+          :capabilities $ #{}
+          :expansion $ :: 'Expr 'EnumDef
+          :required $ [] 'Syntax
+    {} (:declaration nil)
+      :name 'calcit.core/defstruct
+      :runtime-arity nil
+      :schema $ quote $ :: 'Macro
+        {} (:rest 'SyntaxList)
+          :capabilities $ #{}
+          :expansion $ :: 'Expr 'StructDef
+          :required $ [] 'Syntax
+    {} (:declaration nil)
+      :name 'calcit.core/deftrait
+      :runtime-arity nil
+      :schema $ quote $ :: 'Macro
+        {} (:rest 'SyntaxList)
+          :capabilities $ #{}
+          :expansion $ :: 'Expr 'Trait
+          :required $ [] 'Syntax
+    {} (:declaration nil)
+      :name 'calcit.core/struct-with
+      :runtime-arity nil
+      :schema $ quote $ :: 'Macro
+        {} (:rest 'SyntaxList)
+          :capabilities $ #{}
+          :expansion $ :: 'Expr 'Struct
+          :required $ [] $ :: 'Expr 'Struct
+    {} (:declaration nil) (:name 'calcit.core/dbg) (:runtime-arity nil)
+      :schema $ quote $ :: 'Macro
+        {}
+          :capabilities $ #{} :platform-read
+          :expansion $ :: 'Expr 'T
+          :generics $ [] 'T
+          :required $ [] $ :: 'Expr 'T
+    {} (:declaration nil)
+      :name 'calcit.core/swap!
+      :runtime-arity nil
+      :schema $ quote $ :: 'Macro
+        {}
+          :capabilities $ #{}
+          :expansion $ :: 'Expr 'Dynamic
+          :required $ []
+            :: 'Expr $ :: 'Ref 'Dynamic
+            :: 'Expr 'Fn
+          :rest $ :: 'Expr 'Dynamic
+    {} (:declaration nil)
+      :name 'calcit.core/secure-random-bytes
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] 'Number
+        :return $ :: 'Result 'Buffer 'String
+    {} (:declaration nil)
+      :name 'calcit.core/deref
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'T)
+        :args $ [] $ :: 'Ref 'T
+        :generics $ [] 'T
     {} (:declaration nil)
       :failure "|需要_ToString_约束，不任意字符串化动态值"
       :name 'calcit.core/to-string
@@ -496,6 +575,16 @@
           :args $ [] 'T 'T
       :schema $ quote 'Trait
   :method-contracts $ []
+    {} (:name |.deref) (:receiver "|:: 'Ref 'Number") (:rest nil)
+      :parameters $ []
+      :returns $ quote 'Number
+    {} (:name |.map)
+      :receiver "|:: 'calcit.core/Option 'Number"
+      :rest nil
+      :parameters $ [] $ quote
+        :: 'Fn $ {} (:return 'U)
+          :args $ [] 'Number
+      :returns $ quote $ :: 'calcit.core/Option 'U
     {} (:name |.to-string) (:receiver |'String) (:rest nil)
       :parameters $ []
       :returns $ quote 'String
@@ -820,6 +909,25 @@
           :return $ :: 'Result 'Number 'String
       :returns $ quote $ :: 'Result 'Number 'String
   :methods $ []
+    {} (:name |.deref)
+      :provenance 'calcit.core/&atom:deref
+      :receiver "|:: 'Ref 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 1) (:min 1)
+      :schema $ quote $ {} (:kind :fn) (:return 'T)
+        :args $ [] $ :: 'Ref 'T
+        :generics $ [] 'T
+    {} (:name |.map)
+      :provenance 'calcit.core/option:map
+      :receiver "|:: 'calcit.core/Option 'Number"
+      :features $ []
+      :runtime-arity $ {} (:max 2) (:min 2)
+      :schema $ quote $ {} (:kind :fn)
+        :args $ [] (:: 'Option 'T)
+          :: 'Fn $ {} (:return 'U)
+            :args $ [] 'T
+        :generics $ [] 'T 'U
+        :return $ :: 'Option 'U
     {}
       :failure "|返回原_String，不添加_debug_引号或转义"
       :name |.to-string

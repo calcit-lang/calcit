@@ -89,6 +89,7 @@ fn push_use(
 fn collect_uses(
   node: &Calcit,
   current_namespace: &str,
+  imports: &HashMap<Arc<str>, Arc<program::ImportRule>>,
   targets: &HashMap<(String, String), DeprecatedTarget>,
   definitions: &HashSet<(String, String)>,
   path: &mut Vec<usize>,
@@ -112,12 +113,18 @@ fn collect_uses(
       Calcit::Import(import) => push_use(uses, targets, import.ns.as_ref(), import.def.as_ref(), path),
       Calcit::Symbol { sym, .. } => {
         if let Some((namespace, definition)) = sym.rsplit_once('/') {
-          let resolved_namespace = program::lookup_ns_target_in_import(current_namespace, namespace);
-          push_use(uses, targets, resolved_namespace.as_deref().unwrap_or(namespace), definition, path);
+          // Candidate discovery must not depend on whether a previous definition prepared the resolver.
+          let resolved_namespace = match imports.get(namespace).map(AsRef::as_ref) {
+            Some(program::ImportRule::NsAs(target)) => target.as_ref(),
+            _ => namespace,
+          };
+          push_use(uses, targets, resolved_namespace, definition, path);
         } else {
           push_use(uses, targets, current_namespace, sym.as_ref(), path);
-          if let Some(imported_namespace) = program::lookup_def_target_in_import(current_namespace, sym.as_ref()) {
-            push_use(uses, targets, imported_namespace.as_ref(), sym.as_ref(), path);
+          if let Some(program::ImportRule::NsReferDef(imported_namespace, imported_definition)) =
+            imports.get(sym.as_ref()).map(AsRef::as_ref)
+          {
+            push_use(uses, targets, imported_namespace.as_ref(), imported_definition.as_ref(), path);
           } else if !definitions.contains(&(current_namespace.to_owned(), sym.to_string())) {
             push_use(uses, targets, calcit::calcit::CORE_NS, sym.as_ref(), path);
           }
@@ -129,9 +136,84 @@ fn collect_uses(
 
   for (index, item) in items.iter().enumerate() {
     path.push(index);
-    collect_uses(item, current_namespace, targets, definitions, path, uses);
+    collect_uses(item, current_namespace, imports, targets, definitions, path, uses);
     path.pop();
   }
+}
+
+/// Deprecated method spellings that need receiver types to be told apart from other `.count` / `.add`.
+const DEPRECATED_METHOD_NAMES: &[&str] = &["add", "count", "cancel", "cancel-with"];
+
+fn calls_candidate_deprecated_method(node: &Calcit) -> bool {
+  let Calcit::List(items) = node else { return false };
+  if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::Quote, _))) {
+    return false;
+  }
+  let head_is_candidate = match items.first() {
+    Some(Calcit::Method(name, _)) => DEPRECATED_METHOD_NAMES.contains(&name.as_ref()),
+    Some(Calcit::Symbol { sym, .. }) => sym.strip_prefix('.').is_some_and(|name| DEPRECATED_METHOD_NAMES.contains(&name)),
+    _ => false,
+  };
+  head_is_candidate || items.iter().any(calls_candidate_deprecated_method)
+}
+
+/// Advisories name the method in backticks right after the `[Deprecated] method ` prefix.
+fn advisory_method_name(message: &str) -> Option<&str> {
+  let rest = message.strip_prefix("[Deprecated] method `.")?;
+  rest.split_once('`').map(|(name, _)| name)
+}
+
+/// Deprecated methods only exist once the receiver type is known, so they are read from the
+/// compiler's advisory channel rather than matched by name.
+fn deprecated_method_uses(node: &Calcit, source: &Cirru, namespace: &str, definition: &str) -> Option<Vec<DeprecatedApiUse>> {
+  let Calcit::List(items) = node else { return None };
+  if !matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defn") {
+    return None;
+  }
+  let _ = calcit::runner::preprocess::take_advisories();
+  let warnings = RefCell::new(vec![]);
+  let traced = calcit::runner::preprocess::trace_source_usages(
+    node,
+    namespace,
+    definition,
+    &warnings,
+    &calcit::call_stack::CallStackList::default(),
+  );
+  let advisories = calcit::runner::preprocess::take_advisories();
+  traced.ok()?;
+  let mut uses = vec![];
+  for advisory in advisories {
+    let location = advisory.location();
+    if advisory.code() != Some("A_DEPRECATED_METHOD") || location.ns.as_ref() != namespace || location.def.as_ref() != definition {
+      continue;
+    }
+    let Some(method) = advisory_method_name(advisory.message()) else {
+      continue;
+    };
+    let source_coord = location.coord.iter().map(|index| usize::from(*index)).collect::<Vec<_>>();
+    let Some(mut path) = source_path_to_reader_path(source, &source_coord) else {
+      continue;
+    };
+    // The location is the receiver operand; the call is the nearest enclosing list headed by the method.
+    while !matches!(
+      source_node_at(node, &path),
+      Some(Calcit::List(children)) if matches!(children.first(), Some(Calcit::Method(name, _)) if name.as_ref() == method)
+    ) {
+      if path.pop().is_none() {
+        break;
+      }
+    }
+    if source_node_at(node, &path).is_none() || path.is_empty() {
+      continue;
+    }
+    uses.push(DeprecatedApiUse {
+      path: format_path(&path),
+      target_namespace: calcit::calcit::CORE_NS.to_owned(),
+      target_name: format!(".{method}"),
+      target_doc: advisory.message().trim_start_matches("[Deprecated] method ").to_owned(),
+    });
+  }
+  Some(uses)
 }
 
 fn format_path(path: &[usize]) -> String {
@@ -234,7 +316,11 @@ pub fn collect_deprecated_api_rows(
   }
   let _guard = ResolutionGuard(calcit::runner::preprocess::is_strict_types_enabled());
   calcit::runner::preprocess::set_strict_types(false);
-  let resolver_ready = !targets.is_empty() && crate::cli_handlers::prepare_program_for_type_query(snapshot).is_ok();
+  // Prepared on first need so an unaffected project never compiles its call graph.
+  let mut resolver_state: Option<bool> = None;
+  let mut resolver_ready = |needed: bool| -> bool {
+    needed && *resolver_state.get_or_insert_with(|| crate::cli_handlers::prepare_program_for_type_query(snapshot).is_ok())
+  };
   let definitions = program_data
     .iter()
     .flat_map(|(namespace, file)| {
@@ -257,15 +343,27 @@ pub fn collect_deprecated_api_rows(
         .and_then(|file| file.defs.get(definition.as_ref()))
         .map(|entry| &entry.code);
       let mut uses = vec![];
-      collect_uses(&entry.code, namespace, &targets, &definitions, &mut vec![], &mut uses);
+      collect_uses(
+        &entry.code,
+        namespace,
+        &file.import_map,
+        &targets,
+        &definitions,
+        &mut vec![],
+        &mut uses,
+      );
       // Do not compile unrelated call graphs merely to confirm an empty report.
       // Their macros may have compile-time effects that a metadata query must not trigger.
-      if resolver_ready
-        && !uses.is_empty()
+      if resolver_ready(!targets.is_empty() && !uses.is_empty())
         && let Some(resolved) =
           source_code.and_then(|source| resolved_function_uses(&entry.code, source, namespace, definition, &targets, &uses))
       {
         uses = resolved;
+      }
+      if resolver_ready(calls_candidate_deprecated_method(&entry.code))
+        && let Some(mut methods) = source_code.and_then(|source| deprecated_method_uses(&entry.code, source, namespace, definition))
+      {
+        uses.append(&mut methods);
       }
       // Report Snapshot source paths so `query def` / `tree` address the same node.
       if let Some(source) = source_code {
@@ -423,7 +521,15 @@ mod tests {
     )]);
     let mut uses = vec![];
 
-    collect_uses(&code, "app.main", &targets, &HashSet::new(), &mut vec![], &mut uses);
+    collect_uses(
+      &code,
+      "app.main",
+      &HashMap::new(),
+      &targets,
+      &HashSet::new(),
+      &mut vec![],
+      &mut uses,
+    );
 
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].path, "code@3");
@@ -448,7 +554,7 @@ mod tests {
     let definitions = HashSet::from([("app.main".to_owned(), "record?".to_owned())]);
     let mut uses = vec![];
 
-    collect_uses(&code, "app.main", &targets, &definitions, &mut vec![], &mut uses);
+    collect_uses(&code, "app.main", &HashMap::new(), &targets, &definitions, &mut vec![], &mut uses);
 
     assert!(uses.is_empty());
   }
@@ -469,7 +575,15 @@ mod tests {
     )]);
     let mut uses = vec![];
 
-    collect_uses(&code, "app.main", &targets, &HashSet::new(), &mut vec![], &mut uses);
+    collect_uses(
+      &code,
+      "app.main",
+      &HashMap::new(),
+      &targets,
+      &HashSet::new(),
+      &mut vec![],
+      &mut uses,
+    );
 
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].target_name, "record?");
@@ -490,9 +604,58 @@ mod tests {
       },
     )]);
     let mut uses = vec![];
-    collect_uses(&code, "app.main", &targets, &HashSet::new(), &mut vec![], &mut uses);
+    collect_uses(
+      &code,
+      "app.main",
+      &HashMap::new(),
+      &targets,
+      &HashSet::new(),
+      &mut vec![],
+      &mut uses,
+    );
     assert_eq!(uses.len(), 1);
     assert_eq!(uses[0].path, "code@3");
     assert_eq!(uses[0].target_name, "remove-watch");
+  }
+
+  #[test]
+  fn finds_imported_candidates_without_preparing_global_program_data() {
+    let expression = cirru_parser::parse("defn demo () (compat/old-api nil) (old-referred nil)")
+      .expect("parse expression")
+      .into_iter()
+      .next()
+      .expect("one expression");
+    let code = code_to_calcit(&expression, "isolated.imports", "demo", vec![]).expect("convert expression");
+    let imports = HashMap::from([
+      (Arc::from("compat"), Arc::new(program::ImportRule::NsAs(Arc::from("legacy.api")))),
+      (
+        Arc::from("old-referred"),
+        Arc::new(program::ImportRule::NsReferDef(Arc::from("legacy.api"), Arc::from("old-api"))),
+      ),
+    ]);
+    let targets = HashMap::from([(
+      ("legacy.api".to_owned(), "old-api".to_owned()),
+      DeprecatedTarget { doc: String::new() },
+    )]);
+    let mut uses = vec![];
+
+    collect_uses(
+      &code,
+      "isolated.imports",
+      &imports,
+      &targets,
+      &HashSet::new(),
+      &mut vec![],
+      &mut uses,
+    );
+
+    assert_eq!(uses.len(), 2);
+    assert_eq!(uses[0].path, "code@3");
+    assert_eq!(uses[1].path, "code@4");
+    assert!(
+      uses
+        .iter()
+        .all(|usage| usage.target_namespace == "legacy.api" && usage.target_name == "old-api")
+    );
   }
 }

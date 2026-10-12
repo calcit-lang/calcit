@@ -3835,7 +3835,7 @@
         'any? $ %{} 'CodeEntry
           :doc "|checks if any element in collection satisfies the predicate function, returns true on first match, short-circuits evaluation"
           :code $ quote $ defn any? (xs f)
-            foldl-shortcut xs false false $ defn %any? (acc x)
+            &list:foldl-shortcut xs false false $ defn %any? (acc x)
               if (f x) (:: true true) (:: false acc)
           :examples $ []
             quote $ assert= true $ any? ([] 1 2 3 4) even?
@@ -3847,11 +3847,34 @@
               fn (x) (> x 10)
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Dynamic 'Fn
-          :tests $ [] $ %{} 'TestEntry (:name |shortlists-list-members)
-            :code $ quote $ assert= true
-              any? ([] 1 2 3 4)
-                fn (x) (> x 3)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |shortlists-list-members)
+              :code $ quote $ assert= true
+                any? ([] 1 2 3 4)
+                  fn (x) (> x 3)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |short-circuits-list-set-and-map)
+              :code $ quote $ let
+                  calls $ ref 0
+                  predicate $ fn (item)
+                    reset! calls $ inc $ deref calls
+                    , true
+                assert= true $ any? ([] 1 2 3) predicate
+                assert= 1 $ deref calls
+                reset! calls 0
+                assert= true $ any? (#{} 1 2 3) predicate
+                assert= 1 $ deref calls
+                reset! calls 0
+                assert= true $ any?
+                  {} (:a 1) (:b 2) (:c 3)
+                  , predicate
+                assert= 1 $ deref calls
+                reset! calls 0
+                assert= false $ any? ([]) predicate
+                assert= false $ any? (#{}) predicate
+                assert= false $ any? ({}) predicate
+                assert= 0 $ deref calls
+              :tags $ #{} :unit
         'append $ %{} 'CodeEntry
           :doc "|internal function for appending to list\nSyntax: (append list element)\nParams: list (list), element (any)\nReturns: list\nReturns new list with element added at end"
           :code $ quote &runtime-implementation
@@ -6500,7 +6523,7 @@
         'every? $ %{} 'CodeEntry
           :doc "|Checks whether every element of a collection satisfies a predicate, short-circuiting on the first failure."
           :code $ quote $ defn every? (xs f)
-            foldl-shortcut xs true true $ defn %every? (acc x)
+            &list:foldl-shortcut xs true true $ defn %every? (acc x)
               if (f x) (:: false acc) (:: true false)
           :examples $ []
             quote $ assert= true $ every? ([] 2 4 6)
@@ -6521,6 +6544,28 @@
                 every? ([] 1 2 3 4)
                   fn (x) (> x 0)
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |short-circuits-list-set-and-map)
+              :code $ quote $ let
+                  calls $ ref 0
+                  predicate $ fn (item)
+                    reset! calls $ inc $ deref calls
+                    , false
+                assert= false $ every? ([] 1 2 3) predicate
+                assert= 1 $ deref calls
+                reset! calls 0
+                assert= false $ every? (#{} 1 2 3) predicate
+                assert= 1 $ deref calls
+                reset! calls 0
+                assert= false $ every?
+                  {} (:a 1) (:b 2) (:c 3)
+                  , predicate
+                assert= 1 $ deref calls
+                reset! calls 0
+                assert= true $ every? ([]) predicate
+                assert= true $ every? (#{}) predicate
+                assert= true $ every? ({}) predicate
+                assert= 0 $ deref calls
+              :tags $ #{} :unit
         'exclude $ %{} 'CodeEntry
           :doc "|Removes values from a collection by repeatedly calling `&exclude` for each provided item."
           :code $ quote $ defn exclude (base & xs)
@@ -8071,7 +8116,8 @@
             %{} 'TestEntry (:name |plain-call-into-rest-local)
               :code $ quote $ let
                   collect $ fn (a & xs) (&list:count xs)
-                  pick $ fn (a ? b) (if (nil? b) a b)
+                  pick $ fn (a ? b)
+                    if (nil? b) a b
                 assert= 1 $ collect 0 9
                 assert= 0 $ collect 0
                 assert= 3 $ collect 0 7 8 9
@@ -8080,20 +8126,38 @@
               :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |iife-with-rest-param)
               :code $ quote $ do
-                assert= 2 $ (fn (a & xs) (&list:count xs)) 1 2 3
-                assert= 0 $ (fn (a & xs) (&list:count xs)) 1
-                assert= 2 $ apply-args (1 2 3) (fn (a & xs) (&list:count xs))
-                assert= 5 $ (fn (a ? b) (if (nil? b) a b)) 5
+                assert= 2 $
+                  fn (a & xs) (&list:count xs)
+                  , 1 2 3
+                assert= 0 $
+                  fn (a & xs) (&list:count xs)
+                  , 1
+                assert= 2 $ apply-args (1 2 3)
+                  fn (a & xs) (&list:count xs)
+                assert= 5 $
+                  fn (a ? b)
+                    if (nil? b) a b
+                  , 5
               :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |rest-callee-in-hof)
               :code $ quote $ do
                 assert= 6 $ foldl ([] 1 2 3) 0 +
-                assert= ([] 1 2) $ map ([] 1 2) +
-                assert= ([] 1 2) $ foldl ([] 1 2) ([]) conj
-                assert= ([] 1 2) $ foldl ([] ([] 1) ([] 2)) ([]) concat
-                assert= ([] |a |b) $ map ([] |a |b) str
-                assert= ([] 1 1) $ map ([] 1 2) $ fn (& xs) (&list:count xs)
-                assert= 2 $ foldl ([] 3 4) 0 $ fn (acc & xs) (&+ acc $ &list:count xs)
+                assert= ([] 1 2)
+                  map ([] 1 2) +
+                assert= ([] 1 2)
+                  foldl ([] 1 2) ([]) conj
+                assert= ([] 1 2)
+                  foldl
+                    [] ([] 1) ([] 2)
+                    []
+                    , concat
+                assert= ([] |a |b)
+                  map ([] |a |b) str
+                assert= ([] 1 1)
+                  map ([] 1 2)
+                    fn (& xs) (&list:count xs)
+                assert= 2 $ foldl ([] 3 4) 0 $ fn (acc & xs)
+                  &+ acc $ &list:count xs
               :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |plain-call-rest-fn-value)
               :code $ quote $ let
@@ -10314,20 +10378,38 @@
             :generics $ [] 'T 'U
             :return $ :: 'Option 'U
           :tags $ #{} :internal
-          :tests $ [] $ %{} 'TestEntry (:name |preserves-open-payload-callback)
-            :code $ quote $ let
-                consume $ fn (value)
-                  hint-fn $ {}
-                    :args $ [] $ :: (quote Option) (quote Dynamic)
-                    :return $ :: (quote Option) (quote Dynamic)
-                  value .map $ fn (item)
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-open-payload-callback)
+              :code $ quote $ let
+                  consume $ fn (value)
                     hint-fn $ {}
-                      :args $ [] $ quote Dynamic
-                      :return $ quote Dynamic
-                    , item
-              assert= (%some :ready)
-                consume $ %some :ready
-            :tags $ #{} :core :unit
+                      :args $ [] $ :: (quote Option) (quote Dynamic)
+                      :return $ :: (quote Option) (quote Dynamic)
+                    value .map $ fn (item)
+                      hint-fn $ {}
+                        :args $ [] $ quote Dynamic
+                        :return $ quote Dynamic
+                      , item
+                assert= (%some :ready)
+                  consume $ %some :ready
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |typed-method-selects-only-matching-branch)
+              :code $ quote $ let
+                  mapped $
+                    Option :some 3
+                    , .map $ fn (value) (str value)
+                  absent $
+                    Option :none
+                    , .map $ fn (value)
+                      hint-fn $ {}
+                        :args $ [] 'Number
+                        :return 'String
+                      raise |unselected-map-callback
+                assert-type mapped $ :: 'Option 'String
+                assert-type absent $ :: 'Option 'String
+                assert= (Option :some |3) mapped
+                assert= (Option :none) absent
+              :tags $ #{} :core :unit
         'option:none? $ %{} 'CodeEntry
           :doc "|判断 Option 是否为 :none；公开代码优先使用 .none?，本辅助函数属于内部兼容入口。"
           :code $ quote $ defn option:none? (opt)

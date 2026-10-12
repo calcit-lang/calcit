@@ -6,6 +6,8 @@
     :tags $ {} $ :enum-definition-equality "|unsupported: first-class EnumDef creation requires &enum-def:new, rejected by WASM codegen (#1863)"
     :tests $ {} (|calcit.core/&+#preserves-primitive-schema-in-local-binding "|unsupported: unsupported WASM expression: (&proc &+)")
       |calcit.core/pairs-map#retains-malformed-pair-failure "|unsupported: unsupported syntax in WASM: try"
+      |calcit.core/any?#short-circuits-list-set-and-map "|unsupported: unsupported proc in WASM: ref"
+      |calcit.core/every?#short-circuits-list-set-and-map "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/&get-in#handles-empty-path-and-nil-base "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nullable internal traversal needs concrete argument types"
       |calcit.core/get-in#handles-empty-path-and-nil-base "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nullable scalar traversal needs concrete argument types"
       |calcit.core/contains-symbol?#finds-nested-symbol-and-handles-empty-list "|unsupported: unsupported runtime quote value in WASM"
@@ -234,6 +236,8 @@
     :tags $ {} $ :enum-definition-equality "|unsupported: first-class EnumDef creation requires &enum-def:new, rejected by the shared WASM codegen (#1863)"
     :tests $ {} (|calcit.core/&+#preserves-primitive-schema-in-local-binding "|unsupported: unsupported WASM expression: (&proc &+)")
       |calcit.core/pairs-map#retains-malformed-pair-failure "|unsupported: unsupported syntax in WASM: try"
+      |calcit.core/any?#short-circuits-list-set-and-map "|unsupported: unsupported proc in WASM: ref"
+      |calcit.core/every?#short-circuits-list-set-and-map "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/&get-in#handles-empty-path-and-nil-base "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nullable internal traversal needs concrete argument types"
       |calcit.core/get-in#handles-empty-path-and-nil-base "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nullable scalar traversal needs concrete argument types"
       |calcit.core/contains-symbol?#finds-nested-symbol-and-handles-empty-list "|unsupported: unsupported runtime quote value in WASM"

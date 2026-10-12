@@ -320,6 +320,49 @@
           :schema $ :: 'Fn $ {} (:return 'T)
             :args $ [] 'T 'T
             :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |empty-option-before-payload)
+              :code $ quote $ assert= |x
+                .unwrap $ same-type-second (Option :none) (Option :some |x)
+              :tags $ #{} :bottom :generic :unit
+            %{} 'TestEntry (:name |empty-option-after-payload)
+              :code $ quote $ assert= true
+                .none? $ same-type-second (Option :some |x) (Option :none)
+              :tags $ #{} :bottom :generic :unit
+            %{} 'TestEntry (:name |empty-list-before-elements)
+              :code $ quote $ let
+                  selected $ same-type-second ([]) ([] 1)
+                assert-type selected $ :: 'List 'Number
+                assert= ([] 1) selected
+              :tags $ #{} :bottom :generic :unit
+            %{} 'TestEntry (:name |local-empty-option-before-payload)
+              :code $ quote $ let
+                  choose $ fn (left right)
+                    hint-fn $ {}
+                      :generics $ [] 'T
+                      :args $ [] 'T 'T
+                      :return 'T
+                    , right
+                assert= |x $ .unwrap $ choose (Option :none) (Option :some |x)
+              :tags $ #{} :bottom :generic :unit
+            %{} 'TestEntry (:name |variadic-equality-bottom-refinement)
+              :code $ quote $ do
+                assert= false $ = (Option :none) (Option :some 1)
+                assert= false $ = (Option :some 1) (Option :none)
+                assert= false $ = (Option :none) (Option :none) (Option :some 1)
+                assert= false $ = ([]) ([] 1)
+              :tags $ #{} :bottom :generic :unit
+            %{} 'TestEntry (:name |local-variadic-bottom-refinement)
+              :code $ quote $ let
+                  check $ fn (left & right)
+                    hint-fn $ {}
+                      :generics $ [] 'T
+                      :args $ [] 'T
+                      :rest 'T
+                      :return 'Unit
+                    , &unit
+                assert= &unit $ check (Option :none) (Option :some |x) (Option :none)
+              :tags $ #{} :bottom :generic :unit
         'test-count-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-count-inference ()
             assert-type
