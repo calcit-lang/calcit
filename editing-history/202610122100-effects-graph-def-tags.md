@@ -10,6 +10,10 @@
 
 输出 envelope 不变，仅在被调用定义声明了效果 tag 时多出 effect 项。calcit.std 与 js-ffi 中带效果的定义仍需在各自仓库补 `:tags`，补齐前它们按调用图子节点分析，未声明处不会被猜测为效果。
 
+只改 `:tags` 而函数体不变的编辑不会出现在热更新的 `changed_defs` 中，该变化在完整重新加载后才生效。
+
 ## 验证
 
 `calcit/test-effects-graph.cirru` 新增 `declared-helper`（纯函数体、`:tags #{} :effect`）与 `declared-caller`，`fixture_reports_declared_effects_and_unknown_targets` 断言调用点记录 `effect`、被调用定义自身无效果。
+
+补充测试：`deprecated-only`（仅非效果 tag）、`mixed-tagged`（`:deprecated :log`）、另一命名空间的 `test-effects-graph.lib/lib-effect`（`:file`）；`src/program/tests.rs` 覆盖热更新保留已有 tags、新增定义 tags 为空。效果项按 kind、target 排序，输出稳定。

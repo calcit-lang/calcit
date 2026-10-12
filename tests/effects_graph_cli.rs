@@ -45,6 +45,6 @@ fn effects_graph_reports_console_state_and_io_effects() {
   assert_eq!(child("watch-helper")["state"][0]["name"], "*store");
   assert_eq!(child("watch-helper")["effects"][0]["kind"], "state/watch");
   assert_eq!(child("watch-helper")["effects"][0]["target"], "remove-watch");
-  assert_eq!(graph["stats"]["reachable_count"], 23);
+  assert_eq!(graph["stats"]["reachable_count"], 27);
   assert_eq!(graph["stats"]["state_items"], 4);
 }

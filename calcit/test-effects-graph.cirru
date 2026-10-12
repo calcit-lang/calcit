@@ -7,8 +7,8 @@
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
-  :files $ {} $ 'test-effects-graph.main
-    %{} 'FileEntry
+  :files $ {}
+    'test-effects-graph.main $ %{} 'FileEntry
       :defs $ {}
         '*store $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defref *store 0
@@ -44,6 +44,10 @@
           :code $ quote $ defn declared-helper (x) (inc x)
           :examples $ []
           :tags $ #{} :effect
+        'deprecated-only $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn deprecated-only () (inc 1)
+          :examples $ []
+          :tags $ #{} :deprecated
         'io-helper $ %{} 'CodeEntry (:doc "|reads a file path")
           :code $ quote $ defn io-helper (path) (read-file path)
           :examples $ []
@@ -67,6 +71,7 @@
             shadow-helper inc inc inc $ [] 1
             case-default-helper 1 inc
             declared-caller
+            tag-caller
           :examples $ []
           :schema $ :: 'Dynamic
         'missing-helper $ %{} 'CodeEntry (:doc |)
@@ -115,6 +120,13 @@
             hint-fn $ {} $ :async false
             , x
           :examples $ []
+        'mixed-tagged $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn mixed-tagged () (inc 1)
+          :examples $ []
+          :tags $ #{} :deprecated :log
+        'tag-caller $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn tag-caller () (deprecated-only) (mixed-tagged) (lib-effect)
+          :examples $ []
         'watch-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn watch-helper () (remove-watch *store :log)
           :examples $ []
@@ -122,4 +134,12 @@
           :code $ quote $ defn write-helper (path) (.write-text! path |done)
           :examples $ []
       :ns $ %{} 'NsEntry (:doc |)
-        :code $ quote $ ns test-effects-graph.main
+        :code $ quote $ ns test-effects-graph.main $ :require $ test-effects-graph.lib :refer $ lib-effect
+    'test-effects-graph.lib $ %{} 'FileEntry
+      :defs $ {}
+        'lib-effect $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn lib-effect () (inc 1)
+          :examples $ []
+          :tags $ #{} :file
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns test-effects-graph.lib

@@ -1377,3 +1377,48 @@ fn compiled_executable_code_only_exposes_executable_kinds() {
 
   assert_eq!(lookup_compiled_executable_code("app.compiled", "callable"), None);
 }
+
+#[test]
+fn hot_reload_keeps_tags_of_changed_def_and_leaves_new_def_untagged() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  let old_code = code_to_calcit(&Cirru::Leaf(Arc::from("1")), "app.tags", "demo", vec![]).expect("build initial code");
+  let tags: HashSet<cirru_edn::EdnTag> = HashSet::from([cirru_edn::EdnTag::new("effect")]);
+
+  PROGRAM_CODE_DATA.write().expect("seed program code").insert(
+    Arc::from("app.tags"),
+    ProgramFileData {
+      import_map: HashMap::new(),
+      defs: HashMap::from([(
+        Arc::from("demo"),
+        ProgramDefEntry {
+          tags: tags.clone(),
+          code: old_code,
+          schema: DYNAMIC_TYPE.clone(),
+          doc: Arc::from(""),
+          examples: vec![],
+          ffi: None,
+        },
+      )]),
+    },
+  );
+
+  let mut changes = snapshot::ChangesDict::default();
+  changes.changed.insert(
+    Arc::from("app.tags"),
+    snapshot::FileChangeInfo {
+      ns: None,
+      added_defs: HashMap::from([(String::from("fresh"), Cirru::Leaf(Arc::from("3")))]),
+      removed_defs: HashSet::new(),
+      changed_defs: HashMap::from([(String::from("demo"), Cirru::Leaf(Arc::from("2")))]),
+    },
+  );
+  apply_code_changes(&changes).expect("apply source changes");
+
+  let program = PROGRAM_CODE_DATA.read().expect("read program code");
+  let file = program.get("app.tags").expect("file stays loaded");
+  assert_eq!(file.defs["demo"].tags, tags);
+  assert_eq!(file.defs["demo"].code, Calcit::Number(2.0));
+  assert!(file.defs["fresh"].tags.is_empty());
+}

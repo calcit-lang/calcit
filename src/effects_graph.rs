@@ -2908,6 +2908,17 @@ mod tests {
       pair("effect", "test-effects-graph.main/declared-helper")
     );
     assert_eq!(effects["declared-helper"], vec![]);
+    // A non-effect tag is ignored; an effect tag next to it is recorded; a definition in another
+    // namespace is reported as `ns/def`. Rows come out sorted by kind.
+    assert_eq!(
+      effects["tag-caller"],
+      vec![
+        ("console".to_string(), "test-effects-graph.main/mixed-tagged".to_string()),
+        ("io/file".to_string(), "test-effects-graph.lib/lib-effect".to_string()),
+      ]
+    );
+    assert_eq!(effects["deprecated-only"], vec![]);
+    assert_eq!(effects["mixed-tagged"], vec![]);
   }
 
   fn find_node<'a>(node: &'a EffectsGraphNode, def: &str) -> Option<&'a EffectsGraphNode> {
