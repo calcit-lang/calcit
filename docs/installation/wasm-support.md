@@ -32,8 +32,8 @@ aliases:
 | List / Map / Set / Struct / Enum 值与 core 方法 | supported | 线性内存 + bump allocator；`#{}` 字面量不去重 | core `:tests` |
 | 已证明的普通方法调用、trait 方法 | supported-with-type-evidence | 接收者需要具体类型（`E_WASM_TRAIT_TYPE_EVIDENCE`、`E_WASM_TRAIT_RESOLUTION`） | `calcit.core/&map:destruct#exposes-pairs-and-folds` 排除项 |
 | 作为参数传递的闭包 | supported-with-type-evidence | 调用点可静态特化，参数契约可调用（`E_WASM_CLOSURE_SPECIALIZATION`、`E_WASM_CALL_SPECIALIZATION`） | `calcit.core/&list:filter-pair#filters-key-value-pairs` 排除项 |
-| 局部 `fn` 与立即调用的 `fn`（含 `apply-args`）的 `&` rest / `?` optional 参数，`&` 函数作为高阶回调 | supported | 按 native 绑定：缺省的 `?` 参数为 nil，`&` 参数收到剩余实参组成的 List；`foldl xs 0 +` 这类静态回调同样打包。立即调用的 `fn` 若带这类参数且函数体使用 `recur`，运行到该调用时 trap | `calcit.core/hint-fn#plain-call-into-rest-local`、`calcit.core/hint-fn#iife-with-rest-param`、`calcit.core/hint-fn#rest-callee-in-hof` |
-| 通过函数值（函数表）调用 `&` rest 函数 | unsupported | `calcit wasm`：间接调用不打包变参，函数表中的入口签名不匹配，运行到该调用时 trap（node 报 `null function or function signature mismatch`，wasmtime 报 `BadSignature`）。`calcit wasi`：command 中可执行到的间接调用在编译期以 `E_WASI_COMMAND_INDIRECT` 拒绝。包括 `let ((f +)) (f 1 2)`，也包括经声明为定长 Fn 的参数传入 `defn first-of (a & _xs) a` 再以 2 个实参调用：后者以前碰巧得到正确值，现在同样 trap | `calcit.core/hint-fn#plain-call-rest-fn-value` 排除项 |
+| 局部 `fn` 与立即调用的 `fn`（含 `apply-args`）的 `&` rest / `?` optional 参数，`&` 函数作为高阶回调 | supported | 按 native 绑定：缺省的 `?` 参数为 nil，`&` 参数收到剩余实参组成的 List；`foldl xs 0 +` 这类静态回调同样打包。函数体中的 `recur` 按同样规则重新绑定参数（`recur (&- n 1) n n` 把后两个实参打包进 `&` 参数） | `calcit.core/hint-fn#plain-call-into-rest-local`、`calcit.core/hint-fn#iife-with-rest-param`、`calcit.core/hint-fn#iife-rest-param-recur`、`calcit.core/hint-fn#rest-callee-in-hof` |
+| 通过函数值（函数表）调用 `&` rest 函数 | supported | `calcit wasm`：`let ((f +)) (f 1 2)`、经定长 Fn 参数传入的 `defn first-of (a & _xs) a` 等调用按 native 打包剩余实参。用 N 个实参调用函数值时使用第 N 个函数表；表中 `&` 函数的入口是一个按 N 个实参打包 rest List 后再调用原函数的适配函数，定长函数的入口仍是函数本身。`calcit wasi`：command 中可执行到的间接调用仍在编译期以 `E_WASI_COMMAND_INDIRECT` 拒绝 | `calcit.core/hint-fn#plain-call-rest-fn-value`（WASI 为排除项） |
 | 嵌套 `fn` / `defn` 闭包值、特化闭包中的 `recur` | unsupported | | `calcit.core/&list:apply#preserves-homogeneous-function-result-types` 排除项 |
 | `try` | unsupported | 失败只能 trap | `calcit.core/&number:rem#rejects-zero-and-non-safe-integers` 排除项 |
 | 局部 `ref`（兼容名 `atom`）、`add-watch!` / `remove-watch!` | unsupported | 局部 Ref 与观察者；已有数值 `defref` 全局不在此排除范围 | `calcit.core/reset!#returns-assigned-scalar` 排除项 |
@@ -128,3 +128,4 @@ write-file
 
 - 不带编号的 `unsupported ... in WASM` 诊断尚未统一格式，不一定包含源位置与缺失的证据种类。
 - `wasm-unsupported-procs` 列表只校验排除清单出现过的 Proc，没有 core 测试覆盖的 Proc 靠人工维护。
+- 通过函数值调用时，实参个数少于 `&` 之前的参数个数（含 `?` 参数），或与定长函数的参数个数不同，都会 trap；缺省的 `?` 参数不会绑定为 nil。

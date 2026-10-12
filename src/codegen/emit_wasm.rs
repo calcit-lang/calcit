@@ -19,7 +19,7 @@
 //! Output is a `.wasm` binary that can be loaded by Node.js, Deno, or any WASM runtime.
 
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::rc::Rc;
@@ -67,7 +67,8 @@ use runtime::{
   build_wasi_component_get_env_fn, build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn,
   build_wasi_component_route_path_fn, build_wasi_component_select_preopen_fn, build_wasi_component_write_bytes_fn,
   build_wasi_get_args_fn, build_wasi_get_env_fn, build_wasi_open_path_fn, build_wasi_read_dir_fn, build_wasi_read_text_fn,
-  build_wasi_wait_fn, build_wasi_write_all_fn, build_wasi_write_text_fn, build_wasm_module, core_host_import, host_imports_for_target,
+  build_wasi_wait_fn, build_wasi_write_all_fn, build_wasi_write_text_fn, build_wasm_module, call_indirect, core_host_import,
+  host_imports_for_target,
 };
 use structs::{
   StructLayouts, collect_struct_layouts, component_struct_identity, emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth,
@@ -902,17 +903,6 @@ fn emit_wasm_impl(
   runtime_fn_index.insert("__rt_str_pad_right".to_string(), str_pad_right_idx);
   compiled_fns.push(build_str_pad_right_fn(str_tag_id));
 
-  // Funcref table entry for `&` rest-parameter functions; its `() -> ()` type
-  // matches no canonical indirect call type (see `ModuleFunctionLayout`).
-  let rest_slot_trap_idx = num_imports + compiled_fns.len() as u32;
-  compiled_fns.push(CompiledFn {
-    export_name: None,
-    params: vec![],
-    results: vec![],
-    locals: vec![],
-    instructions: vec![Instruction::Unreachable],
-  });
-
   let runtime_fn_count = compiled_fns.len() as u32;
   let mut export_name_counts: HashMap<String, usize> = HashMap::new();
   for (_, name, _, _) in &fn_defs {
@@ -1300,6 +1290,35 @@ fn emit_wasm_impl(
     }
   }
 
+  // Function values of `&` rest-parameter functions are called through
+  // adapters that pack the trailing arguments, one per call arity in use.
+  let mut rest_adapters = HashMap::new();
+  let call_arities: BTreeSet<u32> = compiled_fns
+    .iter()
+    .flat_map(|function| function.instructions.iter())
+    .filter_map(|instruction| match instruction {
+      Instruction::CallIndirect { table_index, .. } => Some(*table_index),
+      _ => None,
+    })
+    .collect();
+  if !call_arities.is_empty() {
+    let mut adapter_ctx = WasmGenCtx::new(0, env.clone());
+    for (slot, (_, _, args, _)) in fn_defs.iter().enumerate() {
+      let (_, Some(fixed)) = compute_fn_arity(args) else {
+        continue;
+      };
+      for &arity in call_arities.range(fixed..) {
+        rest_adapters.insert((arity, slot as u32), num_imports + compiled_fns.len() as u32);
+        compiled_fns.push(build_rest_adapter(
+          &mut adapter_ctx,
+          num_imports + runtime_fn_count + slot as u32,
+          fixed,
+          arity,
+        ));
+      }
+    }
+  }
+
   // Build module using wasm-encoder
   let wasm_bytes = build_wasm_module(
     &compiled_fns,
@@ -1312,15 +1331,7 @@ fn emit_wasm_impl(
       runtime_fn_count,
       table_fn_count: fn_defs.len() as u32,
       component_free_head: component_free_head_global.is_some(),
-      rest_slot_trap: Some((
-        rest_slot_trap_idx,
-        fn_defs
-          .iter()
-          .enumerate()
-          .filter(|(_, (_, _, args, _))| compute_fn_arity(args).1.is_some())
-          .map(|(slot, _)| slot as u32)
-          .collect(),
-      )),
+      rest_adapters,
     },
   )?;
 
@@ -4987,6 +4998,10 @@ struct WasmGenCtx {
   uses_recur: bool,
   /// Argument local indices in order (for recur)
   arg_indices: Vec<u32>,
+  /// `(required, rest)` parameter shape behind `arg_indices` when it has `?` /
+  /// `&` parameters; a plain `recur` binds its arguments by the same rules as
+  /// a call. `None` means every parameter is required.
+  recur_shape: Option<(usize, bool)>,
   /// Collected instructions
   instructions: Vec<Instruction<'static>>,
   /// Function name → index map for cross-function calls
@@ -5051,6 +5066,7 @@ impl WasmGenCtx {
       next_local: num_params,
       uses_recur: false,
       arg_indices: Vec::new(),
+      recur_shape: None,
       instructions: Vec::new(),
       fn_index: env.fn_index,
       fn_arity: env.fn_arity,
@@ -5287,6 +5303,12 @@ fn inline_lambda_shape(expr: &Calcit) -> Option<(usize, bool)> {
     },
     _ => return None,
   };
+  arg_labels_shape(&labels)
+}
+
+/// The `(required, rest)` shape of a marked parameter list; see
+/// `inline_lambda_shape`.
+fn arg_labels_shape(labels: &[CalcitArgLabel]) -> Option<(usize, bool)> {
   let (mut required, mut optional, mut rest, mut rest_params) = (0, false, false, 0);
   for label in labels {
     match label {
@@ -5965,6 +5987,29 @@ fn try_custom_def_impl(
   }
 }
 
+/// A funcref table entry for the `&` rest-parameter function `target` with
+/// `fixed` leading parameters, typed `(f64 x arity) -> f64` like every
+/// function-value call with `arity` arguments: it packs the arguments after
+/// the fixed ones into a new list and calls `target` (#1972).
+fn build_rest_adapter(ctx: &mut WasmGenCtx, target: u32, fixed: u32, arity: u32) -> CompiledFn {
+  ctx.instructions.clear();
+  ctx.extra_locals.clear();
+  ctx.next_local = arity;
+  let rest = emit_list_from_locals(ctx, &(fixed..arity).collect::<Vec<_>>());
+  for param in 0..fixed {
+    ctx.emit(Instruction::LocalGet(param));
+  }
+  ctx.emit(Instruction::LocalGet(rest));
+  ctx.emit(Instruction::Call(target));
+  CompiledFn {
+    export_name: None,
+    params: vec![ValType::F64; arity as usize],
+    results: vec![ValType::F64],
+    locals: std::mem::take(&mut ctx.extra_locals),
+    instructions: std::mem::take(&mut ctx.instructions),
+  }
+}
+
 fn compile_fn(
   source_ns: &str,
   export_name: &str,
@@ -5991,6 +6036,9 @@ fn compile_fn(
       ctx.local_types.insert(pname.clone(), annotation.clone());
     }
     ctx.arg_indices.push(i as u32);
+  }
+  if let CalcitFnArgs::MarkedArgs(labels) = args {
+    ctx.recur_shape = arg_labels_shape(labels).filter(|&(required, rest)| rest || required != arity);
   }
 
   reject_non_tail_recur(body, &format!("{source_ns}/{export_name}"))?;
@@ -6078,19 +6126,68 @@ fn emit_body(ctx: &mut WasmGenCtx, exprs: &[Calcit]) -> Result<(), String> {
 /// - If the body uses `recur`, wraps with `loop...end` and sets up `ctx.arg_indices`
 ///   so that `recur` correctly jumps back to the loop start.
 /// - Outer params of the same name are shadowed and restored after.
-fn emit_inline_iife(ctx: &mut WasmGenCtx, params: &[String], body: &[Calcit], init_args: &[Calcit]) -> Result<(), String> {
+///
+/// `shape` is the `(required, rest)` shape of a parameter list with `?` / `&`
+/// markers; `params` then excludes the markers, and both the initial call and
+/// `recur` bind arguments like native.
+fn emit_inline_iife(
+  ctx: &mut WasmGenCtx,
+  params: &[String],
+  body: &[Calcit],
+  init_args: &[Calcit],
+  shape: Option<(usize, bool)>,
+) -> Result<(), String> {
   // Evaluate all init args and store in fresh locals (before modifying ctx.locals).
   let mut param_locals: Vec<u32> = Vec::new();
-  let param_types = init_args.iter().map(|arg| infer_wasm_static_type(ctx, arg)).collect::<Vec<_>>();
-  for (i, _param_name) in params.iter().enumerate() {
-    let tmp = ctx.alloc_local();
-    if i < init_args.len() {
-      emit_expr(ctx, &init_args[i])?;
-    } else {
-      ctx.emit(f64_const(0.0)); // nil for missing args
+  let mut param_types = init_args.iter().map(|arg| infer_wasm_static_type(ctx, arg)).collect::<Vec<_>>();
+  if let Some((required, rest)) = shape {
+    let positional = params.len() - usize::from(rest);
+    if init_args.len() < required || (!rest && init_args.len() > positional) {
+      return Err(format!(
+        "inline function expects {} argument(s), got {}",
+        if rest {
+          format!("at least {required}")
+        } else {
+          format!("{required} to {positional}")
+        },
+        init_args.len()
+      ));
     }
-    ctx.emit(Instruction::LocalSet(tmp));
-    param_locals.push(tmp);
+    for arg in init_args {
+      let tmp = ctx.alloc_local();
+      emit_expr(ctx, arg)?;
+      ctx.emit(Instruction::LocalSet(tmp));
+      param_locals.push(tmp);
+    }
+    let trailing = if param_locals.len() > positional {
+      param_locals.split_off(positional)
+    } else {
+      vec![]
+    };
+    param_types.truncate(positional);
+    while param_locals.len() < positional {
+      let nil = ctx.alloc_local();
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::LocalSet(nil));
+      param_locals.push(nil);
+      // `recur` may rebind it to a non-nil value.
+      param_types.push(None);
+    }
+    if rest {
+      param_locals.push(emit_list_from_locals(ctx, &trailing));
+      param_types.push(None);
+    }
+  } else {
+    for (i, _param_name) in params.iter().enumerate() {
+      let tmp = ctx.alloc_local();
+      if i < init_args.len() {
+        emit_expr(ctx, &init_args[i])?;
+      } else {
+        ctx.emit(f64_const(0.0)); // nil for missing args
+      }
+      ctx.emit(Instruction::LocalSet(tmp));
+      param_locals.push(tmp);
+    }
   }
 
   // Shadow outer locals with IIFE params (save old bindings for restoration).
@@ -6110,15 +6207,18 @@ fn emit_inline_iife(ctx: &mut WasmGenCtx, params: &[String], body: &[Calcit], in
   let uses_recur = body.iter().any(check_uses_recur);
   if uses_recur {
     let old_arg_indices = std::mem::replace(&mut ctx.arg_indices, param_locals);
+    let old_recur_shape = std::mem::replace(&mut ctx.recur_shape, shape);
     let old_block_depth = ctx.block_depth;
     ctx.block_depth = 0;
 
     ctx.emit(Instruction::Loop(wasm_encoder::BlockType::Result(ValType::F64)));
-    emit_body(ctx, body)?;
+    let result = emit_body(ctx, body);
     ctx.emit(Instruction::End); // end loop
 
     ctx.block_depth = old_block_depth;
     ctx.arg_indices = old_arg_indices;
+    ctx.recur_shape = old_recur_shape;
+    result?;
   } else {
     emit_body(ctx, body)?;
   }
@@ -6603,23 +6703,34 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
         Some(Calcit::List(param_list)) => param_list
           .iter()
           .filter_map(|p| match p {
-            Calcit::Local(CalcitLocal { sym, .. }) => Some(sym.as_ref().to_owned()),
-            Calcit::Symbol { sym, .. } => Some(sym.as_ref().to_owned()),
+            Calcit::Local(CalcitLocal { sym, .. }) | Calcit::Symbol { sym, .. } if !matches!(sym.as_ref(), "&" | "?") => {
+              Some(sym.as_ref().to_owned())
+            }
             _ => None,
           })
           .collect::<Vec<_>>(),
         other => return Err(format!("IIFE defn: params list expected, got: {other:?}")),
       };
       let body: Vec<Calcit> = iife_items.iter().skip(3).cloned().collect();
-      if matches!(inline_lambda_shape(head), Some((required, false)) if required == params.len()) {
-        return emit_inline_iife(ctx, &params, &body, &args_list);
+      let shape = inline_lambda_shape(head);
+      if matches!(shape, Some((required, false)) if required == params.len()) {
+        return emit_inline_iife(ctx, &params, &body, &args_list, None);
       }
-      // `&` / `?` parameters bind like native through the inline closure path.
-      // `recur` would have to rebind them the same way, which the loop lowering
-      // does not do, so such a call traps when it runs (#1964).
+      // `&` / `?` parameters bind like native. With `recur`, the loop lowering
+      // rebinds them by the same rules (#1972); otherwise the inline closure
+      // path also specializes closure arguments.
+      if body.iter().any(check_uses_recur) {
+        return match shape {
+          Some(shape) => emit_inline_iife(ctx, &params, &body, &args_list, Some(shape)),
+          None => {
+            ctx.emit(Instruction::Unreachable);
+            Ok(())
+          }
+        };
+      }
       match capture_inline_closure(ctx, head) {
-        Some(closure) if !body.iter().any(check_uses_recur) => emit_inline_closure_call(ctx, &closure, &args_list),
-        _ => {
+        Some(closure) => emit_inline_closure_call(ctx, &closure, &args_list),
+        None => {
           ctx.emit(Instruction::Unreachable);
           Ok(())
         }
@@ -6649,11 +6760,8 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
       // Load function table index (f64) and truncate to i32 for call_indirect
       ctx.emit(Instruction::LocalGet(local_idx));
       ctx.emit(Instruction::I32TruncF64S);
-      // Canonical type index = number of args (type N = (f64×N) → f64)
-      ctx.emit(Instruction::CallIndirect {
-        type_index: args_list.len() as u32,
-        table_index: 0,
-      });
+      // Canonical type and table index = number of args (type N = (f64×N) → f64)
+      ctx.emit(call_indirect(args_list.len() as u32));
       Ok(())
     }
     _ => Err(format!("unsupported call head in WASM: {head}")),
@@ -7222,13 +7330,21 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
         ctx.emit(Instruction::Unreachable);
         Ok(())
       } else {
-        // Non-spread recur.
-        if args.len() != ctx.arg_indices.len() {
-          return Err(format!(
-            "recur arity mismatch: expected {}, got {}",
-            ctx.arg_indices.len(),
-            args.len()
-          ));
+        // Non-spread recur binds its arguments like a call (#1972): a missing
+        // `?` parameter is nil and a `&` parameter receives the trailing
+        // arguments as a new list.
+        let total = ctx.arg_indices.len();
+        let (required, rest) = ctx.recur_shape.unwrap_or((total, false));
+        let positional = total - usize::from(rest);
+        if args.len() < required || (!rest && args.len() > positional) {
+          let expected = if rest {
+            format!("at least {required}")
+          } else if required == positional {
+            positional.to_string()
+          } else {
+            format!("{required} to {positional}")
+          };
+          return Err(format!("recur arity mismatch: expected {expected}, got {}", args.len()));
         }
         // Evaluate all args into temp locals first
         let mut temps = Vec::new();
@@ -7237,6 +7353,21 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
           emit_expr(ctx, arg)?;
           ctx.emit(Instruction::LocalSet(tmp));
           temps.push(tmp);
+        }
+        let trailing = if temps.len() > positional {
+          temps.split_off(positional)
+        } else {
+          vec![]
+        };
+        while temps.len() < positional {
+          let nil = ctx.alloc_local();
+          ctx.emit(f64_const(0.0));
+          ctx.emit(Instruction::LocalSet(nil));
+          temps.push(nil);
+        }
+        if rest {
+          let list = emit_list_from_locals(ctx, &trailing);
+          temps.push(list);
         }
         // Copy temps back to arg locals
         for (i, &tmp) in temps.iter().enumerate() {
@@ -9941,13 +10072,13 @@ mod tests {
     ComponentExportAdapter, ComponentExportRuntime, ComponentImportAdapter, ComponentStructType, ComponentValueCodecs, HEAP_BASE,
     HostImport, InlineClosure, ModuleFunctionLayout, StaticFnDef, WasiComponentReadImports, WasmBoundary, WasmCompileEnv, WasmGenCtx,
     WasmTarget, build_cabi_free_fn, build_cabi_realloc_fn, build_component_export_adapter, build_component_import_adapter,
-    build_string_pool, build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn, build_wasi_component_route_path_fn,
-    build_wasi_component_select_preopen_fn, build_wasm_module, component_abi_type, component_export_needs_post_return,
-    component_flat_types, component_import_signature, component_memory_layout, component_task_return_signature, emit_call_expr,
-    emit_call_spread, emit_call_spread_args_as_regular, emit_proc_call, expr_uses_wasi_file, host_imports_for_target,
-    index_host_imports, must_reject_extraction_failure, reject_non_tail_recur, reject_reachable_wasi_command_dependencies,
-    validate_component_export_symbols, validate_component_flat_parameters, validate_component_import_symbols,
-    wasi_component_file_imports, wasm_non_nil_value_is_nonzero,
+    build_rest_adapter, build_string_pool, build_wasi_component_open_at_fn, build_wasi_component_read_bytes_fn,
+    build_wasi_component_route_path_fn, build_wasi_component_select_preopen_fn, build_wasm_module, call_indirect, component_abi_type,
+    component_export_needs_post_return, component_flat_types, component_import_signature, component_memory_layout,
+    component_task_return_signature, emit_call_expr, emit_call_spread, emit_call_spread_args_as_regular, emit_proc_call,
+    expr_uses_wasi_file, host_imports_for_target, index_host_imports, mem_arg_f64, must_reject_extraction_failure,
+    reject_non_tail_recur, reject_reachable_wasi_command_dependencies, validate_component_export_symbols,
+    validate_component_flat_parameters, validate_component_import_symbols, wasi_component_file_imports, wasm_non_nil_value_is_nonzero,
   };
   use crate::calcit::{
     Calcit, CalcitEnumDef, CalcitFnTypeAnnotation, CalcitList, CalcitLocal, CalcitNumericRefinement, CalcitProc, CalcitStructDef,
@@ -10271,63 +10402,94 @@ mod tests {
     assert!(matches!(ctx.instructions.as_slice(), [Instruction::Unreachable]));
   }
 
-  /// The funcref table entry of a `&` rest-parameter function points at a
-  /// `() -> ()` trap function, so an indirect call typed `(f64, f64) -> f64`
-  /// traps instead of passing its second argument as the rest list (#1964).
+  /// A function value is its table slot, and a call with N arguments goes
+  /// through funcref table N. There, the slot of a `&` rest-parameter function
+  /// holds an adapter typed `(f64 x N) -> f64` that packs the trailing
+  /// arguments into the rest list (#1972); a fixed-arity slot holds the
+  /// function itself, so calling it with another arity fails the signature check.
   #[test]
-  fn rest_function_table_slot_rejects_fixed_arity_indirect_call() {
-    let function = |params: usize, results: usize, export_name: Option<&str>, instructions: Vec<Instruction<'static>>| CompiledFn {
+  fn rest_function_table_slots_pack_trailing_arguments() {
+    let function = |params: usize, export_name: Option<&str>, instructions: Vec<Instruction<'static>>| CompiledFn {
       export_name: export_name.map(str::to_owned),
       params: vec![ValType::F64; params],
-      results: vec![ValType::F64; results],
+      results: vec![ValType::F64],
       locals: vec![],
       instructions,
     };
-    // Runtime helper 0 is the trap; table slot 0 is `(a & xs)` returning `a`;
-    // the exported caller is outside the table.
+    let env = WasmCompileEnv {
+      function_value_dependencies: Default::default(),
+      fn_index: HashMap::new(),
+      fn_arity: HashMap::new(),
+      fn_has_rest: HashMap::new(),
+      runtime_fn_index: HashMap::new(),
+      tag_index: HashMap::from([("list".to_string(), 1)]),
+      struct_layouts: Default::default(),
+      string_pool: HashMap::new(),
+      atom_globals: HashMap::new(),
+      value_imports: HashMap::new(),
+      static_fn_defs: HashMap::new(),
+      fn_table_index: HashMap::new(),
+      host_imports: HashMap::new(),
+      target: WasmTarget::Core,
+      boundary: WasmBoundary::Native,
+    };
+    let mut ctx = WasmGenCtx::new(0, env);
+    // Calls `call_indirect` on `slot` with `arity` arguments 10, 20, ...
+    let caller = |name: &str, slot: i32, arity: u32| {
+      let mut instructions: Vec<Instruction<'static>> = (1..=arity).map(|i| super::f64_const(10.0 * f64::from(i))).collect();
+      instructions.push(Instruction::I32Const(slot));
+      instructions.push(call_indirect(arity));
+      function(0, Some(name), instructions)
+    };
+    // Table slot 0 is `(a & xs)` returning `a + count xs`; slot 1 is `(a b)`
+    // returning `b`. Functions 4 and 5 are rest adapters for arities 3 and 1.
     let fns = [
-      function(0, 0, None, vec![Instruction::Unreachable]),
-      function(2, 1, None, vec![Instruction::LocalGet(0)]),
       function(
-        0,
-        1,
-        Some("call"),
+        2,
+        None,
         vec![
-          super::f64_const(1.0),
-          super::f64_const(2.0),
-          Instruction::I32Const(0),
-          Instruction::CallIndirect {
-            type_index: 2,
-            table_index: 0,
-          },
+          Instruction::LocalGet(1),
+          Instruction::I32TruncF64U,
+          Instruction::F64Load(mem_arg_f64(0)),
+          Instruction::LocalGet(0),
+          Instruction::F64Add,
         ],
       ),
+      function(2, None, vec![Instruction::LocalGet(1)]),
+      caller("rest3", 0, 3),
+      caller("rest1", 0, 1),
+      build_rest_adapter(&mut ctx, 0, 1, 3),
+      build_rest_adapter(&mut ctx, 0, 1, 1),
+      caller("fixed2", 1, 2),
+      caller("fixed3", 1, 3),
     ];
-    let run = |rest_slot_trap: Option<(u32, Vec<u32>)>| {
-      let bytes = build_wasm_module(
-        &fns,
-        &[],
-        16384,
-        &[],
-        &[],
-        1,
-        ModuleFunctionLayout {
-          runtime_fn_count: 1,
-          table_fn_count: 1,
-          component_free_head: false,
-          rest_slot_trap,
-        },
-      )
-      .expect("valid module");
-      let engine = Engine::default();
-      let module = Module::new(&engine, &bytes).expect("valid module");
-      let mut store = Store::new(&engine, ());
-      let instance = Instance::new(&mut store, &module, &[]).expect("instantiate");
-      let call = instance.get_typed_func::<(), f64>(&mut store, "call").expect("call export");
-      call.call(&mut store, ())
+    let bytes = build_wasm_module(
+      &fns,
+      &[],
+      16384,
+      &[],
+      &[],
+      1,
+      ModuleFunctionLayout {
+        runtime_fn_count: 0,
+        table_fn_count: 2,
+        component_free_head: false,
+        rest_adapters: HashMap::from([((3, 0), 4), ((1, 0), 5)]),
+      },
+    )
+    .expect("valid module");
+    let engine = Engine::default();
+    let module = Module::new(&engine, &bytes).expect("valid module");
+    let mut store = Store::new(&engine, ());
+    let instance = Instance::new(&mut store, &module, &[]).expect("instantiate");
+    let mut call = |name: &str| {
+      let function = instance.get_typed_func::<(), f64>(&mut store, name).expect("caller export");
+      function.call(&mut store, ())
     };
-    assert_eq!(run(None).expect("unguarded slot is called"), 1.0);
-    let error = run(Some((0, vec![0]))).expect_err("guarded rest slot traps");
+    assert_eq!(call("rest3").expect("packs two trailing arguments"), 12.0);
+    assert_eq!(call("rest1").expect("packs an empty rest list"), 10.0);
+    assert_eq!(call("fixed2").expect("fixed-arity slot is called directly"), 20.0);
+    let error = call("fixed3").expect_err("wrong arity traps");
     assert_eq!(
       error.downcast_ref::<wasmtime::Trap>(),
       Some(&wasmtime::Trap::BadSignature),
@@ -10507,7 +10669,7 @@ mod tests {
         runtime_fn_count: 0,
         table_fn_count: 0,
         component_free_head: false,
-        rest_slot_trap: None,
+        rest_adapters: HashMap::new(),
       },
     )
     .expect("valid core module");
@@ -10529,7 +10691,7 @@ mod tests {
         runtime_fn_count: 0,
         table_fn_count: 0,
         component_free_head: false,
-        rest_slot_trap: None,
+        rest_adapters: HashMap::new(),
       },
     )
     .expect("valid route helper module");
@@ -10609,7 +10771,7 @@ mod tests {
         runtime_fn_count: 0,
         table_fn_count: 0,
         component_free_head: false,
-        rest_slot_trap: None,
+        rest_adapters: HashMap::new(),
       },
     )
     .expect("valid preopen selector module");
@@ -10762,7 +10924,7 @@ mod tests {
           runtime_fn_count: 4,
           table_fn_count: 0,
           component_free_head: true,
-          rest_slot_trap: None,
+          rest_adapters: HashMap::new(),
         },
       )
       .expect("valid core command");
@@ -10876,7 +11038,7 @@ mod tests {
           runtime_fn_count: 5,
           table_fn_count: 0,
           component_free_head: true,
-          rest_slot_trap: None,
+          rest_adapters: HashMap::new(),
         },
       )
       .expect("valid async open-at core command");
@@ -11049,7 +11211,7 @@ mod tests {
         runtime_fn_count: 5,
         table_fn_count: 0,
         component_free_head: true,
-        rest_slot_trap: None,
+        rest_adapters: HashMap::new(),
       },
     )
     .expect("valid file stream core command");
@@ -11229,7 +11391,7 @@ mod tests {
           runtime_fn_count: 6,
           table_fn_count: 0,
           component_free_head: true,
-          rest_slot_trap: None,
+          rest_adapters: HashMap::new(),
         },
       )
       .expect("valid bounded file reader core command");
@@ -11368,7 +11530,7 @@ mod tests {
           runtime_fn_count: 3,
           table_fn_count: 0,
           component_free_head: true,
-          rest_slot_trap: None,
+          rest_adapters: HashMap::new(),
         },
       )
       .expect("valid bounded stdin core command");
