@@ -1011,11 +1011,10 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   if ns == calcit::CORE_NS {
     let args = call_expr.drop_left();
     if let Some(contract) = resolve_checked_call_contract(ns, def, &args, scope_types)
-      && (!contract.return_type.contains_type_var()
-        // A receiver-preserving contract already contains caller-owned
-        // variables, not unresolved callee outputs. Keep that evidence after
-        // lowering too (for example update inside a generic accumulator).
-        || args.first().and_then(|receiver| resolve_type_value(receiver, scope_types)).as_ref() == Some(&contract.return_type))
+      // Update's checked contract returns the receiver itself, so its type
+      // variables are caller-owned. Do not infer this from type equality:
+      // an unresolved mapper output can accidentally share a caller's name.
+      && (!contract.return_type.contains_type_var() || def == "update")
     {
       return Some(contract.return_type);
     }
@@ -2018,8 +2017,7 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
         Calcit::Fn { info, .. } => {
           if info.def_ns.as_ref() == calcit::CORE_NS
             && let Some(contract) = resolve_checked_call_contract(&info.def_ns, &info.name, &xs.drop_left(), scope_types)
-            && (!contract.return_type.contains_type_var()
-              || xs.get(1).and_then(|receiver| resolve_type_value(receiver, scope_types)).as_ref() == Some(&contract.return_type))
+            && (!contract.return_type.contains_type_var() || info.name.as_ref() == "update")
           {
             return Some(contract.return_type);
           }
@@ -4967,6 +4965,22 @@ mod tests {
     assert_eq!(
       infer_return_type_from_compiled_callable(calcit::CORE_NS, "update", &update_call, &ScopeTypes::new()),
       Some(map_type)
+    );
+
+    // A provisional mapper output is not the same binder as a caller with
+    // the same spelling; equality of the resulting shapes is insufficient.
+    let caller_list = Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from(
+      "MapOutput",
+    )))));
+    let unknown_map = CalcitList::from(&[
+      symbol("map"),
+      local("items", caller_list.clone()),
+      local("unknown-mapper", Arc::new(CalcitTypeAnnotation::DynFn)),
+    ] as &[Calcit]);
+    assert_ne!(
+      infer_return_type_from_compiled_callable(calcit::CORE_NS, "map", &unknown_map, &ScopeTypes::new()),
+      Some(caller_list),
+      "unknown mapper output cannot borrow a same-named caller variable"
     );
   }
 
