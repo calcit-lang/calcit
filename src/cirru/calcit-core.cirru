@@ -1468,7 +1468,7 @@
             &list:map xs $ defn %map-pair (pair)
               hint-fn $ {}
                 :args $ [] 'P
-                :return 'Dynamic
+                :return 'R
               if (list? pair)
                 if
                   &= 2 $ &list:count pair
@@ -1477,9 +1477,11 @@
                 raise $ &str:concat "|map-pair expected a pair, got: " $ to-lispy-string pair
           :examples $ []
           :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'List 'P) 'Fn
-            :generics $ [] 'P
-            :return $ :: 'List 'Dynamic
+            :args $ [] (:: 'List 'P)
+              :: 'Fn $ {} (:return 'R)
+                :args $ [] 'Dynamic 'Dynamic
+            :generics $ [] 'P 'R
+            :return $ :: 'List 'R
           :tags $ #{} :internal
           :tests $ []
             %{} 'TestEntry (:name |maps-key-value-pairs)
@@ -1497,6 +1499,65 @@
                   [] ([] :a 2) ([] :b 12)
                   fn (k n)
                     [] k $ &- n 1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-list-result-with-open-map-payload)
+              :code $ quote $ let
+                  consume $ fn (pairs)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'List (:: 'List 'Dynamic)
+                      :return 'Number
+                    count pairs
+                  produce $ fn (tasks)
+                    hint-fn $ {} (:return 'Number)
+                      :args $ [] $ :: 'Map 'String (:: 'Map 'Tag 'Dynamic)
+                    consume $ &list:map-pair (&map:to-list tasks)
+                      fn (k task) ([] k 4)
+                assert= 1 $ produce $ {}
+                  |task-1 $ {} $ :text |example
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-scalar-result-and-empty-input)
+              :code $ quote $ let
+                  produce $ fn (tasks)
+                    hint-fn $ {}
+                      :return $ :: 'List 'Number
+                      :args $ [] $ :: 'Map 'String (:: 'Map 'Tag 'Dynamic)
+                    &list:map-pair (&map:to-list tasks)
+                      fn (k task) 4
+                assert= ([] 4)
+                  produce $ {} $ |task-1
+                    {} $ :text |example
+                assert= ([])
+                  &list:map-pair ([])
+                    fn (k v) (raise |unexpected-callback)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-order-input-and-errors)
+              :code $ quote $ let
+                  input $ [] ([] :a 1) ([] :b 2)
+                  calls $ atom $ []
+                  result $ &list:map-pair input $ fn (k v)
+                    swap! calls $ fn (items) (append items k)
+                    [] k v
+                assert= input result
+                assert= ([] :a :b) (deref calls)
+                assert=
+                  [] ([] :a 1) ([] :b 2)
+                  , input
+                assert= |pair-callback-failed $ try
+                  &list:map-pair input $ fn (k v) (raise |pair-callback-failed)
+                  fn (error) error
+                assert= :rejected $ try
+                  do
+                    &list:map-pair
+                      [] $ [] :a
+                      fn (k v) ([] k v)
+                    , :returned
+                  fn (error) :rejected
+                assert= :rejected $ try
+                  do
+                    &list:map-pair ([] 1)
+                      fn (k v) ([] k v)
+                    , :returned
+                  fn (error) :rejected
               :tags $ #{} :core :unit
         '&list:mappend $ %{} 'CodeEntry (:doc "|internal helper for list :mappend method entry")
           :code $ quote $ defn &list:mappend (x y) (&list:concat x y)
@@ -9586,10 +9647,12 @@
             %{} 'TestEntry (:name |passes-index-before-value)
               :code $ quote $ do
                 assert= ([] 0 1)
-                  map-indexed ([] 5 6) $ fn (idx x) idx
+                  map-indexed ([] 5 6)
+                    fn (idx x) idx
                 assert= ([] 50 61)
-                  map-indexed ([] 5 6) $ fn (idx x)
-                    &+ idx $ &* 10 x
+                  map-indexed ([] 5 6)
+                    fn (idx x)
+                      &+ idx $ &* 10 x
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |preserves-open-payload-with-index)
               :code $ quote $ let
