@@ -4760,8 +4760,7 @@
         'conj $ %{} 'CodeEntry
           :doc "|Appends values to the end of a list, returning a new list\nSupports adding multiple values by chaining additional arguments."
           :code $ quote $ defn conj (xs y0 & ys)
-            if (empty? ys) (append xs y0)
-              recur (append xs y0) & ys
+            foldl ys (append xs y0) append
           :examples $ []
             quote $ assert= ([] 1 2 3)
               conj ([] 1 2) 3
@@ -4780,6 +4779,16 @@
               :code $ quote $ let
                   xs $ assert-type ([] 1 |x) (:: 'List 'Dynamic)
                 assert= ([] 1 |x :ready) (conj xs :ready)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-order-and-source-with-rest-spread)
+              :code $ quote $ let
+                  original $ [] 1 2
+                  extra $ [] 4 5
+                assert= ([] 7)
+                  conj ([]) 7
+                assert= ([] 1 2 3) (conj original 3)
+                assert= ([] 1 2 3 4 5) (conj original 3 & extra)
+                assert= ([] 1 2) original
               :tags $ #{} :core :unit
         'consume-readable-byte-stream $ %{} 'CodeEntry
           :doc "|在 Component async export 中有界消费只读字节流。max-total-bytes 与 max-chunk-bytes 必须是正整数字面量；on-chunk 必须是顶层同步 (Buffer) -> Bool，返回 false 表示成功提前停止。该调用必须是导出函数唯一的主体表达式。"
@@ -6351,7 +6360,9 @@
         'each $ %{} 'CodeEntry
           :doc "|Iterate over a collection, apply a function for side effects, and return Unit."
           :code $ quote $ defn each (xs f)
-            foldl xs &unit $ defn %each (_acc x) (f x) &unit
+            do
+              foldl xs &unit $ defn %each (_acc x) (f x) &unit
+              , &unit
           :examples $ [] $ quote
             assert= &unit $ each ([] 1 2 3)
               fn (x) (&+ x 1)
@@ -6360,11 +6371,17 @@
               {} (:return 'R)
                 :args $ [] 'Dynamic
             :generics $ [] 'R
-          :tests $ [] $ %{} 'TestEntry (:name |returns-unit-after-callbacks)
-            :code $ quote $ assert= &unit
-              each ([] 1 2)
-                fn (x) x
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |returns-unit-after-callbacks)
+              :code $ quote $ assert= &unit
+                each ([] 1 2)
+                  fn (x) x
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |empty-does-not-call-callback)
+              :code $ quote $ assert= &unit
+                each ([])
+                  fn (x) (raise |empty-each-called-callback)
+              :tags $ #{} :core :unit
         'either $ %{} 'CodeEntry
           :doc "|Returns the first non-nil value among its arguments\nBehaves like a nil-coalescing macro: only nil triggers evaluation of subsequent branches, so false is preserved as a value. For Option values use .unwrap-or or match; either serves nil-based data until the nil migration."
           :code $ quote $ defmacro either (& xs)
@@ -8168,29 +8185,6 @@
                 assert= 1 $ pick 1
                 assert= 2 $ pick 1 2
               :tags $ #{} :call-boundary
-            %{} 'TestEntry (:name |optional-then-rest-local)
-              :code $ quote $ let
-                  count-rest $ fn (a ? b & xs) (&list:count xs)
-                  pick-b $ fn (a ? b & xs)
-                    if (nil? b) 0 b
-                  count-leading $ fn (? a & xs) (&list:count xs)
-                  count-two $ fn (a ? b ? c & xs) (&list:count xs)
-                  pick-c $ fn (a ? b ? c & xs)
-                    if (nil? c) 0 c
-                assert= 0 $ count-rest 1
-                assert= 0 $ pick-b 1
-                assert= 2 $ pick-b 1 2
-                assert= 2 $ count-rest 1 2 3 4
-                assert= 0 $ count-leading
-                assert= 0 $ count-leading 1
-                assert= 2 $ count-leading 1 2 3
-                assert= 0 $ count-two 1
-                assert= 0 $ count-two 1 2
-                assert= 0 $ pick-c 1 2
-                assert= 0 $ count-two 1 2 3
-                assert= 3 $ pick-c 1 2 3
-                assert= 1 $ count-two 1 2 3 4
-              :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |iife-with-rest-param)
               :code $ quote $ do
                 assert= 2 $
@@ -8347,6 +8341,29 @@
                     same $ &list:nth items 0
                 assert= |wrong $ first-open $ [] |wrong
               :tags $ #{} :call-boundary :open-element-proof
+            %{} 'TestEntry (:name |optional-then-rest-local)
+              :code $ quote $ let
+                  count-rest $ fn (a ? b & xs) (&list:count xs)
+                  pick-b $ fn (a ? b & xs)
+                    if (nil? b) 0 b
+                  count-leading $ fn (? a & xs) (&list:count xs)
+                  count-two $ fn (a ? b ? c & xs) (&list:count xs)
+                  pick-c $ fn (a ? b ? c & xs)
+                    if (nil? c) 0 c
+                assert= 0 $ count-rest 1
+                assert= 0 $ pick-b 1
+                assert= 2 $ pick-b 1 2
+                assert= 2 $ count-rest 1 2 3 4
+                assert= 0 $ count-leading
+                assert= 0 $ count-leading 1
+                assert= 2 $ count-leading 1 2 3
+                assert= 0 $ count-two 1
+                assert= 0 $ count-two 1 2
+                assert= 0 $ pick-c 1 2
+                assert= 0 $ count-two 1 2 3
+                assert= 3 $ pick-c 1 2 3
+                assert= 1 $ count-two 1 2 3 4
+              :tags $ #{} :call-boundary
         'identical? $ %{} 'CodeEntry
           :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
           :code $ quote &runtime-implementation
@@ -10688,21 +10705,74 @@
             reduce xs ({})
               defn %pairs-map (acc pair)
                 hint-fn $ {}
-                  :args $ [] 'Map 'List
-                  :return 'Map
+                  :args $ [] (:: 'Map 'Dynamic 'Dynamic) 'P
+                  :return $ :: 'Map 'Dynamic 'Dynamic
                 assert "|expects pair for pairs-map" $ if (list? pair)
                   &= 2 $ &list:count pair
                   , false
-                &map:assoc acc (&list:first pair) (&list:last pair)
+                if (list? pair)
+                  &map:assoc acc (&list:first pair) (&list:last pair)
+                  , acc
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List 'P
-            :generics $ [] 'P 'K 'V
-            :return $ :: 'Map 'K 'V
-          :tests $ [] $ %{} 'TestEntry (:name |converts-list-pairs)
-            :code $ quote $ assert= (&{} :a 1 :b 2)
-              pairs-map $ [] ([] :a 1) ([] :b 2)
-            :tags $ #{} :core :unit
+            :generics $ [] 'P
+            :return $ :: 'Map 'Dynamic 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |converts-list-pairs)
+              :code $ quote $ assert= (&{} :a 1 :b 2)
+                pairs-map $ [] ([] :a 1) ([] :b 2)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-homogeneous-members)
+              :code $ quote $ let
+                  xs $ [] ([] 1 2) ([] 3 4)
+                  answer $ pairs-map xs
+                assert-type answer $ :: 'Map 'Number 'Number
+                assert=
+                  {} (1 2) (3 4)
+                  , answer
+                assert=
+                  {} (1 2) (3 4)
+                  .pairs-map xs
+              :tags $ #{} :core :pairs-map-proof :unit
+            %{} 'TestEntry (:name |preserves-empty-duplicate-and-nil-pairs)
+              :code $ quote $ do
+                assert= ({})
+                  pairs-map $ []
+                assert=
+                  {} (:a 2) (nil nil)
+                  pairs-map $ [] ([] :a 1) ([] :a 2) ([] nil nil)
+              :tags $ #{} :core :pairs-map-proof :unit
+            %{} 'TestEntry (:name |retains-malformed-pair-failure)
+              :code $ quote $ do
+                assert= true $ try
+                  do
+                    pairs-map $ [] 1
+                    , false
+                  fn (error)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Bool
+                    .includes? error "|expects pair for pairs-map"
+                assert= true $ try
+                  do
+                    pairs-map $ [] $ [] :a
+                    , false
+                  fn (error)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Bool
+                    .includes? error "|expects pair for pairs-map"
+                assert= true $ try
+                  do
+                    pairs-map $ [] $ [] :a 1 2
+                    , false
+                  fn (error)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Bool
+                    .includes? error "|expects pair for pairs-map"
+              :tags $ #{} :core :pairs-map-proof :unit
         'parse-cirru $ %{} 'CodeEntry
           :doc "|internal function for parsing Cirru\nSyntax: (parse-cirru text)\nParams: text (string)\nReturns: list\nParses Cirru syntax text into nested list structure"
           :code $ quote &runtime-implementation
@@ -11141,9 +11211,7 @@
                 n n0
               hint-fn $ {}
                 :generics $ [] 'T
-                :args $ []
-                  :: 'acc $ :: 'List 'T
-                  :: 'n 'Number
+                :args $ [] (:: 'List 'T) 'Number
                 :return $ :: 'List 'T
               if (&<= n 0) acc $ recur (append acc x) (&- n 1)
           :examples $ []
@@ -12651,21 +12719,27 @@
               unselect-keys (&{} :a 1 :b 2 :c 3) ([] :a :b)
             :tags $ #{} :core :unit
         'update $ %{} 'CodeEntry
-          :doc "|Applies a function to the value at a given key or index, returning a collection with the updated slot."
+          :doc "|Applies a function to an existing collection slot. Map/List and known Struct-field calls retain receiver-specific callback types; an open receiver requires a callback accepting Dynamic. List/Enum indices are checked as Number, and an existing Struct field key as Tag. Missing Map/List/Struct slots leave the collection unchanged."
           :code $ quote $ defn update (x k f)
             if (map? x)
               if (contains? x k)
                 assoc x k $ f $ &map:get x k
                 , x
               if (list? x)
-                if (&list:contains? x k)
-                  assoc x k $ f $ &list:nth x k
-                  , x
+                let
+                    index $ decode-map-as k 'Number
+                  if (&list:contains? x index)
+                    assoc x index $ f $ &list:nth x index
+                    , x
                 if (enum? x)
-                  assoc x k $ f $ &enum:nth x k
+                  let
+                      index $ decode-map-as k 'Number
+                    assoc x index $ f $ &enum:nth x index
                   if (struct? x)
                     if (contains? x k)
-                      assoc x k $ f $ &struct:get x k
+                      let
+                          field $ decode-map-as k 'Tag
+                        assoc x field $ f $ &struct:get x field
                       , x
                     raise $ &str:concat "|Cannot update key on item: " $ to-lispy-string x
           :examples $ []
@@ -12683,9 +12757,8 @@
                 , :missing inc
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic 'Dynamic $ :: 'Fn
-              {} (:return 'T)
-                :args $ [] 'T
-            :generics $ [] 'T
+              {} (:return 'Dynamic)
+                :args $ [] 'Dynamic
           :tests $ []
             %{} 'TestEntry (:name |updates-existing-map-and-list-slots)
               :code $ quote $ do
@@ -12695,6 +12768,42 @@
                   update ([] 0 1 2) 1 $ fn (x) (+ x 10)
                 assert= ([] 0 1 2)
                   update ([] 0 1 2) 4 $ fn (x) (+ x 10)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-struct-and-enum-slots)
+              :code $ quote $ let
+                  Point $ defstruct Point $ :n 'Number
+                  p $ Point :n 1
+                  changed $ update p :n inc
+                assert= 2 $ :n changed
+                assert= 1 $ :n p
+                assert= p $ update p :missing $ fn (x) (raise |unexpected-callback)
+                assert= (:: :entry 2)
+                  update (:: :entry 1) 1 $ fn (value)
+                    inc $ decode-map-as value 'Number
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |skips-missing-map-key-and-propagates-errors)
+              :code $ quote $ do
+                assert=
+                  {} $ :n 1
+                  update
+                    {} $ :n 1
+                    , :missing $ fn (x) (raise |unexpected-callback)
+                assert= |rejected $ try
+                  update
+                    {} $ :n 1
+                    , :n $ fn (x) (raise |callback-error)
+                  fn (message) |rejected
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-open-non-number-indices)
+              :code $ quote $ do
+                assert= |rejected $ try
+                  update (parse-cirru-edn "|[] 1") (parse-cirru-edn |:bad)
+                    fn (x) x
+                  fn (message) |rejected
+                assert= |rejected $ try
+                  update (parse-cirru-edn "|:: :entry 1") (parse-cirru-edn |:bad)
+                    fn (x) x
+                  fn (message) |rejected
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |updates-list-by-index-and-skips-missing-slots)
               :code $ quote $ do

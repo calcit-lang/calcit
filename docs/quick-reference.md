@@ -244,6 +244,7 @@ let
 - `m .contains-key? key` / `&map:contains?` 检查键；`m .contains-value? value` / `&map:includes?` 检查值。两者不能互换。
 - `keys`, `vals` - extract keys/values
 - `to-pairs`, `pairs-map` - convert to/from pairs
+- `pairs-map` 逐项检查输入是否为两项 List，重复键保留最后一个值。`List<List<T>>` 可推导为 `Map<T,T>`；异构键值对保留 `Map<Dynamic,Dynamic>`。需要独立的键和值类型时，用带类型的 `foldl` 初值与 `assoc` 构建 Map，让回调保留真实类型关系。
 - `map-list-kv` - collect `List<U>` with a typed `Fn(K,V)->U` callback
 - `&map:filter`, `&map:filter-kv` - filter entries
 - `&map:common-keys`, `&map:diff-keys` - key operations

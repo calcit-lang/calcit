@@ -242,6 +242,14 @@ const compilerSpecializedPositions = new Map([
     "Known List, Map, and Struct receivers specialize the index or key and updater callback, and preserve the receiver as the result; the facade receiver covers incompatible runtime representations.",
   ],
   [
+    "update|schema.args.2.args.0",
+    "已知 List、Map 或 Struct 接收者按成员或字段类型约束 updater 输入；开放接收者保留 Dynamic，不能从未证明的槽恢复任意泛型。",
+  ],
+  [
+    "update|schema.args.2.return",
+    "已知接收者的 updater 返回必须满足相应成员或字段类型，并保留完整接收者类型；开放 fallback 的返回继续为 Dynamic。",
+  ],
+  [
     "update-in|schema.args.0",
     "Fully typed nested Map receivers with non-empty literal paths are lowered to direct typed lookup and reconstruction; dynamic or mixed-container paths remain an explicit compatibility fallback.",
   ],
@@ -261,6 +269,14 @@ const reviewedCompatibilityPositions = new Map([
   ],
 ]);
 const reviewedPublicBoundaryPositions = new Map([
+  [
+    "pairs-map|schema.return.key",
+    "输入的异构两项 List 不能独立证明键类型；开放返回保留 Dynamic。已知 List<List<T>> 可由 receiver 合同保留 Map<T,T>，独立键值类型由 typed fold/assoc 构造。",
+  ],
+  [
+    "pairs-map|schema.return.value",
+    "输入的异构两项 List 不能独立证明值类型；开放返回保留 Dynamic。逐项长度校验、空输入、nil 和重复键最后值覆盖仍由原实现保证。",
+  ],
   [
     "&list:map-pair|schema.args.1.args.0",
     "The pair callback receives heterogeneous key/value slots from a homogeneous List; its key stays open while the callback result is preserved by generic R.",

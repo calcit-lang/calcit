@@ -6154,6 +6154,317 @@ fn whole_project_fix_previews_node_only_definitions_without_weakening_entry_chec
 }
 
 #[test]
+fn nominal_constructor_context_rejects_wrong_inline_dispatch_input() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  let definitions = [
+    ("Op", "defenum Op (:clear)", ":: 'EnumDef"),
+    (
+      "Props",
+      "defstruct Props ([] 'T)\n  :callback $ :: 'Fn $ {} (:return 'Unit)\n    :args $ [] $ :: 'Fn $ {} (:return 'Unit) (:args $ [] 'T)",
+      ":: 'StructDef",
+    ),
+    (
+      "OtherProps",
+      "defstruct OtherProps\n  :callback $ :: 'Fn $ {} (:return 'Unit)\n    :args $ [] $ :: 'Fn $ {} (:return 'Unit) (:args $ [] 'Number)",
+      ":: 'StructDef",
+    ),
+    (
+      "Wrapper",
+      "defstruct Wrapper ([] 'T)\n  :props $ :: 'app.main/Props 'T",
+      ":: 'StructDef",
+    ),
+    (
+      "notify-wrapper",
+      "defn notify-wrapper (dispatch! wrapper)\n  notify dispatch! (:props wrapper)",
+      ":: 'Fn $ {} (:generics $ [] 'T) (:return 'Unit)\n  :args $ [] (:: 'Fn $ {} (:return 'Unit) (:args $ [] 'T)) (:: 'app.main/Wrapper 'T)",
+    ),
+    (
+      "notify",
+      "defn notify (dispatch! props)\n  (:callback props) dispatch!",
+      ":: 'Fn $ {} (:generics $ [] 'T) (:return 'Unit)\n  :args $ [] (:: 'Fn $ {} (:return 'Unit) (:args $ [] 'T)) (:: 'app.main/Props 'T)",
+    ),
+    ("reload!", "defn reload! () &unit", ":: 'Fn $ {} (:args $ []) (:return 'Unit)"),
+  ];
+  for (name, code, schema) in definitions {
+    let target = format!("app.main/{name}");
+    let code = format!("quote $ {code}");
+    let mut args = vec!["edit", "def", &target, "--input-format", "cirru", "--code", &code];
+    if name == "reload!" {
+      args.push("--overwrite");
+    }
+    assert_success(&run_calcit(&snapshot, &args), "install nominal callback fixture");
+    let schema = format!("quote $ {schema}");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "schema", &target, "--input-format", "cirru", "--code", &schema],
+      ),
+      "declare nominal callback fixture",
+    );
+  }
+  let positive = "quote $ defn main! ()\n  notify\n    fn (op)\n      hint-fn $ {} (:args $ [] 'app.main/Op) (:return 'Unit)\n      assert= (Op :clear) op\n      , &unit\n    Props :callback $ fn (d!)\n      d! $ Op :clear\n      , &unit\n  , &unit";
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/main!",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        positive,
+      ],
+    ),
+    "install valid nominal callback",
+  );
+  let before = fs::read(&snapshot).unwrap();
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only"]),
+    "concrete Op context accepts its own variant",
+  );
+  assert_eq!(fs::read(&snapshot).unwrap(), before);
+  let wrong = positive.replace("d! $ Op :clear", "d! 42");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/main!",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        &wrong,
+      ],
+    ),
+    "install wrong nominal callback input",
+  );
+  let before = fs::read(&snapshot).unwrap();
+  let rejected = run_calcit(&snapshot, &["--check-only"]);
+  assert!(
+    !rejected.status.success(),
+    "outer generic Op must constrain the constructor field callback"
+  );
+  assert!(String::from_utf8_lossy(&rejected.stderr).contains("calling `d!` arg 1"));
+  assert_eq!(fs::read(&snapshot).unwrap(), before);
+  let nested = positive
+    .replace("  notify\n", "  notify-wrapper\n")
+    .replace("    Props :callback", "    Wrapper :props $ Props :callback");
+  for (code, accepts) in [(&nested, true), (&nested.replace("d! $ Op :clear", "d! 42"), false)] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          "app.main/main!",
+          "--overwrite",
+          "--input-format",
+          "cirru",
+          "--code",
+          code,
+        ],
+      ),
+      "install nested nominal callback",
+    );
+    let before = fs::read(&snapshot).unwrap();
+    let checked = run_calcit(&snapshot, &["--check-only"]);
+    assert_eq!(
+      checked.status.success(),
+      accepts,
+      "nested constructor must retain concrete Op context"
+    );
+    if !accepts {
+      assert!(String::from_utf8_lossy(&checked.stderr).contains("calling `d!` arg 1"));
+    }
+    assert_eq!(fs::read(&snapshot).unwrap(), before);
+  }
+  for (label, code) in [
+    (
+      "wrong dispatch return",
+      positive
+        .replace("(:return 'Unit)", "(:return 'String)")
+        .replace("assert= (Op :clear) op\n      , &unit", "|wrong-return"),
+    ),
+    (
+      "wrong callback return",
+      positive.replace("d! $ Op :clear\n      , &unit", "d! $ Op :clear\n      , |wrong-return"),
+    ),
+    (
+      "unrelated nominal constructor",
+      positive
+        .replace("Props :callback", "OtherProps :callback")
+        .replace("d! $ Op :clear", "d! 42"),
+    ),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          "app.main/main!",
+          "--overwrite",
+          "--input-format",
+          "cirru",
+          "--code",
+          &code,
+        ],
+      ),
+      label,
+    );
+    let before = fs::read(&snapshot).unwrap();
+    let rejected = run_calcit(&snapshot, &["--check-only"]);
+    assert!(!rejected.status.success(), "context must not accept {label}");
+    if label == "unrelated nominal constructor" {
+      let stderr = String::from_utf8_lossy(&rejected.stderr);
+      assert!(stderr.contains("notify"));
+      assert!(
+        !stderr.contains("calling `d!` arg 1"),
+        "another constructor must retain its own Number contract"
+      );
+    }
+    assert_eq!(fs::read(&snapshot).unwrap(), before);
+  }
+}
+
+#[test]
+fn strict_workflow_preserves_inline_map_callback_contracts() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  for (name, code) in [
+    (
+      "consume",
+      "quote $ defn consume (events)\n  match (get events :click)\n    (:none) 0\n    (:some callback) (callback 7)",
+    ),
+    (
+      "main!",
+      "quote $ defn main! ()\n  assert= 8 $ consume $ &{} :click $ fn (n) (&+ n 1)\n  , &unit",
+    ),
+    ("reload!", "quote $ defn reload! () &unit"),
+  ] {
+    let target = format!("app.main/{name}");
+    let mut args = vec!["edit", "def", &target, "--input-format", "cirru", "--code", code];
+    if name != "consume" {
+      args.push("--overwrite");
+    }
+    assert_success(&run_calcit(&snapshot, &args), "install map callback fixture");
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "app.main/consume",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:return 'Number)\n  :args $ [] $ :: 'Map 'Tag $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)",
+      ],
+    ),
+    "declare map callback contract",
+  );
+  let before = fs::read(&snapshot).unwrap();
+  let positive = run_fix(&snapshot, &["--workflow", "strict", "--verify", "--format", "json"]);
+  assert_success(&positive, "inline callback must independently satisfy the map contract");
+  assert_eq!(fs::read(&snapshot).unwrap(), before);
+  assert_success(&run_calcit(&snapshot, &[]), "execute callback through the typed map");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/main!",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn main! ()\n  consume $ &{} :click $ fn (n) |wrong-return\n  , &unit",
+      ],
+    ),
+    "install wrong callback return",
+  );
+  let rejected = run_fix(&snapshot, &["--workflow", "strict", "--verify", "--format", "json"]);
+  assert!(!rejected.status.success(), "context must not manufacture a Number return proof");
+  assert!(!parse_stdout(&rejected)["diagnostics"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn strict_workflow_replays_type_slot_declarations_without_hiding_duplicates() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  for name in ["main!", "reload!"] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("app.main/{name}"),
+          "--overwrite",
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ defn {name} () &unit"),
+        ],
+      ),
+      "declare independently proven entry return",
+    );
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/slot",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ deftype-slot :dispatch-op",
+      ],
+    ),
+    "install slot declaration",
+  );
+  let before = fs::read(&snapshot).unwrap();
+  let verified = run_fix(&snapshot, &["--workflow", "strict", "--verify", "--format", "json"]);
+  assert_success(&verified, "complete workflow must replay one declaration");
+  assert_eq!(parse_stdout(&verified)["diagnostics"], serde_json::json!([]));
+  assert_eq!(fs::read(&snapshot).unwrap(), before);
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/duplicate",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ deftype-slot :dispatch-op",
+      ],
+    ),
+    "install distinct conflicting declaration",
+  );
+  let rejected = run_fix(&snapshot, &["--workflow", "strict", "--verify", "--format", "json"]);
+  assert!(!rejected.status.success());
+  assert!(parse_stdout(&rejected)["diagnostics"].as_array().unwrap().iter().any(|diagnostic| {
+    diagnostic["message"]
+      .as_str()
+      .is_some_and(|message| message.contains("type slot already declared: dispatch-op"))
+  }));
+}
+
+#[test]
 fn strict_workflow_applies_safe_fixes_without_claiming_unproven_contracts() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

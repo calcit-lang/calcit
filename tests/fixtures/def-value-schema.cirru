@@ -239,6 +239,326 @@
             :tags $ #{} :open-match-payload
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.binding-proof
+    'app.callback-left $ %{} 'FileEntry
+      :defs $ {} $ 'Item
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Item (:n 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.callback-left
+    'app.callback-origin $ %{} 'FileEntry
+      :defs $ {}
+        'Controller $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Controller ([] 'Op)
+            :dispatch $ :: 'Ref $ :: 'Fn
+              {}
+                :args $ [] 'Op
+                :return 'Unit
+          :examples $ []
+          :schema $ :: 'StructDef
+        'branch-empty-generic-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn branch-empty-generic-list (anchor flag open)
+            assert-type
+              if flag ([]) ([])
+              :: 'List 'T
+            , &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] (:: 'List 'T) 'Bool $ :: 'List 'Dynamic
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |both-empty-exits)
+            :code $ quote $ do
+              assert= &unit $ branch-empty-generic-list ([] 1) true $ []
+              assert= &unit $ branch-empty-generic-list ([] |text) false $ []
+            :tags $ #{} :empty-generic-family
+        'branch-nonempty-generic-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn branch-nonempty-generic-list (anchor flag open)
+            assert-type
+              if flag ([]) ([] 1)
+              :: 'List 'T
+            , &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] (:: 'List 'T) 'Bool $ :: 'List 'Dynamic
+            :generics $ [] 'T
+        'branch-open-generic-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn branch-open-generic-list (anchor flag open)
+            assert-type
+              if flag ([]) open
+              :: 'List 'T
+            , &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] (:: 'List 'T) 'Bool $ :: 'List 'Dynamic
+            :generics $ [] 'T
+        'choose $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn choose (flag)
+            let
+                original $ left/Item :n 1
+              if-let
+                present? $ if flag (Option :some true) (Option :none)
+                struct-with original $ :n 2
+                struct-with original $ :n 3
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.callback-left/Item)
+            :args $ [] 'Bool
+          :tests $ [] $ %{} 'TestEntry
+            :name |preserves-nominal-origin-through-option-callbacks
+            :code $ quote $ do
+              assert= 2 $ :n $ choose true
+              assert= 3 $ :n $ choose false
+            :tags $ #{} :nominal-callback-origin
+        'closed-heterogeneous-pairs $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn closed-heterogeneous-pairs ()
+            number-map-count $ pairs-map $ [] ([] :a 1)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+        'closed-homogeneous-pairs $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn closed-homogeneous-pairs ()
+            number-map-count $ pairs-map $ [] ([] 1 2) ([] 3 4)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |feeds-concrete-map-consumer)
+            :code $ quote $ assert= 2 (closed-homogeneous-pairs)
+            :tags $ #{} :pairs-map-proof
+        'closed-wrong-member-pairs $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn closed-wrong-member-pairs ()
+            number-map-count $ pairs-map $ [] ([] |key |value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+        'direct-controller $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn direct-controller ()
+            let
+                received $ atom 0
+                dispatch! $ fn (op)
+                  hint-fn $ {}
+                    :args $ [] 'Number
+                    :return 'Unit
+                  reset! received op
+                  , &unit
+                controller $ Controller :dispatch $ atom dispatch!
+              assert-type controller $ :: Controller Number
+              (deref (:dispatch controller))
+                , 7
+              deref received
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ []
+            %{} 'TestEntry (:name |infers-reference-callback)
+              :code $ quote $ assert= 7 (direct-controller)
+              :tags $ #{} :ref-callback-inference
+            %{} 'TestEntry (:name |empty-nominal-callback-input)
+              :code $ quote $ let
+                  controller $ Controller :dispatch $ atom
+                    fn (items)
+                      hint-fn $ {}
+                        :args $ [] $ :: List 'app.callback-left/Item
+                        :return Unit
+                      assert= 0 $ count items
+                      , &unit
+                assert= &unit $
+                  deref $ :dispatch controller
+                  []
+              :tags $ #{} :ref-callback-inference
+        'empty-generic-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn empty-generic-list (anchor)
+            assert-type ([]) (:: 'List 'T)
+            , &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-empty-family)
+            :code $ quote $ assert= &unit
+              empty-generic-list $ [] 1
+            :tags $ #{} :empty-generic-family
+        'empty-generic-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn empty-generic-map (anchor)
+            assert-type ({}) (:: 'Map 'K 'V)
+            , &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] $ :: 'Map 'K 'V
+            :generics $ [] 'K 'V
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-empty-family)
+            :code $ quote $ assert= &unit
+              empty-generic-map $ {} $ 1 2
+            :tags $ #{} :empty-generic-family
+        'empty-generic-set $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn empty-generic-set (anchor)
+            assert-type (#{}) (:: 'Set 'T)
+            , &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] $ :: 'Set 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-empty-family)
+            :code $ quote $ assert= &unit
+              empty-generic-set $ #{}
+            :tags $ #{} :empty-generic-family
+        'fold-generic-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn fold-generic-list (xs)
+            foldl xs
+              assert-type ([]) (:: 'List 'T)
+              fn (acc item)
+                hint-fn $ {}
+                  :args $ [] (:: 'List 'T) 'T
+                  :return $ :: 'List 'T
+                append acc item
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-callback-and-accumulator-generic)
+            :code $ quote $ do
+              assert= ([] 1 2)
+                fold-generic-list $ [] 1 2
+              assert= ([])
+                fold-generic-list $ []
+            :tags $ #{} :empty-generic-family
+        'generic-controller $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn generic-controller (dispatch! op)
+            let
+                controller $ Controller :dispatch $ atom dispatch!
+              assert-type controller $ :: Controller 'T
+              (deref (:dispatch controller))
+                , op
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+              :: 'Fn $ {} (:return 'Unit)
+                :args $ [] 'T
+              , 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-lexical-type-variable)
+            :code $ quote $ let
+                received $ atom |before
+              generic-controller
+                fn (op)
+                  hint-fn $ {}
+                    :args $ [] 'String
+                    :return 'Unit
+                  reset! received op
+                  , &unit
+                , |after
+              assert= |after $ deref received
+            :tags $ #{} :ref-callback-inference
+        'generic-pairs-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn generic-pairs-map (xs) (pairs-map xs)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List (:: 'List 'T)
+            :generics $ [] 'T
+            :return $ :: 'Map 'T 'T
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-caller-member-variable)
+            :code $ quote $ assert=
+              {} (1 2) (3 4)
+              generic-pairs-map $ [] ([] 1 2) ([] 3 4)
+            :tags $ #{} :pairs-map-proof
+        'mixed-origin $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn mixed-origin ()
+            option:fold (Option :some true)
+              fn () $ left/Item :n 1
+              fn (present?) (right/Item :n 2)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.callback-left/Item)
+            :args $ []
+        'nested-literal-spread $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nested-literal-spread ()
+            &+ & $ [] 2 & $ [] 3
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-order-through-nested-literal-spreads)
+            :code $ quote $ let
+                sink $ fn (a b c)
+                  hint-fn $ {}
+                    :args $ [] 'Number 'Number 'Number
+                    :return $ :: 'List 'Number
+                  [] a b c
+              assert= ([] 1 2 3)
+                sink & ([] 1) & $ [] 2 & $ [] 3
+              assert= 5 $ nested-literal-spread
+            :tags $ #{} :nested-literal-spread
+        'nested-open-spread $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nested-open-spread (xs)
+            &+ & $ [] 2 & xs
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'List 'Number
+        'nested-wrong-member $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nested-wrong-member ()
+            &+ & $ [] 2 & $ [] |wrong
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+        'nonempty-generic-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nonempty-generic-list (anchor)
+            assert-type ([] 1) (:: 'List 'T)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+        'number-map-count $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn number-map-count (xs) (count xs)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'Map 'Number 'Number
+        'open-generic-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn open-generic-list (anchor values)
+            assert-type values $ :: 'List 'Number
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'Number) (:: 'List 'Dynamic)
+            :return $ :: 'List 'Number
+        'wrong-controller-call $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-controller-call ()
+            let
+                dispatch! $ fn (op)
+                  hint-fn $ {}
+                    :args $ [] Number
+                    :return Unit
+                  , &unit
+                controller $ Controller :dispatch $ atom dispatch!
+              (deref (:dispatch controller))
+                , |wrong
+              , &unit
+          :examples $ []
+        'wrong-controller-write $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-controller-write ()
+            let
+                dispatch! $ fn (op)
+                  hint-fn $ {}
+                    :args $ [] Number
+                    :return Unit
+                  , &unit
+                controller $ Controller :dispatch $ atom dispatch!
+              reset! (:dispatch controller)
+                fn (op)
+                  hint-fn $ {}
+                    :args $ [] String
+                    :return Unit
+                  , &unit
+              , &unit
+          :examples $ []
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.callback-origin
+          :require (app.callback-left :as left) (app.callback-right :as right)
+    'app.callback-right $ %{} 'FileEntry
+      :defs $ {} $ 'Item
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Item (:n 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.callback-right
     'app.branch-call $ %{} 'FileEntry
       :defs $ {}
         'count-rest $ %{} 'CodeEntry (:doc |)

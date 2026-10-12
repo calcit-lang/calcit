@@ -160,6 +160,18 @@ pub fn clear_type_slots() {
   TYPE_SLOT_OVERRIDES.with(|overrides| overrides.borrow_mut().clear());
 }
 
+/// Rebuild declarations during a source audit, then restore the ordinary registry.
+/// Entry bindings and lexical overrides remain active throughout the audit.
+pub(crate) fn checkpoint_type_slot_declarations() -> impl Drop {
+  struct RestoreDeclarations(HashMap<Arc<str>, Option<Arc<CalcitTypeAnnotation>>>);
+  impl Drop for RestoreDeclarations {
+    fn drop(&mut self) {
+      TYPE_SLOTS.with(|slots| *slots.borrow_mut() = std::mem::take(&mut self.0));
+    }
+  }
+  RestoreDeclarations(TYPE_SLOTS.with(|slots| std::mem::take(&mut *slots.borrow_mut())))
+}
+
 fn truncate_type_form_preview(raw: &str) -> String {
   const LIMIT: usize = 160;
   if raw.chars().count() > LIMIT {
@@ -430,7 +442,13 @@ impl CallTypeProof {
     // Instantiate callee variables from a callback's input contract before
     // checking contravariance. Caller variables remain rigid, and the complete
     // callback (including its output) must still independently satisfy the call.
-    if let (CalcitTypeAnnotation::Fn(actual), CalcitTypeAnnotation::Fn(expected)) = (actual, expected.as_ref()) {
+    // References do not erase the callback's input evidence. Seed only fresh
+    // callee variables, then prove the original reference in both directions.
+    let (mut input_actual, mut input_expected) = (actual, expected.as_ref());
+    while let (CalcitTypeAnnotation::Ref(actual), CalcitTypeAnnotation::Ref(expected)) = (input_actual, input_expected) {
+      (input_actual, input_expected) = (actual.as_ref(), expected.as_ref());
+    }
+    if let (CalcitTypeAnnotation::Fn(actual), CalcitTypeAnnotation::Fn(expected)) = (input_actual, input_expected) {
       for (actual_parameter, expected_parameter) in actual.arg_types.iter().zip(&expected.arg_types) {
         let mut candidate = staged.clone();
         if actual_parameter.prove_with_bindings(expected_parameter, &mut candidate).is_proven()
@@ -4945,6 +4963,15 @@ impl CalcitTypeAnnotation {
         }
         false
       }
+      // Expand a shared binding on both sides before entering the recursion
+      // guard, so an acyclic slot is not mistaken for its own recursive alias.
+      (Self::TypeSlot(actual), Self::TypeSlot(expected)) if actual == expected => match resolve_type_slot(actual) {
+        Some(resolved) => with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, actual, || {
+          resolved.compatible_with_bindings(resolved.as_ref(), bindings)
+        })
+        .unwrap_or(false),
+        None => true,
+      },
       // TypeSlot: resolve the bound type from the global registry and delegate
       (Self::TypeSlot(name), other) | (other, Self::TypeSlot(name)) => {
         if let Some(resolved) = resolve_type_slot(name) {
@@ -5263,6 +5290,13 @@ impl CalcitTypeAnnotation {
       {
         Proven
       }
+      (Self::TypeSlot(actual), Self::TypeSlot(expected)) if actual == expected => match resolve_type_slot(actual) {
+        Some(resolved) => with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, actual, || {
+          resolved.prove_with_staged_bindings(resolved.as_ref(), bindings)
+        })
+        .unwrap_or(NeedsBoundary(Boundary::RecursiveTypeSlot)),
+        None => NeedsBoundary(Boundary::UnresolvedTypeSlot),
+      },
       (Self::TypeSlot(name), other) => match resolve_type_slot(name) {
         Some(resolved) => with_type_relation_symbol(&TYPE_RELATION_SLOT_STACK, name, || {
           resolved.prove_with_staged_bindings(other, bindings)
@@ -5592,6 +5626,52 @@ impl CalcitTypeAnnotation {
       Self::Dynamic => Calcit::Tag(EdnTag::from("dynamic")),
       _ => Calcit::Nil,
     }
+  }
+
+  /// Preserve source-backed nominal identity in generated callable metadata.
+  /// A hint is parsed again after lowering, possibly in another lexical scope.
+  fn for_source_schema(annotation: &Arc<Self>) -> Arc<Self> {
+    let mapped = Self::for_source_schema;
+    let arguments = |values: &Arc<Vec<Arc<Self>>>| Arc::new(values.iter().map(mapped).collect::<Vec<_>>());
+    let rewritten = match annotation.as_ref() {
+      Self::Struct(definition, args) => match &definition.definition_ref {
+        Some(owner) => Self::TypeRef(owner.clone(), arguments(args)),
+        None => Self::Struct(definition.clone(), arguments(args)),
+      },
+      Self::StructValue(definition) => definition.definition_ref.as_ref().map_or_else(
+        || annotation.as_ref().clone(),
+        |owner| Self::TypeRef(owner.clone(), Arc::new(vec![])),
+      ),
+      Self::Enum(definition, args) => match definition.definition_ref() {
+        Some(owner) => Self::TypeRef(owner.clone(), arguments(args)),
+        None => Self::Enum(definition.clone(), arguments(args)),
+      },
+      Self::EnumValue(definition) => definition.definition_ref().map_or_else(
+        || annotation.as_ref().clone(),
+        |owner| Self::TypeRef(owner.clone(), Arc::new(vec![])),
+      ),
+      Self::TypeRef(name, args) => Self::TypeRef(name.clone(), arguments(args)),
+      Self::List(inner) => Self::List(mapped(inner)),
+      Self::Map(key, value) => Self::Map(mapped(key), mapped(value)),
+      Self::Set(inner) => Self::Set(mapped(inner)),
+      Self::Ref(inner) => Self::Ref(mapped(inner)),
+      Self::Optional(inner) => Self::Optional(mapped(inner)),
+      Self::JsNullish(inner) => Self::JsNullish(mapped(inner)),
+      Self::Variadic(inner) => Self::Variadic(mapped(inner)),
+      Self::Fn(signature) => {
+        let mut signature = signature.as_ref().clone();
+        signature.arg_types = signature.arg_types.iter().map(mapped).collect();
+        signature.return_type = mapped(&signature.return_type);
+        signature.rest_type = signature.rest_type.as_ref().map(mapped);
+        Self::Fn(Arc::new(signature))
+      }
+      Self::Syntax(form) => match form.as_ref() {
+        MacroSyntaxType::Expr(inner) => Self::Syntax(Arc::new(MacroSyntaxType::Expr(mapped(inner)))),
+        _ => return annotation.clone(),
+      },
+      _ => return annotation.clone(),
+    };
+    Arc::new(rewritten)
   }
 
   /// Convert this type annotation to its [`Edn`] representation for schema serialization.
@@ -8673,6 +8753,40 @@ mod tests {
   }
 
   #[test]
+  fn same_bound_slot_relation_preserves_resolved_evidence() {
+    let name: Arc<str> = Arc::from("tests/SameCallbackSlot");
+    let slot = CalcitTypeAnnotation::TypeSlot(name.clone());
+    push_type_slot_override(name.clone(), Arc::new(CalcitTypeAnnotation::Number));
+    assert!(slot.is_compatible_with(&slot));
+    assert_eq!(slot.prove_with_bindings(&slot, &mut TypeBindings::new()), TypeProof::Proven);
+    let callback = CalcitTypeAnnotation::from_function_parts(vec![Arc::new(slot.clone())], Arc::new(CalcitTypeAnnotation::Unit));
+    assert!(callback.is_compatible_with(&callback));
+    assert_eq!(callback.prove_with_bindings(&callback, &mut TypeBindings::new()), TypeProof::Proven);
+    assert!(!slot.is_proven_for(&CalcitTypeAnnotation::String));
+    pop_type_slot_override(&name);
+
+    push_type_slot_override(name.clone(), crate::calcit::DYNAMIC_TYPE.clone());
+    assert_eq!(slot.prove_with_bindings(&slot, &mut TypeBindings::new()), TypeProof::Proven);
+    assert_eq!(
+      slot.prove_with_bindings(&CalcitTypeAnnotation::Number, &mut TypeBindings::new()),
+      TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic)
+    );
+    pop_type_slot_override(&name);
+    assert_eq!(
+      slot.prove_with_bindings(&slot, &mut TypeBindings::new()),
+      TypeProof::NeedsBoundary(TypeBoundaryReason::UnresolvedTypeSlot)
+    );
+
+    push_type_slot_override(name.clone(), Arc::new(slot.clone()));
+    assert!(!slot.is_compatible_with(&slot));
+    assert_eq!(
+      slot.prove_with_bindings(&slot, &mut TypeBindings::new()),
+      TypeProof::NeedsBoundary(TypeBoundaryReason::RecursiveTypeSlot)
+    );
+    pop_type_slot_override(&name);
+  }
+
+  #[test]
   fn proof_preserves_direction_when_the_expected_type_slot_resolves() {
     clear_type_slots();
     let slot_name: Arc<str> = Arc::from("dispatch");
@@ -8863,6 +8977,60 @@ mod tests {
       admin_ref.prove_with_bindings(&app_type, &mut TypeBindings::new()),
       TypeProof::Mismatch
     );
+  }
+
+  #[test]
+  fn nominal_schema_serialization_preserves_source_owner() {
+    let generated_return = |annotation| {
+      let CalcitTypeAnnotation::Fn(signature) = CalcitTypeAnnotation::from_function_parts(vec![], Arc::new(annotation)) else {
+        unreachable!()
+      };
+      let hint = Calcit::from(vec![
+        Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(CORE_NS)),
+        signature.to_schema_calcit(),
+      ]);
+      let parsed = CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form(&hint).expect("generated hint");
+      let CalcitTypeAnnotation::Fn(parsed) = parsed.as_ref() else {
+        panic!("function hint")
+      };
+      parsed.return_type.to_type_edn()
+    };
+    let definition = Arc::new(CalcitStructDef {
+      definition_ref: Some(Arc::from("app.models/Item")),
+      name: EdnTag::new("Item"),
+      fields: Arc::new(vec![EdnTag::new("value")]),
+      field_types: Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]),
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      impls: vec![],
+    });
+    for annotation in [
+      CalcitTypeAnnotation::StructValue(definition.clone()),
+      CalcitTypeAnnotation::Struct(definition.clone(), Arc::new(vec![])),
+    ] {
+      assert_eq!(generated_return(annotation), Edn::Symbol(Arc::from("app.models/Item")));
+    }
+    let mut generic = definition.as_ref().clone();
+    generic.generics = Arc::new(vec![Arc::from("T")]);
+    generic.field_types = Arc::new(vec![Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")))]);
+    let applied = CalcitTypeAnnotation::Struct(Arc::new(generic), Arc::new(vec![Arc::new(CalcitTypeAnnotation::Number)]));
+    assert_eq!(
+      generated_return(applied),
+      Edn::enum_value("app.models/Item", vec![Edn::Symbol(Arc::from("Number"))])
+    );
+    let mut local = definition.as_ref().clone();
+    local.definition_ref = None;
+    assert_eq!(
+      generated_return(CalcitTypeAnnotation::StructValue(Arc::new(local))),
+      Edn::Symbol(Arc::from("Item"))
+    );
+    let enumeration = Arc::new(generic_result_enum().as_ref().clone().with_definition_ref("app.models", "Result"));
+    for annotation in [
+      CalcitTypeAnnotation::EnumValue(enumeration.clone()),
+      CalcitTypeAnnotation::Enum(enumeration, Arc::new(vec![])),
+    ] {
+      assert_eq!(generated_return(annotation), Edn::Symbol(Arc::from("app.models/Result")));
+    }
   }
 
   #[test]
@@ -9650,7 +9818,11 @@ impl CalcitFnTypeAnnotation {
   /// Convert this fn-type annotation to a [`Calcit`] map value suitable for hint-fn injection.
   /// The result is compatible with `extract_schema_value` and `extract_arg_types_from_hint_form`.
   pub fn to_schema_calcit(&self) -> Calcit {
-    CalcitTypeAnnotation::edn_type_to_calcit(&self.to_schema_edn())
+    let mut source = self.clone();
+    source.arg_types = source.arg_types.iter().map(CalcitTypeAnnotation::for_source_schema).collect();
+    source.return_type = CalcitTypeAnnotation::for_source_schema(&source.return_type);
+    source.rest_type = source.rest_type.as_ref().map(CalcitTypeAnnotation::for_source_schema);
+    CalcitTypeAnnotation::edn_type_to_calcit(&source.to_schema_edn())
   }
 
   /// Serialize this fn-type annotation to the schema [`Edn`] map format

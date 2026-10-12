@@ -52,6 +52,7 @@ pub use sum_type::{CalcitEnumDef, EnumVariant};
 pub use symbol::{CalcitImport, CalcitSymbolInfo, ImportInfo};
 pub use syntax_name::{CalcitSyntax, SyntaxTypeSignature};
 pub use thunk::{CalcitThunk, CalcitThunkInfo};
+pub(crate) use type_annotation::checkpoint_type_slot_declarations;
 pub use type_annotation::{
   CalcitFnTypeAnnotation, CalcitGenericBound, CalcitNumericRefinement, CalcitTypeAnnotation, DYNAMIC_TYPE, MacroCapability,
   MacroExpansionType, MacroSignature, MacroSyntaxType, SchemaKind, brief_type_of_value, clear_type_slots, configure_entry_type_slots,

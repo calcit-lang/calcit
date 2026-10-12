@@ -5,6 +5,7 @@
   :wasm $ {}
     :tags $ {} $ :enum-definition-equality "|unsupported: first-class EnumDef creation requires &enum-def:new, rejected by WASM codegen (#1863)"
     :tests $ {} (|calcit.core/&+#preserves-primitive-schema-in-local-binding "|unsupported: unsupported WASM expression: (&proc &+)")
+      |calcit.core/pairs-map#retains-malformed-pair-failure "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/any?#short-circuits-list-set-and-map "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/every?#short-circuits-list-set-and-map "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/&get-in#handles-empty-path-and-nil-base "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nullable internal traversal needs concrete argument types"
@@ -214,6 +215,9 @@
       |calcit.core/try-parse-json#result-method-contract "|unsupported: reaches `calcit.core/try-parse-json`: unsupported syntax in WASM: try"
       |calcit.core/turn-str#accepts-proven-scalars "|unsupported: reaches `calcit.core/to-symbol`: unsupported proc in WASM: turn-symbol"
       |calcit.core/turn-symbol#returns-typed-symbol-from-string "|unsupported: unsupported proc in WASM: turn-symbol"
+      |calcit.core/update#preserves-struct-and-enum-slots "|unsupported: local StructDef construction reaches &struct-def:new, rejected by shared WASM codegen"
+      |calcit.core/update#skips-missing-map-key-and-propagates-errors "|unsupported: callback exception recovery uses try, rejected by shared WASM codegen"
+      |calcit.core/update#rejects-open-non-number-indices "|unsupported: invalid-index exception recovery uses try, rejected by shared WASM codegen"
       |calcit.core/update-in#updates-collection-and-missing-paths "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nil? cannot distinguish nil from false or 0 for open type `dynamic`"
       |calcit.core/update-in#updates-existing-nested-leaf "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nil? cannot distinguish nil from false or 0 for open type `dynamic`"
       |calcit.core/wait-ms#positive-succeeds "|unsupported: reaches `calcit.core/wait-ms`: E_WASM_CAPABILITY: wait-ms is unavailable for the core WASM target"
@@ -230,6 +234,7 @@
   :wasi $ {}
     :tags $ {} $ :enum-definition-equality "|unsupported: first-class EnumDef creation requires &enum-def:new, rejected by the shared WASM codegen (#1863)"
     :tests $ {} (|calcit.core/&+#preserves-primitive-schema-in-local-binding "|unsupported: unsupported WASM expression: (&proc &+)")
+      |calcit.core/pairs-map#retains-malformed-pair-failure "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/any?#short-circuits-list-set-and-map "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/every?#short-circuits-list-set-and-map "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/&get-in#handles-empty-path-and-nil-base "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nullable internal traversal needs concrete argument types"
@@ -444,6 +449,9 @@
       |calcit.core/try-parse-json#result-method-contract "|unsupported: reaches `calcit.core/try-parse-json`: unsupported syntax in WASM: try"
       |calcit.core/turn-str#accepts-proven-scalars "|unsupported: reaches `calcit.core/to-symbol`: unsupported proc in WASM: turn-symbol"
       |calcit.core/turn-symbol#returns-typed-symbol-from-string "|unsupported: unsupported proc in WASM: turn-symbol"
+      |calcit.core/update#preserves-struct-and-enum-slots "|unsupported: local StructDef construction reaches &struct-def:new, rejected by shared WASM codegen"
+      |calcit.core/update#skips-missing-map-key-and-propagates-errors "|unsupported: callback exception recovery uses try, rejected by shared WASM codegen"
+      |calcit.core/update#rejects-open-non-number-indices "|unsupported: invalid-index exception recovery uses try, rejected by shared WASM codegen"
       |calcit.core/update-in#updates-collection-and-missing-paths "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nil? cannot distinguish nil from false or 0 for open type `dynamic`"
       |calcit.core/update-in#updates-existing-nested-leaf "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nil? cannot distinguish nil from false or 0 for open type `dynamic`"
       |calcit.core/wait-ms#positive-succeeds "|unsupported: reaches `calcit.core/wait-ms`: E_WASI_COMMAND_CAPABILITY: `&wait-ms` needs WASI 0.3 clocks lowering"

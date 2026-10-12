@@ -32,6 +32,25 @@
           :code $ quote $ defstruct Person (:name 'String) (:age nil)
           :examples $ []
           :schema $ :: 'Struct
+          :tests $ [] $ %{} 'TestEntry (:name |same-slot-callback)
+            :code $ quote $ with-type-slot (:callback Person)
+              let
+                  expected-value $ Person :name |Ada :age 42
+                  invoke $ fn (callback)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Fn
+                        {}
+                          :args $ [] *callback
+                          :return 'Unit
+                      :return 'Unit
+                    callback expected-value
+                invoke $ fn (value)
+                  hint-fn $ {}
+                    :args $ [] *callback
+                    :return 'Unit
+                  assert= expected-value value
+                  , &unit
+            :tags $ #{} :type-slot :unit
         'Result $ %{} 'CodeEntry (:doc "|Enum prototype for type checks")
           :code $ quote $ defenum Result (:ok 'Number) (:err 'String)
           :examples $ []

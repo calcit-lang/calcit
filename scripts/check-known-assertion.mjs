@@ -28,6 +28,109 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "pairs-map-proof", "--backend", "native,js",
+  ], { ...options, stdio: "inherit" });
+  await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  const pairsMapOriginal = await readFile(snapshot);
+  for (const name of ["generic-pairs-map", "closed-homogeneous-pairs"]) {
+    for (const rule of ["concrete-return-proof-v1", "callable-contract-proof-v1"]) {
+      const proof = JSON.parse(run("fix", "--rule", rule,
+        "--ns", "app.callback-origin", "--def", name, "--format", "json"));
+      assert.deepEqual(proof.diagnostics, []);
+    }
+  }
+  for (const name of ["closed-heterogeneous-pairs", "closed-wrong-member-pairs"]) {
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "callable-contract-proof-v1",
+      "--ns", "app.callback-origin", "--def", name, "--format", "json"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_CALL_ARGUMENT_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|W_FN_ARG_TYPE_MISMATCH|E_ERASED_GENERIC_RELATION/);
+  }
+  assert.deepEqual(await readFile(snapshot), pairsMapOriginal);
+  // #1961: preprocessing proves the same nested literal spreads as lowering,
+  // while a runtime list still cannot establish a fixed-arity call.
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "nested-literal-spread", "--backend", "native,js",
+  ], { ...options, stdio: "inherit" });
+  await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  const nestedSpreadOriginal = await readFile(snapshot);
+  for (const rule of ["concrete-return-proof-v1", "callable-contract-proof-v1"]) {
+    const proof = JSON.parse(run("fix", "--rule", rule,
+      "--ns", "app.callback-origin", "--def", "nested-literal-spread", "--format", "json"));
+    assert.deepEqual(proof.diagnostics, []);
+  }
+  for (const name of ["nested-open-spread", "nested-wrong-member"]) {
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "callable-contract-proof-v1",
+      "--ns", "app.callback-origin", "--def", name, "--format", "json"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_CALL_ARGUMENT_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|W_FN_ARG_TYPE_MISMATCH/);
+  }
+  assert.deepEqual(await readFile(snapshot), nestedSpreadOriginal);
+  // Empty constructors prove a generic collection family without binding its
+  // members; nonempty and open inputs cannot manufacture the same evidence.
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "empty-generic-family", "--backend", "native,js",
+  ], { ...options, stdio: "inherit" });
+  await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  const emptyFamilyOriginal = await readFile(snapshot);
+  for (const name of ["empty-generic-list", "empty-generic-map", "empty-generic-set", "fold-generic-list", "branch-empty-generic-list"]) {
+    const proof = JSON.parse(run("fix", "--rule", "assert-type-proof-v1",
+      "--ns", "app.callback-origin", "--def", name, "--format", "json"));
+    assert.deepEqual(proof.diagnostics, []);
+  }
+  for (const name of ["nonempty-generic-list", "open-generic-list", "branch-nonempty-generic-list", "branch-open-generic-list"]) {
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "assert-type-proof-v1",
+      "--ns", "app.callback-origin", "--def", name, "--format", "json"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_ASSERT_TYPE_UNPROVEN/);
+  }
+  assert.deepEqual(await readFile(snapshot), emptyFamilyOriginal);
+  // Callback inputs infer a direct generic constructor through Ref without
+  // allowing a different callback or argument after construction.
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "ref-callback-inference", "--backend", "native,js",
+  ], { ...options, stdio: "inherit" });
+  for (const name of ["wrong-controller-call", "wrong-controller-write"]) {
+    for (const mode of [["--check-only"], ["js"]]) {
+      const output = join(project, `${name}-${mode.join("-")}`);
+      const rejected = spawnSync(binary, [snapshot, "--init-fn", `app.callback-origin/${name}`,
+        "--emit-path", output, ...mode], options);
+      if (rejected.error) throw rejected.error;
+      assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
+      assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_LOCAL_FN_ARG_TYPE_MISMATCH|W_RESET_ARG_TYPE_MISMATCH/);
+      await assertRejectedArtifacts(output, name, /W_LOCAL_FN_ARG_TYPE_MISMATCH|W_RESET_ARG_TYPE_MISMATCH/);
+    }
+  }
+  assert.deepEqual(await readFile(snapshot), emptyFamilyOriginal);
+  // #1553: generated callback hints retain the nominal source owner across
+  // option lowering; same-named Structs from another namespace stay distinct.
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "nominal-callback-origin", "--backend", "native,js",
+  ], { ...options, stdio: "inherit" });
+  await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  const nominalOriginal = await readFile(snapshot);
+  const nominalProof = JSON.parse(run("fix", "--rule", "callable-contract-proof-v1",
+    "--ns", "app.callback-origin", "--def", "choose", "--format", "json"));
+  assert.deepEqual(nominalProof.diagnostics, []);
+  assert.deepEqual(await readFile(snapshot), nominalOriginal);
+  for (const mode of [["--check-only"], ["js"]]) {
+    const output = join(project, `nominal-origin-rejected-${mode.join("-")}`);
+    const rejected = spawnSync(binary, [snapshot, "--init-fn", "app.callback-origin/mixed-origin",
+      "--emit-path", output, ...mode], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_FN_ARG_TYPE_MISMATCH|W_FN_RETURN_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN/);
+    assert.deepEqual(await readFile(snapshot), nominalOriginal);
+    await assertRejectedArtifacts(output, "nominal callback origin", /W_FN_ARG_TYPE_MISMATCH|W_FN_RETURN_TYPE_MISMATCH|E_CALL_ARGUMENT_UNPROVEN/);
+  }
   // Conditional exits retain their collection evidence independently of the condition.
   execFileSync(process.execPath, [
     "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
@@ -1199,6 +1302,41 @@ try {
       if (mode[0] === "js") await assertRejectedArtifacts(output, label, diagnostic, true);
     }
   }
+  await copyFile("src/cirru/calcit-core.cirru", snapshot);
+  // Open update implementation contracts must preserve precise receiver checks.
+  run("edit", "add-ns", "calcit.update-proof");
+  for (const [label, body] of [
+    ["map-return", "update ({} (:n 1)) :n (fn (x) |wrong)"],
+    ["list-return", "update ([] 1 2) 0 (fn (x) |wrong)"],
+    ["list-index", "update ([] 1 2) |wrong inc"],
+    ["struct-return", "let ((Point (defstruct Point (:n 'Number))) (p (Point :n 1))) (update p :n $ fn (x) |wrong)"],
+  ]) {
+    run("edit", "def", "calcit.update-proof/rejected", "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defn rejected () (${body}) &unit`);
+    run("edit", "schema", "calcit.update-proof/rejected", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)");
+    const before = await readFile(snapshot);
+    for (const mode of [["--check-only"], ["js"]]) {
+      const output = join(project, `update-${label}-${mode[0] === "js" ? "js" : "native"}`);
+      const result = spawnSync(binary, [snapshot, "--init-fn", "calcit.update-proof/rejected",
+        "--reload-fn", "calcit.update-proof/rejected", "--emit-path", output, ...mode], options);
+      if (result.error) throw result.error;
+      assert.equal(result.status, 1, `${label}: ${result.stdout}\n${result.stderr}`);
+      assert.match(`${result.stdout}\n${result.stderr}`, /W_FN_ARG_TYPE_MISMATCH/);
+      assert.deepEqual(await readFile(snapshot), before);
+      if (mode[0] === "js") await assertRejectedArtifacts(output, label, /W_FN_ARG_TYPE_MISMATCH/, true);
+    }
+  }
+  run("edit", "def", "calcit.update-proof/rejected", "--overwrite", "--input-format", "cirru", "--code",
+    'quote $ defn rejected () (update (parse-cirru-edn "|{} (:n |wrong)") :n inc) &unit');
+  const updateBefore = await readFile(snapshot);
+  const updateRejected = spawnSync(binary, [snapshot, "fix", "--rule", "callable-contract-proof-v1", "--ns", "calcit.update-proof",
+    "--def", "rejected", "--format", "json"], options);
+  if (updateRejected.error) throw updateRejected.error;
+  assert.equal(updateRejected.status, 1, `${updateRejected.stdout}\n${updateRejected.stderr}`);
+  const updateAudit = JSON.parse(updateRejected.stdout);
+  assert.ok(updateAudit.diagnostics.some(item => item.code === "E_CALL_ARGUMENT_UNPROVEN" && item.message.includes("argument 3")));
+  assert.deepEqual(await readFile(snapshot), updateBefore);
   await copyFile("src/cirru/calcit-core.cirru", snapshot);
   const coreOriginal = await readFile(snapshot);
   run("fix", "--rule", "concrete-return-proof-v1", "--ns", "calcit.core", "--def", "every?", "--format", "edn");
