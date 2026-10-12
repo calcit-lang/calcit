@@ -151,9 +151,13 @@ fn type_fail_struct_update_after_option_match_rejects_invalid_fields_and_values(
     for (update, diagnostic) in [
       ("assoc draft :ready? |wrong", "expects type `:bool`, but got `:string`"),
       ("assoc draft :missing true", "Field `:missing` does not exist"),
+      (
+        "assoc draft :maybe $ Option :some |wrong",
+        "expects type `'calcit.core/Option<:number>`, but got `enum Option<:string>`",
+      ),
     ] {
       let snippet = format!(
-        "let\n    Draft $ defstruct Draft (:ready? 'Bool)\n    drafts $ {{}} $ |a $ %{{}} Draft (:ready? false)\n  match (get drafts |a)\n    (:some draft) $ {update}\n    (:none) &unit"
+        "let\n    Draft $ defstruct Draft (:ready? 'Bool) (:maybe $ :: Option 'Number)\n    drafts $ {{}} $ |a $ Draft :ready? false :maybe (Option :some 1)\n  match (get drafts |a)\n    (:some draft) $ {update}\n    (:none) &unit"
       );
       let entries = load_snippet_entries(&snippet);
       let warnings = RefCell::new(vec![]);
@@ -163,6 +167,13 @@ fn type_fail_struct_update_after_option_match_rejects_invalid_fields_and_values(
         warnings.borrow().iter().any(|warning| warning.message().contains(diagnostic)),
         "expected {diagnostic}: {:?}",
         warnings.borrow()
+      );
+      assert!(
+        warnings
+          .borrow()
+          .iter()
+          .all(|warning| warning.code() != Some("W_NOMINAL_ENUM_LEGACY_USE")),
+        "stored values must use ordinary field diagnostics, not nullable-receiver warnings"
       );
     }
   });

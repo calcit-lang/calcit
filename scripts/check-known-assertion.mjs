@@ -1329,7 +1329,7 @@ try {
   assert.equal(returnTests.length, 3);
   run("test", "calcit.core/hint-fn", "--tag", "call-boundary", "--require-match");
   const callTests = returnResponse.data.tests.filter(test => test.tags.includes("call-boundary"));
-  assert.equal(callTests.length, 17);
+  assert.equal(callTests.length, 18);
   run("test", "calcit.core/hint-fn", "--tag", "generic-call-proof", "--require-match");
   const genericTests = returnResponse.data.tests.filter(test => test.tags.includes("generic-call-proof"));
   assert.equal(genericTests.length, 1);

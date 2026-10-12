@@ -736,6 +736,56 @@
                 &inspect-type outcome
           :examples $ []
           :schema $ :: 'Dynamic
+        'write-nominal-absence-fields $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn write-nominal-absence-fields (fields number text result)
+            -> fields
+              assoc :number $ Option :some number
+              assoc :text $ Option :some text
+              assoc :result result
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'test-types-inference.main/NominalAbsenceFields)
+            :args $ [] 'test-types-inference.main/NominalAbsenceFields 'Number 'String $ :: 'Result 'Number 'String
+          :tests $ []
+            %{} 'TestEntry (:name |option-and-result-fields)
+              :code $ quote $ let
+                  original $ NominalAbsenceFields :number (Option :none) :text (Option :none) :result $ Result :ok 0
+                  changed $ write-nominal-absence-fields original 7 |ready $ Result :err |failed
+                assert= 7 $ .unwrap $ :number changed
+                assert= |ready $ .unwrap $ :text changed
+                assert= |failed $ match (:result changed)
+                  (:err message) message
+                  (:ok _) |unexpected
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |method-field-write)
+              :code $ quote $ let
+                  original $ NominalAbsenceFields :number (Option :none) :text (Option :none) :result $ Result :ok 0
+                  changed $ .assoc original :text $ Option :some |method
+                assert= |method $ .unwrap $ :text changed
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |collection-values)
+              :code $ quote $ let
+                  value $ Option :some 3
+                  values $ [] $ Option :some 1
+                  mapping $ {} $ :number (Option :some 1)
+                  changed-list $ assoc values 0 value
+                  changed-map $ assoc mapping :number value
+                assert= ([] value) changed-list
+                assert=
+                  {} $ :number value
+                  , changed-map
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |nested-collection-value)
+              :code $ quote $ let
+                  value $ Option :some 3
+                  mapping $ {} $ :number (Option :some 1)
+                  changed $ assoc-in
+                    {} $ :branch mapping
+                    [] :branch :number
+                    , value
+                assert=
+                  {} $ :branch $ {} (:number value)
+                  , changed
+              :tags $ #{} :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-types-inference.main
     'test-types-inference.shadow $ %{} 'FileEntry
