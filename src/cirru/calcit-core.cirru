@@ -9582,10 +9582,12 @@
             %{} 'TestEntry (:name |passes-index-before-value)
               :code $ quote $ do
                 assert= ([] 0 1)
-                  map-indexed ([] 5 6) $ fn (idx x) idx
+                  map-indexed ([] 5 6)
+                    fn (idx x) idx
                 assert= ([] 50 61)
-                  map-indexed ([] 5 6) $ fn (idx x)
-                    &+ idx $ &* 10 x
+                  map-indexed ([] 5 6)
+                    fn (idx x)
+                      &+ idx $ &* 10 x
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |preserves-open-payload-with-index)
               :code $ quote $ let
@@ -11127,9 +11129,7 @@
                 n n0
               hint-fn $ {}
                 :generics $ [] 'T
-                :args $ []
-                  :: 'acc $ :: 'List 'T
-                  :: 'n 'Number
+                :args $ [] (:: 'List 'T) 'Number
                 :return $ :: 'List 'T
               if (&<= n 0) acc $ recur (append acc x) (&- n 1)
           :examples $ []

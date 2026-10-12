@@ -18,6 +18,9 @@ PR 审阅同时发现泛型空集合在 `if` 外层被提前拒绝，无法进�
 - 间接调用检查覆盖了 macro 生成的 loop 初始调用；同类空集合仍是合法 nominal
   集合初始值。nominal 边界复用既有空构造器判定，避免把它误认为开放输入；增加
   空 `List<Item>` callback 实参的可执行正例。
+- core 全定义检查进一步暴露 `repeat` 的 loop hint 仍把参数名作为类型构造器。
+  将其改为现行位置类型列表 `List<T>, Number`；不改运行时算法，回放已有 repeat
+  与结构化保存时重新格式化的 map-indexed definition tests。
 - 审阅提出移除 pairs-map 的第二个 list? 分支。普通求值可通过，但严格审计证明
   删除后 &list:first 接收到未收窄的 P，报告 E_CALL_ARGUMENT_UNPROVEN。
   因而保留现有分支，不借本次修复扩展 assert 的控制流收窄语义。
