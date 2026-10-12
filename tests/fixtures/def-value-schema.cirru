@@ -2866,6 +2866,88 @@
             :tags $ #{} :short-circuit-proof :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.short-circuit
+    'app.sort-selector $ %{} 'FileEntry
+      :defs $ {}
+        'alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn alias (rows)
+            let
+                order &list:sort-by
+              order rows $ fn (row) (&map:get row :n)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
+            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
+            :code $ quote $ assert=
+              []
+                {} $ :n 1
+                {} $ :n 2
+              alias $ []
+                {} $ :n 2
+                {} $ :n 1
+            :tags $ #{} :sort-selector-context :unit
+        'direct $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn direct (rows)
+            &list:sort-by rows $ fn (row) (&map:get row :n)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
+            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |orders-typed-rows)
+              :code $ quote $ assert=
+                []
+                  {} $ :n 1
+                  {} $ :n 2
+                direct $ []
+                  {} $ :n 2
+                  {} $ :n 1
+              :tags $ #{} :sort-selector-context :unit
+            %{} 'TestEntry (:name |retains-tag-selector)
+              :code $ quote $ assert=
+                []
+                  {} $ :n 1
+                  {} $ :n 2
+                &list:sort-by
+                  []
+                    {} $ :n 2
+                    {} $ :n 1
+                  , :n
+              :tags $ #{} :sort-selector-context :unit
+        'method $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn method (rows)
+            rows .sort-by $ fn (row) (&map:get row :n)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
+            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
+            :code $ quote $ assert=
+              []
+                {} $ :n 1
+                {} $ :n 2
+              method $ []
+                {} $ :n 2
+                {} $ :n 1
+            :tags $ #{} :sort-selector-context :unit
+        'threaded $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn threaded (rows)
+            -> rows $ &list:sort-by $ fn (row) (&map:get row :n)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
+            :return $ :: 'List $ :: 'Map 'Tag 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |orders-typed-rows)
+            :code $ quote $ assert=
+              []
+                {} $ :n 1
+                {} $ :n 2
+              threaded $ []
+                {} $ :n 2
+                {} $ :n 1
+            :tags $ #{} :sort-selector-context :unit
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.sort-selector
     'app.values $ %{} 'FileEntry
       :defs $ {}
         'ClientProjection $ %{} 'CodeEntry (:doc |)

@@ -28,6 +28,19 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
+  // #2020: selector inputs must retain independently known List members.
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "sort-selector-context", "--backend", "native,js",
+  ], { ...options, stdio: "inherit" });
+  await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  const sortSelectorOriginal = await readFile(snapshot);
+  for (const name of ["direct", "threaded", "method", "alias"]) {
+    const proof = JSON.parse(run("fix", "--rule", "callable-contract-proof-v1",
+      "--ns", "app.sort-selector", "--def", name, "--format", "json"));
+    assert.deepEqual(proof.diagnostics, [], `${name}: selector input evidence`);
+  }
+  assert.deepEqual(await readFile(snapshot), sortSelectorOriginal);
   // #2014: known container shape survives open members in callback context.
   execFileSync(process.execPath, [
     "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
