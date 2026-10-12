@@ -239,6 +239,73 @@
             :tags $ #{} :open-match-payload
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.binding-proof
+    'app.branch-call $ %{} 'FileEntry
+      :defs $ {}
+        'count-rest $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn count-rest (first-style & more) (count more)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'Map 'Tag 'Dynamic
+            :rest $ :: 'Map 'Tag 'Dynamic
+        'count-style $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn count-style (style) (count style)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'Map 'Tag 'Dynamic
+        'open-style $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn open-style (raw)
+            count-style $ if true raw $ {}
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'Map 'Dynamic 'Dynamic
+        'rebound-style $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn rebound-style (raw)
+            count-style $ let
+                style $ {}
+              set! style raw
+              , style
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+            :features $ #{} :js-ffi
+        'rest-count $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn rest-count (flag)
+            count-rest
+              {} $ :padding |4px
+              if flag
+                {} $ :color |red
+                {}
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |both-rest-exits)
+            :code $ quote $ do
+              assert= 1 $ rest-count true
+              assert= 1 $ rest-count false
+            :tags $ #{} :branch-call-proof
+        'style-count $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn style-count (flag)
+            count-style $ if flag
+              {} $ :color |red
+              {}
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |both-exits)
+            :code $ quote $ do
+              assert= 1 $ style-count true
+              assert= 0 $ style-count false
+            :tags $ #{} :branch-call-proof
+        'wrong-style $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-style (flag)
+            count-style $ if flag
+              {} $ 1 |red
+              {}
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.branch-call
     'app.callback-left $ %{} 'FileEntry
       :defs $ {} $ 'Item
         %{} 'CodeEntry (:doc |)
@@ -257,6 +324,10 @@
                 :return 'Unit
           :examples $ []
           :schema $ :: 'StructDef
+        'RepeatedPayload $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum RepeatedPayload ([] 'T) (:pair 'T 'T)
+          :examples $ []
+          :schema $ :: 'EnumDef
         'branch-empty-generic-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn branch-empty-generic-list (anchor flag open)
             assert-type
@@ -401,6 +472,59 @@
             :code $ quote $ assert= &unit
               empty-generic-set $ #{}
             :tags $ #{} :empty-generic-family
+        'enum-claim-open $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn enum-claim-open (raw)
+            let
+                seed $ Result :ok raw
+              assert-type seed $ :: 'Result 'Number 'String
+              , seed
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Dynamic
+            :return $ :: 'Result 'Number 'String
+        'enum-claim-wrong $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn enum-claim-wrong ()
+            let
+                seed $ Result :ok |wrong
+              assert-type seed $ :: 'Result 'Number 'String
+              , seed
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :return $ :: 'Result 'Number 'String
+        'enum-inconsistent-pair $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn enum-inconsistent-pair (value)
+            let
+                pair $ RepeatedPayload :pair value 1
+              assert-type pair $ :: 'app.callback-origin/RepeatedPayload 'T
+              , pair
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'T
+            :generics $ [] 'T
+            :return $ :: 'app.callback-origin/RepeatedPayload 'T
+        'enum-open-peer $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn enum-open-peer (value raw)
+            let
+                pair $ RepeatedPayload :pair value raw
+              assert-type pair $ :: 'app.callback-origin/RepeatedPayload 'T
+              , pair
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'T 'Dynamic
+            :generics $ [] 'T
+            :return $ :: 'app.callback-origin/RepeatedPayload 'T
+        'enum-specialize-caller $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn enum-specialize-caller (value)
+            let
+                seed $ Result :ok value
+              assert-type seed $ :: 'Result 'Number 'String
+              , seed
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'T
+            :generics $ [] 'T
+            :return $ :: 'Result 'Number 'String
         'fold-generic-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn fold-generic-list (xs)
             foldl xs
@@ -518,6 +642,82 @@
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'Number) (:: 'List 'Dynamic)
             :return $ :: 'List 'Number
+        'wrap-generic-error $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrap-generic-error (error)
+            let
+                seed $ Result :err error
+              assert-type seed $ :: 'Result 'String $ :: 'List 'E
+              , seed
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'E
+            :generics $ [] 'E
+            :return $ :: 'Result 'String $ :: 'List 'E
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-error-slot-variable)
+            :code $ quote $ assert=
+              Result :err $ [] 1 2
+              wrap-generic-error $ [] 1 2
+            :tags $ #{} :enum-generic-payload
+        'wrap-generic-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrap-generic-map (users)
+            let
+                seed $ Result :ok users
+              assert-type seed $ :: 'Result (:: 'Map 'String 'T) 'String
+              , seed
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'String 'T
+            :generics $ [] 'T
+            :return $ :: 'Result (:: 'Map 'String 'T) 'String
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-nested-caller-variable)
+            :code $ quote $ assert=
+              Result :ok $ {} $ |a 1
+              wrap-generic-map $ {} $ |a 1
+            :tags $ #{} :enum-generic-payload
+        'wrap-generic-pair $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrap-generic-pair (left right)
+            let
+                pair $ RepeatedPayload :pair left right
+              assert-type pair $ :: 'app.callback-origin/RepeatedPayload 'T
+              , pair
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'T 'T
+            :generics $ [] 'T
+            :return $ :: 'app.callback-origin/RepeatedPayload 'T
+          :tests $ [] $ %{} 'TestEntry (:name |repeated-payload-shares-caller-variable)
+            :code $ quote $ assert= (RepeatedPayload :pair 1 2) (wrap-generic-pair 1 2)
+            :tags $ #{} :enum-generic-payload
+        'wrap-generic-value $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrap-generic-value (value)
+            let
+                seed $ Result :ok value
+              assert-type seed $ :: 'Result 'T 'String
+              , seed
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'T
+            :generics $ [] 'T
+            :return $ :: 'Result 'T 'String
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-direct-caller-variable)
+            :code $ quote $ assert= (Result :ok |value) (wrap-generic-value |value)
+            :tags $ #{} :enum-generic-payload
+        'wrap-renamed-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrap-renamed-map (users)
+            let
+                seed $ Result :ok users
+              assert-type seed $ :: 'Result (:: 'Map 'String 'U) 'String
+              , seed
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'String 'U
+            :generics $ [] 'U
+            :return $ :: 'Result (:: 'Map 'String 'U) 'String
+          :tests $ [] $ %{} 'TestEntry (:name |generic-renaming-is-equivalent)
+            :code $ quote $ assert=
+              Result :ok $ {} $ |a |value
+              wrap-renamed-map $ {} $ |a |value
+            :tags $ #{} :enum-generic-payload
         'wrong-controller-call $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn wrong-controller-call ()
             let
@@ -559,73 +759,6 @@
           :schema $ :: 'StructDef
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.callback-right
-    'app.branch-call $ %{} 'FileEntry
-      :defs $ {}
-        'count-rest $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn count-rest (first-style & more) (count more)
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'Map 'Tag 'Dynamic
-            :rest $ :: 'Map 'Tag 'Dynamic
-        'count-style $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn count-style (style) (count style)
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'Map 'Tag 'Dynamic
-        'open-style $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn open-style (raw)
-            count-style $ if true raw $ {}
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] $ :: 'Map 'Dynamic 'Dynamic
-        'rebound-style $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn rebound-style (raw)
-            count-style $ let
-                style $ {}
-              set! style raw
-              , style
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
-            :features $ #{} :js-ffi
-        'rest-count $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn rest-count (flag)
-            count-rest
-              {} $ :padding |4px
-              if flag
-                {} $ :color |red
-                {}
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
-          :tests $ [] $ %{} 'TestEntry (:name |both-rest-exits)
-            :code $ quote $ do
-              assert= 1 $ rest-count true
-              assert= 1 $ rest-count false
-            :tags $ #{} :branch-call-proof
-        'style-count $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn style-count (flag)
-            count-style $ if flag
-              {} $ :color |red
-              {}
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
-          :tests $ [] $ %{} 'TestEntry (:name |both-exits)
-            :code $ quote $ do
-              assert= 1 $ style-count true
-              assert= 0 $ style-count false
-            :tags $ #{} :branch-call-proof
-        'wrong-style $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn wrong-style (flag)
-            count-style $ if flag
-              {} $ 1 |red
-              {}
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Dynamic
-      :ns $ %{} 'NsEntry (:doc |)
-        :code $ quote $ ns app.branch-call
     'app.dynamic-construction $ %{} 'FileEntry
       :defs $ {}
         'EmptyBox $ %{} 'CodeEntry (:doc |)

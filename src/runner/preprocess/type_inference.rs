@@ -3329,16 +3329,34 @@ fn infer_enum_applied_args<'a>(
   if payload_args.len() != variant.arity() {
     return None;
   }
-  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+  let expected_types = variant
+    .payload_types()
+    .iter()
+    .map(|expected| resolve_local_type_refs_for_body(expected.clone(), scope_types))
+    .collect::<Vec<_>>();
+  let actual_types = payload_args
+    .into_iter()
+    .map(|payload| resolve_type_value(payload, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()))
+    .collect::<Vec<_>>();
+  // Constructor variables belong to the enum, not to a same-named caller
+  // generic nested in a payload. Reuse the call proof's fresh binder scope.
+  let mut proof = crate::calcit::type_annotation::CallTypeProof::new(enum_proto.generics(), &expected_types, &actual_types);
+  for (expected, actual) in expected_types.iter().zip(&actual_types) {
+    if !proof.prove(actual, expected).is_proven() {
+      return None;
+    }
+  }
 
-  for (payload, expected_type) in payload_args.into_iter().zip(variant.payload_types().iter()) {
-    let actual_type = resolve_type_value(payload, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
-    let resolved_expected = resolve_local_type_refs_for_body(expected_type.clone(), scope_types);
-    if !actual_type
-      .as_ref()
-      .prove_with_bindings(resolved_expected.as_ref(), &mut bindings)
-      .is_proven()
-    {
+  // Calls may transport an open argument alongside a captured caller generic.
+  // A stored payload must independently satisfy the inferred type: an open
+  // peer cannot borrow T from another payload of the same constructor.
+  let instantiated = expected_types
+    .iter()
+    .map(|expected| proof.result_or_open(expected))
+    .collect::<Vec<_>>();
+  let mut payload_proof = crate::calcit::type_annotation::CallTypeProof::new(&[], &instantiated, &actual_types);
+  for (expected, actual) in instantiated.iter().zip(&actual_types) {
+    if !payload_proof.prove(actual, expected).is_proven() {
       return None;
     }
   }
@@ -3349,13 +3367,11 @@ fn infer_enum_applied_args<'a>(
       .generics()
       .iter()
       .map(|name| {
-        bindings.get(name).cloned().unwrap_or_else(|| {
-          if used.contains(name) {
-            calcit::DYNAMIC_TYPE.clone()
-          } else {
-            crate::calcit::type_annotation::NEVER_TYPE.clone()
-          }
-        })
+        if used.contains(name) {
+          proof.result_or_open(&CalcitTypeAnnotation::TypeVar(name.clone()))
+        } else {
+          crate::calcit::type_annotation::NEVER_TYPE.clone()
+        }
       })
       .collect(),
   )
