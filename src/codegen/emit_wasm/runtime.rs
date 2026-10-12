@@ -3463,7 +3463,8 @@ pub(super) fn build_wasi_component_get_env_fn(environment_idx: u32, str_new_idx:
 }
 
 /// Maximum arity covered by canonical call_indirect type entries.
-/// Types 0..MAX_CANONICAL_ARITY are reserved: type N = (f64 × N) → f64.
+/// Types 0..MAX_CANONICAL_ARITY are always reserved: type N = (f64 × N) → f64.
+/// A module whose `call_indirect` uses a larger arity reserves more entries.
 pub(super) const MAX_CANONICAL_ARITY: u32 = 8;
 
 /// Build a binary WASM module from compiled functions.
@@ -3484,13 +3485,22 @@ pub(super) fn build_wasm_module(
 ) -> Result<Vec<u8>, String> {
   let mut module = Module::new();
   let num_imports = host_imports.len() as u32;
+  // Canonical types cover every arity a call_indirect uses (not just 0..8).
+  let canonical_arity = fns
+    .iter()
+    .flat_map(|f| f.instructions.iter())
+    .filter_map(|instruction| match instruction {
+      Instruction::CallIndirect { type_index, .. } => Some(*type_index + 1),
+      _ => None,
+    })
+    .fold(MAX_CANONICAL_ARITY, u32::max);
 
   // Type section:
   //   0..MAX_CANONICAL_ARITY  — canonical HOF callback types: (f64×N) → f64
   //   MAX_CANONICAL_ARITY + 0..host_imports.len() — host import types
   //   MAX_CANONICAL_ARITY + host_imports.len() + 0..fns.len() — compiled fn types
   let mut types = TypeSection::new();
-  for arity in 0..MAX_CANONICAL_ARITY {
+  for arity in 0..canonical_arity {
     types.ty().function(vec![ValType::F64; arity as usize], vec![ValType::F64]);
   }
   for imp in host_imports {
@@ -3507,7 +3517,7 @@ pub(super) fn build_wasm_module(
     imports.import(
       imp.module.as_str(),
       imp.name.as_str(),
-      wasm_encoder::EntityType::Function(MAX_CANONICAL_ARITY + i as u32),
+      wasm_encoder::EntityType::Function(canonical_arity + i as u32),
     );
   }
   module.section(&imports);
@@ -3515,7 +3525,7 @@ pub(super) fn build_wasm_module(
   // Function section: map each user function to its type
   let mut functions = FunctionSection::new();
   for (i, _) in fns.iter().enumerate() {
-    functions.function(MAX_CANONICAL_ARITY + num_imports + i as u32);
+    functions.function(canonical_arity + num_imports + i as u32);
   }
   module.section(&functions);
 
