@@ -8246,6 +8246,14 @@
                 assert= ([] 1 2)
                   map ([] 1 2) f
               :tags $ #{} :call-boundary
+            %{} 'TestEntry (:name |plain-call-many-args-fn-value)
+              :code $ quote $ let
+                  f +
+                  g $ fn (a b c d e f2 g2 h i) $ &+ a $ &+ b $ &+ c $ &+ d $ &+ e $ &+ f2 $ &+ g2 $ &+ h i
+                assert= 36 $ f 1 2 3 4 5 6 7 8
+                assert= 55 $ f 1 2 3 4 5 6 7 8 9 10
+                assert= 45 $ g 1 2 3 4 5 6 7 8 9
+              :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |nested-generic-call-scope)
               :code $ quote $ let
                   identity-list $ fn (xs)

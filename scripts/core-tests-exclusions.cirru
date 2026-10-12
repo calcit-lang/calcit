@@ -360,6 +360,7 @@
       |calcit.core/hint-fn#checked-number-to-concrete-call "|unsupported: try-decode-map-as is not yet supported in WASM codegen"
       |calcit.core/hint-fn#open-element-classified-before-payload "|unsupported: E_WASI_COMMAND_DEPENDENCY: calcit.core/data-view requires concrete argument types so nil can be distinguished from false and 0 (E_WASM_NIL_TYPE_EVIDENCE)"
       |calcit.core/hint-fn#plain-call-rest-fn-value "|unsupported: E_WASI_COMMAND_INDIRECT: an indirect call may reach an unsupported host capability"
+      |calcit.core/hint-fn#plain-call-many-args-fn-value "|unsupported: E_WASI_COMMAND_INDIRECT: an indirect call may reach an unsupported host capability"
       |calcit.core/hint-fn#raise-only-return-contract "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/identity#preserves-generic-schema-for-local-binding "|unsupported: E_WASI_COMMAND_INDIRECT: an indirect call may reach an unsupported host capability"
       |calcit.core/if#condition-and-selected-branch-errors-propagate "|unsupported: unsupported syntax in WASM: try"
