@@ -3087,6 +3087,105 @@
             :tags $ #{} :sort-selector-context :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.sort-selector
+    'app.string-option $ %{} 'FileEntry
+      :defs $ {}
+        'first-text $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn first-text (text) (first text)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Option 'String
+          :tests $ [] $ %{} 'TestEntry (:name |empty-and-unicode)
+            :code $ quote $ let ()
+              assert= (Option :none) (first-text |)
+              assert= (Option :some "|🌱") (first-text "|🌱树")
+              assert= (Option :some |a) (first-text |abc)
+            :tags $ #{} :string-option-presence :unit
+        'get-text $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn get-text (text index) (get text index)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String 'Number
+            :return $ :: 'Option 'String
+          :tests $ [] $ %{} 'TestEntry (:name |bounds-and-unicode)
+            :code $ quote $ let ()
+              assert= (Option :none) (get-text | 0)
+              assert= (Option :none) (get-text "|树🌱" -1)
+              assert= (Option :none) (get-text "|树🌱" 2)
+              assert= (Option :some "|树") (get-text "|树🌱" 0)
+              assert= (Option :some "|🌱") (get-text "|树🌱" 1)
+            :tags $ #{} :string-option-presence :unit
+        'last-text $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn last-text (text) (last text)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String
+            :return $ :: 'Option 'String
+          :tests $ [] $ %{} 'TestEntry (:name |empty-and-unicode)
+            :code $ quote $ let ()
+              assert= (Option :none) (last-text |)
+              assert= (Option :some "|🌱") (last-text "|树🌱")
+              assert= (Option :some |c) (last-text |abc)
+            :tags $ #{} :string-option-presence :unit
+        'list-first $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn list-first (items) (first items)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'T
+            :generics $ [] 'T
+            :return $ :: 'Option 'T
+          :tests $ [] $ %{} 'TestEntry (:name |preserves-present-nil)
+            :code $ quote $ let ()
+              assert= (Option :some nil)
+                list-first $ [] nil
+              assert= (Option :none)
+                list-first $ []
+            :tags $ #{} :string-option-presence :unit
+        'nth-text $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nth-text (text index) (nth text index)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'String 'Number
+            :return $ :: 'Option 'String
+          :tests $ []
+            %{} 'TestEntry (:name |bounds-and-unicode)
+              :code $ quote $ let ()
+                assert= (Option :none) (nth-text | 0)
+                assert= (Option :none) (nth-text "|树🌱" -1)
+                assert= (Option :none) (nth-text "|树🌱" 2)
+                assert= (Option :some "|树") (nth-text "|树🌱" 0)
+                assert= (Option :some "|🌱") (nth-text "|树🌱" 1)
+              :tags $ #{} :string-option-presence :unit
+            %{} 'TestEntry (:name |evaluates-arguments-once-in-order)
+              :code $ quote $ let
+                  calls $ ref 0
+                  result $ nth
+                    let ()
+                      reset! calls $ inc $ deref calls
+                      , "|树🌱"
+                    let ()
+                      assert= 1 $ deref calls
+                      reset! calls $ inc $ deref calls
+                      , 1
+                assert= (Option :some "|🌱") result
+                assert= 2 $ deref calls
+              :tags $ #{} :string-option-effects :unit
+        'sort-date-strings $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn sort-date-strings (dates)
+            sort dates $ fn (x y)
+              &compare
+                option:unwrap-or (first y) |
+                option:unwrap-or (first x) |
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'String
+            :return $ :: 'List 'String
+          :tests $ [] $ %{} 'TestEntry (:name |sorts-present-and-empty)
+            :code $ quote $ assert= ([] |2026-10-12 |1999-01-01 |)
+              sort-date-strings $ [] | |1999-01-01 |2026-10-12
+            :tags $ #{} :string-option-presence :unit
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.string-option
     'app.values $ %{} 'FileEntry
       :defs $ {}
         'ClientProjection $ %{} 'CodeEntry (:doc |)

@@ -17,6 +17,83 @@ impl StructuredOutputFormat {
       _ => Err(format!("Unsupported {command} format '{raw}'. Expected human, edn, or json.")),
     }
   }
+
+  /// Lenient parser for the graph analyzers (`call-graph`, `count-calls`, `effects-graph`).
+  /// Besides `human|edn|json` it accepts the legacy `text` and `tree` spellings of `human`.
+  /// Any other value falls back to `human` with a stderr warning, because older releases
+  /// silently treated unknown values as text; it becomes an error in the next non-patch release.
+  pub(crate) fn parse_graph(raw: &str, command: &str) -> Self {
+    match raw {
+      "tree" | "text" => Self::Human,
+      _ => Self::parse(raw, command).unwrap_or_else(|_| {
+        eprintln!(
+          "[Warn] Unsupported {command} format '{raw}'; falling back to human output. Expected human, edn, or json; unknown values become an error in the next non-patch release."
+        );
+        Self::Human
+      }),
+    }
+  }
+
+  /// Prints one JSON-shaped document as JSON (single line) or the equivalent Cirru EDN.
+  pub(crate) fn print_value(self, value: &serde_json::Value) -> Result<(), String> {
+    match self {
+      Self::Json => println!("{value}"),
+      Self::Edn => println!("{}", format_json_value_as_edn(value)?),
+      Self::Human => return Err("Cannot print a human report as a structured document".to_owned()),
+    }
+    Ok(())
+  }
+
+  /// Same as [`print_value`](Self::print_value) for an already serialized JSON document.
+  pub(crate) fn print_json_text(self, json: &str) -> Result<(), String> {
+    match self {
+      Self::Json => {
+        println!("{json}");
+        Ok(())
+      }
+      _ => {
+        let value =
+          serde_json::from_str(json).map_err(|error| format!("Failed to parse JSON envelope for Cirru EDN output: {error}"))?;
+        self.print_value(&value)
+      }
+    }
+  }
+}
+
+/// Resolves `--format` together with a legacy output-replacing `--json` switch.
+/// `--json` alone selects JSON (with a deprecation warning); combining it with
+/// `--format edn` is rejected because the two disagree.
+pub(crate) fn resolve_format_with_legacy_json(raw: &str, legacy_json: bool, command: &str) -> Result<StructuredOutputFormat, String> {
+  let format = StructuredOutputFormat::parse(raw, command)?;
+  if !legacy_json {
+    return Ok(format);
+  }
+  warn_deprecated_json_switch(command);
+  match format {
+    StructuredOutputFormat::Human | StructuredOutputFormat::Json => Ok(StructuredOutputFormat::Json),
+    StructuredOutputFormat::Edn => Err(format!(
+      "`{command}` got both `--json` and `--format edn`; drop the deprecated `--json`."
+    )),
+  }
+}
+
+/// Rejects a legacy appending `--json` switch combined with an explicit structured `--format`
+/// other than `json` (which restates the switch's intent).
+pub(crate) fn reject_json_switch_conflict(command: &str, format: &str, allowed: &[&str]) -> Result<(), String> {
+  if allowed.contains(&format) {
+    Ok(())
+  } else {
+    Err(format!(
+      "`{command}` got both `--json` and `--format {format}`; drop the deprecated `--json`."
+    ))
+  }
+}
+
+/// Warns on stderr that a legacy `--json` switch is deprecated in favor of `--format json`.
+pub(crate) fn warn_deprecated_json_switch(command: &str) {
+  eprintln!(
+    "[Deprecated] `calcit {command} --json` will be removed in a future non-patch release; use `--format json`. See docs/run/upgrade.md."
+  );
 }
 
 fn json_key_to_edn(key: &str) -> Edn {
@@ -107,6 +184,34 @@ mod tests {
     assert!(json_value_to_edn(&serde_json::json!(i64::MAX)).is_err());
     assert!(json_value_to_edn(&serde_json::json!(u64::MAX)).is_err());
     assert!(json_value_to_edn(&serde_json::json!({ "same_key": 1, "same-key": 2 })).is_err());
+  }
+
+  #[test]
+  fn graph_format_accepts_legacy_spellings_and_falls_back_for_unknown_values() {
+    for raw in ["text", "tree", "human", "yaml"] {
+      assert_eq!(
+        StructuredOutputFormat::parse_graph(raw, "call-graph"),
+        StructuredOutputFormat::Human
+      );
+    }
+    assert_eq!(
+      StructuredOutputFormat::parse_graph("edn", "call-graph"),
+      StructuredOutputFormat::Edn
+    );
+    assert_eq!(
+      StructuredOutputFormat::parse_graph("json", "effects-graph"),
+      StructuredOutputFormat::Json
+    );
+  }
+
+  #[test]
+  fn legacy_json_switch_resolves_with_format() {
+    use StructuredOutputFormat::*;
+    assert_eq!(resolve_format_with_legacy_json("human", false, "query schema"), Ok(Human));
+    assert_eq!(resolve_format_with_legacy_json("human", true, "query schema"), Ok(Json));
+    assert_eq!(resolve_format_with_legacy_json("json", true, "query schema"), Ok(Json));
+    assert_eq!(resolve_format_with_legacy_json("edn", false, "query schema"), Ok(Edn));
+    assert!(resolve_format_with_legacy_json("edn", true, "query schema").is_err());
   }
 
   #[test]

@@ -6,12 +6,21 @@ use calcit::ffi_interface_ir::{
 
 use super::common::package_version_for_snapshot;
 use super::query::load_main_snapshot;
-use super::structured_output::{StructuredOutputFormat, format_json_value_as_edn};
+use super::structured_output::{StructuredOutputFormat, format_json_value_as_edn, warn_deprecated_json_switch};
 
 fn selected_format(boundary: &str, format: Option<&str>, legacy_json: bool) -> Result<StructuredOutputFormat, String> {
   match format {
-    Some(format) => StructuredOutputFormat::parse(format, "ffi export"),
-    None if legacy_json => Ok(StructuredOutputFormat::Json),
+    Some(format) => {
+      if legacy_json {
+        super::structured_output::reject_json_switch_conflict("ffi export", format, &["json"])?;
+        warn_deprecated_json_switch("ffi export");
+      }
+      StructuredOutputFormat::parse(format, "ffi export")
+    }
+    None if legacy_json => {
+      warn_deprecated_json_switch("ffi export");
+      Ok(StructuredOutputFormat::Json)
+    }
     None if boundary == "component" => Ok(StructuredOutputFormat::Edn),
     None => Ok(StructuredOutputFormat::Human),
   }

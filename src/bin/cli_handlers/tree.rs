@@ -4,13 +4,14 @@ use std::fmt::Write as _;
 
 use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, fragment_nesting_level, maybe_chunk_node};
 use super::common::{
-  ERR_CODE_INPUT_REQUIRED, cirru_to_json, decode_mutation_syntax_input, emit_cli_output, format_path,
+  ERR_CODE_INPUT_REQUIRED, cirru_to_json, cirru_to_json_value, decode_mutation_syntax_input, emit_cli_output, format_path,
   guard_snapshot_mutation_toolchain, markdown_cirru_section, markdown_fenced_block, parse_input_to_cirru, parse_path,
   print_cli_warning_block, read_code_input, resolve_definition_lookup, shell_quote,
 };
 use super::cursor::{
   maintain_cursor_after_tree_mutation, resolve_active_cursor_reference, resolve_cursor_path_argument, resolve_cursor_target_argument,
 };
+use super::structured_output::{StructuredOutputFormat, warn_deprecated_json_switch};
 use super::tips::{TipPriority, Tips, command_guidance_enabled, tip_prefer_oneliner_json_markdown, tip_root_edit};
 use crate::cli_args::SyntaxInputFormat;
 use crate::cli_args::{
@@ -449,6 +450,11 @@ fn annotate_paths(node: &mut Cirru, current_path: &[usize], annotate_root: bool)
 // ============================================================================
 
 fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> Result<(), String> {
+  let output_format = StructuredOutputFormat::parse(&opts.format, "tree show")?;
+  if show_json {
+    super::structured_output::reject_json_switch_conflict("tree show", &opts.format, &["human", "text", "json"])?;
+    warn_deprecated_json_switch("tree show");
+  }
   let (namespace, definition) = parse_target(&opts.target)?;
   let path = match &opts.path {
     Some(p) => parse_path(p)?,
@@ -575,6 +581,18 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
   // Apply path annotations if requested
   if opts.path_annotations {
     annotate_paths(&mut node, &path, !path.is_empty());
+  }
+
+  if output_format != StructuredOutputFormat::Human {
+    let tree = cirru_to_json_value(&node);
+    return output_format.print_value(&serde_json::json!({
+      "schema_version": 1,
+      "command": "tree.show",
+      "target": resolved_target,
+      "path": format_path(&path),
+      "type": if matches!(node, Cirru::Leaf(_)) { "leaf" } else { "list" },
+      "tree": tree,
+    }));
   }
 
   let node_type = match &node {

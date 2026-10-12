@@ -487,6 +487,18 @@ let
 迁移时按原意选择：判断是否同一个宿主对象改用 `identical?`；按内容比较或建立索引时，先在适配器内取出 id、
 文本等 Calcit 数据再比较。这一检查不提供自动改写，裸 `JsObject` 与 `Dynamic` 值不受影响。
 
+## 字符串访问的 Option 类型证据
+
+已知 String 上的 `first`、`last`、`nth` 和 `get` 在严格调用与返回证明中保留 `Option<String>`。
+空字符串或越界位置得到 `none`，有效位置得到 Unicode scalar 字符，不需要在业务源码中补 `assert-type`。
+
+```cirru
+option:unwrap-or (first |🌱树) |
+```
+
+上例返回 `|🌱`。编译器将字符串 primitive 的结果绑定一次，通过已有的 `nil?` 分支确认存在性再构造 Option；接收者与索引仍从左到右各求值一次。
+List/Enum 中合法的 nil 元素仍是 `some nil`，不被当作缺失。底层 `&str:first` / `&str:nth` 的 nullable 合同不变，直接把未检查结果断言成 String 仍然无法通过严格证明。
+
 ## String 到 Tag/Symbol 的类型化转换
 
 新代码用 `to-tag: String -> Tag`、`to-symbol: String -> Symbol`。旧 `turn-tag` / `turn-symbol` 的 native/JS 运行时还接受 Tag/Symbol 输入，不能按词形全局替换。`calcit fix --rule core-identity-conversion-v1 --format edn` 只对内建调用且参数已证明为 String 的稳定源码提供自动迁移；Dynamic、非 String、quote、未知 macro 和一等函数引用需人工审阅。预览后携带 revision 应用，再重复预览并运行项目测试。WASM 缺少动态 Tag/Symbol intern；改名不会让原来不支持的调用变得可编译。
@@ -648,6 +660,29 @@ calcit calcit.cirru edit examples app.main/f --code 'quote $ f 1'
 calcit calcit.cirru query ns app.main --format cirru > .calcit/snippets/app.main.cirru
 # 修改 `:ns $ %{} 'NsEntry (:doc |...)` 后写回
 calcit calcit.cirru edit ns app.main --file .calcit/snippets/app.main.cirru --dry-run
+```
+
+### 0.29.2 起新增：统一的 `--format human|edn|json`（#1566）
+
+所有带结构化输出的叶子命令都接受同一组值：`human`（默认）、`edn`（Cirru EDN，推荐）与 `json`（仅用于对接 JSON-only 工具）。本次只新增入口，旧写法全部保留：
+
+| 命令 | 新增或统一 | 仍然可用 |
+| --- | --- | --- |
+| `analyze call-graph`、`analyze count-calls` | `--format human\|edn\|json` | `--format text` 等价于 `human` |
+| `analyze effects-graph` | `--format human\|edn\|json` | `--format tree` 等价于 `human` |
+| `test`、`analyze quality`、`cursor show/region/marks/clipboard` | 增加 `--format edn` | `human`、`json` 不变 |
+| `query ns`、`query schema`、`tree show` | 增加 `--format edn\|json`（`query ns` 另保留 `cirru`） | 默认 human 输出不变 |
+
+遗留的 `--json` 开关（`query schema`、`query def`、`tree show`、`ffi export`）行为不变，但每次使用会在 stderr 多输出一行 `[Deprecated] ...` 提示；请改用 `--format json`（或推荐的 `--format edn`）。`--json` 与显式的矛盾 `--format` 同时出现会报错：`query schema`、`query def`、`tree show` 不接受 `--json` 搭配 `edn`/`cirru`，`ffi export` 只接受 `--json` 搭配 `json`。`query search-expr --json` 与 `cirru format` 的 JSON 参数描述的是输入编码而非输出格式，不在此列。
+
+`analyze call-graph`、`count-calls`、`effects-graph` 对无法识别的 `--format` 值此前静默按文本输出；本版本保持该行为并在 stderr 输出 `[Warn]`，下一个非 patch 版本起改为报错 `Expected human, edn, or json`。`text` 与 `tree` 在这三个命令上都等价于 `human`。根命令的 `--format` 仍只属于 `--check-only` 报告；给子命令传格式时，把 `--format` 写在子命令之后。
+
+迁移示例：
+
+```bash
+calcit calcit.cirru analyze call-graph --format edn
+calcit calcit.cirru query schema app.main/main! --format edn
+calcit calcit.cirru tree show app.main/main! --path @3 --format edn
 ```
 
 ### 仍可用的兼容名

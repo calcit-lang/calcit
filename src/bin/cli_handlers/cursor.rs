@@ -17,6 +17,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use super::atomic_write::{StagedFile, stage_atomic_file};
 use super::common::{cirru_to_json_value, format_path, guard_snapshot_mutation_toolchain, parse_path};
 use super::edit::{apply_operation_at_path, check_ns_editable, load_snapshot, navigate_to_path, parse_target};
+use super::structured_output::StructuredOutputFormat;
 use super::tree_mutation::{
   TreeCursorMutation, TreeOperation, adjusted_source_path_after_insertion, transform_cursor_path, transform_delete,
 };
@@ -526,9 +527,7 @@ fn duplicate_cursor(snapshot_file: &str, opts: &CursorDuplicateCommand) -> Resul
 }
 
 fn handle_cursor_show(snapshot_file: &str, format: &str, view: &str) -> Result<(), String> {
-  if !matches!(format, "human" | "json") {
-    return Err(format!("Unsupported cursor format '{format}'. Expected human or json."));
-  }
+  let format = StructuredOutputFormat::parse(format, "cursor")?;
   if !matches!(view, "focus" | "node" | "full") {
     return Err(format!("Unsupported cursor view '{view}'. Expected focus, node, or full."));
   }
@@ -537,41 +536,38 @@ fn handle_cursor_show(snapshot_file: &str, format: &str, view: &str) -> Result<(
   let (definition, node, _) = read_cursor_context(snapshot_file, &state.target, &state.path)?;
   let preview = build_cursor_preview_from_tree(&definition, &node, &state.path, view)?;
 
-  if format == "json" {
-    println!(
-      "{}",
-      serde_json::json!({
-        "schema_version": 3,
-        "command": "cursor.show",
-        "status": status,
-        "view": view,
-        "target": state.target,
-        "path": format_path(&state.path),
-        "definition_revision": state.definition_revision,
-        "fingerprint": state.fingerprint,
-        "state_file": cursor_file_path(snapshot_file),
-        "anchor": document.anchor.as_ref().map(|anchor| serde_json::json!({
-          "target": anchor.target,
-          "path": format_path(&anchor.path),
-          "fingerprint": anchor.fingerprint,
-        })),
-        "marks": document.marks.iter().map(|(name, mark)| serde_json::json!({
-          "name": name,
-          "target": mark.target,
-          "path": format_path(&mark.path),
-          "fingerprint": mark.fingerprint,
-        })).collect::<Vec<_>>(),
-        "last_query": document.last_query.as_ref().map(|query| serde_json::json!({
-          "command": query.command,
-          "pattern": query.pattern,
-          "filter": query.filter,
-          "selected_index": query.selected_index,
-          "snapshot_revision": query.snapshot_revision,
-        })),
-        "tree": cirru_to_json_value(&node),
-        "preview_tree": cirru_to_json_value(&preview),
-      })
-    );
+  if format != StructuredOutputFormat::Human {
+    format.print_value(&serde_json::json!({
+      "schema_version": 3,
+      "command": "cursor.show",
+      "status": status,
+      "view": view,
+      "target": state.target,
+      "path": format_path(&state.path),
+      "definition_revision": state.definition_revision,
+      "fingerprint": state.fingerprint,
+      "state_file": cursor_file_path(snapshot_file),
+      "anchor": document.anchor.as_ref().map(|anchor| serde_json::json!({
+        "target": anchor.target,
+        "path": format_path(&anchor.path),
+        "fingerprint": anchor.fingerprint,
+      })),
+      "marks": document.marks.iter().map(|(name, mark)| serde_json::json!({
+        "name": name,
+        "target": mark.target,
+        "path": format_path(&mark.path),
+        "fingerprint": mark.fingerprint,
+      })).collect::<Vec<_>>(),
+      "last_query": document.last_query.as_ref().map(|query| serde_json::json!({
+        "command": query.command,
+        "pattern": query.pattern,
+        "filter": query.filter,
+        "selected_index": query.selected_index,
+        "snapshot_revision": query.snapshot_revision,
+      })),
+      "tree": cirru_to_json_value(&node),
+      "preview_tree": cirru_to_json_value(&preview),
+    }))?;
   } else {
     println!("{}", render_cursor_human(&state, &document, status, &preview)?);
   }
@@ -900,9 +896,7 @@ fn cursor_region_bounds(anchor: &CursorState, active: &CursorState) -> Result<(V
 }
 
 fn show_cursor_region(snapshot_file: &str, format: &str) -> Result<(), String> {
-  if !matches!(format, "human" | "json") {
-    return Err(format!("Unsupported region format '{format}'. Expected human or json."));
-  }
+  let format = StructuredOutputFormat::parse(format, "region")?;
   let active = validate_cursor(snapshot_file, true)?;
   let mut document = load_cursor_document(snapshot_file)?;
   let saved_anchor = document
@@ -927,22 +921,19 @@ fn show_cursor_region(snapshot_file: &str, format: &str) -> Result<(), String> {
     save_cursor_document(snapshot_file, &document)?;
   }
 
-  if format == "json" {
-    println!(
-      "{}",
-      serde_json::json!({
-        "schema_version": 1,
-        "command": "cursor.region",
-        "target": active.target,
-        "parent_path": format_path(&parent_path),
-        "start": start,
-        "end": end,
-        "count": selected.len(),
-        "anchor_path": format_path(&anchor.path),
-        "cursor_path": format_path(&active.path),
-        "trees": selected.iter().map(cirru_to_json_value).collect::<Vec<_>>(),
-      })
-    );
+  if format != StructuredOutputFormat::Human {
+    format.print_value(&serde_json::json!({
+      "schema_version": 1,
+      "command": "cursor.region",
+      "target": active.target,
+      "parent_path": format_path(&parent_path),
+      "start": start,
+      "end": end,
+      "count": selected.len(),
+      "anchor_path": format_path(&anchor.path),
+      "cursor_path": format_path(&active.path),
+      "trees": selected.iter().map(cirru_to_json_value).collect::<Vec<_>>(),
+    }))?;
   } else {
     let preview = Cirru::List(std::iter::once(Cirru::leaf("REGION")).chain(selected).collect());
     let rendered = cirru_parser::format(&[preview], cirru_parser::CirruWriterOptions { use_inline: false })
@@ -1024,9 +1015,7 @@ fn goto_cursor_mark(snapshot_file: &str, name: &str) -> Result<(), String> {
 }
 
 fn show_cursor_marks(snapshot_file: &str, format: &str) -> Result<(), String> {
-  if !matches!(format, "human" | "json") {
-    return Err(format!("Unsupported marks format '{format}'. Expected human or json."));
-  }
+  let format = StructuredOutputFormat::parse(format, "marks")?;
   let mut document = load_cursor_document(snapshot_file)?;
   let snapshot = load_snapshot(snapshot_file)?;
   let mut changed = false;
@@ -1047,22 +1036,19 @@ fn show_cursor_marks(snapshot_file: &str, format: &str) -> Result<(), String> {
     save_cursor_document(snapshot_file, &document)?;
   }
 
-  if format == "json" {
-    println!(
-      "{}",
-      serde_json::json!({
-        "schema_version": 1,
-        "command": "cursor.marks",
-        "limit": CURSOR_MARK_LIMIT,
-        "marks": rows.iter().map(|(name, state, error)| serde_json::json!({
-          "name": name,
-          "status": if state.is_some() { "ready" } else { "stale" },
-          "target": state.as_ref().map(|value| value.target.as_str()),
-          "path": state.as_ref().map(|value| format_path(&value.path)),
-          "error": error,
-        })).collect::<Vec<_>>(),
-      })
-    );
+  if format != StructuredOutputFormat::Human {
+    format.print_value(&serde_json::json!({
+      "schema_version": 1,
+      "command": "cursor.marks",
+      "limit": CURSOR_MARK_LIMIT,
+      "marks": rows.iter().map(|(name, state, error)| serde_json::json!({
+        "name": name,
+        "status": if state.is_some() { "ready" } else { "stale" },
+        "target": state.as_ref().map(|value| value.target.as_str()),
+        "path": state.as_ref().map(|value| format_path(&value.path)),
+        "error": error,
+      })).collect::<Vec<_>>(),
+    }))?;
   } else if rows.is_empty() {
     println!("{} No cursor marks are saved", "•".dimmed());
   } else {
@@ -1192,24 +1178,19 @@ fn paste_cursor_clipboard(snapshot_file: &str, at: &str) -> Result<(), String> {
 }
 
 fn show_cursor_clipboard(snapshot_file: &str, format: &str) -> Result<(), String> {
-  if !matches!(format, "human" | "json") {
-    return Err(format!("Unsupported clipboard format '{format}'. Expected human or json."));
-  }
+  let format = StructuredOutputFormat::parse(format, "clipboard")?;
   let document = load_cursor_document(snapshot_file)?;
   let clipboard = document.clipboard.ok_or("Cursor clipboard is empty.")?;
-  if format == "json" {
-    println!(
-      "{}",
-      serde_json::json!({
-        "schema_version": 1,
-        "command": "cursor.clipboard",
-        "mode": clipboard.mode,
-        "source_target": clipboard.source_target,
-        "source_path": format_path(&clipboard.source_path),
-        "fingerprint": clipboard.fingerprint,
-        "tree": cirru_to_json_value(&clipboard.tree),
-      })
-    );
+  if format != StructuredOutputFormat::Human {
+    format.print_value(&serde_json::json!({
+      "schema_version": 1,
+      "command": "cursor.clipboard",
+      "mode": clipboard.mode,
+      "source_target": clipboard.source_target,
+      "source_path": format_path(&clipboard.source_path),
+      "fingerprint": clipboard.fingerprint,
+      "tree": cirru_to_json_value(&clipboard.tree),
+    }))?;
   } else {
     let rendered = cirru_parser::format(
       &[Cirru::List(vec![Cirru::leaf("CLIPBOARD"), clipboard.tree])],
