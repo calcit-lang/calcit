@@ -44,7 +44,7 @@ try {
   ], { ...options, stdio: "inherit" });
   await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
   const emptyEvidenceOriginal = await readFile(snapshot);
-  for (const name of ["map-alias", "list-alias", "set-alias", "result-seed", "nested-empty", "grow-map", "grow-list", "grow-set", "empty-lookup", "accumulate", "accumulate-receiver-first", "typed-ref"]) {
+  for (const name of ["map-alias", "list-alias", "set-alias", "result-seed", "nested-empty", "grow-map", "grow-list", "grow-set", "empty-lookup", "accumulate", "accumulate-receiver-first", "fold-counts", "typed-ref"]) {
     for (const rule of ["assert-type-proof-v1", "concrete-return-proof-v1", "callable-contract-proof-v1"]) {
       const proof = JSON.parse(run("fix", "--rule", rule,
         "--ns", "app.empty-evidence", "--def", name, "--format", "json"));

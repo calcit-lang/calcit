@@ -150,14 +150,30 @@ fn prepare(expr: &Calcit, mut ctx: PreprocessContext, constraints: &mut Constrai
       if let Some(signature) = signature {
         let actual = args.iter().map(|arg| resolve_type_value(arg, ctx.scope_types)).collect::<Vec<_>>();
         if actual.iter().flatten().any(|annotation| has_pending_variable(annotation)) {
+          let callable = match &head {
+            Calcit::Fn { info, .. } => Some(info.clone()),
+            Calcit::Import(import) => {
+              match lookup_callable_ns_def_for_preprocess(&import.ns, &import.def, ctx.check_warnings, ctx.call_stack)? {
+                Some(Calcit::Fn { info, .. }) => Some(info),
+                _ => None,
+              }
+            }
+            _ => None,
+          };
+          // Named collection calls and methods must contribute the same
+          // receiver-specialized input equations during preparation.
+          let specialized = callable
+            .as_ref()
+            .and_then(|info| type_checking::specialize_core_expected_types(info, &args, ctx.scope_types, &signature.arg_types));
+          let parameters = specialized.as_deref().unwrap_or(&signature.arg_types);
           let mut proof = crate::calcit::type_annotation::CallTypeProof::new(
             &signature.generics,
-            &signature.arg_types,
+            parameters,
             &actual.iter().flatten().cloned().collect::<Vec<_>>(),
           );
           for (index, annotation) in actual.into_iter().enumerate() {
             let Some(annotation) = annotation else { continue };
-            let Some(expected) = signature.arg_types.get(index).or(signature.rest_type.as_ref()) else {
+            let Some(expected) = parameters.get(index).or(signature.rest_type.as_ref()) else {
               break;
             };
             let expected = if let CalcitTypeAnnotation::Variadic(inner) = expected.as_ref() {

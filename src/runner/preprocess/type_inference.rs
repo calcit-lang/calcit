@@ -1011,7 +1011,11 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   if ns == calcit::CORE_NS {
     let args = call_expr.drop_left();
     if let Some(contract) = resolve_checked_call_contract(ns, def, &args, scope_types)
-      && !contract.return_type.contains_type_var()
+      && (!contract.return_type.contains_type_var()
+        // A receiver-preserving contract already contains caller-owned
+        // variables, not unresolved callee outputs. Keep that evidence after
+        // lowering too (for example update inside a generic accumulator).
+        || args.first().and_then(|receiver| resolve_type_value(receiver, scope_types)).as_ref() == Some(&contract.return_type))
     {
       return Some(contract.return_type);
     }
@@ -2014,7 +2018,8 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
         Calcit::Fn { info, .. } => {
           if info.def_ns.as_ref() == calcit::CORE_NS
             && let Some(contract) = resolve_checked_call_contract(&info.def_ns, &info.name, &xs.drop_left(), scope_types)
-            && !contract.return_type.contains_type_var()
+            && (!contract.return_type.contains_type_var()
+              || xs.get(1).and_then(|receiver| resolve_type_value(receiver, scope_types)).as_ref() == Some(&contract.return_type))
           {
             return Some(contract.return_type);
           }

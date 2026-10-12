@@ -8860,8 +8860,8 @@
                 if (&list:empty? xs) true $ &list:empty? ys
                 , acc $ recur
                   -> acc
-                    append $ &list:first xs
-                    append $ &list:first ys
+                    append $ &list:nth xs 0
+                    append $ &list:nth ys 0
                   rest xs
                   rest ys
           :examples $ []
@@ -8870,8 +8870,17 @@
             :generics $ [] 'T
             :return $ :: 'List 'T
           :tests $ [] $ %{} 'TestEntry (:name |truncates-to-shortest-list)
-            :code $ quote $ assert= ([] :a :x :b :y)
-              interleave ([] :a :b :c) ([] :x :y)
+            :code $ quote $ do
+              assert= ([] :a :x :b :y)
+                interleave ([] :a :b :c) ([] :x :y)
+              assert= ([])
+                interleave ([]) ([] :x)
+              assert= ([])
+                interleave ([] :x) ([])
+              assert= ([])
+                interleave ([]) ([])
+              assert= ([] nil 1 2 nil)
+                interleave ([] nil 2) ([] 1 nil)
             :tags $ #{} :core :unit
         'intersection $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn intersection (base & xs)

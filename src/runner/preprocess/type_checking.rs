@@ -170,7 +170,7 @@ pub(crate) struct CallTypeCheckInfo<'a> {
   pub call_location: Option<NodeLocation>,
 }
 
-fn specialize_core_expected_types(
+pub(super) fn specialize_core_expected_types(
   fn_info: &CalcitFn,
   args: &CalcitList,
   scope_types: &ScopeTypes,

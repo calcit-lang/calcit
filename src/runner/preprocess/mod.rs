@@ -2021,6 +2021,19 @@ fn try_expand_typed_literal_path_call(
       let Some(path) = fully_typed_literal_assoc_path(base_type.as_ref(), path_arg) else {
         return Ok(None);
       };
+      let mut leaf_type = base_type.clone();
+      for _ in &path {
+        let CalcitTypeAnnotation::Map(_, member) = leaf_type.as_ref() else {
+          return Ok(None);
+        };
+        leaf_type = member.clone();
+      }
+      // Map-only expansion uses homogeneous assoc primitives. A replacement
+      // that changes the leaf family must retain the public path operation,
+      // rather than generating an unchecked call with a different contract.
+      if !resolve_type_value(&args[2], scope_types).is_some_and(|actual| actual.is_proven_for(&leaf_type)) {
+        return Ok(None);
+      }
       let base_binding = generated_path_symbol("typed_path_base", file_ns, call_stack)?;
       let value_binding = generated_path_symbol("typed_path_replacement", file_ns, call_stack)?;
       let mut path_bindings = Vec::with_capacity(path.len());
@@ -15099,7 +15112,7 @@ mod tests {
     let assoc_args = CalcitList::from(&[
       typed_base.to_owned(),
       literal_path.to_owned(),
-      Calcit::Str(Arc::from("typed-path-value-input")),
+      generic_relation_test_local("typed-path-value-input", Arc::new(CalcitTypeAnnotation::Number)),
     ] as &[Calcit]);
     let expanded_assoc = try_expand_typed_literal_path_call(
       &core_import("assoc-in", "tests.typed-path"),
@@ -15126,6 +15139,19 @@ mod tests {
       assoc_code.find(":score").expect("second path expression")
         < assoc_code.find("typed-path-value-input").expect("replacement expression"),
       "path expressions are evaluated before the replacement"
+    );
+    let changing_leaf_args =
+      CalcitList::from(&[typed_base.to_owned(), literal_path.to_owned(), Calcit::Str(Arc::from("new-family"))] as &[Calcit]);
+    assert!(
+      try_expand_typed_literal_path_call(
+        &core_import("assoc-in", "tests.typed-path"),
+        &changing_leaf_args,
+        &ScopeTypes::new(),
+        "tests.typed-path",
+        &stack,
+      )
+      .expect("changing a leaf family preserves the public path call")
+      .is_none()
     );
 
     let updater = Calcit::Local(CalcitLocal {

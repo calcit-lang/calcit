@@ -1907,6 +1907,26 @@
           :tests $ [] $ %{} 'TestEntry (:name |empty-map-accepts-lookup-key)
             :code $ quote $ assert= (Option :none) (empty-lookup)
             :tags $ #{} :empty-collection-evidence
+        'fold-counts $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn fold-counts (words)
+            let
+                init $ {}
+              foldl words init $ fn (acc w)
+                let
+                    n $ -> (get acc w) (.unwrap-or 0)
+                  assoc acc w $ inc n
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'Tag
+            :return $ :: 'Map 'Tag 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |infers-empty-named-assoc-reducer)
+            :code $ quote $ do
+              assert=
+                {} (:a 3) (:b 2) (:c 1)
+                fold-counts $ [] :a :b :a :c :a :b
+              assert= ({})
+                fold-counts $ []
+            :tags $ #{} :empty-collection-evidence
         'grow-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn grow-list ()
             let
