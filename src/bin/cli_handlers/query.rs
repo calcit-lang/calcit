@@ -1035,6 +1035,7 @@ fn handle_query_command_inner(cmd: &QueryCommand, input_path: &str) -> Result<()
     QuerySubcommand::Modules(_) => handle_modules(input_path),
     QuerySubcommand::Def(opts) => {
       if opts.json {
+        super::structured_output::reject_json_switch_conflict("query def", &opts.format, &["human", "text", "json"])?;
         warn_deprecated_json_switch("query def");
       }
       let (ns, def) = parse_target(&opts.target)?;

@@ -170,7 +170,7 @@ fn normalize_call_graph_view(cli_args: ToplevelCalcit) -> Result<ToplevelCalcit,
         "analyze call-graph --diff",
         &[
           ("--show-unused", options.show_unused),
-          ("--format", !matches!(options.format.as_str(), "text" | "human")),
+          ("--format", !matches!(options.format.as_str(), "text" | "tree" | "human")),
           ("--sort", options.sort.is_some()),
         ],
       )?;

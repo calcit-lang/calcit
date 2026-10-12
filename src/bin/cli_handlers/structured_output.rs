@@ -18,13 +18,19 @@ impl StructuredOutputFormat {
     }
   }
 
-  /// Like [`parse`](Self::parse), but also accepts one legacy spelling of `human`
-  /// (`text` for call-graph, `tree` for effects-graph) so older scripts keep working.
-  pub(crate) fn parse_with_legacy_human(raw: &str, command: &str, legacy_human: &str) -> Result<Self, String> {
-    if raw == legacy_human {
-      Ok(Self::Human)
-    } else {
-      Self::parse(raw, command)
+  /// Lenient parser for the graph analyzers (`call-graph`, `count-calls`, `effects-graph`).
+  /// Besides `human|edn|json` it accepts the legacy `text` and `tree` spellings of `human`.
+  /// Any other value falls back to `human` with a stderr warning, because older releases
+  /// silently treated unknown values as text; it becomes an error in the next non-patch release.
+  pub(crate) fn parse_graph(raw: &str, command: &str) -> Self {
+    match raw {
+      "tree" | "text" => Self::Human,
+      _ => Self::parse(raw, command).unwrap_or_else(|_| {
+        eprintln!(
+          "[Warn] Unsupported {command} format '{raw}'; falling back to human output. Expected human, edn, or json; unknown values become an error in the next non-patch release."
+        );
+        Self::Human
+      }),
     }
   }
 
@@ -68,6 +74,18 @@ pub(crate) fn resolve_format_with_legacy_json(raw: &str, legacy_json: bool, comm
     StructuredOutputFormat::Edn => Err(format!(
       "`{command}` got both `--json` and `--format edn`; drop the deprecated `--json`."
     )),
+  }
+}
+
+/// Rejects a legacy appending `--json` switch combined with an explicit structured `--format`
+/// other than `json` (which restates the switch's intent).
+pub(crate) fn reject_json_switch_conflict(command: &str, format: &str, allowed: &[&str]) -> Result<(), String> {
+  if allowed.contains(&format) {
+    Ok(())
+  } else {
+    Err(format!(
+      "`{command}` got both `--json` and `--format {format}`; drop the deprecated `--json`."
+    ))
   }
 }
 
@@ -169,22 +187,21 @@ mod tests {
   }
 
   #[test]
-  fn legacy_human_spelling_is_accepted_alongside_unified_values() {
-    for raw in ["text", "human"] {
+  fn graph_format_accepts_legacy_spellings_and_falls_back_for_unknown_values() {
+    for raw in ["text", "tree", "human", "yaml"] {
       assert_eq!(
-        StructuredOutputFormat::parse_with_legacy_human(raw, "call-graph", "text"),
-        Ok(StructuredOutputFormat::Human)
+        StructuredOutputFormat::parse_graph(raw, "call-graph"),
+        StructuredOutputFormat::Human
       );
     }
     assert_eq!(
-      StructuredOutputFormat::parse_with_legacy_human("tree", "effects-graph", "tree"),
-      Ok(StructuredOutputFormat::Human)
+      StructuredOutputFormat::parse_graph("edn", "call-graph"),
+      StructuredOutputFormat::Edn
     );
     assert_eq!(
-      StructuredOutputFormat::parse_with_legacy_human("edn", "effects-graph", "tree"),
-      Ok(StructuredOutputFormat::Edn)
+      StructuredOutputFormat::parse_graph("json", "effects-graph"),
+      StructuredOutputFormat::Json
     );
-    assert!(StructuredOutputFormat::parse_with_legacy_human("yaml", "effects-graph", "tree").is_err());
   }
 
   #[test]

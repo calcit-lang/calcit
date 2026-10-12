@@ -452,6 +452,7 @@ fn annotate_paths(node: &mut Cirru, current_path: &[usize], annotate_root: bool)
 fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> Result<(), String> {
   let output_format = StructuredOutputFormat::parse(&opts.format, "tree show")?;
   if show_json {
+    super::structured_output::reject_json_switch_conflict("tree show", &opts.format, &["human", "text", "json"])?;
     warn_deprecated_json_switch("tree show");
   }
   let (namespace, definition) = parse_target(&opts.target)?;

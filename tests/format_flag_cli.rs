@@ -35,23 +35,32 @@ fn stderr(output: &Output) -> String {
   String::from_utf8_lossy(&output.stderr).into_owned()
 }
 
-/// Output of a `--format edn` run must be a parseable Cirru EDN map after any preamble lines.
+/// Structured stdout must be exactly one document: it starts with the document and parses completely.
 fn assert_edn_document(output: &Output, label: &str) {
   assert!(output.status.success(), "{label} failed: {}", stderr(output));
+  assert_edn_stdout(output, label);
+}
+
+fn assert_edn_stdout(output: &Output, label: &str) {
   let text = stdout(output);
-  let start = text
-    .find("{}")
-    .unwrap_or_else(|| panic!("{label} should print an EDN map:\n{text}"));
-  cirru_edn::parse(&text[start..]).unwrap_or_else(|error| panic!("{label} should print valid Cirru EDN: {error}\n{text}"));
+  let trimmed = text.trim_start();
+  assert!(trimmed.starts_with("{}"), "{label} stdout should start with an EDN map:\n{text}");
+  cirru_edn::parse(trimmed).unwrap_or_else(|error| panic!("{label} should print one valid Cirru EDN document: {error}\n{text}"));
 }
 
 fn assert_json_document(output: &Output, label: &str) -> serde_json::Value {
   assert!(output.status.success(), "{label} failed: {}", stderr(output));
+  assert_json_stdout(output, label)
+}
+
+fn assert_json_stdout(output: &Output, label: &str) -> serde_json::Value {
   let text = stdout(output);
-  let start = text
-    .find(['{', '['])
-    .unwrap_or_else(|| panic!("{label} should print JSON:\n{text}"));
-  serde_json::from_str(&text[start..]).unwrap_or_else(|error| panic!("{label} should print valid JSON: {error}\n{text}"))
+  let trimmed = text.trim_start();
+  assert!(
+    trimmed.starts_with('{') || trimmed.starts_with('['),
+    "{label} stdout should start with JSON:\n{text}"
+  );
+  serde_json::from_str(trimmed).unwrap_or_else(|error| panic!("{label} should print one valid JSON document: {error}\n{text}"))
 }
 
 #[test]
@@ -68,9 +77,23 @@ fn graph_commands_accept_unified_format_values() {
       args
     };
     let edn_args = with_format("edn");
-    assert_edn_document(&run(&edn_args), &edn_args.join(" "));
+    let edn = run(&edn_args);
+    assert_edn_document(&edn, &edn_args.join(" "));
     let json_args = with_format("json");
-    assert_json_document(&run(&json_args), &json_args.join(" "));
+    let json = run(&json_args);
+    assert_json_document(&json, &json_args.join(" "));
+    // Status lines ("Analyzing ...", "Counting ...") belong on stderr in structured modes.
+    for output in [&edn, &json] {
+      assert!(
+        !stdout(output).contains("Analyzing") && !stdout(output).contains("Counting"),
+        "{base:?}"
+      );
+      assert!(
+        stderr(output).contains("Analyzing") || stderr(output).contains("Counting"),
+        "{base:?}: {}",
+        stderr(output)
+      );
+    }
     let human_args = with_format("human");
     let human = run(&human_args);
     assert!(human.status.success(), "{human_args:?}: {}", stderr(&human));
@@ -82,15 +105,31 @@ fn graph_commands_accept_unified_format_values() {
 }
 
 #[test]
-fn graph_commands_keep_legacy_format_spellings() {
-  let text = run(&["analyze", "call-graph", "--format", "text"]);
-  assert!(text.status.success(), "{}", stderr(&text));
+fn graph_commands_keep_legacy_spellings_and_warn_on_unknown_values() {
+  for base in [
+    &["analyze", "call-graph"][..],
+    &["analyze", "count-calls"][..],
+    &["analyze", "effects-graph"][..],
+  ] {
+    for legacy in ["text", "tree"] {
+      let mut args = base.to_vec();
+      args.extend(["--format", legacy]);
+      let output = run(&args);
+      assert!(output.status.success(), "{args:?}: {}", stderr(&output));
+      assert!(!stdout(&output).trim_start().starts_with('{'), "{args:?}");
+      assert!(!stderr(&output).contains("[Warn]"), "{args:?}: {}", stderr(&output));
+    }
+    // Patch-safe: unknown values still print the human report, with a stderr warning.
+    let mut args = base.to_vec();
+    args.extend(["--format", "yaml"]);
+    let output = run(&args);
+    assert!(output.status.success(), "{args:?}: {}", stderr(&output));
+    assert!(!stdout(&output).trim_start().starts_with('{'), "{args:?}");
+    assert!(stderr(&output).contains("[Warn] Unsupported"), "{args:?}: {}", stderr(&output));
+    assert!(stderr(&output).contains("next non-patch release"), "{args:?}: {}", stderr(&output));
+  }
   let tree = run(&["analyze", "effects-graph", "--format", "tree"]);
-  assert!(tree.status.success(), "{}", stderr(&tree));
   assert!(stdout(&tree).contains("Effects Graph"));
-  let rejected = run(&["analyze", "effects-graph", "--format", "yaml"]);
-  assert!(!rejected.status.success());
-  assert!(stderr(&rejected).contains("Expected human, edn, or json"), "{}", stderr(&rejected));
 }
 
 #[test]
@@ -165,6 +204,21 @@ fn legacy_json_switch_keeps_working_and_warns_on_stderr() {
   assert!(!conflict.status.success());
   assert!(stderr(&conflict).contains("--json"), "{}", stderr(&conflict));
 
+  let ffi = run(&["ffi", "export", "--json"]);
+  assert_json_document(&ffi, "ffi export --json");
+  assert!(stderr(&ffi).contains("[Deprecated] `calcit ffi export --json`"), "{}", stderr(&ffi));
+
+  for args in [
+    &["query", "def", MAIN_DEF, "--json", "--format", "edn"][..],
+    &["tree", "show", MAIN_DEF, "--path", "0", "--json", "--format", "edn"][..],
+    &["ffi", "export", "--json", "--format", "edn"][..],
+    &["ffi", "export", "--json", "--format", "human"][..],
+  ] {
+    let output = run(args);
+    assert!(!output.status.success(), "{args:?} should reject the contradictory combination");
+    assert!(stderr(&output).contains("--json"), "{args:?}: {}", stderr(&output));
+  }
+
   let quiet = run(&["query", "schema", MAIN_DEF, "--format", "json"]);
   assert!(!stderr(&quiet).contains("[Deprecated]"), "{}", stderr(&quiet));
 }
@@ -207,8 +261,35 @@ fn cursor_views_accept_edn() {
     let json = run_in(Some(&dir), &snapshot, &["cursor", view, "--format", "json"]);
     assert_json_document(&json, &format!("cursor {view} --format json"));
   }
+  let anchor = run_in(Some(&dir), &snapshot, &["cursor", "anchor"]);
+  assert!(anchor.status.success(), "{}", stderr(&anchor));
+  let next = run_in(Some(&dir), &snapshot, &["cursor", "next"]);
+  assert!(next.status.success(), "{}", stderr(&next));
+  let copy = run_in(Some(&dir), &snapshot, &["cursor", "copy"]);
+  assert!(copy.status.success(), "{}", stderr(&copy));
+  for view in ["region", "clipboard"] {
+    let edn = run_in(Some(&dir), &snapshot, &["cursor", view, "--format", "edn"]);
+    assert_edn_document(&edn, &format!("cursor {view} --format edn"));
+    let json = run_in(Some(&dir), &snapshot, &["cursor", view, "--format", "json"]);
+    assert_json_document(&json, &format!("cursor {view} --format json"));
+  }
   let rejected = run_in(Some(&dir), &snapshot, &["cursor", "show", "--format", "yaml"]);
   assert!(!rejected.status.success());
   assert!(stderr(&rejected).contains("Expected human, edn, or json"), "{}", stderr(&rejected));
   let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn quality_accepts_edn_and_ns_rejects_unknown_values() {
+  // The fixture has quality regressions, so the gate exits non-zero; stdout is still one document.
+  assert_edn_stdout(&run(&["analyze", "quality", "--format", "edn"]), "analyze quality --format edn");
+  assert_json_stdout(&run(&["analyze", "quality", "--format", "json"]), "analyze quality --format json");
+
+  let rejected = run(&["query", "ns", "--format", "yaml"]);
+  assert!(!rejected.status.success());
+  assert!(
+    stderr(&rejected).contains("Expected human, edn, json, or cirru"),
+    "{}",
+    stderr(&rejected)
+  );
 }

@@ -12,6 +12,7 @@ fn selected_format(boundary: &str, format: Option<&str>, legacy_json: bool) -> R
   match format {
     Some(format) => {
       if legacy_json {
+        super::structured_output::reject_json_switch_conflict("ffi export", format, &["json"])?;
         warn_deprecated_json_switch("ffi export");
       }
       StructuredOutputFormat::parse(format, "ffi export")

@@ -2387,7 +2387,7 @@ fn check_examples_schema() -> Arc<CalcitTypeAnnotation> {
 }
 
 fn run_call_graph(entries: &ProgramEntries, options: &CallGraphCommand, _snapshot: &snapshot::Snapshot) -> Result<(), String> {
-  let output_format = cli_handlers::StructuredOutputFormat::parse_with_legacy_human(&options.format, "call-graph", "text")?;
+  let output_format = cli_handlers::StructuredOutputFormat::parse_graph(&options.format, "call-graph");
   // Determine entry point: use --root if provided, otherwise use init_fn from config
   let (entry_ns, entry_def) = if let Some(ref def_path) = options.root {
     util::string::extract_ns_def(def_path)?
@@ -2425,7 +2425,7 @@ fn run_call_graph(entries: &ProgramEntries, options: &CallGraphCommand, _snapsho
 }
 
 fn run_effects_graph(entries: &ProgramEntries, options: &EffectsGraphCommand) -> Result<(), String> {
-  let output_format = cli_handlers::StructuredOutputFormat::parse_with_legacy_human(&options.format, "effects-graph", "tree")?;
+  let output_format = cli_handlers::StructuredOutputFormat::parse_graph(&options.format, "effects-graph");
   let (entry_ns, entry_def) = if let Some(ref def_path) = options.root {
     util::string::extract_ns_def(def_path)?
   } else {
@@ -2466,7 +2466,7 @@ fn run_effects_graph(entries: &ProgramEntries, options: &EffectsGraphCommand) ->
 }
 
 fn run_count_calls(entries: &ProgramEntries, options: &CountCallsCommand) -> Result<(), String> {
-  let output_format = cli_handlers::StructuredOutputFormat::parse_with_legacy_human(&options.format, "count-calls", "text")?;
+  let output_format = cli_handlers::StructuredOutputFormat::parse_graph(&options.format, "count-calls");
   let sort = calcit::call_tree::CallCountSort::parse(&options.sort)?;
   // Determine entry point: use --root if provided, otherwise use init_fn from config
   let (entry_ns, entry_def) = if let Some(ref def_path) = options.root {
