@@ -12571,15 +12571,27 @@
               {} (:return 'T)
                 :args $ [] 'T
             :generics $ [] 'T
-          :tests $ [] $ %{} 'TestEntry (:name |updates-existing-map-and-list-slots)
-            :code $ quote $ do
-              assert= (&{} :a 11)
-                update (&{} :a 1) :a $ fn (x) (+ x 10)
-              assert= ([] 0 11 2)
-                update ([] 0 1 2) 1 $ fn (x) (+ x 10)
-              assert= ([] 0 1 2)
-                update ([] 0 1 2) 4 $ fn (x) (+ x 10)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |updates-existing-map-and-list-slots)
+              :code $ quote $ do
+                assert= (&{} :a 11)
+                  update (&{} :a 1) :a $ fn (x) (+ x 10)
+                assert= ([] 0 11 2)
+                  update ([] 0 1 2) 1 $ fn (x) (+ x 10)
+                assert= ([] 0 1 2)
+                  update ([] 0 1 2) 4 $ fn (x) (+ x 10)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |updates-list-by-index-and-skips-missing-slots)
+              :code $ quote $ do
+                assert= ([] 13 1 2)
+                  update ([] 3 1 2) 0 $ fn (x) (&+ x 10)
+                assert= ([] 3 1 12)
+                  update ([] 3 1 2) 2 $ fn (x) (&+ x 10)
+                assert= ([] 3 1 2)
+                  update ([] 3 1 2) 3 $ fn (x) (&+ x 10)
+                assert= (&{} :a 1)
+                  update (&{} :a 1) :b $ fn (x) (&+ x 10)
+              :tags $ #{} :core :unit
         'update-in $ %{} 'CodeEntry
           :doc "|Walk a nested path and update its leaf. The updater receives Option<T>: some for an existing leaf and none for a missing leaf. Missing intermediate containers are created as maps."
           :code $ quote $ defn update-in (data path f)

@@ -863,6 +863,42 @@ fn emit_method_contains(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u3
   Ok(())
 }
 
+/// Push 1.0 when `update` should rewrite the slot named by `key_local`, else 0.0.
+/// Mirrors the core `update` definition: List checks the index bounds, Map checks
+/// key presence and Enum always rewrites its payload slot. Other receivers trap,
+/// matching the native `raise`, because the scalar ABI cannot update them.
+pub(super) fn emit_update_has_slot(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32) {
+  let list_tag = get_type_tag(ctx, "list");
+  let map_tag = get_type_tag(ctx, "map");
+  let enum_tag = get_type_tag(ctx, "enum");
+  let type_local = ctx.alloc_local();
+  emit_type_of_local(ctx, receiver_local);
+  ctx.emit(Instruction::LocalSet(type_local));
+
+  ctx.emit(Instruction::LocalGet(type_local));
+  ctx.emit(f64_const(list_tag));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_list_contains_from_local(ctx, receiver_local, key_local);
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(type_local));
+  ctx.emit(f64_const(map_tag));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_map_contains_from_local(ctx, receiver_local, key_local);
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(type_local));
+  ctx.emit(f64_const(enum_tag));
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  ctx.emit(f64_const(1.0));
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::Unreachable);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+}
+
 fn emit_method_includes(ctx: &mut WasmGenCtx, receiver_local: u32, target_local: u32) -> Result<(), String> {
   let list_tag = get_type_tag(ctx, "list");
   let map_tag = get_type_tag(ctx, "map");
@@ -1053,7 +1089,7 @@ fn emit_enum_assoc_from_local(ctx: &mut WasmGenCtx, receiver_local: u32, index_l
   ctx.ptr_to_f64(dst);
 }
 
-fn emit_method_assoc(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32, val_local: u32) -> Result<(), String> {
+pub(super) fn emit_method_assoc(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32, val_local: u32) -> Result<(), String> {
   let list_tag = super::get_type_tag(ctx, "list");
   let map_tag = super::get_type_tag(ctx, "map");
   let type_name = super::get_type_tag(ctx, "enum");
@@ -1218,7 +1254,7 @@ fn emit_method_rest(ctx: &mut WasmGenCtx, receiver_local: u32) -> Result<(), Str
   Ok(())
 }
 
-fn emit_method_get(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32) -> Result<(), String> {
+pub(super) fn emit_method_get(ctx: &mut WasmGenCtx, receiver_local: u32, key_local: u32) -> Result<(), String> {
   let map_tag = get_type_tag(ctx, "map");
   let list_tag = get_type_tag(ctx, "list");
   let type_name = get_type_tag(ctx, "enum");
