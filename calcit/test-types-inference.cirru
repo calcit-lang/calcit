@@ -7,8 +7,8 @@
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
-  :files $ {} $ 'test-types-inference.main
-    %{} 'FileEntry
+  :files $ {}
+    'test-types-inference.main $ %{} 'FileEntry
       :defs $ {}
         '*dynamic-ref $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defatom *dynamic-ref (make-dynamic-value)
@@ -25,6 +25,13 @@
           :schema $ :: 'StructDef
         'Job $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Job (:title 'String) (:status Status)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'NominalAbsenceFields $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct NominalAbsenceFields
+            :number $ :: 'Option 'Number
+            :text $ :: 'Option 'String
+            :result $ :: 'Result 'Number 'String
           :examples $ []
           :schema $ :: 'StructDef
         'Outcome $ %{} 'CodeEntry (:doc |)
@@ -247,6 +254,43 @@
           :code $ quote $ defn reload! () (:: 'Unit)
           :examples $ []
           :schema $ :: 'Dynamic
+        'same-nominal-absence-fields $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn same-nominal-absence-fields (fields)
+            let
+                expected-number $ Option :none
+                expected-text $ Option :none
+                expected-result $ Result :ok 1
+              assert-type expected-number $ :: 'Option 'Number
+              assert-type expected-text $ :: 'Option 'String
+              assert-type expected-result $ :: 'Result 'Number 'String
+              and
+                = expected-number $ :number fields
+                = expected-text $ :text fields
+                = expected-result $ :result fields
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'test-types-inference.main/NominalAbsenceFields
+          :tests $ []
+            %{} 'TestEntry (:name |same-typed-nominal-fields)
+              :code $ quote $ assert= true
+                same-nominal-absence-fields $ NominalAbsenceFields :number (Option :none) :text (Option :none) :result $ Result :ok 1
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |number-payload-is-different)
+              :code $ quote $ assert= false
+                same-nominal-absence-fields $ NominalAbsenceFields :number (Option :some 2) :text (Option :none) :result $ Result :ok 1
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |text-payload-is-different)
+              :code $ quote $ assert= false
+                same-nominal-absence-fields $ NominalAbsenceFields :number (Option :none) :text (Option :some |x) :result $ Result :ok 1
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |result-payload-is-different)
+              :code $ quote $ assert= false
+                same-nominal-absence-fields $ NominalAbsenceFields :number (Option :none) :text (Option :none) :result $ Result :ok 2
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |result-error-is-different)
+              :code $ quote $ assert= false
+                same-nominal-absence-fields $ NominalAbsenceFields :number (Option :none) :text (Option :none) :result $ Result :err |error
+              :tags $ #{} :unit
         'same-type-second $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn same-type-second (left right) right
           :examples $ []
@@ -627,3 +671,65 @@
           :schema $ :: 'Dynamic
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-types-inference.main
+    'test-types-inference.shadow $ %{} 'FileEntry
+      :defs $ {}
+        'Option $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Option ([] 'T) (:none) (:some 'T)
+          :examples $ []
+          :schema $ :: 'EnumDef
+          :tests $ [] $ %{} 'TestEntry (:name |same-name-is-not-core-option)
+            :code $ quote $ assert= false
+              test-types-inference.shadow/foreign-option-is-nil $ test-types-inference.shadow/Option :none
+            :tags $ #{} :unit
+        'Result $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Result (:ok 'Number) (:err 'String)
+          :examples $ []
+          :schema $ :: 'EnumDef
+          :tests $ [] $ %{} 'TestEntry (:name |same-name-is-not-core-result)
+            :code $ quote $ assert= false
+              test-types-inference.shadow/foreign-result-is-nil $ test-types-inference.shadow/Result :ok 1
+            :tags $ #{} :unit
+        'ShadowFields $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct ShadowFields
+            :option $ :: 'test-types-inference.shadow/Option 'Number
+            :other-option $ :: 'test-types-inference.shadow/Option 'Number
+            :result 'test-types-inference.shadow/Result
+            :other-result 'test-types-inference.shadow/Result
+          :examples $ []
+          :schema $ :: 'StructDef
+        'foreign-option-is-nil $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn foreign-option-is-nil (value)
+            assert-type value $ :: 'Option 'Number
+            nil? value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] $ :: 'test-types-inference.shadow/Option 'Number
+        'foreign-result-is-nil $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn foreign-result-is-nil (value) (assert-type value 'Result) (nil? value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'test-types-inference.shadow/Result
+        'same-shadow-fields $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn same-shadow-fields (fields)
+            let
+                expected-option $ :other-option fields
+                expected-result $ :other-result fields
+              assert-type expected-option $ :: 'Option 'Number
+              assert-type expected-result 'Result
+              and
+                = expected-option $ :option fields
+                = expected-result $ :result fields
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'test-types-inference.shadow/ShadowFields
+          :tests $ []
+            %{} 'TestEntry (:name |same-shadow-nominal-fields)
+              :code $ quote $ assert= true
+                test-types-inference.shadow/same-shadow-fields $ test-types-inference.shadow/ShadowFields :option (test-types-inference.shadow/Option :some 7) :other-option (test-types-inference.shadow/Option :some 7) :result (test-types-inference.shadow/Result :ok 1) :other-result $ test-types-inference.shadow/Result :ok 1
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |different-shadow-payload)
+              :code $ quote $ assert= false
+                test-types-inference.shadow/same-shadow-fields $ test-types-inference.shadow/ShadowFields :option (test-types-inference.shadow/Option :some 8) :other-option (test-types-inference.shadow/Option :some 7) :result (test-types-inference.shadow/Result :ok 1) :other-result $ test-types-inference.shadow/Result :ok 1
+              :tags $ #{} :unit
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns test-types-inference.shadow
