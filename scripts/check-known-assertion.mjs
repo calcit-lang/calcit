@@ -65,6 +65,18 @@ try {
     assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
     assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_RESET_ARG_TYPE_MISMATCH/);
   }
+  for (const name of ["narrowed-assignment", "aliased-assignment", "shadowed-assignment", "dead-branch-assignment"]) {
+    const proof = JSON.parse(run("fix", "--rule", "callable-contract-proof-v1",
+      "--ns", "app.empty-evidence", "--def", name, "--format", "json"));
+    assert.deepEqual(proof.diagnostics, [], `${name}: preserve the lexical write contract`);
+  }
+  for (const name of ["wrong-typed-assignment", "stale-assignment", "stale-branch-assignment", "stale-let-assignment"]) {
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "callable-contract-proof-v1",
+      "--ns", "app.empty-evidence", "--def", name, "--format", "edn"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_CALL_ARGUMENT_UNPROVEN/);
+  }
   assert.deepEqual(await readFile(snapshot), emptyEvidenceOriginal);
   // #2008 / #1553: enum construction must preserve caller generics after
   // lowering, without treating a same-named constructor binder as that caller.

@@ -1895,6 +1895,38 @@
                 {} (1 1) (2 2)
                 accumulate-receiver-first 2
             :tags $ #{} :empty-collection-evidence
+        'aliased-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn aliased-assignment (value)
+            let
+                item value
+              if (number? item)
+                do
+                  assert= true $ number? $ &+ item 1
+                  set! item |changed
+              , item
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic
+            :features $ #{} :js-ffi
+          :tests $ [] $ %{} 'TestEntry (:name |local-alias-write-contract)
+            :code $ quote $ do
+              assert= |changed $ aliased-assignment 1
+              assert= |original $ aliased-assignment |original
+            :tags $ #{} :empty-collection-assignment
+        'dead-branch-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn dead-branch-assignment (value)
+            if (number? value)
+              do
+                if true &unit $ set! value |changed
+                &+ value 1
+              , 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+            :features $ #{} :js-ffi
+          :tests $ [] $ %{} 'TestEntry (:name |dead-write-keeps-live-evidence)
+            :code $ quote $ assert= 2 (dead-branch-assignment 1)
+            :tags $ #{} :empty-collection-assignment
         'empty-lookup $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn empty-lookup ()
             let
@@ -2002,6 +2034,19 @@
           :tests $ [] $ %{} 'TestEntry (:name |empty-map-alias)
             :code $ quote $ assert= ({}) (map-alias)
             :tags $ #{} :empty-collection-evidence
+        'narrowed-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn narrowed-assignment (value)
+            if (number? value) (set! value |changed)
+            , value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic
+            :features $ #{} :js-ffi
+          :tests $ [] $ %{} 'TestEntry (:name |dynamic-binding-keeps-write-contract)
+            :code $ quote $ do
+              assert= |changed $ narrowed-assignment 1
+              assert= |original $ narrowed-assignment |original
+            :tags $ #{} :empty-collection-assignment
         'nested-empty $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn nested-empty ()
             let
@@ -2080,6 +2125,57 @@
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'Dynamic 'Dynamic
             :return $ :: 'Map 'String 'Number
+        'shadowed-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn shadowed-assignment (value)
+            if (number? value)
+              do
+                let
+                    value 1
+                  set! value 2
+                  assert= 2 value
+                assert= 2 $ &+ value 1
+                set! value |changed
+            , value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic
+            :features $ #{} :js-ffi
+          :tests $ [] $ %{} 'TestEntry (:name |shadowing-restores-outer-contract)
+            :code $ quote $ assert= |changed (shadowed-assignment 1)
+            :tags $ #{} :empty-collection-assignment
+        'stale-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn stale-assignment (value)
+            if (number? value)
+              do (set! value |changed) (&+ value 1)
+              , 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+            :features $ #{} :js-ffi
+        'stale-branch-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn stale-branch-assignment (value flag)
+            if (number? value)
+              do
+                if flag $ set! value |changed
+                &+ value 1
+              , 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic 'Bool
+            :features $ #{} :js-ffi
+        'stale-let-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn stale-let-assignment (value)
+            if (number? value)
+              do
+                let
+                    ignored 0
+                  set! value |changed
+                &+ value 1
+              , 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+            :features $ #{} :js-ffi
         'typed-assignment $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn typed-assignment ()
             let
@@ -2148,6 +2244,14 @@
                 cell $ ref $ {}
               reset! cell $ {} $ |a 1
           :examples $ []
+        'wrong-typed-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-typed-assignment (value)
+            if (number? value) (set! value |wrong)
+            , value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+            :features $ #{} :js-ffi
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.empty-evidence
     'app.empty-fields $ %{} 'FileEntry

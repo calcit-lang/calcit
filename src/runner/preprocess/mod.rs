@@ -4375,7 +4375,7 @@ fn preprocess_list_call(
               || matches!(call_head, Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "set!"))
             && let (Some(Calcit::Local(local)), Some(value)) = (processed_args.first(), processed_args.get(1))
           {
-            let expected = resolve_type_value(&processed_args[0], scope_types).unwrap_or_else(|| local.type_info.clone());
+            let expected = explicit_open::binding_contract(local).unwrap_or_else(|| local.type_info.clone());
             let actual = resolve_type_value(value, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
             if !actual.is_proven_for(&expected) {
               return Err(CalcitErr::use_msg_stack_location_with_code(
@@ -4391,6 +4391,8 @@ fn preprocess_list_call(
                 value.get_location().or_else(|| call_location.clone()),
               ));
             }
+            // A successful write invalidates read refinements of this local.
+            scope_types.insert(local.sym.clone(), expected);
           }
           reject_or_warn_on_nullable_js_ffi_dereference(
             call_head,
@@ -9885,6 +9887,23 @@ pub fn preprocess_each_items(
   Ok(Calcit::List(Arc::new(xs.into())))
 }
 
+/// Carry invalidated read evidence out of nested evaluation scopes, without
+/// exporting branch refinements or a shadowing let binding to its parent.
+fn propagate_scope_widening(parent: &mut ScopeTypes, after: &ScopeTypes, refinements: &ScopeTypes, shadowed: Option<&str>) {
+  for (name, current) in parent.iter_mut() {
+    if shadowed == Some(name.as_ref()) {
+      continue;
+    }
+    let before = refinements.get(name).unwrap_or(current);
+    if let Some(after) = after.get(name)
+      && after != before
+      && !after.is_proven_for(before)
+    {
+      *current = type_inference::join_return_types(current.clone(), after.clone()).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
+    }
+  }
+}
+
 fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mut PreprocessContext) -> Result<Calcit, CalcitErr> {
   if args.len() < 2 {
     return preprocess_each_items(head, head_ns, args, ctx);
@@ -9928,17 +9947,24 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
     for (sym, inferred) in &narrowing.when_false {
       false_scope_types.insert(sym.clone(), inferred.clone());
     }
-    Some(preprocess_expr(
+    let form = preprocess_expr(
       false_branch,
       ctx.scope_defs,
       &mut false_scope_types,
       ctx.file_ns,
       ctx.check_warnings,
       ctx.call_stack,
-    )?)
+    )?;
+    if !matches!(cond_form, Calcit::Bool(true)) {
+      propagate_scope_widening(ctx.scope_types, &false_scope_types, &narrowing.when_false, None);
+    }
+    Some(form)
   } else {
     None
   };
+  if !matches!(cond_form, Calcit::Bool(false) | Calcit::Nil) {
+    propagate_scope_widening(ctx.scope_types, &true_scope_types, &narrowing.when_true, None);
+  }
 
   // P7: constant folding — eliminate dead branch when condition is a literal
   match &cond_form {
@@ -11907,6 +11933,8 @@ pub fn preprocess_core_let(
       }
       body_defs.insert(sym.to_owned());
       let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
+      // The initializer executes before the new binding shadows its name.
+      propagate_scope_widening(ctx.scope_types, &body_types, &ScopeTypes::new(), None);
 
       let inferred_type = existing_type
         .unwrap_or_else(|| infer_type_from_expr(&form, &body_types).unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone()));
@@ -11974,6 +12002,14 @@ pub fn preprocess_core_let(
     xs.push(form);
     Ok(())
   })?;
+  let shadowed = match xs.get(1) {
+    Some(Calcit::List(pair)) => match pair.first() {
+      Some(Calcit::Local(local)) => Some(local.sym.as_ref()),
+      _ => None,
+    },
+    _ => None,
+  };
+  propagate_scope_widening(ctx.scope_types, &body_types, &ScopeTypes::new(), shadowed);
   Ok(Calcit::List(Arc::from(CalcitList::Vector(xs))))
 }
 
