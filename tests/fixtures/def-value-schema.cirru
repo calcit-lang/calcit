@@ -2873,7 +2873,7 @@
               :tags $ #{} :string-option-presence :unit
             %{} 'TestEntry (:name |evaluates-arguments-once-in-order)
               :code $ quote $ let
-                  calls $ atom 0
+                  calls $ ref 0
                   result $ nth
                     let ()
                       reset! calls $ inc $ deref calls
