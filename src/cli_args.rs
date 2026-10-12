@@ -2613,6 +2613,7 @@ pub enum CursorSubcommand {
   Clear(CursorClearCommand),
   Parent(CursorParentCommand),
   Child(CursorChildCommand),
+  Move(CursorMoveCommand),
   Next(CursorNextCommand),
   Prev(CursorPrevCommand),
   Back(CursorBackCommand),
@@ -2671,12 +2672,12 @@ pub struct CursorClearCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "parent")]
-/// move the virtual cursor to its parent node
+/// [Deprecated] use `cursor move parent`
 pub struct CursorParentCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "child")]
-/// move the virtual cursor to a child node
+/// [Deprecated] use `cursor move child`
 pub struct CursorChildCommand {
   /// zero-based child index (defaults to the first child)
   #[argh(positional)]
@@ -2687,8 +2688,26 @@ pub struct CursorChildCommand {
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "move")]
+/// move the virtual cursor: parent, child [INDEX] [--last], next, prev, forward, backward, or back
+pub struct CursorMoveCommand {
+  /// direction: parent, child, next, prev, forward, backward, or back
+  #[argh(positional)]
+  pub direction: String,
+  /// zero-based child index for `child` (defaults to the first child)
+  #[argh(positional)]
+  pub index: Option<usize>,
+  /// enter the last child (only with `child`)
+  #[argh(switch)]
+  pub last: bool,
+  /// steps for next, prev, forward, backward, or back (default 1)
+  #[argh(option)]
+  pub count: Option<usize>,
+}
+
+#[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "next")]
-/// move the virtual cursor to the next sibling
+/// [Deprecated] use `cursor move next`
 pub struct CursorNextCommand {
   /// number of siblings to skip
   #[argh(option, default = "1")]
@@ -2697,7 +2716,7 @@ pub struct CursorNextCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "prev")]
-/// move the virtual cursor to the previous sibling
+/// [Deprecated] use `cursor move prev`
 pub struct CursorPrevCommand {
   /// number of siblings to skip
   #[argh(option, default = "1")]
@@ -2706,7 +2725,7 @@ pub struct CursorPrevCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "back")]
-/// return to the previous cursor location
+/// [Deprecated] use `cursor move back`
 pub struct CursorBackCommand {
   /// number of recorded cursor locations to rewind
   #[argh(option, default = "1")]
@@ -2725,17 +2744,24 @@ pub struct CursorPopCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "anchor")]
-/// set the region anchor to the current cursor location
-pub struct CursorAnchorCommand {}
+/// manage the region anchor: `anchor [set]`, `anchor clear`, or `anchor show` (the sibling region between anchor and cursor)
+pub struct CursorAnchorCommand {
+  /// action: set (default), clear, or show
+  #[argh(positional)]
+  pub action: Option<String>,
+  /// output format for `show`: human (default), edn, or json
+  #[argh(option)]
+  pub format: Option<String>,
+}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "clear-anchor")]
-/// clear the region anchor without changing the cursor
+/// [Deprecated] use `cursor anchor clear`
 pub struct CursorClearAnchorCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "region")]
-/// display the contiguous sibling region between the anchor and cursor
+/// [Deprecated] use `cursor anchor show`
 pub struct CursorRegionCommand {
   /// output format: human (default), edn, or json
   #[argh(option, default = "String::from(\"human\")")]
@@ -2744,7 +2770,7 @@ pub struct CursorRegionCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "mark")]
-/// save the current cursor location as a bounded named mark
+/// [Deprecated] use `cursor marks set <name>`
 pub struct CursorMarkCommand {
   /// mark name (letters, digits, underscore, and hyphen)
   #[argh(positional)]
@@ -2753,7 +2779,7 @@ pub struct CursorMarkCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "goto")]
-/// move the cursor to a named mark
+/// [Deprecated] use `cursor marks go <name>`
 pub struct CursorGotoCommand {
   /// saved mark name
   #[argh(positional)]
@@ -2762,16 +2788,19 @@ pub struct CursorGotoCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "marks")]
-/// list the bounded named cursor marks
+/// manage bounded named marks: `marks [list]`, `marks set <name>`, `marks go <name>`, `marks drop <name>`
 pub struct CursorMarksCommand {
-  /// output format: human (default), edn, or json
-  #[argh(option, default = "String::from(\"human\")")]
-  pub format: String,
+  /// action (list by default, or set, go, drop) followed by a mark name for set, go, and drop
+  #[argh(positional)]
+  pub args: Vec<String>,
+  /// output format for `list`: human (default), edn, or json
+  #[argh(option)]
+  pub format: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "rm-mark")]
-/// remove a named cursor mark
+/// [Deprecated] use `cursor marks drop <name>`
 pub struct CursorRmMarkCommand {
   /// saved mark name
   #[argh(positional)]
@@ -2780,17 +2809,17 @@ pub struct CursorRmMarkCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "copy")]
-/// copy the selected expression into the cursor clipboard
+/// [Deprecated] use `cursor clipboard copy`
 pub struct CursorCopyCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "cut")]
-/// cut the selected expression into the cursor clipboard
+/// [Deprecated] use `cursor clipboard cut`
 pub struct CursorCutCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "paste")]
-/// paste the cursor clipboard relative to the selected expression
+/// [Deprecated] use `cursor clipboard paste`
 pub struct CursorPasteCommand {
   /// position relative to the cursor: before, after, prepend-child, append-child, replace
   #[argh(option, default = "String::from(\"after\")")]
@@ -2799,23 +2828,29 @@ pub struct CursorPasteCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "clipboard")]
-/// display the cursor clipboard
+/// manage the cursor clipboard: `clipboard [show]`, `copy`, `cut`, `paste [--at <position>]`, `clear`
 pub struct CursorClipboardCommand {
-  /// output format: human (default), edn, or json
-  #[argh(option, default = "String::from(\"human\")")]
-  pub format: String,
+  /// action: show (default), copy, cut, paste, or clear
+  #[argh(positional)]
+  pub action: Option<String>,
+  /// paste position relative to the cursor: before, after (default), prepend-child, append-child, replace
+  #[argh(option)]
+  pub at: Option<String>,
+  /// output format for `show`: human (default), edn, or json
+  #[argh(option)]
+  pub format: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "clear-clipboard")]
-/// clear the cursor clipboard without changing the selection
+/// [Deprecated] use `cursor clipboard clear`
 pub struct CursorClearClipboardCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "apply")]
 /// apply a structural tree operation to the active cursor without repeating target or path
 pub struct CursorApplyCommand {
-  /// operation: delete, swap-next, swap-prev, unwrap (alias splice), raise, replace, wrap, insert-before, insert-after, insert-child, append-child
+  /// operation: delete, swap-next, swap-prev, unwrap (alias splice), raise, replace, wrap, insert-before, insert-after, insert-child, append-child, slurp-next, slurp-prev, barf-last, barf-first, duplicate
   #[argh(positional)]
   pub operation: String,
   /// read the replacement, wrapper, or inserted expression from a file
@@ -2830,31 +2865,34 @@ pub struct CursorApplyCommand {
   /// max depth for the underlying tree command result preview
   #[argh(option, default = "2")]
   pub depth: usize,
+  /// position of the new copy for `duplicate`: before or after (default)
+  #[argh(option)]
+  pub at: Option<String>,
 }
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "slurp-next")]
-/// move the next sibling into the selected list as its last child
+/// [Deprecated] use `cursor apply slurp-next`
 pub struct CursorSlurpNextCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "slurp-prev")]
-/// move the previous sibling into the selected list as its first child
+/// [Deprecated] use `cursor apply slurp-prev`
 pub struct CursorSlurpPrevCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "barf-last")]
-/// move the selected list's last child out as its next sibling
+/// [Deprecated] use `cursor apply barf-last`
 pub struct CursorBarfLastCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "barf-first")]
-/// move the selected list's first child out as its previous sibling
+/// [Deprecated] use `cursor apply barf-first`
 pub struct CursorBarfFirstCommand {}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "duplicate")]
-/// duplicate the selected expression and select the new copy
+/// [Deprecated] use `cursor apply duplicate`
 pub struct CursorDuplicateCommand {
   /// position of the new copy relative to the cursor: before or after
   #[argh(option, default = "String::from(\"after\")")]
@@ -2863,7 +2901,7 @@ pub struct CursorDuplicateCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "forward")]
-/// move forward through the definition in depth-first structural order
+/// [Deprecated] use `cursor move forward`
 pub struct CursorForwardCommand {
   /// number of structural nodes to advance
   #[argh(option, default = "1")]
@@ -2872,7 +2910,7 @@ pub struct CursorForwardCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "backward")]
-/// move backward through the definition in depth-first structural order
+/// [Deprecated] use `cursor move backward`
 pub struct CursorBackwardCommand {
   /// number of structural nodes to rewind
   #[argh(option, default = "1")]

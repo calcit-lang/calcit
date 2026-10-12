@@ -97,6 +97,9 @@ pub fn set_cursor_after_mode(mode: &str) -> Result<(), String> {
 }
 
 pub fn handle_cursor_command(cmd: &CursorCommand, snapshot_file: &str) -> Result<(), String> {
+  let cmd = &CursorCommand {
+    subcommand: super::deprecations::normalize_cursor_subcommand(&cmd.subcommand)?,
+  };
   let mutates_snapshot = matches!(
     &cmd.subcommand,
     CursorSubcommand::Cut(_)
@@ -117,6 +120,7 @@ pub fn handle_cursor_command(cmd: &CursorCommand, snapshot_file: &str) -> Result
     guard_snapshot_mutation_toolchain(snapshot_file)?;
   }
   match &cmd.subcommand {
+    CursorSubcommand::Move(_) => unreachable!("normalized before dispatch"),
     CursorSubcommand::Set(opts) => {
       if opts.path == "@cursor" {
         return Err("`cursor set --path` requires a concrete path, not `@cursor`.".to_string());
@@ -167,12 +171,12 @@ pub fn handle_cursor_command(cmd: &CursorCommand, snapshot_file: &str) -> Result
     CursorSubcommand::Region(opts) => show_cursor_region(snapshot_file, &opts.format),
     CursorSubcommand::Mark(opts) => save_cursor_mark(snapshot_file, &opts.name),
     CursorSubcommand::Goto(opts) => goto_cursor_mark(snapshot_file, &opts.name),
-    CursorSubcommand::Marks(opts) => show_cursor_marks(snapshot_file, &opts.format),
+    CursorSubcommand::Marks(opts) => show_cursor_marks(snapshot_file, opts.format.as_deref().unwrap_or("human")),
     CursorSubcommand::RmMark(opts) => remove_cursor_mark(snapshot_file, &opts.name),
     CursorSubcommand::Copy(_) => store_cursor_clipboard(snapshot_file, "copy", false),
     CursorSubcommand::Cut(_) => store_cursor_clipboard(snapshot_file, "cut", true),
     CursorSubcommand::Paste(opts) => paste_cursor_clipboard(snapshot_file, &opts.at),
-    CursorSubcommand::Clipboard(opts) => show_cursor_clipboard(snapshot_file, &opts.format),
+    CursorSubcommand::Clipboard(opts) => show_cursor_clipboard(snapshot_file, opts.format.as_deref().unwrap_or("human")),
     CursorSubcommand::ClearClipboard(_) => clear_cursor_clipboard(snapshot_file),
     CursorSubcommand::Apply(opts) => apply_at_cursor(snapshot_file, opts),
     CursorSubcommand::SlurpNext(_) => slurp_next(snapshot_file),
@@ -352,7 +356,7 @@ fn apply_at_cursor(snapshot_file: &str, opts: &CursorApplyCommand) -> Result<(),
     }),
     other => {
       return Err(format!(
-        "Unsupported cursor operation '{other}'. Use delete, swap-next, swap-prev, unwrap, splice, raise, replace, wrap, insert-before, insert-after, insert-child, or append-child."
+        "Unsupported cursor operation '{other}'. Use delete, swap-next, swap-prev, unwrap, splice, raise, replace, wrap, insert-before, insert-after, insert-child, append-child, slurp-next, slurp-prev, barf-last, barf-first, or duplicate."
       ));
     }
   };
@@ -380,7 +384,7 @@ fn slurp_next(snapshot_file: &str) -> Result<(), String> {
   }
   let (selected, _) = read_cursor_target(snapshot_file, &state.target, &state.path)?;
   if !matches!(selected, Cirru::List(_)) {
-    return Err("`cursor slurp-next` requires the selected node to be a list.".to_string());
+    return Err("`cursor apply slurp-next` requires the selected node to be a list.".to_string());
   }
   let mut next_path = state.path.clone();
   let current_index = *next_path.last().expect("non-root cursor has a final index");
@@ -403,7 +407,7 @@ fn slurp_prev(snapshot_file: &str) -> Result<(), String> {
   }
   let (selected, _) = read_cursor_target(snapshot_file, &state.target, &state.path)?;
   if !matches!(selected, Cirru::List(_)) {
-    return Err("`cursor slurp-prev` requires the selected node to be a list.".to_string());
+    return Err("`cursor apply slurp-prev` requires the selected node to be a list.".to_string());
   }
   let mut previous_path = state.path.clone();
   let current_index = *previous_path.last().expect("non-root cursor has a final index");
@@ -421,7 +425,7 @@ fn barf_last(snapshot_file: &str) -> Result<(), String> {
   }
   let (selected, _) = read_cursor_target(snapshot_file, &state.target, &state.path)?;
   let Cirru::List(children) = selected else {
-    return Err("`cursor barf-last` requires the selected node to be a list.".to_string());
+    return Err("`cursor apply barf-last` requires the selected node to be a list.".to_string());
   };
   let Some(last_index) = children.len().checked_sub(1) else {
     return Err("Selected list has no child to barf.".to_string());
@@ -438,7 +442,7 @@ fn barf_first(snapshot_file: &str) -> Result<(), String> {
   }
   let (selected, _) = read_cursor_target(snapshot_file, &state.target, &state.path)?;
   let Cirru::List(children) = selected else {
-    return Err("`cursor barf-first` requires the selected node to be a list.".to_string());
+    return Err("`cursor apply barf-first` requires the selected node to be a list.".to_string());
   };
   if children.is_empty() {
     return Err("Selected list has no child to barf.".to_string());
@@ -602,7 +606,7 @@ fn commit_cursor_move(snapshot_file: &str, old_state: CursorState, mut state: Cu
 
 fn move_cursor_to_child(snapshot_file: &str, index: Option<usize>, last: bool) -> Result<(), String> {
   if last && index.is_some() {
-    return Err("`cursor child` accepts either an index or `--last`, not both.".to_string());
+    return Err("`cursor move child` accepts either an index or `--last`, not both.".to_string());
   }
   let mut state = validate_cursor(snapshot_file, true)?;
   let old_state = state.clone();
@@ -974,7 +978,7 @@ fn save_cursor_mark(snapshot_file: &str, name: &str) -> Result<(), String> {
   let mut document = load_cursor_document(snapshot_file)?;
   if !document.marks.contains_key(name) && document.marks.len() == CURSOR_MARK_LIMIT {
     return Err(format!(
-      "Cursor mark limit ({CURSOR_MARK_LIMIT}) reached. Remove an unused mark with `calcit cursor rm-mark <name>`."
+      "Cursor mark limit ({CURSOR_MARK_LIMIT}) reached. Remove an unused mark with `calcit cursor marks drop <name>`."
     ));
   }
   document.marks.insert(name.to_string(), state.clone());
@@ -1132,7 +1136,7 @@ fn paste_cursor_clipboard(snapshot_file: &str, at: &str) -> Result<(), String> {
   let clipboard = document
     .clipboard
     .clone()
-    .ok_or("Cursor clipboard is empty. Use `calcit cursor copy` or `calcit cursor cut` first.")?;
+    .ok_or("Cursor clipboard is empty. Use `calcit cursor clipboard copy` or `calcit cursor clipboard cut` first.")?;
   let operation = TreeOperation::from_insert_position(at)
     .ok_or_else(|| format!("Unsupported paste position '{at}'. Use before, after, prepend-child, append-child, or replace."))?;
 
@@ -1376,7 +1380,7 @@ pub(crate) fn maintain_cursor_after_definition_delete(snapshot_file: &str, targe
   let document = load_cursor_document(snapshot_file)?;
   if document.active.target == target && CURSOR_AFTER_MODE.load(Ordering::Relaxed) != 0 {
     eprintln!(
-      "{} Selected definition '{target}' was deleted; the cursor is stale. Use `calcit cursor back` or `calcit cursor set`.",
+      "{} Selected definition '{target}' was deleted; the cursor is stale. Use `calcit cursor move back` or `calcit cursor set`.",
       "[Cursor]".yellow().bold()
     );
   }
@@ -1391,7 +1395,7 @@ pub(crate) fn maintain_cursor_after_namespace_delete(snapshot_file: &str, namesp
   let cursor_namespace = parse_target(&document.active.target)?.0;
   if cursor_namespace == namespace && CURSOR_AFTER_MODE.load(Ordering::Relaxed) != 0 {
     eprintln!(
-      "{} Selected namespace '{namespace}' was deleted; the cursor is stale. Use `calcit cursor back` or `calcit cursor set`.",
+      "{} Selected namespace '{namespace}' was deleted; the cursor is stale. Use `calcit cursor move back` or `calcit cursor set`.",
       "[Cursor]".yellow().bold()
     );
   }
@@ -1466,7 +1470,7 @@ pub(crate) fn maintain_cursor_after_any_mutation(snapshot_file: &str, detail: &s
     Err(error) => {
       if CURSOR_AFTER_MODE.load(Ordering::Relaxed) != 0 {
         eprintln!(
-          "{} Transaction committed, but the cursor needs attention: {error} Use `calcit cursor back` or `calcit cursor set`.",
+          "{} Transaction committed, but the cursor needs attention: {error} Use `calcit cursor move back` or `calcit cursor set`.",
           "[Cursor]".yellow().bold()
         );
       }
@@ -2683,6 +2687,7 @@ mod tests {
         code: None,
         input_format: crate::cli_args::SyntaxInputFormat::Auto,
         depth: 2,
+        at: None,
       },
     )
     .expect("cursor-native swap should succeed");
@@ -2839,6 +2844,7 @@ mod tests {
         code: Some("quote ignored".to_string()),
         input_format: crate::cli_args::SyntaxInputFormat::Auto,
         depth: 2,
+        at: None,
       },
     )
     .expect_err("code should be rejected for a code-free operation");
