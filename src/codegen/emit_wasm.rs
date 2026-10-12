@@ -6409,7 +6409,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Resul
           "dissoc" if args_list.len() == 2 => return emit_map_dissoc(ctx, &args_list),
           // `conj` — append one or more elements to a list.
           "conj" if args_list.len() >= 2 => return emit_conj(ctx, &args_list),
-          // `update` — map update: new map with key set to f(old value).
+          // `update` — rewrite a List/Map/Enum slot with f(old value) when it exists.
           "update" if args_list.len() == 3 => return emit_update(ctx, &args_list),
           // `mapcat xs f` — map then flatten one level.
           "mapcat" if args_list.len() == 2 => return emit_mapcat(ctx, &args_list),

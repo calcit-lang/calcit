@@ -840,48 +840,36 @@ pub(super) fn emit_filter_not(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   Ok(())
 }
 
-/// `update m k f` — return new map with `k` mapped to `f(m[k])`.
-/// Only supports map operand (not list/enum).
+/// `update x k f` — rewrite the slot `k` of a List, Map or Enum with `f(old)`.
+/// Like the core definition, a missing list index or map key returns `x`
+/// unchanged without calling `f`; the receiver kind is dispatched at runtime.
 pub(super) fn emit_update(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(3, args, "update")?;
-  // Evaluate map → i32 ptr
-  let map_ptr = ctx.alloc_local_typed(ValType::I32);
+  let receiver = ctx.alloc_local();
   emit_expr(ctx, &args[0])?;
-  ctx.emit(Instruction::I32TruncF64U);
-  ctx.emit(Instruction::LocalSet(map_ptr));
+  ctx.emit(Instruction::LocalSet(receiver));
 
-  // Evaluate key → f64 local
   let key_local = ctx.alloc_local();
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::LocalSet(key_local));
 
-  // cur_val = __rt_map_get_value(map_ptr, key)
-  let get_fn_idx = *ctx
-    .runtime_fn_index
-    .get("__rt_map_get_value")
-    .expect("runtime helper __rt_map_get_value must exist");
-  ctx.emit(Instruction::LocalGet(map_ptr));
-  ctx.emit(Instruction::LocalGet(key_local));
-  ctx.emit(Instruction::Call(get_fn_idx));
-  let cur_val = ctx.alloc_local();
-  ctx.emit(Instruction::LocalSet(cur_val));
-
-  // new_val = f(cur_val)
   let kind = resolve_unary_callee(ctx, &args[2]).map_err(|e| format!("update: {e}"))?;
+
+  super::methods::emit_update_has_slot(ctx, receiver, key_local);
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Ne);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  // new_val = f(get(x, k)); result = assoc(x, k, new_val)
+  let cur_val = ctx.alloc_local();
+  super::methods::emit_method_get(ctx, receiver, key_local)?;
+  ctx.emit(Instruction::LocalSet(cur_val));
   let new_val = ctx.alloc_local();
   emit_unary_step(ctx, &kind, cur_val)?;
   ctx.emit(Instruction::LocalSet(new_val));
-
-  // result = __rt_map_assoc(map_ptr, key, new_val)
-  let assoc_fn_idx = *ctx
-    .runtime_fn_index
-    .get("__rt_map_assoc")
-    .expect("runtime helper __rt_map_assoc must exist");
-  ctx.emit(Instruction::LocalGet(map_ptr));
-  ctx.emit(Instruction::LocalGet(key_local));
-  ctx.emit(Instruction::LocalGet(new_val));
-  ctx.emit(Instruction::Call(assoc_fn_idx));
-  ctx.emit(Instruction::F64ConvertI32U);
+  super::methods::emit_method_assoc(ctx, receiver, key_local, new_val)?;
+  ctx.emit(Instruction::Else);
+  ctx.emit(Instruction::LocalGet(receiver));
+  ctx.emit(Instruction::End);
   Ok(())
 }
 

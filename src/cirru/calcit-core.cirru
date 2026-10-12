@@ -8259,6 +8259,29 @@
                     same $ &list:nth items 0
                 assert= |wrong $ first-open $ [] |wrong
               :tags $ #{} :call-boundary :open-element-proof
+            %{} 'TestEntry (:name |optional-then-rest-local)
+              :code $ quote $ let
+                  count-rest $ fn (a ? b & xs) (&list:count xs)
+                  pick-b $ fn (a ? b & xs)
+                    if (nil? b) 0 b
+                  count-leading $ fn (? a & xs) (&list:count xs)
+                  count-two $ fn (a ? b ? c & xs) (&list:count xs)
+                  pick-c $ fn (a ? b ? c & xs)
+                    if (nil? c) 0 c
+                assert= 0 $ count-rest 1
+                assert= 0 $ pick-b 1
+                assert= 2 $ pick-b 1 2
+                assert= 2 $ count-rest 1 2 3 4
+                assert= 0 $ count-leading
+                assert= 0 $ count-leading 1
+                assert= 2 $ count-leading 1 2 3
+                assert= 0 $ count-two 1
+                assert= 0 $ count-two 1 2
+                assert= 0 $ pick-c 1 2
+                assert= 0 $ count-two 1 2 3
+                assert= 3 $ pick-c 1 2 3
+                assert= 1 $ count-two 1 2 3 4
+              :tags $ #{} :call-boundary
         'identical? $ %{} 'CodeEntry
           :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
           :code $ quote &runtime-implementation
@@ -12691,6 +12714,17 @@
                   update (parse-cirru-edn "|:: :entry 1") (parse-cirru-edn |:bad)
                     fn (x) x
                   fn (message) |rejected
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |updates-list-by-index-and-skips-missing-slots)
+              :code $ quote $ do
+                assert= ([] 13 1 2)
+                  update ([] 3 1 2) 0 $ fn (x) (&+ x 10)
+                assert= ([] 3 1 12)
+                  update ([] 3 1 2) 2 $ fn (x) (&+ x 10)
+                assert= ([] 3 1 2)
+                  update ([] 3 1 2) 3 $ fn (x) (&+ x 10)
+                assert= (&{} :a 1)
+                  update (&{} :a 1) :b $ fn (x) (&+ x 10)
               :tags $ #{} :core :unit
         'update-in $ %{} 'CodeEntry
           :doc "|Walk a nested path and update its leaf. The updater receives Option<T>: some for an existing leaf and none for a missing leaf. Missing intermediate containers are created as maps."

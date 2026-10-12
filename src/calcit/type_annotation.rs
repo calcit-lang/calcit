@@ -4672,21 +4672,6 @@ impl CalcitTypeAnnotation {
           bindings.insert(var.to_owned(), Arc::new(actual.to_owned()));
           true
         }
-        Some(bound) if matches!(bound.as_ref(), Self::Nil) => {
-          let merged = if matches!(actual, Self::Optional(_)) {
-            actual.to_owned()
-          } else {
-            Self::Optional(Arc::new(actual.to_owned()))
-          };
-          bindings.insert(var.to_owned(), Arc::new(merged));
-          true
-        }
-        Some(bound) if matches!(actual, Self::Nil) => {
-          if !matches!(bound.as_ref(), Self::Optional(_)) {
-            bindings.insert(var.to_owned(), Arc::new(Self::Optional(bound.clone())));
-          }
-          true
-        }
         Some(bound) => {
           let bound = bound.clone();
           actual.compatible_with_bindings(bound.as_ref(), bindings)
@@ -4698,11 +4683,9 @@ impl CalcitTypeAnnotation {
         }
       },
       (_, Self::Dynamic) | (Self::Dynamic, _) => true,
-      // A generic already bound to a nullable type stands for that whole type,
-      // so it is compared before the nullable arms unwrap the expected side.
-      (Self::TypeVar(var), Self::Optional(_) | Self::JsNullish(_))
-        if bindings.get(var).is_some_and(|bound| !matches!(bound.as_ref(), Self::Nil)) =>
-      {
+      // Compare the whole binding before unwrapping an explicit nullable
+      // destination. A Nil binding satisfies it without changing the binding.
+      (Self::TypeVar(var), Self::Optional(_) | Self::JsNullish(_)) if bindings.contains_key(var) => {
         let bound = bindings.get(var).cloned().expect("bound type var");
         bound.as_ref() == expected || bound.compatible_with_bindings(expected, bindings)
       }
@@ -4735,21 +4718,6 @@ impl CalcitTypeAnnotation {
       (Self::Numeric(_), Self::Number) => true,
       (Self::TypeVar(var), expected_type) => match bindings.get(var) {
         Some(bound) if bound.as_ref() == expected_type => true,
-        Some(bound) if matches!(bound.as_ref(), Self::Nil) => {
-          let merged = if matches!(expected_type, Self::Optional(_)) {
-            expected_type.to_owned()
-          } else {
-            Self::Optional(Arc::new(expected_type.to_owned()))
-          };
-          bindings.insert(var.to_owned(), Arc::new(merged));
-          true
-        }
-        Some(bound) if matches!(expected_type, Self::Nil) => {
-          if !matches!(bound.as_ref(), Self::Optional(_)) {
-            bindings.insert(var.to_owned(), Arc::new(Self::Optional(bound.clone())));
-          }
-          true
-        }
         Some(bound) => {
           let bound = bound.clone();
           bound.as_ref().compatible_with_bindings(expected_type, bindings)
@@ -8855,6 +8823,12 @@ mod tests {
         nullable.to_brief_string()
       );
       assert!(!CalcitTypeAnnotation::TypeVar(var.clone()).compatible_with_bindings(&CalcitTypeAnnotation::Number, &mut bindings));
+      assert!(CalcitTypeAnnotation::Nil.compatible_with_bindings(&CalcitTypeAnnotation::TypeVar(var.clone()), &mut bindings));
+      assert_eq!(bindings.get(&var).map(Arc::as_ref), Some(&nullable));
+
+      bindings.insert(var.clone(), Arc::new(CalcitTypeAnnotation::Nil));
+      assert!(CalcitTypeAnnotation::TypeVar(var.clone()).compatible_with_bindings(&nullable, &mut bindings));
+      assert!(matches!(bindings.get(&var).map(Arc::as_ref), Some(CalcitTypeAnnotation::Nil)));
     }
   }
 
@@ -9423,23 +9397,23 @@ mod tests {
   }
 
   #[test]
-  fn generic_bindings_lift_nil_and_values_into_optional() {
+  fn generic_bindings_do_not_synthesize_nullable_types() {
     let var = Arc::<str>::from("T");
     let mut nil_first = TypeBindings::new();
     assert!(CalcitTypeAnnotation::Nil.compatible_with_bindings(&CalcitTypeAnnotation::TypeVar(var.clone()), &mut nil_first));
-    assert!(CalcitTypeAnnotation::Bool.compatible_with_bindings(&CalcitTypeAnnotation::TypeVar(var.clone()), &mut nil_first));
-    assert!(matches!(
-      nil_first.get(&var).map(Arc::as_ref),
-      Some(CalcitTypeAnnotation::Optional(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Bool)
-    ));
+    assert!(!CalcitTypeAnnotation::Bool.compatible_with_bindings(&CalcitTypeAnnotation::TypeVar(var.clone()), &mut nil_first));
+    assert!(matches!(nil_first.get(&var).map(Arc::as_ref), Some(CalcitTypeAnnotation::Nil)));
 
     let mut value_first = TypeBindings::new();
     assert!(CalcitTypeAnnotation::Bool.compatible_with_bindings(&CalcitTypeAnnotation::TypeVar(var.clone()), &mut value_first));
-    assert!(CalcitTypeAnnotation::Nil.compatible_with_bindings(&CalcitTypeAnnotation::TypeVar(var.clone()), &mut value_first));
-    assert!(matches!(
-      value_first.get(&var).map(Arc::as_ref),
-      Some(CalcitTypeAnnotation::Optional(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Bool)
-    ));
+    assert!(!CalcitTypeAnnotation::Nil.compatible_with_bindings(&CalcitTypeAnnotation::TypeVar(var.clone()), &mut value_first));
+    assert!(matches!(value_first.get(&var).map(Arc::as_ref), Some(CalcitTypeAnnotation::Bool)));
+
+    // Reverse matching must preserve the binding as well (e.g. callback inputs).
+    assert!(!CalcitTypeAnnotation::TypeVar(var.clone()).compatible_with_bindings(&CalcitTypeAnnotation::Bool, &mut nil_first));
+    assert!(!CalcitTypeAnnotation::TypeVar(var.clone()).compatible_with_bindings(&CalcitTypeAnnotation::Nil, &mut value_first));
+    assert!(matches!(nil_first.get(&var).map(Arc::as_ref), Some(CalcitTypeAnnotation::Nil)));
+    assert!(matches!(value_first.get(&var).map(Arc::as_ref), Some(CalcitTypeAnnotation::Bool)));
 
     assert!(!CalcitTypeAnnotation::Unit.compatible_with_bindings(
       &CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::Bool)),

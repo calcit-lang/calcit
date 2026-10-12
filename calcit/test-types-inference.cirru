@@ -363,6 +363,21 @@
                     , &unit
                 assert= &unit $ check (Option :none) (Option :some |x) (Option :none)
               :tags $ #{} :bottom :generic :unit
+            %{} 'TestEntry (:name |nil-remains-a-concrete-generic)
+              :code $ quote $ assert= nil (same-type-second nil nil)
+              :tags $ #{} :generic :unit
+            %{} 'TestEntry (:name |variadic-nil-remains-homogeneous)
+              :code $ quote $ let
+                  check $ fn (left & right)
+                    hint-fn $ {}
+                      :generics $ [] 'T
+                      :args $ [] 'T
+                      :rest 'T
+                      :return 'Unit
+                    , &unit
+                assert= true $ = nil nil nil
+                assert= &unit $ check nil nil nil
+              :tags $ #{} :generic :unit
         'test-count-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-count-inference ()
             assert-type
