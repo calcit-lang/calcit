@@ -759,6 +759,70 @@
           :schema $ :: 'StructDef
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.callback-right
+    'app.callback-shape $ %{} 'FileEntry
+      :defs $ {}
+        'group-open-rows $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn group-open-rows (rows)
+            group-by (&map:vals rows)
+              fn (row) (&map:get row :finished-time)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'String (:: 'Map 'Tag 'Dynamic)
+            :return $ :: 'Map 'Dynamic $ :: 'List (:: 'Map 'Tag 'Dynamic)
+          :tests $ [] $ %{} 'TestEntry (:name |known-map-open-members)
+            :code $ quote $ let
+                row $ {} (:finished-time 7) (:title |task)
+              assert=
+                {} $ 7 $ [] row
+                group-open-rows $ {} $ |one row
+            :tags $ #{} :callback-container-shape :unit
+        'group-open-rows-alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn group-open-rows-alias (rows)
+            let
+                group-items group-by
+              group-items (&map:vals rows)
+                fn (row) (&map:get row :finished-time)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'String (:: 'Map 'Tag 'Dynamic)
+            :return $ :: 'Map 'Dynamic $ :: 'List (:: 'Map 'Tag 'Dynamic)
+          :tests $ [] $ %{} 'TestEntry (:name |callable-alias-known-map)
+            :code $ quote $ let
+                row $ {} (:finished-time 7) (:title |task)
+              assert=
+                group-open-rows $ {} $ |one row
+                group-open-rows-alias $ {} $ |one row
+            :tags $ #{} :callback-container-shape :unit
+        'group-open-rows-arrow $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn group-open-rows-arrow (rows)
+            -> rows (&map:vals)
+              group-by $ fn (row) (&map:get row :finished-time)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'String (:: 'Map 'Tag 'Dynamic)
+            :return $ :: 'Map 'Dynamic $ :: 'List (:: 'Map 'Tag 'Dynamic)
+          :tests $ [] $ %{} 'TestEntry (:name |threaded-known-map)
+            :code $ quote $ let
+                row $ {} (:finished-time 7) (:title |task)
+              assert=
+                group-open-rows $ {} $ |one row
+                group-open-rows-arrow $ {} $ |one row
+            :tags $ #{} :callback-container-shape :unit
+        'read-open-members $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-open-members (rows)
+            map rows $ fn (row) (&map:get row :title)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List (:: 'Map 'Tag 'Dynamic)
+            :return $ :: 'List 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |map-keeps-member-dynamic)
+            :code $ quote $ assert= ([] |task 42)
+              read-open-members $ []
+                {} $ :title |task
+                {} $ :title 42
+            :tags $ #{} :callback-container-shape :unit
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.callback-shape
     'app.dynamic-construction $ %{} 'FileEntry
       :defs $ {}
         'EmptyBox $ %{} 'CodeEntry (:doc |)

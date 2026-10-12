@@ -12064,6 +12064,15 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |retains-open-map-callback)
+            :code $ quote $ assert=
+              {} (:name |Ada)
+                :items $ [] $ {} (:done true)
+                7 nil
+              tagging-edn $ {} (|name |Ada)
+                |items $ [] $ {} (|done true)
+                7 nil
+            :tags $ #{} :core :unit
         'take $ %{} 'CodeEntry (:doc "|Take the first n elements from a list")
           :code $ quote $ defn take (xs n)
             if

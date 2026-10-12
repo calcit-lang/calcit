@@ -196,6 +196,18 @@ List `.map-pair` 的内部合同将回调返回值 `R` 与结果 `List<R>` 关�
 - 异构 pair 的 key/value 输入仍是开放边界；结果形状不能证明其中的值属于 Number、String 或业务 Struct。
 - WASM/WASI 仍不支持该内部 helper 的错误格式化依赖；本次类型修复不扩大后端支持范围。
 
+## 泛型回调保留已知容器结构
+
+`Map<String,Map<Tag,Dynamic>>` 取 values 后传给 `group-by`，回调参数仍是 `Map<Tag,Dynamic>`，
+可以直接读取字段；直接调用、`->` 和局部函数别名使用相同的输入证据。`map` 等泛型回调也遵循该规则。
+已有外层容器类型不需要再次 decode，也不需要给回调补重复的类型断言。
+
+### 限制
+
+- 读取出的 Dynamic 字段仍需在用于数值运算或其他具体能力前 decode/narrow；`List<Dynamic>` 的成员不能直接当作 Map。
+- 回调输入声明不能收窄实际成员类型；调用方泛型、Ref 不变性和函数参数逆变约束保持不变。
+- 本次不扩大 WASM/WASI 对开放数据的支持范围。
+
 ## 显式 trait 调用的重复实现
 
 `&trait-call Trait :method receiver ...` 按 trait 来源选择实现。同一个接收者上，该来源必须只有一个候选；多个候选会报 `E_DUPLICATE_TRAIT_IMPL`，不会执行其中任何一个方法。native 与 JS runtime 均执行这条规则，包括显式 `--compat-types` 生成或运行的调用。

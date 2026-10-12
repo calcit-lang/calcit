@@ -1,0 +1,28 @@
+# 泛型回调保留容器结构
+
+## 依据与设计
+
+Timegrass 的历史任务分组从 `Map<String,Map<Tag,Dynamic>>` 取得 values，回调内部先读取时间字段，
+再调用已有时间 decoder。预处理却因输入嵌套 Dynamic 而跳过整份类型证据，让回调参数残留为未绑定的 `T`。
+这不是业务边界缺少 decoder；正式 0.29.0 和 #2013 开发构建均可复现。
+
+删除普通函数及函数值调用的两处全树 Dynamic 过滤，复用已有的原子 `prove_with_bindings`。
+`T` 可以绑定为 `Map<Tag,Dynamic>`，成员仍是 Dynamic；后续具体使用必须通过同一个类型关系证明。
+不改兼容关系、方差、名义边界检查或泛型刚性，不从回调输出合同反推输入，也不新增分析器或逐 API 规则。
+
+CI 的 core 全定义检查进一步暴露 `tagging-edn` 回归：把裸 Dynamic 绑定也导入回调上下文，会让既有未标注回调退化成缺少签名证据的 DynFn。因此只保留有外层结构的新增 binding（例如 `Map<Tag,Dynamic>`），不把裸 Dynamic 作为新的上下文参数证据；既有 bindings 不变，最终调用证明仍检查原始开放实参。保持 core 实现不变，并给 tagging-edn 增加嵌套开放 Map 的附带回归。
+
+## 验证边界
+
+- 在既有 fixture 增加 4 个 definition-attached 测试：直接分组、线程宏、函数别名、普通 map 读取开放字段。
+- 在既有 proof runner 回放 native/JS，并验证调用与返回证明不修改源码。
+- 反例覆盖直接与线程宏：开放字段冒充 Number、开放成员冒充 Map、回调声明收窄、调用方泛型特化、Ref 不变性、函数逆变。
+- 复验真实 Timegrass 组件，不修改其分组表达式。检查越过原先 Map 形状错误后仍有独立的 nullable String 证明失败，不能据此签发整个应用迁移通过。
+- 运行既有 Rust、核心、CLI 与文档回归；开放容器不新增 WASM 支持承诺。具体命令与结果随 PR 更新。
+- 新增 tagging-edn 测试完整保留在 native/JS。全 core 回放确认其运行时字符串转 Tag 会触发既有 E_WASM_TAG_CONVERSION，因此在原后端清单中仅为该测试记录 WASM/WASI 的 unsupported 边界，不改变断言或扩大后端能力承诺。
+
+## 成本
+
+不新增依赖、持久状态、遍历器或公开入口；去除预扫描过滤后，让原有类型证明处理已有输入。
+既有证明只在全部关系成立时提交 bindings，失败不会向后续回调泄露部分假设。
+本次不声称性能提升；测试耗时与平台记录在 PR。
