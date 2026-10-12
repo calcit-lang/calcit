@@ -33,6 +33,16 @@ fn fn_type(args: Vec<Arc<CalcitTypeAnnotation>>, return_type: Arc<CalcitTypeAnno
   Arc::new(CalcitTypeAnnotation::from_function_parts(args, return_type))
 }
 
+/// SyntaxList parameters become nested List<Syntax> members in macro bodies.
+/// Their shape is syntax evidence, not a runtime value callback contract.
+pub(super) fn is_syntax_member(annotation: &CalcitTypeAnnotation) -> bool {
+  match annotation {
+    CalcitTypeAnnotation::Syntax(_) => true,
+    CalcitTypeAnnotation::List(member) => is_syntax_member(member),
+    _ => false,
+  }
+}
+
 fn callback_return_type(callback: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
   callback_result_evidence(callback, scope_types, false)
 }
@@ -179,7 +189,7 @@ pub(crate) fn resolve_checked_call_contract(
   match (fn_def, receiver_type.as_ref()) {
     ("pairs-map", T::List(pair)) => {
       let T::List(member) = pair.as_ref() else { return None };
-      if matches!(member.as_ref(), T::Syntax(_)) {
+      if is_syntax_member(member) {
         return None;
       }
       // The implementation checks every pair's length before reading it.
@@ -210,7 +220,7 @@ pub(crate) fn resolve_checked_call_contract(
       })
     }
     ("any?" | "every?", T::List(item_type) | T::Set(item_type)) => {
-      let callback_type = if matches!(item_type.as_ref(), T::Syntax(_)) {
+      let callback_type = if is_syntax_member(item_type) {
         Arc::new(T::DynFn)
       } else {
         fn_type(vec![item_type.clone()], Arc::new(T::Bool))
@@ -230,7 +240,7 @@ pub(crate) fn resolve_checked_call_contract(
       lowering: None,
     }),
     ("each", T::List(item_type) | T::Set(item_type)) => {
-      let callback_type = if matches!(item_type.as_ref(), T::Syntax(_)) {
+      let callback_type = if is_syntax_member(item_type) {
         Arc::new(T::DynFn)
       } else {
         fn_type(vec![item_type.clone()], crate::calcit::DYNAMIC_TYPE.clone())
@@ -326,7 +336,7 @@ pub(crate) fn resolve_checked_call_contract(
       return_type: receiver_type,
       lowering: None,
     }),
-    ("filter", T::List(item_type)) | ("filter", T::Set(item_type)) if !matches!(item_type.as_ref(), T::Syntax(_)) => {
+    ("filter", T::List(item_type)) | ("filter", T::Set(item_type)) if !is_syntax_member(item_type) => {
       let target = if matches!(receiver_type.as_ref(), T::List(_)) {
         "&list:filter"
       } else {
@@ -346,7 +356,7 @@ pub(crate) fn resolve_checked_call_contract(
       return_type: receiver_type,
       lowering: Some(CheckedCallLowering::CoreDef("&map:filter")),
     }),
-    ("map", T::List(item_type)) | ("map", T::Set(item_type)) if !matches!(item_type.as_ref(), T::Syntax(_)) => {
+    ("map", T::List(item_type)) | ("map", T::Set(item_type)) if !is_syntax_member(item_type) => {
       let output_type = mapper_output_type(args.get(1)?, scope_types, "MapOutput");
       let (return_type, target) = if matches!(receiver_type.as_ref(), T::List(_)) {
         (Arc::new(T::List(output_type.clone())), "&list:map")
@@ -359,7 +369,7 @@ pub(crate) fn resolve_checked_call_contract(
         lowering: Some(CheckedCallLowering::CoreDef(target)),
       })
     }
-    ("map-indexed", T::List(item_type)) if !matches!(item_type.as_ref(), T::Syntax(_)) => {
+    ("map-indexed", T::List(item_type)) if !is_syntax_member(item_type) => {
       let output_type = mapper_output_type(args.get(1)?, scope_types, "MapIndexedOutput");
       Some(CheckedCallContract {
         expected_types: Some(vec![
@@ -389,7 +399,7 @@ pub(crate) fn resolve_checked_call_contract(
         lowering: None,
       })
     }
-    ("filter", T::List(item_type)) | ("filter", T::Set(item_type)) if matches!(item_type.as_ref(), T::Syntax(_)) => {
+    ("filter", T::List(item_type)) | ("filter", T::Set(item_type)) if is_syntax_member(item_type) => {
       let target = if matches!(receiver_type.as_ref(), T::List(_)) {
         "&list:filter"
       } else {
@@ -401,7 +411,7 @@ pub(crate) fn resolve_checked_call_contract(
         lowering: Some(CheckedCallLowering::CoreDef(target)),
       })
     }
-    ("map", T::List(item_type)) | ("map", T::Set(item_type)) if matches!(item_type.as_ref(), T::Syntax(_)) => {
+    ("map", T::List(item_type)) | ("map", T::Set(item_type)) if is_syntax_member(item_type) => {
       let output_type = Arc::new(T::TypeVar(Arc::from("MapOutput")));
       let (return_type, target) = if matches!(receiver_type.as_ref(), T::List(_)) {
         (Arc::new(T::List(output_type)), "&list:map")
@@ -697,6 +707,19 @@ mod tests {
   #[test]
   fn iteration_contracts_keep_syntax_members_open_and_map_pairs_shaped() {
     let syntax = Arc::new(CalcitTypeAnnotation::Syntax(Arc::new(calcit::MacroSyntaxType::Syntax)));
+    for member in [syntax.clone(), Arc::new(CalcitTypeAnnotation::List(syntax.clone()))] {
+      let syntax_args = CalcitList::from(&[
+        local("forms", Arc::new(CalcitTypeAnnotation::List(member))),
+        local("predicate", Arc::new(CalcitTypeAnnotation::DynFn)),
+      ] as &[Calcit]);
+      for name in ["filter", "map"] {
+        let contract = resolve_checked_call_contract(calcit::CORE_NS, name, &syntax_args, &ScopeTypes::new())
+          .expect("macro syntax collections retain their lowering target");
+        assert!(contract.expected_types.is_none());
+        assert!(contract.lowering.is_some());
+      }
+    }
+    assert!(!is_syntax_member(&CalcitTypeAnnotation::List(crate::calcit::DYNAMIC_TYPE.clone())));
     let syntax_args = CalcitList::from(&[
       local("forms", Arc::new(CalcitTypeAnnotation::List(syntax))),
       local("predicate", Arc::new(CalcitTypeAnnotation::DynFn)),

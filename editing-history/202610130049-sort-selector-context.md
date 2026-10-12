@@ -25,3 +25,13 @@ Timegrass 的排序回调在严格调用证明中丢失 List 成员类型。完�
 同步 main 后完整 Rust 测试通过，CI 的 Struct 写入回归随后发现 `assoc` 更新 Fn 类型字段会被新校验提前拒绝：仅用“专门化参数中包含 Fn”识别回调不成立，存储函数值并不等于调用该函数。这里将已有 fold / sort selector 关系集中为私有的 callback specialization helper，并由原通用 specialization 复用；早期上下文、方法和最终回调校验只接入这个语义边界。Struct 写入仍由原字段合同证明处理，保留原结构化 `E_CALL_ARGUMENT_UNPROVEN`，不改成其他诊断或放宽门禁。既有 `check-struct-field-js.mjs` 用例不删、不改期望，只补空 stdout 的明确报错，避免 JSON parse 错误掩盖根因。
 
 此修复后的完整 Struct 回归与排序正负例定向 runner 均通过，Clippy 通过；完整 Rust / check-all 重新回放，不沿用旧 HEAD 的成功结果。
+
+## 普通检查与 proof 预览一致性
+
+Review 指出 `DynFn` 的 `UnknownCallable` 证明边界未被专门化校验拒绝。复现确认：`List<Dynamic>` 上的 `fn (row) (+ 1 row)` 在 proof 预览中失败，但普通 `--check-only` 返回成功；只测 fix 预览不足以证明正常编译安全。进一步定位表明该回调已经推导为 `Fn(Dynamic) -> Number`，仅拒绝 UnknownCallable 仍不够：caller-supplied 参数没有登记开放输入，回调体可以把 Dynamic 当作 Number 使用。因此复用现有词法记录，让有上下文合同的输入与显式参数遵循同一边界；通用专门化校验也拒绝真正的 UnknownCallable，无新增诊断编号或排序特例。
+
+既有 runner 增加 fn/具名 defn、直接/两种方法写法在普通检查、native、JS、WASM/WASI 入口的明确类型拒绝与无产物检查，并独立验证裸 `'Fn` 参数（内部 DynFn）不能伪装成已证明的 selector。附带正例保留具有完整 Dynamic→Number 合同并实际 decode 的回调，区分开放值与未证明调用能力。
+
+完整回归另外暴露两处已有证据不一致：`&enum:impls` / `&struct:impls` 的 proc 签名仍是裸 List，而 runtime 与 core 文档合同都是 `List<Impl>`，现将 proc 返回类型对齐实际值；`deftrait` 的 SyntaxList 参数进入函数体后是嵌套 `List<Syntax>`，只检查一层 Syntax 会错误启用运行时值合同。后者复用已有 Syntax collection 边界，递归识别 List 包装，在 checked contract 与 callback specialization 中保持一致；普通 `List<Dynamic>` 不属于该边界。临时为宏局部函数补 hint 的尝试已撤回，没有修改宏源码。现有 Unicode / deftrait 回归保留，低层合同测试补嵌套 Syntax 与 Dynamic 的区别。
+
+Option/Result 现有方法测试还发现，后缀方法路径丢弃了 `receiver_specialized` 标记，导致新增的专门化校验误套在所有名义方法上。后缀与前缀路径现均只在实际采用该回调关系时补充校验，普通名义方法继续使用原有 trait/method 验证，不增加平行规则。

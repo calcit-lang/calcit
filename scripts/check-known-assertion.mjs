@@ -37,6 +37,8 @@ try {
   const sortSelectorOriginal = await readFile(snapshot);
   for (const [name, input, selector, generics = ""] of [
     ["open-row", "(:: 'List 'Dynamic)", "fn (row) (&map:get row :n)"],
+    ["open-scalar", "(:: 'List 'Dynamic)", "fn (row) (+ 1 row)"],
+    ["open-scalar-named", "(:: 'List 'Dynamic)", "defn key-of (row) (+ 1 row)"],
     ["open-number", "(:: 'List (:: 'Map 'Tag 'Dynamic))", "fn (row) (+ 1 (&map:get row :n))"],
     ["narrowed-selector", "(:: 'List (:: 'Map 'Tag 'Dynamic))",
       "fn (row) (hint-fn $ {} (:args $ [] (:: 'Map 'Tag 'Number)) (:return 'Number)) (&map:get row :n)"],
@@ -49,6 +51,12 @@ try {
         `quote $ defn rejected (rows) (${call} $ ${selector})`);
       run("edit", "schema", "app.sort-selector/rejected", "--input-format", "cirru", "--code",
         `quote $ :: 'Fn $ {} (:args $ [] ${input}) (:return ${input}) ${generics}`);
+      if (name.startsWith("open-scalar")) {
+        run("edit", "def", "app.sort-selector/rejected-entry!", "--input-format", "cirru", "--code",
+          "quote $ defn rejected-entry! () (rejected $ [] 1 2) &unit");
+        run("edit", "schema", "app.sort-selector/rejected-entry!", "--input-format", "cirru", "--code",
+          "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)");
+      }
       const before = await readFile(snapshot);
       const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "callable-contract-proof-v1",
         "--ns", "app.sort-selector", "--def", "rejected", "--format", "json"], options);
@@ -57,11 +65,40 @@ try {
       assert.match(`${rejected.stdout}\n${rejected.stderr}`,
         /E_CALL_ARGUMENT_(?:UNPROVEN|MISMATCH)|E_ERASED_GENERIC_RELATION|W_FN_ARG_TYPE_MISMATCH/,
         `${name} style=${style}: missing selector contract diagnostic`);
+      if (name.startsWith("open-scalar")) {
+        for (const mode of [["--check-only"], [], ["js"], ["wasm"], ["wasi"]]) {
+          const output = join(project, `${name}-${style}-${mode.join("-") || "native"}`);
+          const checked = spawnSync(binary, [snapshot, "--init-fn", "app.sort-selector/rejected-entry!",
+            "--reload-fn", "app.sort-selector/rejected-entry!", "--emit-path", output, ...mode], options);
+          if (checked.error) throw checked.error;
+          assert.equal(checked.status, 1, `${name} style=${style} ${mode}: must reject unproven numeric use\n${checked.stdout}\n${checked.stderr}`);
+          assert.match(`${checked.stdout}\n${checked.stderr}`, /E_CALL_ARGUMENT_UNPROVEN|E_ERASED_GENERIC_RELATION/);
+          await assertRejectedArtifacts(output, `${name} ${style} ${mode}`, /E_CALL_ARGUMENT_UNPROVEN|E_ERASED_GENERIC_RELATION/);
+        }
+      }
       assert.deepEqual(await readFile(snapshot), before);
     }
   }
+  for (const call of ["&list:sort-by rows selector", "rows .sort-by selector", ".sort-by rows selector"]) {
+    await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+    run("edit", "def", "app.sort-selector/opaque-selector", "--input-format", "cirru", "--code",
+      `quote $ defn opaque-selector (rows selector) (${call})`);
+    run("edit", "schema", "app.sort-selector/opaque-selector", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] (:: 'List 'Number) 'Fn) (:return $ :: 'List 'Number)");
+    const before = await readFile(snapshot);
+    for (const args of [
+      ["fix", "--rule", "callable-contract-proof-v1", "--ns", "app.sort-selector", "--def", "opaque-selector", "--format", "json"],
+      ["--init-fn", "app.sort-selector/opaque-selector", "--reload-fn", "app.sort-selector/opaque-selector", "--check-only"],
+    ]) {
+      const rejected = spawnSync(binary, [snapshot, ...args], options);
+      if (rejected.error) throw rejected.error;
+      assert.equal(rejected.status, 1, `${call}: opaque callable requires a proven signature\n${rejected.stdout}\n${rejected.stderr}`);
+      assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_ERASED_GENERIC_RELATION/);
+    }
+    assert.deepEqual(await readFile(snapshot), before);
+  }
   await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
-  for (const name of ["direct", "threaded", "method", "prefix-method", "named-selector", "alias", "alias-chain", "restored-alias", "mutable-tag-alias", "copied-alias-survives-write"]) {
+  for (const name of ["direct", "threaded", "method", "prefix-method", "named-selector", "alias", "alias-chain", "restored-alias", "mutable-tag-alias", "copied-alias-survives-write", "checked-open-selector"]) {
     const proof = JSON.parse(run("fix", "--rule", "callable-contract-proof-v1",
       "--ns", "app.sort-selector", "--def", name, "--format", "json"));
     assert.deepEqual(proof.diagnostics, [], `${name}: selector input evidence`);

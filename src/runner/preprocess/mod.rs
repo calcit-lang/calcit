@@ -3588,17 +3588,16 @@ fn preprocess_list_call(
                 call_stack,
               )?);
             }
-            let expected_method_args = expected_method_argument_types(
+            let method_context = expected_method_argument_types(
               type_info.as_ref(),
               method_name.as_ref(),
               &CalcitList::from(contextual_args.as_slice()),
               scope_types,
-            )
-            .map(|context| context.argument_types);
+            );
+            let expected_method_args = method_context.as_ref().map(|context| context.argument_types.as_slice());
             let mut processed_args = CalcitList::new_inner_from(&[head_form]);
             for (arg_idx, arg) in args.iter().skip(1).enumerate() {
               let expected_fn = expected_method_args
-                .as_ref()
                 .and_then(|types| types.get(arg_idx))
                 .and_then(|expected| expected.resolve_to_fn());
               let previous_fn = EXPECTED_FN_TYPE.with(|cell| {
@@ -3609,7 +3608,7 @@ fn preprocess_list_call(
               });
               let processed = preprocess_argument_with_context(
                 arg,
-                expected_method_args.as_ref().and_then(|types| types.get(arg_idx)),
+                expected_method_args.and_then(|types| types.get(arg_idx)),
                 scope_defs,
                 scope_types,
                 file_ns,
@@ -3621,7 +3620,8 @@ fn preprocess_list_call(
             }
             let processed_args = CalcitList::from(processed_args);
             reject_pending_async_arguments(&typed_method, &processed_args, scope_types, call_stack)?;
-            if let Some(expected_method_args) = expected_method_args.as_deref()
+            if method_context.as_ref().is_some_and(|context| context.receiver_specialized)
+              && let Some(expected_method_args) = expected_method_args
               && let Ok(method_args) = processed_args.skip(1)
             {
               reject_strict_unproven_specialized_contract(
@@ -7147,14 +7147,14 @@ fn check_struct_method_args(
   }
 }
 
-/// Resolve method argument types after binding the receiver's generic payloads.
-/// This is used before preprocessing inline callbacks, so their parameter and
-/// return contracts are available while the callback body is checked.
+/// Method inputs and whether they rely on a receiver-specific callback relation.
 struct MethodArgumentContext {
   argument_types: Vec<Arc<CalcitTypeAnnotation>>,
   receiver_specialized: bool,
 }
 
+/// Resolve method inputs before callback bodies are checked, using the actual
+/// implementation rather than inferring semantics from the method's spelling.
 fn expected_method_argument_types(
   type_value: &CalcitTypeAnnotation,
   method_name: &str,
@@ -11663,6 +11663,7 @@ pub fn preprocess_defn(
           signature
         }
       });
+      let has_contextual_contract = expected_fn_schema.is_some();
       let has_body_fn_hint = body_fn_hint.is_some();
       // Source-written inline defn and macro-expanded fn consume the same
       // parameter context. Neither owns the callee's temporary output variable.
@@ -11825,9 +11826,10 @@ pub fn preprocess_defn(
       for parameter in &zs {
         proof_bindings.bind(parameter, None, &body_types);
       }
-      // Only a declared contract makes a parameter explicitly open; a
-      // contextual callback type may carry Dynamic as missing evidence.
-      let declared_contract = has_body_fn_hint || matches!(def_schema.as_ref(), CalcitTypeAnnotation::Fn(_));
+      // A contextual input is supplied by the caller, not inferred from this
+      // body's demands. Its open payload must obey the same boundary as an
+      // explicit parameter contract, even without a source-written hint.
+      let declared_contract = has_body_fn_hint || has_contextual_contract || matches!(def_schema.as_ref(), CalcitTypeAnnotation::Fn(_));
       let mut explicit_open_bindings = explicit_open::ExplicitOpenScope::new();
       for parameter in &zs {
         let open = declared_contract && matches!(parameter, Calcit::Local(local) if contains_dynamic_type(local.type_info.as_ref()));
@@ -13130,8 +13132,8 @@ struct UnprovenSpecializedArgument {
   actual: Arc<CalcitTypeAnnotation>,
 }
 
-/// Find an argument that would narrow an open payload exposed by a
-/// receiver-specialized call contract.
+/// Find an open payload or unknown callable that cannot prove a
+/// receiver-specialized input contract.
 fn find_unproven_specialized_argument(
   expected_types: &[Arc<CalcitTypeAnnotation>],
   args: &CalcitList,
@@ -13146,7 +13148,10 @@ fn find_unproven_specialized_argument(
       continue;
     };
     let proof = actual.prove_available_bindings(expected, &mut bindings);
-    if matches!(proof, TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic)) {
+    if matches!(
+      proof,
+      TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic | TypeBoundaryReason::UnknownCallable)
+    ) {
       return Some(UnprovenSpecializedArgument {
         index,
         expected: expected.clone(),
@@ -13157,8 +13162,7 @@ fn find_unproven_specialized_argument(
   None
 }
 
-/// Reject a receiver-specialized contract when a concrete argument would
-/// narrow an open payload without an explicit boundary.
+/// Reject specialization without independent payload or callable evidence.
 fn reject_strict_unproven_specialized_contract(
   head: &Calcit,
   args: &CalcitList,
@@ -13180,7 +13184,7 @@ fn reject_strict_unproven_specialized_contract(
   Err(CalcitErr::use_msg_stack_location_with_code(
     CalcitErrKind::Type,
     format!(
-      "call to `{head}` passes `{}` at argument {}, which cannot satisfy receiver-specialized contract `{}` without narrowing an open Dynamic payload; decode or narrow the payload before using concrete capabilities",
+      "call to `{head}` passes `{}` at argument {}, which cannot prove receiver-specialized contract `{}`; decode or narrow open payloads before using concrete capabilities, and provide a complete callback contract for an unknown callable",
       actual.to_brief_string(),
       index + argument_offset + 1,
       expected.to_brief_string(),

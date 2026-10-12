@@ -2905,6 +2905,21 @@
                 {} $ :n 2
                 {} $ :n 1
             :tags $ #{} :sort-selector-context :unit
+        'checked-open-selector $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn checked-open-selector (rows)
+            &list:sort-by rows $ fn (row)
+              hint-fn $ {}
+                :args $ [] 'Dynamic
+                :return 'Number
+              decode-map-as row 'Number
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'Dynamic
+            :return $ :: 'List 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |decodes-sort-key)
+            :code $ quote $ assert= ([] 1 2)
+              checked-open-selector $ [] 2 1
+            :tags $ #{} :sort-selector-context :unit
         'copied-alias-survives-write $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn copied-alias-survives-write (rows)
             let

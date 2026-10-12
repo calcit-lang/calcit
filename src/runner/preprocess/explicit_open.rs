@@ -2,9 +2,9 @@
 //!
 //! `Dynamic` is also the fallback for evidence inference cannot express yet
 //! (heterogeneous Map entries, anonymous enum payloads, contextual callback
-//! inputs). Only a declared parameter contract, or a `&let` alias computed
-//! from such a parameter, is treated as an explicitly open value that must be
-//! proved before it reaches a concrete parameter.
+//! inputs). A declared parameter contract, a caller-supplied callback input,
+//! or a `&let` alias computed from such a parameter is treated as an explicitly
+//! open value that must be proved before it reaches a concrete parameter.
 //! The same lexical record retains the initial write contract independently
 //! of predicate refinements on references to the binding.
 use super::*;
@@ -70,6 +70,8 @@ pub(super) fn retain_static_callee(local: &Calcit, value: Option<Calcit>) {
   });
 }
 
+/// Return identity only while both the binding and its reference retain the
+/// original contract; an explicit replacement contract must stand on its own.
 pub(super) fn static_callee(local: &CalcitLocal, types: &ScopeTypes) -> Option<Calcit> {
   EXPLICIT_OPEN_LOCALS.with(|marks| {
     marks

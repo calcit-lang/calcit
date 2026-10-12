@@ -262,6 +262,8 @@ fn specialize_list_apply_expected_types(
   Some(specialized)
 }
 
+/// Derive selector inputs solely from list members; source constructors supply
+/// callable kind before their bodies can be checked, never payload evidence.
 fn specialize_list_sort_by_expected_types(
   args: &CalcitList,
   scope_types: &ScopeTypes,
@@ -274,7 +276,7 @@ fn specialize_list_sort_by_expected_types(
   let CalcitTypeAnnotation::List(item_type) = receiver_type.as_ref() else {
     return None;
   };
-  if matches!(item_type.as_ref(), CalcitTypeAnnotation::Syntax(_)) {
+  if super::checked_call_contract::is_syntax_member(item_type) {
     return None;
   }
   let selector = args.get(1)?;
@@ -318,7 +320,7 @@ pub(super) fn specialize_collection_fold_expected_types(
   let member_types = match receiver_type.as_ref() {
     CalcitTypeAnnotation::Map(key, value) if separate_key_value => vec![key.clone(), value.clone()],
     CalcitTypeAnnotation::List(item_type) | CalcitTypeAnnotation::Set(item_type)
-      if !separate_key_value && !matches!(item_type.as_ref(), CalcitTypeAnnotation::Syntax(_)) =>
+      if !separate_key_value && !super::checked_call_contract::is_syntax_member(item_type) =>
     {
       vec![item_type.clone()]
     }
@@ -389,7 +391,7 @@ pub(super) fn specialize_collection_sort_expected_types(
   };
   let mut specialized = expected_types.to_vec();
   specialized[0] = receiver_type.clone();
-  if matches!(item_type.as_ref(), CalcitTypeAnnotation::Syntax(_)) {
+  if super::checked_call_contract::is_syntax_member(item_type) {
     specialized[1] = Arc::new(CalcitTypeAnnotation::DynFn);
     return Some(specialized);
   }
