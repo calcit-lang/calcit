@@ -676,8 +676,10 @@
             :tags $ #{} :unit
         'ShadowFields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct ShadowFields
-            :option $ :: 'Option 'Number
-            :result 'Result
+            :option $ :: 'test-types-inference.shadow/Option 'Number
+            :other-option $ :: 'test-types-inference.shadow/Option 'Number
+            :result 'test-types-inference.shadow/Result
+            :other-result 'test-types-inference.shadow/Result
           :examples $ []
           :schema $ :: 'StructDef
         'foreign-option-is-nil $ %{} 'CodeEntry (:doc |)
@@ -694,29 +696,20 @@
             :args $ [] 'test-types-inference.shadow/Result
         'same-shadow-fields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn same-shadow-fields (fields)
-            let
-                expected-option $ Option :some 7
-                expected-result $ Result :ok 1
-              assert-type expected-option $ :: 'Option 'Number
-              assert-type expected-result 'Result
-              and
-                = expected-option $ :option fields
-                = expected-result $ :result fields
+            and
+              = (:option fields) (:other-option fields)
+              = (:result fields) (:other-result fields)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'test-types-inference.shadow/ShadowFields
           :tests $ []
             %{} 'TestEntry (:name |same-shadow-nominal-fields)
               :code $ quote $ assert= true
-                test-types-inference.shadow/same-shadow-fields $ test-types-inference.shadow/ShadowFields
-                  :option $ test-types-inference.shadow/Option :some 7
-                  :result $ test-types-inference.shadow/Result :ok 1
+                test-types-inference.shadow/same-shadow-fields $ test-types-inference.shadow/ShadowFields :option (test-types-inference.shadow/Option :some 7) :other-option (test-types-inference.shadow/Option :some 7) :result (test-types-inference.shadow/Result :ok 1) :other-result $ test-types-inference.shadow/Result :ok 1
               :tags $ #{} :unit
             %{} 'TestEntry (:name |different-shadow-payload)
               :code $ quote $ assert= false
-                test-types-inference.shadow/same-shadow-fields $ test-types-inference.shadow/ShadowFields
-                  :option $ test-types-inference.shadow/Option :some 8
-                  :result $ test-types-inference.shadow/Result :ok 1
+                test-types-inference.shadow/same-shadow-fields $ test-types-inference.shadow/ShadowFields :option (test-types-inference.shadow/Option :some 8) :other-option (test-types-inference.shadow/Option :some 7) :result (test-types-inference.shadow/Result :ok 1) :other-result $ test-types-inference.shadow/Result :ok 1
               :tags $ #{} :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-types-inference.shadow
