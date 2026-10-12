@@ -487,6 +487,18 @@ let
 迁移时按原意选择：判断是否同一个宿主对象改用 `identical?`；按内容比较或建立索引时，先在适配器内取出 id、
 文本等 Calcit 数据再比较。这一检查不提供自动改写，裸 `JsObject` 与 `Dynamic` 值不受影响。
 
+## 字符串访问的 Option 类型证据
+
+已知 String 上的 `first`、`last`、`nth` 和 `get` 在严格调用与返回证明中保留 `Option<String>`。
+空字符串或越界位置得到 `none`，有效位置得到 Unicode scalar 字符，不需要在业务源码中补 `assert-type`。
+
+```cirru
+option:unwrap-or (first |🌱树) |
+```
+
+上例返回 `|🌱`。编译器将字符串 primitive 的结果绑定一次，通过已有的 `nil?` 分支确认存在性再构造 Option；接收者与索引仍从左到右各求值一次。
+List/Enum 中合法的 nil 元素仍是 `some nil`，不被当作缺失。底层 `&str:first` / `&str:nth` 的 nullable 合同不变，直接把未检查结果断言成 String 仍然无法通过严格证明。
+
 ## String 到 Tag/Symbol 的类型化转换
 
 新代码用 `to-tag: String -> Tag`、`to-symbol: String -> Symbol`。旧 `turn-tag` / `turn-symbol` 的 native/JS 运行时还接受 Tag/Symbol 输入，不能按词形全局替换。`calcit fix --rule core-identity-conversion-v1 --format edn` 只对内建调用且参数已证明为 String 的稳定源码提供自动迁移；Dynamic、非 String、quote、未知 macro 和一等函数引用需人工审阅。预览后携带 revision 应用，再重复预览并运行项目测试。WASM 缺少动态 Tag/Symbol intern；改名不会让原来不支持的调用变得可编译。

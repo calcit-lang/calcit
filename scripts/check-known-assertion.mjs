@@ -125,6 +125,44 @@ try {
     assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_CALL_ARGUMENT_UNPROVEN/);
   }
   assert.deepEqual(await readFile(snapshot), emptyEvidenceOriginal);
+  // #2016: generated string Option access uses checked nullable evidence;
+  // unguarded source assertions and nullable collection items stay unproven.
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "string-option-presence", "--backend", "native,js,wasm",
+  ], { ...options, stdio: "inherit" });
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "string-option-effects", "--backend", "native,js",
+  ], { ...options, stdio: "inherit" });
+  await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  const stringOptionOriginal = await readFile(snapshot);
+  for (const name of ["first-text", "last-text", "nth-text", "get-text", "sort-date-strings", "list-first"]) {
+    for (const rule of ["concrete-return-proof-v1", "callable-contract-proof-v1"]) {
+      const proof = JSON.parse(run("fix", "--rule", rule,
+        "--ns", "app.string-option", "--def", name, "--format", "json"));
+      assert.deepEqual(proof.diagnostics, [], `${name}: ${rule}`);
+    }
+  }
+  assert.deepEqual(await readFile(snapshot), stringOptionOriginal);
+  for (const [name, input, body] of [
+    ["raw-first", "'String", "assert-type (&str:first value) 'String"],
+    ["raw-nth", "'String", "assert-type (&str:nth value 0) 'String"],
+    ["open-list-item", "(:: 'List 'Dynamic)", "assert-type (&list:nth value 0) 'String"],
+    ["open-value", "'Dynamic", "assert-type value 'String"],
+  ]) {
+    run("edit", "def", `app.string-option/${name}`, "--input-format", "cirru", "--code",
+      `quote $ defn ${name} (value) (${body})`);
+    run("edit", "schema", `app.string-option/${name}`, "--input-format", "cirru", "--code",
+      `quote $ :: 'Fn $ {} (:args $ [] ${input}) (:return 'String)`);
+    const before = await readFile(snapshot);
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "assert-type-proof-v1",
+      "--ns", "app.string-option", "--def", name, "--format", "edn"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_ASSERT_TYPE_UNPROVEN/);
+    assert.deepEqual(await readFile(snapshot), before);
+  }
   // #2008 / #1553: enum construction must preserve caller generics after
   // lowering, without treating a same-named constructor binder as that caller.
   execFileSync(process.execPath, [
