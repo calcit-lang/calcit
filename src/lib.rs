@@ -25,6 +25,8 @@ pub mod project_state;
 pub mod runner;
 pub mod snapshot;
 pub mod util;
+#[path = "wasm/mod.rs"]
+pub mod wasm;
 #[cfg(feature = "wasm")]
 #[path = "wasm/wasm_cli.rs"]
 pub mod wasm_cli;

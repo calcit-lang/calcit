@@ -125,8 +125,24 @@ write-file
 
 诊断覆盖检查只读取“诊断”章节表格的“编号”列；正文、其他表格或说明列中引用的编号不算已登记。同一格可以列出多个分别用反引号包裹的编号。
 
+## 源码布局
+
+WASM 后端与 FFI ABI 的实现集中在 `src/wasm/`，对外公开路径保持不变：
+
+| 文件 | 公开路径 | 需要 `wasm` feature |
+| --- | --- | --- |
+| `src/wasm/emit_wasm.rs` 及 `emit_wasm/` | `calcit::codegen::emit_wasm` | 是 |
+| `src/wasm/wasm_cli.rs` | `calcit::wasm_cli` | 是 |
+| `src/wasm/ffi_abi.rs`、`ffi_async.rs` | `calcit::ffi_abi`、`calcit::ffi_async` | 否（仅非 wasm32 目标才编译；不需要 wasm feature） |
+| `src/wasm/ffi_interface_ir.rs` | `calcit::ffi_interface_ir` | 否 |
+
+`src/wasm/mod.rs` 是统一入口 `calcit::wasm`：按上表的 feature 条件重新导出 `WasmTarget`、`WasmBoundary`、`emit_wasm`、`validate_wasm_target`、`validate_wasm_boundary`、`check_wasm_command_component`、`WasmCliOptions`、`run`，以及三个 FFI 模块。这些模块仍通过 `src/lib.rs` 与 `src/codegen.rs` 里的 `#[path]` 声明挂载，所以 FFI 模块不会被 `wasm` feature 门控。
+
+`src/wasm/` 之外的代码只能经 `calcit::wasm` 或上表的公开路径使用 WASM 内部实现。`cargo test boundary_tests` 会扫描 `src/`、`tests/` 与 `benches/`，在以下情况失败：直接引用 `src/wasm/` 下的实现文件（`src/lib.rs` 与 `src/codegen.rs` 的挂载除外），或使用 `emit_wasm::` / `wasm_cli::` 下未列入入口的条目。新增对外条目时同时更新 `src/wasm/mod.rs` 的重新导出与该测试的允许列表。
+
 ## 限制
 
+- 边界检查扫描去掉 `//` 注释行后的整段源码（含 rustfmt 换行的多行 `use` 分组），只检查以 `emit_wasm::` / `wasm_cli::` 开头的路径，不解析 `use` 别名，也不检查其他写法的路径。
 - 不带编号的 `unsupported ... in WASM` 诊断尚未统一格式，不一定包含源位置与缺失的证据种类。
 - `wasm-unsupported-procs` 列表只校验排除清单出现过的 Proc，没有 core 测试覆盖的 Proc 靠人工维护。
 - `update` 的接收者为 Struct 时在 WASM 上 trap，native 会改写对应字段。
