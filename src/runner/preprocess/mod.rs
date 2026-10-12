@@ -3718,6 +3718,7 @@ fn preprocess_list_call(
 
   let head_value = match &head_form {
     Calcit::Import(CalcitImport { ns, def, .. }) => lookup_callable_ns_def_for_preprocess(ns, def, check_warnings, call_stack)?,
+    Calcit::Local(local) => explicit_open::static_callee(local, scope_types),
     _ => None,
   };
 
@@ -4473,6 +4474,18 @@ fn preprocess_list_call(
             }
             // A successful write invalidates read refinements of this local.
             scope_types.insert(local.sym.clone(), expected);
+            if explicit_open::invalidate_static_callee(local) {
+              return Err(CalcitErr::use_msg_stack_location_with_code(
+                CalcitErrKind::Type,
+                format!(
+                  "set! reassigns callable `{}` after its implementation supplied callback context; keep this alias immutable or provide a complete callable contract independent of its initializer",
+                  local.sym,
+                ),
+                "E_CALL_ARGUMENT_UNPROVEN",
+                call_stack,
+                value.get_location().or_else(|| call_location.clone()),
+              ));
+            }
           }
           reject_or_warn_on_nullable_js_ffi_dereference(
             call_head,
@@ -4852,6 +4865,9 @@ fn preprocess_known_function_call(
   let mut ys = CalcitList::new_inner_from(std::slice::from_ref(&head_form));
   let mut has_spread = false;
   let checked_contract = resolve_checked_call_contract(&info.def_ns, &info.name, &args, scope_types);
+  if checked_contract.as_ref().is_some_and(|contract| contract.expected_types.is_some()) {
+    explicit_open::note_callee_use(&head_form);
+  }
   let preprocessing_expected_types = checked_contract
     .as_ref()
     .and_then(|contract| contract.expected_types.as_deref())
@@ -4916,6 +4932,13 @@ fn preprocess_known_function_call(
       .and_then(|contract| contract.expected_types.as_deref())
       .or(refreshed_core_types.as_deref())
       .unwrap_or(preprocessing_expected_types);
+    if refreshed_checked_contract
+      .as_ref()
+      .is_some_and(|contract| contract.expected_types.is_some())
+      || refreshed_core_types.is_some()
+    {
+      explicit_open::note_callee_use(&head_form);
+    }
 
     // Set expected fn type hint if this arg position has a Fn-typed param
     let expected_type = active_expected_types.get(arg_idx).map(|expected| {
@@ -5145,6 +5168,7 @@ fn preprocess_known_function_call(
     let core_expected_types = type_checking::specialize_core_expected_types(&info, &current_args, scope_types, &info.arg_types)
       .filter(|types| types.iter().any(|annotation| annotation.resolve_to_nonoptional_fn().is_some()));
     if let Some(expected_types) = checked_expected_types.or(core_expected_types.as_deref()) {
+      explicit_open::note_callee_use(&head_form);
       reject_strict_unproven_specialized_contract(&head_form, &current_args, expected_types, 0, scope_types, file_ns, call_stack)?;
     }
     reject_strict_unproven_generic_relation(
@@ -12125,7 +12149,19 @@ pub fn preprocess_core_let(
     // explicitly open value, e.g. an element read from a `List<Dynamic>` input.
     let open = matches!(local, Calcit::Local(binding) if body_types.get(&binding.sym).is_some_and(|annotation| contains_dynamic_type(annotation.as_ref())))
       && explicit_open::reads_explicitly_open_local(value);
+    let callable = if resolve_type_value(value, &body_types).is_some_and(|annotation| annotation.resolve_to_nonoptional_fn().is_some())
+    {
+      match value {
+        Calcit::Import(import) => lookup_callable_ns_def_for_preprocess(&import.ns, &import.def, ctx.check_warnings, ctx.call_stack)?,
+        Calcit::Local(alias) => explicit_open::static_callee(alias, &body_types),
+        Calcit::Fn { .. } => Some(value.clone()),
+        _ => None,
+      }
+    } else {
+      None
+    };
     explicit_open_binding.bind(local, open);
+    explicit_open::retain_static_callee(local, callable);
   }
 
   let mut skipped_head = false;

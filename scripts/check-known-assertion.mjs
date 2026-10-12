@@ -61,12 +61,44 @@ try {
     }
   }
   await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
-  for (const name of ["direct", "threaded", "method", "prefix-method", "named-selector", "alias"]) {
+  for (const name of ["direct", "threaded", "method", "prefix-method", "named-selector", "alias", "alias-chain", "restored-alias", "mutable-tag-alias", "copied-alias-survives-write"]) {
     const proof = JSON.parse(run("fix", "--rule", "callable-contract-proof-v1",
       "--ns", "app.sort-selector", "--def", name, "--format", "json"));
     assert.deepEqual(proof.diagnostics, [], `${name}: selector input evidence`);
   }
   assert.deepEqual(await readFile(snapshot), sortSelectorOriginal);
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "sort-selector-assignment", "--backend", "js",
+  ], { ...options, stdio: "inherit" });
+  const aliasSelectorCall = "order rows $ fn (row) (&map:get row :n)";
+  for (const [name, body, features = ""] of [
+    ["unrelated-same-signature", `let ((order ignore-selector)) (${aliasSelectorCall})`],
+    ["shadowed-source", `let ((order &list:sort-by)) (let ((order ignore-selector)) (${aliasSelectorCall}))`],
+    ["shadowed-parameter", `let ((order &list:sort-by)) ((fn (order) (${aliasSelectorCall})) ignore-selector)`],
+    ["rebound-before-context", `let ((order &list:sort-by)) (set! order ignore-selector) (${aliasSelectorCall})`, ":js-ffi"],
+    ["rebound-after-context", `let ((order &list:sort-by)) (${aliasSelectorCall}) (set! order ignore-selector) rows`, ":js-ffi"],
+    ["captured-before-rebind", `let ((order &list:sort-by) (use-order (fn () (${aliasSelectorCall})))) (set! order ignore-selector) (use-order)`, ":js-ffi"],
+  ]) {
+    await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+    run("edit", "def", "app.sort-selector/rejected", "--input-format", "cirru", "--code",
+      `quote $ defn rejected (rows) (${body})`);
+    run("edit", "schema", "app.sort-selector/rejected", "--input-format", "cirru", "--code",
+      `quote $ :: 'Fn $ {} (:args $ [] (:: 'List (:: 'Map 'Tag 'Number))) (:return $ :: 'List (:: 'Map 'Tag 'Number)) (:features $ #{} ${features})`);
+    const before = await readFile(snapshot);
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "callable-contract-proof-v1",
+      "--ns", "app.sort-selector", "--def", "rejected", "--format", "json"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_CALL_ARGUMENT_UNPROVEN|E_ERASED_GENERIC_RELATION/,
+      `${name}: callee identity must not come from an opaque or changed binding`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`,
+      name === "rebound-after-context" || name === "captured-before-rebind"
+        ? /after its implementation supplied callback context/
+        : /&map:get/,
+      `${name}: rejection must reach the intended identity boundary`);
+    assert.deepEqual(await readFile(snapshot), before);
+  }
   // #2014: known container shape survives open members in callback context.
   execFileSync(process.execPath, [
     "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
