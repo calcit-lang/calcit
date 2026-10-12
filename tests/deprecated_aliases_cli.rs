@@ -670,3 +670,167 @@ fn docs_read_line_range_past_the_end_is_an_error() {
   assert!(clipped.status.success(), "{}", String::from_utf8_lossy(&clipped.stderr));
   assert!(String::from_utf8_lossy(&clipped.stdout).contains("End of document."));
 }
+
+#[test]
+fn tree_insert_and_swap_match_the_legacy_leaves() {
+  let read = |project: &TempProject| fs::read_to_string(project.snapshot()).expect("snapshot should read");
+  let cases: [(&str, &[&str], &[&str], &str); 6] = [
+    (
+      "before",
+      &["tree", "insert-before", "app.main/items", "--path", "@2.2", "--code", "quote 9"],
+      &[
+        "tree",
+        "insert",
+        "app.main/items",
+        "--at",
+        "before",
+        "--path",
+        "@2.2",
+        "--code",
+        "quote 9",
+      ],
+      "tree insert --at before",
+    ),
+    (
+      "after",
+      &["tree", "insert-after", "app.main/items", "--path", "@2.2", "--code", "quote 9"],
+      &[
+        "tree",
+        "insert",
+        "app.main/items",
+        "--at",
+        "after",
+        "--path",
+        "@2.2",
+        "--code",
+        "quote 9",
+      ],
+      "tree insert --at after",
+    ),
+    (
+      "prepend",
+      &["tree", "insert-child", "app.main/items", "--path", "@2", "--code", "quote 9"],
+      &[
+        "tree",
+        "insert",
+        "app.main/items",
+        "--at",
+        "prepend-child",
+        "--path",
+        "@2",
+        "--code",
+        "quote 9",
+      ],
+      "tree insert --at prepend-child",
+    ),
+    (
+      "append",
+      &["tree", "append-child", "app.main/items", "--path", "@2", "--code", "quote 9"],
+      &[
+        "tree",
+        "insert",
+        "app.main/items",
+        "--at",
+        "append-child",
+        "--path",
+        "@2",
+        "--code",
+        "quote 9",
+      ],
+      "tree insert --at append-child",
+    ),
+    (
+      "next",
+      &["tree", "swap-next", "app.main/items", "--path", "@2.1"],
+      &["tree", "swap", "app.main/items", "--with", "next", "--path", "@2.1"],
+      "tree swap --with next",
+    ),
+    (
+      "prev",
+      &["tree", "swap-prev", "app.main/items", "--path", "@2.2"],
+      &["tree", "swap", "app.main/items", "--with", "prev", "--path", "@2.2"],
+      "tree swap --with prev",
+    ),
+  ];
+  for (name, old, new, replacement) in cases {
+    let legacy = TempProject::create(&format!("legacy-{name}"));
+    let merged = TempProject::create(&format!("merged-{name}"));
+    let before = read(&legacy);
+    let old_output = edit_ok(&legacy, old);
+    let new_output = edit_ok(&merged, new);
+    let hints = hint_lines(&old_output);
+    assert_eq!(hints.len(), 1, "{old:?}: {hints:?}");
+    assert!(hints[0].contains(replacement), "{}", hints[0]);
+    assert!(hint_lines(&new_output).is_empty(), "{new:?} must not print a hint");
+    assert_ne!(read(&legacy), before, "{old:?} should change the snapshot");
+    assert_eq!(read(&legacy), read(&merged), "{old:?} vs {new:?}");
+  }
+}
+
+#[test]
+fn tree_insert_and_swap_reject_unknown_positions_without_writing() {
+  let project = TempProject::create("bad-position");
+  let before = fs::read_to_string(project.snapshot()).expect("snapshot should read");
+  for args in [
+    &[
+      "tree",
+      "insert",
+      "app.main/items",
+      "--at",
+      "around",
+      "--path",
+      "@2.1",
+      "--code",
+      "quote 9",
+    ][..],
+    &["tree", "swap", "app.main/items", "--with", "up", "--path", "@2.1"][..],
+  ] {
+    let output = run_calcit(&project.snapshot(), args);
+    assert!(!output.status.success(), "{args:?} should fail");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Unsupported"), "{args:?}");
+  }
+  assert_eq!(before, fs::read_to_string(project.snapshot()).expect("snapshot should read"));
+}
+
+#[test]
+fn tree_insert_and_swap_run_inside_transactions_and_legacy_ops_hint() {
+  let project = TempProject::create("transaction-merged");
+  let output = edit_ok(
+    &project,
+    &[
+      "edit",
+      "transaction",
+      "--code",
+      r#"[["tree","insert","app.main/items","--at","after","--path","@2.4","--code","quote 5"],["tree","swap","app.main/items","--with","prev","--path","@2.5"]]"#,
+    ],
+  );
+  assert!(hint_lines(&output).is_empty());
+  assert!(!String::from_utf8_lossy(&output.stderr).contains("[Deprecated]"));
+  let content = fs::read_to_string(project.snapshot()).expect("snapshot should read");
+  assert!(content.contains("[] 1 2 3 5 4"), "{content}");
+
+  let legacy = TempProject::create("transaction-legacy");
+  let output = edit_ok(
+    &legacy,
+    &[
+      "edit",
+      "transaction",
+      "--code",
+      r#"[["tree","insert-after","app.main/items","--path","@2.4","--code","quote 5"]]"#,
+    ],
+  );
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(
+    stderr.contains("[Deprecated] transaction operation 1 uses `tree insert-after`") && stderr.contains("tree insert --at after"),
+    "{stderr}"
+  );
+}
+
+#[test]
+fn host_procs_is_deprecated_without_replacement() {
+  let output = run_calcit(Path::new("calcit/test.cirru"), &["query", "host-procs"]);
+  assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+  let hints = hint_lines(&output);
+  assert_eq!(hints.len(), 1, "{hints:?}");
+  assert!(hints[0].contains("has no replacement"), "{}", hints[0]);
+}

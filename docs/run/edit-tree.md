@@ -483,13 +483,18 @@ You can use numeric paths to locate deep nodes:
 calcit tree replace app.main/main! --path '@1.2.0' \
   --expect 'quote old-value' --input-format cirru --code 'quote $ + 1 2'
 
-# Insert before a node
-calcit tree insert-before app.main/main! --path '@1.0' \
+# Insert before a node (--at before|after|prepend-child|append-child)
+calcit tree insert app.main/main! --at before --path '@1.0' \
   --expect 'quote (render-page)' --input-format cirru --code 'quote (println |started)'
+
+# Swap a node with its next sibling (--with next|prev)
+calcit tree swap app.main/main! --with next --path '@1.0'
 
 # Delete a node
 calcit tree delete app.main/main! --path '@1.0' --expect 'quote (render-page)'
 ```
+
+`tree insert --at prepend-child|append-child` treat the path as the parent list. The earlier leaves `tree insert-before`, `insert-after`, `insert-child`, `append-child`, `swap-next` and `swap-prev` still work, print a `[Deprecated]` hint on stderr, and share the same implementation; see [升级手册](upgrade.md).
 
 `--expect` is optional, but recommended whenever a numeric path is copied from
 an earlier query. The mutation is rejected before writing if the node (or insert

@@ -609,6 +609,8 @@ fn parse_transaction_operations(raw: &str) -> Result<Vec<Vec<String>>, String> {
           | "replace"
           | "replace-leaf"
           | "delete"
+          | "insert"
+          | "swap"
           | "insert-before"
           | "insert-after"
           | "insert-child"
@@ -1315,9 +1317,11 @@ fn format_existing_definition_advice(namespace: &str, definition: &str, existing
     }
     CirruEditStrategy::Insert => {
       lines.push("Most differences are additive. Prefer inserting nodes into the existing tree.".to_string());
-      lines.push(format!("Try: calcit tree insert-before '{target}' --path '<path>' --code '<node>'"));
       lines.push(format!(
-        "Or: calcit tree insert-after '{target}' --path '<path>' --code '<node>' / calcit tree append-child '{target}' --path '<path>' --code '<node>'"
+        "Try: calcit tree insert '{target}' --at before --path '<path>' --code '<node>'"
+      ));
+      lines.push(format!(
+        "Or: calcit tree insert '{target}' --at after --path '<path>' --code '<node>' / calcit tree insert '{target}' --at append-child --path '<path>' --code '<node>'"
       ));
     }
     CirruEditStrategy::Delete => {

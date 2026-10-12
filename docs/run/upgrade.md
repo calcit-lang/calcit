@@ -662,6 +662,30 @@ calcit calcit.cirru query ns app.main --format cirru > .calcit/snippets/app.main
 calcit calcit.cirru edit ns app.main --file .calcit/snippets/app.main.cirru --dry-run
 ```
 
+### 0.29.2 弃用、下一个非 patch 版本删除：`tree insert` / `tree swap` 与 `query host-procs`（#1566）
+
+`tree` 的四个插入叶子合并为一个入口，两个交换叶子合并为一个入口。旧叶子在 0.29.2 仍可运行，stdout 与退出码不变，只在 stderr 多输出一行 `[Deprecated] ...` 提示；新旧写法共用同一实现，改写的 Snapshot 逐字节相同。`edit transaction` 中的旧操作同样输出提示，新操作 `["tree","insert",…]`、`["tree","swap",…]` 可直接放进事务。
+
+| 已弃用 | 替代 | 说明 |
+| --- | --- | --- |
+| `tree insert-before <target> --path <p> …` | `tree insert <target> --at before --path <p> …` | `--code`、`--file`、`--input-format`、`--expect`、`--depth` 不变 |
+| `tree insert-after <target> --path <p> …` | `tree insert <target> --at after --path <p> …` | 同上 |
+| `tree insert-child <target> --path <p> …` | `tree insert <target> --at prepend-child --path <p> …` | `--path` 指向父列表，节点成为第一个子节点 |
+| `tree append-child <target> --path <p> …` | `tree insert <target> --at append-child --path <p> …` | `--path` 指向父列表，节点成为最后一个子节点 |
+| `tree swap-next <target> --path <p>` | `tree swap <target> --with next --path <p>` | 与下一个兄弟交换 |
+| `tree swap-prev <target> --path <p>` | `tree swap <target> --with prev --path <p>` | 与上一个兄弟交换 |
+| `query host-procs [--tag <tag>]` | 无 | 仓库、脚本与已盘点的生态仓库均无引用；删除后不再提供宿主注册 proc 的命令行清单 |
+
+`--at` 只接受 `before`、`after`、`prepend-child`、`append-child`，`--with` 只接受 `next`、`prev`，其他值在写入前报错。`cursor apply` 的操作名（`insert-before`、`swap-next` 等）不属于已弃用叶子，保持不变。
+
+迁移命令示例：
+
+```bash
+calcit calcit.cirru tree insert app.main/main! --at after --path '@1.0' --input-format cirru --code 'quote (println |done)'
+calcit calcit.cirru tree swap app.main/main! --with prev --path '@1.1'
+calcit calcit.cirru edit transaction --dry-run --format edn --code '[["tree","insert","app.main/f","--at","append-child","--path","@3","--code","quote x"]]'
+```
+
 ### 0.29.2 起新增：统一的 `--format human|edn|json`（#1566）
 
 所有带结构化输出的叶子命令都接受同一组值：`human`（默认）、`edn`（Cirru EDN，推荐）与 `json`（仅用于对接 JSON-only 工具）。本次只新增入口，旧写法全部保留：
