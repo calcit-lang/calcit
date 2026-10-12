@@ -78,17 +78,35 @@ try {
   ], { ...options, stdio: "inherit" });
   await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
   const emptyFamilyOriginal = await readFile(snapshot);
-  for (const name of ["empty-generic-list", "empty-generic-map", "empty-generic-set", "fold-generic-list"]) {
+  for (const name of ["empty-generic-list", "empty-generic-map", "empty-generic-set", "fold-generic-list", "branch-empty-generic-list"]) {
     const proof = JSON.parse(run("fix", "--rule", "assert-type-proof-v1",
       "--ns", "app.callback-origin", "--def", name, "--format", "json"));
     assert.deepEqual(proof.diagnostics, []);
   }
-  for (const name of ["nonempty-generic-list", "open-generic-list"]) {
+  for (const name of ["nonempty-generic-list", "open-generic-list", "branch-nonempty-generic-list", "branch-open-generic-list"]) {
     const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "assert-type-proof-v1",
       "--ns", "app.callback-origin", "--def", name, "--format", "json"], options);
     if (rejected.error) throw rejected.error;
     assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
     assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_ASSERT_TYPE_UNPROVEN/);
+  }
+  assert.deepEqual(await readFile(snapshot), emptyFamilyOriginal);
+  // Callback inputs infer a direct generic constructor through Ref without
+  // allowing a different callback or argument after construction.
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "ref-callback-inference", "--backend", "native,js",
+  ], { ...options, stdio: "inherit" });
+  for (const name of ["wrong-controller-call", "wrong-controller-write"]) {
+    for (const mode of [["--check-only"], ["js"]]) {
+      const output = join(project, `${name}-${mode.join("-")}`);
+      const rejected = spawnSync(binary, [snapshot, "--init-fn", `app.callback-origin/${name}`,
+        "--emit-path", output, ...mode], options);
+      if (rejected.error) throw rejected.error;
+      assert.equal(rejected.status, 1, `${rejected.stdout}\n${rejected.stderr}`);
+      assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_LOCAL_FN_ARG_TYPE_MISMATCH|W_RESET_ARG_TYPE_MISMATCH/);
+      await assertRejectedArtifacts(output, name, /W_LOCAL_FN_ARG_TYPE_MISMATCH|W_RESET_ARG_TYPE_MISMATCH/);
+    }
   }
   assert.deepEqual(await readFile(snapshot), emptyFamilyOriginal);
   // #1553: generated callback hints retain the nominal source owner across

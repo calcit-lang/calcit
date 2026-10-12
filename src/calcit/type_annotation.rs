@@ -442,7 +442,13 @@ impl CallTypeProof {
     // Instantiate callee variables from a callback's input contract before
     // checking contravariance. Caller variables remain rigid, and the complete
     // callback (including its output) must still independently satisfy the call.
-    if let (CalcitTypeAnnotation::Fn(actual), CalcitTypeAnnotation::Fn(expected)) = (actual, expected.as_ref()) {
+    // References do not erase the callback's input evidence. Seed only fresh
+    // callee variables, then prove the original reference in both directions.
+    let (mut input_actual, mut input_expected) = (actual, expected.as_ref());
+    while let (CalcitTypeAnnotation::Ref(actual), CalcitTypeAnnotation::Ref(expected)) = (input_actual, input_expected) {
+      (input_actual, input_expected) = (actual.as_ref(), expected.as_ref());
+    }
+    if let (CalcitTypeAnnotation::Fn(actual), CalcitTypeAnnotation::Fn(expected)) = (input_actual, input_expected) {
       for (actual_parameter, expected_parameter) in actual.arg_types.iter().zip(&expected.arg_types) {
         let mut candidate = staged.clone();
         if actual_parameter.prove_with_bindings(expected_parameter, &mut candidate).is_proven()

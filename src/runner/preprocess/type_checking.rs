@@ -1050,13 +1050,26 @@ pub(crate) fn check_local_fn_call_arg_types(
     return;
   };
 
+  check_resolved_fn_call_arg_types(head_form, &fn_annot, &local.sym, args, scope_types, call_info, check_warnings);
+}
+
+/// Apply the ordinary call contract to either a local or a computed function.
+pub(crate) fn check_resolved_fn_call_arg_types(
+  head_form: &Calcit,
+  fn_annot: &crate::calcit::CalcitFnTypeAnnotation,
+  display_name: &str,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  call_info: &CallTypeCheckInfo<'_>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
   if fn_annot.arg_types.is_empty() && fn_annot.rest_type.is_none() {
     return;
   }
 
   let expected_types = expected_types_with_rest(&fn_annot.arg_types, fn_annot.rest_type.as_ref());
 
-  let local_sym = local.sym.clone();
+  let local_sym = display_name;
   let def_name = call_info.def_name.to_owned();
   let file_ns_owned = call_info.file_ns.to_owned();
   let ctx = CheckContext {
@@ -1232,16 +1245,6 @@ pub(super) fn expression_is_proven_for(
   scope: &ScopeTypes,
   async_invocation: bool,
 ) -> bool {
-  // Empty constructors prove their collection family without binding any
-  // member variables. Nonempty values still need independent generic evidence.
-  let empty_family = matches!(
-    expected,
-    CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Map(_, _) | CalcitTypeAnnotation::Set(_)
-  ) && super::empty_container_has_no_type_evidence(expr, expected);
-  if expected.contains_type_var() && !empty_family {
-    return false;
-  }
-
   struct ExpressionCheck {
     remaining: usize,
   }
@@ -1344,7 +1347,17 @@ pub(super) fn expression_is_proven_for(
           }
           _ => {}
         }
-
+      }
+      // Check exits before restricting generic evidence: wrappers such as if
+      // and let may return empty constructors without binding member variables.
+      let empty_family = matches!(
+        expected,
+        CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Map(_, _) | CalcitTypeAnnotation::Set(_)
+      ) && super::empty_container_has_no_type_evidence(expr, expected);
+      if expected.contains_type_var() && !empty_family {
+        return false;
+      }
+      if let Calcit::List(items) = expr {
         // A nullish wrapper admits an independently proved container, not a
         // conversion from Optional. Promise adoption belongs to the whole
         // async return only; collection members are ordinary stored values.

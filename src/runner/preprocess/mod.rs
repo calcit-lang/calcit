@@ -4557,6 +4557,33 @@ fn preprocess_list_call(
           }
         }
 
+        // A computed head, such as a dereferenced callback, owes the same
+        // argument proof as a local with that signature.
+        if let Some(head @ Calcit::List(_)) = ys.first()
+          && let Some(signature) = resolve_type_value(head, scope_types).and_then(|annotation| annotation.resolve_to_fn())
+        {
+          let updated_args = CalcitList::from(ys.drop_left());
+          reject_strict_dynamic_nominal_argument(head, &updated_args, &signature, scope_types, file_ns, call_stack)?;
+          reject_strict_unproven_generic_relation(
+            head,
+            &updated_args,
+            &signature,
+            scope_types,
+            file_ns,
+            call_stack,
+            call_info.call_location.clone(),
+          )?;
+          type_checking::check_resolved_fn_call_arg_types(
+            head,
+            &signature,
+            &head.to_string(),
+            &updated_args,
+            scope_types,
+            &call_info,
+            check_warnings,
+          );
+        }
+
         // Eagerly execute type-slot procs during preprocessing so that TypeSlot
         // annotations can be resolved by the type checker within the same compilation.
         if let Some(Calcit::Proc(CalcitProc::DeftypeSlot)) = ys.first()
@@ -13590,7 +13617,9 @@ fn reject_strict_dynamic_nominal_argument(
   for (index, ((arg, actual), expected)) in args.iter().zip(actual_types).zip(expected_types).enumerate() {
     let Some(actual) = actual else { continue };
     let resolved_expected = expected.substitute_type_vars(&bindings);
-    if dynamic_erases_nominal_contract(actual.as_ref(), resolved_expected.as_ref()) {
+    if !empty_container_has_no_type_evidence(arg, resolved_expected.as_ref())
+      && dynamic_erases_nominal_contract(actual.as_ref(), resolved_expected.as_ref())
+    {
       return Err(CalcitErr::use_msg_stack_location_with_code(
         CalcitErrKind::Type,
         format!(

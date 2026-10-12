@@ -249,6 +249,49 @@
         :code $ quote $ ns app.callback-left
     'app.callback-origin $ %{} 'FileEntry
       :defs $ {}
+        'Controller $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Controller ([] 'Op)
+            :dispatch $ :: 'Ref $ :: 'Fn
+              {}
+                :args $ [] 'Op
+                :return 'Unit
+          :examples $ []
+          :schema $ :: 'StructDef
+        'branch-empty-generic-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn branch-empty-generic-list (anchor flag open)
+            assert-type
+              if flag ([]) ([])
+              :: 'List 'T
+            , &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] (:: 'List 'T) 'Bool $ :: 'List 'Dynamic
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |both-empty-exits)
+            :code $ quote $ do
+              assert= &unit $ branch-empty-generic-list ([] 1) true $ []
+              assert= &unit $ branch-empty-generic-list ([] |text) false $ []
+            :tags $ #{} :empty-generic-family
+        'branch-nonempty-generic-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn branch-nonempty-generic-list (anchor flag open)
+            assert-type
+              if flag ([]) ([] 1)
+              :: 'List 'T
+            , &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] (:: 'List 'T) 'Bool $ :: 'List 'Dynamic
+            :generics $ [] 'T
+        'branch-open-generic-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn branch-open-generic-list (anchor flag open)
+            assert-type
+              if flag ([]) open
+              :: 'List 'T
+            , &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] (:: 'List 'T) 'Bool $ :: 'List 'Dynamic
+            :generics $ [] 'T
         'choose $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn choose (flag)
             let
@@ -287,6 +330,41 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'direct-controller $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn direct-controller ()
+            let
+                received $ atom 0
+                dispatch! $ fn (op)
+                  hint-fn $ {}
+                    :args $ [] 'Number
+                    :return 'Unit
+                  reset! received op
+                  , &unit
+                controller $ Controller :dispatch $ atom dispatch!
+              assert-type controller $ :: Controller Number
+              (deref (:dispatch controller))
+                , 7
+              deref received
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ []
+            %{} 'TestEntry (:name |infers-reference-callback)
+              :code $ quote $ assert= 7 (direct-controller)
+              :tags $ #{} :ref-callback-inference
+            %{} 'TestEntry (:name |empty-nominal-callback-input)
+              :code $ quote $ let
+                  controller $ Controller :dispatch $ atom
+                    fn (items)
+                      hint-fn $ {}
+                        :args $ [] $ :: List 'app.callback-left/Item
+                        :return Unit
+                      assert= 0 $ count items
+                      , &unit
+                assert= &unit $
+                  deref $ :dispatch controller
+                  []
+              :tags $ #{} :ref-callback-inference
         'empty-generic-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn empty-generic-list (anchor)
             assert-type ([]) (:: 'List 'T)
@@ -344,6 +422,33 @@
               assert= ([])
                 fold-generic-list $ []
             :tags $ #{} :empty-generic-family
+        'generic-controller $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn generic-controller (dispatch! op)
+            let
+                controller $ Controller :dispatch $ atom dispatch!
+              assert-type controller $ :: Controller 'T
+              (deref (:dispatch controller))
+                , op
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+              :: 'Fn $ {} (:return 'Unit)
+                :args $ [] 'T
+              , 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-lexical-type-variable)
+            :code $ quote $ let
+                received $ atom |before
+              generic-controller
+                fn (op)
+                  hint-fn $ {}
+                    :args $ [] 'String
+                    :return 'Unit
+                  reset! received op
+                  , &unit
+                , |after
+              assert= |after $ deref received
+            :tags $ #{} :ref-callback-inference
         'generic-pairs-map $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn generic-pairs-map (xs) (pairs-map xs)
           :examples $ []
@@ -413,6 +518,36 @@
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'Number) (:: 'List 'Dynamic)
             :return $ :: 'List 'Number
+        'wrong-controller-call $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-controller-call ()
+            let
+                dispatch! $ fn (op)
+                  hint-fn $ {}
+                    :args $ [] Number
+                    :return Unit
+                  , &unit
+                controller $ Controller :dispatch $ atom dispatch!
+              (deref (:dispatch controller))
+                , |wrong
+              , &unit
+          :examples $ []
+        'wrong-controller-write $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-controller-write ()
+            let
+                dispatch! $ fn (op)
+                  hint-fn $ {}
+                    :args $ [] Number
+                    :return Unit
+                  , &unit
+                controller $ Controller :dispatch $ atom dispatch!
+              reset! (:dispatch controller)
+                fn (op)
+                  hint-fn $ {}
+                    :args $ [] String
+                    :return Unit
+                  , &unit
+              , &unit
+          :examples $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.callback-origin
           :require (app.callback-left :as left) (app.callback-right :as right)
