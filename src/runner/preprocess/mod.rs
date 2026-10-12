@@ -4152,14 +4152,13 @@ fn preprocess_list_call(
               EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous_fn);
             }
             let form = result?;
-            // Specialize callback context using proven preceding inputs;
-            // open values must not manufacture concrete bindings.
+            // Specialize callback context using proven preceding inputs.
+            // Nested Dynamic preserves known container shape, not concrete members.
             if !has_spread
               && let Some(signature) = callable_contract.as_ref()
               && let Some(expected) = signature.arg_types.get(ys.len() - 1).or(signature.rest_type.as_ref())
               && !empty_container_has_no_type_evidence(&form, expected.as_ref())
               && let Some(actual) = resolve_type_value(&form, scope_types)
-              && !contains_dynamic_type(actual.as_ref())
             {
               let mut candidate = callable_bindings.clone();
               if actual.prove_with_bindings(expected.as_ref(), &mut candidate).is_proven() {
@@ -4845,7 +4844,6 @@ fn preprocess_known_function_call(
       && let Some(binding_expected) = info.arg_types.get(arg_idx).or(info.rest_type.as_ref()).or(Some(expected))
       && !empty_container_has_no_type_evidence(&form, binding_expected.as_ref())
       && let Some(actual) = resolve_type_value(&form, scope_types)
-      && !contains_dynamic_type(actual.as_ref())
     {
       let mut candidate = preprocessing_type_bindings.clone();
       let direct_proof = actual

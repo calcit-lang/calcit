@@ -28,6 +28,53 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
+  // #2014: known container shape survives open members in callback context.
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "callback-container-shape", "--backend", "native,js",
+  ], { ...options, stdio: "inherit" });
+  await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+  const callbackShapeOriginal = await readFile(snapshot);
+  for (const name of ["group-open-rows", "group-open-rows-arrow", "group-open-rows-alias", "read-open-members"]) {
+    for (const rule of ["concrete-return-proof-v1", "callable-contract-proof-v1"]) {
+      const proof = JSON.parse(run("fix", "--rule", rule,
+        "--ns", "app.callback-shape", "--def", name, "--format", "json"));
+      assert.deepEqual(proof.diagnostics, [], `${name}: ${rule}`);
+    }
+  }
+  assert.deepEqual(await readFile(snapshot), callbackShapeOriginal);
+  for (const [name, input, body, output, generics = ""] of [
+    ["dynamic-member-number", "(:: 'List (:: 'Map 'Tag 'Dynamic))",
+      "map rows $ fn (row) (+ 1 (&map:get row :title))", "(:: 'List 'Number)"],
+    ["dynamic-row-map", "(:: 'List 'Dynamic)",
+      "map rows $ fn (row) (&map:get row :title)", "(:: 'List 'Dynamic)"],
+    ["narrow-callback-member", "(:: 'List (:: 'Map 'Tag 'Dynamic))",
+      "map rows $ fn (row) (hint-fn $ {} (:args $ [] (:: 'Map 'Tag 'Number)) (:return 'Number)) (&map:get row :title)", "(:: 'List 'Number)"],
+    ["rigid-caller-member", "(:: 'List (:: 'Map 'Tag 'T))",
+      "map rows $ fn (row) (+ 1 (&map:get row :title))", "(:: 'List 'Number)", "(:generics $ [] 'T)"],
+    ["ref-remains-invariant", "(:: 'List (:: 'Ref 'Dynamic))",
+      "map rows $ fn (row) (hint-fn $ {} (:args $ [] (:: 'Ref 'Number)) (:return 'Number)) (deref row)", "(:: 'List 'Number)"],
+    ["callback-remains-contravariant", "(:: 'List (:: 'Fn ({} (:args $ [] 'Number) (:return 'Dynamic))))",
+      "map rows $ fn (row) (hint-fn $ {} (:args $ [] (:: 'Fn ({} (:args $ [] 'Dynamic) (:return 'Dynamic)))) (:return 'Dynamic)) (row |wrong)", "(:: 'List 'Dynamic)"],
+  ]) {
+    for (const threaded of [false, true]) {
+      await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+      const expression = threaded ? `-> rows (${body.replace(/^map rows /, "map ")})` : body;
+      run("edit", "def", "app.callback-shape/rejected", "--input-format", "cirru", "--code",
+        `quote $ defn rejected (rows) (${expression})`);
+      run("edit", "schema", "app.callback-shape/rejected", "--input-format", "cirru", "--code",
+        `quote $ :: 'Fn $ {} (:args $ [] ${input}) (:return ${output}) ${generics}`);
+      const before = await readFile(snapshot);
+      const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "callable-contract-proof-v1",
+        "--ns", "app.callback-shape", "--def", "rejected", "--format", "json"], options);
+      if (rejected.error) throw rejected.error;
+      assert.equal(rejected.status, 1, `${name} threaded=${threaded}\n${rejected.stdout}\n${rejected.stderr}`);
+      assert.match(`${rejected.stdout}\n${rejected.stderr}`,
+        /E_CALL_ARGUMENT_(?:UNPROVEN|MISMATCH)|E_ERASED_GENERIC_RELATION|W_FN_ARG_TYPE_MISMATCH/,
+        `${name} threaded=${threaded}: missing callback contract diagnostic`);
+      assert.deepEqual(await readFile(snapshot), before);
+    }
+  }
   // #2008 / #1553: enum construction must preserve caller generics after
   // lowering, without treating a same-named constructor binder as that caller.
   execFileSync(process.execPath, [
