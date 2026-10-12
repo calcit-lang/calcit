@@ -7,7 +7,8 @@
 use calcit::cli_args::{
   AnalyzeCommand, AnalyzeSubcommand, CalcitCommand, CallGraphCommand, CallGraphDiffCommand, CheckTypesCommand, CirruSubcommand,
   CountCallsCommand, DeprecatedCommand, DocsCommand, DocsReadLinesCommand, DocsSubcommand, DynamicMethodsCommand, EditSubcommand,
-  QuerySubcommand, ToplevelCalcit, TreeSubcommand, WeakTypesCommand,
+  QuerySubcommand, ToplevelCalcit, TreeAppendChildCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand,
+  TreeSubcommand, TreeSwapNextCommand, TreeSwapPrevCommand, WeakTypesCommand,
 };
 
 /// View kinds accepted by `analyze weak-types --only` in place of the retired
@@ -49,6 +50,7 @@ pub fn deprecated_command_hint(cli_args: &ToplevelCalcit) -> Option<String> {
     CalcitCommand::Query(cmd) => match &cmd.subcommand {
       QuerySubcommand::Pkg(_) => ("query pkg", "`calcit query config`, which prints the package name"),
       QuerySubcommand::Modules(_) => ("query modules", "`calcit config modules`"),
+      QuerySubcommand::HostProcs(_) => ("query host-procs", NO_REPLACEMENT),
       _ => return None,
     },
     CalcitCommand::Tree(cmd) => match &cmd.subcommand {
@@ -56,6 +58,12 @@ pub fn deprecated_command_hint(cli_args: &ToplevelCalcit) -> Option<String> {
         "tree batch-delete",
         "`calcit edit transaction` with one `tree delete` operation per path, highest index first",
       ),
+      TreeSubcommand::InsertBefore(_) => ("tree insert-before", "`calcit tree insert --at before`"),
+      TreeSubcommand::InsertAfter(_) => ("tree insert-after", "`calcit tree insert --at after`"),
+      TreeSubcommand::InsertChild(_) => ("tree insert-child", "`calcit tree insert --at prepend-child`"),
+      TreeSubcommand::AppendChild(_) => ("tree append-child", "`calcit tree insert --at append-child`"),
+      TreeSubcommand::SwapNext(_) => ("tree swap-next", "`calcit tree swap --with next`"),
+      TreeSubcommand::SwapPrev(_) => ("tree swap-prev", "`calcit tree swap --with prev`"),
       _ => return None,
     },
     CalcitCommand::Edit(cmd) => match &cmd.subcommand {
@@ -114,6 +122,20 @@ pub fn deprecated_transaction_operation_hint(index: usize, group: &str, subcomma
       "[Deprecated] transaction operation {} uses `tree batch-delete`, which will be removed in the next non-patch release; use one `tree delete` operation per path, highest index first. See docs/run/upgrade.md.",
       index + 1
     )),
+    ("tree", "insert-before" | "insert-after" | "insert-child" | "append-child" | "swap-next" | "swap-prev") => {
+      let replacement = match subcommand {
+        "insert-before" => "`tree insert --at before`",
+        "insert-after" => "`tree insert --at after`",
+        "insert-child" => "`tree insert --at prepend-child`",
+        "append-child" => "`tree insert --at append-child`",
+        "swap-next" => "`tree swap --with next`",
+        _ => "`tree swap --with prev`",
+      };
+      Some(format!(
+        "[Deprecated] transaction operation {} uses `tree {subcommand}`, which will be removed in the next non-patch release; use {replacement}. See docs/run/upgrade.md.",
+        index + 1
+      ))
+    }
     ("edit", "rm-example") => Some(format!(
       "[Deprecated] transaction operation {} uses `edit rm-example`, which will be removed in the next non-patch release; use an `edit examples` operation with the remaining examples. See docs/run/upgrade.md.",
       index + 1
@@ -123,6 +145,76 @@ pub fn deprecated_transaction_operation_hint(index: usize, group: &str, subcomma
       index + 1
     )),
     _ => None,
+  }
+}
+
+/// Rewrites `tree insert --at <position>` and `tree swap --with <next|prev>` to the
+/// leaf handlers they replace, so both spellings share one implementation.
+pub fn normalize_tree_subcommand(subcommand: &TreeSubcommand) -> Result<TreeSubcommand, String> {
+  match subcommand {
+    TreeSubcommand::Insert(o) => {
+      let (target, path, file, code, input_format, expect, depth) = (
+        o.target.clone(),
+        o.path.clone(),
+        o.file.clone(),
+        o.code.clone(),
+        o.input_format,
+        o.expect.clone(),
+        o.depth,
+      );
+      Ok(match o.at.as_str() {
+        "before" => TreeSubcommand::InsertBefore(TreeInsertBeforeCommand {
+          target,
+          path,
+          file,
+          code,
+          input_format,
+          expect,
+          depth,
+        }),
+        "after" => TreeSubcommand::InsertAfter(TreeInsertAfterCommand {
+          target,
+          path,
+          file,
+          code,
+          input_format,
+          expect,
+          depth,
+        }),
+        "prepend-child" => TreeSubcommand::InsertChild(TreeInsertChildCommand {
+          target,
+          path,
+          file,
+          code,
+          input_format,
+          expect,
+          depth,
+        }),
+        "append-child" => TreeSubcommand::AppendChild(TreeAppendChildCommand {
+          target,
+          path,
+          file,
+          code,
+          input_format,
+          expect,
+          depth,
+        }),
+        other => {
+          return Err(format!(
+            "Unsupported `tree insert --at {other}`. Use: before, after, prepend-child, append-child."
+          ));
+        }
+      })
+    }
+    TreeSubcommand::Swap(o) => {
+      let (target, path, depth) = (o.target.clone(), o.path.clone(), o.depth);
+      Ok(match o.with.as_str() {
+        "next" => TreeSubcommand::SwapNext(TreeSwapNextCommand { target, path, depth }),
+        "prev" => TreeSubcommand::SwapPrev(TreeSwapPrevCommand { target, path, depth }),
+        other => return Err(format!("Unsupported `tree swap --with {other}`. Use: next, prev.")),
+      })
+    }
+    other => Ok(other.clone()),
   }
 }
 
@@ -432,6 +524,22 @@ mod tests {
       (&["analyze", "quality"][..], "--check-only"),
       (&["query", "pkg"][..], "query config"),
       (&["query", "modules"][..], "config modules"),
+      (&["query", "host-procs"][..], "has no replacement"),
+      (
+        &["tree", "insert-before", "app.main/f", "--path", "0"][..],
+        "tree insert --at before",
+      ),
+      (&["tree", "insert-after", "app.main/f", "--path", "0"][..], "tree insert --at after"),
+      (
+        &["tree", "insert-child", "app.main/f", "--path", "0"][..],
+        "tree insert --at prepend-child",
+      ),
+      (
+        &["tree", "append-child", "app.main/f", "--path", "0"][..],
+        "tree insert --at append-child",
+      ),
+      (&["tree", "swap-next", "app.main/f", "--path", "0"][..], "tree swap --with next"),
+      (&["tree", "swap-prev", "app.main/f", "--path", "0"][..], "tree swap --with prev"),
       (&["tree", "batch-delete", "app.main/f", "--paths", "0"][..], "edit transaction"),
       (&["analyze", "count-calls"][..], "call-graph --counts"),
       (&["analyze", "call-graph-diff", "HEAD"][..], "call-graph --diff"),
@@ -451,6 +559,71 @@ mod tests {
     assert_eq!(deprecated_command_hint(&parse(&["analyze", "call-graph", "--counts"])), None);
     assert_eq!(deprecated_command_hint(&parse(&["docs", "read", "a.md", "--lines", "3"])), None);
     assert_eq!(deprecated_command_hint(&parse(&["edit", "ns", "app.main"])), None);
+  }
+
+  #[test]
+  fn tree_insert_and_swap_share_the_legacy_leaves() {
+    let tree = |args: &[&str]| match parse(args).subcommand {
+      Some(CalcitCommand::Tree(cmd)) => cmd.subcommand,
+      other => panic!("expected tree command, got {other:?}"),
+    };
+    for (at, old) in [
+      ("before", "insert-before"),
+      ("after", "insert-after"),
+      ("prepend-child", "insert-child"),
+      ("append-child", "append-child"),
+    ] {
+      let new = tree(&[
+        "tree",
+        "insert",
+        "app.main/f",
+        "--path",
+        "2.1",
+        "--at",
+        at,
+        "--code",
+        "quote x",
+        "--input-format",
+        "cirru",
+        "--expect",
+        "quote y",
+        "--depth",
+        "3",
+      ]);
+      let legacy = tree(&[
+        "tree",
+        old,
+        "app.main/f",
+        "--path",
+        "2.1",
+        "--code",
+        "quote x",
+        "--input-format",
+        "cirru",
+        "--expect",
+        "quote y",
+        "--depth",
+        "3",
+      ]);
+      assert_eq!(normalize_tree_subcommand(&new).expect("insert"), legacy, "--at {at}");
+    }
+    for (with, old) in [("next", "swap-next"), ("prev", "swap-prev")] {
+      let new = tree(&["tree", "swap", "app.main/f", "--path", "2.1", "--with", with]);
+      assert_eq!(
+        normalize_tree_subcommand(&new).expect("swap"),
+        tree(&["tree", old, "app.main/f", "--path", "2.1"])
+      );
+    }
+    assert!(normalize_tree_subcommand(&tree(&["tree", "insert", "a/b", "--path", "0", "--at", "around"])).is_err());
+    assert!(normalize_tree_subcommand(&tree(&["tree", "swap", "a/b", "--path", "0", "--with", "up"])).is_err());
+    assert_eq!(
+      deprecated_command_hint(&parse(&["tree", "insert", "a/b", "--path", "0", "--at", "after"])),
+      None
+    );
+    assert_eq!(
+      deprecated_command_hint(&parse(&["tree", "swap", "a/b", "--path", "0", "--with", "next"])),
+      None
+    );
   }
 
   #[test]
@@ -568,6 +741,12 @@ mod tests {
   fn deprecated_transaction_operations_name_their_replacement() {
     for (group, subcommand, replacement) in [
       ("tree", "batch-delete", "tree delete"),
+      ("tree", "insert-before", "tree insert --at before"),
+      ("tree", "insert-after", "tree insert --at after"),
+      ("tree", "insert-child", "tree insert --at prepend-child"),
+      ("tree", "append-child", "tree insert --at append-child"),
+      ("tree", "swap-next", "tree swap --with next"),
+      ("tree", "swap-prev", "tree swap --with prev"),
       ("edit", "rm-example", "edit examples"),
       ("edit", "ns-doc", "edit ns <ns>"),
     ] {

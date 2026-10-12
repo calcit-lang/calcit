@@ -34,6 +34,9 @@ use super::tree_mutation::{TreeCursorMutation, TreeOperation};
 
 /// Main handler for code command
 pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(), String> {
+  let cmd = &TreeCommand {
+    subcommand: super::deprecations::normalize_tree_subcommand(&cmd.subcommand)?,
+  };
   let _writer = if !matches!(&cmd.subcommand, TreeSubcommand::Show(_)) {
     Some(calcit::util::atomic_write::SnapshotWriteGuard::acquire(snapshot_file)?)
   } else {
@@ -63,6 +66,7 @@ pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(),
     TreeSubcommand::SearchReplace(opts) => handle_search_replace(opts, snapshot_file),
     TreeSubcommand::Rewrite(opts) => handle_rewrite(opts, snapshot_file),
     TreeSubcommand::BatchDelete(opts) => handle_batch_delete(opts, snapshot_file),
+    TreeSubcommand::Insert(_) | TreeSubcommand::Swap(_) => unreachable!("normalized before dispatch"),
   };
 
   if let Err(error) = result {
@@ -113,6 +117,9 @@ fn resolve_tree_cursor_references(cmd: &mut TreeCommand, snapshot_file: &str) ->
     TreeSubcommand::SearchReplace(opts) => &mut opts.target,
     TreeSubcommand::Rewrite(opts) => &mut opts.target,
     TreeSubcommand::BatchDelete(opts) => &mut opts.target,
+    TreeSubcommand::Insert(_) | TreeSubcommand::Swap(_) => {
+      return Err("`tree insert` and `tree swap` must be normalized before dispatch.".to_owned());
+    }
   };
   let active_reference = if target == "@cursor" {
     Some(resolve_active_cursor_reference(snapshot_file)?)
@@ -163,6 +170,9 @@ fn resolve_tree_cursor_references(cmd: &mut TreeCommand, snapshot_file: &str) ->
       for path in &mut opts.paths {
         resolve(&opts.target, path)?;
       }
+    }
+    TreeSubcommand::Insert(_) | TreeSubcommand::Swap(_) => {
+      return Err("`tree insert` and `tree swap` must be normalized before dispatch.".to_owned());
     }
   }
   Ok(())
@@ -249,7 +259,7 @@ fn prepare_cursor_mutation(cmd: &TreeCommand, snapshot_file: &str) -> Result<Opt
         path: parse_path(&opts.path)?,
       },
     ),
-    TreeSubcommand::BatchDelete(_) => return Ok(None),
+    TreeSubcommand::BatchDelete(_) | TreeSubcommand::Insert(_) | TreeSubcommand::Swap(_) => return Ok(None),
   };
   Ok(Some(prepared))
 }

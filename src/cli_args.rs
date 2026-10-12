@@ -772,7 +772,7 @@ pub enum QuerySubcommand {
   TypeAt(QueryTypeAtCommand),
   /// gather bounded semantic context for one definition
   Context(QueryContextCommand),
-  /// list host-injected registered procs and descriptor tags
+  /// [Deprecated] no replacement; removed in the next non-patch release
   HostProcs(QueryHostProcsCommand),
   /// resolve a semantic path expression to numeric indices
   Path(QueryPathCommand),
@@ -857,7 +857,7 @@ pub struct QueryContextCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "host-procs")]
-/// list host-injected registered procs and descriptor tags
+/// [Deprecated] no replacement; removed in the next non-patch release
 pub struct QueryHostProcsCommand {
   /// filter procs that contain this tag (e.g. log or :log)
   #[argh(option)]
@@ -2087,6 +2087,8 @@ pub enum TreeSubcommand {
   Replace(TreeReplaceCommand),
   ReplaceLeaf(TreeReplaceLeafCommand),
   Delete(TreeDeleteCommand),
+  Insert(TreeInsertCommand),
+  Swap(TreeSwapCommand),
   InsertBefore(TreeInsertBeforeCommand),
   InsertAfter(TreeInsertAfterCommand),
   InsertChild(TreeInsertChildCommand),
@@ -2351,7 +2353,55 @@ pub struct TreeDeleteCommand {
   pub depth: usize,
 }
 
-/// insert node before target at specific path
+/// insert node relative to the target at a path: --at before, after, prepend-child, or append-child
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "insert")]
+pub struct TreeInsertCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// path to the anchor node (dot-separated coordinates, e.g. "@2.1.0")
+  #[argh(option)]
+  pub path: String,
+  /// insert position relative to the anchor: before, after, prepend-child, or append-child
+  #[argh(option)]
+  pub at: String,
+  /// read syntax_tree from file; select its transport with --input-format
+  #[argh(option)]
+  pub file: Option<String>,
+  /// syntax_tree as inline text; select its transport with --input-format
+  #[argh(option, long = "code")]
+  pub code: Option<String>,
+  /// syntax-node transport format: cirru, json-ast, or compatibility mode auto
+  #[argh(option, long = "input-format", default = "SyntaxInputFormat::Auto")]
+  pub input_format: SyntaxInputFormat,
+  /// require the anchor node to equal this quoted Cirru node before inserting
+  #[argh(option)]
+  pub expect: Option<String>,
+  /// max depth for result preview (0 = unlimited, default 2)
+  #[argh(option, default = "2")]
+  pub depth: usize,
+}
+
+/// swap node with a sibling: --with next or prev
+#[derive(FromArgs, PartialEq, Debug, Clone)]
+#[argh(subcommand, name = "swap")]
+pub struct TreeSwapCommand {
+  /// target in format "namespace/definition"
+  #[argh(positional)]
+  pub target: String,
+  /// path to the node (dot-separated coordinates, e.g. "@2.1.0")
+  #[argh(option)]
+  pub path: String,
+  /// sibling to swap with: next or prev
+  #[argh(option, long = "with")]
+  pub with: String,
+  /// max depth for result preview (0 = unlimited, default 2)
+  #[argh(option, default = "2")]
+  pub depth: usize,
+}
+
+/// [Deprecated] use `tree insert --at before`
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "insert-before")]
 pub struct TreeInsertBeforeCommand {
@@ -2378,7 +2428,7 @@ pub struct TreeInsertBeforeCommand {
   pub depth: usize,
 }
 
-/// insert node after target at specific path
+/// [Deprecated] use `tree insert --at after`
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "insert-after")]
 pub struct TreeInsertAfterCommand {
@@ -2405,7 +2455,7 @@ pub struct TreeInsertAfterCommand {
   pub depth: usize,
 }
 
-/// insert node as first child of target at specific path
+/// [Deprecated] use `tree insert --at prepend-child`
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "insert-child")]
 pub struct TreeInsertChildCommand {
@@ -2432,7 +2482,7 @@ pub struct TreeInsertChildCommand {
   pub depth: usize,
 }
 
-/// append node as last child of target at specific path
+/// [Deprecated] use `tree insert --at append-child`
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "append-child")]
 pub struct TreeAppendChildCommand {
@@ -2459,7 +2509,7 @@ pub struct TreeAppendChildCommand {
   pub depth: usize,
 }
 
-/// swap node with next sibling
+/// [Deprecated] use `tree swap --with next`
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "swap-next")]
 pub struct TreeSwapNextCommand {
@@ -2474,7 +2524,7 @@ pub struct TreeSwapNextCommand {
   pub depth: usize,
 }
 
-/// swap node with previous sibling
+/// [Deprecated] use `tree swap --with prev`
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "swap-prev")]
 pub struct TreeSwapPrevCommand {

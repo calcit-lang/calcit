@@ -474,6 +474,11 @@ fn render_tree_explanation(cmd: &TreeCommand) -> Option<String> {
       desc
     }
     TreeSubcommand::Delete(opts) => format!("removes AST node at path `{}` from `{}`", opts.path, opts.target),
+    TreeSubcommand::Insert(opts) => format!("inserts code ({}) relative to path `{}` in `{}`", opts.at, opts.path, opts.target),
+    TreeSubcommand::Swap(opts) => format!(
+      "swaps node at path `{}` with its {} sibling in `{}`",
+      opts.path, opts.with, opts.target
+    ),
     TreeSubcommand::InsertBefore(opts) => format!("inserts code before path `{}` in `{}`", opts.path, opts.target),
     TreeSubcommand::InsertAfter(opts) => format!("inserts code after path `{}` in `{}`", opts.path, opts.target),
     TreeSubcommand::InsertChild(opts) => format!("inserts child node at path `{}` in `{}`", opts.path, opts.target),
@@ -1140,6 +1145,22 @@ fn push_tree(tokens: &mut Vec<String>, cmd: &TreeCommand) {
     TreeSubcommand::Delete(opts) => {
       echo_items!(tokens, pos "target" => &opts.target, value "path" => &opts.path, opt "expect" => opts.expect.as_deref(); default "none", value "depth" => opts.depth; default "2")
     }
+    TreeSubcommand::Insert(opts) => {
+      push_tree_insert(
+        tokens,
+        &opts.target,
+        &opts.path,
+        CodeInputParts::new(opts.file.as_deref(), opts.code.as_deref()),
+        opts.input_format,
+        opts.expect.as_deref(),
+        opts.depth,
+      );
+      push_value(tokens, "at", &opts.at, None);
+    }
+    TreeSubcommand::Swap(opts) => {
+      push_tree_path_depth(tokens, &opts.target, &opts.path, opts.depth);
+      push_value(tokens, "with", &opts.with, None);
+    }
     TreeSubcommand::InsertBefore(opts) => push_tree_insert(
       tokens,
       &opts.target,
@@ -1469,6 +1490,8 @@ fn tree_name(subcommand: &TreeSubcommand) -> &'static str {
     TreeSubcommand::Replace(_) => "replace",
     TreeSubcommand::ReplaceLeaf(_) => "replace-leaf",
     TreeSubcommand::Delete(_) => "delete",
+    TreeSubcommand::Insert(_) => "insert",
+    TreeSubcommand::Swap(_) => "swap",
     TreeSubcommand::InsertBefore(_) => "insert-before",
     TreeSubcommand::InsertAfter(_) => "insert-after",
     TreeSubcommand::InsertChild(_) => "insert-child",
