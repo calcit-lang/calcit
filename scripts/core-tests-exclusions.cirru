@@ -52,6 +52,7 @@
       |calcit.core/assoc#preserves-struct-through-option-match "|unsupported: unsupported proc in WASM: &struct-def:new"
       |calcit.core/assoc#rejects-non-number-list-index "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/assoc-in#assocs-nested-maps-lists-and-nil-base "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nil? cannot distinguish nil from false or 0 for open type `dynamic`"
+      |test-types-inference.main/write-nominal-absence-fields#nested-collection-value "|unsupported: assoc-in retains its existing E_WASM_NIL_TYPE_EVIDENCE limitation on open internal traversal"
       |calcit.core/bit-and#rejects-non-i32-operands "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/case#literal-match-evaluates-once "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/case-default#literal-patterns-use-match "|parity: wrong result: expected b, got n"
