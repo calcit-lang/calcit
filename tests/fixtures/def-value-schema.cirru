@@ -559,6 +559,73 @@
           :schema $ :: 'StructDef
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.callback-right
+    'app.branch-call $ %{} 'FileEntry
+      :defs $ {}
+        'count-rest $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn count-rest (first-style & more) (count more)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'Map 'Tag 'Dynamic
+            :rest $ :: 'Map 'Tag 'Dynamic
+        'count-style $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn count-style (style) (count style)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'Map 'Tag 'Dynamic
+        'open-style $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn open-style (raw)
+            count-style $ if true raw $ {}
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'Map 'Dynamic 'Dynamic
+        'rebound-style $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn rebound-style (raw)
+            count-style $ let
+                style $ {}
+              set! style raw
+              , style
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+            :features $ #{} :js-ffi
+        'rest-count $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn rest-count (flag)
+            count-rest
+              {} $ :padding |4px
+              if flag
+                {} $ :color |red
+                {}
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |both-rest-exits)
+            :code $ quote $ do
+              assert= 1 $ rest-count true
+              assert= 1 $ rest-count false
+            :tags $ #{} :branch-call-proof
+        'style-count $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn style-count (flag)
+            count-style $ if flag
+              {} $ :color |red
+              {}
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |both-exits)
+            :code $ quote $ do
+              assert= 1 $ style-count true
+              assert= 0 $ style-count false
+            :tags $ #{} :branch-call-proof
+        'wrong-style $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-style (flag)
+            count-style $ if flag
+              {} $ 1 |red
+              {}
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.branch-call
     'app.dynamic-construction $ %{} 'FileEntry
       :defs $ {}
         'EmptyBox $ %{} 'CodeEntry (:doc |)

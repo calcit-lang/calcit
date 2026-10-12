@@ -1406,7 +1406,7 @@ pub(super) fn expression_is_proven_for(
 /// `set!` is the only operation that rebinds a lexical local (JS-FFI only). A
 /// predicate guard says nothing about the value after such a write, so a
 /// guarded branch that may write is left to the ordinary joined-type proof.
-fn may_rebind_local(expr: &Calcit) -> bool {
+pub(super) fn may_rebind_local(expr: &Calcit) -> bool {
   match expr {
     Calcit::Symbol { sym, .. } => sym.as_ref() == "set!",
     Calcit::Import(import) => import.def.as_ref() == "set!",
