@@ -14,6 +14,9 @@
           :code $ quote $ defn helper-count ()
             .count $ helper-list
           :examples $ []
+        'helper-empty-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn helper-empty-list () ([])
+          :examples $ []
         'helper-lengths $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn helper-lengths ()
             .map (helper-texts)
@@ -62,6 +65,9 @@
                   (helper-list) .map $ fn (x) (.add x 1)
                 assert= 3 $ helper-count
               :tags $ #{} :helper-inference :unit
+            %{} 'TestEntry (:name |empty-helper-contract)
+              :code $ quote $ assert= ([]) (helper-empty-list)
+              :tags $ #{} :helper-inference
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []
