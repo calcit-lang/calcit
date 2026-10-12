@@ -45,6 +45,8 @@ leads_to:
 
 已知 `List<T>` 的 `.first`、`.last`、`.get` 和 `String` 的 `.first`、`.last`、`.nth` 使用同一接收者证明推导 `Option<T>` 或 `Option<String>`；`calcit query type ":: 'List 'Number" --format edn` 可查看参数、返回值和 `proven` 状态。List 的旧 `.nth` 已在 0.29.0 删除，改用 `.get`。开放接收者或 Enum 的异质 payload 不能仅凭方法名得到具体成员类型；查询保持开放证据，不把 `Dynamic` 伪装为已证明的 `T`。
 
+同类型的 `Option` / `Result` 值可以直接用 `=` 比较，名义 Struct 字段读取与直接构造值采用同一契约。空变体没有 payload 时，可先绑定预期值并用 `assert-type` 补充完整泛型类型，再与字段比较；payload 类型仍必须匹配。判断是否有值也可使用 `.some?` / `.none?`，不要把 Option 与 nil 或裸 payload 比较。
+
 ### English reference for Agents
 
 | Role | Preferred public form | Legacy or implementation form |

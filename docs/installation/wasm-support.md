@@ -30,9 +30,10 @@ aliases:
 | Number、Bool、nil、String、tag 字面量 | supported | nil、false 与 0 共用 f64 表示，见下一行 | core `:tests` |
 | `nil?`、Option 在开放类型上的判断 | supported-with-type-evidence | 需要具体类型区分 nil、false 与 0（`E_WASM_NIL_TYPE_EVIDENCE`） | `calcit.core/update-in#updates-existing-nested-leaf` 等排除项 |
 | List / Map / Set / Struct / Enum 值与 core 方法 | supported | 线性内存 + bump allocator；`#{}` 字面量不去重 | core `:tests` |
+| `update` 作用于 List / Map / Enum | supported | 按运行时类型分派：List 下标越界或 Map key 不存在时原样返回且不调用回调；Enum 下标越界时 trap，对应 native 的 range error | `calcit.core/update#updates-list-by-index-and-skips-missing-slots` |
 | 已证明的普通方法调用、trait 方法 | supported-with-type-evidence | 接收者需要具体类型（`E_WASM_TRAIT_TYPE_EVIDENCE`、`E_WASM_TRAIT_RESOLUTION`） | `calcit.core/&map:destruct#exposes-pairs-and-folds` 排除项 |
 | 作为参数传递的闭包 | supported-with-type-evidence | 调用点可静态特化，参数契约可调用（`E_WASM_CLOSURE_SPECIALIZATION`、`E_WASM_CALL_SPECIALIZATION`） | `calcit.core/&list:filter-pair#filters-key-value-pairs` 排除项 |
-| 局部 `fn` 与立即调用的 `fn`（含 `apply-args`）的 `&` rest / `?` optional 参数，`&` 函数作为高阶回调 | supported | 按 native 绑定：缺省的 `?` 参数为 nil，`&` 参数收到剩余实参组成的 List；`foldl xs 0 +` 这类静态回调同样打包。函数体中的 `recur` 按同样规则重新绑定参数（`recur (&- n 1) n n` 把后两个实参打包进 `&` 参数） | `calcit.core/hint-fn#plain-call-into-rest-local`、`calcit.core/hint-fn#iife-with-rest-param`、`calcit.core/hint-fn#iife-rest-param-recur`、`calcit.core/hint-fn#rest-callee-in-hof` |
+| 局部 `fn` 与立即调用的 `fn`（含 `apply-args`）的 `&` rest / `?` optional 参数，`&` 函数作为高阶回调 | supported | 按 native 绑定：缺省的 `?` 参数为 nil，`&` 参数收到剩余实参组成的 List；`foldl xs 0 +` 这类静态回调同样打包。函数体中的 `recur` 按同样规则重新绑定参数（`recur (&- n 1) n n` 把后两个实参打包进 `&` 参数） | `calcit.core/hint-fn#plain-call-into-rest-local`、`calcit.core/hint-fn#optional-then-rest-local`、`calcit.core/hint-fn#iife-with-rest-param`、`calcit.core/hint-fn#iife-rest-param-recur`、`calcit.core/hint-fn#rest-callee-in-hof` |
 | 通过函数值（函数表）调用 `&` rest 函数 | supported | `calcit wasm`：`let ((f +)) (f 1 2)`、经定长 Fn 参数传入的 `defn first-of (a & _xs) a` 等调用按 native 打包剩余实参。用 N 个实参调用函数值时使用第 N 个函数表；表中 `&` 函数的入口是一个按 N 个实参打包 rest List 后再调用原函数的适配函数，定长函数的入口仍是函数本身。`calcit wasi`：command 中可执行到的间接调用仍在编译期以 `E_WASI_COMMAND_INDIRECT` 拒绝 | `calcit.core/hint-fn#plain-call-rest-fn-value`（WASI 为排除项） |
 | 嵌套 `fn` / `defn` 闭包值、特化闭包中的 `recur` | unsupported | | `calcit.core/&list:apply#preserves-homogeneous-function-result-types` 排除项 |
 | `try` | unsupported | 失败只能 trap | `calcit.core/&number:rem#rejects-zero-and-non-safe-integers` 排除项 |
@@ -128,4 +129,5 @@ write-file
 
 - 不带编号的 `unsupported ... in WASM` 诊断尚未统一格式，不一定包含源位置与缺失的证据种类。
 - `wasm-unsupported-procs` 列表只校验排除清单出现过的 Proc，没有 core 测试覆盖的 Proc 靠人工维护。
+- `update` 的接收者为 Struct 时在 WASM 上 trap，native 会改写对应字段。
 - 通过函数值调用时，实参个数少于 `&` 之前的参数个数（含 `?` 参数），或与定长函数的参数个数不同，都会 trap；缺省的 `?` 参数不会绑定为 nil。

@@ -377,12 +377,12 @@
           :code $ quote $ defwasm-export test-closure-map-indexed ()
             let
                 values $ map-indexed ([] 4 5)
-                  fn (x idx)
+                  fn (idx x)
                     hint-fn $ {}
                       :args $ [] 'Number 'Number
                       :return 'Number
-                    + x idx
-              if (&list:includes? values 6) 1 0
+                    + x $ * 10 idx
+              if (&list:includes? values 15) 1 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -791,6 +791,14 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
+        'test-enum-update-nth $ %{} 'CodeEntry (:doc "|update an enum slot by index; an index past the payloads traps")
+          :code $ quote $ defwasm-export test-enum-update-nth (i)
+            &enum:nth
+              update (:: :a 1 2) i $ fn (x) (&+ x 10)
+              , i
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
         'test-list-nth $ %{} 'CodeEntry (:doc "|list nth element")
           :code $ quote $ defwasm-export test-list-nth (i)
             &list:nth ([] 10 20 30 40) i

@@ -8107,6 +8107,29 @@
                 assert= 1 $ pick 1
                 assert= 2 $ pick 1 2
               :tags $ #{} :call-boundary
+            %{} 'TestEntry (:name |optional-then-rest-local)
+              :code $ quote $ let
+                  count-rest $ fn (a ? b & xs) (&list:count xs)
+                  pick-b $ fn (a ? b & xs)
+                    if (nil? b) 0 b
+                  count-leading $ fn (? a & xs) (&list:count xs)
+                  count-two $ fn (a ? b ? c & xs) (&list:count xs)
+                  pick-c $ fn (a ? b ? c & xs)
+                    if (nil? c) 0 c
+                assert= 0 $ count-rest 1
+                assert= 0 $ pick-b 1
+                assert= 2 $ pick-b 1 2
+                assert= 2 $ count-rest 1 2 3 4
+                assert= 0 $ count-leading
+                assert= 0 $ count-leading 1
+                assert= 2 $ count-leading 1 2 3
+                assert= 0 $ count-two 1
+                assert= 0 $ count-two 1 2
+                assert= 0 $ pick-c 1 2
+                assert= 0 $ count-two 1 2 3
+                assert= 3 $ pick-c 1 2 3
+                assert= 1 $ count-two 1 2 3 4
+              :tags $ #{} :call-boundary
             %{} 'TestEntry (:name |iife-with-rest-param)
               :code $ quote $ do
                 assert= 2 $
@@ -9559,6 +9582,14 @@
                 map-indexed (range 3)
                   fn (idx x)
                     [] idx $ &str x
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |passes-index-before-value)
+              :code $ quote $ do
+                assert= ([] 0 1)
+                  map-indexed ([] 5 6) $ fn (idx x) idx
+                assert= ([] 50 61)
+                  map-indexed ([] 5 6) $ fn (idx x)
+                    &+ idx $ &* 10 x
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |preserves-open-payload-with-index)
               :code $ quote $ let
@@ -12592,15 +12623,27 @@
               {} (:return 'T)
                 :args $ [] 'T
             :generics $ [] 'T
-          :tests $ [] $ %{} 'TestEntry (:name |updates-existing-map-and-list-slots)
-            :code $ quote $ do
-              assert= (&{} :a 11)
-                update (&{} :a 1) :a $ fn (x) (+ x 10)
-              assert= ([] 0 11 2)
-                update ([] 0 1 2) 1 $ fn (x) (+ x 10)
-              assert= ([] 0 1 2)
-                update ([] 0 1 2) 4 $ fn (x) (+ x 10)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |updates-existing-map-and-list-slots)
+              :code $ quote $ do
+                assert= (&{} :a 11)
+                  update (&{} :a 1) :a $ fn (x) (+ x 10)
+                assert= ([] 0 11 2)
+                  update ([] 0 1 2) 1 $ fn (x) (+ x 10)
+                assert= ([] 0 1 2)
+                  update ([] 0 1 2) 4 $ fn (x) (+ x 10)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |updates-list-by-index-and-skips-missing-slots)
+              :code $ quote $ do
+                assert= ([] 13 1 2)
+                  update ([] 3 1 2) 0 $ fn (x) (&+ x 10)
+                assert= ([] 3 1 12)
+                  update ([] 3 1 2) 2 $ fn (x) (&+ x 10)
+                assert= ([] 3 1 2)
+                  update ([] 3 1 2) 3 $ fn (x) (&+ x 10)
+                assert= (&{} :a 1)
+                  update (&{} :a 1) :b $ fn (x) (&+ x 10)
+              :tags $ #{} :core :unit
         'update-in $ %{} 'CodeEntry
           :doc "|Walk a nested path and update its leaf. The updater receives Option<T>: some for an existing leaf and none for a missing leaf. Missing intermediate containers are created as maps."
           :code $ quote $ defn update-in (data path f)
