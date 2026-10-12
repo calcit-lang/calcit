@@ -17,7 +17,7 @@ try {
   const data = JSON.parse(run("cirru", "parse-edn", "--file", snapshot));
   const tests = data[":files"]["'app.main"].defs["'main!"].tests;
   assert.deepEqual(tests.map(test => test.name).sort(),
-    ["closed-helper-contract", "independent-method-instantiations"], "the shared semantic contracts must be present");
+    ["closed-helper-contract", "empty-helper-contract", "independent-method-instantiations"], "the shared semantic contracts must be present");
   run(snapshot, "edit", "def", "app.main/run-tests", "--input-format", "json-ast", "--code",
     JSON.stringify(["defwasm-export", "run-tests", [], ...tests.map(test => test.code.__edn_quote), "&unit"]));
   run(snapshot, "edit", "schema", "app.main/run-tests", "--input-format", "cirru", "--code",
@@ -82,7 +82,7 @@ try {
     ["conflicting use", "defn bad () $ &str:count $ helper-number"],
     ["invalid helper dependency", "defn bad () $ cycle-peer", undefined, "defn cycle-peer () $ &str:count 1"],
     ["explicit Dynamic", "defn bad () 1", "quote $ :: 'Dynamic"],
-    ["open container", "defn bad () $ []"],
+    ["open container", "defn bad () $ [] $ parse-cirru-edn |1"],
   ];
   for (const [label, code, schema, peer] of failures) {
     const bad = join(fixture, "bad.cirru");

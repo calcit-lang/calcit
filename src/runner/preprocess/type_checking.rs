@@ -170,7 +170,7 @@ pub(crate) struct CallTypeCheckInfo<'a> {
   pub call_location: Option<NodeLocation>,
 }
 
-fn specialize_core_expected_types(
+pub(super) fn specialize_core_expected_types(
   fn_info: &CalcitFn,
   args: &CalcitList,
   scope_types: &ScopeTypes,
@@ -302,19 +302,31 @@ pub(super) fn specialize_collection_fold_expected_types(
   let mut accumulator_type = resolve_type_value(initial, scope_types)?;
   if !shortcut
     && let Some(callback) = resolve_type_value(args.get(2)?, scope_types).and_then(|annotation| annotation.resolve_to_nonoptional_fn())
-    && let Some(parameter) = callback.arg_types.first()
-    && matches!(
-      (accumulator_type.as_ref(), parameter.as_ref()),
-      (CalcitTypeAnnotation::List(_), CalcitTypeAnnotation::List(_))
-        | (CalcitTypeAnnotation::Set(_), CalcitTypeAnnotation::Set(_))
-        | (CalcitTypeAnnotation::Map(_, _), CalcitTypeAnnotation::Map(_, _))
-    )
-    && super::empty_container_has_no_type_evidence(initial, parameter)
+    && let Some(parameter) = callback.arg_types.first().or(callback.rest_type.as_ref())
+    && (super::empty_container_has_no_type_evidence(initial, parameter)
+      || super::type_inference::has_inferred_empty_slot(&accumulator_type))
   {
-    // An empty literal inhabits the same container family at any element type.
-    // Use the callback's input contract, never its declared output, as context.
-    // A nonempty/open value retains its own evidence; callback output is checked later.
-    accumulator_type = parameter.clone();
+    // Infer the callback's inputs from the seed and actual collection members,
+    // including a generic rest callback such as concat. Its declared output
+    // never supplies evidence for its own accumulator input.
+    let mut actual = vec![accumulator_type.clone()];
+    actual.extend(member_types.iter().cloned());
+    let mut expected = callback.arg_types.clone();
+    expected.extend(callback.rest_type.iter().cloned());
+    let mut proof = crate::calcit::type_annotation::CallTypeProof::new(&callback.generics, &expected, &actual);
+    let proven = actual.iter().enumerate().all(|(index, actual)| {
+      callback
+        .arg_types
+        .get(index)
+        .or(callback.rest_type.as_ref())
+        .is_some_and(|expected| proof.prove(actual, expected).is_proven())
+    });
+    if proven
+      && let Some(parameter) = proof.result(parameter)
+      && accumulator_type.is_proven_for(&parameter)
+    {
+      accumulator_type = parameter;
+    }
   }
   let mut specialized = expected_types.to_vec();
   specialized[0] = receiver_type;

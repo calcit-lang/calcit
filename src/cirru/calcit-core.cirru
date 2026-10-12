@@ -1533,7 +1533,7 @@
             %{} 'TestEntry (:name |preserves-order-input-and-errors)
               :code $ quote $ let
                   input $ [] ([] :a 1) ([] :b 2)
-                  calls $ atom $ []
+                  calls $ ref $ assert-type ([]) (:: 'List 'Dynamic)
                   result $ &list:map-pair input $ fn (k v)
                     swap! calls $ fn (items) (append items k)
                     [] k v
@@ -5739,7 +5739,7 @@
             assert "|defstruct expects name as tag/symbol" $ or (tag? name) (symbol? name)
             assert "|defstruct expects pairs in list" $ and (list? pairs) (every? pairs list?)
             &let
-              first-pair $ if (empty? pairs) ([]) (&list:first pairs)
+              first-pair $ if (empty? pairs) ([]) (&list:nth pairs 0)
               &let
                 pairs $ if
                   and
@@ -5749,7 +5749,7 @@
                   &list:rest first-pair
                   , pairs
                 &let
-                  first-pair $ if (empty? pairs) ([]) (&list:first pairs)
+                  first-pair $ if (empty? pairs) ([]) (&list:nth pairs 0)
                   &let
                     generics $ if
                       and (list? first-pair)
@@ -7271,7 +7271,7 @@
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |stops-calling-reducer-after-break)
               :code $ quote $ let
-                  *seen $ atom $ []
+                  *seen $ ref $ assert-type ([]) (:: 'List 'Number)
                   result $ fold-while ([] 1 2 3) 0 $ fn (acc x) (swap! *seen append x)
                     if (&= x 2) (ControlFlow :break acc) (ControlFlow :continue x)
                 assert= 1 result
@@ -8860,8 +8860,8 @@
                 if (&list:empty? xs) true $ &list:empty? ys
                 , acc $ recur
                   -> acc
-                    append $ &list:first xs
-                    append $ &list:first ys
+                    append $ &list:nth xs 0
+                    append $ &list:nth ys 0
                   rest xs
                   rest ys
           :examples $ []
@@ -8870,8 +8870,17 @@
             :generics $ [] 'T
             :return $ :: 'List 'T
           :tests $ [] $ %{} 'TestEntry (:name |truncates-to-shortest-list)
-            :code $ quote $ assert= ([] :a :x :b :y)
-              interleave ([] :a :b :c) ([] :x :y)
+            :code $ quote $ do
+              assert= ([] :a :x :b :y)
+                interleave ([] :a :b :c) ([] :x :y)
+              assert= ([])
+                interleave ([]) ([] :x)
+              assert= ([])
+                interleave ([] :x) ([])
+              assert= ([])
+                interleave ([]) ([])
+              assert= ([] nil 1 2 nil)
+                interleave ([] nil 2) ([] 1 nil)
             :tags $ #{} :core :unit
         'intersection $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn intersection (base & xs)

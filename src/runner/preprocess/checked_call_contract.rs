@@ -278,7 +278,16 @@ pub(crate) fn resolve_checked_call_contract(
       })
     }
     ("get", T::Map(key_type, value_type)) => Some(CheckedCallContract {
-      expected_types: Some(vec![receiver_type.clone(), key_type.clone()]),
+      expected_types: Some(vec![
+        receiver_type.clone(),
+        // An empty map accepts any lookup key and still returns no payload.
+        // This widens the input contract, not the receiver's member evidence.
+        if matches!(key_type.as_ref(), T::Never) {
+          crate::calcit::DYNAMIC_TYPE.clone()
+        } else {
+          key_type.clone()
+        },
+      ]),
       return_type: core_type_ref("Option", vec![value_type.clone()]),
       lowering: Some(CheckedCallLowering::TypedOptionalAccess),
     }),

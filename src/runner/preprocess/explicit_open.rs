@@ -5,12 +5,20 @@
 //! inputs). Only a declared parameter contract, or a `&let` alias computed
 //! from such a parameter, is treated as an explicitly open value that must be
 //! proved before it reaches a concrete parameter.
+//! The same lexical record retains the initial write contract independently
+//! of predicate refinements on references to the binding.
 use super::*;
 
 type BindingKey = (Arc<str>, Arc<str>, Arc<str>);
 
+#[derive(Clone)]
+struct LocalContract {
+  explicitly_open: bool,
+  annotation: Arc<CalcitTypeAnnotation>,
+}
+
 thread_local! {
-  static EXPLICIT_OPEN_LOCALS: RefCell<HashMap<BindingKey, bool>> = RefCell::new(HashMap::new());
+  static EXPLICIT_OPEN_LOCALS: RefCell<HashMap<BindingKey, LocalContract>> = RefCell::new(HashMap::new());
 }
 
 fn binding_key(local: &CalcitLocal) -> BindingKey {
@@ -20,7 +28,7 @@ fn binding_key(local: &CalcitLocal) -> BindingKey {
 /// Restore lexical marks on success, rejection and unwinding. Every binding is
 /// recorded, so an inner binding with inferred evidence shadows an outer
 /// explicitly open one.
-pub(super) struct ExplicitOpenScope(Vec<(BindingKey, Option<bool>)>);
+pub(super) struct ExplicitOpenScope(Vec<(BindingKey, Option<LocalContract>)>);
 
 impl ExplicitOpenScope {
   pub(super) fn new() -> Self {
@@ -32,9 +40,19 @@ impl ExplicitOpenScope {
       return;
     };
     let key = binding_key(local);
-    let previous = EXPLICIT_OPEN_LOCALS.with(|marks| marks.borrow_mut().insert(key.clone(), explicitly_open));
+    let contract = LocalContract {
+      explicitly_open,
+      annotation: local.type_info.clone(),
+    };
+    let previous = EXPLICIT_OPEN_LOCALS.with(|marks| marks.borrow_mut().insert(key.clone(), contract));
     self.0.push((key, previous));
   }
+}
+
+/// The original lexical contract, before branch evidence refines a reference.
+/// Reuse the binding record so shadowing and unwinding restore both together.
+pub(super) fn binding_contract(local: &CalcitLocal) -> Option<Arc<CalcitTypeAnnotation>> {
+  EXPLICIT_OPEN_LOCALS.with(|marks| marks.borrow().get(&binding_key(local)).map(|contract| contract.annotation.clone()))
 }
 
 impl Drop for ExplicitOpenScope {
@@ -59,13 +77,18 @@ impl Drop for ExplicitOpenScope {
 /// function bodies are skipped: they bind their own parameters and produce a
 /// callable rather than the open value itself.
 pub(super) fn reads_explicitly_open_local(value: &Calcit) -> bool {
-  let any_marked = EXPLICIT_OPEN_LOCALS.with(|marks| marks.borrow().values().any(|open| *open));
+  let any_marked = EXPLICIT_OPEN_LOCALS.with(|marks| marks.borrow().values().any(|contract| contract.explicitly_open));
   any_marked && reads_marked_local(value)
 }
 
 fn reads_marked_local(value: &Calcit) -> bool {
   match value {
-    Calcit::Local(local) => EXPLICIT_OPEN_LOCALS.with(|marks| marks.borrow().get(&binding_key(local)).copied().unwrap_or(false)),
+    Calcit::Local(local) => EXPLICIT_OPEN_LOCALS.with(|marks| {
+      marks
+        .borrow()
+        .get(&binding_key(local))
+        .is_some_and(|contract| contract.explicitly_open)
+    }),
     Calcit::List(items) => {
       if matches!(
         items.first(),
