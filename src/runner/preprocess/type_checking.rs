@@ -527,9 +527,8 @@ where
         let expected_rest_type = inner_type.substitute_type_vars(&bindings);
         if let Some(actual_type) = resolve_type_value(rest_arg, ctx.scope_types) {
           let mut candidate = bindings.clone();
-          let matches = actual_type
-            .as_ref()
-            .compatible_with_bindings(expected_rest_type.as_ref(), &mut candidate);
+          // Keep the generic until matching so closed bottom bindings can refine.
+          let matches = actual_type.as_ref().compatible_with_bindings(inner_type.as_ref(), &mut candidate);
           if matches {
             bindings = candidate;
           } else {
@@ -764,9 +763,7 @@ pub(crate) fn check_proc_arg_types(
       for (rest_idx, rest_arg) in args.iter().skip(idx).enumerate() {
         let expected_rest_type = inner_type.substitute_type_vars(&bindings);
         if let Some(actual_type) = resolve_type_value(rest_arg, scope_types)
-          && !actual_type
-            .as_ref()
-            .compatible_with_bindings(expected_rest_type.as_ref(), &mut bindings)
+          && !actual_type.as_ref().compatible_with_bindings(inner_type.as_ref(), &mut bindings)
         {
           let expected_str = diagnostic_type_string(expected_rest_type.as_ref());
           let actual_str = diagnostic_type_string(actual_type.as_ref());
