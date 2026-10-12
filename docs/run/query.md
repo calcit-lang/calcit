@@ -67,6 +67,8 @@ calcit query ns calcit.core
 calcit query ns app.demo --format cirru
 ```
 
+`query ns [<ns>]` 同样接受 `--format edn|json`，返回命名空间列表或该命名空间的 ns 声明与定义数量。`query schema` 与 `tree show` 也接受 `--format human|edn|json`。
+
 `query ns <ns> --format cirru` 输出该命名空间在 Snapshot `:files` 中保存的 `%{} 'FileEntry` 数据，使用与 Snapshot
 文件相同的序列化和格式：
 
@@ -161,7 +163,7 @@ Cirru EDN 文本；缺失时为 `nil`／`null`，两者均不是 preview。有�
 `revision`；无源码 builtin 的 `revision`、`code` 为 `nil`／`null`，`builtin` 为 `true`。
 The schema field remains a Cirru syntax tree, not raw persisted schema data.
 
-兼容性：`--json` 仍在 human 输出末尾附加 `JSON:` 与旧字段对象，其中 `ffi` 保持
+兼容性：已弃用的 `--json`（使用时 stderr 会提示改用 `--format json`）仍在 human 输出末尾附加 `JSON:` 与旧字段对象，其中 `ffi` 保持
 字符串类型，但不再截断。`--format json` 优先于 `--json`，不需要 `--raw` 就会返回
 完整元数据。human 模式默认标明 FFI preview；`--raw` 同时输出完整代码与 FFI。
 本接口只查询声明，不改变 Interface IR v3、目标可用性检查或 async 调用语义。

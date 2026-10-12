@@ -39,7 +39,7 @@ pub fn deprecated_command_hint(cli_args: &ToplevelCalcit) -> Option<String> {
       ),
       AnalyzeSubcommand::CountCalls(_) => (
         "analyze count-calls",
-        "`calcit analyze call-graph --counts` (with `--sort count|name` and `--format text|json`)",
+        "`calcit analyze call-graph --counts` (with `--sort count|name` and `--format human|edn|json`)",
       ),
       AnalyzeSubcommand::CallGraphDiff(_) => ("analyze call-graph-diff", "`calcit analyze call-graph --diff <ref>`"),
       AnalyzeSubcommand::JsEscape(_) => ("analyze js-escape", NO_REPLACEMENT),
@@ -170,7 +170,7 @@ fn normalize_call_graph_view(cli_args: ToplevelCalcit) -> Result<ToplevelCalcit,
         "analyze call-graph --diff",
         &[
           ("--show-unused", options.show_unused),
-          ("--format", options.format != "text"),
+          ("--format", !matches!(options.format.as_str(), "text" | "human")),
           ("--sort", options.sort.is_some()),
         ],
       )?;

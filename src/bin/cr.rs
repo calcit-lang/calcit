@@ -219,20 +219,14 @@ fn run_deprecated(options: &DeprecatedCommand, snapshot: &snapshot::Snapshot) ->
 }
 
 fn run_quality(options: &QualityCommand, snapshot: &snapshot::Snapshot) -> Result<(), String> {
-  if !matches!(options.format.as_str(), "human" | "text" | "json") {
-    return Err(format!(
-      "Unknown quality output format `{}`. Expected `human` or `json`.",
-      options.format
-    ));
-  }
+  let output_format = cli_handlers::StructuredOutputFormat::parse(&options.format, "quality")?;
   let _output_guard = ProgramOutputGuard::new(true, false);
   let effective =
     type_coverage::with_proven_helper_contracts(snapshot, options.ns.as_deref(), options.ns_prefix.as_deref(), options.deps)?;
   let outcome = quality_gate::analyze_quality(options, effective.as_ref())?;
-  match options.format.as_str() {
-    "human" | "text" => print!("{}", quality_gate::format_quality_report(&outcome)),
-    "json" => println!("{}", quality_gate::format_quality_json(&outcome)?),
-    _ => unreachable!("quality output format was validated before analysis"),
+  match output_format {
+    cli_handlers::StructuredOutputFormat::Human => print!("{}", quality_gate::format_quality_report(&outcome)),
+    structured => structured.print_json_text(&quality_gate::format_quality_json(&outcome)?)?,
   }
   if outcome.passed {
     Ok(())
@@ -551,7 +545,10 @@ fn run_cli() -> Result<(), String> {
     );
   }
   if cli_args.format != "human" && !(cli_args.check_only && (keep_going || public_check_scope)) {
-    return Err("Top-level `--format` is only available with `--check-only --keep-going` or `--check-only --ns`.".to_owned());
+    return Err(
+      "Top-level `--format` is only available with `--check-only --keep-going` or `--check-only --ns`; for a subcommand, put `--format` after the subcommand (for example `calcit query def <target> --format edn`)."
+        .to_owned(),
+    );
   }
 
   // Query/analyze commands may run preprocessing before the normal program-loading path.
@@ -1190,17 +1187,11 @@ impl Drop for ProgramOutputGuard {
   }
 }
 
-fn print_test_json(
-  mode: &'static str,
-  tests: &[RunnableTest],
-  passed: usize,
-  failed: usize,
-  duration_ms: f64,
-  summary_only: bool,
-  rows: Vec<TestReportRow>,
-) {
-  let report = make_test_report(mode, tests, passed, failed, duration_ms, summary_only, rows);
-  println!("{}", serde_json::to_string(&report).expect("test report should serialize"));
+fn emit_test_report(format: cli_handlers::StructuredOutputFormat, report: &TestReport) {
+  let json = serde_json::to_string(report).expect("test report should serialize");
+  if let Err(error) = format.print_json_text(&json) {
+    eprintln!("{error}");
+  }
 }
 
 fn make_test_report(
@@ -1227,11 +1218,8 @@ fn make_test_report(
 }
 
 fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_namespaces: &HashSet<String>) -> Result<(), String> {
-  let json_mode = match options.format.as_str() {
-    "human" | "text" => false,
-    "json" => true,
-    other => return Err(format!("Unknown test output format `{other}`. Expected `human` or `json`.")),
-  };
+  let output_format = cli_handlers::StructuredOutputFormat::parse(&options.format, "test")?;
+  let json_mode = output_format != cli_handlers::StructuredOutputFormat::Human;
   let _output_guard = ProgramOutputGuard::new(json_mode, options.summary_only);
   let scope = options.target.as_deref().map(parse_test_scope).transpose()?;
   if let Some((namespace, definition)) = &scope {
@@ -1316,7 +1304,10 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
           })
           .collect()
       };
-      print_test_json("list", &tests, 0, 0, 0.0, options.summary_only, rows);
+      emit_test_report(
+        output_format,
+        &make_test_report("list", &tests, 0, 0, 0.0, options.summary_only, rows),
+      );
     } else if !options.summary_only {
       for test in &tests {
         println!("{}", test.id());
@@ -1327,14 +1318,17 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
   }
   if tests.is_empty() {
     if json_mode {
-      print_test_json(
-        if options.list { "list" } else { "run" },
-        &tests,
-        0,
-        0,
-        0.0,
-        options.summary_only,
-        vec![],
+      emit_test_report(
+        output_format,
+        &make_test_report(
+          if options.list { "list" } else { "run" },
+          &tests,
+          0,
+          0,
+          0.0,
+          options.summary_only,
+          vec![],
+        ),
       );
     }
     if let Some(error) = no_tests_matched_error(options) {
@@ -1414,14 +1408,17 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
 
   if tests.is_empty() {
     if json_mode {
-      print_test_json(
-        if options.list { "list" } else { "run" },
-        &tests,
-        0,
-        0,
-        0.0,
-        options.summary_only,
-        vec![],
+      emit_test_report(
+        output_format,
+        &make_test_report(
+          if options.list { "list" } else { "run" },
+          &tests,
+          0,
+          0,
+          0.0,
+          options.summary_only,
+          vec![],
+        ),
       );
     }
     if let Some(error) = no_tests_matched_error(options) {
@@ -1447,7 +1444,10 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
           })
           .collect()
       };
-      print_test_json("list", &tests, 0, 0, 0.0, options.summary_only, rows);
+      emit_test_report(
+        output_format,
+        &make_test_report("list", &tests, 0, 0, 0.0, options.summary_only, rows),
+      );
     } else if !options.summary_only {
       for test in &tests {
         println!("{}", test.id());
@@ -1518,7 +1518,10 @@ fn run_tests(options: &TestCommand, snapshot: &snapshot::Snapshot, project_names
 
   let duration_ms = started.elapsed().as_secs_f64() * 1000.0;
   if json_mode {
-    print_test_json("run", &tests, passed, failures.len(), duration_ms, options.summary_only, rows);
+    emit_test_report(
+      output_format,
+      &make_test_report("run", &tests, passed, failures.len(), duration_ms, options.summary_only, rows),
+    );
   } else {
     println!(
       "Test result: {} passed; {} failed; {:.2}ms",
@@ -2384,6 +2387,7 @@ fn check_examples_schema() -> Arc<CalcitTypeAnnotation> {
 }
 
 fn run_call_graph(entries: &ProgramEntries, options: &CallGraphCommand, _snapshot: &snapshot::Snapshot) -> Result<(), String> {
+  let output_format = cli_handlers::StructuredOutputFormat::parse_with_legacy_human(&options.format, "call-graph", "text")?;
   // Determine entry point: use --root if provided, otherwise use init_fn from config
   let (entry_ns, entry_def) = if let Some(ref def_path) = options.root {
     util::string::extract_ns_def(def_path)?
@@ -2391,9 +2395,9 @@ fn run_call_graph(entries: &ProgramEntries, options: &CallGraphCommand, _snapsho
     (entries.init_ns.to_string(), entries.init_def.to_string())
   };
 
-  // JSON stdout must be exactly one document, so the status line goes to stderr there.
+  // Structured stdout must be exactly one document, so the status line goes to stderr there.
   let header = format!("Analyzing call tree from: {entry_ns}/{entry_def}").cyan();
-  if options.format == "json" {
+  if output_format != cli_handlers::StructuredOutputFormat::Human {
     eprintln!("{header}");
   } else {
     println!("{header}");
@@ -2411,9 +2415,8 @@ fn run_call_graph(entries: &ProgramEntries, options: &CallGraphCommand, _snapsho
   )?;
 
   // Output result
-  if options.format == "json" {
-    let json = calcit::call_tree::format_as_json(&result)?;
-    println!("{json}");
+  if output_format != cli_handlers::StructuredOutputFormat::Human {
+    output_format.print_json_text(&calcit::call_tree::format_as_json(&result)?)?;
   } else {
     println!("{}", calcit::call_tree::format_for_llm(&result));
   }
@@ -2422,6 +2425,7 @@ fn run_call_graph(entries: &ProgramEntries, options: &CallGraphCommand, _snapsho
 }
 
 fn run_effects_graph(entries: &ProgramEntries, options: &EffectsGraphCommand) -> Result<(), String> {
+  let output_format = cli_handlers::StructuredOutputFormat::parse_with_legacy_human(&options.format, "effects-graph", "tree")?;
   let (entry_ns, entry_def) = if let Some(ref def_path) = options.root {
     util::string::extract_ns_def(def_path)?
   } else {
@@ -2452,9 +2456,8 @@ fn run_effects_graph(entries: &ProgramEntries, options: &EffectsGraphCommand) ->
     detail,
   )?;
 
-  if options.format == "json" {
-    let json = calcit::effects_graph::format_as_json(&result)?;
-    println!("{json}");
+  if output_format != cli_handlers::StructuredOutputFormat::Human {
+    output_format.print_json_text(&calcit::effects_graph::format_as_json(&result)?)?;
   } else {
     println!("{}", calcit::effects_graph::format_as_ste_tree(&result, options.color));
   }
@@ -2463,6 +2466,7 @@ fn run_effects_graph(entries: &ProgramEntries, options: &EffectsGraphCommand) ->
 }
 
 fn run_count_calls(entries: &ProgramEntries, options: &CountCallsCommand) -> Result<(), String> {
+  let output_format = cli_handlers::StructuredOutputFormat::parse_with_legacy_human(&options.format, "count-calls", "text")?;
   let sort = calcit::call_tree::CallCountSort::parse(&options.sort)?;
   // Determine entry point: use --root if provided, otherwise use init_fn from config
   let (entry_ns, entry_def) = if let Some(ref def_path) = options.root {
@@ -2471,9 +2475,9 @@ fn run_count_calls(entries: &ProgramEntries, options: &CountCallsCommand) -> Res
     (entries.init_ns.to_string(), entries.init_def.to_string())
   };
 
-  // JSON stdout must be exactly one document, so the status line goes to stderr there.
+  // Structured stdout must be exactly one document, so the status line goes to stderr there.
   let header = format!("Counting calls from: {entry_ns}/{entry_def}").cyan();
-  if options.format == "json" {
+  if output_format != cli_handlers::StructuredOutputFormat::Human {
     eprintln!("{header}");
   } else {
     println!("{header}");
@@ -2483,9 +2487,8 @@ fn run_count_calls(entries: &ProgramEntries, options: &CountCallsCommand) -> Res
   let result = calcit::call_tree::count_calls(&entry_ns, &entry_def, options.include_core, options.ns_prefix.clone())?;
 
   // Output result
-  if options.format == "json" {
-    let json = calcit::call_tree::format_count_as_json(&result, sort)?;
-    println!("{json}");
+  if output_format != cli_handlers::StructuredOutputFormat::Human {
+    output_format.print_json_text(&calcit::call_tree::format_count_as_json(&result, sort)?)?;
   } else {
     println!("{}", calcit::call_tree::format_count_for_display(&result, sort));
   }

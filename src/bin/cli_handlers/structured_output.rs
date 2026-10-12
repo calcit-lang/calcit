@@ -17,6 +17,65 @@ impl StructuredOutputFormat {
       _ => Err(format!("Unsupported {command} format '{raw}'. Expected human, edn, or json.")),
     }
   }
+
+  /// Like [`parse`](Self::parse), but also accepts one legacy spelling of `human`
+  /// (`text` for call-graph, `tree` for effects-graph) so older scripts keep working.
+  pub(crate) fn parse_with_legacy_human(raw: &str, command: &str, legacy_human: &str) -> Result<Self, String> {
+    if raw == legacy_human {
+      Ok(Self::Human)
+    } else {
+      Self::parse(raw, command)
+    }
+  }
+
+  /// Prints one JSON-shaped document as JSON (single line) or the equivalent Cirru EDN.
+  pub(crate) fn print_value(self, value: &serde_json::Value) -> Result<(), String> {
+    match self {
+      Self::Json => println!("{value}"),
+      Self::Edn => println!("{}", format_json_value_as_edn(value)?),
+      Self::Human => return Err("Cannot print a human report as a structured document".to_owned()),
+    }
+    Ok(())
+  }
+
+  /// Same as [`print_value`](Self::print_value) for an already serialized JSON document.
+  pub(crate) fn print_json_text(self, json: &str) -> Result<(), String> {
+    match self {
+      Self::Json => {
+        println!("{json}");
+        Ok(())
+      }
+      _ => {
+        let value =
+          serde_json::from_str(json).map_err(|error| format!("Failed to parse JSON envelope for Cirru EDN output: {error}"))?;
+        self.print_value(&value)
+      }
+    }
+  }
+}
+
+/// Resolves `--format` together with a legacy output-replacing `--json` switch.
+/// `--json` alone selects JSON (with a deprecation warning); combining it with
+/// `--format edn` is rejected because the two disagree.
+pub(crate) fn resolve_format_with_legacy_json(raw: &str, legacy_json: bool, command: &str) -> Result<StructuredOutputFormat, String> {
+  let format = StructuredOutputFormat::parse(raw, command)?;
+  if !legacy_json {
+    return Ok(format);
+  }
+  warn_deprecated_json_switch(command);
+  match format {
+    StructuredOutputFormat::Human | StructuredOutputFormat::Json => Ok(StructuredOutputFormat::Json),
+    StructuredOutputFormat::Edn => Err(format!(
+      "`{command}` got both `--json` and `--format edn`; drop the deprecated `--json`."
+    )),
+  }
+}
+
+/// Warns on stderr that a legacy `--json` switch is deprecated in favor of `--format json`.
+pub(crate) fn warn_deprecated_json_switch(command: &str) {
+  eprintln!(
+    "[Deprecated] `calcit {command} --json` will be removed in a future non-patch release; use `--format json`. See docs/run/upgrade.md."
+  );
 }
 
 fn json_key_to_edn(key: &str) -> Edn {
@@ -107,6 +166,35 @@ mod tests {
     assert!(json_value_to_edn(&serde_json::json!(i64::MAX)).is_err());
     assert!(json_value_to_edn(&serde_json::json!(u64::MAX)).is_err());
     assert!(json_value_to_edn(&serde_json::json!({ "same_key": 1, "same-key": 2 })).is_err());
+  }
+
+  #[test]
+  fn legacy_human_spelling_is_accepted_alongside_unified_values() {
+    for raw in ["text", "human"] {
+      assert_eq!(
+        StructuredOutputFormat::parse_with_legacy_human(raw, "call-graph", "text"),
+        Ok(StructuredOutputFormat::Human)
+      );
+    }
+    assert_eq!(
+      StructuredOutputFormat::parse_with_legacy_human("tree", "effects-graph", "tree"),
+      Ok(StructuredOutputFormat::Human)
+    );
+    assert_eq!(
+      StructuredOutputFormat::parse_with_legacy_human("edn", "effects-graph", "tree"),
+      Ok(StructuredOutputFormat::Edn)
+    );
+    assert!(StructuredOutputFormat::parse_with_legacy_human("yaml", "effects-graph", "tree").is_err());
+  }
+
+  #[test]
+  fn legacy_json_switch_resolves_with_format() {
+    use StructuredOutputFormat::*;
+    assert_eq!(resolve_format_with_legacy_json("human", false, "query schema"), Ok(Human));
+    assert_eq!(resolve_format_with_legacy_json("human", true, "query schema"), Ok(Json));
+    assert_eq!(resolve_format_with_legacy_json("json", true, "query schema"), Ok(Json));
+    assert_eq!(resolve_format_with_legacy_json("edn", false, "query schema"), Ok(Edn));
+    assert!(resolve_format_with_legacy_json("edn", true, "query schema").is_err());
   }
 
   #[test]

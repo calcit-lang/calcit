@@ -12,7 +12,9 @@ use super::cursor::{
   resolve_cursor_target_argument, set_cursor_from_query_match,
 };
 use super::stdout::{cli_print as print, cli_println as println};
-use super::structured_output::{StructuredOutputFormat, format_json_value_as_edn, json_value_to_edn};
+use super::structured_output::{
+  StructuredOutputFormat, format_json_value_as_edn, json_value_to_edn, resolve_format_with_legacy_json, warn_deprecated_json_switch,
+};
 use super::tips::command_guidance_enabled;
 use calcit::CalcitTypeAnnotation;
 use calcit::calcit::{Calcit, CalcitFnTypeAnnotation, CalcitProc, DYNAMIC_TYPE, LocatedWarning};
@@ -1018,10 +1020,13 @@ fn handle_query_command_inner(cmd: &QueryCommand, input_path: &str) -> Result<()
   resolve_query_cursor_references(&mut resolved, input_path)?;
   match &resolved.subcommand {
     QuerySubcommand::Ns(opts) => match (opts.format.as_str(), opts.namespace.as_deref()) {
-      ("human", _) => handle_ns(input_path, opts.namespace.as_deref(), opts.deps),
       ("cirru", Some(namespace)) => handle_ns_cirru_view(input_path, namespace),
       ("cirru", None) => Err("`query ns --format cirru` needs a namespace: `query ns <namespace> --format cirru`".to_owned()),
-      (other, _) => Err(format!("Unsupported query ns format '{other}'. Expected human or cirru.")),
+      (raw, namespace) => {
+        let format = StructuredOutputFormat::parse(raw, "query ns")
+          .map_err(|_| format!("Unsupported query ns format '{raw}'. Expected human, edn, json, or cirru."))?;
+        handle_ns(input_path, namespace, opts.deps, format)
+      }
     },
     QuerySubcommand::Defs(opts) => handle_defs(input_path, opts),
     QuerySubcommand::Pkg(_) => handle_pkg(input_path),
@@ -1029,6 +1034,9 @@ fn handle_query_command_inner(cmd: &QueryCommand, input_path: &str) -> Result<()
     QuerySubcommand::Error(_) => handle_error(input_path),
     QuerySubcommand::Modules(_) => handle_modules(input_path),
     QuerySubcommand::Def(opts) => {
+      if opts.json {
+        warn_deprecated_json_switch("query def");
+      }
       let (ns, def) = parse_target(&opts.target)?;
       handle_def(input_path, ns, def, opts)
     }
@@ -1091,7 +1099,8 @@ fn handle_query_command_inner(cmd: &QueryCommand, input_path: &str) -> Result<()
     QuerySubcommand::Prev(_) => handle_repeat_cursor_search(input_path, false),
     QuerySubcommand::Schema(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
-      handle_schema(input_path, ns, def, opts.json)
+      let format = resolve_format_with_legacy_json(&opts.format, opts.json, "query schema")?;
+      handle_schema(input_path, ns, def, format)
     }
     QuerySubcommand::Type(opts) => handle_type(input_path, opts),
     QuerySubcommand::TypeAt(opts) => handle_type_at(input_path, opts),
@@ -4537,10 +4546,10 @@ fn load_snapshot_with_entry(input_path: &str, entry: Option<&str>) -> Result<sna
 }
 
 /// Handle `query ns` - list namespaces or show ns details
-fn handle_ns(input_path: &str, namespace: Option<&str>, include_deps: bool) -> Result<(), String> {
+fn handle_ns(input_path: &str, namespace: Option<&str>, include_deps: bool, format: StructuredOutputFormat) -> Result<(), String> {
   // If namespace is provided, show details (merged read-ns functionality)
   if let Some(ns_name) = namespace {
-    return handle_ns_details(input_path, ns_name);
+    return handle_ns_details(input_path, ns_name, format);
   }
 
   // Otherwise list all namespaces
@@ -4574,6 +4583,18 @@ fn handle_ns(input_path: &str, namespace: Option<&str>, include_deps: bool) -> R
     })
     .collect();
 
+  if format != StructuredOutputFormat::Human {
+    return format.print_value(&serde_json::json!({
+      "schema_version": 1,
+      "command": "query.ns",
+      "data": {
+        "include_dependencies": include_deps,
+        "count": filtered.len(),
+        "namespaces": filtered,
+      },
+    }));
+  }
+
   println!(
     "{} ({} namespaces)",
     if include_deps { "All namespaces:" } else { "Project namespaces:" }.bold(),
@@ -4599,13 +4620,26 @@ fn handle_ns_cirru_view(input_path: &str, namespace: &str) -> Result<(), String>
 }
 
 /// Handle `query ns <namespace>` - show ns details
-fn handle_ns_details(input_path: &str, namespace: &str) -> Result<(), String> {
+fn handle_ns_details(input_path: &str, namespace: &str, format: StructuredOutputFormat) -> Result<(), String> {
   let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
 
   let file_data = snapshot
     .files
     .get(namespace)
     .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
+
+  if format != StructuredOutputFormat::Human {
+    return format.print_value(&serde_json::json!({
+      "schema_version": 1,
+      "command": "query.ns",
+      "data": {
+        "namespace": namespace,
+        "doc": file_data.ns.doc,
+        "ns_code": cirru_to_json_value(&file_data.ns.code),
+        "definition_count": file_data.defs.len(),
+      },
+    }));
+  }
 
   if !file_data.ns.doc.is_empty() {
     println!("{} {}", "Doc:".bold(), file_data.ns.doc);
@@ -5462,7 +5496,8 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
 }
 
 /// Show definition schema
-fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool) -> Result<(), String> {
+fn handle_schema(input_path: &str, namespace: &str, definition: &str, format: StructuredOutputFormat) -> Result<(), String> {
+  let structured = format != StructuredOutputFormat::Human;
   let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
 
   let file_data = snapshot
@@ -5474,18 +5509,15 @@ fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool
     && let Some(meta) = lookup_special_builtin_query_meta(namespace, definition)?
   {
     let mut out = String::new();
-    if json {
+    if structured {
       let id = format!("{namespace}/{definition}");
       let schema_fingerprint = format_query_schema(meta.schema.as_ref(), true);
-      println!(
-        "{}",
-        format_schema_query_json(
-          &id,
-          "core-builtin",
-          meta.schema.as_ref(),
-          semantic_revision(&[meta.doc, &schema_fingerprint]),
-        )?
-      );
+      format.print_json_text(&format_schema_query_json(
+        &id,
+        "core-builtin",
+        meta.schema.as_ref(),
+        semantic_revision(&[meta.doc, &schema_fingerprint]),
+      )?)?;
       return Ok(());
     } else {
       let _ = writeln!(&mut out, "# Schema for `{namespace}/{definition}`\n");
@@ -5509,17 +5541,14 @@ fn handle_schema(input_path: &str, namespace: &str, definition: &str, json: bool
 
   let mut out = String::new();
 
-  if json {
+  if structured {
     let id = format!("{namespace}/{resolved_definition}");
-    println!(
-      "{}",
-      format_schema_query_json(
-        &id,
-        &namespace_source(&snapshot, namespace),
-        code_entry.schema.as_ref(),
-        snapshot::definition_revision(code_entry)?,
-      )?
-    );
+    format.print_json_text(&format_schema_query_json(
+      &id,
+      &namespace_source(&snapshot, namespace),
+      code_entry.schema.as_ref(),
+      snapshot::definition_revision(code_entry)?,
+    )?)?;
     return Ok(());
   }
 
