@@ -1568,6 +1568,11 @@ calcit calcit.cirru --entry test
 隐式跨类型行为；它通常来自未收窄的 FFI 值、把类型谓词写成 equality，或遗漏了 nominal enum 的
 pattern match。
 
+泛型 `T` 一旦由实参确定为 Number、String 或某个名义类型，后续 `nil` 不会把它隐式扩成
+`Optional<T>`；先传 `nil` 再传具体值也会拒绝。这同时适用于固定参数和 rest 参数。
+`= nil nil` 仍合法；空 List 与 `Option :none` 中的 `Never` 仍可由后续同型实参的 payload
+精化，因为没有 payload 的底类型与实际的 `nil` 值不同。需要表达业务缺席值时使用名义 `Option`。
+
 升级后出现 `W_FN_ARG_TYPE_MISMATCH` 时，根据值的来源选择明确迁移：
 
 - 两边本应是同一种数据：先 parse/normalize，再比较；
