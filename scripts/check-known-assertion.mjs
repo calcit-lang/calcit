@@ -65,12 +65,12 @@ try {
     assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
     assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_RESET_ARG_TYPE_MISMATCH/);
   }
-  for (const name of ["narrowed-assignment", "aliased-assignment", "shadowed-assignment", "dead-branch-assignment"]) {
+  for (const name of ["narrowed-assignment", "aliased-assignment", "shadowed-assignment", "dead-branch-assignment", "match-peer-assignment", "shadowed-match-assignment"]) {
     const proof = JSON.parse(run("fix", "--rule", "callable-contract-proof-v1",
       "--ns", "app.empty-evidence", "--def", name, "--format", "json"));
     assert.deepEqual(proof.diagnostics, [], `${name}: preserve the lexical write contract`);
   }
-  for (const name of ["wrong-typed-assignment", "stale-assignment", "stale-branch-assignment", "stale-let-assignment"]) {
+  for (const name of ["wrong-typed-assignment", "stale-assignment", "stale-branch-assignment", "stale-let-assignment", "stale-match-assignment", "wrong-match-payload-assignment"]) {
     const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "callable-contract-proof-v1",
       "--ns", "app.empty-evidence", "--def", name, "--format", "edn"], options);
     if (rejected.error) throw rejected.error;

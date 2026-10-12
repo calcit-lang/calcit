@@ -2034,6 +2034,23 @@
           :tests $ [] $ %{} 'TestEntry (:name |empty-map-alias)
             :code $ quote $ assert= ({}) (map-alias)
             :tags $ #{} :empty-collection-evidence
+        'match-peer-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn match-peer-assignment (value choice)
+            if (number? value)
+              match choice
+                (:some item)
+                  do (set! value |changed) value
+                _ $ &+ value 1
+              , value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic $ :: 'Option 'Number
+            :features $ #{} :js-ffi
+          :tests $ [] $ %{} 'TestEntry (:name |match-branches-use-independent-evidence)
+            :code $ quote $ do
+              assert= |changed $ match-peer-assignment 1 $ Option :some 2
+              assert= 2 $ match-peer-assignment 1 $ Option :none
+            :tags $ #{} :empty-collection-assignment
         'narrowed-assignment $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn narrowed-assignment (value)
             if (number? value) (set! value |changed)
@@ -2143,6 +2160,24 @@
           :tests $ [] $ %{} 'TestEntry (:name |shadowing-restores-outer-contract)
             :code $ quote $ assert= |changed (shadowed-assignment 1)
             :tags $ #{} :empty-collection-assignment
+        'shadowed-match-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn shadowed-match-assignment (value choice)
+            if (number? value)
+              do
+                match choice
+                  (:some value) (set! value 2)
+                  (:none) &unit
+                &+ value 1
+              , 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic $ :: 'Option 'Number
+            :features $ #{} :js-ffi
+          :tests $ [] $ %{} 'TestEntry (:name |payload-binding-does-not-write-outer-local)
+            :code $ quote $ do
+              assert= 2 $ shadowed-match-assignment 1 $ Option :some 8
+              assert= 2 $ shadowed-match-assignment 1 $ Option :none
+            :tags $ #{} :empty-collection-assignment
         'stale-assignment $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn stale-assignment (value)
             if (number? value)
@@ -2175,6 +2210,19 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Dynamic
+            :features $ #{} :js-ffi
+        'stale-match-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn stale-match-assignment (value choice)
+            if (number? value)
+              do
+                match choice
+                  (:some item) (set! value |changed)
+                  (:none) &unit
+                &+ value 1
+              , 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic $ :: 'Option 'Number
             :features $ #{} :js-ffi
         'typed-assignment $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn typed-assignment ()
@@ -2231,6 +2279,16 @@
                 items $ {} $ |a |wrong
               assert-type items $ :: 'Map 'String 'Number
           :examples $ []
+        'wrong-match-payload-assignment $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn wrong-match-payload-assignment (value choice)
+            match choice
+              (:some value) (set! value |wrong)
+              (:none) &unit
+            , value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic $ :: 'Option 'Number
+            :features $ #{} :js-ffi
         'wrong-ref-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn wrong-ref-alias ()
             let

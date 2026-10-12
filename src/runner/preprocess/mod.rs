@@ -10642,6 +10642,7 @@ fn process_match(
   // and payload typing. Applied generic arguments are kept so a matched payload
   // can be specialized instead of falling back to Dynamic.
   let inferred_match_type = infer_type_from_expr(&value_form, ctx.scope_types);
+  let explicitly_open_match = explicit_open::reads_explicitly_open_local(&value_form);
   let enum_match = inferred_match_type.and_then(|t| match t.as_ref() {
     CalcitTypeAnnotation::EnumValue(enum_ref) => Some((enum_ref.as_ref().to_owned(), Arc::new(vec![]))),
     CalcitTypeAnnotation::Enum(enum_ref, args) => Some((enum_ref.as_ref().to_owned(), args.clone())),
@@ -10677,6 +10678,9 @@ fn process_match(
   // Collect matched tags for exhaustiveness checking
   let mut matched_tags: Vec<Arc<str>> = vec![];
   let mut has_wildcard = false;
+  // Each arm starts from the same incoming evidence. Effects from one arm
+  // must reach the continuation, but must not change a mutually exclusive arm.
+  let mut joined_scope_types = ctx.scope_types.clone();
 
   // Iterate branch pairs: each arg after value is (pattern body)
   for branch_idx in 1..args.len() {
@@ -10699,10 +10703,12 @@ fn process_match(
       // Wildcard: `_`
       Calcit::Symbol { sym, .. } if sym.as_ref() == "_" => {
         has_wildcard = true;
+        let mut body_types = ctx.scope_types.clone();
         let processed_body = phase.process(
           body,
-          PreprocessContext::new(ctx.scope_defs, ctx.scope_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack),
+          PreprocessContext::new(ctx.scope_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack),
         )?;
+        propagate_scope_widening(&mut joined_scope_types, &body_types, &ScopeTypes::new(), None);
         xs.push(Calcit::from(CalcitList::from(&[pattern.to_owned(), processed_body])));
       }
       // Tag pattern: (:tag binding1 binding2 ...)
@@ -10800,10 +10806,23 @@ fn process_match(
           }
         }
 
+        let mut payload_contracts = explicit_open::ExplicitOpenScope::new();
+        for binding in processed_pattern.iter().skip(1) {
+          let open =
+            explicitly_open_match && matches!(binding, Calcit::Local(local) if contains_dynamic_type(local.type_info.as_ref()));
+          payload_contracts.bind(binding, open);
+        }
         let processed_body = phase.process(
           body,
           PreprocessContext::new(&body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack),
         )?;
+        // Payload names are branch-local, even when they shadow outer names.
+        for binding in processed_pattern.iter().skip(1) {
+          if let Calcit::Local(local) = binding {
+            body_types.remove(&local.sym);
+          }
+        }
+        propagate_scope_widening(&mut joined_scope_types, &body_types, &ScopeTypes::new(), None);
         xs.push(Calcit::from(CalcitList::from(&[
           Calcit::from(CalcitList::from(processed_pattern.as_slice())),
           processed_body,
@@ -10820,6 +10839,7 @@ fn process_match(
     }
   }
 
+  *ctx.scope_types = joined_scope_types;
   if let MacroSourcePhase::Prepare(constraints) = &mut phase {
     let branch_types = type_inference::match_branch_types(&CalcitList::from(xs.as_slice()), ctx.scope_types);
     constraints.join_branches(branch_types, ctx)?;
