@@ -19,6 +19,7 @@ CI 的 core 全定义检查进一步暴露 `tagging-edn` 回归：把裸 Dynamic
 - 反例覆盖直接与线程宏：开放字段冒充 Number、开放成员冒充 Map、回调声明收窄、调用方泛型特化、Ref 不变性、函数逆变。
 - 复验真实 Timegrass 组件，不修改其分组表达式。检查越过原先 Map 形状错误后仍有独立的 nullable String 证明失败，不能据此签发整个应用迁移通过。
 - 运行既有 Rust、核心、CLI 与文档回归；开放容器不新增 WASM 支持承诺。具体命令与结果随 PR 更新。
+- 新增 tagging-edn 测试完整保留在 native/JS。全 core 回放确认其运行时字符串转 Tag 会触发既有 E_WASM_TAG_CONVERSION，因此在原后端清单中仅为该测试记录 WASM/WASI 的 unsupported 边界，不改变断言或扩大后端能力承诺。
 
 ## 成本
 
