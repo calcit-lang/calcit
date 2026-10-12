@@ -1522,6 +1522,7 @@ mod tests {
         defs: HashMap::from([(
           Arc::from("Items"),
           ProgramDefEntry {
+            tags: Default::default(),
             code: Calcit::Unit,
             schema: Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number))),
             doc: Arc::from(""),

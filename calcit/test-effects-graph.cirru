@@ -37,6 +37,13 @@
         'collection-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn collection-helper (xs) (.empty? xs) (.contains? xs 1)
           :examples $ []
+        'declared-caller $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn declared-caller () (declared-helper 1)
+          :examples $ []
+        'declared-helper $ %{} 'CodeEntry (:doc "|pure body, effect declared by tags")
+          :code $ quote $ defn declared-helper (x) (inc x)
+          :examples $ []
+          :tags $ #{} :effect
         'io-helper $ %{} 'CodeEntry (:doc "|reads a file path")
           :code $ quote $ defn io-helper (path) (read-file path)
           :examples $ []
@@ -59,6 +66,7 @@
             scope-helper $ [] 1
             shadow-helper inc inc inc $ [] 1
             case-default-helper 1 inc
+            declared-caller
           :examples $ []
           :schema $ :: 'Dynamic
         'missing-helper $ %{} 'CodeEntry (:doc |)

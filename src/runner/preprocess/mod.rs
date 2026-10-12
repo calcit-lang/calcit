@@ -16854,6 +16854,7 @@ mod tests {
     let _guard = lock_preprocess_test_state();
     let ns = "tests.audit-cache";
     let entry = |number| program::ProgramDefEntry {
+      tags: Default::default(),
       code: Calcit::Number(number),
       schema: calcit::DYNAMIC_TYPE.clone(),
       doc: Arc::from(""),
@@ -16899,6 +16900,7 @@ mod tests {
     calcit::clear_type_slots();
     let ns = "tests.audit-slots";
     let entry = |def| program::ProgramDefEntry {
+      tags: Default::default(),
       code: code_to_calcit(
         &Cirru::List(vec![Cirru::leaf("deftype-slot"), Cirru::leaf(":dispatch-op")]),
         ns,
@@ -17588,6 +17590,7 @@ mod tests {
         defs: HashMap::from([(
           Arc::from("answer"),
           program::ProgramDefEntry {
+            tags: Default::default(),
             code: Calcit::Number(42.0),
             schema: calcit::DYNAMIC_TYPE.clone(),
             doc: Arc::from(""),
@@ -17671,6 +17674,7 @@ mod tests {
         defs: HashMap::from([(
           Arc::from("MySourceTrait"),
           program::ProgramDefEntry {
+            tags: Default::default(),
             code: trait_code,
             schema: calcit::DYNAMIC_TYPE.clone(),
             doc: Arc::from(""),
@@ -17719,6 +17723,7 @@ mod tests {
         defs: HashMap::from([(
           Arc::from(def),
           program::ProgramDefEntry {
+            tags: Default::default(),
             code: trait_code,
             schema: calcit::DYNAMIC_TYPE.clone(),
             doc: Arc::from(""),
@@ -18290,6 +18295,7 @@ mod tests {
       defs.insert(
         Arc::from(name),
         program::ProgramDefEntry {
+          tags: Default::default(),
           code,
           schema,
           doc: Arc::from(""),
@@ -18351,6 +18357,7 @@ mod tests {
         defs: HashMap::from([(
           Arc::from(def),
           program::ProgramDefEntry {
+            tags: Default::default(),
             code: source_code,
             schema,
             doc: Arc::from(""),
@@ -18485,6 +18492,7 @@ mod tests {
         defs: HashMap::from([(
           Arc::from(def),
           program::ProgramDefEntry {
+            tags: Default::default(),
             code: source_code,
             schema: calcit::DYNAMIC_TYPE.clone(),
             doc: Arc::from(""),
@@ -18532,6 +18540,7 @@ mod tests {
         defs: HashMap::from([(
           Arc::from(def),
           program::ProgramDefEntry {
+            tags: Default::default(),
             code: recursive_code,
             schema: calcit::DYNAMIC_TYPE.clone(),
             doc: Arc::from(""),
@@ -18731,6 +18740,7 @@ mod tests {
         defs: HashMap::from([(
           Arc::from("Person"),
           program::ProgramDefEntry {
+            tags: Default::default(),
             code: struct_source_marker,
             schema: calcit::DYNAMIC_TYPE.clone(),
             doc: Arc::from(""),
@@ -18963,6 +18973,7 @@ mod tests {
           (
             Arc::from("Router"),
             program::ProgramDefEntry {
+              tags: Default::default(),
               code: Calcit::StructDef(router_def.clone()),
               schema: crate::calcit::DYNAMIC_TYPE.clone(),
               doc: Arc::from(""),
@@ -18973,6 +18984,7 @@ mod tests {
           (
             Arc::from("ClientStore"),
             program::ProgramDefEntry {
+              tags: Default::default(),
               code: Calcit::StructDef(store_def.clone()),
               schema: crate::calcit::DYNAMIC_TYPE.clone(),
               doc: Arc::from(""),
@@ -18983,6 +18995,7 @@ mod tests {
           (
             Arc::from("Event"),
             program::ProgramDefEntry {
+              tags: Default::default(),
               code: Calcit::EnumDef(event_def.as_ref().clone()),
               schema: crate::calcit::DYNAMIC_TYPE.clone(),
               doc: Arc::from(""),
@@ -20018,6 +20031,7 @@ mod tests {
         defs: HashMap::from([(
           Arc::from("CatDisplayImpl"),
           program::ProgramDefEntry {
+            tags: Default::default(),
             code: Calcit::Nil,
             schema: calcit::DYNAMIC_TYPE.clone(),
             doc: Arc::from(""),
@@ -20121,6 +20135,7 @@ mod tests {
           (
             Arc::from("Render"),
             program::ProgramDefEntry {
+              tags: Default::default(),
               code: Calcit::Nil,
               schema: calcit::DYNAMIC_TYPE.clone(),
               doc: Arc::from(""),
@@ -20131,6 +20146,7 @@ mod tests {
           (
             Arc::from("CardRenderImpl"),
             program::ProgramDefEntry {
+              tags: Default::default(),
               code: Calcit::Nil,
               schema: calcit::DYNAMIC_TYPE.clone(),
               doc: Arc::from(""),
@@ -20175,6 +20191,7 @@ mod tests {
         defs: HashMap::from([(
           Arc::from("CatProfile"),
           program::ProgramDefEntry {
+            tags: Default::default(),
             code: Calcit::Nil,
             schema: calcit::DYNAMIC_TYPE.clone(),
             doc: Arc::from(""),

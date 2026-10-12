@@ -307,6 +307,8 @@ struct DefAnalysis {
   state: Vec<StateItem>,
   effects: HashMap<String, EffectItem>,
   transform: TransformInfo,
+  /// Effect kinds declared by `:tags` on project/module definitions this one calls, keyed by `ns/def`.
+  declared: HashMap<String, Vec<String>>,
 }
 
 pub struct EffectsGraphAnalyzer {
@@ -437,11 +439,25 @@ impl EffectsGraphAnalyzer {
       state: vec![],
       effects: HashMap::new(),
       transform: TransformInfo::default(),
+      declared: HashMap::new(),
     };
 
     let depth_exceeded = self.config.max_depth > 0 && depth >= self.config.max_depth;
 
     if let Some(code) = code {
+      let call_refs = extract_call_targets(&code, ns);
+      // Effects declared on called project/module definitions are read while the program is locked.
+      for (call_ns, call_def) in &call_refs {
+        if call_ns == "calcit.core" {
+          continue;
+        }
+        if let Some(entry) = program_code.get(call_ns.as_str()).and_then(|file| file.defs.get(call_def.as_str())) {
+          let kinds = tags_to_effect_kinds(&entry.tags.iter().cloned().collect());
+          if !kinds.is_empty() {
+            analysis.declared.insert(format!("{call_ns}/{call_def}"), kinds);
+          }
+        }
+      }
       // Always analyze the code for state/effects/transform, even at max depth
       self.analyze_code(&code, ns, doc.as_deref(), &mut analysis);
       if def.starts_with('*') {
@@ -455,7 +471,6 @@ impl EffectsGraphAnalyzer {
         });
       }
 
-      let call_refs = extract_call_targets(&code, ns);
       drop(program_code);
 
       // Only build children if not at max depth
@@ -687,6 +702,17 @@ impl EffectsGraphAnalyzer {
     }
 
     if let Some((call_ns, call_def)) = resolve_def_call(head, current_ns) {
+      let fqn = format!("{call_ns}/{call_def}");
+      if let Some(kinds) = out.declared.get(&fqn).cloned() {
+        for kind in kinds {
+          let key = format!("{kind}::{fqn}");
+          out.effects.entry(key).and_modify(|item| item.count += 1).or_insert(EffectItem {
+            kind,
+            target: fqn.clone(),
+            count: 1,
+          });
+        }
+      }
       if !is_meaningful_call_target(&call_ns, &call_def, self.config.include_core) {
         return;
       }
@@ -699,8 +725,8 @@ impl EffectsGraphAnalyzer {
 
   /// Effect kinds of one call site, derived only from declarations:
   /// core definition tags, registered proc descriptor tags and core impl tables.
-  /// Calls into project/module definitions add nothing here; their effects are reported on
-  /// the callee node of the call graph.
+  /// Calls into project/module definitions add nothing here unless the callee declares effect
+  /// `:tags` (see `DefAnalysis::declared`); the callee body's own effects are reported on its node.
   fn classify_call_head(&self, call: &CallHead) -> (Vec<String>, String) {
     match call {
       CallHead::Core(name) => (classify_call(name, self.tag_index.tags_for(name)), name.clone()),
@@ -2875,6 +2901,13 @@ mod tests {
     assert_eq!(effects["shadow-helper"], pair("effect", "&doseq"));
     // The default of `case-default` is an expression, not a clause.
     assert_eq!(effects["case-default-helper"], pair(UNKNOWN_EFFECT_KIND, "d"));
+    // `:tags` on a project definition is an explicit declaration, reported at its call sites;
+    // the callee's own pure body adds nothing.
+    assert_eq!(
+      effects["declared-caller"],
+      pair("effect", "test-effects-graph.main/declared-helper")
+    );
+    assert_eq!(effects["declared-helper"], vec![]);
   }
 
   fn find_node<'a>(node: &'a EffectsGraphNode, def: &str) -> Option<&'a EffectsGraphNode> {

@@ -6694,6 +6694,7 @@ mod tests {
           (
             Arc::from("A"),
             ProgramDefEntry {
+              tags: Default::default(),
               code: Calcit::Nil,
               schema: alias_ref("B"),
               doc: Arc::from(""),
@@ -6704,6 +6705,7 @@ mod tests {
           (
             Arc::from("B"),
             ProgramDefEntry {
+              tags: Default::default(),
               code: Calcit::Nil,
               schema: alias_ref("A"),
               doc: Arc::from(""),
@@ -6742,6 +6744,7 @@ mod tests {
     };
     let display_trait = Arc::new(CalcitTrait::new(EdnTag::new("Display"), vec![], vec![]).with_definition_ref(namespace, "Display"));
     let entry = |schema| ProgramDefEntry {
+      tags: Default::default(),
       code: Calcit::Nil,
       schema,
       doc: Arc::from(""),
@@ -6968,6 +6971,7 @@ mod tests {
         defs: HashMap::from([(
           Arc::from("Box"),
           ProgramDefEntry {
+            tags: Default::default(),
             code: Calcit::from(vec![
               symbol("defstruct"),
               Calcit::Str(Arc::from("Box")),
