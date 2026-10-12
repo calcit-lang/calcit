@@ -2230,18 +2230,21 @@ fn gen_js_func(
             return Err(format!("unexpected argument after spreading: {sym}"));
           }
         } else if has_optional {
-          if let CalcitArgLabel::Idx(idx) = sym {
-            if !args_code.is_empty() {
-              args_code.push_str(", ");
+          // match native binding: `&` may follow optionals, and a repeated `?` is a no-op
+          match sym {
+            CalcitArgLabel::RestMark => spreading = true,
+            CalcitArgLabel::OptionalMark => {}
+            CalcitArgLabel::Idx(idx) => {
+              if !args_code.is_empty() {
+                args_code.push_str(", ");
+              }
+              let sym = CalcitLocal::read_name(*idx);
+              let arg_name = escape_var(&sym);
+              args_code.push_str(&arg_name);
+              fixed_arg_names.push(arg_name);
+              local_defs.insert(sym.into());
+              optional_count += 1;
             }
-            let sym = CalcitLocal::read_name(*idx);
-            let arg_name = escape_var(&sym);
-            args_code.push_str(&arg_name);
-            fixed_arg_names.push(arg_name);
-            local_defs.insert(sym.into());
-            optional_count += 1;
-          } else {
-            return Err(format!("unexpected argument after optional: {sym}"));
           }
         } else {
           match sym {
