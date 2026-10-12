@@ -4162,6 +4162,11 @@ fn preprocess_list_call(
             {
               let mut candidate = callable_bindings.clone();
               if actual.prove_with_bindings(expected.as_ref(), &mut candidate).is_proven() {
+                // A bare open payload supplies no contextual parameter evidence.
+                // Keep structured bindings such as Map<Tag, Dynamic> intact.
+                candidate.retain(|name, value| {
+                  callable_bindings.contains_key(name) || !matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
+                });
                 callable_bindings = candidate;
               }
             }
@@ -4867,6 +4872,9 @@ fn preprocess_known_function_call(
           .prove_with_bindings(binding_expected.substitute_type_vars(&candidate).as_ref(), &mut candidate.clone())
           .is_proven();
       if direct_proof || inferred_callable_proof {
+        candidate.retain(|name, value| {
+          preprocessing_type_bindings.contains_key(name) || !matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
+        });
         preprocessing_type_bindings = candidate;
       }
     }

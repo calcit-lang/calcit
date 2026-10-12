@@ -10,6 +10,8 @@ Timegrass 的历史任务分组从 `Map<String,Map<Tag,Dynamic>>` 取得 values�
 `T` 可以绑定为 `Map<Tag,Dynamic>`，成员仍是 Dynamic；后续具体使用必须通过同一个类型关系证明。
 不改兼容关系、方差、名义边界检查或泛型刚性，不从回调输出合同反推输入，也不新增分析器或逐 API 规则。
 
+CI 的 core 全定义检查进一步暴露 `tagging-edn` 回归：把裸 Dynamic 绑定也导入回调上下文，会让既有未标注回调退化成缺少签名证据的 DynFn。因此只保留有外层结构的新增 binding（例如 `Map<Tag,Dynamic>`），不把裸 Dynamic 作为新的上下文参数证据；既有 bindings 不变，最终调用证明仍检查原始开放实参。保持 core 实现不变，并给 tagging-edn 增加嵌套开放 Map 的附带回归。
+
 ## 验证边界
 
 - 在既有 fixture 增加 4 个 definition-attached 测试：直接分组、线程宏、函数别名、普通 map 读取开放字段。

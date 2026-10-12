@@ -8249,7 +8249,11 @@
             %{} 'TestEntry (:name |plain-call-many-args-fn-value)
               :code $ quote $ let
                   f +
-                  g $ fn (a b c d e f2 g2 h i) $ &+ a $ &+ b $ &+ c $ &+ d $ &+ e $ &+ f2 $ &+ g2 $ &+ h i
+                  g $ fn
+                    a b c d e f2 g2 h i
+                    &+ a $ &+ b $ &+ c
+                      &+ d $ &+ e $ &+ f2
+                        &+ g2 $ &+ h i
                 assert= 36 $ f 1 2 3 4 5 6 7 8
                 assert= 55 $ f 1 2 3 4 5 6 7 8 9 10
                 assert= 45 $ g 1 2 3 4 5 6 7 8 9
@@ -12051,6 +12055,15 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |retains-open-map-callback)
+            :code $ quote $ assert=
+              {} (:name |Ada)
+                :items $ [] $ {} (:done true)
+                7 nil
+              tagging-edn $ {} (|name |Ada)
+                |items $ [] $ {} (|done true)
+                7 nil
+            :tags $ #{} :core :unit
         'take $ %{} 'CodeEntry (:doc "|Take the first n elements from a list")
           :code $ quote $ defn take (xs n)
             if
