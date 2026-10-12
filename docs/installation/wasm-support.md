@@ -133,7 +133,7 @@ WASM 后端与 FFI ABI 的实现集中在 `src/wasm/`，对外公开路径保持
 | --- | --- | --- |
 | `src/wasm/emit_wasm.rs` 及 `emit_wasm/` | `calcit::codegen::emit_wasm` | 是 |
 | `src/wasm/wasm_cli.rs` | `calcit::wasm_cli` | 是 |
-| `src/wasm/ffi_abi.rs`、`ffi_async.rs` | `calcit::ffi_abi`、`calcit::ffi_async` | 否（非 wasm32 目标） |
+| `src/wasm/ffi_abi.rs`、`ffi_async.rs` | `calcit::ffi_abi`、`calcit::ffi_async` | 否（仅非 wasm32 目标才编译；不需要 wasm feature） |
 | `src/wasm/ffi_interface_ir.rs` | `calcit::ffi_interface_ir` | 否 |
 
 `src/wasm/mod.rs` 是统一入口 `calcit::wasm`：按上表的 feature 条件重新导出 `WasmTarget`、`WasmBoundary`、`emit_wasm`、`validate_wasm_target`、`validate_wasm_boundary`、`check_wasm_command_component`、`WasmCliOptions`、`run`，以及三个 FFI 模块。这些模块仍通过 `src/lib.rs` 与 `src/codegen.rs` 里的 `#[path]` 声明挂载，所以 FFI 模块不会被 `wasm` feature 门控。
@@ -142,7 +142,7 @@ WASM 后端与 FFI ABI 的实现集中在 `src/wasm/`，对外公开路径保持
 
 ## 限制
 
-- 边界检查是对源码文本的逐行扫描，不解析 `use` 别名，也不检查 `emit_wasm` 子模块之外的条目。
+- 边界检查扫描去掉 `//` 注释行后的整段源码（含 rustfmt 换行的多行 `use` 分组），只检查以 `emit_wasm::` / `wasm_cli::` 开头的路径，不解析 `use` 别名，也不检查其他写法的路径。
 - 不带编号的 `unsupported ... in WASM` 诊断尚未统一格式，不一定包含源位置与缺失的证据种类。
 - `wasm-unsupported-procs` 列表只校验排除清单出现过的 Proc，没有 core 测试覆盖的 Proc 靠人工维护。
 - `update` 的接收者为 Struct 时在 WASM 上 trap，native 会改写对应字段。

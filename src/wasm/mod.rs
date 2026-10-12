@@ -91,25 +91,28 @@ mod boundary_tests {
     for file in files.iter().filter(|f| !f.starts_with(&wasm_dir)) {
       let rel = file.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/");
       let source = fs::read_to_string(file).expect("read source");
-      for (index, line) in source.lines().enumerate() {
-        let location = format!("{rel}:{}", index + 1);
-        // Implementation files may only be mounted by the two declaration sites.
-        let mounts_file = line.contains("src/wasm/") || line.contains("\"wasm/");
-        if mounts_file && !matches!(rel.as_str(), "src/lib.rs" | "src/codegen.rs") {
-          violations.push(format!(
-            "{location}: references a src/wasm implementation file directly: {}",
-            line.trim()
-          ));
-        }
-        for name in imported_names(line, "emit_wasm") {
-          if !EMIT_WASM_PUBLIC.contains(&name) {
-            violations.push(format!("{location}: `emit_wasm::{name}` is not part of the WASM facade"));
+      // Drop comment lines, then scan the whole text so rustfmt-wrapped multi-line `use` groups are seen.
+      let code: String = source
+        .lines()
+        .filter(|line| !line.trim_start().starts_with("//"))
+        .collect::<Vec<_>>()
+        .join("\n");
+      // Implementation files may only be mounted by `#[path]` declarations in the two declaration sites.
+      if !matches!(rel.as_str(), "src/lib.rs" | "src/codegen.rs") {
+        for line in code.lines().filter(|line| line.trim_start().starts_with("#[path")) {
+          if line.contains("wasm/") {
+            violations.push(format!("{rel}: mounts a src/wasm implementation file directly: {}", line.trim()));
           }
         }
-        for name in imported_names(line, "wasm_cli") {
-          if !WASM_CLI_PUBLIC.contains(&name) {
-            violations.push(format!("{location}: `wasm_cli::{name}` is not part of the WASM facade"));
-          }
+      }
+      for name in imported_names(&code, "emit_wasm") {
+        if !EMIT_WASM_PUBLIC.contains(&name) {
+          violations.push(format!("{rel}: `emit_wasm::{name}` is not part of the WASM facade"));
+        }
+      }
+      for name in imported_names(&code, "wasm_cli") {
+        if !WASM_CLI_PUBLIC.contains(&name) {
+          violations.push(format!("{rel}: `wasm_cli::{name}` is not part of the WASM facade"));
         }
       }
     }
