@@ -185,6 +185,17 @@ named entry 不继承 default 配置，逐个检查与运行。把 `test --list`
 - 已退役规则不能用目标 CLI 重新获得；先用对应旧版桥梁，或按具体诊断人工迁移，不反复更换 preset 猜测。
 - `--check-only`、生成成功或零语法命中不能代替目标后端运行及真实消费者回归。
 
+## pair 映射保留回调结果类型
+
+List `.map-pair` 的内部合同将回调返回值 `R` 与结果 `List<R>` 关联。回调明确构造 List 时，
+即使原 Map 的嵌套 payload 含 Dynamic，映射结果仍保留外层 List 形状，可继续传给接收
+`List<List<Dynamic>>` 的代码；无需为此扩大业务 schema 或添加强转。回调调用顺序、空输入和异常传播不变。
+
+### 限制
+
+- 异构 pair 的 key/value 输入仍是开放边界；结果形状不能证明其中的值属于 Number、String 或业务 Struct。
+- WASM/WASI 仍不支持该内部 helper 的错误格式化依赖；本次类型修复不扩大后端支持范围。
+
 ## 显式 trait 调用的重复实现
 
 `&trait-call Trait :method receiver ...` 按 trait 来源选择实现。同一个接收者上，该来源必须只有一个候选；多个候选会报 `E_DUPLICATE_TRAIT_IMPL`，不会执行其中任何一个方法。native 与 JS runtime 均执行这条规则，包括显式 `--compat-types` 生成或运行的调用。
