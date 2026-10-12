@@ -979,8 +979,11 @@ pub fn bind_marked_args(
       match arg {
         CalcitArgLabel::RestMark => spreading = true,
         CalcitArgLabel::OptionalMark => optional = true,
-        CalcitArgLabel::Idx(idx) => match values.get(pop_values_idx.get_and_inc()) {
+        // only advance the value cursor when a value is consumed, so a missing optional
+        // leaves it at `values.len()` and a following rest param binds an empty list
+        CalcitArgLabel::Idx(idx) => match values.get(pop_values_idx.0) {
           Some(v) => {
+            pop_values_idx.0 += 1;
             scope.insert_mut(*idx, v.to_owned());
           }
           None => {
