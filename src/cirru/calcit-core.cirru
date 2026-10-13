@@ -3318,6 +3318,18 @@
                   :: :ready $ %some 1
                   :: :ready $ %some 2
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |fractions-in-heap-address-range-stay-numbers)
+              :code $ quote $ let
+                  text $ &str:concat |a |b
+                do
+                  assert= true $ &= 16392.5 16392.5
+                  assert= false $ &= 16392.5 16392.75
+                  assert= false $ &= 16392.75 16392.5
+                  assert= false $ &= 16392.5 16392
+                  assert= false $ &= 16392.5 text
+                  assert= false $ &= text 16392.5
+                  assert= true $ &= text $ &str:concat |a |b
+              :tags $ #{} :core :unit
             %{} 'TestEntry (:name |treats-nan-as-equal-value)
               :code $ quote $ let
                   not-a-number $ sqrt -1
