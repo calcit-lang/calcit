@@ -2941,7 +2941,7 @@ pub enum ConfigSubcommand {
   /// show or bump the project version (omit value to show; use patch|minor|major to bump; or pass a semver string)
   /// [Deprecated] prefer `caps version get/set/bump` which manages `deps.cirru :version`
   Version(ConfigVersionCommand),
-  /// set a configuration key to a value (mode, target, init-fn, reload-fn, description, feature-policy.<name>, version)
+  /// set a configuration key to a value (package, mode, target, init-fn, reload-fn, description, feature-policy.<name>); use caps version for project versions
   Set(ConfigSetCommand),
   /// unset an optional configuration key (target)
   Unset(ConfigUnsetCommand),
@@ -3004,15 +3004,15 @@ pub struct ConfigVersionCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "set")]
-/// set a configuration key (mode, target, init-fn, reload-fn, description, feature-policy.<name>, version)
+/// set a configuration key (package, mode, target, init-fn, reload-fn, description, feature-policy.<name>); use caps version for project versions
 pub struct ConfigSetCommand {
-  /// apply to a named entry (e.g. "test"); defaults to "default" (version is always project-level)
+  /// apply to a named entry (e.g. "test"); defaults to "default"; package is project-level and rejects --entry
   #[argh(option)]
   pub entry: Option<String>,
-  /// config key: mode, target, init-fn, reload-fn, description, feature-policy.<name>, version ([Deprecated] prefer `caps version`)
+  /// config key: package, mode, target, init-fn, reload-fn, description, feature-policy.<name>; project versions use caps version
   #[argh(positional)]
   pub key: String,
-  /// config value; target accepts browser|node|native|wasm; version accepts semver string or patch|minor|major
+  /// config value; package is a namespace prefix; target accepts browser|node|native|wasm
   #[argh(positional)]
   pub value: String,
 }

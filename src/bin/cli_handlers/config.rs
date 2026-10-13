@@ -18,7 +18,7 @@ use std::fs;
 use std::path::Path;
 
 use super::common::{deps_path_for_snapshot, guard_snapshot_mutation_toolchain, package_version_for_snapshot};
-use super::edit::{load_snapshot, save_snapshot};
+use super::edit::{find_edn_map_value_mut, load_snapshot, save_snapshot};
 use super::structured_output::{StructuredOutputFormat, format_json_value_as_edn};
 
 const CONFIG_JSON_SCHEMA_VERSION: u32 = 1;
@@ -545,6 +545,24 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
 
   let mut snapshot = load_snapshot(snapshot_file)?;
 
+  if opts.key == "package" {
+    if opts.entry.is_some() {
+      return Err("Package is project-level; omit --entry when setting package".to_owned());
+    }
+    if opts.value.split('.').any(|segment| {
+      segment.is_empty()
+        || segment.starts_with(|c: char| c.is_ascii_digit())
+        || !segment
+          .chars()
+          .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '?' | '!' | '*'))
+    }) {
+      return Err("Package must be a namespace prefix with nonempty symbol segments separated by dots".to_owned());
+    }
+    save_package_preserving_snapshot(snapshot_file, &opts.value)?;
+    println!("{} Set package = '{}'", "✓".green(), opts.value);
+    return Ok(());
+  }
+
   let entry_label = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
   let entry = select_entry_mut(&mut snapshot, opts.entry.as_deref())?;
 
@@ -590,7 +608,7 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
     }
     _ => {
       return Err(format!(
-        "Unknown config key '{}'. Valid keys: mode, target, init-fn, reload-fn, description, feature-policy.<name>, version (accepts semver string or patch|minor|major)",
+        "Unknown config key '{}'. Valid keys: package, mode, target, init-fn, reload-fn, description, feature-policy.<name>; project version is managed by caps version",
         opts.key
       ));
     }
@@ -599,6 +617,31 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
   save_snapshot(&snapshot, snapshot_file)?;
   println!("{message}");
   Ok(())
+}
+
+/// Update root metadata without canonicalizing unrelated legacy source forms.
+fn save_package_preserving_snapshot(snapshot_file: &str, package: &str) -> Result<(), String> {
+  let original = fs::read_to_string(snapshot_file).map_err(|e| format!("Failed to read {snapshot_file}: {e}"))?;
+  let shebang = original.lines().next().filter(|line| line.starts_with("#!")).map(str::to_owned);
+  let mut content = original;
+  strip_shebang(&mut content);
+  let mut data = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse EDN: {e}"))?;
+  let Edn::Map(root) = &mut data else {
+    return Err("Snapshot root must be an EDN map".to_owned());
+  };
+  if let Some(value) = find_edn_map_value_mut(root, "package") {
+    *value = Edn::Str(package.into());
+  } else {
+    root.insert_key("package", Edn::Str(package.into()));
+  }
+  snapshot::load_snapshot_data(&data, snapshot_file)
+    .map_err(|e| format!("Package update would make the Snapshot unloadable; nothing was written: {e}"))?;
+  let formatted = cirru_edn::format(&data, true).map_err(|e| format!("Failed to format Snapshot EDN: {e}"))?;
+  let output = match shebang {
+    Some(line) => format!("{line}\n{formatted}"),
+    None => formatted,
+  };
+  calcit::util::atomic_write::write_snapshot(snapshot_file, output.as_bytes())
 }
 
 fn parse_run_mode(value: &str) -> Result<snapshot::SnapshotRunMode, String> {
