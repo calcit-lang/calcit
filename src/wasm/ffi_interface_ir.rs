@@ -3,9 +3,9 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use md5::{Digest, Md5};
 use serde::Serialize;
 
-use crate::calcit::{Calcit, CalcitEnumDef, CalcitNumericRefinement, CalcitStructDef, CalcitTypeAnnotation, SchemaKind};
-use crate::data::cirru::code_to_calcit;
-use crate::snapshot::{CodeEntry, Snapshot};
+use crate::wasm::host::calcit::{Calcit, CalcitEnumDef, CalcitNumericRefinement, CalcitStructDef, CalcitTypeAnnotation, SchemaKind};
+use crate::wasm::host::data::cirru::code_to_calcit;
+use crate::wasm::host::snapshot::{CodeEntry, Snapshot};
 use cirru_edn::Edn;
 use cirru_parser::Cirru;
 
@@ -781,7 +781,7 @@ fn collect_local_type_declarations(snapshot: &Snapshot) -> LocalTypeDeclarations
       let Ok(code) = code_to_calcit(&entry.code, namespace, definition, vec![]) else {
         continue;
       };
-      let Some(declaration) = crate::calcit::type_annotation::resolve_type_def_from_code(&code) else {
+      let Some(declaration) = crate::wasm::host::calcit::type_annotation::resolve_type_def_from_code(&code) else {
         continue;
       };
       let source_id = format!("{namespace}/{definition}");
@@ -1790,8 +1790,8 @@ mod tests {
   use cirru_parser::Cirru;
 
   use super::*;
-  use crate::calcit::{CalcitFnTypeAnnotation, DYNAMIC_TYPE};
-  use crate::snapshot::{CodeEntry, FileInSnapShot, NsEntry};
+  use crate::wasm::host::calcit::{CalcitFnTypeAnnotation, DYNAMIC_TYPE};
+  use crate::wasm::host::snapshot::{CodeEntry, FileInSnapShot, NsEntry};
 
   fn function_entry(args: Vec<Arc<CalcitTypeAnnotation>>, result: Arc<CalcitTypeAnnotation>, ffi: Edn) -> CodeEntry {
     CodeEntry {
@@ -1949,7 +1949,7 @@ mod tests {
       about: None,
       version: "0.1.0".to_owned(),
       entries: HashMap::new(),
-      verification: crate::snapshot::VerificationConfig::default(),
+      verification: crate::wasm::host::snapshot::VerificationConfig::default(),
       files: HashMap::from([(
         "test.ffi".to_owned(),
         FileInSnapShot {
@@ -2709,7 +2709,7 @@ mod tests {
       about: None,
       version: "0.1.0".to_owned(),
       entries: HashMap::new(),
-      verification: crate::snapshot::VerificationConfig::default(),
+      verification: crate::wasm::host::snapshot::VerificationConfig::default(),
       files: HashMap::from([
         (
           "alpha.ffi".to_owned(),

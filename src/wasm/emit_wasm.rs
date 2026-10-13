@@ -31,15 +31,17 @@ use wasm_encoder::{
   Ieee64, Instruction, MemorySection, MemoryType, Module, RefType, TableSection, TableType, TypeSection, ValType,
 };
 
-use crate::builtins::syntax::get_raw_args_fn;
-use crate::calcit::data_shape::{DataShapeGraph, DataShapeNode};
-use crate::calcit::type_annotation::TypeBindings;
-use crate::calcit::{
+use crate::wasm::host::builtins::syntax::get_raw_args_fn;
+use crate::wasm::host::calcit::data_shape::{DataShapeGraph, DataShapeNode};
+use crate::wasm::host::calcit::type_annotation::TypeBindings;
+use crate::wasm::host::calcit::{
   Calcit, CalcitArgLabel, CalcitEnumDef, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImport, CalcitLocal, CalcitNumericRefinement,
   CalcitProc, CalcitStructDef, CalcitSyntax, CalcitTypeAnnotation, MethodKind,
 };
-use crate::program;
-use crate::runner::preprocess::{expression_definitely_diverges, infer_static_type_from_expr, resolve_static_trait_callable};
+use crate::wasm::host::program;
+use crate::wasm::host::runner::preprocess::{
+  expression_definitely_diverges, infer_static_type_from_expr, resolve_static_trait_callable,
+};
 
 #[path = "emit_wasm/component.rs"]
 mod component;
@@ -1002,10 +1004,13 @@ fn emit_wasm_impl(
     };
     for (def_name, compiled) in deterministic_definition_order(file_info) {
       let qualified = format!("{ns}/{def_name}");
-      if let crate::calcit::Calcit::List(xs) = &compiled.preprocessed_code
+      if let crate::wasm::host::calcit::Calcit::List(xs) = &compiled.preprocessed_code
         && matches!(
           xs.first(),
-          Some(crate::calcit::Calcit::Syntax(crate::calcit::CalcitSyntax::Defref, _))
+          Some(crate::wasm::host::calcit::Calcit::Syntax(
+            crate::wasm::host::calcit::CalcitSyntax::Defref,
+            _
+          ))
         )
       {
         // Global zero belongs to the heap pointer; atoms follow it.
@@ -1013,8 +1018,8 @@ fn emit_wasm_impl(
         atom_globals.insert(qualified, global_idx);
         // Determine initial value from 3rd node (index 2)
         let init_val = match xs.get(2) {
-          Some(crate::calcit::Calcit::Bool(true)) => 1.0,
-          Some(crate::calcit::Calcit::Number(n)) => *n,
+          Some(crate::wasm::host::calcit::Calcit::Bool(true)) => 1.0,
+          Some(crate::wasm::host::calcit::Calcit::Number(n)) => *n,
           _ => 0.0, // false / nil / complex init → default 0.0
         };
         atom_initial_values.push(init_val);
@@ -1409,7 +1414,7 @@ fn validate_wasm_target_in_program(
     for definition in file.defs.keys() {
       if program::lookup_def_ffi(namespace, definition)
         .as_ref()
-        .is_some_and(|ffi| crate::js_ffi_source::parse_js_source(ffi).ok().flatten().is_some())
+        .is_some_and(|ffi| crate::wasm::host::js_ffi_source::parse_js_source(ffi).ok().flatten().is_some())
       {
         return Err(format!(
           "E_WASM_UNSUPPORTED_JS_FFI: `{namespace}/{definition}` has a JavaScript implementation; WASM cannot lower this definition"
@@ -2034,7 +2039,7 @@ fn resolve_component_enum_ref(
       .chain([&compiled.preprocessed_code, &compiled.codegen_form])
       .find_map(|code| match code {
         Calcit::EnumDef(enum_def) => Some(Arc::new(enum_def.clone())),
-        code => match crate::calcit::type_annotation::resolve_type_def_from_code(code) {
+        code => match crate::wasm::host::calcit::type_annotation::resolve_type_def_from_code(code) {
           Some(Calcit::EnumDef(enum_def)) => Some(Arc::new(enum_def)),
           _ => None,
         },
@@ -2063,7 +2068,7 @@ fn resolve_component_struct_ref(
       .chain([&compiled.preprocessed_code, &compiled.codegen_form])
       .find_map(|code| match code {
         Calcit::StructDef(struct_def) => Some(Arc::new(struct_def.clone())),
-        code => match crate::calcit::type_annotation::resolve_type_def_from_code(code) {
+        code => match crate::wasm::host::calcit::type_annotation::resolve_type_def_from_code(code) {
           Some(Calcit::StructDef(struct_def)) => Some(Arc::new(struct_def)),
           _ => None,
         },
@@ -2286,7 +2291,7 @@ fn collect_component_import_adapters(program_data: &program::CompiledProgram) ->
 fn direct_tail_import_definition(body: &[Calcit], args: &CalcitFnArgs) -> Option<String> {
   let expressions = body
     .iter()
-    .filter(|item| !crate::builtins::syntax::is_function_metadata_hint(item))
+    .filter(|item| !crate::wasm::host::builtins::syntax::is_function_metadata_hint(item))
     .collect::<Vec<_>>();
   let [Calcit::List(call)] = expressions.as_slice() else {
     return None;
@@ -2410,7 +2415,7 @@ fn component_stream_consumer(
   }
   let expressions = body
     .iter()
-    .filter(|item| !crate::builtins::syntax::is_function_metadata_hint(item))
+    .filter(|item| !crate::wasm::host::builtins::syntax::is_function_metadata_hint(item))
     .collect::<Vec<_>>();
   let [Calcit::List(call)] = expressions.as_slice() else {
     return Err(format!(
@@ -4900,7 +4905,7 @@ fn parse_wasm_import_def(code: &Calcit) -> Option<(String, String, CalcitFnArgs)
   let body: Vec<&Calcit> = xs
     .iter()
     .skip(3)
-    .filter(|item| !crate::builtins::syntax::is_function_metadata_hint(item))
+    .filter(|item| !crate::wasm::host::builtins::syntax::is_function_metadata_hint(item))
     .collect();
   let [Calcit::Str(module), Calcit::Str(name)] = body.as_slice() else {
     return None;
@@ -5059,7 +5064,7 @@ impl WasmGenCtx {
     WasmGenCtx {
       source_fn_index: None,
       function_value_dependencies: env.function_value_dependencies,
-      source_ns: crate::calcit::CORE_NS.to_owned(),
+      source_ns: crate::wasm::host::calcit::CORE_NS.to_owned(),
       locals: HashMap::new(),
       local_types: HashMap::new(),
       extra_locals: Vec::new(),
@@ -5469,7 +5474,7 @@ fn emit_inline_closure_with_bindings(
 
 fn infer_wasm_static_type(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
   if expression_definitely_diverges(expr) {
-    return Some(crate::calcit::type_annotation::NEVER_TYPE.clone());
+    return Some(crate::wasm::host::calcit::type_annotation::NEVER_TYPE.clone());
   }
   match expr {
     Calcit::Local(local) => ctx
@@ -5847,8 +5852,8 @@ fn direct_scalar_type_test(expr: &Calcit) -> bool {
           .get(1)
           .and_then(infer_static_type_from_expr)
           .is_none_or(|annotation| scalar_truthiness_constant(&annotation).is_err()),
-        Some(Calcit::Import(import)) => import.ns.as_ref() == crate::calcit::CORE_NS && import.def.as_ref() == "nil?",
-        Some(Calcit::Symbol { sym, info, .. }) => info.at_ns.as_ref() == crate::calcit::CORE_NS && sym.as_ref() == "nil?",
+        Some(Calcit::Import(import)) => import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS && import.def.as_ref() == "nil?",
+        Some(Calcit::Symbol { sym, info, .. }) => info.at_ns.as_ref() == crate::wasm::host::calcit::CORE_NS && sym.as_ref() == "nil?",
         _ => false,
       };
       direct || items.iter().any(direct_scalar_type_test)
@@ -6067,7 +6072,7 @@ fn compile_fn(
 /// tail position; anywhere else it would silently restart the loop, so it is rejected with
 /// the same tail-position rule preprocessing uses.
 fn reject_non_tail_recur(body: &[Calcit], owner: &str) -> Result<(), String> {
-  match crate::runner::preprocess::non_tail_recur_forms(body).first() {
+  match crate::wasm::host::runner::preprocess::non_tail_recur_forms(body).first() {
     Some(form) => Err(format!(
       "recur must be called directly in tail position of the function body in {owner}, got: {}",
       form.lisp_str()
@@ -6105,7 +6110,7 @@ fn emit_body(ctx: &mut WasmGenCtx, exprs: &[Calcit]) -> Result<(), String> {
   // body. `hint-fn` is compile-time metadata, not the closure's return value.
   let executable = exprs
     .iter()
-    .filter(|expr| !crate::builtins::syntax::is_function_metadata_hint(expr))
+    .filter(|expr| !crate::wasm::host::builtins::syntax::is_function_metadata_hint(expr))
     .collect::<Vec<_>>();
   if executable.is_empty() {
     ctx.emit(f64_const(0.0));
@@ -6288,7 +6293,7 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
     // `do` appears as a bare (non-call) expression when used as a body sequencer in defn.
     // It's a no-op — just emit nil so it can be dropped by emit_body.
     Calcit::Import(import)
-      if import.ns.as_ref() == crate::calcit::CORE_NS
+      if import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS
         && import.def.as_ref() == "do"
         && !ctx.fn_table_index.contains_key(&format!("{}/{}", import.ns, import.def)) =>
     {
@@ -6383,7 +6388,7 @@ fn emit_expr(ctx: &mut WasmGenCtx, expr: &Calcit) -> Result<(), String> {
 }
 
 /// Emit instructions for a call expression.
-fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::calcit::CalcitList) -> Result<(), String> {
+fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitList) -> Result<(), String> {
   let head = &xs[0];
   let args_list: Vec<Calcit> = xs.drop_left().to_vec();
 
@@ -6883,7 +6888,7 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
         .get(local.sym.as_ref())
         .is_some_and(|closure| closure.accepts(arg_count));
       if runtime_spreads.is_empty() && accepting_inline_lambda {
-        return emit_call_expr(ctx, &crate::calcit::CalcitList::from(&plain[..]));
+        return emit_call_expr(ctx, &crate::wasm::host::calcit::CalcitList::from(&plain[..]));
       }
       ctx.emit(Instruction::Unreachable);
       Ok(())
@@ -9402,7 +9407,7 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
     return Err("match requires a value and branches".into());
   }
 
-  if let Some(shape) = crate::codegen::destruct_list_match_shape(args) {
+  if let Some(shape) = crate::wasm::host::codegen::destruct_list_match_shape(args) {
     return emit_destruct_list_match(ctx, &shape);
   }
 
@@ -9534,7 +9539,7 @@ fn emit_match(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
 
 /// Lowers `match (destruct-list xs) ((:none) a) ((:some h t) b)` with the same
 /// list primitives `destruct-list` uses, without allocating the enum.
-fn emit_destruct_list_match(ctx: &mut WasmGenCtx, shape: &crate::codegen::DestructListMatch<'_>) -> Result<(), String> {
+fn emit_destruct_list_match(ctx: &mut WasmGenCtx, shape: &crate::wasm::host::codegen::DestructListMatch<'_>) -> Result<(), String> {
   emit_ds_empty(ctx, std::slice::from_ref(shape.subject))?;
   ctx.emit(f64_const(0.0));
   ctx.emit(Instruction::F64Ne);
@@ -9620,10 +9625,14 @@ fn collect_all_tags_from(
           collect_tags_from_expr(code, &mut tags);
           let struct_def = match code {
             Calcit::StructDef(struct_def) => Some(struct_def.clone()),
-            _ => try_parse_defrecord_form(code).or_else(|| match crate::calcit::type_annotation::resolve_type_def_from_code(code) {
-              Some(Calcit::StructDef(struct_def)) => Some(struct_def),
-              _ => None,
-            }),
+            _ => {
+              try_parse_defrecord_form(code).or_else(|| {
+                match crate::wasm::host::calcit::type_annotation::resolve_type_def_from_code(code) {
+                  Some(Calcit::StructDef(struct_def)) => Some(struct_def),
+                  _ => None,
+                }
+              })
+            }
           };
           if let Some(struct_def) = struct_def {
             tags.push(struct_def.name.ref_str().to_owned());
@@ -9631,7 +9640,7 @@ fn collect_all_tags_from(
           }
           let enum_def = match code {
             Calcit::EnumDef(enum_def) => Some(enum_def.clone()),
-            _ => match crate::calcit::type_annotation::resolve_type_def_from_code(code) {
+            _ => match crate::wasm::host::calcit::type_annotation::resolve_type_def_from_code(code) {
               Some(Calcit::EnumDef(enum_def)) => Some(enum_def),
               _ => None,
             },
@@ -9861,7 +9870,7 @@ fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
   }
   match expr {
     Calcit::Number(number) => {
-      strings.push(crate::util::number::format_calcit_number(*number));
+      strings.push(crate::wasm::host::util::number::format_calcit_number(*number));
     }
     Calcit::Str(s) => {
       strings.push(s.to_string());
@@ -9881,7 +9890,7 @@ fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
         && inner.len() >= 2
         && let Calcit::Syntax(CalcitSyntax::Quote, _) = &inner[0]
       {
-        let s = crate::calcit::format_to_lisp(&inner[1]);
+        let s = crate::wasm::host::calcit::format_to_lisp(&inner[1]);
         strings.push(s);
       }
       // Pre-intern lispy strings for literal enum constructors (used by `str`/`turn-string`).
@@ -10149,7 +10158,7 @@ mod tests {
     reject_non_tail_recur, reject_reachable_wasi_command_dependencies, validate_component_export_symbols,
     validate_component_flat_parameters, validate_component_import_symbols, wasi_component_file_imports, wasm_non_nil_value_is_nonzero,
   };
-  use crate::calcit::{
+  use crate::wasm::host::calcit::{
     Calcit, CalcitEnumDef, CalcitFnTypeAnnotation, CalcitList, CalcitLocal, CalcitNumericRefinement, CalcitProc, CalcitStructDef,
     CalcitStructValue, CalcitSymbolInfo, CalcitSyntax, CalcitTypeAnnotation, MethodKind, SchemaKind,
   };
@@ -10606,7 +10615,7 @@ mod tests {
         definition_ref: Some(Arc::from(format!("app.main/{name}"))),
         name: EdnTag::new(name),
         fields: Arc::new(fields),
-        field_types: Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone(); values.len()]),
+        field_types: Arc::new(vec![crate::wasm::host::calcit::DYNAMIC_TYPE.clone(); values.len()]),
         generics: Arc::new(generics),
         where_bounds: Arc::new(vec![]),
         impls: vec![],
@@ -10635,9 +10644,12 @@ mod tests {
       where_bounds: Arc::new(vec![]),
       impls: vec![],
     });
-    let shape = crate::calcit::data_shape::DataShapeGraph::build(&CalcitTypeAnnotation::Struct(nominal, Arc::new(vec![])), "app.main")
-      .expect("derive Struct shape")
-      .into_calcit_handle();
+    let shape = crate::wasm::host::calcit::data_shape::DataShapeGraph::build(
+      &CalcitTypeAnnotation::Struct(nominal, Arc::new(vec![])),
+      "app.main",
+    )
+    .expect("derive Struct shape")
+    .into_calcit_handle();
     let mut tags = vec![];
     super::collect_tags_from_expr(&shape, &mut tags);
     assert!(tags.iter().any(|tag| tag == "Job"));

@@ -11,6 +11,9 @@
 //! through this facade; `boundary_tests` enforces that. The historical paths above remain public
 //! as compatibility aliases for external consumers and are not removed in patch releases.
 
+// Host facade: the single place in this directory that names main-crate internals.
+pub(crate) mod host;
+
 // FFI ABI modules: available without the `wasm` feature.
 #[cfg(not(target_arch = "wasm32"))]
 pub use crate::ffi_abi;
@@ -34,6 +37,11 @@ mod boundary_tests {
 
   /// Module names that are only reachable through `calcit::wasm` for in-repo callers.
   const FACADE_MODULES: &[&str] = &["emit_wasm", "wasm_cli", "ffi_abi", "ffi_async", "ffi_interface_ir"];
+  /// Crate-root modules whose source lives in `src/wasm/`; files there may name them directly.
+  const WASM_OWN_MODULES: &[&str] = &["wasm", "wasm_cli", "ffi_abi", "ffi_async", "ffi_interface_ir", "codegen"];
+  /// Files under `src/wasm/` allowed to name main-crate internals: the host facade, plus the
+  /// facade entry (`mod.rs`) which only re-exports this directory's own modules.
+  const HOST_ALLOWLIST: &[&str] = &["src/wasm/host.rs", "src/wasm/mod.rs"];
   /// Files allowed to name the historical paths: the two `#[path]` mount sites.
   const MOUNT_ALLOWLIST: &[&str] = &["src/lib.rs", "src/codegen.rs"];
 
@@ -117,17 +125,10 @@ mod boundary_tests {
     out
   }
 
-  /// Walks `::`-joined paths with nested `{}` groups and reports facade modules that are not
-  /// reached through `calcit::wasm::`, `crate::wasm::` or an imported `wasm` alias.
-  fn scan_paths(code: &str) -> Vec<String> {
-    let compact: String = code.chars().filter(|c| !c.is_whitespace()).collect();
-    let alias_imported = compact.contains("usecalcit::wasm;")
-      || compact.contains("usecrate::wasm;")
-      || compact.contains("calcit::wasm::{self")
-      || compact.contains("crate::wasm::{self");
+  /// Walks `::`-joined paths with nested `{}` groups (also across lines) and calls `visit` with
+  /// the segments before each identifier and the identifier itself.
+  fn walk_paths(code: &str, visit: &mut dyn FnMut(&[String], &str)) {
     let chars: Vec<char> = code.chars().collect();
-    let mut found = vec![];
-    let mut imported: HashSet<String> = HashSet::new();
     let mut groups: Vec<Vec<String>> = vec![];
     let mut current: Vec<String> = vec![];
     let (mut cont, mut at_start) = (false, false);
@@ -150,18 +151,7 @@ mod boundary_tests {
         current.push(ident.clone());
         cont = false;
         at_start = false;
-        if FACADE_MODULES.contains(&ident.as_str()) {
-          let facade = matches!(parent.as_slice(), [a, b] if (a == "calcit" || a == "crate") && b == "wasm");
-          let aliased = alias_imported && parent.as_slice() == ["wasm"];
-          let bare = parent.is_empty() && imported.contains(&ident);
-          if facade {
-            imported.insert(ident.clone());
-          }
-          if !(facade || aliased || bare) {
-            let full: Vec<String> = parent.iter().cloned().chain([ident]).collect();
-            found.push(format!("`{}`", full.join("::")));
-          }
-        }
+        visit(&parent, &ident);
         i = end;
         continue;
       }
@@ -196,6 +186,47 @@ mod boundary_tests {
       }
       i += 1;
     }
+  }
+
+  /// Reports facade modules that are not reached through `calcit::wasm::`, `crate::wasm::` or an
+  /// imported `wasm` alias.
+  fn scan_paths(code: &str) -> Vec<String> {
+    let compact: String = code.chars().filter(|c| !c.is_whitespace()).collect();
+    let alias_imported = compact.contains("usecalcit::wasm;")
+      || compact.contains("usecrate::wasm;")
+      || compact.contains("calcit::wasm::{self")
+      || compact.contains("crate::wasm::{self");
+    let mut found = vec![];
+    let mut imported: HashSet<String> = HashSet::new();
+    walk_paths(code, &mut |parent, ident| {
+      if FACADE_MODULES.contains(&ident) {
+        let facade = matches!(parent, [a, b] if (a == "calcit" || a == "crate") && b == "wasm");
+        let aliased = alias_imported && parent == ["wasm"];
+        let bare = parent.is_empty() && imported.contains(ident);
+        if facade {
+          imported.insert(ident.to_owned());
+        }
+        if !(facade || aliased || bare) {
+          let full: Vec<String> = parent.iter().cloned().chain([ident.to_owned()]).collect();
+          found.push(format!("`{}`", full.join("::")));
+        }
+      }
+    });
+    found
+  }
+
+  /// Names reached as `crate::<name>` (also inside `use crate::{…}` groups) other than the WASM
+  /// modules that live in this directory.
+  fn scan_host_paths(code: &str) -> Vec<String> {
+    let mut found = vec![];
+    walk_paths(code, &mut |parent, ident| {
+      if parent == ["crate"] && !WASM_OWN_MODULES.contains(&ident) {
+        found.push(format!("`crate::{ident}`"));
+      }
+      if parent == ["crate", "codegen"] && ident != "emit_wasm" {
+        found.push(format!("`crate::codegen::{ident}`"));
+      }
+    });
     found
   }
 
@@ -233,6 +264,68 @@ mod boundary_tests {
       violations.extend(scan_source(&rel, &fs::read_to_string(file).expect("read source")));
     }
     assert!(violations.is_empty(), "WASM boundary violations:\n{}", violations.join("\n"));
+  }
+
+  /// Violations of one `src/wasm/` file: main-crate internals must come through `wasm::host`.
+  fn scan_host_source(rel: &str, source: &str) -> Vec<String> {
+    if HOST_ALLOWLIST.contains(&rel) {
+      return vec![];
+    }
+    scan_host_paths(&blank(source, true))
+      .into_iter()
+      .map(|path| format!("{rel}: {path} must be reached through `crate::wasm::host`"))
+      .collect()
+  }
+
+  #[test]
+  fn wasm_dir_reaches_main_crate_only_through_host() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut files = vec![];
+    rust_files(&root.join("src/wasm"), &mut files);
+    let mut violations = vec![];
+    for file in &files {
+      let rel = file.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/");
+      violations.extend(scan_host_source(&rel, &fs::read_to_string(file).expect("read source")));
+    }
+    assert!(violations.is_empty(), "WASM host facade violations:\n{}", violations.join("\n"));
+  }
+
+  fn host_ok(source: &str) {
+    let v = scan_host_source("src/wasm/x.rs", source);
+    assert!(v.is_empty(), "expected no violations for {source:?}, got {v:?}");
+  }
+
+  fn host_bad(source: &str) {
+    assert!(
+      !scan_host_source("src/wasm/x.rs", source).is_empty(),
+      "expected a violation for {source:?}"
+    );
+  }
+
+  #[test]
+  fn host_scanner_accepts_facade_and_own_modules() {
+    host_ok("use crate::wasm::host::calcit::Calcit;\nuse crate::wasm::{WasmTarget, host};");
+    host_ok("use crate::ffi_abi::{\n  A,\n  B,\n};\nfn f() { crate::ffi_async::go(); }");
+    host_ok("use crate::codegen::emit_wasm::X;");
+    host_ok("// use crate::calcit::X;\nlet s = \"crate::util::y\"; /* crate::program */");
+    host_ok("use crate::wasm::host::{self, calcit};\nfn f() { host::util::go(); }");
+    host_ok("fn f() { let _ = my_crate::calcit::X; }");
+  }
+
+  #[test]
+  fn host_scanner_rejects_direct_internals() {
+    host_bad("use crate::calcit::Calcit;");
+    host_bad("fn f() { crate::util::number::format(1); }");
+    host_bad("use crate::{\n  wasm::host,\n  program,\n};");
+    host_bad("use crate::{ProgramEntries, call_stack};");
+    host_bad("use crate::codegen::destruct_list_match_shape;");
+    host_bad("fn f() { let x = crate::load_core_snapshot(); }");
+    host_bad("use crate::wasm::{host};\nuse crate::runner::preprocess::X;");
+  }
+
+  #[test]
+  fn host_allowlist_covers_facade_files() {
+    assert!(scan_host_source("src/wasm/host.rs", "pub(crate) use crate::{calcit, program};").is_empty());
   }
 
   fn ok(source: &str) {

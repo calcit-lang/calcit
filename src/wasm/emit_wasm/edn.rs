@@ -1,5 +1,5 @@
 use super::*;
-use crate::runner::preprocess::infer_static_type_from_expr;
+use crate::wasm::host::runner::preprocess::infer_static_type_from_expr;
 use cirru_edn::EdnTag;
 
 const MAX_EDN_TYPE_DEPTH: usize = 32;
