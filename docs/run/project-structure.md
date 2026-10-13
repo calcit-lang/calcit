@@ -99,6 +99,19 @@ calcit config set-type-slot --entry test :dispatch-op app.test-schema/TestOp
 calcit config rm-type-slot :dispatch-op
 ```
 
+旧项目的包名与本地命名空间前缀不一致时，可用 `calcit config set package app` 修正
+Snapshot 的项目级 `:package`。包名由非空 symbol 段组成，用点分隔；此命令只修改元数据，
+不重命名命名空间、定义、引用或入口，也不写入依赖模块。先查询本地源码，确认新的归属前缀；
+该命令不接受 `--entry`。
+
+需要预览和 revision 守卫时，复用编辑事务：
+
+```bash
+calcit edit transaction --code '[["config","set","package","app"]]' --dry-run --format edn
+# 确认预览后，使用返回的 scoped-revision 应用同一事务：
+calcit edit transaction --code '[["config","set","package","app"]]' --expect-revision <revision> --format edn
+```
+
 ## Architecture plans and local Agent state
 
 Architecture plans that belong in version control should live under

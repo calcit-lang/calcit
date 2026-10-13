@@ -545,6 +545,25 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
 
   let mut snapshot = load_snapshot(snapshot_file)?;
 
+  if opts.key == "package" {
+    if opts.entry.is_some() {
+      return Err("Package is project-level; omit --entry when setting package".to_owned());
+    }
+    if opts.value.split('.').any(|segment| {
+      segment.is_empty()
+        || segment.starts_with(|c: char| c.is_ascii_digit())
+        || !segment
+          .chars()
+          .all(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '?' | '!' | '*'))
+    }) {
+      return Err("Package must be a namespace prefix with nonempty symbol segments separated by dots".to_owned());
+    }
+    snapshot.package = opts.value.clone();
+    save_snapshot(&snapshot, snapshot_file)?;
+    println!("{} Set package = '{}'", "✓".green(), opts.value);
+    return Ok(());
+  }
+
   let entry_label = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
   let entry = select_entry_mut(&mut snapshot, opts.entry.as_deref())?;
 
@@ -590,7 +609,7 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
     }
     _ => {
       return Err(format!(
-        "Unknown config key '{}'. Valid keys: mode, target, init-fn, reload-fn, description, feature-policy.<name>, version (accepts semver string or patch|minor|major)",
+        "Unknown config key '{}'. Valid keys: package, mode, target, init-fn, reload-fn, description, feature-policy.<name>; project version is managed by caps version",
         opts.key
       ));
     }

@@ -129,6 +129,7 @@ fn snapshot_mutation_entrypoints_respect_a_live_old_writer_lock() {
       "[[\"edit\",\"doc\",\"test-wasm.main/main!\",\"blocked\"]]",
     ],
     vec!["config", "set", "init-fn", "test-wasm.main/main!"],
+    vec!["config", "set", "package", "test-wasm"],
     vec![
       "tree",
       "replace",
@@ -2197,6 +2198,82 @@ fn config_add_entry_creates_complete_named_entries_through_guarded_transactions(
   assert_success(
     &run_calcit(&snapshot, &["--entry", "plain", "--check-only"]),
     "cloned entry runs strict checks",
+  );
+}
+
+#[test]
+fn config_package_repairs_local_ownership_through_a_guarded_metadata_transaction() {
+  // This exercises the CLI/filesystem boundary, not language semantics.
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  let definition = query_definition(&snapshot, "app.main/main!");
+  assert_success(
+    &run_calcit(&snapshot, &["config", "set", "package", "legacy"]),
+    "legacy package fixture",
+  );
+  let original = fs::read(&snapshot).unwrap();
+
+  let blocked = run_calcit(&snapshot, &["edit", "doc", "app.main/main!", "local"]);
+  assert!(!blocked.status.success());
+  assert!(String::from_utf8_lossy(&blocked.stderr).contains("only namespaces under package 'legacy'"));
+  for args in [
+    vec!["config", "set", "package", ""],
+    vec!["config", "set", "package", "app..main"],
+    vec!["config", "set", "package", "app/main"],
+    vec!["config", "set", "package", "app main"],
+    vec!["config", "set", "--entry", "default", "package", "app"],
+  ] {
+    assert!(!run_calcit(&snapshot, &args).status.success(), "invalid package: {args:?}");
+    assert_eq!(fs::read(&snapshot).unwrap(), original);
+  }
+
+  let operations = r#"[["config","set","package","app"]]"#;
+  let dry_run = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", operations, "--dry-run", "--format", "json"],
+  );
+  assert_success(&dry_run, "preview package repair");
+  assert_eq!(fs::read(&snapshot).unwrap(), original);
+  let report: serde_json::Value = serde_json::from_slice(&dry_run.stdout).unwrap();
+  let revision = report["scoped_revision"].as_str().unwrap();
+  assert!(revision.starts_with("scope:project@md5:"), "{revision}");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--code", operations, "--expect-revision", revision],
+    ),
+    "commit package repair",
+  );
+  let repaired = query_definition(&snapshot, "app.main/main!");
+  assert_eq!(repaired["data"], definition["data"], "metadata repair must not rewrite definitions");
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "doc", "app.main/main!", "local"]),
+    "edit recovered local source",
+  );
+  let dependency = run_calcit(&snapshot, &["edit", "doc", "calcit.core/identity", "forbidden"]);
+  assert!(!dependency.status.success(), "dependency ownership must remain protected");
+  assert!(String::from_utf8_lossy(&dependency.stderr).contains("only namespaces under package 'app'"));
+  let stale = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", operations, "--expect-revision", revision],
+  );
+  assert!(!stale.status.success(), "old project revision must be rejected");
+
+  let before_rollback = fs::read(&snapshot).unwrap();
+  let rollback = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "transaction",
+      "--code",
+      r#"[["config","set","package","other"],["config","set","package","bad/name"]]"#,
+    ],
+  );
+  assert!(!rollback.status.success());
+  assert_eq!(
+    fs::read(&snapshot).unwrap(),
+    before_rollback,
+    "failed transaction must not commit package changes"
   );
 }
 
