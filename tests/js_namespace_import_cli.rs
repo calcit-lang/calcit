@@ -76,6 +76,71 @@ await generated.main_$x_();
 }
 
 #[test]
+fn redundant_require_markers_are_advisory_and_keep_structured_stdout_clean() {
+  // Import syntax and stderr/stdout routing are loader/CLI boundaries, not definition semantics.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("calcit/fibo.cirru", &snapshot).unwrap();
+  let legacy_rules = r#"["[]",["[]","calcit.core",":refer",["[]","range"]]]"#;
+  let edit = run_calcit(
+    &snapshot,
+    &["edit", "imports", "app.main", "--input-format", "json-ast", "--code", legacy_rules],
+  );
+  assert_success(&edit, "compatible legacy import edit");
+  assert!(String::from_utf8_lossy(&edit.stderr).contains("redundant `[]` in :require"));
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/main!",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn main! () $ assert= ([] 0 1 2) (range 3)",
+      ],
+    ),
+    "imported range reference",
+  );
+  let query = run_calcit(&snapshot, &["query", "ns", "app.main", "--format", "json"]);
+  assert_success(&query, "JSON query with advisory warning");
+  let json: serde_json::Value = serde_json::from_slice(&query.stdout).expect("stdout remains one JSON document");
+  assert_eq!(json["data"]["ns_code"][2][1][0], "[]", "read-only queries preserve source");
+  let edn = run_calcit(&snapshot, &["query", "ns", "app.main", "--format", "edn"]);
+  assert_success(&edn, "Cirru EDN query with advisory warning");
+  cirru_edn::parse(&String::from_utf8_lossy(&edn.stdout)).expect("stdout remains one Cirru EDN document");
+  let checked = run_calcit(&snapshot, &["--check-only", "--keep-going", "--format", "json"]);
+  assert_success(&checked, "strict preprocessing keeps legacy imports accepted");
+  serde_json::from_slice::<serde_json::Value>(&checked.stdout).expect("warning does not contaminate structured check stdout");
+  assert!(String::from_utf8_lossy(&checked.stderr).contains("redundant `[]` in :require"));
+  assert_success(&run_calcit(&snapshot, &[]), "native legacy import execution");
+  let emit_path = directory.path().join("js-out");
+  assert_success(
+    &run_calcit(&snapshot, &["--emit-path", emit_path.to_str().unwrap(), "js"]),
+    "legacy import JS generation",
+  );
+  assert_generated_js_runs(directory.path(), &emit_path);
+  let canonical = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "imports",
+      "app.main",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ [] (calcit.core :refer $ range)",
+    ],
+  );
+  assert_success(&canonical, "canonical import edit");
+  let checked = run_calcit(&snapshot, &["--check-only"]);
+  assert_success(&checked, "canonical import strict check");
+  assert!(!String::from_utf8_lossy(&checked.stderr).contains("redundant `[]` in :require"));
+}
+
+#[test]
 fn nominal_decoder_and_source_alias_share_one_js_namespace_binding() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");

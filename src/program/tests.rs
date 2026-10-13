@@ -229,7 +229,7 @@ fn import_rule_validation_warns_for_duplicate_refer_within_one_rule() {
   let rules = [import_rule(
     "audit.math",
     ":refer",
-    cirru_list(vec![cirru_leaf("[]"), cirru_leaf("add"), cirru_leaf("add")]),
+    cirru_list(vec![cirru_leaf("add"), cirru_leaf("add")]),
   )];
   let warnings = validate_import_rules(&rules).expect("duplicate refer in one rule should remain executable");
 
@@ -246,11 +246,7 @@ fn import_rule_validation_warns_for_duplicate_refer_within_one_rule() {
 fn import_rule_validation_accepts_supported_rule_kinds() {
   let rules = [
     import_rule("audit.lib", ":as", cirru_leaf("lib")),
-    import_rule(
-      "audit.math",
-      ":refer",
-      cirru_list(vec![cirru_leaf("[]"), cirru_leaf("add"), cirru_leaf("subtract")]),
-    ),
+    import_rule("audit.math", ":refer", cirru_list(vec![cirru_leaf("add"), cirru_leaf("subtract")])),
     import_rule("|chalk", ":default", cirru_leaf("chalk")),
   ];
 
@@ -259,6 +255,49 @@ fn import_rule_validation_accepts_supported_rule_kinds() {
       .expect("supported import rules should pass validation")
       .is_empty()
   );
+}
+
+#[test]
+fn redundant_import_markers_warn_without_changing_resolution() {
+  // Namespace syntax is parsed before definition tests; verify the parser boundary here.
+  let canonical = [
+    import_rule("audit.math", ":refer", cirru_list(vec![cirru_leaf("add"), cirru_leaf("subtract")])),
+    import_rule("audit.other", ":as", cirru_leaf("other")),
+    import_rule("|chalk", ":default", cirru_leaf("chalk")),
+  ];
+  let legacy = [
+    cirru_list(vec![
+      cirru_leaf("[]"),
+      cirru_leaf("audit.math"),
+      cirru_leaf(":refer"),
+      cirru_list(vec![cirru_leaf("[]"), cirru_leaf("add"), cirru_leaf("[]"), cirru_leaf("subtract")]),
+    ]),
+    cirru_list(vec![
+      cirru_leaf("[]"),
+      cirru_leaf("audit.other"),
+      cirru_leaf(":as"),
+      cirru_leaf("other"),
+    ]),
+    cirru_list(vec![
+      cirru_leaf("[]"),
+      cirru_leaf("|chalk"),
+      cirru_leaf(":default"),
+      cirru_leaf("chalk"),
+    ]),
+  ];
+  assert!(validate_import_rules(&canonical).unwrap().is_empty());
+  let warnings = validate_import_rules(&legacy).unwrap();
+  assert_eq!(warnings.len(), 1, "coalesce syntax advice rather than flooding each namespace");
+  assert!(warnings[0].contains("rule 1 prefix"));
+  assert!(warnings[0].contains("rule 1 :refer list"));
+  assert!(warnings[0].contains("rule 2 prefix"));
+  assert!(warnings[0].contains("rule 3 prefix"));
+  assert!(warnings[0].contains("respo.core :refer $ render! clear-cache!"));
+  for (canonical, legacy) in canonical.iter().zip(&legacy) {
+    assert_eq!(extract_import_rule(canonical).unwrap(), extract_import_rule(legacy).unwrap());
+  }
+  let comment = cirru_list(vec![cirru_leaf(";"), cirru_leaf("[]"), cirru_list(vec![cirru_leaf("[]")])]);
+  assert!(validate_import_rules(&[comment]).unwrap().is_empty());
 }
 
 #[test]
