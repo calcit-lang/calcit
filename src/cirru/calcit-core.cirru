@@ -361,6 +361,20 @@
                   assert= -1 $ &compare earlier later
                   assert= 0 $ &compare later $ &str:concat |a |z
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |orders-fractions-in-heap-address-range)
+              :code $ quote $ do
+                assert= -1 $ &compare 16392.5 16392.75
+                assert= 1 $ &compare 16392.75 16392.5
+                assert= 0 $ &compare 16392.5 16392.5
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |orders-numbers-before-runtime-strings)
+              :code $ quote $ let
+                  text $ &str:concat |a |z
+                do
+                  assert= -1 $ &compare 7 text
+                  assert= 1 $ &compare text 7
+                  assert= -1 $ &compare 1.5 text
+              :tags $ #{} :core :unit
         '&core-enum-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for enum values.")
           :code $ quote $ def &core-enum-impls
             [] &core-enum-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-enum-impl) (&impl::new Contains internal/&core-contains-enum-impl) (&impl::new ContainsIndex internal/&core-contains-index-enum-impl)
