@@ -442,15 +442,15 @@ fn resolve_public_wasm_options(
   reload_fn: Option<&str>,
   entry: Option<&str>,
   check_only: bool,
-) -> calcit::wasm_cli::WasmCliOptions {
-  calcit::wasm_cli::WasmCliOptions {
+) -> calcit::wasm::WasmCliOptions {
+  calcit::wasm::WasmCliOptions {
     input: input.unwrap_or(&cli_args.input).to_owned(),
     emit_path: emit_path.unwrap_or(&cli_args.emit_path).to_owned(),
     init_fn: init_fn.or(cli_args.init_fn.as_deref()).map(str::to_owned),
     reload_fn: reload_fn.or(cli_args.reload_fn.as_deref()).map(str::to_owned),
     entry: entry.or(cli_args.entry.as_deref()).map(str::to_owned),
     check_only: check_only || cli_args.check_only,
-    boundary: codegen::emit_wasm::WasmBoundary::Native,
+    boundary: calcit::wasm::WasmBoundary::Native,
   }
 }
 
@@ -636,7 +636,7 @@ fn run_cli() -> Result<(), String> {
         command.check_only,
       );
       options.boundary = command.boundary.parse()?;
-      return calcit::wasm_cli::run(&options, codegen::emit_wasm::WasmTarget::Core);
+      return calcit::wasm::run(&options, calcit::wasm::WasmTarget::Core);
     }
     #[cfg(feature = "wasm")]
     Some(CalcitCommand::EmitWasi(command)) => {
@@ -650,7 +650,7 @@ fn run_cli() -> Result<(), String> {
         command.check_only,
       );
       options.boundary = command.boundary.parse()?;
-      return calcit::wasm_cli::run(&options, codegen::emit_wasm::WasmTarget::Wasi);
+      return calcit::wasm::run(&options, calcit::wasm::WasmTarget::Wasi);
     }
     #[cfg(not(feature = "wasm"))]
     Some(CalcitCommand::EmitWasm(_)) | Some(CalcitCommand::EmitWasi(_)) => {

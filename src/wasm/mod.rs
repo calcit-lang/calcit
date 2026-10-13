@@ -7,8 +7,9 @@
 //! code generator and CLI driver need it.
 //!
 //! This module is the documented facade: it re-exports the supported surface under one name,
-//! `calcit::wasm`. Code outside `src/wasm/` must reach WASM internals only through this facade
-//! or through the public paths listed above; `boundary_tests` enforces that.
+//! `calcit::wasm`. Code in this repository outside `src/wasm/` must reach WASM internals only
+//! through this facade; `boundary_tests` enforces that. The historical paths above remain public
+//! as compatibility aliases for external consumers and are not removed in patch releases.
 
 // FFI ABI modules: available without the `wasm` feature.
 #[cfg(not(target_arch = "wasm32"))]
@@ -30,17 +31,10 @@ mod boundary_tests {
   use std::fs;
   use std::path::{Path, PathBuf};
 
-  /// Items of `emit_wasm` that code outside `src/wasm/` may name.
-  const EMIT_WASM_PUBLIC: &[&str] = &[
-    "WasmBoundary",
-    "WasmTarget",
-    "check_wasm_command_component",
-    "emit_wasm",
-    "validate_wasm_boundary",
-    "validate_wasm_target",
-  ];
-  /// Items of `wasm_cli` that code outside `src/wasm/` may name.
-  const WASM_CLI_PUBLIC: &[&str] = &["WasmCliOptions", "run"];
+  /// Module names that are only reachable through `calcit::wasm` for in-repo callers.
+  const FACADE_MODULES: &[&str] = &["emit_wasm", "wasm_cli", "ffi_abi", "ffi_async", "ffi_interface_ir"];
+  /// Files allowed to name the historical paths: the two `#[path]` mount sites.
+  const MOUNT_ALLOWLIST: &[&str] = &["src/lib.rs", "src/codegen.rs"];
 
   fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) {
     for entry in fs::read_dir(dir).expect("read dir") {
@@ -53,31 +47,22 @@ mod boundary_tests {
     }
   }
 
-  /// Names imported through `module::name` or `module::{a, b}` after every `module::` occurrence.
-  fn imported_names<'a>(line: &'a str, module: &str) -> Vec<&'a str> {
-    let marker = format!("{module}::");
-    let mut names = vec![];
-    let mut rest = line;
-    while let Some(index) = rest.find(&marker) {
-      rest = &rest[index + marker.len()..];
-      if let Some(group) = rest.strip_prefix('{') {
-        let group = group.split('}').next().unwrap_or(group);
-        names.extend(
-          group
-            .split(',')
-            .map(|item| item.trim().split("::").next().unwrap_or("").trim())
-            .filter(|n| !n.is_empty() && *n != "self"),
-        );
-      } else {
-        let end = rest.find(|c: char| !(c.is_alphanumeric() || c == '_')).unwrap_or(rest.len());
-        names.push(&rest[..end]);
-      }
-    }
-    names
+  /// Byte offsets where `name` occurs as a whole path segment (not part of a longer identifier).
+  fn segment_hits(code: &str, name: &str) -> Vec<usize> {
+    let is_ident = |c: char| c.is_alphanumeric() || c == '_';
+    code
+      .match_indices(name)
+      .filter(|(at, _)| {
+        let before = code[..*at].chars().next_back();
+        let after = code[*at + name.len()..].chars().next();
+        !before.is_some_and(is_ident) && !after.is_some_and(is_ident)
+      })
+      .map(|(at, _)| at)
+      .collect()
   }
 
   #[test]
-  fn code_outside_wasm_dir_uses_only_facade_or_public_paths() {
+  fn code_outside_wasm_dir_uses_only_the_facade() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR"));
     let mut files = vec![];
     for dir in ["src", "tests", "benches"] {
@@ -90,6 +75,9 @@ mod boundary_tests {
     let mut violations = vec![];
     for file in files.iter().filter(|f| !f.starts_with(&wasm_dir)) {
       let rel = file.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/");
+      if MOUNT_ALLOWLIST.contains(&rel.as_str()) {
+        continue;
+      }
       let source = fs::read_to_string(file).expect("read source");
       // Drop comment lines, then scan the whole text so rustfmt-wrapped multi-line `use` groups are seen.
       let code: String = source
@@ -97,22 +85,18 @@ mod boundary_tests {
         .filter(|line| !line.trim_start().starts_with("//"))
         .collect::<Vec<_>>()
         .join("\n");
-      // Implementation files may only be mounted by `#[path]` declarations in the two declaration sites.
-      if !matches!(rel.as_str(), "src/lib.rs" | "src/codegen.rs") {
-        for line in code.lines().filter(|line| line.trim_start().starts_with("#[path")) {
-          if line.contains("wasm/") {
-            violations.push(format!("{rel}: mounts a src/wasm implementation file directly: {}", line.trim()));
+      for line in code.lines().filter(|line| line.trim_start().starts_with("#[path")) {
+        if line.contains("wasm/") {
+          violations.push(format!("{rel}: mounts a src/wasm implementation file directly: {}", line.trim()));
+        }
+      }
+      for name in FACADE_MODULES {
+        for at in segment_hits(&code, name) {
+          if !code[..at].ends_with("wasm::") {
+            violations.push(format!(
+              "{rel}: `{name}` must be reached as `calcit::wasm::{name}` (or a facade re-export)"
+            ));
           }
-        }
-      }
-      for name in imported_names(&code, "emit_wasm") {
-        if !EMIT_WASM_PUBLIC.contains(&name) {
-          violations.push(format!("{rel}: `emit_wasm::{name}` is not part of the WASM facade"));
-        }
-      }
-      for name in imported_names(&code, "wasm_cli") {
-        if !WASM_CLI_PUBLIC.contains(&name) {
-          violations.push(format!("{rel}: `wasm_cli::{name}` is not part of the WASM facade"));
         }
       }
     }
