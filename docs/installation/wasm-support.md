@@ -149,3 +149,4 @@ WASM 后端与 FFI ABI 的实现集中在 `src/wasm/`，对外公开路径保持
 - `wasm-unsupported-procs` 列表只校验排除清单出现过的 Proc，没有 core 测试覆盖的 Proc 靠人工维护。
 - `update` 的接收者为 Struct 时在 WASM 上 trap，native 会改写对应字段。
 - 通过函数值调用时，实参个数少于 `&` 之前的参数个数（含 `?` 参数），或与定长函数的参数个数不同，都会 trap；缺省的 `?` 参数不会绑定为 nil。
+- `&compare` 在 WASM 上对两个字符串按字典序比较，字符串与非字符串比较时字符串更大；tag、list 等其他堆类型之间仍按数值比较，与 native 的跨类型全序不同。

@@ -7168,6 +7168,31 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       ctx.emit(Instruction::LocalSet(a));
       emit_expr(ctx, &args[1])?;
       ctx.emit(Instruction::LocalSet(b));
+      // Strings are heap pointers: ordering them as numbers would compare
+      // allocation addresses, so dispatch to the lexicographic runtime compare.
+      // A string sorts after every non-string, matching native ordering.
+      let a_is_string = emit_is_string(ctx, a)?;
+      let b_is_string = emit_is_string(ctx, b)?;
+      ctx.emit(Instruction::LocalGet(a_is_string));
+      ctx.emit(Instruction::LocalGet(b_is_string));
+      ctx.emit(Instruction::I32Or);
+      ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+      ctx.emit(Instruction::LocalGet(a_is_string));
+      ctx.emit(Instruction::LocalGet(b_is_string));
+      ctx.emit(Instruction::I32And);
+      ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+      ctx.emit(Instruction::LocalGet(a));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::LocalGet(b));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.call_rt("__rt_str_compare");
+      ctx.emit(Instruction::Else);
+      ctx.emit(f64_const(1.0));
+      ctx.emit(f64_const(-1.0));
+      ctx.emit(Instruction::LocalGet(a_is_string));
+      ctx.emit(Instruction::Select);
+      ctx.emit(Instruction::End);
+      ctx.emit(Instruction::Else);
       // if a < b then -1 else (if a > b then 1 else isnan(a) - isnan(b))
       ctx.emit(Instruction::LocalGet(a));
       ctx.emit(Instruction::LocalGet(b));
@@ -7191,6 +7216,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       ctx.emit(Instruction::F64Ne);
       ctx.emit(Instruction::F64ConvertI32U);
       ctx.emit(Instruction::F64Sub);
+      ctx.emit(Instruction::End);
       ctx.emit(Instruction::End);
       ctx.emit(Instruction::End);
       Ok(())
@@ -8616,6 +8642,54 @@ fn emit_cmp(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]) 
   ctx.emit(instr);
   ctx.emit(Instruction::Select);
   Ok(())
+}
+
+/// Emits an i32 local that is 1 when the f64 value is a live string heap
+/// pointer: an integer inside the allocated heap whose header carries
+/// `HEAP_MAGIC` and the string tag. Memory is read only after the range and
+/// integer checks, so plain numbers (including fractions) never touch it.
+fn emit_is_string(ctx: &mut WasmGenCtx, value: u32) -> Result<u32, String> {
+  let string_tag = *ctx.tag_index.get("string").ok_or("string tag not found")? as i32;
+  let result = ctx.alloc_local_typed(ValType::I32);
+  let in_heap = ctx.alloc_local_typed(ValType::I32);
+  let raw_base = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(result));
+
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::F64Trunc);
+  ctx.emit(Instruction::F64Eq);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(f64_const((HEAP_BASE + 8) as f64));
+  ctx.emit(Instruction::F64Ge);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::F64Lt);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::LocalSet(in_heap));
+
+  ctx.emit(Instruction::LocalGet(in_heap));
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::LocalSet(raw_base));
+  ctx.emit(Instruction::LocalGet(raw_base));
+  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+  ctx.emit(Instruction::I32Const(HEAP_MAGIC));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::LocalGet(raw_base));
+  ctx.emit(Instruction::I32Load(mem_arg_i32(4)));
+  ctx.emit(Instruction::I32Const(string_tag));
+  ctx.emit(Instruction::I32Eq);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::End);
+  Ok(result)
 }
 
 /// Emit `=` with string content equality support.
