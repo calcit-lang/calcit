@@ -8644,30 +8644,29 @@ fn emit_cmp(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]) 
   Ok(())
 }
 
-/// Emits an i32 local that is 1 when the f64 value is a live string heap
-/// pointer: an integer inside the allocated heap whose header carries
-/// `HEAP_MAGIC` and the string tag. Memory is read only after the range and
-/// integer checks, so plain numbers (including fractions) never touch it.
-fn emit_is_string(ctx: &mut WasmGenCtx, value: u32) -> Result<u32, String> {
-  let string_tag = *ctx.tag_index.get("string").ok_or("string tag not found")? as i32;
+/// Emits an i32 local that is 1 when the f64 value is a live heap value: an
+/// integer inside the allocated heap whose header (ptr-8) carries `HEAP_MAGIC`.
+/// This is the same test `type-of` uses. The cheap range check comes first and
+/// memory is read only after the range and integer checks, so plain numbers
+/// (including fractions in the heap address range) never touch it.
+fn emit_is_heap_value(ctx: &mut WasmGenCtx, value: u32) -> u32 {
   let result = ctx.alloc_local_typed(ValType::I32);
   let in_heap = ctx.alloc_local_typed(ValType::I32);
-  let raw_base = ctx.alloc_local_typed(ValType::I32);
   ctx.emit(Instruction::I32Const(0));
   ctx.emit(Instruction::LocalSet(result));
 
   ctx.emit(Instruction::LocalGet(value));
-  ctx.emit(Instruction::LocalGet(value));
-  ctx.emit(Instruction::F64Trunc);
-  ctx.emit(Instruction::F64Eq);
-  ctx.emit(Instruction::LocalGet(value));
   ctx.emit(f64_const((HEAP_BASE + 8) as f64));
   ctx.emit(Instruction::F64Ge);
-  ctx.emit(Instruction::I32And);
   ctx.emit(Instruction::LocalGet(value));
   ctx.emit(Instruction::GlobalGet(HEAP_PTR_GLOBAL));
   ctx.emit(Instruction::F64ConvertI32U);
   ctx.emit(Instruction::F64Lt);
+  ctx.emit(Instruction::I32And);
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::F64Trunc);
+  ctx.emit(Instruction::F64Eq);
   ctx.emit(Instruction::I32And);
   ctx.emit(Instruction::LocalSet(in_heap));
 
@@ -8677,16 +8676,31 @@ fn emit_is_string(ctx: &mut WasmGenCtx, value: u32) -> Result<u32, String> {
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Sub);
-  ctx.emit(Instruction::LocalSet(raw_base));
-  ctx.emit(Instruction::LocalGet(raw_base));
   ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
   ctx.emit(Instruction::I32Const(HEAP_MAGIC));
   ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::LocalGet(raw_base));
-  ctx.emit(Instruction::I32Load(mem_arg_i32(4)));
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::End);
+  result
+}
+
+/// Emits an i32 local that is 1 when the f64 value is a live string heap
+/// pointer: a heap value (see `emit_is_heap_value`) carrying the string tag.
+fn emit_is_string(ctx: &mut WasmGenCtx, value: u32) -> Result<u32, String> {
+  let string_tag = *ctx.tag_index.get("string").ok_or("string tag not found")? as i32;
+  let result = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(result));
+  let is_heap = emit_is_heap_value(ctx, value);
+  ctx.emit(Instruction::LocalGet(is_heap));
+  ctx.begin_block_if();
+  ctx.emit(Instruction::LocalGet(value));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::I32Const(4));
+  ctx.emit(Instruction::I32Sub);
+  ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
   ctx.emit(Instruction::I32Const(string_tag));
   ctx.emit(Instruction::I32Eq);
-  ctx.emit(Instruction::I32And);
   ctx.emit(Instruction::LocalSet(result));
   ctx.emit(Instruction::End);
   Ok(result)
@@ -8893,35 +8907,16 @@ fn emit_equals_core_impl(ctx: &mut WasmGenCtx, a: u32, b: u32, structural_sets: 
   ctx.begin_block_if(); // outer: only proceed if result is still 0.0
 
   // --- Check both values are heap pointers ---
-  // A valid heap ptr must be >= HEAP_BASE+8 AND < memory_size (in bytes).
-  // We use memory.size * 65536 as the upper bound to prevent OOB on large f64
-  // values (e.g., from &hash) that pass the lower-bound check but exceed memory.
+  // Same test as `type-of`: integer-valued, inside the allocated heap, and
+  // HEAP_MAGIC at ptr-8. Non-integer numbers in the heap address range are
+  // therefore never read as heap values.
   let ptr_a = ctx.alloc_local_typed(ValType::I32);
   let ptr_b = ctx.alloc_local_typed(ValType::I32);
   let both_heap = ctx.alloc_local_typed(ValType::I32);
-  let mem_size_f64 = ctx.alloc_local();
-
-  // mem_size_f64 = f64(memory.size * 65536)
-  ctx.emit(Instruction::MemorySize(0));
-  ctx.emit(Instruction::I32Const(16)); // 2^16 = 65536
-  ctx.emit(Instruction::I32Shl);
-  ctx.emit(Instruction::F64ConvertI32U);
-  ctx.emit(Instruction::LocalSet(mem_size_f64));
-
-  ctx.emit(Instruction::LocalGet(a));
-  ctx.emit(f64_const((HEAP_BASE + 8) as f64));
-  ctx.emit(Instruction::F64Ge);
-  ctx.emit(Instruction::LocalGet(a));
-  ctx.emit(Instruction::LocalGet(mem_size_f64));
-  ctx.emit(Instruction::F64Lt);
-  ctx.emit(Instruction::I32And);
-  ctx.emit(Instruction::LocalGet(b));
-  ctx.emit(f64_const((HEAP_BASE + 8) as f64));
-  ctx.emit(Instruction::F64Ge);
-  ctx.emit(Instruction::LocalGet(b));
-  ctx.emit(Instruction::LocalGet(mem_size_f64));
-  ctx.emit(Instruction::F64Lt);
-  ctx.emit(Instruction::I32And);
+  let heap_a = emit_is_heap_value(ctx, a);
+  let heap_b = emit_is_heap_value(ctx, b);
+  ctx.emit(Instruction::LocalGet(heap_a));
+  ctx.emit(Instruction::LocalGet(heap_b));
   ctx.emit(Instruction::I32And);
   ctx.emit(Instruction::LocalSet(both_heap));
 
