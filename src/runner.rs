@@ -451,10 +451,19 @@ pub fn call_expr(
               Some(value) => Ok(value.to_owned()),
               None => Ok(Calcit::Nil),
             }
+          } else if let Calcit::Struct(struct_value) = &obj {
+            struct_value.get(name).cloned().ok_or_else(|| {
+              CalcitErr::use_msg_stack_location(
+                CalcitErrKind::Type,
+                format!("struct `{}` does not define field `:{name}`", struct_value.struct_ref.name),
+                call_stack,
+                obj.get_location(),
+              )
+            })
           } else {
             Err(CalcitErr::use_msg_stack_location(
               CalcitErrKind::Type,
-              format!("expected a hashmap, got: {obj}"),
+              format!("expected a hashmap or struct, got: {obj}"),
               call_stack,
               obj.get_location(),
             ))

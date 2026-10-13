@@ -179,6 +179,35 @@ fn type_fail_struct_update_after_option_match_rejects_invalid_fields_and_values(
   });
 }
 
+/// `value.:field` must report the same strict diagnostics as `(:field value)` (#1988).
+#[test]
+fn type_fail_tag_access_shorthand_matches_tag_call_diagnostics() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let collect = |access: &str| -> Vec<String> {
+      let snippet = format!("let\n    Ev $ defstruct Ev (:type 'Tag)\n    ev $ Ev :type :create\n  {access}");
+      let entries = load_snippet_entries(&snippet);
+      let warnings = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .expect("field access diagnostics should be warnings, not preprocessing failures");
+      let messages: Vec<String> = warnings
+        .borrow()
+        .iter()
+        .map(|w| w.message().to_string())
+        .filter(|m| !m.contains("eprintln"))
+        .collect();
+      messages
+    };
+    let shorthand = collect("ev.:missing");
+    let call = collect("(:missing ev)");
+    assert_eq!(shorthand, call, "shorthand and tag call must report identical diagnostics");
+    assert!(
+      shorthand.iter().any(|m| m.contains("missing")),
+      "unknown field must be reported: {shorthand:?}"
+    );
+  });
+}
+
 /// Ensures nested external methods reject explicit arguments during preprocessing.
 #[test]
 fn nested_external_method_rejects_explicit_extra_argument() {

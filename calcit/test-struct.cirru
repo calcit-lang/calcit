@@ -215,6 +215,16 @@
           :code $ quote $ defstruct Point2D (:x 'Number) (:y 'Number)
           :examples $ []
           :schema $ :: 'StructDef
+        'TagShorthandEvent $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct TagShorthandEvent (:type 'Tag) (:path 'String)
+          :examples $ []
+          :schema $ :: 'StructDef
+          :tests $ [] $ %{} 'TestEntry (:name |struct-receiver)
+            :code $ quote $ let
+                ev $ TagShorthandEvent :type :create :path |p
+              assert= :create ev.:type
+              assert= |p ev.:path
+              assert= (:type ev) ev.:type
         'assign-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn assign-alias (source value)
             let
