@@ -2630,7 +2630,7 @@ pub fn load_snapshot_data(data: &Edn, path: &str) -> Result<Snapshot, String> {
   if let Some(error) = retired_snapshot_migration_error(Path::new(path)) {
     return Err(error);
   }
-  load_snapshot_data_inner(data, path).map_err(|error| {
+  load_snapshot_data_inner(data, path, true).map_err(|error| {
     let mut message = format!("Failed to load Snapshot `{path}`: {error}");
     if let Some(hint) = legacy_snapshot_recovery_hint(path) {
       message.push_str("\nLegacy Snapshot recovery: ");
@@ -2638,6 +2638,25 @@ pub fn load_snapshot_data(data: &Edn, path: &str) -> Result<Snapshot, String> {
     }
     message
   })
+}
+
+/// Inspect canonical source for an explicit package/schema repair, not execution.
+/// Existing macro contracts may need repair, but the selected schema must be
+/// valid after its edit. Structural parsing and entry validation remain strict.
+pub fn load_snapshot_data_for_metadata(data: &Edn, path: &str, edited_schema: Option<(&str, &str)>) -> Result<Snapshot, String> {
+  if let Some(error) = retired_snapshot_migration_error(Path::new(path)) {
+    return Err(error);
+  }
+  let snapshot = load_snapshot_data_inner(data, path, false)?;
+  if let Some((namespace, definition)) = edited_schema {
+    let entry = snapshot
+      .files
+      .get(namespace)
+      .and_then(|file| file.defs.get(definition))
+      .ok_or_else(|| format!("Definition '{namespace}/{definition}' not found"))?;
+    validate_strict_macro_schema(entry, namespace, definition, path)?;
+  }
+  Ok(snapshot)
 }
 
 /// Parse a Snapshot for canonical formatting, including the constrained
@@ -2749,14 +2768,16 @@ fn parse_legacy_configs_for_format(data: &Edn) -> Result<(SnapshotEntry, Option<
   Ok((entry, version))
 }
 
-fn load_snapshot_data_inner(data: &Edn, path: &str) -> Result<Snapshot, String> {
+fn load_snapshot_data_inner(data: &Edn, path: &str, strict_macros: bool) -> Result<Snapshot, String> {
   let data = data.view_map()?;
   if data.contains_key("configs") {
     return Err(retired_snapshot_configs_error(path));
   }
   let pkg: Arc<str> = data.get_or_nil("package").try_into()?;
   let mut files: HashMap<String, FileInSnapShot> = parse_files_with_context(&data.get_or_nil("files"))?;
-  validate_strict_macro_schemas(&files, path)?;
+  if strict_macros {
+    validate_strict_macro_schemas(&files, path)?;
+  }
   let about = match data.get_or_nil("about") {
     Edn::Nil => None,
     value => {
@@ -2797,21 +2818,24 @@ fn validate_strict_macro_schemas(files: &HashMap<String, FileInSnapShot>, path: 
     let mut definitions = file.defs.keys().collect::<Vec<_>>();
     definitions.sort_unstable();
     for def_name in definitions {
-      let entry = &file.defs[def_name];
-      if !code_declares_macro(&entry.code) || matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Macro(_)) {
-        continue;
-      }
-      let found = match entry.schema.as_ref() {
-        CalcitTypeAnnotation::Fn(_) => "a runtime Fn schema",
-        CalcitTypeAnnotation::Dynamic => "a Dynamic schema",
-        _ => "a non-Macro schema",
-      };
-      return Err(format!(
-        "legacy macro schema at snapshot.files[{ns:?}].defs[{def_name:?}].schema: `defmacro` requires a strict `Macro` contract with :required/:optional/:rest, :expansion, and :capabilities, but found {found}. Migrate this definition with the final compatible Calcit 0.13.51 release, then retry `calcit '{path}' --check-only`."
-      ));
+      validate_strict_macro_schema(&file.defs[def_name], ns, def_name, path)?;
     }
   }
   Ok(())
+}
+
+fn validate_strict_macro_schema(entry: &CodeEntry, ns: &str, def_name: &str, path: &str) -> Result<(), String> {
+  if !code_declares_macro(&entry.code) || matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Macro(_)) {
+    return Ok(());
+  }
+  let found = match entry.schema.as_ref() {
+    CalcitTypeAnnotation::Fn(_) => "a runtime Fn schema",
+    CalcitTypeAnnotation::Dynamic => "a Dynamic schema",
+    _ => "a non-Macro schema",
+  };
+  Err(format!(
+    "legacy macro schema at snapshot.files[{ns:?}].defs[{def_name:?}].schema: `defmacro` requires a strict `Macro` contract with :required/:optional/:rest, :expansion, and :capabilities, but found {found}. Migrate this definition with the final compatible Calcit 0.13.51 release, then retry `calcit '{path}' --check-only`."
+  ))
 }
 
 /// Expand a `defexternal` authoring shorthand into the canonical `deftrait` code
