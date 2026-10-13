@@ -16,13 +16,13 @@ use calcit::{
   calcit::{Calcit, CalcitErr, CalcitErrKind},
   call_stack::{CallStackList, display_stack},
   data::edn::{calcit_to_edn, edn_to_calcit, sanitize_edn_for_format},
-  ffi_abi::{
+  runner::track,
+  wasm::ffi_abi::{
     ASYNC_RESPONSE_REJECT, ASYNC_RESPONSE_RESOLVE, ASYNC_TASK_FLAG_REQUIRES_RESPONSE, ASYNC_TASK_FLAG_SERIAL_EVENTS, FfiAsyncEventKind,
     FfiAsyncHandle, FfiAsyncHandleKind, FfiAsyncHandleRegistry, FfiAsyncHostV1, FfiAsyncResponseResolve, FfiAsyncTaskCancel,
     FfiAsyncTaskDescriptor, FfiBlockingHostV1, FfiBuffer, async_status,
   },
-  ffi_async::{FfiAsyncDrainReport, FfiAsyncEventQueue, FfiAsyncTaskQueueMetrics, copy_async_payload},
-  runner::track,
+  wasm::ffi_async::{FfiAsyncDrainReport, FfiAsyncEventQueue, FfiAsyncTaskQueueMetrics, copy_async_payload},
 };
 
 /// lazily cache dylibs, in case Linux drops memory of libraries
@@ -203,11 +203,11 @@ struct NativeAsyncModuleQueueMetrics {
 }
 
 impl NativeAsyncModuleQueueMetrics {
-  fn add_task(&mut self, lifecycle: calcit::ffi_abi::FfiAsyncLifecycle, metrics: FfiAsyncTaskQueueMetrics) {
+  fn add_task(&mut self, lifecycle: calcit::wasm::ffi_abi::FfiAsyncLifecycle, metrics: FfiAsyncTaskQueueMetrics) {
     match lifecycle {
-      calcit::ffi_abi::FfiAsyncLifecycle::Active => self.active_tasks += 1,
-      calcit::ffi_abi::FfiAsyncLifecycle::Closing => self.closing_tasks += 1,
-      calcit::ffi_abi::FfiAsyncLifecycle::Finished => {}
+      calcit::wasm::ffi_abi::FfiAsyncLifecycle::Active => self.active_tasks += 1,
+      calcit::wasm::ffi_abi::FfiAsyncLifecycle::Closing => self.closing_tasks += 1,
+      calcit::wasm::ffi_abi::FfiAsyncLifecycle::Finished => {}
     }
     self.queued_events = self.queued_events.saturating_add(metrics.queued_events);
     self.queued_bytes = self.queued_bytes.saturating_add(metrics.queued_bytes);
@@ -225,7 +225,7 @@ impl NativeAsyncModuleQueueMetrics {
 
   fn add_completed(&mut self, metrics: FfiAsyncTaskQueueMetrics, outcomes: NativeAsyncTaskOutcomes) {
     self.completed_tasks = self.completed_tasks.saturating_add(1);
-    self.add_task(calcit::ffi_abi::FfiAsyncLifecycle::Finished, metrics);
+    self.add_task(calcit::wasm::ffi_abi::FfiAsyncLifecycle::Finished, metrics);
     self.add_outcomes(outcomes);
   }
 
@@ -435,9 +435,9 @@ pub fn set_trace_ffi(v: bool) {
       "enable",
       format!(
         "cwd={cwd} exe={exe} buffer={} async={} resource={} host={}",
-        calcit::ffi_abi::BUFFER_PROTOCOL_VERSION,
-        calcit::ffi_abi::ASYNC_PROTOCOL_VERSION,
-        calcit::ffi_abi::RESOURCE_PROTOCOL_VERSION,
+        calcit::wasm::ffi_abi::BUFFER_PROTOCOL_VERSION,
+        calcit::wasm::ffi_abi::ASYNC_PROTOCOL_VERSION,
+        calcit::wasm::ffi_abi::RESOURCE_PROTOCOL_VERSION,
         std::env::consts::OS,
       ),
     );
@@ -509,7 +509,7 @@ pub fn init_async_runtime() -> Result<(), String> {
   }
   let runtime = NativeAsyncRuntime {
     registry: FfiAsyncHandleRegistry::new(),
-    queue: FfiAsyncEventQueue::with_limits(calcit::ffi_async::FfiAsyncQueueLimits {
+    queue: FfiAsyncEventQueue::with_limits(calcit::wasm::ffi_async::FfiAsyncQueueLimits {
       event_capacity: ASYNC_EVENT_QUEUE_CAPACITY,
       byte_capacity: ASYNC_EVENT_QUEUE_BYTE_CAPACITY,
       terminal_event_reserve: ASYNC_TERMINAL_EVENT_RESERVE,
@@ -944,7 +944,7 @@ unsafe extern "C" fn native_async_open_response(
     };
     if task_state.kind != FfiAsyncHandleKind::Server
       || task_state.flags & ASYNC_TASK_FLAG_REQUIRES_RESPONSE == 0
-      || task_state.lifecycle != calcit::ffi_abi::FfiAsyncLifecycle::Active
+      || task_state.lifecycle != calcit::wasm::ffi_abi::FfiAsyncLifecycle::Active
     {
       return async_status::INVALID_HANDLE;
     }
@@ -1039,7 +1039,7 @@ fn encode_async_value(value: &Calcit) -> Result<Vec<u8>, CalcitErr> {
     return Ok(b"&unit".to_vec());
   }
   let value = calcit_to_edn(value)?;
-  calcit::ffi_abi::encode_edn_payload(&value)
+  calcit::wasm::ffi_abi::encode_edn_payload(&value)
     .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, format!("failed to encode async FFI value: {error}")))
 }
 
@@ -1234,7 +1234,7 @@ fn ffi_task_cancel(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calci
     .registry
     .state(capability.handle)
     .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error.to_string()))?;
-  if state.lifecycle == calcit::ffi_abi::FfiAsyncLifecycle::Closing {
+  if state.lifecycle == calcit::wasm::ffi_abi::FfiAsyncLifecycle::Closing {
     return Ok(Calcit::Unit);
   }
   let NativeAsyncResource::Task(task) = runtime
@@ -1334,7 +1334,10 @@ fn decode_async_failure(payload: &[u8]) -> Result<String, String> {
     .map_err(|error| format!("failed to format async FFI failure payload: {error}"))
 }
 
-fn dispatch_native_async_event(runtime: &NativeAsyncRuntime, event: &calcit::ffi_async::FfiAsyncQueuedEvent) -> Result<(), String> {
+fn dispatch_native_async_event(
+  runtime: &NativeAsyncRuntime,
+  event: &calcit::wasm::ffi_async::FfiAsyncQueuedEvent,
+) -> Result<(), String> {
   let handle = event.task_handle();
   let NativeAsyncResource::Task(task) = runtime.registry.clone_value(handle).map_err(|error| error.to_string())? else {
     return Err("async FFI event targeted a non-task handle".to_owned());
@@ -1361,7 +1364,7 @@ fn dispatch_native_async_event(runtime: &NativeAsyncRuntime, event: &calcit::ffi
         let response = match runtime.registry.clone_value(response_handle) {
           Ok(NativeAsyncResource::Response(response)) => response,
           Ok(NativeAsyncResource::Task(_)) => return Err("async FFI event carried a non-response handle".to_owned()),
-          Err(calcit::ffi_abi::FfiAsyncHandleError::StaleHandle | calcit::ffi_abi::FfiAsyncHandleError::HandleFinished) => {
+          Err(calcit::wasm::ffi_abi::FfiAsyncHandleError::StaleHandle | calcit::wasm::ffi_abi::FfiAsyncHandleError::HandleFinished) => {
             trace_ffi_event(
               "async-response-skip",
               format!(
@@ -1456,7 +1459,7 @@ fn drain_async_events_from(runtime: &NativeAsyncRuntime, limit: usize) -> Result
       Err(error) => {
         report
           .lifecycle_failures
-          .push(calcit::ffi_async::FfiAsyncLifecycleFailure { descriptor, error });
+          .push(calcit::wasm::ffi_async::FfiAsyncLifecycleFailure { descriptor, error });
         continue;
       }
     };
@@ -1586,7 +1589,7 @@ fn begin_native_async_shutdown(runtime: &NativeAsyncRuntime) -> Result<usize, St
 
   let reason = b"{} (:code :host-shutdown)";
   for (handle, state, resource) in snapshot {
-    if state.kind == FfiAsyncHandleKind::Response || state.lifecycle != calcit::ffi_abi::FfiAsyncLifecycle::Active {
+    if state.kind == FfiAsyncHandleKind::Response || state.lifecycle != calcit::wasm::ffi_abi::FfiAsyncLifecycle::Active {
       continue;
     }
     let NativeAsyncResource::Task(task) = resource else {
@@ -1666,10 +1669,10 @@ fn force_cleanup_native_async(runtime: &NativeAsyncRuntime, release_tracked_task
     let NativeAsyncResource::Task(task) = resource else {
       continue;
     };
-    let unfinished = state.lifecycle != calcit::ffi_abi::FfiAsyncLifecycle::Finished;
+    let unfinished = state.lifecycle != calcit::wasm::ffi_abi::FfiAsyncLifecycle::Finished;
     let purged = runtime.queue.discard_handle_events(handle).map_err(|error| error.to_string())?;
     let discarded_responses = discard_owned_responses(runtime, handle)?;
-    if state.lifecycle != calcit::ffi_abi::FfiAsyncLifecycle::Finished {
+    if state.lifecycle != calcit::wasm::ffi_abi::FfiAsyncLifecycle::Finished {
       runtime.registry.finish(handle).map_err(|error| error.to_string())?;
     }
     match runtime.registry.release(handle).map_err(|error| error.to_string())? {
@@ -1973,7 +1976,7 @@ pub fn call_dylib_edn(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Ca
   );
 
   let lib = load_dylib(&lib_name)?;
-  match calcit::ffi_abi::try_call_buffer(&lib, &lib_name, &method, ys.clone(), Some(trace_ffi_resource_event))
+  match calcit::wasm::ffi_abi::try_call_buffer(&lib, &lib_name, &method, ys.clone(), Some(trace_ffi_resource_event))
     .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?
   {
     Some(ret) => {
@@ -1987,7 +1990,7 @@ pub fn call_dylib_edn(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Ca
       Ok(edn_to_calcit(&ret, &Calcit::Nil))
     }
     None => {
-      let symbol = calcit::ffi_abi::buffer_method_symbol(&method);
+      let symbol = calcit::wasm::ffi_abi::buffer_method_symbol(&method);
       trace_ffi_event("buffer-required", format!("lib={lib_name} symbol={symbol} missing=true"));
       Err(c_safe_migration_error(
         "synchronous",
@@ -2041,13 +2044,14 @@ fn try_start_async_callback_v1(
   callback: Calcit,
   call_stack: &CallStackList,
 ) -> Result<Option<Calcit>, CalcitErr> {
-  let Some(start) =
-    calcit::ffi_abi::lookup_async_start(lib, lib_name, method).map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?
+  let Some(start) = calcit::wasm::ffi_abi::lookup_async_start(lib, lib_name, method)
+    .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?
   else {
     return Ok(None);
   };
   let runtime = native_async_runtime().map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
-  let request = calcit::ffi_abi::encode_buffer_request(args).map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
+  let request =
+    calcit::wasm::ffi_abi::encode_buffer_request(args).map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
   let task = NativeAsyncTask {
     callback,
     stack: Arc::new(call_stack.to_owned()),
@@ -2073,7 +2077,7 @@ fn try_start_async_callback_v1(
     "async-start",
     format!(
       "lib={lib_name} symbol={} task={} request_bytes={} pending={}",
-      calcit::ffi_abi::async_method_symbol(method),
+      calcit::wasm::ffi_abi::async_method_symbol(method),
       handle.raw(),
       request.len(),
       track::count_pending_tasks()
@@ -2120,7 +2124,7 @@ fn try_start_async_callback_v1(
     "async-start-failed",
     format!(
       "lib={lib_name} symbol={} task={} status={status} purged={purged} discarded_responses={discarded_responses} {} pending={}",
-      calcit::ffi_abi::async_method_symbol(method),
+      calcit::wasm::ffi_abi::async_method_symbol(method),
       handle.raw(),
       format_task_queue_metrics(metrics),
       track::count_pending_tasks()
@@ -2130,7 +2134,7 @@ fn try_start_async_callback_v1(
     CalcitErrKind::Unexpected,
     format!(
       "FFI async method `{}` in `{lib_name}` failed to start with status {status}",
-      calcit::ffi_abi::async_method_symbol(method)
+      calcit::wasm::ffi_abi::async_method_symbol(method)
     ),
   )
   .map(Some)
@@ -2193,7 +2197,7 @@ pub fn call_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<
   if let Some(result) = try_start_async_callback_v1(&lib, &lib_name, &method, ys.clone(), callback.clone(), call_stack)? {
     return Ok(result);
   }
-  let symbol = calcit::ffi_abi::async_method_symbol(&method);
+  let symbol = calcit::wasm::ffi_abi::async_method_symbol(&method);
   trace_ffi_event("async-required", format!("lib={lib_name} symbol={symbol} missing=true"));
   Err(c_safe_migration_error(
     "callback",
@@ -2206,10 +2210,10 @@ pub fn call_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<
 
 fn release_blocking_task(runtime: &NativeAsyncRuntime, handle: FfiAsyncHandle) -> Result<(usize, Vec<String>), String> {
   match runtime.registry.state(handle).map_err(|error| error.to_string())?.lifecycle {
-    calcit::ffi_abi::FfiAsyncLifecycle::Active | calcit::ffi_abi::FfiAsyncLifecycle::Closing => {
+    calcit::wasm::ffi_abi::FfiAsyncLifecycle::Active | calcit::wasm::ffi_abi::FfiAsyncLifecycle::Closing => {
       runtime.registry.finish(handle).map_err(|error| error.to_string())?;
     }
-    calcit::ffi_abi::FfiAsyncLifecycle::Finished => {}
+    calcit::wasm::ffi_abi::FfiAsyncLifecycle::Finished => {}
   }
   let NativeAsyncResource::Task(task) = runtime.registry.release(handle).map_err(|error| error.to_string())? else {
     return Err("blocking FFI handle released a response resource".to_owned());
@@ -2280,14 +2284,14 @@ fn try_call_blocking_v1(
     "blocking-call-v1",
     format!(
       "lib={lib_name} symbol={} task={} argc={} pending={}",
-      calcit::ffi_abi::blocking_method_symbol(method),
+      calcit::wasm::ffi_abi::blocking_method_symbol(method),
       handle.raw(),
       args.len(),
       track::count_pending_tasks()
     ),
   );
 
-  let outcome = calcit::ffi_abi::try_call_blocking(lib, lib_name, method, args, &descriptor, &host);
+  let outcome = calcit::wasm::ffi_abi::try_call_blocking(lib, lib_name, method, args, &descriptor, &host);
   let (leaked, mut failures) = release_blocking_task(runtime, handle)
     .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, format!("blocking task cleanup failed: {error}")))?;
   let value = match outcome {
@@ -2313,7 +2317,7 @@ fn try_call_blocking_v1(
         "blocking-return-v1",
         format!(
           "lib={lib_name} symbol={} ret={}",
-          calcit::ffi_abi::blocking_method_symbol(method),
+          calcit::wasm::ffi_abi::blocking_method_symbol(method),
           format_edn_args_for_trace(std::slice::from_ref(&ret))
         ),
       );
@@ -2376,7 +2380,7 @@ pub fn blocking_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Res
   );
 
   let lib = load_dylib(&lib_name)?;
-  let has_blocking_v1 = calcit::ffi_abi::has_blocking_method(&lib, &lib_name, &method)
+  let has_blocking_v1 = calcit::wasm::ffi_abi::has_blocking_method(&lib, &lib_name, &method)
     .map_err(|error| CalcitErr::use_str(CalcitErrKind::Unexpected, error))?;
   if has_blocking_v1 {
     return try_call_blocking_v1(&lib, &lib_name, &method, ys.clone(), callback.clone(), call_stack)?.ok_or_else(|| {
@@ -2386,7 +2390,7 @@ pub fn blocking_dylib_edn_fn(xs: Vec<Calcit>, call_stack: &CallStackList) -> Res
       )
     });
   }
-  let symbol = calcit::ffi_abi::blocking_method_symbol(&method);
+  let symbol = calcit::wasm::ffi_abi::blocking_method_symbol(&method);
   trace_ffi_event("blocking-required", format!("lib={lib_name} symbol={symbol} missing=true"));
   Err(c_safe_migration_error(
     "blocking",
@@ -2816,11 +2820,11 @@ mod async_callback_tests {
     assert_eq!(runtime.registry.finish(handle), Ok(()));
     assert_eq!(
       runtime.registry.finish(handle),
-      Err(calcit::ffi_abi::FfiAsyncHandleError::HandleFinished)
+      Err(calcit::wasm::ffi_abi::FfiAsyncHandleError::HandleFinished)
     );
     assert_eq!(
       runtime.registry.next_event_sequence(handle),
-      Err(calcit::ffi_abi::FfiAsyncHandleError::HandleFinished)
+      Err(calcit::wasm::ffi_abi::FfiAsyncHandleError::HandleFinished)
     );
     assert!(matches!(runtime.registry.release(handle), Ok(NativeAsyncResource::Task(_))));
   }
@@ -2893,7 +2897,7 @@ mod async_callback_tests {
     expire_async_responses(&runtime).expect("expire responses");
     assert_eq!(
       runtime.registry.state(response),
-      Err(calcit::ffi_abi::FfiAsyncHandleError::StaleHandle)
+      Err(calcit::wasm::ffi_abi::FfiAsyncHandleError::StaleHandle)
     );
     let events: Vec<RecordedResponse> = RESPONSE_EVENTS
       .lock()
@@ -3133,18 +3137,18 @@ mod async_callback_tests {
     assert_eq!(shutdown_cancels.load(Ordering::Relaxed), 1);
     assert_eq!(
       runtime.registry.state(owner),
-      Err(calcit::ffi_abi::FfiAsyncHandleError::StaleHandle)
+      Err(calcit::wasm::ffi_abi::FfiAsyncHandleError::StaleHandle)
     );
     assert_eq!(
       runtime.registry.state(response),
-      Err(calcit::ffi_abi::FfiAsyncHandleError::StaleHandle)
+      Err(calcit::wasm::ffi_abi::FfiAsyncHandleError::StaleHandle)
     );
     assert_eq!(runtime.registry.pending_count(), Ok(0));
     assert_eq!(runtime.queue.task_metrics(owner), Ok(None));
     assert!(!runtime.queue.wait_for_event(Duration::ZERO).expect("closed queue"));
     assert_eq!(
       runtime.registry.register(FfiAsyncHandleKind::Stream, test_task()),
-      Err(calcit::ffi_abi::FfiAsyncHandleError::HostClosing)
+      Err(calcit::wasm::ffi_abi::FfiAsyncHandleError::HostClosing)
     );
     let responses: Vec<RecordedResponse> = RESPONSE_EVENTS
       .lock()
@@ -3193,7 +3197,7 @@ mod async_callback_tests {
     );
     assert_eq!(
       runtime.registry.state(owner),
-      Err(calcit::ffi_abi::FfiAsyncHandleError::StaleHandle)
+      Err(calcit::wasm::ffi_abi::FfiAsyncHandleError::StaleHandle)
     );
     assert_eq!(runtime.registry.pending_count(), Ok(0));
     assert!(runtime.queue.is_empty().expect("empty shutdown queue"));
@@ -3238,7 +3242,7 @@ mod async_callback_tests {
       assert_eq!(runtime.registry.pending_count(), Ok(0));
       assert_eq!(
         runtime.registry.state(handle),
-        Err(calcit::ffi_abi::FfiAsyncHandleError::StaleHandle)
+        Err(calcit::wasm::ffi_abi::FfiAsyncHandleError::StaleHandle)
       );
       assert!(runtime.queue.is_empty().expect("empty shutdown queue"));
       assert!(!runtime.queue.wait_for_event(Duration::ZERO).expect("closed shutdown queue"));
@@ -3270,7 +3274,7 @@ mod async_callback_tests {
     assert_eq!(shutdown_cancels.load(Ordering::Relaxed), 0);
     assert_eq!(
       runtime.registry.state(owner),
-      Err(calcit::ffi_abi::FfiAsyncHandleError::StaleHandle)
+      Err(calcit::wasm::ffi_abi::FfiAsyncHandleError::StaleHandle)
     );
   }
 }

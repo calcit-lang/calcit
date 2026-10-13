@@ -6,10 +6,9 @@ use std::str::FromStr;
 
 use argh::FromArgs;
 use calcit::builtins;
-use calcit::codegen::emit_wasm::{WasmBoundary, WasmTarget};
 #[cfg(not(target_arch = "wasm32"))]
 use calcit::runner;
-use calcit::wasm_cli::{self, WasmCliOptions};
+use calcit::wasm::{self, WasmBoundary, WasmCliOptions, WasmTarget};
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 /// Feature-gated harness for WASI preprocessing regression tests.
@@ -54,7 +53,7 @@ fn main() -> Result<(), String> {
   #[cfg(not(target_arch = "wasm32"))]
   injection::inject_platform_apis();
 
-  wasm_cli::run(
+  wasm::run(
     &WasmCliOptions {
       input: cli_args.input,
       emit_path: cli_args.emit_path,

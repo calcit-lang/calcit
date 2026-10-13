@@ -138,11 +138,13 @@ WASM 后端与 FFI ABI 的实现集中在 `src/wasm/`，对外公开路径保持
 
 `src/wasm/mod.rs` 是统一入口 `calcit::wasm`：按上表的 feature 条件重新导出 `WasmTarget`、`WasmBoundary`、`emit_wasm`、`validate_wasm_target`、`validate_wasm_boundary`、`check_wasm_command_component`、`WasmCliOptions`、`run`，以及三个 FFI 模块。这些模块仍通过 `src/lib.rs` 与 `src/codegen.rs` 里的 `#[path]` 声明挂载，所以 FFI 模块不会被 `wasm` feature 门控。
 
-`src/wasm/` 之外的代码只能经 `calcit::wasm` 或上表的公开路径使用 WASM 内部实现。`cargo test boundary_tests` 会扫描 `src/`、`tests/` 与 `benches/`，在以下情况失败：直接引用 `src/wasm/` 下的实现文件（`src/lib.rs` 与 `src/codegen.rs` 的挂载除外），或使用 `emit_wasm::` / `wasm_cli::` 下未列入入口的条目。新增对外条目时同时更新 `src/wasm/mod.rs` 的重新导出与该测试的允许列表。
+本仓库内 `src/wasm/` 之外的调用方（`src/bin/`、`tests/` 等）统一通过 `calcit::wasm` 使用这些条目，例如 `calcit::wasm::WasmCliOptions`、`calcit::wasm::run`、`calcit::wasm::ffi_abi::…`。上表中的旧公开路径继续保留为兼容别名，供外部使用者过渡；是否移除属于后续非 patch 版本的决定，patch 版本不删除。
+
+`cargo test boundary_tests` 会扫描 `src/`、`tests/` 与 `benches/`，在以下情况失败：直接引用 `src/wasm/` 下的实现文件，或把 `emit_wasm`、`wasm_cli`、`ffi_abi`、`ffi_async`、`ffi_interface_ir` 作为路径段使用而前面不是 `wasm::`。`src/lib.rs` 与 `src/codegen.rs` 的 `#[path]` 挂载是唯一的允许项。新增对外条目时同时更新 `src/wasm/mod.rs` 的重新导出。
 
 ## 限制
 
-- 边界检查扫描去掉 `//` 注释行后的整段源码（含 rustfmt 换行的多行 `use` 分组），只检查以 `emit_wasm::` / `wasm_cli::` 开头的路径，不解析 `use` 别名，也不检查其他写法的路径。
+- 边界检查忽略注释（含块注释）与字符串、字符字面量，并展开多行与嵌套的 `use` 分组，要求这五个模块名前面是 `calcit::wasm::`、`crate::wasm::`，或已用 `use calcit::wasm;` / `use calcit::wasm::{self, …}` 引入的 `wasm::`；它不解析 `as` 别名、`super::` 和宏生成的路径。
 - 不带编号的 `unsupported ... in WASM` 诊断尚未统一格式，不一定包含源位置与缺失的证据种类。
 - `wasm-unsupported-procs` 列表只校验排除清单出现过的 Proc，没有 core 测试覆盖的 Proc 靠人工维护。
 - `update` 的接收者为 Struct 时在 WASM 上 trap，native 会改写对应字段。

@@ -1,5 +1,5 @@
 use calcit::cli_args::{FfiCommand, FfiSubcommand};
-use calcit::ffi_interface_ir::{
+use calcit::wasm::ffi_interface_ir::{
   COMPONENT_INTERFACE_IR_SCHEMA_ID, FFI_INTERFACE_IR_SCHEMA_ID, export_component_snapshot, export_snapshot,
   format_component_human_report, format_human_report,
 };
