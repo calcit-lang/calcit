@@ -3482,6 +3482,25 @@ fn preprocess_list_call(
     return Ok(Calcit::from(CalcitList::from(&[typed_access, processed_receiver])));
   }
 
+  // `.:field receiver` (and `receiver.:field`) is receiver-first shorthand for
+  // `(:field receiver)`. For a typed Struct receiver, lower it to the canonical
+  // tag-call form so field validation and backend behavior are shared. Other
+  // receivers (plain maps) keep the runtime tag-access path.
+  if let Calcit::Method(field_name, calcit::MethodKind::TagAccess) = &head_form
+    && args.len() == 1
+    && resolve_type_value(&args[0], scope_types).is_some_and(|t| t.as_ref().resolve_to_struct().is_some())
+  {
+    let items = vec![Calcit::tag(field_name.as_ref()), args[0].clone()];
+    return preprocess_expr(
+      &Calcit::from(CalcitList::from(items.as_slice())),
+      scope_defs,
+      scope_types,
+      file_ns,
+      check_warnings,
+      call_stack,
+    );
+  }
+
   // === Postfix struct field access / method call detection ===
   // Pattern: (expr :field) where expr has a known struct type → rewrite to (.-field expr)
   // Pattern: (expr .method args...) where expr has a known struct/enum/trait type → rewrite to (.method expr args...)
