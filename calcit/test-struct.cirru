@@ -219,12 +219,23 @@
           :code $ quote $ defstruct TagShorthandEvent (:type 'Tag) (:path 'String)
           :examples $ []
           :schema $ :: 'StructDef
-          :tests $ [] $ %{} 'TestEntry (:name |struct-receiver)
-            :code $ quote $ let
-                ev $ TagShorthandEvent :type :create :path |p
-              assert= :create ev.:type
-              assert= |p ev.:path
-              assert= (:type ev) ev.:type
+          :tests $ []
+            %{} 'TestEntry (:name |struct-receiver)
+              :code $ quote $ let
+                  ev $ TagShorthandEvent :type :create :path |p
+                assert= :create ev.:type
+                assert= |p ev.:path
+                assert= (:type ev) ev.:type
+            %{} 'TestEntry (:name |map-receiver)
+              :code $ quote $ let
+                  m $ {} $ :k 1
+                assert= 1 m.:k
+                assert= nil m.:absent
+            %{} 'TestEntry (:name |untyped-param-struct)
+              :code $ quote $ let
+                  ev $ TagShorthandEvent :type :create :path |p
+                  read-type $ fn (x) x.:type
+                assert= :create $ read-type ev
         'assign-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn assign-alias (source value)
             let
