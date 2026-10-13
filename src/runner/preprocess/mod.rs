@@ -4981,11 +4981,13 @@ fn preprocess_known_function_call(
 
     // Set expected fn type hint if this arg position has a Fn-typed param
     let expected_type = active_expected_types.get(arg_idx).map(|expected| {
-      if strict_types_enabled() {
+      let expected = if strict_types_enabled() {
         expected.substitute_type_vars(&preprocessing_type_bindings)
       } else {
         expected.clone()
-      }
+      };
+      // Nominal names in the callee schema resolve in its declaration namespace, not the caller's (#2027).
+      resolve_namespace_type_refs_for_body(expected, &info.def_ns)
     });
 
     // Set expected struct type hint if this arg position has a struct-typed param

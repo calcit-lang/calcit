@@ -5667,6 +5667,38 @@ fn strict_workflow_accepts_map_contains_and_rejects_a_tag_list_index() {
   assert!(!rejected.status.success(), "a Tag index on a List must stay rejected");
 }
 
+/// #2027: a nested nominal name in a callee's Fn schema is written in the callee's
+/// namespace, so an inline callback in another namespace must see it qualified.
+#[test]
+fn nested_fn_schema_nominal_names_resolve_in_declaration_namespace() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/nested-nominal-ns.cirru", &snapshot).unwrap();
+  let verified = run_fix(&snapshot, &["--workflow", "strict", "--verify", "--format", "json"]);
+  assert_success(&verified, "short nested nominal name passes the strict workflow");
+  assert!(parse_stdout(&verified)["diagnostics"].as_array().unwrap().is_empty());
+  // read-field: the caller namespace also defines a different `State`, so the callback
+  // receiver must resolve to the callee's. read-generic: the callee also defines a struct
+  // `T`, which must not capture the generic type variable `'T`. read-list: nested `List<State>`.
+  for name in ["read-field", "read-generic", "read-list"] {
+    assert_success(
+      &run_calcit(&snapshot, &["test", &format!("quatrefoil.repro/{name}"), "--require-match"]),
+      name,
+    );
+  }
+
+  // Positive control: the same program with the nested name written qualified.
+  let source = fs::read_to_string(&snapshot).unwrap();
+  let qualified = source.replace(":args $ [] 'State", ":args $ [] 'quatrefoil.types/State");
+  assert_ne!(source, qualified);
+  let control = directory.path().join("control.cirru");
+  fs::write(&control, qualified).unwrap();
+  assert_success(
+    &run_fix(&control, &["--workflow", "strict", "--verify", "--format", "json"]),
+    "qualified nested nominal name passes the strict workflow",
+  );
+}
+
 #[test]
 fn strict_workflow_checks_proofs_and_resumes_without_fabricating_repairs() {
   let directory = TestDirectory::create();
