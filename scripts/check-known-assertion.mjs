@@ -1768,13 +1768,13 @@ try {
     assert.deepEqual(await readFile(snapshot), zeroArgumentOriginal);
     await assert.rejects(readFile(join(destination, "program.wasm")), { code: "ENOENT" });
   }
-  run("test", "calcit.core/foldl-shortcut", "--tag", "shortcut-fold-proof", "--require-match");
-  const shortcutResponse = JSON.parse(run("query", "def", "calcit.core/foldl-shortcut", "--format", "json"));
+  run("test", "calcit.core/&list:foldl-shortcut", "--tag", "shortcut-fold-proof", "--require-match");
+  const shortcutResponse = JSON.parse(run("query", "def", "calcit.core/&list:foldl-shortcut", "--format", "json"));
   const shortcutTests = shortcutResponse.data.tests.filter(test => test.tags.includes("shortcut-fold-proof"));
   assert.equal(shortcutTests.length, 5);
   const openFoldTests = shortcutResponse.data.tests.filter(test => test.tags.includes("open-fold-proof"));
   assert.equal(openFoldTests.length, 3);
-  run("test", "calcit.core/foldl-shortcut", "--tag", "open-fold-proof", "--require-match");
+  run("test", "calcit.core/&list:foldl-shortcut", "--tag", "open-fold-proof", "--require-match");
   // Audit the typed boundary independently of assert='s generic equality
   // implementation, whose separate core proof obligations remain visible.
   const directShortcutTests = shortcutTests.filter(test => ["proven-shortcut-bool", "shortcut-empty-default", "shortcut-right-order"].includes(test.name));
@@ -1809,7 +1809,7 @@ try {
     ["open-payload", "0", ["fn", ["acc", "item"], ["::", "true", ["parse-cirru-edn", "|do 1"]]]],
     ["mixed-branches", "0", ["fn", ["acc", "item"], ["if", "item", ["::", "true", "acc"], ["::", "false", "|bad"]]], ["[]", "true", "false"]],
   ]) {
-    setBody([["assert-type", ["foldl-shortcut", items, "0", defaultValue, callback], "'Number"]]);
+    setBody([["assert-type", ["&list:foldl-shortcut", items, "0", defaultValue, callback], "'Number"]]);
     const original = await readFile(snapshot);
     const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "assert-type-proof-v1", "--ns", "calcit.assert-evidence", "--def", "run-tests", "--format", "edn"], options);
     if (rejected.error) throw rejected.error;
@@ -1823,7 +1823,7 @@ try {
     ["match", ["Option", ":some", ["parse-cirru-edn", "|do |bad"]], [[":some", "payload"], ["::", "true", "payload"]], [[":none"], ["::", "true", "acc"]]],
   ]) {
     run("edit", "def", "calcit.assert-evidence/shadow-proof", "--overwrite", "--input-format", "json-ast", "--code",
-      JSON.stringify(["defn", "shadow-proof", ["payload"], ["foldl-shortcut", ["[]", "1"], "0", "0", ["fn", ["acc", "item"], shadowBody]]]));
+      JSON.stringify(["defn", "shadow-proof", ["payload"], ["&list:foldl-shortcut", ["[]", "1"], "0", "0", ["fn", ["acc", "item"], shadowBody]]]));
     run("edit", "schema", "calcit.assert-evidence/shadow-proof", "--input-format", "cirru", "--code",
       "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)");
     const original = await readFile(snapshot);
@@ -1896,7 +1896,7 @@ try {
   }
   // Known initial/default values do not prove an externally supplied reducer.
   run("edit", "def", "calcit.assert-evidence/open-shortcut", "--input-format", "json-ast", "--code",
-    JSON.stringify(["defn", "open-shortcut", ["callback"], ["foldl-shortcut", ["[]", "1"], "0", "0", "callback"]]));
+    JSON.stringify(["defn", "open-shortcut", ["callback"], ["&list:foldl-shortcut", ["[]", "1"], "0", "0", "callback"]]));
   run("edit", "schema", "calcit.assert-evidence/open-shortcut", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ [] 'Fn) (:return 'Number)");
   const openShortcutOriginal = await readFile(snapshot);
@@ -1940,7 +1940,7 @@ try {
   const openFoldGenerated = await import(pathToFileURL(join(openFoldOutput, "calcit.assert-evidence.mjs")).href);
   assert.equal(openFoldGenerated.run_tests(), 1);
   // Open input cannot lend member, callback, or payload evidence to the result.
-  for (const [name, receiver, defaultValue, result, foldName = "foldl-shortcut"] of [
+  for (const [name, receiver, defaultValue, result, foldName = "&list:foldl-shortcut"] of [
     ["open-member", "xs", "0", ["::", "true", "item"]],
     ["open-wrong-payload", "xs", "0", ["::", "true", "|bad"]],
     ["open-wrong-default", "xs", "|bad", ["::", "true", "acc"]],

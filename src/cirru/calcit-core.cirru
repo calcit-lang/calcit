@@ -1376,6 +1376,79 @@
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |proven-shortcut-bool)
+              :code $ quote $ let
+                  result $ &list:foldl-shortcut ([] 1 2) true true $ fn (acc item) (:: true false)
+                assert-type result 'Bool
+                assert= false result
+              :tags $ #{} :core :shortcut-fold-proof :unit
+            %{} 'TestEntry (:name |proven-shortcut-payload)
+              :code $ quote $ let
+                  result $ &list:foldl-shortcut ([] 1 2 3) 0 99 $ fn (acc item)
+                    let
+                        next $ + acc item
+                      if (= item 2) (:: true next) (:: false next)
+                assert-type result 'Number
+                assert= 3 result
+              :tags $ #{} :core :shortcut-fold-proof :unit
+            %{} 'TestEntry (:name |shortcut-default-and-source)
+              :code $ quote $ let
+                  items $ [] 1 2 3
+                assert= 99 $ &list:foldl-shortcut items 0 99 $ fn (acc item)
+                  :: false $ + acc item
+                assert= ([] 1 2 3) items
+              :tags $ #{} :core :shortcut-fold-proof :unit
+            %{} 'TestEntry (:name |shortcut-empty-default)
+              :code $ quote $ let
+                  result $ &list:foldl-shortcut ([]) 0 99 $ fn (acc item) (:: true 0)
+                assert-type result 'Number
+                assert= 99 result
+              :tags $ #{} :core :shortcut-fold-proof :unit
+            %{} 'TestEntry (:name |shortcut-right-order)
+              :code $ quote $ let
+                  result $ foldr-shortcut ([] 1 2 3) 0 99 $ fn (acc item) (:: true item)
+                assert-type result 'Number
+                assert= 3 result
+              :tags $ #{} :core :shortcut-fold-proof :unit
+            %{} 'TestEntry (:name |open-receiver-proven-bool)
+              :code $ quote $ let
+                  all-proven $ fn (xs predicate)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic $ :: 'Fn
+                        {}
+                          :args $ [] 'Dynamic
+                          :return 'Bool
+                      :return 'Bool
+                    &list:foldl-shortcut xs true true $ fn (acc item)
+                      if (predicate item) (:: false acc) (:: true false)
+                  answer $ all-proven ([] 1)
+                    fn (item) true
+                assert-type answer 'Bool
+                assert= true answer
+              :tags $ #{} :open-fold-proof :unit
+            %{} 'TestEntry (:name |open-receiver-empty-default)
+              :code $ quote $ let
+                  reduce-open $ fn (xs)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic
+                      :return 'Number
+                    &list:foldl-shortcut xs 0 7 $ fn (acc item) (:: false acc)
+                  answer $ reduce-open $ []
+                assert-type answer 'Number
+                assert= 7 answer
+              :tags $ #{} :open-fold-proof :unit
+            %{} 'TestEntry (:name |open-receiver-ordinary-fold)
+              :code $ quote $ let
+                  reduce-open $ fn (xs)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic
+                      :return 'Number
+                    foldl xs 0 $ fn (acc item) (&+ acc 1)
+                  answer $ reduce-open $ [] 1 2
+                assert-type answer 'Number
+                assert= 2 answer
+              :tags $ #{} :open-fold-proof :unit
         '&list:includes? $ %{} 'CodeEntry
           :doc "|内部原语：检查 List 中是否包含指定元素，参数为 List<T> 和 T，返回 Bool。它与按 Number 索引检查范围的 &list:contains? 不同；业务代码优先使用接收者方法 .includes?。"
           :code $ quote &runtime-implementation
@@ -7368,78 +7441,6 @@
                 foldl-shortcut ([] 1 2 3) 0 99 $ fn (acc x)
                   :: false $ + acc x
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |proven-shortcut-bool)
-              :code $ quote $ let
-                  result $ foldl-shortcut ([] 1 2) true true $ fn (acc item) (:: true false)
-                assert-type result 'Bool
-                assert= false result
-              :tags $ #{} :core :shortcut-fold-proof :unit
-            %{} 'TestEntry (:name |proven-shortcut-payload)
-              :code $ quote $ let
-                  result $ foldl-shortcut ([] 1 2 3) 0 99 $ fn (acc item)
-                    let
-                        next $ + acc item
-                      if (= item 2) (:: true next) (:: false next)
-                assert-type result 'Number
-                assert= 3 result
-              :tags $ #{} :core :shortcut-fold-proof :unit
-            %{} 'TestEntry (:name |shortcut-default-and-source)
-              :code $ quote $ let
-                  items $ [] 1 2 3
-                assert= 99 $ foldl-shortcut items 0 99 $ fn (acc item)
-                  :: false $ + acc item
-                assert= ([] 1 2 3) items
-              :tags $ #{} :core :shortcut-fold-proof :unit
-            %{} 'TestEntry (:name |shortcut-empty-default)
-              :code $ quote $ let
-                  result $ foldl-shortcut ([]) 0 99 $ fn (acc item) (:: true 0)
-                assert-type result 'Number
-                assert= 99 result
-              :tags $ #{} :core :shortcut-fold-proof :unit
-            %{} 'TestEntry (:name |shortcut-right-order)
-              :code $ quote $ let
-                  result $ foldr-shortcut ([] 1 2 3) 0 99 $ fn (acc item) (:: true item)
-                assert-type result 'Number
-                assert= 3 result
-              :tags $ #{} :core :shortcut-fold-proof :unit
-            %{} 'TestEntry (:name |open-receiver-proven-bool)
-              :code $ quote $ let
-                  all-proven $ fn (xs predicate)
-                    hint-fn $ {}
-                      :args $ [] 'Dynamic $ :: 'Fn
-                        {}
-                          :args $ [] 'Dynamic
-                          :return 'Bool
-                      :return 'Bool
-                    foldl-shortcut xs true true $ fn (acc item)
-                      if (predicate item) (:: false acc) (:: true false)
-                  answer $ all-proven ([] 1)
-                    fn (item) true
-                assert-type answer 'Bool
-                assert= true answer
-              :tags $ #{} :open-fold-proof :unit
-            %{} 'TestEntry (:name |open-receiver-empty-default)
-              :code $ quote $ let
-                  reduce-open $ fn (xs)
-                    hint-fn $ {}
-                      :args $ [] 'Dynamic
-                      :return 'Number
-                    foldl-shortcut xs 0 7 $ fn (acc item) (:: false acc)
-                  answer $ reduce-open $ []
-                assert-type answer 'Number
-                assert= 7 answer
-              :tags $ #{} :open-fold-proof :unit
-            %{} 'TestEntry (:name |open-receiver-ordinary-fold)
-              :code $ quote $ let
-                  reduce-open $ fn (xs)
-                    hint-fn $ {}
-                      :args $ [] 'Dynamic
-                      :return 'Number
-                    foldl xs 0 $ fn (acc item) (&+ acc 1)
-                  answer $ reduce-open $ [] 1 2
-                assert-type answer 'Number
-                assert= 2 answer
-              :tags $ #{} :open-fold-proof :unit
         'foldr-shortcut $ %{} 'CodeEntry
           :doc "|Internal right fold with early termination. Syntax: (foldr-shortcut list initial default reducer). The reducer receives accumulator and element, then returns an anonymous enum `:: Bool accumulator`; true returns its accumulator immediately, false continues, and exhaustion returns default."
           :code $ quote &runtime-implementation
@@ -7913,6 +7914,17 @@
                   get-in 9 $ []
                 assert= (Option :none)
                   get-in nil $ []
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |presence-is-not-truthiness-or-path-existence)
+              :code $ quote $ let
+                  data $ {} (:nil nil) (:false false) (:zero 0) (:empty |)
+                assert= true $ contains-in? data $ [] :nil
+                assert= false $ .some? $ get-in data ([] :nil)
+                assert= true $ .some? $ get-in data ([] :false)
+                assert= true $ .some? $ get-in data ([] :zero)
+                assert= true $ .some? $ get-in data ([] :empty)
+                assert= false $ contains-in? data $ [] :missing
+                assert= false $ .some? $ get-in data ([] :missing)
               :tags $ #{} :core :unit
         'group-by $ %{} 'CodeEntry
           :doc "|Group elements by the result of applying function f to each element"

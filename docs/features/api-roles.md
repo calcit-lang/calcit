@@ -361,7 +361,14 @@ Result 的 `result:ok?` / `result:err?` / `result:unwrap-or` 沿用单独的 `co
 
 精确查询 `%some/%none/%ok/%err`、`atom/defatom`、`remove-watch` 等旧入口时，定义文档也标明这一计划窗口与条件，而不是把历史最早移除版本当作现已允许删除。`some-in?` 的人工迁移使用公开的 `.some? $ get-in x path`：叶子是 nil 时返回 false，与 `contains-in?` 的路径存在判断不同。`range-bothway` 的人工展开先按原顺序绑定实参一次，再构造显式 `range`；不要复制带副作用的表达式。省略第二参数会进入 nil 运行时分支，但当前 Number schema 不接受显式 nil 实参，不在迁移中放宽类型。`let{}` 的原 Map 只求值一次；改为公开 `get` 后须人工审阅 Option 与旧 nil/缺失行为，不能自动插入 unwrap 或业务默认值。已知 Struct 字段用 `(:field value)`，不是 JS 属性访问 `.-field`。
 
+### 最终值存在性
+
+`.some? $ get-in data path` 检查最终值是否非 nil，而不是检查值的真假：false、0 和空字符串
+仍是存在的值。Map 中保存 nil 的 key 可以满足 `contains-in?`，但最终值检查为 false；
+缺失路径则两者都为 false。迁移 `some-in?` 时保留这个区别，不改成真假判断或路径存在判断。
+
 ## 限制
 
 - std 0.2.37 发布的是源码模块，不代表预编译 dylib 已发布。
 - 当前发布版组合的回归验证不代表所有下游已完成迁移。
+- `get-in` 遍历混合值 Map 后的开放 nil 判断目前在 WASM/WASI 报 `E_WASM_NIL_TYPE_EVIDENCE`，不表示该路径已具备跨后端支持。
