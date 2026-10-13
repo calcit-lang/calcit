@@ -5,7 +5,6 @@
   :wasm $ {}
     :tags $ {} $ :enum-definition-equality "|unsupported: first-class EnumDef creation requires &enum-def:new, rejected by WASM codegen (#1863)"
     :tests $ {} (|calcit.core/&+#preserves-primitive-schema-in-local-binding "|unsupported: unsupported WASM expression: (&proc &+)")
-      |app.string-option/sort-date-strings#sorts-present-and-empty "|parity: typed string sort result assertion differs from native/JS before and after the presence-proof repair (#2017)"
       |calcit.core/pairs-map#retains-malformed-pair-failure "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/any?#short-circuits-list-set-and-map "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/every?#short-circuits-list-set-and-map "|unsupported: unsupported proc in WASM: ref"

@@ -7168,6 +7168,17 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       ctx.emit(Instruction::LocalSet(a));
       emit_expr(ctx, &args[1])?;
       ctx.emit(Instruction::LocalSet(b));
+      // Strings are heap pointers: ordering them as numbers would compare
+      // allocation addresses, so dispatch to the lexicographic runtime compare.
+      let both_strings = emit_both_strings(ctx, a, b)?;
+      ctx.emit(Instruction::LocalGet(both_strings));
+      ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+      ctx.emit(Instruction::LocalGet(a));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.emit(Instruction::LocalGet(b));
+      ctx.emit(Instruction::I32TruncF64U);
+      ctx.call_rt("__rt_str_compare");
+      ctx.emit(Instruction::Else);
       // if a < b then -1 else (if a > b then 1 else isnan(a) - isnan(b))
       ctx.emit(Instruction::LocalGet(a));
       ctx.emit(Instruction::LocalGet(b));
@@ -7191,6 +7202,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
       ctx.emit(Instruction::F64Ne);
       ctx.emit(Instruction::F64ConvertI32U);
       ctx.emit(Instruction::F64Sub);
+      ctx.emit(Instruction::End);
       ctx.emit(Instruction::End);
       ctx.emit(Instruction::End);
       Ok(())
@@ -8616,6 +8628,55 @@ fn emit_cmp(ctx: &mut WasmGenCtx, instr: Instruction<'static>, args: &[Calcit]) 
   ctx.emit(instr);
   ctx.emit(Instruction::Select);
   Ok(())
+}
+
+/// Emits an i32 local that is 1 when both f64 values are heap pointers whose
+/// type header is the string tag. The header is only read after the pointer
+/// range check, so plain numbers never touch memory.
+fn emit_both_strings(ctx: &mut WasmGenCtx, a: u32, b: u32) -> Result<u32, String> {
+  let string_tag = *ctx.tag_index.get("string").ok_or("string tag not found")? as i32;
+  let result = ctx.alloc_local_typed(ValType::I32);
+  let mem_size_f64 = ctx.alloc_local();
+  let both_heap = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::I32Const(0));
+  ctx.emit(Instruction::LocalSet(result));
+
+  ctx.emit(Instruction::MemorySize(0));
+  ctx.emit(Instruction::I32Const(16));
+  ctx.emit(Instruction::I32Shl);
+  ctx.emit(Instruction::F64ConvertI32U);
+  ctx.emit(Instruction::LocalSet(mem_size_f64));
+  for (n, value) in [a, b].into_iter().enumerate() {
+    ctx.emit(Instruction::LocalGet(value));
+    ctx.emit(f64_const((HEAP_BASE + 8) as f64));
+    ctx.emit(Instruction::F64Ge);
+    ctx.emit(Instruction::LocalGet(value));
+    ctx.emit(Instruction::LocalGet(mem_size_f64));
+    ctx.emit(Instruction::F64Lt);
+    ctx.emit(Instruction::I32And);
+    if n > 0 {
+      ctx.emit(Instruction::I32And);
+    }
+  }
+  ctx.emit(Instruction::LocalSet(both_heap));
+
+  ctx.emit(Instruction::LocalGet(both_heap));
+  ctx.begin_block_if();
+  for (n, value) in [a, b].into_iter().enumerate() {
+    ctx.emit(Instruction::LocalGet(value));
+    ctx.emit(Instruction::I32TruncF64U);
+    ctx.emit(Instruction::I32Const(4));
+    ctx.emit(Instruction::I32Sub);
+    ctx.emit(Instruction::I32Load(mem_arg_i32(0)));
+    ctx.emit(Instruction::I32Const(string_tag));
+    ctx.emit(Instruction::I32Eq);
+    if n > 0 {
+      ctx.emit(Instruction::I32And);
+    }
+  }
+  ctx.emit(Instruction::LocalSet(result));
+  ctx.emit(Instruction::End);
+  Ok(result)
 }
 
 /// Emit `=` with string content equality support.

@@ -352,6 +352,15 @@
                 assert= 0 $ &compare 0 -0
                 assert= -1 $ &compare (&/ -1 0) -1
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |orders-runtime-built-strings)
+              :code $ quote $ let
+                  later $ &str:concat |a |z
+                  earlier $ &str:concat |a |b
+                do
+                  assert= 1 $ &compare later earlier
+                  assert= -1 $ &compare earlier later
+                  assert= 0 $ &compare later $ &str:concat |a |z
+              :tags $ #{} :core :unit
         '&core-enum-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for enum values.")
           :code $ quote $ def &core-enum-impls
             [] &core-enum-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Countable internal/&core-countable-enum-impl) (&impl::new Contains internal/&core-contains-enum-impl) (&impl::new ContainsIndex internal/&core-contains-index-enum-impl)

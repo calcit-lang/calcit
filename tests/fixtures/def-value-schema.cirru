@@ -3208,10 +3208,31 @@
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List 'String
             :return $ :: 'List 'String
-          :tests $ [] $ %{} 'TestEntry (:name |sorts-present-and-empty)
-            :code $ quote $ assert= ([] |2026-10-12 |1999-01-01 |)
-              sort-date-strings $ [] | |1999-01-01 |2026-10-12
-            :tags $ #{} :string-option-presence :unit
+          :tests $ []
+            %{} 'TestEntry (:name |sorts-present-and-empty)
+              :code $ quote $ assert= ([] |2026-10-12 |1999-01-01 |)
+                sort-date-strings $ [] | |1999-01-01 |2026-10-12
+              :tags $ #{} :string-option-presence :unit
+            %{} 'TestEntry (:name |sorts-by-first-character-descending)
+              :code $ quote $ assert= ([] |c |b |a)
+                sort-date-strings $ [] |b |a |c
+              :tags $ #{} :string-option-presence :unit
+            %{} 'TestEntry (:name |keeps-order-for-equal-first-characters)
+              :code $ quote $ assert= ([] |b2 |b1 |a)
+                sort-date-strings $ [] |b2 |a |b1
+              :tags $ #{} :string-option-presence :unit
+            %{} 'TestEntry (:name |sorts-runtime-built-strings)
+              :code $ quote $ assert= ([] |zz |ab |)
+                sort-date-strings $ [] (&str:concat |a |b) | $ &str:concat |z |z
+              :tags $ #{} :string-option-presence :unit
+            %{} 'TestEntry (:name |keeps-every-element-of-the-result)
+              :code $ quote $ let
+                  sorted $ sort-date-strings $ [] | |1999-01-01 |2026-10-12
+                do
+                  assert= 3 $ count sorted
+                  assert= (Option :some |2026-10-12) (first sorted)
+                  assert= (Option :some |) (last sorted)
+              :tags $ #{} :string-option-presence :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.string-option
     'app.values $ %{} 'FileEntry
