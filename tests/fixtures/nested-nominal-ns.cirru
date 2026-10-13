@@ -18,6 +18,32 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'State $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct State (:y 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'read-generic $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-generic () $ quatrefoil.types/apply-t 1
+            fn (n) (+ n 1)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |generic-name-stays-a-type-variable)
+            :code $ quote $ do
+              assert= 2 $ quatrefoil.repro/read-generic
+              , &unit
+            :tags $ #{} :nested-nominal
+        'read-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-list () $ quatrefoil.types/call-list!
+            fn (states) (:x $ &list:nth states 0)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |list-of-nominal-callback)
+            :code $ quote $ do
+              assert= 2 $ quatrefoil.repro/read-list
+              , &unit
+            :tags $ #{} :nested-nominal
         'read-field $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-field () $ quatrefoil.types/read-x
             fn (state) (:x state)
@@ -38,6 +64,26 @@
           :code $ quote $ defstruct State (:x 'Number)
           :examples $ []
           :schema $ :: 'StructDef
+        'T $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct T (:v 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'apply-t $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn apply-t (x f) (f x)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T
+              :: 'Fn $ {} (:return 'T)
+                :args $ [] 'T
+            :generics $ [] 'T
+        'call-list! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn call-list! (f)
+            f $ [] $ State :x 2
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+              :: 'Fn $ {} (:return 'Number)
+                :args $ [] $ :: 'List 'State
         'call! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn call! (f)
             f $ State :x 2

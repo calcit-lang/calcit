@@ -5677,10 +5677,15 @@ fn nested_fn_schema_nominal_names_resolve_in_declaration_namespace() {
   let verified = run_fix(&snapshot, &["--workflow", "strict", "--verify", "--format", "json"]);
   assert_success(&verified, "short nested nominal name passes the strict workflow");
   assert!(parse_stdout(&verified)["diagnostics"].as_array().unwrap().is_empty());
-  assert_success(
-    &run_calcit(&snapshot, &["test", "quatrefoil.repro/read-field", "--require-match"]),
-    "callback reads the declared field through the nested nominal type",
-  );
+  // read-field: the caller namespace also defines a different `State`, so the callback
+  // receiver must resolve to the callee's. read-generic: the callee also defines a struct
+  // `T`, which must not capture the generic type variable `'T`. read-list: nested `List<State>`.
+  for name in ["read-field", "read-generic", "read-list"] {
+    assert_success(
+      &run_calcit(&snapshot, &["test", &format!("quatrefoil.repro/{name}"), "--require-match"]),
+      name,
+    );
+  }
 
   // Positive control: the same program with the nested name written qualified.
   let source = fs::read_to_string(&snapshot).unwrap();

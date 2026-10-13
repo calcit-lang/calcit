@@ -4986,8 +4986,7 @@ fn preprocess_known_function_call(
       } else {
         expected.clone()
       };
-      // Nominal names in the callee schema were written in its declaration
-      // namespace; the callback body is preprocessed in the caller's namespace.
+      // Nominal names in the callee schema resolve in its declaration namespace, not the caller's (#2027).
       resolve_namespace_type_refs_for_body(expected, &info.def_ns)
     });
 
