@@ -38,10 +38,9 @@ mod boundary_tests {
   /// Module names that are only reachable through `calcit::wasm` for in-repo callers.
   const FACADE_MODULES: &[&str] = &["emit_wasm", "wasm_cli", "ffi_abi", "ffi_async", "ffi_interface_ir"];
   /// Crate-root modules whose source lives in `src/wasm/`; files there may name them directly.
-  const WASM_OWN_MODULES: &[&str] = &["wasm", "wasm_cli", "ffi_abi", "ffi_async", "ffi_interface_ir", "codegen"];
-  /// Files under `src/wasm/` allowed to name main-crate internals: the host facade, plus the
-  /// facade entry (`mod.rs`) which only re-exports this directory's own modules.
-  const HOST_ALLOWLIST: &[&str] = &["src/wasm/host.rs", "src/wasm/mod.rs"];
+  const WASM_OWN_MODULES: &[&str] = &["wasm", "wasm_cli", "ffi_abi", "ffi_async", "ffi_interface_ir"];
+  /// The only file under `src/wasm/` allowed to name main-crate internals.
+  const HOST_ALLOWLIST: &[&str] = &["src/wasm/host.rs"];
   /// Files allowed to name the historical paths: the two `#[path]` mount sites.
   const MOUNT_ALLOWLIST: &[&str] = &["src/lib.rs", "src/codegen.rs"];
 
@@ -219,14 +218,24 @@ mod boundary_tests {
   /// modules that live in this directory.
   fn scan_host_paths(code: &str) -> Vec<String> {
     let mut found = vec![];
+    // `crate::codegen` is only fine as the prefix of `crate::codegen::emit_wasm`.
+    let mut bare_codegen: i32 = 0;
     walk_paths(code, &mut |parent, ident| {
-      if parent == ["crate"] && !WASM_OWN_MODULES.contains(&ident) {
+      if parent == ["crate"] && ident == "codegen" {
+        bare_codegen += 1;
+      } else if parent == ["crate"] && !WASM_OWN_MODULES.contains(&ident) {
         found.push(format!("`crate::{ident}`"));
-      }
-      if parent == ["crate", "codegen"] && ident != "emit_wasm" {
-        found.push(format!("`crate::codegen::{ident}`"));
+      } else if parent == ["crate", "codegen"] {
+        if ident == "emit_wasm" {
+          bare_codegen -= 1;
+        } else {
+          found.push(format!("`crate::codegen::{ident}`"));
+        }
       }
     });
+    if bare_codegen > 0 {
+      found.push("`crate::codegen` without `emit_wasm`".to_owned());
+    }
     found
   }
 
@@ -321,10 +330,16 @@ mod boundary_tests {
     host_bad("use crate::codegen::destruct_list_match_shape;");
     host_bad("fn f() { let x = crate::load_core_snapshot(); }");
     host_bad("use crate::wasm::{host};\nuse crate::runner::preprocess::X;");
+    host_bad("use crate::codegen;\nfn f() { codegen::go(); }");
+    host_bad("use crate::{codegen};");
+    host_bad("use crate::codegen as cg;");
+    host_bad("use crate::codegen::{self};");
+    host_bad("use crate::{codegen::emit_wasm::X, codegen};");
   }
 
   #[test]
-  fn host_allowlist_covers_facade_files() {
+  fn host_allowlist_covers_only_host_rs() {
+    assert!(!scan_host_source("src/wasm/mod.rs", "use crate::calcit::X;").is_empty());
     assert!(scan_host_source("src/wasm/host.rs", "pub(crate) use crate::{calcit, program};").is_empty());
   }
 
