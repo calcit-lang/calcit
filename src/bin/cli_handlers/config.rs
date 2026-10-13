@@ -543,8 +543,6 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
     return Err(format!("Project version is stored in deps.cirru; run {replacement}"));
   }
 
-  let mut snapshot = load_snapshot(snapshot_file)?;
-
   if opts.key == "package" {
     if opts.entry.is_some() {
       return Err("Package is project-level; omit --entry when setting package".to_owned());
@@ -563,6 +561,7 @@ fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String
     return Ok(());
   }
 
+  let mut snapshot = load_snapshot(snapshot_file)?;
   let entry_label = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
   let entry = select_entry_mut(&mut snapshot, opts.entry.as_deref())?;
 
@@ -634,8 +633,8 @@ fn save_package_preserving_snapshot(snapshot_file: &str, package: &str) -> Resul
   } else {
     root.insert_key("package", Edn::Str(package.into()));
   }
-  snapshot::load_snapshot_data(&data, snapshot_file)
-    .map_err(|e| format!("Package update would make the Snapshot unloadable; nothing was written: {e}"))?;
+  snapshot::load_snapshot_data_for_metadata(&data, snapshot_file, None)
+    .map_err(|e| format!("Package update would make the Snapshot source invalid; nothing was written: {e}"))?;
   let formatted = cirru_edn::format(&data, true).map_err(|e| format!("Failed to format Snapshot EDN: {e}"))?;
   let output = match shebang {
     Some(line) => format!("{line}\n{formatted}"),

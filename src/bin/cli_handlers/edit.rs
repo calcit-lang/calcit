@@ -688,7 +688,7 @@ where
     fs::read_to_string(snapshot_file).map_err(|error| format!("Failed to read snapshot '{}': {error}", snapshot_file.display()))?;
   let original_revision = snapshot_content_revision(&original_content);
   // Legacy snapshots that only `edit format` can read have no unit view.
-  let original_units = load_snapshot(&snapshot_file.to_string_lossy())
+  let original_units = load_snapshot_for_metadata(&snapshot_file.to_string_lossy())
     .ok()
     .map(|snapshot| super::snapshot_scope::snapshot_units(&snapshot))
     .transpose()?;
@@ -976,12 +976,19 @@ fn handle_transaction(opts: &EditTransactionCommand, snapshot_file: &str) -> Res
 // ═══════════════════════════════════════════════════════════════════════════════
 
 pub(crate) fn load_snapshot(snapshot_file: &str) -> Result<Snapshot, String> {
+  let edn = read_snapshot_edn(snapshot_file)?;
+  snapshot::load_snapshot_data(&edn, snapshot_file).map_err(|e| format!("Failed to load snapshot: {e}"))
+}
+
+fn load_snapshot_for_metadata(snapshot_file: &str) -> Result<Snapshot, String> {
+  let edn = read_snapshot_edn(snapshot_file)?;
+  snapshot::load_snapshot_data_for_metadata(&edn, snapshot_file, None)
+}
+
+fn read_snapshot_edn(snapshot_file: &str) -> Result<Edn, String> {
   let mut content = fs::read_to_string(snapshot_file).map_err(|e| format!("Failed to read {snapshot_file}: {e}"))?;
   strip_shebang(&mut content);
-
-  let edn = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse EDN: {e}"))?;
-
-  snapshot::load_snapshot_data(&edn, snapshot_file).map_err(|e| format!("Failed to load snapshot: {e}"))
+  cirru_edn::parse(&content).map_err(|e| format!("Failed to parse EDN: {e}"))
 }
 
 pub(crate) fn save_snapshot(snapshot: &Snapshot, snapshot_file: &str) -> Result<(), String> {
@@ -1890,7 +1897,7 @@ fn handle_ffi(opts: &EditFfiCommand, snapshot_file: &str) -> Result<(), String> 
 fn handle_schema(opts: &EditSchemaCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
 
-  let snapshot = load_snapshot(snapshot_file)?;
+  let snapshot = load_snapshot_for_metadata(snapshot_file)?;
   check_ns_editable(&snapshot, namespace)?;
 
   let file_data = snapshot
@@ -2057,7 +2064,7 @@ fn restore_untouched_schema_forms(
   strip_shebang(&mut original_source);
   let mut original_edn =
     cirru_edn::parse(&original_source).map_err(|error| format!("Failed to parse original Snapshot EDN: {error}"))?;
-  let original_snapshot = snapshot::load_snapshot_data(&original_edn, "staged original")
+  let original_snapshot = snapshot::load_snapshot_data_for_metadata(&original_edn, "staged original", None)
     .map_err(|error| format!("Failed to load original Snapshot for schema preservation: {error}"))?;
   let mut rendered_source = rendered_content.to_owned();
   let shebang = original_content
@@ -2182,9 +2189,9 @@ fn save_schema_preserving_snapshot(
     entry.pairs.retain(|(key, _)| key.ref_str() != "schema");
   }
 
-  // Reject a schema the loader would refuse before the atomic save, so a failed
-  // write leaves the original bytes and revision untouched.
-  snapshot::load_snapshot_data(&data, snapshot_file).map_err(|e| {
+  // Validate the selected contract before saving; other source contracts can
+  // still need explicit repairs. Execution and transaction completion stay strict.
+  snapshot::load_snapshot_data_for_metadata(&data, snapshot_file, Some((namespace, definition))).map_err(|e| {
     format!("Schema validation failed: `{namespace}/{definition}` would make the snapshot unloadable, nothing was written: {e}")
   })?;
 

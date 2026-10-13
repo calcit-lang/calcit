@@ -2314,6 +2314,72 @@ fn package_metadata_preserves_legacy_file_forms_directly_and_in_transactions() {
   }
 }
 
+/// Source repair and atomic persistence are CLI host boundaries, not language tests.
+#[test]
+fn legacy_macro_schema_repair_keeps_namespace_and_runtime_guards() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  let source = r#"{} (:package |legacy)
+  :entries $ {}
+    :default $ {} (:mode :native) (:init-fn |app.main/main!) (:reload-fn |app.main/main!)
+      :modules $ []
+  :files $ {}
+    |app.main $ %{} :FileEntry
+      :defs $ {}
+        |main! $ %{} :CodeEntry
+          :code $ quote $ defn main! () (forty-two)
+          :schema $ :: :fn $ {} (:args $ []) (:return :number)
+        |forty-two $ %{} :CodeEntry
+          :code $ quote $ defmacro forty-two () (quote 42)
+          :schema $ :: :fn $ {} (:args $ []) (:return :any)
+      :ns $ %{} :CodeEntry (:code $ quote $ ns app.main)
+"#;
+  fs::write(&snapshot, source).unwrap();
+  let contract = "quote $ :: 'Macro $ {} (:required $ []) (:expansion $ :: 'Expr 'Number) (:capabilities $ #{})";
+  let denied = run_calcit(&snapshot, &["edit", "schema", "app.main/forty-two", "--code", contract]);
+  assert!(!denied.status.success());
+  assert!(String::from_utf8_lossy(&denied.stderr).contains("only namespaces under package"));
+  assert_eq!(fs::read_to_string(&snapshot).unwrap(), source);
+  assert!(!run_calcit(&snapshot, &["--check-only"]).status.success());
+
+  let operations = serde_json::to_string(&vec![
+    vec!["config", "set", "package", "app"],
+    vec!["edit", "schema", "app.main/forty-two", "--code", contract],
+  ])
+  .unwrap();
+  let scope = transaction_scope(&snapshot, &operations);
+  assert_eq!(fs::read_to_string(&snapshot).unwrap(), source, "preview must not write");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--expect-revision", &scope, "--code", &operations],
+    ),
+    "guarded macro/package repair",
+  );
+  let after = fs::read_to_string(&snapshot).unwrap();
+  let before_edn = cirru_edn::parse(source).unwrap();
+  let after_edn = cirru_edn::parse(&after).unwrap();
+  let original = calcit::snapshot::load_snapshot_data_for_metadata(&before_edn, snapshot.to_str().unwrap(), None).unwrap();
+  let repaired = calcit::snapshot::load_snapshot_data(&after_edn, snapshot.to_str().unwrap()).unwrap();
+  assert_eq!(original.files["app.main"].defs["main!"], repaired.files["app.main"].defs["main!"]);
+  assert_eq!(
+    original.files["app.main"].defs["forty-two"].code,
+    repaired.files["app.main"].defs["forty-two"].code
+  );
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "repaired macro runtime gate");
+
+  let invalid = run_calcit(&snapshot, &["edit", "schema", "app.main/forty-two", "--clear"]);
+  assert!(!invalid.status.success(), "explicit macro edits must not remove its contract");
+  assert_eq!(fs::read_to_string(&snapshot).unwrap(), after);
+  fs::write(&snapshot, source).unwrap();
+  let incomplete = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", r#"[["config","set","package","app"]]"#],
+  );
+  assert!(!incomplete.status.success(), "a transaction must finish with valid macro contracts");
+  assert_eq!(fs::read_to_string(&snapshot).unwrap(), source);
+}
+
 fn transaction_scope(snapshot: &Path, operations: &str) -> String {
   let dry_run = run_calcit(
     snapshot,

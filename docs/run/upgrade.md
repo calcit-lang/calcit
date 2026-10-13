@@ -1630,8 +1630,12 @@ calcit calcit.cirru fix --rule case-default-to-match-v1 --include-attached --for
 规则只自动改写与宏展开完全一致的调用，其余给出 `requires-review`。模式是表达式或变量时 `match` 不适用，改用 `cond`。`case` 暂未标记弃用，字面量模式下同样展开为 `match`。入口本身仍保留，随后续非 patch 版本再评估删除。
 
 旧的 macro `Fn` / whole-`Dynamic` schema 不再作为运行时兼容格式：Snapshot loader 会在解析阶段以 definition 的完整 path 拒绝它。
-若旧 Snapshot 已经包含结构化 `CodeEntry` 和这类 schema，应使用最终兼容版本 Calcit 0.13.51 先将模块改成严格
-`Macro` contract（显式声明 `:required` / `:optional` / `:rest`、`:expansion` 和 `:capabilities`），再使用新版本检查。
+若旧 Snapshot 已经包含结构化 `CodeEntry` 和 canonical `:entries`，可用当前 `edit schema` 显式补齐严格
+`Macro` contract（声明 `:required` / `:optional` / `:rest`、`:expansion` 和 `:capabilities`）。这条源码修正路径
+仍校验被修改的契约和 namespace 边界；普通查询、格式化和执行不会因此接受旧宏。若 package 声明与本地 namespace
+不一致，可把 `config set package` 与所有必要的 `edit schema` 放在同一事务，先 dry-run，再携带返回的 revision 应用。
+事务提交前要求整个 Snapshot 的宏契约合法；只修改 package 而留下旧宏的事务会失败，原文件不变。
+尚有旧 `:configs` 的结构化 Snapshot 仍需先用最终兼容的 Calcit 0.13.50 做格式转换；0.13.51 也保留为旧契约修正入口。
 若来源仍是更早的 direct-quote Snapshot，则直接用当前 `calcit calcit.cirru edit format`：隔离 formatter 会从参数形状生成
 `Syntax` / `Expr<Dynamic>` / 空 capabilities 的保守严格 contract，避免要求一个无法读取该 direct-quote 格式的中间版本。
 两条路径都必须审阅并收窄生成的 contract，并使用 `--deps` 检查实际解析的模块版本，不能用依赖仓库尚未发布的 main 代替。
