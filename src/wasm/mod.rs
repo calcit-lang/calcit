@@ -28,6 +28,7 @@ pub use crate::wasm_cli::{WasmCliOptions, run};
 
 #[cfg(test)]
 mod boundary_tests {
+  use std::collections::HashSet;
   use std::fs;
   use std::path::{Path, PathBuf};
 
@@ -47,18 +48,172 @@ mod boundary_tests {
     }
   }
 
-  /// Byte offsets where `name` occurs as a whole path segment (not part of a longer identifier).
-  fn segment_hits(code: &str, name: &str) -> Vec<usize> {
-    let is_ident = |c: char| c.is_alphanumeric() || c == '_';
-    code
-      .match_indices(name)
-      .filter(|(at, _)| {
-        let before = code[..*at].chars().next_back();
-        let after = code[*at + name.len()..].chars().next();
-        !before.is_some_and(is_ident) && !after.is_some_and(is_ident)
-      })
-      .map(|(at, _)| at)
-      .collect()
+  /// Replaces comments (and string/char literals when `blank_strings`) with spaces, keeping newlines.
+  fn blank(source: &str, blank_strings: bool) -> String {
+    let c: Vec<char> = source.chars().collect();
+    let mut out = String::with_capacity(source.len());
+    let mut i = 0;
+    let fill = |out: &mut String, from: usize, to: usize| {
+      for &ch in &c[from..to.min(c.len())] {
+        out.push(if ch == '\n' { '\n' } else { ' ' });
+      }
+    };
+    let starts = |s: &str, at: usize| s.chars().enumerate().all(|(k, ch)| c.get(at + k) == Some(&ch));
+    let is_ident = |ch: char| ch.is_alphanumeric() || ch == '_';
+    while i < c.len() {
+      let raw_hashes = if blank_strings && c[i] == 'r' && (i == 0 || !is_ident(c[i - 1])) {
+        let hashes = c[i + 1..].iter().take_while(|&&ch| ch == '#').count();
+        (c.get(i + 1 + hashes) == Some(&'"')).then_some(hashes)
+      } else {
+        None
+      };
+      if starts("//", i) {
+        let end = c[i..].iter().position(|&ch| ch == '\n').map_or(c.len(), |p| i + p);
+        fill(&mut out, i, end);
+        i = end;
+      } else if starts("/*", i) {
+        let (mut depth, mut j) = (1, i + 2);
+        while j < c.len() && depth > 0 {
+          if starts("/*", j) {
+            depth += 1;
+            j += 2;
+          } else if starts("*/", j) {
+            depth -= 1;
+            j += 2;
+          } else {
+            j += 1;
+          }
+        }
+        fill(&mut out, i, j);
+        i = j;
+      } else if let Some(hashes) = raw_hashes {
+        let close: String = std::iter::once('"').chain(std::iter::repeat_n('#', hashes)).collect();
+        let end = (i + 2 + hashes..c.len())
+          .find(|&j| starts(&close, j))
+          .map_or(c.len(), |j| j + close.len());
+        fill(&mut out, i, end);
+        i = end;
+      } else if blank_strings && c[i] == '"' {
+        let mut j = i + 1;
+        while j < c.len() && c[j] != '"' {
+          j += if c[j] == '\\' { 2 } else { 1 };
+        }
+        fill(&mut out, i, j + 1);
+        i = j + 1;
+      } else if blank_strings && c[i] == '\'' && (c.get(i + 1) == Some(&'\\') || c.get(i + 2) == Some(&'\'')) {
+        // Char literal; a lifetime such as `'a` has no closing quote right after one char.
+        let end = if c[i + 1] == '\\' {
+          (i + 3..c.len()).find(|&j| c[j] == '\'').map_or(c.len(), |j| j + 1)
+        } else {
+          i + 3
+        };
+        fill(&mut out, i, end);
+        i = end;
+      } else {
+        out.push(c[i]);
+        i += 1;
+      }
+    }
+    out
+  }
+
+  /// Walks `::`-joined paths with nested `{}` groups and reports facade modules that are not
+  /// reached through `calcit::wasm::`, `crate::wasm::` or an imported `wasm` alias.
+  fn scan_paths(code: &str) -> Vec<String> {
+    let compact: String = code.chars().filter(|c| !c.is_whitespace()).collect();
+    let alias_imported = compact.contains("usecalcit::wasm;")
+      || compact.contains("usecrate::wasm;")
+      || compact.contains("calcit::wasm::{self")
+      || compact.contains("crate::wasm::{self");
+    let chars: Vec<char> = code.chars().collect();
+    let mut found = vec![];
+    let mut imported: HashSet<String> = HashSet::new();
+    let mut groups: Vec<Vec<String>> = vec![];
+    let mut current: Vec<String> = vec![];
+    let (mut cont, mut at_start) = (false, false);
+    let mut i = 0;
+    while i < chars.len() {
+      let ch = chars[i];
+      if ch.is_alphanumeric() || ch == '_' {
+        let end = (i..chars.len())
+          .find(|&j| !(chars[j].is_alphanumeric() || chars[j] == '_'))
+          .unwrap_or(chars.len());
+        let ident: String = chars[i..end].iter().collect();
+        if !cont {
+          current = if at_start {
+            groups.last().cloned().unwrap_or_default()
+          } else {
+            vec![]
+          };
+        }
+        let parent = current.clone();
+        current.push(ident.clone());
+        cont = false;
+        at_start = false;
+        if FACADE_MODULES.contains(&ident.as_str()) {
+          let facade = matches!(parent.as_slice(), [a, b] if (a == "calcit" || a == "crate") && b == "wasm");
+          let aliased = alias_imported && parent.as_slice() == ["wasm"];
+          let bare = parent.is_empty() && imported.contains(&ident);
+          if facade {
+            imported.insert(ident.clone());
+          }
+          if !(facade || aliased || bare) {
+            let full: Vec<String> = parent.iter().cloned().chain([ident]).collect();
+            found.push(format!("`{}`", full.join("::")));
+          }
+        }
+        i = end;
+        continue;
+      }
+      match ch {
+        ':' if chars.get(i + 1) == Some(&':') => {
+          cont = true;
+          i += 2;
+          continue;
+        }
+        '{' => {
+          groups.push(if cont { current.clone() } else { vec![] });
+          cont = false;
+          at_start = true;
+        }
+        '}' => {
+          groups.pop();
+          current = groups.last().cloned().unwrap_or_default();
+          cont = false;
+          at_start = false;
+        }
+        ',' => {
+          current = groups.last().cloned().unwrap_or_default();
+          cont = false;
+          at_start = true;
+        }
+        c if c.is_whitespace() => {}
+        _ => {
+          cont = false;
+          at_start = false;
+          current.clear();
+        }
+      }
+      i += 1;
+    }
+    found
+  }
+
+  /// Boundary violations of one file's source; `rel` is its repository-relative path.
+  fn scan_source(rel: &str, source: &str) -> Vec<String> {
+    if MOUNT_ALLOWLIST.contains(&rel) {
+      return vec![];
+    }
+    let mut violations = vec![];
+    for line in blank(source, false).lines().filter(|line| line.trim_start().starts_with("#[path")) {
+      if line.contains("wasm/") {
+        violations.push(format!("{rel}: mounts a src/wasm implementation file directly: {}", line.trim()));
+      }
+    }
+    for path in scan_paths(&blank(source, true)) {
+      violations.push(format!("{rel}: {path} must be reached through the `calcit::wasm` facade"));
+    }
+    violations
   }
 
   #[test]
@@ -75,31 +230,71 @@ mod boundary_tests {
     let mut violations = vec![];
     for file in files.iter().filter(|f| !f.starts_with(&wasm_dir)) {
       let rel = file.strip_prefix(root).unwrap().to_string_lossy().replace('\\', "/");
-      if MOUNT_ALLOWLIST.contains(&rel.as_str()) {
-        continue;
-      }
-      let source = fs::read_to_string(file).expect("read source");
-      // Drop comment lines, then scan the whole text so rustfmt-wrapped multi-line `use` groups are seen.
-      let code: String = source
-        .lines()
-        .filter(|line| !line.trim_start().starts_with("//"))
-        .collect::<Vec<_>>()
-        .join("\n");
-      for line in code.lines().filter(|line| line.trim_start().starts_with("#[path")) {
-        if line.contains("wasm/") {
-          violations.push(format!("{rel}: mounts a src/wasm implementation file directly: {}", line.trim()));
-        }
-      }
-      for name in FACADE_MODULES {
-        for at in segment_hits(&code, name) {
-          if !code[..at].ends_with("wasm::") {
-            violations.push(format!(
-              "{rel}: `{name}` must be reached as `calcit::wasm::{name}` (or a facade re-export)"
-            ));
-          }
-        }
-      }
+      violations.extend(scan_source(&rel, &fs::read_to_string(file).expect("read source")));
     }
     assert!(violations.is_empty(), "WASM boundary violations:\n{}", violations.join("\n"));
+  }
+
+  fn ok(source: &str) {
+    let v = scan_source("src/x.rs", source);
+    assert!(v.is_empty(), "expected no violations for {source:?}, got {v:?}");
+  }
+
+  fn bad(source: &str) {
+    assert!(!scan_source("src/x.rs", source).is_empty(), "expected a violation for {source:?}");
+  }
+
+  #[test]
+  fn scanner_accepts_facade_qualified_uses() {
+    ok("use calcit::wasm::ffi_abi::FfiBuffer;");
+    ok("use calcit::wasm::{ffi_abi::X, emit_wasm, ffi_async::{Y, Z}};");
+    ok("use calcit::{\n  builtins,\n  wasm::{\n    ffi_abi,\n    ffi_async::Q,\n  },\n};");
+    ok("use crate::wasm::ffi_interface_ir::A;\nfn f() { crate::wasm::ffi_abi::go(); }");
+    ok("fn f() { calcit::wasm::ffi_abi::go(); }");
+    ok("use calcit::wasm;\nfn f() { wasm::ffi_abi::go(); }");
+    ok("use calcit::wasm::{self, WasmTarget};\nfn f() { wasm::ffi_async::go(); }");
+    ok("use calcit::wasm::ffi_abi;\nfn f() { ffi_abi::go(); }");
+  }
+
+  #[test]
+  fn scanner_ignores_comments_and_literals() {
+    ok("let x = 1; // calcit::codegen::emit_wasm::run\n");
+    ok("/* use calcit::ffi_abi::X; */ fn f() {}");
+    ok("/* outer /* nested ffi_abi::X */ still ffi_async::Y */ fn f() {}");
+    ok("let s = \"use calcit::ffi_abi::X; \\\" ffi_async::Y\";");
+    ok("let s = r#\"wasm_cli::run\"#; let c = '\"'; let d = '\\'';");
+    ok("fn f<'a>(x: &'a str) { let _ = \"ffi_abi::X\"; }");
+    ok("let name = \"ffi_abi\"; let calcit_ffi_async_version = 1;");
+  }
+
+  #[test]
+  fn scanner_rejects_old_and_lookalike_paths() {
+    bad("use calcit::ffi_abi::X;");
+    bad("use calcit::codegen::emit_wasm::{WasmBoundary, WasmTarget};");
+    bad("use calcit::wasm_cli::run;");
+    bad("use calcit::{ffi_abi::X, wasm::Y};");
+    bad("use calcit::wasm::{Y, ffi_abi::X};\nuse calcit::ffi_async::Z;");
+    bad("use crate::ffi_interface_ir::A;");
+    bad("fn f() { foo_wasm::ffi_abi::go(); }");
+    bad("fn f() { codegen::wasm::ffi_abi::go(); }");
+    bad("use calcit::codegen::wasm::ffi_abi::X;");
+    // `wasm::` alone is not enough without importing the facade as `wasm`.
+    bad("fn f() { wasm::ffi_abi::go(); }");
+    // A bare name is only fine after a facade import.
+    bad("fn f() { ffi_abi::go(); }");
+    bad("use calcit::{\n  ffi_abi::{\n    A,\n  },\n};");
+    bad("#[path = \"wasm/ffi_abi.rs\"]\nmod ffi_abi;");
+  }
+
+  #[test]
+  fn scanner_handles_plain_blocks_and_fields() {
+    ok("impl A {\n fn add_task(&mut self, life: calcit::wasm::ffi_abi::X, m: Y) {}\n}");
+    ok("fn f() { match life {\n calcit::wasm::ffi_abi::X => {} } if s.life != calcit::wasm::ffi_abi::X {} }");
+    bad("fn f() { match life {\n calcit::ffi_abi::X => {} } }");
+  }
+
+  #[test]
+  fn scanner_allows_mount_sites() {
+    assert!(scan_source("src/lib.rs", "#[path = \"wasm/ffi_abi.rs\"]\npub mod ffi_abi;").is_empty());
   }
 }

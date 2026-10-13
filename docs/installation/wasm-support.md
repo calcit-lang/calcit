@@ -144,7 +144,7 @@ WASM 后端与 FFI ABI 的实现集中在 `src/wasm/`，对外公开路径保持
 
 ## 限制
 
-- 边界检查扫描去掉 `//` 注释行后的整段源码（含 rustfmt 换行的多行 `use` 分组），只按路径段文本匹配，不解析 `use` 别名，也不检查其他写法的路径。
+- 边界检查忽略注释（含块注释）与字符串、字符字面量，并展开多行与嵌套的 `use` 分组，要求这五个模块名前面是 `calcit::wasm::`、`crate::wasm::`，或已用 `use calcit::wasm;` / `use calcit::wasm::{self, …}` 引入的 `wasm::`；它不解析 `as` 别名、`super::` 和宏生成的路径。
 - 不带编号的 `unsupported ... in WASM` 诊断尚未统一格式，不一定包含源位置与缺失的证据种类。
 - `wasm-unsupported-procs` 列表只校验排除清单出现过的 Proc，没有 core 测试覆盖的 Proc 靠人工维护。
 - `update` 的接收者为 Struct 时在 WASM 上 trap，native 会改写对应字段。
