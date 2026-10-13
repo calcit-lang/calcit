@@ -2277,6 +2277,43 @@ fn config_package_repairs_local_ownership_through_a_guarded_metadata_transaction
   );
 }
 
+#[test]
+fn package_metadata_preserves_legacy_file_forms_directly_and_in_transactions() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  let source = r#"#! /usr/bin/env calcit
+{} (:package |legacy)
+  :entries $ {}
+    :default $ {} (:mode :native) (:init-fn |app.main/main!) (:reload-fn |app.main/main!)
+      :modules $ []
+  :files $ {}
+    |app.main $ %{} :FileEntry
+      :defs $ {}
+        |main! $ %{} :CodeEntry
+          :code $ quote $ defn main! () nil
+          :schema $ :: :fn $ {} (:args $ []) (:return :any) (:features $ #{})
+      :ns $ %{} :CodeEntry (:code $ quote $ ns app.main)
+"#;
+  let parse = |content: &str| cirru_edn::parse(content.strip_prefix("#! /usr/bin/env calcit\n").unwrap()).unwrap();
+  let original = parse(source);
+  for args in [
+    vec!["config", "set", "package", "app"],
+    vec!["edit", "transaction", "--code", r#"[["config","set","package","app"]]"#],
+  ] {
+    fs::write(&snapshot, source).unwrap();
+    assert_success(&run_calcit(&snapshot, &args), "preserve legacy package fixture");
+    let output = fs::read_to_string(&snapshot).unwrap();
+    let cirru_edn::Edn::Map(after) = parse(&output) else {
+      panic!("root map")
+    };
+    let cirru_edn::Edn::Map(before) = &original else {
+      panic!("root map")
+    };
+    assert_eq!(after.get_or_nil("files"), before.get_or_nil("files"));
+    assert_eq!(after.get_or_nil("package"), cirru_edn::Edn::Str("app".into()));
+  }
+}
+
 fn transaction_scope(snapshot: &Path, operations: &str) -> String {
   let dry_run = run_calcit(
     snapshot,

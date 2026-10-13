@@ -6,6 +6,11 @@ Phlox guidebook 的旧 Snapshot 将项目标为 `docs-workflow`，实际本地�
 
 在既有 `config set` 中支持项目级 `package`，复用 writer lock、工具链版本守卫、
 Snapshot serializer 及编辑事务。包名使用非空 symbol 段，拒绝 entry 选择器。
+审查指出 typed serializer 会规范化无关旧 schema；包元数据保存改用原始 EDN 树仅修改
+`:package`，校验可加载后复用原子写入。事务保留语义未变的完整 FileEntry，
+显式 schema 编辑仍可规范化目标；旧 schema 保留回归同时覆盖直接调用与事务。
+公共事务复用原有 preservation 路径，保留原 namespace key 形式和 staged about；
+加载器去掉 shebang 后解析，事务写回时保留原 shebang。明确的 `edit format` 仍整体规范化。
 只修改根 Snapshot 的包名；不加载或写入依赖，不重命名源码、引用或入口。
 原有 namespace ownership 检查保持不变；事务 scope 已包含项目 package，无需新 revision 类型。
 

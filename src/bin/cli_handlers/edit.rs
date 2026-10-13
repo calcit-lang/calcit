@@ -646,6 +646,7 @@ fn parse_transaction_operations(raw: &str) -> Result<Vec<Vec<String>>, String> {
   Ok(operations)
 }
 
+#[cfg(test)]
 fn run_staged_transaction_with<F>(
   snapshot_file: &Path,
   operations: &[Vec<String>],
@@ -932,7 +933,7 @@ fn handle_transaction(opts: &EditTransactionCommand, snapshot_file: &str) -> Res
     "Transaction input required: use --file, --code, or pipe a Cirru EDN list of argument lists via stdin (JSON is also accepted)",
   )?;
   let operations = parse_transaction_operations(&raw)?;
-  let report = run_staged_transaction_with(
+  let report = run_staged_transaction_with_preserving_schemas(
     Path::new(snapshot_file),
     &operations,
     opts.expect_revision.as_deref(),
@@ -975,7 +976,8 @@ fn handle_transaction(opts: &EditTransactionCommand, snapshot_file: &str) -> Res
 // ═══════════════════════════════════════════════════════════════════════════════
 
 pub(crate) fn load_snapshot(snapshot_file: &str) -> Result<Snapshot, String> {
-  let content = fs::read_to_string(snapshot_file).map_err(|e| format!("Failed to read {snapshot_file}: {e}"))?;
+  let mut content = fs::read_to_string(snapshot_file).map_err(|e| format!("Failed to read {snapshot_file}: {e}"))?;
+  strip_shebang(&mut content);
 
   let edn = cirru_edn::parse(&content).map_err(|e| format!("Failed to parse EDN: {e}"))?;
 
@@ -1988,12 +1990,16 @@ fn find_edn_struct_value_mut<'a>(struct_value: &'a mut EdnStructView, expected: 
     .find_map(|(key, value)| (key.ref_str() == expected).then_some(value))
 }
 
-fn snapshot_schema_form(root: &mut Edn, namespace: &str, definition: &str) -> Option<Option<Edn>> {
+fn snapshot_file_form<'a>(root: &'a mut Edn, namespace: &str) -> Option<&'a mut Edn> {
   let Edn::Map(root) = root else { return None };
   let Edn::Map(files) = find_edn_map_value_mut(root, "files")? else {
     return None;
   };
-  let Edn::Struct(file) = find_edn_map_value_mut(files, namespace)? else {
+  find_edn_map_value_mut(files, namespace)
+}
+
+fn snapshot_schema_form(root: &mut Edn, namespace: &str, definition: &str) -> Option<Option<Edn>> {
+  let Edn::Struct(file) = snapshot_file_form(root, namespace)? else {
     return None;
   };
   let Edn::Map(defs) = find_edn_struct_value_mut(file, "defs")? else {
@@ -2039,7 +2045,7 @@ fn replace_snapshot_schema_form(root: &mut Edn, namespace: &str, definition: &st
   Ok(())
 }
 
-/// Preserve the surface form of unchanged schemas after typed staged edits.
+/// Preserve untouched file/schema forms and metadata after typed staged edits.
 fn restore_untouched_schema_forms(
   original_content: &str,
   rendered_content: &str,
@@ -2054,7 +2060,7 @@ fn restore_untouched_schema_forms(
   let original_snapshot = snapshot::load_snapshot_data(&original_edn, "staged original")
     .map_err(|error| format!("Failed to load original Snapshot for schema preservation: {error}"))?;
   let mut rendered_source = rendered_content.to_owned();
-  let shebang = rendered_source
+  let shebang = original_content
     .lines()
     .next()
     .filter(|line| line.starts_with("#!"))
@@ -2062,11 +2068,41 @@ fn restore_untouched_schema_forms(
   strip_shebang(&mut rendered_source);
   let mut rendered_edn = cirru_edn::parse(&rendered_source).map_err(|error| format!("Failed to parse staged Snapshot EDN: {error}"))?;
 
+  // Rendering inserts a canonical hint, but preservation must retain metadata
+  // from the staged source rather than turn that hint into an unrelated edit.
+  if let Edn::Map(root) = &mut rendered_edn {
+    root.0.retain(|key, _| !edn_key_matches(key, "about"));
+    if let Some(about) = &staged_snapshot.about {
+      root.insert_key("about", Edn::Str(about.as_str().into()));
+    }
+  }
+
   for (namespace, file) in &original_snapshot.files {
     let Some(staged_file) = staged_snapshot.files.get(namespace) else {
       continue;
     };
     if file.ns != staged_file.ns {
+      continue;
+    }
+    // A metadata-only transaction must retain the entire untouched file form.
+    // Explicit schema edits still request canonicalization even if types match.
+    if file == staged_file
+      && !operations.iter().any(|operation| {
+        operation.first().is_some_and(|group| group == "edit")
+          && operation.get(1).is_some_and(|name| name == "schema")
+          && operation
+            .get(2)
+            .is_some_and(|target| target.split_once('/').is_some_and(|(ns, _)| ns == namespace))
+      })
+    {
+      if let (Edn::Map(original_root), Edn::Map(rendered_root)) = (&mut original_edn, &mut rendered_edn)
+        && let Some(Edn::Map(original_files)) = find_edn_map_value_mut(original_root, "files")
+        && let Some(Edn::Map(rendered_files)) = find_edn_map_value_mut(rendered_root, "files")
+        && let Some((key, value)) = original_files.0.iter().find(|(key, _)| edn_key_matches(key, namespace))
+      {
+        rendered_files.0.retain(|key, _| !edn_key_matches(key, namespace));
+        rendered_files.insert(key.clone(), value.clone());
+      }
       continue;
     }
     for (definition, entry) in &file.defs {
