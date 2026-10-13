@@ -858,12 +858,30 @@ fn extract_import_rule(nodes: &Cirru) -> Result<Vec<ImportMapPair>, String> {
 }
 
 /// Validate import rules before they are persisted or loaded into a program.
-/// Malformed rules return an error; duplicate local bindings return warnings and keep last-rule-wins semantics.
+/// Malformed rules return an error; redundant list markers and duplicate bindings return advisory warnings.
 pub fn validate_import_rules(rules: &[Cirru]) -> Result<Vec<String>, String> {
   let mut bindings: HashMap<Arc<str>, usize> = HashMap::new();
   let mut warnings = vec![];
+  let mut redundant_markers = vec![];
   for (index, rule) in rules.iter().enumerate() {
-    for (binding, _) in extract_import_rule(rule).map_err(|error| format!("import rule {}: {error}", index + 1))? {
+    let imports = extract_import_rule(rule).map_err(|error| format!("import rule {}: {error}", index + 1))?;
+    if let Cirru::List(items) = rule {
+      let has_prefix = items.first().is_some_and(|head| head.eq_leaf("[]"));
+      let items = if has_prefix { &items[1..] } else { items.as_slice() };
+      // Comments are not import rules; their contents must remain uninterpreted.
+      if !items.first().is_some_and(|head| head.eq_leaf(";")) {
+        if has_prefix {
+          redundant_markers.push(format!("rule {} prefix", index + 1));
+        }
+        if let [_, kind, Cirru::List(names)] = items
+          && kind.eq_leaf(":refer")
+          && names.iter().any(|name| name.eq_leaf("[]"))
+        {
+          redundant_markers.push(format!("rule {} :refer list", index + 1));
+        }
+      }
+    }
+    for (binding, _) in imports {
       if let Some(previous_index) = bindings.insert(binding.clone(), index) {
         if previous_index == index {
           warnings.push(format!(
@@ -880,6 +898,12 @@ pub fn validate_import_rules(rules: &[Cirru]) -> Result<Vec<String>, String> {
         }
       }
     }
+  }
+  if !redundant_markers.is_empty() {
+    warnings.push(format!(
+      "redundant `[]` in :require ({}); import rules and :refer names are already syntax lists; write `respo.core :refer $ render! clear-cache!` or `respo.cursor :as cursor` without `[]`. Legacy markers remain accepted; use `edit imports` or `edit add-import --overwrite` to remove them",
+      redundant_markers.join(", ")
+    ));
   }
   Ok(warnings)
 }

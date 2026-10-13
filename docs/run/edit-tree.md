@@ -415,6 +415,10 @@ calcit edit rm-ns app.util
 
 ### Managing Imports
 
+import rule 的前导 `[]` 和 `:refer` 名称列表里的 `[]` 都是多余的，旧写法仍接受但会
+产生 stderr warning。新规则直接写 `respo.core :refer $ div span`；不要把导入规则
+当成运行时 List 构造。
+
 ```bash
 # Add an import to a namespace
 calcit edit add-import app.main --input-format cirru --code 'quote (respo.core :refer $ deftime)'
@@ -435,6 +439,9 @@ quote $ []
 `["[]",["respo.core",":refer",["div","span"]]]`；JSON 只用于必须对接 JSON 的 consumer。
 默认的 `auto` 继续接受旧的规则数组 `[["respo.core",...]]`，但仅作为兼容读取。不要包含外层
 `:require`；命令会自行重建。
+
+这里用于批量传输多条规则的最外层 `quote $ []` 是命令输入容器，不是 namespace
+里面的 import rule，因此不属于上述 warning；同样不要删掉程序中真正构造 List 的 `[]`。
 
 ### Managing Schemas and Examples
 

@@ -17,6 +17,24 @@ entry_for:
 
 # 项目结构：`calcit.cirru` 与 `deps.cirru`
 
+## Namespace 的 require 写法
+
+`:require` 下面每行已经是 Cirru 语法列表，`:refer` 后面用 `$` 形成名称列表，
+两处都不需要运行时 List 构造标记 `[]`：
+
+```cirru.no-check
+ns app.main $ :require
+  respo.core :refer $ render! clear-cache!
+  respo.cursor :refer $ update-state-tree
+  respo-ui.router :as router
+```
+
+旧的 `[] respo.cursor :refer $ [] update-state-tree` 仍按原导入规则解析，但加载与
+import 编辑会在 stderr 给出 warning，标明 namespace、rule 编号和标记位置。
+这是写法提示，不增加类型错误，也不改变 alias、refer、default 或重复绑定的解析语义。
+更新时用 `calcit edit add-import <namespace> --overwrite` 替换已存在的规则，
+多规则修改使用 `edit transaction` 的 dry-run 与 revision 守卫。
+
 ## `calcit.cirru` 的 EDN 结构
 
 Agent 切到新窗口时，把 `calcit.cirru` 看成一个"可执行项目快照"，其顶层 EDN 结构通常是：
@@ -59,7 +77,8 @@ Agent 切到新窗口时，把 `calcit.cirru` 看成一个"可执行项目快照
 - `:files`：源码数据库（namespace → `:ns` + `:defs`；每个定义是 `CodeEntry`，包含 code/doc/examples/schema）。
 - `:modules`：加载的外部模块路径（通常来自项目 `.calcit/modules/`，目录结尾 `/` 补 `calcit.cirru`；旧 `compact.cirru` 模块会被拒绝）。
 
-一般避免直接修改 `calcit.cirru` 文件，因为可能会导致格式出错整体无法解析；如果确实需要修改，要确保修改以后立即执行 `calcit calcit.cirru edit format`。
+程序 Snapshot 只通过 `calcit config` / `edit` / `tree` / `cursor` 修改，写入前读取
+`calcit docs agents --contract`。`edit format` 用于规范化序列化结果，不能代替受保护的结构化编辑。
 
 启动解析顺序（实操最常用）：
 

@@ -29,6 +29,7 @@
 - **查询词汇保持少而稳定**：`query` 输出新增字段或概念前，先确认现有字段无法表达，并记录在 #1566；同一事实只用一个名字。
 - **非 patch 版本允许 breaking change**：为废弃不合理的旧名字和旧用法，非 patch 版本可以删除旧入口；patch 版本不删除入口，也不新增会让严格检查失败的诊断。流程是先发布新入口与 guarded `calcit fix` 规则，下一个非 patch 版本再删除旧入口，并在 `docs/run/upgrade.md` 写明删除项与迁移命令（见 #1458、#1625、#1626、#1627）。
 - **低层构造只留给动态场景**：类型能静态解析时，名义值使用直接构造器（`Person :name |Ada`、`Result :ok value`），不新增 `%{}` / `%::` 用法；两者保留给动态 prototype，Snapshot 中的 `%{} 'CodeEntry` 等记录字面量属于存储格式，不受影响（#1625）。
+- **require 使用 Cirru syntax list**：`:require` 下的 import rule 不加前导 `[]`，`:refer` 名称列表也不加 `[]`；写成 `respo.core :refer $ render! clear-cache!`、`respo.cursor :refer $ update-state-tree` 或 `respo-ui.router :as router`。这些位置本身就是语法列表，不是运行时 List 构造。旧标记仍兼容解析，但会产生 warning；新代码、示例及 CLI 事务不要再引入。
 - **文档先写事实**：用户文档和 README 先说明实际行为、用法和示例，限制集中写在末尾的“限制”小节，每条一句。避免连续的否定式声明，issue 状态、提交 SHA 和 CI 链接只写在 issue 或 PR 中。
 
 ### 测试放置（Calcit-first）
