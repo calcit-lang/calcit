@@ -153,6 +153,25 @@
               assert= true $ try (infer-match-raise false)
                 fn (error) (= error |missing)
             :tags $ #{} :unit
+        'infer-option-presence-without-nil $ %{} 'CodeEntry (:doc "|Option presence is checked with methods or match, not by comparing with nil.")
+          :code $ quote $ defn infer-option-presence-without-nil (enabled)
+            let
+                value $ if enabled (Option :some 1) (Option :none)
+              match value
+                (:some n) n
+                (:none) 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Bool
+          :tests $ [] $ %{} 'TestEntry (:name |option-presence-without-nil)
+            :code $ quote $ do
+              assert= 1 $ infer-option-presence-without-nil true
+              assert= 0 $ infer-option-presence-without-nil false
+              assert= true $ .some? (Option :some 1)
+              assert= true $ .none? (Option :none)
+              assert= 7 $ .unwrap-or (Option :none) 7
+              assert= 1 $ .unwrap-or (Option :some 1) 7
+            :tags $ #{} :unit
         'infer-named-none-fallback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-named-none-fallback ()
             option:unwrap-or (Option :none) 7
