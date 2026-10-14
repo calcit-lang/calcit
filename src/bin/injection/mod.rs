@@ -1926,7 +1926,10 @@ pub fn inject_platform_apis() {
         docs_hint: Some(Arc::from("Fix: use a capability received from native async FFI.")),
         callback_last: false,
         tags: proc_tags(["interop", "io"]),
-        ..Default::default()
+        type_signature: Some(ProcTypeSignature {
+          arg_types: vec![calcit::calcit::DYNAMIC_TYPE.clone(), calcit::calcit::DYNAMIC_TYPE.clone()],
+          return_type: Arc::new(CalcitTypeAnnotation::Unit),
+        }),
       },
     );
   }
