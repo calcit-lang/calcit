@@ -329,7 +329,7 @@ export let foldl = function (xs: CalcitValue, acc: CalcitValue, f: CalcitFn): Ca
   throw new Error("Unknown data for foldl");
 };
 
-export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: CalcitValue, f: CalcitFn): CalcitValue {
+export let _$n_list_$o_foldl_shortcut = function foldl_shortcut(xs: CalcitValue, acc: CalcitValue, v0: CalcitValue, f: CalcitFn): CalcitValue {
   if (arguments.length !== 4) {
     throw new Error("foldl-shortcut takes 4 arguments");
   }
@@ -420,6 +420,9 @@ export let foldl_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: Cal
   }
   throw new Error("Unknown data for foldl-shortcut");
 };
+// Keep the public compatibility bridge independent from internal codegen.
+export let foldl_shortcut = _$n_list_$o_foldl_shortcut;
+
 export let foldr_shortcut = function (xs: CalcitValue, acc: CalcitValue, v0: CalcitValue, f: CalcitFn): CalcitValue {
   if (arguments.length !== 4) {
     throw new Error("foldr-shortcut takes 4 arguments");
