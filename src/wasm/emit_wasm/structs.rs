@@ -595,6 +595,9 @@ pub(super) fn emit_struct_get_name(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
   Ok(())
 }
 
+// Native and JS return `Option :none` for anonymous structs. Anonymous structs come from
+// `&loose-struct`, which WASM codegen rejects, so every struct value reaching this
+// emitter has a definition and the result is always `Option :some`.
 pub(super) fn emit_struct_def(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "&struct:definition requires 1 arg (struct)")?;
 

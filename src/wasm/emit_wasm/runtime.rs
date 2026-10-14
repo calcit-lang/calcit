@@ -4061,6 +4061,11 @@ pub(super) fn build_runtime_fns(
   fn_index.insert(String::from("__rt_parse_float"), parse_float_idx);
   fns.push(build_rt_parse_float());
 
+  // &parse-float validity: __rt_parse_float_valid(s: f64) → f64 (1.0 when the text is a float literal)
+  let parse_float_valid_idx = base_index + fns.len() as u32;
+  fn_index.insert(String::from("__rt_parse_float_valid"), parse_float_valid_idx);
+  fns.push(build_rt_parse_float_valid());
+
   // char-from-code: __rt_char_from_code(cp: f64) → f64 (single-char string ptr)
   let char_from_code_idx = base_index + fns.len() as u32;
   fn_index.insert(String::from("__rt_char_from_code"), char_from_code_idx);
@@ -7271,6 +7276,39 @@ fn build_rt_parse_float() -> CompiledFn {
   b.push(Instruction::F64Const(Ieee64::from(0.0f64)));
   b.push(Instruction::LocalSet(7));
 
+  // `inf` / `infinity` / `nan` spellings (validated by __rt_parse_float_valid):
+  // set the result and consume the rest so the digit loops are skipped.
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::LocalGet(2));
+  b.push(Instruction::I32LtU);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::LocalGet(3));
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.push(Instruction::I32Const(0x20));
+  b.push(Instruction::I32Or);
+  b.push(Instruction::LocalSet(6));
+  b.push(Instruction::LocalGet(6));
+  b.push(Instruction::I32Const(b'i' as i32));
+  b.push(Instruction::I32Eq);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::F64Const(Ieee64::from(f64::INFINITY)));
+  b.push(Instruction::LocalSet(7));
+  b.push(Instruction::LocalGet(2));
+  b.push(Instruction::LocalSet(4));
+  b.push(Instruction::End);
+  b.push(Instruction::LocalGet(6));
+  b.push(Instruction::I32Const(b'n' as i32));
+  b.push(Instruction::I32Eq);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::F64Const(Ieee64::from(f64::NAN)));
+  b.push(Instruction::LocalSet(7));
+  b.push(Instruction::LocalGet(2));
+  b.push(Instruction::LocalSet(4));
+  b.push(Instruction::End);
+  b.push(Instruction::End);
+
   // Integer digit loop
   b.push(Instruction::Block(BlockType::Empty));
   b.push(Instruction::Loop(BlockType::Empty));
@@ -7376,12 +7414,133 @@ fn build_rt_parse_float() -> CompiledFn {
   b.push(Instruction::End); // end if '.'
   b.push(Instruction::End); // end if i < byte_len
 
+  // Optional decimal exponent: e|E [+-] digits
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::LocalGet(2));
+  b.push(Instruction::I32LtU);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::LocalGet(3));
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.push(Instruction::I32Const(0x20));
+  b.push(Instruction::I32Or);
+  b.push(Instruction::I32Const(b'e' as i32));
+  b.push(Instruction::I32Eq);
+  b.push(Instruction::If(BlockType::Empty));
+  // i++ ; esign = 0 ; exp = 0
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::I32Const(1));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalSet(4));
+  b.push(Instruction::I32Const(0));
+  b.push(Instruction::LocalSet(10));
+  b.push(Instruction::I32Const(0));
+  b.push(Instruction::LocalSet(9));
+  // optional exponent sign
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::LocalGet(2));
+  b.push(Instruction::I32LtU);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::LocalGet(3));
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.push(Instruction::LocalSet(6));
+  b.push(Instruction::LocalGet(6));
+  b.push(Instruction::I32Const(b'-' as i32));
+  b.push(Instruction::I32Eq);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::I32Const(1));
+  b.push(Instruction::LocalSet(10));
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::I32Const(1));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalSet(4));
+  b.push(Instruction::Else);
+  b.push(Instruction::LocalGet(6));
+  b.push(Instruction::I32Const(b'+' as i32));
+  b.push(Instruction::I32Eq);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::I32Const(1));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalSet(4));
+  b.push(Instruction::End);
+  b.push(Instruction::End);
+  b.push(Instruction::End);
+  // exponent digits, saturating at 1000
+  b.push(Instruction::Block(BlockType::Empty));
+  b.push(Instruction::Loop(BlockType::Empty));
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::LocalGet(2));
+  b.push(Instruction::I32GeU);
+  b.push(Instruction::BrIf(1));
+  b.push(Instruction::LocalGet(3));
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::I32Load8U(mem_arg_byte(0)));
+  b.push(Instruction::LocalSet(6));
+  b.push(Instruction::LocalGet(6));
+  b.push(Instruction::I32Const(b'0' as i32));
+  b.push(Instruction::I32LtU);
+  b.push(Instruction::BrIf(1));
+  b.push(Instruction::LocalGet(6));
+  b.push(Instruction::I32Const(b'9' as i32));
+  b.push(Instruction::I32GtU);
+  b.push(Instruction::BrIf(1));
+  b.push(Instruction::LocalGet(9));
+  b.push(Instruction::I32Const(1000));
+  b.push(Instruction::I32LtU);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::LocalGet(9));
+  b.push(Instruction::I32Const(10));
+  b.push(Instruction::I32Mul);
+  b.push(Instruction::LocalGet(6));
+  b.push(Instruction::I32Const(b'0' as i32));
+  b.push(Instruction::I32Sub);
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalSet(9));
+  b.push(Instruction::End);
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::I32Const(1));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalSet(4));
+  b.push(Instruction::Br(0));
+  b.push(Instruction::End);
+  b.push(Instruction::End);
+  // scale: repeat exp times (exp <= ~10000)
+  b.push(Instruction::Block(BlockType::Empty));
+  b.push(Instruction::Loop(BlockType::Empty));
+  b.push(Instruction::LocalGet(9));
+  b.push(Instruction::I32Eqz);
+  b.push(Instruction::BrIf(1));
+  b.push(Instruction::LocalGet(10));
+  b.push(Instruction::If(BlockType::Result(ValType::F64)));
+  b.push(Instruction::LocalGet(7));
+  b.push(Instruction::F64Const(Ieee64::from(10.0f64)));
+  b.push(Instruction::F64Div);
+  b.push(Instruction::Else);
+  b.push(Instruction::LocalGet(7));
+  b.push(Instruction::F64Const(Ieee64::from(10.0f64)));
+  b.push(Instruction::F64Mul);
+  b.push(Instruction::End);
+  b.push(Instruction::LocalSet(7));
+  b.push(Instruction::LocalGet(9));
+  b.push(Instruction::I32Const(1));
+  b.push(Instruction::I32Sub);
+  b.push(Instruction::LocalSet(9));
+  b.push(Instruction::Br(0));
+  b.push(Instruction::End);
+  b.push(Instruction::End);
+  b.push(Instruction::End); // end if e
+  b.push(Instruction::End); // end if i < byte_len
+
   // Apply sign
   b.push(Instruction::LocalGet(5));
   b.push(Instruction::If(BlockType::Empty));
-  b.push(Instruction::F64Const(Ieee64::from(0.0f64)));
   b.push(Instruction::LocalGet(7));
-  b.push(Instruction::F64Sub);
+  b.push(Instruction::F64Neg);
   b.push(Instruction::LocalSet(7));
   b.push(Instruction::End);
 
@@ -7400,7 +7559,227 @@ fn build_rt_parse_float() -> CompiledFn {
       ValType::I32, // b (6)
       ValType::F64, // result (7)
       ValType::F64, // frac_mult (8)
+      ValType::I32, // exp (9)
+      ValType::I32, // exp_neg (10)
     ],
+    instructions: b,
+  }
+}
+
+/// `__rt_parse_float_valid(s: f64) → f64`
+///
+/// Returns 1.0 when the whole text is a float literal accepted by native
+/// `str::parse::<f64>`: optional sign, then `inf` / `infinity` / `nan` in any
+/// case, or digits with an optional fraction (at least one digit overall) and
+/// an optional exponent with at least one digit. No surrounding whitespace.
+#[allow(clippy::vec_init_then_push)]
+fn build_rt_parse_float_valid() -> CompiledFn {
+  // params: 0=s(f64)
+  // locals: 1=ptr, 2=len, 3=content, 4=i, 5=b, 6=digits, 7=ok, 8=edigits (all i32)
+  let mut b: Vec<Instruction> = Vec::new();
+  let byte_at_i = |b: &mut Vec<Instruction<'static>>| {
+    b.push(Instruction::LocalGet(3));
+    b.push(Instruction::LocalGet(4));
+    b.push(Instruction::I32Add);
+    b.push(Instruction::I32Load8U(mem_arg_byte(0)));
+    b.push(Instruction::LocalSet(5));
+  };
+  let inc_i = |b: &mut Vec<Instruction<'static>>| {
+    b.push(Instruction::LocalGet(4));
+    b.push(Instruction::I32Const(1));
+    b.push(Instruction::I32Add);
+    b.push(Instruction::LocalSet(4));
+  };
+  // Consume ASCII digits, counting them in `counter`.
+  let digit_loop = |b: &mut Vec<Instruction<'static>>, counter: u32| {
+    b.push(Instruction::Block(BlockType::Empty));
+    b.push(Instruction::Loop(BlockType::Empty));
+    b.push(Instruction::LocalGet(4));
+    b.push(Instruction::LocalGet(2));
+    b.push(Instruction::I32GeU);
+    b.push(Instruction::BrIf(1));
+    b.push(Instruction::LocalGet(3));
+    b.push(Instruction::LocalGet(4));
+    b.push(Instruction::I32Add);
+    b.push(Instruction::I32Load8U(mem_arg_byte(0)));
+    b.push(Instruction::LocalSet(5));
+    b.push(Instruction::LocalGet(5));
+    b.push(Instruction::I32Const(b'0' as i32));
+    b.push(Instruction::I32LtU);
+    b.push(Instruction::BrIf(1));
+    b.push(Instruction::LocalGet(5));
+    b.push(Instruction::I32Const(b'9' as i32));
+    b.push(Instruction::I32GtU);
+    b.push(Instruction::BrIf(1));
+    b.push(Instruction::LocalGet(counter));
+    b.push(Instruction::I32Const(1));
+    b.push(Instruction::I32Add);
+    b.push(Instruction::LocalSet(counter));
+    b.push(Instruction::LocalGet(4));
+    b.push(Instruction::I32Const(1));
+    b.push(Instruction::I32Add);
+    b.push(Instruction::LocalSet(4));
+    b.push(Instruction::Br(0));
+    b.push(Instruction::End);
+    b.push(Instruction::End);
+  };
+
+  b.push(Instruction::LocalGet(0));
+  b.push(Instruction::I32TruncF64U);
+  b.push(Instruction::LocalSet(1));
+  b.push(Instruction::LocalGet(1));
+  b.push(Instruction::F64Load(mem_arg_f64(0)));
+  b.push(Instruction::I32TruncF64U);
+  b.push(Instruction::LocalSet(2));
+  b.push(Instruction::LocalGet(1));
+  b.push(Instruction::I32Const(8));
+  b.push(Instruction::I32Add);
+  b.push(Instruction::LocalSet(3));
+  b.push(Instruction::I32Const(0));
+  b.push(Instruction::LocalSet(4));
+  b.push(Instruction::I32Const(0));
+  b.push(Instruction::LocalSet(7));
+  b.push(Instruction::I32Const(0));
+  b.push(Instruction::LocalSet(6));
+  b.push(Instruction::I32Const(0));
+  b.push(Instruction::LocalSet(8));
+
+  // optional sign
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::LocalGet(2));
+  b.push(Instruction::I32LtU);
+  b.push(Instruction::If(BlockType::Empty));
+  byte_at_i(&mut b);
+  b.push(Instruction::LocalGet(5));
+  b.push(Instruction::I32Const(b'-' as i32));
+  b.push(Instruction::I32Eq);
+  b.push(Instruction::LocalGet(5));
+  b.push(Instruction::I32Const(b'+' as i32));
+  b.push(Instruction::I32Eq);
+  b.push(Instruction::I32Or);
+  b.push(Instruction::If(BlockType::Empty));
+  inc_i(&mut b);
+  b.push(Instruction::End);
+  b.push(Instruction::End);
+
+  // Case-insensitive spellings: the rest must equal one word exactly.
+  // Local 6 doubles as the "special matched" flag until the numeric path starts.
+  for word in ["inf", "infinity", "nan"] {
+    // matched = (len - i == word.len())
+    b.push(Instruction::LocalGet(2));
+    b.push(Instruction::LocalGet(4));
+    b.push(Instruction::I32Sub);
+    b.push(Instruction::I32Const(word.len() as i32));
+    b.push(Instruction::I32Eq);
+    b.push(Instruction::If(BlockType::Empty));
+    for (k, ch) in word.bytes().enumerate() {
+      // if (content[i + k] | 0x20) != ch then mismatch
+      b.push(Instruction::LocalGet(3));
+      b.push(Instruction::LocalGet(4));
+      b.push(Instruction::I32Add);
+      b.push(Instruction::I32Load8U(mem_arg_byte(k as u64)));
+      b.push(Instruction::I32Const(0x20));
+      b.push(Instruction::I32Or);
+      b.push(Instruction::I32Const(ch as i32));
+      b.push(Instruction::I32Ne);
+      b.push(Instruction::If(BlockType::Empty));
+      b.push(Instruction::I32Const(-1));
+      b.push(Instruction::LocalSet(8));
+      b.push(Instruction::End);
+    }
+    // local 8 stays 0 when every byte matched
+    b.push(Instruction::LocalGet(8));
+    b.push(Instruction::I32Eqz);
+    b.push(Instruction::If(BlockType::Empty));
+    b.push(Instruction::I32Const(1));
+    b.push(Instruction::LocalSet(7));
+    b.push(Instruction::End);
+    b.push(Instruction::I32Const(0));
+    b.push(Instruction::LocalSet(8));
+    b.push(Instruction::End);
+  }
+
+  // Numeric path only when no spelling matched.
+  b.push(Instruction::LocalGet(7));
+  b.push(Instruction::I32Eqz);
+  b.push(Instruction::If(BlockType::Empty));
+  digit_loop(&mut b, 6);
+  // optional fraction
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::LocalGet(2));
+  b.push(Instruction::I32LtU);
+  b.push(Instruction::If(BlockType::Empty));
+  byte_at_i(&mut b);
+  b.push(Instruction::LocalGet(5));
+  b.push(Instruction::I32Const(b'.' as i32));
+  b.push(Instruction::I32Eq);
+  b.push(Instruction::If(BlockType::Empty));
+  inc_i(&mut b);
+  digit_loop(&mut b, 6);
+  b.push(Instruction::End);
+  b.push(Instruction::End);
+  // at least one mantissa digit
+  b.push(Instruction::LocalGet(6));
+  b.push(Instruction::If(BlockType::Empty));
+  // ok = 1 unless a malformed exponent follows
+  b.push(Instruction::I32Const(1));
+  b.push(Instruction::LocalSet(7));
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::LocalGet(2));
+  b.push(Instruction::I32LtU);
+  b.push(Instruction::If(BlockType::Empty));
+  byte_at_i(&mut b);
+  b.push(Instruction::LocalGet(5));
+  b.push(Instruction::I32Const(0x20));
+  b.push(Instruction::I32Or);
+  b.push(Instruction::I32Const(b'e' as i32));
+  b.push(Instruction::I32Eq);
+  b.push(Instruction::If(BlockType::Empty));
+  inc_i(&mut b);
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::LocalGet(2));
+  b.push(Instruction::I32LtU);
+  b.push(Instruction::If(BlockType::Empty));
+  byte_at_i(&mut b);
+  b.push(Instruction::LocalGet(5));
+  b.push(Instruction::I32Const(b'-' as i32));
+  b.push(Instruction::I32Eq);
+  b.push(Instruction::LocalGet(5));
+  b.push(Instruction::I32Const(b'+' as i32));
+  b.push(Instruction::I32Eq);
+  b.push(Instruction::I32Or);
+  b.push(Instruction::If(BlockType::Empty));
+  inc_i(&mut b);
+  b.push(Instruction::End);
+  b.push(Instruction::End);
+  digit_loop(&mut b, 8);
+  b.push(Instruction::LocalGet(8));
+  b.push(Instruction::I32Eqz);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::I32Const(0));
+  b.push(Instruction::LocalSet(7));
+  b.push(Instruction::End);
+  b.push(Instruction::End);
+  b.push(Instruction::End);
+  // the whole text must be consumed
+  b.push(Instruction::LocalGet(4));
+  b.push(Instruction::LocalGet(2));
+  b.push(Instruction::I32Ne);
+  b.push(Instruction::If(BlockType::Empty));
+  b.push(Instruction::I32Const(0));
+  b.push(Instruction::LocalSet(7));
+  b.push(Instruction::End);
+  b.push(Instruction::End); // end if digits
+  b.push(Instruction::End); // end numeric path
+
+  b.push(Instruction::LocalGet(7));
+  b.push(Instruction::F64ConvertI32U);
+
+  CompiledFn {
+    export_name: None,
+    params: vec![ValType::F64],
+    results: vec![ValType::F64],
+    locals: vec![ValType::I32; 8],
     instructions: b,
   }
 }

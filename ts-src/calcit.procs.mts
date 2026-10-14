@@ -1715,7 +1715,6 @@ export let _$n_get_env = (name: string): CalcitValue => {
     v = new URLSearchParams(location.search).get(name);
   }
   if (v == null) {
-    console.warn(`(get-env "${name}"): config not found`);
     return option_none();
   }
   return option_some(v);

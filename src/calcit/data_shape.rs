@@ -39,6 +39,11 @@ pub(crate) fn invalidate_field_write_shapes() {
   FIELD_WRITE_GENERATION.fetch_add(1, Ordering::AcqRel);
 }
 
+/// Current registry generation; derived caches compare it to detect program changes.
+pub(crate) fn program_registry_generation() -> usize {
+  FIELD_WRITE_GENERATION.load(Ordering::Acquire)
+}
+
 /// Scoped type slots are thread-local and must not reuse another binding's graph.
 pub(crate) fn clear_local_field_write_shapes() {
   FIELD_WRITE_CACHE.with(|cache| *cache.borrow_mut() = FieldWriteCache::default());

@@ -1248,38 +1248,69 @@ mod tests {
     )
   }
 
-  #[test]
-  fn strict_macro_runtime_path_enforces_declared_env_reads() {
-    let body = vec![Calcit::from(vec![
-      Calcit::Proc(CalcitProc::GetEnv),
-      Calcit::new_str("CALCIT_TEST_CAPABILITY_MISSING_ENV"),
-    ])];
-    let pure = strict_test_macro("read-env", body.clone(), HashSet::new());
-    let error = call_zero_arg_macro(&pure).expect_err("undeclared compile-time env read must fail");
-    assert_eq!(error.code(), Some("E_MACRO_CAPABILITY_MISSING"));
+  /// Load the bundled core so `&get-env` can build its `Option` result.
+  fn load_core_for_env_tests() -> crate::program::ProgramTestStateGuard {
+    let guard = crate::program::lock_program_test_state();
+    let core = crate::load_core_snapshot().expect("embedded core");
+    crate::program::PROGRAM_CODE_DATA
+      .write()
+      .unwrap()
+      .extend(crate::program::extract_program_data(&core).expect("core source"));
+    guard
+  }
 
-    let declared = strict_test_macro("read-env", body, HashSet::from([MacroCapability::EnvRead]));
-    // The unit-test program has no core `Option`, so the read may still fail to
-    // build its result; it must not fail on the capability check.
-    if let Err(e) = call_zero_arg_macro(&declared) {
-      assert_ne!(e.code(), Some("E_MACRO_CAPABILITY_MISSING"));
+  /// Compiling core `Option` evaluates deep macro expansions; run on a larger stack than the test default.
+  fn on_large_stack(body: impl FnOnce() + Send + 'static) {
+    std::thread::Builder::new()
+      .stack_size(64 * 1024 * 1024)
+      .spawn(body)
+      .expect("spawn test thread")
+      .join()
+      .expect("test thread panicked");
+  }
+
+  fn assert_option_none(value: &Calcit) {
+    match value {
+      Calcit::Enum(e) => {
+        assert_eq!(e.tag.as_ref(), &Calcit::tag("none"));
+        assert!(e.extra.is_empty());
+      }
+      other => panic!("expected Option :none, got {other}"),
     }
   }
 
   #[test]
+  fn strict_macro_runtime_path_enforces_declared_env_reads() {
+    on_large_stack(|| {
+      let _guard = load_core_for_env_tests();
+      let body = vec![Calcit::from(vec![
+        Calcit::Proc(CalcitProc::GetEnv),
+        Calcit::new_str("CALCIT_TEST_CAPABILITY_MISSING_ENV"),
+      ])];
+      let pure = strict_test_macro("read-env", body.clone(), HashSet::new());
+      let error = call_zero_arg_macro(&pure).expect_err("undeclared compile-time env read must fail");
+      assert_eq!(error.code(), Some("E_MACRO_CAPABILITY_MISSING"));
+
+      let declared = strict_test_macro("read-env", body, HashSet::from([MacroCapability::EnvRead]));
+      assert_option_none(&call_zero_arg_macro(&declared).expect("declared env read"));
+    });
+  }
+
+  #[test]
   fn strict_macro_may_emit_runtime_env_read_without_capability() {
-    let runtime_call = Calcit::from(vec![
-      Calcit::Proc(CalcitProc::GetEnv),
-      Calcit::new_str("CALCIT_TEST_CAPABILITY_MISSING_ENV"),
-    ]);
-    let body = vec![Calcit::from(vec![
-      Calcit::Syntax(CalcitSyntax::Quote, Arc::from("tests.runner")),
-      runtime_call,
-    ])];
-    let emitting_macro = strict_test_macro("emit-env", body, HashSet::new());
-    if let Err(e) = call_zero_arg_macro(&emitting_macro) {
-      assert_ne!(e.code(), Some("E_MACRO_CAPABILITY_MISSING"), "emitting runtime effect stays pure");
-    }
+    on_large_stack(|| {
+      let _guard = load_core_for_env_tests();
+      let runtime_call = Calcit::from(vec![
+        Calcit::Proc(CalcitProc::GetEnv),
+        Calcit::new_str("CALCIT_TEST_CAPABILITY_MISSING_ENV"),
+      ]);
+      let body = vec![Calcit::from(vec![
+        Calcit::Syntax(CalcitSyntax::Quote, Arc::from("tests.runner")),
+        runtime_call,
+      ])];
+      let emitting_macro = strict_test_macro("emit-env", body, HashSet::new());
+      assert_option_none(&call_zero_arg_macro(&emitting_macro).expect("emitting runtime effect stays pure"));
+    });
   }
 
   fn local_value(name: &str, idx: u16) -> Calcit {

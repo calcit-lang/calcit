@@ -1507,12 +1507,26 @@ pub(super) fn emit_get_char_code(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   Ok(())
 }
 
-/// `parse-float` — parse a decimal string to f64.
-pub(super) fn emit_parse_float(_ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+/// `&parse-float` — `Option :some number` for a float literal, `Option :none` otherwise.
+pub(super) fn emit_parse_float(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "&parse-float")?;
-  // `&parse-float` returns `Option :none` for invalid text, but `__rt_parse_float`
-  // cannot report invalid input, so the primitive stays unsupported (#1554).
-  Err("&parse-float is not supported in WASM codegen: the runtime parser cannot signal invalid input".into())
+  emit_expr(ctx, &args[0])?;
+  let text = ctx.alloc_local();
+  ctx.emit(Instruction::LocalSet(text));
+  ctx.emit(Instruction::LocalGet(text));
+  ctx.call_rt("__rt_parse_float_valid");
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Ne);
+  ctx.emit(Instruction::If(BlockType::Result(ValType::F64)));
+  ctx.emit(Instruction::LocalGet(text));
+  ctx.call_rt("__rt_parse_float");
+  let value = ctx.alloc_local();
+  ctx.emit(Instruction::LocalSet(value));
+  emit_option_enum(ctx, Some(value))?;
+  ctx.emit(Instruction::Else);
+  emit_option_enum(ctx, None)?;
+  ctx.emit(Instruction::End);
+  Ok(())
 }
 
 /// `char-from-code` — encode a Unicode codepoint as a single-character heap string.

@@ -399,11 +399,12 @@ try {
     }
   }
   assert.deepEqual(await readFile(snapshot), stringOptionOriginal);
-  for (const [name, input, body] of [
-    ["raw-first", "'String", "assert-type (&str:first value) 'String"],
-    ["raw-nth", "'String", "assert-type (&str:nth value 0) 'String"],
-    ["open-list-item", "(:: 'List 'Dynamic)", "assert-type (&list:nth value 0) 'String"],
-    ["open-value", "'Dynamic", "assert-type value 'String"],
+  for (const [name, input, body, diagnostic] of [
+    // The raw primitives return Option<String>, a proven mismatch rather than missing evidence.
+    ["raw-first", "'String", "assert-type (&str:first value) 'String", /E_ASSERT_TYPE_MISMATCH/],
+    ["raw-nth", "'String", "assert-type (&str:nth value 0) 'String", /E_ASSERT_TYPE_MISMATCH/],
+    ["open-list-item", "(:: 'List 'Dynamic)", "assert-type (&list:nth value 0) 'String", /E_ASSERT_TYPE_UNPROVEN/],
+    ["open-value", "'Dynamic", "assert-type value 'String", /E_ASSERT_TYPE_UNPROVEN/],
   ]) {
     run("edit", "def", `app.string-option/${name}`, "--input-format", "cirru", "--code",
       `quote $ defn ${name} (value) (${body})`);
@@ -414,7 +415,7 @@ try {
       "--ns", "app.string-option", "--def", name, "--format", "edn"], options);
     if (rejected.error) throw rejected.error;
     assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
-    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_ASSERT_TYPE_UNPROVEN|E_ASSERT_TYPE_MISMATCH/);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, diagnostic);
     assert.deepEqual(await readFile(snapshot), before);
   }
   // #2008 / #1553: enum construction must preserve caller generics after

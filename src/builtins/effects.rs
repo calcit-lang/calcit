@@ -120,10 +120,12 @@ pub fn get_env(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Str(s)) => match env::var(&**s) {
       Ok(v) => option_value::some(Calcit::Str(v.into())),
-      Err(e) => {
-        eprintln!("(get-env {s}): {e}");
-        option_value::none()
-      }
+      // A missing variable is the ordinary `none` case and stays silent.
+      Err(env::VarError::NotPresent) => option_value::none(),
+      Err(e @ env::VarError::NotUnicode(_)) => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("get-env {s}: environment value is not valid unicode: {e}"),
+      ),
     },
     Some(a) => {
       let msg = format!(

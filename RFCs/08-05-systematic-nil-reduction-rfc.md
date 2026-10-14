@@ -97,9 +97,9 @@ JS FFI 是无法立即消除的宿主空值边界。原生属性读取、方法�
 
 - 内建过程用独立 arity 元数据表示末尾可省略参数；
 - proc 参数检查不再剥离 `Optional<T>`；
-- 将底层 `&parse-float` 和 `&get-env` proc 的 nullable 返回标成 Optional，作为公开名义 API 之下的兼容边界；
+- 底层 `&parse-float` 和 `&get-env` proc 最初把 nullable 返回标成 Optional，作为公开名义 API 之下的兼容边界；#1554 已把它们改为直接返回名义 `Option`；
 - 将 `rest` / `butlast` 对空 List 的结果统一为同类型空 List，并同步 Native、JS、WASM；`rest` 与 `empty` 的公开契约改为 `T -> T`，因此确定存在的集合/String 不再被无条件提升为 Optional，而显式 Optional/nil 输入仍保留其可空类型；
-- 公开 core 的 `first`、`last`、`nth`、`get`、`get-in` schema 返回名义 `Option`；内部 `&list:first`、`&list:nth`、`&map:get` 等 raw primitive 保留 nullable 表示并标记为 internal；
+- 公开 core 的 `first`、`last`、`nth`、`get`、`get-in` schema 返回名义 `Option`；内部 `&list:first`、`&list:last`、`&map:get`、`&map:destruct`、`&set:destruct`、`&str:first`、`&str:nth`、`&get-in`、`&enum:definition`、`&struct:definition`、`&impl:origin` 等 raw primitive 在 #1554 中改为直接返回名义 `Option` 并标记为 internal（`&list:nth` 仍按下标越界报错，不返回缺失值）；
 - `analyze weak-types` 将裸 `nil` 与 `;nil` 都纳入审计，仅在结构上可证明的返回位置读取函数契约，并区分 `declared-unit`、`declared-optional` 与 `unresolved`；三类都属于迁移债务并由 JSON 发出 `W_NIL_TYPE_DEBT`；
 - `analyze.weak-types` 的机器协议升级到 schema v2，避免旧消费者在 v1 下错误接受新增的封闭 intent/diagnostic 枚举；
 - 修正既有 `optionally` 桥接函数的契约为 `Optional<T> -> Option<T>`，为遗留 nullable 边界提供不丢失类型关系的显式出口；

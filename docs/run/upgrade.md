@@ -50,7 +50,7 @@ let
 
 `&get-env name fallback` 现在是 arity 错误，写成 `.unwrap-or (&get-env name) fallback`。`let{}` 对 `nil` 绑定仍按缺失处理，但展开改为 `match`，绑定的类型是 `T?`。依赖旧 nil 行为的 Calcit 测试（例如 `read-env-default` 一类固定 nil 的断言）已删除，改为直接断言 `Option`。
 
-WASM / WASI：`&list:first`、`&list:last`、`&map:get`、`&map:destruct`、`&set:destruct`、`&str:first`、`&str:nth`、`&struct:definition` 与 `&get-env` 返回 Option；`&parse-float` 的运行时解析器无法报告非法输入，`&enum:definition`、`&impl:origin` 尚无 WASM 实现，仍按显式 unsupported 处理。
+WASM / WASI：`&list:first`、`&list:last`、`&map:get`、`&map:destruct`、`&set:destruct`、`&str:first`、`&str:nth`、`&struct:definition`、`&get-env` 与 `&parse-float` 返回 Option；`&enum:definition`、`&impl:origin` 尚无 WASM 实现，仍按显式 unsupported 处理。
 
 ## 0.30.0 日志返回 Unit
 
