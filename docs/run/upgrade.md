@@ -42,11 +42,10 @@ related:
 迁移方式：把对结果的 `nil?` 判断改成 `match`，或用 `option:unwrap-or`、`.unwrap-or` 给默认值。
 
 ```cirru
-; 旧：nil 表示缺失
-if (nil? (&map:get m :k)) |default (&map:get m :k)
-
-; 新：Option 表示缺失
-.unwrap-or (&map:get m :k) |default
+; 旧写法用 nil? 判断 (&map:get m :k) 是否缺失；新写法用 Option
+let
+    m $ {} (:a |x)
+  .unwrap-or (&map:get m :k) |default
 ```
 
 `&get-env name fallback` 现在是 arity 错误，写成 `.unwrap-or (&get-env name) fallback`。`let{}` 对 `nil` 绑定仍按缺失处理，但展开改为 `match`，绑定的类型是 `T?`。依赖旧 nil 行为的 Calcit 测试（例如 `read-env-default` 一类固定 nil 的断言）已删除，改为直接断言 `Option`。
