@@ -672,6 +672,15 @@ fn ffi_target_name(entry: &snapshot::CodeEntry, fallback: Option<snapshot::Snaps
   )
 }
 
+fn selected_js_implementation(entry: &snapshot::CodeEntry) -> Result<Option<calcit::js_ffi_source::JsFfiImplementation>, String> {
+  entry
+    .ffi
+    .as_ref()
+    .map(|ffi| calcit::js_ffi_source::validate_js_source(ffi, entry.schema.as_ref()))
+    .transpose()
+    .map(Option::flatten)
+}
+
 fn schema_cirru_edn(schema: &CalcitTypeAnnotation) -> Result<String, String> {
   cirru_edn::format(&snapshot::schema_annotation_to_edn(schema), true)
     .map_err(|error| format!("Failed to render FFI adapter schema: {error}"))
@@ -1790,13 +1799,8 @@ pub fn collect_ffi_boundary_evidence(
         .get(namespace)
         .map(|file| ffi_import_bindings(&file.ns.code))
         .unwrap_or_default();
-      let js_implementation = match entry
-        .ffi
-        .as_ref()
-        .map(|ffi| calcit::js_ffi_source::validate_js_source(ffi, entry.schema.as_ref()))
-        .transpose()
-      {
-        Ok(implementation) => implementation.flatten(),
+      let js_implementation = match selected_js_implementation(entry) {
+        Ok(implementation) => implementation,
         Err(error) => {
           target_error = Some(format!("Invalid FFI metadata for {namespace}/{definition}: {error}"));
           return;
@@ -1861,6 +1865,14 @@ pub fn collect_ffi_boundary_evidence(
         for (caller_def, caller_entry) in &file.defs {
           if caller_ns == namespace && caller_def == definition {
             continue;
+          }
+          match selected_js_implementation(caller_entry) {
+            Ok(Some(_)) => continue,
+            Ok(None) => {}
+            Err(error) => {
+              target_error = Some(format!("Invalid FFI metadata for {caller_ns}/{caller_def}: {error}"));
+              return;
+            }
           }
           if code_calls_definition(&caller_entry.code, caller_ns, namespace, definition) {
             callers.push(format!("{caller_ns}/{caller_def}"));

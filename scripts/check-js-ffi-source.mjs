@@ -25,16 +25,24 @@ try {
   // The active inline/file sources, not deliberately invalid shadow bodies, own execution.
   const shadowOperations = [
     ["edit", "def", "app.main/plus-one", "--overwrite", "--input-format", "cirru", "--code",
-      "quote $ defn plus-one (value) (&map:get value :not-a-map)"],
+      "quote $ defn plus-one (value) (app.main/plus-two value) (&map:get value :not-a-map)"],
     ["edit", "def", "app.main/plus-two", "--overwrite", "--input-format", "cirru", "--code",
       "quote $ defn plus-two (value) |unselected-string-return"],
+    ["edit", "def", "app.main/real-caller", "--input-format", "cirru", "--code",
+      "quote $ defn real-caller (value) (plus-two value)"],
+    ["edit", "schema", "app.main/real-caller", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)"],
   ];
   const shadowPreview = JSON.parse(run(moduleSnapshot, "edit", "transaction", "--code", JSON.stringify(shadowOperations), "--dry-run", "--format", "json"));
   run(moduleSnapshot, "edit", "transaction", "--code", JSON.stringify(shadowOperations), "--expect-revision", shadowPreview.scoped_revision, "--format", "json");
   const unitCase = JSON.parse(run(moduleSnapshot, "query", "def", "app.main/unit-adapter", "--format", "json")).data.tests;
   assert.equal(unitCase.length, 1, "keep the definition-attached Unit boundary contract");
-  const unitOperations = [["tree", "insert", "test-nil.main/main!", "--path", "@3", "--at", "before", "--input-format", "cirru", "--code",
-    "quote $ assert= &unit $ app.main/unit-adapter"]];
+  const unitOperations = [
+    ["tree", "insert", "test-nil.main/main!", "--path", "@3", "--at", "before", "--input-format", "cirru", "--code",
+      "quote $ assert= &unit $ app.main/unit-adapter"],
+    ["tree", "insert", "test-nil.main/main!", "--path", "@3", "--at", "before", "--input-format", "cirru", "--code",
+      "quote $ assert= 4 $ app.main/real-caller 2"],
+  ];
   const unitPreview = JSON.parse(run(input, "edit", "transaction", "--code", JSON.stringify(unitOperations), "--dry-run", "--format", "json"));
   run(input, "edit", "transaction", "--code", JSON.stringify(unitOperations), "--expect-revision", unitPreview.scoped_revision, "--format", "json");
   await writeFile(join(fixture, "js-ffi-module/js-ffi-assets/browser-available.js"), '() => typeof document !== "undefined"\n');
@@ -75,6 +83,8 @@ try {
   const selectedFile = ffiEvidence.data.evidence.ffi_boundaries.find(item => item.definition === "app.main/plus-two");
   assert.ok(selectedFile.provenance.includes("js-file:js-ffi-assets/add-two.js"));
   assert.deepEqual(selectedFile.operations, []);
+  assert.ok(!selectedFile.callers.includes("app.main/plus-one"), "an unselected shadow call is not caller evidence");
+  assert.ok(selectedFile.callers.includes("app.main/real-caller"), "retain calls from actual Calcit implementations");
 
   const ordinarySnapshot = join(fixture, "ordinary-body.cirru");
   await cp(input, ordinarySnapshot);
