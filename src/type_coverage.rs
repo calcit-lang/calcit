@@ -1790,8 +1790,24 @@ pub fn collect_ffi_boundary_evidence(
         .get(namespace)
         .map(|file| ffi_import_bindings(&file.ns.code))
         .unwrap_or_default();
+      let js_implementation = match entry
+        .ffi
+        .as_ref()
+        .map(|ffi| calcit::js_ffi_source::validate_js_source(ffi, entry.schema.as_ref()))
+        .transpose()
+      {
+        Ok(implementation) => implementation.flatten(),
+        Err(error) => {
+          target_error = Some(format!("Invalid FFI metadata for {namespace}/{definition}: {error}"));
+          return;
+        }
+      };
       let mut operations = Vec::new();
-      scan_ffi_operations(&entry.code, &mut Vec::new(), QuoteContext::default(), &imports, &mut operations);
+      // Opaque JS has declaration evidence, not operations inferred from a
+      // shadow Cirru body which is neither emitted nor executed.
+      if js_implementation.is_none() {
+        scan_ffi_operations(&entry.code, &mut Vec::new(), QuoteContext::default(), &imports, &mut operations);
+      }
       operations.sort_by(|left, right| left.path.cmp(&right.path).then(left.kind.cmp(&right.kind)));
       operations.dedup();
 
@@ -1821,7 +1837,12 @@ pub fn collect_ffi_boundary_evidence(
         classifications.insert(classification);
       }
       if classifications.is_empty() {
-        classifications.insert(ffi_classification("", None, active_target));
+        let target = entry
+          .ffi
+          .as_ref()
+          .and_then(|ffi| snapshot::parse_ffi_target(ffi).ok().flatten())
+          .or(active_target);
+        classifications.insert(ffi_classification("", None, target));
       }
       let classification = if classifications.len() == 1 {
         classifications.iter().next().copied().unwrap_or("unknown-host").to_owned()
@@ -1855,7 +1876,7 @@ pub fn collect_ffi_boundary_evidence(
         findings.is_empty() && !matches!(entry.schema.as_ref(), CalcitTypeAnnotation::Dynamic)
       };
       let mut helper_candidates = Vec::new();
-      if schema_is_concrete {
+      if schema_is_concrete && js_implementation.is_none() {
         for (candidate_ns, file) in &snapshot.files {
           for (candidate_def, candidate) in &file.defs {
             if candidate_ns == namespace && candidate_def == definition {
@@ -1957,12 +1978,22 @@ pub fn collect_ffi_boundary_evidence(
         helper_candidates,
         trait_candidates,
         adapter_candidates,
-        provenance: vec![
-          "snapshot-source".to_owned(),
-          "declared-schema".to_owned(),
-          "namespace-imports".to_owned(),
-          "no-runtime-trust-inference".to_owned(),
-        ],
+        provenance: match js_implementation {
+          Some(implementation) => vec![
+            match implementation.source {
+              calcit::js_ffi_source::JsFfiSource::Inline(_) => "js-inline".to_owned(),
+              calcit::js_ffi_source::JsFfiSource::File { path } => format!("js-file:{path}"),
+            },
+            "declared-schema".to_owned(),
+            "no-runtime-trust-inference".to_owned(),
+          ],
+          None => vec![
+            "snapshot-source".to_owned(),
+            "declared-schema".to_owned(),
+            "namespace-imports".to_owned(),
+            "no-runtime-trust-inference".to_owned(),
+          ],
+        },
       });
     },
   )?;

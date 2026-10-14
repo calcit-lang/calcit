@@ -11718,6 +11718,43 @@ pub fn preprocess_defn(
         }
       }
 
+      // A registered JS implementation replaces this declaration's entire
+      // Cirru body. Keep its checked callable interface, not a proof or
+      // executable lowering of the unselected shadow implementation.
+      if source_top_level_definition
+        && matches!(head, CalcitSyntax::Defn)
+        && info.at_ns.as_ref() == ctx.file_ns
+        && info.at_def.as_ref() == def_name.as_ref()
+        && let Some(ffi) = program::lookup_def_ffi(ctx.file_ns, def_name.as_ref())
+        && crate::js_ffi_source::validate_js_source(&ffi, def_schema.as_ref())
+          .map_err(|message| {
+            CalcitErr::use_msg_stack_location(CalcitErrKind::Type, message, ctx.call_stack, Some(definition_location.clone()))
+          })?
+          .is_some()
+      {
+        validate_js_ffi_definition_target(
+          "embedded JS FFI declaration",
+          Some(definition_location.clone()),
+          ctx.file_ns,
+          def_name.as_ref(),
+          ctx.call_stack,
+        )?;
+        let CalcitTypeAnnotation::Fn(signature) = def_schema.as_ref() else {
+          unreachable!("validated JS implementations have an explicit Fn schema")
+        };
+        for (parameter, annotation) in zs.iter_mut().zip(signature.arg_types.iter()) {
+          if let Calcit::Local(local) = parameter {
+            local.type_info = resolve_namespace_type_refs_for_body(annotation.clone(), ctx.file_ns);
+          }
+        }
+        xs = xs.push_right(Calcit::from(zs));
+        xs = xs.push_right(Calcit::from(vec![
+          Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(ctx.file_ns)),
+          signature.to_schema_calcit(),
+        ]));
+        return Ok(Calcit::from(xs));
+      }
+
       // Inject declared argument types into the function body. Call-site checks alone are not
       // enough: without these bindings, local method dispatch and return inference inside a named
       // `defn` unnecessarily fall back to Dynamic. Anonymous callbacks still use EXPECTED_FN_TYPE.

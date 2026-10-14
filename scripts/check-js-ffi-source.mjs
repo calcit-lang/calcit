@@ -19,6 +19,24 @@ try {
   await cp(resolve(repository, "calcit/js-ffi-consumer.cirru"), input);
   await cp(resolve(repository, "calcit/js-ffi-module"), join(fixture, "js-ffi-module"), { recursive: true });
   const moduleSnapshot = join(fixture, "js-ffi-module/calcit.cirru");
+  const binary = resolve(repository, "target/debug/calcit");
+  const run = (snapshot, ...args) => execFileSync(binary, [snapshot, ...args], { cwd: fixture, encoding: "utf8", stdio: "pipe" });
+  run(moduleSnapshot, "docs", "agents", "--contract");
+  // The active inline/file sources, not deliberately invalid shadow bodies, own execution.
+  const shadowOperations = [
+    ["edit", "def", "app.main/plus-one", "--overwrite", "--input-format", "cirru", "--code",
+      "quote $ defn plus-one (value) (&map:get value :not-a-map)"],
+    ["edit", "def", "app.main/plus-two", "--overwrite", "--input-format", "cirru", "--code",
+      "quote $ defn plus-two (value) |unselected-string-return"],
+  ];
+  const shadowPreview = JSON.parse(run(moduleSnapshot, "edit", "transaction", "--code", JSON.stringify(shadowOperations), "--dry-run", "--format", "json"));
+  run(moduleSnapshot, "edit", "transaction", "--code", JSON.stringify(shadowOperations), "--expect-revision", shadowPreview.scoped_revision, "--format", "json");
+  const unitCase = JSON.parse(run(moduleSnapshot, "query", "def", "app.main/unit-adapter", "--format", "json")).data.tests;
+  assert.equal(unitCase.length, 1, "keep the definition-attached Unit boundary contract");
+  const unitOperations = [["tree", "insert", "test-nil.main/main!", "--path", "@3", "--at", "before", "--input-format", "cirru", "--code",
+    "quote $ assert= &unit $ app.main/unit-adapter"]];
+  const unitPreview = JSON.parse(run(input, "edit", "transaction", "--code", JSON.stringify(unitOperations), "--dry-run", "--format", "json"));
+  run(input, "edit", "transaction", "--code", JSON.stringify(unitOperations), "--expect-revision", unitPreview.scoped_revision, "--format", "json");
   await writeFile(join(fixture, "js-ffi-module/js-ffi-assets/browser-available.js"), '() => typeof document !== "undefined"\n');
   for (const args of [
     ["edit", "def", "app.main/browser-available?", "--code", "quote $ defn browser-available? () false"],
@@ -43,6 +61,41 @@ try {
     cwd: fixture,
     stdio: "inherit",
   });
+  const selectedProof = JSON.parse(run(input, "fix", "--workflow", "strict", "--verify", "--format", "json"));
+  assert.equal(selectedProof.data.workflow.status, "passed", "selected JS bodies must not borrow proofs from shadow Cirru");
+  assert.deepEqual(selectedProof.diagnostics, []);
+  const ffiEvidence = JSON.parse(run(moduleSnapshot, "analyze", "weak-types", "--ffi-evidence", "--format", "json"));
+  const selectedBoundary = ffiEvidence.data.evidence.ffi_boundaries.find(item => item.definition === "app.main/plus-one");
+  assert.equal(selectedBoundary.target, "node");
+  assert.equal(selectedBoundary.classification, "node");
+  assert.deepEqual(selectedBoundary.operations, [], "unselected shadow operations are not JS implementation evidence");
+  assert.deepEqual(selectedBoundary.helper_candidates, [], "do not suggest replacements inferred from an unselected body");
+  assert.ok(selectedBoundary.provenance.includes("js-inline"));
+  assert.ok(selectedBoundary.provenance.includes("no-runtime-trust-inference"));
+  const selectedFile = ffiEvidence.data.evidence.ffi_boundaries.find(item => item.definition === "app.main/plus-two");
+  assert.ok(selectedFile.provenance.includes("js-file:js-ffi-assets/add-two.js"));
+  assert.deepEqual(selectedFile.operations, []);
+
+  const ordinarySnapshot = join(fixture, "ordinary-body.cirru");
+  await cp(input, ordinarySnapshot);
+  const ordinaryOperations = [
+    ["edit", "def", "test-nil.main/ordinary-body", "--input-format", "cirru", "--code",
+      "quote $ defn ordinary-body (value) (&map:get value :not-a-map)"],
+    ["edit", "schema", "test-nil.main/ordinary-body", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number) (:features $ #{} :js-ffi)"],
+    ["edit", "def", "test-nil.main/wrong-ffi-call", "--input-format", "cirru", "--code",
+      "quote $ defn wrong-ffi-call () (app.main/plus-one |not-a-number)"],
+    ["edit", "schema", "test-nil.main/wrong-ffi-call", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"],
+  ];
+  const ordinaryPreview = JSON.parse(run(ordinarySnapshot, "edit", "transaction", "--code", JSON.stringify(ordinaryOperations), "--dry-run", "--format", "json"));
+  run(ordinarySnapshot, "edit", "transaction", "--code", JSON.stringify(ordinaryOperations), "--expect-revision", ordinaryPreview.scoped_revision, "--format", "json");
+  const ordinaryProof = spawnSync(binary, [ordinarySnapshot, "fix", "--workflow", "strict", "--verify", "--format", "json"], { cwd: fixture, encoding: "utf8" });
+  assert.notEqual(ordinaryProof.status, 0, "a :js-ffi feature alone must not hide a Calcit implementation error");
+  assert.match(`${ordinaryProof.stdout}\n${ordinaryProof.stderr}`, /ordinary-body/);
+  const rejectedCalls = JSON.parse(ordinaryProof.stdout).diagnostics;
+  assert.ok(rejectedCalls.some(item => item.definition === "test-nil.main/wrong-ffi-call" && /arg/i.test(item.message)),
+    "opaque implementation selection must retain concrete caller argument checks");
 
   const browserInput = join(fixture, "browser-consumer.cirru");
   const browserOutput = join(fixture, "browser-generated");
