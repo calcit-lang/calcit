@@ -1098,13 +1098,13 @@ fn gen_call_code(
           // not core syntax, but treat as macro for better debugging experience
           let args = ys.drop_left();
           let args_code = gen_args_code(&args, ns, local_defs, file_imports, tags)?;
-          Ok(format!("console.log({proc_prefix}printable({args_code}))"))
+          Ok(format!("{return_code}(console.log({proc_prefix}printable({args_code})), void 0)"))
         }
         "eprintln" => {
           // not core syntax, but treat as macro for better debugging experience
           let args = ys.drop_left();
           let args_code = gen_args_code(&args, ns, local_defs, file_imports, tags)?;
-          Ok(format!("console.error({proc_prefix}printable({args_code}))"))
+          Ok(format!("{return_code}(console.error({proc_prefix}printable({args_code})), void 0)"))
         }
         "exists?" => {
           // not core syntax, but treat as macro for availability

@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use calcit::{
   builtins,
   builtins::{RegisteredProcDescriptor, RegisteredProcPlatform, RegisteredProcStability, proc_tags},
-  calcit::{Calcit, CalcitErr, CalcitErrKind},
+  calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitTypeAnnotation, ProcTypeSignature},
   call_stack::{CallStackList, display_stack},
   data::edn::{calcit_to_edn, edn_to_calcit, sanitize_edn_for_format},
   runner::track,
@@ -1842,14 +1842,20 @@ pub fn inject_platform_apis() {
       docs_hint: Some(Arc::from("Fix: use native runtime and pass (lib-name method ...args).")),
       callback_last: false,
       tags: proc_tags(["interop", "io"]),
+      ..Default::default()
     },
   );
   let log_io = proc_tags(["log", "io"]);
+  let log_signature = ProcTypeSignature {
+    arg_types: vec![Arc::new(CalcitTypeAnnotation::Variadic(calcit::calcit::DYNAMIC_TYPE.clone()))],
+    return_type: Arc::new(CalcitTypeAnnotation::Unit),
+  };
   builtins::register_import_proc_with_descriptor(
     "echo",
     stdout_println,
     RegisteredProcDescriptor {
       tags: log_io.clone(),
+      type_signature: Some(log_signature.clone()),
       ..Default::default()
     },
   );
@@ -1858,6 +1864,7 @@ pub fn inject_platform_apis() {
     stdout_println,
     RegisteredProcDescriptor {
       tags: log_io.clone(),
+      type_signature: Some(log_signature.clone()),
       ..Default::default()
     },
   );
@@ -1866,6 +1873,7 @@ pub fn inject_platform_apis() {
     stderr_println,
     RegisteredProcDescriptor {
       tags: log_io,
+      type_signature: Some(log_signature),
       ..Default::default()
     },
   );
@@ -1880,6 +1888,7 @@ pub fn inject_platform_apis() {
       docs_hint: Some(Arc::from("Fix: use native runtime and put callback fn as last argument.")),
       callback_last: true,
       tags: proc_tags(["interop", "io"]),
+      ..Default::default()
     },
   );
   builtins::register_import_proc_with_descriptor(
@@ -1893,6 +1902,7 @@ pub fn inject_platform_apis() {
       docs_hint: Some(Arc::from("Fix: use native runtime and put callback fn as last argument.")),
       callback_last: true,
       tags: proc_tags(["interop", "io"]),
+      ..Default::default()
     },
   );
   for (name, proc, arity_min, arity_max) in [
@@ -1916,6 +1926,7 @@ pub fn inject_platform_apis() {
         docs_hint: Some(Arc::from("Fix: use a capability received from native async FFI.")),
         callback_last: false,
         tags: proc_tags(["interop", "io"]),
+        ..Default::default()
       },
     );
   }
@@ -2012,14 +2023,14 @@ pub fn stdout_println(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Ca
     s.push_str(&x.turn_string());
   }
   if SILENCE_PROGRAM_OUTPUT.load(Ordering::Relaxed) {
-    return Ok(Calcit::Nil);
+    return Ok(Calcit::Unit);
   }
   if STDOUT_TO_STDERR.load(Ordering::Relaxed) {
     eprintln!("{s}");
   } else {
     println!("{s}");
   }
-  Ok(Calcit::Nil)
+  Ok(Calcit::Unit)
 }
 
 pub fn stderr_println(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
@@ -2033,7 +2044,7 @@ pub fn stderr_println(xs: Vec<Calcit>, _call_stack: &CallStackList) -> Result<Ca
   if !SILENCE_PROGRAM_OUTPUT.load(Ordering::Relaxed) {
     eprintln!("{s}");
   }
-  Ok(Calcit::Nil)
+  Ok(Calcit::Unit)
 }
 
 fn try_start_async_callback_v1(

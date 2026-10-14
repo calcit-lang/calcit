@@ -40,6 +40,30 @@ try {
   assert.match(preview1.stderr, /read-stdin-text requires.*--boundary component/);
   calcit(...entry, "wasi", "--boundary", "component", "--emit-path", component);
   const wasmArgs = ["run", "-S", "p3", "-W", "component-model-async-stackful=y", "-W", "component-model-more-async-builtins=y"];
+  // A trap during argument evaluation must happen before the logger writes.
+  const loggingOperations = [
+    ["edit", "def", "app.main/logging-unit-main!", "--input-format", "cirru", "--code",
+      "quote $ defn logging-unit-main! () (assert= &unit $ println |unit-stdout-probe) (assert= &unit $ eprintln |unit-stderr-probe) (assert= &unit $ echo |unit-echo-probe) &unit"],
+    ["edit", "schema", "app.main/logging-unit-main!", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+    ["edit", "def", "app.main/logging-failure-main!", "--input-format", "cirru", "--code",
+      "quote $ defn logging-failure-main! () (println |must-not-print $ raise |log-argument-failed)"],
+    ["edit", "schema", "app.main/logging-failure-main!", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+  ];
+  const loggingPreview = JSON.parse(calcit(snapshot, "edit", "transaction", "--code", JSON.stringify(loggingOperations), "--dry-run", "--format", "json"));
+  calcit(snapshot, "edit", "transaction", "--code", JSON.stringify(loggingOperations), "--expect-revision", loggingPreview.scoped_revision, "--format", "json");
+  const loggingComponent = join(temp, "logging-unit");
+  calcit(snapshot, "--init-fn", "app.main/logging-unit-main!", "wasi", "--emit-path", loggingComponent);
+  const logging = run(wasmtime, [...wasmArgs, join(loggingComponent, "program.wasm")]);
+  assert.equal(logging.status, 0, logging.stderr);
+  assert.equal(logging.stdout, "unit-stdout-probe\nunit-echo-probe\n");
+  assert.equal(logging.stderr, "unit-stderr-probe\n");
+  const failingLoggingComponent = join(temp, "logging-failure");
+  calcit(snapshot, "--init-fn", "app.main/logging-failure-main!", "wasi", "--emit-path", failingLoggingComponent);
+  const loggingFailure = run(wasmtime, [...wasmArgs, join(failingLoggingComponent, "program.wasm")]);
+  assert.notEqual(loggingFailure.status, 0);
+  assert.equal(loggingFailure.stdout, "", "failed arguments cannot publish a partial log line");
   const backends = [
     ["native", binary, entry],
     ["node", process.execPath, [resolve("examples/wasi-command/run-stdin.mjs"), join(js, "app.main.mjs")]],
