@@ -179,6 +179,25 @@ fn type_fail_struct_update_after_option_match_rejects_invalid_fields_and_values(
   });
 }
 
+/// Comparing a nominal `Option` value with `nil` is a type mismatch; Option values are consumed with methods or `match` (#1554).
+#[test]
+fn type_fail_nominal_option_compared_with_nil_reports_arg_type_mismatch() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_snippet_entries("let ((value (Option :some 1)))\n  = value nil");
+    let warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("nil comparison should produce a type diagnostic, not a preprocessing failure");
+    let warnings = warnings.borrow();
+    assert!(
+      warnings.iter().any(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
+        && warning.message().contains("enum Option<:number>")
+        && warning.message().contains(":nil")),
+      "expected W_FN_ARG_TYPE_MISMATCH for Option vs nil: {warnings:?}"
+    );
+  });
+}
+
 /// `value.:field` must report the same strict diagnostics as `(:field value)` (#1988).
 #[test]
 fn type_fail_tag_access_shorthand_matches_tag_call_diagnostics() {
