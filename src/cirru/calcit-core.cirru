@@ -3926,22 +3926,44 @@
                 :args $ [] 'T 'T
             :generics $ [] 'T
           :tags $ #{} :builtin :internal :state :watch
-          :tests $ [] $ %{} 'TestEntry (:name |registers-once-and-preserves-callback-order)
-            :code $ quote $ let
-                source $ atom 0
-                calls $ atom 0
-              assert= &unit $ add-watch! source :change $ fn (current previous) (assert= 1 current) (assert= 0 previous)
-                reset! calls $ inc @calls
-                , &unit
-              assert= "|add-watch! failed: listener with key `change` already existed" $ try
-                add-watch! source :change $ fn (current previous) &unit
-                fn (error) error
-              assert= 1 $ reset! source 1
-              assert= 1 @calls
-              assert= &unit $ remove-watch! source :change
-              assert= 2 $ reset! source 2
-              assert= 1 @calls
-            :tags $ #{} :core :state :unit
+          :tests $ []
+            %{} 'TestEntry (:name |registers-once-and-preserves-callback-order)
+              :code $ quote $ let
+                  source $ atom 0
+                  calls $ atom 0
+                assert= &unit $ add-watch! source :change $ fn (current previous) (assert= 1 current) (assert= 0 previous)
+                  reset! calls $ inc @calls
+                  , &unit
+                assert= "|add-watch! failed: listener with key `change` already existed" $ try
+                  add-watch! source :change $ fn (current previous) &unit
+                  fn (error) error
+                assert= 1 $ reset! source 1
+                assert= 1 @calls
+                assert= &unit $ remove-watch! source :change
+                assert= 2 $ reset! source 2
+                assert= 1 @calls
+              :tags $ #{} :core :state :unit
+            %{} 'TestEntry (:name |open-ref-keeps-checked-input-and-removal)
+              :code $ quote $ let
+                  make-source $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic
+                      :return $ :: 'Ref 'Dynamic
+                    ref value
+                  source $ make-source nil
+                  observed $ ref 0
+                assert= &unit $ add-watch! source :open $ fn (current previous)
+                  assert= true $ nil? previous
+                  if (number? current)
+                    reset! observed $ inc current
+                    raise |Expected-Number
+                  , &unit
+                assert= 7 $ reset! source 7
+                assert= 8 $ deref observed
+                assert= &unit $ remove-watch! source :open
+                assert= |after-removal $ reset! source |after-removal
+                assert= 8 $ deref observed
+              :tags $ #{} :core :open-callback-input :state :unit
         'and $ %{} 'CodeEntry
           :doc "|Logical conjunction macro with short-circuit semantics\nReturns the first falsy value or the last truthy value, evaluating expressions left to right."
           :code $ quote $ defmacro and (& xs)

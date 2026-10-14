@@ -4253,6 +4253,7 @@ fn preprocess_list_call(
               // function. Supply it before checking an inline callback body;
               // do not invent a signature for an open Fn/DynFn value.
               callable_contract.as_ref().and_then(|signature| {
+                member_inputs = !callable_bindings.is_empty();
                 signature
                   .arg_types
                   .get(ys.len() - 1)
@@ -4305,7 +4306,9 @@ fn preprocess_list_call(
                 // A bare open payload supplies no contextual parameter evidence.
                 // Keep structured bindings such as Map<Tag, Dynamic> intact.
                 candidate.retain(|name, value| {
-                  callable_bindings.contains_key(name) || !matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
+                  callable_bindings.contains_key(name)
+                    || !matches!(value.as_ref(), CalcitTypeAnnotation::Dynamic)
+                    || !matches!(actual.as_ref(), CalcitTypeAnnotation::Dynamic)
                 });
                 callable_bindings = candidate;
               }
@@ -4687,8 +4690,15 @@ fn preprocess_list_call(
           if matches!(proc, CalcitProc::NativeNamedEnumNew) {
             reject_strict_unproven_enum_payload(&processed_args, scope_types, file_ns, call_stack, call_location.clone())?;
           }
-          if REQUIRE_ASSERTION_PROOF.with(Cell::get)
-            && let Some(contract) = proc.get_type_signature()
+          // Known builtin callback contracts use the same ordinary input
+          // proof as named/indirect calls. Other proc arguments keep their
+          // existing policy; the audit validates all of them.
+          if let Some(contract) = proc.get_type_signature()
+            && (REQUIRE_ASSERTION_PROOF.with(Cell::get)
+              || contract
+                .arg_types
+                .iter()
+                .any(|argument| argument.resolve_to_nonoptional_fn().is_some()))
             && let CalcitTypeAnnotation::Fn(signature) =
               CalcitTypeAnnotation::from_proc_parts(contract.arg_types.clone(), contract.return_type.clone(), proc.arity())
           {

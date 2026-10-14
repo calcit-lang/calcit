@@ -28,6 +28,36 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
+  // #2054: a structured open Ref retains its input boundary for callbacks.
+  for (const [name, callback, rejected] of [
+    ["open-ref-ignores-input", "fn (current previous) &unit", false],
+    ["open-ref-narrow-input", "fn (current previous) (hint-fn $ {} (:args $ [] 'Number 'Number) (:return 'Unit)) &unit", true],
+    ["open-ref-unchecked-input", "fn (current previous) (inc current) &unit", true],
+  ]) {
+    await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+    const operations = JSON.stringify([
+      ["edit", "add-ns", "app.open-ref-proof"],
+      ["edit", "def", "app.open-ref-proof/*wire", "--input-format", "cirru", "--code", "quote $ defref *wire nil"],
+      ["edit", "schema", "app.open-ref-proof/*wire", "--input-format", "cirru", "--code", "quote $ :: 'Ref 'Dynamic"],
+      ["edit", "def", "app.open-ref-proof/consume", "--input-format", "cirru", "--code",
+        `quote $ defn consume () (add-watch! *wire :changes $ ${callback}) &unit`],
+      ["edit", "schema", "app.open-ref-proof/consume", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+    ]);
+    const preview = JSON.parse(run("edit", "transaction", "--code", operations, "--dry-run", "--format", "json"));
+    run("edit", "transaction", "--code", operations, "--expect-revision", preview.scoped_revision, "--format", "json");
+    const before = await readFile(snapshot);
+    for (const args of [
+      ["fix", "--rule", "callable-contract-proof-v1", "--ns", "app.open-ref-proof", "--def", "consume", "--format", "json"],
+      ["--init-fn", "app.open-ref-proof/consume", "--reload-fn", "app.open-ref-proof/consume", "--check-only"],
+    ]) {
+      const result = spawnSync(binary, [snapshot, ...args], options);
+      if (result.error) throw result.error;
+      assert.equal(result.status, rejected ? 1 : 0, `${name}: preserve open input evidence\n${result.stdout}\n${result.stderr}`);
+      if (rejected) assert.match(`${result.stdout}\n${result.stderr}`,
+        /E_CALL_ARGUMENT_(?:UNPROVEN|MISMATCH)|W_FN_ARG_TYPE_MISMATCH|E_ERASED_GENERIC_RELATION/);
+    }
+    assert.deepEqual(await readFile(snapshot), before);
+  }
   // #2046: an unknown path cannot promise its updater a concrete input.
   execFileSync(process.execPath, [
     "scripts/run-core-tests.mjs", "--target", "calcit.core/update-in",
