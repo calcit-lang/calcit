@@ -455,7 +455,7 @@ pub(super) fn emit_turn_string(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   }
 
   if let Calcit::Number(number) = &args[0] {
-    let text = crate::util::number::format_calcit_number(*number);
+    let text = crate::wasm::host::util::number::format_calcit_number(*number);
     let ptr = *ctx
       .string_pool
       .get(&text)
@@ -649,7 +649,7 @@ pub(super) fn emit_format_to_lisp(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
     && inner.len() >= 2
     && let Calcit::Syntax(CalcitSyntax::Quote, _) = &inner[0]
   {
-    let s = crate::calcit::format_to_lisp(&inner[1]);
+    let s = crate::wasm::host::calcit::format_to_lisp(&inner[1]);
     // Look up in string pool (pre-interned by collect_strings_from_expr)
     if let Some(&ptr) = ctx.string_pool.get(&s) {
       ctx.emit(super::f64_const(ptr as f64));
@@ -755,7 +755,7 @@ fn concat_two_i32_ptrs(ctx: &mut WasmGenCtx, ptr_a: u32, ptr_b: u32) {
 /// Convert a pre-evaluated f64 value local to a string i32 pointer local.
 /// Equivalent to `emit_turn_string` but takes a local instead of a Calcit expression.
 pub(super) fn emit_turn_string_from_local(ctx: &mut WasmGenCtx, v_local: u32) -> u32 {
-  use crate::calcit::{CalcitLocal, CalcitSymbolInfo, DYNAMIC_TYPE};
+  use crate::wasm::host::calcit::{CalcitLocal, CalcitSymbolInfo, DYNAMIC_TYPE};
   use std::sync::Arc;
   // Map a temporary name to the pre-evaluated local
   let sym: Arc<str> = Arc::from("__ts_arg__");
@@ -764,7 +764,7 @@ pub(super) fn emit_turn_string_from_local(ctx: &mut WasmGenCtx, v_local: u32) ->
     at_def: Arc::from("__ts"),
   });
   let prev = ctx.locals.insert(sym.as_ref().to_owned(), v_local);
-  let expr = crate::calcit::Calcit::Local(CalcitLocal {
+  let expr = crate::wasm::host::calcit::Calcit::Local(CalcitLocal {
     idx: 0,
     sym: sym.clone(),
     info: dummy_info,
@@ -1264,7 +1264,7 @@ pub(super) fn emit_join_string_from_locals(ctx: &mut WasmGenCtx, xs_f64: u32, se
   ctx.emit(Instruction::LocalSet(elem));
 
   // elem_str = turn_string(elem)
-  let elem_arr = [crate::calcit::Calcit::Nil]; // dummy
+  let elem_arr = [crate::wasm::host::calcit::Calcit::Nil]; // dummy
   let _ = elem_arr;
   // Use emit_turn_string_from_f64_local instead (inline the conversion)
   let elem_str_ptr = emit_turn_string_from_local(ctx, elem);

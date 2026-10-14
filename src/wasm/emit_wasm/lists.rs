@@ -800,7 +800,7 @@ pub(super) fn emit_list_to_set(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
 
 /// `&list:dissoc list idx` — new list without element at index.
 pub(super) fn emit_list_dissoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  use crate::calcit::CalcitSyntax;
+  use crate::wasm::host::calcit::CalcitSyntax;
   // Handle spread form: (&list:dissoc x & rest_list) — rest_list[0] is the index
   let (list_arg, idx_arg): (&Calcit, Option<&Calcit>) =
     if args.len() == 3 && matches!(args[1], Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
@@ -1273,7 +1273,7 @@ pub(super) fn emit_buf_list_count(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
 /// native and JS, so an oversized range fails before allocating (#1852).
 fn emit_trap_if_range_too_long(ctx: &mut WasmGenCtx, len_f: u32) {
   ctx.emit(Instruction::LocalGet(len_f));
-  ctx.emit(f64_const(crate::builtins::MAX_RANGE_LEN as f64));
+  ctx.emit(f64_const(crate::wasm::host::builtins::MAX_RANGE_LEN as f64));
   ctx.emit(Instruction::F64Gt);
   ctx.begin_block_if();
   ctx.emit(Instruction::Unreachable);
@@ -1426,7 +1426,7 @@ pub(super) fn emit_range(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), St
   ctx.emit(Instruction::I32Eqz);
   ctx.br_if_exit();
   ctx.emit(Instruction::LocalGet(count));
-  ctx.emit(Instruction::I32Const(crate::builtins::MAX_RANGE_LEN as i32));
+  ctx.emit(Instruction::I32Const(crate::wasm::host::builtins::MAX_RANGE_LEN as i32));
   ctx.emit(Instruction::I32GeU);
   emit_trap_if(ctx);
   ctx.i32_inc(count);

@@ -214,7 +214,7 @@ pub(super) enum FoldlCallKind {
 /// Emit a call to a native proc using two pre-allocated locals as arguments.
 /// Registers the locals under synthetic names so `emit_proc_call` can resolve them.
 pub(super) fn emit_foldl_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, acc: u32, elem: u32) -> Result<(), String> {
-  use crate::calcit::{CalcitLocal, CalcitSymbolInfo, DYNAMIC_TYPE};
+  use crate::wasm::host::calcit::{CalcitLocal, CalcitSymbolInfo, DYNAMIC_TYPE};
   use std::sync::Arc;
 
   let sym_a: Arc<str> = Arc::from("__foldl_acc__");
@@ -225,14 +225,14 @@ pub(super) fn emit_foldl_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, acc:
   });
   let prev_a = ctx.locals.insert(sym_a.as_ref().to_owned(), acc);
   let prev_b = ctx.locals.insert(sym_b.as_ref().to_owned(), elem);
-  let expr_a = crate::calcit::Calcit::Local(CalcitLocal {
+  let expr_a = crate::wasm::host::calcit::Calcit::Local(CalcitLocal {
     idx: 0,
     sym: sym_a.clone(),
     info: dummy_info.clone(),
     location: None,
     type_info: DYNAMIC_TYPE.clone(),
   });
-  let expr_b = crate::calcit::Calcit::Local(CalcitLocal {
+  let expr_b = crate::wasm::host::calcit::Calcit::Local(CalcitLocal {
     idx: 0,
     sym: sym_b.clone(),
     info: dummy_info,
@@ -513,7 +513,7 @@ pub(super) fn emit_foldl_compare(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
 
 /// Emit a call to the HOF callee with a single argument (elem local).
 fn emit_unary_step(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, arg: u32) -> Result<(), String> {
-  use crate::calcit::{CalcitLocal, CalcitSymbolInfo, DYNAMIC_TYPE};
+  use crate::wasm::host::calcit::{CalcitLocal, CalcitSymbolInfo, DYNAMIC_TYPE};
   use std::sync::Arc;
   match kind {
     FoldlCallKind::Static(fn_idx, rest_fixed) => {
@@ -528,7 +528,7 @@ fn emit_unary_step(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, arg: u32) -> Resu
         at_def: Arc::from("__hof"),
       });
       let prev = ctx.locals.insert(sym.as_ref().to_owned(), arg);
-      let expr = crate::calcit::Calcit::Local(CalcitLocal {
+      let expr = crate::wasm::host::calcit::Calcit::Local(CalcitLocal {
         idx: 0,
         sym: sym.clone(),
         info: dummy_info,

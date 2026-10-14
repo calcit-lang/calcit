@@ -7,11 +7,11 @@ use std::time::Instant;
 
 use colored::Colorize;
 
-use crate::calcit::LocatedWarning;
-use crate::call_stack::CallStackList;
-use crate::codegen::emit_wasm::{WasmBoundary, WasmTarget};
-use crate::util::string::strip_shebang;
-use crate::{ProgramEntries, call_stack, codegen, program, runner, snapshot, util};
+use crate::wasm::host::calcit::LocatedWarning;
+use crate::wasm::host::call_stack::CallStackList;
+use crate::wasm::host::util::string::strip_shebang;
+use crate::wasm::host::{self, ProgramEntries, call_stack, codegen, program, runner, snapshot, util};
+use crate::wasm::{WasmBoundary, WasmTarget};
 
 #[derive(Clone, Debug)]
 pub struct WasmCliOptions {
@@ -25,10 +25,10 @@ pub struct WasmCliOptions {
 }
 
 pub fn run(options: &WasmCliOptions, target: WasmTarget) -> Result<(), String> {
-  let core_snapshot = crate::load_core_snapshot()?;
+  let core_snapshot = host::load_core_snapshot()?;
 
   let input_path = PathBuf::from(&options.input);
-  crate::validate_snapshot_path(&input_path)?;
+  host::validate_snapshot_path(&input_path)?;
   let input_path_str = input_path.to_string_lossy().to_string();
   if !input_path.exists() {
     return Err(format!("{} does not exist", input_path.display()));
@@ -50,12 +50,12 @@ pub fn run(options: &WasmCliOptions, target: WasmTarget) -> Result<(), String> {
   }
 
   let base_dir = input_path.parent().expect("extract parent");
-  let module_folder = crate::project_module_folder(base_dir);
+  let module_folder = host::project_module_folder(base_dir);
 
   let module_paths = snapshot.active_entry()?.modules.clone();
   for module_path in &module_paths {
-    let module_data = crate::load_module(module_path, base_dir, &module_folder)?;
-    crate::merge_project_module_files(&mut snapshot, &module_data, module_path)?;
+    let module_data = host::load_module(module_path, base_dir, &module_folder)?;
+    host::merge_project_module_files(&mut snapshot, &module_data, module_path)?;
   }
 
   let selected_entry = snapshot.active_entry()?;
@@ -86,8 +86,8 @@ pub fn run(options: &WasmCliOptions, target: WasmTarget) -> Result<(), String> {
 
   let check_warnings = RefCell::new(vec![]);
   runner::preprocess::ensure_ns_def_compiled(
-    crate::calcit::CORE_NS,
-    crate::calcit::BUILTIN_IMPLS_ENTRY,
+    host::calcit::CORE_NS,
+    host::calcit::BUILTIN_IMPLS_ENTRY,
     &check_warnings,
     &CallStackList::default(),
   )

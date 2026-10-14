@@ -107,7 +107,7 @@ pub(super) fn emit_map_assoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
 
 /// `&map:dissoc map key` — new map without key (or same if key absent).
 pub(super) fn emit_map_dissoc(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  use crate::calcit::CalcitSyntax;
+  use crate::wasm::host::calcit::CalcitSyntax;
 
   // Multi-key form: (&map:dissoc m k1 k2 ...) — chain dissoc calls
   if args.len() > 2 && !matches!(args[1], Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {

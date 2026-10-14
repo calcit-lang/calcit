@@ -142,8 +142,15 @@ WASM 后端与 FFI ABI 的实现集中在 `src/wasm/`，对外公开路径保持
 
 `cargo test boundary_tests` 会扫描 `src/`、`tests/` 与 `benches/`，在以下情况失败：直接引用 `src/wasm/` 下的实现文件，或把 `emit_wasm`、`wasm_cli`、`ffi_abi`、`ffi_async`、`ffi_interface_ir` 作为路径段使用而前面不是 `wasm::`。`src/lib.rs` 与 `src/codegen.rs` 的 `#[path]` 挂载是唯一的允许项。新增对外条目时同时更新 `src/wasm/mod.rs` 的重新导出。
 
+### Host facade
+
+`src/wasm/host.rs` 是该目录依赖主 crate 内部的唯一入口：`calcit`、`data`、`snapshot`、`builtins`、`runner`、`program`、`util`、`call_stack`、`codegen`、`js_ffi_source`，以及 CLI 驱动用到的 `ProgramEntries`、`load_core_snapshot` 等根级条目，都在这里用 `pub(crate) use` 重新导出。`src/wasm/` 下的其他文件只写 `crate::wasm::host::…`，不直接写 `crate::<主 crate 内部模块>`，例如 `use crate::wasm::host::calcit::Calcit;`、`crate::wasm::host::runner::preprocess::infer_static_type_from_expr`。没有 `wasm` feature 时只导出 FFI interface IR 需要的 `calcit`、`data`、`snapshot`，其余条目按 feature 门控。
+
+`wasm::boundary_tests` 中的 `wasm_dir_reaches_main_crate_only_through_host` 会扫描 `src/wasm/` 下所有 `.rs` 文件（忽略注释与字符串，展开多行 `use crate::{…}`），除 `host.rs` 外（`mod.rs` 也不例外），出现 `crate::` 后接 `wasm`、`wasm_cli`、`ffi_abi`、`ffi_async`、`ffi_interface_ir`、`codegen::emit_wasm` 之外的名字就会失败；裸 `crate::codegen`（含 `use crate::codegen;`、分组与 `as`）同样会失败。需要新的主 crate 条目时，先在 `host.rs` 增加重新导出，再在调用处经由 `crate::wasm::host` 使用。
+
 ## 限制
 
+- host facade 检查不覆盖 `super::super::`、`use crate as c;` 与 `::crate::` 形式的别名路径。
 - 边界检查忽略注释（含块注释）与字符串、字符字面量，并展开多行与嵌套的 `use` 分组，要求这五个模块名前面是 `calcit::wasm::`、`crate::wasm::`，或已用 `use calcit::wasm;` / `use calcit::wasm::{self, …}` 引入的 `wasm::`；它不解析 `as` 别名、`super::` 和宏生成的路径。
 - 不带编号的 `unsupported ... in WASM` 诊断尚未统一格式，不一定包含源位置与缺失的证据种类。
 - `wasm-unsupported-procs` 列表只校验排除清单出现过的 Proc，没有 core 测试覆盖的 Proc 靠人工维护。
