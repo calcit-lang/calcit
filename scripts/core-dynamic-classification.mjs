@@ -139,7 +139,7 @@ const compilerSpecializedPositions = new Map([
   ],
   [
     "assoc-in|schema.args.0",
-    "Fully typed nested Map receivers with non-empty literal paths are lowered to direct typed lookup and reconstruction; dynamic or mixed-container paths remain an explicit compatibility fallback.",
+    "完整类型的字面量 Map 路径直接 lowering；已证明的 Map 前缀可在开放 payload 上保留结果类型，但未知遍历仍走公开 walker。",
   ],
   [
     "assoc-in|schema.args.2",
@@ -147,7 +147,7 @@ const compilerSpecializedPositions = new Map([
   ],
   [
     "assoc-in|schema.return",
-    "Typed literal Map paths rebuild and preserve the concrete receiver type; dynamic or mixed-container paths retain the representation-polymorphic runtime result.",
+    "字面量路径保留已证明的 Map 前缀；Dynamic 子节点仍开放，空/未知路径与不相容的 key/具体 leaf 不承诺原 receiver 类型。",
   ],
   [
     "apply|schema.return",
@@ -251,7 +251,7 @@ const compilerSpecializedPositions = new Map([
   ],
   [
     "update-in|schema.args.0",
-    "Fully typed nested Map receivers with non-empty literal paths are lowered to direct typed lookup and reconstruction; dynamic or mixed-container paths remain an explicit compatibility fallback.",
+    "完整类型的字面量 Map 路径直接 lowering；开放 payload 上的已证明 Map 前缀可保留结果类型，callback 输入仍需独立证明。",
   ],
   [
     "update-in|schema.return",

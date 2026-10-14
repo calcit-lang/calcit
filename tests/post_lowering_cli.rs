@@ -111,6 +111,31 @@ fn past_lowering_regressions_pass_post_lowering_validation() {
     "quote $ :: 'Fn $ {} (:args $ [] (:: 'Map 'Tag 'Number)) (:return $ :: 'Map 'Tag 'Number)",
     false,
   );
+  // #2068: open descendants do not erase a proven root Map or its key type.
+  for (name, code, schema) in [
+    (
+      "write-open-map",
+      "quote $ defn write-open-map (db) $ assoc-in db ([] :repo :current) |main",
+      "quote $ :: 'Fn $ {} (:args $ [] (:: 'Map 'Tag 'Dynamic)) (:return $ :: 'Map 'Tag 'Dynamic)",
+    ),
+    (
+      "write-generic-key",
+      "quote $ defn write-generic-key (db key) $ assoc-in db ([] key :current) |main",
+      "quote $ :: 'Fn $ {} (:args $ [] (:: 'Map 'K 'Dynamic) 'K) (:return $ :: 'Map 'K 'Dynamic) (:generics $ [] 'K)",
+    ),
+    (
+      "write-nested-prefix",
+      "quote $ defn write-nested-prefix (db) $ assoc-in db ([] :repo |current :value) |main",
+      "quote $ :: 'Fn $ {} (:args $ [] (:: 'Map 'Tag (:: 'Map 'String 'Dynamic))) (:return $ :: 'Map 'Tag (:: 'Map 'String 'Dynamic))",
+    ),
+    (
+      "update-open-map",
+      "quote $ defn update-open-map (db) $ update-in db ([] :current) $ fn (value) (hint-fn $ {} (:args $ [] (:: 'Option 'Dynamic)) (:return 'String)) |main",
+      "quote $ :: 'Fn $ {} (:args $ [] (:: 'Map 'Tag 'Dynamic)) (:return $ :: 'Map 'Tag 'Dynamic)",
+    ),
+  ] {
+    define(&snapshot, name, code, schema, false);
+  }
   // #1428: `recur` follows the lexical function contract.
   define(
     &snapshot,
@@ -139,4 +164,113 @@ fn past_lowering_regressions_pass_post_lowering_validation() {
     &run_calcit(&snapshot, &["--check-only", "--ns", "app.main"]),
     "every definition passes the validator",
   );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--format", "json"],
+    ),
+    "root and generic Map results have independent return evidence",
+  );
+}
+
+#[test]
+fn open_path_write_proof_does_not_invent_receiver_shapes() {
+  let directory = TestDirectory::create();
+  for (label, body, arguments, returned) in [
+    (
+      "empty",
+      "assoc-in db ([]) |changed",
+      "(:: 'Map 'Tag 'Dynamic) (:: 'List 'Tag) 'Tag",
+      "(:: 'Map 'Tag 'Dynamic)",
+    ),
+    (
+      "unknown",
+      "assoc-in db path |changed",
+      "(:: 'Map 'Tag 'Dynamic) (:: 'List 'Tag) 'Tag",
+      "(:: 'Map 'Tag 'Dynamic)",
+    ),
+    (
+      "wrong-key",
+      "assoc-in db ([] |wrong) |changed",
+      "(:: 'Map 'Tag 'Dynamic) (:: 'List 'Tag) 'Tag",
+      "(:: 'Map 'Tag 'Dynamic)",
+    ),
+    (
+      "wrong-leaf",
+      "assoc-in db ([] :count) |changed",
+      "(:: 'Map 'Tag 'Number) (:: 'List 'Tag) 'Tag",
+      "(:: 'Map 'Tag 'Number)",
+    ),
+    (
+      "scalar-hop",
+      "assoc-in db ([] :count :value) 1",
+      "(:: 'Map 'Tag 'Number) (:: 'List 'Tag) 'Tag",
+      "(:: 'Map 'Tag 'Number)",
+    ),
+    (
+      "open-root",
+      "assoc-in db ([] :count) 1",
+      "'Dynamic (:: 'List 'Tag) 'Tag",
+      "(:: 'Map 'Tag 'Dynamic)",
+    ),
+    (
+      "unknown-key",
+      "assoc-in db ([] key) 1",
+      "(:: 'Map 'Tag 'Dynamic) (:: 'List 'Tag) 'Dynamic",
+      "(:: 'Map 'Tag 'Dynamic)",
+    ),
+    (
+      "known-prefix-family",
+      "assoc-in db ([] :repo) |changed",
+      "(:: 'Map 'Tag (:: 'Map 'String 'Dynamic)) (:: 'List 'Tag) 'Tag",
+      "(:: 'Map 'Tag (:: 'Map 'String 'Dynamic))",
+    ),
+    (
+      "empty-update",
+      "update-in db ([]) $ fn (value) (hint-fn $ {} (:args $ [] (:: 'Option 'Dynamic)) (:return 'String)) |changed",
+      "(:: 'Map 'Tag 'Dynamic) (:: 'List 'Tag) 'Tag",
+      "(:: 'Map 'Tag 'Dynamic)",
+    ),
+  ] {
+    let snapshot = directory.snapshot();
+    fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
+    define(
+      &snapshot,
+      "rejected",
+      &format!("quote $ defn rejected (db path key) ({body})"),
+      &format!("quote $ :: 'Fn $ {{}} (:args $ [] {arguments}) (:return {returned})"),
+      false,
+    );
+    let before = fs::read(&snapshot).expect("read source before proof");
+    let result = run_calcit(
+      &snapshot,
+      &[
+        "fix",
+        "--rule",
+        "concrete-return-proof-v1",
+        "--ns",
+        "app.main",
+        "--def",
+        "rejected",
+        "--format",
+        "json",
+      ],
+    );
+    assert!(!result.status.success(), "{label} must not acquire a concrete Map result");
+    let output = String::from_utf8_lossy(&result.stdout);
+    let stderr = String::from_utf8_lossy(&result.stderr);
+    if label == "empty-update" {
+      assert!(
+        stderr.contains("W_FN_RETURN_TYPE_MISMATCH") && stderr.contains("body returns `:string`"),
+        "{label}: {output}\n{stderr}"
+      );
+    } else {
+      assert!(output.contains("E_FN_RETURN_UNPROVEN"), "{label}: {output}\n{stderr}");
+    }
+    assert_eq!(
+      fs::read(&snapshot).expect("read source after proof"),
+      before,
+      "{label} must not mutate source"
+    );
+  }
 }

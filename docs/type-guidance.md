@@ -301,6 +301,13 @@ reason/payload 使用方法级泛型，因此不会为了宿主编码而抹掉�
 
 动态接收者、动态路径和混合容器仍是明确的兼容边界，会保留动态路径 API。新代码在数据形状已知时优先使用直接 `.get`、Option 组合和名义字段访问；只有开放数据才使用路径 API。不要用路径函数绕过 Struct 字段检查：Struct 应使用 `(:field value)` 或 `value.:field`，字段可缺失就把字段声明为 `Option<T>`。
 
+已知 Map 前缀下面有 Dynamic 时，不必把整个写入结果也降成 Dynamic。非空字面量
+路径的已知 key 与 Map key 类型匹配后，`assoc-in` / `update-in` 可以保留成功结果的
+Map 前缀类型，例如 `Map<Tag, Dynamic>`；子节点仍是 Dynamic，使用前仍须检查。
+这只是结果类型证明，不会展开未知遍历或证明深层字段存在。空/未知路径、错误 key
+及替换已知 leaf 家族不能据此获得原 Map 类型；公开运行时检查、失败和求值顺序不变。
+开放 Map 遍历仍受 WASM/WASI 的 nil 类型证据限制，不因前缀推断改善而自动可编译。
+
 开放路径的回调输入是 `Option<Dynamic>`，输出类型与输入独立；具体使用 payload 前先 decode 或 narrow。声明 `Option<Number>` 的回调不能证明开放数据本来就是 Number，也不能仅凭返回 Number 把输入收窄。缺失仍为 `Option :none`，存在 nil 的叶子与缺失分支不混同。升级步骤见[开放路径更新合同](run/upgrade.md#0300-开放路径更新合同)。
 
 `Map<K,V>` receiver 的 `.get`，`List<T>` receiver 的 `.get`、`.first`、`.last`，以及 String、Enum receiver 的 `.get`、`.nth`、`.first`、`.last`，会在 preprocess 阶段降低为对应类型的 `&scope:*` primitive 与显式 Option 构造，不再执行通用函数中的 receiver type predicates。对应的前缀形式保持兼容并使用同一 lowering；业务代码优先使用 receiver 形式来保留类型意图。

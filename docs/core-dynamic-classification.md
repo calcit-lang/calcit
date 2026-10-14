@@ -135,9 +135,9 @@
 | `calcit.core/assert-type` | `schema` | unresolved | compiler-forms | retain-reviewed | This compiler form consumes or produces code/syntax whose value shape is phase-dependent. |
 | `calcit.core/assert=` | `schema.inputs.0.expr` | intentional-macro-syntax | macro-system | retain-reviewed | 宏语法随展开阶段变化；保留显式开放边界，并通过专项测试验证语义。 |
 | `calcit.core/assert=` | `schema.inputs.1.expr` | intentional-macro-syntax | macro-system | retain-reviewed | 宏语法随展开阶段变化；保留显式开放边界，并通过专项测试验证语义。 |
-| `calcit.core/assoc-in` | `schema.args.0` | unresolved | compiler-specialized-contracts | retain-reviewed | Fully typed nested Map receivers with non-empty literal paths are lowered to direct typed lookup and reconstruction; dynamic or mixed-container paths remain an explicit compatibility fallback. |
+| `calcit.core/assoc-in` | `schema.args.0` | unresolved | compiler-specialized-contracts | retain-reviewed | 完整类型的字面量 Map 路径直接 lowering；已证明的 Map 前缀可在开放 payload 上保留结果类型，但未知遍历仍走公开 walker。 |
 | `calcit.core/assoc-in` | `schema.args.2` | unresolved | compiler-specialized-contracts | retain-reviewed | Typed literal Map paths validate the replacement against the recovered leaf type before direct reconstruction; dynamic paths cannot honestly relate this value in the public fallback schema. |
-| `calcit.core/assoc-in` | `schema.return` | unresolved | compiler-specialized-contracts | retain-reviewed | Typed literal Map paths rebuild and preserve the concrete receiver type; dynamic or mixed-container paths retain the representation-polymorphic runtime result. |
+| `calcit.core/assoc-in` | `schema.return` | unresolved | compiler-specialized-contracts | retain-reviewed | 字面量路径保留已证明的 Map 前缀；Dynamic 子节点仍开放，空/未知路径与不相容的 key/具体 leaf 不承诺原 receiver 类型。 |
 | `calcit.core/case` | `schema.inputs.0.expr` | intentional-macro-syntax | macro-system | retain-reviewed | 宏语法随展开阶段变化；保留显式开放边界，并通过专项测试验证语义。 |
 | `calcit.core/case` | `schema.expansion` | intentional-macro-syntax | macro-system | retain-reviewed | 宏语法随展开阶段变化；保留显式开放边界，并通过专项测试验证语义。 |
 | `calcit.core/case-default` | `schema.inputs.0.expr` | intentional-macro-syntax | macro-system | retain-reviewed | 宏语法随展开阶段变化；保留显式开放边界，并通过专项测试验证语义。 |
@@ -271,7 +271,7 @@
 | `calcit.core/update` | `schema.args.2.args.0` | unresolved | compiler-specialized-contracts | retain-reviewed | 已知 List、Map 或 Struct 接收者按成员或字段类型约束 updater 输入；开放接收者保留 Dynamic，不能从未证明的槽恢复任意泛型。 |
 | `calcit.core/update` | `schema.args.2.return` | unresolved | compiler-specialized-contracts | retain-reviewed | 已知接收者的 updater 返回必须满足相应成员或字段类型，并保留完整接收者类型；开放 fallback 的返回继续为 Dynamic。 |
 | `calcit.core/update` | `schema.return` | unresolved | compiler-specialized-contracts | retain-reviewed | Preprocessing preserves the concrete collection or Struct receiver as the update result; the representation-polymorphic facade receiver is reviewed alongside this specialization. |
-| `calcit.core/update-in` | `schema.args.0` | unresolved | compiler-specialized-contracts | retain-reviewed | Fully typed nested Map receivers with non-empty literal paths are lowered to direct typed lookup and reconstruction; dynamic or mixed-container paths remain an explicit compatibility fallback. |
+| `calcit.core/update-in` | `schema.args.0` | unresolved | compiler-specialized-contracts | retain-reviewed | 完整类型的字面量 Map 路径直接 lowering；开放 payload 上的已证明 Map 前缀可保留结果类型，callback 输入仍需独立证明。 |
 | `calcit.core/update-in` | `schema.args.2.args.0.type-arg.0` | unresolved | compiler-specialized-contracts | retain-reviewed | 运行时 fallback 读取开放叶子并传递 Option<Dynamic>，独立输出不能证明输入。已证明的字面量 Map 路径保留成员类型，空路径保留整个接收者类型；开放 payload 在具体使用前校验。 |
 | `calcit.core/update-in` | `schema.return` | unresolved | compiler-specialized-contracts | retain-reviewed | Typed literal Map paths pass Option<Leaf> to the updater and rebuild the concrete receiver type; the dynamic-path runtime fallback cannot expose that dependent relation in the current schema grammar. |
 | `calcit.core/when` | `schema.inputs.0.expr` | intentional-macro-syntax | macro-system | retain-reviewed | 宏语法随展开阶段变化；保留显式开放边界，并通过专项测试验证语义。 |
