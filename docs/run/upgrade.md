@@ -24,6 +24,38 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.30.0 开放路径更新合同
+
+`update-in` 的开放数据/未知路径回调接收 `Option<Dynamic>`，输出类型与输入独立。
+旧 schema 将两者绑定为同一个 `T`，但并没有证明开放数据的叶子也是 `T`。
+已证明的同质 Map 与字面量路径仍提供精确 `Option<Leaf>` 并保留 Map 结果；
+字面量空路径提供整个接收者的 `Option<T>`，允许不同型输出。
+
+原来在未知路径中直接做数值运算，或只声明回调输入为 `Option<Number>` 的项目，
+需要在实际使用处校验 payload。先明确业务缺失行为，再保留原顺序和错误传播，例如：
+
+```cirru
+defn update-counter (data path)
+  hint-fn $ {}
+    :args $ [] 'Dynamic $ :: 'List 'Tag
+    :return 'Dynamic
+  update-in data path $ fn (current)
+    hint-fn $ {}
+      :args $ [] $ :: 'Option 'Dynamic
+      :return 'Number
+    match current
+      (:none) 1
+      (:some value) $ inc $ decode-map-as value 'Number
+```
+
+这里的缺失初值是示例业务规则，不是迁移工具代选的默认值。已有静态叶子无需为了
+升级扩大成 Dynamic；混合容器或动态路径也不能靠返回声明、assert 或 unsafe 证明输入。
+
+通过 `query context/schema` 确认真实调用和输入证据，使用既有 `edit` / `tree` 组成
+项目级事务。先运行 `edit transaction --dry-run --format edn`，审阅写入范围，再把返回的
+`scoped-revision` 传给相同事务的 `--expect-revision`；不新增固定 fix 规则。
+迁移后执行完整 strict、原附带测试及实际目标后端回放，保留失败、缺失与单次求值语义。
+
 ## 当前升级闭环
 
 本节是项目升级的唯一顺序。Agent 可直接运行 `calcit docs read upgrade.md '当前升级闭环'` 读取本节；

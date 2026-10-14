@@ -297,9 +297,11 @@ reason/payload 使用方法级泛型，因此不会为了宿主编码而抹掉�
 
 ## get-in / assoc-in / update-in
 
-`get-in` 是可能失败的开放数据访问，返回 `Option<T>`。当接收者是完整类型的嵌套 Map、路径是非空字面量时，编译器会把 `get-in`、`assoc-in` 和 `update-in` 展开为类型化的直接 `get` / `assoc` 链，不再经过运行时动态路径遍历；调用参数仍按源码顺序各求值一次。`update-in` 的 updater 接收 `Option<T>`，因此缺失叶子不会退回 nil。
+`get-in` 是可能失败的开放数据访问，返回 `Option<T>`。当接收者是完整类型的嵌套 Map、路径是非空字面量时，编译器会把 `get-in`、`assoc-in` 和 `update-in` 展开为类型化的直接 `get` / `assoc` 链，不再经过运行时动态路径遍历；调用参数仍按源码顺序各求值一次。此时 `update-in` 的 updater 接收 `Option<Leaf>`，重建结果保留同质 Map 类型。字面量空路径把整个接收者包装为 `Option<T>`，回调输出可以是不同类型。
 
 动态接收者、动态路径和混合容器仍是明确的兼容边界，会保留动态路径 API。新代码在数据形状已知时优先使用直接 `.get`、Option 组合和名义字段访问；只有开放数据才使用路径 API。不要用路径函数绕过 Struct 字段检查：Struct 应使用 `(:field value)` 或 `value.:field`，字段可缺失就把字段声明为 `Option<T>`。
+
+开放路径的回调输入是 `Option<Dynamic>`，输出类型与输入独立；具体使用 payload 前先 decode 或 narrow。声明 `Option<Number>` 的回调不能证明开放数据本来就是 Number，也不能仅凭返回 Number 把输入收窄。缺失仍为 `Option :none`，存在 nil 的叶子与缺失分支不混同。升级步骤见[开放路径更新合同](run/upgrade.md#0300-开放路径更新合同)。
 
 `Map<K,V>` receiver 的 `.get`，`List<T>` receiver 的 `.get`、`.first`、`.last`，以及 String、Enum receiver 的 `.get`、`.nth`、`.first`、`.last`，会在 preprocess 阶段降低为对应类型的 `&scope:*` primitive 与显式 Option 构造，不再执行通用函数中的 receiver type predicates。对应的前缀形式保持兼容并使用同一 lowering；业务代码优先使用 receiver 形式来保留类型意图。
 

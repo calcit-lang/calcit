@@ -283,7 +283,7 @@ Core lookup APIs that no longer need to preserve bootstrapping compatibility use
 - Reflection uses `enum-definition: Enum -> Option<EnumDef>`, `struct-definition: Struct -> Option<StructDef>`, and `impl-origin: Impl -> Option<Trait>`.
 - `destruct-list`, `destruct-map`, `destruct-set`, and `destruct-str` return named `*Destruct` enums, preserving the familiar `:some`/`:none` branches with checked payloads.
 - 公开集合方法遵守同一契约：Map/Set 的 `.destruct` 返回对应具名 destruct enum。Struct 不暴露 `.nth`，因为字段位置不能作为跨后端稳定语义；静态已知字段使用 `(:field value)` 并直接返回声明类型。显式 `Dynamic` receiver 可用 `get` 做运行时可选字段查询，返回 `Option<Dynamic>`。
-- `when-let` consumes `Option<T>` and returns `Option<R>`; `update-in` passes `Option<T>` to its updater so a missing leaf is never represented by nil. The typed literal-path lowering evaluates the receiver, every path segment, and the updater exactly once in source order.
+- `when-let` 的输入为 `Option<T>`、输出为 `Option<R>`。`update-in` 对已证明静态路径传递 `Option<Leaf>`，开放路径则传递 `Option<Dynamic>`，使用前须校验；回调输入与输出不伪装成同一个泛型。缺失叶子是 `Option :none`，不是 nil。类型化字面量路径 lowering 保持接收者、各路径段和 updater 按源码顺序各求值一次。
 
 When a query immediately ends in a business default, call `.unwrap-or` on its
 Option result. An incompatible fallback is rejected whenever the payload type

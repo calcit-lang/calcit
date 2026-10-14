@@ -129,7 +129,8 @@ let
   ; => {} (:a $ {} (:b $ {} (:c 2)))
 ```
 
-`update-in` 将 `Option<T>` 传给 updater。已有值对应 `Option :some value`，缺失叶子对应
+上例的静态 Map 路径让 `update-in` 将 `Option<Number>` 传给 updater。开放或未知路径则接收
+`Option<Dynamic>`，具体使用前先 decode/narrow，回调输出不被绑定成同一输入类型。已有值对应 `Option :some value`，缺失叶子对应
 `Option :none`；只有已证明路径存在时才使用 `.unwrap`，否则通过 `.fold` / `.unwrap-or`
 明确新建语义。空路径会更新 `Option :some data`。
 

@@ -669,7 +669,7 @@ let
   assert= true $ (parse-float |bad).err?
 ```
 
-`get-in` 返回 `Option<T>`，适合开放数据中可能缺失的路径。完整类型的嵌套 Map 配合非空字面量路径时，`get-in`、`assoc-in`、`update-in` 会编译为直接的类型化访问/重建链，并保证接收者、各路径段和 updater 按源码顺序各求值一次。动态路径、动态接收者和混合容器保留为显式兼容边界。路径进入 Struct 时应改用类型化的 `(:field value)` 或 `value.:field` 访问，字段需要可缺失时在 Struct 中声明 `Option<T>`。`update-in` 的 updater 接收 `Option<T>`，缺失分支应显式处理，不要无条件 unwrap：
+`get-in` 返回 `Option<T>`，适合开放数据中可能缺失的路径。完整类型的嵌套 Map 配合非空字面量路径时，`get-in`、`assoc-in`、`update-in` 会编译为直接的类型化访问/重建链，并保证接收者、各路径段和 updater 按源码顺序各求值一次。此时 updater 接收 `Option<Leaf>`；字面量空路径保留整个接收者的类型，回调输出可不同型。动态路径、动态接收者和混合容器仍走开放边界，回调接收 `Option<Dynamic>`，具体使用 payload 前必须 decode/narrow，不能用回调返回类型证明输入。路径进入 Struct 时使用类型化的 `(:field value)` 或 `value.:field`，字段可缺失时声明 `Option<T>`。已证明的 Number 叶子可以如下处理缺失：
 
 ```cirru.no-check
 update-in data ([] :profile :visits)

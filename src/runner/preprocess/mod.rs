@@ -2090,6 +2090,16 @@ fn try_expand_typed_literal_path_call(
       Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)))
     }
     "update-in" if args.len() == 3 => {
+      if extract_literal_list_items(path_arg).is_some_and(|path| path.is_empty()) {
+        // The literal empty list has no effects. Bind the receiver and
+        // updater in source order instead of entering a dynamic walker.
+        let base_binding = generated_path_symbol("typed_path_base", file_ns, call_stack)?;
+        let updater_binding = generated_path_symbol("typed_path_updater", file_ns, call_stack)?;
+        let current = generated_optional_value(base_binding.to_owned(), file_ns);
+        let body = generated_call(vec![updater_binding.to_owned(), current]);
+        let body = generated_let(updater_binding, args[2].to_owned(), body, file_ns);
+        return Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)));
+      }
       let Some(path) = fully_typed_literal_assoc_path(base_type.as_ref(), path_arg) else {
         return Ok(None);
       };
@@ -4930,6 +4940,27 @@ fn preprocess_known_function_call(
     .as_ref()
     .and_then(|contract| contract.expected_types.as_deref())
     .unwrap_or(&info.arg_types);
+  let has_open_callback_input = |annotation: &Arc<CalcitTypeAnnotation>| {
+    annotation
+      .resolve_to_nonoptional_fn()
+      .is_some_and(|signature| signature.arg_types.iter().any(|input| contains_dynamic_type(input.as_ref())))
+  };
+  let declared_callback_contract = info.arg_types.iter().any(has_open_callback_input)
+    && (matches!(
+      program::lookup_def_schema(&info.def_ns, &info.name).as_ref(),
+      CalcitTypeAnnotation::Fn(_)
+    ) || program::lookup_def_code(&info.def_ns, &info.name).is_some_and(|source| {
+      let Calcit::List(forms) = source else { return false };
+      let body_start = match forms.first().and_then(source_callable_name) {
+        Some("defn") => 3,
+        Some("fn") => 2,
+        _ => return false,
+      };
+      forms
+        .iter()
+        .skip(body_start)
+        .any(|form| CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form(form).is_some())
+    }));
   let mut preprocessing_type_bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
 
   // Process arguments with type-aware preprocessing for Fn-typed params.
@@ -5023,9 +5054,12 @@ fn preprocess_known_function_call(
 
     let result = preprocess_argument_with_context(
       a,
-      expected_type
-        .as_ref()
-        .map(|annotation| (annotation, refreshed_core_types.is_some())),
+      expected_type.as_ref().map(|annotation| {
+        // A callback's declared input is evidence, including an explicit
+        // open payload. Do not relabel an inferred callable placeholder.
+        let declared_input = declared_callback_contract && info.arg_types.get(arg_idx).is_some_and(has_open_callback_input);
+        (annotation, refreshed_core_types.is_some() || declared_input)
+      }),
       scope_defs,
       scope_types,
       file_ns,
@@ -5250,7 +5284,8 @@ fn preprocess_known_function_call(
     // Try to specialize polymorphic calls when receiver type is known
     if let Calcit::Import(CalcitImport { ns, def, .. }) = &head_form {
       let current_args = CalcitList::from(ys.drop_left());
-      if matches!(def.as_ref(), "get-in" | "assoc-in" | "update-in")
+      if !call_has_type_warnings
+        && matches!(def.as_ref(), "get-in" | "assoc-in" | "update-in")
         && let Some(expanded) = try_expand_typed_literal_path_call(&head_form, &current_args, scope_types, file_ns, call_stack)?
       {
         return preprocess_generated_specialization(&expanded, scope_defs, scope_types, file_ns, call_stack);
