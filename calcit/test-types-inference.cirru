@@ -736,6 +736,19 @@
                 &inspect-type outcome
           :examples $ []
           :schema $ :: 'Dynamic
+        'unit-value-as-annotation $ %{} 'CodeEntry
+          :doc "||Calcit::Unit used as a type annotation resolves to Unit, not an opaque Custom value (#1553, #1554)."
+          :code $ quote $ defn unit-value-as-annotation ()
+            let
+                u &unit
+              assert-type u &unit
+              , u
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |unit-value-annotation-proves-unit)
+            :code $ quote $ assert= &unit (unit-value-as-annotation)
+            :tags $ #{} :unit
         'write-nominal-absence-fields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn write-nominal-absence-fields (fields number text result)
             -> fields
