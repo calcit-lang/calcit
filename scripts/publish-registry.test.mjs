@@ -15,6 +15,17 @@ const runs = ["Test", "Push on main"].map((name, index) => ({
   head_branch: "main", status: "completed", conclusion: "success",
 }));
 
+test("publication prepares its local JS runtime before Rust integration tests", () => {
+  const workflow = readFileSync(new URL("../.github/workflows/publish.yaml", import.meta.url), "utf8");
+  const preparation = /- name: Prepare local JavaScript runtime for integration tests\n\s+run: \|([\s\S]*?)(?=\n      -)/.exec(workflow);
+  assert.ok(preparation, "Publication must initialize the tested source's JS runtime");
+  assert.match(preparation[1], /^\s+yarn install --immutable\s*$/m);
+  assert.match(preparation[1], /^\s+yarn compile\s*$/m);
+  assert.match(preparation[1], /^\s+yarn procs-link\s*$/m);
+  const rustTests = workflow.indexOf("- run: cargo test");
+  assert.ok(rustTests > preparation.index, "Generated-JS Rust tests require dependencies, build and local link first");
+});
+
 test("publication checkout explicitly selects the event ref and preserves annotated tags", (t) => {
   const workflow = readFileSync(new URL("../.github/workflows/publish.yaml", import.meta.url), "utf8");
   const checkout = /- uses: actions\/checkout@v4\n\s+with:([\s\S]*?)(?=\n      -)/.exec(workflow)?.[1];
