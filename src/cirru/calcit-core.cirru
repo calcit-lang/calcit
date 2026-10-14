@@ -1586,7 +1586,11 @@
                 &list:map-pair
                   [] ([] :a 1) ([] :b 2)
                   fn (k v)
-                    [] k $ + v 10
+                    [] k $ +
+                      let
+                          numeric-value v
+                        if (number? numeric-value) numeric-value $ raise "|Expected a Number"
+                      , 10
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |uses-strict-named-call)
               :code $ quote $ assert=
@@ -2036,7 +2040,11 @@
             :code $ quote $ assert= (&{} :b 2)
               &map:filter (&{} :a 1 :b 2)
                 fn (pair)
-                  > (&list:last pair) 1
+                  >
+                    let
+                        numeric-value $ &list:last pair
+                      if (number? numeric-value) numeric-value $ raise "|Expected a Number"
+                    , 1
             :tags $ #{} :core :unit
         '&map:filter-kv $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &map:filter-kv (xs f)
@@ -2144,7 +2152,9 @@
                 &map:map (&{} :a 1 :b 2)
                   fn (pair)
                     [] (&list:first pair)
-                      + 10 $ &list:last pair
+                      + 10 $ let
+                          numeric-value $ &list:last pair
+                        if (number? numeric-value) numeric-value $ raise "|Expected a Number"
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |maps-pair-callback-with-key-and-value)
               :code $ quote $ assert= (&{} :b 1 :c 2)
@@ -2180,7 +2190,9 @@
               &list:to-set $ &map:map-list (&{} :a 1 :b 2)
                 fn (pair)
                   [] (&list:first pair)
-                    + 10 $ &list:last pair
+                    + 10 $ let
+                        numeric-value $ &list:last pair
+                      if (number? numeric-value) numeric-value $ raise "|Expected a Number"
             :tags $ #{} :core :unit
         '&map:to-list $ %{} 'CodeEntry
           :doc "|internal function for converting map to list\nSyntax: (&map:to-list map)\nParams: map (map)\nReturns: list\nConverts map to list of [key value] pairs"
@@ -12894,7 +12906,7 @@
                   update (&{} :a 1) :b $ fn (x) (&+ x 10)
               :tags $ #{} :core :unit
         'update-in $ %{} 'CodeEntry
-          :doc "|Walk a collection path and update its leaf. An open or unknown path supplies Option<Dynamic>; decode or narrow the payload before concrete use. A statically proven literal path retains its leaf type. The callback output is independent of its input. Missing intermediate containers are created as maps."
+          :doc "|Walk a collection path and update its leaf. An open or unknown path supplies Option<Dynamic>; decode or narrow the payload before concrete use. A proven nonempty homogeneous Map path requires Option<Leaf> input and Leaf output, retaining the Map type. Callback output is independent for open paths and literal empty paths; an empty path supplies the receiver itself. Missing intermediate containers are created as maps."
           :code $ quote $ defn update-in (data path f)
             &list-match-internal path
               f $ %some data

@@ -25,3 +25,10 @@ Snapshot schema 与源代码 body hint 两种声明都须提供该证据；已�
 静态 Map、空路径及原嵌套叶子已实际通过 WASM 与 Wasmtime 49.0.2 的 WASI 0.3 回放，
 移除原嵌套叶子对应的过期排除。开放遍历的 E_WASM_NIL_TYPE_EVIDENCE 及 Ref trace 的
 unsupported 均保留有实测依据的逐例排除，不缩小输入或将开放路径描述为已支持。
+
+完整 core 回归发现四个旧内部 pair API 测试从声明为 Dynamic 的 callback 输入直接
+读取数值。测试保留原 API 调用和结果断言，在数值运算前使用既有 number? 守卫。
+这修正测试自身的开放边界，不放宽 callback 证明；用同一守卫保留原 WASM filter
+覆盖，避免引入 WASM 尚不支持的 decode-map-as，也不新增排除项。
+review 另要求明确文档范围：输出独立适用于开放路径和空字面量路径；已证明的
+非空同质 Map 路径要求 callback 返回原叶子类型。
