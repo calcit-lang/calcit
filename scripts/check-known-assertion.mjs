@@ -28,6 +28,31 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
+  // Native handles cannot be fabricated for a successful call: audit real wrapper
+  // bodies here, while the HTTP host smoke covers their actual Unit/error behavior.
+  const nativeCapabilities = join(project, "native-capability-signatures.cirru");
+  await copyFile("tests/fixtures/def-value-schema.cirru", nativeCapabilities);
+  const runCapability = (...args) => execFileSync(binary, [nativeCapabilities, ...args], options);
+  runCapability("docs", "agents", "--contract");
+  const capabilityOperations = [["edit", "add-ns", "app.native-contract"]];
+  for (const [name, parameters, body, argTypes, generics] of [
+    ["resolve-unit", "response value", ".resolve! response value", "'FfiResponse 'T", true],
+    ["reject-unit", "response value", ".reject! response value", "'FfiResponse 'T", true],
+    ["cancel-unit", "task", ".cancel! task", "'FfiTask", false],
+    ["cancel-reason-unit", "task reason", ".cancel-with! task reason", "'FfiTask 'T", true],
+  ]) {
+    capabilityOperations.push(
+      ["edit", "def", `app.native-contract/${name}`, "--input-format", "cirru", "--code", `quote $ defn ${name} (${parameters}) (${body})`],
+      ["edit", "schema", `app.native-contract/${name}`, "--input-format", "cirru", "--code",
+        `quote $ :: 'Fn $ {} (:args $ [] ${argTypes}) (:return 'Unit)${generics ? " (:generics $ [] 'T)" : ""}`],
+    );
+  }
+  const capabilityPreview = JSON.parse(runCapability("edit", "transaction", "--code", JSON.stringify(capabilityOperations), "--dry-run", "--format", "json"));
+  runCapability("edit", "transaction", "--code", JSON.stringify(capabilityOperations), "--expect-revision", capabilityPreview.scoped_revision, "--format", "json");
+  const capabilityProof = JSON.parse(runCapability("fix", "--rule", "concrete-return-proof-v1", "--ns", "app.native-contract", "--format", "json"));
+  assert.deepEqual(capabilityProof.diagnostics, [], "native wrapper Unit returns require actual registered intrinsic signatures");
+  assert.deepEqual(capabilityProof.data.suggestions, [], "native contracts must not need downstream casts or Unit tails");
+
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
   // #2053: actual Unit returns, proof, silent output, and host failures agree.
   await copyFile("calcit/add.cirru", snapshot);
