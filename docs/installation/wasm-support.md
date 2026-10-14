@@ -67,6 +67,7 @@ aliases:
 &get-def-doc
 &get-def-schema
 &get-os
+&impl:origin
 &inspect-methods
 &map:fold-kv
 &methods-of

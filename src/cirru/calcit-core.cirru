@@ -842,6 +842,10 @@
             :args $ [] 'String
             :return $ :: 'Optional 'String
           :tags $ #{} :builtin :env :internal :io
+          :tests $ [] $ %{} 'TestEntry (:name |nil-on-missing-variable)
+            :code $ quote $ do
+              assert= nil $ &get-env |__CALCIT_ENV_MISSING_NIL_1554__
+            :tags $ #{} :core :unit
         '&get-in $ %{} 'CodeEntry
           :doc "|Internal nullable traversal primitive. Public get-in is the separate Option-returning API."
           :code $ quote $ defn &get-in (base path)
@@ -965,6 +969,10 @@
             :args $ [] 'Impl
             :return $ :: 'Optional 'Trait
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |nil-on-inherent-impl)
+            :code $ quote $ do
+              assert= nil $ &impl:origin $ &impl::new :PlainImpl
+            :tags $ #{} :core :unit
         '&include $ %{} 'CodeEntry
           :doc "|internal function for including in set\nSyntax: (&include set element)\nParams: set (set), element (any)\nReturns: set\nReturns new set with element included"
           :code $ quote &runtime-implementation
@@ -1368,6 +1376,12 @@
               :code $ quote $ assert= nil
                 &list:first $ []
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |nil-on-empty-and-nil-head)
+              :code $ quote $ do
+                assert= nil $ &list:first $ []
+                assert= 1 $ &list:first $ [] 1 2
+                assert= nil $ &list:first $ [] nil 1
+              :tags $ #{} :core :unit
         '&list:flatten $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:flatten (xs)
             if (list? xs)
@@ -1514,6 +1528,12 @@
             :generics $ [] 'T
             :return $ :: 'Optional 'T
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |nil-on-empty-and-nil-last)
+            :code $ quote $ do
+              assert= nil $ &list:last $ []
+              assert= 3 $ &list:last $ [] 1 3
+              assert= nil $ &list:last $ [] 3 nil
+            :tags $ #{} :core :unit
         '&list:last-index-of $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:last-index-of (xs item)
             &list:find-last-index xs $ defn %last-index-of (x)
@@ -1728,6 +1748,20 @@
                   do (&list:nth xs -1) :returned
                   fn (_error) :failed
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |out-of-bounds-raises)
+              :code $ quote $ do
+                assert= 2 $ &list:nth ([] 1 2) 1
+                assert= true $ try
+                  do
+                    &list:nth ([]) 0
+                    , false
+                  fn (e) true
+                assert= true $ try
+                  do
+                    &list:nth ([] 1) 5
+                    , false
+                  fn (e) true
+              :tags $ #{} :core :unit
         '&list:numbers $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:numbers (xs)
             foldl xs ([])
@@ -1902,22 +1936,33 @@
             :generics $ [] 'K 'V
             :return $ :: 'Optional 'Enum
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |exposes-pairs-and-folds)
-            :code $ quote $ let
-                m $ &{} :a 1 :b 2 :c 3 :d 4
-              do
-                let
-                    parts $ &map:destruct m
-                  if (non-nil? parts)
-                    let
-                        remaining-map $ option:unwrap $ last parts
-                      if (map? remaining-map)
-                        assert= 3 $ count remaining-map
-                        raise |expected-map-rest
-                    raise |expected-non-empty-map
-                assert= 10 $ foldl m 0 $ fn (acc pair)
-                  let[] (k v) pair $ &+ acc v
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |exposes-pairs-and-folds)
+              :code $ quote $ let
+                  m $ &{} :a 1 :b 2 :c 3 :d 4
+                do
+                  let
+                      parts $ &map:destruct m
+                    if (non-nil? parts)
+                      let
+                          remaining-map $ option:unwrap $ last parts
+                        if (map? remaining-map)
+                          assert= 3 $ count remaining-map
+                          raise |expected-map-rest
+                      raise |expected-non-empty-map
+                  assert= 10 $ foldl m 0 $ fn (acc pair)
+                    let[] (k v) pair $ &+ acc v
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |nil-on-empty-map)
+              :code $ quote $ do
+                assert= nil $ &map:destruct $ {}
+                assert=
+                  [] :a 1 $ {}
+                  &map:destruct $ {} $ :a 1
+                assert=
+                  [] :a nil $ {}
+                  &map:destruct $ {} $ :a nil
+              :tags $ #{} :core :unit
         '&map:diff-keys $ %{} 'CodeEntry
           :doc "|internal function for map diff keys\nSyntax: (&map:diff-keys map1 map2)\nParams: map1 (map), map2 (map)\nReturns: set\nReturns keys that differ between maps"
           :code $ quote &runtime-implementation
@@ -2108,6 +2153,16 @@
             :generics $ [] 'K 'V
             :return $ :: 'Optional 'V
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |nil-on-missing-key-and-nil-value)
+            :code $ quote $ do
+              assert= nil $ &map:get ({}) :z
+              assert= 1 $ &map:get
+                {} $ :a 1
+                , :a
+              assert= nil $ &map:get
+                {} $ :a nil
+                , :a
+            :tags $ #{} :core :unit
         '&map:includes? $ %{} 'CodeEntry
           :doc "|Internal function for checking whether a map includes a value. Syntax: (&map:includes? map value). Returns true when any map value equals the supplied value."
           :code $ quote &runtime-implementation
@@ -2408,6 +2463,12 @@
             :args $ [] 'String
             :return $ :: 'Optional 'Number
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |nil-on-invalid-text)
+            :code $ quote $ do
+              assert= nil $ &parse-float |x
+              assert= nil $ &parse-float |
+              assert= 1.5 $ &parse-float |1.5
+            :tags $ #{} :core :unit
         '&read-stdin-text $ %{} 'CodeEntry (:doc "|内部有界 stdin 文本边界，显式接收 Result 与错误消息。")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2467,6 +2528,13 @@
             :generics $ [] 'T
             :return $ :: 'Optional 'Enum
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |nil-on-empty-set)
+            :code $ quote $ do
+              assert= nil $ &set:destruct $ #{}
+              assert=
+                [] 1 $ #{}
+                &set:destruct $ #{} 1
+            :tags $ #{} :core :unit
         '&set:empty $ %{} 'CodeEntry (:doc "|internal helper for set :empty method entry")
           :code $ quote $ defn &set:empty (_xs) (#{})
           :examples $ []
@@ -2723,9 +2791,15 @@
             :args $ [] 'String
             :return $ :: 'Optional 'String
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |returns-first-character)
-            :code $ quote $ assert= |a (&str:first |abc)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |returns-first-character)
+              :code $ quote $ assert= |a (&str:first |abc)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |nil-on-empty-string)
+              :code $ quote $ do
+                assert= nil $ &str:first |
+                assert= |a $ &str:first |abc
+              :tags $ #{} :core :unit
         '&str:includes? $ %{} 'CodeEntry
           :doc "|String .includes? 的内部实现，检查是否包含子串；应用代码优先使用 text .includes? fragment。不要与 String .contains? 的字符索引检查混淆。"
           :code $ quote &runtime-implementation
@@ -2747,11 +2821,17 @@
             :args $ [] 'String 'Number
             :return $ :: 'Optional 'String
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |returns-unicode-character-by-index)
-            :code $ quote $ do
-              assert= "|中" $ &str:nth "|中文" 0
-              assert= "|文" $ &str:nth "|中文" 1
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |returns-unicode-character-by-index)
+              :code $ quote $ do
+                assert= "|中" $ &str:nth "|中文" 0
+                assert= "|文" $ &str:nth "|中文" 1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |nil-on-out-of-bounds)
+              :code $ quote $ do
+                assert= nil $ &str:nth |abc 9
+                assert= |b $ &str:nth |abc 1
+              :tags $ #{} :core :unit
         '&str:pad-left $ %{} 'CodeEntry
           :doc "|internal function for left padding string\nSyntax: (&str:pad-left s length pad-char)\nParams: s (string), length (number), pad-char (string)\nReturns: string\nPads string on left to the given length in Unicode scalars (like count) by repeating the pad string; NaN, negative lengths and an empty pad string return s unchanged"
           :code $ quote &runtime-implementation
@@ -2987,6 +3067,10 @@
             :args $ [] 'Struct
             :return $ :: 'Optional 'Tag
           :tags $ #{} :builtin :internal
+          :tests $ [] $ %{} 'TestEntry (:name |nil-on-anonymous-struct)
+            :code $ quote $ do
+              assert= nil $ &struct:definition $ %{} _ (:x 1)
+            :tags $ #{} :core :unit
         '&struct:extend-as $ %{} 'CodeEntry (:doc "|Extend a struct value with a declared field.")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -6635,7 +6719,7 @@
             :generics $ [] 'T
         'enum-definition $ %{} 'CodeEntry (:doc "|Return Option<EnumDef> for an enum value.")
           :code $ quote $ defn enum-definition (tuple)
-            optionally $ &enum:definition tuple
+            nil->option $ &enum:definition tuple
           :examples $ []
             quote $ assert= (%some Option)
               enum-definition $ %some 1
@@ -7909,7 +7993,7 @@
               :tags $ #{} :core :unit
         'get-env $ %{} 'CodeEntry (:doc "|Read an environment variable as Option<String>.")
           :code $ quote $ defn get-env (name)
-            optionally $ &get-env name
+            nil->option $ &get-env name
           :examples $ [] $ quote
             assert= (Option :none) (get-env |__CALCIT_TEST_MISSING_ENV_83B125E9__)
           :schema $ :: 'Fn $ {}
@@ -8785,7 +8869,7 @@
         'impl-origin $ %{} 'CodeEntry
           :doc "|Return the trait origin of an impl as Option<Trait>; inherent method bags produce none."
           :code $ quote $ defn impl-origin (impl)
-            optionally $ &impl:origin impl
+            nil->option $ &impl:origin impl
           :examples $ [] $ quote
             assert= (%none)
               impl-origin $ &impl::new :PlainImpl
@@ -12026,7 +12110,7 @@
             :generics $ [] 'T
         'struct-definition $ %{} 'CodeEntry (:doc "|Return Option<StructDef> for a struct value.")
           :code $ quote $ defn struct-definition (value)
-            optionally $ &struct:definition value
+            nil->option $ &struct:definition value
           :examples $ [] $ quote
             let
                 User $ defstruct User $ :name 'String
