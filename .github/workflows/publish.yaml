@@ -63,6 +63,12 @@ jobs:
       - name: Set sparse registry protocol
         run: echo "CARGO_REGISTRIES_CRATES_IO_PROTOCOL=sparse" >> $GITHUB_ENV
 
+      - name: Prepare local JavaScript runtime for integration tests
+        run: |
+          yarn install --immutable
+          yarn compile
+          yarn procs-link
+
       - run: cargo test
         env:
           RUST_MIN_STACK: "16777216"
@@ -73,12 +79,7 @@ jobs:
       - name: "verify bundled core Dynamic boundary documentation"
         run: cargo build --bin calcit && node scripts/core-dynamic-classification.mjs --check
       - name: "verify strict diagnostics default and compatibility escape hatch"
-        run: |
-          yarn install --immutable
-          yarn compile
-          mkdir -p node_modules/@calcit
-          ln -s ../../ node_modules/@calcit/procs
-          node scripts/check-strict-default.mjs
+        run: node scripts/check-strict-default.mjs
       - run: cargo run --bin calcit -- calcit/test.cirru
 
       - name: "verify WASM exports and FFI"
