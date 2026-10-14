@@ -1,3 +1,4 @@
+use crate::builtins::option_value;
 use std::sync::Arc;
 
 use crate::builtins::meta::type_of;
@@ -82,10 +83,7 @@ pub fn get(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Map(xs)), Some(a)) => {
       let ys = &mut xs.to_owned();
-      match ys.get(a) {
-        Some(v) => Ok(v.to_owned()),
-        None => Ok(Calcit::Nil),
-      }
+      option_value::from_lookup(ys.get(a).map(|v| v.to_owned()))
     }
     (Some(_), None) => {
       let hint = format_proc_examples_hint(&CalcitProc::NativeMapGet).unwrap_or_default();
@@ -377,9 +375,9 @@ pub fn destruct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Some(k0) => {
         let mut zs = ys.to_owned();
         zs.remove_mut(k0);
-        Ok(Calcit::from(CalcitList::from(&[k0.to_owned(), ys[k0].to_owned(), Calcit::Map(zs)])))
+        option_value::some(Calcit::from(CalcitList::from(&[k0.to_owned(), ys[k0].to_owned(), Calcit::Map(zs)])))
       }
-      None => Ok(Calcit::Nil),
+      None => option_value::none(),
     },
     Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&map:destruct expected a map, but received: {a}")),
     None => CalcitErr::err_nodes(CalcitErrKind::Arity, "&map:destruct expected 1 argument, but received:", xs),

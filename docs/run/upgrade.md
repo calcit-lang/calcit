@@ -24,6 +24,35 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.31.0 底层缺失值原语直接返回 Option（#1554）
+
+十三个内部 `&` 原语此前用 `nil` 表示“没有结果”，类型是 `Optional<T>`。现在它们直接返回名义 `Option`：存在时是 `Option :some value`，缺失时是 `Option :none`，不再产生新的 `nil`。公开包装函数 `first`、`last`、`get`、`nth`、`get-env`、`parse-float`、`enum-definition`、`struct-definition`、`impl-origin` 的签名不变，只需要迁移直接调用原语的代码。
+
+| 原语 | 现在返回 |
+| --- | --- |
+| `&list:first` / `&list:last` | `Option<T>`，空列表为 `none` |
+| `&map:get` | `Option<V>`，键不存在为 `none`；值为 `nil` 的键是 `some nil` |
+| `&map:destruct` / `&set:destruct` | `Option<List>`，空集合为 `none` |
+| `&str:first` / `&str:nth` | `Option<String>`，空串或越界为 `none` |
+| `&parse-float` | `Option<Number>`，无法解析为 `none` |
+| `&get-env` | `Option<String>`；第二个默认值参数已删除，改用 `.unwrap-or` |
+| `&get-in` | `Option<Dynamic>`，路径缺失或遇到 `nil` 为 `none` |
+| `&enum:definition` / `&struct:definition` / `&impl:origin` | `Option<EnumDef>` / `Option<StructDef>` / `Option<Trait>` |
+
+迁移方式：把对结果的 `nil?` 判断改成 `match`，或用 `option:unwrap-or`、`.unwrap-or` 给默认值。
+
+```cirru
+; 旧：nil 表示缺失
+if (nil? (&map:get m :k)) |default (&map:get m :k)
+
+; 新：Option 表示缺失
+.unwrap-or (&map:get m :k) |default
+```
+
+`&get-env name fallback` 现在是 arity 错误，写成 `.unwrap-or (&get-env name) fallback`。`let{}` 对 `nil` 绑定仍按缺失处理，但展开改为 `match`，绑定的类型是 `T?`。依赖旧 nil 行为的 Calcit 测试（例如 `read-env-default` 一类固定 nil 的断言）已删除，改为直接断言 `Option`。
+
+WASM / WASI：`&list:first`、`&list:last`、`&map:get`、`&map:destruct`、`&set:destruct`、`&str:first`、`&str:nth`、`&struct:definition` 与 `&get-env` 返回 Option；`&parse-float` 的运行时解析器无法报告非法输入，`&enum:definition`、`&impl:origin` 尚无 WASM 实现，仍按显式 unsupported 处理。
+
 ## 0.30.0 日志返回 Unit
 
 `println`、`eprintln`、`echo` 成功后统一返回 `Unit`。它们仍按原顺序求值每个参数一次，
@@ -550,7 +579,7 @@ option:unwrap-or (first |🌱树) |
 ```
 
 上例返回 `|🌱`。编译器将字符串 primitive 的结果绑定一次，通过已有的 `nil?` 分支确认存在性再构造 Option；接收者与索引仍从左到右各求值一次。
-List/Enum 中合法的 nil 元素仍是 `some nil`，不被当作缺失。底层 `&str:first` / `&str:nth` 的 nullable 合同不变，直接把未检查结果断言成 String 仍然无法通过严格证明。
+List/Enum 中合法的 nil 元素仍是 `some nil`，不被当作缺失。底层 `&str:first` / `&str:nth` 现在直接返回 `Option<String>`（见 0.31.0 迁移说明）。
 
 ## String 到 Tag/Symbol 的类型化转换
 

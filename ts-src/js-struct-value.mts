@@ -1,5 +1,6 @@
 import { initTernaryTreeMap, Hash, insert } from "@calcit/ternary-tree";
 import { CalcitValue } from "./js-primes.mjs";
+import { option_none, option_some } from "./js-option-value.mjs";
 import { CalcitImpl } from "./js-impl.mjs";
 import {
   newTag,
@@ -281,8 +282,8 @@ export let _$n_struct_$o_get_name = (x: CalcitValue): CalcitTag => {
 
 export let _$n_struct_$o_definition = (x: CalcitValue): CalcitValue => {
   if (x instanceof CalcitStructValue) {
-    if (x.name.value === "_") return null;
-    return x.structRef ?? null;
+    if (x.name.value === "_") return option_none();
+    return x.structRef == null ? option_none() : option_some(x.structRef);
   } else {
     throw new Error("Expected a struct value");
   }

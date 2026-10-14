@@ -1,3 +1,4 @@
+use crate::builtins::option_value;
 use std::env;
 use std::fs;
 use std::process::exit;
@@ -118,20 +119,11 @@ pub fn get_env(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match xs.first() {
     Some(Calcit::Str(s)) => match env::var(&**s) {
-      Ok(v) => {
-        let has_default = xs.len() == 2;
-        if has_default {
-          eprintln!("(get-env {s}): {v}");
-        }
-        Ok(Calcit::Str(v.into()))
+      Ok(v) => option_value::some(Calcit::Str(v.into())),
+      Err(e) => {
+        eprintln!("(get-env {s}): {e}");
+        option_value::none()
       }
-      Err(e) => match xs.get(1) {
-        Some(v0) => Ok(v0.to_owned()),
-        None => {
-          eprintln!("(get-env {s}): {e}");
-          Ok(Calcit::Nil)
-        }
-      },
     },
     Some(a) => {
       let msg = format!(

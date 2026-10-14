@@ -1606,6 +1606,14 @@ fn infer_lookup_payload_type_from_type(
   }
 }
 
+/// Nominal `calcit.core/Option<T>`, the result type of absence-returning primitives (#1554).
+fn core_option_type(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::TypeRef(
+    Arc::from("calcit.core/Option"),
+    Arc::new(vec![inner]),
+  ))
+}
+
 fn wrap_optional_type(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   match inner.as_ref() {
     CalcitTypeAnnotation::Optional(_) => inner,
@@ -2741,28 +2749,11 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
     return Some(updated);
   }
   if matches!(proc, CalcitProc::GetEnv)
-    && matches!(xs.len(), 2 | 3)
+    && xs.len() == 2
     && let Some(name_type) = xs.get(1).and_then(|name| resolve_type_value(name, scope_types))
     && name_type.is_proven_for(&CalcitTypeAnnotation::String)
   {
-    // The raw one-argument operation can only return text or nil. Its broad
-    // first-class signature also admits legacy arbitrary fallbacks, whose
-    // independent evidence must participate in the actual call's result.
-    let text = Arc::new(CalcitTypeAnnotation::String);
-    return Some(match xs.get(2) {
-      None => wrap_optional_type(text),
-      Some(fallback) => match resolve_type_value(fallback, scope_types) {
-        // Arguments evaluate before the environment lookup, not lazily in
-        // its missing-value branch.
-        Some(value) if matches!(value.as_ref(), CalcitTypeAnnotation::Never) => value,
-        Some(value) => merge_if_branch_types(text.clone(), value.clone())
-          // A compatibility join must not fabricate a nominal wrapper for
-          // the actual String branch. Both producers must prove the result.
-          .filter(|joined| text.is_proven_for(joined) && value.is_proven_for(joined))
-          .unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()),
-        None => calcit::DYNAMIC_TYPE.clone(),
-      },
-    });
+    return Some(core_option_type(Arc::new(CalcitTypeAnnotation::String)));
   }
   if matches!(proc, CalcitProc::NativeTraitCall)
     && let Some(signature) = lowered_trait_method_signature(xs, scope_types)
@@ -2774,9 +2765,9 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
     && receiver.is_proven_for(&CalcitTypeAnnotation::AnonymousEnum)
     && let Some(definition) = receiver.resolve_to_enum()
   {
-    // A proven nominal value always carries its definition. Anonymous or
-    // nullable inputs retain the proc's open, nullable result contract.
-    return Some(Arc::new(CalcitTypeAnnotation::EnumDef(Arc::new(definition))));
+    // A proven nominal value always carries its definition, so the payload is
+    // that exact EnumDef. Anonymous inputs retain the open `Option<EnumDef>` contract.
+    return Some(core_option_type(Arc::new(CalcitTypeAnnotation::EnumDef(Arc::new(definition)))));
   }
   if matches!(proc, CalcitProc::NativeTraitNew)
     && let Some(trait_def) = infer_trait_value(xs)
@@ -2852,15 +2843,17 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
     }
   }
   // `&list:nth` retains its unchecked payload type for guarded core macro
-  // expansion. Unlike it, `&list:first` has a nullable Core schema and must
-  // expose that absence to callers.
-  if matches!(proc, CalcitProc::NativeListNth | CalcitProc::NativeListFirst)
-    && let Some(first_arg) = xs.get(1)
+  // expansion. Unlike it, `&list:first` / `&list:last` return nominal
+  // `Option<T>` and must expose that absence to callers.
+  if matches!(
+    proc,
+    CalcitProc::NativeListNth | CalcitProc::NativeListFirst | CalcitProc::NativeListLast
+  ) && let Some(first_arg) = xs.get(1)
     && let Some(type_value) = resolve_type_value(first_arg, scope_types)
     && let CalcitTypeAnnotation::List(element_type) = type_value.as_ref()
   {
-    return Some(if matches!(proc, CalcitProc::NativeListFirst) {
-      wrap_optional_type(element_type.clone())
+    return Some(if matches!(proc, CalcitProc::NativeListFirst | CalcitProc::NativeListLast) {
+      core_option_type(element_type.clone())
     } else {
       element_type.clone()
     });
@@ -2894,7 +2887,7 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
     && let Some(type_value) = resolve_type_value(first_arg, scope_types)
     && let CalcitTypeAnnotation::Map(_key_type, val_type) = type_value.as_ref()
   {
-    return Some(val_type.clone());
+    return Some(core_option_type(val_type.clone()));
   }
   if matches!(proc, CalcitProc::NativeMapDissoc | CalcitProc::NativeMapDiffNew)
     && let Some(first_arg) = xs.get(1)
@@ -4769,20 +4762,30 @@ mod tests {
   }
 
   #[test]
-  fn list_first_inference_preserves_nullable_result() {
+  fn list_first_inference_preserves_option_result() {
     let list = proc_call(CalcitProc::List, vec![Calcit::Number(1.0), Calcit::Number(2.0)]);
     let first = proc_call(CalcitProc::NativeListFirst, vec![list]);
 
     assert!(matches!(
-      infer_static_type_from_expr(&first).as_deref(),
-      Some(CalcitTypeAnnotation::Optional(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)
+      infer_static_type_from_expr(&first).and_then(|t| t.option_payload()).as_deref(),
+      Some(CalcitTypeAnnotation::Number)
+    ));
+    let last = proc_call(
+      CalcitProc::NativeListLast,
+      vec![proc_call(CalcitProc::List, vec![Calcit::Number(1.0)])],
+    );
+    assert!(matches!(
+      infer_static_type_from_expr(&last).and_then(|t| t.option_payload()).as_deref(),
+      Some(CalcitTypeAnnotation::Number)
     ));
 
     let empty_list = proc_call(CalcitProc::List, vec![]);
     let first_empty = proc_call(CalcitProc::NativeListFirst, vec![empty_list]);
     assert!(matches!(
-      infer_static_type_from_expr(&first_empty).as_deref(),
-      Some(CalcitTypeAnnotation::Optional(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::Never)
+      infer_static_type_from_expr(&first_empty)
+        .and_then(|t| t.option_payload())
+        .as_deref(),
+      Some(CalcitTypeAnnotation::Never)
     ));
   }
 
@@ -5313,18 +5316,23 @@ mod tests {
       Arc::new(vec![calcit::DYNAMIC_TYPE.clone()]),
     ));
     let expression = proc_call(CalcitProc::NativeEnumDefinition, vec![local("value", nominal.clone())]);
-    assert!(matches!(infer_type_from_expr(&expression, &ScopeTypes::new()).as_deref(),
-      Some(CalcitTypeAnnotation::EnumDef(definition)) if definition.name() == enum_def.name()));
+    assert!(matches!(
+      infer_type_from_expr(&expression, &ScopeTypes::new()).and_then(|t| t.option_payload()).as_deref(),
+      Some(CalcitTypeAnnotation::EnumDef(definition)) if definition.name() == enum_def.name()
+    ));
     for open in [
       Arc::new(CalcitTypeAnnotation::Optional(nominal)),
       Arc::new(CalcitTypeAnnotation::AnonymousEnum),
     ] {
       let expression = proc_call(CalcitProc::NativeEnumDefinition, vec![local("value", open)]);
       assert!(
-        matches!(
-          infer_type_from_expr(&expression, &ScopeTypes::new()).as_deref(),
-          Some(CalcitTypeAnnotation::Optional(_))
-        ),
+        infer_type_from_expr(&expression, &ScopeTypes::new()).is_some_and(|t| t.is_option_type())
+          && !matches!(
+            infer_type_from_expr(&expression, &ScopeTypes::new())
+              .and_then(|t| t.option_payload())
+              .as_deref(),
+            Some(CalcitTypeAnnotation::EnumDef(_))
+          ),
         "nullable or anonymous evidence must not prove a nominal definition"
       );
     }

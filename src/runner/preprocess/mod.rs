@@ -1979,7 +1979,15 @@ fn generated_assoc_in_step(
   let empty_map = || generated_call(vec![Calcit::Proc(CalcitProc::NativeMap)]);
   let child_value = generated_if(
     generated_call(vec![Calcit::Proc(CalcitProc::NativeMapContains), data.to_owned(), key.to_owned()]),
-    generated_call(vec![Calcit::Proc(CalcitProc::NativeMapGet), data.to_owned(), key.to_owned()]),
+    generated_core_call(
+      "option:unwrap",
+      vec![generated_call(vec![
+        Calcit::Proc(CalcitProc::NativeMapGet),
+        data.to_owned(),
+        key.to_owned(),
+      ])],
+      file_ns,
+    ),
     empty_map(),
     file_ns,
   );
@@ -2155,8 +2163,7 @@ fn generated_optional_index_access(
   nth_proc: CalcitProc,
   check_number: bool,
   file_ns: &str,
-  call_stack: &CallStackList,
-) -> Result<Calcit, CalcitErr> {
+) -> Calcit {
   let none = generated_absent_value(file_ns);
   let in_bounds = generated_if(
     generated_call(vec![
@@ -2171,13 +2178,13 @@ fn generated_optional_index_access(
         index.to_owned(),
         generated_call(vec![Calcit::Proc(count_proc), receiver.to_owned()]),
       ]),
-      generated_optional_nth(nth_proc, receiver, index.to_owned(), file_ns, call_stack)?,
+      generated_optional_nth(nth_proc, receiver, index.to_owned(), file_ns),
       none.to_owned(),
       file_ns,
     ),
     file_ns,
   );
-  Ok(if check_number {
+  if check_number {
     generated_if(
       generated_call(vec![Calcit::Proc(CalcitProc::NumberQuestion), index]),
       in_bounds,
@@ -2186,46 +2193,23 @@ fn generated_optional_index_access(
     )
   } else {
     in_bounds
-  })
-}
-
-/// Convert a nullable string primitive through ordinary lexical narrowing.
-/// A single binding preserves evaluation count without inventing assertion
-/// evidence. This must not be used for collections with legitimate nil items.
-fn generated_string_option(value: Calcit, file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
-  let binding = generated_path_symbol("typed_string_value", file_ns, call_stack)?;
-  let body = generated_if(
-    generated_call(vec![Calcit::Proc(CalcitProc::NilQuestion), binding.to_owned()]),
-    generated_absent_value(file_ns),
-    generated_optional_value(binding.to_owned(), file_ns),
-    file_ns,
-  );
-  Ok(generated_let(binding, value, body, file_ns))
-}
-
-fn generated_optional_nth(
-  proc: CalcitProc,
-  receiver: Calcit,
-  index: Calcit,
-  file_ns: &str,
-  call_stack: &CallStackList,
-) -> Result<Calcit, CalcitErr> {
-  let value = generated_call(vec![Calcit::Proc(proc), receiver, index]);
-  if proc == CalcitProc::NativeStrNth {
-    generated_string_option(value, file_ns, call_stack)
-  } else {
-    Ok(generated_optional_value(value, file_ns))
   }
 }
 
-fn generated_optional_first_access(
-  receiver: Calcit,
-  receiver_type: &CalcitTypeAnnotation,
-  file_ns: &str,
-  call_stack: &CallStackList,
-) -> Result<Option<Calcit>, CalcitErr> {
+/// Indexed read that yields `Option<T>`. `&str:nth` already returns the nominal
+/// Option itself; the unchecked list and enum readers are wrapped in `Option :some`.
+fn generated_optional_nth(proc: CalcitProc, receiver: Calcit, index: Calcit, file_ns: &str) -> Calcit {
+  let value = generated_call(vec![Calcit::Proc(proc), receiver, index]);
+  if proc == CalcitProc::NativeStrNth {
+    value
+  } else {
+    generated_optional_value(value, file_ns)
+  }
+}
+
+fn generated_optional_first_access(receiver: Calcit, receiver_type: &CalcitTypeAnnotation, file_ns: &str) -> Option<Calcit> {
   let none = generated_absent_value(file_ns);
-  Ok(match receiver_type {
+  match receiver_type {
     CalcitTypeAnnotation::List(_) => Some(generated_if(
       generated_call(vec![Calcit::Proc(CalcitProc::NativeListEmpty), receiver.to_owned()]),
       none,
@@ -2235,11 +2219,8 @@ fn generated_optional_first_access(
       ),
       file_ns,
     )),
-    CalcitTypeAnnotation::String => Some(generated_string_option(
-      generated_call(vec![Calcit::Proc(CalcitProc::NativeStrFirst), receiver]),
-      file_ns,
-      call_stack,
-    )?),
+    // `&str:first` already returns nominal `Option<String>`.
+    CalcitTypeAnnotation::String => Some(generated_call(vec![Calcit::Proc(CalcitProc::NativeStrFirst), receiver])),
     value
       if matches!(value, CalcitTypeAnnotation::EnumValue(_) | CalcitTypeAnnotation::AnonymousEnum)
         || value.resolve_to_enum().is_some() =>
@@ -2259,7 +2240,7 @@ fn generated_optional_first_access(
       ))
     }
     _ => None,
-  })
+  }
 }
 
 fn generated_optional_last_access(
@@ -2292,8 +2273,7 @@ fn generated_optional_last_access(
       receiver.to_owned(),
       generated_call(vec![Calcit::Proc(CalcitProc::NativeMinus), count.to_owned(), Calcit::Number(1.0)]),
       file_ns,
-      call_stack,
-    )?,
+    ),
     none,
     file_ns,
   );
@@ -2348,19 +2328,8 @@ fn try_expand_typed_optional_access_call(
     ("get", 2, T::Map(_, _)) if matches!(checked_lowering, Some(CheckedCallLowering::TypedOptionalAccess)) => {
       let receiver = generated_path_symbol("typed_get_receiver", file_ns, call_stack)?;
       let key = generated_path_symbol("typed_get_key", file_ns, call_stack)?;
-      let body = generated_if(
-        generated_call(vec![
-          Calcit::Proc(CalcitProc::NativeMapContains),
-          receiver.to_owned(),
-          key.to_owned(),
-        ]),
-        generated_optional_value(
-          generated_call(vec![Calcit::Proc(CalcitProc::NativeMapGet), receiver.to_owned(), key.to_owned()]),
-          file_ns,
-        ),
-        generated_absent_value(file_ns),
-        file_ns,
-      );
+      // `&map:get` returns nominal `Option<V>` and distinguishes an absent key from a nil value.
+      let body = generated_call(vec![Calcit::Proc(CalcitProc::NativeMapGet), receiver.to_owned(), key.to_owned()]);
       Ok(Some(generated_lets(
         vec![(receiver, receiver_expr.to_owned()), (key, args[1].to_owned())],
         body,
@@ -2371,15 +2340,7 @@ fn try_expand_typed_optional_access_call(
       let (count_proc, nth_proc) = indexed_procs.expect("guarded indexed procs");
       let receiver = generated_path_symbol("typed_get_receiver", file_ns, call_stack)?;
       let index = generated_path_symbol("typed_get_index", file_ns, call_stack)?;
-      let body = generated_optional_index_access(
-        receiver.to_owned(),
-        index.to_owned(),
-        count_proc,
-        nth_proc,
-        true,
-        file_ns,
-        call_stack,
-      )?;
+      let body = generated_optional_index_access(receiver.to_owned(), index.to_owned(), count_proc, nth_proc, true, file_ns);
       Ok(Some(generated_lets(
         vec![(receiver, receiver_expr.to_owned()), (index, args[1].to_owned())],
         body,
@@ -2390,15 +2351,7 @@ fn try_expand_typed_optional_access_call(
       let (count_proc, nth_proc) = indexed_procs.expect("guarded indexed procs");
       let receiver = generated_path_symbol("typed_nth_receiver", file_ns, call_stack)?;
       let index = generated_path_symbol("typed_nth_index", file_ns, call_stack)?;
-      let body = generated_optional_index_access(
-        receiver.to_owned(),
-        index.to_owned(),
-        count_proc,
-        nth_proc,
-        true,
-        file_ns,
-        call_stack,
-      )?;
+      let body = generated_optional_index_access(receiver.to_owned(), index.to_owned(), count_proc, nth_proc, true, file_ns);
       Ok(Some(generated_lets(
         vec![(receiver, receiver_expr.to_owned()), (index, args[1].to_owned())],
         body,
@@ -2407,8 +2360,8 @@ fn try_expand_typed_optional_access_call(
     }
     ("first", 1, _) if indexed_procs.is_some() && matches!(checked_lowering, Some(CheckedCallLowering::TypedOptionalAccess)) => {
       let receiver = generated_path_symbol("typed_first_receiver", file_ns, call_stack)?;
-      let body = generated_optional_first_access(receiver.to_owned(), receiver_type.as_ref(), file_ns, call_stack)?
-        .expect("guarded typed first receiver");
+      let body =
+        generated_optional_first_access(receiver.to_owned(), receiver_type.as_ref(), file_ns).expect("guarded typed first receiver");
       Ok(Some(generated_let(receiver, receiver_expr.to_owned(), body, file_ns)))
     }
     ("last", 1, _) if indexed_procs.is_some() && matches!(checked_lowering, Some(CheckedCallLowering::TypedOptionalAccess)) => {
@@ -2511,7 +2464,17 @@ pub fn preprocess_expr(
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   // the native stack guard targets runtime recursion; preprocessing and macro expansion are exempt
-  runner::with_stack_guard_suspended(|| preprocess_expr_unguarded(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack))
+  let processed = runner::with_stack_guard_suspended(|| {
+    preprocess_expr_unguarded(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack)
+  })?;
+  if let Calcit::Proc(proc) = &processed
+    && proc.returns_core_option()
+  {
+    // These primitives build `calcit.core/Option` values at runtime, so generated
+    // JS / WASM programs must contain that definition even if source never names it.
+    ensure_ns_def_compiled(calcit::CORE_NS, "Option", check_warnings, call_stack)?;
+  }
+  Ok(processed)
 }
 
 /// Qualified core primitives resolve to their runtime identity, not the
@@ -15169,10 +15132,11 @@ mod tests {
         .expect("build typed get expansion")
         .expect("Map get should specialize");
     let get_code = expanded_get.lisp_str();
-    assert!(get_code.contains("&map:contains?"));
-    assert!(get_code.contains("&map:get"));
-    assert!(get_code.contains("calcit.core/%some"));
-    assert!(get_code.contains("calcit.core/%none"));
+    assert!(
+      get_code.contains("&map:get"),
+      "typed Map get lowers to the Option-returning primitive"
+    );
+    assert!(!get_code.contains("&map:contains?"));
     assert!(!get_code.contains("map?"));
     assert!(!get_code.contains("calcit.core/get"));
     assert_eq!(get_code.matches("source-map").count(), 1, "caller receiver is evaluated once");

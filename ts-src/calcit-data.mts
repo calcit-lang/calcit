@@ -13,6 +13,7 @@ import { CalcitValue, _$n_compare } from "./js-primes.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitSet, overwriteSetComparator } from "./js-set.mjs";
 import { CalcitEnumValue } from "./js-enum-value.mjs";
+import { option_none, option_some } from "./js-option-value.mjs";
 import { CalcitTrait } from "./js-trait.mjs";
 import { CalcitCirruQuote, cirru_deep_equal } from "./js-cirru.mjs";
 import { CirruWriterNode } from "@cirru/writer.ts";
@@ -701,7 +702,7 @@ export let _$n_map_$o_get = function (xs: CalcitValue, k: CalcitValue) {
     throw new Error("map &get takes 2 arguments");
   }
 
-  if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) return xs.get(k);
+  if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) return xs.contains(k) ? option_some(xs.get(k)) : option_none();
 
   throw new Error("Does not support `&get` on this type");
 };
@@ -790,7 +791,7 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
         if (!y.contains(k)) {
           return false;
         }
-        if (!_$n__$e_(v, _$n_map_$o_get(y, k))) {
+        if (!_$n__$e_(v, y.get(k))) {
           return false;
         }
       }

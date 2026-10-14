@@ -1,3 +1,4 @@
+use crate::builtins::option_value;
 use std::cmp::Ordering;
 
 use crate::builtins::math::MAX_SAFE_INTEGER;
@@ -404,8 +405,8 @@ pub fn char_from_code(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn parse_float(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Str(s)) => match s.parse::<f64>() {
-      Ok(n) => Ok(Calcit::Number(n)),
-      Err(_) => Ok(Calcit::Nil),
+      Ok(n) => option_value::some(Calcit::Number(n)),
+      Err(_) => option_value::none(),
     },
     Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("parse-float expected 1 string, but received: {a}")),
     _ => CalcitErr::err_str(CalcitErrKind::Arity, "parse-float expected 1 argument, but received none"),
@@ -493,10 +494,7 @@ pub fn includes_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 pub fn nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match (xs.first(), xs.get(1)) {
     (Some(Calcit::Str(s)), Some(Calcit::Number(n))) => match f64_to_usize(*n) {
-      Ok(idx) => match s.chars().nth(idx) {
-        Some(v) => Ok(Calcit::Str(v.to_string().into())),
-        None => Ok(Calcit::Nil),
-      },
+      Ok(idx) => option_value::from_lookup(s.chars().nth(idx).map(|v| Calcit::Str(v.to_string().into()))),
       Err(e) => CalcitErr::err_str(CalcitErrKind::Type, format!("&str:nth expected a valid index, but received: {e}")),
     },
     (Some(_), None) => CalcitErr::err_nodes(CalcitErrKind::Arity, "&str:nth expected a string and an index, but received:", xs),
@@ -507,10 +505,7 @@ pub fn nth(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
 
 pub fn first(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
-    Some(Calcit::Str(s)) => match s.chars().next() {
-      Some(c) => Ok(Calcit::Str(c.to_string().into())),
-      None => Ok(Calcit::Nil),
-    },
+    Some(Calcit::Str(s)) => option_value::from_lookup(s.chars().next().map(|c| Calcit::Str(c.to_string().into()))),
     Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&str:first expected a string, but received: {a}")),
     None => CalcitErr::err_str(CalcitErrKind::Arity, "&str:first expected 1 argument, but received none"),
   }

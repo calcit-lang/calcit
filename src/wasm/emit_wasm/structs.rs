@@ -601,6 +601,9 @@ pub(super) fn emit_struct_def(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::I32TruncF64U);
   ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  let definition = ctx.alloc_local();
+  ctx.emit(Instruction::LocalSet(definition));
+  emit_option_enum(ctx, Some(definition))?;
   Ok(())
 }
 

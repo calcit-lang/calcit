@@ -706,7 +706,7 @@ let
 let
     ; inferred as :list
     numbers $ range 10
-    ; inferred as :optional<number>; handle nil before using it as a number
+    ; inferred as Option<number>; match :some / :none before using the number
     n $ &list:first numbers
   [] n numbers
 ```

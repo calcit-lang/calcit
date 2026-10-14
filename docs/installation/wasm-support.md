@@ -44,7 +44,8 @@ aliases:
 | `turn-tag` / `to-tag` 运行时转换 | unsupported | 需要运行时 tag interning（`E_WASM_TAG_CONVERSION`） | `calcit.core/filter-map-kv#preserves-captured-generic-relations` 排除项 |
 | `format-cirru-edn`、`try-parse-cirru-edn-as` | supported-with-type-evidence | 需要闭合静态类型与数据形状（`E_WASM_EDN_*`），见 [WASM 编译与验证](../../scripts/wasm-validation.md#cirru-edn-格式化边界) | `scripts/check-parse-boundary.mjs` |
 | `decode-map-as`、`parse-cirru-edn-as` | unsupported | | `calcit.core/decode-map-as#decodes-struct-and-option` 排除项 |
-| `parse-float` | supported-with-type-evidence | 结果 Option 的 nil 判断需要具体类型（`E_WASM_NIL_TYPE_EVIDENCE`），目前 core 实现无法提供 | `calcit.core/parse-float#wraps-number-or-source-error` 排除项 |
+| `&parse-float`、`parse-float` | unsupported | 运行时解析器无法报告非法输入，不能构造 `Option :none` | `calcit.core/&parse-float#returns-none-for-invalid-text` 排除项 |
+| `&list:first`、`&list:last`、`&map:get`、`&map:destruct`、`&set:destruct`、`&str:first`、`&str:nth`、`&struct:definition`、`&get-env` | supported | 直接返回 `Option`：缺失为 `Option :none`；`&get-env` 在 core 目标需要宿主 `io.get_env` | core `:tests`，`calcit.core/&get-env#missing-variable-is-none` 在 core 重放中按宿主排除 |
 | 默认比较器的 `sort` | unsupported | 需要显式两参数比较器 | `calcit.core/sort#orders-list-with-default-comparator` 排除项 |
 | 宿主能力（文件、时钟、随机数、进程参数、环境变量） | unsupported（core 目标） | `E_WASM_CAPABILITY`；WASI 按所选边界单独支持 | `calcit.core/wait-ms#positive-succeeds` 排除项 |
 | JS FFI 定义、`unsafe-coerce` | unsupported | `E_WASM_UNSUPPORTED_JS_FFI` | `calcit.core/starts-with?#supports-tag-and-string-prefixes` 排除项 |

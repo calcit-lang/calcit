@@ -318,17 +318,20 @@ pub(super) fn emit_str_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
   ctx.emit(Instruction::LocalGet(len));
   ctx.emit(Instruction::I32GeU);
   ctx.emit(Instruction::If(BlockType::Result(ValType::F64)));
-  ctx.emit(Instruction::F64Const(Ieee64::from(0.0f64)));
+  emit_option_enum(ctx, None)?;
   ctx.emit(Instruction::Else);
 
   let end = ctx.i32_offset(start, 0);
   emit_str_advance_scalar(ctx, ptr, len, end);
   emit_str_copy_range(ctx, ptr, start, end);
+  let value = ctx.alloc_local();
+  ctx.emit(Instruction::LocalSet(value));
+  emit_option_enum(ctx, Some(value))?;
   ctx.emit(Instruction::End);
   Ok(())
 }
 
-/// `&str:first str` — first scalar as a string, or nil.
+/// `&str:first str` — first scalar as `Option :some`, or `Option :none` for an empty string.
 pub(super) fn emit_str_first(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "&str:first")?;
   emit_str_nth(ctx, &[args[0].clone(), Calcit::Number(0.0)])
@@ -1505,11 +1508,11 @@ pub(super) fn emit_get_char_code(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
 }
 
 /// `parse-float` — parse a decimal string to f64.
-pub(super) fn emit_parse_float(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(1, args, "parse-float")?;
-  emit_expr(ctx, &args[0])?;
-  ctx.call_rt("__rt_parse_float");
-  Ok(())
+pub(super) fn emit_parse_float(_ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(1, args, "&parse-float")?;
+  // `&parse-float` returns `Option :none` for invalid text, but `__rt_parse_float`
+  // cannot report invalid input, so the primitive stays unsupported (#1554).
+  Err("&parse-float is not supported in WASM codegen: the runtime parser cannot signal invalid input".into())
 }
 
 /// `char-from-code` — encode a Unicode codepoint as a single-character heap string.

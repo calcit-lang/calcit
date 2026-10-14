@@ -110,7 +110,7 @@ calcit eval '&list:nth ([] :a :b :c) 1'
 # Output: :b
 
 calcit eval '&map:get ({} (:x 1) (:y 2)) :x'
-# Output: 1
+# Output: (Option :some 1)
 ```
 
 ### Exploring Functions

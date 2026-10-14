@@ -1,4 +1,5 @@
 use crate::builtins::meta::type_of;
+use crate::builtins::option_value;
 use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitList, CalcitProc, format_proc_examples_hint};
 
 pub fn new_set(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
@@ -225,9 +226,9 @@ pub fn destruct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Some(y0) => {
         let mut zs = ys.to_owned();
         zs.remove_mut(y0);
-        Ok(Calcit::from(CalcitList::from(&[y0.to_owned(), Calcit::Set(zs)])))
+        option_value::some(Calcit::from(CalcitList::from(&[y0.to_owned(), Calcit::Set(zs)])))
       }
-      None => Ok(Calcit::Nil),
+      None => option_value::none(),
     },
     Some(a) => {
       let msg = format!(

@@ -102,12 +102,16 @@
                 quote $ &let (result__1 o)
                   assert (str "|expected map for destructing: " result__1) (map? result__1)
                   let
-                      a $ &map:get result__1 :a
-                      b $ &map:get result__1 :b
+                      a $ match (&map:get result__1 :a)
+                        (:some value__2) value__2
+                        (:none) nil
+                      b $ match (&map:get result__1 :b)
+                        (:some value__3) value__3
+                        (:none) nil
                     + a b
             &let
               base $ {} (:a 5) (:b 6)
-              assert= 11 $ let{} (a b) base $ + a b
+              assert= 11 $ let{} (a b) base $ + (either a 0) (either b 0)
             inside-eval:
               assert=
                 macroexpand $ quote $ let-destruct ([] a b) ([] 3 4) (+ a b)

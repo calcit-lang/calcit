@@ -559,8 +559,8 @@
             let
                 first-char $ &str:first |abc
                 missing-first $ &str:first |
-              assert-type first-char $ :: 'Optional 'String
-              assert-type missing-first $ :: 'Optional 'String
+              assert-type first-char $ :: 'Option 'String
+              assert-type missing-first $ :: 'Option 'String
               &inspect-type first-char
               &inspect-type missing-first
             let
@@ -586,8 +586,8 @@
             let
                 nth-char $ &str:nth |abc 1
                 missing-char $ &str:nth |abc 9
-              assert-type nth-char $ :: 'Optional 'String
-              assert-type missing-char $ :: 'Optional 'String
+              assert-type nth-char $ :: 'Option 'String
+              assert-type missing-char $ :: 'Option 'String
               &inspect-type nth-char
               &inspect-type missing-char
             let

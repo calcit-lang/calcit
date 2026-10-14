@@ -670,8 +670,8 @@ pub(super) fn emit_set_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   ctx.emit(Instruction::LocalGet(count));
   ctx.emit(Instruction::I32Eqz);
   ctx.begin_block_if();
-  // empty set → nil
-  ctx.emit(f64_const(0.0));
+  // empty set → Option :none
+  emit_option_enum(ctx, None)?;
   ctx.emit(Instruction::LocalSet(result));
   ctx.emit(Instruction::Else);
   {
@@ -738,6 +738,9 @@ pub(super) fn emit_set_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
     ctx.emit(Instruction::F64Store(mem_arg_f64(16)));
 
     ctx.ptr_to_f64(list_ptr);
+    let payload = ctx.alloc_local();
+    ctx.emit(Instruction::LocalSet(payload));
+    emit_option_enum(ctx, Some(payload))?;
     ctx.emit(Instruction::LocalSet(result));
   }
   ctx.emit(Instruction::End);

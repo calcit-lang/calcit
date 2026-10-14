@@ -51,9 +51,18 @@ pub(super) fn emit_map_get_op(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(
   let target = ctx.alloc_local();
   emit_expr(ctx, &args[1])?;
   ctx.emit(Instruction::LocalSet(target));
+  let found_idx = emit_runtime_lookup_i32_f64_to_i32(ctx, "__rt_map_contains_key", ptr, target);
+  ctx.emit(Instruction::LocalGet(found_idx));
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  let value = ctx.alloc_local();
   ctx.emit(Instruction::LocalGet(ptr));
   ctx.emit(Instruction::LocalGet(target));
   ctx.call_rt("__rt_map_get_value");
+  ctx.emit(Instruction::LocalSet(value));
+  emit_option_enum(ctx, Some(value))?;
+  ctx.emit(Instruction::Else);
+  emit_option_enum(ctx, None)?;
+  ctx.emit(Instruction::End);
   Ok(())
 }
 
@@ -1106,8 +1115,8 @@ pub(super) fn emit_map_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   ctx.emit(Instruction::LocalGet(count));
   ctx.emit(Instruction::I32Eqz);
   ctx.begin_block_if();
-  // empty map → nil
-  ctx.emit(f64_const(0.0));
+  // empty map → Option :none
+  emit_option_enum(ctx, None)?;
   ctx.emit(Instruction::LocalSet(result));
   ctx.emit(Instruction::Else);
   {
@@ -1156,6 +1165,9 @@ pub(super) fn emit_map_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
     ctx.emit(Instruction::F64Store(mem_arg_f64(24)));
 
     ctx.ptr_to_f64(list_ptr);
+    let payload = ctx.alloc_local();
+    ctx.emit(Instruction::LocalSet(payload));
+    emit_option_enum(ctx, Some(payload))?;
     ctx.emit(Instruction::LocalSet(result));
   }
   ctx.emit(Instruction::End);
