@@ -125,7 +125,7 @@ pub(crate) fn checked_call_contract_arity(fn_ns: &str, fn_def: &str) -> Option<u
     "first" | "last" | "pairs-map" => Some(1),
     "nth" => Some(2),
     "any?" | "each" | "every?" | "get" | "filter" | "map" | "map-indexed" | "map-list-kv" | "result:map" => Some(2),
-    "option:fold" | "update" | "update-in" => Some(3),
+    "assoc-in" | "option:fold" | "update" | "update-in" => Some(3),
     _ => None,
   }
 }
@@ -144,6 +144,36 @@ pub(crate) fn resolve_bound_type_slot_chain(mut type_value: Arc<CalcitTypeAnnota
     type_value = bound;
   }
   type_value
+}
+
+/// A non-empty write retains every proven Map prefix above an open payload.
+/// This proves only the result shape on success: unknown descendants still
+/// use the public walker and retain its runtime checks and failure behavior.
+fn open_map_write_preserves_receiver(receiver_type: &Arc<CalcitTypeAnnotation>, path_arg: &Calcit, scope_types: &ScopeTypes) -> bool {
+  use CalcitTypeAnnotation as T;
+  let Some(path) = extract_literal_list_items(path_arg) else {
+    return false;
+  };
+  if path.is_empty() || !matches!(receiver_type.as_ref(), T::Map(_, _)) {
+    return false;
+  }
+  let mut current = receiver_type.clone();
+  for key in path {
+    match current.as_ref() {
+      T::Map(expected_key, member) => {
+        let Some(actual_key) = resolve_type_value(key, scope_types) else {
+          return false;
+        };
+        if !actual_key.is_proven_for(expected_key) {
+          return false;
+        }
+        current = member.clone();
+      }
+      T::Dynamic => return true,
+      _ => return false,
+    }
+  }
+  matches!(current.as_ref(), T::Dynamic)
 }
 
 /// Resolve one concrete collection contract from the receiver and current call
@@ -177,10 +207,28 @@ pub(crate) fn resolve_checked_call_contract(
       let payload = resolve_type_value(items.get(1)?, scope_types)?;
       Some(core_type_ref("Option", vec![payload]))
     })?;
-  if fn_def == "update-in" {
+  if matches!(fn_def, "assoc-in" | "update-in") {
     let path_arg = args.get(1)?;
     let path = extract_literal_list_items(path_arg)?;
     let path_type = resolve_type_value(path_arg, scope_types).unwrap_or_else(|| Arc::new(T::List(calcit::DYNAMIC_TYPE.clone())));
+    if open_map_write_preserves_receiver(&receiver_type, path_arg, scope_types) {
+      let value_type = if fn_def == "assoc-in" {
+        calcit::DYNAMIC_TYPE.clone()
+      } else {
+        fn_type(
+          vec![core_type_ref("Option", vec![calcit::DYNAMIC_TYPE.clone()])],
+          mapper_output_type(args.get(2)?, scope_types, "UpdateInOutput"),
+        )
+      };
+      return Some(CheckedCallContract {
+        expected_types: Some(vec![receiver_type.clone(), path_type, value_type]),
+        return_type: receiver_type,
+        lowering: None,
+      });
+    }
+    if fn_def == "assoc-in" {
+      return None;
+    }
     // An empty literal path passes the receiver itself. Its updater may
     // change the result family without claiming a relationship to open data.
     if path.is_empty() {

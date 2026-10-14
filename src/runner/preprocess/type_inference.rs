@@ -1011,10 +1011,16 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   if ns == calcit::CORE_NS {
     let args = call_expr.drop_left();
     if let Some(contract) = resolve_checked_call_contract(ns, def, &args, scope_types)
-      // Update's checked contract returns the receiver itself, so its type
-      // variables are caller-owned. Do not infer this from type equality:
-      // an unresolved mapper output can accidentally share a caller's name.
-      && (!contract.return_type.contains_type_var() || def == "update")
+      // Receiver-preserving contracts keep caller-owned type variables.
+      // Empty update-in paths instead return the mapper output. Do not infer
+      // ownership from type equality: an unresolved output can share a name.
+      && (!contract.return_type.contains_type_var()
+        || matches!(def, "update" | "assoc-in")
+        || (def == "update-in"
+          && call_expr
+            .get(2)
+            .and_then(extract_literal_list_items)
+            .is_some_and(|path| !path.is_empty())))
     {
       return Some(contract.return_type);
     }

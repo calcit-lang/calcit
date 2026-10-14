@@ -4435,25 +4435,115 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic (:: 'List 'K) 'Dynamic
             :generics $ [] 'K
-          :tests $ [] $ %{} 'TestEntry (:name |assocs-nested-maps-lists-and-nil-base)
-            :code $ quote $ do
-              assert=
-                &{} :a $ &{} :b 10
-                assoc-in
-                  &{} :a $ &{} :b $ &{}
-                  [] :a :b
-                  , 10
-              assert=
-                &{} :a $ [] 1 10 3
-                assoc-in
-                  &{} :a $ [] 1 2 3
-                  [] :a 1
-                  , 10
-              assert=
-                &{} :a $ &{} :b $ &{} :c 10
-                assoc-in nil ([] :a :b :c) 10
-              assert= 9 $ assoc-in (&{}) ([]) 9
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |assocs-nested-maps-lists-and-nil-base)
+              :code $ quote $ do
+                assert=
+                  &{} :a $ &{} :b 10
+                  assoc-in
+                    &{} :a $ &{} :b $ &{}
+                    [] :a :b
+                    , 10
+                assert=
+                  &{} :a $ [] 1 10 3
+                  assoc-in
+                    &{} :a $ [] 1 2 3
+                    [] :a 1
+                    , 10
+                assert=
+                  &{} :a $ &{} :b $ &{} :c 10
+                  assoc-in nil ([] :a :b :c) 10
+                assert= 9 $ assoc-in (&{}) ([]) 9
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |open-map-write-keeps-root-and-siblings)
+              :code $ quote $ let
+                  write $ fn (db)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Map 'Tag 'Dynamic
+                      :return $ :: 'Map 'Tag 'Dynamic
+                    assoc-in db ([] :repo :current) |main
+                assert=
+                  {}
+                    :repo $ {} (:current |main) (:kept 7)
+                    :sibling 9
+                  write $ {}
+                    :repo $ {} (:current |old) (:kept 7)
+                    :sibling 9
+                assert=
+                  {} $ :repo $ {} (:current |main)
+                  write $ {}
+              :tags $ #{} :core :open-map-write :unit
+            %{} 'TestEntry (:name |open-map-write-keeps-nested-map-prefix)
+              :code $ quote $ let
+                  write $ fn (db)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Map 'Tag (:: 'Map 'String 'Dynamic)
+                      :return $ :: 'Map 'Tag $ :: 'Map 'String 'Dynamic
+                    assoc-in db ([] :repo |branch :current) |main
+                assert=
+                  {} $ :repo $ {}
+                    |branch $ {} $ :current |main
+                    |kept 7
+                  write $ {} $ :repo
+                    {}
+                      |branch $ {} $ :current |old
+                      |kept 7
+              :tags $ #{} :core :open-map-write :unit
+            %{} 'TestEntry (:name |open-map-write-keeps-generic-keys)
+              :code $ quote $ let
+                  write $ fn (db key)
+                    hint-fn $ {}
+                      :args $ [] (:: 'Map 'K 'Dynamic) 'K
+                      :return $ :: 'Map 'K 'Dynamic
+                      :generics $ [] 'K
+                    assoc-in db ([] key) |main
+                assert=
+                  {} $ :key |main
+                  write
+                    {} $ :key |old
+                    , :key
+                assert=
+                  {} $ |key |main
+                  write
+                    {} $ |key |old
+                    , |key
+                assert=
+                  {} $ 7 |main
+                  write
+                    {} $ 7 |old
+                    , 7
+              :tags $ #{} :core :open-map-write :unit
+            %{} 'TestEntry (:name |open-map-write-evaluates-operands-once)
+              :code $ quote $ let
+                  trace $ ref 0
+                  make-root $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return $ :: 'Map 'Tag 'Dynamic
+                    assert= 0 @trace
+                    reset! trace 1
+                    {} $ :kept 7
+                  make-key $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return 'Tag
+                    assert= 1 @trace
+                    reset! trace 2
+                    , :current
+                  make-value $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return 'String
+                    assert= 2 @trace
+                    reset! trace 3
+                    , |main
+                assert=
+                  {} (:kept 7) (:current |main)
+                  assoc-in (make-root)
+                    [] $ make-key
+                    make-value
+                assert= 3 @trace
+              :tags $ #{} :core :open-map-write :unit
         'atom $ %{} 'CodeEntry
           :doc "|Deprecated: Compatibility spelling of the same builtin implementation as ref, creating a local Ref<T>. Prefer ref; core-ref-constructor-v1 migrates proven source forms. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
           :code $ quote &runtime-implementation
@@ -13131,6 +13221,26 @@
                 assert= |9 result
                 assert= ([] |start |receiver |updater |callback) @trace
               :tags $ #{} :core :unit :update-in-proof
+            %{} 'TestEntry (:name |open-map-update-keeps-root-and-siblings)
+              :code $ quote $ let
+                  write $ fn (db)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Map 'Tag 'Dynamic
+                      :return $ :: 'Map 'Tag 'Dynamic
+                    update-in db ([] :repo :current)
+                      fn (value)
+                        hint-fn $ {}
+                          :args $ [] $ :: 'Option 'Dynamic
+                          :return 'String
+                        identity |main
+                assert=
+                  {}
+                    :repo $ {} (:current |main) (:kept 7)
+                    :sibling 9
+                  write $ {}
+                    :repo $ {} (:current |old) (:kept 7)
+                    :sibling 9
+              :tags $ #{} :core :open-map-write :unit
         'vals $ %{} 'CodeEntry
           :doc "|兼容旧名；首选 distinct-values 或 .distinct-values，取得 Map<K,V> 的去重值集合 Set<V>，不保证顺序，不保留重复值。"
           :code $ quote $ defn vals (x)
