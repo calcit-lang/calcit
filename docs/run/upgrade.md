@@ -24,6 +24,27 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.30.0 日志返回 Unit
+
+`println`、`eprintln`、`echo` 成功后统一返回 `Unit`。它们仍按原顺序求值每个参数一次，
+输出内容、stdout/stderr 选择和错误传播不变。日志可以直接作为 Unit callback 的最后
+一个表达式，无需额外补 `&unit` 来掩盖未知返回。
+
+```cirru
+defn report-message (message)
+  hint-fn $ {} (:args $ [] 'String) (:return 'Unit)
+  println message
+```
+
+旧 native 返回 `nil`；JS 的 Unit 编码本来就是 `undefined`，现在生成代码会显式丢弃
+宿主 console 的返回值。依赖日志返回 `nil` 的 native 代码应审阅真实用途：仍需要 `nil`
+时在日志后明确返回它，不能把 `Unit` 强转成数据，也不要自动替业务选择默认值。
+先查询 source 的调用与 schema，再使用 `edit`/`tree` 事务 dry-run 和 revision 守卫迁移，
+执行原 strict、定义测试及真实目标回放；不增加固定改写规则。
+
+WASI 使用标准 stdout/stderr；core WASM 的单值宿主日志接口仍有通道与多参数行格式
+限制，详见 [WASM 支持范围](../installation/wasm-support.md)。
+
 ## 0.30.0 开放路径更新合同
 
 `update-in` 的开放数据/未知路径回调接收 `Option<Dynamic>`，输出类型与输入独立。

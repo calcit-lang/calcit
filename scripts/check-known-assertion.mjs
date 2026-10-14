@@ -28,6 +28,70 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
+  await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
+  // #2053: actual Unit returns, proof, silent output, and host failures agree.
+  await copyFile("calcit/add.cirru", snapshot);
+  const loggingOps = [
+    ["edit", "def", "app.main/log-unit", "--input-format", "cirru", "--code",
+      "quote $ defn log-unit (value) (println value)"],
+    ["edit", "schema", "app.main/log-unit", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return 'Unit)"],
+    ["edit", "def", "app.main/failing-log", "--input-format", "cirru", "--code",
+      "quote $ defn failing-log () (println |must-not-print $ raise |log-argument-failed)"],
+    ["edit", "schema", "app.main/failing-log", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+    ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
+      "quote $ defn main! () (assert= &unit $ log-unit |unit-stdout-probe) (assert= &unit $ eprintln |unit-stderr-probe) (assert= &unit $ echo |unit-echo-probe) &unit"],
+    ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+    ["config", "set", "reload-fn", "app.main/main!"],
+  ];
+  const loggingPreview = JSON.parse(run("edit", "transaction", "--code", JSON.stringify(loggingOps), "--dry-run", "--format", "json"));
+  run("edit", "transaction", "--code", JSON.stringify(loggingOps), "--expect-revision", loggingPreview.scoped_revision, "--format", "json");
+  const loggingBefore = await readFile(snapshot);
+  const loggingProof = JSON.parse(run("fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "log-unit", "--format", "json"));
+  assert.deepEqual(loggingProof.diagnostics, []);
+  run("fix", "--workflow", "strict", "--verify", "--format", "json");
+  const nativeLog = spawnSync(binary, [snapshot], options);
+  assert.equal(nativeLog.status, 0, `${nativeLog.stdout}\n${nativeLog.stderr}`);
+  assert.match(nativeLog.stdout, /^unit-stdout-probe$/m);
+  assert.match(nativeLog.stdout, /^unit-echo-probe$/m);
+  assert.doesNotMatch(nativeLog.stdout, /^unit-stderr-probe$/m);
+  assert.match(nativeLog.stderr, /^unit-stderr-probe$/m);
+  const silent = spawnSync(binary, ["src/cirru/calcit-core.cirru", "test", "calcit.core/dbg",
+    "--tag", "log", "--summary-only", "--require-match", "--format", "json"], options);
+  assert.equal(silent.status, 0, `${silent.stdout}\n${silent.stderr}`);
+  const silentSummary = JSON.parse(silent.stdout);
+  assert.equal(silentSummary.failed, 0);
+  assert.equal(silentSummary.executed, 5);
+  assert.doesNotMatch(silent.stderr, /unit-stderr|log-first-argument|log-second-argument/);
+  const nativeFailure = spawnSync(binary, [snapshot, "--init-fn", "app.main/failing-log", "--reload-fn", "app.main/failing-log"], options);
+  assert.notEqual(nativeFailure.status, 0);
+  assert.match(nativeFailure.stderr, /log-argument-failed/);
+  assert.doesNotMatch(nativeFailure.stdout, /^must-not-print$/m);
+  const logJsOutput = join(project, "logging-js");
+  run("--emit-path", logJsOutput, "js");
+  const logJs = await import(pathToFileURL(join(logJsOutput, "app.main.mjs")).href);
+  const oldConsole = { log: console.log, error: console.error };
+  const hostFailure = new Error("logging-host-failed");
+  try {
+    console.log = console.error = () => 123;
+    assert.equal(logJs.log_unit("discard-host-result"), undefined);
+    logJs.main_$x_();
+    const unexpectedLog = [];
+    console.log = (...values) => unexpectedLog.push(values);
+    assert.throws(() => logJs.failing_log(), /log-argument-failed/);
+    assert.deepEqual(unexpectedLog, []);
+    console.log = () => { throw hostFailure; };
+    assert.throws(() => logJs.log_unit("host-error"), error => error === hostFailure);
+    console.log = () => undefined;
+    console.error = () => { throw hostFailure; };
+    assert.throws(() => logJs.main_$x_(), error => error === hostFailure);
+  } finally {
+    Object.assign(console, oldConsole);
+  }
+  assert.deepEqual(await readFile(snapshot), loggingBefore);
+  console.log("Logging Unit proof, silent results, stdout/stderr, argument and JS host failures passed");
   // #2054: a structured open Ref retains its input boundary for callbacks.
   for (const [name, callback, rejected] of [
     ["open-ref-ignores-input", "fn (current previous) &unit", false],
@@ -625,7 +689,6 @@ try {
   assert.equal(truthinessTests.length, 15);
   const truthinessSnapshot = join(project, "truthiness.cirru");
   await copyFile(truthinessCore, truthinessSnapshot);
-  await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
   const replay = (...args) => execFileSync(binary, [truthinessSnapshot, ...args], options);
   const truthinessOperations = [["edit", "add-ns", "calcit.truthiness"]];
   for (const [name, type] of [["choose-open", "'Dynamic"], ["choose-bool", "'Bool"]]) {

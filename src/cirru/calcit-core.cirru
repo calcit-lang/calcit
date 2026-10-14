@@ -5588,6 +5588,43 @@
                 assert= 1 $ dbg $ swap! *count inc
                 assert= 1 $ deref *count
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |registered-stdout-returns-unit)
+              :code $ quote $ do
+                assert= &unit $ println
+                assert= &unit $ echo
+                assert= &unit $ println |unit-stdout
+                assert= &unit $ echo |unit-echo
+              :tags $ #{} :core :log :unit
+            %{} 'TestEntry (:name |registered-log-callback-returns-unit)
+              :code $ quote $ assert= ([] &unit &unit)
+                map ([] |callback-a |callback-b)
+                  fn (message)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'Unit
+                    println message
+              :tags $ #{} :core :log :unit
+            %{} 'TestEntry (:name |registered-stderr-returns-unit)
+              :code $ quote $ do
+                assert= &unit $ eprintln
+                assert= &unit $ eprintln |unit-stderr
+              :tags $ #{} :core :log :unit
+            %{} 'TestEntry (:name |registered-log-arguments-evaluate-once-in-order)
+              :code $ quote $ assert= &unit
+                println
+                  do (echo |log-first-argument) |first
+                  do (echo |log-second-argument) |second
+              :tags $ #{} :core :log :unit
+            %{} 'TestEntry (:name |registered-log-propagates-argument-error)
+              :code $ quote $ assert= |log-argument-failed
+                try
+                  println |must-not-print $ raise |log-argument-failed
+                  fn (message)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'String
+                    , message
+              :tags $ #{} :core :log :unit
         'dec $ %{} 'CodeEntry (:doc "|Decrements a number by 1")
           :code $ quote $ defn dec (x) (&- x 1)
           :examples $ []

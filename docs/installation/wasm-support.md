@@ -37,6 +37,8 @@ aliases:
 | 通过函数值（函数表）调用 `&` rest 函数 | supported | `calcit wasm`：`let ((f +)) (f 1 2)`、经定长 Fn 参数传入的 `defn first-of (a & _xs) a` 等调用按 native 打包剩余实参。用 N 个实参调用函数值时使用第 N 个函数表（N 不设上限，规范类型 `(f64 x N) -> f64` 按模块实际用到的最大 N 生成）；表中 `&` 函数的入口是一个按 N 个实参打包 rest List 后再调用原函数的适配函数，定长函数的入口仍是函数本身。`calcit wasi`：command 中可执行到的间接调用仍在编译期以 `E_WASI_COMMAND_INDIRECT` 拒绝 | `calcit.core/hint-fn#plain-call-rest-fn-value`、`calcit.core/hint-fn#plain-call-many-args-fn-value`（WASI 为排除项） |
 | 嵌套 `fn` / `defn` 闭包值、特化闭包中的 `recur` | unsupported | | `calcit.core/&list:apply#preserves-homogeneous-function-result-types` 排除项 |
 | `try` | unsupported | 失败只能 trap | `calcit.core/&number:rem#rejects-zero-and-non-safe-integers` 排除项 |
+| 日志 Unit 返回与零/单参数 stdout | supported | 沿既有 Unit 编码；core 通过宿主 `io.log_value`，WASI 通过标准通道 | `calcit.core/dbg#registered-stdout-returns-unit`、`registered-log-callback-returns-unit` |
+| stderr 与多参数单行日志 | supported（WASI）、parity（core） | core 的旧单值宿主接口没有通道信息，且将参数拆成多条事件；WASI 先求值全部参数，再按标准 stdout/stderr 输出 | `calcit.core/dbg#registered-stderr-returns-unit`、`registered-log-arguments-evaluate-once-in-order`；core 差异见 [#2059](https://github.com/calcit-lang/calcit/issues/2059) |
 | 局部 `ref`（兼容名 `atom`）、`add-watch!` / `remove-watch!` | unsupported | 局部 Ref 与观察者；已有数值 `defref` 全局不在此排除范围 | `calcit.core/reset!#returns-assigned-scalar` 排除项 |
 | 运行时 quote 值、`macroexpand`、`format-to-lisp` 非静态表达式 | unsupported | 宏在编译前展开，不受影响 | `calcit.core/deftrait#requires-head-accepts-bare-and-quoted`、`calcit.core/data-view#classifies-symbol-struct-ref` 排除项 |
 | `turn-tag` / `to-tag` 运行时转换 | unsupported | 需要运行时 tag interning（`E_WASM_TAG_CONVERSION`） | `calcit.core/filter-map-kv#preserves-captured-generic-relations` 排除项 |

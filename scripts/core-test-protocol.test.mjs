@@ -43,10 +43,10 @@ test("successful early exit cannot pass unexecuted or unfinished tests", () => {
 });
 
 test("complete markers preserve traces and failures allow only a valid prefix", () => {
-  const stdout = "@@core-test:0\na\n@@core-test-end:0\n@@core-test:1\nb\n@@core-test-end:1\n";
+  const stdout = "\n@@core-test:0\n\na\n\n@@core-test-end:0\n@@core-test:1\nb\n@@core-test-end:1\n";
   const parsed = parseMarkers(stdout);
   assert.equal(markerProtocolError(parsed.events, tests, true), undefined);
-  assert.deepEqual([...parsed.traces], [[0, ["a"]], [1, ["b"]]]);
+  assert.deepEqual([...parsed.traces], [[0, ["", "a", ""]], [1, ["b"]]]);
   assert.equal(parsed.last, 1);
   assert.equal(markerProtocolError(parseMarkers("@@core-test:0\n").events, tests, false), undefined);
   for (const events of [

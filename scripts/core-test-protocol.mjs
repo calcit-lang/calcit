@@ -54,7 +54,7 @@ export const parseMarkers = (stdout) => {
       } else {
         current = undefined;
       }
-    } else if (current !== undefined && line !== "") {
+    } else if (current !== undefined) {
       traces.get(current).push(line);
     }
   }

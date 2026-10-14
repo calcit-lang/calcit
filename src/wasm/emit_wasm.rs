@@ -6566,7 +6566,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
     Calcit::Symbol { sym, info, .. } => {
       let name = sym.as_ref();
       let qualified = format!("{}/{}", info.at_ns, name);
-      // IO functions: call host log_value for each arg, return nil
+      // IO functions return the backend's Unit representation after logging.
       if matches!(name, "println" | "eprintln" | "echo") {
         if ctx.target == WasmTarget::Wasi && ctx.boundary == WasmBoundary::Component {
           return emit_wasi_component_print(ctx, name, &args_list);
@@ -6574,14 +6574,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         if ctx.target == WasmTarget::Wasi {
           return emit_wasi_print(ctx, name, &args_list);
         }
-        let log_idx = resolve_host_import(ctx, "io", "log_value")?;
-        for arg in &args_list {
-          emit_expr(ctx, arg)?;
-          ctx.emit(Instruction::Call(log_idx));
-          ctx.emit(Instruction::Drop); // drop log_value's return
-        }
-        ctx.emit(f64_const(0.0)); // nil
-        return Ok(());
+        return emit_core_print(ctx, &args_list);
       }
       if let Ok(proc) = name.parse::<CalcitProc>() {
         return emit_proc_call(ctx, &proc, &args_list);
@@ -6637,14 +6630,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
         if ctx.target == WasmTarget::Wasi {
           return emit_wasi_print(ctx, name, &args_list);
         }
-        let log_idx = resolve_host_import(ctx, "io", "log_value")?;
-        for arg in &args_list {
-          emit_expr(ctx, arg)?;
-          ctx.emit(Instruction::Call(log_idx));
-          ctx.emit(Instruction::Drop);
-        }
-        ctx.emit(f64_const(0.0)); // nil
-        return Ok(());
+        return emit_core_print(ctx, &args_list);
       }
       Err(format!("unsupported registered proc in WASM: {name}"))
     }
@@ -8455,16 +8441,44 @@ fn emit_wasi_fs_write_text(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
   Ok(())
 }
 
-/// Lower Calcit console output through a private Preview 1 adapter.
-fn emit_wasi_print(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<(), String> {
-  let fd = if name == "eprintln" { 2 } else { 1 };
-  for (index, arg) in args.iter().enumerate() {
-    if index > 0 {
-      emit_wasi_write_literal(ctx, fd, " ")?;
-    }
+/// Preserve call evaluation before any logging side effect begins.
+fn emit_print_arguments(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<Vec<u32>, String> {
+  let mut values = Vec::with_capacity(args.len());
+  for arg in args {
     emit_expr(ctx, arg)?;
     let value = ctx.alloc_local();
     ctx.emit(Instruction::LocalSet(value));
+    values.push(value);
+  }
+  Ok(values)
+}
+
+/// Evaluate every argument before invoking the embedded host logger.
+fn emit_core_print(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  let log_idx = resolve_host_import(ctx, "io", "log_value")?;
+  if args.is_empty() {
+    let empty = *ctx.string_pool.get("").ok_or("missing empty logging string literal")?;
+    ctx.emit(f64_const(empty as f64));
+    ctx.emit(Instruction::Call(log_idx));
+    ctx.emit(Instruction::Drop);
+  } else {
+    for value in emit_print_arguments(ctx, args)? {
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.emit(Instruction::Call(log_idx));
+      ctx.emit(Instruction::Drop);
+    }
+  }
+  ctx.emit(f64_const(0.0)); // Unit
+  Ok(())
+}
+
+/// Lower Calcit console output through a private Preview 1 adapter.
+fn emit_wasi_print(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<(), String> {
+  let fd = if name == "eprintln" { 2 } else { 1 };
+  for (index, value) in emit_print_arguments(ctx, args)?.into_iter().enumerate() {
+    if index > 0 {
+      emit_wasi_write_literal(ctx, fd, " ")?;
+    }
     let ptr = emit_turn_string_from_local(ctx, value);
     emit_wasi_write_string(ctx, fd, ptr);
   }
@@ -8475,13 +8489,10 @@ fn emit_wasi_print(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<
 
 fn emit_wasi_component_print(ctx: &mut WasmGenCtx, name: &str, args: &[Calcit]) -> Result<(), String> {
   let interface = if name == "eprintln" { "stderr" } else { "stdout" };
-  for (index, arg) in args.iter().enumerate() {
+  for (index, value) in emit_print_arguments(ctx, args)?.into_iter().enumerate() {
     if index > 0 {
       emit_wasi_component_write_literal(ctx, interface, " ")?;
     }
-    emit_expr(ctx, arg)?;
-    let value = ctx.alloc_local();
-    ctx.emit(Instruction::LocalSet(value));
     let ptr = emit_turn_string_from_local(ctx, value);
     emit_wasi_component_write_string(ctx, interface, ptr)?;
   }
@@ -9881,6 +9892,9 @@ fn collect_strings_from_expr(expr: &Calcit, strings: &mut Vec<String>) {
       strings.push(t.to_string());
     }
     Calcit::List(xs) => {
+      if xs.len() == 1 && expr_uses_wasi_stdio(expr) {
+        strings.push(String::new());
+      }
       // Pre-intern strings produced by `(format-to-lisp (quote X))` at compile time.
       // The assert= macro expands to this pattern for the error message.
       if xs.len() == 2

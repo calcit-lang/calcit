@@ -1801,6 +1801,18 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
         ))
       })
       .or_else(|| Some(tag_annotation("fn"))),
+    Calcit::Registered(name) => {
+      let descriptor = builtins::registered_proc_descriptor(name)?;
+      let signature = descriptor.type_signature?;
+      Some(Arc::new(CalcitTypeAnnotation::from_proc_parts(
+        signature.arg_types,
+        signature.return_type,
+        Some(calcit::ProcArity {
+          min: descriptor.arity_min,
+          max: descriptor.arity_max,
+        }),
+      )))
+    }
 
     Calcit::Import(CalcitImport { info, .. }) if matches!(info.as_ref(), ImportInfo::JsDefault { .. }) => Some(js_host_value_type()),
     Calcit::Import(CalcitImport { ns, def, .. }) => infer_definition_value_type(ns, def),
@@ -1938,8 +1950,8 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
 
         // Local variable as head (function call)
         // If it's a function type, return its return type
-        Calcit::Local(local) => {
-          let type_ann = &local.type_info;
+        Calcit::Local(_) | Calcit::Registered(_) => {
+          let type_ann = infer_expression_type(head, scope_types)?;
           if let Some(fn_type) = type_ann.resolve_to_nonoptional_fn() {
             let returned = resolve_generic_return_type_parts(
               &fn_type.generics,

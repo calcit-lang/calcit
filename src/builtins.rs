@@ -16,7 +16,7 @@ pub mod syntax;
 use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, LazyLock, RwLock};
 
-use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitListView, CalcitProc, CalcitScope, CalcitSyntax};
+use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitListView, CalcitProc, CalcitScope, CalcitSyntax, ProcTypeSignature};
 use crate::call_stack::{CallStackList, using_stack};
 use cirru_edn::EdnTag;
 
@@ -62,6 +62,8 @@ pub struct RegisteredProcDescriptor {
   pub stability: RegisteredProcStability,
   pub docs_hint: Option<Arc<str>>,
   pub callback_last: bool,
+  /// Explicit implementation contract; absent metadata provides no type evidence.
+  pub type_signature: Option<ProcTypeSignature>,
   /// Effect/analysis tags aligned with calcit.core CodeEntry `:tags` (e.g. `:log`, `:io`, `:interop`).
   pub tags: HashSet<EdnTag>,
 }
@@ -80,6 +82,7 @@ impl Default for RegisteredProcDescriptor {
       stability: RegisteredProcStability::Public,
       docs_hint: None,
       callback_last: false,
+      type_signature: None,
       tags: HashSet::new(),
     }
   }
@@ -727,6 +730,10 @@ mod tests {
     assert!(descriptor.tags.contains(&EdnTag::new("log")));
     assert!(descriptor.tags.contains(&EdnTag::new("io")));
     assert!(registered_proc_has_tag(&name, &EdnTag::new("log")));
+    assert!(descriptor.type_signature.is_none());
+    let value = Calcit::Registered(Arc::from(name));
+    assert!(crate::runner::preprocess::infer_static_type_from_expr(&value).is_none());
+    assert!(crate::runner::preprocess::infer_static_type_from_expr(&Calcit::from(vec![value])).is_none());
   }
 
   #[test]
