@@ -5369,6 +5369,7 @@ impl CalcitTypeAnnotation {
   pub fn from_calcit(value: &Calcit) -> Self {
     match value {
       Calcit::Nil => Self::Dynamic,
+      Calcit::Unit => Self::Unit,
       Calcit::Bool(_) => Self::Bool,
       Calcit::Number(_) => Self::Number,
       Calcit::Str(_) => Self::String,
