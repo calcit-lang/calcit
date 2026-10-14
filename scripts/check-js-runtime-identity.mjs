@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cp, mkdtemp, rm, symlink } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -11,9 +11,17 @@ try {
   const runtimeBPath = join(fixtureRoot, "runtime-b", "lib");
   await cp(new URL("../lib", import.meta.url), runtimeAPath, { recursive: true });
   await cp(new URL("../lib", import.meta.url), runtimeBPath, { recursive: true });
+  // Simulate removal of only the public bridge in an isolated runtime copy.
+  const listRuntimePath = join(runtimeBPath, "js-list.mjs");
+  const listRuntime = await readFile(listRuntimePath, "utf8");
+  const shortcutBridge = "export let foldl_shortcut = _$n_list_$o_foldl_shortcut;";
+  assert.equal(listRuntime.split(shortcutBridge).length, 2, "expected exactly one removable compatibility bridge");
+  await writeFile(listRuntimePath, listRuntime.replace(shortcutBridge, ""));
   await symlink(resolve("node_modules"), join(fixtureRoot, "node_modules"), "dir");
 
   const runtimeA = await import(pathToFileURL(join(runtimeAPath, "calcit.procs.mjs")).href);
+  assert.equal(runtimeA.foldl_shortcut, runtimeA._$n_list_$o_foldl_shortcut, "legacy bridge must retain the same implementation");
+  assert.equal(runtimeA.foldl_shortcut.name, "foldl_shortcut", "the bridge retains its observable function name");
   const symbolFromString = runtimeA.turn_symbol("hello");
   assert.ok(symbolFromString instanceof runtimeA.CalcitSymbol, "turn-symbol must return a Symbol on JS");
   assert.equal(symbolFromString.value, "hello");
@@ -277,6 +285,20 @@ try {
   // Loading another runtime replaces ternary-tree's process-wide comparator.
   // Finish single-runtime collection checks before exercising reload identity.
   const runtimeB = await import(pathToFileURL(join(runtimeBPath, "calcit.procs.mjs")).href);
+  assert.equal(runtimeB.foldl_shortcut, undefined, "the isolated runtime must really omit the public export");
+  const privateShortcut = runtimeB._$n_list_$o_foldl_shortcut;
+  const shortcutInputs = new runtimeB.CalcitSliceList([1, 2, 3]);
+  const shortcutCalls = [];
+  assert.equal(privateShortcut(shortcutInputs, 0, 99, (acc, item) => {
+    shortcutCalls.push(item);
+    return new runtimeB.CalcitEnumValue(item === 2, [acc + item]);
+  }), 3, "internal early exit must not need the public export");
+  assert.deepEqual(shortcutCalls, [1, 2], "early exit preserves traversal and does not call later items");
+  assert.equal(privateShortcut(shortcutInputs, 0, 99, (acc, item) =>
+    new runtimeB.CalcitEnumValue(false, [acc + item])), 99, "exhaustion keeps the original default");
+  const shortcutFailure = new Error("shortcut callback failed");
+  assert.throws(() => privateShortcut(shortcutInputs, 0, 99, () => { throw shortcutFailure; }),
+    error => error === shortcutFailure, "callback errors propagate without replacement");
   const todoEnumValue = new runtimeA.CalcitEnumValue(todoField, [""], todoEnum);
   const anonymousEnumValue = new runtimeA.CalcitEnumValue(todoField, [""]);
   assert.equal(runtimeA._$n_enum_def_$o_has_variant_$q_(todoEnum, todoField), true);

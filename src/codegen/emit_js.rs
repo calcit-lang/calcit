@@ -635,7 +635,6 @@ fn to_js_code(
           CalcitProc::NativeListSort => CalcitProc::Sort,
           CalcitProc::NativeListRange => CalcitProc::Range,
           CalcitProc::NativeListFoldl => CalcitProc::Foldl,
-          CalcitProc::NativeListFoldlShortcut => CalcitProc::FoldlShortcut,
           CalcitProc::NativeListQ => CalcitProc::ListQuestion,
           _ => *s,
         };
@@ -3660,12 +3659,17 @@ mod tests {
       (CalcitProc::NativeListAppend, "append"),
       (CalcitProc::NativeListPrepend, "prepend"),
       (CalcitProc::NativeListButlast, "butlast"),
+      (CalcitProc::NativeListFoldlShortcut, "_$n_list_$o_foldl_shortcut"),
       (CalcitProc::ReadFile, "read_file"),
       (CalcitProc::ReadDir, "read_dir"),
     ] {
       let proc_code = to_js_code(&Calcit::Proc(native), "tests.emit-js", &local_defs, &file_imports, &tags, None)
         .expect("internal alias should compile as a function value");
       assert_eq!(proc_code, format!("$clt.{runtime_name}"));
+
+      let core_code = to_js_code(&Calcit::Proc(native), calcit::CORE_NS, &local_defs, &file_imports, &tags, None)
+        .expect("internal proc must link directly in core too");
+      assert_eq!(core_code, format!("$procs.{runtime_name}"));
 
       let form = Calcit::from(vec![Calcit::Proc(native), symbol("xs"), symbol("value")]);
       let call_code =
