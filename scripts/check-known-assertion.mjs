@@ -28,6 +28,49 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
+  // #2046: an unknown path cannot promise its updater a concrete input.
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--target", "calcit.core/update-in",
+    "--tag", "update-in-proof", "--backend", "native,js",
+  ], { ...options, stdio: "inherit" });
+  for (const [name, input, path, callback] of [
+    ["narrow-open-input", "'Dynamic", "path",
+      "fn (current) (hint-fn $ {} (:args $ [] (:: 'Option 'Number)) (:return 'Number)) (inc (current.unwrap))"],
+    ["unchecked-open-input", "'Dynamic", "path", "fn (current) $ inc $ current.unwrap"],
+    ["narrow-open-member", "(:: 'Map 'Tag 'Dynamic)", "([] :count)",
+      "fn (current) (hint-fn $ {} (:args $ [] (:: 'Option 'Number)) (:return 'Number)) (inc (current.unwrap))"],
+    ["wrong-known-member", "(:: 'Map 'Tag 'Number)", "([] :count)",
+      "fn (current) (hint-fn $ {} (:args $ [] (:: 'Option 'String)) (:return 'String)) (current.unwrap)"],
+    ["wrong-known-output", "(:: 'Map 'Tag 'Number)", "([] :count)", "fn (current) |wrong"],
+    ["declared-body-hint-input", "'Dynamic", "path", "fn (current) $ inc $ current.unwrap"],
+  ]) {
+    await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
+    run("edit", "add-ns", "app.update-in-proof");
+    if (name === "declared-body-hint-input") {
+      run("edit", "def", "app.update-in-proof/consume", "--input-format", "cirru", "--code",
+        "quote $ defn consume (data callback) (hint-fn $ {} (:args $ [] 'Dynamic (:: 'Fn ({} (:args $ [] (:: 'Option 'Dynamic)) (:return 'Number)))) (:return 'Number)) (callback $ Option :some data)");
+      run("edit", "schema", "app.update-in-proof/consume", "--input-format", "cirru", "--code", "quote 'Dynamic");
+    }
+    const call = name === "declared-body-hint-input" ? "consume data" : `update-in data ${path}`;
+    run("edit", "def", "app.update-in-proof/rejected", "--input-format", "cirru", "--code",
+      `quote $ defn rejected (data path) (${call} $ ${callback})`);
+    run("edit", "schema", "app.update-in-proof/rejected", "--input-format", "cirru", "--code",
+      `quote $ :: 'Fn $ {} (:args $ [] ${input} (:: 'List 'Tag)) (:return 'Dynamic)`);
+    const before = await readFile(snapshot);
+    const rejected = spawnSync(binary, [snapshot, "fix", "--rule", "callable-contract-proof-v1",
+      "--ns", "app.update-in-proof", "--def", "rejected", "--format", "json"], options);
+    if (rejected.error) throw rejected.error;
+    assert.equal(rejected.status, 1, `${name}: reject an unproven updater contract\n${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`,
+      /E_CALL_ARGUMENT_(?:UNPROVEN|MISMATCH)|W_FN_ARG_TYPE_MISMATCH|E_ERASED_GENERIC_RELATION/);
+    const checked = spawnSync(binary, [snapshot, "--init-fn", "app.update-in-proof/rejected",
+      "--reload-fn", "app.update-in-proof/rejected", "--check-only"], options);
+    if (checked.error) throw checked.error;
+    assert.equal(checked.status, 1, `${name}: normal strict must reject the same updater\n${checked.stdout}\n${checked.stderr}`);
+    assert.match(`${checked.stdout}\n${checked.stderr}`,
+      /E_CALL_ARGUMENT_(?:UNPROVEN|MISMATCH)|W_FN_ARG_TYPE_MISMATCH|E_ERASED_GENERIC_RELATION/);
+    assert.deepEqual(await readFile(snapshot), before);
+  }
   // #2020: selector inputs must retain independently known List members.
   execFileSync(process.execPath, [
     "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",

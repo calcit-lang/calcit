@@ -257,6 +257,10 @@ const compilerSpecializedPositions = new Map([
     "update-in|schema.return",
     "Typed literal Map paths pass Option<Leaf> to the updater and rebuild the concrete receiver type; the dynamic-path runtime fallback cannot expose that dependent relation in the current schema grammar.",
   ],
+  [
+    "update-in|schema.args.2.args.0.type-arg.0",
+    "运行时 fallback 读取开放叶子并传递 Option<Dynamic>，独立输出不能证明输入。已证明的字面量 Map 路径保留成员类型，空路径保留整个接收者类型；开放 payload 在具体使用前校验。",
+  ],
 ]);
 const reviewedCompatibilityPositions = new Map([
   [

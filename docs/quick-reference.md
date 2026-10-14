@@ -360,16 +360,14 @@ let
 - `if-let` - bind an `Option<T>` payload with explicit some/none branches
 - `when-let` - 仅在 `Option :some` 分支运行 body，返回 `Option<R>`
 
-Nested updates are nominal as well: `update-in` passes `Option<T>` to its
-updater, and `dissoc-in` treats an empty path as a no-op. On a fully typed nested
-Map, non-empty literal paths in `get-in`, `assoc-in`, and `update-in` compile to
-direct typed lookup/association chains with single evaluation of each argument.
-Dynamic paths, open containers, and mixed traversal deliberately keep the
-runtime compatibility API. Public lookup and
-positional APIs (`get`, `get-in`, `first`, `last`, and collection `nth`) return
-`Option<T>`. Accessing a statically known struct field with `(:field value)` or
-receiver-first `value.:field` returns the field's declared type directly and is
-lowered to indexed access; an undeclared field is a diagnostic, not `nil`.
+嵌套更新保留名义 Option：`update-in` 对已证明静态路径提供 `Option<Leaf>`，
+对开放路径提供 `Option<Dynamic>`，具体使用前先校验；回调输出不证明输入。
+字面量空路径保留接收者类型，允许不同型输出。`dissoc-in` 的空路径不修改输入。
+完整类型的嵌套 Map 与非空字面量路径让 `get-in`、`assoc-in`、`update-in` 编译成直接的
+类型化访问/重建链，各实参只求值一次。动态路径、开放容器和混合遍历保留运行时边界。
+公开查询和位置访问（`get`、`get-in`、`first`、`last`、集合 `nth`）返回 `Option<T>`。
+静态 Struct 的 `(:field value)` 或 `value.:field` 返回声明字段类型并降为索引访问；
+未声明字段是诊断，不是 nil。
 静态已知 Struct 不通过 `get` 读取字段，也没有公开的 positional `.nth`；显式 `Dynamic` 的运行值若为
 Struct，`get` 可按运行时字段名返回 `Option<Dynamic>`。
 

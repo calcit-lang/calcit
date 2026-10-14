@@ -5,7 +5,10 @@ use std::{collections::HashSet, sync::Arc};
 
 use crate::calcit::{self, Calcit, CalcitList, CalcitTypeAnnotation};
 
-use super::{ScopeTypes, type_inference::resolve_type_value};
+use super::{
+  ScopeTypes,
+  type_inference::{extract_literal_list_items, fully_typed_literal_assoc_path, resolve_type_value},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CheckedCallLowering {
@@ -122,7 +125,7 @@ pub(crate) fn checked_call_contract_arity(fn_ns: &str, fn_def: &str) -> Option<u
     "first" | "last" | "pairs-map" => Some(1),
     "nth" => Some(2),
     "any?" | "each" | "every?" | "get" | "filter" | "map" | "map-indexed" | "map-list-kv" | "result:map" => Some(2),
-    "option:fold" | "update" => Some(3),
+    "option:fold" | "update" | "update-in" => Some(3),
     _ => None,
   }
 }
@@ -174,6 +177,42 @@ pub(crate) fn resolve_checked_call_contract(
       let payload = resolve_type_value(items.get(1)?, scope_types)?;
       Some(core_type_ref("Option", vec![payload]))
     })?;
+  if fn_def == "update-in" {
+    let path_arg = args.get(1)?;
+    let path = extract_literal_list_items(path_arg)?;
+    let path_type = resolve_type_value(path_arg, scope_types).unwrap_or_else(|| Arc::new(T::List(calcit::DYNAMIC_TYPE.clone())));
+    // An empty literal path passes the receiver itself. Its updater may
+    // change the result family without claiming a relationship to open data.
+    if path.is_empty() {
+      let output_type = mapper_output_type(args.get(2)?, scope_types, "UpdateInOutput");
+      return Some(CheckedCallContract {
+        expected_types: Some(vec![
+          receiver_type.clone(),
+          path_type,
+          fn_type(vec![core_type_ref("Option", vec![receiver_type])], output_type.clone()),
+        ]),
+        return_type: output_type,
+        lowering: None,
+      });
+    }
+    // Reuse the same bounded Map-path proof as reconstruction. An unknown
+    // path or mixed/open intermediate container keeps the public contract.
+    let path = fully_typed_literal_assoc_path(receiver_type.as_ref(), path_arg)?;
+    let mut leaf_type = receiver_type.clone();
+    for _ in path {
+      let T::Map(_, member) = leaf_type.as_ref() else { return None };
+      leaf_type = member.clone();
+    }
+    return Some(CheckedCallContract {
+      expected_types: Some(vec![
+        receiver_type.clone(),
+        path_type,
+        fn_type(vec![core_type_ref("Option", vec![leaf_type.clone()])], leaf_type),
+      ]),
+      return_type: receiver_type,
+      lowering: None,
+    });
+  }
   if fn_def == "result:map" {
     let type_args = core_result_type_args(receiver_type.as_ref())?;
     let input_type = type_args[0].clone();

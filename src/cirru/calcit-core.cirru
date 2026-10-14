@@ -12894,7 +12894,7 @@
                   update (&{} :a 1) :b $ fn (x) (&+ x 10)
               :tags $ #{} :core :unit
         'update-in $ %{} 'CodeEntry
-          :doc "|Walk a nested path and update its leaf. The updater receives Option<T>: some for an existing leaf and none for a missing leaf. Missing intermediate containers are created as maps."
+          :doc "|Walk a collection path and update its leaf. An open or unknown path supplies Option<Dynamic>; decode or narrow the payload before concrete use. A statically proven literal path retains its leaf type. The callback output is independent of its input. Missing intermediate containers are created as maps."
           :code $ quote $ defn update-in (data path f)
             &list-match-internal path
               f $ %some data
@@ -12931,9 +12931,9 @@
                   &* (option:unwrap current) 2
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic (:: 'List 'K)
-              :: 'Fn $ {} (:return 'T)
-                :args $ [] $ :: 'Option 'T
-            :generics $ [] 'K 'T
+              :: 'Fn $ {} (:return 'R)
+                :args $ [] $ :: 'Option 'Dynamic
+            :generics $ [] 'K 'R
           :tests $ []
             %{} 'TestEntry (:name |updates-existing-nested-leaf)
               :code $ quote $ do
@@ -12970,6 +12970,96 @@
                     fn (value)
                       if (option:none? value) 1 $ raise |expected-missing-value
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |checked-open-path-keeps-numeric-boundary)
+              :code $ quote $ let
+                  change $ fn (data path)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic $ :: 'List 'Tag
+                      :return 'Dynamic
+                    update-in data path $ fn (current)
+                      hint-fn $ {}
+                        :args $ [] $ :: 'Option 'Dynamic
+                        :return 'Number
+                      if (current.none?) 1 $ inc $ decode-map-as (current.unwrap) 'Number
+                assert=
+                  {} $ :count 2
+                  change
+                    {} $ :count 1
+                    [] :count
+                assert=
+                  {} $ :count 1
+                  change ({}) ([] :count)
+              :tags $ #{} :core :unit :update-in-proof
+            %{} 'TestEntry (:name |open-path-output-is-not-input-type)
+              :code $ quote $ let
+                  replace-leaf $ fn (data path)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic $ :: 'List 'Tag
+                      :return 'Dynamic
+                    update-in data path $ fn (current)
+                      hint-fn $ {}
+                        :args $ [] $ :: 'Option 'Dynamic
+                        :return 'String
+                      if (current.some?) |present |missing
+                assert=
+                  {} $ :value |present
+                  replace-leaf
+                    {} $ :value 42
+                    [] :value
+                assert=
+                  {} $ :value |missing
+                  replace-leaf ({}) ([] :value)
+              :tags $ #{} :core :unit :update-in-proof
+            %{} 'TestEntry (:name |literal-map-path-retains-callback-leaf-type)
+              :code $ quote $ let
+                  increment $ fn (data)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Map 'Tag (:: 'Map 'Tag 'Number)
+                      :return $ :: 'Map 'Tag $ :: 'Map 'Tag 'Number
+                    update-in data ([] :nested :count)
+                      fn (current)
+                        inc $ current.unwrap-or 0
+                assert=
+                  {} $ :nested $ {} (:count 2)
+                  increment $ {} $ :nested
+                    {} $ :count 1
+              :tags $ #{} :core :unit :update-in-proof
+            %{} 'TestEntry
+              :name |empty-path-retains-input-with-independent-output
+              :code $ quote $ let
+                  classify $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'String
+                    update-in value ([])
+                      fn (current)
+                        if
+                          > (current.unwrap) 0
+                          , |positive |non-positive
+                assert= |positive $ classify 42
+                assert= |non-positive $ classify 0
+                assert= nil $ update-in nil ([])
+                  fn (current) (current.unwrap)
+              :tags $ #{} :core :unit :update-in-proof
+            %{} 'TestEntry (:name |empty-path-evaluates-receiver-and-updater-once)
+              :code $ quote $ let
+                  trace $ ref $ [] |start
+                  result $ update-in
+                    do
+                      reset! trace $ append @trace |receiver
+                      , 9
+                    []
+                    do
+                      reset! trace $ append @trace |updater
+                      fn (current)
+                        hint-fn $ {}
+                          :args $ [] $ :: 'Option 'Number
+                          :return 'String
+                        reset! trace $ append @trace |callback
+                        to-string $ current.unwrap
+                assert= |9 result
+                assert= ([] |start |receiver |updater |callback) @trace
+              :tags $ #{} :core :unit :update-in-proof
         'vals $ %{} 'CodeEntry
           :doc "|兼容旧名；首选 distinct-values 或 .distinct-values，取得 Map<K,V> 的去重值集合 Set<V>，不保证顺序，不保留重复值。"
           :code $ quote $ defn vals (x)

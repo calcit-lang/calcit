@@ -28,7 +28,7 @@ aliases:
 | --- | --- | --- | --- |
 | `defn`、固定参数、`let`、`if`、`recur` 尾递归 | supported | 参数与返回值为 f64 值 ABI | core `:tests`，如 `calcit.core/recur` |
 | Number、Bool、nil、String、tag 字面量 | supported | nil、false 与 0 共用 f64 表示，见下一行 | core `:tests` |
-| `nil?`、Option 在开放类型上的判断 | supported-with-type-evidence | 需要具体类型区分 nil、false 与 0（`E_WASM_NIL_TYPE_EVIDENCE`） | `calcit.core/update-in#updates-existing-nested-leaf` 等排除项 |
+| `nil?`、Option 在开放类型上的判断 | supported-with-type-evidence | 需要具体类型区分 nil、false 与 0（`E_WASM_NIL_TYPE_EVIDENCE`） | `calcit.core/update-in#updates-collection-and-missing-paths` 等开放遍历排除项；静态 Map 与字面量空路径用例已通过 |
 | List / Map / Set / Struct / Enum 值与 core 方法 | supported | 线性内存 + bump allocator；`#{}` 字面量不去重 | core `:tests` |
 | `update` 作用于 List / Map / Enum | supported | 按运行时类型分派：List 下标越界或 Map key 不存在时原样返回且不调用回调；Enum 下标越界时 trap，对应 native 的 range error | `calcit.core/update#updates-list-by-index-and-skips-missing-slots` |
 | 已证明的普通方法调用、trait 方法 | supported-with-type-evidence | 接收者需要具体类型（`E_WASM_TRAIT_TYPE_EVIDENCE`、`E_WASM_TRAIT_RESOLUTION`） | `calcit.core/&map:destruct#exposes-pairs-and-folds` 排除项 |
