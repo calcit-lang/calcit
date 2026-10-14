@@ -719,6 +719,8 @@ Common diagnostics:
 
 定义级 `:ffi :js` 可以指定一个 JS 函数表达式，或指定当前 Calcit 模块根目录下包含单个表达式的 `.js`/`.mjs` 文件。构建时把表达式嵌入所属 Calcit namespace 的生成文件，不复制成独立的 JS 模块；调用者只需加载 Calcit 模块并按普通 namespace 引用定义。两个形式都要求完整的 `Fn` schema 和显式 `:js-ffi` feature。schema 是作者承诺的外部边界，编译器不解析 JS 来证明返回值。
 
+指定 JS 实现后，Calcit 检查 `defn` 参数与 schema 的对应关系、调用参数、feature 和 target，并从该声明建立可调用接口；执行与输出采用 JS 实现。声明中的 Cirru body 不是备用实现，严格迁移检查不会借它证明 JS 的返回值，也不会要求修改这个未执行的 body 来满足返回证明。只有 `:js-ffi` feature、没有 `:ffi :js` 实现的普通 Calcit 函数仍完整检查函数体。用 `query context` 确认真正选中的 inline/file 来源，再用模块附带测试及真实宿主回放验证返回值和异常传播；native 调用与 WASM 生成仍明确拒绝 JS-only 定义。
+
 ```cirru.no-check
 :schema $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'Number)
   :features $ #{} :js-ffi

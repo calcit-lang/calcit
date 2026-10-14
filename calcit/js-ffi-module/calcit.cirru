@@ -155,5 +155,17 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'unit-adapter $ %{} 'CodeEntry
+          :doc "|The JS implementation returns Unit; the incompatible shadow body is intentionally never selected."
+          :code $ quote $ defn unit-adapter () 42
+          :examples $ []
+          :ffi $ {} (:target :node)
+            :js $ {} $ :inline "|() => undefined"
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+            :features $ #{} :js-ffi
+          :tests $ [] $ %{} 'TestEntry (:name |selected-js-returns-unit)
+            :code $ quote $ assert= &unit (unit-adapter)
+            :tags $ #{} :js-ffi
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)
