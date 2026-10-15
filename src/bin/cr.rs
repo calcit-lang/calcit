@@ -2101,9 +2101,8 @@ fn run_codegen(entries: &ProgramEntries, emit_path: &str, ir_mode: bool, verbose
     }
   } else {
     ensure_host_running("codegen")?;
-    // TODO entry ns
     phase("emitting JavaScript");
-    match codegen::emit_js::emit_js(&entries.init_ns, emit_path) {
+    match codegen::emit_js::emit_js(&entries.init_fn, &entries.reload_fn, emit_path) {
       Ok(_) => (),
       Err(failure) => {
         call_stack::display_stack_with_docs(&failure, &gen_stack::get_gen_stack(), None, None)?;

@@ -76,6 +76,253 @@ await generated.main_$x_();
 }
 
 #[test]
+fn native_only_formatter_is_rejected_by_js_emission_without_blocking_macro_use() {
+  // Rust owns backend rejection and source diagnostics; assertions run as Calcit.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("calcit/fibo.cirru", &snapshot).unwrap();
+  for (args, context) in [
+    (vec!["edit", "add-ns", "app.library"], "module namespace"),
+    (
+      vec![
+        "edit",
+        "def",
+        "app.main/format-check",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn format-check (items) &unit",
+      ],
+      "runtime formatter argument",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "app.main/format-check",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return 'Unit)",
+      ],
+      "runtime formatter argument contract",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "app.library/public-value",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn public-value () 3",
+      ],
+      "ordinary public API",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "app.library/public-value",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+      ],
+      "ordinary public schema",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "app.library/native-format",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn native-format (items) $ &format-ternary-tree items",
+      ],
+      "native helper",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "app.library/native-format",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Number) (:return 'String)",
+      ],
+      "native helper schema",
+    ),
+    (
+      vec![
+        "edit",
+        "add-import",
+        "app.main",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ app.library :as library",
+      ],
+      "ordinary Calcit module import",
+    ),
+    (
+      vec![
+        "edit",
+        "def",
+        "app.main/native-label",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defmacro native-label ()\n  let ((text $ library/native-format $ range 0))\n    if (string? text) (quote &unit) (raise |formatter-failed)",
+      ],
+      "native formatter in compile-time macro",
+    ),
+    (
+      vec![
+        "edit",
+        "schema",
+        "app.main/native-label",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Macro $ {} (:required $ []) (:capabilities $ #{}) (:expansion $ :: 'Expr 'Unit)",
+      ],
+      "pure macro contract",
+    ),
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), context);
+  }
+  for (index, expression) in [
+    "&format-ternary-tree items",
+    "calcit.core/&format-ternary-tree items",
+    "library/native-format items",
+    "let ((formatter &format-ternary-tree)) $ formatter items",
+  ]
+  .iter()
+  .enumerate()
+  {
+    // Keep input unknown while compiling the helper, so the test exercises a
+    // runtime reference rather than a successfully folded native constant.
+    let code = format!(
+      "quote $ defn format-check (items)\n  let ((text $ {expression}))\n    println text\n    assert= true $ string? text\n    , &unit"
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          "app.main/format-check",
+          "--overwrite",
+          "--input-format",
+          "cirru",
+          "--code",
+          &code,
+        ],
+      ),
+      "native entry",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          "app.main/main!",
+          "--overwrite",
+          "--input-format",
+          "cirru",
+          "--code",
+          "quote $ defn main! () $ format-check $ range 0",
+        ],
+      ),
+      "runtime formatter call",
+    );
+    assert_success(&run_calcit(&snapshot, &[]), "native formatting remains valid");
+    let before = fs::read(&snapshot).unwrap();
+    let output_dir = directory.path().join(format!("rejected-{index}"));
+    let rejected = run_calcit(&snapshot, &["--emit-path", output_dir.to_str().unwrap(), "js"]);
+    assert!(
+      !rejected.status.success(),
+      "native-only formatter must not emit a missing JS function for {expression}:\n{}\n{}",
+      String::from_utf8_lossy(&rejected.stdout),
+      String::from_utf8_lossy(&rejected.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&rejected.stderr);
+    assert!(
+      stderr.contains("&format-ternary-tree") && stderr.contains("native-only") && stderr.contains("JavaScript"),
+      "{stderr}"
+    );
+    assert!(
+      stderr.contains("app.main/format-check") || stderr.contains("app.library/native-format"),
+      "source owner is retained: {stderr}"
+    );
+    assert_eq!(fs::read(&snapshot).unwrap(), before, "backend validation does not edit source");
+    // Other completed modules may remain after a failed build; no emitted
+    // module may contain the unsupported runtime reference.
+    if output_dir.exists() {
+      for entry in fs::read_dir(&output_dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|extension| extension == "mjs") {
+          assert!(
+            !fs::read_to_string(&path).unwrap().contains("_$n_format_ternary_tree"),
+            "unsupported runtime reference emitted in {}",
+            path.display()
+          );
+        }
+      }
+    }
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/main!",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn main! ()\n  native-label\n  assert= 3 $ library/public-value\n  , &unit",
+      ],
+    ),
+    "safe entry with compile-time formatter",
+  );
+  let output_dir = directory.path().join("safe");
+  assert_success(
+    &run_calcit(&snapshot, &["--emit-path", output_dir.to_str().unwrap(), "js"]),
+    "unreachable native helper and macro do not block ordinary JS",
+  );
+  assert_generated_js_runs(directory.path(), &output_dir);
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/reload!",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn reload! () $ println $ library/native-format $ range 0",
+      ],
+    ),
+    "runtime formatter in reload entry",
+  );
+  let rejected = run_calcit(&snapshot, &["--emit-path", output_dir.to_str().unwrap(), "js"]);
+  assert!(!rejected.status.success(), "reload is also a runtime root");
+  let stderr = String::from_utf8_lossy(&rejected.stderr);
+  assert!(
+    stderr.contains("native-only") && stderr.contains("app.library/native-format"),
+    "{stderr}"
+  );
+}
+
+#[test]
 fn redundant_require_markers_are_advisory_and_keep_structured_stdout_clean() {
   // Import syntax and stderr/stdout routing are loader/CLI boundaries, not definition semantics.
   let directory = TestDirectory::create();

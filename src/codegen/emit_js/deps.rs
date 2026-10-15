@@ -1,8 +1,53 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
-use crate::calcit::{Calcit, CalcitImport, CalcitLocal};
-use crate::program::{CompiledFileData, DefId};
+use crate::calcit::{Calcit, CalcitImport, CalcitLocal, CalcitProc, CalcitSyntax};
+use crate::program::{CompiledDefKind, CompiledFileData, CompiledProgram, DefId};
+
+/// Find the native layout helper without interpreting quoted symbol data.
+/// Legacy JS warning stubs keep their existing behavior in this bugfix.
+pub(super) fn find_js_unavailable_proc(code: &Calcit) -> Option<CalcitProc> {
+  match code {
+    Calcit::Proc(CalcitProc::NativeFormatTernaryTree) => Some(CalcitProc::NativeFormatTernaryTree),
+    Calcit::Thunk(thunk) => find_js_unavailable_proc(thunk.get_code()),
+    Calcit::Fn { info, .. } => info.body.iter().find_map(find_js_unavailable_proc),
+    // Quoted procs are emitted as symbols, not runtime references.
+    Calcit::List(items) if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::Quote, _))) => None,
+    Calcit::List(items) => items.iter().find_map(find_js_unavailable_proc),
+    _ => None,
+  }
+}
+
+/// Omit only unavailable definitions and their dependents, not ordinary unused code.
+/// Macro bodies run on the native host and are never JavaScript runtime roots.
+pub(super) fn js_unavailable_defs(program: &CompiledProgram) -> HashSet<DefId> {
+  let mut unavailable = HashSet::new();
+  let mut dependents: HashMap<DefId, Vec<DefId>> = HashMap::new();
+  for file in program.values() {
+    for compiled in file.defs.values() {
+      if compiled.kind == CompiledDefKind::Macro {
+        continue;
+      }
+      if find_js_unavailable_proc(&compiled.codegen_form).is_some() {
+        unavailable.insert(compiled.def_id);
+      }
+      for dependency in &compiled.deps {
+        dependents.entry(*dependency).or_default().push(compiled.def_id);
+      }
+    }
+  }
+  let mut pending: VecDeque<_> = unavailable.iter().copied().collect();
+  while let Some(dependency) = pending.pop_front() {
+    if let Some(definitions) = dependents.get(&dependency) {
+      for definition in definitions {
+        if unavailable.insert(*definition) {
+          pending.push_back(*definition);
+        }
+      }
+    }
+  }
+  unavailable
+}
 
 pub(super) fn contains_symbol(xs: &Calcit, symbol: &str) -> bool {
   match xs {
@@ -164,6 +209,37 @@ mod tests {
 
     assert!(depends_on("a", "c", &graph, 3));
     assert!(!depends_on("c", "a", &graph, 3));
+  }
+
+  #[test]
+  fn unavailable_runtime_dependencies_propagate_without_rejecting_quoted_symbols_or_macros() {
+    let native_proc = Calcit::Proc("&format-ternary-tree".parse().unwrap());
+    let quoted = Calcit::List(Arc::new(CalcitList::Vector(vec![
+      Calcit::Syntax(CalcitSyntax::Quote, Arc::from("app.main")),
+      native_proc.clone(),
+    ])));
+    assert!(find_js_unavailable_proc(&quoted).is_none());
+    assert!(find_js_unavailable_proc(&Calcit::Proc("&reset-gensym-index!".parse().unwrap())).is_none());
+
+    let mut macro_def = lazy_value(DefId(4), native_proc.clone(), vec![DefId(1)]);
+    macro_def.kind = CompiledDefKind::Macro;
+    let program = HashMap::from([(
+      Arc::from("app.main"),
+      CompiledFileData {
+        defs: HashMap::from([
+          (Arc::from("native"), lazy_value(DefId(1), native_proc, vec![])),
+          (
+            Arc::from("wrapper"),
+            lazy_value(DefId(2), symbol("native"), vec![DefId(1), DefId(3)]),
+          ),
+          (Arc::from("cycle"), lazy_value(DefId(3), symbol("wrapper"), vec![DefId(2)])),
+          (Arc::from("macro"), macro_def),
+          (Arc::from("quoted"), lazy_value(DefId(5), quoted, vec![])),
+          (Arc::from("safe"), lazy_value(DefId(6), Calcit::Number(3.0), vec![])),
+        ]),
+      },
+    )]);
+    assert_eq!(js_unavailable_defs(&program), HashSet::from([DefId(1), DefId(2), DefId(3)]));
   }
 
   #[test]

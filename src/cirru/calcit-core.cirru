@@ -767,7 +767,7 @@
             :generics $ [] 'A 'B
           :tags $ #{} :internal
         '&format-ternary-tree $ %{} 'CodeEntry
-          :doc "|internal function for formatting ternary tree\nSyntax: (&format-ternary-tree tree)\nParams: tree (ternary tree structure)\nReturns: formatted string\nFormats internal ternary tree data structure for debugging"
+          :doc "|Native-only debugger for a List's internal ternary-tree representation.\nSyntax: (&format-ternary-tree tree)\nParams: tree (a native List stored as a ternary tree)\nReturns: formatted String; rejects other representations.\nJavaScript emission rejects this runtime-internal helper. Compile-time macros execute natively and may use it before returning portable expressions. For portable value display, use format-cirru-edn; it does not expose the internal tree layout."
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
