@@ -4466,6 +4466,8 @@ mod tests {
 
   #[test]
   fn test_validate_schema_for_write() {
+    // Schema parsing must not observe another test's temporary core registry.
+    let _guard = crate::program::lock_program_test_state();
     let valid = parse_one(":: :fn $ {} (:args ([] :string)) (:return :bool)");
     assert!(validate_schema_for_write(&valid).is_ok(), "valid schema should pass");
 

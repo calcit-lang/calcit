@@ -2326,6 +2326,8 @@ mod tests {
 
   #[test]
   fn explicit_trait_call_selects_exact_nominal_origin() {
+    // Trait lookup can lazily compile core impls loaded by another test.
+    let _guard = crate::program::lock_program_test_state();
     let left = Arc::new(
       CalcitTrait::new_runtime(
         EdnTag::new("Show"),
@@ -2378,6 +2380,7 @@ mod tests {
 
   #[test]
   fn generic_enum_where_bounds_accept_nominal_trait_values() {
+    let _guard = crate::program::lock_program_test_state();
     let show_trait = Arc::new(CalcitTrait::new(EdnTag::new("Renderable"), vec![], vec![]));
     let result = new_named_enum_value(&[
       Calcit::EnumDef(shown_maybe_enum(show_trait.clone())),
@@ -2390,6 +2393,7 @@ mod tests {
 
   #[test]
   fn generic_enum_where_bounds_reject_missing_nominal_trait() {
+    let _guard = crate::program::lock_program_test_state();
     let show_trait = Arc::new(CalcitTrait::new(EdnTag::new("Renderable"), vec![], vec![]));
     let err = new_named_enum_value(&[
       Calcit::EnumDef(shown_maybe_enum(show_trait)),
@@ -2406,6 +2410,7 @@ mod tests {
 
   #[test]
   fn optional_core_impl_lookup_allows_embedding_without_core_entries() {
+    let _guard = crate::program::lock_program_test_state();
     let impls = collect_optional_core_impls("&missing-test-core-impls", &CallStackList::default())
       .expect("missing core impl list should be treated as unavailable");
     assert!(impls.is_empty());
