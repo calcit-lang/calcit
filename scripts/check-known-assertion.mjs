@@ -1174,7 +1174,7 @@ try {
     JSON.parse(truthinessRun("query", "def", `calcit.core/${name}`, "--format", "json")).data.tests
       .filter(test => test.tags.includes("reset-proof")));
   assert.equal(resetTests.length, 4);
-  assert.equal(resetCoreTests.length, 4);
+  assert.equal(resetCoreTests.length, 6);
   const resetSnapshot = join(project, "reset-result.cirru");
   await copyFile("tests/fixtures/deep-recursion.cirru", resetSnapshot);
   const resetRun = (...args) => execFileSync(binary, [resetSnapshot, ...args], options);
@@ -1237,6 +1237,9 @@ try {
   }
   new WebAssembly.Instance(resetModule, resetImports).exports["run-tests"]();
 
+  const functionKeyedNumbers = ["::", "'Map", "'Fn", "'Number"];
+  const numberCallback = ["::", "'Fn", ["{}", [":args", ["[]", "'Number"]], [":return", "'Number"]]];
+  const stringCallback = ["::", "'Fn", ["{}", [":args", ["[]", "'String"]], [":return", "'String"]]];
   for (const [name, types, returned, body, generics = [], features = []] of [
     ["reset-is-not-unit", [["::", "'Ref", "'Number"], "'Number"], "'Unit", ["reset!", "source", "value"]],
     ["reset-wrong-return", [["::", "'Ref", "'Bool"], "'Bool"], "'Number", ["reset!", "source", "value"]],
@@ -1246,6 +1249,12 @@ try {
     ["reset-wrong-write", [["::", "'Ref", "'Number"], "'String"], "'String", ["reset!", "source", "value"]],
     ["reset-unrelated-generic", [["::", "'Ref", "'T"], "'U"], "'U", ["reset!", "source", "value"], ["'T", "'U"]],
     ["reset-borrowed-payload", [["::", "'Ref", "'Number"], "'Dynamic"], "'Number", ["reset!", "source", "value"]],
+    ["reset-fn-map-wrong-value", [["::", "'Ref", functionKeyedNumbers], ["::", "'Map", "'Fn", "'String"]], ["::", "'Map", "'Fn", "'String"], ["reset!", "source", "value"]],
+    ["reset-fn-map-wrong-key", [["::", "'Ref", functionKeyedNumbers], ["::", "'Map", "'Number", "'Number"]], ["::", "'Map", "'Number", "'Number"], ["reset!", "source", "value"]],
+    ["reset-fn-map-open-key", [["::", "'Ref", functionKeyedNumbers], ["::", "'Map", "'Dynamic", "'Number"]], ["::", "'Map", "'Dynamic", "'Number"], ["reset!", "source", "value"]],
+    ["reset-opaque-to-concrete-fn", [["::", "'Ref", numberCallback], "'Fn"], "'Fn", ["reset!", "source", "value"]],
+    ["reset-open-to-opaque-fn", [["::", "'Ref", "'Fn"], "'Dynamic"], "'Dynamic", ["reset!", "source", "value"]],
+    ["reset-wrong-concrete-fn", [["::", "'Ref", numberCallback], stringCallback], stringCallback, ["reset!", "source", "value"]],
   ]) {
     const target = `app.main/${name}`;
     resetRun("edit", "def", target, "--input-format", "json-ast", "--code", JSON.stringify(["defn", name, ["source", "value"], body]));
