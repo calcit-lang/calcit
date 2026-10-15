@@ -2712,30 +2712,17 @@ fn infer_typed_method_result<'a>(
   else {
     return calcit::DYNAMIC_TYPE.clone();
   };
-  let argument_types = signature
-    .arg_types
-    .iter()
-    .map(|argument| argument.substitute_type_vars(&receiver_bindings))
-    .collect::<Vec<_>>();
-  let rest_type = signature
-    .rest_type
-    .as_ref()
-    .map(|rest| rest.substitute_type_vars(&receiver_bindings));
-  let return_type = signature.return_type.substitute_type_vars(&receiver_bindings);
-  // Receiver-bound variables now belong to the caller, including an implicit
-  // trait self variable. Do not freshen them again from the callee's generics.
-  let generics = signature
-    .generics
-    .iter()
-    .filter(|name| !receiver_bindings.contains_key(*name))
-    .cloned()
-    .collect::<Vec<_>>();
-  let mut expected_types = argument_types.clone();
-  expected_types.extend(rest_type.iter().cloned());
-  expected_types.push(return_type.clone());
+  // Freshen every callee variable before binding the receiver. Substituting
+  // caller types first could capture a same-named, still-unbound method generic.
+  // Implicit trait self variables participate in the same call proof.
+  let mut generics = signature.generics.as_ref().clone();
+  generics.extend(receiver_bindings.keys().cloned());
+  let mut expected_types = signature.arg_types.clone();
+  expected_types.extend(signature.rest_type.iter().cloned());
+  expected_types.push(signature.return_type.clone());
   let mut proof = crate::calcit::type_annotation::CallTypeProof::new(&generics, &expected_types, &actual_types);
   for (index, (argument, actual)) in arguments.iter().zip(&actual_types).enumerate() {
-    let Some(expected) = argument_types.get(index).or(rest_type.as_ref()) else {
+    let Some(expected) = signature.arg_types.get(index).or(signature.rest_type.as_ref()) else {
       return calcit::DYNAMIC_TYPE.clone();
     };
     if core_option_none_without_payload(argument, actual.as_ref(), expected.as_ref()) {
@@ -2752,7 +2739,7 @@ fn infer_typed_method_result<'a>(
     }
   }
   for bound in signature.where_bounds.iter() {
-    let variable = CalcitTypeAnnotation::TypeVar(bound.name.clone()).substitute_type_vars(&receiver_bindings);
+    let variable = CalcitTypeAnnotation::TypeVar(bound.name.clone());
     if !proof
       .result(&variable)
       .is_some_and(|actual| actual.is_proven_for(&bound.as_type_annotation()))
@@ -2760,7 +2747,7 @@ fn infer_typed_method_result<'a>(
       return calcit::DYNAMIC_TYPE.clone();
     }
   }
-  invocation_return_type(signature, proof.result_or_open(&return_type), false)
+  invocation_return_type(signature, proof.result_or_open(&signature.return_type), false)
 }
 
 /// Infer the return type of a built-in proc call expression.
@@ -3942,6 +3929,37 @@ mod tests {
         Some(calcit::DYNAMIC_TYPE.clone())
       );
     }
+  }
+
+  #[test]
+  fn method_generic_freshening_does_not_capture_same_named_caller_variables() {
+    let variable = |name| Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from(name)));
+    let caller = variable("U");
+    let receiver = typed_local("items", Arc::new(CalcitTypeAnnotation::List(caller.clone())));
+    let mut signature = CalcitFnTypeAnnotation {
+      runtime_arity: None,
+      generics: Arc::new(vec![Arc::from("T"), Arc::from("U")]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::List(variable("T")))],
+      return_type: variable("U"),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    };
+    let scope = ScopeTypes::new();
+    assert_eq!(
+      infer_typed_method_result(&signature, [&receiver].into_iter(), &scope),
+      calcit::DYNAMIC_TYPE.clone()
+    );
+    signature.return_type = variable("T");
+    assert_eq!(infer_typed_method_result(&signature, [&receiver].into_iter(), &scope), caller);
+    signature.return_type = variable("U");
+    signature.arg_types.push(variable("U"));
+    let argument = Calcit::Number(7.0);
+    assert_eq!(
+      infer_typed_method_result(&signature, [&receiver, &argument].into_iter(), &scope),
+      Arc::new(CalcitTypeAnnotation::Number)
+    );
   }
 
   #[test]

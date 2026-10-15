@@ -8,7 +8,7 @@ Rebase Hell 的 Node Chalk adapter 已通过 external-object trait 声明 String
 
 项目 type、type-at、context 使用已有入口 loader；search 和 search-expr 继承顶层入口，原局部选择优先。保留 core-only 和 metadata-only 的原读取路径，不增加命令、参数、输出字段或全局状态。
 
-方法参数检查、静态查询合同与返回推断共享已有的严格接收者绑定。先由实际接收者独立绑定方法变量，再用原 CallTypeProof 校验实参、arity 和 where bounds；接收者已经绑定的调用方变量保持 rigid，不重新从方法调用中推成具体类型。未知接收者、显式 Dynamic 返回、错误输入以及未授权 FFI 不会因此得到具体返回证据。不修改 host runtime，也不在应用加入 decoder、强转或扩大 Dynamic。
+方法参数检查、静态查询合同与返回推断共享已有的严格接收者绑定。返回推断先确定可由实际接收者证明的变量集合，再将显式方法泛型与隐式 self 一起交给原 CallTypeProof，在写入任何调用方类型之前统一 freshen；随后按原签名依次证明接收者、实参、arity 和 where bounds，调用方变量保持 rigid。Review 复现了先代换再 freshen 会捕获同名调用方变量的问题，内部回归验证无输入证据的结果保持 Dynamic、接收者相关结果保持原变量、其他参数确实绑定的结果仍能精确推断。未知接收者、显式 Dynamic 返回、错误输入以及未授权 FFI 不会因此得到具体返回证据。不修改 host runtime，也不在应用加入 decoder、强转或扩大 Dynamic。
 
 ## 验证方式
 
