@@ -7,8 +7,8 @@ use std::sync::Arc;
 use cirru_edn::{Edn, EdnListView, format};
 
 use crate::calcit::{
-  Calcit, CalcitArgLabel, CalcitEnumDef, CalcitEnumValue, CalcitFnArgs, CalcitImpl, CalcitImport, CalcitLocal, CalcitStructDef,
-  CalcitStructValue, CalcitTypeAnnotation, ImportInfo, MethodKind,
+  Calcit, CalcitArgLabel, CalcitEnumDef, CalcitEnumValue, CalcitFn, CalcitFnArgs, CalcitImpl, CalcitImport, CalcitLocal,
+  CalcitStructDef, CalcitStructValue, CalcitTrait, CalcitTraitMemberKind, CalcitTypeAnnotation, ImportInfo, MethodKind,
 };
 use crate::program;
 
@@ -201,15 +201,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
       (Edn::tag("alias"), Edn::Str((**alias).into())),
     ]),
 
-    Calcit::Fn { info, .. } => Edn::map_from_iter([
-      (Edn::tag("kind"), Edn::tag("fn")),
-      (Edn::tag("name"), Edn::Str((*info.name).into())),
-      (Edn::tag("ns"), Edn::Str((*info.def_ns).into())),
-      (Edn::tag("args"), dump_fn_args_code(&info.args)),
-      (Edn::tag("arg-types"), dump_type_list(&info.arg_types)),
-      (Edn::tag("return-type"), dump_type_annotation_opt(&info.return_type)),
-      (Edn::tag("code"), dump_items_code(&info.body)),
-    ]),
+    Calcit::Fn { info, .. } => dump_fn_code(info),
     Calcit::Macro { info, .. } => {
       Edn::map_from_iter([
         (Edn::tag("kind"), Edn::tag("macro")),
@@ -251,6 +243,7 @@ pub(crate) fn dump_code(code: &Calcit) -> Edn {
     Calcit::Impl(impl_def) => dump_impl_code(impl_def),
     Calcit::StructDef(struct_def) => dump_struct_code(struct_def),
     Calcit::EnumDef(enum_def) => dump_enum_code(enum_def),
+    Calcit::Trait(trait_def) => dump_trait_code(trait_def),
     Calcit::Method(method, kind) => {
       let mut entries = vec![
         (Edn::tag("kind"), Edn::tag("method")),
@@ -298,6 +291,18 @@ fn dump_items_code(xs: &[Calcit]) -> Edn {
     ys.push(dump_code(x));
   }
   ys.into()
+}
+
+fn dump_fn_code(info: &CalcitFn) -> Edn {
+  Edn::map_from_iter([
+    (Edn::tag("kind"), Edn::tag("fn")),
+    (Edn::tag("name"), Edn::str(info.name.as_ref())),
+    (Edn::tag("ns"), Edn::str(info.def_ns.as_ref())),
+    (Edn::tag("args"), dump_fn_args_code(&info.args)),
+    (Edn::tag("arg-types"), dump_type_list(&info.arg_types)),
+    (Edn::tag("return-type"), dump_type_annotation_opt(&info.return_type)),
+    (Edn::tag("code"), dump_items_code(&info.body)),
+  ])
 }
 
 fn dump_fn_args_code(xs: &CalcitFnArgs) -> Edn {
@@ -406,6 +411,56 @@ fn dump_impl_code(impl_def: &CalcitImpl) -> Edn {
   entries.push((Edn::tag("fields"), fields.into()));
   entries.push((Edn::tag("field-count"), Edn::Number(impl_def.fields.len() as f64)));
   Edn::map_from_iter(entries)
+}
+
+fn dump_trait_code(trait_def: &CalcitTrait) -> Edn {
+  let members = trait_def
+    .methods
+    .iter()
+    .zip(trait_def.method_types.iter())
+    .zip(trait_def.member_kinds.iter())
+    .zip(trait_def.defaults.iter())
+    .map(|(((name, annotation), kind), default)| {
+      Edn::map_from_iter([
+        (Edn::tag("name"), Edn::str(name.ref_str())),
+        (
+          Edn::tag("kind"),
+          Edn::tag(match kind {
+            CalcitTraitMemberKind::Method => "method",
+            CalcitTraitMemberKind::Field => "field",
+          }),
+        ),
+        (Edn::tag("type"), dump_type_annotation(annotation)),
+        (Edn::tag("default"), default.as_ref().map_or(Edn::Nil, |info| dump_fn_code(info))),
+      ])
+    })
+    .collect::<Vec<_>>();
+  // Keep declaration identity and host mappings without treating IR as a runtime package.
+  let ffi = trait_def
+    .definition_ref
+    .as_deref()
+    .and_then(|reference| reference.rsplit_once('/'))
+    .and_then(|(ns, def)| program::lookup_def_ffi(ns, def));
+  Edn::map_from_iter([
+    (Edn::tag("kind"), Edn::tag("trait")),
+    (Edn::tag("name"), Edn::str(trait_def.name.ref_str())),
+    (
+      Edn::tag("definition-ref"),
+      trait_def.definition_ref.as_deref().map_or(Edn::Nil, Edn::str),
+    ),
+    (Edn::tag("members"), Edn::from(members)),
+    (
+      Edn::tag("requires"),
+      Edn::from(
+        trait_def
+          .requires
+          .iter()
+          .map(|required| dump_trait_code(required))
+          .collect::<Vec<_>>(),
+      ),
+    ),
+    (Edn::tag("ffi"), ffi.unwrap_or(Edn::Nil)),
+  ])
 }
 
 fn dump_struct_code(struct_def: &CalcitStructDef) -> Edn {

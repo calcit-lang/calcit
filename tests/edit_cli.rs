@@ -1559,6 +1559,133 @@ fn overwriting_with_defexternal_drops_retained_ffi_metadata() {
   assert!(report["data"]["ffi"][":names"].is_null());
 }
 
+/// Diagnostic serialization is a CLI/artifact boundary, not a language semantic test.
+#[test]
+fn diagnostic_ir_preserves_loaded_external_trait_declarations() {
+  use cirru_edn::Edn;
+
+  fn member(value: &Edn, key: Edn) -> &Edn {
+    let Edn::Map(map) = value else { panic!("expected a map: {value}") };
+    map.get(&key).unwrap_or_else(|| panic!("missing {key}: {value}"))
+  }
+
+  fn find_trait<'a>(value: &'a Edn, name: &str) -> Option<&'a Edn> {
+    match value {
+      Edn::Map(map)
+        if map.get(&Edn::tag("kind")) == Some(&Edn::tag("trait")) && map.get(&Edn::tag("name")) == Some(&Edn::str(name)) =>
+      {
+        Some(value)
+      }
+      Edn::Map(map) => map.0.iter().find_map(|(_, item)| find_trait(item, name)),
+      Edn::List(items) => items.iter().find_map(|item| find_trait(item, name)),
+      _ => None,
+    }
+  }
+
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).expect("minimal source should copy");
+  assert_success(
+    &run_calcit(&snapshot, &["config", "show", "--format", "json"]),
+    "read fixture config",
+  );
+  query_definition(&snapshot, "app.main/main!");
+  let operations = serde_json::json!([
+    ["edit", "add-ns", "app.host"],
+    ["edit", "def", "app.host/LabelHost", "--input-format", "cirru", "--code",
+      "quote $ defexternal LabelHost (:target :node) (:label 'String)"],
+    ["edit", "def", "app.host/WidgetHost", "--input-format", "cirru", "--code",
+      "quote $ deftrait WidgetHost\n  requires LabelHost\n  :id 'String\n  .refresh! $ :: 'Fn $ {} (:args $ [] 'WidgetHost) (:return 'Unit)"],
+    ["edit", "schema", "app.host/WidgetHost", "--input-format", "cirru", "--code", "quote $ :: 'Trait"],
+    ["edit", "ffi", "app.host/WidgetHost", "--code",
+      "{} (:backend :js) (:kind :external-object) (:target :node) (:names $ {} (:id |nodeId) (:refresh! |refresh)) (:writable $ #{} :id)"],
+    ["edit", "def", "app.main/identity-host", "--input-format", "cirru", "--code",
+      "quote $ defn identity-host (host) (, host)"],
+    ["edit", "schema", "app.main/identity-host", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'app.host/WidgetHost) (:return 'app.host/WidgetHost)"],
+    ["edit", "def", "app.host/cast-host", "--input-format", "cirru", "--code",
+      "quote $ defn cast-host (raw) (js-cast raw WidgetHost)"],
+    ["edit", "schema", "app.host/cast-host", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'JsObject) (:return 'app.host/WidgetHost) (:features $ #{} :js-ffi)"],
+    ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
+      "quote $ defn main! () (assert= identity-host identity-host) (assert= app.host/cast-host app.host/cast-host) &unit"],
+    ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+    ["edit", "def", "app.main/reload!", "--input-format", "cirru", "--code", "quote $ defn reload! () &unit"],
+    ["edit", "schema", "app.main/reload!", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"]
+  ]).to_string();
+  let revision = transaction_scope(&snapshot, &operations);
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--code", &operations, "--expect-revision", &revision],
+    ),
+    "create guarded external trait fixture",
+  );
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "strict external trait preprocessing");
+  assert_success(&run_calcit(&snapshot, &[]), "ordinary native entry");
+  let emit_path = directory.0.join("artifacts");
+  let emit = emit_path.to_str().expect("UTF-8 artifact path");
+  assert_success(&run_calcit(&snapshot, &["--emit-path", emit, "js"]), "ordinary JS generation");
+  assert_success(&run_calcit(&snapshot, &["--emit-path", emit, "ir"]), "diagnostic IR generation");
+
+  let ir = cirru_edn::parse(&fs::read_to_string(emit_path.join("program-ir.cirru")).expect("IR artifact"))
+    .expect("IR should remain valid Cirru EDN");
+  let files = member(&ir, Edn::tag("files"));
+  let defs = member(member(files, Edn::str("app.host")), Edn::tag("defs"));
+  let host = find_trait(member(defs, Edn::str("cast-host")), "WidgetHost").expect("resolved trait in cast IR");
+  assert_eq!(member(host, Edn::tag("kind")), &Edn::tag("trait"));
+  assert_eq!(member(host, Edn::tag("name")), &Edn::str("WidgetHost"));
+  assert_eq!(member(host, Edn::tag("definition-ref")), &Edn::str("app.host/WidgetHost"));
+  let Edn::List(requires) = member(host, Edn::tag("requires")) else {
+    panic!("trait requirements should be a list")
+  };
+  assert_eq!(requires.len(), 1);
+  let ffi = member(host, Edn::tag("ffi"));
+  assert_eq!(member(ffi, Edn::tag("kind")), &Edn::tag("external-object"));
+  assert_eq!(member(ffi, Edn::tag("target")), &Edn::tag("node"));
+  let names = member(ffi, Edn::tag("names"));
+  assert_eq!(member(names, Edn::tag("id")), &Edn::str("nodeId"));
+  assert_eq!(member(names, Edn::tag("refresh!")), &Edn::str("refresh"));
+  assert_eq!(
+    member(ffi, Edn::tag("writable")),
+    &Edn::Set(cirru_edn::EdnSetView([Edn::tag("id")].into()))
+  );
+  let Edn::List(members) = member(host, Edn::tag("members")) else {
+    panic!("trait members should be a list")
+  };
+  assert_eq!(members.len(), 2);
+  for (item, name, kind, expected_type) in [
+    (members.get(0).unwrap(), "id", "field", Edn::sym("String")),
+    (
+      members.get(1).unwrap(),
+      "refresh!",
+      "method",
+      Edn::enum_value(
+        "Fn",
+        vec![Edn::map_from_iter([
+          (Edn::tag("args"), Edn::from(vec![Edn::sym("WidgetHost")])),
+          (Edn::tag("return"), Edn::sym("Unit")),
+        ])],
+      ),
+    ),
+  ] {
+    assert_eq!(member(item, Edn::tag("name")), &Edn::str(name));
+    assert_eq!(member(item, Edn::tag("kind")), &Edn::tag(kind));
+    assert_eq!(member(item, Edn::tag("type")), &expected_type);
+    assert_eq!(member(item, Edn::tag("default")), &Edn::Nil);
+  }
+  let parent = requires.get(0).unwrap();
+  assert_eq!(member(parent, Edn::tag("name")), &Edn::str("LabelHost"));
+  assert_eq!(member(parent, Edn::tag("definition-ref")), &Edn::str("app.host/LabelHost"));
+  let Edn::List(parent_members) = member(parent, Edn::tag("members")) else {
+    panic!("parent members should be a list")
+  };
+  assert_eq!(parent_members.len(), 1);
+  assert_eq!(member(parent_members.get(0).unwrap(), Edn::tag("type")), &Edn::sym("String"));
+}
+
 /// Default output of common agent commands stays compact; details need explicit flags.
 #[test]
 fn agent_commands_print_compact_default_output() {

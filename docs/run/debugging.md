@@ -24,6 +24,8 @@ entry_for:
 若需要监听模式，显式添加 `-w` / `--watch`（如 `calcit -w <filepath>`、`calcit <filepath> js -w`）。
 
 `calcit ir` 只输出供编译器调试使用的内部表示，普通项目开发和验证不需要它；明确排查 IR 时再查看 `calcit ir --help`。
+调试结果中的已解析 trait 保留声明来源、字段与方法的类型、父 trait 和宿主 FFI 名称映射，方便追查
+`js-cast` 等边界的类型证据。生成的 `program-ir.cirru` 是诊断数据，不是可重新执行或部署的 Snapshot。
 
 Calcit snapshot 文件中 config 有 `init-fn` 和 `reload-fn` 配置：
 
