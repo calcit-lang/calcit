@@ -59,6 +59,26 @@ calcit test '<修改后的 namespace/definition>' --require-match
 
 ## 编译器指导型迁移
 
+0.30.1 的缺失值迁移使用显式规则 `core-absence-to-public-v1`，不加入默认规则或版本 preset。
+它识别十三个旧缺失值原语，只在接收者类型、原语来源及直接 `nil?` / `non-nil?` / `either`
+消费方式均有证据时生成替换。公开查询使用 Option，解析使用 Result，集合解构使用各自的
+Destruct enum；生成的 `match` 保留存在的 nil，`either` 的 fallback 语法只保留一次并继续惰性求值。
+使用 `--include-attached` 同时迁移定义附带的测试与示例：
+
+```bash
+calcit calcit.cirru fix --rule core-absence-to-public-v1 --include-attached --format edn
+```
+
+规则跳过 quoted data；函数引用、未知宏、间接绑定用途、旧 `&get-env` 默认值参数和无法证明
+失败行为的字符串索引均需人工审阅。负字符串下标尤其不能直接替换：旧原语会报错，公开 `nth`
+可能返回 none。`&get-in` 只自动处理字面量路径且逐步证明接收者的遍历；旧原语可以读取 Struct
+字段，公开 `get-in` 会拒绝，因此 Struct 中间节点、开放中间值和未证明的索引留给人工审阅。
+空路径或作为最终返回值的 Struct 不涉及字段遍历，仍可迁移。
+任何未迁移代码仍导致暂存严格检查失败时，整批拒绝写回，不会自动忽略诊断。
+核对预览的 revision 后携带 `--apply --expect-revision <revision>` 应用，重复预览应不再出现已处理项，
+然后运行原断言及实际目标后端。此规则是临时迁移桥；活跃消费者源码、测试、示例、宏生成与依赖
+迁移全部验收后，在下一个非 patch 版本审阅退役。升级的兼容性范围见 [升级手册](upgrade.md)。
+
 `calcit fix` 把编译器已经能够唯一判断的迁移建议映射回 Snapshot source AST。默认命令只做预览；它会在同目录的
 staged Snapshot 上尝试替换并重新编译选定 scope，成功后仍不写入原文件：
 
@@ -186,7 +206,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
 - `core-ref-constructor-v1` 把 Ref 构造的兼容旧名改为首选名：`atom` → `ref`、`defatom` → `defref`。读取器把 `atom` 与 `ref` 解析为同一个内建实现，因此代码中所有被求值的 `atom` 都直接改写，Ref 身份与求值次数不变；`defatom` 是按名字解析的 core 语法，只在调用头位置、且所在 namespace 没有同名定义或 import、没有同名局部绑定、不在 quasiquote 模板中、外层也没有未知 macro 时自动改写，其余情况给出 `requires-review`。quoted data 与注释跳过。先用 `calcit calcit.cirru fix --rule core-ref-constructor-v1 --include-attached --format edn` 预览，核对 revision 后带 `--expect-revision` 应用，重复预览只应剩下需要 review 的项。本规则包含在 `core-api-0.29-v1`，`core-api-0.28-v1` 与 surface preset 保持原定义。
 - `case-default-to-match-v1` 把已弃用的 `case-default item default (pattern value)...` 改写为 `match item (pattern value)... (_ default)`。只有全部模式都是字面量（tag、字符串、数字、bool）时才自动改写：此时 `case-default` 宏自身就展开为这段 `match`，求值次数、未命中时的默认值与 native/JS/WASM 行为都不变。嵌套的 `case-default` 合并在外层的一次替换中。模式含表达式、变量或 enum tuple（宏会走 `&case` 比较值）、调用位于 quasiquote 模板中、`case-default` 或 `match` 被局部绑定/定义/import 遮蔽、或外层宏可能读取该参数时，给出 `requires-review`，由人工改写为 `match` 或 `cond`。外层是保持参数原样求值的 core macro（如 `let`、`when`、`cond`）时直接通过；外层是其他宏时，只有宏源码对承载该调用的参数只做 `~` / `~@` 拼接（rest 参数另允许 `count` / `empty?`），且拼接位置外层都是函数、语法或同类 core macro 时才通过，例如 Respo 的 `defcomp`；`->` 等线程宏会改写参数位置，总是需要 review。先用 `calcit calcit.cirru fix --rule case-default-to-match-v1 --include-attached --format edn` 预览，核对 revision 后带 `--expect-revision` 应用。本规则暂不加入 preset；已知活跃下游默认分支的 `case-default` 清零后，与 `case-default` 一起在下一个非 patch 版本退场。
 - `core-macro-alias-v1` 把已弃用的 core 便利宏改写为它们的展开结果：`w-log x` → `dbg x`（`w-log` 转发到 `dbg`，打印内容不变），`wo-log x` / `wo-js-log x` → `x`，`flipped f a b` → `f b a`。每条改写都是宏自身的展开，求值顺序与结果不变；嵌套的已证明调用合并在外层的一次替换中。`w-js-log` 交给 `js/console.log` 的是宿主对象而 `dbg` 打印格式化文本，只给 `requires-review`。调用位于 quasiquote 模板中、宏名或 `dbg` 被局部绑定/定义/import 遮蔽、参数个数与定义不符，或外层宏可能读取该参数时（判定方式与 `case-default-to-match-v1` 相同），给出 `requires-review`；外层是 `wo-log`、`wo-js-log`、`flipped` 或 `noted` 时视为原样转发，外层是 `w-log` / `dbg` 时因为打印的源码会改变而需要 review。`noted` 不在本规则内：`calcit query anchors` 读取它的 `@anchor:` 标注。用 `calcit calcit.cirru fix --rule core-macro-alias-v1 --include-attached --format edn` 预览，核对 revision 后带 `--expect-revision` 应用。本规则暂不加入 preset。
-- `let-sugar-to-let-v1` 把已弃用的 `let-sugar` 改写为它的展开：按原顺序，连续的 symbol 绑定合成一个顺序求值的 `let`，每个 `([] ...)` 模式变成嵌套的 `let[]`，每个右侧仍只求值一次。嵌套的已证明调用合并在外层的一次替换中。`({} ...)` 模式依赖已弃用的 `let{}`，只给 `requires-review`，由人工改成 `let` 逐个绑定 `&map:get`；没有绑定或没有 body、调用位于 quasiquote 模板中、`let-sugar` / `let` / `let[]` 被遮蔽，或外层宏可能读取该参数时（判定方式与 `case-default-to-match-v1` 相同）同样需要 review。用 `calcit calcit.cirru fix --rule let-sugar-to-let-v1 --include-attached --format edn` 预览，核对 revision 后带 `--expect-revision` 应用。本规则暂不加入 preset；已知活跃下游默认分支的 `let-sugar` 清零后，与 `let-sugar` 一起在下一个非 patch 版本退场。
+- `let-sugar-to-let-v1` 把已弃用的 `let-sugar` 改写为它的展开：按原顺序，连续的 symbol 绑定合成一个顺序求值的 `let`，每个 `([] ...)` 模式变成嵌套的 `let[]`，每个右侧仍只求值一次。嵌套的已证明调用合并在外层的一次替换中。`({} ...)` 模式依赖已弃用的 `let{}`，只给 `requires-review`，由人工将右侧只绑定一次，再用公开 `get` 与 `match` 逐项处理字段；`get` 返回 Option，缺失键为 `:none`，存在但值为 nil 的键为 `:some nil`。旧写法把两者视为相同值时须保留原分支含义，不能机械改成 Option 缺失判断，也不要为通过检查自动插入 `.unwrap` 或业务默认值。没有绑定或没有 body、调用位于 quasiquote 模板中、`let-sugar` / `let` / `let[]` 被遮蔽，或外层宏可能读取该参数时（判定方式与 `case-default-to-match-v1` 相同）同样需要 review。用 `calcit calcit.cirru fix --rule let-sugar-to-let-v1 --include-attached --format edn` 预览，核对 revision 后带 `--expect-revision` 应用。本规则暂不加入 preset；已知活跃下游默认分支的 `let-sugar` 清零后，与 `let-sugar` 一起在下一个非 patch 版本退场。
 - `list-match-to-match-v1` 把已弃用的 `list-match xs (() empty...) ((head tail) body...)` 改写为 `match (destruct-list xs) ((:none) empty) ((:some head tail) body)`，保持分支顺序；分支有多个表达式时合成一个 `do`。两者都只求值 `xs` 一次并绑定相同的首元素与剩余 List。`destruct-list` 要求 `List<T>`，因此只有编译器已证明 `xs` 是 List（与 `calcit query type-at` 相同的证据）时才自动改写；Dynamic 或开放类型的 `xs` 给出 `requires-review`，需要先 decode 或收窄。分支形状不符、调用位于 quasiquote 模板中、`list-match` / `match` / `destruct-list` 被遮蔽，或外层宏可能读取该参数时（判定方式与 `case-default-to-match-v1` 相同，外层 `list-match` 视为原样转发）同样需要 review。用 `calcit calcit.cirru fix --rule list-match-to-match-v1 --include-attached --format edn` 预览，核对 revision 后带 `--expect-revision` 应用。本规则暂不加入 preset；已知活跃下游默认分支的 `list-match` 清零后，与 `list-match` 一起在下一个非 patch 版本退场。
 - `apply-args-to-loop-v1` 把已弃用的 `apply-args (a b) (fn (x y) body...)` 改写为 `loop ((x a) (y b)) body...`：参数列表开头的 `[]` 按宏的规则去掉，两者按相同顺序求值实参并运行同一个 body，`recur` 仍然重启这个循环。callee 必须是字面量 `fn` 或 `defn`，参数都是普通 symbol 且个数与实参一致；`defn` 的 body 引用自身名字时（生成的循环函数不绑定这个名字）给出 `requires-review`。callee 是其他表达式、带 rest / 可选参数、调用位于 quasiquote 模板中、`apply-args` 或 `loop` 被遮蔽，或外层宏可能读取该参数时（判定方式与 `case-default-to-match-v1` 相同）同样需要 review。用 `calcit calcit.cirru fix --rule apply-args-to-loop-v1 --include-attached --format edn` 预览，核对 revision 后带 `--expect-revision` 应用。本规则暂不加入 preset；已知活跃下游默认分支的 `apply-args` 清零后，与 `apply-args` 一起在下一个非 patch 版本退场。
 - `core-effect-method-v1` 只迁移已证明的 core nominal 效果方法：`FfiTask .cancel/.cancel-with` → `.cancel!/.cancel-with!`。`FsPath .write-text` 与 `FfiResponse .resolve/.reject` 已在 0.29.0 删除，需在升级 CLI 前用 0.28.x 的同名规则迁移。前缀 `task .cancel` 和紧凑 `task.cancel-with` 写法都可处理；必须同时证明接收者、core trait 来源、旧新方法签名及同一 helper，才能保持参数求值次数、Result/Unit 与宿主生命周期语义。开放接收者与用户自定义同名方法不自动改写，未知 macro 只给 `requires-review`，quoted data 跳过。先用 `calcit calcit.cirru fix --rule core-effect-method-v1 --format edn` 预览，再带相同 selector 和 `--expect-revision` 应用，重复预览应为空。本规则包含在 `core-api-0.28-v1`，旧 surface preset 不变，也不提供新的宿主能力。

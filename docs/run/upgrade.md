@@ -24,7 +24,11 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
-## 0.31.0 底层缺失值原语直接返回 Option（#1554）
+## 0.30.1 底层缺失值原语直接返回 Option
+
+本项从原计划的 0.31.0 提前纳入 0.30.1，从 main 开发与发布。因此本版有明确的兼容性例外，
+不能按完全向后兼容的 patch 升级：直接使用下表原语的代码需要迁移。其余历史类型表示清理、
+弃用 core / CLI 入口删除仍留在后续非 patch 版本，不随本项一起提前。
 
 十三个内部 `&` 原语此前用 `nil` 表示“没有结果”，类型是 `Optional<T>`。现在它们直接返回名义 `Option`：存在时是 `Option :some value`，缺失时是 `Option :none`，不再产生新的 `nil`。公开包装函数 `first`、`last`、`get`、`nth`、`get-env`、`parse-float`、`enum-definition`、`struct-definition`、`impl-origin` 的签名不变，只需要迁移直接调用原语的代码。
 
@@ -35,20 +39,38 @@ related:
 | `&map:destruct` / `&set:destruct` | `Option<List>`，空集合为 `none` |
 | `&str:first` / `&str:nth` | `Option<String>`，空串或越界为 `none` |
 | `&parse-float` | `Option<Number>`，无法解析为 `none` |
-| `&get-env` | `Option<String>`；第二个默认值参数已删除，改用 `.unwrap-or` |
+| `&get-env` | `Option<String>`；第二个默认值参数已删除，使用公开 `get-env` 并审阅 fallback 的求值顺序 |
 | `&get-in` | `Option<Dynamic>`，路径缺失或遇到 `nil` 为 `none` |
 | `&enum:definition` / `&struct:definition` / `&impl:origin` | `Option<EnumDef>` / `Option<StructDef>` / `Option<Trait>` |
 
-迁移方式：把对结果的 `nil?` 判断改成 `match`，或用 `option:unwrap-or`、`.unwrap-or` 给默认值。
+业务代码优先使用公开入口。注意公开合同不全是 Option：`parse-float` 返回
+`Result<Number,String>`，`destruct-map` / `destruct-set` 分别返回 `MapDestruct` / `SetDestruct`，
+不能把它们套用成单 payload 的 Option。
+
+旧 `nil?` 判断会同时匹配缺失和存在的 nil；迁移时仍需保留两者的行为：
 
 ```cirru
-; 旧写法用 nil? 判断 (&map:get m :k) 是否缺失；新写法用 Option
 let
-    m $ {} (:a |x)
-  .unwrap-or (&map:get m :k) |default
+    m $ {} (:a nil)
+  match (get m :a)
+    (:some value) $ nil? value
+    (:none) true
 ```
 
-`&get-env name fallback` 现在是 arity 错误，写成 `.unwrap-or (&get-env name) fallback`。`let{}` 对 `nil` 绑定仍按缺失处理，但展开改为 `match`，绑定的类型是 `T?`。依赖旧 nil 行为的 Calcit 测试（例如 `read-env-default` 一类固定 nil 的断言）已删除，改为直接断言 `Option`。
+上例返回 true，不能简单改成 `option:none?`。旧 `either` 的 fallback 是惰性的，普通函数
+`unwrap-or` 的参数则会立即求值；fallback 有日志、状态修改或报错时，应使用 `match` 保留原分支，
+而不是只替换函数名。
+
+显式运行 `calcit calcit.cirru fix --rule core-absence-to-public-v1 --include-attached --format edn`
+预览受保护迁移。规则自动处理有输入类型证据的直接 `nil?` / `non-nil?` / `either` 消费；
+其他绑定、函数引用、宏、旧 arity 或无法证明的索引保留 `requires-review`。核对 revision 后，
+带相同 selector、`--apply --expect-revision <revision>` 应用，再运行原测试及真实目标后端。
+规则不会替业务决定默认值，也不会因为旧代码无法通过新检查而放宽写回校验。
+
+`&get-env name fallback` 现在是 arity 错误。旧调用先求值 name，再求值 fallback，最后读取环境；
+若 fallback 有效果，先按此顺序用 `let` 绑定 name 和 fallback，再调用公开 `get-env` 并匹配结果。
+直接写 `.unwrap-or (get-env name) fallback` 会把读取环境提前，不能视为通用等价改写。
+`let{}` 对 `nil` 绑定仍按缺失处理，但展开改为 `match`，绑定的类型是 `T?`。
 
 WASM / WASI：`&list:first`、`&list:last`、`&map:get`、`&map:destruct`、`&set:destruct`、`&str:first`、`&str:nth`、`&struct:definition`、`&get-env` 与 `&parse-float` 返回 Option；`&enum:definition`、`&impl:origin` 尚无 WASM 实现，仍按显式 unsupported 处理。
 
@@ -577,8 +599,8 @@ let
 option:unwrap-or (first |🌱树) |
 ```
 
-上例返回 `|🌱`。编译器将字符串 primitive 的结果绑定一次，通过已有的 `nil?` 分支确认存在性再构造 Option；接收者与索引仍从左到右各求值一次。
-List/Enum 中合法的 nil 元素仍是 `some nil`，不被当作缺失。底层 `&str:first` / `&str:nth` 现在直接返回 `Option<String>`（见 0.31.0 迁移说明）。
+上例返回 `|🌱`。字符串查询保留 primitive 的 Option 结果；接收者与索引仍从左到右各求值一次。
+List/Enum 中合法的 nil 元素仍是 `some nil`，不被当作缺失。底层 `&str:first` / `&str:nth` 现在直接返回 `Option<String>`（见 0.30.1 迁移说明）。
 
 ## String 到 Tag/Symbol 的类型化转换
 
@@ -607,6 +629,9 @@ List/String/Map/Set 的旧 `.contains?` 与 Map 的旧 `.includes?` 已在 0.29.
 ## 兼容入口的退场节奏
 
 维护者决定：非 patch 版本允许 breaking change，用于废弃旧的不合理用法；patch 版本不删除入口，也不新增会让严格检查失败的诊断。流程是先发布新入口与 guarded fix rule，再在下一个非 patch 版本删除旧入口，并在本文列出删除项与迁移命令。
+
+0.30.1 有上文列出的单项兼容性例外：提前交付缺失值原语的 Option 返回及 `&get-env` 参数变化。
+这不授权其他弃用入口提前删除，也不改变后续 patch 版本的通常规则。
 
 剩余集中迁移与旧入口的计划退场窗口为 **0.31.0**（0.30.0 发布时未删除这些入口，见 #2079），不撤回下文列出的 0.29.0 已删除项。到达计划版本仍须逐项核验实际消费者、已发布迁移窗口、类型与失败/求值语义，以及 core 方法实现解耦；源码、附带测试/示例、宏生成代码、锁定模块和未合并迁移都在核对范围内。只扫描到零调用、fix 预览为空或更新基线文件都不能代替这些证明。未满足条件的兼容入口继续保留，具体迁移仍按下面的旧新映射与当前 CLI 查询处理。
 
