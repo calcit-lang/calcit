@@ -510,22 +510,48 @@ export let format_calcit_number = (x: number): string => {
   return `${sign}${digits.slice(0, decimalIndex)}.${digits.slice(decimalIndex)}`;
 };
 
+// Keep direct and nested String display aligned with cirru_edn::is_simple_char.
+const simpleStringAscii = /^[0-9A-Za-z?$.,'-]$/u;
+const simpleStringCjk = /^[\u2e80-\u2fdf\u3000-\u30ff\u3130-\u318f\u31c0-\u31ff\u3200-\u32ff\u3400-\u4dbf\u4e00-\u9fff\ua960-\ua97f\uac00-\ud7af\uf900-\ufaff\ufe30-\ufe4f\uff00-\uffef\u{1b000}-\u{1b2ff}\u{20000}-\u{323af}]$/u;
+const isSimpleStringChar = (char: string): boolean => simpleStringAscii.test(char) || simpleStringCjk.test(char);
+const displayString = (value: string): string => {
+  let simple = true;
+  for (const char of value) {
+    if (!isSimpleStringChar(char)) {
+      simple = false;
+      break;
+    }
+  }
+  if (simple) return "|" + value;
+  let text = '"|';
+  for (const char of value) {
+    if (isSimpleStringChar(char)) {
+      text += char;
+      continue;
+    }
+    switch (char) {
+      case "\t": text += "\\t"; break;
+      case "\r": text += "\\r"; break;
+      case "\n": text += "\\n"; break;
+      case "\\": text += "\\\\"; break;
+      case '"': text += '\\"'; break;
+      default: {
+        const point = char.codePointAt(0)!;
+        // Match Rust char::escape_default without changing raw String values.
+        text += point >= 0x20 && point <= 0x7e ? char : "\\u{" + point.toString(16) + "}";
+      }
+    }
+  }
+  return text + '"';
+};
+
 export let toString = (x: CalcitValue, escaped: boolean, disableJsDataWarning: boolean = false): string => {
   if (x === null) {
     return "nil";
   }
   if (x === undefined) return "&unit";
   if (typeof x === "string") {
-    if (escaped) {
-      // turn to visual string representation
-      if (/[\)\(\s\"]/.test(x)) {
-        return JSON.stringify("|" + x);
-      } else {
-        return "|" + x;
-      }
-    } else {
-      return x;
-    }
+    return escaped ? displayString(x) : x;
   }
   if (typeof x === "number") {
     return format_calcit_number(x);
