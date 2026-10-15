@@ -580,7 +580,7 @@ List/String/Map/Set 的旧 `.contains?` 与 Map 的旧 `.includes?` 已在 0.29.
 
 维护者决定：非 patch 版本允许 breaking change，用于废弃旧的不合理用法；patch 版本不删除入口，也不新增会让严格检查失败的诊断。流程是先发布新入口与 guarded fix rule，再在下一个非 patch 版本删除旧入口，并在本文列出删除项与迁移命令。
 
-剩余集中迁移与旧入口的计划退场窗口为 **0.30.0**，不撤回下文列出的 0.29.0 已删除项。到达计划版本仍须逐项核验实际消费者、已发布迁移窗口、类型与失败/求值语义，以及 core 方法实现解耦；源码、附带测试/示例、宏生成代码、锁定模块和未合并迁移都在核对范围内。只扫描到零调用、fix 预览为空或更新基线文件都不能代替这些证明。未满足条件的兼容入口继续保留，具体迁移仍按下面的旧新映射与当前 CLI 查询处理。
+剩余集中迁移与旧入口的计划退场窗口为 **0.31.0**（0.30.0 发布时未删除这些入口，见 #2079），不撤回下文列出的 0.29.0 已删除项。到达计划版本仍须逐项核验实际消费者、已发布迁移窗口、类型与失败/求值语义，以及 core 方法实现解耦；源码、附带测试/示例、宏生成代码、锁定模块和未合并迁移都在核对范围内。只扫描到零调用、fix 预览为空或更新基线文件都不能代替这些证明。未满足条件的兼容入口继续保留，具体迁移仍按下面的旧新映射与当前 CLI 查询处理。
 
 ### 0.29.0 已删除：`.join`、Map `.values`、List/String `.contains?`
 
@@ -657,9 +657,9 @@ Map 与 Set 同时不再实现 `Contains` trait。schema `:where` 中 `'T 'Conta
 
 `core-non-nil-predicate-v1` 随 `some?` 整条退役：0.29.0 的 CLI 用 `--rule` 指定它时会提示改用 0.28.x 的 CLI。`core-api-0.28-v1` preset 由 6 条规则减为 5 条，`core-api-0.29-v1` 由 7 条减为 6 条。`core-function-alias-v1` 继续迁移 `optionally`、`join` 与 `vals`；`core-collection-len-v1` 继续迁移 List、Map、Set 的 `.count`。升级顺序同上：先在 0.28.x 上预览、应用并运行项目测试，再升级 CLI。
 
-### 0.29.0 弃用、0.30.0 删除：合并后的 CLI 入口（#1566）
+### 0.29.0 弃用、0.31.0 删除：合并后的 CLI 入口（#1566）
 
-下面的子命令在 0.29.0 仍可运行，stdout 与退出码不变，只在 stderr 多输出一行 `[Deprecated] ...` 迁移提示；计划在 0.30.0 删除。新入口复用同一实现，结构化输出保留原有 `command` 名与字段，因此读取 `analyze.check-types`、`analyze.check-public` 等 envelope 的脚本只需改命令行；这些 envelope 名在删除旧入口后保持不变。
+下面的子命令在 0.29.0 仍可运行，stdout 与退出码不变，只在 stderr 多输出一行 `[Deprecated] ...` 迁移提示；0.30.0 仍保留，计划在 0.31.0 删除（#2033）。新入口复用同一实现，结构化输出保留原有 `command` 名与字段，因此读取 `analyze.check-types`、`analyze.check-public` 等 envelope 的脚本只需改命令行；这些 envelope 名在删除旧入口后保持不变。
 
 | 已弃用 | 替代 | 说明 |
 | --- | --- | --- |
@@ -667,11 +667,11 @@ Map 与 Set 同时不再实现 `Contains` trait。schema `:where` 中 `'T 'Conta
 | `analyze dynamic-methods` | `analyze weak-types --only dynamic-method` | 不接受 `--ns`/`--ns-prefix`，与原命令一致 |
 | `analyze deprecated` | `analyze weak-types --only deprecated-call` | 不接受 `--incremental`，与原命令一致 |
 | `analyze check-public --ns <ns> [--deps] [--summary-only] [--format …]` | `calcit <snapshot> --check-only --ns <ns> [--deps] [--summary-only] [--format edn\|json]` | 计数与报告相同，另外支持 EDN |
-| `analyze quality [--baseline …]` | `--check-only` 判断正确性，`analyze weak-types [--only coverage\|deprecated-call]` 定位债务 | 0.30.0 删除后不再读取 baseline；清零后从 CI 删除该命令与 baseline 文件 |
+| `analyze quality [--baseline …]` | `--check-only` 判断正确性，`analyze weak-types [--only coverage\|deprecated-call]` 定位债务 | 0.31.0 删除后不再读取 baseline；清零后从 CI 删除该命令与 baseline 文件 |
 | `query pkg` | `query config` | human 输出首行给出 `Package`；结构化输出见 `config show --format edn` 的 `:package` |
 | `query modules` | `config modules` | 默认 entry 的模块列表相同，标题改为 `Modules in entry 'default':` |
 | `tree batch-delete <target> --paths …`，以及 `edit transaction` 中的 `["tree","batch-delete",…]` 操作 | `edit transaction`，每个路径一条 `tree delete`，按下标从大到小排列 | 删除顺序与原命令相同；事务整体成功或整体不写入。事务中使用旧操作时同样在 stderr 输出提示 |
-| `config version` / `config set version` | `caps version get/set/bump` | 早已只输出迁移提示并失败，0.30.0 删除 |
+| `config version` / `config set version` | `caps version get/set/bump` | 早已只输出迁移提示并失败，0.31.0 删除 |
 
 迁移命令示例：
 
@@ -797,7 +797,7 @@ calcit calcit.cirru tree show app.main/main! --path @3 --format edn
 
 ### 仍可用的兼容名
 
-core 在 0.29.0 仍保留下表兼容入口，新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余逐处人工审阅。剩余入口的计划退场窗口是 0.30.0，但到达版本号不自动授权删除，仍须满足消费者、发布窗口、语义与实现解耦条件。
+core 在 0.29.0 仍保留下表兼容入口，新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余逐处人工审阅。剩余入口的计划退场窗口是 0.31.0，但到达版本号不自动授权删除，仍须满足消费者、发布窗口、语义与实现解耦条件。
 
 | 兼容名 | 首选写法 | 迁移 |
 |---|---|---|
@@ -829,7 +829,7 @@ core 在 0.29.0 仍保留下表兼容入口，新代码使用右侧的首选写�
 | 宏 `flipped` | 按实际顺序写参数：`flipped f a b` 写成 `f b a` | 同上；位于 `->` 等线程宏中时需要人工改写 |
 | 宏 `w-js-log` | `dbg`；需要在浏览器控制台查看宿主对象时显式写 `js/console.log` | 同上，只给 `requires-review` |
 
-上表名字、函数 `round?`、前缀 `reduce`，以及方法 List `.add`、List/Map/Set `.count`、FfiTask `.cancel` / `.cancel-with` 与 Struct/Enum `.contains?` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零只是必要条件；还须同时满足消费者验证、已发布迁移窗口、类型/失败/求值与相关后端语义验证，以及 core 实现解耦条件，之后才可在下一个非 patch 版本删除，并在本文列出删除项。依赖模块和未合并迁移也须核对；到达 0.30.0 不自动授权删除。
+上表名字、函数 `round?`、前缀 `reduce`，以及方法 List `.add`、List/Map/Set `.count`、FfiTask `.cancel` / `.cancel-with` 与 Struct/Enum `.contains?` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零只是必要条件；还须同时满足消费者验证、已发布迁移窗口、类型/失败/求值与相关后端语义验证，以及 core 实现解耦条件，之后才可在下一个非 patch 版本删除，并在本文列出删除项。依赖模块和未合并迁移也须核对；到达 0.31.0 不自动授权删除。
 
 ### std 定时器与信号订阅命名
 
@@ -1741,7 +1741,7 @@ CI 应运行默认严格 `--check-only`，由编译器诊断决定类型正确�
 `weak-types` 及其 `coverage`、`deprecated-call` 视图是定位报告，不按命中数充当类型正确性门禁。
 确实动态的 JS FFI 边界应显式声明和收窄，不要通过忽略 warning 伪造通过。
 
-已有非零 `analyze quality` baseline 的旧项目可在该命令于 0.30.0 删除前暂时在 CI 比较并逐步清零；新项目不再创建 baseline，
+已有非零 `analyze quality` baseline 的旧项目可在该命令于 0.31.0 删除前暂时在 CI 比较并逐步清零；新项目不再创建 baseline，
 清零后从 CI 移除该命令。旧格式、按 definition 的预算及 0.14.x 迁移命令见
 [历史版本迁移记录](upgrade-history.md#014x-质量-baseline-迁移)。
 
