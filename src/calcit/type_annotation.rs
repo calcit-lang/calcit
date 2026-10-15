@@ -120,6 +120,7 @@ pub fn entry_type_slots() -> HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> {
   ENTRY_TYPE_SLOTS.with(|slots| slots.borrow().clone())
 }
 
+/// Replaces this thread's entry-level bindings with ones captured by `entry_type_slots`.
 pub fn install_entry_type_slots(bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>) {
   ENTRY_TYPE_SLOTS.with(|slots| *slots.borrow_mut() = bindings);
   super::data_shape::clear_local_field_write_shapes();
