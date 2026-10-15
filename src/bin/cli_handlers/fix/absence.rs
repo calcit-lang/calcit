@@ -452,7 +452,7 @@ fn rewrite(node: &Cirru, path: &mut Vec<usize>, proven: &BTreeMap<Vec<usize>, (E
   let (some, none) = match consumer {
     Consumer::Nil if destructured => (leaf("false"), leaf("true")),
     Consumer::NonNil if destructured => (leaf("true"), leaf("false")),
-    Consumer::Nil => (list([leaf("nil?"), payload]), leaf("true")),
+    Consumer::Nil => (list([leaf("calcit.core/nil?"), payload]), leaf("true")),
     Consumer::NonNil => (list([leaf("calcit.core/non-nil?"), payload]), leaf("false")),
     Consumer::Either => (payload, leaf("nil")),
   };

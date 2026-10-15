@@ -38,6 +38,14 @@ fn absence_fix_guards_source_and_attached_transactions() {
       .iter()
       .all(|suggestion| suggestion["applicability"] == "machine-applicable")
   );
+  let nil_replacement = &suggestions
+    .iter()
+    .find(|suggestion| suggestion["definition"] == "app.migration/map-nil" && suggestion["path"] == "code@3")
+    .expect("the direct nil consumer must be in the plan")["replacement"];
+  assert!(
+    nil_replacement.to_string().contains("\"calcit.core/nil?\""),
+    "generated predicates keep their core origin: {nil_replacement}"
+  );
   assert_eq!(report["data"]["validation"]["status"], "passed");
   assert_eq!(fs::read(&snapshot).unwrap(), before, "preview is read-only");
   let repeated_preview = run_calcit(&snapshot, &base);
