@@ -7231,6 +7231,20 @@ struct MethodArgumentContext {
   receiver_specialized: bool,
 }
 
+/// Bind a method signature's receiver variables using independent receiver
+/// evidence, shared by argument checking, result inference and query metadata.
+fn method_receiver_bindings(
+  receiver: &CalcitTypeAnnotation,
+  signature: &CalcitFnTypeAnnotation,
+) -> Option<HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>> {
+  let expected = signature.arg_types.first().or(signature.rest_type.as_ref())?;
+  let mut bindings = HashMap::new();
+  receiver
+    .prove_with_bindings(expected, &mut bindings)
+    .is_proven()
+    .then_some(bindings)
+}
+
 /// Resolve method inputs before callback bodies are checked, using the actual
 /// implementation rather than inferring semantics from the method's spelling.
 fn expected_method_argument_types(
@@ -7269,14 +7283,7 @@ fn expected_method_argument_types(
     }
   };
   let fn_annotation = signature.as_function()?;
-  let expected_receiver = fn_annotation.arg_types.first()?;
-  let mut bindings = HashMap::new();
-  if !type_value
-    .prove_with_bindings(expected_receiver.as_ref(), &mut bindings)
-    .is_proven()
-  {
-    return None;
-  }
+  let bindings = method_receiver_bindings(type_value, fn_annotation)?;
   Some(MethodArgumentContext {
     receiver_specialized: specialized_types.is_some(),
     argument_types: specialized_types
@@ -9968,8 +9975,7 @@ fn static_method_contract_with_impls(
   let Some(expected_receiver) = signature.arg_types.first().or(signature.rest_type.as_ref()) else {
     return StaticMethodContract::open_with_definition("selected method schema has no receiver parameter", definition);
   };
-  let mut bindings = HashMap::new();
-  if !receiver.prove_with_bindings(expected_receiver.as_ref(), &mut bindings).is_proven() {
+  let Some(bindings) = method_receiver_bindings(receiver, signature) else {
     return StaticMethodContract::open_with_definition(
       format!(
         "receiver {} cannot prove schema receiver {}",
@@ -9978,7 +9984,7 @@ fn static_method_contract_with_impls(
       ),
       definition,
     );
-  }
+  };
   for bound in signature.where_bounds.iter() {
     if let Some(actual) = bindings.get(&bound.name)
       && !actual.is_proven_for(&bound.as_type_annotation())

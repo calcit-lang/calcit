@@ -29,9 +29,9 @@ use cirru_edn::EdnTag;
 
 use super::{
   ScopeTypes, checked_call_contract::resolve_checked_call_contract, find_method_entry_for_type, find_trait_field_type,
-  get_impls_from_type, lookup_source_backed_trait_def, reachable_dispatch_traits, resolve_local_type_refs_for_body,
-  resolve_namespace_type_refs_for_body, resolve_program_trait_refs_for_body, selected_trait_method, tag_annotation,
-  trait_is_external_object, trait_list_from_type,
+  get_impls_from_type, lookup_source_backed_trait_def, method_receiver_bindings, reachable_dispatch_traits,
+  resolve_local_type_refs_for_body, resolve_namespace_type_refs_for_body, resolve_program_trait_refs_for_body, selected_trait_method,
+  tag_annotation, trait_is_external_object, trait_list_from_type,
 };
 
 // ---------------------------------------------------------------------------
@@ -2706,12 +2706,36 @@ fn infer_typed_method_result<'a>(
   else {
     return calcit::DYNAMIC_TYPE.clone();
   };
-  let mut expected_types = signature.arg_types.clone();
-  expected_types.extend(signature.rest_type.iter().cloned());
-  expected_types.push(signature.return_type.clone());
-  let mut proof = crate::calcit::type_annotation::CallTypeProof::new(&signature.generics, &expected_types, &actual_types);
+  let Some(receiver_bindings) = actual_types
+    .first()
+    .and_then(|receiver| method_receiver_bindings(receiver, signature))
+  else {
+    return calcit::DYNAMIC_TYPE.clone();
+  };
+  let argument_types = signature
+    .arg_types
+    .iter()
+    .map(|argument| argument.substitute_type_vars(&receiver_bindings))
+    .collect::<Vec<_>>();
+  let rest_type = signature
+    .rest_type
+    .as_ref()
+    .map(|rest| rest.substitute_type_vars(&receiver_bindings));
+  let return_type = signature.return_type.substitute_type_vars(&receiver_bindings);
+  // Receiver-bound variables now belong to the caller, including an implicit
+  // trait self variable. Do not freshen them again from the callee's generics.
+  let generics = signature
+    .generics
+    .iter()
+    .filter(|name| !receiver_bindings.contains_key(*name))
+    .cloned()
+    .collect::<Vec<_>>();
+  let mut expected_types = argument_types.clone();
+  expected_types.extend(rest_type.iter().cloned());
+  expected_types.push(return_type.clone());
+  let mut proof = crate::calcit::type_annotation::CallTypeProof::new(&generics, &expected_types, &actual_types);
   for (index, (argument, actual)) in arguments.iter().zip(&actual_types).enumerate() {
-    let Some(expected) = signature.arg_types.get(index).or(signature.rest_type.as_ref()) else {
+    let Some(expected) = argument_types.get(index).or(rest_type.as_ref()) else {
       return calcit::DYNAMIC_TYPE.clone();
     };
     if core_option_none_without_payload(argument, actual.as_ref(), expected.as_ref()) {
@@ -2728,7 +2752,7 @@ fn infer_typed_method_result<'a>(
     }
   }
   for bound in signature.where_bounds.iter() {
-    let variable = CalcitTypeAnnotation::TypeVar(bound.name.clone());
+    let variable = CalcitTypeAnnotation::TypeVar(bound.name.clone()).substitute_type_vars(&receiver_bindings);
     if !proof
       .result(&variable)
       .is_some_and(|actual| actual.is_proven_for(&bound.as_type_annotation()))
@@ -2736,7 +2760,7 @@ fn infer_typed_method_result<'a>(
       return calcit::DYNAMIC_TYPE.clone();
     }
   }
-  invocation_return_type(signature, proof.result_or_open(&signature.return_type), false)
+  invocation_return_type(signature, proof.result_or_open(&return_type), false)
 }
 
 /// Infer the return type of a built-in proc call expression.

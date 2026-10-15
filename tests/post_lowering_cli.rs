@@ -68,6 +68,439 @@ fn define(snapshot: &Path, name: &str, code: &str, schema: &str, overwrite: bool
   );
 }
 
+fn guarded_transaction(snapshot: &Path, operations: serde_json::Value) {
+  let code = operations.to_string();
+  let preview = run_calcit(snapshot, &["edit", "transaction", "--code", &code, "--dry-run", "--format", "json"]);
+  assert_success(&preview, "preview CLI regression setup");
+  let report: serde_json::Value = serde_json::from_slice(&preview.stdout).expect("transaction preview should be one JSON document");
+  let revision = report["scoped_revision"].as_str().expect("preview should guard its scope");
+  assert_success(
+    &run_calcit(
+      snapshot,
+      &[
+        "edit",
+        "transaction",
+        "--code",
+        &code,
+        "--expect-revision",
+        revision,
+        "--format",
+        "json",
+      ],
+    ),
+    "apply guarded CLI regression setup",
+  );
+}
+
+#[test]
+fn selected_entry_queries_and_host_method_results_keep_independent_evidence() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/add.cirru", &snapshot).expect("minimal source should copy");
+  guarded_transaction(
+    &snapshot,
+    serde_json::json!([
+      [
+        "edit",
+        "def",
+        "app.main/NodeHost",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ deftrait NodeHost\n  .text $ :: 'Fn $ {} (:args $ [] 'NodeHost) (:return 'String)\n  .number $ :: 'Fn $ {} (:args $ [] 'NodeHost 'Number) (:return 'Number)\n  .open $ :: 'Fn $ {} (:args $ [] 'NodeHost) (:return 'Dynamic)"
+      ],
+      [
+        "edit",
+        "ffi",
+        "app.main/NodeHost",
+        "--code",
+        "{} (:backend :js) (:kind :external-object) (:target :node)"
+      ],
+      [
+        "edit",
+        "def",
+        "app.main/read-text",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn read-text (host) (host .text)"
+      ],
+      [
+        "edit",
+        "schema",
+        "app.main/read-text",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'app.main/NodeHost) (:return 'String) (:features $ #{} :js-ffi)"
+      ],
+      [
+        "edit",
+        "def",
+        "app.main/read-text-prefix",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn read-text-prefix (host) (.text host)"
+      ],
+      [
+        "edit",
+        "schema",
+        "app.main/read-text-prefix",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'app.main/NodeHost) (:return 'String) (:features $ #{} :js-ffi)"
+      ],
+      [
+        "edit",
+        "def",
+        "app.main/main!",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn main! () &unit"
+      ],
+      [
+        "edit",
+        "schema",
+        "app.main/main!",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"
+      ],
+      ["config", "set", "reload-fn", "app.main/main!"],
+      ["config", "set", "mode", "js"],
+      ["config", "set", "target", "browser"],
+      ["config", "add-entry", "server", "--from", "default", "--target", "node"]
+    ]),
+  );
+  let before = fs::read(&snapshot).expect("read source before queries");
+  let browser = run_calcit(
+    &snapshot,
+    &["query", "type-at", "app.main/read-text", "--path", "3", "--format", "json"],
+  );
+  assert_success(&browser, "default target query emits its diagnostic envelope");
+  assert!(String::from_utf8_lossy(&browser.stdout).contains("E_JS_FFI_TARGET_MISMATCH"));
+  for definition in ["read-text", "read-text-prefix"] {
+    let target = format!("app.main/{definition}");
+    for format in ["json", "edn"] {
+      let queried = run_calcit(
+        &snapshot,
+        &["--entry", "server", "query", "type-at", &target, "--path", "3", "--format", format],
+      );
+      assert_success(&queried, "selected Node target query");
+      if format == "json" {
+        let report: serde_json::Value = serde_json::from_slice(&queried.stdout).expect("one JSON query document");
+        assert_eq!(report["data"]["inferred_type"], "'String");
+        assert_eq!(report["diagnostics"], serde_json::json!([]));
+      } else {
+        let text = String::from_utf8_lossy(&queried.stdout);
+        cirru_edn::parse(&text).expect("one EDN query document");
+        assert!(text.contains(":inferred-type |'String"), "{text}");
+      }
+    }
+    let proven = run_calcit(
+      &snapshot,
+      &[
+        "--entry",
+        "server",
+        "fix",
+        "--rule",
+        "concrete-return-proof-v1",
+        "--ns",
+        "app.main",
+        "--def",
+        definition,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&proven, "host method supplies independent return evidence");
+    let report: serde_json::Value = serde_json::from_slice(&proven.stdout).expect("one proof document");
+    assert_eq!(report["diagnostics"], serde_json::json!([]));
+    assert_eq!(report["data"]["suggestions"], serde_json::json!([]));
+  }
+  for command in ["type", "context"] {
+    let selected = run_calcit(
+      &snapshot,
+      &["--entry", "server", "query", command, "app.main/read-text", "--format", "json"],
+    );
+    assert_success(&selected, "semantic queries inherit the selected entry");
+    serde_json::from_slice::<serde_json::Value>(&selected.stdout).expect("one semantic query document");
+    assert!(!String::from_utf8_lossy(&selected.stdout).contains("E_JS_FFI_TARGET_MISMATCH"));
+    let missing = run_calcit(
+      &snapshot,
+      &["--entry", "missing", "query", command, "app.main/read-text", "--format", "json"],
+    );
+    assert!(!missing.status.success(), "invalid entries must not silently select default");
+    serde_json::from_slice::<serde_json::Value>(&missing.stdout).expect("one structured failure document");
+  }
+  assert_eq!(
+    fs::read(&snapshot).unwrap(),
+    before,
+    "queries and proof previews must not write source"
+  );
+
+  for (name, code, schema) in [
+    (
+      "open-result",
+      "quote $ defn open-result (host) (host .open)",
+      "quote $ :: 'Fn $ {} (:args $ [] 'app.main/NodeHost) (:return 'String) (:features $ #{} :js-ffi)",
+    ),
+    (
+      "wrong-input",
+      "quote $ defn wrong-input (host) (host .number |bad)",
+      "quote $ :: 'Fn $ {} (:args $ [] 'app.main/NodeHost) (:return 'Number) (:features $ #{} :js-ffi)",
+    ),
+    (
+      "wrong-arity",
+      "quote $ defn wrong-arity (host) (host .text 1)",
+      "quote $ :: 'Fn $ {} (:args $ [] 'app.main/NodeHost) (:return 'String) (:features $ #{} :js-ffi)",
+    ),
+    (
+      "open-receiver",
+      "quote $ defn open-receiver (host) (host .text)",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'String) (:features $ #{} :js-ffi)",
+    ),
+    (
+      "missing-feature",
+      "quote $ defn missing-feature (host) (host .text)",
+      "quote $ :: 'Fn $ {} (:args $ [] 'app.main/NodeHost) (:return 'String)",
+    ),
+    (
+      "rigid-caller",
+      "quote $ defn rigid-caller (items) (items .append 1)",
+      "quote $ :: 'Fn $ {} (:args $ [] (:: 'List 'T)) (:return $ :: 'List 'T) (:generics $ [] 'T)",
+    ),
+  ] {
+    define(&snapshot, name, code, schema, false);
+    let unchanged = fs::read(&snapshot).unwrap();
+    let rejected = run_calcit(
+      &snapshot,
+      &[
+        "--entry",
+        "server",
+        "fix",
+        "--rule",
+        "concrete-return-proof-v1",
+        "--ns",
+        "app.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+      ],
+    );
+    assert!(!rejected.status.success(), "{name} must not gain false method return evidence");
+    assert_eq!(fs::read(&snapshot).unwrap(), unchanged, "{name}: no mutation");
+  }
+}
+
+#[test]
+fn semantic_query_entry_selects_modules_slots_policy_and_search_override() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::copy("calcit/js-ffi-consumer.cirru", &snapshot).expect("consumer should copy");
+  let module = directory.0.join("js-ffi-module");
+  fs::create_dir_all(module.join("js-ffi-assets")).unwrap();
+  fs::copy("calcit/js-ffi-module/calcit.cirru", module.join("calcit.cirru")).unwrap();
+  for file in ["add-two.js", "count.js", "base-name.js", "counter-host.js"] {
+    fs::copy(
+      Path::new("calcit/js-ffi-module/js-ffi-assets").join(file),
+      module.join("js-ffi-assets").join(file),
+    )
+    .unwrap();
+  }
+  guarded_transaction(
+    &snapshot,
+    serde_json::json!([
+      ["config", "set", "reload-fn", "test-nil.main/main!"],
+      ["config", "add-entry", "isolated", "--from", "default", "--target", "browser"],
+      ["config", "rm-module", "--entry", "isolated", "./js-ffi-module/"],
+      [
+        "edit",
+        "def",
+        "test-nil.main/NumberBox",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defstruct NumberBox (:value 'Number)"
+      ],
+      [
+        "edit",
+        "def",
+        "test-nil.main/TextBox",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defstruct TextBox (:value 'String)"
+      ],
+      [
+        "edit",
+        "def",
+        "test-nil.main/query-slot",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ deftype-slot :entry-value"
+      ],
+      [
+        "edit",
+        "def",
+        "test-nil.main/slot-value",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn slot-value (value) , value"
+      ],
+      [
+        "edit",
+        "schema",
+        "test-nil.main/slot-value",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] '*entry-value) (:return 'test-nil.main/NumberBox)"
+      ],
+      ["config", "set-type-slot", ":entry-value", "test-nil.main/NumberBox"],
+      [
+        "config",
+        "set-type-slot",
+        "--entry",
+        "isolated",
+        ":entry-value",
+        "test-nil.main/TextBox"
+      ],
+      [
+        "edit",
+        "def",
+        "test-nil.main/raw-host",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn raw-host () js/globalThis"
+      ],
+      [
+        "edit",
+        "schema",
+        "test-nil.main/raw-host",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'JsNullish 'JsObject)"
+      ],
+      ["config", "set", "feature-policy.js-ffi", "allow"],
+      ["config", "set", "--entry", "isolated", "feature-policy.js-ffi", "error"]
+    ]),
+  );
+  let before = fs::read(&snapshot).unwrap();
+  // The same symbolic slot must satisfy NumberBox only under the default entry.
+  for entry in ["default", "isolated"] {
+    let result = run_calcit(
+      &snapshot,
+      &[
+        "--entry",
+        entry,
+        "query",
+        "type-at",
+        "test-nil.main/slot-value",
+        "--path",
+        "3",
+        "--format",
+        "json",
+      ],
+    );
+    let report: serde_json::Value = serde_json::from_slice(&result.stdout).unwrap();
+    assert_success(&result, "selected slot query emits one diagnostic envelope");
+    if entry == "default" {
+      assert_eq!(report["diagnostics"], serde_json::json!([]));
+    } else {
+      assert!(
+        report["diagnostics"]
+          .as_array()
+          .is_some_and(|items| items.iter().any(|item| item["code"] == "W_FN_RETURN_TYPE_MISMATCH")),
+        "the other slot binding must not satisfy NumberBox: {report}"
+      );
+    }
+    let policy = run_calcit(
+      &snapshot,
+      &[
+        "--entry",
+        entry,
+        "query",
+        "type-at",
+        "test-nil.main/raw-host",
+        "--path",
+        "3",
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&policy, "policy query has one diagnostic envelope");
+    let policy: serde_json::Value = serde_json::from_slice(&policy.stdout).unwrap();
+    if entry == "default" {
+      assert!(
+        policy["diagnostics"]
+          .as_array()
+          .is_some_and(|items| items.iter().all(|item| item["code"] == "W_TYPE_AT_UNRESOLVED")),
+        "{policy}"
+      );
+    } else {
+      assert!(
+        policy["diagnostics"]
+          .as_array()
+          .is_some_and(|items| items.iter().any(|item| item["code"] == "E_JS_FFI_FEATURE_REQUIRED")),
+        "{policy}"
+      );
+    }
+  }
+  for command in ["type", "context"] {
+    let available = run_calcit(&snapshot, &["query", command, "app.main/counter-add", "--format", "json"]);
+    assert_success(&available, "default entry loads its dependency");
+    let absent = run_calcit(
+      &snapshot,
+      &["--entry", "isolated", "query", command, "app.main/counter-add", "--format", "json"],
+    );
+    assert!(!absent.status.success(), "isolated entry must not inherit default modules");
+    let report: serde_json::Value = serde_json::from_slice(&absent.stdout).unwrap();
+    assert_eq!(report["diagnostics"][0]["code"], "E_QUERY_TARGET_NOT_FOUND");
+  }
+  for (top, local, expected) in [
+    ("default", None, 1),
+    ("isolated", None, 0),
+    ("isolated", Some("default"), 1),
+    ("default", Some("isolated"), 0),
+  ] {
+    let mut args = vec![
+      "--entry",
+      top,
+      "query",
+      "search",
+      "counter-add",
+      "--source",
+      "deps",
+      "--exact",
+      "--format",
+      "json",
+    ];
+    if let Some(local) = local {
+      args.extend(["--entry", local]);
+    }
+    let found = run_calcit(&snapshot, &args);
+    assert_success(&found, "search inherits top-level entry unless locally overridden");
+    let report: serde_json::Value = serde_json::from_slice(&found.stdout).unwrap();
+    assert_eq!(
+      report["data"]["summary"]["matches"].as_u64().is_some_and(|count| count > 0),
+      expected > 0,
+      "{report}"
+    );
+  }
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "entry-scoped queries do not write source");
+}
+
 #[test]
 fn past_lowering_regressions_pass_post_lowering_validation() {
   let directory = TestDirectory::create();

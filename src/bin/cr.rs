@@ -657,7 +657,7 @@ fn run_cli() -> Result<(), String> {
       return Err("WASM and WASI code generation are disabled in this Calcit build; install a WASM-enabled release or build with `--features wasm`.".to_owned());
     }
     Some(CalcitCommand::Query(query_cmd)) => {
-      return cli_handlers::handle_query_command(query_cmd, &cli_args.input);
+      return cli_handlers::handle_query_command(query_cmd, &cli_args.input, cli_args.entry.as_deref());
     }
     Some(CalcitCommand::Docs(docs_cmd)) => {
       return cli_handlers::handle_docs_command(docs_cmd);
