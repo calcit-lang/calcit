@@ -28,6 +28,12 @@
 
 `to-string` 的 `wasm-scalar-method-contract` 附带测试使用普通 `.to-string`，同一断言 AST 在 native、生成 JS 和实际 WASM 执行，覆盖 String、Number、Bool、Tag、Nil 的文本结果及 String 返回类型。WASM fixture 另外从宿主传入运行时 Number，核对普通方法返回的 UTF-8 文本，包括小数、正负零、非有限值和 f64 边界；不改成 native call 或内部 primitive 来绕过方法 lowering。Symbol 仍只计入已经验证的 native/JS 范围，不能因其他标量通过而宣称 WASM 支持 Symbol。
 
+`&format-ternary-tree` 只用于 native List 的内部树布局调试，不是可移植的值显示 API。
+实际 JS 发射会拒绝展开和常量求值后仍可达的运行时引用，并由原代码生成栈指出所属定义；只读类型检查成功不代表后端实现可用，
+仍需执行项目的 `calcit js` 和生成 JS 回放。宏可以在 native 编译阶段使用该 helper 再返回普通表达式；
+模块中未被引用的 native helper 不阻止其普通 API 编译到 JS。`query def/context` 的定义文档也会说明这一边界，
+不为内部调试操作增加新的 feature 或迁移入口。
+
 ## 显式转换边界
 
 显式箭头转换的候选声明覆盖 `number->int*/uint*/float*` 与 `js-nullish->option`。前者保留 `Number -> Result<Refinement,String>`，成功值仍是原 Number，精确表示和范围验证不是自动舍入；后者保留 `JsNullish<T> -> Option<T>` 的同一 T 与 `:js-ffi` feature，仅包装空值边界，不能充当 payload decoder。两者职责不同，不因同用箭头拼写而合并错误模型或新增 `to-/as-/into-` 别名。此处记录既有 schema，不新增 backend 支持，也不冻结未经证明的动态类型。
