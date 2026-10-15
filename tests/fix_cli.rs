@@ -5927,6 +5927,48 @@ fn strict_workflow_accepts_map_contains_and_rejects_a_tag_list_index() {
   assert!(!rejected.status.success(), "a Tag index on a List must stay rejected");
 }
 
+/// #2086: an inline callback over a `map?`-narrowed open value must not keep the
+/// callee's raw generic names as its parameter types. Covers core `tagging-edn`
+/// and a user-written identity callback through the same strict workflow.
+#[test]
+fn strict_workflow_accepts_open_map_callbacks_through_generic_contracts() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/wasi-command-03-exit.cirru", &snapshot).unwrap();
+  let edit = |args: &[&str]| assert_success(&run_calcit(&snapshot, args), &args.join(" "));
+  edit(&[
+    "edit",
+    "def",
+    "app.main/keep-open",
+    "--input-format",
+    "cirru",
+    "--code",
+    "quote $ defn keep-open (data) $ if (map? data) (filter-map-kv data $ fn (k v) $ MapEntryDecision :keep k v) data",
+  ]);
+  edit(&[
+    "edit",
+    "schema",
+    "app.main/keep-open",
+    "--input-format",
+    "cirru",
+    "--code",
+    "quote $ :: :fn $ {} (:return :dynamic) (:args $ [] :dynamic)",
+  ]);
+  edit(&[
+    "edit",
+    "def",
+    "app.main/main!",
+    "--overwrite",
+    "--input-format",
+    "cirru",
+    "--code",
+    "quote $ defn main! () (assert= ({} (:name |Ada)) (tagging-edn $ {} (|name |Ada))) (assert= ({} (1 2)) (keep-open $ {} (1 2))) (, &unit)",
+  ]);
+  let verified = run_fix(&snapshot, &["--workflow", "strict", "--verify", "--format", "json"]);
+  assert_success(&verified, "open map callbacks pass the strict workflow");
+  assert!(parse_stdout(&verified)["diagnostics"].as_array().unwrap().is_empty());
+}
+
 /// #2027: a nested nominal name in a callee's Fn schema is written in the callee's
 /// namespace, so an inline callback in another namespace must see it qualified.
 #[test]
