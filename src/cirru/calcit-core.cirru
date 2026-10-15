@@ -7949,6 +7949,18 @@
                   .write-text! (fs:path |/calcit-result-contract-does-not-exist/file) |content
                   :: 'Result 'Unit 'String
               :tags $ #{} :unit
+            %{} 'TestEntry (:name |preserves-nominal-child-paths)
+              :code $ quote $ assert=
+                Result :ok $ [] $ fs:path |tests/fixtures/read-dir/child.txt
+                .read-dir $ fs:path |tests/fixtures/read-dir
+              :tags $ #{} :file :native
+            %{} 'TestEntry (:name |missing-directory-keeps-string-error)
+              :code $ quote $ match
+                .read-dir $ fs:path |tests/fixtures/read-dir/does-not-exist
+                (:ok _) (assert= true false)
+                (:err message)
+                  assert= true $ string? message
+              :tags $ #{} :file :native
         'generate-id! $ %{} 'CodeEntry
           :doc "|internal function for generating unique IDs\nSyntax: (generate-id!)\nParams: none\nReturns: unique string ID\nGenerates a unique identifier string for runtime use"
           :code $ quote &runtime-implementation
