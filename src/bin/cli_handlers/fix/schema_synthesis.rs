@@ -22,8 +22,7 @@ fn normalize_inferred_schema(annotation: &CalcitTypeAnnotation) -> std::sync::Ar
     Type::Map(key, value) => Type::Map(normalize_inferred_schema(key), normalize_inferred_schema(value)),
     Type::Set(inner) => Type::Set(normalize_inferred_schema(inner)),
     Type::Ref(inner) => Type::Ref(normalize_inferred_schema(inner)),
-    Type::Nullable(inner, NullableOrigin::Calcit) => Type::Nullable(normalize_inferred_schema(inner), NullableOrigin::Calcit),
-    Type::Nullable(inner, NullableOrigin::JsHost) => Type::Nullable(normalize_inferred_schema(inner), NullableOrigin::JsHost),
+    Type::Nullable(inner, origin) => Type::Nullable(normalize_inferred_schema(inner), *origin),
     Type::Variadic(inner) => Type::Variadic(normalize_inferred_schema(inner)),
     Type::Fn(signature) => {
       let mut normalized = signature.as_ref().clone();

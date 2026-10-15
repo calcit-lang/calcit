@@ -470,6 +470,11 @@ try {
     "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
     "--tag", "empty-collection-assignment", "--backend", "js",
   ], { ...options, stdio: "inherit" });
+  // #2073: recur transfers add no exit; each base exit proves the JsNullish return.
+  execFileSync(process.execPath, [
+    "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
+    "--tag", "recursive-nullable-exit", "--backend", "native,js",
+  ], { ...options, stdio: "inherit" });
   await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
   const emptyEvidenceOriginal = await readFile(snapshot);
   for (const name of ["map-alias", "list-alias", "set-alias", "result-seed", "nested-empty", "grow-map", "grow-list", "grow-set", "empty-lookup", "accumulate", "accumulate-receiver-first", "fold-counts", "typed-ref"]) {

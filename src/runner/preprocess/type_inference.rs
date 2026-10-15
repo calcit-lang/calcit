@@ -744,27 +744,7 @@ pub(crate) fn infer_function_exit_type(
       return resolve_type_value(expr, scope).map(Exit::Value);
     };
     match items.first()? {
-      Calcit::Proc(CalcitProc::Recur) => {
-        if items.len() != parameters.len() + 1 {
-          return None;
-        }
-        let mut bindings = HashMap::new();
-        for (argument, expected) in items.iter().skip(1).zip(parameters) {
-          if !matches!(
-            resolve_type_value(argument, scope)?.prove_with_bindings(expected, &mut bindings),
-            crate::calcit::type_annotation::TypeProof::Proven
-          ) || !bindings
-            .iter()
-            .all(|(name, bound)| matches!(bound.as_ref(), CalcitTypeAnnotation::TypeVar(same) if same == name))
-          {
-            // Recur preserves the current instantiation. Unlike a new call,
-            // it cannot infer fresh substitutions for lexical type variables;
-            // passing a parameter's own type variable through is the identity.
-            return None;
-          }
-        }
-        Some(Exit::Transfer)
-      }
+      Calcit::Proc(CalcitProc::Recur) => recur_preserves_parameters(items, scope, parameters).then_some(Exit::Transfer),
       Calcit::Syntax(CalcitSyntax::CoreLet, _) => {
         let tail = items.get(items.len().checked_sub(1)?)?;
         infer(tail, &core_let_scope(items, scope), parameters)
@@ -820,6 +800,82 @@ pub(crate) fn infer_function_exit_type(
     Exit::Value(value) => Some(value),
     // A recursive cycle alone cannot independently establish a return contract.
     Exit::Transfer => None,
+  }
+}
+
+/// Whether a `recur` form passes arguments that prove the loop parameters.
+fn recur_preserves_parameters(items: &CalcitList, scope: &ScopeTypes, parameters: &[Arc<CalcitTypeAnnotation>]) -> bool {
+  if items.len() != parameters.len() + 1 {
+    return false;
+  }
+  let mut bindings = HashMap::new();
+  for (argument, expected) in items.iter().skip(1).zip(parameters) {
+    let Some(actual) = resolve_type_value(argument, scope) else {
+      return false;
+    };
+    // Recur preserves the current instantiation. Unlike a new call,
+    // it cannot infer fresh substitutions for lexical type variables;
+    // passing a parameter's own type variable through is the identity.
+    if !matches!(
+      actual.prove_with_bindings(expected, &mut bindings),
+      crate::calcit::type_annotation::TypeProof::Proven
+    ) || !bindings
+      .iter()
+      .all(|(name, bound)| matches!(bound.as_ref(), CalcitTypeAnnotation::TypeVar(same) if same == name))
+    {
+      return false;
+    }
+  }
+  true
+}
+
+/// Prove each value exit of a function body whose tail may `recur`, under the
+/// branch scope preprocessing applied. Returns the number of value exits, or
+/// `None` when a recur exit does not preserve the parameters or a value exit
+/// fails `prove`. Recur transfers add no value exit, so a caller must still
+/// require at least one (#2073).
+pub(crate) fn prove_function_value_exits(
+  expr: &Calcit,
+  scope: &ScopeTypes,
+  parameters: &[Arc<CalcitTypeAnnotation>],
+  prove: &mut dyn FnMut(&Calcit, &ScopeTypes) -> bool,
+) -> Option<usize> {
+  if expression_definitely_diverges(expr) {
+    return Some(0);
+  }
+  let Calcit::List(items) = expr else {
+    return prove(expr, scope).then_some(1);
+  };
+  match items.first() {
+    Some(Calcit::Proc(CalcitProc::Recur)) => recur_preserves_parameters(items, scope, parameters).then_some(0),
+    Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) => {
+      let tail = items.get(items.len().checked_sub(1)?)?;
+      prove_function_value_exits(tail, &core_let_scope(items, scope), parameters, prove)
+    }
+    Some(Calcit::Syntax(CalcitSyntax::If, _)) if matches!(items.len(), 3 | 4) => {
+      let narrowing = super::extract_predicate_bindings(items.get(1)?, scope);
+      let mut true_scope = scope.clone();
+      if let Some((symbol, narrowed)) = narrowing.true_binding {
+        true_scope.insert(symbol, narrowed);
+      }
+      let mut false_scope = scope.clone();
+      if let Some((symbol, narrowed)) = narrowing.false_binding {
+        false_scope.insert(symbol, narrowed);
+      }
+      let left = prove_function_value_exits(items.get(2)?, &true_scope, parameters, prove)?;
+      let right = prove_function_value_exits(items.get(3).unwrap_or(&Calcit::Nil), &false_scope, parameters, prove)?;
+      Some(left + right)
+    }
+    Some(Calcit::Syntax(CalcitSyntax::Match, _)) => {
+      let mut count = 0;
+      for (pattern, body) in preprocessed_match_branches(items)? {
+        let mut branch_scope = scope.clone();
+        bind_pattern_scope(pattern, &mut branch_scope);
+        count += prove_function_value_exits(body, &branch_scope, parameters, prove)?;
+      }
+      Some(count)
+    }
+    _ => prove(expr, scope).then_some(1),
   }
 }
 

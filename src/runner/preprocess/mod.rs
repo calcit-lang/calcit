@@ -1559,13 +1559,9 @@ where
       resolve_type_ref,
       resolve_trait_bound,
     ))),
-    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => Arc::new(CalcitTypeAnnotation::Nullable(
+    CalcitTypeAnnotation::Nullable(inner, origin) => Arc::new(CalcitTypeAnnotation::Nullable(
       map_type_and_trait_references(inner.clone(), resolve_type_ref, resolve_trait_bound),
-      NullableOrigin::Calcit,
-    )),
-    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::JsHost) => Arc::new(CalcitTypeAnnotation::Nullable(
-      map_type_and_trait_references(inner.clone(), resolve_type_ref, resolve_trait_bound),
-      NullableOrigin::JsHost,
+      *origin,
     )),
     CalcitTypeAnnotation::Variadic(inner) => Arc::new(CalcitTypeAnnotation::Variadic(map_type_and_trait_references(
       inner.clone(),

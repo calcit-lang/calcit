@@ -764,7 +764,8 @@
         'group-open-rows $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn group-open-rows (rows)
             group-by (&map:vals rows)
-              fn (row) (option:unwrap $ &map:get row :finished-time)
+              fn (row)
+                option:unwrap $ &map:get row :finished-time
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'String (:: 'Map 'Tag 'Dynamic)
@@ -781,7 +782,8 @@
             let
                 group-items group-by
               group-items (&map:vals rows)
-                fn (row) (option:unwrap $ &map:get row :finished-time)
+                fn (row)
+                  option:unwrap $ &map:get row :finished-time
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'String (:: 'Map 'Tag 'Dynamic)
@@ -796,7 +798,8 @@
         'group-open-rows-arrow $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn group-open-rows-arrow (rows)
             -> rows (&map:vals)
-              group-by $ fn (row) (option:unwrap $ &map:get row :finished-time)
+              group-by $ fn (row)
+                option:unwrap $ &map:get row :finished-time
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'String (:: 'Map 'Tag 'Dynamic)
@@ -810,7 +813,8 @@
             :tags $ #{} :callback-container-shape :unit
         'read-open-members $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-open-members (rows)
-            map rows $ fn (row) (option:unwrap $ &map:get row :title)
+            map rows $ fn (row)
+              option:unwrap $ &map:get row :title
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Dynamic)
@@ -2161,6 +2165,22 @@
             :args $ []
             :features $ #{} :js-ffi
             :return $ :: 'Map 'String 'Number
+        'recursive-nullish-exit $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recursive-nullish-exit (depth)
+            if (> depth 1)
+              recur $ dec depth
+              if (= depth 1) |found nil
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number
+            :features $ #{} :js-ffi
+            :return $ :: 'JsNullish 'String
+          :tests $ [] $ %{} 'TestEntry (:name |recur-keeps-base-exits)
+            :code $ quote $ do
+              assert= |found $ recursive-nullish-exit 3
+              assert= |found $ recursive-nullish-exit 1
+              assert= nil $ recursive-nullish-exit 0
+            :tags $ #{} :recursive-nullable-exit
         'ref-invariant $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn ref-invariant ()
             let
@@ -2872,7 +2892,8 @@
           :code $ quote $ defn alias (rows)
             let
                 order &list:sort-by
-              order rows $ fn (row) (option:unwrap $ &map:get row :n)
+              order rows $ fn (row)
+                option:unwrap $ &map:get row :n
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
@@ -2891,7 +2912,8 @@
             let
                 order &list:sort-by
                 copy-order order
-              copy-order rows $ fn (row) (option:unwrap $ &map:get row :n)
+              copy-order rows $ fn (row)
+                option:unwrap $ &map:get row :n
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
@@ -2939,7 +2961,8 @@
                 order &list:sort-by
                 copy-order order
               set! order &list:sort-by
-              copy-order rows $ fn (row) (option:unwrap $ &map:get row :n)
+              copy-order rows $ fn (row)
+                option:unwrap $ &map:get row :n
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
@@ -2956,7 +2979,8 @@
             :tags $ #{} :sort-selector-assignment :unit
         'direct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn direct (rows)
-            &list:sort-by rows $ fn (row) (option:unwrap $ &map:get row :n)
+            &list:sort-by rows $ fn (row)
+              option:unwrap $ &map:get row :n
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
@@ -2991,7 +3015,8 @@
             :return $ :: 'List 'T
         'method $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn method (rows)
-            rows .sort-by $ fn (row) (option:unwrap $ &map:get row :n)
+            rows .sort-by $ fn (row)
+              option:unwrap $ &map:get row :n
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
@@ -3046,7 +3071,8 @@
             :tags $ #{} :sort-selector-assignment :unit
         'named-selector $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn named-selector (rows)
-            &list:sort-by rows $ defn select-key (row) (option:unwrap $ &map:get row :n)
+            &list:sort-by rows $ defn select-key (row)
+              option:unwrap $ &map:get row :n
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
@@ -3062,7 +3088,8 @@
             :tags $ #{} :sort-selector-context :unit
         'prefix-method $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn prefix-method (rows)
-            .sort-by rows $ fn (row) (option:unwrap $ &map:get row :n)
+            .sort-by rows $ fn (row)
+              option:unwrap $ &map:get row :n
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
@@ -3083,7 +3110,8 @@
               let
                   order :inner
                 assert= :inner order
-              order rows $ fn (row) (option:unwrap $ &map:get row :n)
+              order rows $ fn (row)
+                option:unwrap $ &map:get row :n
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
@@ -3099,7 +3127,8 @@
             :tags $ #{} :sort-selector-context :unit
         'threaded $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn threaded (rows)
-            -> rows $ &list:sort-by $ fn (row) (option:unwrap $ &map:get row :n)
+            -> rows $ &list:sort-by $ fn (row)
+              option:unwrap $ &map:get row :n
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)

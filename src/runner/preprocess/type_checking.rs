@@ -1655,8 +1655,18 @@ pub(crate) fn check_function_return_type(
   } else {
     proof
   };
+  // With recur, the joined exit type can lose the declared nullable origin;
+  // prove each value exit on its own and require at least one (#2073).
+  let recursive_exits_proven = || {
+    recur_parameters.is_some_and(|parameters| {
+      super::type_inference::prove_function_value_exits(last_expr, scope_types, parameters, &mut |exit, scope| {
+        expression_is_proven_for(exit, declared_return_type, scope, async_invocation)
+      })
+      .is_some_and(|value_exits| value_exits > 0)
+    })
+  };
   let proof = if !matches!(proof, TypeProof::Proven)
-    && expression_is_proven_for(last_expr, declared_return_type, scope_types, async_invocation)
+    && (expression_is_proven_for(last_expr, declared_return_type, scope_types, async_invocation) || recursive_exits_proven())
   {
     TypeProof::Proven
   } else {
