@@ -7772,6 +7772,75 @@
             %{} 'TestEntry (:name |formats-runtime-number)
               :code $ quote $ assert= |42 (format-to-lisp 42)
               :tags $ #{} :core :format-boundary :unit
+            %{} 'TestEntry (:name |uses-the-same-string-display-inside-containers)
+              :code $ quote $ do
+                assert= ||abc $ format-to-lisp |abc
+                assert= "|(|abc)" $ format-to-lisp $ [] |abc
+                assert= "|({} (:value |abc))" $ format-to-lisp $ {} (:value |abc)
+                assert= "|({} (:value |abc))" $ str $ {} (:value |abc)
+                assert= || $ format-to-lisp |
+                assert= "|(|)" $ format-to-lisp $ [] |
+                assert= "|({} (:value |))" $ format-to-lisp $ {} (:value |)
+                assert= "|({} (:value |))" $ str $ {} (:value |)
+                assert= "|\"|owner/repo\"" $ format-to-lisp |owner/repo
+                assert= "|(\"|owner/repo\")" $ format-to-lisp $ [] |owner/repo
+                assert= "|({} (:value \"|owner/repo\"))" $ format-to-lisp $ {} (:value |owner/repo)
+                assert= "|({} (:value \"|owner/repo\"))" $ str $ {} (:value |owner/repo)
+                assert= "|\"|a_b\"" $ format-to-lisp |a_b
+                assert= "|(\"|a_b\")" $ format-to-lisp $ [] |a_b
+                assert= "|({} (:value \"|a_b\"))" $ format-to-lisp $ {} (:value |a_b)
+                assert= "|({} (:value \"|a_b\"))" $ str $ {} (:value |a_b)
+                assert= "|\"|a b\"" $ format-to-lisp "|a b"
+                assert= "|(\"|a b\")" $ format-to-lisp $ [] "|a b"
+                assert= "|({} (:value \"|a b\"))" $ format-to-lisp $ {} (:value "|a b")
+                assert= "|({} (:value \"|a b\"))" $ str $ {} (:value "|a b")
+                assert= "|\"|a\\\"b\"" $ format-to-lisp "|a\"b"
+                assert= "|(\"|a\\\"b\")" $ format-to-lisp $ [] "|a\"b"
+                assert= "|({} (:value \"|a\\\"b\"))" $ format-to-lisp $ {} (:value "|a\"b")
+                assert= "|({} (:value \"|a\\\"b\"))" $ str $ {} (:value "|a\"b")
+                assert= "|\"|a\\\\b\"" $ format-to-lisp |a\b
+                assert= "|(\"|a\\\\b\")" $ format-to-lisp $ [] |a\b
+                assert= "|({} (:value \"|a\\\\b\"))" $ format-to-lisp $ {} (:value |a\b)
+                assert= "|({} (:value \"|a\\\\b\"))" $ str $ {} (:value |a\b)
+                assert= "|\"|a\\nb\"" $ format-to-lisp $ str |a (char-from-code 10) |b
+                assert= "|(\"|a\\nb\")" $ format-to-lisp $ []
+                  str |a (char-from-code 10) |b
+                assert= "|({} (:value \"|a\\nb\"))" $ format-to-lisp $ {}
+                  :value $ str |a (char-from-code 10) |b
+                assert= "|({} (:value \"|a\\nb\"))" $ str $ {}
+                  :value $ str |a (char-from-code 10) |b
+                assert= "|\"|\\t\\r\"" $ format-to-lisp $ str (char-from-code 9) (char-from-code 13)
+                assert= "|(\"|\\t\\r\")" $ format-to-lisp $ []
+                  str (char-from-code 9) (char-from-code 13)
+                assert= "|({} (:value \"|\\t\\r\"))" $ format-to-lisp $ {}
+                  :value $ str (char-from-code 9) (char-from-code 13)
+                assert= "|({} (:value \"|\\t\\r\"))" $ str $ {}
+                  :value $ str (char-from-code 9) (char-from-code 13)
+                assert= "|\"|\\u{0}\"" $ format-to-lisp $ str (char-from-code 0)
+                assert= "|(\"|\\u{0}\")" $ format-to-lisp $ []
+                  str $ char-from-code 0
+                assert= "|({} (:value \"|\\u{0}\"))" $ format-to-lisp $ {}
+                  :value $ str $ char-from-code 0
+                assert= "|({} (:value \"|\\u{0}\"))" $ str $ {}
+                  :value $ str $ char-from-code 0
+                assert= "|\"|\\u{e9}\"" $ format-to-lisp "|é"
+                assert= "|(\"|\\u{e9}\")" $ format-to-lisp $ [] "|é"
+                assert= "|({} (:value \"|\\u{e9}\"))" $ format-to-lisp $ {} (:value "|é")
+                assert= "|({} (:value \"|\\u{e9}\"))" $ str $ {} (:value "|é")
+                assert= "|\"|\\u{1f600}\"" $ format-to-lisp "|😀"
+                assert= "|(\"|\\u{1f600}\")" $ format-to-lisp $ [] "|😀"
+                assert= "|({} (:value \"|\\u{1f600}\"))" $ format-to-lisp $ {} (:value "|😀")
+                assert= "|({} (:value \"|\\u{1f600}\"))" $ str $ {} (:value "|😀")
+                assert= "||中文" $ format-to-lisp "|中文"
+                assert= "|(|中文)" $ format-to-lisp $ [] "|中文"
+                assert= "|({} (:value |中文))" $ format-to-lisp $ {} (:value "|中文")
+                assert= "|({} (:value |中文))" $ str $ {} (:value "|中文")
+                assert= "|\"|中文/\\u{1f600}\"" $ format-to-lisp "|中文/😀"
+                assert= "|(\"|中文/\\u{1f600}\")" $ format-to-lisp $ [] "|中文/😀"
+                assert= "|({} (:value \"|中文/\\u{1f600}\"))" $ format-to-lisp $ {} (:value "|中文/😀")
+                assert= "|({} (:value \"|中文/\\u{1f600}\"))" $ str $ {} (:value "|中文/😀")
+                println $ {} $ |keep |owner/repo
+              :tags $ #{} :core :format-boundary :unit
         'frequencies $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn frequencies (xs0)
             assert "|expects a list for frequencies" $ list? xs0
