@@ -22,7 +22,7 @@ const corePath = resolve("src/cirru/calcit-core.cirru");
 const core = JSON.parse(run("cirru", "parse-edn", "--file", corePath));
 const definitions = core[":files"]["'calcit.core"].defs;
 const successNames = ["unicode-scalar-indexing", "scalar-slice-boundaries", "scalar-search-indices",
-  "roundtrips-astral-scalar", "reads-astral-scalar-code"];
+  "roundtrips-astral-scalar", "reads-astral-scalar-code", "preserves-source-line-terminators"];
 const failureNames = ["rejects-invalid-string-indices", "scalar-slice-invalid-evaluation",
   "rejects-invalid-scalars", "rejects-multiple-characters"];
 const available = [...definitions["'last"].tests, ...definitions["'&str:slice"].tests, ...definitions["'str-find-index"].tests,
@@ -34,6 +34,7 @@ const tests = [...successNames, ...failureNames].map((name) => {
 });
 const expectedTrace = ["unicode-receiver", "unicode-start", "unicode-end",
   "unicode-search-receiver", "unicode-search-needle",
+  "unicode-source-prefix", "unicode-source-suffix",
   "unicode-invalid-receiver", "unicode-invalid-start", "unicode-invalid-end"];
 const fixture = await mkdtemp(join(tmpdir(), "calcit-string-unicode-"));
 try {
