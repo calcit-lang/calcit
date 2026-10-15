@@ -10,6 +10,10 @@ Cumulo Phlox workflow 的旧 Snapshot 在 named entry 中带有旧编辑器字�
 未知字段报错一次列出全部字段并给出完整命令。不按项目硬编码 `storage-key`，不静默丢弃元数据，
 也不修改运行时 loader。
 
+Review 补充：按最后一个点拆分目标，支持 `server.prod` 等 entry 名；验证与删除共用字段名规范化，
+匹配 tag、symbol 与带冒号的字符串 key，同名别名全部删除并逐项报告值。
+先汇总所有 named entry 的未知字段，再给出一条命令；失败时不写回原文件。
+
 ## 退场条件
 
 与顶层 `:configs` 的一次性迁移入口同时退场：已知下游的旧 compact Snapshot 都迁移后，在非 patch 版本删除。
@@ -18,4 +22,5 @@ Cumulo Phlox workflow 的旧 Snapshot 在 named entry 中带有旧编辑器字�
 
 - `src/snapshot.rs` 单元测试覆盖报错提示、非法目标、部分删除仍拒绝、全部删除后迁移成功与报告值。
 - CLI 冒烟：带 `:configs` 与 `entries.server` 旧字段的 Snapshot 报错一次列出两个字段，按提示命令完成格式化。
+- Rust 回归覆盖多 entry 汇总、带点 entry、字段别名、空目标及规范化当前字段保护；已有 CLI 集成测试覆盖失败逐字节不写回、完整命令与幂等格式化。
 - `cargo test`、`yarn check-all`、`cargo clippy -- -D warnings`。

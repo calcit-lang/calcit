@@ -1245,7 +1245,7 @@ Snapshot 路径；如果同目录存在 `compact.cirru`，还会直接给出上�
 这只让迁移结果可被当前严格 loader 读取，不会猜测业务类型或授权编译期副作用；随后应人工收窄语义类型并声明确需的 capability。
 
 早期 named entry 可能带有旧编辑器使用的字段（如 Cumulo 项目里的 `:storage-key`、`:port`），当前 entry 不再有对应语义。
-`edit format` 遇到未知字段时会一次列出全部字段并给出命令；审阅这些值确认不再需要后，逐个显式删除：
+`edit format` 遇到未知字段时会一次列出所有 named entry 的未知字段并给出完整命令；审阅这些值确认不再需要后，逐个显式删除：
 
 ```bash
 calcit calcit.cirru edit format \
@@ -1255,6 +1255,9 @@ calcit calcit.cirru edit format \
 
 输出会列出每个被删除字段的原值，未点名的未知字段仍会被拒绝。该参数只接受 `<entry>.<field>`，
 拒绝当前 entry 字段（如 `:mode`、`:modules`，这些用 `calcit config` 修改）以及不存在的 entry 或字段。
+按最后一个点分隔 entry 名与字段名，例如 `server.prod.port` 表示 `server.prod` 的 `port`；两部分均不能为空。
+字段的 tag、symbol 与字符串写法按同一名称匹配（如 `:port`、`'port`、`|:port`）；
+同名的多种写法都会被显式删除并逐项报告原值。任何目标无效或仍有未点名的未知字段时，原文件保持不变。
 
 旧 namespace 里的 `:require-macros` 也必须在 Snapshot 规范化前处理。宏与普通值现在共用
 `:require` 规则，例如把：
