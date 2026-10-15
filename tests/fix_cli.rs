@@ -5893,6 +5893,72 @@ fn optional_parameter_rule_keeps_multiple_trailing_candidates_review_only() {
 }
 
 #[test]
+fn strict_workflow_keeps_declared_macro_logs_out_of_structured_reports() {
+  // Rust owns CLI stream/envelope and exit-status checks, not macro semantics.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/wasi-command-03-exit.cirru", &snapshot).unwrap();
+  for args in [
+    vec![
+      "edit",
+      "def",
+      "app.main/noisy",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defmacro noisy ()\n  println |workflow-macro-log\n  quote &unit",
+    ],
+    vec![
+      "edit",
+      "schema",
+      "app.main/noisy",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ :: 'Macro $ {} (:required $ []) (:capabilities $ #{} :log) (:expansion $ :: 'Expr 'Unit)",
+    ],
+    vec![
+      "edit",
+      "def",
+      "app.main/main!",
+      "--overwrite",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn main! ()\n  noisy\n  , &unit",
+    ],
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), "install declared logging macro");
+  }
+  let before = fs::read(&snapshot).unwrap();
+  for format in ["json", "edn"] {
+    for args in [
+      vec!["--check-only", "--all-defs", "--format", format],
+      vec!["fix", "--workflow", "strict", "--verify", "--format", format],
+    ] {
+      let output = run_calcit(&snapshot, &args);
+      assert_success(&output, "declared macro logs must not invalidate structured verification");
+      assert!(!String::from_utf8_lossy(&output.stdout).contains("workflow-macro-log"));
+      assert!(String::from_utf8_lossy(&output.stderr).contains("workflow-macro-log"));
+      if format == "json" {
+        let report = parse_stdout(&output);
+        if args[0] == "fix" {
+          assert_eq!(report["data"]["workflow"]["status"], "passed");
+          for result in report["data"]["workflow"]["verification"]["results"].as_array().unwrap() {
+            assert_eq!(result["status"], "passed");
+            assert_eq!(result["report"]["data"]["status"], "passed");
+            assert_eq!(result["report"]["diagnostics"], serde_json::json!([]));
+          }
+        }
+      } else {
+        cirru_edn::parse(&String::from_utf8_lossy(&output.stdout)).expect("one native EDN report, without macro logs");
+      }
+      assert_eq!(fs::read(&snapshot).unwrap(), before, "verification is read-only");
+    }
+  }
+}
+
+#[test]
 fn strict_workflow_accepts_map_contains_and_rejects_a_tag_list_index() {
   // #1717: the Map branch of core `contains?` must not inherit the List index
   // requirement, while a Tag index on a known List stays rejected.

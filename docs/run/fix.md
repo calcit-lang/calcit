@@ -415,7 +415,10 @@ Map/dispatch 仍只用于人工建模。
 默认模式只规划。`--apply` 仍走既有 fingerprint、staged Snapshot、严格预处理和原子替换，不会应用 schema 设计、
 Dynamic 收窄、FFI trust 或业务默认值。`--verify` 是只读模式：它要求安全建议已经清空，逐 entry 运行
 `--check-only --keep-going`，并执行 Snapshot 已声明的 verification profiles；任一结果失败时保持结构化 stdout，
-同时返回非零退出码。`:external-commands` 保持为空，因为 Calcit 不猜测项目使用 yarn、npm、cargo 或其他构建器；
+同时返回非零退出码。宏展开的日志写到 stderr，Cirru EDN / JSON stdout 保持单个报告；子进程退出成功还须
+提供有效且通过的报告，才算该项验证通过。报告缺失、格式错误或解析失败会产生 `E_WORKFLOW_OUTPUT`，
+同时出现在顶层 diagnostics 和对应 verification result 中，workflow 返回 `failed`，不会将内部错误藏在 `passed` 下。
+`:external-commands` 保持为空，因为 Calcit 不猜测项目使用 yarn、npm、cargo 或其他构建器；
 调用方应把外部构建作为显式步骤维护，并可用 Snapshot `:verification :external-gates` 把步骤名称带入 preflight。
 
 `--workflow strict` 是项目级组合视图，因此与 `--ns`、`--def`、`--rule`、`--preset` 和 `--to` 互斥；

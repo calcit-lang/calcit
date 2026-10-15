@@ -470,27 +470,51 @@ fn run_strict_workflow_verification(commands: &[(String, Vec<String>)]) -> Resul
       .args(arguments)
       .output()
       .map_err(|error| format!("Failed to run strict workflow verification for `{scope}`: {error}"))?;
-    let report = serde_json::from_slice::<Value>(&output.stdout).unwrap_or_else(|error| {
-      serde_json::json!({
-        "schema_version": 1,
-        "command": "fix.workflow.verify",
-        "data": null,
-        "diagnostics": [{
-          "code": "E_WORKFLOW_OUTPUT",
-          "phase": "verification",
-          "severity": "error",
-          "message": format!("Expected one JSON report from `{scope}`: {error}"),
-          "stderr": String::from_utf8_lossy(&output.stderr),
-        }],
-      })
-    });
-    results.push(StrictWorkflowVerificationResult {
-      scope: scope.clone(),
-      status: if output.status.success() { "passed" } else { "failed" },
-      report,
-    });
+    results.push(strict_workflow_verification_result(
+      scope,
+      output.status.success(),
+      &output.stdout,
+      &output.stderr,
+    ));
   }
   Ok(results)
+}
+
+fn strict_workflow_verification_result(scope: &str, succeeded: bool, stdout: &[u8], stderr: &[u8]) -> StrictWorkflowVerificationResult {
+  let parsed = serde_json::from_slice::<Value>(stdout)
+    .map_err(|error| error.to_string())
+    .and_then(|report| {
+      if report["data"]["status"].is_string() && report["diagnostics"].is_array() {
+        Ok(report)
+      } else {
+        Err("missing verification data.status or diagnostics array".to_owned())
+      }
+    });
+  let report = parsed.unwrap_or_else(|error| {
+    serde_json::json!({
+      "schema_version": 1,
+      "command": "fix.workflow.verify",
+      "data": null,
+      "diagnostics": [{
+        "code": "E_WORKFLOW_OUTPUT",
+        "phase": "verification",
+        "severity": "error",
+        "message": format!("Expected one JSON report from `{scope}`: {error}"),
+        "stderr": String::from_utf8_lossy(stderr),
+      }],
+    })
+  });
+  // A successful process is insufficient when its report failed or was lost.
+  let passed = succeeded
+    && report["data"]["status"] == "passed"
+    && report["diagnostics"]
+      .as_array()
+      .is_some_and(|diagnostics| diagnostics.iter().all(|diagnostic| diagnostic["severity"] != "error"));
+  StrictWorkflowVerificationResult {
+    scope: scope.to_owned(),
+    status: if passed { "passed" } else { "failed" },
+    report,
+  }
 }
 
 /// Plan deterministic source migrations, validate them on a staged Snapshot, and optionally commit them atomically.
@@ -500,6 +524,7 @@ pub(crate) fn handle_fix_command(
   project_namespaces: &HashSet<String>,
   snapshot_file: &str,
 ) -> Result<(), String> {
+  let _output_guard = crate::ProgramOutputGuard::new(true, false);
   if options.pattern.is_some() || options.replacement.is_some() {
     return structural_rewrite::handle_pattern_rewrite(options, compiled_snapshot, project_namespaces, snapshot_file);
   }
@@ -944,6 +969,13 @@ pub(crate) fn handle_fix_command(
     } else {
       Vec::new()
     };
+    for result in &results {
+      if let Some(diagnostics) = result.report["diagnostics"].as_array() {
+        for diagnostic in diagnostics.iter().filter(|diagnostic| diagnostic["code"] == "E_WORKFLOW_OUTPUT") {
+          boundary_diagnostics.push(diagnostic.clone());
+        }
+      }
+    }
     workflow_failed = options.verify
       && (!boundary_diagnostics.is_empty()
         || !operations.is_empty()
@@ -1088,14 +1120,14 @@ pub(crate) fn handle_fix_command(
   };
 
   emit_fix_report(&report, &options.format)?;
-  if !report.diagnostics.is_empty() {
+  if workflow_failed {
+    Err("Strict project workflow verification failed; inspect the structured workflow results.".to_owned())
+  } else if !report.diagnostics.is_empty() {
     Err(if options.apply && transaction.changed {
       "Compiler proof review required; only the reported safe migrations were applied. Review the remaining input evidence or lexical boundary; no proof repair, cast or FFI permission was inserted."
     } else {
       "Compiler proof review required; the source is unchanged. Review the reported input evidence or lexical boundary without automatically adding casts or granting FFI permission."
     }.to_owned())
-  } else if workflow_failed {
-    Err("Strict project workflow verification failed; inspect the structured workflow results.".to_owned())
   } else {
     Ok(())
   }
@@ -7052,6 +7084,47 @@ mod tests {
 
   fn leaf(value: &str) -> Cirru {
     Cirru::leaf(value)
+  }
+
+  #[test]
+  fn strict_verification_requires_both_process_and_report_success() {
+    // This is a transport invariant; no Calcit test can inject a child report.
+    let passed = serde_json::json!({"data":{"status":"passed"},"diagnostics":[]});
+    for (succeeded, report, expected) in [
+      (true, passed.clone(), "passed"),
+      (false, passed, "failed"),
+      (true, serde_json::json!({"data":{"status":"failed"},"diagnostics":[]}), "failed"),
+      (
+        true,
+        serde_json::json!({"data":{"status":"passed"},"diagnostics":[{"severity":"error"}]}),
+        "failed",
+      ),
+    ] {
+      let bytes = serde_json::to_vec(&report).unwrap();
+      let result = super::strict_workflow_verification_result("entry:default", succeeded, &bytes, b"");
+      assert_eq!(result.status, expected);
+      assert_eq!(result.report, report, "valid child reports retain their details");
+    }
+    for stdout in [
+      b"".as_slice(),
+      b"macro-log\n{}",
+      b"{}{}",
+      b"null",
+      b"{}",
+      b"{\"data\":null,\"diagnostics\":[]}",
+    ] {
+      let result = super::strict_workflow_verification_result("entry:default", true, stdout, b"child-stderr");
+      assert_eq!(result.status, "failed", "zero exit cannot authorize invalid output");
+      assert_eq!(result.report["diagnostics"][0]["code"], "E_WORKFLOW_OUTPUT");
+      assert_eq!(result.report["diagnostics"][0]["severity"], "error");
+      assert_eq!(result.report["diagnostics"][0]["stderr"], "child-stderr");
+      assert!(
+        result.report["diagnostics"][0]["message"]
+          .as_str()
+          .unwrap()
+          .contains("entry:default")
+      );
+    }
   }
 
   #[test]
