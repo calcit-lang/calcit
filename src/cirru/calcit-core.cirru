@@ -645,9 +645,10 @@
           :tests $ [] $ %{} 'TestEntry (:name |nominal-definition-evidence)
             :code $ quote $ let
                 value $ Option :some 1
-              assert= (Option :some Option) $ &enum:definition value
+              assert= (Option :some Option) (&enum:definition value)
               assert-type (&enum:definition value) (:: 'Option 'EnumDef)
-              assert= (Option :none) $ &enum:definition $ %:: _ :anonymous 1
+              assert= (Option :none)
+                &enum:definition $ %:: _ :anonymous 1
             :tags $ #{} :nominal-definition-proof :unit
         '&enum:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to an enum value.")
           :code $ quote &runtime-implementation
@@ -851,19 +852,20 @@
             if
               not $ list? path
               raise $ str-spaced "|expects path in a list, got:" path
-            if (nil? base) (Option :none) $ &list-match-internal path (Option :some base) (y0 ys)
-              cond
-                  map? base
-                  match (&map:get base y0)
-                    (:some value) (recur value ys)
-                    (:none) (Option :none)
-                (list? base)
-                  if
-                    and (number? y0) (&>= y0 0)
-                      &< y0 $ &list:count base
-                    recur (&get-raw base y0) ys
-                    Option :none
-                true $ recur (&get-raw base y0) ys
+            if (nil? base) (Option :none)
+              &list-match-internal path (Option :some base) (y0 ys)
+                cond
+                    map? base
+                    match (&map:get base y0)
+                      (:some value) (recur value ys)
+                      (:none) (Option :none)
+                  (list? base)
+                    if
+                      and (number? y0) (&>= y0 0)
+                        &< y0 $ &list:count base
+                      recur (&get-raw base y0) ys
+                      Option :none
+                  true $ recur (&get-raw base y0) ys
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Dynamic $ :: 'List 'K
@@ -872,31 +874,46 @@
           :tags $ #{} :internal
           :tests $ [] $ %{} 'TestEntry (:name |handles-empty-path-and-nil-base)
             :code $ quote $ do
-              assert= (Option :some 9) $ &get-in 9 $ []
-              assert= (Option :none) $ &get-in nil $ []
-              assert= (Option :some 2) $ &get-in
-                &{} :a $ &{} :b 2
-                [] :a :b
-              assert= (Option :some false) $ &get-in (&{} :a false) ([] :a)
-              assert= (Option :none) $ &get-in (&{} :a nil) ([] :a)
-              assert= (Option :none) $ &get-in
-                &{} :a $ &{}
-                [] :a :missing
-              assert= (Option :some 4) $ &get-in
-                &{} :a $ [] 3 4
-                [] :a 1
-              assert= (Option :none) $ &get-in ([]) ([] 0)
-              assert= (Option :none) $ &get-in ([] 3 4) ([] 2)
-              assert= (Option :none) $ &get-in ([] 3 4) ([] -1)
-              assert= (Option :none) $ &get-in ([] 3 4) ([] :missing)
-              assert= (Option :none) $ &get-in
-                &{} :a $ [] 3 4
-                [] :a 9
-              assert= (Option :none) $ &get-in
-                &{} :a $ [] 3 4
-                [] :a 9 :child
-              assert= (Option :some false) $ &get-in ([] false 0) ([] 0)
-              assert= (Option :some 0) $ &get-in ([] false 0) ([] 1)
+              assert= (Option :some 9)
+                &get-in 9 $ []
+              assert= (Option :none)
+                &get-in nil $ []
+              assert= (Option :some 2)
+                &get-in
+                  &{} :a $ &{} :b 2
+                  [] :a :b
+              assert= (Option :some false)
+                &get-in (&{} :a false) ([] :a)
+              assert= (Option :none)
+                &get-in (&{} :a nil) ([] :a)
+              assert= (Option :none)
+                &get-in
+                  &{} :a $ &{}
+                  [] :a :missing
+              assert= (Option :some 4)
+                &get-in
+                  &{} :a $ [] 3 4
+                  [] :a 1
+              assert= (Option :none)
+                &get-in ([]) ([] 0)
+              assert= (Option :none)
+                &get-in ([] 3 4) ([] 2)
+              assert= (Option :none)
+                &get-in ([] 3 4) ([] -1)
+              assert= (Option :none)
+                &get-in ([] 3 4) ([] :missing)
+              assert= (Option :none)
+                &get-in
+                  &{} :a $ [] 3 4
+                  [] :a 9
+              assert= (Option :none)
+                &get-in
+                  &{} :a $ [] 3 4
+                  [] :a 9 :child
+              assert= (Option :some false)
+                &get-in ([] false 0) ([] 0)
+              assert= (Option :some 0)
+                &get-in ([] false 0) ([] 1)
             :tags $ #{} :core :unit
         '&get-os $ %{} 'CodeEntry
           :doc "|internal function for getting OS information\nSyntax: (&get-os)\nParams: none\nReturns: keyword indicating OS\nReturns current operating system like :linux, :macos, :windows"
@@ -1955,7 +1972,8 @@
                     let[] (k v) pair $ &+ acc v
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |returns-none-for-empty-map)
-              :code $ quote $ assert= (Option :none) (&map:destruct (&{}))
+              :code $ quote $ assert= (Option :none)
+                &map:destruct $ &{}
               :tags $ #{} :core :unit
         '&map:diff-keys $ %{} 'CodeEntry
           :doc "|internal function for map diff keys\nSyntax: (&map:diff-keys map1 map2)\nParams: map1 (map), map2 (map)\nReturns: set\nReturns keys that differ between maps"
@@ -2466,13 +2484,13 @@
           :tests $ []
             %{} 'TestEntry (:name |returns-some-number-for-numeric-text)
               :code $ quote $ do
-                assert= (Option :some 1.5) $ &parse-float |1.5
-                assert= (Option :some 0) $ &parse-float |0
+                assert= (Option :some 1.5) (&parse-float |1.5)
+                assert= (Option :some 0) (&parse-float |0)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |returns-none-for-invalid-text)
               :code $ quote $ do
-                assert= (Option :none) $ &parse-float |x
-                assert= (Option :none) $ &parse-float |
+                assert= (Option :none) (&parse-float |x)
+                assert= (Option :none) (&parse-float |)
               :tags $ #{} :core :unit
         '&read-stdin-text $ %{} 'CodeEntry (:doc "|内部有界 stdin 文本边界，显式接收 Result 与错误消息。")
           :code $ quote &runtime-implementation
@@ -2535,15 +2553,17 @@
           :tags $ #{} :builtin :internal
           :tests $ []
             %{} 'TestEntry (:name |returns-member-and-rest)
-              :code $ quote $ match (&set:destruct (#{} 7))
+              :code $ quote $ match
+                &set:destruct $ #{} 7
                 (:some parts)
                   do
                     assert= 7 $ &list:nth parts 0
-                    assert= (#{}) $ &list:nth parts 1
+                    assert= (#{}) (&list:nth parts 1)
                 (:none) (raise |expected-non-empty-set)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |returns-none-for-empty-set)
-              :code $ quote $ assert= (Option :none) (&set:destruct (#{}))
+              :code $ quote $ assert= (Option :none)
+                &set:destruct $ #{}
               :tags $ #{} :core :unit
         '&set:empty $ %{} 'CodeEntry (:doc "|internal helper for set :empty method entry")
           :code $ quote $ defn &set:empty (_xs) (#{})
@@ -2832,13 +2852,13 @@
           :tests $ []
             %{} 'TestEntry (:name |returns-unicode-character-by-index)
               :code $ quote $ do
-                assert= (Option :some "|中") $ &str:nth "|中文" 0
-                assert= (Option :some "|文") $ &str:nth "|中文" 1
+                assert= (Option :some "|中") (&str:nth "|中文" 0)
+                assert= (Option :some "|文") (&str:nth "|中文" 1)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |returns-none-when-out-of-bounds)
               :code $ quote $ do
-                assert= (Option :none) $ &str:nth |abc 3
-                assert= (Option :none) $ &str:nth | 0
+                assert= (Option :none) (&str:nth |abc 3)
+                assert= (Option :none) (&str:nth | 0)
               :tags $ #{} :core :unit
         '&str:pad-left $ %{} 'CodeEntry
           :doc "|internal function for left padding string\nSyntax: (&str:pad-left s length pad-char)\nParams: s (string), length (number), pad-char (string)\nReturns: string\nPads string on left to the given length in Unicode scalars (like count) by repeating the pad string; NaN, negative lengths and an empty pad string return s unchanged"
@@ -2960,7 +2980,7 @@
                 assert= | $ &str:rest |
                 assert= | $ &str:rest "|😀"
                 assert= "|文" $ &str:rest "|中文"
-                assert= (Option :none) $ &str:nth "|😀" 100000000000000000000
+                assert= (Option :none) (&str:nth "|😀" 100000000000000000000)
                 assert= false $ &str:contains? "|😀" 100000000000000000000
                 assert= | $ &str:slice "|😀" 100000000000000000000 100000000000000000000
                 assert= "|😀" $ &str:slice "|😀" 0 100000000000000000000
@@ -3070,7 +3090,7 @@
             let
                 User $ defstruct User $ :name 'String
                 user $ User :name |Alice
-              assert= (Option :some User) $ &struct:definition user
+              assert= (Option :some User) (&struct:definition user)
           :schema $ :: 'Fn $ {}
             :args $ [] 'Struct
             :return $ :: 'Option 'StructDef
@@ -3245,7 +3265,7 @@
         '->% $ %{} 'CodeEntry (:doc "|pass value as `%` into several expressions")
           :code $ quote $ defmacro ->% (base & xs)
             if (&list:empty? xs) base $ let
-                tail $ &list:nth xs (&- (&list:count xs) 1)
+                tail $ &list:nth xs $ &- (&list:count xs) 1
                 pairs $ &list:concat
                   [] $ [] '% base
                   map (butlast xs)
@@ -4275,7 +4295,8 @@
               not $ list? args
               raise $ str-spaced "|apply-args expects list args, got:" args
             if
-              and (not $ &list:empty? args)
+              and
+                not $ &list:empty? args
                 &= [] $ &list:nth args 0
               quasiquote $ ~f $ ~@ (&list:rest args)
               quasiquote $ ~f ~@args
@@ -6035,11 +6056,13 @@
             assert "|defimpl expects (.method value) pairs" $ every? pairs $ fn (pair)
               &let
                 items $ if
-                  and (not $ &list:empty? pair)
+                  and
+                    not $ &list:empty? pair
                     &= [] $ &list:nth pair 0
                   &list:rest pair
                   if
-                    and (not $ &list:empty? pair)
+                    and
+                      not $ &list:empty? pair
                       &= (quote ::) (&list:nth pair 0)
                     &list:rest pair
                     , pair
@@ -6050,11 +6073,13 @@
               ~@ $ map pairs $ fn (pair)
                 &let
                   items $ if
-                    and (not $ &list:empty? pair)
+                    and
+                      not $ &list:empty? pair
                       &= [] $ &list:nth pair 0
                     &list:rest pair
                     if
-                      and (not $ &list:empty? pair)
+                      and
+                        not $ &list:empty? pair
                         &= (quote ::) (&list:nth pair 0)
                       &list:rest pair
                       , pair
@@ -6205,7 +6230,7 @@
                 shape $ Shape :circle 2
               assert= |old $ :text draft
               assert= false $ :mono? draft
-              assert= (Option :some Draft) $ &struct:definition draft
+              assert= (Option :some Draft) (&struct:definition draft)
               assert= draft $ %{} Draft (:text |old) (:mono? false)
               assert= 2 $ match shape
                 (:circle r) r
@@ -6218,7 +6243,8 @@
             if (every? entries list?) &unit $ raise "|deftrait expects each method as (method type) pair"
             &let
               requires-entry? $ fn (entry)
-                and (not $ &list:empty? entry)
+                and
+                  not $ &list:empty? entry
                   &let
                     head $ &list:nth entry 0
                     or
@@ -6238,7 +6264,8 @@
                     fn (entry)
                       &let
                         items $ if
-                          and (not $ &list:empty? entry)
+                          and
+                            not $ &list:empty? entry
                             &= [] $ &list:nth entry 0
                           &list:rest entry
                           , entry
@@ -6405,8 +6432,9 @@
           :doc "|Split a map into the nominal MapDestruct<K,V> enum."
           :code $ quote $ defn destruct-map (xs)
             match (&map:destruct xs)
-              (:some pair) $ MapDestruct :some (&list:nth pair 0) (&list:nth pair 1) (&list:nth pair 2)
-              (:none) $ MapDestruct :none
+              (:some pair)
+                MapDestruct :some (&list:nth pair 0) (&list:nth pair 1) (&list:nth pair 2)
+              (:none) (MapDestruct :none)
           :examples $ []
             quote $ assert= (MapDestruct :none)
               destruct-map $ &{}
@@ -6437,8 +6465,9 @@
           :doc "|Split a set into the nominal SetDestruct<T> enum."
           :code $ quote $ defn destruct-set (xs)
             match (&set:destruct xs)
-              (:some pair) $ SetDestruct :some (&list:nth pair 0) (&list:nth pair 1)
-              (:none) $ SetDestruct :none
+              (:some pair)
+                SetDestruct :some (&list:nth pair 0) (&list:nth pair 1)
+              (:none) (SetDestruct :none)
           :examples $ []
             quote $ assert= (SetDestruct :none)
               destruct-set $ #{}
@@ -6863,8 +6892,7 @@
             :args $ [] 'T
             :generics $ [] 'T
         'enum-definition $ %{} 'CodeEntry (:doc "|Return Option<EnumDef> for an enum value.")
-          :code $ quote $ defn enum-definition (tuple)
-            &enum:definition tuple
+          :code $ quote $ defn enum-definition (tuple) (&enum:definition tuple)
           :examples $ []
             quote $ assert= (%some Option)
               enum-definition $ %some 1
@@ -7306,7 +7334,7 @@
                   selected $ filter-map-kv input $ fn (id value)
                     MapEntryDecision :keep (to-tag id) (str value)
                 assert-type selected $ :: 'Map 'Tag 'String
-                assert= (Option :some |1) $ &map:get selected :a
+                assert= (Option :some |1) (&map:get selected :a)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |preserves-captured-generic-relations)
               :code $ quote $ let
@@ -7407,8 +7435,7 @@
             cond
                 list? x
                 &list:first x
-              (string? x)
-                &str:first x
+              (string? x) (&str:first x)
               (enum? x)
                 if
                   &= 0 $ &enum:count x
@@ -8214,8 +8241,7 @@
                   fn (e) true
               :tags $ #{} :core :unit
         'get-env $ %{} 'CodeEntry (:doc "|Read an environment variable as Option<String>.")
-          :code $ quote $ defn get-env (name)
-            &get-env name
+          :code $ quote $ defn get-env (name) (&get-env name)
           :examples $ [] $ quote
             assert= (Option :none) (get-env |__CALCIT_TEST_MISSING_ENV_83B125E9__)
           :schema $ :: 'Fn $ {}
@@ -9092,8 +9118,7 @@
           :tags $ #{} :macro
         'impl-origin $ %{} 'CodeEntry
           :doc "|Return the trait origin of an impl as Option<Trait>; inherent method bags produce none."
-          :code $ quote $ defn impl-origin (impl)
-            &impl:origin impl
+          :code $ quote $ defn impl-origin (impl) (&impl:origin impl)
           :examples $ [] $ quote
             assert= (%none)
               impl-origin $ &impl::new :PlainImpl
@@ -9568,10 +9593,10 @@
                 assert= (%none) (last |)
                 assert= (%some |b) (nth |abc 1)
                 assert= (%some "|文") (nth "|中文" 1)
-                assert= (Option :some "|😀") $ &str:first "|😀中"
-                assert= (Option :none) $ &str:first |
-                assert= (Option :some "|中") $ &str:nth "|😀中" 1
-                assert= (Option :none) $ &str:nth "|😀中" 2
+                assert= (Option :some "|😀") (&str:first "|😀中")
+                assert= (Option :none) (&str:first |)
+                assert= (Option :some "|中") (&str:nth "|😀中" 1)
+                assert= (Option :none) (&str:nth "|😀中" 2)
                 assert= true $ &str:contains? "|😀中" 1
                 assert= false $ &str:contains? "|😀中" 2
                 assert= false $ &str:contains? | 0
@@ -9648,6 +9673,59 @@
             :expansion $ :: 'Expr 'Dynamic
             :required $ [] 'SyntaxList
           :tags $ #{} :macro
+          :tests $ []
+            %{} 'TestEntry (:name |new-binding-preserves-lexical-values)
+              :code $ quote $ let
+                  new 1
+                assert= 1 new
+                assert= 2 $ let
+                    new 2
+                  , new
+                assert= 1 new
+                assert= 4 $ let[] (new other) ([] 4 5) new
+                assert= 6 $
+                  fn (new)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    + new 1
+                  , 5
+                assert= 7 $ match (Option :some 7)
+                  (:some new) new
+                  (:none) 0
+              :tags $ #{} :unit
+            %{} 'TestEntry
+              :name |lexical-scopes-restore-values-types-and-closures
+              :code $ quote $ let
+                  value 3
+                  text |outer
+                  transform $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    + x value
+                assert= 4 $ let
+                    value $ + value 1
+                  , value
+                assert= 3 value
+                assert= 5 $ let
+                    text 5
+                  , text
+                assert= |outer text
+                assert= 5 $ .len text
+                assert= 7 $ let
+                    transform 7
+                  , transform
+                assert= 13 $ transform 10
+                assert= 12 $ let
+                    transform $ fn (x)
+                      hint-fn $ {}
+                        :args $ [] 'Number
+                        :return 'Number
+                      + x 2
+                  transform 10
+                assert= 13 $ transform 10
+              :tags $ #{} :unit
         'let-destruct $ %{} 'CodeEntry
           :doc "|Deprecated: dispatches a symbol, `([] ...)` or `({} ...)` pattern to `&let`, `let[]` or `let{}`. Write `let` or `let[]` directly; scheduled for removal in a later non-patch release."
           :code $ quote $ defmacro let-destruct (pattern v & body)
@@ -9655,13 +9733,15 @@
               quasiquote $ &let (~pattern ~v) ~@body
               if (list? pattern)
                 if
-                  and (not $ &list:empty? pattern)
+                  and
+                    not $ &list:empty? pattern
                     &= [] $ &list:nth pattern 0
                   quasiquote $ let[]
                     ~ $ &list:rest pattern
                     , ~v ~@body
                   if
-                    and (not $ &list:empty? pattern)
+                    and
+                      not $ &list:empty? pattern
                       &= '{} $ &list:nth pattern 0
                     quasiquote $ let{}
                       ~ $ &list:rest pattern
@@ -9770,7 +9850,7 @@
                     &let
                       value-var $ gensym |value
                       [] x $ quasiquote $ match
-                        &map:get ~var-result $ ~ (turn-tag x)
+                        &map:get ~var-result $ ~ $ turn-tag x
                         (:some ~value-var) ~value-var
                         (:none) nil
                   ~@ body
@@ -10390,7 +10470,8 @@
           :examples $ []
             quote $ assert= (Option :some 1) (nil->option 1)
             quote $ assert= (Option :none) (nil->option nil)
-            quote $ assert= (Option :some Option) $ &enum:definition (nil->option 1)
+            quote $ assert= (Option :some Option)
+              &enum:definition $ nil->option 1
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Optional 'T
             :generics $ [] 'T
@@ -10769,8 +10850,7 @@
           :code $ quote $ defn option:and-then (opt f)
             match opt
               (:some value) (f value)
-              (:none)
-                %:: Option :none
+              (:none) (%:: Option :none)
           :examples $ [] $ quote
             assert= (Option :some 4)
               (Option :some 2) .and-then $ fn (x)
@@ -10899,8 +10979,7 @@
             match opt
               (:some value)
                 %:: Option :some $ f value
-              (:none)
-                %:: Option :none
+              (:none) (%:: Option :none)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'Option 'T)
@@ -11037,7 +11116,8 @@
           :examples $ []
             quote $ assert= (%some 1) (optionally 1)
             quote $ assert= (%none) (optionally nil)
-            quote $ assert= (Option :some Option) $ &enum:definition (optionally 1)
+            quote $ assert= (Option :some Option)
+              &enum:definition $ optionally 1
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Optional 'T
             :generics $ [] 'T
@@ -11728,8 +11808,7 @@
           :code $ quote $ defn result:and-then (res f)
             match res
               (:ok value) (f value)
-              (:err err)
-                %:: Result :err err
+              (:err err) (%:: Result :err err)
           :examples $ [] $ quote
             assert= (Result :ok 4)
               (Result :ok 2) .and-then $ fn (x)
@@ -11777,8 +11856,7 @@
             match res
               (:ok value)
                 %:: Result :ok $ f value
-              (:err err)
-                %:: Result :err err
+              (:err err) (%:: Result :err err)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'Result 'T 'E)
@@ -11801,8 +11879,7 @@
           :doc "|Maps the error payload of a Result while preserving :ok."
           :code $ quote $ defn result:map-err (res f)
             match res
-              (:ok value)
-                %:: Result :ok value
+              (:ok value) (%:: Result :ok value)
               (:err err)
                 %:: Result :err $ f err
           :examples $ [] $ quote
@@ -12364,8 +12441,7 @@
             :args $ [] 'T
             :generics $ [] 'T
         'struct-definition $ %{} 'CodeEntry (:doc "|Return Option<StructDef> for a struct value.")
-          :code $ quote $ defn struct-definition (value)
-            &struct:definition value
+          :code $ quote $ defn struct-definition (value) (&struct:definition value)
           :examples $ [] $ quote
             let
                 User $ defstruct User $ :name 'String
@@ -13173,7 +13249,8 @@
           :code $ quote $ defn update (x k f)
             if (map? x)
               match (&map:get x k)
-                (:some value) (assoc x k $ f value)
+                (:some value)
+                  assoc x k $ f value
                 (:none) x
               if (list? x)
                 let
@@ -13890,7 +13967,8 @@
         'normalize-trait-type $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn normalize-trait-type (t0)
             if
-              and (list? t0) (not $ &list:empty? t0)
+              and (list? t0)
+                not $ &list:empty? t0
               &let
                 size $ &list:count t0
                 &let

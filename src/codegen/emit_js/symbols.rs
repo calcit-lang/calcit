@@ -10,6 +10,7 @@ pub(super) fn escape_var(name: &str) -> String {
     "else" => String::from("_ELSE_"),
     "let" => String::from("_LET_"),
     "case" => String::from("_CASE_"),
+    "new" => String::from("_NEW_"),
     "-" => String::from("_SUB_"),
     _ => name
       .replace('-', "_")
@@ -64,6 +65,7 @@ pub(crate) fn unescape_var(name: &str) -> String {
     "_ELSE_" => return String::from("else"),
     "_LET_" => return String::from("let"),
     "_CASE_" => return String::from("case"),
+    "_NEW_" => return String::from("new"),
     "_SUB_" => return String::from("-"),
     _ => {}
   }
@@ -107,6 +109,7 @@ mod tests {
   #[test]
   fn escapes_keywords_and_symbols() {
     assert_eq!(escape_var("if"), "_IF_");
+    assert_eq!(escape_var("new"), "_NEW_");
     assert_eq!(escape_var("a-b?"), "a_b_$q_");
     assert_eq!(escape_var("[]"), "_$L_");
   }
@@ -122,5 +125,6 @@ mod tests {
     assert_eq!(unescape_var("a_b_$q_"), "a_b?");
     assert_eq!(unescape_var("_DOT_"), ".");
     assert_eq!(unescape_var("_IF_"), "if");
+    assert_eq!(unescape_var("_NEW_"), "new");
   }
 }
