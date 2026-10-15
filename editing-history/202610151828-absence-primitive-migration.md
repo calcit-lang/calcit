@@ -37,3 +37,16 @@ Destruct 三种合同。维护者确认这项原计划 0.31.0 的变化提前进
 确定性、原子写回、review-only/no-op 和暂存失败保护；不在 Rust 重写上述语言语义断言。
 
 这些结果不是正式 CLI/runtime 配对发布，也不代替 #2080 中九个真实消费者的验收。
+
+## Review 补充：遍历不能只证明根类型
+
+CodeRabbit 指出的 Struct 差异在旧公开版本确认：旧 `&get-in` 经 `&get-raw` 读取 Struct
+字段，而公开 `get-in` 明确报错。Map/List 的根类型也不充分，中间值可能是 Struct 或 Dynamic。
+迁移桥改为只接受字面量路径，逐跳证明接收者与索引；开放路径、中间 Struct/开放值及不兼容
+索引保留人工审阅。终值不再遍历，所以空路径上的 Struct 和最终返回的 Struct 仍允许改写。
+不修改公开 `get-in` 合同，也不让兼容改写隐藏原错误。
+
+补充七项可改写遍历及一项公开 Struct 错误的 Calcit `:tests`，总计 37 项；同一旧源码使用
+正式 0.30.0-alpha.5 CLI/runtime 在 native/JS 各 37/37，通过 guarded 迁移后的候选也各
+37/37，无排除。两个 CLI 边界测试通过，额外覆盖 Struct 根/中间节点、开放值/路径和不兼容
+索引保持 review-only，且整批无效时不写入；全目标 clippy 与格式检查通过。

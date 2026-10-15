@@ -29,6 +29,10 @@
         :code $ quote $ ns app.main (:require)
     'app.migration $ %{} 'FileEntry
       :defs $ {}
+        'TraversalBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct TraversalBox (:value 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
         'active-error $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn active-error ()
             let
@@ -269,6 +273,24 @@
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/parse-number)
             :tags $ #{} :absence-migration
+        'public-struct-boundary $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn public-struct-boundary (base)
+            try
+              do
+                get-in base $ [] :value
+                , |unexpected-success
+              fn (message)
+                hint-fn $ {}
+                  :args $ [] 'String
+                  :return 'String
+                , message
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |public-struct-error)
+            :code $ quote $ assert= "|get-in does not traverse Struct fields; use (:field value) so the checker can enforce the declared type"
+              app.migration/public-struct-boundary $ TraversalBox :value 3
+            :tags $ #{} :absence-migration
         'set-destruct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn set-destruct ()
             non-nil? $ &set:destruct $ #{} 1
@@ -340,6 +362,75 @@
             :args $ []
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= false (app.migration/struct-probe)
+            :tags $ #{} :absence-migration
+        'traversal-empty-scalar $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn traversal-empty-scalar ()
+            non-nil? $ &get-in false $ []
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
+            :code $ quote $ assert= true (app.migration/traversal-empty-scalar)
+            :tags $ #{} :absence-migration
+        'traversal-list-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn traversal-list-map ()
+            nil? $ &get-in
+              [] $ &{} :k nil
+              [] 0 :k
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
+            :code $ quote $ assert= true (app.migration/traversal-list-map)
+            :tags $ #{} :absence-migration
+        'traversal-map-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn traversal-map-list ()
+            non-nil? $ &get-in
+              &{} :k $ [] $ &{} :value false
+              [] :k 0 :value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
+            :code $ quote $ assert= true (app.migration/traversal-map-list)
+            :tags $ #{} :absence-migration
+        'traversal-nil $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn traversal-nil ()
+            nil? $ &get-in nil $ [] :k :value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
+            :code $ quote $ assert= true (app.migration/traversal-nil)
+            :tags $ #{} :absence-migration
+        'traversal-string $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn traversal-string ()
+            non-nil? $ &get-in "|😀" $ [] 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
+            :code $ quote $ assert= true (app.migration/traversal-string)
+            :tags $ #{} :absence-migration
+        'traversal-struct-empty $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn traversal-struct-empty ()
+            non-nil? $ &get-in (TraversalBox :value 3) ([])
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
+            :code $ quote $ assert= true (app.migration/traversal-struct-empty)
+            :tags $ #{} :absence-migration
+        'traversal-struct-terminal $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn traversal-struct-terminal ()
+            non-nil? $ &get-in
+              &{} :box $ TraversalBox :value 3
+              [] :box
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
+            :code $ quote $ assert= true (app.migration/traversal-struct-terminal)
             :tags $ #{} :absence-migration
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.migration

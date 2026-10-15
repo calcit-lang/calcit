@@ -361,12 +361,15 @@ fn check_call(
     | (Domain::Enum, CalcitTypeAnnotation::Enum(..) | CalcitTypeAnnotation::EnumValue(_) | CalcitTypeAnnotation::AnonymousEnum)
     | (Domain::Struct, CalcitTypeAnnotation::Struct(..) | CalcitTypeAnnotation::StructValue(_)) => true,
     (Domain::Impl, CalcitTypeAnnotation::Custom(value)) => matches!(value.as_ref(), Calcit::Impl(_)),
-    // Both traversal entries intentionally accept an open base; the path still
-    // has to prove its List contract, without asserting concrete field values.
-    (Domain::Traversal, _) => true,
+    (Domain::Traversal, annotation) => traversal_proven(annotation, &items[2]),
     _ => false,
   });
   if !domain_proven {
+    if matches!(api.domain, Domain::Traversal) {
+      return Ok(Some(
+        "Review the traversal: prove a literal path with compatible lookup steps; Struct fields, open intermediate values and unproven indices cannot use public get-in automatically.".to_owned(),
+      ));
+    }
     return Ok(Some(
       "The original receiver domain is not proven; a wider public lookup must not hide an invalid input.".to_owned(),
     ));
@@ -389,6 +392,41 @@ fn check_call(
     ));
   }
   Ok(None)
+}
+
+/// Public get-in rejects Struct hops, unlike the legacy raw traversal. Prove
+/// every receiver, not just the root: a Map/List may contain a Struct or an
+/// unknown intermediate value. A final payload is returned, not traversed.
+fn traversal_proven(base: &CalcitTypeAnnotation, path: &Cirru) -> bool {
+  let Cirru::List(items) = path else { return false };
+  if !matches!(items.first().and_then(leaf_value), Some("[]" | "calcit.core/[]")) {
+    return false;
+  }
+  let keys = &items[1..];
+  let mut current = base;
+  for (position, key) in keys.iter().enumerate() {
+    while let CalcitTypeAnnotation::Optional(inner) = current {
+      current = inner;
+    }
+    let safe_index = || {
+      leaf_value(key)
+        .and_then(|value| value.parse::<f64>().ok())
+        .is_some_and(|value| value.is_finite() && value.fract() == 0.0 && value >= 0.0 && value <= f64::from(i32::MAX))
+    };
+    match current {
+      CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Never => return true,
+      CalcitTypeAnnotation::Map(_, inner) => current = inner,
+      CalcitTypeAnnotation::List(inner) if safe_index() => current = inner,
+      CalcitTypeAnnotation::String if safe_index() => {}
+      // The tag is always present. Other enum indices require variant/arity
+      // evidence because raw enum indexing can throw where public nth is None.
+      CalcitTypeAnnotation::Enum(..) | CalcitTypeAnnotation::EnumValue(_) | CalcitTypeAnnotation::AnonymousEnum => {
+        return position + 1 == keys.len() && leaf_value(key).and_then(|value| value.parse::<f64>().ok()) == Some(0.0);
+      }
+      _ => return false,
+    }
+  }
+  true
 }
 
 fn list(items: impl IntoIterator<Item = Cirru>) -> Cirru {

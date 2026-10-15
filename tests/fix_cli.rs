@@ -30,7 +30,7 @@ fn absence_fix_guards_source_and_attached_transactions() {
   let suggestions = report["data"]["suggestions"].as_array().unwrap();
   assert_eq!(
     suggestions.len(),
-    29,
+    36,
     "all thirteen primitive families and attached source: {report}"
   );
   assert!(
@@ -109,6 +109,21 @@ fn absence_fix_keeps_unproven_calls_for_review_and_rejects_partial_invalid_write
     ),
     "create a macro that observes its argument source",
   );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.review/Box",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defstruct Box (:value 'Number)",
+      ],
+    ),
+    "create a Struct traversal boundary",
+  );
   for (name, body) in [
     ("negative", "nil? $ &str:nth |abc -1"),
     ("invalid", "nil? $ &map:get |abc 0"),
@@ -119,6 +134,13 @@ fn absence_fix_keeps_unproven_calls_for_review_and_rejects_partial_invalid_write
     ("shadowed", "let ((match 1)) (nil? $ &map:get (&{} :k nil) :k)"),
     ("opaque", "peek $ nil? $ &map:get (&{} :k nil) :k"),
     ("quoted", "quote $ nil? $ &map:get (&{} :k nil) :k"),
+    ("traversal-struct", "nil? $ &get-in (Box :value 1) ([] :value)"),
+    (
+      "traversal-nested-struct",
+      "nil? $ &get-in (&{} :box (Box :value 1)) ([] :box :value)",
+    ),
+    ("traversal-fractional", "nil? $ &get-in ([] 1) ([] 0.5)"),
+    ("traversal-negative-string", "nil? $ &get-in |abc ([] -1)"),
   ] {
     assert_success(
       &run_calcit(
@@ -136,6 +158,52 @@ fn absence_fix_keeps_unproven_calls_for_review_and_rejects_partial_invalid_write
       "create an unproven source call",
     );
   }
+  for (name, parameter, body, argument_schema) in [
+    (
+      "traversal-open-hop",
+      "base",
+      "nil? $ &get-in base ([] :box :value)",
+      ":: 'Map 'Tag 'Dynamic",
+    ),
+    (
+      "traversal-open-path",
+      "path",
+      "nil? $ &get-in (&{} :box (Box :value 1)) path",
+      ":: 'List 'Tag",
+    ),
+  ] {
+    let target = format!("app.review/{name}");
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ defn {name} ({parameter})\n  {body}"),
+        ],
+      ),
+      "create an open traversal proof boundary",
+    );
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "schema",
+          &target,
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ :: 'Fn $ {{}} (:return 'Bool)\n  :args $ [] ({argument_schema})"),
+        ],
+      ),
+      "declare the traversal receiver/path evidence without specializing it",
+    );
+  }
   let before = fs::read(&snapshot).unwrap();
   let base = [
     "fix",
@@ -150,7 +218,7 @@ fn absence_fix_keeps_unproven_calls_for_review_and_rejects_partial_invalid_write
   assert_success(&preview, "retain unproven calls without attempting a write");
   let report = parse_stdout(&preview);
   let suggestions = report["data"]["suggestions"].as_array().unwrap();
-  assert_eq!(suggestions.len(), 8, "quoted data is not migration code: {report}");
+  assert_eq!(suggestions.len(), 14, "quoted data is not migration code: {report}");
   assert!(
     suggestions
       .iter()
