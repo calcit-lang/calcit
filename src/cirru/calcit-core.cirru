@@ -11564,6 +11564,29 @@
                   reset! cell $ Option :none
                 assert= 0 $ option:unwrap-or (deref cell) 0
               :tags $ #{} :core :reset-proof :types :unit
+            %{} 'TestEntry (:name |function-map-keys-survive-writes)
+              :code $ quote $ let
+                  cache $ assert-type
+                    ref $ {}
+                    :: 'Ref $ :: 'Map 'Fn 'Number
+                reset! cache $ assoc @cache inc 1
+                reset! cache $ assoc @cache inc 2
+                assert= (Option :some 2) (.get @cache inc)
+                reset! cache $ assoc @cache dec 3
+                assert= 2 $ count @cache
+                reset! cache $ dissoc @cache inc
+                assert= (Option :none) (.get @cache inc)
+                assert= (Option :some 3) (.get @cache dec)
+                assert= 1 $ count @cache
+              :tags $ #{} :core :reset-proof :types :unit
+            %{} 'TestEntry (:name |opaque-function-storage-is-reflexive)
+              :code $ quote $ let
+                  cell $ ref $ assert-type inc 'Fn
+                  replacement $ assert-type dec 'Fn
+                reset! cell replacement
+                assert= true $ fn? @cell
+                assert= true $ = @cell dec
+              :tags $ #{} :core :reset-proof :types :unit
         'rest $ %{} 'CodeEntry
           :doc "|Return the same collection type without its first item; empty collections remain empty and nil is rejected."
           :code $ quote $ defn rest (x)

@@ -937,7 +937,8 @@ pub(crate) fn check_core_fn_arg_types(
 fn reset_type_erases_contract(actual: &CalcitTypeAnnotation, expected: &CalcitTypeAnnotation) -> bool {
   use CalcitTypeAnnotation as T;
   match (actual, expected) {
-    (_, T::Dynamic) => false,
+    // Explicitly opaque function storage promises no concrete call signature.
+    (_, T::Dynamic) | (T::DynFn, T::DynFn) => false,
     (T::Dynamic | T::DynFn, _) => true,
     (T::List(a), T::List(e))
     | (T::Set(a), T::Set(e))
