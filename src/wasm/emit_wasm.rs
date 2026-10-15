@@ -9288,6 +9288,63 @@ fn emit_let_multi(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   emit_let_pairs(ctx, &pairs_list.to_vec(), body)
 }
 
+/// Keep let value, type and closure lookup metadata inside its lexical body.
+fn emit_scoped_let(
+  ctx: &mut WasmGenCtx,
+  name: &str,
+  value: &Calcit,
+  body: impl FnOnce(&mut WasmGenCtx) -> Result<(), String>,
+) -> Result<(), String> {
+  let old_local = ctx.locals.get(name).copied();
+  let old_type = ctx.local_types.get(name).cloned();
+  let old_closure = ctx.lambda_locals.get(name).cloned();
+  let result = (|| {
+    let binding_type = infer_wasm_static_type(ctx, value);
+    // Resolve/evaluate the RHS against the outer scope before binding its name.
+    if let Some(closure) = resolve_inline_closure(ctx, value) {
+      ctx.lambda_locals.insert(name.to_owned(), closure);
+      ctx.declare_local(name);
+    } else {
+      emit_expr(ctx, value)?;
+      ctx.lambda_locals.remove(name);
+      let index = ctx.declare_local(name);
+      ctx.emit(Instruction::LocalSet(index));
+    }
+    if let Some(annotation) = binding_type {
+      ctx.local_types.insert(name.to_owned(), annotation);
+    } else {
+      ctx.local_types.remove(name);
+    }
+    body(ctx)
+  })();
+  // Restore lookup metadata even on failure; emitted local slots stay allocated.
+  match old_local {
+    Some(index) => {
+      ctx.locals.insert(name.to_owned(), index);
+    }
+    None => {
+      ctx.locals.remove(name);
+    }
+  }
+  match old_type {
+    Some(annotation) => {
+      ctx.local_types.insert(name.to_owned(), annotation);
+    }
+    None => {
+      ctx.local_types.remove(name);
+    }
+  }
+  match old_closure {
+    Some(closure) => {
+      ctx.lambda_locals.insert(name.to_owned(), closure);
+    }
+    None => {
+      ctx.lambda_locals.remove(name);
+    }
+  }
+  result
+}
+
 fn emit_let_pairs(ctx: &mut WasmGenCtx, pairs: &[Calcit], body: &[Calcit]) -> Result<(), String> {
   if pairs.is_empty() {
     return emit_body(ctx, body);
@@ -9304,22 +9361,7 @@ fn emit_let_pairs(ctx: &mut WasmGenCtx, pairs: &[Calcit], body: &[Calcit]) -> Re
     Calcit::Symbol { sym, .. } => sym.to_string(),
     other => return Err(format!("let binding expected symbol, got: {other}")),
   };
-  let binding_type = infer_wasm_static_type(ctx, &xs[1]);
-  if let Some(closure) = resolve_inline_closure(ctx, &xs[1]) {
-    ctx.lambda_locals.insert(var_name.clone(), closure);
-    ctx.declare_local(&var_name);
-  } else {
-    emit_expr(ctx, &xs[1])?;
-    ctx.lambda_locals.remove(&var_name);
-    let idx = ctx.declare_local(&var_name);
-    ctx.emit(Instruction::LocalSet(idx));
-  }
-  if let Some(annotation) = binding_type {
-    ctx.local_types.insert(var_name.clone(), annotation);
-  } else {
-    ctx.local_types.remove(&var_name);
-  }
-  emit_let_pairs(ctx, &pairs[1..], body)
+  emit_scoped_let(ctx, &var_name, &xs[1], |ctx| emit_let_pairs(ctx, &pairs[1..], body))
 }
 
 /// Emit WASM for `let` expression.
@@ -9341,20 +9383,8 @@ fn emit_let(ctx: &mut WasmGenCtx, body: &[Calcit]) -> Result<(), String> {
         Calcit::Symbol { sym, .. } => sym.to_string(),
         other => return Err(format!("let binding expected symbol, got: {other}")),
       };
-      let binding_type = infer_wasm_static_type(ctx, &xs[1]);
-
-      // Check if the binding value is an inline lambda.
-      // If so, store it for inlining at call sites instead of emitting as runtime value.
-      if let Some(closure) = resolve_inline_closure(ctx, &xs[1]) {
-        ctx.lambda_locals.insert(var_name.clone(), closure);
-        // Allocate a local slot (unused at runtime) so shadowing cleanup works.
-        ctx.declare_local(&var_name);
-        if let Some(annotation) = binding_type {
-          ctx.local_types.insert(var_name.clone(), annotation);
-        } else {
-          ctx.local_types.remove(&var_name);
-        }
-        // Flatten nested lets
+      emit_scoped_let(ctx, &var_name, &xs[1], |ctx| {
+        // Flatten nested lets while retaining each binding's lexical scope.
         if rest.len() == 1
           && let Calcit::List(inner) = &rest[0]
           && let Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) = inner.first()
@@ -9362,29 +9392,8 @@ fn emit_let(ctx: &mut WasmGenCtx, body: &[Calcit]) -> Result<(), String> {
           let inner_body: Vec<Calcit> = inner.drop_left().to_vec();
           return emit_let(ctx, &inner_body);
         }
-        return emit_body(ctx, rest);
-      }
-
-      emit_expr(ctx, &xs[1])?;
-      ctx.lambda_locals.remove(&var_name);
-      let idx = ctx.declare_local(&var_name);
-      ctx.emit(Instruction::LocalSet(idx));
-      if let Some(annotation) = binding_type {
-        ctx.local_types.insert(var_name.clone(), annotation);
-      } else {
-        ctx.local_types.remove(&var_name);
-      }
-
-      // Flatten nested lets
-      if rest.len() == 1
-        && let Calcit::List(inner) = &rest[0]
-        && let Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) = inner.first()
-      {
-        let inner_body: Vec<Calcit> = inner.drop_left().to_vec();
-        return emit_let(ctx, &inner_body);
-      }
-
-      emit_body(ctx, rest)
+        emit_body(ctx, rest)
+      })
     }
     _ => Err(format!("unsupported let binding form: {pair}")),
   }
