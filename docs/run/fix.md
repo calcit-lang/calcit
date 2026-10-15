@@ -59,6 +59,23 @@ calcit test '<修改后的 namespace/definition>' --require-match
 
 ## 编译器指导型迁移
 
+0.30.1 的缺失值迁移使用显式规则 `core-absence-to-public-v1`，不加入默认规则或版本 preset。
+它识别十三个旧缺失值原语，只在接收者类型、原语来源及直接 `nil?` / `non-nil?` / `either`
+消费方式均有证据时生成替换。公开查询使用 Option，解析使用 Result，集合解构使用各自的
+Destruct enum；生成的 `match` 保留存在的 nil，`either` 的 fallback 语法只保留一次并继续惰性求值。
+使用 `--include-attached` 同时迁移定义附带的测试与示例：
+
+```bash
+calcit calcit.cirru fix --rule core-absence-to-public-v1 --include-attached --format edn
+```
+
+规则跳过 quoted data；函数引用、未知宏、间接绑定用途、旧 `&get-env` 默认值参数和无法证明
+失败行为的字符串索引均需人工审阅。负字符串下标尤其不能直接替换：旧原语会报错，公开 `nth`
+可能返回 none。任何未迁移代码仍导致暂存严格检查失败时，整批拒绝写回，不会自动忽略诊断。
+核对预览的 revision 后携带 `--apply --expect-revision <revision>` 应用，重复预览应不再出现已处理项，
+然后运行原断言及实际目标后端。此规则是临时迁移桥；活跃消费者源码、测试、示例、宏生成与依赖
+迁移全部验收后，在下一个非 patch 版本审阅退役。升级的兼容性范围见 [升级手册](upgrade.md)。
+
 `calcit fix` 把编译器已经能够唯一判断的迁移建议映射回 Snapshot source AST。默认命令只做预览；它会在同目录的
 staged Snapshot 上尝试替换并重新编译选定 scope，成功后仍不写入原文件：
 

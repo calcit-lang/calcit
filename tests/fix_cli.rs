@@ -6,6 +6,190 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static TEST_DIRECTORY_COUNTER: AtomicU64 = AtomicU64::new(0);
 
+#[test]
+fn absence_fix_guards_source_and_attached_transactions() {
+  // Rust owns preview/revision/write protection. The fixture's unchanged
+  // Calcit assertions own values, variants, effects and lazy fallbacks.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/absence-migration.cirru", &snapshot).unwrap();
+  let before = fs::read(&snapshot).unwrap();
+  let base = [
+    "fix",
+    "--rule",
+    "core-absence-to-public-v1",
+    "--ns",
+    "app.migration",
+    "--include-attached",
+    "--format",
+    "json",
+  ];
+  let preview = run_calcit(&snapshot, &base);
+  assert_success(&preview, "preview legacy absence migration");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().unwrap();
+  assert_eq!(
+    suggestions.len(),
+    25,
+    "all thirteen primitive families and attached source: {report}"
+  );
+  assert!(
+    suggestions
+      .iter()
+      .all(|suggestion| suggestion["applicability"] == "machine-applicable")
+  );
+  assert_eq!(report["data"]["validation"]["status"], "passed");
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "preview is read-only");
+  let repeated_preview = run_calcit(&snapshot, &base);
+  assert_success(&repeated_preview, "repeat read-only preview");
+  assert_eq!(parse_stdout(&repeated_preview), report, "the plan and revision are deterministic");
+
+  let mut stale = base.to_vec();
+  stale.extend([
+    "--apply",
+    "--allow-no-vcs",
+    "--expect-revision",
+    "md5:00000000000000000000000000000000",
+  ]);
+  let stale_output = run_calcit(&snapshot, &stale);
+  assert!(!stale_output.status.success(), "a stale revision must reject the transaction");
+  assert!(String::from_utf8_lossy(&stale_output.stderr).contains("revision mismatch"));
+  assert_eq!(fs::read(&snapshot).unwrap(), before);
+
+  let mut apply = base.to_vec();
+  apply.extend([
+    "--apply",
+    "--allow-no-vcs",
+    "--expect-revision",
+    report["revision"].as_str().unwrap(),
+  ]);
+  assert_success(&run_calcit(&snapshot, &apply), "apply guarded absence migration");
+  assert_success(
+    &run_calcit(&snapshot, &["test", "--tag", "absence-migration", "--require-match"]),
+    "Calcit legacy behavior survives migration",
+  );
+  let repeated = run_calcit(&snapshot, &base);
+  assert_success(&repeated, "repeat applied absence migration");
+  assert!(parse_stdout(&repeated)["data"]["suggestions"].as_array().unwrap().is_empty());
+}
+
+#[test]
+fn absence_fix_keeps_unproven_calls_for_review_and_rejects_partial_invalid_writes() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/deep-recursion.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(&snapshot, &["query", "config", "--format", "json"]),
+    "inspect refusal fixture",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "add-ns", "app.review"]),
+    "create refusal namespace",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.review/peek",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defmacro peek (form)\n  quasiquote $ quote ~form",
+      ],
+    ),
+    "create a macro that observes its argument source",
+  );
+  for (name, body) in [
+    ("negative", "nil? $ &str:nth |abc -1"),
+    ("invalid", "nil? $ &map:get |abc 0"),
+    ("indirect", "let ((value $ &map:get (&{} :k 1) :k)) (nil? value)"),
+    ("callable", ", &map:get"),
+    ("old-env", "either (&get-env |HOME |fallback) |other"),
+    ("template", "quasiquote $ nil? $ &map:get (&{} :k nil) :k"),
+    ("shadowed", "let ((match 1)) (nil? $ &map:get (&{} :k nil) :k)"),
+    ("opaque", "peek $ nil? $ &map:get (&{} :k nil) :k"),
+    ("quoted", "quote $ nil? $ &map:get (&{} :k nil) :k"),
+  ] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "def",
+          &format!("app.review/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          &format!("quote $ defn {name} ()\n  {body}"),
+        ],
+      ),
+      "create an unproven source call",
+    );
+  }
+  let before = fs::read(&snapshot).unwrap();
+  let base = [
+    "fix",
+    "--rule",
+    "core-absence-to-public-v1",
+    "--ns",
+    "app.review",
+    "--format",
+    "json",
+  ];
+  let preview = run_calcit(&snapshot, &base);
+  assert_success(&preview, "retain unproven calls without attempting a write");
+  let report = parse_stdout(&preview);
+  let suggestions = report["data"]["suggestions"].as_array().unwrap();
+  assert_eq!(suggestions.len(), 8, "quoted data is not migration code: {report}");
+  assert!(
+    suggestions
+      .iter()
+      .all(|suggestion| suggestion["applicability"] == "requires-review" && suggestion["replacement"].is_null()),
+    "unproven calls never get an automatic replacement: {report}"
+  );
+  let mut review_apply = base.to_vec();
+  review_apply.extend([
+    "--apply",
+    "--allow-no-vcs",
+    "--expect-revision",
+    report["revision"].as_str().unwrap(),
+  ]);
+  assert_success(&run_calcit(&snapshot, &review_apply), "review-only application is a no-op");
+  assert_eq!(fs::read(&snapshot).unwrap(), before);
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.review/proven",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn proven ()\n  nil? $ &map:get (&{} :k nil) :k",
+      ],
+    ),
+    "add a proven call next to invalid source",
+  );
+  let before = fs::read(&snapshot).unwrap();
+  let mut invalid_apply = base.to_vec();
+  invalid_apply.extend(["--apply", "--allow-no-vcs"]);
+  let failure = run_calcit(&snapshot, &invalid_apply);
+  assert!(
+    !failure.status.success(),
+    "strict staged validation must reject remaining invalid source"
+  );
+  assert!(String::from_utf8_lossy(&failure.stderr).contains("Staged fixes failed preprocessing"));
+  assert_eq!(
+    fs::read(&snapshot).unwrap(),
+    before,
+    "a valid replacement cannot partially publish an invalid scope"
+  );
+}
+
 fn structural_rewrite_fixture() -> (TestDirectory, PathBuf) {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
