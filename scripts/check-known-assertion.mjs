@@ -96,6 +96,65 @@ try {
   assert.deepEqual(capabilityProof.diagnostics, [], "native wrapper Unit returns require actual registered intrinsic signatures");
   assert.deepEqual(capabilityProof.data.suggestions, [], "native contracts must not need downstream casts or Unit tails");
 
+  // #2048: constructor arguments, not a return declaration, establish the
+  // directory intrinsic's nominal result. Filesystem values live in :tests.
+  const directorySnapshot = join(project, "directory-result.cirru");
+  await copyFile("calcit/add.cirru", directorySnapshot);
+  const runDirectory = (...args) => execFileSync(binary, [directorySnapshot, ...args], options);
+  runDirectory("docs", "agents", "--contract");
+  const directoryOps = [
+    ["config", "set", "reload-fn", "app.main/main!"],
+    ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
+      "quote $ defn main! () (.read-dir $ fs:path |unused)"],
+    ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return $ :: 'Result (:: 'List 'FsPath) 'String)"],
+    ["edit", "def", "app.main/NumberPath", "--input-format", "cirru", "--code",
+      "quote $ def NumberPath $ defstruct NumberPath (:value 'Number)"],
+    ["edit", "schema", "app.main/NumberPath", "--input-format", "cirru", "--code", "quote 'StructDef"],
+    ["edit", "def", "app.main/DirectoryChild", "--input-format", "cirru", "--code",
+      "quote $ def DirectoryChild $ defstruct DirectoryChild (:value 'String)"],
+    ["edit", "schema", "app.main/DirectoryChild", "--input-format", "cirru", "--code", "quote 'StructDef"],
+  ];
+  const directoryNegativeOps = [];
+  for (const [name, args, body, types, returned] of [
+    ["method", "path", ".read-dir $ fs:path path", "'String", "(:: 'List 'FsPath) 'String"],
+    ["typed-receiver", "path", ".read-dir path", "'FsPath", "(:: 'List 'FsPath) 'String"],
+    ["direct", "path", "&fs-read-dir Result DirectoryChild path |read-failed", "'String", "(:: 'List 'DirectoryChild) 'String"],
+    ["aliased", "path", "let ((result Result) (child DirectoryChild)) (&fs-read-dir result child path |read-failed)", "'String", "(:: 'List 'DirectoryChild) 'String"],
+    ["wrong-element", "path", ".read-dir $ fs:path path", "'String", "(:: 'List 'Number) 'String"],
+    ["wrong-error", "path", ".read-dir $ fs:path path", "'String", "(:: 'List 'FsPath) 'Number"],
+    ["wrong-identity", "path", "&fs-read-dir Result DirectoryChild path |read-failed", "'String", "(:: 'List 'FsPath) 'String"],
+    ["opaque-definitions", "result child path", "&fs-read-dir result child path |read-failed", "'EnumDef 'StructDef 'String", "(:: 'List 'DirectoryChild) 'String"],
+    ["wrong-field", "path", "&fs-read-dir Result NumberPath path |read-failed", "'String", "(:: 'List 'NumberPath) 'String"],
+  ]) {
+    const operations = ["method", "typed-receiver", "direct", "aliased"].includes(name) ? directoryOps : directoryNegativeOps;
+    operations.push(
+      ["edit", "def", `app.main/${name}`, "--input-format", "cirru", "--code", `quote $ defn ${name} (${args}) (${body})`],
+      ["edit", "schema", `app.main/${name}`, "--input-format", "cirru", "--code",
+        `quote $ :: 'Fn $ {} (:args $ [] ${types}) (:return $ :: 'Result ${returned})`],
+    );
+  }
+  const directoryPreview = JSON.parse(runDirectory("edit", "transaction", "--code", JSON.stringify(directoryOps), "--dry-run", "--format", "json"));
+  runDirectory("edit", "transaction", "--code", JSON.stringify(directoryOps), "--expect-revision", directoryPreview.scoped_revision, "--format", "json");
+  for (const name of ["method", "typed-receiver", "direct", "aliased"]) {
+    const proof = JSON.parse(runDirectory("fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", name, "--format", "json"));
+    assert.deepEqual(proof.diagnostics, [], `${name}: infer the actual nominal directory result`);
+    assert.deepEqual(proof.data.suggestions, []);
+  }
+  const directoryBefore = await readFile(directorySnapshot);
+  const directoryStrict = JSON.parse(runDirectory("fix", "--workflow", "strict", "--verify", "--format", "json"));
+  assert.equal(directoryStrict.data.workflow.status, "passed");
+  assert.deepEqual(directoryStrict.diagnostics, [], "whole strict must include the embedded core wrapper");
+  assert.deepEqual(await readFile(directorySnapshot), directoryBefore, "proof must not rewrite consumer source");
+  const negativePreview = JSON.parse(runDirectory("edit", "transaction", "--code", JSON.stringify(directoryNegativeOps), "--dry-run", "--format", "json"));
+  runDirectory("edit", "transaction", "--code", JSON.stringify(directoryNegativeOps), "--expect-revision", negativePreview.scoped_revision, "--format", "json");
+  for (const name of ["wrong-element", "wrong-error", "wrong-identity", "opaque-definitions", "wrong-field"]) {
+    const rejected = spawnSync(binary, [directorySnapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", name, "--format", "json"], options);
+    assert.notEqual(rejected.status, 0, `${name}: do not borrow a concrete return declaration`);
+    assert.match(rejected.stdout + rejected.stderr, /E_FN_RETURN_UNPROVEN|W_FN_RETURN_TYPE_MISMATCH/);
+  }
+  execFileSync(binary, ["src/cirru/calcit-core.cirru", "test", "calcit.core/fs:path", "--tag", "native", "--tag", "file", "--require-match"], options);
+
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
   // #2053: actual Unit returns, proof, silent output, and host failures agree.
   await copyFile("calcit/add.cirru", snapshot);

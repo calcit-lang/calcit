@@ -2757,6 +2757,11 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   if let Some(updated) = infer_collection_growth(proc, xs, scope_types) {
     return Some(updated);
   }
+  if matches!(proc, CalcitProc::NativeFsReadDir)
+    && let Some(result) = infer_directory_result(xs, scope_types)
+  {
+    return Some(result);
+  }
   if matches!(proc, CalcitProc::GetEnv)
     && matches!(xs.len(), 2 | 3)
     && let Some(name_type) = xs.get(1).and_then(|name| resolve_type_value(name, scope_types))
@@ -3022,6 +3027,56 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
       type_sig.return_type.substitute_type_vars(&bindings)
     }
   })
+}
+
+/// The host constructs one String field per child, then returns either that
+/// nominal list or a String error through the supplied enum definition.
+/// Infer those constructor relations from metadata, never from the caller's
+/// declared return type or the intrinsic's otherwise unbound result variable.
+fn infer_directory_result(xs: &CalcitList, scope: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
+  use CalcitTypeAnnotation as T;
+  if xs.len() != 5 {
+    return None;
+  }
+  let result = resolve_type_value(xs.get(1)?, scope)?;
+  let path = resolve_type_value(xs.get(2)?, scope)?;
+  let (T::EnumDef(result), T::StructDef(path)) = (result.as_ref(), path.as_ref()) else {
+    return None;
+  };
+  if path.fields.len() != 1 || !path.where_bounds.is_empty() || !result.where_bounds().is_empty() {
+    return None;
+  }
+  let text = Arc::new(T::String);
+  let mut bindings = HashMap::new();
+  let prototype = T::StructValue(path.clone());
+  let field = resolve_struct_field_type_by_index(&prototype, 0)?;
+  if !text.prove_with_bindings(field.as_ref(), &mut bindings).is_proven() {
+    return None;
+  }
+  let path_args = path
+    .generics
+    .iter()
+    .map(|name| bindings.get(name).cloned())
+    .collect::<Option<Vec<_>>>()?;
+  let children = Arc::new(T::List(Arc::new(T::Struct(path.clone(), Arc::new(path_args)))));
+  bindings.clear();
+  for (tag, actual) in [("ok", children), ("err", text)] {
+    let variant = result.find_variant_by_name(tag)?;
+    let [payload] = variant.payload_types() else { return None };
+    let payload = match result.definition_ref().and_then(|name| name.rsplit_once('/')) {
+      Some((ns, _)) => resolve_namespace_type_refs_for_body(payload.clone(), ns),
+      None => payload.clone(),
+    };
+    if !actual.prove_with_bindings(&payload, &mut bindings).is_proven() {
+      return None;
+    }
+  }
+  let args = result
+    .generics()
+    .iter()
+    .map(|name| bindings.get(name).cloned())
+    .collect::<Option<Vec<_>>>()?;
+  Some(Arc::new(T::Enum(result.clone(), Arc::new(args))))
 }
 
 /// Immutable insertions combine old and new member evidence. In particular,
@@ -3783,6 +3838,16 @@ pub(crate) fn resolve_enum_value(target: &Calcit, scope_types: &ScopeTypes) -> O
 }
 
 pub(crate) fn resolve_struct_value(target: &Calcit, scope_types: &ScopeTypes) -> Option<CalcitStructValue> {
+  fn declared_prototype(ns: &str, def: &str) -> Option<CalcitStructValue> {
+    // An impl can refer back to a constructor while its attachment is still
+    // compiling. Retain only the declaration's data shape and identity, as
+    // enum constructor resolution does; do not execute the unfinished impl.
+    let definition = CalcitTypeAnnotation::TypeRef(Arc::from(format!("{ns}/{def}")), Arc::new(vec![])).resolve_to_struct()?;
+    Some(CalcitStructValue {
+      values: Arc::new(vec![Calcit::Nil; definition.fields.len()]),
+      struct_ref: Arc::new(definition),
+    })
+  }
   match target {
     Calcit::Struct(struct_value) => Some(struct_value.to_owned()),
     Calcit::EnumDef(enum_def) => Some(enum_def.to_struct_prototype()),
@@ -3803,7 +3868,7 @@ pub(crate) fn resolve_struct_value(target: &Calcit, scope_types: &ScopeTypes) ->
           values: Arc::new(values),
         })
       }
-      _ => None,
+      _ => declared_prototype(&info.at_ns, sym),
     },
     Calcit::Import(CalcitImport { ns, def, def_id, .. }) => {
       let runtime_value = resolve_program_value_for_preprocess(ns, def, *def_id);
@@ -3817,7 +3882,7 @@ pub(crate) fn resolve_struct_value(target: &Calcit, scope_types: &ScopeTypes) ->
             values: Arc::new(values),
           })
         }
-        _ => None,
+        _ => declared_prototype(ns, def),
       }
     }
     _ => resolve_type_value(target, scope_types).and_then(|t| {
