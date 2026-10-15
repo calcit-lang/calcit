@@ -976,7 +976,7 @@ Then reference the slot in type annotations with the `*name` syntax:
 ```cirru.no-check
 ;; EventHandler schema "—" dispatch callback accepts the slot type
 
-:: :fn $ {} (:return :unit)
+:: 'Fn $ {} (:return 'Unit)
   :args $ [] '*dispatch-op
 ```
 

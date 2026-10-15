@@ -988,8 +988,8 @@ fn query_failure_code(command: &str, error: &str) -> &'static str {
   }
 }
 
-pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), String> {
-  let result = handle_query_command_inner(cmd, input_path);
+pub fn handle_query_command(cmd: &QueryCommand, input_path: &str, entry: Option<&str>) -> Result<(), String> {
+  let result = handle_query_command_inner(cmd, input_path, entry);
   if let Err(error) = &result
     && let Some((format, command, target)) = structured_query_request(cmd)
   {
@@ -1015,7 +1015,7 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str) -> Result<(), 
   result
 }
 
-fn handle_query_command_inner(cmd: &QueryCommand, input_path: &str) -> Result<(), String> {
+fn handle_query_command_inner(cmd: &QueryCommand, input_path: &str, entry: Option<&str>) -> Result<(), String> {
   let mut resolved = cmd.clone();
   resolve_query_cursor_references(&mut resolved, input_path)?;
   match &resolved.subcommand {
@@ -1070,7 +1070,7 @@ fn handle_query_command_inner(cmd: &QueryCommand, input_path: &str) -> Result<()
         loose: !opts.exact,
         regex: opts.regex,
         max_depth: opts.max_depth,
-        entry: opts.entry.as_deref(),
+        entry: opts.entry.as_deref().or(entry),
         source: SearchSource::parse(&opts.source)?,
         detail_offset: opts.detail_offset,
         parent_path: opts.parent_path,
@@ -1086,7 +1086,7 @@ fn handle_query_command_inner(cmd: &QueryCommand, input_path: &str) -> Result<()
         loose: !opts.exact,
         regex: false,
         max_depth: opts.max_depth,
-        entry: opts.entry.as_deref(),
+        entry: opts.entry.as_deref().or(entry),
         source: SearchSource::All,
         detail_offset: opts.detail_offset,
         parent_path: false,
@@ -1103,9 +1103,9 @@ fn handle_query_command_inner(cmd: &QueryCommand, input_path: &str) -> Result<()
       let format = resolve_format_with_legacy_json(&opts.format, opts.json, "query schema")?;
       handle_schema(input_path, ns, def, format)
     }
-    QuerySubcommand::Type(opts) => handle_type(input_path, opts),
-    QuerySubcommand::TypeAt(opts) => handle_type_at(input_path, opts),
-    QuerySubcommand::Context(opts) => handle_context(input_path, opts),
+    QuerySubcommand::Type(opts) => handle_type(input_path, opts, entry),
+    QuerySubcommand::TypeAt(opts) => handle_type_at(input_path, opts, entry),
+    QuerySubcommand::Context(opts) => handle_context(input_path, opts, entry),
     QuerySubcommand::HostProcs(opts) => handle_host_procs(opts),
     QuerySubcommand::Path(opts) => handle_query_path(input_path, opts),
     QuerySubcommand::Anchors(opts) => handle_query_anchors(input_path, opts),
@@ -2485,11 +2485,11 @@ fn format_type_query_annotation(annotation: &CalcitTypeAnnotation) -> Result<Str
     .map_err(|error| format!("Failed to format resolved type: {error}"))
 }
 
-fn handle_type(input_path: &str, opts: &QueryTypeCommand) -> Result<(), String> {
+fn handle_type(input_path: &str, opts: &QueryTypeCommand, entry: Option<&str>) -> Result<(), String> {
   let format = parse_query_render_format(&opts.format)?;
   let snapshot = match definition_type_query_target(&opts.target) {
     Some((namespace, _)) if namespace == calcit::calcit::CORE_NS || namespace == "calcit.internal" => load_core_snapshot()?,
-    Some(_) => load_snapshot(input_path)?,
+    Some(_) => load_snapshot_with_entry(input_path, entry)?,
     None => load_core_snapshot()?,
   };
   prepare_program_for_type_query(&snapshot)?;
@@ -3159,14 +3159,14 @@ fn render_type_at_human(envelope: &SemanticQueryEnvelope<TypeAtData>) -> String 
   out
 }
 
-fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand) -> Result<(), String> {
+fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand, selected_entry: Option<&str>) -> Result<(), String> {
   let format = parse_query_render_format(&opts.format)?;
   let target_path = parse_type_at_path(&opts.path)?;
   let (namespace, requested_definition) = parse_target(&opts.target)?;
   let resolved_input = Path::new(input_path);
   calcit::validate_snapshot_path(resolved_input)?;
   let snapshot = if resolved_input.exists() {
-    load_snapshot(input_path)?
+    load_snapshot_with_entry(input_path, selected_entry)?
   } else if namespace == calcit::calcit::CORE_NS || namespace == "calcit.internal" {
     load_core_snapshot()?
   } else {
@@ -4282,7 +4282,7 @@ fn render_context_human(envelope: &SemanticQueryEnvelope<DefinitionContextData>)
   out
 }
 
-fn handle_context(input_path: &str, opts: &QueryContextCommand) -> Result<(), String> {
+fn handle_context(input_path: &str, opts: &QueryContextCommand, selected_entry: Option<&str>) -> Result<(), String> {
   if opts.budget < 512 {
     return Err("Context budget must be at least 512 characters".to_owned());
   }
@@ -4291,7 +4291,7 @@ fn handle_context(input_path: &str, opts: &QueryContextCommand) -> Result<(), St
   let resolved_input = Path::new(input_path);
   calcit::validate_snapshot_path(resolved_input)?;
   let snapshot = if resolved_input.exists() {
-    load_snapshot(input_path)?
+    load_snapshot_with_entry(input_path, selected_entry)?
   } else if namespace == calcit::calcit::CORE_NS || namespace == "calcit.internal" {
     load_core_snapshot()?
   } else {

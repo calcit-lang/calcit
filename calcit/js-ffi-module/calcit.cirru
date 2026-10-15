@@ -111,6 +111,34 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
             :features $ #{} :js-ffi
+        'counter-add $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn counter-add (host amount) (host .add! amount)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'app.main/CounterHost 'Number
+            :features $ #{} :js-ffi
+          :tests $ []
+            %{} 'TestEntry (:name |declared-method-result-and-once-only-argument)
+              :code $ quote $ let
+                  calls $ ref 0
+                  host $ checked-counter-host $ make-counter-host 3
+                assert= 7 $ counter-add host $ do (swap! calls inc) 4
+                assert= 1 $ deref calls
+                assert= 3 $ counter-total host
+              :tags $ #{} :js-ffi :unit
+            %{} 'TestEntry (:name |inherited-receiver-and-prefix-result)
+              :code $ quote $ let
+                  tally $ js-cast (make-counter-host 3) 'TallyHost
+                assert= 8 $ counter-add tally 5
+                assert= 5 $ counter-add-prefix tally 2
+                assert= 3 $ counter-total tally
+              :tags $ #{} :js-ffi :unit
+        'counter-add-prefix $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn counter-add-prefix (host amount) (.add! host amount)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'app.main/CounterHost 'Number
+            :features $ #{} :js-ffi
         'counter-total $ %{} 'CodeEntry
           :doc "|Accepts any CounterHost, including traits that require it"
           :code $ quote $ defn counter-total (host) (host :total)

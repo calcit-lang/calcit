@@ -29,9 +29,9 @@ use cirru_edn::EdnTag;
 
 use super::{
   ScopeTypes, checked_call_contract::resolve_checked_call_contract, find_method_entry_for_type, find_trait_field_type,
-  get_impls_from_type, lookup_source_backed_trait_def, reachable_dispatch_traits, resolve_local_type_refs_for_body,
-  resolve_namespace_type_refs_for_body, resolve_program_trait_refs_for_body, selected_trait_method, tag_annotation,
-  trait_is_external_object, trait_list_from_type,
+  get_impls_from_type, lookup_source_backed_trait_def, method_receiver_bindings, reachable_dispatch_traits,
+  resolve_local_type_refs_for_body, resolve_namespace_type_refs_for_body, resolve_program_trait_refs_for_body, selected_trait_method,
+  tag_annotation, trait_is_external_object, trait_list_from_type,
 };
 
 // ---------------------------------------------------------------------------
@@ -2706,10 +2706,21 @@ fn infer_typed_method_result<'a>(
   else {
     return calcit::DYNAMIC_TYPE.clone();
   };
+  let Some(receiver_bindings) = actual_types
+    .first()
+    .and_then(|receiver| method_receiver_bindings(receiver, signature))
+  else {
+    return calcit::DYNAMIC_TYPE.clone();
+  };
+  // Freshen every callee variable before binding the receiver. Substituting
+  // caller types first could capture a same-named, still-unbound method generic.
+  // Implicit trait self variables participate in the same call proof.
+  let mut generics = signature.generics.as_ref().clone();
+  generics.extend(receiver_bindings.keys().cloned());
   let mut expected_types = signature.arg_types.clone();
   expected_types.extend(signature.rest_type.iter().cloned());
   expected_types.push(signature.return_type.clone());
-  let mut proof = crate::calcit::type_annotation::CallTypeProof::new(&signature.generics, &expected_types, &actual_types);
+  let mut proof = crate::calcit::type_annotation::CallTypeProof::new(&generics, &expected_types, &actual_types);
   for (index, (argument, actual)) in arguments.iter().zip(&actual_types).enumerate() {
     let Some(expected) = signature.arg_types.get(index).or(signature.rest_type.as_ref()) else {
       return calcit::DYNAMIC_TYPE.clone();
@@ -3918,6 +3929,37 @@ mod tests {
         Some(calcit::DYNAMIC_TYPE.clone())
       );
     }
+  }
+
+  #[test]
+  fn method_generic_freshening_does_not_capture_same_named_caller_variables() {
+    let variable = |name| Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from(name)));
+    let caller = variable("U");
+    let receiver = typed_local("items", Arc::new(CalcitTypeAnnotation::List(caller.clone())));
+    let mut signature = CalcitFnTypeAnnotation {
+      runtime_arity: None,
+      generics: Arc::new(vec![Arc::from("T"), Arc::from("U")]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::List(variable("T")))],
+      return_type: variable("U"),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    };
+    let scope = ScopeTypes::new();
+    assert_eq!(
+      infer_typed_method_result(&signature, [&receiver].into_iter(), &scope),
+      calcit::DYNAMIC_TYPE.clone()
+    );
+    signature.return_type = variable("T");
+    assert_eq!(infer_typed_method_result(&signature, [&receiver].into_iter(), &scope), caller);
+    signature.return_type = variable("U");
+    signature.arg_types.push(variable("U"));
+    let argument = Calcit::Number(7.0);
+    assert_eq!(
+      infer_typed_method_result(&signature, [&receiver, &argument].into_iter(), &scope),
+      Arc::new(CalcitTypeAnnotation::Number)
+    );
   }
 
   #[test]

@@ -180,11 +180,15 @@ try {
   assert.notEqual(module.count_a, module.count_b, "each Calcit definition receives its own expression instance");
 
   // Replay the actual attached Calcit expressions, rather than JS copies of their assertions.
-  const hostContext = JSON.parse(execFileSync(resolve(repository, "target/debug/calcit"),
-    [input, "query", "context", "app.main/checked-counter-host", "--test-limit", "8", "--format", "json"], { cwd: fixture, encoding: "utf8" }));
-  assert.equal(hostContext.data.tests.truncated, false);
-  assert.equal(hostContext.data.tests.items.length, 5);
-  const hostEntry = ["defn", "replay-host-tests!", [], ...hostContext.data.tests.items.map(test => test.tree), "&unit"];
+  const hostTests = [];
+  for (const [target, count] of [["app.main/checked-counter-host", 5], ["app.main/counter-add", 2]]) {
+    const hostContext = JSON.parse(execFileSync(resolve(repository, "target/debug/calcit"),
+      [input, "query", "context", target, "--test-limit", "8", "--format", "json"], { cwd: fixture, encoding: "utf8" }));
+    assert.equal(hostContext.data.tests.truncated, false);
+    assert.equal(hostContext.data.tests.items.length, count);
+    hostTests.push(...hostContext.data.tests.items.map(test => test.tree));
+  }
+  const hostEntry = ["defn", "replay-host-tests!", [], ...hostTests, "&unit"];
   execFileSync(resolve(repository, "target/debug/calcit"), [moduleSnapshot, "edit", "def", "app.main/replay-host-tests!",
     "--input-format", "json-ast", "--code", JSON.stringify(hostEntry)], { cwd: fixture });
   execFileSync(resolve(repository, "target/debug/calcit"), [moduleSnapshot, "edit", "schema", "app.main/replay-host-tests!",

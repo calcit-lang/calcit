@@ -42,6 +42,21 @@ Calcit provides a powerful `query` subcommand to inspect code, find definitions,
 
 ## Core Query Commands
 
+### 查询使用的入口
+
+项目的 `type`、`type-at`、`context` 语义查询使用已有顶层 `--entry`，
+先选择该入口的模块、type slots、feature policy 和 target，再进行预处理。
+省略参数时使用 default；未知入口明确报错，不回退到 default。
+
+```bash
+calcit calcit.cirru --entry server query type-at app.server/read-text --path 3 --format edn
+calcit calcit.cirru --entry server query context app.server/read-text --format edn
+```
+
+`search` 和 `search-expr` 也继承顶层选择；查询自身显式传入的 `--entry`
+优先，例如 `calcit calcit.cirru --entry server query search value --entry browser`。
+这些查询不执行宿主实现或修改源码；core-only 与 metadata-only 查询保留原有轻量读取方式。
+
 ### 管道输出与退出状态
 
 文档读取和 `query` 输出可以交给 `head` 等工具读取前缀，例如
