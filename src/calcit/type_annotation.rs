@@ -297,8 +297,7 @@ fn collect_type_variable_names(types: &[Arc<CalcitTypeAnnotation>], free_only: b
       CalcitTypeAnnotation::List(inner)
       | CalcitTypeAnnotation::Set(inner)
       | CalcitTypeAnnotation::Ref(inner)
-      | CalcitTypeAnnotation::Optional(inner)
-      | CalcitTypeAnnotation::JsNullish(inner)
+      | CalcitTypeAnnotation::Nullable(inner, _)
       | CalcitTypeAnnotation::Variadic(inner) => pending.push((inner, bound)),
       CalcitTypeAnnotation::Map(key, value) => {
         pending.push((key, bound.clone()));
@@ -687,8 +686,8 @@ pub(crate) fn same_data_schema_annotation<'a>(actual: &'a CalcitTypeAnnotation, 
       | (Type::Set(actual), Type::Set(expected))
       | (Type::Ref(actual), Type::Ref(expected))
       | (Type::Variadic(actual), Type::Variadic(expected))
-      | (Type::Optional(actual), Type::Optional(expected))
-      | (Type::JsNullish(actual), Type::JsNullish(expected)) => {
+      | (Type::Nullable(actual, NullableOrigin::Calcit), Type::Nullable(expected, NullableOrigin::Calcit))
+      | (Type::Nullable(actual, NullableOrigin::JsHost), Type::Nullable(expected, NullableOrigin::JsHost)) => {
         worklist.push((actual.as_ref(), expected.as_ref()));
         true
       }
@@ -957,8 +956,10 @@ fn bounded_plain_type_relation<'a>(
       (Type::List(left), Type::List(right))
       | (Type::Set(left), Type::Set(right))
       | (Type::Variadic(left), Type::Variadic(right))
-      | (Type::Optional(left), Type::Optional(right))
-      | (Type::JsNullish(left), Type::JsNullish(right)) => push_pair(&mut worklist, left, right, depth),
+      | (Type::Nullable(left, NullableOrigin::Calcit), Type::Nullable(right, NullableOrigin::Calcit))
+      | (Type::Nullable(left, NullableOrigin::JsHost), Type::Nullable(right, NullableOrigin::JsHost)) => {
+        push_pair(&mut worklist, left, right, depth)
+      }
       (Type::Ref(left), Type::Ref(right)) => {
         push_pair(&mut worklist, left, right, depth);
         if matches!(mode, PlainRelationMode::Proof) {
@@ -1074,14 +1075,14 @@ fn bounded_plain_type_relation<'a>(
       }
       // Introducing nullability preserves the payload evidence. Only
       // elimination requires a checked boundary; containers recurse here too.
-      (Type::Nil, Type::JsNullish(_) | Type::Optional(_)) => {}
-      (plain, Type::Optional(inner)) if !matches!(plain, Type::Optional(_) | Type::JsNullish(_)) => {
+      (Type::Nil, Type::Nullable(_, _)) => {}
+      (plain, Type::Nullable(inner, NullableOrigin::Calcit)) if !matches!(plain, Type::Nullable(_, _)) => {
         worklist.push((plain, inner.as_ref(), depth + 1));
       }
-      (plain, Type::JsNullish(inner)) if !matches!(plain, Type::Optional(_) | Type::JsNullish(_)) => {
+      (plain, Type::Nullable(inner, NullableOrigin::JsHost)) if !matches!(plain, Type::Nullable(_, _)) => {
         worklist.push((plain, inner.as_ref(), depth + 1));
       }
-      (Type::Optional(inner) | Type::JsNullish(inner), plain) if !matches!(plain, Type::Optional(_) | Type::JsNullish(_)) => {
+      (Type::Nullable(inner, _), plain) if !matches!(plain, Type::Nullable(_, _)) => {
         if matches!(mode, PlainRelationMode::Proof) {
           result = result.and(NeedsBoundary(Boundary::LegacyNullish));
           worklist.push((inner.as_ref(), plain, depth + 1));
@@ -1286,6 +1287,15 @@ impl CalcitNumericRefinement {
   }
 }
 
+/// Where a nil-or-T type comes from; the two origins never prove each other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub enum NullableOrigin {
+  /// legacy Calcit `Optional<T>`
+  Calcit,
+  /// JavaScript FFI `JsNullish<T>`
+  JsHost,
+}
+
 /// Unified representation of type annotations propagated through preprocessing
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CalcitTypeAnnotation {
@@ -1329,12 +1339,10 @@ pub enum CalcitTypeAnnotation {
   Custom(Arc<Calcit>),
   /// No checking at static analaysis time
   Dynamic,
-  /// Represents an type that can be nil or the given type
-  Optional(Arc<CalcitTypeAnnotation>),
-  /// JavaScript FFI value that may be `null`/`undefined` (represented as nil at runtime).
-  /// This boundary type is intentionally distinct from both legacy Optional<T>
-  /// and the nominal Calcit Option<T> enum.
-  JsNullish(Arc<CalcitTypeAnnotation>),
+  /// A value that is either nil or the given type. `origin` keeps the legacy
+  /// Calcit `Optional<T>` distinct from the JavaScript FFI `JsNullish<T>`
+  /// boundary (`null`/`undefined`); neither is the nominal `Option<T>` enum.
+  Nullable(Arc<CalcitTypeAnnotation>, NullableOrigin),
   /// Struct type definition, optionally with applied generic arguments.
   /// `args` is empty when used as a bare type annotation (no generics applied).
   Struct(Arc<CalcitStructDef>, Arc<Vec<Arc<CalcitTypeAnnotation>>>),
@@ -1657,7 +1665,7 @@ impl CalcitTypeAnnotation {
   /// schemas such as `min`/`max`. Non-option types return `None`.
   pub(crate) fn option_payload(&self) -> Option<Arc<CalcitTypeAnnotation>> {
     match self {
-      Self::Optional(inner) => Some(inner.clone()),
+      Self::Nullable(inner, NullableOrigin::Calcit) => Some(inner.clone()),
       Self::TypeRef(name, args) => {
         let name = name.trim_start_matches('\'').trim_start_matches(':');
         (args.len() == 1 && matches!(name, "Option" | "calcit.core/Option")).then(|| args[0].clone())
@@ -1686,12 +1694,9 @@ impl CalcitTypeAnnotation {
 
   pub(crate) fn validate_applied_type_args(&self) -> Result<(), String> {
     match self {
-      Self::List(inner)
-      | Self::Set(inner)
-      | Self::Ref(inner)
-      | Self::Variadic(inner)
-      | Self::Optional(inner)
-      | Self::JsNullish(inner) => inner.validate_applied_type_args(),
+      Self::List(inner) | Self::Set(inner) | Self::Ref(inner) | Self::Variadic(inner) | Self::Nullable(inner, _) => {
+        inner.validate_applied_type_args()
+      }
       Self::Map(key, value) => {
         key.validate_applied_type_args()?;
         value.validate_applied_type_args()
@@ -3276,12 +3281,12 @@ impl CalcitTypeAnnotation {
   ) {
     fn is_trait_annotation(ann: &CalcitTypeAnnotation) -> bool {
       matches!(ann, CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_))
-        || matches!(ann, CalcitTypeAnnotation::Optional(inner) if is_trait_annotation(inner.as_ref()))
+        || matches!(ann, CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) if is_trait_annotation(inner.as_ref()))
     }
 
     fn is_dynamic_annotation(ann: &CalcitTypeAnnotation) -> bool {
       matches!(ann, CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
-        || matches!(ann, CalcitTypeAnnotation::Optional(inner) if is_dynamic_annotation(inner.as_ref()))
+        || matches!(ann, CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) if is_dynamic_annotation(inner.as_ref()))
     }
 
     fn is_concrete_annotation(ann: &CalcitTypeAnnotation) -> bool {
@@ -3479,7 +3484,7 @@ impl CalcitTypeAnnotation {
             eprintln!("[Warn] :optional expects 1 argument, got {}", enum_value.extra.len());
           }
           if let Some(inner_form) = enum_value.extra.first() {
-            return Arc::new(CalcitTypeAnnotation::Optional(parse_nested(inner_form)));
+            return Arc::new(CalcitTypeAnnotation::Nullable(parse_nested(inner_form), NullableOrigin::Calcit));
           }
         }
         if is_list_tag(tag) {
@@ -3568,8 +3573,8 @@ impl CalcitTypeAnnotation {
           return base;
         }
         match name {
-          "Optional" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::Optional(args[0].clone())),
-          "JsNullish" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::JsNullish(args[0].clone())),
+          "Optional" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::Nullable(args[0].clone(), NullableOrigin::Calcit)),
+          "JsNullish" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::Nullable(args[0].clone(), NullableOrigin::JsHost)),
           "Variadic" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::Variadic(args[0].clone())),
           "List" => {
             return Arc::new(CalcitTypeAnnotation::List(
@@ -3626,7 +3631,7 @@ impl CalcitTypeAnnotation {
             eprintln!("[Warn] :optional expects 1 argument, got {}", xs.len() as i64 - 1);
           }
           if let Some(inner_form) = xs.get(1) {
-            return Arc::new(CalcitTypeAnnotation::Optional(parse_nested(inner_form)));
+            return Arc::new(CalcitTypeAnnotation::Nullable(parse_nested(inner_form), NullableOrigin::Calcit));
           }
         }
         if is_list_tag(tag) {
@@ -3699,7 +3704,7 @@ impl CalcitTypeAnnotation {
             eprintln!("[Warn] :optional expects 1 argument, got {}", xs.len() as i64 - 2);
           }
           if let Some(inner_form) = xs.get(2) {
-            return Arc::new(CalcitTypeAnnotation::Optional(parse_nested(inner_form)));
+            return Arc::new(CalcitTypeAnnotation::Nullable(parse_nested(inner_form), NullableOrigin::Calcit));
           }
         }
 
@@ -3798,8 +3803,12 @@ impl CalcitTypeAnnotation {
               return base;
             }
             match name {
-              "Optional" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::Optional(args[0].clone())),
-              "JsNullish" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::JsNullish(args[0].clone())),
+              "Optional" if args.len() == 1 => {
+                return Arc::new(CalcitTypeAnnotation::Nullable(args[0].clone(), NullableOrigin::Calcit));
+              }
+              "JsNullish" if args.len() == 1 => {
+                return Arc::new(CalcitTypeAnnotation::Nullable(args[0].clone(), NullableOrigin::JsHost));
+              }
               "Variadic" if args.len() == 1 => return Arc::new(CalcitTypeAnnotation::Variadic(args[0].clone())),
               "List" => {
                 return Arc::new(CalcitTypeAnnotation::List(
@@ -3916,8 +3925,8 @@ impl CalcitTypeAnnotation {
       Self::Set(inner) => format!("set<{}>", inner.to_brief_string_bounded(depth + 1, remaining)),
       Self::Ref(inner) => format!("ref<{}>", inner.to_brief_string_bounded(depth + 1, remaining)),
       Self::Custom(inner) => format!("{inner}"),
-      Self::Optional(inner) => format!("{}?", inner.to_brief_string_bounded(depth + 1, remaining)),
-      Self::JsNullish(inner) => format!("js-nullish<{}>", inner.to_brief_string_bounded(depth + 1, remaining)),
+      Self::Nullable(inner, NullableOrigin::Calcit) => format!("{}?", inner.to_brief_string_bounded(depth + 1, remaining)),
+      Self::Nullable(inner, NullableOrigin::JsHost) => format!("js-nullish<{}>", inner.to_brief_string_bounded(depth + 1, remaining)),
       Self::Struct(base, args) => {
         if args.is_empty() {
           format!("struct {}", base.name)
@@ -4011,11 +4020,11 @@ impl CalcitTypeAnnotation {
               tasks.push(Task::BuildUnary(Unary::Ref));
               tasks.push(Task::Visit(inner));
             }
-            Self::Optional(inner) => {
+            Self::Nullable(inner, NullableOrigin::Calcit) => {
               tasks.push(Task::BuildUnary(Unary::Optional));
               tasks.push(Task::Visit(inner));
             }
-            Self::JsNullish(inner) => {
+            Self::Nullable(inner, NullableOrigin::JsHost) => {
               tasks.push(Task::BuildUnary(Unary::JsNullish));
               tasks.push(Task::Visit(inner));
             }
@@ -4060,8 +4069,8 @@ impl CalcitTypeAnnotation {
             Unary::List => Self::List(inner),
             Unary::Set => Self::Set(inner),
             Unary::Ref => Self::Ref(inner),
-            Unary::Optional => Self::Optional(inner),
-            Unary::JsNullish => Self::JsNullish(inner),
+            Unary::Optional => Self::Nullable(inner, NullableOrigin::Calcit),
+            Unary::JsNullish => Self::Nullable(inner, NullableOrigin::JsHost),
             Unary::Variadic => Self::Variadic(inner),
           }));
         }
@@ -4115,12 +4124,9 @@ impl CalcitTypeAnnotation {
         Self::TypeRef(_, args) | Self::Struct(_, args) | Self::Enum(_, args) => {
           pending.extend(args.iter().map(Arc::as_ref));
         }
-        Self::List(inner)
-        | Self::Set(inner)
-        | Self::Ref(inner)
-        | Self::Optional(inner)
-        | Self::JsNullish(inner)
-        | Self::Variadic(inner) => pending.push(inner),
+        Self::List(inner) | Self::Set(inner) | Self::Ref(inner) | Self::Nullable(inner, _) | Self::Variadic(inner) => {
+          pending.push(inner)
+        }
         Self::Map(key, value) => {
           pending.push(value);
           pending.push(key);
@@ -4196,8 +4202,7 @@ impl CalcitTypeAnnotation {
         CalcitTypeAnnotation::List(inner)
         | CalcitTypeAnnotation::Set(inner)
         | CalcitTypeAnnotation::Ref(inner)
-        | CalcitTypeAnnotation::Optional(inner)
-        | CalcitTypeAnnotation::JsNullish(inner)
+        | CalcitTypeAnnotation::Nullable(inner, _)
         | CalcitTypeAnnotation::Variadic(inner) => walk(inner, name, bindings, visiting),
         CalcitTypeAnnotation::Map(key, value) => walk(key, name, bindings, visiting) || walk(value, name, bindings, visiting),
         CalcitTypeAnnotation::Fn(signature) => {
@@ -4240,7 +4245,7 @@ impl CalcitTypeAnnotation {
             .or_else(|| resolve_struct_from_program(CORE_NS, stripped).map(|s| (s, Some((Arc::from(CORE_NS), Arc::from(stripped))))))
         }
       }
-      Self::Optional(inner) => inner.resolve_to_struct_with_ref(),
+      Self::Nullable(inner, NullableOrigin::Calcit) => inner.resolve_to_struct_with_ref(),
       _ => None,
     }
   }
@@ -4279,7 +4284,7 @@ impl CalcitTypeAnnotation {
             })
         }
       }
-      Self::Optional(inner) => inner.resolve_to_enum_with_ref(),
+      Self::Nullable(inner, NullableOrigin::Calcit) => inner.resolve_to_enum_with_ref(),
       Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.resolve_to_enum_with_ref()),
       _ => None,
     }
@@ -4308,7 +4313,9 @@ impl CalcitTypeAnnotation {
       }
       match annotation {
         CalcitTypeAnnotation::Fn(fn_annot) => Some((fn_annot.clone(), false)),
-        CalcitTypeAnnotation::Optional(inner) => resolve(inner, visited, depth + 1).map(|(signature, _)| (signature, true)),
+        CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => {
+          resolve(inner, visited, depth + 1).map(|(signature, _)| (signature, true))
+        }
         CalcitTypeAnnotation::TypeRef(name, args) => {
           let stripped = name.trim_start_matches('\'').trim_start_matches(':');
           let key = format!("type:{stripped}");
@@ -4359,7 +4366,7 @@ impl CalcitTypeAnnotation {
       Self::DynFn | Self::Fn(_) => Some("&core-fn-impls"),
       Self::Nil | Self::Bool | Self::Tag | Self::Symbol => Some("&core-text-scalar-impls"),
       Self::Unit | Self::CirruQuote => Some("&core-scalar-impls"),
-      Self::Optional(inner) => inner.core_impl_list_symbol(),
+      Self::Nullable(inner, NullableOrigin::Calcit) => inner.core_impl_list_symbol(),
       Self::TypeRef(name, _) => resolve_type_ref_as_schema(name).and_then(|schema| schema.core_impl_list_symbol()),
       Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.core_impl_list_symbol()),
       _ => None,
@@ -4436,7 +4443,7 @@ impl CalcitTypeAnnotation {
     match self {
       Self::Struct(struct_def, _) | Self::StructValue(struct_def) => Some(struct_def.impls.to_vec()),
       Self::Enum(enum_def, _) | Self::EnumValue(enum_def) => Some(enum_def.impls().to_vec()),
-      Self::Optional(inner) => inner.collect_static_impls(),
+      Self::Nullable(inner, NullableOrigin::Calcit) => inner.collect_static_impls(),
       Self::TypeRef(name, _) => resolve_type_ref_as_schema(name).and_then(|schema| schema.collect_static_impls()),
       Self::TypeSlot(name) => resolve_type_slot(name).and_then(|bound| bound.collect_static_impls()),
       _ => self.core_impl_list_symbol().and_then(|symbol| {
@@ -4616,8 +4623,8 @@ impl CalcitTypeAnnotation {
         | (Self::Set(actual), Self::Set(expected))
         | (Self::Ref(actual), Self::Ref(expected))
         | (Self::Variadic(actual), Self::Variadic(expected))
-        | (Self::Optional(actual), Self::Optional(expected))
-        | (Self::JsNullish(actual), Self::JsNullish(expected)) => {
+        | (Self::Nullable(actual, NullableOrigin::Calcit), Self::Nullable(expected, NullableOrigin::Calcit))
+        | (Self::Nullable(actual, NullableOrigin::JsHost), Self::Nullable(expected, NullableOrigin::JsHost)) => {
           worklist.push((actual.as_ref(), expected.as_ref()));
         }
         (Self::Map(actual_key, actual_value), Self::Map(expected_key, expected_value)) => {
@@ -4709,24 +4716,24 @@ impl CalcitTypeAnnotation {
       (_, Self::Dynamic) | (Self::Dynamic, _) => true,
       // Compare the whole binding before unwrapping an explicit nullable
       // destination. A Nil binding satisfies it without changing the binding.
-      (Self::TypeVar(var), Self::Optional(_) | Self::JsNullish(_)) if bindings.contains_key(var) => {
+      (Self::TypeVar(var), Self::Nullable(_, _)) if bindings.contains_key(var) => {
         let bound = bindings.get(var).cloned().expect("bound type var");
         bound.as_ref() == expected || bound.compatible_with_bindings(expected, bindings)
       }
-      (_, Self::Optional(expected_inner)) => match self {
-        Self::Optional(actual_inner) => actual_inner.compatible_with_bindings(expected_inner, bindings),
-        Self::JsNullish(_) => false,
+      (_, Self::Nullable(expected_inner, NullableOrigin::Calcit)) => match self {
+        Self::Nullable(actual_inner, NullableOrigin::Calcit) => actual_inner.compatible_with_bindings(expected_inner, bindings),
+        Self::Nullable(_, NullableOrigin::JsHost) => false,
         Self::Nil => true,
         _ => self.compatible_with_bindings(expected_inner, bindings),
       },
-      (Self::Optional(_), _) => false,
-      (_, Self::JsNullish(expected_inner)) => match self {
-        Self::JsNullish(actual_inner) => actual_inner.compatible_with_bindings(expected_inner, bindings),
-        Self::Optional(_) => false,
+      (Self::Nullable(_, NullableOrigin::Calcit), _) => false,
+      (_, Self::Nullable(expected_inner, NullableOrigin::JsHost)) => match self {
+        Self::Nullable(actual_inner, NullableOrigin::JsHost) => actual_inner.compatible_with_bindings(expected_inner, bindings),
+        Self::Nullable(_, NullableOrigin::Calcit) => false,
         Self::Nil => true,
         _ => self.compatible_with_bindings(expected_inner, bindings),
       },
-      (Self::JsNullish(_), _) => false,
+      (Self::Nullable(_, NullableOrigin::JsHost), _) => false,
       (Self::Bool, Self::Bool)
       | (Self::Number, Self::Number)
       | (Self::String, Self::String)
@@ -5076,10 +5083,10 @@ impl CalcitTypeAnnotation {
         }
       },
       (_, Self::Dynamic) => Proven,
-      (Self::Nil, Self::JsNullish(_) | Self::Optional(_)) => Proven,
+      (Self::Nil, Self::Nullable(_, _)) => Proven,
       // Lift the expected payload before handling an unbound actual variable:
       // T proves Optional<T>, but still cannot prove an unrelated concrete type.
-      (actual, Self::JsNullish(expected) | Self::Optional(expected)) if !matches!(actual, Self::Optional(_) | Self::JsNullish(_)) => {
+      (actual, Self::Nullable(expected, _)) if !matches!(actual, Self::Nullable(_, _)) => {
         actual.prove_with_staged_bindings(expected, bindings)
       }
       (Self::TypeVar(var), expected_type) => match bindings.get(var).cloned() {
@@ -5127,15 +5134,17 @@ impl CalcitTypeAnnotation {
           NeedsBoundary(Boundary::UnresolvedNominalIdentity)
         }
       }
-      (Self::Optional(actual), Self::Optional(expected)) | (Self::JsNullish(actual), Self::JsNullish(expected)) => {
+      (Self::Nullable(actual, NullableOrigin::Calcit), Self::Nullable(expected, NullableOrigin::Calcit))
+      | (Self::Nullable(actual, NullableOrigin::JsHost), Self::Nullable(expected, NullableOrigin::JsHost)) => {
         actual.prove_with_staged_bindings(expected, bindings)
       }
-      (Self::Optional(actual) | Self::JsNullish(actual), expected) if !matches!(expected, Self::Optional(_) | Self::JsNullish(_)) => {
-        actual
-          .prove_with_staged_bindings(expected, bindings)
-          .and(NeedsBoundary(Boundary::LegacyNullish))
-      }
-      (_, Self::Optional(_)) | (Self::Optional(_), _) | (_, Self::JsNullish(_)) | (Self::JsNullish(_), _) => {
+      (Self::Nullable(actual, _), expected) if !matches!(expected, Self::Nullable(_, _)) => actual
+        .prove_with_staged_bindings(expected, bindings)
+        .and(NeedsBoundary(Boundary::LegacyNullish)),
+      (_, Self::Nullable(_, NullableOrigin::Calcit))
+      | (Self::Nullable(_, NullableOrigin::Calcit), _)
+      | (_, Self::Nullable(_, NullableOrigin::JsHost))
+      | (Self::Nullable(_, NullableOrigin::JsHost), _) => {
         if self.compatible_with_bindings(expected, &mut bindings.clone()) {
           NeedsBoundary(Boundary::LegacyNullish)
         } else {
@@ -5400,9 +5409,9 @@ impl CalcitTypeAnnotation {
             return Self::Variadic(Arc::new(Self::from_calcit(&enum_value.extra[0])));
           } else if tag_name == "optional" && enum_value.extra.len() == 1 {
             // Optional type: (optional :type)
-            return Self::Optional(Arc::new(Self::from_calcit(&enum_value.extra[0])));
+            return Self::Nullable(Arc::new(Self::from_calcit(&enum_value.extra[0])), NullableOrigin::Calcit);
           } else if tag_name == "js-nullish" && enum_value.extra.len() == 1 {
-            return Self::JsNullish(Arc::new(Self::from_calcit(&enum_value.extra[0])));
+            return Self::Nullable(Arc::new(Self::from_calcit(&enum_value.extra[0])), NullableOrigin::JsHost);
           }
         }
         match &enum_value.sum_type {
@@ -5580,12 +5589,12 @@ impl CalcitTypeAnnotation {
         sum_type: None,
       }),
       Self::Custom(value) => value.as_ref().to_owned(),
-      Self::Optional(inner) => Calcit::Enum(CalcitEnumValue {
+      Self::Nullable(inner, NullableOrigin::Calcit) => Calcit::Enum(CalcitEnumValue {
         tag: Arc::new(Calcit::Tag(EdnTag::from("optional"))),
         extra: vec![inner.to_calcit()],
         sum_type: None,
       }),
-      Self::JsNullish(inner) => Calcit::Enum(CalcitEnumValue {
+      Self::Nullable(inner, NullableOrigin::JsHost) => Calcit::Enum(CalcitEnumValue {
         tag: Arc::new(Calcit::Tag(EdnTag::from("js-nullish"))),
         extra: vec![inner.to_calcit()],
         sum_type: None,
@@ -5674,8 +5683,8 @@ impl CalcitTypeAnnotation {
       Self::Map(key, value) => Self::Map(mapped(key), mapped(value)),
       Self::Set(inner) => Self::Set(mapped(inner)),
       Self::Ref(inner) => Self::Ref(mapped(inner)),
-      Self::Optional(inner) => Self::Optional(mapped(inner)),
-      Self::JsNullish(inner) => Self::JsNullish(mapped(inner)),
+      Self::Nullable(inner, NullableOrigin::Calcit) => Self::Nullable(mapped(inner), NullableOrigin::Calcit),
+      Self::Nullable(inner, NullableOrigin::JsHost) => Self::Nullable(mapped(inner), NullableOrigin::JsHost),
       Self::Variadic(inner) => Self::Variadic(mapped(inner)),
       Self::Fn(signature) => {
         let mut signature = signature.as_ref().clone();
@@ -5752,8 +5761,8 @@ impl CalcitTypeAnnotation {
           Edn::enum_value("Ref", vec![inner.to_type_edn()])
         }
       }
-      Self::Optional(inner) => Edn::enum_value("Optional", vec![inner.to_type_edn()]),
-      Self::JsNullish(inner) => Edn::enum_value("JsNullish", vec![inner.to_type_edn()]),
+      Self::Nullable(inner, NullableOrigin::Calcit) => Edn::enum_value("Optional", vec![inner.to_type_edn()]),
+      Self::Nullable(inner, NullableOrigin::JsHost) => Edn::enum_value("JsNullish", vec![inner.to_type_edn()]),
       Self::Variadic(inner) => Edn::enum_value("Variadic", vec![inner.to_type_edn()]),
       Self::Fn(fn_annot) => Edn::enum_value("Fn", vec![fn_annot.to_inline_type_schema_edn()]),
       Self::Struct(s, args) => {
@@ -5818,7 +5827,7 @@ impl CalcitTypeAnnotation {
     match self {
       Self::EnumValue(enum_def) => Some(enum_def),
       Self::Enum(enum_def, _) => Some(enum_def),
-      Self::Optional(inner) => inner.as_enum(),
+      Self::Nullable(inner, NullableOrigin::Calcit) => inner.as_enum(),
       _ => None,
     }
   }
@@ -5832,7 +5841,7 @@ impl CalcitTypeAnnotation {
         Calcit::StructDef(struct_def) => Some(struct_def),
         _ => None,
       },
-      Self::Optional(inner) => inner.as_struct(),
+      Self::Nullable(inner, NullableOrigin::Calcit) => inner.as_struct(),
       _ => None,
     }
   }
@@ -5840,7 +5849,7 @@ impl CalcitTypeAnnotation {
   pub fn as_fn(&self) -> Option<&CalcitFnTypeAnnotation> {
     match self {
       Self::Fn(fn_annot) => Some(fn_annot.as_ref()),
-      Self::Optional(inner) => inner.as_fn(),
+      Self::Nullable(inner, NullableOrigin::Calcit) => inner.as_fn(),
       _ => None,
     }
   }
@@ -5848,7 +5857,7 @@ impl CalcitTypeAnnotation {
   pub fn as_function(&self) -> Option<&CalcitFnTypeAnnotation> {
     match self {
       Self::Fn(signature) => Some(signature.as_ref()),
-      Self::Optional(inner) => inner.as_function(),
+      Self::Nullable(inner, NullableOrigin::Calcit) => inner.as_function(),
       _ => None,
     }
   }
@@ -5910,8 +5919,8 @@ impl CalcitTypeAnnotation {
       },
       Self::Variadic(inner) => format!("variadic {}", inner.describe_bounded(depth + 1, remaining)),
       Self::Custom(_) => "custom".to_string(),
-      Self::Optional(inner) => format!("optional<{}>", inner.describe_bounded(depth + 1, remaining)),
-      Self::JsNullish(inner) => format!("js-nullish<{}>", inner.describe_bounded(depth + 1, remaining)),
+      Self::Nullable(inner, NullableOrigin::Calcit) => format!("optional<{}>", inner.describe_bounded(depth + 1, remaining)),
+      Self::Nullable(inner, NullableOrigin::JsHost) => format!("js-nullish<{}>", inner.describe_bounded(depth + 1, remaining)),
       Self::Struct(base, args) => {
         if args.is_empty() {
           format!("struct {}", base.name)
@@ -5967,8 +5976,8 @@ impl CalcitTypeAnnotation {
       Self::Set(_) => 17,
       Self::Variadic(_) => 18,
       Self::Custom(_) => 19,
-      Self::Optional(_) => 20,
-      Self::JsNullish(_) => 21,
+      Self::Nullable(_, NullableOrigin::Calcit) => 20,
+      Self::Nullable(_, NullableOrigin::JsHost) => 21,
       Self::Dynamic => 22,
       Self::TypeVar(_) => 23,
       Self::TypeRef(_, _) => 24,
@@ -6443,7 +6452,7 @@ mod tests {
     for level in 0..depth {
       current = Arc::new(match level % 4 {
         0 => CalcitTypeAnnotation::List(current),
-        1 => CalcitTypeAnnotation::Optional(current),
+        1 => CalcitTypeAnnotation::Nullable(current, NullableOrigin::Calcit),
         2 => CalcitTypeAnnotation::Map(Arc::new(CalcitTypeAnnotation::String), current),
         _ => CalcitTypeAnnotation::TypeRef(Arc::from("tests.types/Layer"), Arc::new(vec![current])),
       });
@@ -7187,7 +7196,7 @@ mod tests {
     assert!(
       matches!(
         parsed.as_ref(),
-        CalcitTypeAnnotation::Optional(inner)
+        CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit)
           if matches!(inner.as_ref(), CalcitTypeAnnotation::TypeRef(name, args) if name.as_ref() == "Node" && args.is_empty())
       ),
       "recursive field annotation must remain a finite TypeRef, got {parsed:?}"
@@ -7443,7 +7452,7 @@ mod tests {
   #[test]
   fn call_type_proof_isolates_callee_variables_and_keeps_callers_rigid() {
     let t = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
-    let optional_t = Arc::new(CalcitTypeAnnotation::Optional(t.clone()));
+    let optional_t = Arc::new(CalcitTypeAnnotation::Nullable(t.clone(), NullableOrigin::Calcit));
     let actual = Arc::new(CalcitTypeAnnotation::List(optional_t.clone()));
     let expected = Arc::new(CalcitTypeAnnotation::List(t.clone()));
     let names = [Arc::from("T")];
@@ -7470,7 +7479,7 @@ mod tests {
     let mut boundary = CallTypeProof::new(&[], std::slice::from_ref(&closed), std::slice::from_ref(&open));
     assert!(!boundary.prove(&open, &closed).is_proven());
     assert!(
-      !CalcitTypeAnnotation::Optional(t.clone())
+      !CalcitTypeAnnotation::Nullable(t.clone(), NullableOrigin::Calcit)
         .prove_with_bindings(&t, &mut TypeBindings::new())
         .is_proven()
     );
@@ -7638,7 +7647,7 @@ mod tests {
   #[test]
   fn nested_type_vars_do_not_create_recursive_occurs_bindings() {
     let type_var = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
-    let optional_type_var = CalcitTypeAnnotation::Optional(type_var);
+    let optional_type_var = CalcitTypeAnnotation::Nullable(type_var, NullableOrigin::Calcit);
     let expected_type_var = CalcitTypeAnnotation::TypeVar(Arc::from("T"));
     let mut bindings = TypeBindings::new();
 
@@ -7649,7 +7658,7 @@ mod tests {
     assert_eq!(bindings.get("T").map(AsRef::as_ref), Some(&CalcitTypeAnnotation::Tag));
 
     let reverse_type_var = CalcitTypeAnnotation::TypeVar(Arc::from("T"));
-    let reverse_optional = CalcitTypeAnnotation::Optional(Arc::new(reverse_type_var.clone()));
+    let reverse_optional = CalcitTypeAnnotation::Nullable(Arc::new(reverse_type_var.clone()), NullableOrigin::Calcit);
     let mut reverse_bindings = TypeBindings::new();
     assert!(reverse_type_var.compatible_with_bindings(&reverse_optional, &mut reverse_bindings));
     assert!(
@@ -7783,7 +7792,10 @@ mod tests {
       CalcitTypeAnnotation::AnonymousEnum,
       CalcitTypeAnnotation::Custom(Arc::new(Calcit::tag("struct"))),
     ] {
-      for expected in [recursive.clone(), CalcitTypeAnnotation::Optional(Arc::new(recursive.clone()))] {
+      for expected in [
+        recursive.clone(),
+        CalcitTypeAnnotation::Nullable(Arc::new(recursive.clone()), NullableOrigin::Calcit),
+      ] {
         let mut bindings = TypeBindings::new();
         assert_eq!(
           actual.prove_with_bindings(&expected, &mut bindings),
@@ -7802,7 +7814,7 @@ mod tests {
   fn generic_occurs_check_follows_existing_alias_bindings() {
     let generic_t = CalcitTypeAnnotation::TypeVar(Arc::from("T"));
     let generic_u = CalcitTypeAnnotation::TypeVar(Arc::from("U"));
-    let optional_t = CalcitTypeAnnotation::Optional(Arc::new(generic_t.clone()));
+    let optional_t = CalcitTypeAnnotation::Nullable(Arc::new(generic_t.clone()), NullableOrigin::Calcit);
     let mut bindings = TypeBindings::new();
 
     assert!(generic_u.compatible_with_bindings(&generic_t, &mut bindings));
@@ -8850,8 +8862,8 @@ mod tests {
   #[test]
   fn bound_type_var_matches_whole_nullable_type() {
     let var: Arc<str> = Arc::from("T");
-    let optional_number = CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::Number));
-    let js_nullish_number = CalcitTypeAnnotation::JsNullish(Arc::new(CalcitTypeAnnotation::Number));
+    let optional_number = CalcitTypeAnnotation::Nullable(Arc::new(CalcitTypeAnnotation::Number), NullableOrigin::Calcit);
+    let js_nullish_number = CalcitTypeAnnotation::Nullable(Arc::new(CalcitTypeAnnotation::Number), NullableOrigin::JsHost);
     for nullable in [optional_number, js_nullish_number] {
       let mut bindings = TypeBindings::new();
       bindings.insert(var.clone(), Arc::new(nullable.clone()));
@@ -8944,8 +8956,10 @@ mod tests {
       TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic)
     );
 
-    let optional_number_ref =
-      CalcitTypeAnnotation::Ref(Arc::new(CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::Number))));
+    let optional_number_ref = CalcitTypeAnnotation::Ref(Arc::new(CalcitTypeAnnotation::Nullable(
+      Arc::new(CalcitTypeAnnotation::Number),
+      NullableOrigin::Calcit,
+    )));
     assert!(!number_ref.prove_with_bindings(&optional_number_ref, &mut bindings).is_proven());
 
     let bare = CalcitTypeAnnotation::TypeRef(Arc::from("app/Box"), Arc::new(vec![]));
@@ -9324,10 +9338,13 @@ mod tests {
   fn callback_parameter_matching_is_contravariant() {
     let number = Arc::new(CalcitTypeAnnotation::Number);
     let actual = CalcitTypeAnnotation::from_function_parts(
-      vec![Arc::new(CalcitTypeAnnotation::Optional(number.clone()))],
-      Arc::new(CalcitTypeAnnotation::Optional(number.clone())),
+      vec![Arc::new(CalcitTypeAnnotation::Nullable(number.clone(), NullableOrigin::Calcit))],
+      Arc::new(CalcitTypeAnnotation::Nullable(number.clone(), NullableOrigin::Calcit)),
     );
-    let expected = CalcitTypeAnnotation::from_function_parts(vec![number.clone()], Arc::new(CalcitTypeAnnotation::Optional(number)));
+    let expected = CalcitTypeAnnotation::from_function_parts(
+      vec![number.clone()],
+      Arc::new(CalcitTypeAnnotation::Nullable(number, NullableOrigin::Calcit)),
+    );
 
     assert!(actual.is_compatible_with(&expected));
   }
@@ -9392,8 +9409,8 @@ mod tests {
   #[test]
   fn js_nullish_and_legacy_optional_are_distinct_boundaries() {
     let number = Arc::new(CalcitTypeAnnotation::Number);
-    let optional = CalcitTypeAnnotation::Optional(number.clone());
-    let js_nullish = CalcitTypeAnnotation::JsNullish(number.clone());
+    let optional = CalcitTypeAnnotation::Nullable(number.clone(), NullableOrigin::Calcit);
+    let js_nullish = CalcitTypeAnnotation::Nullable(number.clone(), NullableOrigin::JsHost);
 
     assert!(!js_nullish.is_compatible_with(&optional));
     assert!(!optional.is_compatible_with(&js_nullish));
@@ -9454,7 +9471,7 @@ mod tests {
     assert!(matches!(value_first.get(&var).map(Arc::as_ref), Some(CalcitTypeAnnotation::Bool)));
 
     assert!(!CalcitTypeAnnotation::Unit.compatible_with_bindings(
-      &CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::Bool)),
+      &CalcitTypeAnnotation::Nullable(Arc::new(CalcitTypeAnnotation::Bool), NullableOrigin::Calcit),
       &mut TypeBindings::new()
     ));
   }
@@ -9542,11 +9559,11 @@ impl Hash for CalcitTypeAnnotation {
         "custom".hash(state);
         value.hash(state);
       }
-      Self::Optional(inner) => {
+      Self::Nullable(inner, NullableOrigin::Calcit) => {
         "optional".hash(state);
         inner.hash(state);
       }
-      Self::JsNullish(inner) => {
+      Self::Nullable(inner, NullableOrigin::JsHost) => {
         "js-nullish".hash(state);
         inner.hash(state);
       }
@@ -9645,8 +9662,8 @@ impl Ord for CalcitTypeAnnotation {
       (Self::Ref(a), Self::Ref(b)) => a.cmp(b),
       (Self::Variadic(a), Self::Variadic(b)) => a.cmp(b),
       (Self::Custom(a), Self::Custom(b)) => a.cmp(b),
-      (Self::Optional(a), Self::Optional(b)) => a.cmp(b),
-      (Self::JsNullish(a), Self::JsNullish(b)) => a.cmp(b),
+      (Self::Nullable(a, NullableOrigin::Calcit), Self::Nullable(b, NullableOrigin::Calcit)) => a.cmp(b),
+      (Self::Nullable(a, NullableOrigin::JsHost), Self::Nullable(b, NullableOrigin::JsHost)) => a.cmp(b),
       (Self::Dynamic, Self::Dynamic) => Ordering::Equal,
       (Self::TypeVar(a), Self::TypeVar(b)) => a.cmp(b),
       (Self::TypeRef(a_name, a_args), Self::TypeRef(b_name, b_args)) => a_name.cmp(b_name).then_with(|| a_args.cmp(b_args)),
@@ -10128,8 +10145,12 @@ pub fn value_matches_type_annotation(value: &Calcit, expected: &CalcitTypeAnnota
     CalcitTypeAnnotation::Dynamic => true,
     CalcitTypeAnnotation::Nil => matches!(value, Calcit::Nil),
     CalcitTypeAnnotation::Unit => matches!(value, Calcit::Unit),
-    CalcitTypeAnnotation::Optional(inner) => matches!(value, Calcit::Nil) || value_matches_type_annotation(value, inner),
-    CalcitTypeAnnotation::JsNullish(inner) => matches!(value, Calcit::Nil) || value_matches_type_annotation(value, inner),
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => {
+      matches!(value, Calcit::Nil) || value_matches_type_annotation(value, inner)
+    }
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::JsHost) => {
+      matches!(value, Calcit::Nil) || value_matches_type_annotation(value, inner)
+    }
     CalcitTypeAnnotation::Bool => matches!(value, Calcit::Bool(_)),
     CalcitTypeAnnotation::Number => matches!(value, Calcit::Number(_)),
     CalcitTypeAnnotation::Numeric(kind) => matches!(value, Calcit::Number(number) if kind.accepts(*number)),

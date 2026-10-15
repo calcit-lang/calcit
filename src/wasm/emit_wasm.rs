@@ -36,7 +36,7 @@ use crate::wasm::host::calcit::data_shape::{DataShapeGraph, DataShapeNode};
 use crate::wasm::host::calcit::type_annotation::TypeBindings;
 use crate::wasm::host::calcit::{
   Calcit, CalcitArgLabel, CalcitEnumDef, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImport, CalcitLocal, CalcitNumericRefinement,
-  CalcitProc, CalcitStructDef, CalcitSyntax, CalcitTypeAnnotation, MethodKind,
+  CalcitProc, CalcitStructDef, CalcitSyntax, CalcitTypeAnnotation, MethodKind, NullableOrigin,
 };
 use crate::wasm::host::program;
 use crate::wasm::host::runner::preprocess::{
@@ -5505,12 +5505,12 @@ fn infer_wasm_static_type(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<CalcitT
 fn nil_type_evidence_is_open(annotation: &CalcitTypeAnnotation) -> bool {
   match annotation {
     CalcitTypeAnnotation::Dynamic
-    | CalcitTypeAnnotation::JsNullish(_)
+    | CalcitTypeAnnotation::Nullable(_, NullableOrigin::JsHost)
     | CalcitTypeAnnotation::TypeVar(_)
     | CalcitTypeAnnotation::TypeSlot(_)
     | CalcitTypeAnnotation::Trait(_)
     | CalcitTypeAnnotation::TraitSet(_) => true,
-    CalcitTypeAnnotation::Optional(inner) => nil_type_evidence_is_open(inner),
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => nil_type_evidence_is_open(inner),
     _ => false,
   }
 }
@@ -5540,7 +5540,7 @@ fn scalar_truthiness_constant(annotation: &CalcitTypeAnnotation) -> Result<Optio
   match annotation {
     CalcitTypeAnnotation::Bool => Ok(None),
     CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Unit | CalcitTypeAnnotation::Never => Ok(Some(false)),
-    CalcitTypeAnnotation::Optional(inner) => match scalar_truthiness_constant(inner)? {
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => match scalar_truthiness_constant(inner)? {
       Some(false) => Ok(Some(false)),
       None => Ok(None),
       Some(true) if wasm_non_nil_value_is_nonzero(inner) => Ok(None),
@@ -5659,7 +5659,9 @@ fn resolve_static_specialization_types(
   let all_declared_types_resolved = definition.arg_types.iter().zip(actual_types.iter()).all(|(expected, actual)| {
     // A proven nil has no Optional payload to resolve; retain its actual
     // Nil evidence rather than inventing a binding for the phantom type.
-    if matches!(actual.as_ref(), CalcitTypeAnnotation::Nil) && matches!(expected.as_ref(), CalcitTypeAnnotation::Optional(_)) {
+    if matches!(actual.as_ref(), CalcitTypeAnnotation::Nil)
+      && matches!(expected.as_ref(), CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit))
+    {
       return true;
     }
     let resolved = expected.substitute_type_vars(&bindings);
@@ -7947,13 +7949,13 @@ fn emit_nil_predicate(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), Strin
       ctx.emit(Instruction::Drop);
       ctx.emit(f64_const(1.0));
     }
-    CalcitTypeAnnotation::Optional(inner) if wasm_non_nil_value_is_nonzero(inner) => {
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) if wasm_non_nil_value_is_nonzero(inner) => {
       emit_expr(ctx, &args[0])?;
       ctx.emit(f64_const(0.0));
       ctx.emit(Instruction::F64Eq);
       ctx.emit(Instruction::F64ConvertI32U);
     }
-    CalcitTypeAnnotation::Optional(inner) => {
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => {
       return Err(format!(
         "E_WASM_NIL_TYPE_EVIDENCE: nil? cannot distinguish nil from a zero-valued Optional<{}> payload in the current scalar ABI",
         inner.to_brief_string()
@@ -10456,7 +10458,13 @@ mod tests {
       fixed_type(),
       fn_type(vec![dynamic_type()], true),
       fn_type(
-        vec![dynamic_type(), Arc::new(CalcitTypeAnnotation::Optional(dynamic_type()))],
+        vec![
+          dynamic_type(),
+          Arc::new(CalcitTypeAnnotation::Nullable(
+            dynamic_type(),
+            crate::wasm::host::calcit::NullableOrigin::Calcit,
+          )),
+        ],
         false,
       ),
       dynamic_type(),
@@ -12284,7 +12292,10 @@ mod tests {
       vec![ValType::I32, ValType::I32, ValType::I64, ValType::I32]
     );
 
-    let legacy = CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::Number));
+    let legacy = CalcitTypeAnnotation::Nullable(
+      Arc::new(CalcitTypeAnnotation::Number),
+      crate::wasm::host::calcit::NullableOrigin::Calcit,
+    );
     let error = component_abi_type(&legacy, "app.main/legacy", "logical_schema.result")
       .expect_err("legacy Optional must not degrade into nominal Option");
     assert!(error.contains("E_COMPONENT_ABI_UNSUPPORTED_TYPE"));

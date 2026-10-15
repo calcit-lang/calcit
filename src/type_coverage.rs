@@ -1,6 +1,7 @@
 //! Type coverage and weak-type analysis for `calcit analyze`.
 #![allow(dead_code)]
 
+use calcit::calcit::NullableOrigin;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
@@ -894,21 +895,20 @@ fn scan_schema_dynamic_annotation(
     | CalcitTypeAnnotation::Set(inner)
     | CalcitTypeAnnotation::Ref(inner)
     | CalcitTypeAnnotation::Variadic(inner)
-    | CalcitTypeAnnotation::Optional(inner)
-    | CalcitTypeAnnotation::JsNullish(inner) => {
+    | CalcitTypeAnnotation::Nullable(inner, _) => {
       let segment = match annotation {
         CalcitTypeAnnotation::List(_) => "list-item",
         CalcitTypeAnnotation::Set(_) => "set-item",
         CalcitTypeAnnotation::Ref(_) => "ref-item",
         CalcitTypeAnnotation::Variadic(_) => "variadic-item",
-        CalcitTypeAnnotation::Optional(_) => "optional-item",
-        CalcitTypeAnnotation::JsNullish(_) => "js-nullish-item",
+        CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit) => "optional-item",
+        CalcitTypeAnnotation::Nullable(_, NullableOrigin::JsHost) => "js-nullish-item",
         _ => unreachable!("composite item annotation should be covered by the match arm"),
       };
       let nested_detail = extend_schema_dynamic_detail(detail, segment);
       let occurrence_start = occurrences.len();
       scan_schema_dynamic_annotation(inner, &format!("{path}.item"), &nested_detail, occurrences);
-      if matches!(annotation, CalcitTypeAnnotation::JsNullish(_)) {
+      if matches!(annotation, CalcitTypeAnnotation::Nullable(_, NullableOrigin::JsHost)) {
         for occurrence in &mut occurrences[occurrence_start..] {
           if occurrence.kind == WeakTypeKind::SchemaDynamic && occurrence.intent == WeakTypeIntent::Unresolved {
             occurrence.intent = WeakTypeIntent::IntentionalJsFfi;
@@ -1125,8 +1125,8 @@ fn nil_return_intent(annotation: &CalcitTypeAnnotation) -> WeakTypeIntent {
   };
   match return_type {
     CalcitTypeAnnotation::Unit => WeakTypeIntent::DeclaredUnit,
-    CalcitTypeAnnotation::Optional(_) => WeakTypeIntent::DeclaredOptional,
-    CalcitTypeAnnotation::JsNullish(_) => WeakTypeIntent::IntentionalJsFfi,
+    CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit) => WeakTypeIntent::DeclaredOptional,
+    CalcitTypeAnnotation::Nullable(_, NullableOrigin::JsHost) => WeakTypeIntent::IntentionalJsFfi,
     _ => WeakTypeIntent::Unresolved,
   }
 }
@@ -3863,9 +3863,10 @@ mod tests {
     clear_type_slots();
     push_type_slot_override(
       Arc::from("outer"),
-      Arc::new(CalcitTypeAnnotation::JsNullish(Arc::new(CalcitTypeAnnotation::TypeSlot(
-        Arc::from("inner"),
-      )))),
+      Arc::new(CalcitTypeAnnotation::Nullable(
+        Arc::new(CalcitTypeAnnotation::TypeSlot(Arc::from("inner"))),
+        calcit::calcit::NullableOrigin::JsHost,
+      )),
     );
 
     let occurrences = scan(CalcitTypeAnnotation::TypeSlot(Arc::from("outer")));
@@ -3881,7 +3882,10 @@ mod tests {
     clear_type_slots();
     push_type_slot_override(
       Arc::from("outer"),
-      Arc::new(CalcitTypeAnnotation::JsNullish(Arc::new(CalcitTypeAnnotation::Dynamic))),
+      Arc::new(CalcitTypeAnnotation::Nullable(
+        Arc::new(CalcitTypeAnnotation::Dynamic),
+        calcit::calcit::NullableOrigin::JsHost,
+      )),
     );
 
     let occurrences = scan(CalcitTypeAnnotation::TypeSlot(Arc::from("outer")));

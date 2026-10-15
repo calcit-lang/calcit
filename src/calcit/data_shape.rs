@@ -1,3 +1,4 @@
+use crate::calcit::NullableOrigin;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -120,7 +121,7 @@ fn needs_deep_field_check(target: &CalcitTypeAnnotation) -> bool {
     CalcitTypeAnnotation::List(_)
       | CalcitTypeAnnotation::Map(_, _)
       | CalcitTypeAnnotation::Set(_)
-      | CalcitTypeAnnotation::Optional(_)
+      | CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit)
       | CalcitTypeAnnotation::Ref(_)
       | CalcitTypeAnnotation::TypeRef(..)
       | CalcitTypeAnnotation::Struct(..)
@@ -577,7 +578,7 @@ impl GraphBuilder {
       CalcitTypeAnnotation::Tag => Ok(self.push(DataShapeNode::Tag)),
       CalcitTypeAnnotation::Buffer => Ok(self.push(DataShapeNode::Buffer)),
       CalcitTypeAnnotation::CirruQuote => Ok(self.push(DataShapeNode::CirruQuote)),
-      CalcitTypeAnnotation::Optional(inner) => {
+      CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => {
         let inner = self.build_type(inner, default_ns)?;
         Ok(self.push(DataShapeNode::Optional(inner)))
       }
@@ -680,7 +681,9 @@ impl GraphBuilder {
         Err(unsupported_type("trait constraints are not data shapes"))
       }
       CalcitTypeAnnotation::JsObject => Err(unsupported_type("JsObject is an opaque host value")),
-      CalcitTypeAnnotation::JsNullish(_) => Err(unsupported_type("JsNullish is an opaque JavaScript boundary value")),
+      CalcitTypeAnnotation::Nullable(_, NullableOrigin::JsHost) => {
+        Err(unsupported_type("JsNullish is an opaque JavaScript boundary value"))
+      }
       CalcitTypeAnnotation::Custom(value) => Err(unsupported_type(&format!("custom type `{value}` has no data shape"))),
       CalcitTypeAnnotation::Variadic(_) => Err(unsupported_type("Variadic is a function parameter constraint")),
     }

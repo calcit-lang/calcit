@@ -12,6 +12,7 @@
 //! - `check_function_return_type` — check fn body return type vs declaration
 //! - `detect_return_type_hint_from_processed_body` — extract hint-fn return type
 
+use crate::calcit::NullableOrigin;
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -943,8 +944,8 @@ fn reset_type_erases_contract(actual: &CalcitTypeAnnotation, expected: &CalcitTy
     (T::List(a), T::List(e))
     | (T::Set(a), T::Set(e))
     | (T::Ref(a), T::Ref(e))
-    | (T::Optional(a), T::Optional(e))
-    | (T::JsNullish(a), T::JsNullish(e))
+    | (T::Nullable(a, NullableOrigin::Calcit), T::Nullable(e, NullableOrigin::Calcit))
+    | (T::Nullable(a, NullableOrigin::JsHost), T::Nullable(e, NullableOrigin::JsHost))
     | (T::Variadic(a), T::Variadic(e)) => reset_type_erases_contract(a, e),
     (T::Map(ak, av), T::Map(ek, ev)) => reset_type_erases_contract(ak, ek) || reset_type_erases_contract(av, ev),
     (T::TypeRef(_, a), T::TypeRef(_, e)) | (T::Struct(_, a), T::Struct(_, e)) | (T::Enum(_, a), T::Enum(_, e)) => {
@@ -1405,7 +1406,7 @@ pub(super) fn expression_is_proven_for(
         // conversion from Optional. Promise adoption belongs to the whole
         // async return only; collection members are ordinary stored values.
         let mut literal_expected = expected;
-        while let CalcitTypeAnnotation::JsNullish(inner) = literal_expected {
+        while let CalcitTypeAnnotation::Nullable(inner, NullableOrigin::JsHost) = literal_expected {
           literal_expected = inner;
         }
         match (items.first(), literal_expected) {
@@ -2462,9 +2463,10 @@ mod tests {
     let optional_struct_args = CalcitList::from(&[
       make_local(
         "maybe-task",
-        Arc::new(CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::StructValue(
-          task_struct,
-        )))),
+        Arc::new(CalcitTypeAnnotation::Nullable(
+          Arc::new(CalcitTypeAnnotation::StructValue(task_struct)),
+          NullableOrigin::Calcit,
+        )),
       ),
       Calcit::Tag(EdnTag::new("done?")),
       Calcit::Bool(false),

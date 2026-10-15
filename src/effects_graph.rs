@@ -2,6 +2,7 @@
 
 use crate::builtins;
 use crate::calcit::CalcitTypeAnnotation;
+use crate::calcit::NullableOrigin;
 use crate::calcit::{Calcit, CalcitFnArgs, CalcitLocal, CalcitProc, CalcitStructDef, CalcitSyntax, MethodKind};
 use crate::program::{
   ImportRule, PROGRAM_CODE_DATA, lookup_codegen_type_hint, lookup_def_code, lookup_def_schema, lookup_ns_target_in_import,
@@ -1318,8 +1319,10 @@ fn format_schema_annotation(schema: &std::sync::Arc<CalcitTypeAnnotation>, conte
       Some(format!("map<{k},{v}>"))
     }
     CalcitTypeAnnotation::List(inner) => format_schema_annotation(inner, context_ns, depth - 1).map(|t| format!("list<{t}>")),
-    CalcitTypeAnnotation::Optional(inner) => format_schema_annotation(inner, context_ns, depth - 1).map(|t| format!("{t}?")),
-    CalcitTypeAnnotation::JsNullish(inner) => {
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => {
+      format_schema_annotation(inner, context_ns, depth - 1).map(|t| format!("{t}?"))
+    }
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::JsHost) => {
       format_schema_annotation(inner, context_ns, depth - 1).map(|t| format!("js-nullish<{t}>"))
     }
     _ => {

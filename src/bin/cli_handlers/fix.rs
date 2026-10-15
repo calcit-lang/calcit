@@ -1,3 +1,4 @@
+use calcit::calcit::NullableOrigin;
 use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
@@ -2365,7 +2366,7 @@ fn collect_optional_parameter_usages(
 fn optional_parameter_candidate(annotation: &CalcitTypeAnnotation) -> Option<String> {
   match annotation {
     CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn => None,
-    CalcitTypeAnnotation::Optional(inner) => optional_parameter_candidate(inner),
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => optional_parameter_candidate(inner),
     CalcitTypeAnnotation::TypeRef(name, args) if matches!(name.as_ref(), "Option" | "calcit.core/Option") && args.len() == 1 => {
       if matches!(args[0].as_ref(), CalcitTypeAnnotation::Dynamic) {
         None
@@ -2380,7 +2381,7 @@ fn optional_parameter_candidate(annotation: &CalcitTypeAnnotation) -> Option<Str
 /// Build a declaration-backed nominal Option slot without guessing through aliases or open types.
 fn optional_parameter_schema_type(annotation: &std::sync::Arc<CalcitTypeAnnotation>) -> Option<std::sync::Arc<CalcitTypeAnnotation>> {
   let mut inner = annotation.as_ref();
-  while let CalcitTypeAnnotation::Optional(next) = inner {
+  while let CalcitTypeAnnotation::Nullable(next, NullableOrigin::Calcit) = inner {
     inner = next.as_ref();
   }
   if !optional_candidate_type_is_closed(inner) {
@@ -2421,8 +2422,7 @@ fn optional_candidate_type_is_closed(annotation: &CalcitTypeAnnotation) -> bool 
     | CalcitTypeAnnotation::Set(inner)
     | CalcitTypeAnnotation::Ref(inner)
     | CalcitTypeAnnotation::Variadic(inner)
-    | CalcitTypeAnnotation::Optional(inner)
-    | CalcitTypeAnnotation::JsNullish(inner) => optional_candidate_type_is_closed(inner),
+    | CalcitTypeAnnotation::Nullable(inner, _) => optional_candidate_type_is_closed(inner),
     CalcitTypeAnnotation::Map(key, value) => optional_candidate_type_is_closed(key) && optional_candidate_type_is_closed(value),
     CalcitTypeAnnotation::TypeRef(_, args) => {
       args.iter().all(|arg| optional_candidate_type_is_closed(arg))
@@ -7146,7 +7146,10 @@ mod tests {
       Some("Option<:number>".to_owned())
     );
     assert_eq!(
-      optional_parameter_candidate(&CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::String))),
+      optional_parameter_candidate(&CalcitTypeAnnotation::Nullable(
+        Arc::new(CalcitTypeAnnotation::String),
+        calcit::calcit::NullableOrigin::Calcit
+      )),
       Some("Option<:string>".to_owned())
     );
     let option = CalcitTypeAnnotation::TypeRef(
