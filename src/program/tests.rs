@@ -20,6 +20,93 @@ fn import_rule(source: &str, kind: &str, target: Cirru) -> Cirru {
 }
 
 #[test]
+fn bundled_core_initialization_releases_program_lock_for_schema_lookups() {
+  use std::process::{Command, Stdio};
+  use std::sync::atomic::{AtomicUsize, Ordering};
+  use std::time::{Duration, Instant};
+
+  const CHILD: &str = "CALCIT_CORE_INITIALIZATION_LOCK_CHILD";
+  static LOOKUPS: AtomicUsize = AtomicUsize::new(0);
+
+  fn audited_lookup(ns: &str, def: &str) -> Option<Calcit> {
+    // A queued writer must not be blocked by the initializer's own read lock.
+    // try_write makes the old lock order fail immediately, without a hang.
+    drop(
+      PROGRAM_CODE_DATA
+        .try_write()
+        .expect("core schema initialization must not hold the program lock"),
+    );
+    LOOKUPS.fetch_add(1, Ordering::Relaxed);
+    lookup_def_code(ns, def)
+  }
+
+  if std::env::var_os(CHILD).is_some() {
+    calcit::register_program_lookups(lookup_runtime_ready, audited_lookup, lookup_def_schema);
+    assert!(!has_bundled_core_source(), "an empty program is not the bundled core");
+    assert!(
+      LOOKUPS.load(Ordering::Relaxed) > 0,
+      "the cold initializer must exercise schema lookups"
+    );
+
+    let snapshot = crate::load_core_snapshot().expect("embedded core snapshot");
+    let source = snapshot
+      .files
+      .iter()
+      .map(|(ns, file)| {
+        let name: Arc<str> = Arc::from(ns.as_str());
+        (name.clone(), extract_file_data(file, name).expect("embedded source"))
+      })
+      .collect();
+    *PROGRAM_CODE_DATA.write().expect("seed bundled source") = source;
+    assert!(has_bundled_core_source(), "initialization order must not change the source proof");
+    PROGRAM_CODE_DATA
+      .write()
+      .expect("replace a core predicate")
+      .get_mut(calcit::CORE_NS)
+      .expect("core namespace")
+      .defs
+      .get_mut("nil?")
+      .expect("core predicate")
+      .code = Calcit::Nil;
+    assert!(!has_bundled_core_source(), "a replaced predicate must still lose its builtin proof");
+    return;
+  }
+
+  // A fresh process guarantees a cold LazyLock and isolates lookup callbacks
+  // from other tests. Bound it so a future lock regression cannot stall CI.
+  let mut child = Command::new(std::env::current_exe().expect("unit test executable"))
+    .args([
+      "--exact",
+      "program::tests::bundled_core_initialization_releases_program_lock_for_schema_lookups",
+      "--nocapture",
+    ])
+    .env(CHILD, "1")
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .expect("spawn cold core initialization test");
+  let deadline = Instant::now() + Duration::from_secs(30);
+  loop {
+    if child.try_wait().expect("poll cold core initialization test").is_some() {
+      break;
+    }
+    if Instant::now() >= deadline {
+      child.kill().expect("stop stalled core initialization test");
+      let output = child.wait_with_output().expect("collect stalled child");
+      panic!("cold core initialization timed out: {}", String::from_utf8_lossy(&output.stderr));
+    }
+    std::thread::sleep(Duration::from_millis(10));
+  }
+  let output = child.wait_with_output().expect("collect cold core initialization test");
+  assert!(
+    output.status.success(),
+    "cold core initialization failed:\n{}\n{}",
+    String::from_utf8_lossy(&output.stdout),
+    String::from_utf8_lossy(&output.stderr)
+  );
+}
+
+#[test]
 fn strict_edn_decoder_nominals_are_compiled_dependencies() {
   let _guard = lock_program_test_state();
   reset_program_test_state();

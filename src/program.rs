@@ -1080,8 +1080,11 @@ pub(crate) fn has_bundled_core_source() -> bool {
       })
       .collect()
   });
+  // Schema parsing can re-enter PROGRAM_CODE_DATA. Initialize before taking
+  // its read lock so a queued writer cannot deadlock a recursive read.
+  let bundled = LazyLock::force(&BUNDLED_CORE);
   let source = PROGRAM_CODE_DATA.read().expect("read program code");
-  BUNDLED_CORE.iter().all(|(namespace, bundled)| {
+  bundled.iter().all(|(namespace, bundled)| {
     source.get(namespace).is_some_and(|file| {
       file.import_map == bundled.import_map
         && bundled.defs.iter().all(|(name, expected)| {
