@@ -114,6 +114,18 @@ pub fn configure_entry_type_slots(bindings: &HashMap<String, String>) -> Result<
   Ok(())
 }
 
+/// Entry-level bindings are thread-local; a worker thread that preprocesses the
+/// selected entry (such as codegen) reinstalls them with `install_entry_type_slots`.
+pub fn entry_type_slots() -> HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> {
+  ENTRY_TYPE_SLOTS.with(|slots| slots.borrow().clone())
+}
+
+/// Replaces this thread's entry-level bindings with ones captured by `entry_type_slots`.
+pub fn install_entry_type_slots(bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>) {
+  ENTRY_TYPE_SLOTS.with(|slots| *slots.borrow_mut() = bindings);
+  super::data_shape::clear_local_field_write_shapes();
+}
+
 /// Look up the type bound to a slot.
 /// Scoped `with-type-slot` overrides take priority, followed by the selected entry configuration.
 pub fn resolve_type_slot(name: &str) -> Option<Arc<CalcitTypeAnnotation>> {
@@ -7399,6 +7411,29 @@ mod tests {
       resolve_type_slot("dispatch-op").as_deref(),
       Some(CalcitTypeAnnotation::TypeRef(path, _)) if path.as_ref() == "app.schema/Op"
     ));
+    clear_type_slots();
+  }
+
+  #[test]
+  fn entry_type_slots_can_be_carried_into_a_worker_thread() {
+    clear_type_slots();
+    let bindings = HashMap::from([("dispatch-op".to_owned(), "app.schema/Op".to_owned())]);
+    configure_entry_type_slots(&bindings).expect("configure entry type slots");
+    let captured = entry_type_slots();
+
+    std::thread::spawn(move || {
+      assert!(
+        resolve_type_slot("dispatch-op").is_none(),
+        "bindings are thread-local until installed"
+      );
+      install_entry_type_slots(captured);
+      assert!(matches!(
+        resolve_type_slot("dispatch-op").as_deref(),
+        Some(CalcitTypeAnnotation::TypeRef(path, _)) if path.as_ref() == "app.schema/Op"
+      ));
+    })
+    .join()
+    .expect("worker thread should resolve the installed slot");
     clear_type_slots();
   }
 
