@@ -229,7 +229,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   同一事务中提交。macro 生成引用、dependency source、quoted data 或缺少 source coordinate 的引用会拒绝整个事务。
 - `rename-local-v1` 是参数化语义重构规则。它要求 `--ns`、`--def`、`--at <binding path>` 与 `--to`，`--at` 指向
   `defn`/`fn` 参数、`let`/`&let` 绑定名或 `loop` 绑定名。规则按 core 绑定形式计算作用域：`let` 按顺序绑定，`loop` 的初始值属于外层，
-  内层同名绑定遮蔽的区域不会改写；每个改写的使用处还必须在预处理结果中解析为局部引用。新名字已在作用域中出现，使用处出现在
+  内层同名绑定遮蔽的区域不会改写；规则预处理改名后的定义，每个改写的使用处都必须解析为新名字的局部引用，因此旧名字已被读成内置 Proc（如 `ref`）的绑定也能迁移。新名字已在作用域中出现，使用处出现在
   quote/quasiquote、项目或依赖 macro 的参数，或会引入绑定的 core macro（如 `->%`、`if-let`、`let{}`）参数中时，整体拒绝并给出位置；
   `when`、`->`、`cond` 等不引入绑定的 core macro 参数照常改写。只改写当前定义的 code，不改 tests/examples。
   绑定本身写在 macro 调用里（如 Respo `defcomp` 的 body 中的 `let`）可以改名；`defcomp` 这类自定义定义 macro 的参数表不被识别为绑定。

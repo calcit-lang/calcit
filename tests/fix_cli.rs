@@ -13332,4 +13332,56 @@ fn rename_local_rewrites_one_binding_and_its_uses_only() {
   let repeated = rename("locals", "3.1.0.0", "total", &[]);
   assert_success(&repeated, "second preview");
   assert_eq!(parse_stdout(&repeated)["data"]["changed"], false);
+
+  // #2049: an old binding name now read as a builtin cannot preprocess before the
+  // rename, so the planner proves the renamed definition instead.
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/builtin-local",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn builtin-local (v)\n  let\n      ref $ &+ v 1\n    &* ref ref",
+      ],
+    ),
+    "create builtin-named local fixture",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "schema",
+        "app.main/builtin-local",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)",
+      ],
+    ),
+    "type builtin-named local fixture",
+  );
+  let builtin = rename("builtin-local", "3.1.0.0", "next", &[]);
+  assert_success(&builtin, "preview rename of a builtin-named local");
+  assert_eq!(paths(&builtin), ["code@3.1.0.0", "code@3.2.1", "code@3.2.2"]);
+  let revision = parse_stdout(&builtin)["revision"].as_str().unwrap().to_owned();
+  assert_success(
+    &rename(
+      "builtin-local",
+      "3.1.0.0",
+      "next",
+      &["--apply", "--expect-revision", &revision, "--allow-no-vcs"],
+    ),
+    "apply rename of a builtin-named local",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only"]),
+    "strict check after builtin-named local rename",
+  );
+  let captured = rename("locals", "3.1.0.0", "b", &[]);
+  assert!(!captured.status.success(), "capture checks still apply after staging");
 }
