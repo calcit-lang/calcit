@@ -368,6 +368,7 @@
       |calcit.core/format-cirru-one-liner#rejects-spread-non-list "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/format-to-lisp#distinguishes-simple-and-quoted-strings "|unsupported: unsupported runtime format-to-lisp in WASM: requires a statically quoted expression"
       |calcit.core/format-to-lisp#formats-runtime-number "|unsupported: unsupported runtime format-to-lisp in WASM: requires a statically quoted expression"
+      |calcit.core/format-to-lisp#uses-the-same-string-display-inside-containers "|unsupported: unsupported runtime format-to-lisp in WASM: requires a statically quoted expression"
       |calcit.core/fs:path#fs-path-contract "|unsupported: reaches `calcit.core/fs-path:write-text`: E_WASI_COMMAND_CAPABILITY: `&fs-write-text` needs a reachable WASI 0.3 filesystem effect"
       |calcit.core/fs:path#write-text-effect-contract "|unsupported: reaches `calcit.core/fs-path:write-text`: E_WASI_COMMAND_CAPABILITY: `&fs-write-text` needs a reachable WASI 0.3 filesystem effect"
       |calcit.core/get#reads-runtime-struct-from-open-value "|unsupported: unsupported runtime quote value in WASM"

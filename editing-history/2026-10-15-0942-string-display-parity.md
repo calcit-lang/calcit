@@ -11,6 +11,6 @@ String 分支，并沿用 native 的字符分类和 `char::escape_default` 转�
 验收放在 `format-to-lisp` 定义的 `:tests`：直接值、List、Map 和 `str` 的容器展示
 覆盖斜线、下划线、空白、引号、反斜线、控制符、中文及非 CJK Unicode。
 使用既有跨后端 runner 验证断言与日志 trace，并重放 Rebase Hell 原六项测试。
-不修改已创建的 alpha.4 tag，不增加 native/JS parity 忽略项。WASM 仍不支持
-运行时 `format-to-lisp`，新测试沿用该已文档化的 unsupported 排除；不宣称完成
-WASM 展示实现。正式消费者验收仍须等待修复发布。
+不修改已创建的 alpha.4 tag，不增加 native/JS parity 忽略项。WASM 与 WASI
+仍不支持运行时 `format-to-lisp`，新测试分别沿用其已文档化的 unsupported
+排除；不宣称完成这两个后端的展示实现。正式消费者验收仍须等待修复发布。
