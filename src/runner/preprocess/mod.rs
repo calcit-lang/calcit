@@ -2051,7 +2051,7 @@ fn try_expand_typed_literal_path_call(
 
   match def.as_ref() {
     "get-in" if args.len() == 2 => {
-      let Some(path) = fully_typed_literal_lookup_path(base_type.as_ref(), path_arg) else {
+      let Some(path) = fully_typed_literal_lookup_path(base_type.as_ref(), path_arg, scope_types) else {
         return Ok(None);
       };
       let base_binding = generated_path_symbol("typed_path_base", file_ns, call_stack)?;

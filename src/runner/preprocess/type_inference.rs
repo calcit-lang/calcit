@@ -15,7 +15,7 @@ use std::{
   collections::{HashMap, HashSet},
 };
 
-use crate::calcit::type_annotation::code_resolves_to_nominal_type_def;
+use crate::calcit::type_annotation::{CallTypeProof, code_resolves_to_nominal_type_def};
 use crate::{
   builtins,
   calcit::{
@@ -1546,8 +1546,13 @@ pub(super) fn find_struct_lookup_in_literal_path(base_type: &CalcitTypeAnnotatio
 /// Return a non-empty literal lookup path when every receiver needed for a
 /// further hop remains statically known. The final payload may be Dynamic
 /// because it is returned rather than traversed. A Struct boundary always
-/// stays on the public fallback.
-pub(super) fn fully_typed_literal_lookup_path(base_type: &CalcitTypeAnnotation, path_arg: &Calcit) -> Option<Vec<Calcit>> {
+/// stays on the public fallback. Generated `get` calls also need independent
+/// key evidence: a path lookup must not specialize the caller's Map key slot.
+pub(super) fn fully_typed_literal_lookup_path(
+  base_type: &CalcitTypeAnnotation,
+  path_arg: &Calcit,
+  scope_types: &ScopeTypes,
+) -> Option<Vec<Calcit>> {
   let path_items = extract_literal_list_items(path_arg)?;
   if path_items.is_empty() || matches!(base_type, CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn) {
     return None;
@@ -1559,6 +1564,18 @@ pub(super) fn fully_typed_literal_lookup_path(base_type: &CalcitTypeAnnotation, 
       || matches!(current_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
     {
       return None;
+    }
+    let expected_key = match current_type.as_ref() {
+      CalcitTypeAnnotation::Map(key_type, _) if matches!(key_type.as_ref(), CalcitTypeAnnotation::Never) => None,
+      CalcitTypeAnnotation::Map(key_type, _) => Some(key_type.clone()),
+      _ => None,
+    };
+    if let Some(expected_key) = expected_key {
+      let actual_key = resolve_type_value(key, scope_types)?;
+      let mut proof = CallTypeProof::new(&[], std::slice::from_ref(&expected_key), std::slice::from_ref(&actual_key));
+      if !proof.prove(actual_key.as_ref(), expected_key.as_ref()).is_proven() {
+        return None;
+      }
     }
     current_type = infer_lookup_payload_type_from_type(current_type.as_ref(), Some(key))?;
   }
@@ -5153,7 +5170,7 @@ mod tests {
       find_struct_lookup_in_literal_path(users_type.as_ref(), &path),
       Some((1, Calcit::Tag(field))) if field.ref_str() == "name"
     ));
-    assert!(fully_typed_literal_lookup_path(users_type.as_ref(), &path).is_none());
+    assert!(fully_typed_literal_lookup_path(users_type.as_ref(), &path, &ScopeTypes::new()).is_none());
     assert!(fully_typed_literal_assoc_path(users_type.as_ref(), &path).is_none());
 
     let empty_path = proc_call(CalcitProc::List, vec![]);
@@ -5163,7 +5180,7 @@ mod tests {
       Some(core_type_ref("Option", vec![user_type.clone()])),
       "an empty path does not access a Struct field"
     );
-    assert!(fully_typed_literal_lookup_path(user_type.as_ref(), &empty_path).is_none());
+    assert!(fully_typed_literal_lookup_path(user_type.as_ref(), &empty_path, &ScopeTypes::new()).is_none());
     assert!(fully_typed_literal_assoc_path(user_type.as_ref(), &empty_path).is_none());
   }
 
@@ -5200,7 +5217,7 @@ mod tests {
     );
 
     assert_eq!(
-      fully_typed_literal_lookup_path(nested_map.as_ref(), &path).map(|xs| xs.len()),
+      fully_typed_literal_lookup_path(nested_map.as_ref(), &path, &ScopeTypes::new()).map(|xs| xs.len()),
       Some(2)
     );
     assert_eq!(
@@ -5209,14 +5226,35 @@ mod tests {
     );
 
     let dynamic_map = CalcitTypeAnnotation::Map(tag_annotation("tag"), calcit::DYNAMIC_TYPE.clone());
-    assert!(fully_typed_literal_lookup_path(&dynamic_map, &path).is_none());
+    assert!(fully_typed_literal_lookup_path(&dynamic_map, &path, &ScopeTypes::new()).is_none());
     assert!(fully_typed_literal_assoc_path(&dynamic_map, &path).is_none());
     let one_step_path = proc_call(CalcitProc::List, vec![Calcit::Tag(EdnTag::from("user"))]);
-    assert!(fully_typed_literal_lookup_path(&dynamic_map, &one_step_path).is_some());
+    assert!(fully_typed_literal_lookup_path(&dynamic_map, &one_step_path, &ScopeTypes::new()).is_some());
     assert!(fully_typed_literal_assoc_path(&dynamic_map, &one_step_path).is_none());
 
+    // Eligibility is a compiler invariant, not a new public key restriction.
+    // In particular, an optimizer cannot bind a lexical caller variable.
+    for key_type in [
+      Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("StateKey"))),
+      Arc::new(CalcitTypeAnnotation::String),
+      Arc::new(CalcitTypeAnnotation::Number),
+    ] {
+      let receiver = CalcitTypeAnnotation::Map(key_type, calcit::DYNAMIC_TYPE.clone());
+      assert!(fully_typed_literal_lookup_path(&receiver, &one_step_path, &ScopeTypes::new()).is_none());
+    }
+    let empty_map = CalcitTypeAnnotation::Map(
+      crate::calcit::type_annotation::NEVER_TYPE.clone(),
+      crate::calcit::type_annotation::NEVER_TYPE.clone(),
+    );
+    assert!(fully_typed_literal_lookup_path(&empty_map, &one_step_path, &ScopeTypes::new()).is_some());
+
+    let caller_key = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("StateKey")));
+    let generic_map = CalcitTypeAnnotation::Map(caller_key.clone(), calcit::DYNAMIC_TYPE.clone());
+    let generic_path = proc_call(CalcitProc::List, vec![local("key", caller_key)]);
+    assert!(fully_typed_literal_lookup_path(&generic_map, &generic_path, &ScopeTypes::new()).is_some());
+
     let string_path = proc_call(CalcitProc::List, vec![Calcit::Number(0.0)]);
-    assert!(fully_typed_literal_lookup_path(&CalcitTypeAnnotation::String, &string_path).is_some());
+    assert!(fully_typed_literal_lookup_path(&CalcitTypeAnnotation::String, &string_path, &ScopeTypes::new()).is_some());
     assert!(fully_typed_literal_assoc_path(&CalcitTypeAnnotation::String, &string_path).is_none());
   }
 

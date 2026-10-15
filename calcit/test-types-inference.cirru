@@ -153,25 +153,6 @@
               assert= true $ try (infer-match-raise false)
                 fn (error) (= error |missing)
             :tags $ #{} :unit
-        'infer-option-presence-without-nil $ %{} 'CodeEntry (:doc "|Option presence is checked with methods or match, not by comparing with nil.")
-          :code $ quote $ defn infer-option-presence-without-nil (enabled)
-            let
-                value $ if enabled (Option :some 1) (Option :none)
-              match value
-                (:some n) n
-                (:none) 0
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Bool
-          :tests $ [] $ %{} 'TestEntry (:name |option-presence-without-nil)
-            :code $ quote $ do
-              assert= 1 $ infer-option-presence-without-nil true
-              assert= 0 $ infer-option-presence-without-nil false
-              assert= true $ .some? (Option :some 1)
-              assert= true $ .none? (Option :none)
-              assert= 7 $ .unwrap-or (Option :none) 7
-              assert= 1 $ .unwrap-or (Option :some 1) 7
-            :tags $ #{} :unit
         'infer-named-none-fallback $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-named-none-fallback ()
             option:unwrap-or (Option :none) 7
@@ -227,6 +208,26 @@
             :args $ []
           :tests $ [] $ %{} 'TestEntry (:name |predicate-contract)
             :code $ quote $ assert= false (infer-option-none-predicate)
+            :tags $ #{} :unit
+        'infer-option-presence-without-nil $ %{} 'CodeEntry
+          :doc "|Option presence is checked with methods or match, not by comparing with nil."
+          :code $ quote $ defn infer-option-presence-without-nil (enabled)
+            let
+                value $ if enabled (Option :some 1) (Option :none)
+              match value
+                (:some n) n
+                (:none) 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Bool
+          :tests $ [] $ %{} 'TestEntry (:name |option-presence-without-nil)
+            :code $ quote $ do
+              assert= 1 $ infer-option-presence-without-nil true
+              assert= 0 $ infer-option-presence-without-nil false
+              assert= true $ .some? $ Option :some 1
+              assert= true $ .none? $ Option :none
+              assert= 7 $ .unwrap-or (Option :none) 7
+              assert= 1 $ .unwrap-or (Option :some 1) 7
             :tags $ #{} :unit
         'infer-option-some-predicate $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-option-some-predicate ()
@@ -324,6 +325,65 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
+        'read-state-metadata $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-state-metadata (states)
+            get-in states $ [] :data
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Map 'K 'V
+            :generics $ [] 'K 'V
+            :return $ :: 'Option 'V
+          :tests $ []
+            %{} 'TestEntry (:name |present-payloads-preserve-values)
+              :code $ quote $ do
+                assert= (Option :some false)
+                  read-state-metadata $ {} $ :data false
+                assert= (Option :some 0)
+                  read-state-metadata $ {} $ :data 0
+                assert= (Option :some |)
+                  read-state-metadata $ {} $ :data |
+                assert=
+                  Option :some $ [] :root |board 7
+                  read-state-metadata $ {} $ :data ([] :root |board 7)
+                , &unit
+              :tags $ #{} :generic-metadata-path :unit
+            %{} 'TestEntry (:name |unrelated-keys-are-absent)
+              :code $ quote $ do
+                assert= (Option :none)
+                  read-state-metadata $ {} $ 1 |value
+                assert= (Option :none)
+                  read-state-metadata $ {} $ |data |value
+                assert= (Option :none)
+                  read-state-metadata $ {}
+                , &unit
+              :tags $ #{} :generic-metadata-path :unit
+            %{} 'TestEntry (:name |nil-path-payload-stays-absent)
+              :code $ quote $ assert= (Option :none)
+                read-state-metadata $ {} $ :data nil
+              :tags $ #{} :generic-metadata-path :unit
+            %{} 'TestEntry (:name |generic-payload-remains-precise)
+              :code $ quote $ let
+                  value $ read-state-metadata $ {} (:data 7)
+                assert-type value $ :: 'Option 'Number
+                assert= (Option :some 7) value
+              :tags $ #{} :generic-metadata-path :unit
+            %{} 'TestEntry (:name |concrete-mismatching-path-is-absent)
+              :code $ quote $ assert= (Option :none)
+                get-in
+                  {} $ 1 |value
+                  [] :data
+              :tags $ #{} :generic-metadata-path :unit
+            %{} 'TestEntry (:name |path-inputs-evaluate-once)
+              :code $ quote $ let
+                  calls $ atom 0
+                  base $ fn () (swap! calls inc)
+                    {} $ :data 7
+                  key $ fn () (swap! calls inc) :data
+                assert= (Option :some 7)
+                  get-in (base)
+                    [] $ key
+                assert= 2 @calls
+              :tags $ #{} :generic-metadata-path :unit
         'recur-types-safe $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn recur-types-safe (person index)
             if (>= index 2) index $ recur person $ inc index

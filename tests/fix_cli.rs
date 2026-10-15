@@ -5994,6 +5994,119 @@ fn strict_workflow_accepts_map_contains_and_rejects_a_tag_list_index() {
   assert!(!rejected.status.success(), "a Tag index on a List must stay rejected");
 }
 
+#[test]
+fn strict_workflow_preserves_generic_metadata_path_contracts() {
+  // Calcit :tests own value semantics. Rust checks the CLI proof envelope and
+  // read-only verification, including generated-call evidence after lowering (#1553).
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/wasi-command-03-exit.cirru", &snapshot).unwrap();
+  for args in [
+    vec![
+      "edit",
+      "def",
+      "app.main/read-state-metadata",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn read-state-metadata (states) $ get-in states $ [] :data",
+    ],
+    vec![
+      "edit",
+      "schema",
+      "app.main/read-state-metadata",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ :: 'Fn $ {} (:generics $ [] 'K 'V) (:args $ [] $ :: 'Map 'K 'V) (:return $ :: 'Option 'V)",
+    ],
+    vec![
+      "edit",
+      "def",
+      "app.main/main!",
+      "--overwrite",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn main! () (read-state-metadata $ {} (:data 0)) (read-state-metadata $ {} (1 |value)) (, &unit)",
+    ],
+  ] {
+    assert_success(&run_calcit(&snapshot, &args), "install generic metadata proof fixture");
+  }
+  let before = fs::read(&snapshot).unwrap();
+  for args in [
+    vec![
+      "--rule",
+      "callable-contract-proof-v1",
+      "--ns",
+      "app.main",
+      "--def",
+      "read-state-metadata",
+      "--format",
+      "json",
+    ],
+    vec!["--workflow", "strict", "--verify", "--format", "json"],
+  ] {
+    let output = run_fix(&snapshot, &args);
+    assert_success(&output, "generic metadata read retains its independent path contract");
+    let report = parse_stdout(&output);
+    assert_eq!(report["diagnostics"], serde_json::json!([]));
+    if args[0] == "--workflow" {
+      assert_eq!(report["data"]["workflow"]["status"], "passed");
+      let results = report["data"]["workflow"]["verification"]["results"].as_array().unwrap();
+      assert!(!results.is_empty());
+      for result in results {
+        assert_eq!(result["status"], "passed");
+        assert_eq!(result["report"]["data"]["status"], "passed");
+        assert_eq!(result["report"]["diagnostics"], serde_json::json!([]));
+      }
+    }
+    assert_eq!(
+      fs::read(&snapshot).unwrap(),
+      before,
+      "proof and verification leave source unchanged"
+    );
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/read-state-metadata",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn read-state-metadata (states) $ get states :data",
+      ],
+    ),
+    "replace the path query with a direct, key-constrained lookup",
+  );
+  let direct = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "callable-contract-proof-v1",
+      "--ns",
+      "app.main",
+      "--def",
+      "read-state-metadata",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!direct.status.success(), "direct get must still reject an unproven generic key");
+  let report = parse_stdout(&direct);
+  assert!(
+    report["diagnostics"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .any(|diagnostic| diagnostic["code"] == "E_CALL_ARGUMENT_UNPROVEN")
+  );
+}
+
 /// #2086: an inline callback over a `map?`-narrowed open value must not keep the
 /// callee's raw generic names as its parameter types. Covers core `tagging-edn`
 /// and a user-written identity callback through the same strict workflow.
