@@ -1,3 +1,4 @@
+use crate::builtins::option_value;
 use core::cmp::Ordering;
 use std::cell::RefCell;
 use std::sync::Arc;
@@ -121,12 +122,9 @@ pub fn last(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     Calcit::List(ys) => {
       let n = ys.len();
       if n == 0 {
-        Ok(Calcit::Nil)
+        option_value::none()
       } else {
-        match ys.get(n - 1) {
-          Some(v) => Ok((*v).to_owned()),
-          None => Ok(Calcit::Nil),
-        }
+        option_value::from_lookup(ys.get(n - 1).map(|v| (*v).to_owned()))
       }
     }
     a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:last expected a list, but received: {a}")),
@@ -707,9 +705,9 @@ pub fn first(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match &xs[0] {
     Calcit::List(ys) => {
       if ys.is_empty() {
-        Ok(Calcit::Nil)
+        option_value::none()
       } else {
-        Ok((ys[0]).to_owned())
+        option_value::some((ys[0]).to_owned())
       }
     }
     a => CalcitErr::err_str(CalcitErrKind::Type, format!("&list:first expected a list, but received: {a}")),

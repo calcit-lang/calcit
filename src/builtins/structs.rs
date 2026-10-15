@@ -1,3 +1,4 @@
+use crate::builtins::option_value;
 use std::collections::HashMap;
 use std::ops::Rem;
 use std::sync::Arc;
@@ -1071,8 +1072,8 @@ pub fn get_struct_def(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
     );
   }
   match &xs[0] {
-    Calcit::Struct(value) if value.is_anonymous() => Ok(Calcit::Nil),
-    Calcit::Struct(CalcitStructValue { struct_ref, .. }) => Ok(Calcit::StructDef(struct_ref.as_ref().to_owned())),
+    Calcit::Struct(value) if value.is_anonymous() => option_value::none(),
+    Calcit::Struct(CalcitStructValue { struct_ref, .. }) => option_value::some(Calcit::StructDef(struct_ref.as_ref().to_owned())),
     a => {
       let msg = format!(
         "&struct:definition requires a struct value, but received: {}",

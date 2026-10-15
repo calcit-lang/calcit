@@ -540,7 +540,7 @@
                     if (&> v 1)
                       %:: MapEntryDecision :keep k $ &* v 10
                       %:: MapEntryDecision :drop
-              &+ (&map:count output) (&map:get output :c)
+              &+ (&map:count output) (option:unwrap $ &map:get output :c)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -938,7 +938,7 @@
           :code $ quote $ defwasm-export test-map-bucket-update (a b)
             &let
               m $ &map:assoc (&{} a 10 b 20) b 99
-              &+ (&map:get m a) (&map:get m b)
+              &+ (option:unwrap $ &map:get m a) (option:unwrap $ &map:get m b)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
@@ -996,7 +996,7 @@
             :args $ []
         'test-map-get $ %{} 'CodeEntry (:doc "|map get by key")
           :code $ quote $ defwasm-export test-map-get ()
-            &map:get (&{} :a 10 :b 20 :c 30) :b
+            option:unwrap $ &map:get (&{} :a 10 :b 20 :c 30) :b
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
@@ -1052,7 +1052,7 @@
             :args $ []
         'test-map-merge-method $ %{} 'CodeEntry (:doc "|typed Map .merge keeps later-key precedence")
           :code $ quote $ defwasm-export test-map-merge-method ()
-            &map:get
+            option:unwrap $ &map:get
                 &{} :a 1 :b 2
                 , .merge (&{} :b 3) (&{} :b 99)
               , :b
@@ -1061,7 +1061,7 @@
             :args $ []
         'test-map-merge-value $ %{} 'CodeEntry (:doc "|merge override check via get")
           :code $ quote $ defwasm-export test-map-merge-value ()
-            &map:get
+            option:unwrap $ &map:get
               &merge (&{} :a 1 :b 2) (&{} :b 99)
               , :b
           :examples $ []
@@ -1071,7 +1071,7 @@
           :code $ quote $ defwasm-export test-map-two-keys-sum (a b)
             &let
               m $ &{} a 10 b 20
-              &+ (&map:get m a) (&map:get m b)
+              &+ (option:unwrap $ &map:get m a) (option:unwrap $ &map:get m b)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number 'Number
@@ -1607,7 +1607,7 @@
         'test-str-nth $ %{} 'CodeEntry (:doc "|nth character at index 1 of hello is e")
           :code $ quote $ defwasm-export test-str-nth ()
             if
-              = (&str:nth |hello 1) |e
+              = (option:unwrap $ &str:nth |hello 1) |e
               , 1 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -1667,7 +1667,7 @@
                   = (&hash oa) (&hash ob)
                   = (&hash -0) (&hash 0)
                   =
-                    &map:get (&{} -1 8) -1
+                    option:unwrap $ &map:get (&{} -1 8) -1
                     , 8
                 , 1 0
           :examples $ []
@@ -1723,7 +1723,7 @@
             &let
               point $ %{} Point (:x 1) (:y 2)
               if
-                &= (&struct:definition point) Point
+                &= (option:unwrap $ &struct:definition point) Point
                 , 1 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -1818,7 +1818,7 @@
                   = (:x point) 1
                   = (:z different) 3
                   =
-                    &map:get (&struct:to-map different) :z
+                    option:unwrap $ &map:get (&struct:to-map different) :z
                     , 3
                   = (&struct:get-name different) :Point
                   not $ .contains-field? different :x
@@ -1838,8 +1838,8 @@
                 m $ &{} a 10 other 20
               if
                 and
-                  = (&map:get m b) 10
-                  = (&map:get m other) 20
+                  = (option:unwrap $ &map:get m b) 10
+                  = (option:unwrap $ &map:get m other) 20
                 , 1 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
@@ -1887,7 +1887,7 @@
               point $ %{} Point (:x 1) (:y 2)
               &let
                 m $ &struct:to-map point
-                &+ (&map:get m :x) (&map:get m :y)
+                &+ (option:unwrap $ &map:get m :x) (option:unwrap $ &map:get m :y)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []

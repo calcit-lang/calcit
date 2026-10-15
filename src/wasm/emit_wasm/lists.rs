@@ -85,23 +85,38 @@ pub(super) fn emit_list_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
   Ok(())
 }
 
-/// `&list:first list` — first element.
+/// `&list:first list` — `Option :some first`, or `Option :none` for an empty list.
 pub(super) fn emit_list_first(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "&list:first expects 1 arg")?;
-  emit_expr(ctx, &args[0])?;
-  ctx.emit(Instruction::I32TruncF64U);
+  let src = emit_ptr_to_i32(ctx, &args[0])?;
+  let count = emit_load_count_i32(ctx, src);
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_option_enum(ctx, None)?;
+  ctx.emit(Instruction::Else);
+  let value = ctx.alloc_local();
+  ctx.emit(Instruction::LocalGet(src));
   ctx.emit(Instruction::F64Load(mem_arg_f64(8)));
+  ctx.emit(Instruction::LocalSet(value));
+  emit_option_enum(ctx, Some(value))?;
+  ctx.emit(Instruction::End);
   Ok(())
 }
 
-/// `&list:last list` — last element of a list.
+/// `&list:last list` — `Option :some last`, or `Option :none` for an empty list.
 pub(super) fn emit_list_last(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "&list:last expects 1 arg")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src);
+  ctx.emit(Instruction::LocalGet(count));
+  ctx.emit(Instruction::I32Eqz);
+  ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+  emit_option_enum(ctx, None)?;
+  ctx.emit(Instruction::Else);
   // last element is at src + 8 + (count-1)*8
   let last_idx = ctx.i32_offset(count, -1);
-  // addr = src + 8 + last_idx * 8
+  let value = ctx.alloc_local();
   ctx.emit(Instruction::LocalGet(src));
   ctx.emit(Instruction::I32Const(8));
   ctx.emit(Instruction::I32Add);
@@ -110,6 +125,9 @@ pub(super) fn emit_list_last(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<()
   ctx.emit(Instruction::I32Mul);
   ctx.emit(Instruction::I32Add);
   ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(value));
+  emit_option_enum(ctx, Some(value))?;
+  ctx.emit(Instruction::End);
   Ok(())
 }
 

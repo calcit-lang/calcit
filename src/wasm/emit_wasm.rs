@@ -7585,20 +7585,10 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     // Static quoted expressions can be formatted without runtime reflection.
     CalcitProc::FormatToLisp => emit_format_to_lisp(ctx, args),
     CalcitProc::GetEnv => {
-      if !(1..=2).contains(&args.len()) {
-        return Err(format!("get-env expects 1~2 args, got {}", args.len()));
-      }
+      expect_arity(1, args, "&get-env")?;
       emit_expr(ctx, &args[0])?;
       let name = ctx.alloc_local();
       ctx.emit(Instruction::LocalSet(name));
-      let default = if let Some(default) = args.get(1) {
-        emit_expr(ctx, default)?;
-        let value = ctx.alloc_local();
-        ctx.emit(Instruction::LocalSet(value));
-        Some(value)
-      } else {
-        None
-      };
       match ctx.target {
         WasmTarget::Core => {
           ctx.emit(Instruction::LocalGet(name));
@@ -7610,18 +7600,17 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
           ctx.call_rt("__rt_wasi_get_env");
         }
       }
-      if let Some(default) = default {
-        let value = ctx.alloc_local();
-        ctx.emit(Instruction::LocalSet(value));
-        ctx.emit(Instruction::LocalGet(value));
-        ctx.emit(f64_const(0.0));
-        ctx.emit(Instruction::F64Eq);
-        ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
-        ctx.emit(Instruction::LocalGet(default));
-        ctx.emit(Instruction::Else);
-        ctx.emit(Instruction::LocalGet(value));
-        ctx.emit(Instruction::End);
-      }
+      // The host reports a missing variable as 0.0; present text (even empty) is a heap pointer.
+      let value = ctx.alloc_local();
+      ctx.emit(Instruction::LocalSet(value));
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.emit(f64_const(0.0));
+      ctx.emit(Instruction::F64Eq);
+      ctx.emit(Instruction::If(wasm_encoder::BlockType::Result(ValType::F64)));
+      emit_option_enum(ctx, None)?;
+      ctx.emit(Instruction::Else);
+      emit_option_enum(ctx, Some(value))?;
+      ctx.emit(Instruction::End);
       Ok(())
     }
     CalcitProc::GetArgs => {

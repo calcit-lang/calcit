@@ -5,6 +5,7 @@ mod logics;
 mod maps;
 mod math;
 pub mod meta;
+pub(crate) mod option_value;
 #[cfg(test)]
 mod proc_panic_tests;
 mod refs;

@@ -52,6 +52,7 @@ import { CalcitList, CalcitSliceList, foldl } from "./js-list.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet } from "./js-set.mjs";
 import { CalcitEnumValue } from "./js-enum-value.mjs";
+import { option_none, option_some } from "./js-option-value.mjs";
 import { to_calcit_data, extract_cirru_edn, extract_cirru_edn_for_typed, CalcitCirruQuote } from "./js-cirru.mjs";
 import { TypedEdnSetView } from "./typed-edn.mjs";
 import { FingerVec } from "@calcit/finger-vec";
@@ -669,8 +670,8 @@ export let _$n_set_$o_includes_$q_ = (xs: CalcitValue, x: CalcitValue): boolean 
   throw new Error("set includes? expected a set");
 };
 
-export let _$n_str_$o_nth = function (xs: CalcitValue, k: CalcitValue) {
-  if (arguments.length !== 2) throw new Error("nth takes 2 arguments");
+/** Scalar at `k`, or `null` when `k` is past the end (callers decide how absence is reported). */
+const strNthOrNull = (xs: CalcitValue, k: CalcitValue): string | null => {
   checkStringIndex(k);
 
   if (typeof xs === "string") {
@@ -680,6 +681,12 @@ export let _$n_str_$o_nth = function (xs: CalcitValue, k: CalcitValue) {
   }
 
   throw new Error("Does not support `nth` on this type");
+};
+
+export let _$n_str_$o_nth = function (xs: CalcitValue, k: CalcitValue) {
+  if (arguments.length !== 2) throw new Error("nth takes 2 arguments");
+  const scalar = strNthOrNull(xs, k);
+  return scalar === null ? option_none() : option_some(scalar);
 };
 
 export let _$n_list_$o_nth = function (xs: CalcitValue, k: CalcitValue) {
@@ -760,9 +767,9 @@ export let _$n_enum_$o_definition = function (x: CalcitEnumValue) {
   if (arguments.length !== 1) throw new Error("&enum:definition takes 1 argument");
   if (!(x instanceof CalcitEnumValue)) throw new Error("&enum:definition expects an enum value");
   if (x.enumPrototype == null) {
-    return null;
+    return option_none();
   }
-  return x.enumPrototype;
+  return option_some(x.enumPrototype);
 };
 
 const unwrap_enum_prototype = (enumPrototype: CalcitValue, procName: string): CalcitStructValue => {
@@ -917,7 +924,7 @@ export let _$n_enum_def_$o_impl_traits = function (xs: CalcitValue, ...traits: C
 export let _$n_impl_$o_origin = function (impl: CalcitValue): CalcitValue {
   if (arguments.length !== 1) throw new Error("&impl:origin expected 1 argument");
   if (impl instanceof CalcitImpl) {
-    return impl.origin ?? null;
+    return impl.origin == null ? option_none() : option_some(impl.origin);
   }
   throw new Error(`&impl:origin expected an impl, but received: ${toString(impl, true)}`);
 };
@@ -1102,9 +1109,9 @@ export function _$n_set_$o_empty_$q_(xs: CalcitValue): boolean {
 export let _$n_list_$o_first = (xs: CalcitValue): CalcitValue => {
   if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {
     if (xs.isEmpty()) {
-      return null;
+      return option_none();
     }
-    return xs.first();
+    return option_some(xs.first());
   }
   console.error(xs);
   throw new Error("Expected a list");
@@ -1113,9 +1120,9 @@ export let _$n_list_$o_first = (xs: CalcitValue): CalcitValue => {
 export let _$n_list_$o_last = (xs: CalcitValue): CalcitValue => {
   if (xs instanceof CalcitList || xs instanceof CalcitSliceList) {
     if (xs.isEmpty()) {
-      return null;
+      return option_none();
     }
-    return xs.get(xs.len() - 1);
+    return option_some(xs.get(xs.len() - 1));
   }
   console.error(xs);
   throw new Error("Expected a list");
@@ -1135,9 +1142,9 @@ export let _$n_map_$o_destruct = (xs: CalcitValue): CalcitValue => {
     if (xs.len() > 0) {
       let pair = xs.pairs()[0];
       let k0 = pair[0];
-      return new CalcitSliceList([pair[0], pair[1], xs.dissoc(k0)]);
+      return option_some(new CalcitSliceList([pair[0], pair[1], xs.dissoc(k0)]));
     } else {
-      return null;
+      return option_none();
     }
   }
   console.error(xs);
@@ -1145,7 +1152,10 @@ export let _$n_map_$o_destruct = (xs: CalcitValue): CalcitValue => {
 };
 
 export let _$n_set_$o_destruct = (xs: CalcitValue): CalcitValue => {
-  if (xs instanceof CalcitSet) return xs.destruct();
+  if (xs instanceof CalcitSet) {
+    const parts = xs.destruct();
+    return parts == null ? option_none() : option_some(parts);
+  }
 
   console.error(xs);
   throw new Error("Expect a set");
@@ -1213,7 +1223,7 @@ export let last = (xs: CalcitValue): CalcitValue => {
     return xs.get(xs.len() - 1);
   }
   if (typeof xs === "string") {
-    return _$n_str_$o_nth(xs, Math.max(0, _$n_str_$o_count(xs) - 1));
+    return strNthOrNull(xs, Math.max(0, _$n_str_$o_count(xs) - 1));
   }
   console.error(xs);
   throw new Error("Data not ready for last");
@@ -1608,14 +1618,14 @@ export let _$n_str_$o_find_index = (x: string, y: string): number => {
   return scalar;
 };
 
-export let _$n_parse_float = (x: string): number | null => {
-  if (/^[+-]?nan$/i.test(x)) return NaN;
-  if (/^[+-]?(?:inf|infinity)$/i.test(x)) return x.startsWith("-") ? -Infinity : Infinity;
+export let _$n_parse_float = (x: string): CalcitValue => {
+  if (/^[+-]?nan$/i.test(x)) return option_some(NaN);
+  if (/^[+-]?(?:inf|infinity)$/i.test(x)) return option_some(x.startsWith("-") ? -Infinity : Infinity);
   if (!/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$/.test(x)) {
-    return null;
+    return option_none();
   }
   const value = Number(x);
-  return Number.isNaN(value) ? null : value;
+  return Number.isNaN(value) ? option_none() : option_some(value);
 };
 export let trim = (x: string, c: string): string => {
   if (c != null) {
@@ -1696,7 +1706,7 @@ export let js_delete = (obj: any, name: string): any => {
   return delete obj[name];
 };
 
-export let _$n_get_env = (name: string, v0?: CalcitValue): CalcitValue => {
+export let _$n_get_env = (name: string): CalcitValue => {
   let v = undefined;
   if (inNodeJs) {
     // only available for Node.js
@@ -1704,13 +1714,10 @@ export let _$n_get_env = (name: string, v0?: CalcitValue): CalcitValue => {
   } else if (typeof URLSearchParams != null && typeof location != null) {
     v = new URLSearchParams(location.search).get(name);
   }
-  if (v != null && v0 != null) {
-    console.log(`(get-env ${name}): ${v}`);
+  if (v == null) {
+    return option_none();
   }
-  if (v == null && v0 == null) {
-    console.warn(`(get-env "${name}"): config not found`);
-  }
-  return v ?? v0 ?? null;
+  return option_some(v);
 };
 
 // Keep already-emitted JS bundles loadable across the nominal Option migration.

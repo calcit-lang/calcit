@@ -114,7 +114,7 @@ Use `&set:destruct` to destructure sets:
 
 ```cirru
 &set:destruct (#{} :a :b :c)
-; Returns a list of elements
+; Returns (Option :some ([] first-element rest-set)); an empty set gives (Option :none)
 ```
 
 ## Common Use Cases

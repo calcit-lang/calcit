@@ -37,7 +37,7 @@ assert= |😀中 $ .slice |A😀中文 1 3
 assert= 2 $ count |é
 ```
 
-公开读取返回 `Option<String>`；底层 `&str:first` / `&str:nth` 在空串或超范围时返回 nil。`&str:contains?` 判断索引是否存在，不判断子串。底层索引须是非负整数，负数、小数及非有限数会报错；公开 `nth`/`get` 的既有边界 guard 对负数或超范围位置返回 `Option :none`，不把范围内的小数截断为整数。切片采用左闭右开区间，超出末尾时截到末尾，反向或空区间返回空串。
+公开读取返回 `Option<String>`；底层 `&str:first` / `&str:nth` 同样返回 `Option<String>`，在空串或超范围时返回 `Option :none`。`&str:contains?` 判断索引是否存在，不判断子串。底层索引须是非负整数，负数、小数及非有限数会报错；公开 `nth`/`get` 的既有边界 guard 对负数或超范围位置返回 `Option :none`，不把范围内的小数截断为整数。切片采用左闭右开区间，超出末尾时截到末尾，反向或空区间返回空串。
 
 0.23 的这项 JS 修复无需源码迁移；不要在应用中通过 UTF-16 偏移补偿 emoji 长度。内部使用无字符数组分配的标量扫描，ASCII/BMP 有快速路径。JS FFI 传入的孤立 surrogate 不是合法 Unicode 标量，不在本次跨 backend 保证范围内。
 

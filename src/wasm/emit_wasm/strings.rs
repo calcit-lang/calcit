@@ -318,17 +318,20 @@ pub(super) fn emit_str_nth(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), 
   ctx.emit(Instruction::LocalGet(len));
   ctx.emit(Instruction::I32GeU);
   ctx.emit(Instruction::If(BlockType::Result(ValType::F64)));
-  ctx.emit(Instruction::F64Const(Ieee64::from(0.0f64)));
+  emit_option_enum(ctx, None)?;
   ctx.emit(Instruction::Else);
 
   let end = ctx.i32_offset(start, 0);
   emit_str_advance_scalar(ctx, ptr, len, end);
   emit_str_copy_range(ctx, ptr, start, end);
+  let value = ctx.alloc_local();
+  ctx.emit(Instruction::LocalSet(value));
+  emit_option_enum(ctx, Some(value))?;
   ctx.emit(Instruction::End);
   Ok(())
 }
 
-/// `&str:first str` — first scalar as a string, or nil.
+/// `&str:first str` — first scalar as `Option :some`, or `Option :none` for an empty string.
 pub(super) fn emit_str_first(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "&str:first")?;
   emit_str_nth(ctx, &[args[0].clone(), Calcit::Number(0.0)])
@@ -1504,11 +1507,25 @@ pub(super) fn emit_get_char_code(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resul
   Ok(())
 }
 
-/// `parse-float` — parse a decimal string to f64.
+/// `&parse-float` — `Option :some number` for a float literal, `Option :none` otherwise.
 pub(super) fn emit_parse_float(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(1, args, "parse-float")?;
+  expect_arity(1, args, "&parse-float")?;
   emit_expr(ctx, &args[0])?;
+  let text = ctx.alloc_local();
+  ctx.emit(Instruction::LocalSet(text));
+  ctx.emit(Instruction::LocalGet(text));
+  ctx.call_rt("__rt_parse_float_valid");
+  ctx.emit(f64_const(0.0));
+  ctx.emit(Instruction::F64Ne);
+  ctx.emit(Instruction::If(BlockType::Result(ValType::F64)));
+  ctx.emit(Instruction::LocalGet(text));
   ctx.call_rt("__rt_parse_float");
+  let value = ctx.alloc_local();
+  ctx.emit(Instruction::LocalSet(value));
+  emit_option_enum(ctx, Some(value))?;
+  ctx.emit(Instruction::Else);
+  emit_option_enum(ctx, None)?;
+  ctx.emit(Instruction::End);
   Ok(())
 }
 

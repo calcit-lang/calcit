@@ -401,12 +401,12 @@
                 without-two $ &map:dissoc strings "|two words"
               assert= true $ result:ok? tags-result
               assert= 2 $ count tags
-              assert= |one $ &map:get tags :a
-              assert= "|two words" $ &map:get tags :b
+              assert= |one $ option:unwrap $ &map:get tags :a
+              assert= "|two words" $ option:unwrap $ &map:get tags :b
               assert= true $ result:ok? strings-result
               assert= 2 $ count strings
-              assert= 2 $ &map:get strings "|two words"
-              assert= -3 $ &map:get strings |tail
+              assert= 2 $ option:unwrap $ &map:get strings "|two words"
+              assert= -3 $ option:unwrap $ &map:get strings |tail
               assert= 1 $ count without-two
               assert= false $ &map:contains? without-two "|two words"
               assert= true $ result:err? $ edn-parse-tag-string-map "|{} (:a"
@@ -624,7 +624,7 @@
         'edn-transform-count-map $ %{} 'CodeEntry (:doc "|递增有类型计数并显式保留 Int32 越界错误。")
           :code $ quote $ defn edn-transform-count-map (data)
             let
-                next-count $ &+ (&map:get data |count) 1
+                next-count $ &+ (option:unwrap $ &map:get data |count) 1
                 refinement :int32
               if (&number:fits? next-count refinement)
                 %ok $ &map:assoc data |processed $ assert-type next-count 'Int32

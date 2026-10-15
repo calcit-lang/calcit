@@ -573,19 +573,16 @@ fn map_of(key: Arc<CalcitTypeAnnotation>, value: Arc<CalcitTypeAnnotation>) -> A
   Arc::new(CalcitTypeAnnotation::Map(key, value))
 }
 
-fn optional_tag(name: &str) -> Arc<CalcitTypeAnnotation> {
-  Arc::new(CalcitTypeAnnotation::Optional(tag_type(name)))
+/// Nominal `calcit.core/Option<T>` (#1554): absence-returning primitives return `Option :none`, never nil.
+fn option_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  Arc::new(CalcitTypeAnnotation::TypeRef(
+    Arc::from("calcit.core/Option"),
+    Arc::new(vec![inner]),
+  ))
 }
 
-fn optional_of(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
-  match inner.as_ref() {
-    CalcitTypeAnnotation::Optional(_) => inner,
-    _ => Arc::new(CalcitTypeAnnotation::Optional(inner)),
-  }
-}
-
-fn optional_dynamic() -> Arc<CalcitTypeAnnotation> {
-  Arc::new(CalcitTypeAnnotation::Optional(dynamic_tag()))
+fn option_tag(name: &str) -> Arc<CalcitTypeAnnotation> {
+  option_of(tag_type(name))
 }
 
 fn dynamic_tag() -> Arc<CalcitTypeAnnotation> {
@@ -872,7 +869,7 @@ impl CalcitProc {
         arg_types: vec![dynamic_tag()],
       }),
       ParseFloat => Some(ProcTypeSignature {
-        return_type: optional_tag("number"),
+        return_type: option_tag("number"),
         arg_types: vec![some_tag("string")],
       }),
       IsBlank => Some(ProcTypeSignature {
@@ -920,11 +917,11 @@ impl CalcitProc {
         arg_types: vec![some_tag("string"), some_tag("string")],
       }),
       NativeStrNth => Some(ProcTypeSignature {
-        return_type: optional_tag("string"),
+        return_type: option_tag("string"),
         arg_types: vec![some_tag("string"), some_tag("number")],
       }),
       NativeStrFirst => Some(ProcTypeSignature {
-        return_type: optional_tag("string"),
+        return_type: option_tag("string"),
         arg_types: vec![some_tag("string")],
       }),
       NativeStrRest => Some(ProcTypeSignature {
@@ -999,7 +996,7 @@ impl CalcitProc {
         arg_types: vec![list_of(type_var("T")), some_tag("number")],
       }),
       NativeListFirst => Some(ProcTypeSignature {
-        return_type: optional_of(type_var("T")),
+        return_type: option_of(type_var("T")),
         arg_types: vec![list_of(type_var("T"))],
       }),
       NativeListRest => Some(ProcTypeSignature {
@@ -1023,8 +1020,8 @@ impl CalcitProc {
         arg_types: vec![some_tag("list")],
       }),
       NativeListLast => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![some_tag("list")],
+        return_type: option_of(type_var("T")),
+        arg_types: vec![list_of(type_var("T"))],
       }),
       // === BufList operations ===
       NativeBufListNew => Some(ProcTypeSignature {
@@ -1097,8 +1094,8 @@ impl CalcitProc {
         ],
       }),
       NativeMapGet => Some(ProcTypeSignature {
-        return_type: dynamic_tag(),
-        arg_types: vec![some_tag("map"), dynamic_tag()],
+        return_type: option_of(type_var("V")),
+        arg_types: vec![map_of(type_var("K"), type_var("V")), dynamic_tag()],
       }),
       NativeMapDissoc => Some(ProcTypeSignature {
         return_type: map_of(type_var("K"), type_var("V")),
@@ -1150,7 +1147,7 @@ impl CalcitProc {
         arg_types: vec![map_of(type_var("K"), type_var("V"))],
       }),
       NativeMapDestruct => Some(ProcTypeSignature {
-        return_type: optional_tag("list"),
+        return_type: option_tag("list"),
         arg_types: vec![map_of(type_var("K"), type_var("V"))],
       }),
 
@@ -1184,7 +1181,7 @@ impl CalcitProc {
         arg_types: vec![set_of(type_var("T")), type_var("T")],
       }),
       NativeSetDestruct => Some(ProcTypeSignature {
-        return_type: optional_tag("list"),
+        return_type: option_tag("list"),
         arg_types: vec![set_of(type_var("T"))],
       }),
 
@@ -1218,7 +1215,7 @@ impl CalcitProc {
         arg_types: vec![some_tag("enum")],
       }),
       NativeEnumDefinition => Some(ProcTypeSignature {
-        return_type: optional_tag("enum-def"),
+        return_type: option_tag("enum-def"),
         arg_types: vec![some_tag("enum")],
       }),
       NativeStructNew => Some(ProcTypeSignature {
@@ -1238,7 +1235,7 @@ impl CalcitProc {
         arg_types: vec![dynamic_tag(), variadic_dynamic()],
       }),
       NativeImplOrigin => Some(ProcTypeSignature {
-        return_type: optional_tag("trait"),
+        return_type: option_tag("trait"),
         arg_types: vec![some_tag("impl")],
       }),
       NativeImplGet => Some(ProcTypeSignature {
@@ -1347,7 +1344,7 @@ impl CalcitProc {
         arg_types: vec![some_tag("struct")],
       }),
       NativeStructDefinition => Some(ProcTypeSignature {
-        return_type: optional_tag("struct-def"),
+        return_type: option_tag("struct-def"),
         arg_types: vec![some_tag("struct")],
       }),
       NativeStructImpls => Some(ProcTypeSignature {
@@ -1441,8 +1438,8 @@ impl CalcitProc {
         arg_types: vec![some_tag("number")],
       }),
       GetEnv => Some(ProcTypeSignature {
-        return_type: optional_dynamic(),
-        arg_types: vec![some_tag("string"), dynamic_tag()],
+        return_type: option_tag("string"),
+        arg_types: vec![some_tag("string")],
       }),
       GetArgs => Some(ProcTypeSignature {
         return_type: list_of(some_tag("string")),
@@ -1548,6 +1545,28 @@ impl CalcitProc {
     self.get_type_signature().is_some()
   }
 
+  /// Primitives that report absence as `Option :none` and so construct values of the
+  /// nominal `calcit.core/Option` at runtime. Backends that only emit reachable
+  /// definitions must keep that definition (#1554).
+  pub fn returns_core_option(&self) -> bool {
+    use CalcitProc::*;
+    matches!(
+      self,
+      ParseFloat
+        | GetEnv
+        | NativeStrFirst
+        | NativeStrNth
+        | NativeListFirst
+        | NativeListLast
+        | NativeMapGet
+        | NativeMapDestruct
+        | NativeSetDestruct
+        | NativeEnumDefinition
+        | NativeImplOrigin
+        | NativeStructDefinition
+    )
+  }
+
   /// Return the runtime call arity without encoding parameter omission as a nullable value type.
   pub fn arity(&self) -> Option<ProcArity> {
     self
@@ -1560,7 +1579,7 @@ impl CalcitProc {
     match self {
       GenerateId | Range | NativeListRange => 2,
       NativeInspectMethods | NativeInspectType | Trim | NativeStrSlice | Sort | NativeListSort | NativeListSlice | NativeStructNth
-      | ReadDir | GetEnv | ParseCirruEdn | FormatCirru | FormatCirruEdn | Todo | NativeTraitNew => 1,
+      | ReadDir | ParseCirruEdn | FormatCirru | FormatCirruEdn | Todo | NativeTraitNew => 1,
       _ => 0,
     }
   }
@@ -1601,7 +1620,6 @@ mod tests {
       CalcitProc::NativeListSlice,
       CalcitProc::NativeStructNth,
       CalcitProc::ReadDir,
-      CalcitProc::GetEnv,
       CalcitProc::ParseCirruEdn,
       CalcitProc::FormatCirru,
       CalcitProc::FormatCirruEdn,
@@ -1618,7 +1636,7 @@ mod tests {
 
     let explicitly_nullable = ProcTypeSignature {
       return_type: dynamic_tag(),
-      arg_types: vec![optional_tag("string")],
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::Optional(tag_type("string")))],
     };
     assert_eq!(explicitly_nullable.arity(0), ProcArity { min: 1, max: Some(1) });
     assert!(matches!(
@@ -1640,7 +1658,6 @@ mod tests {
       (CalcitProc::NativeListSlice, ProcArity { min: 2, max: Some(3) }),
       (CalcitProc::NativeStructNth, ProcArity { min: 2, max: Some(3) }),
       (CalcitProc::ReadDir, ProcArity { min: 1, max: Some(2) }),
-      (CalcitProc::GetEnv, ProcArity { min: 1, max: Some(2) }),
       (CalcitProc::ParseCirruEdn, ProcArity { min: 1, max: Some(2) }),
       (CalcitProc::FormatCirru, ProcArity { min: 1, max: Some(2) }),
       (CalcitProc::FormatCirruEdn, ProcArity { min: 1, max: Some(2) }),
@@ -1780,33 +1797,45 @@ mod tests {
   }
 
   #[test]
-  fn absence_returning_proc_signatures_are_nullable() {
+  fn absence_returning_proc_signatures_return_nominal_option() {
+    for proc in [
+      CalcitProc::ParseFloat,
+      CalcitProc::GetEnv,
+      CalcitProc::NativeStrFirst,
+      CalcitProc::NativeStrNth,
+      CalcitProc::NativeListFirst,
+      CalcitProc::NativeListLast,
+      CalcitProc::NativeMapGet,
+      CalcitProc::NativeMapDestruct,
+      CalcitProc::NativeSetDestruct,
+      CalcitProc::NativeEnumDefinition,
+      CalcitProc::NativeImplOrigin,
+      CalcitProc::NativeStructDefinition,
+    ] {
+      let signature = proc.get_type_signature().expect("absence-returning proc signature");
+      assert!(
+        signature.return_type.is_option_type(),
+        "{proc} must return nominal Option<T>, got {:?}",
+        signature.return_type
+      );
+    }
+
     let parse_float = CalcitProc::ParseFloat.get_type_signature().expect("parse-float signature");
-    assert!(matches!(
-      parse_float.return_type.as_ref(),
-      CalcitTypeAnnotation::Optional(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Number)
-    ));
-
-    let get_env = CalcitProc::GetEnv.get_type_signature().expect("get-env signature");
-    assert!(matches!(
-      get_env.return_type.as_ref(),
-      CalcitTypeAnnotation::Optional(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::Dynamic)
-    ));
-
+    assert_eq!(parse_float.return_type, option_tag("number"));
     let struct_definition = CalcitProc::NativeStructDefinition
       .get_type_signature()
       .expect("struct-definition signature");
-    assert_eq!(struct_definition.return_type, optional_tag("struct-def"));
+    assert_eq!(struct_definition.return_type, option_tag("struct-def"));
 
     let list_first = CalcitProc::NativeListFirst.get_type_signature().expect("&list:first signature");
-    assert!(matches!(
-      list_first.return_type.as_ref(),
-      CalcitTypeAnnotation::Optional(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::TypeVar(name) if name.as_ref() == "T")
-    ));
+    assert!(
+      matches!(list_first.return_type.option_payload().as_deref(), Some(CalcitTypeAnnotation::TypeVar(name)) if name.as_ref() == "T")
+    );
+    assert_eq!(CalcitProc::GetEnv.arity(), Some(ProcArity { min: 1, max: Some(1) }));
   }
 
   #[test]
-  fn nullable_primitives_do_not_shadow_their_typed_public_wrappers() {
+  fn option_primitives_do_not_shadow_their_typed_public_wrappers() {
     assert_eq!(CalcitProc::from_str("&parse-float"), Ok(CalcitProc::ParseFloat));
     assert_eq!(CalcitProc::from_str("&get-env"), Ok(CalcitProc::GetEnv));
     assert_eq!(CalcitProc::from_str("&struct:nth"), Ok(CalcitProc::NativeStructNth));

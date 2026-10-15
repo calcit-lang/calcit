@@ -79,13 +79,9 @@ impl CalcitProc {
       DeftypeSlot => Raises("the name is neither a tag nor a string"),
 
       // enums, structs, traits and impls as values
-      NativeEnum
-      | NativeEnumCount
-      | NativeEnumImpls
-      | NativeEnumParams
-      | NativeEnumDefinition
-      | NativeImplOrigin
-      | NativeEnumDefHasVariant => Total,
+      NativeEnum | NativeEnumCount | NativeEnumImpls | NativeEnumParams | NativeEnumDefHasVariant => Total,
+      NativeEnumDefinition => Result("`Option :none` for an anonymous enum value"),
+      NativeImplOrigin => Result("`Option :none` for an inherent impl"),
       NativeNamedEnumNew => Raises("the variant is not defined or the payload does not match its arity"),
       NativeEnumNth | NativeEnumAssoc | NativeImplNth => Raises(INDEX),
       NativeStructNew | NativeEnumNew | NativeTraitNew | NativeImplNew => Raises("the definition data is malformed"),
@@ -101,7 +97,7 @@ impl CalcitProc {
       // effects
       Raise | Todo => Raises("always"),
       Quit => Raises("the exit code is not an integer in 0..255; otherwise the process exits"),
-      GetEnv => Result("nil when the variable is unset and no default is given"),
+      GetEnv => Result("`Option :none` when the variable is unset"),
       GetArgs | MonotonicTimeMs => Total,
       UnixTimeMs => Raises("the system clock is before the Unix epoch"),
       NativeWaitMs | NativeSecureRandomBytes | NativeFsReadText | NativeReadStdinText | NativeFsReadDir | NativeFsWriteText => {
@@ -150,22 +146,22 @@ impl CalcitProc {
       | NativeStrUtf8ByteCount
       | NativeStrEmpty
       | NativeStrIncludes
-      | NativeStrFirst
       | NativeStrRest => Total,
+      NativeStrFirst => Result("`Option :none` for an empty string"),
       TurnString => Raises("the value is not a scalar"),
       GetCharCode => Raises("the string is not exactly one Unicode scalar"),
       CharFromCode => Raises("the code is not a Unicode scalar value"),
-      ParseFloat => Result("nil when the text is not a number"),
+      ParseFloat => Result("`Option :none` when the text is not a number"),
       NativeStrSlice => Raises("a bound is not a non-negative integer"),
       NativeStrContains => Raises("the index is not a non-negative integer"),
-      NativeStrNth => Result("nil when the index is out of range; raises when it is not a non-negative integer"),
+      NativeStrNth => Result("`Option :none` when the index is out of range; raises when it is not a non-negative integer"),
       NativeStrPadLeft | NativeStrPadRight => Raises("the pattern is empty, or the length is past 536870888"),
 
       // lists
       List | Append | Prepend | Butlast | NativeListReverse | NativeListConcat | NativeListCount | NativeListEmpty
       | NativeListContains | NativeListIncludes | NativeListRest | NativeListToSet | NativeListDistinct | NativeListAppend
       | NativeListPrepend | NativeListButlast => Total,
-      NativeListFirst | NativeListLast => Result("nil for an empty list"),
+      NativeListFirst | NativeListLast => Result("`Option :none` for an empty list"),
       Range | NativeListRange => {
         Raises("a bound or step is not finite, the step is zero or points away from the bound, or the result is too large")
       }
@@ -183,8 +179,8 @@ impl CalcitProc {
       | NativeMapContains | NativeMapIncludes | NativeMapAssoc | NativeMapDiffNew | NativeMapDiffKeys | NativeMapCommonKeys
       | NativeMapDiffTriple | NativeMapKeys | NativeMapVals => Total,
       NativeMerge => Raises("merging into a struct names a field the struct does not have"),
-      NativeMapGet => Result("nil for a missing key"),
-      NativeMapDestruct => Result("nil for an empty map"),
+      NativeMapGet => Result("`Option :none` for a missing key"),
+      NativeMapDestruct => Result("`Option :none` for an empty map"),
       NativeMapFoldKv => Raises(CALLBACK),
 
       // sets
@@ -198,7 +194,7 @@ impl CalcitProc {
       | NativeSetCount
       | NativeSetEmpty
       | NativeSetIncludes => Total,
-      NativeSetDestruct => Result("nil for an empty set"),
+      NativeSetDestruct => Result("`Option :none` for an empty set"),
 
       // refs
       Ref | AtomDeref => Total,
@@ -206,13 +202,10 @@ impl CalcitProc {
       RemoveWatch => Raises("no listener has the key"),
 
       // structs
-      NativeStructImpls
-      | NativeStructMatches
-      | NativeStructGetName
-      | NativeStructDefinition
-      | NativeStructToMap
-      | NativeStructCount
-      | NativeStructContains => Total,
+      NativeStructImpls | NativeStructMatches | NativeStructGetName | NativeStructToMap | NativeStructCount | NativeStructContains => {
+        Total
+      }
+      NativeStructDefinition => Result("`Option :none` for an anonymous struct value"),
       NativeLooseStruct => Raises("a field name is not a tag or appears twice"),
       NativeStruct => Raises("the fields do not match the struct definition"),
       NativeStructWith | NativeStructAssoc | NativeStructGet => Raises("the struct has no such field"),

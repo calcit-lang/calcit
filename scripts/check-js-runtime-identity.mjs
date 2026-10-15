@@ -28,11 +28,19 @@ try {
   assert.equal(runtimeA.turn_symbol(symbolFromString), symbolFromString, "legacy Symbol input remains runtime-compatible");
   assert.equal(runtimeA.turn_symbol(runtimeA.newTag("hello")).value, "hello", "legacy Tag input remains runtime-compatible");
   assert.throws(() => runtimeA.turn_symbol(new runtimeA.CalcitSliceList([1])), /Unexpected data for symbol/);
-  assert.ok(Number.isNaN(runtimeA._$n_parse_float("+nan")), "JS must parse signed NaN like native");
-  assert.equal(runtimeA._$n_parse_float("INF"), Infinity, "JS must parse case-insensitive infinity like native");
-  assert.equal(runtimeA._$n_parse_float("-Infinity"), -Infinity, "JS must preserve a negative non-finite number");
-  assert.equal(runtimeA._$n_parse_float("1e309"), Infinity, "overflowing decimal input remains a successful Number");
-  assert.equal(runtimeA._$n_parse_float("infinite"), null, "invalid non-finite spellings must remain errors");
+  // Primitives that report absence build `calcit.core/Option` values. Without a
+  // compiled core, register a stand-in definition for the raw runtime check.
+  const optionModule = await import(pathToFileURL(join(runtimeAPath, "js-option-value.mjs")).href);
+  optionModule.register_core_option({ impls: [] });
+  const parsed = (text) => {
+    const result = runtimeA._$n_parse_float(text);
+    return result.tag.value === "some" ? result.extra[0] : null;
+  };
+  assert.ok(Number.isNaN(parsed("+nan")), "JS must parse signed NaN like native");
+  assert.equal(parsed("INF"), Infinity, "JS must parse case-insensitive infinity like native");
+  assert.equal(parsed("-Infinity"), -Infinity, "JS must preserve a negative non-finite number");
+  assert.equal(parsed("1e309"), Infinity, "overflowing decimal input remains a successful Number");
+  assert.equal(runtimeA._$n_parse_float("infinite").tag.value, "none", "invalid non-finite spellings must report Option :none");
   const writes = [];
   const waits = [];
   globalThis.__calcit_injections__ = {
@@ -76,7 +84,7 @@ try {
   } finally {
     console.warn = originalWarn;
   }
-  assert.equal(runtimeA.get_env("CALCIT_MISSING_ENV_FOR_RUNTIME_TEST", "fallback"), "fallback");
+  assert.equal(runtimeA.get_env("CALCIT_MISSING_ENV_FOR_RUNTIME_TEST").tag.value, "none");
   assert.equal(
     runtimeA._$n_str_$o_replace("a&a&", "&", "&amp;"),
     "a&amp;a&amp;",

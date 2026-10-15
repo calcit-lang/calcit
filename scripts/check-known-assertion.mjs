@@ -300,13 +300,13 @@ try {
   await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
   const sortSelectorOriginal = await readFile(snapshot);
   for (const [name, input, selector, generics = ""] of [
-    ["open-row", "(:: 'List 'Dynamic)", "fn (row) (&map:get row :n)"],
+    ["open-row", "(:: 'List 'Dynamic)", "fn (row) (option:unwrap $ &map:get row :n)"],
     ["open-scalar", "(:: 'List 'Dynamic)", "fn (row) (+ 1 row)"],
     ["open-scalar-named", "(:: 'List 'Dynamic)", "defn key-of (row) (+ 1 row)"],
-    ["open-number", "(:: 'List (:: 'Map 'Tag 'Dynamic))", "fn (row) (+ 1 (&map:get row :n))"],
+    ["open-number", "(:: 'List (:: 'Map 'Tag 'Dynamic))", "fn (row) (+ 1 (option:unwrap $ &map:get row :n))"],
     ["narrowed-selector", "(:: 'List (:: 'Map 'Tag 'Dynamic))",
-      "fn (row) (hint-fn $ {} (:args $ [] (:: 'Map 'Tag 'Number)) (:return 'Number)) (&map:get row :n)"],
-    ["rigid-member", "(:: 'List (:: 'Map 'Tag 'T))", "fn (row) (+ 1 (&map:get row :n))", "(:generics $ [] 'T)"],
+      "fn (row) (hint-fn $ {} (:args $ [] (:: 'Map 'Tag 'Number)) (:return 'Number)) (option:unwrap $ &map:get row :n)"],
+    ["rigid-member", "(:: 'List (:: 'Map 'Tag 'T))", "fn (row) (+ 1 (option:unwrap $ &map:get row :n))", "(:generics $ [] 'T)"],
   ]) {
     for (const style of ["direct", "postfix", "prefix"]) {
       await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
@@ -381,7 +381,7 @@ try {
     "scripts/run-core-tests.mjs", "--snapshot", "tests/fixtures/def-value-schema.cirru",
     "--tag", "sort-selector-assignment", "--backend", "js",
   ], { ...options, stdio: "inherit" });
-  const aliasSelectorCall = "order rows $ fn (row) (&map:get row :n)";
+  const aliasSelectorCall = "order rows $ fn (row) (option:unwrap $ &map:get row :n)";
   for (const [name, body, features = ""] of [
     ["unrelated-same-signature", `let ((order ignore-selector)) (${aliasSelectorCall})`],
     ["shadowed-source", `let ((order &list:sort-by)) (let ((order ignore-selector)) (${aliasSelectorCall}))`],
@@ -426,13 +426,13 @@ try {
   assert.deepEqual(await readFile(snapshot), callbackShapeOriginal);
   for (const [name, input, body, output, generics = ""] of [
     ["dynamic-member-number", "(:: 'List (:: 'Map 'Tag 'Dynamic))",
-      "map rows $ fn (row) (+ 1 (&map:get row :title))", "(:: 'List 'Number)"],
+      "map rows $ fn (row) (+ 1 (option:unwrap $ &map:get row :title))", "(:: 'List 'Number)"],
     ["dynamic-row-map", "(:: 'List 'Dynamic)",
-      "map rows $ fn (row) (&map:get row :title)", "(:: 'List 'Dynamic)"],
+      "map rows $ fn (row) (option:unwrap $ &map:get row :title)", "(:: 'List 'Dynamic)"],
     ["narrow-callback-member", "(:: 'List (:: 'Map 'Tag 'Dynamic))",
-      "map rows $ fn (row) (hint-fn $ {} (:args $ [] (:: 'Map 'Tag 'Number)) (:return 'Number)) (&map:get row :title)", "(:: 'List 'Number)"],
+      "map rows $ fn (row) (hint-fn $ {} (:args $ [] (:: 'Map 'Tag 'Number)) (:return 'Number)) (option:unwrap $ &map:get row :title)", "(:: 'List 'Number)"],
     ["rigid-caller-member", "(:: 'List (:: 'Map 'Tag 'T))",
-      "map rows $ fn (row) (+ 1 (&map:get row :title))", "(:: 'List 'Number)", "(:generics $ [] 'T)"],
+      "map rows $ fn (row) (+ 1 (option:unwrap $ &map:get row :title))", "(:: 'List 'Number)", "(:generics $ [] 'T)"],
     ["ref-remains-invariant", "(:: 'List (:: 'Ref 'Dynamic))",
       "map rows $ fn (row) (hint-fn $ {} (:args $ [] (:: 'Ref 'Number)) (:return 'Number)) (deref row)", "(:: 'List 'Number)"],
     ["callback-remains-contravariant", "(:: 'List (:: 'Fn ({} (:args $ [] 'Number) (:return 'Dynamic))))",
@@ -526,11 +526,12 @@ try {
     }
   }
   assert.deepEqual(await readFile(snapshot), stringOptionOriginal);
-  for (const [name, input, body] of [
-    ["raw-first", "'String", "assert-type (&str:first value) 'String"],
-    ["raw-nth", "'String", "assert-type (&str:nth value 0) 'String"],
-    ["open-list-item", "(:: 'List 'Dynamic)", "assert-type (&list:nth value 0) 'String"],
-    ["open-value", "'Dynamic", "assert-type value 'String"],
+  for (const [name, input, body, diagnostic] of [
+    // The raw primitives return Option<String>, a proven mismatch rather than missing evidence.
+    ["raw-first", "'String", "assert-type (&str:first value) 'String", /E_ASSERT_TYPE_MISMATCH/],
+    ["raw-nth", "'String", "assert-type (&str:nth value 0) 'String", /E_ASSERT_TYPE_MISMATCH/],
+    ["open-list-item", "(:: 'List 'Dynamic)", "assert-type (&list:nth value 0) 'String", /E_ASSERT_TYPE_UNPROVEN/],
+    ["open-value", "'Dynamic", "assert-type value 'String", /E_ASSERT_TYPE_UNPROVEN/],
   ]) {
     run("edit", "def", `app.string-option/${name}`, "--input-format", "cirru", "--code",
       `quote $ defn ${name} (value) (${body})`);
@@ -541,7 +542,7 @@ try {
       "--ns", "app.string-option", "--def", name, "--format", "edn"], options);
     if (rejected.error) throw rejected.error;
     assert.equal(rejected.status, 1, `${name}\n${rejected.stdout}\n${rejected.stderr}`);
-    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_ASSERT_TYPE_UNPROVEN/);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, diagnostic);
     assert.deepEqual(await readFile(snapshot), before);
   }
   // #2008 / #1553: enum construction must preserve caller generics after
@@ -1071,13 +1072,12 @@ try {
   await copyFile("calcit/util.cirru", join(project, "util.cirru"));
   // Environment results come from the raw operation, not a wrapper's return
   // declaration. Replay the same stored contracts with controlled host values.
-  const envOwners = ["read-env-option", "read-env-default", "read-env-null-default",
-    "read-env-open-default", "read-env-number-default"];
+  const envOwners = ["read-env-option"];
   const envDefinitions = envOwners.map(name =>
     JSON.parse(run("query", "def", `test-struct.main/${name}`, "--format", "json")).data);
   const envTests = envDefinitions.flatMap(definition => definition.tests.filter(test => test.tags.includes("env-proof")));
   const envCoreTests = JSON.parse(truthinessRun("query", "def", "calcit.core/get-env", "--format", "json")).data.tests;
-  assert.equal(envTests.length, 3);
+  assert.equal(envTests.length, 2);
   assert.equal(envCoreTests.length, 2);
   const envSnapshot = join(project, "env-workflow.cirru");
   await copyFile("tests/fixtures/deep-recursion.cirru", envSnapshot);
@@ -1121,9 +1121,11 @@ try {
       else process.env[envKey] = value;
       execFileSync(binary, [envSnapshot], { ...options, env: process.env });
       envModule.main_$x_();
-      // The host supplies exact text. Empty text is present, never None or a
-      // fallback; native and generated JS replay the stored assertions above.
-      assert.equal(envModule.read_env_default(envKey, "fallback"), value ?? "fallback");
+      // The host supplies exact text. Empty text is present, never None;
+      // native and generated JS replay the stored assertions above.
+      const result = envModule.read_env_option(envKey);
+      assert.equal(String(result.tag.value ?? result.tag), value === undefined ? "none" : "some");
+      if (value !== undefined) assert.equal(result.extra[0], value);
     }
   } finally {
     for (const [key, value] of savedEnv) {
@@ -1135,14 +1137,8 @@ try {
   // A fallback with genuinely open or incompatible evidence cannot be
   // narrowed by the caller's return declaration, including through an alias.
   for (const [name, args, types, body, returned] of [
-    ["env-wrong-number", ["name", "fallback"], ["'String", "'Number"], ["&get-env", "name", "fallback"], "'String"],
-    ["env-open-text", ["name", "fallback"], ["'String", "'Dynamic"], ["&get-env", "name", "fallback"], "'String"],
-    ["env-nil-text", ["name"], ["'String"], ["&get-env", "name", "nil"], "'String"],
-    ["env-optional-number", ["name"], ["'String"], ["optionally", ["&get-env", "name"]], ["::", "'Option", "'Number"]],
-    ["env-nominal-default", ["name", "fallback"], ["'String", ["::", "'Option", "'String"]],
-      ["&get-env", "name", "fallback"], ["::", "'Option", "'String"]],
-    ["env-alias-text", ["name", "fallback"], ["'String", "'Dynamic"],
-      ["let", [["alias", "fallback"]], ["&get-env", "name", "alias"]], "'String"],
+    ["env-unwrapped-text", ["name"], ["'String"], ["&get-env", "name"], "'String"],
+    ["env-wrong-payload", ["name"], ["'String"], ["&get-env", "name"], ["::", "'Option", "'Number"]],
   ]) {
     const target = `app.main/${name}`;
     envRun("edit", "def", target, "--input-format", "json-ast", "--code", JSON.stringify(["defn", name, args, body]));
@@ -2547,7 +2543,7 @@ try {
     "quote $ :: 'Fn $ {} (:args $ [] 'WriteState 'Number) (:return 'WriteState)");
   run("edit", "add-test", "calcit.assert-evidence/write-count", "nominal-method-write", "--tags", "nominal-write",
     "--input-format", "cirru", "--code",
-    "quote $ let ((original $ WriteState :count 1 :label |kept) (updated $ write-count original 2)) (assert= 1 $ :count original) (assert= 2 $ :count updated) (assert= |kept $ :label updated) (assert= WriteState $ &struct:definition updated)");
+    "quote $ let ((original $ WriteState :count 1 :label |kept) (updated $ write-count original 2)) (assert= 1 $ :count original) (assert= 2 $ :count updated) (assert= |kept $ :label updated) (assert= (Option :some WriteState) $ &struct:definition updated)");
   run("test", "calcit.assert-evidence/write-count", "--tag", "nominal-write", "--require-match");
   const nominalTests = JSON.parse(run("query", "def", "calcit.assert-evidence/write-count", "--format", "json"))
     .data.tests.filter(test => test.tags.includes("nominal-write"));

@@ -71,8 +71,8 @@ let
 
 `.get` is the public typed lookup form and returns `Option<V>`. When `m` has a
 known `Map<K,V>` type, preprocessing checks the receiver family and lowers the
-lookup to `&map:contains?` plus `&map:get`; the key and receiver are each
-evaluated once. The prefix form `get m key` has the same contract and lowering.
+lookup to the Option-returning `&map:get` primitive; the key and receiver are
+each evaluated once. The prefix form `get m key` has the same contract and lowering.
 Dynamic receivers keep the compatibility implementation with runtime type
 tests, so business code should preserve the concrete Map type instead of
 erasing it to `Dynamic`.

@@ -1,3 +1,4 @@
+use crate::builtins::option_value;
 use crate::calcit::type_annotation::{collect_runtime_type_bindings, validate_runtime_generic_where_bounds};
 use crate::{
   builtins,
@@ -639,8 +640,8 @@ pub fn enum_definition(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::Enum(enum_value) => match &enum_value.sum_type {
-      Some(enum_proto) => Ok(Calcit::EnumDef((**enum_proto).clone())),
-      None => Ok(Calcit::Nil),
+      Some(enum_proto) => option_value::some(Calcit::EnumDef((**enum_proto).clone())),
+      None => option_value::none(),
     },
     a => {
       let msg = format!(
@@ -986,8 +987,8 @@ pub fn impl_origin(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match &xs[0] {
     Calcit::Impl(imp) => match &imp.origin {
-      Some(trait_def) => Ok(Calcit::Trait(trait_def.as_ref().to_owned())),
-      None => Ok(Calcit::Nil),
+      Some(trait_def) => option_value::some(Calcit::Trait(trait_def.as_ref().to_owned())),
+      None => option_value::none(),
     },
     other => CalcitErr::err_str(CalcitErrKind::Type, format!("&impl:origin expected an impl, but received: {other}")),
   }

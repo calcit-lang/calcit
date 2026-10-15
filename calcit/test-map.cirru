@@ -61,12 +61,9 @@
               get-in (&{}) ([] :a :b)
             &let
               m $ &{} :a 1 :b 2 :c 3 :d 4
-              assert=
-                first $ &map:destruct m
-                first $ &map:destruct m
-              assert=
-                last $ &map:destruct m
-                last $ &map:destruct m
+              ; destruct yields Option :some [key value rest-map]
+              assert= 3 $ count $ option:unwrap $ &map:destruct m
+              assert= (Option :none) $ &map:destruct (&{})
               assert= 3 $ count $ option:unwrap
                 last $ &map:destruct m
               assert= 10 $ foldl m 0 $ fn (acc pair)

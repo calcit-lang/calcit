@@ -285,8 +285,8 @@
                 &= 2 $ &list:count pattern
               raise $ str-spaced "|`case` expects pattern in a pair, got:" pattern
             let
-                x $ &list:first pattern
-                branch $ &list:last pattern
+                x $ &list:nth pattern 0
+                branch $ &list:nth pattern 1
               quasiquote $ if (&= ~item ~x) ~branch $ ~
                 if (&list:empty? others) default $ quasiquote $ &case ~item ~default ~@others
           :examples $ []
@@ -553,8 +553,8 @@
                 &= 2 $ &list:count pair
               raise $ str-spaced "|doseq expects a pair, got:" pair
             let
-                name $ &list:first pair
-                xs0 $ &list:last pair
+                name $ &list:nth pair 0
+                xs0 $ &list:nth pair 1
               quasiquote $ foldl ~xs0 &unit $ defn doseq-fn% (_acc ~name) ~@body &unit
           :examples $ [] $ quote
             do
@@ -635,19 +635,19 @@
             :args $ [] 'Enum
           :tags $ #{} :builtin :internal
         '&enum:definition $ %{} 'CodeEntry
-          :doc "|Return the EnumDef of a nominal enum value, or nil for an anonymous enum."
+          :doc "|Return `Option :some EnumDef` for a nominal enum value and `Option :none` for an anonymous enum."
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Enum
-            :return $ :: 'Optional 'EnumDef
+            :return $ :: 'Option 'EnumDef
           :tags $ #{} :builtin :internal
           :tests $ [] $ %{} 'TestEntry (:name |nominal-definition-evidence)
             :code $ quote $ let
                 value $ Option :some 1
-              assert= Option $ &enum:definition value
-              assert-type (&enum:definition value) 'EnumDef
-              assert= nil $ &enum:definition $ %:: _ :anonymous 1
+              assert= (Option :some Option) $ &enum:definition value
+              assert-type (&enum:definition value) (:: 'Option 'EnumDef)
+              assert= (Option :none) $ &enum:definition $ %:: _ :anonymous 1
             :tags $ #{} :nominal-definition-proof :unit
         '&enum:impl-traits $ %{} 'CodeEntry (:doc "|Attach implementations to an enum value.")
           :code $ quote &runtime-implementation
@@ -835,60 +835,68 @@
             :args $ [] 'Dynamic
           :tags $ #{} :builtin :internal :io :meta
         '&get-env $ %{} 'CodeEntry
-          :doc "|internal function for getting environment variables\nSyntax: (get-env var-name)\nParams: var-name (string)\nReturns: string value or nil\nGets environment variable value, returns nil if not found"
+          :doc "|internal function for getting environment variables\nSyntax: (&get-env var-name)\nParams: var-name (string)\nReturns: Option<String>\nReturns `Option :some value` when the variable is set and `Option :none` when it is not"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'String
-            :return $ :: 'Optional 'String
+            :return $ :: 'Option 'String
           :tags $ #{} :builtin :env :internal :io
+          :tests $ [] $ %{} 'TestEntry (:name |missing-variable-is-none)
+            :code $ quote $ assert= (Option :none) (&get-env |__CALCIT_PRIMITIVE_ENV_MISSING_1554__)
+            :tags $ #{} :core :env-proof :unit
         '&get-in $ %{} 'CodeEntry
-          :doc "|Internal nullable traversal primitive. Public get-in is the separate Option-returning API."
+          :doc "|Internal traversal primitive over open data (Map, List, String, Enum, Struct). Returns `Option :some value`; a missing path or a nil encountered during traversal gives `Option :none`. Public get-in is the Struct-rejecting API."
           :code $ quote $ defn &get-in (base path)
             if
               not $ list? path
               raise $ str-spaced "|expects path in a list, got:" path
-            if (nil? base) base $ &list-match-internal path base (y0 ys)
-              if (list? base)
-                if
-                  and (number? y0) (&>= y0 0)
-                    &< y0 $ &list:count base
-                  recur (&get-raw base y0) ys
-                  , nil
-                recur (&get-raw base y0) ys
+            if (nil? base) (Option :none) $ &list-match-internal path (Option :some base) (y0 ys)
+              cond
+                  map? base
+                  match (&map:get base y0)
+                    (:some value) (recur value ys)
+                    (:none) (Option :none)
+                (list? base)
+                  if
+                    and (number? y0) (&>= y0 0)
+                      &< y0 $ &list:count base
+                    recur (&get-raw base y0) ys
+                    Option :none
+                true $ recur (&get-raw base y0) ys
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Dynamic $ :: 'List 'K
             :generics $ [] 'K
-            :return $ :: 'Optional 'Dynamic
+            :return $ :: 'Option 'Dynamic
           :tags $ #{} :internal
           :tests $ [] $ %{} 'TestEntry (:name |handles-empty-path-and-nil-base)
             :code $ quote $ do
-              assert= 9 $ &get-in 9 $ []
-              assert= nil $ &get-in nil $ []
-              assert= 2 $ &get-in
+              assert= (Option :some 9) $ &get-in 9 $ []
+              assert= (Option :none) $ &get-in nil $ []
+              assert= (Option :some 2) $ &get-in
                 &{} :a $ &{} :b 2
                 [] :a :b
-              assert= false $ &get-in (&{} :a false) ([] :a)
-              assert= nil $ &get-in (&{} :a nil) ([] :a)
-              assert= nil $ &get-in
+              assert= (Option :some false) $ &get-in (&{} :a false) ([] :a)
+              assert= (Option :none) $ &get-in (&{} :a nil) ([] :a)
+              assert= (Option :none) $ &get-in
                 &{} :a $ &{}
                 [] :a :missing
-              assert= 4 $ &get-in
+              assert= (Option :some 4) $ &get-in
                 &{} :a $ [] 3 4
                 [] :a 1
-              assert= nil $ &get-in ([]) ([] 0)
-              assert= nil $ &get-in ([] 3 4) ([] 2)
-              assert= nil $ &get-in ([] 3 4) ([] -1)
-              assert= nil $ &get-in ([] 3 4) ([] :missing)
-              assert= nil $ &get-in
+              assert= (Option :none) $ &get-in ([]) ([] 0)
+              assert= (Option :none) $ &get-in ([] 3 4) ([] 2)
+              assert= (Option :none) $ &get-in ([] 3 4) ([] -1)
+              assert= (Option :none) $ &get-in ([] 3 4) ([] :missing)
+              assert= (Option :none) $ &get-in
                 &{} :a $ [] 3 4
                 [] :a 9
-              assert= nil $ &get-in
+              assert= (Option :none) $ &get-in
                 &{} :a $ [] 3 4
                 [] :a 9 :child
-              assert= false $ &get-in ([] false 0) ([] 0)
-              assert= 0 $ &get-in ([] false 0) ([] 1)
+              assert= (Option :some false) $ &get-in ([] false 0) ([] 0)
+              assert= (Option :some 0) $ &get-in ([] false 0) ([] 1)
             :tags $ #{} :core :unit
         '&get-os $ %{} 'CodeEntry
           :doc "|internal function for getting OS information\nSyntax: (&get-os)\nParams: none\nReturns: keyword indicating OS\nReturns current operating system like :linux, :macos, :windows"
@@ -903,9 +911,16 @@
             cond
                 list? base
                 if (number? k) (&list:nth base k) (raise "|&get-raw expected a Number index for list")
-              (map? base) (&map:get base k)
+              (map? base)
+                match (&map:get base k)
+                  (:some value) value
+                  (:none) nil
               (string? base)
-                if (number? k) (&str:nth base k) (raise "|&get-raw expected a Number index for string")
+                if (number? k)
+                  match (&str:nth base k)
+                    (:some value) value
+                    (:none) nil
+                  raise "|&get-raw expected a Number index for string"
               (enum? base)
                 if (number? k) (&enum:nth base k) (raise "|&get-raw expected a Number index for enum")
               (struct? base)
@@ -958,12 +973,12 @@
             :args $ [] 'Impl 'Number
           :tags $ #{} :builtin :internal
         '&impl:origin $ %{} 'CodeEntry
-          :doc "|Internal nullable primitive for reading the trait origin stored on an impl."
+          :doc "|Internal primitive for reading the trait origin stored on an impl: `Option :some Trait`, or `Option :none` for an inherent impl."
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Impl
-            :return $ :: 'Optional 'Trait
+            :return $ :: 'Option 'Trait
           :tags $ #{} :builtin :internal
         '&include $ %{} 'CodeEntry
           :doc "|internal function for including in set\nSyntax: (&include set element)\nParams: set (set), element (any)\nReturns: set\nReturns new set with element included"
@@ -1018,7 +1033,7 @@
           :doc "|Internal list walk: pass an already bound List, one empty-branch expression, a (head tail) pair, and the nonempty body expressions."
           :code $ quote $ defmacro &list-match-internal (v branch1 pair & branch2)
             quasiquote $ if (&list:empty? ~v) ~branch1 $ &let
-                ~ $ &list:first pair
+                ~ $ &list:nth pair 0
                 &list:nth ~v 0
               &let
                   ~ $ &list:nth pair 1
@@ -1351,22 +1366,29 @@
                 &list:last-index-of ([] :a :b :target :other) :target
             :tags $ #{} :core :unit
         '&list:first $ %{} 'CodeEntry
-          :doc "|internal function for getting first list element\nSyntax: (&list:first list)\nParams: list (list)\nReturns: any or nil\nReturns first element of list, nil if empty"
+          :doc "|internal function for getting first list element\nSyntax: (&list:first list)\nParams: list (list)\nReturns: Option<T>\nReturns `Option :some first-element`, or `Option :none` for an empty list"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List 'T
             :generics $ [] 'T
-            :return $ :: 'Optional 'T
+            :return $ :: 'Option 'T
           :tags $ #{} :builtin :internal
           :tests $ []
-            %{} 'TestEntry (:name |returns-first-directly)
-              :code $ quote $ assert= 1
+            %{} 'TestEntry (:name |returns-some-first-element)
+              :code $ quote $ assert= (Option :some 1)
                 &list:first $ [] 1 2
               :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |returns-nil-for-empty-list)
-              :code $ quote $ assert= nil
+            %{} 'TestEntry (:name |returns-none-for-empty-list)
+              :code $ quote $ assert= (Option :none)
                 &list:first $ []
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |keeps-nil-first-element-distinct-from-empty)
+              :code $ quote $ do
+                assert= (Option :some nil)
+                  &list:first $ [] nil
+                assert= (Option :some false)
+                  &list:first $ [] false
               :tags $ #{} :core :unit
         '&list:flatten $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:flatten (xs)
@@ -1506,14 +1528,28 @@
             :args $ [] (:: 'List 'T) 'T 'Number
             :generics $ [] 'T
             :return $ :: 'Option 'Number
-        '&list:last $ %{} 'CodeEntry (:doc |)
+        '&list:last $ %{} 'CodeEntry
+          :doc "|Internal last-element reader: `Option :some last-element`, or `Option :none` for an empty list."
           :code $ quote $ &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List 'T
             :generics $ [] 'T
-            :return $ :: 'Optional 'T
+            :return $ :: 'Option 'T
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |returns-some-last-element)
+              :code $ quote $ assert= (Option :some 2)
+                &list:last $ [] 1 2
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |returns-none-for-empty-list)
+              :code $ quote $ assert= (Option :none)
+                &list:last $ []
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |keeps-nil-last-element-distinct-from-empty)
+              :code $ quote $ assert= (Option :some nil)
+                &list:last $ [] 1 nil
+              :tags $ #{} :core :unit
         '&list:last-index-of $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:last-index-of (xs item)
             &list:find-last-index xs $ defn %last-index-of (x)
@@ -1894,30 +1930,33 @@
             :generics $ [] 'K 'V
           :tags $ #{} :builtin :internal
         '&map:destruct $ %{} 'CodeEntry
-          :doc "|internal function for map destructuring\nSyntax: (&map:destruct map pattern)\nParams: map (map), pattern (any)\nReturns: map\nDestructs map according to pattern"
+          :doc "|internal function for map destructuring\nSyntax: (&map:destruct map)\nParams: map (map)\nReturns: Option<List>\nReturns `Option :some [] key value rest-map` for the first entry, or `Option :none` for an empty map"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'K 'V
             :generics $ [] 'K 'V
-            :return $ :: 'Optional 'Enum
+            :return $ :: 'Option $ :: 'List 'Dynamic
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |exposes-pairs-and-folds)
-            :code $ quote $ let
-                m $ &{} :a 1 :b 2 :c 3 :d 4
-              do
-                let
-                    parts $ &map:destruct m
-                  if (non-nil? parts)
-                    let
-                        remaining-map $ option:unwrap $ last parts
-                      if (map? remaining-map)
-                        assert= 3 $ count remaining-map
-                        raise |expected-map-rest
-                    raise |expected-non-empty-map
-                assert= 10 $ foldl m 0 $ fn (acc pair)
-                  let[] (k v) pair $ &+ acc v
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |exposes-pairs-and-folds)
+              :code $ quote $ let
+                  m $ &{} :a 1 :b 2 :c 3 :d 4
+                do
+                  match (&map:destruct m)
+                    (:some parts)
+                      let
+                          remaining-map $ option:unwrap $ last parts
+                        if (map? remaining-map)
+                          assert= 3 $ count remaining-map
+                          raise |expected-map-rest
+                    (:none) (raise |expected-non-empty-map)
+                  assert= 10 $ foldl m 0 $ fn (acc pair)
+                    let[] (k v) pair $ &+ acc v
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |returns-none-for-empty-map)
+              :code $ quote $ assert= (Option :none) (&map:destruct (&{}))
+              :tags $ #{} :core :unit
         '&map:diff-keys $ %{} 'CodeEntry
           :doc "|internal function for map diff keys\nSyntax: (&map:diff-keys map1 map2)\nParams: map1 (map), map2 (map)\nReturns: set\nReturns keys that differ between maps"
           :code $ quote &runtime-implementation
@@ -2042,7 +2081,7 @@
                 fn (pair)
                   >
                     let
-                        numeric-value $ &list:last pair
+                        numeric-value $ &list:nth pair 1
                       if (number? numeric-value) numeric-value $ raise "|Expected a Number"
                     , 1
             :tags $ #{} :core :unit
@@ -2100,14 +2139,30 @@
             :generics $ [] 'K 'V 'A
           :tags $ #{} :builtin :internal
         '&map:get $ %{} 'CodeEntry
-          :doc "|internal function for getting map value\nSyntax: (&map:get map key) or (&map:get map key default)\nParams: map (map), key (any), default (any, optional)\nReturns: any\nGets value for key, returns default if key not found"
+          :doc "|internal function for getting map value\nSyntax: (&map:get map key)\nParams: map (map), key (any)\nReturns: Option<V>\nReturns `Option :some value` for a present key (including a nil value) and `Option :none` for a missing key"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'Map 'K 'V) 'K
             :generics $ [] 'K 'V
-            :return $ :: 'Optional 'V
+            :return $ :: 'Option 'V
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |returns-some-for-present-key)
+              :code $ quote $ assert= (Option :some 1)
+                &map:get (&{} :a 1) :a
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |returns-none-for-missing-key)
+              :code $ quote $ assert= (Option :none)
+                &map:get (&{} :a 1) :z
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |keeps-nil-value-distinct-from-missing-key)
+              :code $ quote $ do
+                assert= (Option :some nil)
+                  &map:get (&{} :a nil) :a
+                assert= (Option :some false)
+                  &map:get (&{} :a false) :a
+              :tags $ #{} :core :unit
         '&map:includes? $ %{} 'CodeEntry
           :doc "|Internal function for checking whether a map includes a value. Syntax: (&map:includes? map value). Returns true when any map value equals the supplied value."
           :code $ quote &runtime-implementation
@@ -2151,9 +2206,9 @@
               :code $ quote $ assert= (&{} :a 11 :b 12)
                 &map:map (&{} :a 1 :b 2)
                   fn (pair)
-                    [] (&list:first pair)
+                    [] (&list:nth pair 0)
                       + 10 $ let
-                          numeric-value $ &list:last pair
+                          numeric-value $ &list:nth pair 1
                         if (number? numeric-value) numeric-value $ raise "|Expected a Number"
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |maps-pair-callback-with-key-and-value)
@@ -2189,9 +2244,9 @@
               #{} ([] :a 11) ([] :b 12)
               &list:to-set $ &map:map-list (&{} :a 1 :b 2)
                 fn (pair)
-                  [] (&list:first pair)
+                  [] (&list:nth pair 0)
                     + 10 $ let
-                        numeric-value $ &list:last pair
+                        numeric-value $ &list:nth pair 1
                       if (number? numeric-value) numeric-value $ raise "|Expected a Number"
             :tags $ #{} :core :unit
         '&map:to-list $ %{} 'CodeEntry
@@ -2401,13 +2456,24 @@
                   fn (error) error
               :tags $ #{} :core :unit
         '&parse-float $ %{} 'CodeEntry
-          :doc "|internal function for parsing float\nSyntax: (parse-float s)\nParams: s (string)\nReturns: number or nil\nParses string as floating point number, returns nil if invalid"
+          :doc "|internal function for parsing float\nSyntax: (parse-float s)\nParams: s (string)\nReturns: Option<Number>\nParses string as floating point number: `Option :some number`, or `Option :none` if invalid"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'String
-            :return $ :: 'Optional 'Number
+            :return $ :: 'Option 'Number
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |returns-some-number-for-numeric-text)
+              :code $ quote $ do
+                assert= (Option :some 1.5) $ &parse-float |1.5
+                assert= (Option :some 0) $ &parse-float |0
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |returns-none-for-invalid-text)
+              :code $ quote $ do
+                assert= (Option :none) $ &parse-float |x
+                assert= (Option :none) $ &parse-float |
+              :tags $ #{} :core :unit
         '&read-stdin-text $ %{} 'CodeEntry (:doc "|内部有界 stdin 文本边界，显式接收 Result 与错误消息。")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -2459,14 +2525,26 @@
               &set:count $ #{} 1 2 3
             :tags $ #{} :core :unit
         '&set:destruct $ %{} 'CodeEntry
-          :doc "|internal function for set destructuring\nSyntax: (&set:destruct set pattern)\nParams: set (set), pattern (any)\nReturns: set\nDestructs set according to pattern"
+          :doc "|internal function for set destructuring\nSyntax: (&set:destruct set)\nParams: set (set)\nReturns: Option<List>\nReturns `Option :some [] item rest-set` for one member, or `Option :none` for an empty set"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Set 'T
             :generics $ [] 'T
-            :return $ :: 'Optional 'Enum
+            :return $ :: 'Option $ :: 'List 'Dynamic
           :tags $ #{} :builtin :internal
+          :tests $ []
+            %{} 'TestEntry (:name |returns-member-and-rest)
+              :code $ quote $ match (&set:destruct (#{} 7))
+                (:some parts)
+                  do
+                    assert= 7 $ &list:nth parts 0
+                    assert= (#{}) $ &list:nth parts 1
+                (:none) (raise |expected-non-empty-set)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |returns-none-for-empty-set)
+              :code $ quote $ assert= (Option :none) (&set:destruct (#{}))
+              :tags $ #{} :core :unit
         '&set:empty $ %{} 'CodeEntry (:doc "|internal helper for set :empty method entry")
           :code $ quote $ defn &set:empty (_xs) (#{})
           :examples $ []
@@ -2716,16 +2794,20 @@
               assert= -1 $ &str:find-index |abc |z
             :tags $ #{} :core :unit
         '&str:first $ %{} 'CodeEntry
-          :doc "|internal function for getting first character\nSyntax: (&str:first s)\nParams: s (string)\nReturns: string or nil\nReturns first character of string, nil if empty"
+          :doc "|internal function for getting first character\nSyntax: (&str:first s)\nParams: s (string)\nReturns: Option<String>\nReturns `Option :some first-character`, or `Option :none` for an empty string"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'String
-            :return $ :: 'Optional 'String
+            :return $ :: 'Option 'String
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |returns-first-character)
-            :code $ quote $ assert= |a (&str:first |abc)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |returns-some-first-character)
+              :code $ quote $ assert= (Option :some |a) (&str:first |abc)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |returns-none-for-empty-string)
+              :code $ quote $ assert= (Option :none) (&str:first |)
+              :tags $ #{} :core :unit
         '&str:includes? $ %{} 'CodeEntry
           :doc "|String .includes? 的内部实现，检查是否包含子串；应用代码优先使用 text .includes? fragment。不要与 String .contains? 的字符索引检查混淆。"
           :code $ quote &runtime-implementation
@@ -2740,18 +2822,24 @@
               assert= false $ &str:includes? |abcd |z
             :tags $ #{} :core :unit
         '&str:nth $ %{} 'CodeEntry
-          :doc "|internal function for getting nth character\nSyntax: (&str:nth s index)\nParams: s (string), index (number)\nReturns: string or nil\nReturns character at index, nil if index out of bounds"
+          :doc "|internal function for getting nth character\nSyntax: (&str:nth s index)\nParams: s (string), index (number)\nReturns: Option<String>\nReturns `Option :some character` at the index, or `Option :none` if the index is out of bounds"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'String 'Number
-            :return $ :: 'Optional 'String
+            :return $ :: 'Option 'String
           :tags $ #{} :builtin :internal
-          :tests $ [] $ %{} 'TestEntry (:name |returns-unicode-character-by-index)
-            :code $ quote $ do
-              assert= "|中" $ &str:nth "|中文" 0
-              assert= "|文" $ &str:nth "|中文" 1
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |returns-unicode-character-by-index)
+              :code $ quote $ do
+                assert= (Option :some "|中") $ &str:nth "|中文" 0
+                assert= (Option :some "|文") $ &str:nth "|中文" 1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |returns-none-when-out-of-bounds)
+              :code $ quote $ do
+                assert= (Option :none) $ &str:nth |abc 3
+                assert= (Option :none) $ &str:nth | 0
+              :tags $ #{} :core :unit
         '&str:pad-left $ %{} 'CodeEntry
           :doc "|internal function for left padding string\nSyntax: (&str:pad-left s length pad-char)\nParams: s (string), length (number), pad-char (string)\nReturns: string\nPads string on left to the given length in Unicode scalars (like count) by repeating the pad string; NaN, negative lengths and an empty pad string return s unchanged"
           :code $ quote &runtime-implementation
@@ -2872,7 +2960,7 @@
                 assert= | $ &str:rest |
                 assert= | $ &str:rest "|😀"
                 assert= "|文" $ &str:rest "|中文"
-                assert= nil $ &str:nth "|😀" 100000000000000000000
+                assert= (Option :none) $ &str:nth "|😀" 100000000000000000000
                 assert= false $ &str:contains? "|😀" 100000000000000000000
                 assert= | $ &str:slice "|😀" 100000000000000000000 100000000000000000000
                 assert= "|😀" $ &str:slice "|😀" 0 100000000000000000000
@@ -2976,16 +3064,16 @@
             :args $ [] 'Struct
           :tags $ #{} :builtin :internal
         '&struct:definition $ %{} 'CodeEntry
-          :doc "|Return the StructDef of a nominal struct value, or nil for an anonymous struct."
+          :doc "|Return `Option :some StructDef` for a nominal struct value and `Option :none` for an anonymous struct."
           :code $ quote &runtime-implementation
           :examples $ [] $ quote
             let
                 User $ defstruct User $ :name 'String
                 user $ User :name |Alice
-              assert= User $ &struct:definition user
+              assert= (Option :some User) $ &struct:definition user
           :schema $ :: 'Fn $ {}
             :args $ [] 'Struct
-            :return $ :: 'Optional 'Tag
+            :return $ :: 'Option 'StructDef
           :tags $ #{} :builtin :internal
         '&struct:extend-as $ %{} 'CodeEntry (:doc "|Extend a struct value with a declared field.")
           :code $ quote &runtime-implementation
@@ -3130,7 +3218,7 @@
           :code $ quote $ defmacro -> (base & xs)
             if (&list:empty? xs) (quasiquote ~base)
               &let
-                x0 $ &list:first xs
+                x0 $ &list:nth xs 0
                 if
                   and (list? x0) (&list:empty? x0)
                   raise "|-> expects non-empty list step"
@@ -3142,7 +3230,7 @@
                 if (list? x0)
                   recur
                     &list:concat
-                      [] (&list:first x0) base
+                      [] (&list:nth x0 0) base
                       &list:rest x0
                     , & $ &list:rest xs
                   recur ([] x0 base) & $ &list:rest xs
@@ -3157,7 +3245,7 @@
         '->% $ %{} 'CodeEntry (:doc "|pass value as `%` into several expressions")
           :code $ quote $ defmacro ->% (base & xs)
             if (&list:empty? xs) base $ let
-                tail $ &list:last xs
+                tail $ &list:nth xs (&- (&list:count xs) 1)
                 pairs $ &list:concat
                   [] $ [] '% base
                   map (butlast xs)
@@ -3175,7 +3263,7 @@
           :code $ quote $ defmacro ->> (base & xs)
             if (&list:empty? xs) (quasiquote ~base)
               &let
-                x0 $ &list:first xs
+                x0 $ &list:nth xs 0
                 if
                   and (list? x0) (&list:empty? x0)
                   raise "|->> expects non-empty list step"
@@ -3286,7 +3374,7 @@
           :code $ quote $ defn = (x & ys)
             if
               &= 1 $ &list:count ys
-              &= x $ &list:first ys
+              &= x $ &list:nth ys 0
               foldl-compare ys x &=
           :examples $ []
             quote $ assert= true $ = 3 3 3
@@ -3969,7 +4057,7 @@
           :code $ quote $ defmacro and (& xs)
             if (&list:empty? xs) (raise "|and expects at least 1 expression")
             &let
-              item $ &list:first xs
+              item $ &list:nth xs 0
               &let
                 rest-xs $ &list:rest xs
                 if (&list:empty? rest-xs)
@@ -3980,7 +4068,7 @@
                     quasiquote $ if ~item ~item false
                   quasiquote $ if ~item
                     and
-                      ~ $ &list:first rest-xs
+                      ~ $ &list:nth rest-xs 0
                       ~@ $ &list:rest rest-xs
                     , false
           :examples $ []
@@ -4187,7 +4275,8 @@
               not $ list? args
               raise $ str-spaced "|apply-args expects list args, got:" args
             if
-              &= [] $ &list:first args
+              and (not $ &list:empty? args)
+                &= [] $ &list:nth args 0
               quasiquote $ ~f $ ~@ (&list:rest args)
               quasiquote $ ~f ~@args
           :examples $ []
@@ -4738,7 +4827,7 @@
                   :args $ [] 'List
                   :return 'Bool
                 &let
-                  p $ &list:first pair
+                  p $ &list:nth pair 0
                   or (tag? p) (string? p) (number? p) (bool? p)
               quasiquote $ match ~item ~@patterns
               &let
@@ -4797,7 +4886,7 @@
                   :args $ [] 'List
                   :return 'Bool
                 &let
-                  p $ &list:first pair
+                  p $ &list:nth pair 0
                   or (tag? p) (string? p) (number? p) (bool? p)
               quasiquote $ match ~item ~@patterns $ _ ~default
               &let
@@ -4954,7 +5043,7 @@
           :code $ quote $ defmacro cond (& pairs)
             if (&list:empty? pairs) (raise "|cond expects at least 1 (condition branch) pair")
             &let
-              pair $ &list:first pairs
+              pair $ &list:nth pairs 0
               if
                 not $ and (list? pair)
                   &= 2 $ &list:count pair
@@ -5072,9 +5161,9 @@
                     recur (&list:nth xs p0) ps
                     , false
                 (map? xs)
-                  if (&map:contains? xs p0)
-                    recur (&map:get xs p0) ps
-                    , false
+                  match (&map:get xs p0)
+                    (:some value) (recur value ps)
+                    (:none) false
                 (struct? xs)
                   raise "|contains-in? does not traverse Struct fields; end the path before the Struct and use (:field value)"
                 (enum? xs)
@@ -5416,12 +5505,12 @@
             if
               and (list? entry)
                 not $ empty? entry
-                &= [] $ &list:first entry
+                &= [] $ &list:nth entry 0
               &list:rest entry
               if
                 and (list? entry)
                   &= 1 $ count entry
-                  list? $ &list:first entry
+                  list? $ &list:nth entry 0
                 raise "|data definition forms already receive a list from indentation; remove the extra outer parentheses"
                 , entry
           :examples $ []
@@ -5433,15 +5522,15 @@
             if
               and (list? form)
                 &= 1 $ count form
-                list? $ &list:first form
+                list? $ &list:nth form 0
               &let
-                child $ data-definition-form $ &list:first form
+                child $ data-definition-form $ &list:nth form 0
                 and (list? child)
                   not $ empty? child
                   or
-                    tag? $ &list:first child
+                    tag? $ &list:nth child 0
                     and
-                      not $ tag? $ &list:first child
+                      not $ tag? $ &list:nth child 0
                       every? (&list:rest child)
                         fn (bound)
                           &let
@@ -5456,10 +5545,10 @@
           :doc "|Detect optional where-map form after generic parameters in data-definition macros"
           :code $ quote $ defn data-definition-where-form? (tail-forms)
             if (empty? tail-forms) false $ &let
-              candidate $ data-definition-form $ &list:first tail-forms
+              candidate $ data-definition-form $ &list:nth tail-forms 0
               and (list? candidate)
                 not $ empty? candidate
-                not $ tag? $ &list:first candidate
+                not $ tag? $ &list:nth candidate 0
                 every? (&list:rest candidate)
                   fn (bound)
                     &let
@@ -5850,24 +5939,25 @@
             assert "|defenum expects name as tag/symbol" $ or (tag? name) (symbol? name)
             assert "|defenum expects variants in list" $ and (list? variants) (every? variants list?)
             &let
-              first-variant $ if (empty? variants) ([]) (&list:first variants)
+              first-variant $ if (empty? variants) ([]) (&list:nth variants 0)
               &let
                 variants $ if
                   and
                     &= 1 $ count variants
                     list? first-variant
-                    &= '{} $ &list:first first-variant
+                    not $ &list:empty? first-variant
+                    &= '{} $ &list:nth first-variant 0
                   &list:rest first-variant
                   , variants
                 &let
-                  first-variant $ if (empty? variants) ([]) (&list:first variants)
+                  first-variant $ if (empty? variants) ([]) (&list:nth variants 0)
                   &let
                     generics $ if
                       and (list? first-variant)
                         not $ empty? first-variant
-                        not $ tag? $ &list:first first-variant
+                        not $ tag? $ &list:nth first-variant 0
                       if
-                        &= [] $ &list:first first-variant
+                        &= [] $ &list:nth first-variant 0
                         &list:rest first-variant
                         , first-variant
                       []
@@ -5877,7 +5967,7 @@
                         has-where-form? $ data-definition-where-form? tail-forms
                         &let
                           where-form $ if has-where-form?
-                            data-definition-form $ &list:first tail-forms
+                            data-definition-form $ &list:nth tail-forms 0
                             {}
                           &let
                             variant-forms $ if has-where-form? (&list:rest tail-forms) tail-forms
@@ -5886,7 +5976,7 @@
                                 items $ data-definition-form variant
                                 and
                                   &>= (count items) 1
-                                  tag? $ &list:first items
+                                  tag? $ &list:nth items 0
                             assert "|defenum found malformed nested payload syntax; check indentation around variants" $ every? variant-forms $ fn (variant)
                               &let
                                 items $ data-definition-form variant
@@ -5898,7 +5988,7 @@
                                 &let
                                   items $ data-definition-form variant
                                   &let
-                                    variant-tag $ &list:first items
+                                    variant-tag $ &list:nth items 0
                                     &let
                                       payload-forms $ map (&list:rest items)
                                         fn (t)
@@ -5945,29 +6035,33 @@
             assert "|defimpl expects (.method value) pairs" $ every? pairs $ fn (pair)
               &let
                 items $ if
-                  &= [] $ &list:first pair
+                  and (not $ &list:empty? pair)
+                    &= [] $ &list:nth pair 0
                   &list:rest pair
                   if
-                    &= (quote ::) (&list:first pair)
+                    and (not $ &list:empty? pair)
+                      &= (quote ::) (&list:nth pair 0)
                     &list:rest pair
                     , pair
                 and
                   &= 2 $ count items
-                  &= :method $ type-of $ &list:first items
+                  &= :method $ type-of $ &list:nth items 0
             quasiquote $ def ~name $ &impl::new (~ trait)
               ~@ $ map pairs $ fn (pair)
                 &let
                   items $ if
-                    &= [] $ &list:first pair
+                    and (not $ &list:empty? pair)
+                      &= [] $ &list:nth pair 0
                     &list:rest pair
                     if
-                      &= (quote ::) (&list:first pair)
+                      and (not $ &list:empty? pair)
+                        &= (quote ::) (&list:nth pair 0)
                       &list:rest pair
                       , pair
                   do
                     assert "|defimpl expects (.method value) pairs" $ &= 2 $ count items
                     let
-                        k0 $ &list:first items
+                        k0 $ &list:nth items 0
                         v0 $ &list:nth items 1
                         key $ if
                           &= :method $ type-of k0
@@ -6021,7 +6115,8 @@
                   and
                     &= 1 $ count pairs
                     list? first-pair
-                    &= '{} $ &list:first first-pair
+                    not $ &list:empty? first-pair
+                    &= '{} $ &list:nth first-pair 0
                   &list:rest first-pair
                   , pairs
                 &let
@@ -6030,9 +6125,9 @@
                     generics $ if
                       and (list? first-pair)
                         not $ empty? first-pair
-                        not $ tag? $ &list:first first-pair
+                        not $ tag? $ &list:nth first-pair 0
                       if
-                        &= [] $ &list:first first-pair
+                        &= [] $ &list:nth first-pair 0
                         &list:rest first-pair
                         , first-pair
                       []
@@ -6042,7 +6137,7 @@
                         has-where-form? $ data-definition-where-form? tail-forms
                         &let
                           where-form $ if has-where-form?
-                            data-definition-form $ &list:first tail-forms
+                            data-definition-form $ &list:nth tail-forms 0
                             {}
                           &let
                             field-pairs $ if has-where-form? (&list:rest tail-forms) tail-forms
@@ -6051,24 +6146,24 @@
                                 items $ data-definition-form pair
                                 and (list? items)
                                   &= 2 $ count items
-                                  tag? $ &list:first items
+                                  tag? $ &list:nth items 0
                             assert "|defstruct found malformed nested field syntax; check indentation around field pairs" $ every? field-pairs $ fn (pair)
                               &let
                                 items $ data-definition-form pair
-                                not $ data-definition-malformed-nesting? $ &list:last items
+                                not $ data-definition-malformed-nesting? $ &list:nth items 1
                             &let
                               normalized $ map field-pairs $ fn (pair)
                                 &let
                                   items $ data-definition-form pair
                                   &let
-                                    field-name $ &list:first items
+                                    field-name $ &list:nth items 0
                                     &let
-                                      type-form $ &list:last items
+                                      type-form $ &list:nth items 1
                                       if (list? type-form)
                                         if
                                           and
                                             &= 2 $ count type-form
-                                            syntax? $ &list:first type-form
+                                            syntax? $ &list:nth type-form 0
                                           if (includes? generics type-form)
                                             quasiquote $ [] (~ field-name)
                                               quote $ ~ type-form
@@ -6110,7 +6205,7 @@
                 shape $ Shape :circle 2
               assert= |old $ :text draft
               assert= false $ :mono? draft
-              assert= Draft $ &struct:definition draft
+              assert= (Option :some Draft) $ &struct:definition draft
               assert= draft $ %{} Draft (:text |old) (:mono? false)
               assert= 2 $ match shape
                 (:circle r) r
@@ -6123,11 +6218,12 @@
             if (every? entries list?) &unit $ raise "|deftrait expects each method as (method type) pair"
             &let
               requires-entry? $ fn (entry)
-                &let
-                  head $ &list:first entry
-                  or
-                    &= (quote requires) head
-                    &= (quote 'requires) head
+                and (not $ &list:empty? entry)
+                  &let
+                    head $ &list:nth entry 0
+                    or
+                      &= (quote requires) head
+                      &= (quote 'requires) head
               &let
                 parents $ map (filter entries requires-entry?)
                   fn (entry)
@@ -6142,7 +6238,8 @@
                     fn (entry)
                       &let
                         items $ if
-                          &= [] $ &list:first entry
+                          and (not $ &list:empty? entry)
+                            &= [] $ &list:nth entry 0
                           &list:rest entry
                           , entry
                         do
@@ -6150,7 +6247,7 @@
                             &= 2 $ count items
                             , &unit $ raise $ str-spaced "|deftrait expects each method as (method type), got:" (format-to-lisp entry)
                           let
-                              m0 $ &list:first items
+                              m0 $ &list:nth items 0
                               t0 $ &list:nth items 1
                               k0 $ if (tag? m0) m0 $ if
                                 &= :method $ type-of m0
@@ -6307,10 +6404,9 @@
         'destruct-map $ %{} 'CodeEntry
           :doc "|Split a map into the nominal MapDestruct<K,V> enum."
           :code $ quote $ defn destruct-map (xs)
-            &let
-              pair $ &map:destruct xs
-              if (nil? pair) (MapDestruct :none)
-                MapDestruct :some (&list:nth pair 0) (&list:nth pair 1) (&list:nth pair 2)
+            match (&map:destruct xs)
+              (:some pair) $ MapDestruct :some (&list:nth pair 0) (&list:nth pair 1) (&list:nth pair 2)
+              (:none) $ MapDestruct :none
           :examples $ []
             quote $ assert= (MapDestruct :none)
               destruct-map $ &{}
@@ -6340,10 +6436,9 @@
         'destruct-set $ %{} 'CodeEntry
           :doc "|Split a set into the nominal SetDestruct<T> enum."
           :code $ quote $ defn destruct-set (xs)
-            &let
-              pair $ &set:destruct xs
-              if (nil? pair) (SetDestruct :none)
-                SetDestruct :some (&list:nth pair 0) (&list:nth pair 1)
+            match (&set:destruct xs)
+              (:some pair) $ SetDestruct :some (&list:nth pair 0) (&list:nth pair 1)
+              (:none) $ SetDestruct :none
           :examples $ []
             quote $ assert= (SetDestruct :none)
               destruct-set $ #{}
@@ -6663,7 +6758,7 @@
           :code $ quote $ defmacro either (& xs)
             if (&list:empty? xs) (raise "|either expects at least 1 expression")
             &let
-              item $ &list:first xs
+              item $ &list:nth xs 0
               &let
                 rest-xs $ &list:rest xs
                 if (&list:empty? rest-xs) item $ if (list? item)
@@ -6672,12 +6767,12 @@
                     quasiquote $ &let (~v1# ~item)
                       if (nil? ~v1#)
                         either
-                          ~ $ &list:first rest-xs
+                          ~ $ &list:nth rest-xs 0
                           ~@ $ &list:rest rest-xs
                         ~ v1#
                   quasiquote $ if (nil? ~item)
                     either
-                      ~ $ &list:first rest-xs
+                      ~ $ &list:nth rest-xs 0
                       ~@ $ &list:rest rest-xs
                     ~ item
           :examples $ []
@@ -6769,7 +6864,7 @@
             :generics $ [] 'T
         'enum-definition $ %{} 'CodeEntry (:doc "|Return Option<EnumDef> for an enum value.")
           :code $ quote $ defn enum-definition (tuple)
-            optionally $ &enum:definition tuple
+            &enum:definition tuple
           :examples $ []
             quote $ assert= (%some Option)
               enum-definition $ %some 1
@@ -7211,7 +7306,7 @@
                   selected $ filter-map-kv input $ fn (id value)
                     MapEntryDecision :keep (to-tag id) (str value)
                 assert-type selected $ :: 'Map 'Tag 'String
-                assert= |1 $ &map:get selected :a
+                assert= (Option :some |1) $ &map:get selected :a
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |preserves-captured-generic-relations)
               :code $ quote $ let
@@ -7311,11 +7406,9 @@
           :code $ quote $ defn first (x)
             cond
                 list? x
-                if (&list:empty? x) (%none)
-                  %some $ &list:first x
+                &list:first x
               (string? x)
-                if (&str:empty? x) (%none)
-                  %some $ &str:first x
+                &str:first x
               (enum? x)
                 if
                   &= 0 $ &enum:count x
@@ -7986,9 +8079,7 @@
           :code $ quote $ defn get (base k)
             cond
                 map? base
-                if (&map:contains? base k)
-                  %some $ &map:get base k
-                  %none
+                &map:get base k
               (struct? base)
                 if
                   and
@@ -8124,7 +8215,7 @@
               :tags $ #{} :core :unit
         'get-env $ %{} 'CodeEntry (:doc "|Read an environment variable as Option<String>.")
           :code $ quote $ defn get-env (name)
-            optionally $ &get-env name
+            &get-env name
           :examples $ [] $ quote
             assert= (Option :none) (get-env |__CALCIT_TEST_MISSING_ENV_83B125E9__)
           :schema $ :: 'Fn $ {}
@@ -8143,9 +8234,11 @@
               :code $ quote $ let
                   raw $ &get-env |__CALCIT_ENV_PROOF_1788__
                   value $ get-env |__CALCIT_ENV_PROOF_1788__
-                assert= (optionally raw) value
+                assert= raw value
                 assert=
-                  if (nil? raw) |fallback raw
+                  match raw
+                    (:some text) text
+                    (:none) |fallback
                   .unwrap-or value |fallback
               :tags $ #{} :core :env-proof :unit
         'get-in $ %{} 'CodeEntry
@@ -9000,7 +9093,7 @@
         'impl-origin $ %{} 'CodeEntry
           :doc "|Return the trait origin of an impl as Option<Trait>; inherent method bags produce none."
           :code $ quote $ defn impl-origin (impl)
-            optionally $ &impl:origin impl
+            &impl:origin impl
           :examples $ [] $ quote
             assert= (%none)
               impl-origin $ &impl::new :PlainImpl
@@ -9421,11 +9514,10 @@
           :code $ quote $ defn last (xs)
             cond
                 list? xs
-                if (&list:empty? xs) (%none)
-                  %some $ &list:last xs
+                &list:last xs
               (string? xs)
                 if (&str:empty? xs) (%none)
-                  %some $ &str:nth xs $ &- (&str:count xs) 1
+                  &str:nth xs $ &- (&str:count xs) 1
               (enum? xs)
                 if
                   &= 0 $ &enum:count xs
@@ -9476,10 +9568,10 @@
                 assert= (%none) (last |)
                 assert= (%some |b) (nth |abc 1)
                 assert= (%some "|文") (nth "|中文" 1)
-                assert= "|😀" $ &str:first "|😀中"
-                assert= nil $ &str:first |
-                assert= "|中" $ &str:nth "|😀中" 1
-                assert= nil $ &str:nth "|😀中" 2
+                assert= (Option :some "|😀") $ &str:first "|😀中"
+                assert= (Option :none) $ &str:first |
+                assert= (Option :some "|中") $ &str:nth "|😀中" 1
+                assert= (Option :none) $ &str:nth "|😀中" 2
                 assert= true $ &str:contains? "|😀中" 1
                 assert= false $ &str:contains? "|😀中" 2
                 assert= false $ &str:contains? | 0
@@ -9563,12 +9655,14 @@
               quasiquote $ &let (~pattern ~v) ~@body
               if (list? pattern)
                 if
-                  &= [] $ &list:first pattern
+                  and (not $ &list:empty? pattern)
+                    &= [] $ &list:nth pattern 0
                   quasiquote $ let[]
                     ~ $ &list:rest pattern
                     , ~v ~@body
                   if
-                    &= '{} $ &list:first pattern
+                    and (not $ &list:empty? pattern)
+                      &= '{} $ &list:nth pattern 0
                     quasiquote $ let{}
                       ~ $ &list:rest pattern
                       , ~v ~@body
@@ -9626,17 +9720,17 @@
                   if (&list:empty? xs) acc $ &let ()
                     if
                       not $ or
-                        symbol? $ &list:first xs
-                        is-spreading-mark? $ &list:first xs
-                      raise $ &str:concat "|Expected symbol for vars: " $ &list:first xs
+                        symbol? $ &list:nth xs 0
+                        is-spreading-mark? $ &list:nth xs 0
+                      raise $ &str:concat "|Expected symbol for vars: " $ &list:nth xs 0
                     if
-                      is-spreading-mark? $ &list:first xs
+                      is-spreading-mark? $ &list:nth xs 0
                       &let ()
                         assert "|expected list spreading" $ &= 2 $ &list:count xs
                         append acc $ [] (&list:nth xs 1)
                           quasiquote $ &list:slice ~v ~idx
                       recur
-                        append acc $ [] (&list:first xs)
+                        append acc $ [] (&list:nth xs 0)
                           quasiquote $ &list:nth ~v ~idx
                         rest xs
                         inc idx
@@ -9673,7 +9767,12 @@
                 assert (str "|expected map for destructing: " ~var-result) (map? ~var-result)
                 let
                   ~ $ map items $ defn gen-items% (x)
-                    [] x $ [] (quote &map:get) var-result $ turn-tag x
+                    &let
+                      value-var $ gensym |value
+                      [] x $ quasiquote $ match
+                        &map:get ~var-result $ ~ (turn-tag x)
+                        (:some ~value-var) ~value-var
+                        (:none) nil
                   ~@ body
           :examples $ []
           :schema $ :: 'Macro $ {}
@@ -9883,8 +9982,8 @@
               :code $ quote $ assert= (&{} :a 11 :b 12)
                 map (&{} :a 1 :b 2)
                   fn (pair)
-                    [] (&list:first pair)
-                      + 10 $ &list:last pair
+                    [] (&list:nth pair 0)
+                      + 10 $ &list:nth pair 1
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |preserves-open-payload-callback)
               :code $ quote $ let
@@ -10291,7 +10390,7 @@
           :examples $ []
             quote $ assert= (Option :some 1) (nil->option 1)
             quote $ assert= (Option :none) (nil->option nil)
-            quote $ assert= Option $ &enum:definition (nil->option 1)
+            quote $ assert= (Option :some Option) $ &enum:definition (nil->option 1)
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Optional 'T
             :generics $ [] 'T
@@ -10442,7 +10541,7 @@
                 if
                   and (&>= i 0)
                     &< i $ &str:count x
-                  %some $ &str:nth x i
+                  &str:nth x i
                   %none
               (enum? x)
                 if
@@ -10671,7 +10770,7 @@
             match opt
               (:some value) (f value)
               (:none)
-                %:: (&enum:definition opt) :none
+                %:: Option :none
           :examples $ [] $ quote
             assert= (Option :some 4)
               (Option :some 2) .and-then $ fn (x)
@@ -10799,9 +10898,9 @@
           :code $ quote $ defn option:map (opt f)
             match opt
               (:some value)
-                %:: (&enum:definition opt) :some $ f value
+                %:: Option :some $ f value
               (:none)
-                %:: (&enum:definition opt) :none
+                %:: Option :none
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'Option 'T)
@@ -10938,7 +11037,7 @@
           :examples $ []
             quote $ assert= (%some 1) (optionally 1)
             quote $ assert= (%none) (optionally nil)
-            quote $ assert= Option $ &enum:definition (optionally 1)
+            quote $ assert= (Option :some Option) $ &enum:definition (optionally 1)
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Optional 'T
             :generics $ [] 'T
@@ -10953,11 +11052,11 @@
                 quasiquote $ &let (~v1# ~item)
                   if ~v1# (~ v1#)
                     or
-                      ~ $ &list:first xs
+                      ~ $ &list:nth xs 0
                       ~@ $ &list:rest xs
               quasiquote $ if ~item (~ item)
                 or
-                  ~ $ &list:first xs
+                  ~ $ &list:nth xs 0
                   ~@ $ &list:rest xs
           :examples $ []
             quote $ assert= |done $ or nil |done false
@@ -11028,7 +11127,7 @@
                   &= 2 $ &list:count pair
                   , false
                 if (list? pair)
-                  &map:assoc acc (&list:first pair) (&list:last pair)
+                  &map:assoc acc (&list:nth pair 0) (&list:nth pair 1)
                   , acc
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -11135,9 +11234,9 @@
         'parse-float $ %{} 'CodeEntry
           :doc "|把完整数字文本解析为 Result<Number,String>。成功值包括有限数、NaN、inf、Infinity（支持符号与大小写变体）；无效文本的 :err 保留原输入。WASM 若将 parse-float 本身列为显式导出或入口 target，会因 E_WASM_NIL_TYPE_EVIDENCE 在代码生成阶段失败；若仅作为未支持依赖保留，生成的 stub 被调用时才陷阱。"
           :code $ quote $ defn parse-float (source)
-            let
-                parsed $ &parse-float source
-              if (nil? parsed) (%err source) (%ok parsed)
+            match (&parse-float source)
+              (:some parsed) (%ok parsed)
+              (:none) (%err source)
           :examples $ []
             quote $ assert= (Result :ok 1.5) (parse-float |1.5)
             quote $ assert= (Result :err |oops) (parse-float |oops)
@@ -11630,7 +11729,7 @@
             match res
               (:ok value) (f value)
               (:err err)
-                %:: (&enum:definition res) :err err
+                %:: Result :err err
           :examples $ [] $ quote
             assert= (Result :ok 4)
               (Result :ok 2) .and-then $ fn (x)
@@ -11677,9 +11776,9 @@
           :code $ quote $ defn result:map (res f)
             match res
               (:ok value)
-                %:: (&enum:definition res) :ok $ f value
+                %:: Result :ok $ f value
               (:err err)
-                %:: (&enum:definition res) :err err
+                %:: Result :err err
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'Result 'T 'E)
@@ -11703,9 +11802,9 @@
           :code $ quote $ defn result:map-err (res f)
             match res
               (:ok value)
-                %:: (&enum:definition res) :ok value
+                %:: Result :ok value
               (:err err)
-                %:: (&enum:definition res) :err $ f err
+                %:: Result :err $ f err
           :examples $ [] $ quote
             assert= (Result :err |failed!)
               (Result :err |failed) .map-err $ fn (e) (str e |!)
@@ -11921,7 +12020,9 @@
                 hint-fn $ {}
                   :args $ [] 'Map 'Dynamic
                   :return 'Map
-                &map:assoc acc k $ &map:get m k
+                match (&map:get m k)
+                  (:some value) (&map:assoc acc k value)
+                  (:none) (&map:assoc acc k nil)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'Map 'K 'V) (:: 'List 'K)
@@ -12264,7 +12365,7 @@
             :generics $ [] 'T
         'struct-definition $ %{} 'CodeEntry (:doc "|Return Option<StructDef> for a struct value.")
           :code $ quote $ defn struct-definition (value)
-            optionally $ &struct:definition value
+            &struct:definition value
           :examples $ [] $ quote
             let
                 User $ defstruct User $ :name 'String
@@ -13071,9 +13172,9 @@
           :doc "|Applies a function to an existing collection slot. Map/List and known Struct-field calls retain receiver-specific callback types; an open receiver requires a callback accepting Dynamic. List/Enum indices are checked as Number, and an existing Struct field key as Tag. Missing Map/List/Struct slots leave the collection unchanged."
           :code $ quote $ defn update (x k f)
             if (map? x)
-              if (contains? x k)
-                assoc x k $ f $ &map:get x k
-                , x
+              match (&map:get x k)
+                (:some value) (assoc x k $ f value)
+                (:none) x
               if (list? x)
                 let
                     index $ decode-map-as k 'Number
@@ -13599,7 +13700,7 @@
               if
                 if (&list:empty? xs) true $ &list:empty? ys
                 , acc $ recur
-                  &map:assoc acc (&list:first xs) (&list:first ys)
+                  &map:assoc acc (&list:nth xs 0) (&list:nth ys 0)
                   rest xs
                   rest ys
           :examples $ []
@@ -13788,11 +13889,12 @@
           :schema $ :: 'Dynamic
         'normalize-trait-type $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn normalize-trait-type (t0)
-            if (list? t0)
+            if
+              and (list? t0) (not $ &list:empty? t0)
               &let
                 size $ &list:count t0
                 &let
-                  head $ &list:first t0
+                  head $ &list:nth t0 0
                   &let
                     second $ if (&>= size 2) (&list:nth t0 1) ([])
                     &let

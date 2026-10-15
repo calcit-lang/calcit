@@ -1,3 +1,4 @@
+use crate::builtins::option_value;
 use std::env;
 use std::fs;
 use std::process::exit;
@@ -118,20 +119,13 @@ pub fn get_env(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
   match xs.first() {
     Some(Calcit::Str(s)) => match env::var(&**s) {
-      Ok(v) => {
-        let has_default = xs.len() == 2;
-        if has_default {
-          eprintln!("(get-env {s}): {v}");
-        }
-        Ok(Calcit::Str(v.into()))
-      }
-      Err(e) => match xs.get(1) {
-        Some(v0) => Ok(v0.to_owned()),
-        None => {
-          eprintln!("(get-env {s}): {e}");
-          Ok(Calcit::Nil)
-        }
-      },
+      Ok(v) => option_value::some(Calcit::Str(v.into())),
+      // A missing variable is the ordinary `none` case and stays silent.
+      Err(env::VarError::NotPresent) => option_value::none(),
+      Err(e @ env::VarError::NotUnicode(_)) => CalcitErr::err_str(
+        CalcitErrKind::Type,
+        format!("get-env {s}: environment value is not valid unicode: {e}"),
+      ),
     },
     Some(a) => {
       let msg = format!(
