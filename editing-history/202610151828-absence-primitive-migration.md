@@ -27,12 +27,13 @@ Destruct 三种合同。维护者确认这项原计划 0.31.0 的变化提前进
 ## 验证方式
 
 `tests/fixtures/absence-migration.cirru` 通过 CLI 的 dry-run / scoped revision 事务创建。
-25 项 definition :tests 覆盖全部十三个原语、Some nil / None / false / zero / 空字符串、
-解析失败、空/非空集合解构、Unicode 访问、fallback 效果与单次求值。
+29 项 definition :tests 覆盖全部十三个原语、Some nil / None / false / zero / 空字符串、
+解析失败、空/非空集合解构和 payload 次序、Unicode 访问、fallback 效果与单次求值、
+实际触发的错误传播及闭包身份。
 
 同一旧源码使用正式 CLI / @calcit/procs 0.30.0-alpha.5 配对，在既有跨后端运行器的 native / JS
-各 25/25 通过；候选迁移应用到临时副本后，当前同源 CLI / TS runtime 在 native / JS 也各
-25/25 通过，无排除项。Rust 只检查 CLI 的预览、revision、
+各 29/29 通过；候选迁移应用到临时副本后，当前同源 CLI / TS runtime 在 native / JS 也各
+29/29 通过，无排除项。Rust 只检查 CLI 的预览、revision、
 确定性、原子写回、review-only/no-op 和暂存失败保护；不在 Rust 重写上述语言语义断言。
 
 这些结果不是正式 CLI/runtime 配对发布，也不代替 #2080 中九个真实消费者的验收。

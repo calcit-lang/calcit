@@ -29,6 +29,37 @@
         :code $ quote $ ns app.main (:require)
     'app.migration $ %{} 'FileEntry
       :defs $ {}
+        'active-error $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn active-error ()
+            let
+                calls $ ref 0
+                result $ try
+                  either
+                    &map:get (&{} :k true) :missing
+                    do (reset! calls 1) (raise |expected-fallback-error) false
+                  fn (error) true
+              assert= 1 $ deref calls
+              , result
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
+            :code $ quote $ assert= true (app.migration/active-error)
+            :tags $ #{} :absence-migration
+        'closure-identity $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn closure-identity ()
+            let
+                fallback $ fn () 7
+                result $ either
+                  &map:get (&{} :k fallback) :missing
+                  , fallback
+              identical? fallback result
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
+            :code $ quote $ assert= true (app.migration/closure-identity)
+            :tags $ #{} :absence-migration
         'enum-probe $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn enum-probe ()
             nil? $ &enum:definition $ Option :some 1
@@ -112,6 +143,22 @@
             :args $ []
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/map-destruct-present)
+            :tags $ #{} :absence-migration
+        'map-destruct-values $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn map-destruct-values ()
+            let
+                result $ either
+                  &map:destruct $ &{} :k 1
+                  [] :fallback
+              assert=
+                [] :k 1 $ &{}
+                , result
+              , true
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |legacy-payload)
+            :code $ quote $ assert= true (app.migration/map-destruct-values)
             :tags $ #{} :absence-migration
         'map-either $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn map-either ()
@@ -230,6 +277,22 @@
             :args $ []
           :tests $ [] $ %{} 'TestEntry (:name |legacy-value)
             :code $ quote $ assert= true (app.migration/set-destruct)
+            :tags $ #{} :absence-migration
+        'set-destruct-values $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn set-destruct-values ()
+            let
+                result $ either
+                  &set:destruct $ #{} 1
+                  [] :fallback
+              assert=
+                [] 1 $ #{}
+                , result
+              , true
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |legacy-payload)
+            :code $ quote $ assert= true (app.migration/set-destruct-values)
             :tags $ #{} :absence-migration
         'set-empty $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn set-empty ()

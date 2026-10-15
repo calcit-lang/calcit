@@ -30,7 +30,7 @@ fn absence_fix_guards_source_and_attached_transactions() {
   let suggestions = report["data"]["suggestions"].as_array().unwrap();
   assert_eq!(
     suggestions.len(),
-    25,
+    29,
     "all thirteen primitive families and attached source: {report}"
   );
   assert!(
