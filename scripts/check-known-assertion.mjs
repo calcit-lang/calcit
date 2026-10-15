@@ -28,6 +28,49 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
+  // #2077: the shared replay must keep named-entry target boundaries and report
+  // a rejected non-first namespace as a compiler error, not a missing export.
+  const entrySnapshot = resolve("calcit/test-replay-entry.cirru");
+  const entryConfig = () => JSON.parse(execFileSync(binary,
+    [entrySnapshot, "query", "config", "--format", "json"], options));
+  const originalEntryConfig = entryConfig();
+  const browserTest = "app.replay.browser/answer#uses-the-selected-entry-target";
+  const nodeTest = "app.replay.node/answer#uses-the-selected-entry-target";
+  for (const [name, selection, expectedStatus, backends = "js"] of [
+    ["named-node", ["--entry", "node", "--target", "app.replay.node/answer"], 0],
+    ["named-node-universal", ["--entry", "node", "--target", "app.replay.browser/answer"], 0, "native,js"],
+    ["explicit-browser", ["--entry", "default", "--target", "app.replay.node/answer"], 1],
+    ["mixed-default", [], 1],
+    ["unknown-entry", ["--entry", "does-not-exist", "--target", "app.replay.browser/answer"], 1],
+  ]) {
+    const report = join(project, `entry-${name}.json`);
+    const result = spawnSync(process.execPath, ["scripts/run-core-tests.mjs",
+      "--snapshot", entrySnapshot, "--backend", backends, "--results-json", report, ...selection],
+    { ...options, env: { ...process.env, CALCIT_BIN: binary } });
+    if (result.error) throw result.error;
+    assert.equal(result.status, expectedStatus, `${name}: ${result.stdout}\n${result.stderr}`);
+    if (name === "unknown-entry") {
+      assert.match(result.stderr, /does-not-exist/);
+      assert.doesNotMatch(result.stdout, /All non-excluded definition tests passed/);
+      continue;
+    }
+    const results = JSON.parse(await readFile(report, "utf8"));
+    if (name === "named-node") {
+      assert.equal(results[nodeTest].js.status, "pass");
+      assert.equal(Object.keys(results).length, 1);
+    } else if (name === "named-node-universal") {
+      assert.equal(results[browserTest].native.status, "pass");
+      assert.equal(results[browserTest].js.status, "pass");
+      assert.equal(Object.keys(results).length, 1);
+    } else {
+      assert.equal(results[nodeTest].js.status, "compile-error");
+      assert.match(results[nodeTest].js.detail, /E_JS_FFI_TARGET_MISMATCH/);
+      assert.doesNotMatch(result.stderr, /ERR_MODULE_NOT_FOUND|is not a function/);
+      if (name === "mixed-default") assert.equal(results[browserTest].js.status, "pass");
+    }
+  }
+  assert.deepEqual(entryConfig(), originalEntryConfig, "replay must not mutate the source entry configuration");
+
   // Native handles cannot be fabricated for a successful call: audit real wrapper
   // bodies here, while the HTTP host smoke covers their actual Unit/error behavior.
   const nativeCapabilities = join(project, "native-capability-signatures.cirru");

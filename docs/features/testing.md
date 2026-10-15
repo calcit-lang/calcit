@@ -184,6 +184,18 @@ WASMTIME_CLI=wasmtime node scripts/run-core-tests.mjs --backend wasi --target 'c
 从该项目目录运行并指定固定 `CALCIT_BIN`，生成 JS 使用该目录的 Node 依赖；
 运行器不安装依赖或写入模块缓存。
 
+应用已有 browser/Node 等命名入口时，用同一个运行器的 `--entry` 选择原入口，
+再用 tag 或 definition scope 选择该宿主上的测试：
+
+```bash
+node scripts/run-core-tests.mjs --snapshot calcit.cirru --entry server --tag node --backend js
+```
+
+入口的 target、modules、type slots 和 feature policy 沿用 Snapshot 配置，不按测试
+内容猜测，也不自动授予 FFI 能力。省略 `--entry` 仍使用 default；未知入口失败。
+选择 browser 入口执行 Node-only 测试仍报告原 target 错误。JS 构建明确引用全部
+选中测试，单项编译失败不会变成缺少导出或静默跳过其它 namespace 的测试。
+
 新增的 core `:tests` 自动进入三个后端，无需登记。某个后端暂时无法运行的测试写入 `scripts/core-tests-exclusions.cirru`，按后端列出测试 id 或 tag，并写明原因，原因以类别开头：`unsupported`（后端明确拒绝该构造）、`parity`（结果与 native 不同，另开 issue 修复）、`host`（需要回放宿主未提供的能力）、`replay`（因不在所属 namespace 回放而产生）。清单中引用不存在的测试会使运行失败；`--report-unexpected-pass` 会额外运行被排除的测试，列出已经通过、可以移出清单的条目。
 
 新增测试需要核对它实际使用的后端能力。例如 `try`、`atom` 和开放值的 `data-view` 目前在 WASM/WASI 明确报告 unsupported；对应测试仍完整运行于 native/JS，排除项必须指向具体测试并记录实际诊断。一个测试同时覆盖已支持和未支持的构造时，保留原测试，并给已支持的断言单独附加 `:tests`，避免因整项排除而丢失这部分跨后端覆盖。不能用排除项掩盖本应支持的行为回归或改变原断言。

@@ -8,7 +8,7 @@
 // Usage:
 //   node scripts/run-core-tests.mjs [--backend native,js,wasm[,wasi]] [--tag t]...
 //     [--exclude-tag t]... [--name test-name] [--target ns|ns/def|test-id]...
-//     [--exclusions file] [--snapshot file] [--report-unexpected-pass] [--support-matrix file]
+//     [--exclusions file] [--snapshot file] [--entry name] [--report-unexpected-pass] [--support-matrix file]
 //     [--results-json file]
 //
 // Native is the reference: the println trace of each test on the other
@@ -31,7 +31,7 @@ const DEFAULT_BACKENDS = ["native", "js", "wasm"];
 const parseArgs = (argv) => {
   const options = {
     backends: [...DEFAULT_BACKENDS], tags: [], excludeTags: [], names: [], targets: [],
-    snapshot: "src/cirru/calcit-core.cirru", exclusions: "scripts/core-tests-exclusions.cirru",
+    snapshot: "src/cirru/calcit-core.cirru", entry: undefined, exclusions: "scripts/core-tests-exclusions.cirru",
     supportMatrix: "docs/installation/wasm-support.md",
     reportUnexpectedPass: false, resultsJson: undefined,
   };
@@ -48,6 +48,7 @@ const parseArgs = (argv) => {
       case "--name": options.names.push(value()); break;
       case "--target": options.targets.push(value()); break;
       case "--snapshot": options.snapshot = value(); break;
+      case "--entry": options.entry = value(); break;
       case "--exclusions": options.exclusions = value(); break;
       case "--support-matrix": options.supportMatrix = value(); break;
       case "--report-unexpected-pass": options.reportUnexpectedPass = true; break;
@@ -69,8 +70,11 @@ const parseArgs = (argv) => {
 const options = parseArgs(process.argv.slice(2));
 const binary = resolve(process.env.CALCIT_BIN ?? "target/debug/calcit");
 const execOptions = { encoding: "utf8", stdio: "pipe", timeout: 300000, maxBuffer: 256 * 1024 * 1024 };
-const run = (...args) => execFileSync(binary, args, execOptions);
-const attempt = (...args) => spawnSync(binary, args, execOptions);
+// Preserve the selected entry's target, modules, slots and feature policy in
+// every source query, temporary mutation and backend compilation.
+const entryArgs = options.entry === undefined ? [] : ["--entry", options.entry];
+const run = (...args) => execFileSync(binary, [...entryArgs, ...args], execOptions);
+const attempt = (...args) => spawnSync(binary, [...entryArgs, ...args], execOptions);
 const corePath = resolve(options.snapshot);
 
 const ednTags = (value) => (value?.__edn_set ?? []).map((tag) => tag.__edn_tag ?? tag);
@@ -235,7 +239,7 @@ const buildSnapshot = async (tests, { withMain, head = "defwasm-export", owner =
       [`${home(test)}/${test.fn}`], ["println", `|@@core-test-end:${test.index}`]]);
     addDefinition(REPLAY_NS, "main!", ["defn", "main!", [], ...body, "&unit"]);
   }
-  operations.push(["config", "set", "mode", "native"]);
+  operations.push(["config", "set", "mode", "native", ...entryArgs]);
   const transaction = `${snapshot}.transaction.json`;
   await writeFile(transaction, JSON.stringify(operations));
   const preview = JSON.parse(run(snapshot, "edit", "transaction", "--file", transaction, "--dry-run", "--format", "json"));
@@ -372,7 +376,10 @@ const runJs = async (tests) => {
   const rejected = new Map();
   let buildIndex = 0;
   const groups = await buildBisect(tests, async (subset) => {
-    const { snapshot, entry } = await buildSnapshot(subset, { withMain: false });
+    // Reference every selected test before codegen, including tests outside the
+    // first namespace. Otherwise an uncompiled test can masquerade as a missing
+    // JS module/export instead of retaining its original compiler diagnostic.
+    const { snapshot, entry } = await buildSnapshot(subset, { withMain: true });
     const output = join(fixture, `js-${buildIndex++}`);
     const emitted = attempt(snapshot, ...entry, "--emit-path", output, "js");
     return emitted.status === 0 ? { ok: true, artifact: output } : { ok: false, error: tail(`${emitted.stdout}\n${emitted.stderr}`) };
