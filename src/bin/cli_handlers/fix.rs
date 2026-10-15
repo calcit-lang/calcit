@@ -636,12 +636,16 @@ pub(crate) fn handle_fix_command(
     migration_warnings.unwrap_or(review.warnings)
   } else if validation_only {
     compile_selected_definitions(&selected_definitions)?
+  } else if local_rename {
+    // The planner proves the renamed definition itself; the original may not
+    // preprocess when its old name is now read as a builtin (#2049).
+    vec![]
   } else if migration_rule {
     compile_selected_definitions_for_migration(&selected_definitions)?
   } else {
     compile_selected_definitions(&selected_definitions)?
   };
-  let semantic_warning_identities = if semantic_rename {
+  let mut semantic_warning_identities = if semantic_rename {
     Some(semantic_rename_warning_identities(
       &warnings,
       options.ns.as_deref().expect("semantic rename requires namespace"),
@@ -689,7 +693,7 @@ pub(crate) fn handle_fix_command(
         local_rename::MacroHead::Other
       })
     });
-    suggestions.extend(local_rename::plan_local_rename(
+    let plan = local_rename::plan_local_rename(
       namespace,
       definition,
       &at,
@@ -697,7 +701,12 @@ pub(crate) fn handle_fix_command(
       &source_snapshot,
       snapshot_file,
       &mut is_macro,
-    )?);
+    )?;
+    // Staged validation recompiles the renamed definition and must reproduce these warnings.
+    if !validation_only {
+      semantic_warning_identities = Some(warning_identities(&plan.warnings));
+    }
+    suggestions.extend(plan.suggestions);
   } else if value_to_zero_arg_fn {
     suggestions.extend(plan_value_to_zero_arg_fn(
       options,

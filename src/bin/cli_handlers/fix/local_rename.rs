@@ -5,11 +5,14 @@
 //! preprocessed definition, so a same-named global or a macro-produced binding
 //! is never renamed by text alone.
 
-use std::collections::{BTreeSet, HashMap};
+use std::cell::RefCell;
+use std::collections::{BTreeSet, HashMap, HashSet};
+use std::sync::Arc;
 
-use calcit::calcit::Calcit;
-use calcit::program;
-use calcit::snapshot::Snapshot;
+use calcit::calcit::{Calcit, LocatedWarning};
+use calcit::call_stack::CallStackList;
+use calcit::snapshot::{ChangesDict, FileChangeInfo, Snapshot};
+use calcit::{program, runner};
 use cirru_parser::Cirru;
 
 use super::{
@@ -293,7 +296,7 @@ pub(super) fn plan_local_rename(
   snapshot: &Snapshot,
   snapshot_file: &str,
   is_macro: &mut dyn FnMut(&str) -> Result<MacroHead, String>,
-) -> Result<Vec<FixSuggestion>, String> {
+) -> Result<LocalRenamePlan, String> {
   if !valid_local_name(new_name) {
     return Err(format!("`--to {new_name}` is not a plain local name."));
   }
@@ -309,7 +312,10 @@ pub(super) fn plan_local_rename(
   let old_name = old_name.to_string();
   // Already renamed: a second preview has nothing to do.
   if old_name == new_name {
-    return Ok(vec![]);
+    return Ok(LocalRenamePlan {
+      suggestions: vec![],
+      warnings: vec![],
+    });
   }
 
   let mut walk = ScopeWalk {
@@ -329,11 +335,17 @@ pub(super) fn plan_local_rename(
     ));
   }
 
-  // Every rewritten use must be a local reference after preprocessing.
-  let compiled = program::lookup_compiled_def(namespace, definition)
-    .ok_or_else(|| format!("`{namespace}/{definition}` did not preprocess; fix its errors before renaming locals."))?;
+  // Every rewritten use must be a local reference to the new name after
+  // preprocessing the renamed definition. Proving the staged form also covers
+  // an old name the reader resolves as a builtin, which cannot preprocess as a
+  // binding before the rename (#2049).
+  let mut staged = entry.code.clone();
+  for path in std::iter::once(at).chain(walk.uses.iter().map(Vec::as_slice)) {
+    replace_leaf(&mut staged, path, new_name)?;
+  }
+  let (staged_code, warnings) = preprocess_staged_definition(namespace, definition, &entry.code, &staged)?;
   let mut locals = BTreeSet::new();
-  preprocessed_local_paths(&compiled.preprocessed_code, &old_name, &mut locals);
+  preprocessed_local_paths(&staged_code, new_name, &mut locals);
   for use_path in &walk.uses {
     if !locals.contains(use_path) {
       walk.blockers.push(format!(
@@ -354,8 +366,9 @@ pub(super) fn plan_local_rename(
 
   let mut paths = vec![at.to_vec()];
   paths.extend(walk.uses);
-  Ok(
-    paths
+  Ok(LocalRenamePlan {
+    warnings,
+    suggestions: paths
       .into_iter()
       .map(|path| {
         let original = Cirru::leaf(old_name.as_str());
@@ -385,7 +398,65 @@ pub(super) fn plan_local_rename(
         }
       })
       .collect(),
-  )
+  })
+}
+
+/// Replace the leaf at `path` in a definition body.
+fn replace_leaf(node: &mut Cirru, path: &[usize], name: &str) -> Result<(), String> {
+  let mut current = node;
+  for index in path {
+    let Cirru::List(items) = current else {
+      return Err(format!("code{} is not inside a list.", format_path(path)));
+    };
+    current = items
+      .get_mut(*index)
+      .ok_or_else(|| format!("code{} does not exist.", format_path(path)))?;
+  }
+  *current = Cirru::leaf(name);
+  Ok(())
+}
+
+/// Preprocess `staged` in place of `original` and restore the program before returning,
+/// whether or not the staged definition compiles.
+fn preprocess_staged_definition(
+  namespace: &str,
+  definition: &str,
+  original: &Cirru,
+  staged: &Cirru,
+) -> Result<(Calcit, Vec<LocatedWarning>), String> {
+  let swap = |code: &Cirru| {
+    let mut changes = ChangesDict::default();
+    changes.changed.insert(
+      Arc::from(namespace),
+      FileChangeInfo {
+        ns: None,
+        added_defs: HashMap::new(),
+        removed_defs: HashSet::new(),
+        changed_defs: HashMap::from([(definition.to_owned(), code.clone())]),
+      },
+    );
+    program::apply_code_changes(&changes)
+  };
+  swap(staged)?;
+  let warnings = RefCell::new(vec![]);
+  let compiled = super::with_legacy_migration_mode(|| {
+    runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default())
+  })
+  .map_err(|failure| format!("Failed to preprocess the renamed `{namespace}/{definition}`: {failure}"))
+  .and_then(|_| {
+    program::lookup_compiled_def(namespace, definition)
+      .map(|compiled| compiled.preprocessed_code)
+      .ok_or_else(|| format!("`{namespace}/{definition}` did not preprocess after renaming; fix its errors before renaming locals."))
+  });
+  swap(original)?;
+  Ok((compiled?, warnings.into_inner()))
+}
+
+/// Planned edits plus the compiler warnings of the renamed definition, which
+/// staged validation must reproduce.
+pub(super) struct LocalRenamePlan {
+  pub(super) suggestions: Vec<FixSuggestion>,
+  pub(super) warnings: Vec<LocatedWarning>,
 }
 
 /// Cache macro lookups for one plan; module loading behind them is not free.
