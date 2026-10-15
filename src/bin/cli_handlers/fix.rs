@@ -957,6 +957,8 @@ pub(crate) fn handle_fix_command(
   } else {
     "preview"
   };
+  // Source-proof review is independent of later child-report transport errors.
+  let compiler_review_required = !boundary_diagnostics.is_empty();
   let mut workflow_failed = false;
   let workflow = if options.workflow.as_deref() == Some("strict") {
     let commands = strict_workflow_commands(snapshot_file, &source_snapshot);
@@ -1102,7 +1104,7 @@ pub(crate) fn handle_fix_command(
       changed: transaction.changed,
       new_revision: &transaction.new_revision,
       validation: FixValidation {
-        status: if !boundary_diagnostics.is_empty() {
+        status: if compiler_review_required {
           "requires-review"
         } else if operations.is_empty() {
           "not-needed"

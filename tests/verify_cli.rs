@@ -178,6 +178,7 @@ fn logging_macro_preserves_profile_and_workflow_report_channels() {
         let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("one JSON envelope");
         if args[0] == "fix" {
           assert_eq!(report["data"]["workflow"]["status"], "passed");
+          assert_eq!(report["data"]["validation"]["status"], "not-needed");
           let results = report["data"]["workflow"]["verification"]["results"].as_array().unwrap();
           assert_eq!(results.len(), 3, "both entries and the declared profile must run");
           assert!(results.iter().any(|result| result["scope"] == "profile:release"));

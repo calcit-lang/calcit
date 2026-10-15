@@ -5944,6 +5944,7 @@ fn strict_workflow_keeps_declared_macro_logs_out_of_structured_reports() {
         let report = parse_stdout(&output);
         if args[0] == "fix" {
           assert_eq!(report["data"]["workflow"]["status"], "passed");
+          assert_eq!(report["data"]["validation"]["status"], "not-needed");
           for result in report["data"]["workflow"]["verification"]["results"].as_array().unwrap() {
             assert_eq!(result["status"], "passed");
             assert_eq!(result["report"]["data"]["status"], "passed");
