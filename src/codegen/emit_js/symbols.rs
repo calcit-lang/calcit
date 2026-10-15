@@ -46,6 +46,9 @@ pub(super) fn escape_cirru_str(s: &str) -> String {
       '\\' => result.push_str("\\\\"),
       '\"' => result.push_str("\\\""),
       '\n' => result.push_str("\\n"),
+      '\r' => result.push_str("\\r"),
+      '\u{2028}' => result.push_str("\\u2028"),
+      '\u{2029}' => result.push_str("\\u2029"),
       '\t' => result.push_str("\\t"),
       _ => result.push(c),
     }
@@ -111,6 +114,7 @@ mod tests {
   #[test]
   fn escapes_cirru_string_chars() {
     assert_eq!(escape_cirru_str("a\nb\t\\\""), "\"a\\nb\\t\\\\\\\"\"");
+    assert_eq!(escape_cirru_str("\r\n\u{2028}\u{2029}\\r"), "\"\\r\\n\\u2028\\u2029\\\\r\"");
   }
 
   #[test]

@@ -4872,6 +4872,13 @@
                   do (char-from-code 1.5) false
                   fn (e) true
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-source-line-terminators)
+              :code $ quote $ assert=
+                str (char-from-code 9) (char-from-code 13) (char-from-code 10) (char-from-code 13) (char-from-code 10) (char-from-code 8232) (char-from-code 8233) "|tail\\\""
+                str
+                  do (println |unicode-source-prefix) "|\t\n\n  "
+                  do (println |unicode-source-suffix) "|tail\\\""
+              :tags $ #{} :core :source-string :unit
         'chunks $ %{} 'CodeEntry
           :doc "|将 List 按固定长度 n 切成连续的子 List，最后一段可以更短；n 必须是不小于 1 的数字，否则抛出错误。"
           :code $ quote $ defn chunks (xs0 n)
