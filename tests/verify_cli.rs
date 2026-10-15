@@ -121,6 +121,84 @@ const VALID_ENTRIES: &str = r#"    :default $ {} (:description |) (:init-fn 'ver
       :type-slots $ {}"#;
 
 #[test]
+fn logging_macro_preserves_profile_and_workflow_report_channels() {
+  // CLI transport is tested here; the macro body uses the real declared capability.
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  fs::write(&snapshot, snapshot_source(VALID_ENTRIES)).expect("fixture should write");
+  for args in [
+    vec![
+      "edit",
+      "def",
+      "verify-fixture.main/noisy",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defmacro noisy ()\n  println |profile-macro-log\n  quote &unit",
+    ],
+    vec![
+      "edit",
+      "schema",
+      "verify-fixture.main/noisy",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ :: 'Macro $ {} (:required $ []) (:capabilities $ #{} :log) (:expansion $ :: 'Expr 'Unit)",
+    ],
+    vec![
+      "edit",
+      "def",
+      "verify-fixture.main/main!",
+      "--overwrite",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn main! ()\n  noisy\n  , &unit",
+    ],
+  ] {
+    let output = run_calcit(&snapshot, &args);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+  }
+  let before = fs::read(&snapshot).unwrap();
+  for format in ["json", "edn"] {
+    for args in [
+      vec!["analyze", "verify", "--profile", "release", "--format", format],
+      vec!["fix", "--workflow", "strict", "--verify", "--format", format],
+    ] {
+      let output = run_calcit(&snapshot, &args);
+      assert!(
+        output.status.success(),
+        "stdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+      );
+      assert!(!String::from_utf8_lossy(&output.stdout).contains("profile-macro-log"));
+      assert!(String::from_utf8_lossy(&output.stderr).contains("profile-macro-log"));
+      if format == "json" {
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("one JSON envelope");
+        if args[0] == "fix" {
+          assert_eq!(report["data"]["workflow"]["status"], "passed");
+          assert_eq!(report["data"]["validation"]["status"], "not-needed");
+          let results = report["data"]["workflow"]["verification"]["results"].as_array().unwrap();
+          assert_eq!(results.len(), 3, "both entries and the declared profile must run");
+          assert!(results.iter().any(|result| result["scope"] == "profile:release"));
+          for result in results {
+            assert_eq!(result["status"], "passed");
+            assert_eq!(result["report"]["data"]["status"], "passed");
+            assert_eq!(result["report"]["diagnostics"], serde_json::json!([]));
+          }
+        } else {
+          assert_eq!(report["data"]["status"], "passed");
+        }
+      } else {
+        cirru_edn::parse(&String::from_utf8_lossy(&output.stdout)).expect("one native EDN envelope");
+      }
+      assert_eq!(fs::read(&snapshot).unwrap(), before, "verification preserves source");
+    }
+  }
+}
+
+#[test]
 fn verification_profile_uses_one_contract_for_native_and_js_entries() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();

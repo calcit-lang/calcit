@@ -693,6 +693,7 @@ fn run_inner(
 
 pub fn run(options: &VerifyCommand, snapshot_file: &str, strict_diagnostics: bool) -> Result<(), String> {
   let output_format = StructuredOutputFormat::parse(&options.format, "verify")?;
+  let _output_guard = crate::ProgramOutputGuard::new(output_format != StructuredOutputFormat::Human, false);
   match run_inner(options, output_format, snapshot_file, strict_diagnostics) {
     Ok(()) => Ok(()),
     Err(message) => {

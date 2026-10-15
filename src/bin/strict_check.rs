@@ -434,6 +434,7 @@ fn print_human(data: &CheckData) {
 
 pub fn run(entries: &ProgramEntries, raw_format: &str, all_defs: Option<&AllDefsScope>) -> Result<(), String> {
   let format = StructuredOutputFormat::parse(raw_format, "check-only")?;
+  let _output_guard = crate::ProgramOutputGuard::new(format != StructuredOutputFormat::Human, false);
   let (graph, definitions) = reachable_definitions(entries, all_defs)?;
   let results = check_definitions(&graph, &definitions);
   let summary = CheckSummary {
