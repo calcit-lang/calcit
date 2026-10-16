@@ -2812,3 +2812,28 @@ fn run_check_only_surfaces_schema_error_code() {
     );
   });
 }
+
+#[test]
+fn calling_a_dynamic_value_requires_fn_narrowing() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries(
+      "let\n    call-open $ fn (x) (hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)) (x 1)\n    call-narrowed $ fn (x) (hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)) (if (fn? x) (x 1) nil)\n    call-typed $ fn (g) (hint-fn $ {} (:args $ [] $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)) (:return 'Number)) (g 1)\n  [] call-open call-narrowed call-typed",
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("a Dynamic call head should preprocess with a warning");
+
+    let warnings = warnings.borrow();
+    let dynamic_calls = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_DYNAMIC_CALL"))
+      .collect::<Vec<_>>();
+    // Only the unnarrowed call reports; `fn?` and an Fn schema prove the head.
+    assert_eq!(dynamic_calls.len(), 1, "{warnings:?}");
+    assert!(
+      dynamic_calls[0].message().contains("variable `x`") && dynamic_calls[0].message().contains("`(if (fn? f)"),
+      "{dynamic_calls:?}"
+    );
+  });
+}

@@ -216,7 +216,8 @@
           :schema $ :: 'Dynamic
         'test-for-await $ %{} 'CodeEntry (:doc "|for await")
           :code $ quote $ fn ()
-            hint-fn $ {} $ :async true
+            hint-fn $ {} (:async true)
+              :features $ #{} :js-ffi
             let
                 gen $ &raw-code "|async function* genDemo() { yield 1; yield 2; yield 3; } "
                 ret $ js-await $ js-for-await (gen)

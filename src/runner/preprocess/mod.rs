@@ -4238,6 +4238,7 @@ fn preprocess_list_call(
         // rewrite below validates and resolves the actual call target.
         if !matches!(args.first(), Some(Calcit::Method(..))) {
           check_callable_type(&head_form, scope_types, file_ns, &def_name, check_warnings);
+          warn_on_dynamic_call_head(&head_form, scope_types, file_ns, check_warnings);
         }
 
         let mut ys = CalcitList::new_inner_from(std::slice::from_ref(&head_form));
@@ -9143,6 +9144,43 @@ fn is_callable_type(type_ann: &CalcitTypeAnnotation) -> bool {
     CalcitTypeAnnotation::TypeRef(_, _) | CalcitTypeAnnotation::TypeSlot(_) => type_ann.resolve_to_nonoptional_fn().is_some(),
     _ => false,
   }
+}
+
+/// Calling a value whose static type is Dynamic passes every check and fails
+/// at runtime when it is not a function; require a `fn?` test or a decoded Fn
+/// type first, as `E_DYNAMIC_METHOD_DISPATCH` does for methods. JS FFI
+/// definitions keep calling host functions directly.
+fn warn_on_dynamic_call_head(head: &Calcit, scope_types: &ScopeTypes, file_ns: &str, check_warnings: &RefCell<Vec<LocatedWarning>>) {
+  if file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) || current_function_has_js_ffi_feature() {
+    return;
+  }
+  let (head_type, location, label) = match head {
+    Calcit::Local(local) => {
+      let head_type = if matches!(*local.type_info, CalcitTypeAnnotation::Dynamic) {
+        scope_types.get(&local.sym).cloned()
+      } else {
+        Some(local.type_info.clone())
+      };
+      (head_type, head.get_location(), format!("variable `{}`", local.sym))
+    }
+    Calcit::List(items) => (
+      infer_type_from_expr(head, scope_types),
+      derive_list_call_expr_location(items),
+      "the result of the head expression".to_owned(),
+    ),
+    _ => return,
+  };
+  if !matches!(head_type.as_deref(), Some(CalcitTypeAnnotation::Dynamic)) {
+    return;
+  }
+  // A head without a source coordinate in this namespace was produced by a macro.
+  let Some(location) = location.filter(|location| location.ns.as_ref() == file_ns && location.def.as_ref() != GENERATED_DEF) else {
+    return;
+  };
+  let message = format!(
+    "[Warn] calling {label}, whose type is Dynamic, in {file_ns}; it fails at runtime unless it is a function: narrow it with `(if (fn? f) (f ...) ...)` or give it an Fn schema"
+  );
+  gen_check_warning_with_location_code(message, "W_DYNAMIC_CALL", location, check_warnings);
 }
 
 /// Check if an expression's inferred type is callable, and warn if not

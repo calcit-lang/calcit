@@ -31,7 +31,9 @@
             .apply $ fn (box fs)
               let
                   f $ &struct:get fs :value
-                assoc box :value $ f $ &struct:get box :value
+                if (fn? f)
+                  assoc box :value $ f $ &struct:get box :value
+                  raise "|AlgebraBox apply expects a function value"
           :examples $ []
           :schema $ :: 'Impl
         'AlgebraBoxBindImpl $ %{} 'CodeEntry (:doc |)
