@@ -54,7 +54,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Verify exact release source and main CI
+      - name: Verify exact release source and branch CI
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
