@@ -684,6 +684,13 @@ pub fn is_strict_types_enabled() -> bool {
   strict_types_enabled()
 }
 
+/// Generic argument bindings and contextual callback typing. An
+/// assertion-proof audit needs them under either checking mode, so a
+/// schema-candidate review types callbacks exactly as the direct strict audit.
+fn contextual_generic_typing_enabled() -> bool {
+  strict_types_enabled() || REQUIRE_ASSERTION_PROOF.with(Cell::get)
+}
+
 pub(crate) fn tag_annotation(name: &str) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::from_tag_name(name))
 }
@@ -5165,7 +5172,7 @@ fn preprocess_known_function_call(
 
     // Set expected fn type hint if this arg position has a Fn-typed param
     let expected_type = active_expected_types.get(arg_idx).map(|expected| {
-      let expected = if strict_types_enabled() {
+      let expected = if contextual_generic_typing_enabled() {
         expected.substitute_type_vars(&preprocessing_type_bindings)
       } else {
         expected.clone()
@@ -5211,7 +5218,7 @@ fn preprocess_known_function_call(
       reject_strict_bare_enum_constructor_value(&form, expected, scope_types, file_ns, def_name, call_stack, call_location.clone())?;
     }
 
-    if strict_types_enabled()
+    if contextual_generic_typing_enabled()
       && (!info.generics.is_empty() || checked_contract.is_some() || refreshed_checked_contract.is_some())
       && let Some(expected) = active_expected_types.get(arg_idx)
       && let Some(binding_expected) = info.arg_types.get(arg_idx).or(info.rest_type.as_ref()).or(Some(expected))
@@ -11923,7 +11930,7 @@ pub fn preprocess_defn(
       // Source-written inline defn and macro-expanded fn consume the same
       // parameter context. Neither owns the callee's temporary output variable.
       let infer_contextual_callback =
-        strict_types_enabled() && !source_top_level_definition && !has_body_fn_hint && expected_fn_schema.is_some();
+        contextual_generic_typing_enabled() && !source_top_level_definition && !has_body_fn_hint && expected_fn_schema.is_some();
       let mut effective_fn_schema: Option<Arc<CalcitFnTypeAnnotation>> = body_fn_hint.or_else(|| match def_schema.as_ref() {
         CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.clone()),
         CalcitTypeAnnotation::Dynamic => expected_fn_schema,
