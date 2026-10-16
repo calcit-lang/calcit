@@ -10359,8 +10359,13 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
 
   warn_on_nominal_enum_truthiness(&cond_form, ctx.scope_types, ctx.file_ns, ctx.check_warnings);
   // `and` returns its last operand through `if v v false`; that operand is a
-  // value, not a test, so only the operands before it are conditions.
-  let and_tail = args.len() == 3 && args.first() == args.get(1) && matches!(args.get(2), Some(Calcit::Bool(false)));
+  // value, not a test, so only the operands before it are conditions. The
+  // macro splices one node twice, so both copies share a source location;
+  // equality alone would also skip a hand-written `(if n n false)`.
+  let and_tail = args.len() == 3
+    && args.first() == args.get(1)
+    && args.first().map(Calcit::get_location) == args.get(1).map(Calcit::get_location)
+    && matches!(args.get(2), Some(Calcit::Bool(false)));
   if !and_tail {
     warn_on_constant_truthy_condition(args.first().unwrap(), &cond_form, ctx.scope_types, ctx.file_ns, ctx.check_warnings);
   }

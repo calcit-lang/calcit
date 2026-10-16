@@ -2817,7 +2817,7 @@ fn run_check_only_surfaces_schema_error_code() {
 fn constant_truthy_conditions_report_with_replacement_guidance() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(
-      "let\n    xs $ [] 1 2\n    s |text\n    n? $ = 1 1\n  [] (if (count xs) |non-empty |empty) (if s |yes |no) (when (count xs) |some) (and (count xs) n?) (or s |fallback) (if (empty? xs) |a |b) (if (> (count xs) 0) |a |b) (and n? (count xs)) (if n? |a |b)",
+      "let\n    xs $ [] 1 2\n    s |text\n    n? $ = 1 1\n  [] (if (count xs) |non-empty |empty) (if s |yes |no) (when (count xs) |some) (and (count xs) n?) (or s |fallback) (if (empty? xs) |a |b) (if (> (count xs) 0) |a |b) (and n? (count xs)) (if n? |a |b) (if s s false)",
     );
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
 
@@ -2830,8 +2830,9 @@ fn constant_truthy_conditions_report_with_replacement_guidance() {
       .filter(|warning| warning.code() == Some("W_CONSTANT_TRUTHY_CONDITION"))
       .collect::<Vec<_>>();
     // `if (count xs)`, `if s`, `when (count xs)`, `and (count xs) …`, and
-    // `or s …`; the Bool tests and the value-returning `and` tail stay quiet.
-    assert_eq!(truthy.len(), 5, "expected five constant-truthy conditions, got: {warnings:?}");
+    // `or s …`, and a hand-written `if s s false`; the Bool tests and the
+    // value-returning `and` tail stay quiet.
+    assert_eq!(truthy.len(), 6, "expected six constant-truthy conditions, got: {warnings:?}");
     assert_eq!(
       truthy.iter().filter(|warning| warning.message().contains("type Number")).count(),
       3,
@@ -2842,7 +2843,7 @@ fn constant_truthy_conditions_report_with_replacement_guidance() {
         .iter()
         .filter(|warning| warning.message().contains("type String") && warning.message().contains("`blank?`"))
         .count(),
-      2,
+      3,
       "{truthy:?}"
     );
     assert!(
