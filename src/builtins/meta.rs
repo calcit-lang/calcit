@@ -54,6 +54,12 @@ pub(crate) fn current_gensym_index(file_ns: &str) -> usize {
   NS_SYMBOL_DICT.lock().expect("read gensym counter").get(&key).copied().unwrap_or(1)
 }
 
+/// Rewind the counter when a form is preprocessed again from the same state.
+pub(crate) fn set_gensym_index(file_ns: &str, index: usize) {
+  let key = current_compiling_key(file_ns);
+  NS_SYMBOL_DICT.lock().expect("set gensym counter").insert(key, index);
+}
+
 pub(crate) fn advance_gensym_index(file_ns: &str, delta: usize) {
   if delta == 0 {
     return;

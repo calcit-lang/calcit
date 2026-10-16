@@ -21,7 +21,9 @@ pub(super) fn is_contradictory_proof_warning(warning: &LocatedWarning) -> bool {
 }
 
 /// Preserve strict compiler rejection and expose only source-owned review targets.
-/// Preprocessing stops at the first error per definition; this is not an exhaustive scan.
+/// The workflow reports proof-only errors per form; an error that ordinary
+/// checking also rejects stops its definition. A single-rule review stops at the
+/// first error per definition. Tests and examples are not scanned.
 pub(super) fn compile_boundary_review(
   snapshot: &Snapshot,
   snapshot_file: &str,
@@ -40,7 +42,7 @@ pub(super) fn compile_boundary_review(
   let mut seen = HashSet::new();
   for (namespace, definition) in definitions {
     let warning_start = warnings.borrow().len();
-    let result = if workflow
+    let (result, recovered) = if workflow
       || matches!(
         rule,
         ASSERT_TYPE_PROOF_RULE | CONCRETE_RETURN_PROOF_RULE | CALLABLE_CONTRACT_PROOF_RULE | NOMINAL_WRITE_PROOF_RULE
@@ -48,10 +50,23 @@ pub(super) fn compile_boundary_review(
       runner::preprocess::with_assertion_proof(|| {
         // Reprocess the selected source even if another definition compiled it
         // earlier. Cached local annotations are not pre-assertion evidence.
-        runner::preprocess::trace_definition_source_expressions(namespace, definition, &warnings, &CallStackList::default()).map(|_| ())
+        let trace = || {
+          runner::preprocess::trace_definition_source_expressions(namespace, definition, &warnings, &CallStackList::default())
+            .map(|_| ())
+        };
+        // The workflow collects proof-only errors so one pass reports all of
+        // them; a single-rule review keeps failing fast at the first one.
+        if workflow {
+          runner::preprocess::with_proof_error_collection(namespace, definition, trace)
+        } else {
+          (trace(), vec![])
+        }
       })
     } else {
-      runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default()).map(|_| ())
+      (
+        runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default()).map(|_| ()),
+        vec![],
+      )
     };
     if workflow {
       for warning in warnings.borrow()[warning_start..]
@@ -78,7 +93,7 @@ pub(super) fn compile_boundary_review(
       // to an assertion, even when ordinary checking reports it as a warning.
       return Err(format!("{rule} cannot borrow a contradictory producer contract: {}", warning));
     }
-    if let Err(error) = result {
+    for error in recovered.into_iter().chain(result.err()) {
       // One compiler pass serves the combined workflow; keep existing rule identifiers.
       let rule = if workflow {
         match error.code() {
@@ -179,22 +194,22 @@ pub(super) fn compile_boundary_review(
         .collect::<Vec<_>>();
       let message = if rule == NOMINAL_WRITE_PROOF_RULE {
         format!(
-          "{}; review the declared nominal field and assigned value evidence at this source owner. Choose a checked boundary before the write; do not widen the field, replace the Struct with a Map, or insert an unsafe cast. Only an independently checked producer may supply missing metadata through synthesize-schema-v1. The shared compiler may report an earlier argument obligation first; only the first error per definition is reported, and tests/examples are not scanned. No schema, permission or code is changed.",
+          "{}; review the declared nominal field and assigned value evidence at this source owner. Choose a checked boundary before the write; do not widen the field, replace the Struct with a Map, or insert an unsafe cast. Only an independently checked producer may supply missing metadata through synthesize-schema-v1. The strict workflow reports each form's proof error; a single-rule review reports only the first error per definition. Tests/examples are not scanned. No schema, permission or code is changed.",
           error.msg
         )
       } else if rule == CALLABLE_CONTRACT_PROOF_RULE {
         format!(
-          "{}; review the callable's argument, rest, return and feature contract at this source owner. Bare Fn/DynFn storage is allowed but cannot prove a concrete invocation contract. Only an independently checked implementation may supply missing metadata through synthesize-schema-v1; an unknown external callback cannot be assigned a guessed signature. The shared compiler may report an earlier non-callable argument obligation first; only the first error per definition is reported, and tests/examples are not scanned. No schema, permission or code is changed.",
+          "{}; review the callable's argument, rest, return and feature contract at this source owner. Bare Fn/DynFn storage is allowed but cannot prove a concrete invocation contract. Only an independently checked implementation may supply missing metadata through synthesize-schema-v1; an unknown external callback cannot be assigned a guessed signature. The strict workflow reports each form's proof error; a single-rule review reports only the first error per definition. Tests/examples are not scanned. No schema, permission or code is changed.",
           error.msg
         )
       } else if rule == CONCRETE_RETURN_PROOF_RULE {
         format!(
-          "{}; inspect the producer implementation at this source owner, not its wrapper declaration. Choose a checked boundary for open input. Only if the implementation independently proves the missing metadata, review the existing synthesize-schema-v1 candidate. Only the first compiler error per definition is reported; tests/examples are not scanned. No schema, permission or code is changed.",
+          "{}; inspect the producer implementation at this source owner, not its wrapper declaration. Choose a checked boundary for open input. Only if the implementation independently proves the missing metadata, review the existing synthesize-schema-v1 candidate. The strict workflow reports each form's proof error; a single-rule review reports only the first error per definition. Tests/examples are not scanned. No schema, permission or code is changed.",
           error.msg
         )
       } else {
         format!(
-          "{}; inspect the compiler location and lexical source context. Review captures, effects and failure paths before choosing a checked decoder or an explicit adapter. Only the first compiler error per definition is reported; tests/examples are not scanned. No permission or code is changed.",
+          "{}; inspect the compiler location and lexical source context. Review captures, effects and failure paths before choosing a checked decoder or an explicit adapter. The strict workflow reports each form's proof error; a single-rule review reports only the first error per definition. Tests/examples are not scanned. No permission or code is changed.",
           error.msg
         )
       };

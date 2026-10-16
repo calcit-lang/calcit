@@ -2629,6 +2629,85 @@ fn callable_contract_proof_preserves_open_storage_and_reviews_concrete_use() {
 }
 
 #[test]
+fn strict_workflow_reports_every_proof_error_in_a_definition() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).unwrap();
+  for (name, args, body, schema) in [
+    (
+      "consume",
+      "callback",
+      "callback 1",
+      "quote $ :: 'Fn $ {} (:args $ [] (:: 'Fn $ {} (:args $ [] 'Number) (:return 'Number))) (:return 'Number)",
+    ),
+    (
+      "multi",
+      "a b c",
+      "&+ (consume a) (&+ (consume b) (consume c))",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Fn 'Fn 'Fn) (:return 'Number)",
+    ),
+  ] {
+    let target = format!("fix-command.main/{name}");
+    let code = format!("quote $ defn {name} ({args}) ({body})");
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", &target, "--input-format", "cirru", "--code", &code]),
+      "install proof source",
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "schema", &target, "--input-format", "cirru", "--code", schema]),
+      "declare proof contract",
+    );
+  }
+  let single = run_fix(
+    &snapshot,
+    &[
+      "--rule",
+      "callable-contract-proof-v1",
+      "--ns",
+      "fix-command.main",
+      "--def",
+      "multi",
+      "--format",
+      "json",
+    ],
+  );
+  let single = parse_stdout(&single);
+  assert_eq!(
+    single["diagnostics"].as_array().unwrap().len(),
+    1,
+    "a single-rule review fails fast: {single}"
+  );
+  let review = run_fix(&snapshot, &["--workflow", "strict", "--verify", "--format", "json"]);
+  assert!(!review.status.success(), "unproven calls must still fail the workflow");
+  let report = parse_stdout(&review);
+  let coords = report["diagnostics"]
+    .as_array()
+    .unwrap()
+    .iter()
+    .filter(|diagnostic| diagnostic["definition"] == "fix-command.main/multi")
+    .map(|diagnostic| {
+      assert_eq!(diagnostic["code"], "E_CALL_ARGUMENT_UNPROVEN", "{report}");
+      diagnostic["location"]["coord"].clone()
+    })
+    .collect::<Vec<_>>();
+  // Each independent call site is reported once, in source order.
+  assert_eq!(
+    coords,
+    vec![
+      serde_json::json!([3, 1, 1]),
+      serde_json::json!([3, 2, 1, 1]),
+      serde_json::json!([3, 2, 2, 1])
+    ],
+    "{report}"
+  );
+  let suggestions = report["data"]["suggestions"].as_array().unwrap();
+  let multi = suggestions
+    .iter()
+    .filter(|suggestion| suggestion["definition"] == "fix-command.main/multi");
+  assert_eq!(multi.count(), 3, "{report}");
+}
+
+#[test]
 fn concrete_return_proof_navigates_the_implementation_without_writing() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
@@ -3736,7 +3815,12 @@ fn unsafe_boundary_fix_preserves_compiler_rejection_and_source_bytes() {
     assert_eq!(suggestions[0]["applicability"], "requires-review");
     assert!(suggestions[0]["replacement"].is_null());
     assert!(suggestions[0]["path"].as_str().unwrap().starts_with("code@3"), "{report}");
-    assert!(suggestions[0]["message"].as_str().unwrap().contains("first compiler error"));
+    assert!(
+      suggestions[0]["message"]
+        .as_str()
+        .unwrap()
+        .contains("only the first error per definition")
+    );
     assert!(suggestions[0]["origin_chain"][0]["lexical_source_path"].is_string());
     let mut edn_selector = selector;
     edn_selector[7] = "edn";
