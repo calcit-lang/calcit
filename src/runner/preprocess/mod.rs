@@ -16710,6 +16710,8 @@ mod tests {
 
   #[test]
   fn static_method_descriptors_follow_user_impl_precedence() {
+    // Method descriptors may resolve core impls even for a synthetic receiver.
+    let _guard = lock_preprocess_test_state();
     let low_impl = Arc::new(CalcitImpl {
       name: EdnTag::new("LowImpl"),
       origin: None,
@@ -16758,6 +16760,7 @@ mod tests {
 
   #[test]
   fn static_method_contract_reports_ambiguity_and_missing_evidence() {
+    let _guard = lock_preprocess_test_state();
     let low_impl = Arc::new(CalcitImpl {
       name: EdnTag::new("LowImpl"),
       origin: None,
@@ -20271,6 +20274,8 @@ mod tests {
     use crate::calcit::MethodKind;
     use crate::data::cirru::code_to_calcit;
     use cirru_edn::EdnTag;
+
+    let _guard = lock_preprocess_test_state();
     use cirru_parser::Cirru;
 
     let cat_struct = CalcitStructDef::from_fields(EdnTag::from("Cat"), vec![EdnTag::from("name"), EdnTag::from("color")]);
@@ -20940,6 +20945,7 @@ mod tests {
   fn rewrites_method_call_when_class_and_method_are_known() {
     use cirru_edn::EdnTag;
 
+    let _guard = lock_preprocess_test_state();
     let expr = Cirru::List(vec![Cirru::leaf(".greet"), Cirru::leaf("user")]);
     let code = code_to_calcit(&expr, "tests.method", "demo", vec![]).expect("parse cirru");
 
@@ -21295,6 +21301,7 @@ mod tests {
   fn rejects_method_on_struct_without_field() {
     use cirru_edn::EdnTag;
 
+    let _guard = lock_preprocess_test_state();
     // Create a test struct type with limited methods
     let test_struct = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(CalcitStructDef::from_fields(
       EdnTag::from("Person"),
@@ -21336,6 +21343,7 @@ mod tests {
 
   #[test]
   fn string_method_receiver_hint_names_inferred_type_and_function_form() {
+    let _guard = lock_preprocess_test_state();
     let receiver_type = Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(CalcitStructDef::from_fields(
       EdnTag::from("MapLike"),
       vec![],
@@ -21364,6 +21372,7 @@ mod tests {
 
   #[test]
   fn show_on_builtin_value_is_a_type_error_but_debug_is_a_typed_method() {
+    let _guard = lock_preprocess_test_state();
     let show_expr = Cirru::List(vec![Cirru::leaf("1"), Cirru::leaf(".show")]);
     let show_code = code_to_calcit(&show_expr, "tests.method", "demo", vec![]).expect("parse show call");
     let warnings = RefCell::new(vec![]);
