@@ -1085,7 +1085,7 @@ In serialized type annotations, type slots appear as `'*name` (EDN symbol with `
 
 `calcit calcit.cirru analyze program-diff <git-ref> --format edn` 会先把两侧内容解析为 typed Snapshot，再分类 entry/config、namespace/import、definition lifecycle、schema/signature、FFI boundary 与 executable expression 变化。布局、map 顺序或 canonical formatter 折叠只要不改变解析结果，就报告 `canonical-format-only` 和 `semantic-review-required false`。
 
-schema/signature 变化还会逐槽位（`args.N`、`rest`、`return`，非函数 schema 为 `schema`）用有方向的 proof 判断精度变化：新类型接受旧类型的全部值、反之不成立，记为放宽（如 `Number → Dynamic`、`List<Number> → List<Dynamic>`、`Map<Tag,Number> → Map`）；反向记为收窄。每个变化带 `:schema-direction`（`widened` / `narrowed` / `mixed` / `changed`）与 `:widened-slots` / `:narrowed-slots`，证据顶层的 `:schema-widening` 列出放宽了任一槽位的 definition。只改实现或格式不会产生方向。传 `--fail-on-widening` 时，输出报告后若存在放宽则以非零状态退出，可作为 Agent 门禁。
+schema/signature 变化还会逐槽位（`args.N`、`rest`、`return`，非函数 schema 为 `schema`）用有方向的 proof 判断精度变化：新类型接受旧类型的全部值、反之不成立，记为放宽（如 `Number → Dynamic`、`List<Number> → List<Dynamic>`、`Map<Tag,Number> → Map`）；反向记为收窄。每个变化带 `:schema-direction`（`widened` / `narrowed` / `mixed` / `changed`）与 `:widened-slots` / `:narrowed-slots`，证据顶层的 `:schema-widening` 列出放宽了任一槽位的 definition。只改实现或格式不会产生方向。传 `--fail-on-widening` 时，输出报告后若存在放宽则以非零状态退出，可作为 Agent 门禁；它只比较整个 Snapshot，与 `--def` 同时使用会直接报错。
 
 报告中的 content revision 用于固定参与比较的两份输入；definition change 还携带各自的稳定 definition revision。Cirru EDN 是结构化输出的首选格式，只有外部系统明确需要 JSON 时才使用 `--format json`。该命令保持只读，也不会把相似的删除/新增猜成 rename；没有可靠 identity 证据时仍分别报告 definition lifecycle。
 

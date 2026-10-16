@@ -5,6 +5,9 @@ use super::structured_output::{StructuredOutputFormat, format_json_value_as_edn}
 pub fn handle_program_diff_command(cmd: &ProgramDiffCommand, snapshot_file: &str) -> Result<(), String> {
   let format = StructuredOutputFormat::parse(&cmd.format, "analyze program-diff")?;
   if let Some(def) = &cmd.def {
+    if cmd.fail_on_widening {
+      return Err("`--fail-on-widening` gates a whole Snapshot; omit `--def` so every definition's schema is compared.".to_owned());
+    }
     if format != StructuredOutputFormat::Human {
       return Err(
         "Structured program-diff evidence currently requires a whole Snapshot; omit `--def` or use `--format human`.".to_owned(),
