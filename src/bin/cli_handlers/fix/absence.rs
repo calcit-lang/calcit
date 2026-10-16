@@ -45,7 +45,7 @@ fn entry(name: &str) -> Option<Entry> {
     "&str:first" => ("first", 1, Domain::String, Family::Option),
     "&str:nth" => ("nth", 2, Domain::String, Family::Option),
     "&get-env" => ("get-env", 1, Domain::String, Family::Option),
-    "&get-in" => ("get-in", 2, Domain::Traversal, Family::Option),
+    "&get-in" => ("get-in", 2, Domain::Traversal, Family::Result),
     "&enum:definition" => ("enum-definition", 1, Domain::Enum, Family::Option),
     "&struct:definition" => ("struct-definition", 1, Domain::Struct, Family::Option),
     "&impl:origin" => ("impl-origin", 1, Domain::Impl, Family::Option),

@@ -83,11 +83,22 @@ erasing it to `Dynamic`.
 let
     nested $ {} (:user $ {} (:name |Alice) (:age 30))
   println $ get-in nested $ [] :user :name
-  ; => (Option :some |Alice)
+  ; => (Result :ok |Alice)
 ```
 
-`get-in` 返回 `Option<Dynamic>`：查到值对应 `Option :some value`，缺失路径或遍历时遇到 `nil`
-对应 `Option :none`。消费 payload 前请使用 `.unwrap-or` 或原生 `match`。
+`get-in` 返回 `Result<Dynamic, PathError>`：查到值对应 `Result :ok value`；缺失路径或遍历时遇到
+`nil` 对应 `Result :err (PathError :missing)`；中间值不是 Map、List、String 或 Enum 时对应
+`Result :err (PathError :shape message)`，不会抛异常。只需要默认值时用 `.unwrap-or`，需要区分两种失败时用原生 `match`：
+
+```cirru
+let
+    m $ {} (:a 1)
+  match (get-in m $ [] :a :b)
+    (:ok v) v
+    (:err e) $ match e
+      (:missing) 0
+      (:shape _message) -1
+```
 
 ## Modifying Maps
 

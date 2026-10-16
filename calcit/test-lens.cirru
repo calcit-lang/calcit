@@ -74,12 +74,12 @@
                 {} $ :a $ {}
                   :b $ {} $ :c 3
                 [] :a :b :c
-              %some 3
+              Result :ok 3
             assert=
               get-in
                 {} $ :a $ [] 1 2 3
                 [] :a 1
-              %some 2
+              Result :ok 2
             assert=
               assoc-in nil ([] :a :b :c) 10
               {} $ :a $ {}

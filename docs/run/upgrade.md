@@ -24,6 +24,39 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.32.0 `get-in` 返回 Result
+
+`get-in` 此前返回 `Option<Dynamic>`，但中间值不是集合时（例如路径 `[] :a :b` 遇到 `:a` 的值是 `1`）会抛异常，
+签名无法说明这一点。0.32.0 起它返回 `Result<T, PathError>`，三种结果都在类型中：
+
+| 情况 | 返回值 |
+| --- | --- |
+| 找到值 | `Result :ok value` |
+| 路径缺失，或遍历中遇到 `nil` | `Result :err (PathError :missing)` |
+| 中间值不是 Map、List、String 或 Enum | `Result :err (PathError :shape message)` |
+
+遍历 Struct 字段仍会抛错，已知 Struct 字段继续使用 `(:field value)`。完整类型的接收者配合字面量路径时，
+编译期展开只会产生 `:missing`，推断类型为 `Result<T, PathError>`。`update-in` 传给 updater 的仍是 `Option`。
+
+迁移步骤：
+
+1. 运行 `calcit calcit.cirru --check-only`。旧写法在 Result 上调用 Option 方法、`match` 的 `:some`/`:none` 分支、
+   `option:*` 函数形式以及声明 `Option` 返回值的 schema 都会报类型错误，按诊断逐处修改。
+2. 常见改写：
+
+   | 旧写法 | 新写法 |
+   | --- | --- |
+   | `.some? $ get-in x path` | `.ok? $ get-in x path` |
+   | `.none? $ get-in x path` | `.err? $ get-in x path` |
+   | `match (get-in x path) (:some v) … (:none) …` | `match (get-in x path) (:ok v) … (:err _e) …` |
+   | `option:unwrap-or (get-in x path) d` | `.unwrap-or (get-in x path) d` |
+   | schema `:: 'Option 'T` | `:: 'Result 'T 'PathError` |
+
+3. `.unwrap-or`、`.map`、`.and-then` 在 Result 上同名可用，调用文本不变；但 `.and-then` 的回调此后须返回
+   `Result`。注意 `.unwrap-or` 在形状错误时会返回默认值，而旧版本会抛异常；需要把形状错误当作程序错误时，
+   用 `match` 区分 `PathError :missing` 与 `PathError :shape`。
+4. 弃用的 `some-in?` 同步改为 `.ok?`，形状错误时返回 false。
+
 ## 0.30.1 底层缺失值原语直接返回 Option
 
 本项从原计划的 0.31.0 提前纳入 0.30.1，从 main 开发与发布。因此本版有明确的兼容性例外，
@@ -869,7 +902,7 @@ core 在 0.29.0 仍保留下表兼容入口，新代码使用右侧的首选写�
 | FfiTask `.cancel` / `.cancel-with reason` | `.cancel!` / `.cancel-with! reason`，保留原 Unit、参数求值与宿主取消合同 | `calcit calcit.cirru fix --rule core-effect-method-v1 --format edn`；仅改写已证明的 core nominal/trait 来源、同签名同实现调用；开放 host、用户方法和未知 macro 不自动改写，不新增 JS/WASM/WASI 宿主能力 |
 | `case-default` | `match`，默认值写成末尾 `_` 分支 | `case-default-to-match-v1`（字面量模式） |
 | `foldl-shortcut` | `fold-while`，reducer 返回 `ControlFlow :continue acc` 或 `ControlFlow :break value`，从未 break 时返回累积值 | 人工改写：`(:: false acc)` 改为 `ControlFlow :continue acc`，`(:: true v)` 改为 `ControlFlow :break v`；旧写法在从未 break 时返回第三个参数 `default`，需要时在调用处判断后显式给出 |
-| `some-in?` | 公开方法 `.some? $ get-in x path`；`contains-in?` 判断路径存在，两者对 nil 叶子的结果不同 | 人工改写 |
+| `some-in?` | 公开方法 `.ok? $ get-in x path`（0.32.0 起 `get-in` 返回 Result）；`contains-in?` 判断路径存在，两者对 nil 叶子的结果不同 | 人工改写 |
 | `range-bothway` | 按原顺序各绑定实参一次到 `x/y`：省略 `y` 时用 `range (inc (negate x)) x`，Number `y` 时用 `range (inc (- (+ x x) y)) y`；末端不包含 | 人工改写，不能复制带副作用的表达式；历史运行时 nil 分支与省略相同，但当前严格 Number schema 拒绝显式 nil 实参 |
 | `let{}` | 显式 `let` 与 `get`，审阅原 nil/缺失行为后处理 Option；已知 Struct 字段用 `(:field value)`，不是 JS 属性访问 `.-field` | 人工改写；原 Map 求值一次，不自动插入 unwrap 或业务默认值 |
 | `let-destruct` | symbol 模式写 `let`，`([] ...)` 模式写 `let[]` | 人工改写（生态中未见调用） |
@@ -1546,7 +1579,7 @@ Struct 字段是定义的一部分，因此已知 struct 上的 `:field` 和 `.f
 | `first` / `last` | `Option<T>` | 空集合和空字符串可能没有元素 |
 | `nth` | `Option<T>` | 越界是 `Option :none`；不要把结果直接当元素值 |
 | `get` | `Option<T>` | Map/List 等可缺失查找返回 Option；显式 `Dynamic` 的运行值若为 Struct，则按运行时字段名返回 `Option<Dynamic>`；已知 Struct 改用 `(:field value)` |
-| `get-in` | `Option<T>`（开放动态路径常为 `Option<Dynamic>`） | 任一路径缺失都是 `Option :none` |
+| `get-in` | 0.32.0 起为 `Result<T, PathError>`（开放动态路径常为 `Result<Dynamic, PathError>`） | 缺失是 `PathError :missing`，中间值形状错误是 `PathError :shape`，见 0.32.0 一节 |
 | `get-env` | `Option<String>` | 未设置的环境变量是 `Option :none` |
 
 不要用 `str` 或 `turn-string` 掩盖尚未处理的 `Option<T>` / `Result<T,E>`。默认 strict mode 会以

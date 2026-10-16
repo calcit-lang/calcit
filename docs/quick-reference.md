@@ -365,7 +365,7 @@ let
 字面量空路径保留接收者类型，允许不同型输出。`dissoc-in` 的空路径不修改输入。
 完整类型的嵌套 Map 与非空字面量路径让 `get-in`、`assoc-in`、`update-in` 编译成直接的
 类型化访问/重建链，各实参只求值一次。动态路径、开放容器和混合遍历保留运行时边界。
-公开查询和位置访问（`get`、`get-in`、`first`、`last`、集合 `nth`）返回 `Option<T>`。
+公开查询和位置访问（`get`、`first`、`last`、集合 `nth`）返回 `Option<T>`；`get-in` 返回 `Result<T, PathError>`，用 `PathError :missing` 与 `PathError :shape message` 区分路径缺失和中间值形状错误。
 静态 Struct 的 `(:field value)` 或 `value.:field` 返回声明字段类型并降为索引访问；
 未声明字段是诊断，不是 nil。
 静态已知 Struct 不通过 `get` 读取字段，也没有公开的 positional `.nth`；显式 `Dynamic` 的运行值若为

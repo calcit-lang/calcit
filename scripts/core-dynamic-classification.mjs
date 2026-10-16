@@ -78,6 +78,7 @@ const runtimeMetadata = new Set([
   "&trait::new",
   "ControlFlow",
   "MapEntryDecision",
+  "PathError",
   "Option",
   "Result",
 ]);
@@ -197,7 +198,7 @@ const compilerSpecializedPositions = new Map([
   ],
   [
     "get-in|schema.args.0",
-    "Fully typed receivers with known literal paths recover each lookup hop and the Option payload; dynamic paths remain an explicit open-data compatibility boundary and Struct traversal is rejected.",
+    "Fully typed receivers with known literal paths recover each lookup hop and the Result payload; dynamic paths remain an explicit open-data compatibility boundary and Struct traversal is rejected.",
   ],
   [
     "contains-in?|schema.args.0",
@@ -205,7 +206,7 @@ const compilerSpecializedPositions = new Map([
   ],
   [
     "get-in|schema.return.type-arg.0",
-    "A statically typed receiver plus a fully known literal Map/List path recovers the Option payload at preprocessing time; dynamic paths and Struct traversal remain on the reviewed fallback.",
+    "A statically typed receiver plus a fully known literal Map/List path recovers the Result payload at preprocessing time; dynamic paths and Struct traversal remain on the reviewed fallback.",
   ],
   [
     "filter|schema.return",

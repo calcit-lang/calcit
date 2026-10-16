@@ -1558,7 +1558,7 @@ fn infer_core_get_in_return_type(call_expr: &CalcitList, scope_types: &ScopeType
   let mut current_type = resolve_type_value(base_arg, scope_types)?;
 
   if path_items.is_empty() {
-    return Some(core_type_ref("Option", vec![current_type]));
+    return Some(core_get_in_result_type(current_type));
   }
 
   for key in path_items {
@@ -1572,7 +1572,12 @@ fn infer_core_get_in_return_type(call_expr: &CalcitList, scope_types: &ScopeType
     current_type = infer_lookup_payload_type_from_type(current_type.as_ref(), Some(key))?;
   }
 
-  Some(core_type_ref("Option", vec![current_type]))
+  Some(core_get_in_result_type(current_type))
+}
+
+/// Public `get-in` reports absence and shape failures through `PathError`.
+fn core_get_in_result_type(payload: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  core_type_ref("Result", vec![payload, core_type_ref("PathError", vec![])])
 }
 
 fn is_struct_lookup_boundary(type_info: &CalcitTypeAnnotation) -> bool {
@@ -5250,7 +5255,7 @@ mod tests {
     let empty_call = CalcitList::from(&[symbol("get-in"), local("user", user_type.clone()), empty_path.clone()] as &[Calcit]);
     assert_eq!(
       infer_core_get_in_return_type(&empty_call, &ScopeTypes::new()),
-      Some(core_type_ref("Option", vec![user_type.clone()])),
+      Some(core_get_in_result_type(user_type.clone())),
       "an empty path does not access a Struct field"
     );
     assert!(fully_typed_literal_lookup_path(user_type.as_ref(), &empty_path, &ScopeTypes::new()).is_none());
@@ -5272,8 +5277,8 @@ mod tests {
 
     assert_eq!(
       infer_core_get_in_return_type(&call, &ScopeTypes::new()),
-      Some(core_type_ref("Option", vec![number])),
-      "a fully typed literal path must preserve its final payload in Option"
+      Some(core_get_in_result_type(number)),
+      "a fully typed literal path must preserve its final payload in Result"
     );
   }
 

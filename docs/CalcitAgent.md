@@ -587,7 +587,7 @@ Option/Result 的级联优先使用接收者方法，不要在每一层都 `unwr
 ```cirru.no-check
 profile .and-then
   fn (profile)
-    (get-in profile $ [] :account) .and-then
+    (get profile :account) .and-then
       fn (account) $ get account :name
 
 parsed .and-then
