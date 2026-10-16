@@ -99,6 +99,7 @@ calcit calcit.cirru analyze weak-types --only option-nil-roundtrip --ns app.main
 同样处理，迁移时必须保留原行为和惰性 fallback，不能机械替换为缺失判断。
 
 该视图仅扫描所选定义的 `:code`，包含前缀/接收者方法写法及显式 None→nil 分支，
+也识别 `(;nil)` 兼容 fallback（其宏名是单个 `;nil`，不是 `;` 注释）；不扫描该宏丢弃的参数。
 跳过 quoted data，保留 quasiquote 中实际求值的 unquote。它不展开新的迁移规则，
 不写 Snapshot、不新增诊断，也不改变 strict 结论；原测试和实际后端验收仍需保留。
 

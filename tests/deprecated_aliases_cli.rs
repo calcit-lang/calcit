@@ -214,7 +214,7 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
   assert!(report.status.success(), "{}", String::from_utf8_lossy(&report.stderr));
   let report: serde_json::Value = serde_json::from_slice(&report.stdout).expect("one JSON document");
   assert_eq!(report["diagnostics"], serde_json::json!([]));
-  assert_eq!(report["data"]["summary"], serde_json::json!({"findings":6,"unknown":0}));
+  assert_eq!(report["data"]["summary"], serde_json::json!({"findings":9,"unknown":0}));
   let findings = report["data"]["findings"].as_array().unwrap();
   let at = |id: &str| {
     findings
@@ -255,7 +255,7 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
   )));
   let scoped = run_calcit(snapshot, &[&view[..], &["--ns", "app.roundtrip", "--format", "json"]].concat());
   let scoped: serde_json::Value = serde_json::from_slice(&scoped.stdout).unwrap();
-  assert_eq!(scoped["data"]["summary"]["findings"], 5);
+  assert_eq!(scoped["data"]["summary"]["findings"], 8);
   let summary = run_calcit(
     snapshot,
     &[&view[..], &["--ns-prefix", "app.round", "--summary-only", "--format", "json"]].concat(),

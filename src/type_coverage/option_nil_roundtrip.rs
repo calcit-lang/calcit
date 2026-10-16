@@ -25,6 +25,15 @@ fn leaf(node: &Cirru) -> Option<&str> {
   }
 }
 
+fn is_nil(node: &Cirru) -> bool {
+  match node {
+    Cirru::Leaf(text) => text.as_ref() == "nil",
+    // `;nil` is one macro name, not the comment head `;` followed by `nil`.
+    // Its arguments are discarded; a bare `;nil` leaf is the macro value.
+    Cirru::List(items) => matches!(items.first().and_then(leaf), Some(";nil" | "calcit.core/;nil")),
+  }
+}
+
 fn collect<'a>(
   node: &'a Cirru,
   path: &mut Vec<usize>,
@@ -35,11 +44,11 @@ fn collect<'a>(
   let Cirru::List(items) = node else { return };
   let head = items.first().and_then(leaf);
   let core_head = head.map(|head| head.strip_prefix("calcit.core/").unwrap_or(head));
-  if core_head == Some(";") {
+  if core_head == Some(";") || (!quote.is_quoted() && core_head == Some(";nil")) {
     return;
   }
   if !quote.is_quoted() {
-    let input_index = if items.len() == 3 && items.get(2).and_then(leaf) == Some("nil") {
+    let input_index = if items.len() == 3 && items.get(2).is_some_and(is_nil) {
       if head == Some(".unwrap-or") {
         Some(1)
       } else if items.get(1).and_then(leaf) == Some(".unwrap-or") {
@@ -56,7 +65,7 @@ fn collect<'a>(
         && items.iter().skip(2).any(|branch| {
           matches!(branch, Cirru::List(parts) if parts.len() == 2
             && matches!(parts.first(), Some(Cirru::List(pattern)) if pattern.len() == 1 && leaf(&pattern[0]) == Some(":none"))
-            && parts.get(1).and_then(leaf) == Some("nil"))
+            && parts.get(1).is_some_and(is_nil))
         }))
       .then_some(1)
     });
@@ -202,6 +211,15 @@ pub(crate) fn run(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn nil_macro_uses_a_single_head_and_discards_its_arguments() {
+    let source = cirru_parser::parse("do\n  .unwrap-or value (;nil)\n  value .unwrap-or (calcit.core/;nil)\n  match value\n    (:some item) item\n    (:none) (;nil ignored)\n  ;nil $ .unwrap-or hidden nil\n  .unwrap-or value ;nil\n  .unwrap-or value (calcit.core/nil)\n").unwrap();
+    let mut candidates = Vec::new();
+    collect(&source[0], &mut Vec::new(), None, QuoteContext::default(), &mut candidates);
+    assert_eq!(candidates.len(), 3);
+    assert!(candidates.iter().all(|candidate| leaf(candidate.input) == Some("value")));
+  }
 
   #[test]
   fn source_inventory_respects_nested_quote_and_unquote_boundaries() {

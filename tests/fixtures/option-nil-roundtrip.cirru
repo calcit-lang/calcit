@@ -71,6 +71,54 @@
               :code $ quote $ assert= "|中文"
                 match-value $ Option :some "|中文"
               :tags $ #{} :option-nil-roundtrip :unit
+        'nil-macro-match $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nil-macro-match (value)
+            match value
+              (:some item) item
+              (:none)
+                ;nil (raise |must-not-run) (.unwrap-or value nil)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] $ :: 'Option 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-absence)
+              :code $ quote $ assert= nil
+                nil-macro-match $ Option :none
+              :tags $ #{} :option-nil-roundtrip :unit
+            %{} 'TestEntry (:name |keeps-present-nil)
+              :code $ quote $ assert= nil
+                nil-macro-match $ Option :some nil
+              :tags $ #{} :option-nil-roundtrip :unit
+        'nil-macro-prefix $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nil-macro-prefix (value)
+            .unwrap-or value $ ;nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] $ :: 'Option 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-absence)
+              :code $ quote $ assert= nil
+                nil-macro-prefix $ Option :none
+              :tags $ #{} :option-nil-roundtrip :unit
+            %{} 'TestEntry (:name |keeps-present-nil)
+              :code $ quote $ assert= nil
+                nil-macro-prefix $ Option :some nil
+              :tags $ #{} :option-nil-roundtrip :unit
+        'nil-macro-receiver $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nil-macro-receiver (value)
+            value .unwrap-or $ calcit.core/;nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] $ :: 'Option 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-absence)
+              :code $ quote $ assert= nil
+                nil-macro-receiver $ Option :none
+              :tags $ #{} :option-nil-roundtrip :unit
+            %{} 'TestEntry (:name |keeps-present-nil)
+              :code $ quote $ assert= nil
+                nil-macro-receiver $ Option :some nil
+              :tags $ #{} :option-nil-roundtrip :unit
         'other-match $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn other-match (value)
             match value

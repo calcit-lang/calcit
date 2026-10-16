@@ -814,7 +814,7 @@ const scenarios = [
       assert.equal(result.command, "analyze.weak-types");
       assert.equal(result.data.view, "option-nil-roundtrip");
       assert.deepEqual(result.diagnostics, []);
-      assert.deepEqual(result.data.summary, { findings: 6, unknown: 0 });
+      assert.deepEqual(result.data.summary, { findings: 9, unknown: 0 });
       const finding = result.data.findings.find(item => item.definition === "app.roundtrip/read-field");
       assert.equal(finding.path, "code@3.1");
       assert.equal(finding.input.inferred_type, ":: 'calcit.core/Option 'Dynamic");
