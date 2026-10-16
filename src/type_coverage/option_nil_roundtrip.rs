@@ -49,7 +49,7 @@ fn collect<'a>(
   }
   if !quote.is_quoted() {
     let input_index = if items.len() == 3 && items.get(2).is_some_and(is_nil) {
-      if head == Some(".unwrap-or") {
+      if head == Some(".unwrap-or") || core_head == Some("option:unwrap-or") {
         Some(1)
       } else if items.get(1).and_then(leaf) == Some(".unwrap-or") {
         Some(0)
@@ -219,6 +219,21 @@ mod tests {
     collect(&source[0], &mut Vec::new(), None, QuoteContext::default(), &mut candidates);
     assert_eq!(candidates.len(), 3);
     assert!(candidates.iter().all(|candidate| leaf(candidate.input) == Some("value")));
+  }
+
+  #[test]
+  fn direct_core_function_calls_are_listed_like_the_method_form() {
+    let source = cirru_parser::parse(
+      "do\n  option:unwrap-or (get data :plain) nil\n  calcit.core/option:unwrap-or (get data :qualified) nil\n  option:unwrap-or (get data :defaulted) 0\n  app.util/option:unwrap-or (get data :foreign) nil\n",
+    )
+    .unwrap();
+    let mut candidates = Vec::new();
+    collect(&source[0], &mut Vec::new(), None, QuoteContext::default(), &mut candidates);
+    let inputs: Vec<String> = candidates
+      .iter()
+      .map(|candidate| super::super::render_cirru_inline(candidate.input))
+      .collect();
+    assert_eq!(inputs, ["(get data :plain)", "(get data :qualified)"]);
   }
 
   #[test]
