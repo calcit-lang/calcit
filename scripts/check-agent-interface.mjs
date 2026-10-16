@@ -1389,6 +1389,42 @@ try {
   assert.match(namingGuide.stdout, /non-nil\?/);
   assert.match(namingGuide.stdout, /不把旧.*contains/);
 
+  // #2115: eval imports explicit dependencies, not its positional Snapshot,
+  // and loading a project must not execute its configured application entry.
+  const evalProject = join(fixtureDir, "eval-project");
+  mkdirSync(evalProject);
+  const evalSnapshot = join(evalProject, "calcit.cirru");
+  copyFileSync("calcit/util.cirru", evalSnapshot);
+  const evalRun = (...args) => spawnSync(namingBinary, [evalSnapshot, ...args], {
+    cwd: evalProject, encoding: "utf8", maxBuffer: 4 * 1024 * 1024,
+  });
+  const evalOps = ["main!", "reload!"].map(name => ["edit", "def", `util.core/${name}`, "--overwrite",
+    "--input-format", "cirru", "--code", `quote $ defn ${name} () $ raise |eval-must-not-run-project-entry`]);
+  const evalPreview = evalRun("edit", "transaction", "--code", JSON.stringify(evalOps), "--dry-run", "--format", "json");
+  assert.ifError(evalPreview.error);
+  assert.equal(evalPreview.status, 0, evalPreview.stderr);
+  const evalEdit = evalRun("edit", "transaction", "--code", JSON.stringify(evalOps), "--expect-revision",
+    JSON.parse(evalPreview.stdout).scoped_revision, "--format", "json");
+  assert.ifError(evalEdit.error);
+  assert.equal(evalEdit.status, 0, evalEdit.stderr);
+  const evalBefore = readFileSync(evalSnapshot);
+  const unloadedProject = evalRun("eval", "util.core/log-title |project-loaded");
+  assert.ifError(unloadedProject.error);
+  assert.equal(unloadedProject.status, 1);
+  assert.match(unloadedProject.stderr, /unknown ns target: util.core\/log-title/);
+  for (const [dependency, snippet] of [
+    ["./", "util.core/log-title |project-loaded"],
+    ["./calcit.cirru", "util.core/log-title |project-loaded"],
+    ["./", "ns app.demo\n  :require\n    util.core :refer $ log-title\n\nlog-title |project-loaded"],
+  ]) {
+    const loadedProject = evalRun("eval", "--dep", dependency, snippet);
+    assert.ifError(loadedProject.error);
+    assert.equal(loadedProject.status, 0, loadedProject.stderr);
+    assert.match(loadedProject.stdout, /project-loaded/);
+    assert.doesNotMatch(loadedProject.stdout + loadedProject.stderr, /eval-must-not-run-project-entry/);
+    assert.deepEqual(readFileSync(evalSnapshot), evalBefore, "eval must leave project source unchanged");
+  }
+
   const fixture = join(fixtureDir, "calcit.cirru");
   copyFileSync("calcit/test.cirru", fixture);
   const run = (...args) => {
