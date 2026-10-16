@@ -6102,7 +6102,7 @@ fn strict_workflow_preserves_generic_metadata_path_contracts() {
       "--input-format",
       "cirru",
       "--code",
-      "quote $ :: 'Fn $ {} (:generics $ [] 'K 'V) (:args $ [] $ :: 'Map 'K 'V) (:return $ :: 'Option 'V)",
+      "quote $ :: 'Fn $ {} (:generics $ [] 'K 'V) (:args $ [] $ :: 'Map 'K 'V) (:return $ :: 'Result 'V 'PathError)",
     ],
     vec![
       "edit",
