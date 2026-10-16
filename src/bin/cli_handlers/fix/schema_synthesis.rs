@@ -1,4 +1,5 @@
 use super::*;
+use calcit::calcit::NullableOrigin;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize)]
@@ -21,8 +22,7 @@ fn normalize_inferred_schema(annotation: &CalcitTypeAnnotation) -> std::sync::Ar
     Type::Map(key, value) => Type::Map(normalize_inferred_schema(key), normalize_inferred_schema(value)),
     Type::Set(inner) => Type::Set(normalize_inferred_schema(inner)),
     Type::Ref(inner) => Type::Ref(normalize_inferred_schema(inner)),
-    Type::Optional(inner) => Type::Optional(normalize_inferred_schema(inner)),
-    Type::JsNullish(inner) => Type::JsNullish(normalize_inferred_schema(inner)),
+    Type::Nullable(inner, origin) => Type::Nullable(normalize_inferred_schema(inner), *origin),
     Type::Variadic(inner) => Type::Variadic(normalize_inferred_schema(inner)),
     Type::Fn(signature) => {
       let mut normalized = signature.as_ref().clone();
@@ -58,8 +58,12 @@ fn refine_schema_holes(
     (Type::List(current), Type::List(candidate)) => Type::List(refine_schema_holes(current, candidate)),
     (Type::Set(current), Type::Set(candidate)) => Type::Set(refine_schema_holes(current, candidate)),
     (Type::Ref(current), Type::Ref(candidate)) => Type::Ref(refine_schema_holes(current, candidate)),
-    (Type::Optional(current), Type::Optional(candidate)) => Type::Optional(refine_schema_holes(current, candidate)),
-    (Type::JsNullish(current), Type::JsNullish(candidate)) => Type::JsNullish(refine_schema_holes(current, candidate)),
+    (Type::Nullable(current, NullableOrigin::Calcit), Type::Nullable(candidate, NullableOrigin::Calcit)) => {
+      Type::Nullable(refine_schema_holes(current, candidate), NullableOrigin::Calcit)
+    }
+    (Type::Nullable(current, NullableOrigin::JsHost), Type::Nullable(candidate, NullableOrigin::JsHost)) => {
+      Type::Nullable(refine_schema_holes(current, candidate), NullableOrigin::JsHost)
+    }
     (Type::Variadic(current), Type::Variadic(candidate)) => Type::Variadic(refine_schema_holes(current, candidate)),
     (Type::Map(current_key, current_value), Type::Map(candidate_key, candidate_value)) => Type::Map(
       refine_schema_holes(current_key, candidate_key),
@@ -108,12 +112,9 @@ fn collect_dynamic_schema_paths(annotation: &CalcitTypeAnnotation, path: &str, p
   use CalcitTypeAnnotation as Type;
   match annotation {
     Type::Dynamic | Type::DynFn => paths.push(path.to_owned()),
-    Type::List(inner)
-    | Type::Set(inner)
-    | Type::Ref(inner)
-    | Type::Optional(inner)
-    | Type::JsNullish(inner)
-    | Type::Variadic(inner) => collect_dynamic_schema_paths(inner, &format!("{path}.item"), paths),
+    Type::List(inner) | Type::Set(inner) | Type::Ref(inner) | Type::Nullable(inner, _) | Type::Variadic(inner) => {
+      collect_dynamic_schema_paths(inner, &format!("{path}.item"), paths)
+    }
     Type::Map(key, value) => {
       collect_dynamic_schema_paths(key, &format!("{path}.key"), paths);
       collect_dynamic_schema_paths(value, &format!("{path}.value"), paths);
@@ -146,12 +147,9 @@ fn collect_unbound_schema_paths(
   match annotation {
     Type::TypeVar(name) if !bound_generics.contains(name) => paths.push(path.to_owned()),
     Type::TypeSlot(_) => paths.push(path.to_owned()),
-    Type::List(inner)
-    | Type::Set(inner)
-    | Type::Ref(inner)
-    | Type::Optional(inner)
-    | Type::JsNullish(inner)
-    | Type::Variadic(inner) => collect_unbound_schema_paths(inner, &format!("{path}.item"), bound_generics, paths),
+    Type::List(inner) | Type::Set(inner) | Type::Ref(inner) | Type::Nullable(inner, _) | Type::Variadic(inner) => {
+      collect_unbound_schema_paths(inner, &format!("{path}.item"), bound_generics, paths)
+    }
     Type::Map(key, value) => {
       collect_unbound_schema_paths(key, &format!("{path}.key"), bound_generics, paths);
       collect_unbound_schema_paths(value, &format!("{path}.value"), bound_generics, paths);
@@ -186,12 +184,9 @@ fn collect_compiled_refinement_evidence(
   if matches!(declared, Type::Dynamic | Type::DynFn) {
     match inferred {
       Type::Dynamic | Type::DynFn => {}
-      Type::List(inner)
-      | Type::Set(inner)
-      | Type::Ref(inner)
-      | Type::Optional(inner)
-      | Type::JsNullish(inner)
-      | Type::Variadic(inner) => collect_compiled_refinement_evidence(&Type::Dynamic, inner, &format!("{path}.item"), evidence),
+      Type::List(inner) | Type::Set(inner) | Type::Ref(inner) | Type::Nullable(inner, _) | Type::Variadic(inner) => {
+        collect_compiled_refinement_evidence(&Type::Dynamic, inner, &format!("{path}.item"), evidence)
+      }
       Type::Map(key, value) => {
         collect_compiled_refinement_evidence(&Type::Dynamic, key, &format!("{path}.key"), evidence);
         collect_compiled_refinement_evidence(&Type::Dynamic, value, &format!("{path}.value"), evidence);
@@ -223,8 +218,8 @@ fn collect_compiled_refinement_evidence(
     (Type::List(current), Type::List(candidate))
     | (Type::Set(current), Type::Set(candidate))
     | (Type::Ref(current), Type::Ref(candidate))
-    | (Type::Optional(current), Type::Optional(candidate))
-    | (Type::JsNullish(current), Type::JsNullish(candidate))
+    | (Type::Nullable(current, NullableOrigin::Calcit), Type::Nullable(candidate, NullableOrigin::Calcit))
+    | (Type::Nullable(current, NullableOrigin::JsHost), Type::Nullable(candidate, NullableOrigin::JsHost))
     | (Type::Variadic(current), Type::Variadic(candidate)) => {
       collect_compiled_refinement_evidence(current, candidate, &format!("{path}.item"), evidence);
     }

@@ -6,6 +6,7 @@
 //! program FFI metadata) through `super` but does not change language semantics.
 
 use super::*;
+use crate::calcit::NullableOrigin;
 
 /// Keep host capability checking distinct from both data decoding and unchecked casts.
 pub(super) fn preprocess_js_cast(head_ns: &str, args: &CalcitList, ctx: &mut PreprocessContext) -> Result<Calcit, CalcitErr> {
@@ -263,7 +264,7 @@ pub(super) fn reject_or_warn_on_nullable_js_ffi_dereference(
   let Some(receiver_type) = resolve_type_value(receiver, scope_types) else {
     return Ok(());
   };
-  let CalcitTypeAnnotation::JsNullish(inner) = receiver_type.as_ref() else {
+  let CalcitTypeAnnotation::Nullable(inner, NullableOrigin::JsHost) = receiver_type.as_ref() else {
     return Ok(());
   };
   if !matches!(inner.as_ref(), CalcitTypeAnnotation::JsObject) {
@@ -519,7 +520,7 @@ pub(super) fn reject_or_warn_on_js_nullish_predicate_mismatch(
   let Some(value_type) = resolve_type_value(value, scope_types) else {
     return Ok(());
   };
-  if !matches!(value_type.as_ref(), CalcitTypeAnnotation::JsNullish(_)) {
+  if !matches!(value_type.as_ref(), CalcitTypeAnnotation::Nullable(_, NullableOrigin::JsHost)) {
     return Ok(());
   }
 
@@ -557,7 +558,7 @@ pub(super) fn is_external_trait_field(type_value: &CalcitTypeAnnotation, field_n
 /// value, including strings and numbers, as `JsObject`.
 pub(crate) fn is_host_value_type(type_value: &CalcitTypeAnnotation) -> bool {
   match type_value {
-    CalcitTypeAnnotation::Optional(inner) | CalcitTypeAnnotation::JsNullish(inner) => is_host_value_type(inner.as_ref()),
+    CalcitTypeAnnotation::Nullable(inner, _) => is_host_value_type(inner.as_ref()),
     _ => trait_list_from_type(type_value).is_some_and(|traits| traits.iter().any(|trait_def| trait_is_external_object(trait_def))),
   }
 }

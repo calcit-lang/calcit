@@ -5952,7 +5952,7 @@ mod tests {
 
     let input_var = match schema.arg_types.as_slice() {
       [arg] => match arg.as_ref() {
-        CalcitTypeAnnotation::Optional(inner) => match inner.as_ref() {
+        CalcitTypeAnnotation::Nullable(inner, crate::calcit::NullableOrigin::Calcit) => match inner.as_ref() {
           CalcitTypeAnnotation::TypeVar(name) => name,
           other => panic!("optionally Optional input should contain a type variable, got {other:?}"),
         },

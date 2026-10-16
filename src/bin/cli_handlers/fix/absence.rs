@@ -5,6 +5,7 @@
 
 use super::case_default::{ContextSubject, MacroHeadCache, unstable_macro_context};
 use super::*;
+use calcit::calcit::NullableOrigin;
 
 #[derive(Clone, Copy)]
 enum Family {
@@ -405,7 +406,7 @@ fn traversal_proven(base: &CalcitTypeAnnotation, path: &Cirru) -> bool {
   let keys = &items[1..];
   let mut current = base;
   for (position, key) in keys.iter().enumerate() {
-    while let CalcitTypeAnnotation::Optional(inner) = current {
+    while let CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) = current {
       current = inner;
     }
     let safe_index = || {

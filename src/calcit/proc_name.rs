@@ -1626,22 +1626,25 @@ mod tests {
     ] {
       let signature = proc.get_type_signature().expect("migrated proc signature");
       assert!(
-        signature
-          .arg_types
-          .iter()
-          .all(|arg| !matches!(arg.as_ref(), CalcitTypeAnnotation::Optional(_))),
+        signature.arg_types.iter().all(|arg| !matches!(
+          arg.as_ref(),
+          CalcitTypeAnnotation::Nullable(_, crate::calcit::NullableOrigin::Calcit)
+        )),
         "{proc} must not encode parameter omission as Optional<T>"
       );
     }
 
     let explicitly_nullable = ProcTypeSignature {
       return_type: dynamic_tag(),
-      arg_types: vec![Arc::new(CalcitTypeAnnotation::Optional(tag_type("string")))],
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::Nullable(
+        tag_type("string"),
+        crate::calcit::NullableOrigin::Calcit,
+      ))],
     };
     assert_eq!(explicitly_nullable.arity(0), ProcArity { min: 1, max: Some(1) });
     assert!(matches!(
       explicitly_nullable.arg_types[0].as_ref(),
-      CalcitTypeAnnotation::Optional(inner) if matches!(inner.as_ref(), CalcitTypeAnnotation::String)
+      CalcitTypeAnnotation::Nullable(inner, crate::calcit::NullableOrigin::Calcit) if matches!(inner.as_ref(), CalcitTypeAnnotation::String)
     ));
 
     for (proc, expected) in [

@@ -3738,7 +3738,10 @@ mod tests {
         generics: Arc::new(vec![]),
         where_bounds: Arc::new(vec![]),
         arg_types: vec![],
-        return_type: Arc::new(CalcitTypeAnnotation::Optional(Arc::new(CalcitTypeAnnotation::Number))),
+        return_type: Arc::new(CalcitTypeAnnotation::Nullable(
+          Arc::new(CalcitTypeAnnotation::Number),
+          calcit::calcit::NullableOrigin::Calcit,
+        )),
         fn_kind: SchemaKind::Fn,
         rest_type: None,
         features: Arc::new(HashSet::new()),

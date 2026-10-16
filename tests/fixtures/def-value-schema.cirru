@@ -2165,6 +2165,22 @@
             :args $ []
             :features $ #{} :js-ffi
             :return $ :: 'Map 'String 'Number
+        'recursive-nullish-exit $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn recursive-nullish-exit (depth)
+            if (> depth 1)
+              recur $ dec depth
+              if (= depth 1) |found nil
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number
+            :features $ #{} :js-ffi
+            :return $ :: 'JsNullish 'String
+          :tests $ [] $ %{} 'TestEntry (:name |recur-keeps-base-exits)
+            :code $ quote $ do
+              assert= |found $ recursive-nullish-exit 3
+              assert= |found $ recursive-nullish-exit 1
+              assert= nil $ recursive-nullish-exit 0
+            :tags $ #{} :recursive-nullable-exit
         'ref-invariant $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn ref-invariant ()
             let

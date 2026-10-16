@@ -1276,7 +1276,7 @@ fn scalar_field_write_evidence(value: &Calcit, expected: &CalcitTypeAnnotation) 
     | T::Tag
     | T::Buffer
     | T::CirruQuote => Some(value_matches_type_annotation(value, expected)),
-    T::Optional(inner) | T::JsNullish(inner) => {
+    T::Nullable(inner, _) => {
       if matches!(value, Calcit::Nil) {
         Some(true)
       } else {

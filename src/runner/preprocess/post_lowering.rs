@@ -627,9 +627,12 @@ mod tests {
     let evidence = RewriteEvidence {
       origin: RewriteOrigin::TypedAccess,
       before_form: Calcit::from(vec![Calcit::new_str("get"), Calcit::new_str("m")]),
-      before_type: Arc::new(CalcitTypeAnnotation::Optional(number())),
+      before_type: Arc::new(CalcitTypeAnnotation::Nullable(number(), crate::calcit::NullableOrigin::Calcit)),
       after_form: node.clone(),
-      after_type: Arc::new(CalcitTypeAnnotation::Optional(calcit::DYNAMIC_TYPE.clone())),
+      after_type: Arc::new(CalcitTypeAnnotation::Nullable(
+        calcit::DYNAMIC_TYPE.clone(),
+        crate::calcit::NullableOrigin::Calcit,
+      )),
       location: None,
     };
     let error = validate(&node, &[], std::slice::from_ref(&evidence)).expect_err("precision loss must be reported");

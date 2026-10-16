@@ -6,6 +6,7 @@ mod internal_states;
 mod paths;
 mod runtime;
 mod source_map;
+use crate::calcit::NullableOrigin;
 use std::fmt::Write;
 mod snippets;
 mod symbols;
@@ -262,7 +263,7 @@ fn external_js_property_name(type_hint: &Arc<calcit::CalcitTypeAnnotation>, name
   let trait_defs: Vec<Arc<calcit::CalcitTrait>> = match type_hint.as_ref() {
     calcit::CalcitTypeAnnotation::Trait(trait_def) => vec![trait_def.clone()],
     calcit::CalcitTypeAnnotation::TraitSet(traits) => traits.as_ref().clone(),
-    calcit::CalcitTypeAnnotation::Optional(inner) => match inner.as_ref() {
+    calcit::CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) => match inner.as_ref() {
       calcit::CalcitTypeAnnotation::Trait(trait_def) => vec![trait_def.clone()],
       calcit::CalcitTypeAnnotation::TraitSet(traits) => traits.as_ref().clone(),
       _ => vec![],

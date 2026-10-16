@@ -1,6 +1,7 @@
 //! Definition-level JavaScript implementations shared by inline and file assets.
 
 use crate::calcit::CalcitTypeAnnotation;
+use crate::calcit::NullableOrigin;
 use crate::snapshot::{SnapshotTarget, ffi_metadata_value, parse_ffi_target};
 use cirru_edn::Edn;
 use std::path::{Component, Path};
@@ -160,7 +161,7 @@ fn supported_abi_type(value: &CalcitTypeAnnotation) -> bool {
     | CalcitTypeAnnotation::String
     | CalcitTypeAnnotation::Unit
     | CalcitTypeAnnotation::JsObject => true,
-    CalcitTypeAnnotation::JsNullish(inner) => supported_abi_type(inner),
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::JsHost) => supported_abi_type(inner),
     _ => false,
   }
 }

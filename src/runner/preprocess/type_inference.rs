@@ -9,6 +9,7 @@
 //! - `infer_type_from_expr` — synthesize a type for an arbitrary expression
 //! - `resolve_enum_value` / `resolve_struct_value` — resolve data definitions
 
+use crate::calcit::NullableOrigin;
 use std::sync::Arc;
 use std::{
   cell::RefCell,
@@ -165,7 +166,9 @@ fn normalize_variadic_as_list(value: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTyp
 
 fn wrap_option_like(template: &CalcitTypeAnnotation, inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   match template {
-    CalcitTypeAnnotation::Optional(_) => Arc::new(CalcitTypeAnnotation::Optional(inner)),
+    CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit) => {
+      Arc::new(CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit))
+    }
     CalcitTypeAnnotation::TypeRef(name, _) => Arc::new(CalcitTypeAnnotation::TypeRef(name.clone(), Arc::new(vec![inner]))),
     _ => inner,
   }
@@ -257,10 +260,10 @@ fn merge_if_branch_types(
   // absence. Existing nullable types were handled by compatibility above;
   // this is not a nominal Option constructor or evidence for an open value.
   if matches!(true_type.as_ref(), CalcitTypeAnnotation::Nil) {
-    return Some(Arc::new(CalcitTypeAnnotation::Optional(false_type)));
+    return Some(Arc::new(CalcitTypeAnnotation::Nullable(false_type, NullableOrigin::Calcit)));
   }
   if matches!(false_type.as_ref(), CalcitTypeAnnotation::Nil) {
-    return Some(Arc::new(CalcitTypeAnnotation::Optional(true_type)));
+    return Some(Arc::new(CalcitTypeAnnotation::Nullable(true_type, NullableOrigin::Calcit)));
   }
 
   // The branches share no compatible annotation. When one side is a schema
@@ -395,12 +398,10 @@ pub(crate) fn constructor_payload_is_proven(actual: &CalcitTypeAnnotation, expec
   }
   // Legacy nullable fields store either nil or the inner value directly.
   // Check their payload rather than treating this runtime shape as narrowing.
-  if let CalcitTypeAnnotation::Optional(expected_inner) | CalcitTypeAnnotation::JsNullish(expected_inner) = expected {
+  if let CalcitTypeAnnotation::Nullable(expected_inner, _) = expected {
     return match actual {
       CalcitTypeAnnotation::Nil => true,
-      CalcitTypeAnnotation::Optional(actual_inner) | CalcitTypeAnnotation::JsNullish(actual_inner) => {
-        constructor_payload_is_proven(actual_inner, expected_inner)
-      }
+      CalcitTypeAnnotation::Nullable(actual_inner, _) => constructor_payload_is_proven(actual_inner, expected_inner),
       _ => constructor_payload_is_proven(actual, expected_inner),
     };
   }
@@ -652,7 +653,7 @@ pub(crate) fn infer_if_return_type(xs: &CalcitList, scope_types: &ScopeTypes) ->
       .or_else(|| merge_if_branch_types(true_type, false_type))
   } else {
     let true_type = resolve_type_value(true_expr, scope_types)?;
-    Some(Arc::new(CalcitTypeAnnotation::Optional(true_type)))
+    Some(Arc::new(CalcitTypeAnnotation::Nullable(true_type, NullableOrigin::Calcit)))
   }
 }
 
@@ -723,7 +724,7 @@ fn unsafe_coerce_targets_host_handle(form: Option<&Calcit>) -> bool {
   match target.as_ref() {
     // A callable's parameter and result types cannot be checked at runtime either.
     CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn => true,
-    CalcitTypeAnnotation::JsNullish(inner) => host_object(inner),
+    CalcitTypeAnnotation::Nullable(inner, NullableOrigin::JsHost) => host_object(inner),
     other => host_object(other),
   }
 }
@@ -743,27 +744,7 @@ pub(crate) fn infer_function_exit_type(
       return resolve_type_value(expr, scope).map(Exit::Value);
     };
     match items.first()? {
-      Calcit::Proc(CalcitProc::Recur) => {
-        if items.len() != parameters.len() + 1 {
-          return None;
-        }
-        let mut bindings = HashMap::new();
-        for (argument, expected) in items.iter().skip(1).zip(parameters) {
-          if !matches!(
-            resolve_type_value(argument, scope)?.prove_with_bindings(expected, &mut bindings),
-            crate::calcit::type_annotation::TypeProof::Proven
-          ) || !bindings
-            .iter()
-            .all(|(name, bound)| matches!(bound.as_ref(), CalcitTypeAnnotation::TypeVar(same) if same == name))
-          {
-            // Recur preserves the current instantiation. Unlike a new call,
-            // it cannot infer fresh substitutions for lexical type variables;
-            // passing a parameter's own type variable through is the identity.
-            return None;
-          }
-        }
-        Some(Exit::Transfer)
-      }
+      Calcit::Proc(CalcitProc::Recur) => recur_preserves_parameters(items, scope, parameters).then_some(Exit::Transfer),
       Calcit::Syntax(CalcitSyntax::CoreLet, _) => {
         let tail = items.get(items.len().checked_sub(1)?)?;
         infer(tail, &core_let_scope(items, scope), parameters)
@@ -819,6 +800,82 @@ pub(crate) fn infer_function_exit_type(
     Exit::Value(value) => Some(value),
     // A recursive cycle alone cannot independently establish a return contract.
     Exit::Transfer => None,
+  }
+}
+
+/// Whether a `recur` form passes arguments that prove the loop parameters.
+fn recur_preserves_parameters(items: &CalcitList, scope: &ScopeTypes, parameters: &[Arc<CalcitTypeAnnotation>]) -> bool {
+  if items.len() != parameters.len() + 1 {
+    return false;
+  }
+  let mut bindings = HashMap::new();
+  for (argument, expected) in items.iter().skip(1).zip(parameters) {
+    let Some(actual) = resolve_type_value(argument, scope) else {
+      return false;
+    };
+    // Recur preserves the current instantiation. Unlike a new call,
+    // it cannot infer fresh substitutions for lexical type variables;
+    // passing a parameter's own type variable through is the identity.
+    if !matches!(
+      actual.prove_with_bindings(expected, &mut bindings),
+      crate::calcit::type_annotation::TypeProof::Proven
+    ) || !bindings
+      .iter()
+      .all(|(name, bound)| matches!(bound.as_ref(), CalcitTypeAnnotation::TypeVar(same) if same == name))
+    {
+      return false;
+    }
+  }
+  true
+}
+
+/// Prove each value exit of a function body whose tail may `recur`, under the
+/// branch scope preprocessing applied. Returns the number of value exits, or
+/// `None` when a recur exit does not preserve the parameters or a value exit
+/// fails `prove`. Recur transfers add no value exit, so a caller must still
+/// require at least one (#2073).
+pub(crate) fn prove_function_value_exits(
+  expr: &Calcit,
+  scope: &ScopeTypes,
+  parameters: &[Arc<CalcitTypeAnnotation>],
+  prove: &mut dyn FnMut(&Calcit, &ScopeTypes) -> bool,
+) -> Option<usize> {
+  if expression_definitely_diverges(expr) {
+    return Some(0);
+  }
+  let Calcit::List(items) = expr else {
+    return prove(expr, scope).then_some(1);
+  };
+  match items.first() {
+    Some(Calcit::Proc(CalcitProc::Recur)) => recur_preserves_parameters(items, scope, parameters).then_some(0),
+    Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) => {
+      let tail = items.get(items.len().checked_sub(1)?)?;
+      prove_function_value_exits(tail, &core_let_scope(items, scope), parameters, prove)
+    }
+    Some(Calcit::Syntax(CalcitSyntax::If, _)) if matches!(items.len(), 3 | 4) => {
+      let narrowing = super::extract_predicate_bindings(items.get(1)?, scope);
+      let mut true_scope = scope.clone();
+      if let Some((symbol, narrowed)) = narrowing.true_binding {
+        true_scope.insert(symbol, narrowed);
+      }
+      let mut false_scope = scope.clone();
+      if let Some((symbol, narrowed)) = narrowing.false_binding {
+        false_scope.insert(symbol, narrowed);
+      }
+      let left = prove_function_value_exits(items.get(2)?, &true_scope, parameters, prove)?;
+      let right = prove_function_value_exits(items.get(3).unwrap_or(&Calcit::Nil), &false_scope, parameters, prove)?;
+      Some(left + right)
+    }
+    Some(Calcit::Syntax(CalcitSyntax::Match, _)) => {
+      let mut count = 0;
+      for (pattern, body) in preprocessed_match_branches(items)? {
+        let mut branch_scope = scope.clone();
+        bind_pattern_scope(pattern, &mut branch_scope);
+        count += prove_function_value_exits(body, &branch_scope, parameters, prove)?;
+      }
+      Some(count)
+    }
+    _ => prove(expr, scope).then_some(1),
   }
 }
 
@@ -1639,8 +1696,8 @@ fn core_option_type(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotatio
 
 fn wrap_optional_type(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   match inner.as_ref() {
-    CalcitTypeAnnotation::Optional(_) => inner,
-    _ => Arc::new(CalcitTypeAnnotation::Optional(inner)),
+    CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit) => inner,
+    _ => Arc::new(CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit)),
   }
 }
 
@@ -1649,7 +1706,7 @@ fn js_host_value_type() -> Arc<CalcitTypeAnnotation> {
 }
 
 fn js_nullish_host_value_type() -> Arc<CalcitTypeAnnotation> {
-  Arc::new(CalcitTypeAnnotation::JsNullish(js_host_value_type()))
+  Arc::new(CalcitTypeAnnotation::Nullable(js_host_value_type(), NullableOrigin::JsHost))
 }
 
 fn infer_external_field_type(base_type: &CalcitTypeAnnotation, key_arg: Option<&Calcit>) -> Option<Arc<CalcitTypeAnnotation>> {
@@ -1675,7 +1732,7 @@ fn infer_js_ffi_call_return_type(name: &str, call_expr: &CalcitList, scope_types
         .and_then(|base_type| infer_external_field_type(base_type.as_ref(), call_expr.get(2)));
       Some(
         field_type
-          .map(|field_type| Arc::new(CalcitTypeAnnotation::JsNullish(field_type)))
+          .map(|field_type| Arc::new(CalcitTypeAnnotation::Nullable(field_type, NullableOrigin::JsHost)))
           .unwrap_or_else(js_nullish_host_value_type),
       )
     }
@@ -2135,7 +2192,7 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
             && trait_is_external_object(trait_def)
           {
             return Some(if matches!(head, Calcit::Method(_, calcit::MethodKind::ExternalGet(_))) {
-              Arc::new(CalcitTypeAnnotation::JsNullish(field_type.clone()))
+              Arc::new(CalcitTypeAnnotation::Nullable(field_type.clone(), NullableOrigin::JsHost))
             } else {
               field_type.clone()
             });
@@ -3343,7 +3400,7 @@ pub fn fixed_call_arguments_are_proven(callable: &Calcit, arguments: &[Calcit]) 
     || signature
       .arg_types
       .iter()
-      .any(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Optional(_)))
+      .any(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit)))
   {
     return false;
   }
@@ -3690,7 +3747,7 @@ fn resolve_struct_field_type(type_info: &CalcitTypeAnnotation, field_name: &str)
 }
 
 pub(crate) fn resolve_struct_field_type_by_index(type_info: &CalcitTypeAnnotation, idx: usize) -> Option<Arc<CalcitTypeAnnotation>> {
-  if let CalcitTypeAnnotation::Optional(inner) = type_info {
+  if let CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) = type_info {
     return resolve_struct_field_type_by_index(inner, idx);
   }
   let (struct_def, definition_ref) = type_info.resolve_to_struct_with_ref()?;
@@ -4115,7 +4172,7 @@ mod tests {
   fn assert_js_nullish_host_value(value: Option<Arc<CalcitTypeAnnotation>>) {
     assert!(matches!(
       value.as_deref(),
-      Some(CalcitTypeAnnotation::JsNullish(inner)) if matches!(inner.as_ref(), CalcitTypeAnnotation::JsObject)
+      Some(CalcitTypeAnnotation::Nullable(inner, NullableOrigin::JsHost)) if matches!(inner.as_ref(), CalcitTypeAnnotation::JsObject)
     ));
   }
 
@@ -4389,7 +4446,7 @@ mod tests {
 
     // An internal Optional wrapper is kept by the corrected compatibility
     // direction instead of being dropped for the plain payload.
-    let optional_number = Arc::new(CalcitTypeAnnotation::Optional(number.clone()));
+    let optional_number = Arc::new(CalcitTypeAnnotation::Nullable(number.clone(), NullableOrigin::Calcit));
     assert_eq!(
       merge_if_branch_types(number.clone(), optional_number.clone()),
       Some(optional_number)
@@ -4710,7 +4767,10 @@ mod tests {
       vec![number],
       Arc::new(CalcitTypeAnnotation::String),
     ));
-    let callable = local("maybe-format", Arc::new(CalcitTypeAnnotation::Optional(signature)));
+    let callable = local(
+      "maybe-format",
+      Arc::new(CalcitTypeAnnotation::Nullable(signature, NullableOrigin::Calcit)),
+    );
     let arguments = proc_call(CalcitProc::List, vec![Calcit::Number(1.0)]);
     let call = CalcitList::from(&[symbol("apply"), callable, arguments][..]);
 
@@ -4723,7 +4783,7 @@ mod tests {
       vec![Arc::new(CalcitTypeAnnotation::Number)],
       Arc::new(CalcitTypeAnnotation::String),
     ));
-    let optional_callable = Arc::new(CalcitTypeAnnotation::Optional(signature));
+    let optional_callable = Arc::new(CalcitTypeAnnotation::Nullable(signature, NullableOrigin::Calcit));
     let direct_call = Calcit::from(vec![local("maybe-format", optional_callable.clone()), Calcit::Number(1.0)]);
     assert_eq!(
       infer_type_from_expr(&direct_call, &ScopeTypes::new()),
@@ -5088,7 +5148,10 @@ mod tests {
     let user_args = CalcitList::from(&[local("user", Arc::new(user_type.clone())), key.clone()] as &[Calcit]);
     assert!(resolve_checked_call_contract(calcit::CORE_NS, "get", &user_args, &ScopeTypes::new()).is_none());
     let optional_args = CalcitList::from(&[
-      local("maybe-user", Arc::new(CalcitTypeAnnotation::Optional(Arc::new(user_type)))),
+      local(
+        "maybe-user",
+        Arc::new(CalcitTypeAnnotation::Nullable(Arc::new(user_type), NullableOrigin::Calcit)),
+      ),
       key,
     ] as &[Calcit]);
     assert!(
@@ -5482,7 +5545,7 @@ mod tests {
       Some(CalcitTypeAnnotation::EnumDef(definition)) if definition.name() == enum_def.name()
     ));
     for open in [
-      Arc::new(CalcitTypeAnnotation::Optional(nominal)),
+      Arc::new(CalcitTypeAnnotation::Nullable(nominal, NullableOrigin::Calcit)),
       Arc::new(CalcitTypeAnnotation::AnonymousEnum),
     ] {
       let expression = proc_call(CalcitProc::NativeEnumDefinition, vec![local("value", open)]);
