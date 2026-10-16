@@ -10,7 +10,7 @@ gh workflow run publish.yaml --repo calcit-lang/calcit --ref <已有版本>
 workflow、构建源码与发布脚本均来自同一 annotated tag。流程要求：
 
 - Release 已存在且非草稿，预发布标记与版本一致；Cargo/npm 版本和 tag 完全一致。
-- tag 对应的精确提交在 main 上触发的 Test、GitHub 默认 CodeQL「Push on main」都成功；tag 或 PR 上的检查不替代这些记录。
+- tag 对应的精确提交在发布分支上触发的 Test、GitHub 默认 CodeQL 都成功；通常为 main /「Push on main」，0.30.1 的新预发布和稳定版使用获批的 release/0.30.1 /「Push on release/0.30.1」。版本决定分支，不提供绕过参数；tag 或 PR 上的检查不替代这些记录。
 - 原始 `GITHUB_REF` 必须为该 tag，`GITHUB_SHA` 必须等于实际 checkout；main 或其他 ref 在预检阶段拒绝。
 - 原测试、文档验证、标准与无 WASM 资产构建继续执行；没有只发布 npm 的跳过门禁入口。
 - registry 已存在的版本必须属于同一 Git SHA。crate 还须通过 registry checksum 校验，且其 VCS metadata 不得标记 dirty；无法证明时停止，不覆盖。
@@ -20,7 +20,7 @@ npm 使用 OIDC 身份进行 trusted publishing，并生成 provenance（见 [np
 registry 会核对 provenance 与签名证书中的源码 ref/SHA；不能从 main 运行后改写 `GITHUB_REF` / `GITHUB_SHA`
 来声明旧 tag。认证仍使用原 workflow 的 trusted publisher，不改写这些环境变量，不关闭 provenance，也不新增 token fallback。
 
-若必须修复 workflow 或源码，先通过正常 PR 合并修复，再按发布流程等待精确 main CI 成功并发布新版本。
+若必须修复 workflow 或源码，先通过正常 PR 合并修复，再按发布流程等待精确发布分支 CI 成功并发布新版本。
 旧 tag 保持不变，在其 Release notes 标明未完成的 registry 配对；新配对验证成功前，消费者继续使用上一个完整配对。
 
 上传和 registry 可见性可能有时间差。[npm 发布时扫描](https://github.blog/changelog/2026-07-28-npm-publish-time-malware-scanning-and-dual-use-metadata/)
@@ -31,6 +31,10 @@ registry 会核对 provenance 与签名证书中的源码 ref/SHA；不能从 ma
 超过窗口仍不可见时，先检查 npm 的处理状态和维护者通知，不猜测认证失败或直接重发。
 已接受但未公开的版本应等到可见且身份匹配后，再从原 tag 恢复。旧 tag 若仍使用短窗口，不能把 main 的新等待逻辑写回该 tag。
 只有 Publish 完成成功、crate/npm 同版本可见、Release 资产与 manifest 相符后，才算发布完成。
+
+## 0.30.1 维护线
+
+维护者明确批准该版从 `release/0.30.1` 发布，保留已验证的 Option 路径合同，不提前纳入 main 的后续版本改动。该分支从已发布的 alpha.4 建立，只回移本版修复及必要文档/验收；没有减免消费者验证或配对发布要求。分支须保持保护并由默认 CodeQL 覆盖，精确 SHA 上缺少任何必需检查时停止发布。既有 alpha.4 及更早 tag 不移动，恢复仍使用各 tag 自带的原流程。
 
 ## 限制
 

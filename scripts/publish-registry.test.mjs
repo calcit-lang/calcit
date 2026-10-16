@@ -4,7 +4,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { existingCrate, existingNpm, validateWorkflowSource, validateRelease, verifyPublishedSource, versionLessThan, waitForPublished } from "./publish-registry.mjs";
+import { existingCrate, existingNpm, publicationBranch, validateWorkflowSource, validateRelease, verifyPublishedSource, versionLessThan, waitForPublished } from "./publish-registry.mjs";
 
 const tag = "0.29.0-alpha.21";
 const sha = "a".repeat(40);
@@ -104,6 +104,38 @@ test("missing, stale, failed, pending and non-main workflows cannot authorize pu
     assert.throws(() => validateRelease(tag, sha, release, [tag, tag], [{ ...runs[0], ...field }, runs[1]]));
   }
   assert.throws(() => validateRelease(tag, sha, release, [tag, tag], [...runs, { ...runs[0], id: 10, conclusion: "failure" }]));
+});
+
+test("only 0.30.1 releases use exact maintenance-branch CI, never main or PR checks", () => {
+  const branch = "release/0.30.1";
+  const maintenanceRuns = runs.map((run, index) => ({
+    ...run, head_branch: branch, name: index === 0 ? "Test" : `Push on ${branch}`,
+  }));
+  for (const version of ["0.30.1-alpha.5", "0.30.1"]) {
+    const metadata = { tagName: version, isDraft: false, isPrerelease: version.includes("-") };
+    assert.equal(publicationBranch(version), branch);
+    validateRelease(version, sha, metadata, [version, version], maintenanceRuns);
+    assert.throws(() => validateRelease(version, sha, metadata, [version, version], runs));
+    assert.throws(() => validateRelease(version, sha, metadata, [version, version], maintenanceRuns.slice(1)));
+    for (const field of [
+      { head_sha: "b".repeat(40) }, { event: "pull_request" }, { head_branch: "main" },
+      { path: "other.yml" }, { status: "in_progress" }, { conclusion: "failure" }, { conclusion: "cancelled" },
+    ]) {
+      assert.throws(() => validateRelease(version, sha, metadata, [version, version],
+        [{ ...maintenanceRuns[0], ...field }, maintenanceRuns[1]]));
+      assert.throws(() => validateRelease(version, sha, metadata, [version, version],
+        [maintenanceRuns[0], { ...maintenanceRuns[1], ...field }]));
+    }
+    assert.throws(() => validateRelease(version, sha, metadata, [version, version], [
+      ...maintenanceRuns, { ...maintenanceRuns[1], id: 10, conclusion: "failure" },
+    ]));
+  }
+  for (const version of ["0.30.0", "0.30.2", "0.30.10", "0.31.0-alpha.1", "0.32.0"]) {
+    assert.equal(publicationBranch(version), "main");
+    const metadata = { tagName: version, isDraft: false, isPrerelease: version.includes("-") };
+    validateRelease(version, sha, metadata, [version, version], runs);
+    assert.throws(() => validateRelease(version, sha, metadata, [version, version], maintenanceRuns));
+  }
 });
 
 test("an existing registry version may be skipped only with matching clean source identity", () => {

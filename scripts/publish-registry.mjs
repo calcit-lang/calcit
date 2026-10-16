@@ -12,18 +12,23 @@ export function validateRelease(tag, sha, release, versions, runs) {
   assert.equal(release.isDraft, false, "Publish only an existing, non-draft Release");
   assert.equal(release.isPrerelease, tag.includes("-"), "Release channel must match the version");
   assert.deepEqual(versions, [tag, tag], "Cargo and npm must both match the immutable tag");
-  validateMainCI(sha, runs);
+  validateBranchCI(sha, runs, publicationBranch(tag));
 }
 
-export function validateMainCI(sha, runs) {
+export function publicationBranch(tag) {
+  // This is a version-scoped maintenance exception, not a caller override.
+  return /^0\.30\.1(?:-[0-9A-Za-z.-]+)?$/.test(tag) ? "release/0.30.1" : "main";
+}
+
+function validateBranchCI(sha, runs, branch) {
   for (const [name, event, path] of [
     ["Test", "push", ".github/workflows/test.yaml"],
-    ["Push on main", "dynamic", "dynamic/github-code-scanning/codeql"],
+    [`Push on ${branch}`, "dynamic", "dynamic/github-code-scanning/codeql"],
   ]) {
     const latest = runs.filter(run => run.name === name && run.head_sha === sha
-      && run.event === event && run.path === path && run.head_branch === "main")
+      && run.event === event && run.path === path && run.head_branch === branch)
       .sort((a, b) => b.id - a.id)[0];
-    assert.ok(latest, `Missing exact-main ${name} workflow for ${sha}`);
+    assert.ok(latest, `Missing exact-${branch} ${name} workflow for ${sha}`);
     assert.equal(latest.status, "completed", `${name} must finish before publication`);
     assert.equal(latest.conclusion, "success", `${name} must pass before publication`);
   }
@@ -128,6 +133,7 @@ async function main() {
   if (mode === "prepare") {
     const repo = process.env.GITHUB_REPOSITORY;
     assert.equal(repo, "calcit-lang/calcit");
+    run("git", ["merge-base", "--is-ancestor", sha, `refs/remotes/origin/${publicationBranch(tag)}`]);
     const release = json("gh", ["release", "view", tag, "--repo", repo, "--json", "tagName,isDraft,isPrerelease"]);
     const pages = json("gh", ["api", "--paginate", "--slurp", `repos/${repo}/actions/runs?head_sha=${sha}&per_page=100`]);
     validateRelease(tag, sha, release, [cargo.version, pkg.version], pages.flatMap(page => page.workflow_runs));

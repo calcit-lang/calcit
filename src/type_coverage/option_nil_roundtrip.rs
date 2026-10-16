@@ -2,7 +2,7 @@
 
 use super::{QuoteContext, format_cirru_path, scoped_definition_entries};
 use crate::cli_handlers;
-use calcit::calcit::{CalcitTypeAnnotation, NullableOrigin};
+use calcit::calcit::CalcitTypeAnnotation;
 use calcit::call_stack::CallStackList;
 use calcit::cli_args::WeakTypesCommand;
 use calcit::{runner, snapshot};
@@ -132,7 +132,7 @@ pub(crate) fn run(options: &WeakTypesCommand, snapshot: &snapshot::Snapshot) -> 
       if inferred.as_ref().is_some_and(|annotation| {
         !matches!(annotation.as_ref(), CalcitTypeAnnotation::TypeRef(name, args) if args.len() == 1 && matches!(name.as_ref(), "Option" | "calcit.core/Option"))
           && !matches!(annotation.as_ref(), CalcitTypeAnnotation::Enum(definition, _) if definition.definition_ref().map(|name| name.as_ref()) == Some("calcit.core/Option"))
-          && !matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit))
+          && !matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::Optional(_))
       }) {
         continue;
       }
