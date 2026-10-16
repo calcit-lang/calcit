@@ -6149,6 +6149,39 @@ fn strict_workflow_accepts_open_map_callbacks_through_generic_contracts() {
   assert!(parse_stdout(&verified)["diagnostics"].as_array().unwrap().is_empty());
 }
 
+#[test]
+fn strict_workflow_proves_frequencies_count_values() {
+  // The core's attached tests own key/count semantics; this subprocess test
+  // owns the full strict workflow and its read-only caller boundary.
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/wasi-command-03-exit.cirru", &snapshot).unwrap();
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/main!",
+        "--overwrite",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defn main! ()\n  assert= ({} (|rice 2) (|soup 1)) $ frequencies $ [] |rice |rice |soup\n  , &unit",
+      ],
+    ),
+    "create a module-free frequencies caller",
+  );
+  let before = fs::read(&snapshot).unwrap();
+  assert_success(&run_calcit(&snapshot, &[]), "counting caller runs natively");
+  let verified = run_fix(&snapshot, &["--workflow", "strict", "--verify", "--format", "json"]);
+  assert_success(&verified, "full strict retains Number count evidence");
+  let report = parse_stdout(&verified);
+  assert_eq!(report["data"]["workflow"]["status"], "passed");
+  assert_eq!(report["diagnostics"], serde_json::json!([]));
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "verification must not rewrite its caller");
+}
+
 /// #2027: a nested nominal name in a callee's Fn schema is written in the callee's
 /// namespace, so an inline callback in another namespace must see it qualified.
 #[test]
