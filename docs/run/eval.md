@@ -55,27 +55,41 @@ calcit eval '
 # took 0.199ms: ([] 0 1 4 9 16 25 36 49 64 81)
 ```
 
-## Working with Context Files
+## 加载项目定义与外部模块
 
-Eval can access definitions from a loaded program:
+`eval` 为代码片段创建独立的运行上下文，包含 core 定义。使用 `--dep` 显式加载项目或模块；
+目录路径以 `/` 结尾时读取其中的 `calcit.cirru`，也可以直接指定 Snapshot 文件。
+加载定义不执行被加载项目的 `init-fn` 或 `reload-fn`；片段显式调用的函数仍按正常语义执行。
 
-```bash
-# Load from specific file and eval with its context
-calcit calcit.cirru eval 'range 3'
-# Output: ([] 0 1 2)
-
-# Use let bindings
-calcit calcit.cirru eval 'let ((x 1)) (+ x 2)'
-# Output: 3
-```
-
-You can load external modules with repeatable `--dep` options:
+例如，已安装依赖的 [Corokia](https://github.com/calcit-lang/corokia) 项目有
+`corokia.complex/c+` 定义。在该项目根目录执行：
 
 ```bash
-calcit calcit.cirru eval --dep ~/.config/calcit/modules/respo.calcit/ -- 'ns app.demo $ :require respo.util.detect :refer $ element?\n\nelement? nil'
+calcit eval --dep ./ 'corokia.complex/c+ ([] 1 2) ([] 3 4)'
+# 结果：([] 4 6)，不启动画布应用
+
+# 等价的显式文件写法
+calcit eval --dep ./calcit.cirru 'corokia.complex/c+ ([] 1 2) ([] 3 4)'
 ```
 
-If the first expression in a snippet is `ns`, its `:require` rules are merged into runtime `ns app.main`, so imported symbols can be used in the same snippet.
+`calcit calcit.cirru eval '<snippet>'` 中的位置 Snapshot **不会自动成为 eval 的依赖**；
+访问项目定义仍需 `--dep`。`range`、`let` 等 core 表达式无需加载项目，不能用它们验证项目上下文是否已加载。
+
+外部模块同样使用 `--dep`，可重复传入。片段的首个表达式若为 `ns`，其中的 `:require`
+规则会合并到运行用的 `ns app.main`。例如在 Corokia 项目根目录导入同一项目定义：
+
+```bash
+calcit eval --dep ./ '
+ns app.demo
+  :require
+    corokia.complex :refer $ c+
+
+c+ ([] 1 2) ([] 3 4)
+'
+# 结果：([] 4 6)
+```
+
+`--dep` 负责加载定义，`:require` 负责导入名字，两者职责不同；只有 `:require` 不会自动加载项目。
 
 ## Type Checking in Eval
 
