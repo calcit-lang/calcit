@@ -1,3 +1,4 @@
+use crate::calcit::CalcitTypeAnnotation;
 use crate::snapshot::{CodeEntry, FileInSnapShot, NsEntry, Snapshot, SnapshotEntry, VerificationConfig, load_snapshot_data};
 use crate::util::string::strip_shebang;
 use cirru_edn::Edn;
@@ -10,6 +11,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DiffStatus {
@@ -100,6 +102,15 @@ pub struct SemanticChange {
   pub before_revision: Option<String>,
   pub after_revision: Option<String>,
   pub semantic_review_required: bool,
+  /// Schema changes only: `widened`, `narrowed`, `mixed` or `changed`.
+  #[serde(skip_serializing_if = "Option::is_none")]
+  pub schema_direction: Option<String>,
+  /// Schema slots (`schema`, `args.0`, `rest`, `return`) whose new type accepts strictly more values.
+  #[serde(skip_serializing_if = "Vec::is_empty")]
+  pub widened_slots: Vec<String>,
+  /// Schema slots whose new type accepts strictly fewer values.
+  #[serde(skip_serializing_if = "Vec::is_empty")]
+  pub narrowed_slots: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -109,6 +120,8 @@ pub struct ProgramDiffEvidence {
   pub before_revision: String,
   pub after_revision: String,
   pub categories: Vec<String>,
+  /// Definitions whose schema widened at least one slot in this diff.
+  pub schema_widening: Vec<String>,
   pub changes: Vec<SemanticChange>,
   pub stats: ProgramDiffStats,
 }
@@ -250,6 +263,9 @@ fn collect_semantic_evidence(
       before_revision: Some(before_revision.clone()),
       after_revision: Some(after_revision.clone()),
       semantic_review_required: true,
+      schema_direction: None,
+      widened_slots: vec![],
+      narrowed_slots: vec![],
     });
   }
 
@@ -267,6 +283,9 @@ fn collect_semantic_evidence(
           before_revision: Some(before_revision.clone()),
           after_revision: Some(after_revision.clone()),
           semantic_review_required: true,
+          schema_direction: None,
+          widened_slots: vec![],
+          narrowed_slots: vec![],
         });
       }
 
@@ -291,6 +310,9 @@ fn collect_semantic_evidence(
             before_revision: old_revision,
             after_revision: new_revision,
             semantic_review_required: true,
+            schema_direction: None,
+            widened_slots: vec![],
+            narrowed_slots: vec![],
           });
           continue;
         }
@@ -307,6 +329,14 @@ fn collect_semantic_evidence(
             "tags" => ("definition-metadata", true),
             _ => ("unclassified", true),
           };
+          let schema_change = match (field.label.as_str(), old_entry, new_entry) {
+            ("schema", Some(old_entry), Some(new_entry)) => Some(compare_schema(&old_entry.schema, &new_entry.schema)),
+            _ => None,
+          };
+          let (schema_direction, widened_slots, narrowed_slots) = match schema_change {
+            Some(change) => (Some(change.direction().to_owned()), change.widened, change.narrowed),
+            None => (None, vec![], vec![]),
+          };
           changes.push(SemanticChange {
             category: category.to_owned(),
             path: format!("files/{namespace}/defs/{}/{}", definition_node.label, field.label),
@@ -314,6 +344,9 @@ fn collect_semantic_evidence(
             before_revision: old_revision.clone(),
             after_revision: new_revision.clone(),
             semantic_review_required: review_required,
+            schema_direction,
+            widened_slots,
+            narrowed_slots,
           });
         }
       }
@@ -339,15 +372,70 @@ fn collect_semantic_evidence(
     .into_iter()
     .collect();
 
+  let schema_widening = changes
+    .iter()
+    .filter(|change| !change.widened_slots.is_empty())
+    .filter_map(|change| change.definition.clone())
+    .collect();
+
   Ok(ProgramDiffEvidence {
     classification: classification.to_owned(),
     semantic_review_required,
     before_revision,
     after_revision,
     categories,
+    schema_widening,
     changes,
     stats: stats.clone(),
   })
+}
+
+/// Direction of one schema change, judged slot by slot with directional proof.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct SchemaChange {
+  widened: Vec<String>,
+  narrowed: Vec<String>,
+}
+
+impl SchemaChange {
+  fn direction(&self) -> &'static str {
+    match (self.widened.is_empty(), self.narrowed.is_empty()) {
+      (false, true) => "widened",
+      (true, false) => "narrowed",
+      (false, false) => "mixed",
+      (true, true) => "changed",
+    }
+  }
+
+  fn compare_slot(&mut self, slot: String, old: &CalcitTypeAnnotation, new: &CalcitTypeAnnotation) {
+    // Widening: every old value is still accepted, but the new type admits more.
+    match (old.is_proven_for(new), new.is_proven_for(old)) {
+      (true, false) => self.widened.push(slot),
+      (false, true) => self.narrowed.push(slot),
+      _ => {}
+    }
+  }
+}
+
+fn compare_schema(old: &Arc<CalcitTypeAnnotation>, new: &Arc<CalcitTypeAnnotation>) -> SchemaChange {
+  let mut change = SchemaChange::default();
+  match (old.as_ref(), new.as_ref()) {
+    (CalcitTypeAnnotation::Fn(old_fn), CalcitTypeAnnotation::Fn(new_fn)) => {
+      // Slots are compared by declared precision, not by function subtyping:
+      // a parameter relaxed to Dynamic is the loss this report looks for.
+      if old_fn.arg_types.len() == new_fn.arg_types.len() {
+        for (index, (old_arg, new_arg)) in old_fn.arg_types.iter().zip(&new_fn.arg_types).enumerate() {
+          change.compare_slot(format!("args.{index}"), old_arg, new_arg);
+        }
+      }
+      if let (Some(old_rest), Some(new_rest)) = (&old_fn.rest_type, &new_fn.rest_type) {
+        change.compare_slot("rest".to_owned(), old_rest, new_rest);
+      }
+      change.compare_slot("return".to_owned(), &old_fn.return_type, &new_fn.return_type);
+    }
+    _ => change.compare_slot("schema".to_owned(), old, new),
+  }
+  change
 }
 
 pub fn format_program_diff(result: &ProgramDiffResult) -> String {
@@ -370,6 +458,9 @@ pub fn format_program_diff(result: &ProgramDiffResult) -> String {
       result.evidence.categories.join(", ")
     }
   ));
+  if !result.evidence.schema_widening.is_empty() {
+    output.push_str(&format!("- schema widening: {}\n", result.evidence.schema_widening.join(", ")));
+  }
   output.push_str(&format!(
     "- changes: ~{} +{} -{} ={}\n\n",
     result.stats.modified, result.stats.added, result.stats.removed, result.stats.unchanged
@@ -1690,6 +1781,127 @@ mod tests {
         .iter()
         .any(|change| change.definition.as_deref() == Some("ffi-evidence.main/main!") && change.category == "schema-signature")
     );
+  }
+
+  fn schema(text: &str) -> std::sync::Arc<crate::calcit::CalcitTypeAnnotation> {
+    let form = if text.contains(' ') {
+      cirru_parser::parse(text)
+        .expect("schema should parse")
+        .into_iter()
+        .next()
+        .expect("one schema form")
+    } else {
+      leaf(text)
+    };
+    crate::snapshot::parse_schema_annotation_for_write(&form).expect("schema should be valid")
+  }
+
+  #[test]
+  fn schema_changes_report_widening_and_narrowing_per_slot() {
+    let fn_schema = |arg: &str, ret: &str| schema(&format!("::  'Fn $ {{}} (:args $ [] {arg}) (:return {ret})"));
+    for (old, new, direction, widened, narrowed) in [
+      (
+        fn_schema("'Number", "'Number"),
+        fn_schema("'Number", "'Dynamic"),
+        "widened",
+        vec!["return"],
+        vec![],
+      ),
+      (
+        fn_schema("(:: 'List 'Number)", "'Number"),
+        fn_schema("(:: 'List 'Dynamic)", "'Number"),
+        "widened",
+        vec!["args.0"],
+        vec![],
+      ),
+      (
+        fn_schema("(:: 'Map 'Tag 'Number)", "'Number"),
+        fn_schema("'Map", "'Number"),
+        "widened",
+        vec!["args.0"],
+        vec![],
+      ),
+      (
+        fn_schema("'Number", "'Dynamic"),
+        fn_schema("'Number", "'Number"),
+        "narrowed",
+        vec![],
+        vec!["return"],
+      ),
+      (
+        fn_schema("'Dynamic", "'Number"),
+        fn_schema("'Number", "'Dynamic"),
+        "mixed",
+        vec!["return"],
+        vec!["args.0"],
+      ),
+      (schema("'Number"), schema("'String"), "changed", vec![], vec![]),
+    ] {
+      let change = super::compare_schema(&old, &new);
+      assert_eq!(change.direction(), direction, "{old} -> {new}");
+      assert_eq!(change.widened, widened, "{old} -> {new}");
+      assert_eq!(change.narrowed, narrowed, "{old} -> {new}");
+    }
+  }
+
+  #[test]
+  fn semantic_evidence_lists_definitions_with_widened_schemas() {
+    let old = parse_snapshot(
+      include_str!("../tests/fixtures/ffi-boundary-evidence.cirru"),
+      "fixture",
+      "calcit.cirru",
+    )
+    .expect("fixture should parse");
+    let mut new = old.clone();
+    let main = |snapshot: &mut crate::snapshot::Snapshot| {
+      snapshot
+        .files
+        .get_mut("ffi-evidence.main")
+        .expect("namespace should exist")
+        .defs
+        .get_mut("main!")
+        .expect("definition should exist")
+        .schema = schema("::  'Fn $ {} (:args $ []) (:return 'Number)");
+    };
+    let mut old = old;
+    main(&mut old);
+    new
+      .files
+      .get_mut("ffi-evidence.main")
+      .unwrap()
+      .defs
+      .get_mut("main!")
+      .unwrap()
+      .schema = schema("::  'Fn $ {} (:args $ []) (:return 'Dynamic)");
+
+    let root = diff_snapshot(&old, &new);
+    let stats = collect_stats(&root);
+    let evidence = collect_semantic_evidence(&old, &new, "old", "new", &root, &stats).expect("evidence should collect");
+    assert_eq!(evidence.schema_widening, vec!["ffi-evidence.main/main!"]);
+    let change = evidence
+      .changes
+      .iter()
+      .find(|change| change.category == "schema-signature")
+      .expect("schema change");
+    assert_eq!(change.schema_direction.as_deref(), Some("widened"));
+    assert_eq!(change.widened_slots, vec!["return"]);
+    assert!(change.semantic_review_required);
+
+    // An unchanged schema with a changed body reports no direction.
+    let mut body_only = old.clone();
+    body_only
+      .files
+      .get_mut("ffi-evidence.main")
+      .unwrap()
+      .defs
+      .get_mut("main!")
+      .unwrap()
+      .code = leaf("changed-expression");
+    let root = diff_snapshot(&old, &body_only);
+    let stats = collect_stats(&root);
+    let evidence = collect_semantic_evidence(&old, &body_only, "old", "new", &root, &stats).expect("evidence should collect");
+    assert!(evidence.schema_widening.is_empty());
+    assert!(evidence.changes.iter().all(|change| change.schema_direction.is_none()));
   }
 
   #[test]

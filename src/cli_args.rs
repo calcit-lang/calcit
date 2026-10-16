@@ -715,6 +715,9 @@ pub struct ProgramDiffCommand {
   /// output format: human (default), edn (primary structured data), or json (interoperability)
   #[argh(option, default = "String::from(\"human\")")]
   pub format: String,
+  /// exit with an error after printing when any definition schema widens a slot (whole Snapshot only; rejected with --def)
+  #[argh(switch)]
+  pub fail_on_widening: bool,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
