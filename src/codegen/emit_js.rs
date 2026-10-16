@@ -3321,6 +3321,7 @@ mod tests {
 
   #[test]
   fn js_host_global_reference_qualifies_only_on_module_binding_collision() {
+    let _state = program::lock_program_test_state();
     let ns = "tests.emit-js-global-shadow";
     program::PROGRAM_CODE_DATA.write().expect("open program code").insert(
       Arc::from(ns),
@@ -3390,6 +3391,7 @@ mod tests {
 
   #[test]
   fn typed_external_field_codegen_uses_ffi_name_overrides() {
+    let _state = program::lock_program_test_state();
     let type_hint = Arc::new(calcit::CalcitTypeAnnotation::Trait(external_trait_with_names()));
     let local_defs: HashSet<Arc<str>> = HashSet::new();
     let file_imports = RefCell::new(ImportsDict::new());
