@@ -9221,7 +9221,8 @@ fn warn_on_dynamic_call_head(head: &Calcit, scope_types: &ScopeTypes, file_ns: &
     }
     Calcit::List(items) => (
       infer_type_from_expr(head, scope_types),
-      derive_list_call_expr_location(items),
+      // A resolved import head drops its coordinate; an operand still carries one.
+      derive_list_call_expr_location(items).or_else(|| items.iter().skip(1).find_map(derive_call_expr_location)),
       "the result of the head expression".to_owned(),
     ),
     _ => return,

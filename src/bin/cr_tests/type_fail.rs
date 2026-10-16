@@ -219,7 +219,7 @@ fn type_fail_tag_access_shorthand_matches_tag_call_diagnostics() {
       diagnostics
     };
     let shorthand = collect("ev.:missing");
-    let call = collect("(:missing ev)");
+    let call = collect(":missing ev");
     assert_eq!(shorthand, call, "shorthand and tag call must report identical diagnostics");
     assert!(
       shorthand.iter().any(|(code, _)| code.as_deref() == Some("W_UNKNOWN_STRUCT_FIELD")),
@@ -2817,7 +2817,7 @@ fn run_check_only_surfaces_schema_error_code() {
 fn calling_a_dynamic_value_requires_fn_narrowing() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(
-      "let\n    call-open $ fn (x) (hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)) (x 1)\n    call-narrowed $ fn (x) (hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)) (if (fn? x) (x 1) nil)\n    call-typed $ fn (g) (hint-fn $ {} (:args $ [] $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)) (:return 'Number)) (g 1)\n  [] call-open call-narrowed call-typed",
+      "let\n    call-open $ fn (x) (hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)) (x 1)\n    call-narrowed $ fn (x) (hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)) (if (fn? x) (x 1) nil)\n    call-typed $ fn (g) (hint-fn $ {} (:args $ [] $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)) (:return 'Number)) (g 1)\n    call-computed $ fn (x) (hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)) ((identity x) 1)\n    call-threaded $ fn (x) (hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)) (-> 1 x)\n  [] call-open call-narrowed call-typed call-computed call-threaded",
     );
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
 
@@ -2829,8 +2829,9 @@ fn calling_a_dynamic_value_requires_fn_narrowing() {
       .iter()
       .filter(|warning| warning.code() == Some("W_DYNAMIC_CALL"))
       .collect::<Vec<_>>();
-    // Only the unnarrowed call reports; `fn?` and an Fn schema prove the head.
-    assert_eq!(dynamic_calls.len(), 1, "{warnings:?}");
+    // The unnarrowed variable, the computed head and the caller-written head
+    // that `->` moves into place report; `fn?` and an Fn schema prove the head.
+    assert_eq!(dynamic_calls.len(), 3, "{warnings:?}");
     assert!(
       dynamic_calls[0].message().contains("variable `x`") && dynamic_calls[0].message().contains("`(if (fn? f)"),
       "{dynamic_calls:?}"
