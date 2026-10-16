@@ -79,6 +79,31 @@ calcit calcit.cirru fix --rule core-absence-to-public-v1 --include-attached --fo
 然后运行原断言及实际目标后端。此规则是临时迁移桥；活跃消费者源码、测试、示例、宏生成与依赖
 迁移全部验收后，在下一个非 patch 版本审阅退役。升级的兼容性范围见 [升级手册](upgrade.md)。
 
+### 缺失值迁移后的 Option→nil 定位
+
+`.unwrap-or value nil` 或 `match value … ((:none) nil)` 仍把 Option 还原成
+nil-or-T，不能据此认定类型迁移完成。先查看只读证据：
+
+```bash
+calcit calcit.cirru analyze weak-types --only option-nil-roundtrip --format edn
+calcit calcit.cirru analyze weak-types --only option-nil-roundtrip --ns app.main
+```
+
+每处结果带定义、source path、输入表达式的推断类型，以及直接父节点的位置、head
+和 child index。父节点可能是函数返回位置、绑定或调用参数，不是完整数据流追踪。
+没有唯一的编译器类型证据时显示 unknown；它不是允许放宽类型的理由。
+
+先用 Struct 或 `decode-map-as` 给已知形状的容器建立合同，再通过 Option 的
+`match` 分支或 `.unwrap-or` 明确处理真实业务缺失值。不要让 Agent 为通过检查
+自动插入 nil、unsafe 或默认值。开放载荷可能是 `Some nil`；原代码若把它与 None
+同样处理，迁移时必须保留原行为和惰性 fallback，不能机械替换为缺失判断。
+
+该视图仅扫描所选定义的 `:code`，包含前缀/接收者方法写法及显式 None→nil 分支，
+跳过 quoted data，保留 quasiquote 中实际求值的 unquote。它不展开新的迁移规则，
+不写 Snapshot、不新增诊断，也不改变 strict 结论；原测试和实际后端验收仍需保留。
+
+### 预览与其他迁移规则
+
 `calcit fix` 把编译器已经能够唯一判断的迁移建议映射回 Snapshot source AST。默认命令只做预览；它会在同目录的
 staged Snapshot 上尝试替换并重新编译选定 scope，成功后仍不写入原文件：
 

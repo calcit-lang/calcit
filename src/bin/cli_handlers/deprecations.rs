@@ -21,6 +21,7 @@ use calcit::cli_args::{
 const VIEW_COVERAGE: &str = "coverage";
 const VIEW_DYNAMIC_METHOD: &str = "dynamic-method";
 const VIEW_DEPRECATED_CALL: &str = "deprecated-call";
+pub(crate) const VIEW_OPTION_NIL_ROUNDTRIP: &str = "option-nil-roundtrip";
 
 /// Old entries without a replacement name this instead of a command.
 const NO_REPLACEMENT: &str = "";
@@ -487,7 +488,7 @@ fn view_kind(only: Option<&str>) -> Result<Option<&'static str>, String> {
     return Ok(None);
   };
   let kinds = raw.split(',').map(str::trim).filter(|kind| !kind.is_empty()).collect::<Vec<_>>();
-  let views = [VIEW_COVERAGE, VIEW_DYNAMIC_METHOD, VIEW_DEPRECATED_CALL];
+  let views = [VIEW_COVERAGE, VIEW_DYNAMIC_METHOD, VIEW_DEPRECATED_CALL, VIEW_OPTION_NIL_ROUNDTRIP];
   let selected = views.iter().copied().filter(|view| kinds.contains(view)).collect::<Vec<_>>();
   match (selected.as_slice(), kinds.len()) {
     ([], _) => Ok(None),
@@ -526,6 +527,24 @@ pub fn normalize_weak_types_view(cli_args: ToplevelCalcit) -> Result<ToplevelCal
     ("--ffi-evidence", options.ffi_evidence),
     ("--schema-evidence", options.schema_evidence),
   ];
+  if view == Some(VIEW_OPTION_NIL_ROUNDTRIP) {
+    reject_options(VIEW_OPTION_NIL_ROUNDTRIP, &evidence_flags)?;
+    reject_options(
+      VIEW_OPTION_NIL_ROUNDTRIP,
+      &[
+        ("--incremental", options.incremental),
+        ("--coverage-level", options.coverage_level.is_some()),
+      ],
+    )?;
+    let mut options = options.clone();
+    options.only = Some(VIEW_OPTION_NIL_ROUNDTRIP.to_owned());
+    return Ok(ToplevelCalcit {
+      subcommand: Some(CalcitCommand::Analyze(AnalyzeCommand {
+        subcommand: AnalyzeSubcommand::WeakTypes(options),
+      })),
+      ..cli_args
+    });
+  }
   let subcommand = match view {
     Some(VIEW_COVERAGE) => {
       reject_options(VIEW_COVERAGE, &evidence_flags)?;
@@ -658,6 +677,15 @@ mod tests {
   fn weak_types_match_kinds_stay_unchanged() {
     let args = parse(&["analyze", "weak-types", "--only", "code-nil,code-dynamic"]);
     assert_eq!(normalize_weak_types_view(args.clone()).expect("kinds"), args);
+  }
+
+  #[test]
+  fn option_nil_view_keeps_the_shared_entry_and_normalizes_its_spelling() {
+    let options = ["analyze", "weak-types", "--only", "option-nil-roundtrip", "--ns", "app.main"];
+    let expected = parse(&options);
+    assert_eq!(normalize_weak_types_view(expected.clone()).unwrap(), expected);
+    let padded = parse(&["analyze", "weak-types", "--only", " option-nil-roundtrip, ", "--ns", "app.main"]);
+    assert_eq!(normalize_weak_types_view(padded).unwrap(), expected);
   }
 
   #[test]

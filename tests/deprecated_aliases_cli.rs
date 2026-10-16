@@ -158,6 +158,7 @@ fn weak_types_views_offer_edn_equivalent_to_json() {
     ("calcit/test.cirru", "deprecated-call"),
     ("calcit/test.cirru", "dynamic-method"),
     ("calcit/test-wasm.cirru", "dynamic-method"),
+    ("tests/fixtures/option-nil-roundtrip.cirru", "option-nil-roundtrip"),
   ] {
     let args = |format| vec!["analyze", "weak-types", "--only", view, "--format", format];
     let json = run_calcit(Path::new(snapshot), &args("json"));
@@ -181,11 +182,219 @@ fn weak_types_views_reject_options_they_cannot_honor() {
     &["analyze", "weak-types", "--only", "coverage,code-nil"][..],
     &["analyze", "weak-types", "--only", "dynamic-method", "--ns", "app.main"][..],
     &["analyze", "weak-types", "--coverage-level", "none"][..],
+    &["analyze", "weak-types", "--only", "option-nil-roundtrip,code-nil"][..],
+    &["analyze", "weak-types", "--only", "option-nil-roundtrip", "--incremental"][..],
+    &["analyze", "weak-types", "--only", "option-nil-roundtrip", "--intent", "unresolved"][..],
+    &[
+      "analyze",
+      "weak-types",
+      "--only",
+      "option-nil-roundtrip",
+      "--coverage-level",
+      "full",
+    ][..],
   ] {
     let output = run_calcit(snapshot, args);
     assert!(!output.status.success(), "{args:?} should be rejected");
     assert!(output.stdout.is_empty(), "{args:?} should not report on stdout");
   }
+}
+
+#[test]
+fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diagnostics() {
+  // Rust owns the CLI envelope and read-only boundary. The fixture's attached
+  // Calcit tests own None/Some-nil/false/zero/empty/Unicode value semantics.
+  let snapshot = Path::new("tests/fixtures/option-nil-roundtrip.cirru");
+  let before = fs::read(snapshot).unwrap();
+  let strict_args = ["--check-only", "--all-defs", "--format", "json"];
+  let strict_before = run_calcit(snapshot, &strict_args);
+  assert!(strict_before.status.success(), "{}", String::from_utf8_lossy(&strict_before.stderr));
+  let view = ["analyze", "weak-types", "--only", "option-nil-roundtrip"];
+  let report = run_calcit(snapshot, &[&view[..], &["--format", "json"]].concat());
+  assert!(report.status.success(), "{}", String::from_utf8_lossy(&report.stderr));
+  let report: serde_json::Value = serde_json::from_slice(&report.stdout).expect("one JSON document");
+  assert_eq!(report["diagnostics"], serde_json::json!([]));
+  assert_eq!(report["data"]["summary"], serde_json::json!({"findings":6,"unknown":0}));
+  let findings = report["data"]["findings"].as_array().unwrap();
+  let at = |id: &str| {
+    findings
+      .iter()
+      .find(|finding| finding["definition"] == id)
+      .expect("source location")
+  };
+  assert_eq!(at("app.roundtrip/read-field")["path"], "code@3.1");
+  assert_eq!(at("app.roundtrip/read-field")["input"]["path"], "code@3.1.1");
+  assert_eq!(
+    at("app.roundtrip/read-field")["consumer"],
+    serde_json::json!({"path":"code@3","head":"either","child_index":1})
+  );
+  assert_eq!(at("app.roundtrip/threaded-value")["input"]["path"], "code@3.0");
+  for finding in findings {
+    assert_eq!(finding["input"]["inferred_type"], ":: 'calcit.core/Option 'Dynamic");
+    assert_eq!(finding["input"]["confidence"], "partial");
+    let query = run_calcit(
+      snapshot,
+      &[
+        "query",
+        "type-at",
+        finding["definition"].as_str().unwrap(),
+        "--path",
+        finding["input"]["path"].as_str().unwrap(),
+        "--format",
+        "json",
+      ],
+    );
+    assert!(query.status.success(), "{}", String::from_utf8_lossy(&query.stderr));
+    let query: serde_json::Value = serde_json::from_slice(&query.stdout).unwrap();
+    assert_eq!(finding["input"]["inferred_type"], query["data"]["inferred_type"]);
+    assert_eq!(finding["input"]["confidence"], query["data"]["confidence"]);
+  }
+  assert!(!findings.iter().any(|finding| matches!(
+    finding["definition"].as_str(),
+    Some("app.roundtrip/quoted-value" | "app.roundtrip/other-match")
+  )));
+  let scoped = run_calcit(snapshot, &[&view[..], &["--ns", "app.roundtrip", "--format", "json"]].concat());
+  let scoped: serde_json::Value = serde_json::from_slice(&scoped.stdout).unwrap();
+  assert_eq!(scoped["data"]["summary"]["findings"], 5);
+  let summary = run_calcit(
+    snapshot,
+    &[&view[..], &["--ns-prefix", "app.round", "--summary-only", "--format", "json"]].concat(),
+  );
+  let summary: serde_json::Value = serde_json::from_slice(&summary.stdout).unwrap();
+  assert_eq!(summary["data"]["summary"], scoped["data"]["summary"]);
+  assert_eq!(summary["data"]["findings"], serde_json::json!([]));
+  let human = run_calcit(snapshot, &view);
+  assert!(human.status.success());
+  let human = String::from_utf8(human.stdout).unwrap();
+  assert!(human.starts_with("# Option → nil\n\n"));
+  assert!(human.contains("```cirru\n") && human.contains("Direct consumer: either @ code@3"));
+  let strict_after = run_calcit(snapshot, &strict_args);
+  assert_eq!(strict_before.status.code(), strict_after.status.code());
+  let strict_before: serde_json::Value = serde_json::from_slice(&strict_before.stdout).unwrap();
+  let strict_after: serde_json::Value = serde_json::from_slice(&strict_after.stdout).unwrap();
+  assert_eq!(normalize_report(&strict_before), normalize_report(&strict_after));
+  assert_eq!(
+    fs::read(snapshot).unwrap(),
+    before,
+    "read-only view must preserve every source byte"
+  );
+}
+
+#[test]
+fn option_nil_view_keeps_unavailable_evidence_unknown_and_never_runs_the_entry() {
+  let directory = tempfile::tempdir().unwrap();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/option-nil-roundtrip.cirru", &snapshot).unwrap();
+  let operations = serde_json::json!([
+    [
+      "edit",
+      "def",
+      "app.main/main!",
+      "--overwrite",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn main! () $ raise |entry-must-not-run"
+    ],
+    [
+      "edit",
+      "def",
+      "app.roundtrip/unwrap-value",
+      "--overwrite",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn unwrap-value (value) $ .unwrap-or (unknown-expression value) nil"
+    ],
+    [
+      "edit",
+      "def",
+      "app.roundtrip/loud-option",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defmacro loud-option (value)\n  println |macro-output-sentinel\n  quasiquote $ Option :some ~value"
+    ],
+    [
+      "edit",
+      "schema",
+      "app.roundtrip/loud-option",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ :: 'Macro $ {} (:required $ [] 'Syntax) (:expansion $ :: 'Expr $ :: 'Option 'Dynamic) (:capabilities $ #{} :log)"
+    ],
+    [
+      "edit",
+      "def",
+      "app.roundtrip/loud-value",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn loud-value (value) $ .unwrap-or (loud-option value) nil"
+    ],
+    [
+      "edit",
+      "schema",
+      "app.roundtrip/loud-value",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)"
+    ]
+  ])
+  .to_string();
+  let preview = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", &operations, "--dry-run", "--format", "json"],
+  );
+  assert!(preview.status.success(), "{}", String::from_utf8_lossy(&preview.stderr));
+  let preview: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+  let applied = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "transaction",
+      "--code",
+      &operations,
+      "--expect-revision",
+      preview["scoped_revision"].as_str().unwrap(),
+      "--format",
+      "json",
+    ],
+  );
+  assert!(applied.status.success(), "{}", String::from_utf8_lossy(&applied.stderr));
+  let before = fs::read(&snapshot).unwrap();
+  let output = run_calcit(
+    &snapshot,
+    &[
+      "analyze",
+      "weak-types",
+      "--only",
+      "option-nil-roundtrip",
+      "--ns",
+      "app.roundtrip",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+  let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+  assert!(
+    String::from_utf8_lossy(&output.stderr).contains("macro-output-sentinel"),
+    "{}",
+    String::from_utf8_lossy(&output.stderr)
+  );
+  let finding = report["data"]["findings"]
+    .as_array()
+    .unwrap()
+    .iter()
+    .find(|finding| finding["definition"] == "app.roundtrip/unwrap-value")
+    .unwrap();
+  assert_eq!(finding["input"]["inferred_type"], serde_json::Value::Null);
+  assert_eq!(finding["input"]["confidence"], "unknown");
+  assert_eq!(report["diagnostics"], serde_json::json!([]));
+  assert_eq!(fs::read(&snapshot).unwrap(), before);
 }
 
 #[test]
