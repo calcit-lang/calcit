@@ -342,7 +342,7 @@ quote/quasiquote，并用 staged preprocess 验证 splice 后的 scope。此检�
 
 同一个 Snapshot 的写命令仍应串行执行，包括 `config`、`edit`、`tree`、cursor mutation 和 `fix --apply`。当前 CLI 从读取到提交持有排他锁，最多等待 5 秒，超时或 revision 变化时明确失败；进程中断后自动释放内核锁，下次写入会提示恢复。不要删除仍可能被活跃进程持有的 `.calcit/*.lock`。需要并行时使用独立 Snapshot/worktree，需要同一文件内的原子多步修改时使用 transaction 和 `--expect-revision`。外部编辑器或旧 CLI 不遵守此锁，不能据此宣称任意外部写入都不会冲突。
 
-升级 PR 中出现大段 `calcit.cirru` 文本变化时，先运行 `calcit calcit.cirru analyze program-diff <base-ref> --format edn`。优先读取 `:classification`、`:semantic-review-required`、`:categories` 和 `:changes`；只有 `canonical-format-only` 可以省去逐行确认格式差异，任何 config、schema/signature、runtime boundary 或 executable expression 分类仍需检查并运行对应验证。不要另找 JSON 专用入口；外部互操作确有需要时在同一命令上显式传 `--format json`。
+升级 PR 中出现大段 `calcit.cirru` 文本变化时，先运行 `calcit calcit.cirru analyze program-diff <base-ref> --format edn`。优先读取 `:classification`、`:semantic-review-required`、`:categories`、`:schema-widening` 和 `:changes`；`:schema-widening` 非空说明有签名被放宽，应收回放宽或说明原因，不要用放宽 schema 消除类型错误；只有 `canonical-format-only` 可以省去逐行确认格式差异，任何 config、schema/signature、runtime boundary 或 executable expression 分类仍需检查并运行对应验证。不要另找 JSON 专用入口；外部互操作确有需要时在同一命令上显式传 `--format json`。
 
 ### 项目升级入口
 

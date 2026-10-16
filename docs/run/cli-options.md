@@ -592,6 +592,9 @@ calcit calcit.cirru analyze program-diff HEAD --format json
 
 # 比较两个 Git revision
 calcit calcit.cirru analyze program-diff main --base v0.15.5 --format edn
+
+# 任何 definition 的 schema 槽位被放宽（如改成 Dynamic）时以非零状态退出
+calcit calcit.cirru analyze program-diff HEAD --format edn --fail-on-widening
 ```
 
 结构化结果包含 Snapshot path、before/after content revision、稳定分类、受影响 definition 与是否需要 semantic review。`canonical-format-only` 表示原始文件字节不同、但解析后的 Snapshot 没有配置、schema、definition 或可执行表达式变化；它只能减少文本 diff 的人工确认，不能替代 strict check、测试或运行时验证。`--def` 保留原有的交互式 tree diff，目前只支持 human 输出；自动化证据应省略 `--def`，在同一份 Snapshot 报告中筛选 `:changes`。
