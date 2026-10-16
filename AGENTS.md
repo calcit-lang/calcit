@@ -151,6 +151,8 @@ calcit docs agents --contract
 
 ### PR 与发布流程
 
+**0.30.1 维护分支例外（维护者于 2026-10-16 明确批准）**：该版及新的配对预发布从 `release/0.30.1` 开发、验收和发布，以已发布的 `0.30.1-alpha.4` 为基线，仅回移 milestone #62 的修复及必要文档/验收。不要带入 main 上后续版本的变更，特别是 #2136 的 `get-in → Result`。下列流程中针对本版的 `main` 替换为此维护分支：普通源码、测试、CI 和文档仍通过 PR；仅纯版本提交可直接提交；必须先验证精确维护分支 SHA 的 Test 和默认 CodeQL「Push on release/0.30.1」，再从同一 SHA 打 annotated tag、发布配对 CLI / @calcit/procs 并完成消费者验收与成果 Discussion。维护线保留分支保护，不跳过 review、检查或 provenance；其他版本仍遵循 main 流程。既有 tag 不移动，其恢复使用 tag 内原有 workflow。
+
 1. **先合并功能改动到 main**：功能分支完成后推送并等待 GitHub Actions 全绿；确认稳定后通过 PR 合并到 `main`。
 2. **升级版本**：版本号更新允许直接在已验证的 `main` 上进行，不需要为版本号本身创建 PR。该例外只允许修改 `Cargo.toml`、`package.json` 的版本字段，以及仅由该版本变化产生的 lockfile metadata。执行 `cargo update --workspace` 后必须检查 diff；若依赖集合、依赖版本或其他字段发生变化，改用普通分支和 PR。提交 `chore: release <version>` 并推送 `main`。
 3. **等待 main 验证**：release PR 合并或版本提交推送后拉取最新 `main`，把当前 commit 记录为 `VERIFIED_SHA`，确认目标 tag 尚不存在，并按该 SHA 查询每个 required workflow。所有 required runs 都必须为 `completed/success`；失败、缺失或仍在运行时不得打 tag。
@@ -243,4 +245,4 @@ npm view @calcit/procs version
 - Issue 进度评论保持简短：结论、相关 PR 链接、剩余事项。验证命令、CI 记录和 SHA 写在 PR 描述中，评论里不重复。
 - PR 必须等待最新 head 的 bot 或用户 review 完成，处理所有有效意见并清零 review threads；required Actions 全绿且 mergeability 为 CLEAN 后才能合并。Actions 失败时查明并修复原因，不能用重跑代替处理。
 - PR 合并后等待精确 main HEAD 的 required Actions 成功，再进行依赖发布或关闭发布门槛。Wiki 内容只维护在外部 Wiki，不在仓库重复保存。
-- 纯版本号 release commit 可直接在已验证的 `main` 完成；只允许版本字段及由此产生的 lockfile metadata，不得改变依赖集合或夹带源码、测试、CI、文档。必须在精确 main SHA 的 required Actions 成功后才创建指向同一 SHA 的 annotated tag 与 GitHub Release。
+- 纯版本号 release commit 可直接在已验证的 `main` 完成（0.30.1 使用上文批准的维护分支例外）；只允许版本字段及由此产生的 lockfile metadata，不得改变依赖集合或夹带源码、测试、CI、文档。必须在精确发布分支 SHA 的 required Actions 成功后才创建指向同一 SHA 的 annotated tag 与 GitHub Release。
