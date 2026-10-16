@@ -1057,7 +1057,10 @@ try {
   // Runtime ABI inputs must not pass only because a literal call was inlined.
   // The attached core tests above remain the shared language contract.
   const scalarSnapshot = join(project, "truthiness-scalars.cirru");
-  await copyFile("tests/fixtures/deep-recursion.cirru", scalarSnapshot);
+  await copyFile(truthinessCore, scalarSnapshot);
+  // Typed conditions here are constant-truthy on purpose; see the effects contract.
+  const scalarNs = "calcit.core-truthiness-scalars";
+  const scalarEntry = ["--init-fn", `${scalarNs}/main!`, "--reload-fn", `${scalarNs}/main!`];
   const scalarRun = (...args) => execFileSync(binary, [scalarSnapshot, ...args], options);
   const scalarEdit = operations => {
     const original = execFileSync(binary, [scalarSnapshot, "query", "config", "--format", "json"], options);
@@ -1067,16 +1070,17 @@ try {
     scalarRun(...transaction);
   };
   const scalarDefinition = (name, parameters, type, body, returnType = "'Number", features = []) => [
-    ["edit", "def", `app.main/${name}`, "--input-format", "json-ast", "--code",
+    ["edit", "def", `${scalarNs}/${name}`, "--input-format", "json-ast", "--code",
       JSON.stringify(["defwasm-export", name, parameters, body])],
-    ["edit", "schema", `app.main/${name}`, "--input-format", "json-ast", "--code",
+    ["edit", "schema", `${scalarNs}/${name}`, "--input-format", "json-ast", "--code",
       JSON.stringify(["::", "'Fn", ["{}", [":args", ["[]", ...type]], [":return", returnType],
         ...(features.length ? [[":features", ["#{}", ...features]]] : [])]])],
   ];
   scalarEdit([
-    ["edit", "rm-def", "app.main/f"],
-    ...["main!", "reload!"].map(name => ["edit", "def", `app.main/${name}`, "--overwrite",
-      "--input-format", "json-ast", "--code", JSON.stringify(["defn", name, [], "&unit"])]),
+    ["edit", "add-ns", scalarNs],
+    ["edit", "def", `${scalarNs}/main!`, "--input-format", "json-ast", "--code", JSON.stringify(["defn", "main!", [], "&unit"])],
+    ["edit", "schema", `${scalarNs}/main!`, "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)"],
     ...scalarDefinition("choose-number", ["value"], ["'Number"], ["if", "value", "1", "2"]),
     ...scalarDefinition("erase-refinement", ["value"], ["'UInt32"], ["unsafe-coerce", "value", "'Number"], "'Number", [":js-ffi"]),
     ...scalarDefinition("choose-alias", ["value"], ["'Number"], ["let", [["alias", "value"]], ["if", "alias", "1", "2"]]),
@@ -1093,7 +1097,7 @@ try {
     ...scalarDefinition("choose-function", [], [], ["if", "a-first-function", "1", "2"]),
   ]);
   const scalarOutput = join(project, "truthiness-scalars-wasm");
-  scalarRun("--emit-path", scalarOutput, "wasm");
+  scalarRun(...scalarEntry, "--emit-path", scalarOutput, "wasm");
   const scalarModule = new WebAssembly.Module(await readFile(join(scalarOutput, "program.wasm")));
   const scalarImports = {};
   for (const { module, name, kind } of WebAssembly.Module.imports(scalarModule)) {
@@ -1139,12 +1143,12 @@ try {
     scalarEdit(scalarDefinition(`reject-${label}`, parameters, types, body, "'Number", features));
     for (const [target, extra] of [["wasm", []], ["wasi", ["--boundary", "native"]]]) {
       const output = join(project, `truthiness-${label}-${target}`);
-      const result = spawnSync(binary, [target, scalarSnapshot, ...extra, "--emit-path", output], options);
+      const result = spawnSync(binary, [target, scalarSnapshot, ...scalarEntry, ...extra, "--emit-path", output], options);
       assert.notEqual(result.status, 0, `${label}/${target} must reject ambiguous representation`);
       assert.match(result.stderr, diagnostic);
       await assertRejectedArtifacts(output, `${label}/${target}`, diagnostic);
     }
-    scalarEdit([["edit", "rm-def", `app.main/reject-${label}`]]);
+    scalarEdit([["edit", "rm-def", `${scalarNs}/reject-${label}`]]);
   }
   assert.deepEqual(await readFile(scalarSnapshot), scalarPositive);
 
