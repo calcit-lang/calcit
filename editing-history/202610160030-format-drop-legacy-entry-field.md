@@ -1,0 +1,26 @@
+# edit format 显式删除旧 entry 字段（#2052）
+
+## 依据与设计
+
+Cumulo Phlox workflow 的旧 Snapshot 在 named entry 中带有旧编辑器字段 `:storage-key`（以及 `:port`）。
+`edit format` 的隔离迁移入口拒绝未知字段且不提供删除途径，而普通 loader 又要求先格式化，结构化流程形成循环。
+
+新增可重复的 `edit format --drop-legacy-entry-field <entry>.<field>`：只删除点名的字段，
+拒绝当前 entry 字段、不存在的 entry 或字段，并在输出中列出每个被删值；未点名的未知字段继续被拒绝。
+未知字段报错一次列出全部字段并给出完整命令。不按项目硬编码 `storage-key`，不静默丢弃元数据，
+也不修改运行时 loader。
+
+Review 补充：按最后一个点拆分目标，支持 `server.prod` 等 entry 名；验证与删除共用字段名规范化，
+匹配 tag、symbol 与带冒号的字符串 key，同名别名全部删除并逐项报告值。
+先汇总所有 named entry 的未知字段，再给出一条命令；失败时不写回原文件。
+
+## 退场条件
+
+与顶层 `:configs` 的一次性迁移入口同时退场：已知下游的旧 compact Snapshot 都迁移后，在非 patch 版本删除。
+
+## 验证
+
+- `src/snapshot.rs` 单元测试覆盖报错提示、非法目标、部分删除仍拒绝、全部删除后迁移成功与报告值。
+- CLI 冒烟：带 `:configs` 与 `entries.server` 旧字段的 Snapshot 报错一次列出两个字段，按提示命令完成格式化。
+- Rust 回归覆盖多 entry 汇总、带点 entry、字段别名、空目标及规范化当前字段保护；已有 CLI 集成测试覆盖失败逐字节不写回、完整命令与幂等格式化。
+- `cargo test`、`yarn check-all`、`cargo clippy -- -D warnings`。

@@ -316,9 +316,10 @@ fn handle_merge(opts: &EditMergeCommand, snapshot_file: &str) -> Result<(), Stri
   ))
 }
 
-fn handle_format(_opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), String> {
+fn handle_format(opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), String> {
   let original_content = fs::read_to_string(snapshot_file).map_err(|e| format!("Failed to read {snapshot_file}: {e}"))?;
-  let original_edn = cirru_edn::parse(&original_content).map_err(|e| format!("Failed to parse EDN: {e}"))?;
+  let mut original_edn = cirru_edn::parse(&original_content).map_err(|e| format!("Failed to parse EDN: {e}"))?;
+  let dropped_fields = snapshot::drop_legacy_entry_fields(&mut original_edn, &opts.drop_legacy_entry_fields)?;
   let (mut snapshot, legacy_migration) =
     snapshot::load_snapshot_data_for_format(&original_edn, snapshot_file).map_err(|e| format!("Failed to load snapshot: {e}"))?;
   let advisories = collect_format_advisories(snapshot_file, &original_edn, &snapshot);
@@ -336,6 +337,9 @@ fn handle_format(_opts: &EditFormatCommand, snapshot_file: &str) -> Result<(), S
       "{} Canonicalized {canonicalized_type_forms} legacy tag-based type form(s) to quoted symbols",
       "✓".green()
     );
+  }
+  for (field, value) in &dropped_fields {
+    println!("{} Dropped legacy entry field `{field}`: {value}", "✓".green());
   }
   if legacy_migration.happened() {
     println!(
@@ -4073,7 +4077,13 @@ mod tests {
       CalcitTypeAnnotation::Tag
     ));
 
-    handle_format(&EditFormatCommand {}, &path).expect("edit format should preserve the Tag schema");
+    handle_format(
+      &EditFormatCommand {
+        drop_legacy_entry_fields: vec![],
+      },
+      &path,
+    )
+    .expect("edit format should preserve the Tag schema");
     let formatted = load_snapshot(&path).expect("canonically formatted snapshot should reload");
     assert!(matches!(
       formatted.files["app.main"].defs["test-fn"].schema.as_ref(),

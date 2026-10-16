@@ -1661,7 +1661,12 @@ pub enum EditSubcommand {
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "format")]
 /// rewrite target snapshot file in canonical format
-pub struct EditFormatCommand {}
+pub struct EditFormatCommand {
+  /// remove a reviewed unknown legacy entry field before migrating, as `<entry>.<field>`
+  /// (repeatable); each dropped value is reported
+  #[argh(option, long = "drop-legacy-entry-field")]
+  pub drop_legacy_entry_fields: Vec<String>,
+}
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "merge")]
