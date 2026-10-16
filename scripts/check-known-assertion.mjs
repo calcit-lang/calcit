@@ -156,6 +156,84 @@ try {
   execFileSync(binary, ["src/cirru/calcit-core.cirru", "test", "calcit.core/fs:path", "--tag", "native", "--tag", "file", "--require-match"], options);
 
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
+  // #2114: constructor identity, not its caller's declaration or element
+  // types, proves the opaque result of a non-literal JS array spread.
+  execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot",
+    "tests/fixtures/def-value-schema.cirru", "--tag", "js-array-spread", "--backend", "js"],
+  { ...options, stdio: "inherit" });
+  const arraySnapshot = join(project, "js-array-spread.cirru");
+  await copyFile("calcit/add.cirru", arraySnapshot);
+  const arrayRun = (...args) => execFileSync(binary, [arraySnapshot, ...args], options);
+  const arraySource = JSON.parse(execFileSync(binary, ["tests/fixtures/def-value-schema.cirru",
+    "query", "def", "app.js-spread/make-arrays", "--format", "json"], options)).data;
+  const arraySchema = JSON.parse(execFileSync(binary, ["tests/fixtures/def-value-schema.cirru",
+    "query", "schema", "app.js-spread/make-arrays", "--format", "json"], options)).data.canonical_schema;
+  const arrayOps = [
+    ["edit", "add-ns", "app.js-spread"],
+    ["edit", "def", "app.js-spread/make-arrays", "--input-format", "json-ast", "--code", JSON.stringify(arraySource.code)],
+    ["edit", "schema", "app.js-spread/make-arrays", "--input-format", "cirru", "--code", `quote $ ${arraySchema}`],
+    ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
+      "quote $ defn main! () (app.js-spread/make-arrays 3) &unit"],
+    ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit) (:features (#{} :js-ffi))"],
+    ["config", "set", "reload-fn", "app.main/main!"],
+  ];
+  for (const [name, params, types, body] of [
+    ["literal", "", "", "js-array & ([] 1 2)"],
+    ["open-elements", "values", "(:: 'List 'Dynamic)", "js-array & values"],
+    ["prefix", "values", "(:: 'List 'Number)", "js-array |prefix & values"],
+    ["explicit-core", "values", "(:: 'List 'Number)", "&call-spread js-array & values"],
+    ["aliased-result", "n", "'Number", "let ((result (make-arrays n))) result"],
+  ]) {
+    arrayOps.push(
+      ["edit", "def", `app.js-spread/${name}`, "--input-format", "cirru", "--code", `quote $ defn ${name} (${params}) (${body})`],
+      ["edit", "schema", `app.js-spread/${name}`, "--input-format", "cirru", "--code",
+        `quote $ :: 'Fn $ {} (:args ([] ${types})) (:return 'JsObject) (:features (#{} :js-ffi))`],
+    );
+  }
+  const arrayPreview = JSON.parse(arrayRun("edit", "transaction", "--code", JSON.stringify(arrayOps), "--dry-run", "--format", "json"));
+  arrayRun("edit", "transaction", "--code", JSON.stringify(arrayOps), "--expect-revision", arrayPreview.scoped_revision, "--format", "json");
+  const arrayBefore = await readFile(arraySnapshot);
+  const arrayProof = JSON.parse(arrayRun("fix", "--rule", "concrete-return-proof-v1", "--ns", "app.js-spread", "--format", "json"));
+  assert.deepEqual(arrayProof.diagnostics, []);
+  assert.deepEqual(arrayProof.data.suggestions, []);
+  const arrayType = JSON.parse(arrayRun("query", "type-at", "app.js-spread/make-arrays", "--path", "code@3", "--format", "json"));
+  assert.equal(arrayType.data.inferred_type, "'JsObject");
+  const arrayVerification = spawnSync(binary, [arraySnapshot, "fix", "--workflow", "strict", "--verify", "--format", "json"], options);
+  assert.ifError(arrayVerification.error);
+  const arrayStrict = JSON.parse(arrayVerification.stdout);
+  assert.equal(arrayVerification.status, 0, JSON.stringify({ diagnostics: arrayStrict.diagnostics,
+    preflight: arrayStrict.data.workflow.preflight, verification: arrayStrict.data.workflow.verification.results }));
+  assert.equal(arrayStrict.data.workflow.status, "passed");
+  assert.deepEqual(await readFile(arraySnapshot), arrayBefore, "array proofs must not rewrite the source");
+  for (const [name, params, types, body, returned, features = true] of [
+    ["wrong-result", "values", "(:: 'List 'Number)", "js-array & values", "'Number"],
+    ["invented-members", "values", "(:: 'List 'Number)", "js-array & values", "(:: 'List 'Number)"],
+    ["opaque-host", "values", "(:: 'List 'Number)", "js/Array.from & values", "'JsObject"],
+    ["non-list", "values", "'Number", "js-array & values", "'JsObject"],
+    ["unknown-list", "values", "'Dynamic", "js-array & values", "'JsObject"],
+    ["shadowed", "js-array values", "(:: 'Fn ({} (:args ([])) (:rest 'Number) (:return 'Number))) (:: 'List 'Number)",
+      "js-array & values", "'JsObject"],
+    ["wrong-callback", "values", "(:: 'List 'Number)",
+      "js-array & $ map values $ fn (n) (hint-fn $ {} (:args ([] 'Number)) (:return 'JsObject)) n", "'JsObject"],
+    ["missing-feature", "values", "(:: 'List 'Number)", "js-array & values", "'JsObject", false],
+  ]) {
+    const ops = [
+      ["edit", "def", `app.js-spread/${name}`, "--input-format", "cirru", "--code", `quote $ defn ${name} (${params}) (${body})`],
+      ["edit", "schema", `app.js-spread/${name}`, "--input-format", "cirru", "--code",
+        `quote $ :: 'Fn $ {} (:args ([] ${types})) (:return ${returned})${features ? " (:features (#{} :js-ffi))" : ""}`],
+    ];
+    const preview = JSON.parse(arrayRun("edit", "transaction", "--code", JSON.stringify(ops), "--dry-run", "--format", "json"));
+    arrayRun("edit", "transaction", "--code", JSON.stringify(ops), "--expect-revision", preview.scoped_revision, "--format", "json");
+    const before = await readFile(arraySnapshot);
+    const rejected = spawnSync(binary, [arraySnapshot, "fix", "--rule", "concrete-return-proof-v1",
+      "--ns", "app.js-spread", "--def", name, "--format", "json"], options);
+    assert.ifError(rejected.error);
+    assert.notEqual(rejected.status, 0, `${name}: ${rejected.stdout}\n${rejected.stderr}`);
+    assert.match(rejected.stdout + rejected.stderr,
+      /E_FN_RETURN_UNPROVEN|W_FN_RETURN_TYPE_MISMATCH|E_SPREAD_TYPE_MISMATCH|E_JS_FFI_FEATURE_REQUIRED|E_CALL_ARGUMENT_UNPROVEN/);
+    assert.deepEqual(await readFile(arraySnapshot), before, `${name}: a rejected proof must not mutate source`);
+  }
   // #2053: actual Unit returns, proof, silent output, and host failures agree.
   await copyFile("calcit/add.cirru", snapshot);
   const loggingOps = [
