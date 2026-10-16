@@ -19621,6 +19621,9 @@ mod tests {
 
   #[test]
   fn prefix_map_field_access_requires_a_typed_struct() {
+    // Invalid tag access still lowers through core/get. Other tests can load
+    // or replace that shared source, so isolate the whole preprocessing call.
+    let _state = lock_preprocess_test_state();
     let expr = Cirru::List(vec![Cirru::leaf(":name"), Cirru::leaf("record")]);
     let code = code_to_calcit(&expr, "tests.struct", "demo", vec![]).expect("parse required field access");
     let mut scope_defs = HashSet::new();
@@ -19645,7 +19648,7 @@ mod tests {
     );
 
     let warnings = warnings.borrow();
-    assert_eq!(warnings.len(), 1);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert_eq!(warnings[0].code(), Some("W_REQUIRED_STRUCT_FIELD_TYPE"));
     assert!(warnings[0].message().contains("needs a statically typed Struct"));
     assert!(
