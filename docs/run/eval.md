@@ -59,6 +59,7 @@ calcit eval '
 
 `eval` 为代码片段创建独立的运行上下文，包含 core 定义。使用 `--dep` 显式加载项目或模块；
 目录路径以 `/` 结尾时读取其中的 `calcit.cirru`，也可以直接指定 Snapshot 文件。
+仅包含旧 `compact.cirru` 的目录会被拒绝并提示迁移；先按 [升级指南](upgrade.md) 迁为 `calcit.cirru`，再加载。
 加载定义不执行被加载项目的 `init-fn` 或 `reload-fn`；片段显式调用的函数仍按正常语义执行。
 
 例如，已安装依赖的 [Corokia](https://github.com/calcit-lang/corokia) 项目有
