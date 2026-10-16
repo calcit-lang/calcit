@@ -2476,7 +2476,7 @@ fn resolve_type_query_target(snapshot: &snapshot::Snapshot, target: &str) -> Res
   Ok((parse_type_annotation_query(target)?, "type annotation"))
 }
 
-fn format_type_query_annotation(annotation: &CalcitTypeAnnotation) -> Result<String, String> {
+pub(crate) fn format_type_query_annotation(annotation: &CalcitTypeAnnotation) -> Result<String, String> {
   cirru_edn::format(&annotation.to_type_edn(), true)
     .map(|text| {
       let rendered = text.trim();
@@ -2588,7 +2588,7 @@ fn semantic_code_path(path: &[usize]) -> String {
   }
 }
 
-fn format_cirru_expression(node: &Cirru) -> String {
+pub(crate) fn format_cirru_expression(node: &Cirru) -> String {
   cirru_parser::format(std::slice::from_ref(node), true.into())
     .map(|text| text.trim().to_owned())
     .unwrap_or_else(|_| format!("{node:?}"))
@@ -2781,6 +2781,38 @@ pub(super) fn infer_type_at_target(source: &Calcit, processed: Option<&Calcit>) 
   processed
     .and_then(runner::preprocess::infer_static_type_from_expr)
     .or_else(|| runner::preprocess::infer_static_type_from_expr(source))
+}
+
+/// Reuse type-at's lexical evidence for a read-only source inventory. A lowered
+/// child is not evidence for a source call; calls need a unique compiler trace.
+pub(crate) fn source_expression_type_at(
+  source: &Cirru,
+  namespace: &str,
+  definition: &str,
+  path: &[usize],
+  evidence: &[runner::preprocess::SourceExpressionEvidence],
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  if let Some(expression) = runner::preprocess::unique_source_expression_at_path(evidence, namespace, definition, path) {
+    return expression.inferred_type.clone();
+  }
+  if matches!(source, Cirru::List(_)) {
+    return None;
+  }
+  let source = code_to_calcit(
+    source,
+    namespace,
+    definition,
+    path.iter().map(|index| u16::try_from(*index)).collect::<Result<Vec<_>, _>>().ok()?,
+  )
+  .ok()?;
+  if matches!(source, Calcit::List(_)) {
+    return None;
+  }
+  let compiled = program::lookup_compiled_def(namespace, definition);
+  let processed = compiled
+    .as_ref()
+    .and_then(|compiled| find_preprocessed_node_at_path(&compiled.preprocessed_code, namespace, definition, path, false));
+  infer_type_at_target(&source, processed)
 }
 
 fn type_at_evidence(node: &Calcit, path: &str, used_preprocessed: bool) -> TypeAtEvidence {
@@ -3020,7 +3052,7 @@ fn format_type_at_bindings(processed_root: Option<&Calcit>, target: Option<&Calc
     .collect()
 }
 
-fn type_at_confidence(annotation: Option<&CalcitTypeAnnotation>) -> &'static str {
+pub(crate) fn type_at_confidence(annotation: Option<&CalcitTypeAnnotation>) -> &'static str {
   let Some(annotation) = annotation else {
     return "unknown";
   };

@@ -37,9 +37,11 @@ pub(crate) use atomic_write::stage_atomic_file;
 pub use call_graph_diff::handle_call_graph_diff_command;
 pub use cirru::handle_cirru_command;
 pub use command_echo::{print_command_echo, should_echo_command};
+pub(crate) use common::markdown_fenced_block;
 pub use common::{set_verbose_mutation_output, warn_on_global_temp_snapshot_path};
 pub use config::handle_config_command;
 pub use cursor::{handle_cursor_command, set_cursor_after_mode};
+pub(crate) use deprecations::VIEW_OPTION_NIL_ROUNDTRIP;
 pub use deprecations::{deprecated_command_hint, deprecated_type_policy_flag_hint, normalize_consolidated_views};
 pub use docs::handle_docs_command;
 pub use edit::handle_edit_command;
@@ -48,7 +50,8 @@ pub(crate) use fix::handle_fix_command;
 pub use program_diff::handle_program_diff_command;
 pub use query::handle_query_command;
 pub(crate) use query::{
-  load_main_snapshot, load_module_with_sources_silent, load_snapshot_for_static_analysis, prepare_program_for_type_query,
+  format_cirru_expression, format_type_query_annotation, load_main_snapshot, load_module_with_sources_silent,
+  load_snapshot_for_static_analysis, prepare_program_for_type_query, source_expression_type_at, type_at_confidence,
 };
 pub(crate) use scaffold::handle_scaffold_command;
 pub(crate) use structured_output::{StructuredOutputFormat, format_json_value_as_edn};

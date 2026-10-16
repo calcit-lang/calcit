@@ -19,6 +19,9 @@ use md5::{Digest, Md5};
 
 use crate::cli_handlers::fix::schema_synthesis::{SchemaEvidenceCandidate, collect_schema_evidence_candidates};
 
+#[path = "type_coverage/option_nil_roundtrip.rs"]
+pub(crate) mod option_nil_roundtrip;
+
 /// Analyze compiler-proven absent contracts without changing source declarations.
 /// Failed proofs retain their original coverage; explicit Dynamic is never inferred.
 pub(crate) fn with_proven_helper_contracts<'a>(
