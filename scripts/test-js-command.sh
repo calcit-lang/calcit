@@ -43,3 +43,20 @@ node --input-type=module --eval \
   'import("./target/js-command-smoke/app.main.mjs").then((module) => module.random_main_$x_())' \
   >"$STDOUT_FILE" 2>"$STDERR_FILE"
 grep -Fxq "secure-random: ok" "$STDOUT_FILE"
+
+# Entry type slots must survive the hand-off to the codegen thread (#2108):
+# the same bound entry passes check-only and JS emission, an unbound slot still fails.
+readonly SLOT_FIXTURE="calcit/type-fail/type-slot-entry-scope.cirru"
+readonly UNBOUND_SLOT_FIXTURE="calcit/type-fail/type-slot-unbound-strict.cirru"
+readonly SLOT_STDERR="$OUTPUT_DIR/type-slot-stderr.txt"
+for entry_args in "" "--entry server"; do
+  # shellcheck disable=SC2086
+  "$CALCIT_BIN" $entry_args "$SLOT_FIXTURE" --check-only >/dev/null
+  # shellcheck disable=SC2086
+  "$CALCIT_BIN" $entry_args --emit-path "$OUTPUT_DIR/type-slot" "$SLOT_FIXTURE" js >/dev/null
+done
+if "$CALCIT_BIN" --emit-path "$OUTPUT_DIR/type-slot-unbound" "$UNBOUND_SLOT_FIXTURE" js >/dev/null 2>"$SLOT_STDERR"; then
+  echo "JavaScript codegen unexpectedly accepted an unbound type slot" >&2
+  exit 1
+fi
+grep -Fq "E_UNBOUND_TYPE_SLOT" "$SLOT_STDERR"

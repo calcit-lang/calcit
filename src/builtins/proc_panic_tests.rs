@@ -92,6 +92,24 @@ fn value_pool() -> Vec<Calcit> {
 
 #[test]
 fn builtin_procs_do_not_panic_on_arbitrary_input() {
+  // Valid proc calls can lazily compile core methods and Option. Match the
+  // existing core-compilation tests instead of relying on the small test stack.
+  std::thread::Builder::new()
+    .name("builtin-proc-fuzz".to_owned())
+    .stack_size(64 * 1024 * 1024)
+    .spawn(check_builtin_procs)
+    .expect("spawn builtin proc test")
+    .join()
+    .unwrap_or_else(|panic| std::panic::resume_unwind(panic));
+}
+
+fn check_builtin_procs() {
+  // Keep core availability deterministic and restore the original registries
+  // after the test, including when the final no-panic assertion fails.
+  let _guard = crate::program::lock_program_test_state();
+  let core = crate::load_core_snapshot().expect("embedded core snapshot");
+  let source = crate::program::extract_program_data(&core).expect("bundled core source");
+  crate::program::PROGRAM_CODE_DATA.write().expect("load bundled core").extend(source);
   let pool = value_pool();
   let call_stack = CallStackList::default();
   // Set CALCIT_PROC_FUZZ_TRACE to print each call first, which locates an abort

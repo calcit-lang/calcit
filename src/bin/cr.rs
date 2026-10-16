@@ -1980,6 +1980,7 @@ fn run_codegen_with_timeout(
 ) -> Result<(), String> {
   let entries = entries.clone();
   let emit_path = emit_path.to_owned();
+  let entry_type_slots = calcit::calcit::entry_type_slots();
   let (tx, rx) = channel();
   std::thread::Builder::new()
     .name("calcit-codegen".into())
@@ -1990,6 +1991,7 @@ fn run_codegen_with_timeout(
     .stack_size(CODEGEN_STACK_SIZE)
     .spawn(move || {
       calcit::runner::arm_stack_guard(CODEGEN_STACK_SIZE);
+      calcit::calcit::install_entry_type_slots(entry_type_slots);
       let result = run_codegen(&entries, &emit_path, ir_mode, verbose);
       let _ = tx.send(result);
     })

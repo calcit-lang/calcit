@@ -501,6 +501,12 @@ Optional method call is supported with `.?!name`.
 
 Use `js-array` for JavaScript arrays:
 
+`js-array` 构造结果是 `JsObject`，固定参数调用和已知 `List<T>` 的末尾展开
+（`js-array & values`）保留同一返回合同。展开长度不需要静态已知，列表元素也可
+保持开放；这不会把宿主数组证明为 Calcit `List<T>` 或某个 external trait。
+使用内容前仍应在边界转换、解码或通过已声明的宿主合同访问。原始宿主调用继续声明
+`:js-ffi`；不透明的 `js/...` 函数不因返回声明而获得数组构造器的证明。
+
 ```cirru.no-check
 let
     a $ js-array 1 2

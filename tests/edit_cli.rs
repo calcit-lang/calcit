@@ -2441,6 +2441,93 @@ fn package_metadata_preserves_legacy_file_forms_directly_and_in_transactions() {
   }
 }
 
+/// Legacy parsing and failure-without-write are CLI host boundaries, not language semantics.
+#[test]
+fn format_drops_reviewed_fields_across_entries_without_writing_on_failure() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.snapshot();
+  let source = r#"{} (:package |app)
+  :configs $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/main!) (:modules $ [])
+  :entries $ {}
+    |server.prod $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/main!) ('port 6001) (|:port 6002)
+    |worker $ {} (:init-fn |app.main/main!) (:reload-fn |app.main/main!) (:storage-key |worker.cirru)
+  :files $ {}
+"#;
+  fs::write(&snapshot, source).unwrap();
+  let rejected = run_calcit(&snapshot, &["edit", "format"]);
+  assert!(!rejected.status.success());
+  let error = String::from_utf8_lossy(&rejected.stderr);
+  for diagnostic in [
+    "entries.server.prod: unknown field `:port`",
+    "entries.worker: unknown field `:storage-key`",
+  ] {
+    assert!(error.contains(diagnostic), "{error}");
+  }
+  assert!(
+    error.contains(
+      "`calcit <snapshot> edit format --drop-legacy-entry-field server.prod.port --drop-legacy-entry-field worker.storage-key`"
+    ),
+    "{error}"
+  );
+  assert_eq!(fs::read_to_string(&snapshot).unwrap(), source);
+  for (flags, reason) in [
+    (vec!["server.prod.port"], "entries.worker: unknown field `:storage-key`"),
+    (vec!["server.prod.port", "worker.missing"], "entry `worker` has no `:missing` field"),
+    (vec!["server.prod.:mode"], "is a current entry field"),
+    (vec![".port"], "neither part may be empty"),
+    (vec!["server.prod."], "neither part may be empty"),
+  ] {
+    let mut args = vec!["edit", "format"];
+    for flag in flags {
+      args.extend(["--drop-legacy-entry-field", flag]);
+    }
+    let rejected = run_calcit(&snapshot, &args);
+    assert!(!rejected.status.success(), "{args:?}");
+    let diagnostic = String::from_utf8_lossy(&rejected.stderr);
+    assert!(diagnostic.contains(reason), "{args:?}: expected {reason}; got {diagnostic}");
+    assert_eq!(
+      fs::read_to_string(&snapshot).unwrap(),
+      source,
+      "{args:?}: preserve every original byte"
+    );
+  }
+  let formatted = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "format",
+      "--drop-legacy-entry-field",
+      "server.prod.port",
+      "--drop-legacy-entry-field",
+      "worker.storage-key",
+    ],
+  );
+  assert_success(&formatted, "format every reviewed field");
+  let report = String::from_utf8_lossy(&formatted.stdout);
+  let mut reported = report
+    .lines()
+    .filter_map(|line| line.split_once("Dropped legacy entry field ").map(|(_, field_value)| field_value))
+    .collect::<Vec<_>>();
+  reported.sort();
+  assert_eq!(
+    reported,
+    vec![
+      "`server.prod.port`: do 6001",
+      "`server.prod.port`: do 6002",
+      "`worker.storage-key`: do |worker.cirru",
+    ],
+    "every original value must remain associated with its field"
+  );
+  let parsed = cirru_edn::parse(&fs::read_to_string(&snapshot).unwrap()).unwrap();
+  let loaded = calcit::snapshot::load_snapshot_data(&parsed, snapshot.to_str().unwrap()).unwrap();
+  for entry in ["default", "server.prod", "worker"] {
+    assert_eq!(loaded.entries[entry].init_fn, "app.main/main!");
+  }
+  let before = fs::read(&snapshot).unwrap();
+  assert_success(&run_calcit(&snapshot, &["edit", "format"]), "idempotent canonical format");
+  assert_eq!(fs::read(&snapshot).unwrap(), before);
+}
+
 /// Source repair and atomic persistence are CLI host boundaries, not language tests.
 #[test]
 fn legacy_macro_schema_repair_keeps_namespace_and_runtime_guards() {

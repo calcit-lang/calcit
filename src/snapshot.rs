@@ -2341,30 +2341,43 @@ fn parse_entries_with_context(data: &Edn, require_mode: bool) -> Result<HashMap<
     .view_map()
     .map_err(|e| format!("entries: failed to parse entries map: {e}; got {}", format_edn_preview(data)))?;
 
+  let mut unknown_entries = Vec::new();
+  if !require_mode {
+    for (entry_key, entry_value) in &entries_map.0 {
+      let entry_name: String = from_edn(entry_key.to_owned())
+        .map_err(|e| format!("entries: failed to parse entry name: {e}; got {}", format_edn_preview(entry_key)))?;
+      let owner = format!("entries.{entry_name}");
+      let entry_map = entry_value
+        .view_map()
+        .map_err(|e| format!("{owner}: expected a map: {e}; got {}", format_edn_preview(entry_value)))?;
+      let unknown = unknown_format_config_keys(&entry_map, &owner, SNAPSHOT_ENTRY_FIELDS)?;
+      if !unknown.is_empty() {
+        unknown_entries.push((entry_name, unknown));
+      }
+    }
+    if !unknown_entries.is_empty() {
+      unknown_entries.sort();
+      let diagnostics = unknown_entries
+        .iter()
+        .map(|(entry, fields)| format!("entries.{entry}: unknown field {}", format_unknown_config_fields(fields)))
+        .collect::<Vec<_>>()
+        .join("; ");
+      let flags = unknown_entries
+        .iter()
+        .flat_map(|(entry, fields)| fields.iter().map(move |field| format!("--drop-legacy-entry-field {entry}.{field}")))
+        .collect::<Vec<_>>()
+        .join(" ");
+      return Err(format!(
+        "{diagnostics}; review the values, then rerun `calcit <snapshot> edit format {flags}`"
+      ));
+    }
+  }
+
   let mut entries = HashMap::with_capacity(entries_map.0.len());
   for (entry_key, entry_value) in entries_map.0.iter() {
     let entry_name: String = from_edn(entry_key.to_owned())
       .map_err(|e| format!("entries: failed to parse entry name: {e}; got {}", format_edn_preview(entry_key)))?;
     let owner = format!("entries.{entry_name}");
-    if !require_mode {
-      let entry_map = entry_value
-        .view_map()
-        .map_err(|e| format!("{owner}: expected a map: {e}; got {}", format_edn_preview(entry_value)))?;
-      validate_format_config_keys(
-        &entry_map,
-        &owner,
-        &[
-          "mode",
-          "init-fn",
-          "reload-fn",
-          "description",
-          "modules",
-          "type-slots",
-          "feature-policy",
-          "target",
-        ],
-      )?;
-    }
     let entry = parse_snapshot_entry_with_context(entry_value.to_owned(), &owner, require_mode)?;
     entries.insert(entry_name, entry);
   }
@@ -2735,23 +2748,122 @@ fn load_snapshot_data_for_format_inner(data: &Edn, path: &str) -> Result<(Snapsh
   ))
 }
 
-fn validate_format_config_keys(data: &EdnMapView, owner: &str, allowed: &[&str]) -> Result<(), String> {
-  for key in data.0.keys() {
-    let name = match key {
-      Edn::Tag(tag) => tag.ref_str(),
-      Edn::Str(text) | Edn::Symbol(text) => text.trim_start_matches(':'),
-      _ => {
-        return Err(format!(
-          "{owner}: field name must be a tag, string, or symbol; got {}",
-          format_edn_preview(key)
-        ));
-      }
+/// Fields a Snapshot entry may declare.
+const SNAPSHOT_ENTRY_FIELDS: &[&str] = &[
+  "mode",
+  "init-fn",
+  "reload-fn",
+  "description",
+  "modules",
+  "type-slots",
+  "feature-policy",
+  "target",
+];
+
+/// Remove explicitly named unknown legacy fields (`<entry>.<field>`) from `:entries`
+/// before the isolated format loader runs. Each target must exist and must not be a
+/// current entry field, so nothing is dropped implicitly. Returns each removed field
+/// with a preview of its value for the migration report.
+pub fn drop_legacy_entry_fields(data: &mut Edn, targets: &[String]) -> Result<Vec<(String, String)>, String> {
+  let mut dropped = Vec::with_capacity(targets.len());
+  if targets.is_empty() {
+    return Ok(dropped);
+  }
+  let Edn::Map(root) = data else {
+    return Err("Snapshot root must be a map".to_owned());
+  };
+  let entries = [Edn::tag("entries"), Edn::str("entries")]
+    .into_iter()
+    .find(|key| root.0.contains_key(key))
+    .and_then(|key| root.0.get_mut(&key))
+    .ok_or_else(|| "Snapshot has no `:entries` map to migrate".to_owned())?;
+  let Edn::Map(entries) = entries else {
+    return Err("Snapshot `:entries` must be a map".to_owned());
+  };
+  for target in targets {
+    let (entry_name, field) = target
+      .rsplit_once('.')
+      .filter(|(entry, field)| !entry.is_empty() && !field.trim_start_matches(':').is_empty())
+      .ok_or_else(|| {
+        format!("`--drop-legacy-entry-field {target}` must be `<entry>.<field>` (split at the last dot; neither part may be empty)")
+      })?;
+    let field = field.trim_start_matches(':');
+    if SNAPSHOT_ENTRY_FIELDS.contains(&field) {
+      return Err(format!(
+        "`--drop-legacy-entry-field {target}`: `:{field}` is a current entry field; edit it with `calcit config` instead"
+      ));
+    }
+    let entry_key = [Edn::str(entry_name), Edn::tag(entry_name)]
+      .into_iter()
+      .find(|key| entries.0.contains_key(key))
+      .ok_or_else(|| format!("`--drop-legacy-entry-field {target}`: entry `{entry_name}` does not exist"))?;
+    let Some(Edn::Map(entry)) = entries.0.get_mut(&entry_key) else {
+      return Err(format!("`--drop-legacy-entry-field {target}`: entry `{entry_name}` is not a map"));
     };
-    if !allowed.contains(&name) {
-      return Err(format!("{owner}: unknown field `:{name}`; migrate it explicitly before formatting"));
+    let mut keys = entry
+      .0
+      .keys()
+      .filter(|key| format_config_key_name(key) == Some(field))
+      .cloned()
+      .collect::<Vec<_>>();
+    if keys.is_empty() {
+      return Err(format!(
+        "`--drop-legacy-entry-field {target}`: entry `{entry_name}` has no `:{field}` field"
+      ));
+    }
+    // All aliases denote the explicitly reviewed field; report every removed value.
+    keys.sort_by_key(format_edn_preview);
+    for key in keys {
+      let value = entry.0.remove(&key).expect("collected field key exists");
+      dropped.push((format!("{entry_name}.{field}"), format_edn_preview(&value)));
     }
   }
-  Ok(())
+  Ok(dropped)
+}
+
+/// Normalize field names identically for format validation and explicit removal.
+fn format_config_key_name(key: &Edn) -> Option<&str> {
+  match key {
+    Edn::Tag(tag) => Some(tag.ref_str()),
+    Edn::Str(text) | Edn::Symbol(text) => Some(text.trim_start_matches(':')),
+    _ => None,
+  }
+}
+
+/// Collect unknown fields without stopping at the first named entry.
+fn unknown_format_config_keys(data: &EdnMapView, owner: &str, allowed: &[&str]) -> Result<Vec<String>, String> {
+  let mut unknown = vec![];
+  for key in data.0.keys() {
+    let name = format_config_key_name(key).ok_or_else(|| {
+      format!(
+        "{owner}: field name must be a tag, string, or symbol; got {}",
+        format_edn_preview(key)
+      )
+    })?;
+    if !allowed.contains(&name) {
+      unknown.push(name.to_owned());
+    }
+  }
+  unknown.sort();
+  unknown.dedup();
+  Ok(unknown)
+}
+
+/// Render normalized field names in deterministic diagnostics.
+fn format_unknown_config_fields(fields: &[String]) -> String {
+  fields.iter().map(|name| format!("`:{name}`")).collect::<Vec<_>>().join(", ")
+}
+
+fn validate_format_config_keys(data: &EdnMapView, owner: &str, allowed: &[&str]) -> Result<(), String> {
+  let unknown = unknown_format_config_keys(data, owner, allowed)?;
+  if unknown.is_empty() {
+    Ok(())
+  } else {
+    Err(format!(
+      "{owner}: unknown field {}; migrate it explicitly before formatting",
+      format_unknown_config_fields(&unknown)
+    ))
+  }
 }
 
 fn parse_legacy_configs_for_format(data: &Edn) -> Result<(SnapshotEntry, Option<String>), String> {
@@ -6296,6 +6408,120 @@ mod tests {
     let legacy = legacy_direct_quote_snapshot([("custom", Edn::Bool(true))]);
     let error = load_snapshot_data_for_format(&legacy, "calcit.cirru").expect_err("unknown legacy config must not be discarded");
     assert!(error.contains("legacy configs: unknown field `:custom`"), "error: {error}");
+  }
+
+  #[test]
+  fn format_loader_drops_only_named_legacy_entry_fields() {
+    // #2052: historical editor metadata such as `:storage-key` blocks recovery until it is reviewed.
+    let mut legacy = legacy_direct_quote_snapshot([]);
+    let Edn::Map(root) = &mut legacy else { panic!("legacy root map") };
+    root.insert_key(
+      "entries",
+      Edn::map_from_iter([(
+        Edn::tag("server"),
+        Edn::map_from_iter([
+          (Edn::tag("init-fn"), Edn::str("mini/main!")),
+          (Edn::tag("reload-fn"), Edn::str("mini/reload!")),
+          (Edn::tag("storage-key"), Edn::str("calcit.cirru")),
+          (Edn::tag("port"), Edn::Number(6001.0)),
+        ]),
+      )]),
+    );
+    let error = load_snapshot_data_for_format(&legacy, "calcit.cirru").expect_err("unknown legacy fields must not be discarded");
+    assert!(error.contains("--drop-legacy-entry-field server."), "error: {error}");
+
+    for (targets, expected) in [
+      (vec!["server.mode"], "is a current entry field"),
+      (vec!["client.port"], "entry `client` does not exist"),
+      (vec!["server.missing"], "has no `:missing` field"),
+      (vec!["server"], "must be `<entry>.<field>`"),
+      (vec![".port"], "neither part may be empty"),
+      (vec!["server."], "neither part may be empty"),
+      (vec!["server.:"], "neither part may be empty"),
+      (vec!["server.:mode"], "is a current entry field"),
+    ] {
+      let targets = targets.into_iter().map(str::to_owned).collect::<Vec<_>>();
+      let error = drop_legacy_entry_fields(&mut legacy.clone(), &targets).expect_err("invalid drop must fail");
+      assert!(error.contains(expected), "{targets:?}: {error}");
+    }
+
+    let mut partial = legacy.clone();
+    drop_legacy_entry_fields(&mut partial, &["server.storage-key".to_owned()]).expect("drop storage-key");
+    let error = load_snapshot_data_for_format(&partial, "calcit.cirru").expect_err("unnamed fields stay rejected");
+    assert!(error.contains("unknown field `:port`"), "error: {error}");
+
+    let dropped = drop_legacy_entry_fields(&mut legacy, &["server.storage-key".to_owned(), "server.:port".to_owned()])
+      .expect("drop reviewed fields");
+    assert_eq!(
+      dropped,
+      vec![
+        ("server.storage-key".to_owned(), "do |calcit.cirru".to_owned()),
+        ("server.port".to_owned(), "do 6001".to_owned())
+      ]
+    );
+    let (snapshot, migration) = load_snapshot_data_for_format(&legacy, "calcit.cirru").expect("reviewed legacy entry should migrate");
+    assert!(migration.legacy_configs);
+    assert_eq!(snapshot.entries["server"].init_fn, "mini/main!");
+  }
+
+  #[test]
+  fn format_loader_reports_all_entries_and_removes_normalized_field_aliases() {
+    let mut legacy = legacy_direct_quote_snapshot([]);
+    let Edn::Map(root) = &mut legacy else { panic!("legacy root map") };
+    let entry = |fields: Vec<(Edn, Edn)>| {
+      Edn::map_from_iter(
+        [
+          (Edn::tag("init-fn"), Edn::str("mini/main!")),
+          (Edn::tag("reload-fn"), Edn::str("mini/reload!")),
+        ]
+        .into_iter()
+        .chain(fields),
+      )
+    };
+    root.insert_key(
+      "entries",
+      Edn::map_from_iter([
+        (
+          Edn::str("server.prod"),
+          entry(vec![
+            (Edn::Symbol("port".into()), Edn::Number(6001.0)),
+            (Edn::str(":port"), Edn::Number(6002.0)),
+          ]),
+        ),
+        (Edn::str("worker"), entry(vec![(Edn::tag("storage-key"), Edn::str("worker.cirru"))])),
+      ]),
+    );
+    let error = load_snapshot_data_for_format(&legacy, "calcit.cirru").expect_err("report every entry before migration");
+    assert!(error.contains("entries.server.prod: unknown field `:port`"), "{error}");
+    assert!(error.contains("entries.worker: unknown field `:storage-key`"), "{error}");
+    assert!(
+      error.contains("edit format --drop-legacy-entry-field server.prod.port --drop-legacy-entry-field worker.storage-key"),
+      "{error}"
+    );
+    assert_eq!(error.matches("--drop-legacy-entry-field server.prod.port").count(), 1);
+
+    let mut partial = legacy.clone();
+    let removed = drop_legacy_entry_fields(&mut partial, &["server.prod.port".to_owned()]).expect("remove both normalized aliases");
+    assert_eq!(removed.len(), 2);
+    assert!(removed.iter().all(|(target, _)| target == "server.prod.port"));
+    for value in ["do 6001", "do 6002"] {
+      assert!(removed.iter().any(|(_, preview)| preview == value), "report original value {value}");
+    }
+    let error = load_snapshot_data_for_format(&partial, "calcit.cirru").expect_err("other entries remain protected");
+    assert!(error.contains("entries.worker: unknown field `:storage-key`"), "{error}");
+    assert!(!error.contains("server.prod.port"), "{error}");
+
+    let removed = drop_legacy_entry_fields(&mut legacy, &["server.prod.port".to_owned(), "worker.storage-key".to_owned()])
+      .expect("one reviewed command can remove every named field");
+    assert_eq!(removed.len(), 3);
+    let (snapshot, _) = load_snapshot_data_for_format(&legacy, "calcit.cirru").expect("all legacy entries migrate");
+    for name in ["server.prod", "worker"] {
+      assert_eq!(snapshot.entries[name].init_fn, "mini/main!");
+      assert_eq!(snapshot.entries[name].mode, SnapshotRunMode::Native);
+    }
+    let rendered = render_snapshot_content(&snapshot).expect("canonical output");
+    let canonical = cirru_edn::parse(&rendered).expect("parse canonical output");
+    load_snapshot_data(&canonical, "calcit.cirru").expect("migrated entries load with the strict runtime loader");
   }
 
   #[test]
