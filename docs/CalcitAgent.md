@@ -751,6 +751,10 @@ JavaScript 生成使用已有的 `--emit-path`，允许目标目录的父层尚�
 
 `calcit query tests <ns>/<def>` 查询 definition-attached tests；`calcit edit add-test <ns>/<def> <name> --input-format cirru --code 'quote $ ...'` 添加稳定命名的测试，`calcit edit rm-test <ns>/<def> <name>` 按名称删除。`calcit test --affected <ns>/<def>` 使用编译后的传递依赖图选择测试；静态分析失败的测试会保守地被选中并报告为失败，不会静默漏测。
 
+测试函数的返回值不参与通过判定；仅返回 `false`、`nil` 或 `Unit` 不会使测试失败。
+条件检查使用 `assert= true ...` 或已导入的 `calcit.test/is`；`match` / `if` 的意外结果分支应断言失败或抛错，不能只返回 false。
+具体用法见 `calcit docs read features/testing.md 通过条件与显式断言`；native 与 JS 回放都保留同一份显式断言，不另造一套预期。
+
 不要用多个 `'Dynamic` 假装多态：参数与返回共享类型时声明 `:generics`/TypeVar，只依赖能力时增加 trait `:where`，同质 collection/ref 保留 type arg，有限异构值使用 enum。类型写法统一用 quoted symbols，例如 `'String`、`'Number`、`'List` 和 `'Dynamic`；`:any`、`:dynamic` 等旧 tag 写法仅为兼容输入，运行 `calcit edit format` 后会在类型位置规范化。只有明确的 FFI、global state 或 macro 边界保留 dynamic，并尽快在进入 typed code 时 validate/convert。
 
 普通执行和编译不扫描或打印 Dynamic 使用率。类型安全以预处理阶段的 warning/error 为准；迁移存量项目时，再显式运行 `calcit analyze weak-types --only schema-dynamic,code-dynamic --intent unresolved` 定位需要收窄的位置。机器读取可加 `--summary-only --format json`，只使用 kind/intent 汇总和具体 definition/path；命中数量不是编译门禁，也不应推动新增比例阈值或更多分类规则。

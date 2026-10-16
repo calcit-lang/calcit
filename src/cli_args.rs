@@ -230,7 +230,10 @@ pub struct FfiExportCommand {
   pub ns: Option<String>,
 }
 
-/// discover and run definition-attached tests
+/// discover and run definition-attached tests.
+///
+/// Assert expected results explicitly; a returned false, nil or Unit does not
+/// fail a test.
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "test")]
 pub struct TestCommand {
