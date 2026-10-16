@@ -7983,7 +7983,7 @@
           :code $ quote $ defn frequencies (xs0)
             assert "|expects a list for frequencies" $ list? xs0
             loop
-                acc $ {}
+                acc $ assert-type ({}) (:: 'Map 'T 'Number)
                 xs xs0
               &list-match-internal xs acc (x0 xss)
                 recur
@@ -7996,13 +7996,40 @@
             :args $ [] $ :: 'List 'T
             :generics $ [] 'T
             :return $ :: 'Map 'T 'Number
-          :tests $ [] $ %{} 'TestEntry (:name |counts-repeated-list-members)
-            :code $ quote $ do
-              assert= (&{} 1 1 2 2 3 3)
-                frequencies $ [] 1 2 2 3 3 3
-              assert= (&{})
-                frequencies $ []
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |counts-repeated-list-members)
+              :code $ quote $ do
+                assert= (&{} 1 1 2 2 3 3)
+                  frequencies $ [] 1 2 2 3 3 3
+                assert= (&{})
+                  frequencies $ []
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |counts-nil-and-tag-keys)
+              :code $ quote $ let ()
+                assert=
+                  {} $ nil 2
+                  frequencies $ [] nil nil
+                assert=
+                  {} (:red 2) (:blue 1)
+                  frequencies $ [] :red :blue :red
+                assert= (Option :some 2)
+                  get
+                    frequencies $ [] :red :blue :red
+                    , :red
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |counts-structural-list-and-map-keys)
+              :code $ quote $ let
+                  left $ [] 1 2
+                  right $ [] 2 1
+                  left-map $ {} $ :value 1
+                  right-map $ {} $ :value 2
+                assert=
+                  {} (left 2) (right 1)
+                  frequencies $ [] left right left
+                assert=
+                  {} (left-map 2) (right-map 1)
+                  frequencies $ [] left-map right-map left-map
+              :tags $ #{} :core :unit
         'fs-path:read-dir $ %{} 'CodeEntry
           :doc "|枚举 FsPath 的即时子项，并以确定顺序返回 Result<List<FsPath>,String>。"
           :code $ quote $ defn fs-path:read-dir (self)
