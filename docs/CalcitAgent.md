@@ -155,6 +155,8 @@ calcit .calcit/snippets/demo.cirru query config
 
 临时验证代码使用 `calcit eval '<snippet>'`；多行代码或需要绕过 Shell 转义时，使用 `calcit eval --stdin` 从管道读取。两种输入方式互斥，旧顶层 `calcit exec` 已移除。
 
+`eval` 使用独立的片段上下文。需要访问项目定义时，在项目根目录显式使用 `calcit eval --dep ./ '<namespace/definition> ...'`，或把 `--dep` 指向具体 Snapshot 文件；目录以 `/` 结尾。仅含 `compact.cirru` 的模块目录会被拒绝并提示迁移，先按 [升级指南](run/upgrade.md) 迁为 `calcit.cirru`。位置参数写成 `calcit calcit.cirru eval ...` 不会自动加载项目，首行 `ns ... :require ...` 也不能代替 `--dep`。加载依赖不执行其 init/reload，但片段调用的函数仍会执行；用真实项目定义验证加载，不用 core `range` 作为证据。实例见 [eval 项目上下文](run/eval.md#加载项目定义与外部模块)。
+
 仅在任务以 WASM 为目标时加载目标专用指南：`calcit wasm <snapshot>` 生成 browser/embedded core module；`calcit wasm <snapshot> --boundary component` 生成供 Component tooling 包装的 core module；`calcit wasi <snapshot>` 默认生成 WASI 0.3.1 command，显式加 `--boundary native` 才生成 Preview 1 command。这些产物不能互换，也不能从 binary 名称猜测宿主能力。先看对应子命令的 `--help`，再用 `--check-only` 获得当前目标的类型与 capability 诊断；普通 JS/native 应用修改不需要 Canonical ABI 知识。
 
 WASM/Component 类型闭包、异步 adapter 和 ABI 细节见 [WASM Component 边界](installation/wasm-component-boundary.md)；WASI 版本、命令、preopen 和已支持的宿主能力见 [CLI 选项](run/cli-options.md) 的 WASI 部分。只有生成 Component contract/WIT 时才按需查阅 `calcit ffi export --boundary component` 与 `calcit-bindgen` 文档。不要调用已停止发布的 `cr-wasm` 或仓库内部回归 harness 代替公开命令。
@@ -748,6 +750,10 @@ JavaScript 生成使用已有的 `--emit-path`，允许目标目录的父层尚�
 `type-at` 的 unresolved/dynamic warning 只表示静态证据不足；`check-examples` 输出 `No functions with examples` 且退出 0 只表示没有 example 覆盖。二者都不是完成证明，仍要继续项目级 check、测试和目标 codegen。
 
 `calcit query tests <ns>/<def>` 查询 definition-attached tests；`calcit edit add-test <ns>/<def> <name> --input-format cirru --code 'quote $ ...'` 添加稳定命名的测试，`calcit edit rm-test <ns>/<def> <name>` 按名称删除。`calcit test --affected <ns>/<def>` 使用编译后的传递依赖图选择测试；静态分析失败的测试会保守地被选中并报告为失败，不会静默漏测。
+
+测试函数的返回值不参与通过判定；仅返回 `false`、`nil` 或 `Unit` 不会使测试失败。
+条件检查使用 `assert= true ...` 或已导入的 `calcit.test/is`；`match` / `if` 的意外结果分支应断言失败或抛错，不能只返回 false。
+具体用法见 `calcit docs read features/testing.md 通过条件与显式断言`；native 与 JS 回放都保留同一份显式断言，不另造一套预期。
 
 不要用多个 `'Dynamic` 假装多态：参数与返回共享类型时声明 `:generics`/TypeVar，只依赖能力时增加 trait `:where`，同质 collection/ref 保留 type arg，有限异构值使用 enum。类型写法统一用 quoted symbols，例如 `'String`、`'Number`、`'List` 和 `'Dynamic`；`:any`、`:dynamic` 等旧 tag 写法仅为兼容输入，运行 `calcit edit format` 后会在类型位置规范化。只有明确的 FFI、global state 或 macro 边界保留 dynamic，并尽快在进入 typed code 时 validate/convert。
 

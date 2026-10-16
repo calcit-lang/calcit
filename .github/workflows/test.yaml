@@ -2,6 +2,7 @@ on:
   push:
     branches:
       - main
+      - release/0.30.1
   pull_request: {}
 
 name: Test
@@ -9,7 +10,7 @@ name: Test
 permissions:
   contents: read
 
-# Superseded PR commits need no second full run; main commits stay independent.
+# Superseded PR commits need no second full run; release-branch pushes stay independent.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -332,6 +333,7 @@ jobs:
           node scripts/run-core-tests.mjs --snapshot calcit/test-traits.cirru --target test-traits.main/test-qualified-contains-boundary --backend native,js
           node scripts/run-core-tests.mjs --snapshot calcit/test-traits.cirru --target test-traits.main/ResultBox --backend native,js,wasm
           node scripts/run-core-tests.mjs --snapshot calcit/test-types-inference.cirru --target test-types-inference.main/same-type-second --backend native,js,wasm
+          node scripts/run-core-tests.mjs --snapshot tests/fixtures/option-nil-roundtrip.cirru --backend native,js
           node scripts/fuzz-primitives.mjs --seed 1 --cases 6
           node scripts/check-string-unicode.mjs
           node scripts/check-nil-predicate.mjs

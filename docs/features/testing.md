@@ -16,6 +16,26 @@ Calcit stores strict tests beside a definition's code, documentation, examples, 
 
 Examples remain executable documentation. Tests are CI guardrails: an assertion or preprocessing failure makes `calcit test` exit unsuccessfully, while other selected tests continue unless `--fail-fast` is used.
 
+## 通过条件与显式断言
+
+每项测试在预处理和执行都正常完成时通过；测试函数的返回值不参与通过判定。
+单独写 `= 4 (+ 1 2)` 虽然返回 false，仍可能显示 PASS。返回 nil 或 Unit 也不是失败信号。
+比较预期值时使用显式断言：
+
+```cirru
+assert= 3 $ + 1 2
+```
+
+布尔条件可用 `assert= true` 或已导入的 `calcit.test/is`。`throws?` 只返回布尔值，
+需要断言其结果；预期抛错时可直接使用已导入的 `is-throws`。
+`match` / `if` 的检查也要在分支内断言，意外结果分支应抛错，而不是只返回 false：
+
+```cirru
+match (get ({} (:answer 42)) :answer)
+  (:some value) (assert= 42 value)
+  (:none) (raise |Expected-answer)
+```
+
 ## Add a Test
 
 Import the built-in assertions where the test expression will run:

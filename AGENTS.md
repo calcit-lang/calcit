@@ -93,8 +93,9 @@ calcit docs agents --contract
 ### calcit eval 基础与常见踩坑
 
 - **用途定位**：`calcit eval` 适合快速验证语义/类型提示与宏展开，不等同于完整项目运行。
+- **项目上下文显式加载**：位置参数 `calcit calcit.cirru eval ...` 不会自动加载项目定义；在项目根目录用 `calcit eval --dep ./ '<namespace/definition> ...'`，或指定 `--dep ./calcit.cirru`。加载不运行该项目 init/reload，片段自身调用仍正常执行；首行 `ns :require` 只导入已加载的名字，不能替代 `--dep`。用实际项目定义验证，不以 core `range` 的成功代替上下文验收。
 - **可加载外部模块**：`calcit eval` 支持重复传入 `--dep`，可加载多个模块目录（路径以 `/` 结尾时读取其中的 `calcit.cirru`；仅有 `compact.cirru` 的模块会被拒绝并提示迁移）。
-  - ✅ `cargo run --bin calcit -- calcit/test.cirru eval --dep ~/.config/calcit/modules/respo.calcit/ -- 'ns app.demo $ :require respo.util.detect :refer $ element?\n\nelement? nil'`
+  - 多行 `ns` 和表达式使用真实换行，不把单引号内的字面量 `\n` 当作换行；示例见 `docs/run/eval.md`。
 - **首表达式 `ns` 会注入当前 eval 程序**：当 snippet 第一个表达式是 `ns` 时，会把 `ns <NS> ...` 从第 3 个节点开始（通常是 `:require` 等规则）合并到运行用的 `ns app.main`，用于在 eval 中显式导入命名空间。
 - **`docs check-md` 也支持依赖模块**：`calcit docs check-md` 可通过多次 `--dep` 传参，内部会透传给 `eval`/`--check-only`。这样 markdown 代码块可配合首行 `ns ... :require ...` 访问模块函数。
   - `docs check-md --snapshot <file>` 选择求值用的 Snapshot 文件；顶层和 config 的 `--entry` 选择 Snapshot 内的 named entry。旧 `docs check-md --entry` 会明确报错并提示迁移，不要在新脚本中使用。
@@ -149,6 +150,8 @@ calcit docs agents --contract
 - 执行 `cargo update --workspace` 更新 `Cargo.lock`
 
 ### PR 与发布流程
+
+**0.30.1 维护分支例外（维护者于 2026-10-16 明确批准）**：该版及新的配对预发布从 `release/0.30.1` 开发、验收和发布，以已发布的 `0.30.1-alpha.4` 为基线，仅回移 milestone #62 的修复及必要文档/验收。不要带入 main 上后续版本的变更，特别是 #2136 的 `get-in → Result`。下列流程中针对本版的 `main` 替换为此维护分支：普通源码、测试、CI 和文档仍通过 PR；仅纯版本提交可直接提交；必须先验证精确维护分支 SHA 的 Test 和默认 CodeQL「Push on release/0.30.1」，再从同一 SHA 打 annotated tag、发布配对 CLI / @calcit/procs 并完成消费者验收与成果 Discussion。维护线保留分支保护，不跳过 review、检查或 provenance；其他版本仍遵循 main 流程。既有 tag 不移动，其恢复使用 tag 内原有 workflow。
 
 1. **先合并功能改动到 main**：功能分支完成后推送并等待 GitHub Actions 全绿；确认稳定后通过 PR 合并到 `main`。
 2. **升级版本**：版本号更新允许直接在已验证的 `main` 上进行，不需要为版本号本身创建 PR。该例外只允许修改 `Cargo.toml`、`package.json` 的版本字段，以及仅由该版本变化产生的 lockfile metadata。执行 `cargo update --workspace` 后必须检查 diff；若依赖集合、依赖版本或其他字段发生变化，改用普通分支和 PR。提交 `chore: release <version>` 并推送 `main`。
@@ -242,4 +245,4 @@ npm view @calcit/procs version
 - Issue 进度评论保持简短：结论、相关 PR 链接、剩余事项。验证命令、CI 记录和 SHA 写在 PR 描述中，评论里不重复。
 - PR 必须等待最新 head 的 bot 或用户 review 完成，处理所有有效意见并清零 review threads；required Actions 全绿且 mergeability 为 CLEAN 后才能合并。Actions 失败时查明并修复原因，不能用重跑代替处理。
 - PR 合并后等待精确 main HEAD 的 required Actions 成功，再进行依赖发布或关闭发布门槛。Wiki 内容只维护在外部 Wiki，不在仓库重复保存。
-- 纯版本号 release commit 可直接在已验证的 `main` 完成；只允许版本字段及由此产生的 lockfile metadata，不得改变依赖集合或夹带源码、测试、CI、文档。必须在精确 main SHA 的 required Actions 成功后才创建指向同一 SHA 的 annotated tag 与 GitHub Release。
+- 纯版本号 release commit 可直接在已验证的 `main` 完成（0.30.1 使用上文批准的维护分支例外）；只允许版本字段及由此产生的 lockfile metadata，不得改变依赖集合或夹带源码、测试、CI、文档。必须在精确发布分支 SHA 的 required Actions 成功后才创建指向同一 SHA 的 annotated tag 与 GitHub Release。

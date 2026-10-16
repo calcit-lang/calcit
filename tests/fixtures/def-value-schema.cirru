@@ -764,7 +764,8 @@
         'group-open-rows $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn group-open-rows (rows)
             group-by (&map:vals rows)
-              fn (row) (option:unwrap $ &map:get row :finished-time)
+              fn (row)
+                option:unwrap $ &map:get row :finished-time
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'String (:: 'Map 'Tag 'Dynamic)
@@ -781,7 +782,8 @@
             let
                 group-items group-by
               group-items (&map:vals rows)
-                fn (row) (option:unwrap $ &map:get row :finished-time)
+                fn (row)
+                  option:unwrap $ &map:get row :finished-time
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'String (:: 'Map 'Tag 'Dynamic)
@@ -796,7 +798,8 @@
         'group-open-rows-arrow $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn group-open-rows-arrow (rows)
             -> rows (&map:vals)
-              group-by $ fn (row) (option:unwrap $ &map:get row :finished-time)
+              group-by $ fn (row)
+                option:unwrap $ &map:get row :finished-time
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'String (:: 'Map 'Tag 'Dynamic)
@@ -810,7 +813,8 @@
             :tags $ #{} :callback-container-shape :unit
         'read-open-members $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-open-members (rows)
-            map rows $ fn (row) (option:unwrap $ &map:get row :title)
+            map rows $ fn (row)
+              option:unwrap $ &map:get row :title
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Dynamic)
@@ -2533,6 +2537,85 @@
             :args $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.field-owner
+    'app.js-spread $ %{} 'FileEntry
+      :defs $ {} $ 'make-arrays
+        %{} 'CodeEntry
+          :doc "|JS 数组 spread 保留宿主对象返回证据；运行时创建互不共享的子数组，不声称元素或长度具有静态合同。"
+          :code $ quote $ defn make-arrays (n)
+            js-array & $ map (range n)
+              fn (_idx)
+                hint-fn $ {}
+                  :args $ [] 'Number
+                  :return 'JsObject
+                  :features $ #{} :js-ffi
+                js-array
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'JsObject)
+            :args $ [] 'Number
+            :features $ #{} :js-ffi
+          :tests $ []
+            %{} 'TestEntry (:name |empty-and-independent-children)
+              :code $ quote $ let
+                  verify! $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return 'Unit
+                      :features $ #{} :js-ffi
+                    let
+                        empty-array $ make-arrays 0
+                        arrays $ make-arrays 3
+                      assert= ([])
+                        decode-map-as (to-calcit-data empty-array)
+                          :: 'List $ :: 'List 'Number
+                      assert |independent-children $ not $ identical? (aget arrays 0) (aget arrays 1)
+                      js/Reflect.set (aget arrays 0) |0 7
+                      assert=
+                        [] ([] 7) ([]) ([])
+                        decode-map-as (to-calcit-data arrays)
+                          :: 'List $ :: 'List 'Number
+                    , &unit
+                verify!
+              :tags $ #{} :js-array-spread :unit
+            %{} 'TestEntry (:name |preserves-open-elements)
+              :code $ quote $ let
+                  verify! $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return 'Unit
+                      :features $ #{} :js-ffi
+                    let
+                        members $ decode-map-as ([] 0 false nil |) 'List
+                        array $ js-array & members
+                      assert= ([] 0 false nil |) (to-calcit-data array)
+                    , &unit
+                verify!
+              :tags $ #{} :js-array-spread :unit
+            %{} 'TestEntry (:name |preserves-evaluation-order)
+              :code $ quote $ let
+                  verify! $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return 'Unit
+                      :features $ #{} :js-ffi
+                    let
+                        trace $ ref $ [] 0
+                        array $ js-array
+                          do (swap! trace append 1) |prefix
+                          , & $ do (swap! trace append 2)
+                            map ([] 3 4)
+                              fn (value)
+                                hint-fn $ {}
+                                  :args $ [] 'Number
+                                  :return 'Number
+                                swap! trace append value
+                                , value
+                      assert= ([] 0 1 2 3 4) @trace
+                      assert= ([] |prefix 3 4) (to-calcit-data array)
+                    , &unit
+                verify!
+              :tags $ #{} :js-array-spread :unit
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.js-spread
     'app.main $ %{} 'FileEntry
       :defs $ {}
         'answer $ %{} 'CodeEntry (:doc |)
@@ -2872,7 +2955,8 @@
           :code $ quote $ defn alias (rows)
             let
                 order &list:sort-by
-              order rows $ fn (row) (option:unwrap $ &map:get row :n)
+              order rows $ fn (row)
+                option:unwrap $ &map:get row :n
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
@@ -2891,7 +2975,8 @@
             let
                 order &list:sort-by
                 copy-order order
-              copy-order rows $ fn (row) (option:unwrap $ &map:get row :n)
+              copy-order rows $ fn (row)
+                option:unwrap $ &map:get row :n
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
@@ -2939,7 +3024,8 @@
                 order &list:sort-by
                 copy-order order
               set! order &list:sort-by
-              copy-order rows $ fn (row) (option:unwrap $ &map:get row :n)
+              copy-order rows $ fn (row)
+                option:unwrap $ &map:get row :n
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
@@ -2956,7 +3042,8 @@
             :tags $ #{} :sort-selector-assignment :unit
         'direct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn direct (rows)
-            &list:sort-by rows $ fn (row) (option:unwrap $ &map:get row :n)
+            &list:sort-by rows $ fn (row)
+              option:unwrap $ &map:get row :n
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
@@ -2991,7 +3078,8 @@
             :return $ :: 'List 'T
         'method $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn method (rows)
-            rows .sort-by $ fn (row) (option:unwrap $ &map:get row :n)
+            rows .sort-by $ fn (row)
+              option:unwrap $ &map:get row :n
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
@@ -3046,7 +3134,8 @@
             :tags $ #{} :sort-selector-assignment :unit
         'named-selector $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn named-selector (rows)
-            &list:sort-by rows $ defn select-key (row) (option:unwrap $ &map:get row :n)
+            &list:sort-by rows $ defn select-key (row)
+              option:unwrap $ &map:get row :n
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
@@ -3062,7 +3151,8 @@
             :tags $ #{} :sort-selector-context :unit
         'prefix-method $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn prefix-method (rows)
-            .sort-by rows $ fn (row) (option:unwrap $ &map:get row :n)
+            .sort-by rows $ fn (row)
+              option:unwrap $ &map:get row :n
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
@@ -3083,7 +3173,8 @@
               let
                   order :inner
                 assert= :inner order
-              order rows $ fn (row) (option:unwrap $ &map:get row :n)
+              order rows $ fn (row)
+                option:unwrap $ &map:get row :n
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)
@@ -3099,7 +3190,8 @@
             :tags $ #{} :sort-selector-context :unit
         'threaded $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn threaded (rows)
-            -> rows $ &list:sort-by $ fn (row) (option:unwrap $ &map:get row :n)
+            -> rows $ &list:sort-by $ fn (row)
+              option:unwrap $ &map:get row :n
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'Map 'Tag 'Number)

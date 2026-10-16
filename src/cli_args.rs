@@ -230,7 +230,10 @@ pub struct FfiExportCommand {
   pub ns: Option<String>,
 }
 
-/// discover and run definition-attached tests
+/// discover and run definition-attached tests.
+///
+/// Assert expected results explicitly; a returned false, nil or Unit does not
+/// fail a test.
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "test")]
 pub struct TestCommand {
@@ -488,7 +491,7 @@ pub struct WeakTypesCommand {
   /// namespace prefix scope filter
   #[argh(option)]
   pub ns_prefix: Option<String>,
-  /// match kinds to include, comma-separated: schema-dynamic,unresolved-type-slot,code-dynamic,code-nil,unsafe-coerce; or exactly one view: coverage, dynamic-method, deprecated-call
+  /// match kinds to include, comma-separated: schema-dynamic,unresolved-type-slot,code-dynamic,code-nil,unsafe-coerce; or exactly one view: coverage, dynamic-method, deprecated-call, option-nil-roundtrip
   #[argh(option)]
   pub only: Option<String>,
   /// with --only coverage, coverage levels to include, comma-separated: none,partial,full

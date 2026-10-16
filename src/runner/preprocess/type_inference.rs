@@ -1870,7 +1870,17 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
           if let Ok(expanded) = expand_literal_call_arguments(&arguments) {
             return infer_type_from_expr(&Calcit::from(expanded.push_left(callable.clone())), scope_types);
           }
-          let annotation = resolve_type_value(callable, scope_types)?;
+          // The JS array intrinsic has the same opaque result for fixed and
+          // spread calls. Reuse the rest-call proof for the List operand; its
+          // length and members do not establish any stronger host contract.
+          let annotation = if matches!(callable, Calcit::Symbol { sym, .. } if sym.as_ref() == "js-array") {
+            Arc::new(CalcitTypeAnnotation::from_function_parts(
+              vec![Arc::new(CalcitTypeAnnotation::Variadic(calcit::DYNAMIC_TYPE.clone()))],
+              js_host_value_type(),
+            ))
+          } else {
+            resolve_type_value(callable, scope_types)?
+          };
           let CalcitTypeAnnotation::Fn(signature) = annotation.as_ref() else {
             return None;
           };

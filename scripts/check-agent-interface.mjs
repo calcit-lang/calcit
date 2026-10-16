@@ -808,6 +808,20 @@ const scenarios = [
     },
   },
   {
+    name: "read-only Option-to-nil source evidence",
+    args: ["tests/fixtures/option-nil-roundtrip.cirru", "analyze", "weak-types", "--only", "option-nil-roundtrip", "--format", "json"],
+    check(result) {
+      assert.equal(result.command, "analyze.weak-types");
+      assert.equal(result.data.view, "option-nil-roundtrip");
+      assert.deepEqual(result.diagnostics, []);
+      assert.deepEqual(result.data.summary, { findings: 9, unknown: 0 });
+      const finding = result.data.findings.find(item => item.definition === "app.roundtrip/read-field");
+      assert.equal(finding.path, "code@3.1");
+      assert.equal(finding.input.inferred_type, ":: 'calcit.core/Option 'Dynamic");
+      assert.equal(finding.consumer.head, "either");
+    },
+  },
+  {
     name: "intentional dynamic analysis",
     args: [
       "calcit/test.cirru",
@@ -1271,6 +1285,12 @@ assert.match(contractChild.stdout, /Agent contract digest: md5:[0-9a-f]{32}/);
 assert.match(contractChild.stdout, /calcit docs read edit-tree\.md 'Atomic Transactions'/);
 assert.ok(Buffer.byteLength(contractChild.stdout) < 5_000, "compact mutation contract should remain bounded");
 
+const fullAgentGuide = spawnSync(binary, ["docs", "agents", "--full"], { encoding: "utf8" });
+assert.ifError(fullAgentGuide.error);
+assert.equal(fullAgentGuide.status, 0, fullAgentGuide.stderr);
+assert.match(fullAgentGuide.stdout, /测试函数的返回值不参与通过判定/);
+assert.match(fullAgentGuide.stdout, /features\/testing\.md 通过条件与显式断言/);
+
 const apiTypeQuery = spawnSync(binary, ["src/cirru/calcit-core.cirru", "query", "type", ":: 'Option 'Number"], {
   encoding: "utf8",
   maxBuffer: 4 * 1024 * 1024,
@@ -1326,6 +1346,11 @@ const topLevelHelp = spawnSync(binary, ["--help"], { encoding: "utf8" });
 assert.ifError(topLevelHelp.error);
 assert.equal(topLevelHelp.status, 0, topLevelHelp.stderr);
 assert.doesNotMatch(topLevelHelp.stdout, /^  libs\s/m);
+const testHelp = spawnSync(binary, ["test", "--help"], { encoding: "utf8" });
+assert.ifError(testHelp.error);
+assert.equal(testHelp.status, 0, testHelp.stderr);
+assert.match(testHelp.stdout, /Assert expected results explicitly/);
+assert.match(testHelp.stdout, /returned false, nil or Unit does not\s+fail a test/);
 const retiredLibs = spawnSync(binary, ["libs", "search", "web"], { encoding: "utf8" });
 assert.ifError(retiredLibs.error);
 assert.notEqual(retiredLibs.status, 0, "the retired top-level libs command must not reappear");
@@ -1388,6 +1413,53 @@ try {
   assert.match(namingGuide.stdout, /谓词与成员查询/);
   assert.match(namingGuide.stdout, /non-nil\?/);
   assert.match(namingGuide.stdout, /不把旧.*contains/);
+
+  copyFileSync("docs/features/testing.md", join(namingDocs, "testing.md"));
+  const testingGuide = spawnSync(namingBinary, ["docs", "read", "testing.md", "通过条件与显式断言", "--module", "naming-contract"], {
+    cwd: fixtureDir,
+    encoding: "utf8",
+  });
+  assert.ifError(testingGuide.error);
+  assert.equal(testingGuide.status, 0, testingGuide.stderr);
+  assert.match(testingGuide.stdout, /测试函数的返回值不参与通过判定/);
+  assert.match(testingGuide.stdout, /throws\?.*只返回布尔值/);
+  assert.match(testingGuide.stdout, /\(:none\) \(raise \|Expected-answer\)/);
+
+  // #2115: eval imports explicit dependencies, not its positional Snapshot,
+  // and loading a project must not execute its configured application entry.
+  const evalProject = join(fixtureDir, "eval-project");
+  mkdirSync(evalProject);
+  const evalSnapshot = join(evalProject, "calcit.cirru");
+  copyFileSync("calcit/util.cirru", evalSnapshot);
+  const evalRun = (...args) => spawnSync(namingBinary, [evalSnapshot, ...args], {
+    cwd: evalProject, encoding: "utf8", maxBuffer: 4 * 1024 * 1024,
+  });
+  const evalOps = ["main!", "reload!"].map(name => ["edit", "def", `util.core/${name}`, "--overwrite",
+    "--input-format", "cirru", "--code", `quote $ defn ${name} () $ raise |eval-must-not-run-project-entry`]);
+  const evalPreview = evalRun("edit", "transaction", "--code", JSON.stringify(evalOps), "--dry-run", "--format", "json");
+  assert.ifError(evalPreview.error);
+  assert.equal(evalPreview.status, 0, evalPreview.stderr);
+  const evalEdit = evalRun("edit", "transaction", "--code", JSON.stringify(evalOps), "--expect-revision",
+    JSON.parse(evalPreview.stdout).scoped_revision, "--format", "json");
+  assert.ifError(evalEdit.error);
+  assert.equal(evalEdit.status, 0, evalEdit.stderr);
+  const evalBefore = readFileSync(evalSnapshot);
+  const unloadedProject = evalRun("eval", "util.core/log-title |project-loaded");
+  assert.ifError(unloadedProject.error);
+  assert.equal(unloadedProject.status, 1);
+  assert.match(unloadedProject.stderr, /unknown ns target: util.core\/log-title/);
+  for (const [dependency, snippet] of [
+    ["./", "util.core/log-title |project-loaded"],
+    ["./calcit.cirru", "util.core/log-title |project-loaded"],
+    ["./", "ns app.demo\n  :require\n    util.core :refer $ log-title\n\nlog-title |project-loaded"],
+  ]) {
+    const loadedProject = evalRun("eval", "--dep", dependency, snippet);
+    assert.ifError(loadedProject.error);
+    assert.equal(loadedProject.status, 0, loadedProject.stderr);
+    assert.match(loadedProject.stdout, /project-loaded/);
+    assert.doesNotMatch(loadedProject.stdout + loadedProject.stderr, /eval-must-not-run-project-entry/);
+    assert.deepEqual(readFileSync(evalSnapshot), evalBefore, "eval must leave project source unchanged");
+  }
 
   const fixture = join(fixtureDir, "calcit.cirru");
   copyFileSync("calcit/test.cirru", fixture);

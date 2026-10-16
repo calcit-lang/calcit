@@ -121,6 +121,10 @@ fn run_weak_types(
   snapshot_file: &str,
   input_cache: Option<analysis_cache::InputCacheStats>,
 ) -> Result<(), String> {
+  if options.only.as_deref().map(str::trim) == Some(cli_handlers::VIEW_OPTION_NIL_ROUNDTRIP) {
+    let _output_guard = ProgramOutputGuard::new(true, false);
+    return type_coverage::option_nil_roundtrip::run(options, snapshot);
+  }
   let effective =
     type_coverage::with_proven_helper_contracts(snapshot, options.ns.as_deref(), options.ns_prefix.as_deref(), options.deps)?;
   let snapshot = effective.as_ref();
