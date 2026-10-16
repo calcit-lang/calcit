@@ -248,6 +248,17 @@ struct SourceExpressionTrace {
   reader_locations: HashMap<usize, NodeLocation>,
 }
 
+#[derive(Default)]
+struct ProofErrorCollector {
+  /// `ns/def` whose own forms may recover; dependencies compiled on demand
+  /// keep failing fast so they are never cached as proven after a recovery.
+  owner: String,
+  errors: Vec<CalcitErr>,
+  /// Set once ordinary checking also rejected a form; enclosing forms then
+  /// propagate it instead of retrying the same failure at every level.
+  hard_failure: bool,
+}
+
 thread_local! {
   static REQUIRE_ASSERTION_PROOF: Cell<bool> = const { Cell::new(false) };
   /// Dependencies already re-proved within the current outer assertion audit.
@@ -255,6 +266,9 @@ thread_local! {
   static AUDIT_PROVEN_DEFS: RefCell<HashSet<(Arc<str>, Arc<str>)>> = RefCell::new(HashSet::new());
   static RESOLVED_SOURCE_USAGE_TRACE: RefCell<Option<Vec<ResolvedSourceUsage>>> = const { RefCell::new(None) };
   static SOURCE_EXPRESSION_TRACE: RefCell<Option<SourceExpressionTrace>> = const { RefCell::new(None) };
+  /// Proof-only errors recovered during an opted-in assertion audit. `None`
+  /// keeps the default fail-fast behavior.
+  static PROOF_ERROR_COLLECTOR: RefCell<Option<ProofErrorCollector>> = const { RefCell::new(None) };
   #[cfg(test)]
   static TEST_WARN_DYN_METHOD: Cell<bool> = const { Cell::new(false) };
   #[cfg(test)]
@@ -2450,6 +2464,39 @@ fn try_expand_inlined_typed_optional_access(
   try_expand_typed_optional_access_call(ns, def, &items.drop_left(), scope_types, file_ns, call_stack)
 }
 
+/// Collect every proof-only error found under `f` instead of stopping at the first.
+/// A form whose audit fails but whose ordinary checking succeeds records the audit
+/// error and continues with the ordinary result, so later forms are still audited.
+/// Errors that ordinary checking also rejects still stop preprocessing.
+pub fn with_proof_error_collection<R>(ns: &str, def: &str, f: impl FnOnce() -> R) -> (R, Vec<CalcitErr>) {
+  struct Restore(Option<ProofErrorCollector>);
+  impl Drop for Restore {
+    fn drop(&mut self) {
+      PROOF_ERROR_COLLECTOR.with(|collector| collector.replace(self.0.take()));
+    }
+  }
+  let restore = Restore(PROOF_ERROR_COLLECTOR.with(|collector| {
+    collector.replace(Some(ProofErrorCollector {
+      owner: format!("{ns}/{def}"),
+      ..ProofErrorCollector::default()
+    }))
+  }));
+  let result = f();
+  let collected = PROOF_ERROR_COLLECTOR.with(|collector| collector.borrow_mut().take().unwrap_or_default());
+  drop(restore);
+  (result, collected.errors)
+}
+
+fn proof_error_recovery_active() -> bool {
+  REQUIRE_ASSERTION_PROOF.with(Cell::get)
+    && PROOF_ERROR_COLLECTOR.with(|collector| {
+      collector.borrow().as_ref().is_some_and(|collector| {
+        !collector.hard_failure
+          && builtins::meta::CURRENT_COMPILING_DEF.with(|current| current.borrow().as_deref() == Some(collector.owner.as_str()))
+      })
+    })
+}
+
 pub fn preprocess_expr(
   expr: &Calcit,
   scope_defs: &HashSet<Arc<str>>,
@@ -2459,9 +2506,11 @@ pub fn preprocess_expr(
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   // the native stack guard targets runtime recursion; preprocessing and macro expansion are exempt
-  let processed = runner::with_stack_guard_suspended(|| {
-    preprocess_expr_unguarded(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack)
-  })?;
+  let processed = if matches!(expr, Calcit::List(_)) && proof_error_recovery_active() {
+    preprocess_expr_recovering_proof(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack)
+  } else {
+    runner::with_stack_guard_suspended(|| preprocess_expr_unguarded(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack))
+  }?;
   if let Calcit::Proc(proc) = &processed
     && proc.returns_core_option()
   {
@@ -2470,6 +2519,69 @@ pub fn preprocess_expr(
     ensure_ns_def_compiled(calcit::CORE_NS, "Option", check_warnings, call_stack)?;
   }
   Ok(processed)
+}
+
+/// Audit one form; on failure, retry it under ordinary checking from the same
+/// state. Success there marks the failure as proof-only: record it and keep the
+/// ordinary result so the enclosing forms continue to be audited.
+fn preprocess_expr_recovering_proof(
+  expr: &Calcit,
+  scope_defs: &HashSet<Arc<str>>,
+  scope_types: &mut ScopeTypes,
+  file_ns: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  let scope_before = scope_types.clone();
+  let expressions_before = SOURCE_EXPRESSION_TRACE.with(|trace| trace.borrow().as_ref().map(|trace| trace.expressions.len()));
+  let usages_before = RESOLVED_SOURCE_USAGE_TRACE.with(|trace| trace.borrow().as_ref().map(Vec::len));
+  let gensym_before = builtins::meta::current_gensym_index(file_ns);
+  let audit_error = match runner::with_stack_guard_suspended(|| {
+    preprocess_expr_unguarded(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack)
+  }) {
+    Ok(processed) => return Ok(processed),
+    Err(error) => error,
+  };
+  if !proof_error_recovery_active() {
+    return Err(audit_error);
+  }
+  // Discard partial evidence of the failed audit; the retry records its own.
+  *scope_types = scope_before;
+  builtins::meta::set_gensym_index(file_ns, gensym_before);
+  if let Some(len) = expressions_before {
+    SOURCE_EXPRESSION_TRACE.with(|trace| {
+      if let Some(trace) = trace.borrow_mut().as_mut() {
+        trace.expressions.truncate(len);
+      }
+    });
+  }
+  if let Some(len) = usages_before {
+    RESOLVED_SOURCE_USAGE_TRACE.with(|trace| {
+      if let Some(trace) = trace.borrow_mut().as_mut() {
+        trace.truncate(len);
+      }
+    });
+  }
+  // Keep the audit's warnings; ordinary warnings for the same form would only repeat them.
+  let warnings_before = check_warnings.borrow().len();
+  let ordinary = with_assertion_proof_policy(false, || {
+    runner::with_stack_guard_suspended(|| preprocess_expr_unguarded(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack))
+  });
+  check_warnings.borrow_mut().truncate(warnings_before);
+  PROOF_ERROR_COLLECTOR.with(|collector| {
+    let mut collector = collector.borrow_mut();
+    let collector = collector.as_mut().expect("recovery requires an active collector");
+    match ordinary {
+      Ok(processed) => {
+        collector.errors.push(audit_error);
+        Ok(processed)
+      }
+      Err(_) => {
+        collector.hard_failure = true;
+        Err(audit_error)
+      }
+    }
+  })
 }
 
 /// Qualified core primitives resolve to their runtime identity, not the
