@@ -66,6 +66,9 @@ calcit analyze weak-types --ns app.main
 # Deprecated API calls, including the source definition and exact code path
 calcit analyze weak-types --only deprecated-call --ns app.main
 
+# 定位 Option→nil 源码写法，附输入类型和直接消费者；不新增诊断或自动改写
+calcit analyze weak-types --only option-nil-roundtrip --format edn
+
 # Reachable unresolved method dispatch, without unrelated warning categories
 calcit analyze weak-types --only dynamic-method
 
@@ -122,7 +125,7 @@ calcit analyze check-examples --ns app.main --def 'detect-nodejs?' --js
 calcit query type-at app.main/calculate-total --path code@3.2 --format edn
 ```
 
-`analyze weak-types` 的 `--only` 接受一组 match kind（`schema-dynamic`、`unresolved-type-slot`、`code-dynamic`、`code-nil`、`unsafe-coerce`），或单独一个视图：`coverage`（逐 definition 类型覆盖，可加 `--coverage-level none,partial,full`）、`dynamic-method`（未解析的动态方法分派）、`deprecated-call`（对 `:deprecated` 定义的调用）。视图与 match kind 不能混用；`dynamic-method` 不接受 `--ns`/`--ns-prefix`，`deprecated-call` 不接受 `--incremental`，三个视图都不接受 `--intent` 和 evidence 选项。各视图保留原有报告的 `command` 名（`analyze.check-types`、`analyze.dynamic-methods`、`analyze.deprecated`）与字段。`weak-types`、各视图和 `query type-at` 都支持 human、EDN 与 JSON；Calcit 自有工作流优先使用 Cirru EDN，对接 JSON-only 工具时再显式选择 JSON。
+`analyze weak-types` 的 `--only` 接受一组 match kind（`schema-dynamic`、`unresolved-type-slot`、`code-dynamic`、`code-nil`、`unsafe-coerce`），或单独一个视图：`coverage`（逐 definition 类型覆盖，可加 `--coverage-level none,partial,full`）、`dynamic-method`（未解析的动态方法分派）、`deprecated-call`（对 `:deprecated` 定义的调用）、`option-nil-roundtrip`（Option→nil 源码位置、输入类型和直接消费者）。视图与 match kind 不能混用；`dynamic-method` 不接受 `--ns`/`--ns-prefix`，`deprecated-call` 和 `option-nil-roundtrip` 不接受 `--incremental`，这些视图都不接受 `--intent` 和 evidence 选项。原三个视图保留报告的 `command` 名和字段；新视图使用 `command=analyze.weak-types`、`data.view=option-nil-roundtrip`，不改变默认报告。它只查询所选定义的 `:code`，不扫描附带测试/示例或改写任何源码；无法取得输入类型时保留 unknown，顶层 diagnostics 为空，命中不导致非零退出。直接消费者是源码父节点，不是完整数据流或函数调用证明。迁移建议见 [fix 手册](../run/fix.md#缺失值迁移后的-optionnil-定位)。`weak-types`、各视图和 `query type-at` 都支持 human、EDN 与 JSON；Calcit 自有工作流优先使用 Cirru EDN，对接 JSON-only 工具时再显式选择 JSON。
 
 `--only coverage` 会把裸 `:ref`、`:list`、`:map` 等嵌套 Dynamic slot 记为 partial coverage，并在 `schema_issues` 中返回 `[W_SCHEMA_DYNAMIC]`；未绑定的 `*type-slot` 同样记为 partial 并返回 `[W_UNRESOLVED_TYPE_SLOT]`。严格预处理才负责类型正确性：可达项目函数缺少结构化 root schema 或嵌入式 `Fn` hint 时返回 `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA`；通过程序直接注入且没有结构化 root schema 的 macro 也会被拒绝。Snapshot loader 会更早拒绝旧 runtime `Fn` 或 whole-`Dynamic` macro schema。发布审计使用 `--deps` 检查实际解析的 module artifact。`weak-types --format edn` 只提供迁移定位所需的 kind、definition、path、detail、intent、evidence 与 suggestion；unresolved Dynamic、未绑定 slot、nil/Optional 债务分别产生 `W_DYNAMIC_TYPE_DEBT`、`W_UNRESOLVED_TYPE_SLOT`、`W_NIL_TYPE_DEBT`。声明 `:js-ffi` feature 的 definition 仍标记为明确边界，但 analyzer 不据此改变编译语义。
 
