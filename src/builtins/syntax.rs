@@ -465,6 +465,8 @@ mod tests {
 
   #[test]
   fn assert_traits_runtime_checks_pass() {
+    // Trait checks can lazily resolve core impls from the shared registry.
+    let _guard = crate::program::lock_program_test_state();
     let mut scope = CalcitScope::default();
     let sym = Arc::from("x");
     let idx = CalcitLocal::track_sym(&sym);
