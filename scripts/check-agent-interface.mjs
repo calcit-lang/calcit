@@ -1285,6 +1285,12 @@ assert.match(contractChild.stdout, /Agent contract digest: md5:[0-9a-f]{32}/);
 assert.match(contractChild.stdout, /calcit docs read edit-tree\.md 'Atomic Transactions'/);
 assert.ok(Buffer.byteLength(contractChild.stdout) < 5_000, "compact mutation contract should remain bounded");
 
+const fullAgentGuide = spawnSync(binary, ["docs", "agents", "--full"], { encoding: "utf8" });
+assert.ifError(fullAgentGuide.error);
+assert.equal(fullAgentGuide.status, 0, fullAgentGuide.stderr);
+assert.match(fullAgentGuide.stdout, /测试函数的返回值不参与通过判定/);
+assert.match(fullAgentGuide.stdout, /features\/testing\.md 通过条件与显式断言/);
+
 const apiTypeQuery = spawnSync(binary, ["src/cirru/calcit-core.cirru", "query", "type", ":: 'Option 'Number"], {
   encoding: "utf8",
   maxBuffer: 4 * 1024 * 1024,
@@ -1340,6 +1346,11 @@ const topLevelHelp = spawnSync(binary, ["--help"], { encoding: "utf8" });
 assert.ifError(topLevelHelp.error);
 assert.equal(topLevelHelp.status, 0, topLevelHelp.stderr);
 assert.doesNotMatch(topLevelHelp.stdout, /^  libs\s/m);
+const testHelp = spawnSync(binary, ["test", "--help"], { encoding: "utf8" });
+assert.ifError(testHelp.error);
+assert.equal(testHelp.status, 0, testHelp.stderr);
+assert.match(testHelp.stdout, /Assert expected results explicitly/);
+assert.match(testHelp.stdout, /returned false, nil or Unit does not\s+fail a test/);
 const retiredLibs = spawnSync(binary, ["libs", "search", "web"], { encoding: "utf8" });
 assert.ifError(retiredLibs.error);
 assert.notEqual(retiredLibs.status, 0, "the retired top-level libs command must not reappear");
@@ -1402,6 +1413,17 @@ try {
   assert.match(namingGuide.stdout, /谓词与成员查询/);
   assert.match(namingGuide.stdout, /non-nil\?/);
   assert.match(namingGuide.stdout, /不把旧.*contains/);
+
+  copyFileSync("docs/features/testing.md", join(namingDocs, "testing.md"));
+  const testingGuide = spawnSync(namingBinary, ["docs", "read", "testing.md", "通过条件与显式断言", "--module", "naming-contract"], {
+    cwd: fixtureDir,
+    encoding: "utf8",
+  });
+  assert.ifError(testingGuide.error);
+  assert.equal(testingGuide.status, 0, testingGuide.stderr);
+  assert.match(testingGuide.stdout, /测试函数的返回值不参与通过判定/);
+  assert.match(testingGuide.stdout, /throws\?.*只返回布尔值/);
+  assert.match(testingGuide.stdout, /\(:none\) \(raise \|Expected-answer\)/);
 
   // #2115: eval imports explicit dependencies, not its positional Snapshot,
   // and loading a project must not execute its configured application entry.
