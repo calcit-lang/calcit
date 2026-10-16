@@ -209,6 +209,7 @@ fn non_invoking_value_proc(proc: CalcitProc) -> bool {
       | CalcitProc::Not
       | CalcitProc::TypeOf
       | CalcitProc::NativeListCount
+      | CalcitProc::NativeListContains
       | CalcitProc::NativeMapCount
       | CalcitProc::NativeSetCount
       | CalcitProc::NativeEnumCount
