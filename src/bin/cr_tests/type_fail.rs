@@ -2837,3 +2837,43 @@ fn calling_a_dynamic_value_requires_fn_narrowing() {
     );
   });
 }
+
+#[test]
+fn constant_truthy_conditions_report_with_replacement_guidance() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries(
+      "let\n    xs $ [] 1 2\n    s |text\n    n? $ = 1 1\n  [] (if (count xs) |non-empty |empty) (if s |yes |no) (when (count xs) |some) (and (count xs) n?) (or s |fallback) (if (empty? xs) |a |b) (if (> (count xs) 0) |a |b) (and n? (count xs)) (if n? |a |b) (if s s false)",
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("constant-truthy conditions should preprocess with warnings");
+
+    let warnings = warnings.borrow();
+    let truthy = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_CONSTANT_TRUTHY_CONDITION"))
+      .collect::<Vec<_>>();
+    // `if (count xs)`, `if s`, `when (count xs)`, `and (count xs) …`, and
+    // `or s …`, and a hand-written `if s s false`; the Bool tests and the
+    // value-returning `and` tail stay quiet.
+    assert_eq!(truthy.len(), 6, "expected six constant-truthy conditions, got: {warnings:?}");
+    assert_eq!(
+      truthy.iter().filter(|warning| warning.message().contains("type Number")).count(),
+      3,
+      "{truthy:?}"
+    );
+    assert_eq!(
+      truthy
+        .iter()
+        .filter(|warning| warning.message().contains("type String") && warning.message().contains("`blank?`"))
+        .count(),
+      3,
+      "{truthy:?}"
+    );
+    assert!(
+      truthy.iter().all(|warning| warning.message().contains("always taken")),
+      "{truthy:?}"
+    );
+  });
+}
