@@ -122,7 +122,7 @@ let
       fn (current)
         inc $ current .unwrap
   println result1
-  ; => (Option :some 1)
+  ; => (Result :ok 1)
   println result2
   ; => {} (:a $ {} (:b $ {} (:c 100)))
   println result3

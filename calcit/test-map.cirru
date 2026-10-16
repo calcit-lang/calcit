@@ -57,13 +57,15 @@
           :code $ quote $ fn () (log-title "|Testing get")
             assert= (%none)
               get (&{}) :a
-            assert= (%none)
+            assert=
+              Result :err $ PathError :missing
               get-in (&{}) ([] :a :b)
             &let
               m $ &{} :a 1 :b 2 :c 3 :d 4
               ; destruct yields Option :some [key value rest-map]
-              assert= 3 $ count $ option:unwrap $ &map:destruct m
-              assert= (Option :none) $ &map:destruct (&{})
+              assert= 3 $ count $ option:unwrap (&map:destruct m)
+              assert= (Option :none)
+                &map:destruct $ &{}
               assert= 3 $ count $ option:unwrap
                 last $ &map:destruct m
               assert= 10 $ foldl m 0 $ fn (acc pair)

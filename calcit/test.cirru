@@ -388,7 +388,7 @@
               assert=
                 %some $ [] 1 nil true
                 get parsed :items
-              assert= (%some false)
+              assert= (Result :ok false)
                 get-in parsed $ [] :meta :flag
             assert=
               json-parse $ json-stringify $ {} (:status |ok)

@@ -1933,14 +1933,56 @@ fn generated_path_symbol(prefix: &str, file_ns: &str, call_stack: &CallStackList
   builtins::syntax::gensym(&args.view(), &CalcitScope::default(), file_ns, call_stack)
 }
 
-/// Expand one Option-preserving `get-in` traversal step.
-fn generated_get_in_step(current: Calcit, path: &[Calcit], file_ns: &str, call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
-  let none = generated_core_call("%none", vec![], file_ns);
+/// How a generated path traversal reports its outcome. Public `get-in`
+/// returns `Result<T, PathError>`, while `update-in` hands its updater the
+/// `Option` of the current leaf.
+#[derive(Clone, Copy)]
+enum GeneratedPathOutcome {
+  Option,
+  Result,
+}
+
+impl GeneratedPathOutcome {
+  fn found(self, value: Calcit, file_ns: &str) -> Calcit {
+    match self {
+      Self::Option => generated_core_call("%some", vec![value], file_ns),
+      Self::Result => generated_core_call("Result", vec![Calcit::tag("ok"), value], file_ns),
+    }
+  }
+
+  fn missing(self, file_ns: &str) -> Calcit {
+    match self {
+      Self::Option => generated_core_call("%none", vec![], file_ns),
+      Self::Result => generated_core_call(
+        "Result",
+        vec![
+          Calcit::tag("err"),
+          generated_core_call("PathError", vec![Calcit::tag("missing")], file_ns),
+        ],
+        file_ns,
+      ),
+    }
+  }
+}
+
+/// Expand one `get-in` traversal step. Every hop of a generated path is
+/// statically proven, so only absence (never a shape failure) can occur.
+fn generated_get_in_step(
+  current: Calcit,
+  path: &[Calcit],
+  outcome: GeneratedPathOutcome,
+  file_ns: &str,
+  call_stack: &CallStackList,
+) -> Result<Calcit, CalcitErr> {
+  let none = outcome.missing(file_ns);
   let present = if let Some((key, rest)) = path.split_first() {
     let payload = generated_path_symbol("typed_path_value", file_ns, call_stack)?;
     let some_pattern = generated_call(vec![Calcit::tag("some"), payload.to_owned()]);
     let none_pattern = generated_call(vec![Calcit::tag("none")]);
-    let some_branch = generated_call(vec![some_pattern, generated_get_in_step(payload, rest, file_ns, call_stack)?]);
+    let some_branch = generated_call(vec![
+      some_pattern,
+      generated_get_in_step(payload, rest, outcome, file_ns, call_stack)?,
+    ]);
     let none_branch = generated_call(vec![none_pattern, none.to_owned()]);
     let matched = generated_call(vec![
       Calcit::Syntax(CalcitSyntax::Match, Arc::from(file_ns)),
@@ -1960,7 +2002,7 @@ fn generated_get_in_step(current: Calcit, path: &[Calcit], file_ns: &str, call_s
       file_ns,
     )
   } else {
-    generated_core_call("%some", vec![current.to_owned()], file_ns)
+    outcome.found(current.to_owned(), file_ns)
   };
 
   Ok(generated_if(
@@ -2071,7 +2113,13 @@ fn try_expand_typed_literal_path_call(
         path_locals.push(binding.to_owned());
         path_bindings.push((binding, key));
       }
-      let body = generated_get_in_step(base_binding.to_owned(), &path_locals, file_ns, call_stack)?;
+      let body = generated_get_in_step(
+        base_binding.to_owned(),
+        &path_locals,
+        GeneratedPathOutcome::Result,
+        file_ns,
+        call_stack,
+      )?;
       let body = generated_lets(path_bindings, body, file_ns);
       Ok(Some(generated_let(base_binding, base.to_owned(), body, file_ns)))
     }
@@ -2130,7 +2178,13 @@ fn try_expand_typed_literal_path_call(
         path_locals.push(binding.to_owned());
         path_bindings.push((binding, key));
       }
-      let current = generated_get_in_step(base_binding.to_owned(), &path_locals, file_ns, call_stack)?;
+      let current = generated_get_in_step(
+        base_binding.to_owned(),
+        &path_locals,
+        GeneratedPathOutcome::Option,
+        file_ns,
+        call_stack,
+      )?;
       let replacement = generated_call(vec![updater_binding.to_owned(), current]);
       let body = generated_assoc_in_step(base_binding.to_owned(), &replacement_binding, &path_locals, file_ns, call_stack)?;
       let body = generated_let(replacement_binding, replacement, body, file_ns);
@@ -7658,10 +7712,10 @@ fn nominal_enum_expression_name(value: &Calcit, scope_types: &ScopeTypes) -> Opt
   }
   match items.first().and_then(canonical_absence_operation_name) {
     Some(
-      "%some" | "%none" | "find" | "find-index" | "index-of" | "first" | "last" | "nth" | "get" | "get-in" | "get-env" | "impl-origin"
+      "%some" | "%none" | "find" | "find-index" | "index-of" | "first" | "last" | "nth" | "get" | "get-env" | "impl-origin"
       | "enum-definition",
     ) => Some("Option".to_owned()),
-    Some("%ok" | "%err" | "parse-float") => Some("Result".to_owned()),
+    Some("%ok" | "%err" | "parse-float" | "get-in") => Some("Result".to_owned()),
     _ => None,
   }
 }

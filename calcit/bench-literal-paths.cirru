@@ -36,7 +36,7 @@
             :args $ []
         'bench-write-dynamic! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bench-write-dynamic! ()
-            println $ option:unwrap-or
+            println $ .unwrap-or
               get-in
                 loop-write write-dynamic 100000 $ &{} :a $ &{} :b 2
                 [] :a :b
@@ -46,7 +46,7 @@
             :args $ []
         'bench-write-typed! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bench-write-typed! ()
-            println $ option:unwrap-or
+            println $ .unwrap-or
               get-in
                 loop-write write-typed 100000 $ &{} :a $ &{} :b 2
                 [] :a :b
@@ -57,13 +57,13 @@
         'loop-read $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn loop-read (reader n data acc)
             if (&< n 1) acc $ recur reader (&- n 1) data $ &+ acc
-              option:unwrap-or (reader data) 0
+              .unwrap-or (reader data) 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
               :: 'Fn $ {}
                 :args $ [] 'Dynamic
-                :return $ :: 'Option 'Dynamic
+                :return $ :: 'Result 'Dynamic 'PathError
               , 'Number 'Dynamic 'Number
         'loop-write $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn loop-write (writer n data)
@@ -78,30 +78,28 @@
           :code $ quote $ defn main! ()
             let
                 data $ &{} :a $ &{} :b 2
+                missing $ Result :err $ PathError :missing
               do
-                assert= (%some 2) (read-typed data)
-                assert= (%some 2) (read-dynamic data)
-                assert= (%none)
-                  read-typed $ &{}
-                assert= (%none)
-                  read-dynamic $ &{}
-                assert= (%some 2)
+                assert= (Result :ok 2) (read-typed data)
+                assert= (Result :ok 2) (read-dynamic data)
+                assert= missing $ read-typed $ &{}
+                assert= missing $ read-dynamic $ &{}
+                assert= (Result :ok 2)
                   read-indexed-typed $ [] $ [] 1 2
                 assert=
-                  %some $ %some 2
-                  read-optional-typed $ &{} :value $ %some 2
+                  Result :ok $ Option :some 2
+                  read-optional-typed $ &{} :value $ Option :some 2
                 assert=
-                  %some $ %none
-                  read-optional-typed $ &{} :value $ %none
-                assert= 3 $ option:unwrap-or
+                  Result :ok $ Option :none
+                  read-optional-typed $ &{} :value $ Option :none
+                assert= 3 $ .unwrap-or
                   get-in (write-typed data 3) ([] :a :b)
                   , 0
-                assert= 3 $ option:unwrap-or
+                assert= 3 $ .unwrap-or
                   get-in (write-dynamic data 3) ([] :a :b)
                   , 0
                 reset! *path-effects 0
-                assert= (%none)
-                  read-effectful-typed $ &{}
+                assert= missing $ read-effectful-typed $ &{}
                 assert= 12 @*path-effects
                 reset! *path-effects 0
                 assert=
@@ -135,35 +133,35 @@
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] 'Dynamic
-            :return $ :: 'Option 'Dynamic
+            :return $ :: 'Result 'Dynamic 'PathError
         'read-effectful-typed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-effectful-typed (data)
             get-in data $ [] (mark-key! 1 :a) (mark-key! 2 :b)
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'Tag (:: 'Map 'Tag 'Number)
-            :return $ :: 'Option 'Number
+            :return $ :: 'Result 'Number 'PathError
         'read-indexed-typed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-indexed-typed (data)
             get-in data $ [] 0 1
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'List (:: 'List 'Number)
-            :return $ :: 'Option 'Number
+            :return $ :: 'Result 'Number 'PathError
         'read-optional-typed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-optional-typed (data)
             get-in data $ [] :value
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'Tag (:: 'Option 'Number)
-            :return $ :: 'Option $ :: 'Option 'Number
+            :return $ :: 'Result (:: 'Option 'Number) 'PathError
         'read-typed $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-typed (data)
             get-in data $ [] :a :b
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'Tag (:: 'Map 'Tag 'Number)
-            :return $ :: 'Option 'Number
+            :return $ :: 'Result 'Number 'PathError
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () &unit
           :examples $ []

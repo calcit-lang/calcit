@@ -3836,6 +3836,20 @@
           :examples $ []
           :schema $ :: 'Impl
           :tags $ #{} :internal :trait-impl
+        'PathError $ %{} 'CodeEntry
+          :doc "|get-in 的失败值：:missing 表示路径不存在或遍历中遇到 nil；:shape 携带说明，表示中间值不是可遍历的集合。"
+          :code $ quote $ def PathError
+            impl-traits
+              defenum PathError (:missing) (:shape 'String)
+              , internal/&core-debug-impl internal/&core-eq-impl
+          :examples $ []
+          :schema $ :: 'Dynamic
+          :tags $ #{} :data
+          :tests $ [] $ %{} 'TestEntry (:name |distinguishes-missing-from-shape)
+            :code $ quote $ do
+              assert= (PathError :missing) (PathError :missing)
+              assert= false $ = (PathError :missing) (PathError :shape |x)
+            :tags $ #{} :core :unit
         'ReadableByteStream $ %{} 'CodeEntry
           :doc "|Component Model 只读字节流标记类型。仅允许作为 async defwasm-export 的唯一直接参数；值由主机拥有，Calcit 代码不能构造、复制或访问原始句柄。"
           :code $ quote $ def ReadableByteStream (defstruct ReadableByteStream)
@@ -8268,35 +8282,47 @@
                   .unwrap-or value |fallback
               :tags $ #{} :core :env-proof :unit
         'get-in $ %{} 'CodeEntry
-          :doc "|Get a nested value as Option<Dynamic>; none represents a missing path or nil encountered during traversal."
+          :doc "|Get a nested value as Result<Dynamic, PathError>. A missing path or nil met during traversal gives (PathError :missing); an intermediate value that is not a map, list, string or enum gives (PathError :shape message). Struct fields are not traversed and raise, since (:field value) is the checked accessor."
           :code $ quote $ defn get-in (base path)
-            if (nil? base) (%none)
-              &list-match-internal path (%some base) (y0 ys)
-                if (struct? base)
-                  raise "|get-in does not traverse Struct fields; use (:field value) so the checker can enforce the declared type"
-                  match (get base y0)
-                    (:some value) (recur value ys)
-                    (:none) (%none)
+            if (nil? base)
+              Result :err $ PathError :missing
+              &list-match-internal path (Result :ok base) (y0 ys)
+                cond
+                    struct? base
+                    raise "|get-in does not traverse Struct fields; use (:field value) so the checker can enforce the declared type"
+                  (or (map? base) (list? base) (string? base) (enum? base))
+                    match (get base y0)
+                      (:some value) (recur value ys)
+                      (:none)
+                        Result :err $ PathError :missing
+                  true $ Result :err $ PathError :shape
+                    str-spaced |get-in |expected |a |map |or |indexed |collection, |got: $ type-of base
           :examples $ []
-            quote $ assert= (%some 1)
+            quote $ assert= (Result :ok 1)
               get-in
                 {} $ :a $ {} (:b 1)
                 [] :a :b
-            quote $ assert= (%some 2)
+            quote $ assert= (Result :ok 2)
               get-in
                 [] ([] 1 2) ([] 3 4)
                 [] 0 1
-            quote $ assert= (%none)
+            quote $ assert=
+              Result :err $ PathError :missing
               get-in
                 {} $ :x |value
                 [] :y
+            quote $ assert= 0 $ .unwrap-or
+              get-in
+                {} $ :a 1
+                [] :a :b
+              , 0
           :schema $ :: 'Fn $ {}
             :args $ [] 'Dynamic $ :: 'List 'K
             :generics $ [] 'K
-            :return $ :: 'Option 'Dynamic
+            :return $ :: 'Result 'Dynamic 'PathError
           :tests $ []
             %{} 'TestEntry (:name |returns-nested-map-value)
-              :code $ quote $ assert= (%some 2)
+              :code $ quote $ assert= (Result :ok 2)
                 get-in
                   &{} :a $ &{} :b 2
                   [] :a :b
@@ -8308,26 +8334,49 @@
                       :a $ {} $ :b 2
                       :other |x
                     :: 'Map 'Tag 'Dynamic
-                assert= (%some 2)
+                assert= (Result :ok 2)
                   get-in m $ [] :a :b
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |handles-empty-path-and-nil-base)
               :code $ quote $ do
-                assert= (Option :some 9)
+                assert= (Result :ok 9)
                   get-in 9 $ []
-                assert= (Option :none)
+                assert=
+                  Result :err $ PathError :missing
                   get-in nil $ []
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |presence-is-not-truthiness-or-path-existence)
               :code $ quote $ let
                   data $ {} (:nil nil) (:false false) (:zero 0) (:empty |)
                 assert= true $ contains-in? data $ [] :nil
-                assert= false $ .some? $ get-in data ([] :nil)
-                assert= true $ .some? $ get-in data ([] :false)
-                assert= true $ .some? $ get-in data ([] :zero)
-                assert= true $ .some? $ get-in data ([] :empty)
+                assert= false $ .ok? $ get-in data ([] :nil)
+                assert= true $ .ok? $ get-in data ([] :false)
+                assert= true $ .ok? $ get-in data ([] :zero)
+                assert= true $ .ok? $ get-in data ([] :empty)
                 assert= false $ contains-in? data $ [] :missing
-                assert= false $ .some? $ get-in data ([] :missing)
+                assert= false $ .ok? $ get-in data ([] :missing)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |reports-shape-error-instead-of-raising)
+              :code $ quote $ let
+                  m $ assert-type
+                    {} $ :a 1
+                    :: 'Map 'Tag 'Dynamic
+                assert=
+                  Result :err $ PathError :missing
+                  get-in m $ [] :b :c
+                assert=
+                  Result :err $ PathError :shape "|get-in expected a map or indexed collection, got: :number"
+                  get-in m $ [] :a :b
+                assert= 0 $ .unwrap-or
+                  get-in m $ [] :a :b
+                  , 0
+                assert= true $ match
+                  get-in m $ [] :a :b
+                  (:ok _v) false
+                  (:err e)
+                    match e
+                      (:missing) false
+                      (:shape _message) true
               :tags $ #{} :core :unit
         'group-by $ %{} 'CodeEntry
           :doc "|Group elements by the result of applying function f to each element"
@@ -12172,9 +12221,9 @@
                 assert= |bc $ slice |abc 1
               :tags $ #{} :core :unit
         'some-in? $ %{} 'CodeEntry
-          :doc "|Deprecated final-value presence check: prefer (.some? (get-in x path)), with a proven core Option receiver. A nil leaf is absent; contains-in? instead checks path existence and is not equivalent. Review and migrate with guarded source edits. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
+          :doc "|Deprecated final-value presence check: prefer (.ok? (get-in x path)) on the core Result receiver. A nil leaf or a non-collection intermediate is absent; contains-in? instead checks path existence and is not equivalent. Review and migrate with guarded source edits. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
           :code $ quote $ defn some-in? (x path)
-            option:some? $ get-in x path
+            .ok? $ get-in x path
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Dynamic $ :: 'List 'K

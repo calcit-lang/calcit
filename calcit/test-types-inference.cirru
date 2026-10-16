@@ -332,43 +332,48 @@
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'K 'V
             :generics $ [] 'K 'V
-            :return $ :: 'Option 'V
+            :return $ :: 'Result 'V 'PathError
           :tests $ []
             %{} 'TestEntry (:name |present-payloads-preserve-values)
               :code $ quote $ do
-                assert= (Option :some false)
+                assert= (Result :ok false)
                   read-state-metadata $ {} $ :data false
-                assert= (Option :some 0)
+                assert= (Result :ok 0)
                   read-state-metadata $ {} $ :data 0
-                assert= (Option :some |)
+                assert= (Result :ok |)
                   read-state-metadata $ {} $ :data |
                 assert=
-                  Option :some $ [] :root |board 7
+                  Result :ok $ [] :root |board 7
                   read-state-metadata $ {} $ :data ([] :root |board 7)
                 , &unit
               :tags $ #{} :generic-metadata-path :unit
             %{} 'TestEntry (:name |unrelated-keys-are-absent)
               :code $ quote $ do
-                assert= (Option :none)
+                assert=
+                  Result :err $ PathError :missing
                   read-state-metadata $ {} $ 1 |value
-                assert= (Option :none)
+                assert=
+                  Result :err $ PathError :missing
                   read-state-metadata $ {} $ |data |value
-                assert= (Option :none)
+                assert=
+                  Result :err $ PathError :missing
                   read-state-metadata $ {}
                 , &unit
               :tags $ #{} :generic-metadata-path :unit
             %{} 'TestEntry (:name |nil-path-payload-stays-absent)
-              :code $ quote $ assert= (Option :none)
+              :code $ quote $ assert=
+                Result :err $ PathError :missing
                 read-state-metadata $ {} $ :data nil
               :tags $ #{} :generic-metadata-path :unit
             %{} 'TestEntry (:name |generic-payload-remains-precise)
               :code $ quote $ let
                   value $ read-state-metadata $ {} (:data 7)
-                assert-type value $ :: 'Option 'Number
-                assert= (Option :some 7) value
+                assert-type value $ :: 'Result 'Number 'PathError
+                assert= (Result :ok 7) value
               :tags $ #{} :generic-metadata-path :unit
             %{} 'TestEntry (:name |concrete-mismatching-path-is-absent)
-              :code $ quote $ assert= (Option :none)
+              :code $ quote $ assert=
+                Result :err $ PathError :missing
                 get-in
                   {} $ 1 |value
                   [] :data
@@ -379,7 +384,7 @@
                   base $ fn () (swap! calls inc)
                     {} $ :data 7
                   key $ fn () (swap! calls inc) :data
-                assert= (Option :some 7)
+                assert= (Result :ok 7)
                   get-in (base)
                     [] $ key
                 assert= 2 @calls
@@ -741,12 +746,16 @@
                   {} $ :p $ {} (:name |n)
                   [] :p :age
                 nil-nested $ get-in nil $ [] :a
-              assert= (%some 1) nested-hit
-              assert= (%none) nested-miss
-              assert= (%none) nil-nested
-              assert-type nested-hit $ :: 'Option 'Number
-              assert-type nested-miss $ :: 'Option 'Dynamic
-              assert-type nil-nested $ :: 'Option 'Dynamic
+              assert= (Result :ok 1) nested-hit
+              assert=
+                Result :err $ PathError :missing
+                , nested-miss
+              assert=
+                Result :err $ PathError :missing
+                , nil-nested
+              assert-type nested-hit $ :: 'Result 'Number 'PathError
+              assert-type nested-miss $ :: 'Result 'Dynamic 'PathError
+              assert-type nil-nested $ :: 'Result 'Dynamic 'PathError
               &inspect-type nested-hit
               &inspect-type nested-miss
               &inspect-type nil-nested
