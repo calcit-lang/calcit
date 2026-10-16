@@ -8192,6 +8192,100 @@ fn schema_synthesis_requires_independent_producer_and_coercion_evidence() {
 }
 
 #[test]
+fn schema_synthesis_audits_callbacks_with_the_strict_contextual_types() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy contextual callback fixture");
+  for (name, source, schema) in [
+    ("Tr", "quote $ defstruct Tr (:name 'Tag) (:v 'Number)", None),
+    (
+      "trs",
+      "quote $ def trs $ [] (Tr :name :a :v 1) (Tr :name :b :v 2)",
+      Some("quote $ :: 'List 'fix-command.main/Tr"),
+    ),
+    (
+      "pairs",
+      "quote $ defn pairs (xs) $ -> xs (map-indexed $ fn (idx x) ([] idx x)) (pairs-map)",
+      Some("quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Dynamic) (:return 'Dynamic)"),
+    ),
+    (
+      "lines",
+      "quote $ defn lines (x) $ mapcat trs $ fn (info) $ [] (&+ x $ :v info)",
+      Some("quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return $ :: 'List 'Number)"),
+    ),
+    (
+      "bump",
+      "quote $ defn bump (xs) $ map xs $ fn (x) (+ x 1)",
+      Some("quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'Dynamic) (:return $ :: 'List 'Number)"),
+    ),
+    (
+      "typed-make",
+      "quote $ defn typed-make (props & children) $ {} (:props props) (:pairs $ pairs children) (:lines $ lines 1)",
+      Some("quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:rest 'Dynamic) (:return 'Dynamic)"),
+    ),
+    (
+      "open-make",
+      "quote $ defn open-make (props & children) $ {} (:props props) (:bumped $ bump children)",
+      Some("quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:rest 'Dynamic) (:return 'Dynamic)"),
+    ),
+    (
+      "use-typed-make",
+      "quote $ defn use-typed-make () $ typed-make 1 2 3",
+      Some("quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)"),
+    ),
+    (
+      "use-open-make",
+      "quote $ defn use-open-make () $ open-make 1 2 3",
+      Some("quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic)"),
+    ),
+  ] {
+    let target = format!("fix-command.main/{name}");
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", &target, "--input-format", "cirru", "--code", source]),
+      "create contextual callback source",
+    );
+    if let Some(schema) = schema {
+      assert_success(
+        &run_calcit(&snapshot, &["edit", "schema", &target, "--input-format", "cirru", "--code", schema]),
+        "declare contextual callback contract",
+      );
+    }
+  }
+  let audit_errors = |definition: &str| {
+    let preview = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "synthesize-schema-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        definition,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&preview, "review schema candidate");
+    let report = parse_stdout(&preview);
+    report["data"]["suggestions"][0]["origin_chain"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .filter(|evidence| evidence["kind"] == "compiler-diagnostic")
+      .map(|evidence| evidence["diagnostic"]["code"].as_str().unwrap().to_owned())
+      .collect::<Vec<_>>()
+  };
+  // map-indexed binds its output variable from the callback, and mapcat binds
+  // the callback input from the typed receiver, exactly as the strict audit.
+  assert_eq!(audit_errors("typed-make"), Vec::<String>::new());
+  // Contextual typing does not prove an open payload for a concrete use.
+  assert!(
+    audit_errors("open-make").iter().any(|code| code == "E_CALL_ARGUMENT_UNPROVEN"),
+    "a Dynamic list element must still need narrowing before arithmetic"
+  );
+}
+
+#[test]
 fn schema_synthesis_keeps_proven_assertions_decoders_and_discarded_coercions() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
