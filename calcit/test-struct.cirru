@@ -735,7 +735,7 @@
               kitty $ %{} Cat (:name |kitty) (:color :red)
               assert= :Cat $ &struct:get-name kitty
               assert= :red $ :color kitty
-              assert= (Option :some Cat) $ &struct:definition kitty
+              assert= (Option :some Cat) (&struct:definition kitty)
               assert= true $ &struct:matches? kitty $ %{} Cat (:name |kitty) (:color :red)
               assert= (&struct:to-map kitty) (&{} :name |kitty :color :red)
               assert= 2 $ &struct:count kitty
@@ -804,7 +804,7 @@
                 p0 $ &%{} Person :name nil :age nil :position nil
                 p3 $ &%{} Person :name |Chen :age 23 :position :mainland
                 c1 $ %{} City (:name |Shanghai) (:province |Shanghai)
-              assert= (Option :some Person) $ &struct:definition p0
+              assert= (Option :some Person) (&struct:definition p0)
               assert= nil $ :age p0
               assert= nil $ :name p0
               assert= nil $ :position p0
@@ -915,33 +915,6 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
-        'truthiness-count $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defatom truthiness-count 0
-          :examples $ []
-        'truthiness-number-once $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn truthiness-number-once (value)
-            if
-              let ()
-                reset! truthiness-count $ inc $ deref truthiness-count
-                , value
-              let ()
-                reset! truthiness-count $ inc $ deref truthiness-count
-                , 1
-              raise |unselected-zero-branch
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Number)
-            :args $ [] 'Number
-          :tests $ [] $ %{} 'TestEntry (:name |condition-once-and-only-selected-branch)
-            :code $ quote $ do (reset! truthiness-count 0)
-              assert= 1 $ truthiness-number-once 0
-              assert= 2 $ deref truthiness-count
-              reset! truthiness-count 0
-              assert= 1 $ truthiness-number-once -0
-              assert= 2 $ deref truthiness-count
-              reset! truthiness-count 0
-              assert= 1 $ truthiness-number-once 7
-              assert= 2 $ deref truthiness-count
-            :tags $ #{} :truthiness :unit
         'try-bool $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn try-bool (fail?)
             try

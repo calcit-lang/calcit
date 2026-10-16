@@ -24,6 +24,22 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.32.0 恒真条件诊断
+
+Calcit 只把 `nil`、`false` 与 `&unit` 当作假值，所以 `if (count xs) …` 在 `xs` 为空时仍走 then 分支，
+`if s …` 在 `s` 为空字符串时也一样。0.32.0 起，条件的静态类型已证明为 Number、String、List、Map、Set、
+Struct 或函数时，`if`、`when`、`cond`、`and`、`or` 会报告 `W_CONSTANT_TRUTHY_CONDITION`，严格检查不再通过。
+`Bool`、`Optional`、`JsNullish`、Dynamic 与类型变量不报；`and` 的最后一个操作数作为返回值，也不报。
+
+| 旧写法 | 新写法 |
+| --- | --- |
+| `if (count xs) …` | `if (empty? xs) …`（交换分支）或 `if (> (count xs) 0) …` |
+| `if s …`（String） | `if (blank? s) …`（交换分支） |
+| `when items …`（List） | `when-not (empty? items) …` |
+| `or n 0`（Number） | `n`；默认值永远不会被选中 |
+
+若这个值原本可能缺失，说明 schema 写窄了：改为 `Option` 并用 `.unwrap-or` 或 `match` 处理。
+
 ## 0.32.0 `get-in` 返回 Result
 
 `get-in` 此前返回 `Option<Dynamic>`，但中间值不是集合时（例如路径 `[] :a :b` 遇到 `:a` 的值是 `1`）会抛异常，

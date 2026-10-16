@@ -7974,6 +7974,62 @@ fn warn_on_nominal_enum_truthiness(
   }
 }
 
+/// Short label for a condition type that can never be nil or false, so an
+/// `if` over it always selects the then branch. Only nil and false are falsy.
+fn constant_truthy_type_label(value_type: &CalcitTypeAnnotation) -> Option<&'static str> {
+  match value_type {
+    CalcitTypeAnnotation::Number | CalcitTypeAnnotation::Numeric(_) => Some("Number"),
+    CalcitTypeAnnotation::String => Some("String"),
+    CalcitTypeAnnotation::List(_) => Some("List"),
+    CalcitTypeAnnotation::Map(..) => Some("Map"),
+    CalcitTypeAnnotation::Set(_) => Some("Set"),
+    CalcitTypeAnnotation::StructValue(_) | CalcitTypeAnnotation::Struct(..) => Some("Struct"),
+    CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn => Some("Fn"),
+    _ => None,
+  }
+}
+
+fn warn_on_constant_truthy_condition(
+  raw_cond: &Calcit,
+  value: &Calcit,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  // Core and its contract replays (`calcit.core-*`) pin runtime truthiness per
+  // backend on purpose: WASM folds a typed condition to a constant branch.
+  if file_ns.starts_with(calcit::CORE_NS) {
+    return;
+  }
+  let Some(value_type) = resolve_type_value(value, scope_types) else {
+    return;
+  };
+  let Some(label) = constant_truthy_type_label(value_type.as_ref()) else {
+    return;
+  };
+  let location = match raw_cond {
+    Calcit::List(items) => derive_list_call_expr_location(items),
+    _ => raw_cond.get_location(),
+  }
+  .or_else(|| source_location_in_namespace(value, file_ns))
+  .filter(|location| location.ns.as_ref() == file_ns && location.def.as_ref() != GENERATED_DEF);
+  // A condition without a source coordinate in this namespace was produced by
+  // a macro, so the author cannot rewrite it at the reported place.
+  let Some(location) = location else {
+    return;
+  };
+
+  let guidance = match label {
+    "Number" => "compare explicitly, e.g. `(> n 0)` or `(= n 0)`; `0` is truthy",
+    "String" => "use `blank?` or `(= s |)`; an empty string is truthy",
+    "List" | "Map" | "Set" => "use `empty?`; an empty collection is truthy",
+    _ => "test the property you mean explicitly; this value is never nil or false",
+  };
+  let message =
+    format!("[Warn] condition has type {label}, which is never nil or false, so this branch is always taken in {file_ns}; {guidance}");
+  gen_check_warning_with_location_code(message, "W_CONSTANT_TRUTHY_CONDITION", location, check_warnings);
+}
+
 fn reject_legacy_trait_method_tag_syntax(
   macro_info: &crate::calcit::CalcitMacro,
   args: &CalcitList,
@@ -10302,6 +10358,17 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
   )?;
 
   warn_on_nominal_enum_truthiness(&cond_form, ctx.scope_types, ctx.file_ns, ctx.check_warnings);
+  // `and` returns its last operand through `if v v false`; that operand is a
+  // value, not a test, so only the operands before it are conditions. The
+  // macro splices one node twice, so both copies share a source location;
+  // equality alone would also skip a hand-written `(if n n false)`.
+  let and_tail = args.len() == 3
+    && args.first() == args.get(1)
+    && args.first().map(Calcit::get_location) == args.get(1).map(Calcit::get_location)
+    && matches!(args.get(2), Some(Calcit::Bool(false)));
+  if !and_tail {
+    warn_on_constant_truthy_condition(args.first().unwrap(), &cond_form, ctx.scope_types, ctx.file_ns, ctx.check_warnings);
+  }
 
   let narrowing = condition_evidence::infer(&cond_form, ctx.scope_types);
   let mut true_scope_types = ctx.scope_types.clone();
