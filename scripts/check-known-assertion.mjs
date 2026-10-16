@@ -901,20 +901,20 @@ try {
   const truthinessSnapshot = join(project, "truthiness.cirru");
   await copyFile(truthinessCore, truthinessSnapshot);
   const replay = (...args) => execFileSync(binary, [truthinessSnapshot, ...args], options);
-  const truthinessOperations = [["edit", "add-ns", "calcit.truthiness"]];
+  const truthinessOperations = [["edit", "add-ns", "calcit.core-truthiness"]];
   for (const [name, type] of [["choose-open", "'Dynamic"], ["choose-bool", "'Bool"]]) {
     truthinessOperations.push(
-      ["edit", "def", `calcit.truthiness/${name}`, "--input-format", "json-ast", "--code",
+      ["edit", "def", `calcit.core-truthiness/${name}`, "--input-format", "json-ast", "--code",
         JSON.stringify(["defn", name, ["condition"], ["if", "condition", "|yes", "|no"]])],
-      ["edit", "schema", `calcit.truthiness/${name}`, "--input-format", "cirru", "--code",
+      ["edit", "schema", `calcit.core-truthiness/${name}`, "--input-format", "cirru", "--code",
         `quote $ :: 'Fn $ {} (:args ([] ${type})) (:return 'String)`],
     );
   }
   truthinessOperations.push(
-    ["edit", "def", "calcit.truthiness/run-tests", "--input-format", "json-ast", "--code",
+    ["edit", "def", "calcit.core-truthiness/run-tests", "--input-format", "json-ast", "--code",
       JSON.stringify(["defn", "run-tests", [], ...truthinessTests.map(test => test.code),
         ["assert=", "|yes", ["choose-open", "0"]], ["assert=", "|no", ["choose-bool", "false"]], "&unit"])],
-    ["edit", "schema", "calcit.truthiness/run-tests", "--input-format", "cirru", "--code",
+    ["edit", "schema", "calcit.core-truthiness/run-tests", "--input-format", "cirru", "--code",
       "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)"],
   );
   const truthinessRevision = JSON.parse(replay("query", "config", "--format", "json")).revision;
@@ -922,11 +922,11 @@ try {
     "--expect-revision", truthinessRevision, "--format", "json"];
   replay(...truthinessTransaction, "--dry-run");
   replay(...truthinessTransaction);
-  const truthinessEntry = ["--init-fn", "calcit.truthiness/run-tests", "--reload-fn", "calcit.truthiness/run-tests"];
+  const truthinessEntry = ["--init-fn", "calcit.core-truthiness/run-tests", "--reload-fn", "calcit.core-truthiness/run-tests"];
   replay(...truthinessEntry);
   const truthinessOutput = join(project, "truthiness-js");
   replay(...truthinessEntry, "--emit-path", truthinessOutput, "js");
-  const truthinessModule = await import(pathToFileURL(join(truthinessOutput, "calcit.truthiness.mjs")).href);
+  const truthinessModule = await import(pathToFileURL(join(truthinessOutput, "calcit.core-truthiness.mjs")).href);
   truthinessModule.run_tests();
   // Host-only values are not Calcit source literals. Strict identity checks
   // must never invoke coercion hooks or treat NaN/zero/empty text as falsey.
@@ -937,7 +937,7 @@ try {
   }
   assert.equal(truthinessModule.choose_bool(true), "yes");
   assert.equal(truthinessModule.choose_bool(false), "no");
-  const truthinessCode = await readFile(join(truthinessOutput, "calcit.truthiness.mjs"), "utf8");
+  const truthinessCode = await readFile(join(truthinessOutput, "calcit.core-truthiness.mjs"), "utf8");
   assert.match(truthinessCode, /if \(\(\(condition\) \?\? false\) !== false\)/,
     "Bool and open conditions must share single-evaluation Calcit truthiness");
   assert.doesNotMatch(truthinessCode, /_calcit_truthy/, "conditional lowering must not require a new runtime export");
@@ -975,15 +975,15 @@ try {
   await copyFile(truthinessCore, truthinessWasmSnapshot);
   const truthinessWasmRun = (...args) => execFileSync(binary, [truthinessWasmSnapshot, ...args], options);
   const truthinessWasmOperations = [
-    ["edit", "add-ns", "calcit.truthiness-wasm"],
-    ["edit", "def", "calcit.truthiness-wasm/run-tests", "--input-format", "json-ast", "--code",
+    ["edit", "add-ns", "calcit.core-truthiness-wasm"],
+    ["edit", "def", "calcit.core-truthiness-wasm/run-tests", "--input-format", "json-ast", "--code",
       JSON.stringify(["defwasm-export", "run-tests", [], ...truthinessWasmTests.map(test => test.code), "&unit"])],
-    ["edit", "schema", "calcit.truthiness-wasm/run-tests", "--input-format", "cirru", "--code",
+    ["edit", "schema", "calcit.core-truthiness-wasm/run-tests", "--input-format", "cirru", "--code",
       "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)"],
     ...truthinessTraps.flatMap(({ name, expression }) => [
-      ["edit", "def", `calcit.truthiness-wasm/${name}`, "--input-format", "json-ast", "--code",
+      ["edit", "def", `calcit.core-truthiness-wasm/${name}`, "--input-format", "json-ast", "--code",
         JSON.stringify(["defwasm-export", name, [], expression])],
-      ["edit", "schema", `calcit.truthiness-wasm/${name}`, "--input-format", "cirru", "--code",
+      ["edit", "schema", `calcit.core-truthiness-wasm/${name}`, "--input-format", "cirru", "--code",
         "quote $ :: 'Fn $ {} (:args ([])) (:return 'String)"],
     ]),
   ];
@@ -993,8 +993,8 @@ try {
   truthinessWasmRun(...truthinessWasmTransaction, "--dry-run");
   truthinessWasmRun(...truthinessWasmTransaction);
   const truthinessWasmOutput = join(project, "truthiness-wasm");
-  execFileSync(binary, ["wasm", truthinessWasmSnapshot, "--init-fn", "calcit.truthiness-wasm/run-tests",
-    "--reload-fn", "calcit.truthiness-wasm/run-tests", "--emit-path", truthinessWasmOutput], options);
+  execFileSync(binary, ["wasm", truthinessWasmSnapshot, "--init-fn", "calcit.core-truthiness-wasm/run-tests",
+    "--reload-fn", "calcit.core-truthiness-wasm/run-tests", "--emit-path", truthinessWasmOutput], options);
   const truthinessWasmModule = new WebAssembly.Module(await readFile(join(truthinessWasmOutput, "program.wasm")));
   const truthinessWasmImports = {};
   for (const { module, name, kind } of WebAssembly.Module.imports(truthinessWasmModule)) {
@@ -1013,26 +1013,25 @@ try {
   const effectsSnapshot = join(project, "truthiness-effects.cirru");
   await copyFile(truthinessCore, effectsSnapshot);
   const effectsRun = (...args) => execFileSync(binary, [effectsSnapshot, ...args], options);
-  execFileSync(binary, ["calcit/test-struct.cirru", "test", "test-struct.main/truthiness-number-once", "--require-match"], options);
-  const effectsDefinitions = ["truthiness-count", "truthiness-number-once"].map(name =>
-    JSON.parse(execFileSync(binary, ["calcit/test-struct.cirru", "query", "def", `test-struct.main/${name}`, "--format", "json"], options)).data);
-  const effectsTests = effectsDefinitions[1].tests.filter(test => test.tags.includes("truthiness"));
-  assert.equal(effectsTests.length, 1);
+  // A typed Number condition is constant-truthy on purpose here, so the
+  // contract lives in a `calcit.core-*` namespace that W_CONSTANT_TRUTHY_CONDITION
+  // leaves to the language's own backend tests.
+  const bumpCount = ["let", [], ["reset!", "truthiness-count", ["inc", ["deref", "truthiness-count"]]]];
+  const effectsTest = ["do",
+    ...["0", "-0", "7"].flatMap(value => [["reset!", "truthiness-count", "0"],
+      ["assert=", "1", ["truthiness-number-once", value]], ["assert=", "2", ["deref", "truthiness-count"]]])];
   const effectsOperations = [
-    ["edit", "add-ns", "calcit.truthiness-effects"],
-    ...effectsDefinitions.flatMap(definition => {
-      const target = `calcit.truthiness-effects/${definition.id.split("/")[1]}`;
-      const schema = definition.schema && ["::", "'Fn", ["{}",
-        ...definition.schema.slice(1).filter(field => field[0] !== ":kind")]];
-      return [
-        ["edit", "def", target, "--input-format", "json-ast", "--code", JSON.stringify(definition.code)],
-        ...(schema ? [["edit", "schema", target, "--input-format", "json-ast", "--code",
-          JSON.stringify(schema)]] : []),
-      ];
-    }),
-    ["edit", "def", "calcit.truthiness-effects/run-tests", "--input-format", "json-ast", "--code",
-      JSON.stringify(["defwasm-export", "run-tests", [], ...effectsTests.map(test => test.code), "&unit"])],
-    ["edit", "schema", "calcit.truthiness-effects/run-tests", "--input-format", "cirru", "--code",
+    ["edit", "add-ns", "calcit.core-truthiness-effects"],
+    ["edit", "def", "calcit.core-truthiness-effects/truthiness-count", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defatom", "truthiness-count", "0"])],
+    ["edit", "def", "calcit.core-truthiness-effects/truthiness-number-once", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "truthiness-number-once", ["value"],
+        ["if", [...bumpCount, "value"], [...bumpCount, "1"], ["raise", "|unselected-zero-branch"]]])],
+    ["edit", "schema", "calcit.core-truthiness-effects/truthiness-number-once", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'Number)"],
+    ["edit", "def", "calcit.core-truthiness-effects/run-tests", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defwasm-export", "run-tests", [], effectsTest, "&unit"])],
+    ["edit", "schema", "calcit.core-truthiness-effects/run-tests", "--input-format", "cirru", "--code",
       "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit)"],
   ];
   const effectsRevision = JSON.parse(effectsRun("query", "config", "--format", "json")).revision;
@@ -1040,11 +1039,11 @@ try {
     "--expect-revision", effectsRevision, "--format", "json"];
   effectsRun(...effectsTransaction, "--dry-run");
   effectsRun(...effectsTransaction);
-  const effectsEntry = ["--init-fn", "calcit.truthiness-effects/run-tests", "--reload-fn", "calcit.truthiness-effects/run-tests"];
+  const effectsEntry = ["--init-fn", "calcit.core-truthiness-effects/run-tests", "--reload-fn", "calcit.core-truthiness-effects/run-tests"];
   effectsRun(...effectsEntry);
   const effectsJs = join(project, "truthiness-effects-js");
   effectsRun(...effectsEntry, "--emit-path", effectsJs, "js");
-  (await import(pathToFileURL(join(effectsJs, "calcit.truthiness-effects.mjs")).href)).run_tests();
+  (await import(pathToFileURL(join(effectsJs, "calcit.core-truthiness-effects.mjs")).href)).run_tests();
   const effectsWasm = join(project, "truthiness-effects-wasm");
   effectsRun(...effectsEntry, "--emit-path", effectsWasm, "wasm");
   const effectsModule = new WebAssembly.Module(await readFile(join(effectsWasm, "program.wasm")));

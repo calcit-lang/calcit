@@ -18,6 +18,8 @@ Calcit macros extend the language by transforming syntax trees during preprocess
 条件只求值一次，只执行选中的分支；省略 else 时，假值分支返回 `nil`。
 `or` 返回遇到的第一个真值，全部为假时返回最后一个值；`and` 遇到假值时返回 `false`，否则返回最后一个值。
 这些是 Calcit 语义，不使用 JavaScript 的自动布尔转换。
+条件的静态类型已证明为 Number、String、List、Map、Set、Struct 或函数时，这个条件恒为真，检查会报告
+`W_CONSTANT_TRUTHY_CONDITION`；请改写为 `empty?`、`blank?` 或显式比较。`and` 的最后一个操作数是返回值，不算条件。
 
 ```cirru
 assert= |then $ if 0 |then |else
