@@ -772,6 +772,7 @@ try {
     "--target", "app.short-circuit/false-path", "--target", "app.short-circuit/two-values",
     "--target", "app.short-circuit/lexical-guard", "--target", "app.short-circuit/common-or",
     "--target", "app.short-circuit/compound#checked-index", "--target", "app.short-circuit/nested",
+    "--target", "app.short-circuit/guarded-index",
     "--backend", "native,wasm",
   ], { ...options, stdio: "inherit" });
   await copyFile("tests/fixtures/def-value-schema.cirru", snapshot);
@@ -838,6 +839,7 @@ try {
     ["shadowed-alias", ["let", [["valid", ["number?", "k"]]], ["let", [["k", "1"]], "valid"]]],
     ["bool-is-not-proof", ["and", ["pretend", "k"], "true"]],
     ["unknown-call-after-proof", ["and", ["number?", "k"], ["pretend", "k"]]],
+    ["unknown-index-operand-after-proof", ["and", ["number?", "k"], ["&list:contains?", ["[]", ["pretend", "k"]], "0"]]],
     ["lazy-initializer-after-proof", ["and", ["number?", "k"], "lazy-flag"]],
     ["stale-alias-after-call", ["let", [["valid", ["number?", "k"]]], ["pretend", "k"], "valid"]],
     ["rebound-after-proof", ["and", ["number?", "k"], ["&let", ["ignored", ["set!", "k", "|changed"]], "true"]], false, true],

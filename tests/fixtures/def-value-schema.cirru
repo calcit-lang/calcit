@@ -2893,6 +2893,25 @@
               assert= 2 $ false-path 1
               assert= 0 $ false-path |bad
             :tags $ #{} :short-circuit-proof :unit
+        'guarded-index $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn guarded-index (xs k)
+            if
+              and (number? k) (&list:contains? xs k)
+              &list:nth xs k
+              , -1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] (:: 'List 'Number) 'K
+            :generics $ [] 'K
+          :tests $ [] $ %{} 'TestEntry (:name |pure-index-preserves-number-guard)
+            :code $ quote $ do
+              assert= 20 $ guarded-index ([] 10 20) 1
+              assert= -1 $ guarded-index ([] 10 20) |bad
+              assert= -1 $ guarded-index ([] 10 20) -1
+              assert= -1 $ guarded-index ([] 10 20) 1.5
+              assert= -1 $ guarded-index ([] 10 20) 2
+              assert= -1 $ guarded-index ([]) 0
+            :tags $ #{} :short-circuit-proof :unit
         'lexical-guard $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn lexical-guard (k)
             if

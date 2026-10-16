@@ -5188,11 +5188,13 @@
                 (struct? xs)
                   raise "|contains-in? does not traverse Struct fields; end the path before the Struct and use (:field value)"
                 (enum? xs)
-                  if
-                    and (&>= p0 0)
-                      &< p0 $ &enum:count xs
-                    recur (&enum:nth xs p0) ps
-                    , false
+                  let
+                      index $ decode-map-as p0 'Number
+                    if
+                      and (&>= index 0)
+                        &< index $ &enum:count xs
+                      recur (&enum:nth xs index) ps
+                      , false
                 true false
           :examples $ []
             quote $ assert= true $ contains-in?
@@ -5204,34 +5206,43 @@
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Dynamic $ :: 'List 'K
             :generics $ [] 'K
-          :tests $ [] $ %{} 'TestEntry (:name |traverses-maps-lists-tags-and-enums)
-            :code $ quote $ do
-              assert= true $ contains-in?
-                &{} :a $ [] 1 2 3
-                [] :a 1
-              assert= false $ contains-in?
-                &{} :a $ [] 1 2 3
-                [] :a 3
-              assert= false $ contains-in?
-                &{} :a $ [] 1 2 3
-                [] :b 1
-              assert= true $ contains-in?
-                [] 1 2 $ [] 3 4
-                [] 2 1
-              assert= false $ contains-in?
-                [] 1 2 $ [] 3 4
-                [] 2 2
-              assert= false $ contains-in?
-                [] 1 2 $ [] 3 4
-                [] 3 2
-              assert= true $ contains-in?
-                &{} :a $ :: 'quote 1
-                [] :a 1
-              assert= true $ contains-in?
-                :: :a :b $ [] 1 2 3
-                [] 2 2
-              assert= true $ contains-in? (&{}) ([])
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |traverses-maps-lists-tags-and-enums)
+              :code $ quote $ do
+                assert= true $ contains-in?
+                  &{} :a $ [] 1 2 3
+                  [] :a 1
+                assert= false $ contains-in?
+                  &{} :a $ [] 1 2 3
+                  [] :a 3
+                assert= false $ contains-in?
+                  &{} :a $ [] 1 2 3
+                  [] :b 1
+                assert= true $ contains-in?
+                  [] 1 2 $ [] 3 4
+                  [] 2 1
+                assert= false $ contains-in?
+                  [] 1 2 $ [] 3 4
+                  [] 2 2
+                assert= false $ contains-in?
+                  [] 1 2 $ [] 3 4
+                  [] 3 2
+                assert= true $ contains-in?
+                  &{} :a $ :: 'quote 1
+                  [] :a 1
+                assert= true $ contains-in?
+                  :: :a :b $ [] 1 2 3
+                  [] 2 2
+                assert= true $ contains-in? (&{}) ([])
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |rejects-nonnumeric-enum-index)
+              :code $ quote $ assert= true
+                try
+                  do
+                    contains-in? (:: :a 1) ([] :bad)
+                    , false
+                  fn (error) true
+              :tags $ #{} :core :unit
         'contains-index? $ %{} 'CodeEntry
           :doc "|检查 Enum 的有效位置（tag 为 0，payload 自 1 起）：仅非负、有限整数且小于 count 时返回 true；负数、小数、非有限或越界返回 false。旧 .contains? 的小数行为不同，不能无条件迁移。"
           :code $ quote $ defn contains-index? (value index)
