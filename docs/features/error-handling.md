@@ -29,7 +29,7 @@ Native and generated JavaScript normalize caught failures to this String contrac
 ```cirru
 let
     result $ try
-        raise |something-went-wrong
+      raise |something-went-wrong
       fn (e)
         str-spaced |caught: e
   println result
@@ -65,7 +65,7 @@ let
         raise |division-by-zero
         / a b
     result $ try
-        safe-div 10 0
+      safe-div 10 0
       fn (e)
         str-spaced |error: e
   println result
@@ -85,7 +85,7 @@ let
           raise :unrealistic-age
           n
     result $ try
-        validate-age -5
+      validate-age -5
       fn (e)
         str-spaced |validation-failed: e
   println result
@@ -115,7 +115,7 @@ Inner `try` handlers can re-raise or recover selectively:
 ```cirru.no-check
 try
   try
-      risky-operation
+    risky-operation
     fn (e)
       if (= e :recoverable)
         default-value

@@ -24,6 +24,20 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.32.0 调用 Dynamic 值须先收窄
+
+静态类型为 Dynamic 的值被直接调用时（例如 schema 为 `Fn [Dynamic] -> Dynamic` 的 `defn cd (x) (x 1)`），
+此前所有检查都放行，运行时才报 `cannot be used as operator`。0.32.0 起这类调用报告 `W_DYNAMIC_CALL`，检查不再通过。
+多缩进一层写出的 `((.unwrap-or …))` 也会因此暴露。
+
+| 旧写法 | 新写法 |
+| --- | --- |
+| `(f x)`，`f` 为 Dynamic | `if (fn? f) (f x) (raise …)` |
+| 参数 schema 写成 `'Dynamic` 的回调 | 改为 `:: 'Fn $ {} (:args …) (:return …)` |
+| `when (not (fn? f)) (raise …)` 后再 `(f x)` | 改用 `if (fn? f) (f x) (raise …)`；提前 raise 不收窄后续语句 |
+
+调用头由宏自己生成的调用、声明 `:js-ffi` feature 的定义里对宿主函数的调用不受影响。宏把调用方写的值放到调用头时（如 `-> 1 f` 展开为 `(f 1)`）仍会报告，因为被调用的值来自调用方。
+
 ## 0.32.0 恒真条件诊断
 
 Calcit 只把 `nil`、`false` 与 `&unit` 当作假值，所以 `if (count xs) …` 在 `xs` 为空时仍走 then 分支，
