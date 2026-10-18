@@ -4173,7 +4173,12 @@ fn preprocess_list_call(
         CalcitSyntax::Quote | CalcitSyntax::Eval => Ok(preprocess_quote(name, name_ns, &args, scope_defs, file_ns)?),
         CalcitSyntax::HintFn => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
-          preprocess_hint_fn(name, name_ns, &args, &mut ctx)
+          preprocess_hint_fn(name, name_ns, &args, &mut ctx).map_err(|mut error| {
+            if error.location.is_none() {
+              error.location = call_location.clone().map(Arc::new);
+            }
+            error
+          })
         }
         CalcitSyntax::Defref => {
           let mut ctx = PreprocessContext::new(scope_defs, scope_types, file_ns, check_warnings, call_stack);
@@ -12776,6 +12781,17 @@ pub fn preprocess_hint_fn(
   args: &CalcitList,
   ctx: &mut PreprocessContext,
 ) -> Result<Calcit, CalcitErr> {
+  if !matches!(args.len(), 1 | 2) {
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Arity,
+      format!(
+        "hint-fn expects a schema Map, or a local function and a schema Map; got {} arguments",
+        args.len()
+      ),
+      ctx.call_stack,
+      args.first().and_then(Calcit::get_location),
+    ));
+  }
   let mut legacy_clauses: BTreeSet<&str> = BTreeSet::new();
   let mut error_location: Option<NodeLocation> = None;
 
@@ -12818,11 +12834,18 @@ pub fn preprocess_hint_fn(
   // The one-argument form is metadata injected into a function body and has no target to refine.
   let lexical_generics =
     crate::calcit::type_annotation::free_type_variable_names(&ctx.scope_types.values().cloned().collect::<Vec<_>>());
-  if args.len() >= 2
-    && let Some(type_entry) =
-      CalcitTypeAnnotation::extract_fn_annotation_from_hint_form_in_scope(&Calcit::from(ys.clone()), &lexical_generics)
-    && let Some(target_raw) = args.first()
-  {
+  let Some(type_entry) =
+    CalcitTypeAnnotation::extract_fn_annotation_from_hint_form_in_scope(&Calcit::from(ys.clone()), &lexical_generics)
+  else {
+    return Err(CalcitErr::use_msg_stack_location(
+      CalcitErrKind::Syntax,
+      "hint-fn expects a schema Map: use `(hint-fn $ {} (:args ...) (:return ...))` in a function body, or `(hint-fn f schema)` for a local function; do not wrap the schema in `:: 'Fn` or use hint-fn as a callback wrapper",
+      ctx.call_stack,
+      args.get(args.len() - 1).and_then(Calcit::get_location),
+    ));
+  };
+  if args.len() == 2 {
+    let target_raw = args.first().expect("two-argument hint has a target");
     let target_form = preprocess_expr(
       target_raw,
       ctx.scope_defs,
@@ -12831,12 +12854,39 @@ pub fn preprocess_hint_fn(
       ctx.check_warnings,
       ctx.call_stack,
     )?;
-    if let Calcit::Local(local) = target_form {
-      ctx.scope_types.insert(local.sym.to_owned(), type_entry.clone());
-      let mut typed_local = local;
-      typed_local.type_info = type_entry;
-      ys[1] = Calcit::Local(typed_local);
+    let Calcit::Local(mut local) = target_form else {
+      return Err(CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Type,
+        "hint-fn target must be an existing local function; put `(hint-fn schema)` inside a new function body instead",
+        ctx.call_stack,
+        target_raw.get_location(),
+      ));
+    };
+    if !matches!(local.type_info.as_ref(), CalcitTypeAnnotation::DynFn) && local.type_info.resolve_to_nonoptional_fn().is_none() {
+      return Err(CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Type,
+        format!(
+          "hint-fn target must be an existing local function, got {}; a schema does not prove callability",
+          local.type_info
+        ),
+        ctx.call_stack,
+        target_raw.get_location(),
+      ));
     }
+    if !local.type_info.is_compatible_with(type_entry.as_ref()) {
+      return Err(CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Type,
+        format!(
+          "hint-fn schema conflicts with the existing local function signature: got {}, requested {}",
+          local.type_info, type_entry
+        ),
+        ctx.call_stack,
+        target_raw.get_location(),
+      ));
+    }
+    ctx.scope_types.insert(local.sym.to_owned(), type_entry.clone());
+    local.type_info = type_entry;
+    ys[1] = Calcit::Local(local);
   }
   Ok(Calcit::from(ys))
 }
@@ -17089,7 +17139,7 @@ mod tests {
   }
 
   #[test]
-  fn strict_types_rejects_legacy_nil_hint_and_keeps_call_location_without_stack_tracking() {
+  fn rejects_empty_hint_and_keeps_call_location_without_stack_tracking() {
     let _state = lock_preprocess_test_state();
     let _strict = StrictTypesGuard::new(true);
     let _stack_tracking = StackTrackingGuard::new(false);
@@ -17108,12 +17158,13 @@ mod tests {
     ]);
     let code = code_to_calcit(&expr, "tests.strict-nil", "unit-step", vec![7]).expect("parse legacy nil definition");
 
-    let error = preprocess_test_expr(&code).expect_err("strict mode should reject legacy `;nil` expansion");
-    assert_eq!(error.code.as_deref(), Some("E_NIL_FOR_UNIT"));
+    let error = preprocess_test_expr(&code).expect_err("the removed `;nil` expansion is now an invalid empty hint");
+    assert_eq!(error.kind, CalcitErrKind::Arity);
+    assert!(error.msg.contains("hint-fn expects") && error.msg.contains("got 0 arguments"));
     let location = error
       .location
       .expect("strict diagnostic should retain the definition call location");
-    assert_eq!(location.coord.as_ref(), &vec![7]);
+    assert_eq!(location.coord.as_ref(), &vec![7, 4]);
   }
 
   #[test]
@@ -21584,6 +21635,7 @@ mod tests {
     let mut scope_defs: HashSet<Arc<str>> = HashSet::new();
     scope_defs.insert(Arc::from("f"));
     let mut scope_types: ScopeTypes = ScopeTypes::new();
+    scope_types.insert(Arc::from("f"), Arc::new(CalcitTypeAnnotation::DynFn));
     let warnings = RefCell::new(vec![]);
     let stack = CallStackList::default();
 
