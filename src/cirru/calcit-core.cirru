@@ -4532,6 +4532,48 @@
                   assoc ([] 1 2) (&list:nth open-keys 0) 3
                   fn (message) |rejected
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |empty-map-infers-first-entry)
+              :code $ quote $ let
+                  result $ assoc ({}) |k 1
+                assert-type result $ :: 'Map 'String 'Number
+                assert=
+                  {} $ |k 1
+                  , result
+                assert= (Option :some 1) (get result |k)
+                assert= (Option :none) (get result |missing)
+              :tags $ #{} :core :empty-map :unit
+            %{} 'TestEntry (:name |aliased-empty-map-matches-method)
+              :code $ quote $ let
+                  source-map $ {}
+                  result $ assoc source-map :ready true
+                  method-result $ .assoc source-map :ready true
+                assert-type result $ :: 'Map 'Tag 'Bool
+                assert-type method-result $ :: 'Map 'Tag 'Bool
+                assert= method-result result
+                assert= ({}) source-map
+              :tags $ #{} :core :empty-map :unit
+            %{} 'TestEntry (:name |empty-map-keeps-option-payload)
+              :code $ quote $ let
+                  result $ assoc ({}) |value $ Option :some 3
+                assert-type result $ :: 'Map 'String $ :: 'Option 'Number
+                assert=
+                  Option :some $ Option :some 3
+                  get result |value
+                assert= (Option :none) (get result |missing)
+              :tags $ #{} :core :empty-map :unit
+            %{} 'TestEntry (:name |empty-map-arguments-evaluated-once-in-order)
+              :code $ quote $ let
+                  calls $ atom 0
+                  make-map $ fn () (assert= 0 @calls) (swap! calls inc) ({})
+                  make-key $ fn () (assert= 1 @calls) (swap! calls inc) |k
+                  make-value $ fn () (assert= 2 @calls) (swap! calls inc) 7
+                  result $ assoc (make-map) (make-key) (make-value)
+                assert-type result $ :: 'Map 'String 'Number
+                assert=
+                  {} $ |k 7
+                  , result
+                assert= 3 @calls
+              :tags $ #{} :core :empty-map :unit
         'assoc-in $ %{} 'CodeEntry
           :doc "|associates a value at a nested path in a data structure, creates intermediate maps if needed"
           :code $ quote $ defn assoc-in (data path v)
@@ -12138,7 +12180,8 @@
                   (:ok _) false
                   (:err message) (string? message)
               :tags $ #{} :core :crypto :unit :wasi :wasm
-        'select-keys $ %{} 'CodeEntry (:doc "|Keep the entries of m whose keys are listed in xs. Keys missing from m are skipped, not filled with nil.")
+        'select-keys $ %{} 'CodeEntry
+          :doc "|Keep the entries of m whose keys are listed in xs. Keys missing from m are skipped, not filled with nil."
           :code $ quote $ defn select-keys (m xs)
             assert "|expected map for selecting" $ map? m
             foldl xs (&{})

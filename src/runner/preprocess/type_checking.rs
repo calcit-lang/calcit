@@ -452,8 +452,14 @@ fn specialize_assoc_expected_types(
       specialized[2] = item_type.clone();
     }
     CalcitTypeAnnotation::Map(key_type, value_type) => {
-      specialized[1] = key_type.clone();
-      specialized[2] = value_type.clone();
+      // Empty Map slots carry no member constraint. Keep the callee generics
+      // so the new key/value supply evidence instead of requiring Never.
+      if !matches!(key_type.as_ref(), CalcitTypeAnnotation::Never) {
+        specialized[1] = key_type.clone();
+      }
+      if !matches!(value_type.as_ref(), CalcitTypeAnnotation::Never) {
+        specialized[2] = value_type.clone();
+      }
     }
     CalcitTypeAnnotation::EnumValue(_) | CalcitTypeAnnotation::AnonymousEnum => {
       specialized[1] = Arc::new(CalcitTypeAnnotation::Number);
