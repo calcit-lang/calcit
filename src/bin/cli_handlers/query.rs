@@ -2589,9 +2589,12 @@ fn semantic_code_path(path: &[usize]) -> String {
 }
 
 pub(crate) fn format_cirru_expression(node: &Cirru) -> String {
-  cirru_parser::format(std::slice::from_ref(node), true.into())
-    .map(|text| text.trim().to_owned())
-    .unwrap_or_else(|_| format!("{node:?}"))
+  match node {
+    Cirru::Leaf(value) => cirru_parser::generate_leaf(value),
+    Cirru::List(_) => cirru_parser::format(std::slice::from_ref(node), true.into())
+      .map(|text| text.trim().to_owned())
+      .unwrap_or_else(|_| format!("{node:?}")),
+  }
 }
 
 fn calcit_direct_source_path(node: &Calcit, namespace: &str, definition: &str) -> Option<Vec<usize>> {
