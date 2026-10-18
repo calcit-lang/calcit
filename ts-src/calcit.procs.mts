@@ -1821,6 +1821,15 @@ export let printable = (...args: CalcitValue[]): string => {
   return args.map((x) => toString(x, false)).join(" ");
 };
 
+// Unix epoch milliseconds from the system clock, which is not monotonic.
+export let unix_time_ms = (): number => {
+  const milliseconds = Date.now();
+  if (milliseconds < 0) {
+    throw new Error("unix-time-ms failed: system clock is before the Unix epoch");
+  }
+  return milliseconds;
+};
+
 // monotonic milliseconds since app start
 export let monotonic_time_ms = (): number => {
   if (inNodeJs) {
