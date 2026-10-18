@@ -44,6 +44,36 @@ function expectStatus(result, expected, label) {
   }
 }
 
+// Metadata must not silently discard a malformed contract or manufacture a callable.
+for (const [label, source, diagnostic] of [
+  ["missing hint schema", "hint-fn", /hint-fn expects.*got 0 arguments/],
+  ["extra hint argument", "let ((f (fn () 1))) (hint-fn f ({} (:args ([])) (:return 'Number)) :extra) (f)", /hint-fn expects.*got 3 arguments/],
+  ["wrapped body schema", "fn (value) (hint-fn (:: 'Fn ({} (:args ([] 'String)) (:return 'String)))) value", /hint-fn expects a schema Map/],
+  ["callback wrapper", "hint-fn ({} (:args ([])) (:return 'Number)) (:: fn () 1)", /hint-fn expects a schema Map/],
+  ["numeric local target", "let ((f 7)) (hint-fn f ({} (:args ([])) (:return 'Number))) (type-of f)", /hint-fn target must be an existing local function/],
+  ["conflicting return", "let ((f (fn () |wrong))) (hint-fn f ({} (:args ([])) (:return 'Number))) (&+ (f) 1)", /hint-fn schema conflicts with the existing local function signature/],
+  ["conflicting input", `let
+    f $ fn (n)
+      hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+      &+ n 1
+  hint-fn f $ {} (:args $ [] 'String) (:return 'Number)
+  f |wrong`, /hint-fn schema conflicts with the existing local function signature/],
+  ["unproved open target", "fn (f) (hint-fn f ({} (:args ([])) (:return 'Number))) &unit", /a schema does not prove callability/],
+  ["nullable function target", `fn (callback)
+  hint-fn $ {}
+    :args $ [] $ :: 'JsNullish $ :: 'Fn $ {}
+      :args $ [] 'Number
+      :return 'Number
+    :return 'Unit
+  hint-fn callback $ {} (:args $ [] 'Number) (:return 'Number)
+  , &unit`, /a schema does not prove callability/],
+  ["new function target", "hint-fn (fn () 1) ({} (:args ([])) (:return 'Number))", /put .*hint-fn schema.* inside a new function body/],
+]) {
+  const invalid = run(["eval", source]);
+  expectStatus(invalid, 1, label);
+  assert.match(invalid.stderr, diagnostic, `${label}: report the malformed hint itself`);
+}
+
 const scoped = run(["calcit/type-fail/unsafe-coerce-scoped-strict.cirru", "--check-only"]);
 expectStatus(scoped, 0, "default strict valid fixture");
 
@@ -150,6 +180,25 @@ const asyncTest = JSON.parse(asyncDefinition.stdout).data.tests.find(test => tes
 assert.ok(asyncTest, "the shared async scope contract must exist");
 const asyncFixture = await mkdtemp(join(resolve("target"), "async-scope-replay-"));
 try {
+  const conflictingHintSnapshot = join(asyncFixture, "conflicting-local-hint.cirru");
+  await copyFile("calcit/add.cirru", conflictingHintSnapshot);
+  const conflictingHintOps = [
+    ["config", "set", "reload-fn", "app.main/main!"],
+    ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
+      "quote $ defn main! () (let ((f (fn () |wrong))) (hint-fn f ({} (:args ([])) (:return 'Number))) (&+ (f) 1)) &unit"],
+    ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+  ];
+  const conflictPreview = run([conflictingHintSnapshot, "edit", "transaction", "--code", JSON.stringify(conflictingHintOps), "--dry-run", "--format", "json"]);
+  expectStatus(conflictPreview, 0, "preview contradictory local contract fixture");
+  expectStatus(run([conflictingHintSnapshot, "edit", "transaction", "--code", JSON.stringify(conflictingHintOps),
+    "--expect-revision", JSON.parse(conflictPreview.stdout).scoped_revision, "--format", "json"]), 0,
+    "assemble contradictory local contract with a revision guard");
+  for (const [label, mode] of [["check", ["--check-only"]], ["native", []], ["JS", ["js"]], ["WASM", ["wasm"]], ["WASI", ["wasi"]]]) {
+    const invalid = run([conflictingHintSnapshot, "--emit-path", join(asyncFixture, `hint-conflict-${label}`), ...mode]);
+    expectStatus(invalid, 1, `${label} rejects the contradictory local contract before execution`);
+    assert.match(invalid.stderr, /hint-fn schema conflicts with the existing local function signature/);
+  }
   const snapshot = join(asyncFixture, "calcit.cirru");
   await copyFile("src/cirru/calcit-core.cirru", snapshot);
   await symlink(resolve("node_modules"), join(asyncFixture, "node_modules"), "dir");

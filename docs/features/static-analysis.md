@@ -425,6 +425,11 @@ This refinement is static metadata; it does not execute the function. Put it bef
 
 `hint-fn` 表达式自身返回 `Nil`，不会包装或返回函数。传递回调时直接传递已绑定的函数，或将注解写在 `fn` 的函数体内；不要使用 `(hint-fn schema (fn ...))` 作为回调值。把注解表达式传入具体函数参数会在预处理阶段报告类型不匹配，而不是等到 JavaScript 执行时才失败。
 
+函数体内的 schema 直接使用 Map；`:: 'Fn` 是 CodeEntry schema 或嵌套函数类型的写法，不包在函数体 `hint-fn` 外面。
+两参数形式的第一个参数必须已经是局部函数；声明 schema 不能把 Number、Dynamic 或任意表达式变成可调用值。
+已声明的 Fn 类型别名沿用同一合同；可能缺失的函数值不能仅靠元数据获得可调用性。
+错误的 schema、参数顺序、目标或参数数量，以及与已有签名矛盾的注解会在预处理时拒绝，不再静默忽略。合法注解仍返回 Nil，泛型、async 和实际函数调用行为不变。
+
 A body hint may declare only part of the signature. Omitted `:args` slots are aligned with the function's real parameters and remain `:dynamic`; they are not interpreted as a zero-argument function. This lets a return-only hint improve downstream inference without inventing parameter constraints.
 
 Legacy clause syntax such as `(hint-fn (return-type ...))`, `(generics ...)`, and `(type-vars ...)` is no longer supported and now fails during preprocessing.

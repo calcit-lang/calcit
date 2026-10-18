@@ -396,6 +396,7 @@
       |calcit.core/hint-fn#async-tail-return-contract "|unsupported: E_WASM_CLOSURE_SPECIALIZATION: closure `forward` escapes a statically specialized call"
       |calcit.core/hint-fn#callable-return-contract "|unsupported: unsupported call head in WASM: ([] 'keep 'pass-number)"
       |calcit.core/hint-fn#checked-number-to-concrete-call "|unsupported: try-decode-map-as is not yet supported in WASM codegen"
+      |calcit.core/hint-fn#local-hint-keeps-proven-function-alias "|unsupported: E_WASI_COMMAND_INDIRECT: an indirect call may reach an unsupported host capability"
       |calcit.core/hint-fn#open-element-classified-before-payload "|unsupported: E_WASI_COMMAND_DEPENDENCY: calcit.core/data-view requires concrete argument types so nil can be distinguished from false and 0 (E_WASM_NIL_TYPE_EVIDENCE)"
       |calcit.core/hint-fn#plain-call-rest-fn-value "|unsupported: E_WASI_COMMAND_INDIRECT: an indirect call may reach an unsupported host capability"
       |calcit.core/hint-fn#plain-call-many-args-fn-value "|unsupported: E_WASI_COMMAND_INDIRECT: an indirect call may reach an unsupported host capability"
