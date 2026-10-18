@@ -29,6 +29,7 @@
           :code $ quote $ defn mixed-imports () (lib/increment 1)
             quote $ fs/existsSync |quoted
             quasiquote $ ~ $ fs/existsSync |live
+            quasiquote $ ~ $ existsSync |direct
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
@@ -63,6 +64,7 @@
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns ffi-evidence.main
           :require (|nanoid :default nanoid) (|node:fs :as fs) (ffi-evidence.lib :as lib)
+            |node:fs :refer $ existsSync
     'ffi-evidence.pure $ %{} 'FileEntry
       :defs $ {}
         'main! $ %{} 'CodeEntry (:doc |)

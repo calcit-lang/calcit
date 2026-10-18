@@ -891,8 +891,9 @@ const scenarios = [
         throw new Error("Pure Calcit namespace imports must not produce FFI boundaries or adapters");
       }
       const mixed = boundaries.find((item) => item.definition === "ffi-evidence.main/mixed-imports");
-      if (mixed?.classification !== "node" || mixed.operations.length !== 1
+      if (mixed?.classification !== "node" || mixed.operations.length !== 2
         || mixed.operations[0].source !== "fs/existsSync"
+        || mixed.operations[1].source !== "existsSync" || mixed.operations[1].member !== "existsSync"
         || mixed.adapter_candidates.length !== 1
         || mixed.adapter_candidates[0].source !== "node:fs/existsSync") {
         throw new Error("Mixed imports must retain only the executable host import boundary");

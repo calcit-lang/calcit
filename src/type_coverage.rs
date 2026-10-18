@@ -391,7 +391,7 @@ pub struct FfiBoundaryEvidence {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct FfiImportBinding {
   source: String,
-  default_import: bool,
+  member: Option<String>,
 }
 
 fn schema_has_js_ffi(schema: &CalcitTypeAnnotation) -> bool {
@@ -411,16 +411,17 @@ fn ffi_import_bindings(code: &Cirru, namespace: &str) -> Result<BTreeMap<String,
       .filter_map(|(local, rule)| {
         // Default imports are JS bindings; aliases/references need a string
         // module origin, just as preprocessing and JS emission require.
-        let (source, default_import) = match rule.as_ref() {
-          ImportRule::NsDefault(source) => (source, true),
-          ImportRule::NsAs(source) | ImportRule::NsReferDef(source, _) if source.starts_with(['|', '"']) => (source, false),
+        let (source, member) = match rule.as_ref() {
+          ImportRule::NsDefault(source) => (source, Some("default".to_owned())),
+          ImportRule::NsAs(source) if source.starts_with(['|', '"']) => (source, None),
+          ImportRule::NsReferDef(source, member) if source.starts_with(['|', '"']) => (source, Some(member.to_string())),
           _ => return None,
         };
         Some((
           local.to_string(),
           FfiImportBinding {
             source: source.trim_start_matches(['|', '"']).to_owned(),
-            default_import,
+            member,
           },
         ))
       })
@@ -593,8 +594,8 @@ fn scan_ffi_operations(
         path,
         false,
       );
-    } else if imports.get(head).is_some_and(|binding| binding.default_import) {
-      push_ffi_operation(operations, "module-call", head.to_owned(), Some("default".to_owned()), path, false);
+    } else if let Some(member) = imports.get(head).and_then(|binding| binding.member.as_ref()) {
+      push_ffi_operation(operations, "module-call", head.to_owned(), Some(member.to_owned()), path, false);
     }
   }
   for (index, child) in items.iter().enumerate() {
@@ -1941,8 +1942,10 @@ pub fn collect_ffi_boundary_evidence(
           && let Some(import) = imports.get(binding)
         {
           adapter_sources.insert(format!("{}/{}", import.source, export));
-        } else if let Some(import) = imports.get(&operation.source) {
-          adapter_sources.insert(format!("{}/default", import.source));
+        } else if let Some(import) = imports.get(&operation.source)
+          && let Some(member) = &operation.member
+        {
+          adapter_sources.insert(format!("{}/{member}", import.source));
         }
       }
       let adapter_candidates = adapter_sources
@@ -3744,14 +3747,16 @@ mod tests {
         rule("app.lib", ":refer", list(vec![leaf("increment")])),
         rule("|package", ":as", leaf("npm")),
         rule("\"node:fs", ":as", leaf("fs")),
+        rule("|node:fs", ":refer", list(vec![leaf("existsSync")])),
         rule("package-default", ":default", leaf("default-package")),
       ]),
     ]);
     let imports = super::ffi_import_bindings(&code, "app.main").expect("resolver imports should parse");
-    assert_eq!(imports.len(), 3);
+    assert_eq!(imports.len(), 4);
     assert_eq!(imports["npm"].source, "package");
     assert_eq!(imports["fs"].source, "node:fs");
-    assert!(imports["default-package"].default_import);
+    assert_eq!(imports["default-package"].member.as_deref(), Some("default"));
+    assert_eq!(imports["existsSync"].member.as_deref(), Some("existsSync"));
     assert!(super::ffi_import_bindings(&leaf("invalid-ns"), "app.main").is_err());
   }
 

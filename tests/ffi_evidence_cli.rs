@@ -126,9 +126,12 @@ fn ffi_evidence_uses_import_origin_without_classifying_calcit_calls_as_host_boun
     .expect("real Node import must retain its boundary");
   assert_eq!(boundary["classification"], "node");
   let operations = boundary["operations"].as_array().unwrap();
-  assert_eq!(operations.len(), 1, "retain executable unquote, not quoted or Calcit calls");
+  assert_eq!(operations.len(), 2, "retain executable unquotes, not quoted or Calcit calls");
   assert_eq!(operations[0]["source"], "fs/existsSync");
   assert_eq!(operations[0]["classification"], "node");
+  assert_eq!(operations[1]["source"], "existsSync");
+  assert_eq!(operations[1]["member"], "existsSync");
+  assert_eq!(operations[1]["classification"], "node");
   let adapters = boundary["adapter_candidates"].as_array().unwrap();
   assert_eq!(adapters.len(), 1);
   assert_eq!(adapters[0]["source"], "node:fs/existsSync");
