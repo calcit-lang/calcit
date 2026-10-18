@@ -21,7 +21,7 @@
           :schema $ :: 'StructDef
         'Node $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Node
-            :next $ :: 'Optional Node
+            :next $ :: 'Option Node
             :value 'Number
           :examples $ []
           :schema $ :: 'StructDef
@@ -87,9 +87,10 @@
         'test-recursive-struct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-recursive-struct () (println "|Testing recursive struct support...")
             let
-                leaf $ %{} Node (:next nil) (:value 1)
-                nested $ %{} Node (:next leaf) (:value 2)
-              assert= 1 $ :value $ :next nested
+                leaf $ %{} Node (:next $ %none) (:value 1)
+                nested $ %{} Node (:next $ %some leaf) (:value 2)
+              assert= 1 $ :value $ .unwrap $ :next nested
+              assert= true $ .none? $ :next leaf
               assert= 2 $ :value nested
               println "|Recursive struct support passed"
           :examples $ []

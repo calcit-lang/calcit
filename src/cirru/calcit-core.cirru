@@ -9961,7 +9961,7 @@
               () :empty
               (a b) :something
             quote $ assert= 1 $ list-match ([] 1 2 3)
-              () nil
+              () 0
               (head tail) head
           :schema $ :: 'Macro $ {} (:rest 'Syntax)
             :capabilities $ #{}
@@ -9983,7 +9983,7 @@
                 assert=
                   [] 1 $ [] 2 3
                   list-match ([] 1 2 3)
-                    () nil
+                    () ([])
                     (l0 ls) ([] l0 ls)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |evaluates-subject-once-and-only-selected-body)
