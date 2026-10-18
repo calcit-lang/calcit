@@ -156,6 +156,41 @@ try {
   execFileSync(binary, ["src/cirru/calcit-core.cirru", "test", "calcit.core/fs:path", "--tag", "native", "--tag", "file", "--require-match"], options);
 
   await symlink(resolve("node_modules"), join(project, "node_modules"), "dir");
+  // #2148: the public match keeps both its runtime guard and nominal proof
+  // around the selected body; a declared return must not prove an open input.
+  const guardedMatch = join(project, "guarded-struct-match.cirru");
+  await copyFile("calcit/add.cirru", guardedMatch);
+  const runGuardedMatch = (...args) => execFileSync(binary, [guardedMatch, ...args], options);
+  const guardedMatchOps = [
+    ["config", "set", "reload-fn", "app.main/main!"],
+    ["edit", "def", "app.main/GuardedRecord", "--input-format", "cirru", "--code",
+      "quote $ defstruct GuardedRecord (:value 'Number)"],
+    ["edit", "schema", "app.main/GuardedRecord", "--input-format", "cirru", "--code", "quote 'StructDef"],
+    ["edit", "def", "app.main/read-guarded", "--input-format", "cirru", "--code",
+      "quote $ defn read-guarded (value) (struct-match value (GuardedRecord current current) (_ other (raise |Wrong-struct)))"],
+    ["edit", "schema", "app.main/read-guarded", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'app.main/GuardedRecord)"],
+    ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
+      "quote $ defn main! () (let ((original (GuardedRecord :value 7))) (assert= true (identical? original (read-guarded original))) (assert= 7 (:value (read-guarded original))))"],
+    ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+  ];
+  const matchPreview = JSON.parse(runGuardedMatch("edit", "transaction", "--code", JSON.stringify(guardedMatchOps), "--dry-run", "--format", "json"));
+  runGuardedMatch("edit", "transaction", "--code", JSON.stringify(guardedMatchOps), "--expect-revision", matchPreview.scoped_revision, "--format", "json");
+  const matchStrict = JSON.parse(runGuardedMatch("fix", "--workflow", "strict", "--verify", "--format", "json"));
+  assert.equal(matchStrict.data.workflow.status, "passed");
+  assert.deepEqual(matchStrict.diagnostics, []);
+  runGuardedMatch();
+  const guardedMatchJs = join(project, "guarded-match-js");
+  runGuardedMatch("--emit-path", guardedMatchJs, "js");
+  (await import(pathToFileURL(join(guardedMatchJs, "app.main.mjs")).href)).main_$x_();
+  const matchNegativeOps = [["edit", "def", "app.main/read-guarded", "--overwrite", "--input-format", "cirru", "--code",
+    "quote $ defn read-guarded (value) (try (struct-match value (GuardedRecord current current) (_ other (raise |Wrong-struct))) (fn (message) &unit)) value"]];
+  const negativeMatchPreview = JSON.parse(runGuardedMatch("edit", "transaction", "--code", JSON.stringify(matchNegativeOps), "--dry-run", "--format", "json"));
+  runGuardedMatch("edit", "transaction", "--code", JSON.stringify(matchNegativeOps), "--expect-revision", negativeMatchPreview.scoped_revision, "--format", "json");
+  const caughtMatch = spawnSync(binary, [guardedMatch, "fix", "--workflow", "strict", "--verify", "--format", "json"], options);
+  assert.notEqual(caughtMatch.status, 0, "a caught match cannot validate the original open value after failure");
+  assert.match(caughtMatch.stdout + caughtMatch.stderr, /E_FN_RETURN_UNPROVEN/);
   // #2114: constructor identity, not its caller's declaration or element
   // types, proves the opaque result of a non-literal JS array spread.
   execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot",

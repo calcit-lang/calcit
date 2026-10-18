@@ -42,6 +42,32 @@ aliases:
 静态 Map 访问用 `get` 并处理 `Option`；`:field value` 表示已声明 Struct 的必需字段。
 业务层不要为了避开缺失 key 或错误 key 类型而混用两者。
 
+## 接收已经构造的名义 Struct
+
+缓存或开放回调传来的值可能已经是 Struct，而不是待解码的 Map。
+`struct-match` 先检查 Struct 值，再匹配定义；成功分支中的绑定可以读取声明字段，
+也可以作为有具体返回类型的边界函数结果，保留原值身份。不要为了通过检查重复解码或补 unsafe。
+
+下面只构造 `FsPath` 值，不读取文件；业务代码可按同样方式匹配自己已声明的 Struct：
+
+```cirru
+let
+    read-path $ fn (value)
+      hint-fn $ {} (:args $ [] 'Dynamic) (:return 'calcit.core/FsPath)
+      struct-match value
+        FsPath path path
+        _ other $ raise |Expected-FsPath
+    original $ fs:path |notes.cirru
+    checked $ read-path original
+  assert= true $ identical? original checked
+  assert= |notes.cirru $ :value checked
+```
+
+`hint-fn` 在函数体内声明合同，不是返回函数的包装器。实际证明来自匹配，
+不是返回声明；后续使用受检的返回值，不把原来的 Dynamic 变量当作已转换。
+宏自身不需要额外的外层 `struct?` 才能通过完整 strict，但旧代码的外层守卫可能定义不同错误行为，不能机械删除。
+字段精度依赖已知 StructDef；运行时计算的 prototype 不自动提供静态字段合同。
+
 ## Ref decode 与原 alias
 
 `try-decode-map-as raw (:: 'Ref 'Number)` 检查当前 payload；成功结果中的
