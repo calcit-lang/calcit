@@ -435,8 +435,16 @@ pub fn trace_snapshot_source_expressions(
   }
   let mut locations = HashMap::new();
   collect(&code, source, ns, def, &mut vec![], &mut locations);
+  // Attached snippets can reuse a source label without being its definition.
+  // Only the registered source owns that definition's parameter contract.
+  let owned = program::lookup_def_code(ns, def).is_some_and(|registered| registered == code);
+  let _definition_context = owned.then(|| DefinitionContextScope::enter(ns, def, &code));
   // `code` retains every indexed Arc until preprocessing and collection finish.
-  trace_source_expressions_with_locations(&code, ns, def, check_warnings, call_stack, locations).map(|(_, expressions)| expressions)
+  let (resolved, expressions) = trace_source_expressions_with_locations(&code, ns, def, check_warnings, call_stack, locations)?;
+  if owned {
+    check_top_level_value_schema(ns, def, &code, &resolved, &ScopeTypes::new(), call_stack)?;
+  }
+  Ok(expressions)
 }
 
 fn trace_source_expressions_with_locations(
@@ -1839,6 +1847,7 @@ pub fn compile_source_def_for_snapshot(
     ));
   };
 
+  let _definition_context = DefinitionContextScope::enter(ns, def, &code);
   let mut scope_types = ScopeTypes::new();
   let context_label = format!("{ns}/{def}");
   let resolved_code = builtins::meta::with_compiling_def(ns, def, || {

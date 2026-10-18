@@ -6,6 +6,8 @@
 
 共享一个定义级词法 scope，同时用于普通预处理和拥有真实 source 的 definition replay。只从当前定义读取输入合同，进入时清除调用方的期望类型与宿主权限，结束或 unwind 时恢复；不让调用方合同成为函数实现的证明。
 
+同样的上下文应用于 Snapshot 查询编译与 source replay，避免 `.count` 能编译但 `query type-at` 仍报告动态派发错误。Snapshot trace 先确认传入代码与注册定义相同；附带 snippet 即使用了同一 source label，也不借用不属于它的参数合同。
+
 复用既有顶层值的方向性 proof，将匿名根纳入实际返回比较；继续使用现有诊断和源位置，不新增 proof 账本、计数或入口。开放证据的普通检查策略本次不切换，普通检查与完整 strict 的剩余差异仍需后续收敛。
 
 ## 异步边界

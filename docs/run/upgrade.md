@@ -125,6 +125,7 @@ assert= (&{} :a 1)
 
 Snapshot 中以 `fn` 为根节点的定义可以直接使用自身 CodeEntry 的 `Fn` schema；普通检查和完整 strict workflow 都会把其中的参数类型与 trait 约束用于函数体推断，无需为了通过 strict 在函数体重复写相同的 `hint-fn`。
 例如 Number 参数可直接参与数值运算，带 `Countable` 约束的泛型参数可直接调用 `.count`。
+`query type-at` 同样使用这些参数信息，查询方法调用时不再把已有 trait 约束误报成 Unknown 或动态派发错误。
 
 返回类型仍由实现校验：声明返回 `Option<Nil>` 的函数应返回 `Option :none`、`Option :some nil` 或另一个符合合同的 Option，不能直接返回 `nil`；声明返回 Number 也不能掩盖实际返回的 String。
 错误会在原定义位置报告，不必等到 JS 调用时排查。
