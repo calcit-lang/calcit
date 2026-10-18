@@ -4213,12 +4213,9 @@ fn plan_attached_fixes(
             }
           }
         }
-        {
-          let alias = CorePredicateRename::Vals;
-          let (old, new, rule_id, _) = alias.names();
-          if !selected_rules.contains(&rule_id) || !cirru_contains_target_reference(source, namespace, "calcit.core", old) {
-            continue;
-          }
+        let alias = CorePredicateRename::Vals;
+        let (old, new, rule_id, _) = alias.names();
+        if selected_rules.contains(&rule_id) && cirru_contains_target_reference(source, namespace, "calcit.core", old) {
           let label = format!("{namespace}/{definition} {region}[{index}]");
           match plan_attached_source_rewrite_with(
             source,
