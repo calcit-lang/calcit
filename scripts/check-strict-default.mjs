@@ -56,6 +56,81 @@ expectStatus(
   "all-defs check of calcit.core",
 );
 
+// A malformed Snapshot root cannot be expressed by an ordinary attached test:
+// the declaration itself, before any test body runs, must fail preprocessing.
+const wrappedDefinition = "calcit/type-fail/wrapped-definition-root.cirru";
+for (const [label, mode] of [
+  ["reachable check", ["--check-only"]],
+  ["namespace check", ["--check-only", "--ns", "app.main"]],
+  ["all-definitions check", ["--check-only", "--all-defs"]],
+  ["JavaScript", ["js"]],
+  ["WASM", ["wasm"]],
+  ["WASI", ["wasi"]],
+  ["strict workflow", ["fix", "--workflow", "strict", "--verify", "--format", "json"]],
+]) {
+  const result = run([wrappedDefinition, ...mode]);
+  expectStatus(result, 1, `${label} rejects a wrapped definition root`);
+  assert.match(result.stdout + result.stderr, /app\.main\/increment[^\n]*wrapped top-level definition/,
+    `${label} must report the malformed declaration, not an unrelated failure`);
+}
+const rootLocation = run([wrappedDefinition, "--check-only", "--ns", "app.main", "--format", "json"]);
+expectStatus(rootLocation, 1, "report the malformed root as structured source evidence");
+const rootDiagnostic = JSON.parse(rootLocation.stdout).diagnostics.find(diagnostic =>
+  diagnostic.kind === "syntax" && diagnostic.message.includes("wrapped top-level definition"));
+assert.ok(rootDiagnostic, "retain the existing Syntax diagnostic category");
+assert.deepEqual(rootDiagnostic.location, { ns: "app.main", def: "increment", coord: [] });
+const rootFixture = await mkdtemp(join(tmpdir(), "calcit-definition-root-"));
+try {
+  const snapshot = join(rootFixture, "calcit.cirru");
+  await copyFile(wrappedDefinition, snapshot);
+  await symlink(resolve("node_modules"), join(rootFixture, "node_modules"), "dir");
+  const inFixture = (...args) => run([snapshot, ...args]);
+  const readDefinition = () => {
+    const result = inFixture("query", "def", "app.main/increment", "--format", "json");
+    expectStatus(result, 0, "query an old malformed root before repairing it");
+    return JSON.parse(result.stdout).data.code;
+  };
+  const wrapped = readDefinition();
+  assert.equal(wrapped[0][0], "defn");
+  const apply = (operations) => {
+    const code = JSON.stringify(operations);
+    const dry = inFixture("edit", "transaction", "--code", code, "--dry-run", "--format", "json");
+    expectStatus(dry, 0, "preview definition-root repair");
+    expectStatus(inFixture("edit", "transaction", "--code", code,
+      "--expect-revision", JSON.parse(dry.stdout).scoped_revision, "--format", "json"), 0,
+      "apply definition-root repair with the scoped revision");
+  };
+  apply([
+    ["tree", "raise", "app.main/increment", "--path", "0"],
+    ["config", "set", "mode", "native"],
+  ]);
+  assert.deepEqual(readDefinition(), wrapped[0]);
+  const anonymous = ["fn", wrapped[0][2],
+    ["hint-fn", ["{}", [":args", ["[]", "'Number"]], [":return", "'Number"]]], ...wrapped[0].slice(3)];
+  for (const [index, root] of [wrapped[0], anonymous].entries()) {
+    apply([["edit", "def", "app.main/increment", "--overwrite", "--input-format", "json-ast", "--code", JSON.stringify(root)]]);
+    expectStatus(inFixture("fix", "--workflow", "strict", "--verify", "--format", "json"), 0,
+      "a canonical named or anonymous function root passes the complete strict workflow");
+    expectStatus(inFixture(), 0, "native retains the original increment assertion");
+    const output = join(rootFixture, `js-${index}`);
+    expectStatus(inFixture("--emit-path", output, "js"), 0, "generate the repaired function root");
+    const module = await import(pathToFileURL(join(output, "app.main.mjs")).href);
+    module.main_$x_();
+    const before = readFileSync(snapshot, "utf8");
+    for (const command of [
+      ["edit", "def", "app.main/increment", "--overwrite", "--input-format", "json-ast", "--code", JSON.stringify(wrapped)],
+      ["tree", "replace", "app.main/increment", "--path", "", "--expect", JSON.stringify(root), "--input-format", "json-ast", "--code", JSON.stringify(wrapped)],
+    ]) {
+      const result = inFixture(...command);
+      expectStatus(result, 1, "edit and tree reject reintroducing the wrapper");
+      assert.match(result.stdout + result.stderr, /app\.main\/increment[^\n]*wrapped top-level definition/);
+      assert.equal(readFileSync(snapshot, "utf8"), before, "a rejected root must leave the entire Snapshot unchanged");
+    }
+  }
+} finally {
+  await rm(rootFixture, { recursive: true, force: true });
+}
+
 const asyncWatcher = run(["eval", `fn (counter)
   hint-fn $ {}
     :args $ [] $ :: 'Ref 'Number

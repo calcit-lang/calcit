@@ -1016,21 +1016,6 @@ pub(crate) fn check_ns_editable(snapshot: &Snapshot, namespace: &str) -> Result<
 // Definition operations
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const DEFINITION_HEADS: &[&str] = &[
-  "def",
-  "defn",
-  "defmacro",
-  "defstruct",
-  "defenum",
-  "deftrait",
-  "defimpl",
-  "defref",
-  "defatom",
-  "defexternal",
-  "defwasm-export",
-  "defwasm-import",
-];
-
 fn source_declares_macro(entry: &CodeEntry) -> bool {
   matches!(&entry.code, Cirru::List(items) if items.first().is_some_and(|head| head.eq_leaf("defmacro")))
 }
@@ -1135,6 +1120,7 @@ pub(crate) fn validate_definition_shape(
   code: &Cirru,
   allow_unknown_head: bool,
 ) -> Result<(), String> {
+  snapshot::validate_definition_root(code, &format!("{namespace}/{definition}"))?;
   let Cirru::List(items) = code else {
     return Err(format!(
       "Definition '{namespace}/{definition}' must be a named definition expression, not a leaf."
@@ -1178,12 +1164,12 @@ pub(crate) fn validate_definition_shape(
     ));
   }
   if !allow_unknown_head
-    && !DEFINITION_HEADS.contains(&head.as_ref())
+    && !snapshot::DEFINITION_HEADS.contains(&head.as_ref())
     && !definition_head_is_macro(snapshot_file, snapshot, namespace, head)?
   {
     return Err(format!(
       "Unrecognized definition head '{head}' for '{namespace}/{definition}'. Expected {}, or a source-declared macro from this namespace, imports or core. Use --allow-unknown-head only for an intentional custom definition form.",
-      DEFINITION_HEADS.join(", ")
+      snapshot::DEFINITION_HEADS.join(", ")
     ));
   }
   Ok(())

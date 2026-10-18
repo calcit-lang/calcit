@@ -56,6 +56,8 @@ calcit edit def app.util/double --input-format cirru --code 'quote $ defn double
 
 新增或改写表达式时，名称不一致、单独的 leaf 或无法识别的头部会非零退出，不修改 Snapshot；已有 AST 完全不变的原样覆盖可保留历史的 key/name 差异。事务中的任一非法定义使整个事务不写入。确需使用尚不能识别的自定义具名形式时，可显式加 `--allow-unknown-head`，但仍须满足 list 根节点及名称一致性检查。
 
+`edit def` 和 `tree` 写回都拒绝把具名声明放进根节点的操作符 List，例如 `[["defn","increment",["n"],...]]`。这里多的一层 List 会在初始化时调用刚定义的函数，而不是保存函数本身；普通检查、strict workflow 和代码生成会在执行前报告定义位置。旧文件仍可查询并通过带 revision 守卫的编辑规范根节点；未编辑的其他旧定义不妨碍修复。匿名 `fn`、引用数据和合法函数体内的调用不受此根节点检查影响。
+
 `deftype-slot` 独立声明一个 tag/string slot 名，不把 slot 名当作 definition key。
 
 此检查不展开宏，也不替代类型检查；宏返回的表达式仍需后续检查验证。编辑后运行 `calcit --check-only` 与项目测试。不要把带标题或围栏的 Markdown 查询输出直接交给 `edit def`。
