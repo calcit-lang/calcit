@@ -2,16 +2,20 @@ use std::path::Path;
 use std::process::{Command, Output};
 
 fn run(args: &[&str]) -> Output {
+  let mut command = vec!["analyze", "weak-types"];
+  command.extend_from_slice(args);
+  run_calcit(Path::new("tests/fixtures/ffi-boundary-evidence.cirru"), &command)
+}
+
+fn run_calcit(snapshot: &Path, args: &[&str]) -> Output {
   Command::new(env!("CARGO_BIN_EXE_calcit"))
     .env("NO_COLOR", "1")
     .arg("--tips-level")
     .arg("none")
-    .arg(Path::new("tests/fixtures/ffi-boundary-evidence.cirru"))
-    .arg("analyze")
-    .arg("weak-types")
+    .arg(snapshot)
     .args(args)
     .output()
-    .expect("weak-types command should run")
+    .expect("calcit command should run")
 }
 
 fn run_strict_fix(args: &[&str]) -> Output {
@@ -136,6 +140,135 @@ fn ffi_evidence_uses_import_origin_without_classifying_calcit_calls_as_host_boun
   assert_eq!(adapters.len(), 1);
   assert_eq!(adapters[0]["source"], "node:fs/existsSync");
   assert_eq!(adapters[0]["contract_status"], "review-required");
+}
+
+#[test]
+fn ffi_evidence_coalesces_import_advice_per_selected_namespace() {
+  let directory = tempfile::tempdir().expect("temporary fixture directory");
+  let snapshot = directory.path().join("calcit.cirru");
+  std::fs::copy("tests/fixtures/ffi-boundary-evidence.cirru", &snapshot).expect("copy canonical fixture");
+  let canonical = run_calcit(&snapshot, &["analyze", "weak-types", "--ffi-evidence", "--format", "json"]);
+  assert_success(&canonical);
+  assert!(!String::from_utf8_lossy(&canonical.stderr).contains("redundant `[]` in :require"));
+  let canonical: serde_json::Value = serde_json::from_slice(&canonical.stdout).unwrap();
+
+  let namespaces = ["ffi-evidence.main", "ffi-evidence.pure"];
+  let mut operations = vec![];
+  for namespace in namespaces {
+    let queried = run_calcit(&snapshot, &["query", "ns", namespace, "--format", "json"]);
+    assert_success(&queried);
+    let queried: serde_json::Value = serde_json::from_slice(&queried.stdout).unwrap();
+    assert!(queried["data"]["definition_count"].as_u64().unwrap() > 1);
+    let mut rules = queried["data"]["ns_code"][2].as_array().unwrap()[1..].to_vec();
+    // Deliberately exercise accepted legacy syntax only in this temporary compatibility fixture.
+    rules[0].as_array_mut().unwrap().insert(0, "[]".into());
+    rules.last_mut().unwrap()[2].as_array_mut().unwrap().insert(0, "[]".into());
+    rules.insert(0, "[]".into());
+    operations.push(serde_json::json!([
+      "edit",
+      "imports",
+      namespace,
+      "--input-format",
+      "json-ast",
+      "--code",
+      serde_json::to_string(&rules).unwrap()
+    ]));
+  }
+  let operations = serde_json::to_string(&operations).unwrap();
+  let preview = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", &operations, "--dry-run", "--format", "json"],
+  );
+  assert_success(&preview);
+  let preview: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+  let applied = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "transaction",
+      "--code",
+      &operations,
+      "--expect-revision",
+      preview["scoped_revision"].as_str().unwrap(),
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&applied);
+
+  for scope in [
+    vec![],
+    vec!["--ns", namespaces[0]],
+    vec!["--ns", namespaces[1]],
+    vec!["--ns-prefix", "ffi-evidence."],
+    vec!["--ns-prefix", "ffi-evidence.ma"],
+  ] {
+    for format in ["edn", "json"] {
+      let mut args = vec!["analyze", "weak-types", "--ffi-evidence", "--format", format];
+      args.extend_from_slice(&scope);
+      let output = run_calcit(&snapshot, &args);
+      assert_success(&output);
+      let stderr = String::from_utf8_lossy(&output.stderr);
+      for (namespace, last_rule) in namespaces.into_iter().zip([4, 2]) {
+        let expected = format!(
+          "[Warn] in namespace '{namespace}': redundant `[]` in :require (rule 1 prefix, rule {last_rule} :refer list); import rules and :refer names are already syntax lists; write `respo.core :refer $ render! clear-cache!` or `respo.cursor :as cursor` without `[]`. Legacy markers remain accepted; use `edit imports` or `edit add-import --overwrite` to remove them"
+        );
+        let selected = match scope.first() {
+          Some(&"--ns") => scope[1] == namespace,
+          Some(&"--ns-prefix") => namespace.starts_with(scope[1]),
+          _ => true,
+        };
+        assert_eq!(
+          stderr.lines().filter(|line| *line == expected).count(),
+          usize::from(selected),
+          "{scope:?}: {stderr}"
+        );
+      }
+      if format == "edn" {
+        assert!(matches!(
+          cirru_edn::parse(String::from_utf8_lossy(&output.stdout).as_ref()).unwrap(),
+          cirru_edn::Edn::Map(_)
+        ));
+      } else {
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).expect("one JSON report");
+        if scope.is_empty() || scope == ["--ns-prefix", "ffi-evidence."] {
+          assert_eq!(report["data"]["evidence"], canonical["data"]["evidence"]);
+        } else if scope[1] == namespaces[1] {
+          assert_eq!(report["data"]["evidence"]["ffi_boundaries"], serde_json::json!([]));
+        }
+      }
+    }
+  }
+}
+
+#[test]
+fn ffi_evidence_rejects_malformed_imports() {
+  let directory = tempfile::tempdir().expect("temporary malformed fixture directory");
+  let snapshot = directory.path().join("calcit.cirru");
+  let data = cirru_edn::parse(&std::fs::read_to_string("tests/fixtures/ffi-boundary-evidence.cirru").unwrap()).unwrap();
+  let mut fixture = calcit::snapshot::load_snapshot_data(&data, snapshot.to_str().unwrap()).unwrap();
+  // Invalid imports cannot be authored through the validated mutation CLI; construct this parser boundary directly.
+  fixture.files.get_mut("ffi-evidence.main").unwrap().ns.code =
+    cirru_parser::parse("ns ffi-evidence.main\n  :require\n    |node:fs :invalid fs")
+      .unwrap()
+      .remove(0);
+  calcit::snapshot::save_snapshot_to_file(&snapshot, &fixture).expect("serialize malformed import fixture");
+  let output = run_calcit(
+    &snapshot,
+    &[
+      "analyze",
+      "weak-types",
+      "--ns",
+      "ffi-evidence.main",
+      "--ffi-evidence",
+      "--format",
+      "json",
+    ],
+  );
+  assert!(!output.status.success(), "malformed imports must not become empty evidence");
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(stderr.contains("in namespace 'ffi-evidence.main':"));
+  assert!(stderr.contains("unknown import rule kind `:invalid`"));
 }
 
 #[test]
