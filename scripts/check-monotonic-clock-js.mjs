@@ -24,8 +24,12 @@ try {
     let reads = 0;
     for (const expected of [0, 1_700_000_000_123]) {
       Date.now = () => { reads += 1; return expected; };
+      const runtimeReads = reads;
       assert.equal(unix_time_ms(), expected, "runtime must return epoch milliseconds without changing units");
+      assert.equal(reads, runtimeReads + 1, "runtime must read the host clock exactly once");
+      const coreReads = reads;
       assert.equal(core.unix_time_ms(), expected, "generated core must call the public epoch clock export");
+      assert.equal(reads, coreReads + 1, "generated core must read the host clock exactly once");
     }
     assert.equal(reads, 4, "each clock call must read the host exactly once");
 
