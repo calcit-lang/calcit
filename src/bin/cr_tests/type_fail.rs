@@ -2840,6 +2840,30 @@ fn calling_a_dynamic_value_requires_fn_narrowing() {
 }
 
 #[test]
+fn unwrap_or_nil_on_an_open_option_reports_the_erasure() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries(
+      "let\n    erase-method $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) (.unwrap-or (get m :a) nil)\n    erase-call $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) (option:unwrap-or (get m :a) nil)\n    erase-match $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) $ match (get m :a)\n      (:some v) v\n      (:none) nil\n    keep-match $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) $ match (get m :a)\n      (:some v) v\n      (:none) 0\n    to-host $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return $ :: 'JsNullish 'Dynamic)) (.unwrap-or (get m :a) nil)\n    keep-option $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) (get m :a)\n    with-default $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) (.unwrap-or (get m :a) 0)\n  [] erase-method erase-call erase-match keep-match to-host keep-option with-default",
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("erasing an Option to nil should preprocess with a warning");
+
+    let warnings = warnings.borrow();
+    let erased = warnings
+      .iter()
+      .filter(|warning| warning.code() == Some("W_OPTION_ERASED_TO_NIL"))
+      .collect::<Vec<_>>();
+    // The method, the direct call and the `(:none) nil` branch report; keeping
+    // the Option, choosing a concrete default or declaring a `JsNullish`
+    // return for a host does not.
+    assert_eq!(erased.len(), 3, "{warnings:?}");
+    assert!(erased[0].message().contains("back into nil"), "{erased:?}");
+  });
+}
+
+#[test]
 fn constant_truthy_conditions_report_with_replacement_guidance() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(

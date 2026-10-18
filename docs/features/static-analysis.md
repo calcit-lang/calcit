@@ -236,6 +236,14 @@ are not reported. A macro that moves a caller-written value into head position,
 such as `-> 1 f` expanding to `(f 1)`, still reports, because the caller chose
 the value being called.
 
+An Option turned back into nil reports `W_OPTION_ERASED_TO_NIL`: `.unwrap-or X nil`
+or `option:unwrap-or X nil` on a receiver proven to be an Option, and a
+`(:none) nil` branch of a `match` on an Option. The signature promises absence
+is explicit while the value is again nil-or-T. Keep the Option, choose a
+concrete default, or handle both variants with `match`. `:js-ffi` definitions,
+functions that declare a `JsNullish` return, and macro-generated code are not
+reported: those places hand nil to a JS host by contract.
+
 Strict project source also rejects hand-written representation primitives with
 `E_RAW_PRIMITIVE_IN_TYPED_CODE`: `&get-raw`, `record-get` / `&struct:get`, raw `&%{}`, and
 `&struct:nth` without an exact nominal layout/index/tag proof. Prefer public

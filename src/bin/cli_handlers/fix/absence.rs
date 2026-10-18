@@ -493,26 +493,32 @@ fn rewrite(node: &Cirru, path: &mut Vec<usize>, proven: &BTreeMap<Vec<usize>, (E
     Consumer::NonNil if destructured => (leaf("true"), leaf("false")),
     Consumer::Nil => (list([leaf("calcit.core/nil?"), payload]), leaf("true")),
     Consumer::NonNil => (list([leaf("calcit.core/non-nil?"), payload]), leaf("false")),
-    Consumer::Either => (payload, leaf("nil")),
+    // `either` falls through on a nil payload too, so the Some branch keeps
+    // that check while the None branch goes straight to the fallbacks. Only
+    // one branch runs, so each fallback still evaluates at most once and
+    // lazily, without turning the Option back into nil.
+    Consumer::Either => {
+      let fallbacks = rewritten[2..].to_vec();
+      let some = if destructured {
+        payload
+      } else {
+        list([leaf("calcit.core/either"), payload].into_iter().chain(fallbacks.iter().cloned()))
+      };
+      let none = match fallbacks.as_slice() {
+        [single] => single.clone(),
+        _ => list(std::iter::once(leaf("calcit.core/either")).chain(fallbacks.iter().cloned())),
+      };
+      (some, none)
+    }
   };
   let mut empty_pattern = vec![leaf(none_tag)];
   if matches!(api.family, Family::Result) {
     empty_pattern.push(fresh(used));
   }
-  let matched = list([
+  list([
     leaf("match"),
     public,
     list([Cirru::List(pattern), some]),
     list([Cirru::List(empty_pattern), none]),
-  ]);
-  if matches!(consumer, Consumer::Either) {
-    // Preserve each fallback syntax node once, including closure identity.
-    list(
-      [leaf("calcit.core/either"), matched]
-        .into_iter()
-        .chain(rewritten[2..].iter().cloned()),
-    )
-  } else {
-    matched
-  }
+  ])
 }

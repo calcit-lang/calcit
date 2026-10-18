@@ -87,6 +87,34 @@ Struct 或函数时，`if`、`when`、`cond`、`and`、`or` 会报告 `W_CONSTAN
    用 `match` 区分 `PathError :missing` 与 `PathError :shape`。
 4. 弃用的 `some-in?` 同步改为 `.ok?`，形状错误时返回 false。
 
+## 0.32.0 Option 不再擦回 nil
+
+`.unwrap-or X nil`、`option:unwrap-or X nil` 与 `match X … ((:none) nil)` 把 Option 还原成 nil-or-T：
+签名写着 Option，运行时仍是可能为 nil 的值，后面的 `nil?`、`either` 照旧工作，缺失值的旧语义原样保留。
+接收者的类型已证明为 Option 时，0.32.0 起这些写法报告 `W_OPTION_ERASED_TO_NIL`，严格检查不再通过。
+payload 有具体类型时，这种写法本来就被参数检查拒绝；新诊断补上的是 payload 为 Dynamic、`nil` 被当成合法默认值的情形。
+
+| 旧写法 | 新写法 |
+| --- | --- |
+| `.unwrap-or (get props :alpha) nil` 之后接 `either`、`non-nil?` | 保持 Option 往下传，在使用处 `.unwrap-or` 给出业务默认值，或用 `match` 分别处理 |
+| `match x ((:some v) v) ((:none) nil)` | 让函数返回 Option，调用方处理两个分支 |
+| 把缺失值交给 DOM 或其他宿主 API | 在声明了 `:js-ffi` 的适配函数里转换，或把形参写成 `JsNullish` |
+
+宏生成的调用、`:js-ffi` 定义，以及返回类型声明为 `JsNullish` 的函数里的写法不报告：这些位置把 nil 交给 JS 宿主是声明过的合同。`either`、`or`、`if-let` 之后才出现的 nil 不在识别范围内。
+迁移前可用 `calcit calcit.cirru analyze weak-types --only option-nil-roundtrip` 列出全部位置。
+
+## 0.32.0 `select-keys` 跳过缺失键
+
+`select-keys` 此前给源 Map 里不存在的键写入 `nil`，返回值的类型虽然是 `Map<K, V>`，里面却可能有不属于 `V` 的 nil。
+0.32.0 起缺失的键直接跳过：
+
+```cirru
+assert= (&{} :a 1)
+  select-keys (&{} :a 1 :b 2) ([] :a :missing)
+```
+
+之后用 `get` 读取缺失键得到 `none`，与此前读到 `some nil` 不同。依赖返回值里一定有某个键的代码，改为对结果 `get` 后用 `match` 或 `.unwrap-or` 处理。
+
 ## 0.30.1 底层缺失值原语直接返回 Option
 
 本项从原计划的 0.31.0 提前纳入 0.30.1，该版本从 `release/0.30.1` 维护分支发布，保留本节的 Option 合同。
