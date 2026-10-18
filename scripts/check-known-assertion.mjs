@@ -2596,9 +2596,9 @@ try {
     "let ((consume (fn (callback) (hint-fn ({} (:args ([] (:: 'Fn ({} (:args ([] 'Number)) (:return 'Number))))) (:return 'Unit))) &unit)) (wrong (fn (x) (hint-fn ({} (:args ([] 'String)) (:return 'String))) x))) (consume wrong)",
     "let ((consume (fn (value) (hint-fn ({} (:args ([] 'Number)) (:return 'Unit))) &unit)) (forward (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) (consume callback)))) (forward (fn (x) x))",
     // Annotation expressions are Nil, including through bindings and helpers.
-    "let ((consume (fn (callback) (hint-fn ({} (:args ([] (:: 'Fn ({} (:args ([] 'Number)) (:return 'Number))))) (:return 'Number))) (callback 1)))) (consume (hint-fn ({} (:args ([] 'Number)) (:return 'Number)) (fn (x) x)))",
+    "let ((consume (fn (callback) (hint-fn ({} (:args ([] (:: 'Fn ({} (:args ([] 'Number)) (:return 'Number))))) (:return 'Number))) (callback 1)))) (consume (hint-fn ({} (:args ([] 'Number)) (:return 'Number))))",
     "let ((consume (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) &unit)) (callback (hint-fn ({} (:args ([] 'Number)) (:return 'Number))))) (consume callback)",
-    "let ((consume (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) &unit)) (f (fn (x) x))) (consume (hint-fn f ({} (:args ([] 'Number)) (:return 'Number))))",
+    "let ((consume (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) &unit)) (f (fn (x) (hint-fn ({} (:args ([] 'Number)) (:return 'Number))) x))) (consume (hint-fn f ({} (:args ([] 'Number)) (:return 'Number))))",
     "let ((consume (fn (callback) (hint-fn ({} (:args ([] 'Fn)) (:return 'Unit))) &unit)) (make-metadata (fn () (hint-fn ({} (:args ([])) (:return 'Nil)))))) (consume (make-metadata))",
   ];
   // Open values need their own proof before a concrete parameter or payload (#1767).
@@ -2619,7 +2619,7 @@ try {
     ...openCalls.map(([expression]) => [expression, "E_CALL_ARGUMENT_UNPROVEN"]),
     ...badReturns.map(expression => [expression, "W_FN_RETURN_TYPE_MISMATCH"]),
     ...badCalls.map(expression => [expression, "W_LOCAL_FN_ARG_TYPE_MISMATCH"]),
-    ["config/consume-callback (hint-fn ({} (:args ([] 'Number)) (:return 'Number)) (fn (x) x))", "W_FN_ARG_TYPE_MISMATCH"],
+    ["config/consume-callback (hint-fn ({} (:args ([] 'Number)) (:return 'Number)))", "W_FN_ARG_TYPE_MISMATCH"],
     ["let ((empty (fn () (hint-fn ({} (:args ([])) (:return 'Unit)))))) (empty)", "E_NIL_FOR_UNIT"],
   ];
   for (const [expression, diagnostic] of rejected) {
