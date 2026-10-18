@@ -10518,15 +10518,12 @@ fn core_function_alias_rule_renames_resolved_legacy_functions_and_is_idempotent(
       .iter()
       .all(|suggestion| { suggestion["rule_id"] == "core-function-alias-v1" && suggestion["applicability"] == "machine-applicable" })
   );
-  for legacy in ["vals"] {
-    let expected = format!("calcit.core/{legacy}");
-    assert!(
-      suggestions
-        .iter()
-        .any(|suggestion| suggestion["origin_chain"][0]["target"] == expected.as_str()),
-      "missing {legacy}: {report}"
-    );
-  }
+  assert!(
+    suggestions
+      .iter()
+      .any(|suggestion| suggestion["origin_chain"][0]["target"] == "calcit.core/vals"),
+    "missing vals: {report}"
+  );
   assert_eq!(report["data"]["validation"]["status"], "passed", "{report}");
 
   let applied = run_fix(
@@ -10548,9 +10545,10 @@ fn core_function_alias_rule_renames_resolved_legacy_functions_and_is_idempotent(
   );
   assert_success(&applied, "function alias apply");
   let updated = fs::read_to_string(&snapshot).expect("updated Snapshot should read");
-  for preferred in ["calcit.core/distinct-values"] {
-    assert!(updated.contains(preferred), "{preferred} missing after migration");
-  }
+  assert!(
+    updated.contains("calcit.core/distinct-values"),
+    "calcit.core/distinct-values missing after migration"
+  );
   assert_success(
     &run_calcit(&snapshot, &["test", target, "--require-match"]),
     "function alias behavior after migration",

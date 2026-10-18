@@ -756,14 +756,12 @@ pub(crate) fn handle_fix_command(
     )?);
   }
   if selected_rules.contains(&CORE_FUNCTION_ALIAS_RULE) {
-    for alias in [CorePredicateRename::Vals] {
-      suggestions.extend(plan_core_predicate_rename_fixes(
-        &source_snapshot,
-        snapshot_file,
-        &selected_definitions,
-        alias,
-      )?);
-    }
+    suggestions.extend(plan_core_predicate_rename_fixes(
+      &source_snapshot,
+      snapshot_file,
+      &selected_definitions,
+      CorePredicateRename::Vals,
+    )?);
   }
   if selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE) {
     suggestions.extend(plan_core_predicate_rename_fixes(
@@ -4215,7 +4213,8 @@ fn plan_attached_fixes(
             }
           }
         }
-        for alias in [CorePredicateRename::Vals] {
+        {
+          let alias = CorePredicateRename::Vals;
           let (old, new, rule_id, _) = alias.names();
           if !selected_rules.contains(&rule_id) || !cirru_contains_target_reference(source, namespace, "calcit.core", old) {
             continue;
