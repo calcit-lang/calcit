@@ -8916,6 +8916,18 @@
                 assert= (Option :some nil)
                   same $ Option :some nil
               :tags $ #{} :hint-syntax :unit
+            %{} 'TestEntry (:name |local-hint-keeps-proven-function-alias)
+              :code $ quote $ let
+                  invoke $ fn (callback)
+                    hint-fn $ {}
+                      :args $ [] 'calcit.core/inc
+                      :return 'Number
+                    hint-fn callback $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    callback 7
+                assert= 8 $ invoke inc
+              :tags $ #{} :hint-syntax :unit
         'identical? $ %{} 'CodeEntry
           :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
           :code $ quote &runtime-implementation

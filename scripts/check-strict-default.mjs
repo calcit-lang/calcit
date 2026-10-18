@@ -59,6 +59,14 @@ for (const [label, source, diagnostic] of [
   hint-fn f $ {} (:args $ [] 'String) (:return 'Number)
   f |wrong`, /hint-fn schema conflicts with the existing local function signature/],
   ["unproved open target", "fn (f) (hint-fn f ({} (:args ([])) (:return 'Number))) &unit", /a schema does not prove callability/],
+  ["nullable function target", `fn (callback)
+  hint-fn $ {}
+    :args $ [] $ :: 'JsNullish $ :: 'Fn $ {}
+      :args $ [] 'Number
+      :return 'Number
+    :return 'Unit
+  hint-fn callback $ {} (:args $ [] 'Number) (:return 'Number)
+  , &unit`, /a schema does not prove callability/],
   ["new function target", "hint-fn (fn () 1) ({} (:args ([])) (:return 'Number))", /put .*hint-fn schema.* inside a new function body/],
 ]) {
   const invalid = run(["eval", source]);

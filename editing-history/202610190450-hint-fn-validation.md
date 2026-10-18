@@ -6,4 +6,6 @@ Editor 的错误 callback wrapper 和本轮文档检查显示，hint-fn 会静�
 
 失败语法通过既有 CLI strict-default 回归，合法行为复用 hint-fn 原附带测试，并增加泛型局部函数保留 Option None / Some nil 区别的附带测试。测试不放宽成任意失败，必须定位 hint 自身的参数错误；不新增检查脚本、fix planner、Dynamic 预算或 unsafe。
 
+自查还以正式 alpha.5 和候选对照复现了裸 Fn 分支拒绝合法 TypeRef 函数别名的回退。改为复用已有非 nullable 函数解析，保留别名/slot 的独立合同，不把 Nullable 函数当作已证明可调用。附带测试验证真实 Fn 别名，现有 CLI 负例继续拒绝 nullable 目标；这不是为某个别名新增特殊规则。
+
 此为可能拒绝旧源码的非 patch 改动，安排在 0.31.0，不回移到 0.30.1。生态迁移依靠源码查询、dry-run 和 revision 守卫，原业务测试仍须通过。

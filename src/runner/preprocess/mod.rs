@@ -12862,7 +12862,7 @@ pub fn preprocess_hint_fn(
         target_raw.get_location(),
       ));
     };
-    if !matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Fn(_) | CalcitTypeAnnotation::DynFn) {
+    if !matches!(local.type_info.as_ref(), CalcitTypeAnnotation::DynFn) && local.type_info.resolve_to_nonoptional_fn().is_none() {
       return Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Type,
         format!(
