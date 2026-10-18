@@ -645,7 +645,7 @@ String 到名义标识使用 `to-tag: String -> Tag` 与 `to-symbol: String -> S
 
 对旧 `turn-string`，同一 fix 仅在内建 Nil、Bool、Number、String、Tag、Symbol 参数已证明时改为 `to-string`；这些内建 trait 方法调用相同的内部 `&turn-string`。旧入口本身现在也要求 `T: ToString`，因此 List/Map/Unit/开放 Dynamic 会在严格预处理时报错，而用户自定义实现仍可调用。自定义 `ToString`、开放 Dynamic、集合及无法稳定定位的源码不自动改写。`str`、`.show/.debug` 仍是不同显示职责，不应加入此迁移。
 
-测量经过时间使用 `monotonic-time-ms`，返回 Number 毫秒；只比较同一次运行中的两次读数，不把它当 Unix 时间戳或 CPU 使用量。旧 `cpu-time` 已在 0.29.0 删除。`unix-time-ms` 是可能受宿主校时影响的 epoch 毫秒。native/JS/WASI Preview 1 均实现该时钟；WASI 0.3 command 目前不支持时钟，应保留显式 capability 错误，不自行回退。
+测量经过时间使用 `monotonic-time-ms`，返回 Number 毫秒；只比较同一次运行中的两次读数，不把它当 Unix 时间戳或 CPU 使用量。旧 `cpu-time` 已在 0.29.0 删除。`unix-time-ms` 是可能受宿主校时影响的 epoch 毫秒，JS 使用 `Date.now()`；早于 epoch 时失败，不用单调读数或默认值代替。两个时钟均支持 native/JS/WASI Preview 1；WASI 0.3 command 目前不支持时钟，应保留显式 capability 错误，不自行回退。
 
 List 带初始值的从左到右累加首选 `.fold initial reducer`，空 List 返回初值，累加器类型可不同于元素类型。List 的旧 `.reduce`、`.bind`、`.join-str`、`.nth` 与 Map/Set 的旧 `.mappend` 已在 0.29.0 删除，分别改用 `.fold`、`.flat-map`、`.join-string`、`.get` 与 `.merge` / `.union`；写下它们会得到 `E_RETIRED_METHOD`，需要自动迁移时先用 0.28.x 的 CLI 运行 `core-list-fold-v1` 等对应规则。前缀 `reduce` 仍可用，`foldl'` 已删除，改用 `fold`。
 

@@ -13253,12 +13253,18 @@
                   (#{}) .union $ #{}
               :tags $ #{} :core :unit
         'unix-time-ms $ %{} 'CodeEntry
-          :doc "|返回 Unix epoch 以来的系统时间，单位为毫秒。系统时钟可能被宿主校准，不保证单调递增。"
+          :doc "|返回 Unix epoch 以来的系统时间，单位为毫秒。JS 使用 Date.now()；native 与 WASI Preview 1 也可用。系统时钟可能被宿主校准，不保证单调递增；早于 epoch 时失败。WASI 0.3 command 与 core WASM 尚不支持时钟。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ []
           :tags $ #{} :builtin :internal :io :time
+          :tests $ [] $ %{} 'TestEntry (:name |reports-nonnegative-epoch-milliseconds)
+            :code $ quote $ let
+                timestamp $ unix-time-ms
+              assert= true $ number? timestamp
+              assert= true $ &>= timestamp 0
+            :tags $ #{} :core :time :unit
         'unsafe-coerce $ %{} 'CodeEntry
           :doc "||Explicitly attach a type annotation without a runtime validation.\\nSyntax: (unsafe-coerce value type-expr)\\nParams: value (any), type-expr (type annotation)\\nReturns: value unchanged\\nUse only at trusted FFI boundaries so downstream code can be statically checked. The declared type is not validated at runtime."
           :code $ quote $ def unsafe-coerce &runtime-implementation
