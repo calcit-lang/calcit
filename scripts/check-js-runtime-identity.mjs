@@ -20,6 +20,27 @@ try {
   await symlink(resolve("node_modules"), join(fixtureRoot, "node_modules"), "dir");
 
   const runtimeA = await import(pathToFileURL(join(runtimeAPath, "calcit.procs.mjs")).href);
+  const colonText = [":keyword", { ":field": [":nested", new Set([":member"])] }];
+  for (const [label, convert] of [
+    ["omitted", value => runtimeA.to_calcit_data(value)],
+    ["false", value => runtimeA.to_calcit_data(value, false)],
+    ["true", value => runtimeA.to_calcit_data(value, true)],
+  ]) {
+    const converted = convert(colonText).toArray();
+    const key = label === "true" ? ":field" : runtimeA.newTag("field");
+    const nested = converted[1].get(key).toArray();
+    const actual = [converted[0], nested[0], ...nested[1].values()];
+    if (label === "true") {
+      assert.deepEqual(actual, [":keyword", ":nested", ":member"], "true preserves text recursively, including object keys");
+    } else {
+      assert.ok(actual.every(value => value instanceof runtimeA.CalcitTag), `${label} retains recursive Tag conversion`);
+      assert.deepEqual(actual.map(value => value.value), ["keyword", "nested", "member"]);
+    }
+  }
+  assert.deepEqual(colonText, [":keyword", { ":field": [":nested", new Set([":member"])] }], "conversion must not mutate host input");
+  const existingCalcit = runtimeA.to_calcit_data([":keyword"]);
+  assert.equal(runtimeA.to_calcit_data(existingCalcit, true), existingCalcit, "the option does not reinterpret an existing Calcit container");
+  assert.ok(existingCalcit.toArray()[0] instanceof runtimeA.CalcitTag);
   assert.equal(runtimeA.foldl_shortcut, runtimeA._$n_list_$o_foldl_shortcut, "legacy bridge must retain the same implementation");
   assert.equal(runtimeA.foldl_shortcut.name, "foldl_shortcut", "the bridge retains its observable function name");
   const symbolFromString = runtimeA.turn_symbol("hello");

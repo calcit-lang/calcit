@@ -131,6 +131,16 @@ For source-backed definitions, `query def` prints the stored Cirru body. For spe
 
 `query def/context` 对可直接证明为已注册 core Proc 的定义另给 `:runtime-arity`（JSON 为 `runtime_arity`）：`:min` 是最少传参个数，`:max` 是最多个数，`nil` 表示没有有限上限。例如 `read-dir` 为 `{:min 1, :max 2}`，省略第二个参数不意味着可以传 nil，也不意味着它的 Bool 值类型变为 Optional。human 输出显示 `Runtime Proc arity: 1..=2`。此证据复用编译器已有 Proc 元数据，不根据函数名、schema 宽度或 `:internal` 标签猜测；普通函数、未知别名和特殊 builtin 未证明时不提供该字段。字段缺失不是零参数、无上限或可调用的承诺。参数值类型、失败与 backend 支持仍需结合 schema、文档与测试查看，arity 不代替它们。
 
+JavaScript helper `to-calcit-data` 的 `def/schema/context` 查询也展示其已验证的 `:runtime-arity`（1..=2），schema 列出 `Dynamic` 输入和第二个 `Bool` 参数。第二参数省略或为 `false` 时，符合 keyword 拼写的冒号字符串转换为 Tag；传 `true` 时，保留这些 String 值和对象键，递归作用于 JS Array、Set 和普通对象。已有 Calcit 容器保持原值，不重新转换内部内容。不要因省略参数合法而传入 nil，也不要根据旧的漏参查询删掉业务中已有的 `true`。
+
+```bash
+calcit query schema calcit.core/to-calcit-data --format edn
+calcit query context calcit.core/to-calcit-data --format edn
+calcit query examples calcit.core/to-calcit-data
+```
+
+例如 JS 目标中的 `to-calcit-data (js-array |:keyword) true` 返回 `List<String>` 内容 `|:keyword`，而省略第二参数或传 `false` 时，内容为 Tag `:keyword`。查询示例同时保留这三种调用；这是既有 JS 行为的合同补全，不是新增转换模式或 native/WASM 支持。
+
 同一类 core Proc 定义另给 `:failure`，说明参数已符合声明类型时调用如何失败：`:class` 为 `|total`（总能返回值）、`|result`（通过 nil、Option 或 Result 返回预期失败）或 `|raises`（抛出可由 `try` 捕获的错误，WASM 中 trap），`:condition` 写明返回失败或抛错的条件。类型不符的参数在所有 Proc 上都是类型错误，不重复列出。human 输出显示为 `Failure: ...` 一行：
 
 ```bash
