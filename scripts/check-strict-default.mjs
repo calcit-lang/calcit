@@ -135,8 +135,7 @@ try {
     ["config", "set", "mode", "native"],
   ]);
   assert.deepEqual(readDefinition(), wrapped[0]);
-  const anonymous = ["fn", wrapped[0][2],
-    ["hint-fn", ["{}", [":args", ["[]", "'Number"]], [":return", "'Number"]]], ...wrapped[0].slice(3)];
+  const anonymous = ["fn", ...wrapped[0].slice(2)];
   for (const [index, root] of [wrapped[0], anonymous].entries()) {
     apply([["edit", "def", "app.main/increment", "--overwrite", "--input-format", "json-ast", "--code", JSON.stringify(root)]]);
     expectStatus(inFixture("fix", "--workflow", "strict", "--verify", "--format", "json"), 0,
@@ -157,8 +156,86 @@ try {
       assert.equal(readFileSync(snapshot, "utf8"), before, "a rejected root must leave the entire Snapshot unchanged");
     }
   }
+  apply([["edit", "def", "app.main/increment", "--overwrite", "--input-format", "json-ast",
+    "--code", JSON.stringify(["fn", wrapped[0][2], "|wrong"])]]);
+  for (const mode of [["--check-only", "--ns", "app.main"], ["js"],
+    ["fix", "--workflow", "strict", "--verify", "--format", "json"]]) {
+    const result = inFixture(...mode);
+    expectStatus(result, 1, "an anonymous String return cannot borrow the definition's Number result");
+    assert.match(result.stdout + result.stderr, /E_SCHEMA_DEF_MISMATCH/);
+  }
 } finally {
   await rm(rootFixture, { recursive: true, force: true });
+}
+
+// The declaration's own input context does not prove its return contract.
+// An actual nil cannot satisfy the nominal Option<Nil> result, even if an
+// anonymous root's CodeEntry says it does.
+const anonymousOptionReturn = "calcit/type-fail/anonymous-function-option-return.cirru";
+for (const [label, mode] of [
+  ["reachable check", ["--check-only"]],
+  ["namespace check", ["--check-only", "--ns", "app.main"]],
+  ["all-definitions check", ["--check-only", "--all-defs"]],
+  ["JavaScript", ["js"]],
+  ["WASM", ["wasm"]],
+  ["WASI", ["wasi"]],
+  ["strict workflow", ["fix", "--workflow", "strict", "--verify", "--format", "json"]],
+]) {
+  const result = run([anonymousOptionReturn, ...mode]);
+  expectStatus(result, 1, `${label} rejects an anonymous nil-for-Option return`);
+  assert.match(result.stdout + result.stderr, /E_SCHEMA_DEF_MISMATCH/);
+  assert.match(result.stdout + result.stderr, /app\.main\/option-value/);
+}
+const anonymousContracts = "tests/fixtures/anonymous-fn-contract.cirru";
+expectStatus(run([anonymousContracts, "--check-only", "--all-defs"]), 0, "check anonymous definition contracts");
+expectStatus(run([anonymousContracts, "fix", "--workflow", "strict", "--verify", "--format", "json"]), 0,
+  "reuse owned function inputs and trait bounds in the complete strict workflow");
+expectStatus(spawnSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", anonymousContracts,
+  "--backend", "native,js", "--tag", "fn-contract"], {
+  cwd: process.cwd(), encoding: "utf8", maxBuffer: 8 * 1024 * 1024,
+  env: { ...process.env, CALCIT_BIN: resolve(binary) },
+}), 0, "shared anonymous definition tests preserve Number, Option, traits and nested functions");
+
+// A body hint can mark the owned definition async without forging its logical
+// return type or turning an async callable into a synchronous callback.
+const ownedAsyncFixture = await mkdtemp(join(resolve("target"), "owned-fn-async-"));
+try {
+  await symlink(resolve("node_modules"), join(ownedAsyncFixture, "node_modules"), "dir");
+  const output = join(ownedAsyncFixture, "js-out");
+  expectStatus(run([anonymousContracts, "--emit-path", output, "js"]), 0, "generate owned async definitions");
+  const generated = await import(pathToFileURL(join(output, "app.main.mjs")).href);
+  const pending = generated.async_number();
+  assert.ok(pending instanceof Promise, "a first-body async hint must produce an actual Promise");
+  assert.equal(await pending, 7, "the Promise resolves to the declared logical Number result");
+  const callbackResult = generated.async_callback(1, 2);
+  assert.ok(callbackResult instanceof Promise, "an owned async callback retains its invocation contract");
+  await callbackResult;
+
+  const invalid = join(ownedAsyncFixture, "sync-watch.cirru");
+  await copyFile(anonymousContracts, invalid);
+  expectStatus(run([invalid, "query", "config", "--format", "json"]), 0, "inspect the callback fixture configuration");
+  expectStatus(run([invalid, "query", "def", "app.main/async-callback", "--format", "json"]), 0,
+    "inspect the owned async callback before adding its consumer");
+  const operations = [
+    ["edit", "def", "app.main/watch-counter", "--input-format", "cirru", "--code",
+      "quote $ defn watch-counter (counter) (add-watch! counter :changes async-callback) &unit"],
+    ["edit", "schema", "app.main/watch-counter", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] $ :: 'Ref 'Number) (:return 'Unit)"],
+  ];
+  const preview = run([invalid, "edit", "transaction", "--code", JSON.stringify(operations), "--dry-run", "--format", "json"]);
+  expectStatus(preview, 0, "preview the synchronous callback consumer");
+  expectStatus(run([invalid, "edit", "transaction", "--code", JSON.stringify(operations),
+    "--expect-revision", JSON.parse(preview.stdout).scoped_revision, "--format", "json"]), 0,
+    "assemble the callback consumer with a revision guard");
+  for (const mode of [["--check-only", "--ns", "app.main"], ["--check-only", "--all-defs"],
+    ["fix", "--workflow", "strict", "--verify", "--format", "json"]]) {
+    const result = run([invalid, ...mode]);
+    expectStatus(result, 1, "an owned async callable cannot satisfy a synchronous watch callback");
+    assert.match(result.stdout + result.stderr, /async fn/);
+    assert.match(result.stdout + result.stderr, /add-watch!|watch-counter/);
+  }
+} finally {
+  await rm(ownedAsyncFixture, { recursive: true, force: true });
 }
 
 const asyncWatcher = run(["eval", `fn (counter)
