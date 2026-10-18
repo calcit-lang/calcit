@@ -224,6 +224,9 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
   };
   assert_eq!(at("app.roundtrip/read-field")["path"], "code@3.1");
   assert_eq!(at("app.roundtrip/read-field")["input"]["path"], "code@3.1.1");
+  assert_eq!(at("app.roundtrip/read-field")["input"]["expression"], "get data :name");
+  assert_eq!(at("app.roundtrip/unwrap-value")["input"]["expression"], "value");
+  assert_eq!(at("app.roundtrip/reader-value")["input"]["expression"], "@state");
   assert_eq!(
     at("app.roundtrip/read-field")["consumer"],
     serde_json::json!({"path":"code@3","head":"either","child_index":1})
@@ -246,6 +249,7 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
     );
     assert!(query.status.success(), "{}", String::from_utf8_lossy(&query.stderr));
     let query: serde_json::Value = serde_json::from_slice(&query.stdout).unwrap();
+    assert_eq!(finding["input"]["expression"], query["data"]["expression"]);
     assert_eq!(finding["input"]["inferred_type"], query["data"]["inferred_type"]);
     assert_eq!(finding["input"]["confidence"], query["data"]["confidence"]);
   }
