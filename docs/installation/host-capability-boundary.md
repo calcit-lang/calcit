@@ -71,7 +71,7 @@ no-op or fabricated success value.
 | --- | --- | --- | --- | --- | --- |
 | Pure Calcit data/control and typed `Option`/`Result` composition | yes | yes | yes | supported subset | core definitions and methods |
 | JSON parse/stringify | yes | yes | yes | unavailable | String `.parse-json` / Result wrappers; core JSON procedures |
-| Current Unix time in milliseconds | yes | unavailable | unavailable | WASI Preview 1 realtime clock; Component 待实现；core WASM unavailable | `unix-time-ms` |
+| Current Unix time in milliseconds | yes | `Date.now()` | `Date.now()` | WASI Preview 1 realtime clock; Component 待实现；core WASM unavailable | `unix-time-ms` |
 | Monotonic milliseconds for elapsed-time measurement | yes | `process.uptime()` | `performance.now()` | WASI Preview 1 monotonic clock; Component 待实现；core WASM unavailable | `monotonic-time-ms`（只比较同一进程内两次调用的差值） |
 | 同步等待 | 当前线程 sleep | host injection 或 `Atomics.wait` | 主线程通常不可用并返回错误 | WASI Preview 1 `poll_oneoff`；Component 待实现；core WASM unavailable | `wait-ms`，返回 `Result<Unit,String>` |
 | Construct and inspect a path value without I/O | yes | yes | yes | value-level support only | `fs:path`, `FsPath .to-string` |
