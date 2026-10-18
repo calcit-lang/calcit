@@ -391,7 +391,7 @@ pub struct FfiBoundaryEvidence {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct FfiImportBinding {
   source: String,
-  default_import: bool,
+  member: Option<String>,
 }
 
 fn schema_has_js_ffi(schema: &CalcitTypeAnnotation) -> bool {
@@ -402,62 +402,31 @@ fn schema_has_js_ffi(schema: &CalcitTypeAnnotation) -> bool {
   }
 }
 
-fn ffi_import_bindings(code: &Cirru) -> BTreeMap<String, FfiImportBinding> {
-  let mut bindings = BTreeMap::new();
-  let Cirru::List(items) = code else {
-    return bindings;
-  };
-  let Some(Cirru::List(require)) = items
-    .iter()
-    .skip(2)
-    .find(|item| matches!(item, Cirru::List(parts) if parts.first().is_some_and(|head| head.eq_leaf(":require"))))
-  else {
-    return bindings;
-  };
-  for rule in require.iter().skip(1) {
-    let Cirru::List(parts) = rule else {
-      continue;
-    };
-    let parts = if parts.first().is_some_and(|item| item.eq_leaf("[]")) {
-      &parts[1..]
-    } else {
-      parts.as_slice()
-    };
-    if parts.len() != 3 {
-      continue;
-    }
-    let (Cirru::Leaf(source), Cirru::Leaf(kind), local) = (&parts[0], &parts[1], &parts[2]) else {
-      continue;
-    };
-    match (kind.as_ref(), local) {
-      (":as", Cirru::Leaf(alias)) | (":default", Cirru::Leaf(alias)) => {
-        bindings.insert(
-          alias.to_string(),
+fn ffi_import_bindings(code: &Cirru, namespace: &str) -> Result<BTreeMap<String, FfiImportBinding>, String> {
+  use calcit::program::ImportRule;
+
+  Ok(
+    calcit::program::extract_import_map(code, namespace)?
+      .into_iter()
+      .filter_map(|(local, rule)| {
+        // Default imports are JS bindings; aliases/references need a string
+        // module origin, just as preprocessing and JS emission require.
+        let (source, member) = match rule.as_ref() {
+          ImportRule::NsDefault(source) => (source, Some("default".to_owned())),
+          ImportRule::NsAs(source) if source.starts_with(['|', '"']) => (source, None),
+          ImportRule::NsReferDef(source, member) if source.starts_with(['|', '"']) => (source, Some(member.to_string())),
+          _ => return None,
+        };
+        Some((
+          local.to_string(),
           FfiImportBinding {
-            source: source.trim_start_matches('|').to_owned(),
-            default_import: kind.as_ref() == ":default",
+            source: source.trim_start_matches(['|', '"']).to_owned(),
+            member,
           },
-        );
-      }
-      (":refer", Cirru::List(names)) => {
-        for name in names {
-          if let Cirru::Leaf(name) = name
-            && name.as_ref() != "[]"
-          {
-            bindings.insert(
-              name.to_string(),
-              FfiImportBinding {
-                source: source.trim_start_matches('|').to_owned(),
-                default_import: false,
-              },
-            );
-          }
-        }
-      }
-      _ => {}
-    }
-  }
-  bindings
+        ))
+      })
+      .collect(),
+  )
 }
 
 fn ffi_member_operation(head: &str) -> Option<(&'static str, &'static str, bool)> {
@@ -625,8 +594,8 @@ fn scan_ffi_operations(
         path,
         false,
       );
-    } else if imports.get(head).is_some_and(|binding| binding.default_import) {
-      push_ffi_operation(operations, "module-call", head.to_owned(), Some("default".to_owned()), path, false);
+    } else if let Some(member) = imports.get(head).and_then(|binding| binding.member.as_ref()) {
+      push_ffi_operation(operations, "module-call", head.to_owned(), Some(member.to_owned()), path, false);
     }
   }
   for (index, child) in items.iter().enumerate() {
@@ -1797,11 +1766,18 @@ pub fn collect_ffi_boundary_evidence(
       if target_error.is_some() {
         return;
       }
-      let imports = snapshot
+      let imports = match snapshot
         .files
         .get(namespace)
-        .map(|file| ffi_import_bindings(&file.ns.code))
-        .unwrap_or_default();
+        .map(|file| ffi_import_bindings(&file.ns.code, namespace))
+        .transpose()
+      {
+        Ok(imports) => imports.unwrap_or_default(),
+        Err(error) => {
+          target_error = Some(error);
+          return;
+        }
+      };
       let js_implementation = match selected_js_implementation(entry) {
         Ok(implementation) => implementation,
         Err(error) => {
@@ -1966,8 +1942,10 @@ pub fn collect_ffi_boundary_evidence(
           && let Some(import) = imports.get(binding)
         {
           adapter_sources.insert(format!("{}/{}", import.source, export));
-        } else if let Some(import) = imports.get(&operation.source) {
-          adapter_sources.insert(format!("{}/default", import.source));
+        } else if let Some(import) = imports.get(&operation.source)
+          && let Some(member) = &operation.member
+        {
+          adapter_sources.insert(format!("{}/{member}", import.source));
         }
       }
       let adapter_candidates = adapter_sources
@@ -3755,6 +3733,31 @@ mod tests {
 
   fn list(items: Vec<Cirru>) -> Cirru {
     Cirru::List(items)
+  }
+
+  #[test]
+  fn ffi_import_origins_reuse_resolver_rules() {
+    let rule = |source, kind, local| list(vec![leaf(source), leaf(kind), local]);
+    let code = list(vec![
+      leaf("ns"),
+      leaf("app.main"),
+      list(vec![
+        leaf(":require"),
+        rule("app.lib", ":as", leaf("lib")),
+        rule("app.lib", ":refer", list(vec![leaf("increment")])),
+        rule("|package", ":as", leaf("npm")),
+        rule("\"node:fs", ":as", leaf("fs")),
+        rule("|node:fs", ":refer", list(vec![leaf("existsSync")])),
+        rule("package-default", ":default", leaf("default-package")),
+      ]),
+    ]);
+    let imports = super::ffi_import_bindings(&code, "app.main").expect("resolver imports should parse");
+    assert_eq!(imports.len(), 4);
+    assert_eq!(imports["npm"].source, "package");
+    assert_eq!(imports["fs"].source, "node:fs");
+    assert_eq!(imports["default-package"].member.as_deref(), Some("default"));
+    assert_eq!(imports["existsSync"].member.as_deref(), Some("existsSync"));
+    assert!(super::ffi_import_bindings(&leaf("invalid-ns"), "app.main").is_err());
   }
 
   fn scan(annotation: CalcitTypeAnnotation) -> Vec<super::WeakTypeOccurrence> {
