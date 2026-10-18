@@ -5,6 +5,10 @@
   :wasm $ {}
     :tags $ {} $ :enum-definition-equality "|unsupported: first-class EnumDef creation requires &enum-def:new, rejected by WASM codegen (#1863)"
     :tests $ {} (|calcit.core/&+#preserves-primitive-schema-in-local-binding "|unsupported: unsupported WASM expression: (&proc &+)")
+      |calcit.core/struct-match#checked-dynamic-input-preserves-nominal-identity "|parity: generated WASM traps in the nominal matcher fixture; original-macro baseline also traps (#2173)"
+      |calcit.core/struct-match#evaluates-subject-once-and-keeps-body-errors "|unsupported: first-class local prototype uses unsupported proc in WASM: &struct-def:new"
+      |calcit.core/struct-match#rejects-invalid-input-with-original-failure-text "|unsupported: unsupported syntax in WASM: try"
+      |calcit.core/assert#keeps-unit-and-original-failure-text "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/dbg#registered-stderr-returns-unit "|parity: core io.log_value cannot distinguish stderr from stdout (#2059); Unit assertions pass but the stdout trace differs"
       |calcit.core/dbg#registered-log-arguments-evaluate-once-in-order "|parity: core io.log_value emits each argument separately instead of one line (#2059); evaluation order and Unit assertions pass"
       |calcit.core/dbg#registered-log-propagates-argument-error "|unsupported: unsupported syntax in WASM: try; native/JS exercise the handler and WASI separately verifies the uncaught trap before output"
@@ -252,6 +256,10 @@
   :wasi $ {}
     :tags $ {} $ :enum-definition-equality "|unsupported: first-class EnumDef creation requires &enum-def:new, rejected by the shared WASM codegen (#1863)"
     :tests $ {} (|calcit.core/&+#preserves-primitive-schema-in-local-binding "|unsupported: unsupported WASM expression: (&proc &+)")
+      |calcit.core/struct-match#checked-dynamic-input-preserves-nominal-identity "|parity: shared WASM codegen traps in the nominal matcher fixture; original-macro baseline also traps (#2173)"
+      |calcit.core/struct-match#evaluates-subject-once-and-keeps-body-errors "|unsupported: first-class local prototype uses unsupported proc in WASM: &struct-def:new"
+      |calcit.core/struct-match#rejects-invalid-input-with-original-failure-text "|unsupported: unsupported syntax in WASM: try"
+      |calcit.core/assert#keeps-unit-and-original-failure-text "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/dbg#registered-log-propagates-argument-error "|unsupported: unsupported syntax in WASM: try; the existing stdio acceptance verifies the uncaught trap before output"
       |calcit.core/pairs-map#retains-malformed-pair-failure "|unsupported: unsupported syntax in WASM: try"
       |calcit.core/any?#short-circuits-list-set-and-map "|unsupported: unsupported proc in WASM: ref"

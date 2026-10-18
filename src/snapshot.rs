@@ -5391,7 +5391,7 @@ mod tests {
       "bundled macros must declare phase-aware contracts instead of legacy whole-Dynamic schemas: {legacy_macros:?}"
     );
     assert_eq!(
-      macro_count, 61,
+      macro_count, 62,
       "update the audited bundled macro inventory when core macros change"
     );
   }
