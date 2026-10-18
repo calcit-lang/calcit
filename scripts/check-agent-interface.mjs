@@ -887,6 +887,16 @@ const scenarios = [
       if (!boundary.operations.some((item) => item.classification === "npm-import")) {
         throw new Error("FFI evidence lost npm import provenance");
       }
+      if (boundaries.some((item) => item.definition.startsWith("ffi-evidence.pure/"))) {
+        throw new Error("Pure Calcit namespace imports must not produce FFI boundaries or adapters");
+      }
+      const mixed = boundaries.find((item) => item.definition === "ffi-evidence.main/mixed-imports");
+      if (mixed?.classification !== "node" || mixed.operations.length !== 1
+        || mixed.operations[0].source !== "fs/existsSync"
+        || mixed.adapter_candidates.length !== 1
+        || mixed.adapter_candidates[0].source !== "node:fs/existsSync") {
+        throw new Error("Mixed imports must retain only the executable host import boundary");
+      }
       if (boundary.helper_candidates?.[0]?.origin !== "dependency") {
         throw new Error("FFI evidence did not prefer an exact-schema dependency helper");
       }

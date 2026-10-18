@@ -108,6 +108,34 @@ fn ffi_evidence_supports_primary_edn_and_summary_only_output() {
 }
 
 #[test]
+fn ffi_evidence_uses_import_origin_without_classifying_calcit_calls_as_host_boundaries() {
+  let pure = run(&["--ns", "ffi-evidence.pure", "--ffi-evidence", "--format", "json"]);
+  assert_success(&pure);
+  let pure: serde_json::Value = serde_json::from_slice(&pure.stdout).expect("pure Calcit evidence should parse");
+  assert_eq!(pure["data"]["evidence"]["ffi_boundaries"], serde_json::json!([]));
+  assert_eq!(pure["data"]["summary"]["ffi_boundaries"], 0);
+
+  let mixed = run(&["--ffi-evidence", "--format", "json"]);
+  assert_success(&mixed);
+  let mixed: serde_json::Value = serde_json::from_slice(&mixed.stdout).expect("mixed import evidence should parse");
+  let boundary = mixed["data"]["evidence"]["ffi_boundaries"]
+    .as_array()
+    .unwrap()
+    .iter()
+    .find(|boundary| boundary["definition"] == "ffi-evidence.main/mixed-imports")
+    .expect("real Node import must retain its boundary");
+  assert_eq!(boundary["classification"], "node");
+  let operations = boundary["operations"].as_array().unwrap();
+  assert_eq!(operations.len(), 1, "retain executable unquote, not quoted or Calcit calls");
+  assert_eq!(operations[0]["source"], "fs/existsSync");
+  assert_eq!(operations[0]["classification"], "node");
+  let adapters = boundary["adapter_candidates"].as_array().unwrap();
+  assert_eq!(adapters.len(), 1);
+  assert_eq!(adapters[0]["source"], "node:fs/existsSync");
+  assert_eq!(adapters[0]["contract_status"], "review-required");
+}
+
+#[test]
 fn strict_workflow_reuses_ffi_boundary_evidence() {
   let output = run_strict_fix(&["--format", "json"]);
   assert!(!output.status.success(), "an opaque host return must not prove String");
