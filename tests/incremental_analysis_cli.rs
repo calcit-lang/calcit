@@ -414,38 +414,7 @@ fn incremental_analysis_honors_selected_entry_modules_and_policy() {
   let directory = TestDirectory::create();
   let snapshot = directory.snapshot();
   let original = fs::read_to_string("tests/fixtures/ffi-boundary-evidence.cirru").expect("analysis fixture should read");
-  let default_entry = r#"  :entries $ {} $ :default
-    {}
-      :description "|Browser evidence fixture."
-      :init-fn 'ffi-evidence.main/main!
-      :mode :js
-      :reload-fn 'ffi-evidence.main/reload!
-      :target :browser
-      :feature-policy $ {} $ :js-ffi :error
-      :modules $ []
-      :type-slots $ {}"#;
-  let multiple_entries = r#"  :entries $ {}
-    :default $ {}
-      :description "|Default incremental entry."
-      :init-fn 'ffi-evidence.main/main!
-      :mode :js
-      :reload-fn 'ffi-evidence.main/reload!
-      :target :browser
-      :feature-policy $ {} $ :js-ffi :error
-      :modules $ [] |./dep-default/
-      :type-slots $ {}
-    :test $ {}
-      :description "|Selected incremental entry."
-      :init-fn 'ffi-evidence.main/main!
-      :mode :js
-      :reload-fn 'ffi-evidence.main/reload!
-      :target :browser
-      :feature-policy $ {} $ :js-ffi :allow
-      :modules $ [] |./dep-test/
-      :type-slots $ {} $ :cache-probe :dynamic"#;
-  let configured = original.replacen(default_entry, multiple_entries, 1);
-  assert_ne!(configured, original, "fixture entry block should be replaced");
-  fs::write(&snapshot, configured).expect("multi-entry fixture should write");
+  fs::copy("tests/fixtures/ffi-boundary-evidence.cirru", &snapshot).expect("analysis fixture should copy");
 
   for (dependency, package) in [("dep-default", "default-dependency"), ("dep-test", "test-dependency")] {
     let dependency_directory = directory.0.join(dependency);
@@ -453,6 +422,49 @@ fn incremental_analysis_honors_selected_entry_modules_and_policy() {
     fs::write(dependency_directory.join("calcit.cirru"), original.replace("ffi-evidence", package))
       .expect("dependency fixture should write");
   }
+
+  // Configure entries structurally so canonical fixture formatting is irrelevant.
+  let operations = serde_json::json!([
+    ["config", "set", "description", "Default incremental entry."],
+    [
+      "config",
+      "add-entry",
+      "test",
+      "--from",
+      "default",
+      "--description",
+      "Selected incremental entry."
+    ],
+    ["config", "add-module", "./dep-default/"],
+    ["config", "add-module", "./dep-test/", "--entry", "test"],
+    ["config", "set", "feature-policy.js-ffi", "allow", "--entry", "test"],
+    ["config", "set-type-slot", "cache-probe", ":dynamic", "--entry", "test"]
+  ])
+  .to_string();
+  let preview = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", &operations, "--dry-run", "--format", "json"],
+  );
+  assert_success(&preview, "preview entry configuration");
+  let preview: serde_json::Value = serde_json::from_slice(&preview.stdout).expect("transaction preview should parse");
+  assert_eq!(preview["changed"], true);
+  let revision = preview["scoped_revision"]
+    .as_str()
+    .expect("entry transaction should return a scoped revision");
+  let configured = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "transaction",
+      "--code",
+      &operations,
+      "--expect-revision",
+      revision,
+      "--format",
+      "json",
+    ],
+  );
+  assert_success(&configured, "apply guarded entry configuration");
 
   let default = report_with_entry(&snapshot, "check-types", "default", true);
   let definition_count = default["data"]["cache"]["misses"]
