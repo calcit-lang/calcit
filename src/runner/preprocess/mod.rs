@@ -953,6 +953,15 @@ fn ensure_ns_def_preprocessed(
 
   let result = with_preprocess_compile_guard(ns, def, || match program::lookup_def_code(ns, def) {
     Some(code) => {
+      // Only a computed root operator needs source-shape validation. Ordinary
+      // declarations and all nested function bodies retain their existing path.
+      if matches!(&code, Calcit::List(items) if matches!(items.first(), Some(Calcit::List(_)))) {
+        let location = Some(NodeLocation::new(ns.into(), def.into(), Arc::new(vec![])));
+        let source = crate::data::cirru::calcit_to_cirru(&code)
+          .map_err(|message| CalcitErr::use_msg_stack_location(CalcitErrKind::Syntax, message, call_stack, location.clone()))?;
+        crate::snapshot::validate_definition_root(&source, &format!("{ns}/{def}"))
+          .map_err(|message| CalcitErr::use_msg_stack_location(CalcitErrKind::Syntax, message, call_stack, location))?;
+      }
       let _definition_replay_scope = source_replay::Scope::pause_definition();
       let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
 

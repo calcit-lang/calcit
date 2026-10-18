@@ -28,6 +28,22 @@ use super::edit::{
 use super::query::resolve_path_expression;
 use super::tree_mutation::{TreeCursorMutation, TreeOperation};
 
+/// Validate the changed root without blocking repairs to unrelated old source.
+fn save_definition_tree(
+  snapshot: &calcit::snapshot::Snapshot,
+  snapshot_file: &str,
+  namespace: &str,
+  definition: &str,
+) -> Result<(), String> {
+  let entry = snapshot
+    .files
+    .get(namespace)
+    .and_then(|file| file.defs.get(definition))
+    .ok_or_else(|| format!("Definition '{namespace}/{definition}' not found"))?;
+  calcit::snapshot::validate_definition_root(&entry.code, &format!("{namespace}/{definition}"))?;
+  save_snapshot(snapshot, snapshot_file)
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Helper functions
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -735,7 +751,7 @@ fn handle_replace(opts: &TreeReplaceCommand, snapshot_file: &str) -> Result<(), 
   let new_code = apply_operation_at_path(&code_entry.code, &path, TreeOperation::Replace, Some(&new_node))?;
   code_entry.code = new_code.clone();
 
-  save_snapshot(&snapshot, snapshot_file)?;
+  save_definition_tree(&snapshot, snapshot_file, namespace, definition)?;
 
   let replaced_node = navigate_to_path(&new_code, &path)?;
 
@@ -808,7 +824,7 @@ fn handle_rewrite(opts: &TreeStructuralCommand, snapshot_file: &str) -> Result<(
   let new_code = apply_operation_at_path(&code_entry.code, &path, TreeOperation::Replace, Some(&processed_node))?;
   code_entry.code = new_code.clone();
 
-  save_snapshot(&snapshot, snapshot_file)?;
+  save_definition_tree(&snapshot, snapshot_file, namespace, definition)?;
 
   println!("\n## Result\n\n- status: `applied`");
   Ok(())
@@ -882,7 +898,7 @@ fn handle_replace_leaf(opts: &TreeReplaceLeafCommand, snapshot_file: &str) -> Re
 
   // Update the code entry
   code_entry.code = new_code;
-  save_snapshot(&snapshot, snapshot_file)?;
+  save_definition_tree(&snapshot, snapshot_file, namespace, definition)?;
 
   println!("- replaced: `{replaced_count}`\n");
   print_preview_block("Replacement", &replacement_node, 0, "green");
@@ -951,7 +967,7 @@ fn handle_search_replace(opts: &TreeSearchReplaceCommand, snapshot_file: &str) -
 
       let new_code = apply_operation_at_path(&code_entry.code, &full_path, TreeOperation::Replace, Some(&replacement_node))?;
       code_entry.code = new_code;
-      save_snapshot(&snapshot, snapshot_file)?;
+      save_definition_tree(&snapshot, snapshot_file, namespace, definition)?;
       println!("{} Replaced occurrence [{}]", "✓".green(), pick_index);
       return Ok(());
     }
@@ -1019,7 +1035,7 @@ fn handle_search_replace(opts: &TreeSearchReplaceCommand, snapshot_file: &str) -
   let new_code = apply_operation_at_path(&code_entry.code, &full_path, TreeOperation::Replace, Some(&replacement_node))?;
   code_entry.code = new_code;
 
-  save_snapshot(&snapshot, snapshot_file)?;
+  save_definition_tree(&snapshot, snapshot_file, namespace, definition)?;
 
   println!("{} Replaced unique occurrence", "✓".green());
 
@@ -1137,7 +1153,7 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
   let new_code = apply_operation_at_path(&code_entry.code, &path, TreeOperation::Delete, None)?;
   code_entry.code = new_code.clone();
 
-  save_snapshot(&snapshot, snapshot_file)?;
+  save_definition_tree(&snapshot, snapshot_file, namespace, definition)?;
 
   println!("# Tree mutation\n");
   println!("- operation: `delete`");
@@ -1409,7 +1425,7 @@ fn generic_insert_handler<T: InsertOperation>(
   let new_code = apply_operation_at_path(&code_entry.code, &path, operation, Some(&processed_node))?;
   code_entry.code = new_code.clone();
 
-  save_snapshot(&snapshot, snapshot_file)?;
+  save_definition_tree(&snapshot, snapshot_file, namespace, definition)?;
 
   println!("# Tree mutation\n");
   println!("- operation: `{}`", operation.as_str());
@@ -1516,7 +1532,7 @@ fn generic_swap_handler(
   let new_code = apply_operation_at_path(&code_entry.code, &path, operation, None)?;
   code_entry.code = new_code.clone();
 
-  save_snapshot(&snapshot, snapshot_file)?;
+  save_definition_tree(&snapshot, snapshot_file, namespace, definition)?;
 
   println!("# Tree mutation\n");
   println!("- operation: `{}`", operation.as_str());
@@ -1651,7 +1667,7 @@ fn handle_unwrap(opts: &TreeUnwrapCommand, snapshot_file: &str) -> Result<(), St
   };
   code_entry.code = new_code;
 
-  save_snapshot(&snapshot, snapshot_file)?;
+  save_definition_tree(&snapshot, snapshot_file, namespace, definition)?;
 
   println!("# Tree mutation\n");
   println!("- operation: `unwrap`");
@@ -1695,7 +1711,7 @@ fn handle_raise(opts: &TreeRaiseCommand, snapshot_file: &str) -> Result<(), Stri
   let new_code = apply_operation_at_path(&code_entry.code, parent_path, TreeOperation::Replace, Some(&child_node))?;
   code_entry.code = new_code;
 
-  save_snapshot(&snapshot, snapshot_file)?;
+  save_definition_tree(&snapshot, snapshot_file, namespace, definition)?;
 
   println!("# Tree mutation\n");
   println!("- operation: `raise`");
@@ -1740,7 +1756,7 @@ fn handle_wrap(opts: &TreeWrapCommand, snapshot_file: &str) -> Result<(), String
   let new_code = apply_operation_at_path(&code_entry.code, &path, TreeOperation::Replace, Some(&new_node))?;
   code_entry.code = new_code;
 
-  save_snapshot(&snapshot, snapshot_file)?;
+  save_definition_tree(&snapshot, snapshot_file, namespace, definition)?;
 
   println!("# Tree mutation\n");
   println!("- operation: `wrap`");

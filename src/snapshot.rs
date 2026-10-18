@@ -13,6 +13,40 @@ use crate::calcit::{
 };
 use crate::data::edn::{format_deserialize_error, format_edn_display};
 
+/// Named declaration heads accepted by the structured definition editor.
+pub const DEFINITION_HEADS: &[&str] = &[
+  "def",
+  "defn",
+  "defmacro",
+  "defstruct",
+  "defenum",
+  "deftrait",
+  "defimpl",
+  "defref",
+  "defatom",
+  "defexternal",
+  "defwasm-export",
+  "defwasm-import",
+];
+
+/// Reject a named declaration used as the operator of a Snapshot root call.
+/// Do not inspect bodies, quoted data, anonymous functions or ordinary calls.
+pub fn validate_definition_root(code: &Cirru, owner: &str) -> Result<(), String> {
+  let Cirru::List(items) = code else { return Ok(()) };
+  let mut operator = items.first();
+  while let Some(Cirru::List(nested)) = operator {
+    if let Some(Cirru::Leaf(head)) = nested.first()
+      && DEFINITION_HEADS.contains(&head.as_ref())
+    {
+      return Err(format!(
+        "{owner}: wrapped top-level definition `{head}` would be called during initialization; put the named declaration directly at the definition root, without an extra list"
+      ));
+    }
+    operator = nested.first();
+  }
+  Ok(())
+}
+
 const SNAPSHOT_ABOUT_MESSAGE: &str = "Machine-generated snapshot. Do not edit directly — changes will be overwritten. Use `calcit query` to inspect and `calcit edit`/`calcit tree` to modify. Run `calcit docs agents --contract` before mutations; use `--full` for first orientation or changed contract digest. Manual edits must follow format and schema conventions, then run `calcit edit format`.";
 
 fn default_version() -> String {
@@ -3977,6 +4011,30 @@ mod tests {
       .into_iter()
       .next()
       .expect("test Cirru should contain one expression")
+  }
+
+  #[test]
+  fn definition_root_rejects_wrapped_declarations_without_inspecting_expression_bodies() {
+    for head in DEFINITION_HEADS {
+      let declaration = parse_one(&format!("{head} sample (n) n"));
+      validate_definition_root(&declaration, "demo/sample").expect("an unwrapped declaration root");
+      let wrapped = Cirru::List(vec![declaration]);
+      for code in [&wrapped, &Cirru::List(vec![wrapped.clone()])] {
+        let error = validate_definition_root(code, "demo/sample").expect_err("wrapped declaration root");
+        assert!(error.starts_with("demo/sample: wrapped top-level definition"), "{error}");
+        assert!(error.contains(&format!("`{head}`")), "{error}");
+      }
+    }
+    for source in [
+      "fn (n) (&+ n 1)",
+      "quote (defn sample (n) n)",
+      "def factory (fn (n) n)",
+      "defn sample (n) ((fn (x) x) n)",
+    ] {
+      validate_definition_root(&parse_one(source), "demo/sample").expect("only declaration operators at the root are rejected");
+    }
+    let anonymous_call = Cirru::List(vec![parse_one("fn (n) (&+ n 1)"), Cirru::leaf("4")]);
+    validate_definition_root(&anonymous_call, "demo/result").expect("an anonymous function call is an expression, not a declaration");
   }
 
   #[test]

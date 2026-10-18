@@ -24,6 +24,12 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.31.0 定义根节点去掉额外 List 包装
+
+Snapshot 中的具名声明直接作为定义根节点：`["defn","increment",["n"],...]`，不是 `[["defn","increment",["n"],...]]`。后一种形状此前可能通过检查，却在 JS 模块 import 时立即调用函数，产生参数错误；现在会在预处理或 tree 写回时拒绝，并指出定义位置。
+
+先用 `calcit query def app.config/increment --format edn` 和 `calcit tree show app.config/increment --path ''` 核对实际 AST。仅当确认是多余包装时，通过现有编辑事务 dry-run、scoped revision 将内部声明提升为根节点，再运行完整 strict、项目测试和目标后端验证；不批量猜测、自动删除函数体内的调用，也不放宽 schema。查询旧源码和修复操作仍可用，合法匿名函数调用与 quoted data 不变。
+
 ## 0.32.0 调用 Dynamic 值须先收窄
 
 静态类型为 Dynamic 的值被直接调用时（例如 schema 为 `Fn [Dynamic] -> Dynamic` 的 `defn cd (x) (x 1)`），
