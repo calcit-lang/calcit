@@ -199,6 +199,22 @@
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Number 'Number
           :tags $ #{} :internal
+        '&assert-then $ %{} 'CodeEntry
+          :doc "|Internal assertion continuation with the same failure message and output as assert."
+          :code $ quote $ defmacro &assert-then (message xs success)
+            quasiquote $ &let ()
+              if
+                not $ string? ~message
+                raise $ str-spaced "|expects 1st argument to be string, got:" ~message
+              if ~xs ~success $ &let ()
+                eprintln "|Failed assertion:" $ format-to-lisp $ quote ~xs
+                raise $ ~ $ &str:concat (&str:concat message "| ") (format-to-lisp xs)
+          :examples $ []
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Dynamic
+            :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
+          :tags $ #{} :internal :macro
         '&atom:deref $ %{} 'CodeEntry
           :doc "|internal function for dereferencing atoms\nSyntax: (&atom:deref atom)\nParams: atom (atom)\nReturns: any\nReturns current value of atom"
           :code $ quote &runtime-implementation
@@ -4330,13 +4346,7 @@
                 not $ string? message
                 , false
               quasiquote $ assert ~xs ~message
-              quasiquote $ &let ()
-                if
-                  not $ string? ~message
-                  raise $ str-spaced "|expects 1st argument to be string, got:" ~message
-                if ~xs &unit $ &let ()
-                  eprintln "|Failed assertion:" $ format-to-lisp $ quote ~xs
-                  raise $ ~ $ &str:concat (&str:concat message "| ") (format-to-lisp xs)
+              quasiquote $ &assert-then ~message ~xs &unit
           :examples $ []
             quote $ assert "|x should be positive" $ > 1 0
             quote $ assert "|list should not be empty" $ not
@@ -4346,6 +4356,15 @@
             :expansion $ :: 'Expr 'Unit
             :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
           :tags $ #{} :control :log :macro
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-unit-and-original-failure-text)
+            :code $ quote $ do
+              assert= &unit $ assert |unchanged true
+              assert= &unit $ assert true |unchanged
+              assert= "|unchanged false" $ try (assert |unchanged false)
+                fn (message) message
+              assert= "|unchanged false" $ try (assert false |unchanged)
+                fn (message) message
+            :tags $ #{} :core :struct-match-guard :unit
         'assert-detect $ %{} 'CodeEntry
           :doc "|Assert that a value satisfies a predicate, raise with details when false, and return Unit on success."
           :code $ quote $ defmacro assert-detect (f code)
@@ -12569,17 +12588,64 @@
                 &let
                   v# $ gensym |v
                   quasiquote $ &let (~v# ~value)
-                    assert "|expected struct value to match" $ struct? ~v#
-                    &struct-match-internal ~v# ~@body
-                quasiquote $ &let ()
-                  assert "|expected struct value to match" $ struct? ~value
-                  &struct-match-internal ~value ~@body
+                    &assert-then "|expected struct value to match" (struct? ~v#) (&struct-match-internal ~v# ~@body)
+                quasiquote $ &assert-then "|expected struct value to match" (struct? ~value) (&struct-match-internal ~value ~@body)
           :examples $ []
           :schema $ :: 'Macro $ {} (:rest 'SyntaxList)
             :capabilities $ #{}
             :expansion $ :: 'Expr 'Dynamic
             :required $ [] $ :: 'Expr 'Dynamic
           :tags $ #{} :macro
+          :tests $ []
+            %{} 'TestEntry
+              :name |checked-dynamic-input-preserves-nominal-identity
+              :code $ quote $ let
+                  read $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic
+                      :return 'calcit.core/FsPath
+                    struct-match value
+                      FsPath current
+                        assert= |fixture $ :value current
+                        , current
+                      _ other $ raise |Wrong-struct
+                  expected $ fs:path |fixture
+                assert= true $ identical? expected $ read expected
+              :tags $ #{} :core :struct-match-guard :unit
+            %{} 'TestEntry (:name |evaluates-subject-once-and-keeps-body-errors)
+              :code $ quote $ let
+                  Entry $ defstruct Entry $ :value 'Number
+                  expected $ Entry :value 7
+                  counter $ ref 0
+                  result $ struct-match
+                    do
+                      reset! counter $ &+ (deref counter) 1
+                      , expected
+                    Entry current current
+                    _ other $ raise |Wrong-struct
+                assert= 1 $ deref counter
+                assert= true $ identical? expected result
+                assert= |Body-failed $ try
+                  struct-match expected
+                    Entry current $ raise |Body-failed
+                    _ other $ raise |Wrong-struct
+                  fn (message) message
+              :tags $ #{} :core :struct-match-guard :unit
+            %{} 'TestEntry
+              :name |rejects-invalid-input-with-original-failure-text
+              :code $ quote $ let
+                  read $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic
+                      :return 'calcit.core/FsPath
+                    struct-match value (FsPath current current)
+                      _ other $ raise |Wrong-struct
+                assert= "|expected struct value to match (struct? value)" $ try (read |not-a-struct)
+                  fn (message) message
+                assert= |Wrong-struct $ try
+                  read $ %{} _ $ :value 7
+                  fn (message) message
+              :tags $ #{} :core :struct-match-guard :unit
         'struct-with $ %{} 'CodeEntry
           :doc "|Construct a new struct value by replacing declared fields."
           :code $ quote $ defmacro struct-with (struct_value & pairs) (; "check if args are in pairs")
