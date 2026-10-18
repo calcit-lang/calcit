@@ -82,7 +82,7 @@ fn invocation_return_type(
   }
 }
 
-fn definition_value_schema(ns: &str, def: &str, schema: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+pub(super) fn definition_value_schema(ns: &str, def: &str, schema: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   let schema = resolve_namespace_type_refs_for_body(schema, ns);
   if !definition_marks_async(ns, def) {
     return schema;

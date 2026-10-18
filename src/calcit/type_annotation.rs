@@ -2743,7 +2743,12 @@ impl CalcitTypeAnnotation {
     let Calcit::List(items) = form else {
       return false;
     };
-    items.iter().skip(3).any(Self::hint_form_marks_async)
+    let body_start = if matches!(items.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "fn") {
+      2
+    } else {
+      3
+    };
+    items.iter().skip(body_start).any(Self::hint_form_marks_async)
   }
 
   fn parse_fn_annotation_from_schema_form(
@@ -7950,6 +7955,24 @@ mod tests {
     let annotation = CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(&definition_hint).expect("async-only fn schema");
     assert!(matches!(annotation.as_ref(), CalcitTypeAnnotation::Fn(signature) if signature.is_async_invocation()));
     assert!(CalcitTypeAnnotation::hint_form_marks_async(&definition_hint));
+
+    let anonymous = Calcit::from(vec![
+      symbol("fn"),
+      Calcit::from(vec![]),
+      definition_hint.clone(),
+      Calcit::Number(7.0),
+    ]);
+    assert!(CalcitTypeAnnotation::function_form_marks_async(&anonymous));
+    let named = Calcit::from(vec![
+      symbol("defn"),
+      symbol("sample"),
+      Calcit::from(vec![]),
+      definition_hint.clone(),
+      Calcit::Number(7.0),
+    ]);
+    assert!(CalcitTypeAnnotation::function_form_marks_async(&named));
+    let surrounding = Calcit::from(vec![symbol("fn"), Calcit::from(vec![]), anonymous]);
+    assert!(!CalcitTypeAnnotation::function_form_marks_async(&surrounding));
 
     let target_hint = Calcit::from(vec![
       Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests")),

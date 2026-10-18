@@ -75,6 +75,45 @@ struct ExpectedFunctionContext {
   member_inputs: bool,
 }
 
+/// Compile an owned definition with its own input contract and no caller permissions.
+/// Share this lexical scope between ordinary compilation and source-proof replay.
+struct DefinitionContextScope {
+  previous_fn: Option<ExpectedFunctionContext>,
+  previous_struct: Option<(CalcitStructDef, Arc<CalcitTypeAnnotation>)>,
+  _features: FunctionFeaturesScope,
+  _host_nullish: HostNullishReturnScope,
+}
+
+impl DefinitionContextScope {
+  fn enter(ns: &str, def: &str, source: &Calcit) -> Self {
+    let context = if matches!(source, Calcit::List(forms) if matches!(forms.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "fn"))
+      && let CalcitTypeAnnotation::Fn(signature) = program::lookup_def_schema(ns, def).as_ref()
+    {
+      Some(ExpectedFunctionContext {
+        signature: signature.clone(),
+        member_inputs: false,
+      })
+    } else {
+      None
+    };
+    Self {
+      previous_fn: EXPECTED_FN_TYPE.with(|cell| cell.replace(context)),
+      previous_struct: EXPECTED_STRUCT_TYPE.with(|cell| cell.replace(None)),
+      _features: FunctionFeaturesScope {
+        previous: CURRENT_FN_FEATURES.with(|cell| cell.replace(None)),
+      },
+      _host_nullish: HostNullishReturnScope::enter(false),
+    }
+  }
+}
+
+impl Drop for DefinitionContextScope {
+  fn drop(&mut self) {
+    EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = self.previous_fn.take());
+    EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = self.previous_struct.take());
+  }
+}
+
 /// A callee supplies contextual types, never lexical permissions or async syntax.
 fn callback_parameter_context(signature: Arc<CalcitFnTypeAnnotation>, member_inputs: bool) -> ExpectedFunctionContext {
   let signature = if signature.features.is_empty() {
@@ -339,7 +378,10 @@ pub fn trace_definition_source_expressions(
       Some(NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::new(vec![]))),
     )
   })?;
-  trace_source_expressions(&code, ns, def, check_warnings, call_stack).map(|(_, expressions)| expressions)
+  let _definition_context = DefinitionContextScope::enter(ns, def, &code);
+  let (resolved, expressions) = trace_source_expressions(&code, ns, def, check_warnings, call_stack)?;
+  check_top_level_value_schema(ns, def, &code, &resolved, &ScopeTypes::new(), call_stack)?;
+  Ok(expressions)
 }
 
 /// Trace caller-provided source through the same expression evidence collector.
@@ -393,8 +435,16 @@ pub fn trace_snapshot_source_expressions(
   }
   let mut locations = HashMap::new();
   collect(&code, source, ns, def, &mut vec![], &mut locations);
+  // Attached snippets can reuse a source label without being its definition.
+  // Only the registered source owns that definition's parameter contract.
+  let owned = program::lookup_def_code(ns, def).is_some_and(|registered| registered == code);
+  let _definition_context = owned.then(|| DefinitionContextScope::enter(ns, def, &code));
   // `code` retains every indexed Arc until preprocessing and collection finish.
-  trace_source_expressions_with_locations(&code, ns, def, check_warnings, call_stack, locations).map(|(_, expressions)| expressions)
+  let (resolved, expressions) = trace_source_expressions_with_locations(&code, ns, def, check_warnings, call_stack, locations)?;
+  if owned {
+    check_top_level_value_schema(ns, def, &code, &resolved, &ScopeTypes::new(), call_stack)?;
+  }
+  Ok(expressions)
 }
 
 fn trace_source_expressions_with_locations(
@@ -945,12 +995,6 @@ fn ensure_ns_def_preprocessed(
 
   let _trace = PreprocessTrace::enter(ns, def);
 
-  // Save and clear EXPECTED_FN_TYPE to prevent leaking into nested def compilation.
-  // The calling context's fn type hint is only meant for the immediate expression being processed,
-  // not for defs compiled transitively during symbol resolution.
-  let saved_fn_type = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().take());
-  let saved_struct_type = EXPECTED_STRUCT_TYPE.with(|cell| cell.borrow_mut().take());
-
   let result = with_preprocess_compile_guard(ns, def, || match program::lookup_def_code(ns, def) {
     Some(code) => {
       // Only a computed root operator needs source-shape validation. Ordinary
@@ -962,29 +1006,12 @@ fn ensure_ns_def_preprocessed(
         crate::snapshot::validate_definition_root(&source, &format!("{ns}/{def}"))
           .map_err(|message| CalcitErr::use_msg_stack_location(CalcitErrKind::Syntax, message, call_stack, location))?;
       }
+      let _definition_context = DefinitionContextScope::enter(ns, def, &code);
       let _definition_replay_scope = source_replay::Scope::pause_definition();
       let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
 
       let mut scope_types = ScopeTypes::new();
       let context_label = format!("{ns}/{def}");
-      // Referenced source definitions have their own lexical capabilities.
-      // A caller's :js-ffi feature must not authorize a top-level value.
-      let saved_features = CURRENT_FN_FEATURES.with(|cell| cell.replace(None));
-      // Nor does a caller's `JsNullish` return let this definition hand nil to a host.
-      let _host_nullish_scope = HostNullishReturnScope::enter(false);
-      // A source `fn` uses the definition's schema, not the caller's expected
-      // callback type. Named `defn` handles its own schema and must not pass
-      // that expectation on to an unrelated nested callback.
-      if matches!(&code, Calcit::List(forms) if matches!(forms.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "fn"))
-        && let CalcitTypeAnnotation::Fn(fn_schema) = program::lookup_def_schema(ns, def).as_ref()
-      {
-        EXPECTED_FN_TYPE.with(|cell| {
-          *cell.borrow_mut() = Some(ExpectedFunctionContext {
-            signature: fn_schema.clone(),
-            member_inputs: false,
-          })
-        });
-      }
       let lowering_scope = post_lowering::Scope::enter();
       let compile = || {
         builtins::meta::with_compiling_def(ns, def, || {
@@ -1003,7 +1030,6 @@ fn ensure_ns_def_preprocessed(
       } else {
         compile()
       };
-      CURRENT_FN_FEATURES.with(|cell| *cell.borrow_mut() = saved_features);
       let resolved_code = resolved_result?;
       let lowering_evidence = lowering_scope.finish();
       if post_lowering::enabled() {
@@ -1031,10 +1057,6 @@ fn ensure_ns_def_preprocessed(
     }
   });
 
-  // Restore caller hints even when preprocessing failed or was skipped.
-  EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = saved_fn_type);
-  EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = saved_struct_type);
-
   let Some(()) = result? else { return Ok(()) };
   Ok(())
 }
@@ -1049,16 +1071,18 @@ fn check_top_level_value_schema(
   call_stack: &CallStackList,
 ) -> Result<(), CalcitErr> {
   let Calcit::List(forms) = source else { return Ok(()) };
-  if !matches!(forms.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "def") {
+  if !matches!(forms.first(), Some(Calcit::Symbol { sym, .. }) if matches!(sym.as_ref(), "def" | "fn")) {
     return Ok(());
   }
-  let expected = program::lookup_def_schema(ns, def);
+  let expected = type_inference::definition_value_schema(ns, def, program::lookup_def_schema(ns, def));
   let Some(actual) = resolve_type_value(resolved, scope_types) else {
     return Ok(());
   };
   // Preserve the existing migration policy for open evidence; a definite
   // contradiction must never become a consumer's dispatch contract.
-  if !matches!(actual.prove_with_bindings(&expected, &mut HashMap::new()), TypeProof::Mismatch) {
+  let proof =
+    calcit::with_type_annotation_warning_context(format!("{ns}/{def}"), || actual.prove_with_bindings(&expected, &mut HashMap::new()));
+  if !matches!(proof, TypeProof::Mismatch) {
     return Ok(());
   }
   let location = forms
@@ -1823,6 +1847,7 @@ pub fn compile_source_def_for_snapshot(
     ));
   };
 
+  let _definition_context = DefinitionContextScope::enter(ns, def, &code);
   let mut scope_types = ScopeTypes::new();
   let context_label = format!("{ns}/{def}");
   let resolved_code = builtins::meta::with_compiling_def(ns, def, || {
@@ -14699,6 +14724,52 @@ mod tests {
   };
   use crate::data::cirru::code_to_calcit;
   use cirru_parser::Cirru;
+
+  #[test]
+  fn owned_definition_context_restores_caller_evidence_and_permissions_on_unwind() {
+    let _state = lock_preprocess_test_state();
+    let _restore = DefinitionContextScope::enter("tests.context", "restore", &Calcit::Nil);
+    let signature = Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::Number)],
+      return_type: Arc::new(CalcitTypeAnnotation::Number),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    });
+    EXPECTED_FN_TYPE.with(|cell| {
+      *cell.borrow_mut() = Some(ExpectedFunctionContext {
+        signature: signature.clone(),
+        member_inputs: true,
+      });
+    });
+    CURRENT_FN_FEATURES.with(|cell| *cell.borrow_mut() = Some(Arc::new(HashSet::from([EdnTag::from("js-ffi")]))));
+    CURRENT_FN_RETURNS_HOST_NULLISH.with(|cell| cell.set(true));
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+      let _owned = DefinitionContextScope::enter("tests.context", "owned", &Calcit::Nil);
+      assert!(EXPECTED_FN_TYPE.with(|cell| cell.borrow().is_none()));
+      assert!(EXPECTED_STRUCT_TYPE.with(|cell| cell.borrow().is_none()));
+      assert!(CURRENT_FN_FEATURES.with(|cell| cell.borrow().is_none()));
+      assert!(!CURRENT_FN_RETURNS_HOST_NULLISH.with(Cell::get));
+      panic!("exercise owned-context unwinding");
+    }));
+    assert!(result.is_err());
+    EXPECTED_FN_TYPE.with(|cell| {
+      let state = cell.borrow();
+      let restored = state.as_ref().expect("restore caller function context");
+      assert!(restored.member_inputs);
+      assert!(Arc::ptr_eq(&restored.signature, &signature));
+    });
+    assert!(CURRENT_FN_FEATURES.with(|cell| {
+      cell
+        .borrow()
+        .as_ref()
+        .is_some_and(|features| features.contains(&EdnTag::from("js-ffi")))
+    }));
+    assert!(CURRENT_FN_RETURNS_HOST_NULLISH.with(Cell::get));
+  }
 
   #[test]
   fn snapshot_source_trace_retains_unlocated_reader_heads_and_comment_indexes() {
