@@ -9983,7 +9983,11 @@
                 assert=
                   [] 1 $ [] 2 3
                   list-match ([] 1 2 3)
-                    () ([])
+                    () $ []
+                    (l0 ls) ([] l0 ls)
+                assert= ([])
+                  list-match ([])
+                    () $ []
                     (l0 ls) ([] l0 ls)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |evaluates-subject-once-and-only-selected-body)
@@ -12138,7 +12142,8 @@
                   (:ok _) false
                   (:err message) (string? message)
               :tags $ #{} :core :crypto :unit :wasi :wasm
-        'select-keys $ %{} 'CodeEntry (:doc "|Keep the entries of m whose keys are listed in xs. Keys missing from m are skipped, not filled with nil.")
+        'select-keys $ %{} 'CodeEntry
+          :doc "|Keep the entries of m whose keys are listed in xs. Keys missing from m are skipped, not filled with nil."
           :code $ quote $ defn select-keys (m xs)
             assert "|expected map for selecting" $ map? m
             foldl xs (&{})
