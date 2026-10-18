@@ -97,6 +97,25 @@ const asyncTest = JSON.parse(asyncDefinition.stdout).data.tests.find(test => tes
 assert.ok(asyncTest, "the shared async scope contract must exist");
 const asyncFixture = await mkdtemp(join(resolve("target"), "async-scope-replay-"));
 try {
+  const conflictingHintSnapshot = join(asyncFixture, "conflicting-local-hint.cirru");
+  await copyFile("calcit/add.cirru", conflictingHintSnapshot);
+  const conflictingHintOps = [
+    ["config", "set", "reload-fn", "app.main/main!"],
+    ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
+      "quote $ defn main! () (let ((f (fn () |wrong))) (hint-fn f ({} (:args ([])) (:return 'Number))) (&+ (f) 1)) &unit"],
+    ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+  ];
+  const conflictPreview = run([conflictingHintSnapshot, "edit", "transaction", "--code", JSON.stringify(conflictingHintOps), "--dry-run", "--format", "json"]);
+  expectStatus(conflictPreview, 0, "preview contradictory local contract fixture");
+  expectStatus(run([conflictingHintSnapshot, "edit", "transaction", "--code", JSON.stringify(conflictingHintOps),
+    "--expect-revision", JSON.parse(conflictPreview.stdout).scoped_revision, "--format", "json"]), 0,
+    "assemble contradictory local contract with a revision guard");
+  for (const [label, mode] of [["check", ["--check-only"]], ["native", []], ["JS", ["js"]], ["WASM", ["wasm"]], ["WASI", ["wasi"]]]) {
+    const invalid = run([conflictingHintSnapshot, "--emit-path", join(asyncFixture, `hint-conflict-${label}`), ...mode]);
+    expectStatus(invalid, 1, `${label} rejects the contradictory local contract before execution`);
+    assert.match(invalid.stderr, /hint-fn schema conflicts with the existing local function signature/);
+  }
   const snapshot = join(asyncFixture, "calcit.cirru");
   await copyFile("src/cirru/calcit-core.cirru", snapshot);
   await symlink(resolve("node_modules"), join(asyncFixture, "node_modules"), "dir");
