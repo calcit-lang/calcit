@@ -226,6 +226,12 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
   // The fixture keeps its erasures on purpose: each proven one is a
   // W_OPTION_ERASED_TO_NIL note that does not fail the check, and the view
   // must not change that verdict.
+  assert_eq!(
+    strict_before.status.code(),
+    Some(0),
+    "{}",
+    String::from_utf8_lossy(&strict_before.stderr)
+  );
   let strict_report: serde_json::Value = serde_json::from_slice(&strict_before.stdout).expect("one JSON document");
   let mut codes = Vec::new();
   collect_codes(&strict_report, &mut codes);

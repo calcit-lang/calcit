@@ -961,6 +961,8 @@ fn ensure_ns_def_preprocessed(
       // Referenced source definitions have their own lexical capabilities.
       // A caller's :js-ffi feature must not authorize a top-level value.
       let saved_features = CURRENT_FN_FEATURES.with(|cell| cell.replace(None));
+      // Nor does a caller's `JsNullish` return let this definition hand nil to a host.
+      let _host_nullish_scope = HostNullishReturnScope::enter(false);
       // A source `fn` uses the definition's schema, not the caller's expected
       // callback type. Named `defn` handles its own schema and must not pass
       // that expectation on to an unrelated nested callback.
@@ -3845,6 +3847,7 @@ fn preprocess_list_call(
             }
             check_struct_method_args(&typed_method, &processed_args, scope_types, file_ns, &def_name, check_warnings);
             note_deprecated_method_call(&typed_method, &processed_args, scope_types, file_ns);
+            warn_on_option_erased_to_nil(&typed_method, &processed_args, scope_types, file_ns);
             require_js_ffi_feature_for_operation(&typed_method, file_ns, def_name.as_ref(), check_warnings, call_stack)?;
 
             if let Some(qualified_call) =

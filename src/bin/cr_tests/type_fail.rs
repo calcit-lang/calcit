@@ -2843,7 +2843,7 @@ fn calling_a_dynamic_value_requires_fn_narrowing() {
 fn unwrap_or_nil_on_an_open_option_reports_the_erasure() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(
-      "let\n    erase-method $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) (.unwrap-or (get m :a) nil)\n    erase-call $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) (option:unwrap-or (get m :a) nil)\n    erase-match $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) $ match (get m :a)\n      (:some v) v\n      (:none) nil\n    keep-match $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) $ match (get m :a)\n      (:some v) v\n      (:none) 0\n    to-host $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return $ :: 'JsNullish 'Dynamic)) (.unwrap-or (get m :a) nil)\n    keep-option $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) (get m :a)\n    with-default $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) (.unwrap-or (get m :a) 0)\n  [] erase-method erase-call erase-match keep-match to-host keep-option with-default",
+      "let\n    erase-method $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) (.unwrap-or (get m :a) nil)\n    erase-postfix $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) (let ((a (get m :a))) (a .unwrap-or nil))\n    erase-call $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) (option:unwrap-or (get m :a) nil)\n    erase-match $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) $ match (get m :a)\n      (:some v) v\n      (:none) nil\n    keep-match $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) $ match (get m :a)\n      (:some v) v\n      (:none) 0\n    to-host $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return $ :: 'JsNullish 'Dynamic)) (.unwrap-or (get m :a) nil)\n    keep-option $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) (get m :a)\n    with-default $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return 'Dynamic)) (.unwrap-or (get m :a) 0)\n  [] erase-method erase-postfix erase-call erase-match keep-match to-host keep-option with-default",
     );
     let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
     let _ = runner::preprocess::take_advisories();
@@ -2862,10 +2862,10 @@ fn unwrap_or_nil_on_an_open_option_reports_the_erasure() {
       .iter()
       .filter(|advisory| advisory.code() == Some("W_OPTION_ERASED_TO_NIL"))
       .collect::<Vec<_>>();
-    // The method, the direct call and the `(:none) nil` branch report; keeping
+    // The method in both call forms, the direct call and the `(:none) nil` branch report; keeping
     // the Option, choosing a concrete default or declaring a `JsNullish`
     // return for a host does not.
-    assert_eq!(erased.len(), 3, "{advisories:?}");
+    assert_eq!(erased.len(), 4, "{advisories:?}");
     assert!(erased[0].message().contains("back into nil"), "{erased:?}");
   });
 }
