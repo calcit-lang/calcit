@@ -44,6 +44,28 @@ function expectStatus(result, expected, label) {
   }
 }
 
+// Metadata must not silently discard a malformed contract or manufacture a callable.
+for (const [label, source, diagnostic] of [
+  ["missing hint schema", "hint-fn", /hint-fn expects.*got 0 arguments/],
+  ["extra hint argument", "let ((f (fn () 1))) (hint-fn f ({} (:args ([])) (:return 'Number)) :extra) (f)", /hint-fn expects.*got 3 arguments/],
+  ["wrapped body schema", "fn (value) (hint-fn (:: 'Fn ({} (:args ([] 'String)) (:return 'String)))) value", /hint-fn expects a schema Map/],
+  ["callback wrapper", "hint-fn ({} (:args ([])) (:return 'Number)) (:: fn () 1)", /hint-fn expects a schema Map/],
+  ["numeric local target", "let ((f 7)) (hint-fn f ({} (:args ([])) (:return 'Number))) (type-of f)", /hint-fn target must be an existing local function/],
+  ["conflicting return", "let ((f (fn () |wrong))) (hint-fn f ({} (:args ([])) (:return 'Number))) (&+ (f) 1)", /hint-fn schema conflicts with the existing local function signature/],
+  ["conflicting input", `let
+    f $ fn (n)
+      hint-fn $ {} (:args $ [] 'Number) (:return 'Number)
+      &+ n 1
+  hint-fn f $ {} (:args $ [] 'String) (:return 'Number)
+  f |wrong`, /hint-fn schema conflicts with the existing local function signature/],
+  ["unproved open target", "fn (f) (hint-fn f ({} (:args ([])) (:return 'Number))) &unit", /a schema does not prove callability/],
+  ["new function target", "hint-fn (fn () 1) ({} (:args ([])) (:return 'Number))", /put .*hint-fn schema.* inside a new function body/],
+]) {
+  const invalid = run(["eval", source]);
+  expectStatus(invalid, 1, label);
+  assert.match(invalid.stderr, diagnostic, `${label}: report the malformed hint itself`);
+}
+
 const scoped = run(["calcit/type-fail/unsafe-coerce-scoped-strict.cirru", "--check-only"]);
 expectStatus(scoped, 0, "default strict valid fixture");
 

@@ -8457,7 +8457,7 @@
                   fn (x) :number x
             :tags $ #{} :core :unit
         'hint-fn $ %{} 'CodeEntry
-          :doc "|函数类型元数据：在函数体中使用 (hint-fn schema)，或使用 (hint-fn f schema) 为已有局部函数补充类型。schema 支持 :args、:return、:generics、:where 和 :async。\n表达式本身返回 Nil，不创建、包装或返回函数；需要传递回调时直接传递 f，或将 hint-fn 写在 fn 的函数体中。"
+          :doc "|函数类型元数据：在函数体中使用 (hint-fn schema)，或使用 (hint-fn f schema) 为已有局部函数补充类型。schema 支持 :args、:return、:generics、:where 和 :async。\n表达式本身返回 Nil，不创建、包装或返回函数；需要传递回调时直接传递 f，或将 hint-fn 写在 fn 的函数体中。\n只接受一个 schema Map，或已有局部函数加 schema Map。函数体 Map 不包 :: 'Fn；错误 wrapper、参数数量/顺序、非函数目标及与已有签名矛盾的注解会在预处理时拒绝。声明合同不替代动态值的可调用性证明。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Dynamic
@@ -8767,13 +8767,13 @@
             %{} 'TestEntry (:name |nested-generic-call-scope)
               :code $ quote $ let
                   identity-list $ fn (xs)
-                    hint-fn $ :: 'Fn $ {}
+                    hint-fn $ {}
                       :generics $ [] 'T
                       :args $ [] $ :: 'List 'T
                       :return $ :: 'List 'T
                     , xs
                   forward $ fn (xs)
-                    hint-fn $ :: 'Fn $ {}
+                    hint-fn $ {}
                       :generics $ [] 'T
                       :args $ [] $ :: 'List (:: 'Optional 'T)
                       :return $ :: 'List $ :: 'Optional 'T
@@ -8882,6 +8882,21 @@
                 assert= 3 $ pick-c 1 2 3
                 assert= 1 $ count-two 1 2 3 4
               :tags $ #{} :call-boundary
+            %{} 'TestEntry (:name |local-generic-hint-preserves-option-values)
+              :code $ quote $ let
+                  same $ fn (value) value
+                  metadata $ hint-fn same $ {}
+                    :generics $ [] 'T
+                    :args $ [] 'T
+                    :return 'T
+                assert= nil metadata
+                assert= 7 $ same 7
+                assert= |text $ same |text
+                assert= (Option :none)
+                  same $ Option :none
+                assert= (Option :some nil)
+                  same $ Option :some nil
+              :tags $ #{} :hint-syntax :unit
         'identical? $ %{} 'CodeEntry
           :doc "|internal function for identity comparison\nSyntax: (identical? a b)\nParams: a (any), b (any)\nReturns: boolean\nReturns true if two values are identical (same reference), not just equal"
           :code $ quote &runtime-implementation

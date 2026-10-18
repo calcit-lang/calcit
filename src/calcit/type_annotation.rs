@@ -2815,12 +2815,10 @@ impl CalcitTypeAnnotation {
     generics: &[Arc<str>],
   ) -> Option<Arc<CalcitTypeAnnotation>> {
     let items = Self::get_hint_fn_items(form)?;
-    for item in items.iter().skip(1) {
-      if let Some(annotation) = Self::parse_fn_annotation_from_schema_form(item, generics, true) {
-        return Some(annotation);
-      }
+    if !matches!(items.len(), 2 | 3) {
+      return None;
     }
-    None
+    Self::parse_fn_annotation_from_schema_form(items.get(items.len() - 1)?, generics, true)
   }
 
   pub(crate) fn extract_surrounding_fn_annotation_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
