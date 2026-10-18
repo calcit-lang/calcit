@@ -72,6 +72,7 @@ const TYPE_AT_SCHEMA_VERSION: u32 = 2;
 struct SpecialBuiltinQueryMeta {
   doc: &'static str,
   schema: Arc<CalcitTypeAnnotation>,
+  runtime_arity: Option<RuntimeCallArity>,
   examples: Vec<Cirru>,
   expr_preview: &'static str,
   cirru_note: &'static str,
@@ -595,11 +596,15 @@ fn lookup_special_builtin_query_meta(namespace: &str, definition: &str) -> Resul
 
   let meta = match definition {
     "to-calcit-data" => Some(SpecialBuiltinQueryMeta {
-      doc: "convert JS arrays and plain objects into Calcit data recursively",
-      schema: special_builtin_dynamic_fn(vec![DYNAMIC_TYPE.clone()]),
+      doc: "convert JS values recursively; optional second Bool noKeyword defaults to false (keyword text becomes Tag); true preserves String values and object keys; existing Calcit containers are unchanged",
+      schema: special_builtin_dynamic_fn(vec![DYNAMIC_TYPE.clone(), Arc::new(CalcitTypeAnnotation::Bool)]),
+      runtime_arity: Some(RuntimeCallArity { min: 1, max: Some(2) }),
       examples: parse_special_builtin_examples(&[
         "to-calcit-data $ js-array 1 ([] 2 3) (:: :quote $ [] 'a 'b)",
         "to-calcit-data $ &js-object |a 1 |:b 2 :c ([] 3 4)",
+        "assert= ([] |:keyword) $ to-calcit-data (js-array |:keyword) true",
+        "assert= ([] :keyword) $ to-calcit-data (js-array |:keyword) false",
+        "assert= ([] :keyword) $ to-calcit-data $ js-array |:keyword",
       ])?,
       expr_preview: "builtin proc to-calcit-data (JS interop helper)",
       cirru_note: "(builtin proc; runtime helper without snapshot source)",
@@ -608,6 +613,7 @@ fn lookup_special_builtin_query_meta(namespace: &str, definition: &str) -> Resul
     "to-js-data" => Some(SpecialBuiltinQueryMeta {
       doc: "convert Calcit data into JS-compatible data recursively; JS FFI keeps value and options dynamically typed",
       schema: special_builtin_dynamic_fn(vec![DYNAMIC_TYPE.clone(), DYNAMIC_TYPE.clone()]),
+      runtime_arity: None,
       examples: parse_special_builtin_examples(&[
         "to-js-data $ [] 1 2 3",
         "to-js-data $ &{} |a 1 :b ([] 2 3)",
@@ -620,6 +626,7 @@ fn lookup_special_builtin_query_meta(namespace: &str, definition: &str) -> Resul
     "to-cirru-edn" => Some(SpecialBuiltinQueryMeta {
       doc: "convert Calcit data into Cirru EDN data",
       schema: special_builtin_dynamic_fn(vec![DYNAMIC_TYPE.clone()]),
+      runtime_arity: None,
       examples: vec![],
       expr_preview: "builtin proc to-cirru-edn (data conversion helper)",
       cirru_note: "(builtin proc; runtime helper without snapshot source)",
@@ -628,6 +635,7 @@ fn lookup_special_builtin_query_meta(namespace: &str, definition: &str) -> Resul
     "extract-cirru-edn" => Some(SpecialBuiltinQueryMeta {
       doc: "extract Cirru EDN data into regular Calcit values when possible",
       schema: special_builtin_dynamic_fn(vec![DYNAMIC_TYPE.clone()]),
+      runtime_arity: None,
       examples: vec![],
       expr_preview: "builtin proc extract-cirru-edn (data conversion helper)",
       cirru_note: "(builtin proc; runtime helper without snapshot source)",
@@ -636,6 +644,7 @@ fn lookup_special_builtin_query_meta(namespace: &str, definition: &str) -> Resul
     "js-array" => Some(SpecialBuiltinQueryMeta {
       doc: "build a JS array value in JS interop contexts",
       schema: special_builtin_dynamic_fn(vec![Arc::new(CalcitTypeAnnotation::Variadic(DYNAMIC_TYPE.clone()))]),
+      runtime_arity: None,
       examples: vec![],
       expr_preview: "builtin proc js-array (JS interop helper)",
       cirru_note: "(builtin proc; runtime helper without snapshot source)",
@@ -644,6 +653,7 @@ fn lookup_special_builtin_query_meta(namespace: &str, definition: &str) -> Resul
     "&js-object" => Some(SpecialBuiltinQueryMeta {
       doc: "build a plain JS object value in JS interop contexts",
       schema: special_builtin_dynamic_fn(vec![Arc::new(CalcitTypeAnnotation::Variadic(DYNAMIC_TYPE.clone()))]),
+      runtime_arity: None,
       examples: vec![],
       expr_preview: "builtin proc &js-object (JS interop helper)",
       cirru_note: "(builtin proc; runtime helper without snapshot source)",
@@ -697,11 +707,17 @@ fn format_query_schema(annotation: &CalcitTypeAnnotation, wrapped: bool) -> Stri
   }
 }
 
-fn format_schema_query_json(id: &str, source: &str, annotation: &CalcitTypeAnnotation, revision: String) -> Result<String, String> {
+fn format_schema_query_json(
+  id: &str,
+  source: &str,
+  annotation: &CalcitTypeAnnotation,
+  revision: String,
+  runtime_arity: Option<RuntimeCallArity>,
+) -> Result<String, String> {
   let schema = query_schema_cirru(annotation, true)?;
   let canonical_schema = schema.as_ref().map(format_query_schema_oneline).transpose()?;
   let tree = schema.as_ref().map(cirru_to_json_value);
-  let envelope = serde_json::json!({
+  let mut envelope = serde_json::json!({
     "schema_version": 1,
     "command": "query.schema",
     "revision": revision,
@@ -713,6 +729,10 @@ fn format_schema_query_json(id: &str, source: &str, annotation: &CalcitTypeAnnot
     },
     "diagnostics": [],
   });
+  if let Some(arity) = runtime_arity {
+    envelope["data"]["runtime_arity"] =
+      serde_json::to_value(arity).map_err(|error| format!("Failed to encode runtime arity: {error}"))?;
+  }
   serde_json::to_string_pretty(&envelope).map_err(|error| format!("Failed to encode schema query JSON: {error}"))
 }
 
@@ -1373,8 +1393,8 @@ mod type_query_tests {
   #[test]
   fn schema_json_is_a_versioned_machine_readable_envelope() {
     let annotation = CalcitTypeAnnotation::Ref(Arc::new(CalcitTypeAnnotation::Bool));
-    let output =
-      format_schema_query_json("app.main/*enabled?", "local", &annotation, "revision-1".to_owned()).expect("schema JSON should format");
+    let output = format_schema_query_json("app.main/*enabled?", "local", &annotation, "revision-1".to_owned(), None)
+      .expect("schema JSON should format");
     let value: serde_json::Value = serde_json::from_str(&output).expect("schema output should be valid JSON");
 
     assert_eq!(value["schema_version"], 1);
@@ -1384,8 +1404,8 @@ mod type_query_tests {
     assert_eq!(value["data"]["tree"], serde_json::json!(["::", "'Ref", "'Bool"]));
 
     let broad_ref = CalcitTypeAnnotation::Ref(DYNAMIC_TYPE.clone());
-    let output =
-      format_schema_query_json("app.main/*cache", "local", &broad_ref, "revision-2".to_owned()).expect("broad ref JSON should format");
+    let output = format_schema_query_json("app.main/*cache", "local", &broad_ref, "revision-2".to_owned(), None)
+      .expect("broad ref JSON should format");
     let value: serde_json::Value = serde_json::from_str(&output).expect("schema output should be valid JSON");
     assert_eq!(value["data"]["canonical_schema"], "'Ref");
     assert_eq!(value["data"]["tree"], "'Ref");
@@ -1411,8 +1431,14 @@ mod type_query_tests {
       Some(displayed.trim().to_owned())
     );
 
-    let output = format_schema_query_json("app.main/with-bindings", "project", annotation.as_ref(), "revision-1".to_owned())
-      .expect("macro schema JSON");
+    let output = format_schema_query_json(
+      "app.main/with-bindings",
+      "project",
+      annotation.as_ref(),
+      "revision-1".to_owned(),
+      None,
+    )
+    .expect("macro schema JSON");
     let value: serde_json::Value = serde_json::from_str(&output).expect("schema output should be valid JSON");
     assert_eq!(value["data"]["tree"][1], "'Macro");
   }
@@ -4043,7 +4069,8 @@ fn build_special_builtin_context(
     .map(|example| example.format_one_liner().unwrap_or_default())
     .collect::<Vec<_>>()
     .join("\n");
-  let revision = semantic_revision(&[meta.doc, &schema, &examples_fingerprint, meta.cirru_note]);
+  let arity_fingerprint = meta.runtime_arity.map(render_runtime_call_arity).unwrap_or_default();
+  let revision = semantic_revision(&[meta.doc, &schema, &examples_fingerprint, meta.cirru_note, &arity_fingerprint]);
   let tags = meta.semantic_tags.iter().map(|tag| (*tag).to_owned()).collect::<Vec<_>>();
   let intentional_ffi = meta.semantic_tags.contains(&"js-ffi");
   let (doc, doc_truncated) = truncate_chars(meta.doc, (opts.budget / 6).clamp(160, 1200));
@@ -4070,7 +4097,7 @@ fn build_special_builtin_context(
     tags: tags.clone(),
     schema: Some(schema),
     inferred_schema: None,
-    runtime_arity: None,
+    runtime_arity: meta.runtime_arity,
     failure: None,
     features: tags,
     js_ffi: None,
@@ -5062,7 +5089,7 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
         .as_function()
         .map(|annot| annot.to_schema_edn())
         .unwrap_or(cirru_edn::Edn::Nil);
-      let data = serde_json::json!({
+      let mut data = serde_json::json!({
         "id": format!("{namespace}/{definition}"),
         "doc": meta.doc,
         "tags": meta.semantic_tags,
@@ -5075,11 +5102,17 @@ fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryD
         "builtin": true,
         "kind": "special-proc"
       });
+      if let Some(arity) = meta.runtime_arity {
+        data["runtime_arity"] = serde_json::to_value(arity).map_err(|error| format!("Failed to encode runtime arity: {error}"))?;
+      }
       return emit_def_query(data, None, format, None);
     }
     let mut out = String::new();
     let _ = writeln!(&mut out, "# Definition `{namespace}/{definition}`\n");
     let _ = writeln!(&mut out, "- Type: `{}`", meta.expr_preview);
+    if let Some(arity) = meta.runtime_arity {
+      let _ = writeln!(&mut out, "- Runtime Proc arity: `{}`", render_runtime_call_arity(arity));
+    }
     let _ = writeln!(&mut out, "- Examples: {}", meta.examples.len());
     let _ = writeln!(&mut out, "\n## Documentation\n\n> {}", meta.doc);
     let _ = writeln!(&mut out, "\n## Schema\n");
@@ -5465,6 +5498,9 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
   {
     let mut out = String::new();
     let _ = writeln!(&mut out, "# Definition preview `{namespace}/{definition}`\n");
+    if let Some(arity) = meta.runtime_arity {
+      let _ = writeln!(&mut out, "- Runtime Proc arity: `{}`", render_runtime_call_arity(arity));
+    }
     let _ = writeln!(&mut out, "- Examples: {}", meta.examples.len());
     let _ = writeln!(&mut out, "\n## Documentation\n\n> {}", meta.doc);
     let _ = writeln!(&mut out, "\n## Expression\n");
@@ -5548,15 +5584,20 @@ fn handle_schema(input_path: &str, namespace: &str, definition: &str, format: St
     if structured {
       let id = format!("{namespace}/{definition}");
       let schema_fingerprint = format_query_schema(meta.schema.as_ref(), true);
+      let arity_fingerprint = meta.runtime_arity.map(render_runtime_call_arity).unwrap_or_default();
       format.print_json_text(&format_schema_query_json(
         &id,
         "core-builtin",
         meta.schema.as_ref(),
-        semantic_revision(&[meta.doc, &schema_fingerprint]),
+        semantic_revision(&[meta.doc, &schema_fingerprint, &arity_fingerprint]),
+        meta.runtime_arity,
       )?)?;
       return Ok(());
     } else {
       let _ = writeln!(&mut out, "# Schema for `{namespace}/{definition}`\n");
+      if let Some(arity) = meta.runtime_arity {
+        let _ = writeln!(&mut out, "- Runtime Proc arity: `{}`\n", render_runtime_call_arity(arity));
+      }
       out.push_str(&markdown_fenced_block("cirru", &format_query_schema(meta.schema.as_ref(), true)));
     }
     emit_cli_output(&out, false);
@@ -5584,6 +5625,7 @@ fn handle_schema(input_path: &str, namespace: &str, definition: &str, format: St
       &namespace_source(&snapshot, namespace),
       code_entry.schema.as_ref(),
       snapshot::definition_revision(code_entry)?,
+      None,
     )?)?;
     return Ok(());
   }

@@ -1,7 +1,8 @@
 import { spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import assert from "node:assert/strict";
 
 const binary = process.env.CALCIT_AGENT_BIN ?? process.env.CALCIT_AGENT_CR ?? "./target/debug/calcit";
@@ -40,6 +41,20 @@ const scenarios = [
       assert.equal(result.data.examples.items[0]?.cirru, "assert= true $\n  Option :some 1\n  , .some?");
     },
   },
+  ...["def", "schema", "context"].map(command => ({
+    name: `to-calcit-data ${command} preserves the optional Bool contract`,
+    args: ["src/cirru/calcit-core.cirru", "query", command, "calcit.core/to-calcit-data", "--format", "json"],
+    check(result) {
+      assert.deepEqual(result.data.runtime_arity, { min: 1, max: 2 });
+      const schema = JSON.stringify(result.data.schema ?? result.data.canonical_schema);
+      assert.ok(schema.includes("'Dynamic") && schema.includes("'Bool"), schema);
+      assert.doesNotMatch(schema, /Optional|JsNullish/, "omission must not widen the Bool value type");
+      if (command !== "schema") {
+        assert.match(result.data.doc, /defaults to false/);
+        assert.match(result.data.doc, /true.*String/);
+      }
+    },
+  })),
   ...["def", "context"].map(command => ({
     name: `read-dir ${command} preserves Proc omission evidence`,
     args: ["src/cirru/calcit-core.cirru", "query", command, "calcit.core/read-dir", "--format", "json"],
@@ -1119,6 +1134,11 @@ const parseEdnRaw = (text, name) => {
 const parseEdnEnvelope = (text, name, reference) => normalizeEdnKeys(parseEdnRaw(text, name), reference);
 const querySnapshotBefore = readFileSync("calcit/test.cirru");
 for (const { name, base, expectedStatus = 0, check } of [
+  ...scenarios.filter(scenario => scenario.name.startsWith("to-calcit-data ")).map(({ name, args, check }) => ({
+    name: `${name} EDN`,
+    base: args.slice(0, -2),
+    check,
+  })),
   {
     name: "required external method EDN",
     base: ["calcit/js-ffi-consumer.cirru", "query", "type", "app.main/TallyHost"],
@@ -1402,6 +1422,42 @@ try {
   mkdirSync(namingDocs, { recursive: true });
   copyFileSync("docs/features/api-roles.md", join(namingDocs, "api-roles.md"));
   const namingBinary = binary.includes("/") || binary.includes("\\") ? resolve(binary) : binary;
+  // Execute the queried examples through the real JS compiler, not a second
+  // hand-written copy of their source or a host-only conversion assertion.
+  const conversionSnapshot = join(fixtureDir, "conversion.cirru");
+  copyFileSync("src/cirru/calcit-core.cirru", conversionSnapshot);
+  symlinkSync(resolve("node_modules"), join(fixtureDir, "node_modules"), "dir");
+  const conversionRun = (...args) => {
+    const child = spawnSync(namingBinary, [conversionSnapshot, ...args], { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 });
+    assert.ifError(child.error);
+    assert.equal(child.status, 0, `${args.join(" ")}: ${child.stderr}`);
+    return child;
+  };
+  conversionRun("query", "config", "--format", "json");
+  const conversionMeta = JSON.parse(conversionRun("query", "def", "calcit.core/to-calcit-data", "--format", "json").stdout).data;
+  assert.equal(conversionMeta.examples.length, 5);
+  const conversionCode = ["defn", "verify-examples", [], ...conversionMeta.examples.slice(2), "&unit"];
+  const conversionOps = [
+    ["edit", "add-ns", "calcit.query-conversion"],
+    ["edit", "def", "calcit.query-conversion/verify-examples", "--input-format", "json-ast", "--code", JSON.stringify(conversionCode)],
+    ["edit", "schema", "calcit.query-conversion/verify-examples", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit) (:features $ #{} :js-ffi)"],
+    ["config", "set", "init-fn", "calcit.query-conversion/verify-examples"],
+    ["config", "set", "reload-fn", "calcit.query-conversion/verify-examples"],
+    ["config", "set", "mode", "js"],
+    ["config", "set", "target", "node"],
+  ];
+  const conversionPreview = JSON.parse(conversionRun("edit", "transaction", "--code", JSON.stringify(conversionOps), "--dry-run", "--format", "json").stdout);
+  conversionRun("edit", "transaction", "--code", JSON.stringify(conversionOps), "--expect-revision", conversionPreview.scoped_revision, "--format", "json");
+  assert.deepEqual(JSON.parse(conversionRun("query", "def", "calcit.query-conversion/verify-examples", "--format", "json").stdout).data.code, conversionCode);
+  conversionRun("--check-only");
+  const conversionOutput = join(fixtureDir, "conversion-js");
+  conversionRun("--emit-path", conversionOutput, "js");
+  const conversionExecution = spawnSync(process.execPath, ["--input-type=module", "-e",
+    `const examples = await import(${JSON.stringify(pathToFileURL(join(conversionOutput, "calcit.query-conversion.mjs")).href)}); examples.verify_examples();`],
+    { encoding: "utf8", maxBuffer: 4 * 1024 * 1024 });
+  assert.ifError(conversionExecution.error);
+  assert.equal(conversionExecution.status, 0, conversionExecution.stderr);
   const namingGuide = spawnSync(namingBinary, ["docs", "read", "api-roles.md", "逐族命名决策", "--module", "naming-contract"], {
     cwd: fixtureDir,
     encoding: "utf8",
@@ -1562,6 +1618,18 @@ for (const rule of ["tag-match-to-match-v1", "required-struct-field-v1"]) {
 // Reading tasks answered through query views instead of the raw Snapshot text (#1564).
 // Each view must contain the answer and read fewer bytes than the Snapshot it replaces.
 const viewTasks = [
+  {
+    task: "JS text conversion: optional string-preserving argument",
+    snapshot: "src/cirru/calcit-core.cirru",
+    args: ["query", "schema", "calcit.core/to-calcit-data"],
+    answer: /Runtime Proc arity: `1\.\.=2`[\s\S]*'Dynamic 'Bool/,
+  },
+  {
+    task: "JS text conversion: executable string-preserving example",
+    snapshot: "src/cirru/calcit-core.cirru",
+    args: ["query", "examples", "calcit.core/to-calcit-data"],
+    answer: /assert= \(\[\] \|:keyword\)\n  to-calcit-data \(js-array \|:keyword\) true/,
+  },
   {
     task: "module overview: add-numbers signature",
     snapshot: "calcit/test-types.cirru",
