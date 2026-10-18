@@ -1754,6 +1754,8 @@ pub fn collect_ffi_boundary_evidence(
   let package_prefix = format!("{}.", snapshot.package);
   let mut boundaries = Vec::new();
   let mut target_error = None;
+  let mut import_namespace = None;
+  let mut imports = BTreeMap::new();
 
   visit_scoped_definitions(
     snapshot,
@@ -1766,18 +1768,22 @@ pub fn collect_ffi_boundary_evidence(
       if target_error.is_some() {
         return;
       }
-      let imports = match snapshot
-        .files
-        .get(namespace)
-        .map(|file| ffi_import_bindings(&file.ns.code, namespace))
-        .transpose()
-      {
-        Ok(imports) => imports.unwrap_or_default(),
-        Err(error) => {
-          target_error = Some(error);
-          return;
-        }
-      };
+      // The visitor groups definitions by namespace; resolve imports and emit its advice only once.
+      if import_namespace.as_deref() != Some(namespace) {
+        imports = match snapshot
+          .files
+          .get(namespace)
+          .map(|file| ffi_import_bindings(&file.ns.code, namespace))
+          .transpose()
+        {
+          Ok(imports) => imports.unwrap_or_default(),
+          Err(error) => {
+            target_error = Some(error);
+            return;
+          }
+        };
+        import_namespace = Some(namespace.to_owned());
+      }
       let js_implementation = match selected_js_implementation(entry) {
         Ok(implementation) => implementation,
         Err(error) => {
