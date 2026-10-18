@@ -91,7 +91,7 @@ Struct 或函数时，`if`、`when`、`cond`、`and`、`or` 会报告 `W_CONSTAN
 
 `.unwrap-or X nil`、`option:unwrap-or X nil` 与 `match X … ((:none) nil)` 把 Option 还原成 nil-or-T：
 签名写着 Option，运行时仍是可能为 nil 的值，后面的 `nil?`、`either` 照旧工作，缺失值的旧语义原样保留。
-接收者的类型已证明为 Option 时，0.32.0 起这些写法报告 `W_OPTION_ERASED_TO_NIL`，严格检查不再通过。
+接收者的类型已证明为 Option 时，0.32.0 起 `--check-only` 在 Notes 里列出 `W_OPTION_ERASED_TO_NIL`。它暂时只是提示，检查和运行都照常通过；生态库迁移完成后会改成阻塞的警告。
 payload 有具体类型时，这种写法本来就被参数检查拒绝；新诊断补上的是 payload 为 Dynamic、`nil` 被当成合法默认值的情形。
 
 | 旧写法 | 新写法 |

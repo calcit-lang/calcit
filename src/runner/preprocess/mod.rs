@@ -4745,7 +4745,7 @@ fn preprocess_list_call(
           )?;
           reject_strict_nominal_enum_stringification(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), call_stack)?;
           warn_on_nominal_enum_legacy_absence_use(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
-          warn_on_option_erased_to_nil(call_head, &processed_args, scope_types, file_ns, check_warnings);
+          warn_on_option_erased_to_nil(call_head, &processed_args, scope_types, file_ns);
           reject_or_warn_on_js_nullish_predicate_mismatch(
             call_head,
             &processed_args,
@@ -5309,7 +5309,7 @@ fn preprocess_known_function_call(
     reject_strict_bare_enum_constructor_comparison(&head_form, &current_args, scope_types, file_ns, def_name, call_stack)?;
     reject_strict_nominal_enum_stringification(&head_form, &current_args, scope_types, file_ns, def_name, call_stack)?;
     warn_on_nominal_enum_legacy_absence_use(&head_form, &current_args, scope_types, file_ns, def_name, check_warnings);
-    warn_on_option_erased_to_nil(&head_form, &current_args, scope_types, file_ns, check_warnings);
+    warn_on_option_erased_to_nil(&head_form, &current_args, scope_types, file_ns);
     reject_or_warn_on_js_nullish_predicate_mismatch(
       &head_form,
       &current_args,
@@ -7978,13 +7978,7 @@ fn warn_on_nominal_enum_legacy_absence_use(
 /// Payloads with a concrete type are already rejected by the argument check;
 /// this covers the open (Dynamic) payload that accepts nil as a default. JS FFI
 /// definitions keep it to hand `null`/`undefined` to a host.
-fn warn_on_option_erased_to_nil(
-  head: &Calcit,
-  args: &CalcitList,
-  scope_types: &ScopeTypes,
-  file_ns: &str,
-  check_warnings: &RefCell<Vec<LocatedWarning>>,
-) {
+fn warn_on_option_erased_to_nil(head: &Calcit, args: &CalcitList, scope_types: &ScopeTypes, file_ns: &str) {
   if file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) || option_to_nil_is_host_boundary() {
     return;
   }
@@ -8012,24 +8006,26 @@ fn warn_on_option_erased_to_nil(
   else {
     return;
   };
-  report_option_erased_to_nil("`.unwrap-or … nil`", file_ns, location, check_warnings);
+  report_option_erased_to_nil("`.unwrap-or … nil`", file_ns, location);
 }
 
-fn report_option_erased_to_nil(shape: &str, file_ns: &str, location: NodeLocation, check_warnings: &RefCell<Vec<LocatedWarning>>) {
+/// An advisory until the ecosystem stops erasing Options; the check and the
+/// runner still pass so upgrading does not break existing libraries.
+fn report_option_erased_to_nil(shape: &str, file_ns: &str, location: NodeLocation) {
   let message = format!(
     "[Warn] {shape} turns an Option back into nil in {file_ns}; keep the Option and pass it on, handle both variants with `match`, or choose a concrete default. A `:js-ffi` definition or a function returning `JsNullish` may hand nil to a host"
   );
-  gen_check_warning_with_location_code(message, "W_OPTION_ERASED_TO_NIL", location, check_warnings);
+  push_advisory(LocatedWarning::new_with_detail(
+    message,
+    location,
+    Some("W_OPTION_ERASED_TO_NIL".to_owned()),
+    None,
+  ));
 }
 
 /// The `(:none) nil` branch of a `match` on an Option is the same erasure as
 /// `.unwrap-or … nil`; the `:some` branch usually returns the payload.
-fn warn_on_option_none_branch_erased_to_nil(
-  tag: &Calcit,
-  value: &Calcit,
-  file_ns: &str,
-  check_warnings: &RefCell<Vec<LocatedWarning>>,
-) {
+fn warn_on_option_none_branch_erased_to_nil(tag: &Calcit, value: &Calcit, file_ns: &str) {
   if file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) || option_to_nil_is_host_boundary() {
     return;
   }
@@ -8040,7 +8036,7 @@ fn warn_on_option_none_branch_erased_to_nil(
   else {
     return;
   };
-  report_option_erased_to_nil("`match … (:none) nil`", file_ns, location, check_warnings);
+  report_option_erased_to_nil("`match … (:none) nil`", file_ns, location);
 }
 
 fn warn_on_nominal_enum_truthiness(
@@ -11351,7 +11347,7 @@ fn process_match(
 
         matched_tags.push(Arc::from(pat_tag));
         if matches_option && pat_tag == "none" && matches!(body, Calcit::Nil) {
-          warn_on_option_none_branch_erased_to_nil(&pat_xs[0], &xs[1], ctx.file_ns, ctx.check_warnings);
+          warn_on_option_none_branch_erased_to_nil(&pat_xs[0], &xs[1], ctx.file_ns);
         }
 
         // Create scope with bindings for the body

@@ -242,7 +242,9 @@ or `option:unwrap-or X nil` on a receiver proven to be an Option, and a
 is explicit while the value is again nil-or-T. Keep the Option, choose a
 concrete default, or handle both variants with `match`. `:js-ffi` definitions,
 functions that declare a `JsNullish` return, and macro-generated code are not
-reported: those places hand nil to a JS host by contract.
+reported: those places hand nil to a JS host by contract. For now the report is
+a note: `--check-only` lists it and still passes, and it becomes a blocking
+warning once the ecosystem libraries have migrated.
 
 Strict project source also rejects hand-written representation primitives with
 `E_RAW_PRIMITIVE_IN_TYPED_CODE`: `&get-raw`, `record-get` / `&struct:get`, raw `&%{}`, and

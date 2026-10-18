@@ -223,15 +223,15 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
   let before = fs::read(snapshot).unwrap();
   let strict_args = ["--check-only", "--all-defs", "--format", "json"];
   let strict_before = run_calcit(snapshot, &strict_args);
-  // The fixture keeps its erasures on purpose: the check reports each proven
-  // one as W_OPTION_ERASED_TO_NIL, and the view must not change that verdict.
+  // The fixture keeps its erasures on purpose: each proven one is a
+  // W_OPTION_ERASED_TO_NIL note that does not fail the check, and the view
+  // must not change that verdict.
   let strict_report: serde_json::Value = serde_json::from_slice(&strict_before.stdout).expect("one JSON document");
   let mut codes = Vec::new();
   collect_codes(&strict_report, &mut codes);
-  assert!(
-    !codes.is_empty() && codes.iter().all(|code| code == "W_OPTION_ERASED_TO_NIL"),
-    "{codes:?}"
-  );
+  assert!(codes.is_empty(), "{codes:?}");
+  let tests = run_calcit(snapshot, &["test", "--tag", "option-nil-roundtrip", "--require-match"]);
+  assert!(tests.status.success(), "{}", String::from_utf8_lossy(&tests.stderr));
   let view = ["analyze", "weak-types", "--only", "option-nil-roundtrip"];
   let report = run_calcit(snapshot, &[&view[..], &["--format", "json"]].concat());
   assert!(report.status.success(), "{}", String::from_utf8_lossy(&report.stderr));
