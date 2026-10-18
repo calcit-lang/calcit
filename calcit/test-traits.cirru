@@ -875,6 +875,19 @@
           :tests $ [] $ %{} 'TestEntry (:name |dispatches-by-bound-trait)
             :code $ quote $ assert= true (test-qualified-contains-boundary)
             :tags $ #{} :predicate :trait :unit
+        'test-to-string-custom $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn test-to-string-custom ()
+            let
+                Person $ impl-traits Person0 CoreToStringImpl
+                p $ %{} Person $ :name |Alice
+              assert= |Person:Alice $ turn-string p
+              to-string p
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |dispatches-custom-to-string)
+            :code $ quote $ assert= |Person:Alice (test-to-string-custom)
+            :tags $ #{} :trait :unit
         'test-trait-requires $ %{} 'CodeEntry (:doc "|Test requires between ordinary traits")
           :code $ quote $ defn test-trait-requires ()
             let
@@ -885,19 +898,6 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
-        'test-turn-str-custom $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn test-turn-str-custom ()
-            let
-                Person $ impl-traits Person0 CoreToStringImpl
-                p $ %{} Person $ :name |Alice
-              assert= |Person:Alice $ turn-string p
-              turn-str p
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ []
-          :tests $ [] $ %{} 'TestEntry (:name |dispatches-custom-to-string)
-            :code $ quote $ assert= |Person:Alice (test-turn-str-custom)
-            :tags $ #{} :trait :unit
         'trait-listener-host $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn trait-listener-host (value)
             unsafe-coerce value $ :: 'Fn $ {}

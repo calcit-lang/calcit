@@ -333,10 +333,6 @@ const reviewedPublicBoundaryPositions = new Map([
     "The one-line formatter consumes recursively heterogeneous Cirru syntax nodes; the missing recursive leaf-or-list union is retained as a reviewed presentation boundary.",
   ],
   [
-    "some-in?|schema.args.0",
-    "This compatibility predicate accepts open data and dynamic paths; fully typed callers should use get-in and inspect its Option result so the recovered payload remains visible.",
-  ],
-  [
     "str|schema.args.0",
     "String conversion deliberately accepts every runtime value; Dynamic is the honest universal presentation input rather than lost business-domain evidence.",
   ],
@@ -359,26 +355,6 @@ const reviewedPublicBoundaryPositions = new Map([
   [
     "tuple?|schema.args.0",
     "A runtime shape predicate must accept arbitrary values in order to narrow them; its Dynamic input is intentional and its Bool output is concrete.",
-  ],
-  [
-    "concat-dynamic|schema.rest.item",
-    "This public open-container helper concatenates List<Dynamic> values on purpose; the explicit Dynamic item is the reviewed boundary rather than an erased generic relation.",
-  ],
-  [
-    "concat-dynamic|schema.return.item",
-    "This public open-container helper returns List<Dynamic> on purpose; callers must narrow entries before typed processing.",
-  ],
-  [
-    "merge-dynamic|schema.args.0.value",
-    "This public open-container helper merges Map<K,Dynamic> values on purpose; the explicit Dynamic value is the reviewed boundary instead of an erased generic relation.",
-  ],
-  [
-    "merge-dynamic|schema.rest.value",
-    "This public open-container helper merges Map<K,Dynamic> values on purpose; the explicit Dynamic value is the reviewed boundary instead of an erased generic relation.",
-  ],
-  [
-    "merge-dynamic|schema.return.value",
-    "This public open-container helper returns Map<K,Dynamic> on purpose; callers must narrow values before typed processing.",
   ],
 ]);
 const reviewedTestPositions = new Map([

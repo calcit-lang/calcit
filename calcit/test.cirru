@@ -307,17 +307,17 @@
             assert= nil $ if-not (> 2 1) 2
             assert-detect identity $ /= 1 2
             assert-detect identity $ not= 1 2
-            assert= true $ some-in? ({,} :a 1) ([] :a)
-            assert= false $ some-in? ({,} :a 1) ([] :b)
-            assert= false $ some-in? nil $ [] :b
-            assert= false $ some-in? nil $ []
-            assert= true $ some-in?
+            assert= true $ .ok? $ get-in ({,} :a 1) ([] :a)
+            assert= false $ .ok? $ get-in ({,} :a 1) ([] :b)
+            assert= false $ .ok? $ get-in nil ([] :b)
+            assert= false $ .ok? $ get-in nil ([])
+            assert= true $ .ok? $ get-in
               {,} :a $ [] 1
               [] :a 0
-            assert= false $ some-in?
+            assert= false $ .ok? $ get-in
               {,} :a $ [] 1
               [] :a 1
-            assert= false $ some-in? ([] 1 2 3) ([] :a)
+            assert= false $ .ok? $ get-in ([] 1 2 3) ([] :a)
             assert= 1 $ non-nil! 1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)

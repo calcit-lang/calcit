@@ -142,11 +142,11 @@ do
 | List `.add/.append: (List<T>, T) -> List<T>`；底层 Add trait 是两 List 组合 | **保留** `.append` 与 `.concat`，退场 List 单元素 `.add` 别名 | 先解决 originless `.add` 遮蔽；旧入口失效后也不能静默暴露另一种参数语义。名义 `Add` 调用/泛型界限保留单独验证；**退场窗口（计划）**：0.30.0 起视为弃用，0.31 删除；`--check-only` 已用建议级诊断 `A_DEPRECATED_METHOD` 报告接收者类型已证明的项目源码调用（不令检查失败），并可用本表和 `calcit fix` 规则迁移；补丁版本不删除。 |
 | Map `.assoc: (Map<K,V>, K,V) -> Map<K,V>` / `.dissoc: (Map<K,V>, K, & K) -> Map<K,V>`；Set `include/exclude` 返回新 Set | **本阶段首选**现有持久集合入口；不新增 Map/Set `.insert/.remove`，见 [#1479](https://github.com/calcit-lang/calcit/issues/1479) | Rust 同名方法可能暗示原地修改与不同返回值。Set `.add` 与 Map `.add` 已在 0.29.0 删除：Set 改用 `.include`；Map `.add` 只验证二元 List entry 的形状，不能证明 key/value 为 K/V，需人工改成 `.assoc key value` |
 | `foldl/.foldl/foldl'/reduce/.reduce: (List<T>, U, (U,T)->U) -> U` | **已引入** seeded `.fold`；`foldl'` 与 List `.reduce` 已在 0.29.0 删除，前缀 `reduce` 与 `.foldl` 的退场留给 [#1458](https://github.com/calcit-lang/calcit/issues/1458) | 保持左到右、空 List 返回初值、异类型 accumulator、callback 次数；不把旧 reduce 换成无初值语义。新方法证明不弱于现有 `.reduce` |
-| `join/.join: (List<T>, T) -> List<T>` | **已引入** `intersperse/.intersperse`；`.join` 方法已在 0.29.0 删除，前缀 `join` 暂保留兼容 | 只插入同类型分隔项，保持空/单项/重复值/顺序；不改成 String 返回，也不与 `join-string` 混用 |
+| `join/.join: (List<T>, T) -> List<T>` | **已引入** `intersperse/.intersperse`；`.join` 方法已在 0.29.0 删除，前缀 `join` 已在 0.31.0 删除 | 只插入同类型分隔项，保持空/单项/重复值/顺序；不改成 String 返回，也不与 `join-string` 混用 |
 | `join-str/.join-str: (List<T>, String) -> String`，逐项格式化 | **已引入** `join-string/.join-string`；List `.join-str` 与前缀 `join-str` 已在 0.29.0 删除 | 保留 List<T>、原有显示规则和空 List 结果；不与返回 List 的 `intersperse` 混淆 |
 | `vals` / Map `.values: Map<K,V> -> Set<V>`，去重 | **已引入** `distinct-values/.distinct-values`；`.values` 方法已在 0.29.0 删除，前缀 `vals` 暂保留兼容 | 新旧都返回去重 Set，顺序不保证；保留重复值的视图是独立语义任务，本轮不复用旧名 |
 | `foldl-shortcut xs init default f`，reducer 返回 `:: Bool acc` | **已引入** `fold-while xs init f` 与 `ControlFlow`：reducer 返回 `ControlFlow :continue acc` 或 `ControlFlow :break value`，从未 break 时返回累积值；旧入口用 Bool 元组表示停止，并在从未停止时返回额外的 `default` | 前缀 `foldl-shortcut` 标为 `:deprecated` 保留；语义不同，没有自动 fix，按 `upgrade.md` 的对照人工改写 |
-| `section-by xs n: (List<T>, Number) -> List<List<T>>`，按固定长度切段 | **已引入** `chunks`，语义与 Rust `chunks(n)` 一致：最后一段可以更短，`n` 小于 1 时报错；`-by` 后缀在 `group-by`、`sort-by` 中接收函数，这里接收数字，故改名 | 前缀 `section-by` 暂保留兼容并转发到 `chunks`，由 `core-function-alias-v1` 迁移直接调用；一等函数引用只给 `requires-review` |
+| `section-by xs n: (List<T>, Number) -> List<List<T>>`，按固定长度切段 | **已引入** `chunks`，语义与 Rust `chunks(n)` 一致：最后一段可以更短，`n` 小于 1 时报错；`-by` 后缀在 `group-by`、`sort-by` 中接收函数，这里接收数字，故改名 | 前缀 `section-by` 已在 0.31.0 删除；升级前用 0.30.x 的 `core-function-alias-v1` 迁移直接调用，一等函数引用只给 `requires-review` |
 | List `mapcat/.bind: (List<T>, (T)->List<U>) -> List<U>` | **已引入** `.flat-map`；List `.bind` 已在 0.29.0 删除 | 保持顺序、展平一层、callback 次数与具体 U；Fn `.bind` 是不同组合，**暂缓** |
 | `.mappend` 在 List/Map/Set/String 上为各自组合，Fn 另有含义 | **已引入** Map `.merge`、Set `.union`，Map/Set 的 `.mappend` 已在 0.29.0 删除；List `.concat` 已存在，但 List `.mappend` 的自动迁移 **暂缓**；String 与 Fn 另行审阅 | 分别验证重复 key 胜出方、去重；List 的包装函数与 `.concat` 参数契约不同，String 现有格式化宽度先核对，不跨 receiver 批量替换 |
 | List/String `get/nth` 返回 Option；List `.find/.find-index` 接受 predicate，`.index-of` 接受元素；String `.find-index` 接受子串 | **保留**各命题，List 位置访问使用 `.get`；List `.nth` 已在 0.29.0 删除 | 不把 predicate 查找改成值比较；缺失保持 Option，String 保持标量索引；Enum 异构位置访问 **暂缓** |
@@ -160,7 +160,7 @@ Map/Set 更新均返回新集合，不修改原接收者。Map `.assoc key value
 
 长度迁移的小批次使用显式 `core-collection-len-v1`：只在 List/Map/Set 的 `.count` 与 `.len` 同指对应 core 实现、方法契约已证明时改写；String `.count` 已在 0.29.0 删除，其迁移需用 0.28.x 的 CLI 运行本规则。Struct/Enum 的 `.count` 另有语义，用户自定义 trait 也不据名字猜测；这不是一次全局文本替换。见 [fix 规则](../run/fix.md)。
 
-List 分隔元素的方法迁移曾使用 `core-list-intersperse-v1`（仅 0.28.x 的 CLI 提供），`.join` 方法已在 0.29.0 删除。前缀 `join` 不在规则范围，旧名暂保留以便分批迁移；返回 String 的前缀 `join-str` 已在 0.29.0 删除。
+List 分隔元素的方法迁移曾使用 `core-list-intersperse-v1`（仅 0.28.x 的 CLI 提供），`.join` 方法已在 0.29.0 删除。前缀 `join` 已在 0.31.0 删除；返回 String 的前缀 `join-str` 已在 0.29.0 删除。
 
 List 文本拼接使用 `join-string` / `.join-string`，逐项按原有显示规则转为文本并插入 String 分隔符，空 List 返回空字符串；这不是返回 List 的 `intersperse`。0.29.0 起 `join-string` 直接拥有实现，旧 List `.join-str` 方法与前缀 `join-str` 均已删除；方法的自动迁移需用 0.28.x 的 CLI 运行 `core-list-join-string-v1`，前缀调用人工改写为 `join-string`。
 
@@ -200,7 +200,7 @@ do
 | 当前契约 | 决策 | 类型/失败与迁移限制 |
 | --- | --- | --- |
 | `Option/Result/Struct` 名义构造；旧 `%some/%none/%ok/%err` | **保留**直接名义构造，旧 helper 属 **内部兼容** | 完整保留 payload/字段类型与错误；沿用现有 fix 与退场门禁 |
-| `turn-str`、`turn-string` 为内部兼容函数，均转调 `to-string`，要求 `T: ToString`；`&turn-string` 仅是六类内建标量的底层实现 | **首选** `to-string: T where T: ToString -> String`；旧 `turn-*` 暂留兼容与宏阶段边界 | 六类标量和自定义名义 `ToString` 实现可通过兼容入口转换；List/Map/Set、Unit、FsPath 和未经解码的 Dynamic 在严格预处理时拒绝。nil 转空串，Tag/Symbol 取文本；已证明的 Number `ToString` 在 native/JS/core WASM/WASI 0.3 共用精确文本语义，包括运行时小数和非有限值。未证明的开放 trait/Dynamic 边界仍明确拒绝，不因 Number 支持而放宽；`to-string` 也不替代 Debug/Show。 |
+| `turn-string` 为内部兼容函数，转调 `to-string`（`turn-str` 已在 0.31.0 删除），要求 `T: ToString`；`&turn-string` 仅是六类内建标量的底层实现 | **首选** `to-string: T where T: ToString -> String`；旧 `turn-string` 暂留兼容与宏阶段边界 | 六类标量和自定义名义 `ToString` 实现可通过兼容入口转换；List/Map/Set、Unit、FsPath 和未经解码的 Dynamic 在严格预处理时拒绝。nil 转空串，Tag/Symbol 取文本；已证明的 Number `ToString` 在 native/JS/core WASM/WASI 0.3 共用精确文本语义，包括运行时小数和非有限值。未证明的开放 trait/Dynamic 边界仍明确拒绝，不因 Number 支持而放宽；`to-string` 也不替代 Debug/Show。 |
 | `turn-symbol` / `turn-tag` 的历史运行时输入较宽 | **已提供** `to-symbol: String -> Symbol`、`to-tag: String -> Tag`；旧入口暂留 core 宏与兼容路径 | 严格调用只接受 String；native/JS 已验证，WASM 尚无动态 Tag/Symbol intern，调用 `to-tag`/`turn-tag` 会显式报不支持而非伪装成 String。显式 `core-identity-conversion-v1` 只改写内建调用且参数被证明为 String 的稳定源码；也仅对已证明的六类内建标量迁移 `turn-string` 到 `to-string`，Dynamic/集合/自定义类型不自动改。旧入口兼容 Tag/Symbol 输入不构成新接口的静态类型承诺，不可全局替换 |
 | `str`、`.debug/.show`、`format-cirru-edn`、`format-to-lisp/to-lispy-string` | **保留**显示/调试/序列化职责；`format-to-lisp` 与 `to-lispy-string` **不等价** | `format-to-lisp` 把代码/list 格式化成 Lisp 表达式，`to-lispy-string` 保留 Calcit 值构造表示：`([] 1 \|a)` 分别得到 `(1 \|a)` 与 `([] 1 \|a)`。二者都不是通用安全转换，不能自动互换；序列化默认 Cirru EDN |
 | `.parse-json/.parse-cirru-edn/.parse-cirru/.parse-float` 返回 Result；`json-parse` 等旧入口抛错 | **保留并首选** `.parse-格式` 的 checked 路径；旧 throwing 入口属 **内部兼容** | `String -> Result<T,String>`；开放数据合法保留 Dynamic，typed parse-as 先证明 schema。`parse-float` 的 `NaN`、`inf`、`Infinity` 及带符号、大小写变体在 native/JS 返回 `:ok Number`，无效文本返回原文 `:err`；WASM 若将 `parse-float` 本身列为显式导出或入口 target，会在代码生成阶段因 `E_WASM_NIL_TYPE_EVIDENCE` 失败；若仅作为未支持依赖保留，生成的 stub 被调用时才陷阱，尚不能宣称支持该 Result 路径。throw→Result 是人工迁移，不能自动插入 unwrap/fallback；不新增公开 throwing 别名 |
@@ -359,13 +359,13 @@ Result 的 `result:ok?` / `result:err?` / `result:unwrap-or` 沿用单独的 `co
 
 剩余集中迁移与这些**应用可直接调用**的兼容入口以 **0.31.0** 为计划退场窗口，且须同时满足：真实消费者在发布版 Calcit 与匹配的运行时依赖上完成严格类型和运行测试；对消费者 Snapshot 重复运行对应 fix 无可自动改写的旧调用，剩余 `requires-review` 已逐一处置；Agent 查询、升级文档与示例只推荐方法；至少经历一个已发布版本的迁移窗口；JS/native 及实际受影响的 WASM/WASI 路径验证通过；core method 实现已与将删除的入口解耦，并有 Calcit `:tests` 证明行为不变。计划版本本身不证明这些条件已满足；任一条件未满足就继续保留兼容入口，记录原因和下一次检查的版本，不通过扩大 Dynamic 或机械替换绕过。此约束不适用于无自然接收者的模块函数，也不承诺把所有 `result:*` / `option:*` 内部实现一并移除。
 
-精确查询 `%some/%none/%ok/%err`、`atom/defatom`、`remove-watch` 等旧入口时，定义文档也标明这一计划窗口与条件，而不是把历史最早移除版本当作现已允许删除。`some-in?` 的人工迁移使用公开的 `.ok? $ get-in x path`：叶子是 nil 时返回 false，与 `contains-in?` 的路径存在判断不同。`range-bothway` 的人工展开先按原顺序绑定实参一次，再构造显式 `range`；不要复制带副作用的表达式。省略第二参数会进入 nil 运行时分支，但当前 Number schema 不接受显式 nil 实参，不在迁移中放宽类型。`let{}` 的原 Map 只求值一次；改为公开 `get` 后须人工审阅 Option 与旧 nil/缺失行为，不能自动插入 unwrap 或业务默认值。已知 Struct 字段用 `(:field value)`，不是 JS 属性访问 `.-field`。
+精确查询 `%some/%none/%ok/%err`、`atom/defatom`、`remove-watch` 等旧入口时，定义文档也标明这一计划窗口与条件，而不是把历史最早移除版本当作现已允许删除。`some-in?` 与 `range-bothway` 已在 0.31.0 删除，改写方式见[升级指南](../run/upgrade.md#0310-删除已弃用的兼容函数)。`let{}` 的原 Map 只求值一次；改为公开 `get` 后须人工审阅 Option 与旧 nil/缺失行为，不能自动插入 unwrap 或业务默认值。已知 Struct 字段用 `(:field value)`，不是 JS 属性访问 `.-field`。
 
 ### 最终值存在性
 
 `.ok? $ get-in data path` 检查最终值是否非 nil，而不是检查值的真假：false、0 和空字符串
 仍是存在的值。Map 中保存 nil 的 key 可以满足 `contains-in?`，但最终值检查为 false；
-缺失路径则两者都为 false；中间值不是集合时 `.ok?` 也为 false。迁移 `some-in?` 时保留这个区别，不改成真假判断或路径存在判断。
+缺失路径则两者都为 false；中间值不是集合时 `.ok?` 也为 false。
 
 ## 限制
 

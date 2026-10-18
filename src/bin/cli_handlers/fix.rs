@@ -756,14 +756,7 @@ pub(crate) fn handle_fix_command(
     )?);
   }
   if selected_rules.contains(&CORE_FUNCTION_ALIAS_RULE) {
-    for alias in [
-      CorePredicateRename::Optionally,
-      CorePredicateRename::Join,
-      CorePredicateRename::Vals,
-      CorePredicateRename::SectionBy,
-      CorePredicateRename::MergeDynamic,
-      CorePredicateRename::ConcatDynamic,
-    ] {
+    for alias in [CorePredicateRename::Vals] {
       suggestions.extend(plan_core_predicate_rename_fixes(
         &source_snapshot,
         snapshot_file,
@@ -4118,37 +4111,19 @@ fn plan_core_nominal_method_source(
 #[derive(Clone, Copy)]
 enum CorePredicateRename {
   Integer,
-  Optionally,
-  Join,
   Vals,
-  SectionBy,
-  MergeDynamic,
-  ConcatDynamic,
 }
 
 impl CorePredicateRename {
   /// Function aliases are distinct functions, so only direct calls are equivalent.
   fn requires_call_head(self) -> bool {
-    matches!(
-      self,
-      Self::Optionally | Self::Join | Self::Vals | Self::SectionBy | Self::MergeDynamic | Self::ConcatDynamic
-    )
+    matches!(self, Self::Vals)
   }
 
   fn names(self) -> (&'static str, &'static str, &'static str, &'static str) {
     match self {
       Self::Integer => ("round?", "integer?", CORE_INTEGER_PREDICATE_RULE, CORE_INTEGER_PREDICATE_DIAGNOSTIC),
-      Self::Optionally => (
-        "optionally",
-        "nil->option",
-        CORE_FUNCTION_ALIAS_RULE,
-        CORE_FUNCTION_ALIAS_DIAGNOSTIC,
-      ),
-      Self::Join => ("join", "intersperse", CORE_FUNCTION_ALIAS_RULE, CORE_FUNCTION_ALIAS_DIAGNOSTIC),
       Self::Vals => ("vals", "distinct-values", CORE_FUNCTION_ALIAS_RULE, CORE_FUNCTION_ALIAS_DIAGNOSTIC),
-      Self::SectionBy => ("section-by", "chunks", CORE_FUNCTION_ALIAS_RULE, CORE_FUNCTION_ALIAS_DIAGNOSTIC),
-      Self::MergeDynamic => ("merge-dynamic", "merge", CORE_FUNCTION_ALIAS_RULE, CORE_FUNCTION_ALIAS_DIAGNOSTIC),
-      Self::ConcatDynamic => ("concat-dynamic", "concat", CORE_FUNCTION_ALIAS_RULE, CORE_FUNCTION_ALIAS_DIAGNOSTIC),
     }
   }
 }
@@ -4240,15 +4215,7 @@ fn plan_attached_fixes(
             }
           }
         }
-        for alias in [
-          CorePredicateRename::Optionally,
-          CorePredicateRename::Join,
-          CorePredicateRename::Vals,
-          CorePredicateRename::SectionBy,
-          CorePredicateRename::MergeDynamic,
-          CorePredicateRename::ConcatDynamic,
-          CorePredicateRename::ConcatDynamic,
-        ] {
+        for alias in [CorePredicateRename::Vals] {
           let (old, new, rule_id, _) = alias.names();
           if !selected_rules.contains(&rule_id) || !cirru_contains_target_reference(source, namespace, "calcit.core", old) {
             continue;

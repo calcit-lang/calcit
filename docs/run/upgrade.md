@@ -141,6 +141,32 @@ Snapshot 中以 `fn` 为根节点的定义可以直接使用自身 CodeEntry 的
 将这种旧写法迁移为直接传递 `fn`，并把正确 Map 注解写进它的函数体；不要加 unsafe 或假设返回声明能证明一个 Dynamic 可调用。
 合法元数据表达式继续返回 Nil，这不是业务缺失值，不需要迁移为 Option。
 
+## 0.31.0 删除已弃用的兼容函数
+
+0.31.0 从 `calcit.core` 删除以下兼容函数。已知活跃核心库（Respo、Respo UI、Reel、Markdown、Recollect、lilac-parser、ws-edn、cumulo-reel、js-ffi、std）的默认分支在源码、附带测试与示例中都没有调用。
+
+| 已删除 | 改写为 |
+|---|---|
+| `optionally` | `nil->option` |
+| `join` | `intersperse`（返回插入分隔项的 List）；需要 String 时用 `join-string` |
+| `section-by` | `chunks` |
+| `merge-dynamic` | `merge` |
+| `concat-dynamic` | `concat` |
+| `turn-str` | `to-string` |
+
+升级前仍用 0.30.x 的 CLI 迁移：前五项运行 `calcit calcit.cirru fix --rule core-function-alias-v1 --include-attached --format edn`，预览后带 `--expect-revision` 应用；`turn-str`、`some-in?`、`range-bothway` 逐处人工改写。0.31.0 的 `core-function-alias-v1` 只保留 `vals` → `distinct-values`。
+
+残留调用在检查时报告未知名字，告警末尾给出删除版本和改写方式：
+
+```text
+[Warn] unknown `section-by` in app.main/main!, locals {}; `section-by` was removed from calcit.core in 0.31.0, use `chunks`
+```
+
+### 限制
+
+- `%some` / `%none` / `%ok` / `%err`、`atom`、`vals` 仍有下游调用，本版保留。
+- 宏形式的兼容入口（如 `case-default`、`list-match`、`let-sugar`）与已弃用方法另行退场。
+
 ## 0.30.1 底层缺失值原语直接返回 Option
 
 本项从原计划的 0.31.0 提前纳入 0.30.1，该版本从 `release/0.30.1` 维护分支发布，保留本节的 Option 合同。
@@ -973,14 +999,8 @@ core 在 0.29.0 仍保留下表兼容入口，新代码使用右侧的首选写�
 | 兼容名 | 首选写法 | 迁移 |
 |---|---|---|
 | `%some` / `%none` / `%ok` / `%err` | `Option :some x` / `Option :none` / `Result :ok x` / `Result :err e` | `calcit calcit.cirru fix --rule core-nominal-constructor-v1 --format edn` |
-| `optionally` | `nil->option` | `calcit calcit.cirru fix --rule core-function-alias-v1 --format edn` |
-| `join` | `intersperse` | 同上 |
-| `vals` | `distinct-values` | 同上 |
-| `section-by` | `chunks`（按固定长度切段，语义与 Rust `chunks(n)` 一致） | 同上 |
-| `merge-dynamic` | `merge`，泛型值类型绑定为 `Dynamic` | 同上 |
-| `concat-dynamic` | `concat`，泛型元素类型绑定为 `Dynamic` | 同上 |
+| `vals` | `distinct-values` | `calcit calcit.cirru fix --rule core-function-alias-v1 --format edn` |
 | `turn-string` | `to-string` | 参数已证明为标量时用 `core-identity-conversion-v1`，其余人工改写 |
-| `turn-str` | `to-string` | 人工改写 |
 | `remove-watch` | `remove-watch!` | 人工改写 |
 | List `.add` | `.append`，返回新的同型 List，不修改原集合 | `calcit calcit.cirru fix --rule core-list-add-v1 --format edn`；仅改写已证明的 List、相同 core 实现和签名，不处理 Set/Map 或用户同名方法 |
 | List/Map/Set `.count` | `.len`，保留原集合长度语义 | `calcit calcit.cirru fix --rule core-collection-len-v1 --format edn`；未知接收者、自定义 Countable 与泛型 bound 需人工审阅；String 旧方法已删除，见上文 |

@@ -1852,7 +1852,7 @@ pub(super) fn emit_join_from_locals(ctx: &mut WasmGenCtx, xs_f64: u32, sep_f64: 
 
 /// `join xs sep` — call-site intercept (list join).
 pub(super) fn emit_join(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(2, args, "join")?;
+  expect_arity(2, args, "intersperse")?;
   let xs = ctx.alloc_local();
   emit_expr(ctx, &args[0])?;
   ctx.emit(Instruction::LocalSet(xs));

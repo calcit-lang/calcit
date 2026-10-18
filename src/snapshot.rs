@@ -5473,7 +5473,7 @@ mod tests {
       "nth",
       "number?",
       "option:map",
-      "optionally",
+      "nil->option",
     ] {
       let entry = core_file.defs.get(def_name).unwrap_or_else(|| panic!("missing def: {def_name}"));
       if matches!(def_name, "%{}" | "deftrait" | "noted") {
@@ -5994,7 +5994,7 @@ mod tests {
   }
 
   #[test]
-  fn optionally_schema_bridges_nullable_values_to_nominal_option() {
+  fn nil_to_option_schema_bridges_nullable_values_to_nominal_option() {
     let _guard = crate::program::lock_program_test_state();
     let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("Failed to read calcit-core.cirru");
     let edn_data = cirru_edn::parse(&core_file_content).expect("Failed to parse cirru content as EDN");
@@ -6002,33 +6002,33 @@ mod tests {
     let entry = snapshot
       .files
       .get("calcit.core")
-      .and_then(|file| file.defs.get("optionally"))
-      .expect("calcit.core/optionally should exist");
+      .and_then(|file| file.defs.get("nil->option"))
+      .expect("calcit.core/nil->option should exist");
     let CalcitTypeAnnotation::Fn(schema) = entry.schema.as_ref() else {
-      panic!("optionally should have a function schema");
+      panic!("nil->option should have a function schema");
     };
 
     let input_var = match schema.arg_types.as_slice() {
       [arg] => match arg.as_ref() {
         CalcitTypeAnnotation::Nullable(inner, crate::calcit::NullableOrigin::Calcit) => match inner.as_ref() {
           CalcitTypeAnnotation::TypeVar(name) => name,
-          other => panic!("optionally Optional input should contain a type variable, got {other:?}"),
+          other => panic!("nil->option Optional input should contain a type variable, got {other:?}"),
         },
-        other => panic!("optionally should accept Optional<T>, got {other:?}"),
+        other => panic!("nil->option should accept Optional<T>, got {other:?}"),
       },
-      args => panic!("optionally should accept exactly one argument, got {args:?}"),
+      args => panic!("nil->option should accept exactly one argument, got {args:?}"),
     };
     let output_var = match schema.return_type.as_ref() {
       CalcitTypeAnnotation::TypeRef(name, args) if matches!(name.as_ref(), "Option" | "calcit.core/Option") => match args.as_slice() {
         [arg] => match arg.as_ref() {
           CalcitTypeAnnotation::TypeVar(name) => name,
-          other => panic!("optionally Option output should contain a type variable, got {other:?}"),
+          other => panic!("nil->option Option output should contain a type variable, got {other:?}"),
         },
-        args => panic!("optionally Option output should have one type argument, got {args:?}"),
+        args => panic!("nil->option Option output should have one type argument, got {args:?}"),
       },
-      other => panic!("optionally should return Option<T>, got {other:?}"),
+      other => panic!("nil->option should return Option<T>, got {other:?}"),
     };
-    assert_eq!(input_var, output_var, "optionally must preserve its input type variable");
+    assert_eq!(input_var, output_var, "nil->option must preserve its input type variable");
   }
 
   #[test]
@@ -6051,7 +6051,7 @@ mod tests {
       .get("calcit.core")
       .expect("saved calcit.core file should exist");
 
-    for def_name in ["&+", "%{}", "not", "not=", "noted", "nth", "number?", "option:map", "optionally"] {
+    for def_name in ["&+", "%{}", "not", "not=", "noted", "nth", "number?", "option:map", "nil->option"] {
       let source_entry = source_core_file
         .defs
         .get(def_name)

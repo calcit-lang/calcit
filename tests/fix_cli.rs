@@ -595,7 +595,7 @@ fn deprecation_and_quality_reports_keep_declared_macro_logs_off_stdout() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ defn legacy-with-macro () $ turn-str $ test-hygienic.lib/add-11 1 2",
+        "quote $ defn legacy-with-macro () $ turn-string $ test-hygienic.lib/add-11 1 2",
       ],
     ),
     "create legacy call with a declared logging macro",
@@ -628,12 +628,16 @@ fn deprecation_report_shares_core_metadata_and_excludes_local_and_quoted_calls()
     ("app.main/main!", "quote $ defn main! ()\n  , &unit", true),
     (
       "app.main/legacy",
-      "quote $ defn legacy ()\n  compat/optionally nil\n  join ([] 1 2) 0\n  vals $ {} (:a 1)\n  turn-str 1\n  turn-string 1\n  let ((cell $ atom 0))\n    add-watch! cell :key $ fn (new old) &unit\n    remove-watch cell :key",
+      "quote $ defn legacy ()\n  compat/vals $ {} (:b 1)\n  %none\n  vals $ {} (:a 1)\n  turn-string 2\n  turn-string 1\n  let ((cell $ atom 0))\n    add-watch! cell :key $ fn (new old) &unit\n    remove-watch cell :key",
       false,
     ),
-    ("app.main/local", "quote $ defn local (turn-str)\n  turn-str 1", false),
-    ("app.main/quoted", "quote $ defn quoted ()\n  quote $ turn-str 1", false),
-    ("app.main/alias-only", "quote $ defn alias-only ()\n  compat/optionally nil", false),
+    ("app.main/local", "quote $ defn local (turn-string)\n  turn-string 1", false),
+    ("app.main/quoted", "quote $ defn quoted ()\n  quote $ turn-string 1", false),
+    (
+      "app.main/alias-only",
+      "quote $ defn alias-only ()\n  compat/vals $ {} (:c 1)",
+      false,
+    ),
     (
       "app.main/noisy",
       "quote $ defmacro noisy ()\n  println |metadata-query-must-not-expand-unrelated-macro\n  quote 1",
@@ -688,10 +692,8 @@ fn deprecation_report_shares_core_metadata_and_excludes_local_and_quoted_calls()
   assert_eq!(report["data"]["summary"]["calls"], 7, "{report}");
   assert!(!String::from_utf8_lossy(&output.stdout).contains("metadata-query-must-not-expand-unrelated-macro"));
   for (old, preferred) in [
-    ("optionally", "nil->option"),
-    ("join", "intersperse"),
+    ("%none", "Option :none"),
     ("vals", "distinct-values"),
-    ("turn-str", "to-string"),
     ("turn-string", "to-string"),
     ("remove-watch", "remove-watch!"),
   ] {
@@ -727,7 +729,7 @@ fn deprecation_paths_address_snapshot_source_with_comments() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ defn legacy ()\n  ; leading note\n  turn-str 1\n  let ((x 1))\n    ; nested note\n    turn-str x\n    , x\n  optionally 1\n  quote $ turn-str 1",
+        "quote $ defn legacy ()\n  ; leading note\n  turn-string 1\n  let ((x 1))\n    ; nested note\n    turn-string x\n    , x\n  vals $ {} (:a 1)\n  quote $ turn-string 1",
       ],
     ),
     "create commented legacy calls",
@@ -768,9 +770,9 @@ fn deprecation_paths_address_snapshot_source_with_comments() {
   assert_eq!(
     found,
     vec![
-      ("code@4".to_owned(), "calcit.core/turn-str".to_owned()),
-      ("code@5.3".to_owned(), "calcit.core/turn-str".to_owned()),
-      ("code@6".to_owned(), "calcit.core/optionally".to_owned()),
+      ("code@4".to_owned(), "calcit.core/turn-string".to_owned()),
+      ("code@5.3".to_owned(), "calcit.core/turn-string".to_owned()),
+      ("code@6".to_owned(), "calcit.core/vals".to_owned()),
     ],
     "{report}"
   );
@@ -2071,7 +2073,7 @@ fn function_alias_fix_covers_attached_regions_without_rewriting_identity_or_shad
   for (name, code) in [
     (
       "legacy-calls",
-      "quote $ do\n  assert= ([] |a |- |x |- |b) $ join (join ([] |a |b) |x) |-\n  assert= (#{} 1 2) $ vals $ {} (:a 1) (:b 2)\n  assert= (Option :some 1) $ optionally 1\n  assert= ([] |a |- |b) $ calcit.core/join ([] |a |b) |-",
+      "quote $ do\n  assert= (#{} 1 2) $ vals $ {} (:a 1) (:b 2)\n  assert= (#{} 3) $ calcit.core/vals $ {} (:c 3)",
     ),
     ("function-identity", "quote $ assert= vals vals"),
     ("quoted-name", "quote $ assert= (quote vals) (quote vals)"),
@@ -2109,7 +2111,7 @@ fn function_alias_fix_covers_attached_regions_without_rewriting_identity_or_shad
         "--input-format",
         "cirru",
         "--code",
-        "quote $ join (join ([] |a |b) |x) |-",
+        "quote $ vals $ {} (:a 1)",
       ],
     ),
     "attach upgrade example",
@@ -10457,7 +10459,7 @@ fn core_function_alias_rule_renames_resolved_legacy_functions_and_is_idempotent(
         "--input-format",
         "cirru",
         "--code",
-        "quote $ defn legacy-function-aliases ()\n  assert= (#{} 1 2) $ vals $ {} (:a 1) (:b 2)\n  assert= ([] |a |, |b) $ join ([] |a |b) |,\n  assert= (%some 1) $ optionally 1\n  assert= ([] ([] 1 2) ([] 3)) $ section-by ([] 1 2 3) 2\n  assert= 2 $ count $ merge-dynamic (assert-type ({} (:a 1)) (:: 'Map 'Tag 'Dynamic)) (assert-type ({} (:b |x)) (:: 'Map 'Tag 'Dynamic))\n  assert= 3 $ count $ concat-dynamic (assert-type ([] 1 2) (:: 'List 'Dynamic)) (assert-type ([] |x) (:: 'List 'Dynamic))\n  , true",
+        "quote $ defn legacy-function-aliases ()\n  assert= (#{} 1 2) $ vals $ {} (:a 1) (:b 2)\n  assert= (#{} 3) $ vals $ {} (:c 3)\n  , true",
       ],
     ),
     "install legacy function alias calls",
@@ -10510,13 +10512,13 @@ fn core_function_alias_rule_renames_resolved_legacy_functions_and_is_idempotent(
   assert_success(&preview, "function alias preview");
   let report = parse_stdout(&preview);
   let suggestions = report["data"]["suggestions"].as_array().expect("suggestions should be an array");
-  assert_eq!(suggestions.len(), 6, "{report}");
+  assert_eq!(suggestions.len(), 2, "{report}");
   assert!(
     suggestions
       .iter()
       .all(|suggestion| { suggestion["rule_id"] == "core-function-alias-v1" && suggestion["applicability"] == "machine-applicable" })
   );
-  for legacy in ["vals", "join", "optionally", "section-by", "merge-dynamic", "concat-dynamic"] {
+  for legacy in ["vals"] {
     let expected = format!("calcit.core/{legacy}");
     assert!(
       suggestions
@@ -10546,14 +10548,7 @@ fn core_function_alias_rule_renames_resolved_legacy_functions_and_is_idempotent(
   );
   assert_success(&applied, "function alias apply");
   let updated = fs::read_to_string(&snapshot).expect("updated Snapshot should read");
-  for preferred in [
-    "calcit.core/distinct-values",
-    "calcit.core/intersperse",
-    "calcit.core/nil->option",
-    "calcit.core/chunks",
-    "calcit.core/merge",
-    "calcit.core/concat",
-  ] {
+  for preferred in ["calcit.core/distinct-values"] {
     assert!(updated.contains(preferred), "{preferred} missing after migration");
   }
   assert_success(
