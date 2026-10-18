@@ -200,6 +200,21 @@ fn weak_types_views_reject_options_they_cannot_honor() {
   }
 }
 
+fn collect_codes(value: &serde_json::Value, codes: &mut Vec<String>) {
+  match value {
+    serde_json::Value::Object(map) => {
+      for (key, item) in map {
+        match (key.as_str(), item) {
+          ("code", serde_json::Value::String(code)) => codes.push(code.clone()),
+          _ => collect_codes(item, codes),
+        }
+      }
+    }
+    serde_json::Value::Array(items) => items.iter().for_each(|item| collect_codes(item, codes)),
+    _ => {}
+  }
+}
+
 #[test]
 fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diagnostics() {
   // Rust owns the CLI envelope and read-only boundary. The fixture's attached
@@ -208,7 +223,21 @@ fn option_nil_view_reports_source_types_and_consumers_without_writes_or_new_diag
   let before = fs::read(snapshot).unwrap();
   let strict_args = ["--check-only", "--all-defs", "--format", "json"];
   let strict_before = run_calcit(snapshot, &strict_args);
-  assert!(strict_before.status.success(), "{}", String::from_utf8_lossy(&strict_before.stderr));
+  // The fixture keeps its erasures on purpose: each proven one is a
+  // W_OPTION_ERASED_TO_NIL note that does not fail the check, and the view
+  // must not change that verdict.
+  assert_eq!(
+    strict_before.status.code(),
+    Some(0),
+    "{}",
+    String::from_utf8_lossy(&strict_before.stderr)
+  );
+  let strict_report: serde_json::Value = serde_json::from_slice(&strict_before.stdout).expect("one JSON document");
+  let mut codes = Vec::new();
+  collect_codes(&strict_report, &mut codes);
+  assert!(codes.is_empty(), "{codes:?}");
+  let tests = run_calcit(snapshot, &["test", "--tag", "option-nil-roundtrip", "--require-match"]);
+  assert!(tests.status.success(), "{}", String::from_utf8_lossy(&tests.stderr));
   let view = ["analyze", "weak-types", "--only", "option-nil-roundtrip"];
   let report = run_calcit(snapshot, &[&view[..], &["--format", "json"]].concat());
   assert!(report.status.success(), "{}", String::from_utf8_lossy(&report.stderr));

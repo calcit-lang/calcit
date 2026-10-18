@@ -12138,7 +12138,7 @@
                   (:ok _) false
                   (:err message) (string? message)
               :tags $ #{} :core :crypto :unit :wasi :wasm
-        'select-keys $ %{} 'CodeEntry (:doc |)
+        'select-keys $ %{} 'CodeEntry (:doc "|Keep the entries of m whose keys are listed in xs. Keys missing from m are skipped, not filled with nil.")
           :code $ quote $ defn select-keys (m xs)
             assert "|expected map for selecting" $ map? m
             foldl xs (&{})
@@ -12148,14 +12148,14 @@
                   :return 'Map
                 match (&map:get m k)
                   (:some value) (&map:assoc acc k value)
-                  (:none) (&map:assoc acc k nil)
+                  (:none) acc
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'Map 'K 'V) (:: 'List 'K)
             :generics $ [] 'K 'V
             :return $ :: 'Map 'K 'V
-          :tests $ [] $ %{} 'TestEntry (:name |keeps-requested-and-missing-keys)
-            :code $ quote $ assert= (&{} :a 1 :missing nil)
+          :tests $ [] $ %{} 'TestEntry (:name |keeps-requested-keys-and-skips-missing)
+            :code $ quote $ assert= (&{} :a 1)
               select-keys (&{} :a 1 :b 2 :c 3) ([] :a :missing)
             :tags $ #{} :core :unit
         'set? $ %{} 'CodeEntry (:doc "|Check if a value is a set")

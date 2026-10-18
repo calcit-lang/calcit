@@ -1955,11 +1955,7 @@ fn run_check_only_with_output(entries: &ProgramEntries, emit_output: bool) -> Re
   // Advisories never fail the check; they only point at calls that still work.
   let advisories = runner::preprocess::take_advisories();
   if emit_output && !advisories.is_empty() {
-    eprintln!(
-      "\n{} ({} deprecated usages, the check still passes)",
-      "Notes:".yellow(),
-      advisories.len()
-    );
+    eprintln!("\n{} ({} notes, the check still passes)", "Notes:".yellow(), advisories.len());
     LocatedWarning::print_list(&advisories);
   }
 

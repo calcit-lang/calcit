@@ -253,7 +253,7 @@ let
     none-val $ %:: MaybeInt :none
     extracted $ match some-val
       (:some v) (* v 2)
-      (:none) nil
+      (:none) 0
   println extracted
   ; => 84
 ```

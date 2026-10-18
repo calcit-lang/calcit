@@ -572,6 +572,33 @@ thread_local! {
   /// Invocation metadata such as async stays on the owning callable.
   static CURRENT_FN_FEATURES: RefCell<Option<Arc<HashSet<EdnTag>>>> = const { RefCell::new(None) };
   static PREPROCESS_DEPTH: Cell<usize> = const { Cell::new(0) };
+  /// Whether the function being preprocessed declares a `JsNullish` return, the
+  /// one place where converting an Option to nil is the declared contract.
+  static CURRENT_FN_RETURNS_HOST_NULLISH: Cell<bool> = const { Cell::new(false) };
+}
+
+struct HostNullishReturnScope {
+  previous: bool,
+}
+
+impl HostNullishReturnScope {
+  fn enter(returns_host_nullish: bool) -> Self {
+    Self {
+      previous: CURRENT_FN_RETURNS_HOST_NULLISH.with(|cell| cell.replace(returns_host_nullish)),
+    }
+  }
+}
+
+impl Drop for HostNullishReturnScope {
+  fn drop(&mut self) {
+    CURRENT_FN_RETURNS_HOST_NULLISH.with(|cell| cell.set(self.previous));
+  }
+}
+
+/// JS FFI definitions and functions that declare a `JsNullish` return hand nil
+/// to a host on purpose, so Option-to-nil conversions there are not erasures.
+fn option_to_nil_is_host_boundary() -> bool {
+  current_function_has_js_ffi_feature() || CURRENT_FN_RETURNS_HOST_NULLISH.with(Cell::get)
 }
 
 /// Restore lexical permissions on every exit, including errors and unwinding.
@@ -934,6 +961,8 @@ fn ensure_ns_def_preprocessed(
       // Referenced source definitions have their own lexical capabilities.
       // A caller's :js-ffi feature must not authorize a top-level value.
       let saved_features = CURRENT_FN_FEATURES.with(|cell| cell.replace(None));
+      // Nor does a caller's `JsNullish` return let this definition hand nil to a host.
+      let _host_nullish_scope = HostNullishReturnScope::enter(false);
       // A source `fn` uses the definition's schema, not the caller's expected
       // callback type. Named `defn` handles its own schema and must not pass
       // that expectation on to an unrelated nested callback.
@@ -3818,6 +3847,7 @@ fn preprocess_list_call(
             }
             check_struct_method_args(&typed_method, &processed_args, scope_types, file_ns, &def_name, check_warnings);
             note_deprecated_method_call(&typed_method, &processed_args, scope_types, file_ns);
+            warn_on_option_erased_to_nil(&typed_method, &processed_args, scope_types, file_ns);
             require_js_ffi_feature_for_operation(&typed_method, file_ns, def_name.as_ref(), check_warnings, call_stack)?;
 
             if let Some(qualified_call) =
@@ -4718,6 +4748,7 @@ fn preprocess_list_call(
           )?;
           reject_strict_nominal_enum_stringification(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), call_stack)?;
           warn_on_nominal_enum_legacy_absence_use(call_head, &processed_args, scope_types, file_ns, def_name.as_ref(), check_warnings);
+          warn_on_option_erased_to_nil(call_head, &processed_args, scope_types, file_ns);
           reject_or_warn_on_js_nullish_predicate_mismatch(
             call_head,
             &processed_args,
@@ -5281,6 +5312,7 @@ fn preprocess_known_function_call(
     reject_strict_bare_enum_constructor_comparison(&head_form, &current_args, scope_types, file_ns, def_name, call_stack)?;
     reject_strict_nominal_enum_stringification(&head_form, &current_args, scope_types, file_ns, def_name, call_stack)?;
     warn_on_nominal_enum_legacy_absence_use(&head_form, &current_args, scope_types, file_ns, def_name, check_warnings);
+    warn_on_option_erased_to_nil(&head_form, &current_args, scope_types, file_ns);
     reject_or_warn_on_js_nullish_predicate_mismatch(
       &head_form,
       &current_args,
@@ -7942,6 +7974,72 @@ fn warn_on_nominal_enum_legacy_absence_use(
   } else {
     gen_check_warning_code(message, "W_NOMINAL_ENUM_LEGACY_USE", file_ns, check_warnings);
   }
+}
+
+/// `.unwrap-or X nil` turns an Option back into the nil it replaced: callers see
+/// absence as a value again and every later `nil?`/`either` works as before.
+/// Payloads with a concrete type are already rejected by the argument check;
+/// this covers the open (Dynamic) payload that accepts nil as a default. JS FFI
+/// definitions keep it to hand `null`/`undefined` to a host.
+fn warn_on_option_erased_to_nil(head: &Calcit, args: &CalcitList, scope_types: &ScopeTypes, file_ns: &str) {
+  if file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) || option_to_nil_is_host_boundary() {
+    return;
+  }
+  if args.len() != 2 || !matches!(args.get(1), Some(Calcit::Nil)) {
+    return;
+  }
+  let Some(receiver) = args.first() else {
+    return;
+  };
+  let proven_option = match head {
+    Calcit::Method(name, _) if name.as_ref() == "unwrap-or" => {
+      nominal_enum_expression_name(receiver, scope_types).as_deref() == Some("Option")
+    }
+    Calcit::Import(CalcitImport { ns, def, .. }) => ns.as_ref() == calcit::CORE_NS && def.as_ref() == "option:unwrap-or",
+    _ => false,
+  };
+  if !proven_option {
+    return;
+  }
+  // A call without a source coordinate in this namespace was produced by a macro.
+  let Some(location) = head
+    .get_location()
+    .or_else(|| source_location_in_namespace(receiver, file_ns))
+    .filter(|location| location.ns.as_ref() == file_ns && location.def.as_ref() != GENERATED_DEF)
+  else {
+    return;
+  };
+  report_option_erased_to_nil("`.unwrap-or … nil`", file_ns, location);
+}
+
+/// An advisory until the ecosystem stops erasing Options; the check and the
+/// runner still pass so upgrading does not break existing libraries.
+fn report_option_erased_to_nil(shape: &str, file_ns: &str, location: NodeLocation) {
+  let message = format!(
+    "[Warn] {shape} turns an Option back into nil in {file_ns}; keep the Option and pass it on, handle both variants with `match`, or choose a concrete default. A `:js-ffi` definition or a function returning `JsNullish` may hand nil to a host"
+  );
+  push_advisory(LocatedWarning::new_with_detail(
+    message,
+    location,
+    Some("W_OPTION_ERASED_TO_NIL".to_owned()),
+    None,
+  ));
+}
+
+/// The `(:none) nil` branch of a `match` on an Option is the same erasure as
+/// `.unwrap-or … nil`; the `:some` branch usually returns the payload.
+fn warn_on_option_none_branch_erased_to_nil(tag: &Calcit, value: &Calcit, file_ns: &str) {
+  if file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) || option_to_nil_is_host_boundary() {
+    return;
+  }
+  let Some(location) = tag
+    .get_location()
+    .or_else(|| source_location_in_namespace(value, file_ns))
+    .filter(|location| location.ns.as_ref() == file_ns && location.def.as_ref() != GENERATED_DEF)
+  else {
+    return;
+  };
+  report_option_erased_to_nil("`match … (:none) nil`", file_ns, location);
 }
 
 fn warn_on_nominal_enum_truthiness(
@@ -11161,6 +11259,7 @@ fn process_match(
     }
   }
 
+  let matches_option = checking && nominal_enum_expression_name(&value_form, ctx.scope_types).as_deref() == Some("Option");
   xs.push(value_form);
 
   // Collect matched tags for exhaustiveness checking
@@ -11250,6 +11349,9 @@ fn process_match(
         }
 
         matched_tags.push(Arc::from(pat_tag));
+        if matches_option && pat_tag == "none" && matches!(body, Calcit::Nil) {
+          warn_on_option_none_branch_erased_to_nil(&pat_xs[0], &xs[1], ctx.file_ns);
+        }
 
         // Create scope with bindings for the body
         let mut body_defs = ctx.scope_defs.to_owned();
@@ -12147,6 +12249,12 @@ pub fn preprocess_defn(
       let feature_scope = FunctionFeaturesScope {
         previous: prev_features.clone(),
       };
+      let _host_nullish_scope = HostNullishReturnScope::enter(effective_fn_schema.as_ref().is_some_and(|signature| {
+        matches!(
+          signature.return_type.as_ref(),
+          CalcitTypeAnnotation::Nullable(_, NullableOrigin::JsHost)
+        )
+      }));
       let _source_replay_scope = source_replay::Scope::enter_function(
         ys,
         !source_top_level_definition

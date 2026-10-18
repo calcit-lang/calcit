@@ -11,7 +11,7 @@ fn deprecated_methods_are_advisory_in_check_only() {
     .expect("calcit command should run");
   let stderr = String::from_utf8_lossy(&output.stderr);
   assert!(output.status.success(), "advisories must not fail the check: {stderr}");
-  assert!(stderr.contains("2 deprecated usages"), "stderr: {stderr}");
+  assert!(stderr.contains("2 notes"), "stderr: {stderr}");
   assert!(
     stderr.contains("[A_DEPRECATED_METHOD]") && stderr.contains("use `.len`"),
     "stderr: {stderr}"
