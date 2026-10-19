@@ -2964,10 +2964,13 @@
             :tags $ #{} :short-circuit-proof :unit
         'readonly-call-alias $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn readonly-call-alias (k)
-            let
-                valid $ number? k
-              readonly-flag k
-              if valid (&+ k 1) 0
+            if
+              let
+                  valid $ number? k
+                readonly-flag k
+                , valid
+              &+ k 1
+              , 0
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Dynamic
