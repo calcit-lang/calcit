@@ -11972,6 +11972,17 @@ fn body_for_parameter_recheck(form: &Calcit) -> Calcit {
   Calcit::from(items.iter().map(body_for_parameter_recheck).collect::<Vec<_>>())
 }
 
+/// Retained dependency or generated-location warnings can also be emitted by
+/// replay. Compare complete diagnostics, and only across these two traversals.
+fn discard_duplicate_replay_warnings(warnings: &mut Vec<LocatedWarning>, checkpoint: usize, replayed_from: usize) {
+  let replayed = warnings.split_off(replayed_from);
+  for warning in replayed {
+    if !warnings[checkpoint..replayed_from].contains(&warning) {
+      warnings.push(warning);
+    }
+  }
+}
+
 pub fn preprocess_defn(
   head: &CalcitSyntax,
   head_ns: &str,
@@ -12501,12 +12512,18 @@ pub fn preprocess_defn(
         xs = initial_forms.expect("borrowed capture scope retains its function header");
         processed_body = initial_processed_body.expect("borrowed capture scope retains its schema hint");
         source_replay::Scope::rewind_function();
-        for source in args.iter().skip(2) {
-          let form = preprocess_expr(source, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
-          condition_evidence::establish_normal_exit(&form, &mut body_types);
-          processed_body.push(form.clone());
-          xs = xs.push_right(form);
-        }
+        let replayed_from = ctx.check_warnings.borrow().len();
+        let replay_result = (|| -> Result<(), CalcitErr> {
+          for source in args.iter().skip(2) {
+            let form = preprocess_expr(source, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
+            condition_evidence::establish_normal_exit(&form, &mut body_types);
+            processed_body.push(form.clone());
+            xs = xs.push_right(form);
+          }
+          Ok(())
+        })();
+        discard_duplicate_replay_warnings(&mut ctx.check_warnings.borrow_mut(), initial_warnings, replayed_from);
+        replay_result?;
       }
 
       if infer_helper_schema {
@@ -15619,6 +15636,69 @@ mod tests {
   }
 
   #[test]
+  fn replay_warning_dedup_preserves_codes_details_and_prior_occurrences() {
+    let at = NodeLocation::new(Arc::from("tests.warning-replay"), Arc::from(GENERATED_DEF), Arc::new(vec![]));
+    let original = LocatedWarning::new_with_detail(
+      "same message".to_owned(),
+      at.clone(),
+      Some("W_A".to_owned()),
+      Some("hint".to_owned()),
+    );
+    let other_code = LocatedWarning::new_with_detail(
+      "same message".to_owned(),
+      at.clone(),
+      Some("W_B".to_owned()),
+      Some("hint".to_owned()),
+    );
+    let other_hint = LocatedWarning::new_with_detail(
+      "same message".to_owned(),
+      at.clone(),
+      Some("W_A".to_owned()),
+      Some("other hint".to_owned()),
+    );
+    let typed = |expected: &str, actual: &str| {
+      LocatedWarning::new_with_types(
+        "same message".to_owned(),
+        at.clone(),
+        Some("W_A".to_owned()),
+        expected.to_owned(),
+        actual.to_owned(),
+      )
+    };
+    let first_typed = typed("Number", "String");
+    let other_expected = typed("Bool", "String");
+    let other_actual = typed("Number", "Bool");
+    let mut warnings = vec![original.clone(), original.clone(), first_typed.clone()];
+    let replayed_from = warnings.len();
+    warnings.extend([
+      original.clone(),
+      first_typed.clone(),
+      other_code.clone(),
+      other_hint.clone(),
+      other_expected.clone(),
+      other_actual.clone(),
+    ]);
+    discard_duplicate_replay_warnings(&mut warnings, 1, replayed_from);
+    assert_eq!(
+      warnings,
+      vec![
+        original.clone(),
+        original.clone(),
+        first_typed,
+        other_code,
+        other_hint,
+        other_expected,
+        other_actual
+      ]
+    );
+
+    // An earlier identical warning outside this traversal is not a duplicate.
+    let mut unrelated = vec![original.clone(), original.clone()];
+    discard_duplicate_replay_warnings(&mut unrelated, 1, 1);
+    assert_eq!(unrelated, vec![original.clone(), original]);
+  }
+
+  #[test]
   fn reentrant_capture_recheck_discards_duplicate_body_warnings() {
     let _state = lock_preprocess_test_state();
     let ns = "tests.capture-recheck";
@@ -15645,7 +15725,7 @@ mod tests {
     )
     .expect("install dependency compiled only on the first traversal");
     let source = cirru_parser::parse(
-      "defn retry (index)\n  tests.capture-dependency/helper\n  missing-local\n  set! captured |changed\n  recur index",
+      "defn retry (index)\n  tests.capture-dependency/helper 1\n  missing-local\n  set! captured |changed\n  recur index",
     )
     .expect("parse re-entrant function")
     .remove(0);
@@ -15724,6 +15804,14 @@ mod tests {
         .count(),
       1,
       "keep warnings belonging to cached dependencies: {warnings:?}"
+    );
+    assert_eq!(
+      warnings
+        .iter()
+        .filter(|warning| warning.location().def.as_ref() == GENERATED_DEF && warning.message().contains("expected 0 args"))
+        .count(),
+      1,
+      "unlocated body warnings must not be emitted twice: {warnings:?}"
     );
     SOURCE_EXPRESSION_TRACE.with(|trace| {
       let trace = trace.borrow();

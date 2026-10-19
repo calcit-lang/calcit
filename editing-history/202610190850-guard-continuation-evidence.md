@@ -45,3 +45,5 @@
 重入审查还发现丢弃第一遍函数体时，告警、source expression / usage trace 与改写前证据没有同步回滚，可能重复报告或让查询读到旧类型。重放前恢复各集合的 checkpoint，并为既有 post-lowering definition frame 提供局部回滚；首次按需编译、之后仍缓存的依赖告警必须保留。重放复用现有 source replay plan 中已经求值的宏展开，从原始源码重新检查，保留查询坐标、重新记录最终 lowering，不再次求值宏或沿用特化后的旧节点。低层测试验证告警、依赖缓存、查询唯一性与嵌套 frame 隔离；既有 strict 脚本验证实际宏展开只发生一次，原重入拒绝与共享运行时测试不变。
 
 源码重放使两项既有 `.inc` 重入负例更早在原始方法分派处报告 `E_DYNAMIC_METHOD_DISPATCH`，而非在已经特化的原语参数处报告 `E_CALL_ARGUMENT_UNPROVEN`。两项仍必须拒绝，预期分别精确使用现有方法诊断；直接 `&+` 负例仍要求原参数证明诊断，不采用宽泛匹配或删除断言。
+
+后续审查复现了 `GENERATED_DEF` 告警无法按 owner 删除、重放后重复两次的问题。继续保留首次编译依赖产生的告警，只在两遍遍历之间按完整 `LocatedWarning` 相等性消除重复，不跨越原 checkpoint 合并其他调用的诊断；比较包含 code、hint、expected 和 actual，而非只比较文本及位置。即使重查返回错误，也先完成告警合并再传播原错误。低层回归先实际复现两次相同 arity 告警，再验证仅保留一次、不同诊断细节不被合并，原 query trace 与依赖告警断言保持不变。
