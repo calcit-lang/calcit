@@ -129,6 +129,34 @@ payload 有具体类型时，这种写法本来就被参数检查拒绝；新诊
 宏生成的调用、`:js-ffi` 定义，以及返回类型声明为 `JsNullish` 的函数里的写法不报告：这些位置把 nil 交给 JS 宿主是声明过的合同。`either`、`or`、`if-let` 之后才出现的 nil 不在识别范围内。
 迁移前可用 `calcit calcit.cirru analyze weak-types --only option-nil-roundtrip` 列出全部位置。
 
+## 0.32.0 删除 `'Optional` 公共 schema 与旧 Optional 类型
+
+0.32.0 删除旧 `Optional<T>`：公共 schema 里的 `(:: 'Optional T)` 不再被解析，类型系统也不再保留这个可空变体。删除版本已写入 `E_LEGACY_OPTIONAL_SCHEMA` 与 `W_LEGACY_OPTIONAL_SCHEMA` 的诊断文字；本版本只登记删除，不新增自动改写规则，`calcit fix` 不会改 schema。
+
+迁移现在就可以做，不必等到 0.32.0：
+
+1. 用 `calcit calcit.cirru --check-only --keep-going --all-defs --format edn` 定位 schema 中的旧 Optional：严格模式（默认）下公共 schema 报 `E_LEGACY_OPTIONAL_SCHEMA`，诊断带定义位置。`query search` 按代码 AST 叶子匹配，不保证覆盖 `:schema` 字段，不能作为 schema 的定位手段；若要补查代码体里的 `'Optional`（如 `hint-fn`、`assert-type`），搜索时加 `--source project`，避免混入 core 与依赖模块的命中。
+2. 按语义逐处选择新类型：Calcit 内的缺失值用 `Option<T>`，失败原因用 `Result<T,E>`，副作用用 `Unit`，只有 JS 宿主边界才用 `JsNullish<T>`。业务默认值、`Dynamic` 放宽与 `unsafe-coerce` 不由工具选择。
+3. 用 `calcit edit schema`、`calcit tree` 系列命令写成一个 `edit transaction`：先 dry-run，再带返回的 revision 应用；应用后运行测试与目标后端检查。
+
+`nil->option` 是显式桥：`nil` 得到 `Option :none`，其余值得到 `Option :some value`，已有的 `Option` 不会被展开。它自身的参数类型目前仍是 `Optional<T>`（core 内部例外），会随 0.32.0 的删除一起改；已有的调用形式——`nil->option $ if c x`（无 else 的 `if`）、`Optional<Number>` 形参、分支都用 `nil->option` 的 `if`、类型明确的列表上 `map xs nil->option`——由 `calcit.core/nil->option` 的 `:tests` 固定，删除时必须继续通过。宿主 `JsNullish<T>` 不被 `nil->option` 接受，需要先 `js-present?` 收窄，或在接受不透明 payload 合同后用 `js-nullish->option`。
+
+| 旧写法 | 新写法 |
+| --- | --- |
+| `:args $ [] $ :: 'Optional 'String` | `:args $ [] $ :: 'Option 'String`，调用方传 `Option :some value` / `Option :none` |
+| struct 字段 `:: 'Optional 'Number` | `:: 'Option 'Number`，缺省时写 `Option :none` |
+| `:return $ :: 'Optional 'T`（来自 nil 的结果） | `:return $ :: 'Option 'T`，函数体里用 `nil->option` 转换 |
+| 读取 JS 宿主属性的 `Optional<T>` | `JsNullish<T>`，转换时用 `js-nullish->option` |
+
+删除前提：已知活跃下游默认分支的源码、附带测试/示例、宏生成代码与 CI/文档引用清零，依赖模块和未合并迁移核对完毕，见 [兼容入口的退场节奏](#兼容入口的退场节奏)。2026-10-19 对 57 个默认分支浅克隆（upgrade.md、strict-nil-migration.md 与各 `deps.cirru` 传递依赖点名的仓库）做过一次只读扫描，在 `*.cirru` 中匹配 `'Optional`：Respo/alerts.calcit、Phlox-GL/phlox、Erigeron/edn-renderer、TopixIM/diary 仍有命中；该扫描无法枚举各组织的全部仓库，也不含非默认分支、私有仓库与未合并 PR，所以“其余仓库未发现”不等于清零，删除前必须重新普查。命中的下游需要先完成迁移，否则 0.32.0 升级后它们的 schema 会失效。旧版本的迁移指南仍可查阅，不再为版本跨度增加硬编码规则。
+
+### 限制
+
+- 0.32.0 之前 `Optional<T>` 仍可解析，严格模式下公共 schema 报 `E_LEGACY_OPTIONAL_SCHEMA`，其余位置保持现状。
+- 类型推导（无 else 的 `if`、`nil` 与具体值的分支合并）暂时仍会推出 `Optional<T>`；它的替代表示尚未确定，不影响本节的 schema 迁移。
+- `nil->option` 的参数类型改动与 Optional 的删除在同一版本落地；单独把参数改成泛型 `T` 会让上述无 else `if` / `Optional` 实参的折叠形式在严格检查中失败。
+- core 内部 `&` 原语的 schema 不属于公共 API，不在本节范围。
+
 ## 0.32.0 `select-keys` 跳过缺失键
 
 `select-keys` 此前给源 Map 里不存在的键写入 `nil`，返回值的类型虽然是 `Map<K, V>`，里面却可能有不属于 `V` 的 nil。
@@ -1112,7 +1140,7 @@ calcit calcit.cirru fix --preset core-api-0.29-v1 --include-attached --format ed
 
 | 变体 | 当前仍在使用的位置 | 结论 |
 |---|---|---|
-| `Optional` | 本仓库 `src` 中 105 处 `CalcitTypeAnnotation::Optional` 引用（含 `proc_name.rs` 中返回可空值的内置 proc 签名）；`calcit/test-struct.cirru`、`test-generics.cirru`、`test.cirru` 中 19 处 `'Optional` schema；下游 Respo/alerts.calcit、Memkits/genai.calcit、Erigeron/edn-renderer、TopixIM/diary 的默认分支 | 保留。公共 schema 已由 `E_LEGACY_OPTIONAL_SCHEMA` 在严格模式拒绝，core `&` 原语与 `nil->option` 桥是内部边界 |
+| `Optional` | 本仓库中的类型解析、推导（无 else 的 `if`、`nil` 分支合并）、struct 字段缺省与分析器词汇；2026-10-19 扫描到的少量下游默认分支 schema（未覆盖的仓库不算零，删除前重新普查） | 保留到 0.32.0 删除，登记见 [0.32.0 删除 `'Optional` 公共 schema 与旧 Optional 类型](#032-删除-optional-公共-schema-与旧-optional-类型)。公共 schema 已由 `E_LEGACY_OPTIONAL_SCHEMA` 在严格模式拒绝；core `&` 原语与 `nil->option` 的参数仍是内部例外，随删除一起收口 |
 | `Custom` | `'Struct`、`'StructDef`、`'EnumDef`、`'Trait`、`'Impl` 作为 schema 标记，在 110 个下游仓库的 `*.cirru` 中出现（`'Trait` 440 处、`'StructDef` 434 处）；`Calcit::Impl` 的推断结果与 `from_calcit` 的兜底也使用它 | 保留。需要先为这些标记提供专用变体或明确诊断，再删除兜底 |
 | `DynFn` | 19 个下游仓库的 `calcit.cirru` 在 `:args` 等位置写裸 `'Fn`（87 行，含 Respo/respo.calcit、Respo/alerts.calcit、mvc-works/ws-edn.calcit、Termina/termina）；内置 proc 与 `E_FFI_IR_CALLBACK_TYPE` 诊断也依赖它 | 保留。是否表示为参数与返回均为 Dynamic 的 `Fn`，须先让证明与诊断对两者保持一致 |
 | `StructValue` / `EnumValue` 与 `StructDef` / `EnumDef` | 前者描述值的推断类型，后者描述 `defstruct` / `defenum` 产生的一等定义值，分支语义不同 | 保留，没有可合并的重复分支 |
@@ -1127,7 +1155,7 @@ WASM 后端现在依据静态类型证据 lowering `nil?`，从而让 `non-nil? 
 
 无法取得具体类型证据的开放 `Dynamic`、未绑定泛型，以及把 nil-sensitive 泛型 helper 作为一等函数或公开 WASM 导出的边界，会明确报出 `E_WASM_NIL_TYPE_EVIDENCE`。带 `&` 的 spread 调用没有固定实参形状，不能充当泛型特化点；如果目标 helper 依赖 nil 类型证据，同样会在编译期拒绝，而不是留下运行时 trap。应改为类型已具体化的普通直接调用，或增加一个签名闭合、无需猜测 payload 类型的 wrapper。
 
-旧 `Optional<T>` 只有在 payload 使用确定非零的引用/句柄表示时才可做运行时 nil 判断，例如 WASI `get-env` 的 `Optional<String>`；`Optional<Number>` 与 `Optional<Bool>` 仍会拒绝，因为 0/false 和 nil 在 scalar ABI 中相同。这类边界应先收紧 schema、迁到名义 `Option`，或在 Calcit 调用点完成具体化；编译器不会猜测零值，也不会为了兼容扩展动态追踪规则。此次修复不改变 scalar ABI，也没有提供掩盖开放类型的自动转换。
+旧 `Optional<T>` 只有在 payload 使用确定非零的引用/句柄表示时才可做运行时 nil 判断，例如 `Optional<String>`（WASI `get-env` 已改为返回名义 `Option`）；`Optional<Number>` 与 `Optional<Bool>` 仍会拒绝，因为 0/false 和 nil 在 scalar ABI 中相同。这类边界应先收紧 schema、迁到名义 `Option`，或在 Calcit 调用点完成具体化；编译器不会猜测零值，也不会为了兼容扩展动态追踪规则。此次修复不改变 scalar ABI，也没有提供掩盖开放类型的自动转换。
 
 ```cirru
 assert= true $ non-nil? false

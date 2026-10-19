@@ -14845,7 +14845,7 @@ fn reject_strict_legacy_optional_public_schema(
   Err(CalcitErr::use_msg_stack_location_with_code(
     CalcitErrKind::Type,
     format!(
-      "{ns}/{def_name} exposes legacy Optional<T> in its public schema; use Option<T> for Calcit absence, JsNullish<T> only for JavaScript FFI, Result<T,E> for failures, or Unit for effects"
+      "{ns}/{def_name} exposes legacy Optional<T> in its public schema, and Optional<T> will be removed in 0.32.0; use Option<T> for Calcit absence, JsNullish<T> only for JavaScript FFI, Result<T,E> for failures, or Unit for effects"
     ),
     "E_LEGACY_OPTIONAL_SCHEMA",
     call_stack,
@@ -14864,7 +14864,7 @@ fn warn_on_legacy_optional_public_schema(
   }
   gen_check_warning_code(
     format!(
-      "[Warn] {ns}/{def_name} exposes legacy Optional<T> in its function schema; use Option<T> for Calcit absence, JsNullish<T> only for JavaScript FFI, Result<T,E> for failures, or Unit for effects"
+      "[Warn] {ns}/{def_name} exposes legacy Optional<T> in its function schema, and Optional<T> will be removed in 0.32.0; use Option<T> for Calcit absence, JsNullish<T> only for JavaScript FFI, Result<T,E> for failures, or Unit for effects"
     ),
     "W_LEGACY_OPTIONAL_SCHEMA",
     ns,
@@ -23495,6 +23495,11 @@ mod tests {
 
     assert_eq!(warnings.borrow().len(), 1);
     assert_eq!(warnings.borrow()[0].code(), Some("W_LEGACY_OPTIONAL_SCHEMA"));
+    assert!(
+      warnings.borrow()[0].message().contains("removed in 0.32.0"),
+      "the deletion version must be discoverable: {}",
+      warnings.borrow()[0].message()
+    );
 
     let core_public_warnings = RefCell::new(vec![]);
     warn_on_legacy_optional_public_schema(calcit::CORE_NS, "future-public-api", &schema, &core_public_warnings);
@@ -23545,6 +23550,11 @@ mod tests {
       .expect_err("strict mode should reject public Optional<T> schemas");
     assert_eq!(error.code.as_deref(), Some("E_LEGACY_OPTIONAL_SCHEMA"));
     assert!(error.msg.contains("Option<T>"));
+    assert!(
+      error.msg.contains("removed in 0.32.0"),
+      "the deletion version must be discoverable: {}",
+      error.msg
+    );
     assert!(error.location.is_some());
 
     reject_strict_legacy_optional_public_schema(calcit::CORE_NS, "&raw-lookup", &schema, &CallStackList::default(), None)

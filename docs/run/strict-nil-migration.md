@@ -12,7 +12,7 @@ Calcit 0.14 的默认严格诊断把隐式缺失值视为编译错误；迁移�
 | `E_NIL_FOR_UNIT` | A function declared to return `Unit` whose returned expression has static type `Nil`, including legacy `;nil` | Return `&unit`, or end the body with an effect that already returns `Unit`. Intermediate nil values are not treated as the function return. |
 | `E_NIL_CALLBACK_SENTINEL` | An inline `map-kv` callback has a return path that uses `nil` to drop an entry, including an `if` without an else branch | Use `filter-map-kv`; return `MapEntryDecision :keep key value` or `MapEntryDecision :drop` on every path. A `nil` nested inside the returned key/value pair remains ordinary data and is not rejected. |
 | `W_MAP_KV_UNPROVEN_CONTRACT` / `E_MAP_KV_UNPROVEN_CONTRACT` | Typed project code calls legacy `map-kv`, whose heterogeneous pair and nil/enum drop protocol cannot prove output key/value types. Compatibility mode warns and exposes only `Dynamic`; strict mode rejects it. | Use `filter-map-kv` with `MapEntryDecision` when the result remains a Map or entries may be dropped. Use `map-list-kv` for `Fn(K,V)->U` collection into `List<U>`. |
-| `E_LEGACY_OPTIONAL_SCHEMA` | A public function schema contains legacy `Optional<T>`, which conflates a nominal API with runtime nil | Use `Option<T>` for Calcit absence, `JsNullish<T>` only at JS FFI boundaries, `Result<T,E>` for failures, or `Unit` for effects. Raw core `&...` primitives and the `nil->option` bridge remain internal compatibility boundaries. |
+| `E_LEGACY_OPTIONAL_SCHEMA` / `W_LEGACY_OPTIONAL_SCHEMA` | A public function schema contains legacy `Optional<T>`, which conflates a nominal API with runtime nil. `Optional<T>` and the `'Optional` public schema will be removed in 0.32.0; strict mode rejects it now, and both messages name the deletion version | Use `Option<T>` for Calcit absence, `JsNullish<T>` only at JS FFI boundaries, `Result<T,E>` for failures, or `Unit` for effects. Convert a possibly-nil value with `nil->option`. Raw core `&...` primitives and the `nil->option` parameter remain internal exceptions until the deletion. See [upgrade.md](upgrade.md#032-删除-optional-公共-schema-与旧-optional-类型) for the locate-and-migrate steps. |
 
 The runtime `nil` value, Cirru EDN nil, and explicit untyped/FFI boundaries are
 not removed. The strict errors only close constructs that silently manufacture
@@ -99,6 +99,10 @@ Respo 的审阅把迁移分成三类，不把所有显式 runtime nil 混为一�
 nil-drop sentinel 迁移到 `filter-map-kv`；四个公开数据结构中的 legacy
 `Optional<T>` 按 DOM/runtime 语义选择 `Option<T>` 或 host-nullish 边界；其余 49 个
 显式 nil 逐定义分类，不能仅凭出现 `nil` 就误判为五种隐式兼容构造之一。
+
+上表是 0.13.77 时点的历史记录，其中 Respo 的 49 处命中已过期：Respo 默认分支现已无 `'Optional`。2026-10-19 对 57 个默认分支浅克隆（`*.cirru`，匹配 `'Optional`）的只读扫描中，仍使用旧 `Optional` schema 的有 Respo/alerts.calcit、Phlox-GL/phlox、Erigeron/edn-renderer 与 TopixIM/diary；`'Optional` 公共 schema 和旧 Optional 类型将在 0.32.0 删除（见 [upgrade.md](upgrade.md#032-删除-optional-公共-schema-与旧-optional-类型)），这些仓库需要在此之前迁移到 `Option`。该扫描无法枚举各组织的全部仓库，也不含非默认分支与未合并 PR，“未发现”不等于清零；删除前须按 upgrade.md 的退场条件重新普查。
+
+The table above is the 0.13.77 snapshot. A read-only scan on 2026-10-19 of 57 shallow default-branch clones (`*.cirru`, pattern `'Optional`) found no `'Optional` in Respo any more, while Alerts, Phlox, edn-renderer and diary still use legacy `Optional` schemas; the scan cannot enumerate every organization repository or cover other branches, so absence is not proof of zero and a re-census is required before deletion. `'Optional` and the legacy Optional type are removed in 0.32.0, so they must migrate to `Option` first.
 
 Run the audit from a Calcit checkout with clean consumer worktrees:
 
