@@ -74,14 +74,6 @@ const OPTIONAL_PARAMETERS_RULE: &str = "optional-parameters-v1";
 const OPTIONAL_PARAMETERS_DIAGNOSTIC: &str = "E_LEGACY_OPTIONAL_PARAM";
 const CASE_DEFAULT_MATCH_RULE: &str = "case-default-to-match-v1";
 const CASE_DEFAULT_MATCH_DIAGNOSTIC: &str = "FIX_CASE_DEFAULT_MATCH";
-const CORE_MACRO_ALIAS_RULE: &str = "core-macro-alias-v1";
-const CORE_MACRO_ALIAS_DIAGNOSTIC: &str = "FIX_CORE_MACRO_ALIAS";
-const LET_SUGAR_LET_RULE: &str = "let-sugar-to-let-v1";
-const LET_SUGAR_LET_DIAGNOSTIC: &str = "FIX_LET_SUGAR_LET";
-const LIST_MATCH_MATCH_RULE: &str = "list-match-to-match-v1";
-const LIST_MATCH_MATCH_DIAGNOSTIC: &str = "FIX_LIST_MATCH_MATCH";
-const APPLY_ARGS_LOOP_RULE: &str = "apply-args-to-loop-v1";
-const APPLY_ARGS_LOOP_DIAGNOSTIC: &str = "FIX_APPLY_ARGS_LOOP";
 const CORE_ABSENCE_RULE: &str = "core-absence-to-public-v1";
 const CORE_ABSENCE_DIAGNOSTIC: &str = "FIX_CORE_ABSENCE_TO_PUBLIC";
 const SURFACE_LATEST_V1_PRESET: &str = "surface-latest-v1";
@@ -144,44 +136,16 @@ const REQUIRED_STRUCT_FIELD_RULE: &str = "required-struct-field-v1";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum FixOperation {
-  ReplaceLeaf {
-    original: String,
-    replacement: String,
-  },
-  WrapLeafCall {
-    original: String,
-  },
-  ReplaceNode {
-    original: String,
-    replacement: String,
-  },
-  /// Replace a list node with a node of any shape; `code` is the complete
-  /// `quote ...` form, so a leaf replacement keeps its own escaping.
-  ReplaceNodeQuoted {
-    original: String,
-    code: String,
-  },
+  ReplaceLeaf { original: String, replacement: String },
+  WrapLeafCall { original: String },
+  ReplaceNode { original: String, replacement: String },
   SpliceDo,
-  ReplaceImports {
-    code: String,
-  },
-  ReplaceExamples {
-    code: String,
-  },
-  ReplaceTest {
-    name: String,
-    tags: String,
-    code: String,
-  },
-  ReplaceSchema {
-    code: String,
-  },
-  ReplaceDefinition {
-    code: String,
-  },
-  RenameDefinition {
-    new_name: String,
-  },
+  ReplaceImports { code: String },
+  ReplaceExamples { code: String },
+  ReplaceTest { name: String, tags: String, code: String },
+  ReplaceSchema { code: String },
+  ReplaceDefinition { code: String },
+  RenameDefinition { new_name: String },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -553,11 +517,7 @@ pub(crate) fn handle_fix_command(
   let core_predicate_rename = selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE)
     || selected_rules.contains(&CORE_FUNCTION_ALIAS_RULE)
     || selected_rules.contains(&CORE_REF_CONSTRUCTOR_RULE)
-    || selected_rules.contains(&CASE_DEFAULT_MATCH_RULE)
-    || selected_rules.contains(&CORE_MACRO_ALIAS_RULE)
-    || selected_rules.contains(&LET_SUGAR_LET_RULE)
-    || selected_rules.contains(&LIST_MATCH_MATCH_RULE)
-    || selected_rules.contains(&APPLY_ARGS_LOOP_RULE);
+    || selected_rules.contains(&CASE_DEFAULT_MATCH_RULE);
   let semantic_refactor = semantic_rename || value_to_zero_arg_fn || local_rename;
   let migration_rule =
     semantic_refactor || schema_synthesis || optional_parameters || core_predicate_rename || options.workflow.is_some();
@@ -812,36 +772,8 @@ pub(crate) fn handle_fix_command(
       &selected_definitions,
     )?);
   }
-  if selected_rules.contains(&APPLY_ARGS_LOOP_RULE) {
-    suggestions.extend(apply_args::plan_apply_args_fixes(
-      &source_snapshot,
-      snapshot_file,
-      &selected_definitions,
-    )?);
-  }
-  if selected_rules.contains(&LIST_MATCH_MATCH_RULE) {
-    suggestions.extend(list_match::plan_list_match_fixes(
-      &source_snapshot,
-      snapshot_file,
-      &selected_definitions,
-    )?);
-  }
   if selected_rules.contains(&CORE_ABSENCE_RULE) {
     suggestions.extend(absence::plan(&source_snapshot, snapshot_file, &selected_definitions)?);
-  }
-  if selected_rules.contains(&LET_SUGAR_LET_RULE) {
-    suggestions.extend(let_sugar::plan_let_sugar_fixes(
-      &source_snapshot,
-      snapshot_file,
-      &selected_definitions,
-    )?);
-  }
-  if selected_rules.contains(&CORE_MACRO_ALIAS_RULE) {
-    suggestions.extend(core_macro::plan_core_macro_alias_fixes(
-      &source_snapshot,
-      snapshot_file,
-      &selected_definitions,
-    )?);
   }
   let mut constructor_kinds = Vec::new();
   if selected_rules.contains(&NAMED_ENUM_CONSTRUCTOR_RULE) {
@@ -1361,10 +1293,6 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | NOMINAL_WRITE_PROOF_RULE
         | OPTIONAL_PARAMETERS_RULE
         | CASE_DEFAULT_MATCH_RULE
-        | CORE_MACRO_ALIAS_RULE
-        | LET_SUGAR_LET_RULE
-        | LIST_MATCH_MATCH_RULE
-        | APPLY_ARGS_LOOP_RULE
         | CORE_ABSENCE_RULE
         | TAG_MATCH_RULE
         | REQUIRED_STRUCT_FIELD_RULE
@@ -1372,7 +1300,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
   {
     return Err(
       format!(
-        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`, `{CASE_DEFAULT_MATCH_RULE}`, `{CORE_MACRO_ALIAS_RULE}`, `{LET_SUGAR_LET_RULE}`, `{LIST_MATCH_MATCH_RULE}`, `{APPLY_ARGS_LOOP_RULE}`, `{CORE_ABSENCE_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_LIST_ADD_RULE}`, `{CORE_COLLECTION_LEN_RULE}`, `{CORE_EFFECT_METHOD_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`, `{CASE_DEFAULT_MATCH_RULE}`, `{CORE_ABSENCE_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
       ) + &format!(
         " Review-only compiler rules: `{UNSAFE_COERCE_BOUNDARY_RULE}`, `{ASSERT_TYPE_PROOF_RULE}`, `{CONCRETE_RETURN_PROOF_RULE}`, `{CALLABLE_CONTRACT_PROOF_RULE}`, `{NOMINAL_WRITE_PROOF_RULE}`."
       ),
@@ -1427,10 +1355,6 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_EFFECT_METHOD_RULE
         | CORE_REF_CONSTRUCTOR_RULE
         | CASE_DEFAULT_MATCH_RULE
-        | CORE_MACRO_ALIAS_RULE
-        | LET_SUGAR_LET_RULE
-        | LIST_MATCH_MATCH_RULE
-        | APPLY_ARGS_LOOP_RULE
         | CORE_ABSENCE_RULE
     ) {
       return vec![match rule {
@@ -1455,10 +1379,6 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_EFFECT_METHOD_RULE => CORE_EFFECT_METHOD_RULE,
         CORE_REF_CONSTRUCTOR_RULE => CORE_REF_CONSTRUCTOR_RULE,
         CASE_DEFAULT_MATCH_RULE => CASE_DEFAULT_MATCH_RULE,
-        CORE_MACRO_ALIAS_RULE => CORE_MACRO_ALIAS_RULE,
-        LET_SUGAR_LET_RULE => LET_SUGAR_LET_RULE,
-        LIST_MATCH_MATCH_RULE => LIST_MATCH_MATCH_RULE,
-        APPLY_ARGS_LOOP_RULE => APPLY_ARGS_LOOP_RULE,
         CORE_ABSENCE_RULE => CORE_ABSENCE_RULE,
         _ => OPTIONAL_PARAMETERS_RULE,
       }];
@@ -1621,34 +1541,6 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: CASE_DEFAULT_MATCH_DIAGNOSTIC,
       evidence_source: "literal-patterns-and-core-macro-expansion",
-      lifecycle: "semantic-refactor",
-      source_version_required: false,
-    },
-    CORE_MACRO_ALIAS_RULE => FixRuleMetadata {
-      rule_id,
-      diagnostic_code: CORE_MACRO_ALIAS_DIAGNOSTIC,
-      evidence_source: "unshadowed-core-macro-expansion",
-      lifecycle: "semantic-refactor",
-      source_version_required: false,
-    },
-    LET_SUGAR_LET_RULE => FixRuleMetadata {
-      rule_id,
-      diagnostic_code: LET_SUGAR_LET_DIAGNOSTIC,
-      evidence_source: "unshadowed-core-macro-expansion",
-      lifecycle: "semantic-refactor",
-      source_version_required: false,
-    },
-    LIST_MATCH_MATCH_RULE => FixRuleMetadata {
-      rule_id,
-      diagnostic_code: LIST_MATCH_MATCH_DIAGNOSTIC,
-      evidence_source: "proven-list-subject-and-core-macro-expansion",
-      lifecycle: "semantic-refactor",
-      source_version_required: false,
-    },
-    APPLY_ARGS_LOOP_RULE => FixRuleMetadata {
-      rule_id,
-      diagnostic_code: APPLY_ARGS_LOOP_DIAGNOSTIC,
-      evidence_source: "unshadowed-core-macro-expansion",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -2127,12 +2019,8 @@ fn plan_definition_rename(
 }
 
 mod absence;
-mod apply_args;
 mod case_default;
 mod compiler_review;
-mod core_macro;
-mod let_sugar;
-mod list_match;
 mod local_rename;
 pub(crate) mod schema_synthesis;
 mod spread_call;
@@ -4140,10 +4028,6 @@ fn supports_attached_migrations(rule: &str) -> bool {
       | CORE_COLLECTION_LEN_RULE
       | CORE_REF_CONSTRUCTOR_RULE
       | CASE_DEFAULT_MATCH_RULE
-      | CORE_MACRO_ALIAS_RULE
-      | LET_SUGAR_LET_RULE
-      | LIST_MATCH_MATCH_RULE
-      | APPLY_ARGS_LOOP_RULE
       | CORE_ABSENCE_RULE
       | NAMED_ENUM_CONSTRUCTOR_RULE
       | NAMED_STRUCT_CONSTRUCTOR_RULE
@@ -4334,32 +4218,8 @@ fn plan_attached_fixes(
               Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
             }
           }
-          if selected_rules.contains(&APPLY_ARGS_LOOP_RULE) {
-            match apply_args::plan_apply_args_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper) {
-              Ok(planned) => candidates.extend(planned),
-              Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
-            }
-          }
-          if selected_rules.contains(&LIST_MATCH_MATCH_RULE) {
-            match list_match::plan_list_match_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper) {
-              Ok(planned) => candidates.extend(planned),
-              Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
-            }
-          }
           if selected_rules.contains(&CORE_ABSENCE_RULE) {
             match absence::plan_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper) {
-              Ok(planned) => candidates.extend(planned),
-              Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
-            }
-          }
-          if selected_rules.contains(&LET_SUGAR_LET_RULE) {
-            match let_sugar::plan_let_sugar_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper) {
-              Ok(planned) => candidates.extend(planned),
-              Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
-            }
-          }
-          if selected_rules.contains(&CORE_MACRO_ALIAS_RULE) {
-            match core_macro::plan_core_macro_alias_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper) {
               Ok(planned) => candidates.extend(planned),
               Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
             }
@@ -4383,7 +4243,7 @@ fn plan_attached_fixes(
               continue;
             };
             match candidate.operation {
-              Some(FixOperation::ReplaceNode { .. } | FixOperation::ReplaceNodeQuoted { .. }) => {
+              Some(FixOperation::ReplaceNode { .. }) => {
                 let original = fix_source_json_to_cirru(&candidate.original)?;
                 let replacement =
                   fix_source_json_to_cirru(candidate.replacement.as_ref().ok_or("Missing attached subtree replacement")?)?;
@@ -6813,17 +6673,6 @@ fn suggestion_operations(suggestion: &FixSuggestion) -> Vec<Vec<String>> {
       format!("quote $ {original}"),
       "--code".to_owned(),
       format!("quote $ {replacement}"),
-    ]],
-    Some(FixOperation::ReplaceNodeQuoted { original, code }) => vec![vec![
-      "tree".to_owned(),
-      "replace".to_owned(),
-      suggestion.definition.clone(),
-      "--path".to_owned(),
-      format_path(&suggestion.target_path),
-      "--expect".to_owned(),
-      format!("quote $ {original}"),
-      "--code".to_owned(),
-      code.to_owned(),
     ]],
     Some(FixOperation::SpliceDo) => {
       let mut head_path = suggestion.target_path.clone();

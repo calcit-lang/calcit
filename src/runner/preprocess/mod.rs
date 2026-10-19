@@ -820,6 +820,13 @@ fn retired_core_function_migration(name: &str) -> Option<(&'static str, &'static
       "0.31.0",
       "bind the arguments once, then use `range (inc (negate x)) x`, or `range (inc (- (+ x x) y)) y` with an end `y`",
     )),
+    "apply-args" => Some(("0.31.0", "use `loop ((param value) ...) body`")),
+    "let-sugar" => Some(("0.31.0", "use `let` and `let[]` directly")),
+    "list-match" => Some(("0.31.0", "use `match (destruct-list xs) ((:none) ...) ((:some head tail) ...)`")),
+    "option:let" => Some(("0.31.0", "use nested `.and-then` calls")),
+    "w-log" | "w-js-log" => Some(("0.31.0", "use `dbg`, or an explicit `js/console.log` for the host object view")),
+    "wo-log" | "wo-js-log" => Some(("0.31.0", "write `x` for `(wo-log x)`; it returned its argument unchanged")),
+    "flipped" => Some(("0.31.0", "write `(f b a)` for `(flipped f a b)`")),
     _ => None,
   }
 }
@@ -5608,7 +5615,7 @@ fn expression_has_nil_return_path(expr: &Calcit) -> bool {
         || nodes.get(2).is_some_and(expression_has_nil_return_path)
         || nodes.get(3).is_some_and(expression_has_nil_return_path)
     }
-    Some("do" | "let" | "let-sugar" | "&let") => nodes.get(nodes.len() - 1).is_some_and(expression_has_nil_return_path),
+    Some("do" | "let" | "&let") => nodes.get(nodes.len() - 1).is_some_and(expression_has_nil_return_path),
     Some("match") => nodes
       .iter()
       .skip(2)

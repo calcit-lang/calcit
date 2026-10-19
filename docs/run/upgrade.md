@@ -141,6 +141,22 @@ Snapshot 中以 `fn` 为根节点的定义可以直接使用自身 CodeEntry 的
 将这种旧写法迁移为直接传递 `fn`，并把正确 Map 注解写进它的函数体；不要加 unsafe 或假设返回声明能证明一个 Dynamic 可调用。
 合法元数据表达式继续返回 Nil，这不是业务缺失值，不需要迁移为 Option。
 
+## 0.31.0 删除已弃用的兼容宏
+
+0.31.0 从 `calcit.core` 删除以下兼容宏，同时删除对应的 `calcit fix` 规则（`core-macro-alias-v1`、`let-sugar-to-let-v1`、`list-match-to-match-v1`、`apply-args-to-loop-v1`）。已知活跃核心库（Respo、Respo UI、Reel、Markdown、Recollect、lilac-parser、ws-edn、cumulo-reel、js-ffi、std）的默认分支在定义代码、附带测试和示例中都没有调用。
+
+| 已删除 | 改写为 |
+|---|---|
+| `apply-args (a b) (fn (x y) body...)` | `loop ((x a) (y b)) body...` |
+| `let-sugar` | `let` 与 `let[]` 按原顺序嵌套 |
+| `list-match xs (() empty) ((h t) body)` | `match (destruct-list xs) ((:none) empty) ((:some h t) body)` |
+| `option:let` | 嵌套的 `.and-then` 调用 |
+| `w-log x` / `w-js-log x` | `dbg x`；需要宿主对象视图时写显式 `js/console.log` |
+| `wo-log x` / `wo-js-log x` | `x` |
+| `flipped f a b` | `f b a` |
+
+升级前仍用 0.30.x 的 CLI 迁移：依次运行 `calcit calcit.cirru fix --rule apply-args-to-loop-v1`、`let-sugar-to-let-v1`、`list-match-to-match-v1`、`core-macro-alias-v1`（均加 `--include-attached --format edn`），预览后带 `--expect-revision` 应用；`option:let` 逐处人工改写。残留调用在检查时报告未知名字，告警末尾给出删除版本和改写方式。
+
 ## 0.31.0 删除已弃用的兼容函数
 
 0.31.0 从 `calcit.core` 删除以下兼容函数。已知活跃核心库（Respo、Respo UI、Reel、Markdown、Recollect、lilac-parser、ws-edn、cumulo-reel、js-ffi、std）的默认分支在源码、附带测试与示例中都没有调用。
@@ -169,7 +185,7 @@ Snapshot 中以 `fn` 为根节点的定义可以直接使用自身 CodeEntry 的
 ### 限制
 
 - `%some` / `%none` / `%ok` / `%err`、`atom`、`vals` 仍有下游调用，本版保留。
-- 宏形式的兼容入口（如 `case-default`、`list-match`、`let-sugar`）与已弃用方法另行退场。
+- `case-default`（js-ffi 的示例仍在使用）、`foldl-shortcut`、`round?` 与已弃用方法另行退场。
 
 ## 0.30.1 底层缺失值原语直接返回 Option
 

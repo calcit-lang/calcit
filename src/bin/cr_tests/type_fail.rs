@@ -1280,6 +1280,17 @@ fn retired_core_functions_report_preferred_spelling() {
       ("section-by ([] 1 2 3) 2", "section-by", "chunks", "0.31.0"),
       ("turn-str 1", "turn-str", "to-string", "0.31.0"),
       ("some-in? ({} (:a 1)) ([] :a)", "some-in?", ".ok? $ get-in x path", "0.31.0"),
+      ("w-log 1", "w-log", "dbg", "0.31.0"),
+      ("wo-log 1", "wo-log", "x", "0.31.0"),
+      ("flipped &- 1 2", "flipped", "(f b a)", "0.31.0"),
+      (
+        "list-match ([] 1) (() 0) ((h t) h)",
+        "list-match",
+        "match (destruct-list xs) ((:none) ...) ((:some head tail) ...)",
+        "0.31.0",
+      ),
+      ("let-sugar ((a 1)) a", "let-sugar", "let[]", "0.31.0"),
+      ("apply-args (1) (fn (x) x)", "apply-args", "loop ((param value) ...) body", "0.31.0"),
     ] {
       for source in [
         snippet.to_owned(),

@@ -1,6 +1,7 @@
 {} (:schemaVersion 2)
   :definitions $ {}
     |calcit.core/%:: $ {} (:codeDynamic 0)
+    |calcit.core/&list-match-internal $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
       :deprecatedCalls 0
@@ -360,7 +361,6 @@
       :typeNotFull 0
       :unresolved 1
       :unsafeCoerce 0
-    |calcit.core/&list-match-internal $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
       :deprecatedCalls 0
@@ -639,7 +639,6 @@
       :typeNotFull 1
       :unresolved 1
       :unsafeCoerce 0
-    |calcit.core/apply-args $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
       :deprecatedCalls 0
@@ -873,7 +872,6 @@
       :typeNotFull 1
       :unresolved 2
       :unsafeCoerce 0
-    |calcit.core/flipped $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
       :deprecatedCalls 0
@@ -1026,7 +1024,6 @@
       :typeNotFull 1
       :unresolved 0
       :unsafeCoerce 0
-    |calcit.core/let-sugar $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
       :deprecatedCalls 0
@@ -1053,7 +1050,6 @@
       :typeNotFull 1
       :unresolved 0
       :unsafeCoerce 0
-    |calcit.core/list-match $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
       :deprecatedCalls 0
@@ -1134,7 +1130,6 @@
       :typeNotFull 1
       :unresolved 2
       :unsafeCoerce 0
-    |calcit.core/option:let $ {} (:codeDynamic 0)
       :codeNil 0
       :declaredOptional 0
       :deprecatedCalls 0

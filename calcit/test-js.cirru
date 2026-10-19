@@ -87,13 +87,7 @@
             when (> 1 2)
               raise $ str "|error of math" 2 1
               raise "|base error"
-            =
-              {} $ :a 1
-              w-js-log $ {} $ :a 1
-            =
-              {} $ :a 1
-              wo-js-log $ {} $ :a 1
-            w-js-log "|log demo"
+            js/console.log "|log demo"
             test-for-await
             test-case-async
             test-return-raw-code
