@@ -21,7 +21,7 @@ use std::sync::{LazyLock, OnceLock};
 static LEXICAL_TYPE_BINDER: AtomicU64 = AtomicU64::new(0);
 
 /// Alpha-renamed binder keys are internal; all public rendering uses the source name.
-fn source_type_variable(name: &str) -> &str {
+pub(crate) fn source_type_variable(name: &str) -> &str {
   if name.starts_with("#lexical:") {
     name.split_once('\0').map_or(name, |(_, source)| source)
   } else {

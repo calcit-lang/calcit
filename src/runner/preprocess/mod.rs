@@ -12112,6 +12112,14 @@ pub fn preprocess_defn(
       } else {
         calcit::DYNAMIC_TYPE.clone()
       };
+      if source_top_level_definition {
+        body_types.clear_generics();
+      }
+      match def_schema.as_ref() {
+        CalcitTypeAnnotation::Fn(signature) => body_types.bind_generics(&signature.generics),
+        CalcitTypeAnnotation::Macro(signature) => body_types.bind_generics(&signature.generics),
+        _ => {}
+      }
       let strict_generated_by_macro = strict_types_enabled() && generated_by_macro;
       if matches!(head, CalcitSyntax::DefWasmImport) && !has_valid_wasm_import_body(args) {
         return Err(CalcitErr::use_msg_stack_location(
@@ -12130,8 +12138,7 @@ pub fn preprocess_defn(
         info.at_def.to_owned(),
         location.to_owned().unwrap_or_default(),
       );
-      let lexical_generics =
-        crate::calcit::type_annotation::free_type_variable_names(&ctx.scope_types.values().cloned().collect::<Vec<_>>());
+      let lexical_generics = body_types.generic_names();
       let body_fn_hint = args.iter().skip(2).find_map(|form| {
         let annotation = CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form_in_scope(form, &lexical_generics)?;
         match annotation.as_ref() {
@@ -12305,6 +12312,7 @@ pub fn preprocess_defn(
         }
       }
       if let Some(fn_annot) = &effective_fn_schema {
+        body_types.bind_generics(&fn_annot.generics);
         let body_type_bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = fn_annot
           .where_bounds
           .iter()
@@ -13062,8 +13070,7 @@ pub fn preprocess_hint_fn(
   // The two-argument form annotates an existing local function value. Keep the annotation in
   // lexical scope so later calls, callback checks, and `type-at` retain the complete signature.
   // The one-argument form is metadata injected into a function body and has no target to refine.
-  let lexical_generics =
-    crate::calcit::type_annotation::free_type_variable_names(&ctx.scope_types.values().cloned().collect::<Vec<_>>());
+  let lexical_generics = ctx.scope_types.generic_names();
   let Some(type_entry) =
     CalcitTypeAnnotation::extract_fn_annotation_from_hint_form_in_scope(&Calcit::from(ys.clone()), &lexical_generics)
   else {
@@ -13221,8 +13228,7 @@ fn preprocess_assert_type_with_obligation(
 
   let asserted_target = target_form;
   let asserted_type = local_nominal_type.unwrap_or_else(|| {
-    let lexical_generics =
-      crate::calcit::type_annotation::free_type_variable_names(&ctx.scope_types.values().cloned().collect::<Vec<_>>());
+    let lexical_generics = ctx.scope_types.generic_names();
     CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&asserted_type_form, &lexical_generics)
   });
   let current_type = resolve_type_value(&asserted_target, ctx.scope_types).or_else(|| match &asserted_target {

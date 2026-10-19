@@ -8,6 +8,8 @@
 
 为局部声明分配私有 alpha-renamed binder key，源码名称只用于解析与公开显示。解析作用域从内向外查找，未重新声明的闭包沿用捕获者的 key。只重命名自由变量；嵌套函数自己的量词屏蔽同名外层替换，继续使用迭代、带作用域的替换缓存，不用深递归处理嵌套类型。
 
+三层闭包的追加复现表明，不能从所有可见值收集 TypeVar 名称后按排序推测词法遮蔽：外层和内层的值可以同时可见，第三层应引用最近的声明。现在由 ScopeTypes 独立保存声明的名称到 binder key 的映射，函数声明进入时绑定、嵌套作用域复制、顶层源码定义重置；值插入、细化和被传递的类型变量不引入新的词法声明。CodeEntry 中声明的泛型也先进入本函数作用域，body hint 可引用同一声明而不重复建立 binder。
+
 检查后的函数 hint 在已有可执行 List 元数据中保留完整签名。source AST 和打印的 schema 仍只包含源码名字，推断和 runtime 取签名时不再通过序列化后的名字重建绑定身份。普通 List 的值相等、排序和 hash 不因该内部证据改变；重建源码仍丢弃派生元数据。
 
 独立泛型返回继续复用 CallTypeProof 的刚性关系。对于已建立词法身份的返回声明，普通预处理同样不得把另一个词法变量绑定为它；未绑定的上下文求解变量不因此变成刚性 binder。未新增诊断编号、改写规则、入口、unsafe、Dynamic 或函数名白名单。
@@ -18,9 +20,15 @@
 
 `substitute_type_vars` 保留现有实例化语义；词法重命名通过同一个迭代替换实现的捕获避免模式屏蔽嵌套量词。私有 key 不进入 source schema、公开类型描述或正常诊断。
 
+## CI 中暴露的既有 loop 合同
+
+改写后校验复现了 `repeat` 的真实关系冲突：loop 自己重新声明 `T`，但追加的是捕获的外层 `x: T`；只有空 acc 初值无法证明这两个独立变量相同。移除该 loop 的重新声明，使参数/返回 hint 引用外层 `T`，保持同一 append/recur 程序、公开签名和原有断言，不增加 checker 豁免。还通过官方源码查询核对了其他 core 函数体泛型 hint：`interleave` 的局部量词由它自己的三个参数传递，body 不借外层元素冒充新变量，因此保留该声明，不机械删除所有 loop 泛型。
+
+兼容模式的泛型拒绝测试放回已有 `check-strict-default.mjs`；普通 proof harness 不含兼容开关，不修改原默认严格门禁的排除规则。
+
 ## 验证方式
 
-- 合法恒等、纯改名、未重新声明的外层捕获、Number/String 的嵌套 mapcat/map、顺序和空维度，使用 definition `:tests`，由原共享运行器执行 native/真实 JS。
+- 合法恒等、纯改名、未重新声明的外层捕获、三层同名遮蔽与外层恢复、Number/String 的嵌套 mapcat/map、顺序和空维度，使用 definition `:tests`，由原共享运行器执行 native/真实 JS。
 - 原有 check-known-assertion 运行器覆盖错误捕获的 T/U、CodeEntry/body-hint 两种外层合同，以及 proof、完整 strict、普通/compat 检查、native 和 JS 编译拒绝；核对源码不变和拒绝时不产出应用模块。
-- 唯一新增的低层 Rust 测试验证内部 binder 重命名不捕获嵌套量词、checked metadata 保留身份及 source schema 不泄漏 key；语言成功语义不重复写成 Rust 断言。
+- 低层 Rust 测试只验证内部 binder 重命名不捕获嵌套量词、checked metadata 保留身份、source schema 不泄漏 key，以及声明作用域与值/细化状态的独立生命周期；语言成功语义不重复写成 Rust 断言。
 - 原 native/JS 主测试、原类型/调用证明回归、cargo fmt/Clippy/test、文档代码块和真实消费者查询另按 PR 记录实际结果。未运行或未通过的项不写成成功。

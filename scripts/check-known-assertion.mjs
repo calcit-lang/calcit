@@ -33,14 +33,17 @@ try {
   // rejection harness to verify all compiler entrances and unchanged source.
   const binderSnapshot = join(project, "lexical-binder.cirru");
   const runBinder = (...args) => execFileSync(binary, [binderSnapshot, ...args], options);
-  for (const [inner, bodyHint] of [["T", false], ["U", false], ["T", true], ["U", true]]) {
+  for (const [inner, bodyHint, nestedCapture] of [["T", false], ["U", false], ["T", true], ["U", true], ["T", false, true]]) {
     await copyFile("calcit/add.cirru", binderSnapshot);
     runBinder("query", "config", "--format", "edn");
     runBinder("query", "def", "app.main/main!", "--format", "edn");
     const contract = "{} (:args $ [] 'T) (:return 'Number) (:generics $ [] 'T)";
+    const returned = nestedCapture
+      ? `        let\n            capture $ fn ()\n              hint-fn $ {} (:args $ []) (:return '${inner})\n              , value\n          capture`
+      : "        , value";
     const operations = [
       ["edit", "def", "app.main/producer", "--input-format", "cirru", "--code",
-        `quote $ defn producer (value)\n${bodyHint ? `  hint-fn $ ${contract}\n` : ""}  let\n      callback $ fn (other)\n        hint-fn $ {}\n          :args $ [] '${inner}\n          :return '${inner}\n          :generics $ [] '${inner}\n        , value\n    &+ (callback 1) 1`],
+        `quote $ defn producer (value)\n${bodyHint ? `  hint-fn $ ${contract}\n` : ""}  let\n      callback $ fn (other)\n        hint-fn $ {}\n          :args $ [] '${inner}\n          :return '${inner}\n          :generics $ [] '${inner}\n${returned}\n    &+ (callback 1) 1`],
       ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
         "quote $ defn main! () (producer |outer)"],
       ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
@@ -55,12 +58,11 @@ try {
     const sourcePath = references.data.definitions[0].matches.find(match => match.node_kind === "leaf").path;
     const sourceCoord = sourcePath.slice("code@".length).split(".").map(Number);
     const original = await readFile(binderSnapshot);
-    const generated = join(project, `lexical-binder-${inner}-${bodyHint}-js`);
+    const generated = join(project, `lexical-binder-${inner}-${bodyHint}-${!!nestedCapture}-js`);
     for (const args of [
       ["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "producer", "--format", "json"],
       ["fix", "--workflow", "strict", "--verify", "--format", "json"],
       ["--check-only", "--all-defs"],
-      ["--compat-types", "--check-only", "--all-defs"],
       [],
       ["--emit-path", generated, "js"],
     ]) {

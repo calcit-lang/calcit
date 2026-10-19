@@ -16,6 +16,7 @@ type Annotation = Arc<CalcitTypeAnnotation>;
 pub struct ScopeTypes {
   values: HashMap<Arc<str>, Annotation>,
   refinements: HashMap<Arc<str>, Option<Annotation>>,
+  generics: HashMap<Arc<str>, Arc<str>>,
 }
 
 impl ScopeTypes {
@@ -27,12 +28,31 @@ impl ScopeTypes {
     Self {
       values: HashMap::with_capacity(capacity),
       refinements: HashMap::new(),
+      generics: HashMap::new(),
     }
   }
 
   pub fn insert(&mut self, name: Arc<str>, annotation: Annotation) -> Option<Annotation> {
     self.refinements.remove(&name);
     self.values.insert(name, annotation)
+  }
+
+  /// Declarations, not values carrying a type variable, own lexical type names.
+  pub(super) fn bind_generics(&mut self, names: &[Arc<str>]) {
+    for name in names {
+      let source = crate::calcit::type_annotation::source_type_variable(name);
+      self.generics.insert(Arc::from(source), name.clone());
+    }
+  }
+
+  pub(super) fn generic_names(&self) -> Vec<Arc<str>> {
+    let mut names = self.generics.values().cloned().collect::<Vec<_>>();
+    names.sort();
+    names
+  }
+
+  pub(super) fn clear_generics(&mut self) {
+    self.generics.clear();
   }
 
   /// An annotation of an existing binding must retain its evidence lifetime.
@@ -88,6 +108,7 @@ impl ScopeTypes {
   pub fn clear(&mut self) {
     self.values.clear();
     self.refinements.clear();
+    self.generics.clear();
   }
 
   pub fn retain(&mut self, mut predicate: impl FnMut(&Arc<str>, &Annotation) -> bool) {
@@ -109,6 +130,7 @@ impl From<HashMap<Arc<str>, Annotation>> for ScopeTypes {
     Self {
       values,
       refinements: HashMap::new(),
+      generics: HashMap::new(),
     }
   }
 }
@@ -154,6 +176,26 @@ impl<'a> IntoIterator for &'a ScopeTypes {
 #[cfg(test)]
 mod tests {
   use super::*;
+
+  #[test]
+  fn generic_declarations_shadow_without_being_inferred_from_values() {
+    let outer_name: Arc<str> = Arc::from("T");
+    let inner_name: Arc<str> = Arc::from("#lexical:1\0T");
+    let mut outer = ScopeTypes::new();
+    outer.bind_generics(std::slice::from_ref(&outer_name));
+    outer.insert(Arc::from("outer"), Arc::new(CalcitTypeAnnotation::TypeVar(outer_name.clone())));
+    let mut inner = outer.clone();
+    inner.bind_generics(std::slice::from_ref(&inner_name));
+    inner.insert(Arc::from("inner"), Arc::new(CalcitTypeAnnotation::TypeVar(inner_name.clone())));
+    inner.insert(Arc::from("transported"), Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("U"))));
+    assert_eq!(outer.generic_names(), vec![outer_name]);
+    assert_eq!(inner.generic_names(), vec![inner_name.clone()]);
+    inner.refine(Arc::from("inner"), Arc::new(CalcitTypeAnnotation::Number));
+    inner.invalidate_refinements();
+    assert_eq!(inner.generic_names(), vec![inner_name]);
+    inner.clear();
+    assert!(inner.generic_names().is_empty());
+  }
 
   #[test]
   fn independent_contract_survives_reads_but_not_shadowing() {

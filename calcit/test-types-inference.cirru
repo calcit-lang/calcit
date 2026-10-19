@@ -404,6 +404,43 @@
           :tests $ [] $ %{} 'TestEntry (:name |independent-renamed-binder)
             :code $ quote $ assert= 2 (lexical-generic-identity-renamed |outer)
             :tags $ #{} :generic :lexical-binder :unit
+        'lexical-generic-shadow-capture $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn lexical-generic-shadow-capture (outer)
+            hint-fn $ {}
+              :args $ [] 'T
+              :return 'T
+            let
+                inner $ fn (value)
+                  hint-fn $ {}
+                    :args $ [] 'T
+                    :return 'T
+                    :generics $ [] 'T
+                  let
+                      capture $ fn ()
+                        hint-fn $ {}
+                          :args $ []
+                          :return 'T
+                        , value
+                    capture
+                outer-capture $ fn ()
+                  hint-fn $ {}
+                    :args $ []
+                    :return 'T
+                  , outer
+              assert= 1 $ inner 1
+              outer-capture
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T
+            :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |nearest-binder-and-restored-outer-string)
+              :code $ quote $ assert= |outer (lexical-generic-shadow-capture |outer)
+              :tags $ #{} :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |nearest-binder-and-restored-outer-list)
+              :code $ quote $ assert= ([] |outer)
+                lexical-generic-shadow-capture $ [] |outer
+              :tags $ #{} :generic :lexical-binder :unit
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (println "|Testing type inference...") (test-list-inference) (test-legacy-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-filter-map-kv-inference) (test-set-inference) (test-ref-inference) (test-struct-inference) (test-type-ref-combos) (test-generics-identity) (infer-raise-right true) (infer-raise-left false)
             assert= 2 $ recur-types-safe
