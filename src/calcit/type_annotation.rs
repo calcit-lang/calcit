@@ -2436,7 +2436,7 @@ impl CalcitTypeAnnotation {
   }
 
   pub fn extract_return_type_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
-    if let Some(signature) = Self::checked_hint_signature(form) {
+    if let Some(signature) = Self::checked_hint_signature_field(form, "return") {
       return Some(signature.return_type.clone());
     }
     let generics = Self::extract_generics_from_hint_form(form).unwrap_or_default();
@@ -2453,7 +2453,7 @@ impl CalcitTypeAnnotation {
   }
 
   pub fn extract_generics_from_hint_form(form: &Calcit) -> Option<Vec<Arc<str>>> {
-    if let Some(signature) = Self::checked_hint_signature(form) {
+    if let Some(signature) = Self::checked_hint_signature_field(form, "generics") {
       return Some(signature.generics.as_ref().clone());
     }
     let items = Self::get_surrounding_hint_fn_items(form)?;
@@ -2711,8 +2711,8 @@ impl CalcitTypeAnnotation {
   }
 
   pub fn extract_where_bounds_from_hint_form(form: &Calcit) -> Option<Vec<CalcitGenericBound>> {
-    if let Some(signature) = Self::checked_hint_signature(form) {
-      return Some(signature.where_bounds.as_ref().clone());
+    if let Some(signature) = Self::checked_hint_signature_field(form, "where") {
+      return (!signature.where_bounds.is_empty()).then(|| signature.where_bounds.as_ref().clone());
     }
     let generics = Self::extract_generics_from_hint_form(form).unwrap_or_default();
     let items = Self::get_surrounding_hint_fn_items(form)?;
@@ -2893,6 +2893,17 @@ impl CalcitTypeAnnotation {
     }
   }
 
+  /// Retained defaults are not declarations of fields absent from the source.
+  fn checked_hint_signature_field(form: &Calcit, field: &str) -> Option<Arc<CalcitFnTypeAnnotation>> {
+    let signature = Self::checked_hint_signature(form)?;
+    let items = Self::get_surrounding_hint_fn_items(form)?;
+    items
+      .iter()
+      .skip(1)
+      .find_map(|schema| Self::extract_schema_value_single(schema, field))?;
+    Some(signature)
+  }
+
   /// Extract a complete function annotation from the schema map carried by `hint-fn`.
   ///
   /// Both supported forms are accepted:
@@ -2934,8 +2945,11 @@ impl CalcitTypeAnnotation {
   /// Returns `None` if the hint-fn was not found or has no `:args` key. Used in `syntax::defn` as
   /// the highest-priority source for `CalcitFn.arg_types` (before `assert-type` body scanning).
   pub fn extract_arg_types_from_hint_form(form: &Calcit, params: &[Arc<str>]) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
-    if let Some(signature) = Self::checked_hint_signature(form) {
-      return Some(signature.arg_types.clone());
+    if let Some(signature) = Self::checked_hint_signature_field(form, "args") {
+      let mut types = signature.arg_types.clone();
+      types.truncate(params.len());
+      types.resize(params.len(), DYNAMIC_TYPE.clone());
+      return Some(types);
     }
     let generics = Self::extract_generics_from_hint_form(form).unwrap_or_default();
     let items = Self::get_surrounding_hint_fn_items(form)?;
@@ -6585,10 +6599,13 @@ mod tests {
     assert_eq!(renamed.arg_types[0], renamed.return_type);
     assert_eq!(renamed.arg_types[1], nested, "the nested T owns its quantifier");
     assert_eq!(renamed.to_schema_edn(), outer.to_schema_edn(), "source schemas hide binder keys");
-    let hint = Calcit::from(CalcitList::executable(
-      vec![Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests")), renamed.to_schema_calcit()],
-      super::super::CalcitCallKind::TypedFnHint(renamed.clone(), false),
-    ));
+    let typed_hint = |schema, signature| {
+      Calcit::from(CalcitList::executable(
+        vec![Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests")), schema],
+        super::super::CalcitCallKind::TypedFnHint(signature, false),
+      ))
+    };
+    let hint = typed_hint(renamed.to_schema_calcit(), renamed.clone());
     let parsed = CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(&hint).unwrap();
     assert_eq!(parsed.as_ref(), &CalcitTypeAnnotation::Fn(renamed.clone()));
     assert_eq!(
@@ -6600,6 +6617,59 @@ mod tests {
       Some(renamed.generics.as_ref().clone())
     );
     assert!(!parsed.describe().contains("#lexical:"));
+
+    let params = [Arc::from("x"), Arc::from("callback"), Arc::from("extra")];
+    let padded = CalcitTypeAnnotation::extract_arg_types_from_hint_form(&hint, &params).unwrap();
+    assert_eq!(&padded[..2], renamed.arg_types.as_slice());
+    assert_eq!(padded[2], DYNAMIC_TYPE.clone());
+    let truncated = CalcitTypeAnnotation::extract_arg_types_from_hint_form(&hint, &params[..1]).unwrap();
+    assert_eq!(truncated, renamed.arg_types[..1]);
+
+    let Calcit::Map(mut schema) = renamed.to_schema_calcit() else {
+      panic!("function schema is a map")
+    };
+    schema.remove_mut(&Calcit::tag("args"));
+    let absent_args = typed_hint(Calcit::Map(schema.clone()), renamed.clone());
+    assert!(CalcitTypeAnnotation::extract_arg_types_from_hint_form(&absent_args, &params).is_none());
+    schema.remove_mut(&Calcit::tag("return"));
+    let absent_return = typed_hint(Calcit::Map(schema.clone()), renamed.clone());
+    assert!(CalcitTypeAnnotation::extract_return_type_from_hint_form(&absent_return).is_none());
+    assert_eq!(
+      [absent_return, hint.clone()]
+        .iter()
+        .find_map(CalcitTypeAnnotation::extract_return_type_from_hint_form),
+      Some(renamed.return_type.clone()),
+      "an absent field must not hide a later hint"
+    );
+    schema.remove_mut(&Calcit::tag("generics"));
+    let absent_generics = typed_hint(Calcit::Map(schema), renamed.clone());
+    assert!(CalcitTypeAnnotation::extract_generics_from_hint_form(&absent_generics).is_none());
+
+    let mut bounded = renamed.as_ref().clone();
+    bounded.where_bounds = Arc::new(vec![CalcitGenericBound {
+      name: renamed.generics[0].clone(),
+      traits: Arc::new(vec![Arc::new(CalcitTrait::new(EdnTag::new("Show"), vec![], vec![]))]),
+    }]);
+    let bounded = Arc::new(bounded);
+    let Calcit::Map(mut schema) = bounded.to_schema_calcit() else {
+      panic!("bounded function schema is a map")
+    };
+    let present_where = typed_hint(Calcit::Map(schema.clone()), bounded.clone());
+    let bounds = CalcitTypeAnnotation::extract_where_bounds_from_hint_form(&present_where).unwrap();
+    assert_eq!(
+      bounds[0].name, renamed.generics[0],
+      "retain the private binder, not its source spelling"
+    );
+    schema.remove_mut(&Calcit::tag("where"));
+    let absent_where = typed_hint(Calcit::Map(schema), bounded);
+    assert!(CalcitTypeAnnotation::extract_where_bounds_from_hint_form(&absent_where).is_none());
+    assert!(CalcitTypeAnnotation::extract_where_bounds_from_hint_form(&hint).is_none());
+    let Calcit::Map(mut empty_where) = renamed.to_schema_calcit() else {
+      panic!("function schema is a map")
+    };
+    empty_where.insert_mut(Calcit::tag("where"), Calcit::Map(rpds::HashTrieMap::new_sync()));
+    let empty_where = typed_hint(Calcit::Map(empty_where), renamed);
+    assert!(CalcitTypeAnnotation::extract_where_bounds_from_hint_form(&empty_where).is_none());
   }
 
   fn nested_relation_fixture(depth: usize, leaf: CalcitTypeAnnotation) -> Arc<CalcitTypeAnnotation> {

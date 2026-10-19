@@ -55,7 +55,9 @@ try {
     const preview = JSON.parse(runBinder("edit", "transaction", "--code", code, "--dry-run", "--format", "json"));
     runBinder("edit", "transaction", "--code", code, "--expect-revision", preview.scoped_revision, "--format", "edn");
     const references = JSON.parse(runBinder("query", "search", "value", "--exact", "--filter", "app.main/producer", "--format", "json"));
-    const sourcePath = references.data.definitions[0].matches.find(match => match.node_kind === "leaf").path;
+    const returnLeaves = references.data.definitions[0].matches.filter(match => match.node_kind === "leaf");
+    assert.equal(returnLeaves.length, 1, "select the unique return occurrence, not the parameter's call-shaped search match");
+    const sourcePath = returnLeaves[0].path;
     const sourceCoord = sourcePath.slice("code@".length).split(".").map(Number);
     const original = await readFile(binderSnapshot);
     const generated = join(project, `lexical-binder-${inner}-${bodyHint}-${!!nestedCapture}-js`);

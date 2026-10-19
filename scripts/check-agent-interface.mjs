@@ -1574,6 +1574,35 @@ try {
     assert.ifError(child.error);
     return child;
   };
+  const genericOperations = [
+    ["edit", "def", "app.main/query-bounded-assert", "--input-format", "cirru", "--code",
+      "quote $ defn query-bounded-assert (value)\n  hint-fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T) (:where $ {} ('T Sliceable))\n  assert-type value 'T\n  , value"],
+    ["edit", "def", "app.main/query-bounded-fold", "--input-format", "cirru", "--code",
+      "quote $ defn query-bounded-fold (value)\n  hint-fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T) (:where $ {} ('T Sliceable))\n  if true value value"],
+  ];
+  const genericCode = JSON.stringify(genericOperations);
+  const genericPreview = run("edit", "transaction", "--code", genericCode, "--dry-run", "--format", "json");
+  assert.equal(genericPreview.status, 0, genericPreview.stderr);
+  const genericApply = run("edit", "transaction", "--code", genericCode, "--expect-revision",
+    JSON.parse(genericPreview.stdout).scoped_revision, "--format", "json");
+  assert.equal(genericApply.status, 0, genericApply.stderr);
+  const genericBefore = readFileSync(fixture);
+  for (const [definition, path] of [["query-bounded-assert", "code@4.1"], ["query-bounded-assert", "code@5"],
+    ["query-bounded-fold", "code@4.2"]]) {
+    const queryGeneric = format => run("query", "type-at", `app.main/${definition}`, "--path", path, "--format", format);
+    const json = queryGeneric("json");
+    assert.equal(json.status, 0, json.stderr);
+    const result = JSON.parse(json.stdout);
+    assert.deepEqual(result.diagnostics, []);
+    assert.equal(result.data.inferred_type, "'T");
+    assert.deepEqual(result.data.static_methods.map(method => method.name), [".slice"]);
+    assert.equal(result.data.static_methods[0].status, "proven");
+    assert.equal(result.data.static_methods[0].return_type, "'T");
+    const edn = queryGeneric("edn");
+    assert.equal(edn.status, 0, edn.stderr);
+    assert.deepEqual(normalizeEdnKeys(parseEdnRaw(edn.stdout, "bounded source occurrence"), result), result);
+    assert.deepEqual(readFileSync(fixture), genericBefore);
+  }
   const names = Array.from({ length: 300 }, (_, i) => `(:member-${i} ${JSON.stringify(`|宿主\\\"\n${i}`)})`).join(" ");
   const ffi = `{} (:backend :js) (:names $ {} ${names} (:foo_bar |first) (:foo-bar |second))`;
   const edit = run("edit", "ffi", "app.main/main!", "--code", ffi);

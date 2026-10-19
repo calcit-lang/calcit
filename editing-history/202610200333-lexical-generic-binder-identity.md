@@ -52,6 +52,12 @@ post-lowering 的原有遍历按函数 metadata 恢复能力作用域，不用�
 
 远端完整 post-lowering CI 进一步定位到 WASM generic export 的能力作用域遗漏：普通 defn 已恢复 where，但 DefWasmExport/DefWasmImport 仍被当作普通 List 遍历，导致合法的开放 ToString 合同被误报为内部错误，遮住原有 E_WASM_TRAIT_TYPE_EVIDENCE。三种函数声明现在用同一 metadata/作用域及 recur 检查路径；不修改后端负例的预期诊断，也不为 WASM 添加能力豁免。原 check-typed-string-conversions 在 CALCIT_LINT_CORE=1 下回放实际 JS/WASM 与开放 trait 诊断。
 
+完整 review 进一步发现 checked hint 的默认值会掩盖源码字段缺失。字段级提取现在先检查原 schema 是否声明该 key，再读取保留的私有 binder 签名；args 按实际参数长度截断/补齐，空 where 仍返回 None。args、return、where、generics 共用同一字段存在性规则，保持后续 hint 的扫描机会；完整签名提取仍保留原 metadata，不重新按源码名字解析。该内部存储契约在原低层 metadata round-trip 测试中覆盖。
+
+查询 trace 只在原输入为 Symbol 的真实用值位置记录泛型 Local，参数仍单独记录。assert-type 或常量 if 返回已有 Local 时不再重复加入同一坐标；否则唯一 source evidence 会退回 unknown，导致 Agent 无法看到 T 的 .slice 能力。现有 Agent interface 以 guarded 临时定义验证 assertion、常量分支和最终返回的 JSON/EDN 一致性与 source 不变。
+
+另一个 review 怀疑错误捕获测试选中了参数坐标。实际 query search 显示参数 code@2.0 的 node_kind 为 call，返回 code@3.1.0.1.3 才是唯一 leaf；原诊断也在后者，未复现该错误。保留原选择语义，增加唯一 leaf 断言，使将来分类变化不能静默把参数当作返回。没有改为盲选最后一条匹配或改动查询分类。
+
 ## 验证方式
 
 - 合法恒等、纯改名、未重新声明的外层捕获、三层同名遮蔽与外层恢复、Number/String 的嵌套 mapcat/map、顺序和空维度，使用 definition `:tests`，由原共享运行器执行 native/真实 JS。

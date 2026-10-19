@@ -2740,7 +2740,9 @@ pub fn preprocess_expr(
   if scope_types.has_refinements() && !condition_evidence::preserves_locals(&processed, scope_types) {
     scope_types.invalidate_refinements();
   }
-  record_generic_source_local(&processed, scope_types);
+  if matches!(expr, Calcit::Symbol { .. }) {
+    record_generic_source_local(&processed, scope_types);
+  }
   Ok(processed)
 }
 
