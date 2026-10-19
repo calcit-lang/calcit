@@ -159,6 +159,35 @@
                 assert= true $ identical? present $ call-value forward ([] present)
                 assert= true $ identical? absent $ call-value forward ([] absent)
               :tags $ #{} :guard-continuation :unit
+        'check-loop-each-iteration! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn check-loop-each-iteration! (value)
+            loop
+                i 0
+              if (< i 2)
+                do
+                  when
+                    not $ number? value
+                    raise |expected-number
+                  &+ value 1
+                  set! value |changed
+                  recur $ inc i
+                , &unit
+            , &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] 'Dynamic
+            :features $ #{} :js-ffi
+          :tests $ [] $ %{} 'TestEntry (:name |guard-runs-again-after-capture-mutation)
+            :code $ quote $ let
+                message $ try
+                  do (check-loop-each-iteration! 1) |missing-error
+                  fn (message)
+                    hint-fn $ {}
+                      :args $ [] 'String
+                      :return 'String
+                    , message
+              assert= |expected-number message
+            :tags $ #{} :guard-continuation :js :unit
         'count-checked-loop $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn count-checked-loop (value)
             when
@@ -233,15 +262,30 @@
                 :args $ [] 'Number
             :return $ :: 'Fn $ {} (:return 'Number)
               :args $ [] 'Number
-          :tests $ [] $ %{} 'TestEntry (:name |guard-keeps-known-signature)
-            :code $ quote $ let
-                callback $ keep-signature $ fn (value)
-                  hint-fn $ {}
-                    :args $ [] 'Number
-                    :return 'Number
-                  .inc value
-              assert= 8 $ callback 7
-            :tags $ #{} :guard-continuation :unit
+          :tests $ []
+            %{} 'TestEntry (:name |guard-keeps-known-signature)
+              :code $ quote $ let
+                  callback $ keep-signature $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    .inc value
+                assert= 8 $ callback 7
+              :tags $ #{} :guard-continuation :unit
+            %{} 'TestEntry
+              :name |declared-contract-survives-annotation-and-effects
+              :code $ quote $ let
+                  mark $ ref 0
+                  callback $ keep-signature $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    .inc value
+                assert-type callback 'Fn
+                reset! mark 1
+                assert= 8 $ callback 7
+                assert= 1 $ deref mark
+              :tags $ #{} :guard-continuation :unit
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () &unit
           :examples $ []

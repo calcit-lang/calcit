@@ -162,6 +162,7 @@ try {
     ["escaping from an immediate function", `${guard}\n  let ((get-value ((fn () (fn () (hint-fn ({} (:args ([])) (:return 'Fn))) f))))) (set! f 1) (get-value)`, /E_FN_RETURN_UNPROVEN/],
     ["assertion lifetime", `let ((replace (fn () (set! f 1)))) (${guard}) (assert-type f 'Fn) (replace) f`, /E_FN_RETURN_UNPROVEN/],
     ["hint lifetime", `let ((replace (fn () (set! f 1)))) (${guard}) (hint-fn f ({} (:args ([])) (:return 'Number))) (replace) f`, /E_FN_RETURN_UNPROVEN/],
+    ["mutated local condition cannot hide a captured writer", `let ((replace (fn () (set! f 1)))) (${guard}) (let ((run? false)) (set! run? true) (when run? (replace))) f`, /E_FN_RETURN_UNPROVEN/],
     ["same-named user predicate", "when (not (fake/js-present? f)) (raise |expected-function)\n  , f", /E_FN_RETURN_UNPROVEN/],
   ]) {
     apply([["edit", "def", "app.main/guarded", "--overwrite", "--input-format", "cirru", "--code",
@@ -179,6 +180,32 @@ try {
   const kindOnly = inFixture("fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "guarded", "--format", "json");
   expectStatus(kindOnly, 1, "fn? cannot manufacture a Number callback signature");
   assert.match(kindOnly.stdout + kindOnly.stderr, /E_FN_RETURN_UNPROVEN/);
+
+  for (const [label, effect, consume, advance] of [
+    ["direct write", "set! value |wrong", "&+ value 1", "inc i"],
+    ["captured writer with method lowering", "replace", ".inc value", "inc i"],
+    ["write in recur arguments", ", &unit", ".inc value", "do (set! value |wrong) (inc i)"],
+  ]) {
+    apply([
+      ["edit", "def", "app.main/guarded", "--overwrite", "--input-format", "cirru", "--code",
+        `quote $ defn guarded (value)
+  let ((replace (fn () (set! value |wrong))))
+    when (not (number? value)) (raise |expected-number)
+    loop ((i 0))
+      if (< i 2)
+        do
+          ${consume}
+          ${effect}
+          recur (${advance})
+        , &unit
+    , &unit`],
+      ["edit", "schema", "app.main/guarded", "--input-format", "cirru", "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Unit) (:features $ #{} :js-ffi)"],
+    ]);
+    const staleLoop = inFixture("fix", "--rule", "callable-contract-proof-v1", "--ns", "app.main", "--def", "guarded", "--format", "json");
+    expectStatus(staleLoop, 1, `${label}: a re-entrant body cannot borrow loop-entry evidence`);
+    assert.match(staleLoop.stdout + staleLoop.stderr, /E_CALL_ARGUMENT_UNPROVEN/);
+  }
 
   // A JS implementation can invoke a previously installed captured writer;
   // its discarded Calcit shadow body is not an effect proof for any backend.

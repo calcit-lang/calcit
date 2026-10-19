@@ -4788,8 +4788,7 @@ fn preprocess_list_call(
           // JS local assignment must preserve the binding contract. Otherwise
           // later uses can borrow obsolete literal or predicate evidence.
           if strict_types_enabled()
-            && (matches!(call_head, Calcit::Symbol { sym, .. } if sym.as_ref() == "set!")
-              || matches!(call_head, Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "set!"))
+            && is_local_assignment(call_head)
             && let (Some(Calcit::Local(local)), Some(value)) = (processed_args.first(), processed_args.get(1))
           {
             let expected = explicit_open::binding_contract(local).unwrap_or_else(|| local.type_info.clone());
@@ -10583,6 +10582,11 @@ fn propagate_scope_widening(parent: &mut ScopeTypes, after: &ScopeTypes, refinem
   }
 }
 
+fn is_local_assignment(head: &Calcit) -> bool {
+  matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "set!")
+    || matches!(head, Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "set!")
+}
+
 fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mut PreprocessContext) -> Result<Calcit, CalcitErr> {
   if args.len() < 2 {
     return preprocess_each_items(head, head_ns, args, ctx);
@@ -12224,6 +12228,8 @@ pub fn preprocess_defn(
       // The expected contract belongs to this function expression, not to
       // unrelated functions nested in its body or returned by a later macro.
       let expected_context = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().take());
+      let borrows_capture_refinements =
+        expected_context.as_ref().is_some_and(|context| context.immediate) && body_types.has_refinements();
       // A direct invocation runs after its already-checked arguments. An
       // escaping closure cannot borrow temporary facts about captured locals.
       if !expected_context.as_ref().is_some_and(|context| context.immediate) {
@@ -12427,6 +12433,9 @@ pub fn preprocess_defn(
         explicit_open_bindings.bind(parameter, open);
       }
 
+      let initial_body_types = borrows_capture_refinements.then(|| body_types.clone());
+      let initial_forms = borrows_capture_refinements.then(|| xs.clone());
+
       args.traverse_result::<CalcitErr>(&mut |a| {
         if to_skip > 0 {
           to_skip -= 1;
@@ -12438,6 +12447,28 @@ pub fn preprocess_defn(
         xs = xs.push_right(form);
         Ok(())
       })?;
+
+      if let Some(mut initial_scope) = initial_body_types
+        && processed_body.iter().any(body_contains_recur)
+        && processed_body
+          .iter()
+          .any(|form| !condition_evidence::preserves_locals(form, &initial_scope))
+      {
+        // A tail transfer re-enters earlier forms after effects from the
+        // previous iteration. Recheck expanded code without entry-only facts;
+        // do not evaluate source macros twice or retain specialized locals.
+        initial_scope.invalidate_refinements();
+        body_types = initial_scope;
+        xs = initial_forms.expect("borrowed capture scope retains its function header");
+        let replay = processed_body.iter().map(body_for_parameter_recheck).collect::<Vec<_>>();
+        processed_body.clear();
+        for form in replay {
+          let form = preprocess_expr(&form, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
+          condition_evidence::establish_normal_exit(&form, &mut body_types);
+          processed_body.push(form.clone());
+          xs = xs.push_right(form);
+        }
+      }
 
       if infer_helper_schema {
         let inferred = type_inference::infer_unhinted_callback_signature(&xs.clone().into(), &body_types)
@@ -14606,6 +14637,31 @@ fn inferred_helper_contract_is_closed(schema: &Arc<CalcitTypeAnnotation>) -> boo
     && schema.prove_with_bindings(schema, &mut HashMap::new()).is_proven()
 }
 
+fn body_contains_recur(expr: &Calcit) -> bool {
+  match expr {
+    Calcit::Recur(_) | Calcit::Proc(CalcitProc::Recur) => true,
+    Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "recur" => true,
+    Calcit::List(items)
+      if matches!(
+        items.first(),
+        Some(Calcit::Syntax(
+          CalcitSyntax::Defn
+            | CalcitSyntax::Defmacro
+            | CalcitSyntax::DefWasmExport
+            | CalcitSyntax::DefWasmImport
+            | CalcitSyntax::Quote
+            | CalcitSyntax::Quasiquote,
+          _
+        ))
+      ) =>
+    {
+      false
+    }
+    Calcit::List(items) => items.iter().any(body_contains_recur),
+    _ => false,
+  }
+}
+
 fn helper_body_has_recursive_edge(body: &Calcit) -> bool {
   let deps = program::collect_compiled_deps(body);
   let cyclic = PREPROCESS_COMPILE_GUARD.with(|guard| {
@@ -14614,15 +14670,7 @@ fn helper_body_has_recursive_edge(body: &Calcit) -> bool {
       .iter()
       .any(|(ns, def)| program::lookup_def_id(ns, def).is_some_and(|id| deps.contains(&id)))
   });
-  fn contains_recur(expr: &Calcit) -> bool {
-    match expr {
-      Calcit::Recur(_) | Calcit::Proc(CalcitProc::Recur) => true,
-      Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "recur" => true,
-      Calcit::List(items) => items.iter().any(contains_recur),
-      _ => false,
-    }
-  }
-  cyclic || contains_recur(body)
+  cyclic || body_contains_recur(body)
 }
 
 fn reject_strict_whole_dynamic_public_schema(
