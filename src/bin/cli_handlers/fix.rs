@@ -557,15 +557,16 @@ pub(crate) fn handle_fix_command(
       warnings.into_inner()
     })
   } else if let Some(rule) = review_rule.filter(|_| !validation_only) {
-    // Preserve the complete migration evidence even when a later proof pass
-    // stops early in an individual definition.
+    // Planning needs legacy migration evidence even when a later proof pass
+    // stops early. Read-only verification checks current semantics instead:
+    // compatibility compilation can change typed macro execution (#2199).
     let migration_warnings = if options.workflow.is_some() {
-      Some(with_legacy_migration_mode(|| {
+      let mut collect_warnings = || {
         let warnings = RefCell::new(Vec::new());
         for (namespace, definition) in &selected_definitions {
           if let Err(error) = runner::preprocess::ensure_ns_def_compiled(namespace, definition, &warnings, &CallStackList::default()) {
-            // Legacy mode still rejects contradictions. Keep their diagnostics
-            // in the manifest while collecting other definitions' migration evidence.
+            // Keep declaration conflicts and compiler contradictions even when
+            // a later source-proof pass cannot replay the failing definition.
             let owner = error.location.as_ref().map_or_else(
               || format!("{namespace}/{definition}"),
               |location| format!("{}/{}", location.ns, location.def),
@@ -577,7 +578,12 @@ pub(crate) fn handle_fix_command(
           }
         }
         warnings.into_inner()
-      }))
+      };
+      Some(if options.verify {
+        collect_warnings()
+      } else {
+        with_legacy_migration_mode(collect_warnings)
+      })
     } else {
       None
     };
