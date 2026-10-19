@@ -2948,6 +2948,39 @@
               assert= ([] 1 2) (nested 1.5)
               assert= ([] 1 2) (nested 2)
             :tags $ #{} :short-circuit-proof :unit
+        'readonly-call $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn readonly-call (k)
+            if
+              and (number? k) (readonly-flag k)
+              &+ k 1
+              , 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |known-body-preserves-number-proof)
+            :code $ quote $ do
+              assert= 2 $ readonly-call 1
+              assert= 0 $ readonly-call |bad
+            :tags $ #{} :short-circuit-proof :unit
+        'readonly-call-alias $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn readonly-call-alias (k)
+            let
+                valid $ number? k
+              readonly-flag k
+              if valid (&+ k 1) 0
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |known-body-preserves-number-proof)
+            :code $ quote $ do
+              assert= 2 $ readonly-call-alias 1
+              assert= 0 $ readonly-call-alias |bad
+            :tags $ #{} :short-circuit-proof :unit
+        'readonly-flag $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn readonly-flag (value) true
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ [] 'Dynamic
         'two-values $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn two-values (x y)
             if
