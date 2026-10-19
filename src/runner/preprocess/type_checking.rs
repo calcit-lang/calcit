@@ -1493,7 +1493,7 @@ fn refined_generic_return_is_proven(
       Some(Calcit::Syntax(CalcitSyntax::If, _)) if matches!(items.len(), 3 | 4) => {
         let condition = items.get(1).unwrap();
         let refinement = super::kind_predicate_refinement(condition, scope)
-          .filter(|(symbol, _)| matches!(scope.get(symbol).map(|current| current.as_ref()), Some(CalcitTypeAnnotation::TypeVar(name)) if name == variable));
+          .filter(|(symbol, _)| matches!(scope.binding_type(symbol).map(|current| current.as_ref()), Some(CalcitTypeAnnotation::TypeVar(name)) if name == variable));
         let narrowing = super::extract_predicate_bindings(condition, scope);
         let mut true_scope = scope.clone();
         if let Some((symbol, narrowed)) = narrowing.true_binding {

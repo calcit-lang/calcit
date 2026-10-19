@@ -464,6 +464,7 @@ fn non_invoking_value_proc(proc: CalcitProc) -> bool {
       | CalcitProc::NativeStrRest
       | CalcitProc::NativeStrSlice
       | CalcitProc::NativeListEmpty
+      | CalcitProc::NativeListContains
       | CalcitProc::NativeListNth
       | CalcitProc::NativeListFirst
       | CalcitProc::NativeListLast

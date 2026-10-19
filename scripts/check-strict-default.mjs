@@ -155,6 +155,7 @@ try {
     ["known helper invokes an unknown callback", `let ((replace (fn () (set! f 1)))) (${guard}) (fake/invoke replace) f`, /E_FN_RETURN_UNPROVEN/],
     ["argument rebinding", `let ((replace (fn () (set! f 1)))) (${guard}) ((fn (ignored value) (hint-fn ({} (:args ([] 'Dynamic 'Fn)) (:return 'Fn))) value) (replace) f)`, /E_CALL_ARGUMENT_UNPROVEN/],
     ["condition rebinding", `let ((replace (fn () (set! f 1)))) (${guard}) (if (do (replace) true) f (fn () 1))`, /E_FN_RETURN_UNPROVEN/],
+    ["readonly index query still checks argument effects", `let ((replace (fn () (set! f 1)))) (${guard}) (&list:contains? ([] 1) (do (replace) 0)) f`, /E_FN_RETURN_UNPROVEN/],
     ["initializer rebinding", `let ((replace (fn () (set! f 1)))) (${guard}) (let ((ignored (replace))) f)`, /E_FN_RETURN_UNPROVEN/],
     ["interpolation rebinding", `let ((replace (fn () (set! f 1)))) (${guard}) (let ((syntax (quasiquote (ignored (~ (replace)))))) f)`, /E_FN_RETURN_UNPROVEN/],
     ["escaping capture", `${guard}\n  let ((get-value (fn () (hint-fn ({} (:args ([])) (:return 'Fn))) f))) (set! f 1) (get-value)`, /E_FN_RETURN_UNPROVEN/],

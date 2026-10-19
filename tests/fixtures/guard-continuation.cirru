@@ -307,5 +307,28 @@
               assert= 0 $ read-checked $ []
               assert= 2 $ read-checked $ [] nil false
             :tags $ #{} :guard-continuation :unit
+        'read-list-slot $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-list-slot (value index)
+            when
+              not $ list? value
+              raise |expected-list
+            if (.contains-index? value index) (.get value index) (Option :none)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Dynamic 'Number
+            :return $ :: 'Option 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |readonly-index-query-preserves-list-guard)
+            :code $ quote $ do
+              assert= (Option :some nil)
+                read-list-slot ([] nil false) 0
+              assert= (Option :some false)
+                read-list-slot ([] nil false) 1
+              assert= (Option :none)
+                read-list-slot ([] nil false) 2
+              assert= (Option :none)
+                read-list-slot ([]) 0
+              assert= |expected-list $ try (read-list-slot 1 0)
+                fn (error) error
+            :tags $ #{} :guard-continuation :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)

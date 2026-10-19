@@ -2004,6 +2004,7 @@ try {
     "--def", "rejected", "--format", "json"], options);
   if (updateRejected.error) throw updateRejected.error;
   assert.equal(updateRejected.status, 1, `${updateRejected.stdout}\n${updateRejected.stderr}`);
+  assert.ok(updateRejected.stdout.trim(), `update callback proof must return its diagnostic report\n${updateRejected.stderr}`);
   const updateAudit = JSON.parse(updateRejected.stdout);
   assert.ok(updateAudit.diagnostics.some(item => item.code === "E_CALL_ARGUMENT_UNPROVEN" && item.message.includes("argument 3")));
   assert.deepEqual(await readFile(snapshot), updateBefore);

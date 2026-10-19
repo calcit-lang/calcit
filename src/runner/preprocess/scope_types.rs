@@ -72,6 +72,11 @@ impl ScopeTypes {
     !self.refinements.is_empty()
   }
 
+  /// Keep independent binding contracts available beneath temporary reads.
+  pub(super) fn binding_type(&self, name: &str) -> Option<&Annotation> {
+    self.refinements.get(name).map_or_else(|| self.values.get(name), Option::as_ref)
+  }
+
   pub fn remove<Q: ?Sized + Hash + Eq>(&mut self, name: &Q) -> Option<Annotation>
   where
     Arc<str>: Borrow<Q>,
@@ -143,5 +148,36 @@ impl<'a> IntoIterator for &'a ScopeTypes {
 
   fn into_iter(self) -> Self::IntoIter {
     self.values.iter()
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn independent_contract_survives_reads_but_not_shadowing() {
+    let mut scope = ScopeTypes::new();
+    let variable = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let list = Arc::new(CalcitTypeAnnotation::List(crate::calcit::DYNAMIC_TYPE.clone()));
+    scope.insert(Arc::from("value"), variable.clone());
+    scope.refine(Arc::from("value"), list.clone());
+    assert_eq!(scope.get("value"), Some(&list));
+    assert_eq!(scope.binding_type("value"), Some(&variable));
+    scope.annotate(Arc::from("value"), list.clone());
+    assert_eq!(scope.binding_type("value"), Some(&variable));
+    scope.invalidate_refinements();
+    assert_eq!(scope.get("value"), Some(&variable));
+
+    scope.refine(Arc::from("value"), list);
+    let string = Arc::new(CalcitTypeAnnotation::String);
+    scope.insert(Arc::from("value"), string.clone());
+    assert_eq!(scope.binding_type("value"), Some(&string));
+    assert!(!scope.has_refinements());
+
+    scope.refine(Arc::from("unbound"), variable);
+    assert!(scope.binding_type("unbound").is_none());
+    scope.invalidate_refinements();
+    assert!(!scope.contains_key("unbound"));
   }
 }
