@@ -824,6 +824,27 @@ fn retired_core_function_migration(name: &str) -> Option<(&'static str, &'static
   }
 }
 
+fn warn_on_retired_core_import(ns: &str, name: &str, source: &Calcit, warnings: &RefCell<Vec<LocatedWarning>>) -> bool {
+  if ns != calcit::CORE_NS || program::has_def_code(ns, name) {
+    return false;
+  }
+  let Some((version, migration)) = retired_core_function_migration(name) else {
+    return false;
+  };
+  let Calcit::Symbol { info, location, .. } = source else {
+    return false;
+  };
+  gen_check_warning_with_location(
+    format!(
+      "[Warn] unknown `{name}` in {}/{}; `{name}` was removed from calcit.core in {version}, {migration}",
+      info.at_ns, info.at_def
+    ),
+    NodeLocation::new(info.at_ns.clone(), info.at_def.clone(), location.clone().unwrap_or_default()),
+    warnings,
+  );
+  true
+}
+
 fn warn_on_removed_data_api_call(
   head: &Calcit,
   call_location: Option<NodeLocation>,
@@ -2765,6 +2786,9 @@ fn preprocess_expr_unguarded(
             if target_ns.as_ref() == calcit::CORE_NS && def_part.as_ref() == "tag-match" {
               return Err(removed_tag_match_error(expr, call_stack));
             }
+            if warn_on_retired_core_import(&target_ns, &def_part, expr, check_warnings) {
+              return Ok(expr.clone());
+            }
             if let Some(proc) = resolved_core_proc(&target_ns, &def_part) {
               return Ok(Calcit::Proc(proc));
             }
@@ -2802,6 +2826,8 @@ fn preprocess_expr_unguarded(
             });
 
             Ok(retain_resolved_source_usage(form, expr, call_stack))
+          } else if warn_on_retired_core_import(&ns_alias, &def_part, expr, check_warnings) {
+            Ok(expr.clone())
           } else {
             Err(CalcitErr::use_msg_stack_location(
               CalcitErrKind::Var,
@@ -2906,6 +2932,9 @@ fn preprocess_expr_unguarded(
               Some(target_ns) => {
                 if target_ns.as_ref() == calcit::CORE_NS && def.as_ref() == "tag-match" {
                   return Err(removed_tag_match_error(expr, call_stack));
+                }
+                if warn_on_retired_core_import(&target_ns, def, expr, check_warnings) {
+                  return Ok(expr.clone());
                 }
                 // effect
                 // TODO js syntax to handle in future
