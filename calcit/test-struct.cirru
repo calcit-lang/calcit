@@ -63,8 +63,7 @@
           :examples $ []
           :schema $ :: 'Dynamic
         'Lagopus0 $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Lagopus0
-            :name $ :: 'Optional 'String
+          :code $ quote $ defstruct Lagopus0 (:name 'String)
           :examples $ []
           :schema $ :: 'StructDef
         'MapLiteralStore $ %{} 'CodeEntry (:doc |)
@@ -188,27 +187,42 @@
                   [] $ {} (:absent nil) (:present 7)
                   :nested stored
               :tags $ #{} :collection-proof
-        'OptionalFields $ %{} 'CodeEntry (:doc |)
+        'OptionFields $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct OptionFields
+            :count $ :: 'Option 'Number
+            :label $ :: 'Option 'String
+          :examples $ []
+          :schema $ :: 'StructDef
+          :tests $ [] $ %{} 'TestEntry (:name |direct-constructor-admits-option-values)
+            :code $ quote $ do
+              assert= (Option :some 0)
+                :count $ OptionFields :count (Option :some 0) :label $ Option :none
+              assert= (Option :none)
+                :count $ OptionFields :count (Option :none) :label $ Option :some |saved
+              assert= (Option :some |)
+                :label $ OptionFields :count (Option :none) :label $ Option :some |
+            :tags $ #{} :option-fields :unit
+        'OptionalFields $ %{} 'CodeEntry
+          :doc "|Legacy-contract fixture (Optional fields, optional-proof); retire with Optional (0.32.0). OptionFields is the Option form."
           :code $ quote $ defstruct OptionalFields
             :count $ :: 'Optional 'Number
             :label $ :: 'Optional 'String
           :examples $ []
           :schema $ :: 'StructDef
-          :tests $ [] $ %{} 'TestEntry (:name |direct-constructor-admits-concrete-and-nil)
+          :tests $ [] $ %{} 'TestEntry
+            :name |legacy-optional-direct-constructor-admits-concrete-and-nil
             :code $ quote $ do
               assert= 0 $ :count $ OptionalFields :count 0 :label nil
               assert= nil $ :count $ OptionalFields :count nil :label |saved
             :tags $ #{} :optional-proof :unit
-        'OptionalGeneric $ %{} 'CodeEntry (:doc |)
+        'OptionalGeneric $ %{} 'CodeEntry
+          :doc "|Legacy-contract fixture (generic Optional field); retire with Optional (0.32.0)."
           :code $ quote $ defstruct OptionalGeneric ([] 'T)
             :value $ :: 'Optional 'T
           :examples $ []
           :schema $ :: 'StructDef
         'Person $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defstruct Person
-            :name $ :: 'Optional 'String
-            :age $ :: 'Optional 'Number
-            :position $ :: 'Optional 'Tag
+          :code $ quote $ defstruct Person (:name 'String) (:age 'Number) (:position 'Tag)
           :examples $ []
           :schema $ :: 'StructDef
         'Point2D $ %{} 'CodeEntry (:doc |)
@@ -636,24 +650,27 @@
           :code $ quote $ defatom reset-proof-count 0
           :examples $ []
           :schema $ :: 'Ref 'Number
-        'set-optional-fields $ %{} 'CodeEntry (:doc |)
+        'set-optional-fields $ %{} 'CodeEntry
+          :doc "|Legacy-contract fixture (Optional fields, optional-proof); retire with Optional (0.32.0)."
           :code $ quote $ defn set-optional-fields (amount label)
             struct-with (OptionalFields :count nil :label nil) (:count amount) (:label label)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'test-struct.main/OptionalFields)
             :args $ [] 'Number 'String
           :tests $ []
-            %{} 'TestEntry (:name |concrete-fields-enter-optional)
+            %{} 'TestEntry (:name |legacy-optional-concrete-fields-enter-optional)
               :code $ quote $ assert= (OptionalFields :count 7 :label |saved) (set-optional-fields 7 |saved)
               :tags $ #{} :optional-proof :unit
-            %{} 'TestEntry (:name |zero-and-empty-string-remain-values)
+            %{} 'TestEntry
+              :name |legacy-optional-zero-and-empty-string-remain-values
               :code $ quote $ assert= (OptionalFields :count 0 :label |) (set-optional-fields 0 |)
               :tags $ #{} :optional-proof :unit
-            %{} 'TestEntry (:name |nil-writes-remain-valid)
+            %{} 'TestEntry (:name |legacy-optional-nil-writes-remain-valid)
               :code $ quote $ assert= (OptionalFields :count nil :label nil)
                 struct-with (set-optional-fields 7 |saved) (:count nil) (:label nil)
               :tags $ #{} :optional-proof :unit
-        'set-optional-generic $ %{} 'CodeEntry (:doc |)
+        'set-optional-generic $ %{} 'CodeEntry
+          :doc "|Legacy-contract fixture (generic Optional field); retire with Optional (0.32.0)."
           :code $ quote $ defn set-optional-generic (record value)
             struct-with record $ :value value
           :examples $ []
@@ -661,7 +678,8 @@
             :args $ [] (:: 'test-struct.main/OptionalGeneric 'T) 'T
             :generics $ [] 'T
             :return $ :: 'test-struct.main/OptionalGeneric 'T
-          :tests $ [] $ %{} 'TestEntry (:name |preserves-generic-payload-evidence)
+          :tests $ [] $ %{} 'TestEntry
+            :name |legacy-optional-preserves-generic-payload-evidence
             :code $ quote $ do
               assert= (OptionalGeneric :value 9)
                 set-optional-generic (OptionalGeneric :value 1) 9
@@ -679,7 +697,7 @@
             let
                 content "|%{} :Lagopus0 (:name |La)"
                 data $ parse-cirru-edn content $ {}
-                  :Lagopus0 $ %{} Lagopus $ :name nil
+                  :Lagopus0 $ %{} Lagopus $ :name |
               println |EDN: data
               assert= true $ any? (&struct:impls data)
                 fn (impl)
@@ -801,13 +819,13 @@
             let
                 p1 $ %{} Person (:name |Chen) (:age 20) (:position :mainland)
                 p2 $ &%{} Person :name |Chen :age 20 :position :mainland
-                p0 $ &%{} Person :name nil :age nil :position nil
+                p0 $ &%{} Person :name | :age 0 :position :none
                 p3 $ &%{} Person :name |Chen :age 23 :position :mainland
                 c1 $ %{} City (:name |Shanghai) (:province |Shanghai)
               assert= (Option :some Person) (&struct:definition p0)
-              assert= nil $ :age p0
-              assert= nil $ :name p0
-              assert= nil $ :position p0
+              assert= 0 $ :age p0
+              assert= | $ :name p0
+              assert= :none $ :position p0
               assert= 20 $ :age p1
               assert= 20 $ :age p2
               assert= 23 $ :age p3

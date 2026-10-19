@@ -207,6 +207,7 @@
             :args $ []
         'test-arguments $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing arguments")
+            ; "legacy-optional-contract: f1 pins `?` parameters hinted as Optional (E_LEGACY_OPTIONAL_PARAM era); f2 below is the Option form. Delete f1 when Optional is retired (0.32.0)."
             let
                 f1 $ fn (a ? b c)
                   hint-fn $ {}
