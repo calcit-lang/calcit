@@ -10378,7 +10378,7 @@
             quote $ assert= (Option :some Option)
               &enum:definition $ nil->option 1
           :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Optional 'T
+            :args $ [] 'T
             :generics $ [] 'T
             :return $ :: 'Option 'T
           :tests $ []
@@ -10397,6 +10397,12 @@
                   wrapped $ nil->option original
                 assert= (Option :some original) wrapped
                 assert= original $ wrapped .unwrap
+              :tags $ #{} :core :types :unit
+            %{} 'TestEntry (:name |accepts-plain-typed-values-without-optional-annotation)
+              :code $ quote $ do
+                assert-type (nil->option |text) (:: 'Option 'String)
+                assert-type (nil->option $ [] 1 2) (:: 'Option $ :: 'List 'Number)
+                assert= (Option :some ([] 1 2)) (nil->option $ [] 1 2)
               :tags $ #{} :core :types :unit
         'nil? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is nil")
           :code $ quote &runtime-implementation

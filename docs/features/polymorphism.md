@@ -270,7 +270,7 @@ calls, so each step and every error-type transition stays visible. New ordinary 
 operations should be registered in the corresponding method bag and documented
 in receiver-first form.
 
-`nil->option` exists only for legacy core/internal `Optional<T>` compatibility. Public function schemas reject `Optional<T>`; new APIs return `Option<T>`, `Result<T,E>`, or `Unit` directly.
+`nil->option` takes any value of type `T` and returns `Option<T>`: `nil` becomes `Option :none`, every other value becomes `Option :some value`, and an existing `Option` is wrapped rather than flattened. It does not accept a host `JsNullish<T>`; narrow with `js-present?` or convert with `js-nullish->option`. Public function schemas reject legacy `Optional<T>`, which is removed in 0.32.0; new APIs return `Option<T>`, `Result<T,E>`, or `Unit` directly.
 
 Core lookup APIs that no longer need to preserve bootstrapping compatibility use nominal results directly:
 

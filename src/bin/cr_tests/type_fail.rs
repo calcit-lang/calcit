@@ -198,6 +198,39 @@ fn type_fail_nominal_option_compared_with_nil_reports_arg_type_mismatch() {
   });
 }
 
+// A Rust type-fail test is required here: `:tests` assertions run only after a
+// clean check, and cannot express an expected preprocessing diagnostic (#1554).
+#[test]
+fn strict_type_fail_nil_to_option_rejects_js_nullish_argument() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_snippet_entries(
+      "let\n    f $ fn (x) (hint-fn $ {} (:args $ [] $ :: 'JsNullish 'Number) (:return $ :: 'Option 'Dynamic)) $ nil->option x\n  f 1",
+    );
+    let warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("nil->option with JsNullish should produce a type diagnostic, not a preprocessing failure");
+    let warnings = warnings.borrow();
+    assert!(
+      warnings.iter().any(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
+        && warning.message().contains("calcit.core/nil->option")
+        && warning.message().contains("js-nullish<:number>")
+        && warning.message().contains("js-nullish->option")),
+      "generic nil->option must keep rejecting JsNullish arguments: {warnings:?}"
+    );
+
+    let accepted = load_snippet_entries("let ((value (Option :some 1)))\n  nil->option value");
+    let warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&accepted.init_ns, &accepted.init_def, &warnings, &CallStackList::default())
+      .expect("nil->option of an ordinary value should preprocess");
+    assert!(
+      warnings.borrow().is_empty(),
+      "ordinary nil->option calls stay clean: {:?}",
+      warnings.borrow()
+    );
+  });
+}
+
 /// `value.:field` must report the same strict diagnostics as `(:field value)` (#1988).
 #[test]
 fn type_fail_tag_access_shorthand_matches_tag_call_diagnostics() {

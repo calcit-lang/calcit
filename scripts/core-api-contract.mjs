@@ -133,7 +133,13 @@ function contract(row, family, nominalNames = new Map(), variables = new Set()) 
     if (children[0] === "{}") return ["{}", ...children.slice(1).sort((a, b) => JSON.stringify(a[0]).localeCompare(JSON.stringify(b[0])))];
     return children;
   };
-  if (publicContract.schema) publicContract.schema = { quote: normalize(publicContract.schema.quote) };
+  // Dropping a legacy `(Optional T)` parameter wrapper widens an input to plain
+  // `T` (#1554); results and every other position keep exact comparison.
+  const stripOptionalParameters = node => !Array.isArray(node) ? node
+    : node[0] === ":args" && Array.isArray(node[1]) && node[1][0] === "[]"
+      ? [node[0], ["[]", ...node[1].slice(1).map(arg => Array.isArray(arg) && arg[0] === "::" && arg[1] === "'Optional" && arg.length === 3 ? arg[2] : arg)], ...node.slice(2)]
+      : node.map(stripOptionalParameters);
+  if (publicContract.schema) publicContract.schema = { quote: normalize(stripOptionalParameters(publicContract.schema.quote)) };
   if (publicContract.parameters) publicContract.parameters = publicContract.parameters.map(item => ({ quote: normalize(item.quote) }));
   if (publicContract.rest) publicContract.rest = { quote: normalize(publicContract.rest.quote) };
   if (publicContract.returns) publicContract.returns = { quote: normalize(publicContract.returns.quote) };

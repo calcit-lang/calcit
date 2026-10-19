@@ -46,6 +46,8 @@ struct CheckContext<'a> {
   call_location: Option<NodeLocation>,
   warning_code: &'static str,
   check_warnings: &'a RefCell<Vec<LocatedWarning>>,
+  /// Generic parameters that must not receive a host `JsNullish` value, e.g. `nil->option`.
+  reject_js_nullish_args: bool,
 }
 
 fn append_js_ffi_type_hint(mut message: String, actual_type: &str) -> String {
@@ -599,18 +601,21 @@ where
       } else {
         actual_type
       };
-      let matches = if expected_type.contains_type_var() || actual_type.contains_type_var() {
-        let mut candidate = bindings.clone();
-        let matches = actual_type
-          .as_ref()
-          .compatible_with_bindings(expected_type.as_ref(), &mut candidate);
-        if matches {
-          bindings = candidate;
-        }
-        matches
-      } else {
-        actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings)
-      };
+      let matches =
+        if ctx.reject_js_nullish_args && matches!(actual_type.as_ref(), CalcitTypeAnnotation::Nullable(_, NullableOrigin::JsHost)) {
+          false
+        } else if expected_type.contains_type_var() || actual_type.contains_type_var() {
+          let mut candidate = bindings.clone();
+          let matches = actual_type
+            .as_ref()
+            .compatible_with_bindings(expected_type.as_ref(), &mut candidate);
+          if matches {
+            bindings = candidate;
+          }
+          matches
+        } else {
+          actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings)
+        };
       if !matches {
         let diagnostic_expected = expected_type.substitute_type_vars(&bindings);
         ctx.emit_warning(idx + 1, diagnostic_expected.as_ref(), actual_type.as_ref(), &make_warning);
@@ -1044,6 +1049,7 @@ pub(super) fn check_reset_arg_types(
     call_location: head_form.get_location(),
     warning_code: "W_RESET_ARG_TYPE_MISMATCH",
     check_warnings,
+    reject_js_nullish_args: false,
   };
   let message = |index, expected: &str, actual: &str, expr: String| {
     let hint = if index == 2 && fixed_by_empty_initializer {
@@ -1132,6 +1138,7 @@ pub(crate) fn check_resolved_fn_call_arg_types(
     call_location: call_info.call_location.clone(),
     warning_code: "W_LOCAL_FN_ARG_TYPE_MISMATCH",
     check_warnings,
+    reject_js_nullish_args: false,
   };
   check_arg_types_loop(ctx, |arg_idx, expected_str, actual_str, expr_str| {
     format!(
@@ -1197,6 +1204,7 @@ pub(crate) fn check_user_fn_arg_types(
   let equality_migration = fn_def_ns.as_ref() == crate::calcit::CORE_NS && matches!(fn_name.as_ref(), "=" | "not=" | "/=");
   let list_apply_migration = fn_def_ns.as_ref() == crate::calcit::CORE_NS && fn_name.as_ref() == "&list:apply";
   let interleave_migration = fn_def_ns.as_ref() == crate::calcit::CORE_NS && fn_name.as_ref() == "interleave";
+  let nil_option_bridge = fn_def_ns.as_ref() == crate::calcit::CORE_NS && fn_name.as_ref() == "nil->option";
   let def_name = call_info.def_name.to_owned();
   let file_ns_owned = call_info.file_ns.to_owned();
   let ctx = CheckContext {
@@ -1209,12 +1217,15 @@ pub(crate) fn check_user_fn_arg_types(
     call_location: call_info.call_location.clone(),
     warning_code: "W_FN_ARG_TYPE_MISMATCH",
     check_warnings,
+    reject_js_nullish_args: nil_option_bridge,
   };
   check_arg_types_loop(ctx, |arg_idx, expected_str, actual_str, expr_str| {
     let migration = if equality_migration {
       "\n  Migration: public equality now requires operands of one static type. Normalize both values, narrow Dynamic/FFI values with a typed adapter, validator, or assert-type, use a type predicate for category checks, or pattern-match nominal values before comparing."
     } else if list_apply_migration {
       LIST_APPLY_MIGRATION_HINT
+    } else if nil_option_bridge {
+      "\n  Migration: generic nil->option does not accept a host JsNullish value. Narrow with js-present? or convert with js-nullish->option after accepting the opaque payload contract."
     } else if interleave_migration {
       "\n  Migration: interleave preserves one shared element type across both inputs and the result. Normalize both lists to the same type, or declare List<Dynamic> explicitly only at a reviewed heterogeneous boundary."
     } else {
@@ -1251,6 +1262,7 @@ pub(crate) fn check_recur_arg_types(
     call_location,
     warning_code: "W_RECUR_ARG_TYPE_MISMATCH",
     check_warnings,
+    reject_js_nullish_args: false,
   };
   let message = |index, expected: &str, actual: &str, expression| {
     format!(
