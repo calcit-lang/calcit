@@ -196,7 +196,7 @@
             loop
                 idx 0
               if
-                < idx $ .count value
+                < idx $ .len value
                 let
                     entry $ .get value idx
                   recur $ .inc idx
@@ -209,7 +209,7 @@
               count-checked-loop $ [] nil false
             :tags $ #{} :guard-continuation :unit
         'count-items $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn count-items (items) (.count items)
+          :code $ quote $ defn count-items (items) (.len items)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] $ :: 'List 'Dynamic
@@ -298,7 +298,7 @@
               raise |expected-list
             let
                 entry $ .get value 0
-              .count value
+              .len value
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Dynamic
