@@ -46,14 +46,23 @@ pub(super) fn is_syntax_member(annotation: &CalcitTypeAnnotation) -> bool {
   }
 }
 
-fn callback_return_type(callback: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
-  callback_result_evidence(callback, scope_types, false)
+fn callback_return_type(
+  callback: &Calcit,
+  scope_types: &ScopeTypes,
+  inputs: &[Arc<CalcitTypeAnnotation>],
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  callback_result_evidence(callback, scope_types, inputs, false)
 }
 
 /// A mapper's output element: its concrete return, or Dynamic when the callback
 /// itself declares an open result. Only an unknown callback keeps the type variable.
-fn mapper_output_type(callback: &Calcit, scope_types: &ScopeTypes, type_var: &str) -> Arc<CalcitTypeAnnotation> {
-  callback_return_type(callback, scope_types)
+fn mapper_output_type(
+  callback: &Calcit,
+  scope_types: &ScopeTypes,
+  inputs: &[Arc<CalcitTypeAnnotation>],
+  type_var: &str,
+) -> Arc<CalcitTypeAnnotation> {
+  callback_return_type(callback, scope_types, inputs)
     .or_else(|| match resolve_type_value(callback, scope_types)?.as_ref() {
       CalcitTypeAnnotation::Fn(signature) if matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Dynamic) => {
         Some(signature.return_type.clone())
@@ -63,11 +72,16 @@ fn mapper_output_type(callback: &Calcit, scope_types: &ScopeTypes, type_var: &st
     .unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from(type_var))))
 }
 
-fn callback_result_evidence(callback: &Calcit, scope_types: &ScopeTypes, preserve_open: bool) -> Option<Arc<CalcitTypeAnnotation>> {
+fn callback_result_evidence(
+  callback: &Calcit,
+  scope_types: &ScopeTypes,
+  inputs: &[Arc<CalcitTypeAnnotation>],
+  preserve_open: bool,
+) -> Option<Arc<CalcitTypeAnnotation>> {
   // A generated hint may include the caller's expected output. Join the
   // executable body evidence instead, including explicit Dynamic, so context
   // cannot turn an open branch into an independently proven concrete result.
-  if preserve_open
+  let body_result = if preserve_open
     && let Calcit::List(items) = callback
     && matches!(items.first(), Some(Calcit::Syntax(crate::calcit::CalcitSyntax::Defn, _)))
     && let Some(body) = items
@@ -77,8 +91,10 @@ fn callback_result_evidence(callback: &Calcit, scope_types: &ScopeTypes, preserv
       .last()
     && let Some(return_type) = resolve_type_value(body, scope_types)
   {
-    return Some(return_type);
-  }
+    Some(return_type)
+  } else {
+    None
+  };
   let embedded_schema = || {
     let Calcit::List(items) = callback else { return None };
     let lexical_generics = crate::calcit::type_annotation::lexical_type_variables_in_forms(items.iter().skip(2));
@@ -87,15 +103,48 @@ fn callback_result_evidence(callback: &Calcit, scope_types: &ScopeTypes, preserv
       .skip(3)
       .find_map(|form| CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form_in_scope(form, &lexical_generics))
   };
-  let callback_type = embedded_schema().or_else(|| resolve_type_value(callback, scope_types))?;
+  let Some(callback_type) = embedded_schema().or_else(|| resolve_type_value(callback, scope_types)) else {
+    return body_result;
+  };
   match callback_type.as_ref() {
     CalcitTypeAnnotation::Fn(signature)
       if preserve_open || !matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Dynamic) =>
     {
-      Some(signature.return_type.clone())
+      instantiate_callback_result_type(
+        signature,
+        scope_types,
+        inputs,
+        body_result.unwrap_or_else(|| signature.return_type.clone()),
+      )
     }
-    _ => None,
+    _ => body_result,
   }
+}
+
+/// A callback's quantified return belongs to its invocation, not to the
+/// surrounding collection call. Instantiate it from receiver evidence before
+/// exporting the result, and never turn an unresolved binder into Dynamic.
+fn instantiate_callback_result_type(
+  signature: &crate::calcit::CalcitFnTypeAnnotation,
+  scope_types: &ScopeTypes,
+  inputs: &[Arc<CalcitTypeAnnotation>],
+  result: Arc<CalcitTypeAnnotation>,
+) -> Option<Arc<CalcitTypeAnnotation>> {
+  if signature.generics.is_empty() {
+    return Some(result);
+  }
+  let mut proof = scope_types.call_type_proof(&signature.generics, &signature.arg_types, inputs);
+  for (index, input) in inputs.iter().enumerate() {
+    let parameter = signature.arg_types.get(index).or(signature.rest_type.as_ref())?;
+    if !proof.prove(input, parameter).is_proven() {
+      return None;
+    }
+  }
+  proof
+    .prove_where_bounds(&signature.where_bounds, None)
+    .is_proven()
+    .then(|| proof.result(&result))
+    .flatten()
 }
 
 fn core_result_type_args(type_value: &CalcitTypeAnnotation) -> Option<&[Arc<CalcitTypeAnnotation>]> {
@@ -217,7 +266,12 @@ pub(crate) fn resolve_checked_call_contract(
       } else {
         fn_type(
           vec![core_type_ref("Option", vec![calcit::DYNAMIC_TYPE.clone()])],
-          mapper_output_type(args.get(2)?, scope_types, "UpdateInOutput"),
+          mapper_output_type(
+            args.get(2)?,
+            scope_types,
+            &[core_type_ref("Option", vec![calcit::DYNAMIC_TYPE.clone()])],
+            "UpdateInOutput",
+          ),
         )
       };
       return Some(CheckedCallContract {
@@ -232,7 +286,12 @@ pub(crate) fn resolve_checked_call_contract(
     // An empty literal path passes the receiver itself. Its updater may
     // change the result family without claiming a relationship to open data.
     if path.is_empty() {
-      let output_type = mapper_output_type(args.get(2)?, scope_types, "UpdateInOutput");
+      let output_type = mapper_output_type(
+        args.get(2)?,
+        scope_types,
+        &[core_type_ref("Option", vec![receiver_type.clone()])],
+        "UpdateInOutput",
+      );
       return Some(CheckedCallContract {
         expected_types: Some(vec![
           receiver_type.clone(),
@@ -265,8 +324,8 @@ pub(crate) fn resolve_checked_call_contract(
     let type_args = core_result_type_args(receiver_type.as_ref())?;
     let input_type = type_args[0].clone();
     let error_type = type_args[1].clone();
-    let output_type =
-      callback_return_type(args.get(1)?, scope_types).unwrap_or_else(|| Arc::new(T::TypeVar(Arc::from("ResultMapOutput"))));
+    let output_type = callback_return_type(args.get(1)?, scope_types, std::slice::from_ref(&input_type))
+      .unwrap_or_else(|| Arc::new(T::TypeVar(Arc::from("ResultMapOutput"))));
     return Some(CheckedCallContract {
       expected_types: Some(vec![receiver_type.clone(), fn_type(vec![input_type], output_type.clone())]),
       return_type: core_type_ref("Result", vec![output_type, error_type]),
@@ -355,8 +414,8 @@ pub(crate) fn resolve_checked_call_contract(
           if args.len() == 1 && definition.definition_ref().is_some_and(|name| name.as_ref() == "calcit.core/Option")) =>
     {
       let input_type = type_args.first()?.clone();
-      let absent_type = callback_result_evidence(args.get(1)?, scope_types, true);
-      let present_type = callback_result_evidence(args.get(2)?, scope_types, true);
+      let absent_type = callback_result_evidence(args.get(1)?, scope_types, &[], true);
+      let present_type = callback_result_evidence(args.get(2)?, scope_types, std::slice::from_ref(&input_type), true);
       let output_type = match (absent_type, present_type) {
         (Some(absent), Some(present)) => super::type_inference::join_return_types(absent.clone(), present).unwrap_or(absent),
         // A partial result is a lower constraint, not the other callback's
@@ -444,7 +503,7 @@ pub(crate) fn resolve_checked_call_contract(
       lowering: Some(CheckedCallLowering::CoreDef("&map:filter")),
     }),
     ("map", T::List(item_type)) | ("map", T::Set(item_type)) if !is_syntax_member(item_type) => {
-      let output_type = mapper_output_type(args.get(1)?, scope_types, "MapOutput");
+      let output_type = mapper_output_type(args.get(1)?, scope_types, std::slice::from_ref(item_type), "MapOutput");
       let (return_type, target) = if matches!(receiver_type.as_ref(), T::List(_)) {
         (Arc::new(T::List(output_type.clone())), "&list:map")
       } else {
@@ -457,7 +516,12 @@ pub(crate) fn resolve_checked_call_contract(
       })
     }
     ("map-indexed", T::List(item_type)) if !is_syntax_member(item_type) => {
-      let output_type = mapper_output_type(args.get(1)?, scope_types, "MapIndexedOutput");
+      let output_type = mapper_output_type(
+        args.get(1)?,
+        scope_types,
+        &[Arc::new(T::Number), item_type.clone()],
+        "MapIndexedOutput",
+      );
       Some(CheckedCallContract {
         expected_types: Some(vec![
           receiver_type.clone(),
@@ -476,7 +540,7 @@ pub(crate) fn resolve_checked_call_contract(
       })
     }
     ("map-list-kv", T::Map(key_type, value_type)) => {
-      let output_type = mapper_output_type(args.get(1)?, scope_types, "MapListOutput");
+      let output_type = mapper_output_type(args.get(1)?, scope_types, &[key_type.clone(), value_type.clone()], "MapListOutput");
       Some(CheckedCallContract {
         expected_types: Some(vec![
           receiver_type.clone(),

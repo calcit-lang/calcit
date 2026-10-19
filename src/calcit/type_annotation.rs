@@ -490,20 +490,9 @@ impl CallTypeProof {
           return proof;
         }
       }
-      for bound in actual_signature.where_bounds.iter() {
-        let variable = CalcitTypeAnnotation::TypeVar(bound.name.clone());
-        let Some(resolved) = callback_proof.result(&variable) else {
-          return TypeProof::NeedsBoundary(TypeBoundaryReason::UnboundTypeVariable);
-        };
-        if !proves_trait_bound(&resolved, &bound.as_type_annotation(), self.caller_capabilities.as_deref()) {
-          return match resolved.as_ref() {
-            CalcitTypeAnnotation::TypeVar(name) if self.fresh_names.contains(name) => {
-              TypeProof::NeedsBoundary(TypeBoundaryReason::UnboundTypeVariable)
-            }
-            CalcitTypeAnnotation::Dynamic => TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic),
-            _ => TypeProof::Mismatch,
-          };
-        }
+      let bound_proof = callback_proof.prove_where_bounds(&actual_signature.where_bounds, Some(&self.fresh_names));
+      if !bound_proof.is_proven() {
+        return bound_proof;
       }
       // Only this invocation loses its quantifiers; source metadata is unchanged.
       let mut signature = actual_signature.as_ref().clone();
@@ -552,6 +541,26 @@ impl CallTypeProof {
       self.bindings = staged;
     }
     proof
+  }
+
+  /// Check obligations after input evidence has instantiated this invocation.
+  pub(crate) fn prove_where_bounds(&self, bounds: &[CalcitGenericBound], pending: Option<&HashSet<Arc<str>>>) -> TypeProof {
+    for bound in bounds {
+      let variable = CalcitTypeAnnotation::TypeVar(bound.name.clone());
+      let Some(resolved) = self.result(&variable) else {
+        return TypeProof::NeedsBoundary(TypeBoundaryReason::UnboundTypeVariable);
+      };
+      if !proves_trait_bound(&resolved, &bound.as_type_annotation(), self.caller_capabilities.as_deref()) {
+        return match resolved.as_ref() {
+          CalcitTypeAnnotation::TypeVar(name) if pending.is_some_and(|names| names.contains(name)) => {
+            TypeProof::NeedsBoundary(TypeBoundaryReason::UnboundTypeVariable)
+          }
+          CalcitTypeAnnotation::Dynamic => TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic),
+          _ => TypeProof::Mismatch,
+        };
+      }
+    }
+    TypeProof::Proven
   }
 
   /// A contravariant position (a callback parameter, possibly nested in an

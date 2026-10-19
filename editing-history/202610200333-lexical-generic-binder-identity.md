@@ -46,6 +46,8 @@ post-lowering 的原有遍历按函数 metadata 恢复能力作用域，不用�
 
 库回归还定位到一个独立测试竞态：人为构造的 defimpl stack 用了受全局 TRACK_STACK 开关影响的 extend，而另一测试临时关闭了开关。仅将该固定 fixture 改为 push_left 明确的 frame，保留原断言，不改变 runtime 的全局开关或串行化所有测试。
 
+额外执行 bounded-map 的独立审计发现，普通检查和跨后端测试成功并不足以证明全部入口一致：collection contract 直接读取了回调自身量化的返回 T，导致它在外层被当成刚性变量。现在 callback result evidence 先用 receiver 提供的参数实例化当前调用，并复用同一 where 证明，再导出返回类型；未解决的回调局部 binder 不导出为结果，也不退化为 Dynamic。map、map-indexed、map-list-kv、Result.map、Option.fold 和 update-in 共用该路径。原独立证明运行器增加七个已有 bounded 定义的正例，保留缺少能力、同 trait 不同 binder、捕获伪造能力的拒绝控制。
+
 ## 验证方式
 
 - 合法恒等、纯改名、未重新声明的外层捕获、三层同名遮蔽与外层恢复、Number/String 的嵌套 mapcat/map、顺序和空维度，使用 definition `:tests`，由原共享运行器执行 native/真实 JS。

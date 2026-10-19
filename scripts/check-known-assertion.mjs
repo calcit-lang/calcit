@@ -175,6 +175,19 @@ try {
   }
   execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
     "--tag", "lexical-binder", "--backend", "native,js"], { ...options, stdio: "inherit" });
+  // Runtime replay alone cannot catch a false rejection in the independent
+  // audit. In particular, a bounded mapper's quantified output must first be
+  // instantiated from its receiver, not escape as its callback-local binder.
+  const boundedSnapshot = "calcit/test-types-inference.cirru";
+  const boundedSource = await readFile(boundedSnapshot);
+  for (const definition of ["bounded-identity", "bounded-slice", "bounded-forward", "bounded-local-map",
+    "bounded-multiple", "bounded-shadow-capture", "bounded-map"]) {
+    const proof = JSON.parse(execFileSync(binary, [boundedSnapshot, "fix", "--rule", "concrete-return-proof-v1",
+      "--ns", "test-types-inference.main", "--def", definition, "--format", "json"], options));
+    assert.deepEqual(proof.diagnostics, [], `${definition}: retain bounded identity in independent proof`);
+    assert.equal(proof.data.changed, false);
+    assert.deepEqual(await readFile(boundedSnapshot), boundedSource);
+  }
 
   // Retaining checked hint metadata must not replace the public return contract.
   await copyFile("calcit/add.cirru", binderSnapshot);
