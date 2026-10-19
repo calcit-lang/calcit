@@ -337,6 +337,46 @@
               :code $ quote $ assert= ([] |outer)
                 lexical-generic-capture $ [] |outer
               :tags $ #{} :generic :lexical-binder :unit
+        'lexical-generic-empty-collections $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn lexical-generic-empty-collections (value)
+            let
+                empty-list $ fn (item)
+                  hint-fn $ {}
+                    :args $ [] 'T
+                    :return $ :: 'List 'T
+                    :generics $ [] 'T
+                  []
+                empty-map $ fn (item)
+                  hint-fn $ {}
+                    :args $ [] 'T
+                    :return $ :: 'Map 'Tag 'T
+                    :generics $ [] 'T
+                  if (= item item) ({}) ({})
+                empty-set $ fn (item)
+                  hint-fn $ {}
+                    :args $ [] 'T
+                    :return $ :: 'Set 'T
+                    :generics $ [] 'T
+                  #{}
+              assert= ({}) (empty-map value)
+              assert= (#{}) (empty-set value)
+              empty-list value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'T
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+          :tests $ []
+            %{} 'TestEntry (:name |empty-collections-number)
+              :code $ quote $ assert= ([]) (lexical-generic-empty-collections 1)
+              :tags $ #{} :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |empty-collections-string)
+              :code $ quote $ assert= ([]) (lexical-generic-empty-collections |outer)
+              :tags $ #{} :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |empty-collections-list)
+              :code $ quote $ assert= ([])
+                lexical-generic-empty-collections $ [] |outer
+              :tags $ #{} :generic :lexical-binder :unit
         'lexical-generic-grid $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn lexical-generic-grid (x y f)
             -> (range x)
@@ -404,6 +444,30 @@
           :tests $ [] $ %{} 'TestEntry (:name |independent-renamed-binder)
             :code $ quote $ assert= 2 (lexical-generic-identity-renamed |outer)
             :tags $ #{} :generic :lexical-binder :unit
+        'lexical-generic-open-identity $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn lexical-generic-open-identity (value)
+            let
+                callback $ fn (item)
+                  hint-fn $ {}
+                    :args $ [] 'T
+                    :return 'T
+                    :generics $ [] 'T
+                  , item
+              callback value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic
+          :tests $ []
+            %{} 'TestEntry (:name |generic-instantiation-preserves-open-number)
+              :code $ quote $ assert= 1 (lexical-generic-open-identity 1)
+              :tags $ #{} :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |generic-instantiation-preserves-open-string)
+              :code $ quote $ assert= |outer (lexical-generic-open-identity |outer)
+              :tags $ #{} :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |generic-instantiation-preserves-open-list)
+              :code $ quote $ assert= ([] |outer)
+                lexical-generic-open-identity $ [] |outer
+              :tags $ #{} :generic :lexical-binder :unit
         'lexical-generic-shadow-capture $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn lexical-generic-shadow-capture (outer)
             hint-fn $ {}

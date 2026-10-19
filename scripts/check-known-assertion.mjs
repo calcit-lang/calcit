@@ -84,6 +84,56 @@ try {
     }
     await assertRejectedArtifacts(generated, `lexical ${inner}`, /E_ERASED_GENERIC_RELATION/, true);
   }
+  // A universal return is not an inference variable for concrete/open producers.
+  // Keep the direct Map-hint and nested callback entrances in the same harness.
+  for (const [label, inner, nested, returned, returnType, extra, diagnostic, declaredArgs = true] of [
+    ["direct-number", "T", false, ", 1", "'T", false, /E_ERASED_GENERIC_RELATION/],
+    ["nested-number", "U", true, ", 1", "'U", false, /E_ERASED_GENERIC_RELATION/],
+    ["direct-list", "U", false, "[] 1", "(:: 'List 'U)", false, /E_ERASED_GENERIC_RELATION/],
+    ["nested-mixed-branch", "T", true, "if (= value value) 1 value", "'T", false, /E_FN_RETURN_UNPROVEN/],
+    ["nested-open-payload", "T", true, ", raw", "'T", true, /E_ERASED_GENERIC_RELATION/],
+    ["direct-missing-input", "T", false, ", value", "'T", false, /E_FN_RETURN_UNPROVEN/, false],
+  ]) {
+    await copyFile("calcit/add.cirru", binderSnapshot);
+    const contract = `hint-fn $ {} ${declaredArgs ? `(:args $ [] '${inner}${extra ? " 'Dynamic" : ""}) ` : ""}(:return ${returnType}) (:generics $ [] '${inner})`;
+    const source = nested
+      ? `defn producer (input)\n  let\n      callback $ fn (value${extra ? " raw" : ""})\n        ${contract}\n        ${returned}\n    callback input${extra ? " 1" : ""}\n    , &unit`
+      : `defn producer (value)\n  ${contract}\n  ${returned}`;
+    const operations = [
+      ["edit", "def", "app.main/producer", "--input-format", "cirru", "--code", `quote $ ${source}`],
+      ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
+        "quote $ defn main! ()\n  producer |outer\n  , &unit"],
+      ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+      ["config", "set", "reload-fn", "app.main/main!"],
+    ];
+    if (nested) operations.push(["edit", "schema", "app.main/producer", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return 'Unit)"]);
+    const code = JSON.stringify(operations);
+    const preview = JSON.parse(runBinder("edit", "transaction", "--code", code, "--dry-run", "--format", "json"));
+    runBinder("edit", "transaction", "--code", code, "--expect-revision", preview.scoped_revision, "--format", "edn");
+    const original = await readFile(binderSnapshot);
+    const generated = join(project, `lexical-concrete-${label}-js`);
+    for (const args of [
+      ["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "producer", "--format", "json"],
+      ["fix", "--workflow", "strict", "--verify", "--format", "json"],
+      ["--check-only", "--all-defs"], [], ["--emit-path", generated, "js"],
+    ]) {
+      const rejected = spawnSync(binary, [binderSnapshot, ...args], options);
+      if (rejected.error) throw rejected.error;
+      const details = `${rejected.stdout}\n${rejected.stderr}`;
+      assert.equal(rejected.status, 1, `${label}: ${args.join(" ")}\n${details}`);
+      assert.match(details, diagnostic, `${label}: ${args.join(" ")}`);
+      assert.doesNotMatch(details, /#lexical:|#call-type:/);
+      if (args.includes("--workflow")) {
+        const diagnostics = JSON.parse(rejected.stdout).diagnostics.filter(item => diagnostic.test(item.code));
+        assert.ok(diagnostics.some(item => item.location?.ns === "app.main" && item.location?.def === "producer"),
+          "attribute the invalid return to its source definition rather than main");
+      }
+      assert.deepEqual(await readFile(binderSnapshot), original);
+    }
+    await assertRejectedArtifacts(generated, label, diagnostic, true);
+  }
   execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
     "--tag", "lexical-binder", "--backend", "native,js"], { ...options, stdio: "inherit" });
 

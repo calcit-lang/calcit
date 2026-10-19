@@ -22,7 +22,7 @@
 
 本次先修复局部函数声明和捕获，以及完整签名重建造成的嵌套回调证据丢失。没有宣称完成 #2190 的全部 trait-bound 验收或 #2188。CodeEntry 的 where-bound 身份与能力仍按原实现处理；把它们一并 freshen 的早期试验触发了 core trait 初始化中的 Mappable 依赖环，因此未开启该改动。下一阶段须分离能力和泛型身份，不以同 trait 等同于同一变量，也不跳过 core 初始化来绕开问题。
 
-Review 还指出普通检查会接受 `Fn<T>(T) -> T` 的具体常量返回；本地最小 eval 确认当前仍会接受 `1`。本 PR 的刚性扩展只处理有词法变量的 producer，不宣称完整解决具体/开放 producer 的返回证明。具体返回、空容器和 Dynamic 的逐出口关系由 #2121/#2190 后续统一处理，避免用局部特例改变现有开放边界。
+Review 还指出普通检查会接受 `Fn<T>(T) -> T` 的具体常量返回；最小 eval 确认旧候选会接受 `1`。随后在同一返回证明中覆盖具体、开放和未知 producer：已建立的词法 binder 不因 producer 没有自由变量就失去刚性，也不因分支合并成开放值而获得转换证据。在报错前复用原 expression/逐出口证明，允许合法空容器，而不是给空集合或具体函数加豁免。显式 Dynamic 返回及真正泛型用 Dynamic 实例化继续允许。原 CodeEntry where-bound 尚未 freshen 的路径不宣称已修复，不能在能力/身份分离前把它的 trait 描述符误当成另一个变量并新增假拒绝；#2121/#2188/#2190 仍保持开放。
 
 `substitute_type_vars` 保留现有实例化语义；词法重命名通过同一个迭代替换实现的捕获避免模式屏蔽嵌套量词。私有 key 不进入 source schema、公开类型描述或正常诊断。
 
@@ -32,9 +32,12 @@ Review 还指出普通检查会接受 `Fn<T>(T) -> T` 的具体常量返回；�
 
 兼容模式的泛型拒绝测试放回已有 `check-strict-default.mjs`；普通 proof harness 不含兼容开关，不修改原默认严格门禁的排除规则。
 
+具体/未知返回校验还暴露旧 `test-generics.main/test-fn-generics` 的 `id2` 合同不完整：它声明了泛型返回 T，却没有声明参数与 T 的关系。只补该函数的 `:args [T]`，保留其恒等函数体、Number/String 调用与全部原断言；没有从返回声明反向制造输入证据或默认给所有未注解参数套上泛型。同样的不完整合同作为负例进入原 harness。CLI 产生的 recursive-struct 排版折叠通过 program-diff 确认，不据此改写原语义。
+
 ## 验证方式
 
 - 合法恒等、纯改名、未重新声明的外层捕获、三层同名遮蔽与外层恢复、Number/String 的嵌套 mapcat/map、顺序和空维度，使用 definition `:tests`，由原共享运行器执行 native/真实 JS。
+- 新增空 List/Map/Set（包括空 Map 分支）和 Dynamic 实例化的恒等回调，分别以 Number/String/List 验证；具体 Number、错误元素 List、混合分支和开放 payload 的拒绝复用原同一 harness，核对源码不变、source owner 和拒绝产物。
 - 原有 check-known-assertion 运行器覆盖错误捕获的 T/U、CodeEntry/body-hint 两种外层合同，以及 proof、完整 strict、普通/compat 检查、native 和 JS 编译拒绝；核对源码不变和拒绝时不产出应用模块。
 - 低层 Rust 测试只验证内部 binder 重命名不捕获嵌套量词、checked metadata 保留身份、source schema 不泄漏 key，以及声明作用域与值/细化状态的独立生命周期；语言成功语义不重复写成 Rust 断言。
 - 原 native/JS 主测试、原类型/调用证明回归、cargo fmt/Clippy/test、文档代码块和真实消费者查询另按 PR 记录实际结果。未运行或未通过的项不写成成功。

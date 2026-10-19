@@ -1590,6 +1590,7 @@ pub(crate) fn check_function_return_type(
     |parameters| super::type_inference::infer_function_exit_type(last_expr, scope_types, parameters),
   );
   let audit = super::REQUIRE_ASSERTION_PROOF.with(std::cell::Cell::get);
+  let lexical_return = crate::calcit::type_annotation::has_lexical_type_variables(std::slice::from_ref(declared_return_type));
   let unproven = |actual: &str| {
     let location = last_expr
       .get_location()
@@ -1631,7 +1632,11 @@ pub(crate) fn check_function_return_type(
     // Branches may share no joined type while each one still proves the
     // declaration; reuse the same branch-wise proof as typed joins.
     let proven = expression_is_proven_for(last_expr, declared_return_type, scope_types, async_invocation);
-    return if audit && !proven { Err(unproven("unknown")) } else { Ok(()) };
+    return if (audit || lexical_return) && !proven {
+      Err(unproven("unknown"))
+    } else {
+      Ok(())
+    };
   };
   // Async functions adopt a pending tail result; a synchronous function must
   // retain the pending wrapper rather than claim its logical result as a value.
@@ -1645,31 +1650,20 @@ pub(crate) fn check_function_return_type(
   // an open callable hide a definite contradiction with the return contract.
   let mut bindings = HashMap::new();
   let proof = actual_type.prove_with_bindings(declared_return_type, &mut bindings);
-  // A lexical producer cannot establish a different universal return binder,
-  // even outside the independent-proof workflow. Keep the existing treatment
-  // of open/concrete producers separate from this identity obligation.
-  let lexical_return = crate::calcit::type_annotation::has_lexical_type_variables(std::slice::from_ref(declared_return_type))
-    && !free_type_variable_names(std::slice::from_ref(&actual_type)).is_empty();
-  let proof = if (audit || lexical_return)
-    && bindings
-      .values()
-      .any(|binding| !matches!(binding.as_ref(), CalcitTypeAnnotation::Dynamic))
-  {
+  // Neither another lexical variable nor a concrete producer can specialize
+  // an established return binder, even outside the independent-proof workflow.
+  let rigid_return = lexical_return
+    || (audit
+      && bindings
+        .values()
+        .any(|binding| !matches!(binding.as_ref(), CalcitTypeAnnotation::Dynamic)));
+  let proof = if rigid_return {
     // Recheck known substitutions without granting the return schema any
     // callee inference variables. Both concrete and lexical producer types
-    // must not specialize a return variable. Direct Dynamic bindings retain
-    // the existing migration policy for lossy open results.
+    // must not specialize a return variable. Empty constructors and branch
+    // exits can still establish the relation below without using the join.
     let mut return_proof = CallTypeProof::new(&[], std::slice::from_ref(declared_return_type), std::slice::from_ref(&actual_type));
-    let proof = return_proof.prove(&actual_type, declared_return_type);
-    if matches!(proof, TypeProof::NeedsBoundary(TypeBoundaryReason::UnboundTypeVariable))
-      && !free_type_variable_names(std::slice::from_ref(declared_return_type)).is_empty()
-    {
-      let mut error = unproven(&diagnostic_type_string(&actual_type));
-      error.code = Some("E_ERASED_GENERIC_RELATION".to_owned());
-      error.hint = Some("An independent return proof keeps lexical type variables rigid; a return declaration cannot specialize them using another variable or a concrete producer type. Separately declared lexical binders remain distinct even when their source names are identical.".into());
-      return Err(error);
-    }
-    proof
+    return_proof.prove(&actual_type, declared_return_type)
   } else {
     proof
   };
@@ -1690,7 +1684,16 @@ pub(crate) fn check_function_return_type(
   } else {
     proof
   };
-  if audit && matches!(proof, TypeProof::NeedsBoundary(_)) {
+  if rigid_return
+    && matches!(proof, TypeProof::NeedsBoundary(TypeBoundaryReason::UnboundTypeVariable))
+    && !free_type_variable_names(std::slice::from_ref(declared_return_type)).is_empty()
+  {
+    let mut error = unproven(&diagnostic_type_string(&actual_type));
+    error.code = Some("E_ERASED_GENERIC_RELATION".to_owned());
+    error.hint = Some("An independent return proof keeps lexical type variables rigid; a return declaration cannot specialize them using another variable or a concrete producer type. Separately declared lexical binders remain distinct even when their source names are identical.".into());
+    return Err(error);
+  }
+  if (audit || lexical_return) && matches!(proof, TypeProof::NeedsBoundary(_)) {
     return Err(unproven(&diagnostic_type_string(actual_type.as_ref())));
   }
   let compatible = match proof {
