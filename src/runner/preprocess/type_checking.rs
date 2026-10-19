@@ -584,10 +584,16 @@ where
         if let Some(actual_type) = resolve_type_value(rest_arg, ctx.scope_types) {
           let mut candidate = bindings.clone();
           // Keep the generic until matching so closed bottom bindings can refine.
-          let matches = !proof.prove(&actual_type, inner_type).is_mismatch()
+          let compatible = !proof.prove(&actual_type, inner_type).is_mismatch()
             && actual_type.as_ref().compatible_with_bindings(inner_type.as_ref(), &mut candidate);
+          let matches = compatible
+            || !expected_rest_type.contains_type_var()
+              && !may_rebind_local(rest_arg)
+              && expression_is_proven_for(rest_arg, &expected_rest_type, ctx.scope_types, false);
           if matches {
-            bindings = candidate;
+            if compatible {
+              bindings = candidate;
+            }
           } else {
             ctx.emit_warning(idx + rest_idx + 1, expected_rest_type.as_ref(), actual_type.as_ref(), &make_warning);
           }
@@ -623,7 +629,11 @@ where
       };
       // A definite contradiction cannot be accepted by the migration relation;
       // unresolved boundaries retain their existing ordinary-checking policy.
-      if proof.prove(&actual_type, expected_type).is_mismatch() || !compatible {
+      if (proof.prove(&actual_type, expected_type).is_mismatch() || !compatible)
+        && !(!expected_type.contains_type_var()
+          && !may_rebind_local(arg)
+          && expression_is_proven_for(arg, expected_type, ctx.scope_types, false))
+      {
         let diagnostic_expected = expected_type.substitute_type_vars(&bindings);
         ctx.emit_warning(idx + 1, diagnostic_expected.as_ref(), actual_type.as_ref(), &make_warning);
       }

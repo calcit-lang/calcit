@@ -48,6 +48,8 @@ post-lowering 的原有遍历按函数 metadata 恢复能力作用域，不用�
 
 额外执行 bounded-map 的独立审计发现，普通检查和跨后端测试成功并不足以证明全部入口一致：collection contract 直接读取了回调自身量化的返回 T，导致它在外层被当成刚性变量。现在 callback result evidence 先用 receiver 提供的参数实例化当前调用，并复用同一 where 证明，再导出返回类型；未解决的回调局部 binder 不导出为结果，也不退化为 Dynamic。map、map-indexed、map-list-kv、Result.map、Option.fold 和 update-in 共用该路径。原独立证明运行器增加七个已有 bounded 定义的正例，保留缺少能力、同 trait 不同 binder、捕获伪造能力的拒绝控制。
 
+完整 CLI 回归进一步暴露直接 `ref (Option :none)` 传给 Ref<Option<Dynamic>> 的假拒绝。新建 Ref 没有已有别名，原 expression proof 已支持按初始值和期望合同证明；参数关系检查现在复用该证据，而不将 Ref 的类型关系改为协变。已有变量、别名及无注解空 Ref 后续错误写入继续受不变性约束。保留 Option→nil fixture 的原程序和全部断言，原生/真实 JS 的 29 项语义测试通过。严格 workflow 不能按定义过滤，因此通过 query 导出七个真实定义、受保护 edit 导入隔离项目，再执行完整 strict；不以局部返回审计替代完整校验。
+
 ## 验证方式
 
 - 合法恒等、纯改名、未重新声明的外层捕获、三层同名遮蔽与外层恢复、Number/String 的嵌套 mapcat/map、顺序和空维度，使用 definition `:tests`，由原共享运行器执行 native/真实 JS。

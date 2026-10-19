@@ -14215,7 +14215,7 @@ fn find_unproven_generic_argument(
     let proof = call_proof.prove(&actual, expected);
     // A merged type may lose empty-container evidence. Reuse the independent
     // exit proof for non-generic contracts without reusing pre-mutation aliases.
-    if matches!(proof, TypeProof::NeedsBoundary(_))
+    if (matches!(proof, TypeProof::NeedsBoundary(_)) || proof.is_mismatch())
       && !expected.contains_type_var()
       && !type_checking::may_rebind_local(arg)
       && type_checking::expression_is_proven_for(arg, expected, scope_types, false)

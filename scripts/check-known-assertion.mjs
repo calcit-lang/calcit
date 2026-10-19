@@ -180,14 +180,42 @@ try {
   // instantiated from its receiver, not escape as its callback-local binder.
   const boundedSnapshot = "calcit/test-types-inference.cirru";
   const boundedSource = await readFile(boundedSnapshot);
-  for (const definition of ["bounded-identity", "bounded-slice", "bounded-forward", "bounded-local-map",
-    "bounded-multiple", "bounded-shadow-capture", "bounded-map"]) {
+  const boundedDefinitions = ["bounded-identity", "bounded-slice", "bounded-forward", "bounded-local-map",
+    "bounded-multiple", "bounded-shadow-capture", "bounded-map"];
+  const boundedOperations = [];
+  for (const definition of boundedDefinitions) {
     const proof = JSON.parse(execFileSync(binary, [boundedSnapshot, "fix", "--rule", "concrete-return-proof-v1",
       "--ns", "test-types-inference.main", "--def", definition, "--format", "json"], options));
     assert.deepEqual(proof.diagnostics, [], `${definition}: retain bounded identity in independent proof`);
     assert.equal(proof.data.changed, false);
     assert.deepEqual(await readFile(boundedSnapshot), boundedSource);
+    const source = JSON.parse(execFileSync(binary, [boundedSnapshot, "query", "def",
+      `test-types-inference.main/${definition}`, "--format", "json"], options)).data;
+    assert.equal(source.schema.find(field => Array.isArray(field) && field[0] === ":kind")?.[1], ":fn");
+    // Query exposes normalized callable data; edit requires its canonical
+    // wrapper, with the kind represented once rather than repeated inside.
+    const schema = ["::", ":fn", ["{}", ...source.schema.slice(1).filter(field => field[0] !== ":kind")]];
+    boundedOperations.push(
+      ["edit", "def", `app.main/${definition}`, "--input-format", "json-ast", "--code", JSON.stringify(source.code)],
+      ["edit", "schema", `app.main/${definition}`, "--input-format", "json-ast", "--code", JSON.stringify(schema)],
+    );
   }
+  // Strict workflow is project-scoped: export the actual definitions through
+  // query/edit instead of filtering it or treating a partial audit as complete.
+  await copyFile("calcit/add.cirru", binderSnapshot);
+  boundedOperations.push(
+    ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
+      "quote $ defn main! ()\n  bounded-map $ [] 1 2\n  , &unit"],
+    ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+    ["config", "set", "reload-fn", "app.main/main!"],
+  );
+  const boundedCode = JSON.stringify(boundedOperations);
+  const boundedPreview = JSON.parse(runBinder("edit", "transaction", "--code", boundedCode, "--dry-run", "--format", "json"));
+  runBinder("edit", "transaction", "--code", boundedCode, "--expect-revision", boundedPreview.scoped_revision, "--format", "edn");
+  const boundedBefore = await readFile(binderSnapshot);
+  const boundedStrict = JSON.parse(runBinder("fix", "--workflow", "strict", "--verify", "--format", "json"));
+  assert.deepEqual(boundedStrict.diagnostics, []);
+  assert.deepEqual(await readFile(binderSnapshot), boundedBefore);
 
   // Retaining checked hint metadata must not replace the public return contract.
   await copyFile("calcit/add.cirru", binderSnapshot);
