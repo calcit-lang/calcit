@@ -457,6 +457,18 @@ const scenarios = [
     },
   },
   {
+    name: "lexical collection query keeps source generic names",
+    args: ["src/cirru/calcit-core.cirru", "query", "type-at", "calcit.core/interleave", "--path", "code@3.3.2", "--format", "json"],
+    check(result) {
+      assert.deepEqual(result.diagnostics, []);
+      assert.equal(result.data.inferred_type, ":: 'List 'T");
+      const method = result.data.static_methods.find(item => item.name === ".get");
+      assert.deepEqual(method.generics, ["T"]);
+      assert.deepEqual(method.call_types.returns, ["::", "'calcit.core/Option", "'T"]);
+      assert.doesNotMatch(JSON.stringify(result), /#lexical:|#call-type:/);
+    },
+  },
+  {
     name: "source-backed data type",
     args: [
       "calcit/test.cirru",
@@ -1145,7 +1157,8 @@ const parseEdnRaw = (text, name) => {
 const parseEdnEnvelope = (text, name, reference) => normalizeEdnKeys(parseEdnRaw(text, name), reference);
 const querySnapshotBefore = readFileSync("calcit/test.cirru");
 for (const { name, base, expectedStatus = 0, check } of [
-  ...scenarios.filter(scenario => scenario.name.startsWith("to-calcit-data ")).map(({ name, args, check }) => ({
+  ...scenarios.filter(scenario => scenario.name.startsWith("to-calcit-data ")
+    || scenario.name === "lexical collection query keeps source generic names").map(({ name, args, check }) => ({
     name: `${name} EDN`,
     base: args.slice(0, -2),
     check,
@@ -1287,6 +1300,13 @@ for (const { name, base, expectedStatus = 0, check } of [
   check(ednEnvelope);
 }
 assert.deepEqual(readFileSync("calcit/test.cirru"), querySnapshotBefore, "query and config reads must not mutate the Snapshot");
+
+const lexicalHuman = spawnSync(binary, ["src/cirru/calcit-core.cirru", "query", "type-at", "calcit.core/interleave", "--path", "code@3.3.2"], {
+  encoding: "utf8", maxBuffer: 4 * 1024 * 1024, env: { ...process.env, NO_COLOR: "1" },
+});
+assert.ifError(lexicalHuman.error);
+assert.equal(lexicalHuman.status, 0, lexicalHuman.stderr);
+assert.doesNotMatch(lexicalHuman.stdout, /#lexical:|#call-type:/);
 
 const unicodeDefsChild = spawnSync(binary, ["calcit/test-wasi-command.cirru", "query", "defs", "app.main"], {
   cwd: process.cwd(),

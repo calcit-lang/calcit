@@ -33,7 +33,7 @@ try {
   // rejection harness to verify all compiler entrances and unchanged source.
   const binderSnapshot = join(project, "lexical-binder.cirru");
   const runBinder = (...args) => execFileSync(binary, [binderSnapshot, ...args], options);
-  for (const [inner, bodyHint, nestedCapture] of [["T", false], ["U", false], ["T", true], ["U", true], ["T", false, true]]) {
+  for (const [inner, bodyHint, nestedCapture] of [["T", false], ["U", false], ["T", true], ["U", true], ["T", false, true], ["U", false, true]]) {
     await copyFile("calcit/add.cirru", binderSnapshot);
     runBinder("query", "config", "--format", "edn");
     runBinder("query", "def", "app.main/main!", "--format", "edn");

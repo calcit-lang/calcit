@@ -209,7 +209,14 @@ fn context_method(
     rest_type: contract.rest_type.map(|annotation| annotation.describe()),
     return_type: contract.return_type.map(|annotation| annotation.describe()),
     call_types,
-    generics: contract.generics,
+    generics: contract
+      .generics
+      .into_iter()
+      .map(|name| match CalcitTypeAnnotation::TypeVar(Arc::from(name)).to_type_edn() {
+        cirru_edn::Edn::Symbol(source) => source.to_string(),
+        _ => unreachable!("a type variable projects to its source symbol"),
+      })
+      .collect(),
     bounds: contract.bounds,
     features: contract.features,
     definition: contract.definition,

@@ -9852,7 +9852,10 @@ impl DynamicDispatchReceiverCause {
       Self::DynamicSchema => "a receiver schema that resolves to Dynamic".to_owned(),
       Self::DynamicCallable => "a receiver schema that resolves to a dynamic callable".to_owned(),
       Self::LegacyOptional => "a legacy Optional receiver whose payload is Dynamic".to_owned(),
-      Self::UnboundGeneric(name) => format!("unbound generic `'{name}` without a trait constraint"),
+      Self::UnboundGeneric(name) => format!(
+        "unbound generic `'{}` without a trait constraint",
+        crate::calcit::type_annotation::source_type_variable(name)
+      ),
       Self::UnboundTypeSlot(name) => format!("unbound type slot `*{name}`"),
       Self::ExplicitJsFfiBoundary => "an explicit `:js-ffi` Dynamic boundary".to_owned(),
     }
@@ -11983,6 +11986,18 @@ fn discard_duplicate_replay_warnings(warnings: &mut Vec<LocatedWarning>, checkpo
   }
 }
 
+// Preserve both lexical binders and nominal declaration provenance on replay.
+fn checked_function_hint(items: Vec<Calcit>, signature: Arc<CalcitFnTypeAnnotation>, generated: bool, declaring_ns: &str) -> Calcit {
+  let qualified = resolve_namespace_type_refs_for_body(Arc::new(CalcitTypeAnnotation::Fn(signature)), declaring_ns);
+  let CalcitTypeAnnotation::Fn(signature) = qualified.as_ref() else {
+    unreachable!("qualifying function references preserves its annotation kind")
+  };
+  Calcit::from(CalcitList::executable(
+    items,
+    CalcitCallKind::TypedFnHint(signature.clone(), generated),
+  ))
+}
+
 pub fn preprocess_defn(
   head: &CalcitSyntax,
   head_ns: &str,
@@ -12364,10 +12379,12 @@ pub fn preprocess_defn(
 
       if let CalcitTypeAnnotation::Fn(fn_annot) = def_schema.as_ref() {
         let schema_calcit = fn_annot.to_schema_calcit();
-        let schema_hint = Calcit::from(CalcitList::executable(
+        let schema_hint = checked_function_hint(
           vec![Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(ctx.file_ns)), schema_calcit],
-          CalcitCallKind::TypedFnHint(fn_annot.clone(), false),
-        ));
+          fn_annot.clone(),
+          false,
+          ctx.file_ns,
+        );
         processed_body.push(schema_hint.to_owned());
         xs = xs.push_right(schema_hint);
       }
@@ -12474,15 +12491,13 @@ pub fn preprocess_defn(
         PROOF_ERROR_COLLECTOR.with(|collector| collector.borrow().as_ref().map(|collector| collector.errors.len()));
       let initial_rewrites = post_lowering::Scope::checkpoint();
 
+      let declaring_ns = ctx.file_ns;
       let retain_fn_hint = |source: &Calcit, form: Calcit| {
         if body_fn_hint_source.as_ref() == Some(source)
           && let Some(signature) = effective_fn_schema.as_ref()
           && let Calcit::List(items) = &form
         {
-          Calcit::from(CalcitList::executable(
-            items.to_vec(),
-            CalcitCallKind::TypedFnHint(signature.clone(), false),
-          ))
+          checked_function_hint(items.to_vec(), signature.clone(), false, declaring_ns)
         } else {
           form
         }
@@ -12641,13 +12656,15 @@ pub fn preprocess_defn(
           None
         };
       if let Some(fn_annot) = generated_fn_schema.as_ref() {
-        let schema_hint = Calcit::from(CalcitList::executable(
+        let schema_hint = checked_function_hint(
           vec![
             Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(ctx.file_ns)),
             fn_annot.to_schema_calcit(),
           ],
-          CalcitCallKind::TypedFnHint(fn_annot.clone(), true),
-        ));
+          fn_annot.clone(),
+          true,
+          ctx.file_ns,
+        );
         processed_body.push(schema_hint.clone());
         xs = xs.push_right(schema_hint);
       }
@@ -14417,7 +14434,11 @@ fn reject_strict_unproven_generic_relation(
   else {
     return Ok(());
   };
-  let names = generics.iter().map(|name| format!("`'{name}`")).collect::<Vec<_>>().join(", ");
+  let names = generics
+    .iter()
+    .map(|name| format!("`'{}`", crate::calcit::type_annotation::source_type_variable(name)))
+    .collect::<Vec<_>>()
+    .join(", ");
   let actual_name = actual
     .as_ref()
     .map(|actual| actual.to_brief_string())

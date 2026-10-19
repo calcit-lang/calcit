@@ -12,11 +12,17 @@
 
 检查后的函数 hint 在已有可执行 List 元数据中保留完整签名。source AST 和打印的 schema 仍只包含源码名字，推断和 runtime 取签名时不再通过序列化后的名字重建绑定身份。普通 List 的值相等、排序和 hash 不因该内部证据改变；重建源码仍丢弃派生元数据。
 
+方法合同内部继续保留完整 binder key，不能提前用显示名称替换语义键。对 `interleave` 局部 List 的真实 type-at 查询进一步复现了 static-methods.generics 泄漏 key；修复仅放在 CLI 的 ContextMethod 投影边界，并通过原 Agent 接口脚本覆盖 EDN/JSON 一致性及 human 输出，不改变内部方法实例化关系。
+
+原 Agent 接口回归还发现，直接保留签名会跳过旧重解析中的名义类型限定，使 Option 方法查询从 `calcit.core/Option` 退回无命名空间的 `Option`。在生成 checked hint 时复用原 namespace resolver，同时保存声明来源和 binder 身份，不修改原查询断言。两个普通调用/方法诊断也在输出边界还原源码名字，内部关系不变。
+
 独立泛型返回继续复用 CallTypeProof 的刚性关系。对于已建立词法身份的返回声明，普通预处理同样不得把另一个词法变量绑定为它；未绑定的上下文求解变量不因此变成刚性 binder。未新增诊断编号、改写规则、入口、unsafe、Dynamic 或函数名白名单。
 
 ## 范围与尚未完成的关系
 
 本次先修复局部函数声明和捕获，以及完整签名重建造成的嵌套回调证据丢失。没有宣称完成 #2190 的全部 trait-bound 验收或 #2188。CodeEntry 的 where-bound 身份与能力仍按原实现处理；把它们一并 freshen 的早期试验触发了 core trait 初始化中的 Mappable 依赖环，因此未开启该改动。下一阶段须分离能力和泛型身份，不以同 trait 等同于同一变量，也不跳过 core 初始化来绕开问题。
+
+Review 还指出普通检查会接受 `Fn<T>(T) -> T` 的具体常量返回；本地最小 eval 确认当前仍会接受 `1`。本 PR 的刚性扩展只处理有词法变量的 producer，不宣称完整解决具体/开放 producer 的返回证明。具体返回、空容器和 Dynamic 的逐出口关系由 #2121/#2190 后续统一处理，避免用局部特例改变现有开放边界。
 
 `substitute_type_vars` 保留现有实例化语义；词法重命名通过同一个迭代替换实现的捕获避免模式屏蔽嵌套量词。私有 key 不进入 source schema、公开类型描述或正常诊断。
 
