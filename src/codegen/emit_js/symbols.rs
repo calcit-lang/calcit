@@ -1,7 +1,9 @@
 use crate::util::string::has_ns_part;
 
-/// JavaScript reserved words that are valid Calcit symbols but cannot be used as JS binding names.
+/// JavaScript reserved words (plus strict-mode `arguments`/`eval` and literals) that are valid Calcit symbols
+/// but cannot be used as JS binding names in an ES module.
 const JS_RESERVED_WORDS: &[&str] = &[
+  "arguments",
   "await",
   "break",
   "catch",
@@ -12,8 +14,10 @@ const JS_RESERVED_WORDS: &[&str] = &[
   "default",
   "delete",
   "enum",
+  "eval",
   "export",
   "extends",
+  "false",
   "finally",
   "for",
   "function",
@@ -22,6 +26,7 @@ const JS_RESERVED_WORDS: &[&str] = &[
   "in",
   "instanceof",
   "interface",
+  "null",
   "package",
   "private",
   "protected",
@@ -32,6 +37,7 @@ const JS_RESERVED_WORDS: &[&str] = &[
   "switch",
   "this",
   "throw",
+  "true",
   "try",
   "typeof",
   "var",
@@ -162,6 +168,7 @@ mod tests {
     assert_eq!(escape_var("[]"), "_$L_");
     assert_eq!(escape_var("default"), "_DEFAULT_");
     assert_eq!(escape_var("class"), "_CLASS_");
+    assert_eq!(escape_var("arguments"), "_ARGUMENTS_");
     assert_eq!(escape_var("default-value"), "default_value");
   }
 
