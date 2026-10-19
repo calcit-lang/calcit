@@ -24,4 +24,6 @@
 
 不能运行的拒绝案例扩展 `scripts/check-strict-default.mjs`：假谓词、未守卫/反向/可返回的失败分支、直接与捕获重绑、参数/条件/初始化子表达式、逃逸闭包、注解寿命以及种类不能冒充完整签名。临时 Snapshot 通过查询、事务 dry-run 与 scoped revision 组装，不新增 checker、规则或诊断编号。
 
+完整回归还发现 `core/get` 中的 Struct 守卫会在直接字段存在性查询后丢失，造成五项 fix 集成回归提前报 core 边界错误。核对原生实现后，将不调用用户回调的 `&struct:contains?` 与 `turn-tag` 纳入既有只读原语分类，保留原有诊断断言；完整 `fix_cli` 的 131 项回归恢复通过。JS 替代实现仍不能借用未执行的 Calcit 函数体作为副作用证明。
+
 外部回归使用正式 Respo source 副本，记录修复 memo 链后暴露的既有 `get-in` Result 迁移问题，不能将部分恢复或超时记成全项目通过；完整下游迁移仍须独立完成。最终执行 Rust、clippy、完整 strict 与仓库集成验证，PR 的精确 HEAD review/CI 和 main 工作流另在 PR/issue 保留证据。

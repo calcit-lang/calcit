@@ -435,7 +435,9 @@ fn non_invoking_value_proc(proc: CalcitProc) -> bool {
       | CalcitProc::NativeStructDefinition
       | CalcitProc::NativeEnumDefinition
       | CalcitProc::NativeStructGet
+      | CalcitProc::NativeStructContains
       | CalcitProc::NativeStructToMap
+      | CalcitProc::TurnTag
       | CalcitProc::AtomDeref
       | CalcitProc::ListQuestion
       | CalcitProc::TagQuestion
