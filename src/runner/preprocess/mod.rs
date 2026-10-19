@@ -74,13 +74,34 @@ pub(crate) use scope_types::ScopeTypes;
 struct ExpectedFunctionContext {
   signature: Arc<CalcitFnTypeAnnotation>,
   member_inputs: bool,
+  immediate: bool,
+}
+
+struct ExpressionContextScope {
+  previous_fn: Option<ExpectedFunctionContext>,
+  previous_struct: Option<(CalcitStructDef, Arc<CalcitTypeAnnotation>)>,
+}
+
+impl ExpressionContextScope {
+  fn enter(context: Option<ExpectedFunctionContext>, structure: Option<(CalcitStructDef, Arc<CalcitTypeAnnotation>)>) -> Self {
+    Self {
+      previous_fn: EXPECTED_FN_TYPE.with(|cell| cell.replace(context)),
+      previous_struct: EXPECTED_STRUCT_TYPE.with(|cell| cell.replace(structure)),
+    }
+  }
+}
+
+impl Drop for ExpressionContextScope {
+  fn drop(&mut self) {
+    EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = self.previous_fn.take());
+    EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = self.previous_struct.take());
+  }
 }
 
 /// Compile an owned definition with its own input contract and no caller permissions.
 /// Share this lexical scope between ordinary compilation and source-proof replay.
 struct DefinitionContextScope {
-  previous_fn: Option<ExpectedFunctionContext>,
-  previous_struct: Option<(CalcitStructDef, Arc<CalcitTypeAnnotation>)>,
+  _expression: ExpressionContextScope,
   _features: FunctionFeaturesScope,
   _host_nullish: HostNullishReturnScope,
 }
@@ -93,25 +114,18 @@ impl DefinitionContextScope {
       Some(ExpectedFunctionContext {
         signature: signature.clone(),
         member_inputs: false,
+        immediate: false,
       })
     } else {
       None
     };
     Self {
-      previous_fn: EXPECTED_FN_TYPE.with(|cell| cell.replace(context)),
-      previous_struct: EXPECTED_STRUCT_TYPE.with(|cell| cell.replace(None)),
+      _expression: ExpressionContextScope::enter(context, None),
       _features: FunctionFeaturesScope {
         previous: CURRENT_FN_FEATURES.with(|cell| cell.replace(None)),
       },
       _host_nullish: HostNullishReturnScope::enter(false),
     }
-  }
-}
-
-impl Drop for DefinitionContextScope {
-  fn drop(&mut self) {
-    EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = self.previous_fn.take());
-    EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = self.previous_struct.take());
   }
 }
 
@@ -124,7 +138,11 @@ fn callback_parameter_context(signature: Arc<CalcitFnTypeAnnotation>, member_inp
     context.features = Arc::new(HashSet::new());
     Arc::new(context)
   };
-  ExpectedFunctionContext { signature, member_inputs }
+  ExpectedFunctionContext {
+    signature,
+    member_inputs,
+    immediate: false,
+  }
 }
 
 /// Resolve only a source function constructor, before its body needs context.
@@ -227,28 +245,17 @@ fn preprocess_argument_with_context(
       return Ok(Calcit::from(processed));
     }
   }
-  let previous = EXPECTED_FN_TYPE.with(|cell| {
-    let mut slot = cell.borrow_mut();
-    let previous = slot.take();
-    *slot = expected
+  let _context = ExpressionContextScope::enter(
+    expected
       .and_then(|annotation| annotation.resolve_to_fn())
-      .map(|signature| callback_parameter_context(signature, member_inputs));
-    previous
-  });
-  let previous_struct = EXPECTED_STRUCT_TYPE.with(|cell| {
-    let mut slot = cell.borrow_mut();
-    let previous = slot.take();
-    *slot = expected.and_then(|annotation| {
+      .map(|signature| callback_parameter_context(signature, member_inputs)),
+    expected.and_then(|annotation| {
       annotation
         .resolve_to_struct_with_ref()
         .map(|(definition, _)| (definition, annotation.clone()))
-    });
-    previous
-  });
-  let result = preprocess_expr(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack);
-  EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous);
-  EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = previous_struct);
-  result
+    }),
+  );
+  preprocess_expr(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack)
 }
 
 #[cfg(not(test))]
@@ -2688,7 +2695,7 @@ pub fn preprocess_expr(
     // JS / WASM programs must contain that definition even if source never names it.
     ensure_ns_def_compiled(calcit::CORE_NS, "Option", check_warnings, call_stack)?;
   }
-  if !condition_evidence::preserves_locals(&processed, scope_types) {
+  if scope_types.has_refinements() && !condition_evidence::preserves_locals(&processed, scope_types) {
     scope_types.invalidate_refinements();
   }
   Ok(processed)
@@ -3228,7 +3235,7 @@ fn preprocess_immediate_call_context(
         input_types.push(resolve_type_value(&processed, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()));
         processed_args.push(processed);
       }
-      let signature = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      let signature = Arc::new(CalcitFnTypeAnnotation {
         arg_types: input_types,
         runtime_arity: None,
         return_type: calcit::DYNAMIC_TYPE.clone(),
@@ -3237,16 +3244,16 @@ fn preprocess_immediate_call_context(
         where_bounds: Arc::new(vec![]),
         fn_kind: SchemaKind::Fn,
         features: Arc::new(HashSet::new()),
-      })));
-      let processed_head = preprocess_argument_with_context(
-        head,
-        Some((&signature, false)),
-        scope_defs,
-        scope_types,
-        file_ns,
-        check_warnings,
-        call_stack,
-      )?;
+      });
+      let _context = ExpressionContextScope::enter(
+        Some(ExpectedFunctionContext {
+          signature,
+          member_inputs: false,
+          immediate: true,
+        }),
+        None,
+      );
+      let processed_head = preprocess_expr(head, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
       immediate_call = Some((processed_head, CalcitList::from(processed_args.as_slice())));
     }
   }
@@ -11981,9 +11988,6 @@ pub fn preprocess_defn(
     ) => {
       let mut body_defs: HashSet<Arc<str>> = ctx.scope_defs.to_owned();
       let mut body_types: ScopeTypes = ctx.scope_types.clone();
-      // A closure can outlive a temporary predicate fact about its captured
-      // binding. An independently bound checked value keeps its own type.
-      body_types.invalidate_refinements();
       let mut param_symbols: Vec<Arc<str>> = vec![];
       let mut has_marked_args = false; // Track if function has & or ? markers
       let source_owned = program::has_def_code(ctx.file_ns, def_name.as_ref());
@@ -12220,6 +12224,11 @@ pub fn preprocess_defn(
       // The expected contract belongs to this function expression, not to
       // unrelated functions nested in its body or returned by a later macro.
       let expected_context = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().take());
+      // A direct invocation runs after its already-checked arguments. An
+      // escaping closure cannot borrow temporary facts about captured locals.
+      if !expected_context.as_ref().is_some_and(|context| context.immediate) {
+        body_types.invalidate_refinements();
+      }
       let has_contextual_contract = expected_context.as_ref().is_some_and(|context| context.member_inputs);
       let expected_fn_schema = expected_context.map(|context| {
         let signature = context.signature;
@@ -14811,6 +14820,7 @@ mod tests {
       *cell.borrow_mut() = Some(ExpectedFunctionContext {
         signature: signature.clone(),
         member_inputs: true,
+        immediate: true,
       });
     });
     CURRENT_FN_FEATURES.with(|cell| *cell.borrow_mut() = Some(Arc::new(HashSet::from([EdnTag::from("js-ffi")]))));
@@ -14828,6 +14838,7 @@ mod tests {
       let state = cell.borrow();
       let restored = state.as_ref().expect("restore caller function context");
       assert!(restored.member_inputs);
+      assert!(restored.immediate);
       assert!(Arc::ptr_eq(&restored.signature, &signature));
     });
     assert!(CURRENT_FN_FEATURES.with(|cell| {

@@ -45,6 +45,24 @@
               assert |expected-string $ string? value
               assert= |ok value
             :tags $ #{} :guard-continuation :unit
+        'call-after-read $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn call-after-read (f args)
+            when
+              not $ fn? f
+              raise |expected-function
+            count-items args
+            f & args
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] 'Dynamic $ :: 'List 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |proven-readonly-call-keeps-guard)
+            :code $ quote $ let
+                value $ call-after-read
+                  fn () 7
+                  []
+              assert |expected-number $ number? value
+              assert= 7 value
+            :tags $ #{} :guard-continuation :unit
         'call-in-let $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn call-in-let (f args)
             let
@@ -141,6 +159,31 @@
                 assert= true $ identical? present $ call-value forward ([] present)
                 assert= true $ identical? absent $ call-value forward ([] absent)
               :tags $ #{} :guard-continuation :unit
+        'count-checked-loop $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn count-checked-loop (value)
+            when
+              not $ list? value
+              raise |expected-list
+            loop
+                idx 0
+              if
+                < idx $ .count value
+                let
+                    entry $ .get value idx
+                  recur $ .inc idx
+                , idx
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |immediate-loop-keeps-captured-list-evidence)
+            :code $ quote $ assert= 2
+              count-checked-loop $ [] nil false
+            :tags $ #{} :guard-continuation :unit
+        'count-items $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn count-items (items) (.count items)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'List 'Dynamic
         'inc-checked $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn inc-checked (value)
             when
@@ -153,10 +196,72 @@
           :tests $ [] $ %{} 'TestEntry (:name |uses-number-guard-for-method-lowering)
             :code $ quote $ assert= 8 (inc-checked 7)
             :tags $ #{} :guard-continuation :unit
+        'keep-checked $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn keep-checked (f)
+            when
+              not $ fn? f
+              raise |expected-function
+            let
+                checked f
+                get-value $ fn ()
+                  hint-fn $ {}
+                    :args $ []
+                    :return 'Fn
+                  , checked
+              set! f 1
+              get-value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Fn)
+            :args $ [] 'Dynamic
+            :features $ #{} :js-ffi
+          :tests $ [] $ %{} 'TestEntry
+            :name |checked-value-is-independent-of-original-binding
+            :code $ quote $ let
+                original $ fn () 7
+              assert= true $ identical? original $ keep-checked original
+            :tags $ #{} :guard-continuation :js :unit
+        'keep-signature $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn keep-signature (f)
+            when
+              not $ fn? f
+              raise |expected-function
+            , f
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'Fn
+              {} (:return 'Number)
+                :args $ [] 'Number
+            :return $ :: 'Fn $ {} (:return 'Number)
+              :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |guard-keeps-known-signature)
+            :code $ quote $ let
+                callback $ keep-signature $ fn (value)
+                  hint-fn $ {}
+                    :args $ [] 'Number
+                    :return 'Number
+                  .inc value
+              assert= 8 $ callback 7
+            :tags $ #{} :guard-continuation :unit
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () &unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'read-checked $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-checked (value)
+            when
+              not $ list? value
+              raise |expected-list
+            let
+                entry $ .get value 0
+              .count value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Dynamic
+          :tests $ [] $ %{} 'TestEntry (:name |option-construction-keeps-list-evidence)
+            :code $ quote $ do
+              assert= 0 $ read-checked $ []
+              assert= 2 $ read-checked $ [] nil false
+            :tags $ #{} :guard-continuation :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)

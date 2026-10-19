@@ -77,6 +77,136 @@ for (const [label, source, diagnostic] of [
 const scoped = run(["calcit/type-fail/unsafe-coerce-scoped-strict.cirru", "--check-only"]);
 expectStatus(scoped, 0, "default strict valid fixture");
 
+// Runtime guards establish kind, not a complete signature or permanent write contract.
+const guardContracts = "tests/fixtures/guard-continuation.cirru";
+expectStatus(run([guardContracts, "--check-only", "--all-defs"]), 0, "check rejecting-guard continuations");
+expectStatus(run([guardContracts, "fix", "--workflow", "strict", "--verify", "--format", "json"]), 0,
+  "retain guard evidence in the complete strict workflow");
+for (const [backend, selection] of [["native", ["--exclude-tag", "js"]], ["js", []]]) {
+  // set! is explicitly a :js-ffi operation, not a native runtime capability.
+  expectStatus(spawnSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", guardContracts,
+    "--backend", backend, "--tag", "guard-continuation", ...selection], {
+    cwd: process.cwd(), encoding: "utf8", maxBuffer: 8 * 1024 * 1024,
+    env: { ...process.env, CALCIT_BIN: resolve(binary) },
+  }), 0, `${backend} guard tests preserve calls, errors, checked values, methods and nominal Options`);
+}
+
+for (const [label, body] of [
+  ["unguarded", "f & args"],
+  ["returning failure branch", "when (not (fn? f)) |not-a-function\n  f & args"],
+  ["reversed guard", "when (fn? f) (raise |not-a-function)\n  f & args"],
+  ["shadowed guard", "let ((f (fn () 1))) (when (not (fn? f)) (raise |expected-function)) &unit\n  f & args"],
+  ["returning rejection helper", "let ((reject (fn () &unit))) (when (not (fn? f)) (reject)) (f & args)"],
+  ["custom Bool predicate", `let
+      predicate $ fn (value)
+        hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Bool)
+        , true
+    when (not $ predicate f)
+      raise |not-a-function
+    f & args`],
+]) {
+  const invalid = run(["eval", `fn (f args)
+  hint-fn $ {} (:args $ [] 'Dynamic $ :: 'List 'Dynamic) (:return 'Dynamic)
+  ${body}`]);
+  expectStatus(invalid, 1, `${label} does not prove callability`);
+  assert.match(invalid.stderr, /W_DYNAMIC_CALL/, `${label} retains the existing dynamic-call diagnostic`);
+}
+
+// These programs must fail before execution, so they cannot be attached tests.
+// Exercise the existing return/call proof checker, including :js-ffi write boundaries.
+const guardFixture = await mkdtemp(join(tmpdir(), "calcit-guard-lifetime-"));
+try {
+  const snapshot = join(guardFixture, "calcit.cirru");
+  await copyFile("calcit/add.cirru", snapshot);
+  const inFixture = (...args) => run([snapshot, ...args]);
+  expectStatus(inFixture("query", "config", "--format", "json"), 0, "inspect guard fixture configuration");
+  expectStatus(inFixture("query", "def", "app.main/main!", "--format", "json"), 0, "inspect guard fixture entry");
+  const apply = operations => {
+    const code = JSON.stringify(operations);
+    const dry = inFixture("edit", "transaction", "--code", code, "--dry-run", "--format", "json");
+    expectStatus(dry, 0, "preview guard lifetime fixture");
+    expectStatus(inFixture("edit", "transaction", "--code", code,
+      "--expect-revision", JSON.parse(dry.stdout).scoped_revision, "--format", "json"), 0,
+    "apply guard lifetime fixture with a scoped revision");
+  };
+  apply([
+    ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code", "quote $ defn main! () &unit"],
+    ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+    ["config", "set", "reload-fn", "app.main/main!"],
+    ["config", "set", "target", "native"],
+    ["edit", "def", "app.main/guarded", "--input-format", "cirru", "--code", "quote $ defn guarded (f) f"],
+    ["edit", "schema", "app.main/guarded", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Fn) (:features $ #{} :js-ffi)"],
+    ["edit", "add-ns", "app.fake"],
+    ["edit", "def", "app.fake/js-present?", "--input-format", "cirru", "--code", "quote $ defn js-present? (value) true"],
+    ["edit", "schema", "app.fake/js-present?", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Bool)"],
+    ["edit", "def", "app.fake/invoke", "--input-format", "cirru", "--code", "quote $ defn invoke (effect) (effect)"],
+    ["edit", "schema", "app.fake/invoke", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Fn) (:return 'Dynamic)"],
+    ["edit", "add-import", "app.main", "--input-format", "cirru", "--code", "quote $ app.fake :as fake"],
+  ]);
+  const guard = "when (not (fn? f)) (raise |expected-function)";
+  for (const [label, body, diagnostic] of [
+    ["direct rebinding", `${guard}\n  set! f 1\n  , f`, /E_FN_RETURN_UNPROVEN/],
+    ["surviving branch rebinding", "if (not (fn? f)) (raise |expected-function) (do (set! f 1) &unit)\n  , f", /E_FN_RETURN_UNPROVEN/],
+    ["captured rebinding", `let ((replace (fn () (set! f 1)))) (${guard}) (replace) f`, /E_FN_RETURN_UNPROVEN/],
+    ["known helper invokes an unknown callback", `let ((replace (fn () (set! f 1)))) (${guard}) (fake/invoke replace) f`, /E_FN_RETURN_UNPROVEN/],
+    ["argument rebinding", `let ((replace (fn () (set! f 1)))) (${guard}) ((fn (ignored value) (hint-fn ({} (:args ([] 'Dynamic 'Fn)) (:return 'Fn))) value) (replace) f)`, /E_CALL_ARGUMENT_UNPROVEN/],
+    ["condition rebinding", `let ((replace (fn () (set! f 1)))) (${guard}) (if (do (replace) true) f (fn () 1))`, /E_FN_RETURN_UNPROVEN/],
+    ["initializer rebinding", `let ((replace (fn () (set! f 1)))) (${guard}) (let ((ignored (replace))) f)`, /E_FN_RETURN_UNPROVEN/],
+    ["interpolation rebinding", `let ((replace (fn () (set! f 1)))) (${guard}) (let ((syntax (quasiquote (ignored (~ (replace)))))) f)`, /E_FN_RETURN_UNPROVEN/],
+    ["escaping capture", `${guard}\n  let ((get-value (fn () (hint-fn ({} (:args ([])) (:return 'Fn))) f))) (set! f 1) (get-value)`, /E_FN_RETURN_UNPROVEN/],
+    ["immediate mutation", `${guard}\n  ((fn () (set! f 1) f))`, /E_FN_RETURN_UNPROVEN/],
+    ["escaping from an immediate function", `${guard}\n  let ((get-value ((fn () (fn () (hint-fn ({} (:args ([])) (:return 'Fn))) f))))) (set! f 1) (get-value)`, /E_FN_RETURN_UNPROVEN/],
+    ["assertion lifetime", `let ((replace (fn () (set! f 1)))) (${guard}) (assert-type f 'Fn) (replace) f`, /E_FN_RETURN_UNPROVEN/],
+    ["hint lifetime", `let ((replace (fn () (set! f 1)))) (${guard}) (hint-fn f ({} (:args ([])) (:return 'Number))) (replace) f`, /E_FN_RETURN_UNPROVEN/],
+    ["same-named user predicate", "when (not (fake/js-present? f)) (raise |expected-function)\n  , f", /E_FN_RETURN_UNPROVEN/],
+  ]) {
+    apply([["edit", "def", "app.main/guarded", "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defn guarded (f)\n  ${body}`]]);
+    const result = inFixture("fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "guarded", "--format", "json");
+    expectStatus(result, 1, `${label} revokes stale predicate evidence`);
+    assert.match(result.stdout + result.stderr, diagnostic, `${label} must fail at the existing proof boundary`);
+  }
+  apply([
+    ["edit", "def", "app.main/guarded", "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defn guarded (f)\n  ${guard}\n  , f`],
+    ["edit", "schema", "app.main/guarded", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number))"],
+  ]);
+  const kindOnly = inFixture("fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "guarded", "--format", "json");
+  expectStatus(kindOnly, 1, "fn? cannot manufacture a Number callback signature");
+  assert.match(kindOnly.stdout + kindOnly.stderr, /E_FN_RETURN_UNPROVEN/);
+
+  // A JS implementation can invoke a previously installed captured writer;
+  // its discarded Calcit shadow body is not an effect proof for any backend.
+  apply([
+    ["config", "set", "mode", "js"],
+    ["config", "set", "target", "node"],
+    ["edit", "def", "app.fake/opaque!", "--input-format", "cirru", "--code", "quote $ defn opaque! () &unit"],
+    ["edit", "schema", "app.fake/opaque!", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit) (:features $ #{} :js-ffi)"],
+    ["edit", "ffi", "app.fake/opaque!", "--code",
+      '{} (:target :node) (:js $ {} $ :inline "|() => { globalThis.__guard_mutate?.(); }")'],
+    ["edit", "def", "app.main/guarded", "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defn guarded (f)
+  let ((replace (fn () (set! f 1))))
+    js/Reflect.set js/globalThis |__guard_mutate replace
+    ${guard}
+    fake/opaque!
+    , f`],
+    ["edit", "schema", "app.main/guarded", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Fn) (:features $ #{} :js-ffi)"],
+  ]);
+  const opaque = inFixture("fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "guarded", "--format", "json");
+  expectStatus(opaque, 1, "an opaque FFI implementation revokes captured predicate evidence");
+  assert.match(opaque.stdout + opaque.stderr, /E_FN_RETURN_UNPROVEN/);
+} finally {
+  await rm(guardFixture, { recursive: true, force: true });
+}
+
 // All-definitions scope (#1556): Calcit's own project and calcit.core carry proofs for every definition,
 // including ones no entry references. Core builtin placeholders are excluded, like `--check-only --ns`.
 expectStatus(run(["calcit/test.cirru", "--check-only", "--all-defs"]), 0, "all-defs check of the test project");

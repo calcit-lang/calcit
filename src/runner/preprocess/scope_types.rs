@@ -68,6 +68,10 @@ impl ScopeTypes {
     }
   }
 
+  pub(super) fn has_refinements(&self) -> bool {
+    !self.refinements.is_empty()
+  }
+
   pub fn remove<Q: ?Sized + Hash + Eq>(&mut self, name: &Q) -> Option<Annotation>
   where
     Arc<str>: Borrow<Q>,

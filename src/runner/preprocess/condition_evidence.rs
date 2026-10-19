@@ -70,13 +70,6 @@ pub(super) fn establish_normal_exit(expr: &Calcit, scope: &mut ScopeTypes) {
 }
 
 pub(super) fn preserves_locals(expr: &Calcit, scope: &ScopeTypes) -> bool {
-  if let Calcit::Import(import) = expr
-    && let Some(compiled) = program::lookup_compiled_def(&import.ns, &import.def)
-  {
-    // Constructing a known function does not execute its body. Other lazy
-    // initializers owe the same effect proof as an ordinary expression.
-    return visit(&compiled.preprocessed_code, scope, &HashMap::new(), &mut 4096, 0).preserves_locals;
-  }
   visit(expr, scope, &HashMap::new(), &mut 4096, 0).preserves_locals
 }
 
@@ -106,6 +99,77 @@ fn visit_sequence<'a>(
     };
   }
   result
+}
+
+fn has_js_implementation(ns: &str, name: &str) -> bool {
+  program::lookup_def_ffi(ns, name).is_some_and(|ffi| crate::snapshot::ffi_metadata_value(&ffi, "js").is_some())
+}
+
+fn known_import_call_preserves_locals(ns: &str, name: &str, remaining: &mut usize, depth: usize) -> bool {
+  // A registered backend implementation can replace the visible Calcit body.
+  if has_js_implementation(ns, name) {
+    return false;
+  }
+  if let Some(compiled) = program::lookup_compiled_def(ns, name) {
+    known_call_preserves_locals(&compiled.preprocessed_code, remaining, depth + 1)
+  } else {
+    program::lookup_runtime_ready(ns, name).is_some_and(|value| known_call_preserves_locals(&value, remaining, depth + 1))
+  }
+}
+
+fn known_call_preserves_locals(head: &Calcit, remaining: &mut usize, depth: usize) -> bool {
+  if *remaining == 0 || depth > 64 {
+    return false;
+  }
+  *remaining -= 1;
+  // Analyze actual code, never a Bool/result contract or the caller's aliases.
+  let scope = ScopeTypes::new();
+  let aliases = HashMap::new();
+  match head {
+    Calcit::Fn { info, .. } => {
+      !has_js_implementation(&info.def_ns, &info.name)
+        && info
+          .def_ref
+          .as_ref()
+          .is_none_or(|owner| !has_js_implementation(&owner.def_ns, &owner.def_name))
+        && visit_sequence(info.body.iter(), &scope, &aliases, remaining, depth).preserves_locals
+    }
+    Calcit::List(items) if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _))) => {
+      visit_sequence(items.iter().skip(3), &scope, &aliases, remaining, depth).preserves_locals
+    }
+    Calcit::EnumDef(_) | Calcit::Struct(_) => true,
+    Calcit::Proc(proc) => non_invoking_value_proc(*proc),
+    Calcit::Import(import) => known_import_call_preserves_locals(&import.ns, &import.def, remaining, depth),
+    _ => false,
+  }
+}
+
+fn quoted_preserves_locals(
+  expr: &Calcit,
+  scope: &ScopeTypes,
+  aliases: &HashMap<Arc<str>, Outcomes>,
+  remaining: &mut usize,
+  depth: usize,
+) -> bool {
+  if *remaining == 0 || depth > 64 {
+    return false;
+  }
+  *remaining -= 1;
+  let Calcit::List(items) = expr else { return true };
+  if matches!(
+    items.first(),
+    Some(Calcit::Syntax(
+      CalcitSyntax::MacroInterpolate | CalcitSyntax::MacroInterpolateSpread,
+      _
+    ))
+  ) {
+    return items
+      .get(1)
+      .is_some_and(|value| visit(value, scope, aliases, remaining, depth + 1).preserves_locals);
+  }
+  items
+    .iter()
+    .all(|item| quoted_preserves_locals(item, scope, aliases, remaining, depth + 1))
 }
 
 fn visit(expr: &Calcit, scope: &ScopeTypes, aliases: &HashMap<Arc<str>, Outcomes>, remaining: &mut usize, depth: usize) -> Outcomes {
@@ -139,6 +203,25 @@ fn visit(expr: &Calcit, scope: &ScopeTypes, aliases: &HashMap<Arc<str>, Outcomes
       };
     }
     Calcit::Local(local) => return aliases.get(&local.sym).cloned().unwrap_or_else(|| Outcomes::unknown(true)),
+    Calcit::Import(import) => {
+      if program::lookup_runtime_ready(&import.ns, &import.def).is_some() {
+        return Outcomes::unknown(true);
+      }
+      // A value read can force a lazy initializer. Prove its actual code in
+      // its own lexical scope, including reads nested in constructor inputs.
+      return Outcomes::unknown(if let Some(compiled) = program::lookup_compiled_def(&import.ns, &import.def) {
+        visit(
+          &compiled.preprocessed_code,
+          &ScopeTypes::new(),
+          &HashMap::new(),
+          remaining,
+          depth + 1,
+        )
+        .preserves_locals
+      } else {
+        false
+      });
+    }
     _ => {}
   }
 
@@ -160,6 +243,58 @@ fn visit(expr: &Calcit, scope: &ScopeTypes, aliases: &HashMap<Arc<str>, Outcomes
     ));
   };
   match items.first() {
+    Some(Calcit::Syntax(CalcitSyntax::HintFn | CalcitSyntax::Quote, _)) => Outcomes::unknown(true),
+    Some(Calcit::Syntax(CalcitSyntax::Quasiquote, _)) => Outcomes::unknown(
+      items
+        .iter()
+        .skip(1)
+        .all(|item| quoted_preserves_locals(item, scope, aliases, remaining, depth + 1)),
+    ),
+    Some(Calcit::Syntax(CalcitSyntax::DecodeMapAs, _)) => Outcomes::unknown(
+      items
+        .get(1)
+        .is_some_and(|input| visit(input, scope, aliases, remaining, depth + 1).preserves_locals),
+    ),
+    Some(Calcit::Syntax(CalcitSyntax::Defref, _)) => Outcomes::unknown(
+      items
+        .get(2)
+        .is_some_and(|initial| visit(initial, scope, aliases, remaining, depth + 1).preserves_locals),
+    ),
+    Some(Calcit::Syntax(CalcitSyntax::TryDecodeMapAs, _)) => Outcomes::unknown(
+      items
+        .get(1)
+        .is_some_and(|input| visit(input, scope, aliases, remaining, depth + 1).preserves_locals)
+        // The native decoder wraps both outcomes through these actual core
+        // constructors. Do not infer effects from their Result signatures.
+        && ["%ok", "%err"]
+          .iter()
+          .all(|name| known_import_call_preserves_locals(calcit::CORE_NS, name, remaining, depth + 1)),
+    ),
+    Some(Calcit::Syntax(CalcitSyntax::Match, _)) => {
+      let Some(subject) = items.get(1) else {
+        return Outcomes::unknown(false);
+      };
+      if !visit(subject, scope, aliases, remaining, depth + 1).preserves_locals {
+        return Outcomes::unknown(false);
+      }
+      let Some(branches) = type_inference::preprocessed_match_branches(items) else {
+        return Outcomes::unknown(false);
+      };
+      Outcomes::unknown(branches.into_iter().all(|(pattern, body)| {
+        let mut bindings = ScopeTypes::new();
+        type_inference::bind_pattern_scope(pattern, &mut bindings);
+        let mut branch_scope = scope.clone();
+        let mut branch_aliases = aliases.clone();
+        for (name, annotation) in bindings {
+          branch_scope.insert(name.clone(), annotation);
+          branch_aliases.remove(&name);
+          for evidence in branch_aliases.values_mut() {
+            evidence.forget(&name);
+          }
+        }
+        visit(body, &branch_scope, &branch_aliases, remaining, depth + 1).preserves_locals
+      }))
+    }
     Some(Calcit::Proc(CalcitProc::Not)) if items.len() == 2 => {
       let inner = visit(items.get(1).unwrap(), scope, aliases, remaining, depth + 1);
       Outcomes {
@@ -234,8 +369,8 @@ fn visit(expr: &Calcit, scope: &ScopeTypes, aliases: &HashMap<Arc<str>, Outcomes
     Some(Calcit::Import(import))
       if import.ns.as_ref() == calcit::CORE_NS
         && program::has_bundled_core_source()
-        && (matches!(import.def.as_ref(), "=" | "&>=" | "&<=")
-          || (import.def.as_ref() == "count"
+        && (matches!(import.def.as_ref(), "=" | "&>=" | "&<=" | ">=" | "<=" | ">" | "<")
+          || (matches!(import.def.as_ref(), "count" | "empty?")
             && items
               .get(1)
               .is_some_and(|value| matches!(infer_type_from_expr(value, scope).as_deref(), Some(CalcitTypeAnnotation::List(_)))))) =>
@@ -249,7 +384,14 @@ fn visit(expr: &Calcit, scope: &ScopeTypes, aliases: &HashMap<Arc<str>, Outcomes
           .all(|item| visit(item, scope, aliases, remaining, depth + 1).preserves_locals),
       )
     }
-    _ => Outcomes::unknown(false),
+    Some(head) => Outcomes::unknown(
+      items
+        .iter()
+        .skip(1)
+        .all(|item| visit(item, scope, aliases, remaining, depth + 1).preserves_locals)
+        && known_call_preserves_locals(head, remaining, depth + 1),
+    ),
+    None => Outcomes::unknown(true),
   }
 }
 
@@ -257,6 +399,8 @@ fn non_invoking_value_proc(proc: CalcitProc) -> bool {
   matches!(
     proc,
     CalcitProc::List
+      | CalcitProc::NativeMap
+      | CalcitProc::Set
       | CalcitProc::Floor
       | CalcitProc::Ceil
       | CalcitProc::Round
@@ -276,5 +420,34 @@ fn non_invoking_value_proc(proc: CalcitProc) -> bool {
       | CalcitProc::NativeEnumCount
       | CalcitProc::NativeStructCount
       | CalcitProc::NativeStrCount
+      | CalcitProc::NativeListEmpty
+      | CalcitProc::NativeListNth
+      | CalcitProc::NativeListFirst
+      | CalcitProc::NativeListRest
+      | CalcitProc::NativeListSlice
+      | CalcitProc::NativeMapGet
+      | CalcitProc::NativeEnumNth
+      | CalcitProc::NativeEnumNew
+      | CalcitProc::NativeStructNew
+      | CalcitProc::NativeNamedEnumNew
+      | CalcitProc::NativeEnum
+      | CalcitProc::NativeStruct
+      | CalcitProc::NativeStructDefinition
+      | CalcitProc::NativeEnumDefinition
+      | CalcitProc::NativeStructGet
+      | CalcitProc::NativeStructToMap
+      | CalcitProc::AtomDeref
+      | CalcitProc::ListQuestion
+      | CalcitProc::TagQuestion
+      | CalcitProc::SymbolQuestion
+      | CalcitProc::NilQuestion
+      | CalcitProc::StringQuestion
+      | CalcitProc::MapQuestion
+      | CalcitProc::NumberQuestion
+      | CalcitProc::BoolQuestion
+      | CalcitProc::SetQuestion
+      | CalcitProc::EnumQuestion
+      | CalcitProc::StructQuestion
+      | CalcitProc::FnQuestion
   )
 }
