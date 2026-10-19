@@ -348,9 +348,9 @@ calcit calcit.cirru fix --preset surface-latest-v2 --format edn
 
 ### 0.28 核心 API 命名迁移
 
-`core-api-0.29-v1` 包含 `core-api-0.28-v1` 的全部 2 条规则，并追加 `core-ref-constructor-v1`，共 3 条；从 0.28 升级的项目可以直接选择它，`core-api-0.28-v1` 的含义不变。
+`core-api-0.29-v1` 包含当前 `core-api-0.28-v1` 的全部 2 条规则，并追加 `core-ref-constructor-v1`，共 3 条。它不再迁移 0.31.0 已删除的兼容方法；仍有这些调用的项目必须在升级前，用 0.30.x 的 CLI 依次运行 `core-list-add-v1`、`core-collection-len-v1`、`core-effect-method-v1`，各自预览后携带 revision 应用，见[升级指南](upgrade.md#0310-删除已弃用的兼容方法)。
 
-`core-api-0.28-v1` 从已发布的 `0.28.0-alpha.2` 起提供，组合已证明等价的 5 条叶子改写规则（0.29.0 起去掉了随旧名退役的 10 条别名规则，见 [升级指南](upgrade.md#兼容入口的退场节奏)）。它适合在结构升级后一次迁移核心 API 名称；每个调用仍须满足对应规则的类型、来源和源码位置证明。表中的规则也可用 `--rule` 单独选择，未回填进旧的 `surface-latest-v1/v2`；不要把“旧 preset 不变”理解为需要逐条运行所有规则。
+`core-api-0.28-v1` 当前组合已证明等价的 2 条叶子改写规则。它适合在结构升级后迁移仍受支持的核心 API 名称；每个调用仍须满足对应规则的类型、来源和源码位置证明。表中的规则也可用 `--rule` 单独选择，未回填进旧的 `surface-latest-v1/v2`。已经退场的旧入口与历史迁移 CLI 见[升级指南](upgrade.md#兼容入口的退场节奏)。
 
 | 范围 | 展开的规则 |
 | --- | --- |

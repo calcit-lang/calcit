@@ -173,12 +173,6 @@ struct ContextMethod {
   name: String,
   origin: String,
   status: &'static str,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  role: Option<&'static str>,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  preferred_name: Option<String>,
-  #[serde(skip_serializing_if = "Option::is_none")]
-  fix_rule: Option<String>,
   parameter_types: Option<Vec<String>>,
   rest_type: Option<String>,
   return_type: Option<String>,
@@ -200,9 +194,6 @@ fn context_method(
     name: descriptor.name,
     origin: descriptor.origin,
     status: contract.status,
-    role: None,
-    preferred_name: None,
-    fix_rule: None,
     parameter_types: contract
       .arg_types
       .map(|args| args.iter().map(|annotation| annotation.describe()).collect()),
@@ -249,18 +240,6 @@ fn method_contract_fingerprint(methods: &Option<Vec<ContextMethod>>) -> Result<S
 
 fn render_context_method(method: &ContextMethod) -> String {
   let mut rendered = format!("- `{}` (`{}`): {}", method.name, method.origin, method.status);
-  match method.role {
-    Some("preferred") => rendered.push_str("; preferred"),
-    Some("compatibility") => {
-      if let Some(preferred) = &method.preferred_name {
-        rendered.push_str(&format!("; compatibility: use `{preferred}`"));
-      }
-      if let Some(rule) = &method.fix_rule {
-        rendered.push_str(&format!("; `calcit fix --rule {rule}`"));
-      }
-    }
-    _ => {}
-  }
   if !method.generics.is_empty() {
     let generics = method.generics.iter().map(|name| format!("'{name}")).collect::<Vec<_>>();
     rendered.push_str(&format!(" for<{}>", generics.join(", ")));
@@ -289,43 +268,9 @@ fn render_context_method(method: &ContextMethod) -> String {
 
 fn render_type_query_methods(methods: &[ContextMethod]) -> String {
   let mut out = String::new();
-  let preferred = methods.iter().filter(|method| method.role == Some("preferred")).count();
-  let compatibility = methods.iter().filter(|method| method.role == Some("compatibility")).count();
-  let _ = writeln!(
-    &mut out,
-    "Count: {} ({} confirmed preferred, {} compatibility).",
-    methods.len(),
-    preferred,
-    compatibility
-  );
-
-  for (heading, group) in [
-    (
-      "Confirmed preferred",
-      methods.iter().filter(|method| method.role == Some("preferred")).collect::<Vec<_>>(),
-    ),
-    (
-      "Other registered methods (role not yet classified)",
-      methods
-        .iter()
-        .filter(|method| !matches!(method.role, Some("preferred" | "compatibility")))
-        .collect::<Vec<_>>(),
-    ),
-    (
-      "Compatibility (use the listed preferred name)",
-      methods
-        .iter()
-        .filter(|method| method.role == Some("compatibility"))
-        .collect::<Vec<_>>(),
-    ),
-  ] {
-    if group.is_empty() {
-      continue;
-    }
-    let _ = writeln!(&mut out, "\n### {heading}\n");
-    for method in group {
-      let _ = writeln!(&mut out, "{}", render_context_method(method));
-    }
+  let _ = writeln!(&mut out, "Count: {}\n", methods.len());
+  for method in methods {
+    let _ = writeln!(&mut out, "{}", render_context_method(method));
   }
   out
 }
@@ -2427,7 +2372,7 @@ fn handle_type(input_path: &str, opts: &QueryTypeCommand, entry: Option<&str>) -
 
   println!("\n## Methods\n");
   println!(
-    "Call a method on a typed receiver. Confirmed preferred names come first; compatibility names link to their replacement and fix, while unclassified methods need role review. A definition path is its implementation reference, not a second recommended call form. `open` or `ambiguous` does not prove a typed call; use `query def` for constructors and `docs read api-roles.md` for API roles.\n"
+    "Call a method on a typed receiver. Each entry shows its origin, proof status and available type contract. A definition path is its implementation reference, not a second recommended call form. `open` or `ambiguous` does not prove a typed call; use `query def` for constructors and `docs read api-roles.md` for API roles.\n"
   );
   match data.methods {
     Some(methods) if methods.is_empty() => {

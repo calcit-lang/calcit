@@ -37,7 +37,7 @@ CLI 不传格式参数时保持适合人类 review 的 Markdown-compatible 输�
 
 遇到 `%some`、`.unwrap`、`option:unwrap`、`&str:includes?` 等不同层次的名字，先按 [API 命名角色](features/api-roles.md) 区分类型名、构造器、方法、命名空间函数和内部实现。查方法先用 `calcit query type` 确认接收者与 `proven` 契约，再通过 `query def/context --format edn` 读实现与标签；不要因为 `query type` 给出了 `&` 或 `option:*` 的 definition path，就把内部定义改成应用的推荐调用。
 
-查询结果有 `preferred` 时优先用对应方法；`compatibility` 的 `preferred-name` 和 `fix-rule` 用于显式迁移，`open` 不等于已证明可安全调用。`query type` 的 `definition` 是继续查 `query examples '<definition>'` 的定位线索，不是另一种推荐调用写法。例如 String `.includes?` 的示例位于 `calcit.core/&str:includes?`，Map `.contains-key?` 位于 `calcit.core/&map:contains?`，List `.fold` 位于 `calcit.core/fold`；这些示例展示应用方法调用。`query examples` 当前输出 Markdown-compatible 文本，尚不接受 `--format edn`，不要给它套用其他查询命令的格式参数。Option 判断可先用 `query type ":: 'Option 'Number" --format edn` 确认 `.none?`，再查询 `calcit.core/option:none?` 的直接名义构造示例。
+查询方法先核对 `status` 与参数、返回类型；`open` 不等于已证明可安全调用，展示顺序也不表示名称优先级。`query type` 的 `definition` 是继续查 `query examples '<definition>'` 的定位线索，不是另一种推荐调用写法。例如 String `.includes?` 的示例位于 `calcit.core/&str:includes?`，Map `.contains-key?` 位于 `calcit.core/&map:contains?`，List `.fold` 位于 `calcit.core/fold`；这些示例展示应用方法调用。`query examples` 当前输出 Markdown-compatible 文本，尚不接受 `--format edn`，不要给它套用其他查询命令的格式参数。Option 判断可先用 `query type ":: 'Option 'Number" --format edn` 确认 `.none?`，再查询 `calcit.core/option:none?` 的直接名义构造示例。
 
 ## Mutation contract v1
 
@@ -414,7 +414,7 @@ calcit test '<namespace>/<definition>'
 
 `type-at --format edn` 的语义路径可能是 `code@3.2`，而 `tree --path` 需要 `@3.2`；不要把仍含 `code@` 的 follow-up 命令直接交给 `tree`。公开 API 审计 `--check-only --ns` 与其他结构化输出一样优先使用 EDN，对接 JSON-only 工具时再选 `--format json`。
 
-读取 `query type`、`type-at` 或 `context` 的方法契约时，先看 `status`：`proven` 表示接收者实例化后，调用参数与结果已有精确类型；`open` 表示仍含 `Dynamic`/`DynFn` 或缺少可证明的 schema，不能据此生成精确调用。例如普通 `Option<Dynamic>` 的 `.unwrap-or` 是开放契约，但已证明为空的 core `Option :none` 可以由具体 fallback 推断类型；不读取内部值的 `.some? -> Bool` 仍可证明。`ambiguous` 需要先消除 trait/impl 来源冲突，不要按展示顺序猜一个实现。对已证明同实现且有显式 fix 的别名，再看 `role`：`preferred` 是当前首选应用方法，`compatibility` 保留旧名查询并提供 `preferred-name`、`fix-rule`；没有角色不代表不可用，也不能仅凭 `proven` 猜测首选。
+读取 `query type`、`type-at` 或 `context` 的方法契约时，先看 `status`：`proven` 表示接收者实例化后，调用参数与结果已有精确类型；`open` 表示仍含 `Dynamic`/`DynFn` 或缺少可证明的 schema，不能据此生成精确调用。例如普通 `Option<Dynamic>` 的 `.unwrap-or` 是开放契约，但已证明为空的 core `Option :none` 可以由具体 fallback 推断类型；不读取内部值的 `.some? -> Bool` 仍可证明。`ambiguous` 需要先消除 trait/impl 来源冲突，不要按展示顺序猜一个实现。查询不再给方法分配首选/兼容角色；名字的语义与迁移路线通过现有 API 命名文档和升级指南查询，不能仅凭 `proven` 或列表顺序猜测首选。
 
 创建 Ref 使用 `ref value`（局部）与 `defref *name value`（命名空间级，热重载保留状态），`type-of` 返回 `:ref`，谓词为 `ref?`。`atom` / `defatom` 是同一实现的兼容旧名，不要在新代码中生成；已有项目用 `calcit fix --rule core-ref-constructor-v1` 预览后迁移。读取器会把 `ref` 解析为内建构造，不要用 `ref` 作局部绑定或参数名。
 

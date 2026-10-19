@@ -1330,6 +1330,36 @@ const apiTypeQuery = spawnSync(binary, ["src/cirru/calcit-core.cirru", "query", 
 assert.equal(apiTypeQuery.status, 0, apiTypeQuery.stderr);
 assert.match(apiTypeQuery.stdout, /\.unwrap.*proven/);
 assert.match(apiTypeQuery.stdout, /implementation reference, not a second recommended call form/);
+assert.doesNotMatch(apiTypeQuery.stdout, /confirmed preferred|compatibility names|role not yet classified/i);
+for (const target of [":: 'List 'Number", ":: 'Map 'Tag 'Number", ":: 'Set 'Number"]) {
+  const query = format => spawnSync(binary, ["query", "type", target, ...format], {
+    encoding: "utf8", maxBuffer: 4 * 1024 * 1024,
+    env: { ...process.env, NO_COLOR: "1" },
+  });
+  const human = query([]);
+  const structured = query(["--format", "json"]);
+  assert.ifError(human.error);
+  assert.ifError(structured.error);
+  assert.equal(human.status, 0, human.stderr);
+  assert.equal(structured.status, 0, structured.stderr);
+  const methods = JSON.parse(structured.stdout).data.methods;
+  assert.ok(methods.length > 0, `${target} must expose methods`);
+  assert.ok(human.stdout.includes(`Count: ${methods.length}\n`));
+  assert.deepEqual([...human.stdout.matchAll(/^- `(\.[^`]+)`/gm)].map(match => match[1]), methods.map(method => method.name));
+  assert.doesNotMatch(human.stdout, /confirmed preferred|compatibility names|role not yet classified|^### /im);
+  for (const method of methods) {
+    for (const field of ["role", "preferred_name", "fix_rule"]) {
+      assert.ok(!Object.hasOwn(method, field), `${target} must not expose retired ${field}`);
+    }
+    assert.ok(human.stdout.includes(`- \`${method.name}\` (\`${method.origin}\`): ${method.status}`));
+  }
+  assert.ok(methods.some(method => method.name === ".len" && method.status === "proven"));
+  assert.ok(!methods.some(method => method.name === ".count"));
+  if (target.includes("'List")) {
+    assert.ok(methods.some(method => method.name === ".append" && method.status === "proven"));
+    assert.ok(!methods.some(method => method.name === ".add"));
+  }
+}
 for (const [definition, role] of [["%some", "constructor"], ["option:unwrap", "internal"], ["&str:includes?", "internal"]]) {
   const queried = spawnSync(binary, ["src/cirru/calcit-core.cirru", "query", "def", `calcit.core/${definition}`, "--format", "json"], {
     encoding: "utf8",

@@ -127,7 +127,7 @@ calcit query def calcit.core/to-js-data
 
 For source-backed definitions, `query def` prints the stored Cirru body. For special builtin helpers such as `calcit.core/to-js-data`, it falls back to builtin metadata (doc, schema, examples count) even when no snapshot source exists.
 
-`query type` 给出 `.method` 的类型契约，方法后面的 definition path 只是实现入口；`query def/context` 的 `:internal` 标签不能被误读为公开推荐。对已存在显式 fix 且旧、新方法在具体接收者上都证明为同一实现、同一参数和返回契约的别名，查询附带 `role: preferred` 或 `role: compatibility`；兼容名还有 `preferred-name` 与 `fix-rule`（Cirru EDN 拼写；JSON 字段使用下划线）。`proven` 只表示类型契约可用，**不等于首选名称**。开放、歧义或不同实现的方法不会凭拼写获得推荐角色；准确查询旧名仍可见原实现。区分 nominal 类型名、构造器和内部函数时，参见 [API 命名角色](../features/api-roles.md)。
+`query type` 给出 `.method` 的来源、证明状态及可用的类型契约，方法后面的 definition path 只是实现入口；`query def/context` 的 `:internal` 标签不能被误读为公开推荐。`proven` 只表示类型契约可用，不表示名称优先级；`open` 或 `ambiguous` 需要先补齐证据或消除实现冲突。查询不再提供方法的 `role`、`preferred-name` 或 `fix-rule`；已删除方法的迁移见[升级指南](upgrade.md#0310-删除已弃用的兼容方法)。区分 nominal 类型名、构造器和内部函数时，参见 [API 命名角色](../features/api-roles.md)。
 
 `query def/context` 对可直接证明为已注册 core Proc 的定义另给 `:runtime-arity`（JSON 为 `runtime_arity`）：`:min` 是最少传参个数，`:max` 是最多个数，`nil` 表示没有有限上限。例如 `read-dir` 为 `{:min 1, :max 2}`，省略第二个参数不意味着可以传 nil，也不意味着它的 Bool 值类型变为 Optional。human 输出显示 `Runtime Proc arity: 1..=2`。此证据复用编译器已有 Proc 元数据，不根据函数名、schema 宽度或 `:internal` 标签猜测；普通函数、未知别名和特殊 builtin 未证明时不提供该字段。字段缺失不是零参数、无上限或可调用的承诺。参数值类型、失败与 backend 支持仍需结合 schema、文档与测试查看，arity 不代替它们。
 
@@ -152,7 +152,7 @@ calcit query def 'calcit.core/&map:get' --format edn
 
 分类与 Proc 实现放在一起，新增 Proc 必须同时给出类别，否则无法编译。需要可恢复的失败时，优先选择 `result` 类入口或对应的 Option/Result 方法；`raises` 类调用只在条件已由前面的代码排除时使用。
 
-默认 Markdown 输出先列已证明的首选方法，再列尚未完成角色归类的方法，最后列附有首选名和 fix 规则的兼容方法。分组仅改变阅读顺序，不隐藏方法、不改变分派优先级或结构化输出；尚未归类不表示应优先使用。
+默认 Markdown 输出以一个方法列表展示数量、来源、证明状态及可用的参数和返回类型，不按首选、兼容或未归类分组。展示顺序不表示调用优先级，也不改变方法分派或结构化输出。
 
 例如 `query type ":: 'List 'Number" --format edn` 会列出 `.append` 与 `.len` 等方法及其类型契约。
 
@@ -161,7 +161,7 @@ calcit query def 'calcit.core/&map:get' --format edn
 标为“目标”的名字只有在当前版本的查询中实际存在且类型契约可用时才可生成调用；
 `open` 表示查询证明不足，不能直接等同于运行失败，也不能绕过严格检查。
 
-结构化方法条目中的 `:call-types`（JSON 为 `call_types`）补充已解析的参数、rest 和返回类型语法节点；参数不含隐式接收者，Fn 回调及泛型变量不会退化成显示字符串。它复用已有 checker 的证明，只在 `proven` 且语法可表达时提供；`open/ambiguous` 没有该字段。原有 `parameter-types/return-type` 仍便于阅读，schema 原声明仍通过 definition path 查询。比如 List `.get` 的实现 `get` 可处理开放值，但具体 List 查询给出的调用返回类型是 `Option<Number>`，不能只凭实现的宽 schema 判断方法类型。默认 human 输出保持现有紧凑分组，不增加命令或参数。
+结构化方法条目中的 `:call-types`（JSON 为 `call_types`）补充已解析的参数、rest 和返回类型语法节点；参数不含隐式接收者，Fn 回调及泛型变量不会退化成显示字符串。它复用已有 checker 的证明，只在 `proven` 且语法可表达时提供；`open/ambiguous` 没有该字段。原有 `parameter-types/return-type` 仍便于阅读，schema 原声明仍通过 definition path 查询。比如 List `.get` 的实现 `get` 可处理开放值，但具体 List 查询给出的调用返回类型是 `Option<Number>`，不能只凭实现的宽 schema 判断方法类型。默认 human 使用同一方法列表，不增加命令或参数。
 
 Agent 查询优先显式使用 `--format edn`，例如 `calcit query def namespace/name --format edn`；
 需要与 JSON 工具互操作时再指定 `--format json`。`query type`、`type-at`、`context`、
@@ -310,7 +310,7 @@ calcit query type calcit.core/ceil
 calcit query type "'Number" --format edn
 ```
 
-`query type` 只加载和预处理静态元数据，不执行项目的 init/reload 函数。默认 Markdown 按已证明首选、未归类、兼容入口分组；显式 EDN/JSON 保持原有方法列表和分派优先级，每项仍可追溯贡献该方法的实现。查询定义时先使用显式 schema，再尝试静态源码推断。因此，即使 `defstruct`、`defenum` 的 entry schema 为 Dynamic，也能在不构造运行时值的情况下查看名义类型及方法；若两种证据都不足，请查询具体类型标注。
+`query type` 只加载和预处理静态元数据，不执行项目的 init/reload 函数。默认 Markdown 与显式 EDN/JSON 都展示同一方法列表，每项仍可追溯贡献该方法的实现；列表顺序不改变分派优先级。查询定义时先使用显式 schema，再尝试静态源码推断。因此，即使 `defstruct`、`defenum` 的 entry schema 为 Dynamic，也能在不构造运行时值的情况下查看名义类型及方法；若两种证据都不足，请查询具体类型标注。
 
 通过 `(requires Parent)` 获得的方法也列在同一个 `methods` 中，`origin` / `definition` 指向实际声明它的父 trait；传递继承和重复路径复用正常静态分派的解析，不生成另一套方法注册表。普通 trait 与 external-object trait 使用同一规则。例如：
 

@@ -113,7 +113,7 @@ let
 
 ## Adding / Removing Elements
 
-单个元素追加首选 `.append`；两组 List 拼接使用 `.concat`，两者均返回新 List。旧 `.add` 在 List 上仍指向单元素追加，与 `Add` trait 的 List 组合契约同名；迁移需先按 receiver 与实际方法来源证明，不能按词形全局替换。容器长度首选 `.len`；String 的 `.len` 统计 Unicode 标量，UTF-8 字节数使用显式的 `&str:utf8-byte-count`。
+单个元素追加使用 `.append`；两组 List 拼接使用 `.concat`，两者均返回新 List。名义 `Add` trait 的 List 组合契约保持不变；迁移旧调用需先按 receiver 与实际方法来源证明，不能按词形全局替换。容器长度使用 `.len`；String 的 `.len` 统计 Unicode 标量，UTF-8 字节数使用显式的 `&str:utf8-byte-count`。
 
 List 的单元素 `.add` 已在 0.31.0 删除，写 `.append`；升级前可用 0.30.x 的 CLI 运行 `core-list-add-v1` 迁移。
 
