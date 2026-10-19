@@ -153,6 +153,10 @@ Snapshot 中以 `fn` 为根节点的定义可以直接使用自身 CodeEntry 的
 | `merge-dynamic` | `merge` |
 | `concat-dynamic` | `concat` |
 | `turn-str` | `to-string` |
+| `some-in?` | `.ok? $ get-in x path`（0.32.0 起 `get-in` 返回 Result）；`contains-in?` 判断路径存在，两者对 nil 叶子的结果不同 |
+| `range-bothway` | 按原顺序各绑定实参一次到 `x/y`：省略 `y` 时用 `range (inc (negate x)) x`，Number `y` 时用 `range (inc (- (+ x x) y)) y`；末端不包含 |
+
+`range-bothway` 的人工迁移不能复制带副作用的实参表达式。历史运行时的 nil 分支与省略相同，但当前严格 Number schema 拒绝显式 nil 实参。
 
 升级前仍用 0.30.x 的 CLI 迁移：前五项运行 `calcit calcit.cirru fix --rule core-function-alias-v1 --include-attached --format edn`，预览后带 `--expect-revision` 应用；`turn-str`、`some-in?`、`range-bothway` 逐处人工改写。0.31.0 的 `core-function-alias-v1` 只保留 `vals` → `distinct-values`。
 
@@ -1007,8 +1011,6 @@ core 在 0.29.0 仍保留下表兼容入口，新代码使用右侧的首选写�
 | FfiTask `.cancel` / `.cancel-with reason` | `.cancel!` / `.cancel-with! reason`，保留原 Unit、参数求值与宿主取消合同 | `calcit calcit.cirru fix --rule core-effect-method-v1 --format edn`；仅改写已证明的 core nominal/trait 来源、同签名同实现调用；开放 host、用户方法和未知 macro 不自动改写，不新增 JS/WASM/WASI 宿主能力 |
 | `case-default` | `match`，默认值写成末尾 `_` 分支 | `case-default-to-match-v1`（字面量模式） |
 | `foldl-shortcut` | `fold-while`，reducer 返回 `ControlFlow :continue acc` 或 `ControlFlow :break value`，从未 break 时返回累积值 | 人工改写：`(:: false acc)` 改为 `ControlFlow :continue acc`，`(:: true v)` 改为 `ControlFlow :break v`；旧写法在从未 break 时返回第三个参数 `default`，需要时在调用处判断后显式给出 |
-| `some-in?` | 公开方法 `.ok? $ get-in x path`（0.32.0 起 `get-in` 返回 Result）；`contains-in?` 判断路径存在，两者对 nil 叶子的结果不同 | 人工改写 |
-| `range-bothway` | 按原顺序各绑定实参一次到 `x/y`：省略 `y` 时用 `range (inc (negate x)) x`，Number `y` 时用 `range (inc (- (+ x x) y)) y`；末端不包含 | 人工改写，不能复制带副作用的表达式；历史运行时 nil 分支与省略相同，但当前严格 Number schema 拒绝显式 nil 实参 |
 | `let{}` | 显式 `let` 与 `get`，审阅原 nil/缺失行为后处理 Option；已知 Struct 字段用 `(:field value)`，不是 JS 属性访问 `.-field` | 人工改写；原 Map 求值一次，不自动插入 unwrap 或业务默认值 |
 | `let-destruct` | symbol 模式写 `let`，`([] ...)` 模式写 `let[]` | 人工改写（生态中未见调用） |
 | `option:let` | 嵌套 `.and-then`：`option:let ((a x) (b (f a))) body` 写成 `x .and-then $ fn (a) $ (f a) .and-then $ fn (b) body` | 人工改写（生态中 1 处） |
