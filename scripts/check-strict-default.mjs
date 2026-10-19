@@ -182,10 +182,10 @@ try {
   expectStatus(kindOnly, 1, "fn? cannot manufacture a Number callback signature");
   assert.match(kindOnly.stdout + kindOnly.stderr, /E_FN_RETURN_UNPROVEN/);
 
-  for (const [label, effect, consume, advance] of [
-    ["direct write", "set! value |wrong", "&+ value 1", "inc i"],
-    ["captured writer with method lowering", "replace", ".inc value", "inc i"],
-    ["write in recur arguments", ", &unit", ".inc value", "do (set! value |wrong) (inc i)"],
+  for (const [label, effect, consume, advance, diagnostic] of [
+    ["direct write", "set! value |wrong", "&+ value 1", "inc i", /E_CALL_ARGUMENT_UNPROVEN/],
+    ["captured writer with method lowering", "replace", ".inc value", "inc i", /E_DYNAMIC_METHOD_DISPATCH/],
+    ["write in recur arguments", ", &unit", ".inc value", "do (set! value |wrong) (inc i)", /E_DYNAMIC_METHOD_DISPATCH/],
   ]) {
     apply([
       ["edit", "def", "app.main/guarded", "--overwrite", "--input-format", "cirru", "--code",
@@ -205,8 +205,32 @@ try {
     ]);
     const staleLoop = inFixture("fix", "--rule", "callable-contract-proof-v1", "--ns", "app.main", "--def", "guarded", "--format", "json");
     expectStatus(staleLoop, 1, `${label}: a re-entrant body cannot borrow loop-entry evidence`);
-    assert.match(staleLoop.stdout + staleLoop.stderr, /E_CALL_ARGUMENT_UNPROVEN/);
+    assert.match(staleLoop.stdout + staleLoop.stderr, diagnostic,
+      "source replay rechecks method dispatch itself, not an already specialized primitive");
   }
+
+  // Rechecking an immediate loop must discard first-pass diagnostics/evidence,
+  // retain original source identities, and never evaluate its source macro twice.
+  apply([
+    ["edit", "def", "app.main/recheck-once", "--input-format", "cirru", "--code",
+      "quote $ defmacro recheck-once () (println |guard-recheck-expansion-token) (quasiquote &unit)"],
+    ["edit", "schema", "app.main/recheck-once", "--input-format", "cirru", "--code",
+      "quote $ :: 'Macro $ {} (:required $ []) (:capabilities $ #{} :log) (:expansion $ :: 'Expr 'Unit)"],
+    ["edit", "def", "app.main/guarded", "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defn guarded (value)
+  when (not (number? value)) (raise |expected-number)
+  loop ((i 0))
+    if (&< i 2)
+      do
+        recheck-once
+        set! value |changed
+        recur (&+ i 1)
+      , &unit`],
+  ]);
+  const replay = inFixture("--check-only", "--ns", "app.main");
+  expectStatus(replay, 0, "recheck an effectful loop from retained source expansions");
+  assert.equal((replay.stdout + replay.stderr).match(/guard-recheck-expansion-token/g)?.length, 1,
+    "source macros evaluate once even when the body must be rechecked");
 
   // A JS implementation can invoke a previously installed captured writer;
   // its discarded Calcit shadow body is not an effect proof for any backend.

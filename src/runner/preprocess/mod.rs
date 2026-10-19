@@ -12378,12 +12378,13 @@ pub fn preprocess_defn(
       }));
       let _source_replay_scope = source_replay::Scope::enter_function(
         ys,
-        !source_top_level_definition
-          && !has_marked_args
-          && !has_body_fn_hint
-          && recur_param_types
-            .iter()
-            .any(|parameter| type_inference::has_inferred_empty_slot(parameter)),
+        borrows_capture_refinements
+          || (!source_top_level_definition
+            && !has_marked_args
+            && !has_body_fn_hint
+            && recur_param_types
+              .iter()
+              .any(|parameter| type_inference::has_inferred_empty_slot(parameter))),
       );
 
       if !source_top_level_definition
@@ -12435,6 +12436,13 @@ pub fn preprocess_defn(
 
       let initial_body_types = borrows_capture_refinements.then(|| body_types.clone());
       let initial_forms = borrows_capture_refinements.then(|| xs.clone());
+      let initial_processed_body = borrows_capture_refinements.then(|| processed_body.clone());
+      let initial_warnings = ctx.check_warnings.borrow().len();
+      let initial_expressions = SOURCE_EXPRESSION_TRACE.with(|trace| trace.borrow().as_ref().map(|trace| trace.expressions.len()));
+      let initial_usages = RESOLVED_SOURCE_USAGE_TRACE.with(|trace| trace.borrow().as_ref().map(Vec::len));
+      let initial_proof_errors =
+        PROOF_ERROR_COLLECTOR.with(|collector| collector.borrow().as_ref().map(|collector| collector.errors.len()));
+      let initial_rewrites = post_lowering::Scope::checkpoint();
 
       args.traverse_result::<CalcitErr>(&mut |a| {
         if to_skip > 0 {
@@ -12455,15 +12463,46 @@ pub fn preprocess_defn(
           .any(|form| !condition_evidence::preserves_locals(form, &initial_scope))
       {
         // A tail transfer re-enters earlier forms after effects from the
-        // previous iteration. Recheck expanded code without entry-only facts;
-        // do not evaluate source macros twice or retain specialized locals.
+        // previous iteration. Recheck source without entry-only facts, reusing
+        // retained macro expansions so evaluation and source identities survive.
+        // Dependencies compiled on demand remain cached. Keep their diagnostics,
+        // but discard this body's warnings and evidence along with its first pass.
+        let mut warning_index = 0;
+        ctx.check_warnings.borrow_mut().retain(|warning| {
+          let location = warning.location();
+          let retain = warning_index < initial_warnings || location.ns != info.at_ns || location.def != info.at_def;
+          warning_index += 1;
+          retain
+        });
+        if let Some(len) = initial_expressions {
+          SOURCE_EXPRESSION_TRACE.with(|trace| {
+            if let Some(trace) = trace.borrow_mut().as_mut() {
+              trace.expressions.truncate(len);
+            }
+          });
+        }
+        if let Some(len) = initial_usages {
+          RESOLVED_SOURCE_USAGE_TRACE.with(|trace| {
+            if let Some(trace) = trace.borrow_mut().as_mut() {
+              trace.truncate(len);
+            }
+          });
+        }
+        if let Some(len) = initial_proof_errors {
+          PROOF_ERROR_COLLECTOR.with(|collector| {
+            if let Some(collector) = collector.borrow_mut().as_mut() {
+              collector.errors.truncate(len);
+            }
+          });
+        }
+        post_lowering::Scope::rollback(initial_rewrites);
         initial_scope.invalidate_refinements();
         body_types = initial_scope;
         xs = initial_forms.expect("borrowed capture scope retains its function header");
-        let replay = processed_body.iter().map(body_for_parameter_recheck).collect::<Vec<_>>();
-        processed_body.clear();
-        for form in replay {
-          let form = preprocess_expr(&form, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
+        processed_body = initial_processed_body.expect("borrowed capture scope retains its schema hint");
+        source_replay::Scope::rewind_function();
+        for source in args.iter().skip(2) {
+          let form = preprocess_expr(source, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
           condition_evidence::establish_normal_exit(&form, &mut body_types);
           processed_body.push(form.clone());
           xs = xs.push_right(form);
@@ -15577,6 +15616,133 @@ mod tests {
     assert!(build_indexed_match_table(&enum_def, &[match_branch("idle", "first"), match_branch("idle", "second")]).is_none());
     assert!(build_indexed_match_table(&enum_def, &[wildcard_match_branch("early"), match_branch("done", "late")]).is_none());
     assert!(build_indexed_match_table(&enum_def, &[match_branch("missing", "unknown")]).is_none());
+  }
+
+  #[test]
+  fn reentrant_capture_recheck_discards_duplicate_body_warnings() {
+    let _state = lock_preprocess_test_state();
+    let ns = "tests.capture-recheck";
+    let def = "main";
+    let dependency = cirru_parser::parse("defn helper () missing-dependency-local")
+      .expect("parse dependency")
+      .remove(0);
+    program::install_internal_source_namespace(
+      Arc::from("tests.capture-dependency"),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(
+          Arc::from("helper"),
+          program::ProgramDefEntry {
+            tags: Default::default(),
+            code: code_to_calcit(&dependency, "tests.capture-dependency", "helper", vec![]).expect("read dependency"),
+            schema: calcit::DYNAMIC_TYPE.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+            ffi: None,
+          },
+        )]),
+      },
+    )
+    .expect("install dependency compiled only on the first traversal");
+    let source = cirru_parser::parse(
+      "defn retry (index)\n  tests.capture-dependency/helper\n  missing-local\n  set! captured |changed\n  recur index",
+    )
+    .expect("parse re-entrant function")
+    .remove(0);
+    let code = code_to_calcit(&source, ns, def, vec![]).expect("read re-entrant function");
+    // Public trace entrypoints own a fresh scope, so activate their collectors
+    // directly to exercise an immediate caller's captured evidence as well.
+    struct RestoreTraces(Option<SourceExpressionTrace>, Option<Vec<ResolvedSourceUsage>>);
+    impl Drop for RestoreTraces {
+      fn drop(&mut self) {
+        SOURCE_EXPRESSION_TRACE.with(|trace| trace.replace(self.0.take()));
+        RESOLVED_SOURCE_USAGE_TRACE.with(|trace| trace.replace(self.1.take()));
+      }
+    }
+    let mut trace = SourceExpressionTrace::default();
+    let Calcit::List(forms) = &code else { panic!("function source") };
+    for (index, form) in forms.iter().enumerate() {
+      if let Calcit::List(items) = form {
+        trace.reader_locations.insert(
+          Arc::as_ptr(items) as usize,
+          NodeLocation::new(ns.into(), def.into(), Arc::new(vec![index as u16])),
+        );
+      }
+    }
+    let _traces = RestoreTraces(
+      SOURCE_EXPRESSION_TRACE.with(|cell| cell.replace(Some(trace))),
+      RESOLVED_SOURCE_USAGE_TRACE.with(|cell| cell.replace(Some(vec![]))),
+    );
+    let warnings = RefCell::new(vec![LocatedWarning::new(
+      "prior warning".to_owned(),
+      NodeLocation::new(ns.into(), def.into(), Arc::new(vec![])),
+    )]);
+    let signature = Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::Number)],
+      return_type: Arc::new(CalcitTypeAnnotation::Unit),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::from([EdnTag::from("js-ffi")])),
+    });
+    let _context = ExpressionContextScope::enter(
+      Some(ExpectedFunctionContext {
+        signature,
+        member_inputs: true,
+        immediate: true,
+      }),
+      None,
+    );
+    let mut scope = ScopeTypes::new();
+    scope.insert(Arc::from("captured"), calcit::DYNAMIC_TYPE.clone());
+    scope.refine(Arc::from("captured"), Arc::new(CalcitTypeAnnotation::Number));
+    preprocess_expr(
+      &code,
+      &HashSet::from([Arc::from("captured")]),
+      &mut scope,
+      ns,
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("a warning does not prevent rechecking an expanded body");
+    let warnings = warnings.borrow();
+    assert_eq!(warnings.iter().filter(|warning| warning.message() == "prior warning").count(), 1);
+    assert_eq!(
+      warnings
+        .iter()
+        .filter(|warning| warning.message().contains("unknown `missing-local`"))
+        .count(),
+      1,
+      "discard the first body's warning, not its final replay: {warnings:?}"
+    );
+    assert_eq!(
+      warnings
+        .iter()
+        .filter(|warning| warning.message().contains("unknown `missing-dependency-local`"))
+        .count(),
+      1,
+      "keep warnings belonging to cached dependencies: {warnings:?}"
+    );
+    SOURCE_EXPRESSION_TRACE.with(|trace| {
+      let trace = trace.borrow();
+      let evidence = &trace.as_ref().expect("active query trace").expressions;
+      unique_source_expression_at_path(evidence, ns, def, &[5]).expect("the replay's assignment has one original source identity");
+    });
+    RESOLVED_SOURCE_USAGE_TRACE.with(|trace| {
+      assert_eq!(
+        trace
+          .borrow()
+          .as_ref()
+          .unwrap()
+          .iter()
+          .filter(|usage| usage.target_ns.as_ref() == "tests.capture-dependency" && usage.target_def.as_ref() == "helper")
+          .count(),
+        1,
+        "the retained source reference is re-resolved exactly once"
+      );
+    });
   }
 
   #[test]
