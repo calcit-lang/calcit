@@ -59,11 +59,70 @@ pub(super) fn infer(expr: &Calcit, scope: &ScopeTypes) -> ConditionEvidence {
   }
 }
 
+/// A sequence continues only through normal exits, regardless of their truthiness.
+pub(super) fn establish_normal_exit(expr: &Calcit, scope: &mut ScopeTypes) {
+  let outcomes = visit(expr, scope, &HashMap::new(), &mut 4096, 0);
+  if let Some(facts) = common(outcomes.truthy, outcomes.falsey) {
+    for (name, annotation) in facts {
+      scope.refine(name, annotation);
+    }
+  }
+}
+
+pub(super) fn preserves_locals(expr: &Calcit, scope: &ScopeTypes) -> bool {
+  if let Calcit::Import(import) = expr
+    && let Some(compiled) = program::lookup_compiled_def(&import.ns, &import.def)
+  {
+    // Constructing a known function does not execute its body. Other lazy
+    // initializers owe the same effect proof as an ordinary expression.
+    return visit(&compiled.preprocessed_code, scope, &HashMap::new(), &mut 4096, 0).preserves_locals;
+  }
+  visit(expr, scope, &HashMap::new(), &mut 4096, 0).preserves_locals
+}
+
+fn visit_sequence<'a>(
+  forms: impl Iterator<Item = &'a Calcit>,
+  scope: &ScopeTypes,
+  aliases: &HashMap<Arc<str>, Outcomes>,
+  remaining: &mut usize,
+  depth: usize,
+) -> Outcomes {
+  let mut result = Outcomes::unknown(true);
+  let mut body_aliases = aliases.clone();
+  for form in forms {
+    let Some(prefix) = common(result.truthy.take(), result.falsey.take()) else {
+      return result;
+    };
+    let mut body_scope = scope.clone();
+    body_scope.extend(prefix.clone());
+    let current = visit(form, &body_scope, &body_aliases, remaining, depth + 1);
+    if !current.preserves_locals {
+      body_aliases.clear();
+    }
+    result = Outcomes {
+      truthy: following(&prefix, current.truthy, current.preserves_locals),
+      falsey: following(&prefix, current.falsey, current.preserves_locals),
+      preserves_locals: result.preserves_locals && current.preserves_locals,
+    };
+  }
+  result
+}
+
 fn visit(expr: &Calcit, scope: &ScopeTypes, aliases: &HashMap<Arc<str>, Outcomes>, remaining: &mut usize, depth: usize) -> Outcomes {
   if *remaining == 0 || depth > 64 {
     return Outcomes::unknown(false);
   }
   *remaining -= 1;
+  if is_definition_syntax(expr) {
+    return Outcomes::unknown(true);
+  }
+  if expression_definitely_diverges(expr) {
+    return Outcomes {
+      truthy: None,
+      falsey: None,
+      preserves_locals: true,
+    };
+  }
   match expr {
     Calcit::Nil | Calcit::Unit | Calcit::Bool(false) => {
       return Outcomes {
@@ -101,6 +160,14 @@ fn visit(expr: &Calcit, scope: &ScopeTypes, aliases: &HashMap<Arc<str>, Outcomes
     ));
   };
   match items.first() {
+    Some(Calcit::Proc(CalcitProc::Not)) if items.len() == 2 => {
+      let inner = visit(items.get(1).unwrap(), scope, aliases, remaining, depth + 1);
+      Outcomes {
+        truthy: inner.falsey,
+        falsey: inner.truthy,
+        preserves_locals: inner.preserves_locals,
+      }
+    }
     Some(Calcit::Syntax(CalcitSyntax::If, _)) if matches!(items.len(), 3 | 4) => {
       let condition = visit(items.get(1).unwrap(), scope, aliases, remaining, depth + 1);
       let mut result = Outcomes {
@@ -129,6 +196,9 @@ fn visit(expr: &Calcit, scope: &ScopeTypes, aliases: &HashMap<Arc<str>, Outcomes
       let Some(Calcit::List(pair)) = items.get(1) else {
         return Outcomes::unknown(false);
       };
+      if pair.is_empty() {
+        return visit_sequence(items.iter().skip(2), scope, aliases, remaining, depth);
+      }
       let (Some(Calcit::Local(local)), Some(value)) = (pair.first(), pair.get(1)) else {
         return Outcomes::unknown(false);
       };
@@ -148,17 +218,9 @@ fn visit(expr: &Calcit, scope: &ScopeTypes, aliases: &HashMap<Arc<str>, Outcomes
       body_aliases.insert(local.sym.clone(), bound);
       let mut body_scope = scope.clone();
       body_scope.insert(local.sym.clone(), local.type_info.clone());
-      let mut body = Outcomes::unknown(true);
-      let mut preserves_prefix = preserves_initializer;
-      for form in items.iter().skip(2) {
-        body = visit(form, &body_scope, &body_aliases, remaining, depth + 1);
-        preserves_prefix &= body.preserves_locals;
-        if !body.preserves_locals {
-          body_aliases.clear();
-        }
-      }
+      let mut body = visit_sequence(items.iter().skip(2), &body_scope, &body_aliases, remaining, depth);
       body.forget(&local.sym);
-      body.preserves_locals = preserves_prefix;
+      body.preserves_locals &= preserves_initializer;
       body
     }
     // These value operations never invoke user callbacks. Merely declaring

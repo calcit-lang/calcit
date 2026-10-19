@@ -6,6 +6,7 @@ mod post_lowering;
 mod proof_provenance;
 mod recur_tail;
 mod recursive_inputs;
+mod scope_types;
 mod source_replay;
 mod type_checking;
 mod type_inference;
@@ -67,7 +68,7 @@ use cirru_edn::EdnTag;
 use finger_vec::FingerVec;
 use strum::ParseError;
 
-pub(crate) type ScopeTypes = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
+pub(crate) use scope_types::ScopeTypes;
 
 /// Keep proven member inputs distinct from incomplete inference (e.g. pair slots).
 struct ExpectedFunctionContext {
@@ -1304,7 +1305,10 @@ fn preprocess_with_type_slot_block(
   let mut preprocess_err: Option<CalcitErr> = None;
   for expr in body_args.iter() {
     match preprocess_expr(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack) {
-      Ok(form) => preprocessed_body.push(form),
+      Ok(form) => {
+        condition_evidence::establish_normal_exit(&form, scope_types);
+        preprocessed_body.push(form);
+      }
       Err(e) => {
         preprocess_err = Some(e);
         break;
@@ -2683,6 +2687,9 @@ pub fn preprocess_expr(
     // These primitives build `calcit.core/Option` values at runtime, so generated
     // JS / WASM programs must contain that definition even if source never names it.
     ensure_ns_def_compiled(calcit::CORE_NS, "Option", check_warnings, call_stack)?;
+  }
+  if !condition_evidence::preserves_locals(&processed, scope_types) {
+    scope_types.invalidate_refinements();
   }
   Ok(processed)
 }
@@ -10548,17 +10555,24 @@ pub fn preprocess_each_items(
 /// Carry invalidated read evidence out of nested evaluation scopes, without
 /// exporting branch refinements or a shadowing let binding to its parent.
 fn propagate_scope_widening(parent: &mut ScopeTypes, after: &ScopeTypes, refinements: &ScopeTypes, shadowed: Option<&str>) {
-  for (name, current) in parent.iter_mut() {
-    if shadowed == Some(name.as_ref()) {
-      continue;
-    }
-    let before = refinements.get(name).unwrap_or(current);
-    if let Some(after) = after.get(name)
-      && after != before
-      && !after.is_proven_for(before)
-    {
-      *current = type_inference::join_return_types(current.clone(), after.clone()).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
-    }
+  let widened: Vec<_> = parent
+    .iter()
+    .filter_map(|(name, current)| {
+      if shadowed == Some(name.as_ref()) {
+        return None;
+      }
+      let before = refinements.get(name).unwrap_or(current);
+      let after = after.get(name)?;
+      (after != before && !after.is_proven_for(before)).then(|| {
+        (
+          name.clone(),
+          type_inference::join_return_types(current.clone(), after.clone()).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()),
+        )
+      })
+    })
+    .collect();
+  for (name, annotation) in widened {
+    parent.annotate(name, annotation);
   }
 }
 
@@ -10599,7 +10613,7 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
   let narrowing = condition_evidence::infer(&cond_form, ctx.scope_types);
   let mut true_scope_types = ctx.scope_types.clone();
   for (sym, inferred) in &narrowing.when_true {
-    true_scope_types.insert(sym.clone(), inferred.clone());
+    true_scope_types.refine(sym.clone(), inferred.clone());
   }
 
   let true_form = preprocess_expr(
@@ -10614,7 +10628,7 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
   let false_form = if let Some(false_branch) = args.get(2) {
     let mut false_scope_types = ctx.scope_types.clone();
     for (sym, inferred) in &narrowing.when_false {
-      false_scope_types.insert(sym.clone(), inferred.clone());
+      false_scope_types.refine(sym.clone(), inferred.clone());
     }
     let form = preprocess_expr(
       false_branch,
@@ -11967,6 +11981,9 @@ pub fn preprocess_defn(
     ) => {
       let mut body_defs: HashSet<Arc<str>> = ctx.scope_defs.to_owned();
       let mut body_types: ScopeTypes = ctx.scope_types.clone();
+      // A closure can outlive a temporary predicate fact about its captured
+      // binding. An independently bound checked value keeps its own type.
+      body_types.invalidate_refinements();
       let mut param_symbols: Vec<Arc<str>> = vec![];
       let mut has_marked_args = false; // Track if function has & or ? markers
       let source_owned = program::has_def_code(ctx.file_ns, def_name.as_ref());
@@ -12407,6 +12424,7 @@ pub fn preprocess_defn(
           return Ok(());
         }
         let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
+        condition_evidence::establish_normal_exit(&form, &mut body_types);
         processed_body.push(form.clone());
         xs = xs.push_right(form);
         Ok(())
@@ -12764,6 +12782,7 @@ pub fn preprocess_core_let(
       return Ok(());
     }
     let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
+    condition_evidence::establish_normal_exit(&form, &mut body_types);
     xs.push(form);
     Ok(())
   })?;
@@ -12968,7 +12987,7 @@ pub fn preprocess_hint_fn(
         target_raw.get_location(),
       ));
     }
-    ctx.scope_types.insert(local.sym.to_owned(), type_entry.clone());
+    ctx.scope_types.annotate(local.sym.to_owned(), type_entry.clone());
     local.type_info = type_entry;
     ys[1] = Calcit::Local(local);
   }
@@ -13162,7 +13181,7 @@ fn preprocess_assert_type_with_obligation(
     } else {
       asserted_type
     };
-    ctx.scope_types.insert(local.sym.to_owned(), type_entry.clone());
+    ctx.scope_types.annotate(local.sym.to_owned(), type_entry.clone());
 
     let mut typed_local = local.to_owned();
     typed_local.type_info = type_entry;
@@ -13546,7 +13565,7 @@ pub fn preprocess_assert_traits(
       crate::calcit::DYNAMIC_TYPE.clone()
     };
 
-    ctx.scope_types.insert(local.sym.to_owned(), resolved_entry.clone());
+    ctx.scope_types.annotate(local.sym.to_owned(), resolved_entry.clone());
 
     let mut typed_local = local.to_owned();
     typed_local.type_info = resolved_entry;
