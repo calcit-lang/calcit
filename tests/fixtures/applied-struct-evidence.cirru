@@ -169,7 +169,8 @@
             :outcome $ :: 'Result 'Number 'String
           :examples $ []
           :schema $ :: 'StructDef
-        'NilBox $ %{} 'CodeEntry (:doc |)
+        'NilBox $ %{} 'CodeEntry
+          :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct NilBox
             :opt $ :: 'Optional 'Number
             :none 'Nil

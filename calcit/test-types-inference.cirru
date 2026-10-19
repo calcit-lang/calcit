@@ -314,7 +314,7 @@
             :code $ quote $ assert= true (infer-result-ok-predicate)
             :tags $ #{} :unit
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () (println "|Testing type inference...") (test-list-inference) (test-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-filter-map-kv-inference) (test-set-inference) (test-ref-inference) (test-struct-inference) (test-type-ref-combos) (test-generics-identity) (infer-raise-right true) (infer-raise-left false)
+          :code $ quote $ defn main! () (println "|Testing type inference...") (test-list-inference) (test-legacy-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-filter-map-kv-inference) (test-set-inference) (test-ref-inference) (test-struct-inference) (test-type-ref-combos) (test-generics-identity) (infer-raise-right true) (infer-raise-left false)
             assert= 2 $ recur-types-safe
               Person :name |Ada :age 3 :address $ Address :city |X
               , 0
@@ -564,46 +564,16 @@
                   assert= true $ starts-with? error |b
           :examples $ []
           :schema $ :: 'Dynamic
-        'test-list-inference $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn test-list-inference ()
+        'test-legacy-optional-inference $ %{} 'CodeEntry
+          :doc "|Legacy-contract test: pins assert-type against Optional; retire with Optional (0.32.0). The Option forms are asserted first."
+          :code $ quote $ defn test-legacy-optional-inference ()
             let
-                nested $ [] ([] 1 2) ([] 3)
-              assert-type nested $ :: 'List $ :: 'List 'Number
-              &inspect-type nested
-              let
-                  inner $ &list:nth nested 0
-                assert-type inner $ :: 'List 'Number
-                &inspect-type inner
-              let
-                  val $ &list:nth ([] 1 2 3) 0
-                assert-type val 'Number
-                &inspect-type val
-              let
-                  xs $ [] 1 2 3
-                  rest-xs $ rest xs
-                assert-type rest-xs $ :: 'List 'Number
-                &inspect-type rest-xs
-          :examples $ []
-          :schema $ :: 'Dynamic
-        'test-map-inference $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn test-map-inference ()
-            let
-                m $ {}
-              assert-type m $ :: 'Map 'String 'Number
-              let
-                  m2 $ &map:assoc m |b 2
-                  m3 $ &map:dissoc m2 |a
-                  m4 $ &map:get m2 |b
-                  m5 $ merge m2 $ {} (|c 3)
-                &inspect-type m2
-                &inspect-type m3
-                &inspect-type m4
-                assert-type m5 $ :: 'Map 'String 'Number
-                &inspect-type m5
-          :examples $ []
-          :schema $ :: 'Dynamic
-        'test-optional-inference $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn test-optional-inference ()
+                opt-some $ Option :some 10
+                opt-none $ Option :none
+              assert-type opt-some $ :: 'Option 'Number
+              assert-type opt-none $ :: 'Option 'Number
+              &inspect-type opt-some
+              &inspect-type opt-none
             let
                 opt 10
               assert-type opt $ :: 'Optional 'Number
@@ -759,6 +729,44 @@
               &inspect-type nested-hit
               &inspect-type nested-miss
               &inspect-type nil-nested
+          :examples $ []
+          :schema $ :: 'Dynamic
+        'test-list-inference $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn test-list-inference ()
+            let
+                nested $ [] ([] 1 2) ([] 3)
+              assert-type nested $ :: 'List $ :: 'List 'Number
+              &inspect-type nested
+              let
+                  inner $ &list:nth nested 0
+                assert-type inner $ :: 'List 'Number
+                &inspect-type inner
+              let
+                  val $ &list:nth ([] 1 2 3) 0
+                assert-type val 'Number
+                &inspect-type val
+              let
+                  xs $ [] 1 2 3
+                  rest-xs $ rest xs
+                assert-type rest-xs $ :: 'List 'Number
+                &inspect-type rest-xs
+          :examples $ []
+          :schema $ :: 'Dynamic
+        'test-map-inference $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn test-map-inference ()
+            let
+                m $ {}
+              assert-type m $ :: 'Map 'String 'Number
+              let
+                  m2 $ &map:assoc m |b 2
+                  m3 $ &map:dissoc m2 |a
+                  m4 $ &map:get m2 |b
+                  m5 $ merge m2 $ {} (|c 3)
+                &inspect-type m2
+                &inspect-type m3
+                &inspect-type m4
+                assert-type m5 $ :: 'Map 'String 'Number
+                &inspect-type m5
           :examples $ []
           :schema $ :: 'Dynamic
         'test-ref-inference $ %{} 'CodeEntry (:doc |)
