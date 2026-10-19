@@ -154,7 +154,7 @@ calcit query def 'calcit.core/&map:get' --format edn
 
 默认 Markdown 输出先列已证明的首选方法，再列尚未完成角色归类的方法，最后列附有首选名和 fix 规则的兼容方法。分组仅改变阅读顺序，不隐藏方法、不改变分派优先级或结构化输出；尚未归类不表示应优先使用。
 
-例如 `query type ":: 'List 'Number" --format edn` 会把单元素追加的 `.append`、长度查询的 `.len` 标为首选，旧 `.add/.count` 分别关联 `core-list-add-v1`、`core-collection-len-v1`。同一长度规则也覆盖契约已证明的 Map/Set/String；Map `.add` 是不同的 entry 操作，不会因此变成 `.append` 或 `.assoc` 的兼容别名。
+例如 `query type ":: 'List 'Number" --format edn` 会列出 `.append` 与 `.len` 等方法及其类型契约。
 
 命名整理的已实现入口与未来目标必须区分：用 `calcit docs read api-roles.md '逐族命名决策'`
 查看整组契约，或把章节改成 `谓词与成员查询`、`集合长度、组合与遍历` 缩小输出。

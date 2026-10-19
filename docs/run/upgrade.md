@@ -161,6 +161,21 @@ Snapshot 中以 `fn` 为根节点的定义可以直接使用自身 CodeEntry 的
 将这种旧写法迁移为直接传递 `fn`，并把正确 Map 注解写进它的函数体；不要加 unsafe 或假设返回声明能证明一个 Dynamic 可调用。
 合法元数据表达式继续返回 Nil，这不是业务缺失值，不需要迁移为 Option。
 
+## 0.31.0 删除已弃用的兼容方法
+
+0.31.0 删除以下兼容方法，同时删除对应的 `calcit fix` 规则（`core-list-add-v1`、`core-collection-len-v1`、`core-effect-method-v1`）和建议级诊断 `A_DEPRECATED_METHOD`。已知活跃核心库的默认分支在定义代码、附带测试和示例中都没有调用这些写法。
+
+| 已删除 | 改写为 |
+|---|---|
+| List `.add item` | `.append item`；两 List 拼接用 `.concat` |
+| List / Map / Set 具体接收者上的 `.count` | `.len` |
+| FfiTask `.cancel` | `.cancel!` |
+| FfiTask `.cancel-with reason` | `.cancel-with! reason` |
+
+函数 `count` 与 `Countable` 约束（包括泛型代码里的 `x .count`）、String / Struct / Enum 的 `Countable` 实现不变；名义 `Add` 调用与泛型界限也不变。
+
+升级前仍用 0.30.x 的 CLI 迁移：依次运行 `calcit calcit.cirru fix --rule core-list-add-v1`、`core-collection-len-v1`、`core-effect-method-v1`（均加 `--include-attached --format edn`），预览后带 `--expect-revision` 应用。残留调用在检查时报告 `E_RETIRED_METHOD`，信息里给出改写方式。
+
 ## 0.31.0 删除已弃用的兼容宏
 
 0.31.0 从 `calcit.core` 删除以下兼容宏，同时删除对应的 `calcit fix` 规则（`core-macro-alias-v1`、`let-sugar-to-let-v1`、`list-match-to-match-v1`、`apply-args-to-loop-v1`）。已知活跃核心库（Respo、Respo UI、Reel、Markdown、Recollect、lilac-parser、ws-edn、cumulo-reel、js-ffi、std）的默认分支在定义代码、附带测试和示例中都没有调用。
@@ -205,7 +220,7 @@ Snapshot 中以 `fn` 为根节点的定义可以直接使用自身 CodeEntry 的
 ### 限制
 
 - `%some` / `%none` / `%ok` / `%err`、`atom`、`vals` 仍有下游调用，本版保留。
-- `case-default`（js-ffi 的示例仍在使用）、`foldl-shortcut`、`round?` 与已弃用方法另行退场。
+- `case-default`（js-ffi 的示例仍在使用）、`foldl-shortcut` 与 `round?` 另行退场。
 
 ## 0.30.1 底层缺失值原语直接返回 Option
 

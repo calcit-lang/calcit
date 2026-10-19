@@ -611,11 +611,7 @@ let
 `Result<...,String>`；旧 `.write-text` 已在 0.29.0 删除（`E_RETIRED_METHOD`）。String 不提供文件效果方法。旧 `try-read-file` / `try-write-file`
 已退役，应改用 `fs:path` 后调用对应方法；`try-read-dir` 和底层 raising procedures
 暂留为兼容入口。
-迁移 native FFI 任务取消的旧方法时，可先用
-`calcit query type calcit.core/FfiTask --format edn` 确认
-`preferred` / `compatibility` 和类型签名，再显式预览
-`calcit calcit.cirru fix --rule core-effect-method-v1 --format edn`。只有来源与接收者均已证明的
-definition `:code` 调用默认进入预览；传 `--include-attached` 可用相同证明迁移附带测试与示例。未知宏或无法证明的区域仍需人工审阅。
+FfiTask 取消使用 `.cancel!` / `.cancel-with!`；旧 `.cancel` / `.cancel-with` 已在 0.31.0 删除。
 这些文件效果支持 native 与生成的 JavaScript。WASI command 还支持基于 preopen 的
 文本读写与 `.read-dir`；core WASM 明确拒绝宿主文件效果，`.walk-dir` 尚未接入 WASI。
 
@@ -631,7 +627,7 @@ Result 错误类型需要转换时显式使用 `.map-err`。
 
 普通值的非 nil 判断使用 `non-nil?`，不要与 Option `.some?` 混淆。旧 `some?` 已在 0.29.0 删除，残留调用会得到带 `non-nil?` 提示的未知名字告警。`JsNullish<T>` 继续使用 `js-present?` / `js-nullish?`，不能借 `non-nil?` 擦除宿主边界。
 
-List 单元素追加首选 `.append`，List 拼接用 `.concat`。迁移旧 `.add` 可显式运行 `calcit fix --rule core-list-add-v1 --format edn`：仅当具体 List 接收者与旧、新方法同指 `calcit.core/append` 且源码上下文稳定时提供可应用建议；Set/Map、开放类型与未知 macro 不得按字面改写。先预览，再携带原 revision 应用并重复预览；附带的 `:tests` / `:examples` 可传 `--include-attached` 纳入同一证明与原子事务。
+List 单元素追加使用 `.append`，List 拼接用 `.concat`；旧 `.add` 已在 0.31.0 删除（`E_RETIRED_METHOD`）。
 
 判断 Number 是否有限且恰好没有小数部分时，首选 `integer? value` 或 `value .integer?`；返回 Bool，不代表安全整数范围或整数类型 refinement。函数 `round?` 暂留同义兼容，Number `.round?` 已在 0.29.0 删除。可显式用 `core-integer-predicate-v1` 预览：reader 解析为内建 Proc 的单参数 `round?` 调用可自动改写；quoted 数据、自定义同名方法、开放接收者与未知 macro 不按词形批量替换。附带的 `:tests` / `:examples` 可传 `--include-attached` 纳入相同证明。使用前可查询 `calcit.core/integer?` 的公开 schema 和 Number 方法契约。
 

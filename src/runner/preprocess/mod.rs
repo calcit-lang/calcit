@@ -3944,7 +3944,6 @@ fn preprocess_list_call(
               validate_method_call(&typed_method, &processed_args, scope_types, file_ns, call_stack)?;
             }
             check_struct_method_args(&typed_method, &processed_args, scope_types, file_ns, &def_name, check_warnings);
-            note_deprecated_method_call(&typed_method, &processed_args, scope_types, file_ns);
             warn_on_option_erased_to_nil(&typed_method, &processed_args, scope_types, file_ns);
             require_js_ffi_feature_for_operation(&typed_method, file_ns, def_name.as_ref(), check_warnings, call_stack)?;
 
@@ -4590,7 +4589,6 @@ fn preprocess_list_call(
         }
         reject_pending_async_arguments(&head_form, &processed_args, scope_types, call_stack)?;
         validate_method_call(&head_form, &processed_args, scope_types, file_ns, call_stack)?;
-        note_deprecated_method_call(&head_form, &processed_args, scope_types, file_ns);
         check_struct_field_access(&head_form, &processed_args, scope_types, file_ns, call_stack, check_warnings);
         check_struct_construction_fields(
           &head_form,
@@ -7137,65 +7135,6 @@ pub(crate) fn check_enum_construction(
 }
 /// Check struct method call arguments (count and types)
 /// Validates that method calls have correct number and types of arguments
-/// Methods that still dispatch but have a preferred spelling. Unlike the retired
-/// table above, these keep working; a project-source call only gets an advisory.
-fn deprecated_method_migration(receiver: &CalcitTypeAnnotation, method_name: &str) -> Option<&'static str> {
-  use CalcitTypeAnnotation as T;
-  match (receiver, method_name) {
-    (T::List(_), "add") => Some("`.add` is a single-item alias of `.append`; use `.append` (or `.concat` to join two Lists)"),
-    (T::List(_) | T::Map(_, _) | T::Set(_), "count") => Some("`.count` overlaps `.len`; use `.len`"),
-    _ => deprecated_core_struct_method_migration(receiver, method_name),
-  }
-}
-
-/// Same-implementation FfiTask aliases that keep working during the compatibility window.
-fn deprecated_core_struct_method_migration(receiver: &CalcitTypeAnnotation, method_name: &str) -> Option<&'static str> {
-  let is_ffi_task = match receiver {
-    CalcitTypeAnnotation::TypeRef(type_name, _) => type_name.as_ref() == "calcit.core/FfiTask",
-    _ => receiver.resolve_to_struct().is_some_and(|base| {
-      base.definition_ref.as_deref() == Some("calcit.core/FfiTask")
-        || (base.definition_ref.is_none() && base.name.ref_str() == "FfiTask")
-    }),
-  };
-  match method_name {
-    "cancel" if is_ffi_task => Some("`.cancel` is a same-implementation alias; use `.cancel!`"),
-    "cancel-with" if is_ffi_task => Some("`.cancel-with` is a same-implementation alias; use `.cancel-with!`"),
-    _ => None,
-  }
-}
-
-/// Records an advisory for a project-source call of a deprecated method on a proven receiver type.
-fn note_deprecated_method_call(head: &Calcit, args: &CalcitList, scope_types: &ScopeTypes, file_ns: &str) {
-  let Calcit::Method(method_name, calcit::MethodKind::Invoke(inferred_receiver_type)) = head else {
-    return;
-  };
-  if !should_emit_project_source_lint(file_ns) {
-    return;
-  }
-  // The head only carries the inferred type; the receiver expression may prove a more precise one.
-  let receiver_type = args
-    .first()
-    .and_then(|receiver| resolve_type_value(receiver, scope_types))
-    .unwrap_or_else(|| inferred_receiver_type.clone());
-  let Some(migration) = deprecated_method_migration(receiver_type.as_ref(), method_name.as_ref()) else {
-    return;
-  };
-  let location = head
-    .get_location()
-    .or_else(|| {
-      args
-        .iter()
-        .find_map(|arg| find_calcit_location_matching(arg, |location| location.def.as_ref() != GENERATED_DEF))
-    })
-    .unwrap_or_else(|| NodeLocation::new(Arc::from(file_ns), Arc::from(GENERATED_DEF), Arc::from(vec![])));
-  push_advisory(LocatedWarning::new_with_detail(
-    format!("[Deprecated] method {migration}"),
-    location,
-    Some("A_DEPRECATED_METHOD".to_owned()),
-    None,
-  ));
-}
-
 fn check_struct_method_args(
   head: &Calcit,
   args: &CalcitList,
@@ -9091,6 +9030,8 @@ fn retired_method_migration(receiver: &CalcitTypeAnnotation, method_name: &str) 
     (T::List(_), "join-str") => Some("`.join-str` was a same-implementation alias; use `.join-string`"),
     (T::List(_), "nth") => Some("`.nth` was a same-implementation alias; use `.get`, which returns Option<T>"),
     (T::Map(_, _), "mappend") => Some("`.mappend` was a same-implementation alias; use `.merge`"),
+    (T::List(_), "add") => Some("`.add` was a single-item alias of `.append`; use `.append` (or `.concat` to join two Lists)"),
+    (T::List(_) | T::Map(_, _) | T::Set(_), "count") => Some("`.count` was a same-implementation alias; use `.len`"),
     (T::Map(_, _), "add") => Some(
       "`.add` took a two-item List entry and only checked its length; use `.assoc` with a separate key and value, which checks both types",
     ),
@@ -9115,7 +9056,11 @@ fn retired_method_migration(receiver: &CalcitTypeAnnotation, method_name: &str) 
 /// trait-bound calls and the prefix function keep dispatching through the impl.
 fn retired_trait_reachable_method_migration(receiver: &CalcitTypeAnnotation, method_name: &str) -> Option<&'static str> {
   match (receiver, method_name) {
-    (CalcitTypeAnnotation::String, "count") => retired_method_migration(receiver, method_name),
+    (
+      CalcitTypeAnnotation::String | CalcitTypeAnnotation::List(_) | CalcitTypeAnnotation::Map(_, _) | CalcitTypeAnnotation::Set(_),
+      "count",
+    )
+    | (CalcitTypeAnnotation::List(_), "add") => retired_method_migration(receiver, method_name),
     _ => None,
   }
 }
@@ -9135,6 +9080,8 @@ fn retired_core_struct_method_migration(receiver: &CalcitTypeAnnotation, method_
     "write-text" if is_core("FsPath") => Some("`.write-text` was a same-implementation alias; use `.write-text!`"),
     "resolve" if is_core("FfiResponse") => Some("`.resolve` was a same-implementation alias; use `.resolve!`"),
     "reject" if is_core("FfiResponse") => Some("`.reject` was a same-implementation alias; use `.reject!`"),
+    "cancel" if is_core("FfiTask") => Some("`.cancel` was a same-implementation alias; use `.cancel!`"),
+    "cancel-with" if is_core("FfiTask") => Some("`.cancel-with` was a same-implementation alias; use `.cancel-with!`"),
     _ => None,
   }
 }

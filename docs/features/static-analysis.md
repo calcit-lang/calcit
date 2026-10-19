@@ -274,7 +274,7 @@ are preserved. Missing, duplicate, or unknown constructor fields do not qualify.
 
 `analyze weak-types --only deprecated-call` scans calls to definitions tagged `:deprecated`. It reports every calling definition and a stable `code@...` path, and includes the target definition's documentation so migrations can be automated without maintaining a second hard-coded legacy API list. Use `--summary-only --format json` for migration gates that only need aggregate counts.
 
-Deprecated *methods* are matched by receiver type: `.count` on a List/Map/Set, `.add` on a List and the FfiTask `.cancel` / `.cancel-with` aliases are reported as `calcit.core/.<method>` with the same migration text that `--check-only` prints as an `A_DEPRECATED_METHOD` note, and they count toward `deprecatedCalls`. Only definitions that spell one of these method names are preprocessed to prove the receiver type, and only project namespaces are reported (`--deps` does not add dependency method calls).
+Deprecated methods no longer exist in 0.31.0: the former `.count` / `.add` / FfiTask `.cancel` aliases report `E_RETIRED_METHOD`.
 
 `tag-match` 已从 Calcit 0.14.16 的表层语言移除，统一由原生 `match` 承担具名与匿名 enum 的模式匹配。旧项目应先用 Calcit 0.14.15 执行 `calcit fix --rule tag-match-to-match-v1`。原生 `match` 会把分支结构保留给穷尽性、payload arity、类型与 backend 优化 pass。
 

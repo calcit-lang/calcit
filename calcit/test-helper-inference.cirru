@@ -12,7 +12,7 @@
       :defs $ {}
         'helper-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn helper-count ()
-            .count $ helper-list
+            .len $ helper-list
           :examples $ []
         'helper-empty-list $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn helper-empty-list () ([])

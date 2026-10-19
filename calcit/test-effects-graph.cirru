@@ -28,7 +28,7 @@
           :code $ quote $ defn call-through (f) (f 1)
           :examples $ []
         'cancel-helper $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn cancel-helper (task) (.cancel task)
+          :code $ quote $ defn cancel-helper (task) (.cancel! task)
           :examples $ []
         'case-default-helper $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn case-default-helper (x d)

@@ -1106,7 +1106,7 @@
                   :args $ []
                   :rest 'String
                   :return 'Number
-                .count messages
+                .len messages
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Bool
