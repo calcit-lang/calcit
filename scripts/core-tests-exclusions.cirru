@@ -252,6 +252,7 @@
   :wasi $ {}
     :tags $ {} $ :enum-definition-equality "|unsupported: first-class EnumDef creation requires &enum-def:new, rejected by the shared WASM codegen (#1863)"
     :tests $ {} (|calcit.core/&+#preserves-primitive-schema-in-local-binding "|unsupported: unsupported WASM expression: (&proc &+)")
+      |calcit.core/nil->option#collapses-legacy-optional-values-under-declared-option "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nil? cannot distinguish nil from a zero-valued Optional<:number> payload in the current scalar ABI"
       |calcit.core/struct-match#checked-dynamic-input-preserves-nominal-identity "|parity: shared WASM codegen traps in the nominal matcher fixture; original-macro baseline also traps (#2173)"
       |calcit.core/struct-match#evaluates-subject-once-and-keeps-body-errors "|unsupported: first-class local prototype uses unsupported proc in WASM: &struct-def:new"
       |calcit.core/struct-match#rejects-invalid-input-with-original-failure-text "|unsupported: unsupported syntax in WASM: try"
