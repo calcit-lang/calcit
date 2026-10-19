@@ -13097,11 +13097,13 @@
                       index $ decode-map-as k 'Number
                     assoc x index $ f $ &enum:nth x index
                   if (struct? x)
-                    if (contains? x k)
-                      let
-                          field $ decode-map-as k 'Tag
-                        assoc x field $ f $ &struct:get x field
-                      , x
+                    let
+                        receiver x
+                      if (contains? receiver k)
+                        let
+                            field $ decode-map-as k 'Tag
+                          assoc receiver field $ f $ &struct:get receiver field
+                        , receiver
                     raise $ &str:concat "|Cannot update key on item: " $ to-lispy-string x
           :examples $ []
             quote $ assert=

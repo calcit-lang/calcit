@@ -3,7 +3,7 @@
 //! Rust has limits on Closures, callbacks need to be handled specifically
 
 use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::vec;
 
@@ -16,6 +16,7 @@ use crate::calcit::{
 };
 use crate::calcit::{Calcit, CalcitEnumValue, CalcitErr, CalcitScope, gen_core_id};
 use crate::call_stack::CallStackList;
+use crate::runner::preprocess::ScopeTypes;
 use crate::runner::{self, call_expr, evaluate_expr};
 
 pub fn defn(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str) -> Result<Calcit, CalcitErr> {
@@ -700,7 +701,7 @@ pub fn eval(expr: &CalcitListView<'_>, scope: &CalcitScope, file_ns: &str, call_
   if expr.len() == 1 {
     let v = runner::evaluate_expr(&expr[0], scope, file_ns, call_stack)?;
     let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
-    let mut scope_types = HashMap::new();
+    let mut scope_types = ScopeTypes::new();
     let resolved = runner::preprocess::preprocess_expr(&v, &HashSet::new(), &mut scope_types, file_ns, check_warnings, call_stack)?;
     LocatedWarning::print_list(&check_warnings.borrow());
     runner::evaluate_expr(&resolved, scope, file_ns, call_stack)
@@ -1230,7 +1231,7 @@ pub fn macroexpand_all(
                     chain.push(next_macro);
                   }
                   print_macroexpand_chain("macroexpand-all", &chain);
-                  let mut scope_types = HashMap::new();
+                  let mut scope_types = ScopeTypes::new();
                   let resolved =
                     runner::preprocess::preprocess_expr(&v, &HashSet::new(), &mut scope_types, file_ns, check_warnings, call_stack)?;
                   let warnings = check_warnings.borrow();
@@ -1243,7 +1244,7 @@ pub fn macroexpand_all(
           }
           _ => {
             let check_warnings: &RefCell<Vec<LocatedWarning>> = &RefCell::new(vec![]);
-            let mut scope_types = HashMap::new();
+            let mut scope_types = ScopeTypes::new();
             let resolved = runner::preprocess::preprocess_expr(
               &quoted_code,
               &HashSet::new(),

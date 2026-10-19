@@ -867,9 +867,12 @@ try {
     ["edit", "def", "app.short-circuit/pretend", "--input-format", "cirru", "--code", "quote $ defn pretend (k) true"],
     ["edit", "schema", "app.short-circuit/pretend", "--input-format", "cirru", "--code",
       "quote $ :: 'Fn $ {} (:args ([] 'Dynamic)) (:return 'Bool)"],
-    ["edit", "def", "app.short-circuit/lazy-flag", "--input-format", "cirru", "--code", "quote $ def lazy-flag $ pretend nil"],
+    ["edit", "def", "app.short-circuit/lazy-flag", "--input-format", "cirru", "--code", "quote $ def lazy-flag $ do (println |lazy-flag) true"],
     ["edit", "schema", "app.short-circuit/lazy-flag", "--input-format", "cirru", "--code", "quote 'Bool"],
   ]);
+  // A visible constant-return body is now proven non-invoking. Keep actual
+  // unknown callback calls and effectful lazy initialization as barriers;
+  // readonly-call attached tests cover the corresponding positive contract.
   for (const [name, condition, otherwise = false, jsFfi = false] of [
     ["one-or-arm", ["or", ["number?", "k"], "true"]],
     ["false-and-arm", ["and", ["number?", "k"], ["&>=", "k", "0"]], true],
@@ -877,18 +880,18 @@ try {
     ["shadowed-value", ["let", [["k", "1"]], ["number?", "k"]]],
     ["shadowed-alias", ["let", [["valid", ["number?", "k"]]], ["let", [["k", "1"]], "valid"]]],
     ["bool-is-not-proof", ["and", ["pretend", "k"], "true"]],
-    ["unknown-call-after-proof", ["and", ["number?", "k"], ["pretend", "k"]]],
+    ["unknown-call-after-proof", ["and", ["number?", "k"], ["effect", "k"]]],
     ["lazy-initializer-after-proof", ["and", ["number?", "k"], "lazy-flag"]],
-    ["stale-alias-after-call", ["let", [["valid", ["number?", "k"]]], ["pretend", "k"], "valid"]],
+    ["stale-alias-after-call", ["let", [["valid", ["number?", "k"]]], ["effect", "k"], "valid"]],
     ["rebound-after-proof", ["and", ["number?", "k"], ["&let", ["ignored", ["set!", "k", "|changed"]], "true"]], false, true],
     ["rebound-proof-alias", ["let", [["valid", ["number?", "k"]]], ["set!", "k", "|changed"], "valid"], false, true],
   ]) {
     const consume = ["&+", "k", "1"];
     guardedEdit([
       ["edit", "def", "app.short-circuit/rejected", "--overwrite", "--input-format", "json-ast", "--code",
-        JSON.stringify(["defn", "rejected", ["k"], ["if", condition, otherwise ? "0" : consume, otherwise ? consume : "0"]])],
+        JSON.stringify(["defn", "rejected", ["k", "effect"], ["if", condition, otherwise ? "0" : consume, otherwise ? consume : "0"]])],
       ["edit", "schema", "app.short-circuit/rejected", "--input-format", "cirru", "--code",
-        `quote $ :: 'Fn $ {} (:args ([] 'Dynamic)) (:return 'Number)${jsFfi ? " (:features $ #{} :js-ffi)" : ""}`],
+        `quote $ :: 'Fn $ {} (:args ([] 'Dynamic (:: 'Fn $ {} (:args ([] 'Dynamic)) (:return 'Bool)))) (:return 'Number)${jsFfi ? " (:features $ #{} :js-ffi)" : ""}`],
     ]);
     const original = await readFile(snapshot);
     const rejected = spawnSync(binary, [snapshot, "fix", "--ns", "app.short-circuit", "--def", "rejected",
@@ -2001,6 +2004,7 @@ try {
     "--def", "rejected", "--format", "json"], options);
   if (updateRejected.error) throw updateRejected.error;
   assert.equal(updateRejected.status, 1, `${updateRejected.stdout}\n${updateRejected.stderr}`);
+  assert.ok(updateRejected.stdout.trim(), `update callback proof must return its diagnostic report\n${updateRejected.stderr}`);
   const updateAudit = JSON.parse(updateRejected.stdout);
   assert.ok(updateAudit.diagnostics.some(item => item.code === "E_CALL_ARGUMENT_UNPROVEN" && item.message.includes("argument 3")));
   assert.deepEqual(await readFile(snapshot), updateBefore);

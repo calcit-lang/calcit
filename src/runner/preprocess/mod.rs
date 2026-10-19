@@ -6,6 +6,7 @@ mod post_lowering;
 mod proof_provenance;
 mod recur_tail;
 mod recursive_inputs;
+mod scope_types;
 mod source_replay;
 mod type_checking;
 mod type_inference;
@@ -67,19 +68,40 @@ use cirru_edn::EdnTag;
 use finger_vec::FingerVec;
 use strum::ParseError;
 
-pub(crate) type ScopeTypes = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
+pub(crate) use scope_types::ScopeTypes;
 
 /// Keep proven member inputs distinct from incomplete inference (e.g. pair slots).
 struct ExpectedFunctionContext {
   signature: Arc<CalcitFnTypeAnnotation>,
   member_inputs: bool,
+  immediate: bool,
+}
+
+struct ExpressionContextScope {
+  previous_fn: Option<ExpectedFunctionContext>,
+  previous_struct: Option<(CalcitStructDef, Arc<CalcitTypeAnnotation>)>,
+}
+
+impl ExpressionContextScope {
+  fn enter(context: Option<ExpectedFunctionContext>, structure: Option<(CalcitStructDef, Arc<CalcitTypeAnnotation>)>) -> Self {
+    Self {
+      previous_fn: EXPECTED_FN_TYPE.with(|cell| cell.replace(context)),
+      previous_struct: EXPECTED_STRUCT_TYPE.with(|cell| cell.replace(structure)),
+    }
+  }
+}
+
+impl Drop for ExpressionContextScope {
+  fn drop(&mut self) {
+    EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = self.previous_fn.take());
+    EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = self.previous_struct.take());
+  }
 }
 
 /// Compile an owned definition with its own input contract and no caller permissions.
 /// Share this lexical scope between ordinary compilation and source-proof replay.
 struct DefinitionContextScope {
-  previous_fn: Option<ExpectedFunctionContext>,
-  previous_struct: Option<(CalcitStructDef, Arc<CalcitTypeAnnotation>)>,
+  _expression: ExpressionContextScope,
   _features: FunctionFeaturesScope,
   _host_nullish: HostNullishReturnScope,
 }
@@ -92,25 +114,18 @@ impl DefinitionContextScope {
       Some(ExpectedFunctionContext {
         signature: signature.clone(),
         member_inputs: false,
+        immediate: false,
       })
     } else {
       None
     };
     Self {
-      previous_fn: EXPECTED_FN_TYPE.with(|cell| cell.replace(context)),
-      previous_struct: EXPECTED_STRUCT_TYPE.with(|cell| cell.replace(None)),
+      _expression: ExpressionContextScope::enter(context, None),
       _features: FunctionFeaturesScope {
         previous: CURRENT_FN_FEATURES.with(|cell| cell.replace(None)),
       },
       _host_nullish: HostNullishReturnScope::enter(false),
     }
-  }
-}
-
-impl Drop for DefinitionContextScope {
-  fn drop(&mut self) {
-    EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = self.previous_fn.take());
-    EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = self.previous_struct.take());
   }
 }
 
@@ -123,7 +138,11 @@ fn callback_parameter_context(signature: Arc<CalcitFnTypeAnnotation>, member_inp
     context.features = Arc::new(HashSet::new());
     Arc::new(context)
   };
-  ExpectedFunctionContext { signature, member_inputs }
+  ExpectedFunctionContext {
+    signature,
+    member_inputs,
+    immediate: false,
+  }
 }
 
 /// Resolve only a source function constructor, before its body needs context.
@@ -226,28 +245,17 @@ fn preprocess_argument_with_context(
       return Ok(Calcit::from(processed));
     }
   }
-  let previous = EXPECTED_FN_TYPE.with(|cell| {
-    let mut slot = cell.borrow_mut();
-    let previous = slot.take();
-    *slot = expected
+  let _context = ExpressionContextScope::enter(
+    expected
       .and_then(|annotation| annotation.resolve_to_fn())
-      .map(|signature| callback_parameter_context(signature, member_inputs));
-    previous
-  });
-  let previous_struct = EXPECTED_STRUCT_TYPE.with(|cell| {
-    let mut slot = cell.borrow_mut();
-    let previous = slot.take();
-    *slot = expected.and_then(|annotation| {
+      .map(|signature| callback_parameter_context(signature, member_inputs)),
+    expected.and_then(|annotation| {
       annotation
         .resolve_to_struct_with_ref()
         .map(|(definition, _)| (definition, annotation.clone()))
-    });
-    previous
-  });
-  let result = preprocess_expr(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack);
-  EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = previous);
-  EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = previous_struct);
-  result
+    }),
+  );
+  preprocess_expr(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack)
 }
 
 #[cfg(not(test))]
@@ -1304,7 +1312,10 @@ fn preprocess_with_type_slot_block(
   let mut preprocess_err: Option<CalcitErr> = None;
   for expr in body_args.iter() {
     match preprocess_expr(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack) {
-      Ok(form) => preprocessed_body.push(form),
+      Ok(form) => {
+        condition_evidence::establish_normal_exit(&form, scope_types);
+        preprocessed_body.push(form);
+      }
       Err(e) => {
         preprocess_err = Some(e);
         break;
@@ -2684,6 +2695,9 @@ pub fn preprocess_expr(
     // JS / WASM programs must contain that definition even if source never names it.
     ensure_ns_def_compiled(calcit::CORE_NS, "Option", check_warnings, call_stack)?;
   }
+  if scope_types.has_refinements() && !condition_evidence::preserves_locals(&processed, scope_types) {
+    scope_types.invalidate_refinements();
+  }
   Ok(processed)
 }
 
@@ -3221,7 +3235,7 @@ fn preprocess_immediate_call_context(
         input_types.push(resolve_type_value(&processed, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()));
         processed_args.push(processed);
       }
-      let signature = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      let signature = Arc::new(CalcitFnTypeAnnotation {
         arg_types: input_types,
         runtime_arity: None,
         return_type: calcit::DYNAMIC_TYPE.clone(),
@@ -3230,16 +3244,16 @@ fn preprocess_immediate_call_context(
         where_bounds: Arc::new(vec![]),
         fn_kind: SchemaKind::Fn,
         features: Arc::new(HashSet::new()),
-      })));
-      let processed_head = preprocess_argument_with_context(
-        head,
-        Some((&signature, false)),
-        scope_defs,
-        scope_types,
-        file_ns,
-        check_warnings,
-        call_stack,
-      )?;
+      });
+      let _context = ExpressionContextScope::enter(
+        Some(ExpectedFunctionContext {
+          signature,
+          member_inputs: false,
+          immediate: true,
+        }),
+        None,
+      );
+      let processed_head = preprocess_expr(head, scope_defs, scope_types, file_ns, check_warnings, call_stack)?;
       immediate_call = Some((processed_head, CalcitList::from(processed_args.as_slice())));
     }
   }
@@ -4774,8 +4788,7 @@ fn preprocess_list_call(
           // JS local assignment must preserve the binding contract. Otherwise
           // later uses can borrow obsolete literal or predicate evidence.
           if strict_types_enabled()
-            && (matches!(call_head, Calcit::Symbol { sym, .. } if sym.as_ref() == "set!")
-              || matches!(call_head, Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "set!"))
+            && is_local_assignment(call_head)
             && let (Some(Calcit::Local(local)), Some(value)) = (processed_args.first(), processed_args.get(1))
           {
             let expected = explicit_open::binding_contract(local).unwrap_or_else(|| local.type_info.clone());
@@ -10548,18 +10561,30 @@ pub fn preprocess_each_items(
 /// Carry invalidated read evidence out of nested evaluation scopes, without
 /// exporting branch refinements or a shadowing let binding to its parent.
 fn propagate_scope_widening(parent: &mut ScopeTypes, after: &ScopeTypes, refinements: &ScopeTypes, shadowed: Option<&str>) {
-  for (name, current) in parent.iter_mut() {
-    if shadowed == Some(name.as_ref()) {
-      continue;
-    }
-    let before = refinements.get(name).unwrap_or(current);
-    if let Some(after) = after.get(name)
-      && after != before
-      && !after.is_proven_for(before)
-    {
-      *current = type_inference::join_return_types(current.clone(), after.clone()).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
-    }
+  let widened: Vec<_> = parent
+    .iter()
+    .filter_map(|(name, current)| {
+      if shadowed == Some(name.as_ref()) {
+        return None;
+      }
+      let before = refinements.get(name).unwrap_or(current);
+      let after = after.get(name)?;
+      (after != before && !after.is_proven_for(before)).then(|| {
+        (
+          name.clone(),
+          type_inference::join_return_types(current.clone(), after.clone()).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()),
+        )
+      })
+    })
+    .collect();
+  for (name, annotation) in widened {
+    parent.annotate(name, annotation);
   }
+}
+
+fn is_local_assignment(head: &Calcit) -> bool {
+  matches!(head, Calcit::Symbol { sym, .. } if sym.as_ref() == "set!")
+    || matches!(head, Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "set!")
 }
 
 fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mut PreprocessContext) -> Result<Calcit, CalcitErr> {
@@ -10599,7 +10624,7 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
   let narrowing = condition_evidence::infer(&cond_form, ctx.scope_types);
   let mut true_scope_types = ctx.scope_types.clone();
   for (sym, inferred) in &narrowing.when_true {
-    true_scope_types.insert(sym.clone(), inferred.clone());
+    true_scope_types.refine(sym.clone(), inferred.clone());
   }
 
   let true_form = preprocess_expr(
@@ -10614,7 +10639,7 @@ fn preprocess_if(head: &CalcitSyntax, head_ns: &str, args: &CalcitList, ctx: &mu
   let false_form = if let Some(false_branch) = args.get(2) {
     let mut false_scope_types = ctx.scope_types.clone();
     for (sym, inferred) in &narrowing.when_false {
-      false_scope_types.insert(sym.clone(), inferred.clone());
+      false_scope_types.refine(sym.clone(), inferred.clone());
     }
     let form = preprocess_expr(
       false_branch,
@@ -11947,6 +11972,17 @@ fn body_for_parameter_recheck(form: &Calcit) -> Calcit {
   Calcit::from(items.iter().map(body_for_parameter_recheck).collect::<Vec<_>>())
 }
 
+/// Retained dependency or generated-location warnings can also be emitted by
+/// replay. Compare complete diagnostics, and only across these two traversals.
+fn discard_duplicate_replay_warnings(warnings: &mut Vec<LocatedWarning>, checkpoint: usize, replayed_from: usize) {
+  let replayed = warnings.split_off(replayed_from);
+  for warning in replayed {
+    if !warnings[checkpoint..replayed_from].contains(&warning) {
+      warnings.push(warning);
+    }
+  }
+}
+
 pub fn preprocess_defn(
   head: &CalcitSyntax,
   head_ns: &str,
@@ -12203,6 +12239,13 @@ pub fn preprocess_defn(
       // The expected contract belongs to this function expression, not to
       // unrelated functions nested in its body or returned by a later macro.
       let expected_context = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().take());
+      let borrows_capture_refinements =
+        expected_context.as_ref().is_some_and(|context| context.immediate) && body_types.has_refinements();
+      // A direct invocation runs after its already-checked arguments. An
+      // escaping closure cannot borrow temporary facts about captured locals.
+      if !expected_context.as_ref().is_some_and(|context| context.immediate) {
+        body_types.invalidate_refinements();
+      }
       let has_contextual_contract = expected_context.as_ref().is_some_and(|context| context.member_inputs);
       let expected_fn_schema = expected_context.map(|context| {
         let signature = context.signature;
@@ -12346,12 +12389,13 @@ pub fn preprocess_defn(
       }));
       let _source_replay_scope = source_replay::Scope::enter_function(
         ys,
-        !source_top_level_definition
-          && !has_marked_args
-          && !has_body_fn_hint
-          && recur_param_types
-            .iter()
-            .any(|parameter| type_inference::has_inferred_empty_slot(parameter)),
+        borrows_capture_refinements
+          || (!source_top_level_definition
+            && !has_marked_args
+            && !has_body_fn_hint
+            && recur_param_types
+              .iter()
+              .any(|parameter| type_inference::has_inferred_empty_slot(parameter))),
       );
 
       if !source_top_level_definition
@@ -12401,16 +12445,86 @@ pub fn preprocess_defn(
         explicit_open_bindings.bind(parameter, open);
       }
 
+      let initial_body_types = borrows_capture_refinements.then(|| body_types.clone());
+      let initial_forms = borrows_capture_refinements.then(|| xs.clone());
+      let initial_processed_body = borrows_capture_refinements.then(|| processed_body.clone());
+      let initial_warnings = ctx.check_warnings.borrow().len();
+      let initial_expressions = SOURCE_EXPRESSION_TRACE.with(|trace| trace.borrow().as_ref().map(|trace| trace.expressions.len()));
+      let initial_usages = RESOLVED_SOURCE_USAGE_TRACE.with(|trace| trace.borrow().as_ref().map(Vec::len));
+      let initial_proof_errors =
+        PROOF_ERROR_COLLECTOR.with(|collector| collector.borrow().as_ref().map(|collector| collector.errors.len()));
+      let initial_rewrites = post_lowering::Scope::checkpoint();
+
       args.traverse_result::<CalcitErr>(&mut |a| {
         if to_skip > 0 {
           to_skip -= 1;
           return Ok(());
         }
         let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
+        condition_evidence::establish_normal_exit(&form, &mut body_types);
         processed_body.push(form.clone());
         xs = xs.push_right(form);
         Ok(())
       })?;
+
+      if let Some(mut initial_scope) = initial_body_types
+        && processed_body.iter().any(body_contains_recur)
+        && processed_body
+          .iter()
+          .any(|form| !condition_evidence::preserves_locals(form, &initial_scope))
+      {
+        // A tail transfer re-enters earlier forms after effects from the
+        // previous iteration. Recheck source without entry-only facts, reusing
+        // retained macro expansions so evaluation and source identities survive.
+        // Dependencies compiled on demand remain cached. Keep their diagnostics,
+        // but discard this body's warnings and evidence along with its first pass.
+        let mut warning_index = 0;
+        ctx.check_warnings.borrow_mut().retain(|warning| {
+          let location = warning.location();
+          let retain = warning_index < initial_warnings || location.ns != info.at_ns || location.def != info.at_def;
+          warning_index += 1;
+          retain
+        });
+        if let Some(len) = initial_expressions {
+          SOURCE_EXPRESSION_TRACE.with(|trace| {
+            if let Some(trace) = trace.borrow_mut().as_mut() {
+              trace.expressions.truncate(len);
+            }
+          });
+        }
+        if let Some(len) = initial_usages {
+          RESOLVED_SOURCE_USAGE_TRACE.with(|trace| {
+            if let Some(trace) = trace.borrow_mut().as_mut() {
+              trace.truncate(len);
+            }
+          });
+        }
+        if let Some(len) = initial_proof_errors {
+          PROOF_ERROR_COLLECTOR.with(|collector| {
+            if let Some(collector) = collector.borrow_mut().as_mut() {
+              collector.errors.truncate(len);
+            }
+          });
+        }
+        post_lowering::Scope::rollback(initial_rewrites);
+        initial_scope.invalidate_refinements();
+        body_types = initial_scope;
+        xs = initial_forms.expect("borrowed capture scope retains its function header");
+        processed_body = initial_processed_body.expect("borrowed capture scope retains its schema hint");
+        source_replay::Scope::rewind_function();
+        let replayed_from = ctx.check_warnings.borrow().len();
+        let replay_result = (|| -> Result<(), CalcitErr> {
+          for source in args.iter().skip(2) {
+            let form = preprocess_expr(source, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
+            condition_evidence::establish_normal_exit(&form, &mut body_types);
+            processed_body.push(form.clone());
+            xs = xs.push_right(form);
+          }
+          Ok(())
+        })();
+        discard_duplicate_replay_warnings(&mut ctx.check_warnings.borrow_mut(), initial_warnings, replayed_from);
+        replay_result?;
+      }
 
       if infer_helper_schema {
         let inferred = type_inference::infer_unhinted_callback_signature(&xs.clone().into(), &body_types)
@@ -12764,6 +12878,7 @@ pub fn preprocess_core_let(
       return Ok(());
     }
     let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
+    condition_evidence::establish_normal_exit(&form, &mut body_types);
     xs.push(form);
     Ok(())
   })?;
@@ -12968,7 +13083,7 @@ pub fn preprocess_hint_fn(
         target_raw.get_location(),
       ));
     }
-    ctx.scope_types.insert(local.sym.to_owned(), type_entry.clone());
+    ctx.scope_types.annotate(local.sym.to_owned(), type_entry.clone());
     local.type_info = type_entry;
     ys[1] = Calcit::Local(local);
   }
@@ -13162,7 +13277,7 @@ fn preprocess_assert_type_with_obligation(
     } else {
       asserted_type
     };
-    ctx.scope_types.insert(local.sym.to_owned(), type_entry.clone());
+    ctx.scope_types.annotate(local.sym.to_owned(), type_entry.clone());
 
     let mut typed_local = local.to_owned();
     typed_local.type_info = type_entry;
@@ -13546,7 +13661,7 @@ pub fn preprocess_assert_traits(
       crate::calcit::DYNAMIC_TYPE.clone()
     };
 
-    ctx.scope_types.insert(local.sym.to_owned(), resolved_entry.clone());
+    ctx.scope_types.annotate(local.sym.to_owned(), resolved_entry.clone());
 
     let mut typed_local = local.to_owned();
     typed_local.type_info = resolved_entry;
@@ -14578,6 +14693,31 @@ fn inferred_helper_contract_is_closed(schema: &Arc<CalcitTypeAnnotation>) -> boo
     && schema.prove_with_bindings(schema, &mut HashMap::new()).is_proven()
 }
 
+fn body_contains_recur(expr: &Calcit) -> bool {
+  match expr {
+    Calcit::Recur(_) | Calcit::Proc(CalcitProc::Recur) => true,
+    Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "recur" => true,
+    Calcit::List(items)
+      if matches!(
+        items.first(),
+        Some(Calcit::Syntax(
+          CalcitSyntax::Defn
+            | CalcitSyntax::Defmacro
+            | CalcitSyntax::DefWasmExport
+            | CalcitSyntax::DefWasmImport
+            | CalcitSyntax::Quote
+            | CalcitSyntax::Quasiquote,
+          _
+        ))
+      ) =>
+    {
+      false
+    }
+    Calcit::List(items) => items.iter().any(body_contains_recur),
+    _ => false,
+  }
+}
+
 fn helper_body_has_recursive_edge(body: &Calcit) -> bool {
   let deps = program::collect_compiled_deps(body);
   let cyclic = PREPROCESS_COMPILE_GUARD.with(|guard| {
@@ -14586,15 +14726,7 @@ fn helper_body_has_recursive_edge(body: &Calcit) -> bool {
       .iter()
       .any(|(ns, def)| program::lookup_def_id(ns, def).is_some_and(|id| deps.contains(&id)))
   });
-  fn contains_recur(expr: &Calcit) -> bool {
-    match expr {
-      Calcit::Recur(_) | Calcit::Proc(CalcitProc::Recur) => true,
-      Calcit::Import(import) if import.ns.as_ref() == calcit::CORE_NS && import.def.as_ref() == "recur" => true,
-      Calcit::List(items) => items.iter().any(contains_recur),
-      _ => false,
-    }
-  }
-  cyclic || contains_recur(body)
+  cyclic || body_contains_recur(body)
 }
 
 fn reject_strict_whole_dynamic_public_schema(
@@ -14792,6 +14924,7 @@ mod tests {
       *cell.borrow_mut() = Some(ExpectedFunctionContext {
         signature: signature.clone(),
         member_inputs: true,
+        immediate: true,
       });
     });
     CURRENT_FN_FEATURES.with(|cell| *cell.borrow_mut() = Some(Arc::new(HashSet::from([EdnTag::from("js-ffi")]))));
@@ -14809,6 +14942,7 @@ mod tests {
       let state = cell.borrow();
       let restored = state.as_ref().expect("restore caller function context");
       assert!(restored.member_inputs);
+      assert!(restored.immediate);
       assert!(Arc::ptr_eq(&restored.signature, &signature));
     });
     assert!(CURRENT_FN_FEATURES.with(|cell| {
@@ -15499,6 +15633,204 @@ mod tests {
     assert!(build_indexed_match_table(&enum_def, &[match_branch("idle", "first"), match_branch("idle", "second")]).is_none());
     assert!(build_indexed_match_table(&enum_def, &[wildcard_match_branch("early"), match_branch("done", "late")]).is_none());
     assert!(build_indexed_match_table(&enum_def, &[match_branch("missing", "unknown")]).is_none());
+  }
+
+  #[test]
+  fn replay_warning_dedup_preserves_codes_details_and_prior_occurrences() {
+    let at = NodeLocation::new(Arc::from("tests.warning-replay"), Arc::from(GENERATED_DEF), Arc::new(vec![]));
+    let original = LocatedWarning::new_with_detail(
+      "same message".to_owned(),
+      at.clone(),
+      Some("W_A".to_owned()),
+      Some("hint".to_owned()),
+    );
+    let other_code = LocatedWarning::new_with_detail(
+      "same message".to_owned(),
+      at.clone(),
+      Some("W_B".to_owned()),
+      Some("hint".to_owned()),
+    );
+    let other_hint = LocatedWarning::new_with_detail(
+      "same message".to_owned(),
+      at.clone(),
+      Some("W_A".to_owned()),
+      Some("other hint".to_owned()),
+    );
+    let typed = |expected: &str, actual: &str| {
+      LocatedWarning::new_with_types(
+        "same message".to_owned(),
+        at.clone(),
+        Some("W_A".to_owned()),
+        expected.to_owned(),
+        actual.to_owned(),
+      )
+    };
+    let first_typed = typed("Number", "String");
+    let other_expected = typed("Bool", "String");
+    let other_actual = typed("Number", "Bool");
+    let mut warnings = vec![original.clone(), original.clone(), first_typed.clone()];
+    let replayed_from = warnings.len();
+    warnings.extend([
+      original.clone(),
+      first_typed.clone(),
+      other_code.clone(),
+      other_hint.clone(),
+      other_expected.clone(),
+      other_actual.clone(),
+    ]);
+    discard_duplicate_replay_warnings(&mut warnings, 1, replayed_from);
+    assert_eq!(
+      warnings,
+      vec![
+        original.clone(),
+        original.clone(),
+        first_typed,
+        other_code,
+        other_hint,
+        other_expected,
+        other_actual
+      ]
+    );
+
+    // An earlier identical warning outside this traversal is not a duplicate.
+    let mut unrelated = vec![original.clone(), original.clone()];
+    discard_duplicate_replay_warnings(&mut unrelated, 1, 1);
+    assert_eq!(unrelated, vec![original.clone(), original]);
+  }
+
+  #[test]
+  fn reentrant_capture_recheck_discards_duplicate_body_warnings() {
+    let _state = lock_preprocess_test_state();
+    let ns = "tests.capture-recheck";
+    let def = "main";
+    let dependency = cirru_parser::parse("defn helper () missing-dependency-local")
+      .expect("parse dependency")
+      .remove(0);
+    program::install_internal_source_namespace(
+      Arc::from("tests.capture-dependency"),
+      program::ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(
+          Arc::from("helper"),
+          program::ProgramDefEntry {
+            tags: Default::default(),
+            code: code_to_calcit(&dependency, "tests.capture-dependency", "helper", vec![]).expect("read dependency"),
+            schema: calcit::DYNAMIC_TYPE.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+            ffi: None,
+          },
+        )]),
+      },
+    )
+    .expect("install dependency compiled only on the first traversal");
+    let source = cirru_parser::parse(
+      "defn retry (index)\n  tests.capture-dependency/helper 1\n  missing-local\n  set! captured |changed\n  recur index",
+    )
+    .expect("parse re-entrant function")
+    .remove(0);
+    let code = code_to_calcit(&source, ns, def, vec![]).expect("read re-entrant function");
+    // Public trace entrypoints own a fresh scope, so activate their collectors
+    // directly to exercise an immediate caller's captured evidence as well.
+    struct RestoreTraces(Option<SourceExpressionTrace>, Option<Vec<ResolvedSourceUsage>>);
+    impl Drop for RestoreTraces {
+      fn drop(&mut self) {
+        SOURCE_EXPRESSION_TRACE.with(|trace| trace.replace(self.0.take()));
+        RESOLVED_SOURCE_USAGE_TRACE.with(|trace| trace.replace(self.1.take()));
+      }
+    }
+    let mut trace = SourceExpressionTrace::default();
+    let Calcit::List(forms) = &code else { panic!("function source") };
+    for (index, form) in forms.iter().enumerate() {
+      if let Calcit::List(items) = form {
+        trace.reader_locations.insert(
+          Arc::as_ptr(items) as usize,
+          NodeLocation::new(ns.into(), def.into(), Arc::new(vec![index as u16])),
+        );
+      }
+    }
+    let _traces = RestoreTraces(
+      SOURCE_EXPRESSION_TRACE.with(|cell| cell.replace(Some(trace))),
+      RESOLVED_SOURCE_USAGE_TRACE.with(|cell| cell.replace(Some(vec![]))),
+    );
+    let warnings = RefCell::new(vec![LocatedWarning::new(
+      "prior warning".to_owned(),
+      NodeLocation::new(ns.into(), def.into(), Arc::new(vec![])),
+    )]);
+    let signature = Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![Arc::new(CalcitTypeAnnotation::Number)],
+      return_type: Arc::new(CalcitTypeAnnotation::Unit),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::from([EdnTag::from("js-ffi")])),
+    });
+    let _context = ExpressionContextScope::enter(
+      Some(ExpectedFunctionContext {
+        signature,
+        member_inputs: true,
+        immediate: true,
+      }),
+      None,
+    );
+    let mut scope = ScopeTypes::new();
+    scope.insert(Arc::from("captured"), calcit::DYNAMIC_TYPE.clone());
+    scope.refine(Arc::from("captured"), Arc::new(CalcitTypeAnnotation::Number));
+    preprocess_expr(
+      &code,
+      &HashSet::from([Arc::from("captured")]),
+      &mut scope,
+      ns,
+      &warnings,
+      &CallStackList::default(),
+    )
+    .expect("a warning does not prevent rechecking an expanded body");
+    let warnings = warnings.borrow();
+    assert_eq!(warnings.iter().filter(|warning| warning.message() == "prior warning").count(), 1);
+    assert_eq!(
+      warnings
+        .iter()
+        .filter(|warning| warning.message().contains("unknown `missing-local`"))
+        .count(),
+      1,
+      "discard the first body's warning, not its final replay: {warnings:?}"
+    );
+    assert_eq!(
+      warnings
+        .iter()
+        .filter(|warning| warning.message().contains("unknown `missing-dependency-local`"))
+        .count(),
+      1,
+      "keep warnings belonging to cached dependencies: {warnings:?}"
+    );
+    assert_eq!(
+      warnings
+        .iter()
+        .filter(|warning| warning.location().def.as_ref() == GENERATED_DEF && warning.message().contains("expected 0 args"))
+        .count(),
+      1,
+      "unlocated body warnings must not be emitted twice: {warnings:?}"
+    );
+    SOURCE_EXPRESSION_TRACE.with(|trace| {
+      let trace = trace.borrow();
+      let evidence = &trace.as_ref().expect("active query trace").expressions;
+      unique_source_expression_at_path(evidence, ns, def, &[5]).expect("the replay's assignment has one original source identity");
+    });
+    RESOLVED_SOURCE_USAGE_TRACE.with(|trace| {
+      assert_eq!(
+        trace
+          .borrow()
+          .as_ref()
+          .unwrap()
+          .iter()
+          .filter(|usage| usage.target_ns.as_ref() == "tests.capture-dependency" && usage.target_def.as_ref() == "helper")
+          .count(),
+        1,
+        "the retained source reference is re-resolved exactly once"
+      );
+    });
   }
 
   #[test]

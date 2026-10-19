@@ -85,6 +85,12 @@ pub(super) struct Scope {
   active: bool,
 }
 
+/// A position in the current definition's evidence, not in a nested definition.
+pub(super) struct Checkpoint {
+  depth: usize,
+  len: usize,
+}
+
 impl Scope {
   pub(super) fn enter() -> Self {
     let active = enabled();
@@ -92,6 +98,27 @@ impl Scope {
       FRAMES.with(|frames| frames.borrow_mut().push(Vec::new()));
     }
     Self { active }
+  }
+
+  pub(super) fn checkpoint() -> Option<Checkpoint> {
+    FRAMES.with(|frames| {
+      let frames = frames.borrow();
+      frames.last().map(|frame| Checkpoint {
+        depth: frames.len(),
+        len: frame.len(),
+      })
+    })
+  }
+
+  /// Drop evidence of a discarded traversal without touching its caller's frame.
+  pub(super) fn rollback(checkpoint: Option<Checkpoint>) {
+    if let Some(checkpoint) = checkpoint {
+      FRAMES.with(|frames| {
+        let mut frames = frames.borrow_mut();
+        assert_eq!(frames.len(), checkpoint.depth, "rewrite rollback must stay in its definition frame");
+        frames.last_mut().expect("checkpoint retains its frame").truncate(checkpoint.len);
+      });
+    }
   }
 
   /// Take the evidence recorded for this definition.
@@ -436,6 +463,38 @@ mod tests {
 
   fn validate(tree: &Calcit, reported: &[LocatedWarning], evidence: &[RewriteEvidence]) -> Result<(), CalcitErr> {
     validate_definition("tests.post-lowering", "main", tree, reported, evidence, &CallStackList::default())
+  }
+
+  #[test]
+  fn rollback_keeps_prior_evidence_and_nested_definition_frames() {
+    // Construct active frames directly so this invariant is checked without
+    // depending on the process-wide CALCIT_LINT_CORE switch.
+    let evidence = |value| RewriteEvidence {
+      origin: RewriteOrigin::MethodInline,
+      before_form: Calcit::Number(value),
+      before_type: number(),
+      after_form: Calcit::Number(value),
+      after_type: number(),
+      location: None,
+    };
+    assert!(FRAMES.with(|frames| frames.borrow().is_empty()));
+    FRAMES.with(|frames| frames.borrow_mut().push(vec![evidence(1.0)]));
+    let outer = Scope { active: true };
+    let checkpoint = Scope::checkpoint();
+    FRAMES.with(|frames| frames.borrow_mut().last_mut().unwrap().push(evidence(2.0)));
+    FRAMES.with(|frames| frames.borrow_mut().push(vec![evidence(3.0)]));
+    let nested = Scope { active: true };
+    let nested_evidence = nested.finish();
+    Scope::rollback(checkpoint);
+    FRAMES.with(|frames| frames.borrow_mut().last_mut().unwrap().push(evidence(4.0)));
+    let retained = outer.finish();
+    assert_eq!(nested_evidence.len(), 1);
+    assert_eq!(nested_evidence[0].after_form, Calcit::Number(3.0));
+    assert_eq!(retained.len(), 2);
+    assert_eq!(retained[0].after_form, Calcit::Number(1.0));
+    assert_eq!(retained[1].after_form, Calcit::Number(4.0));
+    assert!(Scope::checkpoint().is_none());
+    Scope::rollback(None);
   }
 
   /// #1428: `recur` arguments were never checked against the function type.

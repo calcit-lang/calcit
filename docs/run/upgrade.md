@@ -30,6 +30,27 @@ Snapshot 中的具名声明直接作为定义根节点：`["defn","increment",["
 
 先用 `calcit query def app.config/increment --format edn` 和 `calcit tree show app.config/increment --path ''` 核对实际 AST。仅当确认是多余包装时，通过现有编辑事务 dry-run、scoped revision 将内部声明提升为根节点，再运行完整 strict、项目测试和目标后端验证；不批量猜测、自动删除函数体内的调用，也不放宽 schema。查询旧源码和修复操作仍可用，合法匿名函数调用与 quoted data 不变。
 
+## 0.31.0 拒绝守卫保留后续类型证据
+
+在函数体或 `let` 中，运行时守卫拒绝不匹配的值后，后续表达式可以使用正常继续路径已经证明的类型：
+
+```cirru
+defn call-value (f args)
+  when (not $ fn? f)
+    raise |expected-function
+  f & args
+```
+
+这里 `f` 的输入仍可声明为 `Dynamic`，`args` 为 `List<Dynamic>`；运行时错误、参数求值顺序和调用次数不变。
+`number?` 等已有谓词也适用，例如拒绝非 Number 后使用 `.inc`。编译器分析展开后的控制流，`assert` 和直接 `if` 不需要各自的特殊规则。立即调用的函数可以使用当前证据，参数求值中的写入仍会使证据失效。只读 `loop` 也可沿用入口证据；可能修改捕获值并通过 `recur` 重入的循环会在撤销入口临时证据后重新检查，需要在每轮使用前检查，或显式绑定独立的已检查值。
+
+### 限制
+
+- `fn?` 只证明值是函数；需要具体回调参数、返回值或 async 合同时，仍须提供并验证完整函数类型。
+- 变量重绑或可能修改捕获变量的调用会使临时证据失效，后加 `assert-type` / `hint-fn` 不延长证据寿命。
+- 可能逃逸的闭包不继承捕获变量的临时证据；可在守卫后绑定独立的已检查值，再为闭包声明真实输入与返回合同。
+- 自定义同名谓词或正常返回的拒绝分支不能提供内置谓词的类型证据。
+
 ## 0.32.0 调用 Dynamic 值须先收窄
 
 静态类型为 Dynamic 的值被直接调用时（例如 schema 为 `Fn [Dynamic] -> Dynamic` 的 `defn cd (x) (x 1)`），
@@ -40,7 +61,6 @@ Snapshot 中的具名声明直接作为定义根节点：`["defn","increment",["
 | --- | --- |
 | `(f x)`，`f` 为 Dynamic | `if (fn? f) (f x) (raise …)` |
 | 参数 schema 写成 `'Dynamic` 的回调 | 改为 `:: 'Fn $ {} (:args …) (:return …)` |
-| `when (not (fn? f)) (raise …)` 后再 `(f x)` | 改用 `if (fn? f) (f x) (raise …)`；提前 raise 不收窄后续语句 |
 
 调用头由宏自己生成的调用、声明 `:js-ffi` feature 的定义里对宿主函数的调用不受影响。宏把调用方写的值放到调用头时（如 `-> 1 f` 展开为 `(f 1)`）仍会报告，因为被调用的值来自调用方。
 
