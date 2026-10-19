@@ -1265,25 +1265,65 @@ fn retired_string_count_rejects_prefix_and_postfix_in_both_modes() {
 #[test]
 fn retired_core_functions_report_preferred_spelling() {
   run_with_large_stack(|| {
-    for (snippet, name, replacement) in [
-      ("some? 1", "some?", "non-nil?"),
-      ("join-str ([] 1 2) |-", "join-str", "join-string"),
-      ("add-watch (ref 0) :k $ fn (current previous) &unit", "add-watch", "add-watch!"),
-      ("cpu-time", "cpu-time", "monotonic-time-ms"),
+    for (snippet, name, replacement, version) in [
+      ("some? 1", "some?", "non-nil?", "0.29.0"),
+      ("join-str ([] 1 2) |-", "join-str", "join-string", "0.29.0"),
+      (
+        "add-watch (ref 0) :k $ fn (current previous) &unit",
+        "add-watch",
+        "add-watch!",
+        "0.29.0",
+      ),
+      ("cpu-time", "cpu-time", "monotonic-time-ms", "0.29.0"),
+      ("optionally 1", "optionally", "nil->option", "0.31.0"),
+      ("join ([] 1 2) 0", "join", "intersperse", "0.31.0"),
+      ("section-by ([] 1 2 3) 2", "section-by", "chunks", "0.31.0"),
+      ("turn-str 1", "turn-str", "to-string", "0.31.0"),
+      ("some-in? ({} (:a 1)) ([] :a)", "some-in?", ".ok? $ get-in x path", "0.31.0"),
     ] {
-      let entries = load_snippet_entries(snippet);
-      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
-      let _ = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
-      let warnings = warnings.borrow();
-      assert!(
-        warnings.iter().any(|warning| {
-          warning.message().contains(&format!("unknown `{name}`"))
-            && warning.message().contains("removed from calcit.core in 0.29.0")
-            && warning.message().contains(&format!("`{replacement}`"))
-        }),
-        "retired `{name}` should point to `{replacement}`: {warnings:?}"
-      );
+      for source in [
+        snippet.to_owned(),
+        format!("ns app.main\n  :require\n    calcit.core :refer $ {name}\n\n{snippet}"),
+        format!(
+          "ns app.main\n  :require\n    calcit.core :as core\n\n{}",
+          snippet.replacen(name, &format!("core/{name}"), 1)
+        ),
+        snippet.replacen(name, &format!("calcit.core/{name}"), 1),
+      ] {
+        let entries = load_snippet_entries(&source);
+        let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+        let _ = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+        let warnings = warnings.borrow();
+        assert!(
+          warnings.iter().any(|warning| {
+            warning.message().contains(&format!("unknown `{name}`"))
+              && warning.message().contains(&format!("removed from calcit.core in {version}"))
+              && warning.message().contains(&format!("`{replacement}`"))
+          }),
+          "retired `{name}` should point to `{replacement}` in {source}: {warnings:?}"
+        );
+      }
     }
+
+    let mut snapshot = snapshot::Snapshot::default();
+    snapshot.files.insert(
+      "app.main".to_owned(),
+      snapshot::create_file_from_snippet("ns app.main\n  :require\n    app.helper :refer $ join\n\njoin")
+        .expect("custom import fixture should parse"),
+    );
+    snapshot.files.insert(
+      "app.helper".to_owned(),
+      snapshot::create_file_from_snippet("defn join () 1").expect("custom definition should parse"),
+    );
+    let entries = prepare_snapshot_entries(snapshot);
+    let warnings = RefCell::new(vec![]);
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("a same-spelling function from another namespace remains available");
+    assert!(
+      warnings.borrow().is_empty(),
+      "custom imports are not retired core names: {:?}",
+      warnings.borrow()
+    );
   });
 }
 

@@ -32,13 +32,10 @@ for (const expression of ["to-tag 1", "to-tag ([] 1)", "to-symbol :ready", "to-s
 
 const stringConversion = JSON.parse(execFileSync(binary, [snapshot, "query", "def", "calcit.core/to-string", "--format", "json"], { encoding: "utf8" }));
 assert.ok(JSON.stringify(stringConversion.data.schema).includes("ToString"), "to-string must require its trait bound");
-const legacyStringConversion = JSON.parse(execFileSync(binary, [snapshot, "query", "def", "calcit.core/turn-str", "--format", "json"], { encoding: "utf8" }));
-assert.ok(JSON.stringify(legacyStringConversion.data.schema).includes("ToString"), "turn-str must retain the same strict trait boundary");
-assert.ok(legacyStringConversion.data.tags.includes("internal"), "the compatibility alias must not be recommended as a public API");
 const legacyTurnString = JSON.parse(execFileSync(binary, [snapshot, "query", "def", "calcit.core/turn-string", "--format", "json"], { encoding: "utf8" }));
 assert.ok(JSON.stringify(legacyTurnString.data.schema).includes("ToString"), "turn-string must expose the trait-bound wrapper contract");
 assert.ok(legacyTurnString.data.tags.includes("internal"), "turn-string must remain a compatibility entry");
-for (const expression of ["to-string ([] 1)", "to-string (&{} :a 1)", "to-string (#{} 1)", "to-string &unit", "to-string (fs:path |abc)", "to-string (json-parse |42)", "turn-str ([] 1)", "turn-str (&{} :a 1)", "turn-str &unit", "turn-str (json-parse |42)", "turn-string ([] 1)", "turn-string (&{} :a 1)", "turn-string &unit", "turn-string (json-parse |42)"]) {
+for (const expression of ["to-string ([] 1)", "to-string (&{} :a 1)", "to-string (#{} 1)", "to-string &unit", "to-string (fs:path |abc)", "to-string (json-parse |42)", "turn-string ([] 1)", "turn-string (&{} :a 1)", "turn-string &unit", "turn-string (json-parse |42)"]) {
   const result = spawnSync(binary, [snapshot, "eval", expression], { encoding: "utf8" });
   assert.notEqual(result.status, 0, `${expression} must fail strict trait-bound checking`);
   assert.match(result.stderr, /W_GENERIC_WHERE_BOUND_MISMATCH/);
@@ -150,13 +147,12 @@ try {
     [0.0000001, "0.0000001"],
   ]) {
     assert.equal(core.to_string(value), expected, `generated JS to-string should convert ${String(value)}`);
-    assert.equal(core.turn_str(value), expected, `generated JS compatibility alias should convert ${String(value)}`);
     assert.equal(core.turn_string(value), expected, `generated JS turn-string compatibility wrapper should convert ${String(value)}`);
   }
   const traitsOutput = join(output, "traits-js");
   execFileSync(binary, ["--emit-path", traitsOutput, "calcit/test-traits.cirru", "js"], { stdio: "pipe" });
   const traits = await import(pathToFileURL(join(traitsOutput, "test-traits.main.mjs")).href);
-  assert.equal(traits.test_turn_str_custom(), "Person:Alice", "generated JS turn-str must dispatch a nominal ToString implementation");
+  assert.equal(traits.test_to_string_custom(), "Person:Alice", "generated JS to-string must dispatch a nominal ToString implementation");
   const list = new runtime.CalcitSliceList([1, "a"]);
   assert.equal(runtime.format_to_lisp(list), "(1 |a)", "JS Lisp formatting must match native for a simple String in a List");
   assert.equal(runtime.to_lispy_string(list), "([] 1 |a)", "diagnostic List display is not Lisp formatting");
@@ -175,8 +171,6 @@ try {
   execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-to-string-value", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'String) (:args $ [] 'Number)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-runtime", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-runtime (x) (if (&= (turn-string x) |42) 1 0)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-runtime", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)"], { stdio: "pipe" });
-  execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-str-runtime", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-str-runtime (x) (if (&= (turn-str x) |42) 1 0)"], { stdio: "pipe" });
-  execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-str-runtime", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-zero", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-zero (x) (if (&= (turn-string x) |0) 1 0)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "schema", "test-wasm.main/test-turn-string-zero", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number)"], { stdio: "pipe" });
   execFileSync(binary, [wasmSnapshot, "edit", "def", "test-wasm.main/test-turn-string-safe-limit", "--input-format", "cirru", "--code", "quote $ defwasm-export test-turn-string-safe-limit (x) (if (&= (turn-string x) |9007199254740992) 1 0)"], { stdio: "pipe" });
@@ -189,7 +183,6 @@ try {
   execFileSync(binary, ["--emit-path", wasmJsOutput, wasmSnapshot, "js"], { stdio: "pipe" });
   const wasmJs = await import(pathToFileURL(join(wasmJsOutput, "test-wasm.main.mjs")).href);
   assert.equal(wasmJs.test_to_string_number(42), 1, "generated JS must run the generic ToString definition");
-  assert.equal(wasmJs.test_turn_str_runtime(42), 1, "generated JS compatibility alias must run the trait-bound ToString definition");
   assert.equal(wasmJs.test_to_string_scalars(), 1, "generated JS must preserve Nil, Bool, String, and Tag trait text");
   assert.equal(wasmJs.test_custom_trait_score(42), 1, "generated JS must select the same nominal trait implementation");
   assert.equal(wasmJs.test_qualified_symbol_helper(42), 1, "generated JS must keep the local helper despite a same-named definition");
@@ -219,7 +212,6 @@ try {
   };
   assert.equal(instance.exports["test-to-string-frac"](), 1, "WASM must lower Number to-string through its trait implementation");
   assert.equal(instance.exports["test-to-string-number"](42), 1, "WASM must specialize the generic ToString trait call for runtime Number arguments");
-  assert.equal(instance.exports["test-turn-str-runtime"](42), 1, "WASM compatibility alias must specialize the ToString trait call for runtime Number arguments");
   assert.equal(instance.exports["test-to-string-scalars"](), 1, "WASM must preserve Nil, Bool, String, and Tag trait text");
   assert.equal(instance.exports["test-custom-trait-score"](42), 1, "WASM must select a user-defined nominal trait implementation for a runtime argument");
   assert.equal(instance.exports["test-qualified-symbol-helper"](42), 1, "WASM must resolve a local symbol by namespace before a same-named helper");

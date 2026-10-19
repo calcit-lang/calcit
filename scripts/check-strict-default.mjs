@@ -402,7 +402,7 @@ if (!resultMethod.stdout.split("\n").some((line) => line.trim().endsWith(": (%::
 
 const openMerge = run([
   "eval",
-  "count $ merge-dynamic (assert-type ({} (:a 1)) (:: 'Map 'Tag 'Dynamic)) (assert-type ({} (:b 2)) (:: 'Map 'Tag 'Dynamic))",
+  "count $ merge (assert-type ({} (:a 1)) (:: 'Map 'Tag 'Dynamic)) (assert-type ({} (:b 2)) (:: 'Map 'Tag 'Dynamic))",
 ]);
 expectStatus(openMerge, 0, "strict open-container merge");
 if (!openMerge.stdout.split("\n").some((line) => line.trim().endsWith(": 2"))) {
@@ -411,7 +411,7 @@ if (!openMerge.stdout.split("\n").some((line) => line.trim().endsWith(": 2"))) {
 
 const openConcat = run([
   "eval",
-  "count $ concat-dynamic (assert-type ([] 1 2) (:: 'List 'Dynamic)) (assert-type ([] 3) (:: 'List 'Dynamic))",
+  "count $ concat (assert-type ([] 1 2) (:: 'List 'Dynamic)) (assert-type ([] 3) (:: 'List 'Dynamic))",
 ]);
 expectStatus(openConcat, 0, "strict open-container concat");
 if (!openConcat.stdout.split("\n").some((line) => line.trim().endsWith(": 3"))) {

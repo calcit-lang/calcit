@@ -62,7 +62,7 @@ Use `js-nullish?` and `js-present?` to narrow a JavaScript boundary. Applying
 `E_JS_FFI_NULLABLE_PREDICATE`; compatibility mode reports
 `W_JS_FFI_NULLABLE_PREDICATE`. Convert explicitly with
 `js-nullish->option` only after accepting the opaque payload contract; generic
-`optionally` does not accept `JsNullish<T>`.
+`nil->option` does not accept `JsNullish<T>`.
 
 ## 2. Capability and target policy
 

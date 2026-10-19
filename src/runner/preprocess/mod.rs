@@ -797,17 +797,52 @@ pub fn removed_data_api_migration(name: &str) -> Option<RemovedDataApiMigration>
   Some(RemovedDataApiMigration { replacement, guidance })
 }
 
-/// Core functions removed in 0.29.0. An unresolved reference keeps the regular
-/// unknown-symbol warning and appends the preferred spelling.
-fn retired_core_function_migration(name: &str) -> Option<&'static str> {
+/// Removed core functions with the release that removed them. An unresolved
+/// reference keeps the regular unknown-symbol warning and appends the preferred spelling.
+fn retired_core_function_migration(name: &str) -> Option<(&'static str, &'static str)> {
   match name {
-    "some?" => Some("use `non-nil?`; Option variants use `.some?`"),
-    "join-str" => Some("use `join-string`"),
-    "add-watch" => Some("use `add-watch!`"),
-    "cpu-time" => Some("use `monotonic-time-ms`"),
-    "foldl'" => Some("use `fold` with the same argument order"),
+    "some?" => Some(("0.29.0", "use `non-nil?`; Option variants use `.some?`")),
+    "join-str" => Some(("0.29.0", "use `join-string`")),
+    "add-watch" => Some(("0.29.0", "use `add-watch!`")),
+    "cpu-time" => Some(("0.29.0", "use `monotonic-time-ms`")),
+    "foldl'" => Some(("0.29.0", "use `fold` with the same argument order")),
+    "optionally" => Some(("0.31.0", "use `nil->option`")),
+    "join" => Some((
+      "0.31.0",
+      "use `intersperse` (it returns a List); use `join-string` to build a String",
+    )),
+    "section-by" => Some(("0.31.0", "use `chunks`")),
+    "merge-dynamic" => Some(("0.31.0", "use `merge`")),
+    "concat-dynamic" => Some(("0.31.0", "use `concat`")),
+    "turn-str" => Some(("0.31.0", "use `to-string`")),
+    "some-in?" => Some(("0.31.0", "use `.ok? $ get-in x path`; `contains-in?` checks path existence instead")),
+    "range-bothway" => Some((
+      "0.31.0",
+      "bind the arguments once, then use `range (inc (negate x)) x`, or `range (inc (- (+ x x) y)) y` with an end `y`",
+    )),
     _ => None,
   }
+}
+
+fn warn_on_retired_core_import(ns: &str, name: &str, source: &Calcit, warnings: &RefCell<Vec<LocatedWarning>>) -> bool {
+  if ns != calcit::CORE_NS || program::has_def_code(ns, name) {
+    return false;
+  }
+  let Some((version, migration)) = retired_core_function_migration(name) else {
+    return false;
+  };
+  let Calcit::Symbol { info, location, .. } = source else {
+    return false;
+  };
+  gen_check_warning_with_location(
+    format!(
+      "[Warn] unknown `{name}` in {}/{}; `{name}` was removed from calcit.core in {version}, {migration}",
+      info.at_ns, info.at_def
+    ),
+    NodeLocation::new(info.at_ns.clone(), info.at_def.clone(), location.clone().unwrap_or_default()),
+    warnings,
+  );
+  true
 }
 
 fn warn_on_removed_data_api_call(
@@ -2751,6 +2786,9 @@ fn preprocess_expr_unguarded(
             if target_ns.as_ref() == calcit::CORE_NS && def_part.as_ref() == "tag-match" {
               return Err(removed_tag_match_error(expr, call_stack));
             }
+            if warn_on_retired_core_import(&target_ns, &def_part, expr, check_warnings) {
+              return Ok(expr.clone());
+            }
             if let Some(proc) = resolved_core_proc(&target_ns, &def_part) {
               return Ok(Calcit::Proc(proc));
             }
@@ -2788,6 +2826,8 @@ fn preprocess_expr_unguarded(
             });
 
             Ok(retain_resolved_source_usage(form, expr, call_stack))
+          } else if warn_on_retired_core_import(&ns_alias, &def_part, expr, check_warnings) {
+            Ok(expr.clone())
           } else {
             Err(CalcitErr::use_msg_stack_location(
               CalcitErrKind::Var,
@@ -2893,6 +2933,9 @@ fn preprocess_expr_unguarded(
                 if target_ns.as_ref() == calcit::CORE_NS && def.as_ref() == "tag-match" {
                   return Err(removed_tag_match_error(expr, call_stack));
                 }
+                if warn_on_retired_core_import(&target_ns, def, expr, check_warnings) {
+                  return Ok(expr.clone());
+                }
                 // effect
                 // TODO js syntax to handle in future
 
@@ -2960,8 +3003,8 @@ fn preprocess_expr_unguarded(
                     );
                   } else {
                     let mut message = format!("[Warn] unknown `{def}` in {def_ns}/{at_def}, locals {{{}}}", names.join(" "));
-                    if let Some(migration) = retired_core_function_migration(def) {
-                      message.push_str(&format!("; `{def}` was removed from calcit.core in 0.29.0, {migration}"));
+                    if let Some((version, migration)) = retired_core_function_migration(def) {
+                      message.push_str(&format!("; `{def}` was removed from calcit.core in {version}, {migration}"));
                     }
                     gen_check_warning_with_location(message, node_location, check_warnings);
                   }
@@ -11927,7 +11970,7 @@ pub fn preprocess_defn(
         && !generated_by_macro
         // These core APIs intentionally preserve omission sugar in their
         // public calling convention until their signatures are redesigned.
-        && !(ctx.file_ns == calcit::CORE_NS && matches!(def_name.as_ref(), "if-let" | "slice" | "range-bothway"))
+        && !(ctx.file_ns == calcit::CORE_NS && matches!(def_name.as_ref(), "if-let" | "slice"))
         && ys.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgOptional, _)))
       {
         return Err(CalcitErr::use_msg_stack_location_with_code(
@@ -14642,10 +14685,9 @@ fn legacy_optional_public_schema_requires_migration(ns: &str, def_name: &str, sc
   }
   // Core `&` definitions are semver-private primitives and may still model
   // nullable host/runtime values. Public core wrappers must obey the same
-  // nominal absence rule as application code. `nil->option` and its legacy
-  // spelling `optionally` are the explicit bridge from an internal Optional<T>
-  // value to Option<T>.
-  !(ns == calcit::CORE_NS && (def_name.starts_with('&') || matches!(def_name, "optionally" | "nil->option")))
+  // nominal absence rule as application code. `nil->option` is the explicit
+  // bridge from an internal Optional<T> value to Option<T>.
+  !(ns == calcit::CORE_NS && (def_name.starts_with('&') || def_name == "nil->option"))
 }
 
 fn reject_strict_legacy_optional_public_schema(
@@ -23128,10 +23170,10 @@ mod tests {
     assert!(core_raw_warnings.borrow().is_empty(), "raw core primitives are semver-private");
 
     let bridge_warnings = RefCell::new(vec![]);
-    warn_on_legacy_optional_public_schema(calcit::CORE_NS, "optionally", &schema, &bridge_warnings);
+    warn_on_legacy_optional_public_schema(calcit::CORE_NS, "nil->option", &schema, &bridge_warnings);
     assert!(
       bridge_warnings.borrow().is_empty(),
-      "optionally is the explicit nullable-to-nominal bridge"
+      "nil->option is the explicit nullable-to-nominal bridge"
     );
   }
 
@@ -23168,10 +23210,8 @@ mod tests {
 
     reject_strict_legacy_optional_public_schema(calcit::CORE_NS, "&raw-lookup", &schema, &CallStackList::default(), None)
       .expect("raw core primitives remain explicit nullable implementation boundaries");
-    reject_strict_legacy_optional_public_schema(calcit::CORE_NS, "optionally", &schema, &CallStackList::default(), None)
-      .expect("the explicit Optional-to-Option bridge remains available");
     reject_strict_legacy_optional_public_schema(calcit::CORE_NS, "nil->option", &schema, &CallStackList::default(), None)
-      .expect("the preferred spelling of the bridge remains available");
+      .expect("the explicit Optional-to-Option bridge remains available");
   }
 
   #[test]

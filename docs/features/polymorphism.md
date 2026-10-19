@@ -270,7 +270,7 @@ calls, so each step and every error-type transition stays visible. New ordinary 
 operations should be registered in the corresponding method bag and documented
 in receiver-first form.
 
-`optionally` exists only for legacy core/internal `Optional<T>` compatibility. Public function schemas reject `Optional<T>`; new APIs return `Option<T>`, `Result<T,E>`, or `Unit` directly.
+`nil->option` exists only for legacy core/internal `Optional<T>` compatibility. Public function schemas reject `Optional<T>`; new APIs return `Option<T>`, `Result<T,E>`, or `Unit` directly.
 
 Core lookup APIs that no longer need to preserve bootstrapping compatibility use nominal results directly:
 
@@ -290,7 +290,7 @@ Option result. An incompatible fallback is rejected whenever the payload type
 is known; an existing Dynamic boundary remains Dynamic. Keep the original
 Option and use `if-let` or exhaustive `match` when absence is a distinct branch.
 
-Raw JavaScript property reads and native calls are different: they return `JsNullish<JsObject>`. Narrow them with `js-present?`/`js-nullish?`; `nil?`, `non-nil?`, and generic `optionally` do not erase this host boundary. Use `js-nullish->option` only as an explicit conversion after accepting or validating the opaque payload contract.
+Raw JavaScript property reads and native calls are different: they return `JsNullish<JsObject>`. Narrow them with `js-present?`/`js-nullish?`; `nil?`, `non-nil?`, and generic `nil->option` do not erase this host boundary. Use `js-nullish->option` only as an explicit conversion after accepting or validating the opaque payload contract.
 
 泛型 payload 无法推断时，Calcit 会保留 nominal wrapper，只把未知 payload 标为 `Dynamic`；例如对动态 list 调用 `find` 的结果仍是 `Option<Dynamic>`，而不是裸 `Dynamic`。这会让迁移错误保持可见。若对该 Option 使用 nullable predicate（`non-nil?`/`nil?`）、位置式 enum 访问或裸比较，会报告 `W_NOMINAL_ENUM_LEGACY_USE`；请改用 Option 方法或原生 `match`。
 
@@ -298,8 +298,8 @@ The same operations are available as methods on enum values:
 
 ```cirru
 do
-  assert= (Option :some 1) $ optionally 1
-  assert= (Option :none) $ optionally nil
+  assert= (Option :some 1) $ nil->option 1
+  assert= (Option :none) $ nil->option nil
   assert= (Option :some 2) $ find ([] 1 2 3) (fn (x) (> x 1))
   assert= (Result :ok 1.5) $ parse-float |1.5
   assert= |fallback $ (get-env |__MISSING_ENV__) .unwrap-or |fallback

@@ -5116,24 +5116,6 @@
               assert= ([] 1)
                 concat $ [] 1
             :tags $ #{} :core :unit
-        'concat-dynamic $ %{} 'CodeEntry
-          :doc "|Deprecated: use concat, which accepts List<Dynamic> values the same way. Concatenates open List<Dynamic> values without claiming a homogeneous member relation; keeps an explicit open-container boundary."
-          :code $ quote $ defn concat-dynamic (& args) (concat & args)
-          :examples $ [] $ quote
-            assert= 3 $ count $ concat-dynamic
-              assert-type ([] 1 2) (:: 'List 'Dynamic)
-              assert-type ([] 3) (:: 'List 'Dynamic)
-          :schema $ :: 'Fn $ {}
-            :args $ []
-            :rest $ :: 'List 'Dynamic
-            :return $ :: 'List 'Dynamic
-          :tags $ #{} :deprecated
-          :tests $ [] $ %{} 'TestEntry (:name |joins-open-lists)
-            :code $ quote $ assert= 3
-              count $ concat-dynamic
-                assert-type ([] 1 2) (:: 'List 'Dynamic)
-                assert-type ([] 3) (:: 'List 'Dynamic)
-            :tags $ #{} :core :unit
         'cond $ %{} 'CodeEntry
           :doc "|Multi-branch conditional macro. Requires a final true branch so unmatched control flow cannot return nil."
           :code $ quote $ defmacro cond (& pairs)
@@ -9448,7 +9430,20 @@
             :tags $ #{} :core :unit
         'intersperse $ %{} 'CodeEntry
           :doc "|在 List 元素之间插入同类型分隔值；保持原有元素顺序，空 List 和单元素 List 原样返回。"
-          :code $ quote $ defn intersperse (xs separator) (join xs separator)
+          :code $ quote $ defn intersperse (xs0 separator)
+            loop
+                acc $ []
+                xs xs0
+                beginning? true
+              hint-fn $ {}
+                :args $ [] (:: 'List 'T) (:: 'List 'T) 'Bool
+                :return $ :: 'List 'T
+              &list-match-internal xs acc (x0 xss)
+                recur
+                  append
+                    if beginning? acc $ append acc separator
+                    , x0
+                  , xss false
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T) 'T
@@ -9478,35 +9473,6 @@
             :args $ [] 'T
             :generics $ [] 'T
           :tags $ #{} :builtin :internal
-        'join $ %{} 'CodeEntry
-          :doc "|兼容旧名；首选 intersperse 或 .intersperse，在 List<T> 的相邻元素之间插入同类型分隔项，仍返回 List<T>，不是文本拼接。"
-          :code $ quote $ defn join (xs0 sep)
-            loop
-                acc $ []
-                xs xs0
-                beginning? true
-              hint-fn $ {}
-                :args $ [] (:: 'List 'T) (:: 'List 'T) 'Bool
-                :return $ :: 'List 'T
-              &list-match-internal xs acc (x0 xss)
-                recur
-                  append
-                    if beginning? acc $ append acc sep
-                    , x0
-                  , xss false
-          :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'List 'T) 'T
-            :generics $ [] 'T
-            :return $ :: 'List 'T
-          :tags $ #{} :deprecated
-          :tests $ [] $ %{} 'TestEntry (:name |inserts-separators-between-list-items)
-            :code $ quote $ do
-              assert= ([] 1 10 2 10 3 10 4)
-                join ([] 1 2 3 4) 10
-              assert= ([])
-                join ([]) 0
-            :tags $ #{} :core :unit
         'join-string $ %{} 'CodeEntry
           :doc "|将 List 元素按既有显示规则逐项转为文本，并用 String 分隔符连接；空 List 返回空字符串。"
           :code $ quote $ defn join-string (xs0 sep)
@@ -10509,45 +10475,6 @@
                 assert= ({})
                   ({}) .merge $ {}
               :tags $ #{} :core :unit
-        'merge-dynamic $ %{} 'CodeEntry
-          :doc "|Deprecated: use merge, which accepts Map<K,Dynamic> values the same way. Combines maps left-to-right with later maps overwriting earlier keys."
-          :code $ quote $ defn merge-dynamic (x0 & xs) (merge x0 & xs)
-          :examples $ [] $ quote
-            assert= 2 $ count $ merge-dynamic
-              assert-type
-                {} $ :a 1
-                :: 'Map 'Tag 'Dynamic
-              assert-type
-                {} $ :b 2
-                :: 'Map 'Tag 'Dynamic
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Map 'K 'Dynamic
-            :generics $ [] 'K
-            :rest $ :: 'Map 'K 'Dynamic
-            :return $ :: 'Map 'K 'Dynamic
-          :tags $ #{} :deprecated
-          :tests $ []
-            %{} 'TestEntry (:name |combines-open-maps)
-              :code $ quote $ assert= 2
-                count $ merge-dynamic
-                  assert-type
-                    {} $ :a 1
-                    :: 'Map 'Tag 'Dynamic
-                  assert-type
-                    {} $ :b 2
-                    :: 'Map 'Tag 'Dynamic
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |accepts-empty-map-literal)
-              :code $ quote $ assert= 1
-                count $ merge-dynamic
-                  {} $ :a 1
-                  {}
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |infers-key-after-empty-map-literal)
-              :code $ quote $ assert= 1
-                count $ merge-dynamic ({})
-                  {} $ :a 1
-              :tags $ #{} :core :unit
         'merge-non-nil $ %{} 'CodeEntry
           :doc "|Merge maps left-to-right like merge, but a nil value in a later map keeps the earlier value instead of overwriting it, so nil means absent. Prefer Option values in new code; this helper serves nil-based data until the nil migration."
           :code $ quote $ defn merge-non-nil (x0 & xs) (reduce xs x0 &merge-non-nil)
@@ -10606,8 +10533,9 @@
             :code $ quote $ assert= 4 (negate -4)
             :tags $ #{} :core :unit
         'nil->option $ %{} 'CodeEntry
-          :doc "|Convert a possibly-nil value into nominal Option<T>: nil becomes `Option :none`, anything else `Option :some value`. Preferred spelling of the legacy optionally; both share one implementation."
-          :code $ quote $ defn nil->option (s) (optionally s)
+          :doc "|Convert a possibly-nil value into nominal Option<T>: nil becomes `Option :none`, anything else `Option :some value`."
+          :code $ quote $ defn nil->option (s)
+            if (nil? s) (Option :none) (Option :some s)
           :examples $ []
             quote $ assert= (Option :some 1) (nil->option 1)
             quote $ assert= (Option :none) (nil->option nil)
@@ -11250,20 +11178,6 @@
                 assert= 1 $ option:unwrap-or present 0
                 assert= 0 $ option:unwrap-or absent 0
             :tags $ #{} :core :unit
-        'optionally $ %{} 'CodeEntry
-          :doc "|兼容旧名；首选 nil->option，把 Optional<T> 转为名义 Option<T>，不改变 nil 和 payload 的含义。"
-          :code $ quote $ defn optionally (s)
-            if (nil? s) (%none) (%some s)
-          :examples $ []
-            quote $ assert= (%some 1) (optionally 1)
-            quote $ assert= (%none) (optionally nil)
-            quote $ assert= (Option :some Option)
-              &enum:definition $ optionally 1
-          :schema $ :: 'Fn $ {}
-            :args $ [] $ :: 'Optional 'T
-            :generics $ [] 'T
-            :return $ :: 'Option 'T
-          :tags $ #{} :deprecated
         'or $ %{} 'CodeEntry
           :doc "|Logical disjunction macro. Skips later forms once a truthy (non-nil, non-false, non-Unit) value is found and returns it; when every form is falsey, returns the final form."
           :code $ quote $ defmacro or (item & xs)
@@ -11666,26 +11580,6 @@
                   do (range 0 3 0) :returned
                   fn (_error) :failed
               :tags $ #{} :core :unit
-        'range-bothway $ %{} 'CodeEntry
-          :doc "|Deprecated symmetric/offset range. With y omitted, bind x once and use (range (inc (negate x)) x). With a proven Number y, bind x/y once in their original order and use (range (inc (- (+ x x) y)) y). The historical runtime nil branch matches omission, but the current Number schema rejects an explicit nil argument in strict calls. The end is exclusive; do not duplicate effectful arguments or relax types during migration. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
-          :code $ quote $ defn range-bothway (x ? y)
-            if (nil? y)
-              range
-                inc $ negate x
-                , x
-              range
-                inc $ &- (&+ x x) y
-                , y
-          :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] 'Number 'Number
-            :return $ :: 'List 'Number
-          :tags $ #{} :deprecated
-          :tests $ [] $ %{} 'TestEntry (:name |creates-symmetric-and-offset-ranges)
-            :code $ quote $ do
-              assert= ([] -2 -1 0 1 2) (range-bothway 3)
-              assert= ([] 0 1 2 3 4) (range-bothway 2 5)
-            :tags $ #{} :core :unit
         'read-dir $ %{} 'CodeEntry
           :doc "|List paths inside a directory.\nSyntax: (read-dir path recursive?)\nParams: path (string), recursive? (optional boolean, defaults to false)\nReturns: sorted list of path strings"
           :code $ quote &read-dir
@@ -12192,19 +12086,6 @@
                 assert= true $ round? $ do (println |integer-free-argument) 0
                 assert= false $ .integer? $ do (println |integer-method-argument) 0.0000000000000001
               :tags $ #{} :core :numeric-predicate :unit
-        'section-by $ %{} 'CodeEntry (:doc "|兼容旧名；首选 chunks，将 List 按固定长度 n 切成连续的子 List。")
-          :code $ quote $ defn section-by (xs0 n) (chunks xs0 n)
-          :examples $ []
-          :schema $ :: 'Fn $ {}
-            :args $ [] (:: 'List 'T) 'Number
-            :generics $ [] 'T
-            :return $ :: 'List $ :: 'List 'T
-          :tags $ #{} :deprecated
-          :tests $ [] $ %{} 'TestEntry (:name |forwards-to-chunks)
-            :code $ quote $ assert=
-              chunks (range 10) 3
-              section-by (range 10) 3
-            :tags $ #{} :core :unit
         'secure-random-bytes $ %{} 'CodeEntry
           :doc "|生成指定长度的密码学安全随机字节。长度必须是 0..65536 的整数；失败以 Result<String> 返回，不提供非安全伪随机退化路径。"
           :code $ quote $ defn secure-random-bytes (size)
@@ -12313,15 +12194,6 @@
                   slice ([] 1 2 3) 1 2
                 assert= |bc $ slice |abc 1
               :tags $ #{} :core :unit
-        'some-in? $ %{} 'CodeEntry
-          :doc "|Deprecated final-value presence check: prefer (.ok? (get-in x path)) on the core Result receiver. A nil leaf or a non-collection intermediate is absent; contains-in? instead checks path existence and is not equivalent. Review and migrate with guarded source edits. Retirement target: 0.30.0, not automatic removal; consumer, published migration, semantic/backend and implementation gates still apply (api-roles.md)."
-          :code $ quote $ defn some-in? (x path)
-            .ok? $ get-in x path
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Dynamic $ :: 'List 'K
-            :generics $ [] 'K
-          :tags $ #{} :deprecated
         'sort $ %{} 'CodeEntry
           :doc "|internal function for sorting lists\nSyntax: (sort list) or (sort list comparator)\nParams: list (list), comparator (function, optional)\nReturns: list\nReturns sorted list using natural order or custom comparator"
           :code $ quote &runtime-implementation
@@ -13298,25 +13170,6 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Dynamic
-        'turn-str $ %{} 'CodeEntry
-          :doc "|旧版兼容别名；仅接受实现 ToString 的值，推荐新代码使用 to-string。集合、Unit、开放 Dynamic 不属于该静态契约。"
-          :code $ quote $ defn turn-str (x) (to-string x)
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'String)
-            :args $ [] 'T
-            :generics $ [] 'T
-            :where $ {} $ 'T 'ToString
-          :tags $ #{} :deprecated :internal
-          :tests $ [] $ %{} 'TestEntry (:name |accepts-proven-scalars)
-            :code $ quote $ do
-              assert-type (turn-str 42) 'String
-              assert= |42 $ turn-str 42
-              assert= |hello $ turn-str |hello
-              assert= |false $ turn-str false
-              assert= | $ turn-str nil
-              assert= |ready $ turn-str :ready
-              assert= |ready $ turn-str $ to-symbol |ready
-            :tags $ #{} :core :unit
         'turn-string $ %{} 'CodeEntry
           :doc "|旧版兼容入口；只接受实现 ToString 的值，新代码使用 to-string。集合、Unit 与未收窄的 Dynamic 不能直接调用。"
           :code $ quote $ defn turn-string (value) (to-string value)
