@@ -11,7 +11,7 @@
     %{} 'FileEntry
       :defs $ {}
         'main! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn main! () (test-case) (log-title "|Testing expr in case") (test-expr-in-case) (test-thread-macros) (test-lambda) (test-gensym) (test-w-log) (test-with-cpu-time) (test-assert) (test-extract) (test-detector) (test-if-let) (test-flipped) (test-misc) (test-or-linear-expansion) (do true)
+          :code $ quote $ defn main! () (test-case) (log-title "|Testing expr in case") (test-expr-in-case) (test-thread-macros) (test-lambda) (test-gensym) (test-with-cpu-time) (test-assert) (test-extract) (test-detector) (test-if-let) (test-misc) (test-or-linear-expansion) (do true)
           :examples $ []
           :schema $ :: 'Dynamic
         'test-assert $ %{} 'CodeEntry (:doc |)
@@ -142,19 +142,6 @@
                     , |one
                   true |other
                 macroexpand-all $ quote $ if (= a 1) |one |other
-            assert= ([] 3 4 5 6)
-              let-sugar
-                    [] a b
-                    [] 3 4
-                  ({} c d) ({,} :c 5 :d 6)
-                [] a b c d
-          :examples $ []
-          :schema $ :: 'Dynamic
-        'test-flipped $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ fn () (log-title |flipped)
-            assert=
-              flipped [] 1 2 $ + 3 4
-              [] 7 2 1
           :examples $ []
           :schema $ :: 'Dynamic
         'test-gensym $ %{} 'CodeEntry (:doc |)
@@ -282,27 +269,6 @@
                   * % 2
             assert= 35 $ ->% 3 (+ % 4) (* % 5)
             assert= 36 $ ->% 3 (+ % %) (* % %)
-          :examples $ []
-          :schema $ :: 'Dynamic
-        'test-w-log $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ fn () (log-title "|Testing w-log") (&reset-gensym-index!)
-            inside-eval: $ assert=
-              macroexpand $ quote $ dbg (+ 1 2)
-              quote $ &let
-                v__1 $ + 1 2
-                println $ str-spaced
-                  format-to-lisp $ quote $ + 1 2
-                  , |=> v__1
-                , v__1
-            assert=
-              w-log $ + 1 2
-              , 3
-            assert=
-              wo-log $ + 1 2
-              , 3
-            assert=
-              w-log $ + 1 $ w-log (* 7 8)
-              , 57
           :examples $ []
           :schema $ :: 'Dynamic
         'test-with-cpu-time $ %{} 'CodeEntry (:doc |)

@@ -16,9 +16,9 @@
           :schema $ :: 'Dynamic
         'consume-tail $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn consume-tail (xs)
-            list-match xs
-              () 0
-              (_ rest-items) (consume-tail rest-items)
+            match (destruct-list xs)
+              (:none) 0
+              (:some _ rest-items) (consume-tail rest-items)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] $ :: 'List 'Number

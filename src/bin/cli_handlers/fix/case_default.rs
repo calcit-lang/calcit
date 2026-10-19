@@ -32,7 +32,6 @@ const ARGUMENT_PRESERVING_CORE_MACROS: &[&str] = &[
   "let",
   "let[]",
   "let-destruct",
-  "let-sugar",
   "loop",
   "when",
   "when-let",

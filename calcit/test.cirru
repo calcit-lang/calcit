@@ -498,7 +498,7 @@
                 , :true
               fn (error)
                 do (println "|Caught error:" error) false
-            assert= |:a $ apply-args () $ fn ()
+            assert= |:a $ loop ()
               try (raise |false)
                 fn (error) (str :a)
             println "|Finished testing try"

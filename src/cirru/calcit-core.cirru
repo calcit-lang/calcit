@@ -4318,26 +4318,6 @@
                       [] 10 20 30
                 assert= 3 $ deref state
               :tags $ #{} :core :count-contract :unit
-        'apply-args $ %{} 'CodeEntry
-          :doc "|Deprecated: calls a function with the listed arguments (a leading `[]` is dropped), usually a literal `fn` that loops with `recur`. Write `loop ((param value) ...) body` instead; `calcit fix --rule apply-args-to-loop-v1` rewrites calls with a literal `fn` or `defn`. Scheduled for removal in a later non-patch release."
-          :code $ quote $ defmacro apply-args (args f)
-            if
-              not $ list? args
-              raise $ str-spaced "|apply-args expects list args, got:" args
-            if
-              and
-                not $ &list:empty? args
-                &= [] $ &list:nth args 0
-              quasiquote $ ~f $ ~@ (&list:rest args)
-              quasiquote $ ~f ~@args
-          :examples $ []
-            quote $ assert= 6 $ apply-args ([] 1 2 3) +
-            quote $ assert= 15 $ apply-args ([] 5 10) +
-          :schema $ :: 'Macro $ {}
-            :capabilities $ #{}
-            :expansion $ :: 'Expr 'Dynamic
-            :required $ [] 'SyntaxList $ :: 'Expr 'Fn
-          :tags $ #{} :deprecated :macro
         'assert $ %{} 'CodeEntry
           :doc "|Assert that an expression is truthy, raise with a message when false, and return Unit on success."
           :code $ quote $ defmacro assert (message xs)
@@ -7558,17 +7538,6 @@
                   first $ [] 1 2
                 assert= (%some |a) (first |abc)
               :tags $ #{} :core :types :unit
-        'flipped $ %{} 'CodeEntry
-          :doc "|Deprecated: write the call with its arguments in order; (flipped f a b) expands to (f b a)."
-          :code $ quote $ defmacro flipped (f & args)
-            quasiquote $ ~f $ ~@ (reverse args)
-          :examples $ []
-          :schema $ :: 'Macro $ {}
-            :capabilities $ #{}
-            :expansion $ :: 'Expr 'Dynamic
-            :required $ [] $ :: 'Expr 'Dynamic
-            :rest $ :: 'Expr 'Dynamic
-          :tags $ #{} :deprecated :macro
         'floor $ %{} 'CodeEntry
           :doc "|公开的向下舍入函数。floor n 接收 Number，返回不大于 n 的最大整数值，返回类型仍为 Number；不执行整数 refinement 转换。"
           :code $ quote &runtime-implementation
@@ -8700,8 +8669,9 @@
                 assert= 0 $
                   fn (a & xs) (&list:count xs)
                   , 1
-                assert= 2 $ apply-args (1 2 3)
+                assert= 2 $
                   fn (a & xs) (&list:count xs)
+                  , 1 2 3
                 assert= 5 $
                   fn (a ? b)
                     if (nil? b) a b
@@ -9858,33 +9828,6 @@
             :required $ [] 'Syntax $ :: 'Expr 'Dynamic
             :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :deprecated :macro
-        'let-sugar $ %{} 'CodeEntry
-          :doc "|Deprecated: binds each `(pattern value)` pair in order, a symbol through `&let` and a `([] ...)` pattern through `let[]`. Write `let` and `let[]` directly; `calcit fix --rule let-sugar-to-let-v1` rewrites proven calls. Scheduled for removal in a later non-patch release."
-          :code $ quote $ defmacro let-sugar (pairs & body)
-            if
-              not $ and (list? pairs) (every? pairs list?)
-              raise $ str-spaced "|expects pairs in list for let, got:" pairs
-            if (&list:empty? pairs)
-              quasiquote $ &let () ~@body
-              &let
-                pair $ &list:nth pairs 0
-                assert-type pair 'List
-                if
-                  not $ &= 2 $ &list:count pair
-                  raise $ str-spaced "|expected pair length of 2, got:" pair
-                if
-                  &= 1 $ &list:count pairs
-                  quasiquote $ let-destruct ~@pair $ ~@ body
-                  quasiquote $ let-destruct ~@pair $ let-sugar
-                    ~ $ &list:rest pairs
-                    ~@ body
-          :examples $ []
-          :schema $ :: 'Macro $ {}
-            :capabilities $ #{}
-            :expansion $ :: 'Expr 'Dynamic
-            :required $ [] 'SyntaxList
-            :rest $ :: 'Expr 'Dynamic
-          :tags $ #{} :deprecated :macro
         'let[] $ %{} 'CodeEntry
           :doc "|Destructures a sequential value inside `let`, assigning each position to declared names and supporting `&` rest bindings."
           :code $ quote $ defmacro let[] (vars data & body)
@@ -9964,113 +9907,6 @@
             :required $ [] 'SyntaxList $ :: 'Expr 'Dynamic
             :rest $ :: 'Expr 'Dynamic
           :tags $ #{} :deprecated :macro
-        'list-match $ %{} 'CodeEntry
-          :doc "|Deprecated: two-branch list destructuring with an empty branch and a `(head tail)` branch. Write `match (destruct-list xs) ((:none) ...) ((:some head tail) ...)`; `calcit fix --rule list-match-to-match-v1` rewrites calls whose subject is a proven List. Scheduled for removal in a later non-patch release."
-          :code $ quote $ defmacro list-match (& values)
-            if
-              not $ &= 3 $ &list:count values
-              raise $ str-spaced "|list-match expects exactly 3 arguments, got:" values
-            &let
-              xs $ &list:nth values 0
-              &let
-                pattern1 $ &list:nth values 1
-                &let
-                  pattern2 $ &list:nth values 2
-                  if
-                    not $ and (list? pattern1) (list? pattern2)
-                      &> (count pattern1) 1
-                      list? $ &list:nth pattern1 0
-                      list? $ &list:nth pattern2 0
-                      &> (count pattern2) 1
-                    raise $ str-spaced "|list-match expects 2 branches: (() body...) and ((head tail) body...), got:" pattern1 pattern2
-                  &let
-                    pattern1 $ assert-type pattern1 'List
-                    &let
-                      pattern2 $ assert-type pattern2 'List
-                      &let
-                        v# $ gensym |v
-                        quasiquote $ &let (~v# ~xs)
-                          if
-                            not $ list? ~v#
-                            raise "|expected a list in list-match"
-                          ~ $ if
-                            and
-                              empty? $ &list:nth pattern1 0
-                              &= 2 $ &list:count $ assert-type (&list:nth pattern2 0) 'List
-                            quasiquote $ &list-match-internal ~v#
-                              &let () $ ~@ $ &list:slice pattern1 1
-                              ~ $ &list:nth pattern2 0
-                              ~@ $ &list:slice pattern2 1
-                            if
-                              and
-                                empty? $ &list:nth pattern2 0
-                                &= 2 $ &list:count $ assert-type (&list:nth pattern1 0) 'List
-                              quasiquote $ &list-match-internal ~v#
-                                &let () $ ~@ $ &list:slice pattern2 1
-                                ~ $ &list:nth pattern1 0
-                                ~@ $ &list:slice pattern1 1
-                              raise $ str-spaced "|list-match expects one empty branch and one destructuring branch, got:" pattern1 pattern2
-          :examples $ []
-            quote $ assert= :something $ list-match ([] 1)
-              () :empty
-              (a b) :something
-            quote $ assert= 1 $ list-match ([] 1 2 3)
-              () 0
-              (head tail) head
-          :schema $ :: 'Macro $ {} (:rest 'Syntax)
-            :capabilities $ #{}
-            :expansion $ :: 'Expr 'Dynamic
-            :required $ []
-          :tags $ #{} :deprecated :macro
-          :tests $ []
-            %{} 'TestEntry (:name |branches-empty-and-head-tail)
-              :code $ quote $ do
-                assert= :empty $ list-match ([])
-                  () :empty
-                  (a b) :something
-                assert= :something $ list-match ([] 1)
-                  () :empty
-                  (a b) :something
-                assert= :something0 $ list-match ([] 1)
-                  (a b) :something0
-                  () :empty
-                assert=
-                  [] 1 $ [] 2 3
-                  list-match ([] 1 2 3)
-                    () $ []
-                    (l0 ls) ([] l0 ls)
-                assert= ([])
-                  list-match ([])
-                    () $ []
-                    (l0 ls) ([] l0 ls)
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |evaluates-subject-once-and-only-selected-body)
-              :code $ quote $ let
-                  counter $ ref 0
-                  value $ list-match
-                    do
-                      reset! counter $ &+ (deref counter) 1
-                      [] 5
-                    ()
-                      reset! counter $ &+ (deref counter) 100
-                      , -1
-                    (head tail)
-                      reset! counter $ &+ (deref counter) 10
-                      &+ head 1
-                assert= 6 value
-                assert= 11 $ deref counter
-                assert= 9 $ list-match
-                  do
-                    reset! counter $ &+ (deref counter) 1
-                    []
-                  (head tail)
-                    reset! counter $ &+ (deref counter) 100
-                    , -1
-                  ()
-                    reset! counter $ &+ (deref counter) 10
-                    , 9
-                assert= 22 $ deref counter
-              :tags $ #{} :core :unit
         'list? $ %{} 'CodeEntry
           :doc "|checks if value is a list\nSyntax: (list? x)\nParams: x (any)\nReturns: true if x is a list, false otherwise\nType predicate for list data structure"
           :code $ quote &runtime-implementation
@@ -10993,56 +10829,6 @@
                   fn () |missing
                   fn (value) (raise |unselected-option-fold-some) (str value)
               :tags $ #{} :core :unit
-        'option:let $ %{} 'CodeEntry
-          :doc "|Deprecated: binds Option payloads in sequence through `.and-then`, stopping at the first none; the body must return Option. Write the nested `.and-then` calls directly; scheduled for removal in a later non-patch release."
-          :code $ quote $ defmacro option:let (pairs & body)
-            if
-              not $ and (list? pairs) (every? pairs list?)
-              raise $ str-spaced "|option:let expects pairs in list, got:" pairs
-            if (&list:empty? body) (raise "|option:let expects at least 1 body expression")
-            if (&list:empty? pairs)
-              quasiquote $ do $ ~@ body
-              &let
-                pair $ assert-type (&list:nth pairs 0) 'List
-                if
-                  not $ &= 2 $ &list:count pair
-                  raise $ str-spaced "|option:let expects binding pair, got:" pair
-                &let
-                  x $ &list:nth pair 0
-                  if
-                    not $ symbol? x
-                    raise $ str-spaced "|option:let expects a symbol for binding, got:" x
-                  &let
-                    value $ &list:nth pair 1
-                    quasiquote $ .and-then ~value $ fn (~x)
-                      option:let
-                        ~ $ &list:rest pairs
-                        ~@ body
-          :examples $ [] $ quote
-            assert= (%some 5)
-              option:let
-                  x $ %some 2
-                  y $ %some 3
-                %some $ + x y
-          :schema $ :: 'Macro $ {} (:rest 'Syntax)
-            :capabilities $ #{}
-            :expansion $ :: 'Expr $ :: 'Option 'Dynamic
-            :required $ [] 'SyntaxList
-          :tags $ #{} :deprecated :macro
-          :tests $ []
-            %{} 'TestEntry (:name |short-circuits-none)
-              :code $ quote $ assert= (%none)
-                option:let
-                    x $ %some 2
-                    y $ %none
-                    unreachable $ raise |option-let-should-short-circuit
-                  %some $ + x y unreachable
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |expression-binding)
-              :code $ quote $ assert= (%some 3)
-                option:let
-                    x $ if true (%some 2) (%none)
-                  %some $ inc x
         'option:map $ %{} 'CodeEntry (:doc "|Mappable map implementation for Option")
           :code $ quote $ defn option:map (opt f)
             match opt
@@ -13596,43 +13382,6 @@
             :code $ quote $ assert= (#{} 1 2)
               vals $ &{} :a 1 :b 2 :c 2
             :tags $ #{} :core :unit
-        'w-js-log $ %{} 'CodeEntry
-          :doc "|Deprecated: use dbg, or an explicit js/console.log when the host object view is needed."
-          :code $ quote $ defmacro w-js-log (x)
-            if (list? x)
-              &let
-                v $ if
-                  = :eval $ &get-calcit-running-mode
-                  gensym |v
-                  , '_log_tmp
-                quasiquote $ &let (~v ~x)
-                  js/console.log
-                    format-to-lisp $ quote ~x
-                    , |=> ~v
-                  ~ v
-              quasiquote $ &let ()
-                js/console.log
-                  format-to-lisp $ quote ~x
-                  , |=> ~x
-                ~ x
-          :examples $ []
-          :schema $ :: 'Macro $ {}
-            :capabilities $ #{} :platform-read
-            :expansion $ :: 'Expr 'T
-            :generics $ [] 'T
-            :required $ [] $ :: 'Expr 'T
-          :tags $ #{} :deprecated :macro
-        'w-log $ %{} 'CodeEntry
-          :doc "|Deprecated: use dbg, which prints the same text and returns the value."
-          :code $ quote $ defmacro w-log (x)
-            quasiquote $ dbg ~x
-          :examples $ []
-          :schema $ :: 'Macro $ {}
-            :capabilities $ #{} :platform-read
-            :expansion $ :: 'Expr 'T
-            :generics $ [] 'T
-            :required $ [] $ :: 'Expr 'T
-          :tags $ #{} :deprecated :macro
         'wait-ms $ %{} 'CodeEntry
           :doc "|同步等待整数毫秒并返回 Result<Unit,String>；允许 0..4294967295，不做隐式舍入。"
           :code $ quote $ defn wait-ms (milliseconds)
@@ -13789,26 +13538,6 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] 'Dynamic
           :tags $ #{} :builtin :internal :meta :state :syntax
-        'wo-js-log $ %{} 'CodeEntry
-          :doc "|Deprecated: remove the wrapper; wo-js-log returns its argument unchanged."
-          :code $ quote $ defmacro wo-js-log (x) x
-          :examples $ []
-          :schema $ :: 'Macro $ {}
-            :capabilities $ #{}
-            :expansion $ :: 'Expr 'T
-            :generics $ [] 'T
-            :required $ [] $ :: 'Expr 'T
-          :tags $ #{} :deprecated :macro
-        'wo-log $ %{} 'CodeEntry
-          :doc "|Deprecated: remove the wrapper; wo-log returns its argument unchanged."
-          :code $ quote $ defmacro wo-log (x) x
-          :examples $ []
-          :schema $ :: 'Macro $ {}
-            :capabilities $ #{}
-            :expansion $ :: 'Expr 'T
-            :generics $ [] 'T
-            :required $ [] $ :: 'Expr 'T
-          :tags $ #{} :deprecated :macro
         'write-file $ %{} 'CodeEntry
           :doc "|internal function for writing files\nSyntax: (write-file filepath content)\nParams: filepath (string), content (string)\nReturns: &unit or error\nWrites string content to file"
           :code $ quote &runtime-implementation

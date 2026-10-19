@@ -868,7 +868,7 @@ fn clause_form_start(head: &Calcit) -> Option<usize> {
     _ => return None,
   };
   match name.as_str() {
-    "case" | "match" | "tag-match" | "list-match" | "struct-match" => Some(2),
+    "case" | "match" | "tag-match" | "struct-match" => Some(2),
     // `case-default value default clauses...`: the default is an ordinary expression.
     "case-default" => Some(3),
     "cond" => Some(1),
