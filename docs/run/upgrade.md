@@ -1047,9 +1047,9 @@ calcit calcit.cirru query schema app.main/main! --format edn
 calcit calcit.cirru tree show app.main/main! --path @3 --format edn
 ```
 
-### 仍可用的兼容名
+### 0.30.x 兼容名迁移对照（历史）
 
-core 在 0.29.0 仍保留下表兼容入口，新代码使用右侧的首选写法；有 fix 规则的项目先预览再应用，其余逐处人工审阅。剩余入口的计划退场窗口是 0.31.0，但到达版本号不自动授权删除，仍须满足消费者、发布窗口、语义与实现解耦条件。
+下表记录 0.30.x 保留的兼容入口及迁移方式，不表示它们在当前 CLI 中仍可用。已在 0.31.0 删除的函数、宏和方法见本文对应小节；旧项目先使用 0.30.x 的 CLI 预览并应用相应规则，再升级，不能在新 CLI 中运行已退役规则。新代码使用右侧写法；没有 fix 规则的用法逐处人工审阅。
 
 | 兼容名 | 首选写法 | 迁移 |
 |---|---|---|
@@ -1057,9 +1057,9 @@ core 在 0.29.0 仍保留下表兼容入口，新代码使用右侧的首选写�
 | `vals` | `distinct-values` | `calcit calcit.cirru fix --rule core-function-alias-v1 --format edn` |
 | `turn-string` | `to-string` | 参数已证明为标量时用 `core-identity-conversion-v1`，其余人工改写 |
 | `remove-watch` | `remove-watch!` | 人工改写 |
-| List `.add` | `.append`，返回新的同型 List，不修改原集合 | `calcit calcit.cirru fix --rule core-list-add-v1 --format edn`；仅改写已证明的 List、相同 core 实现和签名，不处理 Set/Map 或用户同名方法 |
-| List/Map/Set `.count` | `.len`，保留原集合长度语义 | `calcit calcit.cirru fix --rule core-collection-len-v1 --format edn`；未知接收者、自定义 Countable 与泛型 bound 需人工审阅；String 旧方法已删除，见上文 |
-| FfiTask `.cancel` / `.cancel-with reason` | `.cancel!` / `.cancel-with! reason`，保留原 Unit、参数求值与宿主取消合同 | `calcit calcit.cirru fix --rule core-effect-method-v1 --format edn`；仅改写已证明的 core nominal/trait 来源、同签名同实现调用；开放 host、用户方法和未知 macro 不自动改写，不新增 JS/WASM/WASI 宿主能力 |
+| List `.add` | `.append`，返回新的同型 List，不修改原集合 | 使用 0.30.x 的 CLI：`calcit calcit.cirru fix --rule core-list-add-v1 --format edn`；仅改写已证明的 List、相同 core 实现和签名，不处理 Set/Map 或用户同名方法 |
+| List/Map/Set `.count` | `.len`，保留原集合长度语义 | 使用 0.30.x 的 CLI：`calcit calcit.cirru fix --rule core-collection-len-v1 --format edn`；未知接收者、自定义 Countable 与泛型 bound 需人工审阅；String 旧方法已删除，见上文 |
+| FfiTask `.cancel` / `.cancel-with reason` | `.cancel!` / `.cancel-with! reason`，保留原 Unit、参数求值与宿主取消合同 | 使用 0.30.x 的 CLI：`calcit calcit.cirru fix --rule core-effect-method-v1 --format edn`；仅改写已证明的 core nominal/trait 来源、同签名同实现调用；开放 host、用户方法和未知 macro 不自动改写，不新增 JS/WASM/WASI 宿主能力 |
 | `case-default` | `match`，默认值写成末尾 `_` 分支 | `case-default-to-match-v1`（字面量模式） |
 | `foldl-shortcut` | `fold-while`，reducer 返回 `ControlFlow :continue acc` 或 `ControlFlow :break value`，从未 break 时返回累积值 | 人工改写：`(:: false acc)` 改为 `ControlFlow :continue acc`，`(:: true v)` 改为 `ControlFlow :break v`；旧写法在从未 break 时返回第三个参数 `default`，需要时在调用处判断后显式给出 |
 | `let{}` | 显式 `let` 与 `get`，审阅原 nil/缺失行为后处理 Option；已知 Struct 字段用 `(:field value)`，不是 JS 属性访问 `.-field` | 人工改写；原 Map 求值一次，不自动插入 unwrap 或业务默认值 |
@@ -1073,7 +1073,7 @@ core 在 0.29.0 仍保留下表兼容入口，新代码使用右侧的首选写�
 | 宏 `flipped` | 按实际顺序写参数：`flipped f a b` 写成 `f b a` | 同上；位于 `->` 等线程宏中时需要人工改写 |
 | 宏 `w-js-log` | `dbg`；需要在浏览器控制台查看宿主对象时显式写 `js/console.log` | 同上，只给 `requires-review` |
 
-上表名字、函数 `round?`、前缀 `reduce`，以及方法 List `.add`、List/Map/Set `.count`、FfiTask `.cancel` / `.cancel-with` 与 Struct/Enum `.contains?` 按同一节奏退场：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零只是必要条件；还须同时满足消费者验证、已发布迁移窗口、类型/失败/求值与相关后端语义验证，以及 core 实现解耦条件，之后才可在下一个非 patch 版本删除，并在本文列出删除项。依赖模块和未合并迁移也须核对；到达 0.31.0 不自动授权删除。
+尚未退场的兼容入口继续遵循上述门槛，不因达到计划版本号自动删除：已知活跃下游默认分支（源码、附带测试/示例、宏生成代码与 CI/文档引用）清零只是必要条件；还须同时满足消费者验证、已发布迁移窗口、类型/失败/求值与相关后端语义验证，以及 core 实现解耦条件，之后才可在下一个非 patch 版本删除，并在本文列出删除项。依赖模块和未合并迁移也须核对；已经删除的入口按对应版本小节迁移，不再视为待退场项。
 
 ### std 定时器与信号订阅命名
 
