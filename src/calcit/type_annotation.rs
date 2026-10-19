@@ -15,7 +15,30 @@ use super::{
   CORE_NS, Calcit, CalcitEnumDef, CalcitEnumValue, CalcitFn, CalcitImpl, CalcitImport, CalcitList, CalcitProc, CalcitStructDef,
   CalcitStructValue, CalcitSymbolInfo, CalcitSyntax, CalcitTrait,
 };
+use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 use std::sync::{LazyLock, OnceLock};
+
+static LEXICAL_TYPE_BINDER: AtomicU64 = AtomicU64::new(0);
+
+/// Alpha-renamed binder keys are internal; all public rendering uses the source name.
+fn source_type_variable(name: &str) -> &str {
+  if name.starts_with("#lexical:") {
+    name.split_once('\0').map_or(name, |(_, source)| source)
+  } else {
+    name
+  }
+}
+
+fn fresh_lexical_type_variable(name: &str) -> Arc<str> {
+  let binder = LEXICAL_TYPE_BINDER.fetch_add(1, AtomicOrdering::Relaxed);
+  Arc::from(format!("#lexical:{binder}\0{}", source_type_variable(name)))
+}
+
+pub(crate) fn has_lexical_type_variables(types: &[Arc<CalcitTypeAnnotation>]) -> bool {
+  free_type_variable_names(types)
+    .iter()
+    .any(|name| name.starts_with("#lexical:") && name.contains('\0'))
+}
 
 // ---------------------------------------------------------------------------
 // Decoupled program lookups – registered at runtime by `program::init_type_annotation_lookups()`
@@ -1214,7 +1237,7 @@ impl CalcitGenericBound {
 
   pub fn to_brief_string(&self) -> String {
     let rendered = self.traits.iter().map(|t| t.name.to_string()).collect::<Vec<_>>().join(" + ");
-    format!("'{}: {rendered}", self.name)
+    format!("'{}: {rendered}", source_type_variable(&self.name))
   }
 }
 
@@ -2012,8 +2035,16 @@ impl CalcitTypeAnnotation {
   }
 
   fn generics_contains(generics: &[Arc<str>], name: &str) -> bool {
+    Self::generic_in_scope(generics, name).is_some()
+  }
+
+  fn generic_in_scope(generics: &[Arc<str>], name: &str) -> Option<Arc<str>> {
     let stripped = name.trim_start_matches('\'');
-    generics.iter().any(|g| g.as_ref() == stripped)
+    generics
+      .iter()
+      .rev()
+      .find(|g| source_type_variable(g) == stripped || g.as_ref() == stripped)
+      .cloned()
   }
 
   fn extend_generics_scope(outer: &[Arc<str>], inner: &[Arc<str>]) -> Vec<Arc<str>> {
@@ -2365,6 +2396,9 @@ impl CalcitTypeAnnotation {
   }
 
   pub fn extract_return_type_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
+    if let Some(signature) = Self::checked_hint_signature(form) {
+      return Some(signature.return_type.clone());
+    }
     let generics = Self::extract_generics_from_hint_form(form).unwrap_or_default();
     let items = Self::get_surrounding_hint_fn_items(form)?;
     for item in items.iter().skip(1) {
@@ -2379,6 +2413,9 @@ impl CalcitTypeAnnotation {
   }
 
   pub fn extract_generics_from_hint_form(form: &Calcit) -> Option<Vec<Arc<str>>> {
+    if let Some(signature) = Self::checked_hint_signature(form) {
+      return Some(signature.generics.as_ref().clone());
+    }
     let items = Self::get_surrounding_hint_fn_items(form)?;
     for item in items.iter().skip(1) {
       if let Some(value) = Self::extract_schema_value_single(item, "generics")
@@ -2392,6 +2429,9 @@ impl CalcitTypeAnnotation {
 
   /// Extract the element type declared by `:rest` from a schema hint-fn form.
   pub fn extract_rest_type_from_hint_form(form: &Calcit) -> Option<Arc<CalcitTypeAnnotation>> {
+    if let Some(signature) = Self::checked_hint_signature(form) {
+      return signature.rest_type.clone();
+    }
     let generics = Self::extract_generics_from_hint_form(form).unwrap_or_default();
     let items = Self::get_surrounding_hint_fn_items(form)?;
     for item in items.iter().skip(1) {
@@ -2465,11 +2505,7 @@ impl CalcitTypeAnnotation {
       _ => Self::parse_type_var_form(form)?,
     };
 
-    if Self::generics_contains(generics, name.as_ref()) {
-      Some(name)
-    } else {
-      None
-    }
+    Self::generic_in_scope(generics, name.as_ref())
   }
 
   fn trait_bound_with_source_ref(form: &Calcit, trait_def: &Arc<CalcitTrait>) -> Arc<CalcitTrait> {
@@ -2635,6 +2671,9 @@ impl CalcitTypeAnnotation {
   }
 
   pub fn extract_where_bounds_from_hint_form(form: &Calcit) -> Option<Vec<CalcitGenericBound>> {
+    if let Some(signature) = Self::checked_hint_signature(form) {
+      return Some(signature.where_bounds.as_ref().clone());
+    }
     let generics = Self::extract_generics_from_hint_form(form).unwrap_or_default();
     let items = Self::get_surrounding_hint_fn_items(form)?;
     for item in items.iter().skip(1) {
@@ -2805,6 +2844,15 @@ impl CalcitTypeAnnotation {
     }))))
   }
 
+  fn checked_hint_signature(form: &Calcit) -> Option<Arc<CalcitFnTypeAnnotation>> {
+    let Calcit::List(items) = form else { return None };
+    if let super::CalcitCallKind::TypedFnHint(signature, _) = items.call_kind() {
+      Some(signature)
+    } else {
+      None
+    }
+  }
+
   /// Extract a complete function annotation from the schema map carried by `hint-fn`.
   ///
   /// Both supported forms are accepted:
@@ -2819,6 +2867,9 @@ impl CalcitTypeAnnotation {
     form: &Calcit,
     generics: &[Arc<str>],
   ) -> Option<Arc<CalcitTypeAnnotation>> {
+    if let Some(signature) = Self::checked_hint_signature(form) {
+      return Some(Arc::new(Self::Fn(signature)));
+    }
     let items = Self::get_hint_fn_items(form)?;
     if !matches!(items.len(), 2 | 3) {
       return None;
@@ -2843,6 +2894,9 @@ impl CalcitTypeAnnotation {
   /// Returns `None` if the hint-fn was not found or has no `:args` key. Used in `syntax::defn` as
   /// the highest-priority source for `CalcitFn.arg_types` (before `assert-type` body scanning).
   pub fn extract_arg_types_from_hint_form(form: &Calcit, params: &[Arc<str>]) -> Option<Vec<Arc<CalcitTypeAnnotation>>> {
+    if let Some(signature) = Self::checked_hint_signature(form) {
+      return Some(signature.arg_types.clone());
+    }
     let generics = Self::extract_generics_from_hint_form(form).unwrap_or_default();
     let items = Self::get_surrounding_hint_fn_items(form)?;
     for item in items.iter().skip(1) {
@@ -3453,7 +3507,9 @@ impl CalcitTypeAnnotation {
         let qualified_name = Self::extract_type_ref_name(form).unwrap_or_else(|| name.clone());
         Arc::new(CalcitTypeAnnotation::TypeRef(qualified_name, Arc::new(vec![])))
       } else {
-        Arc::new(CalcitTypeAnnotation::TypeVar(name))
+        Arc::new(CalcitTypeAnnotation::TypeVar(
+          Self::generic_in_scope(generics, &name).unwrap_or(name),
+        ))
       };
     }
 
@@ -3470,7 +3526,9 @@ impl CalcitTypeAnnotation {
         return if (strict_named_refs || stripped.contains('/')) && !Self::generics_contains(generics, stripped) {
           Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(stripped), Arc::new(vec![])))
         } else {
-          Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from(stripped)))
+          Arc::new(CalcitTypeAnnotation::TypeVar(
+            Self::generic_in_scope(generics, stripped).unwrap_or_else(|| Arc::from(stripped)),
+          ))
         };
       }
       // Type slot reference: *name → TypeSlot(name)
@@ -3481,7 +3539,9 @@ impl CalcitTypeAnnotation {
         }
       }
       if strict_named_refs && Self::generics_contains(generics, sym) {
-        return Arc::new(CalcitTypeAnnotation::TypeVar(sym.to_owned()));
+        return Arc::new(CalcitTypeAnnotation::TypeVar(
+          Self::generic_in_scope(generics, sym).expect("generic in scope"),
+        ));
       }
     }
 
@@ -3952,7 +4012,7 @@ impl CalcitTypeAnnotation {
         let rendered = traits.iter().map(|t| t.name.to_string()).collect::<Vec<_>>().join(" ");
         format!("traits {rendered}")
       }
-      Self::TypeVar(name) => format!("'{name}"),
+      Self::TypeVar(name) => format!("'{}", source_type_variable(name)),
       Self::TypeRef(name, args) => {
         if args.is_empty() {
           format!("'{name}")
@@ -3982,6 +4042,15 @@ impl CalcitTypeAnnotation {
   /// Substitute all `TypeVar` occurrences with their bound types from `bindings`.
   /// Returns a new annotation with variables resolved; unbound variables remain as-is.
   pub fn substitute_type_vars(&self, bindings: &TypeBindings) -> Arc<CalcitTypeAnnotation> {
+    self.substitute_scoped_type_vars(bindings, false)
+  }
+
+  /// Rename free variables without capturing a nested function's quantifiers.
+  fn substitute_free_type_vars(&self, bindings: &TypeBindings) -> Arc<CalcitTypeAnnotation> {
+    self.substitute_scoped_type_vars(bindings, true)
+  }
+
+  fn substitute_scoped_type_vars(&self, bindings: &TypeBindings, preserve_binders: bool) -> Arc<CalcitTypeAnnotation> {
     enum Unary {
       List,
       Set,
@@ -3991,8 +4060,8 @@ impl CalcitTypeAnnotation {
     }
 
     enum Task<'a> {
-      Visit(&'a CalcitTypeAnnotation),
-      Cache(usize),
+      Visit(&'a CalcitTypeAnnotation, usize),
+      Cache((usize, usize)),
       BuildUnary(Unary),
       BuildMap,
       BuildTypeRef(Arc<str>, usize),
@@ -4001,68 +4070,80 @@ impl CalcitTypeAnnotation {
       BuildFn(Arc<CalcitFnTypeAnnotation>, usize, bool),
     }
 
-    let mut tasks = vec![Task::Visit(self)];
+    let mut tasks = vec![Task::Visit(self, 0)];
+    let mut lexical_bindings: Vec<TypeBindings> = vec![];
     let mut values: Vec<Arc<CalcitTypeAnnotation>> = vec![];
-    let mut cache: HashMap<usize, Arc<CalcitTypeAnnotation>> = HashMap::new();
+    let mut cache: HashMap<(usize, usize), Arc<CalcitTypeAnnotation>> = HashMap::new();
     while let Some(task) = tasks.pop() {
       match task {
-        Task::Visit(annotation) => {
-          let cache_key = std::ptr::from_ref(annotation) as usize;
+        Task::Visit(annotation, scope) => {
+          let cache_key = (std::ptr::from_ref(annotation) as usize, scope);
           if let Some(cached) = cache.get(&cache_key) {
             values.push(cached.clone());
             continue;
           }
           tasks.push(Task::Cache(cache_key));
+          let current_bindings = if scope == 0 { bindings } else { &lexical_bindings[scope - 1] };
           match annotation {
-            Self::TypeVar(name) => values.push(bindings.get(name).cloned().unwrap_or_else(|| Arc::new(annotation.clone()))),
+            Self::TypeVar(name) => values.push(current_bindings.get(name).cloned().unwrap_or_else(|| Arc::new(annotation.clone()))),
             Self::TypeRef(name, args) => {
               tasks.push(Task::BuildTypeRef(name.clone(), args.len()));
-              tasks.extend(args.iter().rev().map(|arg| Task::Visit(arg)));
+              tasks.extend(args.iter().rev().map(|arg| Task::Visit(arg, scope)));
             }
             Self::List(inner) => {
               tasks.push(Task::BuildUnary(Unary::List));
-              tasks.push(Task::Visit(inner));
+              tasks.push(Task::Visit(inner, scope));
             }
             Self::Set(inner) => {
               tasks.push(Task::BuildUnary(Unary::Set));
-              tasks.push(Task::Visit(inner));
+              tasks.push(Task::Visit(inner, scope));
             }
             Self::Ref(inner) => {
               tasks.push(Task::BuildUnary(Unary::Ref));
-              tasks.push(Task::Visit(inner));
+              tasks.push(Task::Visit(inner, scope));
             }
             Self::Nullable(inner, origin) => {
               tasks.push(Task::BuildUnary(Unary::Nullable(*origin)));
-              tasks.push(Task::Visit(inner));
+              tasks.push(Task::Visit(inner, scope));
             }
             Self::Variadic(inner) => {
               tasks.push(Task::BuildUnary(Unary::Variadic));
-              tasks.push(Task::Visit(inner));
+              tasks.push(Task::Visit(inner, scope));
             }
             Self::Map(key, value) => {
               tasks.push(Task::BuildMap);
-              tasks.push(Task::Visit(value));
-              tasks.push(Task::Visit(key));
+              tasks.push(Task::Visit(value, scope));
+              tasks.push(Task::Visit(key, scope));
             }
             Self::Struct(base, args) => {
               tasks.push(Task::BuildStruct(base.clone(), args.len()));
-              tasks.extend(args.iter().rev().map(|arg| Task::Visit(arg)));
+              tasks.extend(args.iter().rev().map(|arg| Task::Visit(arg, scope)));
             }
             Self::Enum(base, args) => {
               tasks.push(Task::BuildEnum(base.clone(), args.len()));
-              tasks.extend(args.iter().rev().map(|arg| Task::Visit(arg)));
+              tasks.extend(args.iter().rev().map(|arg| Task::Visit(arg, scope)));
             }
             Self::Fn(signature) => {
+              let scope = if preserve_binders && signature.generics.iter().any(|name| current_bindings.contains_key(name)) {
+                let mut nested = current_bindings.clone();
+                for name in signature.generics.iter() {
+                  nested.remove(name);
+                }
+                lexical_bindings.push(nested);
+                lexical_bindings.len()
+              } else {
+                scope
+              };
               tasks.push(Task::BuildFn(
                 signature.clone(),
                 signature.arg_types.len(),
                 signature.rest_type.is_some(),
               ));
               if let Some(rest) = &signature.rest_type {
-                tasks.push(Task::Visit(rest));
+                tasks.push(Task::Visit(rest, scope));
               }
-              tasks.push(Task::Visit(&signature.return_type));
-              tasks.extend(signature.arg_types.iter().rev().map(|arg| Task::Visit(arg)));
+              tasks.push(Task::Visit(&signature.return_type, scope));
+              tasks.extend(signature.arg_types.iter().rev().map(|arg| Task::Visit(arg, scope)));
             }
             _ => values.push(Arc::new(annotation.clone())),
           }
@@ -5613,7 +5694,7 @@ impl CalcitTypeAnnotation {
           Calcit::List(Arc::new(CalcitList::from(items.as_slice())))
         }
       }
-      Self::TypeVar(name) => Self::quote_symbol(name),
+      Self::TypeVar(name) => Self::quote_symbol(&Arc::from(source_type_variable(name))),
       Self::TypeRef(name, args) => {
         if args.is_empty() {
           Self::quote_symbol(name)
@@ -5719,7 +5800,7 @@ impl CalcitTypeAnnotation {
       Self::CirruQuote => Edn::Symbol(Arc::from("CirruQuote")),
       Self::JsObject => Edn::Symbol(Arc::from("JsObject")),
       // TypeVar: source syntax uses `'T`, while Cirru EDN stores that as `Edn::Symbol("T")`.
-      Self::TypeVar(name) => Edn::Symbol(Arc::from(name.trim_start_matches('\''))),
+      Self::TypeVar(name) => Edn::Symbol(Arc::from(source_type_variable(name).trim_start_matches('\''))),
       Self::TypeRef(name, args) => {
         if args.is_empty() {
           Edn::Symbol(Arc::from(name.trim_start_matches('\'')))
@@ -5925,7 +6006,7 @@ impl CalcitTypeAnnotation {
           format!("struct {}<{}>", base.name, rendered)
         }
       }
-      Self::TypeVar(name) => format!("'{name}"),
+      Self::TypeVar(name) => format!("'{}", source_type_variable(name)),
       Self::TypeRef(name, args) => {
         if args.is_empty() {
           format!("type {name}")
@@ -6442,6 +6523,44 @@ mod tests {
   use super::*;
   use crate::calcit::CalcitSymbolInfo;
   use std::collections::BTreeSet;
+
+  #[test]
+  fn lexical_binder_renaming_respects_nested_quantifiers_and_preserves_checked_metadata() {
+    let variable = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let identity = CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![variable.clone()],
+      return_type: variable.clone(),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+      runtime_arity: None,
+    };
+    let mut outer = identity.clone();
+    let nested = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(identity)));
+    outer.arg_types.push(nested.clone());
+    let renamed = Arc::new(outer.with_lexical_binders());
+    assert_ne!(renamed.generics, outer.generics);
+    assert_eq!(renamed.arg_types[0], renamed.return_type);
+    assert_eq!(renamed.arg_types[1], nested, "the nested T owns its quantifier");
+    assert_eq!(renamed.to_schema_edn(), outer.to_schema_edn(), "source schemas hide binder keys");
+    let hint = Calcit::from(CalcitList::executable(
+      vec![Calcit::Syntax(CalcitSyntax::HintFn, Arc::from("tests")), renamed.to_schema_calcit()],
+      super::super::CalcitCallKind::TypedFnHint(renamed.clone(), false),
+    ));
+    let parsed = CalcitTypeAnnotation::extract_fn_annotation_from_hint_form(&hint).unwrap();
+    assert_eq!(parsed.as_ref(), &CalcitTypeAnnotation::Fn(renamed.clone()));
+    assert_eq!(
+      CalcitTypeAnnotation::extract_return_type_from_hint_form(&hint),
+      Some(renamed.return_type.clone())
+    );
+    assert_eq!(
+      CalcitTypeAnnotation::extract_generics_from_hint_form(&hint),
+      Some(renamed.generics.as_ref().clone())
+    );
+    assert!(!parsed.describe().contains("#lexical:"));
+  }
 
   fn nested_relation_fixture(depth: usize, leaf: CalcitTypeAnnotation) -> Arc<CalcitTypeAnnotation> {
     let mut current = Arc::new(leaf);
@@ -9778,6 +9897,41 @@ impl Hash for CalcitFnTypeAnnotation {
 }
 
 impl CalcitFnTypeAnnotation {
+  /// Instantiate a definition's own binders without specializing any captured variable.
+  pub(crate) fn with_lexical_binders(&self) -> Self {
+    let renaming: TypeBindings = self
+      .generics
+      .iter()
+      .map(|name| {
+        (
+          name.clone(),
+          Arc::new(CalcitTypeAnnotation::TypeVar(fresh_lexical_type_variable(name))),
+        )
+      })
+      .collect();
+    let renamed = |name: &Arc<str>| match renaming.get(name).map(Arc::as_ref) {
+      Some(CalcitTypeAnnotation::TypeVar(fresh)) => fresh.clone(),
+      _ => name.clone(),
+    };
+    let mut signature = self.clone();
+    signature.generics = Arc::new(self.generics.iter().map(renamed).collect());
+    signature.where_bounds = Arc::new(
+      self
+        .where_bounds
+        .iter()
+        .map(|bound| {
+          let mut bound = bound.clone();
+          bound.name = renamed(&bound.name);
+          bound
+        })
+        .collect(),
+    );
+    signature.arg_types = self.arg_types.iter().map(|ty| ty.substitute_free_type_vars(&renaming)).collect();
+    signature.return_type = self.return_type.substitute_free_type_vars(&renaming);
+    signature.rest_type = self.rest_type.as_ref().map(|ty| ty.substitute_free_type_vars(&renaming));
+    signature
+  }
+
   pub(crate) fn call_arity(&self) -> super::ProcArity {
     self.runtime_arity.unwrap_or_else(|| {
       let optional = if self.rest_type.is_none() {
@@ -9834,7 +9988,7 @@ impl CalcitFnTypeAnnotation {
             .collect(),
         ))
       };
-      map.insert(Edn::Symbol(bound.name.clone()), value);
+      map.insert(Edn::Symbol(Arc::from(source_type_variable(&bound.name))), value);
     }
     Some(Edn::Map(map))
   }
@@ -9881,7 +10035,7 @@ impl CalcitFnTypeAnnotation {
       let generics: Vec<Edn> = self
         .generics
         .iter()
-        .map(|s| Edn::Symbol(Arc::from(s.trim_start_matches('\''))))
+        .map(|s| Edn::Symbol(Arc::from(source_type_variable(s).trim_start_matches('\''))))
         .collect();
       map.insert_key("generics", Edn::List(EdnListView(generics)));
     }
@@ -9926,7 +10080,7 @@ impl CalcitFnTypeAnnotation {
       let generics: Vec<Edn> = self
         .generics
         .iter()
-        .map(|s| Edn::Symbol(Arc::from(s.trim_start_matches('\''))))
+        .map(|s| Edn::Symbol(Arc::from(source_type_variable(s).trim_start_matches('\''))))
         .collect();
       map.insert_key("generics", Edn::List(EdnListView(generics)));
     }
@@ -9954,7 +10108,7 @@ impl CalcitFnTypeAnnotation {
       let generics: Vec<Edn> = self
         .generics
         .iter()
-        .map(|s| Edn::Symbol(Arc::from(s.trim_start_matches('\''))))
+        .map(|s| Edn::Symbol(Arc::from(source_type_variable(s).trim_start_matches('\''))))
         .collect();
       map.insert_key("generics", Edn::List(EdnListView(generics)));
     }
@@ -9987,7 +10141,12 @@ impl CalcitFnTypeAnnotation {
     let generics = if self.generics.is_empty() {
       "".to_string()
     } else {
-      let rendered = self.generics.iter().map(|name| format!("'{name}")).collect::<Vec<_>>().join(", ");
+      let rendered = self
+        .generics
+        .iter()
+        .map(|name| format!("'{}", source_type_variable(name)))
+        .collect::<Vec<_>>()
+        .join(", ");
       format!("<{rendered}>")
     };
     let where_clause = if self.where_bounds.is_empty() {
@@ -10039,7 +10198,12 @@ impl CalcitFnTypeAnnotation {
     let generics = if self.generics.is_empty() {
       "".to_string()
     } else {
-      let rendered = self.generics.iter().map(|name| format!("'{name}")).collect::<Vec<_>>().join(", ");
+      let rendered = self
+        .generics
+        .iter()
+        .map(|name| format!("'{}", source_type_variable(name)))
+        .collect::<Vec<_>>()
+        .join(", ");
       format!("<{rendered}>")
     };
     let where_clause = if self.where_bounds.is_empty() {
@@ -10412,7 +10576,7 @@ pub fn validate_runtime_generic_where_bounds(bindings: &TypeBindings, where_boun
 
     return Err(format!(
       "generic '{}' is bound to `{}`, but it does not satisfy `{}`",
-      bound.name,
+      source_type_variable(&bound.name),
       actual_type.to_brief_string(),
       required.to_brief_string()
     ));

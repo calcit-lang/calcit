@@ -1593,7 +1593,14 @@ pub(crate) fn check_function_return_type(
   let unproven = |actual: &str| {
     let location = last_expr
       .get_location()
-      .filter(|location| location.ns.as_ref() == file_ns && location.def.as_ref() == def_name)
+      .filter(|location| {
+        location.ns.as_ref() == file_ns
+          && (location.def.as_ref() == def_name
+            || info
+              .call_location
+              .as_ref()
+              .is_some_and(|source| source.ns == location.ns && source.def == location.def))
+      })
       .or_else(|| {
         // A lowered tail can lose its coordinate. The declaration still has
         // an exact source owner; never attribute its proof debt to a caller.
@@ -1638,7 +1645,12 @@ pub(crate) fn check_function_return_type(
   // an open callable hide a definite contradiction with the return contract.
   let mut bindings = HashMap::new();
   let proof = actual_type.prove_with_bindings(declared_return_type, &mut bindings);
-  let proof = if audit
+  // A lexical producer cannot establish a different universal return binder,
+  // even outside the independent-proof workflow. Keep the existing treatment
+  // of open/concrete producers separate from this identity obligation.
+  let lexical_return = crate::calcit::type_annotation::has_lexical_type_variables(std::slice::from_ref(declared_return_type))
+    && !free_type_variable_names(std::slice::from_ref(&actual_type)).is_empty();
+  let proof = if (audit || lexical_return)
     && bindings
       .values()
       .any(|binding| !matches!(binding.as_ref(), CalcitTypeAnnotation::Dynamic))
@@ -1654,7 +1666,7 @@ pub(crate) fn check_function_return_type(
     {
       let mut error = unproven(&diagnostic_type_string(&actual_type));
       error.code = Some("E_ERASED_GENERIC_RELATION".to_owned());
-      error.hint = Some("An independent return proof keeps lexical type variables rigid; a return declaration cannot specialize them using another variable or a concrete producer type.".into());
+      error.hint = Some("An independent return proof keeps lexical type variables rigid; a return declaration cannot specialize them using another variable or a concrete producer type. Separately declared lexical binders remain distinct even when their source names are identical.".into());
       return Err(error);
     }
     proof

@@ -11963,7 +11963,7 @@ fn body_for_parameter_recheck(form: &Calcit) -> Calcit {
       CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport,
       _
     ))
-  ) && matches!(items.last(), Some(Calcit::List(hint)) if hint.call_kind() == CalcitCallKind::GeneratedFnHint)
+  ) && matches!(items.last(), Some(Calcit::List(hint)) if matches!(hint.call_kind(), CalcitCallKind::GeneratedFnHint | CalcitCallKind::TypedFnHint(_, true)))
   {
     // Macro-generated functions append this signature after their source
     // forms. Remove that one trailing copy, not the user's original hints.
@@ -12132,14 +12132,22 @@ pub fn preprocess_defn(
       );
       let lexical_generics =
         crate::calcit::type_annotation::free_type_variable_names(&ctx.scope_types.values().cloned().collect::<Vec<_>>());
-      let body_fn_hint = args
-        .iter()
-        .skip(2)
-        .find_map(|form| CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form_in_scope(form, &lexical_generics))
-        .and_then(|annotation| match annotation.as_ref() {
-          CalcitTypeAnnotation::Fn(fn_annotation) => Some(fn_annotation.clone()),
+      let body_fn_hint = args.iter().skip(2).find_map(|form| {
+        let annotation = CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form_in_scope(form, &lexical_generics)?;
+        match annotation.as_ref() {
+          CalcitTypeAnnotation::Fn(signature) => Some((
+            form.clone(),
+            if matches!(def_schema.as_ref(), CalcitTypeAnnotation::Fn(_)) {
+              signature.clone()
+            } else {
+              Arc::new(signature.with_lexical_binders())
+            },
+          )),
           _ => None,
-        });
+        }
+      });
+      let body_fn_hint_source = body_fn_hint.as_ref().map(|(source, _)| source.clone());
+      let body_fn_hint = body_fn_hint.map(|(_, signature)| signature);
       // A zero-input helper has no caller-dependent parameter constraints.
       // Infer only absent contracts; an explicit Dynamic remains intentional.
       let infer_helper_schema = source_top_level_definition
@@ -12348,7 +12356,10 @@ pub fn preprocess_defn(
 
       if let CalcitTypeAnnotation::Fn(fn_annot) = def_schema.as_ref() {
         let schema_calcit = fn_annot.to_schema_calcit();
-        let schema_hint = Calcit::from(vec![Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(ctx.file_ns)), schema_calcit]);
+        let schema_hint = Calcit::from(CalcitList::executable(
+          vec![Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(ctx.file_ns)), schema_calcit],
+          CalcitCallKind::TypedFnHint(fn_annot.clone(), false),
+        ));
         processed_body.push(schema_hint.to_owned());
         xs = xs.push_right(schema_hint);
       }
@@ -12455,12 +12466,29 @@ pub fn preprocess_defn(
         PROOF_ERROR_COLLECTOR.with(|collector| collector.borrow().as_ref().map(|collector| collector.errors.len()));
       let initial_rewrites = post_lowering::Scope::checkpoint();
 
+      let retain_fn_hint = |source: &Calcit, form: Calcit| {
+        if body_fn_hint_source.as_ref() == Some(source)
+          && let Some(signature) = effective_fn_schema.as_ref()
+          && let Calcit::List(items) = &form
+        {
+          Calcit::from(CalcitList::executable(
+            items.to_vec(),
+            CalcitCallKind::TypedFnHint(signature.clone(), false),
+          ))
+        } else {
+          form
+        }
+      };
+
       args.traverse_result::<CalcitErr>(&mut |a| {
         if to_skip > 0 {
           to_skip -= 1;
           return Ok(());
         }
-        let form = preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
+        let form = retain_fn_hint(
+          a,
+          preprocess_expr(a, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?,
+        );
         condition_evidence::establish_normal_exit(&form, &mut body_types);
         processed_body.push(form.clone());
         xs = xs.push_right(form);
@@ -12515,7 +12543,10 @@ pub fn preprocess_defn(
         let replayed_from = ctx.check_warnings.borrow().len();
         let replay_result = (|| -> Result<(), CalcitErr> {
           for source in args.iter().skip(2) {
-            let form = preprocess_expr(source, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?;
+            let form = retain_fn_hint(
+              source,
+              preprocess_expr(source, &body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack)?,
+            );
             condition_evidence::establish_normal_exit(&form, &mut body_types);
             processed_body.push(form.clone());
             xs = xs.push_right(form);
@@ -12607,7 +12638,7 @@ pub fn preprocess_defn(
             Calcit::Syntax(CalcitSyntax::HintFn, Arc::from(ctx.file_ns)),
             fn_annot.to_schema_calcit(),
           ],
-          CalcitCallKind::GeneratedFnHint,
+          CalcitCallKind::TypedFnHint(fn_annot.clone(), true),
         ));
         processed_body.push(schema_hint.clone());
         xs = xs.push_right(schema_hint);

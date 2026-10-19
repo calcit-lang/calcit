@@ -313,6 +313,97 @@
           :tests $ [] $ %{} 'TestEntry (:name |predicate-contract)
             :code $ quote $ assert= true (infer-result-ok-predicate)
             :tags $ #{} :unit
+        'lexical-generic-capture $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn lexical-generic-capture (value)
+            let
+                callback $ fn ()
+                  hint-fn $ {}
+                    :args $ []
+                    :return 'T
+                  , value
+              callback
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T
+            :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-outer-number)
+              :code $ quote $ assert= 1 (lexical-generic-capture 1)
+              :tags $ #{} :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-outer-string)
+              :code $ quote $ assert= |outer (lexical-generic-capture |outer)
+              :tags $ #{} :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-outer-list)
+              :code $ quote $ assert= ([] |outer)
+                lexical-generic-capture $ [] |outer
+              :tags $ #{} :generic :lexical-binder :unit
+        'lexical-generic-grid $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn lexical-generic-grid (x y f)
+            -> (range x)
+              mapcat $ fn (xi)
+                -> (range y)
+                  map $ fn (yi) (f xi yi)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'Number 'Number $ :: 'Fn
+              {} (:return 'T)
+                :args $ [] 'Number 'Number
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-number-order)
+              :code $ quote $ assert= ([] 0 1 10 11)
+                lexical-generic-grid 2 2 $ fn (x y)
+                  + (* x 10) y
+              :tags $ #{} :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-string-result)
+              :code $ quote $ assert= ([] |0:0 |0:1 |1:0 |1:1)
+                lexical-generic-grid 2 2 $ fn (x y) (str x |: y)
+              :tags $ #{} :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-empty-dimensions)
+              :code $ quote $ do
+                assert= ([]) (lexical-generic-grid 0 2 +)
+                assert= ([]) (lexical-generic-grid 2 0 +)
+              :tags $ #{} :generic :lexical-binder :unit
+        'lexical-generic-identity $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn lexical-generic-identity (value)
+            let
+                callback $ fn (other)
+                  hint-fn $ {}
+                    :args $ [] 'T
+                    :return 'T
+                    :generics $ [] 'T
+                  , other
+              &+ (callback 1) 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'T
+            :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |independent-string-capture)
+              :code $ quote $ assert= 2 (lexical-generic-identity |outer)
+              :tags $ #{} :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |independent-list-capture)
+              :code $ quote $ assert= 2
+                lexical-generic-identity $ [] |outer
+              :tags $ #{} :generic :lexical-binder :unit
+        'lexical-generic-identity-renamed $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn lexical-generic-identity-renamed (value)
+            let
+                callback $ fn (other)
+                  hint-fn $ {}
+                    :args $ [] 'U
+                    :return 'U
+                    :generics $ [] 'U
+                  , other
+              &+ (callback 1) 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'T
+            :generics $ [] 'T
+          :tests $ [] $ %{} 'TestEntry (:name |independent-renamed-binder)
+            :code $ quote $ assert= 2 (lexical-generic-identity-renamed |outer)
+            :tags $ #{} :generic :lexical-binder :unit
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (println "|Testing type inference...") (test-list-inference) (test-legacy-optional-inference) (test-count-inference) (test-fn-inference) (test-map-inference) (test-filter-map-kv-inference) (test-set-inference) (test-ref-inference) (test-struct-inference) (test-type-ref-combos) (test-generics-identity) (infer-raise-right true) (infer-raise-left false)
             assert= 2 $ recur-types-safe

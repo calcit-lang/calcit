@@ -28,6 +28,74 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
+  // #2190: an inner quantifier is not an outer capture with the same spelling.
+  // Successful identities/captures live in definition :tests; use this existing
+  // rejection harness to verify all compiler entrances and unchanged source.
+  const binderSnapshot = join(project, "lexical-binder.cirru");
+  const runBinder = (...args) => execFileSync(binary, [binderSnapshot, ...args], options);
+  for (const [inner, bodyHint] of [["T", false], ["U", false], ["T", true], ["U", true]]) {
+    await copyFile("calcit/add.cirru", binderSnapshot);
+    runBinder("query", "config", "--format", "edn");
+    runBinder("query", "def", "app.main/main!", "--format", "edn");
+    const contract = "{} (:args $ [] 'T) (:return 'Number) (:generics $ [] 'T)";
+    const operations = [
+      ["edit", "def", "app.main/producer", "--input-format", "cirru", "--code",
+        `quote $ defn producer (value)\n${bodyHint ? `  hint-fn $ ${contract}\n` : ""}  let\n      callback $ fn (other)\n        hint-fn $ {}\n          :args $ [] '${inner}\n          :return '${inner}\n          :generics $ [] '${inner}\n        , value\n    &+ (callback 1) 1`],
+      ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
+        "quote $ defn main! () (producer |outer)"],
+      ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"],
+      ["config", "set", "reload-fn", "app.main/main!"],
+    ];
+    if (!bodyHint) operations.push(["edit", "schema", "app.main/producer", "--input-format", "cirru", "--code", `quote $ :: 'Fn $ ${contract}`]);
+    const code = JSON.stringify(operations);
+    const preview = JSON.parse(runBinder("edit", "transaction", "--code", code, "--dry-run", "--format", "json"));
+    runBinder("edit", "transaction", "--code", code, "--expect-revision", preview.scoped_revision, "--format", "edn");
+    const references = JSON.parse(runBinder("query", "search", "value", "--exact", "--filter", "app.main/producer", "--format", "json"));
+    const sourcePath = references.data.definitions[0].matches.find(match => match.node_kind === "leaf").path;
+    const sourceCoord = sourcePath.slice("code@".length).split(".").map(Number);
+    const original = await readFile(binderSnapshot);
+    const generated = join(project, `lexical-binder-${inner}-${bodyHint}-js`);
+    for (const args of [
+      ["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "producer", "--format", "json"],
+      ["fix", "--workflow", "strict", "--verify", "--format", "json"],
+      ["--check-only", "--all-defs"],
+      ["--compat-types", "--check-only", "--all-defs"],
+      [],
+      ["--emit-path", generated, "js"],
+    ]) {
+      const rejected = spawnSync(binary, [binderSnapshot, ...args], options);
+      if (rejected.error) throw rejected.error;
+      const details = `${rejected.stdout}\n${rejected.stderr}`;
+      assert.equal(rejected.status, 1, `lexical ${inner}: ${args.join(" ")}\n${details}`);
+      assert.match(details, /E_ERASED_GENERIC_RELATION/);
+      assert.doesNotMatch(details, /#lexical:|#call-type:/, "internal binder identities must not leak");
+      if (args.includes("--workflow")) {
+        const diagnostics = JSON.parse(rejected.stdout).diagnostics.filter(item => item.code === "E_ERASED_GENERIC_RELATION");
+        assert.ok(diagnostics.length > 0);
+        for (const diagnostic of diagnostics) {
+          assert.deepEqual(diagnostic.location, { ns: "app.main", def: "producer", coord: sourceCoord },
+            "the rejection belongs to the captured return expression, not the caller or macro head");
+        }
+      }
+      assert.deepEqual(await readFile(binderSnapshot), original);
+    }
+    await assertRejectedArtifacts(generated, `lexical ${inner}`, /E_ERASED_GENERIC_RELATION/, true);
+  }
+  execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
+    "--tag", "lexical-binder", "--backend", "native,js"], { ...options, stdio: "inherit" });
+
+  // Retaining checked hint metadata must not replace the public return contract.
+  await copyFile("calcit/add.cirru", binderSnapshot);
+  runBinder("edit", "def", "app.main/public-return", "--input-format", "cirru", "--code",
+    "quote $ defn public-return (value)\n  hint-fn $ {} (:args $ [] 'Number) (:return 'String)\n  str value");
+  runBinder("edit", "schema", "app.main/public-return", "--input-format", "cirru", "--code",
+    "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)");
+  const publicReturn = spawnSync(binary, [binderSnapshot, "--init-fn", "app.main/public-return", "--reload-fn", "app.main/public-return", "--check-only"], options);
+  if (publicReturn.error) throw publicReturn.error;
+  assert.equal(publicReturn.status, 1);
+  assert.match(`${publicReturn.stdout}\n${publicReturn.stderr}`, /W_FN_RETURN_TYPE_MISMATCH|E_FN_RETURN_UNPROVEN/);
+
   // #2077: the shared replay must keep named-entry target boundaries and report
   // a rejected non-first namespace as a compiler error, not a missing export.
   const entrySnapshot = resolve("calcit/test-replay-entry.cirru");

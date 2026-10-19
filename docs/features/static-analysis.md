@@ -402,6 +402,28 @@ assert= ([] 2 3 4)
 
 受检调用会独立实例化被调用函数声明的泛型。调用者的 `T` 和辅助函数声明的 `T` 即使同名，也不是同一个推断变量；`List<List<T>>` 可以传给泛型 `List<U>` 参数，并保留调用者的元素关系。闭包捕获的外层类型变量不是闭包的新泛型，后续实参不能把它重新绑定为另一个具体类型。开放输出仍保留开放证据，不能因实例化获得未经证明的具体类型。
 
+局部函数的 Map 形式 `hint-fn` 若重新声明 `:generics`，会建立独立的词法绑定；它不会因为也叫 `T` 就继承外层 `T` 的身份。例如下面的回调返回自己的参数，因此允许外层接收 String、内层接收 Number：
+
+```cirru
+let
+    choose $ fn (value)
+      hint-fn $ {}
+        :args $ [] 'T
+        :return 'Number
+        :generics $ [] 'T
+      let
+          callback $ fn (other)
+            hint-fn $ {}
+              :args $ [] 'T
+              :return 'T
+              :generics $ [] 'T
+            , other
+        callback 1
+  assert= 1 $ choose |outer
+```
+
+如果内层改为返回外层 `value`，它就无法证明自己声明的独立泛型返回；普通检查、独立返回证明与编译入口都会拒绝，而不是等到 Number 运算或生成的 JS 出错。诊断保留源码里的类型名字；同名时，提示会说明它们来自不同的词法绑定。若回调只是合法捕获外层类型，不要重新声明该泛型；没有局部 `:generics` 的零参数闭包仍可保留外层参数及结果的关联。
+
 具体参数的实参也可以逐出口证明：例如 `if` 分支分别返回 `Map<Tag,String>` 和空 Map 时，可传入 `Map<Tag,Dynamic>` 参数，即使条件来自显式 Dynamic。条件值不提供结果类型；每个结果出口仍独立受检，开放 Map 或错误 key 的非空 Map 不能借空分支获得证明。此路径不重新绑定被调用函数的泛型；包含 `set!` 的实参仍依赖原合并类型证明，不复用赋值前的 alias 证据。
 
 There are two ways to specify return types:
