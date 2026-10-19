@@ -468,6 +468,24 @@ const scenarios = [
       assert.doesNotMatch(JSON.stringify(result), /#lexical:|#call-type:/);
     },
   },
+  ...[
+    ["bounded-slice", "code@3.0", "C"],
+    ["bounded-local-map", "code@3.1.0.1.3", "T"],
+  ].map(([definition, path, variable]) => ({
+    name: `bounded receiver ${definition} retains identity and capabilities`,
+    args: ["calcit/test-types-inference.cirru", "query", "type-at", `test-types-inference.main/${definition}`, "--path", path, "--format", "json"],
+    check(result) {
+      assert.deepEqual(result.diagnostics, []);
+      assert.equal(result.data.inferred_type, `'${variable}`);
+      assert.deepEqual(result.data.static_methods.map(method => method.name), [".slice"]);
+      const method = result.data.static_methods[0];
+      assert.equal(method.status, "proven");
+      assert.equal(method.return_type, `'${variable}`);
+      assert.equal(method.call_types.returns, `'${variable}`);
+      assert.equal(method.definition, "calcit.core/Sliceable");
+      assert.doesNotMatch(JSON.stringify(result), /#lexical:|#call-type:/);
+    },
+  })),
   {
     name: "source-backed data type",
     args: [
@@ -1158,7 +1176,8 @@ const parseEdnEnvelope = (text, name, reference) => normalizeEdnKeys(parseEdnRaw
 const querySnapshotBefore = readFileSync("calcit/test.cirru");
 for (const { name, base, expectedStatus = 0, check } of [
   ...scenarios.filter(scenario => scenario.name.startsWith("to-calcit-data ")
-    || scenario.name === "lexical collection query keeps source generic names").map(({ name, args, check }) => ({
+    || scenario.name === "lexical collection query keeps source generic names"
+    || scenario.name.startsWith("bounded receiver ")).map(({ name, args, check }) => ({
     name: `${name} EDN`,
     base: args.slice(0, -2),
     check,

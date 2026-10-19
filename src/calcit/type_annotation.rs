@@ -272,12 +272,27 @@ pub(crate) static NEVER_TYPE: LazyLock<Arc<CalcitTypeAnnotation>> = LazyLock::ne
 
 pub(crate) type TypeBindings = HashMap<Arc<str>, Arc<CalcitTypeAnnotation>>;
 
+/// Capability evidence proves only a trait obligation, never value identity.
+pub(crate) fn proves_trait_bound(
+  actual: &CalcitTypeAnnotation,
+  required: &CalcitTypeAnnotation,
+  capabilities: Option<&TypeBindings>,
+) -> bool {
+  let capability = match actual {
+    CalcitTypeAnnotation::TypeVar(name) => capabilities.and_then(|items| items.get(name)),
+    _ => None,
+  };
+  capability.map_or(actual, AsRef::as_ref).is_proven_for(required)
+}
+
 /// One call's inference variables are distinct from the caller's rigid variables.
 /// Source annotations and diagnostics keep their original names.
+#[derive(Default)]
 pub(crate) struct CallTypeProof {
   renaming: TypeBindings,
   bindings: TypeBindings,
   fresh_names: HashSet<Arc<str>>,
+  caller_capabilities: Option<Arc<TypeBindings>>,
 }
 
 fn type_variable_names(types: &[Arc<CalcitTypeAnnotation>]) -> HashSet<Arc<str>> {
@@ -358,6 +373,9 @@ impl CallTypeProof {
   /// Starts a proof for one call: each callee generic is renamed to a fresh
   /// variable so caller variables with the same name stay distinct and rigid.
   pub(crate) fn new(generics: &[Arc<str>], expected: &[Arc<CalcitTypeAnnotation>], actual: &[Arc<CalcitTypeAnnotation>]) -> Self {
+    if generics.is_empty() {
+      return Self::default();
+    }
     let mut occupied = type_variable_names(actual);
     occupied.extend(type_variable_names(expected));
     let mut ordered = generics.to_vec();
@@ -381,7 +399,13 @@ impl CallTypeProof {
       renaming,
       bindings: TypeBindings::new(),
       fresh_names,
+      caller_capabilities: None,
     }
+  }
+
+  pub(crate) fn with_caller_capabilities(mut self, capabilities: Option<Arc<TypeBindings>>) -> Self {
+    self.caller_capabilities = capabilities;
+    self
   }
 
   /// Proves one argument against its expected contract, binding only fresh
@@ -446,7 +470,8 @@ impl CallTypeProof {
           .iter()
           .map(|rest| rest.substitute_type_vars(&self.bindings)),
       );
-      let mut callback_proof = Self::new(&actual_signature.generics, &owned_types, &contextual_types);
+      let mut callback_proof = Self::new(&actual_signature.generics, &owned_types, &contextual_types)
+        .with_caller_capabilities(self.caller_capabilities.clone());
       for (index, input) in expected_inputs.iter().enumerate() {
         let Some(parameter) = actual_signature.arg_types.get(index).or(actual_signature.rest_type.as_ref()) else {
           return TypeProof::Mismatch;
@@ -470,8 +495,14 @@ impl CallTypeProof {
         let Some(resolved) = callback_proof.result(&variable) else {
           return TypeProof::NeedsBoundary(TypeBoundaryReason::UnboundTypeVariable);
         };
-        if !resolved.is_proven_for(&bound.as_type_annotation()) {
-          return TypeProof::NeedsBoundary(TypeBoundaryReason::UnboundTypeVariable);
+        if !proves_trait_bound(&resolved, &bound.as_type_annotation(), self.caller_capabilities.as_deref()) {
+          return match resolved.as_ref() {
+            CalcitTypeAnnotation::TypeVar(name) if self.fresh_names.contains(name) => {
+              TypeProof::NeedsBoundary(TypeBoundaryReason::UnboundTypeVariable)
+            }
+            CalcitTypeAnnotation::Dynamic => TypeProof::NeedsBoundary(TypeBoundaryReason::Dynamic),
+            _ => TypeProof::Mismatch,
+          };
         }
       }
       // Only this invocation loses its quantifiers; source metadata is unchanged.

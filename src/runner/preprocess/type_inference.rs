@@ -16,7 +16,7 @@ use std::{
   collections::{HashMap, HashSet},
 };
 
-use crate::calcit::type_annotation::{CallTypeProof, code_resolves_to_nominal_type_def};
+use crate::calcit::type_annotation::code_resolves_to_nominal_type_def;
 use crate::{
   builtins,
   calcit::{
@@ -1018,7 +1018,7 @@ fn resolve_generic_return_type_parts<'a>(
   let mut expected_types = arg_types.to_vec();
   expected_types.extend(rest_type.cloned());
   expected_types.push(return_type.clone());
-  let mut call_proof = crate::calcit::type_annotation::CallTypeProof::new(generics, &expected_types, &actual_types);
+  let mut call_proof = scope_types.call_type_proof(generics, &expected_types, &actual_types);
 
   // Match fixed and variadic actual arguments against the declared types.
   // Rest-only generic functions otherwise lose their payload type before a
@@ -1634,7 +1634,7 @@ pub(super) fn fully_typed_literal_lookup_path(
     };
     if let Some(expected_key) = expected_key {
       let actual_key = resolve_type_value(key, scope_types)?;
-      let mut proof = CallTypeProof::new(&[], std::slice::from_ref(&expected_key), std::slice::from_ref(&actual_key));
+      let mut proof = scope_types.call_type_proof(&[], std::slice::from_ref(&expected_key), std::slice::from_ref(&actual_key));
       if !proof.prove(actual_key.as_ref(), expected_key.as_ref()).is_proven() {
         return None;
       }
@@ -1953,7 +1953,7 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
             .collect::<Option<Vec<_>>>()?;
           let mut expected_types = contract.arg_types.clone();
           expected_types.push(contract.return_type.clone());
-          let mut call_proof = crate::calcit::type_annotation::CallTypeProof::new(&contract.generics, &expected_types, &actual_types);
+          let mut call_proof = scope_types.call_type_proof(&contract.generics, &expected_types, &actual_types);
           for (argument, expected) in projected.iter().zip(&contract.arg_types) {
             if !call_proof
               .prove(resolve_type_value(argument, scope_types)?.as_ref(), expected)
@@ -2164,7 +2164,7 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
             .get(1)
             .and_then(|receiver| resolve_type_value(receiver, scope_types))
             .unwrap_or_else(|| receiver_hint.clone());
-          let method_type = if let Some(traits) = trait_list_from_type(receiver_type.as_ref()) {
+          let method_type = if let Some(traits) = super::trait_list_for_receiver(receiver_type.as_ref(), scope_types) {
             selected_trait_method(&traits, method_name).map(|candidate| candidate.method_type)?
           } else {
             let impls = get_impls_from_type(receiver_type.as_ref())?;
@@ -2192,7 +2192,7 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
           }
           if let Some(receiver) = xs.get(1)
             && let Some(receiver_type) = resolve_type_value(receiver, scope_types)
-            && let Some(traits) = trait_list_from_type(receiver_type.as_ref())
+            && let Some(traits) = super::trait_list_for_receiver(receiver_type.as_ref(), scope_types)
             && let Some((trait_def, field_type)) = find_trait_field_type(&traits, field_name.as_ref())
             && trait_is_external_object(trait_def)
           {
@@ -2760,7 +2760,7 @@ fn lowered_trait_method_signature(xs: &CalcitList, scope_types: &ScopeTypes) -> 
     _ => return None,
   };
   let receiver_type = resolve_type_value(xs.get(3)?, scope_types)?;
-  let matching_count = if let Some(traits) = trait_list_from_type(receiver_type.as_ref()) {
+  let matching_count = if let Some(traits) = super::trait_list_for_receiver(receiver_type.as_ref(), scope_types) {
     // A listed bound counts as is, so duplicates stay ambiguous. A trait that is
     // only required by a listed bound is also proven, as in surface method lookup.
     let direct = traits.iter().filter(|candidate| candidate.has_same_origin(&trait_def)).count();
@@ -2817,7 +2817,7 @@ fn infer_typed_method_result<'a>(
   let mut expected_types = signature.arg_types.clone();
   expected_types.extend(signature.rest_type.iter().cloned());
   expected_types.push(signature.return_type.clone());
-  let mut proof = crate::calcit::type_annotation::CallTypeProof::new(&generics, &expected_types, &actual_types);
+  let mut proof = scope_types.call_type_proof(&generics, &expected_types, &actual_types);
   for (index, (argument, actual)) in arguments.iter().zip(&actual_types).enumerate() {
     let Some(expected) = signature.arg_types.get(index).or(signature.rest_type.as_ref()) else {
       return calcit::DYNAMIC_TYPE.clone();
@@ -2839,7 +2839,7 @@ fn infer_typed_method_result<'a>(
     let variable = CalcitTypeAnnotation::TypeVar(bound.name.clone());
     if !proof
       .result(&variable)
-      .is_some_and(|actual| actual.is_proven_for(&bound.as_type_annotation()))
+      .is_some_and(|actual| scope_types.proves_trait_bound(&actual, &bound.as_type_annotation()))
     {
       return calcit::DYNAMIC_TYPE.clone();
     }
@@ -3641,7 +3641,7 @@ fn infer_enum_applied_args<'a>(
     .collect::<Vec<_>>();
   // Constructor variables belong to the enum, not to a same-named caller
   // generic nested in a payload. Reuse the call proof's fresh binder scope.
-  let mut proof = crate::calcit::type_annotation::CallTypeProof::new(enum_proto.generics(), &expected_types, &actual_types);
+  let mut proof = scope_types.call_type_proof(enum_proto.generics(), &expected_types, &actual_types);
   for (expected, actual) in expected_types.iter().zip(&actual_types) {
     if !proof.prove(actual, expected).is_proven() {
       return None;
@@ -3655,7 +3655,7 @@ fn infer_enum_applied_args<'a>(
     .iter()
     .map(|expected| proof.result_or_open(expected))
     .collect::<Vec<_>>();
-  let mut payload_proof = crate::calcit::type_annotation::CallTypeProof::new(&[], &instantiated, &actual_types);
+  let mut payload_proof = scope_types.call_type_proof(&[], &instantiated, &actual_types);
   for (expected, actual) in instantiated.iter().zip(&actual_types) {
     if !payload_proof.prove(actual, expected).is_proven() {
       return None;
@@ -3816,7 +3816,7 @@ fn infer_struct_applied_args<'a>(
     .collect::<Vec<_>>();
   let expected_types = fields.iter().map(|(expected, _)| expected.clone()).collect::<Vec<_>>();
   let actual_types = fields.iter().map(|(_, actual)| actual.clone()).collect::<Vec<_>>();
-  let mut proof = crate::calcit::type_annotation::CallTypeProof::new(&struct_def.generics, &expected_types, &actual_types);
+  let mut proof = scope_types.call_type_proof(&struct_def.generics, &expected_types, &actual_types);
   for (expected, actual) in fields {
     if proof.prove(&actual, &expected).is_mismatch() {
       return struct_def.generics.iter().map(|_| calcit::DYNAMIC_TYPE.clone()).collect();

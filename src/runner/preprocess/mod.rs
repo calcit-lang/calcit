@@ -31,7 +31,7 @@ use crate::{
   codegen, program, runner,
 };
 
-use crate::calcit::type_annotation::{CallTypeProof, TypeBoundaryReason, TypeProof};
+use crate::calcit::type_annotation::{TypeBoundaryReason, TypeProof};
 use checked_call_contract::{
   CheckedCallLowering, checked_call_contract_arity, resolve_bound_type_slot_chain, resolve_checked_call_contract,
 };
@@ -285,6 +285,48 @@ pub struct SourceExpressionEvidence {
   pub location: NodeLocation,
   pub processed: Calcit,
   pub inferred_type: Option<Arc<CalcitTypeAnnotation>>,
+  generic_capability: Option<Arc<CalcitTypeAnnotation>>,
+}
+
+impl SourceExpressionEvidence {
+  /// Query the captured capabilities while preserving the original receiver type.
+  pub fn static_method_contracts(&self) -> Option<Vec<(StaticMethodDescriptor, StaticMethodContract)>> {
+    let receiver = self.inferred_type.as_ref()?;
+    let capability = self.generic_capability.as_ref()?;
+    let methods = static_method_descriptors(capability)?;
+    let traits = trait_list_from_type(capability)?;
+    Some(
+      methods
+        .into_iter()
+        .map(|method| {
+          let contract = static_method_contract_with_impls(receiver, &method.name, Some(&traits), None);
+          (method, contract)
+        })
+        .collect(),
+    )
+  }
+}
+
+fn record_generic_source_local(local: &Calcit, scope: &ScopeTypes) {
+  if !matches!(local, Calcit::Local(_)) || !SOURCE_EXPRESSION_TRACE.with(|trace| trace.borrow().is_some()) {
+    return;
+  }
+  let Some(annotation) =
+    resolve_type_value(local, scope).filter(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::TypeVar(_)))
+  else {
+    return;
+  };
+  let Some(location) = local.get_location() else { return };
+  SOURCE_EXPRESSION_TRACE.with(|trace| {
+    if let Some(trace) = trace.borrow_mut().as_mut() {
+      trace.expressions.push(SourceExpressionEvidence {
+        location,
+        processed: local.clone(),
+        generic_capability: scope.generic_capability(&annotation).cloned(),
+        inferred_type: Some(annotation),
+      });
+    }
+  });
 }
 
 #[derive(Default)]
@@ -2698,6 +2740,7 @@ pub fn preprocess_expr(
   if scope_types.has_refinements() && !condition_evidence::preserves_locals(&processed, scope_types) {
     scope_types.invalidate_refinements();
   }
+  record_generic_source_local(&processed, scope_types);
   Ok(processed)
 }
 
@@ -3067,6 +3110,10 @@ fn preprocess_expr_unguarded(
               trace.expressions.push(SourceExpressionEvidence {
                 location,
                 processed: processed.clone(),
+                generic_capability: inferred_type
+                  .as_ref()
+                  .and_then(|annotation| scope_types.generic_capability(annotation))
+                  .cloned(),
                 inferred_type,
               });
             }
@@ -3855,7 +3902,7 @@ fn preprocess_list_call(
             // bootstrapping. It is still explicit static evidence, and normal
             // method dispatch/codegen does not require resolving its impl table.
             || matches!(type_info.as_ref(), CalcitTypeAnnotation::TypeRef(..))
-            || trait_list_from_type(type_info.as_ref()).is_some();
+            || trait_list_for_receiver(type_info.as_ref(), scope_types).is_some();
           let static_methods = static_method_descriptors(type_info.as_ref());
           let has_static_receiver = static_methods.is_some()
             && type_info.resolve_to_fn().is_none()
@@ -3878,7 +3925,7 @@ fn preprocess_list_call(
 
           if is_nominal_or_trait || has_static_receiver || has_known_method || is_display_contract || is_retired_method {
             // Rewrite to (.method expr remaining_args...) — already handled by codegen
-            let is_external = trait_list_from_type(type_info.as_ref())
+            let is_external = trait_list_for_receiver(type_info.as_ref(), scope_types)
               .is_some_and(|traits| traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref())));
             let method_kind = if is_external {
               calcit::MethodKind::ExternalInvoke(type_info.clone())
@@ -4751,7 +4798,7 @@ fn preprocess_list_call(
             )?;
           }
           // Reconstruct the list with updated Method node carrying inferred type
-          let is_external = trait_list_from_type(type_value.as_ref())
+          let is_external = trait_list_for_receiver(type_value.as_ref(), scope_types)
             .is_some_and(|traits| traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref())));
           let method_kind = if is_external {
             calcit::MethodKind::ExternalInvoke(type_value)
@@ -6740,7 +6787,7 @@ fn check_struct_construction_fields(
     .iter()
     .filter_map(|pair| resolve_type_value(pair[1], scope_types))
     .collect::<Vec<_>>();
-  let mut field_proof = CallTypeProof::new(&value.struct_ref.generics, &field_types, &actual_types);
+  let mut field_proof = scope_types.call_type_proof(&value.struct_ref.generics, &field_types, &actual_types);
   for pair in items.as_chunks::<2>().0 {
     let Some(field) = struct_constructor_field_name(pair[0]) else {
       continue;
@@ -7225,7 +7272,7 @@ fn check_struct_method_args(
     return; // No type info, skip check
   };
 
-  if let Some(traits) = trait_list_from_type(type_value.as_ref())
+  if let Some(traits) = trait_list_for_receiver(type_value.as_ref(), scope_types)
     && let Some(candidate) = selected_trait_method(&traits, method_name.as_ref())
   {
     let trait_def = candidate.trait_def;
@@ -7518,7 +7565,7 @@ fn expected_method_argument_types(
   scope_types: &ScopeTypes,
 ) -> Option<MethodArgumentContext> {
   let mut specialized_types = None;
-  let signature = if let Some(traits) = trait_list_from_type(type_value) {
+  let signature = if let Some(traits) = trait_list_for_receiver(type_value, scope_types) {
     selected_trait_method(&traits, method_name).map(|candidate| candidate.method_type)?
   } else {
     let impl_values = get_impls_from_type(type_value)?;
@@ -7582,6 +7629,12 @@ fn reject_or_warn_on_dynamic_trait_call(
   };
 
   let receiver_type = resolve_type_value(receiver, scope_types);
+  if receiver_type
+    .as_ref()
+    .is_some_and(|annotation| trait_list_for_receiver(annotation, scope_types).is_some())
+  {
+    return Ok(());
+  }
   let Some(receiver_cause) = classify_dynamic_dispatch_receiver(receiver_type.as_deref(), current_function_has_js_ffi_feature()) else {
     return Ok(());
   };
@@ -7744,7 +7797,9 @@ fn validate_explicit_trait_call(
     )
   })?;
   if let Some(cause) = classify_dynamic_dispatch_receiver(Some(receiver_type.as_ref()), current_function_has_js_ffi_feature())
-    && !matches!(cause, DynamicDispatchReceiverCause::UnboundGeneric(_))
+    && (!matches!(cause, DynamicDispatchReceiverCause::UnboundGeneric(_))
+      || !(scope_types.proves_trait_bound(&receiver_type, &CalcitTypeAnnotation::Trait(Arc::new(trait_def.clone())))
+        || trait_def.get_default(method_name).is_some()))
   {
     return Err(reject(
       "E_UNPROVEN_TRAIT_CALL",
@@ -7758,7 +7813,7 @@ fn validate_explicit_trait_call(
     ));
   }
 
-  let matching_count = if let Some(traits) = trait_list_from_type(receiver_type.as_ref()) {
+  let matching_count = if let Some(traits) = trait_list_for_receiver(receiver_type.as_ref(), scope_types) {
     traits.iter().filter(|candidate| candidate.has_same_origin(&trait_def)).count()
   } else {
     get_impls_from_type(receiver_type.as_ref())
@@ -8354,7 +8409,7 @@ fn warn_on_method_name_conflict(
     return;
   };
 
-  let candidates = if let Some(traits) = trait_list_from_type(type_value.as_ref()) {
+  let candidates = if let Some(traits) = trait_list_for_receiver(type_value.as_ref(), scope_types) {
     match resolve_trait_method(&traits, method_name.as_ref()) {
       TraitMethodResolution::Ambiguous(candidates) => candidates
         .iter()
@@ -8569,10 +8624,7 @@ fn qualify_trait_bound_method_call_inner(
   };
   let receiver = args.first()?;
   let receiver_type = resolve_type_value(receiver, scope_types).unwrap_or_else(|| inferred_receiver_type.clone());
-  let traits = match receiver_type.as_ref() {
-    CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_) => trait_list_from_type(receiver_type.as_ref())?,
-    _ => return None,
-  };
+  let traits = trait_list_for_receiver(receiver_type.as_ref(), scope_types)?;
   let TraitMethodResolution::Selected(candidate) = resolve_trait_method(&traits, method_name.as_ref()) else {
     return None;
   };
@@ -9182,7 +9234,7 @@ fn validate_method_call(
   let type_value = resolve_type_value(receiver, scope_types).unwrap_or_else(|| inferred_receiver_type.clone());
 
   if REQUIRE_ASSERTION_PROOF.with(Cell::get) {
-    let contract = static_method_contract(type_value.as_ref(), method_name);
+    let contract = scoped_static_method_contract(type_value.as_ref(), method_name, scope_types);
     if let Some(mut arg_types) = contract.arg_types {
       arg_types.insert(0, type_value.clone());
       let signature = CalcitFnTypeAnnotation {
@@ -9199,7 +9251,7 @@ fn validate_method_call(
     }
   }
 
-  if let Some(traits) = trait_list_from_type(type_value.as_ref()) {
+  if let Some(traits) = trait_list_for_receiver(type_value.as_ref(), scope_types) {
     let method_str = method_name.as_ref();
     match resolve_trait_method(&traits, method_str) {
       TraitMethodResolution::Selected(_) => return Ok(()),
@@ -9819,6 +9871,11 @@ fn trait_list_from_type(type_value: &CalcitTypeAnnotation) -> Option<Vec<Arc<Cal
   }
 }
 
+/// A where-bound supplies dispatch capabilities without replacing its value type.
+fn trait_list_for_receiver(type_value: &CalcitTypeAnnotation, scope: &ScopeTypes) -> Option<Vec<Arc<CalcitTrait>>> {
+  trait_list_from_type(scope.generic_capability(type_value).map_or(type_value, AsRef::as_ref))
+}
+
 fn is_trait_annotation(type_value: &CalcitTypeAnnotation) -> bool {
   matches!(type_value, CalcitTypeAnnotation::Trait(_) | CalcitTypeAnnotation::TraitSet(_))
     || matches!(type_value, CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit) if is_trait_annotation(inner.as_ref()))
@@ -10283,6 +10340,12 @@ fn refined_impl_method_schema(
 /// preprocessing instead of maintaining a query-only method registry.
 pub fn static_method_contract(receiver: &CalcitTypeAnnotation, method_name: &str) -> StaticMethodContract {
   let traits = trait_list_from_type(receiver);
+  let impls = if traits.is_none() { get_impls_from_type(receiver) } else { None };
+  static_method_contract_with_impls(receiver, method_name, traits.as_deref(), impls.as_deref())
+}
+
+fn scoped_static_method_contract(receiver: &CalcitTypeAnnotation, method_name: &str, scope: &ScopeTypes) -> StaticMethodContract {
+  let traits = trait_list_for_receiver(receiver, scope);
   let impls = if traits.is_none() { get_impls_from_type(receiver) } else { None };
   static_method_contract_with_impls(receiver, method_name, traits.as_deref(), impls.as_deref())
 }
@@ -12327,24 +12390,18 @@ pub fn preprocess_defn(
         }
       }
       if let Some(fn_annot) = &effective_fn_schema {
-        body_types.bind_generics(&fn_annot.generics);
-        let body_type_bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = fn_annot
-          .where_bounds
-          .iter()
-          .filter_map(|bound| resolve_where_bound_type_for_body(bound, ctx.file_ns).map(|trait_type| (bound.name.clone(), trait_type)))
-          .collect();
+        body_types.bind_function_generics(fn_annot, ctx.file_ns);
         let parameter_types = fn_annot
           .arg_types
           .iter()
           .enumerate()
           .map(|(idx, arg_type)| {
-            let substituted = arg_type.substitute_type_vars(&body_type_bindings);
-            let positional = unwrap_named_body_parameter_type(substituted, param_symbols.get(idx));
+            let positional = unwrap_named_body_parameter_type(arg_type.clone(), param_symbols.get(idx));
             let local = resolve_local_type_refs_for_body(positional, &body_types);
             resolve_namespace_type_refs_for_body(local, ctx.file_ns)
           })
           .chain(fn_annot.rest_type.iter().map(|rest_type| {
-            let local = resolve_local_type_refs_for_body(rest_type.substitute_type_vars(&body_type_bindings), &body_types);
+            let local = resolve_local_type_refs_for_body(rest_type.clone(), &body_types);
             // A rest contract describes each trailing call argument, while the
             // source-level rest binding receives the collected arguments as a
             // List. Keep Variadic in the callable schema, not in the body.
@@ -12367,6 +12424,7 @@ pub fn preprocess_defn(
         {
           local.type_info = type_info.clone();
         }
+        record_generic_source_local(param, &body_types);
       }
       let mut recur_param_types = param_symbols
         .iter()
@@ -14118,7 +14176,7 @@ fn find_unproven_generic_argument(
     .iter()
     .filter_map(|arg| resolve_type_value(arg, scope_types))
     .collect::<Vec<_>>();
-  let mut call_proof = CallTypeProof::new(&signature.generics, &expected_types, &actual_types);
+  let mut call_proof = scope_types.call_type_proof(&signature.generics, &expected_types, &actual_types);
   let mut inspect = |index: usize, arg: &Calcit, expected: &Arc<CalcitTypeAnnotation>| {
     if matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic) {
       return None;
@@ -20559,7 +20617,13 @@ mod tests {
     };
     let args = CalcitList::from(&[receiver, Calcit::Tag(EdnTag::from("name"))][..]);
     let warnings = RefCell::new(vec![]);
-    let stack = CallStackList::default().extend(calcit::CORE_NS, "defimpl", StackKind::Macro, &Calcit::Nil, &[]);
+    let stack = CallStackList::default().push_left(crate::call_stack::CalcitStack {
+      ns: Arc::from(calcit::CORE_NS),
+      def: Arc::from("defimpl"),
+      kind: StackKind::Macro,
+      code: Calcit::Nil,
+      args: vec![],
+    });
 
     check_struct_field_access(&head, &args, &ScopeTypes::new(), "tests.struct", &stack, &warnings);
 

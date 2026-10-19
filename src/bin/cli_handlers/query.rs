@@ -3283,7 +3283,10 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand, selected_entry: O
     && located_target.is_some_and(|target| {
       type_at_call_head(&source_target).and_then(type_at_head_label) != type_at_call_head(target).and_then(type_at_head_label)
     });
-  let needs_source_trace = reader_expanded || source_method_call || changed_call_head;
+  let generic_receiver = located_target
+    .and_then(|target| infer_type_at_target(&source_target, Some(target)))
+    .is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::TypeVar(_)));
+  let needs_source_trace = reader_expanded || source_method_call || changed_call_head || generic_receiver;
   let traced = if compile_error.is_none() && (needs_source_trace || (located_target.is_none() && matches!(target_node, Cirru::List(_))))
   {
     runner::preprocess::trace_snapshot_source_expressions(
@@ -3317,14 +3320,17 @@ fn handle_type_at(input_path: &str, opts: &QueryTypeAtCommand, selected_entry: O
     None => (None, None),
   };
   let methods = inferred.as_ref().and_then(|annotation| {
-    runner::preprocess::static_method_contracts(annotation.as_ref()).map(|items| {
-      let mut methods = items
-        .into_iter()
-        .map(|(method, contract)| context_method(method, contract))
-        .collect::<Vec<_>>();
-      mark_proven_method_roles(annotation.as_ref(), &mut methods);
-      methods
-    })
+    traced_target
+      .and_then(runner::preprocess::SourceExpressionEvidence::static_method_contracts)
+      .or_else(|| runner::preprocess::static_method_contracts(annotation.as_ref()))
+      .map(|items| {
+        let mut methods = items
+          .into_iter()
+          .map(|(method, contract)| context_method(method, contract))
+          .collect::<Vec<_>>();
+        mark_proven_method_roles(annotation.as_ref(), &mut methods);
+        methods
+      })
   });
   let method_fingerprint = method_contract_fingerprint(&methods)?;
   let revision = semantic_revision(&[&source_revision, &method_fingerprint]);

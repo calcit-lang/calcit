@@ -34,6 +34,18 @@ Review 还指出普通检查会接受 `Fn<T>(T) -> T` 的具体常量返回；�
 
 具体/未知返回校验还暴露旧 `test-generics.main/test-fn-generics` 的 `id2` 合同不完整：它声明了泛型返回 T，却没有声明参数与 T 的关系。只补该函数的 `:args [T]`，保留其恒等函数体、Number/String 调用与全部原断言；没有从返回声明反向制造输入证据或默认给所有未注解参数套上泛型。同样的不完整合同作为负例进入原 harness。CLI 产生的 recursive-struct 排版折叠通过 program-diff 确认，不据此改写原语义。
 
+## trait 能力与身份分离
+
+完整词法返回检查使带 `T: Debug` 的合法局部恒等函数暴露假拒绝：参数早先被替换成 `trait Debug`，返回声明却仍是原 T。现在参数始终保留原 TypeVar；ScopeTypes 以 binder key 独立保存能力，只有该函数自己量化的变量可以引入假设。嵌套作用域共享不可变的 capability map，修改时 copy-on-write；普通无约束作用域不额外分配该 map。值、细化和能力的生命周期分开，闭包捕获及同名遮蔽不会制造新证据。
+
+方法解析、origin-qualified trait lowering 和 where 校验读取同一能力证据，但普通值类型比较不把 trait 当作身份。CallTypeProof 显式接收调用者能力上下文，嵌套泛型回调实例化沿用它；回调自己声明的量词/where 不再被“无注解”推断丢弃。普通参数检查仍保留原未解决边界策略，但已知矛盾不能被兼容关系放行。显式 trait call 同样要求 receiver 能力或原有 default 实现，不再让无约束 TypeVar 绕过。
+
+post-lowering 的原有遍历按函数 metadata 恢复能力作用域，不用空 ScopeTypes 复验合法转发；没有关闭门禁或加函数例外。type-at 的原 source trace 保存泛型局部及参数的能力，现有 static-methods 字段同时显示 T 与其方法，不新增 CLI 字段或入口；EDN/JSON 继续等价。返回自身的 `.slice` 方法仍显示返回 T，而不是 Sliceable。
+
+曾试验同时切换全部 CodeEntry 的默认返回证明，发现 core destruct-set 的旧 Option<List<Dynamic>> 异构 pair 使 SetDestruct<T> 退化为 SetDestruct<Dynamic>。这是 #2121 全局切换前须修复的既有精度问题；本次没有增加 destruct-set 豁免，也没有提前启用该全局切换。完整 #2187/#2121 与公共泛型合同收尾仍不宣称完成。
+
+库回归还定位到一个独立测试竞态：人为构造的 defimpl stack 用了受全局 TRACK_STACK 开关影响的 extend，而另一测试临时关闭了开关。仅将该固定 fixture 改为 push_left 明确的 frame，保留原断言，不改变 runtime 的全局开关或串行化所有测试。
+
 ## 验证方式
 
 - 合法恒等、纯改名、未重新声明的外层捕获、三层同名遮蔽与外层恢复、Number/String 的嵌套 mapcat/map、顺序和空维度，使用 definition `:tests`，由原共享运行器执行 native/真实 JS。

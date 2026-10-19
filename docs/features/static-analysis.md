@@ -462,6 +462,10 @@ Legacy clause syntax such as `(hint-fn (return-type ...))`, `(generics ...)`, an
 
 Generic trait bounds use the same schema map. Follow the Rust-style split: declare variables in `:generics`, then put trait constraints in `:where`.
 
+`T: Sliceable` 表示 `T` 具备切片能力，参数及结果仍是原来的 `T`，不是 trait 描述符。合法恒等返回、转发和高阶回调会保留这层关系；两个变量即使实现同一 trait，也不能相互替代。内层重新声明同名变量不会继承外层约束，闭包也不能通过给捕获的变量补写 `:where` 来制造能力。
+
+已有泛型函数作为回调时，保留原量词和 where 合同，不将它重新当作无注解函数推断。实际调用仍需证明全部 trait 约束；查询泛型表达式时，`type-at` 保留源码类型变量，同时列出约束允许的方法及其关联返回类型。
+
 ```cirru
 let
     get-name $ fn (user)

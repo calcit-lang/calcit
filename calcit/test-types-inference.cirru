@@ -66,6 +66,136 @@
           :code $ quote $ defenum Status (:ok 'Number) (:err 'String)
           :examples $ []
           :schema $ :: 'EnumDef
+        'bounded-forward $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn bounded-forward (value) (bounded-identity value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'C)
+            :args $ [] 'C
+            :generics $ [] 'C
+            :where $ {} $ 'C 'Sliceable
+          :tests $ [] $ %{} 'TestEntry (:name |forwards-the-same-variable)
+            :code $ quote $ assert= ([] |a |b)
+              bounded-forward $ [] |a |b
+            :tags $ #{} :bounded-binder :generic :lexical-binder :unit
+        'bounded-identity $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn bounded-identity (value) value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'C)
+            :args $ [] 'C
+            :generics $ [] 'C
+            :where $ {} $ 'C 'Sliceable
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-list-payload)
+              :code $ quote $ assert= ([] 1 2)
+                bounded-identity $ [] 1 2
+              :tags $ #{} :bounded-binder :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-string)
+              :code $ quote $ assert= "|你好" (bounded-identity "|你好")
+              :tags $ #{} :bounded-binder :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-empty-list)
+              :code $ quote $ assert= ([])
+                bounded-identity $ []
+              :tags $ #{} :bounded-binder :generic :lexical-binder :unit
+        'bounded-local-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn bounded-local-map (value)
+            let
+                shorten $ fn (item)
+                  hint-fn $ {}
+                    :args $ [] 'T
+                    :return 'T
+                    :generics $ [] 'T
+                    :where $ {} $ 'T Sliceable
+                  .slice item 0 1
+              shorten value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'C)
+            :args $ [] 'C
+            :generics $ [] 'C
+            :where $ {} $ 'C 'Sliceable
+          :tests $ []
+            %{} 'TestEntry (:name |local-map-keeps-list-payload)
+              :code $ quote $ assert= ([] 1)
+                bounded-local-map $ [] 1 2
+              :tags $ #{} :bounded-binder :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |local-map-keeps-string)
+              :code $ quote $ assert= |a (bounded-local-map |ab)
+              :tags $ #{} :bounded-binder :generic :lexical-binder :unit
+        'bounded-map $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn bounded-map (value)
+            map ([] value)
+              fn (item)
+                hint-fn $ {}
+                  :args $ [] 'T
+                  :return 'T
+                  :generics $ [] 'T
+                  :where $ {} $ 'T Sliceable
+                , item
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'C
+            :generics $ [] 'C
+            :return $ :: 'List 'C
+            :where $ {} $ 'C 'Sliceable
+          :tests $ []
+            %{} 'TestEntry (:name |bounded-callback-keeps-list-payload)
+              :code $ quote $ assert=
+                [] $ [] 1 2
+                bounded-map $ [] 1 2
+              :tags $ #{} :bounded-binder :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |bounded-callback-keeps-string)
+              :code $ quote $ assert= ([] |ab) (bounded-map |ab)
+              :tags $ #{} :bounded-binder :generic :lexical-binder :unit
+        'bounded-multiple $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn bounded-multiple (value)
+            assert-type (.debug value) 'String
+            .slice value 0 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'C)
+            :args $ [] 'C
+            :generics $ [] 'C
+            :where $ {} $ 'C ([] 'Debug 'Sliceable)
+          :tests $ [] $ %{} 'TestEntry (:name |both-capabilities-keep-one-identity)
+            :code $ quote $ assert= ([] 1)
+              bounded-multiple $ [] 1 2
+            :tags $ #{} :bounded-binder :generic :lexical-binder :unit
+        'bounded-shadow-capture $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn bounded-shadow-capture (value)
+            let
+                describe $ fn (other)
+                  hint-fn $ {}
+                    :args $ [] 'T
+                    :return 'String
+                    :generics $ [] 'T
+                  .debug value
+              assert-type (describe 1) 'String
+              , value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T
+            :generics $ [] 'T
+            :where $ {} $ 'T 'Debug
+          :tests $ []
+            %{} 'TestEntry (:name |shadowing-retains-captured-number-bound)
+              :code $ quote $ assert= 1 (bounded-shadow-capture 1)
+              :tags $ #{} :bounded-binder :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |shadowing-retains-captured-string-bound)
+              :code $ quote $ assert= |outer (bounded-shadow-capture |outer)
+              :tags $ #{} :bounded-binder :generic :lexical-binder :unit
+        'bounded-slice $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn bounded-slice (value) (value .slice 0 1)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'C)
+            :args $ [] 'C
+            :generics $ [] 'C
+            :where $ {} $ 'C 'Sliceable
+          :tests $ []
+            %{} 'TestEntry (:name |method-keeps-list-payload)
+              :code $ quote $ assert= ([] 1)
+                bounded-slice $ [] 1 2
+              :tags $ #{} :bounded-binder :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |method-keeps-unicode-string)
+              :code $ quote $ assert= "|你" (bounded-slice "|你好")
+              :tags $ #{} :bounded-binder :generic :lexical-binder :unit
         'call-callback-envelope $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn call-callback-envelope (dispatch! envelope)
             call-callback-holder dispatch! $ :holder envelope

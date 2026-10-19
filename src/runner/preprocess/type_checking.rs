@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use super::checked_call_contract::resolve_checked_call_contract;
 use super::type_inference::{async_invocation_result, infer_struct_field_type, infer_unhinted_callback_signature};
-use crate::calcit::type_annotation::{CallTypeProof, TypeBoundaryReason, TypeProof, free_type_variable_names};
+use crate::calcit::type_annotation::{TypeBoundaryReason, TypeProof, free_type_variable_names};
 use crate::calcit::{
   self, Calcit, CalcitErr, CalcitErrKind, CalcitFn, CalcitGenericBound, CalcitList, CalcitLocal, CalcitProc, CalcitSyntax,
   CalcitTypeAnnotation, LocatedWarning, NodeLocation,
@@ -40,6 +40,7 @@ struct CheckContext<'a> {
   head_form: &'a Calcit,
   args: &'a CalcitList,
   expected_types: &'a [Arc<CalcitTypeAnnotation>],
+  generics: &'a [Arc<str>],
   where_bounds: &'a [CalcitGenericBound],
   scope_types: &'a ScopeTypes,
   file_ns: &'a str,
@@ -104,7 +105,7 @@ fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str
         .iter()
         .map(|argument| resolve_type_value(argument, ctx.scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()))
         .collect::<Vec<_>>();
-      let mut proof = CallTypeProof::new(&signature.generics, &parameters, &actual_types);
+      let mut proof = ctx.scope_types.call_type_proof(&signature.generics, &parameters, &actual_types);
       for (index, parameter) in parameters.iter().enumerate() {
         let (parameter, limit) = match parameter.as_ref() {
           CalcitTypeAnnotation::Variadic(inner) => (inner.as_ref(), usize::MAX),
@@ -134,7 +135,7 @@ fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str
       .or_else(|| call_proof.is_none().then(|| bindings.get(&bound.name).cloned()).flatten())
       .unwrap_or_else(|| Arc::new(CalcitTypeAnnotation::TypeVar(bound.name.clone())));
     let required = bound.as_type_annotation();
-    if actual_type.as_ref().is_proven_for(required.as_ref()) {
+    if ctx.scope_types.proves_trait_bound(actual_type.as_ref(), required.as_ref()) {
       continue;
     }
 
@@ -145,7 +146,7 @@ fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str
     gen_check_warning_code_at(
       format!(
         "[Warn] call binds generic `'{}' to `{}`, but it does not satisfy trait bound `{}` at {}/{}\n  Expression: `{}`",
-        bound.name,
+        crate::calcit::type_annotation::source_type_variable(&bound.name),
         diagnostic_type_string(actual_type.as_ref()),
         diagnostic_type_string(required.as_ref()),
         ctx.file_ns,
@@ -344,7 +345,7 @@ pub(super) fn specialize_collection_fold_expected_types(
     actual.extend(member_types.iter().cloned());
     let mut expected = callback.arg_types.clone();
     expected.extend(callback.rest_type.iter().cloned());
-    let mut proof = crate::calcit::type_annotation::CallTypeProof::new(&callback.generics, &expected, &actual);
+    let mut proof = scope_types.call_type_proof(&callback.generics, &expected, &actual);
     let proven = actual.iter().enumerate().all(|(index, actual)| {
       callback
         .arg_types
@@ -564,6 +565,12 @@ where
     }
   }
 
+  let actual_types = ctx
+    .args
+    .iter()
+    .map(|arg| resolve_type_value(arg, ctx.scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()))
+    .collect::<Vec<_>>();
+  let mut proof = ctx.scope_types.call_type_proof(ctx.generics, ctx.expected_types, &actual_types);
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
   for (idx, (arg, expected_type)) in ctx.args.iter().zip(ctx.expected_types.iter()).enumerate() {
     if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
@@ -577,7 +584,8 @@ where
         if let Some(actual_type) = resolve_type_value(rest_arg, ctx.scope_types) {
           let mut candidate = bindings.clone();
           // Keep the generic until matching so closed bottom bindings can refine.
-          let matches = actual_type.as_ref().compatible_with_bindings(inner_type.as_ref(), &mut candidate);
+          let matches = !proof.prove(&actual_type, inner_type).is_mismatch()
+            && actual_type.as_ref().compatible_with_bindings(inner_type.as_ref(), &mut candidate);
           if matches {
             bindings = candidate;
           } else {
@@ -590,7 +598,9 @@ where
 
     if let Some(actual_type) = resolve_type_value(arg, ctx.scope_types) {
       let callback_needs_inference = matches!(actual_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
-        || matches!(actual_type.as_ref(), CalcitTypeAnnotation::Fn(signature) if matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Dynamic) || signature.return_type.contains_type_var());
+        || matches!(actual_type.as_ref(), CalcitTypeAnnotation::Fn(signature)
+          if signature.generics.is_empty() && signature.where_bounds.is_empty()
+            && (matches!(signature.return_type.as_ref(), CalcitTypeAnnotation::Dynamic) || signature.return_type.contains_type_var()));
       let actual_type = if callback_needs_inference
         && matches!(expected_type.as_ref(), CalcitTypeAnnotation::Fn(_))
         && let Calcit::List(callback) = arg
@@ -599,7 +609,7 @@ where
       } else {
         actual_type
       };
-      let matches = if expected_type.contains_type_var() || actual_type.contains_type_var() {
+      let compatible = if expected_type.contains_type_var() || actual_type.contains_type_var() {
         let mut candidate = bindings.clone();
         let matches = actual_type
           .as_ref()
@@ -611,7 +621,9 @@ where
       } else {
         actual_type.as_ref().compatible_with_bindings(expected_type.as_ref(), &mut bindings)
       };
-      if !matches {
+      // A definite contradiction cannot be accepted by the migration relation;
+      // unresolved boundaries retain their existing ordinary-checking policy.
+      if proof.prove(&actual_type, expected_type).is_mismatch() || !compatible {
         let diagnostic_expected = expected_type.substitute_type_vars(&bindings);
         ctx.emit_warning(idx + 1, diagnostic_expected.as_ref(), actual_type.as_ref(), &make_warning);
       }
@@ -1038,6 +1050,7 @@ pub(super) fn check_reset_arg_types(
     head_form,
     args,
     expected_types: &expected_types,
+    generics: &[],
     where_bounds: &[],
     scope_types,
     file_ns,
@@ -1126,6 +1139,7 @@ pub(crate) fn check_resolved_fn_call_arg_types(
     head_form,
     args,
     expected_types: expected_types.as_ref(),
+    generics: &fn_annot.generics,
     where_bounds: fn_annot.where_bounds.as_ref(),
     scope_types,
     file_ns: call_info.file_ns,
@@ -1203,6 +1217,11 @@ pub(crate) fn check_user_fn_arg_types(
     head_form,
     args,
     expected_types: expected_types.as_ref(),
+    generics: if fn_info.generics.is_empty() {
+      schema_fn_annot.map_or(&[], |signature| signature.generics.as_slice())
+    } else {
+      &fn_info.generics
+    },
     where_bounds,
     scope_types,
     file_ns: call_info.file_ns,
@@ -1245,6 +1264,7 @@ pub(crate) fn check_recur_arg_types(
     head_form: &head,
     args: &args,
     expected_types,
+    generics: &[],
     where_bounds: &[],
     scope_types,
     file_ns,
@@ -1542,13 +1562,14 @@ fn refined_generic_return_is_proven(
   // An unguarded exit keeps the variable rigid, as the independent return
   // proof does: a producer type must not bind the declared variable.
   resolve_type_value(expr, scope).is_some_and(|actual| {
-    CallTypeProof::new(
-      &[],
-      std::slice::from_ref(&Arc::new(declared.to_owned())),
-      std::slice::from_ref(&actual),
-    )
-    .prove(&actual, declared)
-    .is_proven()
+    scope
+      .call_type_proof(
+        &[],
+        std::slice::from_ref(&Arc::new(declared.to_owned())),
+        std::slice::from_ref(&actual),
+      )
+      .prove(&actual, declared)
+      .is_proven()
   })
 }
 
@@ -1662,7 +1683,8 @@ pub(crate) fn check_function_return_type(
     // callee inference variables. Both concrete and lexical producer types
     // must not specialize a return variable. Empty constructors and branch
     // exits can still establish the relation below without using the join.
-    let mut return_proof = CallTypeProof::new(&[], std::slice::from_ref(declared_return_type), std::slice::from_ref(&actual_type));
+    let mut return_proof =
+      scope_types.call_type_proof(&[], std::slice::from_ref(declared_return_type), std::slice::from_ref(&actual_type));
     return_proof.prove(&actual_type, declared_return_type)
   } else {
     proof
