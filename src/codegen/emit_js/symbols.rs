@@ -1,6 +1,6 @@
 use crate::util::string::has_ns_part;
 
-/// JavaScript reserved words (plus strict-mode `arguments`/`eval` and literals) that are valid Calcit symbols
+/// JavaScript reserved words (plus strict-mode `arguments` and literals) that are valid Calcit symbols
 /// but cannot be used as JS binding names in an ES module.
 const JS_RESERVED_WORDS: &[&str] = &[
   "arguments",
@@ -14,7 +14,6 @@ const JS_RESERVED_WORDS: &[&str] = &[
   "default",
   "delete",
   "enum",
-  "eval",
   "export",
   "extends",
   "false",
