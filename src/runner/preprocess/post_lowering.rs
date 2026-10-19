@@ -220,16 +220,37 @@ fn call_chain(operation: String, location: Option<&NodeLocation>, rewrites: &[&R
 }
 
 /// Visit every list node of a lowered tree, skipping quoted data.
-fn visit_lists(expr: &Calcit, visit: &mut impl FnMut(&Calcit, &CalcitList)) {
+fn visit_lists(expr: &Calcit, scope: &ScopeTypes, namespace: &str, visit: &mut impl FnMut(&Calcit, &CalcitList, &ScopeTypes)) {
   let Calcit::List(items) = expr else {
     return;
   };
   if let Some(Calcit::Syntax(CalcitSyntax::Quote | CalcitSyntax::Quasiquote, _)) = items.first() {
     return;
   }
-  visit(expr, items);
+  let function_scope = if matches!(
+    items.first(),
+    Some(Calcit::Syntax(
+      CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport,
+      _
+    ))
+  ) {
+    let mut nested = scope.clone();
+    let generics = scope.generic_names();
+    for form in items.iter().skip(3) {
+      if let Some(annotation) = CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form_in_scope(form, &generics)
+        && let CalcitTypeAnnotation::Fn(signature) = annotation.as_ref()
+      {
+        nested.bind_function_generics(signature, namespace);
+      }
+    }
+    Some(nested)
+  } else {
+    None
+  };
+  let scope = function_scope.as_ref().unwrap_or(scope);
+  visit(expr, items, scope);
   for item in items.iter() {
-    visit_lists(item, visit);
+    visit_lists(item, scope, namespace, visit);
   }
 }
 
@@ -273,7 +294,7 @@ pub(super) fn validate_definition(
   let mut violations: Vec<Violation> = vec![];
   let mut live: Vec<&RewriteEvidence> = vec![];
 
-  visit_lists(resolved, &mut |node, items| {
+  visit_lists(resolved, &ScopeTypes::new(), ns, &mut |node, items, scope| {
     let produced_by = evidence.iter().filter(|item| item.after_form == *node).collect::<Vec<_>>();
     live.extend(produced_by.iter().copied());
     match items.first() {
@@ -281,7 +302,7 @@ pub(super) fn validate_definition(
       Some(Calcit::Proc(proc)) => {
         let recheck = RefCell::new(vec![]);
         let location = find_calcit_location_matching(node, |location| location.def.as_ref() != GENERATED_DEF);
-        check_proc_arg_types(proc, &items.drop_left(), &ScopeTypes::new(), ns, def, location.clone(), &recheck);
+        check_proc_arg_types(proc, &items.drop_left(), scope, ns, def, location.clone(), &recheck);
         let already_checked = reported_at(location.as_ref(), !produced_by.is_empty());
         for warning in recheck
           .borrow()
@@ -299,7 +320,9 @@ pub(super) fn validate_definition(
           });
         }
       }
-      Some(Calcit::Syntax(CalcitSyntax::Defn, _)) => check_recur_in_function(ns, def, items, &known, &mut violations),
+      Some(Calcit::Syntax(CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport, _)) => {
+        check_recur_in_function(ns, def, items, scope, &known, &mut violations)
+      }
       Some(head @ (Calcit::Import(_) | Calcit::Fn { .. })) => {
         let Some(info) = resolved_user_fn(head, call_stack) else {
           return;
@@ -311,7 +334,7 @@ pub(super) fn validate_definition(
           def_name: def,
           call_location: location.clone(),
         };
-        check_user_fn_arg_types(&info, head, &items.drop_left(), &ScopeTypes::new(), &call_info, &recheck);
+        check_user_fn_arg_types(&info, head, &items.drop_left(), scope, &call_info, &recheck);
         let already_checked = reported_at(location.as_ref(), !produced_by.is_empty());
         for warning in recheck
           .borrow()
@@ -403,12 +426,19 @@ fn resolved_user_fn(head: &Calcit, call_stack: &CallStackList) -> Option<Arc<Cal
 
 /// Re-run the `recur` arity and argument checks against the lowered function.
 /// Lowering may introduce `recur` after the source-level check ran.
-fn check_recur_in_function(ns: &str, def: &str, items: &CalcitList, known: &dyn Fn(&str) -> bool, violations: &mut Vec<Violation>) {
+fn check_recur_in_function(
+  ns: &str,
+  def: &str,
+  items: &CalcitList,
+  enclosing_scope: &ScopeTypes,
+  known: &dyn Fn(&str) -> bool,
+  violations: &mut Vec<Violation>,
+) {
   let Some(Calcit::List(params)) = items.get(2) else {
     return;
   };
   let mut types: Vec<Arc<CalcitTypeAnnotation>> = vec![];
-  let mut scope = ScopeTypes::new();
+  let mut scope = enclosing_scope.clone();
   for param in params.iter() {
     match param {
       Calcit::Local(local) => {

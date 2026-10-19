@@ -457,6 +457,36 @@ const scenarios = [
     },
   },
   {
+    name: "lexical collection query keeps source generic names",
+    args: ["src/cirru/calcit-core.cirru", "query", "type-at", "calcit.core/interleave", "--path", "code@3.3.2", "--format", "json"],
+    check(result) {
+      assert.deepEqual(result.diagnostics, []);
+      assert.equal(result.data.inferred_type, ":: 'List 'T");
+      const method = result.data.static_methods.find(item => item.name === ".get");
+      assert.deepEqual(method.generics, ["T"]);
+      assert.deepEqual(method.call_types.returns, ["::", "'calcit.core/Option", "'T"]);
+      assert.doesNotMatch(JSON.stringify(result), /#lexical:|#call-type:/);
+    },
+  },
+  ...[
+    ["bounded-slice", "code@3.0", "C"],
+    ["bounded-local-map", "code@3.1.0.1.3", "T"],
+  ].map(([definition, path, variable]) => ({
+    name: `bounded receiver ${definition} retains identity and capabilities`,
+    args: ["calcit/test-types-inference.cirru", "query", "type-at", `test-types-inference.main/${definition}`, "--path", path, "--format", "json"],
+    check(result) {
+      assert.deepEqual(result.diagnostics, []);
+      assert.equal(result.data.inferred_type, `'${variable}`);
+      assert.deepEqual(result.data.static_methods.map(method => method.name), [".slice"]);
+      const method = result.data.static_methods[0];
+      assert.equal(method.status, "proven");
+      assert.equal(method.return_type, `'${variable}`);
+      assert.equal(method.call_types.returns, `'${variable}`);
+      assert.equal(method.definition, "calcit.core/Sliceable");
+      assert.doesNotMatch(JSON.stringify(result), /#lexical:|#call-type:/);
+    },
+  })),
+  {
     name: "source-backed data type",
     args: [
       "calcit/test.cirru",
@@ -1145,7 +1175,9 @@ const parseEdnRaw = (text, name) => {
 const parseEdnEnvelope = (text, name, reference) => normalizeEdnKeys(parseEdnRaw(text, name), reference);
 const querySnapshotBefore = readFileSync("calcit/test.cirru");
 for (const { name, base, expectedStatus = 0, check } of [
-  ...scenarios.filter(scenario => scenario.name.startsWith("to-calcit-data ")).map(({ name, args, check }) => ({
+  ...scenarios.filter(scenario => scenario.name.startsWith("to-calcit-data ")
+    || scenario.name === "lexical collection query keeps source generic names"
+    || scenario.name.startsWith("bounded receiver ")).map(({ name, args, check }) => ({
     name: `${name} EDN`,
     base: args.slice(0, -2),
     check,
@@ -1287,6 +1319,13 @@ for (const { name, base, expectedStatus = 0, check } of [
   check(ednEnvelope);
 }
 assert.deepEqual(readFileSync("calcit/test.cirru"), querySnapshotBefore, "query and config reads must not mutate the Snapshot");
+
+const lexicalHuman = spawnSync(binary, ["src/cirru/calcit-core.cirru", "query", "type-at", "calcit.core/interleave", "--path", "code@3.3.2"], {
+  encoding: "utf8", maxBuffer: 4 * 1024 * 1024, env: { ...process.env, NO_COLOR: "1" },
+});
+assert.ifError(lexicalHuman.error);
+assert.equal(lexicalHuman.status, 0, lexicalHuman.stderr);
+assert.doesNotMatch(lexicalHuman.stdout, /#lexical:|#call-type:/);
 
 const unicodeDefsChild = spawnSync(binary, ["calcit/test-wasi-command.cirru", "query", "defs", "app.main"], {
   cwd: process.cwd(),
@@ -1535,6 +1574,35 @@ try {
     assert.ifError(child.error);
     return child;
   };
+  const genericOperations = [
+    ["edit", "def", "app.main/query-bounded-assert", "--input-format", "cirru", "--code",
+      "quote $ defn query-bounded-assert (value)\n  hint-fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T) (:where $ {} ('T Sliceable))\n  assert-type value 'T\n  , value"],
+    ["edit", "def", "app.main/query-bounded-fold", "--input-format", "cirru", "--code",
+      "quote $ defn query-bounded-fold (value)\n  hint-fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T) (:where $ {} ('T Sliceable))\n  if true value value"],
+  ];
+  const genericCode = JSON.stringify(genericOperations);
+  const genericPreview = run("edit", "transaction", "--code", genericCode, "--dry-run", "--format", "json");
+  assert.equal(genericPreview.status, 0, genericPreview.stderr);
+  const genericApply = run("edit", "transaction", "--code", genericCode, "--expect-revision",
+    JSON.parse(genericPreview.stdout).scoped_revision, "--format", "json");
+  assert.equal(genericApply.status, 0, genericApply.stderr);
+  const genericBefore = readFileSync(fixture);
+  for (const [definition, path] of [["query-bounded-assert", "code@4.1"], ["query-bounded-assert", "code@5"],
+    ["query-bounded-fold", "code@4.2"]]) {
+    const queryGeneric = format => run("query", "type-at", `app.main/${definition}`, "--path", path, "--format", format);
+    const json = queryGeneric("json");
+    assert.equal(json.status, 0, json.stderr);
+    const result = JSON.parse(json.stdout);
+    assert.deepEqual(result.diagnostics, []);
+    assert.equal(result.data.inferred_type, "'T");
+    assert.deepEqual(result.data.static_methods.map(method => method.name), [".slice"]);
+    assert.equal(result.data.static_methods[0].status, "proven");
+    assert.equal(result.data.static_methods[0].return_type, "'T");
+    const edn = queryGeneric("edn");
+    assert.equal(edn.status, 0, edn.stderr);
+    assert.deepEqual(normalizeEdnKeys(parseEdnRaw(edn.stdout, "bounded source occurrence"), result), result);
+    assert.deepEqual(readFileSync(fixture), genericBefore);
+  }
   const names = Array.from({ length: 300 }, (_, i) => `(:member-${i} ${JSON.stringify(`|宿主\\\"\n${i}`)})`).join(" ");
   const ffi = `{} (:backend :js) (:names $ {} ${names} (:foo_bar |first) (:foo-bar |second))`;
   const edit = run("edit", "ffi", "app.main/main!", "--code", ffi);

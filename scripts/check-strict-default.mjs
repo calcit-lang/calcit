@@ -77,6 +77,34 @@ for (const [label, source, diagnostic] of [
 const scoped = run(["calcit/type-fail/unsafe-coerce-scoped-strict.cirru", "--check-only"]);
 expectStatus(scoped, 0, "default strict valid fixture");
 
+// A compatibility policy cannot equate separately declared lexical binders.
+for (const inner of ["T", "U"]) {
+  const source = `fn (outer)
+  hint-fn $ {} (:args $ [] 'T) (:return 'Number) (:generics $ [] 'T)
+  let
+      callback $ fn (other)
+        hint-fn $ {} (:args $ [] '${inner}) (:return '${inner}) (:generics $ [] '${inner})
+        , outer
+    &+ (callback 1) 1`;
+  const rejected = run(["--compat-types", "eval", source]);
+  expectStatus(rejected, 1, `compatibility preserves ${inner} binder identity`);
+  assert.match(rejected.stderr, /E_ERASED_GENERIC_RELATION/);
+}
+
+// Ordinary argument/method diagnostics render source names, not binder keys.
+for (const [name, source, code] of [
+  ["local generic collection input",
+    "fn (data)\n  hint-fn $ {} (:args $ [] 'Dynamic) (:return 'Number)\n  let\n      size $ fn (xs)\n        hint-fn $ {} (:args $ [] (:: 'List 'T)) (:return 'Number) (:generics $ [] 'T)\n        count xs\n    size data", /E_ERASED_GENERIC_RELATION/],
+  ["unbound generic method",
+    "fn (value)\n  hint-fn $ {} (:args $ [] 'T) (:return 'Number) (:generics $ [] 'T)\n  .add value 1", /E_DYNAMIC_METHOD_DISPATCH/],
+]) {
+  const rejected = run(["eval", source]);
+  expectStatus(rejected, 1, name);
+  assert.match(rejected.stderr, code);
+  assert.match(rejected.stderr, /'T/);
+  assert.doesNotMatch(rejected.stderr, /#lexical:|#call-type:|\u0000/);
+}
+
 // Runtime guards establish kind, not a complete signature or permanent write contract.
 const guardContracts = "tests/fixtures/guard-continuation.cirru";
 expectStatus(run([guardContracts, "--check-only", "--all-defs"]), 0, "check rejecting-guard continuations");

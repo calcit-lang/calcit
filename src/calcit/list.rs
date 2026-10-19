@@ -6,17 +6,19 @@ use std::{fmt::Debug, ops::Index, sync::Arc};
 
 use finger_vec::FingerVec;
 
-use crate::Calcit;
+use crate::{Calcit, calcit::CalcitFnTypeAnnotation};
 
 /// Internal metadata attached to contiguous call nodes. It never
 /// changes the language-level list value represented by the stored items.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum CalcitCallKind {
   #[default]
   Normal,
   NumberBinary(CalcitNumberBinaryOp),
   /// A compiler-appended signature, distinct from source-authored hints.
   GeneratedFnHint,
+  /// Checked metadata retains lexical type identities independently of source spelling.
+  TypedFnHint(Arc<CalcitFnTypeAnnotation>, bool),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -385,7 +387,7 @@ impl CalcitList {
 
   pub fn call_kind(&self) -> CalcitCallKind {
     match self {
-      CalcitList::Call(_, kind) => *kind,
+      CalcitList::Call(_, kind) => kind.clone(),
       CalcitList::Vector(_) | CalcitList::List(_) => CalcitCallKind::Normal,
     }
   }
