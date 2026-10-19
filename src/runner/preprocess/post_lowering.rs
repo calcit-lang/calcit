@@ -227,7 +227,13 @@ fn visit_lists(expr: &Calcit, scope: &ScopeTypes, namespace: &str, visit: &mut i
   if let Some(Calcit::Syntax(CalcitSyntax::Quote | CalcitSyntax::Quasiquote, _)) = items.first() {
     return;
   }
-  let function_scope = if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::Defn, _))) {
+  let function_scope = if matches!(
+    items.first(),
+    Some(Calcit::Syntax(
+      CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport,
+      _
+    ))
+  ) {
     let mut nested = scope.clone();
     let generics = scope.generic_names();
     for form in items.iter().skip(3) {
@@ -314,7 +320,9 @@ pub(super) fn validate_definition(
           });
         }
       }
-      Some(Calcit::Syntax(CalcitSyntax::Defn, _)) => check_recur_in_function(ns, def, items, scope, &known, &mut violations),
+      Some(Calcit::Syntax(CalcitSyntax::Defn | CalcitSyntax::DefWasmExport | CalcitSyntax::DefWasmImport, _)) => {
+        check_recur_in_function(ns, def, items, scope, &known, &mut violations)
+      }
       Some(head @ (Calcit::Import(_) | Calcit::Fn { .. })) => {
         let Some(info) = resolved_user_fn(head, call_stack) else {
           return;

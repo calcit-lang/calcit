@@ -50,6 +50,8 @@ post-lowering 的原有遍历按函数 metadata 恢复能力作用域，不用�
 
 完整 CLI 回归进一步暴露直接 `ref (Option :none)` 传给 Ref<Option<Dynamic>> 的假拒绝。新建 Ref 没有已有别名，原 expression proof 已支持按初始值和期望合同证明；参数关系检查现在复用该证据，而不将 Ref 的类型关系改为协变。已有变量、别名及无注解空 Ref 后续错误写入继续受不变性约束。保留 Option→nil fixture 的原程序和全部断言，原生/真实 JS 的 29 项语义测试通过。严格 workflow 不能按定义过滤，因此通过 query 导出七个真实定义、受保护 edit 导入隔离项目，再执行完整 strict；不以局部返回审计替代完整校验。
 
+远端完整 post-lowering CI 进一步定位到 WASM generic export 的能力作用域遗漏：普通 defn 已恢复 where，但 DefWasmExport/DefWasmImport 仍被当作普通 List 遍历，导致合法的开放 ToString 合同被误报为内部错误，遮住原有 E_WASM_TRAIT_TYPE_EVIDENCE。三种函数声明现在用同一 metadata/作用域及 recur 检查路径；不修改后端负例的预期诊断，也不为 WASM 添加能力豁免。原 check-typed-string-conversions 在 CALCIT_LINT_CORE=1 下回放实际 JS/WASM 与开放 trait 诊断。
+
 ## 验证方式
 
 - 合法恒等、纯改名、未重新声明的外层捕获、三层同名遮蔽与外层恢复、Number/String 的嵌套 mapcat/map、顺序和空维度，使用 definition `:tests`，由原共享运行器执行 native/真实 JS。
