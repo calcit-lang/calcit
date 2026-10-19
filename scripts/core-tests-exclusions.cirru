@@ -17,6 +17,7 @@
       |calcit.core/every?#short-circuits-list-set-and-map "|unsupported: unsupported proc in WASM: ref"
       |calcit.core/&get-in#handles-empty-path-and-nil-base "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nullable internal traversal needs concrete argument types"
       |calcit.core/get-in#handles-empty-path-and-nil-base "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nullable scalar traversal needs concrete argument types"
+      |calcit.core/nil->option#collapses-legacy-optional-values-under-declared-option "|unsupported: E_WASM_NIL_TYPE_EVIDENCE: nil? cannot distinguish nil from a zero-valued Optional<:number> payload in the current scalar ABI"
       |calcit.core/contains-symbol?#finds-nested-symbol-and-handles-empty-list "|unsupported: unsupported runtime quote value in WASM"
       |calcit.core/&core-string-methods#excludes-file-effects "|unsupported: unsupported proc in WASM: &methods-of"
       |calcit.core/&doseq#applies-side-effects-per-item "|unsupported: unsupported proc in WASM: ref"

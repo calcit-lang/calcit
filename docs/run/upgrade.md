@@ -135,11 +135,11 @@ payload 有具体类型时，这种写法本来就被参数检查拒绝；新诊
 
 迁移现在就可以做，不必等到 0.32.0：
 
-1. 用 `calcit calcit.cirru --check-only --keep-going --all-defs --format edn` 找出命中 `E_LEGACY_OPTIONAL_SCHEMA`（严格模式）的公共函数；用 `calcit calcit.cirru query search Optional` 补查 struct 字段、`def` 值 schema 与 `hint-fn` 里的 `'Optional`。
+1. 用 `calcit calcit.cirru --check-only --keep-going --all-defs --format edn` 定位 schema 中的旧 Optional：严格模式（默认）下公共 schema 报 `E_LEGACY_OPTIONAL_SCHEMA`，诊断带定义位置。`query search` 按代码 AST 叶子匹配，不保证覆盖 `:schema` 字段，不能作为 schema 的定位手段；若要补查代码体里的 `'Optional`（如 `hint-fn`、`assert-type`），搜索时加 `--source project`，避免混入 core 与依赖模块的命中。
 2. 按语义逐处选择新类型：Calcit 内的缺失值用 `Option<T>`，失败原因用 `Result<T,E>`，副作用用 `Unit`，只有 JS 宿主边界才用 `JsNullish<T>`。业务默认值、`Dynamic` 放宽与 `unsafe-coerce` 不由工具选择。
 3. 用 `calcit edit schema`、`calcit tree` 系列命令写成一个 `edit transaction`：先 dry-run，再带返回的 revision 应用；应用后运行测试与目标后端检查。
 
-`nil->option` 是仍可用的显式桥：它的参数是普通泛型 `T`（不再要求 `Optional<T>`），`nil` 得到 `Option :none`，其余值得到 `Option :some value`，已有的 `Option` 不会被展开。因此 `nil->option` 的调用点不需要为本次删除改动。宿主 `JsNullish<T>` 仍不被 `nil->option` 接受，需要先 `js-present?` 收窄，或在接受不透明 payload 合同后用 `js-nullish->option`。
+`nil->option` 是显式桥：`nil` 得到 `Option :none`，其余值得到 `Option :some value`，已有的 `Option` 不会被展开。它自身的参数类型目前仍是 `Optional<T>`（core 内部例外），会随 0.32.0 的删除一起改；已有的调用形式——`nil->option $ if c x`（无 else 的 `if`）、`Optional<Number>` 形参、分支都用 `nil->option` 的 `if`、类型明确的列表上 `map xs nil->option`——由 `calcit.core/nil->option` 的 `:tests` 固定，删除时必须继续通过。宿主 `JsNullish<T>` 不被 `nil->option` 接受，需要先 `js-present?` 收窄，或在接受不透明 payload 合同后用 `js-nullish->option`。
 
 | 旧写法 | 新写法 |
 | --- | --- |
@@ -148,12 +148,13 @@ payload 有具体类型时，这种写法本来就被参数检查拒绝；新诊
 | `:return $ :: 'Optional 'T`（来自 nil 的结果） | `:return $ :: 'Option 'T`，函数体里用 `nil->option` 转换 |
 | 读取 JS 宿主属性的 `Optional<T>` | `JsNullish<T>`，转换时用 `js-nullish->option` |
 
-删除前提：已知活跃下游默认分支的源码、附带测试/示例、宏生成代码与 CI/文档引用清零，依赖模块和未合并迁移核对完毕，见 [兼容入口的退场节奏](#兼容入口的退场节奏)。普查中仍有命中的下游需要先完成迁移，否则 0.32.0 升级后它们的 schema 会失效。旧版本的迁移指南仍可查阅，不再为版本跨度增加硬编码规则。
+删除前提：已知活跃下游默认分支的源码、附带测试/示例、宏生成代码与 CI/文档引用清零，依赖模块和未合并迁移核对完毕，见 [兼容入口的退场节奏](#兼容入口的退场节奏)。2026-10-19 对 57 个默认分支浅克隆（upgrade.md、strict-nil-migration.md 与各 `deps.cirru` 传递依赖点名的仓库）做过一次只读扫描，在 `*.cirru` 中匹配 `'Optional`：Respo/alerts.calcit、Phlox-GL/phlox、Erigeron/edn-renderer、TopixIM/diary 仍有命中；该扫描无法枚举各组织的全部仓库，也不含非默认分支、私有仓库与未合并 PR，所以“其余仓库未发现”不等于清零，删除前必须重新普查。命中的下游需要先完成迁移，否则 0.32.0 升级后它们的 schema 会失效。旧版本的迁移指南仍可查阅，不再为版本跨度增加硬编码规则。
 
 ### 限制
 
 - 0.32.0 之前 `Optional<T>` 仍可解析，严格模式下公共 schema 报 `E_LEGACY_OPTIONAL_SCHEMA`，其余位置保持现状。
 - 类型推导（无 else 的 `if`、`nil` 与具体值的分支合并）暂时仍会推出 `Optional<T>`；它的替代表示尚未确定，不影响本节的 schema 迁移。
+- `nil->option` 的参数类型改动与 Optional 的删除在同一版本落地；单独把参数改成泛型 `T` 会让上述无 else `if` / `Optional` 实参的折叠形式在严格检查中失败。
 - core 内部 `&` 原语的 schema 不属于公共 API，不在本节范围。
 
 ## 0.32.0 `select-keys` 跳过缺失键
@@ -1139,7 +1140,7 @@ calcit calcit.cirru fix --preset core-api-0.29-v1 --include-attached --format ed
 
 | 变体 | 当前仍在使用的位置 | 结论 |
 |---|---|---|
-| `Optional` | 本仓库中的类型解析、推导（无 else 的 `if`、`nil` 分支合并）、struct 字段缺省与分析器词汇；少量下游默认分支的 schema（以删除前重新普查为准） | 保留到 0.32.0 删除，登记见 [0.32.0 删除 `'Optional` 公共 schema 与旧 Optional 类型](#032-删除-optional-公共-schema-与旧-optional-类型)。公共 schema 已由 `E_LEGACY_OPTIONAL_SCHEMA` 在严格模式拒绝；`nil->option` 不再需要 Optional 参数，也不再是例外 |
+| `Optional` | 本仓库中的类型解析、推导（无 else 的 `if`、`nil` 分支合并）、struct 字段缺省与分析器词汇；2026-10-19 扫描到的少量下游默认分支 schema（未覆盖的仓库不算零，删除前重新普查） | 保留到 0.32.0 删除，登记见 [0.32.0 删除 `'Optional` 公共 schema 与旧 Optional 类型](#032-删除-optional-公共-schema-与旧-optional-类型)。公共 schema 已由 `E_LEGACY_OPTIONAL_SCHEMA` 在严格模式拒绝；core `&` 原语与 `nil->option` 的参数仍是内部例外，随删除一起收口 |
 | `Custom` | `'Struct`、`'StructDef`、`'EnumDef`、`'Trait`、`'Impl` 作为 schema 标记，在 110 个下游仓库的 `*.cirru` 中出现（`'Trait` 440 处、`'StructDef` 434 处）；`Calcit::Impl` 的推断结果与 `from_calcit` 的兜底也使用它 | 保留。需要先为这些标记提供专用变体或明确诊断，再删除兜底 |
 | `DynFn` | 19 个下游仓库的 `calcit.cirru` 在 `:args` 等位置写裸 `'Fn`（87 行，含 Respo/respo.calcit、Respo/alerts.calcit、mvc-works/ws-edn.calcit、Termina/termina）；内置 proc 与 `E_FFI_IR_CALLBACK_TYPE` 诊断也依赖它 | 保留。是否表示为参数与返回均为 Dynamic 的 `Fn`，须先让证明与诊断对两者保持一致 |
 | `StructValue` / `EnumValue` 与 `StructDef` / `EnumDef` | 前者描述值的推断类型，后者描述 `defstruct` / `defenum` 产生的一等定义值，分支语义不同 | 保留，没有可合并的重复分支 |

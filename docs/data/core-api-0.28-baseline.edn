@@ -388,7 +388,7 @@
       :name 'calcit.core/nil->option
       :runtime-arity $ {} (:max 1) (:min 1)
       :schema $ quote $ {} (:kind :fn)
-        :args $ [] 'T
+        :args $ [] $ :: 'Optional 'T
         :generics $ [] 'T
         :return $ :: 'Option 'T
     {} (:declaration nil)

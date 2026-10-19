@@ -5952,7 +5952,7 @@ mod tests {
   }
 
   #[test]
-  fn nil_to_option_schema_accepts_generic_value_and_returns_nominal_option() {
+  fn nil_to_option_schema_bridges_nullable_values_to_nominal_option() {
     let _guard = crate::program::lock_program_test_state();
     let core_file_content = fs::read_to_string("src/cirru/calcit-core.cirru").expect("Failed to read calcit-core.cirru");
     let edn_data = cirru_edn::parse(&core_file_content).expect("Failed to parse cirru content as EDN");
@@ -5968,8 +5968,11 @@ mod tests {
 
     let input_var = match schema.arg_types.as_slice() {
       [arg] => match arg.as_ref() {
-        CalcitTypeAnnotation::TypeVar(name) => name,
-        other => panic!("nil->option should accept a bare generic T without legacy Optional, got {other:?}"),
+        CalcitTypeAnnotation::Nullable(inner, crate::calcit::NullableOrigin::Calcit) => match inner.as_ref() {
+          CalcitTypeAnnotation::TypeVar(name) => name,
+          other => panic!("nil->option Optional input should contain a type variable, got {other:?}"),
+        },
+        other => panic!("nil->option should accept Optional<T>, got {other:?}"),
       },
       args => panic!("nil->option should accept exactly one argument, got {args:?}"),
     };

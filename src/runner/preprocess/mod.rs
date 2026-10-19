@@ -14824,9 +14824,9 @@ fn legacy_optional_public_schema_requires_migration(ns: &str, def_name: &str, sc
   }
   // Core `&` definitions are semver-private primitives and may still model
   // nullable host/runtime values. Public core wrappers must obey the same
-  // nominal absence rule as application code; `nil->option` accepts a generic
-  // `T` and no longer needs an exemption.
-  !(ns == calcit::CORE_NS && def_name.starts_with('&'))
+  // nominal absence rule as application code. `nil->option` is the explicit
+  // bridge from an internal Optional<T> value to Option<T>.
+  !(ns == calcit::CORE_NS && (def_name.starts_with('&') || def_name == "nil->option"))
 }
 
 fn reject_strict_legacy_optional_public_schema(
@@ -23515,15 +23515,14 @@ mod tests {
 
     let bridge_warnings = RefCell::new(vec![]);
     warn_on_legacy_optional_public_schema(calcit::CORE_NS, "nil->option", &schema, &bridge_warnings);
-    assert_eq!(
-      bridge_warnings.borrow().len(),
-      1,
-      "nil->option is a public core API and has no Optional<T> exemption"
+    assert!(
+      bridge_warnings.borrow().is_empty(),
+      "nil->option is the explicit nullable-to-nominal bridge"
     );
   }
 
   #[test]
-  fn strict_types_reject_legacy_optional_public_schemas_but_keep_raw_primitives() {
+  fn strict_types_reject_legacy_optional_public_schemas_but_keep_internal_bridges() {
     let _state = lock_preprocess_test_state();
     let schema = CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
       runtime_arity: None,
@@ -23560,10 +23559,8 @@ mod tests {
 
     reject_strict_legacy_optional_public_schema(calcit::CORE_NS, "&raw-lookup", &schema, &CallStackList::default(), None)
       .expect("raw core primitives remain explicit nullable implementation boundaries");
-    let bridge_error =
-      reject_strict_legacy_optional_public_schema(calcit::CORE_NS, "nil->option", &schema, &CallStackList::default(), None)
-        .expect_err("nil->option has no Optional<T> exemption");
-    assert_eq!(bridge_error.code.as_deref(), Some("E_LEGACY_OPTIONAL_SCHEMA"));
+    reject_strict_legacy_optional_public_schema(calcit::CORE_NS, "nil->option", &schema, &CallStackList::default(), None)
+      .expect("the explicit Optional-to-Option bridge remains available");
   }
 
   #[test]

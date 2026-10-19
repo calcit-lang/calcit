@@ -198,8 +198,9 @@ fn type_fail_nominal_option_compared_with_nil_reports_arg_type_mismatch() {
   });
 }
 
-// A Rust type-fail test is required here: `:tests` assertions run only after a
-// clean check, and cannot express an expected preprocessing diagnostic (#1554).
+// Pins today's contract while `nil->option` still takes `Optional<T>`: a Rust
+// type-fail test is required because `:tests` run only after a clean check and
+// cannot express an expected preprocessing diagnostic (#1554).
 #[test]
 fn strict_type_fail_nil_to_option_rejects_js_nullish_argument() {
   run_with_large_stack(|| {
@@ -214,20 +215,50 @@ fn strict_type_fail_nil_to_option_rejects_js_nullish_argument() {
     assert!(
       warnings.iter().any(|warning| warning.code() == Some("W_FN_ARG_TYPE_MISMATCH")
         && warning.message().contains("calcit.core/nil->option")
-        && warning.message().contains("js-nullish<:number>")
-        && warning.message().contains("js-nullish->option")),
-      "generic nil->option must keep rejecting JsNullish arguments: {warnings:?}"
+        && warning.message().contains("js-nullish<:number>")),
+      "nil->option must keep rejecting JsNullish arguments: {warnings:?}"
     );
 
-    let accepted = load_snippet_entries("let ((value (Option :some 1)))\n  nil->option value");
+    // Ordinary values, nil and a legacy Optional argument stay warning-free.
+    for source in [
+      "nil->option nil",
+      "let ((value (Option :some 1)))\n  nil->option value",
+      "let\n    f $ fn (x) (hint-fn $ {} (:args $ [] $ :: 'Optional 'Number) (:return $ :: 'Option 'Number)) $ nil->option x\n  f 1",
+    ] {
+      let accepted = load_snippet_entries(source);
+      let warnings = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&accepted.init_ns, &accepted.init_def, &warnings, &CallStackList::default())
+        .expect("nil->option of an accepted value should preprocess");
+      assert!(
+        warnings.borrow().is_empty(),
+        "`{source}` should stay clean: {:?}",
+        warnings.borrow()
+      );
+    }
+  });
+}
+
+// `map xs nil->option` is accepted only when the list element type is known;
+// an untyped list literal reports E_ERASED_GENERIC_RELATION today.
+#[test]
+fn strict_type_fail_nil_to_option_as_map_callback_needs_typed_elements() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let typed = load_snippet_entries("let ((xs (assert-type ([] 1 2) (:: 'List 'Number)))) (map xs nil->option)");
     let warnings = RefCell::new(vec![]);
-    runner::preprocess::ensure_ns_def_compiled(&accepted.init_ns, &accepted.init_def, &warnings, &CallStackList::default())
-      .expect("nil->option of an ordinary value should preprocess");
+    runner::preprocess::ensure_ns_def_compiled(&typed.init_ns, &typed.init_def, &warnings, &CallStackList::default())
+      .expect("a typed list should accept nil->option as a callback");
     assert!(
       warnings.borrow().is_empty(),
-      "ordinary nil->option calls stay clean: {:?}",
+      "typed callback use stays clean: {:?}",
       warnings.borrow()
     );
+
+    let untyped = load_snippet_entries("map ([] 1 nil 2) nil->option");
+    let warnings = RefCell::new(vec![]);
+    let error = runner::preprocess::ensure_ns_def_compiled(&untyped.init_ns, &untyped.init_def, &warnings, &CallStackList::default())
+      .expect_err("an untyped list cannot prove the callback contract");
+    assert!(error.to_string().contains("E_ERASED_GENERIC_RELATION"), "unexpected error: {error}");
   });
 }
 

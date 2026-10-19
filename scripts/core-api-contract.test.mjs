@@ -260,22 +260,6 @@ test("additions and internal implementation-path/arity changes preserve the publ
   assertPreserved(baseline, changed);
 });
 
-test("replacing an Optional parameter with its plain payload type preserves the frozen contract", () => {
-  const previous = structuredClone(baseline);
-  const optionalSchema = definition(previous, "nil->option").schema.quote;
-  const args = optionalSchema.find(pair => pair[0] === ":args")[1];
-  assert.deepEqual(args, ["[]", "'T"]);
-  optionalSchema.find(pair => pair[0] === ":args")[1] = ["[]", ["::", "'Optional", "'T"]];
-  assertPreserved(previous, baseline);
-  // Only parameters are widened: a concrete replacement or a changed result still fails.
-  const concrete = structuredClone(baseline);
-  definition(concrete, "nil->option").schema.quote.find(pair => pair[0] === ":args")[1] = ["[]", "'Number"];
-  assert.throws(() => assertPreserved(previous, concrete));
-  const result = structuredClone(baseline);
-  definition(result, "nil->option").schema.quote.find(pair => pair[0] === ":return")[1] = ["::", "'Optional", "'T"];
-  assert.throws(() => assertPreserved(previous, result));
-});
-
 test("schema map entry ordering is not a breaking signature change", () => {
   const changed = structuredClone(baseline);
   const conversion = definition(changed, "to-string");
