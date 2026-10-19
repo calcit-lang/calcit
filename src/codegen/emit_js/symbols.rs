@@ -1,5 +1,46 @@
 use crate::util::string::has_ns_part;
 
+/// JavaScript reserved words that are valid Calcit symbols but cannot be used as JS binding names.
+const JS_RESERVED_WORDS: &[&str] = &[
+  "await",
+  "break",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "debugger",
+  "default",
+  "delete",
+  "enum",
+  "export",
+  "extends",
+  "finally",
+  "for",
+  "function",
+  "implements",
+  "import",
+  "in",
+  "instanceof",
+  "interface",
+  "package",
+  "private",
+  "protected",
+  "public",
+  "return",
+  "static",
+  "super",
+  "switch",
+  "this",
+  "throw",
+  "try",
+  "typeof",
+  "var",
+  "void",
+  "while",
+  "with",
+  "yield",
+];
+
 pub(super) fn escape_var(name: &str) -> String {
   if has_ns_part(name) {
     unreachable!("Invalid variable name `{}`, use `escape_ns_var` instead", name);
@@ -12,6 +53,7 @@ pub(super) fn escape_var(name: &str) -> String {
     "case" => String::from("_CASE_"),
     "new" => String::from("_NEW_"),
     "-" => String::from("_SUB_"),
+    _ if JS_RESERVED_WORDS.contains(&name) => format!("_{}_", name.to_uppercase()),
     _ => name
       .replace('-', "_")
       .replace('.', "_DOT_")
@@ -69,6 +111,12 @@ pub(crate) fn unescape_var(name: &str) -> String {
     "_SUB_" => return String::from("-"),
     _ => {}
   }
+  if let Some(inner) = name.strip_prefix('_').and_then(|n| n.strip_suffix('_')) {
+    let lower = inner.to_lowercase();
+    if inner == lower.to_uppercase() && JS_RESERVED_WORDS.contains(&lower.as_str()) {
+      return lower;
+    }
+  }
 
   let mut decoded = name.to_string();
   for (from, to) in [
@@ -112,6 +160,9 @@ mod tests {
     assert_eq!(escape_var("new"), "_NEW_");
     assert_eq!(escape_var("a-b?"), "a_b_$q_");
     assert_eq!(escape_var("[]"), "_$L_");
+    assert_eq!(escape_var("default"), "_DEFAULT_");
+    assert_eq!(escape_var("class"), "_CLASS_");
+    assert_eq!(escape_var("default-value"), "default_value");
   }
 
   #[test]
@@ -126,5 +177,7 @@ mod tests {
     assert_eq!(unescape_var("_DOT_"), ".");
     assert_eq!(unescape_var("_IF_"), "if");
     assert_eq!(unescape_var("_NEW_"), "new");
+    assert_eq!(unescape_var("_DEFAULT_"), "default");
+    assert_eq!(unescape_var("_Default_"), "_Default_");
   }
 }
