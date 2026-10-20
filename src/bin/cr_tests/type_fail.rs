@@ -2954,6 +2954,56 @@ fn calling_a_dynamic_value_requires_fn_narrowing() {
   });
 }
 
+/// #1554: `T|nil` produced by a branch without an else (or an explicit nil join)
+/// no longer infers to the legacy Optional<T>. A value-position use is an
+/// advisory that names the migration; statement position stays silent.
+#[test]
+fn value_position_nil_branch_reports_an_advisory_without_blocking() {
+  run_with_large_stack(|| {
+    let number_fn = |body: &str, ret: &str| format!("fn (x) (hint-fn $ {{}} (:args $ [] 'Number) (:return '{ret})) {body}");
+    let snippet = format!(
+      "let\n    missing-else $ {}\n    nil-join $ {}\n    call-arg $ {}\n    typed-return $ {}\n    statement $ {}\n    explicit-else $ {}\n    option-result $ {}\n  [] missing-else nil-join call-arg typed-return statement explicit-else option-result",
+      number_fn("(let ((y (if (> x 0) x))) y)", "Dynamic"),
+      number_fn("(let ((y (if (> x 0) x nil))) y)", "Dynamic"),
+      number_fn("(str (if (> x 0) x))", "String"),
+      number_fn("(if (> x 0) x)", "Number"),
+      number_fn("(do (if (> x 0) (println |hit)) x)", "Number"),
+      number_fn("(let ((y (if (> x 0) x 0))) y)", "Number"),
+      number_fn("(let ((y (if (> x 0) (Option :some x) (Option :none)))) y)", "Dynamic"),
+    );
+    let entries = load_snippet_entries(&snippet);
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    let _ = runner::preprocess::take_advisories();
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("an implicit nil branch should preprocess");
+
+    let warnings = warnings.borrow();
+    assert!(
+      warnings.iter().all(|warning| warning.code() != Some("W_IMPLICIT_NIL_BRANCH")),
+      "the migration is an advisory on a patch line: {warnings:?}"
+    );
+    let advisories = runner::preprocess::take_advisories();
+    let implicit = advisories
+      .iter()
+      .filter(|advisory| advisory.code() == Some("W_IMPLICIT_NIL_BRANCH"))
+      .collect::<Vec<_>>();
+    assert_eq!(implicit.len(), 4, "{advisories:?}");
+    assert!(
+      implicit.iter().any(|advisory| advisory.message().contains("without an else")),
+      "{implicit:?}"
+    );
+    assert!(
+      implicit.iter().any(|advisory| advisory.message().contains("`nil` while another")),
+      "{implicit:?}"
+    );
+    assert!(
+      implicit.iter().all(|advisory| advisory.message().contains("Option :some value")),
+      "{implicit:?}"
+    );
+  });
+}
+
 #[test]
 fn unwrap_or_nil_on_an_open_option_reports_the_erasure() {
   run_with_large_stack(|| {

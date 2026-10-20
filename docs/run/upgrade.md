@@ -115,6 +115,25 @@ defn call-value (f args)
 - 可能逃逸的闭包不继承捕获变量的临时证据；可在守卫后绑定独立的已检查值，再为闭包声明真实输入与返回合同。
 - 自定义同名谓词或正常返回的拒绝分支不能提供内置谓词的类型证据。
 
+## 0.31.0 无 else 分支与 nil 合并不再推出 Optional
+
+无 else 的 `if` / `when` / `cond` / `case`，以及一支是 `nil`、另一支有具体值的 `if`，过去会被推成旧 `Optional<T>`。`T|nil` 不是 Calcit 类型，现在这类表达式不再带类型证据（不推 `Dynamic`，所以不会因此新增严格失败）；`.?-field` 在已知 struct 字段上的结果改为 `JsNullish<T>`。运行时行为不变，值仍是 `nil`。
+
+值被消费的位置——`let` 初始化、调用或方法实参、声明了具体返回类型的函数结尾——`--check-only` 在 Notes 里列出 `W_IMPLICIT_NIL_BRANCH`，检查与运行照常通过；这是补丁线上的提示，下一个非 patch 版本可以升级为阻塞诊断。语句位置的 `if`（结果被丢弃）不报告，`nil->option` 的实参也不报告。
+
+| 旧写法 | 新写法 |
+| --- | --- |
+| `let ((y (when ok x))) …` | `let ((y (if ok (Option :some x) (Option :none)))) …`，或补显式 else 值 |
+| `if ok x nil` 作为实参或返回值 | 返回 `Option :some x` / `Option :none`；已有的可能为 nil 的值用 `nil->option` 包装 |
+| `.?-field` 之后按业务值使用 | 先用 `js-present?` / `js-nullish?` 收窄，或用 `js-nullish->option` |
+
+迁移前可运行 `calcit calcit.cirru --check-only`，按 Notes 中的位置逐处修改，修改前后用 `calcit edit` / `calcit tree` 事务（dry-run、revision 守卫）并跑测试；业务默认值由人选择，不由工具补。
+
+### 限制
+
+- 只在值被消费的几类位置报告；`and` / `or` 的结果、通过 `set!` 写入的值与宏展开生成的分支不在识别范围内。
+- `nil->option` 的参数类型不在本节改动范围，仍随 0.32.0 删除 Optional 时调整。
+
 ## 0.32.0 调用 Dynamic 值须先收窄
 
 静态类型为 Dynamic 的值被直接调用时（例如 schema 为 `Fn [Dynamic] -> Dynamic` 的 `defn cd (x) (x 1)`），
@@ -217,7 +236,7 @@ payload 有具体类型时，这种写法本来就被参数检查拒绝；新诊
 ### 限制
 
 - 0.32.0 之前 `Optional<T>` 仍可解析，严格模式下公共 schema 报 `E_LEGACY_OPTIONAL_SCHEMA`，其余位置保持现状。
-- 类型推导（无 else 的 `if`、`nil` 与具体值的分支合并）暂时仍会推出 `Optional<T>`；它的替代表示尚未确定，不影响本节的 schema 迁移。
+- 类型推导（无 else 的 `if`、`nil` 与具体值的分支合并）不再推出 `Optional<T>`，见 [无 else 分支与 nil 合并不再推出 Optional](#031-无-else-分支与-nil-合并不再推出-optional)；`Optional<T>` 现在只来自显式声明。
 - `nil->option` 的参数类型改动与 Optional 的删除在同一版本落地；单独把参数改成泛型 `T` 会让上述无 else `if` / `Optional` 实参的折叠形式在严格检查中失败。
 - core 内部 `&` 原语的 schema 不属于公共 API，不在本节范围。
 
