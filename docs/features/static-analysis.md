@@ -270,7 +270,7 @@ are preserved. Missing, duplicate, or unknown constructor fields do not qualify.
 
 内置 Cirru core 曾使用 `config/calcit-core-quality.cirru` 记录逐 definition 的迁移数量。该文件暂留作历史参考，但 `yarn check-all`、PR 和发布流程不再运行数量门槛，也不应为了通过检查而刷新它。core 的类型正确性由编译器诊断与测试判断；仍需补齐 core 公开定义的严格可达性检查，而不是重新设定 Dynamic 数量阈值。显式 `analyze quality --baseline` 仅服务尚未迁走的旧项目。
 
-[`docs/core-dynamic-classification.md`](../core-dynamic-classification.md) 保留逐位置的人工审阅记录：每个 schema-Dynamic 路径标明所属子系统、`migrate` 或 `retain-reviewed` 决策及原因。`yarn check-core-dynamic-classification` 仅检查文档与当前源码是否同步；有意修改契约并审阅后，再运行 `yarn generate-core-dynamic-classification` 更新清单。它不替代编译器的 warning/error，也不以位置数量决定正确性。调用方可见的输出槽位要与 receiver 槽位分开审阅：具有静态类型和字面量路径的 `get-in` 可恢复 `Option<T>`，具有静态类型的 List/Map/Set `filter` 调用会降级到保持形状的 core 定义；Dynamic receiver、动态路径、Struct 遍历以及不支持的集合能力不能沿用这一较窄结论。历史迁移记录见 [calcit#701](https://github.com/calcit-lang/calcit/issues/701)，optional indexed access 的 bound-slot 正确性另见 [calcit#694](https://github.com/calcit-lang/calcit/issues/694)。
+[`docs/core-dynamic-classification.md`](../core-dynamic-classification.md) 保留逐位置的人工审阅记录：每个 schema-Dynamic 路径标明所属子系统、`migrate` 或 `retain-reviewed` 决策及原因。`yarn check-core-dynamic-classification` 仅检查文档与当前源码是否同步；有意修改契约并审阅后，再运行 `yarn generate-core-dynamic-classification` 更新清单。它不替代编译器的 warning/error，也不以位置数量决定正确性。调用方可见的输出槽位要与 receiver 槽位分开审阅：具有静态类型和字面量路径的 `get-in` 可恢复 `Result<T, PathError>`，具有静态类型的 List/Map/Set `filter` 调用会降级到保持形状的 core 定义；Dynamic receiver、动态路径、Struct 遍历以及不支持的集合能力不能沿用这一较窄结论。历史迁移记录见 [calcit#701](https://github.com/calcit-lang/calcit/issues/701)，optional indexed access 的 bound-slot 正确性另见 [calcit#694](https://github.com/calcit-lang/calcit/issues/694)。
 
 `analyze weak-types --only deprecated-call` scans calls to definitions tagged `:deprecated`. It reports every calling definition and a stable `code@...` path, and includes the target definition's documentation so migrations can be automated without maintaining a second hard-coded legacy API list. Use `--summary-only --format json` for migration gates that only need aggregate counts.
 
@@ -556,7 +556,7 @@ Dynamic 应限制在 JS FFI、宏和框架开放数据边界。普通多态使�
 查询后立即结束为业务默认值时，直接在查询返回的 `Option<T>` 上使用 `.unwrap-or`。
 需要区分缺失分支时使用 `if-let` 或穷尽 `match`。
 
-`get-in` 返回 `Option<T>`，适合开放 Map/List 路径；不要用它绕过 Struct 字段检查，Struct 应使用 `(:field value)`。`update-in` 的已证明静态路径提供 `Option<Leaf>`；开放路径提供 `Option<Dynamic>`，具体使用前先 decode/narrow，并显式处理缺失。回调输出不能用来证明开放输入。
+`get-in` 返回 `Result<T, PathError>`，适合开放 Map/List 路径；未知 payload 仍为 Dynamic。调用方应区分缺失的 `PathError :missing` 与形状错误的 `PathError :shape`，不要用它绕过 Struct 字段检查，Struct 应使用 `(:field value)`。`update-in` 的已证明静态路径仍提供 `Option<Leaf>`；开放路径提供 `Option<Dynamic>`，具体使用前先 decode/narrow，并显式处理缺失。回调输出不能用来证明开放输入。
 
 默认 strict mode 不允许把核心 `Option<T>` 或 `Result<T,E>` 直接传给 `str` / `turn-string`，并报告 `E_NOMINAL_ENUM_STRINGIFICATION`。应先用 `match`、`.unwrap-or` 或对应的 Option/Result helper 明确处理分支和 payload；只有确实需要诊断表示时才使用 `to-lispy-string`。`--compat-types` 仍保留旧的 enum 渲染行为，便于渐进迁移。
 

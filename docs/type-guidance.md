@@ -309,7 +309,7 @@ reason/payload 使用方法级泛型，因此不会为了宿主编码而抹掉�
 
 ## get-in / assoc-in / update-in
 
-`get-in` 是可能失败的开放数据访问，返回 `Option<T>`。当接收者是完整类型的嵌套 Map、路径是非空字面量时，编译器会把 `get-in`、`assoc-in` 和 `update-in` 展开为类型化的直接 `get` / `assoc` 链，不再经过运行时动态路径遍历；调用参数仍按源码顺序各求值一次。此时 `update-in` 的 updater 接收 `Option<Leaf>`，重建结果保留同质 Map 类型。字面量空路径把整个接收者包装为 `Option<T>`，回调输出可以是不同类型。
+`get-in` 是可能失败的开放数据访问，返回 `Result<T, PathError>`；开放输入通常为 `Result<Dynamic, PathError>`。路径缺失或遍历到 nil 返回 `PathError :missing`，中间值形状错误返回 `PathError :shape message`，不能都按旧 Option 的缺失分支处理。当接收者是完整类型的嵌套 Map、路径是非空字面量时，编译器会保留叶子类型，并把路径访问/重建展开为类型化链；调用参数仍按源码顺序各求值一次。`update-in` 的 updater 仍接收 `Option<Leaf>`，重建结果保留同质 Map 类型。空路径查询返回成功的非 nil 接收者；空路径更新仍用 Option 传递整个接收者，回调输出可以是不同类型。版本边界和错误处理见[路径查询迁移](run/upgrade.md#get-in-result)。
 
 动态接收者、动态路径和混合容器仍是明确的兼容边界，会保留动态路径 API。新代码在数据形状已知时优先使用直接 `.get`、Option 组合和名义字段访问；只有开放数据才使用路径 API。不要用路径函数绕过 Struct 字段检查：Struct 应使用 `(:field value)` 或 `value.:field`，字段可缺失就把字段声明为 `Option<T>`。
 
