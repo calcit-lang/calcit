@@ -51,3 +51,25 @@ rebase 后的 v15 release 候选已重新通过 slice/helper 九项及自定义�
 78 份文档的 416 个代码块及历史 API 合同检查通过。原 native 入口与实际生成的 app.main JS
 入口也通过；JS codegen 不生成 main.mjs，测试直接导入生成 namespace 并调用原 main!。
 完整既有拒绝 harness 继续使用同一个 v15 进程，不因观察超时重启；结果待其正常结束。
+
+v15 的完整既有拒绝 harness 随后正常结束、exit 0。正式 post-lowering CI 则暴露旧的
+check-typed-string-conversions 用例仍要求所有泛型函数局部别名被 WASM 拒绝。单独回放确认：
+具体 Number 实参的 to-string 别名已通过通用调用点特化并真实返回正确结果；开放泛型 receiver
+仍以 E_WASM_TRAIT_TYPE_EVIDENCE 拒绝。这是本次已实现能力，不是放行未知函数表调用。
+原用例保留同一表达式，改为检查实际 WASM 执行结果；追加开放泛型别名的编译拒绝和无产物
+断言，保留原开放直接调用与 spread 的拒绝门禁。支持矩阵同步说明具体证据与未知边界。
+
+CodeRabbit 对首个 PR HEAD 发现真实缺陷：仅为尾部 Option 补值也进入完整 body 内联，导致
+已有 recur 或递归函数被当成递归特化而拒绝。新增两项 Calcit 附带测试在修复前证实 native/JS
+通过、WASM/WASI 编译失败；分别保留 recur 累加与递归调用内部省略 Option 的正常语义。
+补值不需要闭包、nil 或 trait 特化时，改为把完整实参传给原已编译函数；其他特化路径不变。
+
+v16 的新增递归两项与自定义 Sliceable 四项在四后端全部通过。完整 core 回放最初有七项 JS
+解构失败，定位为本地 lib 仍是旧生成物（TS 源码已使用 MapDestruct/SetDestruct，lib 仍返回
+Option）；重新实际编译 TS 后，同一 v16 回放为 native686、JS685、WASM439、WASI434 全部通过，
+沿用原排除清单。旧 v15 的逐项排除审计已因候选更新有意停止，不计为完整通过。
+
+单独开启 CALCIT_LINT_CORE 的完整拒绝集继续暴露导入方法的漏检：method-inline 返回的 Import
+调用未先走普通函数参数检查，后置校验因此对错误 Option payload 报内部错误。复用与后置
+校验相同的已编译函数解析和 check_user_fn_arg_types，在返回已补全实参的 lowered call 前检查；
+不编译或执行新的定义，不改错误匹配、不关闭 invariant。原七个错误调用继续作为拒绝回归。

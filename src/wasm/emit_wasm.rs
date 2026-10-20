@@ -5790,12 +5790,21 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
       Ok(closure.map(|_| (effects, tail)))
     })
     .collect::<Result<Vec<_>, String>>()?;
-  if closure_args.iter().all(Option::is_none)
-    && nil_argument_types.is_none()
-    && trait_argument_types.is_none()
-    && completed_args.is_none()
-  {
-    return Ok(false);
+  if closure_args.iter().all(Option::is_none) && nil_argument_types.is_none() && trait_argument_types.is_none() {
+    let Some(completed) = completed_args.as_deref() else {
+      return Ok(false);
+    };
+    // Omission alone does not require inlining. Preserve the compiled body's
+    // ordinary recursive calls and recur loop while passing nominal None.
+    let function = *ctx
+      .fn_index
+      .get(qualified)
+      .ok_or_else(|| format!("unknown function: {qualified}"))?;
+    for argument in completed {
+      emit_expr(ctx, argument)?;
+    }
+    ctx.emit(Instruction::Call(function));
+    return Ok(true);
   }
   if !definition.fixed_arity || definition.params.len() != args.len() {
     return Err(format!(

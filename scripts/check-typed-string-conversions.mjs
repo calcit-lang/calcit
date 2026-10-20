@@ -255,9 +255,28 @@ try {
   await copyFile("calcit/test-wasm.cirru", firstClassSnapshot);
   execFileSync(binary, [firstClassSnapshot, "edit", "def", "test-wasm.main/test-to-string-first-class", "--input-format", "cirru", "--code", "quote $ defwasm-export test-to-string-first-class () (let ((f to-string)) (if (&= (f 42) |42) 1 0))"], { stdio: "pipe" });
   execFileSync(binary, [firstClassSnapshot, "edit", "schema", "test-wasm.main/test-to-string-first-class", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'Number) (:args $ [])"], { stdio: "pipe" });
-  const firstClass = spawnSync(binary, ["wasm", firstClassSnapshot, "--emit-path", join(output, "first-class-trait-wasm")], { encoding: "utf8" });
-  assert.notEqual(firstClass.status, 0, "a first-class generic trait function cannot bypass specialization");
-  assert.match(firstClass.stderr, /E_WASM_TRAIT_TYPE_EVIDENCE:.*first-class function/);
+  const firstClassOutput = join(output, "first-class-trait-wasm");
+  const firstClass = spawnSync(binary, ["wasm", firstClassSnapshot, "--emit-path", firstClassOutput], { encoding: "utf8" });
+  assert.equal(firstClass.status, 0, `a known generic alias must specialize from concrete call inputs\n${firstClass.stderr}`);
+  const firstClassModule = new WebAssembly.Module(await readFile(join(firstClassOutput, "program.wasm")));
+  const firstClassImports = {};
+  for (const item of WebAssembly.Module.imports(firstClassModule)) {
+    assert.equal(item.kind, "function");
+    (firstClassImports[item.module] ??= {})[item.name] = () => {
+      throw new Error(`unexpected generic-alias host call: ${item.module}/${item.name}`);
+    };
+  }
+  assert.equal(new WebAssembly.Instance(firstClassModule, firstClassImports).exports["test-to-string-first-class"](), 1,
+    "the specialized generic alias must execute the original Number-to-String assertion");
+
+  // A known alias supplies the callee, not the missing receiver evidence.
+  execFileSync(binary, [firstClassSnapshot, "edit", "def", "test-wasm.main/test-to-string-first-class-open", "--input-format", "cirru", "--code", "quote $ defwasm-export test-to-string-first-class-open (x) (let ((f to-string)) (f x))"], { stdio: "pipe" });
+  execFileSync(binary, [firstClassSnapshot, "edit", "schema", "test-wasm.main/test-to-string-first-class-open", "--input-format", "cirru", "--code", "quote $ :: 'Fn $ {} (:return 'String) (:args $ [] 'T) (:generics $ [] 'T) (:where $ {} $ 'T 'ToString)"], { stdio: "pipe" });
+  const firstClassOpenOutput = join(output, "first-class-open-trait-wasm");
+  const firstClassOpen = spawnSync(binary, ["wasm", firstClassSnapshot, "--emit-path", firstClassOpenOutput], { encoding: "utf8" });
+  assert.notEqual(firstClassOpen.status, 0, "a generic alias cannot invent concrete receiver evidence");
+  assert.match(firstClassOpen.stderr, /E_WASM_TRAIT_TYPE_EVIDENCE/);
+  await assert.rejects(readFile(join(firstClassOpenOutput, "program.wasm")), { code: "ENOENT" });
 
   const spreadSnapshot = join(output, "spread-trait.cirru");
   await copyFile("calcit/test-wasm.cirru", spreadSnapshot);

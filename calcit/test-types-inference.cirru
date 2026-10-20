@@ -668,6 +668,35 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
+        'option-recur-sum $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn option-recur-sum (n acc)
+            if (&<= n 0) (acc.unwrap-or 0)
+              recur (dec n)
+                Option :some $ &+ (acc.unwrap-or 0) n
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number $ :: 'Option 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |omitted-option-preserves-recursion)
+            :code $ quote $ do
+              assert= 15 $ option-recur-sum 5
+              assert= 25 $ option-recur-sum 5 $ Option :some 10
+              assert= 0 $ option-recur-sum 0
+              , &unit
+            :tags $ #{} :option-call-arity :unit
+        'option-recursive-count $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn option-recursive-count (n acc)
+            if (&<= n 0) (acc.unwrap-or 7)
+              &+ 1 $ option-recursive-count $ dec n
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number $ :: 'Option 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |omitted-option-preserves-recursion)
+            :code $ quote $ do
+              assert= 9 $ option-recursive-count 2
+              assert= 99 $ option-recursive-count 0 $ Option :some 99
+              assert= 9 $ option-recursive-count 2 $ Option :some 99
+              , &unit
+            :tags $ #{} :option-call-arity :unit
         'read-state-metadata $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-state-metadata (states)
             get-in states $ [] :data

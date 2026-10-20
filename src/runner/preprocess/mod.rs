@@ -4131,7 +4131,9 @@ fn preprocess_list_call(
             // generic prefix-call branch below. Specialize it before returning
             // so typed source such as `m .keys` reaches codegen with the direct
             // `&scope:name` callable as its head instead of `invoke-method`.
-            if let Some(optimized_call) = try_inline_method_call(&typed_method, &processed_args, scope_types, file_ns, call_stack)? {
+            if let Some(optimized_call) =
+              try_inline_method_call(&typed_method, &processed_args, scope_types, &call_info, check_warnings, call_stack)?
+            {
               if let Some(expanded) = try_expand_inlined_typed_optional_access(&optimized_call, scope_types, file_ns, call_stack)? {
                 return preprocess_recorded_lowering(
                   post_lowering::RewriteOrigin::TypedAccess,
@@ -5333,7 +5335,8 @@ fn preprocess_list_call(
 
         if !has_spread
           && let Some(call_head) = ys.first()
-          && let Some(optimized_call) = try_inline_method_call(call_head, &processed_args, scope_types, file_ns, call_stack)?
+          && let Some(optimized_call) =
+            try_inline_method_call(call_head, &processed_args, scope_types, &call_info, check_warnings, call_stack)?
         {
           if let Some(expanded) = try_expand_inlined_typed_optional_access(&optimized_call, scope_types, file_ns, call_stack)? {
             return preprocess_recorded_lowering(
@@ -8774,9 +8777,11 @@ fn try_inline_method_call(
   head: &Calcit,
   args: &CalcitList,
   scope_types: &ScopeTypes,
-  file_ns: &str,
+  call_info: &CallTypeCheckInfo<'_>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<Option<Calcit>, CalcitErr> {
+  let file_ns = call_info.file_ns;
   match head {
     Calcit::Method(method_name, calcit::MethodKind::Invoke(type_value)) => {
       let mut resolved_type = type_value.clone();
@@ -8820,6 +8825,22 @@ fn try_inline_method_call(
         pick_callable_from_method_entry(method_entry, impl_value, type_ref, method_name.as_ref(), file_ns, call_stack)?
       {
         let inlined = build_inlined_call(callable_head, args, scope_types);
+        // Imported implementations are still user-function calls. Check the
+        // completed lowered arguments before returning from method lowering,
+        // using the same contract and message as final-tree validation.
+        if let Calcit::List(call) = &inlined
+          && let Some(target @ Calcit::Import(import)) = call.first()
+          && let Some(Calcit::Fn { info, .. }) = program::resolve_compiled_executable_def(&import.ns, &import.def, call_stack)
+            .ok()
+            .flatten()
+        {
+          let source_call = CallTypeCheckInfo {
+            file_ns,
+            def_name: call_info.def_name,
+            call_location: preferred_source_call_location(call_info.call_location.clone(), call_stack),
+          };
+          check_user_fn_arg_types(info.as_ref(), target, &call.drop_left(), scope_types, &source_call, check_warnings);
+        }
         post_lowering::record_rewrite(
           post_lowering::RewriteOrigin::MethodInline,
           || {
@@ -21707,9 +21728,20 @@ mod tests {
     let head = Calcit::Method(Arc::from("display-name"), calcit::MethodKind::Invoke(receiver_type.clone()));
     let args = CalcitList::from(&[receiver] as &[Calcit]);
 
-    let lowered = try_inline_method_call(&head, &args, &ScopeTypes::new(), "tests.nominal-call", &CallStackList::default())
-      .expect("lower anonymous nominal impl")
-      .expect("anonymous nominal impl should get a direct callable");
+    let lowered = try_inline_method_call(
+      &head,
+      &args,
+      &ScopeTypes::new(),
+      &CallTypeCheckInfo {
+        file_ns: "tests.nominal-call",
+        def_name: "demo",
+        call_location: None,
+      },
+      &RefCell::new(vec![]),
+      &CallStackList::default(),
+    )
+    .expect("lower anonymous nominal impl")
+    .expect("anonymous nominal impl should get a direct callable");
     let Calcit::List(call) = lowered else {
       panic!("expected direct call")
     };
