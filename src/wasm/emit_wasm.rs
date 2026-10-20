@@ -5267,20 +5267,24 @@ impl WasmGenCtx {
   }
 }
 
-fn capture_inline_closure(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<InlineClosure>> {
-  let (params, body) = try_extract_inline_lambda(expr)?;
-  let (required, rest) = inline_lambda_shape(expr)?;
-  let option_types = if !rest && required == params.len() {
+fn inline_option_types(ctx: &WasmGenCtx, expr: &Calcit, params: usize, shape: (usize, bool)) -> Vec<Arc<CalcitTypeAnnotation>> {
+  if shape == (params, false) {
     infer_wasm_static_type(ctx, expr)
       .and_then(|annotation| annotation.resolve_to_fn())
       .map(|signature| {
-        let count = crate::wasm::host::calcit::trailing_option_arg_count(&signature.arg_types, params.len());
-        signature.arg_types.iter().skip(params.len() - count).cloned().collect::<Vec<_>>()
+        let count = crate::wasm::host::calcit::trailing_option_arg_count(&signature.arg_types, params);
+        signature.arg_types.iter().skip(params - count).cloned().collect::<Vec<_>>()
       })
       .unwrap_or_default()
   } else {
     vec![]
-  };
+  }
+}
+
+fn capture_inline_closure(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<InlineClosure>> {
+  let (params, body) = try_extract_inline_lambda(expr)?;
+  let (required, rest) = inline_lambda_shape(expr)?;
+  let option_types = inline_option_types(ctx, expr, params.len(), (required, rest));
   Some(Arc::new(InlineClosure {
     required: required - option_types.len(),
     params,
@@ -6224,12 +6228,14 @@ fn emit_body(ctx: &mut WasmGenCtx, exprs: &[Calcit]) -> Result<(), String> {
 /// `shape` is the `(required, rest)` shape of a parameter list with `?` / `&`
 /// markers; `params` then excludes the markers, and both the initial call and
 /// `recur` bind arguments like native.
+/// Fixed-arity trailing Option metadata supplies nominal None for omission.
 fn emit_inline_iife(
   ctx: &mut WasmGenCtx,
   params: &[String],
   body: &[Calcit],
   init_args: &[Calcit],
   shape: Option<(usize, bool)>,
+  option_types: &[Arc<CalcitTypeAnnotation>],
 ) -> Result<(), String> {
   // Evaluate all init args and store in fresh locals (before modifying ctx.locals).
   let mut param_locals: Vec<u32> = Vec::new();
@@ -6276,8 +6282,12 @@ fn emit_inline_iife(
       let tmp = ctx.alloc_local();
       if i < init_args.len() {
         emit_expr(ctx, &init_args[i])?;
+      } else if i >= params.len() - option_types.len() {
+        emit_expr(ctx, &nominal_option_none_expression()?)?;
+        param_types.push(Some(option_types[i - (params.len() - option_types.len())].clone()));
       } else {
         ctx.emit(f64_const(0.0)); // nil for missing args
+        param_types.push(None);
       }
       ctx.emit(Instruction::LocalSet(tmp));
       param_locals.push(tmp);
@@ -6783,15 +6793,18 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
       };
       let body: Vec<Calcit> = iife_items.iter().skip(3).cloned().collect();
       let shape = inline_lambda_shape(head);
-      if matches!(shape, Some((required, false)) if required == params.len()) {
-        return emit_inline_iife(ctx, &params, &body, &args_list, None);
+      if let Some((required, false)) = shape
+        && required == params.len()
+      {
+        let option_types = inline_option_types(ctx, head, params.len(), (required, false));
+        return emit_inline_iife(ctx, &params, &body, &args_list, None, &option_types);
       }
       // `&` / `?` parameters bind like native. With `recur`, the loop lowering
       // rebinds them by the same rules (#1972); otherwise the inline closure
       // path also specializes closure arguments.
       if body.iter().any(check_uses_recur) {
         return match shape {
-          Some(shape) => emit_inline_iife(ctx, &params, &body, &args_list, Some(shape)),
+          Some(shape) => emit_inline_iife(ctx, &params, &body, &args_list, Some(shape), &[]),
           None => {
             ctx.emit(Instruction::Unreachable);
             Ok(())

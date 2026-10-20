@@ -676,13 +676,56 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number $ :: 'Option 'Number
-          :tests $ [] $ %{} 'TestEntry (:name |omitted-option-preserves-recursion)
-            :code $ quote $ do
-              assert= 15 $ option-recur-sum 5
-              assert= 25 $ option-recur-sum 5 $ Option :some 10
-              assert= 0 $ option-recur-sum 0
-              , &unit
-            :tags $ #{} :option-call-arity :unit
+          :tests $ []
+            %{} 'TestEntry (:name |omitted-option-preserves-recursion)
+              :code $ quote $ do
+                assert= 15 $ option-recur-sum 5
+                assert= 25 $ option-recur-sum 5 $ Option :some 10
+                assert= 0 $ option-recur-sum 0
+                , &unit
+              :tags $ #{} :option-call-arity :unit
+            %{} 'TestEntry (:name |immediate-option-completion)
+              :code $ quote $ do
+                assert= 7 $
+                  fn (end)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Option 'Number
+                      :return 'Number
+                    end.unwrap-or 7
+                assert= 11 $
+                  fn (end)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Option 'Number
+                      :return 'Number
+                    end.unwrap-or 7
+                  Option :some 11
+                assert= 7 $
+                  fn (end)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Option 'Number
+                      :return 'Number
+                    end.unwrap-or 7
+                  Option :none
+                assert= 6 $
+                  fn (n acc)
+                    hint-fn $ {}
+                      :args $ [] 'Number $ :: 'Option 'Number
+                      :return 'Number
+                    if (&<= n 0) (acc.unwrap-or 0)
+                      recur (dec n)
+                        Option :some $ &+ (acc.unwrap-or 0) n
+                  , 3
+                assert= 16 $
+                  fn (n acc)
+                    hint-fn $ {}
+                      :args $ [] 'Number $ :: 'Option 'Number
+                      :return 'Number
+                    if (&<= n 0) (acc.unwrap-or 0)
+                      recur (dec n)
+                        Option :some $ &+ (acc.unwrap-or 0) n
+                  , 3 $ Option :some 10
+                , &unit
+              :tags $ #{} :option-call-arity :unit
         'option-recursive-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn option-recursive-count (n acc)
             if (&<= n 0) (acc.unwrap-or 7)

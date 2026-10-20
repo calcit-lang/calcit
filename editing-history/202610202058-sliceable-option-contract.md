@@ -84,3 +84,15 @@ Calcit 用户接口构造，用户可见拒绝继续使用原 Calcit harness。�
 
 将自定义 Sliceable 四项和 Option 递归两项接入既有 known-assertion harness 的 native/JS/WASM
 回放及既有 WASI Component job；不新增 workflow、检查器或排除项，选择零项继续由原运行器拒绝。
+
+最终 CI 又以原 Map `.filter-kv` 错误 predicate 揭示同类 source 对应缺口：lowered call 保留了
+operand 的子坐标，原 source 方法诊断却在整个 call 上。以 eval 独立复现关闭 lowering 时只有
+一项 W_METHOD_ARG_TYPE_MISMATCH，开启时却误报内部 invariant。source 证据不仅用于无位置的
+literal 调用，也用于同 namespace/definition 且确实属于该 source 子树的 operand；所有匹配
+rewrite occurrence 都必须有检查，另一子树和部分报告继续拒绝。新增内部 metadata 回归先失败
+再修复；原 Map 回调拒绝断言与 List.apply 的原数量/内容断言不变。
+
+CodeRabbit 第二轮还指出立即调用的 fixed-arity closure 仍给省略 Option 传 raw nil。新增一项
+Calcit 附带回归覆盖立即调用的省略、Some、None 和 recur 累加；修复前 native/JS 通过而
+WASM/WASI 真实执行失败。立即调用和普通闭包复用尾部 Option metadata，绑定真实名义 None
+及其参数类型；legacy ? 和 rest 仍走原有 nil/集合规则，不加入新的公开入口或方法名特例。
