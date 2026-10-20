@@ -13499,6 +13499,7 @@ fn preprocess_assert_type_with_obligation(
     let lexical_generics = ctx.scope_types.generic_names();
     CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&asserted_type_form, &lexical_generics)
   });
+  let asserted_type = resolve_local_type_refs_for_body(asserted_type, ctx.scope_types);
   let current_type = resolve_type_value(&asserted_target, ctx.scope_types).or_else(|| match &asserted_target {
     Calcit::Local(local) => Some(local.type_info.clone()),
     _ => None,

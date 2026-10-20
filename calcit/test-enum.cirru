@@ -122,12 +122,30 @@
                     :args $ [] 'Payload
                     :return 'String
                   :value record
-              read $ Payload :value |Ada
+                record $ Payload :value |Ada
+              assert-type record 'Payload
+              read record
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ []
           :tests $ [] $ %{} 'TestEntry (:name |unqualified-local-type-remains-lexical)
             :code $ quote $ assert= |Ada (read-local-type)
+            :tags $ #{} :enum :local-type-shadow :unit
+        'read-shadowed-local-type $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-shadowed-local-type ()
+            let
+                Payload recursive/Payload
+                read $ fn (Payload)
+                  hint-fn $ {}
+                    :args $ [] 'String
+                    :return 'Payload
+                  recursive/Payload :value Payload
+              :value $ read |Ada
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |parameter-does-not-rebind-outer-type-alias)
+            :code $ quote $ assert= |Ada (read-shadowed-local-type)
             :tags $ #{} :enum :local-type-shadow :unit
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (println |Reloaded)
