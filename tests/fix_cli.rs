@@ -4874,6 +4874,96 @@ fn optional_parameter_rule_keeps_multiple_trailing_candidates_review_only() {
 }
 
 #[test]
+fn strict_workflow_verifies_typed_macro_without_compatibility_recompilation() {
+  // Rust owns workflow orchestration and read-only failure reporting. The
+  // macro exercises the typed callback contract used by Geometry Book (#2199).
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("tests/fixtures/wasi-command-03-exit.cirru", &snapshot).unwrap();
+  let mut operations = Vec::new();
+  for (name, code) in [
+    ("Doc", "quote $ defstruct Doc (:queue $ :: 'Option $ :: 'List 'String)"),
+    (
+      "validate-docs",
+      "quote $ defn validate-docs (documents)\n  mapcat documents $ fn (doc)\n    filter ((:queue doc) .unwrap-or $ []) $ fn (id) (= id |missing)",
+    ),
+    (
+      "load-docs",
+      "quote $ defmacro load-docs ()\n  let ((values $ validate-docs $ [] $ Doc :queue $ Option :none))\n    quasiquote $ [] ~@values",
+    ),
+    ("values", "quote $ def values $ load-docs"),
+    ("main!", "quote $ defn main! ()\n  assert= ([]) values\n  , &unit"),
+  ] {
+    let mut args = vec![
+      "edit".to_owned(),
+      "def".to_owned(),
+      format!("app.main/{name}"),
+      "--input-format".to_owned(),
+      "cirru".to_owned(),
+      "--code".to_owned(),
+      code.to_owned(),
+    ];
+    if name == "main!" {
+      args.push("--overwrite".to_owned());
+    }
+    operations.push(args);
+  }
+  for (name, schema) in [
+    (
+      "validate-docs",
+      "quote $ :: 'Fn $ {} (:args $ [] $ :: 'List 'app.main/Doc) (:return $ :: 'List 'String)",
+    ),
+    (
+      "load-docs",
+      "quote $ :: 'Macro $ {} (:required $ []) (:expansion $ :: 'Expr $ :: 'List 'String)",
+    ),
+  ] {
+    operations.push(vec![
+      "edit".to_owned(),
+      "schema".to_owned(),
+      format!("app.main/{name}"),
+      "--input-format".to_owned(),
+      "cirru".to_owned(),
+      "--code".to_owned(),
+      schema.to_owned(),
+    ]);
+  }
+  let code = serde_json::to_string(&operations).unwrap();
+  let dry_run = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--dry-run", "--code", &code, "--format", "json"],
+  );
+  assert_success(&dry_run, "preview typed macro fixture transaction");
+  let plan = parse_stdout(&dry_run);
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "transaction",
+        "--code",
+        &code,
+        "--expect-revision",
+        plan["scoped_revision"].as_str().unwrap(),
+        "--format",
+        "json",
+      ],
+    ),
+    "install typed macro workflow fixture atomically",
+  );
+  let before = fs::read(&snapshot).unwrap();
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only", "--all-defs", "--format", "json"]),
+    "ordinary strict checking accepts the macro",
+  );
+  assert_success(&run_calcit(&snapshot, &[]), "execute the typed macro result");
+  let verified = run_fix(&snapshot, &["--workflow", "strict", "--verify", "--format", "json"]);
+  assert_success(&verified, "strict verification must not substitute compatibility inference");
+  assert_eq!(parse_stdout(&verified)["diagnostics"], serde_json::json!([]));
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "verification must remain read-only");
+}
+
+#[test]
 fn strict_workflow_keeps_declared_macro_logs_out_of_structured_reports() {
   // Rust owns CLI stream/envelope and exit-status checks, not macro semantics.
   let directory = TestDirectory::create();

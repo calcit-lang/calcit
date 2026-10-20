@@ -10389,6 +10389,34 @@
                 assert= (Option :some original) wrapped
                 assert= original $ wrapped .unwrap
               :tags $ #{} :core :types :unit
+            %{} 'TestEntry
+              :name |collapses-legacy-optional-values-under-declared-option
+              :code $ quote $ let
+                  from-if $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return $ :: 'Option 'Number
+                    nil->option $ if (> x 0) x
+                  from-optional $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Optional 'Number
+                      :return $ :: 'Option 'Number
+                    nil->option x
+                  from-branches $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return $ :: 'Option 'Number
+                    if (> x 0) (nil->option x) (nil->option nil)
+                  numbers $ assert-type ([] 1 2) (:: 'List 'Number)
+                assert= (Option :some 1) (from-if 1)
+                assert= (Option :none) (from-if -1)
+                assert= (Option :some 2) (from-optional 2)
+                assert= (Option :some 3) (from-branches 3)
+                assert= (Option :none) (from-branches -3)
+                assert=
+                  [] (Option :some 1) (Option :some 2)
+                  map numbers nil->option
+              :tags $ #{} :core :types :unit
         'nil? $ %{} 'CodeEntry (:doc "|Predicate that checks whether a value is nil")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -11518,7 +11546,6 @@
                 acc $ []
                 n n0
               hint-fn $ {}
-                :generics $ [] 'T
                 :args $ [] (:: 'List 'T) 'Number
                 :return $ :: 'List 'T
               if (&<= n 0) acc $ recur (append acc x) (&- n 1)

@@ -10,7 +10,8 @@
   :files $ {}
     'app.binding-proof $ %{} 'FileEntry
       :defs $ {}
-        'Box $ %{} 'CodeEntry (:doc |)
+        'Box $ %{} 'CodeEntry
+          :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct Box
             :value $ :: 'Optional 'app.binding-proof/Value
           :examples $ []
@@ -19,7 +20,8 @@
           :code $ quote $ defstruct OpenBox (:value 'Dynamic)
           :examples $ []
           :schema $ :: 'StructDef
-        'OptionBox $ %{} 'CodeEntry (:doc |)
+        'OptionBox $ %{} 'CodeEntry
+          :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct OptionBox
             :value $ :: 'Optional $ :: 'Option 'String
           :examples $ []
@@ -1111,7 +1113,8 @@
             :items $ :: 'List 'Number
           :examples $ []
           :schema $ :: 'StructDef
-        'MapBox $ %{} 'CodeEntry (:doc |)
+        'MapBox $ %{} 'CodeEntry
+          :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct MapBox
             :items $ :: 'Map 'Tag $ :: 'List (:: 'Optional 'Number)
           :examples $ []
@@ -1124,7 +1127,8 @@
           :code $ quote $ defstruct NominalBox (:user 'app.field-owner/User)
           :examples $ []
           :schema $ :: 'StructDef
-        'NullableFunctionBox $ %{} 'CodeEntry (:doc |)
+        'NullableFunctionBox $ %{} 'CodeEntry
+          :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct NullableFunctionBox
             :value $ :: 'Optional $ :: 'Fn
               {}
@@ -1132,7 +1136,8 @@
                 :return 'Number
           :examples $ []
           :schema $ :: 'StructDef
-        'NullableRefBox $ %{} 'CodeEntry (:doc |)
+        'NullableRefBox $ %{} 'CodeEntry
+          :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct NullableRefBox
             :value $ :: 'Optional $ :: 'Ref 'Number
           :examples $ []
@@ -2398,7 +2403,8 @@
         :code $ quote $ ns app.empty-evidence
     'app.empty-fields $ %{} 'FileEntry
       :defs $ {}
-        'Fields $ %{} 'CodeEntry (:doc |)
+        'Fields $ %{} 'CodeEntry
+          :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct Fields
             :mapping $ :: 'Optional $ :: 'Map 'Tag 'String
             :items $ :: 'Optional $ :: 'List 'Number
@@ -2532,7 +2538,8 @@
           :require $ app.field-owner :as owner
     'app.field-owner $ %{} 'FileEntry
       :defs $ {}
-        'Database $ %{} 'CodeEntry (:doc |)
+        'Database $ %{} 'CodeEntry
+          :doc "|Legacy-contract fixture: pins the Optional schema (W_/E_LEGACY_OPTIONAL_SCHEMA era); retire with Optional (0.32.0)."
           :code $ quote $ defstruct Database
             :users $ :: 'Map 'String 'User
             :maybe $ :: 'Optional 'User

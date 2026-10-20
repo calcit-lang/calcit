@@ -14,7 +14,8 @@
           :code $ quote $ defn f1 (a) (:: 'Unit)
           :examples $ []
           :schema $ :: 'Dynamic
-        'f2 $ %{} 'CodeEntry (:doc |)
+        'f2 $ %{} 'CodeEntry
+          :doc "|Legacy-contract fixture: `?` parameter with an Optional hint; retire with Optional (0.32.0)."
           :code $ quote $ defn f2 (a ? b)
             hint-fn $ {}
               :args $ [] 'Number $ :: 'Optional 'Number
