@@ -28,6 +28,87 @@ async function assertRejectedArtifacts(output, label, diagnostic, requireDiagnos
 }
 
 try {
+  // #2121: enum payload names use their declaration namespace, including
+  // recursive branches. Caller-owned generic arguments retain their identity.
+  execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-enum.cirru",
+    "--backend", "native,js,wasm", "--tag", "nominal-namespace"],
+  { ...options, env: { ...process.env, CALCIT_BIN: binary } });
+  // First-class type-definition values are not supported by WASM. Keep the
+  // lexical-alias regressions alongside the shared nominal-shape replay.
+  execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-enum.cirru",
+    "--backend", "native,js", "--tag", "local-type-shadow"],
+  { ...options, env: { ...process.env, CALCIT_BIN: binary } });
+  for (const definition of ["render-short-recursive", "read-declared-payload", "unwrap-recursive-envelope", "read-caller-payload", "read-local-type", "read-local-shadow", "read-shadowed-local-type"]) {
+    execFileSync(binary, ["calcit/test-enum.cirru", "fix", "--rule", "concrete-return-proof-v1",
+      "--ns", "test-enum.main", "--def", definition, "--format", "edn"], options);
+  }
+  const recursiveSnapshot = join(project, "recursive-nominal.cirru");
+  await copyFile("calcit/add.cirru", recursiveSnapshot);
+  const runRecursive = (...args) => execFileSync(binary, [recursiveSnapshot, ...args], options);
+  runRecursive("query", "config", "--format", "edn");
+  runRecursive("query", "def", "app.main/main!", "--format", "edn");
+  const recursiveOperations = [
+    ["edit", "add-ns", "app.declared"],
+    ["edit", "add-import", "app.main", "--input-format", "cirru", "--code", "quote $ app.declared :as declared"],
+    ["edit", "def", "app.declared/Payload", "--input-format", "cirru", "--code", "quote $ defstruct Payload (:value 'Number)"],
+    ["edit", "def", "app.main/Payload", "--input-format", "cirru", "--code", "quote $ defstruct Payload (:value 'Number)"],
+    ["edit", "def", "app.declared/Envelope", "--input-format", "cirru", "--code", "quote $ defenum Envelope (:record 'Payload)"],
+    ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
+      "quote $ defn main! ()\n  declared/Envelope :record $ Payload :value 7"],
+    ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ []) (:return 'app.declared/Envelope)"],
+    ["config", "set", "reload-fn", "app.main/main!"],
+  ];
+  const recursiveCode = JSON.stringify(recursiveOperations);
+  const recursivePreview = JSON.parse(runRecursive("edit", "transaction", "--code", recursiveCode, "--dry-run", "--format", "json"));
+  runRecursive("edit", "transaction", "--code", recursiveCode, "--expect-revision", recursivePreview.scoped_revision, "--format", "edn");
+  const recursiveOriginal = await readFile(recursiveSnapshot);
+  const recursiveNominalOutput = join(project, "recursive-nominal-js");
+  for (const args of [
+    ["--check-only", "--all-defs"],
+    ["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "main!", "--format", "edn"],
+    ["fix", "--workflow", "strict", "--verify", "--format", "edn"],
+    [],
+    ["--emit-path", recursiveNominalOutput, "js"],
+  ]) {
+    const result = spawnSync(binary, [recursiveSnapshot, ...args], options);
+    if (result.error) throw result.error;
+    assert.equal(result.status, 1, `same-spelled caller type must remain distinct: ${args.join(" ")}\n${result.stdout}\n${result.stderr}`);
+    assert.match(result.stdout + result.stderr, /app\.declared\/Payload/);
+    assert.deepEqual(await readFile(recursiveSnapshot), recursiveOriginal);
+  }
+  await assertRejectedArtifacts(recursiveNominalOutput, "same-spelled enum payload type", /app\.declared\/Payload/, true);
+  // A same-named value parameter must neither erase the captured type alias
+  // nor let an assertion accept a different declaration with the same fields.
+  for (const typeName of ["'Payload", "Payload"]) {
+    runRecursive("query", "def", "app.main/main!", "--format", "edn");
+    const operations = [
+      ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
+        `quote $ defn main! ()\n  let\n      Payload declared/Payload\n      read $ fn (Payload)\n        hint-fn $ {} (:args $ [] 'String) (:return 'Unit)\n        let\n            record $ app.main/Payload :value 7\n          assert-type record ${typeName}\n          , &unit\n    read |caller`],
+      ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+    ];
+    const code = JSON.stringify(operations);
+    const preview = JSON.parse(runRecursive("edit", "transaction", "--code", code, "--dry-run", "--format", "json"));
+    runRecursive("edit", "transaction", "--code", code, "--expect-revision", preview.scoped_revision, "--format", "edn");
+    const original = await readFile(recursiveSnapshot);
+    const output = join(project, `shadowed-assertion-${typeName.startsWith("'") ? "quoted" : "unquoted"}-js`);
+    for (const args of [
+      ["--check-only", "--all-defs"],
+      ["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "main!", "--format", "edn"],
+      ["fix", "--workflow", "strict", "--verify", "--format", "edn"],
+      [], ["--emit-path", output, "js"],
+    ]) {
+      const result = spawnSync(binary, [recursiveSnapshot, ...args], options);
+      if (result.error) throw result.error;
+      const details = `${result.stdout}\n${result.stderr}`;
+      assert.equal(result.status, 1, `shadowed ${typeName}: ${args.join(" ")}\n${details}`);
+      assert.match(details, /E_ASSERT_TYPE_MISMATCH/);
+      assert.match(details, /app\.main\/main!/);
+      assert.deepEqual(await readFile(recursiveSnapshot), original);
+    }
+    await assertRejectedArtifacts(output, `shadowed ${typeName}`, /E_ASSERT_TYPE_MISMATCH/, true);
+  }
   // #2190: an inner quantifier is not an outer capture with the same spelling.
   // Successful identities/captures live in definition :tests; use this existing
   // rejection harness to verify all compiler entrances and unchanged source.

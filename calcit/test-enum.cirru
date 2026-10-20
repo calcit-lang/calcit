@@ -7,9 +7,13 @@
       :feature-policy $ {}
       :modules $ []
       :type-slots $ {}
-  :files $ {} $ 'test-enum.main
-    %{} 'FileEntry
+  :files $ {}
+    'test-enum.main $ %{} 'FileEntry
       :defs $ {}
+        'ContentNode $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct ContentNode (:wrong 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
         'Duo $ %{} 'CodeEntry (:doc "|Generic enum with 2 type variables")
           :code $ quote $ defenum Duo ('T 'U) (:pair 'T 'U) (:swapped 'U 'T)
           :examples $ []
@@ -27,6 +31,10 @@
           :code $ quote $ defenum Maybe1 ('T) (:some 'T) (:none)
           :examples $ []
           :schema $ :: 'EnumDef
+        'Payload $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Payload (:wrong 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
         'Result0 $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Result0 (:err 'String) (:ok)
           :examples $ []
@@ -69,11 +77,104 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'read-caller-payload $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-caller-payload (value)
+            :wrong $ unwrap-recursive-envelope value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] $ :: 'test-enum.recursive/Envelope 'test-enum.main/Payload
+          :tests $ [] $ %{} 'TestEntry (:name |generic-argument-keeps-caller-namespace)
+            :code $ quote $ assert= 7
+              read-caller-payload $ recursive/Envelope :item $ Payload :wrong 7
+            :tags $ #{} :enum :nominal-namespace :unit
+        'read-declared-payload $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-declared-payload (value)
+            match value $
+              :record payload
+              :value payload
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'test-enum.recursive/RecordEnvelope
+          :tests $ [] $ %{} 'TestEntry (:name |declared-payload-does-not-bind-caller-shadow)
+            :code $ quote $ assert= |Ada
+              read-declared-payload $ recursive/RecordEnvelope :record $ recursive/Payload :value |Ada
+            :tags $ #{} :enum :nominal-namespace :unit
+        'read-local-shadow $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-local-shadow (value)
+            let
+                Payload test-enum.main/Payload
+              match value $
+                :record payload
+                :value payload
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'test-enum.recursive/RecordEnvelope
+          :tests $ [] $ %{} 'TestEntry (:name |qualified-payload-ignores-local-shadow)
+            :code $ quote $ assert= |Ada
+              read-local-shadow $ recursive/RecordEnvelope :record $ recursive/Payload :value |Ada
+            :tags $ #{} :enum :local-type-shadow :unit
+        'read-local-type $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-local-type ()
+            let
+                Payload recursive/Payload
+                read $ fn (record)
+                  hint-fn $ {}
+                    :args $ [] 'Payload
+                    :return 'String
+                  :value record
+                record $ Payload :value |Ada
+              assert-type record 'Payload
+              read record
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |unqualified-local-type-remains-lexical)
+            :code $ quote $ assert= |Ada (read-local-type)
+            :tags $ #{} :enum :local-type-shadow :unit
+        'read-shadowed-local-type $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-shadowed-local-type ()
+            let
+                Payload recursive/Payload
+                read $ fn (Payload)
+                  hint-fn $ {}
+                    :args $ [] 'String
+                    :return 'Payload
+                  let
+                      record $ recursive/Payload :value Payload
+                    assert-type record 'Payload
+                    assert-type record Payload
+                    , record
+              :value $ read |Ada
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |parameter-does-not-rebind-outer-type-alias)
+            :code $ quote $ assert= |Ada (read-shadowed-local-type)
+            :tags $ #{} :enum :local-type-shadow :unit
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (println |Reloaded)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'render-short-recursive $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn render-short-recursive (node)
+            match node
+              (:text text) text
+              (:pair left right)
+                str (render-short-recursive left) (render-short-recursive right)
+              (:list children)
+                foldl children | $ fn (acc child)
+                  str acc $ render-short-recursive child
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'test-enum.recursive/ContentNode
+          :tests $ [] $ %{} 'TestEntry (:name |recursive-short-names-in-declaration-namespace)
+            :code $ quote $ do
+              assert= |ab $ render-short-recursive $ recursive/ContentNode :pair (recursive/ContentNode :text |a) (recursive/ContentNode :text |b)
+              assert= |ab $ render-short-recursive $ recursive/ContentNode :list
+                [] (recursive/ContentNode :text |a) (recursive/ContentNode :text |b)
+              assert= | $ render-short-recursive $ recursive/ContentNode :list ([])
+            :tags $ #{} :enum :nominal-namespace :unit
         'takes-result $ %{} 'CodeEntry (:doc "|Function accepting Result0 enum type")
           :code $ quote $ defn takes-result (r)
             match r
@@ -253,5 +354,36 @@
             :args $ [] $ :: 'test-enum.main/Maybe1 'T
             :generics $ [] 'T
             :return $ :: 'calcit.core/Option 'T
+        'unwrap-recursive-envelope $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn unwrap-recursive-envelope (value)
+            match value $
+              :item payload
+              , payload
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] $ :: 'test-enum.recursive/Envelope 'T
+            :generics $ [] 'T
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-enum.main
+          :require $ test-enum.recursive :as recursive
+    'test-enum.recursive $ %{} 'FileEntry
+      :defs $ {}
+        'ContentNode $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum ContentNode (:text 'String) (:pair 'ContentNode 'ContentNode)
+            :list $ :: 'List 'ContentNode
+          :examples $ []
+          :schema $ :: 'EnumDef
+        'Envelope $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum Envelope ('T) (:item 'T)
+          :examples $ []
+          :schema $ :: 'EnumDef
+        'Payload $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct Payload (:value 'String)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'RecordEnvelope $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defenum RecordEnvelope (:record 'Payload)
+          :examples $ []
+          :schema $ :: 'EnumDef
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns test-enum.recursive

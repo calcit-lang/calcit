@@ -3611,6 +3611,15 @@ fn infer_enum_annotation(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Ar
   Some(Arc::new(CalcitTypeAnnotation::Enum(Arc::new(enum_proto), Arc::new(applied_args))))
 }
 
+/// Resolve declaration-owned names before substituting caller-owned arguments.
+/// Construction and matching must read the same nominal payload contract.
+pub(crate) fn resolve_enum_payload_type(definition: &CalcitEnumDef, payload: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+  match definition.definition_ref().and_then(|name| name.rsplit_once('/')) {
+    Some((declaring_ns, _)) => resolve_namespace_type_refs_for_body(payload, declaring_ns),
+    None => payload,
+  }
+}
+
 fn infer_enum_applied_args<'a>(
   enum_proto: &CalcitEnumDef,
   tag_arg: Option<&Calcit>,
@@ -3633,7 +3642,7 @@ fn infer_enum_applied_args<'a>(
   let expected_types = variant
     .payload_types()
     .iter()
-    .map(|expected| resolve_local_type_refs_for_body(expected.clone(), scope_types))
+    .map(|expected| resolve_local_type_refs_for_body(resolve_enum_payload_type(enum_proto, expected.clone()), scope_types))
     .collect::<Vec<_>>();
   let actual_types = payload_args
     .into_iter()

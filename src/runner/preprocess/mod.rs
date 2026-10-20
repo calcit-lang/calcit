@@ -43,8 +43,9 @@ use type_checking::{
 pub(crate) use type_inference::expression_definitely_diverges;
 use type_inference::{
   extract_literal_list_items, find_struct_lookup_in_literal_path, fully_typed_literal_assoc_path, fully_typed_literal_lookup_path,
-  infer_struct_field_type, infer_struct_value_annotation, infer_type_from_expr, is_pending_async_value, resolve_enum_value,
-  resolve_program_value_for_preprocess, resolve_struct_field_type_by_index, resolve_struct_value, resolve_type_value,
+  infer_struct_field_type, infer_struct_value_annotation, infer_type_from_expr, is_pending_async_value, resolve_enum_payload_type,
+  resolve_enum_value, resolve_program_value_for_preprocess, resolve_struct_field_type_by_index, resolve_struct_value,
+  resolve_type_value,
 };
 pub use type_inference::{
   fixed_call_arguments_are_proven, infer_compiled_definition_implementation_type, infer_static_type_from_expr,
@@ -1949,8 +1950,8 @@ where
 fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope_types: &ScopeTypes) -> Arc<CalcitTypeAnnotation> {
   map_type_references(annotation, &|name, resolved_args| {
     let lookup_name = name.trim_start_matches('\'').trim_start_matches(':');
-    let short_name = lookup_name.rsplit('/').next().unwrap_or(lookup_name);
-    let local_type = scope_types.get(lookup_name).or_else(|| scope_types.get(short_name));
+    // A qualified declaration is not an alias for a same-named local type.
+    let local_type = scope_types.type_reference(lookup_name);
     match local_type.map(AsRef::as_ref) {
       Some(CalcitTypeAnnotation::StructDef(struct_def)) => Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), resolved_args)),
       Some(CalcitTypeAnnotation::Struct(struct_def, _)) | Some(CalcitTypeAnnotation::StructValue(struct_def)) => {
@@ -7306,6 +7307,7 @@ pub(crate) fn check_enum_construction(
 
   // Check payload types
   for (idx, (payload_arg, expected_type)) in args.iter().skip(2).zip(variant.payload_types().iter()).enumerate() {
+    let expected_type = resolve_enum_payload_type(&enum_proto, expected_type.clone());
     if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
       continue; // No type constraint for this payload
     }
@@ -11642,6 +11644,7 @@ fn process_match(
               let payload_type = enum_def
                 .and_then(|e| e.find_variant_by_name(pat_tag))
                 .and_then(|v| v.payload_types().get(bind_idx).cloned())
+                .map(|payload| resolve_enum_payload_type(enum_def.expect("variant belongs to the matched enum"), payload))
                 .map(|payload| payload.substitute_type_vars(&enum_bindings))
                 .map(|payload| resolve_local_type_refs_for_body(payload, &body_types))
                 .unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone());
@@ -12145,8 +12148,15 @@ fn discard_duplicate_replay_warnings(warnings: &mut Vec<LocatedWarning>, checkpo
 }
 
 // Preserve both lexical binders and nominal declaration provenance on replay.
-fn checked_function_hint(items: Vec<Calcit>, signature: Arc<CalcitFnTypeAnnotation>, generated: bool, declaring_ns: &str) -> Calcit {
-  let qualified = resolve_namespace_type_refs_for_body(Arc::new(CalcitTypeAnnotation::Fn(signature)), declaring_ns);
+fn checked_function_hint(
+  items: Vec<Calcit>,
+  signature: Arc<CalcitFnTypeAnnotation>,
+  generated: bool,
+  declaring_ns: &str,
+  lexical_types: &ScopeTypes,
+) -> Calcit {
+  let captured = resolve_local_type_refs_for_body(Arc::new(CalcitTypeAnnotation::Fn(signature)), lexical_types);
+  let qualified = resolve_namespace_type_refs_for_body(captured, declaring_ns);
   let CalcitTypeAnnotation::Fn(signature) = qualified.as_ref() else {
     unreachable!("qualifying function references preserves its annotation kind")
   };
@@ -12235,7 +12245,7 @@ pub fn preprocess_defn(
               arg_location.to_owned().unwrap_or_default(),
             );
             check_symbol(sym, args, loc, ctx.check_warnings);
-            body_types.remove(sym);
+            body_types.shadow_parameter(sym);
             let s = Calcit::Local(CalcitLocal {
               idx: CalcitLocal::track_sym(sym),
               sym: sym.to_owned(),
@@ -12260,10 +12270,9 @@ pub fn preprocess_defn(
           Calcit::Local(local) => {
             param_symbols.push(local.sym.clone());
             body_defs.insert(local.sym.clone());
+            body_types.shadow_parameter(&local.sym);
             if !matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Dynamic) {
-              body_types.insert(local.sym.clone(), local.type_info.clone());
-            } else {
-              body_types.remove(&local.sym);
+              body_types.bind_parameter(local.sym.clone(), local.type_info.clone());
             }
             zs.push(Calcit::Local(local.clone()));
             Ok(())
@@ -12541,7 +12550,7 @@ pub fn preprocess_defn(
       }
       if let CalcitTypeAnnotation::Macro(signature) = def_schema.as_ref() {
         for (param_sym, type_info) in param_symbols.iter().zip(strict_macro_body_parameter_types(signature)) {
-          body_types.insert(param_sym.clone(), type_info);
+          body_types.bind_parameter(param_sym.clone(), type_info);
         }
       }
       if let Some(fn_annot) = &effective_fn_schema {
@@ -12593,7 +12602,7 @@ pub fn preprocess_defn(
           // An explicit open parameter is part of the callable contract. Body
           // usage cannot silently replace it with the capability it needs.
           // Predicates may still narrow that parameter in their success branch.
-          body_types.insert(param_sym.to_owned(), arg_type);
+          body_types.bind_parameter(param_sym.to_owned(), arg_type);
         }
       }
 
@@ -12623,6 +12632,7 @@ pub fn preprocess_defn(
           fn_annot.clone(),
           false,
           ctx.file_ns,
+          ctx.scope_types,
         );
         processed_body.push(schema_hint.to_owned());
         xs = xs.push_right(schema_hint);
@@ -12687,7 +12697,7 @@ pub fn preprocess_defn(
           PreprocessContext::new(&body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack),
         )?;
         for (symbol, annotation) in param_symbols.iter().zip(&parameters) {
-          body_types.insert(symbol.clone(), annotation.clone());
+          body_types.bind_parameter(symbol.clone(), annotation.clone());
         }
         for parameter in &mut zs {
           if let Calcit::Local(local) = parameter
@@ -12736,7 +12746,7 @@ pub fn preprocess_defn(
           && let Some(signature) = effective_fn_schema.as_ref()
           && let Calcit::List(items) = &form
         {
-          checked_function_hint(items.to_vec(), signature.clone(), false, declaring_ns)
+          checked_function_hint(items.to_vec(), signature.clone(), false, declaring_ns, ctx.scope_types)
         } else {
           form
         }
@@ -12903,6 +12913,7 @@ pub fn preprocess_defn(
           fn_annot.clone(),
           true,
           ctx.file_ns,
+          ctx.scope_types,
         );
         processed_body.push(schema_hint.clone());
         xs = xs.push_right(schema_hint);
@@ -13474,11 +13485,15 @@ fn preprocess_assert_type_with_obligation(
   };
 
   let local_nominal_type = match type_form {
-    Calcit::Symbol { sym, .. } if !sym.starts_with('\'') => ctx.scope_types.get(sym).and_then(|type_info| match type_info.as_ref() {
-      CalcitTypeAnnotation::StructDef(struct_def) => Some(Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), Arc::new(vec![])))),
-      CalcitTypeAnnotation::EnumDef(enum_def) => Some(Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), Arc::new(vec![])))),
-      _ => None,
-    }),
+    Calcit::Symbol { sym, .. } if !sym.starts_with('\'') => {
+      ctx.scope_types.type_reference(sym).and_then(|type_info| match type_info.as_ref() {
+        CalcitTypeAnnotation::StructDef(struct_def) => {
+          Some(Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), Arc::new(vec![]))))
+        }
+        CalcitTypeAnnotation::EnumDef(enum_def) => Some(Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), Arc::new(vec![])))),
+        _ => None,
+      })
+    }
     _ => None,
   };
 
@@ -13487,6 +13502,7 @@ fn preprocess_assert_type_with_obligation(
     let lexical_generics = ctx.scope_types.generic_names();
     CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&asserted_type_form, &lexical_generics)
   });
+  let asserted_type = resolve_local_type_refs_for_body(asserted_type, ctx.scope_types);
   let current_type = resolve_type_value(&asserted_target, ctx.scope_types).or_else(|| match &asserted_target {
     Calcit::Local(local) => Some(local.type_info.clone()),
     _ => None,
@@ -14564,18 +14580,22 @@ fn reject_strict_unproven_enum_payload(
   if variant.payload_types().len() != payloads.len() {
     return Ok(());
   }
-  // Payload proof follows the ordinary policy for explicitly open values; the
-  // assertion audit keeps its own constructor contracts.
-  if REQUIRE_ASSERTION_PROOF.with(Cell::get)
-    || !payloads.iter().any(|payload| {
+  // The audit proves the actual constructor payload contract, not just the
+  // builtin's open transport signature. Ordinary open-value policy is unchanged.
+  if !REQUIRE_ASSERTION_PROOF.with(Cell::get)
+    && !payloads.iter().any(|payload| {
       explicit_open::reads_explicitly_open_local(payload)
         && resolve_type_value(payload, scope_types).is_some_and(|actual| contains_dynamic_type(actual.as_ref()))
     })
   {
     return Ok(());
   }
-  let CalcitTypeAnnotation::Fn(mut signature) =
-    CalcitTypeAnnotation::from_function_parts(variant.payload_types().to_vec(), calcit::DYNAMIC_TYPE.clone())
+  let payload_types = variant
+    .payload_types()
+    .iter()
+    .map(|payload| resolve_enum_payload_type(&enum_def, payload.clone()))
+    .collect();
+  let CalcitTypeAnnotation::Fn(mut signature) = CalcitTypeAnnotation::from_function_parts(payload_types, calcit::DYNAMIC_TYPE.clone())
   else {
     unreachable!("function parts produce a function signature")
   };
