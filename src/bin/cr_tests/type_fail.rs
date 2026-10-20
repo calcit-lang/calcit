@@ -3002,10 +3002,11 @@ fn option_erased_to_nil_is_exempt_only_as_a_direct_host_argument() {
       .map(|advisory| advisory.location().def.to_string())
       .collect::<Vec<_>>();
     erased.sort();
-    // A `js/` call, a native method call and a `(:none) nil` branch that is the
+    // A `js/` call, native and external-object method calls (prefix and
+    // postfix), a host-property `set!` and a `(:none) nil` branch that is the
     // host argument stay quiet; the `:js-ffi` feature alone does not exempt a
-    // nil tested by business code or bound to a local first.
-    assert_eq!(erased, ["bound-in-ffi", "business-in-ffi"], "{advisories:?}");
+    // nil tested by business code, bound to a local or `set!` on a local.
+    assert_eq!(erased, ["bound-in-ffi", "business-in-ffi", "local-set-in-ffi"], "{advisories:?}");
   });
 }
 

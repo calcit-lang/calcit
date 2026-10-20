@@ -687,9 +687,19 @@ impl HostSinkFrame {
     let Calcit::List(xs) = expr else {
       return None;
     };
-    let is_sink = xs.first().is_some_and(is_host_sink_head);
+    let is_sink = xs.first().is_some_and(is_host_sink_head) || is_host_property_write(xs);
     HOST_SINK_FRAMES.with(|frames| frames.borrow_mut().push(is_sink));
     Some(Self)
+  }
+
+  /// Marks the innermost form as a host sink once its head resolves to an
+  /// external-object method, which the raw head cannot show.
+  fn mark_current_sink() {
+    HOST_SINK_FRAMES.with(|frames| {
+      if let Some(top) = frames.borrow_mut().last_mut() {
+        *top = true;
+      }
+    });
   }
 }
 
@@ -710,7 +720,7 @@ fn is_host_sink_head(head: &Calcit) -> bool {
       sym.starts_with("js/")
         || sym.starts_with(".!")
         || sym.starts_with(".?!")
-        || matches!(sym, "new" | "js-array" | "js-object" | "js-set" | "aset" | "set!")
+        || matches!(sym, "new" | "js-array" | "js-object" | "js-set" | "aset")
     }
     Calcit::Method(
       _,
@@ -719,6 +729,23 @@ fn is_host_sink_head(head: &Calcit) -> bool {
       | calcit::MethodKind::ExternalInvoke(_)
       | calcit::MethodKind::ExternalSet(_),
     ) => true,
+    _ => false,
+  }
+}
+
+/// `set!` writes to the host only when its target is a JS property; a
+/// lexical-local target is a Calcit binding like any other.
+fn is_host_property_write(xs: &CalcitList) -> bool {
+  if !xs.first().is_some_and(is_local_assignment) {
+    return false;
+  }
+  match xs.get(1) {
+    Some(Calcit::Symbol { sym, .. }) => sym.starts_with("js/"),
+    Some(Calcit::List(target)) => match target.first() {
+      Some(Calcit::Symbol { sym, .. }) => sym.starts_with(".-"),
+      Some(Calcit::Method(_, calcit::MethodKind::Access | calcit::MethodKind::ExternalAccess(_))) => true,
+      _ => false,
+    },
     _ => false,
   }
 }
@@ -3989,6 +4016,7 @@ fn preprocess_list_call(
             let is_external = trait_list_for_receiver(type_info.as_ref(), scope_types)
               .is_some_and(|traits| traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref())));
             let method_kind = if is_external {
+              HostSinkFrame::mark_current_sink();
               calcit::MethodKind::ExternalInvoke(type_info.clone())
             } else {
               calcit::MethodKind::Invoke(type_info.clone())
@@ -4686,6 +4714,16 @@ fn preprocess_list_call(
               }
             }
             ys = ys.push(form);
+            // Once the receiver is known, an external-object method hands
+            // its remaining arguments to JS.
+            if ys.len() == 2
+              && matches!(&head_form, Calcit::Method(_, calcit::MethodKind::Invoke(_)))
+              && let Some(receiver_type) = ys.get(1).and_then(|receiver| resolve_type_value(receiver, scope_types))
+              && trait_list_for_receiver(receiver_type.as_ref(), scope_types)
+                .is_some_and(|traits| traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref())))
+            {
+              HostSinkFrame::mark_current_sink();
+            }
             Ok(())
           })?;
         }

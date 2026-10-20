@@ -14,6 +14,20 @@
   :files $ {} $ 'type-fail-option-nil-host-position.main
     %{} 'FileEntry
       :defs $ {}
+        'HostConsole $ %{} 'CodeEntry (:doc "|An external-object console.")
+          :code $ quote $ deftrait HostConsole
+            .log $ :: 'Fn $ {}
+              :args $ [] 'type-fail-option-nil-host-position.main/HostConsole 'Dynamic
+              :return 'Unit
+          :examples $ []
+          :ffi $ {} (:backend :js) (:kind :external-object)
+          :schema $ :: 'Trait
+        'HostObject $ %{} 'CodeEntry (:doc "|An external-object with a writable field.")
+          :code $ quote $ deftrait HostObject (:a 'Dynamic)
+          :examples $ []
+          :ffi $ {} (:backend :js) (:kind :external-object)
+            :writable $ #{} :a
+          :schema $ :: 'Trait
         'bound-in-ffi $ %{} 'CodeEntry
           :doc "|A local binding is not a host position even inside a `:js-ffi` definition."
           :code $ quote $ defn bound-in-ffi (m)
@@ -34,6 +48,17 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] $ :: 'Map 'Tag 'Dynamic
             :features $ #{} :js-ffi
+        'local-set-in-ffi $ %{} 'CodeEntry
+          :doc "|`set!` on a lexical local rebinds a Calcit value, not a host field."
+          :code $ quote $ defn local-set-in-ffi (m)
+            let
+                v 1
+              set! v $ .unwrap-or (get m :a) nil
+              , v
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] $ :: 'Map 'Tag 'Dynamic
+            :features $ #{} :js-ffi
         'main! $ %{} 'CodeEntry (:doc "|Calls every adapter.")
           :code $ quote $ defn main! ()
             let
@@ -43,6 +68,10 @@
               to-native-method m
               business-in-ffi m
               bound-in-ffi m
+              local-set-in-ffi m
+              to-host-field m
+              to-external-method m
+              to-external-postfix m
               , &unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
@@ -65,6 +94,36 @@
             js/console.log $ match (get m :a)
               (:some v) v
               (:none) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] $ :: 'Map 'Tag 'Dynamic
+            :features $ #{} :js-ffi
+        'to-external-method $ %{} 'CodeEntry
+          :doc "|An external-object method argument is a host position."
+          :code $ quote $ defn to-external-method (m)
+            let
+                c $ unsafe-coerce js/console type-fail-option-nil-host-position.main/HostConsole
+              .log c $ .unwrap-or (get m :a) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] $ :: 'Map 'Tag 'Dynamic
+            :features $ #{} :js-ffi
+        'to-external-postfix $ %{} 'CodeEntry
+          :doc "|The postfix external-object method form is a host position too."
+          :code $ quote $ defn to-external-postfix (m)
+            let
+                c $ unsafe-coerce js/console type-fail-option-nil-host-position.main/HostConsole
+              c .log $ .unwrap-or (get m :a) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] $ :: 'Map 'Tag 'Dynamic
+            :features $ #{} :js-ffi
+        'to-host-field $ %{} 'CodeEntry
+          :doc "|A `set!` on a host property writes to JS."
+          :code $ quote $ defn to-host-field (m)
+            let
+                o $ unsafe-coerce (js-object) type-fail-option-nil-host-position.main/HostObject
+              set! (.-a o) $ .unwrap-or (get m :a) nil
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] $ :: 'Map 'Tag 'Dynamic
