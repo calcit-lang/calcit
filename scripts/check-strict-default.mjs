@@ -260,6 +260,31 @@ try {
   assert.equal((replay.stdout + replay.stderr).match(/guard-recheck-expansion-token/g)?.length, 1,
     "source macros evaluate once even when the body must be rechecked");
 
+  // Calcit values are immutable, so only a set! can make a guard on a local
+  // stale. Effects in a definition that never rewrites the local keep it.
+  for (const [label, body, returnType, rule] of [
+    ["logging effect", `${guard}\n  println |effect\n  , f`, "'Fn", "concrete-return-proof-v1"],
+    ["unknown callback without a writer", `${guard}\n  fake/invoke (fn () (println |effect))\n  , f`, "'Fn",
+      "concrete-return-proof-v1"],
+    ["re-entrant loop without a writer", `when (not (fn? f)) (raise |expected-function)
+  loop ((i 0))
+    if (&< i 2)
+      do
+        f
+        println |effect
+        recur (&+ i 1)
+      , &unit`, "'Unit", "callable-contract-proof-v1"],
+  ]) {
+    apply([
+      ["edit", "def", "app.main/guarded", "--overwrite", "--input-format", "cirru", "--code",
+        `quote $ defn guarded (f)\n  ${body}`],
+      ["edit", "schema", "app.main/guarded", "--input-format", "cirru", "--code",
+        `quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return ${returnType})`],
+    ]);
+    const kept = inFixture("fix", "--rule", rule, "--ns", "app.main", "--def", "guarded", "--format", "json");
+    expectStatus(kept, 0, `${label} keeps predicate evidence for a local no set! rewrites`);
+  }
+
   // A JS implementation can invoke a previously installed captured writer;
   // its discarded Calcit shadow body is not an effect proof for any backend.
   apply([
