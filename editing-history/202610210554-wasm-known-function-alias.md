@@ -23,3 +23,9 @@ Calcit definition :tests 覆盖别名链、内层遮蔽后的恢复、闭包捕�
 ## 审查补充
 
 高阶调用共享具名目标以后，静态目标解析必须同时验证调用点的实际参数数：普通 map 等为一个，fold 和 map-indexed 为两个。校验统一作用于 Fn、Import、Symbol 及已知 local，而不是保留旧的 Fn 专属二参数假定。非 rest local 不匹配时仍走原表间接调用，不生成签名错误的直接 Call；rest 继续复用原打包或缺参 trap。此处直接构造不兼容 backend 元数据的回归留在 Rust，因为完整 strict 应先拒绝这样的 Calcit 程序。合法别名行为继续由 definition :tests 覆盖，并在现有 Component smoke job 明确选择 fixture/tag 回放四后端。
+
+复审补充检查了两种同名遮蔽：内联闭包实参会占用 lambda lookup，但可能仍保留捕获环境中的同名 scalar slot，因此已知具名目标解析必须先尊重 lambda lookup；普通调用和字面量 spread 共用此规则。HOF 里的局部 Symbol 没有已知目标时也不得落入同名全局函数 lookup，而是与 Local 一样保留间接调用。合法闭包实参的普通/spread 行为扩展进原词法测试，Symbol backend 表示的边界扩展进原 resolver 测试；不新增运行器、排除或类型豁免。
+
+同一回归进一步覆盖相反方向：具名函数实参覆盖捕获的同名闭包。安装内联参数时同步清理另一类 lookup 的旧名称，让 Value 与 Closure 两种绑定都真正遮蔽捕获环境，不只在解析处优先某一种。该修复保持已有局部槽位和闭包表示，正常类型/arity 检查不变。
+
+全量 CI 的原具名 do 回归发现，别名转为 Import 调用后，其他模块的普通 do 函数会被误当作 sequencing。将该特殊 lowering 严格限定为 calcit.core/do，其他模块保留正常具名目标；保留原 check-known-assertion 回归，并增加第五项附带测试以便统一四后端回放。

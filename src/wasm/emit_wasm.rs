@@ -5407,6 +5407,7 @@ fn install_inline_closure_bindings(ctx: &mut WasmGenCtx, closure: &InlineClosure
   for (param, (binding, annotation)) in closure.params.iter().zip(bindings) {
     match binding {
       InlineArgument::Value(local) => {
+        ctx.lambda_locals.remove(param);
         ctx.locals.insert(param.clone(), local);
         if let Some(annotation) = annotation {
           ctx.local_types.insert(param.clone(), annotation);
@@ -5415,6 +5416,7 @@ fn install_inline_closure_bindings(ctx: &mut WasmGenCtx, closure: &InlineClosure
         }
       }
       InlineArgument::Closure(value) => {
+        ctx.locals.remove(param);
         ctx.local_types.remove(param);
         ctx.lambda_locals.insert(param.clone(), value);
       }
@@ -5460,6 +5462,12 @@ fn resolve_inline_closure(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<InlineC
 }
 
 fn resolve_known_function_value(ctx: &WasmGenCtx, expr: &Calcit) -> Option<CalcitImport> {
+  // Closure parameters can shadow captured scalar slots with the same name.
+  if matches!(expr, Calcit::Local(local) if ctx.lambda_locals.contains_key(local.sym.as_ref()))
+    || matches!(expr, Calcit::Symbol { sym, .. } if ctx.lambda_locals.contains_key(sym.as_ref()))
+  {
+    return None;
+  }
   match expr {
     Calcit::Local(local) => ctx
       .locals
@@ -6624,7 +6632,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
     },
     Calcit::Import(import) => {
       // `do` is a sequencing form in calcit.core — emit all args, return last
-      if import.def.as_ref() == "do" {
+      if import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS && import.def.as_ref() == "do" {
         return emit_body(ctx, &args_list);
       }
       // High-level set wrappers (union/difference/include) use reduce+lambda which can't be

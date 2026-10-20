@@ -3437,6 +3437,37 @@
                       chosen dec
                     assert= 3 $ chosen 4
                     assert= 5 $ call-captured 4
+                let
+                    apply-chosen $ fn (chosen)
+                      hint-fn $ {}
+                        :args $ [] $ :: 'Fn
+                          {}
+                            :args $ [] 'Number
+                            :return 'Number
+                        :return 'Number
+                      assert= 3 $ chosen 4
+                      assert= 3 $ chosen & $ [] 4
+                      chosen 4
+                  assert= 3 $ apply-chosen $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    dec value
+                let
+                    chosen $ fn (value)
+                      hint-fn $ {}
+                        :args $ [] 'Number
+                        :return 'Number
+                      dec value
+                    apply-chosen $ fn (chosen)
+                      hint-fn $ {}
+                        :args $ [] $ :: 'Fn
+                          {}
+                            :args $ [] 'Number
+                            :return 'Number
+                        :return 'Number
+                      chosen 4
+                  assert= 4 $ apply-chosen sum-tail
               :tags $ #{} :known-function-alias
             %{} 'TestEntry (:name |named-value-keeps-identity-after-escaping-let)
               :code $ quote $ let
@@ -3447,6 +3478,16 @@
                 assert= true $ identical? original copied
                 assert= true $ identical? bump copied
               :tags $ #{} :known-function-alias
+        'do $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn do () 42
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |imported-do-name-remains-an-ordinary-function)
+            :code $ quote $ let
+                callback app.wasm-alias/do
+              assert= 42 $ callback
+            :tags $ #{} :known-function-alias
         'sum-pair $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn sum-pair (left right) (+ left right)
           :examples $ []
