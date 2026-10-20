@@ -2904,6 +2904,46 @@ impl CalcitTypeAnnotation {
     Some(signature)
   }
 
+  pub(crate) fn surrounding_fn_hint_declares(source: &Calcit, field: &str) -> bool {
+    Self::get_surrounding_hint_fn_items(source)
+      .and_then(|items| items.get(1))
+      .and_then(|schema| Self::extract_schema_value_single(schema, field))
+      .is_some()
+  }
+
+  /// A partial body hint cannot erase fields declared by its owning definition.
+  pub(crate) fn overlay_surrounding_fn_hint(
+    source: &Calcit,
+    declared: &CalcitFnTypeAnnotation,
+    hinted: &CalcitFnTypeAnnotation,
+  ) -> CalcitFnTypeAnnotation {
+    let present = |field| Self::surrounding_fn_hint_declares(source, field);
+    let mut merged = hinted.clone();
+    if !present("args") {
+      merged.arg_types = declared.arg_types.clone();
+    }
+    if !present("return") {
+      merged.return_type = declared.return_type.clone();
+    }
+    if !present("generics") {
+      merged.generics = declared.generics.clone();
+    }
+    if !present("where") {
+      merged.where_bounds = declared.where_bounds.clone();
+    }
+    if !present("rest") {
+      merged.rest_type = declared.rest_type.clone();
+    }
+    if !present("kind") {
+      merged.fn_kind = declared.fn_kind;
+    }
+    if !present("args") && !present("rest") {
+      merged.runtime_arity = declared.runtime_arity;
+    }
+    merged.features = Arc::new(merged.features.union(declared.features.as_ref()).cloned().collect());
+    merged
+  }
+
   /// Extract a complete function annotation from the schema map carried by `hint-fn`.
   ///
   /// Both supported forms are accepted:

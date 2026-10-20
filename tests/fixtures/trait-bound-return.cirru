@@ -74,6 +74,56 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'matching-body-contract $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn matching-body-contract (value)
+            hint-fn $ {}
+              :args $ [] 'T
+              :generics $ [] 'T
+              :where $ {} $ 'T 'ToString
+              :return 'String
+            to-string value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'T
+            :generics $ [] 'T
+            :where $ {} $ 'T 'ToString
+          :tests $ [] $ %{} 'TestEntry (:name |single-matching-hint)
+            :code $ quote $ do
+              assert= |1 $ matching-body-contract 1
+              assert= |Ada $ matching-body-contract |Ada
+            :tags $ #{} :body-hint-contract :unit
+        'partial-body-rest $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn partial-body-rest (& values)
+            hint-fn $ {} $ :return (:: 'List 'T)
+            , values
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:rest 'T)
+            :args $ []
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+          :tests $ []
+            %{} 'TestEntry (:name |numbers)
+              :code $ quote $ assert= ([] 1 2) (partial-body-rest 1 2)
+              :tags $ #{} :body-hint-contract :unit
+            %{} 'TestEntry (:name |strings)
+              :code $ quote $ assert= ([] |Ada |Bob) (partial-body-rest |Ada |Bob)
+              :tags $ #{} :body-hint-contract :unit
+        'partial-body-return $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn partial-body-return (value)
+            hint-fn $ {} $ :return 'String
+            to-string value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'T
+            :generics $ [] 'T
+            :where $ {} $ 'T 'ToString
+          :tests $ []
+            %{} 'TestEntry (:name |number)
+              :code $ quote $ assert= |1 (partial-body-return 1)
+              :tags $ #{} :body-hint-contract :unit
+            %{} 'TestEntry (:name |string)
+              :code $ quote $ assert= |Ada (partial-body-return |Ada)
+              :tags $ #{} :body-hint-contract :unit
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []

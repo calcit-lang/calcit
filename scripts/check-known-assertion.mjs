@@ -225,10 +225,15 @@ try {
     "quote $ defn public-return (value)\n  hint-fn $ {} (:args $ [] 'Number) (:return 'String)\n  str value");
   runBinder("edit", "schema", "app.main/public-return", "--input-format", "cirru", "--code",
     "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)");
+  const publicReturnSource = await readFile(binderSnapshot);
   const publicReturn = spawnSync(binary, [binderSnapshot, "--init-fn", "app.main/public-return", "--reload-fn", "app.main/public-return", "--check-only"], options);
   if (publicReturn.error) throw publicReturn.error;
   assert.equal(publicReturn.status, 1);
-  assert.match(`${publicReturn.stdout}\n${publicReturn.stderr}`, /W_FN_RETURN_TYPE_MISMATCH|E_FN_RETURN_UNPROVEN/);
+  // Contradictory declarations now reject before checking the return body.
+  assert.match(`${publicReturn.stdout}\n${publicReturn.stderr}`, /E_SCHEMA_DEF_MISMATCH/);
+  assert.match(`${publicReturn.stdout}\n${publicReturn.stderr}`, /body hint cannot prove the declared callable contract/);
+  assert.match(`${publicReturn.stdout}\n${publicReturn.stderr}`, /app\.main\/public-return @3(?:\D|$)/);
+  assert.deepEqual(await readFile(binderSnapshot), publicReturnSource);
 
   // #2077: the shared replay must keep named-entry target boundaries and report
   // a rejected non-first namespace as a compiler error, not a missing export.
@@ -1665,7 +1670,7 @@ try {
     ["contradictory-handler-hint", "'Bool", "try 7 $ fn (message) (hint-fn $ {} (:args ([] 'String)) (:return 'Number)) |wrong", true],
     ["not-callable", "'Bool", "try 7 1", true],
     ["too-few-handler-parameters", "'Bool", "try 7 $ fn () 0", false],
-    ["hint-cannot-invent-handler-parameters", "'Bool", "try 7 $ fn () (hint-fn $ {} (:args ([] 'String)) (:return 'Number)) 0", false],
+    ["hint-cannot-invent-handler-parameters", "'Bool", "try 7 $ fn () (hint-fn $ {} (:args ([] 'String)) (:return 'Number)) 0", true],
     ["fixed-context-cannot-prove-rest-inputs", "'Bool", "try 7 $ fn (& messages) $ .len $ .trim messages", false],
     ["wrong-rest-input", "'Bool", "try 7 $ fn (& messages) (hint-fn $ {} (:args ([])) (:rest 'Number) (:return 'Number)) (.len messages)", true],
     ["variadic-fixed-option-is-not-omittable", "'Bool", "try 7 $ fn (message extra & tail) (hint-fn $ {} (:args ([] 'String (:: 'Option 'Number))) (:rest 'String) (:return 'Number)) 0", false],
@@ -1680,12 +1685,22 @@ try {
     run("edit", "schema", target, "--input-format", "cirru", "--code",
       `quote $ :: 'Fn $ {} (:args ([] ${argumentType})) (:return 'Number)`);
     const original = await readFile(snapshot);
-    const diagnostic = /E_FN_RETURN_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|E_DYNAMIC_METHOD_DISPATCH|W_FN_RETURN_TYPE_MISMATCH|W_LOCAL_FN_ARG_TYPE_MISMATCH|trying to call a non-function value|js-ffi/;
+    const sourceShapeConflict = label === "hint-cannot-invent-handler-parameters";
+    const diagnostic = sourceShapeConflict
+      ? /E_SCHEMA_DEF_MISMATCH/
+      : /E_FN_RETURN_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|E_DYNAMIC_METHOD_DISPATCH|W_FN_RETURN_TYPE_MISMATCH|W_LOCAL_FN_ARG_TYPE_MISMATCH|trying to call a non-function value|js-ffi/;
+    const assertSourceShape = details => {
+      if (!sourceShapeConflict) return;
+      assert.match(details, /E_SCHEMA_REQUIRED_ARGS/);
+      assert.match(details, /schema has 1 required arg\(s\) but code has 0/);
+      assert.match(details, /at test-struct\.main\/try-rejected @/);
+    };
     const audit = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "test-struct.main",
       "--def", "try-rejected", "--format", "edn"], options);
     if (audit.error) throw audit.error;
     assert.equal(audit.status, 1, `${label}\n${audit.stdout}\n${audit.stderr}`);
     assert.match(`${audit.stdout}\n${audit.stderr}`, diagnostic);
+    assertSourceShape(`${audit.stdout}\n${audit.stderr}`);
     assert.deepEqual(await readFile(snapshot), original);
     if (definite) {
       for (const mode of [["--check-only"], ["js"]]) {
@@ -1695,6 +1710,7 @@ try {
         if (rejected.error) throw rejected.error;
         assert.equal(rejected.status, 1, `${label}\n${rejected.stdout}\n${rejected.stderr}`);
         assert.match(`${rejected.stdout}\n${rejected.stderr}`, diagnostic);
+        assertSourceShape(`${rejected.stdout}\n${rejected.stderr}`);
         assert.deepEqual(await readFile(snapshot), original);
         if (mode[0] === "js") await assertRejectedArtifacts(output, label, diagnostic, true);
       }
@@ -3514,8 +3530,60 @@ try {
     }
   }
 
+  // A body hint describes the owning function, not a conversion of the
+  // public contract or an independent source of caller trait capabilities.
+  for (const [name, body, schema, call] of [
+    ["conflicting-input", "quote $ defn rejected-body-hint (value) (hint-fn $ {} (:args ([] 'String)) (:return 'String)) (.slice value 0 1)",
+      "quote $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'String)", ["rejected-body-hint", "1"]],
+    ["introduced-bound", "quote $ defn rejected-body-hint (value) (hint-fn $ {} (:args ([] 'T)) (:generics ([] 'T)) (:where ({} ('T 'ToString))) (:return 'String)) (to-string value)",
+      "quote $ :: 'Fn $ {} (:args ([] 'T)) (:generics ([] 'T)) (:return 'String)", ["rejected-body-hint", ["Unrendered", ":n", "1"]]],
+    ["mismatched-rest-shape", "quote $ defn rejected-body-hint (value tail) (hint-fn $ {} (:args ([] 'Number)) (:rest 'String) (:return 'String)) (&list:nth tail 0)",
+      "quote $ :: 'Fn $ {} (:args ([] 'Number 'String)) (:return 'String)", ["rejected-body-hint", "1", "|Ada"]],
+    ["duplicate-conflicting", "quote $ defn rejected-body-hint (value) (hint-fn $ {} (:args ([] 'Number)) (:return 'String)) (hint-fn $ {} (:args ([] 'String)) (:return 'String)) (to-string value)",
+      "quote $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'String)", ["rejected-body-hint", "1"]],
+    ["duplicate-matching", "quote $ defn rejected-body-hint (value) (hint-fn $ {} (:args ([] 'Number)) (:return 'String)) (hint-fn $ {} (:args ([] 'Number)) (:return 'String)) (to-string value)",
+      "quote $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'String)", ["rejected-body-hint", "1"]],
+    ["duplicate-local", "quote $ defn rejected-body-hint (value) (hint-fn $ {} (:args ([] 'Number)) (:return 'String)) (let ((render (fn (item) (hint-fn $ {} (:args ([] 'Number)) (:return 'String)) (hint-fn $ {} (:args ([] 'String)) (:return 'String)) (to-string item)))) (render value))",
+      "quote $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'String)", ["rejected-body-hint", "1"]],
+  ]) {
+    await copyFile("tests/fixtures/trait-bound-return.cirru", snapshot);
+    run("edit", "def", "fix-command.main/Unrendered", "--input-format", "cirru", "--code",
+      "quote $ defstruct Unrendered (:n 'Number)");
+    run("edit", "def", "fix-command.main/rejected-body-hint", "--input-format", "cirru", "--code", body);
+    run("edit", "schema", "fix-command.main/rejected-body-hint", "--input-format", "cirru", "--code", schema);
+    run("edit", "def", "fix-command.main/main!", "--overwrite", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "main!", [], call]));
+    run("edit", "schema", "fix-command.main/main!", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args ([])) (:return 'String)");
+    const original = await readFile(snapshot);
+    for (const [mode, args] of [
+      ["ordinary", ["--check-only", "--all-defs", "--format", "edn"]],
+      ["independent", ["fix", "--rule", "concrete-return-proof-v1", "--ns", "fix-command.main", "--def", "rejected-body-hint", "--format", "edn"]],
+      ["strict", ["fix", "--workflow", "strict", "--verify", "--format", "edn"]],
+      ["native", []],
+      ["js", ["--emit-path", join(project, `body-hint-${name}`), "js"]],
+    ]) {
+      const result = spawnSync(binary, [snapshot, ...args], options);
+      if (result.error) throw result.error;
+      assert.equal(result.status, 1, `${name}/${mode}\n${result.stdout}\n${result.stderr}`);
+      assert.match(`${result.stdout}\n${result.stderr}`, /E_SCHEMA_DEF_MISMATCH/);
+      if (name.startsWith("duplicate-")) {
+        assert.match(`${result.stdout}\n${result.stderr}`, /only one body hint-fn Map/);
+        if (name !== "duplicate-local" && (mode === "native" || mode === "js")) {
+          assert.match(`${result.stdout}\n${result.stderr}`, /fix-command\.main\/rejected-body-hint @4(?:\D|$)/);
+        }
+      } else {
+        assert.match(`${result.stdout}\n${result.stderr}`, /body hint cannot prove the declared callable contract|body hint schema mismatch/);
+      }
+      assert.deepEqual(await readFile(snapshot), original);
+    }
+  }
+
   await copyFile("tests/fixtures/trait-bound-return.cirru", snapshot);
   const traitOriginal = await readFile(snapshot);
+  execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", snapshot,
+    "--backend", "native,js", "--tag", "body-hint-contract"],
+  { ...options, env: { ...process.env, CALCIT_BIN: binary } });
   run("test", "--require-match");
   run("fix", "--workflow", "strict", "--verify", "--format", "edn");
   assert.deepEqual(await readFile(snapshot), traitOriginal);

@@ -230,6 +230,12 @@ Snapshot 中以 `fn` 为根节点的定义可以直接使用自身 CodeEntry 的
 将这种旧写法迁移为直接传递 `fn`，并把正确 Map 注解写进它的函数体；不要加 unsafe 或假设返回声明能证明一个 Dynamic 可调用。
 合法元数据表达式继续返回 Nil，这不是业务缺失值，不需要迁移为 Option。
 
+CodeEntry 已有 `Fn` 合同时，函数体 Map 中省略的 `:args`、`:return`、`:generics`、`:where`、`:rest` 和 `:kind` 保留定义原值；例如只补 `:return` 不会清掉已有参数类型和 trait 约束。
+两处同时写出的合同不能互相矛盾：函数体不能把公开 Number 输入当作 String，也不能自行增加调用方没有承诺的 trait 能力。冲突以 `E_SCHEMA_DEF_MISMATCH` 定位到实际 hint 调用；宏生成的声明使用项目调用来源。
+显式 `:args` / `:rest` 还须符合真实参数列表；固定参数不能靠注解变成收集剩余实参的 List。现有 async 和 feature 声明继续保留。
+每个函数只写一份直接的 body Map 注解；重复的 `hint-fn $ {} ...` 会报 `E_SCHEMA_DEF_MISMATCH`，即使内容相同也不再只取第一份。将 `:args`、`:return`、`:where`、`:async` 等字段合并到同一份 Map；不同嵌套函数各自的注解和已有局部函数的两参数形式不合并。
+已有局部函数的两参数兼容形式暂时保留；需要给新函数增加类型信息时，优先在其实际函数体声明 Map，不用外部注解补造未知函数的签名。
+
 ## 0.31.0 删除已弃用的兼容方法
 
 0.31.0 删除以下兼容方法，同时删除对应的 `calcit fix` 规则（`core-list-add-v1`、`core-collection-len-v1`、`core-effect-method-v1`）和建议级诊断 `A_DEPRECATED_METHOD`。已知活跃核心库的默认分支在定义代码、附带测试和示例中都没有调用这些写法。

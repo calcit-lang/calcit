@@ -12277,7 +12277,7 @@ pub fn preprocess_defn(
         location.to_owned().unwrap_or_default(),
       );
       let lexical_generics = body_types.generic_names();
-      let body_fn_hint = args.iter().skip(2).find_map(|form| {
+      let hint_signature = |form: &Calcit| {
         let annotation = CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form_in_scope(form, &lexical_generics)?;
         match annotation.as_ref() {
           CalcitTypeAnnotation::Fn(signature) => Some((
@@ -12290,8 +12290,40 @@ pub fn preprocess_defn(
           )),
           _ => None,
         }
-      });
+      };
+      let generated_hint = |form: &Calcit| matches!(form, Calcit::List(items) if matches!(items.call_kind(), CalcitCallKind::GeneratedFnHint | CalcitCallKind::TypedFnHint(_, true)));
+      // Lowering appends a proven signature for replay; it is not a second
+      // source declaration. Prefer the original hint, retaining that derived
+      // signature only when the function has no source-written declaration.
+      let mut body_fn_hints = args.iter().skip(2).filter(|form| !generated_hint(form)).filter_map(hint_signature);
+      // Keep a precise source-written hint coordinate when it belongs to the
+      // caller. A hint originating in a macro definition belongs at its call.
+      let hint_location = |source: Option<&Calcit>| {
+        let original = source
+          .and_then(|source| match source {
+            Calcit::List(items) => derive_list_call_expr_location(items),
+            _ => source.get_location(),
+          })
+          .unwrap_or_else(|| definition_location.clone());
+        Some(
+          find_preferred_macro_location(ctx.call_stack)
+            .filter(|caller| caller.def.as_ref() != GENERATED_DEF && (caller.ns != original.ns || caller.def != original.def))
+            .unwrap_or(original),
+        )
+      };
+      let body_fn_hint = body_fn_hints.next();
+      if let Some((source, _)) = body_fn_hints.next() {
+        return Err(CalcitErr::use_msg_stack_location_with_code(
+          CalcitErrKind::Type,
+          "a function may declare only one body hint-fn Map; combine its fields into one declaration",
+          "E_SCHEMA_DEF_MISMATCH",
+          ctx.call_stack,
+          hint_location(Some(&source)),
+        ));
+      }
+      let body_fn_hint = body_fn_hint.or_else(|| args.iter().skip(2).filter(|form| generated_hint(form)).find_map(hint_signature));
       let body_fn_hint_source = body_fn_hint.as_ref().map(|(source, _)| source.clone());
+      let body_fn_hint_location = hint_location(body_fn_hint_source.as_ref());
       let body_fn_hint = body_fn_hint.map(|(_, signature)| signature);
       // A zero-input helper has no caller-dependent parameter constraints.
       // Infer only absent contracts; an explicit Dynamic remains intentional.
@@ -12433,10 +12465,38 @@ pub fn preprocess_defn(
         && let CalcitTypeAnnotation::Fn(declared) = def_schema.as_ref()
         && let Some(effective) = effective_fn_schema.as_ref()
       {
-        // An embedded hint can add invocation properties such as async, but
-        // it must not erase capabilities declared on the source definition.
-        let mut merged = effective.as_ref().clone();
-        merged.features = Arc::new(merged.features.union(declared.features.as_ref()).cloned().collect());
+        // Both annotations describe the same function. Missing body fields
+        // inherit declarations; written assumptions must satisfy that public
+        // callable contract before they authorize checking the body.
+        let merged = match body_fn_hint_source.as_ref() {
+          Some(source) => CalcitTypeAnnotation::overlay_surrounding_fn_hint(source, declared, effective),
+          None => effective.as_ref().clone(),
+        };
+        if body_fn_hint_source.is_some() {
+          let mut declared_scope = body_types.clone();
+          declared_scope.bind_function_generics(declared, ctx.file_ns);
+          // Async is an existing source invocation property, not a new body
+          // assumption about which argument values a public caller supplies.
+          let expected = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(if merged.is_async_invocation() {
+            declared.with_async_invocation()
+          } else {
+            declared.as_ref().clone()
+          })));
+          let actual = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(merged.clone())));
+          if !declared_scope
+            .call_type_proof(&[], std::slice::from_ref(&expected), std::slice::from_ref(&actual))
+            .prove(&actual, &expected)
+            .is_proven()
+          {
+            return Err(CalcitErr::use_msg_stack_location_with_code(
+              CalcitErrKind::Type,
+              format!("function body hint cannot prove the declared callable contract: body {actual}, declared {expected}"),
+              "E_SCHEMA_DEF_MISMATCH",
+              ctx.call_stack,
+              body_fn_hint_location.clone(),
+            ));
+          }
+        }
         effective_fn_schema = Some(Arc::new(merged));
       }
       if args.iter().skip(2).any(CalcitTypeAnnotation::hint_form_marks_async)
@@ -12450,6 +12510,32 @@ pub fn preprocess_defn(
         }
       }
       if let Some(fn_annot) = &effective_fn_schema {
+        if body_fn_hint_source.as_ref().is_some_and(|source| {
+          CalcitTypeAnnotation::surrounding_fn_hint_declares(source, "args")
+            || CalcitTypeAnnotation::surrounding_fn_hint_declares(source, "rest")
+        }) {
+          // Callable subtyping alone cannot turn a fixed source parameter
+          // into the collected List represented by a rest binding.
+          let issues = validate_def_schema_during_preprocess(
+            head,
+            ctx.file_ns,
+            def_name.as_ref(),
+            ys,
+            &CalcitTypeAnnotation::Fn(fn_annot.clone()),
+          );
+          if !issues.is_empty() {
+            return Err(CalcitErr::use_msg_stack_location_with_code(
+              CalcitErrKind::Type,
+              format!(
+                "body hint schema mismatch while preprocessing definition:\n  - {}",
+                issues.join("\n  - ")
+              ),
+              "E_SCHEMA_DEF_MISMATCH",
+              ctx.call_stack,
+              body_fn_hint_location.clone(),
+            ));
+          }
+        }
         body_types.bind_function_generics(fn_annot, ctx.file_ns);
         let parameter_types = fn_annot
           .arg_types
