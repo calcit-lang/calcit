@@ -144,10 +144,13 @@ Struct 或函数时，`if`、`when`、`cond`、`and`、`or` 会报告 `W_CONSTAN
 
 若这个值原本可能缺失，说明 schema 写窄了：改为 `Option` 并用 `.unwrap-or` 或 `match` 处理。
 
-## 0.32.0 `get-in` 返回 Result
+<a id="0320-get-in-返回-result"></a>
+<a id="get-in-result"></a>
+
+## `get-in` 返回 Result（0.31.0-alpha.1）
 
 `get-in` 此前返回 `Option<Dynamic>`，但中间值不是集合时（例如路径 `[] :a :b` 遇到 `:a` 的值是 `1`）会抛异常，
-签名无法说明这一点。0.32.0 起它返回 `Result<T, PathError>`，三种结果都在类型中：
+签名无法说明这一点。main 的 `0.31.0-alpha.1` 配对预发布已提供 `Result<T, PathError>`；`0.30.1` 维护线仍保留 Option 合同。三种结果都在类型中：
 
 | 情况 | 返回值 |
 | --- | --- |
@@ -303,7 +306,7 @@ CodeEntry 已有 `Fn` 合同时，函数体 Map 中省略的 `:args`、`:return`
 | `merge-dynamic` | `merge` |
 | `concat-dynamic` | `concat` |
 | `turn-str` | `to-string` |
-| `some-in?` | `.ok? $ get-in x path`（0.32.0 起 `get-in` 返回 Result）；`contains-in?` 判断路径存在，两者对 nil 叶子的结果不同 |
+| `some-in?` | `.ok? $ get-in x path`（main 的 0.31.0-alpha.1 已提供 Result 合同）；`contains-in?` 判断路径存在，两者对 nil 叶子的结果不同 |
 | `range-bothway` | 按原顺序各绑定实参一次到 `x/y`：省略 `y` 时用 `range (inc (negate x)) x`，Number `y` 时用 `range (inc (- (+ x x) y)) y`；末端不包含 |
 
 `range-bothway` 的人工迁移不能复制带副作用的实参表达式。历史运行时的 nil 分支与省略相同，但当前严格 Number schema 拒绝显式 nil 实参。
@@ -324,7 +327,7 @@ CodeEntry 已有 `Fn` 合同时，函数体 Map 中省略的 `:args`、`:return`
 ## 0.30.1 底层缺失值原语直接返回 Option
 
 本项从原计划的 0.31.0 提前纳入 0.30.1，该版本从 `release/0.30.1` 维护分支发布，保留本节的 Option 合同。
-main 的后续变化不自动带入，特别是 0.32.0 的公开 `get-in` 返回 Result 变化不属于本版。因此本版有明确的兼容性例外，
+main 的后续变化不自动带入，特别是已由 0.31.0-alpha.1 提供的公开 `get-in` 返回 Result 变化不属于本版。因此本版有明确的兼容性例外，
 不能按完全向后兼容的 patch 升级：直接使用下表原语的代码需要迁移。其余历史类型表示清理、
 弃用 core / CLI 入口删除仍留在后续非 patch 版本，不随本项一起提前。
 
@@ -1836,7 +1839,7 @@ Struct 字段是定义的一部分，因此已知 struct 上的 `:field` 和 `.f
 | `first` / `last` | `Option<T>` | 空集合和空字符串可能没有元素 |
 | `nth` | `Option<T>` | 越界是 `Option :none`；不要把结果直接当元素值 |
 | `get` | `Option<T>` | Map/List 等可缺失查找返回 Option；显式 `Dynamic` 的运行值若为 Struct，则按运行时字段名返回 `Option<Dynamic>`；已知 Struct 改用 `(:field value)` |
-| `get-in` | 0.32.0 起为 `Result<T, PathError>`（开放动态路径常为 `Result<Dynamic, PathError>`） | 缺失是 `PathError :missing`，中间值形状错误是 `PathError :shape`，见 0.32.0 一节 |
+| `get-in` | main 的 0.31.0-alpha.1 起为 `Result<T, PathError>`（开放动态路径常为 `Result<Dynamic, PathError>`） | 缺失是 `PathError :missing`，中间值形状错误是 `PathError :shape`，见[路径查询迁移](#get-in-result) |
 | `get-env` | `Option<String>` | 未设置的环境变量是 `Option :none` |
 
 不要用 `str` 或 `turn-string` 掩盖尚未处理的 `Option<T>` / `Result<T,E>`。默认 strict mode 会以
