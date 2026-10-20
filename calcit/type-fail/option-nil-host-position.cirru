@@ -73,6 +73,8 @@
               to-external-method m
               to-external-postfix m
               to-native-postfix m
+              to-nullish-param $ {} (:a 1)
+              to-plain-param $ {} (:a 1)
               , &unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
@@ -99,6 +101,36 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] $ :: 'Map 'Tag 'Dynamic
             :features $ #{} :js-ffi
+        'take-host-value $ %{} 'CodeEntry
+          :doc "|A Calcit function whose parameter declares a JS nullish contract."
+          :code $ quote $ defn take-host-value (x) &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] $ :: 'JsNullish 'Number
+        'take-plain-value $ %{} 'CodeEntry
+          :doc "|A Calcit function with an ordinary parameter."
+          :code $ quote $ defn take-plain-value (x) &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] 'Dynamic
+        'to-nullish-param $ %{} 'CodeEntry
+          :doc "|An argument for a `JsNullish` parameter accepts nil as declared."
+          :code $ quote $ defn to-nullish-param (m)
+            take-host-value $ match (get m :a)
+              (:some v) v
+              (:none) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] $ :: 'Map 'Tag 'Number
+        'to-plain-param $ %{} 'CodeEntry
+          :doc "|An ordinary parameter is not a host position."
+          :code $ quote $ defn to-plain-param (m)
+            take-plain-value $ match (get m :a)
+              (:some v) v
+              (:none) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ [] $ :: 'Map 'Tag 'Number
         'to-external-method $ %{} 'CodeEntry
           :doc "|An external-object method argument is a host position."
           :code $ quote $ defn to-external-method (m)

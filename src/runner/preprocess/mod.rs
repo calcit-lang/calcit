@@ -676,8 +676,9 @@ thread_local! {
   /// one place where converting an Option to nil is the declared contract.
   static CURRENT_FN_RETURNS_HOST_NULLISH: Cell<bool> = const { Cell::new(false) };
   /// One entry per list form being preprocessed, innermost last: whether that
-  /// form hands its arguments to a JS host, where nil is the expected absence.
-  static HOST_SINK_FRAMES: RefCell<Vec<bool>> = const { RefCell::new(Vec::new()) };
+  /// form hands its arguments to a JS host, where nil is the expected absence,
+  /// and whether the argument being preprocessed fills a `JsNullish` parameter.
+  static HOST_SINK_FRAMES: RefCell<Vec<(bool, bool)>> = const { RefCell::new(Vec::new()) };
 }
 
 struct HostSinkFrame;
@@ -688,7 +689,7 @@ impl HostSinkFrame {
       return None;
     };
     let is_sink = xs.first().is_some_and(is_host_sink_head) || is_postfix_native_call(xs) || is_host_property_write(xs);
-    HOST_SINK_FRAMES.with(|frames| frames.borrow_mut().push(is_sink));
+    HOST_SINK_FRAMES.with(|frames| frames.borrow_mut().push((is_sink, false)));
     Some(Self)
   }
 
@@ -697,7 +698,17 @@ impl HostSinkFrame {
   fn mark_current_sink() {
     HOST_SINK_FRAMES.with(|frames| {
       if let Some(top) = frames.borrow_mut().last_mut() {
-        *top = true;
+        top.0 = true;
+      }
+    });
+  }
+
+  /// Records whether the argument about to be preprocessed fills a parameter
+  /// the callee declares as `JsNullish`, where nil is the declared absence.
+  fn set_current_arg_host_nullish(host_nullish: bool) {
+    HOST_SINK_FRAMES.with(|frames| {
+      if let Some(top) = frames.borrow_mut().last_mut() {
+        top.1 = host_nullish;
       }
     });
   }
@@ -759,12 +770,20 @@ fn is_host_property_write(xs: &CalcitList) -> bool {
   }
 }
 
+/// A parameter declared `JsNullish<T>` takes JavaScript null/undefined as its contract.
+fn is_js_nullish_param(expected: &Arc<CalcitTypeAnnotation>) -> bool {
+  matches!(expected.as_ref(), CalcitTypeAnnotation::Nullable(_, NullableOrigin::JsHost))
+}
+
 /// Whether the form currently being preprocessed is a direct argument of a
 /// host call. The innermost frame is that form itself; its parent consumes it.
 fn current_form_feeds_host() -> bool {
   HOST_SINK_FRAMES.with(|frames| {
     let frames = frames.borrow();
-    frames.len() >= 2 && frames[frames.len() - 2]
+    frames.len() >= 2 && {
+      let (is_sink, arg_host_nullish) = frames[frames.len() - 2];
+      is_sink || arg_host_nullish
+    }
   })
 }
 
@@ -786,8 +805,9 @@ impl Drop for HostNullishReturnScope {
   }
 }
 
-/// A nil passed directly to a JS host call, or returned from a function that
-/// declares a `JsNullish` return, is the host's absence rather than an erasure.
+/// A nil passed directly to a JS host call or a `JsNullish` parameter, or
+/// returned from a function that declares a `JsNullish` return, is the host's
+/// absence rather than an erasure.
 /// A `:js-ffi` feature alone does not exempt the business code around it.
 fn option_to_nil_is_host_boundary() -> bool {
   current_form_feeds_host() || CURRENT_FN_RETURNS_HOST_NULLISH.with(Cell::get)
@@ -4688,6 +4708,18 @@ fn preprocess_list_call(
                     | CalcitProc::NativeListFoldlShortcut
                 )
               );
+            // A parameter declared `JsNullish` accepts nil as its contract,
+            // the same as a direct JS host argument.
+            HostSinkFrame::set_current_arg_host_nullish(
+              !has_spread
+                && callable_contract.as_ref().is_some_and(|signature| {
+                  signature
+                    .arg_types
+                    .get(ys.len() - 1)
+                    .or(signature.rest_type.as_ref())
+                    .is_some_and(is_js_nullish_param)
+                }),
+            );
             let result = if has_callback_contract {
               preprocess_argument_with_context(
                 a,
@@ -4701,6 +4733,7 @@ fn preprocess_list_call(
             } else {
               preprocess_expr(a, scope_defs, scope_types, file_ns, check_warnings, call_stack)
             };
+            HostSinkFrame::set_current_arg_host_nullish(false);
             let form = result?;
             // Specialize callback context using proven preceding inputs.
             // Nested Dynamic preserves known container shape, not concrete members.
@@ -5485,6 +5518,7 @@ fn preprocess_known_function_call(
       EXPECTED_STRUCT_TYPE.with(|cell| cell.borrow_mut().replace(struct_def));
     }
 
+    HostSinkFrame::set_current_arg_host_nullish(!has_spread && expected_type.as_ref().is_some_and(is_js_nullish_param));
     let result = preprocess_argument_with_context(
       a,
       expected_type.as_ref().map(|annotation| {
@@ -5503,6 +5537,7 @@ fn preprocess_known_function_call(
     // Always clear the hints after preprocessing, even on error
     EXPECTED_FN_TYPE.with(|cell| *cell.borrow_mut() = None);
     EXPECTED_STRUCT_TYPE.with(|cell| *cell.borrow_mut() = None);
+    HostSinkFrame::set_current_arg_host_nullish(false);
 
     let form = result?;
 
@@ -8225,7 +8260,7 @@ fn warn_on_option_erased_to_nil(head: &Calcit, args: &CalcitList, scope_types: &
 /// runner still pass so upgrading does not break existing libraries.
 fn report_option_erased_to_nil(shape: &str, file_ns: &str, location: NodeLocation) {
   let message = format!(
-    "[Warn] {shape} turns an Option back into nil in {file_ns}; keep the Option and pass it on, handle both variants with `match`, or choose a concrete default. nil may still be passed directly to a JS host call or returned from a function declared to return `JsNullish`"
+    "[Warn] {shape} turns an Option back into nil in {file_ns}; keep the Option and pass it on, handle both variants with `match`, or choose a concrete default. nil may still be passed directly to a JS host call or a `JsNullish` parameter, or returned from a function declared to return `JsNullish`"
   );
   push_advisory(LocatedWarning::new_with_detail(
     message,
