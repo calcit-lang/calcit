@@ -2764,8 +2764,7 @@ mod tests {
   #[test]
   fn unmarked_lifecycle_methods_are_effects_through_core_impl_tags() {
     let index = TagIndex::load().expect("load core tags");
-    // Legacy `.cancel` / `.cancel-with` lack `!` but share the tagged implementation.
-    for method in ["cancel", "cancel!", "cancel-with", "cancel-with!", "resolve!", "reject!"] {
+    for method in ["cancel!", "cancel-with!", "resolve!", "reject!"] {
       assert_eq!(index.core_methods.get(method), Some(&strings(&["effect"])), "{method}");
     }
     for method in ["write-text!", "read-text", "read-dir", "walk-dir"] {
@@ -2874,7 +2873,7 @@ mod tests {
     assert_eq!(effects["setup!"], vec![]);
     // Unmarked writes are found through core tags.
     assert_eq!(effects["watch-helper"], pair("state/watch", "remove-watch"));
-    assert_eq!(effects["cancel-helper"], pair("effect", ".cancel"));
+    assert_eq!(effects["cancel-helper"], pair("effect", ".cancel!"));
     assert_eq!(effects["write-helper"], pair("io/file", ".write-text!"));
     // Calling a parameter calls a function value supplied by the caller.
     assert_eq!(effects["call-through"], pair(UNKNOWN_EFFECT_KIND, "f"));

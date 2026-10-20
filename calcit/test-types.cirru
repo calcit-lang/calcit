@@ -258,7 +258,7 @@
                   first-item $ .first xs
                   second-item $ .get xs 1
                   rest-items $ .rest xs
-                  list-len $ .count xs
+                  list-len $ .len xs
                 println |first: first-item
                 println |second: second-item
                 println |rest: rest-items
@@ -295,7 +295,7 @@
               assert-type xs 'List
               let
                   first-item $ .first xs
-                  count-val $ .count xs
+                  count-val $ .len xs
                   reversed $ .reverse xs
                 println "|✓ List methods validated at preprocess"
             let
@@ -312,7 +312,7 @@
               let
                   val $ .get m :a
                   keys-list $ .keys m
-                  size $ .count m
+                  size $ .len m
                 println "|✓ Map methods validated at preprocess"
             , "|All valid method calls passed preprocess validation"
           :examples $ []
@@ -381,7 +381,7 @@
               ; :list "类型对应" calcit.core/&core-list-methods "提供的方法"
               let
                   first-elem $ .first typed-list
-                  list-size $ .count typed-list
+                  list-size $ .len typed-list
                   rest-elems $ .rest typed-list
                 println "|Typed list access - first:" first-elem
                 println "|Typed list access - count:" list-size

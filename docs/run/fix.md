@@ -118,7 +118,6 @@ calcit calcit.cirru fix --ns app.main --def render! --format edn
 
 ```bash
 calcit calcit.cirru fix --rule core-function-alias-v1 --include-attached --format edn
-calcit calcit.cirru fix --rule core-collection-len-v1 --include-attached --format edn
 calcit calcit.cirru fix --preset core-api-0.28-v1 --include-attached --format edn
 calcit calcit.cirru fix --preset surface-latest-v2 --include-attached --format edn
 ```
@@ -144,12 +143,12 @@ quoted data 不改写，未知宏中无法证明执行上下文的区域保留 r
 `core-option-method-v1`、`core-result-method-v1` 支持附带 helper 调用：
 接收者和 fallback 的类型证明、方法实现与宏来源要求和普通定义相同。
 局部绑定只收集真实绑定位置，初始化表达式中的类型名不视为遮蔽。
-转换规则 `core-identity-conversion-v1`、`core-list-add-v1` 和 `core-collection-len-v1` 也支持附带区域，
+转换规则 `core-identity-conversion-v1` 也支持附带区域，
 与普通定义共用实参类型、方法实现和源码上下文证明；局部接收者保留实际预处理类型，
-reader 展开的调用不会被误认成其中叶节点的类型。Set `.add` 不被 List 规则改写，
+reader 展开的调用不会被误认成其中叶节点的类型。
 未知宏保留 review，quoted data 原样保留。
-`core-api-0.28-v1 --include-attached` 把该 preset 的 5 条规则组合应用于附带区域（0.29.0 起去掉了随旧名退役的
-10 条别名规则，原 15 条以 0.28.x 的 CLI 为准），
+`core-api-0.28-v1 --include-attached` 把该 preset 的 2 条规则组合应用于附带区域（0.29.0 与 0.31.0 去掉了随旧名退役的
+别名与方法规则，原 15 条以 0.28.x 的 CLI 为准），
 不改变不传 flag 时的扫描范围。同一区域中有需要 review 的表达式时不部分写入。
 `removed-data-api-v1` 与 `surface-latest-v1/v2` 也支持附带区域；旧 API 使用编译器的现有诊断定位，
 `tuple?` 的值/定义含义选择仍需人工 review。组合规则逐步重新证明 source，整个测试或示例区域仍只产生一次原子替换。
@@ -232,19 +231,6 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
 - `core-function-alias-v1` 把编译器已解析到 core 兼容函数 `vals` 的源码引用改为 `distinct-values`。新名转发全部参数，因此只改名字，参数求值次数与结果不变；局部同名 binding、quoted data 与未知 macro 不自动改写，跨 macro 的引用只给 `requires-review`；作为一等值（非调用头）使用的引用也只给 `requires-review`，因为新名是独立函数，函数身份不同。这是独立的显式规则，**不**包含在已发布的 `core-api-0.28-v1`；用 `calcit calcit.cirru fix --rule core-function-alias-v1 --format edn` 预览，核对 revision 后带 `--expect-revision` 应用并重复预览。`optionally`、`join`、`section-by`、`merge-dynamic`、`concat-dynamic` 已在 0.31.0 删除，迁移需在升级 CLI 前用 0.30.x 的同名规则，见[升级指南](upgrade.md#0310-删除已弃用的兼容函数)。
 - `core-ref-constructor-v1` 把 Ref 构造的兼容旧名改为首选名：`atom` → `ref`、`defatom` → `defref`。读取器把 `atom` 与 `ref` 解析为同一个内建实现，因此代码中所有被求值的 `atom` 都直接改写，Ref 身份与求值次数不变；`defatom` 是按名字解析的 core 语法，只在调用头位置、且所在 namespace 没有同名定义或 import、没有同名局部绑定、不在 quasiquote 模板中、外层也没有未知 macro 时自动改写，其余情况给出 `requires-review`。quoted data 与注释跳过。先用 `calcit calcit.cirru fix --rule core-ref-constructor-v1 --include-attached --format edn` 预览，核对 revision 后带 `--expect-revision` 应用，重复预览只应剩下需要 review 的项。本规则包含在 `core-api-0.29-v1`，`core-api-0.28-v1` 与 surface preset 保持原定义。
 - `case-default-to-match-v1` 把已弃用的 `case-default item default (pattern value)...` 改写为 `match item (pattern value)... (_ default)`。只有全部模式都是字面量（tag、字符串、数字、bool）时才自动改写：此时 `case-default` 宏自身就展开为这段 `match`，求值次数、未命中时的默认值与 native/JS/WASM 行为都不变。嵌套的 `case-default` 合并在外层的一次替换中。模式含表达式、变量或 enum tuple（宏会走 `&case` 比较值）、调用位于 quasiquote 模板中、`case-default` 或 `match` 被局部绑定/定义/import 遮蔽、或外层宏可能读取该参数时，给出 `requires-review`，由人工改写为 `match` 或 `cond`。外层是保持参数原样求值的 core macro（如 `let`、`when`、`cond`）时直接通过；外层是其他宏时，只有宏源码对承载该调用的参数只做 `~` / `~@` 拼接（rest 参数另允许 `count` / `empty?`），且拼接位置外层都是函数、语法或同类 core macro 时才通过，例如 Respo 的 `defcomp`；`->` 等线程宏会改写参数位置，总是需要 review。先用 `calcit calcit.cirru fix --rule case-default-to-match-v1 --include-attached --format edn` 预览，核对 revision 后带 `--expect-revision` 应用。本规则暂不加入 preset；已知活跃下游默认分支的 `case-default` 清零后，与 `case-default` 一起在下一个非 patch 版本退场。
-- `core-effect-method-v1` 只迁移已证明的 core nominal 效果方法：`FfiTask .cancel/.cancel-with` → `.cancel!/.cancel-with!`。`FsPath .write-text` 与 `FfiResponse .resolve/.reject` 已在 0.29.0 删除，需在升级 CLI 前用 0.28.x 的同名规则迁移。前缀 `task .cancel` 和紧凑 `task.cancel-with` 写法都可处理；必须同时证明接收者、core trait 来源、旧新方法签名及同一 helper，才能保持参数求值次数、Result/Unit 与宿主生命周期语义。开放接收者与用户自定义同名方法不自动改写，未知 macro 只给 `requires-review`，quoted data 跳过。先用 `calcit calcit.cirru fix --rule core-effect-method-v1 --format edn` 预览，再带相同 selector 和 `--expect-revision` 应用，重复预览应为空。本规则包含在 `core-api-0.28-v1`，旧 surface preset 不变，也不提供新的宿主能力。
-- `core-list-add-v1` 仅把类型和方法契约均已证明的 List `.add` 改成 `.append`。它要求旧、新方法都指向
-  `calcit.core/append`，形参和返回类型一致，且源码只经过已知保持调用的结构；Set/Map `.add` 不属于此规则，
-  开放 List、未知 macro 和无法回溯的接收者只给 `requires-review`。显式运行
-  `calcit calcit.cirru fix --rule core-list-add-v1 --format edn` 预览，再核对 definition、path、来源和 revision；
-  应用后重复预览并运行项目测试。该规则也包含在 `core-api-0.28-v1`；旧 surface preset 不变。
-- `core-collection-len-v1` 仅把 List、Map、Set 上已证明的零参数 `.count` 改成 `.len`。
-  编译器须同时证明具体接收者类型、旧/新方法指向同一个对应的 core `&*:count` 实现、形参与返回类型一致，
-  且源码处于已知保持调用的结构。Struct 字段数、Enum payload 数、用户自定义 `Countable` 不在自动范围；
-  开放类型与未知 macro 只给 `requires-review`，quoted data 不扫描。String `.count` 已在 0.29.0 删除
-  （`E_RETIRED_METHOD`），其迁移需在升级 CLI 前用 0.28.x 的本规则完成；`.len` 同样按 Unicode 标量计数。用 `calcit calcit.cirru fix --rule core-collection-len-v1 --format edn` 预览，
-  核对来源与 revision 后带 `--expect-revision` 应用；重复预览应为空，再运行严格检查与项目测试。
-  该规则也包含在 `core-api-0.28-v1`；旧 surface preset 不变。
 - `rename-definition-v1` 是参数化语义重构规则。它要求 `--ns`、`--def` 与 `--to`，只改写 resolver 已证明指向
   同一项目 definition 的源码引用，并在同一事务中移除旧 `:refer`、重命名声明。裸引用会写成完整 namespace 路径，
   避免新名称被调用点的局部 binding 遮蔽；已有 `:as` 限定名会保留 alias。definition-attached tests 与 examples
@@ -362,15 +348,13 @@ calcit calcit.cirru fix --preset surface-latest-v2 --format edn
 
 ### 0.28 核心 API 命名迁移
 
-`core-api-0.29-v1` 包含 `core-api-0.28-v1` 的全部 5 条规则，并追加 `core-ref-constructor-v1`，共 6 条；从 0.28 升级的项目可以直接选择它，`core-api-0.28-v1` 的含义不变。
+`core-api-0.29-v1` 包含当前 `core-api-0.28-v1` 的全部 2 条规则，并追加 `core-ref-constructor-v1`，共 3 条。它不再迁移 0.31.0 已删除的兼容方法；仍有这些调用的项目必须在升级前，用 0.30.x 的 CLI 依次运行 `core-list-add-v1`、`core-collection-len-v1`、`core-effect-method-v1`，各自预览后携带 revision 应用，见[升级指南](upgrade.md#0310-删除已弃用的兼容方法)。
 
-`core-api-0.28-v1` 从已发布的 `0.28.0-alpha.2` 起提供，组合已证明等价的 5 条叶子改写规则（0.29.0 起去掉了随旧名退役的 10 条别名规则，见 [升级指南](upgrade.md#兼容入口的退场节奏)）。它适合在结构升级后一次迁移核心 API 名称；每个调用仍须满足对应规则的类型、来源和源码位置证明。表中的规则也可用 `--rule` 单独选择，未回填进旧的 `surface-latest-v1/v2`；不要把“旧 preset 不变”理解为需要逐条运行所有规则。
+`core-api-0.28-v1` 当前组合已证明等价的 2 条叶子改写规则。它适合在结构升级后迁移仍受支持的核心 API 名称；每个调用仍须满足对应规则的类型、来源和源码位置证明。表中的规则也可用 `--rule` 单独选择，未回填进旧的 `surface-latest-v1/v2`。已经退场的旧入口与历史迁移 CLI 见[升级指南](upgrade.md#兼容入口的退场节奏)。
 
 | 范围 | 展开的规则 |
 | --- | --- |
 | 整数谓词与标量转换 | `core-integer-predicate-v1`、`core-identity-conversion-v1` |
-| List 追加与集合长度 | `core-list-add-v1`、`core-collection-len-v1` |
-| 效果方法 | `core-effect-method-v1` |
 
 ```bash
 calcit calcit.cirru fix --preset core-api-0.28-v1 --format edn

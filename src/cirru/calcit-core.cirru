@@ -437,7 +437,7 @@
           :tags $ #{} :internal
         '&core-list-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-list-methods
-            &impl::new :&core-list-methods (:: :any? any?) (:: :add append) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains-index? &list:contains?) (:: :includes? &list:includes?) (:: :count &list:count) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :flat-map mapcat) (:: :fold fold) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :intersperse intersperse) (:: :join-string join-string) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
+            &impl::new :&core-list-methods (:: :any? any?) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains-index? &list:contains?) (:: :includes? &list:includes?) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :flat-map mapcat) (:: :fold fold) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :intersperse intersperse) (:: :join-string join-string) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -449,7 +449,7 @@
           :tags $ #{} :internal
         '&core-map-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-map-methods
-            &impl::new :&core-map-methods (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains-key? &map:contains?) (:: :contains-value? &map:includes?) (:: :count &map:count) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :filter-map-kv filter-map-kv) (:: :get get) (:: :get-in get-in) (:: :keys &map:keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :distinct-values distinct-values)
+            &impl::new :&core-map-methods (:: :assoc &map:assoc) (:: :common-keys &map:common-keys) (:: :contains-key? &map:contains?) (:: :contains-value? &map:includes?) (:: :destruct destruct-map) (:: :diff-keys &map:diff-keys) (:: :diff-new &map:diff-new) (:: :diff-triple &map:diff-triple) (:: :dissoc &map:dissoc) (:: :empty &map:empty) (:: :empty? &map:empty?) (:: :filter &map:filter) (:: :filter-kv &map:filter-kv) (:: :filter-map-kv filter-map-kv) (:: :get get) (:: :get-in get-in) (:: :keys &map:keys) (:: :map &map:map) (:: :map-kv map-kv) (:: :map-list &map:map-list) (:: :merge merge) (:: :to-list &map:to-list) (:: :to-map identity) (:: :to-pairs to-pairs) (:: :distinct-values distinct-values)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -492,7 +492,7 @@
           :tags $ #{} :internal
         '&core-set-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-set-methods
-            &impl::new :&core-set-methods (:: :count &set:count) (:: :destruct destruct-set) (:: :difference difference) (:: :empty &set:empty) (:: :empty? &set:empty?) (:: :exclude exclude) (:: :filter &set:filter) (:: :include include) (:: :includes? &set:includes?) (:: :intersection intersection) (:: :map &set:map) (:: :max &set:max) (:: :min &set:min) (:: :to-list &set:to-list) (:: :to-set identity) (:: :union union)
+            &impl::new :&core-set-methods (:: :destruct destruct-set) (:: :difference difference) (:: :empty &set:empty) (:: :empty? &set:empty?) (:: :exclude exclude) (:: :filter &set:filter) (:: :include include) (:: :includes? &set:includes?) (:: :intersection intersection) (:: :map &set:map) (:: :max &set:max) (:: :min &set:min) (:: :to-list &set:to-list) (:: :to-set identity) (:: :union union)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -3701,15 +3701,8 @@
         'FfiTaskOps $ %{} 'CodeEntry
           :doc "|Internal method contract for native async task capabilities."
           :code $ quote $ deftrait FfiTaskOps
-            .cancel $ :: 'Fn $ {}
-              :args $ [] 'FfiTask
-              :return 'Unit
             .cancel! $ :: 'Fn $ {}
               :args $ [] 'FfiTask
-              :return 'Unit
-            .cancel-with $ :: 'Fn $ {}
-              :generics $ [] 'T
-              :args $ [] 'FfiTask 'T
               :return 'Unit
             .cancel-with! $ :: 'Fn $ {}
               :generics $ [] 'T
@@ -3720,7 +3713,7 @@
           :tags $ #{} :internal :trait
         'FfiTaskOpsImpl $ %{} 'CodeEntry
           :doc "|Internal implementation of native async task methods."
-          :code $ quote $ defimpl FfiTaskOpsImpl FfiTaskOps (.cancel ffi-task:cancel) (.cancel! ffi-task:cancel) (.cancel-with ffi-task:cancel-with) (.cancel-with! ffi-task:cancel-with)
+          :code $ quote $ defimpl FfiTaskOpsImpl FfiTaskOps (.cancel! ffi-task:cancel) (.cancel-with! ffi-task:cancel-with)
           :examples $ []
           :schema $ :: 'Impl
           :tags $ #{} :internal :trait-impl
@@ -4284,8 +4277,6 @@
               :code $ quote $ do
                 assert= ([] 1 2 3)
                   ([] 1 2) .append 3
-                assert= ([] 1 2 3)
-                  ([] 1 2) .add 3
                 assert= ([] 1 2 3 4)
                   ([] 1 2) .concat $ [] 3 4
                 assert= 3 $

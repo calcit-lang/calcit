@@ -320,10 +320,8 @@
             ; List concatenation
             assert= ([] 1 2 3 4)
               &list:concat ([] 1 2) ([] 3 4)
-            ; Built-in list .add appends one item to the receiver.
-            ; The receiver type selects this method before the Add trait.
             assert= ([] 1 2)
-              .add ([] 1) 2
+              .append ([] 1) 2
             assert= 3 $ add-with-trait 1 2
             assert= |ab $ add-with-trait |a |b
             let
