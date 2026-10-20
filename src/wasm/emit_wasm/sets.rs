@@ -659,7 +659,7 @@ pub(super) fn emit_set_intersection(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Re
   Ok(())
 }
 
-/// `&set:destruct set` — returns `[elem rest-set]` for the first entry, or nil if empty.
+/// `&set:destruct set` returns SetDestruct with separate member and remainder payloads.
 pub(super) fn emit_set_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(1, args, "&set:destruct expects 1 arg")?;
   let src = emit_ptr_to_i32(ctx, &args[0])?;
@@ -670,8 +670,8 @@ pub(super) fn emit_set_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   ctx.emit(Instruction::LocalGet(count));
   ctx.emit(Instruction::I32Eqz);
   ctx.begin_block_if();
-  // empty set → Option :none
-  emit_option_enum(ctx, None)?;
+  // Empty set -> SetDestruct :none.
+  emit_core_enum(ctx, "none", &[])?;
   ctx.emit(Instruction::LocalSet(result));
   ctx.emit(Instruction::Else);
   {
@@ -724,23 +724,7 @@ pub(super) fn emit_set_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
     ctx.ptr_to_f64(rest_set_ptr);
     ctx.emit(Instruction::LocalSet(rest_set_f64));
 
-    // Allocate 2-element list [elem0, rest-set]
-    let list_ptr = ctx.alloc_local_typed(ValType::I32);
-    emit_bump_alloc(ctx, 24, list_ptr, "list"); // 3 * 8 bytes
-    ctx.emit(Instruction::LocalGet(list_ptr));
-    ctx.emit(f64_const(2.0));
-    ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-    ctx.emit(Instruction::LocalGet(list_ptr));
-    ctx.emit(Instruction::LocalGet(elem0));
-    ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
-    ctx.emit(Instruction::LocalGet(list_ptr));
-    ctx.emit(Instruction::LocalGet(rest_set_f64));
-    ctx.emit(Instruction::F64Store(mem_arg_f64(16)));
-
-    ctx.ptr_to_f64(list_ptr);
-    let payload = ctx.alloc_local();
-    ctx.emit(Instruction::LocalSet(payload));
-    emit_option_enum(ctx, Some(payload))?;
+    emit_core_enum(ctx, "some", &[elem0, rest_set_f64])?;
     ctx.emit(Instruction::LocalSet(result));
   }
   ctx.emit(Instruction::End);

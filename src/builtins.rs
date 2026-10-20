@@ -1,3 +1,4 @@
+mod core_enum_value;
 pub mod effects;
 mod json;
 mod lists;

@@ -53,6 +53,7 @@ import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet } from "./js-set.mjs";
 import { CalcitEnumValue } from "./js-enum-value.mjs";
 import { option_none, option_some } from "./js-option-value.mjs";
+import { core_enum_value } from "./js-core-enum-value.mjs";
 import { to_calcit_data, extract_cirru_edn, extract_cirru_edn_for_typed, CalcitCirruQuote } from "./js-cirru.mjs";
 import { TypedEdnSetView } from "./typed-edn.mjs";
 import { FingerVec } from "@calcit/finger-vec";
@@ -1142,9 +1143,9 @@ export let _$n_map_$o_destruct = (xs: CalcitValue): CalcitValue => {
     if (xs.len() > 0) {
       let pair = xs.pairs()[0];
       let k0 = pair[0];
-      return option_some(new CalcitSliceList([pair[0], pair[1], xs.dissoc(k0)]));
+      return core_enum_value("calcit.core/MapDestruct", "some", [pair[0], pair[1], xs.dissoc(k0)]);
     } else {
-      return option_none();
+      return core_enum_value("calcit.core/MapDestruct", "none", []);
     }
   }
   console.error(xs);
@@ -1154,7 +1155,9 @@ export let _$n_map_$o_destruct = (xs: CalcitValue): CalcitValue => {
 export let _$n_set_$o_destruct = (xs: CalcitValue): CalcitValue => {
   if (xs instanceof CalcitSet) {
     const parts = xs.destruct();
-    return parts == null ? option_none() : option_some(parts);
+    return parts == null
+      ? core_enum_value("calcit.core/SetDestruct", "none", [])
+      : core_enum_value("calcit.core/SetDestruct", "some", [parts.get(0), parts.get(1)]);
   }
 
   console.error(xs);

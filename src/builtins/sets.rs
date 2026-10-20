@@ -1,6 +1,6 @@
+use crate::builtins::core_enum_value;
 use crate::builtins::meta::type_of;
-use crate::builtins::option_value;
-use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitList, CalcitProc, format_proc_examples_hint};
+use crate::calcit::{Calcit, CalcitErr, CalcitErrKind, CalcitProc, format_proc_examples_hint};
 
 pub fn new_set(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   let mut ys = rpds::HashTrieSet::new_sync();
@@ -226,9 +226,9 @@ pub fn destruct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Some(y0) => {
         let mut zs = ys.to_owned();
         zs.remove_mut(y0);
-        option_value::some(Calcit::from(CalcitList::from(&[y0.to_owned(), Calcit::Set(zs)])))
+        core_enum_value::value("SetDestruct", "some", vec![y0.to_owned(), Calcit::Set(zs)])
       }
-      None => option_value::none(),
+      None => core_enum_value::value("SetDestruct", "none", vec![]),
     },
     Some(a) => {
       let msg = format!(

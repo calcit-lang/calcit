@@ -180,7 +180,7 @@ impl CalcitProc {
       | NativeMapDiffTriple | NativeMapKeys | NativeMapVals => Total,
       NativeMerge => Raises("merging into a struct names a field the struct does not have"),
       NativeMapGet => Result("`Option :none` for a missing key"),
-      NativeMapDestruct => Result("`Option :none` for an empty map"),
+      NativeMapDestruct => Result("`MapDestruct :none` for an empty map"),
       NativeMapFoldKv => Raises(CALLBACK),
 
       // sets
@@ -194,7 +194,7 @@ impl CalcitProc {
       | NativeSetCount
       | NativeSetEmpty
       | NativeSetIncludes => Total,
-      NativeSetDestruct => Result("`Option :none` for an empty set"),
+      NativeSetDestruct => Result("`SetDestruct :none` for an empty set"),
 
       // refs
       Ref | AtomDeref => Total,

@@ -24,6 +24,35 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.31.0 内部 Map / Set 解构保留成员类型
+
+`&map:destruct` 直接返回已有的 `MapDestruct<K,V>`，`&set:destruct` 直接返回
+`SetDestruct<T>`。公开 `destruct-map` / `destruct-set` 的签名和行为不变，业务代码优先使用公开入口。
+这项变化仅属于 0.31.0，不改变 0.30.1 的 `Option<List>` 内部合同。
+
+直接调用内部入口的代码应改为匹配独立字段，而不是从 `Option :some parts` 的开放 List 取值：
+
+```cirru
+match (destruct-map $ {} (:count 1))
+  (:some key value remaining-map)
+    assert= (Option :some value) $ get ({} (:count 1)) key
+  (:none) (raise |expected-entry)
+
+match (destruct-set $ #{} false)
+  (:some item remaining-set) (assert= false item)
+  (:none) (raise |expected-member)
+```
+
+Map 的 key、value、剩余 Map 和 Set 的成员、剩余 Set 分别保留输入的泛型关系，不再经过
+`List<Dynamic>`。空集合仍使用对应 enum 的 `:none`；非空集合中的 nil、false、0、空字符串
+或 Option 值仍是存在的成员。输入保持不变，成员选择顺序仍未指定。native、JS、WASM/WASI
+使用相同的字段顺序；各目标的其他限制不变。
+
+用 `query usages`、`query tests` 和 `query examples` 核对直接调用及附带区域，再通过
+`edit transaction --dry-run` 和返回的 scoped revision 修改实际匹配分支，运行完整 strict、原测试
+及真实目标后端。旧结果被存储、作为函数值传递或经过宏生成时，需要审阅完整消费链；不新增
+固定改写规则，也不通过断言或 unsafe 把旧 List 当成名义结果。
+
 ## 0.31.0 定义根节点去掉额外 List 包装
 
 Snapshot 中的具名声明直接作为定义根节点：`["defn","increment",["n"],...]`，不是 `[["defn","increment",["n"],...]]`。后一种形状此前可能通过检查，却在 JS 模块 import 时立即调用函数，产生参数错误；现在会在预处理或 tree 写回时拒绝，并指出定义位置。

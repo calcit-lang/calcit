@@ -1147,7 +1147,10 @@ impl CalcitProc {
         arg_types: vec![map_of(type_var("K"), type_var("V"))],
       }),
       NativeMapDestruct => Some(ProcTypeSignature {
-        return_type: option_tag("list"),
+        return_type: Arc::new(CalcitTypeAnnotation::TypeRef(
+          Arc::from("calcit.core/MapDestruct"),
+          Arc::new(vec![type_var("K"), type_var("V")]),
+        )),
         arg_types: vec![map_of(type_var("K"), type_var("V"))],
       }),
 
@@ -1181,7 +1184,10 @@ impl CalcitProc {
         arg_types: vec![set_of(type_var("T")), type_var("T")],
       }),
       NativeSetDestruct => Some(ProcTypeSignature {
-        return_type: option_tag("list"),
+        return_type: Arc::new(CalcitTypeAnnotation::TypeRef(
+          Arc::from("calcit.core/SetDestruct"),
+          Arc::new(vec![type_var("T")]),
+        )),
         arg_types: vec![set_of(type_var("T"))],
       }),
 
@@ -1549,22 +1555,7 @@ impl CalcitProc {
   /// nominal `calcit.core/Option` at runtime. Backends that only emit reachable
   /// definitions must keep that definition (#1554).
   pub fn returns_core_option(&self) -> bool {
-    use CalcitProc::*;
-    matches!(
-      self,
-      ParseFloat
-        | GetEnv
-        | NativeStrFirst
-        | NativeStrNth
-        | NativeListFirst
-        | NativeListLast
-        | NativeMapGet
-        | NativeMapDestruct
-        | NativeSetDestruct
-        | NativeEnumDefinition
-        | NativeImplOrigin
-        | NativeStructDefinition
-    )
+    self.get_type_signature().is_some_and(|signature| signature.return_type.is_option_type())
   }
 
   /// Return the runtime call arity without encoding parameter omission as a nullable value type.
@@ -1809,8 +1800,6 @@ mod tests {
       CalcitProc::NativeListFirst,
       CalcitProc::NativeListLast,
       CalcitProc::NativeMapGet,
-      CalcitProc::NativeMapDestruct,
-      CalcitProc::NativeSetDestruct,
       CalcitProc::NativeEnumDefinition,
       CalcitProc::NativeImplOrigin,
       CalcitProc::NativeStructDefinition,
@@ -1829,6 +1818,20 @@ mod tests {
       .get_type_signature()
       .expect("struct-definition signature");
     assert_eq!(struct_definition.return_type, option_tag("struct-def"));
+
+    for (proc, name, parameters) in [
+      (
+        CalcitProc::NativeMapDestruct,
+        "calcit.core/MapDestruct",
+        vec![type_var("K"), type_var("V")],
+      ),
+      (CalcitProc::NativeSetDestruct, "calcit.core/SetDestruct", vec![type_var("T")]),
+    ] {
+      assert_eq!(
+        proc.get_type_signature().unwrap().return_type,
+        Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from(name), Arc::new(parameters)))
+      );
+    }
 
     let list_first = CalcitProc::NativeListFirst.get_type_signature().expect("&list:first signature");
     assert!(

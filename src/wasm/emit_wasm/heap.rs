@@ -158,11 +158,16 @@ fn emit_align_heap_ptr(ctx: &mut WasmGenCtx) {
 /// leaking their internal nil / numeric sentinel representation.
 pub(super) fn emit_option_enum(ctx: &mut WasmGenCtx, payload_local: Option<u32>) -> Result<(), String> {
   let tag_name = if payload_local.is_some() { "some" } else { "none" };
+  emit_core_enum(ctx, tag_name, payload_local.as_slice())
+}
+
+/// Core enums share the constructor's tag and ordered payload layout.
+pub(super) fn emit_core_enum(ctx: &mut WasmGenCtx, tag_name: &str, payload_locals: &[u32]) -> Result<(), String> {
   let tag_id = *ctx
     .tag_index
     .get(tag_name)
-    .ok_or_else(|| format!("Option tag missing from WASM tag index: {tag_name}"))? as f64;
-  let payload_count = usize::from(payload_local.is_some());
+    .ok_or_else(|| format!("Core enum tag missing from WASM tag index: {tag_name}"))? as f64;
+  let payload_count = payload_locals.len();
   let ptr_local = ctx.alloc_local_typed(ValType::I32);
   emit_bump_alloc(ctx, ((2 + payload_count) * 8) as i32, ptr_local, "enum");
 
@@ -174,10 +179,10 @@ pub(super) fn emit_option_enum(ctx: &mut WasmGenCtx, payload_local: Option<u32>)
   ctx.emit(f64_const(tag_id));
   ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
 
-  if let Some(payload) = payload_local {
+  for (idx, payload) in payload_locals.iter().enumerate() {
     ctx.emit(Instruction::LocalGet(ptr_local));
-    ctx.emit(Instruction::LocalGet(payload));
-    ctx.emit(Instruction::F64Store(mem_arg_f64(16)));
+    ctx.emit(Instruction::LocalGet(*payload));
+    ctx.emit(Instruction::F64Store(mem_arg_f64(((2 + idx) * 8) as u64)));
   }
 
   ctx.emit(Instruction::LocalGet(ptr_local));

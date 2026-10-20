@@ -1963,33 +1963,48 @@
             :generics $ [] 'K 'V
           :tags $ #{} :builtin :internal
         '&map:destruct $ %{} 'CodeEntry
-          :doc "|internal function for map destructuring\nSyntax: (&map:destruct map)\nParams: map (map)\nReturns: Option<List>\nReturns `Option :some [] key value rest-map` for the first entry, or `Option :none` for an empty map"
+          :doc "|内部 Map 解构。返回 MapDestruct<K,V>：非空时为 MapDestruct :some key value rest-map，空时为 MapDestruct :none。选择顺序未指定，输入不变。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Map 'K 'V
             :generics $ [] 'K 'V
-            :return $ :: 'Option $ :: 'List 'Dynamic
+            :return $ :: 'MapDestruct 'K 'V
           :tags $ #{} :builtin :internal
           :tests $ []
             %{} 'TestEntry (:name |exposes-pairs-and-folds)
               :code $ quote $ let
                   m $ &{} :a 1 :b 2 :c 3 :d 4
-                do
-                  match (&map:destruct m)
-                    (:some parts)
-                      let
-                          remaining-map $ option:unwrap $ last parts
-                        if (map? remaining-map)
-                          assert= 3 $ count remaining-map
-                          raise |expected-map-rest
-                    (:none) (raise |expected-non-empty-map)
-                  assert= 10 $ foldl m 0 $ fn (acc pair)
-                    let[] (k v) pair $ &+ acc v
+                match (&map:destruct m)
+                  (:some key value remaining-map)
+                    do (assert-type key 'Tag) (assert-type value 'Number)
+                      assert-type remaining-map $ :: 'Map 'Tag 'Number
+                      assert= (Option :some value) (&map:get m key)
+                      assert= (&map:dissoc m key) remaining-map
+                      assert= 3 $ count remaining-map
+                      assert= 4 $ count m
+                  (:none) (raise |expected-non-empty-map)
+                assert= 10 $ foldl m 0 $ fn (acc pair)
+                  let[] (k v) pair $ &+ acc v
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |returns-none-for-empty-map)
-              :code $ quote $ assert= (Option :none)
+              :code $ quote $ assert= (MapDestruct :none)
                 &map:destruct $ &{}
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-falsey-and-wrapped-payloads)
+              :code $ quote $ do
+                assert=
+                  MapDestruct :some nil false $ &{}
+                  &map:destruct $ &{} nil false
+                assert=
+                  MapDestruct :some 0 | $ &{}
+                  &map:destruct $ &{} 0 |
+                assert=
+                  MapDestruct :some :key (Option :some false) (&{})
+                  &map:destruct $ &{} :key $ Option :some false
+                assert=
+                  MapDestruct :some :key (Option :none) (&{})
+                  &map:destruct $ &{} :key $ Option :none
               :tags $ #{} :core :unit
         '&map:diff-keys $ %{} 'CodeEntry
           :doc "|internal function for map diff keys\nSyntax: (&map:diff-keys map1 map2)\nParams: map1 (map), map2 (map)\nReturns: set\nReturns keys that differ between maps"
@@ -2559,27 +2574,62 @@
               &set:count $ #{} 1 2 3
             :tags $ #{} :core :unit
         '&set:destruct $ %{} 'CodeEntry
-          :doc "|internal function for set destructuring\nSyntax: (&set:destruct set)\nParams: set (set)\nReturns: Option<List>\nReturns `Option :some [] item rest-set` for one member, or `Option :none` for an empty set"
+          :doc "|内部 Set 解构。返回 SetDestruct<T>：非空时为 SetDestruct :some item rest-set，空时为 SetDestruct :none。选择顺序未指定，输入不变。"
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] $ :: 'Set 'T
             :generics $ [] 'T
-            :return $ :: 'Option $ :: 'List 'Dynamic
+            :return $ :: 'SetDestruct 'T
           :tags $ #{} :builtin :internal
           :tests $ []
             %{} 'TestEntry (:name |returns-member-and-rest)
               :code $ quote $ match
                 &set:destruct $ #{} 7
-                (:some parts)
-                  do
-                    assert= 7 $ &list:nth parts 0
-                    assert= (#{}) (&list:nth parts 1)
+                (:some item remaining-set)
+                  do (assert-type item 'Number)
+                    assert-type remaining-set $ :: 'Set 'Number
+                    assert= 7 item
+                    assert= (#{}) remaining-set
                 (:none) (raise |expected-non-empty-set)
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |returns-none-for-empty-set)
-              :code $ quote $ assert= (Option :none)
+              :code $ quote $ assert= (SetDestruct :none)
                 &set:destruct $ #{}
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-falsey-and-wrapped-members)
+              :code $ quote $ do
+                assert=
+                  SetDestruct :some nil $ #{}
+                  &set:destruct $ #{} nil
+                assert=
+                  SetDestruct :some false $ #{}
+                  &set:destruct $ #{} false
+                assert=
+                  SetDestruct :some 0 $ #{}
+                  &set:destruct $ #{} 0
+                assert=
+                  SetDestruct :some | $ #{}
+                  &set:destruct $ #{} |
+                assert=
+                  SetDestruct :some (Option :some false) (#{})
+                  &set:destruct $ #{} $ Option :some false
+                assert=
+                  SetDestruct :some (Option :none) (#{})
+                  &set:destruct $ #{} $ Option :none
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-input-and-remainder)
+              :code $ quote $ let
+                  items $ #{} 1 2 3
+                match (&set:destruct items)
+                  (:some item remaining-set)
+                    do
+                      assert= true $ &set:includes? items item
+                      assert= false $ &set:includes? remaining-set item
+                      assert= (&exclude items item) remaining-set
+                      assert= 2 $ count remaining-set
+                      assert= 3 $ count items
+                  (:none) (raise |expected-non-empty-set)
               :tags $ #{} :core :unit
         '&set:empty $ %{} 'CodeEntry (:doc "|internal helper for set :empty method entry")
           :code $ quote $ defn &set:empty (_xs) (#{})
@@ -6467,11 +6517,7 @@
               :tags $ #{} :core :unit
         'destruct-map $ %{} 'CodeEntry
           :doc "|Split a map into the nominal MapDestruct<K,V> enum."
-          :code $ quote $ defn destruct-map (xs)
-            match (&map:destruct xs)
-              (:some pair)
-                MapDestruct :some (&list:nth pair 0) (&list:nth pair 1) (&list:nth pair 2)
-              (:none) (MapDestruct :none)
+          :code $ quote $ defn destruct-map (xs) (&map:destruct xs)
           :examples $ []
             quote $ assert= (MapDestruct :none)
               destruct-map $ &{}
@@ -6500,11 +6546,7 @@
             :tags $ #{} :core :unit
         'destruct-set $ %{} 'CodeEntry
           :doc "|Split a set into the nominal SetDestruct<T> enum."
-          :code $ quote $ defn destruct-set (xs)
-            match (&set:destruct xs)
-              (:some pair)
-                SetDestruct :some (&list:nth pair 0) (&list:nth pair 1)
-              (:none) (SetDestruct :none)
+          :code $ quote $ defn destruct-set (xs) (&set:destruct xs)
           :examples $ []
             quote $ assert= (SetDestruct :none)
               destruct-set $ #{}
