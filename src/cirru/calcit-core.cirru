@@ -6529,21 +6529,27 @@
             :args $ [] $ :: 'Map 'K 'V
             :generics $ [] 'K 'V
             :return $ :: 'MapDestruct 'K 'V
-          :tests $ [] $ %{} 'TestEntry (:name |splits-entry-and-remainder)
-            :code $ quote $ do
-              assert= (:: :parts true true 1)
-                match
-                  destruct-map $ &{} :a 1 :b 2
-                  (:none) (:: :empty)
-                  (:some key value tail)
-                    :: :parts (tag? key) (number? value) (count tail)
-              assert= (:: :empty)
-                match
-                  destruct-map $ &{}
-                  (:none) (:: :empty)
-                  (:some key value tail)
-                    :: :parts $ count tail
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |splits-entry-and-remainder)
+              :code $ quote $ do
+                assert= (:: :parts true true 1)
+                  match
+                    destruct-map $ &{} :a 1 :b 2
+                    (:none) (:: :empty)
+                    (:some key value tail)
+                      :: :parts (tag? key) (number? value) (count tail)
+                assert= (:: :empty)
+                  match
+                    destruct-map $ &{}
+                    (:none) (:: :empty)
+                    (:some key value tail)
+                      :: :parts $ count tail
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |forwards-without-naming-result-type)
+              :code $ quote $ let
+                  data $ &{} :key 1
+                assert= (destruct-map data) (&map:destruct data)
+              :tags $ #{} :core :unit
         'destruct-set $ %{} 'CodeEntry
           :doc "|Split a set into the nominal SetDestruct<T> enum."
           :code $ quote $ defn destruct-set (xs) (&set:destruct xs)
@@ -6558,21 +6564,27 @@
             :args $ [] $ :: 'Set 'T
             :generics $ [] 'T
             :return $ :: 'SetDestruct 'T
-          :tests $ [] $ %{} 'TestEntry (:name |splits-item-and-remainder)
-            :code $ quote $ do
-              assert= (:: :parts true 2)
-                match
-                  destruct-set $ #{} 1 2 3
-                  (:none) (:: :empty)
-                  (:some item tail)
-                    :: :parts (number? item) (count tail)
-              assert= (:: :empty)
-                match
-                  destruct-set $ #{}
-                  (:none) (:: :empty)
-                  (:some item tail)
-                    :: :parts (number? item) (count tail)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |splits-item-and-remainder)
+              :code $ quote $ do
+                assert= (:: :parts true 2)
+                  match
+                    destruct-set $ #{} 1 2 3
+                    (:none) (:: :empty)
+                    (:some item tail)
+                      :: :parts (number? item) (count tail)
+                assert= (:: :empty)
+                  match
+                    destruct-set $ #{}
+                    (:none) (:: :empty)
+                    (:some item tail)
+                      :: :parts (number? item) (count tail)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |forwards-without-naming-result-type)
+              :code $ quote $ let
+                  data $ #{} 1
+                assert= (destruct-set data) (&set:destruct data)
+              :tags $ #{} :core :unit
         'destruct-str $ %{} 'CodeEntry
           :doc "|Split a string into the nominal StringDestruct enum."
           :code $ quote $ defn destruct-str (s)

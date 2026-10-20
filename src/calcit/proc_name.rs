@@ -1555,7 +1555,9 @@ impl CalcitProc {
   /// nominal `calcit.core/Option` at runtime. Backends that only emit reachable
   /// definitions must keep that definition (#1554).
   pub fn returns_core_option(&self) -> bool {
-    self.get_type_signature().is_some_and(|signature| signature.return_type.is_option_type())
+    self
+      .get_type_signature()
+      .is_some_and(|signature| signature.return_type.is_option_type())
   }
 
   /// Return the runtime call arity without encoding parameter omission as a nullable value type.
