@@ -36,7 +36,7 @@ use crate::wasm::host::calcit::data_shape::{DataShapeGraph, DataShapeNode};
 use crate::wasm::host::calcit::type_annotation::TypeBindings;
 use crate::wasm::host::calcit::{
   Calcit, CalcitArgLabel, CalcitEnumDef, CalcitFnArgs, CalcitFnTypeAnnotation, CalcitImport, CalcitLocal, CalcitNumericRefinement,
-  CalcitProc, CalcitStructDef, CalcitSyntax, CalcitTypeAnnotation, MethodKind, NullableOrigin,
+  CalcitProc, CalcitStructDef, CalcitSyntax, CalcitTypeAnnotation, ImportInfo, MethodKind, NullableOrigin,
 };
 use crate::wasm::host::program;
 use crate::wasm::host::runner::preprocess::{
@@ -4997,6 +4997,9 @@ struct WasmGenCtx {
   /// Call-site-specialized source types for locals. Values keep the existing
   /// f64 ABI; this map only guides lowering that needs nominal type evidence.
   local_types: HashMap<String, Arc<CalcitTypeAnnotation>>,
+  /// Immutable let values with exact definition targets. Fresh WASM local
+  /// indices preserve lexical identity across shadowing and captured scopes.
+  local_function_values: HashMap<u32, CalcitImport>,
   /// Local declarations to add (beyond parameters)
   extra_locals: Vec<ValType>,
   /// Next local index (starts after parameters)
@@ -5069,6 +5072,7 @@ impl WasmGenCtx {
       source_ns: crate::wasm::host::calcit::CORE_NS.to_owned(),
       locals: HashMap::new(),
       local_types: HashMap::new(),
+      local_function_values: HashMap::new(),
       extra_locals: Vec::new(),
       next_local: num_params,
       uses_recur: false,
@@ -5403,6 +5407,7 @@ fn install_inline_closure_bindings(ctx: &mut WasmGenCtx, closure: &InlineClosure
   for (param, (binding, annotation)) in closure.params.iter().zip(bindings) {
     match binding {
       InlineArgument::Value(local) => {
+        ctx.lambda_locals.remove(param);
         ctx.locals.insert(param.clone(), local);
         if let Some(annotation) = annotation {
           ctx.local_types.insert(param.clone(), annotation);
@@ -5411,6 +5416,7 @@ fn install_inline_closure_bindings(ctx: &mut WasmGenCtx, closure: &InlineClosure
         }
       }
       InlineArgument::Closure(value) => {
+        ctx.locals.remove(param);
         ctx.local_types.remove(param);
         ctx.lambda_locals.insert(param.clone(), value);
       }
@@ -5452,6 +5458,59 @@ fn resolve_inline_closure(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<InlineC
       }))
     }
     _ => capture_inline_closure(ctx, expr),
+  }
+}
+
+fn resolve_known_function_value(ctx: &WasmGenCtx, expr: &Calcit) -> Option<CalcitImport> {
+  // Closure parameters can shadow captured scalar slots with the same name.
+  if matches!(expr, Calcit::Local(local) if ctx.lambda_locals.contains_key(local.sym.as_ref()))
+    || matches!(expr, Calcit::Symbol { sym, .. } if ctx.lambda_locals.contains_key(sym.as_ref()))
+  {
+    return None;
+  }
+  match expr {
+    Calcit::Local(local) => ctx
+      .locals
+      .get(local.sym.as_ref())
+      .and_then(|index| ctx.local_function_values.get(index))
+      .cloned(),
+    Calcit::Symbol { sym, .. } if ctx.locals.contains_key(sym.as_ref()) => ctx
+      .locals
+      .get(sym.as_ref())
+      .and_then(|index| ctx.local_function_values.get(index))
+      .cloned(),
+    Calcit::Symbol { sym, info, .. } => {
+      let qualified = format!("{}/{}", info.at_ns, sym);
+      ctx.fn_index.contains_key(&qualified).then(|| CalcitImport {
+        ns: info.at_ns.clone(),
+        def: sym.clone(),
+        info: Arc::new(ImportInfo::SameFile {
+          at_def: info.at_def.clone(),
+        }),
+        def_id: None,
+      })
+    }
+    Calcit::Import(import) => ctx
+      .fn_index
+      .contains_key(&format!("{}/{}", import.ns, import.def))
+      .then(|| import.clone()),
+    Calcit::Fn { info, .. } => info
+      .def_ref
+      .as_ref()
+      .filter(|reference| {
+        let qualified = format!("{}/{}", reference.def_ns, reference.def_name);
+        let (arity, rest) = compute_fn_arity(info.args.as_ref());
+        ctx.fn_index.contains_key(&qualified)
+          && ctx.fn_arity.get(&qualified).copied() == Some(arity)
+          && ctx.fn_has_rest.get(&qualified).copied() == rest
+      })
+      .map(|reference| CalcitImport {
+        ns: reference.def_ns.clone(),
+        def: reference.def_name.clone(),
+        info: Arc::new(ImportInfo::SameFile { at_def: info.name.clone() }),
+        def_id: None,
+      }),
+    _ => None,
   }
 }
 
@@ -5499,9 +5558,14 @@ fn emit_inline_closure_call(ctx: &mut WasmGenCtx, closure: &InlineClosure, args:
       bound.push((InlineArgument::Closure(arg_closure), None));
     } else {
       let annotation = infer_wasm_static_type(ctx, arg);
+      let function_value = resolve_known_function_value(ctx, arg);
       emit_expr(ctx, arg)?;
       let idx = ctx.alloc_local();
       ctx.emit(Instruction::LocalSet(idx));
+      // This fresh argument slot belongs to a non-recursive inline invocation.
+      if let Some(definition) = function_value {
+        ctx.local_function_values.insert(idx, definition);
+      }
       bound.push((InlineArgument::Value(idx), annotation));
     }
   }
@@ -6491,6 +6555,14 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
   let head = &xs[0];
   let args_list: Vec<Calcit> = xs.drop_left().to_vec();
 
+  if (matches!(head, Calcit::Local(_)) || matches!(head, Calcit::Symbol { sym, .. } if ctx.locals.contains_key(sym.as_ref())))
+    && let Some(definition) = resolve_known_function_value(ctx, head)
+  {
+    let mut call = vec![Calcit::Import(definition)];
+    call.extend(args_list);
+    return emit_call_expr(ctx, &crate::wasm::host::calcit::CalcitList::from(&call[..]));
+  }
+
   match head {
     Calcit::Syntax(syn, _) => match syn {
       CalcitSyntax::CallSpread => emit_call_spread(ctx, &args_list),
@@ -6560,7 +6632,7 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
     },
     Calcit::Import(import) => {
       // `do` is a sequencing form in calcit.core — emit all args, return last
-      if import.def.as_ref() == "do" {
+      if import.ns.as_ref() == crate::wasm::host::calcit::CORE_NS && import.def.as_ref() == "do" {
         return emit_body(ctx, &args_list);
       }
       // High-level set wrappers (union/difference/include) use reduce+lambda which can't be
@@ -6858,6 +6930,13 @@ fn emit_call_spread(ctx: &mut WasmGenCtx, args_list: &[Calcit]) -> Result<(), St
 
   let head = &args_list[0];
   let call_args = &args_list[1..];
+  if (matches!(head, Calcit::Local(_)) || matches!(head, Calcit::Symbol { sym, .. } if ctx.locals.contains_key(sym.as_ref())))
+    && let Some(definition) = resolve_known_function_value(ctx, head)
+  {
+    let mut call = vec![Calcit::Import(definition)];
+    call.extend_from_slice(call_args);
+    return emit_call_spread(ctx, &call);
+  }
   if call_args.iter().any(|arg| resolve_inline_closure(ctx, arg).is_some()) {
     return Err("E_WASM_CLOSURE_SPECIALIZATION: spread calls cannot receive inline closures".into());
   }
@@ -9392,6 +9471,7 @@ fn emit_scoped_let(
   let old_closure = ctx.lambda_locals.get(name).cloned();
   let result = (|| {
     let binding_type = infer_wasm_static_type(ctx, value);
+    let function_value = resolve_known_function_value(ctx, value);
     // Resolve/evaluate the RHS against the outer scope before binding its name.
     if let Some(closure) = resolve_inline_closure(ctx, value) {
       ctx.lambda_locals.insert(name.to_owned(), closure);
@@ -9401,6 +9481,9 @@ fn emit_scoped_let(
       ctx.lambda_locals.remove(name);
       let index = ctx.declare_local(name);
       ctx.emit(Instruction::LocalSet(index));
+      if let Some(definition) = function_value {
+        ctx.local_function_values.insert(index, definition);
+      }
     }
     if let Some(annotation) = binding_type {
       ctx.local_types.insert(name.to_owned(), annotation);

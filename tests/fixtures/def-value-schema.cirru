@@ -3408,3 +3408,113 @@
           :schema $ :: 'app.values/LoginState
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.values
+    'app.wasm-alias $ %{} 'FileEntry
+      :defs $ {}
+        'bump $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn bump (value) (inc value)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |lexical-alias-chain-shadow-and-capture)
+              :code $ quote $ let
+                  chosen bump
+                  chained chosen
+                assert= 5 $ chained 4
+                assert= ([] 2 3)
+                  map ([] 1 2) chosen
+                let
+                    chosen dec
+                  assert= 3 $ chosen 4
+                assert= 5 $ chosen 4
+                let
+                    call-captured $ fn (value)
+                      hint-fn $ {}
+                        :args $ [] 'Number
+                        :return 'Number
+                      chosen value
+                  let
+                      chosen dec
+                    assert= 3 $ chosen 4
+                    assert= 5 $ call-captured 4
+                let
+                    apply-chosen $ fn (chosen)
+                      hint-fn $ {}
+                        :args $ [] $ :: 'Fn
+                          {}
+                            :args $ [] 'Number
+                            :return 'Number
+                        :return 'Number
+                      assert= 3 $ chosen 4
+                      assert= 3 $ chosen & $ [] 4
+                      chosen 4
+                  assert= 3 $ apply-chosen $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return 'Number
+                    dec value
+                let
+                    chosen $ fn (value)
+                      hint-fn $ {}
+                        :args $ [] 'Number
+                        :return 'Number
+                      dec value
+                    apply-chosen $ fn (chosen)
+                      hint-fn $ {}
+                        :args $ [] $ :: 'Fn
+                          {}
+                            :args $ [] 'Number
+                            :return 'Number
+                        :return 'Number
+                      chosen 4
+                  assert= 4 $ apply-chosen sum-tail
+              :tags $ #{} :known-function-alias
+            %{} 'TestEntry (:name |named-value-keeps-identity-after-escaping-let)
+              :code $ quote $ let
+                  original bump
+                  copied $ let
+                      saved original
+                    , saved
+                assert= true $ identical? original copied
+                assert= true $ identical? bump copied
+              :tags $ #{} :known-function-alias
+        'do $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn do () 42
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |imported-do-name-remains-an-ordinary-function)
+            :code $ quote $ let
+                callback app.wasm-alias/do
+              assert= 42 $ callback
+            :tags $ #{} :known-function-alias
+        'sum-pair $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn sum-pair (left right) (+ left right)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |binary-alias-keeps-map-indexed-and-fold-arity)
+            :code $ quote $ let
+                combine sum-pair
+              assert= ([] 10 21)
+                map-indexed ([] 10 20) combine
+              assert= 6 $ foldl ([] 1 2 3) 0 combine
+            :tags $ #{} :known-function-alias
+        'sum-tail $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn sum-tail (first-value & values) (foldl values first-value +)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:rest 'Number) (:return 'Number)
+            :args $ [] 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |known-rest-alias-keeps-arity-spread-and-order)
+            :code $ quote $ let
+                total sum-tail
+              assert= 6 $ total 1 2 3
+              assert= 6 $ foldl ([] 1 2 3) 0 total
+              assert= 6 $ total & $ [] 1 2 3
+              assert= 1 $ total 1
+              assert= 3 $ total
+                do (println |left) 1
+                do (println |right) 2
+            :tags $ #{} :known-function-alias
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns app.wasm-alias
