@@ -154,6 +154,24 @@ impl ScopeTypes {
     }
   }
 
+  pub(super) fn invalidate_refinements_where(&mut self, mut revoked: impl FnMut(&str) -> bool) {
+    let names: Vec<Arc<str>> = self.refinements.keys().filter(|name| revoked(name)).cloned().collect();
+    for name in names {
+      match self.refinements.remove(&name).flatten() {
+        Some(annotation) => {
+          self.values.insert(name, annotation);
+        }
+        None => {
+          self.values.remove(&name);
+        }
+      }
+    }
+  }
+
+  pub(super) fn refined_names(&self) -> impl Iterator<Item = &Arc<str>> {
+    self.refinements.keys()
+  }
+
   pub(super) fn has_refinements(&self) -> bool {
     !self.refinements.is_empty()
   }

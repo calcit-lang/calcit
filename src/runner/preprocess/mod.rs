@@ -513,6 +513,7 @@ fn trace_source_expressions_with_locations(
     }))
   });
   debug_assert!(previous.is_none(), "source expression traces must not be nested");
+  let _assignable_locals = AssignableLocalsScope::enter(ns, code);
   let mut scope_types = ScopeTypes::new();
   let result = builtins::meta::with_compiling_def(ns, def, || {
     calcit::with_type_annotation_warning_context(format!("{ns}/{def}"), || {
@@ -581,6 +582,7 @@ pub fn trace_source_usages(
 ) -> Result<Vec<ResolvedSourceUsage>, CalcitErr> {
   let previous = RESOLVED_SOURCE_USAGE_TRACE.with(|trace| trace.replace(Some(Vec::new())));
   debug_assert!(previous.is_none(), "resolved source usage traces must not be nested");
+  let _assignable_locals = AssignableLocalsScope::enter(ns, code);
   let mut scope_types = ScopeTypes::new();
   let result = builtins::meta::with_compiling_def(ns, def, || {
     calcit::with_type_annotation_warning_context(format!("{ns}/{def}"), || {
@@ -804,6 +806,122 @@ impl Drop for HostNullishReturnScope {
   fn drop(&mut self) {
     CURRENT_FN_RETURNS_HOST_NULLISH.with(|cell| cell.set(self.previous));
   }
+}
+
+thread_local! {
+  /// Local names this definition may reassign with `set!`. `None` means the
+  /// definition is unknown, so every local counts as assignable.
+  static ASSIGNABLE_LOCALS: RefCell<Option<HashSet<Arc<str>>>> = const { RefCell::new(None) };
+}
+
+/// Calcit values are immutable, so only a `set!` can make a predicate fact
+/// about a local stale. Collect the targets written in the definition source;
+/// `note_local_assignment` adds the ones that macro expansion produces.
+struct AssignableLocalsScope {
+  previous: Option<HashSet<Arc<str>>>,
+}
+
+impl AssignableLocalsScope {
+  fn enter(ns: &str, source: &Calcit) -> Self {
+    // A user macro may emit a `set!` the source does not spell; its targets
+    // are only known after expansion, too late for closures compiled before.
+    let names = (!uses_assignment_macro(source, ns, &mut HashSet::new())).then(|| {
+      let mut names = HashSet::new();
+      collect_assignment_targets(source, &mut names);
+      names
+    });
+    Self {
+      previous: ASSIGNABLE_LOCALS.with(|cell| cell.replace(names)),
+    }
+  }
+}
+
+fn is_assignment_spelling(text: &str) -> bool {
+  matches!(text, "set!" | "|set!" | "\"set!")
+}
+
+/// Whether `expr` names a non-core macro whose source, or a macro it names in
+/// turn, mentions `set!` as a symbol or string.
+fn uses_assignment_macro(expr: &Calcit, ns: &str, visited: &mut HashSet<(Arc<str>, Arc<str>)>) -> bool {
+  match expr {
+    Calcit::List(items) => items.iter().any(|item| uses_assignment_macro(item, ns, visited)),
+    Calcit::Symbol { sym, .. } => {
+      let Some((target_ns, def)) = program::resolve_type_name_in_ns(ns, sym) else {
+        return false;
+      };
+      if target_ns.as_ref() == calcit::CORE_NS || !visited.insert((target_ns.clone(), def.clone())) {
+        return false;
+      }
+      let Some(code) = program::lookup_def_code(&target_ns, &def) else {
+        return false;
+      };
+      matches!(&code, Calcit::List(forms) if matches!(forms.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defmacro"))
+        && (mentions_assignment(&code) || uses_assignment_macro(&code, &target_ns, visited))
+    }
+    _ => false,
+  }
+}
+
+fn mentions_assignment(expr: &Calcit) -> bool {
+  match expr {
+    Calcit::List(items) => items.iter().any(mentions_assignment),
+    Calcit::Symbol { sym, .. } | Calcit::Str(sym) => is_assignment_spelling(sym),
+    _ => false,
+  }
+}
+
+impl Drop for AssignableLocalsScope {
+  fn drop(&mut self) {
+    ASSIGNABLE_LOCALS.with(|cell| *cell.borrow_mut() = self.previous.take());
+  }
+}
+
+fn assignment_target_name(target: &Calcit) -> Option<Arc<str>> {
+  match target {
+    Calcit::Symbol { sym, .. } => Some(sym.clone()),
+    Calcit::Local(local) => Some(local.sym.clone()),
+    _ => None,
+  }
+}
+
+fn collect_assignment_targets(expr: &Calcit, names: &mut HashSet<Arc<str>>) {
+  let Calcit::List(items) = expr else { return };
+  if items.first().is_some_and(is_local_assignment)
+    && let Some(name) = items.get(1).and_then(assignment_target_name)
+  {
+    names.insert(name);
+  }
+  for item in items.iter() {
+    collect_assignment_targets(item, names);
+  }
+}
+
+fn note_local_assignment(expr: &Calcit) {
+  if let Calcit::List(items) = expr
+    && items.first().is_some_and(is_local_assignment)
+    && let Some(name) = items.get(1).and_then(assignment_target_name)
+  {
+    ASSIGNABLE_LOCALS.with(|cell| {
+      if let Some(names) = cell.borrow_mut().as_mut() {
+        names.insert(name);
+      }
+    });
+  }
+}
+
+fn has_assignable_refinements(scope_types: &ScopeTypes) -> bool {
+  ASSIGNABLE_LOCALS.with(|cell| match cell.borrow().as_ref() {
+    Some(names) => scope_types.refined_names().any(|name| names.contains(name)),
+    None => scope_types.has_refinements(),
+  })
+}
+
+/// Effects revoke only the refinements of locals that a `set!` may rewrite.
+fn invalidate_assignable_refinements(scope_types: &mut ScopeTypes) {
+  ASSIGNABLE_LOCALS.with(|cell| match cell.borrow().as_ref() {
+    Some(names) => scope_types.invalidate_refinements_where(|name| names.contains(name)),
+    None => scope_types.invalidate_refinements(),
+  });
 }
 
 /// A nil passed directly to a JS host call or a `JsNullish` parameter, or
@@ -1212,6 +1330,7 @@ fn ensure_ns_def_preprocessed(
           .map_err(|message| CalcitErr::use_msg_stack_location(CalcitErrKind::Syntax, message, call_stack, location))?;
       }
       let _definition_context = DefinitionContextScope::enter(ns, def, &code);
+      let _assignable_locals = AssignableLocalsScope::enter(ns, &code);
       let _definition_replay_scope = source_replay::Scope::pause_definition();
       let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
 
@@ -2056,6 +2175,7 @@ pub fn compile_source_def_for_snapshot(
   };
 
   let _definition_context = DefinitionContextScope::enter(ns, def, &code);
+  let _assignable_locals = AssignableLocalsScope::enter(ns, &code);
   let mut scope_types = ScopeTypes::new();
   let context_label = format!("{ns}/{def}");
   let resolved_code = builtins::meta::with_compiling_def(ns, def, || {
@@ -2838,6 +2958,7 @@ pub fn preprocess_expr(
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let _host_sink_frame = HostSinkFrame::enter(expr);
+  note_local_assignment(expr);
   // the native stack guard targets runtime recursion; preprocessing and macro expansion are exempt
   let processed = if matches!(expr, Calcit::List(_)) && proof_error_recovery_active() {
     preprocess_expr_recovering_proof(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack)
@@ -2854,7 +2975,7 @@ pub fn preprocess_expr(
     ensure_ns_def_compiled(calcit::CORE_NS, definition, check_warnings, call_stack)?;
   }
   if scope_types.has_refinements() && !condition_evidence::preserves_locals(&processed, scope_types) {
-    scope_types.invalidate_refinements();
+    invalidate_assignable_refinements(scope_types);
   }
   if matches!(expr, Calcit::Symbol { .. }) {
     record_generic_source_local(&processed, scope_types);
@@ -12473,7 +12594,7 @@ pub fn preprocess_defn(
       // A direct invocation runs after its already-checked arguments. An
       // escaping closure cannot borrow temporary facts about captured locals.
       if !expected_context.as_ref().is_some_and(|context| context.immediate) {
-        body_types.invalidate_refinements();
+        invalidate_assignable_refinements(&mut body_types);
       }
       let has_contextual_contract = expected_context.as_ref().is_some_and(|context| context.member_inputs);
       let expected_fn_schema = expected_context.map(|context| {
@@ -12768,6 +12889,7 @@ pub fn preprocess_defn(
       })?;
 
       if let Some(mut initial_scope) = initial_body_types
+        && has_assignable_refinements(&initial_scope)
         && processed_body.iter().any(body_contains_recur)
         && processed_body
           .iter()
@@ -12807,7 +12929,7 @@ pub fn preprocess_defn(
           });
         }
         post_lowering::Scope::rollback(initial_rewrites);
-        initial_scope.invalidate_refinements();
+        invalidate_assignable_refinements(&mut initial_scope);
         body_types = initial_scope;
         xs = initial_forms.expect("borrowed capture scope retains its function header");
         processed_body = initial_processed_body.expect("borrowed capture scope retains its schema hint");
