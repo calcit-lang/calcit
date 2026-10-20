@@ -72,10 +72,38 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'main-unknown-alias! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main-unknown-alias! ()
+            let
+                action inc
+              let
+                  action $ if
+                    empty? $ get-args
+                    , inc dec
+                println $ action 1
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'main-unsupported! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main-unsupported! ()
             assert= true $ result:ok? $ .read-dir (fs:path |workspace)
             , &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+        'main-unsupported-alias! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main-unsupported-alias! ()
+            let
+                action main-unsupported!
+                invoke $ fn (callback)
+                  hint-fn $ {}
+                    :args $ [] $ :: 'Fn
+                      {}
+                        :args $ []
+                        :return 'Unit
+                    :return 'Unit
+                  callback
+              invoke action
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []

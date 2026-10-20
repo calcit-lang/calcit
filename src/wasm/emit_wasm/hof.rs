@@ -4,6 +4,11 @@ use super::*;
 /// Supports Fn literals (with def_ref), Imports, and Symbols.
 /// The callee must have arity 2 (acc, elem) — as required by foldl/foldl-shortcut/foldr-shortcut.
 pub(super) fn resolve_callee_fn_idx(ctx: &WasmGenCtx, callee: &Calcit) -> Result<u32, String> {
+  if (matches!(callee, Calcit::Local(_)) || matches!(callee, Calcit::Symbol { sym, .. } if ctx.locals.contains_key(sym.as_ref())))
+    && let Some(definition) = resolve_known_function_value(ctx, callee)
+  {
+    return resolve_callee_fn_idx(ctx, &Calcit::Import(definition));
+  }
   match callee {
     Calcit::Fn { info, .. } => {
       let def_ref = info
@@ -57,6 +62,11 @@ pub(super) fn resolve_callee_fn_idx(ctx: &WasmGenCtx, callee: &Calcit) -> Result
 /// The fixed parameter count of a static HOF callee declared with a `&` rest
 /// parameter, looked up the same way as `resolve_callee_fn_idx`.
 fn resolve_callee_rest_fixed(ctx: &WasmGenCtx, callee: &Calcit) -> Option<u32> {
+  if (matches!(callee, Calcit::Local(_)) || matches!(callee, Calcit::Symbol { sym, .. } if ctx.locals.contains_key(sym.as_ref())))
+    && let Some(definition) = resolve_known_function_value(ctx, callee)
+  {
+    return resolve_callee_rest_fixed(ctx, &Calcit::Import(definition));
+  }
   let (qualified, short) = match callee {
     Calcit::Fn { info, .. } => {
       let def_ref = info.def_ref.as_ref()?;
