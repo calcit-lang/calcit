@@ -675,6 +675,97 @@ thread_local! {
   /// Whether the function being preprocessed declares a `JsNullish` return, the
   /// one place where converting an Option to nil is the declared contract.
   static CURRENT_FN_RETURNS_HOST_NULLISH: Cell<bool> = const { Cell::new(false) };
+  /// One entry per list form being preprocessed, innermost last: whether that
+  /// form hands its arguments to a JS host, where nil is the expected absence.
+  static HOST_SINK_FRAMES: RefCell<Vec<bool>> = const { RefCell::new(Vec::new()) };
+}
+
+struct HostSinkFrame;
+
+impl HostSinkFrame {
+  fn enter(expr: &Calcit) -> Option<Self> {
+    let Calcit::List(xs) = expr else {
+      return None;
+    };
+    let is_sink = xs.first().is_some_and(is_host_sink_head) || is_postfix_native_call(xs) || is_host_property_write(xs);
+    HOST_SINK_FRAMES.with(|frames| frames.borrow_mut().push(is_sink));
+    Some(Self)
+  }
+
+  /// Marks the innermost form as a host sink once its head resolves to an
+  /// external-object method, which the raw head cannot show.
+  fn mark_current_sink() {
+    HOST_SINK_FRAMES.with(|frames| {
+      if let Some(top) = frames.borrow_mut().last_mut() {
+        *top = true;
+      }
+    });
+  }
+}
+
+impl Drop for HostSinkFrame {
+  fn drop(&mut self) {
+    HOST_SINK_FRAMES.with(|frames| {
+      frames.borrow_mut().pop();
+    });
+  }
+}
+
+/// Source heads whose arguments go straight to JavaScript: `js/` globals,
+/// native method calls, host constructors and host field writes.
+fn is_host_sink_head(head: &Calcit) -> bool {
+  match head {
+    Calcit::Symbol { sym, .. } => {
+      let sym = sym.as_ref();
+      sym.starts_with("js/")
+        || sym.starts_with(".!")
+        || sym.starts_with(".?!")
+        || matches!(sym, "new" | "js-array" | "js-object" | "js-set" | "aset")
+    }
+    Calcit::Method(
+      _,
+      calcit::MethodKind::InvokeNative
+      | calcit::MethodKind::InvokeNativeOptional
+      | calcit::MethodKind::ExternalInvoke(_)
+      | calcit::MethodKind::ExternalSet(_),
+    ) => true,
+    _ => false,
+  }
+}
+
+/// `receiver .!method args…`: the native method sits after its receiver.
+fn is_postfix_native_call(xs: &CalcitList) -> bool {
+  match xs.get(1) {
+    Some(Calcit::Symbol { sym, .. }) => sym.starts_with(".!") || sym.starts_with(".?!"),
+    Some(Calcit::Method(_, calcit::MethodKind::InvokeNative | calcit::MethodKind::InvokeNativeOptional)) => true,
+    _ => false,
+  }
+}
+
+/// `set!` writes to the host only when its target is a JS property; a
+/// lexical-local target is a Calcit binding like any other.
+fn is_host_property_write(xs: &CalcitList) -> bool {
+  if !xs.first().is_some_and(is_local_assignment) {
+    return false;
+  }
+  match xs.get(1) {
+    Some(Calcit::Symbol { sym, .. }) => sym.starts_with("js/"),
+    Some(Calcit::List(target)) => match target.first() {
+      Some(Calcit::Symbol { sym, .. }) => sym.starts_with(".-"),
+      Some(Calcit::Method(_, calcit::MethodKind::Access | calcit::MethodKind::ExternalAccess(_))) => true,
+      _ => false,
+    },
+    _ => false,
+  }
+}
+
+/// Whether the form currently being preprocessed is a direct argument of a
+/// host call. The innermost frame is that form itself; its parent consumes it.
+fn current_form_feeds_host() -> bool {
+  HOST_SINK_FRAMES.with(|frames| {
+    let frames = frames.borrow();
+    frames.len() >= 2 && frames[frames.len() - 2]
+  })
 }
 
 struct HostNullishReturnScope {
@@ -695,10 +786,11 @@ impl Drop for HostNullishReturnScope {
   }
 }
 
-/// JS FFI definitions and functions that declare a `JsNullish` return hand nil
-/// to a host on purpose, so Option-to-nil conversions there are not erasures.
+/// A nil passed directly to a JS host call, or returned from a function that
+/// declares a `JsNullish` return, is the host's absence rather than an erasure.
+/// A `:js-ffi` feature alone does not exempt the business code around it.
 fn option_to_nil_is_host_boundary() -> bool {
-  current_function_has_js_ffi_feature() || CURRENT_FN_RETURNS_HOST_NULLISH.with(Cell::get)
+  current_form_feeds_host() || CURRENT_FN_RETURNS_HOST_NULLISH.with(Cell::get)
 }
 
 /// Restore lexical permissions on every exit, including errors and unwinding.
@@ -2724,6 +2816,7 @@ pub fn preprocess_expr(
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
+  let _host_sink_frame = HostSinkFrame::enter(expr);
   // the native stack guard targets runtime recursion; preprocessing and macro expansion are exempt
   let processed = if matches!(expr, Calcit::List(_)) && proof_error_recovery_active() {
     preprocess_expr_recovering_proof(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack)
@@ -3932,6 +4025,7 @@ fn preprocess_list_call(
             let is_external = trait_list_for_receiver(type_info.as_ref(), scope_types)
               .is_some_and(|traits| traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref())));
             let method_kind = if is_external {
+              HostSinkFrame::mark_current_sink();
               calcit::MethodKind::ExternalInvoke(type_info.clone())
             } else {
               calcit::MethodKind::Invoke(type_info.clone())
@@ -4629,6 +4723,16 @@ fn preprocess_list_call(
               }
             }
             ys = ys.push(form);
+            // Once the receiver is known, an external-object method hands
+            // its remaining arguments to JS.
+            if ys.len() == 2
+              && matches!(&head_form, Calcit::Method(_, calcit::MethodKind::Invoke(_)))
+              && let Some(receiver_type) = ys.get(1).and_then(|receiver| resolve_type_value(receiver, scope_types))
+              && trait_list_for_receiver(receiver_type.as_ref(), scope_types)
+                .is_some_and(|traits| traits.iter().any(|trait_def| trait_is_external_object(trait_def.as_ref())))
+            {
+              HostSinkFrame::mark_current_sink();
+            }
             Ok(())
           })?;
         }
@@ -8121,7 +8225,7 @@ fn warn_on_option_erased_to_nil(head: &Calcit, args: &CalcitList, scope_types: &
 /// runner still pass so upgrading does not break existing libraries.
 fn report_option_erased_to_nil(shape: &str, file_ns: &str, location: NodeLocation) {
   let message = format!(
-    "[Warn] {shape} turns an Option back into nil in {file_ns}; keep the Option and pass it on, handle both variants with `match`, or choose a concrete default. A `:js-ffi` definition or a function returning `JsNullish` may hand nil to a host"
+    "[Warn] {shape} turns an Option back into nil in {file_ns}; keep the Option and pass it on, handle both variants with `match`, or choose a concrete default. nil may still be passed directly to a JS host call or returned from a function declared to return `JsNullish`"
   );
   push_advisory(LocatedWarning::new_with_detail(
     message,

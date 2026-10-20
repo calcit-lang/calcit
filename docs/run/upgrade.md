@@ -165,9 +165,9 @@ payload 有具体类型时，这种写法本来就被参数检查拒绝；新诊
 | --- | --- |
 | `.unwrap-or (get props :alpha) nil` 之后接 `either`、`non-nil?` | 保持 Option 往下传，在使用处 `.unwrap-or` 给出业务默认值，或用 `match` 分别处理 |
 | `match x ((:some v) v) ((:none) nil)` | 让函数返回 Option，调用方处理两个分支 |
-| 把缺失值交给 DOM 或其他宿主 API | 在声明了 `:js-ffi` 的适配函数里转换，或把形参写成 `JsNullish` |
+| 把缺失值交给 DOM 或其他宿主 API | 在 `:js-ffi` 适配函数里把转换写成宿主调用的直接参数，或让适配函数的返回类型声明为 `JsNullish` |
 
-宏生成的调用、`:js-ffi` 定义，以及返回类型声明为 `JsNullish` 的函数里的写法不报告：这些位置把 nil 交给 JS 宿主是声明过的合同。`either`、`or`、`if-let` 之后才出现的 nil 不在识别范围内。
+宏展开生成、在源码里没有对应位置的调用，直接作为 JS 宿主调用参数的写法（`js/…` 全局、`.!method` 原生方法的前缀与后缀调用、`new`、`js-array`、`js-object`、`js-set`/`aset`、external-object 方法的前缀与后缀调用、目标为宿主属性的 `set!`），以及返回类型声明为 `JsNullish` 的函数里的写法不报告：这些位置把 nil 交给 JS 宿主是声明过的合同。`:js-ffi` feature 本身不再豁免整个定义：先绑定到局部变量、`set!` 到局部变量、或被 `nil?`/`if` 等业务代码消费的 nil 仍会报告。Nil passed directly as a JS host call argument stays quiet; the `:js-ffi` feature alone no longer exempts the whole definition.`either`、`or`、`if-let` 之后才出现的 nil 不在识别范围内。
 迁移前可用 `calcit calcit.cirru analyze weak-types --only option-nil-roundtrip` 列出全部位置。
 
 ## 0.32.0 删除 `'Optional` 公共 schema 与旧 Optional 类型

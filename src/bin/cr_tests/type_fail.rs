@@ -2986,6 +2986,31 @@ fn unwrap_or_nil_on_an_open_option_reports_the_erasure() {
 }
 
 #[test]
+fn option_erased_to_nil_is_exempt_only_as_a_direct_host_argument() {
+  run_with_large_stack(|| {
+    let entries = load_fixture_entries("calcit/type-fail/option-nil-host-position.cirru");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    let _ = runner::preprocess::take_advisories();
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("host-position fixture should preprocess");
+
+    let advisories = runner::preprocess::take_advisories();
+    let mut erased = advisories
+      .iter()
+      .filter(|advisory| advisory.code() == Some("W_OPTION_ERASED_TO_NIL"))
+      .map(|advisory| advisory.location().def.to_string())
+      .collect::<Vec<_>>();
+    erased.sort();
+    // A `js/` call, native and external-object method calls (prefix and
+    // postfix), a host-property `set!` and a `(:none) nil` branch that is the
+    // host argument stay quiet; the `:js-ffi` feature alone does not exempt a
+    // nil tested by business code, bound to a local or `set!` on a local.
+    assert_eq!(erased, ["bound-in-ffi", "business-in-ffi", "local-set-in-ffi"], "{advisories:?}");
+  });
+}
+
+#[test]
 fn constant_truthy_conditions_report_with_replacement_guidance() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries(
