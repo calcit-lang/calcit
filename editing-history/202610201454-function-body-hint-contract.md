@@ -20,4 +20,6 @@ CodeEntry 的 Fn 与函数体 Map 描述同一个函数。此前 preprocess 优�
 
 原 public-return 负例保留原源码及拒绝要求；新校验更早报告 E_SCHEMA_DEF_MISMATCH，因此精确检查新的合同诊断、源位置与源码不变，不把任何编译失败当成通过。
 
+完整回归中的 try handler 也保留原非法源码：零参数函数不能靠 hint 发明一个参数。此用例从仅独立 proof 拒绝加强到普通与 JS 编译也拒绝，并精确检查 E_SCHEMA_REQUIRED_ARGS 的 1/0 差异。位置复用已有宏调用来源恢复，指向项目定义而非内部 calcit.core/fn；不扩大整组负例的通用诊断匹配。
+
 此批次仅面向 0.31.0 的 main；不改 0.30.1 维护线，不提前删除旧形式。最终测试结果、精确提交、review、CI 和消费者证据记录在 PR。

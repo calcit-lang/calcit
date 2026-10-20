@@ -1670,7 +1670,7 @@ try {
     ["contradictory-handler-hint", "'Bool", "try 7 $ fn (message) (hint-fn $ {} (:args ([] 'String)) (:return 'Number)) |wrong", true],
     ["not-callable", "'Bool", "try 7 1", true],
     ["too-few-handler-parameters", "'Bool", "try 7 $ fn () 0", false],
-    ["hint-cannot-invent-handler-parameters", "'Bool", "try 7 $ fn () (hint-fn $ {} (:args ([] 'String)) (:return 'Number)) 0", false],
+    ["hint-cannot-invent-handler-parameters", "'Bool", "try 7 $ fn () (hint-fn $ {} (:args ([] 'String)) (:return 'Number)) 0", true],
     ["fixed-context-cannot-prove-rest-inputs", "'Bool", "try 7 $ fn (& messages) $ .len $ .trim messages", false],
     ["wrong-rest-input", "'Bool", "try 7 $ fn (& messages) (hint-fn $ {} (:args ([])) (:rest 'Number) (:return 'Number)) (.len messages)", true],
     ["variadic-fixed-option-is-not-omittable", "'Bool", "try 7 $ fn (message extra & tail) (hint-fn $ {} (:args ([] 'String (:: 'Option 'Number))) (:rest 'String) (:return 'Number)) 0", false],
@@ -1685,12 +1685,22 @@ try {
     run("edit", "schema", target, "--input-format", "cirru", "--code",
       `quote $ :: 'Fn $ {} (:args ([] ${argumentType})) (:return 'Number)`);
     const original = await readFile(snapshot);
-    const diagnostic = /E_FN_RETURN_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|E_DYNAMIC_METHOD_DISPATCH|W_FN_RETURN_TYPE_MISMATCH|W_LOCAL_FN_ARG_TYPE_MISMATCH|trying to call a non-function value|js-ffi/;
+    const sourceShapeConflict = label === "hint-cannot-invent-handler-parameters";
+    const diagnostic = sourceShapeConflict
+      ? /E_SCHEMA_DEF_MISMATCH/
+      : /E_FN_RETURN_UNPROVEN|E_CALL_ARGUMENT_MISMATCH|E_DYNAMIC_METHOD_DISPATCH|W_FN_RETURN_TYPE_MISMATCH|W_LOCAL_FN_ARG_TYPE_MISMATCH|trying to call a non-function value|js-ffi/;
+    const assertSourceShape = details => {
+      if (!sourceShapeConflict) return;
+      assert.match(details, /E_SCHEMA_REQUIRED_ARGS/);
+      assert.match(details, /schema has 1 required arg\(s\) but code has 0/);
+      assert.match(details, /at test-struct\.main\/try-rejected @/);
+    };
     const audit = spawnSync(binary, [snapshot, "fix", "--rule", "concrete-return-proof-v1", "--ns", "test-struct.main",
       "--def", "try-rejected", "--format", "edn"], options);
     if (audit.error) throw audit.error;
     assert.equal(audit.status, 1, `${label}\n${audit.stdout}\n${audit.stderr}`);
     assert.match(`${audit.stdout}\n${audit.stderr}`, diagnostic);
+    assertSourceShape(`${audit.stdout}\n${audit.stderr}`);
     assert.deepEqual(await readFile(snapshot), original);
     if (definite) {
       for (const mode of [["--check-only"], ["js"]]) {
@@ -1700,6 +1710,7 @@ try {
         if (rejected.error) throw rejected.error;
         assert.equal(rejected.status, 1, `${label}\n${rejected.stdout}\n${rejected.stderr}`);
         assert.match(`${rejected.stdout}\n${rejected.stderr}`, diagnostic);
+        assertSourceShape(`${rejected.stdout}\n${rejected.stderr}`);
         assert.deepEqual(await readFile(snapshot), original);
         if (mode[0] === "js") await assertRejectedArtifacts(output, label, diagnostic, true);
       }

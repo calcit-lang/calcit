@@ -12188,6 +12188,11 @@ pub fn preprocess_defn(
         }
       });
       let body_fn_hint_source = body_fn_hint.as_ref().map(|(source, _)| source.clone());
+      let body_fn_hint_location = find_preferred_macro_location(ctx.call_stack)
+        .filter(|location| location.def.as_ref() != GENERATED_DEF)
+        .or_else(|| body_fn_hint_source.as_ref().and_then(Calcit::get_location))
+        .or_else(|| ctx.call_location.clone())
+        .or(Some(definition_location.clone()));
       let body_fn_hint = body_fn_hint.map(|(_, signature)| signature);
       // A zero-input helper has no caller-dependent parameter constraints.
       // Infer only absent contracts; an explicit Dynamic remains intentional.
@@ -12357,10 +12362,7 @@ pub fn preprocess_defn(
               format!("function body hint cannot prove the declared callable contract: body {actual}, declared {expected}"),
               "E_SCHEMA_DEF_MISMATCH",
               ctx.call_stack,
-              body_fn_hint_source
-                .as_ref()
-                .and_then(Calcit::get_location)
-                .or(Some(definition_location.clone())),
+              body_fn_hint_location.clone(),
             ));
           }
         }
@@ -12399,10 +12401,7 @@ pub fn preprocess_defn(
               ),
               "E_SCHEMA_DEF_MISMATCH",
               ctx.call_stack,
-              body_fn_hint_source
-                .as_ref()
-                .and_then(Calcit::get_location)
-                .or(Some(definition_location.clone())),
+              body_fn_hint_location.clone(),
             ));
           }
         }
