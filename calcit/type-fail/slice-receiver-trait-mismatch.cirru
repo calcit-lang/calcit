@@ -12,7 +12,9 @@
       :defs $ {}
         'main! $ %{} 'CodeEntry
           :doc "|Reject a receiver that does not implement Sliceable"
-          :code $ quote $ defn main! () (slice 1 0 1) nil
+          :code $ quote $ defn main! ()
+            slice 1 0 $ Option :some 1
+            , nil
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []

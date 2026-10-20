@@ -431,13 +431,13 @@
           :doc "|Built-in implementation list for list\nNOTE: ordering matters; &core-list-methods must come before internal/&core-add-list-impl, otherwise list .add may be shadowed by Add trait :add."
           :code $ quote $ def &core-list-impls
             [] &core-list-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-list-impl) (&impl::new Len internal/&core-len-list-impl) (&impl::new Mappable internal/&core-mappable-list-impl) (&impl::new Countable internal/&core-countable-list-impl)
-              &impl::new Sliceable $ :: :slice &list:slice
+              &impl::new Sliceable $ :: :slice internal/&slice-list
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
         '&core-list-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-list-methods
-            &impl::new :&core-list-methods (:: :any? any?) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains-index? &list:contains?) (:: :includes? &list:includes?) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :flat-map mapcat) (:: :fold fold) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :intersperse intersperse) (:: :join-string join-string) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reverse &list:reverse) (:: :slice &list:slice) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
+            &impl::new :&core-list-methods (:: :any? any?) (:: :append append) (:: :assoc &list:assoc) (:: :assoc-after &list:assoc-after) (:: :assoc-before &list:assoc-before) (:: :butlast butlast) (:: :concat &list:concat) (:: :contains-index? &list:contains?) (:: :includes? &list:includes?) (:: :drop drop) (:: :each each) (:: :empty &list:empty) (:: :empty? &list:empty?) (:: :filter &list:filter) (:: :filter-not filter-not) (:: :find find) (:: :find-index find-index) (:: :find-last &list:find-last) (:: :find-last-index &list:find-last-index) (:: :flat-map mapcat) (:: :fold fold) (:: :foldl foldl) (:: :get get) (:: :get-in get-in) (:: :group-by group-by) (:: :index-of index-of) (:: :intersperse intersperse) (:: :join-string join-string) (:: :last-index-of &list:last-index-of) (:: :map &list:map) (:: :map-indexed map-indexed) (:: :mappend &list:mappend) (:: :max &list:max) (:: :min &list:min) (:: :pairs-map pairs-map) (:: :prepend prepend) (:: :reverse &list:reverse) (:: :slice internal/&slice-list) (:: :sort sort) (:: :sort-by &list:sort-by) (:: :take take) (:: :take-last take-last) (:: :to-set &list:to-set) (:: :first first) (:: :last last) (:: :rest &list:rest) (:: :dissoc &list:dissoc) (:: :to-list identity) (:: :map-pair &list:map-pair) (:: :filter-pair &list:filter-pair) (:: :apply &list:apply) (:: :flatten &list:flatten)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -499,14 +499,14 @@
         '&core-string-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for string")
           :code $ quote $ def &core-string-impls
             [] &core-string-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-string-impl) (&impl::new Len internal/&core-len-string-impl) (&impl::new Countable internal/&core-countable-string-impl) (&impl::new Compare internal/&core-compare-string-impl)
-              &impl::new Sliceable $ :: :slice &str:slice
+              &impl::new Sliceable $ :: :slice internal/&slice-string
               &impl::new ToString $ :: :to-string &turn-string
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
         '&core-string-methods $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def &core-string-methods
-            &impl::new :&core-string-methods (:: :blank? blank?) (:: :utf8-byte-count &str:utf8-byte-count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get get) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice &str:slice) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains-index? &str:contains?) (:: :includes? &str:includes?) (:: :nth nth) (:: :first first) (:: :last last) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare) (:: :parse-cirru try-parse-cirru) (:: :parse-cirru-list try-parse-cirru-list) (:: :parse-cirru-edn try-parse-cirru-edn) (:: :parse-json try-parse-json)
+            &impl::new :&core-string-methods (:: :blank? blank?) (:: :utf8-byte-count &str:utf8-byte-count) (:: :empty &str:empty) (:: :ends-with? ends-with?) (:: :get get) (:: :parse-float parse-float) (:: :replace &str:replace) (:: :split split) (:: :split-lines split-lines) (:: :starts-with? starts-with?) (:: :strip-prefix strip-prefix) (:: :strip-suffix strip-suffix) (:: :slice internal/&slice-string) (:: :trim trim) (:: :empty? &str:empty?) (:: :contains-index? &str:contains?) (:: :includes? &str:includes?) (:: :nth nth) (:: :first first) (:: :last last) (:: :rest &str:rest) (:: :pad-left &str:pad-left) (:: :pad-right &str:pad-right) (:: :find-index str-find-index) (:: :get-char-code get-char-code) (:: :escape &str:escape) (:: :mappend &str:concat) (:: :compare &str:compare) (:: :parse-cirru try-parse-cirru) (:: :parse-cirru-list try-parse-cirru-list) (:: :parse-cirru-edn try-parse-cirru-edn) (:: :parse-json try-parse-json)
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -3039,10 +3039,10 @@
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |scalar-slice-boundaries)
               :code $ quote $ do
-                assert= | $ slice "|😀中" 0 0
+                assert= | $ slice "|😀中" 0 $ Option :some 0
                 assert= ([])
-                  slice ([] 1 2) 0 0
-                assert= | $ .slice "|😀中" 0 0
+                  slice ([] 1 2) 0 $ Option :some 0
+                assert= | $ .slice "|😀中" 0 $ Option :some 0
                 assert= | $ &str:rest |
                 assert= | $ &str:rest "|😀"
                 assert= "|文" $ &str:rest "|中文"
@@ -4039,11 +4039,11 @@
           :schema $ :: 'Trait
           :tags $ #{} :trait
         'Sliceable $ %{} 'CodeEntry
-          :doc "|Core trait for values whose slice operation preserves the receiver type. List and String implement it."
+          :doc "|切片保持 receiver 类型的能力。slice 方法接收 receiver、Number 起点、Option<Number> 终点并返回原 receiver 类型；省略末尾 Option 自动补 none。List/String 使用内部适配器，自定义实现显式匹配 some/none，不需要 Countable。"
           :code $ quote $ deftrait Sliceable
             .slice $ :: :fn $ {} (:return 'T)
               :generics $ [] 'T
-              :args $ [] 'T 'Number 'Number
+              :args $ [] 'T 'Number $ :: 'Option 'Number
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
@@ -6829,7 +6829,7 @@
               :tags $ #{} :core :unit
         'drop $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn drop (xs n)
-            slice xs n $ &list:count xs
+            slice xs n $ Option :some $ &list:count xs
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T) 'Number
@@ -9720,8 +9720,8 @@
                 assert= false $ &str:contains? | 0
                 assert= "|中" $ rest "|😀中"
                 assert= | $ rest |
-                assert= "|😀中" $ slice "|A😀中文" 1 3
-                assert= "|😀中" $ .slice "|A😀中文" 1 3
+                assert= "|😀中" $ slice "|A😀中文" 1 $ Option :some 3
+                assert= "|😀中" $ .slice "|A😀中文" 1 $ Option :some 3
                 assert= (%some "|中") (.nth "|A😀中" 2)
                 assert= (%some "|😀") (.last "|中😀")
                 assert= "|中" $ &str:slice "|😀中" 1 99
@@ -12014,27 +12014,26 @@
               assert= 1 $ round $ sin (/ 3.141592653589793 2)
             :tags $ #{} :core :unit
         'slice $ %{} 'CodeEntry
-          :doc "|Extract a slice from a collection from index n to m"
-          :code $ quote $ defn slice (xs n ? m)
-            if (nil? m) (.slice xs n) (.slice xs n m)
+          :doc "|返回保持 receiver 类型的左闭右开切片。终点为 Option<Number>：Option :some end 指定终点，省略或 Option :none 表示到末尾；起点仍为 Number。String 按 Unicode 标量索引，List 保留已有范围错误。函数值、方法和自定义 Sliceable 使用同一合同。"
+          :code $ quote $ defn slice (xs n end) (.slice xs n end)
           :examples $ []
             quote $ assert= ([] 2 3)
-              slice ([] 1 2 3 4) 1 3
+              slice ([] 1 2 3 4) 1 $ Option :some 3
             quote $ assert= ([] 3 4)
               slice ([] 1 2 3 4) 2
           :schema $ :: 'Fn $ {} (:return 'C)
-            :args $ [] 'C 'Number 'Number
+            :args $ [] 'C 'Number $ :: 'Option 'Number
             :generics $ [] 'C
             :where $ {} $ 'C 'Sliceable
           :tests $ []
             %{} 'TestEntry (:name |slices-strings)
               :code $ quote $ do
                 assert= |56789 $ slice |0123456789 5
-                assert= |567 $ slice |0123456789 5 8
+                assert= |567 $ slice |0123456789 5 $ Option :some 8
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |slices-unicode-text-by-character)
               :code $ quote $ do
-                assert= "|文字" $ slice "|中文字符串" 1 3
+                assert= "|文字" $ slice "|中文字符串" 1 $ Option :some 3
                 assert= "|文字符串" $ slice "|中文字符串" 1
               :tags $ #{} :core :unit
             %{} 'TestEntry (:name |preserves-slice-container-types)
@@ -12049,9 +12048,29 @@
                 assert= ([] 2 3)
                   slice ([] 1 2 3) 1
                 assert= ([] 2)
-                  slice ([] 1 2 3) 1 2
+                  slice ([] 1 2 3) 1 $ Option :some 2
                 assert= |bc $ slice |abc 1
               :tags $ #{} :core :unit
+            %{} 'TestEntry
+              :name |option-endpoints-through-function-method-and-trait
+              :code $ quote $ let
+                  values $ [] 1 2 3
+                  take-slice slice
+                assert= ([] 2)
+                  take-slice values 1 $ Option :some 2
+                assert= ([] 2 3)
+                  take-slice values 1 $ Option :none
+                assert= ([] 2 3) (take-slice values 1)
+                assert= ([] 2)
+                  .slice values 1 $ Option :some 2
+                assert= ([] 2 3)
+                  .slice values 1 $ Option :none
+                assert= "|😀" $ .slice "|A😀中" 1 $ Option :some 2
+                assert= "|😀中" $ .slice "|A😀中" 1 $ Option :none
+                assert= ([] 2)
+                  &trait-call Sliceable :slice values 1 $ Option :some 2
+                assert= ([] 2 3) (&trait-call Sliceable :slice values 1)
+              :tags $ #{} :core :sliceable-option :unit
         'sort $ %{} 'CodeEntry
           :doc "|internal function for sorting lists\nSyntax: (sort list) or (sort list comparator)\nParams: list (list), comparator (function, optional)\nReturns: list\nReturns sorted list using natural order or custom comparator"
           :code $ quote &runtime-implementation
@@ -12187,7 +12206,7 @@
             quote $ assert= (Option :none) (str-find-index |hello |xyz)
             quote $ assert= "|中文" $ "|A😀中文" .slice
               ("|A😀中文" .find-index "|中文") .unwrap
-              "|A😀中文" .len
+              Option :some $ "|A😀中文" .len
           :schema $ :: 'Fn $ {}
             :args $ [] 'String 'String
             :return $ :: 'Option 'Number
@@ -12220,7 +12239,7 @@
                   , .unwrap
               assert= "|中文" $ "|A😀中文" .slice
                 ("|A😀中文" .find-index "|中文") .unwrap
-                "|A😀中文" .len
+                Option :some $ "|A😀中文" .len
               assert= true $ "|A😀中" .includes? "|😀中"
               assert= false $ "|A😀中" .includes? "|😀文"
               assert= true $ "|A😀中" .includes? |
@@ -12492,7 +12511,7 @@
           :code $ quote $ defn take (xs n)
             if
               >= n $ &list:count xs
-              , xs $ slice xs 0 n
+              , xs $ slice xs 0 $ Option :some n
           :examples $ []
             quote $ assert= ([] 1 2)
               take ([] 1 2 3 4) 2
@@ -12512,7 +12531,7 @@
               >= n $ &list:count xs
               , xs $ slice xs
                 - (&list:count xs) n
-                &list:count xs
+                Option :some $ &list:count xs
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T) 'Number
@@ -13815,6 +13834,26 @@
             &impl::new :&core-multiply-number-impl $ :: :multiply &*
           :examples $ []
           :schema $ :: 'Dynamic
+        '&slice-list $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn &slice-list (xs start end)
+            match end
+              (:some end) (&list:slice xs start end)
+              (:none) (&list:slice xs start)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] (:: 'List 'T) 'Number $ :: 'Option 'Number
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+          :tags $ #{} :internal
+        '&slice-string $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn &slice-string (xs start end)
+            match end
+              (:some end) (&str:slice xs start end)
+              (:none) (&str:slice xs start)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'String 'Number $ :: 'Option 'Number
+          :tags $ #{} :internal
         'normalize-trait-type $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn normalize-trait-type (t0)
             if

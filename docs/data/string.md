@@ -33,15 +33,15 @@ native、JavaScript 与 WASM 已验证的静态字符串路径中，`first`、`l
 assert= (Option :some |😀) $ last |中😀
 assert= (Option :some |中) $ get |A😀中 2
 assert= (Option :none) $ nth |A😀中 3
-assert= |😀中 $ .slice |A😀中文 1 3
+assert= |😀中 $ .slice |A😀中文 1 (Option :some 3)
 assert= 2 $ count |é
 ```
 
-公开读取返回 `Option<String>`；底层 `&str:first` / `&str:nth` 同样返回 `Option<String>`，在空串或超范围时返回 `Option :none`。`&str:contains?` 判断索引是否存在，不判断子串。底层索引须是非负整数，负数、小数及非有限数会报错；公开 `nth`/`get` 的既有边界 guard 对负数或超范围位置返回 `Option :none`，不把范围内的小数截断为整数。切片采用左闭右开区间，超出末尾时截到末尾，反向或空区间返回空串。
+公开读取返回 `Option<String>`；底层 `&str:first` / `&str:nth` 同样返回 `Option<String>`，在空串或超范围时返回 `Option :none`。`&str:contains?` 判断索引是否存在，不判断子串。底层索引须是非负整数，负数、小数及非有限数会报错；公开 `nth`/`get` 的既有边界 guard 对负数或超范围位置返回 `Option :none`，不把范围内的小数截断为整数。切片采用左闭右开区间，终点为 `Option<Number>`：`Option :some n` 指定终点，省略或 `Option :none` 表示到末尾。超出末尾时截到末尾，反向或空区间返回空串。
 
 0.23 的这项 JS 修复无需源码迁移；不要在应用中通过 UTF-16 偏移补偿 emoji 长度。内部使用无字符数组分配的标量扫描，ASCII/BMP 有快速路径。JS FFI 传入的孤立 surrogate 不是合法 Unicode 标量，不在本次跨 backend 保证范围内。
 
-WASM 的底层 `first`/`nth`/`rest`/`slice`/`contains?` 复用有界的标量边界扫描：空串 `rest` 保持空串，超大合法索引按越界处理，复制范围不越过源字符串。普通 `slice` 根据已证明的 String/List receiver 选择现有 lowering，不再无条件解释成列表；缺少类型证据时明确拒绝。传入参数按原顺序各求值一次，再验证索引。
+WASM 的底层 `first`/`nth`/`rest`/`slice`/`contains?` 复用有界的标量边界扫描：空串 `rest` 保持空串，超大合法索引按越界处理，复制范围不越过源字符串。普通 `slice` 根据已证明的 receiver 通过现有 trait 单态化选择实现；缺少类型证据时明确拒绝。传入参数按原顺序各求值一次，再验证索引。
 
 native/JS 的非法索引通过既有错误路径报告；当前 WASM 对应为 trap，尚不提供可捕获的 `try` 语义。共享 Calcit 测试验证正常结果，宿主测试验证 trap 与求值顺序。不将这些结果外推到所有 Dynamic 方法、任意 host 字符串或其他文本操作；本次修复不扩大 WASI 宿主能力。
 
@@ -54,7 +54,7 @@ assert= (Option :some 1) $ |😀中 .find-index |中
 assert= (Option :some 2) $ |éa .find-index |a
 assert= (Option :none) $ |éa .find-index |é
 assert= (Option :some 0) $ | .find-index |
-assert= |中文 $ |A😀中文 .slice ((|A😀中文 .find-index |中文) .unwrap) (|A😀中文 .len)
+assert= |中文 $ |A😀中文 .slice ((|A😀中文 .find-index |中文) .unwrap)
 ```
 
 这修复了旧 native/WASM 返回 UTF-8 字节偏移、旧 JS 返回 UTF-16 单元偏移的不一致；不改变 `.includes?` 的子串存在判断或显式 `&str:utf8-byte-count`。普通 Calcit 搜索不提供 byte-offset 模式；需要协议偏移的调用者应在明确的编码边界自行计算，不再依赖旧缺陷。JS FFI 的孤立 surrogate 仍按既有宿主行为处理，不替换为 `�`，也不扩大跨 backend 的合法文本保证范围。

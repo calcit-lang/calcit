@@ -62,6 +62,26 @@
             :none
           :examples $ []
           :schema $ :: 'EnumDef
+        'SliceReceiver $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct SliceReceiver (:n 'Number)
+            :end $ :: 'Option 'Number
+          :examples $ []
+          :schema $ :: 'StructDef
+        'SliceReceiverImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl SliceReceiverImpl Sliceable
+            .slice $ fn (self start end)
+              hint-fn $ {}
+                :args $ [] 'test-types-inference.main/SliceReceiver 'Number $ :: 'Option 'Number
+                :return 'test-types-inference.main/SliceReceiver
+              struct-with self
+                :n $ + (:n self) start
+                :end end
+          :examples $ []
+          :schema $ :: 'Impl
+        'SliceReceiverWithMethods $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def SliceReceiverWithMethods (impl-traits SliceReceiver SliceReceiverImpl)
+          :examples $ []
+          :schema $ :: 'StructDef
         'Status $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Status (:ok 'Number) (:err 'String)
           :examples $ []
@@ -105,7 +125,7 @@
                     :return 'T
                     :generics $ [] 'T
                     :where $ {} $ 'T Sliceable
-                  .slice item 0 1
+                  .slice item 0 $ Option :some 1
               shorten value
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'C)
@@ -148,7 +168,7 @@
         'bounded-multiple $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bounded-multiple (value)
             assert-type (.debug value) 'String
-            .slice value 0 1
+            .slice value 0 $ Option :some 1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'C)
             :args $ [] 'C
@@ -182,7 +202,8 @@
               :code $ quote $ assert= |outer (bounded-shadow-capture |outer)
               :tags $ #{} :bounded-binder :generic :lexical-binder :unit
         'bounded-slice $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn bounded-slice (value) (value .slice 0 1)
+          :code $ quote $ defn bounded-slice (value)
+            value .slice 0 $ Option :some 1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'C)
             :args $ [] 'C
@@ -828,6 +849,47 @@
                 assert= true $ = nil nil nil
                 assert= &unit $ check nil nil nil
               :tags $ #{} :generic :unit
+        'slice-with-contract $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn slice-with-contract (value start end) (slice value start end)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'C)
+            :args $ [] 'C 'Number $ :: 'Option 'Number
+            :generics $ [] 'C
+            :where $ {} $ 'C 'Sliceable
+          :tests $ []
+            %{} 'TestEntry (:name |custom-omitted-end)
+              :code $ quote $ let
+                  source $ SliceReceiverWithMethods :n 7 :end $ Option :some 9
+                  result $ slice-with-contract source 2
+                assert= 9 $ :n result
+                assert= (Option :none) (:end result)
+              :tags $ #{} :sliceable-option :unit
+            %{} 'TestEntry (:name |custom-specified-end)
+              :code $ quote $ let
+                  source $ SliceReceiverWithMethods :n 7 :end $ Option :none
+                  result $ slice-with-contract source 2 $ Option :some 5
+                assert= 9 $ :n result
+                assert= (Option :some 5) (:end result)
+              :tags $ #{} :sliceable-option :unit
+            %{} 'TestEntry (:name |custom-method-and-trait)
+              :code $ quote $ let
+                  source $ SliceReceiverWithMethods :n 7 :end $ Option :some 9
+                  method-result $ .slice source 2
+                  trait-result $ &trait-call Sliceable :slice source 2 $ Option :some 5
+                  trait-omitted $ &trait-call Sliceable :slice source 2
+                assert= 9 $ :n method-result
+                assert= (Option :none) (:end method-result)
+                assert= (Option :some 5) (:end trait-result)
+                assert= (Option :none) (:end trait-omitted)
+              :tags $ #{} :sliceable-option :unit
+            %{} 'TestEntry (:name |custom-function-reference)
+              :code $ quote $ let
+                  source $ SliceReceiverWithMethods :n 7 :end $ Option :some 9
+                  forward slice-with-contract
+                  result $ forward source 2
+                assert= 9 $ :n result
+                assert= (Option :none) (:end result)
+              :tags $ #{} :sliceable-option :unit
         'test-count-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-count-inference ()
             assert-type

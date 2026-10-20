@@ -29,7 +29,8 @@
           :code $ quote $ defn helper-number () (+ 1 2)
           :examples $ []
         'helper-text $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn helper-text () (.slice "|😀中" 0 1)
+          :code $ quote $ defn helper-text ()
+            .slice "|😀中" 0 $ Option :some 1
           :examples $ []
         'helper-texts $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn helper-texts () ([] |a |bc)

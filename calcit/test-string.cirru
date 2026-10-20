@@ -128,9 +128,9 @@
               , :string
             assert= (.replace "|this is a" |is |IS) "|thIS IS a"
             assert= |56789 $ .slice |0123456789 5
-            assert= |567 $ .slice |0123456789 5 8
+            assert= |567 $ .slice |0123456789 5 $ Option :some 8
             assert= | $ .slice |0123456789 10
-            assert= | $ .slice |0123456789 9 1
+            assert= | $ .slice |0123456789 9 $ Option :some 1
           :examples $ []
           :schema $ :: 'Dynamic
       :ns $ %{} 'NsEntry (:doc |)

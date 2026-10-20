@@ -75,8 +75,8 @@ use runtime::{
 use structs::{
   StructLayouts, collect_struct_layouts, component_struct_identity, emit_enum_assoc, emit_enum_count, emit_enum_new, emit_enum_nth,
   emit_named_enum_new, emit_struct_assoc_at, emit_struct_contains, emit_struct_count, emit_struct_def, emit_struct_field_tag,
-  emit_struct_get, emit_struct_get_name, emit_struct_matches, emit_struct_new, emit_struct_nth, emit_struct_to_map, resolve_struct_ref,
-  try_parse_defrecord_form,
+  emit_struct_get, emit_struct_get_name, emit_struct_matches, emit_struct_new, emit_struct_nth, emit_struct_to_map,
+  emit_struct_with_at, resolve_struct_ref, try_parse_defrecord_form,
 };
 
 /// Low memory holds WASI scratch, the private Number formatter stack, and its
@@ -4937,6 +4937,8 @@ struct InlineClosure {
   required: usize,
   /// The last parameter is a `&` rest parameter.
   rest: bool,
+  /// Fixed-arity trailing Option parameters bind omission to nominal None.
+  option_types: Vec<Arc<CalcitTypeAnnotation>>,
   body: Vec<Calcit>,
   captured_locals: HashMap<String, u32>,
   captured_local_types: HashMap<String, Arc<CalcitTypeAnnotation>>,
@@ -5268,10 +5270,22 @@ impl WasmGenCtx {
 fn capture_inline_closure(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<InlineClosure>> {
   let (params, body) = try_extract_inline_lambda(expr)?;
   let (required, rest) = inline_lambda_shape(expr)?;
+  let option_types = if !rest && required == params.len() {
+    infer_wasm_static_type(ctx, expr)
+      .and_then(|annotation| annotation.resolve_to_fn())
+      .map(|signature| {
+        let count = crate::wasm::host::calcit::trailing_option_arg_count(&signature.arg_types, params.len());
+        signature.arg_types.iter().skip(params.len() - count).cloned().collect::<Vec<_>>()
+      })
+      .unwrap_or_default()
+  } else {
+    vec![]
+  };
   Some(Arc::new(InlineClosure {
+    required: required - option_types.len(),
     params,
-    required,
     rest,
+    option_types,
     body,
     captured_locals: ctx.locals.clone(),
     captured_local_types: ctx.local_types.clone(),
@@ -5352,10 +5366,16 @@ fn bind_inline_closure_args(
     vec![]
   };
   while args.len() < positional {
-    let nil = ctx.alloc_local();
-    ctx.emit(f64_const(0.0));
-    ctx.emit(Instruction::LocalSet(nil));
-    args.push((InlineArgument::Value(nil), Some(Arc::new(CalcitTypeAnnotation::Nil))));
+    let annotation = if args.len() >= positional - closure.option_types.len() {
+      emit_expr(ctx, &nominal_option_none_expression()?)?;
+      closure.option_types[args.len() - (positional - closure.option_types.len())].clone()
+    } else {
+      ctx.emit(f64_const(0.0));
+      Arc::new(CalcitTypeAnnotation::Nil)
+    };
+    let local = ctx.alloc_local();
+    ctx.emit(Instruction::LocalSet(local));
+    args.push((InlineArgument::Value(local), Some(annotation)));
   }
   if closure.rest {
     let items = trailing
@@ -5397,7 +5417,36 @@ fn install_inline_closure_bindings(ctx: &mut WasmGenCtx, closure: &InlineClosure
 fn resolve_inline_closure(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<InlineClosure>> {
   match expr {
     Calcit::Local(local) => ctx.lambda_locals.get(local.sym.as_ref()).cloned(),
-    Calcit::Symbol { sym, .. } => ctx.lambda_locals.get(sym.as_ref()).cloned(),
+    Calcit::Symbol { sym, .. } if ctx.lambda_locals.contains_key(sym.as_ref()) => ctx.lambda_locals.get(sym.as_ref()).cloned(),
+    Calcit::Symbol { sym, .. } if ctx.locals.contains_key(sym.as_ref()) => None,
+    Calcit::Import(_) | Calcit::Symbol { .. } => {
+      let qualified = direct_definition_reference(expr)?;
+      let definition = ctx.static_fn_defs.get(&qualified)?;
+      if !definition.fixed_arity
+        || !(definition_requires_nil_specialization(definition) || definition_requires_trait_specialization(definition))
+      {
+        return None;
+      }
+      // A known immutable definition alias can stay compiler-side until its
+      // call supplies concrete parameter evidence, instead of materializing an
+      // unspecialized function-table entry. It captures no caller bindings.
+      let optional = crate::wasm::host::calcit::trailing_option_arg_count(&definition.arg_types, definition.params.len());
+      Some(Arc::new(InlineClosure {
+        params: definition.params.clone(),
+        required: definition.params.len() - optional,
+        rest: false,
+        option_types: definition
+          .arg_types
+          .iter()
+          .skip(definition.params.len() - optional)
+          .cloned()
+          .collect(),
+        body: definition.body.clone(),
+        captured_locals: HashMap::new(),
+        captured_local_types: HashMap::new(),
+        captured_closures: HashMap::new(),
+      }))
+    }
     _ => capture_inline_closure(ctx, expr),
   }
 }
@@ -5670,10 +5719,35 @@ fn resolve_static_specialization_types(
   all_declared_types_resolved.then_some(actual_types)
 }
 
+fn nominal_option_none_expression() -> Result<Calcit, String> {
+  let Calcit::Enum(none) = crate::wasm::host::builtins::option_value::none().map_err(|error| error.to_string())? else {
+    unreachable!("the core Option helper returns a nominal enum value")
+  };
+  let definition = none.sum_type.expect("the core Option value retains its definition");
+  Ok(Calcit::from(vec![
+    Calcit::Proc(CalcitProc::NativeNamedEnumNew),
+    Calcit::EnumDef(definition.as_ref().clone()),
+    Calcit::tag("none"),
+  ]))
+}
+
 fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[Calcit]) -> Result<bool, String> {
   let Some(definition) = ctx.static_fn_defs.get(qualified).cloned() else {
     return Ok(false);
   };
+
+  let optional = crate::wasm::host::calcit::trailing_option_arg_count(&definition.arg_types, definition.params.len());
+  let completed_args =
+    if definition.fixed_arity && args.len() < definition.params.len() && args.len() >= definition.params.len() - optional {
+      // Complete the language's trailing Option convention before selecting a
+      // specialization. Legacy `?` parameters still use their existing nil path.
+      let mut completed = args.to_vec();
+      completed.resize(definition.params.len(), nominal_option_none_expression()?);
+      Some(completed)
+    } else {
+      None
+    };
+  let args = completed_args.as_deref().unwrap_or(args);
 
   let needs_nil_specialization = definition_requires_nil_specialization(&definition);
   let needs_trait_specialization = definition_requires_trait_specialization(&definition);
@@ -5716,7 +5790,11 @@ fn emit_specialized_static_call(ctx: &mut WasmGenCtx, qualified: &str, args: &[C
       Ok(closure.map(|_| (effects, tail)))
     })
     .collect::<Result<Vec<_>, String>>()?;
-  if closure_args.iter().all(Option::is_none) && nil_argument_types.is_none() && trait_argument_types.is_none() {
+  if closure_args.iter().all(Option::is_none)
+    && nil_argument_types.is_none()
+    && trait_argument_types.is_none()
+    && completed_args.is_none()
+  {
     return Ok(false);
   }
   if !definition.fixed_arity || definition.params.len() != args.len() {
@@ -6502,16 +6580,6 @@ fn emit_call_expr(ctx: &mut WasmGenCtx, xs: &crate::wasm::host::calcit::CalcitLi
           "str-spaced" if !args_list.is_empty() => return emit_str_spaced(ctx, &args_list),
           // `filter-not` — keep elements where f(elem) is falsy.
           "filter-not" if args_list.len() == 2 => return emit_filter_not(ctx, &args_list),
-          // Preserve the proven receiver type and source arity. Calling the
-          // legacy optional core wrapper would confuse end=0 with omitted nil
-          // in the unboxed WASM representation.
-          "slice" if args_list.len() >= 2 && args_list.len() <= 3 => {
-            return match infer_static_type_from_expr(&args_list[0]).as_deref() {
-              Some(CalcitTypeAnnotation::String) => emit_str_slice(ctx, &args_list),
-              Some(CalcitTypeAnnotation::List(_)) => emit_list_slice(ctx, &args_list),
-              _ => Err("slice requires a statically proven String or List receiver in WASM".into()),
-            };
-          }
           // `dissoc` — delegated to map dissoc for 2-arg calls.
           "dissoc" if args_list.len() == 2 => return emit_map_dissoc(ctx, &args_list),
           // `conj` — append one or more elements to a list.
@@ -7410,11 +7478,11 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeStructGetName => emit_struct_get_name(ctx, args),
     CalcitProc::NativeStructToMap => emit_struct_to_map(ctx, args),
     CalcitProc::NativeStructAssocAt => emit_struct_assoc_at(ctx, args),
+    CalcitProc::NativeStructWithAt => emit_struct_with_at(ctx, args),
     CalcitProc::NativeStructAssoc | CalcitProc::NativeStructWith => Err(format!("{proc} not yet supported in WASM codegen")),
     CalcitProc::NativeStructFromMap
     | CalcitProc::NativeStructExtendAs
     | CalcitProc::NativeStructImpls
-    | CalcitProc::NativeStructWithAt
     | CalcitProc::NativeLooseStruct => Err(format!("Struct operation {proc} not yet supported in WASM codegen")),
     CalcitProc::NativeStructContains => emit_struct_contains(ctx, args),
     CalcitProc::NativeStructMatches => emit_struct_matches(ctx, args),
@@ -10480,6 +10548,7 @@ mod tests {
         params: vec!["a".to_string(), "xs".to_string()],
         required: 1,
         rest: true,
+        option_types: vec![],
         body: vec![Calcit::Number(0.0)],
         captured_locals: HashMap::new(),
         captured_local_types: HashMap::new(),

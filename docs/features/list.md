@@ -43,7 +43,7 @@ All list operations return new lists — the original is never mutated.
 - **Access**: `xs.get 0`, `xs.first`, `xs.last`
 - **Modify**: `append xs 4`, `prepend xs 0`, `assoc xs 1 99`
 - **Transform**: `map xs f`, `filter xs f`, `reduce xs 0 f`
-- **Combine**: `concat xs ys`, `slice xs 1 3`
+- **组合**：`concat xs ys`、`slice xs 1 (Option :some 3)`；省略终点表示取到末尾。
 
 ## Creating Lists
 
@@ -158,7 +158,7 @@ let
   ; => $ [] 2 3 4 5
   println $ butlast xs
   ; => $ [] 1 2 3 4
-  println $ slice xs 1 3
+  println $ slice xs 1 (Option :some 3)
   ; => $ [] 2 3
   println $ take xs 3
   ; => $ [] 1 2 3

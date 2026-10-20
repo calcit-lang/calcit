@@ -731,6 +731,44 @@ pub(crate) fn check_proc_arg_types(
     }
   }
 
+  if matches!(proc, CalcitProc::NativeTraitCall) {
+    let mut call = vec![Calcit::Proc(*proc)];
+    call.extend(args.iter().cloned());
+    if let Some(signature) = super::type_inference::lowered_trait_method_signature(&CalcitList::from(call.as_slice()), scope_types) {
+      // The builtin only transports a dispatch request. Its open signature
+      // cannot replace the selected method's actual input contract.
+      let method_args = args.skip(2).expect("resolved trait method has trait and method operands");
+      let arity = signature.call_arity();
+      if method_args.len() < arity.min || arity.max.is_some_and(|maximum| method_args.len() > maximum) {
+        gen_check_warning(
+          format!(
+            "[Warn] &trait-call method expects {}..{} arguments including receiver, got {} at {file_ns}/{def_name}",
+            arity.min,
+            arity.max.map_or_else(|| "unbounded".to_owned(), |maximum| maximum.to_string()),
+            method_args.len(),
+          ),
+          file_ns,
+          check_warnings,
+        );
+        return;
+      }
+      check_resolved_fn_call_arg_types(
+        &Calcit::Proc(*proc),
+        &signature,
+        "&trait-call",
+        &method_args,
+        scope_types,
+        &CallTypeCheckInfo {
+          file_ns,
+          def_name,
+          call_location,
+        },
+        check_warnings,
+      );
+      return;
+    }
+  }
+
   // Check argument count
   let Some(arity) = proc.arity() else {
     return;

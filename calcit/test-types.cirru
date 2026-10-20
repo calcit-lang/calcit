@@ -169,7 +169,8 @@
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'Number
         'slice-as-string $ %{} 'CodeEntry (:doc "|Guarded dynamic .slice call")
-          :code $ quote $ defn slice-as-string (text) (.slice text 1 4)
+          :code $ quote $ defn slice-as-string (text)
+            .slice text 1 $ Option :some 4
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'String
@@ -230,11 +231,11 @@
             let
                 typed-text |calcit
               assert-type typed-text 'String
-              assert= |alc $ .slice typed-text 1 4
+              assert= |alc $ .slice typed-text 1 $ Option :some 4
             let
                 also-text |numbers
               assert-type also-text 'String
-              assert= |num $ .slice also-text 0 3
+              assert= |num $ .slice also-text 0 $ Option :some 3
             println "|slice checks succeeded"
             , "|slice checks passed"
           :examples $ []
@@ -302,7 +303,7 @@
                 text |hello-world
               assert-type text 'String
               let
-                  sliced $ .slice text 0 5
+                  sliced $ .slice text 0 $ Option :some 5
                   len $ .len text
                   trimmed $ .trim text
                 println "|✓ String methods validated at preprocess"
@@ -332,7 +333,7 @@
               assert-type text 'String
               ; Call valid string methods
               let
-                  sliced $ .slice text 0 5
+                  sliced $ .slice text 0 $ Option :some 5
                   text-len $ .len text
                   first-char $ .first text
                   starts $ .starts-with? text |hello

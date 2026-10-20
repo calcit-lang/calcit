@@ -277,14 +277,64 @@ pub(super) fn try_parse_defrecord_form(code: &Calcit) -> Option<CalcitStructDef>
 /// Copy a validated Struct allocation before updating a statically selected field.
 pub(super) fn emit_struct_assoc_at(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(4, args, "&struct:assoc-at requires 4 args (struct, index, tag, value)")?;
-  let (Calcit::Number(index), Calcit::Tag(field)) = (&args[1], &args[2]) else {
+  let (index, field) = static_struct_update_field(&args[1], &args[2])?;
+  let receiver = ctx.alloc_local();
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(Instruction::LocalSet(receiver));
+  let value = ctx.alloc_local();
+  emit_expr(ctx, &args[3])?;
+  ctx.emit(Instruction::LocalSet(value));
+  emit_struct_update_from_locals(ctx, receiver, value, index, &field)
+}
+
+fn static_struct_update_field(index: &Calcit, field: &Calcit) -> Result<(usize, String), String> {
+  let (Calcit::Number(index), Calcit::Tag(field)) = (index, field) else {
     return Err("&struct:assoc-at requires a static field index and tag in WASM".into());
   };
   if !index.is_finite() || *index < 0.0 || index.fract() != 0.0 || *index > (u32::MAX / 8 - 2) as f64 {
     return Err("&struct:assoc-at field index is out of range".into());
   }
-  let index = *index as usize;
-  let field_id = ctx.tag_index.get(field.ref_str()).copied().ok_or("unknown Struct field tag")?;
+  Ok((*index as usize, field.ref_str().to_owned()))
+}
+
+/// Evaluate all update inputs before validating/copying, as native eager calls do.
+pub(super) fn emit_struct_with_at(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  if args.is_empty() || !(args.len() - 1).is_multiple_of(3) {
+    return Err("&struct:with-at requires (struct, index, tag, value, ...) triples".into());
+  }
+  let triples = args[1..].as_chunks::<3>().0;
+  let fields = triples
+    .iter()
+    .map(|triple| static_struct_update_field(&triple[0], &triple[1]))
+    .collect::<Result<Vec<_>, _>>()?;
+  let receiver = ctx.alloc_local();
+  emit_expr(ctx, &args[0])?;
+  ctx.emit(Instruction::LocalSet(receiver));
+  let mut updates = Vec::with_capacity(fields.len());
+  for ((index, field), triple) in fields.into_iter().zip(triples) {
+    let value = ctx.alloc_local();
+    emit_expr(ctx, &triple[2])?;
+    ctx.emit(Instruction::LocalSet(value));
+    updates.push((index, field, value));
+  }
+  if updates.is_empty() {
+    emit_type_of_local(ctx, receiver);
+    ctx.emit(f64_const(get_type_tag(ctx, "struct")));
+    ctx.emit(Instruction::F64Ne);
+    ctx.emit(Instruction::If(wasm_encoder::BlockType::Empty));
+    ctx.emit(Instruction::Unreachable);
+    ctx.emit(Instruction::End);
+  }
+  for (index, field, value) in updates {
+    emit_struct_update_from_locals(ctx, receiver, value, index, &field)?;
+    ctx.emit(Instruction::LocalSet(receiver));
+  }
+  ctx.emit(Instruction::LocalGet(receiver));
+  Ok(())
+}
+
+fn emit_struct_update_from_locals(ctx: &mut WasmGenCtx, receiver: u32, value: u32, index: usize, field: &str) -> Result<(), String> {
+  let field_id = ctx.tag_index.get(field).copied().ok_or("unknown Struct field tag")?;
   let mut layouts = ctx
     .struct_layouts
     .field_tags
@@ -292,13 +342,6 @@ pub(super) fn emit_struct_assoc_at(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
     .filter_map(|(id, fields)| (fields.get(index) == Some(&field_id)).then_some((*id, fields.len())))
     .collect::<Vec<_>>();
   layouts.sort_unstable();
-
-  let receiver = ctx.alloc_local();
-  emit_expr(ctx, &args[0])?;
-  ctx.emit(Instruction::LocalSet(receiver));
-  let value = ctx.alloc_local();
-  emit_expr(ctx, &args[3])?;
-  ctx.emit(Instruction::LocalSet(value));
 
   // Reuse heap range, magic and allocation-kind validation. A matching payload
   // layout slot in a List must not manufacture nominal Struct authority.
