@@ -16,6 +16,132 @@ fn calcit(fixture_home: &Path) -> Command {
   command
 }
 
+// Namespace ownership, entry selection and process failures are CLI/loader
+// boundaries; the loaded values and assertions still use real Calcit source.
+#[test]
+fn eval_preserves_explicit_application_namespaces_without_running_their_entries() {
+  let project = tempfile::tempdir().expect("create eval project");
+  let snapshot = project.path().join("calcit.cirru");
+  std::fs::copy("tests/fixtures/def-value-schema.cirru", &snapshot).expect("copy actual app fixture");
+  let run = |args: &[&str]| {
+    calcit(project.path())
+      .current_dir(project.path())
+      .arg(&snapshot)
+      .args(args)
+      .output()
+      .expect("run project command")
+  };
+  let success = |output: &std::process::Output| {
+    assert!(
+      output.status.success(),
+      "{}{}",
+      String::from_utf8_lossy(&output.stdout),
+      String::from_utf8_lossy(&output.stderr)
+    );
+  };
+  let migrate = |operations: serde_json::Value| {
+    let code = operations.to_string();
+    let preview = run(&["edit", "transaction", "--code", &code, "--dry-run", "--format", "json"]);
+    success(&preview);
+    let report: serde_json::Value = serde_json::from_slice(&preview.stdout).expect("transaction preview");
+    success(&run(&[
+      "edit",
+      "transaction",
+      "--code",
+      &code,
+      "--expect-revision",
+      report["scoped_revision"].as_str().expect("scoped revision"),
+      "--format",
+      "json",
+    ]));
+  };
+  migrate(serde_json::json!([
+    [
+      "edit",
+      "def",
+      "app.main/main!",
+      "--overwrite",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn main! () $ raise |eval-must-not-run-project-entry"
+    ],
+    [
+      "edit",
+      "def",
+      "app.main/reload!",
+      "--overwrite",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn reload! () $ raise |eval-must-not-run-project-entry"
+    ],
+    ["edit", "add-ns", "app.__calcit_eval_0__"],
+    [
+      "edit",
+      "def",
+      "app.__calcit_eval_0__/answer",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ def answer 7"
+    ],
+    ["edit", "schema", "app.__calcit_eval_0__/answer", "--code", "quote 'Number"],
+    [
+      "edit",
+      "def",
+      "app.main/increment",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn increment (value) $ inc value"
+    ],
+    [
+      "edit",
+      "schema",
+      "app.main/increment",
+      "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)"
+    ]
+  ]));
+  let before = std::fs::read(&snapshot).expect("source before eval");
+  let missing = run(&["eval", "+ app.main/answer 0"]);
+  assert!(!missing.status.success());
+  assert!(String::from_utf8_lossy(&missing.stderr).contains("unknown ns target"));
+  for dependency in ["./", "./calcit.cirru", snapshot.to_str().unwrap()] {
+    let result = run(&[
+      "eval",
+      "--dep",
+      dependency,
+      "assert= 43 $ app.main/increment app.main/answer\nassert= 7 app.__calcit_eval_0__/answer",
+    ]);
+    success(&result);
+    assert!(!String::from_utf8_lossy(&result.stderr).contains("eval-must-not-run-project-entry"));
+  }
+  success(&run(&[
+    "eval",
+    "--dep",
+    "./",
+    "--dep",
+    "./calcit.cirru",
+    "ns app.snippet\n  :require\n    app.main :refer $ increment answer\n\nassert= 43 $ increment answer",
+  ]));
+  // Explicit application calls still execute, including their errors.
+  let raised = run(&["eval", "--dep", "./", "app.main/main!"]);
+  assert!(!raised.status.success());
+  assert!(String::from_utf8_lossy(&raised.stderr).contains("eval-must-not-run-project-entry"));
+  let wrong_type = run(&["eval", "--dep", "./", "app.main/increment |not-a-number"]);
+  assert!(!wrong_type.status.success());
+  assert!(!String::from_utf8_lossy(&wrong_type.stderr).contains("eval-must-not-run-project-entry"));
+
+  let other = project.path().join("other.cirru");
+  std::fs::copy(&snapshot, &other).expect("copy conflicting application");
+  let conflict = run(&["eval", "--dep", "./", "--dep", other.to_str().unwrap(), "+ app.main/answer 0"]);
+  assert!(!conflict.status.success(), "different source owners must not be silently preferred");
+  assert!(String::from_utf8_lossy(&conflict.stderr).contains("conflict"));
+  assert_eq!(std::fs::read(&snapshot).unwrap(), before, "eval must not mutate application source");
+}
+
 #[test]
 fn read_commands_exit_successfully_when_stdout_reader_is_closed() {
   let fixture = documentation_fixture();

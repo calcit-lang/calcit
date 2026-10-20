@@ -809,11 +809,10 @@ fn run_cli() -> Result<(), String> {
       }
       (None, false) => return Err("No snippet provided. Pass a positional snippet or use `calcit eval --stdin`.".to_string()),
     };
-    {
-      let main_file = snapshot::create_file_from_snippet(&snippet)?;
-      snapshot.files.insert(String::from("app.main"), main_file);
-      project_namespaces.insert(String::from("app.main"));
-    }
+    let mut main_file = snapshot::create_file_from_snippet(&snippet)?;
+    // Explicit eval dependencies have no authoritative project package to filter
+    // or prefer. Merge their namespaces strictly before installing the snippet.
+    let snippet_package = std::mem::take(&mut snapshot.package);
 
     for module_path in &command.dep {
       let loaded = calcit::load_module_with_sources(module_path, base_dir, &module_folder)?;
@@ -827,8 +826,25 @@ fn run_cli() -> Result<(), String> {
           ));
         }
       }
-      calcit::merge_project_module_files(&mut snapshot, &loaded.snapshot, module_path)?;
+      calcit::merge_module_files(&mut snapshot, &loaded.snapshot, module_path)?;
     }
+    snapshot.package = snippet_package;
+    // Keep the historical namespace when available, without replacing a loaded
+    // application's app.main (or any other existing namespace).
+    let mut eval_namespace = String::from("app.main");
+    let mut suffix = 0;
+    while snapshot.files.contains_key(&eval_namespace) {
+      eval_namespace = format!("app.__calcit_eval_{suffix}__");
+      suffix += 1;
+    }
+    if let Cirru::List(items) = &mut main_file.ns.code {
+      items[1] = Cirru::leaf(eval_namespace.as_str());
+    }
+    let entry = snapshot.entries.get_mut(snapshot::DEFAULT_ENTRY_NAME).expect("default eval entry");
+    entry.init_fn = format!("{eval_namespace}/main!");
+    entry.reload_fn = format!("{eval_namespace}/reload!");
+    snapshot.files.insert(eval_namespace.clone(), main_file);
+    project_namespaces.insert(eval_namespace);
   } else {
     calcit::validate_snapshot_path(&input_path)?;
     if !input_path.exists() {

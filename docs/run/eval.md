@@ -62,6 +62,8 @@ calcit eval '
 仅包含旧 `compact.cirru` 的目录会被拒绝并提示迁移；先按 [升级指南](upgrade.md) 迁为 `calcit.cirru`，再加载。
 加载定义不执行被加载项目的 `init-fn` 或 `reload-fn`；片段显式调用的函数仍按正常语义执行。
 
+读取 `def answer 42` 这样的不可变值时，用逗号明确返回值，例如 `calcit eval --dep ./ ', app.main/answer'`；直接写一行 `app.main/answer` 是零参数调用，会因 Number 不是函数而报错。函数定义则按正常方式传参调用。
+
 例如，已安装依赖的 [Corokia](https://github.com/calcit-lang/corokia) 项目有
 `corokia.complex/c+` 定义。在该项目根目录执行：
 
@@ -77,7 +79,7 @@ calcit eval --dep ./calcit.cirru 'corokia.complex/c+ ([] 1 2) ([] 3 4)'
 访问项目定义仍需 `--dep`。`range`、`let` 等 core 表达式无需加载项目，不能用它们验证项目上下文是否已加载。
 
 外部模块同样使用 `--dep`，可重复传入。片段的首个表达式若为 `ns`，其中的 `:require`
-规则会合并到运行用的 `ns app.main`。例如在 Corokia 项目根目录导入同一项目定义：
+规则会合并到片段自己的 namespace；它不会覆盖已加载项目的 `app.main` 或其他定义。例如在 Corokia 项目根目录导入同一项目定义：
 
 ```bash
 calcit eval --dep ./ '
