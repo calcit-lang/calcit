@@ -12329,10 +12329,41 @@ pub fn preprocess_defn(
         && let CalcitTypeAnnotation::Fn(declared) = def_schema.as_ref()
         && let Some(effective) = effective_fn_schema.as_ref()
       {
-        // An embedded hint can add invocation properties such as async, but
-        // it must not erase capabilities declared on the source definition.
-        let mut merged = effective.as_ref().clone();
-        merged.features = Arc::new(merged.features.union(declared.features.as_ref()).cloned().collect());
+        // Both annotations describe the same function. Missing body fields
+        // inherit declarations; written assumptions must satisfy that public
+        // callable contract before they authorize checking the body.
+        let merged = match body_fn_hint_source.as_ref() {
+          Some(source) => CalcitTypeAnnotation::overlay_surrounding_fn_hint(source, declared, effective),
+          None => effective.as_ref().clone(),
+        };
+        if body_fn_hint_source.is_some() {
+          let mut declared_scope = body_types.clone();
+          declared_scope.bind_function_generics(declared, ctx.file_ns);
+          // Async is an existing source invocation property, not a new body
+          // assumption about which argument values a public caller supplies.
+          let expected = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(if merged.is_async_invocation() {
+            declared.with_async_invocation()
+          } else {
+            declared.as_ref().clone()
+          })));
+          let actual = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(merged.clone())));
+          if !declared_scope
+            .call_type_proof(&[], std::slice::from_ref(&expected), std::slice::from_ref(&actual))
+            .prove(&actual, &expected)
+            .is_proven()
+          {
+            return Err(CalcitErr::use_msg_stack_location_with_code(
+              CalcitErrKind::Type,
+              format!("function body hint cannot prove the declared callable contract: body {actual}, declared {expected}"),
+              "E_SCHEMA_DEF_MISMATCH",
+              ctx.call_stack,
+              body_fn_hint_source
+                .as_ref()
+                .and_then(Calcit::get_location)
+                .or(Some(definition_location.clone())),
+            ));
+          }
+        }
         effective_fn_schema = Some(Arc::new(merged));
       }
       if args.iter().skip(2).any(CalcitTypeAnnotation::hint_form_marks_async)
@@ -12346,6 +12377,35 @@ pub fn preprocess_defn(
         }
       }
       if let Some(fn_annot) = &effective_fn_schema {
+        if body_fn_hint_source.as_ref().is_some_and(|source| {
+          CalcitTypeAnnotation::surrounding_fn_hint_declares(source, "args")
+            || CalcitTypeAnnotation::surrounding_fn_hint_declares(source, "rest")
+        }) {
+          // Callable subtyping alone cannot turn a fixed source parameter
+          // into the collected List represented by a rest binding.
+          let issues = validate_def_schema_during_preprocess(
+            head,
+            ctx.file_ns,
+            def_name.as_ref(),
+            ys,
+            &CalcitTypeAnnotation::Fn(fn_annot.clone()),
+          );
+          if !issues.is_empty() {
+            return Err(CalcitErr::use_msg_stack_location_with_code(
+              CalcitErrKind::Type,
+              format!(
+                "body hint schema mismatch while preprocessing definition:\n  - {}",
+                issues.join("\n  - ")
+              ),
+              "E_SCHEMA_DEF_MISMATCH",
+              ctx.call_stack,
+              body_fn_hint_source
+                .as_ref()
+                .and_then(Calcit::get_location)
+                .or(Some(definition_location.clone())),
+            ));
+          }
+        }
         body_types.bind_function_generics(fn_annot, ctx.file_ns);
         let parameter_types = fn_annot
           .arg_types
