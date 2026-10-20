@@ -99,6 +99,36 @@
             :code $ quote $ assert= |Ada
               read-declared-payload $ recursive/RecordEnvelope :record $ recursive/Payload :value |Ada
             :tags $ #{} :enum :nominal-namespace :unit
+        'read-local-shadow $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-local-shadow (value)
+            let
+                Payload test-enum.main/Payload
+              match value $
+                :record payload
+                :value payload
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'test-enum.recursive/RecordEnvelope
+          :tests $ [] $ %{} 'TestEntry (:name |qualified-payload-ignores-local-shadow)
+            :code $ quote $ assert= |Ada
+              read-local-shadow $ recursive/RecordEnvelope :record $ recursive/Payload :value |Ada
+            :tags $ #{} :enum :local-type-shadow :unit
+        'read-local-type $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn read-local-type ()
+            let
+                Payload recursive/Payload
+                read $ fn (record)
+                  hint-fn $ {}
+                    :args $ [] 'Payload
+                    :return 'String
+                  :value record
+              read $ Payload :value |Ada
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |unqualified-local-type-remains-lexical)
+            :code $ quote $ assert= |Ada (read-local-type)
+            :tags $ #{} :enum :local-type-shadow :unit
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (println |Reloaded)
           :examples $ []

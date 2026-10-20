@@ -33,7 +33,12 @@ try {
   execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-enum.cirru",
     "--backend", "native,js,wasm", "--tag", "nominal-namespace"],
   { ...options, env: { ...process.env, CALCIT_BIN: binary } });
-  for (const definition of ["render-short-recursive", "read-declared-payload", "unwrap-recursive-envelope", "read-caller-payload"]) {
+  // First-class type-definition values are not supported by WASM. Keep the
+  // lexical-alias regressions alongside the shared nominal-shape replay.
+  execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-enum.cirru",
+    "--backend", "native,js", "--tag", "local-type-shadow"],
+  { ...options, env: { ...process.env, CALCIT_BIN: binary } });
+  for (const definition of ["render-short-recursive", "read-declared-payload", "unwrap-recursive-envelope", "read-caller-payload", "read-local-type", "read-local-shadow"]) {
     execFileSync(binary, ["calcit/test-enum.cirru", "fix", "--rule", "concrete-return-proof-v1",
       "--ns", "test-enum.main", "--def", definition, "--format", "edn"], options);
   }

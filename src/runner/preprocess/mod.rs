@@ -1950,8 +1950,8 @@ where
 fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope_types: &ScopeTypes) -> Arc<CalcitTypeAnnotation> {
   map_type_references(annotation, &|name, resolved_args| {
     let lookup_name = name.trim_start_matches('\'').trim_start_matches(':');
-    let short_name = lookup_name.rsplit('/').next().unwrap_or(lookup_name);
-    let local_type = scope_types.get(lookup_name).or_else(|| scope_types.get(short_name));
+    // A qualified declaration is not an alias for a same-named local type.
+    let local_type = scope_types.get(lookup_name);
     match local_type.map(AsRef::as_ref) {
       Some(CalcitTypeAnnotation::StructDef(struct_def)) => Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), resolved_args)),
       Some(CalcitTypeAnnotation::Struct(struct_def, _)) | Some(CalcitTypeAnnotation::StructValue(struct_def)) => {
@@ -12148,8 +12148,15 @@ fn discard_duplicate_replay_warnings(warnings: &mut Vec<LocatedWarning>, checkpo
 }
 
 // Preserve both lexical binders and nominal declaration provenance on replay.
-fn checked_function_hint(items: Vec<Calcit>, signature: Arc<CalcitFnTypeAnnotation>, generated: bool, declaring_ns: &str) -> Calcit {
-  let qualified = resolve_namespace_type_refs_for_body(Arc::new(CalcitTypeAnnotation::Fn(signature)), declaring_ns);
+fn checked_function_hint(
+  items: Vec<Calcit>,
+  signature: Arc<CalcitFnTypeAnnotation>,
+  generated: bool,
+  declaring_ns: &str,
+  lexical_types: &ScopeTypes,
+) -> Calcit {
+  let captured = resolve_local_type_refs_for_body(Arc::new(CalcitTypeAnnotation::Fn(signature)), lexical_types);
+  let qualified = resolve_namespace_type_refs_for_body(captured, declaring_ns);
   let CalcitTypeAnnotation::Fn(signature) = qualified.as_ref() else {
     unreachable!("qualifying function references preserves its annotation kind")
   };
@@ -12626,6 +12633,7 @@ pub fn preprocess_defn(
           fn_annot.clone(),
           false,
           ctx.file_ns,
+          ctx.scope_types,
         );
         processed_body.push(schema_hint.to_owned());
         xs = xs.push_right(schema_hint);
@@ -12739,7 +12747,7 @@ pub fn preprocess_defn(
           && let Some(signature) = effective_fn_schema.as_ref()
           && let Calcit::List(items) = &form
         {
-          checked_function_hint(items.to_vec(), signature.clone(), false, declaring_ns)
+          checked_function_hint(items.to_vec(), signature.clone(), false, declaring_ns, ctx.scope_types)
         } else {
           form
         }
@@ -12906,6 +12914,7 @@ pub fn preprocess_defn(
           fn_annot.clone(),
           true,
           ctx.file_ns,
+          ctx.scope_types,
         );
         processed_body.push(schema_hint.clone());
         xs = xs.push_right(schema_hint);
