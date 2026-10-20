@@ -129,6 +129,13 @@ let
 
 When you annotate an enum payload with a struct type, `%::` validates both the variant tag and the payload value at runtime. Applied struct payload types must use the correct generic arity.
 
+### Payload 的命名空间
+
+命名 Enum 的 payload 短名按声明所在的命名空间解析，包括引用自身的递归类型和集合中的嵌套类型。
+在其他命名空间构造或 `match` 这个 Enum 时，不需要把声明中的短名改成完整名；调用方即使定义了同名类型，也不会改变该 payload 的身份。
+泛型实参则保留调用方提供的类型：声明中的 `T` 被替换成实际类型以后，不会再按 Enum 的命名空间重新解释。
+未声明的类型名仍不能凭同名或相同字段获得名义类型证明。
+
 ## Creating Instances
 
 Use `%::` with the enum definition, the variant tag, and then the payload values:

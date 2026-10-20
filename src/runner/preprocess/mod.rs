@@ -43,8 +43,9 @@ use type_checking::{
 pub(crate) use type_inference::expression_definitely_diverges;
 use type_inference::{
   extract_literal_list_items, find_struct_lookup_in_literal_path, fully_typed_literal_assoc_path, fully_typed_literal_lookup_path,
-  infer_struct_field_type, infer_struct_value_annotation, infer_type_from_expr, is_pending_async_value, resolve_enum_value,
-  resolve_program_value_for_preprocess, resolve_struct_field_type_by_index, resolve_struct_value, resolve_type_value,
+  infer_struct_field_type, infer_struct_value_annotation, infer_type_from_expr, is_pending_async_value, resolve_enum_payload_type,
+  resolve_enum_value, resolve_program_value_for_preprocess, resolve_struct_field_type_by_index, resolve_struct_value,
+  resolve_type_value,
 };
 pub use type_inference::{
   fixed_call_arguments_are_proven, infer_compiled_definition_implementation_type, infer_static_type_from_expr,
@@ -7306,6 +7307,7 @@ pub(crate) fn check_enum_construction(
 
   // Check payload types
   for (idx, (payload_arg, expected_type)) in args.iter().skip(2).zip(variant.payload_types().iter()).enumerate() {
+    let expected_type = resolve_enum_payload_type(&enum_proto, expected_type.clone());
     if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
       continue; // No type constraint for this payload
     }
@@ -11642,6 +11644,7 @@ fn process_match(
               let payload_type = enum_def
                 .and_then(|e| e.find_variant_by_name(pat_tag))
                 .and_then(|v| v.payload_types().get(bind_idx).cloned())
+                .map(|payload| resolve_enum_payload_type(enum_def.expect("variant belongs to the matched enum"), payload))
                 .map(|payload| payload.substitute_type_vars(&enum_bindings))
                 .map(|payload| resolve_local_type_refs_for_body(payload, &body_types))
                 .unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone());
@@ -14564,18 +14567,22 @@ fn reject_strict_unproven_enum_payload(
   if variant.payload_types().len() != payloads.len() {
     return Ok(());
   }
-  // Payload proof follows the ordinary policy for explicitly open values; the
-  // assertion audit keeps its own constructor contracts.
-  if REQUIRE_ASSERTION_PROOF.with(Cell::get)
-    || !payloads.iter().any(|payload| {
+  // The audit proves the actual constructor payload contract, not just the
+  // builtin's open transport signature. Ordinary open-value policy is unchanged.
+  if !REQUIRE_ASSERTION_PROOF.with(Cell::get)
+    && !payloads.iter().any(|payload| {
       explicit_open::reads_explicitly_open_local(payload)
         && resolve_type_value(payload, scope_types).is_some_and(|actual| contains_dynamic_type(actual.as_ref()))
     })
   {
     return Ok(());
   }
-  let CalcitTypeAnnotation::Fn(mut signature) =
-    CalcitTypeAnnotation::from_function_parts(variant.payload_types().to_vec(), calcit::DYNAMIC_TYPE.clone())
+  let payload_types = variant
+    .payload_types()
+    .iter()
+    .map(|payload| resolve_enum_payload_type(&enum_def, payload.clone()))
+    .collect();
+  let CalcitTypeAnnotation::Fn(mut signature) = CalcitTypeAnnotation::from_function_parts(payload_types, calcit::DYNAMIC_TYPE.clone())
   else {
     unreachable!("function parts produce a function signature")
   };
