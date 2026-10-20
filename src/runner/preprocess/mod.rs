@@ -1951,7 +1951,7 @@ fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope
   map_type_references(annotation, &|name, resolved_args| {
     let lookup_name = name.trim_start_matches('\'').trim_start_matches(':');
     // A qualified declaration is not an alias for a same-named local type.
-    let local_type = scope_types.get(lookup_name);
+    let local_type = scope_types.type_reference(lookup_name);
     match local_type.map(AsRef::as_ref) {
       Some(CalcitTypeAnnotation::StructDef(struct_def)) => Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), resolved_args)),
       Some(CalcitTypeAnnotation::Struct(struct_def, _)) | Some(CalcitTypeAnnotation::StructValue(struct_def)) => {
@@ -12245,7 +12245,7 @@ pub fn preprocess_defn(
               arg_location.to_owned().unwrap_or_default(),
             );
             check_symbol(sym, args, loc, ctx.check_warnings);
-            body_types.remove(sym);
+            body_types.shadow_parameter(sym);
             let s = Calcit::Local(CalcitLocal {
               idx: CalcitLocal::track_sym(sym),
               sym: sym.to_owned(),
@@ -12270,10 +12270,9 @@ pub fn preprocess_defn(
           Calcit::Local(local) => {
             param_symbols.push(local.sym.clone());
             body_defs.insert(local.sym.clone());
+            body_types.shadow_parameter(&local.sym);
             if !matches!(local.type_info.as_ref(), CalcitTypeAnnotation::Dynamic) {
-              body_types.insert(local.sym.clone(), local.type_info.clone());
-            } else {
-              body_types.remove(&local.sym);
+              body_types.bind_parameter(local.sym.clone(), local.type_info.clone());
             }
             zs.push(Calcit::Local(local.clone()));
             Ok(())
@@ -12551,7 +12550,7 @@ pub fn preprocess_defn(
       }
       if let CalcitTypeAnnotation::Macro(signature) = def_schema.as_ref() {
         for (param_sym, type_info) in param_symbols.iter().zip(strict_macro_body_parameter_types(signature)) {
-          body_types.insert(param_sym.clone(), type_info);
+          body_types.bind_parameter(param_sym.clone(), type_info);
         }
       }
       if let Some(fn_annot) = &effective_fn_schema {
@@ -12603,7 +12602,7 @@ pub fn preprocess_defn(
           // An explicit open parameter is part of the callable contract. Body
           // usage cannot silently replace it with the capability it needs.
           // Predicates may still narrow that parameter in their success branch.
-          body_types.insert(param_sym.to_owned(), arg_type);
+          body_types.bind_parameter(param_sym.to_owned(), arg_type);
         }
       }
 
@@ -12698,7 +12697,7 @@ pub fn preprocess_defn(
           PreprocessContext::new(&body_defs, &mut body_types, ctx.file_ns, ctx.check_warnings, ctx.call_stack),
         )?;
         for (symbol, annotation) in param_symbols.iter().zip(&parameters) {
-          body_types.insert(symbol.clone(), annotation.clone());
+          body_types.bind_parameter(symbol.clone(), annotation.clone());
         }
         for parameter in &mut zs {
           if let Calcit::Local(local) = parameter
@@ -13486,11 +13485,15 @@ fn preprocess_assert_type_with_obligation(
   };
 
   let local_nominal_type = match type_form {
-    Calcit::Symbol { sym, .. } if !sym.starts_with('\'') => ctx.scope_types.get(sym).and_then(|type_info| match type_info.as_ref() {
-      CalcitTypeAnnotation::StructDef(struct_def) => Some(Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), Arc::new(vec![])))),
-      CalcitTypeAnnotation::EnumDef(enum_def) => Some(Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), Arc::new(vec![])))),
-      _ => None,
-    }),
+    Calcit::Symbol { sym, .. } if !sym.starts_with('\'') => {
+      ctx.scope_types.type_reference(sym).and_then(|type_info| match type_info.as_ref() {
+        CalcitTypeAnnotation::StructDef(struct_def) => {
+          Some(Arc::new(CalcitTypeAnnotation::Struct(struct_def.clone(), Arc::new(vec![]))))
+        }
+        CalcitTypeAnnotation::EnumDef(enum_def) => Some(Arc::new(CalcitTypeAnnotation::Enum(enum_def.clone(), Arc::new(vec![])))),
+        _ => None,
+      })
+    }
     _ => None,
   };
 

@@ -15,6 +15,7 @@ type Annotation = Arc<CalcitTypeAnnotation>;
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ScopeTypes {
   values: HashMap<Arc<str>, Annotation>,
+  parameter_shadowed_types: HashMap<Arc<str>, Annotation>,
   refinements: HashMap<Arc<str>, Option<Annotation>>,
   generics: HashMap<Arc<str>, Arc<str>>,
   generic_capabilities: Option<Arc<HashMap<Arc<str>, Annotation>>>,
@@ -28,6 +29,7 @@ impl ScopeTypes {
   pub fn with_capacity(capacity: usize) -> Self {
     Self {
       values: HashMap::with_capacity(capacity),
+      parameter_shadowed_types: HashMap::new(),
       refinements: HashMap::new(),
       generics: HashMap::new(),
       generic_capabilities: None,
@@ -35,8 +37,31 @@ impl ScopeTypes {
   }
 
   pub fn insert(&mut self, name: Arc<str>, annotation: Annotation) -> Option<Annotation> {
+    self.parameter_shadowed_types.remove(&name);
     self.refinements.remove(&name);
     self.values.insert(name, annotation)
+  }
+
+  /// Value parameters do not redeclare a captured nominal type alias.
+  pub(super) fn shadow_parameter(&mut self, name: &Arc<str>) {
+    if let Some(annotation) = self.type_reference(name).filter(|annotation| {
+      matches!(
+        annotation.as_ref(),
+        CalcitTypeAnnotation::StructDef(_) | CalcitTypeAnnotation::EnumDef(_)
+      )
+    }) {
+      self.parameter_shadowed_types.insert(name.clone(), annotation.clone());
+    }
+    self.remove(name);
+  }
+
+  pub(super) fn bind_parameter(&mut self, name: Arc<str>, annotation: Annotation) {
+    self.refinements.remove(&name);
+    self.values.insert(name, annotation);
+  }
+
+  pub(super) fn type_reference(&self, name: &str) -> Option<&Annotation> {
+    self.parameter_shadowed_types.get(name).or_else(|| self.values.get(name))
   }
 
   /// Declarations, not values carrying a type variable, own lexical type names.
@@ -148,6 +173,7 @@ impl ScopeTypes {
 
   pub fn clear(&mut self) {
     self.values.clear();
+    self.parameter_shadowed_types.clear();
     self.refinements.clear();
     self.generics.clear();
     self.generic_capabilities = None;
@@ -171,6 +197,7 @@ impl From<HashMap<Arc<str>, Annotation>> for ScopeTypes {
   fn from(values: HashMap<Arc<str>, Annotation>) -> Self {
     Self {
       values,
+      parameter_shadowed_types: HashMap::new(),
       refinements: HashMap::new(),
       generics: HashMap::new(),
       generic_capabilities: None,

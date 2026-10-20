@@ -78,6 +78,37 @@ try {
     assert.deepEqual(await readFile(recursiveSnapshot), recursiveOriginal);
   }
   await assertRejectedArtifacts(recursiveNominalOutput, "same-spelled enum payload type", /app\.declared\/Payload/, true);
+  // A same-named value parameter must neither erase the captured type alias
+  // nor let an assertion accept a different declaration with the same fields.
+  for (const typeName of ["'Payload", "Payload"]) {
+    runRecursive("query", "def", "app.main/main!", "--format", "edn");
+    const operations = [
+      ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
+        `quote $ defn main! ()\n  let\n      Payload declared/Payload\n      read $ fn (Payload)\n        hint-fn $ {} (:args $ [] 'String) (:return 'Unit)\n        let\n            record $ app.main/Payload :value 7\n          assert-type record ${typeName}\n          , &unit\n    read |caller`],
+      ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+    ];
+    const code = JSON.stringify(operations);
+    const preview = JSON.parse(runRecursive("edit", "transaction", "--code", code, "--dry-run", "--format", "json"));
+    runRecursive("edit", "transaction", "--code", code, "--expect-revision", preview.scoped_revision, "--format", "edn");
+    const original = await readFile(recursiveSnapshot);
+    const output = join(project, `shadowed-assertion-${typeName.startsWith("'") ? "quoted" : "unquoted"}-js`);
+    for (const args of [
+      ["--check-only", "--all-defs"],
+      ["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "main!", "--format", "edn"],
+      ["fix", "--workflow", "strict", "--verify", "--format", "edn"],
+      [], ["--emit-path", output, "js"],
+    ]) {
+      const result = spawnSync(binary, [recursiveSnapshot, ...args], options);
+      if (result.error) throw result.error;
+      const details = `${result.stdout}\n${result.stderr}`;
+      assert.equal(result.status, 1, `shadowed ${typeName}: ${args.join(" ")}\n${details}`);
+      assert.match(details, /E_ASSERT_TYPE_MISMATCH/);
+      assert.match(details, /app\.main\/main!/);
+      assert.deepEqual(await readFile(recursiveSnapshot), original);
+    }
+    await assertRejectedArtifacts(output, `shadowed ${typeName}`, /E_ASSERT_TYPE_MISMATCH/, true);
+  }
   // #2190: an inner quantifier is not an outer capture with the same spelling.
   // Successful identities/captures live in definition :tests; use this existing
   // rejection harness to verify all compiler entrances and unchanged source.

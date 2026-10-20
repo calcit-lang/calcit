@@ -139,7 +139,11 @@
                   hint-fn $ {}
                     :args $ [] 'String
                     :return 'Payload
-                  recursive/Payload :value Payload
+                  let
+                      record $ recursive/Payload :value Payload
+                    assert-type record 'Payload
+                    assert-type record Payload
+                    , record
               :value $ read |Ada
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)

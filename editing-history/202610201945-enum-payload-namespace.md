@@ -16,6 +16,8 @@ CI 的原泛型 Struct 文档进一步发现，assert-type 仍将局部应用类
 
 增量 review 建议改用函数处理后的 body_types。实际对照表明该建议会使名为 Payload 的 String 参数覆盖声明环境的 Payload 类型别名，独立证明从通过变为 W_FN_RETURN_TYPE_MISMATCH。函数注解按声明环境捕获，而不是按函数执行后的值绑定重解释；保留原环境，增加同名参数的 definition :tests 与独立证明。let 内类型绑定没有泄漏到外部函数签名的语义。
 
+最终复审将同一用例补上嵌套 assert-type 后，复现了另一条有效遗漏：函数签名捕获了外层类型，函数体断言却只看到同名值参数。ScopeTypes 仅保存被函数参数遮蔽的 StructDef／EnumDef 别名供类型位置读取，值读取和参数合同仍用原值表；新的 let 绑定按原规则建立自己的环境，完整限定名仍只按完整名字解析。共享测试保留原断言结果，既有拒绝 harness 同时验证带引号与直接类型名不能接受另一声明的同形 Struct，不增加另一套证明器或放宽类型。
+
 额外诊断还发现运行时新建、没有源码名义身份的局部 Struct 在独立调用证明中会出现 expected LocalPayload / got LocalPayload 的拒绝。复现另留在 #2121；本次只修复已有名义定义的局部别名，不通过结构相同、Dynamic 或 unsafe 赋予新建定义来源证明，也不宣称该额外问题完成。
 
 该修复独立于 Sliceable 已批准的 Option 终点迁移；不带入尚未完成的 CodeEntry 全局绑定原型，也不修改 0.30.1 维护线。完整 CI、最终提交审查和精确 main 验证仍是交付门槛。
