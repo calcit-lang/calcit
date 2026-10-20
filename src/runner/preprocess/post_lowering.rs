@@ -143,7 +143,13 @@ impl Drop for Scope {
 
 /// Record the pre-rewrite type of `before` and the type of the lowered `after`.
 /// `before` is only built when the pass is enabled.
-pub(super) fn record_rewrite(origin: RewriteOrigin, before: impl FnOnce() -> Calcit, after: &Calcit, scope_types: &ScopeTypes) {
+pub(super) fn record_rewrite(
+  origin: RewriteOrigin,
+  before: impl FnOnce() -> Calcit,
+  after: &Calcit,
+  scope_types: &ScopeTypes,
+  source_location: Option<NodeLocation>,
+) {
   if !enabled() {
     return;
   }
@@ -158,7 +164,7 @@ pub(super) fn record_rewrite(origin: RewriteOrigin, before: impl FnOnce() -> Cal
     before_type,
     after_form: after.clone(),
     after_type,
-    location: find_calcit_location_matching(&before, |_| true),
+    location: source_location.or_else(|| find_calcit_location_matching(&before, |_| true)),
   };
   FRAMES.with(|frames| {
     if let Some(frame) = frames.borrow_mut().last_mut() {
@@ -297,13 +303,27 @@ pub(super) fn validate_definition(
   visit_lists(resolved, &ScopeTypes::new(), ns, &mut |node, items, scope| {
     let produced_by = evidence.iter().filter(|item| item.after_form == *node).collect::<Vec<_>>();
     live.extend(produced_by.iter().copied());
+    // A lowered call can retain only an operand coordinate, not its source
+    // call coordinate. Every matching rewrite must have its own reported
+    // check, and any retained operand must belong to a matching source call.
+    let source_rewrites_checked = |location: Option<&NodeLocation>| {
+      !produced_by.is_empty()
+        && produced_by.iter().all(|rewrite| reported_at(rewrite.location.as_ref(), true))
+        && location.is_none_or(|location| {
+          produced_by.iter().any(|rewrite| {
+            rewrite.location.as_ref().is_some_and(|source| {
+              source.ns == location.ns && source.def == location.def && location.coord.starts_with(source.coord.as_slice())
+            })
+          })
+        })
+    };
     match items.first() {
       Some(Calcit::Proc(CalcitProc::Recur)) => {}
       Some(Calcit::Proc(proc)) => {
         let recheck = RefCell::new(vec![]);
         let location = find_calcit_location_matching(node, |location| location.def.as_ref() != GENERATED_DEF);
         check_proc_arg_types(proc, &items.drop_left(), scope, ns, def, location.clone(), &recheck);
-        let already_checked = reported_at(location.as_ref(), !produced_by.is_empty());
+        let already_checked = reported_at(location.as_ref(), !produced_by.is_empty()) || source_rewrites_checked(location.as_ref());
         for warning in recheck
           .borrow()
           .iter()
@@ -335,7 +355,7 @@ pub(super) fn validate_definition(
           call_location: location.clone(),
         };
         check_user_fn_arg_types(&info, head, &items.drop_left(), scope, &call_info, &recheck);
-        let already_checked = reported_at(location.as_ref(), !produced_by.is_empty());
+        let already_checked = reported_at(location.as_ref(), !produced_by.is_empty()) || source_rewrites_checked(location.as_ref());
         for warning in recheck
           .borrow()
           .iter()
@@ -707,6 +727,70 @@ mod tests {
     let source_warning = LocatedWarning::new("[Warn] Method `.assoc` arg 3 expects type `number`".to_owned(), at);
     validate(&call, &[source_warning], std::slice::from_ref(&evidence)).expect("the source-shaped check ran at this call");
     validate(&call, &[], &[evidence]).expect_err("without a reported warning the skipped check is still a violation");
+  }
+
+  /// Literal-only calls need retained source evidence, not a duplicate warning.
+  #[test]
+  fn literal_call_requires_checks_at_every_matching_source_rewrite() {
+    let at = NodeLocation::new(Arc::from("tests.post-lowering"), Arc::from("main"), Arc::new(vec![3]));
+    let other = NodeLocation::new(Arc::from("tests.post-lowering"), Arc::from("main"), Arc::new(vec![4]));
+    let call = Calcit::from(vec![expects_number_fn(), Calcit::new_str("oops")]);
+    let evidence = RewriteEvidence {
+      origin: RewriteOrigin::MethodInline,
+      before_form: Calcit::Nil,
+      before_type: number(),
+      after_form: call.clone(),
+      after_type: number(),
+      location: Some(at.clone()),
+    };
+    let warning = LocatedWarning::new("[Warn] source method argument mismatch".to_owned(), at);
+    let unrelated = LocatedWarning::new("[Warn] source method argument mismatch".to_owned(), other.clone());
+    validate(&call, std::slice::from_ref(&warning), std::slice::from_ref(&evidence))
+      .expect("retained evidence proves this literal-only call was checked");
+    validate(&call, std::slice::from_ref(&unrelated), std::slice::from_ref(&evidence))
+      .expect_err("a warning at another source occurrence grants no check evidence");
+    validate(&call, std::slice::from_ref(&warning), &[]).expect_err("a warning alone does not prove a rewrite check");
+    let duplicate = RewriteEvidence {
+      location: Some(other),
+      ..evidence.clone()
+    };
+    validate(&call, std::slice::from_ref(&warning), &[evidence.clone(), duplicate.clone()])
+      .expect_err("one checked occurrence cannot hide an identical unchecked occurrence");
+    validate(&call, &[warning, unrelated], &[evidence, duplicate]).expect("both source occurrences were checked");
+  }
+
+  /// A retained source call owns operand coordinates nested inside that call.
+  #[test]
+  fn rewritten_call_uses_its_source_check_before_operand_coordinates() {
+    let at = NodeLocation::new(Arc::from("tests.post-lowering"), Arc::from("main"), Arc::new(vec![3]));
+    let Calcit::Local(mut operand) = local("value", Arc::new(CalcitTypeAnnotation::String)) else {
+      unreachable!()
+    };
+    operand.location = Some(Arc::new(vec![3, 1]));
+    let call = Calcit::from(vec![expects_number_fn(), Calcit::Local(operand)]);
+    let evidence = RewriteEvidence {
+      origin: RewriteOrigin::MethodInline,
+      before_form: Calcit::Nil,
+      before_type: number(),
+      after_form: call.clone(),
+      after_type: number(),
+      location: Some(at.clone()),
+    };
+    let warning = LocatedWarning::new("[Warn] source method argument mismatch".to_owned(), at);
+    validate(&call, std::slice::from_ref(&warning), std::slice::from_ref(&evidence))
+      .expect("the checked source call, not its first operand, identifies the rewrite");
+    validate(&call, &[], std::slice::from_ref(&evidence)).expect_err("missing checks remain violations");
+    let other = NodeLocation::new(Arc::from("tests.post-lowering"), Arc::from("main"), Arc::new(vec![4]));
+    let unrelated = RewriteEvidence {
+      location: Some(other.clone()),
+      ..evidence.clone()
+    };
+    let other_warning = LocatedWarning::new("[Warn] source method argument mismatch".to_owned(), other);
+    validate(&call, std::slice::from_ref(&other_warning), std::slice::from_ref(&unrelated))
+      .expect_err("a different source subtree cannot own this operand");
+    validate(&call, std::slice::from_ref(&warning), &[evidence.clone(), unrelated.clone()])
+      .expect_err("one checked occurrence cannot hide a matching unchecked occurrence");
+    validate(&call, &[warning, other_warning], &[evidence, unrelated]).expect("every matching source occurrence was checked");
   }
 
   /// #1378: `%none` was re-inferred as `Option<Dynamic>` and erased the payload.

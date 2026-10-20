@@ -138,12 +138,6 @@ pub(super) fn emit_method_invoke(ctx: &mut WasmGenCtx, name: &str, args: &[Calci
       ctx.emit(Instruction::LocalGet(result));
       Ok(())
     }
-    // .slice start end — fallback for non-list/string types; return nil (0.0).
-    // List and string cases are handled before this branch in the definition.
-    "slice" => {
-      ctx.emit(f64_const(0.0));
-      Ok(())
-    }
     // .filter f — fallback for non-list types; return nil (0.0).
     // List case is handled before this branch in the definition.
     "filter" => {

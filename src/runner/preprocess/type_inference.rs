@@ -2744,10 +2744,24 @@ fn infer_impl_attachment_type(xs: &CalcitList, scope_types: &ScopeTypes) -> Opti
 }
 
 /// Preserve a nominal method contract through origin-qualified trait lowering.
-fn lowered_trait_method_signature(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitFnTypeAnnotation>> {
+pub(super) fn lowered_trait_method_signature(xs: &CalcitList, scope_types: &ScopeTypes) -> Option<Arc<CalcitFnTypeAnnotation>> {
+  let receiver_type = resolve_type_value(xs.get(3)?, scope_types)?;
+  let receiver_traits = super::trait_list_for_receiver(receiver_type.as_ref(), scope_types);
   let trait_def = match xs.get(1)? {
     Calcit::Trait(definition) => definition.clone(),
-    Calcit::Import(import) => lookup_source_backed_trait_def(&import.ns, &import.def)?.with_definition_ref(&import.ns, &import.def),
+    // A declared capability is a source contract, not an evaluated impl.
+    // Compare it with the same source origin; concrete receivers below still
+    // require the exact evaluated nominal identity for implementation lookup.
+    Calcit::Import(import) if receiver_traits.is_some() => {
+      lookup_source_backed_trait_def(&import.ns, &import.def)?.with_definition_ref(&import.ns, &import.def)
+    }
+    Calcit::Import(import) => match program::lookup_runtime_ready(&import.ns, &import.def) {
+      // Dispatch compares evaluated nominal identities. A fresh source
+      // placeholder cannot stand in for an already evaluated trait here.
+      Some(Calcit::Trait(definition)) => definition,
+      Some(_) => return None,
+      None => lookup_source_backed_trait_def(&import.ns, &import.def)?.with_definition_ref(&import.ns, &import.def),
+    },
     local @ Calcit::Local(_) => match resolve_type_value(local, scope_types)?.as_ref() {
       CalcitTypeAnnotation::Trait(definition) => definition.as_ref().clone(),
       _ => return None,
@@ -2759,8 +2773,7 @@ fn lowered_trait_method_signature(xs: &CalcitList, scope_types: &ScopeTypes) -> 
     Calcit::Symbol { sym, .. } | Calcit::Str(sym) => sym.as_ref(),
     _ => return None,
   };
-  let receiver_type = resolve_type_value(xs.get(3)?, scope_types)?;
-  let matching_count = if let Some(traits) = super::trait_list_for_receiver(receiver_type.as_ref(), scope_types) {
+  let matching_count = if let Some(traits) = receiver_traits {
     // A listed bound counts as is, so duplicates stay ambiguous. A trait that is
     // only required by a listed bound is also proven, as in surface method lookup.
     let direct = traits.iter().filter(|candidate| candidate.has_same_origin(&trait_def)).count();

@@ -62,6 +62,26 @@
             :none
           :examples $ []
           :schema $ :: 'EnumDef
+        'SliceReceiver $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct SliceReceiver (:n 'Number)
+            :end $ :: 'Option 'Number
+          :examples $ []
+          :schema $ :: 'StructDef
+        'SliceReceiverImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl SliceReceiverImpl Sliceable
+            .slice $ fn (self start end)
+              hint-fn $ {}
+                :args $ [] 'test-types-inference.main/SliceReceiver 'Number $ :: 'Option 'Number
+                :return 'test-types-inference.main/SliceReceiver
+              struct-with self
+                :n $ + (:n self) start
+                :end end
+          :examples $ []
+          :schema $ :: 'Impl
+        'SliceReceiverWithMethods $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def SliceReceiverWithMethods (impl-traits SliceReceiver SliceReceiverImpl)
+          :examples $ []
+          :schema $ :: 'StructDef
         'Status $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defenum Status (:ok 'Number) (:err 'String)
           :examples $ []
@@ -105,7 +125,7 @@
                     :return 'T
                     :generics $ [] 'T
                     :where $ {} $ 'T Sliceable
-                  .slice item 0 1
+                  .slice item 0 $ Option :some 1
               shorten value
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'C)
@@ -148,7 +168,7 @@
         'bounded-multiple $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn bounded-multiple (value)
             assert-type (.debug value) 'String
-            .slice value 0 1
+            .slice value 0 $ Option :some 1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'C)
             :args $ [] 'C
@@ -182,7 +202,8 @@
               :code $ quote $ assert= |outer (bounded-shadow-capture |outer)
               :tags $ #{} :bounded-binder :generic :lexical-binder :unit
         'bounded-slice $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn bounded-slice (value) (value .slice 0 1)
+          :code $ quote $ defn bounded-slice (value)
+            value .slice 0 $ Option :some 1
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'C)
             :args $ [] 'C
@@ -647,6 +668,78 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
+        'option-recur-sum $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn option-recur-sum (n acc)
+            if (&<= n 0) (acc.unwrap-or 0)
+              recur (dec n)
+                Option :some $ &+ (acc.unwrap-or 0) n
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number $ :: 'Option 'Number
+          :tests $ []
+            %{} 'TestEntry (:name |omitted-option-preserves-recursion)
+              :code $ quote $ do
+                assert= 15 $ option-recur-sum 5
+                assert= 25 $ option-recur-sum 5 $ Option :some 10
+                assert= 0 $ option-recur-sum 0
+                , &unit
+              :tags $ #{} :option-call-arity :unit
+            %{} 'TestEntry (:name |immediate-option-completion)
+              :code $ quote $ do
+                assert= 7 $
+                  fn (end)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Option 'Number
+                      :return 'Number
+                    end.unwrap-or 7
+                assert= 11 $
+                  fn (end)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Option 'Number
+                      :return 'Number
+                    end.unwrap-or 7
+                  Option :some 11
+                assert= 7 $
+                  fn (end)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Option 'Number
+                      :return 'Number
+                    end.unwrap-or 7
+                  Option :none
+                assert= 6 $
+                  fn (n acc)
+                    hint-fn $ {}
+                      :args $ [] 'Number $ :: 'Option 'Number
+                      :return 'Number
+                    if (&<= n 0) (acc.unwrap-or 0)
+                      recur (dec n)
+                        Option :some $ &+ (acc.unwrap-or 0) n
+                  , 3
+                assert= 16 $
+                  fn (n acc)
+                    hint-fn $ {}
+                      :args $ [] 'Number $ :: 'Option 'Number
+                      :return 'Number
+                    if (&<= n 0) (acc.unwrap-or 0)
+                      recur (dec n)
+                        Option :some $ &+ (acc.unwrap-or 0) n
+                  , 3 $ Option :some 10
+                , &unit
+              :tags $ #{} :option-call-arity :unit
+        'option-recursive-count $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn option-recursive-count (n acc)
+            if (&<= n 0) (acc.unwrap-or 7)
+              &+ 1 $ option-recursive-count $ dec n
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number $ :: 'Option 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |omitted-option-preserves-recursion)
+            :code $ quote $ do
+              assert= 9 $ option-recursive-count 2
+              assert= 99 $ option-recursive-count 0 $ Option :some 99
+              assert= 9 $ option-recursive-count 2 $ Option :some 99
+              , &unit
+            :tags $ #{} :option-call-arity :unit
         'read-state-metadata $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn read-state-metadata (states)
             get-in states $ [] :data
@@ -828,6 +921,47 @@
                 assert= true $ = nil nil nil
                 assert= &unit $ check nil nil nil
               :tags $ #{} :generic :unit
+        'slice-with-contract $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn slice-with-contract (value start end) (slice value start end)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'C)
+            :args $ [] 'C 'Number $ :: 'Option 'Number
+            :generics $ [] 'C
+            :where $ {} $ 'C 'Sliceable
+          :tests $ []
+            %{} 'TestEntry (:name |custom-omitted-end)
+              :code $ quote $ let
+                  source $ SliceReceiverWithMethods :n 7 :end $ Option :some 9
+                  result $ slice-with-contract source 2
+                assert= 9 $ :n result
+                assert= (Option :none) (:end result)
+              :tags $ #{} :sliceable-option :unit
+            %{} 'TestEntry (:name |custom-specified-end)
+              :code $ quote $ let
+                  source $ SliceReceiverWithMethods :n 7 :end $ Option :none
+                  result $ slice-with-contract source 2 $ Option :some 5
+                assert= 9 $ :n result
+                assert= (Option :some 5) (:end result)
+              :tags $ #{} :sliceable-option :unit
+            %{} 'TestEntry (:name |custom-method-and-trait)
+              :code $ quote $ let
+                  source $ SliceReceiverWithMethods :n 7 :end $ Option :some 9
+                  method-result $ .slice source 2
+                  trait-result $ &trait-call Sliceable :slice source 2 $ Option :some 5
+                  trait-omitted $ &trait-call Sliceable :slice source 2
+                assert= 9 $ :n method-result
+                assert= (Option :none) (:end method-result)
+                assert= (Option :some 5) (:end trait-result)
+                assert= (Option :none) (:end trait-omitted)
+              :tags $ #{} :sliceable-option :unit
+            %{} 'TestEntry (:name |custom-function-reference)
+              :code $ quote $ let
+                  source $ SliceReceiverWithMethods :n 7 :end $ Option :some 9
+                  forward slice-with-contract
+                  result $ forward source 2
+                assert= 9 $ :n result
+                assert= (Option :none) (:end result)
+              :tags $ #{} :sliceable-option :unit
         'test-count-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-count-inference ()
             assert-type

@@ -109,6 +109,59 @@ try {
     }
     await assertRejectedArtifacts(output, `shadowed ${typeName}`, /E_ASSERT_TYPE_MISMATCH/, true);
   }
+  // #2213: a resolved trait call checks its method contract even when its
+  // result is discarded. The builtin's transport schema is not that contract.
+  execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
+    "--target", "test-types-inference.main/slice-with-contract",
+    "--target", "test-types-inference.main/option-recur-sum",
+    "--target", "test-types-inference.main/option-recursive-count",
+    "--backend", "native,js,wasm"], { ...options, env: { ...process.env, CALCIT_BIN: binary } });
+  const sliceSnapshot = join(project, "sliceable-input.cirru");
+  const runSlice = (...args) => execFileSync(binary, [sliceSnapshot, ...args], options);
+  for (const [label, expression] of [
+    ["bare-number", "slice |abcd 0 2"],
+    ["wrong-option", "slice |abcd 0 (Option :some |bad)"],
+    ["wrong-method-option", ".slice |abcd 0 (Option :some |bad)"],
+    ["wrong-trait-option", "&trait-call Sliceable :slice |abcd 0 (Option :some |bad)"],
+    ["missing-trait-start", "&trait-call Sliceable :slice |abcd"],
+    ["extra-trait-end", "&trait-call Sliceable :slice |abcd 0 (Option :some 2) 3"],
+    ["wrong-function-reference", "let ((forward slice)) (forward |abcd 0 (Option :some |bad))"],
+  ]) {
+    await copyFile("calcit/add.cirru", sliceSnapshot);
+    runSlice("query", "config", "--format", "edn");
+    runSlice("query", "def", "app.main/main!", "--format", "edn");
+    const operations = [
+      ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
+        `quote $ defn main! ()\n  ${expression}\n  , &unit`],
+      ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
+        "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
+      ["config", "set", "reload-fn", "app.main/main!"],
+    ];
+    const code = JSON.stringify(operations);
+    const preview = JSON.parse(runSlice("edit", "transaction", "--code", code, "--dry-run", "--format", "json"));
+    runSlice("edit", "transaction", "--code", code, "--expect-revision", preview.scoped_revision, "--format", "edn");
+    const original = await readFile(sliceSnapshot);
+    const output = join(project, `sliceable-${label}-js`);
+    const diagnosticPattern = label === "missing-trait-start" || label === "extra-trait-end"
+      ? /E_TRAIT_CALL_ARITY|&trait-call method expects .*arguments/
+      : /E_CALL_ARGUMENT_(?:MISMATCH|UNPROVEN)|W_(?:LOCAL_FN|FN|PROC|METHOD)_ARG_TYPE_MISMATCH/;
+    for (const args of [
+      ["--check-only", "--all-defs"],
+      ["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "main!", "--format", "json"],
+      ["fix", "--workflow", "strict", "--verify", "--format", "json"],
+      [],
+      ["--emit-path", output, "js"],
+    ]) {
+      const rejected = spawnSync(binary, [sliceSnapshot, ...args], options);
+      if (rejected.error) throw rejected.error;
+      const diagnostic = rejected.stdout + rejected.stderr;
+      assert.equal(rejected.status, 1, `${label}: ${args.join(" ")}\n${diagnostic}`);
+      assert.match(diagnostic, diagnosticPattern);
+      assert.match(diagnostic, /app\.main\/main!/);
+      assert.deepEqual(await readFile(sliceSnapshot), original);
+    }
+    await assertRejectedArtifacts(output, label, diagnosticPattern, true);
+  }
   // #2190: an inner quantifier is not an outer capture with the same spelling.
   // Successful identities/captures live in definition :tests; use this existing
   // rejection harness to verify all compiler entrances and unchanged source.
@@ -196,7 +249,7 @@ try {
     })),
     {
       label: "bound-shadow-not-inherited", diagnostic: /E_DYNAMIC_METHOD_DISPATCH/, schema: sliceableUnit,
-      source: "defn producer (value)\n  let\n      transform $ fn (other)\n        hint-fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T)\n        .slice other 0 1\n    transform value\n    , &unit",
+      source: "defn producer (value)\n  let\n      transform $ fn (other)\n        hint-fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T)\n        .slice other 0 (Option :some 1)\n    transform value\n    , &unit",
     },
     {
       label: "bound-hof-missing-caller-capability", diagnostic: /W_FN_ARG_TYPE_MISMATCH/,
@@ -212,12 +265,12 @@ try {
     {
       label: "bound-explicit-call-needs-evidence", diagnostic: /E_UNPROVEN_TRAIT_CALL/,
       schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'Unit) (:generics $ [] 'T)",
-      source: "defn producer (value)\n  &trait-call Sliceable :slice value 0 1\n  , &unit",
+      source: "defn producer (value)\n  &trait-call Sliceable :slice value 0 (Option :some 1)\n  , &unit",
     },
     {
       label: "bound-capture-cannot-invent-capability", diagnostic: /E_DYNAMIC_METHOD_DISPATCH/,
       schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'Unit) (:generics $ [] 'T)",
-      source: "defn producer (value)\n  let\n      transform $ fn ()\n        hint-fn $ {} (:args $ []) (:return 'T) (:where $ {} ('T Sliceable))\n        .slice value 0 1\n    transform\n    , &unit",
+      source: "defn producer (value)\n  let\n      transform $ fn ()\n        hint-fn $ {} (:args $ []) (:return 'T) (:where $ {} ('T Sliceable))\n        .slice value 0 (Option :some 1)\n    transform\n    , &unit",
     },
   ];
   for (const { label, source, diagnostic, strictDiagnostic = diagnostic, schema, returnProof = true } of [...returnCases, ...boundedCases]) {
@@ -3614,7 +3667,7 @@ try {
   // A body hint describes the owning function, not a conversion of the
   // public contract or an independent source of caller trait capabilities.
   for (const [name, body, schema, call] of [
-    ["conflicting-input", "quote $ defn rejected-body-hint (value) (hint-fn $ {} (:args ([] 'String)) (:return 'String)) (.slice value 0 1)",
+    ["conflicting-input", "quote $ defn rejected-body-hint (value) (hint-fn $ {} (:args ([] 'String)) (:return 'String)) (.slice value 0 (Option :some 1))",
       "quote $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'String)", ["rejected-body-hint", "1"]],
     ["introduced-bound", "quote $ defn rejected-body-hint (value) (hint-fn $ {} (:args ([] 'T)) (:generics ([] 'T)) (:where ({} ('T 'ToString))) (:return 'String)) (to-string value)",
       "quote $ :: 'Fn $ {} (:args ([] 'T)) (:generics ([] 'T)) (:return 'String)", ["rejected-body-hint", ["Unrendered", ":n", "1"]]],

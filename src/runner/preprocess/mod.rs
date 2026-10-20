@@ -2894,7 +2894,7 @@ fn preprocess_recorded_lowering(
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
   let lowered = preprocess_generated_specialization(expanded, scope_defs, scope_types, file_ns, call_stack)?;
-  post_lowering::record_rewrite(origin, before, &lowered, scope_types);
+  post_lowering::record_rewrite(origin, before, &lowered, scope_types, None);
   Ok(lowered)
 }
 
@@ -4230,7 +4230,15 @@ fn preprocess_list_call(
             {
               validate_method_call(&typed_method, &processed_args, scope_types, file_ns, call_stack)?;
             }
-            check_struct_method_args(&typed_method, &processed_args, scope_types, file_ns, &def_name, check_warnings);
+            check_struct_method_args(
+              &typed_method,
+              &processed_args,
+              scope_types,
+              file_ns,
+              &def_name,
+              preferred_source_call_location(call_location.clone(), call_stack),
+              check_warnings,
+            );
             warn_on_option_erased_to_nil(&typed_method, &processed_args, scope_types, file_ns);
             require_js_ffi_feature_for_operation(&typed_method, file_ns, def_name.as_ref(), check_warnings, call_stack)?;
 
@@ -4244,7 +4252,7 @@ fn preprocess_list_call(
             // generic prefix-call branch below. Specialize it before returning
             // so typed source such as `m .keys` reaches codegen with the direct
             // `&scope:name` callable as its head instead of `invoke-method`.
-            if let Some(optimized_call) = try_inline_method_call(&typed_method, &processed_args, scope_types, file_ns, call_stack)? {
+            if let Some(optimized_call) = try_inline_method_call(&typed_method, &processed_args, scope_types, &call_info, call_stack)? {
               if let Some(expanded) = try_expand_inlined_typed_optional_access(&optimized_call, scope_types, file_ns, call_stack)? {
                 return preprocess_recorded_lowering(
                   post_lowering::RewriteOrigin::TypedAccess,
@@ -4906,27 +4914,20 @@ fn preprocess_list_call(
           scope_types,
           file_ns,
           &def_name,
-          call_location
-            .clone()
-            .filter(|location| location.def.as_ref() != GENERATED_DEF)
-            .or_else(|| find_preferred_macro_location(call_stack).filter(|location| location.def.as_ref() != GENERATED_DEF))
-            .or_else(|| {
-              call_stack.0.iter().find_map(|frame| {
-                let source =
-                  |location: &NodeLocation| location.def.as_ref() != GENERATED_DEF && location.ns.as_ref() != calcit::CORE_NS;
-                find_calcit_location_matching(&frame.code, source).or_else(|| {
-                  frame
-                    .args
-                    .iter()
-                    .find_map(|argument| find_calcit_location_matching(argument, source))
-                })
-              })
-            }),
+          preferred_source_call_location(call_location.clone(), call_stack),
           check_warnings,
         );
         check_struct_update_fields(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
         reject_unproven_struct_update(&head_form, &processed_args, scope_types, file_ns, call_stack)?;
-        check_struct_method_args(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
+        check_struct_method_args(
+          &head_form,
+          &processed_args,
+          scope_types,
+          file_ns,
+          &def_name,
+          preferred_source_call_location(call_location.clone(), call_stack),
+          check_warnings,
+        );
         check_typed_js_field_operation(
           &head_form,
           &processed_args,
@@ -5032,6 +5033,7 @@ fn preprocess_list_call(
             },
             &Calcit::from(CalcitList::List(ys.clone())),
             scope_types,
+            None,
           );
         }
 
@@ -5453,7 +5455,7 @@ fn preprocess_list_call(
 
         if !has_spread
           && let Some(call_head) = ys.first()
-          && let Some(optimized_call) = try_inline_method_call(call_head, &processed_args, scope_types, file_ns, call_stack)?
+          && let Some(optimized_call) = try_inline_method_call(call_head, &processed_args, scope_types, &call_info, call_stack)?
         {
           if let Some(expanded) = try_expand_inlined_typed_optional_access(&optimized_call, scope_types, file_ns, call_stack)? {
             return preprocess_recorded_lowering(
@@ -7451,22 +7453,41 @@ pub(crate) fn check_enum_construction(
     }
   }
 }
-/// Check struct method call arguments (count and types)
-/// Validates that method calls have correct number and types of arguments
+/// Prefer retained source over generated macro operands in call diagnostics.
+fn preferred_source_call_location(location: Option<NodeLocation>, call_stack: &CallStackList) -> Option<NodeLocation> {
+  location
+    .filter(|location| location.def.as_ref() != GENERATED_DEF)
+    .or_else(|| find_preferred_macro_location(call_stack).filter(|location| location.def.as_ref() != GENERATED_DEF))
+    .or_else(|| {
+      call_stack.0.iter().find_map(|frame| {
+        let source = |location: &NodeLocation| location.def.as_ref() != GENERATED_DEF && location.ns.as_ref() != calcit::CORE_NS;
+        find_calcit_location_matching(&frame.code, source).or_else(|| {
+          frame
+            .args
+            .iter()
+            .find_map(|argument| find_calcit_location_matching(argument, source))
+        })
+      })
+    })
+}
+
+/// Validate method argument count and types against the receiver contract.
 fn check_struct_method_args(
   head: &Calcit,
   args: &CalcitList,
   scope_types: &ScopeTypes,
   file_ns: &str,
   def_name: &str,
+  source_location: Option<NodeLocation>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
   // Only check Method(Invoke) calls
   let Calcit::Method(method_name, calcit::MethodKind::Invoke(_) | calcit::MethodKind::ExternalInvoke(_)) = head else {
     return;
   };
-  // Method heads carry no coordinate; locate the call by its first source operand.
-  let call_location = head.get_location().or_else(|| {
+  // Method heads carry no coordinate. Prefer the caller's retained source,
+  // then fall back to the first source operand.
+  let call_location = source_location.or_else(|| head.get_location()).or_else(|| {
     args
       .iter()
       .find_map(|arg| find_calcit_location_matching(arg, |location| location.def.as_ref() != GENERATED_DEF))
@@ -7634,7 +7655,7 @@ fn check_struct_method_args(
     Calcit::Fn { info, .. } => Some(info.as_ref()),
     Calcit::Proc(proc) => {
       // Inlined methods return before the lowered Proc call is preprocessed.
-      check_proc_arg_types(proc, args, scope_types, file_ns, def_name, head.get_location(), check_warnings);
+      check_proc_arg_types(proc, args, scope_types, file_ns, def_name, call_location, check_warnings);
       return;
     }
     _ => None,
@@ -8817,6 +8838,7 @@ fn qualify_trait_bound_method_call(
       },
       after,
       scope_types,
+      None,
     );
   }
   lowered
@@ -8875,9 +8897,10 @@ fn try_inline_method_call(
   head: &Calcit,
   args: &CalcitList,
   scope_types: &ScopeTypes,
-  file_ns: &str,
+  call_info: &CallTypeCheckInfo<'_>,
   call_stack: &CallStackList,
 ) -> Result<Option<Calcit>, CalcitErr> {
+  let file_ns = call_info.file_ns;
   match head {
     Calcit::Method(method_name, calcit::MethodKind::Invoke(type_value)) => {
       let mut resolved_type = type_value.clone();
@@ -8930,6 +8953,7 @@ fn try_inline_method_call(
           },
           &inlined,
           scope_types,
+          preferred_source_call_location(call_info.call_location.clone(), call_stack),
         );
         return Ok(Some(inlined));
       }
@@ -12315,9 +12339,9 @@ pub fn preprocess_defn(
       if strict_types_enabled()
         && should_emit_project_source_lint(ctx.file_ns)
         && !generated_by_macro
-        // These core APIs intentionally preserve omission sugar in their
-        // public calling convention until their signatures are redesigned.
-        && !(ctx.file_ns == calcit::CORE_NS && matches!(def_name.as_ref(), "if-let" | "slice"))
+        // This core macro retains legacy omission sugar until its contract
+        // is redesigned; functions use ordinary trailing Option parameters.
+        && !(ctx.file_ns == calcit::CORE_NS && def_name.as_ref() == "if-let")
         && ys.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgOptional, _)))
       {
         return Err(CalcitErr::use_msg_stack_location_with_code(
@@ -21809,9 +21833,19 @@ mod tests {
     let head = Calcit::Method(Arc::from("display-name"), calcit::MethodKind::Invoke(receiver_type.clone()));
     let args = CalcitList::from(&[receiver] as &[Calcit]);
 
-    let lowered = try_inline_method_call(&head, &args, &ScopeTypes::new(), "tests.nominal-call", &CallStackList::default())
-      .expect("lower anonymous nominal impl")
-      .expect("anonymous nominal impl should get a direct callable");
+    let lowered = try_inline_method_call(
+      &head,
+      &args,
+      &ScopeTypes::new(),
+      &CallTypeCheckInfo {
+        file_ns: "tests.nominal-call",
+        def_name: "demo",
+        call_location: None,
+      },
+      &CallStackList::default(),
+    )
+    .expect("lower anonymous nominal impl")
+    .expect("anonymous nominal impl should get a direct callable");
     let Calcit::List(call) = lowered else {
       panic!("expected direct call")
     };

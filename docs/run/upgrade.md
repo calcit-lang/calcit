@@ -24,6 +24,29 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.31.0 切片终点使用 Option
+
+`slice` 和 `.slice` 的终点统一为 `Option<Number>`。省略终点仍切到末尾；显式终点使用
+`Option :some end`，显式切到末尾使用 `Option :none`。不再用 `nil` 或 `?` 参数表示终点。
+
+```cirru
+assert= ([] 2 3) $ slice ([] 1 2 3 4) 1 (Option :some 3)
+assert= ([] 2 3 4) $ slice ([] 1 2 3 4) 1
+assert= |😀 $ .slice |A😀中 1 (Option :some 2)
+assert= |😀中 $ .slice |A😀中 1 (Option :none)
+```
+
+迁移时保留 receiver 与起点，只把原显式数字终点包装成 `Option :some`；不要重复求值终点表达式。
+函数值、线程宏、附带 tests/examples 和模块中的实现也需要审阅。自定义 `Sliceable` 实现的第三个
+参数声明为 `Option<Number>` 并匹配 `:some` / `:none`；trait 不再假定一个必需三参数实现支持二参数。
+List/String 的内部适配器使用同一合同，原 `&list:slice` / `&str:slice` 原语仍接收数字终点。
+字符串的 Unicode 标量单位、List 的范围错误和参数求值顺序不变。
+
+先用 `query usages calcit.core/slice`、`query search .slice --exact`、`query tests` 和
+`query examples` 检查真实源码与附带区域，再用现有 transaction 的 dry-run、scoped revision
+实施项目级迁移，运行完整 strict、原语义测试和实际目标后端。没有新固定 fix 规则，也不通过
+unsafe、更宽 Dynamic 或默认终点掩盖类型错误。
+
 ## 0.31.0 JS 局部赋值保持已有类型合同
 
 `set!` 写入局部变量时，普通检查与严格检查共同验证原 binding 的完整类型关系。
