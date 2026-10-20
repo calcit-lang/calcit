@@ -512,7 +512,7 @@ fn trace_source_expressions_with_locations(
     }))
   });
   debug_assert!(previous.is_none(), "source expression traces must not be nested");
-  let _assignable_locals = AssignableLocalsScope::enter(code);
+  let _assignable_locals = AssignableLocalsScope::enter(ns, code);
   let mut scope_types = ScopeTypes::new();
   let result = builtins::meta::with_compiling_def(ns, def, || {
     calcit::with_type_annotation_warning_context(format!("{ns}/{def}"), || {
@@ -581,7 +581,7 @@ pub fn trace_source_usages(
 ) -> Result<Vec<ResolvedSourceUsage>, CalcitErr> {
   let previous = RESOLVED_SOURCE_USAGE_TRACE.with(|trace| trace.replace(Some(Vec::new())));
   debug_assert!(previous.is_none(), "resolved source usage traces must not be nested");
-  let _assignable_locals = AssignableLocalsScope::enter(code);
+  let _assignable_locals = AssignableLocalsScope::enter(ns, code);
   let mut scope_types = ScopeTypes::new();
   let result = builtins::meta::with_compiling_def(ns, def, || {
     calcit::with_type_annotation_warning_context(format!("{ns}/{def}"), || {
@@ -821,12 +821,51 @@ struct AssignableLocalsScope {
 }
 
 impl AssignableLocalsScope {
-  fn enter(source: &Calcit) -> Self {
-    let mut names = HashSet::new();
-    collect_assignment_targets(source, &mut names);
+  fn enter(ns: &str, source: &Calcit) -> Self {
+    // A user macro may emit a `set!` the source does not spell; its targets
+    // are only known after expansion, too late for closures compiled before.
+    let names = (!uses_assignment_macro(source, ns, &mut HashSet::new())).then(|| {
+      let mut names = HashSet::new();
+      collect_assignment_targets(source, &mut names);
+      names
+    });
     Self {
-      previous: ASSIGNABLE_LOCALS.with(|cell| cell.replace(Some(names))),
+      previous: ASSIGNABLE_LOCALS.with(|cell| cell.replace(names)),
     }
+  }
+}
+
+fn is_assignment_spelling(text: &str) -> bool {
+  matches!(text, "set!" | "|set!" | "\"set!")
+}
+
+/// Whether `expr` names a non-core macro whose source, or a macro it names in
+/// turn, mentions `set!` as a symbol or string.
+fn uses_assignment_macro(expr: &Calcit, ns: &str, visited: &mut HashSet<(Arc<str>, Arc<str>)>) -> bool {
+  match expr {
+    Calcit::List(items) => items.iter().any(|item| uses_assignment_macro(item, ns, visited)),
+    Calcit::Symbol { sym, .. } => {
+      let Some((target_ns, def)) = program::resolve_type_name_in_ns(ns, sym) else {
+        return false;
+      };
+      if target_ns.as_ref() == calcit::CORE_NS || !visited.insert((target_ns.clone(), def.clone())) {
+        return false;
+      }
+      let Some(code) = program::lookup_def_code(&target_ns, &def) else {
+        return false;
+      };
+      matches!(&code, Calcit::List(forms) if matches!(forms.first(), Some(Calcit::Symbol { sym, .. }) if sym.as_ref() == "defmacro"))
+        && (mentions_assignment(&code) || uses_assignment_macro(&code, &target_ns, visited))
+    }
+    _ => false,
+  }
+}
+
+fn mentions_assignment(expr: &Calcit) -> bool {
+  match expr {
+    Calcit::List(items) => items.iter().any(mentions_assignment),
+    Calcit::Symbol { sym, .. } | Calcit::Str(sym) => is_assignment_spelling(sym),
+    _ => false,
   }
 }
 
@@ -1290,7 +1329,7 @@ fn ensure_ns_def_preprocessed(
           .map_err(|message| CalcitErr::use_msg_stack_location(CalcitErrKind::Syntax, message, call_stack, location))?;
       }
       let _definition_context = DefinitionContextScope::enter(ns, def, &code);
-      let _assignable_locals = AssignableLocalsScope::enter(&code);
+      let _assignable_locals = AssignableLocalsScope::enter(ns, &code);
       let _definition_replay_scope = source_replay::Scope::pause_definition();
       let next_stack = call_stack.extend(ns, def, StackKind::Fn, &code, &[]);
 
@@ -2135,7 +2174,7 @@ pub fn compile_source_def_for_snapshot(
   };
 
   let _definition_context = DefinitionContextScope::enter(ns, def, &code);
-  let _assignable_locals = AssignableLocalsScope::enter(&code);
+  let _assignable_locals = AssignableLocalsScope::enter(ns, &code);
   let mut scope_types = ScopeTypes::new();
   let context_label = format!("{ns}/{def}");
   let resolved_code = builtins::meta::with_compiling_def(ns, def, || {

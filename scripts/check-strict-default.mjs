@@ -285,6 +285,24 @@ try {
     expectStatus(kept, 0, `${label} keeps predicate evidence for a local no set! rewrites`);
   }
 
+  // A user macro can emit a set! that the source never spells. Its target is
+  // only known after expansion, so such a definition keeps the old barrier.
+  apply([
+    ["edit", "def", "app.main/clobber!", "--input-format", "cirru", "--code",
+      "quote $ defmacro clobber! (name) (quasiquote (set! (~ name) 1))"],
+    ["edit", "schema", "app.main/clobber!", "--input-format", "cirru", "--code",
+      "quote $ :: 'Macro $ {} (:required $ [] 'Syntax) (:expansion $ :: 'Expr 'Dynamic)"],
+    ["edit", "def", "app.main/guarded", "--overwrite", "--input-format", "cirru", "--code",
+      `quote $ defn guarded (f)
+  ${guard}
+  let ((get-value (fn () (hint-fn ({} (:args ([])) (:return 'Fn))) f))) (clobber! f) (get-value)`],
+    ["edit", "schema", "app.main/guarded", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Fn) (:features $ #{} :js-ffi)"],
+  ]);
+  const macroWrite = inFixture("fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "guarded", "--format", "json");
+  expectStatus(macroWrite, 1, "a macro-generated set! revokes captured predicate evidence");
+  assert.match(macroWrite.stdout + macroWrite.stderr, /E_FN_RETURN_UNPROVEN/);
+
   // A JS implementation can invoke a previously installed captured writer;
   // its discarded Calcit shadow body is not an effect proof for any backend.
   apply([
