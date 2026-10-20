@@ -24,6 +24,18 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.31.0 JS 局部赋值保持已有类型合同
+
+`set!` 写入局部变量时，普通检查与严格检查共同验证原 binding 的完整类型关系。
+泛型 `T` 是调用方已经选择的类型，不是每次赋值时可重新推断的槽；不能把新构造的
+`List<String>` 或独立 `U` 写入 `T`，再靠返回声明伪装成原类型。kind 守卫也不改变原赋值合同。
+不成立的写入在赋值的 source 位置报告现有 `E_CALL_ARGUMENT_UNPROVEN`。
+
+同一 `T` 的替换和明确开放合同仍可使用。不自动加入类型断言、unsafe、默认值或更宽 Dynamic；
+旧代码遇到错误时，用 `query context` 和 `query type-at` 核对赋值两端，再修正生产者或受检转换，
+通过 guarded transaction、完整 strict 和实际 JS 回放验收。`set!` 仍属于 `:js-ffi`，
+不会因此变成 native/WASM 的通用赋值语法。
+
 ## 0.31.0 内部 Map / Set 解构保留成员类型
 
 `&map:destruct` 直接返回已有的 `MapDestruct<K,V>`，`&set:destruct` 直接返回
