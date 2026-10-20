@@ -52,7 +52,7 @@
           :doc "|`set!` on a lexical local rebinds a Calcit value, not a host field."
           :code $ quote $ defn local-set-in-ffi (m)
             let
-                v 1
+                v $ unsafe-coerce 1 'Dynamic
               set! v $ .unwrap-or (get m :a) nil
               , v
           :examples $ []
