@@ -72,6 +72,7 @@
               to-host-field m
               to-external-method m
               to-external-postfix m
+              to-native-postfix m
               , &unit
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
@@ -124,6 +125,16 @@
             let
                 o $ unsafe-coerce (js-object) type-fail-option-nil-host-position.main/HostObject
               set! (.-a o) $ .unwrap-or (get m :a) nil
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+            :args $ [] $ :: 'Map 'Tag 'Dynamic
+            :features $ #{} :js-ffi
+        'to-native-postfix $ %{} 'CodeEntry
+          :doc "|The postfix native method form is a host position too."
+          :code $ quote $ defn to-native-postfix (m)
+            let
+                c $ unsafe-coerce js/console type-fail-option-nil-host-position.main/HostConsole
+              c .!log $ .unwrap-or (get m :a) nil
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ [] $ :: 'Map 'Tag 'Dynamic

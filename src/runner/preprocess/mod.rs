@@ -687,7 +687,7 @@ impl HostSinkFrame {
     let Calcit::List(xs) = expr else {
       return None;
     };
-    let is_sink = xs.first().is_some_and(is_host_sink_head) || is_host_property_write(xs);
+    let is_sink = xs.first().is_some_and(is_host_sink_head) || is_postfix_native_call(xs) || is_host_property_write(xs);
     HOST_SINK_FRAMES.with(|frames| frames.borrow_mut().push(is_sink));
     Some(Self)
   }
@@ -729,6 +729,15 @@ fn is_host_sink_head(head: &Calcit) -> bool {
       | calcit::MethodKind::ExternalInvoke(_)
       | calcit::MethodKind::ExternalSet(_),
     ) => true,
+    _ => false,
+  }
+}
+
+/// `receiver .!method args…`: the native method sits after its receiver.
+fn is_postfix_native_call(xs: &CalcitList) -> bool {
+  match xs.get(1) {
+    Some(Calcit::Symbol { sym, .. }) => sym.starts_with(".!") || sym.starts_with(".?!"),
+    Some(Calcit::Method(_, calcit::MethodKind::InvokeNative | calcit::MethodKind::InvokeNativeOptional)) => true,
     _ => false,
   }
 }
