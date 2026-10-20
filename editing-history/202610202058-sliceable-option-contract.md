@@ -39,3 +39,15 @@ CI/review 及精确 main 门槛仍未完成。v14 的 78 份文档／416 个代�
 6 处显式终点的事务预览成功，2 处省略终点保留，尚未应用；std 主 Snapshot 的 67 个定义、
 44 项测试、32 个示例没有相关调用。独立 fixture、架构数据、依赖和其他消费者仍不在这次
 盘点范围，不能当作零命中。这里只记录独立本地分支的工作，不表示 #2213 或 0.31.0 完成。
+
+后续先 rebase 到已合并 #2220 的 main，保留其名义身份拒绝区块和本项 Sliceable 区块。
+旧 v14 debug 完整回归仍活跃时，因基线更新有意停止，不记为失败或完整通过；不修改运行中的
+输入。普通内联闭包的 trailing Option 也应补入名义 None，因此把已在独立 Snapshot 四后端
+通过的同一表达式加入 slice 的 definition :tests，再以 release 候选重新回放完整门禁。
+
+rebase 后的 v15 release 候选已重新通过 slice/helper 九项及自定义实现四项的四后端回放；
+原 lexical-binder 三十项、局部类型别名三项在 native/JS 通过，声明命名空间三项在四后端通过。
+完整 core Snapshot 的 686 项 native 测试、1030 项 Rust library、all-target Clippy、TS 检查、
+78 份文档的 416 个代码块及历史 API 合同检查通过。原 native 入口与实际生成的 app.main JS
+入口也通过；JS codegen 不生成 main.mjs，测试直接导入生成 namespace 并调用原 main!。
+完整既有拒绝 harness 继续使用同一个 v15 进程，不因观察超时重启；结果待其正常结束。

@@ -12071,6 +12071,24 @@
                   &trait-call Sliceable :slice values 1 $ Option :some 2
                 assert= ([] 2 3) (&trait-call Sliceable :slice values 1)
               :tags $ #{} :core :sliceable-option :unit
+            %{} 'TestEntry (:name |inline-option-omission-keeps-nominal-none)
+              :code $ quote $ let
+                  default-end $ fn (end)
+                    hint-fn $ {}
+                      :args $ [] $ :: 'Option 'Number
+                      :return 'Number
+                    end.unwrap-or 99
+                  take-prefix $ fn (value end)
+                    hint-fn $ {}
+                      :args $ [] 'String $ :: 'Option 'Number
+                      :return 'String
+                    value.slice 0 end
+                assert= 99 $ default-end
+                assert= 2 $ default-end $ Option :some 2
+                assert= |ab $ take-prefix |ab
+                assert= |a $ take-prefix |ab $ Option :some 1
+                , &unit
+              :tags $ #{} :core :option-omission :unit
         'sort $ %{} 'CodeEntry
           :doc "|internal function for sorting lists\nSyntax: (sort list) or (sort list comparator)\nParams: list (list), comparator (function, optional)\nReturns: list\nReturns sorted list using natural order or custom comparator"
           :code $ quote &runtime-implementation
