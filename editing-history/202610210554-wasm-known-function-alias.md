@@ -19,3 +19,7 @@ Calcit definition :tests 覆盖别名链、内层遮蔽后的恢复、闭包捕�
 四项原 core 回归在 native/WASI 的实际排除审计中全部通过，才移除它们各自的 WASI 排除：hint-fn 的已证明回调别名、rest 函数值、多参数函数值，以及 identity 的本地泛型函数值。原断言没有修改；sort-by、Set map 等其他未知 callee 限制没有由此宣称解决。完整命令与最终结果保存在 PR，而不是让排除删除或本记录代替实际回放。
 
 函数参数中的一般已证明 callback、动态 callee 集合、逃逸闭包 ABI 等仍按 #2179 原范围继续，不以本次局部具名别名通过宣称整单完成。最终 HEAD review、CI 与精确 main 工作流仍是合并门槛；本记录不替代实际结果。
+
+## 审查补充
+
+高阶调用共享具名目标以后，静态目标解析必须同时验证调用点的实际参数数：普通 map 等为一个，fold 和 map-indexed 为两个。校验统一作用于 Fn、Import、Symbol 及已知 local，而不是保留旧的 Fn 专属二参数假定。非 rest local 不匹配时仍走原表间接调用，不生成签名错误的直接 Call；rest 继续复用原打包或缺参 trap。此处直接构造不兼容 backend 元数据的回归留在 Rust，因为完整 strict 应先拒绝这样的 Calcit 程序。合法别名行为继续由 definition :tests 覆盖，并在现有 Component smoke job 明确选择 fixture/tag 回放四后端。

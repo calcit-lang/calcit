@@ -3447,6 +3447,18 @@
                 assert= true $ identical? original copied
                 assert= true $ identical? bump copied
               :tags $ #{} :known-function-alias
+        'sum-pair $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn sum-pair (left right) (+ left right)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'Number 'Number
+          :tests $ [] $ %{} 'TestEntry (:name |binary-alias-keeps-map-indexed-and-fold-arity)
+            :code $ quote $ let
+                combine sum-pair
+              assert= ([] 10 21)
+                map-indexed ([] 10 20) combine
+              assert= 6 $ foldl ([] 1 2 3) 0 combine
+            :tags $ #{} :known-function-alias
         'sum-tail $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn sum-tail (first-value & values) (foldl values first-value +)
           :examples $ []
