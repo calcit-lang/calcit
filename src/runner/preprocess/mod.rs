@@ -12173,7 +12173,7 @@ pub fn preprocess_defn(
         location.to_owned().unwrap_or_default(),
       );
       let lexical_generics = body_types.generic_names();
-      let mut body_fn_hints = args.iter().skip(2).filter_map(|form| {
+      let hint_signature = |form: &Calcit| {
         let annotation = CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form_in_scope(form, &lexical_generics)?;
         match annotation.as_ref() {
           CalcitTypeAnnotation::Fn(signature) => Some((
@@ -12186,7 +12186,12 @@ pub fn preprocess_defn(
           )),
           _ => None,
         }
-      });
+      };
+      let generated_hint = |form: &Calcit| matches!(form, Calcit::List(items) if matches!(items.call_kind(), CalcitCallKind::GeneratedFnHint | CalcitCallKind::TypedFnHint(_, true)));
+      // Lowering appends a proven signature for replay; it is not a second
+      // source declaration. Prefer the original hint, retaining that derived
+      // signature only when the function has no source-written declaration.
+      let mut body_fn_hints = args.iter().skip(2).filter(|form| !generated_hint(form)).filter_map(hint_signature);
       // Keep a precise source-written hint coordinate when it belongs to the
       // caller. A hint originating in a macro definition belongs at its call.
       let hint_location = |source: Option<&Calcit>| {
@@ -12212,6 +12217,7 @@ pub fn preprocess_defn(
           hint_location(Some(&source)),
         ));
       }
+      let body_fn_hint = body_fn_hint.or_else(|| args.iter().skip(2).filter(|form| generated_hint(form)).find_map(hint_signature));
       let body_fn_hint_source = body_fn_hint.as_ref().map(|(source, _)| source.clone());
       let body_fn_hint_location = hint_location(body_fn_hint_source.as_ref());
       let body_fn_hint = body_fn_hint.map(|(_, signature)| signature);
