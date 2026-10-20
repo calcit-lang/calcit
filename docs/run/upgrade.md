@@ -119,7 +119,7 @@ defn call-value (f args)
 
 无 else 的 `if` / `when` / `cond` / `case`，以及一支是 `nil`、另一支有具体值的 `if`，过去会被推成旧 `Optional<T>`。`T|nil` 不是 Calcit 类型，现在这类表达式不再带类型证据（不推 `Dynamic`，所以不会因此新增严格失败）；`.?-field` 在已知 struct 字段上的结果改为 `JsNullish<T>`。运行时行为不变，值仍是 `nil`。
 
-值被消费的位置——`let` 初始化、调用或方法实参、声明了具体返回类型的函数结尾——`--check-only` 在 Notes 里列出 `W_IMPLICIT_NIL_BRANCH`，检查与运行照常通过；这是补丁线上的提示，下一个非 patch 版本可以升级为阻塞诊断。语句位置的 `if`（结果被丢弃）不报告，`nil->option` 的实参也不报告。
+值被消费的位置——`let` 初始化、调用或方法实参、声明了具体返回类型的函数结尾——`--check-only` 在 Notes 里列出 `W_IMPLICIT_NIL_BRANCH`，检查与运行照常通过；它目前是提示，之后可以升级为阻塞诊断。语句位置的 `if`（结果被丢弃）不报告，`nil->option` 的实参也不报告。
 
 | 旧写法 | 新写法 |
 | --- | --- |

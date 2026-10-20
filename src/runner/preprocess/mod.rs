@@ -12061,9 +12061,8 @@ fn is_dynamic_branch(expr: &Calcit, scope_types: &ScopeTypes) -> bool {
 /// return) receives a branch that silently yields nil. Such `T|nil` results no
 /// longer infer to the legacy `Optional<T>` (#1554); the migration is an explicit
 /// `Option :some` / `Option :none`, or an explicit else value. Statement-position
-/// branches are never passed here. This is an advisory while the release line is a
-/// patch cycle: the check and the runner still pass, and the next non-patch
-/// version can promote it to an error.
+/// branches are never passed here. This is an advisory for now: the check and the
+/// runner still pass, and a later release can promote it to an error.
 fn warn_on_value_position_nil_branch(
   value: &Calcit,
   context: &str,

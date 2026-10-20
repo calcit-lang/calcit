@@ -10449,23 +10449,23 @@
                   explicit-option $ fn (x)
                     hint-fn $ {}
                       :args $ [] 'Number
-                      :return $ :: 'Option 'Number
-                    if (> x 0) (Option :some x) (Option :none)
+                      :return $ :: 'Option 'String
+                    if (> x 0) (Option :some |pos) (Option :none)
                   from-nil-join $ fn (x)
                     hint-fn $ {}
                       :args $ [] 'Number
-                      :return $ :: 'Option 'Number
-                    nil->option $ if (> x 0) x nil
+                      :return $ :: 'Option 'String
+                    nil->option $ if (> x 0) |pos nil
                   from-when $ fn (x)
                     hint-fn $ {}
                       :args $ [] 'Number
-                      :return $ :: 'Option 'Number
-                    nil->option $ when (> x 0) x
-                assert= (Option :some 1) (explicit-option 1)
+                      :return $ :: 'Option 'String
+                    nil->option $ when (> x 0) |pos
+                assert= (Option :some |pos) (explicit-option 1)
                 assert= (Option :none) (explicit-option -1)
-                assert= (Option :some 2) (from-nil-join 2)
+                assert= (Option :some |pos) (from-nil-join 2)
                 assert= (Option :none) (from-nil-join -2)
-                assert= (Option :some 3) (from-when 3)
+                assert= (Option :some |pos) (from-when 3)
                 assert= (Option :none) (from-when -3)
               :tags $ #{} :core :types :unit
             %{} 'TestEntry

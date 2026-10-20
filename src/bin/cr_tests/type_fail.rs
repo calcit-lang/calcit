@@ -2981,7 +2981,7 @@ fn value_position_nil_branch_reports_an_advisory_without_blocking() {
     let warnings = warnings.borrow();
     assert!(
       warnings.iter().all(|warning| warning.code() != Some("W_IMPLICIT_NIL_BRANCH")),
-      "the migration is an advisory on a patch line: {warnings:?}"
+      "the migration is reported as an advisory: {warnings:?}"
     );
     let advisories = runner::preprocess::take_advisories();
     let implicit = advisories
