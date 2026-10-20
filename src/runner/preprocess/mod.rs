@@ -4836,13 +4836,18 @@ fn preprocess_list_call(
           require_js_ffi_feature_for_operation(call_head, file_ns, def_name.as_ref(), check_warnings, call_stack)?;
           // JS local assignment must preserve the binding contract. Otherwise
           // later uses can borrow obsolete literal or predicate evidence.
-          if strict_types_enabled()
-            && is_local_assignment(call_head)
+          if is_local_assignment(call_head)
             && let (Some(Calcit::Local(local)), Some(value)) = (processed_args.first(), processed_args.get(1))
           {
-            let expected = explicit_open::binding_contract(local).unwrap_or_else(|| local.type_info.clone());
+            let expected = explicit_open::binding_contract(local)
+              .or_else(|| scope_types.binding_type(&local.sym).cloned())
+              .unwrap_or_else(|| local.type_info.clone());
             let actual = resolve_type_value(value, scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone());
-            if !actual.is_proven_for(&expected) {
+            if !scope_types
+              .call_type_proof(&[], std::slice::from_ref(&expected), std::slice::from_ref(&actual))
+              .prove(&actual, &expected)
+              .is_proven()
+            {
               return Err(CalcitErr::use_msg_stack_location_with_code(
                 CalcitErrKind::Type,
                 format!(

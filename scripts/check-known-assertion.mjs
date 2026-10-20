@@ -3580,6 +3580,58 @@ try {
     const generated = await import(pathToFileURL(join(output, `${namespace}.mjs`)).href);
     generated.replay_count_tests();
   }
+  // Assignment is not a new generic invocation. Neither a concrete producer
+  // nor an unrelated binder may specialize an established local contract.
+  for (const [name, parameters, body, types, generics, arguments_] of [
+    ["concrete-assignment", ["value"], ["set!", "value", ["[]", "|wrong"]], "'T", "'T", [["[]", "1"]]],
+    ["unrelated-assignment", ["value", "replacement"], ["set!", "value", "replacement"], "'T 'U", "'T 'U", [["[]", "1"], ["[]", "|wrong"]]],
+  ]) {
+    await copyFile("tests/fixtures/count-contract.cirru", snapshot);
+    run("edit", "def", "fix-command.main/rejected-assignment", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "rejected-assignment", parameters, body, "value"]));
+    run("edit", "schema", "fix-command.main/rejected-assignment", "--input-format", "cirru", "--code",
+      `quote $ :: 'Fn $ {} (:args ([] ${types})) (:return 'T) (:generics ([] ${generics})) (:features (#{} :js-ffi))`);
+    run("edit", "def", "fix-command.main/main!", "--overwrite", "--input-format", "json-ast", "--code",
+      JSON.stringify(["defn", "main!", [], ["rejected-assignment", ...arguments_], "&unit"]));
+    run("edit", "schema", "fix-command.main/main!", "--input-format", "cirru", "--code",
+      "quote $ :: 'Fn $ {} (:args ([])) (:return 'Unit) (:features (#{} :js-ffi))");
+    run("config", "set", "init-fn", "fix-command.main/main!");
+    run("config", "set", "reload-fn", "fix-command.main/main!");
+    const original = await readFile(snapshot);
+    for (const [mode, args] of [
+      ["ordinary", ["--check-only", "--all-defs", "--format", "json"]],
+      ["independent", ["fix", "--rule", "concrete-return-proof-v1", "--ns", "fix-command.main", "--def", "rejected-assignment", "--format", "json"]],
+      ["strict", ["fix", "--workflow", "strict", "--verify", "--format", "json"]],
+      ["js", ["--emit-path", join(project, name), "js"]],
+    ]) {
+      const rejected = spawnSync(binary, [snapshot, ...args], options);
+      if (rejected.error) throw rejected.error;
+      assert.equal(rejected.status, 1, `${name}/${mode}\n${rejected.stdout}\n${rejected.stderr}`);
+      assert.match(`${rejected.stdout}\n${rejected.stderr}`, /E_CALL_ARGUMENT_UNPROVEN/);
+      assert.match(`${rejected.stdout}\n${rejected.stderr}`, /set! value cannot prove the local/);
+      assert.deepEqual(await readFile(snapshot), original);
+    }
+  }
+  // set! is a JS-FFI host operation. Its positive language contracts live in
+  // attached tests and execute on the actual supported backend, not native.
+  // Export through query/edit rather than copying unrelated relative modules
+  // configured by the original test-js main entry.
+  await copyFile("tests/fixtures/count-contract.cirru", snapshot);
+  const assignmentSource = JSON.parse(execFileSync(binary, ["calcit/test-js.cirru", "query", "def",
+    "test-js.main/reassign-same-generic", "--format", "json"], options)).data;
+  assert.equal(assignmentSource.tests.length, 3);
+  run("edit", "def", "fix-command.main/reassign-same-generic", "--input-format", "json-ast", "--code",
+    JSON.stringify(assignmentSource.code));
+  run("edit", "schema", "fix-command.main/reassign-same-generic", "--input-format", "json-ast", "--code",
+    JSON.stringify(["::", "'Fn", ["{}", ...assignmentSource.schema.slice(1).filter(field => field[0] !== ":kind")]]));
+  for (const test of assignmentSource.tests) {
+    run("edit", "add-test", "fix-command.main/reassign-same-generic", test.name, "--input-format", "json-ast",
+      "--code", JSON.stringify(test.code));
+  }
+  execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", snapshot,
+    "--backend", "js", "--target", "fix-command.main/reassign-same-generic"],
+  { ...options, env: { ...process.env, CALCIT_BIN: binary } });
+
   // An open or concrete result cannot independently prove a bare generic
   // return, whether it is the whole result or one unguarded branch; a branch
   // guarded by a kind predicate on the generic argument still proves it.

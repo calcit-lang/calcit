@@ -98,6 +98,31 @@
           :schema $ :: 'Fn $ {} (:return 'Dynamic)
             :args $ []
             :features $ #{} :js-ffi
+        'reassign-same-generic $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reassign-same-generic (value replacement) (set! value replacement) value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'T)
+            :args $ [] 'T 'T
+            :features $ #{} :js-ffi
+            :generics $ [] 'T
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-number)
+              :code $ quote $ do
+                assert-type (reassign-same-generic 1 7) 'Number
+                assert= 7 $ reassign-same-generic 1 7
+              :tags $ #{} :generic-assignment :js-ffi :unit
+            %{} 'TestEntry (:name |preserves-list-members)
+              :code $ quote $ do
+                assert-type
+                  reassign-same-generic ([] 1) ([] 7)
+                  :: 'List 'Number
+                assert= ([] 7)
+                  reassign-same-generic ([] 1) ([] 7)
+              :tags $ #{} :generic-assignment :js-ffi :unit
+            %{} 'TestEntry (:name |preserves-option-false)
+              :code $ quote $ assert= (Option :some false)
+                reassign-same-generic (Option :some true) (Option :some false)
+              :tags $ #{} :generic-assignment :js-ffi :unit
         'test-async $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn ()
             let
