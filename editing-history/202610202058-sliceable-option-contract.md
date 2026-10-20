@@ -73,3 +73,11 @@ Option）；重新实际编译 TS 后，同一 v16 回放为 native686、JS685�
 调用未先走普通函数参数检查，后置校验因此对错误 Option payload 报内部错误。复用与后置
 校验相同的已编译函数解析和 check_user_fn_arg_types，在返回已补全实参的 lowered call 前检查；
 不编译或执行新的定义，不改错误匹配、不关闭 invariant。原七个错误调用继续作为拒绝回归。
+
+随后完整 Rust CLI 测试揭示上述追加检查造成 List.apply 重复诊断，原断言的数量从 1 变 2。
+这证明此前漏检定位不准确：原方法检查已经拒绝错误，丢失的是 literal-only 调用的 source
+坐标，而非实际类型检查。因此删除该次追加检查，不改原数量断言；方法 lowering 在记录证据时
+保留 source 位置，后置校验仅对没有 operand 位置的调用使用这一对应。相同 lowered AST 若对应
+多个 source occurrence，必须全部具有已报告的检查，不能凭其中一个遮蔽另一个。内部 metadata
+invariant 测试覆盖无证据、无关位置、相同 AST 的部分/全部报告；此层低级条件无法直接通过
+Calcit 用户接口构造，用户可见拒绝继续使用原 Calcit harness。未关闭任何校验或增加诊断规则。
