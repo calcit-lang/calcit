@@ -287,7 +287,7 @@ pub(crate) fn proves_trait_bound(
 
 /// One call's inference variables are distinct from the caller's rigid variables.
 /// Source annotations and diagnostics keep their original names.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct CallTypeProof {
   renaming: TypeBindings,
   bindings: TypeBindings,
@@ -470,6 +470,9 @@ impl CallTypeProof {
           .iter()
           .map(|rest| rest.substitute_type_vars(&self.bindings)),
       );
+      if !expected_signature.generics.is_empty() {
+        contextual_types.push(expected_signature.return_type.substitute_type_vars(&self.bindings));
+      }
       let mut callback_proof = Self::new(&actual_signature.generics, &owned_types, &contextual_types)
         .with_caller_capabilities(self.caller_capabilities.clone());
       for (index, input) in expected_inputs.iter().enumerate() {
@@ -488,6 +491,22 @@ impl CallTypeProof {
         let proof = callback_proof.prove(&expected_rest.substitute_type_vars(&self.bindings), actual_rest);
         if !proof.is_proven() {
           return proof;
+        }
+      }
+      if !expected_signature.generics.is_empty() {
+        // A universally quantified contract is not a single callback invocation.
+        // Its rigid result variables can relate return-only binders without
+        // erasing them to Dynamic. The final covariant result proof still runs;
+        // a failed reverse constraint must not reject bottom or commit bindings.
+        let mut result_proof = callback_proof.clone();
+        if result_proof
+          .prove(
+            &expected_signature.return_type.substitute_type_vars(&self.bindings),
+            &actual_signature.return_type,
+          )
+          .is_proven()
+        {
+          callback_proof = result_proof;
         }
       }
       let bound_proof = callback_proof.prove_where_bounds(&actual_signature.where_bounds, Some(&self.fresh_names));
