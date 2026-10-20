@@ -232,7 +232,7 @@ try {
   // Contradictory declarations now reject before checking the return body.
   assert.match(`${publicReturn.stdout}\n${publicReturn.stderr}`, /E_SCHEMA_DEF_MISMATCH/);
   assert.match(`${publicReturn.stdout}\n${publicReturn.stderr}`, /body hint cannot prove the declared callable contract/);
-  assert.match(`${publicReturn.stdout}\n${publicReturn.stderr}`, /app\.main\/public-return @1/);
+  assert.match(`${publicReturn.stdout}\n${publicReturn.stderr}`, /app\.main\/public-return @3(?:\D|$)/);
   assert.deepEqual(await readFile(binderSnapshot), publicReturnSource);
 
   // #2077: the shared replay must keep named-entry target boundaries and report
@@ -3539,6 +3539,12 @@ try {
       "quote $ :: 'Fn $ {} (:args ([] 'T)) (:generics ([] 'T)) (:return 'String)", ["rejected-body-hint", ["Unrendered", ":n", "1"]]],
     ["mismatched-rest-shape", "quote $ defn rejected-body-hint (value tail) (hint-fn $ {} (:args ([] 'Number)) (:rest 'String) (:return 'String)) (&list:nth tail 0)",
       "quote $ :: 'Fn $ {} (:args ([] 'Number 'String)) (:return 'String)", ["rejected-body-hint", "1", "|Ada"]],
+    ["duplicate-conflicting", "quote $ defn rejected-body-hint (value) (hint-fn $ {} (:args ([] 'Number)) (:return 'String)) (hint-fn $ {} (:args ([] 'String)) (:return 'String)) (to-string value)",
+      "quote $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'String)", ["rejected-body-hint", "1"]],
+    ["duplicate-matching", "quote $ defn rejected-body-hint (value) (hint-fn $ {} (:args ([] 'Number)) (:return 'String)) (hint-fn $ {} (:args ([] 'Number)) (:return 'String)) (to-string value)",
+      "quote $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'String)", ["rejected-body-hint", "1"]],
+    ["duplicate-local", "quote $ defn rejected-body-hint (value) (hint-fn $ {} (:args ([] 'Number)) (:return 'String)) (let ((render (fn (item) (hint-fn $ {} (:args ([] 'Number)) (:return 'String)) (hint-fn $ {} (:args ([] 'String)) (:return 'String)) (to-string item)))) (render value))",
+      "quote $ :: 'Fn $ {} (:args ([] 'Number)) (:return 'String)", ["rejected-body-hint", "1"]],
   ]) {
     await copyFile("tests/fixtures/trait-bound-return.cirru", snapshot);
     run("edit", "def", "fix-command.main/Unrendered", "--input-format", "cirru", "--code",
@@ -3561,7 +3567,14 @@ try {
       if (result.error) throw result.error;
       assert.equal(result.status, 1, `${name}/${mode}\n${result.stdout}\n${result.stderr}`);
       assert.match(`${result.stdout}\n${result.stderr}`, /E_SCHEMA_DEF_MISMATCH/);
-      assert.match(`${result.stdout}\n${result.stderr}`, /body hint cannot prove the declared callable contract|body hint schema mismatch/);
+      if (name.startsWith("duplicate-")) {
+        assert.match(`${result.stdout}\n${result.stderr}`, /only one body hint-fn Map/);
+        if (name !== "duplicate-local" && (mode === "native" || mode === "js")) {
+          assert.match(`${result.stdout}\n${result.stderr}`, /fix-command\.main\/rejected-body-hint @4(?:\D|$)/);
+        }
+      } else {
+        assert.match(`${result.stdout}\n${result.stderr}`, /body hint cannot prove the declared callable contract|body hint schema mismatch/);
+      }
       assert.deepEqual(await readFile(snapshot), original);
     }
   }

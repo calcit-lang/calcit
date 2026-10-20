@@ -74,6 +74,24 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'matching-body-contract $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn matching-body-contract (value)
+            hint-fn $ {}
+              :args $ [] 'T
+              :generics $ [] 'T
+              :where $ {} $ 'T 'ToString
+              :return 'String
+            to-string value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'T
+            :generics $ [] 'T
+            :where $ {} $ 'T 'ToString
+          :tests $ [] $ %{} 'TestEntry (:name |single-matching-hint)
+            :code $ quote $ do
+              assert= |1 $ matching-body-contract 1
+              assert= |Ada $ matching-body-contract |Ada
+            :tags $ #{} :body-hint-contract :unit
         'partial-body-rest $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn partial-body-rest (& values)
             hint-fn $ {} $ :return (:: 'List 'T)

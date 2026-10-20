@@ -16,12 +16,14 @@ CodeEntry 的 Fn 与函数体 Map 描述同一个函数。此前 preprocess 优�
 
 ## 验证与边界
 
-合法的 return-only bounded 参数与 rest 参数写在现有 trait-bound fixture 的 definition :tests，并复用 native/JS 共享运行器。三个非法声明复用 known-assertion harness，覆盖普通、独立返回 proof、完整 strict、native 和 JS emit，并验证源码未改。
+合法的 return-only bounded 参数、rest 参数与单份完整匹配的 body hint 写在现有 trait-bound fixture 的 definition :tests，并复用 native/JS 共享运行器。非法声明复用 known-assertion harness，覆盖普通、独立返回 proof、完整 strict、native 和 JS emit，并验证源码未改。
 
 原 public-return 负例保留原源码及拒绝要求；新校验更早报告 E_SCHEMA_DEF_MISMATCH，因此精确检查新的合同诊断、源位置与源码不变，不把任何编译失败当成通过。
 
 完整回归中的 try handler 也保留原非法源码：零参数函数不能靠 hint 发明一个参数。此用例从仅独立 proof 拒绝加强到普通与 JS 编译也拒绝，并精确检查 E_SCHEMA_REQUIRED_ARGS 的 1/0 差异。位置复用已有宏调用来源恢复，指向项目定义而非内部 calcit.core/fn；不扩大整组负例的通用诊断匹配。
 
-直接定义与宏来源使用 namespace/definition 身份区分：已有精确坐标属于调用方时保留，只有原位置属于另一处宏定义时才恢复调用方。public-return 原有 @1 精确断言保持不变，与整组 try 负例一起验证，避免粗略宏位置遮蔽直接源码坐标。
+直接定义与宏来源使用 namespace/definition 身份区分：已有精确坐标属于调用方时保留，只有原位置属于另一处宏定义时才恢复调用方。复审确认 List 本身没有 get_location，因此改用已有 list-call 定位函数；public-return 精确断言从定义名 @1 改到 query/tree 确认的实际 hint 调用 @3，与整组 try 负例一起验证，避免粗略宏位置遮蔽直接源码坐标。
+
+复审另一个反例中，第一份 body hint 与 Number 合同一致、第二份改为 String，原实现仍全部通过检查并只使用第一份。采用每个函数一份直接 Map 声明的规则，第二份以现有 E_SCHEMA_DEF_MISMATCH 拒绝，不叠加多个局部证明或字段特例。core 和语言测试存储 AST 的只读盘点没有发现直接多份声明，但这不是所有消费者或宏生成代码的清零证明。互相冲突、重复匹配和匿名函数内的多份声明均加入既有负例回归；嵌套函数各自的注解与两参数局部 hint 不计为外层声明。升级时将同一函数的字段合并到一份 Map。
 
 此批次仅面向 0.31.0 的 main；不改 0.30.1 维护线，不提前删除旧形式。最终测试结果、精确提交、review、CI 和消费者证据记录在 PR。

@@ -12173,7 +12173,7 @@ pub fn preprocess_defn(
         location.to_owned().unwrap_or_default(),
       );
       let lexical_generics = body_types.generic_names();
-      let body_fn_hint = args.iter().skip(2).find_map(|form| {
+      let mut body_fn_hints = args.iter().skip(2).filter_map(|form| {
         let annotation = CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form_in_scope(form, &lexical_generics)?;
         match annotation.as_ref() {
           CalcitTypeAnnotation::Fn(signature) => Some((
@@ -12187,21 +12187,33 @@ pub fn preprocess_defn(
           _ => None,
         }
       });
-      let body_fn_hint_source = body_fn_hint.as_ref().map(|(source, _)| source.clone());
       // Keep a precise source-written hint coordinate when it belongs to the
       // caller. A hint originating in a macro definition belongs at its call.
-      let body_fn_hint_original_location = body_fn_hint_source
-        .as_ref()
-        .and_then(Calcit::get_location)
-        .unwrap_or_else(|| definition_location.clone());
-      let body_fn_hint_location = Some(
-        find_preferred_macro_location(ctx.call_stack)
-          .filter(|caller| {
-            caller.def.as_ref() != GENERATED_DEF
-              && (caller.ns != body_fn_hint_original_location.ns || caller.def != body_fn_hint_original_location.def)
+      let hint_location = |source: Option<&Calcit>| {
+        let original = source
+          .and_then(|source| match source {
+            Calcit::List(items) => derive_list_call_expr_location(items),
+            _ => source.get_location(),
           })
-          .unwrap_or(body_fn_hint_original_location),
-      );
+          .unwrap_or_else(|| definition_location.clone());
+        Some(
+          find_preferred_macro_location(ctx.call_stack)
+            .filter(|caller| caller.def.as_ref() != GENERATED_DEF && (caller.ns != original.ns || caller.def != original.def))
+            .unwrap_or(original),
+        )
+      };
+      let body_fn_hint = body_fn_hints.next();
+      if let Some((source, _)) = body_fn_hints.next() {
+        return Err(CalcitErr::use_msg_stack_location_with_code(
+          CalcitErrKind::Type,
+          "a function may declare only one body hint-fn Map; combine its fields into one declaration",
+          "E_SCHEMA_DEF_MISMATCH",
+          ctx.call_stack,
+          hint_location(Some(&source)),
+        ));
+      }
+      let body_fn_hint_source = body_fn_hint.as_ref().map(|(source, _)| source.clone());
+      let body_fn_hint_location = hint_location(body_fn_hint_source.as_ref());
       let body_fn_hint = body_fn_hint.map(|(_, signature)| signature);
       // A zero-input helper has no caller-dependent parameter constraints.
       // Infer only absent contracts; an explicit Dynamic remains intentional.
