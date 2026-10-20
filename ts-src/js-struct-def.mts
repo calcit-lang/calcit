@@ -3,7 +3,7 @@ import { CalcitValue } from "./js-primes.mjs";
 import { CalcitImpl } from "./js-impl.mjs";
 import { CalcitEnumDef } from "./js-enum-def.mjs";
 import { CalcitStructValue } from "./js-struct-value.mjs";
-import { register_core_option } from "./js-option-value.mjs";
+import { register_core_enum } from "./js-core-enum-value.mjs";
 
 export type FieldValidator = ((value: CalcitValue, requireEvidence?: boolean) => boolean) | null;
 
@@ -61,7 +61,7 @@ export function bind_struct_definition(value: CalcitValue, definitionRef: string
     const prototype = value.prototype;
     const structRef = bind_struct_definition(prototype.structRef, definitionRef) as CalcitStructDef;
     const bound = new CalcitEnumDef(new CalcitStructValue(prototype.name, prototype.fields, prototype.values, structRef));
-    if (definitionRef === "calcit.core/Option") register_core_option(bound);
+    if (definitionRef.startsWith("calcit.core/")) register_core_enum(definitionRef, bound);
     return bound;
   }
   return value;

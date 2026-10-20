@@ -2731,11 +2731,13 @@ pub fn preprocess_expr(
     runner::with_stack_guard_suspended(|| preprocess_expr_unguarded(expr, scope_defs, scope_types, file_ns, check_warnings, call_stack))
   }?;
   if let Calcit::Proc(proc) = &processed
-    && proc.returns_core_option()
+    && let Some(signature) = proc.get_type_signature()
+    && let CalcitTypeAnnotation::TypeRef(name, _) = signature.return_type.as_ref()
+    && let Some(definition) = name.strip_prefix("calcit.core/")
   {
-    // These primitives build `calcit.core/Option` values at runtime, so generated
-    // JS / WASM programs must contain that definition even if source never names it.
-    ensure_ns_def_compiled(calcit::CORE_NS, "Option", check_warnings, call_stack)?;
+    // Nominal primitive results need their source definition even when callers
+    // only pass them onward. Derive this dependency from the shared contract.
+    ensure_ns_def_compiled(calcit::CORE_NS, definition, check_warnings, call_stack)?;
   }
   if scope_types.has_refinements() && !condition_evidence::preserves_locals(&processed, scope_types) {
     scope_types.invalidate_refinements();

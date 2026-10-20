@@ -110,12 +110,16 @@ intersection (#{} :a :b :c) (#{} :b :c :d})
 
 ## Pattern Matching with Sets
 
-Use `&set:destruct` to destructure sets:
+使用公开 `destruct-set` 匹配成员与剩余集合，两者保留原 Set 的成员类型：
 
 ```cirru
-&set:destruct (#{} :a :b :c)
-; Returns (Option :some ([] first-element rest-set)); an empty set gives (Option :none)
+match (destruct-set $ #{} :a :b :c)
+  (:some item remaining-set) $ assert= 2 $ count remaining-set
+  (:none) (raise |expected-member)
 ```
+
+空集合返回 `SetDestruct :none`；成员顺序未指定。0.31.0 的内部 `&set:destruct` 也直接
+返回 `SetDestruct<T>`，不再返回 `Option<List>`。
 
 ## Common Use Cases
 

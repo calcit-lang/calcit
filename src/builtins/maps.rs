@@ -1,4 +1,4 @@
-use crate::builtins::option_value;
+use crate::builtins::{core_enum_value, option_value};
 use std::sync::Arc;
 
 use crate::builtins::meta::type_of;
@@ -375,9 +375,9 @@ pub fn destruct(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
       Some(k0) => {
         let mut zs = ys.to_owned();
         zs.remove_mut(k0);
-        option_value::some(Calcit::from(CalcitList::from(&[k0.to_owned(), ys[k0].to_owned(), Calcit::Map(zs)])))
+        core_enum_value::value("MapDestruct", "some", vec![k0.to_owned(), ys[k0].to_owned(), Calcit::Map(zs)])
       }
-      None => option_value::none(),
+      None => core_enum_value::value("MapDestruct", "none", vec![]),
     },
     Some(a) => CalcitErr::err_str(CalcitErrKind::Type, format!("&map:destruct expected a map, but received: {a}")),
     None => CalcitErr::err_nodes(CalcitErrKind::Arity, "&map:destruct expected 1 argument, but received:", xs),

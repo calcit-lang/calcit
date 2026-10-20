@@ -51,8 +51,23 @@ try {
   assert.throws(() => runtimeA.turn_symbol(new runtimeA.CalcitSliceList([1])), /Unexpected data for symbol/);
   // Primitives that report absence build `calcit.core/Option` values. Without a
   // compiled core, register a stand-in definition for the raw runtime check.
-  const optionModule = await import(pathToFileURL(join(runtimeAPath, "js-option-value.mjs")).href);
-  optionModule.register_core_option({ impls: [] });
+  const coreEnumModule = await import(pathToFileURL(join(runtimeAPath, "js-core-enum-value.mjs")).href);
+  coreEnumModule.register_core_enum("calcit.core/Option", { impls: [] });
+  // Host-level identity and reload invariants; collection semantics live in core :tests.
+  for (const [name, destruct, empty] of [
+    ["MapDestruct", runtimeA._$n_map_$o_destruct, new runtimeA.CalcitSliceMap([])],
+    ["SetDestruct", runtimeA._$n_set_$o_destruct, new runtimeA.CalcitSet([])],
+  ]) {
+    assert.throws(() => destruct(empty), new RegExp(`calcit.core/${name} is not initialized`));
+    const definition = { impls: [] };
+    coreEnumModule.register_core_enum(`calcit.core/${name}`, definition);
+    const original = destruct(empty);
+    assert.equal(original.enumPrototype, definition, "primitive must use the source-owned nominal definition");
+    const reloaded = { impls: [] };
+    coreEnumModule.register_core_enum(`calcit.core/${name}`, reloaded);
+    assert.equal(destruct(empty).enumPrototype, reloaded, "next call must observe the reloaded definition");
+    assert.equal(original.enumPrototype, definition, "reload must not rewrite an existing value's identity");
+  }
   const parsed = (text) => {
     const result = runtimeA._$n_parse_float(text);
     return result.tag.value === "some" ? result.extra[0] : null;

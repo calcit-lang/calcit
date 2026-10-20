@@ -1102,7 +1102,7 @@ pub(super) fn emit_map_diff_triple(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Res
   Ok(())
 }
 
-/// `&map:destruct map` — returns `[key val rest-map]` for the first entry, or nil if empty.
+/// `&map:destruct map` returns MapDestruct with separate key, value and remainder payloads.
 pub(super) fn emit_map_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   if args.len() != 1 {
     return Err("&map:destruct expects 1 arg".into());
@@ -1115,8 +1115,8 @@ pub(super) fn emit_map_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
   ctx.emit(Instruction::LocalGet(count));
   ctx.emit(Instruction::I32Eqz);
   ctx.begin_block_if();
-  // empty map → Option :none
-  emit_option_enum(ctx, None)?;
+  // Empty map -> MapDestruct :none.
+  emit_core_enum(ctx, "none", &[])?;
   ctx.emit(Instruction::LocalSet(result));
   ctx.emit(Instruction::Else);
   {
@@ -1148,26 +1148,7 @@ pub(super) fn emit_map_destruct(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result
     ctx.emit(Instruction::F64ConvertI32U);
     ctx.emit(Instruction::LocalSet(rest_map));
 
-    // Allocate 3-element list [key0, val0, rest-map]
-    let list_ptr = ctx.alloc_local_typed(ValType::I32);
-    emit_bump_alloc(ctx, 32, list_ptr, "list"); // 4 * 8 bytes
-    ctx.emit(Instruction::LocalGet(list_ptr));
-    ctx.emit(f64_const(3.0));
-    ctx.emit(Instruction::F64Store(mem_arg_f64(0)));
-    ctx.emit(Instruction::LocalGet(list_ptr));
-    ctx.emit(Instruction::LocalGet(key0));
-    ctx.emit(Instruction::F64Store(mem_arg_f64(8)));
-    ctx.emit(Instruction::LocalGet(list_ptr));
-    ctx.emit(Instruction::LocalGet(val0));
-    ctx.emit(Instruction::F64Store(mem_arg_f64(16)));
-    ctx.emit(Instruction::LocalGet(list_ptr));
-    ctx.emit(Instruction::LocalGet(rest_map));
-    ctx.emit(Instruction::F64Store(mem_arg_f64(24)));
-
-    ctx.ptr_to_f64(list_ptr);
-    let payload = ctx.alloc_local();
-    ctx.emit(Instruction::LocalSet(payload));
-    emit_option_enum(ctx, Some(payload))?;
+    emit_core_enum(ctx, "some", &[key0, val0, rest_map])?;
     ctx.emit(Instruction::LocalSet(result));
   }
   ctx.emit(Instruction::End);
