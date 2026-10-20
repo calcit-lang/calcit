@@ -81,3 +81,6 @@ Option）；重新实际编译 TS 后，同一 v16 回放为 native686、JS685�
 多个 source occurrence，必须全部具有已报告的检查，不能凭其中一个遮蔽另一个。内部 metadata
 invariant 测试覆盖无证据、无关位置、相同 AST 的部分/全部报告；此层低级条件无法直接通过
 Calcit 用户接口构造，用户可见拒绝继续使用原 Calcit harness。未关闭任何校验或增加诊断规则。
+
+将自定义 Sliceable 四项和 Option 递归两项接入既有 known-assertion harness 的 native/JS/WASM
+回放及既有 WASI Component job；不新增 workflow、检查器或排除项，选择零项继续由原运行器拒绝。

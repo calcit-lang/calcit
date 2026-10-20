@@ -111,6 +111,11 @@ try {
   }
   // #2213: a resolved trait call checks its method contract even when its
   // result is discarded. The builtin's transport schema is not that contract.
+  execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", "calcit/test-types-inference.cirru",
+    "--target", "test-types-inference.main/slice-with-contract",
+    "--target", "test-types-inference.main/option-recur-sum",
+    "--target", "test-types-inference.main/option-recursive-count",
+    "--backend", "native,js,wasm"], { ...options, env: { ...process.env, CALCIT_BIN: binary } });
   const sliceSnapshot = join(project, "sliceable-input.cirru");
   const runSlice = (...args) => execFileSync(binary, [sliceSnapshot, ...args], options);
   for (const [label, expression] of [
