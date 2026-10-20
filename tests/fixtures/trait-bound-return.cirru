@@ -92,6 +92,21 @@
               assert= |1 $ matching-body-contract 1
               assert= |Ada $ matching-body-contract |Ada
             :tags $ #{} :body-hint-contract :unit
+        'matching-empty-body-return $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn matching-empty-body-return ()
+            hint-fn $ {}
+              :args $ []
+              :generics $ [] 'T
+              :return $ :: 'List 'T
+            []
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+          :tests $ [] $ %{} 'TestEntry (:name |return-only-generic)
+            :code $ quote $ assert= ([]) (matching-empty-body-return)
+            :tags $ #{} :body-hint-contract :unit
         'partial-body-rest $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn partial-body-rest (& values)
             hint-fn $ {} $ :return (:: 'List 'T)
@@ -124,6 +139,18 @@
             %{} 'TestEntry (:name |string)
               :code $ quote $ assert= |Ada (partial-body-return |Ada)
               :tags $ #{} :body-hint-contract :unit
+        'partial-empty-body-return $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn partial-empty-body-return ()
+            hint-fn $ {} $ :return (:: 'List 'T)
+            []
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ []
+            :generics $ [] 'T
+            :return $ :: 'List 'T
+          :tests $ [] $ %{} 'TestEntry (:name |return-only-generic)
+            :code $ quote $ assert= ([]) (partial-empty-body-return)
+            :tags $ #{} :body-hint-contract :unit
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler.")
           :code $ quote $ defn reload! () &unit
           :examples $ []

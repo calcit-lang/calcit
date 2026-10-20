@@ -29,3 +29,5 @@ CodeEntry 的 Fn 与函数体 Map 描述同一个函数。此前 preprocess 优�
 CI 与完整本地回归的原 update-in 求值顺序测试随后暴露派生元数据问题：lowering 已通过 GeneratedFnHint / TypedFnHint 的 generated 标记追加签名，重放时不能把它当作第二份用户声明。保留原测试和断言，按既有来源标记只对源码声明去重；优先原注解，没有原注解时才沿用已证明的生成签名。不在 Snapshot 添加、删除或重排 hint，也不为单个 core 函数设置例外。
 
 此批次仅面向 0.31.0 的 main；不改 0.30.1 维护线，不提前删除旧形式。最终测试结果、精确提交、review、CI 和消费者证据记录在 PR。
+
+独立复审发现零参数 `Fn<T>() -> List<T>` 返回空 List 时，补上相同合同反而被拒绝。回调调用证明只从输入实例化 actual 泛型，未绑定的返回变量随后被擦成 Dynamic。共享证明现在区分有量词的 expected 合同与单次 callback 调用：前者可从结果中的刚性变量建立 actual 返回泛型的关系，再按原协变关系证明结果并核实 trait 义务；失败的反向约束不提交，也不拒绝合法 bottom。单态 callback 仍不能从预期结果凭空取得输入证据。部分/完整空 List 合同使用 definition :tests 验证真实 native/JS 结果；具体 Number 列表冒充任意 T、返回变量新增未承诺 trait 的反例加入原负例运行器。
