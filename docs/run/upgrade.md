@@ -24,6 +24,24 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.31.0 Enum 原语检查已知接收者类型
+
+`&enum:nth` 与 `%::` 按声明的参数合同检查第一个参数：`&enum:nth` 需要 Enum 值，`%::` 需要
+Enum 定义。已知类型不符的接收者（例如声明为 `List<String>` 的参数）在严格检查阶段报告现有
+`W_PROC_ARG_TYPE_MISMATCH`，不再等到运行时失败。Enum 值、名义 Enum 值（如 `Option`、`Result`）
+与动态 prototype 的用法不变。
+
+```cirru
+let
+    good $ fn (xs)
+      hint-fn $ {} (:args $ [] 'Enum) (:return 'Tag)
+      &enum:nth xs 0
+  good $ :: :ns |demo
+```
+
+遇到该诊断时，用 `query context` 与 `query type-at` 核对接收者，修正参数声明或生产者，使其提供真实的
+Enum 值。没有新固定 fix 规则，也不通过 unsafe 或更宽 Dynamic 掩盖类型错误。
+
 ## 0.31.0 切片终点使用 Option
 
 `slice` 和 `.slice` 的终点统一为 `Option<Number>`。省略终点仍切到末尾；显式终点使用

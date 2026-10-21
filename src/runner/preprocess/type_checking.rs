@@ -28,8 +28,8 @@ use crate::calcit::{
 use crate::program;
 
 use super::{
-  ScopeTypes, check_enum_construction, check_enum_nth_bounds, gen_check_warning, gen_check_warning_code_at,
-  gen_check_warning_code_at_with_types, resolve_type_value, tag_annotation,
+  ScopeTypes, check_enum_construction, gen_check_warning, gen_check_warning_code_at, gen_check_warning_code_at_with_types,
+  resolve_type_value, tag_annotation,
 };
 
 // ---------------------------------------------------------------------------
@@ -833,14 +833,11 @@ pub(crate) fn check_proc_arg_types(
     return;
   }
 
+  // Specialized checks add proc-specific evidence on top of the generic
+  // argument contract below; they never replace it, so a known non-Enum
+  // receiver is still rejected against the declared `:enum` parameter.
   if matches!(proc, CalcitProc::NativeNamedEnumNew) {
     check_enum_construction(args, scope_types, file_ns, def_name, check_warnings);
-    return;
-  }
-
-  if matches!(proc, CalcitProc::NativeEnumNth) {
-    check_enum_nth_bounds(args, scope_types, file_ns, def_name, check_warnings);
-    return;
   }
 
   let expected_types = match proc {

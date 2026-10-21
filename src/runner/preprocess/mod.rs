@@ -7361,19 +7361,6 @@ fn check_field_in_struct(
   );
 }
 
-/// Check enum index bounds for &enum:nth operations.
-/// NOTE: Static bounds checking is not available for a dynamic enum since
-/// the enum definition does not carry the per-variant payload sizes. This function is
-/// a no-op: bounds errors will be caught at runtime instead.
-pub(crate) fn check_enum_nth_bounds(
-  _args: &CalcitList,
-  _scope_types: &ScopeTypes,
-  _file_ns: &str,
-  _def_name: &str,
-  _check_warnings: &RefCell<Vec<LocatedWarning>>,
-) {
-}
-
 /// Check enum construction (%::) for variant existence and payload arity
 pub(crate) fn check_enum_construction(
   args: &CalcitList,
@@ -23844,113 +23831,6 @@ mod tests {
       warning_msg.contains("string") && warning_msg.contains("number"),
       "warning should mention expected and actual types: {warning_msg}"
     );
-  }
-
-  #[test]
-  fn checks_enum_nth_out_of_bounds() {
-    use cirru_edn::EdnTag;
-    let _ = EdnTag::from("point"); // tag retained for documentation
-
-    // With a dynamic enum, size is not statically known;
-    // bounds checking falls through (same as AnonymousEnum). Verify no warning.
-    let mut scope_types: ScopeTypes = ScopeTypes::new();
-    scope_types.insert(Arc::from("my-enum"), Arc::new(CalcitTypeAnnotation::AnonymousEnum));
-
-    let args = CalcitList::from(
-      &vec![
-        Calcit::Symbol {
-          sym: Arc::from("my-enum"),
-          info: Arc::new(CalcitSymbolInfo {
-            at_ns: Arc::from("tests.enum"),
-            at_def: Arc::from("demo"),
-          }),
-          location: None,
-        },
-        Calcit::Number(3.0),
-      ][..],
-    );
-
-    let warnings = RefCell::new(vec![]);
-
-    check_enum_nth_bounds(&args, &scope_types, "tests.enum", "demo", &warnings);
-
-    let warnings_vec = warnings.borrow();
-    assert!(
-      warnings_vec.is_empty(),
-      "AnonymousEnum: no static bounds checking, should have no warning"
-    );
-  }
-
-  #[test]
-  fn checks_enum_nth_valid_index() {
-    use cirru_edn::EdnTag;
-    let _ = EdnTag::from("point"); // tag retained for documentation
-
-    // AnonymousEnum: bounds checking not performed, no warning expected
-    let mut scope_types: ScopeTypes = ScopeTypes::new();
-    scope_types.insert(Arc::from("my-enum"), Arc::new(CalcitTypeAnnotation::AnonymousEnum));
-
-    let args = CalcitList::from(
-      &vec![
-        Calcit::Symbol {
-          sym: Arc::from("my-enum"),
-          info: Arc::new(CalcitSymbolInfo {
-            at_ns: Arc::from("tests.enum"),
-            at_def: Arc::from("demo"),
-          }),
-          location: None,
-        },
-        Calcit::Number(1.0),
-      ][..],
-    );
-
-    let warnings = RefCell::new(vec![]);
-
-    check_enum_nth_bounds(&args, &scope_types, "tests.enum", "demo", &warnings);
-
-    let warnings_vec = warnings.borrow();
-    assert!(warnings_vec.is_empty(), "should have no warnings for valid index");
-  }
-
-  #[test]
-  fn checks_enum_nth_dynamic_index() {
-    use cirru_edn::EdnTag;
-    let _ = EdnTag::from("point"); // tag retained for documentation
-
-    // AnonymousEnum: dynamic index - should skip checking
-    let mut scope_types: ScopeTypes = ScopeTypes::new();
-    scope_types.insert(Arc::from("my-enum"), Arc::new(CalcitTypeAnnotation::AnonymousEnum));
-
-    // Test: dynamic index (variable) - should skip checking
-    let args = CalcitList::from(
-      &vec![
-        Calcit::Symbol {
-          sym: Arc::from("my-enum"),
-          info: Arc::new(CalcitSymbolInfo {
-            at_ns: Arc::from("tests.enum"),
-            at_def: Arc::from("demo"),
-          }),
-          location: None,
-        },
-        Calcit::Local(CalcitLocal {
-          idx: CalcitLocal::track_sym(&Arc::from("idx")),
-          sym: Arc::from("idx"),
-          info: Arc::new(CalcitSymbolInfo {
-            at_ns: Arc::from("tests.enum"),
-            at_def: Arc::from("demo"),
-          }),
-          location: None,
-          type_info: Arc::new(CalcitTypeAnnotation::Number),
-        }),
-      ][..],
-    );
-
-    let warnings = RefCell::new(vec![]);
-
-    check_enum_nth_bounds(&args, &scope_types, "tests.enum", "demo", &warnings);
-
-    let warnings_vec = warnings.borrow();
-    assert!(warnings_vec.is_empty(), "should skip check for dynamic index");
   }
 
   #[test]
