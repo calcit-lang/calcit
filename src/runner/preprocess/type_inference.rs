@@ -2834,7 +2834,17 @@ pub(super) fn method_call_signature(
   } else {
     let impls = get_impls_from_type(receiver_type.as_ref())?;
     let method = find_method_entry_for_type(receiver_type.as_ref(), &impls, method_name)?;
-    infer_type_from_expr(method, scope_types)?
+    if let Calcit::Proc(proc) = method {
+      let (namespace, definition) = proc.get_ns_def();
+      let schema = program::lookup_def_schema(namespace, definition);
+      if schema.as_function().is_some() {
+        schema
+      } else {
+        infer_type_from_expr(method, scope_types)?
+      }
+    } else {
+      infer_type_from_expr(method, scope_types)?
+    }
   };
   method_type.resolve_to_nonoptional_fn()
 }

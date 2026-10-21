@@ -606,9 +606,10 @@ where
   let actual_types = ctx
     .args
     .iter()
-    .map(|arg| resolve_type_value(arg, ctx.scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()))
+    .map(|arg| resolve_type_value(arg, ctx.scope_types))
     .collect::<Vec<_>>();
-  let mut proof = ctx.scope_types.call_type_proof(ctx.generics, ctx.expected_types, &actual_types);
+  let actual_context = actual_types.iter().flatten().cloned().collect::<Vec<_>>();
+  let mut proof = ctx.scope_types.call_type_proof(ctx.generics, ctx.expected_types, &actual_context);
   if !ctx.generics.is_empty() {
     proof.prepare_inputs(
       ctx
@@ -627,7 +628,7 @@ where
             CalcitTypeAnnotation::Variadic(inner) => inner.as_ref(),
             _ => expected.as_ref(),
           };
-          super::type_inference::generic_input_evidence(argument, actual, expected)
+          super::type_inference::generic_input_evidence(argument, actual.as_deref()?, expected)
         }),
     );
   }
@@ -641,7 +642,7 @@ where
     if let CalcitTypeAnnotation::Variadic(inner_type) = expected_type.as_ref() {
       for (rest_idx, rest_arg) in ctx.args.iter().skip(idx).enumerate() {
         let expected_rest_type = inner_type.substitute_type_vars(&bindings);
-        if let Some(actual_type) = resolve_type_value(rest_arg, ctx.scope_types) {
+        if let Some(actual_type) = actual_types.get(idx + rest_idx).and_then(Option::as_ref) {
           let mut candidate = bindings.clone();
           // Keep the generic until matching so closed bottom bindings can refine.
           let compatible = !proof.prove(&actual_type, inner_type).is_mismatch()
@@ -662,7 +663,7 @@ where
       break;
     }
 
-    if let Some(actual_type) = resolve_type_value(arg, ctx.scope_types) {
+    if let Some(actual_type) = actual_types.get(idx).cloned().flatten() {
       let callback_needs_inference = matches!(actual_type.as_ref(), CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::DynFn)
         || matches!(actual_type.as_ref(), CalcitTypeAnnotation::Fn(signature)
           if signature.generics.is_empty() && signature.where_bounds.is_empty()

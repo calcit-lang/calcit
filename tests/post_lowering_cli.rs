@@ -294,7 +294,12 @@ fn selected_entry_queries_and_host_method_results_keep_independent_evidence() {
         "json",
       ],
     );
-    assert!(!rejected.status.success(), "{name} must not gain false method return evidence");
+    assert!(
+      !rejected.status.success(),
+      "{name} must not gain false method return evidence\n{}\n{}",
+      String::from_utf8_lossy(&rejected.stdout),
+      String::from_utf8_lossy(&rejected.stderr)
+    );
     assert_eq!(fs::read(&snapshot).unwrap(), unchanged, "{name}: no mutation");
   }
 }

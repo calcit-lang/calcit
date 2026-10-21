@@ -14662,15 +14662,13 @@ fn find_unproven_generic_argument(
     .iter()
     .map(|(_, _, expected)| (*expected).clone())
     .collect::<Vec<_>>();
-  let actual_types = args
-    .iter()
-    .filter_map(|arg| resolve_type_value(arg, scope_types))
-    .collect::<Vec<_>>();
-  let mut call_proof = scope_types.call_type_proof(&signature.generics, &expected_types, &actual_types);
+  let actual_types = args.iter().map(|arg| resolve_type_value(arg, scope_types)).collect::<Vec<_>>();
+  let actual_context = actual_types.iter().flatten().cloned().collect::<Vec<_>>();
+  let mut call_proof = scope_types.call_type_proof(&signature.generics, &expected_types, &actual_context);
   let inputs = argument_contracts
     .iter()
-    .filter_map(|(_, argument, expected)| {
-      let actual = resolve_type_value(argument, scope_types).or_else(|| match argument {
+    .filter_map(|(index, argument, expected)| {
+      let actual = actual_types[*index].clone().or_else(|| match argument {
         Calcit::Local(local) => Some(local.type_info.clone()),
         _ => None,
       })?;
@@ -14695,7 +14693,7 @@ fn find_unproven_generic_argument(
       .cloned()
       .collect::<Vec<_>>();
     let concrete_open_check = generics.is_empty() && !audit;
-    let actual = resolve_type_value(arg, scope_types).or_else(|| match arg {
+    let actual = actual_types[index].clone().or_else(|| match arg {
       Calcit::Local(local) if !concrete_open_check => Some(local.type_info.clone()),
       _ => None,
     });
