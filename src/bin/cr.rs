@@ -2929,6 +2929,44 @@ mod tests {
   }
 
   #[test]
+  fn analyze_weak_types_distinguishes_tag_names_from_legacy_type_aliases() {
+    let cases = [
+      ("trait field name", "deftrait MobileInfo (:any 'Bool)", vec![]),
+      ("struct field name", "defstruct Settings (:dynamic 'Bool)", vec![]),
+      ("enum variant name", "defenum Mode (:any 'Number)", vec![]),
+      ("ordinary tag data", "def settings $ {} (:any :dynamic)", vec![]),
+      ("ordinary enum data", "def value $ :: :any :dynamic", vec![]),
+      ("legacy field type", "defstruct Envelope (:payload :any)", vec!["code@2.1"]),
+      (
+        "wrapped generic field type",
+        "defstruct Envelope ((:any (:: :list :dynamic)))",
+        vec!["code@2.0.1.2"],
+      ),
+      (
+        "function schema types, not feature names",
+        "defn demo (value)\n  hint-fn $ {} (:args $ [] :any) (:return $ :: :list :dynamic) (:features $ #{} :any)\n  , value",
+        vec!["code@3.1.1.1.1", "code@3.1.2.1.2"],
+      ),
+    ];
+    for (label, source, expected_paths) in cases {
+      let mut forms = cirru_parser::parse(source).expect("source fixture should parse");
+      assert_eq!(forms.len(), 1, "{label}: one source definition");
+      let entry = code_entry(forms.remove(0), CalcitTypeAnnotation::Dynamic);
+      let row = type_coverage::analyze_weak_types_entry(
+        "app.main",
+        "fixture",
+        &entry,
+        &BTreeSet::from([type_coverage::WeakTypeKind::CodeDynamic]),
+      );
+      let paths = row
+        .as_ref()
+        .map(|row| row.occurrences.iter().map(|item| item.path.as_str()).collect::<Vec<_>>())
+        .unwrap_or_default();
+      assert_eq!(paths, expected_paths, "{label}: {row:?}");
+    }
+  }
+
+  #[test]
   fn type_coverage_treats_any_as_legacy_dynamic() {
     let entry = code_entry(
       list(vec![
@@ -3357,11 +3395,17 @@ mod tests {
         leaf("defn"),
         leaf("template"),
         list(vec![]),
-        list(vec![leaf("quote"), list(vec![leaf("::"), leaf(":dynamic")])]),
-        list(vec![leaf("quasiquote"), list(vec![leaf("::"), leaf(":dynamic")])]),
+        list(vec![
+          leaf("quote"),
+          list(vec![leaf("assert-type"), leaf("value"), leaf(":dynamic")]),
+        ]),
         list(vec![
           leaf("quasiquote"),
-          list(vec![leaf("::"), list(vec![leaf("~"), leaf(":dynamic")])]),
+          list(vec![leaf("assert-type"), leaf("value"), leaf(":dynamic")]),
+        ]),
+        list(vec![
+          leaf("quasiquote"),
+          list(vec![leaf("assert-type"), leaf("value"), list(vec![leaf("~"), leaf(":dynamic")])]),
         ]),
         list(vec![leaf("assert-type"), leaf("value"), leaf(":dynamic")]),
       ]),
@@ -3377,7 +3421,7 @@ mod tests {
     .expect("unquoted Dynamic positions should remain visible");
 
     let paths = row.occurrences.iter().map(|item| item.path.as_str()).collect::<Vec<_>>();
-    assert_eq!(paths, vec!["code@5.1.1.1", "code@6.2"]);
+    assert_eq!(paths, vec!["code@5.1.2.1", "code@6.2"]);
   }
 
   #[test]
