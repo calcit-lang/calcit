@@ -12,7 +12,6 @@ preflight；只有验证 0.14 之前的临时 warning 路径时才使用 `--comp
 - `cargo run --bin calcit -- calcit/type-fail/schema-required-arity.cirru --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/schema-rest-missing.cirru --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/schema-rest-unexpected.cirru --check-only`
-- `cargo run --bin calcit -- calcit/type-fail/schema-kind-mismatch.cirru --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/schema-call-arg-type-mismatch.cirru --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/trait-method-generic-receiver-mismatch.cirru --check-only`
 - `cargo run --bin calcit -- calcit/type-fail/generic-where-bound-mismatch.cirru --check-only`
@@ -36,7 +35,7 @@ preflight；只有验证 0.14 之前的临时 warning 路径时才使用 `--comp
 
 - `generic-callback-map-output-strict.cirru` 验证普通泛型函数按已知输入推断回调参数和 Enum 泛型返回值，最终拒绝向 `Map<String,Number>` 写入字符串值。
 
-- 前 4 个会触发 `schema mismatch while preprocessing definition`（定义时校验）。
+- 前 3 个会触发 `schema mismatch while preprocessing definition`（定义时校验）。
 - `schema-call-arg-type-mismatch.cirru` 会触发基于 schema 的函数参数类型告警，并在 `--check-only` 下被当作错误处理。
 - `trait-method-generic-receiver-mismatch.cirru` 会验证泛型方法根据 receiver 的 `Option<String>` 绑定其 fallback 类型，并拒绝 `Number` fallback；同时验证 `.and-then` callback 不能返回裸 payload。
 - `generic-where-bound-mismatch.cirru` 会触发 `W_GENERIC_WHERE_BOUND_MISMATCH`，验证泛型 `:where` 约束在调用点能被发现，并在 `--check-only` 下被当作错误处理。

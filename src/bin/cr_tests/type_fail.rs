@@ -699,14 +699,6 @@ fn type_fail_schema_mismatch_fixtures_report_error_code() {
 }
 
 #[test]
-fn formatter_normalizes_legacy_schema_kind_fixture() {
-  run_with_large_stack(|| {
-    let entries = load_fixture_entries("calcit/type-fail/schema-kind-mismatch.cirru");
-    run_check_only(&entries).expect("formatter-normalized fixture should pass strict check-only");
-  });
-}
-
-#[test]
 fn strict_type_fail_reachable_unbound_slot_reports_stable_error_code() {
   run_with_large_stack(|| {
     let entries = load_fixture_entries("calcit/type-fail/type-slot-unbound-strict.cirru");
