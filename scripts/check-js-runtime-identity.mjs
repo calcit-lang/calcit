@@ -207,6 +207,27 @@ try {
   const reloadedOrigin = new runtimeA.CalcitTrait(runtimeA.newTag("Show"), [traitMethod], [null]);
   assert.throws(() => runtimeA._$n_trait_call(reloadedOrigin, traitMethod, makeReceiver([leftImpl])), /cannot find impl/);
 
+  // A new graph replaces ordinary methods, not another origin's explicit calls.
+  runtimeA.register_calcit_builtin_impls({ number: leftImpl });
+  runtimeA.register_calcit_builtin_impls({ number: rightImpl });
+  assert.equal(runtimeA._$n_trait_call(leftOrigin, traitMethod, 1), "left");
+  assert.equal(runtimeA._$n_trait_call(rightOrigin, traitMethod, 1), "right");
+  assert.equal(runtimeA._$n_assert_traits(1, leftOrigin), 1);
+  assert.equal(runtimeA._$n_assert_traits(1, rightOrigin), 1);
+  assert.equal(runtimeA.invoke_method("render", 1), "right", "ordinary methods still use the latest table");
+  assert.throws(() => runtimeA._$n_trait_call(reloadedOrigin, traitMethod, 1), /cannot find impl/);
+  runtimeA.register_calcit_builtin_impls({ string: leftImpl });
+  assert.equal(runtimeA._$n_trait_call(leftOrigin, traitMethod, 1), "left", "partial registration preserves other receiver kinds");
+  runtimeA.register_calcit_builtin_impls({ number: secondLeftImpl });
+  assert.equal(runtimeA._$n_trait_call(leftOrigin, traitMethod, 1), "second-left", "re-registering one origin updates its own kind");
+  assert.equal(runtimeA._$n_trait_call(leftOrigin, traitMethod, "value"), "left");
+  const malformedImpls = new runtimeA.CalcitSliceList([leftImpl, runtimeA.newTag("not-an-impl")]);
+  assert.doesNotThrow(() => runtimeA.register_calcit_builtin_impls({ number: malformedImpls }));
+  assert.throws(() => runtimeA._$n_trait_call(leftOrigin, traitMethod, 1), /invoke-method expects impls in list/);
+  assert.throws(() => runtimeA.invoke_method("render", 1), /invoke-method expects impls in list/);
+  assert.equal(runtimeA._$n_trait_call(rightOrigin, traitMethod, 1), "right", "a malformed newer table cannot corrupt another origin");
+  runtimeA.register_calcit_builtin_impls({ number: null, string: null });
+
   const mapKeyA = "map-key-a";
   const mapKeyB = "map-key-b";
   const typedMapKeys = runtimeA._$n_map_$o_keys(new runtimeA.CalcitSliceMap([mapKeyA, 1, mapKeyB, 2]));
