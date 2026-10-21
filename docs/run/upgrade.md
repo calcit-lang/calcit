@@ -115,26 +115,23 @@ defn call-value (f args)
 - 可能逃逸的闭包不继承捕获变量的临时证据；可在守卫后绑定独立的已检查值，再为闭包声明真实输入与返回合同。
 - 自定义同名谓词或正常返回的拒绝分支不能提供内置谓词的类型证据。
 
-## 0.31.0 无 else 分支与 nil 合并不再推出 Optional
+## 0.31.0 值位置的无 else 分支与 nil 合并提示改用 Option
 
-无 else 的 `if` / `when` / `cond` / `case`，以及一支是 `nil`、另一支有具体值的 `if`，过去会被推成旧 `Optional<T>`。`T|nil` 不是 Calcit 类型，现在这类表达式不再带类型证据（不推 `Dynamic`，所以不会因此新增严格失败）；`.?-field` 在已知 struct 字段上的结果改为 `JsNullish<T>`。运行时行为不变，值仍是 `nil`。
-
-值被消费的位置——`let` 初始化、调用或方法实参、声明了具体返回类型的函数结尾——`--check-only` 在 Notes 里列出 `W_IMPLICIT_NIL_BRANCH`，检查与运行照常通过；它目前是提示，之后可以升级为阻塞诊断。语句位置的 `if`（结果被丢弃）不报告，`nil->option` 的实参也不报告。
+无 else 的 `if` / `when` / `case`，以及一支是 `nil`、另一支有具体值的 `if`（包括最后一支为 `(true nil)` 的 `cond`），在值被消费的位置——`let` 初始化、调用或方法实参、声明了具体返回类型的函数结尾——会在 `--check-only` 的 Notes 中列出 `W_IMPLICIT_NIL_BRANCH`。检查与运行照常通过，类型检查结果与 0.30 相同：这类分支在 0.32.0 删除 `Optional<T>` 之前仍按旧 `Optional<T>` 合并参与所有合同检查。
 
 | 旧写法 | 新写法 |
 | --- | --- |
 | `let ((y (when ok x))) …` | `let ((y (if ok (Option :some x) (Option :none)))) …`，或补显式 else 值 |
 | `if ok x nil` 作为实参或返回值 | 返回 `Option :some x` / `Option :none`；已有的可能为 nil 的值用 `nil->option` 包装 |
-| `.?-field` 之后按业务值使用 | 先用 `js-present?` / `js-nullish?` 收窄，或用 `js-nullish->option` |
 
 迁移前可运行 `calcit calcit.cirru --check-only`，按 Notes 中的位置逐处修改，修改前后用 `calcit edit` / `calcit tree` 事务（dry-run、revision 守卫）并跑测试；业务默认值由人选择，不由工具补。
 
 ### 限制
 
-- 只在值被消费的几类位置报告；`and` / `or` 的结果、通过 `set!` 写入的值与宏展开生成的分支不在识别范围内。
-- 直接写在函数返回或函数调用实参处的这类分支，按有值分支逐支比较合同；方法 / proc 实参不做这项比较。
-- 迁移期内，绑定到 `let` 的这类值仍保留旧 `Optional<T>` 证据，已有的可空字段与参数检查不变；这一桥接随 0.32.0 删除 `Optional<T>` 一并退场。
-- `nil->option` 的参数类型不在本节改动范围，仍随 0.32.0 删除 Optional 时调整。
+- 语句位置的 `if`（结果被丢弃）、`nil->option` 的实参、声明为可空（`JsNullish<T>` 或旧 `Optional<T>`）的参数与返回值不报告。
+- 只识别直接写在上述位置的分支；回调或函数字面量中没有声明具体返回类型的结尾、`assert-type` 的操作数、`and` / `or` 的结果、通过 `set!` 写入的值与库宏生成的分支不报告。
+- 检查失败时只输出错误，Notes 不显示。
+- `nil->option` 的参数类型与 `.?-field` 的结果类型不在本节改动范围，仍随 0.32.0 删除 Optional 时调整。
 
 <a id="032-调用-dynamic-值须先收窄"></a>
 
@@ -247,7 +244,7 @@ payload 有具体类型时，这种写法本来就被参数检查拒绝；新诊
 ### 限制
 
 - 0.32.0 之前 `Optional<T>` 仍可解析，严格模式下公共 schema 报 `E_LEGACY_OPTIONAL_SCHEMA`，其余位置保持现状。
-- 类型推导（无 else 的 `if`、`nil` 与具体值的分支合并）不再推出 `Optional<T>`，见 [无 else 分支与 nil 合并不再推出 Optional](#031-无-else-分支与-nil-合并不再推出-optional)；`Optional<T>` 现在只来自显式声明。
+- 类型推导（无 else 的 `if`、`nil` 与具体值的分支合并）在 0.32.0 之前仍推出 `Optional<T>`；值位置的用法由 `W_IMPLICIT_NIL_BRANCH` 提示，见 [值位置的无 else 分支与 nil 合并提示改用 Option](#031-值位置的无-else-分支与-nil-合并提示改用-option)。
 - `nil->option` 的参数类型改动与 Optional 的删除在同一版本落地；单独把参数改成泛型 `T` 会让上述无 else `if` / `Optional` 实参的折叠形式在严格检查中失败。
 - core 内部 `&` 原语的 schema 不属于公共 API，不在本节范围。
 

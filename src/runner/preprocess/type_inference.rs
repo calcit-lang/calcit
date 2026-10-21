@@ -256,16 +256,14 @@ fn merge_if_branch_types(
     return Some(joined);
   }
 
-  // A live value joined with nil has no inferred type (#1554): `T|nil` is
-  // not a Calcit type, so the join yields no evidence instead of the legacy
-  // `Optional<T>`. Value-position uses are reported by
-  // `warn_on_value_position_nil_branch`; the migration is an explicit
-  // `Option :some` / `Option :none` or an explicit else value.
+  // A live value joined with nil keeps its evidence and the possibility of
+  // absence. Existing nullable types were handled by compatibility above;
+  // this is not a nominal Option constructor or evidence for an open value.
   if matches!(true_type.as_ref(), CalcitTypeAnnotation::Nil) {
-    return legacy_nil_branch_evidence_enabled().then(|| Arc::new(CalcitTypeAnnotation::Nullable(false_type, NullableOrigin::Calcit)));
+    return Some(Arc::new(CalcitTypeAnnotation::Nullable(false_type, NullableOrigin::Calcit)));
   }
   if matches!(false_type.as_ref(), CalcitTypeAnnotation::Nil) {
-    return legacy_nil_branch_evidence_enabled().then(|| Arc::new(CalcitTypeAnnotation::Nullable(true_type, NullableOrigin::Calcit)));
+    return Some(Arc::new(CalcitTypeAnnotation::Nullable(true_type, NullableOrigin::Calcit)));
   }
 
   // The branches share no compatible annotation. When one side is a schema
@@ -654,43 +652,9 @@ pub(crate) fn infer_if_return_type(xs: &CalcitList, scope_types: &ScopeTypes) ->
       .or_else(|| merge_option_absence_branch(true_expr, &true_type, false_expr, &false_type))
       .or_else(|| merge_if_branch_types(true_type, false_type))
   } else {
-    // An `if` without an else yields nil when the test fails. `T|nil` has no
-    // inferred type (#1554), so the expression carries no evidence; see
-    // `warn_on_value_position_nil_branch` for the value-position diagnostic.
-    if !legacy_nil_branch_evidence_enabled() {
-      return None;
-    }
     let true_type = resolve_type_value(true_expr, scope_types)?;
     Some(Arc::new(CalcitTypeAnnotation::Nullable(true_type, NullableOrigin::Calcit)))
   }
-}
-
-thread_local! {
-  static LEGACY_NIL_BRANCH_EVIDENCE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-}
-
-fn legacy_nil_branch_evidence_enabled() -> bool {
-  LEGACY_NIL_BRANCH_EVIDENCE.with(std::cell::Cell::get)
-}
-
-/// Migration bridge for #1554, retired together with `Optional<T>` (0.32.0).
-///
-/// Expression inference gives a nil-yielding branch no type. A `let` binding of
-/// such a branch would otherwise fall back to Dynamic, and Dynamic entering a
-/// concrete slot needs proof (#1538), so existing code that stores the binding
-/// in a declared nullable field would newly fail. Re-run the inference for that
-/// one initializer with the legacy `Optional<T>` evidence, so the binding keeps
-/// exactly the contract it had before. The value position is still reported by
-/// `W_IMPLICIT_NIL_BRANCH`; nothing outside the binding sees the legacy type.
-pub(crate) fn infer_let_binding_with_legacy_nil_evidence(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<CalcitTypeAnnotation>> {
-  struct Restore(bool);
-  impl Drop for Restore {
-    fn drop(&mut self) {
-      LEGACY_NIL_BRANCH_EVIDENCE.with(|flag| flag.set(self.0));
-    }
-  }
-  let _restore = Restore(LEGACY_NIL_BRANCH_EVIDENCE.with(|flag| flag.replace(true)));
-  infer_type_from_expr(expr, scope_types)
 }
 
 /// Join normal and caught values without evaluating the lazy handler. Its
@@ -1735,12 +1699,10 @@ fn core_option_type(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotatio
   ))
 }
 
-/// Optional chaining (`.?-field`) is a JavaScript host operation, so its result is a
-/// `JsNullish<T>` boundary value rather than a Calcit `Optional<T>` (#1554).
-fn wrap_js_nullish_type(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
+fn wrap_optional_type(inner: Arc<CalcitTypeAnnotation>) -> Arc<CalcitTypeAnnotation> {
   match inner.as_ref() {
-    CalcitTypeAnnotation::Nullable(_, _) => inner,
-    _ => Arc::new(CalcitTypeAnnotation::Nullable(inner, NullableOrigin::JsHost)),
+    CalcitTypeAnnotation::Nullable(_, NullableOrigin::Calcit) => inner,
+    _ => Arc::new(CalcitTypeAnnotation::Nullable(inner, NullableOrigin::Calcit)),
   }
 }
 
@@ -2254,7 +2216,7 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
           if let Some(receiver) = xs.get(1)
             && let Some(field_type) = infer_struct_field_type(receiver, field_name.as_ref(), scope_types)
           {
-            return Some(wrap_js_nullish_type(field_type));
+            return Some(wrap_optional_type(field_type));
           }
           Some(js_nullish_host_value_type())
         }

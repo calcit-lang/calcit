@@ -5603,9 +5603,6 @@ fn infer_wasm_static_type(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<CalcitT
       .get(1)
       .and_then(|definition| resolve_struct_ref(definition).ok())
       .map(|definition| Arc::new(CalcitTypeAnnotation::StructValue(Arc::new(definition)))),
-    Calcit::List(items) if matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::If, _))) => {
-      infer_wasm_nil_branch_type(ctx, items.get(2), items.get(3)).or_else(|| infer_static_type_from_expr(expr))
-    }
     Calcit::List(items) => items
       .first()
       .and_then(|head| match head {
@@ -5619,31 +5616,6 @@ fn infer_wasm_static_type(ctx: &WasmGenCtx, expr: &Calcit) -> Option<Arc<CalcitT
       })
       .or_else(|| infer_static_type_from_expr(expr)),
     _ => infer_static_type_from_expr(expr),
-  }
-}
-
-/// Surface inference gives a branch that may yield nil (an `if` without an else,
-/// or `nil` joined with a value) no type (#1554). The scalar ABI still has to
-/// tell nil apart from `false` and `0`, so the backend derives its own
-/// `Nullable(T)` layout evidence from the live branch. This is backend-local
-/// representation evidence, not a surface type.
-fn infer_wasm_nil_branch_type(
-  ctx: &WasmGenCtx,
-  true_expr: Option<&Calcit>,
-  false_expr: Option<&Calcit>,
-) -> Option<Arc<CalcitTypeAnnotation>> {
-  let true_expr = true_expr?;
-  let live_branch = match false_expr {
-    None => true_expr,
-    Some(Calcit::Nil) => true_expr,
-    Some(false_expr) if matches!(true_expr, Calcit::Nil) => false_expr,
-    Some(_) => return None,
-  };
-  let live_type = infer_wasm_static_type(ctx, live_branch)?;
-  match live_type.as_ref() {
-    CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Never => Some(Arc::new(CalcitTypeAnnotation::Nil)),
-    CalcitTypeAnnotation::Nullable(_, _) => Some(live_type),
-    _ => Some(Arc::new(CalcitTypeAnnotation::Nullable(live_type, NullableOrigin::Calcit))),
   }
 }
 

@@ -5672,7 +5672,12 @@ fn preprocess_known_function_call(
     HostSinkFrame::set_current_arg_host_nullish(false);
 
     let form = result?;
-    if !is_nil_bridge_head(&head_form) {
+    // A parameter that declares nullability already admits the nil exit.
+    if !is_nil_bridge_head(&head_form)
+      && !expected_type
+        .as_ref()
+        .is_some_and(|expected| matches!(expected.as_ref(), CalcitTypeAnnotation::Nullable(_, _)))
+    {
       warn_on_value_position_nil_branch(&form, "call argument", scope_types, file_ns, check_warnings);
     }
 
@@ -11980,7 +11985,7 @@ fn reject_strict_nil_for_unit_return(
 /// How a value-position branch silently produces nil (#1554).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ImplicitNilBranch {
-  /// `if` / `when` / `cond` / `case` without a final branch.
+  /// `if` / `when` / `case` without a final branch.
   MissingElse,
   /// One branch is `nil` while the other carries a concrete value.
   NilJoin,
@@ -12058,11 +12063,12 @@ fn is_dynamic_branch(expr: &Calcit, scope_types: &ScopeTypes) -> bool {
 }
 
 /// Report when a value-consuming position (let initializer, call argument, typed
-/// return) receives a branch that silently yields nil. Such `T|nil` results no
-/// longer infer to the legacy `Optional<T>` (#1554); the migration is an explicit
-/// `Option :some` / `Option :none`, or an explicit else value. Statement-position
-/// branches are never passed here. This is an advisory for now: the check and the
-/// runner still pass, and a later release can promote it to an error.
+/// return) receives a branch that silently yields nil (#1554). Until `Optional<T>`
+/// is removed (0.32.0) such a `T|nil` result keeps its legacy nullable evidence,
+/// so every contract check still sees it; this note only names the migration: an
+/// explicit `Option :some` / `Option :none`, or an explicit else value.
+/// Statement-position branches and declared nullable slots are never reported.
+/// It is an advisory: the check and the runner still pass.
 fn warn_on_value_position_nil_branch(
   value: &Calcit,
   context: &str,
@@ -12080,12 +12086,12 @@ fn warn_on_value_position_nil_branch(
     return;
   }
   let reason = match kind {
-    ImplicitNilBranch::MissingElse => "a branch without an else (`if` / `when` / `cond` / `case`) yields nil when no condition matches",
+    ImplicitNilBranch::MissingElse => "a branch without an else (`if` / `when` / `case`) yields nil when no condition matches",
     ImplicitNilBranch::NilJoin => "one branch is `nil` while another carries a value",
   };
   push_advisory(LocatedWarning::new_with_detail(
     format!(
-      "[Warn] {reason}, and it is used as a value ({context}) in {file_ns}; `T|nil` is no longer inferred as Optional<T>. Return `Option :some value` / `Option :none` (wrap an existing nil with `nil->option`), or add an explicit else value; keep the form in statement position if its result is unused"
+      "[Warn] {reason}, and it is used as a value ({context}) in {file_ns}; `T|nil` is only checked as the legacy Optional<T>, which is removed in 0.32.0. Return `Option :some value` / `Option :none` (wrap an existing nil with `nil->option`), or add an explicit else value; keep the form in statement position if its result is unused"
     ),
     location,
     Some("W_IMPLICIT_NIL_BRANCH".to_owned()),
@@ -13213,9 +13219,11 @@ pub fn preprocess_defn(
             ctx.call_location.clone().or(Some(definition_location.clone())),
           )?;
         }
+        // A declared nullable return (`JsNullish<T>`, legacy `Optional<T>`) already
+        // admits the nil exit, so only a concrete return is reported.
         if !matches!(
           return_type_hint.as_ref(),
-          CalcitTypeAnnotation::Unit | CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Dynamic
+          CalcitTypeAnnotation::Unit | CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::Nullable(_, _)
         ) && let Some(returned_expr) = processed_body
           .iter()
           .rev()
@@ -13395,11 +13403,8 @@ pub fn preprocess_core_let(
       if existing_type.is_none() {
         warn_on_value_position_nil_branch(&form, "let binding", &body_types, ctx.file_ns, ctx.check_warnings);
       }
-      let inferred_type = existing_type.unwrap_or_else(|| {
-        infer_type_from_expr(&form, &body_types)
-          .or_else(|| type_inference::infer_let_binding_with_legacy_nil_evidence(&form, &body_types))
-          .unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone())
-      });
+      let inferred_type = existing_type
+        .unwrap_or_else(|| infer_type_from_expr(&form, &body_types).unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone()));
 
       let name = Calcit::Local(CalcitLocal {
         idx: CalcitLocal::track_sym(sym),

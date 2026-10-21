@@ -10444,7 +10444,7 @@
                 assert= original $ wrapped .unwrap
               :tags $ #{} :core :types :unit
             %{} 'TestEntry
-              :name |nil-joins-carry-no-inferred-optional
+              :name |nil-joins-bridge-through-nil-option
               :code $ quote $ let
                   explicit-option $ fn (x)
                     hint-fn $ {}
@@ -10461,12 +10461,28 @@
                       :args $ [] 'Number
                       :return $ :: 'Option 'String
                     nil->option $ when (> x 0) |pos
+                  from-do-nil $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return $ :: 'Option 'String
+                    nil->option $ if (> x 0) |pos (do nil)
+                  from-nil-local $ fn (x)
+                    hint-fn $ {}
+                      :args $ [] 'Number
+                      :return $ :: 'Option 'String
+                    let
+                        n nil
+                      nil->option $ if (> x 0) |pos n
                 assert= (Option :some |pos) (explicit-option 1)
                 assert= (Option :none) (explicit-option -1)
                 assert= (Option :some |pos) (from-nil-join 2)
                 assert= (Option :none) (from-nil-join -2)
                 assert= (Option :some |pos) (from-when 3)
                 assert= (Option :none) (from-when -3)
+                assert= (Option :some |pos) (from-do-nil 4)
+                assert= (Option :none) (from-do-nil -4)
+                assert= (Option :some |pos) (from-nil-local 5)
+                assert= (Option :none) (from-nil-local -5)
               :tags $ #{} :core :types :unit
             %{} 'TestEntry
               :name |collapses-legacy-optional-values-under-declared-option

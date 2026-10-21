@@ -1,16 +1,14 @@
-# 推导不再产出 Optional（#1554）
+# 值位置的 nil 分支提示改用 Option（#1554）
 
-Jon 在 2026-10-20 决定“用 Option，尽量废弃 nil”。类型推导里有三处生产 `Nullable(T, NullableOrigin::Calcit)`（旧 `Optional<T>`）：无 else 的 `if`（`when` / `cond` / `case` 展开后同形）、`T` 与 `nil` 的分支合并，以及已知 struct 字段上 `.?-field` 的 `wrap_optional_type`；`wrap_option_like` 只保持已声明的 Optional 外壳，不是生产者。`T|nil` 不是 Calcit 类型，继续推成 Optional 只是在把旧表示写回新代码。
+Jon 在 2026-10-20 决定“用 Option，尽量废弃 nil”。类型推导里有三处生产 `Nullable(T, NullableOrigin::Calcit)`（旧 `Optional<T>`）：无 else 的 `if`（`when` / `case` 展开后同形）、`T` 与 `nil` 的分支合并，以及已知 struct 字段上 `.?-field` 的 `wrap_optional_type`。
 
 决策依据与边界：
 
-- 前两处不再给出类型（返回“无证据”）。不推 `Dynamic`：显式 Dynamic 进入具体类型需要证明（#1538），会让原本只是缺证据的代码在严格模式下新增失败。无证据本身不会让检查收紧；但单纯“无证据”会让有值分支的载荷不再与合同比较（CI 中 `check-known-assertion` 的 `wrong-live-payload` 从失败变成通过）。因此 `type_checking::nil_branch_contradiction` 在函数返回与调用实参处，对无 else / nil 合并的 `if` 逐支比较有值分支与合同（去掉合同的可空外壳），只把确定矛盾报告为原有的 `W_FN_RETURN_TYPE_MISMATCH` / `W_*_ARG_TYPE_MISMATCH`；开放、泛型或未解析的合同保持原有迁移策略。
-- `.?-field` 是 JS 可选链，结果改为 `JsNullish<T>`，与同一分支里无 struct 证据时已有的 `js_nullish_host_value_type` 一致。
-- 诊断只在“值被消费”的位置报告：`&let` 初始化、调用与方法实参、声明了非 Unit/Nil/Dynamic 返回类型的函数结尾。语句位置（`&do` 中非末项、函数体前部）不报告，Unit 式 `if` 不受影响。报告集合等于过去会产出 Optional 的集合（排除 Nil/Unit/Never 分支和已是 Nullable 的分支）。`nil->option` 的实参豁免，它就是显式桥。
-- 级别：实现时 main 的 Cargo 版本是 0.30.1-alpha.4 补丁线，补丁线不新增让严格检查失败的诊断；提交前 main 已切到 0.31.0-alpha.1（非 patch），升级为阻塞诊断已被允许，但需要单独决定并重新验证，本次先保持提示级别；`gen_check_warning` 在本仓库会阻塞 runner（`Found N warnings, runner blocked`），所以采用已有的 advisory 通道（与 `W_OPTION_ERASED_TO_NIL` 相同）：`--check-only` 在 Notes 中列出，检查与运行照常通过。下一个非 patch 版本可以改成阻塞诊断，不需要再改推导。
+- 第一版直接让前两处“无证据”、`.?-field` 改推 `JsNullish<T>`，并补了逐支比较与 `let` 桥接。评审用探针（每个用例分别交给 main 与 PR 的 `--check-only`）证明这仍有回退：nil 流入非可空合同、proc / method 实参、`%{}` 字段、`assert-type`、回调与 `let` / `do` / 嵌套主体里的错误载荷，从 main 拒绝变成 PR 接受；`.?-field` 则让 `nil?`、`nil->option` 与返回 `Optional<String>` 从通过变成严格失败。逐个形状补检查覆盖不全。
+- 采用方案 (a)：0.32.0 删除 `Optional<T>` 之前，推导保持 main 的旧可空合并，所有合同检查都按它进行，main 的每一个拒绝与接受都保留；`.?-field` 也保持旧结果。因此删去了第一版的逐支比较、`let` 桥接与 WASM 自行推导（推导恢复后 WASM 已有同样的证据）。本次只新增值位置提示 `W_IMPLICIT_NIL_BRANCH`，真正去掉推导中的 `Optional<T>` 与删除 Optional 同步在 0.32.0 进行。
+- 诊断只在“值被消费”的位置报告：`&let` 初始化、调用与方法实参、声明了具体返回类型的函数结尾。语句位置、`nil->option` 实参、声明为可空（`JsNullish<T>` / `Optional<T>`）的参数与返回值不报告。
+- 级别：实现时 main 为 0.30.1-alpha.4（patch 线，不新增让严格检查失败的诊断），采用已有的 advisory 通道（与 `W_OPTION_ERASED_TO_NIL` 相同）。main 现已是 0.31.0-alpha.1；是否升级为阻塞诊断由 Jon 决定。
 - 新编号 `W_IMPLICIT_NIL_BRANCH`：`E_NIL_FOR_UNIT` 只针对声明返回 Unit 的函数结尾，`E_NIL_CALLBACK_SENTINEL` 只针对 `map-kv` 回调，`W_OPTION_ERASED_TO_NIL` 针对已有 Option 被擦回 nil，`W_NIL_TYPE_DEBT` 属于 `analyze weak-types`；没有一个能表达“值位置的分支静默产出 nil”。
-- `let` 绑定桥接：表达式推导不给类型后，`let` 绑定会落到 Dynamic，而 Dynamic 进入具体槽位需要证明（#1538），`check-known-assertion` 的 `nullable-branch-binding` 合同（可空字段接受、非可空 / Option / 错误载荷 / 开放值拒绝）因此失败。“无类型”会全部接受，Dynamic 会全部拒绝，二者都不满足该合同。所以 `preprocess_core_let` 在常规推导为空时，用 `infer_let_binding_with_legacy_nil_evidence` 以旧规则为这一个初始化式重新推导，绑定保留原 `Optional<T>` 证据；该位置仍报告 `W_IMPLICIT_NIL_BRANCH`。退场条件：0.32.0 删除 `Optional<T>`。
-- WASM 标量 ABI 需要区分 nil 与 `false` / `0`。表层推导不再给出类型后，`emit_wasm` 的 `infer_wasm_static_type` 对无 else / nil 合并的 `if` 自行从有值分支推出后端布局证据 `Nullable(T)`，只在后端内部使用，不回流为表层类型；否则 `nil->option $ when …` 会在 WASM 报 `E_WASM_NIL_TYPE_EVIDENCE`。`Optional<Number>` 等零值载荷仍按原有限制报错。
-- 不改 `nil->option` 签名（裸 `T` 曾破坏合法代码）；`E_LEGACY_OPTIONAL_SCHEMA` 与 Optional 的删除（0.32.0）不在本次范围。
+- 不改 `nil->option` 签名；`E_LEGACY_OPTIONAL_SCHEMA` 与 Optional 的删除（0.32.0）不在本次范围。
 
-验证：`cargo test`、`calcit/test.cirru`、core `:tests` 以及 native / JS / WASM 回放；新诊断用 Rust 的 type_fail 用例固定，Calcit 侧用 `:tests` 固定“无 else / nil 合并的值不再带 Optional 证据且仍按原值运行”。
+验证：探针 72+ 个用例与 main 的退出码逐一一致，并固定为 `tests/fixtures/nil-branch-contracts.cirru` 与 type_fail 用例 `nil_branch_contracts_keep_every_main_rejection`；`when` / `case` 的 lowering 用例加入 `tests/post_lowering_cli.rs`（#1553）；core `nil->option` 的 `:tests` 在 native / JS / WASM 回放无 else、nil 合并、`(do nil)` 与 nil 局部经 `nil->option` 的结果。

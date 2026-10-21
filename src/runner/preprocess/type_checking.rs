@@ -637,10 +637,6 @@ where
         let diagnostic_expected = expected_type.substitute_type_vars(&bindings);
         ctx.emit_warning(idx + 1, diagnostic_expected.as_ref(), actual_type.as_ref(), &make_warning);
       }
-    } else if let Some(live_type) = nil_branch_contradiction(arg, expected_type, ctx.scope_types) {
-      // A nil-yielding branch has no joined type (#1554); its live payload must
-      // still not contradict the parameter contract.
-      ctx.emit_warning(idx + 1, expected_type.as_ref(), live_type.as_ref(), &make_warning);
     }
   }
 
@@ -1358,60 +1354,6 @@ pub(crate) fn detect_return_type_hint_from_processed_body(processed_body: &[Calc
   crate::calcit::DYNAMIC_TYPE.clone()
 }
 
-/// A branch that may yield nil (an `if` without an else, or `nil` joined with a
-/// value) has no inferred type (#1554), but its value-carrying branch still has
-/// to agree with the contract it flows into. Return that branch's type when it
-/// definitely contradicts `expected`; a nil exit is checked against `expected`
-/// with its nullability removed, so only the live payload is compared. Open,
-/// generic and unresolved contracts are left to the existing migration policy.
-pub(super) fn nil_branch_contradiction(
-  expr: &Calcit,
-  expected: &CalcitTypeAnnotation,
-  scope: &ScopeTypes,
-) -> Option<Arc<CalcitTypeAnnotation>> {
-  if expected.contains_type_var() || matches!(expected, CalcitTypeAnnotation::Dynamic) {
-    return None;
-  }
-  let Calcit::List(items) = expr else {
-    return None;
-  };
-  if !matches!(items.first(), Some(Calcit::Syntax(CalcitSyntax::If, _))) || !matches!(items.len(), 3 | 4) {
-    return None;
-  }
-  let is_nil = |branch: &Calcit| {
-    matches!(branch, Calcit::Nil)
-      || resolve_type_value(branch, scope).is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Nil))
-  };
-  let true_expr = items.get(2)?;
-  let live = match items.get(3) {
-    None => true_expr,
-    Some(false_expr) if is_nil(false_expr) => true_expr,
-    Some(false_expr) if is_nil(true_expr) => false_expr,
-    Some(_) => return None,
-  };
-  if super::type_inference::expression_definitely_diverges(live) {
-    return None;
-  }
-  let payload_expected = match expected {
-    CalcitTypeAnnotation::Nullable(inner, _) => inner.as_ref(),
-    _ => expected,
-  };
-  if let Some(nested) = nil_branch_contradiction(live, payload_expected, scope) {
-    return Some(nested);
-  }
-  let live_type = resolve_type_value(live, scope)?;
-  if matches!(
-    live_type.as_ref(),
-    CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Unit | CalcitTypeAnnotation::Never | CalcitTypeAnnotation::Dynamic
-  ) {
-    return None;
-  }
-  live_type
-    .prove_with_bindings(payload_expected, &mut HashMap::new())
-    .is_mismatch()
-    .then_some(live_type)
-}
-
 /// Check independent exits and literal members before a lossy synthesized join.
 /// Evidence is local to the expected contract; inferred annotations stay intact.
 /// Open generic contracts continue through the existing substitution checker.
@@ -1756,27 +1698,6 @@ pub(crate) fn check_function_return_type(
     return Ok(());
   }
   let Some(actual_type) = actual_type else {
-    // A nil-yielding branch has no joined type (#1554); its live payload must
-    // still not contradict the declaration.
-    if !async_invocation && let Some(live_type) = nil_branch_contradiction(last_expr, declared_return_type, scope_types) {
-      let expected_str = diagnostic_type_string(declared_return_type.as_ref());
-      let actual_str = diagnostic_type_string(live_type.as_ref());
-      gen_check_warning_code_at_with_types(
-        format!(
-          "[Warn] Function `{file_ns}/{def_name}` declares return type `{expected_str}`, but a branch returns `{actual_str}` (the other branch yields nil)"
-        ),
-        "W_FN_RETURN_TYPE_MISMATCH",
-        file_ns,
-        last_expr
-          .get_location()
-          .filter(|location| location.def.as_ref() != calcit::GENERATED_DEF)
-          .or(info.call_location.clone()),
-        expected_str,
-        actual_str,
-        check_warnings,
-      );
-      return Ok(());
-    }
     // Branches may share no joined type while each one still proves the
     // declaration; reuse the same branch-wise proof as typed joins.
     let proven = expression_is_proven_for(last_expr, declared_return_type, scope_types, async_invocation);

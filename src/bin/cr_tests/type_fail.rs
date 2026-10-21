@@ -2954,9 +2954,9 @@ fn calling_a_dynamic_value_requires_fn_narrowing() {
   });
 }
 
-/// #1554: `T|nil` produced by a branch without an else (or an explicit nil join)
-/// no longer infers to the legacy Optional<T>. A value-position use is an
-/// advisory that names the migration; statement position stays silent.
+/// #1554: a value-position use of a branch without an else (or an explicit nil
+/// join) is an advisory that names the migration to `Option`; statement position
+/// stays silent, and the advisory itself never blocks.
 #[test]
 fn value_position_nil_branch_reports_an_advisory_without_blocking() {
   run_with_large_stack(|| {
@@ -3004,9 +3004,9 @@ fn value_position_nil_branch_reports_an_advisory_without_blocking() {
   });
 }
 
-/// #1554: a nil-yielding branch carries no inferred type, but a live payload that
-/// contradicts the contract it flows into is still a mismatch (return and call
-/// argument), while a matching payload stays accepted.
+/// #1554: a live payload that contradicts the nullable contract it flows into is
+/// still a mismatch (return, call argument, `let` binding), while a matching
+/// payload stays accepted.
 #[test]
 fn nil_branch_live_payload_still_checks_against_the_contract() {
   run_with_large_stack(|| {
@@ -3040,6 +3040,115 @@ fn nil_branch_live_payload_still_checks_against_the_contract() {
         ),
       }
     }
+  });
+}
+
+/// #1554 regression set: every case is one definition in
+/// `tests/fixtures/nil-branch-contracts.cirru`, and the expected outcome is the
+/// one main gave before the advisory existed. Until `Optional<T>` is removed
+/// (0.32.0) a nil-yielding branch keeps its legacy nullable evidence for every
+/// contract check (returns, function / local / proc / method arguments, struct
+/// fields, `assert-type`, callbacks, `let` / `do` / nested bodies and `.?-field`),
+/// so the advisory must never turn a rejection into an accepted program.
+/// Columns: case, rejected, reports `W_IMPLICIT_NIL_BRANCH` on an accepted program.
+const NIL_BRANCH_CONTRACT_CASES: &[(&str, bool, bool)] = &[
+  ("ret-if-noelse", true, false),
+  ("ret-if-niljoin", true, false),
+  ("ret-when", true, false),
+  ("ret-cond", true, false),
+  ("ret-case", true, false),
+  ("ret-nested-if", false, true),
+  ("ret-nested-if-else-nil", false, true),
+  ("ret-let-body", true, false),
+  ("ret-do-body", true, false),
+  ("ret-ok-match", true, false),
+  ("ret-option", true, false),
+  ("ret-option-bad", true, false),
+  ("arg-local", true, false),
+  ("arg-defn", true, false),
+  ("arg-defn-niljoin", true, false),
+  ("arg-defn-when", true, false),
+  ("arg-defn-nested", false, true),
+  ("arg-proc-add", true, false),
+  ("arg-proc-plus", true, false),
+  ("arg-proc-strcount", true, false),
+  ("arg-method-slice", true, false),
+  ("arg-method-slice-recv", true, false),
+  ("arg-method-count", true, false),
+  ("struct-field", true, false),
+  ("struct-field-pct", true, false),
+  ("list-literal", false, true),
+  ("map-callback", true, false),
+  ("hof-typed-fn-arg", true, false),
+  ("assert-type", true, false),
+  ("let-bound-ret", true, false),
+  ("let-bound-arg-defn", true, false),
+  ("let-bound-ok-arg", true, false),
+  ("let-bound-fn-literal", true, false),
+  ("let-bound-list", true, false),
+  ("let-cross-def", false, false),
+  ("let-cross-def2", false, false),
+  ("direct-cross-def", false, false),
+  ("let-bound-nilq", false, true),
+  ("let-bound-plus", true, false),
+  ("ret-bool-ok", true, false),
+  ("ret-string-niljoin-ok", true, false),
+  ("ret-cond2", true, false),
+  ("arg-defn-ok", true, false),
+  ("arg-defn-niljoin-ok", true, false),
+  ("arg-local-ok", true, false),
+  ("arg-method-ok", true, false),
+  ("struct-ctor-bad", true, false),
+  ("struct-ctor-nil", true, false),
+  ("struct-pct-nil", true, false),
+  ("list-ret-ok", false, true),
+  ("map-callback-ok", true, false),
+  ("hof-ok", true, false),
+  ("qfield-nilq", false, false),
+  ("qfield-take-str", true, false),
+  ("qfield-let-take-str", true, false),
+  ("qfield-nil-option", false, false),
+  ("qfield-js-present", true, false),
+  ("qfield-js-nullish-option", true, false),
+  ("qfield-str-concat", false, false),
+  ("qfield-ret-opt", false, false),
+  ("m-slice-ok", true, false),
+  ("m-slice-bad", true, false),
+  ("m-slice-ok2", true, false),
+  ("local-ok", true, false),
+  ("local-ret-typed-fn-literal", true, false),
+  ("n3-jsnullish-ret", false, false),
+  ("n3-jsnullish-ret-join", false, false),
+  ("n3-jsnullish-arg", false, false),
+  ("n3-dynamic-ret", false, false),
+  ("n3-let-value", false, true),
+  ("n3-statement", false, false),
+  ("n3-nil-option", false, false),
+];
+
+#[test]
+fn nil_branch_contracts_keep_every_main_rejection() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_fixture_entries("tests/fixtures/nil-branch-contracts.cirru");
+    let mut mismatches = vec![];
+    for (label, rejected, advisory) in NIL_BRANCH_CONTRACT_CASES {
+      let def = format!("case-{label}");
+      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+      let _ = runner::preprocess::take_advisories();
+      let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &def, &warnings, &CallStackList::default());
+      let actual_rejected = result.is_err() || !warnings.borrow().is_empty();
+      let actual_advisory = runner::preprocess::take_advisories()
+        .iter()
+        .any(|note| note.code() == Some("W_IMPLICIT_NIL_BRANCH"));
+      if actual_rejected != *rejected || (!rejected && actual_advisory != *advisory) {
+        mismatches.push(format!(
+          "{label}: rejected={actual_rejected} (expected {rejected}), advisory={actual_advisory} (expected {advisory}), result={result:?}, warnings={:?}",
+          warnings.borrow()
+        ));
+      }
+    }
+    assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
   });
 }
 

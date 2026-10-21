@@ -569,6 +569,23 @@ fn past_lowering_regressions_pass_post_lowering_validation() {
   ] {
     define(&snapshot, name, code, schema, false);
   }
+  // #1554: `when` and `case` without a final branch keep their nil-branch
+  // evidence through lowering, both into a declared nullable return and through
+  // the explicit `nil->option` bridge.
+  for (name, code, schema) in [
+    (
+      "when-nullable",
+      "quote $ defn when-nullable (flag) $ when flag 1",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Bool) (:return $ :: 'JsNullish 'Number)",
+    ),
+    (
+      "case-option",
+      "quote $ defn case-option (flag) $ nil->option $ case flag (true |hit)",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Bool) (:return $ :: 'Option 'String)",
+    ),
+  ] {
+    define(&snapshot, name, code, schema, false);
+  }
   // #1428: `recur` follows the lexical function contract.
   define(
     &snapshot,
