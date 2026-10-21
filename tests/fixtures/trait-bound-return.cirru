@@ -74,38 +74,90 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
-          :tests $ [] $ %{} 'TestEntry (:name |update-keeps-custom-struct-result-guard)
-            :code $ quote $ let
-                trace $ ref $ [] |start
-                Override $ deftrait Override $ .assoc
-                  :: 'Fn $ {}
-                    :args $ [] 'T 'Tag 'Number
-                    :return 'String
-                    :generics $ [] 'T
-                implementation $ defimpl CustomAssoc Override $ .assoc
-                  fn (_self _key _value)
-                    assert= ([] |start |callback) @trace
-                    reset! trace $ append @trace |method
-                    , |wrong
-                Item $ impl-traits
-                  defstruct Item $ :n 'Number
-                  , implementation
-                change $ fn (data)
-                  hint-fn $ {}
-                    :args $ [] 'Dynamic
-                    :return 'Dynamic
-                  update data :n $ fn (value)
+          :tests $ []
+            %{} 'TestEntry (:name |update-keeps-custom-struct-result-guard)
+              :code $ quote $ let
+                  trace $ ref $ [] |start
+                  Override $ deftrait Override $ .assoc
+                    :: 'Fn $ {}
+                      :args $ [] 'T 'Tag 'Number
+                      :return 'String
+                      :generics $ [] 'T
+                  implementation $ defimpl CustomAssoc Override $ .assoc
+                    fn (_self _key _value)
+                      assert= ([] |start |callback) @trace
+                      reset! trace $ append @trace |method
+                      , |wrong
+                  Item $ impl-traits
+                    defstruct Item $ :n 'Number
+                    , implementation
+                  change $ fn (data)
                     hint-fn $ {}
                       :args $ [] 'Dynamic
-                      :return 'Number
-                    assert= ([] |start) @trace
-                    reset! trace $ append @trace |callback
-                    , 1
-              assert= |rejected $ try
-                change $ Item :n 0
-                fn (message) (assert= "|assoc on a struct expected a struct result" message) |rejected
-              assert= ([] |start |callback |method) @trace
-            :tags $ #{} :unit :update-method-contract
+                      :return 'Dynamic
+                    update data :n $ fn (value)
+                      hint-fn $ {}
+                        :args $ [] 'Dynamic
+                        :return 'Number
+                      assert= ([] |start) @trace
+                      reset! trace $ append @trace |callback
+                      , 1
+                assert= |rejected $ try
+                  change $ Item :n 0
+                  fn (message) (assert= "|assoc on a struct expected a struct result" message) |rejected
+                assert= ([] |start |callback |method) @trace
+              :tags $ #{} :unit :update-method-contract
+            %{} 'TestEntry
+              :name |nested-writes-keep-callback-errors-and-enum-values
+              :code $ quote $ let
+                  trace $ ref $ assert-type ([]) (:: 'List 'String)
+                  change $ fn (data key)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic 'Dynamic
+                      :return 'Dynamic
+                    update-in data ([] key)
+                      fn (current)
+                        hint-fn $ {}
+                          :args $ [] $ :: 'Option 'Dynamic
+                          :return 'Number
+                        reset! trace $ append @trace |callback
+                        , 4
+                  write $ fn (data key)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic 'Dynamic
+                      :return 'Dynamic
+                    assoc-in data ([] key) 4
+                assert= "|assoc on a list expected a Number index" $ try
+                  change ([] 1) :bad
+                  fn (message) message
+                assert= ([] |callback) @trace
+                reset! trace $ []
+                assert= "|assoc on an enum expected a Number index" $ try
+                  change (:: :entry 1) :bad
+                  fn (message) message
+                assert= ([] |callback) @trace
+                reset! trace $ []
+                assert= "|assoc expected a List, Map, Struct or Enum" $ try (change |abc 0)
+                  fn (message) message
+                assert= ([] |callback) @trace
+                reset! trace $ []
+                assert= (:: :entry 4)
+                  change (:: :entry 1) 1
+                assert= ([] |callback) @trace
+                assert= (:: :entry 4)
+                  assoc-in (:: :entry 1) ([] 1) 4
+                assert= "|contains? on a list expected a Number index" $ try
+                  write ([] 1) :bad
+                  fn (message) message
+                assert= "|assoc expected a List, Map, Struct or Enum" $ try (write |abc 0)
+                  fn (message) message
+                assert= "|assoc expected a List, Map, Struct or Enum" $ try
+                  write (#{} :present) :missing
+                  fn (message) message
+                assert= "|&get-raw expected a collection or struct" $ try
+                  write (#{} :present) :present
+                  fn (message) message
+              :tags $ #{} :nested-write-contract :unit :update-method-contract
         'matching-body-contract $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn matching-body-contract (value)
             hint-fn $ {}

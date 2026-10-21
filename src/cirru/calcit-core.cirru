@@ -4622,9 +4622,18 @@
                 raise "|assoc-in does not traverse Struct fields; use assoc with a direct field key"
                 &let
                   d $ either data $ &{}
-                  assoc d p0 $ assoc-in
-                    if (contains? d p0) (&get-raw d p0) (&{})
-                    , ps v
+                  &let
+                    updated $ assoc-in
+                      if (contains? d p0) (&get-raw d p0) (&{})
+                      , ps v
+                    cond
+                        map? d
+                        .assoc d p0 updated
+                      (list? d)
+                        if (number? p0) (.assoc d p0 updated) (raise "|assoc on a list expected a Number index")
+                      (enum? d)
+                        if (number? p0) (&enum:assoc d p0 updated) (raise "|assoc on an enum expected a Number index")
+                      true $ raise "|assoc expected a List, Map, Struct or Enum"
           :examples $ []
             quote $ assert=
               &{} :a $ &{} :b 1
@@ -13301,12 +13310,21 @@
                 raise "|update-in does not traverse Struct fields; use update with a direct field key"
                 let
                     current $ if (nil? data) (%none) (get data p0)
-                  assoc
-                    either data $ {}
-                    , p0 $ if (empty? ps) (f current)
-                      update-in
-                        option:unwrap-or current $ {}
-                        , ps f
+                  &let
+                    receiver $ either data $ {}
+                    &let
+                      updated $ if (empty? ps) (f current)
+                        update-in
+                          option:unwrap-or current $ {}
+                          , ps f
+                      cond
+                          map? receiver
+                          .assoc receiver p0 updated
+                        (list? receiver)
+                          if (number? p0) (.assoc receiver p0 updated) (raise "|assoc on a list expected a Number index")
+                        (enum? receiver)
+                          if (number? p0) (&enum:assoc receiver p0 updated) (raise "|assoc on an enum expected a Number index")
+                        true $ raise "|assoc expected a List, Map, Struct or Enum"
           :examples $ []
             quote $ assert=
               {} $ :a $ {} (:b 2)
