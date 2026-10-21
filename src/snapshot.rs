@@ -1355,7 +1355,7 @@ fn validate_schema_for_snapshot_write(owner: &str, schema: &Arc<CalcitTypeAnnota
     .map_err(|e| format!("{owner}: serialized `:schema` becomes invalid during snapshot write: {e}; schema={schema_text}"))
 }
 
-fn validate_snapshot_schemas_for_write(snapshot: &Snapshot) -> Result<(), String> {
+fn validate_snapshot_contracts_for_write(snapshot: &Snapshot) -> Result<(), String> {
   for (ns_name, file_data) in &snapshot.files {
     if ns_name.ends_with(".$meta") {
       continue;
@@ -1363,6 +1363,7 @@ fn validate_snapshot_schemas_for_write(snapshot: &Snapshot) -> Result<(), String
 
     for (def_name, code_entry) in &file_data.defs {
       validate_schema_for_snapshot_write(&format!("{ns_name}/{def_name}"), &code_entry.schema)?;
+      crate::js_ffi_source::validate_js_definition(code_entry).map_err(|error| format!("{ns_name}/{def_name}: {error}"))?;
     }
   }
 
@@ -3867,7 +3868,7 @@ pub fn canonicalize_snapshot_type_syntax(snapshot: &mut Snapshot) -> usize {
 /// Render snapshot content for runtime snapshot files such as `calcit.cirru`
 /// This is a shared utility function used by CLI edit commands
 pub fn render_snapshot_content(snapshot: &Snapshot) -> Result<String, String> {
-  validate_snapshot_schemas_for_write(snapshot)?;
+  validate_snapshot_contracts_for_write(snapshot)?;
 
   // Build root level Edn mapping
   let mut edn_map = EdnMapView::default();

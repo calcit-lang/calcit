@@ -2,7 +2,7 @@
 
 use crate::calcit::CalcitTypeAnnotation;
 use crate::calcit::NullableOrigin;
-use crate::snapshot::{SnapshotTarget, ffi_metadata_value, parse_ffi_target};
+use crate::snapshot::{CodeEntry, SnapshotTarget, ffi_metadata_value, parse_ffi_target};
 use cirru_edn::Edn;
 use std::path::{Component, Path};
 
@@ -152,6 +152,18 @@ pub fn validate_js_source(ffi: &Edn, schema: &CalcitTypeAnnotation) -> Result<Op
     ));
   }
   Ok(Some(source))
+}
+
+/// Share the existing source, signature and declaration checks with Snapshot writers.
+pub fn validate_js_definition(entry: &CodeEntry) -> Result<Option<JsFfiImplementation>, String> {
+  let Some(ffi) = &entry.ffi else { return Ok(None) };
+  let source = validate_js_source(ffi, entry.schema.as_ref())?;
+  if source.is_some()
+    && !matches!(&entry.code, cirru_parser::Cirru::List(items) if matches!(items.first(), Some(cirru_parser::Cirru::Leaf(head)) if head.as_ref() == "defn"))
+  {
+    return Err("`:ffi :js` requires a `defn` declaration".to_owned());
+  }
+  Ok(source)
 }
 
 fn supported_abi_type(value: &CalcitTypeAnnotation) -> bool {

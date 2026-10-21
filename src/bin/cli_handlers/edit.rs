@@ -2181,9 +2181,10 @@ fn save_schema_preserving_snapshot(
 
   // Validate the selected contract before saving; other source contracts can
   // still need explicit repairs. Execution and transaction completion stay strict.
-  snapshot::load_snapshot_data_for_metadata(&data, snapshot_file, Some((namespace, definition))).map_err(|e| {
+  let checked = snapshot::load_snapshot_data_for_metadata(&data, snapshot_file, Some((namespace, definition))).map_err(|e| {
     format!("Schema validation failed: `{namespace}/{definition}` would make the snapshot unloadable, nothing was written: {e}")
   })?;
+  validate_selected_js_ffi(&checked, namespace, definition)?;
 
   let formatted = cirru_edn::format(&data, true).map_err(|e| format!("Failed to format snapshot EDN: {e}"))?;
   let output = match shebang {
@@ -2229,12 +2230,21 @@ fn save_ffi_preserving_snapshot(snapshot_file: &str, namespace: &str, definition
     entry.pairs.retain(|(key, _)| key.ref_str() != "ffi");
   }
 
+  let checked = snapshot::load_snapshot_data_for_metadata(&data, snapshot_file, Some((namespace, definition)))?;
+  validate_selected_js_ffi(&checked, namespace, definition)?;
+
   let formatted = cirru_edn::format(&data, true).map_err(|e| format!("Failed to format snapshot EDN: {e}"))?;
   let output = match shebang {
     Some(line) => format!("{line}\n{formatted}"),
     None => formatted,
   };
   calcit::util::atomic_write::write_snapshot(snapshot_file, output.as_bytes())
+}
+
+fn validate_selected_js_ffi(snapshot: &Snapshot, namespace: &str, definition: &str) -> Result<(), String> {
+  calcit::js_ffi_source::validate_js_definition(&snapshot.files[namespace].defs[definition])
+    .map_err(|error| format!("{namespace}/{definition}: {error}; no changes were written"))?;
+  Ok(())
 }
 
 fn parse_examples_input(raw: &str) -> Result<Vec<Cirru>, String> {
