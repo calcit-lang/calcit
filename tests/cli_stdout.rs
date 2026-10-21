@@ -129,8 +129,40 @@ fn eval_preserves_explicit_application_namespaces_without_running_their_entries(
     "./",
     "--dep",
     "./calcit.cirru",
+    "--dep",
+    snapshot.to_str().unwrap(),
     "ns app.snippet\n  :require\n    app.main :refer $ increment answer\n\nassert= 43 $ increment answer",
   ]));
+  #[cfg(unix)]
+  {
+    let directory_alias = project.path().join("same-module");
+    std::os::unix::fs::symlink(project.path(), &directory_alias).expect("link the complete module directory");
+    let aliased_snapshot = directory_alias.join("calcit.cirru");
+    success(&run(&[
+      "eval",
+      "--dep",
+      "./",
+      "--dep",
+      aliased_snapshot.to_str().unwrap(),
+      "assert= 42 app.main/answer",
+    ]));
+
+    // A file-only link does not share the module's resource directory.
+    let other_root = project.path().join("file-only-alias");
+    std::fs::create_dir(&other_root).expect("create distinct module directory");
+    let linked_snapshot = other_root.join("calcit.cirru");
+    std::os::unix::fs::symlink(&snapshot, &linked_snapshot).expect("link only the Snapshot file");
+    let conflict = run(&[
+      "eval",
+      "--dep",
+      "./",
+      "--dep",
+      linked_snapshot.to_str().unwrap(),
+      "+ app.main/answer 0",
+    ]);
+    assert!(!conflict.status.success(), "a file link must not erase a distinct module directory");
+    assert!(String::from_utf8_lossy(&conflict.stderr).contains("namespace `app.$meta` conflicts with existing content"));
+  }
   // Explicit application calls still execute, including their errors.
   let raised = run(&["eval", "--dep", "./", "app.main/main!"]);
   assert!(!raised.status.success());

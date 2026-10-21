@@ -813,8 +813,21 @@ fn run_cli() -> Result<(), String> {
     // Explicit eval dependencies have no authoritative project package to filter
     // or prefer. Merge their namespaces strictly before installing the snippet.
     let snippet_package = std::mem::take(&mut snapshot.package);
+    let mut eval_module_paths = HashSet::new();
 
     for module_path in &command.dep {
+      // Reuse equivalent directory aliases without changing the first source.
+      // A file-only symlink can have a different JS resource directory, so
+      // canonicalize the containing directory rather than the Snapshot file.
+      let (_, module_snapshot_path, _) = calcit::resolve_module_snapshot_path(module_path, base_dir, &module_folder);
+      let module_identity = module_snapshot_path
+        .parent()
+        .and_then(|parent| parent.join(".").canonicalize().ok())
+        .zip(module_snapshot_path.file_name())
+        .map(|(parent, name)| parent.join(name));
+      if module_identity.as_ref().is_some_and(|path| !eval_module_paths.insert(path.clone())) {
+        continue;
+      }
       let loaded = calcit::load_module_with_sources(module_path, base_dir, &module_folder)?;
       for (namespace, source) in loaded.namespace_sources {
         if let Some(previous) = js_namespace_sources.insert(namespace.clone(), source.clone())

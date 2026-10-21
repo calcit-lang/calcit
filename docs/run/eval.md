@@ -62,6 +62,8 @@ calcit eval '
 仅包含旧 `compact.cirru` 的目录会被拒绝并提示迁移；先按 [升级指南](upgrade.md) 迁为 `calcit.cirru`，再加载。
 加载定义不执行被加载项目的 `init-fn` 或 `reload-fn`；片段显式调用的函数仍按正常语义执行。
 
+同一模块目录中的同名 Snapshot 经相对路径、绝对路径或目录软链接重复指定时，只加载一次并保留首个来源。不同目录或不同 Snapshot 文件名仍是独立来源；只软链接文件不会合并两个模块的资源目录，同名异内容 namespace 继续报冲突。
+
 读取 `def answer 42` 这样的不可变值时，用逗号明确返回值，例如 `calcit eval --dep ./ ', app.main/answer'`；直接写一行 `app.main/answer` 是零参数调用，会因 Number 不是函数而报错。函数定义则按正常方式传参调用。
 
 例如，已安装依赖的 [Corokia](https://github.com/calcit-lang/corokia) 项目有
