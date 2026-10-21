@@ -5570,50 +5570,32 @@ fn collect_usages_from_snapshot(snapshot: &snapshot::Snapshot, target_ns: &str, 
       continue;
     }
 
-    let imports_target = check_ns_imports(&file_data.ns.code, target_ns, target_def);
+    let symbols = target_reference_symbols(ns_name, &file_data.ns.code, target_ns, target_def);
 
     for (def_name, code_entry) in &file_data.defs {
       if ns_name == target_ns && def_name == target_def {
         continue;
       }
 
-      let code_symbol = if imports_target || ns_name == target_ns {
-        target_def.to_owned()
-      } else {
-        format!("{target_ns}/{target_def}")
-      };
-
-      if find_symbol_in_cirru(&code_entry.code, &code_symbol) {
-        let context = get_symbol_context_cirru(&code_entry.code, &code_symbol);
-        let coords = find_symbol_coords(&code_entry.code, &code_symbol);
+      if let Some((context, coords)) = find_reference_symbols(&code_entry.code, &symbols) {
         usages.push((ns_name.clone(), def_name.clone(), context, coords, "code"));
       }
 
       for test in &code_entry.tests {
-        if find_symbol_in_cirru(&test.code, &code_symbol) {
-          let expression = get_symbol_context_cirru(&test.code, &code_symbol);
+        if let Some((expression, coords)) = find_reference_symbols(&test.code, &symbols) {
           let context = if expression.is_empty() {
             format!("#{}", test.name)
           } else {
             format!("#{}  {expression}", test.name)
           };
-          let coords = find_symbol_coords(&test.code, &code_symbol);
           usages.push((ns_name.clone(), def_name.clone(), context, coords, "tests"));
         }
       }
 
-      if let Ok(Some(schema)) = query_schema_cirru(code_entry.schema.as_ref(), false) {
-        let schema_symbol = if imports_target || ns_name == target_ns {
-          target_def.to_owned()
-        } else {
-          format!("{target_ns}/{target_def}")
-        };
-
-        if find_symbol_in_cirru(&schema, &schema_symbol) {
-          let context = get_symbol_context_cirru(&schema, &schema_symbol);
-          let coords = find_symbol_coords(&schema, &schema_symbol);
-          usages.push((ns_name.clone(), def_name.clone(), context, coords, "schema"));
-        }
+      if let Ok(Some(schema)) = query_schema_cirru(code_entry.schema.as_ref(), false)
+        && let Some((context, coords)) = find_reference_symbols(&schema, &symbols)
+      {
+        usages.push((ns_name.clone(), def_name.clone(), context, coords, "schema"));
       }
     }
   }
@@ -5775,14 +5757,57 @@ fn get_symbol_context_cirru(code: &Cirru, symbol: &str) -> String {
   String::new()
 }
 
-// Helper: check if namespace imports the target
-fn check_ns_imports(ns_code: &Cirru, target_ns: &str, _target_def: &str) -> bool {
-  // ns_code is like (ns my-ns (:require [target-ns ...]))
-  // Simplified check: just see if target_ns appears in the ns declaration
-  match ns_code {
-    Cirru::Leaf(s) => s.as_ref() == target_ns,
-    Cirru::List(items) => items.iter().any(|item| check_ns_imports(item, target_ns, _target_def)),
+/// Spellings that name `target_ns/target_def` inside `ns_name`: the fully qualified name,
+/// `alias/def` for every `:as` alias of the target namespace, the bare name when it is
+/// `:refer`-ed (and not rebound by a later rule), and the bare name inside the target namespace.
+fn target_reference_symbols(ns_name: &str, ns_code: &Cirru, target_ns: &str, target_def: &str) -> Vec<String> {
+  let mut symbols = vec![format!("{target_ns}/{target_def}")];
+  let mut bindings: BTreeMap<Arc<str>, Arc<program::ImportRule>> = BTreeMap::new();
+  for rule in super::edit::extract_require_rules(ns_code) {
+    // Malformed rules are reported by loading and checking; usages only needs the valid bindings.
+    if let Ok(pairs) = program::extract_import_rule(&rule) {
+      bindings.extend(pairs);
+    }
   }
+  let mut bare_refers_target = ns_name == target_ns;
+  for (binding, rule) in &bindings {
+    match rule.as_ref() {
+      program::ImportRule::NsAs(source) if source.as_ref() == target_ns => {
+        symbols.push(format!("{binding}/{target_def}"));
+      }
+      program::ImportRule::NsReferDef(source, def) if source.as_ref() == target_ns && def.as_ref() == target_def => {
+        bare_refers_target = true;
+      }
+      _ => {}
+    }
+  }
+  if bare_refers_target {
+    symbols.push(target_def.to_owned());
+  }
+  symbols.sort();
+  symbols.dedup();
+  symbols
+}
+
+/// Locate every leaf spelled as one of `symbols`; returns the first match's context and all coordinates.
+fn find_reference_symbols(code: &Cirru, symbols: &[String]) -> Option<(String, Vec<Vec<usize>>)> {
+  let mut context = None;
+  let mut coords = vec![];
+  for symbol in symbols {
+    let found = find_symbol_coords(code, symbol);
+    if found.is_empty() {
+      continue;
+    }
+    if context
+      .as_ref()
+      .is_none_or(|(first_path, _): &(Vec<usize>, String)| found[0] < *first_path)
+    {
+      context = Some((found[0].clone(), get_symbol_context_cirru(code, symbol)));
+    }
+    coords.extend(found);
+  }
+  coords.sort();
+  context.map(|(_, context)| (context, coords))
 }
 
 /// Fuzzy search for namespace/definition by pattern

@@ -193,7 +193,7 @@ pub struct ProgramFileData {
   pub defs: HashMap<Arc<str>, ProgramDefEntry>,
 }
 
-type ImportMapPair = (Arc<str>, Arc<ImportRule>);
+pub type ImportMapPair = (Arc<str>, Arc<ImportRule>);
 
 /// defRule: ns def
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -801,7 +801,8 @@ fn register_program_def_ids(program_data: &ProgramCodeData) {
   }
 }
 
-fn extract_import_rule(nodes: &Cirru) -> Result<Vec<ImportMapPair>, String> {
+/// Parse one `:require` rule into its local bindings without printing warnings.
+pub fn extract_import_rule(nodes: &Cirru) -> Result<Vec<ImportMapPair>, String> {
   match nodes {
     Cirru::Leaf(_) => Err(format!(
       "expected an import rule list, got {nodes}; expected `(namespace :as alias)`, `(namespace :refer (definition ...))`, or `(module :default alias)`"
