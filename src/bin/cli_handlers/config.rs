@@ -757,6 +757,22 @@ fn handle_add_entry(opts: &ConfigAddEntryCommand, snapshot_file: &str) -> Result
 
 fn handle_unset(opts: &ConfigUnsetCommand, snapshot_file: &str) -> Result<(), String> {
   let mut snapshot = load_snapshot(snapshot_file)?;
+  if opts.key == "entry" {
+    let name = opts
+      .entry
+      .as_deref()
+      .ok_or("Removing an entry requires an explicit --entry <name>; the default entry cannot be removed")?;
+    if name == snapshot::DEFAULT_ENTRY_NAME {
+      return Err("The default entry cannot be removed".to_owned());
+    }
+    if !snapshot.entries.contains_key(name) {
+      return Err(missing_entry_error(&snapshot, name));
+    }
+    snapshot.entries.remove(name);
+    save_snapshot(&snapshot, snapshot_file)?;
+    println!("{} Removed entry [{}]", "✓".green(), name.cyan());
+    return Ok(());
+  }
   let entry_label = opts.entry.as_deref().unwrap_or(snapshot::DEFAULT_ENTRY_NAME);
   let entry = select_entry_mut(&mut snapshot, opts.entry.as_deref())?;
 
@@ -770,7 +786,7 @@ fn handle_unset(opts: &ConfigUnsetCommand, snapshot_file: &str) -> Result<(), St
       }
     }
     _ => {
-      return Err(format!("Unknown config key '{}' for unset. Valid keys: target", opts.key));
+      return Err(format!("Unknown config key '{}' for unset. Valid keys: target, entry", opts.key));
     }
   };
 
@@ -1127,7 +1143,7 @@ mod tests {
       &path,
     )
     .expect_err("unsupported key should fail before writing");
-    assert_eq!(error, "Unknown config key 'mode' for unset. Valid keys: target");
+    assert_eq!(error, "Unknown config key 'mode' for unset. Valid keys: target, entry");
     assert_eq!(fs::read_to_string(&temp_path).expect("read unchanged fixture"), before_invalid);
 
     fs::remove_file(temp_path).expect("remove fixture");
