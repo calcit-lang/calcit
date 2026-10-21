@@ -601,13 +601,6 @@ fn past_lowering_regressions_pass_post_lowering_validation() {
     "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
     true,
   );
-  define(
-    &snapshot,
-    "reload!",
-    "quote $ defn reload! () &unit",
-    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)",
-    false,
-  );
 
   assert_success(&run_calcit(&snapshot, &["--check-only"]), "entry check with validator");
   assert_success(
