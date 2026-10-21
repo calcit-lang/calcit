@@ -2,61 +2,59 @@ use super::*;
 
 /// Resolve a compile-time Calcit callee expression to a WASM function index.
 /// Supports Fn literals (with def_ref), Imports, and Symbols.
-/// The callee must have arity 2 (acc, elem) — as required by foldl/foldl-shortcut/foldr-shortcut.
-pub(super) fn resolve_callee_fn_idx(ctx: &WasmGenCtx, callee: &Calcit) -> Result<u32, String> {
-  match callee {
+/// Validate the actual caller's arity before selecting a non-rest static call.
+fn resolve_callee_fn_idx(ctx: &WasmGenCtx, callee: &Calcit, expected_arity: u32) -> Result<u32, String> {
+  if (matches!(callee, Calcit::Local(_)) || matches!(callee, Calcit::Symbol { sym, .. } if ctx.locals.contains_key(sym.as_ref())))
+    && let Some(definition) = resolve_known_function_value(ctx, callee)
+  {
+    return resolve_callee_fn_idx(ctx, &Calcit::Import(definition), expected_arity);
+  }
+  let (qualified, short) = match callee {
     Calcit::Fn { info, .. } => {
       let def_ref = info
         .def_ref
         .as_ref()
         .ok_or_else(|| format!("fn literal without def_ref in foldl callee: {}/{}", info.def_ns, info.name))?;
-      let qualified = format!("{}/{}", def_ref.def_ns, def_ref.def_name);
-      let fn_idx = ctx
-        .fn_index
-        .get(&qualified)
-        .or_else(|| ctx.fn_index.get(def_ref.def_name.as_ref()))
-        .copied()
-        .ok_or_else(|| format!("unknown fn in foldl callee: {qualified}"))?;
-      // Callee must have arity 2 (acc, elem). If the def_ref points to a function with
-      // different arity (e.g. the outer containing function), reject it — calling with 2
-      // args would produce an invalid WASM module. A `&` rest callee is exempt:
-      // `emit_static_callee_call` packs or traps by its fixed arity (#1964).
-      let has_rest = ctx.fn_has_rest.contains_key(&qualified) || ctx.fn_has_rest.contains_key(def_ref.def_name.as_ref());
-      if !has_rest
-        && let Some(arity) = ctx
-          .fn_arity
-          .get(&qualified)
-          .or_else(|| ctx.fn_arity.get(def_ref.def_name.as_ref()))
-          .copied()
-        && arity != 2
-      {
-        return Err(format!(
-          "foldl callee must be a 2-arg fn (acc, elem), but {qualified} has arity {arity}"
-        ));
-      }
-      Ok(fn_idx)
+      (format!("{}/{}", def_ref.def_ns, def_ref.def_name), def_ref.def_name.to_string())
     }
-    Calcit::Import(import) => {
-      let qualified = format!("{}/{}", import.ns, import.def);
-      ctx
-        .fn_index
-        .get(&qualified)
-        .or_else(|| ctx.fn_index.get(import.def.as_ref()))
-        .copied()
-        .ok_or_else(|| format!("unknown import in foldl callee: {qualified}"))
+    Calcit::Import(import) => (format!("{}/{}", import.ns, import.def), import.def.to_string()),
+    Calcit::Symbol { sym, .. } if ctx.locals.contains_key(sym.as_ref()) => {
+      return Err(format!("HOF callee has no known local target: {sym}"));
     }
-    Calcit::Symbol { sym, .. } => ctx
-      .fn_index
-      .get(sym.as_ref())
-      .copied()
-      .ok_or_else(|| format!("unknown symbol in foldl callee: {sym}")),
-    _ => Err(format!("foldl callee must be a static fn/import/symbol in WASM, got: {callee}")),
+    Calcit::Symbol { sym, .. } => (sym.to_string(), sym.to_string()),
+    _ => return Err(format!("HOF callee must be a static fn/import/symbol in WASM, got: {callee}")),
+  };
+  let fn_idx = ctx
+    .fn_index
+    .get(&qualified)
+    .or_else(|| ctx.fn_index.get(&short))
+    .copied()
+    .ok_or_else(|| format!("unknown HOF callee: {qualified}"))?;
+  // Rest calls pack their arguments or trap when fixed arguments are missing.
+  // Ordinary functions must match exactly, including Imports and known locals.
+  if !ctx.fn_has_rest.contains_key(&qualified) && !ctx.fn_has_rest.contains_key(&short) {
+    let arity = ctx
+      .fn_arity
+      .get(&qualified)
+      .or_else(|| ctx.fn_arity.get(&short))
+      .ok_or_else(|| format!("unknown HOF callee arity: {qualified}"))?;
+    if *arity != expected_arity {
+      return Err(format!(
+        "HOF callee must accept {expected_arity} arguments, but {qualified} has arity {arity}"
+      ));
+    }
   }
+  Ok(fn_idx)
 }
 
 /// The fixed parameter count of a static HOF callee declared with a `&` rest
 /// parameter, looked up the same way as `resolve_callee_fn_idx`.
 fn resolve_callee_rest_fixed(ctx: &WasmGenCtx, callee: &Calcit) -> Option<u32> {
+  if (matches!(callee, Calcit::Local(_)) || matches!(callee, Calcit::Symbol { sym, .. } if ctx.locals.contains_key(sym.as_ref())))
+    && let Some(definition) = resolve_known_function_value(ctx, callee)
+  {
+    return resolve_callee_rest_fixed(ctx, &Calcit::Import(definition));
+  }
   let (qualified, short) = match callee {
     Calcit::Fn { info, .. } => {
       let def_ref = info.def_ref.as_ref()?;
@@ -261,25 +259,7 @@ pub(super) fn emit_foldl_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, acc:
 
 /// Resolve a callee to a `FoldlCallKind`, also accepting native procs.
 pub(super) fn resolve_callee_kind(ctx: &WasmGenCtx, callee: &Calcit, _acc: u32, _elem: u32) -> Result<FoldlCallKind, String> {
-  if let Some(closure) = resolve_inline_closure(ctx, callee) {
-    return Ok(FoldlCallKind::Inline(closure));
-  }
-  if let Ok(fn_idx) = resolve_callee_fn_idx(ctx, callee) {
-    return Ok(FoldlCallKind::Static(fn_idx, resolve_callee_rest_fixed(ctx, callee)));
-  }
-  if let Calcit::Proc(proc) = callee {
-    return Ok(FoldlCallKind::Proc(*proc));
-  }
-  // Local variable holding a function value (dyn dispatch via call_indirect)
-  if let Calcit::Local(local) = callee {
-    let local_idx = ctx
-      .locals
-      .get(&*local.sym)
-      .copied()
-      .ok_or_else(|| format!("foldl callee local not found: {}", local.sym))?;
-    return Ok(FoldlCallKind::Dynamic(local_idx));
-  }
-  Err(format!("foldl callee must be a static fn/import/symbol in WASM, got: {callee}"))
+  resolve_hof_callee(ctx, callee, 2)
 }
 
 /// Emit the body of a single foldl iteration step:
@@ -591,27 +571,36 @@ fn emit_binary_step_ie(ctx: &mut WasmGenCtx, kind: &FoldlCallKind, idx: u32, ele
   }
 }
 
-/// Resolve a single-arg HOF callee (map, filter, each, any?, etc.).
-fn resolve_unary_callee(ctx: &WasmGenCtx, callee: &Calcit) -> Result<FoldlCallKind, String> {
+/// Resolve a HOF callee for the argument count supplied by its caller.
+fn resolve_hof_callee(ctx: &WasmGenCtx, callee: &Calcit, expected_arity: u32) -> Result<FoldlCallKind, String> {
   if let Some(closure) = resolve_inline_closure(ctx, callee) {
     return Ok(FoldlCallKind::Inline(closure));
   }
-  if let Ok(fn_idx) = resolve_callee_fn_idx(ctx, callee) {
+  if let Ok(fn_idx) = resolve_callee_fn_idx(ctx, callee, expected_arity) {
     return Ok(FoldlCallKind::Static(fn_idx, resolve_callee_rest_fixed(ctx, callee)));
   }
   if let Calcit::Proc(proc) = callee {
     return Ok(FoldlCallKind::Proc(*proc));
   }
   // Local variable holding a function value (dyn dispatch via call_indirect)
-  if let Calcit::Local(local) = callee {
+  if let Some(name) = match callee {
+    Calcit::Local(local) => Some(local.sym.as_ref()),
+    Calcit::Symbol { sym, .. } if ctx.locals.contains_key(sym.as_ref()) => Some(sym.as_ref()),
+    _ => None,
+  } {
     let local_idx = ctx
       .locals
-      .get(&*local.sym)
+      .get(name)
       .copied()
-      .ok_or_else(|| format!("HOF callee local not found: {}", local.sym))?;
+      .ok_or_else(|| format!("HOF callee local not found: {name}"))?;
     return Ok(FoldlCallKind::Dynamic(local_idx));
   }
   Err(format!("HOF callee must be a static fn/import/symbol in WASM, got: {callee}"))
+}
+
+/// Resolve a single-arg HOF callee (map, filter, each, any?, etc.).
+fn resolve_unary_callee(ctx: &WasmGenCtx, callee: &Calcit) -> Result<FoldlCallKind, String> {
+  resolve_hof_callee(ctx, callee, 1)
 }
 
 /// `map xs f` — apply f to every element, returning new list of same length.
@@ -663,7 +652,7 @@ pub(super) fn emit_map_indexed(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<
   let src_ptr = emit_ptr_to_i32(ctx, &args[0])?;
   let count = emit_load_count_i32(ctx, src_ptr);
   let dst_ptr = emit_alloc_list(ctx, count);
-  let kind = resolve_unary_callee(ctx, &args[1]).map_err(|e| format!("map-indexed: {e}"))?;
+  let kind = resolve_hof_callee(ctx, &args[1], 2).map_err(|e| format!("map-indexed: {e}"))?;
   let (i, elem) = emit_list_iter_begin(ctx, src_ptr, count);
   // write f(i, elem) into dst[i]
   ctx.emit(Instruction::LocalGet(dst_ptr));
@@ -1049,4 +1038,103 @@ fn emit_map_kv_impl(ctx: &mut WasmGenCtx, args: &[Calcit], uses_decision: bool) 
 
   ctx.ptr_to_f64(acc);
   Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+  use crate::wasm::host::calcit::CalcitSymbolInfo;
+
+  // Deliberately mismatched callback metadata cannot pass a strict Calcit test.
+  // Check the backend boundary directly: never emit an invalid static signature.
+  #[test]
+  fn known_hof_alias_checks_the_callers_arity() {
+    let mut ctx = WasmGenCtx::new(
+      0,
+      WasmCompileEnv {
+        function_value_dependencies: Default::default(),
+        fn_index: HashMap::new(),
+        fn_arity: HashMap::new(),
+        fn_has_rest: HashMap::new(),
+        runtime_fn_index: HashMap::new(),
+        tag_index: HashMap::new(),
+        struct_layouts: Default::default(),
+        string_pool: HashMap::new(),
+        atom_globals: HashMap::new(),
+        value_imports: HashMap::new(),
+        static_fn_defs: HashMap::new(),
+        fn_table_index: HashMap::new(),
+        host_imports: HashMap::new(),
+        target: WasmTarget::Core,
+        boundary: WasmBoundary::Native,
+      },
+    );
+    for (name, arity) in [("unary", 1), ("binary", 2), ("ternary", 3)] {
+      let target = format!("tests.hof/{name}");
+      ctx.fn_index.insert(target.clone(), arity);
+      ctx.fn_arity.insert(target, arity);
+      let slot = ctx.alloc_local();
+      ctx.locals.insert(name.to_string(), slot);
+      let definition = CalcitImport {
+        ns: Arc::from("tests.hof"),
+        def: Arc::from(name),
+        info: Arc::new(ImportInfo::SameFile { at_def: Arc::from("test") }),
+        def_id: None,
+      };
+      ctx.local_function_values.insert(slot, definition.clone());
+      let alias = Calcit::Local(CalcitLocal {
+        idx: 0,
+        sym: Arc::from(name),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.hof"),
+          at_def: Arc::from("test"),
+        }),
+        location: None,
+        type_info: crate::wasm::host::calcit::DYNAMIC_TYPE.clone(),
+      });
+      let symbol = Calcit::Symbol {
+        sym: Arc::from(name),
+        info: Arc::new(CalcitSymbolInfo {
+          at_ns: Arc::from("tests.hof"),
+          at_def: Arc::from("test"),
+        }),
+        location: None,
+      };
+      for supplied in [1, 2] {
+        for callee in [&alias, &symbol] {
+          let kind = resolve_hof_callee(&ctx, callee, supplied).expect("local call strategy");
+          if arity == supplied {
+            assert!(matches!(kind, FoldlCallKind::Static(index, None) if index == arity));
+          } else {
+            assert!(matches!(kind, FoldlCallKind::Dynamic(index) if index == slot));
+            assert!(resolve_hof_callee(&ctx, &Calcit::Import(definition.clone()), supplied).is_err());
+          }
+        }
+      }
+      assert_eq!(
+        matches!(resolve_unary_callee(&ctx, &alias).unwrap(), FoldlCallKind::Static(_, _)),
+        arity == 1
+      );
+      assert_eq!(
+        matches!(resolve_callee_kind(&ctx, &alias, 0, 0).unwrap(), FoldlCallKind::Static(_, _)),
+        arity == 2
+      );
+      // An unknown local shadows the same-named global, even with a matching arity.
+      ctx.fn_index.insert(name.to_string(), arity);
+      ctx.fn_arity.insert(name.to_string(), arity);
+      ctx.local_function_values.remove(&slot);
+      for supplied in [1, 2] {
+        assert!(matches!(resolve_hof_callee(&ctx, &symbol, supplied).unwrap(), FoldlCallKind::Dynamic(index) if index == slot));
+      }
+      assert!(matches!(resolve_callee_kind(&ctx, &symbol, 0, 0).unwrap(), FoldlCallKind::Dynamic(index) if index == slot));
+      ctx.local_function_values.insert(slot, definition);
+      // Rest functions still use the shared pack-or-trap path at either call site.
+      ctx.fn_has_rest.insert(format!("tests.hof/{name}"), arity - 1);
+      for supplied in [1, 2] {
+        assert!(
+          matches!(resolve_hof_callee(&ctx, &alias, supplied).unwrap(), FoldlCallKind::Static(_, Some(fixed)) if fixed == arity - 1)
+        );
+      }
+    }
+  }
 }

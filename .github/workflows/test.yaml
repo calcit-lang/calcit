@@ -129,6 +129,9 @@ jobs:
               --target test-types-inference.main/option-recur-sum \
               --target test-types-inference.main/option-recursive-count --backend native,wasi
           WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
+            node scripts/run-core-tests.mjs --snapshot tests/fixtures/def-value-schema.cirru \
+              --tag known-function-alias --backend native,js,wasm,wasi
+          WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
             node scripts/check-nil-predicate.mjs
           WASMTIME_CLI="$RUNNER_TEMP/wasmtime-v49.0.1-x86_64-linux/wasmtime" \
             node scripts/check-wasi-number-text.mjs
@@ -299,54 +302,24 @@ jobs:
           "$CALCIT_BIN" calcit/test.cirru
           "$CALCIT_BIN" calcit/test-types-inference.cirru test --tag unit --require-match
 
-      - name: "verify bundled core Dynamic boundary documentation"
-        run: node scripts/core-dynamic-classification.mjs --check
-
-      - name: "verify strict diagnostics default and compatibility escape hatch"
-        # The compatibility regression executes generated JS before try-js.
-        # Prepare the local runtime instead of relying on a developer symlink.
+      # Steps already covered by `yarn check-all` in lint_core_check_all (with the
+      # post-lowering validator on) are not repeated here; this job keeps only the
+      # checks that check-all does not run.
+      - name: "prepare JS runtime"
         run: |
           yarn install --immutable
           yarn compile
           mkdir -p node_modules/@calcit
           ln -s ../../ node_modules/@calcit/procs
-          node scripts/check-strict-default.mjs
 
       - name: "verify release manifest generator"
         run: node --test scripts/release-manifest.test.mjs scripts/publish-registry.test.mjs
 
-      - name: "verify Dynamic-valued atom inference in Calcit"
-        run: |
-          "$CALCIT_BIN" calcit/test-types-inference.cirru test 'test-types-inference.main/*dynamic-ref' --require-match
+      - name: "verify JS command fixture"
+        run: bash scripts/test-js-command.sh
 
-      - name: "verify WASM exports and FFI"
-        run: bash scripts/test-wasm.sh
-
-      - name: "try js"
-        run: >
-          "$CALCIT_BIN" calcit/test.cirru js
-          && cp -v scripts/main.mjs js-out/
-          && node js-out/main.mjs
-          && node scripts/check-struct-field-js.mjs
-          && bash scripts/test-js-command.sh
-
-      - name: "verify shared Calcit backend contracts"
-        run: |
-          node --test scripts/core-api-contract.test.mjs scripts/core-test-protocol.test.mjs
-          node scripts/core-api-contract.mjs
-          node scripts/run-core-tests.mjs
-          node scripts/run-core-tests.mjs --snapshot calcit/test-traits.cirru --target test-traits.main/test-qualified-contains-boundary --backend native,js
-          node scripts/run-core-tests.mjs --snapshot calcit/test-traits.cirru --target test-traits.main/ResultBox --backend native,js,wasm
-          node scripts/run-core-tests.mjs --snapshot calcit/test-types-inference.cirru --target test-types-inference.main/same-type-second --backend native,js,wasm
-          node scripts/run-core-tests.mjs --snapshot tests/fixtures/option-nil-roundtrip.cirru --backend native,js
-          node scripts/fuzz-primitives.mjs --seed 1 --cases 6
-          node scripts/check-string-unicode.mjs
-          node scripts/check-nil-predicate.mjs
-          node scripts/check-monotonic-clock-js.mjs
-          node scripts/check-helper-inference.mjs
-          node scripts/check-parse-boundary.mjs
-          node scripts/check-known-assertion.mjs
-          node scripts/check-typed-source-alias.mjs
+      - name: "fuzz shared primitives across backends"
+        run: node scripts/fuzz-primitives.mjs --seed 1 --cases 6
 
   lint_core_check_all:
     name: Full check-all with post-lowering validation

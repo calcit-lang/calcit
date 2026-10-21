@@ -492,25 +492,39 @@ fn component_file_capabilities_check_only_without_writing_an_artifact() {
   assert!(supported.status.success(), "{}", String::from_utf8_lossy(&supported.stderr));
   assert!(!output.path().join("program.wasm").exists());
 
-  let unsupported = calcit(
-    &[
-      "--init-fn",
-      "app.main/main-unsupported!",
-      "tests/fixtures/wasi-command-03.cirru",
-      "wasi",
-      "--boundary",
-      "component",
-      "--check-only",
-    ],
-    output.path(),
-  );
-  assert!(!unsupported.status.success(), "unimplemented directory access must fail");
-  assert!(
-    String::from_utf8_lossy(&unsupported.stderr).contains("E_WASI_COMMAND_CAPABILITY"),
-    "{}",
-    String::from_utf8_lossy(&unsupported.stderr)
-  );
-  assert!(!output.path().join("program.wasm").exists());
+  for (entry, diagnostic) in [
+    ("app.main/main-unsupported!", "E_WASI_COMMAND_CAPABILITY"),
+    ("app.main/main-unsupported-alias!", "E_WASI_COMMAND_CAPABILITY"),
+    ("app.main/main-unknown-alias!", "E_WASI_COMMAND_INDIRECT"),
+  ] {
+    let checked = calcit(
+      &["--init-fn", entry, "tests/fixtures/wasi-command-03.cirru", "--check-only"],
+      output.path(),
+    );
+    assert!(checked.status.success(), "{entry}: {}", String::from_utf8_lossy(&checked.stderr));
+    let unsupported = calcit(
+      &[
+        "--init-fn",
+        entry,
+        "tests/fixtures/wasi-command-03.cirru",
+        "wasi",
+        "--boundary",
+        "component",
+        "--check-only",
+      ],
+      output.path(),
+    );
+    assert!(
+      !unsupported.status.success(),
+      "{entry}: unsupported capability or unknown callee must fail"
+    );
+    assert!(
+      String::from_utf8_lossy(&unsupported.stderr).contains(diagnostic),
+      "{entry}: {}",
+      String::from_utf8_lossy(&unsupported.stderr)
+    );
+    assert!(!output.path().join("program.wasm").exists());
+  }
 }
 
 #[test]

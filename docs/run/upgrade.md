@@ -136,10 +136,12 @@ defn call-value (f args)
 - 迁移期内，绑定到 `let` 的这类值仍保留旧 `Optional<T>` 证据，已有的可空字段与参数检查不变；这一桥接随 0.32.0 删除 `Optional<T>` 一并退场。
 - `nil->option` 的参数类型不在本节改动范围，仍随 0.32.0 删除 Optional 时调整。
 
-## 0.32.0 调用 Dynamic 值须先收窄
+<a id="032-调用-dynamic-值须先收窄"></a>
+
+## 0.31.0 调用 Dynamic 值须先收窄
 
 静态类型为 Dynamic 的值被直接调用时（例如 schema 为 `Fn [Dynamic] -> Dynamic` 的 `defn cd (x) (x 1)`），
-此前所有检查都放行，运行时才报 `cannot be used as operator`。0.32.0 起这类调用报告 `W_DYNAMIC_CALL`，检查不再通过。
+此前所有检查都放行，运行时才报 `cannot be used as operator`。0.31.0 起这类调用报告 `W_DYNAMIC_CALL`，检查不再通过。
 多缩进一层写出的 `((.unwrap-or …))` 也会因此暴露。
 
 | 旧写法 | 新写法 |
@@ -149,10 +151,12 @@ defn call-value (f args)
 
 调用头由宏自己生成的调用、声明 `:js-ffi` feature 的定义里对宿主函数的调用不受影响。宏把调用方写的值放到调用头时（如 `-> 1 f` 展开为 `(f 1)`）仍会报告，因为被调用的值来自调用方。
 
-## 0.32.0 恒真条件诊断
+<a id="032-恒真条件诊断"></a>
+
+## 0.31.0 恒真条件诊断
 
 Calcit 只把 `nil`、`false` 与 `&unit` 当作假值，所以 `if (count xs) …` 在 `xs` 为空时仍走 then 分支，
-`if s …` 在 `s` 为空字符串时也一样。0.32.0 起，条件的静态类型已证明为 Number、String、List、Map、Set、
+`if s …` 在 `s` 为空字符串时也一样。0.31.0 起，条件的静态类型已证明为 Number、String、List、Map、Set、
 Struct 或函数时，`if`、`when`、`cond`、`and`、`or` 会报告 `W_CONSTANT_TRUTHY_CONDITION`，严格检查不再通过。
 `Bool`、`Optional`、`JsNullish`、Dynamic 与类型变量不报；`and` 的最后一个操作数作为返回值，也不报。
 
@@ -165,10 +169,13 @@ Struct 或函数时，`if`、`when`、`cond`、`and`、`or` 会报告 `W_CONSTAN
 
 若这个值原本可能缺失，说明 schema 写窄了：改为 `Option` 并用 `.unwrap-or` 或 `match` 处理。
 
-## 0.32.0 `get-in` 返回 Result
+<a id="0320-get-in-返回-result"></a>
+<a id="get-in-result"></a>
+
+## `get-in` 返回 Result（0.31.0-alpha.1）
 
 `get-in` 此前返回 `Option<Dynamic>`，但中间值不是集合时（例如路径 `[] :a :b` 遇到 `:a` 的值是 `1`）会抛异常，
-签名无法说明这一点。0.32.0 起它返回 `Result<T, PathError>`，三种结果都在类型中：
+签名无法说明这一点。main 的 `0.31.0-alpha.1` 配对预发布已提供 `Result<T, PathError>`；`0.30.1` 维护线仍保留 Option 合同。三种结果都在类型中：
 
 | 情况 | 返回值 |
 | --- | --- |
@@ -198,11 +205,13 @@ Struct 或函数时，`if`、`when`、`cond`、`and`、`or` 会报告 `W_CONSTAN
    用 `match` 区分 `PathError :missing` 与 `PathError :shape`。
 4. 弃用的 `some-in?` 同步改为 `.ok?`，形状错误时返回 false。
 
-## 0.32.0 Option 不再擦回 nil
+<a id="032-option-不再擦回-nil"></a>
+
+## Option 不再擦回 nil（0.31.0 提示，0.32.0 阻塞）
 
 `.unwrap-or X nil`、`option:unwrap-or X nil` 与 `match X … ((:none) nil)` 把 Option 还原成 nil-or-T：
 签名写着 Option，运行时仍是可能为 nil 的值，后面的 `nil?`、`either` 照旧工作，缺失值的旧语义原样保留。
-接收者的类型已证明为 Option 时，0.32.0 起 `--check-only` 在 Notes 里列出 `W_OPTION_ERASED_TO_NIL`。它暂时只是提示，检查和运行都照常通过；生态库迁移完成后会改成阻塞的警告。
+接收者的类型已证明为 Option 时，0.31.0 起 `--check-only` 在 Notes 里列出 `W_OPTION_ERASED_TO_NIL`。它暂时只是提示，检查和运行都照常通过；生态库迁移完成后，计划在 0.32.0 改成阻塞的警告。
 payload 有具体类型时，这种写法本来就被参数检查拒绝；新诊断补上的是 payload 为 Dynamic、`nil` 被当成合法默认值的情形。
 
 | 旧写法 | 新写法 |
@@ -242,10 +251,12 @@ payload 有具体类型时，这种写法本来就被参数检查拒绝；新诊
 - `nil->option` 的参数类型改动与 Optional 的删除在同一版本落地；单独把参数改成泛型 `T` 会让上述无 else `if` / `Optional` 实参的折叠形式在严格检查中失败。
 - core 内部 `&` 原语的 schema 不属于公共 API，不在本节范围。
 
-## 0.32.0 `select-keys` 跳过缺失键
+<a id="032-select-keys-跳过缺失键"></a>
+
+## 0.31.0 `select-keys` 跳过缺失键
 
 `select-keys` 此前给源 Map 里不存在的键写入 `nil`，返回值的类型虽然是 `Map<K, V>`，里面却可能有不属于 `V` 的 nil。
-0.32.0 起缺失的键直接跳过：
+0.31.0 起缺失的键直接跳过：
 
 ```cirru
 assert= (&{} :a 1)
@@ -324,7 +335,7 @@ CodeEntry 已有 `Fn` 合同时，函数体 Map 中省略的 `:args`、`:return`
 | `merge-dynamic` | `merge` |
 | `concat-dynamic` | `concat` |
 | `turn-str` | `to-string` |
-| `some-in?` | `.ok? $ get-in x path`（0.32.0 起 `get-in` 返回 Result）；`contains-in?` 判断路径存在，两者对 nil 叶子的结果不同 |
+| `some-in?` | `.ok? $ get-in x path`（main 的 0.31.0-alpha.1 已提供 Result 合同）；`contains-in?` 判断路径存在，两者对 nil 叶子的结果不同 |
 | `range-bothway` | 按原顺序各绑定实参一次到 `x/y`：省略 `y` 时用 `range (inc (negate x)) x`，Number `y` 时用 `range (inc (- (+ x x) y)) y`；末端不包含 |
 
 `range-bothway` 的人工迁移不能复制带副作用的实参表达式。历史运行时的 nil 分支与省略相同，但当前严格 Number schema 拒绝显式 nil 实参。
@@ -345,7 +356,7 @@ CodeEntry 已有 `Fn` 合同时，函数体 Map 中省略的 `:args`、`:return`
 ## 0.30.1 底层缺失值原语直接返回 Option
 
 本项从原计划的 0.31.0 提前纳入 0.30.1，该版本从 `release/0.30.1` 维护分支发布，保留本节的 Option 合同。
-main 的后续变化不自动带入，特别是 0.32.0 的公开 `get-in` 返回 Result 变化不属于本版。因此本版有明确的兼容性例外，
+main 的后续变化不自动带入，特别是已由 0.31.0-alpha.1 提供的公开 `get-in` 返回 Result 变化不属于本版。因此本版有明确的兼容性例外，
 不能按完全向后兼容的 patch 升级：直接使用下表原语的代码需要迁移。其余历史类型表示清理、
 弃用 core / CLI 入口删除仍留在后续非 patch 版本，不随本项一起提前。
 
@@ -1857,7 +1868,7 @@ Struct 字段是定义的一部分，因此已知 struct 上的 `:field` 和 `.f
 | `first` / `last` | `Option<T>` | 空集合和空字符串可能没有元素 |
 | `nth` | `Option<T>` | 越界是 `Option :none`；不要把结果直接当元素值 |
 | `get` | `Option<T>` | Map/List 等可缺失查找返回 Option；显式 `Dynamic` 的运行值若为 Struct，则按运行时字段名返回 `Option<Dynamic>`；已知 Struct 改用 `(:field value)` |
-| `get-in` | 0.32.0 起为 `Result<T, PathError>`（开放动态路径常为 `Result<Dynamic, PathError>`） | 缺失是 `PathError :missing`，中间值形状错误是 `PathError :shape`，见 0.32.0 一节 |
+| `get-in` | main 的 0.31.0-alpha.1 起为 `Result<T, PathError>`（开放动态路径常为 `Result<Dynamic, PathError>`） | 缺失是 `PathError :missing`，中间值形状错误是 `PathError :shape`，见[路径查询迁移](#get-in-result) |
 | `get-env` | `Option<String>` | 未设置的环境变量是 `Option :none` |
 
 不要用 `str` 或 `turn-string` 掩盖尚未处理的 `Option<T>` / `Result<T,E>`。默认 strict mode 会以

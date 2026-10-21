@@ -275,7 +275,7 @@ in receiver-first form.
 Core lookup APIs that no longer need to preserve bootstrapping compatibility use nominal results directly:
 
 - `find`, `find-index`, `find-last`, `find-last-index`, `index-of`, and `last-index-of` return `Option`.
-- `get-in` returns `Option<Dynamic>` while preserving a more precise payload type for literal paths when inference can resolve it. Fully typed Map receivers with non-empty literal paths are lowered, together with `assoc-in` and `update-in`, to direct typed lookup/association chains; dynamic paths and open containers remain an explicit compatibility boundary.
+- `get-in` 返回 `Result<Dynamic, PathError>`；完整类型的 Map 配合字面量路径时可保留更精确的 payload 类型。缺失或遍历到 nil 与形状错误分别使用 `PathError :missing` / `:shape`，不再匹配 Option 的变体。`assoc-in` / `update-in` 继续复用类型化访问/重建，updater 输入仍为 Option；动态路径和开放容器仍是显式边界。
 - List/set `max` and `min` return `Option<Number>` so empty collections are explicit.
 - String `.find-index` and `str-find-index` return `Option<Number>`; the internal `&str:find-index` primitive retains its `-1` ABI sentinel.
 - `get-env` returns `Option<String>`; use `.unwrap-or` for a default.

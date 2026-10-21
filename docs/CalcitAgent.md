@@ -155,7 +155,7 @@ calcit .calcit/snippets/demo.cirru query config
 
 临时验证代码使用 `calcit eval '<snippet>'`；多行代码或需要绕过 Shell 转义时，使用 `calcit eval --stdin` 从管道读取。两种输入方式互斥，旧顶层 `calcit exec` 已移除。
 
-`eval` 使用独立的片段上下文。需要访问项目定义时，在项目根目录显式使用 `calcit eval --dep ./ '<namespace/definition> ...'`，或把 `--dep` 指向具体 Snapshot 文件；目录以 `/` 结尾。仅含 `compact.cirru` 的模块目录会被拒绝并提示迁移，先按 [升级指南](run/upgrade.md) 迁为 `calcit.cirru`。位置参数写成 `calcit calcit.cirru eval ...` 不会自动加载项目，首行 `ns ... :require ...` 也不能代替 `--dep`。加载依赖不执行其 init/reload，但片段调用的函数仍会执行；用真实项目定义验证加载，不用 core `range` 作为证据。实例见 [eval 项目上下文](run/eval.md#加载项目定义与外部模块)。
+`eval` 使用独立的片段上下文。需要访问项目定义时，在项目根目录显式使用 `calcit eval --dep ./ '<namespace/definition> ...'`，或把 `--dep` 指向具体 Snapshot 文件；目录以 `/` 结尾。显式加载会保留项目的 `app.*` 和其他 namespace，片段自己的入口避开已有名称；不同依赖中的同名异内容 namespace 仍会报冲突。仅含 `compact.cirru` 的模块目录会被拒绝并提示迁移，先按 [升级指南](run/upgrade.md) 迁为 `calcit.cirru`。位置参数写成 `calcit calcit.cirru eval ...` 不会自动加载项目，首行 `ns ... :require ...` 也不能代替 `--dep`。加载依赖不执行其 init/reload，但片段调用的函数仍会执行；用真实项目定义验证加载，不用 core `range` 作为证据。实例见 [eval 项目上下文](run/eval.md#加载项目定义与外部模块)。
 
 仅在任务以 WASM 为目标时加载目标专用指南：`calcit wasm <snapshot>` 生成 browser/embedded core module；`calcit wasm <snapshot> --boundary component` 生成供 Component tooling 包装的 core module；`calcit wasi <snapshot>` 默认生成 WASI 0.3.1 command，显式加 `--boundary native` 才生成 Preview 1 command。这些产物不能互换，也不能从 binary 名称猜测宿主能力。先看对应子命令的 `--help`，再用 `--check-only` 获得当前目标的类型与 capability 诊断；普通 JS/native 应用修改不需要 Canonical ABI 知识。
 
@@ -667,7 +667,9 @@ let
   assert= true $ (parse-float |bad).err?
 ```
 
-`get-in` 返回 `Option<T>`，适合开放数据中可能缺失的路径。完整类型的嵌套 Map 配合非空字面量路径时，`get-in`、`assoc-in`、`update-in` 会编译为直接的类型化访问/重建链，并保证接收者、各路径段和 updater 按源码顺序各求值一次。此时 updater 接收 `Option<Leaf>`；字面量空路径保留整个接收者的类型，回调输出可不同型。动态路径、动态接收者和混合容器仍走开放边界，回调接收 `Option<Dynamic>`，具体使用 payload 前必须 decode/narrow，不能用回调返回类型证明输入。路径进入 Struct 时使用类型化的 `(:field value)` 或 `value.:field`，字段可缺失时声明 `Option<T>`。已证明的 Number 叶子可以如下处理缺失：
+`get-in` 返回 `Result<T, PathError>`：路径缺失或遍历到 nil 为 `PathError :missing`，中间值形状错误为 `PathError :shape message`。开放输入的 payload 通常仍是 Dynamic；完整类型的嵌套 Map 配合非空字面量路径时，可以保留叶子类型并编译为类型化访问链。不要再用 `:some` / `:none` 匹配查询结果，也不要用统一默认值吞掉原本需要报错的形状错误。该合同已包含在 `0.31.0-alpha.1`，`0.30.1` 维护线不变；见[路径查询迁移](run/upgrade.md#get-in-result)。
+
+`update-in` 的 updater 仍接收 `Option<Leaf>`，不随查询结果改成 Result；字面量空路径保留整个接收者的类型，回调输出可不同型。动态路径、动态接收者和混合容器仍走开放边界，回调接收 `Option<Dynamic>`，具体使用 payload 前必须 decode/narrow，不能用回调返回类型证明输入。接收者、路径段和 updater 仍按源码顺序各求值一次。路径进入 Struct 时使用类型化的 `(:field value)` 或 `value.:field`，字段可缺失时声明 `Option<T>`。已证明的 Number 叶子可以如下处理缺失：
 
 ```cirru.no-check
 update-in data ([] :profile :visits)

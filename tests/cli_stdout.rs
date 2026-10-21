@@ -16,6 +16,210 @@ fn calcit(fixture_home: &Path) -> Command {
   command
 }
 
+// Namespace ownership, entry selection and process failures are CLI/loader
+// boundaries; the loaded values and assertions still use real Calcit source.
+#[test]
+fn eval_preserves_explicit_application_namespaces_without_running_their_entries() {
+  let project = tempfile::tempdir().expect("create eval project");
+  let snapshot = project.path().join("calcit.cirru");
+  std::fs::copy("tests/fixtures/def-value-schema.cirru", &snapshot).expect("copy actual app fixture");
+  let run_snapshot = |target: &Path, args: &[&str]| {
+    calcit(project.path())
+      .current_dir(project.path())
+      .arg(target)
+      .args(args)
+      .output()
+      .expect("run project command")
+  };
+  let run = |args: &[&str]| run_snapshot(&snapshot, args);
+  let success = |output: &std::process::Output| {
+    assert!(
+      output.status.success(),
+      "{}{}",
+      String::from_utf8_lossy(&output.stdout),
+      String::from_utf8_lossy(&output.stderr)
+    );
+  };
+  let migrate = |target: &Path, operations: serde_json::Value| {
+    let code = operations.to_string();
+    let preview = run_snapshot(target, &["edit", "transaction", "--code", &code, "--dry-run", "--format", "json"]);
+    success(&preview);
+    let report: serde_json::Value = serde_json::from_slice(&preview.stdout).expect("transaction preview");
+    success(&run_snapshot(
+      target,
+      &[
+        "edit",
+        "transaction",
+        "--code",
+        &code,
+        "--expect-revision",
+        report["scoped_revision"].as_str().expect("scoped revision"),
+        "--format",
+        "json",
+      ],
+    ));
+  };
+  let initial_operations = serde_json::json!([
+    [
+      "edit",
+      "def",
+      "app.main/main!",
+      "--overwrite",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn main! () $ raise |eval-must-not-run-project-entry"
+    ],
+    [
+      "edit",
+      "def",
+      "app.main/reload!",
+      "--overwrite",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn reload! () $ raise |eval-must-not-run-project-entry"
+    ],
+    ["edit", "add-ns", "app.__calcit_eval_0__"],
+    [
+      "edit",
+      "def",
+      "app.__calcit_eval_0__/answer",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ def answer 7"
+    ],
+    ["edit", "schema", "app.__calcit_eval_0__/answer", "--code", "quote 'Number"],
+    [
+      "edit",
+      "def",
+      "app.main/increment",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn increment (value) $ inc value"
+    ],
+    [
+      "edit",
+      "schema",
+      "app.main/increment",
+      "--code",
+      "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)"
+    ]
+  ]);
+  migrate(&snapshot, initial_operations);
+  let before = std::fs::read(&snapshot).expect("source before eval");
+  let missing = run(&["eval", "+ app.main/answer 0"]);
+  assert!(!missing.status.success());
+  assert!(String::from_utf8_lossy(&missing.stderr).contains("unknown ns target"));
+  for dependency in ["./", "./calcit.cirru", snapshot.to_str().unwrap()] {
+    let result = run(&[
+      "eval",
+      "--dep",
+      dependency,
+      "assert= 43 $ app.main/increment app.main/answer\nassert= 7 app.__calcit_eval_0__/answer",
+    ]);
+    success(&result);
+    assert!(!String::from_utf8_lossy(&result.stderr).contains("eval-must-not-run-project-entry"));
+  }
+  success(&run(&[
+    "eval",
+    "--dep",
+    "./",
+    "--dep",
+    "./calcit.cirru",
+    "--dep",
+    snapshot.to_str().unwrap(),
+    "ns app.snippet\n  :require\n    app.main :refer $ increment answer\n\nassert= 43 $ increment answer",
+  ]));
+  #[cfg(unix)]
+  {
+    let directory_alias = project.path().join("same-module");
+    std::os::unix::fs::symlink(project.path(), &directory_alias).expect("link the complete module directory");
+    let aliased_snapshot = directory_alias.join("calcit.cirru");
+    success(&run(&[
+      "eval",
+      "--dep",
+      "./",
+      "--dep",
+      aliased_snapshot.to_str().unwrap(),
+      "assert= 42 app.main/answer",
+    ]));
+
+    // A file-only link does not share the module's resource directory.
+    let other_root = project.path().join("file-only-alias");
+    std::fs::create_dir(&other_root).expect("create distinct module directory");
+    let linked_snapshot = other_root.join("calcit.cirru");
+    std::os::unix::fs::symlink(&snapshot, &linked_snapshot).expect("link only the Snapshot file");
+    let conflict = run(&[
+      "eval",
+      "--dep",
+      "./",
+      "--dep",
+      linked_snapshot.to_str().unwrap(),
+      "+ app.main/answer 0",
+    ]);
+    assert!(!conflict.status.success(), "a file link must not erase a distinct module directory");
+    assert!(String::from_utf8_lossy(&conflict.stderr).contains("namespace `app.$meta` conflicts with existing content"));
+  }
+  // Explicit application calls still execute, including their errors.
+  let raised = run(&["eval", "--dep", "./", "app.main/main!"]);
+  assert!(!raised.status.success());
+  assert!(String::from_utf8_lossy(&raised.stderr).contains("eval-must-not-run-project-entry"));
+  let wrong_type = run(&["eval", "--dep", "./", "app.main/increment |not-a-number"]);
+  assert!(!wrong_type.status.success());
+  assert!(
+    String::from_utf8_lossy(&wrong_type.stderr).contains("[W_FN_ARG_TYPE_MISMATCH]"),
+    "{}",
+    String::from_utf8_lossy(&wrong_type.stderr)
+  );
+  assert!(!String::from_utf8_lossy(&wrong_type.stderr).contains("eval-must-not-run-project-entry"));
+
+  let other = project.path().join("other.cirru");
+  std::fs::copy(&snapshot, &other).expect("copy conflicting application");
+  let conflict = run(&["eval", "--dep", "./", "--dep", other.to_str().unwrap(), "+ app.main/answer 0"]);
+  assert!(
+    !conflict.status.success(),
+    "different Snapshot metadata must not be silently preferred"
+  );
+  assert!(String::from_utf8_lossy(&conflict.stderr).contains("namespace `app.$meta` conflicts with existing content"));
+
+  // A distinct package avoids the generated app.$meta collision. Use a fixture
+  // without JS FFI so only app.main's actual content conflict can reject this.
+  let plain_other = project.path().join("plain-other.cirru");
+  std::fs::copy("calcit/add.cirru", &plain_other).expect("copy FFI-free conflicting application");
+  migrate(
+    &plain_other,
+    serde_json::json!([
+      [
+        "edit",
+        "def",
+        "app.main/answer",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ def answer 43"
+      ],
+      [
+        "edit",
+        "schema",
+        "app.main/answer",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote 'Number"
+      ],
+      ["config", "set", "package", "other"]
+    ]),
+  );
+  let conflict = run(&["eval", "--dep", "./", "--dep", plain_other.to_str().unwrap(), "+ app.main/answer 0"]);
+  assert!(!conflict.status.success());
+  assert!(String::from_utf8_lossy(&conflict.stderr).contains("namespace `app.main` conflicts with existing content"));
+
+  assert_eq!(std::fs::read(&snapshot).unwrap(), before, "eval must not mutate application source");
+}
+
 #[test]
 fn read_commands_exit_successfully_when_stdout_reader_is_closed() {
   let fixture = documentation_fixture();
