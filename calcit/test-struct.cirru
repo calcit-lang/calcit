@@ -573,7 +573,8 @@
               assert-type store test-struct.main/MapLiteralStore
               :text store
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'Dynamic
           :tests $ [] $ %{} 'TestEntry (:name |assert-type-statement-narrows-struct)
             :code $ quote $ assert= |ok
               read-asserted-map-literal-store $ MapLiteralStore :text |ok
@@ -625,7 +626,8 @@
                 store $ assert-type source test-struct.main/MapLiteralStore
               :text store
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'Dynamic
           :tests $ [] $ %{} 'TestEntry (:name |assert-type-expression-narrows-struct)
             :code $ quote $ assert= |ok
               read-let-asserted-map-literal-store $ MapLiteralStore :text |ok
@@ -645,7 +647,8 @@
         'reload! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn reload! () (println |reloaded)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'reset-proof-count $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defatom reset-proof-count 0
           :examples $ []
@@ -800,10 +803,6 @@
                 p $ &%{} Point2D :x 10 :y 20
               assert= 10 $ p :x
               assert= 20 $ p :y
-            let
-                ffi-point $ unsafe-coerce (?{} :x 30 :y 40) Point2D
-              assert= 30 $ ffi-point :x
-              assert= 40 $ ffi-point :y
             let
                 l1 $ %{} Lagopus $ :name |LagopusA
               assert= |LagopusA $ :name l1

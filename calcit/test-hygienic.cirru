@@ -20,8 +20,8 @@
           :examples $ []
           :schema $ :: 'Macro $ {}
             :capabilities $ #{} :log
-            :expansion $ :: 'Expr 'List
-            :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
+            :expansion $ :: 'Expr $ :: 'List 'Number
+            :required $ [] (:: 'Expr 'Number) (:: 'Expr 'Number)
         'add-11-safe $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro add-11-safe (a b)
             with-gensyms (c)
@@ -30,8 +30,8 @@
           :examples $ []
           :schema $ :: 'Macro $ {}
             :capabilities $ #{}
-            :expansion $ :: 'Expr 'List
-            :required $ [] (:: 'Expr 'Dynamic) (:: 'Expr 'Dynamic)
+            :expansion $ :: 'Expr $ :: 'List 'Number
+            :required $ [] (:: 'Expr 'Number) (:: 'Expr 'Number)
         'add-2 $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn add-2 (x) (&+ x 2)
           :examples $ []

@@ -66,7 +66,8 @@
               assert= 1 $ deref a
               assert= "|atom 1" $ trim $ format-cirru-edn a
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-edn $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-edn ()
             let
@@ -129,7 +130,8 @@
               assert= "|do \"|a b\"" $ trim $ format-cirru-edn "|a b"
               assert= "|do |hello" $ trim $ format-cirru-edn |hello
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-edn-comment $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-edn-comment () (log-title "|Testing edn comment")
             assert=
@@ -140,7 +142,8 @@
               parse-cirru-edn "|{} (:a 1) (:b 2)"
             assert= (:: :a 1) (parse-cirru-edn "|:: :a (; comment) 1")
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-imported-type-names $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-imported-type-names ()
             let
@@ -175,7 +178,8 @@
               %{} External $ :label |linked
               parse-cirru-edn-as "|%{} :External (:label |linked)" External
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-runtime-map-decode $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-runtime-map-decode ()
             let
@@ -245,14 +249,16 @@
                 code $ quote $ + 1 2
               assert= code $ eval $ &data-to-code code
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-top-level-typed-edn $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-top-level-typed-edn ()
             assert=
               %{} Person (:name |Top) (:age 23)
               , A-typed-person
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-typed-edn $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-typed-edn ()
             let
@@ -296,7 +302,8 @@
                 {} $ :a |second
                 parse-cirru-edn-as "|{} (:a |first) (:a |second)" $ :: 'Map 'Tag 'String
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-edn.main
           :require

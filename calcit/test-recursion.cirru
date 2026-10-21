@@ -55,14 +55,16 @@
             test-loop
             do true
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
         'test-hole-series $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-hole-series ()
             assert "|hole series numbers" $ =
               map (range 1 20) hole-series
               [] 0 1 0 1 2 3 2 1 0 1 2 3 4 5 6 7 8 9 8
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-loop $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn ()
             assert= 55 $ apply

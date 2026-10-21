@@ -662,7 +662,8 @@
               Person :name |Ada :age 3 :address $ Address :city |X
               , 0
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'make-dynamic-value $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-dynamic-value () 1
           :examples $ []
@@ -817,9 +818,10 @@
                 , 0
             :tags $ #{} :type-inference :unit
         'reload! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn reload! () (:: 'Unit)
+          :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'same-nominal-absence-fields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn same-nominal-absence-fields (fields)
             let
@@ -969,7 +971,8 @@
               , 'Number
             assert-type (count |abc) 'Number
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
         'test-filter-map-kv-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-filter-map-kv-inference ()
             let
@@ -982,7 +985,8 @@
               assert-type output $ :: 'Map 'String 'Number
               &inspect-type output
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Nil)
+            :args $ []
         'test-fn-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-fn-inference ()
             let
@@ -996,7 +1000,8 @@
                 , 'Number
               &inspect-type f
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Nil)
+            :args $ []
         'test-generics-identity $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-generics-identity ()
             let
@@ -1019,7 +1024,8 @@
                 (:err error)
                   assert= true $ starts-with? error |b
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-legacy-optional-inference $ %{} 'CodeEntry
           :doc "|Legacy-contract test: pins assert-type against Optional; retire with Optional (0.32.0). The Option forms are asserted first."
           :code $ quote $ defn test-legacy-optional-inference ()
@@ -1186,7 +1192,8 @@
               &inspect-type nested-miss
               &inspect-type nil-nested
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Nil)
+            :args $ []
         'test-list-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-list-inference ()
             let
@@ -1207,7 +1214,8 @@
                 assert-type rest-xs $ :: 'List 'Number
                 &inspect-type rest-xs
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Nil)
+            :args $ []
         'test-map-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-map-inference ()
             let
@@ -1224,7 +1232,8 @@
                 assert-type m5 $ :: 'Map 'String 'Number
                 &inspect-type m5
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Nil)
+            :args $ []
         'test-ref-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-ref-inference ()
             let
@@ -1236,7 +1245,8 @@
                 &inspect-type r
                 &inspect-type x
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Nil)
+            :args $ []
         'test-set-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-set-inference ()
             let
@@ -1247,7 +1257,8 @@
                 &inspect-type s
                 &inspect-type xs
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Nil)
+            :args $ []
         'test-struct-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-struct-inference ()
             let
@@ -1267,7 +1278,8 @@
                 &inspect-type top-name-v
                 &inspect-type city-v
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Nil)
+            :args $ []
         'test-type-ref-combos $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-type-ref-combos ()
             let
@@ -1287,7 +1299,8 @@
                 &inspect-type wrapped
                 &inspect-type outcome
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Nil)
+            :args $ []
         'unit-value-as-annotation $ %{} 'CodeEntry
           :doc "||Calcit::Unit used as a type annotation resolves to Unit, not an opaque Custom value (#1553, #1554)."
           :code $ quote $ defn unit-value-as-annotation ()

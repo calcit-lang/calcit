@@ -18,11 +18,13 @@
         'main! $ %{} 'CodeEntry (:doc "|Run def metadata lookup tests")
           :code $ quote $ defn main! () (log-title "|Testing def metadata") (test-local-def) (test-core-def) (test-missing-doc)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
-          :code $ quote $ defn reload! () (:: 'Unit)
+          :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-core-def $ %{} 'CodeEntry (:doc "|lookup calcit.core definitions")
           :code $ quote $ defn test-core-def ()
             inside-eval: $ let
@@ -32,7 +34,8 @@
               assert= :Fn $ &enum:nth schema 0
               assert= true $ option:some? $ get (&enum:nth schema 1) :args
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-local-def $ %{} 'CodeEntry (:doc "|lookup local definition metadata")
           :code $ quote $ defn test-local-def ()
             inside-eval: $ let
@@ -43,12 +46,14 @@
               assert= (%some 'Number)
                 get (&enum:nth schema 1) :return
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-missing-doc $ %{} 'CodeEntry (:doc "|missing definition returns empty doc string")
           :code $ quote $ defn test-missing-doc ()
             inside-eval: $ assert= | $ &get-def-doc |test-def-meta.main/not-a-real-def
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-def-meta.main
           :require $ util.core :refer $ log-title inside-eval:
