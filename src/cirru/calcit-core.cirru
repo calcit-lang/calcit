@@ -10354,9 +10354,30 @@
             :return $ :: 'Map 'K 'V
           :tests $ []
             %{} 'TestEntry (:name |combines-maps-left-to-right)
-              :code $ quote $ assert=
-                {,} :a nil :b 12 :c nil :d 14
-                merge ({,} :a 1 :b 2 :c 3) ({,} :a nil :b 12) ({,} :c nil :d 14)
+              :code $ quote $ do
+                assert=
+                  {,} :a nil :b 12 :c nil :d 14
+                  merge ({,} :a 1 :b 2 :c 3) ({,} :a nil :b 12) ({,} :c nil :d 14)
+                let
+                    read-input $ fn ()
+                      hint-fn $ {}
+                        :args $ []
+                        :return $ :: 'Map 'Tag 'Dynamic
+                      {} (:time 12) (:missing nil)
+                    input $ read-input
+                    defaults $ {} $ :done? false
+                  assert= (Option :some 12)
+                    get (merge defaults input) :time
+                  assert= (Option :some 12)
+                    get (merge input defaults) :time
+                  assert= (Option :some 12)
+                    get (.merge defaults input) :time
+                  assert= (Option :some 12)
+                    get (input .merge defaults) :time
+                  assert= (Option :some nil)
+                    get (merge defaults input) :missing
+                  assert= (Option :some false)
+                    get (merge input defaults) :done?
               :tags $ #{} :core :unit
             %{} 'TestEntry
               :name |map-method-combination-preserves-overwrite-order

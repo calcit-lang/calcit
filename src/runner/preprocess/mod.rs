@@ -7780,6 +7780,38 @@ fn expected_method_argument_types(
   };
   let fn_annotation = signature.as_function()?;
   let bindings = method_receiver_bindings(type_value, fn_annotation)?;
+  if specialized_types.is_none() {
+    // A receiver starts the invocation; later input evidence can still keep
+    // its shared payload open. Do not freeze the first input into a concrete
+    // contract before the ordinary call proof sees the remaining operands.
+    let mut generics = fn_annotation.generics.as_ref().clone();
+    generics.extend(bindings.keys().cloned());
+    let actual_types = args.iter().map(|arg| resolve_type_value(arg, scope_types)).collect::<Vec<_>>();
+    let actual_context = actual_types.iter().flatten().cloned().collect::<Vec<_>>();
+    let mut expected_context = fn_annotation.arg_types.clone();
+    expected_context.extend(fn_annotation.rest_type.iter().cloned());
+    let mut proof = scope_types.call_type_proof(&generics, &expected_context, &actual_context);
+    proof.prepare_inputs(
+      args
+        .iter()
+        .zip(&actual_types)
+        .enumerate()
+        .filter_map(|(index, (argument, actual))| {
+          let expected = fn_annotation.arg_types.get(index).or(fn_annotation.rest_type.as_ref())?;
+          type_inference::generic_input_evidence(argument, actual.as_deref()?, expected)
+        }),
+    );
+    proof.prove(type_value, fn_annotation.arg_types.first().or(fn_annotation.rest_type.as_ref())?);
+    return Some(MethodArgumentContext {
+      receiver_specialized: false,
+      argument_types: fn_annotation
+        .arg_types
+        .iter()
+        .skip(1)
+        .map(|arg| proof.result(arg).unwrap_or_else(|| arg.clone()))
+        .collect(),
+    });
+  }
   Some(MethodArgumentContext {
     receiver_specialized: specialized_types.is_some(),
     argument_types: specialized_types
@@ -9443,20 +9475,30 @@ fn validate_method_call(
   let type_value = resolve_type_value(receiver, scope_types).unwrap_or_else(|| inferred_receiver_type.clone());
 
   if REQUIRE_ASSERTION_PROOF.with(Cell::get) {
-    let contract = scoped_static_method_contract(type_value.as_ref(), method_name, scope_types);
-    if let Some(mut arg_types) = contract.arg_types {
-      arg_types.insert(0, type_value.clone());
-      let signature = CalcitFnTypeAnnotation {
-        arg_types,
-        runtime_arity: None,
-        return_type: contract.return_type.unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()),
-        rest_type: contract.rest_type,
-        generics: Arc::new(contract.generics.into_iter().map(Arc::from).collect()),
-        where_bounds: Arc::new(vec![]),
-        fn_kind: SchemaKind::Fn,
-        features: Arc::new(HashSet::new()),
-      };
+    if let Some(signature) = type_inference::method_call_signature(head, args, scope_types) {
+      let mut signature = signature.as_ref().clone();
+      if let Some(bindings) = method_receiver_bindings(&type_value, &signature) {
+        Arc::make_mut(&mut signature.generics).extend(bindings.keys().cloned());
+      }
+      // Query metadata specializes a receiver for display. Invocation proof
+      // must instead bind the original method against every actual input.
       reject_strict_unproven_generic_relation(head, args, &signature, scope_types, file_ns, call_stack, head.get_location())?;
+    } else {
+      let contract = scoped_static_method_contract(type_value.as_ref(), method_name, scope_types);
+      if let Some(mut arg_types) = contract.arg_types {
+        arg_types.insert(0, type_value.clone());
+        let signature = CalcitFnTypeAnnotation {
+          arg_types,
+          runtime_arity: None,
+          return_type: contract.return_type.unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()),
+          rest_type: contract.rest_type,
+          generics: Arc::new(contract.generics.into_iter().map(Arc::from).collect()),
+          where_bounds: Arc::new(vec![]),
+          fn_kind: SchemaKind::Fn,
+          features: Arc::new(HashSet::new()),
+        };
+        reject_strict_unproven_generic_relation(head, args, &signature, scope_types, file_ns, call_stack, head.get_location())?;
+      }
     }
   }
 
@@ -14596,7 +14638,7 @@ fn find_unproven_generic_argument(
     return None;
   }
 
-  let mut argument_contracts = args
+  let argument_contracts = args
     .iter()
     .enumerate()
     .filter_map(|(index, arg)| {
@@ -14616,16 +14658,6 @@ fn find_unproven_generic_argument(
         })
     })
     .collect::<Vec<_>>();
-  // Inspect open evidence first so intentional Dynamic transport is not narrowed by a later concrete peer.
-  argument_contracts.sort_by_key(|(_, arg, _)| {
-    !resolve_type_value(arg, scope_types)
-      .or_else(|| match arg {
-        Calcit::Local(local) => Some(local.type_info.clone()),
-        _ => None,
-      })
-      .is_some_and(|actual| contains_dynamic_type(actual.as_ref()))
-  });
-
   let expected_types = argument_contracts
     .iter()
     .map(|(_, _, expected)| (*expected).clone())
@@ -14635,6 +14667,17 @@ fn find_unproven_generic_argument(
     .filter_map(|arg| resolve_type_value(arg, scope_types))
     .collect::<Vec<_>>();
   let mut call_proof = scope_types.call_type_proof(&signature.generics, &expected_types, &actual_types);
+  let inputs = argument_contracts
+    .iter()
+    .filter_map(|(_, argument, expected)| {
+      let actual = resolve_type_value(argument, scope_types).or_else(|| match argument {
+        Calcit::Local(local) => Some(local.type_info.clone()),
+        _ => None,
+      })?;
+      type_inference::generic_input_evidence(argument, &actual, expected).map(|(actual, expected)| (actual.clone(), expected.clone()))
+    })
+    .collect::<Vec<_>>();
+  call_proof.prepare_inputs(inputs.iter().map(|(actual, expected)| (actual, expected)));
   let mut inspect = |index: usize, arg: &Calcit, expected: &Arc<CalcitTypeAnnotation>| {
     if matches!(expected.as_ref(), CalcitTypeAnnotation::Dynamic) {
       return None;

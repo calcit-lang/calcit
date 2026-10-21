@@ -106,6 +106,17 @@ fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str
         .map(|argument| resolve_type_value(argument, ctx.scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()))
         .collect::<Vec<_>>();
       let mut proof = ctx.scope_types.call_type_proof(&signature.generics, &parameters, &actual_types);
+      proof.prepare_inputs(
+        ctx
+          .args
+          .iter()
+          .zip(&actual_types)
+          .enumerate()
+          .filter_map(|(index, (argument, actual))| {
+            let expected = signature.arg_types.get(index).or(signature.rest_type.as_ref())?;
+            super::type_inference::generic_input_evidence(argument, actual, expected)
+          }),
+      );
       for (index, parameter) in parameters.iter().enumerate() {
         let (parameter, limit) = match parameter.as_ref() {
           CalcitTypeAnnotation::Variadic(inner) => (inner.as_ref(), usize::MAX),
@@ -598,6 +609,28 @@ where
     .map(|arg| resolve_type_value(arg, ctx.scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()))
     .collect::<Vec<_>>();
   let mut proof = ctx.scope_types.call_type_proof(ctx.generics, ctx.expected_types, &actual_types);
+  if !ctx.generics.is_empty() {
+    proof.prepare_inputs(
+      ctx
+        .args
+        .iter()
+        .zip(&actual_types)
+        .enumerate()
+        .filter_map(|(index, (argument, actual))| {
+          let expected = ctx.expected_types.get(index).or_else(|| {
+            ctx
+              .expected_types
+              .last()
+              .filter(|last| matches!(last.as_ref(), CalcitTypeAnnotation::Variadic(_)))
+          })?;
+          let expected = match expected.as_ref() {
+            CalcitTypeAnnotation::Variadic(inner) => inner.as_ref(),
+            _ => expected.as_ref(),
+          };
+          super::type_inference::generic_input_evidence(argument, actual, expected)
+        }),
+    );
+  }
   let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
   for (idx, (arg, expected_type)) in ctx.args.iter().zip(ctx.expected_types.iter()).enumerate() {
     if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) {

@@ -997,6 +997,23 @@ pub(crate) fn resolve_generic_return_type<'a>(
   )
 }
 
+/// Keep absent payloads out of call constraints while retaining actual open
+/// values. Inference and checking must prepare the same input evidence.
+pub(super) fn generic_input_evidence<'a>(
+  argument: &Calcit,
+  actual: &'a CalcitTypeAnnotation,
+  expected: &'a CalcitTypeAnnotation,
+) -> Option<(&'a CalcitTypeAnnotation, &'a CalcitTypeAnnotation)> {
+  if matches!(expected, CalcitTypeAnnotation::Dynamic)
+    || super::empty_container_has_no_type_evidence(argument, expected)
+    || core_option_none_without_payload(argument, actual, expected)
+  {
+    None
+  } else {
+    Some(core_result_err_payload_types(argument, actual, expected).unwrap_or((actual, expected)))
+  }
+}
+
 fn resolve_generic_return_type_parts<'a>(
   generics: &[Arc<str>],
   arg_types: &[Arc<CalcitTypeAnnotation>],
@@ -1019,6 +1036,7 @@ fn resolve_generic_return_type_parts<'a>(
   expected_types.extend(rest_type.cloned());
   expected_types.push(return_type.clone());
   let mut call_proof = scope_types.call_type_proof(generics, &expected_types, &actual_types);
+  let mut inputs = Vec::with_capacity(call_args.len());
 
   // Match fixed and variadic actual arguments against the declared types.
   // Rest-only generic functions otherwise lose their payload type before a
@@ -1042,16 +1060,13 @@ fn resolve_generic_return_type_parts<'a>(
       }
       _ => None,
     })?;
-    if core_option_none_without_payload(arg, actual_type.as_ref(), expected_type.as_ref()) {
-      continue;
+    if let Some((actual, expected)) = generic_input_evidence(arg, &actual_type, expected_type) {
+      inputs.push((actual.clone(), expected.clone()));
     }
-    if let Some((actual_error, expected_error)) = core_result_err_payload_types(arg, actual_type.as_ref(), expected_type.as_ref()) {
-      if call_proof.prove(actual_error, expected_error).is_mismatch() {
-        return None;
-      }
-      continue;
-    }
-    if call_proof.prove(actual_type.as_ref(), expected_type.as_ref()).is_mismatch() {
+  }
+  call_proof.prepare_inputs(inputs.iter().map(|(actual, expected)| (actual, expected)));
+  for (actual, expected) in &inputs {
+    if call_proof.prove(actual, expected).is_mismatch() {
       return None;
     }
   }
@@ -1961,6 +1976,13 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
           let mut expected_types = contract.arg_types.clone();
           expected_types.push(contract.return_type.clone());
           let mut call_proof = scope_types.call_type_proof(&contract.generics, &expected_types, &actual_types);
+          call_proof.prepare_inputs(
+            projected
+              .iter()
+              .zip(&actual_types)
+              .zip(&contract.arg_types)
+              .filter_map(|((argument, actual), expected)| generic_input_evidence(argument, actual, expected)),
+          );
           for (argument, expected) in projected.iter().zip(&contract.arg_types) {
             if !call_proof
               .prove(resolve_type_value(argument, scope_types)?.as_ref(), expected)
@@ -2864,6 +2886,16 @@ fn infer_typed_method_result<'a>(
   expected_types.extend(signature.rest_type.iter().cloned());
   expected_types.push(signature.return_type.clone());
   let mut proof = scope_types.call_type_proof(&generics, &expected_types, &actual_types);
+  let inputs = arguments
+    .iter()
+    .zip(&actual_types)
+    .enumerate()
+    .filter_map(|(index, (argument, actual))| {
+      let expected = signature.arg_types.get(index).or(signature.rest_type.as_ref())?;
+      generic_input_evidence(argument, actual, expected)
+    })
+    .collect::<Vec<_>>();
+  proof.prepare_inputs(inputs.iter().copied());
   for (index, (argument, actual)) in arguments.iter().zip(&actual_types).enumerate() {
     let Some(expected) = signature.arg_types.get(index).or(signature.rest_type.as_ref()) else {
       return calcit::DYNAMIC_TYPE.clone();
@@ -3143,17 +3175,17 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
     if !type_sig.return_type.contains_type_var() {
       return type_sig.return_type.clone();
     }
-    let mut bindings = HashMap::new();
-    for (argument, expected) in xs.iter().skip(1).zip(type_sig.arg_types.iter()) {
-      if let Some(actual) = resolve_type_value(argument, scope_types) {
-        actual.prove_with_bindings(expected, &mut bindings);
-      }
-    }
-    if bindings.is_empty() {
-      type_sig.return_type.clone()
-    } else {
-      type_sig.return_type.substitute_type_vars(&bindings)
-    }
+    let annotation = CalcitTypeAnnotation::from_proc_parts(type_sig.arg_types.clone(), type_sig.return_type.clone(), proc.arity());
+    let signature = annotation.as_function().expect("proc parts form a callable signature");
+    resolve_generic_return_type_parts(
+      &signature.generics,
+      &signature.arg_types,
+      signature.rest_type.as_ref(),
+      &signature.return_type,
+      xs.iter().skip(1),
+      scope_types,
+    )
+    .unwrap_or_else(|| type_sig.return_type.clone())
   })
 }
 
@@ -3697,6 +3729,12 @@ fn infer_enum_applied_args<'a>(
   // Constructor variables belong to the enum, not to a same-named caller
   // generic nested in a payload. Reuse the call proof's fresh binder scope.
   let mut proof = scope_types.call_type_proof(enum_proto.generics(), &expected_types, &actual_types);
+  proof.prepare_inputs(
+    actual_types
+      .iter()
+      .zip(&expected_types)
+      .map(|(actual, expected)| (actual.as_ref(), expected.as_ref())),
+  );
   for (expected, actual) in expected_types.iter().zip(&actual_types) {
     if !proof.prove(actual, expected).is_proven() {
       return None;
@@ -3872,6 +3910,7 @@ fn infer_struct_applied_args<'a>(
   let expected_types = fields.iter().map(|(expected, _)| expected.clone()).collect::<Vec<_>>();
   let actual_types = fields.iter().map(|(_, actual)| actual.clone()).collect::<Vec<_>>();
   let mut proof = scope_types.call_type_proof(&struct_def.generics, &expected_types, &actual_types);
+  proof.prepare_inputs(fields.iter().map(|(expected, actual)| (actual.as_ref(), expected.as_ref())));
   for (expected, actual) in fields {
     if proof.prove(&actual, &expected).is_mismatch() {
       return struct_def.generics.iter().map(|_| calcit::DYNAMIC_TYPE.clone()).collect();

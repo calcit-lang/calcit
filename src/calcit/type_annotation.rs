@@ -292,6 +292,7 @@ pub(crate) struct CallTypeProof {
   renaming: TypeBindings,
   bindings: TypeBindings,
   fresh_names: HashSet<Arc<str>>,
+  unresolved_inputs: HashSet<Arc<str>>,
   caller_capabilities: Option<Arc<TypeBindings>>,
 }
 
@@ -399,6 +400,7 @@ impl CallTypeProof {
       renaming,
       bindings: TypeBindings::new(),
       fresh_names,
+      unresolved_inputs: HashSet::new(),
       caller_capabilities: None,
     }
   }
@@ -406,6 +408,66 @@ impl CallTypeProof {
   pub(crate) fn with_caller_capabilities(mut self, capabilities: Option<Arc<TypeBindings>>) -> Self {
     self.caller_capabilities = capabilities;
     self
+  }
+
+  /// Prepare one invocation from independent input evidence before checking it.
+  /// A common bound must be one of the actual annotations and accept every
+  /// contributor under rigid proof; incompatible peers never invent Dynamic.
+  /// Argument proof still checks variance, invariant references and bounds.
+  pub(crate) fn prepare_inputs<'a>(&mut self, inputs: impl IntoIterator<Item = (&'a CalcitTypeAnnotation, &'a CalcitTypeAnnotation)>) {
+    if self.fresh_names.is_empty() {
+      return;
+    }
+    let mut constraints: HashMap<Arc<str>, Vec<Arc<CalcitTypeAnnotation>>> = HashMap::new();
+    for (actual, expected) in inputs {
+      // A polymorphic callback owns its quantifiers. Its existing contextual
+      // instantiation below must run before its output can become evidence.
+      if matches!((actual, expected), (CalcitTypeAnnotation::Fn(actual), CalcitTypeAnnotation::Fn(_))
+        if !actual.generics.is_empty())
+      {
+        continue;
+      }
+      let expected = expected.substitute_type_vars(&self.renaming);
+      let mut independent = TypeBindings::new();
+      if actual.prove_available_bindings(&expected, &mut independent).is_mismatch()
+        || independent.keys().any(|name| !self.fresh_names.contains(name))
+      {
+        continue;
+      }
+      for (name, evidence) in independent {
+        constraints.entry(name).or_default().push(evidence);
+      }
+    }
+    let rigidly_proves = |actual: &CalcitTypeAnnotation, expected: &CalcitTypeAnnotation| {
+      Self::default()
+        .with_caller_capabilities(self.caller_capabilities.clone())
+        .prove(actual, expected)
+        .is_proven()
+    };
+    for (name, evidence) in constraints {
+      // A single non-reflexive producer needs no peer reconciliation. Leave
+      // its first bind to argument proof: storing a nominal trait value in T
+      // is not a claim that it implements that same trait as a capability.
+      if evidence.len() == 1 && !rigidly_proves(&evidence[0], &evidence[0]) {
+        continue;
+      }
+      // A possible upper bound can replace the previous candidate only when
+      // it accepts it. Checking all contributors at the end is linear and also
+      // handles an explicit open producer appearing after incompatible peers.
+      let mut candidate = evidence[0].clone();
+      for actual in evidence.iter().skip(1) {
+        if rigidly_proves(&candidate, actual) {
+          candidate = actual.clone();
+        }
+      }
+      if evidence.iter().all(|actual| rigidly_proves(actual, &candidate)) {
+        self.bindings.insert(name, candidate);
+      } else {
+        // Keep unrelated projections available, but no later speculative
+        // argument match may expose a conflicted narrow binding as a result.
+        self.unresolved_inputs.insert(name);
+      }
+    }
   }
 
   /// Proves one argument against its expected contract, binding only fresh
@@ -607,7 +669,19 @@ impl CallTypeProof {
   }
 
   pub(crate) fn result(&self, expected: &CalcitTypeAnnotation) -> Option<Arc<CalcitTypeAnnotation>> {
-    let resolved = expected.substitute_type_vars(&self.renaming).substitute_type_vars(&self.bindings);
+    let available;
+    let bindings = if self.unresolved_inputs.is_empty() {
+      &self.bindings
+    } else {
+      available = self
+        .bindings
+        .iter()
+        .filter(|(name, _)| !self.unresolved_inputs.contains(*name))
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect();
+      &available
+    };
+    let resolved = expected.substitute_type_vars(&self.renaming).substitute_type_vars(bindings);
     if self.fresh_names.iter().any(|name| resolved.contains_type_var_named(name)) {
       None
     } else {
@@ -620,7 +694,11 @@ impl CallTypeProof {
   pub(crate) fn result_or_open(&self, expected: &CalcitTypeAnnotation) -> Arc<CalcitTypeAnnotation> {
     let mut bindings = self.bindings.clone();
     for name in &self.fresh_names {
-      bindings.entry(name.clone()).or_insert_with(|| DYNAMIC_TYPE.clone());
+      if self.unresolved_inputs.contains(name) {
+        bindings.insert(name.clone(), DYNAMIC_TYPE.clone());
+      } else {
+        bindings.entry(name.clone()).or_insert_with(|| DYNAMIC_TYPE.clone());
+      }
     }
     expected.substitute_type_vars(&self.renaming).substitute_type_vars(&bindings)
   }
@@ -7842,6 +7920,13 @@ mod tests {
   fn call_type_proof_does_not_keep_concrete_precision_after_dynamic_transport() {
     let t = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
     let number = Arc::new(CalcitTypeAnnotation::Number);
+    let trait_value = Arc::new(CalcitTypeAnnotation::Trait(Arc::new(CalcitTrait::new_reference(
+      "tests/StoredTrait",
+    ))));
+    let mut stored = CallTypeProof::new(&[Arc::from("T")], std::slice::from_ref(&t), std::slice::from_ref(&trait_value));
+    stored.prepare_inputs([(trait_value.as_ref(), t.as_ref())]);
+    assert!(stored.prove(&trait_value, &t).is_proven());
+    assert_eq!(stored.result(&t), Some(trait_value));
     for actual in [[number.clone(), DYNAMIC_TYPE.clone()], [DYNAMIC_TYPE.clone(), number.clone()]] {
       let mut proof = CallTypeProof::new(&[Arc::from("T")], std::slice::from_ref(&t), &actual);
       for argument in &actual {
@@ -7851,6 +7936,74 @@ mod tests {
       let mut concrete = CallTypeProof::new(&[], std::slice::from_ref(&number), &actual);
       assert!(!concrete.prove(&CalcitTypeAnnotation::Dynamic, &number).is_proven());
     }
+
+    let key = Arc::new(CalcitTypeAnnotation::Tag);
+    let expected = Arc::new(CalcitTypeAnnotation::Map(key.clone(), t.clone()));
+    let narrow = Arc::new(CalcitTypeAnnotation::Map(key.clone(), number.clone()));
+    let open = Arc::new(CalcitTypeAnnotation::Map(key.clone(), DYNAMIC_TYPE.clone()));
+    let text = Arc::new(CalcitTypeAnnotation::Map(key, Arc::new(CalcitTypeAnnotation::String)));
+    for actual in [
+      vec![narrow.clone(), open.clone()],
+      vec![open.clone(), narrow.clone()],
+      vec![narrow.clone(), text.clone(), open.clone()],
+      vec![open.clone(), text.clone(), narrow.clone()],
+    ] {
+      let mut proof = CallTypeProof::new(&[Arc::from("T")], std::slice::from_ref(&expected), &actual);
+      proof.prepare_inputs(actual.iter().map(|actual| (actual.as_ref(), expected.as_ref())));
+      for argument in &actual {
+        assert!(proof.prove(argument, &expected).is_proven());
+      }
+      assert_eq!(proof.result(&expected), Some(open.clone()));
+    }
+    for actual in [[narrow.clone(), text.clone()], [text, narrow]] {
+      let mut proof = CallTypeProof::new(&[Arc::from("T")], std::slice::from_ref(&expected), &actual);
+      proof.prepare_inputs(actual.iter().map(|actual| (actual.as_ref(), expected.as_ref())));
+      assert!(actual.iter().any(|actual| !proof.prove(actual, &expected).is_proven()));
+      assert!(
+        proof.result(&expected).is_none(),
+        "conflicting closed inputs cannot expose a narrow result"
+      );
+    }
+
+    let caller = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("Caller")));
+    for actual in [[caller.clone(), number.clone()], [number.clone(), caller.clone()]] {
+      let mut proof = CallTypeProof::new(&[Arc::from("T")], std::slice::from_ref(&t), &actual);
+      proof.prepare_inputs(actual.iter().map(|actual| (actual.as_ref(), t.as_ref())));
+      assert!(actual.iter().any(|actual| !proof.prove(actual, &t).is_proven()));
+      assert!(proof.result(&t).is_none());
+    }
+    let invariant = Arc::new(CalcitTypeAnnotation::Ref(t.clone()));
+    let actual = [
+      Arc::new(CalcitTypeAnnotation::Ref(number.clone())),
+      Arc::new(CalcitTypeAnnotation::Ref(DYNAMIC_TYPE.clone())),
+    ];
+    let mut proof = CallTypeProof::new(&[Arc::from("T")], std::slice::from_ref(&invariant), &actual);
+    proof.prepare_inputs(actual.iter().map(|actual| (actual.as_ref(), invariant.as_ref())));
+    assert!(actual.iter().any(|actual| !proof.prove(actual, &invariant).is_proven()));
+
+    let callback = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![t.clone()], number.clone()));
+    let narrow_callback = Arc::new(CalcitTypeAnnotation::from_function_parts(vec![number.clone()], number.clone()));
+    let mut proof = CallTypeProof::new(
+      &[Arc::from("T")],
+      &[callback.clone(), t.clone()],
+      &[narrow_callback.clone(), DYNAMIC_TYPE.clone()],
+    );
+    proof.prepare_inputs([(narrow_callback.as_ref(), callback.as_ref()), (DYNAMIC_TYPE.as_ref(), t.as_ref())]);
+    assert!(
+      !proof.prove(&narrow_callback, &callback).is_proven(),
+      "callback inputs remain contravariant"
+    );
+
+    let pair = Arc::new(CalcitTypeAnnotation::Map(t.clone(), Arc::new(CalcitTypeAnnotation::String)));
+    let actual = Arc::new(CalcitTypeAnnotation::Map(number.clone(), DYNAMIC_TYPE.clone()));
+    let mut proof = CallTypeProof::new(&[Arc::from("T")], std::slice::from_ref(&pair), std::slice::from_ref(&actual));
+    proof.prepare_inputs([(actual.as_ref(), pair.as_ref())]);
+    assert!(!proof.prove(&actual, &pair).is_proven());
+    assert_eq!(
+      proof.result(&t),
+      Some(number),
+      "an independent payload survives an unrelated open boundary"
+    );
   }
 
   #[test]
