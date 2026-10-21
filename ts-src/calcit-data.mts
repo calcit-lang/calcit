@@ -730,7 +730,7 @@ export let _$n_map_$o_get = function (xs: CalcitValue, k: CalcitValue) {
 
   if (xs instanceof CalcitMap || xs instanceof CalcitSliceMap) return xs.contains(k) ? option_some(xs.get(k)) : option_none();
 
-  throw new Error("Does not support `&get` on this type");
+  throw new Error("&map:get expected a Map");
 };
 
 export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
