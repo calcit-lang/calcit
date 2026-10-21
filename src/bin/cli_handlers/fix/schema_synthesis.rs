@@ -1,6 +1,12 @@
 use super::*;
 use calcit::calcit::NullableOrigin;
+use calcit::runner::preprocess::ResolvedSourceUsage;
+use std::collections::HashMap;
 use std::sync::Arc;
+
+// Ordinary source references are inventory, not argument or implementation
+// proof. Keep this cache local to one immutable Snapshot/entry analysis.
+type SourceUsageInventory = HashMap<(String, String), Result<Vec<ResolvedSourceUsage>, String>>;
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct SchemaEvidenceCandidate {
@@ -254,6 +260,7 @@ fn merge_callsite_argument_evidence(
   target_ns: &str,
   target_def: &str,
   tolerate_unavailable_owners: bool,
+  source_usages: &mut SourceUsageInventory,
 ) -> Result<(std::sync::Arc<CalcitTypeAnnotation>, Vec<Value>), String> {
   struct StrictTypesGuard(bool);
 
@@ -290,25 +297,24 @@ fn merge_callsite_argument_evidence(
       .and_then(|file| file.defs.get(owner_def))
       .ok_or_else(|| format!("Project definition `{owner_ns}/{owner_def}` is missing from the source snapshot."))?;
     let owner_is_macro = list_head(&source_entry.code) == Some("defmacro");
-    if let Err(failure) = runner::preprocess::compile_source_def_for_snapshot(owner_ns, owner_def, &warnings, &CallStackList::default())
-    {
-      if tolerate_unavailable_owners {
-        unavailable_owners.push(format!("{owner_ns}/{owner_def}"));
-        continue;
-      }
-      return Err(failure.msg);
-    }
-    let usages = match runner::preprocess::trace_definition_source_usages(owner_ns, owner_def, &warnings, &CallStackList::default()) {
+    let usages = source_usages.entry((owner_ns.clone(), owner_def.clone())).or_insert_with(|| {
+      runner::preprocess::compile_source_def_for_snapshot(owner_ns, owner_def, &warnings, &CallStackList::default())
+        .map_err(|failure| failure.msg)?;
+      runner::preprocess::trace_definition_source_usages(owner_ns, owner_def, &warnings, &CallStackList::default())
+        .map_err(|failure| failure.msg)
+    });
+    let usages = match usages {
       Ok(usages) => usages,
       Err(_) if tolerate_unavailable_owners => {
         unavailable_owners.push(format!("{owner_ns}/{owner_def}"));
         continue;
       }
-      Err(failure) => return Err(failure.msg),
+      Err(message) => return Err(message.clone()),
     };
     let usages = usages
-      .into_iter()
+      .iter()
       .filter(|usage| usage.target_ns.as_ref() == target_ns && usage.target_def.as_ref() == target_def)
+      .cloned()
       .collect::<Vec<_>>();
     if usages.is_empty() {
       continue;
@@ -474,6 +480,7 @@ fn schema_candidate_for_definition(
   namespace: &str,
   definition: &str,
   tolerate_unavailable_owners: bool,
+  source_usages: &mut SourceUsageInventory,
 ) -> Result<Option<SchemaEvidenceCandidate>, String> {
   let entry = snapshot
     .files
@@ -515,6 +522,7 @@ fn schema_candidate_for_definition(
     namespace,
     definition,
     tolerate_unavailable_owners,
+    source_usages,
   )?;
   let candidate = refine_schema_holes(&entry.schema, &inferred);
   if candidate == entry.schema {
@@ -625,8 +633,11 @@ pub(crate) fn collect_schema_evidence_candidates(
   targets: &[(String, String)],
 ) -> Result<Vec<SchemaEvidenceCandidate>, String> {
   let mut candidates = Vec::new();
+  let mut source_usages = SourceUsageInventory::new();
   for (namespace, definition) in targets {
-    if let Some(candidate) = schema_candidate_for_definition(snapshot, project_definitions, namespace, definition, true)? {
+    if let Some(candidate) =
+      schema_candidate_for_definition(snapshot, project_definitions, namespace, definition, true, &mut source_usages)?
+    {
       candidates.push(candidate);
     }
   }
@@ -723,7 +734,15 @@ pub(super) fn plan_schema_synthesis(
     ));
   }
 
-  let Some(evidence_candidate) = schema_candidate_for_definition(snapshot, project_definitions, namespace, definition, false)? else {
+  let Some(evidence_candidate) = schema_candidate_for_definition(
+    snapshot,
+    project_definitions,
+    namespace,
+    definition,
+    false,
+    &mut SourceUsageInventory::new(),
+  )?
+  else {
     if std::env::var("CALCIT_FIX_VALIDATE_ONLY").as_deref() == Ok("1") {
       validate_attached_sources_against_synthesized_schema(snapshot, project_definitions, namespace, definition)?;
     }
