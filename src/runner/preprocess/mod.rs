@@ -1414,10 +1414,18 @@ fn check_top_level_value_schema(
     .and_then(Calcit::get_location)
     .filter(|location| location.ns.as_ref() == ns && location.def.as_ref() == def)
     .unwrap_or_else(|| NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::new(vec![2])));
+  // `def Alias &unit` is not a schema-alias declaration: the definition stays
+  // an ordinary value that consumers may read, so its initializer must inhabit
+  // the schema it publishes. Point placeholder initializers at the valid form.
+  let placeholder_hint = if matches!(actual.as_ref(), CalcitTypeAnnotation::Unit) {
+    "; a definition referenced as a schema type alias is still a value, so replace the `&unit` placeholder with an initializer of the declared type (for example `defn` with matching parameters for a Fn alias, or `[]` for a List alias)"
+  } else {
+    ""
+  };
   Err(CalcitErr::use_msg_stack_location_with_code(
     CalcitErrKind::Type,
     format!(
-      "Value `{ns}/{def}` declares type `{}`, but its initializer has type `{}`",
+      "Value `{ns}/{def}` declares type `{}`, but its initializer has type `{}`{placeholder_hint}",
       expected.to_brief_string(),
       actual.to_brief_string()
     ),

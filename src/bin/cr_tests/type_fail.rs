@@ -1761,6 +1761,79 @@ fn named_callback_schema_rejects_wrong_arguments_and_non_callable_aliases() {
 }
 
 #[test]
+fn schema_alias_definitions_must_inhabit_their_schema_for_all_defs_checks() {
+  run_with_large_stack(|| {
+    let fn_schema = |args: Vec<Arc<CalcitTypeAnnotation>>, return_type: CalcitTypeAnnotation| {
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        runtime_arity: None,
+        generics: Arc::new(vec![]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: args,
+        return_type: Arc::new(return_type),
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      })))
+    };
+    let alias_ref = |name: &str| {
+      Arc::new(CalcitTypeAnnotation::TypeRef(
+        Arc::from(format!("app.main/{name}")),
+        Arc::new(vec![]),
+      ))
+    };
+    // Each alias is consumed only as a type, as in `calcit/test-types.cirru`.
+    // Ordinary loading never reaches the alias value; `--all-defs` does, so
+    // the alias body must be a real inhabitant rather than a `&unit` stub.
+    for (callback_alias, items_alias, accepted) in [
+      ("defn NamedCallback (text) (count text)", "def Items $ [] 1 2", true),
+      ("def NamedCallback &unit", "def Items $ [] 1 2", false),
+      ("defn NamedCallback (text) (count text)", "def Items &unit", false),
+    ] {
+      let snippet = format!(
+        "{callback_alias}\n\n{items_alias}\n\ndefn invoke (callback text) (callback text)\n\ndefn total (items) (count items)\n\ndefn main! () $ &+ (invoke (fn (t) (count t)) |abc) (total $ [] 1 2)\n\ndefn reload! () &unit"
+      );
+      let mut snapshot = snapshot::Snapshot::default();
+      builtins::effects::init_effects_states();
+      let mut file = snapshot::create_file_from_snippet(&snippet).expect("alias snippet should parse");
+      file.defs.get_mut("NamedCallback").expect("callback alias").schema =
+        fn_schema(vec![Arc::new(CalcitTypeAnnotation::String)], CalcitTypeAnnotation::Number);
+      file.defs.get_mut("Items").expect("list alias").schema =
+        Arc::new(CalcitTypeAnnotation::List(Arc::new(CalcitTypeAnnotation::Number)));
+      file.defs.get_mut("invoke").expect("invoke").schema = fn_schema(
+        vec![alias_ref("NamedCallback"), Arc::new(CalcitTypeAnnotation::String)],
+        CalcitTypeAnnotation::Number,
+      );
+      file.defs.get_mut("total").expect("total").schema = fn_schema(vec![alias_ref("Items")], CalcitTypeAnnotation::Number);
+      file.defs.get_mut("main!").expect("main").schema = fn_schema(vec![], CalcitTypeAnnotation::Number);
+      file.defs.get_mut("reload!").expect("reload").schema = fn_schema(vec![], CalcitTypeAnnotation::Unit);
+      snapshot.files.insert("app.main".to_owned(), file);
+      let entries = prepare_snapshot_entries(snapshot);
+      let _strict = StrictTypesReset::enabled();
+      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .expect("entry-reachable code only uses the aliases as types");
+      let failures: Vec<String> = ["NamedCallback", "Items", "invoke", "total"]
+        .into_iter()
+        .filter_map(|def| {
+          runner::preprocess::ensure_ns_def_compiled("app.main", def, &warnings, &CallStackList::default())
+            .err()
+            .map(|err| format!("{def}: [{}] {}", err.code.as_deref().unwrap_or(""), err.msg))
+        })
+        .collect();
+      if accepted {
+        assert!(failures.is_empty(), "inhabited aliases should pass all-defs checks: {failures:?}");
+      } else {
+        assert_eq!(failures.len(), 1, "only the placeholder alias should fail: {failures:?}");
+        assert!(
+          failures[0].contains("E_SCHEMA_DEF_MISMATCH") && failures[0].contains("replace the `&unit` placeholder"),
+          "placeholder alias should report a guided schema mismatch: {failures:?}"
+        );
+      }
+    }
+  });
+}
+
+#[test]
 fn mixed_public_equality_reports_guided_type_mismatches() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries("do\n  = 1 |one\n  = 1 1 |one\n  not= 1 |one\n  /= 1 |one");

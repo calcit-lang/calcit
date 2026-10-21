@@ -193,9 +193,13 @@ match
 非 Dynamic definition schema 可以通过完整的 `'namespace/definition` 名称作为类型别名使用。别名只复用底层类型关系，不创建新的运行时包装；需要名义身份时仍应使用 `defstruct` 或 `defenum`。
 
 ```bash
-calcit edit def app.schema/Items --code 'quote $ def Items &unit'
+calcit edit def app.schema/Items --code 'quote $ def Items $ []'
 calcit edit schema app.schema/Items --code "quote \$ :: 'List 'Number"
+calcit edit def app.schema/NamedCallback --code 'quote $ defn NamedCallback (text) (count text)'
+calcit edit schema app.schema/NamedCallback --code "quote \$ :: 'Fn \$ {} (:args \$ [] 'String) (:return 'Number)"
 ```
+
+别名定义本身仍是一个普通的值，其他代码可以直接读取它，因此初始化表达式必须属于它发布的 schema：数据别名给出该类型的代表值（如上例的空 List），Fn 别名使用参数个数与 schema 一致的 `defn`，函数体按同一签名检查。`def Items &unit` 这类占位写法声明了 `List<Number>` 却求值为 Unit；只要该定义被预处理（作为值被引用，或 `--check-only --all-defs` / `--ns` 检查全部定义），就会报告 `E_SCHEMA_DEF_MISMATCH`，诊断会提示替换 `&unit` 占位。
 
 此后 `'app.schema/Items` 可用于 Struct 字段、Enum payload、callback 或 trait 边界。静态检查、Native 构造验证和 JavaScript codegen 都按同一底层 schema 判断值；不要为 Native 单独增加 coercion。类型别名不能接收泛型实参，循环别名也不会退化成 Dynamic，而是作为无法证明的类型关系拒绝。
 

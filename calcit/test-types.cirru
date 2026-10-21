@@ -24,7 +24,7 @@
           :examples $ []
           :schema $ :: 'Trait
         'NamedCallback $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ def NamedCallback &unit
+          :code $ quote $ defn NamedCallback (text) (count text)
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Number)
             :args $ [] 'String
