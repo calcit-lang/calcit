@@ -3292,3 +3292,53 @@ fn constant_truthy_conditions_report_with_replacement_guidance() {
     );
   });
 }
+
+/// `&enum:nth` and `%::` keep their declared receiver contracts: a known
+/// non-Enum receiver is rejected during strict checking instead of failing at
+/// runtime (#2181). A Rust type-fail test is needed because `:tests` only run
+/// after a clean check and cannot express an expected preprocessing diagnostic.
+#[test]
+fn strict_type_fail_enum_primitives_reject_known_non_enum_receivers() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    for (source, proc_name, expected, actual) in [
+      (
+        "let\n    bad $ fn (xs)\n      hint-fn $ {} (:args $ [] $ :: 'List 'String) (:return 'Tag)\n      &enum:nth xs 0\n  bad $ [] |x",
+        "&enum:nth",
+        "`:enum`",
+        "`list<string>`",
+      ),
+      ("let ((xs ([] 1)))\n  %:: xs :a", "%::", "`:enum-def`", "`list<number>`"),
+    ] {
+      let entries = load_snippet_entries(source);
+      let warnings = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+        .expect("a non-Enum receiver should produce a type diagnostic, not a preprocessing failure");
+      let warnings = warnings.borrow();
+      assert!(
+        warnings.iter().any(|warning| warning.code() == Some("W_PROC_ARG_TYPE_MISMATCH")
+          && warning
+            .message()
+            .contains(&format!("Proc `{proc_name}` arg 1 expects type {expected}, but got {actual}"))),
+        "`{source}` should reject the non-Enum receiver: {warnings:?}"
+      );
+    }
+
+    // Enum receivers, including nominal enum values, stay warning-free.
+    for source in [
+      "let\n    good $ fn (xs)\n      hint-fn $ {} (:args $ [] 'Enum) (:return 'Tag)\n      &enum:nth xs 0\n  good $ :: :ns |demo",
+      "&enum:nth (Option :some 1) 1",
+      "&enum:nth (%:: (defenum E (:a 'Number)) :a 1) 1",
+    ] {
+      let accepted = load_snippet_entries(source);
+      let warnings = RefCell::new(vec![]);
+      runner::preprocess::ensure_ns_def_compiled(&accepted.init_ns, &accepted.init_def, &warnings, &CallStackList::default())
+        .expect("an Enum receiver should preprocess");
+      assert!(
+        warnings.borrow().is_empty(),
+        "`{source}` should stay clean: {:?}",
+        warnings.borrow()
+      );
+    }
+  });
+}
