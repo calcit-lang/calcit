@@ -974,20 +974,30 @@ pub fn handle_query_command(cmd: &QueryCommand, input_path: &str, entry: Option<
   result
 }
 
+/// Reject an unknown global `--entry` before any view runs, so views that only
+/// read the project Snapshot (or never load dependencies) do not silently ignore it.
+fn validate_query_entry(subcommand: &QuerySubcommand, input_path: &str, entry: Option<&str>) -> Result<(), String> {
+  if entry.is_none() || matches!(subcommand, QuerySubcommand::HostProcs(_)) {
+    return Ok(());
+  }
+  load_main_snapshot(input_path)?.select_entry(entry)
+}
+
 fn handle_query_command_inner(cmd: &QueryCommand, input_path: &str, entry: Option<&str>) -> Result<(), String> {
   let mut resolved = cmd.clone();
   resolve_query_cursor_references(&mut resolved, input_path)?;
+  validate_query_entry(&resolved.subcommand, input_path, entry)?;
   match &resolved.subcommand {
     QuerySubcommand::Ns(opts) => match (opts.format.as_str(), opts.namespace.as_deref()) {
-      ("cirru", Some(namespace)) => handle_ns_cirru_view(input_path, namespace),
+      ("cirru", Some(namespace)) => handle_ns_cirru_view(input_path, namespace, entry),
       ("cirru", None) => Err("`query ns --format cirru` needs a namespace: `query ns <namespace> --format cirru`".to_owned()),
       (raw, namespace) => {
         let format = StructuredOutputFormat::parse(raw, "query ns")
           .map_err(|_| format!("Unsupported query ns format '{raw}'. Expected human, edn, json, or cirru."))?;
-        handle_ns(input_path, namespace, opts.deps, format)
+        handle_ns(input_path, namespace, opts.deps, format, entry)
       }
     },
-    QuerySubcommand::Defs(opts) => handle_defs(input_path, opts),
+    QuerySubcommand::Defs(opts) => handle_defs(input_path, opts, entry),
     QuerySubcommand::Pkg(_) => handle_pkg(input_path),
     QuerySubcommand::Config(opts) => handle_config(input_path, opts),
     QuerySubcommand::Error(_) => handle_error(input_path),
@@ -998,30 +1008,30 @@ fn handle_query_command_inner(cmd: &QueryCommand, input_path: &str, entry: Optio
         warn_deprecated_json_switch("query def");
       }
       let (ns, def) = parse_target(&opts.target)?;
-      handle_def(input_path, ns, def, opts)
+      handle_def(input_path, ns, def, opts, entry)
     }
     QuerySubcommand::Peek(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
-      handle_peek(input_path, ns, def)
+      handle_peek(input_path, ns, def, entry)
     }
     QuerySubcommand::Examples(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
-      handle_examples(input_path, ns, def)
+      handle_examples(input_path, ns, def, entry)
     }
     QuerySubcommand::Tests(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
-      handle_tests(input_path, ns, def)
+      handle_tests(input_path, ns, def, entry)
     }
     QuerySubcommand::Find(opts) => {
       if opts.exact {
-        handle_find(input_path, &opts.symbol, opts.deps, opts.detail_offset)
+        handle_find(input_path, &opts.symbol, opts.deps, opts.detail_offset, entry)
       } else {
-        handle_fuzzy_search(input_path, &opts.symbol, opts.deps, opts.limit, opts.detail_offset)
+        handle_fuzzy_search(input_path, &opts.symbol, opts.deps, opts.limit, opts.detail_offset, entry)
       }
     }
     QuerySubcommand::Usages(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
-      handle_usages(input_path, ns, def, opts.deps, opts.detail_offset)
+      handle_usages(input_path, ns, def, opts.deps, opts.detail_offset, entry)
     }
     QuerySubcommand::Search(opts) => {
       let common_opts = SearchCommonOpts {
@@ -1060,14 +1070,14 @@ fn handle_query_command_inner(cmd: &QueryCommand, input_path: &str, entry: Optio
     QuerySubcommand::Schema(opts) => {
       let (ns, def) = parse_target(&opts.target)?;
       let format = resolve_format_with_legacy_json(&opts.format, opts.json, "query schema")?;
-      handle_schema(input_path, ns, def, format)
+      handle_schema(input_path, ns, def, format, entry)
     }
     QuerySubcommand::Type(opts) => handle_type(input_path, opts, entry),
     QuerySubcommand::TypeAt(opts) => handle_type_at(input_path, opts, entry),
     QuerySubcommand::Context(opts) => handle_context(input_path, opts, entry),
     QuerySubcommand::HostProcs(opts) => handle_host_procs(opts),
-    QuerySubcommand::Path(opts) => handle_query_path(input_path, opts),
-    QuerySubcommand::Anchors(opts) => handle_query_anchors(input_path, opts),
+    QuerySubcommand::Path(opts) => handle_query_path(input_path, opts, entry),
+    QuerySubcommand::Anchors(opts) => handle_query_anchors(input_path, opts, entry),
   }
 }
 
@@ -1807,7 +1817,7 @@ mod type_query_tests {
   #[test]
   fn method_query_reads_source_external_object_trait_without_project_initialization() {
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-    let snapshot = load_snapshot("calcit/test-js.cirru").expect("JS fixture should load");
+    let snapshot = load_snapshot("calcit/test-js.cirru", None).expect("JS fixture should load");
     prepare_program_for_type_query_on_cli_stack(snapshot.clone());
 
     let (trait_type, source) =
@@ -1832,7 +1842,7 @@ mod type_query_tests {
   fn js_ffi_query_exposes_dependency_owner_and_source_without_executing_js() {
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     let input = "calcit/js-ffi-consumer.cirru";
-    let snapshot = load_snapshot(input).expect("JS FFI consumer should load");
+    let snapshot = load_snapshot(input, None).expect("JS FFI consumer should load");
     let file = snapshot.files.get("app.main").expect("dependency namespace");
     let inline = file
       .defs
@@ -1976,7 +1986,7 @@ mod type_query_tests {
   #[test]
   fn project_function_schema_argument_resolves_source_backed_struct() {
     let _guard = crate::GLOBAL_TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
-    let snapshot = load_snapshot("calcit/test.cirru").expect("test snapshot should load");
+    let snapshot = load_snapshot("calcit/test.cirru", None).expect("test snapshot should load");
     prepare_program_for_type_query_on_cli_stack(snapshot.clone());
     let schema = program::lookup_def_schema("test-struct.main", "sum-point");
     let CalcitTypeAnnotation::Fn(annotation) = schema.as_ref() else {
@@ -4219,8 +4229,8 @@ pub(crate) fn load_module_with_sources_silent(
   result
 }
 
-fn load_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
-  load_snapshot_with_entry(input_path, None)
+fn load_snapshot(input_path: &str, entry: Option<&str>) -> Result<snapshot::Snapshot, String> {
+  load_snapshot_with_entry(input_path, entry)
 }
 
 pub(crate) fn load_main_snapshot(input_path: &str) -> Result<snapshot::Snapshot, String> {
@@ -4245,16 +4255,21 @@ pub(crate) fn load_main_snapshot(input_path: &str) -> Result<snapshot::Snapshot,
 }
 
 /// Prefer the project Snapshot for metadata-only queries. Dependencies and
-/// core are loaded only when the requested namespace is not local.
-fn load_snapshot_for_namespace(input_path: &str, namespace: &str) -> Result<snapshot::Snapshot, String> {
-  let main_snapshot = load_main_snapshot(input_path)?;
+/// core are loaded only when the requested namespace is not local; dependencies
+/// come from the selected entry's modules (the default entry when `entry` is None).
+/// An unknown entry is rejected even when the namespace is local.
+fn load_snapshot_for_namespace(input_path: &str, namespace: &str, entry: Option<&str>) -> Result<snapshot::Snapshot, String> {
+  let mut main_snapshot = load_main_snapshot(input_path)?;
+  if entry.is_some() {
+    main_snapshot.select_entry(entry)?;
+  }
   if main_snapshot.files.contains_key(namespace) {
     return Ok(main_snapshot);
   }
   if namespace == calcit::calcit::CORE_NS || namespace == "calcit.internal" {
     return load_core_snapshot();
   }
-  load_snapshot(input_path)
+  load_snapshot(input_path, entry)
 }
 
 fn snapshot_search_sources(
@@ -4407,10 +4422,16 @@ fn load_snapshot_with_entry(input_path: &str, entry: Option<&str>) -> Result<sna
 }
 
 /// Handle `query ns` - list namespaces or show ns details
-fn handle_ns(input_path: &str, namespace: Option<&str>, include_deps: bool, format: StructuredOutputFormat) -> Result<(), String> {
+fn handle_ns(
+  input_path: &str,
+  namespace: Option<&str>,
+  include_deps: bool,
+  format: StructuredOutputFormat,
+  entry: Option<&str>,
+) -> Result<(), String> {
   // If namespace is provided, show details (merged read-ns functionality)
   if let Some(ns_name) = namespace {
-    return handle_ns_details(input_path, ns_name, format);
+    return handle_ns_details(input_path, ns_name, format, entry);
   }
 
   // Otherwise list all namespaces
@@ -4428,7 +4449,11 @@ fn handle_ns(input_path: &str, namespace: Option<&str>, include_deps: bool, form
   let main_snapshot = snapshot::load_snapshot_data(&data, input_path)?;
   let main_package = main_snapshot.package.clone();
 
-  let snapshot = if include_deps { load_snapshot(input_path)? } else { main_snapshot };
+  let snapshot = if include_deps {
+    load_snapshot(input_path, entry)?
+  } else {
+    main_snapshot
+  };
 
   let mut namespaces: Vec<&String> = snapshot.files.keys().collect();
   namespaces.sort();
@@ -4470,8 +4495,8 @@ fn handle_ns(input_path: &str, namespace: Option<&str>, include_deps: bool, form
 }
 
 /// Print the namespace's `FileEntry` data as stored in the Snapshot, the input `edit ns` accepts.
-fn handle_ns_cirru_view(input_path: &str, namespace: &str) -> Result<(), String> {
-  let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
+fn handle_ns_cirru_view(input_path: &str, namespace: &str, entry: Option<&str>) -> Result<(), String> {
+  let snapshot = load_snapshot_for_namespace(input_path, namespace, entry)?;
   let file_data = snapshot
     .files
     .get(namespace)
@@ -4481,8 +4506,8 @@ fn handle_ns_cirru_view(input_path: &str, namespace: &str) -> Result<(), String>
 }
 
 /// Handle `query ns <namespace>` - show ns details
-fn handle_ns_details(input_path: &str, namespace: &str, format: StructuredOutputFormat) -> Result<(), String> {
-  let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
+fn handle_ns_details(input_path: &str, namespace: &str, format: StructuredOutputFormat, entry: Option<&str>) -> Result<(), String> {
+  let snapshot = load_snapshot_for_namespace(input_path, namespace, entry)?;
 
   let file_data = snapshot
     .files
@@ -4591,9 +4616,9 @@ fn definition_signature(entry: &snapshot::CodeEntry) -> String {
   format!("(untyped) {text}")
 }
 
-fn handle_defs(input_path: &str, opts: &QueryDefsCommand) -> Result<(), String> {
+fn handle_defs(input_path: &str, opts: &QueryDefsCommand, entry: Option<&str>) -> Result<(), String> {
   let namespace = &opts.namespace;
-  let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
+  let snapshot = load_snapshot_for_namespace(input_path, namespace, entry)?;
 
   let file_data = snapshot
     .files
@@ -4838,8 +4863,8 @@ fn render_chunked_display(display: &ChunkedDisplay) -> String {
 
 /// Print only `quote $ <definition>`, the exact input `edit def --overwrite
 /// --input-format cirru` accepts, so a read can be edited and written back.
-fn handle_def_cirru_view(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
-  let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
+fn handle_def_cirru_view(input_path: &str, namespace: &str, definition: &str, entry: Option<&str>) -> Result<(), String> {
+  let snapshot = load_snapshot_for_namespace(input_path, namespace, entry)?;
   let file_data = snapshot
     .files
     .get(namespace)
@@ -4865,13 +4890,13 @@ fn handle_def_cirru_view(input_path: &str, namespace: &str, definition: &str) ->
 
 /// Show one definition as Markdown (chunked only when large), a structured envelope
 /// (`--format edn|json`), or writable source (`--format cirru`).
-fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryDefCommand) -> Result<(), String> {
+fn handle_def(input_path: &str, namespace: &str, definition: &str, opts: &QueryDefCommand, entry: Option<&str>) -> Result<(), String> {
   if opts.format == "cirru" {
-    return handle_def_cirru_view(input_path, namespace, definition);
+    return handle_def_cirru_view(input_path, namespace, definition, entry);
   }
   let format = parse_query_render_format(&opts.format)?;
   let structured = format != QueryRenderFormat::Human;
-  let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
+  let snapshot = load_snapshot_for_namespace(input_path, namespace, entry)?;
 
   let file_data = snapshot
     .files
@@ -5211,8 +5236,8 @@ fn render_examples_human(target: &str, examples: &[Cirru]) -> String {
 // Progressive disclosure commands
 // ═══════════════════════════════════════════════════════════════════════════════
 
-fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
-  let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
+fn handle_examples(input_path: &str, namespace: &str, definition: &str, entry: Option<&str>) -> Result<(), String> {
+  let snapshot = load_snapshot_for_namespace(input_path, namespace, entry)?;
 
   let file_data = snapshot
     .files
@@ -5244,8 +5269,8 @@ fn handle_examples(input_path: &str, namespace: &str, definition: &str) -> Resul
   Ok(())
 }
 
-fn handle_tests(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
-  let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
+fn handle_tests(input_path: &str, namespace: &str, definition: &str, entry: Option<&str>) -> Result<(), String> {
+  let snapshot = load_snapshot_for_namespace(input_path, namespace, entry)?;
   let file = snapshot
     .files
     .get(namespace)
@@ -5283,8 +5308,8 @@ fn handle_tests(input_path: &str, namespace: &str, definition: &str) -> Result<(
 }
 
 /// Peek definition - show signature/params/doc without full body
-fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<(), String> {
-  let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
+fn handle_peek(input_path: &str, namespace: &str, definition: &str, entry: Option<&str>) -> Result<(), String> {
+  let snapshot = load_snapshot_for_namespace(input_path, namespace, entry)?;
 
   let file_data = snapshot
     .files
@@ -5366,9 +5391,15 @@ fn handle_peek(input_path: &str, namespace: &str, definition: &str) -> Result<()
 }
 
 /// Show definition schema
-fn handle_schema(input_path: &str, namespace: &str, definition: &str, format: StructuredOutputFormat) -> Result<(), String> {
+fn handle_schema(
+  input_path: &str,
+  namespace: &str,
+  definition: &str,
+  format: StructuredOutputFormat,
+  entry: Option<&str>,
+) -> Result<(), String> {
   let structured = format != StructuredOutputFormat::Human;
-  let snapshot = load_snapshot_for_namespace(input_path, namespace)?;
+  let snapshot = load_snapshot_for_namespace(input_path, namespace, entry)?;
 
   let file_data = snapshot
     .files
@@ -5443,8 +5474,8 @@ fn handle_schema(input_path: &str, namespace: &str, definition: &str, format: St
 }
 
 /// Find symbol across all namespaces
-fn handle_find(input_path: &str, symbol: &str, include_deps: bool, detail_offset: usize) -> Result<(), String> {
-  let snapshot = load_snapshot(input_path)?;
+fn handle_find(input_path: &str, symbol: &str, include_deps: bool, detail_offset: usize, entry: Option<&str>) -> Result<(), String> {
+  let snapshot = load_snapshot(input_path, entry)?;
 
   let mut found_definitions: Vec<(String, String)> = vec![];
   let mut found_references: RefResults = vec![]; // (ns, def, context, coords, source)
@@ -5606,8 +5637,15 @@ fn collect_usages_from_snapshot(snapshot: &snapshot::Snapshot, target_ns: &str, 
 }
 
 /// Find usages of a specific definition
-fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_deps: bool, detail_offset: usize) -> Result<(), String> {
-  let snapshot = load_snapshot(input_path)?;
+fn handle_usages(
+  input_path: &str,
+  target_ns: &str,
+  target_def: &str,
+  include_deps: bool,
+  detail_offset: usize,
+  entry: Option<&str>,
+) -> Result<(), String> {
+  let snapshot = load_snapshot(input_path, entry)?;
 
   let target_file = snapshot
     .files
@@ -5846,8 +5884,15 @@ fn find_reference_symbols(code: &Cirru, symbols: &[String]) -> Option<(String, V
 
 /// Fuzzy search for namespace/definition by pattern
 /// Searches for `<pattern>` in qualified names like `namespace/definition`
-fn handle_fuzzy_search(input_path: &str, pattern: &str, include_deps: bool, limit: usize, detail_offset: usize) -> Result<(), String> {
-  let snapshot = load_snapshot(input_path)?;
+fn handle_fuzzy_search(
+  input_path: &str,
+  pattern: &str,
+  include_deps: bool,
+  limit: usize,
+  detail_offset: usize,
+  entry: Option<&str>,
+) -> Result<(), String> {
+  let snapshot = load_snapshot(input_path, entry)?;
 
   let pattern_lower = pattern.to_lowercase();
   let mut results: Vec<(String, String, bool)> = Vec::new(); // (namespace, def, is_core)
@@ -6653,8 +6698,8 @@ fn matches_exact_structure(node: &Cirru, pattern: &Cirru) -> bool {
 // L4: path expression resolver
 // ═══════════════════════════════════════════════════════════════════════════════
 
-fn handle_query_path(input_path: &str, opts: &QueryPathCommand) -> Result<(), String> {
-  let snapshot = load_snapshot_for_namespace(input_path, &opts.namespace)?;
+fn handle_query_path(input_path: &str, opts: &QueryPathCommand, entry: Option<&str>) -> Result<(), String> {
+  let snapshot = load_snapshot_for_namespace(input_path, &opts.namespace, entry)?;
   let file_data = snapshot
     .files
     .get(opts.namespace.as_str())
@@ -6799,8 +6844,8 @@ fn starts_with_pattern(node_children: &[Cirru], pattern: &[Cirru]) -> bool {
 // Phase 4: anchor annotations
 // ═══════════════════════════════════════════════════════════════════════════════
 
-fn handle_query_anchors(input_path: &str, opts: &QueryAnchorsCommand) -> Result<(), String> {
-  let snapshot = load_snapshot_for_namespace(input_path, &opts.namespace)?;
+fn handle_query_anchors(input_path: &str, opts: &QueryAnchorsCommand, entry: Option<&str>) -> Result<(), String> {
+  let snapshot = load_snapshot_for_namespace(input_path, &opts.namespace, entry)?;
   let file_data = snapshot
     .files
     .get(opts.namespace.as_str())
