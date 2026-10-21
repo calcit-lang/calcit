@@ -1381,34 +1381,50 @@ fn validate_serialized_snapshot_content(content: &str) -> Result<(), String> {
     validate_schema_for_write(schema)
   }
 
-  fn walk(node: &Cirru, path: &mut Vec<usize>) -> Result<(), String> {
-    if let Cirru::List(items) = node {
-      if let Some(Cirru::Leaf(head)) = items.first()
-        && &**head == ":schema"
-        && let Some(schema_node) = items.get(1)
-      {
-        if matches!(schema_node, Cirru::Leaf(s) if s.as_ref() == "nil") {
-          return Ok(());
-        }
-        return validate_serialized_schema(schema_node)
-          .map_err(|e| format!("serialized snapshot has invalid `:schema` at {path:?}: {e}"));
-      }
+  fn pairs(node: &Cirru) -> impl Iterator<Item = (usize, &[Cirru])> {
+    let items = match node {
+      Cirru::List(items) => items.as_slice(),
+      _ => &[],
+    };
+    items.iter().enumerate().filter_map(|(index, item)| match item {
+      Cirru::List(pair) if pair.len() == 2 => Some((index, pair.as_slice())),
+      _ => None,
+    })
+  }
 
-      for (idx, item) in items.iter().enumerate() {
-        path.push(idx);
-        walk(item, path)?;
-        path.pop();
-      }
+  fn field<'a>(node: &'a Cirru, name: &str) -> Option<(usize, &'a Cirru)> {
+    pairs(node).find_map(|(index, pair)| matches!(&pair[0], Cirru::Leaf(key) if key.as_ref() == name).then_some((index, &pair[1])))
+  }
+
+  fn validate_entry(node: &Cirru, mut path: Vec<usize>) -> Result<(), String> {
+    let Some((index, schema)) = field(node, ":schema") else {
+      return Ok(());
+    };
+    if matches!(schema, Cirru::Leaf(s) if s.as_ref() == "nil") {
+      return Ok(());
     }
-    Ok(())
+    path.push(index);
+    validate_serialized_schema(schema).map_err(|e| format!("serialized snapshot has invalid `:schema` at {path:?}: {e}"))
   }
 
   let nodes = cirru_parser::parse(content).map_err(|e| format!("Failed to parse serialized snapshot content: {e}"))?;
-  let mut path = vec![];
-  for (idx, node) in nodes.iter().enumerate() {
-    path.push(idx);
-    walk(node, &mut path)?;
-    path.pop();
+  // Follow Snapshot metadata, never recursively interpreting quoted source,
+  // examples, tests or arbitrary FFI data as additional schema declarations.
+  for (root_index, node) in nodes.iter().enumerate() {
+    let Some((files_index, files)) = field(node, ":files") else {
+      continue;
+    };
+    for (file_index, file_pair) in pairs(files) {
+      let Some((defs_index, defs)) = field(&file_pair[1], ":defs") else {
+        continue;
+      };
+      for (def_index, def_pair) in pairs(defs) {
+        validate_entry(
+          &def_pair[1],
+          vec![root_index, files_index, 1, file_index, 1, defs_index, 1, def_index, 1],
+        )?;
+      }
+    }
   }
   Ok(())
 }
@@ -6134,11 +6150,16 @@ mod tests {
             {} (:args $ [] :dynamic) (:generics $ [] ''T) (:return :dynamic)
 "#;
 
-    let err = validate_serialized_snapshot_content(content).expect_err("serialized snapshot should reject double-quoted generics");
-    assert!(
-      err.contains("serialized snapshot has invalid `:schema`") && err.contains("excess leading quotes"),
-      "unexpected error: {err}"
-    );
+    for content in [
+      content.to_owned(),
+      content.replace("%{} :FileEntry", "{}").replace("%{} :CodeEntry", "{}"),
+    ] {
+      let err = validate_serialized_snapshot_content(&content).expect_err("serialized snapshot should reject double-quoted generics");
+      assert!(
+        err.contains("serialized snapshot has invalid `:schema`") && err.contains("excess leading quotes"),
+        "unexpected error: {err}"
+      );
+    }
   }
 
   #[test]
