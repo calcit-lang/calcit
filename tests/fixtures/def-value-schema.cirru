@@ -2761,7 +2761,7 @@
               :tags $ #{} :diary-boundary :unit
             %{} 'TestEntry (:name |nominal-component-state)
               :code $ quote $ do (verify-values)
-                assert= |Ada $ :username $ assoc initial-state :username |Ada
+                assert= |Ada $ :username $ .assoc initial-state :username |Ada
                 assert= | $ :username initial-state
               :tags $ #{} :diary-boundary :unit
             %{} 'TestEntry (:name |checked-patch-projection)
@@ -2770,7 +2770,7 @@
                   previous $ match (prepare-client-patch previous-raw)
                     (:ok candidate) candidate
                     (:err reason) (raise reason)
-                  next-raw $ assoc previous-raw :count 2
+                  next-raw $ .assoc previous-raw :count 2
                 match (prepare-client-patch next-raw)
                   (:ok candidate)
                     do
@@ -2781,7 +2781,7 @@
                       assert= 1 $ :count $ :typed previous
                   (:err reason) (raise reason)
                 match
-                  prepare-client-patch $ assoc next-raw :count |invalid
+                  prepare-client-patch $ .assoc next-raw :count |invalid
                   (:ok _) (raise |invalid-patch-candidate-accepted)
                   (:err reason)
                     do
