@@ -287,10 +287,10 @@ export let _$n_assert_traits = function (value: CalcitValue, traitDef: CalcitVal
   if (!(traitDef instanceof CalcitTrait)) {
     throw new Error(`&assert-traits expected a trait definition, but received: ${toString(traitDef, true)}`);
   }
-  // Use the same merged builtin + attached impl list as method dispatch.
-  // Otherwise records and tuples can call a builtin method while
-  // `assert-traits` incorrectly claims that the corresponding trait is absent.
-  const pair = lookup_impls(value);
+  // Resolve the requested origin from builtin + attached impls. Ordinary
+  // method tables may already belong to a later generated core; instance-only
+  // lookup would also miss builtin record/tuple traits.
+  const pair = lookup_impls(value, traitDef);
   if (pair == null) {
     throw new Error(`&assert-traits cannot resolve impls for: ${toString(value, true)}`);
   }
@@ -318,7 +318,8 @@ export let _$n_assert_traits = function (value: CalcitValue, traitDef: CalcitVal
       )}`
     );
   }
-  const unmet = traitDef.reachable().find((required) => required !== traitDef && !impls.some((impl) => impl?.origin === required));
+  const unmet = traitDef.reachable().find((required) =>
+    required !== traitDef && !lookup_impls(value, required)?.[0].some((impl) => impl?.origin === required));
   if (unmet != null) {
     throw new Error(
       `assert-traits failed: ${toString(value, true)} implements ${traitDef.name.toString()} but not its required trait ${unmet.name.toString()}`
@@ -2769,9 +2770,29 @@ let calcit_builtin_impls = {
   ref: null as CalcitImplEntry,
 };
 
-// need to register code from outside
+const calcit_builtin_impls_by_trait = new WeakMap<CalcitTrait, Partial<typeof calcit_builtin_impls>>();
+
+/** Register ordinary-method tables and retain each nominal origin's receiver entries. */
 export let register_calcit_builtin_impls = (options: typeof calcit_builtin_impls) => {
   Object.assign(calcit_builtin_impls, options);
+  // Explicit trait calls retain their graph's tables. Weak keys do not keep an
+  // otherwise unreachable trait generation alive; ordinary methods use latest.
+  for (const kind of Object.keys(options) as (keyof typeof options)[]) {
+    const entry = options[kind];
+    const impls = entry instanceof CalcitImpl ? [entry]
+      : entry instanceof CalcitList || entry instanceof CalcitSliceList ? list_items(entry) : [];
+    for (const impl of impls) {
+      // Index valid origins without moving malformed-entry validation from use
+      // to registration. The original entry still reaches normalize_builtin_impls.
+      if (!(impl instanceof CalcitImpl) || impl.origin == null) continue;
+      let registered = calcit_builtin_impls_by_trait.get(impl.origin);
+      if (registered == null) {
+        registered = {};
+        calcit_builtin_impls_by_trait.set(impl.origin, registered);
+      }
+      registered[kind] = entry;
+    }
+  }
 };
 
 /** method used as closure */
@@ -2795,19 +2816,20 @@ function normalize_builtin_impls(entry: CalcitImplEntry): CalcitImpl[] | null {
   return null;
 }
 
-function lookup_impls(obj: CalcitValue): [CalcitImpl[], string] {
+function lookup_impls(obj: CalcitValue, traitOrigin?: CalcitTrait): [CalcitImpl[], string] {
+  const scoped = traitOrigin == null ? undefined : calcit_builtin_impls_by_trait.get(traitOrigin);
   let impls: CalcitImpl[];
   let tag: string;
   if (obj instanceof CalcitList || obj instanceof CalcitSliceList) {
     tag = "&core-list-methods";
-    impls = normalize_builtin_impls(calcit_builtin_impls.list);
+    impls = normalize_builtin_impls(scoped?.list ?? calcit_builtin_impls.list);
   } else if (obj instanceof CalcitMap || obj instanceof CalcitSliceMap) {
     tag = "&core-map-methods";
-    impls = normalize_builtin_impls(calcit_builtin_impls.map);
+    impls = normalize_builtin_impls(scoped?.map ?? calcit_builtin_impls.map);
   } else if (obj instanceof CalcitStructValue) {
     tag = obj.name.toString();
     let instanceImpls = obj.structRef.impls;
-    let builtinRecordImpls = normalize_builtin_impls(calcit_builtin_impls.struct);
+    let builtinRecordImpls = normalize_builtin_impls(scoped?.struct ?? calcit_builtin_impls.struct);
     if (builtinRecordImpls && instanceImpls && instanceImpls.length > 0) {
       impls = [...builtinRecordImpls, ...instanceImpls];
     } else if (builtinRecordImpls) {
@@ -2818,7 +2840,7 @@ function lookup_impls(obj: CalcitValue): [CalcitImpl[], string] {
   } else if (obj instanceof CalcitEnumValue) {
     tag = obj.tag.toString();
     let instanceImpls = obj.impls;
-    let builtinTupleImpls = normalize_builtin_impls(calcit_builtin_impls.enum);
+    let builtinTupleImpls = normalize_builtin_impls(scoped?.enum ?? calcit_builtin_impls.enum);
     if (builtinTupleImpls && instanceImpls && instanceImpls.length > 0) {
       impls = [...builtinTupleImpls, ...instanceImpls];
     } else if (builtinTupleImpls) {
@@ -2828,30 +2850,30 @@ function lookup_impls(obj: CalcitValue): [CalcitImpl[], string] {
     }
   } else if (obj instanceof CalcitSet) {
     tag = "&core-set-methods";
-    impls = normalize_builtin_impls(calcit_builtin_impls.set);
+    impls = normalize_builtin_impls(scoped?.set ?? calcit_builtin_impls.set);
   } else if (obj instanceof CalcitStructDef) {
     // Bare type definitions (not yet instantiated) carry their own attached
     // impls, so introspection tools like `&methods-of` can answer "what
     // methods will instances of this type have" without a concrete instance.
     tag = obj.name.toString();
-    const builtinRecordImpls = normalize_builtin_impls(calcit_builtin_impls.struct) ?? [];
+    const builtinRecordImpls = normalize_builtin_impls(scoped?.struct ?? calcit_builtin_impls.struct) ?? [];
     impls = [...builtinRecordImpls, ...(obj.impls ?? [])];
   } else if (obj instanceof CalcitEnumDef) {
     tag = obj.name();
-    const builtinTupleImpls = normalize_builtin_impls(calcit_builtin_impls.enum) ?? [];
+    const builtinTupleImpls = normalize_builtin_impls(scoped?.enum ?? calcit_builtin_impls.enum) ?? [];
     impls = [...builtinTupleImpls, ...(obj.impls ?? [])];
   } else if (typeof obj === "number") {
     tag = "&core-number-methods";
-    impls = normalize_builtin_impls(calcit_builtin_impls.number);
+    impls = normalize_builtin_impls(scoped?.number ?? calcit_builtin_impls.number);
   } else if (typeof obj === "string") {
     tag = "&core-string-methods";
-    impls = normalize_builtin_impls(calcit_builtin_impls.string);
+    impls = normalize_builtin_impls(scoped?.string ?? calcit_builtin_impls.string);
   } else if (typeof obj === "function") {
     tag = "&core-fn-methods";
-    impls = normalize_builtin_impls(calcit_builtin_impls.fn);
+    impls = normalize_builtin_impls(scoped?.fn ?? calcit_builtin_impls.fn);
   } else if (obj instanceof CalcitRef) {
     tag = "&core-ref-methods";
-    impls = normalize_builtin_impls(calcit_builtin_impls.ref);
+    impls = normalize_builtin_impls(scoped?.ref ?? calcit_builtin_impls.ref);
   } else if (
     obj === null ||
     typeof obj === "boolean" ||
@@ -2859,10 +2881,10 @@ function lookup_impls(obj: CalcitValue): [CalcitImpl[], string] {
     obj instanceof CalcitSymbol
   ) {
     tag = "&core-text-scalar-impls";
-    impls = normalize_builtin_impls(calcit_builtin_impls.textScalar);
+    impls = normalize_builtin_impls(scoped?.textScalar ?? calcit_builtin_impls.textScalar);
   } else if (obj === undefined || obj instanceof CalcitCirruQuote) {
     tag = "&core-scalar-impls";
-    impls = normalize_builtin_impls(calcit_builtin_impls.scalar);
+    impls = normalize_builtin_impls(scoped?.scalar ?? calcit_builtin_impls.scalar);
   } else {
     return null;
   }
@@ -3001,7 +3023,7 @@ export function _$n_trait_call(traitDef: CalcitValue, method: CalcitValue, obj: 
     const ms = traitDef.methods.map((m) => m.toString()).join(" ");
     throw new Error(`&trait-call: trait ${traitDef.name.toString()} does not define method :${methodName}. Available methods: ${ms}`);
   }
-  const pair = lookup_impls(obj);
+  const pair = lookup_impls(obj, traitDef);
   if (pair == null) {
     throw new Error(`&trait-call cannot resolve impls for: ${toString(obj, true)}`);
   }

@@ -34,6 +34,88 @@ fn js_codegen_creates_nested_output_and_only_reports_written_artifacts() {
 }
 
 #[test]
+fn generated_core_graphs_preserve_each_others_nominal_builtin_dispatch() {
+  // Module loading and shared-runtime lifetime are JS host boundaries, not
+  // operations that an ordinary Calcit definition test can express.
+  assert!(
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("lib/calcit.procs.mjs").is_file(),
+    "lib/calcit.procs.mjs is missing; run `yarn compile` before `cargo test`"
+  );
+  let root = tempfile::tempdir().expect("temporary graph root");
+  let graphs = [root.path().join("graph-a"), root.path().join("graph-b")];
+  for graph in &graphs {
+    let output = emit_js(graph);
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+  }
+  assert_eq!(
+    fs::read(graphs[0].join("calcit.core.mjs")).unwrap(),
+    fs::read(graphs[1].join("calcit.core.mjs")).unwrap(),
+    "the regression must load two instances of identical generated core code"
+  );
+  let script = r#"
+import assert from "node:assert/strict";
+import { mkdir, realpath, symlink } from "node:fs/promises";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+
+const root = process.env.CALCIT_GRAPH_ROOT;
+const runtime = process.env.CALCIT_RUNTIME_ROOT;
+const packageScope = join(root, "node_modules", "@calcit");
+await mkdir(packageScope, { recursive: true });
+const packageLink = join(packageScope, "procs");
+try {
+  await symlink(runtime, packageLink, process.platform === "win32" ? "junction" : "dir");
+} catch (error) {
+  if (error.code !== "EEXIST") throw error;
+  assert.equal(await realpath(packageLink), await realpath(runtime));
+}
+const order = JSON.parse(process.env.CALCIT_GRAPH_ORDER);
+const load = name => import(pathToFileURL(join(root, name, "calcit.core.mjs")).href);
+const first = await load(order[0]);
+const tag = first.init_tags(["synthetic"]).synthetic;
+assert.equal(first.to_string(tag), "synthetic");
+assert.equal(first._$n_assert_traits(tag, first.ToString), tag);
+const childTrait = new first.CalcitTrait(first.newTag("RequiresEq"), [first.newTag("probe")], first.ToString.methodTypes, [first.Eq]);
+const childImpl = new first.CalcitImpl(childTrait.name, childTrait.methods, [() => "probe"], childTrait);
+const childDef = new first.CalcitStructDef(first.newTag("Required"), [], [], [childImpl]);
+const childValue = new first.CalcitStructValue(childDef.name, childDef.fields, [], childDef);
+assert.equal(first._$n_assert_traits(childValue, childTrait), childValue);
+const second = await load(order[1]);
+assert.equal(first.CalcitTag, second.CalcitTag, "the graphs share one runtime");
+assert.notEqual(first.ToString, second.ToString, "evaluated trait identities remain distinct");
+for (const graph of [first, second]) {
+  assert.equal(graph.to_string(tag), "synthetic");
+  assert.equal(graph._$n_assert_traits(tag, graph.ToString), tag);
+  assert.equal(graph.invoke_method("to-string", tag), "synthetic");
+}
+assert.equal(first._$n_assert_traits(childValue, childTrait), childValue, "required builtin traits retain their origin");
+const unrelated = new first.CalcitTrait(first.ToString.name, first.ToString.methods, first.ToString.methodTypes);
+assert.throws(() => first._$n_trait_call(unrelated, "to-string", tag), /cannot find impl for trait/);
+assert.throws(() => first._$n_assert_traits(tag, unrelated), /does not nominally implement/);
+const impl = new first.CalcitImpl(first.ToString.name, [first.newTag("to-string")], [() => "duplicate"], first.ToString);
+const definition = new first.CalcitStructDef(first.newTag("Duplicate"), [], [], [impl, impl]);
+const value = new first.CalcitStructValue(definition.name, definition.fields, [], definition);
+assert.throws(() => first._$n_trait_call(first.ToString, "to-string", value), /E_DUPLICATE_TRAIT_IMPL/);
+"#;
+  for order in [["graph-a", "graph-b"], ["graph-b", "graph-a"]] {
+    let output = Command::new("node")
+      .current_dir(env!("CARGO_MANIFEST_DIR"))
+      .args(["--input-type=module", "--eval", script])
+      .env("CALCIT_GRAPH_ROOT", root.path())
+      .env("CALCIT_RUNTIME_ROOT", env!("CARGO_MANIFEST_DIR"))
+      .env("CALCIT_GRAPH_ORDER", serde_json::to_string(&order).unwrap())
+      .output()
+      .expect("Node should load the generated graphs");
+    assert!(
+      output.status.success(),
+      "{order:?} failed\nstdout:\n{}\nstderr:\n{}",
+      String::from_utf8_lossy(&output.stdout),
+      String::from_utf8_lossy(&output.stderr)
+    );
+  }
+}
+
+#[test]
 fn js_codegen_rejects_output_path_that_is_a_file_without_claiming_success() {
   let root = tempfile::tempdir().expect("temporary output root");
   let emit_path = root.path().join("blocked-js");

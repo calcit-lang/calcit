@@ -31,6 +31,12 @@ as a decision guide:
 The syntax reference is at the end; the earlier sections explain the safety
 and portability rules that apply to every form.
 
+## 多份编译产物的内建 trait 分发
+
+同一 realm 内的多份编译产物共享一份配对的 `@calcit/procs` 时，后加载的 core 不会覆盖前一份 core 已持有的内建 trait 分发。显式 trait 调用、`assert-traits` 及其依赖的内建 trait 按各自的 trait 对象查找实现；名称相同的独立 trait 不会因此互认，同一 nominal trait 的重复实现仍会在分发时拒绝。
+
+普通动态方法继续使用最新注册表。为同一个 trait 对象重新注册某类接收者时，只更新这一组合，不影响它已注册的其他接收者类型。本规则不改变名义值或定义的相等语义，也不保证不同 CLI/runtime 版本混用时兼容。
+
 ## 1. Boundary model: opaque first, typed second
 
 Raw JavaScript values are not ordinary `Dynamic` Calcit values. Property reads,
