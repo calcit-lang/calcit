@@ -7176,6 +7176,58 @@ fn schema_synthesis_requires_independent_producer_and_coercion_evidence() {
     assert_success(&run_fix(&snapshot, &apply_arguments), "do not write unproven schema");
     assert_eq!(fs::read(&snapshot).unwrap(), original, "{name} must retain source bytes");
   }
+
+  // A shared ordinary-reference inventory must not cache the caller proof:
+  // the warmed unproven owner still blocks every affected candidate.
+  for name in ["argument-proof", "owner-proof"] {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "schema",
+          &format!("fix-command.main/{name}"),
+          "--input-format",
+          "cirru",
+          "--code",
+          "quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)",
+        ],
+      ),
+      "expose the original open contract to bulk schema evidence",
+    );
+  }
+  let original = fs::read(&snapshot).unwrap();
+  let bulk = run_calcit(&snapshot, &["analyze", "weak-types", "--schema-evidence", "--format", "json"]);
+  assert_success(&bulk, "collect shared ordinary inventory with unproven callers");
+  let bulk = parse_stdout(&bulk);
+  for name in ["argument-proof", "owner-proof"] {
+    let single = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "synthesize-schema-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&single, "retain independent single-target review");
+    let single = parse_stdout(&single);
+    let candidate = bulk["data"]["evidence"]["schema_candidates"]
+      .as_array()
+      .unwrap()
+      .iter()
+      .find(|candidate| candidate["definition"] == format!("fix-command.main/{name}"))
+      .expect("open target should retain a bulk candidate");
+    assert_eq!(candidate["confidence"], "boundary-unknown", "{candidate}");
+    assert_eq!(candidate["evidence"], single["data"]["suggestions"][0]["origin_chain"]);
+    assert_eq!(candidate["candidate"], single["data"]["suggestions"][0]["replacement"]);
+    assert_eq!(single["data"]["suggestions"][0]["applicability"], "needs-review");
+  }
+  assert_eq!(fs::read(&snapshot).unwrap(), original, "both evidence paths remain read-only");
 }
 
 #[test]
@@ -7733,6 +7785,35 @@ fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
     assert_success(&run_calcit(&snapshot, &args), context);
   }
 
+  for (target, source, schema) in [
+    (
+      "fix-command.main/macro-observed",
+      "quote $ defn macro-observed (x) 1",
+      Some("quote $ :: 'Fn $ {} (:args $ [] 'Dynamic) (:return 'Dynamic)"),
+    ),
+    (
+      "fix-command.main/use-macro-observed",
+      "quote $ defn use-macro-observed () (macro-observed 2)",
+      Some("quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"),
+    ),
+    (
+      "fix-command.main/expand-macro-observed",
+      "quote $ defmacro expand-macro-observed () macro-observed 3",
+      None,
+    ),
+  ] {
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "def", target, "--input-format", "cirru", "--code", source]),
+      "create shared-inventory macro boundary",
+    );
+    if let Some(schema) = schema {
+      assert_success(
+        &run_calcit(&snapshot, &["edit", "schema", target, "--input-format", "cirru", "--code", schema]),
+        "declare the existing open macro-observed contract",
+      );
+    }
+  }
+  let original = fs::read(&snapshot).unwrap();
   let output = run_calcit(&snapshot, &["analyze", "weak-types", "--schema-evidence", "--format", "json"]);
   assert_success(&output, "schema evidence report");
   let report = parse_stdout(&output);
@@ -7741,6 +7822,34 @@ fn schema_evidence_reuses_schema_synthesis_and_reports_structural_candidates() {
   let schemas = report["data"]["evidence"]["schema_candidates"]
     .as_array()
     .expect("schema candidates should be an array");
+  for name in ["evidence-number", "evidence-add-one", "conflicting-evidence", "macro-observed"] {
+    let single = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        "synthesize-schema-v1",
+        "--ns",
+        "fix-command.main",
+        "--def",
+        name,
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&single, "compare bulk inventory to fresh single-target evidence");
+    let single = parse_stdout(&single);
+    let candidate = schemas
+      .iter()
+      .find(|candidate| candidate["definition"] == format!("fix-command.main/{name}"))
+      .expect("each open schema should retain its bulk evidence");
+    assert_eq!(candidate["evidence"], single["data"]["suggestions"][0]["origin_chain"]);
+    assert_eq!(candidate["candidate"], single["data"]["suggestions"][0]["replacement"]);
+    if name == "macro-observed" {
+      assert_eq!(candidate["confidence"], "boundary-unknown");
+      assert_eq!(single["data"]["suggestions"][0]["applicability"], "needs-review");
+    }
+  }
+  assert_eq!(fs::read(&snapshot).unwrap(), original, "inventory reuse must not write source");
   assert!(
     schemas
       .iter()
