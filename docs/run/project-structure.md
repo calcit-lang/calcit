@@ -131,6 +131,8 @@ calcit edit transaction --code '[] $ [] |config |unset |entry |--entry |obsolete
 calcit edit transaction --code '[] $ [] |config |unset |entry |--entry |obsolete' --expect-revision <revision> --format edn
 ```
 
+升级 CLI 后请重新预览事务，不复用旧工具生成的临时 revision。
+
 旧项目的包名与本地命名空间前缀不一致时，可用 `calcit config set package app` 修正
 Snapshot 的项目级 `:package`。包名由非空 symbol 段组成，用点分隔；此命令只修改元数据，
 不重命名命名空间、定义、引用或入口，也不写入依赖模块。先查询本地源码，确认新的归属前缀；

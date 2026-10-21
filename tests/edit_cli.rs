@@ -2493,6 +2493,38 @@ fn config_unset_entry_is_guarded_atomic_and_preserves_surviving_entries() {
     );
   }
   assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/EntryOp",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defenum EntryOp (:ready)",
+      ],
+    ),
+    "declare a concrete slot binding",
+  );
+  for name in ["obsolete", "live"] {
+    for (feature, policy) in [("js-ffi", "warn"), ("fs", "error")] {
+      assert_success(
+        &run_calcit(
+          &snapshot,
+          &["config", "set", "--entry", name, &format!("feature-policy.{feature}"), policy],
+        ),
+        "populate entry policies",
+      );
+    }
+    for slot in [":op", ":event"] {
+      assert_success(
+        &run_calcit(&snapshot, &["config", "set-type-slot", "--entry", name, slot, "app.main/EntryOp"]),
+        "populate concrete slot metadata",
+      );
+    }
+  }
+  assert_success(
     &run_calcit(&snapshot, &["config", "add-module", "--entry", "obsolete", "missing-test-module/"]),
     "retain an unavailable historical dependency",
   );
@@ -2531,6 +2563,18 @@ fn config_unset_entry_is_guarded_atomic_and_preserves_surviving_entries() {
   let stale_revision = report["scoped_revision"].as_str().unwrap();
   assert!(stale_revision.starts_with("scope:entry:obsolete@md5:"), "{report}");
   assert!(!stale_revision.contains(','), "only the removed entry should be guarded: {report}");
+  for _ in 0..3 {
+    let repeat = run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--code", operations, "--dry-run", "--format", "json"],
+    );
+    assert_success(&repeat, "repeat the preview in a separate process");
+    let repeated: serde_json::Value = serde_json::from_slice(&repeat.stdout).unwrap();
+    assert_eq!(
+      repeated["scoped_revision"], stale_revision,
+      "unchanged metadata must have one stable guard"
+    );
+  }
   assert_eq!(fs::read(&snapshot).unwrap(), before, "dry-run must not write");
 
   assert_success(
@@ -2584,6 +2628,7 @@ fn config_unset_entry_is_guarded_atomic_and_preserves_surviving_entries() {
     .cloned()
     .collect::<Vec<_>>();
   let definition = query_definition(&snapshot, "app.main/main!");
+  let enum_definition = query_definition(&snapshot, "app.main/EntryOp");
   assert_success(
     &run_calcit(
       &snapshot,
@@ -2596,6 +2641,7 @@ fn config_unset_entry_is_guarded_atomic_and_preserves_surviving_entries() {
   let after: serde_json::Value = serde_json::from_slice(&config_after.stdout).unwrap();
   assert_eq!(after["data"]["entries"], serde_json::json!(surviving));
   assert_eq!(query_definition(&snapshot, "app.main/main!"), definition);
+  assert_eq!(query_definition(&snapshot, "app.main/EntryOp"), enum_definition);
   assert_success(&run_calcit(&snapshot, &["--check-only"]), "the default entry still checks");
   assert_success(
     &run_calcit(&snapshot, &["fix", "--workflow", "strict", "--verify", "--format", "json"]),
