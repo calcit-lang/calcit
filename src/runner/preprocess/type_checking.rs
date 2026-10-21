@@ -645,7 +645,7 @@ where
         if let Some(actual_type) = actual_types.get(idx + rest_idx).and_then(Option::as_ref) {
           let mut candidate = bindings.clone();
           // Keep the generic until matching so closed bottom bindings can refine.
-          let compatible = !proof.prove(&actual_type, inner_type).is_mismatch()
+          let compatible = !proof.prove(actual_type, inner_type).is_mismatch()
             && actual_type.as_ref().compatible_with_bindings(inner_type.as_ref(), &mut candidate);
           let matches = compatible
             || !expected_rest_type.contains_type_var()
