@@ -4737,7 +4737,18 @@ fn handle_error(input_path: &str) -> Result<(), String> {
         selected_file = Some(candidate);
         break;
       }
-      Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+      Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+        if let Some(parent) = candidate.parent() {
+          match fs::symlink_metadata(parent) {
+            Ok(metadata) if metadata.is_symlink() => {
+              fs::metadata(parent).map_err(|error| format!("Failed to get metadata of error file: {error}"))?;
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("Failed to get metadata of error file: {error}")),
+          }
+        }
+      }
       Err(error) => return Err(format!("Failed to get metadata of error file: {error}")),
     }
   }

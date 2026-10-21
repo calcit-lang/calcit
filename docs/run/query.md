@@ -93,7 +93,8 @@ calcit path/to/calcit.cirru query error
 读取所选 Snapshot 同目录下的 `.calcit/error.cirru`；该路径不存在时，兼容读取旧的
 `.calcit-error.cirru`，并在 stderr 说明使用了旧路径。查询不创建目录、不移动或删除文件，
 也不要求 Snapshot 已存在。新旧文件并存时始终以新路径为准，包括内容为空的情况；
-新文件无法读取时直接报错，不用旧诊断掩盖错误。过期提示使用实际读取文件的路径与修改时间。
+新文件无法读取或 `.calcit` 是断开的软链接时直接报错，不用旧诊断掩盖错误。
+有效目录软链接仍遵循相同的优先与回退规则。过期提示使用实际读取文件的路径与修改时间。
 
 ### List Namespaces (`ns`)
 

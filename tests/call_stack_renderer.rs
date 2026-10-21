@@ -174,17 +174,48 @@ fn unreadable_current_error_state_does_not_fall_back_to_legacy() {
 
 #[cfg(unix)]
 #[test]
-fn broken_current_error_symlink_does_not_fall_back_to_legacy() {
+fn broken_current_error_path_does_not_fall_back_to_legacy() {
+  for broken_directory in [false, true] {
+    let directory = tempfile::tempdir().unwrap();
+    let current = state_file(directory.path(), ERROR_STATE_FILE);
+    let link = if broken_directory {
+      current.parent().unwrap().to_path_buf()
+    } else {
+      fs::create_dir(current.parent().unwrap()).unwrap();
+      current.clone()
+    };
+    std::os::unix::fs::symlink("missing-target", &link).unwrap();
+    fs::write(directory.path().join(".calcit-error.cirru"), "stale diagnostic").unwrap();
+    let output = query_error(directory.path(), "calcit.cirru");
+    assert!(!output.status.success(), "broken_directory={broken_directory}");
+    assert!(String::from_utf8_lossy(&output.stderr).contains("Failed to get metadata of error file"));
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("stale diagnostic"));
+    assert!(fs::symlink_metadata(&link).unwrap().is_symlink());
+  }
+}
+
+#[cfg(unix)]
+#[test]
+fn valid_state_directory_symlink_preserves_precedence_and_read_only_fallback() {
   let directory = tempfile::tempdir().unwrap();
-  let current = state_file(directory.path(), ERROR_STATE_FILE);
-  fs::create_dir(current.parent().unwrap()).unwrap();
-  std::os::unix::fs::symlink("missing-diagnostic", &current).unwrap();
-  fs::write(directory.path().join(".calcit-error.cirru"), "stale diagnostic").unwrap();
-  let output = query_error(directory.path(), "calcit.cirru");
-  assert!(!output.status.success());
-  assert!(String::from_utf8_lossy(&output.stderr).contains("Failed to get metadata of error file"));
-  assert!(!String::from_utf8_lossy(&output.stdout).contains("stale diagnostic"));
-  assert!(fs::symlink_metadata(&current).unwrap().is_symlink());
+  let target = directory.path().join("state");
+  fs::create_dir(&target).unwrap();
+  let link = directory.path().join(".calcit");
+  std::os::unix::fs::symlink("state", &link).unwrap();
+  let legacy = directory.path().join(".calcit-error.cirru");
+  fs::write(&legacy, "legacy diagnostic").unwrap();
+
+  let fallback = query_error(directory.path(), "calcit.cirru");
+  assert!(assert_query_success(&fallback).contains("legacy diagnostic"));
+  assert_eq!(fs::read_dir(&target).unwrap().count(), 0);
+
+  fs::write(target.join(ERROR_STATE_FILE), "current diagnostic").unwrap();
+  let current = query_error(directory.path(), "calcit.cirru");
+  let stdout = assert_query_success(&current);
+  assert!(stdout.contains("current diagnostic"), "{stdout}");
+  assert!(!stdout.contains("legacy diagnostic"), "{stdout}");
+  assert_eq!(fs::read_to_string(&legacy).unwrap(), "legacy diagnostic");
+  assert_eq!(fs::read_link(&link).unwrap(), Path::new("state"));
 }
 
 #[cfg(unix)]
