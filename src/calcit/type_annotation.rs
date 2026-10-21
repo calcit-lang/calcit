@@ -5692,9 +5692,11 @@ impl CalcitTypeAnnotation {
     }
     let shape = info.call_shape;
     // The rest binding stores a List; it is not a required call argument.
-    let required = shape
-      .param_len()
-      .saturating_sub(if shape.has_rest() { 1 } else { shape.trailing_optionals() });
+    let required = if shape.has_rest() {
+      shape.param_len().saturating_sub(1 + info.args.marked_optional_count())
+    } else {
+      shape.param_len().saturating_sub(shape.trailing_optionals())
+    };
     Self::Fn(Arc::new(CalcitFnTypeAnnotation {
       runtime_arity: Some(super::ProcArity {
         min: required,
