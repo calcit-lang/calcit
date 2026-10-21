@@ -181,11 +181,12 @@ try {
 
   // Replay the actual attached Calcit expressions, rather than JS copies of their assertions.
   const hostTests = [];
-  for (const [target, count] of [["app.main/checked-counter-host", 5], ["app.main/counter-add", 2]]) {
+  for (const [target, count] of [["app.main/checked-counter-host", 5], ["app.main/counter-add", 2], ["app.main/rest-host-output", 8]]) {
     const hostContext = JSON.parse(execFileSync(resolve(repository, "target/debug/calcit"),
-      [input, "query", "context", target, "--test-limit", "8", "--format", "json"], { cwd: fixture, encoding: "utf8" }));
+      [input, "query", "context", target, "--test-limit", "8", "--budget", "20000", "--format", "json"], { cwd: fixture, encoding: "utf8" }));
     assert.equal(hostContext.data.tests.truncated, false);
     assert.equal(hostContext.data.tests.items.length, count);
+    assert.ok(hostContext.data.tests.items.every(test => !test.truncated && test.tree), "replay complete source tests, never truncated views");
     hostTests.push(...hostContext.data.tests.items.map(test => test.tree));
   }
   const hostEntry = ["defn", "replay-host-tests!", [], ...hostTests, "&unit"];
@@ -198,6 +199,38 @@ try {
     "--emit-path", hostOutput, "js"], { cwd: fixture, encoding: "utf8", stdio: "pipe" });
   const hostModule = await import(pathToFileURL(join(hostOutput, "app.main.mjs")).href);
   hostModule.replay_host_tests_$x_();
+  const restProof = JSON.parse(run(moduleSnapshot, "fix", "--workflow", "strict", "--verify", "--format", "json"));
+  assert.equal(restProof.data.workflow.status, "passed", "method spread preserves independent return and argument proof");
+  assert.deepEqual(restProof.diagnostics, []);
+  // Check the same declared rest contract at source before emitting any host call.
+  for (const [name, expression, diagnostic] of [
+    ["wrong-direct", ".emit host 1", /expects type `:string`, but got `:number`/],
+    ["wrong-spread", "let ((items $ [] 1)) (.emit host & items)", /expects type `list<string>`, but got `list<number>`/],
+    ["missing-prefix", ".prefix host", /expects at least 2 args/],
+  ]) {
+    const negativeSnapshot = join(fixture, `rest-${name}.cirru`);
+    await cp(input, negativeSnapshot);
+    const operations = [
+      ["edit", "def", "test-nil.main/rejected-rest", "--input-format", "cirru", "--code",
+        `quote $ defn rejected-rest (host) (${expression})`],
+      ["edit", "schema", "test-nil.main/rejected-rest", "--input-format", "cirru", "--code",
+        "quote $ :: 'Fn $ {} (:args $ [] 'app.main/RestHost) (:return 'String) (:features $ #{} :js-ffi)"],
+    ];
+    const preview = JSON.parse(run(negativeSnapshot, "edit", "transaction", "--code", JSON.stringify(operations), "--dry-run", "--format", "json"));
+    run(negativeSnapshot, "edit", "transaction", "--code", JSON.stringify(operations), "--expect-revision", preview.scoped_revision, "--format", "json");
+    const rejected = spawnSync(binary, [negativeSnapshot, "--init-fn", "test-nil.main/rejected-rest", "--check-only", "js"],
+      { cwd: fixture, encoding: "utf8" });
+    assert.notEqual(rejected.status, 0, `reject ${name} before host execution`);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /W_METHOD_ARG_TYPE_MISMATCH/);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, /test-nil\.main\/rejected-rest/);
+    assert.match(`${rejected.stdout}\n${rejected.stderr}`, diagnostic);
+    const proof = spawnSync(binary, [negativeSnapshot, "fix", "--workflow", "strict", "--verify", "--format", "json"],
+      { cwd: fixture, encoding: "utf8" });
+    assert.notEqual(proof.status, 0, `strict proof also rejects ${name}`);
+    assert.ok(proof.stdout.trim(), `strict proof must return a structured report: ${proof.stderr}`);
+    assert.ok(JSON.parse(proof.stdout).diagnostics.some(item => item.definition === "test-nil.main/rejected-rest"
+      && /(?:W_METHOD_ARG_TYPE_MISMATCH|E_CALL_ARGUMENT_MISMATCH)/.test(item.code)), "retain a source argument diagnostic");
+  }
   const host = hostModule.make_counter_host(3);
   assert.equal(hostModule.checked_counter_host(host), host, "checked casts preserve frozen host identity");
   const foreignBuffer = runInNewContext("new Uint8Array(1)");

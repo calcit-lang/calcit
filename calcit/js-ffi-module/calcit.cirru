@@ -40,6 +40,19 @@
           :ffi $ {} (:backend :js) (:kind :external-object) (:target :node)
             :names $ {} $ :total |total-value
           :schema $ :: 'Trait
+        'RestHost $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait RestHost
+            .emit $ :: 'Fn $ {}
+              :args $ [] 'RestHost
+              :rest 'String
+              :return 'String
+            .prefix $ :: 'Fn $ {}
+              :args $ [] 'RestHost 'String
+              :rest 'String
+              :return 'String
+          :examples $ []
+          :ffi $ {} (:backend :js) (:kind :external-object) (:target :node)
+          :schema $ :: 'Trait
         'TallyHost $ %{} 'CodeEntry
           :doc "|External-object trait that inherits CounterHost members"
           :code $ quote $ deftrait TallyHost (requires CounterHost)
@@ -95,6 +108,12 @@
                 assert= 3 $ tally :total
                 assert= 7 $ tally .add! 4
               :tags $ #{} :unit
+        'checked-rest-host $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn checked-rest-host (value) (js-cast value 'RestHost)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'app.main/RestHost)
+            :args $ [] 'JsObject
+            :features $ #{} :js-ffi
         'count-a $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn count-a () 0
           :examples $ []
@@ -162,6 +181,14 @@
           :schema $ :: 'Fn $ {} (:return 'JsObject)
             :args $ [] 'Number
             :features $ #{} :js-ffi
+        'make-rest-host $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn make-rest-host () (&js-object)
+          :examples $ []
+          :ffi $ {} (:target :node)
+            :js $ {} $ :file |js-ffi-assets/rest-host.js
+          :schema $ :: 'Fn $ {} (:return 'JsObject)
+            :args $ []
+            :features $ #{} :js-ffi
         'plus-one $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn plus-one (x) x
           :examples $ []
@@ -183,6 +210,63 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'rest-host-output $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn rest-host-output (host items) (.emit host & items)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ [] 'app.main/RestHost $ :: 'List 'String
+            :features $ #{} :js-ffi
+          :tests $ []
+            %{} 'TestEntry (:name |no-rest)
+              :code $ quote $ let
+                  host $ checked-rest-host $ make-rest-host
+                assert= | $ .emit host
+              :tags $ #{} :js-ffi :unit
+            %{} 'TestEntry (:name |direct-rest)
+              :code $ quote $ let
+                  host $ checked-rest-host $ make-rest-host
+                assert= |one:two $ .emit host |one |two
+              :tags $ #{} :js-ffi :unit
+            %{} 'TestEntry (:name |list-rest)
+              :code $ quote $ let
+                  host $ checked-rest-host $ make-rest-host
+                assert= |one:two $ rest-host-output host $ [] |one |two
+              :tags $ #{} :js-ffi :unit
+            %{} 'TestEntry (:name |empty-list)
+              :code $ quote $ let
+                  host $ checked-rest-host $ make-rest-host
+                assert= | $ rest-host-output host $ []
+              :tags $ #{} :js-ffi :unit
+            %{} 'TestEntry (:name |explicit-before-list)
+              :code $ quote $ let
+                  host $ checked-rest-host $ make-rest-host
+                  items $ [] |two
+                assert= |one:two $ .emit host |one & items
+              :tags $ #{} :js-ffi :unit
+            %{} 'TestEntry (:name |required-prefix)
+              :code $ quote $ let
+                  host $ checked-rest-host $ make-rest-host
+                  items $ [] |one |two
+                assert= |prefix:one:two $ .prefix host |prefix & items
+              :tags $ #{} :js-ffi :unit
+            %{} 'TestEntry (:name |prefix-no-rest)
+              :code $ quote $ let
+                  host $ checked-rest-host $ make-rest-host
+                assert= |prefix $ .prefix host |prefix
+              :tags $ #{} :js-ffi :unit
+            %{} 'TestEntry (:name |single-evaluation)
+              :code $ quote $ let
+                  calls $ ref 0
+                  host $ checked-rest-host $ make-rest-host
+                  supply $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return $ :: 'List 'String
+                    swap! calls inc
+                    [] |one
+                assert= |one $ .emit host & $ supply
+                assert= 1 $ deref calls
+              :tags $ #{} :js-ffi :unit
         'unit-adapter $ %{} 'CodeEntry
           :doc "|The JS implementation returns Unit; the incompatible shadow body is intentionally never selected."
           :code $ quote $ defn unit-adapter () 42

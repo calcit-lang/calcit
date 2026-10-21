@@ -77,6 +77,20 @@ unsafe、更宽 Dynamic 或默认终点掩盖类型错误。
 通过 guarded transaction、完整 strict 和实际 JS 回放验收。`set!` 仍属于 `:js-ffi`，
 不会因此变成 native/WASM 的通用赋值语法。
 
+## 0.31.0 rest 调用保留元素合同
+
+普通函数和 external-object trait 方法使用同一份 rest 元素合同。方法声明 `:rest 'String`
+后，可以传零个或多个 String，也可以在必需前缀参数之后使用 `& items` 展开 `List<String>`；
+展开仍只求值一次，方法返回值保留原声明与实参共同证明的类型。
+
+局部函数、具名函数和显式 `&call-spread` 不再跳过已知的 spread 元素检查。
+`List<Number>` 不能传给 `rest String`，即使旧普通检查曾经通过；错误沿用现有参数类型诊断，
+定位到调用者源码。先用 `query context` 核对 callee 的固定参数和 `:rest`，再修正列表生产者，
+或在真实开放边界逐元素检查、转换；不要用更宽 Dynamic 或 unsafe 掩盖冲突。
+
+未知长度的列表不能证明缺少的必需前缀参数；不能独立证明的开放或多重 spread 仍保留原有
+审阅要求。JS host 方法仍需显式 `:js-ffi` 与 external-object 合同，不因此获得 native/WASM 支持。
+
 ## 0.31.0 内部 Map / Set 解构保留成员类型
 
 `&map:destruct` 直接返回已有的 `MapDestruct<K,V>`，`&set:destruct` 直接返回
