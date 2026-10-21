@@ -401,6 +401,141 @@ fn ffi_metadata_edit_commits_with_schema_and_rolls_back_on_failure() {
   assert!(after["data"]["ffi"].to_string().contains(":backend"));
 }
 
+/// JS FFI metadata and filesystem rollback are editor boundaries, not runtime semantics.
+#[test]
+fn js_ffi_edits_validate_contracts_before_writing() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  let target = "app.main/main!";
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "schema", target, "--add-feature", "js-ffi"]),
+    "prepare the existing explicit JS FFI feature",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["cursor", "set", target, "--path", "@0"]),
+    "exercise post-edit cursor maintenance as well as Snapshot writing",
+  );
+  let original = fs::read(&snapshot).unwrap();
+  let valid_inline = r#"{} (:target :node) (:js $ {} $ :inline "|()=>42")"#;
+  let operations = |ffi: &str| {
+    serde_json::json!([
+      ["edit", "doc", "app.main/reload!", "staged documentation must roll back"],
+      ["edit", "ffi", target, "--code", ffi]
+    ])
+    .to_string()
+  };
+  let valid_operations = operations(valid_inline);
+  let revision = transaction_scope(&snapshot, &valid_operations);
+  for (ffi, expected) in [
+    (
+      "{} (:target :node) (:js $ {} $ :modules $ {} (:dayjs |dayjs))",
+      "requires exactly one of nonempty",
+    ),
+    (
+      r#"{} $ :js $ {} $ :inline "|()=>42""#,
+      "requires an explicit browser or node target",
+    ),
+    (
+      "{} (:target :node) (:js $ {} $ :file |../escape.mjs)",
+      "must be a module-root-relative",
+    ),
+    (
+      r#"{} (:target :browser) (:js $ {} (:inline "|()=>42") (:modules $ {} (:fs |node:fs)))"#,
+      "node: imports require the node target",
+    ),
+  ] {
+    let transaction = operations(ffi);
+    for args in [
+      vec!["edit", "ffi", target, "--code", ffi],
+      vec!["edit", "transaction", "--code", &transaction, "--dry-run", "--format", "json"],
+      vec!["edit", "transaction", "--code", &transaction, "--expect-revision", &revision],
+    ] {
+      let output = run_calcit(&snapshot, &args);
+      let diagnostic = String::from_utf8_lossy(&output.stderr);
+      assert!(!output.status.success(), "invalid JS FFI must fail: {args:?}");
+      assert!(diagnostic.contains(expected), "expected {expected:?}: {diagnostic}");
+      assert_eq!(fs::read(&snapshot).unwrap(), original, "failed {args:?} changed Snapshot bytes");
+    }
+  }
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--code", &valid_operations, "--expect-revision", &revision],
+    ),
+    "a complete JS FFI contract still commits with its original scoped revision",
+  );
+  let valid_snapshot = fs::read(&snapshot).unwrap();
+  let queried = query_definition(&snapshot, target);
+  assert_eq!(
+    query_definition(&snapshot, "app.main/reload!")["data"]["doc"],
+    "staged documentation must roll back"
+  );
+  assert_eq!(queried["data"]["js_ffi"]["source_kind"], "inline");
+  assert!(queried["data"]["js_ffi"]["metadata_error"].is_null());
+  for schema in [
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
+    "quote $ :: 'Fn $ {} (:args $ []) (:return 'Dynamic) (:features $ #{} :js-ffi)",
+  ] {
+    let output = run_calcit(&snapshot, &["edit", "schema", target, "--code", schema]);
+    assert!(!output.status.success(), "an incompatible schema must not invalidate JS FFI");
+    assert_eq!(
+      fs::read(&snapshot).unwrap(),
+      valid_snapshot,
+      "failed schema edit changed Snapshot bytes"
+    );
+  }
+  let clear_schema = run_calcit(&snapshot, &["edit", "schema", target, "--clear"]);
+  assert!(!clear_schema.status.success(), "JS FFI requires its explicit Fn schema");
+  assert_eq!(fs::read(&snapshot).unwrap(), valid_snapshot);
+  let invalid_declaration = run_calcit(
+    &snapshot,
+    &[
+      "edit",
+      "def",
+      target,
+      "--overwrite",
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ def main! 42",
+    ],
+  );
+  assert!(
+    !invalid_declaration.status.success(),
+    "JS FFI retains the existing defn requirement"
+  );
+  assert!(String::from_utf8_lossy(&invalid_declaration.stderr).contains("requires a `defn` declaration"));
+  assert_eq!(fs::read(&snapshot).unwrap(), valid_snapshot);
+  assert_success(
+    &run_calcit(&snapshot, &["cursor", "show", "--format", "json"]),
+    "failed edits preserve a valid cursor",
+  );
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "ffi",
+        target,
+        "--code",
+        "{} (:target :browser) (:js $ {} $ :file |js/handler.mjs)",
+      ],
+    ),
+    "valid file metadata does not require reading or executing the external asset",
+  );
+  assert_eq!(query_definition(&snapshot, target)["data"]["js_ffi"]["source_kind"], "file");
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "ffi", target, "--clear"]),
+    "clear a valid JS FFI contract",
+  );
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "schema", target, "--clear"]),
+    "clearing metadata permits the existing schema-clear workflow",
+  );
+}
+
 fn prepare_minimal_snapshot(directory: &TestDirectory) -> PathBuf {
   let snapshot = directory.snapshot();
   fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");

@@ -121,6 +121,13 @@ calcit calcit.cirru edit transaction \
 重复添加同一 feature 不会再次改写 Snapshot。对 dayjs 等第三方对象，优先用 typed adapter 或
 external-object trait 暴露稳定接口，并在 Calcit 测试中覆盖有效和无效宿主值。
 
+为定义设置 `:ffi :js` 实现时，先声明完整 `Fn` schema 和 `:js-ffi` feature，
+再用一次 `edit ffi` 提供完整的 `:inline` 或 `:file` 以及显式 `:browser` / `:node`
+target；也可按这个顺序放进同一个受保护事务。直接编辑与事务 dry-run 都会在写入前
+复用这些合同检查。来源、target、ABI 类型或声明不合法时，Snapshot 保持原字节不变。
+已有 JS 实现的 schema 修改也必须保留有效合同；要移除签名，先清除该实现元数据。
+这些检查不读取或执行外部 JS 文件，源文件语法与运行时行为仍由目标构建和测试验证。
+
 ### 2.2 Host target policy
 
 Entries can additionally declare an explicit host target:
