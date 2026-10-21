@@ -5,6 +5,7 @@ scope: "core"
 kind: "reference"
 category: "run"
 aliases:
+  - "query error"
   - "query defs"
   - "query ns"
   - "query def"
@@ -16,6 +17,7 @@ aliases:
   - "search-expr"
   - "search expr"
 entry_for:
+  - "calcit query error"
   - "calcit query ns"
   - "calcit query defs"
   - "calcit query def"
@@ -80,6 +82,19 @@ BrokenPipe 视为读者主动结束，安静退出且状态为 `0`，不输出 p
 其他 stdout 写入错误仍报告到 stderr 并以状态 `1` 退出，不作为成功处理。
 该约定用于 CLI 文档/查询展示及其共享渲染函数，不修改 Calcit 程序运行时的
 `println`、FFI、watch 或其他执行模式的错误语义。
+
+### 读取最近错误 (`error`)
+
+```bash
+calcit query error
+calcit path/to/calcit.cirru query error
+```
+
+读取所选 Snapshot 同目录下的 `.calcit/error.cirru`；该路径不存在时，兼容读取旧的
+`.calcit-error.cirru`，并在 stderr 说明使用了旧路径。查询不创建目录、不移动或删除文件，
+也不要求 Snapshot 已存在。新旧文件并存时始终以新路径为准，包括内容为空的情况；
+新文件无法读取或 `.calcit` 是断开的软链接时直接报错，不用旧诊断掩盖错误。
+有效目录软链接仍遵循相同的优先与回退规则。过期提示使用实际读取文件的路径与修改时间。
 
 ### List Namespaces (`ns`)
 
