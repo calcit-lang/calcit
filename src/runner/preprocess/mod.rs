@@ -1364,6 +1364,7 @@ fn ensure_ns_def_preprocessed(
         })?;
       }
       check_top_level_value_schema(ns, def, &code, &resolved_code, &scope_types, &next_stack)?;
+      note_legacy_optional_in_definition(ns, def, &code);
       store_preprocessed_compiled_output(ns, def, &code, &resolved_code);
       mark_audit_proven(ns, def);
 
@@ -13609,6 +13610,16 @@ pub fn preprocess_hint_fn(
       args.get(args.len() - 1).and_then(Calcit::get_location),
     ));
   };
+  // Schemas the compiler injects from a definition carry no source location,
+  // so only a `hint-fn` written in project source is noted here.
+  note_legacy_optional_type(
+    "a hint-fn schema",
+    &type_entry,
+    ctx.file_ns,
+    args
+      .get(args.len() - 1)
+      .and_then(|schema| source_location_in_namespace(schema, ctx.file_ns)),
+  );
   if args.len() == 2 {
     let target_raw = args.first().expect("two-argument hint has a target");
     let target_form = preprocess_expr(
@@ -13764,6 +13775,12 @@ fn preprocess_assert_type_with_obligation(
     CalcitTypeAnnotation::parse_type_annotation_form_with_generics(&asserted_type_form, &lexical_generics)
   });
   let asserted_type = resolve_local_type_refs_for_body(asserted_type, ctx.scope_types);
+  note_legacy_optional_type(
+    "an assert-type target",
+    &asserted_type,
+    ctx.file_ns,
+    source_location_in_namespace(type_form, ctx.file_ns),
+  );
   let current_type = resolve_type_value(&asserted_target, ctx.scope_types).or_else(|| match &asserted_target {
     Calcit::Local(local) => Some(local.type_info.clone()),
     _ => None,
@@ -14030,6 +14047,12 @@ pub fn preprocess_parse_cirru_edn_as(
   let source_type_form = args.get(1).expect("validated parse-cirru-edn-as type");
   let type_form = &qualify_decoder_type_form(source_type_form, ctx.file_ns);
   let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
+  note_legacy_optional_type(
+    &format!("a {head} target"),
+    &target,
+    ctx.file_ns,
+    source_location_in_namespace(source_type_form, ctx.file_ns),
+  );
   let decoder = crate::calcit::data_shape::DataShapeGraph::build(target.as_ref(), ctx.file_ns).map_err(|error| {
     CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
@@ -14089,6 +14112,12 @@ pub fn preprocess_decode_map_as(
   let source_type_form = args.get(1).expect("validated decode-map-as type");
   let type_form = &qualify_decoder_type_form(source_type_form, ctx.file_ns);
   let target = CalcitTypeAnnotation::parse_type_annotation_form_with_generics(type_form, &[]);
+  note_legacy_optional_type(
+    &format!("a {head} target"),
+    &target,
+    ctx.file_ns,
+    source_location_in_namespace(source_type_form, ctx.file_ns),
+  );
   let decoder = crate::calcit::data_shape::DataShapeGraph::build_open(target.as_ref(), ctx.file_ns).map_err(|error| {
     CalcitErr::use_msg_stack_location(
       CalcitErrKind::Type,
@@ -15429,6 +15458,95 @@ fn legacy_optional_public_schema_requires_migration(ns: &str, def_name: &str, sc
   // nominal absence rule as application code. `nil->option` is the explicit
   // bridge from an internal Optional<T> value to Option<T>.
   !(ns == calcit::CORE_NS && (def_name.starts_with('&') || def_name == "nil->option"))
+}
+
+/// Whether a legacy `Optional<T>` outside a public function schema is reported
+/// as an advisory. Only project source written at `location` qualifies; raw
+/// core `&` primitives and the `nil->option` bridge keep their internal
+/// exception, matching `legacy_optional_public_schema_requires_migration`.
+fn legacy_optional_note_applies(file_ns: &str, location: &NodeLocation) -> bool {
+  should_emit_project_source_lint(file_ns)
+    && location.ns.as_ref() == file_ns
+    && location.def.as_ref() != GENERATED_DEF
+    && !(file_ns == calcit::CORE_NS && (location.def.starts_with('&') || location.def.as_ref() == "nil->option"))
+}
+
+/// Advisory for a legacy `Optional<T>` that `W_LEGACY_OPTIONAL_SCHEMA` does not
+/// cover (data definitions, value schemas, `hint-fn`, `assert-type`, decoder
+/// targets). It never fails a check: these positions only need to migrate
+/// before `Optional<T>` is removed in 0.32.0.
+fn note_legacy_optional_type(position: &str, annotation: &CalcitTypeAnnotation, file_ns: &str, location: Option<NodeLocation>) {
+  let Some(location) = location else {
+    return;
+  };
+  if !contains_legacy_optional(annotation) || !legacy_optional_note_applies(file_ns, &location) {
+    return;
+  }
+  let message = format!(
+    "[Warn] {position} in {}/{} uses legacy Optional<T>, which will be removed in 0.32.0; use Option<T> for Calcit absence, JsNullish<T> only for JavaScript FFI, Result<T,E> for failures, or Unit for effects",
+    location.ns, location.def
+  );
+  push_advisory(LocatedWarning::new_with_detail(
+    message,
+    location,
+    Some("W_LEGACY_OPTIONAL_TYPE".to_owned()),
+    None,
+  ));
+}
+
+/// Finds the source form `(:tag ...)` of a struct field or enum variant so the
+/// advisory points at the declaration rather than the whole definition.
+fn find_tagged_declaration_location(code: &Calcit, tag: &EdnTag, file_ns: &str) -> Option<NodeLocation> {
+  let Calcit::List(items) = code else {
+    return None;
+  };
+  if matches!(items.first(), Some(Calcit::Tag(head)) if head == tag) {
+    return source_location_in_namespace(code, file_ns);
+  }
+  items.iter().find_map(|item| find_tagged_declaration_location(item, tag, file_ns))
+}
+
+/// Reports legacy `Optional<T>` in struct fields, enum payloads and the schema
+/// of a `def` value. Function schemas of `defn` / `defmacro` are reported by
+/// `W_LEGACY_OPTIONAL_SCHEMA` instead.
+fn note_legacy_optional_in_definition(ns: &str, def: &str, code: &Calcit) {
+  let Calcit::List(items) = code else {
+    return;
+  };
+  let head = match items.first() {
+    Some(Calcit::Symbol { sym, .. }) => sym.clone(),
+    _ => return,
+  };
+  let definition_location = NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::new(vec![]));
+  if !legacy_optional_note_applies(ns, &definition_location) {
+    return;
+  }
+  match head.as_ref() {
+    "def" => {
+      let schema = program::lookup_def_schema(ns, def);
+      note_legacy_optional_type("the value schema", &schema, ns, Some(definition_location));
+    }
+    "defstruct" | "defenum" | "impl-traits" => match crate::calcit::type_annotation::resolve_type_def_from_code(code) {
+      Some(Calcit::StructDef(struct_def)) => {
+        for (field, field_type) in struct_def.fields.iter().zip(struct_def.field_types.iter()) {
+          let location = find_tagged_declaration_location(code, field, ns).unwrap_or_else(|| definition_location.clone());
+          note_legacy_optional_type(&format!("struct field `{field}`"), field_type, ns, Some(location));
+        }
+      }
+      Some(Calcit::EnumDef(enum_def)) => {
+        for variant in enum_def.variants() {
+          // One advisory per variant, however many payload slots it affects.
+          let Some(payload) = variant.payload_types().iter().find(|item| contains_legacy_optional(item)) else {
+            continue;
+          };
+          let location = find_tagged_declaration_location(code, &variant.tag, ns).unwrap_or_else(|| definition_location.clone());
+          note_legacy_optional_type(&format!("enum variant `{}` payload", variant.tag), payload, ns, Some(location));
+        }
+      }
+      _ => {}
+    },
+    _ => {}
+  }
 }
 
 fn reject_strict_legacy_optional_public_schema(
@@ -23983,6 +24101,21 @@ mod tests {
       issues.iter().any(|issue| issue.starts_with("[E_SCHEMA_REQUIRED_ARGS]")),
       "strict macro schema must constrain parameters: {issues:?}"
     );
+  }
+
+  #[test]
+  fn legacy_optional_notes_keep_the_core_internal_exceptions() {
+    let at = |ns: &str, def: &str| NodeLocation::new(Arc::from(ns), Arc::from(def), Arc::new(vec![]));
+    assert!(legacy_optional_note_applies("tests.schema", &at("tests.schema", "Box")));
+    assert!(legacy_optional_note_applies(
+      calcit::CORE_NS,
+      &at(calcit::CORE_NS, "future-public-api")
+    ));
+    assert!(!legacy_optional_note_applies(calcit::CORE_NS, &at(calcit::CORE_NS, "&raw-lookup")));
+    assert!(!legacy_optional_note_applies(calcit::CORE_NS, &at(calcit::CORE_NS, "nil->option")));
+    // Macro output located in another namespace, or with no source definition, is skipped.
+    assert!(!legacy_optional_note_applies("tests.schema", &at(calcit::CORE_NS, "when")));
+    assert!(!legacy_optional_note_applies("tests.schema", &at("tests.schema", GENERATED_DEF)));
   }
 
   #[test]

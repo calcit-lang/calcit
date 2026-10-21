@@ -3444,6 +3444,63 @@ fn option_erased_to_nil_is_exempt_only_as_a_direct_host_argument() {
   });
 }
 
+/// #1554: legacy `Optional<T>` outside a public function schema is only noted
+/// (`W_LEGACY_OPTIONAL_TYPE`) before its removal in 0.32.0. Struct fields, enum
+/// payloads, a `def` value schema, a local `hint-fn`, `assert-type` and a
+/// decoder target are each reported once; the strict check still passes and
+/// the `Option<T>` forms stay quiet.
+#[test]
+fn legacy_optional_outside_public_schemas_is_only_noted() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_fixture_entries("tests/fixtures/legacy-optional-advisory.cirru");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    let _ = runner::preprocess::take_advisories();
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("legacy Optional positions must not fail the strict check");
+
+    let warnings = warnings.into_inner();
+    assert!(
+      warnings
+        .iter()
+        .all(|warning| !warning.code().is_some_and(|code| code.contains("LEGACY_OPTIONAL"))),
+      "the advisory must never become a warning: {warnings:?}"
+    );
+    let advisories = runner::preprocess::take_advisories();
+    let noted = advisories
+      .iter()
+      .filter(|advisory| advisory.code() == Some("W_LEGACY_OPTIONAL_TYPE"))
+      .filter(|advisory| advisory.location().ns.as_ref() == "legacy-optional-advisory.main")
+      .collect::<Vec<_>>();
+    let mut positions = noted.iter().map(|advisory| advisory.location().def.to_string()).collect::<Vec<_>>();
+    positions.sort();
+    assert_eq!(
+      positions,
+      ["Box", "Choice", "fallback", "use-assert-type", "use-decoder", "use-hint-fn"],
+      "{advisories:?}"
+    );
+    for (def, position) in [
+      ("Box", "struct field `value`"),
+      ("Choice", "enum variant `maybe` payload"),
+      ("fallback", "the value schema"),
+      ("use-hint-fn", "a hint-fn schema"),
+      ("use-assert-type", "an assert-type target"),
+      ("use-decoder", "a parse-cirru-edn-as target"),
+    ] {
+      let advisory = noted
+        .iter()
+        .find(|advisory| advisory.location().def.as_ref() == def)
+        .expect("position is noted");
+      assert!(
+        advisory.message().contains(position) && advisory.message().contains("removed in 0.32.0"),
+        "{def}: {}",
+        advisory.message()
+      );
+    }
+  });
+}
+
 #[test]
 fn constant_truthy_conditions_report_with_replacement_guidance() {
   run_with_large_stack(|| {

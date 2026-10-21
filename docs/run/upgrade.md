@@ -271,7 +271,7 @@ payload 有具体类型时，这种写法本来就被参数检查拒绝；新诊
 
 迁移现在就可以做，不必等到 0.32.0：
 
-1. 用 `calcit calcit.cirru --check-only --keep-going --all-defs --format edn` 定位 schema 中的旧 Optional：严格模式（默认）下公共 schema 报 `E_LEGACY_OPTIONAL_SCHEMA`，诊断带定义位置。`query search` 按代码 AST 叶子匹配，不保证覆盖 `:schema` 字段，不能作为 schema 的定位手段；若要补查代码体里的 `'Optional`（如 `hint-fn`、`assert-type`），搜索时加 `--source project`，避免混入 core 与依赖模块的命中。
+1. 用 `calcit calcit.cirru --check-only --keep-going --all-defs --format edn` 定位 schema 中的旧 Optional：严格模式（默认）下公共函数 schema 报 `E_LEGACY_OPTIONAL_SCHEMA`，诊断带定义位置。其余位置用不带 `--keep-going` 的 `calcit calcit.cirru --check-only` 查看：0.31.0 起，项目源码中 `defstruct` 字段、`defenum` 变体 payload、`def` 值的 `:schema`、局部 `hint-fn` 的参数与返回、`assert-type` 的目标类型，以及 `parse-cirru-edn-as` / `decode-map-as` 等解码目标里的 `'Optional`，都会在 `Notes:` 中列出 `W_LEGACY_OPTIONAL_TYPE`，带定义与源码坐标。它只是提示，检查、运行和代码生成照常通过；core 内部 `&` 原语与 `nil->option` 的参数不报告。Notes 只覆盖从 init / reload 入口可达的定义；`--keep-going` / `--all-defs` 的逐定义报告不含 Notes，不可达的定义可用 `query search` 补查：`query search` 按代码 AST 叶子匹配，不保证覆盖 `:schema` 字段，不能作为公共 schema 的定位手段；搜索时加 `--source project`，避免混入 core 与依赖模块的命中。
 2. 按语义逐处选择新类型：Calcit 内的缺失值用 `Option<T>`，失败原因用 `Result<T,E>`，副作用用 `Unit`，只有 JS 宿主边界才用 `JsNullish<T>`。业务默认值、`Dynamic` 放宽与 `unsafe-coerce` 不由工具选择。
 3. 用 `calcit edit schema`、`calcit tree` 系列命令写成一个 `edit transaction`：先 dry-run，再带返回的 revision 应用；应用后运行测试与目标后端检查。
 
@@ -288,7 +288,7 @@ payload 有具体类型时，这种写法本来就被参数检查拒绝；新诊
 
 ### 限制
 
-- 0.32.0 之前 `Optional<T>` 仍可解析，严格模式下公共 schema 报 `E_LEGACY_OPTIONAL_SCHEMA`，其余位置保持现状。
+- 0.32.0 之前 `Optional<T>` 仍可解析，严格模式下公共函数 schema 报 `E_LEGACY_OPTIONAL_SCHEMA`，其余位置只在 `--check-only` 的 Notes 中列出 `W_LEGACY_OPTIONAL_TYPE`，不会失败。
 - 类型推导（无 else 的 `if`、`nil` 与具体值的分支合并）在 0.32.0 之前仍推出 `Optional<T>`；值位置的用法由 `E_IMPLICIT_NIL_BRANCH` 拒绝，见 [值位置的无 else 分支与 nil 合并改为严格错误](#031-值位置的无-else-分支与-nil-合并改为严格错误)。
 - `nil->option` 的参数类型改动与 Optional 的删除在同一版本落地；单独把参数改成泛型 `T` 会让上述无 else `if` / `Optional` 实参的折叠形式在严格检查中失败。
 - core 内部 `&` 原语的 schema 不属于公共 API，不在本节范围。
