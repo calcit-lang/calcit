@@ -24,6 +24,18 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.31.0 泛型调用保留开放输入
+
+同一次泛型调用会综合实参的类型证据，再检查参数与推断返回类型。将 `Map<Tag, Bool>` 与明确声明的
+`Map<Tag, Dynamic>` 传给 `merge`、`.merge` 或相同合同的普通函数时，结果保持 `Map<Tag, Dynamic>`，
+不再因为较窄参数排在前面而错误保留 Bool；Tag key 与 Map 结构仍然可用。
+
+开放数据可以继续保存和传递，但读取后不能仅靠 Bool 返回声明或 Bool fallback 证明该值是 Bool。
+遇到现有的调用或返回证明诊断时，用 `query type-at` 核对实际 payload，在使用位置通过已有的
+decode、模式匹配或谓词守卫收窄。不自动加入 unsafe、更宽 Dynamic 或业务默认值。
+两个相互冲突的封闭输入不会仅为通过检查而合成 Dynamic；Ref 的不变性、回调参数的逆变关系、
+调用方泛型身份与 trait 约束仍须分别成立。运行时合并顺序及覆盖行为不变。
+
 ## 0.31.0 Enum 原语检查已知接收者类型
 
 `&enum:nth` 与 `%::` 按声明的参数合同检查第一个参数：`&enum:nth` 需要 Enum 值，`%::` 需要

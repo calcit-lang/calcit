@@ -134,6 +134,13 @@ fn instantiate_callback_result_type(
     return Some(result);
   }
   let mut proof = scope_types.call_type_proof(&signature.generics, &signature.arg_types, inputs);
+  proof.prepare_inputs(inputs.iter().enumerate().filter_map(|(index, input)| {
+    signature
+      .arg_types
+      .get(index)
+      .or(signature.rest_type.as_ref())
+      .map(|parameter| (input.as_ref(), parameter.as_ref()))
+  }));
   for (index, input) in inputs.iter().enumerate() {
     let parameter = signature.arg_types.get(index).or(signature.rest_type.as_ref())?;
     if !proof.prove(input, parameter).is_proven() {

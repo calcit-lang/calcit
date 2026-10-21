@@ -2514,6 +2514,11 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
       "quote $ defn choose-first (x y)\n  , x",
       "quote $ :: 'Fn $ {} (:generics $ [] 'T) (:args $ [] 'T 'T) (:return 'T)",
     ),
+    (
+      "choose-map",
+      "quote $ defn choose-map (left right) right",
+      "quote $ :: 'Fn $ {} (:generics $ [] 'T) (:args $ [] (:: 'Map 'Tag 'T) (:: 'Map 'Tag 'T)) (:return $ :: 'Map 'Tag 'T)",
+    ),
   ] {
     let target = format!("fix-command.returns/{name}");
     assert_success(
@@ -2526,6 +2531,57 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
     );
   }
   for (name, argument, returns, body, rejected) in [
+    // Rejection and query evidence are CLI boundaries; value semantics are
+    // replayed by the shared Calcit definition tests rather than duplicated here.
+    (
+      "late-open-map-call",
+      "Map 'Tag 'Dynamic",
+      "Bool",
+      ".unwrap-or (get (merge ({} (:done? false)) x) :time) false",
+      true,
+    ),
+    (
+      "early-open-map-call",
+      "Map 'Tag 'Dynamic",
+      "Bool",
+      ".unwrap-or (get (merge x ({} (:done? false))) :time) false",
+      true,
+    ),
+    (
+      "late-open-map-helper",
+      "Map 'Tag 'Dynamic",
+      "Bool",
+      ".unwrap-or (get (choose-map ({} (:done? false)) x) :time) false",
+      true,
+    ),
+    (
+      "early-open-map-helper",
+      "Map 'Tag 'Dynamic",
+      "Bool",
+      ".unwrap-or (get (choose-map x ({} (:done? false))) :time) false",
+      true,
+    ),
+    (
+      "open-map-call-storage",
+      "Map 'Tag 'Dynamic",
+      "Map 'Tag 'Dynamic",
+      "merge ({} (:done? false)) x",
+      false,
+    ),
+    (
+      "open-map-helper-storage",
+      "Map 'Tag 'Dynamic",
+      "Map 'Tag 'Dynamic",
+      "choose-map ({} (:done? false)) x",
+      false,
+    ),
+    (
+      "open-map-method-storage",
+      "Map 'Tag 'Dynamic",
+      "Map 'Tag 'Dynamic",
+      ".merge ({} (:done? false)) x",
+      false,
+    ),
     ("closed", "Number", "Number", ", x", false),
     ("closed-tail", "Number", "Number", "if (&< x 1) 0 (recur (&- x 1))", false),
     (
@@ -2638,7 +2694,7 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
             } else {
               format!("'{returns}")
             },
-            if argument == "T" || argument.contains("'T") {
+            if argument == "T" || argument.split_whitespace().any(|item| item.trim_matches(['(', ')']) == "'T") {
               " (:generics $ [] 'T)"
             } else {
               ""
@@ -2658,7 +2714,13 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
       "json",
     ];
     let output = run_fix(&snapshot, &[selectors.as_slice(), &["--def", name]].concat());
-    assert_eq!(output.status.success(), !rejected, "{}", String::from_utf8_lossy(&output.stderr));
+    assert_eq!(
+      output.status.success(),
+      !rejected,
+      "{name}: {}\n{}",
+      String::from_utf8_lossy(&output.stderr),
+      String::from_utf8_lossy(&output.stdout)
+    );
     if name == "wrong-rest-spread" {
       // A definite contradiction is a hard compiler error, not a migration suggestion.
       let stderr = String::from_utf8_lossy(&output.stderr);
@@ -2760,6 +2822,12 @@ fn concrete_return_proof_navigates_the_implementation_without_writing() {
       }
     } else {
       assert!(report["data"]["suggestions"].as_array().unwrap().is_empty());
+      if name.starts_with("open-map-") && name.ends_with("-storage") {
+        let inferred = run_calcit(&snapshot, &["query", "type-at", &target, "--path", "@3", "--format", "json"]);
+        assert_success(&inferred, "inspect the actual generic result, not its declared return");
+        let inferred = parse_stdout(&inferred);
+        assert_eq!(inferred["data"]["inferred_type"], ":: 'Map 'Tag 'Dynamic", "{name}: {inferred}");
+      }
     }
     assert_eq!(fs::read(&snapshot).unwrap(), original);
   }
