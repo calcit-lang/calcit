@@ -73,6 +73,20 @@ fn load_snippet_entries_with_main_schema(snippet: &str, main_schema: Option<Arc<
 
   let mut snapshot = snapshot::Snapshot::default();
   let mut file = snapshot::create_file_from_snippet(snippet).expect("test snippet should parse");
+  annotate_snippet_macros(&mut file);
+  if let Some(schema) = main_schema
+    && let Some(entry) = file.defs.get_mut("main!")
+  {
+    entry.schema = schema;
+  }
+  snapshot.files.insert("app.main".to_owned(), file);
+
+  prepare_snapshot_entries(snapshot)
+}
+
+/// Give every `defmacro` in a snippet file a Macro schema with one Syntax input
+/// per parameter, as a checked library would declare.
+fn annotate_snippet_macros(file: &mut snapshot::FileInSnapShot) {
   for entry in file.defs.values_mut() {
     let Some(required_inputs) = (match &entry.code {
       cirru_parser::Cirru::List(items) if matches!(items.first(), Some(cirru_parser::Cirru::Leaf(head)) if head.as_ref() == "defmacro") => {
@@ -96,18 +110,34 @@ fn load_snippet_entries_with_main_schema(snippet: &str, main_schema: Option<Arc<
       features: Arc::new(HashSet::new()),
     })));
   }
-  if let Some(schema) = main_schema
-    && let Some(entry) = file.defs.get_mut("main!")
-  {
-    entry.schema = schema;
-  }
-  snapshot.files.insert("app.main".to_owned(), file);
-
-  prepare_snapshot_entries(snapshot)
 }
 
-fn prepare_snapshot_entries(mut snapshot: snapshot::Snapshot) -> ProgramEntries {
+/// Load `app.main` from `snippet` with `library_snippet` as the dependency
+/// namespace `library_ns`, which is not a project namespace.
+fn load_snippet_entries_with_library(library_ns: &str, library_snippet: &str, snippet: &str) -> ProgramEntries {
+  builtins::effects::init_effects_states();
+
+  let mut snapshot = snapshot::Snapshot::default();
+  let mut file = snapshot::create_file_from_snippet(snippet).expect("test snippet should parse");
+  annotate_snippet_macros(&mut file);
+  snapshot.files.insert("app.main".to_owned(), file);
+
+  let mut library = snapshot::create_file_from_snippet(library_snippet).expect("library snippet should parse");
+  annotate_snippet_macros(&mut library);
+  library.ns.code = vec!["ns", library_ns].into();
+  prepare_snapshot_entries_with_libraries(snapshot, vec![(library_ns.to_owned(), library)])
+}
+
+fn prepare_snapshot_entries(snapshot: snapshot::Snapshot) -> ProgramEntries {
+  prepare_snapshot_entries_with_libraries(snapshot, vec![])
+}
+
+fn prepare_snapshot_entries_with_libraries(
+  mut snapshot: snapshot::Snapshot,
+  libraries: Vec<(String, snapshot::FileInSnapShot)>,
+) -> ProgramEntries {
   let project_namespaces: HashSet<String> = snapshot.files.keys().cloned().collect();
+  snapshot.files.extend(libraries);
 
   for (k, v) in &cached_core_snapshot().files {
     snapshot.files.insert(k.to_owned(), v.to_owned());
@@ -3043,6 +3073,8 @@ fn value_position_nil_branch_is_a_strict_error() {
       );
       let reason = if missing_else { "without an else" } else { "`nil` while another" };
       assert!(err.msg.contains(reason), "{label}: {err:?}");
+      // `case` / `cond` without a default raise on no match, so they never yield nil.
+      assert!(!err.msg.contains("`case`"), "{label}: {err:?}");
     }
 
     for (label, function) in [
@@ -3080,6 +3112,45 @@ fn value_position_nil_branch_is_a_strict_error() {
       advisories.iter().any(|a| a.code() == Some("W_IMPLICIT_NIL_BRANCH")),
       "compat mode keeps the warning: {advisories:?}"
     );
+  });
+}
+
+/// #1554: a branch written wholly by a library macro is skipped, but a library
+/// macro that wraps the caller's form in an else-less `if` is reported at the
+/// caller; `nil->option` around the macro call, then an Option helper, is the fix.
+#[test]
+fn library_macro_wrapping_caller_form_reports_implicit_nil_at_the_caller() {
+  run_with_large_stack(|| {
+    let library = "defmacro maybe (c x)\n  quasiquote $ if ~c ~x\n\ndefmacro quiet ()\n  quasiquote $ if (> 1 0) |a";
+    let compile = |body: &str| {
+      let snippet = format!(
+        "ns app.main $ :require (lib.core :refer $ maybe quiet)\n\nlet\n    probe $ fn (flag) (hint-fn $ {{}} (:args $ [] 'Bool) (:return 'String)) {body}\n  probe true"
+      );
+      let entries = load_snippet_entries_with_library("lib.core", library, &snippet);
+      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+      let _ = runner::preprocess::take_advisories();
+      let result =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      (result, warnings.into_inner(), runner::preprocess::take_advisories())
+    };
+    let is_implicit = |code: Option<&str>| code.is_some_and(|code| code.ends_with("_IMPLICIT_NIL_BRANCH"));
+    let _strict = StrictTypesReset::enabled();
+
+    let (result, _, _) = compile("(str |x (maybe flag |b))");
+    let err = result.expect_err("a library macro wrapping the caller's form in an else-less `if` is reported");
+    assert_eq!(err.code.as_deref(), Some("E_IMPLICIT_NIL_BRANCH"), "{err:?}");
+    let location = err.location.as_ref().expect("the error points at the caller");
+    assert_eq!(location.ns.as_ref(), "app.main", "{err:?}");
+
+    for (label, body) in [
+      ("nil-option-fix", "(str |x (.unwrap-or (nil->option (maybe flag |b)) |))"),
+      ("wholly-generated", "(str |x (quiet))"),
+    ] {
+      let (result, warnings, advisories) = compile(body);
+      assert!(result.is_ok(), "{label}: {result:?}");
+      assert!(warnings.iter().all(|w| !is_implicit(w.code())), "{label}: {warnings:?}");
+      assert!(advisories.iter().all(|a| !is_implicit(a.code())), "{label}: {advisories:?}");
+    }
   });
 }
 
