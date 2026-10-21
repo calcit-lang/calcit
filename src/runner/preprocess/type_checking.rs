@@ -560,16 +560,25 @@ where
 {
   let expanded_args;
   let expanded_types;
+  let mut complete_arguments = true;
   let ctx = if ctx.args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
     // Keep the original generic/trait context. Only argument shape changes
     // for checking; codegen still sees each original operand exactly once.
     let (arguments, expected_types) = match super::type_inference::expand_literal_call_arguments(ctx.args) {
       Ok(arguments) => (arguments, ctx.expected_types.to_vec()),
       Err(_) => {
-        let Some(projected) = super::typed_rest_spread_arguments(ctx.expected_types, None, ctx.args) else {
-          return;
-        };
-        projected
+        super::typed_rest_spread_arguments(ctx.expected_types, None, ctx.args).unwrap_or_else(|| {
+          // Unknown suffixes cannot erase independently known prefix types.
+          // This partial check does not prove bounds that may depend on the suffix.
+          complete_arguments = false;
+          let prefix = ctx
+            .args
+            .iter()
+            .take_while(|arg| !matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+            .cloned()
+            .collect::<Vec<_>>();
+          (CalcitList::from(prefix.as_slice()), ctx.expected_types.to_vec())
+        })
       }
     };
     expanded_args = arguments;
@@ -658,7 +667,9 @@ where
     }
   }
 
-  check_generic_trait_bounds(&ctx, &bindings);
+  if complete_arguments {
+    check_generic_trait_bounds(&ctx, &bindings);
+  }
 }
 
 /// Where a call compares or hashes an argument by value.
@@ -742,13 +753,6 @@ pub(crate) fn check_proc_arg_types(
     return;
   };
 
-  // Check if we have spreading args
-  for arg in args.iter() {
-    if matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
-      return;
-    }
-  }
-
   if matches!(proc, CalcitProc::NativeTraitCall) {
     let mut call = vec![Calcit::Proc(*proc)];
     call.extend(args.iter().cloned());
@@ -756,24 +760,9 @@ pub(crate) fn check_proc_arg_types(
       // The builtin only transports a dispatch request. Its open signature
       // cannot replace the selected method's actual input contract.
       let method_args = args.skip(2).expect("resolved trait method has trait and method operands");
-      let arity = signature.call_arity();
-      if method_args.len() < arity.min || arity.max.is_some_and(|maximum| method_args.len() > maximum) {
-        gen_check_warning(
-          format!(
-            "[Warn] &trait-call method expects {}..{} arguments including receiver, got {} at {file_ns}/{def_name}",
-            arity.min,
-            arity.max.map_or_else(|| "unbounded".to_owned(), |maximum| maximum.to_string()),
-            method_args.len(),
-          ),
-          file_ns,
-          check_warnings,
-        );
-        return;
-      }
-      check_resolved_fn_call_arg_types(
+      check_method_call_arg_types(
         &Calcit::Proc(*proc),
         &signature,
-        "&trait-call",
         &method_args,
         scope_types,
         &CallTypeCheckInfo {
@@ -785,6 +774,10 @@ pub(crate) fn check_proc_arg_types(
       );
       return;
     }
+  }
+
+  if args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
+    return;
   }
 
   // Check argument count
@@ -1226,18 +1219,17 @@ pub(super) fn check_method_call_arg_types(
   call_info: &CallTypeCheckInfo<'_>,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
 ) {
-  let normalized;
-  let (args, signature) = if args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
-    let Ok(contract) = super::expanded_call_contract(signature, args) else {
-      return;
-    };
-    normalized = contract;
-    (&normalized.0, &normalized.1)
-  } else {
-    (args, signature)
-  };
+  let fixed_count = signature.arg_types.len();
+  let has_rest = signature.rest_type.is_some();
+  let spread = args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)));
+  let normalized = spread.then(|| super::expanded_call_contract(signature, args).ok()).flatten();
+  let complete_arguments = !spread || normalized.is_some();
+  let (args, signature) = normalized
+    .as_ref()
+    .map(|(args, signature)| (args, signature))
+    .unwrap_or((args, signature));
   let arity = signature.call_arity();
-  if args.len() < arity.min || arity.max.is_some_and(|max| args.len() > max) {
+  if complete_arguments && (args.len() < arity.min || arity.max.is_some_and(|max| args.len() > max)) {
     let expected = match arity.max {
       None => format!("at least {}", arity.min),
       Some(max) if max != arity.min => format!("{}..={max}", arity.min),
@@ -1272,8 +1264,9 @@ pub(super) fn check_method_call_arg_types(
       check_warnings,
     },
     |index, expected, actual, _| {
+      let role = if has_rest && index > fixed_count { "variadic " } else { "" };
       format!(
-        "[Warn] Method `{head}` arg {index} expects type `{expected}`, but got `{actual}` in call at {}/{}",
+        "[Warn] Method `{head}` {role}arg {index} expects type `{expected}`, but got `{actual}` in call at {}/{}",
         call_info.file_ns, call_info.def_name
       )
     },

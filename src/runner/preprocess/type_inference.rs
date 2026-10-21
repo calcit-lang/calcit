@@ -1935,6 +1935,7 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
           if matches!(
             callable,
             Calcit::Method(_, calcit::MethodKind::Invoke(_) | calcit::MethodKind::ExternalInvoke(_))
+              | Calcit::Proc(CalcitProc::NativeTraitCall)
           ) {
             return infer_type_from_expr(&Calcit::from(arguments.push_left(callable.clone())), scope_types);
           }

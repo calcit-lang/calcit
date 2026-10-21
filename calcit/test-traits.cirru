@@ -154,6 +154,74 @@
           :code $ quote $ defstruct Person0 (:name 'String)
           :examples $ []
           :schema $ :: 'Struct
+        'RestBox $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def RestBox (impl-traits RestBoxBase RestBoxImpl)
+          :examples $ []
+          :schema $ :: 'StructDef
+          :tests $ []
+            %{} 'TestEntry (:name |direct-method)
+              :code $ quote $ assert= 13
+                .sum (RestBox :value 10) |numbers 1 2
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |explicit-no-rest)
+              :code $ quote $ assert= 10
+                &trait-call RestBoxOps :sum (RestBox :value 10) |numbers
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |explicit-list)
+              :code $ quote $ assert= 13
+                explicit-rest-sum (RestBox :value 10) ([] 1 2)
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |explicit-empty-list)
+              :code $ quote $ assert= 10
+                explicit-rest-sum (RestBox :value 10) ([])
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |method-list)
+              :code $ quote $ let
+                  items $ [] 1 2
+                assert= 13 $ .sum (RestBox :value 10) |numbers & items
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |explicit-literal)
+              :code $ quote $ assert= 13
+                &trait-call RestBoxOps :sum (RestBox :value 10) |numbers & $ [] 1 2
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |fixed-method-empty-spread)
+              :code $ quote $ assert= 2
+                &trait-call Countable :count ([] 1 2) & $ []
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |single-evaluation)
+              :code $ quote $ let
+                  calls $ ref 0
+                  supply $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return $ :: 'List 'Number
+                    swap! calls inc
+                    [] 1 2
+                assert= 13 $ &trait-call RestBoxOps :sum (RestBox :value 10) |numbers & $ supply
+                assert= 1 $ deref calls
+              :tags $ #{} :unit
+        'RestBoxBase $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct RestBoxBase (:value 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'RestBoxImpl $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defimpl RestBoxImpl RestBoxOps
+            .sum $ fn (self label & values)
+              hint-fn $ {}
+                :args $ [] 'test-traits.main/RestBox 'String
+                :rest 'Number
+                :return 'Number
+              foldl values (:value self) &+
+          :examples $ []
+          :schema $ :: 'Impl
+        'RestBoxOps $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ deftrait RestBoxOps
+            .sum $ :: 'Fn $ {}
+              :args $ [] 'test-traits.main/RestBox 'String
+              :rest 'Number
+              :return 'Number
+          :examples $ []
+          :schema $ :: 'Trait
         'ResultBox $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def ResultBox (impl-traits ResultBoxBase ResultBoxImpl)
           :examples $ []
@@ -246,6 +314,11 @@
             :args $ [] 'T
             :generics $ [] 'T
             :where $ {} $ 'T 'Greeting
+        'explicit-rest-sum $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn explicit-rest-sum (box items) (&trait-call RestBoxOps :sum box |numbers & items)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'test-traits.main/RestBox $ :: 'List 'Number
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (&init-builtin-impls!) (println "|Testing built-in traits...")
             ; Test Debug trait - all types should have it

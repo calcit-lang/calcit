@@ -207,6 +207,7 @@ try {
     ["wrong-direct", ".emit host 1", /expects type `:string`, but got `:number`/],
     ["wrong-spread", "let ((items $ [] 1)) (.emit host & items)", /expects type `list<string>`, but got `list<number>`/],
     ["missing-prefix", ".prefix host", /expects at least 2 args/],
+    ["wrong-prefix-before-spreads", "let ((items $ [] |one)) (.prefix host 1 & items & items)", /expects type `:string`, but got `:number`/],
   ]) {
     const negativeSnapshot = join(fixture, `rest-${name}.cirru`);
     await cp(input, negativeSnapshot);
@@ -228,8 +229,18 @@ try {
       { cwd: fixture, encoding: "utf8" });
     assert.notEqual(proof.status, 0, `strict proof also rejects ${name}`);
     assert.ok(proof.stdout.trim(), `strict proof must return a structured report: ${proof.stderr}`);
-    assert.ok(JSON.parse(proof.stdout).diagnostics.some(item => item.definition === "test-nil.main/rejected-rest"
-      && /(?:W_METHOD_ARG_TYPE_MISMATCH|E_CALL_ARGUMENT_MISMATCH)/.test(item.code)), "retain a source argument diagnostic");
+    const diagnostics = JSON.parse(proof.stdout).diagnostics;
+    const expectedProofCode = name === "wrong-prefix-before-spreads"
+      ? /E_CALL_ARGUMENT_UNPROVEN/
+      : /(?:W_METHOD_ARG_TYPE_MISMATCH|E_CALL_ARGUMENT_MISMATCH)/;
+    assert.ok(diagnostics.some(item => item.definition === "test-nil.main/rejected-rest"
+      && expectedProofCode.test(item.code)), `retain a source argument diagnostic for ${name}: ${JSON.stringify(diagnostics)}`);
+    if (name === "wrong-prefix-before-spreads") {
+      const argument = diagnostics.find(item => item.code === "E_CALL_ARGUMENT_UNPROVEN");
+      assert.equal(argument.location.ns, "test-nil.main");
+      assert.equal(argument.location.def, "rejected-rest");
+      assert.match(argument.message, /cannot independently prove spread arguments/);
+    }
   }
   const host = hostModule.make_counter_host(3);
   assert.equal(hostModule.checked_counter_host(host), host, "checked casts preserve frozen host identity");

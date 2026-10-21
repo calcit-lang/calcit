@@ -7639,17 +7639,29 @@ fn check_struct_method_args(
   let has_variadic = fn_info.call_shape.has_rest()
     || matches!(fn_info.args.as_ref(), CalcitFnArgs::MarkedArgs(xs) if xs.iter().any(|label| matches!(label, CalcitArgLabel::RestMark)));
 
-  let trailing_options = if has_variadic {
-    0
-  } else {
-    fn_info
-      .call_shape
-      .trailing_optionals()
-      .max(fn_info.args.marked_optional_count())
-      .max(calcit::trailing_option_arg_count(&fn_info.arg_types, expected_count))
-  };
+  if has_variadic || args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
+    type_checking::check_method_call_arg_types(
+      head,
+      &effective_user_call_schema(fn_info),
+      args,
+      scope_types,
+      &CallTypeCheckInfo {
+        file_ns,
+        def_name,
+        call_location,
+      },
+      check_warnings,
+    );
+    return;
+  }
+
+  let trailing_options = fn_info
+    .call_shape
+    .trailing_optionals()
+    .max(fn_info.args.marked_optional_count())
+    .max(calcit::trailing_option_arg_count(&fn_info.arg_types, expected_count));
   let accepts_omission = trailing_options > 0 && (expected_count - trailing_options..=expected_count).contains(&actual_with_receiver);
-  if !has_variadic && expected_count != actual_with_receiver && !accepts_omission {
+  if expected_count != actual_with_receiver && !accepts_omission {
     gen_check_warning(
       format!(
         "[Warn] Method `.{method_name}` expects {expected_count} args (including receiver), got {actual_with_receiver} in call at {file_ns}/{def_name}"
@@ -7674,30 +7686,6 @@ fn check_struct_method_args(
   for (idx, (arg, expected_type)) in method_args.iter().zip(arg_types_without_receiver.iter()).enumerate() {
     if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
       continue; // No type constraint for this argument
-    }
-
-    // Handle variadic argument type (same as check_user_fn_arg_types)
-    if let CalcitTypeAnnotation::Variadic(inner_type) = expected_type.as_ref() {
-      for (rest_idx, rest_arg) in method_args.iter().skip(idx).enumerate() {
-        let expected_rest_type = inner_type.substitute_type_vars(&bindings);
-        if let Some(actual_type) = resolve_type_value(rest_arg, scope_types)
-          && !actual_type.as_ref().compatible_with_bindings(inner_type.as_ref(), &mut bindings)
-        {
-          let expected_str = expected_rest_type.describe();
-          let actual_str = actual_type.as_ref().describe();
-          gen_check_warning_code_at(
-            format!(
-              "[Warn] Method `.{method_name}` variadic arg {} expects type `{expected_str}`, but got `{actual_str}` in call at {file_ns}/{def_name}",
-              idx + rest_idx + 2
-            ),
-            "W_METHOD_ARG_TYPE_MISMATCH",
-            file_ns,
-            call_location.clone(),
-            check_warnings,
-          );
-        }
-      }
-      return;
     }
 
     if let Some(actual_type) = resolve_type_value(arg, scope_types) {
@@ -7948,25 +7936,38 @@ fn validate_explicit_trait_call(
     .and_then(|index| trait_def.method_types.get(index))
     .and_then(|annotation| annotation.as_function())
   {
-    let actual_count = args.len().saturating_sub(2);
-    let expected_count = signature.arg_types.len();
-    let trailing_options = if signature.rest_type.is_none() {
-      calcit::trailing_option_arg_count(&signature.arg_types, expected_count)
+    let method_args = args.skip(2).expect("trait and method operands were checked");
+    let normalized;
+    let (checked_args, checked_signature) = if method_args
+      .iter()
+      .any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+    {
+      normalized = expanded_call_contract(signature, &method_args).map_err(|operand| {
+        reject(
+          "E_CALL_ARGUMENT_UNPROVEN",
+          format!("&trait-call {} .{method_name} cannot prove its spread against the selected method contract; expose the fixed arguments and a checked rest List", trait_def.origin_label()),
+          operand.and_then(Calcit::get_location).or_else(|| head.get_location()),
+        )
+      })?;
+      (&normalized.0, &normalized.1)
     } else {
-      0
+      (&method_args, signature)
     };
-    let enough = actual_count >= expected_count.saturating_sub(trailing_options);
-    let not_too_many = signature.rest_type.is_some() || actual_count <= expected_count;
-    if !enough || !not_too_many {
+    let actual_count = checked_args.len();
+    let arity = checked_signature.call_arity();
+    if actual_count < arity.min || arity.max.is_some_and(|maximum| actual_count > maximum) {
       return Err(reject(
         "E_TRAIT_CALL_ARITY",
         format!(
-          "&trait-call {} .{method_name} expects {expected_count} argument(s) including receiver, got {actual_count}",
-          trait_def.origin_label()
+          "&trait-call {} .{method_name} expects {}..{} argument(s) including receiver, got {actual_count}",
+          trait_def.origin_label(),
+          arity.min,
+          arity.max.map_or_else(|| "unbounded".to_owned(), |max| max.to_string())
         ),
         head.get_location(),
       ));
     }
+    reject_strict_unproven_generic_relation(head, &method_args, signature, scope_types, file_ns, call_stack, head.get_location())?;
   }
   let receiver = args.get(2).ok_or_else(|| {
     reject(
@@ -14779,11 +14780,21 @@ pub fn typed_rest_spread_call_is_proven(processed: &Calcit) -> bool {
     return registered_rest_spread_call_is_proven(name, &call.iter().skip(2).cloned().collect::<Vec<_>>());
   }
   let Some(callable) = call.get(1) else { return false };
-  let arguments = call.iter().skip(2).cloned().collect::<Vec<_>>();
-  let Some(signature) = type_inference::method_call_signature(callable, &CalcitList::from(arguments.as_slice()), &ScopeTypes::new())
-    .or_else(|| type_inference::infer_static_type_from_expr(callable).and_then(|annotation| annotation.resolve_to_nonoptional_fn()))
-  else {
-    return false;
+  let mut arguments = call.iter().skip(2).cloned().collect::<Vec<_>>();
+  let signature = if matches!(callable, Calcit::Proc(CalcitProc::NativeTraitCall)) {
+    let inner = CalcitList::from(call.iter().skip(1).cloned().collect::<Vec<_>>().as_slice());
+    let Some(signature) = type_inference::lowered_trait_method_signature(&inner, &ScopeTypes::new()) else {
+      return false;
+    };
+    arguments.drain(..2);
+    signature
+  } else {
+    let Some(signature) = type_inference::method_call_signature(callable, &CalcitList::from(arguments.as_slice()), &ScopeTypes::new())
+      .or_else(|| type_inference::infer_static_type_from_expr(callable).and_then(|annotation| annotation.resolve_to_nonoptional_fn()))
+    else {
+      return false;
+    };
+    signature
   };
   if signature.fn_kind != SchemaKind::Fn
     || !signature.where_bounds.is_empty()

@@ -1548,29 +1548,47 @@ fn strict_specialized_map_contracts_reject_concrete_callbacks_for_open_payload()
 fn type_fail_typed_rest_spread_checks_the_list_element_contract() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
-    for snippet in [
-      "let\n    accept $ fn (label & values)\n      hint-fn $ {} (:args $ [] 'String) (:rest 'String) (:return 'Unit)\n      , &unit\n    items $ [] 1\n  accept |prefix & items",
-      "defn accept (label & values)\n  hint-fn $ {} (:args $ [] 'String) (:rest 'String) (:return 'Unit)\n  , &unit\n\ndefn main! ()\n  hint-fn $ {} (:args $ []) (:return 'Unit)\n  let\n      items $ [] 1\n    accept |prefix & items",
+    for (parameters, fixed_types, call, expected, actual) in [
+      (
+        "label & values",
+        "'String",
+        "accept |prefix & items",
+        "list<string>",
+        "list<number>",
+      ),
+      ("label tail & values", "'String 'String", "accept 1 & items", ":string", ":number"),
+      ("label & values", "'String", "accept 1 & items & items", ":string", ":number"),
     ] {
-      for explicit in [false, true] {
-        let snippet = if explicit {
-          snippet.replace("accept |prefix & items", "&call-spread accept |prefix & items")
-        } else {
-          snippet.to_owned()
-        };
-        let entries = load_snippet_entries(&snippet);
-        let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
-        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
-          .expect("ordinary checking should record the argument mismatch");
-        let warnings = warnings.borrow();
-        let mismatches = warnings
-          .iter()
-          .filter(|warning| matches!(warning.code(), Some("W_FN_ARG_TYPE_MISMATCH" | "W_LOCAL_FN_ARG_TYPE_MISMATCH")))
-          .collect::<Vec<_>>();
-        assert_eq!(mismatches.len(), 1, "a Number spread cannot satisfy rest String: {warnings:?}");
-        assert_eq!(mismatches[0].expected(), Some("list<string>"));
-        assert_eq!(mismatches[0].actual(), Some("list<number>"));
-        assert_eq!(mismatches[0].location().def, entries.init_def);
+      for named in [false, true] {
+        for explicit in [false, true] {
+          let call = if explicit {
+            call.replacen("accept", "&call-spread accept", 1)
+          } else {
+            call.to_owned()
+          };
+          let snippet = if named {
+            format!(
+              "defn accept ({parameters})\n  hint-fn $ {{}} (:args $ [] {fixed_types}) (:rest 'String) (:return 'Unit)\n  , &unit\n\ndefn main! ()\n  hint-fn $ {{}} (:args $ []) (:return 'Unit)\n  let\n      items $ [] 1\n    {call}"
+            )
+          } else {
+            format!(
+              "let\n    accept $ fn ({parameters})\n      hint-fn $ {{}} (:args $ [] {fixed_types}) (:rest 'String) (:return 'Unit)\n      , &unit\n    items $ [] 1\n  {call}"
+            )
+          };
+          let entries = load_snippet_entries(&snippet);
+          let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+          runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+            .expect("ordinary checking should record the argument mismatch");
+          let warnings = warnings.borrow();
+          let mismatches = warnings
+            .iter()
+            .filter(|warning| matches!(warning.code(), Some("W_FN_ARG_TYPE_MISMATCH" | "W_LOCAL_FN_ARG_TYPE_MISMATCH")))
+            .collect::<Vec<_>>();
+          assert_eq!(mismatches.len(), 1, "a Number spread cannot satisfy rest String: {warnings:?}");
+          assert_eq!(mismatches[0].expected(), Some(expected));
+          assert_eq!(mismatches[0].actual(), Some(actual));
+          assert_eq!(mismatches[0].location().def, entries.init_def);
+        }
       }
     }
   });

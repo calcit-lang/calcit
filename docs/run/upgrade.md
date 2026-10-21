@@ -88,6 +88,10 @@ unsafe、更宽 Dynamic 或默认终点掩盖类型错误。
 定位到调用者源码。先用 `query context` 核对 callee 的固定参数和 `:rest`，再修正列表生产者，
 或在真实开放边界逐元素检查、转换；不要用更宽 Dynamic 或 unsafe 掩盖冲突。
 
+`Dynamic` 或 `List<Dynamic>` 进入具体参数时仍须先收窄，`fix` 预览不会跳过当前类型错误。
+无法完整展开的调用仍检查已知前缀；显式 `&trait-call` 按选中方法的参数合同检查，而不是借用
+分发原语的开放签名。rest 方法实现的 List 绑定不再被误算成一个必需实参。
+
 未知长度的列表不能证明缺少的必需前缀参数；不能独立证明的开放或多重 spread 仍保留原有
 审阅要求。JS host 方法仍需显式 `:js-ffi` 与 external-object 合同，不因此获得 native/WASM 支持。
 
