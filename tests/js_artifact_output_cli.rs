@@ -37,6 +37,10 @@ fn js_codegen_creates_nested_output_and_only_reports_written_artifacts() {
 fn generated_core_graphs_preserve_each_others_nominal_builtin_dispatch() {
   // Module loading and shared-runtime lifetime are JS host boundaries, not
   // operations that an ordinary Calcit definition test can express.
+  assert!(
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("lib/calcit.procs.mjs").is_file(),
+    "lib/calcit.procs.mjs is missing; run `yarn compile` before `cargo test`"
+  );
   let root = tempfile::tempdir().expect("temporary graph root");
   let graphs = [root.path().join("graph-a"), root.path().join("graph-b")];
   for graph in &graphs {
