@@ -4917,11 +4917,11 @@ fn preprocess_list_call(
           &head_form,
           &processed_args,
           scope_types,
-          file_ns,
-          &def_name,
+          (file_ns, &def_name),
           preferred_source_call_location(call_location.clone(), call_stack),
+          call_stack,
           check_warnings,
-        );
+        )?;
         check_struct_update_fields(&head_form, &processed_args, scope_types, file_ns, &def_name, check_warnings);
         reject_unproven_struct_update(&head_form, &processed_args, scope_types, file_ns, call_stack)?;
         check_struct_method_args(
@@ -5814,11 +5814,11 @@ fn preprocess_known_function_call(
             head,
             &constructor.drop_left(),
             scope_types,
-            file_ns,
-            def_name,
+            (file_ns, def_name),
             call_location.clone(),
+            call_stack,
             check_warnings,
-          );
+          )?;
         }
         new_ys = new_ys.push(item.to_owned());
       }
@@ -7009,17 +7009,17 @@ fn check_struct_construction_fields(
   head: &Calcit,
   args: &CalcitList,
   scope_types: &ScopeTypes,
-  file_ns: &str,
-  def_name: &str,
+  (file_ns, def_name): (&str, &str),
   call_location: Option<NodeLocation>,
+  call_stack: &CallStackList,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
-) {
+) -> Result<(), CalcitErr> {
   if !matches!(head, Calcit::Proc(CalcitProc::NativeStruct)) {
-    return;
+    return Ok(());
   }
-  let Some(prototype) = args.first() else { return };
+  let Some(prototype) = args.first() else { return Ok(()) };
   let Some(value) = resolve_struct_value(prototype, scope_types) else {
-    return;
+    return Ok(());
   };
   let items = args.iter().skip(1).collect::<Vec<_>>();
   if !items.iter().any(|item| matches!(item, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
@@ -7113,6 +7113,23 @@ fn check_struct_construction_fields(
       expected
     };
     if !proven {
+      let location = pair[1]
+        .get_location()
+        .filter(|location| location.def.as_ref() != GENERATED_DEF)
+        .or_else(|| call_location.clone())
+        .or_else(|| prototype.get_location());
+      let field_path = format!("struct.{}.fields.{field}", value.struct_ref.name);
+      // The relation has already failed. Identify a missing entry binding
+      // without treating symbolic slot identity as concrete type evidence.
+      if matches!(
+        actual.prove_with_bindings(&expected, &mut HashMap::new()),
+        TypeProof::NeedsBoundary(TypeBoundaryReason::UnresolvedTypeSlot)
+      ) && let Some((path, slot)) =
+        find_unbound_type_slot_schema(&expected, &field_path).or_else(|| find_unbound_type_slot_schema(&actual, &field_path))
+      {
+        let owner = location.as_ref().map(|location| location.def.as_ref()).unwrap_or(def_name);
+        return Err(unbound_type_slot_error(file_ns, owner, &path, &slot, call_stack, location.clone()));
+      }
       gen_check_warning_code_at_with_types(
         format!(
           "[Warn] struct `{}` field `:{field}` expects type `{}`, but got `{}` at {file_ns}/{def_name}",
@@ -7122,17 +7139,14 @@ fn check_struct_construction_fields(
         ),
         "W_FN_ARG_TYPE_MISMATCH",
         file_ns,
-        pair[1]
-          .get_location()
-          .filter(|location| location.def.as_ref() != GENERATED_DEF)
-          .or_else(|| call_location.clone())
-          .or_else(|| prototype.get_location()),
+        location,
         expected.to_brief_string(),
         actual.to_brief_string(),
         check_warnings,
       );
     }
   }
+  Ok(())
 }
 
 fn struct_update_pairs<'a>(head: &Calcit, args: &'a CalcitList) -> Option<Vec<(usize, &'a Calcit, &'a Calcit)>> {
@@ -15435,15 +15449,27 @@ fn reject_strict_unbound_type_slot_schema(
   let Some((path, slot)) = find_unbound_type_slot_schema(schema, "schema") else {
     return Ok(());
   };
-  Err(CalcitErr::use_msg_stack_location_with_code(
+  Err(unbound_type_slot_error(ns, def_name, &path, &slot, call_stack, definition_location))
+}
+
+/// Render the same missing-entry-binding diagnostic for schema and use sites.
+fn unbound_type_slot_error(
+  ns: &str,
+  def_name: &str,
+  path: &str,
+  slot: &str,
+  call_stack: &CallStackList,
+  location: Option<NodeLocation>,
+) -> CalcitErr {
+  CalcitErr::use_msg_stack_location_with_code(
     CalcitErrKind::Type,
     format!(
       "{ns}/{def_name} uses unbound type slot `*{slot}` at {path}; bind it for the selected entry with `calcit config set-type-slot :{slot} namespace/definition`, or explicitly select `:dynamic` only for a reviewed open boundary"
     ),
     "E_UNBOUND_TYPE_SLOT",
     call_stack,
-    find_preferred_macro_location(call_stack).or(definition_location),
-  ))
+    find_preferred_macro_location(call_stack).or(location),
+  )
 }
 
 fn reject_strict_bare_container_public_schema(
