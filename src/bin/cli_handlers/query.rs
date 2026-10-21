@@ -4728,13 +4728,21 @@ fn handle_error(input_path: &str) -> Result<(), String> {
   let project_directory = project_state::project_directory_for_snapshot(input_path);
   let error_file = project_state::state_file(project_directory, ERROR_STATE_FILE);
   let legacy_error_file = project_directory.join(".calcit-error.cirru");
-  if project_state::migrate_legacy_file(&legacy_error_file, &error_file)
-    .map_err(|error| format!("Failed to migrate legacy error file: {error}"))?
-  {
-    eprintln!("Moved legacy error state into '{}'.", error_file.display());
+  let mut selected_file = None;
+  for candidate in [&error_file, &legacy_error_file] {
+    // Only an absent path permits fallback; a broken symlink or unreadable
+    // current file must not silently reveal an older diagnostic instead.
+    match fs::symlink_metadata(candidate) {
+      Ok(_) => {
+        selected_file = Some(candidate);
+        break;
+      }
+      Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+      Err(error) => return Err(format!("Failed to get metadata of error file: {error}")),
+    }
   }
 
-  if !error_file.exists() {
+  let Some(error_file) = selected_file else {
     println!("{}", "No .calcit/error.cirru file found.".yellow());
     if command_guidance_enabled() {
       println!();
@@ -4743,22 +4751,25 @@ fn handle_error(input_path: &str) -> Result<(), String> {
       println!("  • Run syntax check: {}", "calcit --check-only".cyan());
     }
     return Ok(());
-  }
+  };
 
-  let metadata = fs::metadata(&error_file).map_err(|e| format!("Failed to get metadata of error file: {e}"))?;
+  let metadata = fs::metadata(error_file).map_err(|e| format!("Failed to get metadata of error file: {e}"))?;
   if let Ok(modified) = metadata.modified()
     && let Ok(elapsed) = modified.elapsed()
     && elapsed.as_secs() > 10
   {
     println!(
       "{}",
-      format!("Warning: .calcit/error.cirru was modified {} seconds ago.", elapsed.as_secs()).yellow()
+      format!("Warning: {} was modified {} seconds ago.", error_file.display(), elapsed.as_secs()).yellow()
     );
     println!("{}", "It might be outdated, please recompile or check the watcher.".yellow());
     println!();
   }
 
-  let content = fs::read_to_string(&error_file).map_err(|e| format!("Failed to read error file: {e}"))?;
+  let content = fs::read_to_string(error_file).map_err(|e| format!("Failed to read error file: {e}"))?;
+  if error_file == &legacy_error_file {
+    eprintln!("Reading legacy error state from '{}' without moving it.", error_file.display());
+  }
 
   if content.trim().is_empty() {
     println!("{}", "✓ Error file is empty (no recent errors).".green());
