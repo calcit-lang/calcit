@@ -548,6 +548,67 @@ fn prepare_minimal_snapshot(directory: &TestDirectory) -> PathBuf {
 }
 
 #[test]
+fn format_and_weak_types_distinguish_member_names_from_legacy_type_aliases() {
+  // This verifies CLI diagnostics and no-write/idempotence, not a runtime trait operation.
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  let target = "app.main/MobileInfo";
+  let write_trait = |code| {
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &["edit", "def", target, "--overwrite", "--input-format", "cirru", "--code", code],
+      ),
+      "write trait through the public editor",
+    );
+  };
+  write_trait("quote $ deftrait MobileInfo (:any 'Bool)");
+  assert_success(&run_calcit(&snapshot, &["--check-only", "--all-defs"]), "strict trait fixture");
+  assert_success(&run_calcit(&snapshot, &["edit", "format"]), "canonicalize trait fixture");
+  let original = fs::read(&snapshot).unwrap();
+  let weak_args = ["analyze", "weak-types", "--only", "schema-dynamic,code-dynamic", "--format", "json"];
+  let clean = run_calcit(&snapshot, &weak_args);
+  assert_success(&clean, "read shared weak-type report");
+  let report: serde_json::Value = serde_json::from_slice(&clean.stdout).unwrap();
+  assert_eq!(report["data"]["definitions"], serde_json::json!([]), "{report}");
+  let formatted = run_calcit(&snapshot, &["edit", "format"]);
+  assert_success(&formatted, "format legal trait member");
+  let messages = format!(
+    "{}{}",
+    String::from_utf8_lossy(&formatted.stdout),
+    String::from_utf8_lossy(&formatted.stderr)
+  );
+  for code in ["W_LEGACY_ANY", "W_DYNAMIC_TYPE_DEBT"] {
+    assert!(!messages.contains(code), "legal member name must not trigger {code}: {messages}");
+  }
+  assert_eq!(
+    fs::read(&snapshot).unwrap(),
+    original,
+    "analysis/format must preserve canonical source"
+  );
+
+  write_trait("quote $ deftrait MobileInfo (:any :any)");
+  let debt = run_calcit(&snapshot, &weak_args);
+  assert_success(&debt, "report a real legacy annotation");
+  let report: serde_json::Value = serde_json::from_slice(&debt.stdout).unwrap();
+  let definitions = report["data"]["definitions"].as_array().unwrap();
+  assert_eq!(definitions.len(), 1, "{report}");
+  let occurrences = definitions[0]["occurrences"].as_array().unwrap();
+  assert_eq!(occurrences.len(), 1, "count the type, not the same-spelled member name: {report}");
+  assert_eq!(occurrences[0]["path"], "code@2.1");
+  let formatted = run_calcit(&snapshot, &["edit", "format"]);
+  assert_success(&formatted, "format preserves actual type-debt warnings");
+  let messages = format!(
+    "{}{}",
+    String::from_utf8_lossy(&formatted.stdout),
+    String::from_utf8_lossy(&formatted.stderr)
+  );
+  for code in ["W_LEGACY_ANY", "W_DYNAMIC_TYPE_DEBT"] {
+    assert!(messages.contains(code), "real annotation must still trigger {code}: {messages}");
+  }
+}
+
+#[test]
 fn schema_metadata_validation_does_not_inspect_business_source_fields() {
   // Rust owns the guarded write/round-trip checks; the attached Calcit test
   // exercises ordinary Map construction and declared Struct field access.

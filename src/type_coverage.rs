@@ -1197,10 +1197,63 @@ impl QuoteContext {
   }
 }
 
+// Tag spellings are type aliases only in annotation slots, not member names or
+// ordinary data. Keep this source-only distinction shared by all weak-type views.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+enum WeakTypeContext {
+  #[default]
+  Code,
+  Type,
+  DeclarationMember,
+  SchemaEntry,
+}
+
+impl WeakTypeContext {
+  fn for_child(self, head: Option<&str>, index: usize, count: usize) -> Self {
+    match self {
+      Self::Type if head == Some("{}") => {
+        if index > 0 {
+          Self::SchemaEntry
+        } else {
+          Self::Code
+        }
+      }
+      Self::Type => {
+        if index > 0 {
+          Self::Type
+        } else {
+          Self::Code
+        }
+      }
+      Self::SchemaEntry => {
+        if index > 0
+          && matches!(
+            head,
+            Some(":args" | ":return" | ":rest" | ":inputs" | ":expansion" | ":required" | ":optional")
+          )
+        {
+          Self::Type
+        } else {
+          Self::Code
+        }
+      }
+      Self::DeclarationMember if count == 1 && head.is_none() => Self::DeclarationMember,
+      Self::DeclarationMember if index > 0 && head.is_some_and(|name| name.starts_with([':', '.'])) => Self::Type,
+      Self::Code | Self::DeclarationMember => match head {
+        Some("assert-type" | "unsafe-coerce") if index == 2 => Self::Type,
+        Some("hint-fn") if index > 0 && index + 1 == count => Self::Type,
+        Some("defstruct" | "defenum" | "deftrait" | "defexternal") if index >= 2 => Self::DeclarationMember,
+        _ => Self::Code,
+      },
+    }
+  }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 struct WeakScanState {
   nil_return_intent: Option<WeakTypeIntent>,
   quote_context: QuoteContext,
+  type_context: WeakTypeContext,
 }
 
 fn scan_cirru_weak_types(
@@ -1223,7 +1276,12 @@ fn scan_cirru_weak_types(
           weak_type_detail(WeakTypeKind::SchemaDynamic, detail_prefix),
           format_cirru_path(root, path),
         );
-      } else if is_dynamic && root == "code" && selected.contains(&WeakTypeKind::CodeDynamic) && !state.quote_context.is_quoted() {
+      } else if is_dynamic
+        && root == "code"
+        && state.type_context == WeakTypeContext::Type
+        && selected.contains(&WeakTypeKind::CodeDynamic)
+        && !state.quote_context.is_quoted()
+      {
         let detail = if text.as_ref() == ":any" {
           format!("legacy-any:{}", classify_code_dynamic(parent))
         } else {
@@ -1311,6 +1369,7 @@ fn scan_cirru_weak_types(
         let child_state = WeakScanState {
           nil_return_intent: state.nil_return_intent.filter(|_| child_return_position),
           quote_context: state.quote_context.for_child(head.as_deref(), idx),
+          type_context: state.type_context.for_child(head.as_deref(), idx, items.len()),
         };
         scan_cirru_weak_types(item, root, path, Some(&next_parent), child_state, selected, occurrences);
         path.pop();
@@ -1378,6 +1437,7 @@ pub fn analyze_weak_types_entry(
     WeakScanState {
       nil_return_intent: Some(nil_return_intent(entry.schema.as_ref())),
       quote_context: QuoteContext::default(),
+      type_context: WeakTypeContext::Code,
     },
     selected,
     &mut occurrences,
