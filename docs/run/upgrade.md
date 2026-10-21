@@ -115,22 +115,25 @@ defn call-value (f args)
 - 可能逃逸的闭包不继承捕获变量的临时证据；可在守卫后绑定独立的已检查值，再为闭包声明真实输入与返回合同。
 - 自定义同名谓词或正常返回的拒绝分支不能提供内置谓词的类型证据。
 
-## 0.31.0 值位置的无 else 分支与 nil 合并提示改用 Option
+## 0.31.0 值位置的无 else 分支与 nil 合并改为严格错误
 
-无 else 的 `if` / `when` / `case`，以及一支是 `nil`、另一支有具体值的 `if`（包括最后一支为 `(true nil)` 的 `cond`），在值被消费的位置——`let` 初始化、调用或方法实参、声明了具体返回类型的函数结尾——会在 `--check-only` 的 Notes 中列出 `W_IMPLICIT_NIL_BRANCH`。检查与运行照常通过，类型检查结果与 0.30 相同：这类分支在 0.32.0 删除 `Optional<T>` 之前仍按旧 `Optional<T>` 合并参与所有合同检查。
+无 else 的 `if` / `when` / `case`，以及一支是 `nil`、另一支有具体值的 `if`，作为调用或方法实参、或作为声明了具体返回类型的函数结尾时，严格模式（默认）报 `E_IMPLICIT_NIL_BRANCH`，`--check-only` 与运行都会失败。`--compat-types` 下降为 `W_IMPLICIT_NIL_BRANCH`，只在 Notes 中列出。`let` 初始化只列出 `W_IMPLICIT_NIL_BRANCH` 提示，不阻塞：绑定后的值仍可用 `nil?` 收窄或交给可空参数，而每一处非可空的使用都已在使用点被拒绝。类型检查的其余结果与 0.30 相同：这类分支在 0.32.0 删除 `Optional<T>` 之前仍按旧 `Optional<T>` 合并参与所有合同检查，因此原本被拒绝的程序仍被拒绝，部分原本按 `W_*_TYPE_MISMATCH` 报告的位置改报 `E_IMPLICIT_NIL_BRANCH`。
 
 | 旧写法 | 新写法 |
 | --- | --- |
-| `let ((y (when ok x))) …` | `let ((y (if ok (Option :some x) (Option :none)))) …`，或补显式 else 值 |
-| `if ok x nil` 作为实参或返回值 | 返回 `Option :some x` / `Option :none`；已有的可能为 nil 的值用 `nil->option` 包装 |
+| `take-num (when ok x)`、`{} (:k (if-not ok f))` 等实参 | `Option :some x` / `Option :none` 并改参数合同；或补显式 else 值 |
+| `if ok x nil` 作为实参或具体返回类型的结尾 | 返回 `Option :some x` / `Option :none`；已有的可能为 nil 的值用 `nil->option` 包装；确属宿主边界的返回声明为 `JsNullish<T>` |
+| `let ((y (when ok x))) …`（提示） | `let ((y (if ok (Option :some x) (Option :none)))) …`，或补显式 else 值 |
 
-迁移前可运行 `calcit calcit.cirru --check-only`，按 Notes 中的位置逐处修改，修改前后用 `calcit edit` / `calcit tree` 事务（dry-run、revision 守卫）并跑测试；业务默认值由人选择，不由工具补。
+迁移前可运行 `calcit calcit.cirru --check-only`，按错误位置逐处修改，修改前后用 `calcit edit` / `calcit tree` 事务（dry-run、revision 守卫）并跑测试；业务默认值由人选择，不由工具补。需要分批迁移时可暂用 `--compat-types`。
+
+已知受影响的下游位置：Triadica/triadica-space 的 `triadica.comp.drag-point/comp-drag-point`（`:on-mousemove $ if-not ignore-moving? (fn …)` 作为 `{}` 的实参）。
 
 ### 限制
 
-- 语句位置的 `if`（结果被丢弃）、`nil->option` 的实参、声明为可空（`JsNullish<T>` 或旧 `Optional<T>`）的参数与返回值不报告。
-- 只识别直接写在上述位置的分支；回调或函数字面量中没有声明具体返回类型的结尾、`assert-type` 的操作数、`and` / `or` 的结果、通过 `set!` 写入的值与库宏生成的分支不报告。
-- 检查失败时只输出错误，Notes 不显示。
+- 语句位置的 `if`（结果被丢弃）、`nil->option` 的实参、声明为可空（`JsNullish<T>` 或旧 `Optional<T>`）的参数与返回值、`Dynamic` 返回、`calcit.core` 与库宏生成的分支不报告。
+- 只识别直接写在上述位置的分支；回调或函数字面量中没有声明具体返回类型的结尾、`assert-type` 的操作数、`and` / `or` 的结果与通过 `set!` 写入的值不报告。
+- `let` 初始化的提示只在检查通过时显示在 Notes 中。
 - `nil->option` 的参数类型与 `.?-field` 的结果类型不在本节改动范围，仍随 0.32.0 删除 Optional 时调整。
 
 <a id="032-调用-dynamic-值须先收窄"></a>
@@ -244,7 +247,7 @@ payload 有具体类型时，这种写法本来就被参数检查拒绝；新诊
 ### 限制
 
 - 0.32.0 之前 `Optional<T>` 仍可解析，严格模式下公共 schema 报 `E_LEGACY_OPTIONAL_SCHEMA`，其余位置保持现状。
-- 类型推导（无 else 的 `if`、`nil` 与具体值的分支合并）在 0.32.0 之前仍推出 `Optional<T>`；值位置的用法由 `W_IMPLICIT_NIL_BRANCH` 提示，见 [值位置的无 else 分支与 nil 合并提示改用 Option](#031-值位置的无-else-分支与-nil-合并提示改用-option)。
+- 类型推导（无 else 的 `if`、`nil` 与具体值的分支合并）在 0.32.0 之前仍推出 `Optional<T>`；值位置的用法由 `E_IMPLICIT_NIL_BRANCH` 拒绝，见 [值位置的无 else 分支与 nil 合并改为严格错误](#031-值位置的无-else-分支与-nil-合并改为严格错误)。
 - `nil->option` 的参数类型改动与 Optional 的删除在同一版本落地；单独把参数改成泛型 `T` 会让上述无 else `if` / `Optional` 实参的折叠形式在严格检查中失败。
 - core 内部 `&` 原语的 schema 不属于公共 API，不在本节范围。
 
