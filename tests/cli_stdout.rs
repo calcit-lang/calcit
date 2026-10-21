@@ -23,14 +23,15 @@ fn eval_preserves_explicit_application_namespaces_without_running_their_entries(
   let project = tempfile::tempdir().expect("create eval project");
   let snapshot = project.path().join("calcit.cirru");
   std::fs::copy("tests/fixtures/def-value-schema.cirru", &snapshot).expect("copy actual app fixture");
-  let run = |args: &[&str]| {
+  let run_snapshot = |target: &Path, args: &[&str]| {
     calcit(project.path())
       .current_dir(project.path())
-      .arg(&snapshot)
+      .arg(target)
       .args(args)
       .output()
       .expect("run project command")
   };
+  let run = |args: &[&str]| run_snapshot(&snapshot, args);
   let success = |output: &std::process::Output| {
     assert!(
       output.status.success(),
@@ -39,23 +40,26 @@ fn eval_preserves_explicit_application_namespaces_without_running_their_entries(
       String::from_utf8_lossy(&output.stderr)
     );
   };
-  let migrate = |operations: serde_json::Value| {
+  let migrate = |target: &Path, operations: serde_json::Value| {
     let code = operations.to_string();
-    let preview = run(&["edit", "transaction", "--code", &code, "--dry-run", "--format", "json"]);
+    let preview = run_snapshot(target, &["edit", "transaction", "--code", &code, "--dry-run", "--format", "json"]);
     success(&preview);
     let report: serde_json::Value = serde_json::from_slice(&preview.stdout).expect("transaction preview");
-    success(&run(&[
-      "edit",
-      "transaction",
-      "--code",
-      &code,
-      "--expect-revision",
-      report["scoped_revision"].as_str().expect("scoped revision"),
-      "--format",
-      "json",
-    ]));
+    success(&run_snapshot(
+      target,
+      &[
+        "edit",
+        "transaction",
+        "--code",
+        &code,
+        "--expect-revision",
+        report["scoped_revision"].as_str().expect("scoped revision"),
+        "--format",
+        "json",
+      ],
+    ));
   };
-  migrate(serde_json::json!([
+  let initial_operations = serde_json::json!([
     [
       "edit",
       "def",
@@ -103,7 +107,8 @@ fn eval_preserves_explicit_application_namespaces_without_running_their_entries(
       "--code",
       "quote $ :: 'Fn $ {} (:args $ [] 'Number) (:return 'Number)"
     ]
-  ]));
+  ]);
+  migrate(&snapshot, initial_operations);
   let before = std::fs::read(&snapshot).expect("source before eval");
   let missing = run(&["eval", "+ app.main/answer 0"]);
   assert!(!missing.status.success());
@@ -137,8 +142,44 @@ fn eval_preserves_explicit_application_namespaces_without_running_their_entries(
   let other = project.path().join("other.cirru");
   std::fs::copy(&snapshot, &other).expect("copy conflicting application");
   let conflict = run(&["eval", "--dep", "./", "--dep", other.to_str().unwrap(), "+ app.main/answer 0"]);
-  assert!(!conflict.status.success(), "different source owners must not be silently preferred");
-  assert!(String::from_utf8_lossy(&conflict.stderr).contains("conflict"));
+  assert!(
+    !conflict.status.success(),
+    "different Snapshot metadata must not be silently preferred"
+  );
+  assert!(String::from_utf8_lossy(&conflict.stderr).contains("namespace `app.$meta` conflicts with existing content"));
+
+  // A distinct package avoids the generated app.$meta collision. Use a fixture
+  // without JS FFI so only app.main's actual content conflict can reject this.
+  let plain_other = project.path().join("plain-other.cirru");
+  std::fs::copy("calcit/add.cirru", &plain_other).expect("copy FFI-free conflicting application");
+  migrate(
+    &plain_other,
+    serde_json::json!([
+      [
+        "edit",
+        "def",
+        "app.main/answer",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ def answer 43"
+      ],
+      [
+        "edit",
+        "schema",
+        "app.main/answer",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote 'Number"
+      ],
+      ["config", "set", "package", "other"]
+    ]),
+  );
+  let conflict = run(&["eval", "--dep", "./", "--dep", plain_other.to_str().unwrap(), "+ app.main/answer 0"]);
+  assert!(!conflict.status.success());
+  assert!(String::from_utf8_lossy(&conflict.stderr).contains("namespace `app.main` conflicts with existing content"));
+
   assert_eq!(std::fs::read(&snapshot).unwrap(), before, "eval must not mutate application source");
 }
 
