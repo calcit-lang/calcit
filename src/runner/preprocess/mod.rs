@@ -12089,7 +12089,7 @@ fn check_value_position_nil_branch(
     return Ok(());
   }
   let reason = match kind {
-    ImplicitNilBranch::MissingElse => "a branch without an else (`if` / `when` / `case`) yields nil when no condition matches",
+    ImplicitNilBranch::MissingElse => "an `if` / `when` without an else yields nil when its condition is false",
     ImplicitNilBranch::NilJoin => "one branch is `nil` while another carries a value",
   };
   let message = format!(

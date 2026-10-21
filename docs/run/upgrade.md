@@ -117,7 +117,7 @@ defn call-value (f args)
 
 ## 0.31.0 值位置的无 else 分支与 nil 合并改为严格错误
 
-无 else 的 `if` / `when` / `case`，以及一支是 `nil`、另一支有具体值的 `if`，作为调用或方法实参、或作为声明了具体返回类型的函数结尾时，严格模式（默认）报 `E_IMPLICIT_NIL_BRANCH`，`--check-only` 与运行都会失败。`--compat-types` 下降为 `W_IMPLICIT_NIL_BRANCH`，只在 Notes 中列出。`let` 初始化只列出 `W_IMPLICIT_NIL_BRANCH` 提示，不阻塞：绑定后的值仍可用 `nil?` 收窄或交给可空参数，而每一处非可空的使用都已在使用点被拒绝。类型检查的其余结果与 0.30 相同：这类分支在 0.32.0 删除 `Optional<T>` 之前仍按旧 `Optional<T>` 合并参与所有合同检查，因此原本被拒绝的程序仍被拒绝，部分原本按 `W_*_TYPE_MISMATCH` 报告的位置改报 `E_IMPLICIT_NIL_BRANCH`。
+无 else 的 `if` / `when`，以及一支是 `nil`、另一支有具体值的 `if`，作为调用或方法实参、或作为声明了具体返回类型的函数结尾时，严格模式（默认）报 `E_IMPLICIT_NIL_BRANCH`，`--check-only` 与运行都会失败。`--compat-types` 下降为 `W_IMPLICIT_NIL_BRANCH`，只在 Notes 中列出。`let` 初始化只列出 `W_IMPLICIT_NIL_BRANCH` 提示，不阻塞：绑定后的值仍可用 `nil?` 收窄或交给可空参数，而每一处非可空的使用都已在使用点被拒绝。没有默认分支的 `case` / `cond` 在未匹配时抛出错误，不会得到 nil，因此不在此列。类型检查的其余结果与 0.30 相同：这类分支在 0.32.0 删除 `Optional<T>` 之前仍按旧 `Optional<T>` 合并参与所有合同检查，因此原本被拒绝的程序仍被拒绝，部分原本按 `W_*_TYPE_MISMATCH` 报告的位置改报 `E_IMPLICIT_NIL_BRANCH`。
 
 | 旧写法 | 新写法 |
 | --- | --- |
@@ -127,11 +127,17 @@ defn call-value (f args)
 
 迁移前可运行 `calcit calcit.cirru --check-only`，按错误位置逐处修改，修改前后用 `calcit edit` / `calcit tree` 事务（dry-run、revision 守卫）并跑测试；业务默认值由人选择，不由工具补。需要分批迁移时可暂用 `--compat-types`。
 
-已知受影响的下游位置：Triadica/triadica-space 的 `triadica.comp.drag-point/comp-drag-point`（`:on-mousemove $ if-not ignore-moving? (fn …)` 作为 `{}` 的实参）。
+已知受影响的下游位置：Triadica/triadica-space 的 `triadica.comp.drag-point/comp-drag-point`（`:on-mousemove $ if-not ignore-moving? (fn …)` 作为 `{}` 的实参）。改写成 `if ignore-moving? nil (fn …)` 属于 nil 合并，同样被拒绝。可选的修改：
+
+- 在 else 分支放一个不做事的处理函数：`:on-mousemove $ if ignore-moving? noop-move (fn …)`，`noop-move` 的参数与返回类型和原来的 `fn …` 相同，函数体只返回该合同要求的空结果。
+- 只在需要时加这个键：先构造不含 `:on-mousemove` 的 `{}`，再 `if ignore-moving? props (assoc props :on-mousemove (fn …))`。
 
 ### 限制
 
-- 语句位置的 `if`（结果被丢弃）、`nil->option` 的实参、声明为可空（`JsNullish<T>` 或旧 `Optional<T>`）的参数与返回值、`Dynamic` 返回、`calcit.core` 与库宏生成的分支不报告。
+- 语句位置的 `if`（结果被丢弃）、`nil->option` 的实参、声明为可空（`JsNullish<T>` 或旧 `Optional<T>`）的参数与返回值、`Dynamic` 返回、`calcit.core` 的分支不报告。
+- 完全由宏写出的分支（`if` 及其操作数都来自宏定义）不报告；库宏把调用者的表达式包进无 else 的 `if` 时，在调用处报告，例如 `defmacro maybe (c x) (quasiquote (if ~c ~x))` 用作 `str |x (maybe flag |b)`，修改方式是用 `nil->option (maybe flag |b)` 得到 Option 再处理（例如 `.unwrap-or`），或让宏带上 else 值。
+- `let` 初始化只给提示，但直接写在实参里的 `nil? (if flag 1)` 仍是严格错误；先绑定到 `let` 再判断，或改用 Option。
+- 直接作为 JS FFI 调用实参（如 `js/console.log (if flag 1)`）的无 else 分支同样被拒绝，`W_OPTION_ERASED_TO_NIL` 对宿主实参的豁免不适用于这里；需要补 else 值，或交给形参声明为 `JsNullish<T>` 的适配函数。
 - 只识别直接写在上述位置的分支；回调或函数字面量中没有声明具体返回类型的结尾、`assert-type` 的操作数、`and` / `or` 的结果与通过 `set!` 写入的值不报告。
 - `let` 初始化的提示只在检查通过时显示在 Notes 中。
 - `nil->option` 的参数类型与 `.?-field` 的结果类型不在本节改动范围，仍随 0.32.0 删除 Optional 时调整。
