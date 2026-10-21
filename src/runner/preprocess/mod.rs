@@ -15461,6 +15461,28 @@ fn unbound_type_slot_error(
   call_stack: &CallStackList,
   location: Option<NodeLocation>,
 ) -> CalcitErr {
+  // Preserve caller-owned callback coordinates. Only source originating in a
+  // different (macro) definition should move to the macro invocation.
+  let location = location
+    .map(|mut original| {
+      // Nested core expansions can precede the owning macro. Follow only
+      // frames that actually generated this source, from inner to outer.
+      for frame in &call_stack.0 {
+        if frame.kind == StackKind::Macro && frame.ns == original.ns && frame.def == original.def {
+          let source = |location: &NodeLocation| location.def.as_ref() != GENERATED_DEF;
+          if let Some(caller) = find_calcit_location_matching(&frame.code, source).or_else(|| {
+            frame
+              .args
+              .iter()
+              .find_map(|argument| find_calcit_location_matching(argument, source))
+          }) {
+            original = caller;
+          }
+        }
+      }
+      original
+    })
+    .or_else(|| find_preferred_macro_location(call_stack));
   CalcitErr::use_msg_stack_location_with_code(
     CalcitErrKind::Type,
     format!(
@@ -15468,7 +15490,7 @@ fn unbound_type_slot_error(
     ),
     "E_UNBOUND_TYPE_SLOT",
     call_stack,
-    find_preferred_macro_location(call_stack).or(location),
+    location,
   )
 }
 

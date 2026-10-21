@@ -1003,6 +1003,10 @@ deftype-slot :dispatch-op
 
 Then reference the slot in type annotations with the `*name` syntax:
 
+下面是 `edit schema` / CodeEntry schema 的序列化写法，`'*dispatch-op` 表示 EDN Symbol。
+在程序源码的 `hint-fn` Map 或 `defstruct` 字段类型表达式中，使用裸 `*dispatch-op`；
+这些位置的 `'*dispatch-op` 是另一个带引号的类型名称，不能代替 slot。
+
 ```cirru.no-check
 ;; EventHandler schema "—" dispatch callback accepts the slot type
 
