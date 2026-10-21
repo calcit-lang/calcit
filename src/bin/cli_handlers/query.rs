@@ -5570,7 +5570,8 @@ fn collect_usages_from_snapshot(snapshot: &snapshot::Snapshot, target_ns: &str, 
       continue;
     }
 
-    let symbols = target_reference_symbols(ns_name, &file_data.ns.code, target_ns, target_def);
+    let defines_target_name = ns_name != target_ns && file_data.defs.contains_key(target_def);
+    let symbols = target_reference_symbols(ns_name, &file_data.ns.code, defines_target_name, target_ns, target_def);
 
     for (def_name, code_entry) in &file_data.defs {
       if ns_name == target_ns && def_name == target_def {
@@ -5593,7 +5594,7 @@ fn collect_usages_from_snapshot(snapshot: &snapshot::Snapshot, target_ns: &str, 
       }
 
       if let Ok(Some(schema)) = query_schema_cirru(code_entry.schema.as_ref(), false)
-        && let Some((context, coords)) = find_reference_symbols(&schema, &symbols)
+        && let Some((context, coords)) = find_reference_symbols(&strip_schema_quotes(&schema), &symbols)
       {
         usages.push((ns_name.clone(), def_name.clone(), context, coords, "schema"));
       }
@@ -5634,6 +5635,11 @@ fn handle_usages(input_path: &str, target_ns: &str, target_def: &str, include_de
       &mut out,
       "\n{}",
       "No usages found. This definition may be unused or only called externally.".yellow()
+    );
+    let _ = writeln!(
+      &mut out,
+      "{}",
+      "Macro-generated references and local shadowing are not detected, so zero usages is not proof of non-use.".dimmed()
     );
   } else {
     let _ = writeln!(&mut out);
@@ -5757,11 +5763,19 @@ fn get_symbol_context_cirru(code: &Cirru, symbol: &str) -> String {
   String::new()
 }
 
-/// Spellings that name `target_ns/target_def` inside `ns_name`: the fully qualified name,
-/// `alias/def` for every `:as` alias of the target namespace, the bare name when it is
-/// `:refer`-ed (and not rebound by a later rule), and the bare name inside the target namespace.
-fn target_reference_symbols(ns_name: &str, ns_code: &Cirru, target_ns: &str, target_def: &str) -> Vec<String> {
-  let mut symbols = vec![format!("{target_ns}/{target_def}")];
+/// Spellings that name `target_ns/target_def` inside `ns_name`, following the `:require` rules
+/// (a later rule rebinds an earlier one):
+/// - the fully qualified name, unless the caller binds `target_ns` itself as an alias of another namespace;
+/// - `alias/def` for every `:as` alias of the target namespace;
+/// - the bare name inside the target namespace, when it is `:refer`-ed from the target namespace,
+///   or for `calcit.core` when no import rule or local definition (`defines_target_name`) rebinds it.
+fn target_reference_symbols(
+  ns_name: &str,
+  ns_code: &Cirru,
+  defines_target_name: bool,
+  target_ns: &str,
+  target_def: &str,
+) -> Vec<String> {
   let mut bindings: BTreeMap<Arc<str>, Arc<program::ImportRule>> = BTreeMap::new();
   for rule in super::edit::extract_require_rules(ns_code) {
     // Malformed rules are reported by loading and checking; usages only needs the valid bindings.
@@ -5769,24 +5783,44 @@ fn target_reference_symbols(ns_name: &str, ns_code: &Cirru, target_ns: &str, tar
       bindings.extend(pairs);
     }
   }
-  let mut bare_refers_target = ns_name == target_ns;
+  let mut symbols = vec![];
+  let qualified_is_rebound = bindings
+    .get(target_ns)
+    .is_some_and(|rule| !matches!(rule.as_ref(), program::ImportRule::NsAs(source) if source.as_ref() == target_ns));
+  if !qualified_is_rebound {
+    symbols.push(format!("{target_ns}/{target_def}"));
+  }
   for (binding, rule) in &bindings {
-    match rule.as_ref() {
-      program::ImportRule::NsAs(source) if source.as_ref() == target_ns => {
-        symbols.push(format!("{binding}/{target_def}"));
-      }
-      program::ImportRule::NsReferDef(source, def) if source.as_ref() == target_ns && def.as_ref() == target_def => {
-        bare_refers_target = true;
-      }
-      _ => {}
+    if let program::ImportRule::NsAs(source) = rule.as_ref()
+      && source.as_ref() == target_ns
+    {
+      symbols.push(format!("{binding}/{target_def}"));
     }
   }
+  let bare_refers_target = if ns_name == target_ns {
+    true
+  } else if let Some(rule) = bindings.get(target_def) {
+    matches!(rule.as_ref(), program::ImportRule::NsReferDef(source, def) if source.as_ref() == target_ns && def.as_ref() == target_def)
+  } else {
+    target_ns == calcit::calcit::CORE_NS && !defines_target_name
+  };
   if bare_refers_target {
     symbols.push(target_def.to_owned());
   }
   symbols.sort();
   symbols.dedup();
   symbols
+}
+
+/// Schema leaves name types as quoted symbols (`'Story`, `'schema/Story`); compare them unquoted.
+fn strip_schema_quotes(code: &Cirru) -> Cirru {
+  match code {
+    Cirru::Leaf(s) => match s.strip_prefix('\'') {
+      Some(name) if !name.is_empty() => Cirru::Leaf(Arc::from(name)),
+      _ => code.clone(),
+    },
+    Cirru::List(items) => Cirru::List(items.iter().map(strip_schema_quotes).collect()),
+  }
 }
 
 /// Locate every leaf spelled as one of `symbols`; returns the first match's context and all coordinates.
@@ -6803,4 +6837,68 @@ fn find_anchors(node: &Cirru, current_path: &[usize]) -> Vec<(Vec<usize>, String
     }
   }
   results
+}
+
+#[cfg(test)]
+mod usage_symbol_tests {
+  use super::*;
+
+  fn symbols_for(ns_source: &str, defines_target_name: bool, target: (&str, &str)) -> Vec<String> {
+    let ns_code = cirru_parser::parse(ns_source).expect("ns form should parse").remove(0);
+    target_reference_symbols("app.caller", &ns_code, defines_target_name, target.0, target.1)
+  }
+
+  #[test]
+  fn reference_symbols_follow_require_rules() {
+    let target = ("app.schema", "decode");
+    assert_eq!(symbols_for("ns app.caller", false, target), ["app.schema/decode"]);
+    // Two aliases for one namespace, plus a refer.
+    assert_eq!(
+      symbols_for(
+        "ns app.caller $ :require (app.schema :as s) (app.schema :as schema) (app.schema :refer $ decode)",
+        false,
+        target
+      ),
+      ["app.schema/decode", "decode", "s/decode", "schema/decode"]
+    );
+    // A namespace whose name only shares a prefix is a different namespace.
+    assert_eq!(
+      symbols_for(
+        "ns app.caller $ :require (app.schema-v2 :as schema) (app.schema-v2 :refer $ decode)",
+        false,
+        target
+      ),
+      ["app.schema/decode"]
+    );
+    // A later rule rebinding the referred name wins: `:refer`, `:as` and `:default`.
+    for rebinding in ["app.other :refer $ decode", "app.other :as decode", "|pkg :default decode"] {
+      let source = format!("ns app.caller $ :require (app.schema :refer $ decode) ({rebinding})");
+      assert_eq!(symbols_for(&source, false, target), ["app.schema/decode"], "{rebinding}");
+    }
+    // A later rule rebinding the alias drops the alias spelling.
+    assert_eq!(
+      symbols_for("ns app.caller $ :require (app.schema :as s) (app.other :as s)", false, target),
+      ["app.schema/decode"]
+    );
+    // Binding the target namespace name itself to another namespace hides the qualified spelling.
+    assert_eq!(
+      symbols_for(
+        "ns app.caller $ :require (app.other :as app.schema) (app.schema :as s)",
+        false,
+        target
+      ),
+      ["s/decode"]
+    );
+  }
+
+  #[test]
+  fn core_names_are_bare_unless_rebound() {
+    let target = ("calcit.core", "map");
+    assert_eq!(symbols_for("ns app.caller", false, target), ["calcit.core/map", "map"]);
+    assert_eq!(symbols_for("ns app.caller", true, target), ["calcit.core/map"]);
+    assert_eq!(
+      symbols_for("ns app.caller $ :require (app.util :refer $ map)", false, target),
+      ["calcit.core/map"]
+    );
+  }
 }
