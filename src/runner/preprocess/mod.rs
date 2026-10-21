@@ -7802,13 +7802,22 @@ fn expected_method_argument_types(
         }),
     );
     proof.prove(type_value, fn_annotation.arg_types.first().or(fn_annotation.rest_type.as_ref())?);
+    // An unbound callback output must not erase its independently known input.
+    let bindings = generics
+      .iter()
+      .filter_map(|name| {
+        proof
+          .result(&CalcitTypeAnnotation::TypeVar(name.clone()))
+          .map(|value| (name.clone(), value))
+      })
+      .collect::<HashMap<_, _>>();
     return Some(MethodArgumentContext {
       receiver_specialized: false,
       argument_types: fn_annotation
         .arg_types
         .iter()
         .skip(1)
-        .map(|arg| proof.result(arg).unwrap_or_else(|| arg.clone()))
+        .map(|arg| arg.substitute_type_vars(&bindings))
         .collect(),
     });
   }

@@ -15,6 +15,7 @@
 方法调用不再把仅用于查询展示的 receiver-specialized 合同当作全调用证明。
 方法的 primitive 优先读取已有公开 schema，而非宽泛 runtime 签名；同一次调用的准备与检查复用
 同一份解析后实参证据，避免重复解析名义 trait 定义产生不同身份，也不把未解析输入当作显式 Dynamic。
+回调上下文逐个替换已证明的泛型槽：输出暂时未绑定时，输入仍保留接收者已证明的具体类型。
 现有空容器、Option none、Result err 的无 payload 规则在准备证据时复用；独立的已知投影仍可保留。
 不增加检查入口、诊断编号、固定改写、Dynamic/unsafe 合同或统计门禁。
 
@@ -28,4 +29,7 @@ CLI 拒绝与 type-at 证据扩展现有 fix_cli 矩阵；内部 binder 的不�
 用户语义扩展 core merge 原 :tests，保留原覆盖顺序断言，增加开放 Map 的前后顺序、方法与 postfix、
 Some(nil) 和 Bool 字段保留。复用原 native/JS/WASM 运行器，不新增 runner 或排除项；原混合值测试的
 WASM recursive-specialization 限制仍存在，支持的方法覆盖顺序测试继续实际运行。
+WASI 原 Component 方法回调断言继续完整保留；EDN 标量测试 helper 的旧顶层 Dynamic 声明收窄为
+实际的 List<Result<Dynamic,String>>，只把异型标量 payload 留在开放边界，不借助未绑定的 getter
+变量绕过名义 Result 检查。程序、错误分支和原断言均不变，完整原 WASI 脚本验证该合同。
 提交与 PR 记录最终执行结果及实际后端范围；本修复不表示普通方向检查总单或整个版本已经完成。

@@ -535,8 +535,9 @@
                 str "|do " (char-from-code 34) ||bad (char-from-code 92) |q $ char-from-code 34
                 , 'String
           :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Dynamic)
+          :schema $ :: 'Fn $ {}
             :args $ []
+            :return $ :: 'List $ :: 'Result 'Dynamic 'String
           :tests $ []
             %{} 'TestEntry (:name |parses-bounded-scalars)
               :code $ quote $ assert=
@@ -624,7 +625,9 @@
         'edn-transform-count-map $ %{} 'CodeEntry (:doc "|递增有类型计数并显式保留 Int32 越界错误。")
           :code $ quote $ defn edn-transform-count-map (data)
             let
-                next-count $ &+ (option:unwrap $ &map:get data |count) 1
+                next-count $ &+
+                  option:unwrap $ &map:get data |count
+                  , 1
                 refinement :int32
               if (&number:fits? next-count refinement)
                 %ok $ &map:assoc data |processed $ assert-type next-count 'Int32
