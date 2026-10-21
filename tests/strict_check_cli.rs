@@ -51,6 +51,127 @@ fn assert_success(output: &Output, context: &str) {
 }
 
 #[test]
+fn public_check_retains_cached_callee_warnings_on_their_source_definition() {
+  for (caller, bad, passed) in [("a-caller", "z-bad", 2), ("z-caller", "a-bad", 3)] {
+    let directory = TestDirectory::create();
+    let snapshot = directory.snapshot();
+    fs::copy("tests/fixtures/def-value-schema.cirru", &snapshot).expect("copy public-check fixture");
+    let bad_id = format!("app.check-probe/{bad}");
+    let mut operations = vec![
+      serde_json::json!(["config", "set", "target", "native"]),
+      serde_json::json!(["edit", "add-ns", "app.check-probe"]),
+      serde_json::json!(["edit", "add-ns", "app.other-probe"]),
+    ];
+    let number_fn = "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)";
+    for (id, code, schema) in [
+      (
+        format!("app.check-probe/{caller}"),
+        format!("quote $ defn {caller} () ({bad} |x)"),
+        number_fn,
+      ),
+      (
+        bad_id.clone(),
+        format!("quote $ defn {bad} (x) (inc x)"),
+        "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return 'Number)",
+      ),
+      ("app.check-probe/good".to_owned(), "quote $ defn good () 1".to_owned(), number_fn),
+      (format!("app.other-probe/{bad}"), format!("quote $ defn {bad} () 1"), number_fn),
+    ] {
+      operations.push(serde_json::json!(["edit", "def", id, "--input-format", "cirru", "--code", code]));
+      operations.push(serde_json::json!([
+        "edit",
+        "schema",
+        id,
+        "--input-format",
+        "cirru",
+        "--code",
+        schema
+      ]));
+    }
+    let operations = serde_json::to_string(&operations).unwrap();
+    let preview = run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--code", &operations, "--dry-run", "--format", "json"],
+    );
+    assert_success(&preview, "preview diagnostic ownership fixture");
+    let preview: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+    assert_success(
+      &run_calcit(
+        &snapshot,
+        &[
+          "edit",
+          "transaction",
+          "--code",
+          &operations,
+          "--expect-revision",
+          preview["scoped_revision"].as_str().unwrap(),
+          "--format",
+          "json",
+        ],
+      ),
+      "apply guarded diagnostic ownership fixture",
+    );
+    let original = fs::read(&snapshot).unwrap();
+
+    let output = run_calcit(
+      &snapshot,
+      &[
+        "--check-only",
+        "--ns",
+        "app.check-probe",
+        "--ns",
+        "app.other-probe",
+        "--format",
+        "json",
+      ],
+    );
+    assert!(!output.status.success(), "the known String-to-Number mismatch must fail checking");
+    let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(report["data"]["summary"]["complete"], true, "{report}");
+    assert_eq!(report["data"]["summary"]["passed"], false, "{report}");
+    let definitions = report["data"]["definitions"].as_array().unwrap();
+    let bad_result = definitions.iter().find(|row| row["id"] == bad_id).unwrap();
+    assert_eq!(bad_result["status"], "warning", "{report}");
+    let same_name = format!("app.other-probe/{bad}");
+    assert_eq!(definitions.iter().find(|row| row["id"] == same_name).unwrap()["status"], "passed");
+    assert_eq!(
+      definitions.iter().find(|row| row["definition"] == "good").unwrap()["status"],
+      "passed"
+    );
+    assert_eq!(report["data"]["summary"]["definitions_passed"], passed, "{report}");
+    assert_eq!(report["data"]["summary"]["definitions_checked"], 4, "{report}");
+    let diagnostics = report["diagnostics"].as_array().unwrap();
+    assert_eq!(diagnostics.len(), 1, "{report}");
+    assert_eq!(diagnostics[0]["code"], "W_FN_ARG_TYPE_MISMATCH");
+    assert_eq!(diagnostics[0]["expected"], ":number");
+    assert_eq!(diagnostics[0]["actual"], ":string");
+    assert_eq!(
+      diagnostics[0]["location"],
+      serde_json::json!({"ns":"app.check-probe", "def":bad, "coord":[3,1]})
+    );
+
+    let independent = run_calcit(
+      &snapshot,
+      &[
+        "--check-only",
+        "--keep-going",
+        "--init-fn",
+        &bad_id,
+        "--reload-fn",
+        &bad_id,
+        "--format",
+        "json",
+      ],
+    );
+    assert!(!independent.status.success());
+    let independent: serde_json::Value = serde_json::from_slice(&independent.stdout).unwrap();
+    assert_eq!(independent["data"]["summary"]["failed"], 1);
+    assert_eq!(independent["data"]["summary"]["passed"], 0);
+    assert_eq!(fs::read(&snapshot).unwrap(), original, "checking must not write the snapshot");
+  }
+}
+
+#[test]
 fn method_on_impl_traits_alias_reports_the_failed_trait_load() {
   // #1712: a trait that fails to load leaves the `impl-traits` alias without impls;
   // the method call must surface that failure instead of `unknown method`.
