@@ -278,6 +278,16 @@ calcit query find assoc
 calcit query usages app.main/main!
 ```
 
+`usages` 按命名空间的 require 归属识别 `:refer`、`:as`、全限定名称与隐式 core 引用。
+代码和附带 tests 复用局部改名的词法遍历，区分 `defn` / `fn` 参数、顺序 `let`、`&let` 与
+`loop` 的绑定和读取：绑定名及被遮蔽的局部读取不算全局引用，初始化式中的真实全局读取仍保留。
+已解析到 core 的绑定形式使用相同规则，包括 namespace alias；schema 中的类型引用独立处理。
+`quote` 的内容与 `quasiquote` 的普通模板 leaf 不算可执行引用；后者的 `~` / `~@` 逃逸表达式
+按所在词法作用域收集，含紧凑的 `~name` / `~@name` 写法，并返回真实 source leaf 的坐标。
+
+查询不展开或执行用户 macro，输出是源级引用候选。未展开 macro 仍可能引入绑定或生成引用，
+因此零命中不能单独证明定义可安全删除；改写前仍需核对源码、受保护事务及项目原有验收。
+
 ### Search Text (`search`)
 
 ```bash

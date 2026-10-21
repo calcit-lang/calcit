@@ -1963,6 +1963,7 @@ mod absence;
 mod case_default;
 mod compiler_review;
 mod local_rename;
+pub(crate) use local_rename::{SOURCE_SCOPE_HEADS, source_reference_paths};
 pub(crate) mod schema_synthesis;
 mod spread_call;
 mod structural_rewrite;

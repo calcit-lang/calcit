@@ -11,13 +11,14 @@ use super::cursor::{
   CursorLastQuery, load_cursor_last_query, resolve_active_cursor_reference, resolve_cursor_path_argument,
   resolve_cursor_target_argument, set_cursor_from_query_match,
 };
+use super::fix::{SOURCE_SCOPE_HEADS, source_reference_paths};
 use super::stdout::{cli_print as print, cli_println as println};
 use super::structured_output::{
   StructuredOutputFormat, format_json_value_as_edn, json_value_to_edn, resolve_format_with_legacy_json, warn_deprecated_json_switch,
 };
 use super::tips::command_guidance_enabled;
 use calcit::CalcitTypeAnnotation;
-use calcit::calcit::{Calcit, CalcitFnTypeAnnotation, CalcitProc, DYNAMIC_TYPE, LocatedWarning};
+use calcit::calcit::{Calcit, CalcitFnTypeAnnotation, CalcitProc, CalcitSyntax, DYNAMIC_TYPE, LocatedWarning};
 use calcit::call_stack::CallStackList;
 use calcit::call_tree::{CallTreeAnalyzer, CallTreeConfig};
 use calcit::cli_args::{
@@ -5625,18 +5626,35 @@ fn collect_usages_from_snapshot(snapshot: &snapshot::Snapshot, target_ns: &str, 
 
     let defines_target_name = ns_name != target_ns && file_data.defs.contains_key(target_def);
     let symbols = target_reference_symbols(ns_name, &file_data.ns.code, defines_target_name, target_ns, target_def);
+    let core_heads = SOURCE_SCOPE_HEADS
+      .iter()
+      .flat_map(|head| {
+        let mut spellings = target_reference_symbols(
+          ns_name,
+          &file_data.ns.code,
+          file_data.defs.contains_key(*head),
+          calcit::calcit::CORE_NS,
+          head,
+        );
+        // Intrinsic syntax precedes module imports/defs, but not locals.
+        if CalcitSyntax::is_valid(head) {
+          spellings.push((*head).to_owned());
+        }
+        spellings.into_iter().map(|spelling| (spelling, (*head).to_owned()))
+      })
+      .collect::<BTreeMap<_, _>>();
 
     for (def_name, code_entry) in &file_data.defs {
       if ns_name == target_ns && def_name == target_def {
         continue;
       }
 
-      if let Some((context, coords)) = find_reference_symbols(&code_entry.code, &symbols) {
+      if let Some((context, coords)) = find_reference_symbols(&code_entry.code, &symbols, Some(&core_heads)) {
         usages.push((ns_name.clone(), def_name.clone(), context, coords, "code"));
       }
 
       for test in &code_entry.tests {
-        if let Some((expression, coords)) = find_reference_symbols(&test.code, &symbols) {
+        if let Some((expression, coords)) = find_reference_symbols(&test.code, &symbols, Some(&core_heads)) {
           let context = if expression.is_empty() {
             format!("#{}", test.name)
           } else {
@@ -5647,7 +5665,7 @@ fn collect_usages_from_snapshot(snapshot: &snapshot::Snapshot, target_ns: &str, 
       }
 
       if let Ok(Some(schema)) = query_schema_cirru(code_entry.schema.as_ref(), false)
-        && let Some((context, coords)) = find_reference_symbols(&strip_schema_quotes(&schema), &symbols)
+        && let Some((context, coords)) = find_reference_symbols(&strip_schema_quotes(&schema), &symbols, None)
       {
         usages.push((ns_name.clone(), def_name.clone(), context, coords, "schema"));
       }
@@ -5689,17 +5707,18 @@ fn handle_usages(
 
   let mut out = String::new();
   let _ = writeln!(&mut out, "{} {}", "Usages:".bold(), usages.len());
+  let _ = writeln!(
+    &mut out,
+    "{}",
+    "Source-reference candidates: unexpanded macros can introduce bindings or references; zero usages is not proof of non-use."
+      .dimmed()
+  );
 
   if usages.is_empty() {
     let _ = writeln!(
       &mut out,
       "\n{}",
       "No usages found. This definition may be unused or only called externally.".yellow()
-    );
-    let _ = writeln!(
-      &mut out,
-      "{}",
-      "Macro-generated references and local shadowing are not detected, so zero usages is not proof of non-use.".dimmed()
     );
   } else {
     let _ = writeln!(&mut out);
@@ -5883,25 +5902,28 @@ fn strip_schema_quotes(code: &Cirru) -> Cirru {
   }
 }
 
-/// Locate every leaf spelled as one of `symbols`; returns the first match's context and all coordinates.
-fn find_reference_symbols(code: &Cirru, symbols: &[String]) -> Option<(String, Vec<Vec<usize>>)> {
-  let mut context = None;
+/// Locate namespace-resolved spellings, using the shared lexical walker for
+/// executable source and plain leaves for the separately parsed schema tree.
+fn find_reference_symbols(
+  code: &Cirru,
+  symbols: &[String],
+  core_heads: Option<&BTreeMap<String, String>>,
+) -> Option<(String, Vec<Vec<usize>>)> {
   let mut coords = vec![];
   for symbol in symbols {
-    let found = find_symbol_coords(code, symbol);
-    if found.is_empty() {
-      continue;
-    }
-    if context
-      .as_ref()
-      .is_none_or(|(first_path, _): &(Vec<usize>, String)| found[0] < *first_path)
-    {
-      context = Some((found[0].clone(), get_symbol_context_cirru(code, symbol)));
-    }
+    let found = match core_heads {
+      Some(heads) => source_reference_paths(code, symbol, heads),
+      None => find_symbol_coords(code, symbol),
+    };
     coords.extend(found);
   }
   coords.sort();
-  context.map(|(_, context)| (context, coords))
+  coords.dedup();
+  let first = coords.first()?;
+  let parent = first.get(..first.len().saturating_sub(1)).unwrap_or_default();
+  let node = navigate_to_path(code, parent).unwrap_or_else(|_| code.clone());
+  let text = node.format_one_liner().unwrap_or_default();
+  Some((truncate_chars_with_dots(text.trim(), 50), coords))
 }
 
 /// Fuzzy search for namespace/definition by pattern
