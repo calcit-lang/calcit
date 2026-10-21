@@ -89,7 +89,7 @@ fn run_with_large_stack(path: &'static str) {
     .expect("test thread panicked");
 }
 
-/// Main integration test: runs calcit/test.cirru which loads all 23 sub-test
+/// Main integration test: runs calcit/test.cirru which loads its sub-test
 /// modules plus util.cirru — equivalent to `cargo run --bin calcit -- calcit/test.cirru`.
 #[test]
 fn cirru_test_suite() {
