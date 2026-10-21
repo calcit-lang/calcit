@@ -3004,6 +3004,45 @@ fn value_position_nil_branch_reports_an_advisory_without_blocking() {
   });
 }
 
+/// #1554: a nil-yielding branch carries no inferred type, but a live payload that
+/// contradicts the contract it flows into is still a mismatch (return and call
+/// argument), while a matching payload stays accepted.
+#[test]
+fn nil_branch_live_payload_still_checks_against_the_contract() {
+  run_with_large_stack(|| {
+    let nullable_return =
+      |body: &str| format!("fn (flag) (hint-fn $ {{}} (:args $ [] 'Bool) (:return $ :: 'JsNullish 'Number)) {body}");
+    let cases = [
+      ("wrong-live-payload", nullable_return("(if flag |bad nil)"), Some("W_FN_RETURN_TYPE_MISMATCH")),
+      ("wrong-reversed-payload", nullable_return("(if flag nil |bad)"), Some("W_FN_RETURN_TYPE_MISMATCH")),
+      ("missing-else-payload", nullable_return("(if flag |bad)"), Some("W_FN_RETURN_TYPE_MISMATCH")),
+      ("matching-payload", nullable_return("(if flag 7 nil)"), None),
+      ("let-bound-wrong-payload", nullable_return("(let ((y (if flag |bad nil))) y)"), Some("W_FN_RETURN_TYPE_MISMATCH")),
+      ("let-bound-matching-payload", nullable_return("(let ((y (if flag 7 nil))) y)"), None),
+      (
+        "wrong-argument-payload",
+        "fn (flag) (hint-fn $ {} (:args $ [] 'Bool) (:return 'Unit)) (let ((take (fn (v) (hint-fn $ {} (:args $ [] $ :: 'JsNullish 'Number) (:return 'Unit)) &unit))) (take (if flag |bad nil)))".to_owned(),
+        Some("W_LOCAL_FN_ARG_TYPE_MISMATCH"),
+      ),
+    ];
+    for (label, function, expected_code) in cases {
+      let snippet = format!("let\n    probe $ {function}\n  probe true");
+      let entries = load_snippet_entries(&snippet);
+      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+      let _ = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      let warnings = warnings.borrow();
+      let codes = warnings.iter().filter_map(LocatedWarning::code).collect::<Vec<_>>();
+      match expected_code {
+        Some(code) => assert!(codes.contains(&code), "{label}: expected {code}, got {warnings:?}"),
+        None => assert!(
+          !codes.iter().any(|code| code.ends_with("TYPE_MISMATCH")),
+          "{label}: a matching payload should be accepted, got {warnings:?}"
+        ),
+      }
+    }
+  });
+}
+
 #[test]
 fn unwrap_or_nil_on_an_open_option_reports_the_erasure() {
   run_with_large_stack(|| {

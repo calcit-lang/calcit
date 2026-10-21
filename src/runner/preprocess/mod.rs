@@ -13395,8 +13395,11 @@ pub fn preprocess_core_let(
       if existing_type.is_none() {
         warn_on_value_position_nil_branch(&form, "let binding", &body_types, ctx.file_ns, ctx.check_warnings);
       }
-      let inferred_type = existing_type
-        .unwrap_or_else(|| infer_type_from_expr(&form, &body_types).unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone()));
+      let inferred_type = existing_type.unwrap_or_else(|| {
+        infer_type_from_expr(&form, &body_types)
+          .or_else(|| type_inference::infer_let_binding_with_legacy_nil_evidence(&form, &body_types))
+          .unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone())
+      });
 
       let name = Calcit::Local(CalcitLocal {
         idx: CalcitLocal::track_sym(sym),
