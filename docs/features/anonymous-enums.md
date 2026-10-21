@@ -63,7 +63,7 @@ enum，让编译器检查 variant、payload arity 与穷尽性：
 ```cirru
 let
     Shape $ defenum Shape (:point 'Number 'Number) (:none)
-    value $ %:: Shape :point 10 20
+    value $ Shape :point 10 20
   assert= 30 $ match value
     (:point x y) (+ x y)
     (:none) 0

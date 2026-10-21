@@ -134,8 +134,8 @@ let
     AppResult $ defenum AppResult (:ok :number) (:err :string)
     safe-compute $ fn (x)
       if (> x 0)
-        %:: AppResult :ok (* x 10)
-        %:: AppResult :err |negative-input
+        AppResult :ok (* x 10)
+        AppResult :err |negative-input
     handle $ fn (r)
       match r
         (:ok v)

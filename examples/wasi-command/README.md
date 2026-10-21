@@ -43,7 +43,7 @@ WASMTIME_CLI=/path/to/wasmtime-49.0.1 node scripts/test-wasi-stdin.mjs
 
 这个示例展示 Calcit 当前可直接用于小型批处理业务的最短路径：读取命令行参数和环境变量，从 Wasmtime 显式预开放的目录读取文本，转换后写回文件，并用稳定的进程状态码报告失败。`calcit wasi` 默认生成支持上述文本读写的 WASI 0.3.1 `wasi:cli/command` Component；显式传 `--boundary native` 则生成 Preview 1 模块。两条路径都要求 host 授予预开放目录；Component 文本读写各限 4 MiB。
 
-它只使用公开的 `calcit wasi` 入口，不需要 `cr-wasm`、JavaScript host import 或自定义 descriptor API。Calcit 程序只看到 guest path；host path 和授权范围由启动 Wasmtime 的命令决定。
+它只使用公开的 `calcit wasi` 入口，不需要 JavaScript host import 或自定义 descriptor API。Calcit 程序只看到 guest path；host path 和授权范围由启动 Wasmtime 的命令决定。
 
 ## 构建与运行
 

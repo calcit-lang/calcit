@@ -13,13 +13,13 @@ parent: core/features
 
 # Structs
 
-Calcit structs are declared data types with a fixed set of named fields. Struct definitions are created with `defstruct`; struct values are constructed with `%{}` or by calling the definition directly with tag/value pairs.
+Calcit structs are declared data types with a fixed set of named fields. Struct definitions are created with `defstruct`; struct values are constructed by calling the definition directly with tag/value pairs; the low-level `%{}` macro is kept for dynamic prototypes.
 
 ## Quick Recipes
 
 - **Define**: `defstruct Point (:x 'Number) (:y 'Number)`
-- **Create**: `%{} Point (:x 1) (:y 2)`
-- **Constructor sugar**: `Point :x 1 :y 2`
+- **Create**: `Point :x 1 :y 2`
+- **Low-level (dynamic prototype)**: `%{} Point (:x 1) (:y 2)`
 - **Access**: `(:x p)`
 - **Update**: `assoc p :x 10` or `update p :x inc`
 - **Type Check**: `assert-type p 'Point`
@@ -43,11 +43,10 @@ defstruct Person (:name 'String) (:age 'Number) (:position 'Tag)
 字段中的类型名按 `defstruct` 所在 namespace 及其显式 import 解析，而不是按调用者解析。
 例如 `Database` 声明 `:users $ :: 'Map 'String 'User` 时，其他 namespace 通过普通 import
 构造、读取或更新该字段，仍使用声明处的 `User`；调用者自己也定义了 `User`，不代表两者可以互换。
-这个规则同样覆盖 Optional 和嵌套容器。泛型字段先解析声明中的具名类型，再代入调用方已证明的参数，
+这个规则同样覆盖 `Option` 和嵌套容器。泛型字段先解析声明中的具名类型，再代入调用方已证明的参数，
 不需要把合法本地类型名全部改为全限定名，也不需要增加 `unsafe-coerce`。
 
-Optional 容器字段可以接收 `nil` 或对应种类的字面量空容器，例如
-`Optional<Map<Tag,String>>` 接收 `{}`。空 Map、List、Set 的种类仍有区别；
+容器字段可以接收对应种类的字面量空容器，例如 `Map<Tag,String>` 字段接收 `{}`。空 Map、List、Set 的种类仍有区别；
 声明为开放容器的函数返回值不因当前实现返回空值而获得具体元素类型证明。
 
 ## Generic Structs
@@ -63,7 +62,7 @@ let
         :args $ [] (:: 'Box 'T)
         :return 'T
       :value box
-    b $ %{} Box (:value 1)
+    b $ Box :value 1
   assert-type b $ :: 'Box :number
   assert= 1 $ keep b
 ```
@@ -92,7 +91,7 @@ let
     ShownBox $ defstruct ShownBox ([] 'T)
       {} $ 'T Debug
       :value 'T
-    box $ %{} ShownBox (:value 1)
+    box $ ShownBox :value 1
     item $ :value box
   assert-type box $ :: 'ShownBox 'Number
   assert= |1 $ item .debug
@@ -131,15 +130,6 @@ let
   , p
 ```
 
-Fields can also be written on separate lines:
-
-```cirru
-let
-    Point $ defstruct Point (:x :number) (:y :number)
-    p $ %{} Point (:x 1) (:y 2)
-  , p
-```
-
 ## Accessing Fields
 
 Use the required field accessor `(:field value)` to read a field:
@@ -147,7 +137,7 @@ Use the required field accessor `(:field value)` to read a field:
 ```cirru
 let
     Point $ defstruct Point (:x :number) (:y :number)
-    p $ %{} Point (:x 1) (:y 2)
+    p $ Point :x 1 :y 2
   println $ :x p
   ; => 1
 ```
@@ -191,7 +181,7 @@ schema to be established before application code depends on it.
 ```cirru
 let
     Point $ defstruct Point (:x :number) (:y :number)
-    p $ %{} Point (:x 1) (:y 2)
+    p $ Point :x 1 :y 2
   println $ &map:keys $ &struct:to-map p
   ; => $ #{} :x :y
   println $ count p
@@ -207,7 +197,7 @@ Struct values are immutable. Use `assoc` or `struct-with` to produce an updated 
 ```cirru
 let
     Point $ defstruct Point (:x :number) (:y :number)
-    p $ %{} Point (:x 1) (:y 2)
+    p $ Point :x 1 :y 2
     p2 $ assoc p :x 10
   println p2
   ; => $ %{} :Point (:x 10) (:y 2)
@@ -218,7 +208,7 @@ let
 ```cirru
 let
     Person $ defstruct Person (:name :string) (:age :number) (:position :tag)
-    p $ %{} Person (:name |Chen) (:age 20) (:position :mainland)
+    p $ Person :name |Chen :age 20 :position :mainland
     p2 $ struct-with p (:age 21) (:position :shanghai)
   println p2
   ; p2 has updated :age and :position, :name is unchanged
@@ -229,28 +219,9 @@ let
 ```cirru
 let
     Point $ defstruct Point (:x :number) (:y :number)
-    p $ %{} Point (:x 1) (:y 2)
+    p $ Point :x 1 :y 2
   println $ &struct:assoc p :x 100
 ```
-
-## 部分 Struct 构造迁移
-
-旧代码可能用 `%{}?` 只填写部分字段，其余字段曾被隐式补成 `nil`：
-
-```cirru.no-check
-let
-    Person $ defstruct Person (:name :string) (:age :number) (:position :tag)
-    p1 $ %{}? Person (:name |Chen)
-  println $ :name p1
-  ; => |Chen
-  println $ :age p1
-  ; => nil
-```
-
-`%{}?` 与底层 `&%{}?` 已从运行时和 JS backend 移除；严格模式与
-`--compat-types` 都会返回 `E_PARTIAL_STRUCT_NIL_FILL`。改用 `%{}` 明确填写字段；
-确实可能缺失的字段应声明为 `Option<T>` 并提供 `Option :none`。遗漏字段也可能需要业务默认值，
-因此不能自动改写。
 
 The low-level `&%{}` form accepts fields as flat keyword-value pairs (no type checking):
 
@@ -265,7 +236,7 @@ let
 ```cirru
 let
     Point $ defstruct Point (:x :number) (:y :number)
-    p $ %{} Point (:x 1) (:y 2)
+    p $ Point :x 1 :y 2
   ; check if a value is a struct
   println $ struct? p
   ; => true
@@ -289,7 +260,7 @@ Use `struct-match` to branch on struct definitions:
 let
     Circle $ defstruct Circle (:radius :number)
     Square $ defstruct Square (:radius :number)
-    shape $ %{} Circle (:radius 5)
+    shape $ Circle :radius 5
   struct-match shape
     Circle c $ * 3.14
       * (:radius c) (:radius c)
@@ -306,7 +277,7 @@ let
 ```cirru
 let
     Point $ defstruct Point (:x :number) (:y :number)
-    p $ %{} Point (:x 1) (:y 2)
+    p $ Point :x 1 :y 2
   println $ &struct:to-map p
   ; => {} (:x 1) (:y 2)
 ```
@@ -316,7 +287,7 @@ Use `struct-with` to update fields while preserving the same struct definition:
 ```cirru
 let
     Person $ defstruct Person (:name :string) (:age :number) (:position :tag)
-    p $ %{} Person (:name |Chen) (:age 20) (:position :mainland)
+    p $ Person :name |Chen :age 20 :position :mainland
   println $ struct-with p (:age 23) (:name |Ye)
 ```
 
@@ -325,7 +296,7 @@ let
 ```cirru
 let
     Person $ defstruct Person (:name :string) (:age :number) (:position :tag)
-    p $ %{} Person (:name |Chen) (:age 20) (:position :mainland)
+    p $ Person :name |Chen :age 20 :position :mainland
   ; get the tag name of the struct value
   println $ &struct:get-name p
   ; => :Person
@@ -351,7 +322,7 @@ Use the typed Struct predicate when you need to confirm a struct value's origin:
 let
     Cat $ defstruct Cat (:name :string) (:color :tag)
     Dog $ defstruct Dog (:name :string)
-    v1 $ %{} Cat (:name |Mimi) (:color :white)
+    v1 $ Cat :name |Mimi :color :white
   if (&struct:matches? v1 Cat)
     println "|Handle Cat branch"
     println "|Not a Cat"
@@ -376,7 +347,7 @@ let
         ; Do not copy this form into typed application code.
         println $ &struct:get self :name
     Bird $ impl-traits BirdShape BirdImpl
-    b $ %{} Bird (:name |Sparrow)
+    b $ Bird :name |Sparrow
   assert-traits b BirdTrait
   b .show
   println $ :name b
@@ -389,7 +360,7 @@ let
 ```cirru
 let
     Config $ defstruct Config (:host :string) (:port :number) (:debug :bool)
-    config $ %{} Config (:host |localhost) (:port 3000) (:debug false)
+    config $ Config :host |localhost :port 3000 :debug false
   println $ :port config
   ; => 3000
 ```
@@ -399,7 +370,7 @@ let
 ```cirru
 let
     Product $ defstruct Product (:id :string) (:name :string) (:price :number) (:discount :number)
-    product $ %{} Product (:id |P001) (:name |Widget) (:price 100) (:discount 0.9)
+    product $ Product :id |P001 :name |Widget :price 100 :discount 0.9
   println $ * (:price product) (:discount product)
   ; => 90
 ```
@@ -415,7 +386,7 @@ let
         :return :string
       :name user
   println $ get-user-name
-    %{} User (:name |John) (:age 30) (:email |john@example.com)
+    User :name |John :age 30 :email |john@example.com
 
 ; => John
 ```
@@ -437,7 +408,7 @@ assert= 30 $ sum-point
   {} (:x 10) (:y 20)
 ; Equivalent to:
 assert= 30 $ sum-point
-  %{} Point (:x 10) (:y 20)
+  Point :x 10 :y 20
 ```
 
 Requirements for the rewrite to trigger:
@@ -497,7 +468,7 @@ defn sum-point (p)
 assert= 30 $ sum-point (%{} _ (:x 10) (:y 20))
 ; Equivalent to:
 assert= 30 $ sum-point
-  %{} Point (:x 10) (:y 20)
+  Point :x 10 :y 20
 ```
 
 The rewrite uses the same requirements as the map-to-struct rewrite. Fields not present in the anonymous struct but defined in the target struct are filled with `nil`; their declared field types must therefore permit `nil`.
@@ -510,7 +481,7 @@ The collection type system follows a consistent "precision increasing" pattern:
 | -------------------------------- | -------------------------------------- |
 | `list` (dynamic)                 | `hashmap` (dynamic)                    |
 | `%:: _ :tag ...` (anonymous enum) | `%{} _ (:field val)` (anonymous struct) |
-| `%:: Enum :tag ...` (named enum)  | `%{} Struct (:field val)` (named struct) |
+| `Enum :tag ...` (named enum)      | `Struct :field val` (named struct)     |
 
 Both anonymous enums and anonymous structs can be rewritten to their named counterparts when function parameter types are known at compile time.
 

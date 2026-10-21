@@ -1,6 +1,6 @@
 ---
-title: "Calcit 历史版本迁移记录（0.13–0.15）"
-summary: "旧版严格诊断、修复规则、WASM/Component 边界和质量 baseline 的迁移记录"
+title: "Calcit 历史版本迁移记录（0.13–0.19）"
+summary: "0.14 两阶段修复桥接、默认严格诊断、质量 baseline 与 0.19 兼容清理的迁移记录"
 scope: "core"
 kind: "guide"
 category: "run"
@@ -10,7 +10,7 @@ related:
   - core/run/library-quality
 ---
 
-# Calcit 历史版本迁移记录（0.13–0.15）
+# Calcit 历史版本迁移记录（0.13–0.19）
 
 这里保存历史版本当时的迁移步骤和能力边界，供旧项目定位；它不是当前版本的能力清单。
 各固定桥梁的适用写法、所用 CLI 与退场状态汇总在[当前升级手册的历史迁移桥梁](upgrade.md#历史迁移桥梁)。
@@ -23,93 +23,6 @@ related:
 `tag-match-to-match-v1` 与 `required-struct-field-v1`，验证并提交后，
 再切至当前工具链运行 `surface-latest-v2`。冻结的 `surface-latest-v1` 保持原有四条规则；
 当前版本不恢复已退休 planner，preset 不能代替第一阶段。
-
-## 0.14.20 工具链安装记录
-
-当时文档使用已发布的 `calcit 0.14.20` 与独立的 `calcit-caps 0.1.1` 组合；
-0.14.20 发布前曾要求继续固定 0.14.19。这是历史记录，不是当前推荐版本。
-仍维护该版本的项目需分别核对 Calcit 与 caps 的 release 和项目 `deps.cirru`，
-不要在新项目直接复制旧安装命令。
-
-## 0.14.20 WASM 命令入口收敛
-
-0.14.20 不再通过 `cargo install calcit` 或 GitHub Release 发布 `cr-wasm`。项目与 Agent 应直接选择宿主契约：
-
-- 原来的 `cr-wasm <snapshot> --target core` 改为 `calcit wasm <snapshot>`；
-- 原来的 `cr-wasm <snapshot> --target wasi` 改为 `calcit wasi <snapshot>`；
-- 两者的 `--check-only`、`--emit-path`、`--init-fn`、`--reload-fn` 与 `--entry` 继续由公开子命令提供。
-
-这不是能力删除：Snapshot 加载、预处理、target validation 与 codegen 仍共用同一实现。仓库为 WASI 自举保留
-feature-gated 的内部回归 harness，但它不是兼容 CLI，也不应被用户脚本调用。遇到旧 workflow 时应显式改写命令，
-不要尝试复制或重新发布该内部 binary。
-
-## 0.14.20 Component preview
-
-0.14.20 新增 opt-in 的同步 Component core boundary，不改变普通 native、JavaScript、
-`calcit wasm` 或 `calcit wasi` 项目的默认行为。只有显式使用
-`calcit ffi export --boundary component` 或 `calcit wasm --boundary component` 的项目
-需要关注：当时支持 `Unit` 结果、`Bool`、`Buffer`、`Number`、UTF-8 `String`、递归同质
-`List<T>`，以及闭合单态 `Option<T>` / `Result<T,E>` 的 import/export adapter，默认 contract
-格式为 Cirru EDN。独立的 `calcit-bindgen` 可为这些类型生成 WIT 并包装 runnable Component；
-Struct record、普通 Enum variant、明确宽度数值与 async 在该 preview 中尚未完成，不会静默退化为 Dynamic
-或 core 私有 value ABI。
-
-## 0.15.1 Struct/Enum Component boundary
-
-0.15.1 完成 monomorphic Struct record 与闭合单态 Enum variant 的同步 Component boundary。Struct 字段名称、顺序和类型完全来自
-规范化的 `defstruct` schema；嵌套 Struct 与已经支持的闭合字段类型复用统一递归 walker。边界不会根据运行时值
-补字段或猜测 layout，未具体化 generic、Dynamic 字段和其他未支持类型会带 schema path 在生成阶段失败。
-
-Enum 的 case 名称与顺序来自规范化后的 `defenum` schema，并决定从零开始的 Canonical ABI discriminant。无 payload、
-单 payload 与多 payload case 分别映射为 WIT bare case、直接 payload 与 tuple payload；payload 可递归包含已支持的
-闭合类型和 Struct。anonymous/open Enum、递归 Enum、未具体化 generic 与显式 `Unit` payload 会明确拒绝，不会退化为 Dynamic。
-
-该阶段没有新增命令：core 继续使用 `calcit ffi export --boundary component` 与
-`calcit wasm --boundary component`，WIT 与 runnable Component packaging 继续由 calcit-bindgen 的
-`generate` / `check` 负责。Struct/Enum/Result 已在 Wasmtime 与 jco/Node 完成实际往返；明确宽度数值的
-Component lowering 见下一节。
-
-从 0.14.20 preview 升级时不需要改写命令，也不要新增 WIT/component wrapper。应重新执行
-`calcit ffi export --boundary component` 导出 contract，用 calcit-bindgen `check` 查看 ABI fingerprint 与兼容性变化，
-确认后再用 `generate` 刷新 WIT、manifest 和 Component 产物。依赖 declaration 顺序的 Struct field 与 Enum case 会进入
-公开 ABI；若顺序发生变化，应把它作为显式接口变更审阅，并重新运行宿主侧 Wasmtime 或 jco 往返测试。
-
-## 0.15.2 明确宽度数值边界
-
-0.15.2 让十种明确宽度数值 refinement 直接进入 Component Canonical ABI，同时保持单一运行时数值表示。
-
-运行时值形状不变：signed/unsigned 8/16/32/64 位整数与 32/64 位浮点数是 `Number` 的静态边界 refinement，
-native 仍是 `f64`，JavaScript 仍是 `Number`。refinement 可安全地作为 `Number` 使用，普通 `Number` 不会隐式收窄；
-普通算术返回 `Number`，不会保留已经失效的范围证明。
-
-进入明确边界必须显式转换：`number->int8`、`number->uint8`、`number->int16`、`number->uint16`、`number->int32`、
-`number->uint32`、`number->int64`、`number->uint64`、`number->float32`、`number->float64` 返回
-`Result<目标类型,String>`，拒绝非整数、符号错误、溢出、NaN/Infinity 与不可接受的精度损失——不截断、不环绕、
-不静默舍入。Calcit 的 `f64` 表示无法无损覆盖全部 64 位整数，因此只承诺可精确表示的安全整数范围，host 超范围
-值明确拒绝。
-
-Component boundary 按推导并规范化后的 schema 宽度确定性导出 `Int8`、`UInt8`、`Int16`、`UInt16`、`Int32`、
-`UInt32`、`Int64`、`UInt64`、`Float32`、`Float64` 独立 kind；普通 `Number` 仍导出为 `number`，bindgen 不根据值、
-名称或调用位置猜测宽度。从 0.15.1 升级时不需要新增顶层命令、语法或 analyzer；但必须重新执行
-`calcit ffi export --boundary component`，并用 calcit-bindgen `generate` / `check` 刷新 WIT、manifest 与 Component
-产物，不保留旧数值 ABI 兼容层。旧边界写法只有在能证明等价时才由 `calcit fix` 给出迁移建议，其他仍需人工决定。
-
-## 0.15.3 异步 Component export 基础
-
-0.15.3 开始消费函数 schema 已有的 `:async true`，不增加新的表层 Task/Future 类型或 CLI。Component Interface IR v4
-将该标记导出为 `invocation: async`；`calcit wasm --boundary component` 为对应 export 生成 WASI 0.3 async core shape：
-参数继续使用现有 Canonical ABI 类型 walker，core 函数没有返回值，逻辑返回值通过 packaging 注入的强类型
-`task.return` 恰好完成一次。
-
-这是分阶段开放的能力。async import 对最多 4 个 flat 参数使用 direct shape；更多参数会写入按 Canonical ABI
-布局的 parameter record，并传递单个 pointer。两种形状都处理立即完成以及 subtask 的
-`starting` / `started` / `returned`、终态清理和 drop。
-不要把 native `async-task-v1` 队列、句柄或 polling API 搬到 Component 接口，也不要把 async import 临时改成同步 ABI。
-升级相关项目时，先重新导出当前 contract（native 为 IR v3，Component 为 IR v4），再升级 calcit-bindgen：除连接
-`[export]$root/[task-return]<export-symbol>` 外，还需连接 `$root` 下的 `[waitable-set-*]`、`[waitable-join]`
-与 `[subtask-drop]` canonical builtins。async import/export 分别使用 `[async-lower]` 与
-`[async-lift-stackful]` 名称前缀，使 `wit-component` 能按 Canonical ABI 识别这些内部接缝。当时的 stackful adapter
-对已收到的 cancellation 终态清理后 trap；主动取消留给 callback cancellation 阶段。
 
 ## 0.14 默认严格诊断
 
@@ -127,17 +40,6 @@ calcit calcit.cirru --strict-types --check-only  # 显式执行严格入口检�
 
 `--compat-types` 只用于限时迁移，不应成为新项目或长期 CI 的默认参数。已经在 entry 中显式配置的
 feature policy 仍然生效；兼容开关不会覆写 Snapshot。
-
-适用对象：通过 Calcit CLI 运行并产出 JS 的项目（例如 Respo）。
-
-升级完成的标准不是“`caps upgrade --all` 执行成功”，而是：
-
-- 新版 `calcit` 与独立版本的 `caps` 已分别固定到本地和 CI，且 `deps.cirru`、`calcit`、`@calcit/procs` 版本链路一致；
-- 每个声明支持的 entry 都通过 `--check-only`，并完成对应 native / JS 行为测试；
-- `check-types`、`weak-types`、`deprecated` 已生成可复查报告，存量债务有 baseline，新增债务被阻断；
-- examples、Markdown 示例、项目测试与真实消费者回归覆盖了公开能力。
-
----
 
 ## 0.14.x 质量 baseline 迁移
 
@@ -197,3 +99,70 @@ calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
 `partial`，`typeNone` 会下降且 `typeNotFull` 不变；改善为 `full` 时二者都会下降。确有类型债务在
 不同分类间迁移时，不应通过自动写入抬高另一项预算；先依默认诊断与测试解决问题，确需调整存量文件时单独人工审阅。baseline 归零后
 删除 `analyze quality` 调用；0.15 将不再把 coverage/Dynamic 数量作为独立类型正确性策略。
+
+## 0.19 兼容清理与 CLI 入口收敛
+
+`%{}?` 与底层 `&%{}?` 已退役，`--compat-types` 也不再恢复其隐式 `nil` 补字段行为。
+旧代码应改用完整的 `%{}` 构造；确实可能缺失的字段先声明为 `Option<T>`，再显式提供
+`Option :none`，不能由编译器猜测业务默认值。旧调用会给出 `E_PARTIAL_STRUCT_NIL_FILL` 迁移错误。
+
+基于 String path 的 `try-read-file path` 与 `try-write-file path content` 包装已移除。
+分别改为 `.read-text (fs:path path)` 与 `.write-text! (fs:path path) content`，仍返回相同的
+`Result<String,String>` 与 `Result<Unit,String>`；不要迁回会抛出异常的原始 `read-file` /
+`write-file`。`try-read-dir` 暂留供递归 `.walk-dir` 使用，后续单独整理。
+
+entry 的 `:target` 现在可以通过既有命令族撤销：`calcit config unset target [--entry <name>]`
+删除该 entry 的 `:target`，恢复“未指定 target”的语义（`config show` 显示 `(none)`）。
+重复执行 unset 稳定返回 “already unset”，且不改写 Snapshot 内容；`unset` 目前只接受 `target`，
+其他 key 会给出明确错误。同时用于 browser 与 Node 的项目不必再手改 Snapshot 回退。
+
+JavaScript runtime 的 `to-js-data value true/false` 布尔第二参数已退役；需要保留 tag 键的冒号时，
+改用 `to-js-data value $ {} (:add-colon true)`，无需该行为时只传 `value`。旧布尔写法现在明确报错，
+避免在升级后静默转换出不同的 JSON key。`@calcit/procs` 的旧导出
+`_$n_enum_def_$o_has_variant` 也已移除；直接调用 runtime 的代码应使用与
+`&enum-def:has-variant?` 对应的 `_$n_enum_def_$o_has_variant_$q_`。
+
+当前 Snapshot 的命名空间代码必须使用 `ns name`；旧式 `:ns name` 已被拒绝，并会给出迁移提示。
+升级旧快照时，可对没有 import 的命名空间执行
+`calcit calcit.cirru edit imports <namespace> --input-format cirru --code 'quote $ []'`；
+这会通过结构化编辑重建 `ns` 节点。已有 import 的命名空间应先查询并保留规则，再用
+`edit imports` 提交，不能用空列表覆盖。
+`%Expr` / `%Leaf` 是早期快照的展示结构；当前诊断只对 `quote` 代码做 Cirru 预览。
+若旧快照仍使用这两种结构，请先用其对应旧版工具迁移，不要把它们当作当前语言代码节点。
+`docs check-md` 读取项目依赖时也使用同一严格 Snapshot loader，不再单独从旧格式中提取模块列表；
+先完成快照迁移，再运行文档代码块检查。
+普通 `deftrait` / `defimpl` 方法键原来的 `:render` 等 tag 写法已退役，改成 `.render` 等 dot 写法；
+类型标注中的 `:fn` 不变。external-object trait 的属性条目（如 `:field 'String`）仍使用 tag，
+不要把它们批量改为 dot。
+
+顶层 `calcit libs`（或旧二进制名 `cr libs`）已移除，统一改为 `calcit docs remote-libs`。
+子命令和参数保留：`libs search <keyword>`、`libs readme <package> [--file <file>]`、
+`libs scan-md <module>` 分别改为 `docs remote-libs search`、`docs remote-libs readme`、
+`docs remote-libs scan-md`；不带子命令的列表查询改为 `calcit docs remote-libs`。
+升级时请同步修改项目脚本和 Agent 指南中的旧命令。查询已安装模块的文档时，优先使用
+`calcit docs list/read/search --module <module>`，无需经过远端类库索引。
+
+`calcit exec` 也合并进现有 `eval` 命令族：原来的 `echo 'range 10' | calcit exec`
+改为 `echo 'range 10' | calcit eval --stdin`。`--dep` 仍可重复传入，stdin 与位置参数片段互斥；
+未指定位置参数或 `--stdin` 时直接报错；显式传 `--stdin` 后会等待输入直到 EOF，空输入也会报错。
+
+对于编译器能够证明等价的一对一迁移，先运行 `calcit calcit.cirru fix --preset surface-latest-v2 --format edn`
+审阅结构化计划，再用
+`--apply --expect-revision <revision>` 原子应用；完整安全边界见 [Compiler-guided Source Fixes](fix.md)。
+
+若起点是仍依赖 0.14.15 旧修复规则的项目，请先按
+[历史两阶段桥接步骤](#01415-的两阶段源码修复桥接)完成旧版迁移，
+再使用当前 preset；不要把旧 rule ID 交给当前版本。
+
+升级或类型迁移后，应显式预览一次问题写法修复。`fix` 的默认 preview 本身就是检测入口，不写 Snapshot；其中
+`redundant-do-v1` 会定位 `defn`、`fn`、`let` 等多表达式 body 中不必要的 `do`，并返回可审阅的 source path、
+fingerprint 和 splice replacement；`single-expression-do-v1` 会解包普通可执行位置中只有一个 payload 的 `do`：
+
+```bash
+calcit calcit.cirru fix --preset surface-latest-v2 --format edn
+```
+
+不要用全文搜索后批量删除 `do`：`if` 分支、调用参数和 binding value 等单表达式位置仍需要它来组合多个步骤。
+若 preview 返回建议，确认 `:data :validation :status` 为 `passed` 后，再复制报告中的 `:revision` 执行带保护的 apply；
+若建议为空，则接受 `not-needed` 并跳过 apply。完整示例见
+[检测并修复冗余 `do`](fix.md#检测并修复冗余-do)。这是一项显式源码整理，不会增加普通编译 warning。

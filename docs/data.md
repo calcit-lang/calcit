@@ -53,8 +53,9 @@ Prefer named structs and enums at module boundaries: their definitions carry sch
 
 ## Implementation Details
 
-- **Rust runtime**: Uses [rpds](https://github.com/orium/rpds) for HashMap/HashSet and [ternary-tree](https://github.com/calcit-lang/ternary-tree.rs/) for vectors
-- **JavaScript runtime**: Uses [ternary-tree.ts](https://github.com/calcit-lang/ternary-tree.ts) for all collections
+- **Rust runtime**: Uses [rpds](https://github.com/orium/rpds) for HashMap/HashSet and [finger-vec.rs](https://github.com/calcit-lang/finger-vec.rs) for List
+- **JavaScript runtime**: Uses `@calcit/finger-vec` for List and [ternary-tree.ts](https://github.com/calcit-lang/ternary-tree.ts) `TernaryTreeMap` for Map/Set
+- See [Persistent Data](data/persistent-data.md)
 
 集合方法的可用性也通过内建 trait 表达：`Countable` 覆盖 List、Map、Set、String、Struct 与 Enum；`Contains` 只覆盖 Struct 与 Enum（Map 与 Set 已在 0.29.0 移出）；`Compare` 覆盖 Number 与 String。 See [Polymorphism](features/polymorphism.md) for the full matrix.
 

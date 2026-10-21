@@ -239,11 +239,7 @@ calcit calcit.cirru --entry test
 
 对于省略 schema、且编译器已经能够证明完整契约的封闭 helper，`weak-types`（含 `coverage` 视图）和 `quality` 使用同一份推断结果；增量分析也遵循这一规则。删除这类冗余标注不应增加迁移债务。分析不会把推断结果写回源码，也不会替换显式 `Dynamic`；推断失败的定义仍按原有缺失契约报告。
 
-已弃用的 `analyze quality` 与 baseline 在下一个非 patch 版本删除之前，仍作为存量项目的有界迁移兼容面，帮助逐步清理尚未证明的类型边界；它们不能替代严格预处理和实际目标测试：
-
-```bash
-calcit calcit.cirru analyze quality --baseline config/calcit-quality.cirru
-```
+已弃用的 `analyze quality` 与 baseline 在下一个非 patch 版本删除，用法见 [静态分析](features/static-analysis.md)；它们不能替代严格预处理和实际目标测试。
 
 不要为新项目生成 baseline，也不要增加 metric、intent 或统计协议。迁移不提高已有预算，并同时保证默认严格检查通过；债务清零后从项目 CI 删除 baseline 命令和文件。代码能否进入具体类型由同一套类型证明决定，不以 coverage 或 Dynamic 数量充当正确性证明，也不预告未经交付的删除版本。
 

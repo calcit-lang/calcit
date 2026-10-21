@@ -85,7 +85,7 @@ calcit eval "echo |done"
 - **HashSets**: `#{} :a :b :c`
 - **Anonymous Enums**: `%:: _ :tag 1 2` (or `:: :tag 1 2`) - short-lived tagged values
 - **Anonymous Structs**: `%{} _ (:key1 val1) (:key2 val2)` - short-lived fixed-field values
-- **Structs**: `defstruct Point (:x 'Number) (:y 'Number)` and `%{} Point ...`
+- **Structs**: `defstruct Point (:x 'Number) (:y 'Number)` and `Point :x 1 :y 2`
 - **Enums**: `defenum Result (:ok ..) (:err 'String)` and `%:: Result ...`
 - **Refs**: `ref 0` - mutable references (`atom` is the compatibility name)
 - **Buffers**: `&buffer 0x01 0x02` - binary data
@@ -292,8 +292,8 @@ let
 ### Struct Operations
 
 - `defstruct` - define a struct type with typed fields
-- `%{}` - create a named struct value, or an anonymous value with `%{} _ ...`
-- `%{}?`, `&%{}?` - 已退役的部分 Struct 构造器；所有模式都以 `E_PARTIAL_STRUCT_NIL_FILL` 拒绝
+- `Point :x 1 :y 2` - create a named struct value by calling the definition
+- `%{}` - low-level constructor for dynamic prototypes, or an anonymous value with `%{} _ ...`
 - `&%{}` - low-level struct constructor (flat key-value pairs, no type check)
 - `struct-with` - update multiple declared fields
 - `&struct:get` - internal/dynamic-boundary field lookup; normal typed code must use `(:field value)`

@@ -76,14 +76,17 @@ let
 
 ```cirru
 let
-    MyResult $ defenum MyResult
-      :ok :dynamic
-      :err :string
     safe-divide $ fn (a b)
+      hint-fn $ {}
+        :args $ [] 'Number 'Number
+        :return $ :: 'Result 'Number 'String
       if (= b 0)
-        %:: MyResult :err "|Division by zero"
-        %:: MyResult :ok (/ a b)
+        Result :err "|Division by zero"
+        Result :ok (/ a b)
     handle-result $ fn (result)
+      hint-fn $ {}
+        :args $ [] $ :: 'Result 'Number 'String
+        :return 'Unit
       match result
         (:ok v) (println $ str "|Result: " v)
         (:err msg) (println $ str "|Error: " msg)
@@ -434,7 +437,7 @@ let
 ```cirru
 let
     items $ [] ({} (:value 1)) ({} (:value 2)) ({} (:value 3))
-    result1 $ reduce items 0 $ fn (acc item)
+    result1 $ .fold items 0 $ fn (acc item)
       hint-fn $ {}
         :args $ [] 'Number $ :: 'Map 'Tag 'Number
         :return 'Number
