@@ -783,12 +783,16 @@
             :generics $ [] 'A 'B
           :tags $ #{} :internal
         '&format-ternary-tree $ %{} 'CodeEntry
-          :doc "|Native-only debugger for a List's internal ternary-tree representation.\nSyntax: (&format-ternary-tree tree)\nParams: tree (a native List stored as a ternary tree)\nReturns: formatted String; rejects other representations.\nJavaScript emission rejects this runtime-internal helper. Compile-time macros execute natively and may use it before returning portable expressions. For portable value display, use format-cirru-edn; it does not expose the internal tree layout."
+          :doc "|Deprecated FingerVec diagnostic; the ternary-tree name is historical. Returns the debug layout String of a native List's current FingerVec representation (for example `{} _ {0 1}`), not a ternary tree; the text follows the runtime implementation and is not a data contract, so do not parse it into tree nodes. Build an explicit data model for teaching trees, and use format-cirru-edn for portable value display. Scheduled for removal in 0.32.0 with no replacement (docs/run/upgrade.md).\nSyntax: (&format-ternary-tree list)\nParams: list (a native List)\nReturns: String; rejects vectors and other values.\nJavaScript emission and WASM reject this native-only helper. Compile-time macros execute natively and may still call it before returning portable expressions."
           :code $ quote &runtime-implementation
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'String)
             :args $ [] 'List
-          :tags $ #{} :builtin :internal
+          :tags $ #{} :builtin :deprecated :internal
+          :tests $ [] $ %{} 'TestEntry (:name |returns-finger-vec-debug-string)
+            :code $ quote $ assert= true
+              string? $ &format-ternary-tree $ distinct $ range 2
+            :tags $ #{} :core :unit
         '&fs-read-dir $ %{} 'CodeEntry
           :doc "|内部目录枚举边界；显式接收 Result 与 FsPath 定义、guest path 和宿主错误前缀。"
           :code $ quote &runtime-implementation
