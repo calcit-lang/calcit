@@ -246,6 +246,28 @@ try {
   }
   assert.throws(() => runtimeA._$n_map_$o_vals(1), /&map:vals expected a Map/);
 
+  // Foreign host receivers bypass static Map contracts; errors must not render
+  // private input or call its formatting hooks. Shared semantics stay in core :tests.
+  const privateReceiver = { toString() { throw new Error("private formatting hook must not run"); } };
+  for (const receiver of [7, "private-map-input", false, null, undefined,
+    new runtimeA.CalcitSliceList([]), new runtimeA.CalcitSet([]), privateReceiver]) {
+    assert.throws(() => runtimeA._$n_map_$o_get(receiver, mapKeyA), {
+      name: "Error", message: "&map:get expected a Map",
+    });
+  }
+  for (const map of [
+    new runtimeA.CalcitSliceMap([mapKeyA, null]),
+    new runtimeA.CalcitSliceMap([mapKeyA, null]).turnMap(),
+  ]) {
+    const present = runtimeA._$n_map_$o_get(map, mapKeyA);
+    assert.equal(present.tag.value, "some");
+    assert.equal(present.extra[0], null, "stored nil is present in both JS map representations");
+    assert.equal(runtimeA._$n_map_$o_get(map, mapKeyB).tag.value, "none");
+  }
+  for (const args of [[], [new runtimeA.CalcitSliceMap([])], [7, mapKeyA, "extra"]]) {
+    assert.throws(() => runtimeA._$n_map_$o_get(...args), { message: "map &get takes 2 arguments" });
+  }
+
   const todoName = runtimeA.newTag("TodoState");
   const todoField = runtimeA.newTag("draft");
   const todoType = new runtimeA.CalcitSymbol("String");
