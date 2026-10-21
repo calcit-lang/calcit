@@ -55,7 +55,19 @@ calcit calcit.cirru --entry server query context app.server/read-text --format e
 
 `search` 和 `search-expr` 也继承顶层选择；查询自身显式传入的 `--entry`
 优先，例如 `calcit calcit.cirru --entry server query search value --entry browser`。
-这些查询不执行宿主实现或修改源码；core-only 与 metadata-only 查询保留原有轻量读取方式。
+
+`def`、`schema`、`peek`、`examples`、`tests`、`defs`、`ns`、`path`、`anchors`、
+`find`、`usages` 等元数据查询同样读取所选入口加载的依赖模块，
+因此只在 page 入口加载的依赖也能直接查询：
+
+```bash
+calcit calcit.cirru --entry page query schema feather.core/comp-icon
+calcit calcit.cirru --entry page query def respo-alerts.core/use-confirm --format cirru
+```
+
+目标属于项目自身或 core 时仍只读取项目 Snapshot 或内置 core，不装载依赖模块；
+未知入口在这些查询中同样报错。
+这些查询不执行宿主实现或修改源码。
 
 ### 管道输出与退出状态
 
