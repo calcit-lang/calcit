@@ -51,6 +51,40 @@ fn assert_success(output: &Output, context: &str) {
 }
 
 #[test]
+fn malformed_struct_match_reports_the_pattern_without_log_capability_noise() {
+  let directory = TestDirectory::create();
+  for (arm, expected) in [
+    (
+      "(Tiny item) item",
+      "struct-match expected (StructDef binding & body) or (_ binding & body)",
+    ),
+    ("(Tiny item) item &unit", "struct-match expected struct or symbol as pattern"),
+    (
+      "Tiny item",
+      "struct-match expected (StructDef binding & body) or (_ binding & body)",
+    ),
+    ("_ other", "struct-match expected (StructDef binding & body) or (_ binding & body)"),
+    ("()", "struct-match expected (StructDef binding & body) or (_ binding & body)"),
+  ] {
+    let snippet = format!("let\n    Tiny $ defstruct Tiny $ :value 'Number\n  struct-match (Tiny :value 1)\n    {arm}");
+    let output = Command::new(env!("CARGO_BIN_EXE_calcit"))
+      .current_dir(&directory.0)
+      .args(["--tips-level", "none", "eval", &snippet])
+      .output()
+      .expect("run the public CLI with its real platform API registration");
+    assert!(!output.status.success(), "malformed struct-match arms must fail preprocessing");
+    let diagnostic = String::from_utf8_lossy(&output.stderr);
+    assert!(diagnostic.contains(expected), "arm={arm}: {diagnostic}");
+    assert!(
+      diagnostic.contains("app.main/main!"),
+      "the caller must remain in the source trace: {diagnostic}"
+    );
+    assert!(!diagnostic.contains("E_MACRO_CAPABILITY_MISSING"), "{diagnostic}");
+    assert!(!diagnostic.contains("capability :log"), "{diagnostic}");
+  }
+}
+
+#[test]
 fn public_check_retains_cached_callee_warnings_on_their_source_definition() {
   for (caller, bad, passed) in [("a-caller", "z-bad", 2), ("z-caller", "a-bad", 3)] {
     let directory = TestDirectory::create();
