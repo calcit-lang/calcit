@@ -1977,7 +1977,12 @@ fn required_struct_field_access_does_not_fall_back_to_option_lookup() {
       .expect_err("a statically known Struct must reject optional `get` lookup");
     assert_eq!(error.code.as_deref(), Some("E_STRUCT_FIELD_OPTIONAL_LOOKUP"));
     assert!(error.msg.contains("use `(:field value)`"));
-    assert!(error.msg.contains("Calcit 0.14.15 `calcit fix --rule required-struct-field-v1`"));
+    assert!(error.location.is_some(), "the current source location must remain available");
+    assert!(
+      !error.msg.contains("0.14.15"),
+      "current Struct errors must not require a historical CLI"
+    );
+    assert!(!error.msg.contains("required-struct-field-v1"));
 
     let warnings = warnings.borrow();
     let required_warnings = warnings
