@@ -65,7 +65,7 @@
           :schema $ :: 'Trait
         'load-data-code $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro load-data-code (s)
-            &data-to-code $ parse-cirru-edn s
+            &data-to-code $ parse-cirru-edn $ unsafe-coerce s 'String
           :examples $ []
           :schema $ :: 'Macro $ {}
             :capabilities $ #{}

@@ -2221,8 +2221,8 @@ fn edit_ns_writes_only_changed_definitions() {
   // One changed definition: the result equals `edit def --overwrite` of just that definition.
   let edited = replace_once(
     &text,
-    ":code $ quote $ defn reload! () (:: 'Unit)",
-    ":code $ quote $ defn reload! () (println |reloaded) (:: 'Unit)",
+    ":code $ quote $ defn reload! () &unit",
+    ":code $ quote $ defn reload! () (println |reloaded) &unit",
   );
   let view = directory.0.join("view.cirru");
   fs::write(&view, &edited).unwrap();
@@ -2249,7 +2249,7 @@ fn edit_ns_writes_only_changed_definitions() {
         "--input-format",
         "cirru",
         "--code",
-        "quote $ defn reload! () (println |reloaded) (:: 'Unit)",
+        "quote $ defn reload! () (println |reloaded) &unit",
       ],
     ),
     "reference single-definition edit",
@@ -2320,8 +2320,8 @@ fn edit_ns_rejects_removal_without_flag_stale_revisions_and_malformed_data() {
   assert!(!stale.status.success(), "unchanged data still checks the revision");
   let changed = replace_once(
     &text,
-    ":code $ quote $ defn reload! () (:: 'Unit)",
-    ":code $ quote $ defn reload! () (println |stale) (:: 'Unit)",
+    ":code $ quote $ defn reload! () &unit",
+    ":code $ quote $ defn reload! () (println |stale) &unit",
   );
   fs::write(&view, &changed).unwrap();
   let stale = edit_ns_json(
@@ -2339,7 +2339,7 @@ fn edit_ns_rejects_removal_without_flag_stale_revisions_and_malformed_data() {
     ("unparsable EDN", "%{} 'FileEntry (:defs".to_owned(), "Failed to parse"),
     (
       "missing :code",
-      replace_once(&changed, ":code $ quote $ defn reload! () (println |stale) (:: 'Unit)\n", ""),
+      replace_once(&changed, ":code $ quote $ defn reload! () (println |stale) &unit\n", ""),
       "reload!",
     ),
     (
@@ -2357,8 +2357,8 @@ fn edit_ns_rejects_removal_without_flag_stale_revisions_and_malformed_data() {
       "misspelled :tests",
       replace_once(
         &text,
-        ":code $ quote $ defn reload! () (:: 'Unit)\n",
-        ":code $ quote $ defn reload! () (:: 'Unit)\n      :test $ []\n",
+        ":code $ quote $ defn reload! () &unit\n",
+        ":code $ quote $ defn reload! () &unit\n      :test $ []\n",
       ),
       "Unknown key `:test` in definition 'test-def-meta.main/reload!'",
     ),
@@ -2371,8 +2371,8 @@ fn edit_ns_rejects_removal_without_flag_stale_revisions_and_malformed_data() {
       "duplicate CodeEntry key",
       replace_once(
         &text,
-        ":code $ quote $ defn reload! () (:: 'Unit)\n",
-        ":code $ quote $ defn reload! () (:: 'Unit)\n      :doc |again\n",
+        ":code $ quote $ defn reload! () &unit\n",
+        ":code $ quote $ defn reload! () &unit\n      :doc |again\n",
       ),
       "Duplicate key `:doc` in definition 'test-def-meta.main/reload!'",
     ),
