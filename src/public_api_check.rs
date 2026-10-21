@@ -308,6 +308,18 @@ pub fn run(
   }
 
   diagnostics.extend(warnings.borrow().iter().map(warning_diagnostic));
+  // A dependency may already have been compiled through an earlier root.
+  // Its cached success does not erase warnings owned by its source definition.
+  let warned_definitions = diagnostics
+    .iter()
+    .filter(|diagnostic| diagnostic["severity"] == "warning")
+    .filter_map(|diagnostic| Some((diagnostic["location"]["ns"].as_str()?, diagnostic["location"]["def"].as_str()?)))
+    .collect::<HashSet<_>>();
+  for row in &mut results {
+    if row.status == "passed" && warned_definitions.contains(&(row.namespace.as_str(), row.definition.as_str())) {
+      row.status = "warning";
+    }
+  }
   let checked_count = checked_definition_ids.len();
   let passed_count = results.iter().filter(|row| row.status == "passed").count();
   let intrinsic_count = results.iter().filter(|row| row.status == "intrinsic").count();
