@@ -31,11 +31,13 @@
         'main! $ %{} 'CodeEntry (:doc "|Run docs smoke cases")
           :code $ quote $ defn main! () (println "|Testing doc smoke cases...") (test-defimpl-order) (test-native-impl-new-dot-method) (test-assert-traits-local) (test-impl-traits-struct-enum-only) (println "|Doc smoke cases passed")
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'reload! $ %{} 'CodeEntry (:doc "|Reload handler")
-          :code $ quote $ defn reload! () (:: 'Unit)
+          :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-assert-traits-local $ %{} 'CodeEntry (:doc "|assert-traits local first arg smoke")
           :code $ quote $ defn test-assert-traits-local ()
             let
@@ -44,12 +46,14 @@
               assert= p $ assert-traits p DocTrait
               assert= "|doc Alice" $ p .label
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-defimpl-order $ %{} 'CodeEntry (:doc "|defimpl arg order smoke")
           :code $ quote $ defn test-defimpl-order ()
             assert= (%some DocTrait) (impl-origin DocTraitImpl)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-impl-traits-struct-enum-only $ %{} 'CodeEntry
           :doc "|impl-traits only accepts struct/enum definitions"
           :code $ quote $ defn test-impl-traits-struct-enum-only ()
@@ -70,7 +74,8 @@
                 assert= true $ includes? msg |Actual:
                 assert= true $ includes? msg |Fix:
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-native-impl-new-dot-method $ %{} 'CodeEntry (:doc "|&impl::new accepts .method field keys")
           :code $ quote $ defn test-native-impl-new-dot-method ()
             let
@@ -82,7 +87,8 @@
               assert= (%some DocTrait) (impl-origin DotImpl)
               assert= "|native-dot Bob" $ p .label
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-doc-smoke.main
           :require $ util.core :refer $ inside-eval:

@@ -13,7 +13,8 @@
         'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (test-case) (log-title "|Testing expr in case") (test-expr-in-case) (test-thread-macros) (test-lambda) (test-gensym) (test-with-cpu-time) (test-assert) (test-extract) (test-detector) (test-if-let) (test-misc) (test-or-linear-expansion) (do true)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
         'test-assert $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Assert in different order")
             assert (= 1 1) |string
@@ -65,7 +66,8 @@
                 quote $ match (+ 1 2) (1 |one) (2 |two) (3 |three)
             assert= |two $ case (+ 1 1) (1 |one) (2 |two) (3 |three)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-detector $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Detector function")
             inside-eval: (&reset-gensym-index!)
@@ -93,7 +95,8 @@
               (+ 2 3) |5
               (+ 2 4) |6
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-extract $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Extract map via tags")
             inside-eval: (&reset-gensym-index!)
@@ -215,7 +218,8 @@
           :code $ quote $ defn test-or-linear-expansion ()
             assert= |done $ or false false false false false false false false false false false false false false false false false false false false |done
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-thread-macros $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-thread-macros () (log-title "|Testing thread macros")
             inside-eval:
@@ -270,7 +274,8 @@
             assert= 35 $ ->% 3 (+ % 4) (* % 5)
             assert= 36 $ ->% 3 (+ % %) (* % %)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-with-cpu-time $ %{} 'CodeEntry (:doc |)
           :code $ quote $ fn () (log-title "|Testing with-cpu-time")
             inside-eval: (&reset-gensym-index!)

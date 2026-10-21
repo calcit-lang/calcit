@@ -33,7 +33,8 @@
           :code $ quote $ defn main! ()
             do (println "|Testing generics...") (println "|  - generic structs") (test-struct-generics) (println "|  - function generics and where-bounds") (test-recursive-struct) (test-fn-generics) (println "|Generics tests passed")
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'pair-right $ %{} 'CodeEntry (:doc "|Return the right value from a generic pair")
           :code $ quote $ defn pair-right (pair) (:right pair)
           :examples $ []
@@ -41,9 +42,10 @@
             :args $ [] $ :: 'test-generics.main/Pair 'T 'U
             :generics $ [] 'T 'U
         'reload! $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn reload! () (:: 'Unit)
+          :code $ quote $ defn reload! () &unit
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-fn-generics $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-fn-generics ()
             let
@@ -84,7 +86,8 @@
               &inspect-type s
               &inspect-type debug-id
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Nil)
+            :args $ []
         'test-recursive-struct $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-recursive-struct () (println "|Testing recursive struct support...")
             let
@@ -99,7 +102,8 @@
               assert= 2 $ :value nested
               println "|Recursive struct support passed"
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-struct-generics $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-struct-generics ()
             do (println "|Testing generic struct support...")
@@ -116,7 +120,8 @@
               &inspect-type $ &%{} Holder :box $ &%{} Box :value 2
               println "|Generic struct support passed"
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'unbox $ %{} 'CodeEntry (:doc "|Return value from a generic box")
           :code $ quote $ defn unbox (box) (:value box)
           :examples $ []

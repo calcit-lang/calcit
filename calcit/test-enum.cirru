@@ -308,7 +308,8 @@
               assert= :ok-branch v
             println "|✓ match syntax passed"
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-match-validation $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-match-validation ()
             do (println "|Testing match runtime validation...")

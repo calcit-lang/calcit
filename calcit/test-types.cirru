@@ -152,7 +152,8 @@
             test-numeric-refinements
             ; Currently not supported for runtime Struct literals.
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Bool)
+            :args $ []
         'process-string $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn process-string (s) (str s |!!!)
           :examples $ []
@@ -177,7 +178,8 @@
         'test-arg-type-hints $ %{} 'CodeEntry (:doc "|Checks arg hint path without emitting warning")
           :code $ quote $ defn test-arg-type-hints () (typed-only 1) (println "|arg type hints check executed")
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-builtin-proc-types $ %{} 'CodeEntry
           :doc "|Tests that Proc (builtin) functions check argument types during preprocess"
           :code $ quote $ defn test-builtin-proc-types () (; Test math operations with typed arguments)
@@ -194,7 +196,8 @@
                 println |rounded: rounded
                 println |negated: negated
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
         'test-complex-threading $ %{} 'CodeEntry
           :doc "|Tests type preservation with multiple typed functions in -> chain"
           :code $ quote $ defn test-complex-threading (a b)
@@ -225,7 +228,8 @@
               assert= "|(%:: 'Result :ok 1)" $ str ok
             , "|defstruct/defenum checks passed"
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
         'test-dynamic-methods $ %{} 'CodeEntry (:doc "|Ensures .slice target type is validated")
           :code $ quote $ defn test-dynamic-methods ()
             let
@@ -239,7 +243,8 @@
             println "|slice checks succeeded"
             , "|slice checks passed"
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
         'test-fn-type $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-fn-type (f x) (f x)
           :examples $ []
@@ -269,7 +274,8 @@
                 assert= 5 list-len
             , "|List method checks passed"
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
         'test-numeric-refinements $ %{} 'CodeEntry
           :doc "|验证数值 refinement 受检转换在 native 与 JavaScript 后端保持一致。"
           :code $ quote $ defn test-numeric-refinements ()
@@ -317,7 +323,8 @@
                 println "|✓ Map methods validated at preprocess"
             , "|All valid method calls passed preprocess validation"
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
         'test-proc-type $ %{} 'CodeEntry (:doc "|Tests Proc (builtin function) type annotation")
           :code $ quote $ defn test-proc-type (p x y) (p x y)
           :examples $ []
@@ -349,7 +356,8 @@
                 assert= true starts
             , "|String method checks passed"
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
         'test-struct-methods $ %{} 'CodeEntry
           :doc "|Tests method calls on Struct instances with impls"
           :code $ quote $ defn test-struct-methods () (; "使用" impl-traits "挂载实现" Struct methods)
@@ -366,7 +374,8 @@
                 assert= "|Hello, I'm Alice" greeting
             , "|Struct method checks passed"
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
         'test-threading-types $ %{} 'CodeEntry
           :doc "|Tests type preservation through -> threading macro"
           :code $ quote $ defn test-threading-types (text) (; "使用" -> "串联：text" "先经过" str "拼接，再经过" process-string) (; "最终结果应该保留" :string "类型（从" process-string "的" return-type "推断）")
@@ -401,7 +410,8 @@
                 assert= (%some |t) str-first
             , "|Typed method access checks passed"
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
         'typed-only $ %{} 'CodeEntry (:doc "|Used to verify arg type hints are collected")
           :code $ quote $ defn typed-only (a) (&+ 1 0)
           :examples $ []
