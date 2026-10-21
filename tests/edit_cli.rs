@@ -570,6 +570,97 @@ fn prepare_minimal_snapshot(directory: &TestDirectory) -> PathBuf {
 }
 
 #[test]
+fn schema_metadata_validation_does_not_inspect_business_source_fields() {
+  // Rust owns the guarded write/round-trip checks; the attached Calcit test
+  // exercises ordinary Map construction and declared Struct field access.
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  let target = "app.main/schema-probe";
+  let schema = "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return $ :: 'Map 'Tag 'String)";
+  let semantic_check = "quote $ let\n    Entry $ defstruct Entry (:schema 'String)\n    entry $ Entry :schema |Ada\n  assert= |Ada $ :schema entry\n  assert= (Option :some |Ada) $ get (schema-probe |Ada) :schema";
+  let operations = serde_json::json!([
+    [
+      "edit",
+      "def",
+      target,
+      "--input-format",
+      "cirru",
+      "--code",
+      "quote $ defn schema-probe (text) $ {} $ :schema $ str text"
+    ],
+    ["edit", "schema", target, "--input-format", "cirru", "--code", schema],
+    [
+      "edit",
+      "add-test",
+      target,
+      "business-schema-field",
+      "--input-format",
+      "cirru",
+      "--code",
+      semantic_check
+    ],
+    ["edit", "add-example", target, "--input-format", "cirru", "--code", semantic_check]
+  ])
+  .to_string();
+  let before = fs::read(&snapshot).unwrap();
+  let revision = transaction_scope(&snapshot, &operations);
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "preview must not write");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--code", &operations, "--expect-revision", &revision],
+    ),
+    "commit source containing business schema fields",
+  );
+  let definition = query_definition(&snapshot, target)["data"].clone();
+  assert_success(&run_calcit(&snapshot, &["edit", "format"]), "format business schema fields");
+  assert_eq!(
+    query_definition(&snapshot, target)["data"],
+    definition,
+    "format must preserve all metadata and source"
+  );
+  assert_success(&run_calcit(&snapshot, &["--check-only", "--all-defs"]), "strict public definitions");
+  assert_success(
+    &run_calcit(&snapshot, &["test", target, "--require-match"]),
+    "attached Calcit field assertions",
+  );
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["analyze", "check-examples", "--ns", "app.main", "--def", "schema-probe"],
+    ),
+    "business schema fields in examples",
+  );
+
+  let before_invalid = fs::read(&snapshot).unwrap();
+  let invalid_schema = "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return $ str text)";
+  let direct = run_calcit(
+    &snapshot,
+    &["edit", "schema", target, "--input-format", "cirru", "--code", invalid_schema],
+  );
+  assert!(!direct.status.success(), "actual invalid schema metadata must still fail");
+  assert_eq!(fs::read(&snapshot).unwrap(), before_invalid);
+  let invalid_operations = serde_json::json!([
+    ["edit", "doc", target, "must roll back"],
+    ["edit", "schema", target, "--input-format", "cirru", "--code", invalid_schema]
+  ])
+  .to_string();
+  for preview in [true, false] {
+    let mut args = vec!["edit", "transaction", "--code", &invalid_operations];
+    if preview {
+      args.push("--dry-run");
+    }
+    let rejected = run_calcit(&snapshot, &args);
+    assert!(!rejected.status.success(), "invalid metadata must reject the entire transaction");
+    assert_eq!(
+      fs::read(&snapshot).unwrap(),
+      before_invalid,
+      "invalid metadata must not leave a staged doc write"
+    );
+  }
+}
+
+#[test]
 fn edit_def_creates_exact_names_beside_shell_sensitive_variants() {
   let directory = TestDirectory::create();
   let snapshot = prepare_minimal_snapshot(&directory);
