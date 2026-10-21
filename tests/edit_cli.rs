@@ -538,34 +538,12 @@ fn js_ffi_edits_validate_contracts_before_writing() {
 
 fn prepare_minimal_snapshot(directory: &TestDirectory) -> PathBuf {
   let snapshot = directory.snapshot();
+  // The fixture already declares structured `main!` / `reload!` contracts and passes strict checks.
   fs::copy("calcit/add.cirru", &snapshot).expect("minimal snapshot fixture should copy");
-  let schema = run_calcit(
-    &snapshot,
-    &[
-      "edit",
-      "schema",
-      "app.main/main!",
-      "--code",
-      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)",
-    ],
+  assert_success(
+    &run_calcit(&snapshot, &["--check-only", "--all-defs"]),
+    "minimal snapshot fixture passes strict checks",
   );
-  assert_success(&schema, "make minimal entry schema strict");
-  let reload = run_calcit(
-    &snapshot,
-    &["edit", "def", "app.main/reload!", "--code", "quote $ defn reload! () nil"],
-  );
-  assert_success(&reload, "create minimal reload definition");
-  let reload_schema = run_calcit(
-    &snapshot,
-    &[
-      "edit",
-      "schema",
-      "app.main/reload!",
-      "--code",
-      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Nil)",
-    ],
-  );
-  assert_success(&reload_schema, "make minimal reload schema strict");
   snapshot
 }
 
@@ -1836,9 +1814,6 @@ fn diagnostic_ir_preserves_loaded_external_trait_declarations() {
     ["edit", "def", "app.main/main!", "--overwrite", "--input-format", "cirru", "--code",
       "quote $ defn main! () (assert= identity-host identity-host) (assert= app.host/cast-host app.host/cast-host) &unit"],
     ["edit", "schema", "app.main/main!", "--input-format", "cirru", "--code",
-      "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"],
-    ["edit", "def", "app.main/reload!", "--input-format", "cirru", "--code", "quote $ defn reload! () &unit"],
-    ["edit", "schema", "app.main/reload!", "--input-format", "cirru", "--code",
       "quote $ :: 'Fn $ {} (:args $ []) (:return 'Unit)"]
   ]).to_string();
   let revision = transaction_scope(&snapshot, &operations);

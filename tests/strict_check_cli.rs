@@ -434,7 +434,7 @@ fn prepare_project() -> (TestDirectory, PathBuf) {
     false,
   );
   edit_definition(&snapshot, "dependent", "quote $ defn dependent () $ bad-a", false);
-  edit_definition(&snapshot, "reload!", "quote $ defn reload! () nil", false);
+  edit_definition(&snapshot, "reload!", "quote $ defn reload! () nil", true);
   edit_definition(&snapshot, "main!", "quote $ defn main! () $ do (dependent) (bad-b) (cycle-a)", true);
 
   for name in ["bad-a", "bad-b", "cycle-a", "cycle-z", "dependent", "main!"] {
@@ -471,8 +471,6 @@ fn recur_arguments_follow_the_lexical_function_contract() {
   );
   edit_definition(&snapshot, "main!", "quote $ defn main! () $ typed-recur |point 0", true);
   edit_schema(&snapshot, "main!", "Number");
-  edit_definition(&snapshot, "reload!", "quote $ defn reload! () &unit", false);
-  edit_schema(&snapshot, "reload!", "Unit");
 
   assert_success(&run_calcit(&snapshot, &["--check-only"]), "correct recur argument order");
   assert_success(

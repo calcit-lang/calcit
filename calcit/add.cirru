@@ -9,10 +9,16 @@
       :type-slots $ {}
   :files $ {} $ 'app.main
     %{} 'FileEntry
-      :defs $ {} $ 'main!
-        %{} 'CodeEntry (:doc |)
+      :defs $ {}
+        'main! $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn main! () (+ 1 2)
           :examples $ []
-          :schema $ :: 'Dynamic
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ []
+        'reload! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn reload! () &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.main (:require)
