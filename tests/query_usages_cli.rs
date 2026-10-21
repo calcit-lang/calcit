@@ -138,6 +138,45 @@ fn usages_keep_core_binding_operators_but_not_a_local_callable_named_let() {
 }
 
 #[test]
+fn usages_visit_quasiquote_escapes_without_counting_template_data() {
+  fn coordinates(out: &str, name: &str) -> String {
+    let mut lines = out.lines();
+    lines
+      .find(|line| line.contains(&format!("app.shadow/{name} [code]")))
+      .expect("the expected definition should appear");
+    lines.next().expect("the usage should retain coordinates").trim().to_owned()
+  }
+  let out = run_query_usages("app.shadow/template-value");
+  assert_eq!(usages_count_line(&out), "Usages: 3", "{out}");
+  for expected in ["unquote-read", "compact-unquote-read", "nested-escape-read"] {
+    assert!(out.contains(&format!("app.shadow/{expected} [code]")), "{out}");
+  }
+  assert!(!out.contains("app.shadow/local-escape-shadow [code]"), "{out}");
+  assert_eq!(
+    coordinates(&out, "unquote-read"),
+    "at [@3.1.2.1]",
+    "template leaves are data:\n{out}"
+  );
+  assert_eq!(coordinates(&out, "compact-unquote-read"), "at [@3.1.1]", "{out}");
+  assert_eq!(
+    coordinates(&out, "nested-escape-read"),
+    "at [@3.1.1.1.1] and [@3.1.2.1.1.1]",
+    "{out}"
+  );
+
+  let out = run_query_usages("app.shadow/template-values");
+  assert_eq!(usages_count_line(&out), "Usages: 2", "{out}");
+  assert!(out.contains("app.shadow/splice-read [code]"), "{out}");
+  assert!(out.contains("app.shadow/compact-splice-read [code]"), "{out}");
+  assert_eq!(coordinates(&out, "splice-read"), "at [@3.1.2.1]", "{out}");
+  assert_eq!(coordinates(&out, "compact-splice-read"), "at [@3.1.1]", "{out}");
+
+  let output = run_query(&["context", "app.shadow/template-value", "--format", "json"]);
+  let context: serde_json::Value = serde_json::from_slice(&output.stdout).expect("context stdout should be one JSON document");
+  assert_eq!(context["data"]["usages"]["total"], 3, "{context}");
+}
+
+#[test]
 fn context_uses_the_same_lexical_reference_collection() {
   let output = run_query(&["context", "app.shadow/shadow-sentinel", "--format", "json"]);
   let value: serde_json::Value = serde_json::from_slice(&output.stdout).expect("context stdout should be one JSON document");

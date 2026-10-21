@@ -148,6 +148,12 @@ impl ScopeWalk<'_> {
       Some("fn") => self.walk_params(items, path, 1, 2, active),
       Some("let" | "loop") => self.walk_let(items, path, active, core_head == Some("loop")),
       Some("&let") => self.walk_single_let(items, path, active),
+      Some("quasiquote") if self.core_heads.is_some() => {
+        for (index, template) in items.iter().enumerate().skip(1) {
+          self.walk_template(template, &child_path(path, index), active)?;
+        }
+        Ok(())
+      }
       Some(name) if QUOTING_HEADS.contains(&name) => {
         if self.core_heads.is_none() {
           self.reject_inside(node, path, active, "quoted source");
@@ -174,6 +180,32 @@ impl ScopeWalk<'_> {
         Ok(())
       }
     }
+  }
+
+  /// Match Calcit's quasiquote preprocessing: template leaves stay data, while
+  /// escapes execute in the enclosing scope, including inside nested templates.
+  fn walk_template(&mut self, node: &Cirru, path: &[usize], active: bool) -> Result<(), String> {
+    match node {
+      Cirru::Leaf(name) => {
+        // The reader expands ~name / ~@name, but their only source coordinate
+        // is the original leaf, not a manufactured child path.
+        let escaped = name.strip_prefix("~@").or_else(|| name.strip_prefix('~'));
+        if active && escaped == Some(self.old_name) {
+          self.uses.push(path.to_vec());
+        }
+      }
+      Cirru::List(items) if matches!(items.first().and_then(leaf_name), Some("~" | "~@")) => {
+        for (index, expression) in items.iter().enumerate() {
+          self.walk(expression, &child_path(path, index), active)?;
+        }
+      }
+      Cirru::List(items) => {
+        for (index, template) in items.iter().enumerate() {
+          self.walk_template(template, &child_path(path, index), active)?;
+        }
+      }
+    }
+    Ok(())
   }
 
   fn reject_inside(&mut self, node: &Cirru, path: &[usize], active: bool, place: &str) {

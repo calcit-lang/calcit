@@ -115,6 +115,14 @@
                 shadow-sentinel false
               , shadow-sentinel
           :examples $ []
+        'compact-splice-read $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn compact-splice-read ()
+            quasiquote $ [] ~@template-values
+          :examples $ []
+        'compact-unquote-read $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn compact-unquote-read ()
+            quasiquote $ [] ~template-value
+          :examples $ []
         'global-read $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn global-read () shadow-sentinel
           :examples $ []
@@ -134,6 +142,10 @@
                 shadow-sentinel false
               , shadow-sentinel
           :examples $ []
+        'local-escape-shadow $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn local-escape-shadow (template-value)
+            quasiquote $ [] ~template-value $ ~ template-value
+          :examples $ []
         'local-head-read $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn local-head-read (let)
             hint-fn $ {} (:return 'Bool)
@@ -148,6 +160,12 @@
             loop
                 shadow-sentinel false
               , shadow-sentinel
+          :examples $ []
+        'nested-escape-read $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn nested-escape-read ()
+            quasiquote $ []
+              quote $ [] ~template-value
+              quasiquote $ [] $ ~ template-value
           :examples $ []
         'parameter-shadow $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn parameter-shadow (shadow-sentinel) shadow-sentinel
@@ -172,6 +190,20 @@
           :examples $ []
         'shadow-sentinel $ %{} 'CodeEntry (:doc |)
           :code $ quote $ def shadow-sentinel true
+          :examples $ []
+        'splice-read $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn splice-read ()
+            quasiquote $ [] template-values $ ~@ template-values
+          :examples $ []
+        'template-value $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def template-value true
+          :examples $ []
+        'template-values $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ def template-values ([] true)
+          :examples $ []
+        'unquote-read $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn unquote-read ()
+            quasiquote $ [] template-value $ ~ template-value
           :examples $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns app.shadow
