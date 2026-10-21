@@ -1955,6 +1955,8 @@ pub fn async_sleep(xs: Vec<Calcit>, call_stack: &CallStackList) -> Result<Calcit
   Ok(Calcit::Unit)
 }
 
+/// Deprecated FingerVec diagnostic kept under its historical name until 0.32.0.
+/// The output is the FingerVec debug layout, not a ternary tree.
 pub fn format_ternary_tree(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   if xs.len() != 1 {
     return CalcitErr::err_nodes(CalcitErrKind::Arity, "&format-ternary-tree expected 1 argument, but received:", xs);

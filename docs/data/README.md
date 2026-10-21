@@ -28,7 +28,7 @@
 
 `to-string` 的 `wasm-scalar-method-contract` 附带测试使用普通 `.to-string`，同一断言 AST 在 native、生成 JS 和实际 WASM 执行，覆盖 String、Number、Bool、Tag、Nil 的文本结果及 String 返回类型。WASM fixture 另外从宿主传入运行时 Number，核对普通方法返回的 UTF-8 文本，包括小数、正负零、非有限值和 f64 边界；不改成 native call 或内部 primitive 来绕过方法 lowering。Symbol 仍只计入已经验证的 native/JS 范围，不能因其他标量通过而宣称 WASM 支持 Symbol。
 
-`&format-ternary-tree` 只用于 native List 的内部树布局调试，不是可移植的值显示 API。
+`&format-ternary-tree` 是已弃用的 FingerVec 诊断：名称沿用旧的三叉树实现，实际返回 native List 当前 FingerVec 表示的调试文本（例如 `{} _ {0 1}`），不是三叉树结构，也不是稳定的数据格式，不要把它解析成树节点。它将在 0.32.0 删除，没有替代入口，见 [升级手册](../run/upgrade.md#format-ternary-tree-deprecation)。可移植的值显示使用 `format-cirru-edn`。
 实际 JS 发射会拒绝展开和常量求值后仍可达的运行时引用，并由原代码生成栈指出所属定义；只读类型检查成功不代表后端实现可用，
 仍需执行项目的 `calcit js` 和生成 JS 回放。宏可以在 native 编译阶段使用该 helper 再返回普通表达式；
 模块中未被引用的 native helper 不阻止其普通 API 编译到 JS。`query def/context` 的定义文档也会说明这一边界，

@@ -627,7 +627,7 @@ fn to_js_code(
       Calcit::Proc(s) => {
         if matches!(s, CalcitProc::NativeFormatTernaryTree) {
           return Err(format!(
-            "`{s}` is a native-only builtin and cannot be emitted for JavaScript; use a native entry for this runtime-internal operation"
+            "`{s}` is a native-only builtin and cannot be emitted for JavaScript; use a native entry for this runtime-internal operation. It is a deprecated FingerVec diagnostic scheduled for removal in 0.32.0"
           ));
         }
         let proc_prefix = get_proc_prefix(ns);
@@ -2552,7 +2552,7 @@ fn validate_js_runtime_dependencies(program: &program::CompiledProgram, entries:
     if let Some(proc) = find_js_unavailable_proc(&compiled.codegen_form) {
       gen_stack::push_call_stack(ns, def, StackKind::Codegen, compiled.preprocessed_code.clone(), &[]);
       return Err(format!(
-        "`{proc}` is a native-only builtin and cannot be emitted for JavaScript; use a native entry for this runtime-internal operation"
+        "`{proc}` is a native-only builtin and cannot be emitted for JavaScript; use a native entry for this runtime-internal operation. It is a deprecated FingerVec diagnostic scheduled for removal in 0.32.0"
       ));
     }
     pending.extend(compiled.deps.iter().rev().copied());
