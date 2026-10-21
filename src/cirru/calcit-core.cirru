@@ -791,7 +791,7 @@
           :tags $ #{} :builtin :deprecated :internal
           :tests $ [] $ %{} 'TestEntry (:name |returns-finger-vec-debug-string)
             :code $ quote $ assert= true
-              string? $ &format-ternary-tree $ distinct $ range 2
+              string? $ &format-ternary-tree $ distinct (range 2)
             :tags $ #{} :core :unit
         '&fs-read-dir $ %{} 'CodeEntry
           :doc "|内部目录枚举边界；显式接收 Result 与 FsPath 定义、guest path 和宿主错误前缀。"
@@ -3113,24 +3113,25 @@
                 if
                   not $ list? pair
                   raise $ str-spaced "|struct-match expected arm in list, got:" pair
+                if
+                  not $ &<= 3 $ &list:count pair
+                  raise $ str-spaced "|struct-match expected (StructDef binding & body) or (_ binding & body), got:" pair
                 let
                     pattern $ &list:nth pair 0
-                  assert "|expected struct or symbol as pattern" $ or (struct? pattern) (symbol? pattern)
+                  if
+                    not $ or (struct? pattern) (symbol? pattern)
+                    raise $ str-spaced "|struct-match expected struct or symbol as pattern, got:" pattern
                   if (&= pattern '_)
-                    &let ()
-                      assert "|struct-match expected a branch after `_`" $ &<= 3 $ &list:count pair
-                      quasiquote $ &let
+                    &let () $ quasiquote $ &let
+                        ~ $ &list:nth pair 1
+                        , ~value
+                      ~@ $ &list:slice pair 2
+                    &let () $ quasiquote $ if (&struct:matches? ~value ~pattern)
+                      &let
                           ~ $ &list:nth pair 1
                           , ~value
                         ~@ $ &list:slice pair 2
-                    &let ()
-                      assert "|struct-match expected (StructDef binding & body)" $ &<= 3 $ &list:count pair
-                      quasiquote $ if (&struct:matches? ~value ~pattern)
-                        &let
-                            ~ $ &list:nth pair 1
-                            , ~value
-                          ~@ $ &list:slice pair 2
-                        &struct-match-internal ~value $ ~@ $ &list:rest body
+                      &struct-match-internal ~value $ ~@ $ &list:rest body
           :examples $ []
           :schema $ :: 'Macro $ {} (:rest 'SyntaxList)
             :capabilities $ #{}
@@ -10456,8 +10457,7 @@
                 assert= (Option :some original) wrapped
                 assert= original $ wrapped .unwrap
               :tags $ #{} :core :types :unit
-            %{} 'TestEntry
-              :name |nil-joins-bridge-through-nil-option
+            %{} 'TestEntry (:name |nil-joins-bridge-through-nil-option)
               :code $ quote $ let
                   explicit-option $ fn (x)
                     hint-fn $ {}
@@ -10478,7 +10478,7 @@
                     hint-fn $ {}
                       :args $ [] 'Number
                       :return $ :: 'Option 'String
-                    nil->option $ if (> x 0) |pos (do nil)
+                    nil->option $ if (> x 0) |pos $ do nil
                   from-nil-local $ fn (x)
                     hint-fn $ {}
                       :args $ [] 'Number
@@ -12414,7 +12414,7 @@
             :args $ [] 'Struct
             :return $ :: 'Option 'StructDef
         'struct-match $ %{} 'CodeEntry
-          :doc "|Pattern-match a struct value by StructDef and fields."
+          :doc "|按 StructDef 模式匹配结构体。分支写作 `Type binding $ body`，兜底写作 `_ binding $ body`；多条 body 表达式可直接缩进。不要使用 Enum 的 `(Type binding)` 模式。被匹配值只求值一次，binding 保留原结构体对象。"
           :code $ quote $ defmacro struct-match (value & body)
             if (&list:empty? body) (raise "|struct-match expected patterns for matching")
               if (list? value)
@@ -12478,6 +12478,15 @@
                 assert= |Wrong-struct $ try
                   read $ %{} _ $ :value 7
                   fn (message) message
+              :tags $ #{} :core :struct-match-guard :unit
+            %{} 'TestEntry
+              :name |wildcard-binds-original-value-with-multiple-expressions
+              :code $ quote $ let
+                  expected $ fs:path |fixture
+                  result $ struct-match expected $ _ current
+                    assert= |fixture $ :value current
+                    , current
+                assert= true $ identical? expected result
               :tags $ #{} :core :struct-match-guard :unit
         'struct-with $ %{} 'CodeEntry
           :doc "|Construct a new struct value by replacing declared fields."
