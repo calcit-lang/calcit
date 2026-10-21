@@ -277,6 +277,48 @@
           :schema $ :: 'Fn $ {}
             :args $ [] 'Dynamic
             :return $ :: 'Option 'Dynamic
+        'first-rest-value $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn first-rest-value (label & values) (first values)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:rest 'String)
+            :args $ [] 'String
+            :return $ :: 'Option 'String
+          :tests $ []
+            %{} 'TestEntry (:name |no-rest)
+              :code $ quote $ assert= (Option :none) (first-rest-value |prefix)
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |direct-rest)
+              :code $ quote $ assert= (Option :some |one) (first-rest-value |prefix |one |two)
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |list-rest)
+              :code $ quote $ assert= (Option :some |one)
+                spread-first-rest $ [] |one |two
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |empty-list)
+              :code $ quote $ assert= (Option :none)
+                spread-first-rest $ []
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |literal-rest)
+              :code $ quote $ assert= (Option :some |one)
+                first-rest-value |prefix & $ [] |one |two
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |explicit-before-list)
+              :code $ quote $ assert= (Option :some |one)
+                first-rest-value |prefix |one & $ [] |two |three
+              :tags $ #{} :unit
+            %{} 'TestEntry (:name |single-evaluation)
+              :code $ quote $ let
+                  calls $ ref 0
+                  supply $ fn ()
+                    hint-fn $ {}
+                      :args $ []
+                      :return $ :: 'List 'String
+                    swap! calls inc
+                    [] |one
+                assert= (Option :some |one)
+                  first-rest-value |prefix & $ supply
+                assert= 1 $ deref calls
+              :tags $ #{} :unit
         'infer-later-dynamic-generic $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn infer-later-dynamic-generic (value) (same-type-second 7 value)
           :examples $ []
@@ -962,6 +1004,12 @@
                 assert= 9 $ :n result
                 assert= (Option :none) (:end result)
               :tags $ #{} :sliceable-option :unit
+        'spread-first-rest $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn spread-first-rest (items) (first-rest-value |prefix & items)
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] $ :: 'List 'String
+            :return $ :: 'Option 'String
         'test-count-inference $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn test-count-inference ()
             assert-type

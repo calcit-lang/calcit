@@ -3848,7 +3848,7 @@ fn literal_spread_fix_is_guarded_atomic_and_idempotent() {
 }
 
 #[test]
-fn spread_fix_keeps_unproved_calls_for_review_without_writes() {
+fn spread_fix_never_writes_unproved_calls() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("copy fixture");
@@ -3892,6 +3892,20 @@ fn spread_fix_keeps_unproved_calls_for_review_without_writes() {
         "--allow-no-vcs",
       ],
     );
+    if name == "open-item" {
+      // Concrete use of Dynamic is now rejected before any rewrite can be planned.
+      // Keep the original no-write contract and assert the stronger source error.
+      assert!(!result.status.success());
+      let stderr = String::from_utf8_lossy(&result.stderr);
+      assert!(stderr.contains("E_CALL_ARGUMENT_UNPROVEN"), "{stderr}");
+      assert!(stderr.contains("passes open `dynamic` at argument 2"), "{stderr}");
+      assert!(stderr.contains("at fix-command.main/open-item @3.2.2.2"), "{stderr}");
+      assert_eq!(fs::read(&snapshot).unwrap(), original);
+      let checked = run_calcit(&snapshot, &["--init-fn", &target, "--check-only"]);
+      assert!(!checked.status.success());
+      assert!(String::from_utf8_lossy(&checked.stderr).contains("E_CALL_ARGUMENT_UNPROVEN"));
+      continue;
+    }
     assert_success(&result, name);
     let report = parse_stdout(&result);
     let suggestions = report["data"]["suggestions"].as_array().unwrap();
@@ -4178,12 +4192,133 @@ fn typed_rest_spread_is_already_valid_and_remains_unmodified() {
         "json",
       ],
     );
+    if name.starts_with("open-") {
+      assert!(!result.status.success());
+      let stderr = String::from_utf8_lossy(&result.stderr);
+      assert!(stderr.contains("E_CALL_ARGUMENT_UNPROVEN"), "{stderr}");
+      let coord = if name == "open-prefixed-rest" { "3.2.4" } else { "3.2.3" };
+      assert!(stderr.contains(&format!("at {target} @{coord}")), "{stderr}");
+      assert!(stderr.contains("no proof for concrete parameter `list<:number>`"), "{stderr}");
+      assert_eq!(fs::read(&snapshot).unwrap(), before);
+      let checked = run_calcit(&snapshot, &["--init-fn", &target, "--check-only"]);
+      assert!(!checked.status.success());
+      assert!(String::from_utf8_lossy(&checked.stderr).contains("E_CALL_ARGUMENT_UNPROVEN"));
+      continue;
+    }
     assert_success(&result, "retain the rest call for review");
     let report = parse_stdout(&result);
     let suggestions = report["data"]["suggestions"].as_array().unwrap();
     assert_eq!(suggestions.len(), 1, "{name}: {report}");
     assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
     assert!(suggestions[0]["replacement"].is_null());
+    assert_eq!(fs::read(&snapshot).unwrap(), before);
+  }
+}
+
+#[test]
+fn selected_trait_rest_contract_survives_explicit_spread() {
+  let directory = TestDirectory::create();
+  let snapshot = directory.path().join("calcit.cirru");
+  fs::copy("calcit/test-traits.cirru", &snapshot).expect("copy trait fixture");
+  for rule in ["callable-contract-proof-v1", "concrete-return-proof-v1", "spread-call-proof-v1"] {
+    let result = run_fix(
+      &snapshot,
+      &[
+        "--rule",
+        rule,
+        "--ns",
+        "test-traits.main",
+        "--def",
+        "explicit-rest-sum",
+        "--format",
+        "json",
+      ],
+    );
+    assert_success(&result, "selected method arguments and result remain proven");
+    let report = parse_stdout(&result);
+    assert!(report["diagnostics"].as_array().unwrap().is_empty(), "{report}");
+    if rule == "spread-call-proof-v1" {
+      // The explicit primitive still lacks a unique source-call mapping;
+      // a successful type proof must not fabricate source rewrite identity.
+      let suggestions = report["data"]["suggestions"].as_array().unwrap();
+      assert_eq!(suggestions.len(), 1, "{report}");
+      assert_eq!(suggestions[0]["applicability"], "requires-review", "{report}");
+      assert!(suggestions[0]["replacement"].is_null(), "{report}");
+    } else {
+      assert!(report["data"]["suggestions"].as_array().unwrap().is_empty(), "{report}");
+    }
+  }
+  for (name, call, element, diagnostic) in [
+    (
+      "wrong-explicit-rest",
+      "&trait-call RestBoxOps :sum box |numbers & items",
+      "String",
+      "W_METHOD_ARG_TYPE_MISMATCH",
+    ),
+    (
+      "wrong-method-rest",
+      ".sum box |numbers & items",
+      "String",
+      "W_METHOD_ARG_TYPE_MISMATCH",
+    ),
+    (
+      "wrong-explicit-prefix",
+      "&trait-call RestBoxOps :sum box 1 & items",
+      "Number",
+      "W_METHOD_ARG_TYPE_MISMATCH",
+    ),
+    (
+      "unproven-method-spread",
+      "&trait-call RestBoxOps :sum box |numbers & items & items",
+      "Number",
+      "E_CALL_ARGUMENT_UNPROVEN",
+    ),
+    (
+      "missing-method-prefix",
+      "&trait-call RestBoxOps :sum box",
+      "Number",
+      "E_TRAIT_CALL_ARITY",
+    ),
+  ] {
+    let target = format!("test-traits.main/{name}");
+    let ops = serde_json::json!([
+      [
+        "edit",
+        "def",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        format!("quote $ defn {name} (box items) ({call})")
+      ],
+      [
+        "edit",
+        "schema",
+        target,
+        "--input-format",
+        "cirru",
+        "--code",
+        format!("quote $ :: 'Fn $ {{}} (:args $ [] 'test-traits.main/RestBox $ :: 'List '{element}) (:return 'Number)")
+      ]
+    ])
+    .to_string();
+    let preview = run_calcit(&snapshot, &["edit", "transaction", "--code", &ops, "--dry-run", "--format", "json"]);
+    assert_success(&preview, "preview rejected trait call fixture");
+    let revision = parse_stdout(&preview)["scoped_revision"].as_str().unwrap().to_owned();
+    assert_success(
+      &run_calcit(&snapshot, &["edit", "transaction", "--code", &ops, "--expect-revision", &revision]),
+      "add rejected trait call fixture",
+    );
+    let before = fs::read(&snapshot).unwrap();
+    let checked = run_calcit(&snapshot, &["--init-fn", &target, "--check-only"]);
+    assert!(!checked.status.success(), "{name} must fail before runtime");
+    let stderr = String::from_utf8_lossy(&checked.stderr);
+    assert!(stderr.contains(diagnostic), "{name}: {stderr}");
+    assert!(stderr.contains(&target), "{stderr}");
+    assert!(
+      !stderr.contains("E_TRAIT_CALL_IMPL_MISSING"),
+      "type errors are not missing implementations: {stderr}"
+    );
     assert_eq!(fs::read(&snapshot).unwrap(), before);
   }
 }

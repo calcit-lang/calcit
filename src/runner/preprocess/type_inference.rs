@@ -1932,6 +1932,13 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
           if let Ok(expanded) = expand_literal_call_arguments(&arguments) {
             return infer_type_from_expr(&Calcit::from(expanded.push_left(callable.clone())), scope_types);
           }
+          if matches!(
+            callable,
+            Calcit::Method(_, calcit::MethodKind::Invoke(_) | calcit::MethodKind::ExternalInvoke(_))
+              | Calcit::Proc(CalcitProc::NativeTraitCall)
+          ) {
+            return infer_type_from_expr(&Calcit::from(arguments.push_left(callable.clone())), scope_types);
+          }
           // The JS array intrinsic has the same opaque result for fixed and
           // spread calls. Reuse the rest-call proof for the List operand; its
           // length and members do not establish any stronger host contract.
@@ -2159,22 +2166,10 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
 
         // Typed method invocation: resolve the selected trait signature and
         // substitute receiver/argument types into its generic return type.
-        Calcit::Method(method_name, calcit::MethodKind::Invoke(receiver_hint) | calcit::MethodKind::ExternalInvoke(receiver_hint)) => {
-          let receiver_type = xs
-            .get(1)
-            .and_then(|receiver| resolve_type_value(receiver, scope_types))
-            .unwrap_or_else(|| receiver_hint.clone());
-          let method_type = if let Some(traits) = super::trait_list_for_receiver(receiver_type.as_ref(), scope_types) {
-            selected_trait_method(&traits, method_name).map(|candidate| candidate.method_type)?
-          } else {
-            let impls = get_impls_from_type(receiver_type.as_ref())?;
-            let method = find_method_entry_for_type(receiver_type.as_ref(), &impls, method_name)?;
-            infer_type_from_expr(method, scope_types)?
-          };
-          let CalcitTypeAnnotation::Fn(info) = method_type.as_ref() else {
-            return Some(calcit::DYNAMIC_TYPE.clone());
-          };
-          Some(infer_typed_method_result(info, xs.iter().skip(1), scope_types))
+        Calcit::Method(_, calcit::MethodKind::Invoke(_) | calcit::MethodKind::ExternalInvoke(_)) => {
+          let arguments = xs.drop_left();
+          let signature = method_call_signature(head, &arguments, scope_types)?;
+          Some(infer_typed_method_result(&signature, arguments.iter(), scope_types))
         }
 
         // Method access: infer struct field type when available
@@ -2798,6 +2793,30 @@ pub(super) fn lowered_trait_method_signature(xs: &CalcitList, scope_types: &Scop
     .resolve_to_nonoptional_fn()
 }
 
+/// Resolve one selected method contract for both surface and spread calls.
+pub(super) fn method_call_signature(
+  head: &Calcit,
+  arguments: &CalcitList,
+  scope_types: &ScopeTypes,
+) -> Option<Arc<CalcitFnTypeAnnotation>> {
+  let Calcit::Method(method_name, calcit::MethodKind::Invoke(receiver_hint) | calcit::MethodKind::ExternalInvoke(receiver_hint)) = head
+  else {
+    return None;
+  };
+  let receiver_type = arguments
+    .first()
+    .and_then(|receiver| resolve_type_value(receiver, scope_types))
+    .unwrap_or_else(|| receiver_hint.clone());
+  let method_type = if let Some(traits) = super::trait_list_for_receiver(receiver_type.as_ref(), scope_types) {
+    selected_trait_method(&traits, method_name).map(|candidate| candidate.method_type)?
+  } else {
+    let impls = get_impls_from_type(receiver_type.as_ref())?;
+    let method = find_method_entry_for_type(receiver_type.as_ref(), &impls, method_name)?;
+    infer_type_from_expr(method, scope_types)?
+  };
+  method_type.resolve_to_nonoptional_fn()
+}
+
 /// Surface and lowered methods share argument proof and result substitution.
 fn infer_typed_method_result<'a>(
   signature: &CalcitFnTypeAnnotation,
@@ -2805,8 +2824,22 @@ fn infer_typed_method_result<'a>(
   scope_types: &ScopeTypes,
 ) -> Arc<CalcitTypeAnnotation> {
   let arguments = arguments.collect::<Vec<_>>();
-  let required = signature.arg_types.len() - calcit::trailing_option_arg_count(&signature.arg_types, signature.arg_types.len());
-  if arguments.len() < required || signature.rest_type.is_none() && arguments.len() > signature.arg_types.len() {
+  let projected;
+  let (arguments, signature) = if arguments
+    .iter()
+    .any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+  {
+    let original = CalcitList::from(arguments.iter().copied().cloned().collect::<Vec<_>>().as_slice());
+    let Ok(contract) = super::expanded_call_contract(signature, &original) else {
+      return calcit::DYNAMIC_TYPE.clone();
+    };
+    projected = contract;
+    (projected.0.iter().collect::<Vec<_>>(), &projected.1)
+  } else {
+    (arguments, signature)
+  };
+  let arity = signature.call_arity();
+  if arguments.len() < arity.min || arity.max.is_some_and(|max| arguments.len() > max) {
     return calcit::DYNAMIC_TYPE.clone();
   }
   let Some(actual_types) = arguments

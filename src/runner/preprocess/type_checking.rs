@@ -558,12 +558,39 @@ fn check_arg_types_loop<F>(ctx: CheckContext<'_>, make_warning: F)
 where
   F: Fn(usize, &str, &str, String) -> String,
 {
-  // Check if we have spreading args — can't check with spread
-  for arg in ctx.args.iter() {
-    if matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
-      return;
+  let expanded_args;
+  let expanded_types;
+  let mut complete_arguments = true;
+  let ctx = if ctx.args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
+    // Keep the original generic/trait context. Only argument shape changes
+    // for checking; codegen still sees each original operand exactly once.
+    let (arguments, expected_types) = match super::type_inference::expand_literal_call_arguments(ctx.args) {
+      Ok(arguments) => (arguments, ctx.expected_types.to_vec()),
+      Err(_) => {
+        super::typed_rest_spread_arguments(ctx.expected_types, None, ctx.args).unwrap_or_else(|| {
+          // Unknown suffixes cannot erase independently known prefix types.
+          // This partial check does not prove bounds that may depend on the suffix.
+          complete_arguments = false;
+          let prefix = ctx
+            .args
+            .iter()
+            .take_while(|arg| !matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+            .cloned()
+            .collect::<Vec<_>>();
+          (CalcitList::from(prefix.as_slice()), ctx.expected_types.to_vec())
+        })
+      }
+    };
+    expanded_args = arguments;
+    expanded_types = expected_types;
+    CheckContext {
+      args: &expanded_args,
+      expected_types: &expanded_types,
+      ..ctx
     }
-  }
+  } else {
+    ctx
+  };
 
   let actual_types = ctx
     .args
@@ -640,7 +667,9 @@ where
     }
   }
 
-  check_generic_trait_bounds(&ctx, &bindings);
+  if complete_arguments {
+    check_generic_trait_bounds(&ctx, &bindings);
+  }
 }
 
 /// Where a call compares or hashes an argument by value.
@@ -724,13 +753,6 @@ pub(crate) fn check_proc_arg_types(
     return;
   };
 
-  // Check if we have spreading args
-  for arg in args.iter() {
-    if matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)) {
-      return;
-    }
-  }
-
   if matches!(proc, CalcitProc::NativeTraitCall) {
     let mut call = vec![Calcit::Proc(*proc)];
     call.extend(args.iter().cloned());
@@ -738,24 +760,9 @@ pub(crate) fn check_proc_arg_types(
       // The builtin only transports a dispatch request. Its open signature
       // cannot replace the selected method's actual input contract.
       let method_args = args.skip(2).expect("resolved trait method has trait and method operands");
-      let arity = signature.call_arity();
-      if method_args.len() < arity.min || arity.max.is_some_and(|maximum| method_args.len() > maximum) {
-        gen_check_warning(
-          format!(
-            "[Warn] &trait-call method expects {}..{} arguments including receiver, got {} at {file_ns}/{def_name}",
-            arity.min,
-            arity.max.map_or_else(|| "unbounded".to_owned(), |maximum| maximum.to_string()),
-            method_args.len(),
-          ),
-          file_ns,
-          check_warnings,
-        );
-        return;
-      }
-      check_resolved_fn_call_arg_types(
+      check_method_call_arg_types(
         &Calcit::Proc(*proc),
         &signature,
-        "&trait-call",
         &method_args,
         scope_types,
         &CallTypeCheckInfo {
@@ -767,6 +774,10 @@ pub(crate) fn check_proc_arg_types(
       );
       return;
     }
+  }
+
+  if args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _))) {
+    return;
   }
 
   // Check argument count
@@ -1197,6 +1208,69 @@ pub(crate) fn check_resolved_fn_call_arg_types(
       "[Warn] calling `{local_sym}` arg {arg_idx} expects type `{expected_str}`, but got `{actual_str}` at {file_ns_owned}/{def_name}\n  Expression: ({local_sym} {expr_str})"
     )
   });
+}
+
+/// Check trait method arity and reuse ordinary callable argument proof.
+pub(super) fn check_method_call_arg_types(
+  head: &Calcit,
+  signature: &crate::calcit::CalcitFnTypeAnnotation,
+  args: &CalcitList,
+  scope_types: &ScopeTypes,
+  call_info: &CallTypeCheckInfo<'_>,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  let fixed_count = signature.arg_types.len();
+  let has_rest = signature.rest_type.is_some();
+  let spread = args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)));
+  let normalized = spread.then(|| super::expanded_call_contract(signature, args).ok()).flatten();
+  let complete_arguments = !spread || normalized.is_some();
+  let (args, signature) = normalized
+    .as_ref()
+    .map(|(args, signature)| (args, signature))
+    .unwrap_or((args, signature));
+  let arity = signature.call_arity();
+  if complete_arguments && (args.len() < arity.min || arity.max.is_some_and(|max| args.len() > max)) {
+    let expected = match arity.max {
+      None => format!("at least {}", arity.min),
+      Some(max) if max != arity.min => format!("{}..={max}", arity.min),
+      Some(max) => max.to_string(),
+    };
+    gen_check_warning_code_at(
+      format!(
+        "[Warn] Method `{head}` expects {expected} args (including receiver), got {} in call at {}/{}",
+        args.len(),
+        call_info.file_ns,
+        call_info.def_name
+      ),
+      "W_METHOD_ARG_TYPE_MISMATCH",
+      call_info.file_ns,
+      call_info.call_location.clone(),
+      check_warnings,
+    );
+    return;
+  }
+  let expected_types = expected_types_with_rest(&signature.arg_types, signature.rest_type.as_ref());
+  check_arg_types_loop(
+    CheckContext {
+      head_form: head,
+      args,
+      expected_types: &expected_types,
+      generics: &signature.generics,
+      where_bounds: &signature.where_bounds,
+      scope_types,
+      file_ns: call_info.file_ns,
+      call_location: call_info.call_location.clone(),
+      warning_code: "W_METHOD_ARG_TYPE_MISMATCH",
+      check_warnings,
+    },
+    |index, expected, actual, _| {
+      let role = if has_rest && index > fixed_count { "variadic " } else { "" };
+      format!(
+        "[Warn] Method `{head}` {role}arg {index} expects type `{expected}`, but got `{actual}` in call at {}/{}",
+        call_info.file_ns, call_info.def_name
+      )
+    },
+  );
 }
 
 /// Check user-defined function argument types against type annotations.

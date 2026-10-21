@@ -1369,6 +1369,57 @@ mod tests {
   }
 
   #[test]
+  fn runtime_fn_arity_preserves_marked_optionals_before_rest() {
+    use crate::calcit::{CalcitArgLabel, CalcitFnCallShape, ProcArity};
+
+    let number = Arc::new(CalcitTypeAnnotation::Number);
+    let option = Arc::new(CalcitTypeAnnotation::TypeRef(Arc::from("Option"), Arc::new(vec![number.clone()])));
+    let mut info = fn_info(vec![
+      number.clone(),
+      option.clone(),
+      Arc::new(CalcitTypeAnnotation::List(number.clone())),
+    ]);
+    info.rest_type = Some(number);
+    let cases = [
+      (
+        CalcitFnArgs::MarkedArgs(vec![
+          CalcitArgLabel::Idx(0),
+          CalcitArgLabel::OptionalMark,
+          CalcitArgLabel::Idx(1),
+          CalcitArgLabel::RestMark,
+          CalcitArgLabel::Idx(2),
+        ]),
+        1,
+      ),
+      (
+        CalcitFnArgs::MarkedArgs(vec![
+          CalcitArgLabel::Idx(0),
+          CalcitArgLabel::Idx(1),
+          CalcitArgLabel::RestMark,
+          CalcitArgLabel::Idx(2),
+        ]),
+        2,
+      ),
+    ];
+    for (args, min) in cases {
+      info.call_shape = CalcitFnCallShape::from_parts(&args, &info.arg_types, true);
+      info.args = Arc::new(args);
+      let CalcitTypeAnnotation::Fn(signature) = CalcitTypeAnnotation::from_calcit_fn(&info) else {
+        panic!("runtime callable must retain its function annotation")
+      };
+      assert_eq!(signature.call_arity(), ProcArity { min, max: None });
+      assert_eq!(signature.rest_type, info.rest_type);
+    }
+
+    // Typed Option completion is retained only when there is no rest binding.
+    let fixed = fn_info(vec![Arc::new(CalcitTypeAnnotation::Number), option]);
+    let CalcitTypeAnnotation::Fn(signature) = CalcitTypeAnnotation::from_calcit_fn(&fixed) else {
+      panic!("fixed callable must retain its function annotation")
+    };
+    assert_eq!(signature.call_arity(), ProcArity { min: 1, max: Some(2) });
+  }
+
+  #[test]
   fn evaluates_specialized_number_binary_calls() {
     let cases = [
       (CalcitNumberBinaryOp::Add, 8.0, 2.0, Calcit::Number(10.0)),
