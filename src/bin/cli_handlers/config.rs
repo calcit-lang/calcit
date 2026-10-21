@@ -768,6 +768,20 @@ fn handle_unset(opts: &ConfigUnsetCommand, snapshot_file: &str) -> Result<(), St
     if !snapshot.entries.contains_key(name) {
       return Err(missing_entry_error(&snapshot, name));
     }
+    let mut referencing_profiles = snapshot
+      .verification
+      .profiles
+      .iter()
+      .filter(|(_, profile)| profile.entries.iter().any(|entry| entry == name))
+      .map(|(profile, _)| profile.as_str())
+      .collect::<Vec<_>>();
+    if !referencing_profiles.is_empty() {
+      referencing_profiles.sort_unstable();
+      return Err(format!(
+        "Cannot remove entry '{name}': it is referenced by verification profiles: {}",
+        referencing_profiles.join(", ")
+      ));
+    }
     snapshot.entries.remove(name);
     save_snapshot(&snapshot, snapshot_file)?;
     println!("{} Removed entry [{}]", "✓".green(), name.cyan());

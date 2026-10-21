@@ -2482,6 +2482,101 @@ fn edit_ns_accepts_definition_heads_from_macros_in_the_same_data() {
 }
 
 #[test]
+fn config_unset_entry_rejects_verification_profile_references_without_writing() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  for name in ["used", "unused"] {
+    assert_success(
+      &run_calcit(&snapshot, &["config", "add-entry", name, "--from", "default"]),
+      "create a named verification entry",
+    );
+  }
+  let deletion = "[] $ [] |config |unset |entry |--entry |used";
+  let preview = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", deletion, "--dry-run", "--format", "edn"],
+  );
+  assert_success(&preview, "preview removal before any profile refers to the entry");
+  let cirru_edn::Edn::Map(preview) = cirru_edn::parse(&String::from_utf8(preview.stdout).unwrap()).unwrap() else {
+    panic!("transaction preview must be an EDN envelope")
+  };
+  let cirru_edn::Edn::Str(revision) = preview.get_or_nil("scoped-revision") else {
+    panic!("transaction preview must have a scoped revision")
+  };
+  let data = cirru_edn::parse(&fs::read_to_string(&snapshot).unwrap()).unwrap();
+  let mut project = calcit::snapshot::load_snapshot_data(&data, snapshot.to_str().unwrap()).unwrap();
+  // There is no profile mutation CLI. Set up only typed host metadata through
+  // the real serializer; keep the fixture's source, schemas and tests intact.
+  for (name, entries) in [
+    ("z-last", vec!["used"]),
+    ("a-first", vec!["default", "used"]),
+    ("unrelated", vec!["default"]),
+  ] {
+    project.verification.profiles.insert(
+      name.to_owned(),
+      calcit::snapshot::VerificationProfile {
+        entries: entries.into_iter().map(str::to_owned).collect(),
+        checks: vec![calcit::snapshot::VerificationCheckKind::Strict],
+        on_failure: calcit::snapshot::VerificationFailurePolicy::Stop,
+      },
+    );
+  }
+  calcit::snapshot::save_snapshot_to_file(&snapshot, &project).expect("serialize valid verification metadata");
+  let before = fs::read(&snapshot).unwrap();
+  assert_success(
+    &run_calcit(&snapshot, &["config", "show", "--format", "edn"]),
+    "load the profile fixture",
+  );
+  let operations = "[]\n  [] |config |set |--entry |unused |description |staged-change\n  [] |config |unset |entry |--entry |used";
+  for args in [
+    vec!["config", "unset", "entry", "--entry", "used"],
+    vec!["edit", "transaction", "--code", operations, "--dry-run", "--format", "edn"],
+    vec!["edit", "transaction", "--code", operations, "--format", "edn"],
+    vec![
+      "edit",
+      "transaction",
+      "--code",
+      deletion,
+      "--expect-revision",
+      &revision,
+      "--format",
+      "edn",
+    ],
+  ] {
+    let rejected = run_calcit(&snapshot, &args);
+    assert!(!rejected.status.success(), "a referenced entry must remain: {args:?}");
+    let diagnostic = format!(
+      "{}\n{}",
+      String::from_utf8_lossy(&rejected.stdout),
+      String::from_utf8_lossy(&rejected.stderr)
+    );
+    assert!(diagnostic.contains("Cannot remove entry 'used'"), "{diagnostic}");
+    assert!(
+      diagnostic.contains("a-first, z-last"),
+      "all referencing profile names must be sorted: {diagnostic}"
+    );
+    assert_eq!(
+      fs::read(&snapshot).unwrap(),
+      before,
+      "the direct or staged rejection must not write"
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["config", "show", "--format", "edn"]),
+      "ordinary CLI recovery must remain available after rejection",
+    );
+  }
+  assert_success(
+    &run_calcit(&snapshot, &["config", "unset", "entry", "--entry", "unused"]),
+    "profiles referring to other entries must not block removal",
+  );
+  let after = cirru_edn::parse(&fs::read_to_string(&snapshot).unwrap()).unwrap();
+  let after = calcit::snapshot::load_snapshot_data(&after, snapshot.to_str().unwrap()).unwrap();
+  assert!(!after.entries.contains_key("unused"));
+  assert_eq!(after.entries["used"], project.entries["used"]);
+  assert_eq!(after.verification, project.verification, "profiles must not be silently rewritten");
+}
+
+#[test]
 fn config_unset_entry_is_guarded_atomic_and_preserves_surviving_entries() {
   // Configuration/revision/filesystem behavior needs the existing CLI harness.
   let directory = TestDirectory::create();

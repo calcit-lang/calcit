@@ -120,7 +120,8 @@ calcit config rm-type-slot :dispatch-op
 
 确认命名入口已经废弃后，用 `calcit config unset entry --entry <name>` 删除整个入口配置；
 命令只删除 Snapshot 中的入口配置，不删除对应源码或已安装模块目录。必须显式传 `--entry`，不能删除
-`default`，不存在的入口会报错。先核对 `config show --format edn` 中的入口、依赖及项目文档，
+`default`，不存在的入口会报错。被 verification profile 引用的入口也会拒绝删除，并列出相关 profile；
+不会静默改写验收范围。先核对 `config show --format edn` 中的入口、依赖及项目文档，
 不要为了跳过失败验收而删除仍有用途的测试入口。
 
 需要预览和 revision 守卫时，沿用同一个编辑事务：
