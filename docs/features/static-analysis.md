@@ -1003,6 +1003,10 @@ deftype-slot :dispatch-op
 
 Then reference the slot in type annotations with the `*name` syntax:
 
+下面是 `edit schema` / CodeEntry schema 的序列化写法，`'*dispatch-op` 表示 EDN Symbol。
+在程序源码的 `hint-fn` Map 或 `defstruct` 字段类型表达式中，使用裸 `*dispatch-op`；
+这些位置的 `'*dispatch-op` 是另一个带引号的类型名称，不能代替 slot。
+
 ```cirru.no-check
 ;; EventHandler schema "—" dispatch callback accepts the slot type
 
@@ -1046,14 +1050,17 @@ Entries do not inherit `entries.default.type-slots`. Bind every slot needed by e
 
 同一个已绑定 slot 可以同时出现在 callback 的声明与传入函数的参数中；检查器比较两端绑定后的具体类型，并继续检查函数参数方差和返回值。重复引用同名 slot 不会被当作循环绑定；真正的循环、未绑定 slot，以及从 `Dynamic` 到具体类型的证据缺失仍按各自的检查规则处理。
 
+Struct 回调字段的类型关系已因未绑定 slot 而失败时，同样报告已有的 `E_UNBOUND_TYPE_SLOT`，
+给出实际字段路径、调用者源码坐标及 `calcit config set-type-slot` 提示，而不是只显示两个看似相同的函数类型。
+为当前选中的 entry 绑定真实名义类型后重新检查；不同 entry 需要分别配置。
+这不把未绑定 slot 转为 `Dynamic`，也不使同名 slot 自动成为具体类型证明。
+
 ### Constraints
 
 - Configuration values must be `:dynamic` or a full `namespace/definition` path that exists after modules are loaded.
-- In compatibility mode an unbound slot falls back to `:dynamic` and remains an
-  `unresolved-type-slot` finding. Strict preprocessing rejects a slot used by a
-  reachable function or macro with `E_UNBOUND_TYPE_SLOT`, including its precise
-  schema path.
-- `:dynamic` is an explicit opt-out for an entry that intentionally disables the slot check.
+- 未绑定 slot 保留其符号身份，不自动回退为 `Dynamic`。严格预处理对可达函数或 macro 声明中的未绑定
+  slot 报告 `E_UNBOUND_TYPE_SLOT` 及 schema 路径；compat 模式也不能凭未绑定 slot 通过已有字段类型关系。
+- `:dynamic` 是 entry 明确选择的开放边界，具体使用其中内容时仍需相应证明。
 - The slot name is currently project-wide within one compilation. Libraries should choose stable, specific names to avoid accidental collisions.
 
 Inspect and remove bindings with:

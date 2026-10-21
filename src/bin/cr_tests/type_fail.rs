@@ -3072,6 +3072,112 @@ fn type_slot_bindings_are_scoped_to_selected_entry() {
 }
 
 #[test]
+fn struct_callback_unbound_slot_reports_the_binding_and_field_location() {
+  run_with_large_stack(|| {
+    injection::inject_platform_apis();
+    for strict in [false, true] {
+      for bound in [false, true] {
+        let _strict = if strict {
+          StrictTypesReset::enabled()
+        } else {
+          StrictTypesReset::disabled()
+        };
+        builtins::effects::init_effects_states();
+        let mut snapshot = snapshot::Snapshot::default();
+        let mut file = snapshot::create_file_from_snippet(
+          "def slot $ deftype-slot :op\ndef Handler $ fn (d!) &unit\ndefenum Op (:inc)\ndefstruct Props\n  :on-click $ :: 'JsNullish 'app.main/Handler\ndefn main! ()\n  hint-fn $ {} (:args $ []) (:return 'Unit)\n  , slot\n  Props :on-click $ fn (d!)\n    d! $ :: :inc\n  , &unit",
+        )
+        .expect("callback fixture should parse");
+        // A named callback alias gets its contract from CodeEntry metadata,
+        // exactly as the published Respo event-handler definitions do.
+        let schema = cirru_parser::parse(":: 'Fn $ {} (:return 'Unit)\n  :args $ [] $ :: 'Fn $ {} (:args $ [] '*op) (:return 'Unit)")
+          .unwrap()
+          .remove(0);
+        file.defs.get_mut("Handler").unwrap().schema = snapshot::parse_schema_annotation_for_write(&schema).unwrap();
+        snapshot.files.insert("app.main".to_owned(), file);
+        if bound {
+          snapshot
+            .entries
+            .get_mut("default")
+            .unwrap()
+            .type_slots
+            .insert("op".to_owned(), "app.main/Op".to_owned());
+        }
+        let entries = prepare_snapshot_entries(snapshot);
+        let warnings = RefCell::new(vec![]);
+        let result =
+          runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+        if bound {
+          result.expect("a concrete entry binding should retain the callback contract");
+          assert!(warnings.borrow().is_empty(), "{warnings:?}");
+          run_check_only(&entries).expect("the same callback with a concrete nominal slot should pass");
+        } else {
+          let error = result.expect_err("an already-rejected unbound-slot callback should identify its actual cause");
+          assert_eq!(error.code.as_deref(), Some("E_UNBOUND_TYPE_SLOT"));
+          assert!(error.msg.contains("*op"), "{error}");
+          assert!(error.msg.contains("on-click"), "{error}");
+          assert!(
+            error.msg.contains("calcit config set-type-slot :op namespace/definition"),
+            "{error}"
+          );
+          let location = error.location.expect("callback failure should retain source coordinates");
+          assert_eq!(location.ns.as_ref(), "app.main");
+          assert_eq!(location.def.as_ref(), "main!");
+          assert!(!location.coord.is_empty());
+        }
+      }
+    }
+  });
+}
+
+#[test]
+fn struct_callback_unbound_slot_location_respects_macro_source_origins() {
+  run_with_large_stack(|| {
+    injection::inject_platform_apis();
+    for generated in [false, true] {
+      // Compatibility mode reaches the constructor rather than rejecting the
+      // source-written callback hint first; both paths share the renderer.
+      let _strict = StrictTypesReset::disabled();
+      builtins::effects::init_effects_states();
+      let (macro_code, body, expected_coord) = if generated {
+        (
+          "defmacro into-props ()\n  quasiquote $ let\n      handler $ fn (d!)\n        hint-fn $ {} (:return 'Unit)\n          :args $ [] $ :: 'Fn $ {} (:args $ [] *op) (:return 'Unit)\n        , &unit\n    Props :on-click handler",
+          "  into-props",
+          vec![5, 0],
+        )
+      } else {
+        (
+          "defmacro into-props (handler)\n  quasiquote $ Props :on-click ~handler",
+          "  let\n      handler $ fn (d!)\n        hint-fn $ {} (:return 'Unit)\n          :args $ [] $ :: 'Fn $ {} (:args $ [] *op) (:return 'Unit)\n        , &unit\n    into-props handler",
+          vec![5, 2, 1],
+        )
+      };
+      let snippet = format!(
+        "def slot $ deftype-slot :op\ndefstruct Props\n  :on-click $ :: 'Fn $ {{}} (:return 'Unit)\n    :args $ [] $ :: 'Fn $ {{}} (:args $ [] *op) (:return 'Unit)\n{macro_code}\ndefn main! ()\n  hint-fn $ {{}} (:args $ []) (:return 'Unit)\n  , slot\n{body}\n  , &unit"
+      );
+      let mut file = snapshot::create_file_from_snippet(&snippet).expect("macro callback fixture should parse");
+      annotate_snippet_macros(&mut file);
+      let mut snapshot = snapshot::Snapshot::default();
+      snapshot.files.insert("app.main".to_owned(), file);
+      let entries = prepare_snapshot_entries(snapshot);
+      let warnings = RefCell::new(vec![]);
+      let result =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      assert!(
+        result.is_err(),
+        "generated callback: {generated}; expected the slot diagnostic, warnings: {warnings:?}"
+      );
+      let error = result.expect_err("the missing slot must still reject a macro-wrapped callback");
+      assert_eq!(error.code.as_deref(), Some("E_UNBOUND_TYPE_SLOT"), "{error}");
+      let location = error.location.expect("the slot error should retain a source origin");
+      assert_eq!(location.ns.as_ref(), "app.main");
+      assert_eq!(location.def.as_ref(), "main!");
+      assert_eq!(*location.coord, expected_coord, "generated callback: {generated}");
+    }
+  });
+}
+
+#[test]
 fn run_check_only_surfaces_schema_error_code() {
   run_with_large_stack(|| {
     let entries = load_fixture_entries("calcit/type-fail/schema-required-arity.cirru");

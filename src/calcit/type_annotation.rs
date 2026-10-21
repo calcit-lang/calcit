@@ -9292,6 +9292,18 @@ mod tests {
     assert!(!slot.is_proven_for(&CalcitTypeAnnotation::String));
     pop_type_slot_override(&name);
 
+    let other_name: Arc<str> = Arc::from("tests/OtherCallbackSlot");
+    let other = CalcitTypeAnnotation::TypeSlot(other_name.clone());
+    assert_eq!(
+      slot.prove_with_bindings(&other, &mut TypeBindings::new()),
+      TypeProof::NeedsBoundary(TypeBoundaryReason::UnresolvedTypeSlot)
+    );
+    push_type_slot_override(name.clone(), Arc::new(CalcitTypeAnnotation::Number));
+    push_type_slot_override(other_name.clone(), Arc::new(CalcitTypeAnnotation::String));
+    assert_eq!(slot.prove_with_bindings(&other, &mut TypeBindings::new()), TypeProof::Mismatch);
+    pop_type_slot_override(&other_name);
+    pop_type_slot_override(&name);
+
     push_type_slot_override(name.clone(), crate::calcit::DYNAMIC_TYPE.clone());
     assert_eq!(slot.prove_with_bindings(&slot, &mut TypeBindings::new()), TypeProof::Proven);
     assert_eq!(
