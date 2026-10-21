@@ -137,6 +137,11 @@ fn eval_preserves_explicit_application_namespaces_without_running_their_entries(
   assert!(String::from_utf8_lossy(&raised.stderr).contains("eval-must-not-run-project-entry"));
   let wrong_type = run(&["eval", "--dep", "./", "app.main/increment |not-a-number"]);
   assert!(!wrong_type.status.success());
+  assert!(
+    String::from_utf8_lossy(&wrong_type.stderr).contains("[W_FN_ARG_TYPE_MISMATCH]"),
+    "{}",
+    String::from_utf8_lossy(&wrong_type.stderr)
+  );
   assert!(!String::from_utf8_lossy(&wrong_type.stderr).contains("eval-must-not-run-project-entry"));
 
   let other = project.path().join("other.cirru");
