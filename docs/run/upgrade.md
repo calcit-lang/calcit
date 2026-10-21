@@ -115,10 +115,12 @@ defn call-value (f args)
 - 可能逃逸的闭包不继承捕获变量的临时证据；可在守卫后绑定独立的已检查值，再为闭包声明真实输入与返回合同。
 - 自定义同名谓词或正常返回的拒绝分支不能提供内置谓词的类型证据。
 
-## 0.32.0 调用 Dynamic 值须先收窄
+<a id="032-调用-dynamic-值须先收窄"></a>
+
+## 0.31.0 调用 Dynamic 值须先收窄
 
 静态类型为 Dynamic 的值被直接调用时（例如 schema 为 `Fn [Dynamic] -> Dynamic` 的 `defn cd (x) (x 1)`），
-此前所有检查都放行，运行时才报 `cannot be used as operator`。0.32.0 起这类调用报告 `W_DYNAMIC_CALL`，检查不再通过。
+此前所有检查都放行，运行时才报 `cannot be used as operator`。0.31.0 起这类调用报告 `W_DYNAMIC_CALL`，检查不再通过。
 多缩进一层写出的 `((.unwrap-or …))` 也会因此暴露。
 
 | 旧写法 | 新写法 |
@@ -128,10 +130,12 @@ defn call-value (f args)
 
 调用头由宏自己生成的调用、声明 `:js-ffi` feature 的定义里对宿主函数的调用不受影响。宏把调用方写的值放到调用头时（如 `-> 1 f` 展开为 `(f 1)`）仍会报告，因为被调用的值来自调用方。
 
-## 0.32.0 恒真条件诊断
+<a id="032-恒真条件诊断"></a>
+
+## 0.31.0 恒真条件诊断
 
 Calcit 只把 `nil`、`false` 与 `&unit` 当作假值，所以 `if (count xs) …` 在 `xs` 为空时仍走 then 分支，
-`if s …` 在 `s` 为空字符串时也一样。0.32.0 起，条件的静态类型已证明为 Number、String、List、Map、Set、
+`if s …` 在 `s` 为空字符串时也一样。0.31.0 起，条件的静态类型已证明为 Number、String、List、Map、Set、
 Struct 或函数时，`if`、`when`、`cond`、`and`、`or` 会报告 `W_CONSTANT_TRUTHY_CONDITION`，严格检查不再通过。
 `Bool`、`Optional`、`JsNullish`、Dynamic 与类型变量不报；`and` 的最后一个操作数作为返回值，也不报。
 
@@ -180,11 +184,13 @@ Struct 或函数时，`if`、`when`、`cond`、`and`、`or` 会报告 `W_CONSTAN
    用 `match` 区分 `PathError :missing` 与 `PathError :shape`。
 4. 弃用的 `some-in?` 同步改为 `.ok?`，形状错误时返回 false。
 
-## 0.32.0 Option 不再擦回 nil
+<a id="032-option-不再擦回-nil"></a>
+
+## Option 不再擦回 nil（0.31.0 提示，0.32.0 阻塞）
 
 `.unwrap-or X nil`、`option:unwrap-or X nil` 与 `match X … ((:none) nil)` 把 Option 还原成 nil-or-T：
 签名写着 Option，运行时仍是可能为 nil 的值，后面的 `nil?`、`either` 照旧工作，缺失值的旧语义原样保留。
-接收者的类型已证明为 Option 时，0.32.0 起 `--check-only` 在 Notes 里列出 `W_OPTION_ERASED_TO_NIL`。它暂时只是提示，检查和运行都照常通过；生态库迁移完成后会改成阻塞的警告。
+接收者的类型已证明为 Option 时，0.31.0 起 `--check-only` 在 Notes 里列出 `W_OPTION_ERASED_TO_NIL`。它暂时只是提示，检查和运行都照常通过；生态库迁移完成后，计划在 0.32.0 改成阻塞的警告。
 payload 有具体类型时，这种写法本来就被参数检查拒绝；新诊断补上的是 payload 为 Dynamic、`nil` 被当成合法默认值的情形。
 
 | 旧写法 | 新写法 |
@@ -224,10 +230,12 @@ payload 有具体类型时，这种写法本来就被参数检查拒绝；新诊
 - `nil->option` 的参数类型改动与 Optional 的删除在同一版本落地；单独把参数改成泛型 `T` 会让上述无 else `if` / `Optional` 实参的折叠形式在严格检查中失败。
 - core 内部 `&` 原语的 schema 不属于公共 API，不在本节范围。
 
-## 0.32.0 `select-keys` 跳过缺失键
+<a id="032-select-keys-跳过缺失键"></a>
+
+## 0.31.0 `select-keys` 跳过缺失键
 
 `select-keys` 此前给源 Map 里不存在的键写入 `nil`，返回值的类型虽然是 `Map<K, V>`，里面却可能有不属于 `V` 的 nil。
-0.32.0 起缺失的键直接跳过：
+0.31.0 起缺失的键直接跳过：
 
 ```cirru
 assert= (&{} :a 1)
