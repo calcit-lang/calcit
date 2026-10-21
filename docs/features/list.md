@@ -33,7 +33,7 @@ leads_to:
 ---
 # List
 
-Calcit List is a persistent, immutable vector. In Rust it uses [ternary-tree](https://github.com/calcit-lang/ternary-tree.rs) (optimized 2-3 tree with finger-tree tricks). In JavaScript it uses a similar structure with a fast-path `CalcitSliceList` for append-heavy workloads.
+Calcit List is a persistent, immutable vector. Both the Rust and JavaScript runtimes store it as a [FingerVec](https://github.com/calcit-lang/finger-vec.rs); JavaScript also has a fast-path `CalcitSliceList` for append-heavy workloads.
 
 All list operations return new lists — the original is never mutated.
 
@@ -42,7 +42,7 @@ All list operations return new lists — the original is never mutated.
 - **Create**: `[] 1 2 3` or `range 5`
 - **Access**: `xs.get 0`, `xs.first`, `xs.last`
 - **Modify**: `append xs 4`, `prepend xs 0`, `assoc xs 1 99`
-- **Transform**: `map xs f`, `filter xs f`, `reduce xs 0 f`
+- **Transform**: `map xs f`, `filter xs f`, `.fold xs 0 f`
 - **组合**：`concat xs ys`、`slice xs 1 (Option :some 3)`；省略终点表示取到末尾。
 
 ## Creating Lists
@@ -252,14 +252,7 @@ let
 ```cirru
 let
     xs $ [] 1 2 3 4 5
-  println $ reduce xs 0
-    fn (acc x)
-      hint-fn $ {}
-        :args $ [] 'Number 'Number
-        :return 'Number
-      + acc x
-  ; => 15
-  println $ foldl xs 0
+  println $ .fold xs 0
     fn (acc x)
       hint-fn $ {}
         :args $ [] 'Number 'Number

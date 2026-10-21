@@ -423,7 +423,7 @@ For comparison, built-in functions inspect live data and definitions at runtime:
 ```cirru
 let
     Point $ defstruct Point (:x :number) (:y :number)
-    p (%{} Point (:x 1) (:y 2))
+    p (Point :x 1 :y 2)
   do
     ; "Get all methods/traits implemented by a value"
     println $ &methods-of p

@@ -10,7 +10,7 @@ aliases:
 ---
 # Sets
 
-Calcit provides HashSet data structure for storing unordered unique elements. In Rust implementation, it uses `rpds::HashTrieSet`, while in JavaScript it uses a custom implementation based on ternary-tree.
+Calcit provides HashSet data structure for storing unordered unique elements. In Rust implementation, it uses `rpds::HashTrieSet`, while in JavaScript it uses a custom implementation based on `TernaryTreeMap` from ternary-tree.ts.
 
 ## Quick Recipes
 

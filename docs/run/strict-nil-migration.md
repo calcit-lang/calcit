@@ -1,6 +1,6 @@
 # Strict nil migration / strict nil 迁移
 
-Calcit 0.14 的默认严格诊断把隐式缺失值视为编译错误；迁移期间可用 `--compat-types`
+Calcit 的默认严格诊断把隐式缺失值视为编译错误；迁移期间可用 `--compat-types`
 暂时保留旧运行时语义。`--strict-types` 显式运行严格入口检查，但不会按 Dynamic 数量判断类型正确性。
 
 ## Diagnostics / 诊断
@@ -31,79 +31,9 @@ value rather than a drop sentinel.
 可见的返回路径，不猜测具名回调；`[] key nil` 中的 nil 是映射后的值，不是丢弃
 sentinel，因此不会被拒绝。
 
-## Initial executable census / 首轮可执行调用点盘点
+## Ecosystem audit / 生态审计
 
-The 2026-09-02 workspace census separated executable source from documentation,
-quoted examples, vendored copies, and obsolete `compact.cirru` snapshots.
-
-- 该次历史盘点发现 Calcit 自身有四处 `%{}?` 兼容测试：
-  `calcit/test-edn.cirru` 一处、`calcit/test-struct.cirru` 三处；0.19 清理已移除这些
-  调用及 core 定义，当前不再将其作为可执行兼容面。
-- Calcit's `fn` placeholder lowering still generates `(? % %2)` when a `%2`
-  placeholder is present. The matching `test-macro.cirru` forms exercise that
-  generated compatibility behavior.
-- Current source snapshots with direct `?` parameters were found in `std`
-  (`nanoid!`, `rand`, `rand-int`), `lilac` (seven optional constructor helpers),
-  `editor` (two callback parameters), and `gen-code` (one callback parameter).
-- `reacher`, `explain-ternary-tree`, `std-old`, and `.compact-inc.cirru` hits are
-  legacy snapshot inputs and must first follow the `calcit.cirru` source-model
-  migration; they are not migration templates for new code.
-- No direct `?` or `%{}?` call was found in the checked Respo or msg-buffer
-  workspaces. Caltrop retains its own legacy macro and four test calls; `apis`
-  contains documentation metadata only.
-
-首轮结果说明真正需要迁移的重点是 `fn` 的 `%2` placeholder lowering、std/lilac 的
-公共可选参数，以及 editor/gen-code 的宿主回调；Calcit 内的 `%{}?` 兼容测试现已退役，
-不能再作为新代码模板。
-
-Reproduce the text-level census with:
-
-```bash
-rg -n -F --glob '*.cirru' --glob '!**/.git/**' -- '%{}?' /path/to/calcit-lang
-rg -n -F --glob '*.cirru' --glob '!**/.git/**' -- '(? ' /path/to/calcit-lang
-```
-
-Each hit still needs AST/context review: quoted code and macro definitions are
-not ordinary executable call sites.
-
-## Ecosystem evidence for 0.13.78 / 0.13.78 生态证据
-
-The 2026-09-04 UTC follow-up audit used Calcit 0.13.77 main at
-`5915ccf38ef3b57ea26897599646eefdbc9e3ba6`. It intentionally reports the nil
-slice separately from the first failure of the whole strict preflight: a
-project can have no project-local nil debt while still being blocked by a
-Dynamic or generic-contract diagnostic.
-
-2026-09-04 UTC 的后续审计基于 Calcit 0.13.77 main
-`5915ccf38ef3b57ea26897599646eefdbc9e3ba6`。审计刻意把 nil 专项结果与完整 strict
-预检的首个失败分开：项目可能没有自身 nil 债务，但仍被 Dynamic 或泛型契约诊断阻断。
-
-| Consumer | Frozen revision | Project nil audit | Dependency-inclusive nil audit | Legacy syntax/schema candidates | First whole-strict blocker | Migration owner |
-| --- | --- | --- | --- | --- | --- | --- |
-| Respo | `d106b38a85d7bc0e10c6d621235843f37e69c6e4` | 49 unresolved hits, 28 definitions, 14 namespaces | same 49 hits | no `(? ...)` or `%{}?`; public legacy `Optional<T>` fields and one `map-kv` nil-drop callback remain | `E_WHOLE_DYNAMIC_PUBLIC_SCHEMA` at `respo.main/f%` | [Respo/respo.calcit#131](https://github.com/Respo/respo.calcit/issues/131) |
-| gen-code | `a112db30414a865089054edcfb4b73a557433d0e` | 0 hits | 122 unresolved hits from dependencies, 61 definitions, 33 namespaces | one executable `fn (? chunk)` stream callback; no `%{}?`, public `Optional<T>`, or `map-kv` candidate | `E_ERASED_GENERIC_RELATION` in `gen-code.comp.container/comp-container` | [calcit-lang/gen-code#13](https://github.com/calcit-lang/gen-code/issues/13) |
-
-The Respo review identifies three distinct migrations rather than treating all
-explicit runtime nil values alike:
-
-- `respo.util.list/pick-event` uses `map-kv` with a visible nil drop sentinel;
-  migrate it to `filter-map-kv` and `MapEntryDecision`.
-- `Component`, `DomProps`, `Element`, and `RespoEvent` expose legacy
-  `Optional<T>` fields. Their DOM/runtime meaning must be reviewed before
-  choosing Calcit `Option<T>` or a host-nullish boundary.
-- The remaining 49 explicit nil forms need per-definition classification.
-  They are visible debt, but their presence alone does not prove that they use
-  one of the implicit compatibility constructs rejected by the five strict nil
-  diagnostics.
-
-Respo 的审阅把迁移分成三类，不把所有显式 runtime nil 混为一谈：`pick-event` 的
-nil-drop sentinel 迁移到 `filter-map-kv`；四个公开数据结构中的 legacy
-`Optional<T>` 按 DOM/runtime 语义选择 `Option<T>` 或 host-nullish 边界；其余 49 个
-显式 nil 逐定义分类，不能仅凭出现 `nil` 就误判为五种隐式兼容构造之一。
-
-上表是 0.13.77 时点的历史记录，其中 Respo 的 49 处命中已过期：Respo 默认分支现已无 `'Optional`。2026-10-19 对 57 个默认分支浅克隆（`*.cirru`，匹配 `'Optional`）的只读扫描中，仍使用旧 `Optional` schema 的有 Respo/alerts.calcit、Phlox-GL/phlox、Erigeron/edn-renderer 与 TopixIM/diary；`'Optional` 公共 schema 和旧 Optional 类型将在 0.32.0 删除（见 [upgrade.md](upgrade.md#032-删除-optional-公共-schema-与旧-optional-类型)），这些仓库需要在此之前迁移到 `Option`。该扫描无法枚举各组织的全部仓库，也不含非默认分支与未合并 PR，“未发现”不等于清零；删除前须按 upgrade.md 的退场条件重新普查。
-
-The table above is the 0.13.77 snapshot. A read-only scan on 2026-10-19 of 57 shallow default-branch clones (`*.cirru`, pattern `'Optional`) found no `'Optional` in Respo any more, while Alerts, Phlox, edn-renderer and diary still use legacy `Optional` schemas; the scan cannot enumerate every organization repository or cover other branches, so absence is not proof of zero and a re-census is required before deletion. `'Optional` and the legacy Optional type are removed in 0.32.0, so they must migrate to `Option` first.
+删除旧入口前，按 [upgrade.md 的退场条件](upgrade.md#兼容入口的退场节奏) 对下游默认分支重新普查。
 
 Run the audit from a Calcit checkout with clean consumer worktrees:
 

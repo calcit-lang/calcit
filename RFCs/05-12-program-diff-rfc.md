@@ -1,6 +1,6 @@
 # RFC: `calcit analyze program-diff <GIT REF>`
 
-状态：Draft
+状态：Implemented（设计记录；当前用法以 CLI 帮助为准）
 日期：2026-05-12
 
 ---

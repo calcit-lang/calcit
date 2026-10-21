@@ -58,7 +58,7 @@ let
       .foo $ fn (p) (assert-type p Person0)
         str-spaced |foo $ :name p
     Person $ impl-traits Person0 MyFooImpl
-    p $ %{} Person (:name |Alice)
+    p $ Person :name |Alice
   p .foo
 ```
 
@@ -88,7 +88,7 @@ let
       .foo $ fn (p) (assert-type p PersonA0)
         str-spaced |foo $ :name p
     PersonA $ impl-traits PersonA0 MyFooImplA
-    p $ %{} PersonA (:name |Alice)
+    p $ PersonA :name |Alice
   p .foo
 ```
 
@@ -109,7 +109,7 @@ let
       :: .foo $ fn (p) (assert-type p Person0)
         str |B: $ :name p
     PersonB $ impl-traits Person0 ImplB
-    pb $ %{} PersonB (:name |Bob)
+    pb $ PersonB :name |Bob
   pb .foo
 ```
 
@@ -162,7 +162,7 @@ let
       .bar $ fn (p) (assert-type p StructDef0)
         str |B: $ :name p
     StructDef $ impl-traits StructDef0 ImplA ImplB
-    x $ %{} StructDef (:name |test)
+    x $ StructDef :name |test
   x .foo
 ```
 
@@ -185,7 +185,7 @@ do (; struct example)
         .foo $ fn (p) (assert-type p Person0)
           str-spaced |foo $ :name p
       Person $ impl-traits Person0 MyFooImpl
-      p $ %{} Person (:name |Alice)
+      p $ Person :name |Alice
     p .foo
   ; enum example
   let
@@ -274,7 +274,7 @@ let
       .zap $ fn (_x) |zapB
     Person0 $ defstruct Person (:name 'String)
     Person $ impl-traits Person0 MyZapAImpl MyZapBImpl
-    p $ %{} Person (:name |Alice)
+    p $ Person :name |Alice
   ; compatibility mode keeps last-wins; strict mode rejects this ambiguous call
   p .zap
   ; explicitly pick a "trait’s" implementation
@@ -312,7 +312,7 @@ let
       .foo $ fn (t)
         str |shape: $ &enum:nth t 0
     Shape $ impl-traits Shape0 MyFooImpl
-    shape $ %:: Shape :point 10 20
+    shape $ Shape :point 10 20
     impls $ &enum:impls shape
   any? impls $ fn (impl)
     match (impl-origin impl)
@@ -364,7 +364,7 @@ let
       .foo $ fn (p) (assert-type p Person0)
         str-spaced |foo $ :name p
     Person $ impl-traits Person0 MyFooImpl
-    p $ %{} Person (:name |Alice)
+    p $ Person :name |Alice
   assert-traits p MyFoo
   p .foo
 ```

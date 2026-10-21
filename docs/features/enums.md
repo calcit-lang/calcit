@@ -13,12 +13,12 @@ parent: core/features
 
 # Enums (defenum)
 
-Calcit enums are tagged unions: each variant has a tag and zero or more typed payload values. `defenum` creates an enum definition; `%::` constructs enum values that retain that definition.
+Calcit enums are tagged unions: each variant has a tag and zero or more typed payload values. `defenum` creates an enum definition; calling the definition with a variant tag, such as `Shape :circle 5`, constructs a value that retains that definition. The low-level `%::` form is kept for anonymous enums and dynamic prototypes.
 
 ## Quick Recipes
 
 - **Define**: `defenum Shape (:circle 'Number) (:rect 'Number 'Number)`
-- **Create**: `%:: Shape :circle 5`
+- **Create**: `Shape :circle 5`
 - **Match**: `match shape ((:circle r) ...) ((:rect w h) ...)`
 - **Type Check**: `assert-type shape 'Shape`
 
@@ -27,7 +27,7 @@ Calcit enums are tagged unions: each variant has a tag and zero or more typed pa
 ```cirru
 let
     Color $ defenum Color (:red) (:green) (:blue)
-    c $ %:: Color :red
+    c $ Color :red
   println c
   ; => $ %:: 'Color :red
 ```
@@ -37,8 +37,8 @@ Variants with payloads:
 ```cirru
 let
     Shape $ defenum Shape (:circle 'Number) (:rect 'Number 'Number)
-    c $ %:: Shape :circle 5
-    r $ %:: Shape :rect 3 4
+    c $ Shape :circle 5
+    r $ Shape :rect 3 4
   println c
   ; => $ %:: 'Shape :circle 5
   println r
@@ -64,8 +64,8 @@ let
 ```cirru
 let
     ResultX $ defenum ResultX ([] 'T 'E) (:ok 'T) (:err 'E)
-    ok $ %:: ResultX :ok 1
-    err $ %:: ResultX :err |oops
+    ok $ ResultX :ok 1
+    err $ ResultX :err |oops
   assert-type ok $ :: 'ResultX 'Number 'String
   assert-type err $ :: 'ResultX 'Number 'String
   assert= 1 $ &enum:nth ok 1
@@ -84,8 +84,8 @@ let
       {} $ 'T Debug
       :some 'T
       :none
-    some-val $ %:: ShownMaybe :some 1
-    none-val $ %:: ShownMaybe :none
+    some-val $ ShownMaybe :some 1
+    none-val $ ShownMaybe :none
   assert-type some-val $ :: 'ShownMaybe 'Number
   assert= |1 $ match some-val
     (:some item) (&trait-call Debug :debug item)
@@ -105,7 +105,7 @@ Enum payload slots can reference named structs, not just primitive tags. Use the
 let
     Point $ defstruct Point (:x :number) (:y :number)
     Shape $ defenum Shape (:point Point) (:label :string)
-    p $ %{} Point (:x 1) (:y 2)
+    p $ Point :x 1 :y 2
     shape $ %:: Shape :point p
   assert-type shape Shape
   assert= 1 $ :x (&enum:nth shape 1)
@@ -119,7 +119,7 @@ let
     Wrapped $ defenum Wrapped ([] 'T)
       :box $ :: 'Box 'T
       :empty
-    value $ %:: Wrapped :box
+    value $ Wrapped :box
       %{} Box $ :value 1
   assert-type value $ :: 'Wrapped :number
   assert= 1 $ match value
@@ -138,13 +138,13 @@ When you annotate an enum payload with a struct type, `%::` validates both the v
 
 ## Creating Instances
 
-Use `%::` with the enum definition, the variant tag, and then the payload values:
+Call the enum definition with the variant tag and then the payload values:
 
 ```cirru
 let
     ApiResult $ defenum ApiResult (:ok :string) (:err :string)
-    ok $ %:: ApiResult :ok |success
-    err $ %:: ApiResult :err |network-error
+    ok $ ApiResult :ok |success
+    err $ ApiResult :err |network-error
   println ok
   println err
 ```
@@ -162,7 +162,7 @@ let
 ```cirru
 let
     Shape $ defenum Shape (:circle :number) (:rect :number :number)
-    c $ %:: Shape :circle 5
+    c $ Shape :circle 5
     area $ match c
       (:circle radius) (* radius radius 3.14159)
       (:rect w h) (* w h)
@@ -177,7 +177,7 @@ When a branch body needs more than one expression, indent subsequent lines under
 ```cirru
 let
     ApiResult $ defenum ApiResult (:ok :string) (:err :string)
-    r $ %:: ApiResult :err |network-error
+    r $ ApiResult :err |network-error
     msg $ match r
       (:ok v) (str-spaced |OK: v)
       (:err e) (str-spaced |Error: e)
@@ -202,7 +202,7 @@ Use `_` as a wildcard to catch remaining variants:
 ```cirru
 let
     Shape $ defenum Shape (:circle :number) (:rect :number :number)
-    c $ %:: Shape :circle 5
+    c $ Shape :circle 5
     label $ match c
       (:circle _r) |round
       _ |other
@@ -256,8 +256,8 @@ When a variant has no payload, the pattern is just the tag wrapped in parenthese
 ```cirru
 let
     MaybeInt $ defenum MaybeInt (:some :number) (:none)
-    some-val $ %:: MaybeInt :some 42
-    none-val $ %:: MaybeInt :none
+    some-val $ MaybeInt :some 42
+    none-val $ MaybeInt :none
     extracted $ match some-val
       (:some v) (* v 2)
       (:none) 0
@@ -272,7 +272,7 @@ Use the Option-returning `enum-definition` API to inspect the definition behind 
 ```cirru
 let
     ApiResult $ defenum ApiResult (:ok :number) (:err :string)
-    x $ %:: ApiResult :ok 1
+    x $ ApiResult :ok 1
   println $ match (enum-definition x)
     (:some original) $ = original ApiResult
     (:none) false
@@ -311,8 +311,8 @@ let
     AppResult $ defenum AppResult (:ok :number) (:err :string)
     compute $ fn (x)
       if (> x 0)
-        %:: AppResult :ok $ * x 10
-        %:: AppResult :err |negative-input
+        AppResult :ok $ * x 10
+        AppResult :err |negative-input
     handle $ fn (r)
       match r
         (:ok v) (str-spaced |result: v)
@@ -328,8 +328,8 @@ let
 ```cirru
 let
     Status $ defenum Status (:pending) (:done :string) (:failed :string)
-    pending $ %:: Status :pending
-    done $ %:: Status :done |ok
+    pending $ Status :pending
+    done $ Status :done |ok
     is-done $ fn (s)
       match s
         (:done _) true
@@ -387,16 +387,16 @@ When a function parameter is typed as an enum, the preprocessor can rewrite an a
 let
     Result0 $ defenum Result0 (:err :string) (:ok)
     takes-result $ fn (r)
-      :: :fn $ {} (:return :dynamic)
+      :: :fn $ {} (:return 'Tag)
         :args $ [] 'app.main/Result0
       match r
         (:ok) :ok
-        (:err msg) msg
+        (:err msg) :err
         _ :unknown
   ; The anonymous enum is rewritten to the expected named enum:
   assert= :ok $ takes-result (%:: _ :ok)
   ; Equivalent to:
-  assert= :ok $ takes-result (%:: Result0 :ok)
+  assert= :ok $ takes-result (Result0 :ok)
 ```
 
 Requirements for the rewrite to trigger:
@@ -412,7 +412,7 @@ If any condition is not met, the argument is left unchanged (no error is raised)
 - Enum values are immutable and retain their enum definition.
 - `match` 是唯一的 enum 模式匹配表层语法，并提供穷尽性检查。
 - Use `&enum:nth` to directly access payload values by index (0 = tag, 1+ = payloads).
-- `%:: _ :tag ...` constructs an anonymous enum; `%:: EnumDef :tag ...` constructs a named enum.
+- `%:: _ :tag ...` constructs an anonymous enum; `EnumDef :tag ...` constructs a named enum.
 
 ## See Also
 

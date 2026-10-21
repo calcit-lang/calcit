@@ -226,7 +226,7 @@ yarn check-all
 
 - [Cirru Parser](https://github.com/Cirru/parser.rs) for indentation-based syntax parsing.
 - [Cirru EDN](https://github.com/Cirru/cirru-edn.rs) for canonical runtime snapshot parsing (`calcit.cirru`).
-- [Ternary Tree](https://github.com/calcit-lang/ternary-tree.rs) for immutable list data structure.
+- [FingerVec](https://github.com/calcit-lang/finger-vec.rs) for the immutable List data structure.
 
 Other tools:
 

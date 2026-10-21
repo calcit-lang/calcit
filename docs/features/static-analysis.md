@@ -15,7 +15,6 @@ entry_for:
   - "assert-type"
   - "calcit analyze weak-types"
   - "calcit --check-only --ns"
-  - "calcit analyze quality"
 id: core/features/static-analysis
 related:
   - core/run/library-quality
@@ -74,9 +73,6 @@ calcit analyze weak-types --only dynamic-method
 
 # 查看只读的迁移概览
 calcit analyze weak-types --only dynamic-method --summary-only --format json
-
-# [Deprecated] legacy budget; removed in the next non-patch release
-calcit analyze quality --baseline config/calcit-quality.cirru
 
 # Focus only on unresolved type debt
 calcit analyze weak-types --ns app.main --intent unresolved
@@ -314,8 +310,6 @@ schema 候选即使没有剩余洞，仍需独立实现证明。返回声明、�
 
 `code-dynamic` 只定位活动代码中的类型位置：`quote` 与 `quasiquote` 中作为数据保存的 `:dynamic` 不计入结果，`~` / `~@` 展开后重新进入活动代码的表达式仍会定位。此报告不判断类型关系；需要确认能否通过检查时仍以默认严格诊断为准。
 
-`analyze quality` 已弃用，其 v1/v2 baseline 读取只保留到下一个非 patch 版本。新项目不再生成 baseline；存量项目只降低已有预算，清零后删除 baseline 与命令。当前默认检查已不再把 coverage/Dynamic 数量当作独立的类型正确性策略。
-
 只需要 kind/intent 汇总时使用 `--summary-only`；human 输出在汇总后停止，JSON 保留 `data.summary` 与 scope revision，并返回空的 `data.definitions`。`defstruct`、`defenum`、`deftrait`、`defimpl` 使用明确的 definition-kind schema：`StructDef`、`EnumDef`、`Trait`、`Impl`。旧 Snapshot 的 Dynamic root 会在加载时规范化；字段、Enum payload 和方法仍正常进入迁移扫描，但 declaration root 本身不产生 `schema-dynamic` finding。
 
 `check-examples` reports pass/fail and elapsed time without printing the final example value, which can be a very large function, struct, or component tree. Output explicitly produced by an example is still shown. Pass `--js` to compile the generated examples entry and execute it with Node.js; this is intended for definitions whose examples use JavaScript-only FFI syntax such as `exists? js/process`.
@@ -369,7 +363,7 @@ let
       hint-fn $ {}
         :args $ [] $ :: 'List 'Number
         :return :number
-      reduce items 0 $ fn (acc item)
+      .fold items 0 $ fn (acc item)
         hint-fn $ {}
           :args $ [] :number :number
           :return :number
@@ -470,10 +464,10 @@ Generic trait bounds use the same schema map. Follow the Rust-style split: decla
 let
     get-name $ fn (user)
       hint-fn $ {}
-        :args $ [] :dynamic
-        :return :string
-      , |demo
-  get-name nil
+        :args $ [] 'String
+        :return 'String
+      str "|user " user
+  get-name |Ada
 ```
 
 ```cirru
@@ -562,23 +556,21 @@ Dynamic 应限制在 JS FFI、宏和框架开放数据边界。普通多态使�
 
 ### Complex Types
 
-#### Legacy Optional Types
+#### Option Types
 
-`Optional<T>` is parsed only for legacy core/internal compatibility. Public
-function schemas reject it; use `Option<T>`, `Result<T,E>`, or `Unit`. JavaScript
-`null`/`undefined` uses the distinct `JsNullish<T>` boundary.
+Model absence with `Option<T>`; the caller handles both variants explicitly:
 
-Existing migration tools still understand the old `:: 'Optional <type>` syntax:
-
-```cirru.no-check
+```cirru
 let
     greet $ fn (name)
       hint-fn $ {}
-        :args $ [] (:: :optional :string)
-        :return :string
-      str "|Hello " $ or name |Guest
-  greet nil
+        :args $ [] $ :: 'Option 'String
+        :return 'String
+      str "|Hello " $ .unwrap-or name |Guest
+  greet $ Option :none
 ```
+
+Failures use `Result<T,E>`, effects use `Unit`, and JavaScript `null`/`undefined` uses the distinct `JsNullish<T>` boundary. Public schemas reject the old `Optional<T>`; see [升级手册](../run/upgrade.md) for the migration.
 
 #### Variadic Types
 
@@ -588,11 +580,11 @@ Represent variable arguments in `&` parameters:
 let
     sum $ fn (& xs)
       hint-fn $ {} (:rest :number) (:return :number)
-      reduce xs 0 &+
+      .fold xs 0 &+
   sum 1 2 3
 ```
 
-A variadic function can satisfy a fixed-arity callback when its required parameters and rest element type accept every argument promised by the callback. Callback parameter matching is contravariant, while callback return matching is covariant. Optional callback examples describe legacy compatibility and should not be introduced in public schemas.
+A variadic function can satisfy a fixed-arity callback when its required parameters and rest element type accept every argument promised by the callback. Callback parameter matching is contravariant, while callback return matching is covariant.
 
 `:any` is accepted only as a compatibility spelling and is parsed as `:dynamic`. Schema serialization, generated metadata, type queries, and diagnostics use `:dynamic`; new code should not introduce `:any`.
 
@@ -647,7 +639,7 @@ let
         :args $ [] 'User
         :return :string
       :name u
-  get-name $ %{} User (:name |Alice)
+  get-name $ User :name |Alice
 ```
 
 ## Built-in Type Checks
@@ -775,7 +767,7 @@ let
 ```cirru
 let
     Point $ defstruct Point (:x :number) (:y :number)
-    p $ %{} Point (:x 10) (:y 20)
+    p $ Point :x 10 :y 20
     x-val $ :x p
   ; x-val inferred as :number from field type
   assert= x-val 10
@@ -857,27 +849,6 @@ let
 
 **Note**: This is a development tool - remove it in production code. Returns `nil` at runtime.
 
-## Legacy Optional Types
-
-Calcit can read old Optional annotations for migration analysis, but new public
-function schemas must not declare them. Model absence with `Option`, failures
-with `Result`, effects with `Unit`, and JavaScript host nullability with
-`JsNullish`.
-
-Definition:
-
-```cirru.no-check
-defn find-user (id) (; May return nil if user not found) (println "|demo code")
-```
-
-Schema on the namespace definition:
-
-```cirru.no-check
-:: :fn $ {}
-  :args $ [] :dynamic
-  :return $ :: 'Optional 'Struct
-```
-
 ## Variadic Types
 
 Functions with rest parameters use variadic type annotations:
@@ -885,7 +856,7 @@ Functions with rest parameters use variadic type annotations:
 Definition:
 
 ```cirru
-defn sum (& numbers) (reduce numbers 0 +)
+defn sum (& numbers) (.fold numbers 0 +)
 ```
 
 Schema on the namespace definition:

@@ -1441,73 +1441,6 @@ sort entries $ fn (a b)
 编译器特殊规则。`map-entries` 不会自动修改旧调用；升级时应在实际消费者项目中运行
 `--check-only --ns`、对应测试及 JS 构建，确认业务排序和渲染结果。
 
-## 0.19 兼容清理与 CLI 入口收敛
-
-`%{}?` 与底层 `&%{}?` 已退役，`--compat-types` 也不再恢复其隐式 `nil` 补字段行为。
-旧代码应改用完整的 `%{}` 构造；确实可能缺失的字段先声明为 `Option<T>`，再显式提供
-`Option :none`，不能由编译器猜测业务默认值。旧调用会给出 `E_PARTIAL_STRUCT_NIL_FILL` 迁移错误。
-
-基于 String path 的 `try-read-file path` 与 `try-write-file path content` 包装已移除。
-分别改为 `.read-text (fs:path path)` 与 `.write-text! (fs:path path) content`，仍返回相同的
-`Result<String,String>` 与 `Result<Unit,String>`；不要迁回会抛出异常的原始 `read-file` /
-`write-file`。`try-read-dir` 暂留供递归 `.walk-dir` 使用，后续单独整理。
-
-entry 的 `:target` 现在可以通过既有命令族撤销：`calcit config unset target [--entry <name>]`
-删除该 entry 的 `:target`，恢复“未指定 target”的语义（`config show` 显示 `(none)`）。
-重复执行 unset 稳定返回 “already unset”，且不改写 Snapshot 内容；`unset` 目前只接受 `target`，
-其他 key 会给出明确错误。同时用于 browser 与 Node 的项目不必再手改 Snapshot 回退。
-
-JavaScript runtime 的 `to-js-data value true/false` 布尔第二参数已退役；需要保留 tag 键的冒号时，
-改用 `to-js-data value $ {} (:add-colon true)`，无需该行为时只传 `value`。旧布尔写法现在明确报错，
-避免在升级后静默转换出不同的 JSON key。`@calcit/procs` 的旧导出
-`_$n_enum_def_$o_has_variant` 也已移除；直接调用 runtime 的代码应使用与
-`&enum-def:has-variant?` 对应的 `_$n_enum_def_$o_has_variant_$q_`。
-
-当前 Snapshot 的命名空间代码必须使用 `ns name`；旧式 `:ns name` 已被拒绝，并会给出迁移提示。
-升级旧快照时，可对没有 import 的命名空间执行
-`calcit calcit.cirru edit imports <namespace> --input-format cirru --code 'quote $ []'`；
-这会通过结构化编辑重建 `ns` 节点。已有 import 的命名空间应先查询并保留规则，再用
-`edit imports` 提交，不能用空列表覆盖。
-`%Expr` / `%Leaf` 是早期快照的展示结构；当前诊断只对 `quote` 代码做 Cirru 预览。
-若旧快照仍使用这两种结构，请先用其对应旧版工具迁移，不要把它们当作当前语言代码节点。
-`docs check-md` 读取项目依赖时也使用同一严格 Snapshot loader，不再单独从旧格式中提取模块列表；
-先完成快照迁移，再运行文档代码块检查。
-普通 `deftrait` / `defimpl` 方法键原来的 `:render` 等 tag 写法已退役，改成 `.render` 等 dot 写法；
-类型标注中的 `:fn` 不变。external-object trait 的属性条目（如 `:field 'String`）仍使用 tag，
-不要把它们批量改为 dot。
-
-顶层 `calcit libs`（或旧二进制名 `cr libs`）已移除，统一改为 `calcit docs remote-libs`。
-子命令和参数保留：`libs search <keyword>`、`libs readme <package> [--file <file>]`、
-`libs scan-md <module>` 分别改为 `docs remote-libs search`、`docs remote-libs readme`、
-`docs remote-libs scan-md`；不带子命令的列表查询改为 `calcit docs remote-libs`。
-升级时请同步修改项目脚本和 Agent 指南中的旧命令。查询已安装模块的文档时，优先使用
-`calcit docs list/read/search --module <module>`，无需经过远端类库索引。
-
-`calcit exec` 也合并进现有 `eval` 命令族：原来的 `echo 'range 10' | calcit exec`
-改为 `echo 'range 10' | calcit eval --stdin`。`--dep` 仍可重复传入，stdin 与位置参数片段互斥；
-未指定位置参数或 `--stdin` 时直接报错；显式传 `--stdin` 后会等待输入直到 EOF，空输入也会报错。
-
-对于编译器能够证明等价的一对一迁移，先运行 `calcit calcit.cirru fix --preset surface-latest-v2 --format edn`
-审阅结构化计划，再用
-`--apply --expect-revision <revision>` 原子应用；完整安全边界见 [Compiler-guided Source Fixes](fix.md)。
-
-若起点是仍依赖 0.14.15 旧修复规则的项目，请先按
-[历史两阶段桥接步骤](upgrade-history.md#01415-的两阶段源码修复桥接)完成旧版迁移，
-再使用当前 preset；不要把旧 rule ID 交给当前版本。
-
-升级或类型迁移后，应显式预览一次问题写法修复。`fix` 的默认 preview 本身就是检测入口，不写 Snapshot；其中
-`redundant-do-v1` 会定位 `defn`、`fn`、`let` 等多表达式 body 中不必要的 `do`，并返回可审阅的 source path、
-fingerprint 和 splice replacement；`single-expression-do-v1` 会解包普通可执行位置中只有一个 payload 的 `do`：
-
-```bash
-calcit calcit.cirru fix --preset surface-latest-v2 --format edn
-```
-
-不要用全文搜索后批量删除 `do`：`if` 分支、调用参数和 binding value 等单表达式位置仍需要它来组合多个步骤。
-若 preview 返回建议，确认 `:data :validation :status` 为 `passed` 后，再复制报告中的 `:revision` 执行带保护的 apply；
-若建议为空，则接受 `not-needed` 并跳过 apply。完整示例见
-[检测并修复冗余 `do`](fix.md#检测并修复冗余-do)。这是一项显式源码整理，不会增加普通编译 warning。
-
 ## 当前目标与历史版本迁移
 
 当前项目以默认严格 `--check-only`、对应 entry 的实际运行和目标后端回归为升级验收；
@@ -1517,7 +1450,7 @@ Preview 1 core module 需显式 `--boundary native`（时钟、`wait-ms`、安�
 等尚未迁移能力仍走该路径）。Component 的当前支持范围以
 [WASM Component 边界](../installation/wasm-component-boundary.md) 为准。
 
-0.13–0.15 的严格诊断桥接、`cr-wasm` 迁移及 Component ABI 演进步骤已移至
+0.14 的两阶段修复桥接、默认严格诊断与 0.19 的兼容清理见
 [历史版本迁移记录](upgrade-history.md)。历史版本当时的“尚未支持”不代表当前能力。
 
 ---
@@ -2074,13 +2007,13 @@ calcit calcit.cirru analyze weak-types --only deprecated-call --summary-only
 兼容函数的 `:deprecated` 标签与定义文档也可由 `query context` 查询：
 
 ```bash
-calcit calcit.cirru query context calcit.core/optionally --format edn
+calcit calcit.cirru query context calcit.core/turn-string --format edn
 calcit calcit.cirru fix --preset surface-latest-v2 --include-attached --format edn
 calcit calcit.cirru fix --preset core-api-0.28-v1 --include-attached --format edn
 ```
 
-函数形式的 `optionally`、`join`、`vals`、`turn-str`、`turn-string`、`remove-watch`
-均由其定义文档提供首选名，不需要另一份迁移名称表。
+函数形式的 `vals`、`turn-string`、`remove-watch`
+均由其定义文档提供首选名；`optionally`、`join`、`turn-str` 已在 0.31.0 删除，见上方删除表，不需要另一份迁移名称表。
 普通函数成功预处理时，弃用报告用编译器解析目标排除局部同名参数并识别 namespace alias；
 quoted data 不计为调用，推荐方法复用旧内部 helper 也不计为旧函数调用。
 无法预处理的定义保留保守 source 报告，仍需修正原编译问题后重新检查。

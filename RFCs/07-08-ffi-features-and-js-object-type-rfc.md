@@ -1,6 +1,6 @@
 # RFC: `:features` 函数能力标记 + `:js-object` 类型收敛
 
-状态：Draft
+状态：Implemented（设计记录；当前规则以 docs/features/js-interop.md 为准）
 日期：2026-07-08
 
 ---

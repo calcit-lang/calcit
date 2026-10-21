@@ -12,7 +12,7 @@ parent: core/features
 ---
 # HashMap
 
-Calcit HashMap is a persistent, immutable hash map. In Rust it uses [rpds::HashTrieMap](https://docs.rs/rpds/0.10.0/rpds/#hashtriemap). In JavaScript it is built on [ternary-tree](https://github.com/calcit-lang/ternary-tree.ts).
+Calcit HashMap is a persistent, immutable hash map. In Rust it uses [rpds::HashTrieMap](https://docs.rs/rpds/0.10.0/rpds/#hashtriemap). In JavaScript it is built on `TernaryTreeMap` from [ternary-tree.ts](https://github.com/calcit-lang/ternary-tree.ts).
 
 All map operations return new maps — the original is never mutated.
 
@@ -179,8 +179,8 @@ let
     m $ {} (:a 1) (:b 2) (:c 13)
     filtered $ filter-map-kv m $ fn (k v)
       if (> v 10)
-        %:: MapEntryDecision :drop
-        %:: MapEntryDecision :keep k v
+        MapEntryDecision :drop
+        MapEntryDecision :keep k v
   println filtered
   ; => ({} (:a 1) (:b 2))
 ```

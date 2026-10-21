@@ -84,7 +84,7 @@ let
       .foo $ fn (p) (assert-type p Person0)
         str "|foo " $ :name p
     Person $ impl-traits Person0 MyFooImpl
-    p $ %{} Person (:name |Alice)
+    p $ Person :name |Alice
   p .foo
 ```
 
@@ -121,7 +121,7 @@ let
       .foo $ fn (p) (assert-type p Person0)
         str |foo: $ :name p
     Person $ impl-traits Person0 ShowImpl EqImpl MyFooImpl
-    p $ %{} Person (:name |Alice)
+    p $ Person :name |Alice
   [] (p .show) (p .foo)
 ```
 
@@ -142,7 +142,7 @@ let
       .foo $ fn (p) (assert-type p Person0)
         str-spaced |foo $ :name p
     Person $ impl-traits Person0 MyFooImpl
-    p $ %{} Person (:name |Alice)
+    p $ Person :name |Alice
   assert-traits p MyFoo
   p .foo
 ```
