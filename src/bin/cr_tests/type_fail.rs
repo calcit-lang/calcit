@@ -2954,6 +2954,204 @@ fn calling_a_dynamic_value_requires_fn_narrowing() {
   });
 }
 
+/// #1554: a value-position use of a branch without an else (or an explicit nil
+/// join) is an advisory that names the migration to `Option`; statement position
+/// stays silent, and the advisory itself never blocks.
+#[test]
+fn value_position_nil_branch_reports_an_advisory_without_blocking() {
+  run_with_large_stack(|| {
+    let number_fn = |body: &str, ret: &str| format!("fn (x) (hint-fn $ {{}} (:args $ [] 'Number) (:return '{ret})) {body}");
+    let snippet = format!(
+      "let\n    missing-else $ {}\n    nil-join $ {}\n    call-arg $ {}\n    typed-return $ {}\n    statement $ {}\n    explicit-else $ {}\n    option-result $ {}\n  [] missing-else nil-join call-arg typed-return statement explicit-else option-result",
+      number_fn("(let ((y (if (> x 0) x))) y)", "Dynamic"),
+      number_fn("(let ((y (if (> x 0) x nil))) y)", "Dynamic"),
+      number_fn("(str (if (> x 0) x))", "String"),
+      number_fn("(if (> x 0) x)", "Number"),
+      number_fn("(do (if (> x 0) (println |hit)) x)", "Number"),
+      number_fn("(let ((y (if (> x 0) x 0))) y)", "Number"),
+      number_fn("(let ((y (if (> x 0) (Option :some x) (Option :none)))) y)", "Dynamic"),
+    );
+    let entries = load_snippet_entries(&snippet);
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    let _ = runner::preprocess::take_advisories();
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("an implicit nil branch should preprocess");
+
+    let warnings = warnings.borrow();
+    assert!(
+      warnings.iter().all(|warning| warning.code() != Some("W_IMPLICIT_NIL_BRANCH")),
+      "the migration is reported as an advisory: {warnings:?}"
+    );
+    let advisories = runner::preprocess::take_advisories();
+    let implicit = advisories
+      .iter()
+      .filter(|advisory| advisory.code() == Some("W_IMPLICIT_NIL_BRANCH"))
+      .collect::<Vec<_>>();
+    assert_eq!(implicit.len(), 4, "{advisories:?}");
+    assert!(
+      implicit.iter().any(|advisory| advisory.message().contains("without an else")),
+      "{implicit:?}"
+    );
+    assert!(
+      implicit.iter().any(|advisory| advisory.message().contains("`nil` while another")),
+      "{implicit:?}"
+    );
+    assert!(
+      implicit.iter().all(|advisory| advisory.message().contains("Option :some value")),
+      "{implicit:?}"
+    );
+  });
+}
+
+/// #1554: a live payload that contradicts the nullable contract it flows into is
+/// still a mismatch (return, call argument, `let` binding), while a matching
+/// payload stays accepted.
+#[test]
+fn nil_branch_live_payload_still_checks_against_the_contract() {
+  run_with_large_stack(|| {
+    let nullable_return =
+      |body: &str| format!("fn (flag) (hint-fn $ {{}} (:args $ [] 'Bool) (:return $ :: 'JsNullish 'Number)) {body}");
+    let cases = [
+      ("wrong-live-payload", nullable_return("(if flag |bad nil)"), Some("W_FN_RETURN_TYPE_MISMATCH")),
+      ("wrong-reversed-payload", nullable_return("(if flag nil |bad)"), Some("W_FN_RETURN_TYPE_MISMATCH")),
+      ("missing-else-payload", nullable_return("(if flag |bad)"), Some("W_FN_RETURN_TYPE_MISMATCH")),
+      ("matching-payload", nullable_return("(if flag 7 nil)"), None),
+      ("let-bound-wrong-payload", nullable_return("(let ((y (if flag |bad nil))) y)"), Some("W_FN_RETURN_TYPE_MISMATCH")),
+      ("let-bound-matching-payload", nullable_return("(let ((y (if flag 7 nil))) y)"), None),
+      (
+        "wrong-argument-payload",
+        "fn (flag) (hint-fn $ {} (:args $ [] 'Bool) (:return 'Unit)) (let ((take (fn (v) (hint-fn $ {} (:args $ [] $ :: 'JsNullish 'Number) (:return 'Unit)) &unit))) (take (if flag |bad nil)))".to_owned(),
+        Some("W_LOCAL_FN_ARG_TYPE_MISMATCH"),
+      ),
+    ];
+    for (label, function, expected_code) in cases {
+      let snippet = format!("let\n    probe $ {function}\n  probe true");
+      let entries = load_snippet_entries(&snippet);
+      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+      let _ = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+      let warnings = warnings.borrow();
+      let codes = warnings.iter().filter_map(LocatedWarning::code).collect::<Vec<_>>();
+      match expected_code {
+        Some(code) => assert!(codes.contains(&code), "{label}: expected {code}, got {warnings:?}"),
+        None => assert!(
+          !codes.iter().any(|code| code.ends_with("TYPE_MISMATCH")),
+          "{label}: a matching payload should be accepted, got {warnings:?}"
+        ),
+      }
+    }
+  });
+}
+
+/// #1554 regression set: every case is one definition in
+/// `tests/fixtures/nil-branch-contracts.cirru`, and the expected outcome is the
+/// one main gave before the advisory existed. Until `Optional<T>` is removed
+/// (0.32.0) a nil-yielding branch keeps its legacy nullable evidence for every
+/// contract check (returns, function / local / proc / method arguments, struct
+/// fields, `assert-type`, callbacks, `let` / `do` / nested bodies and `.?-field`),
+/// so the advisory must never turn a rejection into an accepted program.
+/// Columns: case, rejected, reports `W_IMPLICIT_NIL_BRANCH` on an accepted program.
+const NIL_BRANCH_CONTRACT_CASES: &[(&str, bool, bool)] = &[
+  ("ret-if-noelse", true, false),
+  ("ret-if-niljoin", true, false),
+  ("ret-when", true, false),
+  ("ret-cond", true, false),
+  ("ret-case", true, false),
+  ("ret-nested-if", false, true),
+  ("ret-nested-if-else-nil", false, true),
+  ("ret-let-body", true, false),
+  ("ret-do-body", true, false),
+  ("ret-ok-match", true, false),
+  ("ret-option", true, false),
+  ("ret-option-bad", true, false),
+  ("arg-local", true, false),
+  ("arg-defn", true, false),
+  ("arg-defn-niljoin", true, false),
+  ("arg-defn-when", true, false),
+  ("arg-defn-nested", false, true),
+  ("arg-proc-add", true, false),
+  ("arg-proc-plus", true, false),
+  ("arg-proc-strcount", true, false),
+  ("arg-method-slice", true, false),
+  ("arg-method-slice-recv", true, false),
+  ("arg-method-count", true, false),
+  ("struct-field", true, false),
+  ("struct-field-pct", true, false),
+  ("list-literal", false, true),
+  ("map-callback", true, false),
+  ("hof-typed-fn-arg", true, false),
+  ("assert-type", true, false),
+  ("let-bound-ret", true, false),
+  ("let-bound-arg-defn", true, false),
+  ("let-bound-ok-arg", true, false),
+  ("let-bound-fn-literal", true, false),
+  ("let-bound-list", true, false),
+  ("let-cross-def", false, false),
+  ("let-cross-def2", false, false),
+  ("direct-cross-def", false, false),
+  ("let-bound-nilq", false, true),
+  ("let-bound-plus", true, false),
+  ("ret-bool-ok", true, false),
+  ("ret-string-niljoin-ok", true, false),
+  ("ret-cond2", true, false),
+  ("arg-defn-ok", true, false),
+  ("arg-defn-niljoin-ok", true, false),
+  ("arg-local-ok", true, false),
+  ("arg-method-ok", true, false),
+  ("struct-ctor-bad", true, false),
+  ("struct-ctor-nil", true, false),
+  ("struct-pct-nil", true, false),
+  ("list-ret-ok", false, true),
+  ("map-callback-ok", true, false),
+  ("hof-ok", true, false),
+  ("qfield-nilq", false, false),
+  ("qfield-take-str", true, false),
+  ("qfield-let-take-str", true, false),
+  ("qfield-nil-option", false, false),
+  ("qfield-js-present", true, false),
+  ("qfield-js-nullish-option", true, false),
+  ("qfield-str-concat", false, false),
+  ("qfield-ret-opt", false, false),
+  ("m-slice-ok", true, false),
+  ("m-slice-bad", true, false),
+  ("m-slice-ok2", true, false),
+  ("local-ok", true, false),
+  ("local-ret-typed-fn-literal", true, false),
+  ("n3-jsnullish-ret", false, false),
+  ("n3-jsnullish-ret-join", false, false),
+  ("n3-jsnullish-arg", false, false),
+  ("n3-dynamic-ret", false, false),
+  ("n3-let-value", false, true),
+  ("n3-statement", false, false),
+  ("n3-nil-option", false, false),
+];
+
+#[test]
+fn nil_branch_contracts_keep_every_main_rejection() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_fixture_entries("tests/fixtures/nil-branch-contracts.cirru");
+    let mut mismatches = vec![];
+    for (label, rejected, advisory) in NIL_BRANCH_CONTRACT_CASES {
+      let def = format!("case-{label}");
+      let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+      let _ = runner::preprocess::take_advisories();
+      let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &def, &warnings, &CallStackList::default());
+      let actual_rejected = result.is_err() || !warnings.borrow().is_empty();
+      let actual_advisory = runner::preprocess::take_advisories()
+        .iter()
+        .any(|note| note.code() == Some("W_IMPLICIT_NIL_BRANCH"));
+      if actual_rejected != *rejected || (!rejected && actual_advisory != *advisory) {
+        mismatches.push(format!(
+          "{label}: rejected={actual_rejected} (expected {rejected}), advisory={actual_advisory} (expected {advisory}), result={result:?}, warnings={:?}",
+          warnings.borrow()
+        ));
+      }
+    }
+    assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
+  });
+}
+
 #[test]
 fn unwrap_or_nil_on_an_open_option_reports_the_erasure() {
   run_with_large_stack(|| {

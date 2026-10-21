@@ -4210,6 +4210,9 @@ fn preprocess_list_call(
               processed_args = processed_args.push(processed?);
             }
             let processed_args = CalcitList::from(processed_args);
+            for arg in processed_args.iter().skip(1) {
+              warn_on_value_position_nil_branch(arg, "method argument", scope_types, file_ns, check_warnings);
+            }
             reject_pending_async_arguments(&typed_method, &processed_args, scope_types, call_stack)?;
             if let Some(expected_method_args) = expected_method_args
               && let Ok(method_args) = processed_args.skip(1)
@@ -4902,6 +4905,11 @@ fn preprocess_list_call(
 
         // Check for struct field access after processing arguments
         let processed_args = CalcitList::from(ys.drop_left()); // Skip the head, convert to CalcitList
+        if !is_nil_bridge_head(&head_form) {
+          for arg in processed_args.iter() {
+            warn_on_value_position_nil_branch(arg, "call argument", scope_types, file_ns, check_warnings);
+          }
+        }
         if has_spread {
           reject_known_non_list_spreads(&processed_args, scope_types, call_stack, call_location.clone())?;
         }
@@ -5664,6 +5672,14 @@ fn preprocess_known_function_call(
     HostSinkFrame::set_current_arg_host_nullish(false);
 
     let form = result?;
+    // A parameter that declares nullability already admits the nil exit.
+    if !is_nil_bridge_head(&head_form)
+      && !expected_type
+        .as_ref()
+        .is_some_and(|expected| matches!(expected.as_ref(), CalcitTypeAnnotation::Nullable(_, _)))
+    {
+      warn_on_value_position_nil_branch(&form, "call argument", scope_types, file_ns, check_warnings);
+    }
 
     if let Some(expected) = expected_type.as_ref() {
       reject_strict_bare_enum_constructor_value(&form, expected, scope_types, file_ns, def_name, call_stack, call_location.clone())?;
@@ -11966,6 +11982,123 @@ fn reject_strict_nil_for_unit_return(
   ))
 }
 
+/// How a value-position branch silently produces nil (#1554).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ImplicitNilBranch {
+  /// `if` / `when` / `case` without a final branch.
+  MissingElse,
+  /// One branch is `nil` while the other carries a concrete value.
+  NilJoin,
+}
+
+/// Find a branch inside a value-producing expression whose result is `T|nil`.
+/// Only the control flow that directly yields the value is walked: `if` branches
+/// (which also cover the expansion of `when` / `cond` / `case`) and the body of
+/// `&let`. A nested expression that merely mentions nil is ordinary data.
+fn find_implicit_nil_branch(value: &Calcit, scope_types: &ScopeTypes) -> Option<(ImplicitNilBranch, Option<NodeLocation>)> {
+  let Calcit::List(items) = value else {
+    return None;
+  };
+  match items.first() {
+    Some(Calcit::Syntax(CalcitSyntax::If, _)) => {
+      let true_expr = items.get(2)?;
+      // Prefer a coordinate written in this namespace; a branch produced wholly by a
+      // library macro is not something the caller can edit.
+      let location = || {
+        items
+          .iter()
+          .skip(1)
+          .filter_map(Calcit::get_location)
+          .find(|loc| loc.def.as_ref() != GENERATED_DEF)
+      };
+      let is_nil = |expr: &Calcit| {
+        matches!(expr, Calcit::Nil)
+          || resolve_type_value(expr, scope_types).is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Nil))
+      };
+      // A value type that is not a live value: nil itself, Unit effects, or a diverging branch.
+      let carries_value = |expr: &Calcit| {
+        !type_inference::expression_definitely_diverges(expr)
+          && resolve_type_value(expr, scope_types).is_some_and(|annotation| {
+            !matches!(
+              annotation.as_ref(),
+              CalcitTypeAnnotation::Nil
+                | CalcitTypeAnnotation::Unit
+                | CalcitTypeAnnotation::Never
+                | CalcitTypeAnnotation::Nullable(_, _)
+            )
+          })
+      };
+      let Some(false_expr) = items.get(3) else {
+        if let Some(inner) = find_implicit_nil_branch(true_expr, scope_types) {
+          return Some(inner);
+        }
+        return carries_value(true_expr).then(|| (ImplicitNilBranch::MissingElse, location()));
+      };
+      if let Some(inner) =
+        find_implicit_nil_branch(true_expr, scope_types).or_else(|| find_implicit_nil_branch(false_expr, scope_types))
+      {
+        return Some(inner);
+      }
+      let nil_join = (is_nil(true_expr) && carries_value(false_expr) && !is_dynamic_branch(false_expr, scope_types))
+        || (is_nil(false_expr) && carries_value(true_expr) && !is_dynamic_branch(true_expr, scope_types));
+      nil_join.then(|| (ImplicitNilBranch::NilJoin, location()))
+    }
+    Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) => items.get(items.len().checked_sub(1)?).and_then(|returned| {
+      // The binding pair is `items[1]`; only a body form can be the result.
+      (items.len() > 2).then_some(returned)?;
+      find_implicit_nil_branch(returned, scope_types)
+    }),
+    _ => None,
+  }
+}
+
+/// `nil->option` is the explicit bridge from a possibly-nil value to `Option`, so
+/// a nil-able branch is its intended argument.
+fn is_nil_bridge_head(head: &Calcit) -> bool {
+  matches!(head, Calcit::Import(CalcitImport { ns, def, .. }) if ns.as_ref() == calcit::CORE_NS && def.as_ref() == "nil->option")
+}
+
+fn is_dynamic_branch(expr: &Calcit, scope_types: &ScopeTypes) -> bool {
+  resolve_type_value(expr, scope_types).is_some_and(|annotation| matches!(annotation.as_ref(), CalcitTypeAnnotation::Dynamic))
+}
+
+/// Report when a value-consuming position (let initializer, call argument, typed
+/// return) receives a branch that silently yields nil (#1554). Until `Optional<T>`
+/// is removed (0.32.0) such a `T|nil` result keeps its legacy nullable evidence,
+/// so every contract check still sees it; this note only names the migration: an
+/// explicit `Option :some` / `Option :none`, or an explicit else value.
+/// Statement-position branches and declared nullable slots are never reported.
+/// It is an advisory: the check and the runner still pass.
+fn warn_on_value_position_nil_branch(
+  value: &Calcit,
+  context: &str,
+  scope_types: &ScopeTypes,
+  file_ns: &str,
+  _check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  if file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) {
+    return;
+  }
+  let Some((kind, Some(location))) = find_implicit_nil_branch(value, scope_types) else {
+    return;
+  };
+  if location.ns.as_ref() != file_ns {
+    return;
+  }
+  let reason = match kind {
+    ImplicitNilBranch::MissingElse => "a branch without an else (`if` / `when` / `case`) yields nil when no condition matches",
+    ImplicitNilBranch::NilJoin => "one branch is `nil` while another carries a value",
+  };
+  push_advisory(LocatedWarning::new_with_detail(
+    format!(
+      "[Warn] {reason}, and it is used as a value ({context}) in {file_ns}; `T|nil` is only checked as the legacy Optional<T>, which is removed in 0.32.0. Return `Option :some value` / `Option :none` (wrap an existing nil with `nil->option`), or add an explicit else value; keep the form in statement position if its result is unused"
+    ),
+    location,
+    Some("W_IMPLICIT_NIL_BRANCH".to_owned()),
+    None,
+  ));
+}
+
 /// Return constructor name and produced enum type for a bare zero-argument
 /// `%name` function value. A list call is intentionally excluded.
 fn bare_zero_argument_enum_producer(value: &Calcit, scope_types: &ScopeTypes) -> Option<(Arc<str>, Arc<CalcitTypeAnnotation>)> {
@@ -13086,6 +13219,18 @@ pub fn preprocess_defn(
             ctx.call_location.clone().or(Some(definition_location.clone())),
           )?;
         }
+        // A declared nullable return (`JsNullish<T>`, legacy `Optional<T>`) already
+        // admits the nil exit, so only a concrete return is reported.
+        if !matches!(
+          return_type_hint.as_ref(),
+          CalcitTypeAnnotation::Unit | CalcitTypeAnnotation::Nil | CalcitTypeAnnotation::Dynamic | CalcitTypeAnnotation::Nullable(_, _)
+        ) && let Some(returned_expr) = processed_body
+          .iter()
+          .rev()
+          .find(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
+        {
+          warn_on_value_position_nil_branch(returned_expr, "function return", &body_types, ctx.file_ns, ctx.check_warnings);
+        }
         reject_strict_nil_for_unit_return(
           &processed_body,
           &return_type_hint,
@@ -13255,6 +13400,9 @@ pub fn preprocess_core_let(
       // The initializer executes before the new binding shadows its name.
       propagate_scope_widening(ctx.scope_types, &body_types, &ScopeTypes::new(), None);
 
+      if existing_type.is_none() {
+        warn_on_value_position_nil_branch(&form, "let binding", &body_types, ctx.file_ns, ctx.check_warnings);
+      }
       let inferred_type = existing_type
         .unwrap_or_else(|| infer_type_from_expr(&form, &body_types).unwrap_or_else(|| crate::calcit::DYNAMIC_TYPE.clone()));
 
