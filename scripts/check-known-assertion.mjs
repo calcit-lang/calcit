@@ -3767,6 +3767,11 @@ try {
       execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", snapshot,
         "--backend", "native,js", "--tag", "body-hint-contract"],
       { ...options, env: { ...process.env, CALCIT_BIN: binary } });
+      // Open Struct methods retain runtime dispatch and the existing result-kind
+      // guard; callbacks and custom methods must still execute once in order.
+      execFileSync(process.execPath, ["scripts/run-core-tests.mjs", "--snapshot", snapshot,
+        "--backend", "native,js", "--tag", "update-method-contract"],
+      { ...options, env: { ...process.env, CALCIT_BIN: binary } });
       run("test", "--require-match");
       run("fix", "--workflow", "strict", "--verify", "--format", "edn");
       assert.deepEqual(await readFile(snapshot), traitOriginal);
