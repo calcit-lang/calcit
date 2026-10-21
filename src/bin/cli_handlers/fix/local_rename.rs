@@ -6,7 +6,7 @@
 //! is never renamed by text alone.
 
 use std::cell::RefCell;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::sync::Arc;
 
 use calcit::calcit::{Calcit, LocatedWarning};
@@ -21,6 +21,9 @@ use super::{
 
 /// Forms whose arguments are data or generated code; a use inside them cannot be proven.
 const QUOTING_HEADS: &[&str] = &["quote", "quasiquote", "calcit.core/quote", "calcit.core/quasiquote"];
+
+/// Source forms whose scope/data boundaries this walker understands.
+pub(crate) const SOURCE_SCOPE_HEADS: &[&str] = &["defn", "defmacro", "fn", "let", "loop", "&let", "quote", "quasiquote"];
 
 /// Core macros that rearrange or wrap their arguments without introducing bindings,
 /// so a local inside them still refers to the enclosing scope.
@@ -76,6 +79,8 @@ struct ScopeWalk<'a> {
   new_name: &'a str,
   target: &'a [usize],
   is_macro: &'a mut dyn FnMut(&str) -> Result<MacroHead, String>,
+  core_heads: Option<&'a BTreeMap<String, String>>,
+  local_heads: Vec<Arc<str>>,
   uses: Vec<Vec<usize>>,
   target_found: bool,
   blockers: Vec<String>,
@@ -125,13 +130,28 @@ impl ScopeWalk<'_> {
       return Ok(());
     };
     let head = items.first().and_then(leaf_name).unwrap_or_default();
-    match head {
-      "defn" | "defmacro" => self.walk_params(items, path, 2, 3, active),
-      "fn" => self.walk_params(items, path, 1, 2, active),
-      "let" | "loop" => self.walk_let(items, path, active, head == "loop"),
-      "&let" => self.walk_single_let(items, path, active),
-      _ if QUOTING_HEADS.contains(&head) => {
-        self.reject_inside(node, path, active, "quoted source");
+    let core_head = match self.core_heads {
+      Some(heads) if !self.local_heads.iter().any(|local| local.as_ref() == head) => heads.get(head).map(String::as_str),
+      Some(_) => None,
+      None => Some(head),
+    };
+    // A binding form's operator is itself a global reference, even though its
+    // parameter/binding positions are not. Rename mode only tracks locals.
+    if self.core_heads.is_some()
+      && core_head.is_some()
+      && let Some(operator) = items.first()
+    {
+      self.walk(operator, &child_path(path, 0), active)?;
+    }
+    match core_head {
+      Some("defn" | "defmacro") => self.walk_params(items, path, 2, 3, active),
+      Some("fn") => self.walk_params(items, path, 1, 2, active),
+      Some("let" | "loop") => self.walk_let(items, path, active, core_head == Some("loop")),
+      Some("&let") => self.walk_single_let(items, path, active),
+      Some(name) if QUOTING_HEADS.contains(&name) => {
+        if self.core_heads.is_none() {
+          self.reject_inside(node, path, active, "quoted source");
+        }
         Ok(())
       }
       // Outside the binding's scope a macro call is only searched for the binding
@@ -171,8 +191,23 @@ impl ScopeWalk<'_> {
     }
   }
 
+  fn is_target_binding(&self, name: &str) -> bool {
+    name == self.old_name && (self.core_heads.is_none() || !name.contains('/'))
+  }
+
+  fn remember_head_binding(&mut self, node: &Cirru) {
+    if let Some(heads) = self.core_heads
+      && let Cirru::Leaf(name) = node
+      && !name.contains('/')
+      && heads.contains_key(name.as_ref())
+    {
+      self.local_heads.push(name.clone());
+    }
+  }
+
   /// `defn name (params) body...` / `fn (params) body...`
   fn walk_params(&mut self, items: &[Cirru], path: &[usize], params_at: usize, body_at: usize, active: bool) -> Result<(), String> {
+    let head_count = self.local_heads.len();
     let mut body_active = active;
     if let Some(Cirru::List(params)) = items.get(params_at) {
       let params_path = child_path(path, params_at);
@@ -183,7 +218,7 @@ impl ScopeWalk<'_> {
             self.target_found = true;
             body_active = true;
           }
-          Some(name) if name == self.old_name => body_active = false,
+          Some(name) if self.is_target_binding(name) => body_active = false,
           Some(name) if active && name == self.new_name => self.blockers.push(format!(
             "code{}: `{}` is already bound in the binding's scope",
             format_path(&param_path),
@@ -191,16 +226,19 @@ impl ScopeWalk<'_> {
           )),
           _ => {}
         }
+        self.remember_head_binding(param);
       }
     }
     for (index, item) in items.iter().enumerate().skip(body_at) {
       self.walk(item, &child_path(path, index), body_active)?;
     }
+    self.local_heads.truncate(head_count);
     Ok(())
   }
 
   /// `let ((a v) (b v)) body...` binds sequentially; `loop` values see only the outer scope.
   fn walk_let(&mut self, items: &[Cirru], path: &[usize], active: bool, parallel: bool) -> Result<(), String> {
+    let head_count = self.local_heads.len();
     let mut scope_active = active;
     if let Some(Cirru::List(pairs)) = items.get(1) {
       let pairs_path = child_path(path, 1);
@@ -219,7 +257,7 @@ impl ScopeWalk<'_> {
             self.target_found = true;
             scope_active = true;
           }
-          Some(name) if name == self.old_name => scope_active = false,
+          Some(name) if self.is_target_binding(name) => scope_active = false,
           Some(name) if scope_active && name == self.new_name => self.blockers.push(format!(
             "code{}: `{}` is already bound in the binding's scope",
             format_path(&name_path),
@@ -227,16 +265,30 @@ impl ScopeWalk<'_> {
           )),
           _ => {}
         }
+        if !parallel && let Some(binding) = pair_items.first() {
+          self.remember_head_binding(binding);
+        }
+      }
+      if parallel {
+        for pair in pairs {
+          if let Cirru::List(pair) = pair
+            && let Some(binding) = pair.first()
+          {
+            self.remember_head_binding(binding);
+          }
+        }
       }
     }
     for (index, item) in items.iter().enumerate().skip(2) {
       self.walk(item, &child_path(path, index), scope_active)?;
     }
+    self.local_heads.truncate(head_count);
     Ok(())
   }
 
   /// `&let (a v) body...`
   fn walk_single_let(&mut self, items: &[Cirru], path: &[usize], active: bool) -> Result<(), String> {
+    let head_count = self.local_heads.len();
     let mut body_active = active;
     if let Some(Cirru::List(pair)) = items.get(1) {
       let pair_path = child_path(path, 1);
@@ -249,15 +301,38 @@ impl ScopeWalk<'_> {
           self.target_found = true;
           body_active = true;
         }
-        Some(name) if name == self.old_name => body_active = false,
+        Some(name) if self.is_target_binding(name) => body_active = false,
         _ => {}
+      }
+      if let Some(binding) = pair.first() {
+        self.remember_head_binding(binding);
       }
     }
     for (index, item) in items.iter().enumerate().skip(2) {
       self.walk(item, &child_path(path, index), body_active)?;
     }
+    self.local_heads.truncate(head_count);
     Ok(())
   }
+}
+
+/// Source-reference candidates outside known lexical bindings. Unknown macro
+/// arguments are retained conservatively; no user code is preprocessed here.
+pub(crate) fn source_reference_paths(code: &Cirru, name: &str, core_heads: &BTreeMap<String, String>) -> Vec<Vec<usize>> {
+  let mut plain = |_: &str| Ok(MacroHead::Plain);
+  let mut walk = ScopeWalk {
+    old_name: name,
+    new_name: name,
+    target: &[],
+    is_macro: &mut plain,
+    core_heads: Some(core_heads),
+    local_heads: vec![],
+    uses: vec![],
+    target_found: false,
+    blockers: vec![],
+  };
+  walk.walk(code, &[], true).expect("the plain macro classifier cannot fail");
+  walk.uses
 }
 
 /// Source paths of local references named `name` after preprocessing.
@@ -323,6 +398,8 @@ pub(super) fn plan_local_rename(
     new_name,
     target: at,
     is_macro,
+    core_heads: None,
+    local_heads: vec![],
     uses: vec![],
     target_found: false,
     blockers: vec![],
