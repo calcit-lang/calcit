@@ -74,6 +74,38 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |update-keeps-custom-struct-result-guard)
+            :code $ quote $ let
+                trace $ ref $ [] |start
+                Override $ deftrait Override $ .assoc
+                  :: 'Fn $ {}
+                    :args $ [] 'T 'Tag 'Number
+                    :return 'String
+                    :generics $ [] 'T
+                implementation $ defimpl CustomAssoc Override $ .assoc
+                  fn (_self _key _value)
+                    assert= ([] |start |callback) @trace
+                    reset! trace $ append @trace |method
+                    , |wrong
+                Item $ impl-traits
+                  defstruct Item $ :n 'Number
+                  , implementation
+                change $ fn (data)
+                  hint-fn $ {}
+                    :args $ [] 'Dynamic
+                    :return 'Dynamic
+                  update data :n $ fn (value)
+                    hint-fn $ {}
+                      :args $ [] 'Dynamic
+                      :return 'Number
+                    assert= ([] |start) @trace
+                    reset! trace $ append @trace |callback
+                    , 1
+              assert= |rejected $ try
+                change $ Item :n 0
+                fn (message) (assert= "|assoc on a struct expected a struct result" message) |rejected
+              assert= ([] |start |callback |method) @trace
+            :tags $ #{} :unit :update-method-contract
         'matching-body-contract $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn matching-body-contract (value)
             hint-fn $ {}

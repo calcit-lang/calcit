@@ -13190,30 +13190,33 @@
         'update $ %{} 'CodeEntry
           :doc "|Applies a function to an existing collection slot. Map/List and known Struct-field calls retain receiver-specific callback types; an open receiver requires a callback accepting Dynamic. List/Enum indices are checked as Number, and an existing Struct field key as Tag. Missing Map/List/Struct slots leave the collection unchanged."
           :code $ quote $ defn update (x k f)
-            if (map? x)
-              match (&map:get x k)
-                (:some value)
-                  assoc x k $ f value
-                (:none) x
-              if (list? x)
-                let
-                    index $ decode-map-as k 'Number
-                  if (&list:contains? x index)
-                    assoc x index $ f $ &list:nth x index
-                    , x
-                if (enum? x)
+            &let (open-receiver x)
+              if (map? x)
+                match (&map:get x k)
+                  (:some value)
+                    .assoc x k $ f value
+                  (:none) x
+                if (list? x)
                   let
                       index $ decode-map-as k 'Number
-                    assoc x index $ f $ &enum:nth x index
-                  if (struct? x)
+                    if (&list:contains? x index)
+                      .assoc x index $ f $ &list:nth x index
+                      , x
+                  if (enum? x)
                     let
-                        receiver x
-                      if (contains? receiver k)
-                        let
-                            field $ decode-map-as k 'Tag
-                          assoc receiver field $ f $ &struct:get receiver field
-                        , receiver
-                    raise $ &str:concat "|Cannot update key on item: " $ to-lispy-string x
+                        index $ decode-map-as k 'Number
+                      &enum:assoc x index $ f $ &enum:nth x index
+                    if (struct? x)
+                      let
+                          receiver x
+                        if (contains? receiver k)
+                          let
+                              field $ decode-map-as k 'Tag
+                            &let
+                              updated $ .assoc open-receiver field $ f (&struct:get receiver field)
+                              if (struct? updated) updated $ raise "|assoc on a struct expected a struct result"
+                          , receiver
+                      raise $ &str:concat "|Cannot update key on item: " $ to-lispy-string x
           :examples $ []
             quote $ assert=
               {} $ :count 2
