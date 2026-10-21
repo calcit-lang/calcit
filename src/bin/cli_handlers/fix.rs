@@ -1276,7 +1276,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
   }
   if let Some(rule @ (TAG_MATCH_RULE | REQUIRED_STRUCT_FIELD_RULE)) = options.rule.as_deref() {
     return Err(format!(
-      "Fix rule `{rule}` belongs to the published 0.14.x migration bridge and is not part of the 0.15 surface. Run it with Calcit 0.14.15 before upgrading, then retry the 0.15 check."
+      "Fix rule `{rule}` belongs to the published 0.14.x migration bridge and is retired from the current CLI. For a historical project that needs this bridge, run it with Calcit 0.14.15 before upgrading. For current source, follow the compiler diagnostic and use guarded query/tree/edit transactions; see docs/run/upgrade.md."
     ));
   }
   Ok(())

@@ -1808,7 +1808,7 @@ fn handle_check_md(file_path: &str, entry: &str, deps: &[String], quiet: bool, f
   let requires_calcit_context = blocks.iter().any(|(_, mode, _)| *mode != CirruCheckMode::Edn);
   if requires_calcit_context && !Path::new(entry).exists() {
     return Err(format!(
-      "Entry file '{entry}' not found. Use --entry to specify a valid entry .cirru file."
+      "Snapshot file '{entry}' not found. Use --snapshot <file> to select an existing .cirru evaluation context."
     ));
   }
 

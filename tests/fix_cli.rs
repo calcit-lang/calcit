@@ -8412,6 +8412,7 @@ fn retired_surface_rules_point_to_the_published_migration_bridge() {
   let directory = TestDirectory::create();
   let snapshot = directory.path().join("calcit.cirru");
   fs::copy("tests/fixtures/fix-command.cirru", &snapshot).expect("fixture should copy");
+  let before = fs::read(&snapshot).expect("fixture should read");
 
   for rule in ["tag-match-to-match-v1", "required-struct-field-v1"] {
     let output = run_fix(&snapshot, &["--rule", rule, "--format", "json"]);
@@ -8419,6 +8420,9 @@ fn retired_surface_rules_point_to_the_published_migration_bridge() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("Calcit 0.14.15"), "stderr: {stderr}");
     assert!(stderr.contains("before upgrading"), "stderr: {stderr}");
+    assert!(stderr.contains("docs/run/upgrade.md"), "stderr: {stderr}");
+    assert!(!stderr.contains("0.15"), "current surface must not be hardcoded to 0.15: {stderr}");
+    assert_eq!(fs::read(&snapshot).expect("fixture should remain readable"), before);
   }
 }
 

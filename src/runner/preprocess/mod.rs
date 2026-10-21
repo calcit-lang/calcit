@@ -2839,7 +2839,7 @@ fn try_expand_typed_optional_access_call(
       Err(CalcitErr::use_msg_stack_location_with_code(
         CalcitErrKind::Type,
         format!(
-          "`get` cannot use statically resolved Struct receiver `{}`; use `(:field value)` so the declared field is checked, or keep the receiver explicitly Dynamic for optional runtime lookup. For existing source, run Calcit 0.14.15 `calcit fix --rule required-struct-field-v1` before upgrading",
+          "`get` cannot use statically resolved Struct receiver `{}`; use `(:field value)` so the declared field is checked, or keep the receiver explicitly Dynamic for optional runtime lookup.",
           receiver_type.to_brief_string()
         ),
         "E_STRUCT_FIELD_OPTIONAL_LOOKUP",

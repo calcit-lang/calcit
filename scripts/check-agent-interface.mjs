@@ -1719,9 +1719,11 @@ for (const rule of ["tag-match-to-match-v1", "required-struct-field-v1"]) {
     { cwd: process.cwd(), encoding: "utf8", maxBuffer: 4 * 1024 * 1024 },
   );
   assert.ifError(retired.error);
-  assert.notEqual(retired.status, 0, `${rule} must stay outside the 0.15 fix surface`);
+  assert.notEqual(retired.status, 0, `${rule} must stay outside the current fix surface`);
   assert.match(retired.stderr, /Calcit 0\.14\.15/);
   assert.match(retired.stderr, /before upgrading/);
+  assert.match(retired.stderr, /docs\/run\/upgrade\.md/);
+  assert.doesNotMatch(retired.stderr, /0\.15/);
 }
 
 // Reading tasks answered through query views instead of the raw Snapshot text (#1564).
