@@ -5,6 +5,7 @@ import { copyFile, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { traitRejectionCases } from "./check-map-add-trait-boundary.mjs";
 
 const binary = process.env.CALCIT_STRICT_BIN ?? process.env.CALCIT_BIN ?? "./target/debug/calcit";
 
@@ -593,25 +594,32 @@ const compatibility = run(["calcit/type-fail/unsafe-coerce-unscoped-strict.cirru
 expectStatus(compatibility, 0, "compatibility escape hatch");
 
 // Compatibility preprocessing must not turn duplicate origins into runtime
-// precedence. Replay the definition-owned contracts without relaxing any
+// precedence. Replay the migrated contracts without relaxing any
 // ordinary entrypoint or the compatibility scanner above.
 const traitSnapshot = "calcit/test-traits.cirru";
-const traitTests = run([traitSnapshot, "--compat-types", "test",
-  "test-traits.main/test-explicit-trait-call", "--tag", "trait-runtime", "--require-match"]);
-expectStatus(traitTests, 0, "compatibility native duplicate-trait contracts");
-const definition = run([traitSnapshot, "query", "def", "test-traits.main/test-explicit-trait-call", "--format", "json"]);
-expectStatus(definition, 0, "read duplicate-trait contracts");
-const runtimeTests = JSON.parse(definition.stdout).data.tests.filter(test => test.tags.includes("trait-runtime"));
-assert.equal(runtimeTests.length, 6);
-const identityTests = JSON.parse(definition.stdout).data.tests.filter(test => test.tags.includes("trait-identity-runtime"));
-assert.equal(identityTests.length, 1);
-expectStatus(run([traitSnapshot, "--compat-types", "test", "test-traits.main/test-explicit-trait-call",
-  "--tag", "trait-identity-runtime", "--require-match"]), 0, "fresh trait identity rejects a stale implementation");
 const traitFixture = await mkdtemp(join(tmpdir(), "calcit-compat-trait-"));
 try {
   const snapshot = join(traitFixture, "calcit.cirru");
   await copyFile(traitSnapshot, snapshot);
   await symlink(resolve("node_modules"), join(traitFixture, "node_modules"), "dir");
+  // Restore only the original negatives in this isolated policy fixture;
+  // ordinary source remains completely replayable with strict checking.
+  for (const [name, code] of traitRejectionCases()) {
+    const tag = name === "fresh-origin-rejects-stale-impl" ? "trait-identity-runtime" : "trait-runtime";
+    expectStatus(run([snapshot, "edit", "add-test", "test-traits.main/test-explicit-trait-call", name,
+      "--tags", tag, "--input-format", "cirru", "--code", `quote $ ${code}`]), 0, `restore ${name} in the private policy fixture`);
+  }
+  const traitTests = run([snapshot, "--compat-types", "test",
+    "test-traits.main/test-explicit-trait-call", "--tag", "trait-runtime", "--require-match"]);
+  expectStatus(traitTests, 0, "compatibility native duplicate-trait contracts");
+  const definition = run([snapshot, "query", "def", "test-traits.main/test-explicit-trait-call", "--format", "json"]);
+  expectStatus(definition, 0, "read duplicate-trait contracts");
+  const runtimeTests = JSON.parse(definition.stdout).data.tests.filter(test => test.tags.includes("trait-runtime"));
+  assert.equal(runtimeTests.length, 6);
+  const identityTests = JSON.parse(definition.stdout).data.tests.filter(test => test.tags.includes("trait-identity-runtime"));
+  assert.equal(identityTests.length, 1);
+  expectStatus(run([snapshot, "--compat-types", "test", "test-traits.main/test-explicit-trait-call",
+    "--tag", "trait-identity-runtime", "--require-match"]), 0, "fresh trait identity rejects a stale implementation");
   const edit = run([snapshot, "edit", "def", "test-traits.main/test-explicit-trait-call", "--overwrite",
     "--input-format", "json-ast", "--code", JSON.stringify([
       "defn", "test-explicit-trait-call", [], ...runtimeTests.concat(identityTests).map(test => test.code), "1",
