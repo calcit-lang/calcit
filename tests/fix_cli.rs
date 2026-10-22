@@ -3499,7 +3499,7 @@ fn type_at_next_navigation_executes_at_root_and_nested_paths() {
     }
     let binary_directory = Path::new(env!("CARGO_BIN_EXE_calcit")).parent().unwrap();
     let navigation = Command::new("sh")
-      .args(["-c", &format!("{command} --json --raw --depth 0")])
+      .args(["-c", &format!("{command} --format json --raw --depth 0")])
       .current_dir(directory.path())
       .env(
         "PATH",
@@ -3508,27 +3508,9 @@ fn type_at_next_navigation_executes_at_root_and_nested_paths() {
       .output()
       .expect("execute the actual suggested command without splitting shell quoting");
     assert_success(&navigation, "execute query next command from another working directory");
-    let stdout = String::from_utf8(navigation.stdout).unwrap();
-    if report["data"]["tree"].is_array() {
-      let json = stdout
-        .split("```json\n")
-        .nth(1)
-        .expect("tree JSON fence")
-        .split("```")
-        .next()
-        .unwrap();
-      let tree: serde_json::Value = serde_json::from_str(json.trim()).expect("tree AST");
-      assert_eq!(tree, report["data"]["tree"]);
-    } else {
-      let leaf = stdout
-        .split("```cirru\n")
-        .nth(1)
-        .expect("leaf Cirru fence")
-        .split("```")
-        .next()
-        .unwrap();
-      assert_eq!(leaf.trim(), report["data"]["tree"].as_str().unwrap());
-    }
+    let shown: serde_json::Value = serde_json::from_slice(&navigation.stdout).expect("tree show should print one JSON document");
+    assert_eq!(shown["command"], "tree.show");
+    assert_eq!(shown["tree"], report["data"]["tree"]);
     assert_eq!(fs::read(&snapshot).unwrap(), original);
     let edn = run_calcit(
       &snapshot,

@@ -3617,8 +3617,7 @@ mod tests {
 
   #[test]
   fn transaction_cirru_round_trips_quoted_empty_list() {
-    let cirru =
-      "[]\n  []\n    , |tree\n    , |insert\n    , |app.main/main!\n    , |--at\n    , |after\n    , |--path\n    , |@1\n    , |--code\n    quote ()";
+    let cirru = "[]\n  []\n    , |tree\n    , |insert\n    , |app.main/main!\n    , |--at\n    , |after\n    , |--path\n    , |@1\n    , |--code\n    quote ()";
     let operations = parse_transaction_operations(cirru).expect("Cirru transaction with an empty quoted list should parse");
     let code = operations[0].get(8).expect("formatted --code argument should exist");
 
