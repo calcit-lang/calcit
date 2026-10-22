@@ -864,6 +864,68 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'renamed-captured-option-payload $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn renamed-captured-option-payload (value)
+            hint-fn $ {}
+              :args $ [] 'T
+              :generics $ [] 'T
+            let
+                wrap-value $ fn (other)
+                  hint-fn $ {}
+                    :args $ [] 'T
+                    :return $ :: 'Option 'T
+                  Option :some other
+              wrap-value value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'C
+            :generics $ [] 'C
+            :return $ :: 'Option 'C
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-number)
+              :code $ quote $ assert= (Option :some 17) (renamed-captured-option-payload 17)
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-string)
+              :code $ quote $ assert= (Option :some |Ada) (renamed-captured-option-payload |Ada)
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-list-payload)
+              :code $ quote $ assert=
+                Option :some $ [] 1 2
+                renamed-captured-option-payload $ [] 1 2
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-nested-absence)
+              :code $ quote $ assert=
+                Option :some $ Option :none
+                renamed-captured-option-payload $ Option :none
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+        'renamed-option-payload $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn renamed-option-payload (value)
+            hint-fn $ {}
+              :args $ [] 'T
+              :generics $ [] 'T
+            Option :some value
+          :examples $ []
+          :schema $ :: 'Fn $ {}
+            :args $ [] 'C
+            :generics $ [] 'C
+            :return $ :: 'Option 'C
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-number)
+              :code $ quote $ assert= (Option :some 17) (renamed-option-payload 17)
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-string)
+              :code $ quote $ assert= (Option :some |Ada) (renamed-option-payload |Ada)
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-list-payload)
+              :code $ quote $ assert=
+                Option :some $ [] 1 2
+                renamed-option-payload $ [] 1 2
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-nested-absence)
+              :code $ quote $ assert=
+                Option :some $ Option :none
+                renamed-option-payload $ Option :none
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
         'same-nominal-absence-fields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn same-nominal-absence-fields (fields)
             let

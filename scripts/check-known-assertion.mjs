@@ -202,7 +202,11 @@ try {
       // rejection harness to verify all compiler entrances and unchanged source.
       const binderSnapshot = join(project, "lexical-binder.cirru");
       const runBinder = (...args) => execFileSync(binary, [binderSnapshot, ...args], options);
-      for (const [inner, bodyHint, nestedCapture] of [["T", false], ["U", false], ["T", true], ["U", true], ["T", false, true], ["U", false, true]]) {
+      for (const [inner, bodyHint, nestedCapture, codeEntryGeneric] of [
+        ["T", false], ["U", false], ["T", true], ["U", true], ["T", false, true], ["U", false, true],
+        // Renaming the outer contract does not turn an inner owner into a capture.
+        ["T", true, false, "C"], ["U", true, false, "C"], ["T", true, true, "C"], ["U", true, true, "C"],
+      ]) {
         await copyFile("calcit/add.cirru", binderSnapshot);
         runBinder("query", "config", "--format", "edn");
         runBinder("query", "def", "app.main/main!", "--format", "edn");
@@ -219,7 +223,11 @@ try {
             "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"],
           ["config", "set", "reload-fn", "app.main/main!"],
         ];
-        if (!bodyHint) operations.push(["edit", "schema", "app.main/producer", "--input-format", "cirru", "--code", `quote $ :: 'Fn $ ${contract}`]);
+        if (!bodyHint || codeEntryGeneric) {
+          const owner = codeEntryGeneric ?? "T";
+          operations.push(["edit", "schema", "app.main/producer", "--input-format", "cirru", "--code",
+            `quote $ :: 'Fn $ {} (:args $ [] '${owner}) (:return 'Number) (:generics $ [] '${owner})`]);
+        }
         const code = JSON.stringify(operations);
         const preview = JSON.parse(runBinder("edit", "transaction", "--code", code, "--dry-run", "--format", "json"));
         runBinder("edit", "transaction", "--code", code, "--expect-revision", preview.scoped_revision, "--format", "edn");
@@ -229,7 +237,7 @@ try {
         const sourcePath = returnLeaves[0].path;
         const sourceCoord = sourcePath.slice("code@".length).split(".").map(Number);
         const original = await readFile(binderSnapshot);
-        const generated = join(project, `lexical-binder-${inner}-${bodyHint}-${!!nestedCapture}-js`);
+        const generated = join(project, `lexical-binder-${inner}-${bodyHint}-${!!nestedCapture}-${codeEntryGeneric ?? "body"}-js`);
         for (const args of [
           ["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "producer", "--format", "json"],
           ["fix", "--workflow", "strict", "--verify", "--format", "json"],

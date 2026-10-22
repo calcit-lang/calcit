@@ -3727,10 +3727,14 @@ fn infer_enum_applied_args<'a>(
   if payload_args.len() != variant.arity() {
     return None;
   }
+  // Payload parameters belong to the enum declaration. A caller's spelling
+  // aliases may resolve captured names, but cannot capture these quantifiers.
+  let mut payload_scope = scope_types.clone();
+  payload_scope.bind_generics(enum_proto.generics());
   let expected_types = variant
     .payload_types()
     .iter()
-    .map(|expected| resolve_local_type_refs_for_body(resolve_enum_payload_type(enum_proto, expected.clone()), scope_types))
+    .map(|expected| resolve_local_type_refs_for_body(resolve_enum_payload_type(enum_proto, expected.clone()), &payload_scope))
     .collect::<Vec<_>>();
   let actual_types = payload_args
     .into_iter()
@@ -5757,8 +5761,46 @@ mod tests {
 
     assert_eq!(
       infer_enum_applied_args(&enum_def, Some(&Calcit::Tag(EdnTag::from("box"))), payloads.iter(), &scope_types,),
-      Some(vec![number]),
+      Some(vec![number.clone()]),
       "a local Box<T> payload should preserve T for the enclosing enum"
+    );
+
+    let variable = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let caller = CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![variable.clone()],
+      return_type: variable,
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+      runtime_arity: None,
+    }
+    .with_lexical_binders();
+    scope_types.bind_generics(&caller.generics);
+    assert_eq!(
+      infer_enum_applied_args(&enum_def, Some(&Calcit::Tag(EdnTag::from("box"))), payloads.iter(), &scope_types),
+      Some(vec![number]),
+      "a same-spelled caller binder must not capture the enum's own parameter"
+    );
+    let Calcit::Local(boxed) = &payloads[0] else { unreachable!() };
+    let CalcitTypeAnnotation::Struct(box_def, _) = boxed.type_info.as_ref() else {
+      unreachable!()
+    };
+    let mut generic_box = boxed.clone();
+    generic_box.type_info = Arc::new(CalcitTypeAnnotation::Struct(
+      box_def.clone(),
+      Arc::new(vec![caller.return_type.clone()]),
+    ));
+    assert_eq!(
+      infer_enum_applied_args(
+        &enum_def,
+        Some(&Calcit::Tag(EdnTag::from("box"))),
+        [Calcit::Local(generic_box)].iter(),
+        &scope_types
+      ),
+      Some(vec![caller.return_type]),
+      "constructor instantiation transports the caller's rigid identity without rebinding it"
     );
   }
 
