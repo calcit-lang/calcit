@@ -60,16 +60,22 @@ let typeFormName = (form: CalcitValue): string | null => {
 // Keep the original field form for diagnostics and runtime validation.
 const typeNameAliases = new Map<string, string>();
 for (const name of ["Dynamic", "Nil", "Unit", "Bool", "Number", "String", "Symbol", "Tag", "List", "Map", "Set", "Ref",
-  "Fn", "Buffer", "CirruQuote", "JsObject", "Struct", "StructDef", "Enum", "EnumDef", "Trait", "Impl",
+  "Fn", "Buffer", "Struct", "Enum", "Trait", "Impl",
   "Int8", "UInt8", "Int16", "UInt16", "Int32", "UInt32", "Int64", "UInt64", "Float32", "Float64"]) {
   typeNameAliases.set(name, name);
   typeNameAliases.set(name.toLowerCase(), name);
 }
+for (const name of ["CirruQuote", "JsObject", "StructDef", "EnumDef"]) typeNameAliases.set(name, name);
 for (const [alias, name] of [["any", "Dynamic"], ["Macro", "Fn"], ["macro", "Fn"], ["record", "Struct"], ["Record", "Struct"],
   ["tuple", "Enum"], ["Tuple", "Enum"], ["cirru-quote", "CirruQuote"], ["js-object", "JsObject"],
   ["struct-def", "StructDef"], ["enum-def", "EnumDef"]]) typeNameAliases.set(alias, name);
 
 const containerTypeArity = new Map([["List", 1], ["Map", 2], ["Set", 1], ["Ref", 1]]);
+// These constructors require a payload; their bare names are not scalar aliases.
+const payloadTypeAliases = new Map([
+  ["Optional", "Optional"], ["optional", "Optional"], ["JsNullish", "JsNullish"], ["js-nullish", "JsNullish"],
+  ["Variadic", "Variadic"], ["variadic", "Variadic"], ["&", "Variadic"],
+]);
 const containerTypeIdentity = (name: string, args: CalcitValue[], generics: readonly string[]): CalcitValue => {
   const arity = containerTypeArity.get(name)!;
   return new CalcitSliceList([new CalcitSymbol("::"), new CalcitSymbol(name),
@@ -160,6 +166,10 @@ export const typeFormIdentity = (form: CalcitValue, generics: readonly string[] 
     if (typeFormName(items[0]) === "::") {
       const rawName = typeFormName(items[1]);
       const name = typeNameAliases.get(rawName) ?? rawName;
+      const payloadName = payloadTypeAliases.get(rawName);
+      if (payloadName != null && items.length === 3) {
+        return new CalcitSliceList([new CalcitSymbol("::"), new CalcitSymbol(payloadName), typeFormIdentity(items[2], generics)]);
+      }
       if (items.length === 2 && typeNameAliases.has(rawName)) return typeFormIdentity(items[1], generics);
       if (containerTypeArity.has(name) && items.length - 2 <= containerTypeArity.get(name)) {
         return containerTypeIdentity(name, items.slice(2), generics);

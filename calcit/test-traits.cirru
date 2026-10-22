@@ -1223,6 +1223,30 @@
                 assert= 0 $ &compare left applied
                 assert= 1 $ count $ #{} left right applied
               :tags $ #{} :struct-definition-equality :unit
+            %{} 'TestEntry (:name |preserves-host-nullable-type-aliases)
+              :code $ quote $ let
+                  left $ defstruct ComparedRecord $ :value (:: 'JsNullish 'Number)
+                  right $ defstruct ComparedRecord $ :value (:: :js-nullish :number)
+                assert= true $ = left right
+                assert= 0 $ &compare left right
+                assert= 1 $ count $ #{} left right
+              :tags $ #{} :struct-definition-equality :unit
+            %{} 'TestEntry (:name |preserves-variadic-type-aliases)
+              :code $ quote $ let
+                  left $ defstruct ComparedRecord $ :value (:: 'Variadic 'Number)
+                  right $ defstruct ComparedRecord $ :value (:: :variadic :number)
+                assert= true $ = left right
+                assert= 0 $ &compare left right
+                assert= 1 $ count $ #{} left right
+              :tags $ #{} :struct-definition-equality :unit
+            %{} 'TestEntry (:name |does-not-invent-host-type-aliases)
+              :code $ quote $ let
+                  named $ test-traits.struct-left/make-host-holder
+                  host $ defstruct ComparedRecord $ :value 'JsObject
+                assert= false $ = named host
+                assert= false $ = 0 $ &compare named host
+                assert= 2 $ count $ #{} named host
+              :tags $ #{} :struct-definition-equality :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-traits.struct-identity
     'test-traits.struct-left $ %{} 'FileEntry
@@ -1236,6 +1260,10 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'StructDef)
             :args $ []
+        'jsobject $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct jsobject (:value 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
         'make-generic-holder $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-generic-holder ()
             defstruct Holder ([] 'Point) (:point 'Point)
@@ -1245,6 +1273,12 @@
         'make-holder $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-holder ()
             defstruct Holder $ :point 'Point
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'StructDef)
+            :args $ []
+        'make-host-holder $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn make-host-holder ()
+            defstruct ComparedRecord $ :value 'jsobject
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'StructDef)
             :args $ []
