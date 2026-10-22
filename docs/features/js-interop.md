@@ -391,7 +391,26 @@ defn read-title (element)
 `js-cast` 按 `:names` 与默认名称映射检查字段存在、方法为函数；输入只求值一次，成功返回同一个宿主对象。
 检查可见的原型成员，不写入属性或调用方法，冻结对象也可使用；字段 presence 不读取 getter，方法 getter
 或 Proxy trap 抛错会成为带原异常 `cause` 的 `TypeError`。失败信息包含 trait 来源与成员名称。
-Calcit 容器、名义值与 Buffer 不能冒充宿主对象；null/undefined 与原始值也会失败。
+宿主值也可以是 callable：Axios、Day.js 的默认导出，Luxon `DateTime` 这类 class，以及 Chalk 一类带成员的函数，
+只要带有 trait 声明的字段与方法，就能直接 `js-cast`，返回同一个函数对象；之后的方法调用以它为 receiver，
+class 静态方法中的 `this` 保持不变，无需再写委托对象或 `unsafe-coerce`。成员可以是函数自身属性、class
+静态成员（含继承的静态成员）或其原型链上的成员。
+
+```cirru.no-check
+defn checked-client (axios)
+  js-cast axios 'HttpClientHost
+
+defn post-json (axios url body)
+  let
+      client $ checked-client axios
+    client .post url body
+```
+
+Calcit 容器、名义值与 Buffer 不能冒充宿主对象；null/undefined 与原始值也会失败。Calcit 自身的函数在 JS 中
+也是普通函数，因此 callable 至少要有一个声明成员来自函数本身或 class/原型，而不是每个函数都有的
+`name`、`length`、`prototype` 或 `Function.prototype` 上的 `call`、`bind` 等；只具备这些成员（或 trait 没有成员）
+的函数会以 `expected a JavaScript host object` 失败。缺少某个声明成员的 callable 与普通对象报告相同的
+`missing field` / `method ... is not callable`。
 
 成员形状不是深层数据解码：字段的值类型、方法参数/返回类型仍是外部声明的信任合同，检查不会执行方法来
 猜测签名，也不证明 Promise payload 或后来改变的属性。来自不可信数据的内容仍需 decoder；不要据此批量

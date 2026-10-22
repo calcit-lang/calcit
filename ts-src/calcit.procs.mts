@@ -133,6 +133,18 @@ export let type_of = (x: any): CalcitTag => {
 // The intrinsic getter reads typed-array slots across realms, ignoring a forged Symbol.toStringTag.
 const typedArrayTag = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), Symbol.toStringTag)!.get!;
 
+// Members every function has, so they never show that a callable is a host rather than a Calcit function.
+const functionIntrinsicMembers = new Set(["name", "length", "prototype", "arguments", "caller"]);
+
+/** Find the member on the callable itself or a prototype other than Function.prototype/Object.prototype, without reading it. */
+const hasHostOwnedMember = (value: Function, member: string): boolean => {
+  if (functionIntrinsicMembers.has(member)) return false;
+  for (let holder: object | null = value; holder != null; holder = Reflect.getPrototypeOf(holder)) {
+    if (Object.prototype.hasOwnProperty.call(holder, member)) return holder !== Function.prototype && holder !== Object.prototype;
+  }
+  return false;
+};
+
 /** Check host member shape without invoking methods or claiming their signature is verified. */
 export const js_cast = (value: unknown, trait: string, fields: readonly string[], methods: readonly string[]): object => {
   const fail = (detail: string, cause?: unknown): never => {
@@ -144,13 +156,19 @@ export const js_cast = (value: unknown, trait: string, fields: readonly string[]
   // Keep the runtime's own value classification authoritative instead of another registry.
   let host: boolean;
   try {
-    host = value !== null && typeof value === "object"
-      && !(ArrayBuffer.isView(value) && typedArrayTag.call(value) === "Uint8Array")
-      && !(value instanceof CalcitRecur) && type_of(value).value === "js-object";
+    if (typeof value === "function") {
+      // Calcit compiles its own functions to plain JS functions, so a callable only counts as a host
+      // when a declared member exists beyond what every function carries (an SDK export or class).
+      host = type_of(value).value === "fn" && [...fields, ...methods].some(member => hasHostOwnedMember(value, member));
+    } else {
+      host = value !== null && typeof value === "object"
+        && !(ArrayBuffer.isView(value) && typedArrayTag.call(value) === "Uint8Array")
+        && !(value instanceof CalcitRecur) && type_of(value).value === "js-object";
+    }
   } catch (cause) {
     return fail("host classification failed", cause);
   }
-  if (!host || value === null || typeof value !== "object") return fail("expected a JavaScript host object");
+  if (!host || value === null || (typeof value !== "object" && typeof value !== "function")) return fail("expected a JavaScript host object");
   for (const field of fields) {
     let present: boolean;
     try {
