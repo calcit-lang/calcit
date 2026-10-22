@@ -3016,9 +3016,20 @@ impl CalcitTypeAnnotation {
     source: &Calcit,
     declared: &CalcitFnTypeAnnotation,
     hinted: &CalcitFnTypeAnnotation,
-  ) -> CalcitFnTypeAnnotation {
+  ) -> (CalcitFnTypeAnnotation, Option<TypeBindings>) {
     let present = |field| Self::surrounding_fn_hint_declares(source, field);
-    let mut merged = hinted.clone();
+    // Both annotations describe one function, not two lexical scopes. Prove
+    // the correspondence from explicitly overlapping types before inheriting
+    // any fields; names or shared trait capabilities alone are not evidence.
+    let source_hint = Self::source_surrounding_fn_signature(source, &declared.generics);
+    let renaming = Self::surrounding_fn_binder_correspondence(source, declared, hinted);
+    let aliases = source_hint
+      .as_ref()
+      .and_then(|original| Self::surrounding_fn_binder_correspondence(source, declared, original));
+    let mut merged = match renaming.as_ref() {
+      Some(renaming) => hinted.with_renamed_binders(renaming),
+      None => hinted.clone(),
+    };
     if !present("args") {
       merged.arg_types = declared.arg_types.clone();
     }
@@ -3041,7 +3052,64 @@ impl CalcitTypeAnnotation {
       merged.runtime_arity = declared.runtime_arity;
     }
     merged.features = Arc::new(merged.features.union(declared.features.as_ref()).cloned().collect());
-    merged
+    (merged, aliases)
+  }
+
+  fn source_surrounding_fn_signature(source: &Calcit, generics: &[Arc<str>]) -> Option<Arc<CalcitFnTypeAnnotation>> {
+    let items = Self::get_surrounding_hint_fn_items(source)?;
+    let annotation = Self::parse_fn_annotation_from_schema_form(items.get(1)?, generics, true)?;
+    match annotation.as_ref() {
+      Self::Fn(signature) => Some(signature.clone()),
+      _ => None,
+    }
+  }
+
+  /// Rebuild source-spelling aliases from the existing checked hint on replay.
+  pub(crate) fn checked_hint_binder_aliases(source: &Calcit, generics: &[Arc<str>]) -> Option<TypeBindings> {
+    let checked = Self::checked_hint_signature(source)?;
+    let original = Self::source_surrounding_fn_signature(source, generics)?;
+    Self::surrounding_fn_binder_correspondence(source, &checked, &original)
+  }
+
+  fn surrounding_fn_binder_correspondence(
+    source: &Calcit,
+    declared: &CalcitFnTypeAnnotation,
+    hinted: &CalcitFnTypeAnnotation,
+  ) -> Option<TypeBindings> {
+    if hinted.generics.is_empty() || hinted.generics.len() != declared.generics.len() {
+      return None;
+    }
+    let mut inputs = vec![];
+    if Self::surrounding_fn_hint_declares(source, "args") {
+      inputs.extend(declared.arg_types.iter().zip(&hinted.arg_types));
+    }
+    if Self::surrounding_fn_hint_declares(source, "return") {
+      inputs.push((&declared.return_type, &hinted.return_type));
+    }
+    if Self::surrounding_fn_hint_declares(source, "rest")
+      && let (Some(actual), Some(expected)) = (&declared.rest_type, &hinted.rest_type)
+    {
+      inputs.push((actual, expected));
+    }
+    let expected = inputs.iter().map(|(_, expected)| (*expected).clone()).collect::<Vec<_>>();
+    let actual = inputs.iter().map(|(actual, _)| (*actual).clone()).collect::<Vec<_>>();
+    let mut proof = CallTypeProof::new(&hinted.generics, &expected, &actual);
+    for (actual, expected) in inputs {
+      if !proof.prove(actual, expected).is_proven() {
+        return None;
+      }
+    }
+    let mut renaming = TypeBindings::new();
+    let mut targets = HashSet::new();
+    for name in hinted.generics.iter() {
+      let resolved = proof.result(&Self::TypeVar(name.clone()))?;
+      let Self::TypeVar(target) = resolved.as_ref() else { return None };
+      if !declared.generics.contains(target) || !targets.insert(target.clone()) {
+        return None;
+      }
+      renaming.insert(name.clone(), resolved);
+    }
+    Some(renaming)
   }
 
   /// Extract a complete function annotation from the schema map carried by `hint-fn`.
@@ -4240,7 +4308,7 @@ impl CalcitTypeAnnotation {
   }
 
   /// Rename free variables without capturing a nested function's quantifiers.
-  fn substitute_free_type_vars(&self, bindings: &TypeBindings) -> Arc<CalcitTypeAnnotation> {
+  pub(crate) fn substitute_free_type_vars(&self, bindings: &TypeBindings) -> Arc<CalcitTypeAnnotation> {
     self.substitute_scoped_type_vars(bindings, true)
   }
 
@@ -10255,6 +10323,11 @@ impl CalcitFnTypeAnnotation {
         )
       })
       .collect();
+    self.with_renamed_binders(&renaming)
+  }
+
+  /// Rename owned quantifiers while retaining independently quantified nested types.
+  fn with_renamed_binders(&self, renaming: &TypeBindings) -> Self {
     let renamed = |name: &Arc<str>| match renaming.get(name).map(Arc::as_ref) {
       Some(CalcitTypeAnnotation::TypeVar(fresh)) => fresh.clone(),
       _ => name.clone(),
@@ -10272,9 +10345,9 @@ impl CalcitFnTypeAnnotation {
         })
         .collect(),
     );
-    signature.arg_types = self.arg_types.iter().map(|ty| ty.substitute_free_type_vars(&renaming)).collect();
-    signature.return_type = self.return_type.substitute_free_type_vars(&renaming);
-    signature.rest_type = self.rest_type.as_ref().map(|ty| ty.substitute_free_type_vars(&renaming));
+    signature.arg_types = self.arg_types.iter().map(|ty| ty.substitute_free_type_vars(renaming)).collect();
+    signature.return_type = self.return_type.substitute_free_type_vars(renaming);
+    signature.rest_type = self.rest_type.as_ref().map(|ty| ty.substitute_free_type_vars(renaming));
     signature
   }
 

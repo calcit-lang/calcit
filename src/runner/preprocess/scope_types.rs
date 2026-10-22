@@ -73,9 +73,46 @@ impl ScopeTypes {
   }
 
   pub(super) fn generic_names(&self) -> Vec<Arc<str>> {
-    let mut names = self.generics.values().cloned().collect::<Vec<_>>();
+    let mut aliases = vec![];
+    let mut names = vec![];
+    for (source, name) in &self.generics {
+      if source.as_ref() == crate::calcit::type_annotation::source_type_variable(name) {
+        names.push(name.clone());
+      } else {
+        aliases.push(source.clone());
+      }
+    }
+    aliases.sort();
     names.sort();
-    names
+    names.dedup();
+    aliases.extend(names);
+    aliases
+  }
+
+  /// Two annotations of one function may spell an already-proven binder differently.
+  pub(super) fn bind_generic_aliases(&mut self, aliases: &HashMap<Arc<str>, Annotation>) {
+    for (source, annotation) in aliases {
+      if let CalcitTypeAnnotation::TypeVar(name) = annotation.as_ref() {
+        self.generics.insert(
+          Arc::from(crate::calcit::type_annotation::source_type_variable(source)),
+          name.clone(),
+        );
+      }
+    }
+  }
+
+  pub(super) fn resolve_generic_aliases(&self, annotation: Annotation) -> Annotation {
+    let aliases = self
+      .generics
+      .iter()
+      .filter(|(source, name)| source.as_ref() != name.as_ref())
+      .map(|(source, name)| (source.clone(), Arc::new(CalcitTypeAnnotation::TypeVar(name.clone()))))
+      .collect::<HashMap<_, _>>();
+    if aliases.is_empty() {
+      annotation
+    } else {
+      annotation.substitute_free_type_vars(&aliases)
+    }
   }
 
   pub(super) fn clear_generics(&mut self) {

@@ -6343,15 +6343,15 @@
                       &= (quote requires) head
                       &= (quote 'requires) head
               &let
-                parents $ map (filter entries requires-entry?)
+                parents $ &list:map (&list:filter entries requires-entry?)
                   fn (entry)
                     if
-                      &= 2 $ count entry
+                      &= 2 $ &list:count entry
                       &list:nth entry 1
                       raise $ str-spaced "|deftrait expects (requires Trait) with one trait, got:" $ format-to-lisp entry
                 &let
-                  normalized $ map
-                    filter entries $ fn (entry)
+                  normalized $ &list:map
+                    &list:filter entries $ fn (entry)
                       not $ requires-entry? entry
                     fn (entry)
                       &let
@@ -6363,7 +6363,7 @@
                           , entry
                         do
                           if
-                            &= 2 $ count items
+                            &= 2 $ &list:count items
                             , &unit $ raise $ str-spaced "|deftrait expects each method as (method type), got:" (format-to-lisp entry)
                           let
                               m0 $ &list:nth items 0
@@ -6372,7 +6372,7 @@
                                 &= :method $ type-of m0
                                 let
                                     s $ format-to-lisp m0
-                                  turn-tag $ &str:slice s 1 $ count s
+                                  turn-tag $ &str:slice s 1 $ &str:count s
                                 raise $ str-spaced "|deftrait expects method key as :tag or .method, got:" m0
                               t1 $ internal/normalize-trait-type t0
                             quasiquote $ [] ~k0 $ quote ~t1

@@ -2076,6 +2076,7 @@ where
 /// those definitions, so retaining the symbolic reference would make otherwise
 /// precise function parameters fall back to `Dynamic` inside the body.
 fn resolve_local_type_refs_for_body(annotation: Arc<CalcitTypeAnnotation>, scope_types: &ScopeTypes) -> Arc<CalcitTypeAnnotation> {
+  let annotation = scope_types.resolve_generic_aliases(annotation);
   map_type_references(annotation, &|name, resolved_args| {
     let lookup_name = name.trim_start_matches('\'').trim_start_matches(':');
     // A qualified declaration is not an alias for a same-named local type.
@@ -12647,7 +12648,15 @@ pub fn preprocess_defn(
       // schema; nested named callbacks use their local expected function type.
       let source_top_level_definition = source_owned;
       let def_schema = if source_top_level_definition {
-        program::lookup_def_schema(ctx.file_ns, def_name.as_ref())
+        let source = program::lookup_def_schema(ctx.file_ns, def_name.as_ref());
+        match source.as_ref() {
+          // The source contract stays canonical data. Its owned quantifiers
+          // acquire rigid identities only in this definition's lexical body.
+          CalcitTypeAnnotation::Fn(signature) if !signature.generics.is_empty() => {
+            Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature.with_lexical_binders())))
+          }
+          _ => source,
+        }
       } else {
         calcit::DYNAMIC_TYPE.clone()
       };
@@ -12680,6 +12689,7 @@ pub fn preprocess_defn(
       let lexical_generics = body_types.generic_names();
       let hint_signature = |form: &Calcit| {
         let annotation = CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form_in_scope(form, &lexical_generics)?;
+        let annotation = resolve_local_type_refs_for_body(annotation, &body_types);
         match annotation.as_ref() {
           CalcitTypeAnnotation::Fn(signature) => Some((
             form.clone(),
@@ -12855,13 +12865,13 @@ pub fn preprocess_defn(
       let has_body_fn_hint = body_fn_hint.is_some();
       // Source-written inline defn and macro-expanded fn consume the same
       // parameter context. Neither owns the callee's temporary output variable.
-      let infer_contextual_callback =
-        contextual_generic_typing_enabled() && !source_top_level_definition && !has_body_fn_hint && expected_fn_schema.is_some();
+      let infer_contextual_callback = !source_top_level_definition && !has_body_fn_hint && expected_fn_schema.is_some();
       let mut effective_fn_schema: Option<Arc<CalcitFnTypeAnnotation>> = body_fn_hint.or_else(|| match def_schema.as_ref() {
         CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.clone()),
         CalcitTypeAnnotation::Dynamic => expected_fn_schema,
         _ => None,
       });
+      let mut function_generic_aliases = None;
       if source_owned
         && let CalcitTypeAnnotation::Fn(declared) = def_schema.as_ref()
         && let Some(effective) = effective_fn_schema.as_ref()
@@ -12869,9 +12879,9 @@ pub fn preprocess_defn(
         // Both annotations describe the same function. Missing body fields
         // inherit declarations; written assumptions must satisfy that public
         // callable contract before they authorize checking the body.
-        let merged = match body_fn_hint_source.as_ref() {
+        let (merged, aliases) = match body_fn_hint_source.as_ref() {
           Some(source) => CalcitTypeAnnotation::overlay_surrounding_fn_hint(source, declared, effective),
-          None => effective.as_ref().clone(),
+          None => (effective.as_ref().clone(), None),
         };
         if body_fn_hint_source.is_some() {
           let mut declared_scope = body_types.clone();
@@ -12898,6 +12908,7 @@ pub fn preprocess_defn(
             ));
           }
         }
+        function_generic_aliases = aliases;
         effective_fn_schema = Some(Arc::new(merged));
       }
       if args.iter().skip(2).any(CalcitTypeAnnotation::hint_form_marks_async)
@@ -12938,6 +12949,9 @@ pub fn preprocess_defn(
           }
         }
         body_types.bind_function_generics(fn_annot, ctx.file_ns);
+        if let Some(aliases) = function_generic_aliases.as_ref() {
+          body_types.bind_generic_aliases(aliases);
+        }
         let parameter_types = fn_annot
           .arg_types
           .iter()
@@ -13733,6 +13747,7 @@ pub fn preprocess_hint_fn(
       .get(args.len() - 1)
       .and_then(|schema| source_location_in_namespace(schema, ctx.file_ns)),
   );
+  let type_entry = resolve_local_type_refs_for_body(type_entry, ctx.scope_types);
   if args.len() == 2 {
     let target_raw = args.first().expect("two-argument hint has a target");
     let target_form = preprocess_expr(
