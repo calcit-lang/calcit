@@ -4970,9 +4970,15 @@ fn preprocess_list_call(
                 }),
             );
             let result = if has_callback_contract {
+              let callee_generics = callable_contract
+                .as_ref()
+                .map(|signature| signature.generics.as_slice())
+                .unwrap_or(&[]);
               preprocess_argument_with_context(
                 a,
-                expected_type.as_ref().map(|annotation| (annotation, member_inputs, &[][..])),
+                expected_type
+                  .as_ref()
+                  .map(|annotation| (annotation, member_inputs, callee_generics)),
                 scope_defs,
                 scope_types,
                 file_ns,

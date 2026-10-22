@@ -857,6 +857,26 @@ fn contextual_callback_without_input_keeps_output_slot_open() {
 }
 
 #[test]
+fn contextual_callback_indirect_callable_keeps_output_slot_open() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_snippet_entries(
+      "let\n    invoke $ fn (callback)\n      hint-fn $ {}\n        :generics $ [] 'T\n        :args $ [] (:: 'Fn $ {} (:return 'T))\n        :return 'T\n      callback\n  invoke $ fn () 1",
+    );
+    let warnings = RefCell::new(vec![]);
+    let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+    assert!(
+      result.is_ok(),
+      "an indirect generic callback output slot must remain open: {result:?}"
+    );
+    assert!(
+      warnings.borrow().is_empty(),
+      "an indirect unbound output slot must not report a false return mismatch"
+    );
+  });
+}
+
+#[test]
 fn contextual_callback_does_not_erase_captured_lexical_output_binder() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
