@@ -966,7 +966,10 @@ pub(crate) enum TypeBoundaryReason {
   TagCallable,
   UnresolvedTypeSlot,
   UnboundTypeVariable,
-  LegacyNullish,
+  /// A nullable value flows into a position that does not accept nil, either a
+  /// plain type or a nullable of a different origin (Calcit vs JS host). The
+  /// proof needs a checked nil elimination at the boundary.
+  NullableElimination,
   ErasedTypeArguments,
   RecursiveTypeVariable,
   RecursiveTypeAlias,
@@ -1253,7 +1256,7 @@ fn bounded_plain_type_relation<'a>(
       }
       (Type::Nullable(inner, _), plain) if !matches!(plain, Type::Nullable(_, _)) => {
         if matches!(mode, PlainRelationMode::Proof) {
-          result = result.and(NeedsBoundary(Boundary::LegacyNullish));
+          result = result.and(NeedsBoundary(Boundary::NullableElimination));
           worklist.push((inner.as_ref(), plain, depth + 1));
         } else {
           return Ok(Some((Mismatch, stats)));
@@ -5412,10 +5415,10 @@ impl CalcitTypeAnnotation {
       }
       (Self::Nullable(actual, _), expected) if !matches!(expected, Self::Nullable(_, _)) => actual
         .prove_with_staged_bindings(expected, bindings)
-        .and(NeedsBoundary(Boundary::LegacyNullish)),
+        .and(NeedsBoundary(Boundary::NullableElimination)),
       (_, Self::Nullable(_, _)) | (Self::Nullable(_, _), _) => {
         if self.compatible_with_bindings(expected, &mut bindings.clone()) {
-          NeedsBoundary(Boundary::LegacyNullish)
+          NeedsBoundary(Boundary::NullableElimination)
         } else {
           Mismatch
         }
