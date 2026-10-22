@@ -10604,6 +10604,7 @@ fn checked_core_method_contract(receiver: &CalcitTypeAnnotation, namespace: &str
   types.push(contract.return_type.clone());
   let generics = crate::calcit::type_annotation::free_type_variable_names(&types)
     .iter()
+    .map(|name| crate::calcit::type_annotation::source_type_variable(name))
     .map(ToString::to_string)
     .collect();
   Some(StaticMethodContract {
@@ -10838,6 +10839,7 @@ fn static_method_contract_with_impls(
       .generics
       .iter()
       .filter(|name| !bindings.contains_key(*name))
+      .map(|name| crate::calcit::type_annotation::source_type_variable(name))
       .map(ToString::to_string)
       .collect(),
     bounds: signature

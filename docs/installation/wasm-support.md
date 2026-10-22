@@ -75,7 +75,6 @@ aliases:
 &get-def-schema
 &get-os
 &inspect-methods
-&map:fold-kv
 &methods-of
 &number:format
 &read-file
