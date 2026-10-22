@@ -6069,8 +6069,12 @@
                 let
                     original $ StringDestruct :some |x |tail
                     decoded $ decode-map-as original 'StringDestruct
+                    original-option $ Option :some 3
+                    decoded-option $ decode-map-as original-option $ :: 'Option 'Number
                   assert-type decoded 'StringDestruct
                   assert= true $ identical? original decoded
+                  assert-type decoded-option $ :: 'Option 'Number
+                  assert= true $ identical? original-option decoded-option
               :tags $ #{} :core :types :unit
         'def $ %{} 'CodeEntry (:doc "|special macro to expose value to definition")
           :code $ quote $ defmacro def (_name x) x
