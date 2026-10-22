@@ -2954,7 +2954,7 @@ pub enum ConfigSubcommand {
   Version(ConfigVersionCommand),
   /// set a configuration key to a value (package, mode, target, init-fn, reload-fn, description, feature-policy.<name>); use caps version for project versions
   Set(ConfigSetCommand),
-  /// unset an optional configuration key (target)
+  /// unset target, or remove a named entry with an explicit --entry
   Unset(ConfigUnsetCommand),
   /// create a named entry with a complete configuration, or clone one with --from
   AddEntry(ConfigAddEntryCommand),
@@ -3030,12 +3030,12 @@ pub struct ConfigSetCommand {
 
 #[derive(FromArgs, PartialEq, Debug, Clone)]
 #[argh(subcommand, name = "unset")]
-/// unset an optional configuration key (target)
+/// unset target, or remove a named entry with an explicit --entry
 pub struct ConfigUnsetCommand {
-  /// apply to a named entry (e.g. "test"); defaults to "default"
+  /// entry to change; defaults to "default" for target, required and non-default for entry removal
   #[argh(option)]
   pub entry: Option<String>,
-  /// config key to unset: target
+  /// config key to unset: target or entry; entry removes the entire named configuration
   #[argh(positional)]
   pub key: String,
 }

@@ -37,7 +37,11 @@ pub(crate) fn snapshot_units(snapshot: &Snapshot) -> Result<BTreeMap<String, Str
 }
 
 fn json_fingerprint<T: Serialize>(value: &T) -> Result<String, String> {
-  let encoded = serde_json::to_string(value).map_err(|error| format!("Failed to fingerprint Snapshot unit: {error}"))?;
+  // Hash metadata content, not randomized HashMap iteration order. Sorting
+  // only objects also preserves the order of source AST and module arrays.
+  let mut canonical = serde_json::to_value(value).map_err(|error| format!("Failed to fingerprint Snapshot unit: {error}"))?;
+  canonical.sort_all_objects();
+  let encoded = serde_json::to_string(&canonical).map_err(|error| format!("Failed to fingerprint Snapshot unit: {error}"))?;
   let mut hasher = Md5::new();
   hasher.update(encoded.as_bytes());
   Ok(format!("md5:{}", hex::encode(hasher.finalize())))
@@ -219,4 +223,48 @@ fn take_theirs(merged: &mut Snapshot, theirs: &Snapshot, unit: &str) -> Result<b
     return Err(format!("Unknown Snapshot unit `{unit}`"));
   }
   Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+  use super::json_fingerprint;
+  use serde::{Serialize, Serializer, ser::SerializeMap};
+
+  // Unlike a random HashMap seed, this serializer guarantees opposite object
+  // orders, so the regression is deterministic on every test execution.
+  struct OrderedMap<'a>(&'a [(&'a str, &'a str)]);
+
+  impl Serialize for OrderedMap<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+      let mut map = serializer.serialize_map(Some(self.0.len()))?;
+      for (key, value) in self.0 {
+        map.serialize_entry(key, value)?;
+      }
+      map.end()
+    }
+  }
+
+  #[test]
+  fn fingerprints_ignore_object_order_but_preserve_values_and_array_order() {
+    let forward = OrderedMap(&[("fs", "error"), ("js-ffi", "warn")]);
+    let reverse = OrderedMap(&[("js-ffi", "warn"), ("fs", "error")]);
+    assert_eq!(json_fingerprint(&forward).unwrap(), json_fingerprint(&reverse).unwrap());
+
+    #[derive(Serialize)]
+    struct Entry<T> {
+      feature_policy: T,
+    }
+    assert_eq!(
+      json_fingerprint(&Entry { feature_policy: forward }).unwrap(),
+      json_fingerprint(&Entry { feature_policy: reverse }).unwrap()
+    );
+    assert_ne!(
+      json_fingerprint(&OrderedMap(&[("fs", "error"), ("js-ffi", "warn")])).unwrap(),
+      json_fingerprint(&OrderedMap(&[("fs", "warn"), ("js-ffi", "warn")])).unwrap()
+    );
+    assert_ne!(
+      json_fingerprint(&["first", "second"]).unwrap(),
+      json_fingerprint(&["second", "first"]).unwrap()
+    );
+  }
 }

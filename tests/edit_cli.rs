@@ -2482,6 +2482,279 @@ fn edit_ns_accepts_definition_heads_from_macros_in_the_same_data() {
 }
 
 #[test]
+fn config_unset_entry_rejects_verification_profile_references_without_writing() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  for name in ["used", "unused"] {
+    assert_success(
+      &run_calcit(&snapshot, &["config", "add-entry", name, "--from", "default"]),
+      "create a named verification entry",
+    );
+  }
+  let deletion = "[] $ [] |config |unset |entry |--entry |used";
+  let preview = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", deletion, "--dry-run", "--format", "edn"],
+  );
+  assert_success(&preview, "preview removal before any profile refers to the entry");
+  let cirru_edn::Edn::Map(preview) = cirru_edn::parse(&String::from_utf8(preview.stdout).unwrap()).unwrap() else {
+    panic!("transaction preview must be an EDN envelope")
+  };
+  let cirru_edn::Edn::Str(revision) = preview.get_or_nil("scoped-revision") else {
+    panic!("transaction preview must have a scoped revision")
+  };
+  let data = cirru_edn::parse(&fs::read_to_string(&snapshot).unwrap()).unwrap();
+  let mut project = calcit::snapshot::load_snapshot_data(&data, snapshot.to_str().unwrap()).unwrap();
+  // There is no profile mutation CLI. Set up only typed host metadata through
+  // the real serializer; keep the fixture's source, schemas and tests intact.
+  for (name, entries) in [
+    ("z-last", vec!["used"]),
+    ("a-first", vec!["default", "used"]),
+    ("unrelated", vec!["default"]),
+  ] {
+    project.verification.profiles.insert(
+      name.to_owned(),
+      calcit::snapshot::VerificationProfile {
+        entries: entries.into_iter().map(str::to_owned).collect(),
+        checks: vec![calcit::snapshot::VerificationCheckKind::Strict],
+        on_failure: calcit::snapshot::VerificationFailurePolicy::Stop,
+      },
+    );
+  }
+  calcit::snapshot::save_snapshot_to_file(&snapshot, &project).expect("serialize valid verification metadata");
+  let before = fs::read(&snapshot).unwrap();
+  assert_success(
+    &run_calcit(&snapshot, &["config", "show", "--format", "edn"]),
+    "load the profile fixture",
+  );
+  let operations = "[]\n  [] |config |set |--entry |unused |description |staged-change\n  [] |config |unset |entry |--entry |used";
+  for args in [
+    vec!["config", "unset", "entry", "--entry", "used"],
+    vec!["edit", "transaction", "--code", operations, "--dry-run", "--format", "edn"],
+    vec!["edit", "transaction", "--code", operations, "--format", "edn"],
+    vec![
+      "edit",
+      "transaction",
+      "--code",
+      deletion,
+      "--expect-revision",
+      &revision,
+      "--format",
+      "edn",
+    ],
+  ] {
+    let rejected = run_calcit(&snapshot, &args);
+    assert!(!rejected.status.success(), "a referenced entry must remain: {args:?}");
+    let diagnostic = format!(
+      "{}\n{}",
+      String::from_utf8_lossy(&rejected.stdout),
+      String::from_utf8_lossy(&rejected.stderr)
+    );
+    assert!(diagnostic.contains("Cannot remove entry 'used'"), "{diagnostic}");
+    assert!(
+      diagnostic.contains("a-first, z-last"),
+      "all referencing profile names must be sorted: {diagnostic}"
+    );
+    assert_eq!(
+      fs::read(&snapshot).unwrap(),
+      before,
+      "the direct or staged rejection must not write"
+    );
+    assert_success(
+      &run_calcit(&snapshot, &["config", "show", "--format", "edn"]),
+      "ordinary CLI recovery must remain available after rejection",
+    );
+  }
+  assert_success(
+    &run_calcit(&snapshot, &["config", "unset", "entry", "--entry", "unused"]),
+    "profiles referring to other entries must not block removal",
+  );
+  let after = cirru_edn::parse(&fs::read_to_string(&snapshot).unwrap()).unwrap();
+  let after = calcit::snapshot::load_snapshot_data(&after, snapshot.to_str().unwrap()).unwrap();
+  assert!(!after.entries.contains_key("unused"));
+  assert_eq!(after.entries["used"], project.entries["used"]);
+  assert_eq!(after.verification, project.verification, "profiles must not be silently rewritten");
+}
+
+#[test]
+fn config_unset_entry_is_guarded_atomic_and_preserves_surviving_entries() {
+  // Configuration/revision/filesystem behavior needs the existing CLI harness.
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  for name in ["obsolete", "live"] {
+    assert_success(
+      &run_calcit(&snapshot, &["config", "add-entry", name, "--from", "default"]),
+      "create named entry",
+    );
+  }
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &[
+        "edit",
+        "def",
+        "app.main/EntryOp",
+        "--input-format",
+        "cirru",
+        "--code",
+        "quote $ defenum EntryOp (:ready)",
+      ],
+    ),
+    "declare a concrete slot binding",
+  );
+  for name in ["obsolete", "live"] {
+    for (feature, policy) in [("js-ffi", "warn"), ("fs", "error")] {
+      assert_success(
+        &run_calcit(
+          &snapshot,
+          &["config", "set", "--entry", name, &format!("feature-policy.{feature}"), policy],
+        ),
+        "populate entry policies",
+      );
+    }
+    for slot in [":op", ":event"] {
+      assert_success(
+        &run_calcit(&snapshot, &["config", "set-type-slot", "--entry", name, slot, "app.main/EntryOp"]),
+        "populate concrete slot metadata",
+      );
+    }
+  }
+  assert_success(
+    &run_calcit(&snapshot, &["config", "add-module", "--entry", "obsolete", "missing-test-module/"]),
+    "retain an unavailable historical dependency",
+  );
+  let before = fs::read(&snapshot).unwrap();
+  let strict_before = run_calcit(&snapshot, &["fix", "--workflow", "strict", "--verify", "--format", "json"]);
+  assert!(
+    !strict_before.status.success(),
+    "the historical module must still block complete strict verification"
+  );
+  assert!(
+    String::from_utf8_lossy(&strict_before.stderr).contains("missing-test-module"),
+    "{strict_before:?}"
+  );
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "strict verification must not mutate source");
+  for (args, diagnostic) in [
+    (vec!["config", "unset", "entry"], "requires an explicit --entry <name>"),
+    (
+      vec!["config", "unset", "entry", "--entry", "default"],
+      "default entry cannot be removed",
+    ),
+    (vec!["config", "unset", "entry", "--entry", "missing"], "Entry 'missing' not found"),
+  ] {
+    let rejected = run_calcit(&snapshot, &args);
+    assert!(!rejected.status.success(), "unsafe/missing removal must fail: {args:?}");
+    assert!(String::from_utf8_lossy(&rejected.stderr).contains(diagnostic), "{rejected:?}");
+    assert_eq!(fs::read(&snapshot).unwrap(), before, "rejected removal wrote: {args:?}");
+  }
+
+  let operations = "[] $ [] |config |unset |entry |--entry |obsolete";
+  let preview = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", operations, "--dry-run", "--format", "json"],
+  );
+  assert_success(&preview, "preview obsolete entry removal without loading its missing module");
+  let report: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+  let stale_revision = report["scoped_revision"].as_str().unwrap();
+  assert!(stale_revision.starts_with("scope:entry:obsolete@md5:"), "{report}");
+  assert!(!stale_revision.contains(','), "only the removed entry should be guarded: {report}");
+  for _ in 0..3 {
+    let repeat = run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--code", operations, "--dry-run", "--format", "json"],
+    );
+    assert_success(&repeat, "repeat the preview in a separate process");
+    let repeated: serde_json::Value = serde_json::from_slice(&repeat.stdout).unwrap();
+    assert_eq!(
+      repeated["scoped_revision"], stale_revision,
+      "unchanged metadata must have one stable guard"
+    );
+  }
+  assert_eq!(fs::read(&snapshot).unwrap(), before, "dry-run must not write");
+
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["config", "set", "--entry", "obsolete", "description", "changed since preview"],
+    ),
+    "change the entry after preview",
+  );
+  let before_stale = fs::read(&snapshot).unwrap();
+  let stale = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", operations, "--expect-revision", stale_revision],
+  );
+  assert!(!stale.status.success());
+  assert!(String::from_utf8_lossy(&stale.stderr).contains("Definition conflict"));
+  assert_eq!(fs::read(&snapshot).unwrap(), before_stale);
+
+  let rollback = r#"[["config","unset","entry","--entry","obsolete"],["config","set","--entry","missing","description","invalid"]]"#;
+  let failed = run_calcit(&snapshot, &["edit", "transaction", "--code", rollback]);
+  assert!(!failed.status.success());
+  assert!(String::from_utf8_lossy(&failed.stderr).contains("Entry 'missing' not found"));
+  assert_eq!(
+    fs::read(&snapshot).unwrap(),
+    before_stale,
+    "a later failure must restore the removed entry"
+  );
+
+  let preview = run_calcit(
+    &snapshot,
+    &["edit", "transaction", "--code", operations, "--dry-run", "--format", "json"],
+  );
+  assert_success(&preview, "refresh removal guard");
+  let report: serde_json::Value = serde_json::from_slice(&preview.stdout).unwrap();
+  let revision = report["scoped_revision"].as_str().unwrap();
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["config", "set", "--entry", "live", "description", "preserve this unrelated update"],
+    ),
+    "change a surviving entry",
+  );
+  let config_before = run_calcit(&snapshot, &["config", "show", "--format", "json"]);
+  assert_success(&config_before, "query entries before removal");
+  let before: serde_json::Value = serde_json::from_slice(&config_before.stdout).unwrap();
+  let surviving = before["data"]["entries"]
+    .as_array()
+    .unwrap()
+    .iter()
+    .filter(|entry| entry["name"] != "obsolete")
+    .cloned()
+    .collect::<Vec<_>>();
+  let definition = query_definition(&snapshot, "app.main/main!");
+  let enum_definition = query_definition(&snapshot, "app.main/EntryOp");
+  assert_success(
+    &run_calcit(
+      &snapshot,
+      &["edit", "transaction", "--code", operations, "--expect-revision", revision],
+    ),
+    "remove only the guarded entry after an unrelated update",
+  );
+  let config_after = run_calcit(&snapshot, &["config", "show", "--format", "json"]);
+  assert_success(&config_after, "query surviving entries");
+  let after: serde_json::Value = serde_json::from_slice(&config_after.stdout).unwrap();
+  assert_eq!(after["data"]["entries"], serde_json::json!(surviving));
+  assert_eq!(query_definition(&snapshot, "app.main/main!"), definition);
+  assert_eq!(query_definition(&snapshot, "app.main/EntryOp"), enum_definition);
+  assert_success(&run_calcit(&snapshot, &["--check-only"]), "the default entry still checks");
+  assert_success(
+    &run_calcit(&snapshot, &["fix", "--workflow", "strict", "--verify", "--format", "json"]),
+    "complete strict verification passes with the obsolete entry removed, without changing source tests or types",
+  );
+
+  assert_success(
+    &run_calcit(&snapshot, &["config", "unset", "entry", "--entry", "live"]),
+    "direct removal uses the same safe entry operation",
+  );
+  let before_repeat = fs::read(&snapshot).unwrap();
+  let repeated = run_calcit(&snapshot, &["config", "unset", "entry", "--entry", "live"]);
+  assert!(!repeated.status.success());
+  assert!(String::from_utf8_lossy(&repeated.stderr).contains("Entry 'live' not found"));
+  assert_eq!(fs::read(&snapshot).unwrap(), before_repeat);
+}
+
+#[test]
 fn config_add_entry_creates_complete_named_entries_through_guarded_transactions() {
   let directory = TestDirectory::create();
   let snapshot = prepare_minimal_snapshot(&directory);

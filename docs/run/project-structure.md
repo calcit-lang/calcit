@@ -118,6 +118,22 @@ calcit config set-type-slot --entry test :dispatch-op app.test-schema/TestOp
 calcit config rm-type-slot :dispatch-op
 ```
 
+确认命名入口已经废弃后，用 `calcit config unset entry --entry <name>` 删除整个入口配置；
+命令只删除 Snapshot 中的入口配置，不删除对应源码或已安装模块目录。必须显式传 `--entry`，不能删除
+`default`，不存在的入口会报错。被 verification profile 引用的入口也会拒绝删除，并列出相关 profile；
+不会静默改写验收范围。先核对 `config show --format edn` 中的入口、依赖及项目文档，
+不要为了跳过失败验收而删除仍有用途的测试入口。
+
+需要预览和 revision 守卫时，沿用同一个编辑事务：
+
+```bash
+calcit edit transaction --code '[] $ [] |config |unset |entry |--entry |obsolete' --dry-run --format edn
+# 审阅预览后，使用返回的 scoped-revision；只守卫删除的入口，其他定义的独立修改仍可保留。
+calcit edit transaction --code '[] $ [] |config |unset |entry |--entry |obsolete' --expect-revision <revision> --format edn
+```
+
+升级 CLI 后请重新预览事务，不复用旧工具生成的临时 revision。
+
 旧项目的包名与本地命名空间前缀不一致时，可用 `calcit config set package app` 修正
 Snapshot 的项目级 `:package`。包名由非空 symbol 段组成，用点分隔；此命令只修改元数据，
 不重命名命名空间、定义、引用或入口，也不写入依赖模块。先查询本地源码，确认新的归属前缀；
