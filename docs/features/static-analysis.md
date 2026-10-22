@@ -236,10 +236,12 @@ An Option turned back into nil reports `W_OPTION_ERASED_TO_NIL`: `.unwrap-or X n
 or `option:unwrap-or X nil` on a receiver proven to be an Option, and a
 `(:none) nil` branch of a `match` on an Option. The signature promises absence
 is explicit while the value is again nil-or-T. Keep the Option, choose a
-concrete default, or handle both variants with `match`. `:js-ffi` definitions,
-functions that declare a `JsNullish` return, and macro-generated code are not
-reported: those places hand nil to a JS host by contract. For now the report is
-a note: `--check-only` lists it and still passes, and it becomes a blocking
+concrete default, or handle both variants with `match`. Macro-generated code,
+direct JavaScript host arguments, `JsNullish` parameters,
+and tail-return expressions in functions that declare a `JsNullish` return are
+not reported. A `JsNullish` return does not exempt business erasures in local
+binding initializers or other non-tail expressions. For now the report is a
+note: `--check-only` lists it and still passes, and it becomes a blocking
 warning once the ecosystem libraries have migrated.
 
 Strict project source also rejects hand-written representation primitives with
