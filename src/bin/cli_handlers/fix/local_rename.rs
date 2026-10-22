@@ -541,7 +541,8 @@ fn preprocess_staged_definition(
         ns: None,
         added_defs: HashMap::new(),
         removed_defs: HashSet::new(),
-        changed_defs: HashMap::from([(definition.to_owned(), code.clone())]),
+        // Code-only change: the staged swap keeps the definition's metadata.
+        changed_defs: HashMap::from([(definition.to_owned(), code.clone().into())]),
       },
     );
     program::apply_code_changes(&changes)

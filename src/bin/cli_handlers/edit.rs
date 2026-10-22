@@ -3208,7 +3208,7 @@ fn handle_inc(opts: &EditIncCommand, snapshot_file: &str) -> Result<(), String> 
       resolve_definition_lookup(namespace, definition, file.defs.keys().map(|name| name.as_str()), false)?.resolved;
     let code_entry = file.defs.get(resolved_definition.as_str()).expect("resolved definition exists");
     let entry = ensure_change_entry(&mut changed_entries, namespace);
-    entry.added_defs.insert(resolved_definition, code_entry.code.clone());
+    entry.added_defs.insert(resolved_definition, code_entry.clone().into());
   }
 
   for target in &opts.changed {
@@ -3222,7 +3222,7 @@ fn handle_inc(opts: &EditIncCommand, snapshot_file: &str) -> Result<(), String> 
       resolve_definition_lookup(namespace, definition, file.defs.keys().map(|name| name.as_str()), false)?.resolved;
     let code_entry = file.defs.get(resolved_definition.as_str()).expect("resolved definition exists");
     let entry = ensure_change_entry(&mut changed_entries, namespace);
-    entry.changed_defs.insert(resolved_definition, code_entry.code.clone());
+    entry.changed_defs.insert(resolved_definition, code_entry.clone().into());
   }
 
   for target in &opts.removed {

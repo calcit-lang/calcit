@@ -3394,3 +3394,48 @@ fn merge_driver_reports_namespace_deletion_conflicts() {
     }
   }
 }
+
+/// `calcit edit inc` is the in-repo `.compact-inc.cirru` producer: it must send
+/// the full saved `CodeEntry`, so `cr watch` applies the same metadata a cold
+/// start would load (#2178).
+#[test]
+fn edit_inc_writes_full_code_entries_for_added_and_changed_definitions() {
+  let directory = TestDirectory::create();
+  let snapshot = prepare_minimal_snapshot(&directory);
+  assert_success(
+    &run_calcit(&snapshot, &["edit", "doc", "app.main/main!", "metadata-only doc"]),
+    "edit doc",
+  );
+  let output = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .current_dir(&directory.0)
+    .arg("--tips-level")
+    .arg("none")
+    .arg(&snapshot)
+    .args(["edit", "inc", "--changed", "app.main/main!", "--added", "app.main/reload!"])
+    .output()
+    .expect("calcit edit inc should run");
+  assert_success(&output, "edit inc");
+
+  let text = fs::read_to_string(directory.0.join(".compact-inc.cirru")).expect("incremental file should be written");
+  let changes: calcit::snapshot::ChangesDict = cirru_edn::parse(&text)
+    .expect("incremental file should parse")
+    .try_into()
+    .expect("incremental file should load");
+  let saved = calcit::snapshot::load_snapshot_data(
+    &cirru_edn::parse(&fs::read_to_string(&snapshot).expect("snapshot should read")).expect("snapshot should parse"),
+    snapshot.to_str().unwrap(),
+  )
+  .expect("snapshot should load");
+  let file = &saved.files["app.main"];
+  let info = &changes.changed["app.main"];
+  assert_eq!(info.code_only_def_count(), 0, "{text}");
+  assert_eq!(
+    info.changed_defs["main!"],
+    calcit::snapshot::DefinitionChange::Entry(file.defs["main!"].clone())
+  );
+  assert_eq!(
+    info.added_defs["reload!"],
+    calcit::snapshot::DefinitionChange::Entry(file.defs["reload!"].clone())
+  );
+  assert!(text.contains("metadata-only doc"), "{text}");
+}

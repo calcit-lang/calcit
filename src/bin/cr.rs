@@ -1874,6 +1874,13 @@ fn recall_program(
       }
       println!("  {} {}: {}", "~".yellow(), ns, changes_desc.join(", "));
     }
+    let code_only = changes.changed.values().map(|info| info.code_only_def_count()).sum::<usize>();
+    if code_only > 0 {
+      println!(
+        "  {} {code_only} code-only definition entries: only code is replaced (changed defs keep loaded metadata, added defs start without schema/doc/examples/ffi/tags); send CodeEntry records to apply metadata",
+        "!".yellow()
+      );
+    }
   }
 
   program::apply_code_changes(&changes)?;

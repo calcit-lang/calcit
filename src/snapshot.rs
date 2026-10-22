@@ -3593,12 +3593,144 @@ pub fn create_file_from_snippet(raw: &str) -> Result<FileInSnapShot, String> {
   }
 }
 
+/// One definition entry inside `added-defs` / `changed-defs` of an
+/// incremental change file (`.compact-inc.cirru`).
+///
+/// Two payload shapes are accepted:
+///
+/// - `Entry`: a full `%{} CodeEntry` record (or `{} (:code ..) ..` map), parsed by
+///   the same loader as the full Snapshot. Applying it replaces code *and*
+///   every runtime metadata field (`:schema`, `:doc`, `:examples`, `:ffi`,
+///   `:tags`), so the incremental state matches a cold start of the same entry.
+///   An entry whose code is unchanged expresses a metadata-only change.
+/// - `Code`: the legacy bare quoted code. It only carries code, so applying it
+///   keeps the definition's current in-memory metadata for `changed-defs` and
+///   starts an `added-defs` definition with empty metadata (Dynamic schema, no
+///   doc/examples/ffi/tags). The watcher never writes the full Snapshot, so the
+///   metadata stored there is never dropped or overwritten by either shape.
+#[derive(Debug, PartialEq, Clone, Eq)]
+pub enum DefinitionChange {
+  Code(Cirru),
+  Entry(CodeEntry),
+}
+
+impl DefinitionChange {
+  pub fn code(&self) -> &Cirru {
+    match self {
+      DefinitionChange::Code(code) => code,
+      DefinitionChange::Entry(entry) => &entry.code,
+    }
+  }
+
+  pub fn is_code_only(&self) -> bool {
+    matches!(self, DefinitionChange::Code(_))
+  }
+}
+
+impl From<Cirru> for DefinitionChange {
+  fn from(code: Cirru) -> Self {
+    DefinitionChange::Code(code)
+  }
+}
+
+impl From<CodeEntry> for DefinitionChange {
+  fn from(entry: CodeEntry) -> Self {
+    DefinitionChange::Entry(entry)
+  }
+}
+
+impl From<&DefinitionChange> for Edn {
+  fn from(data: &DefinitionChange) -> Edn {
+    match data {
+      DefinitionChange::Code(code) => Edn::Quote(code.to_owned()),
+      DefinitionChange::Entry(entry) => Edn::from(entry),
+    }
+  }
+}
+
+fn parse_definition_change(value: Edn, owner: &str) -> Result<DefinitionChange, String> {
+  match value {
+    Edn::Quote(code) => Ok(DefinitionChange::Code(code)),
+    value @ (Edn::Struct(_) | Edn::Map(_)) => parse_code_entry_with_context(value, owner).map(DefinitionChange::Entry),
+    other => Err(format!(
+      "{owner}: expected quoted code or a CodeEntry record, got: {}",
+      format_edn_display(&other)
+    )),
+  }
+}
+
+fn parse_definition_changes(value: Edn, field: &str) -> Result<HashMap<String, DefinitionChange>, String> {
+  match value {
+    Edn::Nil => Ok(HashMap::new()),
+    Edn::Map(map) => {
+      let mut defs = HashMap::with_capacity(map.0.len());
+      for (key, value) in map.0 {
+        // Same identifier rules as `:defs` in a full Snapshot.
+        let name = parse_snapshot_identifier_key(&key, field)?;
+        let change = parse_definition_change(value, &format!("{field}/{name}"))?;
+        insert_snapshot_identifier(&mut defs, name, change, field)?;
+      }
+      Ok(defs)
+    }
+    other => Err(format!("{field}: expected a map, got: {}", format_edn_display(&other))),
+  }
+}
+
+/// Apply the cold-start strict `defmacro` schema check to every full
+/// `CodeEntry` carried by an incremental change, so a definition the next cold
+/// start would reject is not accepted by `cr watch` either. Legacy code-only
+/// entries carry no schema and are not checked here.
+pub fn validate_incremental_macro_schemas(changes: &ChangesDict) -> Result<(), String> {
+  const PATH: &str = ".compact-inc.cirru";
+  let mut added = changes.added.keys().collect::<Vec<_>>();
+  added.sort_unstable();
+  for ns in added {
+    let file = &changes.added[ns];
+    let mut defs = file.defs.keys().collect::<Vec<_>>();
+    defs.sort_unstable();
+    for def in defs {
+      validate_strict_macro_schema(&file.defs[def], ns, def, PATH)?;
+    }
+  }
+  let mut namespaces = changes.changed.keys().collect::<Vec<_>>();
+  namespaces.sort_unstable();
+  for ns in namespaces {
+    let info = &changes.changed[ns];
+    let mut defs = info.added_defs.iter().chain(info.changed_defs.iter()).collect::<Vec<_>>();
+    defs.sort_unstable_by(|a, b| a.0.cmp(b.0));
+    for (def, change) in defs {
+      if let DefinitionChange::Entry(entry) = change {
+        validate_strict_macro_schema(entry, ns, def, PATH)?;
+      }
+    }
+  }
+  Ok(())
+}
+
+fn definition_changes_to_edn(defs: &HashMap<String, DefinitionChange>) -> Edn {
+  Edn::Map(EdnMapView(
+    defs.iter().map(|(name, def)| (Edn::str(&**name), Edn::from(def))).collect(),
+  ))
+}
+
 #[derive(Debug, PartialEq, Clone, Eq)]
 pub struct FileChangeInfo {
   pub ns: Option<Cirru>,
-  pub added_defs: HashMap<String, Cirru>,
+  pub added_defs: HashMap<String, DefinitionChange>,
   pub removed_defs: HashSet<String>,
-  pub changed_defs: HashMap<String, Cirru>,
+  pub changed_defs: HashMap<String, DefinitionChange>,
+}
+
+impl FileChangeInfo {
+  /// Number of `added-defs` / `changed-defs` entries that only carry legacy bare code.
+  pub fn code_only_def_count(&self) -> usize {
+    self
+      .added_defs
+      .values()
+      .chain(self.changed_defs.values())
+      .filter(|change| change.is_code_only())
+      .count()
+  }
 }
 
 impl From<&FileChangeInfo> for Edn {
@@ -3609,13 +3741,7 @@ impl From<&FileChangeInfo> for Edn {
     }
 
     if !data.added_defs.is_empty() {
-      #[allow(clippy::mutable_key_type)]
-      let defs: HashMap<Edn, Edn> = data
-        .added_defs
-        .iter()
-        .map(|(name, def)| (Edn::str(&**name), Edn::Quote(def.to_owned())))
-        .collect();
-      map.insert_key("added-defs", Edn::from(defs));
+      map.insert_key("added-defs", definition_changes_to_edn(&data.added_defs));
     }
     if !data.removed_defs.is_empty() {
       map.insert_key(
@@ -3624,16 +3750,7 @@ impl From<&FileChangeInfo> for Edn {
       );
     }
     if !data.changed_defs.is_empty() {
-      map.insert_key(
-        "changed-defs",
-        Edn::Map(EdnMapView(
-          data
-            .changed_defs
-            .iter()
-            .map(|(name, def)| (Edn::str(&**name), Edn::Quote(def.to_owned())))
-            .collect(),
-        )),
-      );
+      map.insert_key("changed-defs", definition_changes_to_edn(&data.changed_defs));
     }
     map.into()
   }
@@ -3656,14 +3773,15 @@ impl TryFrom<Edn> for FileChangeInfo {
         Edn::Nil => None,
         ns => Some(ns.try_into()?),
       },
-      added_defs: data.get_or_nil("added-defs").try_into()?,
+      added_defs: parse_definition_changes(data.get_or_nil("added-defs"), "added-defs")?,
       removed_defs: data.get_or_nil("removed-defs").try_into()?,
-      changed_defs: data.get_or_nil("changed-defs").try_into()?,
+      changed_defs: parse_definition_changes(data.get_or_nil("changed-defs"), "changed-defs")?,
     })
   }
 }
 
-/// TODO: Support for :doc and :examples fields has been added, needs to be handled properly
+/// Incremental change dictionary read from `.compact-inc.cirru` by `cr watch`.
+/// See [`DefinitionChange`] for the accepted per-definition payloads.
 #[derive(Debug, PartialEq, Clone, Eq, Default)]
 pub struct ChangesDict {
   pub added: HashMap<Arc<str>, FileInSnapShot>,
