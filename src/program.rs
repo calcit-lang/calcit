@@ -774,7 +774,10 @@ fn collect_changed_seed_def_ids(changes: &snapshot::ChangesDict, index: &Program
       }
     }
 
-    for def in info.changed_defs.keys() {
+    // Metadata-only `changed-defs` entries land here as well: callers compiled
+    // against the old schema/FFI contract must be rebuilt. `added-defs` naming
+    // an already-loaded definition replaces it, so it is a seed too.
+    for def in info.changed_defs.keys().chain(info.added_defs.keys()) {
       if let Some(def_id) = index.by_ns.get(ns).and_then(|defs| defs.get(def.as_str())) {
         seeds.insert(*def_id);
       }
@@ -972,24 +975,56 @@ fn extract_file_data(file: &snapshot::FileInSnapShot, ns: Arc<str>) -> Result<Pr
   let import_map = extract_import_map(&file.ns.code, &ns)?;
   let mut defs: HashMap<Arc<str>, ProgramDefEntry> = HashMap::with_capacity(file.defs.len());
   for (def, entry) in &file.defs {
-    let at_def = def.to_owned();
-    crate::js_ffi_source::validate_js_definition(entry).map_err(|error| format!("{ns}/{def}: {error}"))?;
-    let code = code_to_calcit(&entry.code, &ns, &at_def, vec![])?;
-    let schema = entry.schema.clone();
-    let doc = Arc::from(entry.doc.as_str());
-    defs.insert(
-      def.to_owned().into(),
-      ProgramDefEntry {
-        tags: entry.tags.clone(),
-        code,
-        schema,
-        doc,
-        examples: entry.examples.clone(),
-        ffi: entry.ffi.clone(),
-      },
-    );
+    defs.insert(def.to_owned().into(), program_def_entry_from_code_entry(entry, &ns, def)?);
   }
   Ok(ProgramFileData { import_map, defs })
+}
+
+/// Build the runtime definition entry for one Snapshot `CodeEntry`.
+///
+/// Cold start and incremental reload of full `CodeEntry` records share this
+/// conversion, so both paths carry the same schema, doc, examples, FFI and tags.
+fn program_def_entry_from_code_entry(entry: &snapshot::CodeEntry, ns: &str, def: &str) -> Result<ProgramDefEntry, String> {
+  crate::js_ffi_source::validate_js_definition(entry).map_err(|error| format!("{ns}/{def}: {error}"))?;
+  let code = code_to_calcit(&entry.code, ns, def, vec![])?;
+  Ok(ProgramDefEntry {
+    tags: entry.tags.clone(),
+    code,
+    schema: entry.schema.clone(),
+    doc: Arc::from(entry.doc.as_str()),
+    examples: entry.examples.clone(),
+    ffi: entry.ffi.clone(),
+  })
+}
+
+/// Build the runtime entry for one incremental definition change.
+///
+/// A full `CodeEntry` replaces code and metadata exactly like a cold start.
+/// Legacy bare code only replaces code: it keeps `previous` metadata when the
+/// definition is already loaded, otherwise it starts with empty metadata.
+fn program_def_entry_from_change(
+  change: &snapshot::DefinitionChange,
+  previous: Option<&ProgramDefEntry>,
+  ns: &str,
+  def: &str,
+) -> Result<ProgramDefEntry, String> {
+  match change {
+    snapshot::DefinitionChange::Entry(entry) => program_def_entry_from_code_entry(entry, ns, def),
+    snapshot::DefinitionChange::Code(code) => {
+      let code = code_to_calcit(code, ns, def, vec![])?;
+      Ok(match previous {
+        Some(existing) => ProgramDefEntry { code, ..existing.clone() },
+        None => ProgramDefEntry {
+          tags: Default::default(),
+          code,
+          schema: DYNAMIC_TYPE.clone(),
+          doc: Arc::from(""),
+          examples: vec![],
+          ffi: None,
+        },
+      })
+    }
+  }
 }
 
 pub fn extract_program_data(s: &Snapshot) -> Result<ProgramCodeData, String> {
@@ -1354,7 +1389,6 @@ pub(crate) fn remove_internal_source_namespace(ns: &str) {
 pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String> {
   invalidate_field_write_shapes();
   let mut program_code = PROGRAM_CODE_DATA.write().expect("open program code");
-  let coord0 = vec![];
 
   for (ns, file) in &changes.added {
     let file_info = extract_file_data(file, ns.to_owned())?;
@@ -1372,22 +1406,35 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
   for (ns, info) in &changes.changed {
     // println!("handling ns: {:?} {}", ns, program_code.contains_key(ns));
     let file = program_code.get_mut(ns).ok_or_else(|| format!("can not load ns: {ns}"))?;
-    if let Some(v) = &info.ns {
-      file.import_map = extract_import_map(v, ns)?;
+    // Build the import map and every entry before mutating the file so a
+    // malformed entry leaves the namespace unchanged.
+    let import_map = info.ns.as_ref().map(|v| extract_import_map(v, ns)).transpose()?;
+    let mut added_entries = Vec::with_capacity(info.added_defs.len());
+    for (def, change) in &info.added_defs {
+      // Legacy `added-defs` code never inherited metadata, keep that behaviour.
+      added_entries.push((def, program_def_entry_from_change(change, None, ns, def)?));
     }
-    for (def, code) in &info.added_defs {
+    let mut changed_entries = Vec::with_capacity(info.changed_defs.len());
+    for (def, change) in &info.changed_defs {
+      // Removals apply before changes, so a definition removed in the same
+      // message has no metadata to keep.
+      let previous = if info.removed_defs.contains(def) {
+        None
+      } else {
+        file.defs.get(def.as_str())
+      };
+      let entry = program_def_entry_from_change(change, previous, ns, def)?;
+      changed_entries.push((def, entry));
+    }
+
+    if let Some(import_map) = import_map {
+      file.import_map = import_map;
+    }
+
+    for (def, entry) in added_entries {
       let _ = register_program_def_id(ns, def);
       clear_runtime_value(ensure_def_id(ns, def));
       remove_compiled_def(ns, def);
-      let calcit_code = code_to_calcit(code, ns, def, coord0.to_owned())?;
-      let entry = ProgramDefEntry {
-        tags: Default::default(),
-        code: calcit_code,
-        schema: DYNAMIC_TYPE.clone(),
-        doc: Arc::from(""), // No doc info in changes, use empty string
-        examples: vec![],   // No examples info in changes, use empty vector
-        ffi: None,
-      };
       file.defs.insert(def.to_owned().into(), entry);
     }
     for def in &info.removed_defs {
@@ -1397,32 +1444,11 @@ pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String>
       file.defs.remove(def.as_str());
       remove_compiled_def(ns, def);
     }
-    for (def, code) in &info.changed_defs {
+    for (def, entry) in changed_entries {
       let def_id = register_program_def_id(ns, def);
       clear_runtime_value(def_id);
       remove_compiled_def(ns, def);
-      let calcit_code = code_to_calcit(code, ns, def, coord0.to_owned())?;
-      let (schema, doc, examples, ffi, tags) = match file.defs.get(def.as_str()) {
-        Some(existing) => (
-          existing.schema.clone(),
-          existing.doc.clone(),
-          existing.examples.clone(),
-          existing.ffi.clone(),
-          existing.tags.clone(),
-        ),
-        None => (DYNAMIC_TYPE.clone(), Arc::from(""), Vec::new(), None, HashSet::new()),
-      };
-      file.defs.insert(
-        def.to_owned().into(),
-        ProgramDefEntry {
-          tags,
-          code: calcit_code,
-          schema,
-          doc,
-          examples,
-          ffi,
-        },
-      );
+      file.defs.insert(def.to_owned().into(), entry);
     }
   }
 

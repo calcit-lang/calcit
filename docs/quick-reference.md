@@ -201,7 +201,7 @@ let
 - `calcit.cirru` - Preferred runtime snapshot and structural-editing source
 - `compact.cirru` - Retired runtime snapshot filename; migrate it to `calcit.cirru` with Calcit 0.13.48 as the final compatibility release
 - `deps.cirru` - Dependencies
-- `.compact-inc.cirru` - Hot reload trigger, including incremental changes
+- `.compact-inc.cirru` - Hot reload trigger, including incremental changes (definition entries may be full `CodeEntry` records with metadata, see `docs/run/hot-swapping.md`)
 
 ## Common Functions
 

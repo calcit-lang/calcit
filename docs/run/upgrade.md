@@ -24,6 +24,17 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.31.0 增量更新携带定义元数据（#2178）
+
+`calcit edit inc --added/--changed` 现在把完整 `CodeEntry`（代码以及 `:schema`、`:doc`、`:examples`、`:ffi`、`:tags`）写入
+`.compact-inc.cirru`，`cr watch` 应用后的类型合同与冷启动相同；只改元数据的定义也用 `--changed` 生效，并让依赖它的编译缓存失效。
+旧的纯代码条目（裸 `quote`）仍被接受：修改定义只替换代码并保留已加载的元数据，新增定义以 Dynamic、无 doc/ffi/tags 开始，
+watcher 会提示 code-only 条目数量。
+
+升级时让 watcher 与写入增量文件的 CLI 使用同一版本：旧版 watcher 无法读取新的 `CodeEntry` 条目，会报 `failed to convert to cirru code`
+并跳过本次更新，此时重启为新版本即可。自行生成增量文件的编辑器可以继续写纯代码条目，若要同步元数据，按
+[Hot Swapping](hot-swapping.md) 中的格式改写为与 Snapshot 相同的 `%{} 'CodeEntry` 记录。
+
 ## 0.31.0 `js-cast` 接受带成员的 callable 宿主（#2153）
 
 `js-cast` 现在接受 `typeof` 为 `function` 的宿主值，例如 Axios、Day.js 的默认导出，Luxon `DateTime` class，

@@ -643,7 +643,7 @@ fn clear_runtime_caches_for_changes_clears_transitive_dependents() {
       ns: None,
       added_defs: HashMap::new(),
       removed_defs: HashSet::new(),
-      changed_defs: HashMap::from([(String::from("a"), Cirru::Leaf(Arc::from("1")))]),
+      changed_defs: HashMap::from([(String::from("a"), Cirru::Leaf(Arc::from("1")).into())]),
     },
   );
 
@@ -883,7 +883,7 @@ fn snapshot_rebuilds_changed_source_backed_def_after_reload_changes() {
       ns: None,
       added_defs: HashMap::new(),
       removed_defs: HashSet::new(),
-      changed_defs: HashMap::from([(String::from("demo"), Cirru::Leaf(Arc::from("2")))]),
+      changed_defs: HashMap::from([(String::from("demo"), Cirru::Leaf(Arc::from("2")).into())]),
     },
   );
 
@@ -1535,9 +1535,9 @@ fn hot_reload_keeps_tags_of_changed_def_and_leaves_new_def_untagged() {
     Arc::from("app.tags"),
     snapshot::FileChangeInfo {
       ns: None,
-      added_defs: HashMap::from([(String::from("fresh"), Cirru::Leaf(Arc::from("3")))]),
+      added_defs: HashMap::from([(String::from("fresh"), Cirru::Leaf(Arc::from("3")).into())]),
       removed_defs: HashSet::new(),
-      changed_defs: HashMap::from([(String::from("demo"), Cirru::Leaf(Arc::from("2")))]),
+      changed_defs: HashMap::from([(String::from("demo"), Cirru::Leaf(Arc::from("2")).into())]),
     },
   );
   apply_code_changes(&changes).expect("apply source changes");
@@ -1547,4 +1547,278 @@ fn hot_reload_keeps_tags_of_changed_def_and_leaves_new_def_untagged() {
   assert_eq!(file.defs["demo"].tags, tags);
   assert_eq!(file.defs["demo"].code, Calcit::Number(2.0));
   assert!(file.defs["fresh"].tags.is_empty());
+}
+
+fn parse_changes_for_test(text: &str) -> snapshot::ChangesDict {
+  cirru_edn::parse(text)
+    .expect("parse incremental change EDN")
+    .try_into()
+    .expect("convert incremental change EDN")
+}
+
+fn parse_code_entry_for_test(text: &str) -> snapshot::CodeEntry {
+  cirru_edn::parse(text)
+    .expect("parse CodeEntry EDN")
+    .try_into()
+    .expect("convert CodeEntry EDN")
+}
+
+const INC_FN_ENTRY: &str = r#"%{} :CodeEntry (:doc |fresh-doc)
+  :code $ quote $ defn fresh (x) x
+  :examples $ [] (quote $ fresh 1)
+  :tags $ #{} :effect
+  :ffi $ {} (:target :node)
+  :schema $ :: :fn $ {} (:return :number) (:args $ [] :number)"#;
+
+#[test]
+fn incremental_code_entry_for_new_def_matches_cold_start() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  PROGRAM_CODE_DATA.write().expect("seed program code").insert(
+    Arc::from("app.inc"),
+    ProgramFileData {
+      import_map: HashMap::new(),
+      defs: HashMap::new(),
+    },
+  );
+
+  let indented = INC_FN_ENTRY.replace('\n', "\n        ");
+  let changes = parse_changes_for_test(&format!(
+    "{{}}\n  :changed $ {{}}\n    |app.inc $ {{}}\n      :added-defs $ {{}}\n        |fresh $ {indented}\n"
+  ));
+  let change = &changes.changed["app.inc"].added_defs["fresh"];
+  assert!(!change.is_code_only(), "a CodeEntry payload keeps its metadata: {change:?}");
+
+  apply_code_changes(&changes).expect("apply CodeEntry change");
+  clear_runtime_caches_for_changes(&changes, false).expect("clear caches");
+
+  let cold_entry = parse_code_entry_for_test(INC_FN_ENTRY);
+  let cold_file = snapshot::FileInSnapShot {
+    ns: snapshot::NsEntry {
+      doc: String::new(),
+      code: Cirru::List(vec![Cirru::leaf("ns"), Cirru::leaf("app.inc")]),
+    },
+    defs: HashMap::from([(String::from("fresh"), cold_entry)]),
+  };
+  let cold = extract_file_data(&cold_file, Arc::from("app.inc")).expect("cold start file data");
+
+  let program = PROGRAM_CODE_DATA.read().expect("read program code");
+  let incremental = &program["app.inc"].defs["fresh"];
+  assert_eq!(incremental, &cold.defs["fresh"]);
+  assert!(
+    matches!(incremental.schema.as_ref(), CalcitTypeAnnotation::Fn(_)),
+    "{:?}",
+    incremental.schema
+  );
+  assert!(incremental.ffi.is_some());
+  assert_eq!(incremental.doc.as_ref(), "fresh-doc");
+  assert_eq!(incremental.examples.len(), 1);
+  assert!(incremental.tags.contains(&EdnTag::new("effect")));
+  drop(program);
+  assert!(matches!(
+    lookup_def_schema("app.inc", "fresh").as_ref(),
+    CalcitTypeAnnotation::Fn(_)
+  ));
+}
+
+#[test]
+fn incremental_metadata_only_change_replaces_metadata_and_invalidates_dependents() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  let code = Cirru::List(vec![
+    Cirru::leaf("defn"),
+    Cirru::leaf("fresh"),
+    Cirru::List(vec![Cirru::leaf("x")]),
+    Cirru::leaf("x"),
+  ]);
+  let old_code = code_to_calcit(&code, "app.inc", "fresh", vec![]).expect("build old code");
+  let consumer_code = code_to_calcit(&Cirru::leaf("2"), "app.consumer", "use-fresh", vec![]).expect("build consumer code");
+  let keep_code = code_to_calcit(&Cirru::leaf("3"), "app.consumer", "keep", vec![]).expect("build unrelated code");
+  let plain = |code: Calcit| ProgramDefEntry {
+    tags: HashSet::from([EdnTag::new("stale")]),
+    code,
+    schema: DYNAMIC_TYPE.clone(),
+    doc: Arc::from("stale doc"),
+    examples: vec![],
+    ffi: None,
+  };
+  PROGRAM_CODE_DATA.write().expect("seed program code").extend(HashMap::from([
+    (
+      Arc::from("app.inc"),
+      ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(Arc::from("fresh"), plain(old_code))]),
+      },
+    ),
+    (
+      Arc::from("app.consumer"),
+      ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([
+          (Arc::from("use-fresh"), plain(consumer_code)),
+          (Arc::from("keep"), plain(keep_code)),
+        ]),
+      },
+    ),
+  ]));
+
+  let fresh_def = ensure_def_id("app.inc", "fresh");
+  let consumer_def = ensure_def_id("app.consumer", "use-fresh");
+  let keep_def = ensure_def_id("app.consumer", "keep");
+  {
+    let mut compiled = PROGRAM_COMPILED_DATA_STATE.write().expect("seed compiled data");
+    compiled.extend(HashMap::from([
+      (
+        Arc::from("app.inc"),
+        CompiledFileData {
+          defs: HashMap::from([(Arc::from("fresh"), compiled_def_for_test(fresh_def, vec![]))]),
+        },
+      ),
+      (
+        Arc::from("app.consumer"),
+        CompiledFileData {
+          defs: HashMap::from([
+            (Arc::from("use-fresh"), compiled_def_for_test(consumer_def, vec![fresh_def])),
+            (Arc::from("keep"), compiled_def_for_test(keep_def, vec![])),
+          ]),
+        },
+      ),
+    ]));
+  }
+  write_runtime_ready("app.consumer", "use-fresh", Calcit::Number(2.0)).expect("seed consumer runtime");
+  write_runtime_ready("app.consumer", "keep", Calcit::Number(3.0)).expect("seed unrelated runtime");
+
+  // Same code as the loaded definition: only metadata differs.
+  let entry = parse_code_entry_for_test(INC_FN_ENTRY);
+  assert_eq!(entry.code, code);
+  let mut changes = snapshot::ChangesDict::default();
+  changes.changed.insert(
+    Arc::from("app.inc"),
+    snapshot::FileChangeInfo {
+      ns: None,
+      added_defs: HashMap::new(),
+      removed_defs: HashSet::new(),
+      changed_defs: HashMap::from([(String::from("fresh"), entry.clone().into())]),
+    },
+  );
+
+  // The change dictionary survives the `.compact-inc.cirru` text round trip.
+  let text = cirru_edn::format(&cirru_edn::Edn::try_from(changes.clone()).expect("serialize changes"), true).expect("format changes");
+  assert_eq!(parse_changes_for_test(&text), changes);
+
+  apply_code_changes(&changes).expect("apply metadata-only change");
+  clear_runtime_caches_for_changes(&changes, false).expect("clear caches");
+
+  {
+    let program = PROGRAM_CODE_DATA.read().expect("read program code");
+    let applied = &program["app.inc"].defs["fresh"];
+    assert!(
+      matches!(applied.schema.as_ref(), CalcitTypeAnnotation::Fn(_)),
+      "{:?}",
+      applied.schema
+    );
+    assert_eq!(applied.doc.as_ref(), "fresh-doc");
+    assert_eq!(applied.tags, HashSet::from([EdnTag::new("effect")]));
+    assert_eq!(applied.ffi, entry.ffi);
+    assert_eq!(applied.examples, entry.examples);
+  }
+  assert!(matches!(
+    lookup_def_schema("app.inc", "fresh").as_ref(),
+    CalcitTypeAnnotation::Fn(_)
+  ));
+  assert_eq!(lookup_compiled_def("app.inc", "fresh"), None);
+  assert_eq!(lookup_compiled_def("app.consumer", "use-fresh"), None);
+  assert_eq!(lookup_runtime_cell("app.consumer", "use-fresh"), Some(RuntimeCell::Cold));
+  assert!(lookup_compiled_def("app.consumer", "keep").is_some());
+  assert_eq!(lookup_runtime_ready("app.consumer", "keep"), Some(Calcit::Number(3.0)));
+}
+
+#[test]
+fn legacy_code_only_incremental_entries_keep_documented_metadata_behaviour() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  let schema = parse_code_entry_for_test(INC_FN_ENTRY).schema;
+  let old_code = code_to_calcit(&Cirru::leaf("1"), "app.legacy", "demo", vec![]).expect("build old code");
+  let loaded = ProgramDefEntry {
+    tags: HashSet::from([EdnTag::new("effect")]),
+    code: old_code,
+    schema: schema.clone(),
+    doc: Arc::from("kept doc"),
+    examples: vec![Cirru::leaf("1")],
+    ffi: Some(cirru_edn::Edn::map_from_iter([(
+      cirru_edn::Edn::tag("target"),
+      cirru_edn::Edn::tag("node"),
+    )])),
+  };
+  PROGRAM_CODE_DATA.write().expect("seed program code").insert(
+    Arc::from("app.legacy"),
+    ProgramFileData {
+      import_map: HashMap::new(),
+      defs: HashMap::from([(Arc::from("demo"), loaded.clone())]),
+    },
+  );
+
+  // Pre-#2178 producers write bare quoted code.
+  let changes = parse_changes_for_test(
+    "{}\n  :changed $ {}\n    |app.legacy $ {}\n      :added-defs $ {}\n        |fresh $ quote 3\n      :changed-defs $ {}\n        |demo $ quote 2\n",
+  );
+  let info = &changes.changed["app.legacy"];
+  assert_eq!(info.code_only_def_count(), 2);
+  assert_eq!(info.changed_defs["demo"], snapshot::DefinitionChange::Code(Cirru::leaf("2")));
+
+  apply_code_changes(&changes).expect("apply legacy change");
+
+  let program = PROGRAM_CODE_DATA.read().expect("read program code");
+  let file = &program["app.legacy"];
+  assert_eq!(
+    file.defs["demo"],
+    ProgramDefEntry {
+      code: Calcit::Number(2.0),
+      ..loaded
+    },
+    "legacy changed-defs only replace code"
+  );
+  let fresh = &file.defs["fresh"];
+  assert_eq!(fresh.code, Calcit::Number(3.0));
+  assert!(matches!(fresh.schema.as_ref(), CalcitTypeAnnotation::Dynamic));
+  assert!(fresh.doc.is_empty() && fresh.examples.is_empty() && fresh.ffi.is_none() && fresh.tags.is_empty());
+}
+
+#[test]
+fn incremental_code_entry_rejects_invalid_metadata_without_partial_apply() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  PROGRAM_CODE_DATA.write().expect("seed program code").insert(
+    Arc::from("app.inc"),
+    ProgramFileData {
+      import_map: HashMap::new(),
+      defs: HashMap::new(),
+    },
+  );
+  let error = snapshot::ChangesDict::try_from(
+    cirru_edn::parse("{}\n  :changed $ {}\n    |app.inc $ {}\n      :added-defs $ {}\n        |bad $ []\n").expect("parse"),
+  )
+  .expect_err("a list is neither quoted code nor a CodeEntry");
+  assert!(error.contains("added-defs/bad"), "error: {error}");
+
+  // `:ffi :js` needs a `:js-ffi` Fn schema; the cold-start validation applies too.
+  let mut entry = parse_code_entry_for_test(INC_FN_ENTRY);
+  entry.ffi = Some(cirru_edn::parse("{} (:target :node) (:js $ {} (:code |x))").expect("parse js ffi"));
+  let mut changes = snapshot::ChangesDict::default();
+  changes.changed.insert(
+    Arc::from("app.inc"),
+    snapshot::FileChangeInfo {
+      ns: None,
+      added_defs: HashMap::from([(String::from("ok"), Cirru::leaf("1").into()), (String::from("bad"), entry.into())]),
+      removed_defs: HashSet::new(),
+      changed_defs: HashMap::new(),
+    },
+  );
+  let error = apply_code_changes(&changes).expect_err("invalid JS FFI metadata");
+  assert!(error.contains("app.inc/bad") && error.contains(":ffi :js"), "error: {error}");
+  assert!(PROGRAM_CODE_DATA.read().expect("read program code")["app.inc"].defs.is_empty());
 }

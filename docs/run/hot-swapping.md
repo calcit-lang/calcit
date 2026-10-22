@@ -34,6 +34,30 @@ It relies on change event on `.compact-inc.cirru` for detecting code changes. `.
 
 But also notice that if you have effects like events listening, you have to dispose and re-attach listeners in `reload!`.
 
+#### `.compact-inc.cirru` 中的定义元数据（#2178）
+
+`:changed` 下每个命名空间的 `:added-defs` 与 `:changed-defs` 是「定义名 → 条目」的 map，条目接受两种形式：
+
+```cirru.no-check
+{}
+  :changed $ {}
+    |app.main $ {}
+      :changed-defs $ {}
+        ; 完整 CodeEntry：与 Snapshot 中的定义条目格式相同
+        |add $ %{} 'CodeEntry (:doc |Add two numbers.)
+          :code $ quote $ defn add (a b) (&+ a b)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number) (:args $ [] 'Number 'Number)
+        ; 旧格式：只有代码
+        |legacy $ quote $ defn legacy () 1
+```
+
+- **完整 `CodeEntry`**：使用完整 Snapshot 的同一个加载器解析（含 schema 归一化、`:ffi` 与 JS FFI 校验），应用后代码与 `:schema`、`:doc`、`:examples`、`:ffi`、`:tags` 全部替换为该条目的值，结果与冷启动加载同一条目一致。代码不变、只改元数据的定义也通过 `:changed-defs` 表达；其编译缓存及依赖它的定义都会失效重建。`:tests` 会被解析校验，但与冷启动相同，运行时不保存它。任何条目不合法时，该命名空间不做部分应用。
+- **旧格式（裸 quote 代码）**：继续接受，只替换代码。`:changed-defs` 保留内存中已加载的元数据；`:added-defs` 新定义以空元数据开始（`Dynamic` schema，没有 doc/examples/ffi/tags）。watcher 会打印 code-only 条目数量提醒。需要让元数据生效时，发送完整 `CodeEntry`，或重启 watcher。
+- watcher 只读取增量文件，不写回完整 Snapshot，两种形式都不会覆盖或丢弃 Snapshot 中保存的元数据。
+
+`calcit edit inc` 写出的 `--added` / `--changed` 条目始终是 Snapshot 中保存的完整 `CodeEntry`。
+
 ### JavaScript runtime
 
 While Calcit-js is compiled to JavaScript beforing running, we need tools from JavaScript side for hot swapping, or HMR(hot module replacement). The tool I use most frequestly is [Vite](https://vitejs.dev/), with extra entry file of code:

@@ -96,6 +96,8 @@ calcit edit inc \
   --removed app.core/old-fn
 ```
 
+`--added` / `--changed` 会把 Snapshot 中保存的完整定义条目（代码以及 schema、doc、examples、ffi、tags）写入 `.compact-inc.cirru`，watcher 应用后与冷启动一致。只用 `calcit edit schema`、`edit ffi`、`edit doc` 等修改元数据时，同样用 `--changed` 触发更新。格式与旧版纯代码条目的兼容行为见 [Hot Swapping](hot-swapping.md)。
+
 **查看 watcher 持久化错误栈：**
 
 ```bash
