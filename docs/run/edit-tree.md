@@ -95,9 +95,9 @@ calcit cursor show
 - `cursor anchor` → 移动 → `cursor anchor show`：确认同一 parent 下的连续 sibling 范围；结束后 `cursor anchor clear`。
 - `cursor marks set <name>` / `marks go <name>`：保存和恢复最多 16 个高频位置；短期绕行仍优先使用 `push/pop`。
 - `query context @cursor`、`tree show @cursor --path @cursor`：后续命令不再重复 target/path。
-- `cursor back` 只回退 cursor 位置，**不会撤销源码修改**。
+- `cursor move back` 只回退 cursor 位置，**不会撤销源码修改**。
 
-cursor 密集操作可把顶层选项写在命令前，如 `calcit --cursor-after focus cursor forward --count 4`，让每次移动立即展示上下文。需要机器确认真实选中节点时，使用 `calcit cursor show --format json --view node`。
+cursor 密集操作可把顶层选项写在命令前，如 `calcit --cursor-after focus cursor move forward --count 4`，让每次移动立即展示上下文。需要机器确认真实选中节点时，使用 `calcit cursor show --format json --view node`。
 
 `.calcit/` 是项目本地状态目录，应整体加入 `.gitignore`。其中 `cursor.cirru` 保存 active cursor、单一 anchor、最多 16 个 marks、last query、有限 history/stack 与 clipboard，硬上限 64 KiB；`error.cirru` 保存最近一次持久化 runtime/watcher stack，多行输入临时片段可放 `snippets/`。进入复制项目或已有 worktree 时先 `cursor show`；若选择与当前任务无关，执行 `cursor clear`。目前只有一个 active cursor，不负责多个进程的并发写入；并行 Agent 使用独立 worktree/Snapshot。
 
@@ -174,7 +174,7 @@ calcit --cursor-after focus calcit.cirru tree replace app.main/render! \
 The cursor state has independent navigation history and an explicit stack:
 
 ```bash
-calcit calcit.cirru cursor back       # restore the previous cursor location; source is unchanged
+calcit calcit.cirru cursor move back  # restore the previous cursor location; source is unchanged
 calcit calcit.cirru cursor push       # remember a location before a detour
 calcit calcit.cirru cursor pop        # restore that explicit location
 ```
@@ -505,7 +505,7 @@ calcit tree swap app.main/main! --with next --path '@1.0'
 calcit tree delete app.main/main! --path '@1.0' --expect 'quote (render-page)'
 ```
 
-`tree insert --at prepend-child|append-child` treat the path as the parent list. The earlier leaves `tree insert-before`, `insert-after`, `insert-child`, `append-child`, `swap-next` and `swap-prev` still work, print a `[Deprecated]` hint on stderr, and share the same implementation; see [升级手册](upgrade.md).
+`tree insert --at prepend-child|append-child` treat the path as the parent list. The earlier leaves `tree insert-before`, `insert-after`, `insert-child`, `append-child`, `swap-next` and `swap-prev` were removed in 0.31.0; calling one fails with a message that names the `tree insert --at` / `tree swap --with` form. See [升级手册](upgrade.md).
 
 `--expect` is optional, but recommended whenever a numeric path is copied from
 an earlier query. The mutation is rejected before writing if the node (or insert

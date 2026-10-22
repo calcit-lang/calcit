@@ -53,6 +53,7 @@ use calcit::cli_args::{
 use calcit::js_ffi_source::{JsFfiSource, parse_js_source};
 use calcit::snapshot::ChangesDict;
 use calcit::util::string::strip_shebang;
+use cli_handlers::AnalyzeView;
 use colored::Colorize;
 use notify::RecursiveMode;
 use notify_debouncer_mini::new_debouncer;
@@ -479,6 +480,10 @@ fn run_public_check(
 fn run_cli() -> Result<(), String> {
   // deep non-tail recursion should surface as a Calcit error, not a native stack overflow abort
   calcit::runner::arm_stack_guard(CLI_STACK_SIZE);
+  let raw_args = std::env::args().collect::<Vec<_>>();
+  if let Some(error) = cli_handlers::removed_command_error(&raw_args) {
+    return Err(error);
+  }
   let cli_args: ToplevelCalcit = argh::from_env();
   let active_input = match &cli_args.subcommand {
     Some(CalcitCommand::EmitWasm(command)) => command.input.as_deref().unwrap_or(&cli_args.input),
@@ -580,7 +585,7 @@ fn run_cli() -> Result<(), String> {
     calcit::set_quiet_tool_output(true);
   }
   // The echo above shows what the user typed; dispatch then uses the analyzer that owns the view.
-  let cli_args = cli_handlers::normalize_consolidated_views(cli_args)?;
+  let (cli_args, analyze_view) = cli_handlers::normalize_consolidated_views(cli_args)?;
 
   builtins::effects::init_effects_states();
 
@@ -684,12 +689,35 @@ fn run_cli() -> Result<(), String> {
     Some(CalcitCommand::Ffi(ffi_cmd)) => {
       return cli_handlers::handle_ffi_command(ffi_cmd, &cli_args.input);
     }
+    Some(CalcitCommand::Analyze(_)) if analyze_view.is_some() => match analyze_view.as_ref().expect("checked above") {
+      AnalyzeView::CallGraphDiff(diff_cmd) => {
+        return cli_handlers::handle_call_graph_diff_command(diff_cmd, &cli_args.input);
+      }
+      AnalyzeView::DynamicMethods(options) if options.incremental => {
+        let (mut snapshot, input_cache, project_namespaces) =
+          analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input, cli_args.entry.as_deref())?;
+        input_cache.ensure_complete()?;
+        apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
+        let entries = analysis_program_entries(&snapshot, cli_args.init_fn.as_deref(), cli_args.reload_fn.as_deref())?;
+        return run_dynamic_methods(
+          options,
+          &entries,
+          &snapshot,
+          &project_namespaces,
+          &cli_args.input,
+          Some(input_cache),
+        );
+      }
+      AnalyzeView::DeprecatedCalls(options) => {
+        let mut snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input, cli_args.entry.as_deref())?;
+        apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
+        return run_deprecated(options, &snapshot);
+      }
+      AnalyzeView::DynamicMethods(_) | AnalyzeView::CountCalls(_) => {}
+    },
     Some(CalcitCommand::Analyze(analyze_cmd)) => match &analyze_cmd.subcommand {
       AnalyzeSubcommand::ProgramDiff(diff_cmd) => {
         return cli_handlers::handle_program_diff_command(diff_cmd, &cli_args.input);
-      }
-      AnalyzeSubcommand::CallGraphDiff(diff_cmd) => {
-        return cli_handlers::handle_call_graph_diff_command(diff_cmd, &cli_args.input);
       }
       AnalyzeSubcommand::CheckTypes(options) => {
         let (mut snapshot, input_cache) = if options.incremental {
@@ -721,26 +749,6 @@ fn run_cli() -> Result<(), String> {
           apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
           return run_weak_types(options, &snapshot, &cli_args.input, input_cache);
         }
-      }
-      AnalyzeSubcommand::DynamicMethods(options) if options.incremental => {
-        let (mut snapshot, input_cache, project_namespaces) =
-          analysis_cache::load_snapshot_for_incremental_analysis(&cli_args.input, cli_args.entry.as_deref())?;
-        input_cache.ensure_complete()?;
-        apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
-        let entries = analysis_program_entries(&snapshot, cli_args.init_fn.as_deref(), cli_args.reload_fn.as_deref())?;
-        return run_dynamic_methods(
-          options,
-          &entries,
-          &snapshot,
-          &project_namespaces,
-          &cli_args.input,
-          Some(input_cache),
-        );
-      }
-      AnalyzeSubcommand::Deprecated(options) => {
-        let mut snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input, cli_args.entry.as_deref())?;
-        apply_strict_feature_policy_defaults(&mut snapshot, strict_type_policy.diagnostics)?;
-        return run_deprecated(options, &snapshot);
       }
       AnalyzeSubcommand::Quality(options) => {
         let mut snapshot = cli_handlers::load_snapshot_for_static_analysis(&cli_args.input, cli_args.entry.as_deref())?;
@@ -1050,12 +1058,23 @@ fn run_cli() -> Result<(), String> {
       eval_once = true;
     }
     run_codegen_with_timeout(&entries, &cli_args.emit_path, true, cli_args.timeout, cli_args.verbose)
+  } else if let Some(view) = analyze_view
+    .as_ref()
+    .filter(|_| matches!(&cli_args.subcommand, Some(CalcitCommand::Analyze(_))))
+  {
+    eval_once = true;
+    match view {
+      AnalyzeView::CallGraphDiff(diff_options) => cli_handlers::handle_call_graph_diff_command(diff_options, &cli_args.input),
+      AnalyzeView::CountCalls(count_call_options) => run_count_calls(&entries, count_call_options),
+      AnalyzeView::DynamicMethods(options) => {
+        run_dynamic_methods(options, &entries, &snapshot, &project_namespaces, &cli_args.input, None)
+      }
+      AnalyzeView::DeprecatedCalls(deprecated_options) => run_deprecated(deprecated_options, &snapshot),
+    }
   } else if let Some(CalcitCommand::Analyze(analyze_cmd)) = &cli_args.subcommand {
     eval_once = true;
     match &analyze_cmd.subcommand {
       AnalyzeSubcommand::CallGraph(call_graph_options) => run_call_graph(&entries, call_graph_options, &snapshot),
-      AnalyzeSubcommand::CallGraphDiff(diff_options) => cli_handlers::handle_call_graph_diff_command(diff_options, &cli_args.input),
-      AnalyzeSubcommand::CountCalls(count_call_options) => run_count_calls(&entries, count_call_options),
       AnalyzeSubcommand::ProgramDiff(diff_options) => cli_handlers::handle_program_diff_command(diff_options, &cli_args.input),
       AnalyzeSubcommand::CheckExamples(check_options) => run_check_examples(
         &check_options.ns,
@@ -1076,15 +1095,9 @@ fn run_cli() -> Result<(), String> {
           .incremental
           .then(|| analysis_cache::InputCacheStats::bypassed("schema-evidence-requires-preprocessing")),
       ),
-      AnalyzeSubcommand::DynamicMethods(options) => {
-        run_dynamic_methods(options, &entries, &snapshot, &project_namespaces, &cli_args.input, None)
-      }
-      AnalyzeSubcommand::Deprecated(deprecated_options) => run_deprecated(deprecated_options, &snapshot),
       AnalyzeSubcommand::Quality(quality_options) => run_quality(quality_options, &snapshot),
       AnalyzeSubcommand::Verify(options) => verification::run(options, &cli_args.input, strict_type_policy.diagnostics),
       AnalyzeSubcommand::EffectsGraph(effects_graph_options) => run_effects_graph(&entries, effects_graph_options),
-      AnalyzeSubcommand::JsEscape(options) => run_js_escape(&options.symbol),
-      AnalyzeSubcommand::JsUnescape(options) => run_js_unescape(&options.symbol),
     }
   } else {
     if !cli_args.watch {
@@ -1668,18 +1681,6 @@ fn apply_strict_feature_policy_defaults(snapshot: &mut snapshot::Snapshot, stric
     .feature_policy
     .entry("js-ffi".to_owned())
     .or_insert(snapshot::FeaturePolicy::Error);
-  Ok(())
-}
-
-fn run_js_escape(symbol: &str) -> Result<(), String> {
-  let escaped = calcit::codegen::emit_js::escape_symbol_for_js(symbol);
-  println!("{escaped}");
-  Ok(())
-}
-
-fn run_js_unescape(symbol: &str) -> Result<(), String> {
-  let restored = calcit::codegen::emit_js::unescape_symbol_from_js(symbol);
-  println!("{restored}");
   Ok(())
 }
 
@@ -2417,7 +2418,7 @@ fn check_examples_schema() -> Arc<CalcitTypeAnnotation> {
 }
 
 fn run_call_graph(entries: &ProgramEntries, options: &CallGraphCommand, _snapshot: &snapshot::Snapshot) -> Result<(), String> {
-  let output_format = cli_handlers::StructuredOutputFormat::parse_graph(&options.format, "call-graph");
+  let output_format = cli_handlers::StructuredOutputFormat::parse_graph(&options.format, "call-graph")?;
   // Determine entry point: use --root if provided, otherwise use init_fn from config
   let (entry_ns, entry_def) = if let Some(ref def_path) = options.root {
     util::string::extract_ns_def(def_path)?
@@ -2455,7 +2456,7 @@ fn run_call_graph(entries: &ProgramEntries, options: &CallGraphCommand, _snapsho
 }
 
 fn run_effects_graph(entries: &ProgramEntries, options: &EffectsGraphCommand) -> Result<(), String> {
-  let output_format = cli_handlers::StructuredOutputFormat::parse_graph(&options.format, "effects-graph");
+  let output_format = cli_handlers::StructuredOutputFormat::parse_graph(&options.format, "effects-graph")?;
   let (entry_ns, entry_def) = if let Some(ref def_path) = options.root {
     util::string::extract_ns_def(def_path)?
   } else {
@@ -2496,7 +2497,7 @@ fn run_effects_graph(entries: &ProgramEntries, options: &EffectsGraphCommand) ->
 }
 
 fn run_count_calls(entries: &ProgramEntries, options: &CountCallsCommand) -> Result<(), String> {
-  let output_format = cli_handlers::StructuredOutputFormat::parse_graph(&options.format, "count-calls");
+  let output_format = cli_handlers::StructuredOutputFormat::parse_graph(&options.format, "call-graph --counts")?;
   let sort = calcit::call_tree::CallCountSort::parse(&options.sort)?;
   // Determine entry point: use --root if provided, otherwise use init_fn from config
   let (entry_ns, entry_def) = if let Some(ref def_path) = options.root {

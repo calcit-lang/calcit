@@ -229,7 +229,7 @@ Agent 和 CI 读取 entry 配置时优先使用 config 查询的 `--format edn`�
 `:command`、`:data`、`:diagnostics`、`:revision`，JSON 对应 `schema_version` 等兼容名称；
 entry 不存在或 Snapshot 配置无效时仍输出结构化诊断并以非零状态退出。
 
-读取源码优先使用 human 输出；其中包含代码的查询与 `tree show` 按 Markdown 组织，Cirru、JSON AST 和普通说明使用明确的 fenced block 或段落边界，适合人类 review，也方便 LLM 保留代码边界。需要稳定字段、自动分支或静态证据时优先使用 `--format edn`；仅对接 JSON-only 工具时显式使用 `--format json`。两种结构化格式各自承诺 stdout 为单个可解析 envelope；某些命令的 `--json` 只是在人类输出中附加 fenced JSON，具体以子命令 `--help` 为准。不要把 Markdown heading、fence 或截断说明复制为 Calcit 源码。
+读取源码优先使用 human 输出；其中包含代码的查询与 `tree show` 按 Markdown 组织，Cirru、JSON AST 和普通说明使用明确的 fenced block 或段落边界，适合人类 review，也方便 LLM 保留代码边界。需要稳定字段、自动分支或静态证据时优先使用 `--format edn`；仅对接 JSON-only 工具时显式使用 `--format json`。两种结构化格式各自承诺 stdout 为单个可解析 envelope；`query def`/`query schema`/`tree show` 的 `--json` 已在 0.31.0 删除，请改用 `--format json`；`ffi export --json` 仍可用但已弃用。不要把 Markdown heading、fence 或截断说明复制为 Calcit 源码。
 
 ## 2. 最小心智模型
 

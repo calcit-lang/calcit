@@ -808,7 +808,8 @@ const scenarios = [
       "query",
       "schema",
       "app.main/*ref-demo",
-      "--json",
+      "--format",
+      "json",
     ],
     check(result) {
       if (
@@ -1638,7 +1639,7 @@ try {
   const edit = run("edit", "ffi", "app.main/main!", "--code", ffi);
   assert.equal(edit.status, 0, edit.stderr);
   const query = (...flags) => run("query", "def", "app.main/main!", ...flags);
-  const machine = query("--format", "json", "--json", "--raw");
+  const machine = query("--format", "json", "--raw");
   assert.equal(machine.status, 0, machine.stderr);
   const data = JSON.parse(machine.stdout).data;
   const nativeEdn = query("--format", "edn");
@@ -1657,11 +1658,12 @@ try {
   assert.equal(roundTrip.status, 0, roundTrip.stderr);
   assert.deepEqual(JSON.parse(roundTrip.stdout), data.ffi);
   const legacy = query("--raw", "--json");
-  assert.equal(legacy.status, 0, legacy.stderr);
-  const legacyJson = legacy.stdout.match(/\n## JSON\n\n(`{3,})json\n([\s\S]*?)\n\1\n?$/);
-  assert.ok(legacyJson, "legacy --json output must append a fenced JSON block");
-  assert.equal(JSON.parse(legacyJson[2]).ffi, data.ffi_edn);
-  assert.ok(legacy.stdout.includes(data.ffi_edn), "raw human FFI must also be complete");
+  assert.notEqual(legacy.status, 0, "the removed --json switch must fail");
+  assert.equal(legacy.stdout, "", "the removed --json switch must not print a report");
+  assert.match(legacy.stderr, /`calcit query def --json` was removed in 0\.31\.0; use `--format json`/);
+  const raw = query("--raw");
+  assert.equal(raw.status, 0, raw.stderr);
+  assert.ok(raw.stdout.includes(data.ffi_edn), "raw human FFI must also be complete");
   assert.match(query().stdout, /FFI \(preview; use --raw/);
   for (const [args, structured] of [
     [["query", "def", "app.main/nonexistent-875", "--format", "json"], true],

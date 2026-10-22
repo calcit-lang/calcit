@@ -215,9 +215,9 @@ Cirru EDN 文本；缺失时为 `nil`／`null`，两者均不是 preview。有�
 `revision`；无源码 builtin 的 `revision`、`code` 为 `nil`／`null`，`builtin` 为 `true`。
 The schema field remains a Cirru syntax tree, not raw persisted schema data.
 
-兼容性：已弃用的 `--json`（使用时 stderr 会提示改用 `--format json`）仍在 human 输出末尾附加 `JSON:` 与旧字段对象，其中 `ffi` 保持
-字符串类型，但不再截断。`--format json` 优先于 `--json`，不需要 `--raw` 就会返回
-完整元数据。human 模式默认标明 FFI preview；`--raw` 同时输出完整代码与 FFI。
+兼容性：`query def`、`query schema` 与 `tree show` 的 `--json` 开关已在 0.31.0 删除，使用时会报错并提示改用
+`--format json`。`--format json` 不需要 `--raw` 就会返回完整元数据。human 模式默认标明 FFI preview；`--raw`
+同时输出完整代码与 FFI。
 本接口只查询声明，不改变 Interface IR v3、目标可用性检查或 async 调用语义。
 
 `--format cirru` 只输出 `quote $ <定义>` 形式的源码，不带 Markdown 标题、Schema 段或代码围栏，可以直接作为
@@ -259,10 +259,10 @@ calcit query schema app.main/main!
 calcit query schema 'app.main/*enabled?'
 
 # Versioned machine-readable envelope with canonical schema and Cirru tree
-calcit query schema 'app.main/*enabled?' --json
+calcit query schema 'app.main/*enabled?' --format json
 ```
 
-Parameterized value schemas are rendered directly, for example `:: :ref :bool`; they are no longer hidden as `(none)` merely because they are not function schemas. `--json` emits actual JSON, including both the canonical one-line schema and its Cirru tree, rather than a Cirru EDN fragment labeled as JSON.
+Parameterized value schemas are rendered directly, for example `:: :ref :bool`; they are no longer hidden as `(none)` merely because they are not function schemas. `--format json` emits actual JSON, including both the canonical one-line schema and its Cirru tree, rather than a Cirru EDN fragment labeled as JSON.
 
 ### Find Symbol (`find`)
 

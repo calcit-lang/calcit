@@ -36,6 +36,71 @@ decode、模式匹配或谓词守卫收窄。不自动加入 unsafe、更宽 Dyn
 两个相互冲突的封闭输入不会仅为通过检查而合成 Dynamic；Ref 的不变性、回调参数的逆变关系、
 调用方泛型身份与 trait 约束仍须分别成立。运行时合并顺序及覆盖行为不变。
 
+## 0.31.0 删除已弃用的 CLI 入口（#2033）
+
+0.29.0、0.29.2 与 0.30.0 标为弃用的合并入口在 0.31.0 删除。调用已删除的入口时，CLI 在解析参数之前失败：退出码非 0，stdout 为空，stderr 只有一行，例如
+`` `calcit tree insert-after` was removed in 0.31.0; use `calcit tree insert --at after`. See docs/run/upgrade.md. ``，Snapshot 与 cursor 状态都不写入。
+`edit transaction` 中使用已删除的操作时，整个事务在写入前失败，报错为
+`` Transaction operation N uses `tree insert-after`, which was removed in 0.31.0; use ... ``。
+
+升级前在 0.30.x 上运行一遍 CI、`package.json` 脚本与 Agent 指南中的命令：stderr 里仍出现 `[Deprecated]` 的行就是需要迁移的入口。
+
+| 已删除 | 替代 |
+| --- | --- |
+| `analyze dynamic-methods` | `analyze weak-types --only dynamic-method` |
+| `analyze deprecated` | `analyze weak-types --only deprecated-call`（envelope `command` 仍为 `analyze.deprecated`） |
+| `analyze count-calls [--sort count\|name]` | `analyze call-graph --counts [--sort count\|name]` |
+| `analyze call-graph-diff <ref>` | `analyze call-graph --diff <ref>` |
+| `analyze js-escape`、`analyze js-unescape` | 无；JS 代码生成的转义规则不变 |
+| `query pkg` | `query config`（首行给出 `Package`） |
+| `query modules` | `config modules` |
+| `query host-procs` | 无 |
+| `tree insert-before` / `insert-after` | `tree insert --at before` / `--at after` |
+| `tree insert-child` / `append-child` | `tree insert --at prepend-child` / `--at append-child` |
+| `tree swap-next` / `swap-prev` | `tree swap --with next` / `--with prev` |
+| `tree batch-delete --paths …` | `edit transaction`，每个路径一条 `tree delete`，下标从大到小 |
+| `cursor parent` / `child` / `next` / `prev` / `forward` / `backward` / `back` | `cursor move parent` / `child` / `next` / `prev` / `forward` / `backward` / `back` |
+| `cursor clear-anchor`、`cursor region` | `cursor anchor clear`、`cursor anchor show` |
+| `cursor mark` / `goto` / `rm-mark <name>` | `cursor marks set` / `go` / `drop <name>` |
+| `cursor copy` / `cut` / `paste` / `clear-clipboard` | `cursor clipboard copy` / `cut` / `paste` / `clear` |
+| `cursor slurp-next` / `slurp-prev` / `barf-last` / `barf-first` / `duplicate` | `cursor apply slurp-next` / `slurp-prev` / `barf-last` / `barf-first` / `duplicate` |
+| `edit rm-example <ns/def> <index>` | `edit examples <ns/def>` 写入剩余示例 |
+| `edit ns-doc <ns> <doc>` | `edit ns <ns>` 写回修改了 `:doc` 的 `query ns <ns> --format cirru` 数据 |
+| `docs read-lines <file> [--start n] [--lines n]` | `docs read <file> [--start n] [--lines n]` |
+| `cirru show-guide` | `docs read cirru-syntax.md` |
+| `config version` | `caps version get/set/bump`（`config set version` 仍报错） |
+| `query def --json`、`query schema --json`、`tree show --json` | `--format json`（推荐 `--format edn`） |
+| `analyze call-graph`、`effects-graph` 的未知 `--format` 值 | 改为报错 `Expected human (or text, tree), edn, or json`；不再回退到文本输出 |
+
+`cursor anchor`、`cursor marks`、`cursor clipboard` 的无动作写法，以及 `cursor apply` 的操作名（`insert-before`、`swap-next` 等）不是已删除的入口，保持可用。`--format text` 与 `--format tree` 在图命令上仍等价于 `human`。`query search-expr --json` 描述输入编码，不受影响。
+
+迁移命令示例：
+
+```bash
+calcit calcit.cirru analyze weak-types --only deprecated-call --ns-prefix app. --format edn
+calcit calcit.cirru analyze call-graph --counts --sort name --format edn
+calcit calcit.cirru config modules
+calcit calcit.cirru tree insert app.main/main! --at after --path '@1.0' --code 'quote (println |done)'
+calcit calcit.cirru tree swap app.main/main! --with prev --path '@1.1'
+calcit calcit.cirru edit transaction --dry-run --format edn --code '[["tree","delete","app.main/f","--path","@3.2"],["tree","delete","app.main/f","--path","@3.1"]]'
+calcit calcit.cirru cursor move next --count 2
+calcit calcit.cirru cursor clipboard paste --at before
+calcit calcit.cirru query def app.main/main! --format json
+calcit calcit.cirru docs read common-patterns.md --start 100 --lines 50
+```
+
+### 仍保留的已弃用入口
+
+下列入口仍然可用，并继续在 stderr 输出一行 `[Deprecated]` 提示。#1566 的盘点显示 calcit.std、js-ffi、respo 等生态仓库的 CI 或脚本仍在调用它们，删除前需要先完成下游迁移：
+
+| 保留 | 替代 | 保留原因 |
+| --- | --- | --- |
+| `analyze check-types` | `analyze weak-types --only coverage` | js-ffi 的脚本仍调用 |
+| `analyze check-public --ns <ns>` | `--check-only --ns <ns> [--deps]` | calcit.std、js-ffi、respo 的 CI 仍调用 |
+| `analyze quality` | `--check-only` 与 `analyze weak-types` 视图 | calcit.std、js-ffi、respo 的 CI 仍调用；仍依赖 baseline 的项目需要先清零 |
+| `ffi export --json` | `ffi export --format json` | calcit.std 的 FFI inventory 流程仍使用 |
+| `--strict-types`、`--compat-types` | 去掉选项（默认即严格）；修复报告的诊断 | 仓库的生态严格模式检查脚本仍依赖 |
+
 ## 0.31.0 Enum 原语检查已知接收者类型
 
 `&enum:nth` 与 `%::` 按声明的参数合同检查第一个参数：`&enum:nth` 需要 Enum 值，`%::` 需要
@@ -1119,7 +1184,7 @@ Map 与 Set 同时不再实现 `Contains` trait。schema `:where` 中 `'T 'Conta
 
 ### 0.29.0 弃用、0.31.0 删除：合并后的 CLI 入口（#1566）
 
-下面的子命令在 0.29.0 仍可运行，stdout 与退出码不变，只在 stderr 多输出一行 `[Deprecated] ...` 迁移提示；0.30.0 仍保留，计划在 0.31.0 删除（#2033）。新入口复用同一实现，结构化输出保留原有 `command` 名与字段，因此读取 `analyze.check-types`、`analyze.check-public` 等 envelope 的脚本只需改命令行；这些 envelope 名在删除旧入口后保持不变。
+下面的子命令在 0.29.0 仍可运行，stdout 与退出码不变，只在 stderr 多输出一行 `[Deprecated] ...` 迁移提示；0.30.0 仍保留。0.31.0 已删除其中的 `analyze dynamic-methods`、`analyze deprecated`、`query pkg`、`query modules`、`tree batch-delete` 与 `config version`；`analyze check-types`、`analyze check-public`、`analyze quality` 因生态 CI 仍在调用而保留（见本手册“0.31.0 删除已弃用的 CLI 入口”一节）。新入口复用同一实现，结构化输出保留原有 `command` 名与字段，因此读取 `analyze.check-types`、`analyze.check-public` 等 envelope 的脚本只需改命令行；这些 envelope 名在删除旧入口后保持不变。
 
 | 已弃用 | 替代 | 说明 |
 | --- | --- | --- |
@@ -1149,7 +1214,7 @@ calcit calcit.cirru edit transaction --dry-run --format edn --code '[["tree","de
 
 ### 0.30.0 弃用、0.31.0 删除：零引用的 CLI 入口（#1566）
 
-下面的子命令在仓库 CI、脚本与已盘点的生态仓库中都没有调用。它们在 0.30.0 仍可运行，stdout 与退出码不变，只在 stderr 多输出一行 `[Deprecated] ...` 迁移提示；计划在 0.31.0 删除。合并为选项的入口与旧命令共用同一实现，输出逐字节相同。
+下面的子命令在仓库 CI、脚本与已盘点的生态仓库中都没有调用。它们在 0.30.0 仍可运行，stdout 与退出码不变，只在 stderr 多输出一行 `[Deprecated] ...` 迁移提示；已在 0.31.0 删除。合并为选项的入口与旧命令共用同一实现，输出逐字节相同。
 
 | 已弃用 | 替代 | 说明 |
 | --- | --- | --- |
@@ -1175,9 +1240,9 @@ calcit calcit.cirru query ns app.main --format cirru > .calcit/snippets/app.main
 calcit calcit.cirru edit ns app.main --file .calcit/snippets/app.main.cirru --dry-run
 ```
 
-### 0.29.2 弃用、下一个非 patch 版本删除：`tree insert` / `tree swap` 与 `query host-procs`（#1566）
+### 0.29.2 弃用、0.31.0 删除：`tree insert` / `tree swap` 与 `query host-procs`（#1566）
 
-`tree` 的四个插入叶子合并为一个入口，两个交换叶子合并为一个入口。旧叶子在 0.29.2 仍可运行，stdout 与退出码不变，只在 stderr 多输出一行 `[Deprecated] ...` 提示；新旧写法共用同一实现，改写的 Snapshot 逐字节相同。`edit transaction` 中的旧操作同样输出提示，新操作 `["tree","insert",…]`、`["tree","swap",…]` 可直接放进事务。
+`tree` 的四个插入叶子合并为一个入口，两个交换叶子合并为一个入口。旧叶子在 0.29.2 至 0.30.x 仍可运行，stdout 与退出码不变，只在 stderr 多输出一行 `[Deprecated] ...` 提示；新旧写法共用同一实现，改写的 Snapshot 逐字节相同。0.31.0 已删除这些旧叶子。`edit transaction` 中的旧操作同样输出提示，新操作 `["tree","insert",…]`、`["tree","swap",…]` 可直接放进事务。
 
 | 已弃用 | 替代 | 说明 |
 | --- | --- | --- |
@@ -1199,9 +1264,9 @@ calcit calcit.cirru tree swap app.main/main! --with prev --path '@1.1'
 calcit calcit.cirru edit transaction --dry-run --format edn --code '[["tree","insert","app.main/f","--at","append-child","--path","@3","--code","quote x"]]'
 ```
 
-### 0.29.2 弃用、下一个非 patch 版本删除：`cursor` 的移动、锚点、书签、剪贴板与 Paredit 叶子（#1566）
+### 0.29.2 弃用、0.31.0 删除：`cursor` 的移动、锚点、书签、剪贴板与 Paredit 叶子（#1566）
 
-`cursor` 组的 21 个叶子并入已有入口：导航并入新增的 `cursor move`，锚点、书签、剪贴板各用一个带动作的入口，slurp / barf / duplicate 并入 `cursor apply`。旧叶子在 0.29.2 仍可运行，stdout 与退出码不变，只在 stderr 多输出一行 `[Deprecated] ...` 提示；新旧写法共用同一实现，改写的 Snapshot 与 cursor 状态逐字节相同。
+`cursor` 组的 21 个叶子并入已有入口：导航并入新增的 `cursor move`，锚点、书签、剪贴板各用一个带动作的入口，slurp / barf / duplicate 并入 `cursor apply`。旧叶子在 0.29.2 至 0.30.x 仍可运行，stdout 与退出码不变，只在 stderr 多输出一行 `[Deprecated] ...` 提示；新旧写法共用同一实现，改写的 Snapshot 与 cursor 状态逐字节相同。0.31.0 已删除这些旧叶子。
 
 | 已弃用 | 替代 | 说明 |
 | --- | --- | --- |
@@ -1243,9 +1308,9 @@ calcit calcit.cirru cursor apply slurp-next
 | `test`、`analyze quality`、`cursor show/region/marks/clipboard` | 增加 `--format edn` | `human`、`json` 不变 |
 | `query ns`、`query schema`、`tree show` | 增加 `--format edn\|json`（`query ns` 另保留 `cirru`） | 默认 human 输出不变 |
 
-遗留的 `--json` 开关（`query schema`、`query def`、`tree show`、`ffi export`）行为不变，但每次使用会在 stderr 多输出一行 `[Deprecated] ...` 提示；请改用 `--format json`（或推荐的 `--format edn`）。`--json` 与显式的矛盾 `--format` 同时出现会报错：`query schema`、`query def`、`tree show` 不接受 `--json` 搭配 `edn`/`cirru`，`ffi export` 只接受 `--json` 搭配 `json`。`query search-expr --json` 与 `cirru format` 的 JSON 参数描述的是输入编码而非输出格式，不在此列。
+遗留的 `--json` 开关（`query schema`、`query def`、`tree show`、`ffi export`）在 0.29.2 至 0.30.x 行为不变，但每次使用会在 stderr 多输出一行 `[Deprecated] ...` 提示（0.31.0 删除了前三个命令的 `--json`，`ffi export --json` 仍保留为弃用）；请改用 `--format json`（或推荐的 `--format edn`）。`--json` 与显式的矛盾 `--format` 同时出现会报错：`query schema`、`query def`、`tree show` 不接受 `--json` 搭配 `edn`/`cirru`，`ffi export` 只接受 `--json` 搭配 `json`。`query search-expr --json` 与 `cirru format` 的 JSON 参数描述的是输入编码而非输出格式，不在此列。
 
-`analyze call-graph`、`count-calls`、`effects-graph` 对无法识别的 `--format` 值此前静默按文本输出；本版本保持该行为并在 stderr 输出 `[Warn]`，下一个非 patch 版本起改为报错 `Expected human, edn, or json`。`text` 与 `tree` 在这三个命令上都等价于 `human`。根命令的 `--format` 仍只属于 `--check-only` 报告；给子命令传格式时，把 `--format` 写在子命令之后。
+`analyze call-graph`、`count-calls`、`effects-graph` 对无法识别的 `--format` 值此前静默按文本输出；0.29.2 至 0.30.x 保持该行为并在 stderr 输出 `[Warn]`，0.31.0 起改为报错 `Expected human (or text, tree), edn, or json`。`text` 与 `tree` 在这三个命令上都等价于 `human`。根命令的 `--format` 仍只属于 `--check-only` 报告；给子命令传格式时，把 `--format` 写在子命令之后。
 
 迁移示例：
 

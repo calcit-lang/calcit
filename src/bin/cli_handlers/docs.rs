@@ -3,7 +3,7 @@
 //! Handles: calcit docs scopes, search, list, sections, read, read-lines
 
 use super::stdout::{cli_print as print, cli_println as println};
-use calcit::cli_args::{DocsCommand, DocsGraphSubcommand, DocsSubcommand};
+use calcit::cli_args::{DocsCommand, DocsGraphSubcommand, DocsReadCommand, DocsSubcommand};
 use colored::Colorize;
 use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
@@ -159,6 +159,15 @@ pub fn handle_docs_command(cmd: &DocsCommand) -> Result<(), String> {
     ),
     DocsSubcommand::List(opts) => handle_list(opts.module.as_deref()),
     DocsSubcommand::Sections(opts) => handle_sections(&opts.filename, opts.module.as_deref(), opts.with_lines),
+    DocsSubcommand::Read(opts) if opts.start.is_some() || opts.lines.is_some() => {
+      reject_read_line_range_conflicts(opts)?;
+      handle_read_lines(
+        &opts.filename,
+        opts.start.unwrap_or(0),
+        opts.lines.unwrap_or(80),
+        opts.module.as_deref(),
+      )
+    }
     DocsSubcommand::Read(opts) => handle_read(
       &opts.filename,
       &opts.headings,
@@ -175,7 +184,6 @@ pub fn handle_docs_command(cmd: &DocsCommand) -> Result<(), String> {
       opts.with_lines,
       opts.refresh,
     ),
-    DocsSubcommand::ReadLines(opts) => handle_read_lines(&opts.filename, opts.start, opts.lines, opts.module.as_deref()),
     DocsSubcommand::CheckMd(opts) => {
       if opts.legacy_entry.is_some() {
         return Err(
@@ -188,6 +196,21 @@ pub fn handle_docs_command(cmd: &DocsCommand) -> Result<(), String> {
     DocsSubcommand::FormatMd(opts) => handle_format_md(&opts.file, opts.check),
     DocsSubcommand::Graph(opts) => handle_graph_command(&opts.subcommand),
   }
+}
+
+/// `docs read --start/--lines` reads a line range, which cannot be combined with heading selection.
+fn reject_read_line_range_conflicts(opts: &DocsReadCommand) -> Result<(), String> {
+  for (flag, present) in [
+    ("<headings>", !opts.headings.is_empty()),
+    ("--no-subheadings", opts.no_subheadings),
+    ("--full", opts.full),
+    ("--with-lines", opts.with_lines),
+  ] {
+    if present {
+      return Err(format!("`docs read --start/--lines` does not support `{flag}`."));
+    }
+  }
+  Ok(())
 }
 
 fn build_graph_cache(force_rebuild: bool) -> Result<(PathBuf, docs_cache::DocsCache), String> {

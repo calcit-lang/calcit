@@ -5,7 +5,6 @@
 use calcit::cli_args::{
   ConfigAddEntryCommand, ConfigAddModuleCommand, ConfigCommand, ConfigModulesCommand, ConfigRmModuleCommand, ConfigRmTypeSlotCommand,
   ConfigSetCommand, ConfigSetTypeSlotCommand, ConfigShowCommand, ConfigSubcommand, ConfigTypeSlotsCommand, ConfigUnsetCommand,
-  ConfigVersionCommand,
 };
 use calcit::snapshot;
 use calcit::util::string::strip_shebang;
@@ -275,7 +274,7 @@ fn config_json_query<T>(
 
 pub fn handle_config_command(cmd: &ConfigCommand, snapshot_file: &str) -> Result<(), String> {
   let mutates_snapshot = match &cmd.subcommand {
-    ConfigSubcommand::Show(_) | ConfigSubcommand::Modules(_) | ConfigSubcommand::TypeSlots(_) | ConfigSubcommand::Version(_) => false,
+    ConfigSubcommand::Show(_) | ConfigSubcommand::Modules(_) | ConfigSubcommand::TypeSlots(_) => false,
     ConfigSubcommand::Set(opts) => opts.key != "version",
     _ => true,
   };
@@ -291,7 +290,6 @@ pub fn handle_config_command(cmd: &ConfigCommand, snapshot_file: &str) -> Result
     ConfigSubcommand::Show(opts) => handle_show(opts, snapshot_file),
     ConfigSubcommand::Modules(opts) => handle_modules(opts, snapshot_file),
     ConfigSubcommand::TypeSlots(opts) => handle_type_slots(opts, snapshot_file),
-    ConfigSubcommand::Version(opts) => handle_version(opts, snapshot_file),
     ConfigSubcommand::Set(opts) => handle_set(opts, snapshot_file),
     ConfigSubcommand::Unset(opts) => handle_unset(opts, snapshot_file),
     ConfigSubcommand::AddEntry(opts) => handle_add_entry(opts, snapshot_file),
@@ -525,21 +523,9 @@ fn load_module_silent(module_path: &str, base_dir: &Path, module_folder: &Path) 
   Err(last_error.unwrap_or_else(|| format!("Module not found: {module_path}")))
 }
 
-fn handle_version(opts: &ConfigVersionCommand, snapshot_file: &str) -> Result<(), String> {
-  let replacement = version_command_replacement(opts.value.as_deref(), snapshot_file);
-  eprintln!(
-    "[Deprecated] `calcit config version` no longer writes `calcit.cirru :version`; use {replacement}, which manages `deps.cirru :version`"
-  );
-  let _ = snapshot_file;
-  Err(format!("Project version is stored in deps.cirru; run {replacement}"))
-}
-
 fn handle_set(opts: &ConfigSetCommand, snapshot_file: &str) -> Result<(), String> {
   if opts.key == "version" {
-    let replacement = version_command_replacement(Some(opts.value.as_str()), snapshot_file);
-    eprintln!(
-      "[Deprecated] `calcit config set version` no longer writes `calcit.cirru :version`; use {replacement} to manage `deps.cirru :version`"
-    );
+    let replacement = version_command_replacement(&opts.value, snapshot_file);
     return Err(format!("Project version is stored in deps.cirru; run {replacement}"));
   }
 
@@ -809,12 +795,11 @@ fn handle_unset(opts: &ConfigUnsetCommand, snapshot_file: &str) -> Result<(), St
   Ok(())
 }
 
-fn version_command_replacement(value: Option<&str>, snapshot_file: &str) -> String {
+fn version_command_replacement(value: &str, snapshot_file: &str) -> String {
   let deps_path = deps_path_for_snapshot(snapshot_file);
   match value {
-    None => format!("`caps version get {deps_path}`"),
-    Some(v @ ("patch" | "minor" | "major")) => format!("`caps version bump {v} {deps_path}`"),
-    Some(v) => format!("`caps version set {v} {deps_path}`"),
+    v @ ("patch" | "minor" | "major") => format!("`caps version bump {v} {deps_path}`"),
+    v => format!("`caps version set {v} {deps_path}`"),
   }
 }
 

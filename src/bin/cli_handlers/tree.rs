@@ -4,20 +4,20 @@ use std::fmt::Write as _;
 
 use super::chunk_display::{ChunkDisplayOptions, ChunkedDisplay, fragment_nesting_level, maybe_chunk_node};
 use super::common::{
-  ERR_CODE_INPUT_REQUIRED, cirru_to_json, cirru_to_json_value, decode_mutation_syntax_input, emit_cli_output, format_path,
+  ERR_CODE_INPUT_REQUIRED, cirru_to_json_value, decode_mutation_syntax_input, emit_cli_output, format_path,
   guard_snapshot_mutation_toolchain, markdown_cirru_section, markdown_fenced_block, parse_input_to_cirru, parse_path,
   print_cli_warning_block, read_code_input, resolve_definition_lookup, shell_quote,
 };
 use super::cursor::{
   maintain_cursor_after_tree_mutation, resolve_active_cursor_reference, resolve_cursor_path_argument, resolve_cursor_target_argument,
 };
-use super::structured_output::{StructuredOutputFormat, warn_deprecated_json_switch};
+use super::structured_output::StructuredOutputFormat;
 use super::tips::{TipPriority, Tips, command_guidance_enabled, tip_prefer_oneliner_json_markdown, tip_root_edit};
 use crate::cli_args::SyntaxInputFormat;
 use crate::cli_args::{
-  TreeAppendChildCommand, TreeBatchDeleteCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand,
-  TreeInsertChildCommand, TreeRaiseCommand, TreeReplaceCommand, TreeReplaceLeafCommand, TreeSearchReplaceCommand, TreeShowCommand,
-  TreeStructuralCommand, TreeSubcommand, TreeSwapNextCommand, TreeSwapPrevCommand, TreeUnwrapCommand, TreeWrapCommand,
+  TreeCommand, TreeDeleteCommand, TreeInsertCommand, TreeRaiseCommand, TreeReplaceCommand, TreeReplaceLeafCommand,
+  TreeSearchReplaceCommand, TreeShowCommand, TreeStructuralCommand, TreeSubcommand, TreeSwapCommand, TreeUnwrapCommand,
+  TreeWrapCommand,
 };
 
 // Import shared functions from edit module
@@ -50,9 +50,16 @@ fn save_definition_tree(
 
 /// Main handler for code command
 pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(), String> {
-  let cmd = &TreeCommand {
-    subcommand: super::deprecations::normalize_tree_subcommand(&cmd.subcommand)?,
-  };
+  // Reject an unknown `--at` / `--with` value before any file is touched.
+  match &cmd.subcommand {
+    TreeSubcommand::Insert(opts) => {
+      insert_operation(&opts.at)?;
+    }
+    TreeSubcommand::Swap(opts) => {
+      swap_operation(&opts.with)?;
+    }
+    _ => {}
+  }
   let _writer = if !matches!(&cmd.subcommand, TreeSubcommand::Show(_)) {
     Some(calcit::util::atomic_write::SnapshotWriteGuard::acquire(snapshot_file)?)
   } else {
@@ -66,23 +73,17 @@ pub fn handle_tree_command(cmd: &TreeCommand, snapshot_file: &str) -> Result<(),
   let cursor_mutation = prepare_cursor_mutation(&resolved, snapshot_file)?;
 
   let result = match &resolved.subcommand {
-    TreeSubcommand::Show(opts) => handle_show(opts, snapshot_file, opts.json),
+    TreeSubcommand::Show(opts) => handle_show(opts, snapshot_file),
     TreeSubcommand::Replace(opts) => handle_replace(opts, snapshot_file),
     TreeSubcommand::ReplaceLeaf(opts) => handle_replace_leaf(opts, snapshot_file),
     TreeSubcommand::Delete(opts) => handle_delete(opts, snapshot_file),
-    TreeSubcommand::InsertBefore(opts) => handle_insert_before(opts, snapshot_file),
-    TreeSubcommand::InsertAfter(opts) => handle_insert_after(opts, snapshot_file),
-    TreeSubcommand::InsertChild(opts) => handle_insert_child(opts, snapshot_file),
-    TreeSubcommand::AppendChild(opts) => handle_append_child(opts, snapshot_file),
-    TreeSubcommand::SwapNext(opts) => handle_swap_next(opts, snapshot_file),
-    TreeSubcommand::SwapPrev(opts) => handle_swap_prev(opts, snapshot_file),
+    TreeSubcommand::Insert(opts) => handle_insert(opts, snapshot_file),
+    TreeSubcommand::Swap(opts) => handle_swap(opts, snapshot_file),
     TreeSubcommand::Unwrap(opts) => handle_unwrap(opts, snapshot_file),
     TreeSubcommand::Raise(opts) => handle_raise(opts, snapshot_file),
     TreeSubcommand::Wrap(opts) => handle_wrap(opts, snapshot_file),
     TreeSubcommand::SearchReplace(opts) => handle_search_replace(opts, snapshot_file),
     TreeSubcommand::Rewrite(opts) => handle_rewrite(opts, snapshot_file),
-    TreeSubcommand::BatchDelete(opts) => handle_batch_delete(opts, snapshot_file),
-    TreeSubcommand::Insert(_) | TreeSubcommand::Swap(_) => unreachable!("normalized before dispatch"),
   };
 
   if let Err(error) = result {
@@ -121,21 +122,13 @@ fn resolve_tree_cursor_references(cmd: &mut TreeCommand, snapshot_file: &str) ->
     TreeSubcommand::Replace(opts) => &mut opts.target,
     TreeSubcommand::ReplaceLeaf(opts) => &mut opts.target,
     TreeSubcommand::Delete(opts) => &mut opts.target,
-    TreeSubcommand::InsertBefore(opts) => &mut opts.target,
-    TreeSubcommand::InsertAfter(opts) => &mut opts.target,
-    TreeSubcommand::InsertChild(opts) => &mut opts.target,
-    TreeSubcommand::AppendChild(opts) => &mut opts.target,
-    TreeSubcommand::SwapNext(opts) => &mut opts.target,
-    TreeSubcommand::SwapPrev(opts) => &mut opts.target,
+    TreeSubcommand::Insert(opts) => &mut opts.target,
+    TreeSubcommand::Swap(opts) => &mut opts.target,
     TreeSubcommand::Unwrap(opts) => &mut opts.target,
     TreeSubcommand::Raise(opts) => &mut opts.target,
     TreeSubcommand::Wrap(opts) => &mut opts.target,
     TreeSubcommand::SearchReplace(opts) => &mut opts.target,
     TreeSubcommand::Rewrite(opts) => &mut opts.target,
-    TreeSubcommand::BatchDelete(opts) => &mut opts.target,
-    TreeSubcommand::Insert(_) | TreeSubcommand::Swap(_) => {
-      return Err("`tree insert` and `tree swap` must be normalized before dispatch.".to_owned());
-    }
   };
   let active_reference = if target == "@cursor" {
     Some(resolve_active_cursor_reference(snapshot_file)?)
@@ -172,24 +165,12 @@ fn resolve_tree_cursor_references(cmd: &mut TreeCommand, snapshot_file: &str) ->
     TreeSubcommand::Replace(opts) => resolve(&opts.target, &mut opts.path)?,
     TreeSubcommand::ReplaceLeaf(_) | TreeSubcommand::SearchReplace(_) => {}
     TreeSubcommand::Delete(opts) => resolve(&opts.target, &mut opts.path)?,
-    TreeSubcommand::InsertBefore(opts) => resolve(&opts.target, &mut opts.path)?,
-    TreeSubcommand::InsertAfter(opts) => resolve(&opts.target, &mut opts.path)?,
-    TreeSubcommand::InsertChild(opts) => resolve(&opts.target, &mut opts.path)?,
-    TreeSubcommand::AppendChild(opts) => resolve(&opts.target, &mut opts.path)?,
-    TreeSubcommand::SwapNext(opts) => resolve(&opts.target, &mut opts.path)?,
-    TreeSubcommand::SwapPrev(opts) => resolve(&opts.target, &mut opts.path)?,
+    TreeSubcommand::Insert(opts) => resolve(&opts.target, &mut opts.path)?,
+    TreeSubcommand::Swap(opts) => resolve(&opts.target, &mut opts.path)?,
     TreeSubcommand::Unwrap(opts) => resolve(&opts.target, &mut opts.path)?,
     TreeSubcommand::Raise(opts) => resolve(&opts.target, &mut opts.path)?,
     TreeSubcommand::Wrap(opts) => resolve(&opts.target, &mut opts.path)?,
     TreeSubcommand::Rewrite(opts) => resolve(&opts.target, &mut opts.path)?,
-    TreeSubcommand::BatchDelete(opts) => {
-      for path in &mut opts.paths {
-        resolve(&opts.target, path)?;
-      }
-    }
-    TreeSubcommand::Insert(_) | TreeSubcommand::Swap(_) => {
-      return Err("`tree insert` and `tree swap` must be normalized before dispatch.".to_owned());
-    }
   }
   Ok(())
 }
@@ -210,37 +191,24 @@ fn prepare_cursor_mutation(cmd: &TreeCommand, snapshot_file: &str) -> Result<Opt
         path: parse_path(&opts.path)?,
       },
     ),
-    TreeSubcommand::InsertBefore(opts) => (
-      opts.target.clone(),
-      TreeCursorMutation::InsertBefore {
-        path: parse_path(&opts.path)?,
-      },
-    ),
-    TreeSubcommand::InsertAfter(opts) => (
-      opts.target.clone(),
-      TreeCursorMutation::InsertAfter {
-        path: parse_path(&opts.path)?,
-      },
-    ),
-    TreeSubcommand::InsertChild(opts) => (
-      opts.target.clone(),
-      TreeCursorMutation::InsertChild {
-        path: parse_path(&opts.path)?,
-      },
-    ),
-    TreeSubcommand::AppendChild(opts) => (opts.target.clone(), TreeCursorMutation::NoPathShift),
-    TreeSubcommand::SwapNext(opts) => (
-      opts.target.clone(),
-      TreeCursorMutation::SwapNext {
-        path: parse_path(&opts.path)?,
-      },
-    ),
-    TreeSubcommand::SwapPrev(opts) => (
-      opts.target.clone(),
-      TreeCursorMutation::SwapPrev {
-        path: parse_path(&opts.path)?,
-      },
-    ),
+    TreeSubcommand::Insert(opts) => {
+      let path = parse_path(&opts.path)?;
+      let mutation = match insert_operation(&opts.at)? {
+        TreeOperation::InsertBefore => TreeCursorMutation::InsertBefore { path },
+        TreeOperation::InsertAfter => TreeCursorMutation::InsertAfter { path },
+        TreeOperation::InsertChild => TreeCursorMutation::InsertChild { path },
+        _ => TreeCursorMutation::NoPathShift,
+      };
+      (opts.target.clone(), mutation)
+    }
+    TreeSubcommand::Swap(opts) => {
+      let path = parse_path(&opts.path)?;
+      let mutation = match swap_operation(&opts.with)? {
+        TreeOperation::SwapNextSibling => TreeCursorMutation::SwapNext { path },
+        _ => TreeCursorMutation::SwapPrev { path },
+      };
+      (opts.target.clone(), mutation)
+    }
     TreeSubcommand::Unwrap(opts) => {
       let path = parse_path(&opts.path)?;
       let (namespace, definition) = parse_target(&opts.target)?;
@@ -275,7 +243,6 @@ fn prepare_cursor_mutation(cmd: &TreeCommand, snapshot_file: &str) -> Result<Opt
         path: parse_path(&opts.path)?,
       },
     ),
-    TreeSubcommand::BatchDelete(_) | TreeSubcommand::Insert(_) | TreeSubcommand::Swap(_) => return Ok(None),
   };
   Ok(Some(prepared))
 }
@@ -475,12 +442,8 @@ fn annotate_paths(node: &mut Cirru, current_path: &[usize], annotate_root: bool)
 // Command handlers
 // ============================================================================
 
-fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> Result<(), String> {
+fn handle_show(opts: &TreeShowCommand, snapshot_file: &str) -> Result<(), String> {
   let output_format = StructuredOutputFormat::parse(&opts.format, "tree show")?;
-  if show_json {
-    super::structured_output::reject_json_switch_conflict("tree show", &opts.format, &["human", "text", "json"])?;
-    warn_deprecated_json_switch("tree show");
-  }
   let (namespace, definition) = parse_target(&opts.target)?;
   let path = match &opts.path {
     Some(p) => parse_path(p)?,
@@ -650,15 +613,6 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
         None
       };
 
-      if show_json {
-        let _ = writeln!(&mut out, "## JSON AST\n");
-        out.push_str(&markdown_fenced_block("json", &cirru_to_json(&node)));
-        if opts.depth > 0 {
-          let _ = writeln!(&mut out, "{}", format!("(depth limited to {})", opts.depth).dimmed());
-        }
-        let _ = writeln!(&mut out);
-      }
-
       let mut tips = Tips::new();
       // Tip: suggest path-annotations for nodes with many children
       if items.len() > 8 && !opts.path_annotations {
@@ -682,7 +636,7 @@ fn handle_show(opts: &TreeShowCommand, snapshot_file: &str, show_json: bool) -> 
           ),
         );
       }
-      tips.append(tip_prefer_oneliner_json_markdown(show_json));
+      tips.append(tip_prefer_oneliner_json_markdown());
       emit_cli_output(&out, render_to_stderr);
       tips.print_markdown(render_to_stderr);
 
@@ -1194,75 +1148,31 @@ fn handle_delete(opts: &TreeDeleteCommand, snapshot_file: &str) -> Result<(), St
   Ok(())
 }
 
-fn handle_batch_delete(opts: &TreeBatchDeleteCommand, snapshot_file: &str) -> Result<(), String> {
-  // First, parse and validate all paths, sorting by path descending
-  // so we delete from highest index to lowest, avoiding index drift
-  let mut parsed: Vec<(Vec<usize>, String)> = Vec::new();
-  for p in &opts.paths {
-    let path = parse_path(p).map_err(|e| format!("Invalid path '{p}': {e}"))?;
-    parsed.push((path, p.clone()));
+/// Maps `tree insert --at <position>` to its tree operation.
+fn insert_operation(at: &str) -> Result<TreeOperation, String> {
+  match at {
+    "before" => Ok(TreeOperation::InsertBefore),
+    "after" => Ok(TreeOperation::InsertAfter),
+    "prepend-child" => Ok(TreeOperation::InsertChild),
+    "append-child" => Ok(TreeOperation::AppendChild),
+    other => Err(format!(
+      "Unsupported `tree insert --at {other}`. Use: before, after, prepend-child, append-child."
+    )),
   }
-  // Sort by path descending
-  parsed.sort_by(|a, b| b.0.cmp(&a.0));
+}
 
-  for (path, original_path) in &parsed {
-    let delete_opts = TreeDeleteCommand {
-      target: opts.target.clone(),
-      path: original_path.clone(),
-      expect: None,
-      depth: opts.depth,
-    };
-    handle_delete(&delete_opts, snapshot_file)?;
-    maintain_cursor_after_tree_mutation(snapshot_file, &opts.target, &TreeCursorMutation::Delete { path: path.clone() })?;
-    println!();
+/// Maps `tree swap --with <sibling>` to its tree operation.
+fn swap_operation(with: &str) -> Result<TreeOperation, String> {
+  match with {
+    "next" => Ok(TreeOperation::SwapNextSibling),
+    "prev" => Ok(TreeOperation::SwapPrevSibling),
+    other => Err(format!("Unsupported `tree swap --with {other}`. Use: next, prev.")),
   }
-
-  println!("{} Deleted {} path(s) via batch-delete", "✓".green(), parsed.len());
-  Ok(())
 }
 
-fn handle_insert_before(opts: &TreeInsertBeforeCommand, snapshot_file: &str) -> Result<(), String> {
-  generic_insert_handler(
-    &opts.target,
-    &opts.path,
-    TreeOperation::InsertBefore,
-    opts,
-    snapshot_file,
-    opts.depth,
-  )
-}
-
-fn handle_insert_after(opts: &TreeInsertAfterCommand, snapshot_file: &str) -> Result<(), String> {
-  generic_insert_handler(
-    &opts.target,
-    &opts.path,
-    TreeOperation::InsertAfter,
-    opts,
-    snapshot_file,
-    opts.depth,
-  )
-}
-
-fn handle_insert_child(opts: &TreeInsertChildCommand, snapshot_file: &str) -> Result<(), String> {
-  generic_insert_handler(
-    &opts.target,
-    &opts.path,
-    TreeOperation::InsertChild,
-    opts,
-    snapshot_file,
-    opts.depth,
-  )
-}
-
-fn handle_append_child(opts: &TreeAppendChildCommand, snapshot_file: &str) -> Result<(), String> {
-  generic_insert_handler(
-    &opts.target,
-    &opts.path,
-    TreeOperation::AppendChild,
-    opts,
-    snapshot_file,
-    opts.depth,
-  )
+fn handle_insert(opts: &TreeInsertCommand, snapshot_file: &str) -> Result<(), String> {
+  let operation = insert_operation(&opts.at)?;
+  generic_insert_handler(&opts.target, &opts.path, operation, opts, snapshot_file, opts.depth)
 }
 
 // Generic trait for insert-like operations
@@ -1276,52 +1186,7 @@ trait InsertOperation {
   }
 }
 
-impl InsertOperation for TreeInsertBeforeCommand {
-  fn file(&self) -> &Option<String> {
-    &self.file
-  }
-  fn code(&self) -> &Option<String> {
-    &self.code
-  }
-  fn input_format(&self) -> SyntaxInputFormat {
-    self.input_format
-  }
-  fn expect(&self) -> Option<&str> {
-    self.expect.as_deref()
-  }
-}
-
-impl InsertOperation for TreeInsertAfterCommand {
-  fn file(&self) -> &Option<String> {
-    &self.file
-  }
-  fn code(&self) -> &Option<String> {
-    &self.code
-  }
-  fn input_format(&self) -> SyntaxInputFormat {
-    self.input_format
-  }
-  fn expect(&self) -> Option<&str> {
-    self.expect.as_deref()
-  }
-}
-
-impl InsertOperation for TreeInsertChildCommand {
-  fn file(&self) -> &Option<String> {
-    &self.file
-  }
-  fn code(&self) -> &Option<String> {
-    &self.code
-  }
-  fn input_format(&self) -> SyntaxInputFormat {
-    self.input_format
-  }
-  fn expect(&self) -> Option<&str> {
-    self.expect.as_deref()
-  }
-}
-
-impl InsertOperation for TreeAppendChildCommand {
+impl InsertOperation for TreeInsertCommand {
   fn file(&self) -> &Option<String> {
     &self.file
   }
@@ -1490,12 +1355,9 @@ fn generic_insert_handler<T: InsertOperation>(
   Ok(())
 }
 
-fn handle_swap_next(opts: &TreeSwapNextCommand, snapshot_file: &str) -> Result<(), String> {
-  generic_swap_handler(&opts.target, &opts.path, TreeOperation::SwapNextSibling, snapshot_file, opts.depth)
-}
-
-fn handle_swap_prev(opts: &TreeSwapPrevCommand, snapshot_file: &str) -> Result<(), String> {
-  generic_swap_handler(&opts.target, &opts.path, TreeOperation::SwapPrevSibling, snapshot_file, opts.depth)
+fn handle_swap(opts: &TreeSwapCommand, snapshot_file: &str) -> Result<(), String> {
+  let operation = swap_operation(&opts.with)?;
+  generic_swap_handler(&opts.target, &opts.path, operation, snapshot_file, opts.depth)
 }
 
 fn generic_swap_handler(

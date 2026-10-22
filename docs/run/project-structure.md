@@ -180,7 +180,7 @@ project source.
 - `calcit.cirru`：声明"运行时要加载哪些模块（`:modules`）+ 项目代码快照（`:files`）"。
 
 版本号只以 `deps.cirru :version` 为权威，用 `caps version get/set/bump` 管理；`calcit.cirru :version`
-不会作为 `caps` 的回退来源。`calcit config version` / `calcit config set version` 已废弃，请改用 `caps version`。
+不会作为 `caps` 的回退来源。`calcit config version` 已在 0.31.0 删除，`calcit config set version` 会报错，请改用 `caps version`。
 
 常见升级动作（最少命令）：
 

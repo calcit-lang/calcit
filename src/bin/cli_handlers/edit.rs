@@ -14,9 +14,8 @@ use calcit::calcit::{CalcitTypeAnnotation, DYNAMIC_TYPE};
 use calcit::cli_args::{
   EditAddExampleCommand, EditAddImportCommand, EditAddNsCommand, EditAddTestCommand, EditCommand, EditCpCommand, EditDefCommand,
   EditDocCommand, EditExamplesCommand, EditFfiCommand, EditFormatCommand, EditImportsCommand, EditIncCommand, EditMergeCommand,
-  EditMvDefCommand, EditMvNodeCommand, EditNsDocCommand, EditRenameCommand, EditRmDefCommand, EditRmExampleCommand,
-  EditRmImportCommand, EditRmNsCommand, EditRmTestCommand, EditSchemaCommand, EditSplitDefCommand, EditSubcommand, EditTagsCommand,
-  EditTransactionCommand, SyntaxInputFormat,
+  EditMvDefCommand, EditMvNodeCommand, EditRenameCommand, EditRmDefCommand, EditRmImportCommand, EditRmNsCommand, EditRmTestCommand,
+  EditSchemaCommand, EditSplitDefCommand, EditSubcommand, EditTagsCommand, EditTransactionCommand, SyntaxInputFormat,
 };
 use calcit::program::validate_import_rules;
 use calcit::program_diff::{CirruEditStrategy, analyze_cirru_edit_advice};
@@ -113,7 +112,6 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
     EditSubcommand::Ffi(opts) => handle_ffi(opts, snapshot_file),
     EditSubcommand::Examples(opts) => handle_examples(opts, snapshot_file),
     EditSubcommand::AddExample(opts) => handle_add_example(opts, snapshot_file),
-    EditSubcommand::RmExample(opts) => handle_rm_example(opts, snapshot_file),
     EditSubcommand::AddTest(opts) => handle_add_test(opts, snapshot_file),
     EditSubcommand::RmTest(opts) => handle_rm_test(opts, snapshot_file),
     EditSubcommand::Tags(opts) => handle_tags(opts, snapshot_file),
@@ -123,7 +121,6 @@ pub fn handle_edit_command(cmd: &EditCommand, snapshot_file: &str) -> Result<(),
     EditSubcommand::Imports(opts) => handle_imports(opts, snapshot_file),
     EditSubcommand::AddImport(opts) => handle_add_import(opts, snapshot_file),
     EditSubcommand::RmImport(opts) => handle_rm_import(opts, snapshot_file),
-    EditSubcommand::NsDoc(opts) => handle_ns_doc(opts, snapshot_file),
     EditSubcommand::Inc(opts) => handle_inc(opts, snapshot_file),
   };
   result?;
@@ -153,7 +150,6 @@ fn resolve_edit_cursor_references(cmd: &mut EditCommand, snapshot_file: &str) ->
     EditSubcommand::Ffi(opts) => Some(&mut opts.target),
     EditSubcommand::Examples(opts) => Some(&mut opts.target),
     EditSubcommand::AddExample(opts) => Some(&mut opts.target),
-    EditSubcommand::RmExample(opts) => Some(&mut opts.target),
     EditSubcommand::AddTest(opts) => Some(&mut opts.target),
     EditSubcommand::RmTest(opts) => Some(&mut opts.target),
     EditSubcommand::Tags(opts) => Some(&mut opts.target),
@@ -171,7 +167,6 @@ fn resolve_edit_cursor_references(cmd: &mut EditCommand, snapshot_file: &str) ->
     | EditSubcommand::Imports(_)
     | EditSubcommand::AddImport(_)
     | EditSubcommand::RmImport(_)
-    | EditSubcommand::NsDoc(_)
     | EditSubcommand::Inc(_) => None,
   };
   let active_reference = if target.as_deref().is_some_and(|target| target == "@cursor") {
@@ -256,9 +251,6 @@ fn maintain_cursor_after_edit(cmd: &EditCommand, snapshot_file: &str) -> Result<
       maintain_cursor_after_tree_mutation(snapshot_file, &opts.target, &TreeCursorMutation::NoPathShift)
     }
     EditSubcommand::AddExample(opts) => {
-      maintain_cursor_after_tree_mutation(snapshot_file, &opts.target, &TreeCursorMutation::NoPathShift)
-    }
-    EditSubcommand::RmExample(opts) => {
       maintain_cursor_after_tree_mutation(snapshot_file, &opts.target, &TreeCursorMutation::NoPathShift)
     }
     EditSubcommand::AddTest(opts) => maintain_cursor_after_tree_mutation(snapshot_file, &opts.target, &TreeCursorMutation::NoPathShift),
@@ -590,7 +582,6 @@ fn parse_transaction_operations(raw: &str) -> Result<Vec<Vec<String>>, String> {
           | "ffi"
           | "examples"
           | "add-example"
-          | "rm-example"
           | "add-test"
           | "rm-test"
           | "tags"
@@ -599,7 +590,6 @@ fn parse_transaction_operations(raw: &str) -> Result<Vec<Vec<String>>, String> {
           | "imports"
           | "add-import"
           | "rm-import"
-          | "ns-doc"
           | "cp"
           | "mv"
           | "rename"
@@ -607,42 +597,20 @@ fn parse_transaction_operations(raw: &str) -> Result<Vec<Vec<String>>, String> {
       ),
       "tree" => matches!(
         subcommand,
-        "rewrite"
-          | "search-replace"
-          | "batch-delete"
-          | "replace"
-          | "replace-leaf"
-          | "delete"
-          | "insert"
-          | "swap"
-          | "insert-before"
-          | "insert-after"
-          | "insert-child"
-          | "append-child"
-          | "swap-next"
-          | "swap-prev"
-          | "unwrap"
-          | "raise"
-          | "wrap"
+        "rewrite" | "search-replace" | "replace" | "replace-leaf" | "delete" | "insert" | "swap" | "unwrap" | "raise" | "wrap"
       ),
       "config" => matches!(
         subcommand,
-        "version" | "set" | "unset" | "add-entry" | "add-module" | "rm-module" | "set-type-slot" | "rm-type-slot"
+        "set" | "unset" | "add-entry" | "add-module" | "rm-module" | "set-type-slot" | "rm-type-slot"
       ),
       _ => false,
     };
+    if let Some(error) = super::normalize::removed_transaction_operation_error(index, group, subcommand) {
+      return Err(error);
+    }
     if !supported {
       return Err(format!(
         "Transaction operation {} uses unsupported staged mutation '{group} {subcommand}'. Read-only commands and edits with external side effects (such as `edit inc`) must run outside the transaction.",
-        index + 1
-      ));
-    }
-    if let Some(hint) = super::deprecations::deprecated_transaction_operation_hint(index, group, subcommand) {
-      eprintln!("{hint}");
-    }
-    if group == "config" && subcommand == "version" && operation.len() < 3 {
-      return Err(format!(
-        "Transaction operation {} uses read-only `config version`; provide a version or patch/minor/major value to mutate the staged snapshot.",
         index + 1
       ));
     }
@@ -2480,55 +2448,6 @@ fn handle_tags(opts: &EditTagsCommand, snapshot_file: &str) -> Result<(), String
   Ok(())
 }
 
-fn handle_rm_example(opts: &EditRmExampleCommand, snapshot_file: &str) -> Result<(), String> {
-  let (namespace, definition) = parse_target(&opts.target)?;
-
-  let mut snapshot = load_snapshot(snapshot_file)?;
-
-  // Check if namespace can be edited
-  check_ns_editable(&snapshot, namespace)?;
-
-  let file_data = snapshot
-    .files
-    .get_mut(namespace)
-    .ok_or_else(|| format!("Namespace '{namespace}' not found"))?;
-
-  let resolved_definition =
-    resolve_definition_lookup(namespace, definition, file_data.defs.keys().map(|name| name.as_str()), false)?.resolved;
-
-  let code_entry = file_data
-    .defs
-    .get_mut(resolved_definition.as_str())
-    .expect("resolved definition exists");
-
-  // Validate index
-  if opts.index >= code_entry.examples.len() {
-    return Err(format!(
-      "Index {} out of range (max: {})",
-      opts.index,
-      code_entry.examples.len().saturating_sub(1)
-    ));
-  }
-
-  // Remove example
-  code_entry.examples.remove(opts.index);
-
-  let remaining_count = code_entry.examples.len();
-
-  save_snapshot(&snapshot, snapshot_file)?;
-
-  println!(
-    "{} Removed example at index {} from '{}' in namespace '{}' (remaining: {})",
-    "✓".green(),
-    opts.index,
-    resolved_definition.cyan(),
-    namespace,
-    remaining_count
-  );
-
-  Ok(())
-}
-
 fn handle_add_test(opts: &EditAddTestCommand, snapshot_file: &str) -> Result<(), String> {
   let (namespace, definition) = parse_target(&opts.target)?;
   snapshot::validate_test_names([opts.name.as_str()], "Test")?;
@@ -3179,26 +3098,6 @@ fn handle_rm_import(opts: &EditRmImportCommand, snapshot_file: &str) -> Result<(
   Ok(())
 }
 
-fn handle_ns_doc(opts: &EditNsDocCommand, snapshot_file: &str) -> Result<(), String> {
-  let mut snapshot = load_snapshot(snapshot_file)?;
-
-  // Check if namespace can be edited
-  check_ns_editable(&snapshot, &opts.namespace)?;
-
-  let file_data = snapshot
-    .files
-    .get_mut(&opts.namespace)
-    .ok_or_else(|| format!("Namespace '{}' not found", opts.namespace))?;
-
-  file_data.ns.doc = opts.doc.clone();
-
-  save_snapshot(&snapshot, snapshot_file)?;
-
-  println!("{} Updated documentation for namespace '{}'", "✓".green(), opts.namespace.cyan());
-
-  Ok(())
-}
-
 // ═══════════════════════════════════════════════════════════════════════════════
 // Semver helpers used by edit tests
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -3719,9 +3618,9 @@ mod tests {
   #[test]
   fn transaction_cirru_round_trips_quoted_empty_list() {
     let cirru =
-      "[]\n  []\n    , |tree\n    , |insert-after\n    , |app.main/main!\n    , |--path\n    , |@1\n    , |--code\n    quote ()";
+      "[]\n  []\n    , |tree\n    , |insert\n    , |app.main/main!\n    , |--at\n    , |after\n    , |--path\n    , |@1\n    , |--code\n    quote ()";
     let operations = parse_transaction_operations(cirru).expect("Cirru transaction with an empty quoted list should parse");
-    let code = operations[0].get(6).expect("formatted --code argument should exist");
+    let code = operations[0].get(8).expect("formatted --code argument should exist");
 
     assert_eq!(
       parse_input_to_cirru(code).expect("quoted empty list should remain valid edit input"),

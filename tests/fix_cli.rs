@@ -602,7 +602,13 @@ fn deprecation_and_quality_reports_keep_declared_macro_logs_off_stdout() {
   );
   let before = fs::read(&snapshot).unwrap();
   for command in ["deprecated", "quality"] {
-    let output = run_calcit(&snapshot, &["analyze", command, "--ns", "test-hygienic.main", "--format", "json"]);
+    let view: &[&str] = if command == "deprecated" {
+      &["analyze", "weak-types", "--only", "deprecated-call"]
+    } else {
+      &["analyze", "quality"]
+    };
+    let args = [view, &["--ns", "test-hygienic.main", "--format", "json"]].concat();
+    let output = run_calcit(&snapshot, &args);
     if command == "deprecated" {
       assert_success(&output, "report deprecation with macro logs");
     } else {

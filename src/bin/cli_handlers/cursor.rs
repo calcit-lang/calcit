@@ -1,7 +1,6 @@
 use calcit::cli_args::{
-  CursorApplyCommand, CursorCommand, CursorDuplicateCommand, CursorSubcommand, EditCommand, EditMvNodeCommand, EditSubcommand,
-  TreeAppendChildCommand, TreeCommand, TreeDeleteCommand, TreeInsertAfterCommand, TreeInsertBeforeCommand, TreeInsertChildCommand,
-  TreeRaiseCommand, TreeReplaceCommand, TreeSubcommand, TreeSwapNextCommand, TreeSwapPrevCommand, TreeUnwrapCommand, TreeWrapCommand,
+  CursorApplyCommand, CursorCommand, EditCommand, EditMvNodeCommand, EditSubcommand, TreeCommand, TreeDeleteCommand, TreeInsertCommand,
+  TreeRaiseCommand, TreeReplaceCommand, TreeSubcommand, TreeSwapCommand, TreeUnwrapCommand, TreeWrapCommand,
 };
 use calcit::project_state::{self, CURSOR_STATE_FILE};
 use calcit::snapshot;
@@ -17,6 +16,7 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use super::atomic_write::{StagedFile, stage_atomic_file};
 use super::common::{cirru_to_json_value, format_path, guard_snapshot_mutation_toolchain, parse_path};
 use super::edit::{apply_operation_at_path, check_ns_editable, load_snapshot, navigate_to_path, parse_target};
+use super::normalize::CursorAction;
 use super::structured_output::StructuredOutputFormat;
 use super::tree_mutation::{
   TreeCursorMutation, TreeOperation, adjusted_source_path_after_insertion, transform_cursor_path, transform_delete,
@@ -97,19 +97,17 @@ pub fn set_cursor_after_mode(mode: &str) -> Result<(), String> {
 }
 
 pub fn handle_cursor_command(cmd: &CursorCommand, snapshot_file: &str) -> Result<(), String> {
-  let cmd = &CursorCommand {
-    subcommand: super::deprecations::normalize_cursor_subcommand(&cmd.subcommand)?,
-  };
+  let action = super::normalize::normalize_cursor_subcommand(&cmd.subcommand)?;
   let mutates_snapshot = matches!(
-    &cmd.subcommand,
-    CursorSubcommand::Cut(_)
-      | CursorSubcommand::Paste(_)
-      | CursorSubcommand::Apply(_)
-      | CursorSubcommand::SlurpNext(_)
-      | CursorSubcommand::SlurpPrev(_)
-      | CursorSubcommand::BarfLast(_)
-      | CursorSubcommand::BarfFirst(_)
-      | CursorSubcommand::Duplicate(_)
+    &action,
+    CursorAction::Cut
+      | CursorAction::Paste(_)
+      | CursorAction::Apply(_)
+      | CursorAction::SlurpNext
+      | CursorAction::SlurpPrev
+      | CursorAction::BarfLast
+      | CursorAction::BarfFirst
+      | CursorAction::Duplicate(_)
   );
   let _writer = if mutates_snapshot {
     Some(calcit::util::atomic_write::SnapshotWriteGuard::acquire(snapshot_file)?)
@@ -119,9 +117,8 @@ pub fn handle_cursor_command(cmd: &CursorCommand, snapshot_file: &str) -> Result
   if mutates_snapshot {
     guard_snapshot_mutation_toolchain(snapshot_file)?;
   }
-  match &cmd.subcommand {
-    CursorSubcommand::Move(_) => unreachable!("normalized before dispatch"),
-    CursorSubcommand::Set(opts) => {
+  match &action {
+    CursorAction::Set(opts) => {
       if opts.path == "@cursor" {
         return Err("`cursor set --path` requires a concrete path, not `@cursor`.".to_string());
       }
@@ -131,8 +128,8 @@ pub fn handle_cursor_command(cmd: &CursorCommand, snapshot_file: &str) -> Result
       println!("{} Cursor set: {} {}", "✓".green(), state.target, format_path(&state.path));
       emit_focus_after_cursor_action(snapshot_file, &state, "cursor selected")
     }
-    CursorSubcommand::Show(opts) => handle_cursor_show(snapshot_file, &opts.format, &opts.view),
-    CursorSubcommand::Clear(_) => {
+    CursorAction::Show(opts) => handle_cursor_show(snapshot_file, &opts.format, &opts.view),
+    CursorAction::Clear => {
       let file = cursor_file_path(snapshot_file);
       let legacy_file = legacy_cursor_file_path(snapshot_file);
       let mut removed = false;
@@ -152,7 +149,7 @@ pub fn handle_cursor_command(cmd: &CursorCommand, snapshot_file: &str) -> Result
       }
       Ok(())
     }
-    CursorSubcommand::Parent(_) => move_cursor(snapshot_file, |path| {
+    CursorAction::Parent => move_cursor(snapshot_file, |path| {
       if path.is_empty() {
         Err("Cursor is already at the definition root.".to_string())
       } else {
@@ -160,32 +157,32 @@ pub fn handle_cursor_command(cmd: &CursorCommand, snapshot_file: &str) -> Result
         Ok(())
       }
     }),
-    CursorSubcommand::Child(opts) => move_cursor_to_child(snapshot_file, opts.index, opts.last),
-    CursorSubcommand::Next(opts) => move_cursor_across_siblings(snapshot_file, opts.count, true),
-    CursorSubcommand::Prev(opts) => move_cursor_across_siblings(snapshot_file, opts.count, false),
-    CursorSubcommand::Back(opts) => restore_cursor(snapshot_file, RestoreSource::History, opts.count),
-    CursorSubcommand::Push(_) => push_cursor(snapshot_file),
-    CursorSubcommand::Pop(_) => restore_cursor(snapshot_file, RestoreSource::Stack, 1),
-    CursorSubcommand::Anchor(_) => set_cursor_anchor(snapshot_file),
-    CursorSubcommand::ClearAnchor(_) => clear_cursor_anchor(snapshot_file),
-    CursorSubcommand::Region(opts) => show_cursor_region(snapshot_file, &opts.format),
-    CursorSubcommand::Mark(opts) => save_cursor_mark(snapshot_file, &opts.name),
-    CursorSubcommand::Goto(opts) => goto_cursor_mark(snapshot_file, &opts.name),
-    CursorSubcommand::Marks(opts) => show_cursor_marks(snapshot_file, opts.format.as_deref().unwrap_or("human")),
-    CursorSubcommand::RmMark(opts) => remove_cursor_mark(snapshot_file, &opts.name),
-    CursorSubcommand::Copy(_) => store_cursor_clipboard(snapshot_file, "copy", false),
-    CursorSubcommand::Cut(_) => store_cursor_clipboard(snapshot_file, "cut", true),
-    CursorSubcommand::Paste(opts) => paste_cursor_clipboard(snapshot_file, &opts.at),
-    CursorSubcommand::Clipboard(opts) => show_cursor_clipboard(snapshot_file, opts.format.as_deref().unwrap_or("human")),
-    CursorSubcommand::ClearClipboard(_) => clear_cursor_clipboard(snapshot_file),
-    CursorSubcommand::Apply(opts) => apply_at_cursor(snapshot_file, opts),
-    CursorSubcommand::SlurpNext(_) => slurp_next(snapshot_file),
-    CursorSubcommand::SlurpPrev(_) => slurp_prev(snapshot_file),
-    CursorSubcommand::BarfLast(_) => barf_last(snapshot_file),
-    CursorSubcommand::BarfFirst(_) => barf_first(snapshot_file),
-    CursorSubcommand::Duplicate(opts) => duplicate_cursor(snapshot_file, opts),
-    CursorSubcommand::Forward(opts) => move_cursor_depth_first(snapshot_file, opts.count, true),
-    CursorSubcommand::Backward(opts) => move_cursor_depth_first(snapshot_file, opts.count, false),
+    CursorAction::Child { index, last } => move_cursor_to_child(snapshot_file, *index, *last),
+    CursorAction::Next(count) => move_cursor_across_siblings(snapshot_file, *count, true),
+    CursorAction::Prev(count) => move_cursor_across_siblings(snapshot_file, *count, false),
+    CursorAction::Back(count) => restore_cursor(snapshot_file, RestoreSource::History, *count),
+    CursorAction::Push => push_cursor(snapshot_file),
+    CursorAction::Pop => restore_cursor(snapshot_file, RestoreSource::Stack, 1),
+    CursorAction::SetAnchor => set_cursor_anchor(snapshot_file),
+    CursorAction::ClearAnchor => clear_cursor_anchor(snapshot_file),
+    CursorAction::ShowRegion(format) => show_cursor_region(snapshot_file, format),
+    CursorAction::SetMark(name) => save_cursor_mark(snapshot_file, name),
+    CursorAction::GotoMark(name) => goto_cursor_mark(snapshot_file, name),
+    CursorAction::ListMarks(format) => show_cursor_marks(snapshot_file, format),
+    CursorAction::DropMark(name) => remove_cursor_mark(snapshot_file, name),
+    CursorAction::Copy => store_cursor_clipboard(snapshot_file, "copy", false),
+    CursorAction::Cut => store_cursor_clipboard(snapshot_file, "cut", true),
+    CursorAction::Paste(at) => paste_cursor_clipboard(snapshot_file, at),
+    CursorAction::ShowClipboard(format) => show_cursor_clipboard(snapshot_file, format),
+    CursorAction::ClearClipboard => clear_cursor_clipboard(snapshot_file),
+    CursorAction::Apply(opts) => apply_at_cursor(snapshot_file, opts),
+    CursorAction::SlurpNext => slurp_next(snapshot_file),
+    CursorAction::SlurpPrev => slurp_prev(snapshot_file),
+    CursorAction::BarfLast => barf_last(snapshot_file),
+    CursorAction::BarfFirst => barf_first(snapshot_file),
+    CursorAction::Duplicate(at) => duplicate_cursor(snapshot_file, at),
+    CursorAction::Forward(count) => move_cursor_depth_first(snapshot_file, *count, true),
+    CursorAction::Backward(count) => move_cursor_depth_first(snapshot_file, *count, false),
   }
 }
 
@@ -281,14 +278,10 @@ fn apply_at_cursor(snapshot_file: &str, opts: &CursorApplyCommand) -> Result<(),
       expect: None,
       depth: opts.depth,
     }),
-    "swap-next" => TreeSubcommand::SwapNext(TreeSwapNextCommand {
+    "swap-next" | "swap-prev" => TreeSubcommand::Swap(TreeSwapCommand {
       target,
       path,
-      depth: opts.depth,
-    }),
-    "swap-prev" => TreeSubcommand::SwapPrev(TreeSwapPrevCommand {
-      target,
-      path,
+      with: opts.operation.trim_start_matches("swap-").to_owned(),
       depth: opts.depth,
     }),
     "unwrap" | "splice" => TreeSubcommand::Unwrap(TreeUnwrapCommand {
@@ -318,36 +311,40 @@ fn apply_at_cursor(snapshot_file: &str, opts: &CursorApplyCommand) -> Result<(),
       input_format: opts.input_format,
       depth: opts.depth,
     }),
-    "insert-before" => TreeSubcommand::InsertBefore(TreeInsertBeforeCommand {
+    "insert-before" => TreeSubcommand::Insert(TreeInsertCommand {
       target,
       path,
+      at: "before".to_owned(),
       file: opts.file.clone(),
       code: opts.code.clone(),
       input_format: opts.input_format,
       expect: None,
       depth: opts.depth,
     }),
-    "insert-after" => TreeSubcommand::InsertAfter(TreeInsertAfterCommand {
+    "insert-after" => TreeSubcommand::Insert(TreeInsertCommand {
       target,
       path,
+      at: "after".to_owned(),
       file: opts.file.clone(),
       code: opts.code.clone(),
       input_format: opts.input_format,
       expect: None,
       depth: opts.depth,
     }),
-    "insert-child" => TreeSubcommand::InsertChild(TreeInsertChildCommand {
+    "insert-child" => TreeSubcommand::Insert(TreeInsertCommand {
       target,
       path,
+      at: "prepend-child".to_owned(),
       file: opts.file.clone(),
       code: opts.code.clone(),
       input_format: opts.input_format,
       expect: None,
       depth: opts.depth,
     }),
-    "append-child" => TreeSubcommand::AppendChild(TreeAppendChildCommand {
+    "append-child" => TreeSubcommand::Insert(TreeInsertCommand {
       target,
       path,
+      at: "append-child".to_owned(),
       file: opts.file.clone(),
       code: opts.code.clone(),
       input_format: opts.input_format,
@@ -480,9 +477,9 @@ fn barf_first(snapshot_file: &str) -> Result<(), String> {
   Ok(())
 }
 
-fn duplicate_cursor(snapshot_file: &str, opts: &CursorDuplicateCommand) -> Result<(), String> {
-  if !matches!(opts.at.as_str(), "before" | "after") {
-    return Err(format!("Unsupported duplicate position '{}'. Use before or after.", opts.at));
+fn duplicate_cursor(snapshot_file: &str, at: &str) -> Result<(), String> {
+  if !matches!(at, "before" | "after") {
+    return Err(format!("Unsupported duplicate position '{}'. Use before or after.", at));
   }
   let state = validate_cursor(snapshot_file, true)?;
   if state.path.is_empty() {
@@ -501,7 +498,7 @@ fn duplicate_cursor(snapshot_file: &str, opts: &CursorDuplicateCommand) -> Resul
   entry.code = apply_operation_at_path(
     &entry.code,
     &state.path,
-    if opts.at == "before" {
+    if at == "before" {
       TreeOperation::InsertBefore
     } else {
       TreeOperation::InsertAfter
@@ -510,7 +507,7 @@ fn duplicate_cursor(snapshot_file: &str, opts: &CursorDuplicateCommand) -> Resul
   )?;
 
   let mut duplicated_path = state.path.clone();
-  if opts.at == "after" {
+  if at == "after" {
     *duplicated_path.last_mut().expect("root was rejected above") += 1;
   }
   push_bounded(&mut document.history, state, CURSOR_HISTORY_LIMIT);
@@ -523,7 +520,7 @@ fn duplicate_cursor(snapshot_file: &str, opts: &CursorDuplicateCommand) -> Resul
   println!(
     "{} Duplicated selection {} cursor; cursor now at {}",
     "✓".green(),
-    opts.at,
+    at,
     format_path(&document.active.path)
   );
   emit_cursor_after(snapshot_file, &document.active, "cursor follows duplicated expression")?;
@@ -2177,7 +2174,7 @@ mod tests {
   };
   use crate::cli_handlers::edit::{apply_operation_at_path, load_snapshot, save_snapshot};
   use crate::cli_handlers::test_support::TestProject;
-  use calcit::cli_args::{CursorApplyCommand, CursorDuplicateCommand};
+  use calcit::cli_args::CursorApplyCommand;
   use cirru_edn::Edn;
   use cirru_parser::Cirru;
   use std::collections::BTreeMap;
@@ -2725,7 +2722,7 @@ mod tests {
       load_cursor_state(&snapshot_file).expect("first-barfed cursor should load").path,
       vec![1]
     );
-    duplicate_cursor(&snapshot_file, &CursorDuplicateCommand { at: "after".to_string() }).expect("cursor duplicate should succeed");
+    duplicate_cursor(&snapshot_file, "after").expect("cursor duplicate should succeed");
     assert_eq!(
       load_cursor_state(&snapshot_file).expect("duplicate cursor should load").path,
       vec![2]
@@ -2810,19 +2807,14 @@ mod tests {
         .contains("definition root")
     );
     assert!(
-      duplicate_cursor(&snapshot_file, &CursorDuplicateCommand { at: "after".to_string() },)
+      duplicate_cursor(&snapshot_file, "after")
         .expect_err("root cannot duplicate")
         .contains("definition root")
     );
     assert!(
-      duplicate_cursor(
-        &snapshot_file,
-        &CursorDuplicateCommand {
-          at: "sideways".to_string(),
-        },
-      )
-      .expect_err("invalid duplicate position should fail")
-      .contains("Use before or after")
+      duplicate_cursor(&snapshot_file, "sideways")
+        .expect_err("invalid duplicate position should fail")
+        .contains("Use before or after")
     );
 
     set_cursor_selection(&snapshot_file, "app.main/main!", vec![0]).expect("cursor should select leaf");

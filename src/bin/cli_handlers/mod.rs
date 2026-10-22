@@ -11,7 +11,6 @@ mod command_echo;
 mod common;
 mod config;
 mod cursor;
-mod deprecations;
 mod docs;
 mod docs_cache;
 pub(crate) mod edit;
@@ -19,6 +18,7 @@ mod ffi;
 pub(crate) mod fix;
 mod libs;
 mod markdown_read;
+mod normalize;
 mod ns_view;
 mod program_diff;
 mod query;
@@ -41,12 +41,14 @@ pub(crate) use common::markdown_fenced_block;
 pub use common::{set_verbose_mutation_output, warn_on_global_temp_snapshot_path};
 pub use config::handle_config_command;
 pub use cursor::{handle_cursor_command, set_cursor_after_mode};
-pub(crate) use deprecations::VIEW_OPTION_NIL_ROUNDTRIP;
-pub use deprecations::{deprecated_command_hint, deprecated_type_policy_flag_hint, normalize_consolidated_views};
 pub use docs::handle_docs_command;
 pub use edit::handle_edit_command;
 pub use ffi::handle_ffi_command;
 pub(crate) use fix::handle_fix_command;
+pub(crate) use normalize::VIEW_OPTION_NIL_ROUNDTRIP;
+pub use normalize::{
+  AnalyzeView, deprecated_command_hint, deprecated_type_policy_flag_hint, normalize_consolidated_views, removed_command_error,
+};
 pub use program_diff::handle_program_diff_command;
 pub use query::handle_query_command;
 pub(crate) use query::{
