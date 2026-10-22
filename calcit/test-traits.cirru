@@ -1247,6 +1247,40 @@
                 assert= false $ = 0 $ &compare named host
                 assert= 2 $ count $ #{} named host
               :tags $ #{} :struct-definition-equality :unit
+            %{} 'TestEntry (:name |preserves-string-bound-keys)
+              :code $ quote $ let
+                  marker $ deftrait Marker
+                  left $ defstruct ComparedRecord ([] 'T)
+                    {} $ 'T marker
+                    :value 'T
+                  right $ defstruct ComparedRecord ([] 'T)
+                    {} $ |:T marker
+                    :value 'T
+                assert= true $ = left right
+                assert= 0 $ &compare left right
+                assert= 1 $ count $ #{} left right
+              :tags $ #{} :struct-definition-equality :unit
+            %{} 'TestEntry (:name |does-not-invent-bounds-from-tag-keys)
+              :code $ quote $ let
+                  marker $ deftrait Marker
+                  left $ defstruct ComparedRecord ([] 'T) (:value 'T)
+                  right $ defstruct ComparedRecord ([] 'T)
+                    {} $ :T marker
+                    :value 'T
+                assert= true $ = left right
+                assert= 0 $ &compare left right
+                assert= 1 $ count $ #{} left right
+              :tags $ #{} :struct-definition-equality :unit
+            %{} 'TestEntry (:name |does-not-invent-bounds-from-scalar-types)
+              :code $ quote $ let
+                  left $ defstruct ComparedRecord ([] 'T) (:value 'T)
+                  right $ defstruct ComparedRecord ([] 'T)
+                    {} $ 'T 'Number
+                    :value 'T
+                assert= true $ = left right
+                assert= 0 $ &compare left right
+                assert= 1 $ count $ #{} left right
+              :tags $ #{} :struct-definition-equality :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-traits.struct-identity
     'test-traits.struct-left $ %{} 'FileEntry

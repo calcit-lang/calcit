@@ -108,13 +108,18 @@ const formPairs = (schema: CalcitValue): Array<[CalcitValue, CalcitValue]> | nul
 export const typeBoundsIdentity = (form: CalcitValue, generics: readonly string[]): CalcitValue => {
   const bounds: Array<[string, CalcitValue]> = [];
   for (const [key, value] of formPairs(form) ?? []) {
-    const name = typeFormName(key);
+    const name = typeof key === "string" ? key.replace(/^[':]+/, "")
+      : key instanceof CalcitTag ? null : typeFormName(key)?.replace(/^'+/, "");
     if (name == null || !generics.includes(name)) continue;
     const quoted = (value instanceof CalcitList || value instanceof CalcitSliceList)
       && typeFormName(value.toArray()[0]) === "quote";
     const traits = value instanceof CalcitTrait || value instanceof CalcitSymbol || quoted ? [value] : formItems(value, "[]");
-    if (traits.length === 0) continue;
-    bounds.push([name, new CalcitSliceList(traits.map(trait => typeFormIdentity(trait, generics)))]);
+    const identities = traits.map(trait => typeFormIdentity(trait, generics));
+    // Native bounds retain traits and unapplied named references, not scalar
+    // types or lexical type variables. Ignored forms must not invent evidence.
+    if (identities.length === 0 || !identities.every(trait => trait instanceof CalcitTrait
+      || (trait instanceof CalcitSymbol && !typeNameAliases.has(trait.value) && !generics.includes(trait.value)))) continue;
+    bounds.push([name, new CalcitSliceList(identities)]);
   }
   bounds.sort(([left], [right]) => compareUnicodeStrings(left, right));
   return bounds.length === 0 ? null
