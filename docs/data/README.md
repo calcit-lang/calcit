@@ -69,7 +69,7 @@
 维护者可在已经构建本仓库 binary 和 JS runtime 后用统一运行器复跑这些定义的测试，不新增用户命令：
 
 ```bash
-node scripts/run-core-tests.mjs --target 'calcit.core/integer?' --target 'calcit.core/round?'
+node scripts/run-core-tests.mjs --target 'calcit.core/integer?'
 WASMTIME_CLI=/absolute/path/to/wasmtime node scripts/run-core-tests.mjs --backend native,wasi --target 'calcit.core/integer?'
 ```
 

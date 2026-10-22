@@ -40,8 +40,6 @@ const CORE_RESULT_METHOD_RULE: &str = "core-result-method-v1";
 const CORE_RESULT_METHOD_DIAGNOSTIC: &str = "FIX_CORE_RESULT_METHOD";
 const CORE_FUNCTION_ALIAS_RULE: &str = "core-function-alias-v1";
 const CORE_FUNCTION_ALIAS_DIAGNOSTIC: &str = "FIX_CORE_FUNCTION_ALIAS";
-const CORE_INTEGER_PREDICATE_RULE: &str = "core-integer-predicate-v1";
-const CORE_INTEGER_PREDICATE_DIAGNOSTIC: &str = "FIX_CORE_INTEGER_PREDICATE";
 const CORE_IDENTITY_CONVERSION_RULE: &str = "core-identity-conversion-v1";
 const CORE_IDENTITY_CONVERSION_DIAGNOSTIC: &str = "FIX_CORE_IDENTITY_CONVERSION";
 const CORE_REF_CONSTRUCTOR_RULE: &str = "core-ref-constructor-v1";
@@ -95,14 +93,10 @@ const SURFACE_LATEST_V2_RULES: [&str; 5] = [
   SINGLE_EXPRESSION_DO_RULE,
 ];
 // These proven renames replace leaves only, so nested calls retain their source paths.
-const CORE_API_028_V1_RULES: [&str; 2] = [CORE_INTEGER_PREDICATE_RULE, CORE_IDENTITY_CONVERSION_RULE];
+const CORE_API_028_V1_RULES: [&str; 1] = [CORE_IDENTITY_CONVERSION_RULE];
 // The 0.29 preset keeps every 0.28 rule this CLI still ships and adds the Ref
 // constructor rename, so `core-api-0.28-v1` keeps its published meaning.
-const CORE_API_029_V1_RULES: [&str; 3] = [
-  CORE_INTEGER_PREDICATE_RULE,
-  CORE_IDENTITY_CONVERSION_RULE,
-  CORE_REF_CONSTRUCTOR_RULE,
-];
+const CORE_API_029_V1_RULES: [&str; 2] = [CORE_IDENTITY_CONVERSION_RULE, CORE_REF_CONSTRUCTOR_RULE];
 // Alias rules whose old names were removed in 0.29.0; only 0.28.x CLIs ship them.
 const RETIRED_CORE_API_028_RULES: [&str; 10] = [
   "core-list-intersperse-v1",
@@ -499,8 +493,7 @@ pub(crate) fn handle_fix_command(
   let value_to_zero_arg_fn = selected_rules.contains(&VALUE_TO_ZERO_ARG_FN_RULE);
   let schema_synthesis = selected_rules.contains(&SYNTHESIZE_SCHEMA_RULE);
   let optional_parameters = selected_rules.contains(&OPTIONAL_PARAMETERS_RULE);
-  let core_predicate_rename = selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE)
-    || selected_rules.contains(&CORE_FUNCTION_ALIAS_RULE)
+  let core_predicate_rename = selected_rules.contains(&CORE_FUNCTION_ALIAS_RULE)
     || selected_rules.contains(&CORE_REF_CONSTRUCTOR_RULE)
     || selected_rules.contains(&CASE_DEFAULT_MATCH_RULE);
   let semantic_refactor = semantic_rename || value_to_zero_arg_fn || local_rename;
@@ -712,14 +705,6 @@ pub(crate) fn handle_fix_command(
       snapshot_file,
       &selected_definitions,
       CorePredicateRename::Vals,
-    )?);
-  }
-  if selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE) {
-    suggestions.extend(plan_core_predicate_rename_fixes(
-      &source_snapshot,
-      snapshot_file,
-      &selected_definitions,
-      CorePredicateRename::Integer,
     )?);
   }
   if selected_rules.contains(&CORE_IDENTITY_CONVERSION_RULE) {
@@ -1246,7 +1231,6 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
         | CORE_OPTION_METHOD_RULE
         | CORE_RESULT_METHOD_RULE
         | CORE_FUNCTION_ALIAS_RULE
-        | CORE_INTEGER_PREDICATE_RULE
         | CORE_IDENTITY_CONVERSION_RULE
         | CORE_REF_CONSTRUCTOR_RULE
         | RENAME_DEFINITION_RULE
@@ -1268,7 +1252,7 @@ fn validate_options(options: &FixCommand) -> Result<(), String> {
   {
     return Err(
       format!(
-        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_INTEGER_PREDICATE_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`, `{CASE_DEFAULT_MATCH_RULE}`, `{CORE_ABSENCE_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
+        "Unknown fix rule `{rule}`. Available rules: `{REMOVED_DATA_API_RULE}`, `{REDUNDANT_DO_RULE}`, `{SINGLE_EXPRESSION_DO_RULE}`, `{NAMED_ENUM_CONSTRUCTOR_RULE}`, `{NAMED_STRUCT_CONSTRUCTOR_RULE}`, `{CORE_OPTION_METHOD_RULE}`, `{CORE_RESULT_METHOD_RULE}`, `{CORE_FUNCTION_ALIAS_RULE}`, `{CORE_IDENTITY_CONVERSION_RULE}`, `{CORE_REF_CONSTRUCTOR_RULE}`, `{RENAME_DEFINITION_RULE}`, `{RENAME_LOCAL_RULE}`, `{VALUE_TO_ZERO_ARG_FN_RULE}`, `{SYNTHESIZE_SCHEMA_RULE}`, `{SPREAD_CALL_PROOF_RULE}`, `{OPTIONAL_PARAMETERS_RULE}`, `{CASE_DEFAULT_MATCH_RULE}`, `{CORE_ABSENCE_RULE}`. The retired 0.14.x migration bridge rules are `{TAG_MATCH_RULE}` and `{REQUIRED_STRUCT_FIELD_RULE}`."
       ) + &format!(
         " Review-only compiler rules: `{UNSAFE_COERCE_BOUNDARY_RULE}`, `{ASSERT_TYPE_PROOF_RULE}`, `{CONCRETE_RETURN_PROOF_RULE}`, `{CALLABLE_CONTRACT_PROOF_RULE}`, `{NOMINAL_WRITE_PROOF_RULE}`."
       ),
@@ -1316,7 +1300,6 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         | CORE_OPTION_METHOD_RULE
         | CORE_RESULT_METHOD_RULE
         | CORE_FUNCTION_ALIAS_RULE
-        | CORE_INTEGER_PREDICATE_RULE
         | CORE_IDENTITY_CONVERSION_RULE
         | CORE_REF_CONSTRUCTOR_RULE
         | CASE_DEFAULT_MATCH_RULE
@@ -1337,7 +1320,6 @@ fn selected_rule_ids(options: &FixCommand) -> Vec<&'static str> {
         CORE_OPTION_METHOD_RULE => CORE_OPTION_METHOD_RULE,
         CORE_RESULT_METHOD_RULE => CORE_RESULT_METHOD_RULE,
         CORE_FUNCTION_ALIAS_RULE => CORE_FUNCTION_ALIAS_RULE,
-        CORE_INTEGER_PREDICATE_RULE => CORE_INTEGER_PREDICATE_RULE,
         CORE_IDENTITY_CONVERSION_RULE => CORE_IDENTITY_CONVERSION_RULE,
         CORE_REF_CONSTRUCTOR_RULE => CORE_REF_CONSTRUCTOR_RULE,
         CASE_DEFAULT_MATCH_RULE => CASE_DEFAULT_MATCH_RULE,
@@ -1454,13 +1436,6 @@ fn fix_rule_metadata(rule_id: &'static str) -> FixRuleMetadata {
       rule_id,
       diagnostic_code: CORE_FUNCTION_ALIAS_DIAGNOSTIC,
       evidence_source: "compiler-resolved-reference",
-      lifecycle: "semantic-refactor",
-      source_version_required: false,
-    },
-    CORE_INTEGER_PREDICATE_RULE => FixRuleMetadata {
-      rule_id,
-      diagnostic_code: CORE_INTEGER_PREDICATE_DIAGNOSTIC,
-      evidence_source: "reader-resolved-builtin-proc",
       lifecycle: "semantic-refactor",
       source_version_required: false,
     },
@@ -3938,7 +3913,6 @@ fn plan_core_nominal_method_source(
 
 #[derive(Clone, Copy)]
 enum CorePredicateRename {
-  Integer,
   Vals,
 }
 
@@ -3950,7 +3924,6 @@ impl CorePredicateRename {
 
   fn names(self) -> (&'static str, &'static str, &'static str, &'static str) {
     match self {
-      Self::Integer => ("round?", "integer?", CORE_INTEGER_PREDICATE_RULE, CORE_INTEGER_PREDICATE_DIAGNOSTIC),
       Self::Vals => ("vals", "distinct-values", CORE_FUNCTION_ALIAS_RULE, CORE_FUNCTION_ALIAS_DIAGNOSTIC),
     }
   }
@@ -3961,7 +3934,6 @@ fn supports_attached_migrations(rule: &str) -> bool {
     rule,
     REMOVED_DATA_API_RULE
       | CORE_FUNCTION_ALIAS_RULE
-      | CORE_INTEGER_PREDICATE_RULE
       | CORE_NOMINAL_CONSTRUCTOR_RULE
       | CORE_OPTION_METHOD_RULE
       | CORE_RESULT_METHOD_RULE
@@ -4119,12 +4091,6 @@ fn plan_attached_fixes(
               Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
             }
           }
-          if selected_rules.contains(&CORE_INTEGER_PREDICATE_RULE) {
-            match plan_core_predicate_rename_source(snapshot_file, namespace, &synthetic_def, &wrapper, CorePredicateRename::Integer) {
-              Ok(planned) => candidates.extend(planned),
-              Err(error) => blockers.push(format!("{namespace}/{definition} {region}[{index}]: {error}")),
-            }
-          }
           if selected_rules.contains(&CORE_IDENTITY_CONVERSION_RULE) {
             match plan_core_identity_conversion_source(snapshot, snapshot_file, namespace, &synthetic_def, &wrapper) {
               Ok(planned) => candidates.extend(planned),
@@ -4260,10 +4226,8 @@ fn plan_core_predicate_rename_fixes(
     if list_head(&entry.code) == Some("defmacro") {
       continue;
     }
-    if !matches!(rule, CorePredicateRename::Integer)
-      && !program::lookup_def_id("calcit.core", old_name).is_some_and(|target| {
-        program::lookup_compiled_def(namespace, definition).is_some_and(|compiled| compiled.deps.contains(&target))
-      })
+    if !program::lookup_def_id("calcit.core", old_name)
+      .is_some_and(|target| program::lookup_compiled_def(namespace, definition).is_some_and(|compiled| compiled.deps.contains(&target)))
     {
       // Avoid re-tracing unrelated declaration definitions.
       continue;
@@ -4292,19 +4256,6 @@ fn plan_core_predicate_rename_source(
   if list_head(source) == Some("defmacro") {
     return Ok(suggestions);
   }
-  let mut integer_heads = Vec::new();
-  if matches!(rule, CorePredicateRename::Integer) {
-    let mut local_bindings = HashSet::new();
-    collect_potential_local_bindings(source, &mut local_bindings);
-    if local_bindings.contains(old_name) {
-      return Ok(suggestions);
-    }
-    collect_builtin_round_call_heads(source, &mut Vec::new(), &mut integer_heads);
-    if integer_heads.is_empty() {
-      return Ok(suggestions);
-    }
-  }
-
   let parsed = code_to_calcit(source, namespace, definition, vec![]).map_err(|error| error.to_string())?;
   let usages =
     runner::preprocess::trace_source_usages(&parsed, namespace, definition, &RefCell::new(Vec::new()), &CallStackList::default())
@@ -4362,57 +4313,39 @@ fn plan_core_predicate_rename_source(
       .or_insert_with(|| (source_leaf.to_string(), replacement, macro_origin, review));
   }
 
-  if matches!(rule, CorePredicateRename::Integer) {
-    // The Cirru reader resolves `round?` directly to a built-in Proc before
-    // preprocessing, so it has no source location in definition-usage traces.
-    // A source call head is therefore sufficient evidence for this one proc.
-    for head_path in integer_heads {
-      let mut call_path = head_path.clone();
-      call_path.pop();
-      let review = (!method_source_context_is_stable(source, &call_path, namespace, definition, &usages)).then(|| {
-        "The built-in predicate call crosses an unknown source context; review whether macro expansion observes its spelling."
-          .to_owned()
-      });
-      planned.insert(
-        head_path,
-        (old_name.to_owned(), format!("calcit.core/{new_name}"), Vec::new(), review),
-      );
-    }
-  }
-
   for (target_path, (original_leaf, replacement, macro_origin, review)) in planned {
     let original_node = Cirru::leaf(original_leaf.as_str());
     let replacement_node = Cirru::leaf(replacement.as_str());
     let machine_applicable = review.is_none();
     let message = review.unwrap_or_else(|| format!("Use the preferred core name `{new_name}`; the direct calls have equivalent results and preserve argument evaluation. First-class function identity is not rewritten."));
     suggestions.push(FixSuggestion {
-        rule_id,
-        diagnostic_code,
-        semantic_layer: "surface",
-        source_file: snapshot_file.to_owned(),
-        definition: format!("{namespace}/{definition}"),
-        path: format!("code{}", format_path(&target_path)),
-        fingerprint: node_fingerprint(&original_node),
-        origin_chain: vec![serde_json::json!({
-          "kind": if matches!(rule, CorePredicateRename::Integer) { "reader-resolved-builtin-proc" } else { "compiler-resolved-core-predicate" },
-          "target": format!("calcit.core/{old_name}"),
-          "replacement": format!("calcit.core/{new_name}"),
-          "macro_origin": macro_origin,
-        })],
-        original: quoted_json(&original_node),
-        replacement: machine_applicable.then(|| quoted_json(&replacement_node)),
-        applicability: if machine_applicable {
-          "machine-applicable"
-        } else {
-          "requires-review"
-        },
-        message,
-        target_path,
-        operation: machine_applicable.then_some(FixOperation::ReplaceLeaf {
-          original: original_leaf,
-          replacement,
-        }),
-      });
+      rule_id,
+      diagnostic_code,
+      semantic_layer: "surface",
+      source_file: snapshot_file.to_owned(),
+      definition: format!("{namespace}/{definition}"),
+      path: format!("code{}", format_path(&target_path)),
+      fingerprint: node_fingerprint(&original_node),
+      origin_chain: vec![serde_json::json!({
+        "kind": "compiler-resolved-core-predicate",
+        "target": format!("calcit.core/{old_name}"),
+        "replacement": format!("calcit.core/{new_name}"),
+        "macro_origin": macro_origin,
+      })],
+      original: quoted_json(&original_node),
+      replacement: machine_applicable.then(|| quoted_json(&replacement_node)),
+      applicability: if machine_applicable {
+        "machine-applicable"
+      } else {
+        "requires-review"
+      },
+      message,
+      target_path,
+      operation: machine_applicable.then_some(FixOperation::ReplaceLeaf {
+        original: original_leaf,
+        replacement,
+      }),
+    });
   }
   Ok(suggestions)
 }
@@ -4580,25 +4513,6 @@ fn ref_definition_context_is_stable(code: &Cirru, head_path: &[usize]) -> bool {
       _ => false,
     }
   })
-}
-
-fn collect_builtin_round_call_heads(node: &Cirru, path: &mut Vec<usize>, heads: &mut Vec<Vec<usize>>) {
-  let Cirru::List(items) = node else {
-    return;
-  };
-  if matches!(items.first(), Some(Cirru::Leaf(head)) if matches!(head.as_ref(), "quote" | "quasiquote")) {
-    return;
-  }
-  if items.len() == 2 && matches!(items.first(), Some(Cirru::Leaf(head)) if head.as_ref() == "round?") {
-    let mut head_path = path.clone();
-    head_path.push(0);
-    heads.push(head_path);
-  }
-  for (index, child) in items.iter().enumerate() {
-    path.push(index);
-    collect_builtin_round_call_heads(child, path, heads);
-    path.pop();
-  }
 }
 
 /// Collect complete built-in conversion calls without entering quoted source.
@@ -6051,16 +5965,16 @@ fn print_human_report(report: &FixReport<'_>) {
 #[cfg(test)]
 mod tests {
   use super::{
-    ConstructorScope, FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collect_builtin_round_call_heads,
-    collect_potential_local_bindings, collect_redundant_do_paths, fix_rule_metadata, fix_source_json_to_cirru, insert_fix_suggestion,
-    legacy_constructor_replacement, migration_for_source_leaf, optional_candidate_signature_is_closed,
-    optional_candidate_type_is_closed, optional_parameter_candidate, prototype_is_shadowed, resolve_fix_target,
-    rewrite_loaded_schema_type_references, rewrite_named_constructor_tree, struct_fields_are_complete, suggestion_operations,
+    ConstructorScope, FixOperation, FixSuggestion, NominalKind, REMOVED_DATA_API_RULE, collect_potential_local_bindings,
+    collect_redundant_do_paths, fix_rule_metadata, fix_source_json_to_cirru, insert_fix_suggestion, legacy_constructor_replacement,
+    migration_for_source_leaf, optional_candidate_signature_is_closed, optional_candidate_type_is_closed, optional_parameter_candidate,
+    prototype_is_shadowed, resolve_fix_target, rewrite_loaded_schema_type_references, rewrite_named_constructor_tree,
+    struct_fields_are_complete, suggestion_operations,
   };
   use calcit::calcit::{CalcitFnTypeAnnotation, CalcitGenericBound, CalcitTrait, CalcitTypeAnnotation, SchemaKind};
   use cirru_parser::Cirru;
   use serde_json::Value;
-  use std::collections::{BTreeMap, HashSet};
+  use std::collections::BTreeMap;
   use std::sync::Arc;
 
   use super::super::common::markdown_cirru_section;
@@ -6368,34 +6282,6 @@ mod tests {
     collect_potential_local_bindings(&code, &mut shadowed);
     assert!(prototype_is_shadowed("Result", &shadowed));
     assert!(!prototype_is_shadowed("app.schema/Result", &shadowed));
-  }
-
-  #[test]
-  fn integer_predicate_scanner_rejects_binder_shaped_source() {
-    let parameter = Cirru::List(vec![
-      leaf("defn"),
-      leaf("demo"),
-      Cirru::List(vec![leaf("round?"), leaf("x")]),
-      Cirru::List(vec![leaf("round?"), leaf("x")]),
-    ]);
-    let binding = Cirru::List(vec![
-      leaf("defn"),
-      leaf("demo"),
-      Cirru::List(vec![]),
-      Cirru::List(vec![
-        leaf("let"),
-        Cirru::List(vec![Cirru::List(vec![leaf("round?"), leaf("x")])]),
-        Cirru::List(vec![leaf("round?"), leaf("x")]),
-      ]),
-    ]);
-    for code in [parameter, binding] {
-      let mut bindings = HashSet::new();
-      collect_potential_local_bindings(&code, &mut bindings);
-      assert!(bindings.contains("round?"));
-      let mut heads = Vec::new();
-      collect_builtin_round_call_heads(&code, &mut Vec::new(), &mut heads);
-      assert!(!heads.is_empty(), "the binder guard must precede shape-based call scanning");
-    }
   }
 
   #[test]

@@ -502,7 +502,7 @@ fn non_invoking_value_proc(proc: CalcitProc) -> bool {
       | CalcitProc::Cos
       | CalcitProc::Pow
       | CalcitProc::Sqrt
-      | CalcitProc::IsRound
+      | CalcitProc::IsInteger
       | CalcitProc::NativeNumberFract
       | CalcitProc::NativeNumberRem
       | CalcitProc::NativeNumberFormat

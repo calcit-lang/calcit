@@ -92,7 +92,7 @@ let
 显式返回证明审计会保留开放参数证据；普通入口的全面收紧仍以真实消费者迁移为前提。
 
 ```bash
-calcit src/cirru/calcit-core.cirru test calcit.core/foldl-shortcut --tag open-fold-proof --require-match
+calcit src/cirru/calcit-core.cirru test 'calcit.core/&list:foldl-shortcut' --tag open-fold-proof --require-match
 ```
 
 分支合并中，只要一个可达分支仍是根级 `Dynamic`，结果就不能仅凭另一个分支的

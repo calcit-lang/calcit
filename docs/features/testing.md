@@ -190,11 +190,11 @@ node scripts/run-core-tests.mjs
 
 # 按 tag、名称或定义缩小范围；零个测试被选中时失败
 node scripts/run-core-tests.mjs --tag unicode --backend native,js
-node scripts/run-core-tests.mjs --target 'calcit.core/round?' --name distinguishes-integers
+node scripts/run-core-tests.mjs --target 'calcit.core/integer?' --name distinguishes-integers
 
 # 其它 Snapshot 的 :tests 也可重放；WASI 0.3 command 需显式选择并提供 Wasmtime
 node scripts/run-core-tests.mjs --snapshot calcit/test-traits.cirru --target test-traits.main/test-qualified-contains-boundary --backend native,js
-WASMTIME_CLI=wasmtime node scripts/run-core-tests.mjs --backend wasi --target 'calcit.core/round?'
+WASMTIME_CLI=wasmtime node scripts/run-core-tests.mjs --backend wasi --target 'calcit.core/integer?'
 ```
 
 运行器为每个测试生成一个零参数函数，写入临时 Snapshot，再分别执行：native 与 WASI 逐个打印标记后运行，JS 导入生成的模块逐个调用，WASM 在 Node 中实例化后逐个调用导出函数。native 是参照结果，JS 与 WASM 的 `println` 输出必须与 native 一致。失败报告列出测试 id、后端、期望与实际值，以及该测试在其它后端的状态。

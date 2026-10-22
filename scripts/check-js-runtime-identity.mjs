@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { cp, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { cp, mkdtemp, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -11,12 +11,6 @@ try {
   const runtimeBPath = join(fixtureRoot, "runtime-b", "lib");
   await cp(new URL("../lib", import.meta.url), runtimeAPath, { recursive: true });
   await cp(new URL("../lib", import.meta.url), runtimeBPath, { recursive: true });
-  // Simulate removal of only the public bridge in an isolated runtime copy.
-  const listRuntimePath = join(runtimeBPath, "js-list.mjs");
-  const listRuntime = await readFile(listRuntimePath, "utf8");
-  const shortcutBridge = "export let foldl_shortcut = _$n_list_$o_foldl_shortcut;";
-  assert.equal(listRuntime.split(shortcutBridge).length, 2, "expected exactly one removable compatibility bridge");
-  await writeFile(listRuntimePath, listRuntime.replace(shortcutBridge, ""));
   await symlink(resolve("node_modules"), join(fixtureRoot, "node_modules"), "dir");
 
   const runtimeA = await import(pathToFileURL(join(runtimeAPath, "calcit.procs.mjs")).href);
@@ -41,8 +35,7 @@ try {
   const existingCalcit = runtimeA.to_calcit_data([":keyword"]);
   assert.equal(runtimeA.to_calcit_data(existingCalcit, true), existingCalcit, "the option does not reinterpret an existing Calcit container");
   assert.ok(existingCalcit.toArray()[0] instanceof runtimeA.CalcitTag);
-  assert.equal(runtimeA.foldl_shortcut, runtimeA._$n_list_$o_foldl_shortcut, "legacy bridge must retain the same implementation");
-  assert.equal(runtimeA.foldl_shortcut.name, "foldl_shortcut", "the bridge retains its observable function name");
+  assert.equal(runtimeA.foldl_shortcut, undefined, "the public foldl-shortcut export was removed in 0.31.0");
   const symbolFromString = runtimeA.turn_symbol("hello");
   assert.ok(symbolFromString instanceof runtimeA.CalcitSymbol, "turn-symbol must return a Symbol on JS");
   assert.equal(symbolFromString.value, "hello");
@@ -478,7 +471,6 @@ try {
     assert.equal(runtime._$n_set_$o_count(runtime._SHA__$M_(frozenTrait, foreignTrait, frozenTrait)), 2);
     assert.equal(runtime._$n_set_$o_count(runtime._SHA__$M_(markerImplA, markerImplB, foreignMarkerImpl)), 2);
   }
-  assert.equal(runtimeB.foldl_shortcut, undefined, "the isolated runtime must really omit the public export");
   const privateShortcut = runtimeB._$n_list_$o_foldl_shortcut;
   const shortcutInputs = new runtimeB.CalcitSliceList([1, 2, 3]);
   const shortcutCalls = [];

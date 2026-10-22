@@ -284,12 +284,12 @@ pub(super) fn emit_foldl_step(ctx: &mut WasmGenCtx, fn_call_kind: &FoldlCallKind
   }
 }
 
-/// `foldl-shortcut xs acc default fn` — like foldl but fn returns `:: bool new_acc`.
+/// `&list:foldl-shortcut xs acc default fn` — like foldl but fn returns `:: bool new_acc`.
 /// If bool is true, return new_acc immediately (short-circuit). Otherwise continue.
 /// After exhausting xs, return default.
 /// fn must be statically resolvable or an inline lambda.
 pub(super) fn emit_foldl_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
-  expect_arity(4, args, "foldl-shortcut")?;
+  expect_arity(4, args, "&list:foldl-shortcut")?;
 
   // Evaluate collection → i32 pointer
   let list_ptr = emit_ptr_to_i32(ctx, &args[0])?;
@@ -311,7 +311,7 @@ pub(super) fn emit_foldl_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   let enum_ptr = ctx.alloc_local_typed(ValType::I32);
 
   // Resolve callee (after allocating acc/elem so Proc variant has the right indices)
-  let fn_call_kind = resolve_callee_kind(ctx, &args[3], acc, elem).map_err(|e| format!("foldl-shortcut: {e}"))?;
+  let fn_call_kind = resolve_callee_kind(ctx, &args[3], acc, elem).map_err(|e| format!("&list:foldl-shortcut: {e}"))?;
 
   // Outer block for early exit; inner loop for iteration
   ctx.begin_block();
@@ -358,7 +358,7 @@ pub(super) fn emit_foldl_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Resu
   Ok(())
 }
 
-/// `foldr-shortcut xs acc default fn` — like foldl-shortcut but iterates right-to-left.
+/// `foldr-shortcut xs acc default fn` — like `&list:foldl-shortcut` but iterates right-to-left.
 pub(super) fn emit_foldr_shortcut(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
   expect_arity(4, args, "foldr-shortcut")?;
 

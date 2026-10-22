@@ -400,7 +400,7 @@ pub fn foldl(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, Calcit
   }
 }
 
-/// foldl-shortcut using syntax for performance, it's supposed to be a function
+/// `&list:foldl-shortcut` using syntax for performance, it's supposed to be a function
 /// by returning `:: bool acc`, bool indicates where performace a shortcut return
 pub fn foldl_shortcut(xs: &[Calcit], call_stack: &CallStackList) -> Result<Calcit, CalcitErr> {
   if xs.len() == 4 {

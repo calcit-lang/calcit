@@ -223,8 +223,8 @@ pub enum CalcitProc {
   Ceil,
   #[strum(serialize = "sqrt")]
   Sqrt,
-  #[strum(serialize = "round?")]
-  IsRound,
+  #[strum(serialize = "integer?")]
+  IsInteger,
   #[strum(serialize = "&number:fract")]
   NativeNumberFract,
   #[strum(serialize = "&number:rem")]
@@ -319,8 +319,6 @@ pub enum CalcitProc {
   Sort,
   #[strum(serialize = "foldl")]
   Foldl,
-  #[strum(serialize = "foldl-shortcut")]
-  FoldlShortcut,
   #[strum(serialize = "foldr-shortcut")]
   FoldrShortcut,
   #[strum(serialize = "&list:reverse")]
@@ -788,7 +786,7 @@ impl CalcitProc {
         return_type: some_tag("number"),
         arg_types: vec![some_tag("number")],
       }),
-      IsRound => Some(ProcTypeSignature {
+      IsInteger => Some(ProcTypeSignature {
         return_type: some_tag("bool"),
         arg_types: vec![some_tag("number")],
       }),
@@ -1048,7 +1046,7 @@ impl CalcitProc {
         return_type: dynamic_tag(),
         arg_types: vec![dynamic_tag(), dynamic_tag(), some_fn()],
       }),
-      FoldlShortcut | FoldrShortcut | NativeListFoldlShortcut => Some(ProcTypeSignature {
+      FoldrShortcut | NativeListFoldlShortcut => Some(ProcTypeSignature {
         return_type: dynamic_tag(),
         arg_types: vec![dynamic_tag(), dynamic_tag(), dynamic_tag(), some_fn()],
       }),

@@ -7826,29 +7826,6 @@
                       if (&< n 1) 0 $ do (&+ n 0) (recur next)
                 assert= 0 $ step 4
               :tags $ #{} :tail-return-proof :unit
-        'foldl-shortcut $ %{} 'CodeEntry
-          :doc "|Deprecated: use fold-while with ControlFlow, which returns the accumulator when no step breaks. Internal left fold with early termination. Syntax: (foldl-shortcut list initial default reducer). The reducer receives accumulator and element, then returns an anonymous enum `:: Bool accumulator`; true returns its accumulator immediately, false continues, and exhaustion returns default."
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'U)
-            :args $ [] (:: 'List 'T) 'U 'U $ :: 'Fn
-              {} (:return 'Enum)
-                :args $ [] 'U 'T
-            :generics $ [] 'T 'U
-          :tags $ #{} :builtin :deprecated :internal
-          :tests $ []
-            %{} 'TestEntry (:name |returns-shortcut-accumulator)
-              :code $ quote $ assert= 3
-                foldl-shortcut ([] 1 2 3) 0 99 $ fn (acc x)
-                  let
-                      next $ + acc x
-                    :: (&= x 2) next
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |returns-default-without-shortcut)
-              :code $ quote $ assert= 99
-                foldl-shortcut ([] 1 2 3) 0 99 $ fn (acc x)
-                  :: false $ + acc x
-              :tags $ #{} :core :unit
         'foldr-shortcut $ %{} 'CodeEntry
           :doc "|Internal right fold with early termination. Syntax: (foldr-shortcut list initial default reducer). The reducer receives accumulator and element, then returns an anonymous enum `:: Bool accumulator`; true returns its accumulator immediately, false continues, and exhaustion returns default."
           :code $ quote &runtime-implementation
@@ -9387,26 +9364,73 @@
                 index-of ([] :a :b :c) :missing
             :tags $ #{} :core :unit
         'integer? $ %{} 'CodeEntry
-          :doc "|判断 Number 是否有限且恰好没有小数部分；这是首选公开名字，返回 Bool 而不收窄为整数类型。旧函数 round? 保持同义兼容；Number 方法 .round? 已在 0.29.0 删除，改用 .integer?。"
-          :code $ quote $ defn integer? (x) (round? x)
+          :doc "|判断 Number 是否有限且恰好没有小数部分，返回 Bool 而不收窄为整数类型。NaN、正负 Infinity、非零小数返回 false，-0 返回 true。这不是安全整数范围或 Int32/UInt32 等 refinement 检查，也不执行舍入。旧函数 round? 已在 0.31.0 删除，Number 方法 .round? 已在 0.29.0 删除，均改用 integer? / .integer?。"
+          :code $ quote &runtime-implementation
           :examples $ [] $ quote (integer? 12)
           :schema $ :: 'Fn $ {} (:return 'Bool)
             :args $ [] 'Number
-          :tests $ [] $ %{} 'TestEntry (:name |integer-alias-boundaries-and-evaluation)
-            :code $ quote $ do
-              assert= true $ integer? 0
-              assert= true $ integer? -0
-              assert= true $ integer? 1e100
-              assert= false $ integer? 1.25
-              assert= false $ integer? 0.0000000000000001
-              assert= false $ integer? $ / 1 0
-              assert= false $ integer? $ / 0 0
-              assert= true $ .integer? -1
-              assert= false $ .integer? 0.25
-              assert= false $ .integer? $ / -1 0
-              assert= true $ integer? $ do (println |integer-alias-free-argument) 0
-              assert= false $ .integer? $ do (println |integer-alias-method-argument) 0.25
-            :tags $ #{} :core :numeric-predicate :unit
+          :tags $ #{} :builtin
+          :tests $ []
+            %{} 'TestEntry (:name |integer-alias-boundaries-and-evaluation)
+              :code $ quote $ do
+                assert= true $ integer? 0
+                assert= true $ integer? -0
+                assert= true $ integer? 1e100
+                assert= false $ integer? 1.25
+                assert= false $ integer? 0.0000000000000001
+                assert= false $ integer? $ / 1 0
+                assert= false $ integer? $ / 0 0
+                assert= true $ .integer? -1
+                assert= false $ .integer? 0.25
+                assert= false $ .integer? $ / -1 0
+                assert= true $ integer? $ do (println |integer-alias-free-argument) 0
+                assert= false $ .integer? $ do (println |integer-alias-method-argument) 0.25
+              :tags $ #{} :core :numeric-predicate :unit
+            %{} 'TestEntry (:name |distinguishes-integers)
+              :code $ quote $ do
+                assert= true $ integer? 1
+                assert= false $ integer? 1.1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |finite-exact-integer-boundaries)
+              :code $ quote $ do
+                assert= true $ integer? 0
+                assert= true $ integer? -0
+                assert= true $ integer? 1
+                assert= true $ integer? -1
+                assert= true $ integer? 9007199254740992
+                assert= true $ integer? 1e100
+                assert= false $ integer? 1.25
+                assert= false $ integer? -1.25
+                assert= false $ integer? 0.0000000000000001
+                assert= false $ integer? -0.0000000000000001
+                assert= false $ integer? $ / 1 1e300
+                assert= false $ integer? $ / -1 1e300
+                assert= false $ integer? $ / 1 0
+                assert= false $ integer? $ / -1 0
+                assert= false $ integer? $ / 0 0
+                assert= false $ integer? $ sqrt -1
+              :tags $ #{} :core :numeric-predicate :unit
+            %{} 'TestEntry (:name |integer-method-and-evaluation)
+              :code $ quote $ do
+                assert= true $ .integer? 0
+                assert= true $ .integer? -0
+                assert= true $ .integer? 1
+                assert= true $ .integer? -1
+                assert= true $ .integer? 9007199254740992
+                assert= true $ .integer? 1e100
+                assert= false $ .integer? 1.25
+                assert= false $ .integer? -1.25
+                assert= false $ .integer? 0.0000000000000001
+                assert= false $ .integer? -0.0000000000000001
+                assert= false $ .integer? $ / 1 1e300
+                assert= false $ .integer? $ / -1 1e300
+                assert= false $ .integer? $ / 0 0
+                assert= false $ .integer? $ sqrt -1
+                assert= false $ .integer? $ / 1 0
+                assert= false $ .integer? $ / -1 0
+                assert= true $ integer? $ do (println |integer-free-argument) 0
+                assert= false $ .integer? $ do (println |integer-method-argument) 0.0000000000000001
+              :tags $ #{} :core :numeric-predicate :unit
         'interleave $ %{} 'CodeEntry
           :doc "|Interleave two homogeneous lists, truncating to the shorter input. Both inputs and the result share one element type; explicitly use List<Dynamic> only at a reviewed heterogeneous boundary."
           :code $ quote $ defn interleave (xs0 ys0)
@@ -11966,64 +11990,11 @@
                 assert= -1 $ round -0.5
                 assert= |-0 $ turn-string $ round -0.4
               :tags $ #{} :core :unit
-        'round? $ %{} 'CodeEntry
-          :doc "|已弃用:判断 Number 是否有限且恰好无小数部分。首选 integer? 和 Number .integer?；旧函数 round? 在兼容窗口保持同义，Number 方法 .round? 已在 0.29.0 删除。可用 calcit fix --rule core-integer-predicate-v1 显式预览来源受控的函数调用迁移，附带 tests/examples 需人工检查。NaN、正负 Infinity、非零小数返回 false，-0 返回 true。这不是安全整数范围或 Int32/UInt32 等 refinement 检查，也不执行舍入。"
-          :code $ quote &runtime-implementation
-          :examples $ []
-          :schema $ :: 'Fn $ {} (:return 'Bool)
-            :args $ [] 'Number
-          :tags $ #{} :builtin :deprecated :internal
-          :tests $ []
-            %{} 'TestEntry (:name |distinguishes-integers)
-              :code $ quote $ do
-                assert= true $ round? 1
-                assert= false $ round? 1.1
-              :tags $ #{} :core :unit
-            %{} 'TestEntry (:name |finite-exact-integer-boundaries)
-              :code $ quote $ do
-                assert= true $ round? 0
-                assert= true $ round? -0
-                assert= true $ round? 1
-                assert= true $ round? -1
-                assert= true $ round? 9007199254740992
-                assert= true $ round? 1e100
-                assert= false $ round? 1.25
-                assert= false $ round? -1.25
-                assert= false $ round? 0.0000000000000001
-                assert= false $ round? -0.0000000000000001
-                assert= false $ round? $ / 1 1e300
-                assert= false $ round? $ / -1 1e300
-                assert= false $ round? $ / 1 0
-                assert= false $ round? $ / -1 0
-                assert= false $ round? $ / 0 0
-                assert= false $ round? $ sqrt -1
-              :tags $ #{} :core :numeric-predicate :unit
-            %{} 'TestEntry (:name |integer-method-and-evaluation)
-              :code $ quote $ do
-                assert= true $ .integer? 0
-                assert= true $ .integer? -0
-                assert= true $ .integer? 1
-                assert= true $ .integer? -1
-                assert= true $ .integer? 9007199254740992
-                assert= true $ .integer? 1e100
-                assert= false $ .integer? 1.25
-                assert= false $ .integer? -1.25
-                assert= false $ .integer? 0.0000000000000001
-                assert= false $ .integer? -0.0000000000000001
-                assert= false $ .integer? $ / 1 1e300
-                assert= false $ .integer? $ / -1 1e300
-                assert= false $ .integer? $ / 0 0
-                assert= false $ .integer? $ sqrt -1
-                assert= false $ .integer? $ / 1 0
-                assert= false $ .integer? $ / -1 0
-                assert= true $ round? $ do (println |integer-free-argument) 0
-                assert= false $ .integer? $ do (println |integer-method-argument) 0.0000000000000001
-              :tags $ #{} :core :numeric-predicate :unit
         'secure-random-bytes $ %{} 'CodeEntry
           :doc "|生成指定长度的密码学安全随机字节。长度必须是 0..65536 的整数；失败以 Result<String> 返回，不提供非安全伪随机退化路径。"
           :code $ quote $ defn secure-random-bytes (size)
             if
-              and (round? size) (>= size 0) (<= size 65536)
+              and (integer? size) (>= size 0) (<= size 65536)
               &secure-random-bytes Result size "|secure-random-bytes failed"
               %err "|secure-random-bytes expected an integer byte count in 0..65536"
           :examples $ []
@@ -13593,7 +13564,7 @@
           :doc "|同步等待整数毫秒并返回 Result<Unit,String>；允许 0..4294967295，不做隐式舍入。"
           :code $ quote $ defn wait-ms (milliseconds)
             if
-              and (round? milliseconds) (>= milliseconds 0) (<= milliseconds 4294967295)
+              and (integer? milliseconds) (>= milliseconds 0) (<= milliseconds 4294967295)
               &wait-ms Result milliseconds "|wait-ms failed"
               %err "|wait-ms expected an integer millisecond duration in 0..4294967295"
           :examples $ []
