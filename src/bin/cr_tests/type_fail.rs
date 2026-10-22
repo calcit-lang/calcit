@@ -782,11 +782,20 @@ fn hint_fn_rejects_malformed_forms_instead_of_ignoring_them() {
 
     for (source, expected) in cases {
       let entries = load_snippet_entries(source);
-      let error = run_check_only(&entries).expect_err("malformed hint-fn source must fail preprocessing");
+      let error = runner::preprocess::ensure_ns_def_compiled(
+        &entries.init_ns,
+        &entries.init_def,
+        &RefCell::new(vec![]),
+        &CallStackList::default(),
+      )
+      .expect_err("malformed hint-fn source must fail preprocessing");
       assert!(
-        error.contains(expected),
+        error.msg.contains(expected),
         "hint-fn diagnostic should mention {expected:?}, got: {error}"
       );
+      let location = error.location.as_ref().expect("hint-fn diagnostics must retain source location");
+      assert_eq!(location.ns.as_ref(), "app.main", "{error}");
+      assert_eq!(location.def.as_ref(), "main!", "{error}");
     }
   });
 }
