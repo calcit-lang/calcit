@@ -1822,3 +1822,164 @@ fn incremental_code_entry_rejects_invalid_metadata_without_partial_apply() {
   assert!(error.contains("app.inc/bad") && error.contains(":ffi :js"), "error: {error}");
   assert!(PROGRAM_CODE_DATA.read().expect("read program code")["app.inc"].defs.is_empty());
 }
+
+#[test]
+fn incremental_code_entry_rejects_defmacro_without_strict_macro_contract() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  PROGRAM_CODE_DATA.write().expect("seed program code").insert(
+    Arc::from("app.inc"),
+    ProgramFileData {
+      import_map: HashMap::new(),
+      defs: HashMap::new(),
+    },
+  );
+  // Cold start rejects this entry (`validate_strict_macro_schema`), so the
+  // watcher must not accept it with a Dynamic schema either.
+  let changes = parse_changes_for_test(
+    "{}\n  :changed $ {}\n    |app.inc $ {}\n      :added-defs $ {}\n        |m $ %{} :CodeEntry (:doc |)\n          :code $ quote $ defmacro m (x) x\n",
+  );
+  let error = apply_code_changes(&changes).expect_err("defmacro without a Macro contract");
+  assert!(error.contains("`defmacro` requires a strict `Macro` contract"), "error: {error}");
+  assert!(PROGRAM_CODE_DATA.read().expect("read program code")["app.inc"].defs.is_empty());
+
+  // The same definition inside an added namespace is checked as well.
+  let mut added = snapshot::ChangesDict::default();
+  added.added.insert(
+    Arc::from("app.macros"),
+    snapshot::FileInSnapShot {
+      ns: snapshot::NsEntry {
+        doc: String::new(),
+        code: Cirru::List(vec![Cirru::leaf("ns"), Cirru::leaf("app.macros")]),
+      },
+      defs: HashMap::from([(
+        String::from("m"),
+        snapshot::CodeEntry::from_code(Cirru::List(vec![
+          Cirru::leaf("defmacro"),
+          Cirru::leaf("m"),
+          Cirru::List(vec![Cirru::leaf("x")]),
+          Cirru::leaf("x"),
+        ])),
+      )]),
+    },
+  );
+  assert!(apply_code_changes(&added).is_err());
+  assert!(!PROGRAM_CODE_DATA.read().expect("read program code").contains_key("app.macros"));
+}
+
+#[test]
+fn incremental_changes_apply_all_namespaces_or_none() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  let old_code = code_to_calcit(&Cirru::leaf("1"), "app.a", "demo", vec![]).expect("build old code");
+  PROGRAM_CODE_DATA.write().expect("seed program code").extend(HashMap::from([
+    (
+      Arc::from("app.a"),
+      ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::from([(
+          Arc::from("demo"),
+          ProgramDefEntry {
+            tags: Default::default(),
+            code: old_code.clone(),
+            schema: DYNAMIC_TYPE.clone(),
+            doc: Arc::from(""),
+            examples: vec![],
+            ffi: None,
+          },
+        )]),
+      },
+    ),
+    (
+      Arc::from("app.gone"),
+      ProgramFileData {
+        import_map: HashMap::new(),
+        defs: HashMap::new(),
+      },
+    ),
+  ]));
+  let demo_def = ensure_def_id("app.a", "demo");
+  {
+    let mut compiled = PROGRAM_COMPILED_DATA_STATE.write().expect("seed compiled data");
+    compiled.insert(
+      Arc::from("app.a"),
+      CompiledFileData {
+        defs: HashMap::from([(Arc::from("demo"), compiled_def_for_test(demo_def, vec![]))]),
+      },
+    );
+  }
+  write_runtime_ready("app.a", "demo", Calcit::Number(1.0)).expect("seed runtime");
+  let before = PROGRAM_CODE_DATA.read().expect("read program code").clone();
+
+  // `app.a` and the namespace edits are valid, `app.b` is not loaded.
+  let changes = parse_changes_for_test(
+    "{}\n  :added $ {}\n    |app.new $ {}\n      :ns $ %{} :NsEntry (:doc |) (:code $ quote $ ns app.new)\n      :defs $ {}\n  :removed $ #{} |app.gone\n  :changed $ {}\n    |app.a $ {}\n      :changed-defs $ {}\n        |demo $ quote 2\n    |app.b $ {}\n      :changed-defs $ {}\n        |x $ quote 3\n",
+  );
+  let error = apply_code_changes(&changes).expect_err("app.b is not loaded");
+  assert!(error.contains("can not load ns: app.b"), "error: {error}");
+
+  assert_eq!(*PROGRAM_CODE_DATA.read().expect("read program code"), before);
+  assert!(lookup_compiled_def("app.a", "demo").is_some());
+  assert_eq!(lookup_runtime_ready("app.a", "demo"), Some(Calcit::Number(1.0)));
+}
+
+#[test]
+fn legacy_changed_entry_inherits_metadata_added_in_the_same_message() {
+  let _guard = lock_program_test_state();
+  reset_program_test_state();
+
+  PROGRAM_CODE_DATA.write().expect("seed program code").insert(
+    Arc::from("app.inc"),
+    ProgramFileData {
+      import_map: HashMap::new(),
+      defs: HashMap::new(),
+    },
+  );
+  let entry = parse_code_entry_for_test(INC_FN_ENTRY);
+  let mut changes = snapshot::ChangesDict::default();
+  changes.changed.insert(
+    Arc::from("app.inc"),
+    snapshot::FileChangeInfo {
+      ns: None,
+      added_defs: HashMap::from([(String::from("fresh"), entry.clone().into())]),
+      removed_defs: HashSet::new(),
+      changed_defs: HashMap::from([(String::from("fresh"), Cirru::leaf("7").into())]),
+    },
+  );
+  apply_code_changes(&changes).expect("apply added then changed");
+
+  let program = PROGRAM_CODE_DATA.read().expect("read program code");
+  let applied = &program["app.inc"].defs["fresh"];
+  assert_eq!(applied.code, Calcit::Number(7.0));
+  assert!(
+    matches!(applied.schema.as_ref(), CalcitTypeAnnotation::Fn(_)),
+    "{:?}",
+    applied.schema
+  );
+  assert_eq!(applied.ffi, entry.ffi);
+  assert_eq!(applied.doc.as_ref(), "fresh-doc");
+}
+
+#[test]
+fn incremental_definition_names_follow_snapshot_identifier_rules() {
+  let duplicate = snapshot::ChangesDict::try_from(
+    cirru_edn::parse("{}\n  :changed $ {}\n    |app.inc $ {}\n      :changed-defs $ {}\n        |x $ quote 1\n        'x $ quote 2\n")
+      .expect("parse"),
+  )
+  .expect_err("String and Symbol spellings of one name collide");
+  assert!(duplicate.contains("duplicate snapshot identifier `x`"), "error: {duplicate}");
+
+  let tag = snapshot::ChangesDict::try_from(
+    cirru_edn::parse("{}\n  :changed $ {}\n    |app.inc $ {}\n      :added-defs $ {}\n        :x $ quote 1\n").expect("parse"),
+  )
+  .expect_err("tags are not definition identifiers");
+  assert!(tag.contains("must be a String or Symbol"), "error: {tag}");
+
+  let symbol = snapshot::ChangesDict::try_from(
+    cirru_edn::parse("{}\n  :changed $ {}\n    |app.inc $ {}\n      :added-defs $ {}\n        'x $ quote 1\n").expect("parse"),
+  )
+  .expect("Symbol keys are accepted like in :defs");
+  assert!(symbol.changed["app.inc"].added_defs.contains_key("x"));
+}

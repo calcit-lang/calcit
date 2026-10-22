@@ -1386,70 +1386,82 @@ pub(crate) fn remove_internal_source_namespace(ns: &str) {
   remove_compiled_ns(ns);
 }
 
+/// Apply an incremental change dictionary to the loaded program.
+///
+/// Every namespace and definition is validated and built before anything is
+/// mutated, so an error leaves the whole program (code, runtime values and
+/// compiled caches) exactly as it was.
 pub fn apply_code_changes(changes: &snapshot::ChangesDict) -> Result<(), String> {
-  invalidate_field_write_shapes();
+  snapshot::validate_incremental_macro_schemas(changes)?;
   let mut program_code = PROGRAM_CODE_DATA.write().expect("open program code");
 
+  // Phase 1: build. Nothing global is touched here.
+  let mut added_files: HashMap<Arc<str>, ProgramFileData> = HashMap::with_capacity(changes.added.len());
   for (ns, file) in &changes.added {
-    let file_info = extract_file_data(file, ns.to_owned())?;
-    for def in file_info.defs.keys() {
-      let _ = register_program_def_id(ns, def);
+    added_files.insert(ns.to_owned(), extract_file_data(file, ns.to_owned())?);
+  }
+  let mut changed_files: Vec<(&Arc<str>, &snapshot::FileChangeInfo, ProgramFileData)> = Vec::with_capacity(changes.changed.len());
+  for (ns, info) in &changes.changed {
+    // Added namespaces are applied before removals, and removals before
+    // changes, so a changed namespace sees an added file but not a removed one.
+    let base = if changes.removed.contains(ns) {
+      None
+    } else {
+      added_files.get(ns).or_else(|| program_code.get(ns))
+    };
+    let mut file = base.cloned().ok_or_else(|| format!("can not load ns: {ns}"))?;
+    if let Some(v) = &info.ns {
+      file.import_map = extract_import_map(v, ns)?;
     }
-    program_code.insert(ns.to_owned(), file_info);
-    remove_compiled_ns(ns);
+    for (def, change) in &info.added_defs {
+      // Legacy `added-defs` code never inherited metadata, keep that behaviour.
+      let entry = program_def_entry_from_change(change, None, ns, def)?;
+      file.defs.insert(def.as_str().into(), entry);
+    }
+    for def in &info.removed_defs {
+      file.defs.remove(def.as_str());
+    }
+    for (def, change) in &info.changed_defs {
+      // `file` already reflects this message's additions and removals, so a
+      // code-only change keeps just-added metadata and a removed definition
+      // has none to keep.
+      let entry = program_def_entry_from_change(change, file.defs.get(def.as_str()), ns, def)?;
+      file.defs.insert(def.as_str().into(), entry);
+    }
+    changed_files.push((ns, info, file));
+  }
+
+  // Phase 2: commit.
+  invalidate_field_write_shapes();
+  for (ns, file_info) in added_files {
+    for def in file_info.defs.keys() {
+      let _ = register_program_def_id(&ns, def);
+    }
+    remove_compiled_ns(&ns);
+    program_code.insert(ns, file_info);
   }
   for ns in &changes.removed {
     clear_runtime_ns(ns);
     program_code.remove(ns);
     remove_compiled_ns(ns);
   }
-  for (ns, info) in &changes.changed {
-    // println!("handling ns: {:?} {}", ns, program_code.contains_key(ns));
-    let file = program_code.get_mut(ns).ok_or_else(|| format!("can not load ns: {ns}"))?;
-    // Build the import map and every entry before mutating the file so a
-    // malformed entry leaves the namespace unchanged.
-    let import_map = info.ns.as_ref().map(|v| extract_import_map(v, ns)).transpose()?;
-    let mut added_entries = Vec::with_capacity(info.added_defs.len());
-    for (def, change) in &info.added_defs {
-      // Legacy `added-defs` code never inherited metadata, keep that behaviour.
-      added_entries.push((def, program_def_entry_from_change(change, None, ns, def)?));
-    }
-    let mut changed_entries = Vec::with_capacity(info.changed_defs.len());
-    for (def, change) in &info.changed_defs {
-      // Removals apply before changes, so a definition removed in the same
-      // message has no metadata to keep.
-      let previous = if info.removed_defs.contains(def) {
-        None
-      } else {
-        file.defs.get(def.as_str())
-      };
-      let entry = program_def_entry_from_change(change, previous, ns, def)?;
-      changed_entries.push((def, entry));
-    }
-
-    if let Some(import_map) = import_map {
-      file.import_map = import_map;
-    }
-
-    for (def, entry) in added_entries {
+  for (ns, info, file) in changed_files {
+    for def in info.added_defs.keys() {
       let _ = register_program_def_id(ns, def);
       clear_runtime_value(ensure_def_id(ns, def));
       remove_compiled_def(ns, def);
-      file.defs.insert(def.to_owned().into(), entry);
     }
     for def in &info.removed_defs {
       if let Some(def_id) = lookup_def_id(ns, def) {
         clear_runtime_value(def_id);
       }
-      file.defs.remove(def.as_str());
       remove_compiled_def(ns, def);
     }
-    for (def, entry) in changed_entries {
-      let def_id = register_program_def_id(ns, def);
-      clear_runtime_value(def_id);
+    for def in info.changed_defs.keys() {
+      clear_runtime_value(register_program_def_id(ns, def));
       remove_compiled_def(ns, def);
-      file.defs.insert(def.to_owned().into(), entry);
     }
+    program_code.insert(ns.to_owned(), file);
   }
 
   Ok(())

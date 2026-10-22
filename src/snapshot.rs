@@ -3665,16 +3665,46 @@ fn parse_definition_changes(value: Edn, field: &str) -> Result<HashMap<String, D
     Edn::Map(map) => {
       let mut defs = HashMap::with_capacity(map.0.len());
       for (key, value) in map.0 {
-        let name: String = key
-          .try_into()
-          .map_err(|e: String| format!("{field}: invalid definition name: {e}"))?;
+        // Same identifier rules as `:defs` in a full Snapshot.
+        let name = parse_snapshot_identifier_key(&key, field)?;
         let change = parse_definition_change(value, &format!("{field}/{name}"))?;
-        defs.insert(name, change);
+        insert_snapshot_identifier(&mut defs, name, change, field)?;
       }
       Ok(defs)
     }
     other => Err(format!("{field}: expected a map, got: {}", format_edn_display(&other))),
   }
+}
+
+/// Apply the cold-start strict `defmacro` schema check to every full
+/// `CodeEntry` carried by an incremental change, so a definition the next cold
+/// start would reject is not accepted by `cr watch` either. Legacy code-only
+/// entries carry no schema and are not checked here.
+pub fn validate_incremental_macro_schemas(changes: &ChangesDict) -> Result<(), String> {
+  const PATH: &str = ".compact-inc.cirru";
+  let mut added = changes.added.keys().collect::<Vec<_>>();
+  added.sort_unstable();
+  for ns in added {
+    let file = &changes.added[ns];
+    let mut defs = file.defs.keys().collect::<Vec<_>>();
+    defs.sort_unstable();
+    for def in defs {
+      validate_strict_macro_schema(&file.defs[def], ns, def, PATH)?;
+    }
+  }
+  let mut namespaces = changes.changed.keys().collect::<Vec<_>>();
+  namespaces.sort_unstable();
+  for ns in namespaces {
+    let info = &changes.changed[ns];
+    let mut defs = info.added_defs.iter().chain(info.changed_defs.iter()).collect::<Vec<_>>();
+    defs.sort_unstable_by(|a, b| a.0.cmp(b.0));
+    for (def, change) in defs {
+      if let DefinitionChange::Entry(entry) = change {
+        validate_strict_macro_schema(entry, ns, def, PATH)?;
+      }
+    }
+  }
+  Ok(())
 }
 
 fn definition_changes_to_edn(defs: &HashMap<String, DefinitionChange>) -> Edn {
