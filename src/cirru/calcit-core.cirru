@@ -6064,6 +6064,31 @@
                       :return 'String
                     , message
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-validated-enum-identity)
+              :code $ quote $ do
+                let
+                    original $ StringDestruct :some |x |tail
+                    decoded $ decode-map-as original 'StringDestruct
+                    original-option $ Option :some 3
+                    decoded-option $ decode-map-as original-option $ :: 'Option 'Number
+                  assert-type decoded 'StringDestruct
+                  assert= true $ identical? original decoded
+                  assert-type decoded-option $ :: 'Option 'Number
+                  assert= true $ identical? original-option decoded-option
+              :tags $ #{} :core :types :unit
+            %{} 'TestEntry (:name |preserves-nan-identity)
+              :code $ quote $ do
+                let
+                    not-a-number $ &/ 0 0
+                    original-option $ Option :some not-a-number
+                    decoded-option $ decode-map-as original-option $ :: 'Option 'Number
+                    original-result $ Result :ok not-a-number
+                    decoded-result $ decode-map-as original-result $ :: 'Result 'Number 'String
+                  assert-type decoded-option $ :: 'Option 'Number
+                  assert-type decoded-result $ :: 'Result 'Number 'String
+                  assert= true $ identical? original-option decoded-option
+                  assert= true $ identical? original-result decoded-result
+              :tags $ #{} :core :types :unit
         'def $ %{} 'CodeEntry (:doc "|special macro to expose value to definition")
           :code $ quote $ defmacro def (_name x) x
           :examples $ []
