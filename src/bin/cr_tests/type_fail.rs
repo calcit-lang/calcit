@@ -3857,6 +3857,28 @@ fn option_erased_to_nil_is_exempt_only_as_a_direct_host_argument() {
   });
 }
 
+#[test]
+fn option_erased_in_a_js_nullish_function_initializer_is_not_exempt() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries(
+      "let\n    to-host-let $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return $ :: 'JsNullish 'Dynamic)) (let ((x 1)) (.unwrap-or (get m :a) nil))\n    to-host-do $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return $ :: 'JsNullish 'Dynamic)) (do 1 (.unwrap-or (get m :a) nil))\n    to-host-match $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return $ :: 'JsNullish 'Dynamic)) $ match (get m :a)\n      (:some v) v\n      (:none) nil\n    business-in-nullish $ fn (m) (hint-fn $ {} (:args $ [] $ :: 'Map 'Tag 'Dynamic) (:return $ :: 'JsNullish 'Dynamic)) (let ((ignored (.unwrap-or (get m :a) nil))) nil)\n  [] to-host-let to-host-do to-host-match business-in-nullish",
+    );
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    let _ = runner::preprocess::take_advisories();
+
+    runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect("an Option erasure inside a nullish-returning function should remain advisory");
+
+    let advisories = runner::preprocess::take_advisories();
+    let erased = advisories
+      .iter()
+      .filter(|advisory| advisory.code() == Some("W_OPTION_ERASED_TO_NIL"))
+      .collect::<Vec<_>>();
+    assert_eq!(erased.len(), 1, "{advisories:?}");
+    assert_eq!(erased[0].location().def.as_ref(), "main!", "{advisories:?}");
+  });
+}
+
 /// #1554: legacy `Optional<T>` outside a public function schema is only noted
 /// (`W_LEGACY_OPTIONAL_TYPE`) before its removal in 0.32.0. Struct fields, enum
 /// payloads, a `def` value schema, a local `hint-fn`, `assert-type` and a

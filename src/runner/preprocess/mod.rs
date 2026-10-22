@@ -132,7 +132,7 @@ impl DefinitionContextScope {
       _features: FunctionFeaturesScope {
         previous: CURRENT_FN_FEATURES.with(|cell| cell.replace(None)),
       },
-      _host_nullish: HostNullishReturnScope::enter(false),
+      _host_nullish: HostNullishReturnScope::enter(HashSet::new()),
     }
   }
 }
@@ -688,13 +688,13 @@ thread_local! {
   /// Invocation metadata such as async stays on the owning callable.
   static CURRENT_FN_FEATURES: RefCell<Option<Arc<HashSet<EdnTag>>>> = const { RefCell::new(None) };
   static PREPROCESS_DEPTH: Cell<usize> = const { Cell::new(0) };
-  /// Whether the function being preprocessed declares a `JsNullish` return, the
-  /// one place where converting an Option to nil is the declared contract.
-  static CURRENT_FN_RETURNS_HOST_NULLISH: Cell<bool> = const { Cell::new(false) };
-  /// One entry per list form being preprocessed, innermost last: whether that
-  /// form hands its arguments to a JS host, where nil is the expected absence,
-  /// and whether the argument being preprocessed fills a `JsNullish` parameter.
-  static HOST_SINK_FRAMES: RefCell<Vec<(bool, bool)>> = const { RefCell::new(Vec::new()) };
+  /// Source expressions in tail position of a function whose declared result is
+  /// `JsNullish`. Other expressions in that function remain business code.
+  static HOST_NULLISH_RETURN_FORMS: RefCell<HashSet<usize>> = RefCell::new(HashSet::new());
+  /// One entry per form being preprocessed, innermost last: whether it hands
+  /// arguments to a JS host, whether the current argument is `JsNullish`, and
+  /// the identity of the source form for tail-position checks.
+  static HOST_SINK_FRAMES: RefCell<Vec<(bool, bool, usize)>> = const { RefCell::new(Vec::new()) };
 }
 
 struct HostSinkFrame;
@@ -705,7 +705,11 @@ impl HostSinkFrame {
       return None;
     };
     let is_sink = xs.first().is_some_and(is_host_sink_head) || is_postfix_native_call(xs) || is_host_property_write(xs);
-    HOST_SINK_FRAMES.with(|frames| frames.borrow_mut().push((is_sink, false)));
+    let source_form = match expr {
+      Calcit::List(items) => Arc::as_ptr(items) as usize,
+      _ => 0,
+    };
+    HOST_SINK_FRAMES.with(|frames| frames.borrow_mut().push((is_sink, false, source_form)));
     Some(Self)
   }
 
@@ -797,27 +801,32 @@ fn current_form_feeds_host() -> bool {
   HOST_SINK_FRAMES.with(|frames| {
     let frames = frames.borrow();
     frames.len() >= 2 && {
-      let (is_sink, arg_host_nullish) = frames[frames.len() - 2];
+      let (is_sink, arg_host_nullish, _) = frames[frames.len() - 2];
       is_sink || arg_host_nullish
     }
   })
 }
 
+fn current_form_is_host_nullish_return() -> bool {
+  let source_form = HOST_SINK_FRAMES.with(|frames| frames.borrow().last().map(|(_, _, source)| *source));
+  source_form.is_some_and(|source| HOST_NULLISH_RETURN_FORMS.with(|forms| forms.borrow().contains(&source)))
+}
+
 struct HostNullishReturnScope {
-  previous: bool,
+  previous: HashSet<usize>,
 }
 
 impl HostNullishReturnScope {
-  fn enter(returns_host_nullish: bool) -> Self {
+  fn enter(forms: HashSet<usize>) -> Self {
     Self {
-      previous: CURRENT_FN_RETURNS_HOST_NULLISH.with(|cell| cell.replace(returns_host_nullish)),
+      previous: HOST_NULLISH_RETURN_FORMS.with(|cell| std::mem::replace(&mut *cell.borrow_mut(), forms)),
     }
   }
 }
 
 impl Drop for HostNullishReturnScope {
   fn drop(&mut self) {
-    CURRENT_FN_RETURNS_HOST_NULLISH.with(|cell| cell.set(self.previous));
+    HOST_NULLISH_RETURN_FORMS.with(|cell| *cell.borrow_mut() = std::mem::take(&mut self.previous));
   }
 }
 
@@ -942,7 +951,65 @@ fn invalidate_assignable_refinements(scope_types: &mut ScopeTypes) {
 /// absence rather than an erasure.
 /// A `:js-ffi` feature alone does not exempt the business code around it.
 fn option_to_nil_is_host_boundary() -> bool {
-  current_form_feeds_host() || CURRENT_FN_RETURNS_HOST_NULLISH.with(Cell::get)
+  current_form_feeds_host() || current_form_is_host_nullish_return()
+}
+
+/// Record only expressions that can supply the function's final value. A
+/// nullish return contract must not exempt a binding initializer, condition,
+/// or ordinary argument elsewhere in the function body.
+fn collect_tail_return_forms(expr: &Calcit, forms: &mut HashSet<usize>) {
+  let Calcit::List(items) = expr else {
+    return;
+  };
+  forms.insert(Arc::as_ptr(items) as usize);
+  match items.first() {
+    Some(Calcit::Syntax(CalcitSyntax::If, _)) => {
+      for branch in items.iter().skip(2) {
+        collect_tail_return_forms(branch, forms);
+      }
+    }
+    Some(Calcit::Syntax(CalcitSyntax::Match, _)) => {
+      for branch in items.iter().skip(2) {
+        if let Calcit::List(pair) = branch
+          && pair.len() == 2
+        {
+          collect_tail_return_forms(&pair[1], forms);
+        }
+      }
+    }
+    Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) => {
+      if items.len() > 2
+        && let Some(body) = items.get(items.len() - 1)
+      {
+        collect_tail_return_forms(body, forms);
+      }
+    }
+    Some(Calcit::Symbol { sym, .. }) if matches!(sym.as_ref(), "let" | "do") => {
+      if items.len() > 2
+        && let Some(body) = items.get(items.len() - 1)
+      {
+        collect_tail_return_forms(body, forms);
+      }
+    }
+    _ => {}
+  }
+}
+
+fn host_nullish_return_forms(args: &CalcitList, returns_host_nullish: bool) -> HashSet<usize> {
+  if !returns_host_nullish {
+    return HashSet::new();
+  }
+  let Some(body) = args
+    .iter()
+    .skip(2)
+    .filter(|form| !crate::builtins::syntax::is_function_metadata_hint(form))
+    .last()
+  else {
+    return HashSet::new();
+  };
+  let mut forms = HashSet::new();
+  collect_tail_return_forms(body, &mut forms);
+  forms
 }
 
 /// Restore lexical permissions on every exit, including errors and unwinding.
@@ -8617,8 +8684,8 @@ fn warn_on_nominal_enum_legacy_absence_use(
 /// `.unwrap-or X nil` turns an Option back into the nil it replaced: callers see
 /// absence as a value again and every later `nil?`/`either` works as before.
 /// Payloads with a concrete type are already rejected by the argument check;
-/// this covers the open (Dynamic) payload that accepts nil as a default. JS FFI
-/// definitions keep it to hand `null`/`undefined` to a host.
+/// this covers the open (Dynamic) payload that accepts nil as a default. Exempt
+/// only an actual host sink or a tail expression returned as `JsNullish`.
 fn warn_on_option_erased_to_nil(head: &Calcit, args: &CalcitList, scope_types: &ScopeTypes, file_ns: &str) {
   if file_ns.starts_with(calcit::CORE_NS) || !should_emit_project_source_lint(file_ns) || option_to_nil_is_host_boundary() {
     return;
@@ -13228,12 +13295,15 @@ pub fn preprocess_defn(
       let feature_scope = FunctionFeaturesScope {
         previous: prev_features.clone(),
       };
-      let _host_nullish_scope = HostNullishReturnScope::enter(effective_fn_schema.as_ref().is_some_and(|signature| {
-        matches!(
-          signature.return_type.as_ref(),
-          CalcitTypeAnnotation::Nullable(_, NullableOrigin::JsHost)
-        )
-      }));
+      let _host_nullish_scope = HostNullishReturnScope::enter(host_nullish_return_forms(
+        args,
+        effective_fn_schema.as_ref().is_some_and(|signature| {
+          matches!(
+            signature.return_type.as_ref(),
+            CalcitTypeAnnotation::Nullable(_, NullableOrigin::JsHost)
+          )
+        }),
+      ));
       let _source_replay_scope = source_replay::Scope::enter_function(
         ys,
         borrows_capture_refinements
@@ -16090,13 +16160,13 @@ mod tests {
       });
     });
     CURRENT_FN_FEATURES.with(|cell| *cell.borrow_mut() = Some(Arc::new(HashSet::from([EdnTag::from("js-ffi")]))));
-    CURRENT_FN_RETURNS_HOST_NULLISH.with(|cell| cell.set(true));
+    HOST_NULLISH_RETURN_FORMS.with(|cell| *cell.borrow_mut() = HashSet::from([1usize]));
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
       let _owned = DefinitionContextScope::enter("tests.context", "owned", &Calcit::Nil);
       assert!(EXPECTED_FN_TYPE.with(|cell| cell.borrow().is_none()));
       assert!(EXPECTED_STRUCT_TYPE.with(|cell| cell.borrow().is_none()));
       assert!(CURRENT_FN_FEATURES.with(|cell| cell.borrow().is_none()));
-      assert!(!CURRENT_FN_RETURNS_HOST_NULLISH.with(Cell::get));
+      assert!(HOST_NULLISH_RETURN_FORMS.with(|cell| cell.borrow().is_empty()));
       panic!("exercise owned-context unwinding");
     }));
     assert!(result.is_err());
@@ -16113,7 +16183,7 @@ mod tests {
         .as_ref()
         .is_some_and(|features| features.contains(&EdnTag::from("js-ffi")))
     }));
-    assert!(CURRENT_FN_RETURNS_HOST_NULLISH.with(Cell::get));
+    assert!(HOST_NULLISH_RETURN_FORMS.with(|cell| cell.borrow().contains(&1)));
   }
 
   #[test]
