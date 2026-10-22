@@ -2385,6 +2385,130 @@ mod tests {
   }
 
   #[test]
+  fn explicit_trait_runtime_rejects_duplicates_after_evaluating_arguments_once() {
+    // Host-created tables bypass preprocessing. Exercise the evaluator, not
+    // just trait_call with already evaluated arguments, to preserve effects.
+    let _guard = crate::program::lock_program_test_state();
+    let origin = Arc::new(CalcitTrait::new_runtime(
+      EdnTag::new("Show"),
+      vec![EdnTag::new("render")],
+      vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+    ));
+    let list = |items| Calcit::List(Arc::new(CalcitList::Vector(items)));
+    let new_counter = |name: &str| Calcit::Ref(Arc::from(name), Arc::new(Mutex::new((Calcit::Number(0.0), HashMap::new()))));
+    let arguments = new_counter("test.meta/dispatch-arguments");
+    let calls = new_counter("test.meta/dispatch-candidates");
+    let increment = |counter: &Calcit| {
+      list(vec![
+        Calcit::Syntax(CalcitSyntax::Reset, Arc::from("test.meta")),
+        counter.clone(),
+        list(vec![
+          Calcit::Proc(CalcitProc::NativeAdd),
+          list(vec![Calcit::Proc(CalcitProc::AtomDeref), counter.clone()]),
+          Calcit::Number(1.0),
+        ]),
+      ])
+    };
+    let Calcit::Fn { mut info, .. } = constant_method("unused") else {
+      unreachable!()
+    };
+    let method = Arc::make_mut(&mut info);
+    method.args = Arc::new(CalcitFnArgs::Args(vec![
+      CalcitLocal::track_sym(&Arc::from("self")),
+      CalcitLocal::track_sym(&Arc::from("argument")),
+    ]));
+    method.call_shape = CalcitFnCallShape::fixed(2);
+    method.arg_types = vec![crate::calcit::DYNAMIC_TYPE.clone(); 2];
+    method.return_type = Arc::new(CalcitTypeAnnotation::Number);
+    method.body = vec![increment(&calls)];
+    let make_impl = |name| {
+      Arc::new(CalcitImpl {
+        name: EdnTag::new(name),
+        origin: Some(origin.clone()),
+        fields: Arc::new(vec![EdnTag::new("render")]),
+        values: Arc::new(vec![Calcit::Fn {
+          id: calcit::gen_core_id(),
+          info: info.clone(),
+        }]),
+      })
+    };
+    let first = make_impl("First");
+    let second = make_impl("Second");
+    let make_receiver = |impls: Vec<Arc<CalcitImpl>>, is_enum| {
+      let mut definition = CalcitStructDef::from_fields(EdnTag::new("Card"), vec![]);
+      definition.impls = impls;
+      if is_enum {
+        let mut prototype = definition;
+        prototype.fields = Arc::new(vec![EdnTag::new("card")]);
+        prototype.field_types = Arc::new(vec![crate::calcit::DYNAMIC_TYPE.clone()]);
+        let definition = CalcitEnumDef::from_struct(CalcitStructValue {
+          struct_ref: Arc::new(prototype),
+          values: Arc::new(vec![list(vec![])]),
+        })
+        .expect("host enum definition");
+        Calcit::Enum(CalcitEnumValue {
+          tag: Arc::new(Calcit::tag("card")),
+          extra: vec![],
+          sum_type: Some(Arc::new(definition)),
+        })
+      } else {
+        Calcit::Struct(CalcitStructValue {
+          struct_ref: Arc::new(definition),
+          values: Arc::new(vec![]),
+        })
+      }
+    };
+    let invoke = |receiver, selected: &Arc<CalcitTrait>| {
+      runner::evaluate_expr(
+        &list(vec![
+          Calcit::Proc(CalcitProc::NativeTraitCall),
+          Calcit::Trait(selected.as_ref().clone()),
+          Calcit::tag("render"),
+          receiver,
+          increment(&arguments),
+        ]),
+        &CalcitScope::default(),
+        "test.meta",
+        &CallStackList::default(),
+      )
+    };
+    let read = |counter: &Calcit| builtins::refs::atom_deref(std::slice::from_ref(counter)).unwrap();
+    let mut expected_arguments = 0.0;
+    let mut expected_calls = 0.0;
+    for is_enum in [false, true] {
+      // A control proves the candidate's observable effect really executes.
+      invoke(make_receiver(vec![first.clone()], is_enum), &origin).expect("unique origin dispatch");
+      expected_arguments += 1.0;
+      expected_calls += 1.0;
+      let before_calls = read(&calls);
+      assert_eq!(read(&arguments), Calcit::Number(expected_arguments));
+      assert_eq!(before_calls, Calcit::Number(expected_calls));
+      for impls in [
+        vec![first.clone(), second.clone()],
+        vec![second.clone(), first.clone()],
+        vec![first.clone(), first.clone()],
+      ] {
+        let error = invoke(make_receiver(impls, is_enum), &origin).expect_err("duplicate origins must reject at runtime");
+        expected_arguments += 1.0;
+        assert_eq!(error.code(), Some("E_DUPLICATE_TRAIT_IMPL"));
+        assert!(error.msg.contains("duplicate impls"), "{error}");
+        assert_eq!(read(&arguments), Calcit::Number(expected_arguments));
+        assert_eq!(read(&calls), before_calls, "neither candidate may run");
+      }
+      let fresh = Arc::new(CalcitTrait::new_runtime(
+        EdnTag::new("Show"),
+        vec![EdnTag::new("render")],
+        vec![Arc::new(CalcitTypeAnnotation::DynFn)],
+      ));
+      let error = invoke(make_receiver(vec![first.clone()], is_enum), &fresh).expect_err("stale origin cannot satisfy a fresh trait");
+      expected_arguments += 1.0;
+      assert!(error.msg.contains("cannot find impl"), "{error}");
+      assert_eq!(read(&arguments), Calcit::Number(expected_arguments));
+      assert_eq!(read(&calls), before_calls);
+    }
+  }
+
+  #[test]
   fn generic_enum_where_bounds_accept_nominal_trait_values() {
     let _guard = crate::program::lock_program_test_state();
     let show_trait = Arc::new(CalcitTrait::new(EdnTag::new("Renderable"), vec![], vec![]));

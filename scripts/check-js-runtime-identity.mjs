@@ -187,17 +187,28 @@ try {
     const definition = new runtimeA.CalcitStructDef(runtimeA.newTag("Card"), [], [], impls);
     return new runtimeA.CalcitStructValue(definition.name, [], [], definition);
   };
+  const makeEnumReceiver = (impls) => {
+    const tag = runtimeA.newTag("card");
+    const definition = new runtimeA.CalcitStructDef(runtimeA.newTag("Card"), [tag], [null], impls);
+    const prototype = new runtimeA.CalcitEnumDef(new runtimeA.CalcitStructValue(
+      definition.name, [tag], [new runtimeA.CalcitSliceList([])], definition,
+    ));
+    return new runtimeA.CalcitEnumValue(tag, [], prototype);
+  };
   for (const impls of [[leftImpl, rightImpl], [rightImpl, leftImpl]]) {
     const receiver = makeReceiver(impls);
     assert.equal(runtimeA._$n_trait_call(leftOrigin, traitMethod, receiver), "left");
     assert.equal(runtimeA._$n_trait_call(rightOrigin, traitMethod, receiver), "right");
   }
   for (const impls of [[leftImpl, secondLeftImpl], [secondLeftImpl, leftImpl], [leftImpl, leftImpl]]) {
-    const receiver = makeReceiver(impls);
     const countBefore = calls.length;
-    let evaluated = 0;
-    assert.throws(() => runtimeA._$n_trait_call(leftOrigin, traitMethod, receiver, ++evaluated), /E_DUPLICATE_TRAIT_IMPL.*duplicate impls/);
-    assert.equal(evaluated, 1, "ordinary argument evaluation must remain exactly once before dispatch");
+    for (const make of [makeReceiver, makeEnumReceiver]) {
+      const receiver = make(impls);
+      let evaluated = 0;
+      assert.throws(() => runtimeA._$n_trait_call(leftOrigin, traitMethod, receiver, ++evaluated), /E_DUPLICATE_TRAIT_IMPL.*duplicate impls/);
+      assert.equal(evaluated, 1, "ordinary argument evaluation must remain exactly once before dispatch");
+      assert.equal(calls.length, countBefore, "duplicate rejection must invoke neither candidate");
+    }
     runtimeA.register_calcit_builtin_impls({ number: new runtimeA.CalcitSliceList(impls) });
     assert.throws(() => runtimeA._$n_trait_call(leftOrigin, traitMethod, 1), /E_DUPLICATE_TRAIT_IMPL.*duplicate impls/);
     assert.equal(calls.length, countBefore, "duplicate rejection must invoke neither candidate");
@@ -206,6 +217,8 @@ try {
   assert.throws(() => runtimeA._$n_trait_call(rightOrigin, traitMethod, makeReceiver([leftImpl])), /cannot find impl/);
   const reloadedOrigin = new runtimeA.CalcitTrait(runtimeA.newTag("Show"), [traitMethod], [null]);
   assert.throws(() => runtimeA._$n_trait_call(reloadedOrigin, traitMethod, makeReceiver([leftImpl])), /cannot find impl/);
+  assert.equal(runtimeA._$n_trait_call(leftOrigin, traitMethod, makeEnumReceiver([leftImpl])), "left");
+  assert.throws(() => runtimeA._$n_trait_call(reloadedOrigin, traitMethod, makeEnumReceiver([leftImpl])), /cannot find impl/);
 
   // A new graph replaces ordinary methods, not another origin's explicit calls.
   runtimeA.register_calcit_builtin_impls({ number: leftImpl });

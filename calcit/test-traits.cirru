@@ -629,13 +629,11 @@
           :tests $ []
             %{} 'TestEntry (:name |accepts-external-field-pair)
               :code $ quote $ assert= false
-                throws? $ macroexpand $ quote
-                  deftrait Host $ :icons 'Dynamic
+                throws-at-expansion? $ deftrait Host $ :icons 'Dynamic
             %{} 'TestEntry (:name |rejects-nested-field-pair)
               :code $ quote $ assert= true
-                throws? $ macroexpand $ quote
-                  deftrait Host $
-                    :icons 'Dynamic
+                throws-at-expansion? $ deftrait Host $
+                  :icons 'Dynamic
         'test-enum-impl-precedence-order $ %{} 'CodeEntry (:doc "|Test enum impl precedence order")
           :code $ quote $ defn test-enum-impl-precedence-order () (println "|Testing enum impl precedence order...")
             let
@@ -712,104 +710,6 @@
                     &trait-call calcit.core/Countable :count x
                 assert= 2 $ count-items $ [] 1 2
               :tags $ #{} :trait :unit
-            %{} 'TestEntry (:name |duplicate-origin-runtime)
-              :code $ quote $ let
-                  Person $ impl-traits Person0 MyFooImpl MyFooImpl2
-                  p $ %{} Person $ :name |Alice
-                assert= true $ try
-                  do (&trait-call MyFoo :foo p) false
-                  fn (error)
-                    hint-fn $ {}
-                      :args $ [] 'String
-                      :return 'Bool
-                    &str:includes? error |duplicate
-              :tags $ #{} :trait-runtime
-            %{} 'TestEntry (:name |duplicate-origin-reversed)
-              :code $ quote $ let
-                  Person $ impl-traits Person0 MyFooImpl2 MyFooImpl
-                  p $ %{} Person $ :name |Alice
-                assert= true $ try
-                  do (&trait-call MyFoo :foo p) false
-                  fn (error)
-                    hint-fn $ {}
-                      :args $ [] 'String
-                      :return 'Bool
-                    &str:includes? error |duplicate
-              :tags $ #{} :trait-runtime
-            %{} 'TestEntry (:name |duplicate-origin-repeated)
-              :code $ quote $ let
-                  Person $ impl-traits Person0 MyFooImpl MyFooImpl
-                  p $ %{} Person $ :name |Alice
-                assert= true $ try
-                  do (&trait-call MyFoo :foo p) false
-                  fn (error)
-                    hint-fn $ {}
-                      :args $ [] 'String
-                      :return 'Bool
-                    &str:includes? error |duplicate
-              :tags $ #{} :trait-runtime
-            %{} 'TestEntry (:name |duplicate-enum-origin)
-              :code $ quote $ let
-                  Person $ impl-traits Demo0 MyBarImpl MyBarImpl2
-                  p $ %:: Person :demo 1
-                assert= true $ try
-                  do (&trait-call MyBar :bar p) false
-                  fn (error)
-                    hint-fn $ {}
-                      :args $ [] 'String
-                      :return 'Bool
-                    &str:includes? error |duplicate
-              :tags $ #{} :trait-runtime
-            %{} 'TestEntry (:name |duplicate-enum-reversed)
-              :code $ quote $ let
-                  Person $ impl-traits Demo0 MyBarImpl2 MyBarImpl
-                  p $ %:: Person :demo 1
-                assert= true $ try
-                  do (&trait-call MyBar :bar p) false
-                  fn (error)
-                    hint-fn $ {}
-                      :args $ [] 'String
-                      :return 'Bool
-                    &str:includes? error |duplicate
-              :tags $ #{} :trait-runtime
-            %{} 'TestEntry (:name |duplicate-arguments-once)
-              :code $ quote $ let
-                  Person $ impl-traits Person0 MyFooImpl MyFooImpl2
-                  p $ %{} Person $ :name |Alice
-                  counter $ atom 0
-                assert= true $ try
-                  do
-                    &trait-call MyFoo :foo p $ reset! counter $ + @counter 1
-                    , false
-                  fn (error)
-                    hint-fn $ {}
-                      :args $ [] 'String
-                      :return 'Bool
-                    &str:includes? error |duplicate
-                assert= 1 @counter
-              :tags $ #{} :trait-runtime
-            %{} 'TestEntry (:name |fresh-origin-rejects-stale-impl)
-              :code $ quote $ let
-                  make-trait $ fn ()
-                    hint-fn $ {}
-                      :args $ []
-                      :return 'Trait
-                    deftrait FreshShow $ .render :fn
-                  old-trait $ make-trait
-                  next-trait $ make-trait
-                  old-impl $ defimpl OldImpl old-trait $ .render
-                    fn (self) |old
-                  Person $ impl-traits Person0 old-impl
-                  p $ %{} Person $ :name |Alice
-                assert= |old $ &trait-call old-trait :render p
-                assert= true $ try
-                  do (&trait-call next-trait :render p) false
-                  fn (error)
-                    hint-fn $ {}
-                      :args $ [] 'String
-                      :return 'Bool
-                    &str:includes? error "|cannot find impl"
-              :tags $ #{} :trait-identity-runtime
         'test-impl-precedence-order $ %{} 'CodeEntry (:doc "|Test impl precedence order")
           :code $ quote $ defn test-impl-precedence-order () (println "|Testing impl precedence order...")
             let
@@ -969,6 +869,17 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'throws-at-expansion? $ %{} 'CodeEntry
+          :doc "|Evaluate macro rejection during expansion and emit only its boolean result for shared backend replay."
+          :code $ quote $ defmacro throws-at-expansion? (form)
+            let
+                failed? $ throws? $ macroexpand form
+              quasiquote ~failed?
+          :examples $ []
+          :schema $ :: 'Macro $ {}
+            :capabilities $ #{}
+            :expansion $ :: 'Expr 'Bool
+            :required $ [] 'Syntax
         'trait-listener-host $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn trait-listener-host (value)
             unsafe-coerce value $ :: 'Fn $ {}
