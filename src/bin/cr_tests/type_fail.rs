@@ -3876,6 +3876,14 @@ fn option_erased_in_a_js_nullish_function_initializer_is_not_exempt() {
       .collect::<Vec<_>>();
     assert_eq!(erased.len(), 1, "{advisories:?}");
     assert_eq!(erased[0].location().def.as_ref(), "main!", "{advisories:?}");
+    // The sole advisory must point inside `business-in-nullish`'s let
+    // initializer. This also proves that the three other tail-return forms
+    // (let, do, and match) remain exempt.
+    assert_eq!(
+      erased[0].location().coord.as_ref(),
+      &vec![3, 1, 3, 1, 3, 1, 0, 1, 1, 1],
+      "{advisories:?}"
+    );
   });
 }
 
