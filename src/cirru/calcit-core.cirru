@@ -432,6 +432,7 @@
           :code $ quote $ def &core-list-impls
             [] &core-list-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-list-impl) (&impl::new Len internal/&core-len-list-impl) (&impl::new Mappable internal/&core-mappable-list-impl) (&impl::new Countable internal/&core-countable-list-impl)
               &impl::new Sliceable $ :: :slice internal/&slice-list
+              &impl::new Emptyable $ :: :empty &list:empty
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -444,6 +445,7 @@
         '&core-map-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for map")
           :code $ quote $ def &core-map-impls
             [] &core-map-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Len internal/&core-len-map-impl) (&impl::new Mappable internal/&core-mappable-map-impl) (&impl::new Countable internal/&core-countable-map-impl)
+              &impl::new Emptyable $ :: :empty &map:empty
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -457,6 +459,7 @@
           :code $ quote $ def &core-number-impls
             [] &core-number-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-number-impl) (&impl::new Multiply internal/&core-multiply-number-impl) (&impl::new Compare internal/&core-compare-number-impl)
               &impl::new ToString $ :: :to-string &turn-string
+              &impl::new Emptyable $ :: :empty &number:empty
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -487,6 +490,7 @@
         '&core-set-impls $ %{} 'CodeEntry (:doc "|Built-in implementation list for set")
           :code $ quote $ def &core-set-impls
             [] &core-set-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Len internal/&core-len-set-impl) (&impl::new Mappable internal/&core-mappable-set-impl) (&impl::new Countable internal/&core-countable-set-impl)
+              &impl::new Emptyable $ :: :empty &set:empty
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -501,6 +505,7 @@
             [] &core-string-methods (&impl::new Debug internal/&core-debug-impl) (&impl::new Eq internal/&core-eq-impl) (&impl::new Add internal/&core-add-string-impl) (&impl::new Len internal/&core-len-string-impl) (&impl::new Countable internal/&core-countable-string-impl) (&impl::new Compare internal/&core-compare-string-impl)
               &impl::new Sliceable $ :: :slice internal/&slice-string
               &impl::new ToString $ :: :to-string &turn-string
+              &impl::new Emptyable $ :: :empty &str:empty
           :examples $ []
           :schema $ :: 'Dynamic
           :tags $ #{} :internal
@@ -1341,11 +1346,14 @@
             :return $ :: 'Option 'Number
         '&list:find-last $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:find-last (xs f)
-            foldr-shortcut xs (%none) (%none)
+            foldr-shortcut xs (Option :none) (Option :none)
               fn (_acc x)
+                hint-fn $ {}
+                  :args $ [] (:: 'Option 'T) 'T
+                  :return 'Enum
                 if (f x)
-                  :: true $ %some x
-                  :: false $ %none
+                  :: true $ Option :some x
+                  :: false $ Option :none
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T)
@@ -2112,13 +2120,14 @@
             :tags $ #{} :core :unit
         '&map:filter $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &map:filter (xs f)
-            reduce (&map:to-list xs) (&map:empty xs)
-              defn %&map:filter (acc x)
+            &map:fold-kv xs (&map:empty xs)
+              defn %&map:filter (acc key value)
                 hint-fn $ {}
-                  :args $ [] (:: 'Map 'K 'V) (:: 'List 'Dynamic)
+                  :args $ [] (:: 'Map 'K 'V) 'K 'V
                   :return $ :: 'Map 'K 'V
-                if (f x)
-                  &map:assoc acc (&list:nth x 0) (&list:nth x 1)
+                if
+                  f $ [] key value
+                  &map:assoc acc key value
                   , acc
           :examples $ []
           :schema $ :: 'Fn $ {}
@@ -2128,16 +2137,33 @@
             :generics $ [] 'K 'V
             :return $ :: 'Map 'K 'V
           :tags $ #{} :internal
-          :tests $ [] $ %{} 'TestEntry (:name |filters-map-pairs-directly)
-            :code $ quote $ assert= (&{} :b 2)
-              &map:filter (&{} :a 1 :b 2)
-                fn (pair)
-                  >
-                    let
-                        numeric-value $ &list:nth pair 1
-                      if (number? numeric-value) numeric-value $ raise "|Expected a Number"
-                    , 1
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |filters-map-pairs-directly)
+              :code $ quote $ assert= (&{} :b 2)
+                &map:filter (&{} :a 1 :b 2)
+                  fn (pair)
+                    >
+                      let
+                          numeric-value $ &list:nth pair 1
+                        if (number? numeric-value) numeric-value $ raise "|Expected a Number"
+                      , 1
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |visits-original-pairs-once-in-order)
+              :code $ quote $ let
+                  source $ &{} :a 1 :b 2 :c 3
+                  seen $ atom $ &map:to-list (&{})
+                let
+                    filtered $ &map:filter source $ fn (pair)
+                      swap! seen $ fn (items) (&list:append items pair)
+                      , true
+                  assert= (&map:to-list source) @seen
+                  assert= source filtered
+              :tags $ #{} :core :lexical-binder :unit
+            %{} 'TestEntry (:name |empty-map-skips-predicate)
+              :code $ quote $ assert= (&{})
+                &map:filter (&{})
+                  fn (pair) (raise "|Unexpected predicate on empty Map")
+              :tags $ #{} :core :lexical-binder :unit
         '&map:filter-kv $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &map:filter-kv (xs f)
             &map:fold-kv xs (&map:empty xs)
@@ -3654,6 +3680,16 @@
             .deserialize $ :: :fn $ {} (:return 'T)
               :generics $ [] 'T
               :args $ [] :string
+          :examples $ []
+          :schema $ :: 'Trait
+          :tags $ #{} :trait
+        'Emptyable $ %{} 'CodeEntry
+          :doc "|产生与接收者保持同一类型的空值。Self 是方法自身声明的接收者泛型，不是新语法；泛型函数通过 Emptyable 约束调用 .empty。内建实现覆盖 Number、String、List、Map、Set。"
+          :code $ quote $ deftrait Emptyable
+            .empty $ :: 'Fn $ {}
+              :args $ [] 'Self
+              :return 'Self
+              :generics $ [] 'Self
           :examples $ []
           :schema $ :: 'Trait
           :tags $ #{} :trait
@@ -6097,13 +6133,13 @@
                                   fn (payload-form)
                                     not $ data-definition-malformed-nesting? payload-form
                             &let
-                              normalized $ map variant-forms $ fn (variant)
+                              normalized $ &list:map variant-forms $ fn (variant)
                                 &let
                                   items $ data-definition-form variant
                                   &let
                                     variant-tag $ &list:nth items 0
                                     &let
-                                      payload-forms $ map (&list:rest items)
+                                      payload-forms $ &list:map (&list:rest items)
                                         fn (t)
                                           if (list? t)
                                             quasiquote $ quote $ ~ t
@@ -6159,10 +6195,10 @@
                     &list:rest pair
                     , pair
                 and
-                  &= 2 $ count items
+                  &= 2 $ &list:count items
                   &= :method $ type-of $ &list:nth items 0
             quasiquote $ def ~name $ &impl::new (~ trait)
-              ~@ $ map pairs $ fn (pair)
+              ~@ $ &list:map pairs $ fn (pair)
                 &let
                   items $ if
                     and
@@ -6176,7 +6212,7 @@
                       &list:rest pair
                       , pair
                   do
-                    assert "|defimpl expects (.method value) pairs" $ &= 2 $ count items
+                    assert "|defimpl expects (.method value) pairs" $ &= 2 $ &list:count items
                     let
                         k0 $ &list:nth items 0
                         v0 $ &list:nth items 1
@@ -6184,7 +6220,7 @@
                           &= :method $ type-of k0
                           let
                               s $ format-to-lisp k0
-                            turn-tag $ &str:slice s 1 $ count s
+                            turn-tag $ &str:slice s 1 $ &str:count s
                           raise $ str-spaced "|defimpl expects .method key, got:" k0
                       quasiquote $ [] ~key ~v0
           :examples $ []
@@ -6335,6 +6371,10 @@
             if (every? entries list?) &unit $ raise "|deftrait expects each method as (method type) pair"
             &let
               requires-entry? $ fn (entry)
+                hint-fn $ {}
+                  :args $ [] $ :: 'List 'T
+                  :return 'Bool
+                  :generics $ [] 'T
                 and
                   not $ &list:empty? entry
                   &let
@@ -6343,15 +6383,19 @@
                       &= (quote requires) head
                       &= (quote 'requires) head
               &let
-                parents $ map (filter entries requires-entry?)
+                parents $ &list:map (&list:filter entries requires-entry?)
                   fn (entry)
                     if
-                      &= 2 $ count entry
+                      &= 2 $ &list:count entry
                       &list:nth entry 1
                       raise $ str-spaced "|deftrait expects (requires Trait) with one trait, got:" $ format-to-lisp entry
                 &let
-                  normalized $ map
-                    filter entries $ fn (entry)
+                  normalized $ &list:map
+                    &list:filter entries $ fn (entry)
+                      hint-fn $ {}
+                        :args $ [] $ :: 'List 'T
+                        :return 'Bool
+                        :generics $ [] 'T
                       not $ requires-entry? entry
                     fn (entry)
                       &let
@@ -6363,7 +6407,7 @@
                           , entry
                         do
                           if
-                            &= 2 $ count items
+                            &= 2 $ &list:count items
                             , &unit $ raise $ str-spaced "|deftrait expects each method as (method type), got:" (format-to-lisp entry)
                           let
                               m0 $ &list:nth items 0
@@ -6372,7 +6416,7 @@
                                 &= :method $ type-of m0
                                 let
                                     s $ format-to-lisp m0
-                                  turn-tag $ &str:slice s 1 $ count s
+                                  turn-tag $ &str:slice s 1 $ &str:count s
                                 raise $ str-spaced "|deftrait expects method key as :tag or .method, got:" m0
                               t1 $ internal/normalize-trait-type t0
                             quasiquote $ [] ~k0 $ quote ~t1
@@ -6919,8 +6963,7 @@
               assert= 1 $ either (do nil) (do 1) (do nil)
             :tags $ #{} :core :unit
         'empty $ %{} 'CodeEntry (:doc |)
-          :code $ quote $ defn empty (x)
-            if (list? x) ([]) (.empty x)
+          :code $ quote $ defn empty (x) (.empty x)
           :examples $ []
             quote $ assert= ([])
               empty $ [] 1 2 3
@@ -6928,9 +6971,43 @@
           :schema $ :: 'Fn $ {} (:return 'T)
             :args $ [] 'T
             :generics $ [] 'T
-          :tests $ [] $ %{} 'TestEntry (:name |empties-number)
-            :code $ quote $ assert= 0 (empty 1.1)
-            :tags $ #{} :core :unit
+            :where $ {} $ 'T 'Emptyable
+          :tests $ []
+            %{} 'TestEntry (:name |empties-number)
+              :code $ quote $ assert= 0 (empty 1.1)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |empties-string-with-capability)
+              :code $ quote $ assert= | (empty |Ada)
+              :tags $ #{} :core :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-list-member-contract)
+              :code $ quote $ let
+                  result $ empty $ [] 1 2
+                assert-type result $ :: 'List 'Number
+                assert= ([]) result
+              :tags $ #{} :core :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-map-key-value-contract)
+              :code $ quote $ let
+                  result $ empty $ &{} :name |Ada
+                assert-type result $ :: 'Map 'Tag 'String
+                assert= (&{}) result
+              :tags $ #{} :core :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-set-member-contract)
+              :code $ quote $ let
+                  result $ empty $ #{} |a |b
+                assert-type result $ :: 'Set 'String
+                assert= (#{}) result
+              :tags $ #{} :core :lexical-binder :unit
+            %{} 'TestEntry (:name |methods-preserve-primitive-empty-values)
+              :code $ quote $ do
+                assert= 0 $ .empty 17
+                assert= | $ .empty |Ada
+                assert= ([])
+                  .empty $ [] 1
+                assert= (&{})
+                  .empty $ &{} :a 1
+                assert= (#{})
+                  .empty $ #{} 1
+              :tags $ #{} :core :lexical-binder :unit
         'empty? $ %{} 'CodeEntry
           :doc "|Check whether a collection or string is empty. Nil is rejected instead of being treated as empty."
           :code $ quote $ defn empty? (x)
@@ -12051,8 +12128,8 @@
             foldl xs (&{})
               defn %select-keys (acc k)
                 hint-fn $ {}
-                  :args $ [] 'Map 'Dynamic
-                  :return 'Map
+                  :args $ [] (:: 'Map 'K 'V) 'K
+                  :return $ :: 'Map 'K 'V
                 match (&map:get m k)
                   (:some value) (&map:assoc acc k value)
                   (:none) acc
@@ -12061,10 +12138,19 @@
             :args $ [] (:: 'Map 'K 'V) (:: 'List 'K)
             :generics $ [] 'K 'V
             :return $ :: 'Map 'K 'V
-          :tests $ [] $ %{} 'TestEntry (:name |keeps-requested-keys-and-skips-missing)
-            :code $ quote $ assert= (&{} :a 1)
-              select-keys (&{} :a 1 :b 2 :c 3) ([] :a :missing)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |keeps-requested-keys-and-skips-missing)
+              :code $ quote $ assert= (&{} :a 1)
+                select-keys (&{} :a 1 :b 2 :c 3) ([] :a :missing)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-number-key-string-payload)
+              :code $ quote $ assert= (&{} 17 |Ada)
+                select-keys (&{} 17 |Ada 22 |Bob) ([] 17 99)
+              :tags $ #{} :core :lexical-binder :unit
+            %{} 'TestEntry (:name |empty-key-selection-stays-empty)
+              :code $ quote $ assert= (&{})
+                select-keys (&{} :a 1) ([])
+              :tags $ #{} :core :lexical-binder :unit
         'set? $ %{} 'CodeEntry (:doc "|Check if a value is a set")
           :code $ quote &runtime-implementation
           :examples $ []
@@ -13758,6 +13844,9 @@
                 acc $ {}
                 xs xs0
                 ys ys0
+              hint-fn $ {}
+                :args $ [] (:: 'Map 'K 'V) (:: 'List 'K) (:: 'List 'V)
+                :return $ :: 'Map 'K 'V
               if
                 if (&list:empty? xs) true $ &list:empty? ys
                 , acc $ recur
@@ -13769,10 +13858,36 @@
             :args $ [] (:: 'List 'K) (:: 'List 'V)
             :generics $ [] 'K 'V
             :return $ :: 'Map 'K 'V
-          :tests $ [] $ %{} 'TestEntry (:name |pairs-equally-sized-lists)
-            :code $ quote $ assert= (&{} :a 1 :b 2 :c 3)
-              zipmap ([] :a :b :c) ([] 1 2 3)
-            :tags $ #{} :core :unit
+          :tests $ []
+            %{} 'TestEntry (:name |pairs-equally-sized-lists)
+              :code $ quote $ assert= (&{} :a 1 :b 2 :c 3)
+                zipmap ([] :a :b :c) ([] 1 2 3)
+              :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-number-keys-and-string-values)
+              :code $ quote $ assert= (&{} 17 |Ada 22 |Bob)
+                zipmap ([] 17 22) ([] |Ada |Bob)
+              :tags $ #{} :core :lexical-binder :unit
+            %{} 'TestEntry (:name |truncates-extra-keys)
+              :code $ quote $ assert= (&{} :a 1)
+                zipmap ([] :a :b) ([] 1)
+              :tags $ #{} :core :lexical-binder :unit
+            %{} 'TestEntry (:name |truncates-extra-values)
+              :code $ quote $ assert= (&{} :a 1)
+                zipmap ([] :a) ([] 1 2)
+              :tags $ #{} :core :lexical-binder :unit
+            %{} 'TestEntry (:name |last-duplicate-key-wins)
+              :code $ quote $ assert= (&{} :a 2)
+                zipmap ([] :a :a) ([] 1 2)
+              :tags $ #{} :core :lexical-binder :unit
+            %{} 'TestEntry (:name |empty-either-input-stays-empty)
+              :code $ quote $ do
+                assert= (&{})
+                  zipmap ([]) ([] 1)
+                assert= (&{})
+                  zipmap ([] :a) ([])
+                assert= (&{})
+                  zipmap ([]) ([])
+              :tags $ #{} :core :lexical-binder :unit
         '{,} $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defmacro {,} (& body)
             &let

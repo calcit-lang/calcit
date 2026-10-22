@@ -603,6 +603,121 @@ fn resolve_unary_callee(ctx: &WasmGenCtx, callee: &Calcit) -> Result<FoldlCallKi
   resolve_hof_callee(ctx, callee, 1)
 }
 
+/// `&map:fold-kv map init f` — fold map entries in iteration order, passing
+/// the accumulator, key, and value to `f`.
+pub(super) fn emit_map_fold_kv(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(), String> {
+  expect_arity(3, args, "&map:fold-kv")?;
+
+  let map_ptr = emit_ptr_to_i32(ctx, &args[0])?;
+  let linearize_idx = *ctx
+    .runtime_fn_index
+    .get("__rt_map_linearize")
+    .ok_or("runtime __rt_map_linearize missing")?;
+  ctx.emit(Instruction::LocalGet(map_ptr));
+  ctx.emit(Instruction::Call(linearize_idx));
+  let flat_ptr = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalSet(flat_ptr));
+
+  let count = ctx.alloc_local_typed(ValType::I32);
+  ctx.emit(Instruction::LocalGet(flat_ptr));
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::I32TruncF64U);
+  ctx.emit(Instruction::LocalSet(count));
+
+  let acc = ctx.alloc_local();
+  emit_expr(ctx, &args[1])?;
+  ctx.emit(Instruction::LocalSet(acc));
+
+  let kind = resolve_hof_callee(ctx, &args[2], 3).map_err(|error| format!("&map:fold-kv: {error}"))?;
+  if let FoldlCallKind::Inline(closure) = &kind
+    && !closure.accepts(3)
+  {
+    return Err("&map:fold-kv inline lambda must accept 3 arguments".into());
+  }
+
+  let i = ctx.alloc_i32(0);
+  let key = ctx.alloc_local();
+  let value = ctx.alloc_local();
+  ctx.begin_block();
+  ctx.begin_loop();
+  ctx.loop_exit_if_ge(i, count);
+
+  // Entries are stored as [key, value] pairs in the linearized map buffer.
+  ctx.emit(Instruction::LocalGet(flat_ptr));
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Const(16));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Const(8));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(key));
+
+  ctx.emit(Instruction::LocalGet(flat_ptr));
+  ctx.emit(Instruction::LocalGet(i));
+  ctx.emit(Instruction::I32Const(16));
+  ctx.emit(Instruction::I32Mul);
+  ctx.emit(Instruction::I32Const(16));
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::I32Add);
+  ctx.emit(Instruction::F64Load(mem_arg_f64(0)));
+  ctx.emit(Instruction::LocalSet(value));
+
+  match &kind {
+    FoldlCallKind::Static(fn_idx, rest_fixed) => emit_static_callee_call(ctx, *fn_idx, *rest_fixed, &[acc, key, value]),
+    FoldlCallKind::Inline(closure) => emit_inline_closure_body(ctx, closure, &[acc, key, value])?,
+    FoldlCallKind::Proc(proc) => emit_map_fold_kv_proc_call(ctx, proc, acc, key, value)?,
+    FoldlCallKind::Dynamic(fn_idx) => {
+      ctx.emit(Instruction::LocalGet(acc));
+      ctx.emit(Instruction::LocalGet(key));
+      ctx.emit(Instruction::LocalGet(value));
+      ctx.emit(Instruction::LocalGet(*fn_idx));
+      ctx.emit(Instruction::I32TruncF64S);
+      ctx.emit(call_indirect(3));
+    }
+  }
+  ctx.emit(Instruction::LocalSet(acc));
+
+  ctx.i32_inc(i);
+  ctx.emit(Instruction::Br(0));
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::End);
+  ctx.emit(Instruction::LocalGet(acc));
+  Ok(())
+}
+
+fn emit_map_fold_kv_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, acc: u32, key: u32, value: u32) -> Result<(), String> {
+  use crate::wasm::host::calcit::{CalcitLocal, CalcitSymbolInfo, DYNAMIC_TYPE};
+  use std::sync::Arc;
+
+  let info = Arc::new(CalcitSymbolInfo {
+    at_ns: Arc::from("wasm"),
+    at_def: Arc::from("__map_fold_kv"),
+  });
+  let mut expressions = Vec::with_capacity(3);
+  let mut previous = Vec::with_capacity(3);
+  for (name, index) in [("acc", acc), ("key", key), ("value", value)] {
+    let symbol: Arc<str> = Arc::from(format!("__map_fold_kv_{name}__"));
+    previous.push((symbol.to_string(), ctx.locals.insert(symbol.to_string(), index)));
+    expressions.push(Calcit::Local(CalcitLocal {
+      idx: 0,
+      sym: symbol,
+      info: info.clone(),
+      location: None,
+      type_info: DYNAMIC_TYPE.clone(),
+    }));
+  }
+  let result = emit_proc_call(ctx, proc, &expressions);
+  for (symbol, previous) in previous {
+    if let Some(previous) = previous {
+      ctx.locals.insert(symbol, previous);
+    } else {
+      ctx.locals.remove(&symbol);
+    }
+  }
+  result
+}
+
 /// `map xs f` — apply f to every element, returning new list of same length.
 /// Copy the type tag (i32 at raw_base+4 = ptr-4) from `src` to `dst`.
 /// Used by map/filter to preserve set→set or list→list semantics.

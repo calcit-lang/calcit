@@ -7691,6 +7691,7 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::NativeMapIncludes => emit_map_includes(ctx, args),
     CalcitProc::ToPairs => emit_map_to_pairs(ctx, args),
     CalcitProc::NativeMapToList => emit_map_to_list(ctx, args),
+    CalcitProc::NativeMapFoldKv => hof::emit_map_fold_kv(ctx, args),
 
     // ------- Set operations -------
     CalcitProc::Set => emit_set_new(ctx, args),

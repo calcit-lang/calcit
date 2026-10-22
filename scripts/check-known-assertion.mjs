@@ -202,7 +202,11 @@ try {
       // rejection harness to verify all compiler entrances and unchanged source.
       const binderSnapshot = join(project, "lexical-binder.cirru");
       const runBinder = (...args) => execFileSync(binary, [binderSnapshot, ...args], options);
-      for (const [inner, bodyHint, nestedCapture] of [["T", false], ["U", false], ["T", true], ["U", true], ["T", false, true], ["U", false, true]]) {
+      for (const [inner, bodyHint, nestedCapture, codeEntryGeneric] of [
+        ["T", false], ["U", false], ["T", true], ["U", true], ["T", false, true], ["U", false, true],
+        // Renaming the outer contract does not turn an inner owner into a capture.
+        ["T", true, false, "C"], ["U", true, false, "C"], ["T", true, true, "C"], ["U", true, true, "C"],
+      ]) {
         await copyFile("calcit/add.cirru", binderSnapshot);
         runBinder("query", "config", "--format", "edn");
         runBinder("query", "def", "app.main/main!", "--format", "edn");
@@ -219,7 +223,11 @@ try {
             "quote $ :: 'Fn $ {} (:args $ []) (:return 'Number)"],
           ["config", "set", "reload-fn", "app.main/main!"],
         ];
-        if (!bodyHint) operations.push(["edit", "schema", "app.main/producer", "--input-format", "cirru", "--code", `quote $ :: 'Fn $ ${contract}`]);
+        if (!bodyHint || codeEntryGeneric) {
+          const owner = codeEntryGeneric ?? "T";
+          operations.push(["edit", "schema", "app.main/producer", "--input-format", "cirru", "--code",
+            `quote $ :: 'Fn $ {} (:args $ [] '${owner}) (:return 'Number) (:generics $ [] '${owner})`]);
+        }
         const code = JSON.stringify(operations);
         const preview = JSON.parse(runBinder("edit", "transaction", "--code", code, "--dry-run", "--format", "json"));
         runBinder("edit", "transaction", "--code", code, "--expect-revision", preview.scoped_revision, "--format", "edn");
@@ -229,7 +237,7 @@ try {
         const sourcePath = returnLeaves[0].path;
         const sourceCoord = sourcePath.slice("code@".length).split(".").map(Number);
         const original = await readFile(binderSnapshot);
-        const generated = join(project, `lexical-binder-${inner}-${bodyHint}-${!!nestedCapture}-js`);
+        const generated = join(project, `lexical-binder-${inner}-${bodyHint}-${!!nestedCapture}-${codeEntryGeneric ?? "body"}-js`);
         for (const args of [
           ["fix", "--rule", "concrete-return-proof-v1", "--ns", "app.main", "--def", "producer", "--format", "json"],
           ["fix", "--workflow", "strict", "--verify", "--format", "json"],
@@ -274,6 +282,21 @@ try {
       const sliceableUnit = "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'Unit) (:generics $ [] 'T) (:where $ {} ('T 'Sliceable))";
       const plainUnit = "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return 'Unit)";
       const boundedCases = [
+        {
+          label: "empty-requires-caller-capability", diagnostic: /E_DYNAMIC_METHOD_DISPATCH/,
+          schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T)",
+          source: "defn producer (value)\n  .empty value",
+        },
+        {
+          label: "empty-cannot-manufacture-receiver-identity", diagnostic: /E_ERASED_GENERIC_RELATION/,
+          schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T) (:where $ {} ('T 'Emptyable))",
+          source: "defn producer (value)\n  empty $ [] 1",
+        },
+        {
+          label: "shortcut-cannot-specialize-caller", diagnostic: /E_FN_RETURN_UNPROVEN/,
+          schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return $ :: 'Option 'T) (:generics $ [] 'T)",
+          source: "defn producer (value)\n  foldr-shortcut ([] value) (Option :none) (Option :none) $ fn (_acc item)\n    hint-fn $ {} (:args $ [] (:: 'Option 'T) 'T) (:return 'Enum)\n    :: true $ Option :some 1",
+        },
         {
           label: "bound-missing-impl", diagnostic: /W_GENERIC_WHERE_BOUND_MISMATCH/, schema: plainUnit, returnProof: false,
           source: "defn producer (input)\n  let\n      transform $ fn (value)\n        hint-fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T) (:where $ {} ('T Sliceable))\n        , value\n    transform 1\n    , &unit",
@@ -352,7 +375,9 @@ try {
       const boundedSnapshot = "calcit/test-types-inference.cirru";
       const boundedSource = await readFile(boundedSnapshot);
       const boundedDefinitions = ["bounded-identity", "bounded-slice", "bounded-forward", "bounded-local-map",
-        "bounded-multiple", "bounded-shadow-capture", "bounded-map"];
+        "bounded-multiple", "bounded-shadow-capture", "bounded-map",
+        "renamed-option-payload", "renamed-captured-option-payload", "renamed-inherited-count",
+        "same-named-inherited-count", "crossed-binder-first", "inherited-rest-binders", "renamed-inherited-empty"];
       const boundedOperations = [];
       for (const definition of boundedDefinitions) {
         const proof = JSON.parse(execFileSync(binary, [boundedSnapshot, "fix", "--rule", "concrete-return-proof-v1",
@@ -770,14 +795,15 @@ try {
           "--ns", "app.update-in-proof", "--def", "rejected", "--format", "json"], options);
         if (rejected.error) throw rejected.error;
         assert.equal(rejected.status, 1, `${name}: reject an unproven updater contract\n${rejected.stdout}\n${rejected.stderr}`);
-        assert.match(`${rejected.stdout}\n${rejected.stderr}`,
-          /E_CALL_ARGUMENT_(?:UNPROVEN|MISMATCH)|W_FN_ARG_TYPE_MISMATCH|E_ERASED_GENERIC_RELATION/);
+        const expectedDiagnostic = name === "wrong-known-output"
+          ? /W_FN_RETURN_TYPE_MISMATCH/
+          : /E_CALL_ARGUMENT_(?:UNPROVEN|MISMATCH)|W_FN_ARG_TYPE_MISMATCH|E_ERASED_GENERIC_RELATION/;
+        assert.match(`${rejected.stdout}\n${rejected.stderr}`, expectedDiagnostic);
         const checked = spawnSync(binary, [snapshot, "--init-fn", "app.update-in-proof/rejected",
           "--reload-fn", "app.update-in-proof/rejected", "--check-only"], options);
         if (checked.error) throw checked.error;
         assert.equal(checked.status, 1, `${name}: normal strict must reject the same updater\n${checked.stdout}\n${checked.stderr}`);
-        assert.match(`${checked.stdout}\n${checked.stderr}`,
-          /E_CALL_ARGUMENT_(?:UNPROVEN|MISMATCH)|W_FN_ARG_TYPE_MISMATCH|E_ERASED_GENERIC_RELATION/);
+        assert.match(`${checked.stdout}\n${checked.stderr}`, expectedDiagnostic);
         assert.deepEqual(await readFile(snapshot), before);
       }
       // #2020: selector inputs must retain independently known List members.

@@ -1074,6 +1074,28 @@ fn resolve_generic_return_type_parts<'a>(
   Some(call_proof.result_or_open(return_type))
 }
 
+/// Export actual caller captures, never unresolved output placeholders.
+/// Source-name equality is insufficient: input binders need lexical identities.
+fn contract_return_captures_only_inputs<'a>(
+  returned: &Arc<CalcitTypeAnnotation>,
+  arguments: impl Iterator<Item = &'a Calcit>,
+  scope: &ScopeTypes,
+) -> bool {
+  use crate::calcit::type_annotation::{free_type_variable_names, source_type_variable};
+  let variables = free_type_variable_names(std::slice::from_ref(returned));
+  if variables.is_empty() {
+    return true;
+  }
+  if variables.iter().any(|name| source_type_variable(name) == name.as_ref()) {
+    return false;
+  }
+  let inputs = arguments
+    .filter_map(|argument| resolve_type_value(argument, scope))
+    .collect::<Vec<_>>();
+  let captures = free_type_variable_names(&inputs);
+  variables.iter().all(|name| captures.contains(name))
+}
+
 pub(crate) fn infer_return_type_from_compiled_callable(
   ns: &str,
   def: &str,
@@ -1083,16 +1105,7 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   if ns == calcit::CORE_NS {
     let args = call_expr.drop_left();
     if let Some(contract) = resolve_checked_call_contract(ns, def, &args, scope_types)
-      // Receiver-preserving contracts keep caller-owned type variables.
-      // Empty update-in paths instead return the mapper output. Do not infer
-      // ownership from type equality: an unresolved output can share a name.
-      && (!contract.return_type.contains_type_var()
-        || matches!(def, "update" | "assoc-in")
-        || (def == "update-in"
-          && call_expr
-            .get(2)
-            .and_then(extract_literal_list_items)
-            .is_some_and(|path| !path.is_empty())))
+      && contract_return_captures_only_inputs(&contract.return_type, args.iter(), scope_types)
     {
       return Some(contract.return_type);
     }
@@ -2161,7 +2174,7 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
         Calcit::Fn { info, .. } => {
           if info.def_ns.as_ref() == calcit::CORE_NS
             && let Some(contract) = resolve_checked_call_contract(&info.def_ns, &info.name, &xs.drop_left(), scope_types)
-            && (!contract.return_type.contains_type_var() || info.name.as_ref() == "update")
+            && contract_return_captures_only_inputs(&contract.return_type, xs.iter().skip(1), scope_types)
           {
             return Some(contract.return_type);
           }
@@ -3593,7 +3606,7 @@ pub fn infer_compiled_definition_implementation_type(ns: &str, def: &str) -> Opt
 
 /// Anonymous enum schemas do not describe their control/payload slots. Inspect
 /// the actual reducer implementation instead of trusting a declared Enum return.
-fn shortcut_payload_is_proven(expr: &Calcit, accumulator: &CalcitTypeAnnotation, scope_types: &ScopeTypes) -> bool {
+fn shortcut_payload_is_proven(expr: &Calcit, accumulator: &Arc<CalcitTypeAnnotation>, scope_types: &ScopeTypes) -> bool {
   let Calcit::List(items) = expr else { return false };
   match items.first() {
     Some(Calcit::Proc(CalcitProc::NativeEnum)) if items.len() == 3 => {
@@ -3604,7 +3617,12 @@ fn shortcut_payload_is_proven(expr: &Calcit, accumulator: &CalcitTypeAnnotation,
         && items
           .get(2)
           .and_then(|payload| resolve_type_value(payload, scope_types))
-          .is_some_and(|payload| payload.is_proven_for(accumulator))
+          .is_some_and(|payload| {
+            scope_types
+              .call_type_proof(&[], std::slice::from_ref(accumulator), std::slice::from_ref(&payload))
+              .prove(&payload, accumulator)
+              .is_proven()
+          })
     }
     Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) => items
       .get(items.len().saturating_sub(1))
@@ -3632,14 +3650,20 @@ fn infer_shortcut_fold_return(xs: &CalcitList, scope_types: &ScopeTypes) -> Opti
   if xs.len() != 5 {
     return None;
   }
-  let accumulator = resolve_type_value(xs.get(2)?, scope_types)?;
-  let default = resolve_type_value(xs.get(3)?, scope_types)?;
-  if !default.is_proven_for(&accumulator) || super::contains_dynamic_type(&accumulator) {
-    return None;
-  }
   let args = xs.drop_left();
   let expected =
     super::type_checking::specialize_collection_fold_expected_types(&args, scope_types, &vec![calcit::DYNAMIC_TYPE.clone(); 4])?;
+  let accumulator = expected.get(1)?.clone();
+  let default = resolve_type_value(xs.get(3)?, scope_types)?;
+  let proven = |actual: &Arc<CalcitTypeAnnotation>, expected: &Arc<CalcitTypeAnnotation>| {
+    scope_types
+      .call_type_proof(&[], std::slice::from_ref(expected), std::slice::from_ref(actual))
+      .prove(actual, expected)
+      .is_proven()
+  };
+  if !proven(&default, &accumulator) || super::contains_dynamic_type(&accumulator) {
+    return None;
+  }
   let reducer = xs.get(4)?;
   // Use compiled source only: resolving a runtime thunk here could re-enter
   // preprocessing, and open callable metadata cannot prove enum slot values.
@@ -3661,8 +3685,11 @@ fn infer_shortcut_fold_return(xs: &CalcitList, scope_types: &ScopeTypes) -> Opti
     return None;
   }
   bind_pattern_scope(body.get(2)?, &mut reducer_scope);
-  let signature = CalcitTypeAnnotation::from_function_parts(arg_types, Arc::new(CalcitTypeAnnotation::AnonymousEnum));
-  if !signature.is_proven_for(expected.get(3)?) {
+  let signature = Arc::new(CalcitTypeAnnotation::from_function_parts(
+    arg_types,
+    Arc::new(CalcitTypeAnnotation::AnonymousEnum),
+  ));
+  if !proven(&signature, expected.get(3)?) {
     return None;
   }
   let annotation = infer_preprocessed_function_type(body);
@@ -3727,10 +3754,14 @@ fn infer_enum_applied_args<'a>(
   if payload_args.len() != variant.arity() {
     return None;
   }
+  // Payload parameters belong to the enum declaration. A caller's spelling
+  // aliases may resolve captured names, but cannot capture these quantifiers.
+  let mut payload_scope = scope_types.clone();
+  payload_scope.bind_generics(enum_proto.generics());
   let expected_types = variant
     .payload_types()
     .iter()
-    .map(|expected| resolve_local_type_refs_for_body(resolve_enum_payload_type(enum_proto, expected.clone()), scope_types))
+    .map(|expected| resolve_local_type_refs_for_body(resolve_enum_payload_type(enum_proto, expected.clone()), &payload_scope))
     .collect::<Vec<_>>();
   let actual_types = payload_args
     .into_iter()
@@ -5713,6 +5744,65 @@ mod tests {
   }
 
   #[test]
+  fn inferred_contract_returns_require_actual_free_input_binders() {
+    let generic = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let annotation = CalcitTypeAnnotation::from_function_parts(vec![generic.clone()], generic.clone());
+    let mut signature = annotation.as_function().unwrap().clone();
+    signature.generics = Arc::new(vec![Arc::from("T")]);
+    let caller = signature.with_lexical_binders();
+    let other = signature.with_lexical_binders();
+    let scope = ScopeTypes::new();
+    let arguments = [typed_local("input", caller.return_type.clone())];
+    let returned = Arc::new(CalcitTypeAnnotation::List(caller.return_type.clone()));
+    assert!(contract_return_captures_only_inputs(&returned, arguments.iter(), &scope));
+    assert!(!contract_return_captures_only_inputs(
+      &Arc::new(CalcitTypeAnnotation::List(other.return_type)),
+      arguments.iter(),
+      &scope
+    ));
+    let owned = [typed_local("polymorphic", Arc::new(CalcitTypeAnnotation::Fn(Arc::new(caller))))];
+    assert!(!contract_return_captures_only_inputs(&returned, owned.iter(), &scope));
+    let unresolved = [typed_local("unresolved", generic.clone())];
+    assert!(!contract_return_captures_only_inputs(&generic, unresolved.iter(), &scope));
+    assert!(!contract_return_captures_only_inputs(&returned, std::iter::empty(), &scope));
+  }
+
+  #[test]
+  fn shortcut_payload_preserves_rigid_caller_binders() {
+    let generic = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let signature = CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![generic.clone()],
+      return_type: generic,
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+      runtime_arity: None,
+    };
+    let caller = signature.with_lexical_binders();
+    let other = signature.with_lexical_binders();
+    let mut scope = ScopeTypes::new();
+    scope.bind_generics(&caller.generics);
+    let accumulator = Arc::new(CalcitTypeAnnotation::List(caller.return_type.clone()));
+    for (member, proven) in [
+      (caller.return_type, true),
+      (other.return_type, false),
+      (Arc::new(CalcitTypeAnnotation::Number), false),
+      (calcit::DYNAMIC_TYPE.clone(), false),
+    ] {
+      let expression = proc_call(
+        CalcitProc::NativeEnum,
+        vec![
+          Calcit::Bool(true),
+          typed_local("payload", Arc::new(CalcitTypeAnnotation::List(member))),
+        ],
+      );
+      assert_eq!(shortcut_payload_is_proven(&expression, &accumulator, &scope), proven);
+    }
+  }
+
+  #[test]
   fn enum_constructor_resolves_local_generic_struct_payloads() {
     let generic: Arc<str> = Arc::from("T");
     let mut box_def = CalcitStructDef::from_fields(EdnTag::from("Box"), vec![EdnTag::from("value")]);
@@ -5757,8 +5847,46 @@ mod tests {
 
     assert_eq!(
       infer_enum_applied_args(&enum_def, Some(&Calcit::Tag(EdnTag::from("box"))), payloads.iter(), &scope_types,),
-      Some(vec![number]),
+      Some(vec![number.clone()]),
       "a local Box<T> payload should preserve T for the enclosing enum"
+    );
+
+    let variable = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let caller = CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![variable.clone()],
+      return_type: variable,
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+      runtime_arity: None,
+    }
+    .with_lexical_binders();
+    scope_types.bind_generics(&caller.generics);
+    assert_eq!(
+      infer_enum_applied_args(&enum_def, Some(&Calcit::Tag(EdnTag::from("box"))), payloads.iter(), &scope_types),
+      Some(vec![number]),
+      "a same-spelled caller binder must not capture the enum's own parameter"
+    );
+    let Calcit::Local(boxed) = &payloads[0] else { unreachable!() };
+    let CalcitTypeAnnotation::Struct(box_def, _) = boxed.type_info.as_ref() else {
+      unreachable!()
+    };
+    let mut generic_box = boxed.clone();
+    generic_box.type_info = Arc::new(CalcitTypeAnnotation::Struct(
+      box_def.clone(),
+      Arc::new(vec![caller.return_type.clone()]),
+    ));
+    assert_eq!(
+      infer_enum_applied_args(
+        &enum_def,
+        Some(&Calcit::Tag(EdnTag::from("box"))),
+        [Calcit::Local(generic_box)].iter(),
+        &scope_types
+      ),
+      Some(vec![caller.return_type]),
+      "constructor instantiation transports the caller's rigid identity without rebinding it"
     );
   }
 

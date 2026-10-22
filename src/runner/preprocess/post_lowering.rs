@@ -247,6 +247,9 @@ fn visit_lists(expr: &Calcit, scope: &ScopeTypes, namespace: &str, visit: &mut i
         && let CalcitTypeAnnotation::Fn(signature) = annotation.as_ref()
       {
         nested.bind_function_generics(signature, namespace);
+        if let Some(aliases) = CalcitTypeAnnotation::checked_hint_binder_aliases(form, &generics) {
+          nested.bind_generic_aliases(&aliases);
+        }
       }
     }
     Some(nested)
