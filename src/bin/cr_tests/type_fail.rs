@@ -732,14 +732,20 @@ fn type_fail_schema_mismatch_fixtures_report_error_code() {
 fn hint_fn_reports_invalid_target_before_invalid_schema() {
   run_with_large_stack(|| {
     let entries = load_snippet_entries("type-of $ hint-fn ({} (:args ([])) (:return (quote Number))) (:: fn () 1)");
-    let error = run_check_only(&entries).expect_err("the first hint-fn argument is a map, not a local function");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    let error = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect_err("the first hint-fn argument is a map, not a local function");
 
     assert!(
-      error.contains("hint-fn target must be an existing local function"),
+      error.msg.contains("hint-fn target must be an existing local function"),
       "diagnostic should identify the misplaced target argument, got: {error}"
     );
+    let location = error.location.as_ref().expect("target diagnostic has a source location");
+    assert_eq!(location.ns.as_ref(), "app.main", "{error}");
+    assert_eq!(location.def.as_ref(), "main!", "{error}");
+    assert_eq!(location.coord.as_ref().as_slice(), &[3, 1], "{error}");
     assert!(
-      !error.contains("hint-fn expects a schema Map"),
+      !error.msg.contains("hint-fn expects a schema Map"),
       "diagnostic should not misidentify the second argument as the first schema, got: {error}"
     );
 
