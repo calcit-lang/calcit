@@ -143,7 +143,7 @@ export class CalcitStructValue {
     } else {
       throw new Error("Expected an impl or array of impls");
     }
-    let nextStruct = new CalcitStructDef(this.name, this.fields, this.structRef.fieldTypes, this.structRef.impls.concat(nextImpls), this.structRef.definitionRef, this.structRef.fieldValidators);
+    let nextStruct = this.structRef.withImpls(this.structRef.impls.concat(nextImpls));
     return new CalcitStructValue(this.name, this.fields, this.values, nextStruct);
   }
 }

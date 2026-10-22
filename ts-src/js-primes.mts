@@ -185,6 +185,17 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
         }
         return compareSequences(left.fields, right.fields) || compareSequences(left.values, right.values);
       }
+      case PseudoTypeIndex.struct_def: {
+        const left = a as CalcitStructDef;
+        const right = b as CalcitStructDef;
+        const referenceOrder = left.definitionRef === right.definitionRef ? 0
+          : left.definitionRef == null ? -1 : right.definitionRef == null ? 1
+            : compareUnicodeStrings(left.definitionRef, right.definitionRef);
+        return referenceOrder || compareUnicodeStrings(left.name.value, right.name.value)
+          || compareSequences(left.fields, right.fields) || compareSequences(left.fieldTypeIdentities, right.fieldTypeIdentities)
+          || compareSequences(left.generics, right.generics) || _$n_compare(left.whereBounds, right.whereBounds)
+          || rawCompare(left.impls.length, right.impls.length) || compareSequences(left.impls, right.impls);
+      }
       case PseudoTypeIndex.struct_value: {
         const left = a as CalcitStructValue;
         const right = b as CalcitStructValue;

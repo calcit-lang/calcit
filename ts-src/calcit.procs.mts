@@ -22,6 +22,7 @@ import {
   _$n__$e_,
   hashFunction,
 } from "./calcit-data.mjs";
+import { typeBoundsIdentity } from "./js-type-form.mjs";
 
 import { CalcitRef, atom } from "./js-ref.mjs";
 import { CalcitStructValue } from "./js-struct-value.mjs";
@@ -222,15 +223,21 @@ const isWhereMapEntry = (entry: CalcitValue): boolean => {
   });
 };
 
-const trimDataDefinitionEntries = (entries: CalcitValue[]): CalcitValue[] => {
+const dataDefinitionEntries = (entries: CalcitValue[]): { fields: CalcitValue[]; generics: CalcitValue[]; whereBounds: CalcitValue } => {
   let start = 0;
+  let generics: CalcitValue[] = [];
+  let whereBounds: CalcitValue = null;
   if (entries[start] != null && isGenericsEntry(entries[start])) {
+    const names = list_items(entries[start]).map(item => getStringName(item instanceof CalcitSymbol ? item : list_items(item)[1]));
+    generics = [...new Set(names)].map(name => new CalcitSymbol(name));
     start += 1;
   }
   if (entries[start] != null && isWhereMapEntry(entries[start])) {
+    whereBounds = entries[start];
     start += 1;
   }
-  return entries.slice(start);
+  whereBounds = typeBoundsIdentity(whereBounds, generics.map(getStringName));
+  return { fields: entries.slice(start), generics, whereBounds };
 };
 
 export let _$n_trait_$o__$o_new = function (name: CalcitValue, methods: CalcitValue, parents?: CalcitValue): CalcitTrait {
@@ -331,7 +338,7 @@ export let _$n_assert_traits = function (value: CalcitValue, traitDef: CalcitVal
 export let defstruct = (name: CalcitValue, ...entries: CalcitValue[]): CalcitStructDef => {
   const structName = castTag(name);
   const fields: Array<{ tag: CalcitTag; type: CalcitValue }> = [];
-  const fieldEntries = trimDataDefinitionEntries(entries);
+  const { fields: fieldEntries, generics, whereBounds } = dataDefinitionEntries(entries);
 
   for (let entry of fieldEntries) {
     const items = list_items(entry);
@@ -352,13 +359,13 @@ export let defstruct = (name: CalcitValue, ...entries: CalcitValue[]): CalcitStr
 
   const fieldTags = fields.map((entry) => entry.tag);
   const fieldTypes = fields.map((entry) => entry.type);
-  return new CalcitStructDef(structName, fieldTags, fieldTypes, null);
+  return new CalcitStructDef(structName, fieldTags, fieldTypes, [], null, null, generics, whereBounds);
 };
 
 export let defenum = (name: CalcitValue, ...variants: CalcitValue[]): CalcitEnumDef => {
   const enumName = castTag(name);
   const entries: Array<{ tag: CalcitTag; payload: CalcitSliceList }> = [];
-  const variantEntries = trimDataDefinitionEntries(variants);
+  const { fields: variantEntries } = dataDefinitionEntries(variants);
 
   for (let variant of variantEntries) {
     const items = list_items(variant);
@@ -900,7 +907,7 @@ export let _$n_struct_$o_impl_traits = function (xs: CalcitValue, ...traits: Cal
   if (!(xs instanceof CalcitStructValue)) throw new Error("&struct:impl-traits expected a struct value");
   const impls = traits.map((trait) => coerce_impl(trait, "&struct:impl-traits"));
   checkRequiredTraitImpls(xs.structRef.impls.concat(impls), "&struct:impl-traits");
-  const nextStruct = new CalcitStructDef(xs.name, xs.fields, xs.structRef.fieldTypes, xs.structRef.impls.concat(impls), xs.structRef.definitionRef, xs.structRef.fieldValidators);
+  const nextStruct = xs.structRef.withImpls(xs.structRef.impls.concat(impls));
   return new CalcitStructValue(xs.name, xs.fields, xs.values, nextStruct);
 };
 
@@ -910,7 +917,7 @@ export let _$n_struct_def_$o_impl_traits = function (xs: CalcitValue, ...traits:
   const addedImpls = traits.map((trait) => coerce_impl(trait, "&struct-def:impl-traits"));
   const baseImpls = xs.impls ?? [];
   checkRequiredTraitImpls(baseImpls.concat(addedImpls), "&struct-def:impl-traits");
-  return new CalcitStructDef(xs.name, xs.fields, xs.fieldTypes, baseImpls.concat(addedImpls), xs.definitionRef, xs.fieldValidators);
+  return xs.withImpls(baseImpls.concat(addedImpls));
 };
 
 export let _$n_enum_def_$o_impl_traits = function (xs: CalcitValue, ...traits: CalcitValue[]) {

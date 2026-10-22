@@ -1667,6 +1667,17 @@ mod tests {
     assert_ne!(trait_left_value, trait_right_value);
     assert_ne!(trait_left_value.cmp(&trait_right_value), Equal);
 
+    // Unevaluated schema placeholders cannot be constructed by source-level
+    // tests: evaluating a declaration assigns a nominal runtime identity.
+    let mut schema_method = trait_left.clone();
+    schema_method.runtime_id = None;
+    let mut schema_field = schema_method.clone();
+    schema_field.member_kinds = Arc::new(vec![CalcitTraitMemberKind::Field]);
+    let schema_method_value = Calcit::Trait(schema_method);
+    let schema_field_value = Calcit::Trait(schema_field);
+    assert_ne!(schema_method_value, schema_field_value);
+    assert_ne!(schema_method_value.cmp(&schema_field_value), Equal);
+
     let impl_left = Calcit::Impl(CalcitImpl {
       name: EdnTag::new("Box"),
       origin: Some(Arc::new(trait_left.clone())),

@@ -13,38 +13,24 @@ pub(super) fn compare_calcit_trait_values(a: &CalcitTrait, b: &CalcitTrait) -> O
     (Some(_), None) => return Greater,
     (None, None) => {}
   }
-  match a.definition_ref.cmp(&b.definition_ref) {
-    Equal => {}
-    ord => return ord,
-  }
-  match a.name.cmp(&b.name) {
-    Equal => match a.methods.cmp(&b.methods) {
-      Equal => match a.method_types.cmp(&b.method_types) {
-        Equal => match compare_trait_requires(&a.requires, &b.requires) {
-          Equal => compare_trait_defaults(&a.defaults, &b.defaults),
-          ord => ord,
-        },
-        ord => ord,
-      },
-      ord => ord,
-    },
-    ord => ord,
-  }
+  a.definition_ref
+    .cmp(&b.definition_ref)
+    .then_with(|| a.name.cmp(&b.name))
+    .then_with(|| a.methods.cmp(&b.methods))
+    .then_with(|| a.method_types.cmp(&b.method_types))
+    .then_with(|| a.member_kinds.cmp(&b.member_kinds))
+    .then_with(|| compare_trait_sequences(&a.requires, &b.requires))
+    .then_with(|| compare_trait_defaults(&a.defaults, &b.defaults))
 }
 
-fn compare_trait_requires(a: &Arc<Vec<Arc<CalcitTrait>>>, b: &Arc<Vec<Arc<CalcitTrait>>>) -> Ordering {
-  match a.len().cmp(&b.len()) {
-    Equal => {
-      for (left, right) in a.iter().zip(b.iter()) {
-        match compare_calcit_trait_values(left.as_ref(), right.as_ref()) {
-          Equal => continue,
-          ord => return ord,
-        }
-      }
-      Equal
+pub(super) fn compare_trait_sequences(a: &[Arc<CalcitTrait>], b: &[Arc<CalcitTrait>]) -> Ordering {
+  for (left, right) in a.iter().zip(b.iter()) {
+    let order = compare_calcit_trait_values(left, right);
+    if order != Equal {
+      return order;
     }
-    ord => ord,
   }
+  a.len().cmp(&b.len())
 }
 
 fn compare_trait_defaults(a: &Arc<Vec<Option<Arc<CalcitFn>>>>, b: &Arc<Vec<Option<Arc<CalcitFn>>>>) -> Ordering {

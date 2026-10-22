@@ -1,11 +1,12 @@
 import { CalcitValue } from "./js-primes.mjs";
-import { CalcitSymbol, CalcitTag } from "./calcit-data.mjs";
+import { CalcitSymbol, CalcitTag, newTag, compareUnicodeStrings } from "./calcit-data.mjs";
 import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet } from "./js-set.mjs";
 import { CalcitRef } from "./js-ref.mjs";
 import { CalcitEnumValue } from "./js-enum-value.mjs";
 import { CalcitCirruQuote } from "./js-cirru.mjs";
+import { CalcitTrait } from "./js-trait.mjs";
 
 /// Shallow runtime check of a value against a struct field type form, matching
 /// the native `value_matches_type_annotation`: container kinds are checked,
@@ -53,6 +54,146 @@ let typeFormName = (form: CalcitValue): string | null => {
     if (items[0] instanceof CalcitSymbol && items[0].value === "quote") return typeFormName(items[1]);
   }
   return null;
+};
+
+// Primitive spellings share one identity; unresolved names retain their form.
+// Keep the original field form for diagnostics and runtime validation.
+const typeNameAliases = new Map<string, string>();
+for (const name of ["Dynamic", "Nil", "Unit", "Bool", "Number", "String", "Symbol", "Tag", "List", "Map", "Set", "Ref",
+  "Fn", "Buffer", "Struct", "Enum", "Trait", "Impl",
+  "Int8", "UInt8", "Int16", "UInt16", "Int32", "UInt32", "Int64", "UInt64", "Float32", "Float64"]) {
+  typeNameAliases.set(name, name);
+  typeNameAliases.set(name.toLowerCase(), name);
+}
+for (const name of ["CirruQuote", "JsObject", "StructDef", "EnumDef"]) typeNameAliases.set(name, name);
+for (const [alias, name] of [["any", "Dynamic"], ["Macro", "Fn"], ["macro", "Fn"], ["record", "Struct"], ["Record", "Struct"],
+  ["tuple", "Enum"], ["Tuple", "Enum"], ["cirru-quote", "CirruQuote"], ["js-object", "JsObject"],
+  ["struct-def", "StructDef"], ["enum-def", "EnumDef"]]) typeNameAliases.set(alias, name);
+
+const containerTypeArity = new Map([["List", 1], ["Map", 2], ["Set", 1], ["Ref", 1]]);
+// These constructors require a payload; their bare names are not scalar aliases.
+const payloadTypeAliases = new Map([
+  ["Optional", "Optional"], ["optional", "Optional"], ["JsNullish", "JsNullish"], ["js-nullish", "JsNullish"],
+  ["Variadic", "Variadic"], ["variadic", "Variadic"], ["&", "Variadic"],
+]);
+const containerTypeIdentity = (name: string, args: CalcitValue[], generics: readonly string[]): CalcitValue => {
+  const arity = containerTypeArity.get(name)!;
+  return new CalcitSliceList([new CalcitSymbol("::"), new CalcitSymbol(name),
+    ...Array.from({ length: arity }, (_, index) => typeFormIdentity(index < args.length ? args[index] : new CalcitSymbol("Dynamic"), generics))]);
+};
+
+const formItems = (form: CalcitValue, head: string): CalcitValue[] => {
+  if (!(form instanceof CalcitList || form instanceof CalcitSliceList)) return [];
+  const items = form.toArray();
+  return typeFormName(items[0]) === head ? items.slice(1) : items;
+};
+
+const formPairs = (schema: CalcitValue): Array<[CalcitValue, CalcitValue]> | null => {
+  if (schema instanceof CalcitMap || schema instanceof CalcitSliceMap) {
+    return schema.pairs();
+  } else if (schema instanceof CalcitList || schema instanceof CalcitSliceList) {
+    const items = schema.toArray();
+    if (typeFormName(items[0]) !== "{}") return null;
+    const pairs: Array<[CalcitValue, CalcitValue]> = [];
+    for (const item of items.slice(1)) {
+      if (!(item instanceof CalcitList || item instanceof CalcitSliceList) || item.len() !== 2) return null;
+      pairs.push(item.toArray() as [CalcitValue, CalcitValue]);
+    }
+    return pairs;
+  } else {
+    return null;
+  }
+};
+
+export const typeBoundsIdentity = (form: CalcitValue, generics: readonly string[]): CalcitValue => {
+  const bounds: Array<[string, CalcitValue]> = [];
+  for (const [key, value] of formPairs(form) ?? []) {
+    const name = typeof key === "string" ? key.replace(/^[':]+/, "")
+      : key instanceof CalcitTag ? null : typeFormName(key)?.replace(/^'+/, "");
+    if (name == null || !generics.includes(name)) continue;
+    const quoted = (value instanceof CalcitList || value instanceof CalcitSliceList)
+      && typeFormName(value.toArray()[0]) === "quote";
+    const traits = value instanceof CalcitTrait || value instanceof CalcitSymbol || quoted ? [value] : formItems(value, "[]");
+    const identities = traits.map(trait => typeFormIdentity(trait, generics));
+    // Native bounds retain traits and unapplied named references, not scalar
+    // types or lexical type variables. Ignored forms must not invent evidence.
+    if (identities.length === 0 || !identities.every(trait => trait instanceof CalcitTrait
+      || (trait instanceof CalcitSymbol && !typeNameAliases.has(trait.value) && !generics.includes(trait.value)))) continue;
+    bounds.push([name, new CalcitSliceList(identities)]);
+  }
+  bounds.sort(([left], [right]) => compareUnicodeStrings(left, right));
+  return bounds.length === 0 ? null
+    : new CalcitSliceList(bounds.map(([name, traits]) => new CalcitSliceList([name, traits])));
+};
+
+const functionTypeFormIdentity = (schema: CalcitValue, generics: readonly string[]): CalcitValue => {
+  const pairs = formPairs(schema);
+  if (pairs == null) return schema;
+  const source = new Map<string, CalcitValue>();
+  for (const [key, value] of pairs) {
+    const name = typeFormName(key);
+    if (name != null && !source.has(name)) source.set(name, value);
+  }
+  if (!["args", "return", "rest", "generics", "where", "kind", "features", "async"].some(key => source.has(key))) {
+    return new CalcitSymbol("Fn");
+  }
+  const localGenerics = formItems(source.get("generics"), "[]").map(typeFormName).filter((name): name is string => name != null);
+  const scope = [...generics, ...localGenerics];
+  // Native function annotations materialize these defaults. Missing fields and
+  // explicit defaults must denote the same callback contract.
+  const fields = new Map<string, CalcitValue>([
+    ["args", new CalcitSliceList([])], ["return", new CalcitSymbol("Dynamic")],
+    ["kind", newTag("fn")], ["features", new CalcitSet([])],
+    ["generics", new CalcitSliceList(localGenerics.map(name => new CalcitSymbol(name)))],
+    ["where", typeBoundsIdentity(source.get("where"), scope)],
+  ]);
+  for (const [name, original] of source) {
+    if (name === "return" || name === "rest") fields.set(name, typeFormIdentity(original, scope));
+    if (name === "args") fields.set(name, new CalcitSliceList(formItems(original, "[]").map(form => typeFormIdentity(form, scope))));
+    if (name === "kind") fields.set(name, newTag(typeFormName(original) === "macro" ? "macro" : "fn"));
+    if (name === "features") {
+      const items = original instanceof CalcitSet ? original.values() : formItems(original, "#{}");
+      fields.set(name, new CalcitSet(items.filter(item => item instanceof CalcitTag && item.value !== "$async-invocation")));
+    }
+  }
+  const async = source.get("async");
+  if (async !== undefined && async !== null && async !== false) {
+    fields.set("features", new CalcitSet([...(fields.get("features") as CalcitSet).values(), newTag("$async-invocation")]));
+  }
+  return new CalcitSliceMap([...fields].flatMap(([name, value]) => [newTag(name), value]));
+};
+
+export const typeFormIdentity = (form: CalcitValue, generics: readonly string[] = []): CalcitValue => {
+  if (form === null) return new CalcitSymbol("Dynamic");
+  if (form instanceof CalcitList || form instanceof CalcitSliceList) {
+    const items = form.toArray();
+    if (typeFormName(items[0]) === "quote" && items.length === 2) return typeFormIdentity(items[1], generics);
+    if (typeFormName(items[0]) === "::") {
+      const rawName = typeFormName(items[1]);
+      const name = typeNameAliases.get(rawName) ?? rawName;
+      const payloadName = payloadTypeAliases.get(rawName);
+      if (payloadName != null && items.length === 3) {
+        return new CalcitSliceList([new CalcitSymbol("::"), new CalcitSymbol(payloadName), typeFormIdentity(items[2], generics)]);
+      }
+      if (items.length === 2 && typeNameAliases.has(rawName)) return typeFormIdentity(items[1], generics);
+      if (containerTypeArity.has(name) && items.length - 2 <= containerTypeArity.get(name)) {
+        return containerTypeIdentity(name, items.slice(2), generics);
+      }
+      if ((rawName === "Fn" || rawName === "fn") && items.length === 3) {
+        const signature = functionTypeFormIdentity(items[2], generics);
+        return signature instanceof CalcitSymbol && signature.value === "Fn" ? signature
+          : new CalcitSliceList([new CalcitSymbol("::"), new CalcitSymbol("Fn"), signature]);
+      }
+    }
+    return new CalcitSliceList(items.map(item => typeFormIdentity(item, generics)));
+  }
+  const name = typeFormName(form);
+  const canonical = name == null ? null : typeNameAliases.get(name);
+  if (canonical == null) {
+    return form instanceof CalcitSymbol && form.typeRef != null && !generics.includes(form.value)
+      ? new CalcitSymbol(form.typeRef) : form;
+  }
+  return containerTypeArity.has(canonical) ? containerTypeIdentity(canonical, [], generics) : new CalcitSymbol(canonical);
 };
 
 /// Numeric refinements check range and integrality like the native `CalcitNumericRefinement::accepts`.
