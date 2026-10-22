@@ -877,6 +877,29 @@ fn contextual_callback_indirect_callable_keeps_output_slot_open() {
 }
 
 #[test]
+fn contextual_callback_method_owned_output_generic_is_open() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_snippet_entries(
+      "let\n    present $ Option :some 3\n    chained $ present .and-then $ fn (value) (Option :some $ str value)\n  assert-type chained $ :: 'Option 'String",
+    );
+    let warnings = RefCell::new(vec![]);
+    let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+    assert!(
+      result.is_ok(),
+      "a method-owned output generic should be inferred from its inline callback: {result:?}"
+    );
+    let warnings = warnings.borrow();
+    assert!(
+      !warnings.iter().any(|warning| {
+        matches!(warning.code(), Some("W_METHOD_ARG_TYPE_MISMATCH" | "W_FN_RETURN_TYPE_MISMATCH" | "W_LOCAL_FN_ARG_TYPE_MISMATCH"))
+      }),
+      "a valid callback result must not produce a method type diagnostic: {warnings:?}"
+    );
+  });
+}
+
+#[test]
 fn contextual_callback_does_not_erase_captured_lexical_output_binder() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();

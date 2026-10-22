@@ -4293,7 +4293,9 @@ fn preprocess_list_call(
                   (
                     annotation,
                     method_context.as_ref().is_some_and(|context| context.receiver_specialized),
-                    &[][..],
+                    method_context
+                      .as_ref()
+                      .map_or(&[][..], |context| context.callee_owned_generics.as_slice()),
                   )
                 }),
                 scope_defs,
@@ -7949,6 +7951,7 @@ fn check_struct_method_args(
 struct MethodArgumentContext {
   argument_types: Vec<Arc<CalcitTypeAnnotation>>,
   receiver_specialized: bool,
+  callee_owned_generics: Vec<Arc<str>>,
 }
 
 /// Bind a method signature's receiver variables using independent receiver
@@ -8037,6 +8040,12 @@ fn expected_method_argument_types(
       .collect::<HashMap<_, _>>();
     return Some(MethodArgumentContext {
       receiver_specialized: false,
+      callee_owned_generics: fn_annotation
+        .generics
+        .iter()
+        .filter(|name| !bindings.contains_key(*name))
+        .cloned()
+        .collect(),
       argument_types: fn_annotation
         .arg_types
         .iter()
@@ -8047,6 +8056,12 @@ fn expected_method_argument_types(
   }
   Some(MethodArgumentContext {
     receiver_specialized: specialized_types.is_some(),
+    callee_owned_generics: fn_annotation
+      .generics
+      .iter()
+      .filter(|name| !bindings.contains_key(*name))
+      .cloned()
+      .collect(),
     argument_types: specialized_types
       .as_deref()
       .unwrap_or(&fn_annotation.arg_types)
