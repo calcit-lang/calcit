@@ -835,7 +835,7 @@ fn contextual_callback_without_input_keeps_output_slot_open() {
           where_bounds: Arc::new(vec![]),
           arg_types: vec![],
           return_type: Arc::new(if name == "main!" {
-            CalcitTypeAnnotation::Dynamic
+            CalcitTypeAnnotation::String
           } else {
             CalcitTypeAnnotation::Unit
           }),
