@@ -261,6 +261,22 @@ Struct 或函数时，`if`、`when`、`cond`、`and`、`or` 会报告 `W_CONSTAN
 
 <a id="032-option-不再擦回-nil"></a>
 
+## 无效 import 不再被内建名称掩盖（0.32.0）
+
+使用 `generate-id!` 等内建函数时，同名 `:refer` 若指向不存在的 Calcit namespace 或
+definition，预处理会产生警告并使严格检查、JS 生成失败。此前裸名称直接选择内建函数，
+因此错误的 import 也可能检查通过；函数的运行行为与内建优先级不变。
+
+先用 `calcit query ns <namespace> --format edn` 查看真实 `:require`。若需要内建实现，
+通过 `edit imports` 或带 `--overwrite` 的 `edit add-import` 删除同名过期项；若需要模块实现，
+修正来源后使用 `alias/generate-id!` 或完整限定名，不依赖 `:refer` 覆盖内建。
+修改先做 transaction dry-run，并携带返回的 scoped revision，再运行原有严格检查、
+definition tests 和目标 backend 构建。无需新增 fix 规则或更换 ID 算法。
+
+诊断沿用预处理警告通道，指出声明的目标、实际内建来源和所属定义。
+有效导入不触发被遮蔽实现的编译或求值；未使用的导入、JavaScript exports 和宿主过程
+仍遵循原有加载/FFI 规则，见[内建名称与模块实现](project-structure.md#内建名称与模块实现)。
+
 ## Option 不再擦回 nil（0.31.0 提示，0.32.0 阻塞）
 
 `.unwrap-or X nil`、`option:unwrap-or X nil` 与 `match X … ((:none) nil)` 把 Option 还原成 nil-or-T：

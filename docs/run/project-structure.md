@@ -35,6 +35,27 @@ import 编辑会在 stderr 给出 warning，标明 namespace、rule 编号和标
 更新时用 `calcit edit add-import <namespace> --overwrite` 替换已存在的规则，
 多规则修改使用 `edit transaction` 的 dry-run 与 revision 守卫。
 
+### 内建名称与模块实现
+
+裸内建函数名优先于 `:refer`，因此 `generate-id!` 即使出现在模块导入中，裸调用仍使用
+`calcit.core/generate-id!`。要调用模块自己的同名实现，使用 alias 或完整限定名：
+
+```cirru.no-check
+ns app.main $ :require
+  project.ids :as ids
+
+defn make-id ()
+  ids/generate-id!
+```
+
+0.32.0 的预处理在使用内建函数时检查同名显式导入的 Calcit 目标是否存在。
+如果 namespace 或 definition 不存在，会报告声明的目标和实际选中的内建函数，
+严格检查及 JS 生成失败；删除过期的 import，或修正来源后改用限定名。
+读取器已将源码内建名称转为 Proc，因此该诊断定位到所属定义，不声称定位到具体 token。
+有效导入只检查定义存在，不预处理或运行被内建名称遮蔽的模块实现。
+
+限制：这不是未使用 import 的全量审计，也不验证 JavaScript 模块的 exports；宿主命名空间与已注册宿主过程仍按原 FFI 边界处理。
+
 ## `calcit.cirru` 的 EDN 结构
 
 Agent 切到新窗口时，把 `calcit.cirru` 看成一个"可执行项目快照"，其顶层 EDN 结构通常是：

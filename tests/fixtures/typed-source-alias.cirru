@@ -211,6 +211,70 @@
             :tags $ #{} :alias-contract :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns fix-command.alias-evidence
+    'fix-command.import-core $ %{} 'FileEntry
+      :defs $ {} $ 'builtin-id
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn builtin-id () (generate-id!)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |builtin-precedence)
+            :code $ quote $ assert= true
+              string? $ fix-command.import-core/builtin-id
+            :tags $ #{} :alias-contract :unit
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns fix-command.import-core
+          :require $ calcit.core :refer $ generate-id!
+    'fix-command.import-direct $ %{} 'FileEntry
+      :defs $ {} $ 'builtin-id
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn builtin-id () (generate-id!)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |builtin-precedence)
+            :code $ quote $ assert= true
+              string? $ fix-command.import-direct/builtin-id
+            :tags $ #{} :alias-contract :unit
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns fix-command.import-direct
+    'fix-command.import-source $ %{} 'FileEntry
+      :defs $ {} $ 'generate-id!
+        %{} 'CodeEntry (:doc |)
+          :code $ quote $ fn () |module-id
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns fix-command.import-source
+    'fix-command.import-valid $ %{} 'FileEntry
+      :defs $ {}
+        'builtin-id $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn builtin-id () (generate-id!)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |builtin-precedence)
+            :code $ quote $ do
+              assert= true $ string? $ fix-command.import-valid/builtin-id
+              assert= false $ = |module-id $ fix-command.import-valid/builtin-id
+            :tags $ #{} :alias-contract :unit
+        'main! $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn main! () (builtin-id) &unit
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Unit)
+            :args $ []
+        'qualified-id $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn qualified-id () (fix-command.import-source/generate-id!)
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'String)
+            :args $ []
+          :tests $ [] $ %{} 'TestEntry (:name |qualified-source)
+            :code $ quote $ assert= |module-id (fix-command.import-valid/qualified-id)
+            :tags $ #{} :alias-contract :unit
+      :ns $ %{} 'NsEntry (:doc |)
+        :code $ quote $ ns fix-command.import-valid
+          :require $ fix-command.import-source :refer $ generate-id!
     'fix-command.left $ %{} 'FileEntry
       :defs $ {} $ 'state-alias
         %{} 'CodeEntry (:doc |)

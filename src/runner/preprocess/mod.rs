@@ -3199,6 +3199,12 @@ fn preprocess_expr_unguarded(
             });
             Ok(retain_resolved_source_usage(form, expr, call_stack))
           } else if let Ok(p) = def.parse::<CalcitProc>() {
+            warn_on_invalid_builtin_import(
+              p,
+              def_ns,
+              || NodeLocation::new(def_ns.to_owned(), at_def.to_owned(), location.to_owned().unwrap_or_default()),
+              check_warnings,
+            );
             Ok(Calcit::Proc(p))
           } else if program::has_def_code(calcit::CORE_NS, def) {
             // println!("find in core def: {}", def);
@@ -3382,7 +3388,23 @@ fn preprocess_expr_unguarded(
     | Calcit::Struct(..)
     | Calcit::Local(..) => Ok(expr.to_owned()),
     Calcit::Method(..) => Ok(expr.to_owned()),
-    Calcit::Proc(..) => Ok(expr.to_owned()),
+    Calcit::Proc(proc) => {
+      // The reader already turns source builtin names into Proc values. They
+      // have no retained token coordinate, so report the owning definition.
+      let location = || {
+        builtins::meta::CURRENT_COMPILING_DEF.with(|current| {
+          current
+            .borrow()
+            .as_deref()
+            .and_then(runner::parse_ns_def)
+            .filter(|(ns, _)| ns.as_ref() == file_ns)
+            .map(|(ns, def)| NodeLocation::new(ns, def, Arc::new(vec![])))
+            .unwrap_or_else(|| NodeLocation::new(file_ns.into(), GENERATED_DEF.into(), Arc::new(vec![])))
+        })
+      };
+      warn_on_invalid_builtin_import(*proc, file_ns, location, check_warnings);
+      Ok(expr.to_owned())
+    }
     Calcit::Syntax(..) => Ok(expr.to_owned()),
     Calcit::Import { .. } => Ok(expr.to_owned()),
     _ => {
@@ -6420,6 +6442,32 @@ pub(crate) fn gen_check_warning_code_at_with_types(
     expected,
     actual,
   ));
+}
+
+/// Check an explicit refer target without compiling it or changing builtin precedence.
+fn warn_on_invalid_builtin_import(
+  proc: CalcitProc,
+  file_ns: &str,
+  location: impl FnOnce() -> NodeLocation,
+  check_warnings: &RefCell<Vec<LocatedWarning>>,
+) {
+  let name = proc.as_ref();
+  if file_ns != calcit::CORE_NS
+    && let Some(target_ns) = program::lookup_def_target_in_import(file_ns, name)
+    && target_ns.as_ref() != calcit::CORE_NS
+    && !target_ns.starts_with('|')
+    && !target_ns.starts_with('"')
+    && !program::has_def_code(&target_ns, name)
+    && !is_registered_proc(&format!("{target_ns}/{name}"))
+  {
+    gen_check_warning_with_location(
+      format!(
+        "[Warn] import `{target_ns}/{name}` does not exist; bare `{name}` resolves to builtin `calcit.core/{name}` before imports. Remove the stale import or correct its target; use a qualified reference when the module implementation is intended"
+      ),
+      location(),
+      check_warnings,
+    );
+  }
 }
 
 fn gen_check_warning_with_location(message: String, location: NodeLocation, check_warnings: &RefCell<Vec<LocatedWarning>>) {
