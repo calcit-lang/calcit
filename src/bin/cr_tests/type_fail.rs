@@ -729,6 +729,36 @@ fn type_fail_schema_mismatch_fixtures_report_error_code() {
 }
 
 #[test]
+fn hint_fn_reports_invalid_target_before_invalid_schema() {
+  run_with_large_stack(|| {
+    let entries = load_snippet_entries("type-of $ hint-fn ({} (:args ([])) (:return (quote Number))) (:: fn () 1)");
+    let warnings: RefCell<Vec<LocatedWarning>> = RefCell::new(vec![]);
+    let error = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      .expect_err("the first hint-fn argument is a map, not a local function");
+
+    assert!(
+      error.msg.contains("hint-fn target must be an existing local function"),
+      "diagnostic should identify the misplaced target argument, got: {error}"
+    );
+    let location = error.location.as_ref().expect("target diagnostic has a source location");
+    assert_eq!(location.ns.as_ref(), "app.main", "{error}");
+    assert_eq!(location.def.as_ref(), "main!", "{error}");
+    assert_eq!(location.coord.as_ref().as_slice(), &[3, 1], "{error}");
+    assert!(
+      !error.msg.contains("hint-fn expects a schema Map"),
+      "diagnostic should not misidentify the second argument as the first schema, got: {error}"
+    );
+
+    let entries = load_snippet_entries("let ((f $ fn () 1)) (hint-fn f (:: fn () 1))");
+    let error = run_check_only(&entries).expect_err("the second hint-fn argument must still be validated as a schema");
+    assert!(
+      error.contains("hint-fn expects a schema Map"),
+      "a local function target should leave schema validation to the second argument, got: {error}"
+    );
+  });
+}
+
+#[test]
 fn contextual_callback_return_does_not_merge_unrelated_generic_binders() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
@@ -892,7 +922,10 @@ fn contextual_callback_method_owned_output_generic_is_open() {
     let warnings = warnings.borrow();
     assert!(
       !warnings.iter().any(|warning| {
-        matches!(warning.code(), Some("W_METHOD_ARG_TYPE_MISMATCH" | "W_FN_RETURN_TYPE_MISMATCH" | "W_LOCAL_FN_ARG_TYPE_MISMATCH"))
+        matches!(
+          warning.code(),
+          Some("W_METHOD_ARG_TYPE_MISMATCH" | "W_FN_RETURN_TYPE_MISMATCH" | "W_LOCAL_FN_ARG_TYPE_MISMATCH")
+        )
       }),
       "a valid callback result must not produce a method type diagnostic: {warnings:?}"
     );
