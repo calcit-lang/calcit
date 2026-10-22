@@ -14,7 +14,7 @@ import { CalcitList, CalcitSliceList } from "./js-list.mjs";
 import { CalcitSet, overwriteSetComparator } from "./js-set.mjs";
 import { CalcitEnumValue } from "./js-enum-value.mjs";
 import { option_none, option_some } from "./js-option-value.mjs";
-import { CalcitTrait } from "./js-trait.mjs";
+import { CalcitTrait, traitIdentity } from "./js-trait.mjs";
 import { CalcitCirruQuote, cirru_deep_equal } from "./js-cirru.mjs";
 import { CirruWriterNode } from "@cirru/writer.ts";
 import { CalcitRef } from "./js-ref.mjs";
@@ -246,6 +246,7 @@ let defaultHash_list = valueHash("list:");
 let defaultHash_map = valueHash("map:");
 let defaultHash_record = valueHash("record:");
 let defaultHash_impl = valueHash("impl:");
+let defaultHash_trait = valueHash("trait:");
 let defaultHash_struct = valueHash("struct:");
 let defaultHash_enum = valueHash("enum:");
 let defaultHash_cirru_quote = valueHash("cirru-quote:");
@@ -400,8 +401,7 @@ export let hashFunction = (x: CalcitValue): Hash => {
     let base = defaultHash_impl;
     base = mergeValueHash(base, hashFunction(x.name));
     if (x.origin != null) {
-      // Impl equality compares origin names, not trait object identities.
-      base = mergeValueHash(base, hashFunction(x.origin.name.value));
+      base = mergeValueHash(base, mergeValueHash(defaultHash_trait, traitIdentity(x.origin)));
     }
     for (let idx = 0; idx < x.fields.length; idx++) {
       base = mergeValueHash(base, hashFunction(x.fields[idx]));
@@ -409,6 +409,9 @@ export let hashFunction = (x: CalcitValue): Hash => {
     }
     x.cachedHash = base;
     return base;
+  }
+  if (x instanceof CalcitTrait) {
+    return mergeValueHash(defaultHash_trait, traitIdentity(x));
   }
   if (x instanceof CalcitStructDef) {
     let base = defaultHash_struct;
@@ -909,10 +912,7 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
       if (x.name !== y.name) {
         return false;
       }
-      if ((x.origin == null) !== (y.origin == null)) {
-        return false;
-      }
-      if (x.origin != null && y.origin != null && x.origin.name.value !== y.origin.name.value) {
+      if (x.origin !== y.origin) {
         return false;
       }
       if (!fieldsEqual(x.fields, y.fields)) {
@@ -947,9 +947,7 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
     return false;
   }
   if (x instanceof CalcitTrait) {
-    if (y instanceof CalcitTrait) {
-      return x.name === y.name;
-    }
+    // The identical-reference fast path above is the entire nominal contract.
     return false;
   }
   if (x instanceof Uint8Array) {

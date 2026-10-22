@@ -9,7 +9,7 @@ import { CalcitMap, CalcitSliceMap } from "./js-map.mjs";
 import { CalcitSet as CalcitSet } from "./js-set.mjs";
 import { CalcitEnumValue } from "./js-enum-value.mjs";
 import { CalcitCirruQuote, cirru_deep_equal } from "./js-cirru.mjs";
-import { CalcitTrait } from "./js-trait.mjs";
+import { CalcitTrait, traitIdentity } from "./js-trait.mjs";
 
 export type CalcitValue =
   | string
@@ -61,9 +61,10 @@ enum PseudoTypeIndex {
   set,
   map,
   struct_value,
-  impl,
   struct_def,
   enum_def,
+  trait,
+  impl,
   fn,
   cirru_quote,
 }
@@ -88,6 +89,7 @@ let typeAsInt = (x: CalcitValue): number => {
   if (x instanceof CalcitImpl) return PseudoTypeIndex.impl;
   if (x instanceof CalcitStructDef) return PseudoTypeIndex.struct_def;
   if (x instanceof CalcitEnumDef) return PseudoTypeIndex.enum_def;
+  if (x instanceof CalcitTrait) return PseudoTypeIndex.trait;
   if (x instanceof CalcitCirruQuote) return PseudoTypeIndex.cirru_quote;
   // proc, fn, macro, syntax, not distinguished
   if (t === "function") return PseudoTypeIndex.fn;
@@ -157,6 +159,8 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
         return rawCompare(a, b);
       case PseudoTypeIndex.ref:
         return rawCompare((a as CalcitRef).path, (b as CalcitRef).path);
+      case PseudoTypeIndex.trait:
+        return rawCompare(traitIdentity(a as CalcitTrait), traitIdentity(b as CalcitTrait));
       case PseudoTypeIndex.fn: {
         const left = a as CalcitFn & { __calcitMethodName?: string };
         const right = b as CalcitFn & { __calcitMethodName?: string };
@@ -176,7 +180,7 @@ export let _$n_compare = (a: CalcitValue, b: CalcitValue): number => {
         if (left.origin == null && right.origin != null) return -1;
         if (left.origin != null && right.origin == null) return 1;
         if (left.origin != null && right.origin != null) {
-          const originOrder = compareUnicodeStrings(left.origin.name.value, right.origin.name.value);
+          const originOrder = rawCompare(traitIdentity(left.origin), traitIdentity(right.origin));
           if (originOrder !== 0) return originOrder;
         }
         return compareSequences(left.fields, right.fields) || compareSequences(left.values, right.values);
