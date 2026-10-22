@@ -391,7 +391,14 @@ fn number_to_js(n: f64) -> String {
 
 fn quote_to_js(xs: &Calcit, var_prefix: &str, tags: &RefCell<HashSet<EdnTag>>) -> Result<String, String> {
   match xs {
-    Calcit::Symbol { sym, .. } => Ok(format!("new {var_prefix}CalcitSymbol({})", escape_cirru_str(sym))),
+    Calcit::Symbol { sym, .. } => {
+      // Quoted symbols keep their data identity, but type forms must not lose
+      // the declaration namespace when the same name exists in two modules.
+      let type_ref = CalcitTypeAnnotation::extract_type_ref_name(xs)
+        .filter(|name| name.as_ref() != sym.as_ref())
+        .map_or_else(String::new, |name| format!(", {}", escape_cirru_str(&name)));
+      Ok(format!("new {var_prefix}CalcitSymbol({}{type_ref})", escape_cirru_str(sym)))
+    }
     Calcit::Str(s) => Ok(escape_cirru_str(s)),
     Calcit::Bool(b) => Ok(b.to_string()),
     Calcit::Number(n) => Ok(number_to_js(*n)),

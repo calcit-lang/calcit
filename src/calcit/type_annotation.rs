@@ -1359,7 +1359,7 @@ impl Ord for CalcitGenericBound {
     self
       .name
       .cmp(&other.name)
-      .then_with(|| self.to_brief_string().cmp(&other.to_brief_string()))
+      .then_with(|| super::compare::compare_trait_sequences(&self.traits, &other.traits))
   }
 }
 
@@ -2198,7 +2198,7 @@ impl CalcitTypeAnnotation {
     Arc::from(name.trim_start_matches('\''))
   }
 
-  fn extract_type_ref_name(form: &Calcit) -> Option<Arc<str>> {
+  pub(crate) fn extract_type_ref_name(form: &Calcit) -> Option<Arc<str>> {
     match form {
       Calcit::Symbol { sym, info, .. } => {
         let normalized = Self::normalize_type_ref_name(sym);
@@ -10144,13 +10144,7 @@ impl Ord for CalcitTypeAnnotation {
       (Self::Map(ak, av), Self::Map(bk, bv)) => ak.cmp(bk).then_with(|| av.cmp(bv)),
       (Self::StructValue(a), Self::StructValue(b)) => super::compare::compare_calcit_struct_values(a, b),
       (Self::EnumValue(a), Self::EnumValue(b)) => super::compare::compare_calcit_enum_values(a, b),
-      (Self::Fn(a), Self::Fn(b)) => a
-        .generics
-        .cmp(&b.generics)
-        .then_with(|| a.arg_types.cmp(&b.arg_types))
-        .then_with(|| a.return_type.cmp(&b.return_type))
-        .then_with(|| a.runtime_arity.cmp(&b.runtime_arity))
-        .then_with(|| a.is_async_invocation().cmp(&b.is_async_invocation())),
+      (Self::Fn(a), Self::Fn(b)) => a.cmp(b),
       (Self::Macro(a), Self::Macro(b)) => a.cmp(b),
       (Self::Syntax(a), Self::Syntax(b)) => a.cmp(b),
       (Self::Set(a), Self::Set(b)) => a.cmp(b),
@@ -10169,8 +10163,8 @@ impl Ord for CalcitTypeAnnotation {
       }
       (Self::StructDef(a), Self::StructDef(b)) => super::compare::compare_calcit_struct_values(a, b),
       (Self::EnumDef(a), Self::EnumDef(b)) => super::compare::compare_calcit_enum_values(a, b),
-      (Self::Trait(a), Self::Trait(b)) => a.name.cmp(&b.name),
-      (Self::TraitSet(a), Self::TraitSet(b)) => a.iter().map(|t| &t.name).cmp(b.iter().map(|t| &t.name)),
+      (Self::Trait(a), Self::Trait(b)) => super::compare::compare_calcit_trait_values(a, b),
+      (Self::TraitSet(a), Self::TraitSet(b)) => super::compare::compare_trait_sequences(a, b),
       _ => Ordering::Equal, // other variants already separated by kind order
     }
   }
@@ -10219,6 +10213,16 @@ impl Ord for CalcitFnTypeAnnotation {
       .then_with(|| self.rest_type.cmp(&other.rest_type))
       .then_with(|| self.runtime_arity.cmp(&other.runtime_arity))
       .then_with(|| self.is_async_invocation().cmp(&other.is_async_invocation()))
+      .then_with(|| {
+        if self.features == other.features {
+          return Ordering::Equal;
+        }
+        let mut left: Vec<_> = self.features.iter().collect();
+        let mut right: Vec<_> = other.features.iter().collect();
+        left.sort_unstable();
+        right.sort_unstable();
+        left.cmp(&right)
+      })
   }
 }
 

@@ -10,7 +10,7 @@ static NEXT_TRAIT_RUNTIME_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Source member shape retained for traits. Ordinary traits use method
 /// members; external-object traits may additionally expose typed fields.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CalcitTraitMemberKind {
   Method,
   Field,

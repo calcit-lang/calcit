@@ -303,6 +303,42 @@ try {
   const todoType = new runtimeA.CalcitSymbol("String");
   const todoRecord = new runtimeA.CalcitStructValue(todoName, [todoField], [""]);
   const todoStruct = new runtimeA.CalcitStructDef(todoName, [todoField], [todoType]);
+  // Validator closures are host evidence, never definition-value identity.
+  const definitionField = runtimeA.newTag("value");
+  const structDefinition = (type, origin = "app.model/Definition", validator = () => true) => new runtimeA.CalcitStructDef(
+    runtimeA.newTag("Definition"), [definitionField], [type], [], origin, [validator],
+  );
+  const definition = structDefinition(new runtimeA.CalcitSymbol("Number"));
+  const equalDefinition = structDefinition(runtimeA.newTag("number"), undefined, () => false);
+  assert.equal(runtimeA._$n__$e_(definition, equalDefinition), true, "Validator addresses must not affect definition equality");
+  const differentDefinitions = [
+    structDefinition(new runtimeA.CalcitSymbol("String")),
+    structDefinition(new runtimeA.CalcitSymbol("Number"), "app.other/Definition"),
+    structDefinition(null, null),
+    definition.withImpls([new runtimeA.CalcitImpl(runtimeA.newTag("Marker"), [], [])]),
+  ];
+  for (const other of differentDefinitions) {
+    assert.equal(runtimeA._$n__$e_(definition, other), false);
+    assert.notEqual(runtimeA._$n_compare(definition, other), 0);
+    assert.equal(Math.sign(runtimeA._$n_compare(definition, other)), -Math.sign(runtimeA._$n_compare(other, definition)));
+    for (const map of [
+      new runtimeA.CalcitSliceMap([definition, "current", other, "other"]),
+      new runtimeA.CalcitSliceMap([definition, "current", other, "other"]).turnMap(),
+    ]) {
+      assert.equal(map.get(equalDefinition), "current");
+      assert.equal(map.get(other), "other");
+    }
+    assert.equal(runtimeA._$n_set_$o_count(runtimeA._SHA__$M_(definition, equalDefinition, other)), 2);
+  }
+  assert.equal(runtimeA.hashFunction(definition), runtimeA.hashFunction(equalDefinition));
+  assert.equal(runtimeA._$n_compare(definition, equalDefinition), 0);
+  const sourceSymbol = new runtimeA.CalcitSymbol("Point", "app.left/Point");
+  const otherSourceSymbol = new runtimeA.CalcitSymbol("Point", "app.right/Point");
+  assert.equal(runtimeA._$n__$e_(sourceSymbol, otherSourceSymbol), true, "Quoted data equality still ignores source locations");
+  assert.equal(runtimeA.hashFunction(sourceSymbol), runtimeA.hashFunction(otherSourceSymbol));
+  assert.equal(runtimeA._$n_compare(sourceSymbol, otherSourceSymbol), 0);
+  assert.equal(runtimeA._$n__$e_(structDefinition(sourceSymbol), structDefinition(otherSourceSymbol)), false,
+    "Type forms, unlike ordinary quoted data, must retain their nominal origin");
   const todoEnum = new runtimeA.CalcitEnumDef(new runtimeA.CalcitStructValue(todoName, [todoField], [todoType]));
   // Enum definitions are data, not their shared JavaScript name() method.
   const makeEnumDefinition = (name, origin, payload = "String", impls = []) => {

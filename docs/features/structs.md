@@ -49,6 +49,20 @@ defstruct Person (:name 'String) (:age 'Number) (:position 'Tag)
 容器字段可以接收对应种类的字面量空容器，例如 `Map<Tag,String>` 字段接收 `{}`。空 Map、List、Set 的种类仍有区别；
 声明为开放容器的函数返回值不因当前实现返回空值而获得具体元素类型证明。
 
+## 定义值的相等性
+
+在 native 与 JS 中，`StructDef` 的 `=` 比较定义本身：声明来源、名称、字段及其类型、
+泛型参数、约束和附加 impl 都参与比较。类型的兼容写法按语义比较，例如字段声明
+`'Number` 与旧写法 `:number` 相等；生成的字段校验闭包不参与定义相等性。
+
+`struct-definition` 返回实例携带的定义。Cirru EDN 恢复的旧 Struct 可能缺少声明来源、
+字段类型与 impl，不能仅凭相同名称和字段名，就把它视为当前模块的类型定义。
+需要将旧数据迁移为当前类型时，通过既有 decoder 重建并验证；需要确认是同一个运行时
+定义对象时使用 `identical?`。定义值比较不替代实例的类型证明，也不改变实例的相等规则。
+
+定义可作为 Map key 或 Set 成员；相等定义具有相同 hash，排序比较为 0。
+不同模块里的同名类型仍有不同来源；普通引用和别名保留原类型来源，不需要改成 npm 路径。
+
 ## Generic Structs
 
 `defstruct` also accepts an optional generics list right after the type name. Declare generic slots with quoted symbols, then apply the named type in schemas with `(:: 'TypeName ...)`.

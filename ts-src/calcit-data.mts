@@ -52,9 +52,11 @@ export class CalcitTag {
 export class CalcitSymbol {
   value: string;
   cachedHash: Hash;
-  constructor(x: string) {
+  readonly typeRef: string | null;
+  constructor(x: string, typeRef: string | null = null) {
     this.value = x;
     this.cachedHash = null;
+    this.typeRef = typeRef;
   }
   toString() {
     return `'${this.value}`;
@@ -416,10 +418,13 @@ export let hashFunction = (x: CalcitValue): Hash => {
   if (x instanceof CalcitStructDef) {
     let base = defaultHash_struct;
     base = mergeValueHash(base, hashFunction(x.name));
+    base = mergeValueHash(base, hashFunction(x.definitionRef));
     for (let idx = 0; idx < x.fields.length; idx++) {
       base = mergeValueHash(base, hashFunction(x.fields[idx]));
-      base = mergeValueHash(base, hashFunction(x.fieldTypes[idx]));
+      base = mergeValueHash(base, hashFunction(x.fieldTypeIdentities[idx]));
     }
+    for (const generic of x.generics) base = mergeValueHash(base, hashFunction(generic));
+    base = mergeValueHash(base, hashFunction(x.whereBounds));
     for (let impl of x.impls) {
       base = mergeValueHash(base, hashFunction(impl));
     }
@@ -932,7 +937,12 @@ export let _$n__$e_ = (x: CalcitValue, y: CalcitValue): boolean => {
   }
   if (x instanceof CalcitStructDef) {
     if (y instanceof CalcitStructDef) {
-      return x.name === y.name && fieldsEqual(x.fields, y.fields);
+      return x.name === y.name && x.definitionRef === y.definitionRef && fieldsEqual(x.fields, y.fields)
+        && x.fieldTypeIdentities.length === y.fieldTypeIdentities.length
+        && x.fieldTypeIdentities.every((type, index) => _$n__$e_(type, y.fieldTypeIdentities[index]))
+        && x.generics.length === y.generics.length && x.generics.every((generic, index) => _$n__$e_(generic, y.generics[index]))
+        && _$n__$e_(x.whereBounds, y.whereBounds)
+        && x.impls.length === y.impls.length && x.impls.every((impl, index) => _$n__$e_(impl, y.impls[index]));
     }
     return false;
   }

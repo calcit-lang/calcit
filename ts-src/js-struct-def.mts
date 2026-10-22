@@ -1,9 +1,10 @@
-import { CalcitTag, canonicalizeTagPairs, toString } from "./calcit-data.mjs";
+import { CalcitSymbol, CalcitTag, canonicalizeTagPairs, toString } from "./calcit-data.mjs";
 import { CalcitValue } from "./js-primes.mjs";
 import { CalcitImpl } from "./js-impl.mjs";
 import { CalcitEnumDef } from "./js-enum-def.mjs";
 import { CalcitStructValue } from "./js-struct-value.mjs";
 import { register_core_enum } from "./js-core-enum-value.mjs";
+import { typeFormIdentity } from "./js-type-form.mjs";
 
 export type FieldValidator = ((value: CalcitValue, requireEvidence?: boolean) => boolean) | null;
 
@@ -11,28 +12,35 @@ export class CalcitStructDef {
   name: CalcitTag;
   fields: CalcitTag[];
   fieldTypes: CalcitValue[];
+  readonly fieldTypeIdentities: CalcitValue[];
   impls: CalcitImpl[];
   cachedHash: number;
   readonly definitionRef: string | null;
   readonly fieldValidators: FieldValidator[] | null;
+  readonly generics: CalcitValue[];
+  readonly whereBounds: CalcitValue;
 
   constructor(name: CalcitTag, fields: CalcitTag[], fieldTypes: CalcitValue[], impls: CalcitImpl[] = [], definitionRef: string | null = null,
-    fieldValidators: FieldValidator[] | null = null) {
+    fieldValidators: FieldValidator[] | null = null, generics: CalcitValue[] = [], whereBounds: CalcitValue = null) {
     const [canonicalFields, canonicalTypes] = canonicalizeTagPairs(fields, fieldTypes, "CalcitStructDef");
     this.name = name;
     this.fields = canonicalFields;
     this.fieldTypes = canonicalTypes;
+    const genericNames = generics.map(item => item instanceof CalcitSymbol ? item.value : "");
+    this.fieldTypeIdentities = canonicalTypes.map(form => typeFormIdentity(form, genericNames));
     this.impls = impls ?? [];
     this.cachedHash = null;
     this.definitionRef = definitionRef;
     this.fieldValidators = fieldValidators == null ? null : canonicalizeTagPairs(fields, fieldValidators, "CalcitStructDef validators")[1];
+    this.generics = generics;
+    this.whereBounds = whereBounds;
   }
 
   withImpls(impls: CalcitImpl | CalcitImpl[]): CalcitStructDef {
     if (impls instanceof CalcitImpl) {
-      return new CalcitStructDef(this.name, this.fields, this.fieldTypes, [impls], this.definitionRef, this.fieldValidators);
+      return new CalcitStructDef(this.name, this.fields, this.fieldTypes, [impls], this.definitionRef, this.fieldValidators, this.generics, this.whereBounds);
     } else if (Array.isArray(impls)) {
-      return new CalcitStructDef(this.name, this.fields, this.fieldTypes, impls, this.definitionRef, this.fieldValidators);
+      return new CalcitStructDef(this.name, this.fields, this.fieldTypes, impls, this.definitionRef, this.fieldValidators, this.generics, this.whereBounds);
     }
     throw new Error("Expected an impl as implementation");
   }
@@ -55,7 +63,7 @@ export class CalcitStructDef {
 /** Bind nominal definitions like native, preserving an alias's existing identity. */
 export function bind_struct_definition(value: CalcitValue, definitionRef: string, fieldValidators: FieldValidator[] | null = null): CalcitValue {
   if (value instanceof CalcitStructDef && value.definitionRef == null) {
-    return new CalcitStructDef(value.name, value.fields, value.fieldTypes, value.impls, definitionRef, fieldValidators);
+    return new CalcitStructDef(value.name, value.fields, value.fieldTypes, value.impls, definitionRef, fieldValidators, value.generics, value.whereBounds);
   }
   if (value instanceof CalcitEnumDef && value.prototype.structRef.definitionRef == null) {
     const prototype = value.prototype;
