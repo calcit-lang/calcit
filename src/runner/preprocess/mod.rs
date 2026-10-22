@@ -13985,6 +13985,44 @@ pub fn preprocess_hint_fn(
     ));
   }
 
+  // Validate the first argument of the two-argument form before parsing the
+  // schema. This keeps diagnostics aligned with the public `(hint-fn f
+  // schema)` order when a schema-like expression is accidentally supplied as
+  // the target.
+  let target_form = if args.len() == 2 {
+    let target_raw = args.first().expect("two-argument hint has a target");
+    let target_form = preprocess_expr(
+      target_raw,
+      ctx.scope_defs,
+      ctx.scope_types,
+      ctx.file_ns,
+      ctx.check_warnings,
+      ctx.call_stack,
+    )?;
+    let Calcit::Local(local) = target_form else {
+      return Err(CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Type,
+        "hint-fn target must be an existing local function; put `(hint-fn schema)` inside a new function body instead",
+        ctx.call_stack,
+        target_raw.get_location(),
+      ));
+    };
+    if !matches!(local.type_info.as_ref(), CalcitTypeAnnotation::DynFn) && local.type_info.resolve_to_nonoptional_fn().is_none() {
+      return Err(CalcitErr::use_msg_stack_location(
+        CalcitErrKind::Type,
+        format!(
+          "hint-fn target must be an existing local function, got {}; a schema does not prove callability",
+          local.type_info
+        ),
+        ctx.call_stack,
+        target_raw.get_location(),
+      ));
+    }
+    Some(local)
+  } else {
+    None
+  };
+
   // preserve hint-fn for JS codegen or other metadata needs
   let mut ys = vec![Calcit::Syntax(head.to_owned(), Arc::from(head_ns))];
   for a in args {
@@ -14018,33 +14056,7 @@ pub fn preprocess_hint_fn(
   let type_entry = resolve_local_type_refs_for_body(type_entry, ctx.scope_types);
   if args.len() == 2 {
     let target_raw = args.first().expect("two-argument hint has a target");
-    let target_form = preprocess_expr(
-      target_raw,
-      ctx.scope_defs,
-      ctx.scope_types,
-      ctx.file_ns,
-      ctx.check_warnings,
-      ctx.call_stack,
-    )?;
-    let Calcit::Local(mut local) = target_form else {
-      return Err(CalcitErr::use_msg_stack_location(
-        CalcitErrKind::Type,
-        "hint-fn target must be an existing local function; put `(hint-fn schema)` inside a new function body instead",
-        ctx.call_stack,
-        target_raw.get_location(),
-      ));
-    };
-    if !matches!(local.type_info.as_ref(), CalcitTypeAnnotation::DynFn) && local.type_info.resolve_to_nonoptional_fn().is_none() {
-      return Err(CalcitErr::use_msg_stack_location(
-        CalcitErrKind::Type,
-        format!(
-          "hint-fn target must be an existing local function, got {}; a schema does not prove callability",
-          local.type_info
-        ),
-        ctx.call_stack,
-        target_raw.get_location(),
-      ));
-    }
+    let mut local = target_form.expect("two-argument hint target was preprocessed");
     if !local.type_info.is_compatible_with(type_entry.as_ref()) {
       return Err(CalcitErr::use_msg_stack_location(
         CalcitErrKind::Type,
