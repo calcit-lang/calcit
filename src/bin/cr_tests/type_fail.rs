@@ -759,6 +759,39 @@ fn hint_fn_reports_invalid_target_before_invalid_schema() {
 }
 
 #[test]
+fn hint_fn_rejects_malformed_forms_instead_of_ignoring_them() {
+  run_with_large_stack(|| {
+    let cases = [
+      (
+        "hint-fn",
+        "hint-fn expects a schema Map, or a local function and a schema Map; got 0 arguments",
+      ),
+      (
+        "let ((target $ fn () 1)) (hint-fn target ({} (:args ([])) (:return 'Number)) :extra)",
+        "hint-fn expects a schema Map, or a local function and a schema Map; got 3 arguments",
+      ),
+      (
+        "fn (value)\n  hint-fn $ :: 'Fn $ {} (:args $ [] 'String) (:return 'String)\n  , value",
+        "hint-fn expects a schema Map",
+      ),
+      (
+        "let ((target 7))\n  hint-fn target $ {} (:args $ []) (:return 'Number)\n  , target",
+        "hint-fn target must be an existing local function, got number",
+      ),
+    ];
+
+    for (source, expected) in cases {
+      let entries = load_snippet_entries(source);
+      let error = run_check_only(&entries).expect_err("malformed hint-fn source must fail preprocessing");
+      assert!(
+        error.contains(expected),
+        "hint-fn diagnostic should mention {expected:?}, got: {error}"
+      );
+    }
+  });
+}
+
+#[test]
 fn contextual_callback_return_does_not_merge_unrelated_generic_binders() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
