@@ -1050,6 +1050,16 @@ fn contextual_generic_typing_enabled() -> bool {
 }
 
 fn output_only_callback_generics(generics: &[Arc<str>], arguments: &[Arc<CalcitTypeAnnotation>]) -> HashSet<Arc<str>> {
+  // Only defer a callback result variable when the same call has a separate,
+  // non-callback argument that can establish it. A result-only variable such
+  // as `K` in `Fn<T> -> K` must still be inferred from the callback body when no
+  // other argument contributes evidence (for example `group-by`).
+  let ordinary_variables = arguments
+    .iter()
+    .filter(|argument| argument.resolve_to_nonoptional_fn().is_none())
+    .flat_map(|argument| crate::calcit::type_annotation::free_type_variable_names(std::slice::from_ref(argument)))
+    .filter(|variable| generics.contains(variable))
+    .collect::<HashSet<_>>();
   let mut output_only = HashSet::new();
   for argument in arguments {
     let Some(callback) = argument.resolve_to_nonoptional_fn() else {
@@ -1060,7 +1070,7 @@ fn output_only_callback_generics(generics: &[Arc<str>], arguments: &[Arc<CalcitT
     let input_variables = crate::calcit::type_annotation::free_type_variable_names(&callback_inputs);
     let output_variables = crate::calcit::type_annotation::free_type_variable_names(std::slice::from_ref(&callback.return_type));
     for variable in output_variables {
-      if generics.contains(&variable) && !input_variables.iter().any(|input| input == &variable) {
+      if ordinary_variables.contains(&variable) && !input_variables.iter().any(|input| input == &variable) {
         output_only.insert(variable);
       }
     }
@@ -13425,6 +13435,22 @@ pub fn preprocess_defn(
             && matches!(detected_return_type.as_ref(), CalcitTypeAnnotation::TypeVar(_))
           {
             let actual = detected_return_type.clone();
+            let returned_input_binder = expected_fn_schema.as_ref().is_some_and(|signature| {
+              signature.arg_types.iter().chain(signature.rest_type.iter()).any(|input| {
+                body_types
+                  .call_type_proof(&[], std::slice::from_ref(input), std::slice::from_ref(&actual))
+                  .prove(&actual, input)
+                  .is_proven()
+              })
+            });
+            // A callback may derive its result type from one of its own
+            // inputs (for example a Self-preserving method). That is valid
+            // evidence for the enclosing result even when the result binder
+            // is otherwise output-only. A captured, unrelated binder is not
+            // an input and still needs an identity-aware proof below.
+            if returned_input_binder {
+              return false;
+            }
             return !body_types
               .call_type_proof(&[], std::slice::from_ref(expected), std::slice::from_ref(&actual))
               .prove(&actual, expected)
