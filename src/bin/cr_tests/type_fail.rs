@@ -764,6 +764,38 @@ fn contextual_callback_return_does_not_merge_unrelated_generic_binders() {
 }
 
 #[test]
+fn contextual_callback_output_does_not_bind_output_only_generic() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_snippet_entries(
+      "let\n    consume $ fn (callback expected)\n      hint-fn $ {}\n        :generics $ [] 'T\n        :args $ [] (:: 'Fn $ {} (:return 'T)) 'T\n        :return 'T\n      callback\n  consume (fn () |wrong) 17",
+    );
+    let warnings = RefCell::new(vec![]);
+    let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+    let warnings = warnings.borrow();
+    assert!(
+      result.is_ok(),
+      "the invalid callback result should be diagnosed without breaking call preprocessing: {result:?}"
+    );
+    assert!(
+      warnings.iter().any(|warning| {
+        warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH")
+          && warning
+            .message()
+            .contains("declares return type `:number`, but body returns `:string`")
+      }),
+      "the later Number argument should determine T, then the callback's String result should be diagnosed: {warnings:?}"
+    );
+    assert!(
+      !warnings.iter().any(|warning| {
+        warning.code() == Some("W_LOCAL_FN_ARG_TYPE_MISMATCH") && warning.message().contains("arg 2 expects type `:string`")
+      }),
+      "the callback result must not specialize T before the later ordinary argument: {warnings:?}"
+    );
+  });
+}
+
+#[test]
 fn strict_type_fail_reachable_unbound_slot_reports_stable_error_code() {
   run_with_large_stack(|| {
     let entries = load_fixture_entries("calcit/type-fail/type-slot-unbound-strict.cirru");

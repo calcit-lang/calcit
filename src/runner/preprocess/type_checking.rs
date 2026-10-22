@@ -635,7 +635,14 @@ where
         }),
     );
   }
-  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+  let output_only_callback_generics = super::output_only_callback_generics(ctx.generics, ctx.expected_types);
+  let mut bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = output_only_callback_generics
+    .iter()
+    .filter_map(|name| {
+      let variable = CalcitTypeAnnotation::TypeVar(name.clone());
+      proof.result(&variable).map(|resolved| (name.clone(), resolved))
+    })
+    .collect();
   for (idx, (arg, expected_type)) in ctx.args.iter().zip(ctx.expected_types.iter()).enumerate() {
     if matches!(expected_type.as_ref(), CalcitTypeAnnotation::Dynamic) {
       continue;
@@ -679,7 +686,23 @@ where
       } else {
         actual_type
       };
-      let compatible = if expected_type.contains_type_var() || actual_type.contains_type_var() {
+      let mask_unbound_callback_result = expected_type.resolve_to_nonoptional_fn().is_some()
+        && super::has_output_only_callback_generic(ctx.generics, std::slice::from_ref(expected_type))
+        && matches!(expected_type.as_ref(), CalcitTypeAnnotation::Fn(signature) if proof.result(&signature.return_type).is_none());
+      let expected_for_proof = if mask_unbound_callback_result && let CalcitTypeAnnotation::Fn(signature) = expected_type.as_ref() {
+        let mut signature = signature.as_ref().clone();
+        signature.return_type = crate::calcit::type_annotation::DYNAMIC_TYPE.clone();
+        Arc::new(CalcitTypeAnnotation::Fn(Arc::new(signature)))
+      } else {
+        expected_type.clone()
+      };
+      let input_proof = proof.prove(&actual_type, &expected_for_proof);
+      let compatible = if expected_type.resolve_to_nonoptional_fn().is_some() {
+        // The call proof was prepared from every argument's safe input
+        // evidence. A callback return may validate an already-bound output
+        // variable, but it must not create that binding on its own.
+        !input_proof.is_mismatch()
+      } else if expected_type.contains_type_var() || actual_type.contains_type_var() {
         let mut candidate = bindings.clone();
         let matches = actual_type
           .as_ref()
@@ -693,7 +716,7 @@ where
       };
       // A definite contradiction cannot be accepted by the migration relation;
       // unresolved boundaries retain their existing ordinary-checking policy.
-      if (proof.prove(&actual_type, expected_type).is_mismatch() || !compatible)
+      if (input_proof.is_mismatch() || !compatible)
         && !(!expected_type.contains_type_var()
           && !may_rebind_local(arg)
           && expression_is_proven_for(arg, expected_type, ctx.scope_types, false))

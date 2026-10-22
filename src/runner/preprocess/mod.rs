@@ -1049,6 +1049,29 @@ fn contextual_generic_typing_enabled() -> bool {
   strict_types_enabled() || REQUIRE_ASSERTION_PROOF.with(Cell::get)
 }
 
+fn output_only_callback_generics(generics: &[Arc<str>], arguments: &[Arc<CalcitTypeAnnotation>]) -> HashSet<Arc<str>> {
+  let mut output_only = HashSet::new();
+  for argument in arguments {
+    let Some(callback) = argument.resolve_to_nonoptional_fn() else {
+      continue;
+    };
+    let mut callback_inputs = callback.arg_types.clone();
+    callback_inputs.extend(callback.rest_type.iter().cloned());
+    let input_variables = crate::calcit::type_annotation::free_type_variable_names(&callback_inputs);
+    let output_variables = crate::calcit::type_annotation::free_type_variable_names(std::slice::from_ref(&callback.return_type));
+    for variable in output_variables {
+      if generics.contains(&variable) && !input_variables.iter().any(|input| input == &variable) {
+        output_only.insert(variable);
+      }
+    }
+  }
+  output_only
+}
+
+fn has_output_only_callback_generic(generics: &[Arc<str>], arguments: &[Arc<CalcitTypeAnnotation>]) -> bool {
+  !output_only_callback_generics(generics, arguments).is_empty()
+}
+
 pub(crate) fn tag_annotation(name: &str) -> Arc<CalcitTypeAnnotation> {
   Arc::new(CalcitTypeAnnotation::from_tag_name(name))
 }
@@ -4738,6 +4761,38 @@ fn preprocess_list_call(
         } else {
           let callable_contract = resolve_type_value(&head_form, scope_types).and_then(|annotation| annotation.resolve_to_fn());
           let mut callable_bindings = HashMap::new();
+          // A later ordinary argument can be the only evidence for a type
+          // variable returned by an earlier callback (for example
+          // `Fn() -> T, T`). Gather that evidence before constructing callback
+          // context so the callback body cannot choose T by source order.
+          if let Some(signature) = callable_contract.as_ref()
+            && !signature.generics.is_empty()
+            && !output_only_callback_generics(&signature.generics, &signature.arg_types).is_empty()
+            && !args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+          {
+            let output_only = output_only_callback_generics(&signature.generics, &signature.arg_types);
+            for (index, arg) in args.iter().enumerate() {
+              let Some(expected) = signature.arg_types.get(index).or(signature.rest_type.as_ref()) else {
+                continue;
+              };
+              if expected.resolve_to_nonoptional_fn().is_some() || empty_container_has_no_type_evidence(arg, expected.as_ref()) {
+                continue;
+              }
+              let Some(actual) = resolve_type_value(arg, scope_types) else {
+                continue;
+              };
+              if actual.contains_type_var() || matches!(actual.as_ref(), CalcitTypeAnnotation::Dynamic) {
+                continue;
+              }
+              let mut candidate = callable_bindings.clone();
+              if actual.as_ref().prove_with_bindings(expected.as_ref(), &mut candidate).is_proven()
+                && candidate.keys().all(|name| signature.generics.contains(name))
+              {
+                candidate.retain(|name, _| callable_bindings.contains_key(name) || output_only.contains(name));
+                callable_bindings = candidate;
+              }
+            }
+          }
           args.traverse_result::<CalcitErr>(&mut |a| {
             if let Calcit::Syntax(CalcitSyntax::ArgSpread, _) = a {
               has_spread = true;
@@ -5581,6 +5636,38 @@ fn preprocess_known_function_call(
         .any(|form| CalcitTypeAnnotation::extract_surrounding_fn_annotation_from_hint_form(form).is_some())
     }));
   let mut preprocessing_type_bindings: HashMap<Arc<str>, Arc<CalcitTypeAnnotation>> = HashMap::new();
+  // A later ordinary argument can be the only evidence for a type variable
+  // returned by an earlier callback (for example `Fn() -> T, T`). Gather that
+  // evidence before constructing callback context so the callback body cannot
+  // choose the caller's T just because it appears first in source order.
+  if contextual_generic_typing_enabled()
+    && !info.generics.is_empty()
+    && !output_only_callback_generics(&info.generics, &info.arg_types).is_empty()
+    && !args.iter().any(|arg| matches!(arg, Calcit::Syntax(CalcitSyntax::ArgSpread, _)))
+  {
+    let output_only = output_only_callback_generics(&info.generics, &info.arg_types);
+    for (arg_idx, arg) in args.iter().enumerate() {
+      let Some(expected) = info.arg_types.get(arg_idx).or(info.rest_type.as_ref()) else {
+        continue;
+      };
+      if expected.resolve_to_nonoptional_fn().is_some() || empty_container_has_no_type_evidence(arg, expected.as_ref()) {
+        continue;
+      }
+      let Some(actual) = resolve_type_value(arg, scope_types) else {
+        continue;
+      };
+      if actual.contains_type_var() || matches!(actual.as_ref(), CalcitTypeAnnotation::Dynamic) {
+        continue;
+      }
+      let mut candidate = preprocessing_type_bindings.clone();
+      if actual.as_ref().prove_with_bindings(expected.as_ref(), &mut candidate).is_proven()
+        && candidate.keys().all(|name| info.generics.contains(name))
+      {
+        candidate.retain(|name, _| preprocessing_type_bindings.contains_key(name) || output_only.contains(name));
+        preprocessing_type_bindings = candidate;
+      }
+    }
+  }
 
   // Process arguments with type-aware preprocessing for Fn-typed params.
   // When the expected param type is Fn(...), set EXPECTED_FN_TYPE so that
@@ -13274,7 +13361,16 @@ pub fn preprocess_defn(
             // An unresolved output slot is not evidence of a concrete result.
             // Keep explicit open returns instead of leaking temporary variables
             // into the generated callable contract.
-            if !matches!(detected_return_type.as_ref(), CalcitTypeAnnotation::Dynamic) || schema.return_type.contains_type_var() {
+            // A zero-argument contextual callback also has no input binder from
+            // which to infer an output-only generic. Preserve that caller-owned
+            // slot until another call argument supplies evidence.
+            let return_is_output_only = infer_contextual_callback
+              && expected_fn_schema.as_ref().is_some_and(|expected| {
+                expected.arg_types.is_empty() && expected.rest_type.is_none() && schema.return_type.contains_type_var()
+              });
+            if !return_is_output_only
+              && (!matches!(detected_return_type.as_ref(), CalcitTypeAnnotation::Dynamic) || schema.return_type.contains_type_var())
+            {
               schema.return_type = detected_return_type.clone();
             }
             if strict_generated_by_macro && let Some(parent) = prev_features.as_ref() {
