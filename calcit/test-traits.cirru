@@ -1281,12 +1281,42 @@
                 assert= 0 $ &compare left right
                 assert= 1 $ count $ #{} left right
               :tags $ #{} :struct-definition-equality :unit
+            %{} 'TestEntry (:name |preserves-native-builtin-type-priority)
+              :code $ quote $ let
+                  left $ test-traits.struct-left/make-builtin-holder
+                  right $ test-traits.struct-right/make-builtin-holder
+                assert= true $ = left right
+                assert= 0 $ &compare left right
+                assert= 1 $ count $ #{} left right
+              :tags $ #{} :struct-definition-equality :unit
+            %{} 'TestEntry
+              :name |distinguishes-qualified-builtin-spelled-nominal-types
+              :code $ quote $ let
+                  left $ test-traits.struct-left/make-qualified-holder
+                  right $ test-traits.struct-right/make-qualified-holder
+                assert= false $ = left right
+                assert= false $ = 0 $ &compare left right
+                assert= 2 $ count $ #{} left right
+              :tags $ #{} :struct-definition-equality :unit
+            %{} 'TestEntry
+              :name |distinguishes-builtin-marker-from-qualified-nominal-type
+              :code $ quote $ let
+                  builtin $ test-traits.struct-left/make-builtin-holder
+                  nominal $ test-traits.struct-left/make-qualified-holder
+                assert= false $ = builtin nominal
+                assert= false $ = 0 $ &compare builtin nominal
+                assert= 2 $ count $ #{} builtin nominal
+              :tags $ #{} :struct-definition-equality :unit
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-traits.struct-identity
     'test-traits.struct-left $ %{} 'FileEntry
       :defs $ {}
         'Point $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defstruct Point (:x 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
+        'StructDef $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct StructDef (:value 'Number)
           :examples $ []
           :schema $ :: 'StructDef
         'definition $ %{} 'CodeEntry (:doc |)
@@ -1298,6 +1328,12 @@
           :code $ quote $ defstruct jsobject (:value 'Number)
           :examples $ []
           :schema $ :: 'StructDef
+        'make-builtin-holder $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn make-builtin-holder ()
+            defstruct Holder $ :value 'StructDef
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'StructDef)
+            :args $ []
         'make-generic-holder $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-generic-holder ()
             defstruct Holder ([] 'Point) (:point 'Point)
@@ -1316,6 +1352,12 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'StructDef)
             :args $ []
+        'make-qualified-holder $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn make-qualified-holder ()
+            defstruct Holder $ :value 'test-traits.struct-left/StructDef
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'StructDef)
+            :args $ []
       :ns $ %{} 'NsEntry (:doc |)
         :code $ quote $ ns test-traits.struct-left
     'test-traits.struct-right $ %{} 'FileEntry
@@ -1324,8 +1366,18 @@
           :code $ quote $ defstruct Point (:x 'Number)
           :examples $ []
           :schema $ :: 'StructDef
+        'StructDef $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defstruct StructDef (:value 'Number)
+          :examples $ []
+          :schema $ :: 'StructDef
         'definition $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn definition () Point
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'StructDef)
+            :args $ []
+        'make-builtin-holder $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn make-builtin-holder ()
+            defstruct Holder $ :value 'StructDef
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'StructDef)
             :args $ []
@@ -1338,6 +1390,12 @@
         'make-holder $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-holder ()
             defstruct Holder $ :point 'Point
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'StructDef)
+            :args $ []
+        'make-qualified-holder $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn make-qualified-holder ()
+            defstruct Holder $ :value 'test-traits.struct-right/StructDef
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'StructDef)
             :args $ []

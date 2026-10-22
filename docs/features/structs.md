@@ -46,6 +46,10 @@ defstruct Person (:name 'String) (:age 'Number) (:position 'Tag)
 这个规则同样覆盖 `Option` 和嵌套容器。泛型字段先解析声明中的具名类型，再代入调用方已证明的参数，
 不需要把合法本地类型名全部改为全限定名，也不需要增加 `unsafe-coerce`。
 
+内建 schema 名（如 `StructDef`、`JsObject`）优先解释为内建类型标记，即使同一 namespace
+声明了同名类型。引用这些同名自定义类型时使用完整的 `namespace/definition`；完整引用
+不会被截短为内建名，不同 namespace 的定义仍然可区分。这是既有的 native 解析优先级。
+
 容器字段可以接收对应种类的字面量空容器，例如 `Map<Tag,String>` 字段接收 `{}`。空 Map、List、Set 的种类仍有区别；
 声明为开放容器的函数返回值不因当前实现返回空值而获得具体元素类型证明。
 
