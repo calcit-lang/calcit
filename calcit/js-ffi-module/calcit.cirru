@@ -108,6 +108,12 @@
                 assert= 3 $ tally :total
                 assert= 7 $ tally .add! 4
               :tags $ #{} :unit
+            %{} 'TestEntry (:name |callable-host)
+              :code $ quote $ let
+                  host $ checked-counter-host $ make-callable-counter-host 3
+                assert= 3 $ host :total
+                assert= 7 $ host .add! 4
+              :tags $ #{} :unit
         'checked-rest-host $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn checked-rest-host (value) (js-cast value 'RestHost)
           :examples $ []
@@ -173,6 +179,15 @@
           :examples $ []
           :schema $ :: 'Fn $ {} (:return 'Unit)
             :args $ []
+        'make-callable-counter-host $ %{} 'CodeEntry
+          :doc "|Callable host export carrying CounterHost members, like an SDK default export"
+          :code $ quote $ defn make-callable-counter-host (value) (&js-object)
+          :examples $ []
+          :ffi $ {} (:target :node)
+            :js $ {} $ :file |js-ffi-assets/callable-counter-host.js
+          :schema $ :: 'Fn $ {} (:return 'JsObject)
+            :args $ [] 'Number
+            :features $ #{} :js-ffi
         'make-counter-host $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn make-counter-host (value) (&js-object)
           :examples $ []

@@ -181,7 +181,7 @@ try {
 
   // Replay the actual attached Calcit expressions, rather than JS copies of their assertions.
   const hostTests = [];
-  for (const [target, count] of [["app.main/checked-counter-host", 5], ["app.main/counter-add", 2], ["app.main/rest-host-output", 8]]) {
+  for (const [target, count] of [["app.main/checked-counter-host", 6], ["app.main/counter-add", 2], ["app.main/rest-host-output", 8]]) {
     const hostContext = JSON.parse(execFileSync(resolve(repository, "target/debug/calcit"),
       [input, "query", "context", target, "--test-limit", "8", "--budget", "20000", "--format", "json"], { cwd: fixture, encoding: "utf8" }));
     assert.equal(hostContext.data.tests.truncated, false);
@@ -266,6 +266,31 @@ try {
   // A shape check must not be represented as validation of foreign signatures.
   const declaredTrust = { "total-value": "wrong", add() { return "wrong"; } };
   assert.equal(hostModule.checked_counter_host(declaredTrust), declaredTrust);
+  // Callable SDK exports and classes are hosts when they carry the declared members (#2153).
+  const callable = hostModule.make_callable_counter_host(3);
+  assert.equal(typeof callable, "function");
+  assert.equal(hostModule.checked_counter_host(callable), callable, "callable hosts keep their identity");
+  assert.equal(hostModule.counter_add(callable, 4), 7, "callable host methods keep the callable as receiver");
+  class CounterClass { static "total-value" = 3; static add(amount) { return this["total-value"] + amount; } }
+  class DerivedCounter extends CounterClass {}
+  assert.equal(hostModule.checked_counter_host(CounterClass), CounterClass, "classes with static members are hosts");
+  assert.equal(hostModule.counter_add(CounterClass, 5), 8);
+  assert.equal(hostModule.checked_counter_host(DerivedCounter), DerivedCounter, "inherited statics are visible members");
+  assert.equal(hostModule.counter_add(DerivedCounter, 1), 4);
+  assert.throws(() => hostModule.checked_counter_host(Object.assign(function partial() {}, { "total-value": 3 })),
+    /js-cast app\.main\/CounterHost: method "add" is not callable/);
+  assert.throws(() => hostModule.checked_counter_host(Object.assign(() => 0, { add() { return 0; } })),
+    /js-cast app\.main\/CounterHost: missing field "total-value"/);
+  // Calcit functions compile to plain JS functions and carry only members every function has.
+  const calcitFunctions = [function bare() {}, hostModule.counter_add, hostModule.checked_counter_host, procs.invoke_method_closure("add")];
+  for (const fn of calcitFunctions) {
+    assert.throws(() => hostModule.checked_counter_host(fn), /js-cast app\.main\/CounterHost: expected a JavaScript host object/);
+    assert.throws(() => procs.js_cast(fn, "fixture/FunctionShape", ["name", "length", "prototype"], ["call", "apply", "bind", "toString"]),
+      /expected a JavaScript host object/, "Function.prototype members never make a callable a host");
+    assert.throws(() => procs.js_cast(fn, "fixture/Empty", [], []), /expected a JavaScript host object/);
+  }
+  const trappingCallable = new Proxy(callable, { getOwnPropertyDescriptor() { throw underlying; } });
+  assert.throws(() => hostModule.checked_counter_host(trappingCallable), error => error instanceof TypeError && error.cause === underlying);
   const castNative = spawnSync(resolve(repository, "target/debug/calcit"), [input, "--init-fn", "app.main/replay-host-tests!"],
     { cwd: fixture, encoding: "utf8" });
   assert.notEqual(castNative.status, 0);

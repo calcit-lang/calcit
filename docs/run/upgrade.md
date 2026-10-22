@@ -24,6 +24,14 @@ related:
 每一层通过后再收紧下一层，避免把所有失败混在一次升级里。类库/module 发布前的完整证据矩阵见
 [Calcit 类库项目验收与质量门禁](library-quality.md)。
 
+## 0.31.0 `js-cast` 接受带成员的 callable 宿主（#2153）
+
+`js-cast` 现在接受 `typeof` 为 `function` 的宿主值，例如 Axios、Day.js 的默认导出，Luxon `DateTime` class，
+以及 Chalk、http-proxy 一类带方法的函数导出：只要 trait 声明的字段存在、方法可调用，就返回同一个对象，
+方法调用保留原 receiver。为绕过旧限制而写的 JS 委托对象或 `unsafe-coerce` 可以改回
+`js-cast value 'Trait`，改写后用目标后端实际运行一次相关适配器。Calcit 函数、容器与名义值仍被拒绝；
+只依赖 `name`、`length`、`call` 等通用函数成员的 trait 无法用来检查 callable。
+
 ## 0.31.0 泛型调用保留开放输入
 
 同一次泛型调用会综合实参的类型证据，再检查参数与推断返回类型。将 `Map<Tag, Bool>` 与明确声明的
