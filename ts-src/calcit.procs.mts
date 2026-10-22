@@ -2166,14 +2166,20 @@ type DataShapeGraph = {
   nodes: DataShapeNode[];
 };
 
+const same_nominal_struct = (actual: CalcitStructDef, expected: CalcitStructDef): boolean =>
+  actual === expected || (actual != null && expected != null && expected.definitionRef != null &&
+    actual.definitionRef === expected.definitionRef && actual.name.value === expected.name.value &&
+    actual.fields.length === expected.fields.length && actual.fields.every((field, idx) =>
+      field.value === expected.fields[idx].value && _$n__$e_(actual.fieldTypes[idx], expected.fieldTypes[idx])));
+
+const same_nominal_enum = (actual: CalcitEnumDef, expected: CalcitEnumDef): boolean =>
+  actual === expected || (actual != null && expected != null &&
+    same_nominal_struct(actual.prototype.structRef, expected.prototype.structRef) &&
+    _$n__$e_(actual.prototype, expected.prototype));
+
 /** Validate existing data without the decoder's map conversion or Option lifting. */
 export function validate_data_shape(input: CalcitValue, graph: DataShapeGraph): boolean {
   if (graph.version !== 3) throw new Error(`validate-data-shape expected ABI version 3, got ${graph.version}`);
-  const sameNominal = (actual: CalcitStructDef, expected: CalcitStructDef): boolean =>
-    actual === expected || (actual != null && expected != null && expected.definitionRef != null &&
-      actual.definitionRef === expected.definitionRef && actual.name.value === expected.name.value &&
-      actual.fields.length === expected.fields.length && actual.fields.every((field, idx) =>
-        field.value === expected.fields[idx].value && _$n__$e_(actual.fieldTypes[idx], expected.fieldTypes[idx])));
   const check = (value: CalcitValue, nodeId: number, depth: number): boolean => {
     if (depth > 1024) return false;
     const node = graph.nodes[nodeId];
@@ -2200,14 +2206,13 @@ export function validate_data_shape(input: CalcitValue, graph: DataShapeGraph): 
       case "map": return (value instanceof CalcitMap || value instanceof CalcitSliceMap) && value.pairs().every(([key, item]) =>
         check(key, node.key, depth + 1) && check(item, node.value, depth + 1));
       case "ref": return value instanceof CalcitRef && check(value.value, node.inner, depth + 1);
-      case "struct": return value instanceof CalcitStructValue && sameNominal(value.structRef, node.nominal) &&
+      case "struct": return value instanceof CalcitStructValue && same_nominal_struct(value.structRef, node.nominal) &&
         value.values.length === node.fields.length && node.fields.every(([name, child], idx) =>
           value.fields[idx]?.value === name && check(value.values[idx], child, depth + 1));
       case "map-option":
       case "enum": {
         if (!(value instanceof CalcitEnumValue) || value.enumPrototype == null ||
-          !sameNominal(value.enumPrototype.prototype.structRef, node.nominal.prototype.structRef) ||
-          !_$n__$e_(value.enumPrototype.prototype, node.nominal.prototype) || !(value.tag instanceof CalcitTag)) return false;
+          !same_nominal_enum(value.enumPrototype, node.nominal) || !(value.tag instanceof CalcitTag)) return false;
         if (node.kind === "map-option") {
           return value.tag.value === "none" ? value.extra.length === 0 : value.tag.value === "some" &&
             value.extra.length === 1 && check(value.extra[0], node.inner, depth + 1);
@@ -2437,16 +2442,18 @@ const decode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
     case "dynamic":
       return input;
     case "map-option": {
-      if (
-        input instanceof CalcitEnumValue &&
-        (input.enumPrototype === node.nominal || input.enumPrototype?.name() === node.nominal.name())
-      ) {
+      if (input instanceof CalcitEnumValue && same_nominal_enum(input.enumPrototype, node.nominal)) {
         const tag: CalcitValue = input.tag;
         if (!(tag instanceof CalcitTag)) map_decode_error(path, "Option variant is not a tag");
         const tag_name = (tag as CalcitTag).value;
-        if (tag_name === "none" && input.extra.length === 0) return input;
+        if (tag_name === "none" && input.extra.length === 0) {
+          return input.enumPrototype === node.nominal ? input : new CalcitEnumValue(tag as CalcitTag, [], node.nominal);
+        }
         if (tag_name === "some" && input.extra.length === 1) {
-          return new CalcitEnumValue(tag as CalcitTag, [decode_runtime_map_node(graph, node.inner, input.extra[0], path, depth + 1)], node.nominal);
+          const value = decode_runtime_map_node(graph, node.inner, input.extra[0], path, depth + 1);
+          return input.enumPrototype === node.nominal && value === input.extra[0]
+            ? input
+            : new CalcitEnumValue(tag as CalcitTag, [value], node.nominal);
         }
         return map_decode_error(path, "invalid Option value");
       }
@@ -2523,8 +2530,9 @@ const decode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
         return map_decode_error(path, `expected enum :${node.nominal.name()}, got ${typed_edn_kind(input)}`);
       }
       const actualEnumName = enum_prototype_name(input.enumPrototype);
-      if (actualEnumName !== node.nominal.name()) {
-        return map_decode_error(path, `expected enum :${node.nominal.name()}, got enum :${actualEnumName}`);
+      if (!same_nominal_enum(input.enumPrototype, node.nominal)) {
+        const detail = actualEnumName === node.nominal.name() ? " (incompatible definition)" : "";
+        return map_decode_error(path, `expected enum :${node.nominal.name()}, got enum :${actualEnumName}${detail}`);
       }
       if (!(input.tag instanceof CalcitTag)) return map_decode_error(path, `enum :${node.nominal.name()} variant must be a tag`);
       const inputTag = input.tag as CalcitTag;
@@ -2539,6 +2547,8 @@ const decode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
       const values = variant.payload.map((payloadNode, idx) =>
         decode_runtime_map_node(graph, payloadNode, input.extra[idx], `${path}.payload[${idx}]`, depth + 1)
       );
+      // Reuse only the exact nominal definition and payload values that needed no decoding.
+      if (input.enumPrototype === node.nominal && values.every((value, idx) => value === input.extra[idx])) return input;
       return new CalcitEnumValue(newTag(variant.tag), values, node.nominal);
     }
     default:

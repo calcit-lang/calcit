@@ -6064,6 +6064,14 @@
                       :return 'String
                     , message
               :tags $ #{} :core :unit
+            %{} 'TestEntry (:name |preserves-validated-enum-identity)
+              :code $ quote $ do
+                let
+                    original $ StringDestruct :some |x |tail
+                    decoded $ decode-map-as original 'StringDestruct
+                  assert-type decoded 'StringDestruct
+                  assert= true $ identical? original decoded
+              :tags $ #{} :core :types :unit
         'def $ %{} 'CodeEntry (:doc "|special macro to expose value to definition")
           :code $ quote $ defmacro def (_name x) x
           :examples $ []
