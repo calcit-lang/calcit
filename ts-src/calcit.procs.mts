@@ -2170,7 +2170,10 @@ const same_nominal_struct = (actual: CalcitStructDef, expected: CalcitStructDef)
   actual === expected || (actual != null && expected != null && expected.definitionRef != null &&
     actual.definitionRef === expected.definitionRef && actual.name.value === expected.name.value &&
     actual.fields.length === expected.fields.length && actual.fields.every((field, idx) =>
-      field.value === expected.fields[idx].value && _$n__$e_(actual.fieldTypes[idx], expected.fieldTypes[idx])));
+      field.value === expected.fields[idx].value && _$n__$e_(actual.fieldTypes[idx], expected.fieldTypes[idx])) &&
+    actual.generics.length === expected.generics.length &&
+    actual.generics.every((generic, idx) => _$n__$e_(generic, expected.generics[idx])) &&
+    _$n__$e_(actual.whereBounds, expected.whereBounds));
 
 const same_nominal_enum = (actual: CalcitEnumDef, expected: CalcitEnumDef): boolean =>
   actual === expected || (actual != null && expected != null &&
@@ -2442,20 +2445,26 @@ const decode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
     case "dynamic":
       return input;
     case "map-option": {
-      if (input instanceof CalcitEnumValue && same_nominal_enum(input.enumPrototype, node.nominal)) {
-        const tag: CalcitValue = input.tag;
-        if (!(tag instanceof CalcitTag)) map_decode_error(path, "Option variant is not a tag");
-        const tag_name = (tag as CalcitTag).value;
-        if (tag_name === "none" && input.extra.length === 0) {
-          return input.enumPrototype === node.nominal ? input : new CalcitEnumValue(tag as CalcitTag, [], node.nominal);
+      if (input instanceof CalcitEnumValue && input.enumPrototype != null) {
+        const sameOption = same_nominal_enum(input.enumPrototype, node.nominal);
+        if (!sameOption && input.enumPrototype.name() === node.nominal.name()) {
+          map_decode_error(path, `expected Option enum :${node.nominal.name()}, got incompatible enum definition`);
         }
-        if (tag_name === "some" && input.extra.length === 1) {
-          const value = decode_runtime_map_node(graph, node.inner, input.extra[0], path, depth + 1);
-          return input.enumPrototype === node.nominal && value === input.extra[0]
-            ? input
-            : new CalcitEnumValue(tag as CalcitTag, [value], node.nominal);
+        if (sameOption) {
+          const tag: CalcitValue = input.tag;
+          if (!(tag instanceof CalcitTag)) map_decode_error(path, "Option variant is not a tag");
+          const tag_name = (tag as CalcitTag).value;
+          if (tag_name === "none" && input.extra.length === 0) {
+            return input.enumPrototype === node.nominal ? input : new CalcitEnumValue(tag as CalcitTag, [], node.nominal);
+          }
+          if (tag_name === "some" && input.extra.length === 1) {
+            const value = decode_runtime_map_node(graph, node.inner, input.extra[0], path, depth + 1);
+            return input.enumPrototype === node.nominal && Object.is(value, input.extra[0])
+              ? input
+              : new CalcitEnumValue(tag as CalcitTag, [value], node.nominal);
+          }
+          return map_decode_error(path, "invalid Option value");
         }
-        return map_decode_error(path, "invalid Option value");
       }
       return new CalcitEnumValue(newTag("some"), [decode_runtime_map_node(graph, node.inner, input, path, depth + 1)], node.nominal);
     }
@@ -2548,7 +2557,7 @@ const decode_runtime_map_node = (graph: DataShapeGraph, nodeId: number, input: a
         decode_runtime_map_node(graph, payloadNode, input.extra[idx], `${path}.payload[${idx}]`, depth + 1)
       );
       // Reuse only the exact nominal definition and payload values that needed no decoding.
-      if (input.enumPrototype === node.nominal && values.every((value, idx) => value === input.extra[idx])) return input;
+      if (input.enumPrototype === node.nominal && values.every((value, idx) => Object.is(value, input.extra[idx]))) return input;
       return new CalcitEnumValue(newTag(variant.tag), values, node.nominal);
     }
     default:
