@@ -4840,11 +4840,21 @@ impl CalcitTypeAnnotation {
       return &["Debug", "Eq", "Countable", "Contains"];
     }
     match self.core_impl_list_symbol() {
-      Some("&core-list-impls") => &["Debug", "Eq", "Add", "Len", "Mappable", "Countable", "Sliceable"],
-      Some("&core-map-impls") => &["Debug", "Eq", "Len", "Mappable", "Countable"],
-      Some("&core-set-impls") => &["Debug", "Eq", "Len", "Mappable", "Countable"],
-      Some("&core-string-impls") => &["Debug", "Eq", "Add", "Len", "Countable", "Compare", "Sliceable", "ToString"],
-      Some("&core-number-impls") => &["Debug", "Eq", "Add", "Multiply", "Compare", "ToString"],
+      Some("&core-list-impls") => &["Debug", "Eq", "Add", "Len", "Mappable", "Countable", "Sliceable", "Emptyable"],
+      Some("&core-map-impls") => &["Debug", "Eq", "Len", "Mappable", "Countable", "Emptyable"],
+      Some("&core-set-impls") => &["Debug", "Eq", "Len", "Mappable", "Countable", "Emptyable"],
+      Some("&core-string-impls") => &[
+        "Debug",
+        "Eq",
+        "Add",
+        "Len",
+        "Countable",
+        "Compare",
+        "Sliceable",
+        "ToString",
+        "Emptyable",
+      ],
+      Some("&core-number-impls") => &["Debug", "Eq", "Add", "Multiply", "Compare", "ToString", "Emptyable"],
       Some("&core-fn-impls") => &["Debug"],
       Some("&core-scalar-impls") => &["Debug", "Eq"],
       Some("&core-text-scalar-impls") => &["Debug", "Eq", "ToString"],

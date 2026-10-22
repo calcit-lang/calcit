@@ -1074,6 +1074,28 @@ fn resolve_generic_return_type_parts<'a>(
   Some(call_proof.result_or_open(return_type))
 }
 
+/// Export actual caller captures, never unresolved output placeholders.
+/// Source-name equality is insufficient: input binders need lexical identities.
+fn contract_return_captures_only_inputs<'a>(
+  returned: &Arc<CalcitTypeAnnotation>,
+  arguments: impl Iterator<Item = &'a Calcit>,
+  scope: &ScopeTypes,
+) -> bool {
+  use crate::calcit::type_annotation::{free_type_variable_names, source_type_variable};
+  let variables = free_type_variable_names(std::slice::from_ref(returned));
+  if variables.is_empty() {
+    return true;
+  }
+  if variables.iter().any(|name| source_type_variable(name) == name.as_ref()) {
+    return false;
+  }
+  let inputs = arguments
+    .filter_map(|argument| resolve_type_value(argument, scope))
+    .collect::<Vec<_>>();
+  let captures = free_type_variable_names(&inputs);
+  variables.iter().all(|name| captures.contains(name))
+}
+
 pub(crate) fn infer_return_type_from_compiled_callable(
   ns: &str,
   def: &str,
@@ -1083,16 +1105,7 @@ pub(crate) fn infer_return_type_from_compiled_callable(
   if ns == calcit::CORE_NS {
     let args = call_expr.drop_left();
     if let Some(contract) = resolve_checked_call_contract(ns, def, &args, scope_types)
-      // Receiver-preserving contracts keep caller-owned type variables.
-      // Empty update-in paths instead return the mapper output. Do not infer
-      // ownership from type equality: an unresolved output can share a name.
-      && (!contract.return_type.contains_type_var()
-        || matches!(def, "update" | "assoc-in")
-        || (def == "update-in"
-          && call_expr
-            .get(2)
-            .and_then(extract_literal_list_items)
-            .is_some_and(|path| !path.is_empty())))
+      && contract_return_captures_only_inputs(&contract.return_type, args.iter(), scope_types)
     {
       return Some(contract.return_type);
     }
@@ -2161,7 +2174,7 @@ fn infer_expression_type(expr: &Calcit, scope_types: &ScopeTypes) -> Option<Arc<
         Calcit::Fn { info, .. } => {
           if info.def_ns.as_ref() == calcit::CORE_NS
             && let Some(contract) = resolve_checked_call_contract(&info.def_ns, &info.name, &xs.drop_left(), scope_types)
-            && (!contract.return_type.contains_type_var() || info.name.as_ref() == "update")
+            && contract_return_captures_only_inputs(&contract.return_type, xs.iter().skip(1), scope_types)
           {
             return Some(contract.return_type);
           }
@@ -5728,6 +5741,30 @@ mod tests {
             Some(CalcitTypeAnnotation::List(item)) if matches!(item.as_ref(), CalcitTypeAnnotation::Number)
           )
     ));
+  }
+
+  #[test]
+  fn inferred_contract_returns_require_actual_free_input_binders() {
+    let generic = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let annotation = CalcitTypeAnnotation::from_function_parts(vec![generic.clone()], generic.clone());
+    let mut signature = annotation.as_function().unwrap().clone();
+    signature.generics = Arc::new(vec![Arc::from("T")]);
+    let caller = signature.with_lexical_binders();
+    let other = signature.with_lexical_binders();
+    let scope = ScopeTypes::new();
+    let arguments = [typed_local("input", caller.return_type.clone())];
+    let returned = Arc::new(CalcitTypeAnnotation::List(caller.return_type.clone()));
+    assert!(contract_return_captures_only_inputs(&returned, arguments.iter(), &scope));
+    assert!(!contract_return_captures_only_inputs(
+      &Arc::new(CalcitTypeAnnotation::List(other.return_type)),
+      arguments.iter(),
+      &scope
+    ));
+    let owned = [typed_local("polymorphic", Arc::new(CalcitTypeAnnotation::Fn(Arc::new(caller))))];
+    assert!(!contract_return_captures_only_inputs(&returned, owned.iter(), &scope));
+    let unresolved = [typed_local("unresolved", generic.clone())];
+    assert!(!contract_return_captures_only_inputs(&generic, unresolved.iter(), &scope));
+    assert!(!contract_return_captures_only_inputs(&returned, std::iter::empty(), &scope));
   }
 
   #[test]

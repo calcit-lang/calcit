@@ -283,6 +283,16 @@ try {
       const plainUnit = "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return 'Unit)";
       const boundedCases = [
         {
+          label: "empty-requires-caller-capability", diagnostic: /E_DYNAMIC_METHOD_DISPATCH/,
+          schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T)",
+          source: "defn producer (value)\n  .empty value",
+        },
+        {
+          label: "empty-cannot-manufacture-receiver-identity", diagnostic: /E_ERASED_GENERIC_RELATION/,
+          schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T) (:where $ {} ('T 'Emptyable))",
+          source: "defn producer (value)\n  empty $ [] 1",
+        },
+        {
           label: "shortcut-cannot-specialize-caller", diagnostic: /E_FN_RETURN_UNPROVEN/,
           schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return $ :: 'Option 'T) (:generics $ [] 'T)",
           source: "defn producer (value)\n  foldr-shortcut ([] value) (Option :none) (Option :none) $ fn (_acc item)\n    hint-fn $ {} (:args $ [] (:: 'Option 'T) 'T) (:return 'Enum)\n    :: true $ Option :some 1",
@@ -365,7 +375,9 @@ try {
       const boundedSnapshot = "calcit/test-types-inference.cirru";
       const boundedSource = await readFile(boundedSnapshot);
       const boundedDefinitions = ["bounded-identity", "bounded-slice", "bounded-forward", "bounded-local-map",
-        "bounded-multiple", "bounded-shadow-capture", "bounded-map"];
+        "bounded-multiple", "bounded-shadow-capture", "bounded-map",
+        "renamed-option-payload", "renamed-captured-option-payload", "renamed-inherited-count",
+        "same-named-inherited-count", "crossed-binder-first", "inherited-rest-binders", "renamed-inherited-empty"];
       const boundedOperations = [];
       for (const definition of boundedDefinitions) {
         const proof = JSON.parse(execFileSync(binary, [boundedSnapshot, "fix", "--rule", "concrete-return-proof-v1",
@@ -783,14 +795,15 @@ try {
           "--ns", "app.update-in-proof", "--def", "rejected", "--format", "json"], options);
         if (rejected.error) throw rejected.error;
         assert.equal(rejected.status, 1, `${name}: reject an unproven updater contract\n${rejected.stdout}\n${rejected.stderr}`);
-        assert.match(`${rejected.stdout}\n${rejected.stderr}`,
-          /E_CALL_ARGUMENT_(?:UNPROVEN|MISMATCH)|W_FN_ARG_TYPE_MISMATCH|E_ERASED_GENERIC_RELATION/);
+        const expectedDiagnostic = name === "wrong-known-output"
+          ? /W_FN_RETURN_TYPE_MISMATCH/
+          : /E_CALL_ARGUMENT_(?:UNPROVEN|MISMATCH)|W_FN_ARG_TYPE_MISMATCH|E_ERASED_GENERIC_RELATION/;
+        assert.match(`${rejected.stdout}\n${rejected.stderr}`, expectedDiagnostic);
         const checked = spawnSync(binary, [snapshot, "--init-fn", "app.update-in-proof/rejected",
           "--reload-fn", "app.update-in-proof/rejected", "--check-only"], options);
         if (checked.error) throw checked.error;
         assert.equal(checked.status, 1, `${name}: normal strict must reject the same updater\n${checked.stdout}\n${checked.stderr}`);
-        assert.match(`${checked.stdout}\n${checked.stderr}`,
-          /E_CALL_ARGUMENT_(?:UNPROVEN|MISMATCH)|W_FN_ARG_TYPE_MISMATCH|E_ERASED_GENERIC_RELATION/);
+        assert.match(`${checked.stdout}\n${checked.stderr}`, expectedDiagnostic);
         assert.deepEqual(await readFile(snapshot), before);
       }
       // #2020: selector inputs must retain independently known List members.

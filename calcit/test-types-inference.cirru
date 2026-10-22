@@ -271,6 +271,38 @@
             :code $ quote $ assert= 8
               consume-number-callback-map $ &{} :click $ fn (n) (&+ n 1)
             :tags $ #{} :map-callback-context :unit
+        'crossed-binder-first $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn crossed-binder-first (head-value other-value)
+            hint-fn $ {}
+              :args $ [] 'D 'C
+              :return 'D
+              :generics $ [] 'C 'D
+            let
+                pass-value $ fn (item)
+                  hint-fn $ {}
+                    :args $ [] 'D
+                    :return 'D
+                  , item
+              pass-value head-value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'C)
+            :args $ [] 'C 'D
+            :generics $ [] 'C 'D
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-number-before-string)
+              :code $ quote $ assert= 17 (crossed-binder-first 17 |other)
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-string-before-number)
+              :code $ quote $ assert= |Ada (crossed-binder-first |Ada 17)
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-list-before-string)
+              :code $ quote $ assert= ([] 1 2)
+                crossed-binder-first ([] 1 2) |other
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-option-before-number)
+              :code $ quote $ assert= (Option :some |Ada)
+                crossed-binder-first (Option :some |Ada) 17
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
         'dynamic-last-compat $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn dynamic-last-compat (value) (.last value)
           :examples $ []
@@ -506,6 +538,28 @@
           :tests $ [] $ %{} 'TestEntry (:name |predicate-contract)
             :code $ quote $ assert= true (infer-result-ok-predicate)
             :tags $ #{} :unit
+        'inherited-rest-binders $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn inherited-rest-binders (head-value & others)
+            hint-fn $ {}
+              :args $ [] 'T
+              :rest 'U
+              :generics $ [] 'T 'U
+            , others
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:rest 'D)
+            :args $ [] 'C
+            :generics $ [] 'D 'C
+            :return $ :: 'List 'D
+          :tests $ []
+            %{} 'TestEntry (:name |inherits-string-rest)
+              :code $ quote $ assert= ([] |a |b) (inherited-rest-binders 17 |a |b)
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |inherits-number-rest)
+              :code $ quote $ assert= ([] 1 2) (inherited-rest-binders :ready 1 2)
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-empty-rest)
+              :code $ quote $ assert= ([]) (inherited-rest-binders 17)
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
         'lexical-generic-capture $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn lexical-generic-capture (value)
             let
@@ -898,6 +952,65 @@
                 Option :some $ Option :none
                 renamed-captured-option-payload $ Option :none
               :tags $ #{} :function-contract :generic :lexical-binder :unit
+        'renamed-inherited-count $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn renamed-inherited-count (value)
+            hint-fn $ {}
+              :args $ [] 'T
+              :generics $ [] 'T
+            .count value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'C
+            :generics $ [] 'C
+            :where $ {} $ 'C 'Countable
+          :tests $ []
+            %{} 'TestEntry (:name |inherits-string-capability)
+              :code $ quote $ assert= 5 (renamed-inherited-count "|中文abc")
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |inherits-list-capability)
+              :code $ quote $ assert= 2
+                renamed-inherited-count $ [] 1 2
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-empty-list)
+              :code $ quote $ assert= 0
+                renamed-inherited-count $ []
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+        'renamed-inherited-empty $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn renamed-inherited-empty (value)
+            hint-fn $ {}
+              :args $ [] 'T
+              :generics $ [] 'T
+            .empty value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'C)
+            :args $ [] 'C
+            :generics $ [] 'C
+            :where $ {} $ 'C 'Emptyable
+          :tests $ []
+            %{} 'TestEntry (:name |preserves-number-identity)
+              :code $ quote $ assert= 0 (renamed-inherited-empty 17)
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-list-member-identity)
+              :code $ quote $ assert= ([])
+                renamed-inherited-empty $ [] 1 2
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-map-key-value-identity)
+              :code $ quote $ assert= (&{})
+                renamed-inherited-empty $ &{} :name |Ada
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-custom-empty-receiver)
+              :code $ quote $ let
+                  Marker $ defstruct EmptyMarker
+                  marker-type $ impl-traits Marker $ defimpl EmptyMarkerImpl Emptyable
+                    .empty $ fn (value)
+                      hint-fn $ {}
+                        :args $ [] 'Marker
+                        :return 'Marker
+                      , value
+                  value $ marker-type
+                assert= value $ renamed-inherited-empty value
+                assert= value $ .empty value
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
         'renamed-option-payload $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn renamed-option-payload (value)
             hint-fn $ {}
@@ -925,6 +1038,29 @@
               :code $ quote $ assert=
                 Option :some $ Option :none
                 renamed-option-payload $ Option :none
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+        'same-named-inherited-count $ %{} 'CodeEntry (:doc |)
+          :code $ quote $ defn same-named-inherited-count (value)
+            hint-fn $ {}
+              :args $ [] 'T
+              :generics $ [] 'T
+            .count value
+          :examples $ []
+          :schema $ :: 'Fn $ {} (:return 'Number)
+            :args $ [] 'T
+            :generics $ [] 'T
+            :where $ {} $ 'T 'Countable
+          :tests $ []
+            %{} 'TestEntry (:name |inherits-string-capability)
+              :code $ quote $ assert= 5 (same-named-inherited-count "|中文abc")
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |inherits-list-capability)
+              :code $ quote $ assert= 2
+                same-named-inherited-count $ [] 1 2
+              :tags $ #{} :function-contract :generic :lexical-binder :unit
+            %{} 'TestEntry (:name |preserves-empty-list)
+              :code $ quote $ assert= 0
+                same-named-inherited-count $ []
               :tags $ #{} :function-contract :generic :lexical-binder :unit
         'same-nominal-absence-fields $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn same-nominal-absence-fields (fields)

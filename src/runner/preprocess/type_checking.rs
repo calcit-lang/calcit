@@ -95,39 +95,42 @@ fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str
     Calcit::Import(import) => Some(program::lookup_def_schema(&import.ns, &import.def)),
     _ => resolve_type_value(ctx.head_form, ctx.scope_types),
   };
-  let call_proof = declared
+  let signature = declared.as_ref().and_then(|annotation| annotation.resolve_to_fn());
+  // Argument substitutions and bound names must come from one contract.
+  // A source callable's public quantifiers differ from its checked body IDs.
+  let where_bounds = signature
     .as_ref()
-    .and_then(|annotation| annotation.resolve_to_fn())
-    .map(|signature| {
-      let parameters = expected_types_with_rest(&signature.arg_types, signature.rest_type.as_ref());
-      let actual_types = ctx
+    .map_or(ctx.where_bounds, |signature| signature.where_bounds.as_slice());
+  let call_proof = signature.as_ref().map(|signature| {
+    let parameters = expected_types_with_rest(&signature.arg_types, signature.rest_type.as_ref());
+    let actual_types = ctx
+      .args
+      .iter()
+      .map(|argument| resolve_type_value(argument, ctx.scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()))
+      .collect::<Vec<_>>();
+    let mut proof = ctx.scope_types.call_type_proof(&signature.generics, &parameters, &actual_types);
+    proof.prepare_inputs(
+      ctx
         .args
         .iter()
-        .map(|argument| resolve_type_value(argument, ctx.scope_types).unwrap_or_else(|| calcit::DYNAMIC_TYPE.clone()))
-        .collect::<Vec<_>>();
-      let mut proof = ctx.scope_types.call_type_proof(&signature.generics, &parameters, &actual_types);
-      proof.prepare_inputs(
-        ctx
-          .args
-          .iter()
-          .zip(&actual_types)
-          .enumerate()
-          .filter_map(|(index, (argument, actual))| {
-            let expected = signature.arg_types.get(index).or(signature.rest_type.as_ref())?;
-            super::type_inference::generic_input_evidence(argument, actual, expected)
-          }),
-      );
-      for (index, parameter) in parameters.iter().enumerate() {
-        let (parameter, limit) = match parameter.as_ref() {
-          CalcitTypeAnnotation::Variadic(inner) => (inner.as_ref(), usize::MAX),
-          parameter => (parameter, 1),
-        };
-        for actual in actual_types.iter().skip(index).take(limit) {
-          proof.prove(actual, parameter);
-        }
+        .zip(&actual_types)
+        .enumerate()
+        .filter_map(|(index, (argument, actual))| {
+          let expected = signature.arg_types.get(index).or(signature.rest_type.as_ref())?;
+          super::type_inference::generic_input_evidence(argument, actual, expected)
+        }),
+    );
+    for (index, parameter) in parameters.iter().enumerate() {
+      let (parameter, limit) = match parameter.as_ref() {
+        CalcitTypeAnnotation::Variadic(inner) => (inner.as_ref(), usize::MAX),
+        parameter => (parameter, 1),
+      };
+      for actual in actual_types.iter().skip(index).take(limit) {
+        proof.prove(actual, parameter);
       }
-      proof
-    });
+    }
+    proof
+  });
 
   let expr_str = format!(
     "{} {}",
@@ -135,7 +138,7 @@ fn check_generic_trait_bounds(ctx: &CheckContext<'_>, bindings: &HashMap<Arc<str
     ctx.args.iter().map(|a| format!("{a}")).collect::<Vec<_>>().join(" ")
   );
 
-  for bound in ctx.where_bounds {
+  for bound in where_bounds {
     // An unbound variable is not evidence for a required capability. This also
     // covers a caller/callee generic with the same spelling: compatibility can
     // accept that identity without producing a concrete binding.

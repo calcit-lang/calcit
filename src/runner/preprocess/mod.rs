@@ -12866,6 +12866,13 @@ pub fn preprocess_defn(
       // Source-written inline defn and macro-expanded fn consume the same
       // parameter context. Neither owns the callee's temporary output variable.
       let infer_contextual_callback = !source_top_level_definition && !has_body_fn_hint && expected_fn_schema.is_some();
+      let contextual_return_constraint = infer_contextual_callback.then(|| {
+        expected_fn_schema
+          .as_ref()
+          .expect("a contextual callback has an expected signature")
+          .return_type
+          .clone()
+      });
       let mut effective_fn_schema: Option<Arc<CalcitFnTypeAnnotation>> = body_fn_hint.or_else(|| match def_schema.as_ref() {
         CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.clone()),
         CalcitTypeAnnotation::Dynamic => expected_fn_schema,
@@ -13300,6 +13307,12 @@ pub fn preprocess_defn(
       } else {
         detected_return_type
       };
+      // Keep independently inferred callable metadata, but diagnose a definite
+      // contextual shape contradiction at the callback's actual return. Empty
+      // seed slots are provisional inference, not declared output restrictions.
+      let checked_return_type = contextual_return_constraint
+        .filter(|expected| !type_inference::has_inferred_empty_slot(expected) && !return_type_hint.is_compatible_with(expected))
+        .unwrap_or_else(|| return_type_hint.clone());
       if !matches!(head, CalcitSyntax::DefWasmImport) {
         if let Some(returned_expr) = processed_body.last() {
           reject_strict_bare_enum_constructor_value(
@@ -13335,7 +13348,7 @@ pub fn preprocess_defn(
         )?;
         check_function_return_type(
           &processed_body,
-          &return_type_hint,
+          &checked_return_type,
           effective_fn_schema
             .as_ref()
             .is_some_and(|signature| signature.is_async_invocation()),

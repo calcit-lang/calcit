@@ -21,6 +21,13 @@ Keep two concepts separate:
 - A **trait impl** has a concrete `deftrait` value as its origin. It participates in `.method` dispatch and can satisfy `assert-traits`, generic `:where` bounds, and `&trait-call`.
 - An **inherent method bag** has no trait origin. It only exists inside core bootstrap via `&impl::new` with a tag origin; user-level `defimpl` no longer creates one, and it does not prove any trait capability.
 
+## 保留接收者类型的 Emptyable
+
+`Emptyable` 描述 `.empty` 能力，其方法输入和返回使用同一个接收者泛型 `Self`。
+Number、String、List、Map、Set 已有实现；`empty` 前缀函数也使用相同合同。
+泛型函数通过 `:where $ {} ('T 'Emptyable)` 取得能力后，调用 `.empty` 仍得到原来的 `T`，不会抹掉 List 成员或 Map 的 key/value 类型。
+自定义 Struct/Enum 使用普通的 `defimpl ImplName Emptyable` 与 `impl-traits` 提供实现；能力必须来自实际实现，不能由同名方法或 kind 判断代替。
+
 ## Quick Recipes
 
 - **Define Trait**: `deftrait MyTrait .method (:: 'Fn $ {} ...)`

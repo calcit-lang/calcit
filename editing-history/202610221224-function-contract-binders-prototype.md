@@ -1,65 +1,57 @@
-# 函数合同的词法泛型对应：未完成原型
+# 函数合同的词法泛型对应
 
-本记录对应 #2190 的实现探索，尚未通过 core 与完整回归，不能作为已交付行为或发版依据。
+本记录对应 #2190；相关的旧 kind→T 许可及其他 core 合同仍由 #2187 / #2121 跟踪。
+这是当前分支的设计和验证方式，不代表已合并、已发版或完成所有类型系统任务。
 
-## 已复现的问题
+## 问题与统一关系
 
-同一函数的 CodeEntry 使用 `C`，函数体部分 Map hint 使用 `T` 时，继承的返回值或 where
-仍引用旧的变量。合法恒等函数在普通检查及 native/JS 执行通过，却被独立 proof 和完整
-strict 拒绝；Countable 方法在继承 where 时也会丢失能力。同名对照没有这个问题。
+同一函数的 CodeEntry 使用 C、部分 body Map 使用 T 时，原实现继承的返回值、rest 或
+where 仍可能引用另一份变量。合法恒等函数和普通 Countable 方法因纯改名被拒绝；
+只替换最终签名还会让嵌套回调再次丢失捕获关系。
 
-## 原型方向
+- Source schema 保留原始数据表示，仅在检查函数体时为 CodeEntry 的量词分配词法身份。
+- 从显式重叠的 args、return、rest 用已有 CallTypeProof 证明绑定双射，再继承省略字段。
+  不按变量名字、声明顺序或相同 trait 猜测，不把具体类型映成任意泛型。
+- 复用 ScopeTypes 的 source-name → binder 映射保留已证明的 body 拼写别名。
+  独立内层量词仍遮蔽外层同名变量；没有重新声明量词的回调才捕获外层变量。
+- Post-lowering 从已有 checked hint 与原 Map 恢复对应，不增加 Snapshot 字段或另一套证明。
+- 枚举 payload 在枚举自身量词的作用域解析，随后实例化；不能被调用方同名别名捕获。
+- 实参推断与 where 名称必须来自同一份 callable 合同，不能混用 public 名字和 checked body ID。
 
-- 从显式重叠的 args、return、rest 通过现有 CallTypeProof 证明绑定双射，不根据变量名字、
-  声明顺序或相同 trait 猜测对应关系。证明后再继承缺失字段，完整 callable 关系仍须校验。
-- 源码 schema 保留原数据表示，只在函数体检查时为 CodeEntry 的量词分配词法身份。
-  独立内层量词不能借源码同名或同一 trait 冒充外层变量。
-- 复用 ScopeTypes 已有的 source-name → binder 映射保留 body hint 的拼写别名。
-  只替换签名而不保留作用域别名，会使内层回调再次丢失原来的类型关联。
-- 从已有 checked hint 的原始 Map 与已证明签名恢复别名，避免为 post-lowering 增加另一套规则或公开字段。
-- 待推断的回调输出与函数拥有的刚性量词应区分；推断不能依赖是否启动独立证明。
+Checked contract 返回值只导出实际输入中捕获的词法变量，不导出未绑定输出占位符，
+也不从输入函数自己的量词冒充捕获。这替代了按 core 函数名允许泛型结果的分支。
+回调输出独立推断；若与调用上下文存在确定的返回形状冲突，仍在实际返回处检查，
+保留原 W_FN_RETURN_TYPE_MISMATCH，而不把期望输出当成实现证据。
 
-## 验证状态与未完成部分
+## Core 的真实合同
 
-最初的合同对应原型让五组恒等、部分返回和 Countable 对照在普通检查、独立 proof、
-完整 strict、native 与真实 JS 中一致通过；嵌套回调显示这还不完整。后续原型加入作用域
-别名和 CodeEntry 词法身份后，core 自举暴露了更多既有关系，不能仅保留五组通过结果。
+扩大词法身份后暴露的合法代码缺口不能靠跳过 core 或扩大 Dynamic 消除：
 
-`deftrait` 构造 trait 时经通用 map/filter/count 回到尚未建立的 trait 运行时，形成自举依赖。
-已通过官方事务将该宏的七处已知语法树 List/String 操作移至既有基础层，保留原 DSL、
-检查顺序、错误与附带断言；不改普通用户代码的 trait 方法写法。
+- deftrait / defenum / defimpl 在构造 trait 自身时，使用已有的基础 List/String 语法树操作，
+  避免经通用 map/filter/count 回到尚未建立的 Mappable 等实现；保留宏 DSL、求值与错误顺序。
+- Shortcut fold 复用普通 fold 的输入特化，回调输入约束初值，默认值和实际 payload 仍需刚性证明。
+  find-last 明确 Option<T>/T 的 accumulator 输入，算法及原断言不变。
+- Map filter 直接 fold 独立 key/value，避免经过开放 pair 丢掉 K/V；补测原 pair 顺序、一次求值和空 Map。
+- select-keys 与 zipmap 的内部回调/循环声明 Map<K,V> 不变量；空初值、每个写入和 recur 都须符合它。
+  保留缺失键跳过、较短输入截断、重复键覆盖等原语义，不要求应用改成 native call。
+- 按维护者已选择的方案提供 Emptyable。方法使用同一个接收者泛型 Self，前缀 empty 要求 T:Emptyable
+  并返回 T；Self 是普通泛型名，不新增关键字或类型表示。Number/String/List/Map/Set 的既有空值不变，
+  容器成员合同保留；自定义名义类型依实际 trait 实现取得能力。Bootstrap 表与真实 core impl 同步。
 
-后续定位到 `%some` 的 Option payload 丢失：解析枚举声明的 payload 时错误应用了调用方
-同名泛型的别名。复用 ScopeTypes，在该解析作用域重新绑定枚举自身的量词，再由已有
-CallTypeProof 实例化；既不改变调用方的刚性身份，也不按构造器名字添加例外。
-原内部枚举推断测试补充了同名调用方、Number 实例与刚性泛型实例的边界，类型推断模块
-58 项 Rust 测试全部通过。这些 Rust 断言覆盖无法从用户查询看到的私有 binder 身份；
-可观察语义另放在 Calcit 定义的测试中。
+## 验证与兼容边界
 
-通过官方 dry-run/scoped revision 在 test-types-inference 增加两个定义、八项附带测试，
-覆盖部分 body hint、合法嵌套捕获、Number/String/List 和 Some(None) 包装。基线 CLI 的
-原共享运行器已实际回放 native 8/8、JS 8/8，证明原语义不是错误预期；这不是候选通过。
-既有拒绝 harness 同时扩展了 CodeEntry C / body T 的四项错误捕获，尚未执行该完整部分。
+用户可观察语义放在 definition :tests：部分合同、继承能力、嵌套捕获、交叉改名、rest、
+Number/String/List/Option payload、Some(None)、Map 算法及自定义 Emptyable 接收者。
+源码均通过官方 query/tree/edit、dry-run 与 scoped revision 修改，原断言没有删除或放宽。
 
-越过 `%some` 后，候选在 `&list:find-last` 的 shortcut fold 返回证明失败。
-无依赖隔离对照使用直接 Option 构造、相同 List<T>/callback<T> 合同，在当前 main 基线
-普通检查和 native 执行通过，独立 proof 与完整 strict 均报 E_FN_RETURN_UNPROVEN，
-所以这是既有合法代码的证明缺口，不应通过放宽刚性或跳过 core 来消除。该对照暂存于
-本地官方事务生成的副本；后续还需把通用推断修复与对应正式回归合并验证。
+编译拒绝扩展原 check-known-assertion harness：T/U 错误捕获、CodeEntry C/body T、
+错误 shortcut payload、缺失 Emptyable 能力及伪造接收者身份。保留实际 source 坐标、
+无内部 ID、Snapshot 不变与不生成错误产物的检查；合法定义还通过 query/edit 导出后完整 strict。
+Rust 只补私有 binder/构造器/输出占位符等内部 invariant，既有拒绝诊断断言保持原样。
 
-为此复用已有 fold 输入特化：shortcut 与普通 fold 均可由回调的输入注解表达 accumulator
-合同，初值必须证明能进入这个合同，结果也仍逐分支证明，不能借输出声明推断输入。
-`find-last` 的内部回调补上 Option<T>/T 输入，空初值与实际 payload 使用直接 Option
-构造；原附带断言、从右向左顺序和短路算法不变。payload、default 与 callback 的关系
-用零 callee 量词的共享 CallTypeProof 保持调用方变量刚性，不能把 Number 或另一个同名
-binder 绑定到 T。既有拒绝 harness 增加错误 Some(Number) 对照。
-新增私有 binder 边界的内部断言后，类型推断模块共 59 项通过。
+完整 core、函数合同的 native/JS 回放、Rust 库与编译拒绝、原全量断言 harness、默认严格检查、
+Agent 接口、历史 API 合同、TS 编译及相关真实项目验证仍分别执行。部分 gate 通过不冒充最新候选全绿，
+WASM/WASI 只按原运行器与已支持用例验证，不宣称支持任意泛型闭包或 first-class type definition。
 
-这个本地候选已越过 `find-last`，但继续在 `mapcat` 的 spread 返回推断得到 unknown。
-尚未运行通过完整 core，也没有宣称新增测试在候选 native/JS 或任何 WASM 后端通过。
-
-必须继续修复通用关系，并完成多变量交叉改名、rest、嵌套捕获/遮蔽、能力与原拒绝回归；
-还需要完整 core、宏边界、共享 backend、查询不泄漏内部身份及消费者验收。
-没有删除原断言、放宽 Dynamic、添加 unsafe、增加 checker 或批准任何公共 API 删除。
-
-这只是本地检查点，没有推送或创建编译器 PR。最终设计、命令与 CI 证据将在实际 PR 中记录。
+没有扩大 Dynamic、加入 unsafe、增加 checker/诊断编号/计数门禁，也没有批准旧 API 删除。
+升级说明解释 Emptyable 约束和 body 合同对应；具体提交与 CI 证据集中记录在最终 PR。
