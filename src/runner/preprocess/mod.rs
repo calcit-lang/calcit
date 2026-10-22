@@ -12877,7 +12877,7 @@ pub fn preprocess_defn(
       });
       let mut effective_fn_schema: Option<Arc<CalcitFnTypeAnnotation>> = body_fn_hint.or_else(|| match def_schema.as_ref() {
         CalcitTypeAnnotation::Fn(fn_annot) => Some(fn_annot.clone()),
-        CalcitTypeAnnotation::Dynamic => expected_fn_schema,
+        CalcitTypeAnnotation::Dynamic => expected_fn_schema.clone(),
         _ => None,
       });
       let mut function_generic_aliases = None;
@@ -13305,15 +13305,37 @@ pub fn preprocess_defn(
         effective_fn_schema
           .as_ref()
           .map(|schema| schema.return_type.clone())
-          .unwrap_or(detected_return_type)
+          .unwrap_or_else(|| detected_return_type.clone())
       } else {
-        detected_return_type
+        detected_return_type.clone()
       };
       // Keep independently inferred callable metadata, but diagnose a definite
       // contextual shape contradiction at the callback's actual return. Empty
       // seed slots are provisional inference, not declared output restrictions.
       let checked_return_type = contextual_return_constraint
-        .filter(|expected| !type_inference::has_inferred_empty_slot(expected) && !return_type_hint.is_compatible_with(expected))
+        .filter(|expected| {
+          if type_inference::has_inferred_empty_slot(expected)
+            || matches!(
+              detected_return_type.as_ref(),
+              CalcitTypeAnnotation::Never
+                | CalcitTypeAnnotation::Dynamic
+                | CalcitTypeAnnotation::DynFn
+                | CalcitTypeAnnotation::Syntax(_)
+            )
+          {
+            return false;
+          }
+          if matches!(expected.as_ref(), CalcitTypeAnnotation::TypeVar(_))
+            && matches!(detected_return_type.as_ref(), CalcitTypeAnnotation::TypeVar(_))
+          {
+            let actual = detected_return_type.clone();
+            return !body_types
+              .call_type_proof(&[], std::slice::from_ref(expected), std::slice::from_ref(&actual))
+              .prove(&actual, expected)
+              .is_proven();
+          }
+          !return_type_hint.is_compatible_with(expected)
+        })
         .unwrap_or_else(|| return_type_hint.clone());
       if !matches!(head, CalcitSyntax::DefWasmImport) {
         if let Some(returned_expr) = processed_body.last() {

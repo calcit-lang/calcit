@@ -729,6 +729,41 @@ fn type_fail_schema_mismatch_fixtures_report_error_code() {
 }
 
 #[test]
+fn contextual_callback_return_does_not_merge_unrelated_generic_binders() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    for (name, snippet) in [(
+      "callback returning unrelated binder B must not satisfy A",
+      "let\n    accept $ fn (expected callback)\n      hint-fn $ {}\n        :generics $ [] 'A\n        :args $ [] 'A $ :: 'Fn $ {} (:args $ []) (:return 'A)\n        :return 'Unit\n      , &unit\n    caller $ fn (expected other)\n      hint-fn $ {}\n        :generics $ [] 'A 'B\n        :args $ [] 'A 'B\n        :return 'Unit\n      accept expected $ fn ()\n        , other\n      , &unit\n  caller 1 |wrong",
+    )] {
+      let entries = load_snippet_entries(snippet);
+      let warnings = RefCell::new(vec![]);
+      if let Err(error) =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      {
+        assert!(
+          matches!(
+            error.code.as_deref(),
+            Some("E_FN_RETURN_UNPROVEN" | "E_ERASED_GENERIC_RELATION" | "E_FN_ARG_TYPE_MISMATCH")
+          ),
+          "{name}: expected a typed callback error, got: {} [{:?}]",
+          error.msg,
+          error.code
+        );
+        continue;
+      }
+      let warnings = warnings.borrow();
+      assert!(
+        warnings.iter().any(|warning| {
+          warning.code() == Some("W_LOCAL_FN_ARG_TYPE_MISMATCH") || warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH")
+        }),
+        "{name}: invalid callback passed without a typed diagnostic: {warnings:?}"
+      );
+    }
+  });
+}
+
+#[test]
 fn strict_type_fail_reachable_unbound_slot_reports_stable_error_code() {
   run_with_large_stack(|| {
     let entries = load_fixture_entries("calcit/type-fail/type-slot-unbound-strict.cirru");
