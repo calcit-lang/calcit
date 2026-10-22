@@ -283,6 +283,11 @@ try {
       const plainUnit = "quote $ :: 'Fn $ {} (:args $ [] 'String) (:return 'Unit)";
       const boundedCases = [
         {
+          label: "shortcut-cannot-specialize-caller", diagnostic: /E_FN_RETURN_UNPROVEN/,
+          schema: "quote $ :: 'Fn $ {} (:args $ [] 'T) (:return $ :: 'Option 'T) (:generics $ [] 'T)",
+          source: "defn producer (value)\n  foldr-shortcut ([] value) (Option :none) (Option :none) $ fn (_acc item)\n    hint-fn $ {} (:args $ [] (:: 'Option 'T) 'T) (:return 'Enum)\n    :: true $ Option :some 1",
+        },
+        {
           label: "bound-missing-impl", diagnostic: /W_GENERIC_WHERE_BOUND_MISMATCH/, schema: plainUnit, returnProof: false,
           source: "defn producer (input)\n  let\n      transform $ fn (value)\n        hint-fn $ {} (:args $ [] 'T) (:return 'T) (:generics $ [] 'T) (:where $ {} ('T Sliceable))\n        , value\n    transform 1\n    , &unit",
         },

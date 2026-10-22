@@ -41,11 +41,22 @@ CallTypeProof 实例化；既不改变调用方的刚性身份，也不按构造
 原共享运行器已实际回放 native 8/8、JS 8/8，证明原语义不是错误预期；这不是候选通过。
 既有拒绝 harness 同时扩展了 CodeEntry C / body T 的四项错误捕获，尚未执行该完整部分。
 
-当前候选已越过 `%some`，但仍在 `&list:find-last` 的 shortcut fold 返回证明失败。
+越过 `%some` 后，候选在 `&list:find-last` 的 shortcut fold 返回证明失败。
 无依赖隔离对照使用直接 Option 构造、相同 List<T>/callback<T> 合同，在当前 main 基线
 普通检查和 native 执行通过，独立 proof 与完整 strict 均报 E_FN_RETURN_UNPROVEN，
 所以这是既有合法代码的证明缺口，不应通过放宽刚性或跳过 core 来消除。该对照暂存于
 本地官方事务生成的副本；后续还需把通用推断修复与对应正式回归合并验证。
+
+为此复用已有 fold 输入特化：shortcut 与普通 fold 均可由回调的输入注解表达 accumulator
+合同，初值必须证明能进入这个合同，结果也仍逐分支证明，不能借输出声明推断输入。
+`find-last` 的内部回调补上 Option<T>/T 输入，空初值与实际 payload 使用直接 Option
+构造；原附带断言、从右向左顺序和短路算法不变。payload、default 与 callback 的关系
+用零 callee 量词的共享 CallTypeProof 保持调用方变量刚性，不能把 Number 或另一个同名
+binder 绑定到 T。既有拒绝 harness 增加错误 Some(Number) 对照。
+新增私有 binder 边界的内部断言后，类型推断模块共 59 项通过。
+
+这个本地候选已越过 `find-last`，但继续在 `mapcat` 的 spread 返回推断得到 unknown。
+尚未运行通过完整 core，也没有宣称新增测试在候选 native/JS 或任何 WASM 后端通过。
 
 必须继续修复通用关系，并完成多变量交叉改名、rest、嵌套捕获/遮蔽、能力与原拒绝回归；
 还需要完整 core、宏边界、共享 backend、查询不泄漏内部身份及消费者验收。

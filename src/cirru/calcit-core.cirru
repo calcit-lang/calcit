@@ -1341,11 +1341,14 @@
             :return $ :: 'Option 'Number
         '&list:find-last $ %{} 'CodeEntry (:doc |)
           :code $ quote $ defn &list:find-last (xs f)
-            foldr-shortcut xs (%none) (%none)
+            foldr-shortcut xs (Option :none) (Option :none)
               fn (_acc x)
+                hint-fn $ {}
+                  :args $ [] (:: 'Option 'T) 'T
+                  :return 'Enum
                 if (f x)
-                  :: true $ %some x
-                  :: false $ %none
+                  :: true $ Option :some x
+                  :: false $ Option :none
           :examples $ []
           :schema $ :: 'Fn $ {}
             :args $ [] (:: 'List 'T)

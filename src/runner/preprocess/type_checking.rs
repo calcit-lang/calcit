@@ -343,8 +343,8 @@ pub(super) fn specialize_collection_fold_expected_types(
   };
   let initial = args.get(1)?;
   let mut accumulator_type = resolve_type_value(initial, scope_types)?;
-  if !shortcut
-    && let Some(callback) = resolve_type_value(args.get(2)?, scope_types).and_then(|annotation| annotation.resolve_to_nonoptional_fn())
+  if let Some(callback) = resolve_type_value(args.get(if shortcut { 3 } else { 2 })?, scope_types)
+    .and_then(|annotation| annotation.resolve_to_nonoptional_fn())
     && let Some(parameter) = callback.arg_types.first().or(callback.rest_type.as_ref())
     && (super::empty_container_has_no_type_evidence(initial, parameter)
       || super::type_inference::has_inferred_empty_slot(&accumulator_type))

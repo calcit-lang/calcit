@@ -3593,7 +3593,7 @@ pub fn infer_compiled_definition_implementation_type(ns: &str, def: &str) -> Opt
 
 /// Anonymous enum schemas do not describe their control/payload slots. Inspect
 /// the actual reducer implementation instead of trusting a declared Enum return.
-fn shortcut_payload_is_proven(expr: &Calcit, accumulator: &CalcitTypeAnnotation, scope_types: &ScopeTypes) -> bool {
+fn shortcut_payload_is_proven(expr: &Calcit, accumulator: &Arc<CalcitTypeAnnotation>, scope_types: &ScopeTypes) -> bool {
   let Calcit::List(items) = expr else { return false };
   match items.first() {
     Some(Calcit::Proc(CalcitProc::NativeEnum)) if items.len() == 3 => {
@@ -3604,7 +3604,12 @@ fn shortcut_payload_is_proven(expr: &Calcit, accumulator: &CalcitTypeAnnotation,
         && items
           .get(2)
           .and_then(|payload| resolve_type_value(payload, scope_types))
-          .is_some_and(|payload| payload.is_proven_for(accumulator))
+          .is_some_and(|payload| {
+            scope_types
+              .call_type_proof(&[], std::slice::from_ref(accumulator), std::slice::from_ref(&payload))
+              .prove(&payload, accumulator)
+              .is_proven()
+          })
     }
     Some(Calcit::Syntax(CalcitSyntax::CoreLet, _)) => items
       .get(items.len().saturating_sub(1))
@@ -3632,14 +3637,20 @@ fn infer_shortcut_fold_return(xs: &CalcitList, scope_types: &ScopeTypes) -> Opti
   if xs.len() != 5 {
     return None;
   }
-  let accumulator = resolve_type_value(xs.get(2)?, scope_types)?;
-  let default = resolve_type_value(xs.get(3)?, scope_types)?;
-  if !default.is_proven_for(&accumulator) || super::contains_dynamic_type(&accumulator) {
-    return None;
-  }
   let args = xs.drop_left();
   let expected =
     super::type_checking::specialize_collection_fold_expected_types(&args, scope_types, &vec![calcit::DYNAMIC_TYPE.clone(); 4])?;
+  let accumulator = expected.get(1)?.clone();
+  let default = resolve_type_value(xs.get(3)?, scope_types)?;
+  let proven = |actual: &Arc<CalcitTypeAnnotation>, expected: &Arc<CalcitTypeAnnotation>| {
+    scope_types
+      .call_type_proof(&[], std::slice::from_ref(expected), std::slice::from_ref(actual))
+      .prove(actual, expected)
+      .is_proven()
+  };
+  if !proven(&default, &accumulator) || super::contains_dynamic_type(&accumulator) {
+    return None;
+  }
   let reducer = xs.get(4)?;
   // Use compiled source only: resolving a runtime thunk here could re-enter
   // preprocessing, and open callable metadata cannot prove enum slot values.
@@ -3661,8 +3672,11 @@ fn infer_shortcut_fold_return(xs: &CalcitList, scope_types: &ScopeTypes) -> Opti
     return None;
   }
   bind_pattern_scope(body.get(2)?, &mut reducer_scope);
-  let signature = CalcitTypeAnnotation::from_function_parts(arg_types, Arc::new(CalcitTypeAnnotation::AnonymousEnum));
-  if !signature.is_proven_for(expected.get(3)?) {
+  let signature = Arc::new(CalcitTypeAnnotation::from_function_parts(
+    arg_types,
+    Arc::new(CalcitTypeAnnotation::AnonymousEnum),
+  ));
+  if !proven(&signature, expected.get(3)?) {
     return None;
   }
   let annotation = infer_preprocessed_function_type(body);
@@ -5714,6 +5728,41 @@ mod tests {
             Some(CalcitTypeAnnotation::List(item)) if matches!(item.as_ref(), CalcitTypeAnnotation::Number)
           )
     ));
+  }
+
+  #[test]
+  fn shortcut_payload_preserves_rigid_caller_binders() {
+    let generic = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let signature = CalcitFnTypeAnnotation {
+      generics: Arc::new(vec![Arc::from("T")]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![generic.clone()],
+      return_type: generic,
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+      runtime_arity: None,
+    };
+    let caller = signature.with_lexical_binders();
+    let other = signature.with_lexical_binders();
+    let mut scope = ScopeTypes::new();
+    scope.bind_generics(&caller.generics);
+    let accumulator = Arc::new(CalcitTypeAnnotation::List(caller.return_type.clone()));
+    for (member, proven) in [
+      (caller.return_type, true),
+      (other.return_type, false),
+      (Arc::new(CalcitTypeAnnotation::Number), false),
+      (calcit::DYNAMIC_TYPE.clone(), false),
+    ] {
+      let expression = proc_call(
+        CalcitProc::NativeEnum,
+        vec![
+          Calcit::Bool(true),
+          typed_local("payload", Arc::new(CalcitTypeAnnotation::List(member))),
+        ],
+      );
+      assert_eq!(shortcut_payload_is_proven(&expression, &accumulator, &scope), proven);
+    }
   }
 
   #[test]
