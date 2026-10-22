@@ -7401,9 +7401,9 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
     CalcitProc::Round => emit_round_half_away(ctx, args),
     CalcitProc::Sqrt => emit_unary(ctx, Instruction::F64Sqrt, args),
 
-    // round?: a finite Number with no fractional part, not a safe-integer bound.
-    CalcitProc::IsRound => {
-      expect_arity(1, args, "round?")?;
+    // integer?: a finite Number with no fractional part, not a safe-integer bound.
+    CalcitProc::IsInteger => {
+      expect_arity(1, args, "integer?")?;
       let v = ctx.alloc_local();
       emit_expr(ctx, &args[0])?;
       ctx.emit(Instruction::LocalSet(v));
@@ -7751,7 +7751,6 @@ fn emit_proc_call(ctx: &mut WasmGenCtx, proc: &CalcitProc, args: &[Calcit]) -> R
 
     // Higher-order list operations
     CalcitProc::Foldl => emit_foldl(ctx, args),
-    CalcitProc::FoldlShortcut => emit_foldl_shortcut(ctx, args),
     CalcitProc::FoldrShortcut => emit_foldr_shortcut(ctx, args),
 
     // Static quoted expressions can be formatted without runtime reflection.

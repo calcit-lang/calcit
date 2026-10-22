@@ -1101,6 +1101,11 @@ fn retired_core_function_migration(name: &str) -> Option<(&'static str, &'static
       "0.31.0",
       "bind the arguments once, then use `range (inc (negate x)) x`, or `range (inc (- (+ x x) y)) y` with an end `y`",
     )),
+    "round?" => Some(("0.31.0", "use `integer?`, or the Number method `.integer?`")),
+    "foldl-shortcut" => Some((
+      "0.31.0",
+      "use `fold-while` with a reducer returning `ControlFlow :continue acc` or `ControlFlow :break value`; it returns the accumulator when no step breaks, so pass the old default explicitly where it differs",
+    )),
     "apply-args" => Some(("0.31.0", "use `loop ((param value) ...) body`")),
     "let-sugar" => Some(("0.31.0", "use `let` and `let[]` directly")),
     "list-match" => Some(("0.31.0", "use `match (destruct-list xs) ((:none) ...) ((:some head tail) ...)`")),
@@ -4806,7 +4811,6 @@ fn preprocess_list_call(
                 proc @ (CalcitProc::Foldl
                 | CalcitProc::NativeMapFoldKv
                 | CalcitProc::NativeListFoldl
-                | CalcitProc::FoldlShortcut
                 | CalcitProc::FoldrShortcut
                 | CalcitProc::NativeListFoldlShortcut),
               ) = &head_form
@@ -4857,7 +4861,6 @@ fn preprocess_list_call(
                     | CalcitProc::Foldl
                     | CalcitProc::NativeMapFoldKv
                     | CalcitProc::NativeListFoldl
-                    | CalcitProc::FoldlShortcut
                     | CalcitProc::FoldrShortcut
                     | CalcitProc::NativeListFoldlShortcut
                 )
@@ -9442,7 +9445,7 @@ fn retired_method_migration(receiver: &CalcitTypeAnnotation, method_name: &str) 
       "`.contains?` checked a String scalar position, not a substring; use `.contains-index?` for a position or `.includes?` for a substring",
     ),
     (T::Number, "round?") => {
-      Some("`.round?` was a same-implementation alias; use `.integer?` (the function `round?` is still available)")
+      Some("`.round?` was a same-implementation alias; use `.integer?` (the function `round?` was removed in 0.31.0; use `integer?`)")
     }
     (T::List(_), "reduce") => Some("`.reduce` was a same-implementation alias; use `.fold`"),
     (T::List(_), "bind") => Some("`.bind` was a same-implementation alias; use `.flat-map`"),

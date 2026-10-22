@@ -128,10 +128,8 @@ calcit calcit.cirru fix --preset surface-latest-v2 --include-attached --format e
 预览不写入文件；应用时仍须核对 revision 并传 `--expect-revision`，随后运行附带测试。
 不传 `--include-attached` 时仍只扫描 `:code`。
 
-当前支持显式的 `core-function-alias-v1`、integer predicate 规则，以及 List add、
-collection len 和 effect method 等已有方法等价改名规则。
+当前支持显式的 `core-function-alias-v1`、`core-identity-conversion-v1` 与 `core-ref-constructor-v1` 等改名规则。
 附带方法改写与 `:code` 共享接收者类型、方法实现和源码来源的证明，局部 `let` 类型由实际预处理结果保留。
-`round?` 的 reader 调用头与 Number 方法迁移同时覆盖，仍保留引号、局部遮蔽和未知宏保护。
 一个示例区域中混有需要 review 的表达式时，整个区域暂不自动改写。
 `redundant-do-v1` 与 `single-expression-do-v1` 也支持附带区域，复用原 body 规则。
 最外层多表达式 `do` 保留，只有真实 variadic body 内的 wrapper 能拆开；单表达式 wrapper 可直接解包。
@@ -147,7 +145,7 @@ quoted data 不改写，未知宏中无法证明执行上下文的区域保留 r
 与普通定义共用实参类型、方法实现和源码上下文证明；局部接收者保留实际预处理类型，
 reader 展开的调用不会被误认成其中叶节点的类型。
 未知宏保留 review，quoted data 原样保留。
-`core-api-0.28-v1 --include-attached` 把该 preset 的 2 条规则组合应用于附带区域（0.29.0 与 0.31.0 去掉了随旧名退役的
+`core-api-0.28-v1 --include-attached` 把该 preset 当前的 1 条规则应用于附带区域（0.29.0 与 0.31.0 去掉了随旧名退役的
 别名与方法规则，原 15 条以 0.28.x 的 CLI 为准），
 不改变不传 flag 时的扫描范围。同一区域中有需要 review 的表达式时不部分写入。
 `removed-data-api-v1` 与 `surface-latest-v1/v2` 也支持附带区域；旧 API 使用编译器的现有诊断定位，
@@ -215,9 +213,7 @@ server-only 的 Node FFI 定义。这不表示每个入口都能运行所有定�
   0.26.0 不删除 Option/Result 旧方法 helper；它们仍是 core method 的实现目标。应用可直接调用的
   兼容入口最早于 0.27.0 且满足[退场条件](../features/api-roles.md#旧方法-helper-的退场条件)后才考虑移除，
   不能把一次空预览误认为已完成消费者迁移。
-- `core-integer-predicate-v1` 把 Cirru reader 直接解析为内建 Proc 的单参数 `round?` 调用头改为
-  `calcit.core/integer?`。新入口复用有限且恰好没有小数部分的既有语义；不会把 Bool 当作整数类型 refinement。仅改写可回溯的源码调用，保留实参原位与求值次数；含同名词法绑定的定义及 quoted 数据跳过，未知 macro 只给 `requires-review`。
-  Number `.round?` 已在 0.29.0 删除（`E_RETIRED_METHOD`）；0.28.x 的同名规则可把静态 Number 接收者的 `.round?` 改成 `.integer?`，需在升级 CLI 前运行。一等函数引用不自动修改。使用 `calcit calcit.cirru fix --rule core-integer-predicate-v1 --format edn` 预览，核对来源与 revision 后应用并重复预览；包含在 `core-api-0.28-v1`；旧 surface preset 不变。
+- `core-integer-predicate-v1` 随函数 `round?` 在 0.31.0 退役，只在 0.30.x 及更早的 CLI 中提供：它把 reader 解析为内建 Proc 的单参数 `round?` 调用头改为 `calcit.core/integer?`。当前 CLI 用 `--rule` 选择它时报未知规则；残留的 `round?` 调用在检查时报告未知名字，告警末尾给出 `integer?`。Number `.round?` 已在 0.29.0 删除（`E_RETIRED_METHOD`）。见[升级指南](upgrade.md#0310-删除已弃用的兼容函数)。
 - `core-identity-conversion-v1` 把参数已证明为 String 的内建 `turn-tag` / `turn-symbol` 完整调用分别改为 `calcit.core/to-tag` / `calcit.core/to-symbol`；也把解析到 core 兼容函数、且参数已证明为内建 Nil、Bool、Number、String、Tag 或 Symbol 的 `turn-string` 改为 `calcit.core/to-string`。这些标量路径调用相同的底层转换，实参仍只求值一次；自定义 `ToString` 实现、Dynamic、已知不支持的集合、局部同名绑定、quoted 数据、未知 macro 与一等函数值都不自动改写。先用 `calcit calcit.cirru fix --rule core-identity-conversion-v1 --format edn` 预览，核对来源与 revision，再带 `--expect-revision` 应用并复查；包含在 `core-api-0.28-v1`；旧 surface preset 不变。WASM 仍不支持动态 Tag/Symbol intern，迁移不意味着获得 WASM 支持。
 - 0.29.0 起，`core-set-include-v1`、`core-list-fold-v1`、`core-list-flat-map-v1`、`core-list-join-string-v1`、
   `core-list-get-v1`、`core-collection-combine-v1`、`core-predicate-method-v1` 随 List `.reduce` / `.bind` / `.join-str` / `.nth`、
@@ -348,13 +344,13 @@ calcit calcit.cirru fix --preset surface-latest-v2 --format edn
 
 ### 0.28 核心 API 命名迁移
 
-`core-api-0.29-v1` 包含当前 `core-api-0.28-v1` 的全部 2 条规则，并追加 `core-ref-constructor-v1`，共 3 条。它不再迁移 0.31.0 已删除的兼容方法；仍有这些调用的项目必须在升级前，用 0.30.x 的 CLI 依次运行 `core-list-add-v1`、`core-collection-len-v1`、`core-effect-method-v1`，各自预览后携带 revision 应用，见[升级指南](upgrade.md#0310-删除已弃用的兼容方法)。
+`core-api-0.29-v1` 包含当前 `core-api-0.28-v1` 的全部 1 条规则，并追加 `core-ref-constructor-v1`，共 2 条。它不再迁移 0.31.0 已删除的兼容方法与 `round?`；仍有这些调用的项目必须在升级前，用 0.30.x 的 CLI 依次运行 `core-list-add-v1`、`core-collection-len-v1`、`core-effect-method-v1`、`core-integer-predicate-v1`，各自预览后携带 revision 应用，见升级指南的[兼容方法](upgrade.md#0310-删除已弃用的兼容方法)与[兼容函数](upgrade.md#0310-删除已弃用的兼容函数)小节。
 
-`core-api-0.28-v1` 当前组合已证明等价的 2 条叶子改写规则。它适合在结构升级后迁移仍受支持的核心 API 名称；每个调用仍须满足对应规则的类型、来源和源码位置证明。表中的规则也可用 `--rule` 单独选择，未回填进旧的 `surface-latest-v1/v2`。已经退场的旧入口与历史迁移 CLI 见[升级指南](upgrade.md#兼容入口的退场节奏)。
+`core-api-0.28-v1` 当前只含 1 条已证明等价的叶子改写规则。它适合在结构升级后迁移仍受支持的核心 API 名称；每个调用仍须满足对应规则的类型、来源和源码位置证明。表中的规则也可用 `--rule` 单独选择，未回填进旧的 `surface-latest-v1/v2`。已经退场的旧入口与历史迁移 CLI 见[升级指南](upgrade.md#兼容入口的退场节奏)。
 
 | 范围 | 展开的规则 |
 | --- | --- |
-| 整数谓词与标量转换 | `core-integer-predicate-v1`、`core-identity-conversion-v1` |
+| 标量转换 | `core-identity-conversion-v1` |
 
 ```bash
 calcit calcit.cirru fix --preset core-api-0.28-v1 --format edn

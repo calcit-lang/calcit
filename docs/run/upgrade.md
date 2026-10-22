@@ -523,10 +523,14 @@ Emptyable 的方法合同为 `Self -> Self`；这里的 `Self` 是方法声明�
 | `turn-str` | `to-string` |
 | `some-in?` | `.ok? $ get-in x path`（main 的 0.31.0-alpha.1 已提供 Result 合同）；`contains-in?` 判断路径存在，两者对 nil 叶子的结果不同 |
 | `range-bothway` | 按原顺序各绑定实参一次到 `x/y`：省略 `y` 时用 `range (inc (negate x)) x`，Number `y` 时用 `range (inc (- (+ x x) y)) y`；末端不包含 |
+| `round?` | `integer?`，或 Number 方法 `.integer?`；判断有限且恰好没有小数部分，结果相同 |
+| `foldl-shortcut xs init default f` | `fold-while xs init f`：reducer 的 `(:: false acc)` 改为 `ControlFlow :continue acc`，`(:: true v)` 改为 `ControlFlow :break v`。从未 break 时 `fold-while` 返回累积值，旧写法返回 `default`；两者不同时在调用处显式给出 |
 
 `range-bothway` 的人工迁移不能复制带副作用的实参表达式。历史运行时的 nil 分支与省略相同，但当前严格 Number schema 拒绝显式 nil 实参。
 
-升级前仍用 0.30.x 的 CLI 迁移：前五项运行 `calcit calcit.cirru fix --rule core-function-alias-v1 --include-attached --format edn`，预览后带 `--expect-revision` 应用；`turn-str`、`some-in?`、`range-bothway` 逐处人工改写。0.31.0 的 `core-function-alias-v1` 只保留 `vals` → `distinct-values`。
+升级前仍用 0.30.x 的 CLI 迁移：前五项运行 `calcit calcit.cirru fix --rule core-function-alias-v1 --include-attached --format edn`，`round?` 运行 `calcit calcit.cirru fix --rule core-integer-predicate-v1 --include-attached --format edn`，预览后带 `--expect-revision` 应用；`turn-str`、`some-in?`、`range-bothway`、`foldl-shortcut` 逐处人工改写。0.31.0 的 `core-function-alias-v1` 只保留 `vals` → `distinct-values`；`core-integer-predicate-v1` 随 `round?` 删除，`core-api-0.28-v1` 因此只剩 `core-identity-conversion-v1` 一条规则，`core-api-0.29-v1` 剩 2 条。
+
+`integer?` 现在直接是内建实现，`round?` 原有的测试随之移到 `integer?`。JS runtime 不再导出 `foldl_shortcut`；core 内部的 `any?` / `every?` 继续使用私有的 `&list:foldl-shortcut`，行为不变。
 
 残留调用在检查时报告未知名字，告警末尾给出删除版本和改写方式：
 
@@ -537,7 +541,7 @@ Emptyable 的方法合同为 `Self -> Self`；这里的 `Self` 是方法声明�
 ### 限制
 
 - `%some` / `%none` / `%ok` / `%err`、`atom`、`vals` 仍有下游调用，本版保留。
-- `case-default`（js-ffi 的示例仍在使用）、`foldl-shortcut` 与 `round?` 另行退场。
+- `case-default` 仍被 Respo UI 的源码与 js-ffi 的示例使用，本版保留。
 
 ## 0.30.1 底层缺失值原语直接返回 Option
 
@@ -1005,12 +1009,12 @@ assert= 11 $ count $ range 0 1 0.1
 
 `round?`（以及 0.28 的 Number `.round?`，该方法已在 0.29.0 删除，见下文）现在统一判断“有限且恰好没有小数部分”。native、JS、core WASM 和 WASI Component 使用相同契约：NaN、正负 Infinity、任何非零小数均为 false；0、-0 与有限的整数值为 true。
 
-此前 native 使用 EPSILON 容差，把 `0.0000000000000001` 等近零非整数误判为 true；JS/WASM 则把 Infinity 误判为 true。这是行为修复，不是批量 rename。依赖旧容差的业务需要显式选择适合其精度的近似比较；不要通过自动 fix 猜测容差或加入舍入。新代码首选已提供的 `integer?/.integer?`；函数 `round?` 暂留同义兼容，可用 `calcit fix --rule core-integer-predicate-v1` 显式迁移已证明的调用，详见 [fix 规则](fix.md)。
+此前 native 使用 EPSILON 容差，把 `0.0000000000000001` 等近零非整数误判为 true；JS/WASM 则把 Infinity 误判为 true。这是行为修复，不是批量 rename。依赖旧容差的业务需要显式选择适合其精度的近似比较；不要通过自动 fix 猜测容差或加入舍入。新代码首选已提供的 `integer?/.integer?`；函数 `round?` 已在 0.31.0 删除，升级前可用 0.30.x 的 `calcit fix --rule core-integer-predicate-v1` 显式迁移已证明的调用，见[删除已弃用的兼容函数](#0310-删除已弃用的兼容函数)。
 
 该 Bool 谓词不等于“安全整数”或 `Int32/UInt32` 等数值 refinement 证明。例如 `9007199254740992` 仍是有限且无小数部分的 Number，所以结果为 true；需要特定边界时继续使用对应的 checked 转换。这次不改变索引转换、JSON 格式化的内部容差，也不改变 `round` 的舍入行为。
 
 ```cirru
-assert= false $ round? 0.0000000000000001
+assert= false $ integer? 0.0000000000000001
 
 assert= false $ .integer? $ / 1 0
 
@@ -1018,7 +1022,7 @@ assert= false $ .integer? $ / 0 0
 
 assert= true $ .integer? -0
 
-assert= true $ round? 9007199254740992
+assert= true $ integer? 9007199254740992
 ```
 
 ## Struct 数据字段写入检查
@@ -1167,7 +1171,7 @@ List/String/Map/Set 的旧 `.contains?` 与 Map 的旧 `.includes?` 已在 0.29.
 
 ### 0.29.0 已删除：同实现的方法别名 `.round?`、`.write-text`、`.resolve`、`.reject`
 
-下面四个方法别名与首选方法指向同一实现、同一类型契约，0.28.0 起已有对应的首选写法与 guarded fix rule，已知活跃下游默认分支没有真实调用，因此在 0.29.0 删除。写下它们会得到 `E_RETIRED_METHOD`，信息里给出首选替代。函数 `round?` 不受影响，仍可调用。
+下面四个方法别名与首选方法指向同一实现、同一类型契约，0.28.0 起已有对应的首选写法与 guarded fix rule，已知活跃下游默认分支没有真实调用，因此在 0.29.0 删除。写下它们会得到 `E_RETIRED_METHOD`，信息里给出首选替代。函数 `round?` 当时不受影响，后来在 0.31.0 删除。
 
 | 已删除 | 首选替代 | 迁移（使用 0.28.x 的 CLI） |
 |---|---|---|
@@ -1372,6 +1376,7 @@ calcit calcit.cirru tree show app.main/main! --path @3 --format edn
 |---|---|---|
 | `%some` / `%none` / `%ok` / `%err` | `Option :some x` / `Option :none` / `Result :ok x` / `Result :err e` | `calcit calcit.cirru fix --rule core-nominal-constructor-v1 --format edn` |
 | `vals` | `distinct-values` | `calcit calcit.cirru fix --rule core-function-alias-v1 --format edn` |
+| `round?` | `integer?` / `.integer?` | 使用 0.30.x 的 CLI：`calcit calcit.cirru fix --rule core-integer-predicate-v1 --format edn` |
 | `turn-string` | `to-string` | 参数已证明为标量时用 `core-identity-conversion-v1`，其余人工改写 |
 | `remove-watch` | `remove-watch!` | 人工改写 |
 | List `.add` | `.append`，返回新的同型 List，不修改原集合 | 使用 0.30.x 的 CLI：`calcit calcit.cirru fix --rule core-list-add-v1 --format edn`；仅改写已证明的 List、相同 core 实现和签名，不处理 Set/Map 或用户同名方法 |

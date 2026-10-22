@@ -1401,7 +1401,7 @@ export let _$n_number_$o_fits_$q_ = (value: number, target: CalcitTag): boolean 
       throw new Error(`&number:fits? expected a numeric refinement tag, got :${target.value}`);
   }
 };
-export let round_$q_ = (a: number) => {
+export let integer_$q_ = (a: number) => {
   return Number.isInteger(a);
 };
 export let _$n_str_$o_concat = (a: string, b: string) => {

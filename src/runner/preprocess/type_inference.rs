@@ -3032,10 +3032,8 @@ fn infer_proc_call_return_type(proc: &CalcitProc, xs: &CalcitList, scope_types: 
   {
     return Some(Arc::new(CalcitTypeAnnotation::Ref(initial_type)));
   }
-  if matches!(
-    proc,
-    CalcitProc::FoldlShortcut | CalcitProc::FoldrShortcut | CalcitProc::NativeListFoldlShortcut
-  ) && let Some(return_type) = infer_shortcut_fold_return(xs, scope_types)
+  if matches!(proc, CalcitProc::FoldrShortcut | CalcitProc::NativeListFoldlShortcut)
+    && let Some(return_type) = infer_shortcut_fold_return(xs, scope_types)
   {
     return Some(return_type);
   }

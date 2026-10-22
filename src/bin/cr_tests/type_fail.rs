@@ -1372,6 +1372,13 @@ fn retired_core_functions_report_preferred_spelling() {
       ("section-by ([] 1 2 3) 2", "section-by", "chunks", "0.31.0"),
       ("turn-str 1", "turn-str", "to-string", "0.31.0"),
       ("some-in? ({} (:a 1)) ([] :a)", "some-in?", ".ok? $ get-in x path", "0.31.0"),
+      ("round? 1", "round?", "integer?", "0.31.0"),
+      (
+        "foldl-shortcut ([] 1) 0 0 $ fn (acc x) (:: false acc)",
+        "foldl-shortcut",
+        "fold-while",
+        "0.31.0",
+      ),
       ("w-log 1", "w-log", "dbg", "0.31.0"),
       ("wo-log 1", "wo-log", "x", "0.31.0"),
       ("flipped &- 1 2", "flipped", "(f b a)", "0.31.0"),

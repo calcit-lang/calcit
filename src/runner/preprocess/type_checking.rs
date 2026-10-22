@@ -889,11 +889,7 @@ pub(crate) fn check_proc_arg_types(
   }
 
   let expected_types = match proc {
-    CalcitProc::Foldl
-    | CalcitProc::NativeMapFoldKv
-    | CalcitProc::FoldlShortcut
-    | CalcitProc::FoldrShortcut
-    | CalcitProc::NativeListFoldlShortcut => {
+    CalcitProc::Foldl | CalcitProc::NativeMapFoldKv | CalcitProc::FoldrShortcut | CalcitProc::NativeListFoldlShortcut => {
       specialize_collection_fold_expected_types(args, scope_types, &signature.arg_types).unwrap_or_else(|| signature.arg_types.clone())
     }
     CalcitProc::Sort | CalcitProc::NativeListSort => {

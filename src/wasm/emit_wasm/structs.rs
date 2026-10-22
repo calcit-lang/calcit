@@ -801,7 +801,7 @@ pub(super) fn emit_enum_new(ctx: &mut WasmGenCtx, args: &[Calcit]) -> Result<(),
     return Err(":: requires at least a tag argument".into());
   }
 
-  // First arg is the tag — accept Calcit::Tag or Calcit::Bool (used by foldl-shortcut pattern)
+  // First arg is the tag — accept Calcit::Tag or Calcit::Bool (used by the `&list:foldl-shortcut` pattern)
   let tag_f64 = match &args[0] {
     Calcit::Tag(t) => {
       let tag_str = t.to_string();

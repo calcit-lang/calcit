@@ -26,7 +26,7 @@
       :code $ quote
         defn wait-ms (milliseconds)
           if
-            and (round? milliseconds) (>= milliseconds 0) (<= milliseconds 4294967295)
+            and (integer? milliseconds) (>= milliseconds 0) (<= milliseconds 4294967295)
             &wait-ms Result milliseconds "|wait-ms failed"
             %err "|wait-ms expected an integer millisecond duration in 0..4294967295"
   :edges $ #{}

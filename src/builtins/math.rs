@@ -61,18 +61,18 @@ pub fn binary_divide(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   }
 }
 
-pub fn round_ques(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
+pub fn is_integer(xs: &[Calcit]) -> Result<Calcit, CalcitErr> {
   match xs.first() {
     Some(Calcit::Number(n)) => Ok(Calcit::Bool(n.is_finite() && n.fract() == 0.0)),
     Some(a) => {
       let msg = format!(
-        "&math:round? requires a number, but received: {}",
+        "integer? requires a number, but received: {}",
         type_of(std::slice::from_ref(a))?.lisp_str()
       );
-      let hint = format_proc_examples_hint(&CalcitProc::IsRound).unwrap_or_default();
+      let hint = format_proc_examples_hint(&CalcitProc::IsInteger).unwrap_or_default();
       CalcitErr::err_str_with_hint(CalcitErrKind::Type, msg, hint)
     }
-    a => CalcitErr::err_str(CalcitErrKind::Arity, format!("&math:round? expected 1 number, but received: {a:?}")),
+    a => CalcitErr::err_str(CalcitErrKind::Arity, format!("integer? expected 1 number, but received: {a:?}")),
   }
 }
 

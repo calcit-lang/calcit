@@ -120,7 +120,7 @@ impl CalcitProc {
 
       // logics and math
       NativeEquals | NativeLessThan | NativeGreaterThan | Not | Identical => Total,
-      NativeAdd | NativeMinus | NativeMultiply | NativeDivide | Round | Floor | Sin | Cos | Pow | Ceil | Sqrt | IsRound
+      NativeAdd | NativeMinus | NativeMultiply | NativeDivide | Round | Floor | Sin | Cos | Pow | Ceil | Sqrt | IsInteger
       | NativeNumberFract => Total,
       NativeNumberRem => Raises("an operand is not a safe integer, or the divisor is zero"),
       NativeNumberFormat => Raises("the digit count is not an integer in 0..100"),
@@ -166,7 +166,7 @@ impl CalcitProc {
         Raises("a bound or step is not finite, the step is zero or points away from the bound, or the result is too large")
       }
       Sort | NativeListSort => Raises("the comparator raises or returns a non-number"),
-      Foldl | FoldlShortcut | FoldrShortcut | NativeListFoldl | NativeListFoldlShortcut => Raises(CALLBACK),
+      Foldl | FoldrShortcut | NativeListFoldl | NativeListFoldlShortcut => Raises(CALLBACK),
       NativeListSlice | NativeListAssocBefore | NativeListAssocAfter | NativeListNth | NativeListAssoc | NativeListDissoc => {
         Raises(INDEX)
       }

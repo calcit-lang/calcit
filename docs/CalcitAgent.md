@@ -629,7 +629,7 @@ Result 错误类型需要转换时显式使用 `.map-err`。
 
 List 单元素追加使用 `.append`，List 拼接用 `.concat`；旧 `.add` 已在 0.31.0 删除（`E_RETIRED_METHOD`）。
 
-判断 Number 是否有限且恰好没有小数部分时，首选 `integer? value` 或 `value .integer?`；返回 Bool，不代表安全整数范围或整数类型 refinement。函数 `round?` 暂留同义兼容，Number `.round?` 已在 0.29.0 删除。可显式用 `core-integer-predicate-v1` 预览：reader 解析为内建 Proc 的单参数 `round?` 调用可自动改写；quoted 数据、自定义同名方法、开放接收者与未知 macro 不按词形批量替换。附带的 `:tests` / `:examples` 可传 `--include-attached` 纳入相同证明。使用前可查询 `calcit.core/integer?` 的公开 schema 和 Number 方法契约。
+判断 Number 是否有限且恰好没有小数部分时，首选 `integer? value` 或 `value .integer?`；返回 Bool，不代表安全整数范围或整数类型 refinement。函数 `round?` 已在 0.31.0 删除，Number `.round?` 已在 0.29.0 删除；残留调用分别报告带 `integer?` 提示的未知名字告警与 `E_RETIRED_METHOD`。使用前可查询 `calcit.core/integer?` 的公开 schema 和 Number 方法契约。
 
 索引、键和值查询先看接收者类型：List/String 用 `.contains-index? Number` 判断有效位置，Enum 也提供 `.contains-index? Number`，其中 0 是 tag、1 起是 payload；Map<K,V> 用 `.contains-key? K` 与 `.contains-value? V` 分别判断键和值，即使 K/V 同型也不能混用。List/Set 的元素成员和 String 子串仍用 `.includes?`。Enum 新方法要求非负有限整数，旧 `.contains?` 对范围内小数会返回 true，因此不能机械迁移。List/String/Map/Set 的旧 `.contains?` 与 Map 的旧 `.includes?` 已在 0.29.0 删除，写下它们会得到 `E_RETIRED_METHOD` 并给出替代；需要自动迁移时先用 0.28.x 的 CLI 运行 `core-predicate-method-v1`，该规则不处理 Struct/Enum、`Contains` trait 或自定义同名方法，不要按词形替换。前缀函数 `contains?` / `includes?` 仍接受 Map 与 Set。List 索引的小数、负数和非有限值返回 false，JS 与 WASM 也遵守该契约。
 
