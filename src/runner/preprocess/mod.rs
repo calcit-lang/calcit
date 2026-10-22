@@ -76,9 +76,9 @@ struct ExpectedFunctionContext {
   signature: Arc<CalcitFnTypeAnnotation>,
   member_inputs: bool,
   immediate: bool,
-  /// Generic binders declared by the callee supplying this callback contract.
-  /// Their ownership distinguishes an unresolved output slot from a captured
-  /// lexical type variable with the same source spelling.
+  /// Output binders declared by the callee or synthesized by its checked call
+  /// contract. Their ownership distinguishes unresolved result slots from
+  /// captured lexical variables with the same source spelling.
   callee_owned_generics: Arc<Vec<Arc<str>>>,
 }
 
@@ -5792,6 +5792,30 @@ fn preprocess_known_function_call(
         .resolve_to_struct_with_ref()
         .map(|(definition, _)| (definition, annotation.clone()))
     });
+    let mut callback_output_binders = if refreshed_checked_contract.is_none() {
+      info.generics.as_ref().clone()
+    } else {
+      vec![]
+    };
+    if let Some(contract) = refreshed_checked_contract.as_ref() {
+      let contract_outputs = crate::calcit::type_annotation::free_type_variable_names(std::slice::from_ref(&contract.return_type));
+      let mut callback_output_counts = HashMap::<Arc<str>, usize>::new();
+      for signature in contract
+        .expected_types
+        .iter()
+        .flatten()
+        .filter_map(|expected| expected.as_function())
+      {
+        for binder in crate::calcit::type_annotation::free_type_variable_names(std::slice::from_ref(&signature.return_type)) {
+          *callback_output_counts.entry(binder).or_default() += 1;
+        }
+      }
+      for (binder, count) in callback_output_counts {
+        if count > 1 && contract_outputs.contains(&binder) && !callback_output_binders.contains(&binder) {
+          callback_output_binders.push(binder);
+        }
+      }
+    }
 
     if let Some(struct_def) = expected_struct {
       EXPECTED_STRUCT_TYPE.with(|cell| cell.borrow_mut().replace(struct_def));
@@ -5807,7 +5831,7 @@ fn preprocess_known_function_call(
         (
           annotation,
           refreshed_core_types.is_some() || declared_input,
-          info.generics.as_slice(),
+          callback_output_binders.as_slice(),
         )
       }),
       scope_defs,
@@ -13401,6 +13425,22 @@ pub fn preprocess_defn(
       {
         detected_return_type = inferred;
       }
+      let open_contextual_output = if infer_contextual_callback {
+        expected_fn_schema.as_ref().and_then(|expected| {
+          let mut input_types = expected.arg_types.clone();
+          input_types.extend(expected.rest_type.iter().cloned());
+          let input_variables = crate::calcit::type_annotation::free_type_variable_names(&input_types);
+          let return_variables = crate::calcit::type_annotation::free_type_variable_names(std::slice::from_ref(&expected.return_type));
+          let open_binders = return_variables
+            .into_iter()
+            .filter(|name| expected_callee_owned_generics.contains(name) && !input_variables.contains(name))
+            .map(|name| (name, calcit::DYNAMIC_TYPE.clone()))
+            .collect::<HashMap<_, _>>();
+          (!open_binders.is_empty()).then(|| expected.return_type.substitute_free_type_vars(&open_binders))
+        })
+      } else {
+        None
+      };
       let generated_fn_schema =
         if matches!(def_schema.as_ref(), CalcitTypeAnnotation::Dynamic) && (strict_generated_by_macro || infer_contextual_callback) {
           effective_fn_schema.as_ref().map(|schema| {
@@ -13408,10 +13448,12 @@ pub fn preprocess_defn(
             // An unresolved output slot is not evidence of a concrete result.
             // Keep explicit open returns instead of leaking temporary variables
             // into the generated callable contract.
-            // A zero-argument contextual callback also has no input binder from
-            // which to infer an output-only generic. Preserve that caller-owned
-            // slot until another call argument supplies evidence.
-            let return_is_output_only = infer_contextual_callback
+            // Keep a zero-argument captured lexical binder rigid when it is not
+            // owned by the callee. For callee-owned output slots, retain the
+            // callback's independently inferred result so the enclosing call
+            // can compare sibling callbacks and ordinary arguments.
+            let return_is_output_only = open_contextual_output.is_none()
+              && infer_contextual_callback
               && expected_fn_schema.as_ref().is_some_and(|expected| {
                 expected.arg_types.is_empty() && expected.rest_type.is_none() && schema.return_type.contains_type_var()
               });
@@ -13451,22 +13493,6 @@ pub fn preprocess_defn(
           .unwrap_or_else(|| detected_return_type.clone())
       } else {
         detected_return_type.clone()
-      };
-      let open_contextual_output = if infer_contextual_callback {
-        expected_fn_schema.as_ref().and_then(|expected| {
-          if !expected.arg_types.is_empty() || expected.rest_type.is_some() {
-            return None;
-          }
-          let return_variables = crate::calcit::type_annotation::free_type_variable_names(std::slice::from_ref(&expected.return_type));
-          let open_binders = return_variables
-            .into_iter()
-            .filter(|name| expected_callee_owned_generics.contains(name))
-            .map(|name| (name, calcit::DYNAMIC_TYPE.clone()))
-            .collect::<HashMap<_, _>>();
-          (!open_binders.is_empty()).then(|| expected.return_type.substitute_free_type_vars(&open_binders))
-        })
-      } else {
-        None
       };
       // Keep independently inferred callable metadata, but diagnose a definite
       // contextual shape contradiction at the callback's actual return. Empty
