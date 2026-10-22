@@ -729,6 +729,231 @@ fn type_fail_schema_mismatch_fixtures_report_error_code() {
 }
 
 #[test]
+fn contextual_callback_return_does_not_merge_unrelated_generic_binders() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    for (name, snippet) in [(
+      "callback returning unrelated binder B must not satisfy A",
+      "let\n    accept $ fn (expected callback)\n      hint-fn $ {}\n        :generics $ [] 'A\n        :args $ [] 'A $ :: 'Fn $ {} (:args $ []) (:return 'A)\n        :return 'Unit\n      , &unit\n    caller $ fn (expected other)\n      hint-fn $ {}\n        :generics $ [] 'A 'B\n        :args $ [] 'A 'B\n        :return 'Unit\n      accept expected $ fn ()\n        , other\n      , &unit\n  caller 1 |wrong",
+    )] {
+      let entries = load_snippet_entries(snippet);
+      let warnings = RefCell::new(vec![]);
+      if let Err(error) =
+        runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default())
+      {
+        assert!(
+          matches!(
+            error.code.as_deref(),
+            Some("E_FN_RETURN_UNPROVEN" | "E_ERASED_GENERIC_RELATION" | "E_FN_ARG_TYPE_MISMATCH")
+          ),
+          "{name}: expected a typed callback error, got: {} [{:?}]",
+          error.msg,
+          error.code
+        );
+        continue;
+      }
+      let warnings = warnings.borrow();
+      assert!(
+        warnings.iter().any(|warning| {
+          warning.code() == Some("W_LOCAL_FN_ARG_TYPE_MISMATCH") || warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH")
+        }),
+        "{name}: invalid callback passed without a typed diagnostic: {warnings:?}"
+      );
+    }
+  });
+}
+
+#[test]
+fn contextual_callback_output_does_not_bind_output_only_generic() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_snippet_entries(
+      "let\n    consume $ fn (callback expected)\n      hint-fn $ {}\n        :generics $ [] 'T\n        :args $ [] (:: 'Fn $ {} (:return 'T)) 'T\n        :return 'T\n      callback\n  consume (fn () |wrong) 17",
+    );
+    let warnings = RefCell::new(vec![]);
+    let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+    let warnings = warnings.borrow();
+    assert!(
+      result.is_ok(),
+      "the invalid callback result should be diagnosed without breaking call preprocessing: {result:?}"
+    );
+    assert!(
+      warnings.iter().any(|warning| {
+        warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH")
+          && warning
+            .message()
+            .contains("declares return type `:number`, but body returns `:string`")
+      }),
+      "the later Number argument should determine T, then the callback's String result should be diagnosed: {warnings:?}"
+    );
+    assert!(
+      !warnings.iter().any(|warning| {
+        warning.code() == Some("W_LOCAL_FN_ARG_TYPE_MISMATCH") && warning.message().contains("arg 2 expects type `:string`")
+      }),
+      "the callback result must not specialize T before the later ordinary argument: {warnings:?}"
+    );
+  });
+}
+
+#[test]
+fn contextual_callback_without_input_keeps_output_slot_open() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    builtins::effects::init_effects_states();
+    let mut snapshot = snapshot::Snapshot::default();
+    let mut file = snapshot::create_file_from_snippet(
+      "defn invoke (callback) $ callback\n\ndefn main! () $ invoke $ fn () 1\n\ndefn reload! () &unit",
+    )
+    .expect("generic callback snippet should parse");
+    let output = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let callback = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![],
+      return_type: output.clone(),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+    file.defs.get_mut("invoke").expect("invoke definition").schema =
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        runtime_arity: None,
+        generics: Arc::new(vec![Arc::from("T")]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![callback],
+        return_type: output,
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      })));
+    for name in ["main!", "reload!"] {
+      file.defs.get_mut(name).expect("entry definition").schema =
+        Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+          runtime_arity: None,
+          generics: Arc::new(vec![]),
+          where_bounds: Arc::new(vec![]),
+          arg_types: vec![],
+          return_type: Arc::new(if name == "main!" {
+            CalcitTypeAnnotation::String
+          } else {
+            CalcitTypeAnnotation::Unit
+          }),
+          fn_kind: SchemaKind::Fn,
+          rest_type: None,
+          features: Arc::new(HashSet::new()),
+        })));
+    }
+    snapshot.files.insert("app.main".to_owned(), file);
+    let entries = prepare_snapshot_entries(snapshot);
+    let warnings = RefCell::new(vec![]);
+    let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+    assert!(result.is_ok(), "an unbound callback result slot must remain open: {result:?}");
+    assert!(
+      warnings.borrow().is_empty(),
+      "an unbound output slot must not report a false return mismatch"
+    );
+  });
+}
+
+#[test]
+fn contextual_callback_indirect_callable_keeps_output_slot_open() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_snippet_entries(
+      "let\n    invoke $ fn (callback)\n      hint-fn $ {}\n        :generics $ [] 'T\n        :args $ [] (:: 'Fn $ {} (:return 'T))\n        :return 'T\n      callback\n  invoke $ fn () 1",
+    );
+    let warnings = RefCell::new(vec![]);
+    let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+    assert!(
+      result.is_ok(),
+      "an indirect generic callback output slot must remain open: {result:?}"
+    );
+    assert!(
+      warnings.borrow().is_empty(),
+      "an indirect unbound output slot must not report a false return mismatch"
+    );
+  });
+}
+
+#[test]
+fn contextual_callback_method_owned_output_generic_is_open() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_snippet_entries(
+      "let\n    present $ Option :some 3\n    chained $ present .and-then $ fn (value) (Option :some $ str value)\n  assert-type chained $ :: 'Option 'String",
+    );
+    let warnings = RefCell::new(vec![]);
+    let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+    assert!(
+      result.is_ok(),
+      "a method-owned output generic should be inferred from its inline callback: {result:?}"
+    );
+    let warnings = warnings.borrow();
+    assert!(
+      !warnings.iter().any(|warning| {
+        matches!(warning.code(), Some("W_METHOD_ARG_TYPE_MISMATCH" | "W_FN_RETURN_TYPE_MISMATCH" | "W_LOCAL_FN_ARG_TYPE_MISMATCH"))
+      }),
+      "a valid callback result must not produce a method type diagnostic: {warnings:?}"
+    );
+  });
+}
+
+#[test]
+fn contextual_callback_does_not_erase_captured_lexical_output_binder() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_snippet_entries(
+      "let\n    outer $ fn (value)\n      hint-fn $ {}\n        :generics $ [] 'T\n        :args $ [] 'T\n        :return 'Unit\n      let\n          invoke $ fn (callback)\n            hint-fn $ {}\n              :args $ [] (:: 'Fn $ {} (:return 'T))\n              :return 'Unit\n            , &unit\n        invoke $ fn () 1\n      , &unit\n  outer 2",
+    );
+    let warnings = RefCell::new(vec![]);
+    let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+    if let Err(error) = result {
+      assert!(
+        matches!(
+          error.code.as_deref(),
+          Some("E_FN_RETURN_UNPROVEN" | "E_ERASED_GENERIC_RELATION" | "E_FN_ARG_TYPE_MISMATCH")
+        ),
+        "expected a typed callback error, got: {} [{:?}]",
+        error.msg,
+        error.code
+      );
+      return;
+    }
+    let warnings = warnings.borrow();
+    assert!(
+      warnings.iter().any(|warning| {
+        warning.code() == Some("W_LOCAL_FN_ARG_TYPE_MISMATCH") || warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH")
+      }),
+      "a concrete callback result must not satisfy a captured lexical generic without a typed diagnostic: {warnings:?}"
+    );
+  });
+}
+
+#[test]
+fn contextual_callback_preserves_proven_parts_of_composite_output() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_snippet_entries(
+      "let\n    check $ fn (key callback)\n      hint-fn $ {}\n        :generics $ [] 'K 'V\n        :args $ [] 'K (:: 'Fn $ {} (:return $ :: 'Map 'K 'V))\n        :return 'Unit\n      , &unit\n    bad $ fn ()\n      hint-fn $ {} (:args $ []) (:return $ :: 'Map 'String 'Bool)\n      {} $ |wrong true\n  check 1 bad",
+    );
+    let warnings = RefCell::new(vec![]);
+    let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+    let warnings = warnings.borrow();
+    assert!(
+      result.is_ok(),
+      "the callback mismatch should be reported without aborting preprocessing: {result:?}"
+    );
+    assert!(
+      warnings
+        .iter()
+        .any(|warning| warning.message().contains("map<:number") && warning.message().contains("map<:string")),
+      "the proven Number key constraint must reject the callback's String-keyed map: {warnings:?}"
+    );
+  });
+}
+
+#[test]
 fn strict_type_fail_reachable_unbound_slot_reports_stable_error_code() {
   run_with_large_stack(|| {
     let entries = load_fixture_entries("calcit/type-fail/type-slot-unbound-strict.cirru");

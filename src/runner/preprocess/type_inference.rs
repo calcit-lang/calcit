@@ -1009,6 +1009,21 @@ pub(super) fn generic_input_evidence<'a>(
     || core_option_none_without_payload(argument, actual, expected)
   {
     None
+  } else if matches!(
+    (actual, expected),
+    (
+      CalcitTypeAnnotation::Fn(actual),
+      CalcitTypeAnnotation::Fn(expected)
+    ) if actual.arg_types.is_empty()
+      && actual.rest_type.is_none()
+      && expected.arg_types.is_empty()
+      && expected.rest_type.is_none()
+      && expected.return_type.contains_type_var()
+  ) {
+    // A zero-argument callback has no input from which to infer an output-only
+    // generic. Its concrete body must not specialize the enclosing call before
+    // other arguments provide evidence for that variable.
+    None
   } else {
     Some(core_result_err_payload_types(argument, actual, expected).unwrap_or((actual, expected)))
   }
