@@ -799,15 +799,90 @@ fn contextual_callback_output_does_not_bind_output_only_generic() {
 fn contextual_callback_without_input_keeps_output_slot_open() {
   run_with_large_stack(|| {
     let _strict = StrictTypesReset::enabled();
-    let entries = load_snippet_entries(
-      "let\n    invoke $ fn (callback)\n      hint-fn $ {}\n        :generics $ [] 'T\n        :args $ [] (:: 'Fn $ {} (:return 'T))\n        :return 'T\n      callback\n  invoke $ fn () 1",
-    );
+    builtins::effects::init_effects_states();
+    let mut snapshot = snapshot::Snapshot::default();
+    let mut file = snapshot::create_file_from_snippet(
+      "defn invoke (callback) $ callback\n\ndefn main! () $ invoke $ fn () 1\n\ndefn reload! () &unit",
+    )
+    .expect("generic callback snippet should parse");
+    let output = Arc::new(CalcitTypeAnnotation::TypeVar(Arc::from("T")));
+    let callback = Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+      runtime_arity: None,
+      generics: Arc::new(vec![]),
+      where_bounds: Arc::new(vec![]),
+      arg_types: vec![],
+      return_type: output.clone(),
+      fn_kind: SchemaKind::Fn,
+      rest_type: None,
+      features: Arc::new(HashSet::new()),
+    })));
+    file.defs.get_mut("invoke").expect("invoke definition").schema =
+      Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+        runtime_arity: None,
+        generics: Arc::new(vec![Arc::from("T")]),
+        where_bounds: Arc::new(vec![]),
+        arg_types: vec![callback],
+        return_type: output,
+        fn_kind: SchemaKind::Fn,
+        rest_type: None,
+        features: Arc::new(HashSet::new()),
+      })));
+    for name in ["main!", "reload!"] {
+      file.defs.get_mut(name).expect("entry definition").schema =
+        Arc::new(CalcitTypeAnnotation::Fn(Arc::new(CalcitFnTypeAnnotation {
+          runtime_arity: None,
+          generics: Arc::new(vec![]),
+          where_bounds: Arc::new(vec![]),
+          arg_types: vec![],
+          return_type: Arc::new(if name == "main!" {
+            CalcitTypeAnnotation::Dynamic
+          } else {
+            CalcitTypeAnnotation::Unit
+          }),
+          fn_kind: SchemaKind::Fn,
+          rest_type: None,
+          features: Arc::new(HashSet::new()),
+        })));
+    }
+    snapshot.files.insert("app.main".to_owned(), file);
+    let entries = prepare_snapshot_entries(snapshot);
     let warnings = RefCell::new(vec![]);
     let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
     assert!(result.is_ok(), "an unbound callback result slot must remain open: {result:?}");
     assert!(
       warnings.borrow().is_empty(),
       "an unbound output slot must not report a false return mismatch"
+    );
+  });
+}
+
+#[test]
+fn contextual_callback_does_not_erase_captured_lexical_output_binder() {
+  run_with_large_stack(|| {
+    let _strict = StrictTypesReset::enabled();
+    let entries = load_snippet_entries(
+      "let\n    outer $ fn (value)\n      hint-fn $ {}\n        :generics $ [] 'T\n        :args $ [] 'T\n        :return 'Unit\n      let\n          invoke $ fn (callback)\n            hint-fn $ {}\n              :args $ [] (:: 'Fn $ {} (:return 'T))\n              :return 'Unit\n            , &unit\n        invoke $ fn () 1\n      , &unit\n  outer 2",
+    );
+    let warnings = RefCell::new(vec![]);
+    let result = runner::preprocess::ensure_ns_def_compiled(&entries.init_ns, &entries.init_def, &warnings, &CallStackList::default());
+    if let Err(error) = result {
+      assert!(
+        matches!(
+          error.code.as_deref(),
+          Some("E_FN_RETURN_UNPROVEN" | "E_ERASED_GENERIC_RELATION" | "E_FN_ARG_TYPE_MISMATCH")
+        ),
+        "expected a typed callback error, got: {} [{:?}]",
+        error.msg,
+        error.code
+      );
+      return;
+    }
+    let warnings = warnings.borrow();
+    assert!(
+      warnings.iter().any(|warning| {
+        warning.code() == Some("W_LOCAL_FN_ARG_TYPE_MISMATCH") || warning.code() == Some("W_FN_RETURN_TYPE_MISMATCH")
+      }),
+      "a concrete callback result must not satisfy a captured lexical generic without a typed diagnostic: {warnings:?}"
     );
   });
 }

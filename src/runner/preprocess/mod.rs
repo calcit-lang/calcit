@@ -76,7 +76,13 @@ struct ExpectedFunctionContext {
   signature: Arc<CalcitFnTypeAnnotation>,
   member_inputs: bool,
   immediate: bool,
+  /// Generic binders declared by the callee supplying this callback contract.
+  /// Their ownership distinguishes an unresolved output slot from a captured
+  /// lexical type variable with the same source spelling.
+  callee_owned_generics: Arc<Vec<Arc<str>>>,
 }
+
+type ExpectedArgumentContext<'a> = (&'a Arc<CalcitTypeAnnotation>, bool, &'a [Arc<str>]);
 
 struct ExpressionContextScope {
   previous_fn: Option<ExpectedFunctionContext>,
@@ -116,6 +122,7 @@ impl DefinitionContextScope {
         signature: signature.clone(),
         member_inputs: false,
         immediate: false,
+        callee_owned_generics: Arc::new(vec![]),
       })
     } else {
       None
@@ -131,7 +138,11 @@ impl DefinitionContextScope {
 }
 
 /// A callee supplies contextual types, never lexical permissions or async syntax.
-fn callback_parameter_context(signature: Arc<CalcitFnTypeAnnotation>, member_inputs: bool) -> ExpectedFunctionContext {
+fn callback_parameter_context(
+  signature: Arc<CalcitFnTypeAnnotation>,
+  member_inputs: bool,
+  callee_owned_generics: &[Arc<str>],
+) -> ExpectedFunctionContext {
   let signature = if signature.features.is_empty() {
     signature
   } else {
@@ -143,6 +154,7 @@ fn callback_parameter_context(signature: Arc<CalcitFnTypeAnnotation>, member_inp
     signature,
     member_inputs,
     immediate: false,
+    callee_owned_generics: Arc::new(callee_owned_generics.to_vec()),
   }
 }
 
@@ -175,15 +187,16 @@ fn resolve_callback_constructor(
 /// Carry collection member contexts into literal callbacks before evidence erasure.
 fn preprocess_argument_with_context(
   expr: &Calcit,
-  context: Option<(&Arc<CalcitTypeAnnotation>, bool)>,
+  context: Option<ExpectedArgumentContext<'_>>,
   scope_defs: &HashSet<Arc<str>>,
   scope_types: &mut ScopeTypes,
   file_ns: &str,
   check_warnings: &RefCell<Vec<LocatedWarning>>,
   call_stack: &CallStackList,
 ) -> Result<Calcit, CalcitErr> {
-  let expected = context.map(|(annotation, _)| annotation);
-  let member_inputs = context.is_some_and(|(_, member_inputs)| member_inputs);
+  let expected = context.map(|(annotation, _, _)| annotation);
+  let member_inputs = context.is_some_and(|(_, member_inputs, _)| member_inputs);
+  let callee_owned_generics = context.map(|(_, _, binders)| binders).unwrap_or_default();
   if let Some(CalcitTypeAnnotation::Map(key, value)) = expected.map(AsRef::as_ref)
     && let Calcit::List(items) = expr
     && items.len() % 2 == 1
@@ -201,7 +214,7 @@ fn preprocess_argument_with_context(
       for (index, item) in items.iter().skip(1).enumerate() {
         processed.push(preprocess_argument_with_context(
           item,
-          Some((if index % 2 == 0 { key } else { value }, member_inputs)),
+          Some((if index % 2 == 0 { key } else { value }, member_inputs, callee_owned_generics)),
           scope_defs,
           scope_types,
           file_ns,
@@ -234,7 +247,7 @@ fn preprocess_argument_with_context(
       for item in items.iter().skip(1) {
         processed.push(preprocess_argument_with_context(
           item,
-          Some((member, member_inputs)),
+          Some((member, member_inputs, callee_owned_generics)),
           scope_defs,
           scope_types,
           file_ns,
@@ -249,7 +262,7 @@ fn preprocess_argument_with_context(
   let _context = ExpressionContextScope::enter(
     expected
       .and_then(|annotation| annotation.resolve_to_fn())
-      .map(|signature| callback_parameter_context(signature, member_inputs)),
+      .map(|signature| callback_parameter_context(signature, member_inputs, callee_owned_generics)),
     expected.and_then(|annotation| {
       annotation
         .resolve_to_struct_with_ref()
@@ -3616,6 +3629,7 @@ fn preprocess_immediate_call_context(
           signature,
           member_inputs: false,
           immediate: true,
+          callee_owned_generics: Arc::new(vec![]),
         }),
         None,
       );
@@ -4279,6 +4293,7 @@ fn preprocess_list_call(
                   (
                     annotation,
                     method_context.as_ref().is_some_and(|context| context.receiver_specialized),
+                    &[][..],
                   )
                 }),
                 scope_defs,
@@ -4589,7 +4604,7 @@ fn preprocess_list_call(
           ));
           let handler = preprocess_argument_with_context(
             &args[1],
-            Some((&expected, false)),
+            Some((&expected, false, &[])),
             scope_defs,
             scope_types,
             file_ns,
@@ -4773,7 +4788,7 @@ fn preprocess_list_call(
             };
             let form = preprocess_argument_with_context(
               item,
-              expected.as_ref().map(|annotation| (annotation, false)),
+              expected.as_ref().map(|annotation| (annotation, false, &[][..])),
               scope_defs,
               scope_types,
               file_ns,
@@ -4957,7 +4972,7 @@ fn preprocess_list_call(
             let result = if has_callback_contract {
               preprocess_argument_with_context(
                 a,
-                expected_type.as_ref().map(|annotation| (annotation, member_inputs)),
+                expected_type.as_ref().map(|annotation| (annotation, member_inputs, &[][..])),
                 scope_defs,
                 scope_types,
                 file_ns,
@@ -5770,7 +5785,6 @@ fn preprocess_known_function_call(
       // Nominal names in the callee schema resolve in its declaration namespace, not the caller's (#2027).
       resolve_namespace_type_refs_for_body(expected, &info.def_ns)
     });
-
     // Set expected struct type hint if this arg position has a struct-typed param
     // This enables field-type-aware preprocessing of hashmap literals (e.g., DomProps)
     let expected_struct = expected_type.as_ref().and_then(|annotation| {
@@ -5790,7 +5804,11 @@ fn preprocess_known_function_call(
         // A callback's declared input is evidence, including an explicit
         // open payload. Do not relabel an inferred callable placeholder.
         let declared_input = declared_callback_contract && info.arg_types.get(arg_idx).is_some_and(has_open_callback_input);
-        (annotation, refreshed_core_types.is_some() || declared_input)
+        (
+          annotation,
+          refreshed_core_types.is_some() || declared_input,
+          info.generics.as_slice(),
+        )
       }),
       scope_defs,
       scope_types,
@@ -12949,6 +12967,10 @@ pub fn preprocess_defn(
       // The expected contract belongs to this function expression, not to
       // unrelated functions nested in its body or returned by a later macro.
       let expected_context = EXPECTED_FN_TYPE.with(|cell| cell.borrow_mut().take());
+      let expected_callee_owned_generics = expected_context
+        .as_ref()
+        .map(|context| context.callee_owned_generics.clone())
+        .unwrap_or_else(|| Arc::new(vec![]));
       let borrows_capture_refinements =
         expected_context.as_ref().is_some_and(|context| context.immediate) && body_types.has_refinements();
       // A direct invocation runs after its already-checked arguments. An
@@ -13430,19 +13452,29 @@ pub fn preprocess_defn(
       } else {
         detected_return_type.clone()
       };
-      let unbound_contextual_output = infer_contextual_callback
-        && !detected_return_type.contains_type_var()
-        && expected_fn_schema.as_ref().is_some_and(|expected| {
-          expected.arg_types.is_empty() && expected.rest_type.is_none() && expected.return_type.contains_type_var()
-        });
+      let open_contextual_output = if infer_contextual_callback {
+        expected_fn_schema.as_ref().and_then(|expected| {
+          if !expected.arg_types.is_empty() || expected.rest_type.is_some() {
+            return None;
+          }
+          let return_variables = crate::calcit::type_annotation::free_type_variable_names(std::slice::from_ref(&expected.return_type));
+          let open_binders = return_variables
+            .into_iter()
+            .filter(|name| expected_callee_owned_generics.contains(name))
+            .map(|name| (name, calcit::DYNAMIC_TYPE.clone()))
+            .collect::<HashMap<_, _>>();
+          (!open_binders.is_empty()).then(|| expected.return_type.substitute_free_type_vars(&open_binders))
+        })
+      } else {
+        None
+      };
       // Keep independently inferred callable metadata, but diagnose a definite
       // contextual shape contradiction at the callback's actual return. Empty
       // seed slots are provisional inference, not declared output restrictions.
-      let checked_return_type = if unbound_contextual_output {
-        // With no callback inputs, a generic result slot is caller-owned but
-        // has no evidence yet. Check the body against its actual result while
-        // preserving the open generic in the generated callable schema.
-        detected_return_type.clone()
+      let checked_return_type = if let Some(open_return) = open_contextual_output {
+        // Keep the callback contract's known structure and captured variables,
+        // opening only output binders owned by the callee.
+        open_return
       } else {
         contextual_return_constraint
           .filter(|expected| {
@@ -15992,6 +16024,7 @@ mod tests {
         signature: signature.clone(),
         member_inputs: true,
         immediate: true,
+        callee_owned_generics: Arc::new(vec![]),
       });
     });
     CURRENT_FN_FEATURES.with(|cell| *cell.borrow_mut() = Some(Arc::new(HashSet::from([EdnTag::from("js-ffi")]))));
@@ -16839,6 +16872,7 @@ mod tests {
         signature,
         member_inputs: true,
         immediate: true,
+        callee_owned_generics: Arc::new(vec![]),
       }),
       None,
     );
