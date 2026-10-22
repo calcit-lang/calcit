@@ -103,13 +103,56 @@ fn removal_message(subject: &str, replacement: &str) -> String {
   }
 }
 
+/// Top-level options of `ToplevelCalcit` that take a value. The value is skipped when
+/// looking for the subcommand, so `--entry tree cursor parent` reads `cursor parent`.
+/// `top_level_value_options_match_the_parser` keeps this list in sync with argh.
+const TOP_LEVEL_VALUE_OPTIONS: &[&str] = &[
+  "--ns",
+  "--format",
+  "--emit-path",
+  "--init-fn",
+  "--reload-fn",
+  "--entry",
+  "--watch-dir",
+  "--timeout",
+  "--tips-level",
+  "--cursor-after",
+];
+
+/// Finds the subcommand path the way argh reads it: skip top-level options (and the
+/// values of those that take one) and the optional snapshot positional, stop at the
+/// first token that names a subcommand, and return its index.
+fn subcommand_position(args: &[String]) -> Option<usize> {
+  let commands = <CalcitCommand as argh::SubCommands>::COMMANDS;
+  let mut index = 1;
+  while index < args.len() {
+    let arg = args[index].as_str();
+    if arg == "--" {
+      return None;
+    }
+    if arg.starts_with('-') {
+      index += if TOP_LEVEL_VALUE_OPTIONS.contains(&arg) { 2 } else { 1 };
+      continue;
+    }
+    if commands.iter().any(|command| command.name == arg) {
+      return Some(index);
+    }
+    index += 1;
+  }
+  None
+}
+
 /// Explains a command line that uses an entry removed in 0.31.0, before argument
 /// parsing reports it as an unknown command. `args` includes the program name.
-/// Only the first command-group token and the leaf right after it are inspected,
-/// so positional values such as `docs read <file> <heading>` are never mistaken for commands.
+/// Only the subcommand path (the first subcommand token after the top-level options
+/// and the leaf right after it) is inspected, so positional values such as
+/// `docs read <file> <heading>` or `--entry tree` are never mistaken for commands.
 pub fn removed_command_error(args: &[String]) -> Option<String> {
-  let position = args.iter().skip(1).position(|arg| REMOVED_GROUPS.contains(&arg.as_str()))? + 1;
+  let position = subcommand_position(args)?;
   let group = args[position].as_str();
+  if !REMOVED_GROUPS.contains(&group) {
+    return None;
+  }
   let leaf = args.get(position + 1)?.as_str();
   if let Some(replacement) = removed_replacement(group, leaf) {
     return Some(removal_message(&format!("`calcit {group} {leaf}`"), replacement));
@@ -120,8 +163,27 @@ pub fn removed_command_error(args: &[String]) -> Option<String> {
   None
 }
 
+/// Removed entries that `edit transaction` accepted as staged operations before 0.31.0.
+/// Only these get a removal message; any other operation falls through to the normal
+/// unsupported-operation error.
+const REMOVED_TRANSACTION_OPERATIONS: &[(&str, &str)] = &[
+  ("tree", "batch-delete"),
+  ("tree", "insert-before"),
+  ("tree", "insert-after"),
+  ("tree", "insert-child"),
+  ("tree", "append-child"),
+  ("tree", "swap-next"),
+  ("tree", "swap-prev"),
+  ("edit", "rm-example"),
+  ("edit", "ns-doc"),
+  ("config", "version"),
+];
+
 /// Explains an `edit transaction` operation that names an entry removed in 0.31.0.
 pub fn removed_transaction_operation_error(index: usize, group: &str, subcommand: &str) -> Option<String> {
+  if !REMOVED_TRANSACTION_OPERATIONS.contains(&(group, subcommand)) {
+    return None;
+  }
   let replacement = removed_replacement(group, subcommand)?;
   let replacement = match (group, subcommand) {
     ("tree", "batch-delete") => "one `tree delete` operation per path, highest index first".to_owned(),
@@ -695,6 +757,15 @@ mod tests {
     for (cli_args, replacement) in [
       (&["query", "pkg"][..], "query config"),
       (&["--entry", "page", "calcit.cirru", "query", "modules"][..], "config modules"),
+      (&["--entry", "tree", "cursor", "parent"][..], "cursor move parent"),
+      (
+        &["--tips-level", "none", "--entry", "cursor", "app.cirru", "tree", "swap-next"][..],
+        "tree swap --with next",
+      ),
+      (
+        &["-w", "--verbose", "calcit.cirru", "docs", "read-lines", "a.md"][..],
+        "docs read <file> --start",
+      ),
       (&["query", "host-procs"][..], "has no replacement"),
       (
         &["tree", "insert-before", "app.main/f", "--path", "0"][..],
@@ -730,6 +801,13 @@ mod tests {
       &["analyze", "call-graph", "--counts"][..],
       &["--check-only"][..],
       &["ffi", "export", "--json"][..],
+      // Positional values and option values are not the subcommand path.
+      &["--entry", "query", "calcit.cirru", "js"][..],
+      &["query", "def", "query/pkg"][..],
+      &["edit", "def", "app.main/f", "--code", "query pkg"][..],
+      &["calcit.cirru", "js", "query", "pkg"][..],
+      &["--ns", "tree", "--check-only", "calcit.cirru"][..],
+      &["--", "query", "pkg"][..],
     ] {
       assert_eq!(removed_command_error(&args(cli_args)), None, "{cli_args:?}");
     }
@@ -817,6 +895,47 @@ mod tests {
     }
     assert_eq!(removed_transaction_operation_error(0, "edit", "examples"), None);
     assert_eq!(removed_transaction_operation_error(0, "tree", "insert"), None);
+    // Removed entries that were never staged operations keep the normal unsupported error.
+    for (group, subcommand) in [
+      ("cursor", "copy"),
+      ("query", "pkg"),
+      ("docs", "read-lines"),
+      ("analyze", "count-calls"),
+    ] {
+      assert_eq!(
+        removed_transaction_operation_error(0, group, subcommand),
+        None,
+        "{group} {subcommand}"
+      );
+    }
+  }
+
+  #[test]
+  fn top_level_value_options_match_the_parser() {
+    let help = match <ToplevelCalcit as argh::FromArgs>::from_args(&["calcit"], &["--help"]) {
+      Err(early_exit) => early_exit.output,
+      Ok(_) => panic!("--help should exit early"),
+    };
+    let usage = help.lines().next().expect("usage line");
+    let mut from_parser = usage
+      .split('[')
+      .filter_map(|item| {
+        let item = item.trim().trim_end_matches(']');
+        let (flag, value) = item.split_once(' ')?;
+        (flag.starts_with("--") && value.starts_with('<')).then(|| flag.to_owned())
+      })
+      .collect::<Vec<_>>();
+    let mut listed = TOP_LEVEL_VALUE_OPTIONS.iter().map(|flag| (*flag).to_owned()).collect::<Vec<_>>();
+    from_parser.sort();
+    listed.sort();
+    assert_eq!(listed, from_parser, "usage: {usage}");
+    let commands = <CalcitCommand as argh::SubCommands>::COMMANDS;
+    for group in REMOVED_GROUPS {
+      assert!(
+        commands.iter().any(|command| command.name == *group),
+        "{group} should be a subcommand"
+      );
+    }
   }
 
   #[test]

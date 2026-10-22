@@ -216,7 +216,7 @@ fn run_deprecated(options: &DeprecatedCommand, snapshot: &snapshot::Snapshot) ->
     format @ ("json" | "edn") => print_structured_report(&deprecated_api::format_deprecated_api_json(options, snapshot)?, format)?,
     other => {
       return Err(format!(
-        "Unknown deprecated output format `{other}`. Expected `human`, `edn`, or `json`."
+        "Unknown `analyze weak-types --only deprecated-call` output format `{other}`. Expected `human`, `edn`, or `json`."
       ));
     }
   }
@@ -287,7 +287,7 @@ fn run_dynamic_methods(
   let _output_guard = ProgramOutputGuard::new(true, false);
   if !matches!(options.format.as_str(), "human" | "text" | "edn" | "json") {
     return Err(format!(
-      "Unknown dynamic-methods output format `{}`. Expected `human`, `edn`, or `json`.",
+      "Unknown `analyze weak-types --only dynamic-method` output format `{}`. Expected `human`, `edn`, or `json`.",
       options.format
     ));
   }
@@ -480,7 +480,10 @@ fn run_public_check(
 fn run_cli() -> Result<(), String> {
   // deep non-tail recursion should surface as a Calcit error, not a native stack overflow abort
   calcit::runner::arm_stack_guard(CLI_STACK_SIZE);
-  let raw_args = std::env::args().collect::<Vec<_>>();
+  // `args_os` never panics; a non-UTF-8 argument is still reported by argh below.
+  let raw_args = std::env::args_os()
+    .map(|arg| arg.to_string_lossy().into_owned())
+    .collect::<Vec<_>>();
   if let Some(error) = cli_handlers::removed_command_error(&raw_args) {
     return Err(error);
   }
@@ -1064,12 +1067,13 @@ fn run_cli() -> Result<(), String> {
   {
     eval_once = true;
     match view {
-      AnalyzeView::CallGraphDiff(diff_options) => cli_handlers::handle_call_graph_diff_command(diff_options, &cli_args.input),
       AnalyzeView::CountCalls(count_call_options) => run_count_calls(&entries, count_call_options),
       AnalyzeView::DynamicMethods(options) => {
         run_dynamic_methods(options, &entries, &snapshot, &project_namespaces, &cli_args.input, None)
       }
-      AnalyzeView::DeprecatedCalls(deprecated_options) => run_deprecated(deprecated_options, &snapshot),
+      AnalyzeView::CallGraphDiff(_) | AnalyzeView::DeprecatedCalls(_) => {
+        unreachable!("call-graph --diff and weak-types --only deprecated-call return before the snapshot loads")
+      }
     }
   } else if let Some(CalcitCommand::Analyze(analyze_cmd)) = &cli_args.subcommand {
     eval_once = true;

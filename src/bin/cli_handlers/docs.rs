@@ -1,6 +1,6 @@
 //! Docs subcommand handlers
 //!
-//! Handles: calcit docs scopes, search, list, sections, read, read-lines
+//! Handles: calcit docs scopes, search, list, sections, read (including `--start`/`--lines` ranges)
 
 use super::stdout::{cli_print as print, cli_println as println};
 use calcit::cli_args::{DocsCommand, DocsGraphSubcommand, DocsReadCommand, DocsSubcommand};

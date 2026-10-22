@@ -52,7 +52,7 @@ decode、模式匹配或谓词守卫收窄。不自动加入 unsafe、更宽 Dyn
 | `analyze count-calls [--sort count\|name]` | `analyze call-graph --counts [--sort count\|name]` |
 | `analyze call-graph-diff <ref>` | `analyze call-graph --diff <ref>` |
 | `analyze js-escape`、`analyze js-unescape` | 无；JS 代码生成的转义规则不变 |
-| `query pkg` | `query config`（首行给出 `Package`） |
+| `query pkg` | `query config`（`# Project configuration` 标题之后的 `Package:` 行给出包名） |
 | `query modules` | `config modules` |
 | `query host-procs` | 无 |
 | `tree insert-before` / `insert-after` | `tree insert --at before` / `--at after` |
@@ -1182,7 +1182,7 @@ Map 与 Set 同时不再实现 `Contains` trait。schema `:where` 中 `'T 'Conta
 
 `core-non-nil-predicate-v1` 随 `some?` 整条退役：0.29.0 的 CLI 用 `--rule` 指定它时会提示改用 0.28.x 的 CLI。`core-api-0.28-v1` preset 由 6 条规则减为 5 条，`core-api-0.29-v1` 由 7 条减为 6 条。`core-function-alias-v1` 继续迁移 `optionally`、`join` 与 `vals`；`core-collection-len-v1` 继续迁移 List、Map、Set 的 `.count`。升级顺序同上：先在 0.28.x 上预览、应用并运行项目测试，再升级 CLI。
 
-### 0.29.0 弃用、0.31.0 删除：合并后的 CLI 入口（#1566）
+### 0.29.0 弃用、0.31.0 删除（部分保留）：合并后的 CLI 入口（#1566）
 
 下面的子命令在 0.29.0 仍可运行，stdout 与退出码不变，只在 stderr 多输出一行 `[Deprecated] ...` 迁移提示；0.30.0 仍保留。0.31.0 已删除其中的 `analyze dynamic-methods`、`analyze deprecated`、`query pkg`、`query modules`、`tree batch-delete` 与 `config version`；`analyze check-types`、`analyze check-public`、`analyze quality` 因生态 CI 仍在调用而保留（见本手册“0.31.0 删除已弃用的 CLI 入口”一节）。新入口复用同一实现，结构化输出保留原有 `command` 名与字段，因此读取 `analyze.check-types`、`analyze.check-public` 等 envelope 的脚本只需改命令行；这些 envelope 名在删除旧入口后保持不变。
 
@@ -1192,11 +1192,11 @@ Map 与 Set 同时不再实现 `Contains` trait。schema `:where` 中 `'T 'Conta
 | `analyze dynamic-methods` | `analyze weak-types --only dynamic-method` | 不接受 `--ns`/`--ns-prefix`，与原命令一致 |
 | `analyze deprecated` | `analyze weak-types --only deprecated-call` | 不接受 `--incremental`，与原命令一致 |
 | `analyze check-public --ns <ns> [--deps] [--summary-only] [--format …]` | `calcit <snapshot> --check-only --ns <ns> [--deps] [--summary-only] [--format edn\|json]` | 计数与报告相同，另外支持 EDN |
-| `analyze quality [--baseline …]` | `--check-only` 判断正确性，`analyze weak-types [--only coverage\|deprecated-call]` 定位债务 | 0.31.0 删除后不再读取 baseline；清零后从 CI 删除该命令与 baseline 文件 |
-| `query pkg` | `query config` | human 输出首行给出 `Package`；结构化输出见 `config show --format edn` 的 `:package` |
+| `analyze quality [--baseline …]` | `--check-only` 判断正确性，`analyze weak-types [--only coverage\|deprecated-call]` 定位债务 | 0.31.0 仍保留（生态 CI 仍在调用），继续读取 baseline 并输出弃用提示；清零后从 CI 删除该命令与 baseline 文件 |
+| `query pkg` | `query config` | human 输出在 `# Project configuration` 标题之后的 `Package:` 行给出包名；结构化输出见 `config show --format edn` 的 `:package` |
 | `query modules` | `config modules` | 默认 entry 的模块列表相同，标题改为 `Modules in entry 'default':` |
-| `tree batch-delete <target> --paths …`，以及 `edit transaction` 中的 `["tree","batch-delete",…]` 操作 | `edit transaction`，每个路径一条 `tree delete`，按下标从大到小排列 | 删除顺序与原命令相同；事务整体成功或整体不写入。事务中使用旧操作时同样在 stderr 输出提示 |
-| `config version` / `config set version` | `caps version get/set/bump` | 早已只输出迁移提示并失败，0.31.0 删除 |
+| `tree batch-delete <target> --paths …`，以及 `edit transaction` 中的 `["tree","batch-delete",…]` 操作 | `edit transaction`，每个路径一条 `tree delete`，按下标从大到小排列 | 删除顺序与原命令相同；事务整体成功或整体不写入。0.31.0 起事务中使用旧操作会让整个事务在写入前失败 |
+| `config version` / `config set version` | `caps version get/set/bump` | 早已只输出迁移提示并失败；0.31.0 删除 `config version`，`config set version` 仍报错 |
 
 迁移命令示例：
 
@@ -1223,7 +1223,7 @@ calcit calcit.cirru edit transaction --dry-run --format edn --code '[["tree","de
 | `analyze js-escape <symbol>`、`analyze js-unescape <name>` | 无 | 删除后不再提供命令行转换；JS 代码生成的转义规则不变 |
 | `docs read-lines <file> [--start <n>] [--lines <n>]` | `docs read <file> [--start <n>] [--lines <n>]` | 给出 `--start` 或 `--lines` 时按行读取，默认值仍为 0 与 80；不能与标题关键词、`--full`、`--with-lines`、`--no-subheadings` 混用；`--start` 不小于文件行数时报错（原来会 panic），范围超出结尾时截断 |
 | `cirru show-guide` | `docs read cirru-syntax.md` | 读取同一份 `~/.config/calcit/docs/cirru-syntax.md`；`docs read` 带标题渲染，也可按标题关键词或行范围读取 |
-| `edit rm-example <ns/def> <index>`，以及 `edit transaction` 中的 `["edit","rm-example",…]` 操作 | `edit examples <ns/def>` 写入剩余示例，或 `edit ns` 写回修改后的 `:examples` | 先用 `query examples` 读取现有示例；事务中改用 `["edit","examples",…]` 操作。事务中使用旧操作时同样在 stderr 输出提示 |
+| `edit rm-example <ns/def> <index>`，以及 `edit transaction` 中的 `["edit","rm-example",…]` 操作 | `edit examples <ns/def>` 写入剩余示例，或 `edit ns` 写回修改后的 `:examples` | 先用 `query examples` 读取现有示例；事务中改用 `["edit","examples",…]` 操作。0.31.0 起事务中使用旧操作会让整个事务在写入前失败 |
 | `edit ns-doc <ns> <doc>`，以及 `edit transaction` 中的 `["edit","ns-doc",…]` 操作 | `edit ns <ns>` 写回修改了 `:ns` 条目 `:doc` 的 `query ns <ns> --format cirru` 数据 | `edit ns` 自带 `--dry-run` 与 `--expect-revision`，但不能放进 `edit transaction`；原事务中的 `ns-doc` 操作需拆成单独的 `edit ns` 步骤 |
 
 迁移命令示例：
@@ -1242,7 +1242,7 @@ calcit calcit.cirru edit ns app.main --file .calcit/snippets/app.main.cirru --dr
 
 ### 0.29.2 弃用、0.31.0 删除：`tree insert` / `tree swap` 与 `query host-procs`（#1566）
 
-`tree` 的四个插入叶子合并为一个入口，两个交换叶子合并为一个入口。旧叶子在 0.29.2 至 0.30.x 仍可运行，stdout 与退出码不变，只在 stderr 多输出一行 `[Deprecated] ...` 提示；新旧写法共用同一实现，改写的 Snapshot 逐字节相同。0.31.0 已删除这些旧叶子。`edit transaction` 中的旧操作同样输出提示，新操作 `["tree","insert",…]`、`["tree","swap",…]` 可直接放进事务。
+`tree` 的四个插入叶子合并为一个入口，两个交换叶子合并为一个入口。旧叶子在 0.29.2 至 0.30.x 仍可运行，stdout 与退出码不变，只在 stderr 多输出一行 `[Deprecated] ...` 提示；新旧写法共用同一实现，改写的 Snapshot 逐字节相同。0.31.0 已删除这些旧叶子，`edit transaction` 中的旧操作会让整个事务在写入前失败；新操作 `["tree","insert",…]`、`["tree","swap",…]` 可直接放进事务。
 
 | 已弃用 | 替代 | 说明 |
 | --- | --- | --- |

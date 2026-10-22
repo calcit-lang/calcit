@@ -1252,8 +1252,6 @@ fn cursor_json(project: &TempProject) -> String {
     .replace(&project.0.display().to_string(), "<project>")
 }
 
-/// Replays the legacy and merged spellings on two fresh projects and requires equal snapshots
-/// and cursor state after every step, one hint per legacy step, and none for the merged one.
 /// Replays the merged spellings on a fresh project. Before each step a removed legacy
 /// spelling is tried first: it must fail, name its replacement, and leave both the snapshot
 /// and the cursor state unchanged. Legacy spellings that are still current (empty
@@ -1554,4 +1552,48 @@ fn cursor_after_focus_works_with_the_merged_forms() {
     assert!(output.status.success(), "{args:?}: {}", String::from_utf8_lossy(&output.stderr));
     assert!(hint_lines(&output).is_empty(), "{args:?} must not print a hint");
   }
+}
+
+#[test]
+fn removed_entry_detection_reads_the_subcommand_path_only() {
+  // Top-level option values are not the subcommand: `--entry tree` precedes `cursor parent`.
+  let output = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .args(["--tips-level", "none", "--entry", "tree", "calcit/test.cirru", "cursor", "parent"])
+    .output()
+    .expect("calcit command should run");
+  assert!(!output.status.success());
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(
+    stderr.contains("`calcit cursor parent` was removed in 0.31.0") && stderr.contains("cursor move parent"),
+    "{stderr}"
+  );
+
+  // A positional value that spells a removed entry is not a command.
+  let output = run_calcit(Path::new("calcit/test.cirru"), &["query", "find", "query", "pkg"]);
+  assert!(
+    !String::from_utf8_lossy(&output.stderr).contains("was removed in 0.31.0"),
+    "{}",
+    String::from_utf8_lossy(&output.stderr)
+  );
+}
+
+#[cfg(unix)]
+#[test]
+fn non_utf8_arguments_are_reported_without_a_panic() {
+  use std::ffi::OsStr;
+  use std::os::unix::ffi::OsStrExt;
+  let output = Command::new(env!("CARGO_BIN_EXE_calcit"))
+    .env("NO_COLOR", "1")
+    .arg("calcit/test.cirru")
+    .arg("query")
+    .arg("def")
+    .arg(OsStr::from_bytes(b"app.main/\xff"))
+    .output()
+    .expect("calcit command should run");
+  assert_eq!(output.status.code(), Some(1));
+  assert!(output.stdout.is_empty());
+  let stderr = String::from_utf8_lossy(&output.stderr);
+  assert!(stderr.contains("Invalid utf8"), "{stderr}");
+  assert!(!stderr.contains("panicked"), "{stderr}");
 }
